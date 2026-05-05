@@ -377,6 +377,34 @@ export const opencodeServerAdapter: EngineAdapter = {
       const pump = pumpEvents().catch(() => {}); // SSE is additive; REST is truth
 
       // ── the turn: POST resolves when the assistant message completes ────────
+      // Pre-turn snapshot (resumed sessions): the finalize step reconciles from
+      // FULL session history, which on a resumed thread includes every earlier
+      // turn — without this snapshot a reply re-emits the whole thread's past
+      // tools into its own worklog (observed: a Paris essay turn wearing the
+      // previous turn's stock-price subagents).
+      const preTurnMessages = new Set<string>();
+      const preTurnChildren = new Set<string>();
+      if (resumed) {
+        try {
+          const [hres, cres] = await Promise.all([
+            fetch(`${baseUrl}/session/${sessionId}/message${dirQ}`, { headers, signal: ctx.signal }),
+            fetch(`${baseUrl}/session/${sessionId}/children${dirQ}`, { headers, signal: ctx.signal }),
+          ]);
+          if (hres.ok) {
+            for (const m of (await hres.json()) as { info?: { id?: string } }[]) {
+              if (m.info?.id) preTurnMessages.add(m.info.id);
+            }
+          }
+          if (cres.ok) {
+            for (const c of (await cres.json()) as { id?: string }[]) {
+              if (c.id) preTurnChildren.add(c.id);
+            }
+          }
+        } catch {
+          /* snapshot is best-effort; worst case we over-reconcile like before */
+        }
+      }
+
       await ctx.emit({ kind: "task", label: "Thinking…", chip: "opencode" });
       const model = ctx.model?.trim() || DEFAULT_MODEL;
       const turnAbort = new AbortController();
@@ -438,8 +466,13 @@ export const opencodeServerAdapter: EngineAdapter = {
         try {
           const res = await fetch(`${baseUrl}/session/${id}/message${dirQ}`, { headers, signal: ctx.signal });
           if (!res.ok) return;
-          const msgs = (await res.json()) as { parts?: Record<string, unknown>[] }[];
+          const msgs = (await res.json()) as {
+            info?: { id?: string };
+            parts?: Record<string, unknown>[];
+          }[];
           for (const m of msgs) {
+            // Prior turns' messages belong to prior worklogs.
+            if (m.info?.id && preTurnMessages.has(m.info.id)) continue;
             for (const part of m.parts ?? []) {
               if (part.type === "tool" || part.type === "subtask") await handlePart(part);
             }
@@ -452,7 +485,11 @@ export const opencodeServerAdapter: EngineAdapter = {
       // parent first (its `task`/tool steps) followed by each child (↳ tools).
       try {
         const cres = await fetch(`${baseUrl}/session/${sessionId}/children${dirQ}`, { headers, signal: ctx.signal });
-        if (cres.ok) for (const c of (await cres.json()) as { id?: string }[]) if (c.id) childSessions.add(c.id);
+        if (cres.ok) {
+          for (const c of (await cres.json()) as { id?: string }[]) {
+            if (c.id && !preTurnChildren.has(c.id)) childSessions.add(c.id);
+          }
+        }
       } catch {
         /* best-effort child discovery */
       }
