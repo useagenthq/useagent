@@ -17,9 +17,6 @@ import { Conversation, type Turn } from "@/components/chat/conversation";
 import { AgentsRail } from "@/components/chat/agents-rail";
 import { EditorPane } from "@/components/chat/editor-pane";
 import { DesktopPane } from "@/components/chat/desktop-pane";
-// The "Live" tab: opencode's session view mounted inline as a Web Component
-// (solid-element, no iframe) — see live-pane.tsx.
-import { LivePane } from "@/components/chat/live-pane";
 import { TerminalPane } from "@/components/chat/terminal-pane";
 import { OrbBootIndicator } from "@/components/chat/orb-boot-indicator";
 import { useRunStream } from "@/components/chat/use-run-stream";
@@ -214,23 +211,19 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
       <div className="flex min-h-0 flex-1 flex-col gap-3 p-3 md:flex-row">
         {/* Conversation */}
         <section className="border-stroke-soft-200 bg-bg-white-0 relative flex min-h-[60vh] min-w-0 flex-1 flex-col overflow-hidden rounded-2xl border md:min-h-0">
-          {/* PRIMARY CHAT = opencode's own session view, inline (user decision
-              2026-08-05): their composer/timeline drive the conversation.
-              Our Conversation below is TBD — kept as the fallback renderer for
-              threads without a live session (dead sandbox, pre-session, other
-              engines) and as the future durable-history surface. NOTE: turns
-              typed in their composer live in the ENGINE's session store; the
-              event-log import for those is part of the TBD. */}
-          {isOpencode && engineSessionId ? (
-            <LivePane threadId={rootId} sessionId={engineSessionId} />
-          ) : (
-            <Conversation
-              turns={turns}
-              defaultEngine={normalizeEngine(newest.engine)}
-              pendingReply={pendingReply}
-              onReply={handleReply}
-            />
-          )}
+          {/* PRIMARY CHAT = our native React conversation (user decision
+              2026-08-05, second pass): owning the rendering layer keeps the
+              extension surface ours — artifact/PPT/PDF viewers, custom panes —
+              per the reference bot/Cloudflare-OS model. The opencode inline-embed
+              implementation lives complete on branch feat/opencode-live-embed;
+              the React-native port of their part renderers grows on
+              feat/react-session-port. */}
+          <Conversation
+            turns={turns}
+            defaultEngine={normalizeEngine(newest.engine)}
+            pendingReply={pendingReply}
+            onReply={handleReply}
+          />
           {/* Boot phase: engine spinning up, no steps yet — orb pill; clears the
               moment the first step streams in (Thinking block takes over). */}
           {booting && (
