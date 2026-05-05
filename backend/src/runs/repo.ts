@@ -155,6 +155,23 @@ export async function setRunEngineSession(id: string, sessionId: string): Promis
   await db.update(runs).set({ engineSessionId: sessionId }).where(eq(runs.id, id));
 }
 
+/** Persist the sandbox a run executed in (thread→sandbox mapping, durable). */
+export async function setRunSandbox(id: string, sandboxId: string): Promise<void> {
+  await db.update(runs).set({ sandboxId }).where(eq(runs.id, id));
+}
+
+/** The most recent sandbox id recorded in this thread — the box holding the
+ * conversation's workspace and resident engine server. Survives restarts. */
+export async function getThreadSandbox(threadId: string): Promise<string | null> {
+  const [row] = await db
+    .select({ sid: runs.sandboxId })
+    .from(runs)
+    .where(and(eq(runs.threadId, threadId), isNotNull(runs.sandboxId)))
+    .orderBy(desc(runs.createdAt), desc(runs.id))
+    .limit(1);
+  return row?.sid ?? null;
+}
+
 /** The most recent engine session id recorded in this thread FOR THE SAME
  * engine (a thread can mix engines; sessions don't transfer across them).
  * Null → the adapter starts a fresh native session with the composed preamble. */

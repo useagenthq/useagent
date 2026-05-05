@@ -227,7 +227,7 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
               {railTab === "editor" ? (
                 <EditorPane steps={allSteps} live={live} />
               ) : (
-                <TerminalPane steps={allSteps} live={live} engine={newest.engine} />
+                <TerminalPane steps={allSteps} live={live} engine={newest.engine} runId={newest.id} />
               )}
             </div>
           </section>

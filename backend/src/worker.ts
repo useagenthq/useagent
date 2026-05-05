@@ -197,7 +197,7 @@ export const RUNS_ROOT = join(import.meta.dir, "..", ".runs");
 // Overridable (test/ops) like the mock's WORKER_STEP_DELAY_MS knob.
 const ADAPTER_TIMEOUT_MS = process.env.ENGINE_TIMEOUT_MS
   ? Number(process.env.ENGINE_TIMEOUT_MS)
-  : 180_000;
+  : 600_000; // resident engines make long fanout turns legitimate
 
 async function runEngine(
   runId: string,

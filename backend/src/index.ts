@@ -8,6 +8,7 @@ import { connectorEmailConfig, env } from "./env";
 import { knowledgeRoutes } from "./knowledge/routes";
 import { failStaleRuns } from "./runs/repo";
 import { runsRoutes } from "./runs/routes";
+import { terminalRoutes, websocket } from "./runs/terminal";
 import { schedulesRoutes } from "./schedules/routes";
 import { startScheduler } from "./schedules/scheduler";
 import { seedDev } from "./seed";
@@ -47,6 +48,9 @@ app.get("/api/health", (c) => c.json({ status: "ok" }));
 app.on(["GET", "POST"], "/api/auth/*", (c) => auth.handler(c.req.raw));
 
 app.route("/api/runs", runsRoutes);
+// Interactive terminal WS bridge (browser xterm ⇄ sandbox PTY). Mounted before
+// nothing — separate router so the SSE/step routes stay untouched.
+app.route("/api/runs", terminalRoutes);
 app.route("/api/skills", skillsRoutes);
 app.route("/api/schedules", schedulesRoutes);
 app.route("/api/knowledge", knowledgeRoutes);
@@ -80,4 +84,6 @@ console.log(`[skynet] backend listening on http://localhost:${env.PORT}`);
 export default {
   port: env.PORT,
   fetch: app.fetch,
+  // Bun WebSocket handler for the terminal bridge (hono/bun upgradeWebSocket).
+  websocket,
 };

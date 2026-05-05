@@ -1,8 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { RiArrowDownSLine, RiCheckLine } from "@remixicon/react";
-import { AsteriskMark } from "@/components/foundations/brand/asterisk-mark";
+import { RiArrowDownSLine, RiCheckLine, RiCpuLine } from "@remixicon/react";
 import { cnExt as cn } from "@/utils/cn";
 import { ENGINES, engineLabel, type EngineId } from "@/components/chat/types";
 
@@ -31,7 +30,9 @@ export function EnginePicker({
         aria-expanded={open}
         className="text-text-strong-950 hover:bg-bg-weak-50 flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-label-sm transition-colors"
       >
-        <AsteriskMark className="size-4 text-orange-500" />
+        {/* Engine chip glyph — the AsteriskMark is Skynet's brand, not an
+            engine's; match the composer's neutral cpu icon instead. */}
+        <RiCpuLine className="text-text-sub-600 size-4" aria-hidden />
         <span>{engineLabel(engine)}</span>
         <RiArrowDownSLine className="text-text-soft-400 size-4" aria-hidden />
       </button>

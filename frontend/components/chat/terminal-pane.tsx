@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { cnExt as cn } from "@/utils/cn";
+import { InteractiveTerminal } from "@/components/chat/interactive-terminal";
 import {
   engineLabel,
   parseCommandStep,
@@ -20,13 +21,19 @@ export function TerminalPane({
   steps,
   live,
   engine,
+  runId,
 }: {
   steps: ApiStep[];
   live: boolean;
   engine: EngineId;
+  /** Any run in the conversation — the shell attaches to the THREAD's sandbox. */
+  runId?: string;
 }) {
   const commandSteps = steps.filter((s) => s.kind === "command");
   const bodyRef = useRef<HTMLDivElement>(null);
+  // Log = the run's command steps (read-only); Shell = a live PTY into the
+  // conversation's sandbox (type alongside the agent).
+  const [tab, setTab] = useState<"log" | "shell">("log");
 
   useEffect(() => {
     const el = bodyRef.current;
@@ -40,11 +47,33 @@ export function TerminalPane({
         <span className="size-3 rounded-full bg-yellow-400" />
         <span className="size-3 rounded-full bg-green-500" />
         <span className="text-mono-label ml-2 text-neutral-400">Terminal</span>
+        {runId && (
+          <span className="ml-3 flex items-center gap-1">
+            {(["log", "shell"] as const).map((t) => (
+              <button
+                key={t}
+                type="button"
+                onClick={() => setTab(t)}
+                className={cn(
+                  "text-mono-label rounded px-1.5 py-0.5 transition-colors",
+                  tab === t
+                    ? "bg-white-alpha-10 text-neutral-200"
+                    : "text-neutral-600 hover:text-neutral-400",
+                )}
+              >
+                {t === "log" ? "Log" : "Shell"}
+              </button>
+            ))}
+          </span>
+        )}
         <span className="text-mono-label ml-auto text-neutral-600">
           {engineLabel(engine)}
         </span>
       </div>
 
+      {tab === "shell" && runId ? (
+        <InteractiveTerminal runId={runId} />
+      ) : (
       <div
         ref={bodyRef}
         className="min-h-0 flex-1 overflow-y-auto px-4 py-3 [font-family:var(--font-mono)] text-[13px] leading-6"
@@ -85,6 +114,7 @@ export function TerminalPane({
           })
         )}
       </div>
+      )}
     </div>
   );
 }

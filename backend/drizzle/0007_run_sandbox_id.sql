@@ -1,0 +1,1 @@
+ALTER TABLE "runs" ADD COLUMN "sandbox_id" text;

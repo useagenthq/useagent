@@ -677,11 +677,10 @@ function makeSandboxAdapter(spec: SandboxEngineSpec): EngineAdapter {
         );
         succeeded = true;
       } finally {
-        // Success in a thread → keep the sandbox for the next turn (auto-stop /
-        // auto-delete contain cost). Failure/abort or no thread → tear down and
-        // forget the mapping so the next turn starts clean.
-        if (sandbox && (!retainForThread || !succeeded)) {
-          if (ctx.threadId) threadSandboxes.delete(ctx.threadId);
+        // A thread's sandbox is the conversation's world — a failed TURN must
+        // not destroy it (auto-stop/auto-delete contain cost). Only runs
+        // without a thread clean up their box.
+        if (sandbox && !ctx.threadId) {
           await sandbox.delete().catch(() => {});
         }
       }

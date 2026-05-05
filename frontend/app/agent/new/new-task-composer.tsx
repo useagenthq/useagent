@@ -22,10 +22,17 @@ const REPOS = ["skynet-app", "skynet-web", "skynet-infra", "chartden"];
 // Real backend model ids (`value`, sent verbatim in the POST body) paired with a
 // friendly `label`. Only meaningful for the opencode engine — see the picker below.
 const MODELS: { value: string; label: string; tint: string }[] = [
+  // Bare ids → Anthropic direct; provider/model ids → OpenRouter (the backend
+  // maps them; OPENROUTER_API_KEY rides into the sandbox). Ids verified against
+  // openrouter.ai/api/v1/models.
   { value: "claude-opus-5", label: "Opus 5", tint: "text-orange-500" },
   { value: "claude-sonnet-5", label: "Sonnet 5", tint: "text-blue-500" },
   { value: "claude-fable-5", label: "Fable 5", tint: "text-purple-500" },
   { value: "claude-haiku-4-5", label: "Haiku 4.5", tint: "text-green-500" },
+  { value: "openai/gpt-5.6-sol", label: "GPT-5.6 Sol", tint: "text-teal-500" },
+  { value: "openai/gpt-5.6-sol-pro", label: "GPT-5.6 Sol Pro", tint: "text-teal-500" },
+  { value: "openai/gpt-5.6-luna", label: "GPT-5.6 Luna", tint: "text-sky-500" },
+  { value: "openai/gpt-5.6-terra", label: "GPT-5.6 Terra", tint: "text-amber-500" },
 ];
 
 const MACHINES: { value: string; label: string; mono: boolean }[] = [
@@ -169,7 +176,8 @@ export function NewTaskComposer({ skills }: { skills: Skill[] }) {
             placeholder="Describe the task — repo, goal, constraints..."
             aria-label="Describe the task"
             onKeyDown={(event) => {
-              if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+              // Plain Enter submits (chat convention); Shift+Enter = newline.
+              if (event.key === "Enter" && !event.shiftKey) {
                 event.preventDefault();
                 void submit();
               }
