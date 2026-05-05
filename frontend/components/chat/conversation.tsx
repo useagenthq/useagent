@@ -164,6 +164,16 @@ function TurnBlock({ turn }: { turn: Turn }) {
   const activity = steps.filter((s) => s.kind !== "done");
   const latestLabel = activity.at(-1)?.label ?? "Starting up";
   const failed = status === "failed";
+  // Settled-state weight (beautiful-ui): fanout turns earn the full Worklog
+  // capsule; plain tool runs settle into the quiet "Ran N tools" trace.
+  const hasSubagents = activity.some((s) => s.chip === "subagent");
+  const toolCount = activity.filter(
+    (s) => s.kind === "command" || s.kind === "file",
+  ).length;
+  const traceLabel =
+    toolCount > 0
+      ? `Ran ${toolCount} tool${toolCount === 1 ? "" : "s"}`
+      : `${activity.length} step${activity.length === 1 ? "" : "s"}`;
   // While narration is streaming it IS this turn's live indicator: show the
   // fading text + caret and suppress the Thinking shimmer so only one live
   // signal shows at a time.
@@ -204,7 +214,9 @@ function TurnBlock({ turn }: { turn: Turn }) {
         {/* One live indicator: while narration streams it IS the indicator, so
             the Thinking block is suppressed for that turn. Otherwise Thinking
             covers live activity (the boot gap — live, no steps yet — is owned by
-            the session's OrbBootIndicator) and WorklogCapsule covers history. */}
+            the session's OrbBootIndicator). Settled history splits by weight:
+            subagent fanouts (and failures, which need the status badge) keep the
+            Worklog capsule; plain tool runs collapse to the quiet trace. */}
         {narrating ? null : live
           ? activity.length > 0 && (
               <Thinking label={`Working — ${latestLabel}`} active open>
@@ -217,13 +229,20 @@ function TurnBlock({ turn }: { turn: Turn }) {
                 ))}
               </Thinking>
             )
-          : activity.length > 0 && (
+          : activity.length > 0 &&
+            (hasSubagents || failed ? (
               <WorklogCapsule count={activity.length} failed={failed}>
                 {activity.map((step) => (
                   <ToolStepRow key={step.id} step={step} state="done" />
                 ))}
               </WorklogCapsule>
-            )}
+            ) : (
+              <Thinking label={traceLabel} active={false}>
+                {activity.map((step) => (
+                  <ToolStepRow key={step.id} step={step} state="done" />
+                ))}
+              </Thinking>
+            ))}
       </div>
     </div>
   );
