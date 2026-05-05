@@ -71,7 +71,7 @@ function ModelRow({
 
 /**
  * Account affordance in the top-nav right cluster: an avatar that opens a
- * dropdown — identity header, Settings / Language / Docs / Apps / Logout, and a
+ * dropdown — identity header, Settings / Docs / Apps / Logout, and a
  * Models section with segmented usage meters. Identity + usage are static for
  * now (skynet-a has no auth wired yet); pattern ported from skynet-saas.
  */
