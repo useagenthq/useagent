@@ -1,0 +1,9 @@
+{
+  "name": "skynet",
+  "private": true,
+  "scripts": {
+    "dev:frontend": "bun run --cwd frontend dev",
+    "dev:backend": "bun run --cwd backend dev",
+    "typecheck": "bun run --cwd frontend typecheck && (cd backend && bunx tsc --noEmit)"
+  }
+}

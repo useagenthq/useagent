@@ -1,0 +1,60 @@
+// Ported from reference bot (Apache-2.0): src/kiro_crew/cron.py
+// reference bot runs an asyncio timer that periodically fires due, enabled jobs;
+// this is the Postgres-backed translation — a plain 60s interval tick.
+
+import { cronMatches } from "./cron";
+import { fireSchedule } from "./fire";
+import { listEnabledSchedules, markFired } from "./repo";
+
+const TICK_MS = process.env.SCHEDULER_TICK_MS
+  ? Number(process.env.SCHEDULER_TICK_MS)
+  : 60_000;
+
+let timer: ReturnType<typeof setInterval> | null = null;
+
+/** Two dates fall in the same clock minute (epoch-minute bucket). */
+function sameMinute(a: Date, b: Date): boolean {
+  return Math.floor(a.getTime() / 60_000) === Math.floor(b.getTime() / 60_000);
+}
+
+/**
+ * One scheduler pass: fire every enabled schedule whose cron matches the
+ * current minute and that hasn't already fired this minute. `markFired` claims
+ * the minute BEFORE firing so a transient fire error can't cause a duplicate
+ * run on a later tick within the same minute. Exported for tests.
+ */
+export async function tick(now: Date = new Date()): Promise<void> {
+  let due;
+  try {
+    due = await listEnabledSchedules();
+  } catch (err) {
+    console.error("[scheduler] tick query failed:", err);
+    return;
+  }
+
+  for (const s of due) {
+    if (!cronMatches(s.cron, now)) continue;
+    if (s.lastFiredAt && sameMinute(new Date(s.lastFiredAt), now)) continue;
+    try {
+      await markFired(s.id, now);
+      await fireSchedule(s, "cron");
+      console.log(`[scheduler] fired schedule ${s.id} (${s.name})`);
+    } catch (err) {
+      console.error(`[scheduler] failed to fire schedule ${s.id}:`, err);
+    }
+  }
+}
+
+/**
+ * Start the always-on scheduler loop. Harmless when no schedule is enabled
+ * (default), and `unref`'d so it never keeps the process alive on its own.
+ * Idempotent.
+ */
+export function startScheduler(): void {
+  if (timer) return;
+  timer = setInterval(() => {
+    void tick();
+  }, TICK_MS);
+  timer.unref?.();
+  console.log(`[scheduler] started (${TICK_MS}ms tick)`);
+}

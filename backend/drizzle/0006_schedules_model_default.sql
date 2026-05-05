@@ -1,0 +1,1 @@
+ALTER TABLE "schedules" ALTER COLUMN "model" SET DEFAULT 'claude-opus-5';

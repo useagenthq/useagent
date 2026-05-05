@@ -1,0 +1,55 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1785287424048,
+      "tag": "0000_natural_vulcan",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1785403055097,
+      "tag": "0001_add_runs_engine",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1785500000000,
+      "tag": "0002_add_run_threading",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1785922059588,
+      "tag": "0003_add_slack_threads",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1785926397150,
+      "tag": "0004_chunky_dreadnoughts",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1785928092752,
+      "tag": "0005_add_engine_session_id",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1785928731677,
+      "tag": "0006_schedules_model_default",
+      "breakpoints": true
+    }
+  ]
+}

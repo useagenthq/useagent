@@ -1,0 +1,33 @@
+# One-command bring-up of the TencentDB-Agent-Memory data plane (memory-core
+# gateway) that the Skynet backend consumes as its shared team-memory layer.
+#
+#   docker compose -f memory/docker-compose.yml up -d
+#
+# Then point the backend at it (see README.md § "Quick start" → backend/.env)
+# and it starts prepending relevant team memory to run context. Uses the public
+# multi-arch image; no build, no cloning the upstream repo.
+#
+# This runs ONLY memory-core (what the backend needs). For the Panel UI (:8125)
+# and Knowledge/Wiki service (:8424), use the upstream repo's full stack — see
+# README.md § "Full stack".
+services:
+  memory-core:
+    image: agentmemory/memory-core:latest
+    container_name: skynet-memory-core
+    ports:
+      - "${MEMORY_CORE_PORT:-8420}:8420"
+    environment:
+      TDAI_GATEWAY_PORT: "8420"
+      TDAI_GATEWAY_HOST: "0.0.0.0"
+      # Empty = auth disabled (fine for localhost). Set a strong secret before
+      # exposing beyond loopback, and set the backend's MEMORY_API_KEY to match.
+      TDAI_GATEWAY_API_KEY: "${MEMORY_CORE_GATEWAY_API_KEY:-}"
+      TDAI_DATA_DIR: "/data/tdai-memory"
+    volumes:
+      - ./tdai-gateway.yaml:/data/config/tdai-gateway.yaml:ro
+      - skynet-memory-core-data:/data/tdai-memory
+    restart: unless-stopped
+
+volumes:
+  # Memory lives in this Docker-managed volume, never in the repo.
+  skynet-memory-core-data:

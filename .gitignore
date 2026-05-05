@@ -1,0 +1,37 @@
+# deps
+node_modules/
+
+# next build output
+.next/
+
+# backend per-run isolated workdirs
+backend/.runs/
+
+# build artifacts
+dist/
+build/
+*.tsbuildinfo
+
+# env / secrets
+.env
+.env.*
+
+# logs
+*.log
+
+# editor / os
+.DS_Store
+.idea/
+.vscode/
+*.local
+
+# local agent-harness state (tmux hooks, HUD, turn logs) — never commit
+.omx/
+
+# agent session/workspace metadata
+.entire/
+.claude/
+
+# local memory-core config (holds an API key)
+memory/tdai-gateway.local.yaml
+memory/docker-compose.local.yml
