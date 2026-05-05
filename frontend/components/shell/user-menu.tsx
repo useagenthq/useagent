@@ -7,7 +7,6 @@ import {
   RiLogoutBoxRLine,
   RiOpenaiFill,
   RiSettings3Line,
-  RiTranslate2,
 } from '@remixicon/react';
 import { useRouter } from 'next/navigation';
 import type { ComponentType } from 'react';
@@ -115,10 +114,6 @@ export function UserMenu() {
         <Dropdown.Item onSelect={() => router.push('/settings')}>
           <Dropdown.ItemIcon as={RiSettings3Line} />
           Settings
-        </Dropdown.Item>
-        <Dropdown.Item onSelect={(event) => event.preventDefault()}>
-          <Dropdown.ItemIcon as={RiTranslate2} />
-          Language
         </Dropdown.Item>
         <Dropdown.Item
           onSelect={() =>
