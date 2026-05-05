@@ -9,8 +9,10 @@ import { Thinking } from "@/components/ai/thinking";
 import { Composer } from "@/components/chat/composer";
 import { Markdown } from "@/components/prompt-kit/markdown";
 import { ToolStepRow } from "@/components/chat/tool-step-row";
+import type { SlashCommand } from "@/components/chat/slash-command";
 import {
   cleanPrompt,
+  deriveTrace,
   engineLabel,
   type ApiRun,
   type ApiStep,
@@ -164,16 +166,20 @@ function TurnBlock({ turn }: { turn: Turn }) {
   const activity = steps.filter((s) => s.kind !== "done");
   const latestLabel = activity.at(-1)?.label ?? "Starting up";
   const failed = status === "failed";
+  // Settled history drops sandbox plumbing rows ("Sandbox — Thinking…" etc.):
+  // they're live indicators, not work worth re-reading. Live rendering keeps
+  // them — they ARE the signal during the boot gap.
+  const settled = activity.filter((s) => deriveTrace(s).accent !== "boot");
   // Settled-state weight (beautiful-ui): fanout turns earn the full Worklog
   // capsule; plain tool runs settle into the quiet "Ran N tools" trace.
-  const hasSubagents = activity.some((s) => s.chip === "subagent");
-  const toolCount = activity.filter(
+  const hasSubagents = settled.some((s) => s.chip === "subagent");
+  const toolCount = settled.filter(
     (s) => s.kind === "command" || s.kind === "file",
   ).length;
   const traceLabel =
     toolCount > 0
       ? `Ran ${toolCount} tool${toolCount === 1 ? "" : "s"}`
-      : `${activity.length} step${activity.length === 1 ? "" : "s"}`;
+      : `${settled.length} step${settled.length === 1 ? "" : "s"}`;
   // While narration is streaming it IS this turn's live indicator: show the
   // fading text + caret and suppress the Thinking shimmer so only one live
   // signal shows at a time.
@@ -229,16 +235,16 @@ function TurnBlock({ turn }: { turn: Turn }) {
                 ))}
               </Thinking>
             )
-          : activity.length > 0 &&
+          : settled.length > 0 &&
             (hasSubagents || failed ? (
-              <WorklogCapsule count={activity.length} failed={failed}>
-                {activity.map((step) => (
+              <WorklogCapsule count={settled.length} failed={failed}>
+                {settled.map((step) => (
                   <ToolStepRow key={step.id} step={step} state="done" />
                 ))}
               </WorklogCapsule>
             ) : (
               <Thinking label={traceLabel} active={false}>
-                {activity.map((step) => (
+                {settled.map((step) => (
                   <ToolStepRow key={step.id} step={step} state="done" />
                 ))}
               </Thinking>
@@ -252,11 +258,13 @@ function ReplyComposer({
   engine,
   model,
   pending,
+  commands,
   onReply,
 }: {
   engine: EngineId;
   model: string;
   pending: boolean;
+  commands?: SlashCommand[];
   onReply: (text: string, engine: EngineId, model: string) => void;
 }) {
   return (
@@ -267,6 +275,7 @@ function ReplyComposer({
         defaultEngine={engine}
         defaultModel={model}
         pending={pending}
+        commands={commands}
         onSubmit={(text, eng, mdl) => onReply(text, eng, mdl)}
       />
     </div>
@@ -284,12 +293,15 @@ export function Conversation({
   defaultEngine,
   defaultModel,
   pendingReply,
+  commands,
   onReply,
 }: {
   turns: Turn[];
   defaultEngine: EngineId;
   defaultModel: string;
   pendingReply: string | null;
+  /** Engine slash commands for the reply composer's "/" autocomplete. */
+  commands?: SlashCommand[];
   onReply: (text: string, engine: EngineId, model: string) => void;
 }) {
   // Stick-to-bottom autoscroll: follow new turns/steps/narration as they
@@ -325,6 +337,7 @@ export function Conversation({
         engine={defaultEngine}
         model={defaultModel}
         pending={pendingReply !== null}
+        commands={commands}
         onReply={onReply}
       />
     </div>

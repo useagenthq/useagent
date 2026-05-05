@@ -19,6 +19,11 @@ import {
   ChooseAgentPopover,
   type Agent,
 } from "@/components/chat/agent-command";
+import {
+  filterCommands,
+  SlashCommandPopover,
+  type SlashCommand,
+} from "@/components/chat/slash-command";
 import type { EngineId } from "@/components/chat/types";
 
 type Variant = "hero" | "compact";
@@ -39,6 +44,8 @@ export type ComposerProps = {
   enableAgentCommand?: boolean;
   /** Starting model for the picker (thread's current model on replies). */
   defaultModel?: string;
+  /** Engine slash commands for "/" autocomplete (reply composer, live thread). */
+  commands?: SlashCommand[];
   onSubmit: (prompt: string, engine: EngineId, model: string) => void;
 };
 
@@ -66,6 +73,7 @@ export function Composer({
   tray,
   enableAgentCommand,
   defaultModel = "claude-opus-5",
+  commands,
   onSubmit,
 }: ComposerProps) {
   const [value, setValue] = useState("");
@@ -73,6 +81,8 @@ export function Composer({
   const [model, setModel] = useState(defaultModel);
   const [command, setCommand] = useState<Agent | null>(null);
   const [toolsOpen, setToolsOpen] = useState(false);
+  const [cmdHighlight, setCmdHighlight] = useState(0);
+  const [cmdDismissed, setCmdDismissed] = useState(false);
 
   const engine = engineProp ?? engineState;
   const hero = variant === "hero";
@@ -80,6 +90,37 @@ export function Composer({
   const slashActive = allowAgent && !command && value.trimStart().startsWith("/");
   const showAgentPopover = slashActive || toolsOpen;
   const canSend = value.trim().length > 0 && !pending;
+
+  // Slash-command autocomplete: live while the FIRST token is being typed
+  // ("/rev" but not "/review changes"). A trailing space ends completion.
+  const cmdToken = /^\/([^\s]*)$/.exec(value.trimStart())?.[1];
+  const cmdMatches =
+    !allowAgent && !cmdDismissed && commands?.length && cmdToken !== undefined
+      ? filterCommands(commands, cmdToken)
+      : [];
+  const cmdActive = cmdMatches.length > 0;
+
+  function pickCommand(cmd: SlashCommand) {
+    setValue(`/${cmd.name} `);
+    setCmdHighlight(0);
+  }
+
+  function handleCmdKeys(e: React.KeyboardEvent<HTMLTextAreaElement>) {
+    if (!cmdActive) return;
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setCmdHighlight((h) => (h + 1) % cmdMatches.length);
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setCmdHighlight((h) => (h - 1 + cmdMatches.length) % cmdMatches.length);
+    } else if (e.key === "Enter" || e.key === "Tab") {
+      e.preventDefault();
+      pickCommand(cmdMatches[Math.min(cmdHighlight, cmdMatches.length - 1)]);
+    } else if (e.key === "Escape") {
+      e.preventDefault();
+      setCmdDismissed(true);
+    }
+  }
 
   function submit() {
     const text = value.trim();
@@ -102,6 +143,16 @@ export function Composer({
         </div>
       )}
 
+      {cmdActive && (
+        <div className="absolute bottom-full left-0 z-30 mb-2 w-full">
+          <SlashCommandPopover
+            matches={cmdMatches}
+            highlight={Math.min(cmdHighlight, cmdMatches.length - 1)}
+            onSelect={pickCommand}
+          />
+        </div>
+      )}
+
       {/* No overflow-hidden here: the engine-picker popover opens upward past the
           card edge and must not be clipped; header/tray round their own corners. */}
       <div className="border-stroke-soft-200 bg-bg-white-0 shadow-regular-md rounded-2xl border">
@@ -119,7 +170,11 @@ export function Composer({
 
         <PromptInput
           value={value}
-          onValueChange={setValue}
+          onValueChange={(v) => {
+            setValue(v);
+            setCmdDismissed(false);
+            setCmdHighlight(0);
+          }}
           onSubmit={submit}
           isLoading={pending}
           maxHeight={hero ? 220 : 150}
@@ -138,6 +193,7 @@ export function Composer({
               autoFocus={autoFocus}
               placeholder={command ? "" : placeholder}
               onKeyDown={(e) => {
+                handleCmdKeys(e);
                 if (e.key === "Backspace" && value === "" && command) {
                   setCommand(null);
                 }
