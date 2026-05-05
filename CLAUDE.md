@@ -14,6 +14,19 @@ Skynet, rebuilt. Two standalone apps (no workspace/turbo):
 engine-UI iframes, no harness-in-sandbox, threading is backend truth) and the working
 protocol. Architecture source of truth: `~/Documents/skynet-saas/ARCHITECTURE.md`.
 
+## Branches (2026-08-05 decisions)
+- `rebuild/skynet-a` (main line): NATIVE React chat is the primary surface — we
+  own the rendering layer so the extension surface (artifact/PPT/PDF viewers,
+  custom panes) stays ours (reference bot / Cloudflare-OS model). Terminal (ghostty
+  shell), Desktop/VNC pane, Agents rail and ALL backend engine/proxy machinery
+  live here.
+- `feat/opencode-live-embed`: the complete working opencode inline-embed
+  (solid-element `<skynet-oc-session>`, seamless theme, allowlist WIP) —
+  preserved for reference/revival.
+- `feat/react-session-port` (worktree ../skynet-react-port): React-native port
+  of opencode's session UI — forward path for chat quality. Handoff doc:
+  react_port.md.
+
 ## Hard rules
 - Runtime is **bun** everywhere. Never npm (broken root-owned cache on this machine).
 - **NEVER run `psql`** — it hangs on a Postgres.app permission dialog. Use bun `postgres`
