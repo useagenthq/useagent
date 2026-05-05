@@ -14,7 +14,7 @@ import {
   PromptInputTextarea,
 } from "@/components/prompt-kit/prompt-input";
 import { Loader } from "@/components/prompt-kit/loader";
-import { EnginePicker } from "@/components/chat/engine-picker";
+import { ModelPicker } from "@/components/chat/engine-picker";
 import {
   AgentChip,
   ChooseAgentPopover,
@@ -38,7 +38,9 @@ export type ComposerProps = {
   tray?: React.ReactNode;
   /** Enable the "/" Choose-Agent slash command (default on hero). */
   enableAgentCommand?: boolean;
-  onSubmit: (prompt: string, engine: EngineId) => void;
+  /** Starting model for the picker (thread's current model on replies). */
+  defaultModel?: string;
+  onSubmit: (prompt: string, engine: EngineId, model: string) => void;
 };
 
 /**
@@ -64,10 +66,12 @@ export function Composer({
   orchestratorHeader = false,
   tray,
   enableAgentCommand,
+  defaultModel = "claude-opus-5",
   onSubmit,
 }: ComposerProps) {
   const [value, setValue] = useState("");
   const [engineState, setEngineState] = useState<EngineId>(defaultEngine);
+  const [model, setModel] = useState(defaultModel);
   const [command, setCommand] = useState<Agent | null>(null);
   const [toolsOpen, setToolsOpen] = useState(false);
 
@@ -82,7 +86,7 @@ export function Composer({
     const text = value.trim();
     if (!text || pending) return;
     setValue("");
-    onSubmit(text, engine);
+    onSubmit(text, engine, model);
   }
 
   function pickAgent(agent: Agent) {
@@ -185,7 +189,8 @@ export function Composer({
 
             {/* Right cluster */}
             <div className="ml-auto flex items-center gap-1.5">
-              <EnginePicker engine={engine} onChange={setEngineState} />
+              {/* One engine now — the meaningful per-message choice is the MODEL. */}
+              <ModelPicker model={model} onChange={setModel} />
               {hero && (
                 <button
                   type="button"
