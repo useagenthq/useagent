@@ -5,7 +5,7 @@ import type { AppEnv } from "../http";
 import { orgScope } from "../middleware/org";
 import { getOpencodeThreadSandboxId } from "../engines/opencode-server";
 import { getThreadSandboxId } from "../engines/sandbox";
-import { getRunForOrg } from "./repo";
+import { getRunForOrg, getThreadSandbox } from "./repo";
 
 // ---------------------------------------------------------------------------
 // Interactive terminal — a WebSocket bridge from the browser's xterm.js into
@@ -26,9 +26,16 @@ interface PtyLike {
 export const terminalRoutes = new Hono<AppEnv>();
 terminalRoutes.use("*", orgScope);
 
-/** Resolve the live sandbox for a run's conversation, engine-agnostic. */
-function sandboxForThread(threadId: string): string | null {
-  return getOpencodeThreadSandboxId(threadId) ?? getThreadSandboxId(threadId);
+/** Resolve the live sandbox for a run's conversation, engine-agnostic.
+ *  Memory maps first (cheap), then the DURABLE DB mapping — without the DB
+ *  fallback a backend restart made the terminal blind to every existing
+ *  conversation until its next message (battle-test T8 finding). */
+async function sandboxForThread(threadId: string): Promise<string | null> {
+  return (
+    getOpencodeThreadSandboxId(threadId) ??
+    getThreadSandboxId(threadId) ??
+    (await getThreadSandbox(threadId))
+  );
 }
 
 terminalRoutes.get(
@@ -63,7 +70,7 @@ terminalRoutes.get(
                 `run not found (${runId.slice(0, 8) || "no id"} org=${orgId ?? "none"})`,
               );
             }
-            const sandboxId = sandboxForThread(run.threadId);
+            const sandboxId = await sandboxForThread(run.threadId);
             if (!sandboxId) {
               throw new Error(
                 "no live sandbox for this conversation yet — send a message first",
