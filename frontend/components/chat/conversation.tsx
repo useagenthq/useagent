@@ -203,26 +203,14 @@ function TurnBlock({ turn }: { turn: Turn }) {
           </span>
         </div>
 
-        {summary && (
-          <AgentAnswer summary={summary} stream={wasLive && !sawNarration} />
-        )}
-
-        {/* Answer-in-progress: the run's live tokens stream in word-by-word
-            until the durable summary/markdown takes over on completion. */}
-        {narrating && !summary && <LiveNarration text={liveText} />}
-
-        {failed && !summary && (
-          <p className="text-paragraph-sm text-error-base">
-            This run failed before producing a summary.
-          </p>
-        )}
-
-        {/* One live indicator: while narration streams it IS the indicator, so
-            the Thinking block is suppressed for that turn. Otherwise Thinking
-            covers live activity (the boot gap — live, no steps yet — is owned by
-            the session's OrbBootIndicator). Settled history splits by weight:
-            subagent fanouts (and failures, which need the status badge) keep the
-            Worklog capsule; plain tool runs collapse to the quiet trace. */}
+        {/* The work reads top-down: activity first, then the answer it
+            produced. One live indicator at a time: while narration streams it
+            IS the indicator, so the Thinking block is suppressed for that turn.
+            Otherwise Thinking covers live activity (the boot gap — live, no
+            steps yet — is owned by the session's OrbBootIndicator). Settled
+            history splits by weight: subagent fanouts (and failures, which need
+            the status badge) keep the Worklog capsule; plain tool runs collapse
+            to the quiet trace. */}
         {narrating ? null : live
           ? activity.length > 0 && (
               <Thinking label={`Working — ${latestLabel}`} active open>
@@ -249,6 +237,20 @@ function TurnBlock({ turn }: { turn: Turn }) {
                 ))}
               </Thinking>
             ))}
+
+        {summary && (
+          <AgentAnswer summary={summary} stream={wasLive && !sawNarration} />
+        )}
+
+        {/* Answer-in-progress: the run's live tokens stream in word-by-word
+            until the durable summary/markdown takes over on completion. */}
+        {narrating && !summary && <LiveNarration text={liveText} />}
+
+        {failed && !summary && (
+          <p className="text-paragraph-sm text-error-base">
+            This run failed before producing a summary.
+          </p>
+        )}
       </div>
     </div>
   );
