@@ -115,3 +115,101 @@ skynet-oc-session #review-panel,
 skynet-oc-session [class~="group/review-toggle"] {
   display: none !important;
 }
+
+/* ── 3. Deep-skin the timeline parts → Loop trace grammar ────────────────────
+   The seamless theme above merges the surface; this section restyles the
+   message PARTS (subagent/task cards, tool cards, the context read-group, status
+   titles, tool output) so they read like our own trace rows: hairline bg-weak
+   cards (#292826 · 1px #3b3935 · 9px radius), a compact 13px Inter verb→target
+   rhythm, muted chips. CSS-ONLY and additive: we never `display:none` functional
+   content and never touch the collapsible mechanism (open/closed is driven by
+   `data-closed` on [data-component="collapsible"] + the <a data-slot=
+   "collapsible-trigger">), so expand/collapse, outputs and diffs keep working.
+   All hooks are opencode's stable data-component / data-slot attributes (read
+   off the built part DOM). Ladder: card #292826 · hover #33322e · border #3b3935
+   / #4b4944 · text strong #d7d4ce · muted #99968f. */
+
+/* 3a. Subagent (task) cards — [data-component="task-tool-surface"] is the visible
+   card: give it our hairline, radius and compact 13px verb→target row. */
+skynet-oc-session [data-component="task-tool-surface"] {
+  background-color: #292826 !important;
+  border: 1px solid #3b3935 !important;
+  border-radius: 9px !important;
+  padding: 6px 10px !important;
+  box-shadow: none !important;
+  transition: background-color 0.12s ease, border-color 0.12s ease;
+}
+skynet-oc-session [data-slot="collapsible-trigger"]:hover [data-component="task-tool-surface"] {
+  background-color: #33322e !important;
+  border-color: #4b4944 !important;
+}
+skynet-oc-session [data-component="task-tool-title"] {
+  font-size: 13px !important;
+  font-weight: 500 !important;
+  color: #d7d4ce !important;
+  letter-spacing: -0.1px;
+}
+skynet-oc-session [data-slot="basic-tool-tool-subtitle"] {
+  font-size: 13px !important;
+  color: #99968f !important;
+  letter-spacing: -0.1px;
+}
+skynet-oc-session [data-component="task-tool-icon"] {
+  color: #8f8c85 !important;
+}
+skynet-oc-session [data-component="task-tool-action"] {
+  color: #6f6c66 !important;
+}
+
+/* 3b. Context read-group ("Explored · N reads") → one legible, muted trace row.
+   opencode ships the verb ("Explored") at low contrast; lift it to our muted
+   label and keep the count in the softer sub tone. */
+skynet-oc-session [data-component="tool-status-title"] {
+  color: #b9b6af !important;
+  font-size: 13px !important;
+}
+/* opencode renders the verb through a text-shimmer whose RESTING (non-animating)
+   base sits at low contrast — lift it to our muted label so "Explored"/"Read"/…
+   is legible; the shimmer sweep still runs while a tool is active. */
+skynet-oc-session [data-component="tool-status-title"] [data-slot="text-shimmer-char-base"] {
+  color: #b9b6af !important;
+  opacity: 1 !important;
+}
+skynet-oc-session [data-slot="context-tool-group-title"] {
+  font-size: 13px !important;
+  font-weight: 500 !important;
+}
+skynet-oc-session [data-slot="context-tool-group-summary"],
+skynet-oc-session [data-component="tool-count-label"] {
+  font-size: 13px !important;
+  color: #99968f !important;
+}
+
+/* 3c. Generic tool cards (Read/Edit/Run/Search/… — a [data-slot=
+   "basic-tool-tool-info"] WITHOUT a nested task card) → the same hairline card
+   + compact header, so every non-subagent tool row matches. Scoped to exclude
+   the task card (styled in 3a) so we don't double-border. */
+skynet-oc-session
+  [data-slot="basic-tool-tool-info"]:not(:has([data-component="task-tool-card"])) {
+  background-color: #292826 !important;
+  border: 1px solid #3b3935 !important;
+  border-radius: 9px !important;
+  padding: 6px 10px !important;
+}
+skynet-oc-session [data-slot="basic-tool-tool-info-main"] {
+  font-size: 13px !important;
+}
+
+/* 3d. Tool output / result blocks — when a tool is expanded, its output/diff
+   renders inside the collapsible content. Keep it on a slightly deeper inset so
+   it reads as OUR output block (never hidden — fidelity). Targets opencode's
+   output slots and any raw <pre>/code surface inside a tool part. */
+skynet-oc-session [data-component="tool-part-wrapper"] pre,
+skynet-oc-session [data-component="tool-part-wrapper"] [data-slot*="output"],
+skynet-oc-session [data-component="tool-part-wrapper"] [data-slot*="result"],
+skynet-oc-session [data-component="tool-part-wrapper"] [data-component="markdown"] pre {
+  background-color: #201f1e !important;
+  border: 1px solid #33322e !important;
+  border-radius: 8px !important;
+  font-size: 12.5px !important;
+}
