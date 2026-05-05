@@ -316,6 +316,22 @@ export async function completeRun(
     .where(eq(runs.id, id));
 }
 
+/** Replace a step's code_json in place (same id/idx). Serves the tool_call →
+ * tool_result contract: the step appears when the tool is INVOKED, and its
+ * output is attached to the SAME step when the tool finishes. */
+export async function updateStepCode(
+  id: string,
+  code: unknown,
+): Promise<ApiStep | null> {
+  const codeJson = code == null ? null : JSON.stringify(code);
+  const [row] = await db
+    .update(steps)
+    .set({ codeJson })
+    .where(eq(steps.id, id))
+    .returning();
+  return row ? toStep(row) : null;
+}
+
 export async function insertStep(step: {
   runId: string;
   idx: number;

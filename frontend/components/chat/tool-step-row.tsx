@@ -5,93 +5,71 @@ import {
   RiArrowDownSLine,
   RiCheckLine,
   RiCloseLine,
+  RiFileAddLine,
   RiFileCodeLine,
+  RiFileEditLine,
   RiFileLine,
   RiFileTextLine,
-  RiGitBranchLine,
+  RiGlobalLine,
   RiImageLine,
+  RiListCheck,
   RiReactjsLine,
+  RiRobot2Line,
+  RiSearchLine,
+  RiServerLine,
   RiSparkling2Line,
-  RiTerminalBoxLine,
   RiTerminalLine,
   type RemixiconComponentType,
 } from "@remixicon/react";
 import { cnExt as cn } from "@/utils/cn";
-import { ToolChip } from "@/components/ai/tool-chips";
 import {
+  deriveTrace,
   formatDuration,
-  parseCommandStep,
-  parseFileEntries,
   type ApiStep,
   type FileChangeKind,
-  type FileEntry,
+  type StepTrace,
+  type TraceGlyph,
 } from "@/components/chat/types";
-
-// ── Shared bits ──────────────────────────────────────────────────────────────
-
-function iconForStep(step: ApiStep): RemixiconComponentType {
-  if (step.kind === "file") return RiFileCodeLine;
-  if (step.kind === "task") return RiSparkling2Line;
-  if (step.chip === "git") return RiGitBranchLine;
-  return RiTerminalBoxLine;
-}
 
 type RowState = "running" | "done";
 
 /**
- * Dispatches a run step to the right conversation element: command steps become
- * terminal-style tool cards, file steps become file-list cards, and everything
- * else (task / thinking) stays a compact single-line row. Never dumps raw JSON.
+ * A single worklog step, rendered in the beautiful-ui trace grammar: a bold
+ * leading verb (Read / Edit / Write / Run / Search / Subagent / Sandbox …), a
+ * monospace target (basename or command), an optional derived `+adds -dels`, and
+ * — when the step carries output or a prompt — a click-to-expand mono block.
+ * Everything is re-derived from `code_json` on each render, so an in-place step
+ * update (enriched with output mid-run) re-reads without memo staleness.
  */
-export function ToolStepRow({
-  step,
-  state,
-}: {
-  step: ApiStep;
-  state: RowState;
-}) {
-  if (step.kind === "command") return <CommandCard step={step} state={state} />;
-  if (step.kind === "file") {
-    const entries = parseFileEntries(step);
-    if (entries.length > 0) return <FileCard entries={entries} />;
+export function ToolStepRow({ step, state }: { step: ApiStep; state: RowState }) {
+  return <TraceRow trace={deriveTrace(step)} state={state} />;
+}
+
+// ── Icons ────────────────────────────────────────────────────────────────────
+
+const GLYPH_ICON: Record<TraceGlyph, RemixiconComponentType> = {
+  read: RiFileTextLine,
+  edit: RiFileEditLine,
+  write: RiFileAddLine,
+  run: RiTerminalLine,
+  search: RiSearchLine,
+  list: RiListCheck,
+  fetch: RiGlobalLine,
+  subagent: RiRobot2Line,
+  reasoning: RiSparkling2Line,
+  task: RiSparkling2Line,
+  boot: RiServerLine,
+};
+
+/** File-shaped rows prefer an extension-aware glyph over the generic family one. */
+function iconForTrace(trace: StepTrace): RemixiconComponentType {
+  if (trace.base && (trace.glyph === "read" || trace.glyph === "edit" || trace.glyph === "write")) {
+    return fileTypeIcon(trace.base);
   }
-  return <TaskRow step={step} state={state} />;
+  return GLYPH_ICON[trace.glyph];
 }
 
-// ── Task / thinking row (single line) ────────────────────────────────────────
-
-function TaskRow({ step, state }: { step: ApiStep; state: RowState }) {
-  const Icon = iconForStep(step);
-  const running = state === "running";
-  return (
-    <div className="animate-ai-fade-up flex items-center gap-2">
-      <Icon
-        className={cn(
-          "size-4 shrink-0",
-          running ? "text-blue-500" : "text-text-soft-400",
-        )}
-        aria-hidden
-      />
-      <span className="text-label-sm text-text-strong-950 min-w-0 flex-1 truncate">
-        {step.label}
-      </span>
-      {step.chip && step.chip !== step.kind ? (
-        <ToolChip
-          icon={Icon}
-          label={step.chip}
-          state={running ? "running" : "done"}
-          className="shrink-0"
-        />
-      ) : (
-        running && (
-          <span className="ai-loading-pixel bg-blue-500 size-1.5 shrink-0 rounded-full" />
-        )
-      )}
-    </div>
-  );
-}
-
-// ── Command card ─────────────────────────────────────────────────────────────
+// ── Trace row ────────────────────────────────────────────────────────────────
 
 function ExitBadge({ code }: { code: number }) {
   const ok = code === 0;
@@ -100,9 +78,7 @@ function ExitBadge({ code }: { code: number }) {
     <span
       className={cn(
         "inline-flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 font-mono text-label-xs tabular-nums",
-        ok
-          ? "bg-success-lighter text-success-base"
-          : "bg-error-lighter text-error-base",
+        ok ? "bg-success-lighter text-success-base" : "bg-error-lighter text-error-base",
       )}
     >
       <Icon className="size-3" aria-hidden />
@@ -111,67 +87,125 @@ function ExitBadge({ code }: { code: number }) {
   );
 }
 
-function CommandCard({ step, state }: { step: ApiStep; state: RowState }) {
-  const { command, exitCode, output, durationMs } = parseCommandStep(step);
+function DiffStat({ adds, dels }: { adds: number; dels: number }) {
+  return (
+    <span className="shrink-0 font-mono text-label-xs tabular-nums" aria-label={`+${adds} -${dels}`}>
+      <span className="text-success-base">+{adds}</span>{" "}
+      <span className="text-error-base">−{dels}</span>
+    </span>
+  );
+}
+
+function TraceRow({ trace, state }: { trace: StepTrace; state: RowState }) {
   const [open, setOpen] = useState(false);
   const running = state === "running";
-  const hasOutput = Boolean(output);
+  const Icon = iconForTrace(trace);
+  const expandable = Boolean(trace.detail);
+  const subagent = trace.accent === "subagent";
+  const showRunningDot = running && trace.exitCode === null;
 
-  return (
-    <div className="animate-ai-fade-up border-stroke-soft-200 bg-bg-weak-50 overflow-hidden rounded-xl border">
-      {/* Command line */}
-      <div className="flex items-center gap-2 px-2.5 py-2">
-        <RiTerminalLine className="text-text-soft-400 size-4 shrink-0" aria-hidden />
-        <code className="text-label-sm text-text-strong-950 min-w-0 flex-1 truncate font-mono">
-          <span className="text-text-soft-400 mr-1 select-none">$</span>
-          {command}
-        </code>
-        {typeof durationMs === "number" && (
-          <span className="text-text-soft-400 shrink-0 font-mono text-label-xs tabular-nums">
-            {formatDuration(durationMs)}
+  const head = (
+    <>
+      {subagent ? (
+        <span className="bg-feature-lighter text-feature-base flex size-5 shrink-0 items-center justify-center rounded-md">
+          <Icon className="size-3.5" aria-hidden />
+        </span>
+      ) : (
+        <Icon
+          className={cn(
+            "size-4 shrink-0",
+            trace.accent === "boot"
+              ? "text-text-soft-400"
+              : running
+                ? "text-blue-500"
+                : "text-text-soft-400",
+          )}
+          aria-hidden
+        />
+      )}
+
+      <span className="min-w-0 flex-1 truncate">
+        <span
+          className={cn(
+            "text-label-sm font-medium",
+            subagent ? "text-feature-base" : "text-text-strong-950",
+          )}
+        >
+          {trace.verb}
+        </span>
+        {trace.target && (
+          <span
+            className={cn(
+              "ml-1.5",
+              trace.monoTarget
+                ? "text-text-sub-600 font-mono text-label-xs"
+                : "text-text-sub-600 text-label-sm",
+            )}
+          >
+            {trace.target}
           </span>
         )}
-        {typeof exitCode === "number" ? (
-          <ExitBadge code={exitCode} />
-        ) : (
-          running && (
-            <span className="ai-loading-pixel bg-blue-500 size-1.5 shrink-0 rounded-full" />
-          )
-        )}
-      </div>
+      </span>
 
-      {/* Output disclosure */}
-      {hasOutput && (
-        <>
-          <button
-            type="button"
-            aria-expanded={open}
-            onClick={() => setOpen((o) => !o)}
-            className="border-stroke-soft-200 text-text-sub-600 hover:bg-bg-soft-200 flex w-full items-center gap-1.5 border-t px-2.5 py-1.5 text-label-xs transition-colors"
-          >
-            <RiArrowDownSLine
-              className={cn(
-                "size-3.5 shrink-0 transition-transform duration-200",
-                open && "rotate-180",
-              )}
-              aria-hidden
-            />
-            {open ? "Hide output" : "Show output"}
-          </button>
-          {open && (
-            <div className="max-h-64 overflow-auto bg-neutral-950 px-3 py-2">
-              <pre className="whitespace-pre-wrap break-words [font-family:var(--font-mono)] text-[12px] leading-5 text-neutral-300">
-                {output}
-              </pre>
-            </div>
+      {trace.adds !== null && trace.dels !== null && (
+        <DiffStat adds={trace.adds} dels={trace.dels} />
+      )}
+      {typeof trace.durationMs === "number" && (
+        <span className="text-text-soft-400 shrink-0 font-mono text-label-xs tabular-nums">
+          {formatDuration(trace.durationMs)}
+        </span>
+      )}
+      {trace.exitCode !== null ? (
+        <ExitBadge code={trace.exitCode} />
+      ) : (
+        showRunningDot && (
+          <span className="ai-loading-pixel bg-blue-500 size-1.5 shrink-0 rounded-full" />
+        )
+      )}
+      {expandable && (
+        <RiArrowDownSLine
+          className={cn(
+            "text-text-soft-400 size-4 shrink-0 transition-transform duration-200",
+            open && "rotate-180",
           )}
-        </>
+          aria-hidden
+        />
+      )}
+    </>
+  );
+
+  return (
+    <div
+      className={cn(
+        "animate-ai-fade-up",
+        trace.nested && "border-stroke-soft-200 ml-2 border-l pl-3",
+      )}
+    >
+      {expandable ? (
+        <button
+          type="button"
+          aria-expanded={open}
+          onClick={() => setOpen((o) => !o)}
+          className="hover:bg-bg-weak-50 flex w-full items-center gap-2 rounded-lg px-1.5 py-1 text-left transition-colors"
+        >
+          {head}
+        </button>
+      ) : (
+        <div className="flex items-center gap-2 px-1.5 py-1">{head}</div>
+      )}
+
+      {expandable && open && trace.detail && (
+        <div className="mt-1 ml-1.5 max-h-64 overflow-auto rounded-lg bg-neutral-950 px-3 py-2">
+          <pre className="whitespace-pre-wrap break-words [font-family:var(--font-mono)] text-[12px] leading-5 text-neutral-300">
+            {trace.detail}
+          </pre>
+        </div>
       )}
     </div>
   );
 }
 
-// ── File card ────────────────────────────────────────────────────────────────
+// ── File helpers (shared with the editor pane) ───────────────────────────────
 
 /** Remix icon for a file, chosen by extension. Shared with the editor tabs. */
 export function fileTypeIcon(base: string): RemixiconComponentType {
@@ -201,48 +235,8 @@ const KIND_LABEL: Record<FileChangeKind, string> = {
 /** Colored add/edit/del pill. Shared by the file card and the editor pane. */
 export function FileKindBadge({ kind }: { kind: FileChangeKind }) {
   return (
-    <span
-      className={cn(
-        "shrink-0 rounded-md px-1.5 py-0.5 text-label-xs",
-        KIND_TONE[kind],
-      )}
-    >
+    <span className={cn("shrink-0 rounded-md px-1.5 py-0.5 text-label-xs", KIND_TONE[kind])}>
       {KIND_LABEL[kind]}
     </span>
-  );
-}
-
-function FileRow({ entry }: { entry: FileEntry }) {
-  const Icon = fileTypeIcon(entry.base);
-  return (
-    <div className="flex items-center gap-2 px-2.5 py-1.5">
-      <Icon className="text-text-soft-400 size-4 shrink-0" aria-hidden />
-      <span className="min-w-0 flex-1 truncate text-label-sm">
-        <span className="text-text-strong-950 font-medium">{entry.base}</span>
-        {entry.dir && (
-          <span className="text-text-soft-400 ml-1.5 font-mono text-label-xs">
-            {entry.dir}
-          </span>
-        )}
-      </span>
-      <FileKindBadge kind={entry.kind} />
-    </div>
-  );
-}
-
-function FileCard({ entries }: { entries: FileEntry[] }) {
-  return (
-    <div className="animate-ai-fade-up border-stroke-soft-200 bg-bg-weak-50 divide-stroke-soft-200 overflow-hidden rounded-xl border">
-      {entries.length > 1 && (
-        <div className="border-stroke-soft-200 text-mono-label text-text-soft-400 border-b px-2.5 py-1.5">
-          {entries.length} files
-        </div>
-      )}
-      <div className="divide-stroke-soft-200 divide-y">
-        {entries.map((entry, i) => (
-          <FileRow key={`${entry.path}-${i}`} entry={entry} />
-        ))}
-      </div>
-    </div>
   );
 }

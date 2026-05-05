@@ -9,32 +9,63 @@ import { basename, parseJsonLine, truncate } from "./util";
 // Sandbox engine substrate — ALL user-facing engines (opencode / claude / codex)
 // execute inside a per-THREAD Daytona cloud sandbox; local engine execution is
 // deliberately gone. One shared runner owns the sandbox lifecycle (create /
-// thread-reuse / resume / teardown), prompt staging, the blocking exec (the
-// session-command streaming API starves against real sandboxes — verified live),
-// and exit policy. Each engine contributes a small spec: how to build its
-// command, how to translate its JSONL, and how its native session id is
-// captured/resumed — the reference bot model (explicit ids, persisted in the runs
-// table via ctx.saveEngineSessionId, resumed via ctx.engineSessionId).
+// thread-reuse / resume / teardown), prompt staging, LIVE output streaming
+// (background launch + poll-tail — Daytona's own session-command streaming API
+// starves against real sandboxes, verified live), and exit policy. Each engine
+// contributes a small spec: how to build its command, how to translate its
+// JSONL, and how its native session id is captured/resumed — the reference bot model
+// (explicit ids, persisted in the runs table via ctx.saveEngineSessionId,
+// resumed via ctx.engineSessionId).
 // ---------------------------------------------------------------------------
 
 const DEFAULT_MODEL = "claude-opus-5";
 /** Pinned versions for npx-on-demand installs inside the sandbox (the default
- *  image has no engines preinstalled; the `skynet-agent` snapshot, when active,
- *  has opencode on PATH). */
-const OPENCODE_VERSION = "1.18.7";
+ *  image has no engines preinstalled). */
 const CLAUDE_CODE_VERSION = "2.1.222";
 const CODEX_VERSION = "0.146.0";
 
-/** Where each turn's prompt is staged inside the sandbox (fed to the CLI via
- *  stdin redirect — see SandboxEngineSpec.command). */
+/** In-sandbox paths for one engine turn: the staged prompt (fed via stdin
+ *  redirect — see SandboxEngineSpec.command), the live output log the poll loop
+ *  tails, the exit-code file the wrapper writes on completion, and the pid file
+ *  used to kill a runaway engine on abort. */
 const PROMPT_PATH = "/tmp/skynet-prompt.txt";
+const OUT_PATH = "/tmp/skynet-out.log";
+const EXIT_PATH = "/tmp/skynet-exit";
+const PID_PATH = "/tmp/skynet-pid";
 
-const FILE_TOOLS_OPENCODE = new Set(["write", "edit", "patch", "multiedit"]);
+/** Poll cadence for tailing the engine's output. Low enough that steps feel
+ *  live in the UI, high enough that the toolbox API isn't hammered. */
+const POLL_MS = 2000;
+
+/** Values interpolated into the engine command line (model ids, engine session
+ *  ids) must match this or they're dropped — nothing user-controlled ever
+ *  reaches the shell unvalidated. */
+const SAFE_ARG = /^[A-Za-z0-9._/-]+$/;
+
 const FILE_TOOLS_CLAUDE = new Set(["Write", "Edit", "MultiEdit", "NotebookEdit"]);
+/** claude-code's subagent spawn tool — named `Task` historically, `Agent` in
+ *  current releases (observed live on 2.1.222). Both mean "fan out". */
+const SPAWN_TOOLS_CLAUDE = new Set(["Task", "Agent"]);
+
+const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
 /** One live sandbox per conversation. In-memory (a restart re-provisions);
  *  cost containment lives on the sandbox: 10m idle auto-stop + 2h auto-delete. */
-const threadSandboxes = new Map<string, { sandboxId: string; npxFallback: boolean }>();
+const threadSandboxes = new Map<string, { sandboxId: string }>();
+
+/** The live sandbox backing a conversation, if any — consumed by the terminal
+ *  WS bridge to attach a PTY to the same box the engine works in. */
+export function getThreadSandboxId(threadId: string): string | null {
+  return threadSandboxes.get(threadId)?.sandboxId ?? null;
+}
+
+/** A claude tool call already SURFACED as a step (reference bot's tool_call event);
+ *  kept so its tool_result can enrich that same step with output. */
+interface PendingTool {
+  name: string;
+  input: Record<string, unknown>;
+  subagent: boolean;
+}
 
 /** Mutable per-run parse state shared between the runner and a spec's line handler. */
 interface ParseState {
@@ -42,6 +73,28 @@ interface ParseState {
   rawTail: string;
   seenTools: Set<string>;
   sessionId: string | null;
+  pendingTools: Map<string, PendingTool>;
+}
+
+const newParseState = (): ParseState => ({
+  lastText: "",
+  rawTail: "",
+  seenTools: new Set(),
+  sessionId: null,
+  pendingTools: new Map(),
+});
+
+/** What a spec's line handler asks the runner to do — mirrors reference bot's event
+ *  contract: `step` ≙ tool_call/spawn surfaced immediately, `update` ≙
+ *  tool_result enriching that same step, `delta` ≙ chat_chunk live narration. */
+interface SpecAction {
+  step?: EmitStep;
+  /** With `step`: remember the persisted step id under this key. */
+  pairKey?: string;
+  /** Replace the code_json of the step remembered under `pairKey`. */
+  update?: { pairKey: string; code_json: unknown };
+  /** Live narration text pushed to the run's turn-stream. */
+  delta?: string;
 }
 
 interface SandboxEngineSpec {
@@ -55,19 +108,17 @@ interface SandboxEngineSpec {
   command(args: {
     model: string;
     resumeId: string | undefined;
-    npxFallback: boolean;
   }): string;
-  /** Translate one stdout line; return a step to emit (or null). Must also
-   *  maintain state.lastText / state.sessionId as its protocol reveals them. */
-  handleLine(line: string, state: ParseState): EmitStep | null;
+  /** Package to install ONCE per sandbox (user prefix — npm -g needs root on
+   *  the default image). Turns then invoke the resident binary directly instead
+   *  of paying `npx -y` registry resolution + reinstall on EVERY message. */
+  install: { pkg: string; bin: string };
+  /** Translate one stdout line into runner actions. Must also maintain
+   *  state.lastText / state.sessionId as its protocol reveals them. */
+  handleLine(line: string, state: ParseState): SpecAction[];
   /** Extra sandbox preparation (e.g. codex auth seeding). Runs after create AND
    *  after reuse — must be idempotent and cheap. */
   prepare?(sandbox: Sandbox): Promise<void>;
-}
-
-/** Map a bare Anthropic-style model id to opencode's provider/model format. */
-function opencodeModel(model: string): string {
-  return model.includes("/") ? `openrouter/${model}` : `anthropic/${model}`;
 }
 
 /** Track the last MEANINGFUL non-JSON line for error surfacing. npm's install
@@ -89,61 +140,54 @@ function anySessionId(ev: Record<string, unknown>): string | null {
   return null;
 }
 
-// ── opencode spec (JSONL: step_start / text / tool_use / step_finish) ────────
+// ── claude spec (claude CLI stream-json: system/init, assistant, user, result) ─
 
-const opencodeSpec: SandboxEngineSpec = {
-  id: "opencode",
-  command: ({ model, resumeId, npxFallback }) => {
-    const bin = npxFallback ? `npx -y opencode-ai@${OPENCODE_VERSION}` : "opencode";
-    const resume = resumeId ? `-s ${resumeId} ` : "";
-    return `${bin} run --format json ${resume}-m ${opencodeModel(model)}`;
-  },
-  handleLine: (line, state) => {
-    const ev = parseJsonLine(line);
-    if (!ev) {
-      noteRawLine(line, state);
-      return null;
-    }
-    if (!state.sessionId) state.sessionId = anySessionId(ev);
-    const part = ev.part as
-      | {
-          type?: string;
-          text?: string;
-          tool?: string;
-          callID?: string;
-          state?: { status?: string; title?: string; input?: Record<string, unknown>; output?: string };
-        }
-      | undefined;
-    if (ev.type === "text" && part?.text?.trim()) {
-      state.lastText = part.text;
-      return { kind: "task", label: truncate(part.text, 60), chip: "task" };
-    }
-    if (ev.type === "tool_use" && part?.tool) {
-      const status = part.state?.status;
-      if (status !== "completed" && status !== "error") return null;
-      const callId = part.callID ?? `${part.tool}:${state.lastText.length}`;
-      if (state.seenTools.has(callId)) return null;
-      state.seenTools.add(callId);
-      const isFile = FILE_TOOLS_OPENCODE.has(part.tool.toLowerCase());
-      const input = part.state?.input ?? {};
-      const filePath = (input.filePath as string) ?? (input.file_path as string) ?? "";
-      const label = isFile
-        ? filePath
-          ? basename(filePath)
-          : part.state?.title ?? part.tool
-        : (input.command as string) ?? part.state?.title ?? part.tool;
-      return {
-        kind: isFile ? "file" : "command",
-        label: truncate(String(label)),
-        chip: isFile ? "file" : part.tool === "bash" ? "bash" : part.tool,
-        code_json: { tool: part.tool, input, output: (part.state?.output ?? "").slice(0, 2000) },
-      };
-    }
-    return null;
-  },
-};
+/** Render one claude tool call as a step. `output` present ⇒ its tool_result
+ *  already arrived and the step carries both sides. */
+function claudeToolStep(
+  name: string,
+  input: Record<string, unknown>,
+  output: string | undefined,
+  subagent: boolean,
+): EmitStep {
+  const isFile = FILE_TOOLS_CLAUDE.has(name);
+  const path = String(input.file_path ?? input.path ?? "");
+  // Any tool that names a file shows it (Read/Grep included), not just writers.
+  const label =
+    name === "Bash"
+      ? truncate(String(input.command ?? "bash"))
+      : path
+        ? isFile
+          ? basename(path)
+          : `${name} ${basename(path)}`
+        : name;
+  return {
+    kind: isFile ? "file" : "command",
+    label: (subagent ? "↳ " : "") + label,
+    chip: name === "Bash" ? "bash" : isFile ? "file" : name,
+    code_json: {
+      tool: name,
+      input,
+      ...(output !== undefined ? { output: output.slice(0, 2000) } : {}),
+    },
+  };
+}
 
-// ── claude spec (claude CLI stream-json: system/init, assistant, result) ─────
+/** Flatten a tool_result's content (string or [{type:"text",text}] blocks). */
+function toolResultText(content: unknown): string {
+  if (typeof content === "string") return content;
+  if (Array.isArray(content)) {
+    return content
+      .map((c) =>
+        c && typeof c === "object" && typeof (c as { text?: unknown }).text === "string"
+          ? ((c as { text: string }).text)
+          : "",
+      )
+      .filter(Boolean)
+      .join("\n");
+  }
+  return "";
+}
 
 const claudeSpec: SandboxEngineSpec = {
   id: "claude",
@@ -151,59 +195,110 @@ const claudeSpec: SandboxEngineSpec = {
     // Model is engine-managed (Anthropic only); the picker applies to opencode.
     const resume = resumeId ? `--resume ${resumeId} ` : "";
     return (
-      `npx -y @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION} -p ` +
-      `${resume}--model ${DEFAULT_MODEL} --output-format stream-json --verbose ` +
-      `--dangerously-skip-permissions`
+      `claude -p ${resume}--model ${DEFAULT_MODEL} --output-format stream-json ` +
+      `--verbose --dangerously-skip-permissions`
     );
   },
+  install: { pkg: `@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}`, bin: "claude" },
   handleLine: (line, state) => {
     const ev = parseJsonLine(line);
     if (!ev) {
       noteRawLine(line, state);
-      return null;
+      return [];
     }
     if (!state.sessionId) state.sessionId = anySessionId(ev);
+    // Events emitted from INSIDE a subagent carry the spawning tool id — tag
+    // them so the worklog shows the fan-out (claude's own UI does the same).
+    const subagent =
+      typeof ev.parent_tool_use_id === "string" && ev.parent_tool_use_id.length > 0;
+    const actions: SpecAction[] = [];
+
     if (ev.type === "assistant") {
       const content =
         ((ev as { message?: { content?: unknown[] } }).message?.content ?? []) as {
           type?: string;
+          id?: string;
           text?: string;
           name?: string;
           input?: Record<string, unknown>;
         }[];
-      // One line carries a whole assistant message; surface the FIRST meaningful
-      // block as the step (text beats tool for narration ordering).
       for (const block of content) {
         if (block.type === "text" && block.text?.trim()) {
-          state.lastText = block.text;
-          return { kind: "task", label: truncate(block.text, 60), chip: "task" };
-        }
-        if (block.type === "tool_use" && block.name) {
-          const isFile = FILE_TOOLS_CLAUDE.has(block.name);
+          // Subagent narration never overwrites the MAIN agent's final text and
+          // never streams into the main turn's live-typing channel.
+          if (!subagent) state.lastText = block.text;
+          actions.push({
+            step: {
+              kind: "task",
+              label: (subagent ? "↳ " : "") + truncate(block.text, 60),
+              chip: "task",
+            },
+            ...(subagent ? {} : { delta: block.text }),
+          });
+        } else if (block.type === "tool_use" && block.name) {
           const input = block.input ?? {};
-          const path = String(input.file_path ?? input.path ?? "");
-          const label =
-            block.name === "Bash"
-              ? truncate(String(input.command ?? "bash"))
-              : isFile && path
-                ? basename(path)
-                : block.name;
-          return {
-            kind: isFile ? "file" : "command",
-            label,
-            chip: block.name === "Bash" ? "bash" : isFile ? "file" : block.name,
-            code_json: { tool: block.name, input },
-          };
+          if (SPAWN_TOOLS_CLAUDE.has(block.name)) {
+            // A subagent spawn is a step of its own, emitted IMMEDIATELY (its
+            // result may be minutes away).
+            const desc = String(input.description ?? input.prompt ?? "subagent");
+            actions.push({
+              step: {
+                kind: "task",
+                label: `${subagent ? "↳ " : ""}Subagent — ${truncate(desc, 50)}`,
+                chip: "subagent",
+                code_json: { tool: block.name, input },
+              },
+            });
+          } else if (block.id) {
+            // Surface the call NOW; its tool_result enriches this same step.
+            state.pendingTools.set(block.id, { name: block.name, input, subagent });
+            actions.push({
+              step: claudeToolStep(block.name, input, undefined, subagent),
+              pairKey: block.id,
+            });
+          } else {
+            actions.push({ step: claudeToolStep(block.name, input, undefined, subagent) });
+          }
         }
       }
-      return null;
+      return actions;
     }
+
+    if (ev.type === "user") {
+      const content =
+        ((ev as { message?: { content?: unknown[] } }).message?.content ?? []) as {
+          type?: string;
+          tool_use_id?: string;
+          content?: unknown;
+        }[];
+      for (const block of content) {
+        if (block.type !== "tool_result" || !block.tool_use_id) continue;
+        const held = state.pendingTools.get(block.tool_use_id);
+        if (!held) continue;
+        state.pendingTools.delete(block.tool_use_id);
+        actions.push({
+          update: {
+            pairKey: block.tool_use_id,
+            code_json: {
+              tool: held.name,
+              input: held.input,
+              output: toolResultText(block.content).slice(0, 2000),
+            },
+          },
+        });
+      }
+      return actions;
+    }
+
     if (ev.type === "result") {
+      // Final reconciliation only — the assistant text blocks already streamed
+      // as deltas; re-publishing the full result here would duplicate the
+      // answer for every delta consumer.
       const text = (ev as { result?: string }).result;
       if (typeof text === "string" && text.trim()) state.lastText = text;
-      return null; // the runner emits the done step
+      return []; // the runner emits the done step
     }
-    return null;
+    return actions;
   },
 };
 
@@ -214,44 +309,78 @@ const codexSpec: SandboxEngineSpec = {
   command: ({ resumeId }) => {
     const sub = resumeId ? `exec resume ${resumeId}` : "exec";
     return (
-      `npx -y @openai/codex@${CODEX_VERSION} ${sub} --json --skip-git-repo-check ` +
+      `codex ${sub} --json --skip-git-repo-check ` +
       `--dangerously-bypass-approvals-and-sandbox`
     );
   },
+  install: { pkg: `@openai/codex@${CODEX_VERSION}`, bin: "codex" },
   handleLine: (line, state) => {
     const ev = parseJsonLine(line);
     if (!ev) {
       noteRawLine(line, state);
-      return null;
+      return [];
     }
     if (!state.sessionId) state.sessionId = anySessionId(ev);
     const item = (ev as { item?: Record<string, unknown> }).item;
-    if (ev.type === "item.completed" && item) {
-      const itemType = item.type as string | undefined;
-      if (itemType === "agent_message" && typeof item.text === "string" && item.text.trim()) {
-        state.lastText = item.text;
-        return { kind: "task", label: truncate(item.text, 60), chip: "task" };
-      }
-      if (itemType === "command_execution") {
-        const cmd = String(item.command ?? "command");
-        return {
-          kind: "command",
-          label: truncate(cmd),
-          chip: "bash",
-          code_json: {
-            command: cmd,
-            output: String(item.aggregated_output ?? "").slice(0, 2000),
-            exit_code: item.exit_code ?? null,
+    const itemType = item?.type as string | undefined;
+    // item.started → surface a command the moment codex launches it; the
+    // matching item.completed enriches the SAME step with its output.
+    if (ev.type === "item.started" && item && itemType === "command_execution") {
+      const id = String(item.id ?? "");
+      const cmd = String(item.command ?? "command");
+      if (id && !state.pendingTools.has(id)) {
+        state.pendingTools.set(id, { name: "bash", input: { command: cmd }, subagent: false });
+        return [
+          {
+            step: { kind: "command", label: truncate(cmd), chip: "bash", code_json: { command: cmd } },
+            pairKey: id,
           },
-        };
+        ];
       }
-      if (itemType === "file_change" || itemType === "patch_apply") {
-        const changes = (item.changes ?? item.files ?? []) as { path?: string }[];
-        const first = Array.isArray(changes) && changes[0]?.path ? basename(String(changes[0].path)) : "files";
-        return { kind: "file", label: first, chip: "file", code_json: item };
-      }
+      return [];
     }
-    return null;
+    if (ev.type !== "item.completed" || !item) return [];
+    if (itemType === "agent_message" && typeof item.text === "string" && item.text.trim()) {
+      state.lastText = item.text;
+      return [
+        {
+          step: { kind: "task", label: truncate(item.text, 60), chip: "task" },
+          delta: item.text,
+        },
+      ];
+    }
+    if (itemType === "reasoning" && typeof item.text === "string" && item.text.trim()) {
+      return [{ step: { kind: "task", label: truncate(item.text, 60), chip: "reasoning" } }];
+    }
+    if (itemType === "web_search") {
+      const query = String(item.query ?? "web search");
+      return [{ step: { kind: "command", label: truncate(query), chip: "search", code_json: item } }];
+    }
+    if (itemType === "mcp_tool_call") {
+      const tool = String(item.tool ?? item.server ?? "mcp");
+      return [{ step: { kind: "command", label: truncate(tool), chip: tool, code_json: item } }];
+    }
+    if (itemType === "command_execution") {
+      const id = String(item.id ?? "");
+      const cmd = String(item.command ?? "command");
+      const code = {
+        command: cmd,
+        output: String(item.aggregated_output ?? "").slice(0, 2000),
+        exit_code: item.exit_code ?? null,
+      };
+      if (id && state.pendingTools.has(id)) {
+        state.pendingTools.delete(id);
+        return [{ update: { pairKey: id, code_json: code } }];
+      }
+      return [{ step: { kind: "command", label: truncate(cmd), chip: "bash", code_json: code } }];
+    }
+    if (itemType === "file_change" || itemType === "patch_apply") {
+      const changes = (item.changes ?? item.files ?? []) as { path?: string }[];
+      const first =
+        Array.isArray(changes) && changes[0]?.path ? basename(String(changes[0].path)) : "files";
+      return [{ step: { kind: "file", label: first, chip: "file", code_json: item } }];
+    }
+    return [];
   },
   // Codex has no API-key auth here — seed the host's ChatGPT-login credential
   // into the sandbox (the user's own Daytona org; required for codex to run at
@@ -293,9 +422,16 @@ function makeSandboxAdapter(spec: SandboxEngineSpec): EngineAdapter {
       if (process.env.ANTHROPIC_API_KEY) envVars.ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
       if (process.env.OPENROUTER_API_KEY) envVars.OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
 
-      const snapshot = process.env.DAYTONA_SNAPSHOT ?? "skynet-agent";
+      // The org's snapshot (2 vCPU / 8 GiB, opencode preinstalled). The bare
+      // "skynet-agent" name does NOT exist — a wrong name silently drops every
+      // opencode run onto the tiny default image, which OOM-kills (137) the
+      // npx-installed CLI mid-run. Keep this in sync with `daytona snapshot list`.
+      // A STOPPED sandbox keeps its disk (workspace + engine sessions) at ~zero
+      // cost and restarts in seconds — so stop quickly, but keep the thread's
+      // world alive for days before deletion.
+      const autoStopInterval = Number(process.env.SANDBOX_AUTO_STOP_MIN ?? 30);
+      const autoDeleteInterval = Number(process.env.SANDBOX_AUTO_DELETE_MIN ?? 4320); // 3 days
       let sandbox: Sandbox | null = null;
-      let npxFallback = false;
       let retainForThread = false;
       let succeeded = false;
 
@@ -319,7 +455,6 @@ function makeSandboxAdapter(spec: SandboxEngineSpec): EngineAdapter {
               throw new Error(`sandbox in unusable state: ${state}`);
             }
             sandbox = prior;
-            npxFallback = remembered.npxFallback;
             retainForThread = true;
             await ctx.emit({
               kind: "task",
@@ -334,50 +469,59 @@ function makeSandboxAdapter(spec: SandboxEngineSpec): EngineAdapter {
 
         if (!sandbox) {
           await ctx.emit({ kind: "task", label: "Provisioning cloud sandbox…", chip: spec.id });
-          // Only opencode benefits from the snapshot (its binary is preinstalled
-          // there). claude/codex npx-install on the DEFAULT image — verified: the
-          // snapshot runs as root, where `claude --dangerously-skip-permissions`
-          // refuses to start; the default image (user `daytona`) works.
-          if (spec.id === "opencode") {
-            try {
-              sandbox = await daytona.create({
-                snapshot,
-                envVars,
-                labels: { "skynet-run": ctx.runId },
-                autoStopInterval: 10,
-                autoDeleteInterval: 120,
-              });
-            } catch {
-              sandbox = null;
-            }
-          }
-          if (!sandbox) {
-            sandbox = await daytona.create({
-              envVars,
-              labels: { "skynet-run": ctx.runId },
-              autoStopInterval: 10,
-              autoDeleteInterval: 120,
-            });
-            npxFallback = true;
-          }
+          // Default image (user `daytona`): the root-running snapshot refuses
+          // `claude --dangerously-skip-permissions`. The engine binary installs
+          // once below and stays resident for the sandbox's lifetime.
+          sandbox = await daytona.create({
+            envVars,
+            labels: { "skynet-run": ctx.runId },
+            autoStopInterval,
+            autoDeleteInterval,
+          });
           await ctx.emit({
             kind: "task",
             label: `Sandbox ${sandbox.id.slice(0, 8)} ready in ${Math.round((Date.now() - startedAt) / 1000)}s`,
             chip: spec.id,
           });
           if (ctx.threadId) {
-            threadSandboxes.set(ctx.threadId, { sandboxId: sandbox.id, npxFallback });
+            threadSandboxes.set(ctx.threadId, { sandboxId: sandbox.id });
             retainForThread = true;
           }
         }
         if (ctx.signal.aborted) throw new Error(`${spec.id} run aborted (timeout)`);
+
+        // Resident binary: install ONCE per sandbox into the user prefix (npm -g
+        // needs root here), then every turn invokes it directly — no npx
+        // resolution tax per message. Idempotent probe first, so reuse is free.
+        const probe = await sandbox.process.executeCommand(
+          `export PATH=$HOME/.local/bin:$PATH; command -v ${spec.install.bin} >/dev/null 2>&1 && echo OK`,
+          undefined,
+          undefined,
+          15,
+        );
+        if (!(probe.result ?? "").includes("OK")) {
+          await ctx.emit({ kind: "task", label: `Installing ${spec.install.bin} (once per sandbox)…`, chip: spec.id });
+          const inst = await sandbox.process.executeCommand(
+            `npm install -g --prefix $HOME/.local --silent ${spec.install.pkg} 2>&1 | tail -2`,
+            undefined,
+            undefined,
+            180,
+          );
+          if ((inst.exitCode ?? 1) !== 0) {
+            throw new Error(`failed to install ${spec.install.pkg}: ${truncate(inst.result ?? "", 200)}`);
+          }
+        }
 
         await spec.prepare?.(sandbox);
 
         // Explicit native-session resume: id from the DB (previous turn, same
         // engine). Resuming ⇒ the engine holds the history — send ONLY the new
         // prompt; fresh ⇒ composed preamble (team memory + thread fallback).
-        const resumeId = ctx.engineSessionId;
+        // Both interpolated values are validated before touching the shell.
+        const rawResume = ctx.engineSessionId;
+        const resumeId = rawResume && SAFE_ARG.test(rawResume) ? rawResume : undefined;
+        const rawModel = ctx.model?.trim() ?? "";
+        const model = SAFE_ARG.test(rawModel) ? rawModel : DEFAULT_MODEL;
         const box = sandbox;
         const budgetSec = Math.floor(Number(process.env.ENGINE_TIMEOUT_MS ?? 180_000) / 1000);
 
@@ -392,35 +536,118 @@ function makeSandboxAdapter(spec: SandboxEngineSpec): EngineAdapter {
           if ((res.exitCode ?? 1) !== 0) throw new Error("failed to stage prompt in sandbox");
         };
 
-        // One engine turn: run the CLI with the staged prompt on STDIN, translate
-        // its JSONL into steps, persist the session id the moment it appears.
+        // One engine turn, streamed LIVE: launch the CLI detached (output to a
+        // log, exit code + pid to files), then poll-tail the log translating
+        // complete JSONL lines into steps as they land. Session id persists the
+        // moment the stream reveals it. Abort/budget overrun kills the pid.
         const execTurn = async (
           resume: string | undefined,
         ): Promise<{ exitCode: number; state: ParseState; produced: boolean }> => {
-          const command = spec.command({
-            model: ctx.model?.trim() || DEFAULT_MODEL,
-            resumeId: resume,
-            npxFallback,
-          });
-          const timeout = Math.max(60, budgetSec - Math.floor((Date.now() - startedAt) / 1000) - 15);
-          const result = await box.process.executeCommand(
-            `cd ~/work && ${command} < ${PROMPT_PATH} 2>&1`,
+          const command = spec.command({ model, resumeId: resume });
+          const launch = await box.process.executeCommand(
+            `rm -f ${OUT_PATH} ${EXIT_PATH} ${PID_PATH}; export PATH=$HOME/.local/bin:$PATH; cd ~/work && ` +
+              `nohup sh -c '${command} < ${PROMPT_PATH}; echo $? > ${EXIT_PATH}' ` +
+              `> ${OUT_PATH} 2>&1 & echo $! > ${PID_PATH}`,
             undefined,
             undefined,
-            timeout,
+            30,
           );
-          if (ctx.signal.aborted) throw new Error(`${spec.id} run aborted (timeout)`);
-          const state: ParseState = { lastText: "", rawTail: "", seenTools: new Set(), sessionId: null };
-          for (const line of (result.result ?? "").split("\n")) {
-            const step = spec.handleLine(line, state);
-            if (step) await ctx.emit(step);
+          if ((launch.exitCode ?? 1) !== 0) {
+            throw new Error(`failed to launch ${spec.id} in sandbox`);
           }
+
+          const state = newParseState();
+          const pairIds = new Map<string, string>(); // spec pairKey → persisted step id
+          // One streaming decoder across ALL chunks: offsets are BYTES and a
+          // chunk boundary can split a multibyte UTF-8 char — chunks travel as
+          // base64 and decode statefully, never per-chunk.
+          const decoder = new TextDecoder();
+          let emittedSteps = 0;
+          let offset = 0;
+          let partial = "";
+          let exitCode: number | null = null;
+
+          const apply = async (actions: SpecAction[]): Promise<void> => {
+            for (const a of actions) {
+              if (a.delta) ctx.publishDelta?.(a.delta);
+              if (a.step) {
+                const id = await ctx.emit(a.step);
+                emittedSteps += 1;
+                if (a.pairKey && id) pairIds.set(a.pairKey, id);
+              }
+              if (a.update) {
+                const sid = pairIds.get(a.update.pairKey);
+                if (sid) await ctx.updateStep?.(sid, a.update.code_json);
+              }
+            }
+          };
+
+          const feedB64 = async (b64: string): Promise<void> => {
+            const bytes = Buffer.from(b64.replace(/\s+/g, ""), "base64");
+            partial += decoder.decode(bytes, { stream: true });
+            const lines = partial.split("\n");
+            partial = lines.pop() ?? "";
+            for (const l of lines) await apply(spec.handleLine(l, state));
+          };
+
+          while (true) {
+            if (ctx.signal.aborted || Date.now() - startedAt > budgetSec * 1000) {
+              // Kill children FIRST: the pid file holds the `sh -c` wrapper, and
+              // killing only it would orphan the npx/engine child, which keeps
+              // burning the sandbox.
+              await box.process
+                .executeCommand(
+                  `pkill -9 -P $(cat ${PID_PATH}) 2>/dev/null; kill -9 $(cat ${PID_PATH}) 2>/dev/null`,
+                  undefined,
+                  undefined,
+                  15,
+                )
+                .catch(() => {});
+              throw new Error(`${spec.id} run aborted (timeout)`);
+            }
+            await sleep(POLL_MS);
+            // Size FIRST, exit second: if the engine finishes in between, the
+            // stale size just means one final drain below picks up the rest.
+            const st = await box.process.executeCommand(
+              `printf '%s\\n' "$(wc -c < ${OUT_PATH} 2>/dev/null || echo 0)" "$(cat ${EXIT_PATH} 2>/dev/null)"`,
+              undefined,
+              undefined,
+              30,
+            );
+            const [sizeLine, exitLine] = (st.result ?? "").split("\n");
+            const size = Number((sizeLine ?? "").trim()) || 0;
+            if (size > offset) {
+              const chunk = await box.process.executeCommand(
+                `tail -c +${offset + 1} ${OUT_PATH} | head -c ${size - offset} | base64`,
+                undefined,
+                undefined,
+                30,
+              );
+              await feedB64(chunk.result ?? "");
+              offset = size;
+            }
+            if (exitLine !== undefined && exitLine.trim() !== "") {
+              exitCode = Number(exitLine.trim());
+              const rest = await box.process.executeCommand(
+                `tail -c +${offset + 1} ${OUT_PATH} | base64`,
+                undefined,
+                undefined,
+                30,
+              );
+              await feedB64(rest.result ?? "");
+              partial += decoder.decode(); // flush the streaming decoder
+              if (partial.trim()) await apply(spec.handleLine(partial, state));
+              break;
+            }
+          }
+
           if (state.sessionId) ctx.saveEngineSessionId?.(state.sessionId);
-          const exitCode = result.exitCode ?? 0;
-          // 137 = SIGKILL at teardown on the small default image AFTER the work
-          // streamed; only fatal when nothing was produced (genuine mid-run OOM).
-          const produced = state.lastText.trim().length > 0 || state.seenTools.size > 0;
-          return { exitCode, state, produced };
+          // 137 = SIGKILL at teardown AFTER work streamed; only fatal when the
+          // turn produced nothing at all. `emittedSteps` counts EVERY emitted
+          // action (tools included) so a tools-but-no-text turn is never
+          // classified empty and re-executed (double mutation hazard).
+          const produced = state.lastText.trim().length > 0 || emittedSteps > 0;
+          return { exitCode: exitCode ?? 0, state, produced };
         };
 
         await stagePrompt(resumeId ? ctx.prompt : ctx.contextPreamble + ctx.prompt);
@@ -462,6 +689,5 @@ function makeSandboxAdapter(spec: SandboxEngineSpec): EngineAdapter {
   };
 }
 
-export const sandboxOpencodeAdapter = makeSandboxAdapter(opencodeSpec);
 export const sandboxClaudeAdapter = makeSandboxAdapter(claudeSpec);
 export const sandboxCodexAdapter = makeSandboxAdapter(codexSpec);
