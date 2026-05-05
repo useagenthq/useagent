@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { RiArrowDownSLine, RiCheckLine, RiCloseLine } from "@remixicon/react";
 import { AsteriskMark } from "@/components/foundations/brand/asterisk-mark";
 import { cnExt as cn } from "@/utils/cn";
@@ -88,27 +88,21 @@ function AgentAnswer({ summary, stream }: { summary: string; stream: boolean }) 
 
 /**
  * Live narration: the run's token deltas rendered as the answer-in-progress —
- * plain text (markdown may still be half-formed mid-stream) whose words fade in
- * as they arrive, tailed by a blinking caret. Word-keyed by index so only the
- * freshly-arrived words animate while already-shown text stays put; `liveText`
- * only grows, so the prefix is stable and never re-animates. Replaced by the
- * durable Markdown summary once the run settles.
+ * PROGRESSIVE MARKDOWN (Zola-style): remark-gfm parses whatever partial
+ * markdown exists on each delta and degrades gracefully, so bold/tables/lists
+ * render as they stream instead of arriving as raw `**`/`|` runes and snapping
+ * into shape only at completion. A blinking caret tails the rendered block.
+ * Replaced by the durable Markdown summary once the run settles.
  */
 function LiveNarration({ text }: { text: string }) {
-  // Split on whitespace but keep the separators so spacing is preserved.
-  const tokens = text.split(/(\s+)/);
   return (
-    <p className="text-paragraph-sm text-text-strong-950 whitespace-pre-wrap break-words">
-      {tokens.map((tok, i) => (
-        <span key={i} className="animate-ai-word-in">
-          {tok}
-        </span>
-      ))}
+    <div className="animate-ai-fade-up">
+      <Markdown className={MD_CLASS}>{text}</Markdown>
       <span
         className="ai-caret ml-0.5 inline-block h-4 w-0.5 translate-y-0.5 rounded-full bg-text-strong-950 align-text-bottom"
         aria-hidden
       />
-    </p>
+    </div>
   );
 }
 
@@ -291,9 +285,29 @@ export function Conversation({
   pendingReply: string | null;
   onReply: (text: string, engine: EngineId) => void;
 }) {
+  // Stick-to-bottom autoscroll: follow new turns/steps/narration as they
+  // stream, but ONLY while the user is already near the bottom — scrolling up
+  // to read history must never be yanked back down. `stick` flips on scroll.
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const stickRef = useRef(true);
+  const scrollSignature = turns
+    .map((t) => `${t.steps.length}:${t.liveText.length}:${t.summary ? 1 : 0}`)
+    .join("|");
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (el && stickRef.current) el.scrollTop = el.scrollHeight;
+  }, [scrollSignature, pendingReply, turns.length]);
+
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="min-h-0 flex-1 space-y-8 overflow-y-auto px-5 py-6">
+      <div
+        ref={scrollRef}
+        onScroll={(e) => {
+          const el = e.currentTarget;
+          stickRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+        }}
+        className="min-h-0 flex-1 space-y-8 overflow-y-auto px-5 py-6"
+      >
         {turns.map((turn) => (
           <TurnBlock key={turn.run.id} turn={turn} />
         ))}
