@@ -6,6 +6,7 @@ import { startEmailConnector } from "./connectors/email";
 import { db } from "./db/client";
 import { connectorEmailConfig, env } from "./env";
 import { knowledgeRoutes } from "./knowledge/routes";
+import { liveProxyRoutes } from "./runs/live-proxy";
 import { failStaleRuns } from "./runs/repo";
 import { runsRoutes } from "./runs/routes";
 import { terminalRoutes, websocket } from "./runs/terminal";
@@ -51,6 +52,10 @@ app.route("/api/runs", runsRoutes);
 // Interactive terminal WS bridge (browser xterm ⇄ sandbox PTY). Mounted before
 // nothing — separate router so the SSE/step routes stay untouched.
 app.route("/api/runs", terminalRoutes);
+// Same-origin bridge to a thread's opencode server for the embedded "Live" tab
+// (frontend/public/opencode-app). Injects the Daytona preview token, streams
+// SSE through untouched.
+app.route("/api/live-proxy", liveProxyRoutes);
 app.route("/api/skills", skillsRoutes);
 app.route("/api/schedules", schedulesRoutes);
 app.route("/api/knowledge", knowledgeRoutes);
@@ -86,4 +91,10 @@ export default {
   fetch: app.fetch,
   // Bun WebSocket handler for the terminal bridge (hono/bun upgradeWebSocket).
   websocket,
+  // Long-held requests are legitimate here: the Live tab's prompt POST stays
+  // open for a whole engine turn through /api/live-proxy. Bun's 10s default
+  // idle timeout kills them ("Failed to fetch" in opencode's composer); 255s
+  // is Bun's maximum. Turns longer than that keep running server-side — only
+  // the embed's request errors.
+  idleTimeout: 255,
 };

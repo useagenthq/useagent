@@ -1,18 +1,23 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import {
   RiAddLine,
   RiCodeSSlashLine,
   RiLayoutRightLine,
+  RiRobot2Line,
   RiTerminalBoxLine,
 } from "@remixicon/react";
 import { backendFetch } from "@/lib/backend-fetch";
 import { cnExt as cn } from "@/utils/cn";
 import * as SegmentedControl from "@/components/ui/segmented-control";
 import { Conversation, type Turn } from "@/components/chat/conversation";
+import { AgentsRail } from "@/components/chat/agents-rail";
 import { EditorPane } from "@/components/chat/editor-pane";
+// The "Live" tab: opencode's session view mounted inline as a Web Component
+// (solid-element, no iframe) — see live-pane.tsx.
+import { LivePane } from "@/components/chat/live-pane";
 import { TerminalPane } from "@/components/chat/terminal-pane";
 import { OrbBootIndicator } from "@/components/chat/orb-boot-indicator";
 import { useRunStream } from "@/components/chat/use-run-stream";
@@ -75,6 +80,7 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
           status: stream.status,
           summary: stream.summary,
           live: stream.live,
+          liveText: stream.liveText,
         }
       : {
           run,
@@ -82,13 +88,18 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
           status: run.status,
           summary: run.summary,
           live: false,
+          liveText: "",
         },
   );
   const allSteps = turns.flatMap((t) => t.steps);
   const live = stream.live;
-  // Boot window: run accepted but no activity has streamed yet — the orb stands
-  // in until the first step arrives, then the Thinking disclosure takes over.
-  const booting = live && !stream.steps.some((s) => s.kind !== "done");
+  // Boot window: run accepted but nothing has streamed yet — the orb stands in
+  // until the first narration token OR step arrives, then the conversation's live
+  // narration / Thinking disclosure takes over (keeps one live indicator at a time).
+  const booting =
+    live &&
+    !stream.liveText &&
+    !stream.steps.some((s) => s.kind !== "done");
 
   const refetchThread = useCallback(async () => {
     try {
@@ -103,6 +114,16 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
       setPendingReply(null);
     }
   }, [rootId]);
+
+  // Refetch the thread whenever the streamed run reaches a terminal state —
+  // run-level fields written during the turn (engine_session_id → the Live
+  // tab's deep-link, summary) only travel via thread fetches, and without this
+  // a FRESH session never learns them until a reply or a page reload.
+  const wasLive = useRef(false);
+  useEffect(() => {
+    if (wasLive.current && !stream.live) void refetchThread();
+    wasLive.current = stream.live;
+  }, [stream.live, refetchThread]);
 
   const handleReply = useCallback(
     async (text: string, engine: EngineId) => {
@@ -136,15 +157,26 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
     (s) => s.kind === "file" && parseFileEntries(s).length > 0,
   );
   const hasCommands = allSteps.some((s) => s.kind === "command");
-  const hasRailContent = hasFiles || hasCommands;
+  const hasSubagents = allSteps.some((s) => s.chip === "subagent");
+  const hasRailContent = hasFiles || hasCommands || hasSubagents;
+  // opencode threads carry a live resident server in their sandbox — offer its
+  // own web UI as a "Live" tab (opt-in: the heavy iframe mounts only when picked).
+  const isOpencode = thread.some((r) => normalizeEngine(r.engine) === "opencode");
+  // The engine's own session id for this thread — the LATEST non-null across its
+  // runs (oldest→newest, so `findLast`). Lets the Live tab open straight into the
+  // conversation's opencode session instead of the app's home screen.
+  const engineSessionId =
+    thread.findLast((r) => r.engine_session_id)?.engine_session_id ?? null;
   const [railOverride, setRailOverride] = useState<boolean | null>(null);
   const railOpen = railOverride ?? hasRailContent;
   // Default to whichever pane actually has content; an explicit pick wins.
+  // Agents leads when a run fanned out — that's the story you want to watch.
   const [railTabOverride, setRailTabOverride] = useState<
-    "editor" | "terminal" | null
+    "agents" | "editor" | "terminal" | null
   >(null);
   const railTab =
-    railTabOverride ?? (hasFiles ? "editor" : hasCommands ? "terminal" : "editor");
+    railTabOverride ??
+    (hasSubagents ? "agents" : hasFiles ? "editor" : hasCommands ? "terminal" : "editor");
 
   return (
     <div className="flex h-full flex-col">
@@ -173,15 +205,26 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
           Editor|Terminal panel. ONE live indicator at a time: the boot gap is the
           orb below, and once steps stream the conversation's Thinking block takes
           over — the old floating WorkingPill duplicate is gone. */}
-      <div className="flex min-h-0 flex-1 flex-col gap-3 p-3 lg:flex-row">
+      <div className="flex min-h-0 flex-1 flex-col gap-3 p-3 md:flex-row">
         {/* Conversation */}
-        <section className="border-stroke-soft-200 bg-bg-white-0 relative flex min-h-[60vh] min-w-0 flex-1 flex-col overflow-hidden rounded-2xl border lg:min-h-0">
-          <Conversation
-            turns={turns}
-            defaultEngine={normalizeEngine(newest.engine)}
-            pendingReply={pendingReply}
-            onReply={handleReply}
-          />
+        <section className="border-stroke-soft-200 bg-bg-white-0 relative flex min-h-[60vh] min-w-0 flex-1 flex-col overflow-hidden rounded-2xl border md:min-h-0">
+          {/* PRIMARY CHAT = opencode's own session view, inline (user decision
+              2026-08-05): their composer/timeline drive the conversation.
+              Our Conversation below is TBD — kept as the fallback renderer for
+              threads without a live session (dead sandbox, pre-session, other
+              engines) and as the future durable-history surface. NOTE: turns
+              typed in their composer live in the ENGINE's session store; the
+              event-log import for those is part of the TBD. */}
+          {isOpencode && engineSessionId ? (
+            <LivePane threadId={rootId} sessionId={engineSessionId} />
+          ) : (
+            <Conversation
+              turns={turns}
+              defaultEngine={normalizeEngine(newest.engine)}
+              pendingReply={pendingReply}
+              onReply={handleReply}
+            />
+          )}
           {/* Boot phase: engine spinning up, no steps yet — orb pill; clears the
               moment the first step streams in (Thinking block takes over). */}
           {booting && (
@@ -195,14 +238,28 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
           // ONE bordered panel: the Editor|Terminal switcher + collapse live in
           // its header; the active pane fills the body bare (its own border/round
           // is dropped so this panel owns the single card edge).
-          <section className="border-stroke-soft-200 bg-bg-white-0 flex min-h-[50vh] min-w-0 flex-col overflow-hidden rounded-2xl border lg:min-h-0 lg:w-[32%] lg:shrink-0">
+          <section
+            className={
+              "border-stroke-soft-200 bg-bg-white-0 flex min-h-[50vh] min-w-0 flex-col overflow-hidden rounded-2xl border md:min-h-0 md:w-[32%] md:shrink-0"
+            }
+          >
             <div className="border-stroke-soft-200 flex shrink-0 items-center gap-2 border-b p-2">
               <SegmentedControl.Root
                 className="flex-1"
                 value={railTab}
-                onValueChange={(v) => setRailTabOverride(v as "editor" | "terminal")}
+                onValueChange={(v) =>
+                  setRailTabOverride(v as "agents" | "editor" | "terminal")
+                }
               >
                 <SegmentedControl.List>
+                  {/* Agents leads the switcher, but only once a run has fanned
+                      out — no empty tab before then. */}
+                  {hasSubagents && (
+                    <SegmentedControl.Trigger value="agents">
+                      <RiRobot2Line className="size-4" aria-hidden />
+                      Agents
+                    </SegmentedControl.Trigger>
+                  )}
                   <SegmentedControl.Trigger value="editor">
                     <RiCodeSSlashLine className="size-4" aria-hidden />
                     Editor
@@ -224,7 +281,9 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
               </button>
             </div>
             <div className="min-h-0 flex-1">
-              {railTab === "editor" ? (
+              {railTab === "agents" ? (
+                <AgentsRail steps={allSteps} live={live} />
+              ) : railTab === "editor" ? (
                 <EditorPane steps={allSteps} live={live} />
               ) : (
                 <TerminalPane steps={allSteps} live={live} engine={newest.engine} runId={newest.id} />

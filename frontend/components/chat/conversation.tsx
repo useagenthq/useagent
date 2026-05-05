@@ -26,17 +26,26 @@ export type Turn = {
   status: RunStatus;
   summary: string | null;
   live: boolean;
+  /** Accumulated token deltas while this turn is live; "" once settled. */
+  liveText: string;
 };
 
 // Lightweight prose styling for rendered summaries — the AlignUI foundation
-// doesn't ship @tailwindcss/typography, so map the common markdown elements to
-// brand tokens directly.
+// doesn't ship @tailwindcss/typography, so map the flow elements (headings,
+// paragraphs, lists, links) to brand tokens here. Structural elements that need
+// a wrapper — tables, blockquotes, code — are styled as component overrides in
+// `prompt-kit/markdown.tsx` so every caller gets them.
 const MD_CLASS = cn(
   "text-paragraph-sm text-text-strong-950",
-  "[&_p]:my-2 [&_p:first-child]:mt-0 [&_p:last-child]:mb-0",
-  "[&_h1]:text-label-md [&_h1]:mt-3 [&_h2]:text-label-sm [&_h2]:mt-3 [&_h3]:text-label-sm",
-  "[&_ul]:my-2 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:my-2 [&_ol]:list-decimal [&_ol]:pl-5 [&_li]:my-0.5",
-  "[&_a]:text-blue-500 [&_a]:underline [&_strong]:font-medium [&_pre]:my-2",
+  // First/last block flush to the turn's edges; even rhythm everywhere else.
+  "[&>*:first-child]:mt-0 [&>*:last-child]:mb-0",
+  "[&_p]:my-2",
+  "[&_h1]:text-label-md [&_h1]:font-medium [&_h1]:mt-4 [&_h1]:mb-1.5",
+  "[&_h2]:text-label-sm [&_h2]:font-medium [&_h2]:mt-4 [&_h2]:mb-1.5",
+  "[&_h3]:text-label-sm [&_h3]:font-medium [&_h3]:mt-3 [&_h3]:mb-1",
+  "[&_h4]:text-label-xs [&_h4]:font-medium [&_h4]:mt-3 [&_h4]:mb-1",
+  "[&_ul]:my-2 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:my-2 [&_ol]:list-decimal [&_ol]:pl-5 [&_li]:my-1",
+  "[&_a]:text-blue-500 [&_a]:underline [&_a]:underline-offset-2 [&_strong]:font-medium",
 );
 
 function UserBubble({ children }: { children: string }) {
@@ -74,6 +83,32 @@ function AgentAnswer({ summary, stream }: { summary: string; stream: boolean }) 
         aria-hidden
       />
     </span>
+  );
+}
+
+/**
+ * Live narration: the run's token deltas rendered as the answer-in-progress —
+ * plain text (markdown may still be half-formed mid-stream) whose words fade in
+ * as they arrive, tailed by a blinking caret. Word-keyed by index so only the
+ * freshly-arrived words animate while already-shown text stays put; `liveText`
+ * only grows, so the prefix is stable and never re-animates. Replaced by the
+ * durable Markdown summary once the run settles.
+ */
+function LiveNarration({ text }: { text: string }) {
+  // Split on whitespace but keep the separators so spacing is preserved.
+  const tokens = text.split(/(\s+)/);
+  return (
+    <p className="text-paragraph-sm text-text-strong-950 whitespace-pre-wrap break-words">
+      {tokens.map((tok, i) => (
+        <span key={i} className="animate-ai-word-in">
+          {tok}
+        </span>
+      ))}
+      <span
+        className="ai-caret ml-0.5 inline-block h-4 w-0.5 translate-y-0.5 rounded-full bg-text-strong-950 align-text-bottom"
+        aria-hidden
+      />
+    </p>
   );
 }
 
@@ -137,14 +172,25 @@ function WorklogCapsule({
 /** A single turn: the user's clean prompt, the agent's answer, and its activity
  * (open + streaming while live, a collapsed disclosure once settled). */
 function TurnBlock({ turn }: { turn: Turn }) {
-  const { run, steps, status, summary, live } = turn;
+  const { run, steps, status, summary, live, liveText } = turn;
   // Capture whether this turn was streaming when it first mounted, so its
   // summary typewriters in on arrival but settled history renders instantly.
   const [wasLive] = useState(() => live);
+  // Whether this turn ever streamed live narration. Once it has, the completed
+  // summary swaps in instantly (no re-typewriter of text the user just watched);
+  // turns with no narration keep the on-arrival typewriter as a graceful fallback.
+  const [sawNarration, setSawNarration] = useState(false);
+  useEffect(() => {
+    if (liveText.length > 0) setSawNarration(true);
+  }, [liveText]);
 
   const activity = steps.filter((s) => s.kind !== "done");
   const latestLabel = activity.at(-1)?.label ?? "Starting up";
   const failed = status === "failed";
+  // While narration is streaming it IS this turn's live indicator: show the
+  // fading text + caret and suppress the Thinking shimmer so only one live
+  // signal shows at a time.
+  const narrating = live && liveText.length > 0;
 
   return (
     <div className="space-y-4">
@@ -164,7 +210,13 @@ function TurnBlock({ turn }: { turn: Turn }) {
           </span>
         </div>
 
-        {summary && <AgentAnswer summary={summary} stream={wasLive} />}
+        {summary && (
+          <AgentAnswer summary={summary} stream={wasLive && !sawNarration} />
+        )}
+
+        {/* Answer-in-progress: the run's live tokens stream in word-by-word
+            until the durable summary/markdown takes over on completion. */}
+        {narrating && !summary && <LiveNarration text={liveText} />}
 
         {failed && !summary && (
           <p className="text-paragraph-sm text-error-base">
@@ -172,10 +224,11 @@ function TurnBlock({ turn }: { turn: Turn }) {
           </p>
         )}
 
-        {/* One live indicator: the Thinking block only appears once there's real
-            activity; the boot gap (live, no steps yet) is owned by the session's
-            OrbBootIndicator, so the two never show at once. */}
-        {live
+        {/* One live indicator: while narration streams it IS the indicator, so
+            the Thinking block is suppressed for that turn. Otherwise Thinking
+            covers live activity (the boot gap — live, no steps yet — is owned by
+            the session's OrbBootIndicator) and WorklogCapsule covers history. */}
+        {narrating ? null : live
           ? activity.length > 0 && (
               <Thinking label={`Working — ${latestLabel}`} active open>
                 {activity.map((step, i) => (
