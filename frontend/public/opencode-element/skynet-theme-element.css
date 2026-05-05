@@ -1,0 +1,117 @@
+/* ─────────────────────────────────────────────────────────────────────────
+   skynet-a theme skin for the INLINE opencode session view (<skynet-oc-session>).
+
+   Loaded as a global <link> AFTER the opencode stylesheet by live-pane.tsx's
+   ensureStyles(). The element renders into LIGHT DOM, so these document rules
+   reach its whole subtree. Goal: the embed reads as OUR chat content, not an
+   app-in-an-app. Two jobs:
+
+   1) Force our warm dark ladder regardless of the scheme opencode's own
+      ThemeProvider picks (it sets data-color-scheme on <html>, which can be
+      light). The element itself carries data-color-scheme="dark" (set in
+      live-pane.tsx), so opencode's own dark token block applies to the element's
+      subtree; here we only re-anchor its grey ramp to our warm values. This is
+      scheme-proof: the element is a nearer ancestor than <html>, so its ramp +
+      dark mapping win for everything inside.
+
+   2) Hide opencode's app chrome (titlebar → DEV chip, home/grid, the session
+      TAB STRIP, the "+" new-session button, window controls) and flatten the
+      box-in-box frame so the timeline + composer merge into our card.
+
+   Our warm dark ladder (frontend/AGENTS.md · globals.css .dark):
+     canvas #20201f · card #292826 · raised #3b3935 · raised+ #4b4944
+   ───────────────────────────────────────────────────────────────────────── */
+
+/* ── 1. Warm surface ladder ─────────────────────────────────────────────────
+   opencode's dark block maps: bg-deep←grey-1200, bg-base←grey-1100,
+   layer-01←grey-1000, layer-02←grey-900, layer-03←grey-800, layer-04←grey-700.
+   Collapse BOTH deep and base to our canvas so the opencode page background is
+   exactly our section colour — no darker frame. Card/raised rungs climb our
+   ladder. Text/icon greys (grey-50…600) are left as shipped: they're the light
+   end of the ramp and already read correctly on our dark surfaces.
+
+   The second half re-aliases Tailwind's `--color-v2-*` tokens. Their utilities
+   read `--color-v2-X` (not `--v2-X`), and Tailwind's @theme declares each
+   `--color-v2-X: var(--v2-X)` ONLY on :root — so it resolves against <html>'s
+   (light) scheme and inherits that baked light value everywhere. Because the
+   element carries data-color-scheme="dark", opencode's own dark block sets the
+   element's `--v2-*` to dark values; re-declaring each `--color-v2-X:var(--v2-X)`
+   HERE makes the alias recompute against the element's dark scheme. This is the
+   scheme-proof equivalent of the iframe-era trick (which just flipped <html>). */
+skynet-oc-session[data-color-scheme="dark"] {
+  --v2-grey-1200: #20201f; /* bg-deep  → canvas (merge, kills the frame) */
+  --v2-grey-1100: #20201f; /* bg-base  → canvas (merge) */
+  --v2-grey-1000: #292826; /* layer-01 → card */
+  --v2-grey-900: #33322e;  /* layer-02 */
+  --v2-grey-800: #3b3935;  /* layer-03 → raised / hover */
+  --v2-grey-700: #4b4944;  /* layer-04 → raised+ / contrast */
+  background-color: #20201f; /* the element's own box, before subtree paints */
+
+  /* Re-alias the Tailwind color layer to the element's dark semantic tokens. */
+  --color-v2-background-bg-accent: var(--v2-background-bg-accent);
+  --color-v2-background-bg-base: var(--v2-background-bg-base);
+  --color-v2-background-bg-contrast: var(--v2-background-bg-contrast);
+  --color-v2-background-bg-deep: var(--v2-background-bg-deep);
+  --color-v2-background-bg-inverse: var(--v2-background-bg-inverse);
+  --color-v2-background-bg-layer-01: var(--v2-background-bg-layer-01);
+  --color-v2-background-bg-layer-02: var(--v2-background-bg-layer-02);
+  --color-v2-background-bg-layer-03: var(--v2-background-bg-layer-03);
+  --color-v2-background-bg-layer-04: var(--v2-background-bg-layer-04);
+  --color-v2-border-border-base: var(--v2-border-border-base);
+  --color-v2-border-border-focus: var(--v2-border-border-focus);
+  --color-v2-border-border-muted: var(--v2-border-border-muted);
+  --color-v2-border-border-strong: var(--v2-border-border-strong);
+  --color-v2-icon-icon-accent: var(--v2-icon-icon-accent);
+  --color-v2-icon-icon-base: var(--v2-icon-icon-base);
+  --color-v2-icon-icon-contrast: var(--v2-icon-icon-contrast);
+  --color-v2-icon-icon-muted: var(--v2-icon-icon-muted);
+  --color-v2-overlay-simple-overlay-hover: var(--v2-overlay-simple-overlay-hover);
+  --color-v2-overlay-simple-overlay-pressed: var(--v2-overlay-simple-overlay-pressed);
+  --color-v2-overlay-simple-overlay-scrim: var(--v2-overlay-simple-overlay-scrim);
+  --color-v2-state-fg-danger: var(--v2-state-fg-danger);
+  --color-v2-text-text-accent: var(--v2-text-text-accent);
+  --color-v2-text-text-base: var(--v2-text-text-base);
+  --color-v2-text-text-faint: var(--v2-text-text-faint);
+  --color-v2-text-text-muted: var(--v2-text-text-muted);
+}
+
+/* ── 2a. Hide opencode's app chrome ─────────────────────────────────────────
+   The v2 titlebar is a single <header data-slot="titlebar-v2"> that contains the
+   DEV channel chip, the home/grid button, the session TAB STRIP (one thread =
+   one session in our model, so their per-session tab management is redundant),
+   the "+" new-session affordance and the right-hand window/controls. Hiding the
+   header removes every acceptance-#1 chrome item at once. No provider lives in
+   the titlebar (they sit above the layout), so this is layout-safe. */
+skynet-oc-session [data-slot="titlebar-v2"] {
+  display: none !important;
+}
+
+/* ── 2b. Flatten the box-in-box frame ───────────────────────────────────────
+   The panel row insets the session panel with p-2/gap-2, and the panel itself
+   is a rounded, raised card (bg-base rounded-[10px] shadow-[--v2-elevation-raised]).
+   With the card colour already merged into the canvas (grey-1100 above), drop
+   the inset, the rounding and the elevation ring so the timeline + composer sit
+   flush inside OUR rounded card — indistinguishable from our own chat surface. */
+skynet-oc-session [class~="md:flex-row"][class~="p-2"] {
+  padding: 0 !important;
+  gap: 0 !important;
+}
+skynet-oc-session [class~="@container"] > [class*="rounded-[10px]"] {
+  border-radius: 0 !important;
+  box-shadow: none !important;
+}
+
+/* ── 2c. Hide opencode's Review / changes panel ─────────────────────────────
+   opencode ships a git-review side panel ("Last turn changes" / "Filter files" /
+   "No tracked changes" / "Create Git repository") plus a toolbar toggle. It's
+   not part of our chat surface (we own diffs/changes in our own rail), so hide
+   the panel roots AND the toggle button. The toggle's aria-label is localized,
+   so target its stable class token `group/review-toggle` instead. The panel
+   normally opens via the Review command (mod+shift+r) — that keybind is also
+   neutralized in live-pane.tsx so it can't hijack the browser's hard-refresh. */
+skynet-oc-session [data-component="session-review-v2"],
+skynet-oc-session [data-component="session-review"],
+skynet-oc-session #review-panel,
+skynet-oc-session [class~="group/review-toggle"] {
+  display: none !important;
+}

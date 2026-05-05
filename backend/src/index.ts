@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { websocket } from "hono/bun";
 import { cors } from "hono/cors";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
 import { auth } from "./auth";
@@ -6,10 +7,11 @@ import { startEmailConnector } from "./connectors/email";
 import { db } from "./db/client";
 import { connectorEmailConfig, env } from "./env";
 import { knowledgeRoutes } from "./knowledge/routes";
+import { desktopProxyRoutes } from "./runs/desktop-proxy";
 import { liveProxyRoutes } from "./runs/live-proxy";
 import { failStaleRuns } from "./runs/repo";
 import { runsRoutes } from "./runs/routes";
-import { terminalRoutes, websocket } from "./runs/terminal";
+import { terminalRoutes } from "./runs/terminal";
 import { schedulesRoutes } from "./schedules/routes";
 import { startScheduler } from "./schedules/scheduler";
 import { seedDev } from "./seed";
@@ -56,6 +58,10 @@ app.route("/api/runs", terminalRoutes);
 // (frontend/public/opencode-app). Injects the Daytona preview token, streams
 // SSE through untouched.
 app.route("/api/live-proxy", liveProxyRoutes);
+// Same-origin bridge to a thread's noVNC desktop for the "Desktop" tab — proxies
+// noVNC's static app over HTTP and its RFB WebSocket, injecting the Daytona
+// preview token on both (shares the `websocket` handler above).
+app.route("/api/desktop-proxy", desktopProxyRoutes);
 app.route("/api/skills", skillsRoutes);
 app.route("/api/schedules", schedulesRoutes);
 app.route("/api/knowledge", knowledgeRoutes);

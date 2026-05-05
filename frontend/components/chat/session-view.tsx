@@ -5,6 +5,7 @@ import Link from "next/link";
 import {
   RiAddLine,
   RiCodeSSlashLine,
+  RiComputerLine,
   RiLayoutRightLine,
   RiRobot2Line,
   RiTerminalBoxLine,
@@ -15,6 +16,7 @@ import * as SegmentedControl from "@/components/ui/segmented-control";
 import { Conversation, type Turn } from "@/components/chat/conversation";
 import { AgentsRail } from "@/components/chat/agents-rail";
 import { EditorPane } from "@/components/chat/editor-pane";
+import { DesktopPane } from "@/components/chat/desktop-pane";
 // The "Live" tab: opencode's session view mounted inline as a Web Component
 // (solid-element, no iframe) — see live-pane.tsx.
 import { LivePane } from "@/components/chat/live-pane";
@@ -172,11 +174,15 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
   // Default to whichever pane actually has content; an explicit pick wins.
   // Agents leads when a run fanned out — that's the story you want to watch.
   const [railTabOverride, setRailTabOverride] = useState<
-    "agents" | "editor" | "terminal" | null
+    "agents" | "editor" | "terminal" | "desktop" | null
   >(null);
   const railTab =
     railTabOverride ??
     (hasSubagents ? "agents" : hasFiles ? "editor" : hasCommands ? "terminal" : "editor");
+  // The Desktop tab watches the sandbox GUI (multi-repo); a recorded opencode
+  // session implies its sandbox exists, so the pane can connect (else it shows a
+  // placeholder). Only offered for opencode threads — the snapshot with noVNC.
+  const hasDesktop = isOpencode;
 
   return (
     <div className="flex h-full flex-col">
@@ -248,7 +254,7 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
                 className="flex-1"
                 value={railTab}
                 onValueChange={(v) =>
-                  setRailTabOverride(v as "agents" | "editor" | "terminal")
+                  setRailTabOverride(v as "agents" | "editor" | "terminal" | "desktop")
                 }
               >
                 <SegmentedControl.List>
@@ -268,6 +274,14 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
                     <RiTerminalBoxLine className="size-4" aria-hidden />
                     Terminal
                   </SegmentedControl.Trigger>
+                  {/* multi-repo desktop: watch (and click) the sandbox GUI over
+                      noVNC. Only opencode threads carry the noVNC snapshot. */}
+                  {hasDesktop && (
+                    <SegmentedControl.Trigger value="desktop">
+                      <RiComputerLine className="size-4" aria-hidden />
+                      Desktop
+                    </SegmentedControl.Trigger>
+                  )}
                 </SegmentedControl.List>
               </SegmentedControl.Root>
               <button
@@ -285,6 +299,8 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
                 <AgentsRail steps={allSteps} live={live} />
               ) : railTab === "editor" ? (
                 <EditorPane steps={allSteps} live={live} />
+              ) : railTab === "desktop" ? (
+                <DesktopPane threadId={rootId} hasSandbox={isOpencode && !!engineSessionId} />
               ) : (
                 <TerminalPane steps={allSteps} live={live} engine={newest.engine} runId={newest.id} />
               )}
