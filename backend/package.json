@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "bun run --watch src/index.ts",
     "start": "bun run src/index.ts",
-    "test": "bun run test/prepare-db.ts && bun test"
+    "test": "bun run test/prepare-db.ts && bun test",
+    "e2e": "bun run test/e2e/full-stack.ts"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.3.220",
