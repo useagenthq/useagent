@@ -106,6 +106,13 @@
       "when": 1786060800000,
       "tag": "0016_commands_catalog",
       "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1786060900000,
+      "tag": "0017_runs_memory_scope",
+      "breakpoints": true
     }
   ]
 }

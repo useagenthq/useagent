@@ -20,6 +20,15 @@ import {
 export type RunStatus = "queued" | "running" | "completed" | "failed";
 export type StepKind = "command" | "file" | "task" | "done";
 
+/** Which team-memory pool a run reads and writes (see src/memory/scope.ts).
+ *  - "org": read + capture ORGANIZATION memory only (every org member shares it).
+ *  - "personal": read the actor's PERSONAL memory AND org memory (merged); capture
+ *    into personal ONLY. A personal run with no authenticated user fails closed.
+ *  This is the ACCEPTED set at the API boundary; a run's scope is server-persisted,
+ *  never taken from the sandbox/prompt/tool at recall time. */
+export const MEMORY_SCOPES = ["org", "personal"] as const;
+export type MemoryScope = (typeof MEMORY_SCOPES)[number];
+
 /** Which harness executes a run. `mock` is the scripted trace; the user-facing
  *  engines (opencode / claude / codex) ALL execute inside a per-thread Daytona
  *  cloud sandbox (src/engines/sandbox.ts). `daytona` and `claude-sdk` are legacy
@@ -81,6 +90,11 @@ export const runs = pgTable(
     // no repo works in a bare sandbox workdir. Inherited across a thread (a reply
     // keeps its root run's repo) so the adapter always knows the thread's repo.
     repo: text("repo"),
+    // Which team-memory pool this run reads/writes. Default "org" so every
+    // pre-existing (pre-migration) run behaves as an organization-scoped run.
+    // A reply inherits its parent's scope unless the authenticated user changes
+    // it; resolution/validation lives at the run-creation boundary (routes.ts).
+    memoryScope: text("memory_scope").$type<MemoryScope>().notNull().default("org"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),

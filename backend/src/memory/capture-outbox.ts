@@ -1,6 +1,6 @@
 import { eq, sql } from "drizzle-orm";
 import { db, type Executor } from "../db/client";
-import { memoryOutbox } from "../db/schema";
+import { memoryOutbox, type MemoryScope } from "../db/schema";
 import { deliverTeamMemory, type MemoryIdentity } from "./team-memory";
 
 // ---------------------------------------------------------------------------
@@ -25,6 +25,11 @@ interface CapturePayload {
   readonly identity: MemoryIdentity;
   readonly prompt: string;
   readonly summary: string;
+  /** The destination pool (personal|org). The `identity` already encodes it
+   *  (its user_id IS the pool partition); this is the human-readable label, kept
+   *  so a retry — which reuses this same committed payload — provably preserves
+   *  the original destination scope. */
+  readonly scope: MemoryScope;
 }
 
 /** Next retry time: exponential backoff (30s·2^attempt), capped at 1h. Pure. */
@@ -53,6 +58,10 @@ export async function enqueueCapture(
   runId: string,
   identity: MemoryIdentity,
   run: { prompt: string; summary: string },
+  /** The destination pool (personal|org) — recorded in the payload so a retry,
+   *  which reuses this committed row verbatim, provably preserves the original
+   *  destination scope. */
+  scope: MemoryScope,
   /** Enqueue inside the run-finalization transaction (runs/finalize.ts) so the
    *  capture intent commits ATOMICALLY with the run reaching `completed` — a crash
    *  in the old completeRun→enqueue gap could otherwise lose it forever. Defaults
@@ -63,6 +72,7 @@ export async function enqueueCapture(
     identity,
     prompt: run.prompt,
     summary: run.summary,
+    scope,
   } satisfies CapturePayload).slice(0, PAYLOAD_CAP);
   await exec
     .insert(memoryOutbox)
