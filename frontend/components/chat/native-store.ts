@@ -14,6 +14,7 @@
 
 import type { ApiStep } from "./types";
 import { nativeOf, type NativeIds } from "./native-ids";
+import type { NativeFrame } from "./native-events";
 
 /** A child (subagent) native session, discovered from a parent's subtask step. */
 export interface NativeChild {
@@ -35,6 +36,11 @@ export interface NativeSnapshot {
   /** Set of child session ids — attribute a step to a child when its
    *  `native.sessionID` is in here (native nesting, not the "↳" heuristic). */
   childSessionIds: ReadonlySet<string>;
+  /** Lossless native frames seen for this run, deduped by eventId at the highest
+   *  seq, ordered by seq — the substrate for child status/text derivation. */
+  nativeFrames: readonly NativeFrame[];
+  /** Highest native `seq` seen (reconnect cursor); -1 before any frame. */
+  nativeCursor: number;
   /** Bumped by reset() — lets consumers detect a session switch. */
   generation: number;
 }
@@ -50,6 +56,9 @@ export interface NativeStore {
   ingest(step: ApiStep, generation: number): void;
   /** Ingest many steps at the given generation (poll/finalize reconcile). */
   ingestAll(steps: readonly ApiStep[], generation: number): void;
+  /** Ingest a native frame; deduped by eventId keeping the highest seq, so a
+   *  live↔replay overlap and part revisions collapse. Stale generation ignored. */
+  ingestNative(frame: NativeFrame, generation: number): void;
 }
 
 const EMPTY_SNAPSHOT: NativeSnapshot = {
@@ -58,6 +67,8 @@ const EMPTY_SNAPSHOT: NativeSnapshot = {
   tools: new Map(),
   children: new Map(),
   childSessionIds: new Set(),
+  nativeFrames: [],
+  nativeCursor: -1,
   generation: 0,
 };
 
@@ -70,9 +81,10 @@ function dedupeKey(step: ApiStep, ids: NativeIds | null): string {
   return ids?.partID ?? ids?.callID ?? `idx:${step.idx}`;
 }
 
-/** Build the immutable snapshot from the canonical record map (pure). */
+/** Build the immutable snapshot from the canonical record + frame maps (pure). */
 function buildSnapshot(
   records: ReadonlyMap<string, ApiStep>,
+  frames: ReadonlyMap<string, NativeFrame>,
   generation: number,
 ): NativeSnapshot {
   const steps = [...records.values()].sort((a, b) => a.idx - b.idx);
@@ -91,12 +103,16 @@ function buildSnapshot(
       });
     }
   }
+  const nativeFrames = [...frames.values()].sort((a, b) => a.seq - b.seq);
+  const nativeCursor = nativeFrames.reduce((max, f) => Math.max(max, f.seq), -1);
   return {
     steps,
     parts,
     tools,
     children,
     childSessionIds: new Set(children.keys()),
+    nativeFrames,
+    nativeCursor,
     generation,
   };
 }
@@ -105,6 +121,7 @@ function buildSnapshot(
  *  function of the ingested steps and the current generation. */
 export function createNativeStore(): NativeStore {
   const records = new Map<string, ApiStep>();
+  const frames = new Map<string, NativeFrame>();
   let generation = 0;
   const listeners = new Set<() => void>();
   let snapshot: NativeSnapshot | null = null;
@@ -120,12 +137,13 @@ export function createNativeStore(): NativeStore {
       return () => listeners.delete(listener);
     },
     getSnapshot() {
-      if (records.size === 0 && generation === 0) return EMPTY_SNAPSHOT;
-      if (!snapshot) snapshot = buildSnapshot(records, generation);
+      if (records.size === 0 && frames.size === 0 && generation === 0) return EMPTY_SNAPSHOT;
+      if (!snapshot) snapshot = buildSnapshot(records, frames, generation);
       return snapshot;
     },
     reset(steps, gen) {
       records.clear();
+      frames.clear();
       generation = gen;
       for (const step of steps) records.set(dedupeKey(step, nativeOf(step)), step);
       snapshot = null; // silent: render-driven, React re-reads getSnapshot
@@ -138,6 +156,13 @@ export function createNativeStore(): NativeStore {
     ingestAll(steps, gen) {
       if (gen !== generation) return;
       for (const step of steps) records.set(dedupeKey(step, nativeOf(step)), step);
+      notify();
+    },
+    ingestNative(frame, gen) {
+      if (gen !== generation) return;
+      const seen = frames.get(frame.eventId);
+      if (seen && seen.seq >= frame.seq) return; // dedupe: keep the highest seq
+      frames.set(frame.eventId, frame);
       notify();
     },
   };
