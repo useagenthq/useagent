@@ -18,7 +18,6 @@ import {
   RiFlashlightLine,
   RiFlaskLine,
   RiGitPullRequestLine,
-  RiHandHeartLine,
   RiLayoutGridLine,
   RiPenNibLine,
   RiPlugLine,
@@ -55,7 +54,6 @@ const COMMANDS: Cmd[] = [
   { href: '/agent/new', label: 'New task', icon: RiAddLine, group: 'Agent' },
 
   { href: '/agent/new', label: 'New chat', icon: RiChat3Line, group: 'Chat' },
-  { href: '/welcome', label: 'Welcome', icon: RiHandHeartLine, group: 'Chat' },
   { href: '/apps', label: 'Apps', icon: RiAppsLine, group: 'Chat' },
   { href: '/artifacts', label: 'Artifacts', icon: RiApps2Line, group: 'Chat' },
 

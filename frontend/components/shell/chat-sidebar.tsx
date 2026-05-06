@@ -9,7 +9,6 @@ import {
   RiFolderLine,
   RiGithubFill,
   RiGoogleFill,
-  RiHandHeartLine,
   RiNotionFill,
   RiSlackFill,
   RiStackLine,
@@ -25,7 +24,7 @@ type IconComponent = ComponentType<{
 }>;
 
 export interface ChatSidebarProps {
-  /** Key of the active primary nav item (e.g. "welcome"). */
+  /** Key of the active primary nav item (e.g. "new-chat"). */
   active?: string;
 }
 
@@ -76,15 +75,9 @@ function ConnectAppsFooter() {
   );
 }
 
-export function ChatSidebar({ active = 'welcome' }: ChatSidebarProps) {
+export function ChatSidebar({ active = 'new-chat' }: ChatSidebarProps) {
   return (
     <Sidebar ariaLabel='Chat navigation' footer={<ConnectAppsFooter />}>
-      <SidebarNavItem
-        href='/welcome'
-        icon={RiHandHeartLine}
-        label='Welcome'
-        active={active === 'welcome'}
-      />
       <SidebarNavItem
         href='/agent/new'
         icon={RiAddLine}
