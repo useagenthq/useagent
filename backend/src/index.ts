@@ -16,7 +16,7 @@ import { schedulesRoutes } from "./schedules/routes";
 import { startScheduler } from "./schedules/scheduler";
 import { seedDev } from "./seed";
 import { skillsRoutes } from "./skills/routes";
-import { slackEnabled, slackRoutes } from "./slack";
+import { slackEnabled, slackRoutes, startSlackOutbox } from "./slack";
 
 // Apply committed Drizzle migrations BEFORE anything reads or seeds the schema,
 // so a fresh clone (or a fresh database) boots with the tables in place. The
@@ -88,10 +88,12 @@ app.route("/api/knowledge", knowledgeRoutes);
 startScheduler();
 
 // Slack adapter: mounted only when SLACK_BOT_TOKEN + SLACK_SIGNING_SECRET are
-// set (env-gated). Handles the Events API at POST /api/slack/events.
+// set (env-gated). Handles the Events API at POST /api/slack/events, and starts
+// the durable outbox relay (boot recovery of undelivered replies + retry loop).
 if (slackEnabled()) {
   app.route("/api/slack", slackRoutes);
-  console.log("[slack] adapter enabled — POST /api/slack/events");
+  startSlackOutbox();
+  console.log("[slack] adapter enabled — POST /api/slack/events (durable outbox)");
 }
 
 // Email connector: mounted only when CONNECTOR_EMAIL_NOTIFY (all|failed) + a

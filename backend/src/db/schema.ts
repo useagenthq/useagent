@@ -250,6 +250,51 @@ export const slackThreads = pgTable(
 );
 
 // ---------------------------------------------------------------------------
+// Durable Slack connector outbox (north star "transactional connector outbox").
+// Outbound Slack calls (the run-completion reply, the receipt reaction) are
+// enqueued here as durable rows — a backend restart must not lose an undelivered
+// reply. A delivery worker claims due rows, calls Slack, and on failure records
+// a classified error + bounded exponential backoff; after `max_attempts` the row
+// dead-letters. Slack 429s honor Retry-After. `idempotency_key` (UNIQUE)
+// deduplicates enqueue and bounds delivery to once per logical message.
+// ---------------------------------------------------------------------------
+
+export type SlackOutboxState = "pending" | "delivering" | "delivered" | "dead";
+export type SlackOutboxKind = "post_message" | "add_reaction";
+/** Classified delivery failure — drives retry vs dead-letter and observability. */
+export type SlackErrorClass = "rate_limited" | "transient" | "permanent";
+
+export const slackOutbox = pgTable(
+  "slack_outbox",
+  {
+    id: text("id").primaryKey(),
+    idempotencyKey: text("idempotency_key").notNull().unique(),
+    kind: text("kind").$type<SlackOutboxKind>().notNull(),
+    /** Bounded JSON of the Slack call arguments (channel/text/threadTs, …). */
+    payload: text("payload").notNull(),
+    state: text("state").$type<SlackOutboxState>().notNull().default("pending"),
+    attemptCount: integer("attempt_count").notNull().default(0),
+    maxAttempts: integer("max_attempts").notNull().default(6),
+    /** Earliest time a pending row may be (re)delivered — backoff / Retry-After. */
+    nextAttemptAt: timestamp("next_attempt_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    lastError: text("last_error"),
+    errorClass: text("error_class").$type<SlackErrorClass>(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    // The delivery worker claims due rows by (state, next_attempt_at).
+    index("idx_slack_outbox_due").on(t.state, t.nextAttemptAt),
+  ],
+);
+
+// ---------------------------------------------------------------------------
 // Schedules — unattended autonomy. A schedule fires the existing run-creation
 // path on a 5-field cron expression (the always-on 60s scheduler loop) or on a
 // manual "run now". `enabled` defaults FALSE — reference bot's safety default, so an

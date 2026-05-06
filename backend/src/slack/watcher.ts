@@ -13,22 +13,28 @@ import { getRun } from "../runs/repo";
 import type { RunStatus } from "../db/schema";
 import { bus, channel as runChannel, type BusEvent } from "../worker";
 import type { SlackClient } from "./client";
+import { enqueuePostMessage } from "./outbox";
 
 /** Min gap between assistant-status updates so a chatty run doesn't spam Slack. */
 const STATUS_THROTTLE_MS = 2_000;
 
 /**
- * Outbound delivery seam. v1 posts only the final text (`done: true`); when we
- * adopt Slack's streaming APIs (`chat.startStream` / `chat.appendStream` /
- * `chat.stopStream`) incremental calls with `done: false` become appendStream
- * frames — the watcher already funnels all outbound text through here.
+ * Outbound delivery seam. v1 posts only the final text (`done: true`), now
+ * through the DURABLE outbox keyed `slack-reply:<runId>` — a backend restart no
+ * longer loses an undelivered reply, and the key bounds it to one delivery. When
+ * we adopt Slack's streaming APIs, incremental (`done: false`) calls become
+ * appendStream frames — the watcher already funnels all outbound text here.
  */
 async function deliverRunText(
-  client: SlackClient,
-  args: { channel: string; threadTs: string; text: string; done: boolean },
+  args: { runId: string; channel: string; threadTs: string; text: string; done: boolean },
 ): Promise<void> {
   if (!args.done) return; // streaming not implemented yet — see seam note above
-  await client.postMessage({ channel: args.channel, text: args.text, threadTs: args.threadTs });
+  await enqueuePostMessage({
+    idempotencyKey: `slack-reply:${args.runId}`,
+    channel: args.channel,
+    text: args.text,
+    threadTs: args.threadTs,
+  });
 }
 
 export function watchSlackRun(opts: {
@@ -60,7 +66,7 @@ export function watchSlackRun(opts: {
       status === "completed"
         ? run?.summary?.trim() || "Done."
         : `:warning: Run failed${run?.summary ? `: ${run.summary}` : "."}`;
-    await deliverRunText(client, { channel, threadTs, text, done: true });
+    await deliverRunText({ runId, channel, threadTs, text, done: true });
   };
 
   const onEvent = (ev: BusEvent): void => {

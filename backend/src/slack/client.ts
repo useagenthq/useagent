@@ -1,33 +1,54 @@
 /**
- * Minimal Slack Web API client — only the two calls v1 needs: a 👀 ack reaction
- * on receipt and a threaded `chat.postMessage` on run completion. QM's full
- * delivery stack (retries, verification, chunking, mrkdwn, blocks) is DEFERRED.
+ * Minimal Slack Web API client. The durable outbox (src/slack/outbox) drives the
+ * two delivery calls (`postMessage` reply, `addReaction` receipt) and needs to
+ * KNOW the outcome to retry/backoff/dead-letter, so those return a classified
+ * {@link DeliveryResult} instead of swallowing. `setAssistantStatus` is the live
+ * shimmer — best-effort and NOT durable, so it still swallows.
  *
- * A module-level override (`setSlackClientForTest`) lets unit tests record calls
- * instead of hitting the network — the event/watcher code always resolves the
- * client through `resolveSlackClient()`, never `fetch` directly.
+ * A module-level override (`setSlackClientForTest`) lets tests record calls (and
+ * simulate 429 / errors) instead of hitting the network.
  */
 import type { SlackConfig } from "../env";
 
+/** Outcome of a single Slack delivery attempt — drives the outbox state machine. */
+export type DeliveryResult =
+  | { ok: true }
+  | { ok: false; class: "rate_limited"; retryAfterMs: number; message: string }
+  | { ok: false; class: "transient"; message: string }
+  | { ok: false; class: "permanent"; message: string };
+
 export interface SlackClient {
   /** Post a message; `threadTs` keeps every reply inside the Slack thread. */
-  postMessage(args: { channel: string; text: string; threadTs?: string }): Promise<void>;
+  postMessage(args: { channel: string; text: string; threadTs?: string }): Promise<DeliveryResult>;
   /** Add a reaction emoji (name without colons) to a specific message. */
-  addReaction(args: { channel: string; timestamp: string; name: string }): Promise<void>;
+  addReaction(args: { channel: string; timestamp: string; name: string }): Promise<DeliveryResult>;
   /**
-   * Slack AI-Apps assistant status — the shimmering "Starting up…" line under the
-   * bot's reply. Empty `status` clears it. Only works in assistant containers
-   * (the app needs the Agents/AI-Apps feature + `assistant:write`); elsewhere
-   * Slack returns an error which the client swallows, so callers can fire this
-   * unconditionally and non-assistant contexts fall back to the ack/post path.
+   * Slack AI-Apps assistant status — the shimmering "Starting up…" line. Empty
+   * `status` clears it. Best-effort: non-assistant contexts error and are
+   * swallowed, so callers fire it unconditionally. NOT routed through the outbox.
    */
   setAssistantStatus(args: { channel: string; threadTs: string; status: string }): Promise<void>;
 }
 
-/** Real client: thin `fetch` wrapper over the Slack Web API. Errors are logged
- * and swallowed — a Slack outage must never fail (or retry-storm) a run. */
+/** Slack `error` strings that will never succeed on retry → dead-letter fast. */
+const PERMANENT_ERRORS = new Set([
+  "channel_not_found",
+  "not_in_channel",
+  "is_archived",
+  "msg_too_long",
+  "no_text",
+  "invalid_auth",
+  "account_inactive",
+  "token_revoked",
+  "missing_scope",
+  "not_authed",
+  "restricted_action",
+  "invalid_arguments",
+]);
+
+/** Real client: thin `fetch` wrapper that classifies the Slack response. */
 export function httpSlackClient(config: SlackConfig): SlackClient {
-  async function call(method: string, params: Record<string, unknown>): Promise<void> {
+  async function call(method: string, params: Record<string, unknown>): Promise<DeliveryResult> {
     try {
       const res = await fetch(`${config.apiUrl}${method}`, {
         method: "POST",
@@ -37,10 +58,31 @@ export function httpSlackClient(config: SlackConfig): SlackClient {
         },
         body: JSON.stringify(params),
       });
+      // HTTP-level rate limit — honor Retry-After (seconds).
+      if (res.status === 429) {
+        const ra = Number(res.headers.get("retry-after") ?? "1");
+        return {
+          ok: false,
+          class: "rate_limited",
+          retryAfterMs: (Number.isFinite(ra) && ra > 0 ? ra : 1) * 1000,
+          message: "http_429",
+        };
+      }
       const data = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
-      if (!data.ok) console.error(`[slack] ${method} failed: ${data.error ?? res.status}`);
+      if (data.ok) return { ok: true };
+      const err = data.error ?? String(res.status);
+      // App-level rate limit is also possible with a 200 body.
+      if (err === "ratelimited" || err === "rate_limited") {
+        return { ok: false, class: "rate_limited", retryAfterMs: 1000, message: err };
+      }
+      return {
+        ok: false,
+        class: PERMANENT_ERRORS.has(err) ? "permanent" : "transient",
+        message: err,
+      };
     } catch (err) {
-      console.error(`[slack] ${method} error:`, (err as Error).message);
+      // Network / DNS / timeout — retryable.
+      return { ok: false, class: "transient", message: (err as Error).message };
     }
   }
 
@@ -55,12 +97,14 @@ export function httpSlackClient(config: SlackConfig): SlackClient {
       }),
     addReaction: ({ channel, timestamp, name }) =>
       call("reactions.add", { channel, timestamp, name }),
-    setAssistantStatus: ({ channel, threadTs, status }) =>
-      call("assistant.threads.setStatus", {
+    setAssistantStatus: async ({ channel, threadTs, status }) => {
+      // Best-effort shimmer: swallow the classified result.
+      await call("assistant.threads.setStatus", {
         channel_id: channel,
         thread_ts: threadTs,
         status,
-      }),
+      });
+    },
   };
 }
 

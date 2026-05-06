@@ -21,6 +21,7 @@ import { pumpThread } from "../worker";
 import { resolveSlackClient } from "./client";
 import { findSlackThread, linkSlackThread } from "./repo";
 import { watchSlackRun } from "./watcher";
+import { enqueueAddReaction } from "./outbox";
 
 // Bounded FIFO deduper — collapses Slack retries AND the app_mention/message
 // pair for a channel mention (both carry the same `channel:ts`). No LRU dep;
@@ -160,6 +161,12 @@ export async function handleSlackEvent(body: SlackEnvelope): Promise<void> {
   }
 
   const client = resolveSlackClient(config);
-  void client.addReaction({ channel, timestamp: ts, name: "eyes" });
+  // Durable receipt reaction (survives a restart; keyed once per message).
+  void enqueueAddReaction({
+    idempotencyKey: `slack-ack:${channel}:${ts}`,
+    channel,
+    timestamp: ts,
+    name: "eyes",
+  });
   watchSlackRun({ runId, client, channel, threadTs: slackThreadTs });
 }

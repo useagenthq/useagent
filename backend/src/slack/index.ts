@@ -15,6 +15,16 @@
  * suggested prompts); the user's actual message still arrives as `message.im`
  * and is handled by the DM path, so runs are created without it.
  */
+import { slackConfig } from "../env";
+import { startSlackOutboxRelay } from "./outbox";
+
 export { slackRoutes } from "./routes";
 export { slackEnabled } from "../env";
 export { setSlackClientForTest, type SlackClient } from "./client";
+
+/** Start the durable outbox delivery relay (boot recovery + interval). Called
+ *  from src/index.ts only when Slack is configured. No-op if unconfigured. */
+export function startSlackOutbox(): void {
+  const cfg = slackConfig();
+  if (cfg) startSlackOutboxRelay(cfg);
+}

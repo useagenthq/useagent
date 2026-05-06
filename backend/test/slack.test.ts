@@ -30,9 +30,11 @@ beforeAll(() => {
   setSlackClientForTest({
     addReaction: async (a) => {
       rec.reactions.push(a);
+      return { ok: true };
     },
     postMessage: async (m) => {
       rec.messages.push(m);
+      return { ok: true };
     },
     setAssistantStatus: async (s) => {
       if (statusFails) throw new Error("invalid_thread (not an assistant container)");
@@ -136,8 +138,11 @@ describe("slack event → run", () => {
     expect(run.parent_run_id).toBeNull();
     expect(run.thread_id).toBe(run.id); // a root run threads under itself
 
-    // 👀 ack targeted the triggering message.
-    expect(rec.reactions.some((r) => r.channel === channel && r.timestamp === ts && r.name === "eyes")).toBe(true);
+    // 👀 ack targeted the triggering message (now delivered via the durable
+    // outbox relay, so wait for it rather than asserting synchronously).
+    await waitFor(async () =>
+      rec.reactions.some((r) => r.channel === channel && r.timestamp === ts && r.name === "eyes") || null,
+    );
 
     // On completion the summary is posted back into the Slack thread (thread_ts = message ts).
     const msg = await waitFor(async () =>

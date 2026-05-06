@@ -1,0 +1,127 @@
+import type { SlackConfig } from "../../env";
+import { resolveSlackClient, type DeliveryResult, type SlackClient } from "../client";
+import { assertNever } from "../../util/exhaustive";
+import { claimDue, markDead, markDelivered, markRetry, resetStuckDelivering, type ClaimedRow } from "./repo";
+import type { ProcessResult, SlackDeliveryOutcome } from "./types";
+
+// ---------------------------------------------------------------------------
+// Slack outbox delivery worker + relay. Claims due rows, calls Slack, and on
+// failure classifies the error into retry-with-backoff (Retry-After for 429),
+// or dead-letter once attempts are exhausted / the error is permanent.
+// ---------------------------------------------------------------------------
+
+/** Exponential-backoff base/cap (ms). Overridable so tests/live-proofs go fast. */
+const BASE_MS = Number(process.env.SLACK_OUTBOX_BASE_MS ?? 1000);
+const CAP_MS = Number(process.env.SLACK_OUTBOX_CAP_MS ?? 60_000);
+const TICK_MS = Number(process.env.SLACK_OUTBOX_TICK_MS ?? 2000);
+
+/** Full-jittered exponential backoff for retry attempt N (1-based). */
+function backoffMs(attempt: number): number {
+  const exp = Math.min(CAP_MS, BASE_MS * 2 ** Math.max(0, attempt - 1));
+  return exp + Math.floor(Math.random() * Math.min(1000, exp * 0.25));
+}
+
+/** Make the actual Slack call for a row, returning the classified result. */
+function attempt(client: SlackClient, row: ClaimedRow): Promise<DeliveryResult> {
+  const p = JSON.parse(row.payload) as Record<string, string | undefined>;
+  switch (row.kind) {
+    case "post_message":
+      return client.postMessage({ channel: p.channel!, text: p.text!, threadTs: p.threadTs });
+    case "add_reaction":
+      return client.addReaction({ channel: p.channel!, timestamp: p.timestamp!, name: p.name! });
+    default:
+      return assertNever(row.kind, "unhandled slack outbox kind");
+  }
+}
+
+/** Deliver one claimed row and transition its state. */
+async function deliverOne(client: SlackClient, row: ClaimedRow): Promise<SlackDeliveryOutcome> {
+  const result = await attempt(client, row);
+  if (result.ok) {
+    await markDelivered(row.id);
+    return { status: "delivered" };
+  }
+
+  // A permanent error will never succeed → dead-letter immediately.
+  if (result.class === "permanent") {
+    await markDead(row.id, { errorClass: "permanent", lastError: result.message });
+    return { status: "dead", errorClass: "permanent" };
+  }
+
+  // Otherwise retry until attempts are exhausted, then dead-letter.
+  const attemptsAfter = row.attemptCount + 1;
+  if (attemptsAfter >= row.maxAttempts) {
+    await markDead(row.id, { errorClass: result.class, lastError: result.message });
+    return { status: "dead", errorClass: result.class };
+  }
+  // 429 honors Retry-After; transient uses exponential backoff.
+  const delayMs = result.class === "rate_limited" ? result.retryAfterMs : backoffMs(attemptsAfter);
+  const nextAttemptAt = new Date(Date.now() + delayMs);
+  await markRetry(row.id, { nextAttemptAt, errorClass: result.class, lastError: result.message });
+  return { status: "retry", errorClass: result.class, nextAttemptAt };
+}
+
+/** One delivery pass: claim due rows and deliver each. Returns tallies. */
+export async function processDue(client: SlackClient): Promise<ProcessResult> {
+  const rows = await claimDue();
+  let delivered = 0;
+  let retried = 0;
+  let dead = 0;
+  for (const row of rows) {
+    const outcome = await deliverOne(client, row);
+    if (outcome.status === "delivered") delivered++;
+    else if (outcome.status === "retry") retried++;
+    else dead++;
+  }
+  return { delivered, retried, dead };
+}
+
+// ── relay (background delivery loop) ──────────────────────────────────────
+
+let relayConfig: SlackConfig | null = null;
+let relayTimer: ReturnType<typeof setInterval> | null = null;
+let inFlight = false;
+
+/** A single guarded pass (no overlapping passes). */
+async function pass(): Promise<void> {
+  if (inFlight || !relayConfig) return;
+  inFlight = true;
+  try {
+    await processDue(resolveSlackClient(relayConfig));
+  } catch (err) {
+    console.error("[slack-outbox] delivery pass failed:", (err as Error).message);
+  } finally {
+    inFlight = false;
+  }
+}
+
+/**
+ * Start the delivery relay: on boot reset orphaned `delivering` rows (a crash
+ * mid-send) back to pending and deliver everything due, then poll on an
+ * interval. Idempotent — a second call just refreshes the config.
+ */
+export function startSlackOutboxRelay(config: SlackConfig): void {
+  relayConfig = config;
+  void resetStuckDelivering()
+    .catch((err) => console.error("[slack-outbox] reset stuck failed:", (err as Error).message))
+    .then(() => pass());
+  if (!relayTimer) {
+    relayTimer = setInterval(() => void pass(), TICK_MS);
+    relayTimer.unref?.();
+  }
+}
+
+/** Trigger an immediate delivery pass (called after an enqueue). */
+export function kickSlackOutbox(): void {
+  void pass();
+}
+
+/** Stop the relay (clears the interval and disables passes). For tests that
+ *  drive processDue() explicitly; the app never stops it. */
+export function stopSlackOutboxRelay(): void {
+  relayConfig = null;
+  if (relayTimer) {
+    clearInterval(relayTimer);
+    relayTimer = null;
+  }
+}
