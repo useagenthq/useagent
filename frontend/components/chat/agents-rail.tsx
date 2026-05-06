@@ -5,30 +5,37 @@ import {
   RiArrowLeftLine,
   RiArrowRightSLine,
   RiCheckLine,
+  RiErrorWarningLine,
   RiRobot2Line,
 } from "@remixicon/react";
 import { cnExt as cn } from "@/utils/cn";
 import { ToolStepRow } from "@/components/chat/tool-step-row";
 import { deriveTrace, formatDuration, type ApiStep } from "@/components/chat/types";
 import { deriveSubagents, type SubagentCard } from "@/components/chat/subagents";
+import {
+  deriveChildFidelity,
+  type ChildFidelity,
+  type ChildStatus,
+  type NativeFrame,
+} from "@/components/chat/native-events";
 
 /**
  * The right-rail "Agents" tab: one card per fanned-out subagent, mirroring
  * the reference tool's session view. Each card shows the subagent's description, a live status
- * line (its latest activity), an elapsed timer, and a run-state indicator.
+ * line, an elapsed timer, and — crucially — its OWN run-state.
  *
- * Everything is derived from the same ordered step stream that feeds the
- * conversation (`useRunStream`) — no extra fetch — via `deriveSubagents`, which
- * attributes each nested step to the card whose native child session it ran in
- * (exact even with concurrent subagents), falling back to the legacy spawn-order
- * heuristic only for pre-native-stamp runs. See `subagents.ts`.
+ * Cards + nested activity are derived from the ordered step stream via
+ * `deriveSubagents` (native child-session attribution, not display order). Each
+ * card's status (running/completed/failed) and returned answer come from the
+ * native event lane via `deriveChildFidelity`, keyed by the parent's task-tool
+ * call id — so a failed child reads failed while its siblings complete, instead
+ * of every card sharing the parent run's liveness. When no native frame is
+ * available (pre-native runs, or before the lane loads) status falls back to the
+ * run's liveness. See `native-events.ts` and `subagents.ts`.
  *
  * Cards are openable: selecting one swaps this rail to a detail view of THAT
- * subagent — its objective, status, and only its own native-attributed activity
- * (via `ownerByStep`) — mirroring the subagent viewing-pane grammar. Back returns
- * to the list. A native child session is a slice of the parent run's step stream
- * (not a separate Skynet run), so this is in-rail master/detail rather than the
- * separate-run slide-over in `subagent-pane.tsx`.
+ * subagent — objective, status, its returned answer, and only its own
+ * native-attributed activity. Back returns to the list.
  */
 
 /** Ticks once a second while `live`, so elapsed timers advance; frozen otherwise. */
@@ -43,36 +50,50 @@ function useNow(live: boolean): number {
   return now;
 }
 
-/** Elapsed ms this card has been (or was) active; frozen once the run settles. */
+/** Elapsed ms this card has been (or was) active; frozen once it settles. */
 function elapsedOf(card: SubagentCard, now: number, live: boolean): number {
   const endedAt = live ? now : (card.lastActivityAt ?? card.startedAt);
   return Number.isFinite(card.startedAt) ? Math.max(0, endedAt - card.startedAt) : 0;
 }
 
-/** Live pulse dot / settled check — shared by the card and the detail header. */
-function RunStateDot({ live }: { live: boolean }) {
-  return live ? (
-    <span
-      className="ai-loading-pixel bg-blue-500 size-1.5 shrink-0 rounded-full"
-      aria-label="running"
-    />
-  ) : (
-    <RiCheckLine className="text-success-base size-4 shrink-0" aria-label="completed" />
-  );
+/** Resolve a card's authoritative status: native fidelity first, else fall back
+ *  to the parent run's liveness (pre-native runs / before the lane loads). */
+function statusOf(card: SubagentCard, fidelity: ChildFidelity | undefined, runLive: boolean): ChildStatus {
+  return fidelity?.status ?? (runLive ? "running" : "completed");
+}
+
+/** Per-child state indicator: running pulse / completed check / failed warning. */
+function ChildStateDot({ status }: { status: ChildStatus }) {
+  if (status === "running") {
+    return (
+      <span
+        className="ai-loading-pixel bg-blue-500 size-1.5 shrink-0 rounded-full"
+        aria-label="running"
+      />
+    );
+  }
+  if (status === "failed") {
+    return <RiErrorWarningLine className="text-error-base size-4 shrink-0" aria-label="failed" />;
+  }
+  return <RiCheckLine className="text-success-base size-4 shrink-0" aria-label="completed" />;
 }
 
 function AgentCardRow({
   card,
-  live,
+  status,
   onOpen,
 }: {
   card: SubagentCard;
-  live: boolean;
+  status: ChildStatus;
   onOpen: () => void;
 }) {
+  const live = status === "running";
   const now = useNow(live);
   const elapsed = elapsedOf(card, now, live);
-  const status = card.status ?? (live ? "Starting…" : "No activity recorded");
+  const statusLine =
+    status === "failed"
+      ? (card.status ?? "Failed")
+      : (card.status ?? (live ? "Starting…" : "No activity recorded"));
 
   return (
     <button
@@ -89,16 +110,17 @@ function AgentCardRow({
           <span className="text-label-sm text-text-strong-950 min-w-0 flex-1 truncate">
             {card.title}
           </span>
-          <RunStateDot live={live} />
+          <ChildStateDot status={status} />
         </div>
         <div className="mt-1 flex items-center gap-2">
           <span
             className={cn(
-              "text-paragraph-xs text-text-sub-600 min-w-0 flex-1 truncate",
+              "text-paragraph-xs min-w-0 flex-1 truncate",
+              status === "failed" ? "text-error-base" : "text-text-sub-600",
               live && card.status && "agent-progress-loading-text",
             )}
           >
-            {status}
+            {statusLine}
           </span>
           <span className="text-text-soft-400 shrink-0 font-mono text-label-xs tabular-nums">
             {formatDuration(elapsed)}
@@ -111,24 +133,26 @@ function AgentCardRow({
 }
 
 /**
- * The detail view for one subagent card. Its objective comes from the spawn
- * step's prompt (`deriveTrace(...).detail`); its activity is exactly the steps
- * native-attributed to this card (`ownerByStep`), never display order. Updates
- * live as steps stream in and freezes once the run settles.
+ * The detail view for one subagent card. Its objective is the spawn step's prompt
+ * (`deriveTrace(...).detail`); its returned answer is the native result text; its
+ * activity is exactly the steps native-attributed to this card (`ownerByStep`).
  */
 function AgentDetail({
   card,
+  status,
+  resultText,
   steps,
   ownerByStep,
-  live,
   onBack,
 }: {
   card: SubagentCard;
+  status: ChildStatus;
+  resultText: string | null;
   steps: ApiStep[];
   ownerByStep: ReadonlyMap<string, string>;
-  live: boolean;
   onBack: () => void;
 }) {
+  const live = status === "running";
   const now = useNow(live);
   const elapsed = elapsedOf(card, now, live);
 
@@ -155,10 +179,12 @@ function AgentDetail({
             <span className="text-label-sm text-text-strong-950 min-w-0 flex-1 truncate">
               {card.title}
             </span>
-            <RunStateDot live={live} />
+            <ChildStateDot status={status} />
           </div>
           <div className="mt-0.5 flex items-center gap-2">
-            <span className="text-mono-label text-text-soft-400 flex-1">Subagent</span>
+            <span className="text-mono-label text-text-soft-400 flex-1">
+              Subagent{status === "failed" ? " · failed" : ""}
+            </span>
             <span className="text-text-soft-400 shrink-0 font-mono text-label-xs tabular-nums">
               {formatDuration(elapsed)}
             </span>
@@ -171,6 +197,29 @@ function AgentDetail({
           <p className="text-paragraph-sm text-text-sub-600 border-stroke-soft-200 border-b pb-3">
             {objective}
           </p>
+        )}
+
+        {resultText && (
+          <div
+            className={cn(
+              "rounded-xl border p-3",
+              status === "failed"
+                ? "border-error-base/30 bg-error-lighter"
+                : "border-stroke-soft-200 bg-bg-weak-50",
+            )}
+          >
+            <p className="text-mono-label text-text-soft-400 mb-1">
+              {status === "failed" ? "Error" : "Answer"}
+            </p>
+            <p
+              className={cn(
+                "text-paragraph-sm whitespace-pre-wrap break-words",
+                status === "failed" ? "text-error-base" : "text-text-strong-950",
+              )}
+            >
+              {resultText}
+            </p>
+          </div>
         )}
 
         {activity.length === 0 ? (
@@ -194,12 +243,21 @@ function AgentDetail({
   );
 }
 
-export function AgentsRail({ steps, live }: { steps: ApiStep[]; live: boolean }) {
+export function AgentsRail({
+  steps,
+  live,
+  frames = [],
+}: {
+  steps: ApiStep[];
+  live: boolean;
+  frames?: readonly NativeFrame[];
+}) {
   const { cards, ownerByStep } = deriveSubagents(steps);
+  const fidelity = deriveChildFidelity(frames);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  // Cards pulse while the run is live and hasn't emitted its terminal `done`
-  // step; once it settles every card flips to the completed check.
-  const running = live && !steps.some((s) => s.kind === "done");
+  // Fallback liveness for cards without a native status frame: the run is live
+  // and hasn't emitted its terminal `done` step.
+  const runLive = live && !steps.some((s) => s.kind === "done");
 
   if (cards.length === 0) {
     return (
@@ -211,16 +269,17 @@ export function AgentsRail({ steps, live }: { steps: ApiStep[]; live: boolean })
     );
   }
 
-  // Selection survives live re-derivation because card ids are stable; a missing
-  // id (never happens — steps only append) falls back to the list.
+  // Selection survives live re-derivation because card ids are stable.
   const selected = selectedId ? cards.find((c) => c.id === selectedId) : null;
   if (selected) {
+    const f = selected.callId ? fidelity.get(selected.callId) : undefined;
     return (
       <AgentDetail
         card={selected}
+        status={statusOf(selected, f, runLive)}
+        resultText={f?.resultText ?? null}
         steps={steps}
         ownerByStep={ownerByStep}
-        live={running}
         onBack={() => setSelectedId(null)}
       />
     );
@@ -232,7 +291,7 @@ export function AgentsRail({ steps, live }: { steps: ApiStep[]; live: boolean })
         <AgentCardRow
           key={card.id}
           card={card}
-          live={running}
+          status={statusOf(card, card.callId ? fidelity.get(card.callId) : undefined, runLive)}
           onOpen={() => setSelectedId(card.id)}
         />
       ))}

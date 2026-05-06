@@ -129,10 +129,12 @@ describe("deriveSubagents — native attribution", () => {
   const { cards, ownerByStep } = deriveSubagents(nativeFanout());
   const byId = new Map(cards.map((c) => [c.id, c] as const));
 
-  test("derives one card per spawn with its child session", () => {
+  test("derives one card per spawn with its child session + task-tool call id", () => {
     expect(cards.map((c) => c.id)).toEqual(["cardA", "cardB"]);
     expect(byId.get("cardA")?.childSessionId).toBe(CHILD_A);
     expect(byId.get("cardB")?.childSessionId).toBe(CHILD_B);
+    // callId links a card to its native status frame (deriveChildFidelity).
+    expect(byId.get("cardA")?.callId).toBe("c");
   });
 
   test("attributes each nested step to the card whose child session it ran in", () => {
