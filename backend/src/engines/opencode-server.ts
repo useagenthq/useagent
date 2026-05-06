@@ -13,6 +13,7 @@ import type {
 } from "./types";
 import { basename, parseJsonLine, truncate } from "./util";
 import { getThreadSandbox, setRunSandbox } from "../runs/repo";
+import { assertNever } from "../util/exhaustive";
 
 // ---------------------------------------------------------------------------
 // NATIVE opencode engine — the realtime path. Instead of one-shot CLI runs, the
@@ -310,6 +311,8 @@ export const opencodeHarness: HarnessAdapter = {
         return { status: "no_change" };
       case "unreachable":
         return { status: "unreachable" };
+      default:
+        return assertNever(r, "unhandled opencode reconcile outcome");
     }
   },
 };
@@ -436,6 +439,10 @@ export const opencodeServerAdapter: EngineAdapter = {
       // their tool activity renders (↳-tagged) instead of being filtered out.
       const childSessions = new Set<string>();
       const textLen = new Map<string, number>();
+      // message id → role, from message.updated events. The engine emits
+      // part updates for the USER'S own prompt message too — streaming those
+      // echoed the prompt into live narration (user-reported).
+      const messageRoles = new Map<string, string>();
       const textParts = new Map<string, string>(); // ordered final text parts
       const toolSteps = new Map<string, string>(); // part id → persisted step id
       const toolDone = new Set<string>();
@@ -455,14 +462,21 @@ export const opencodeServerAdapter: EngineAdapter = {
         // chatter; keep the parent delta channel clean (their TOOLS still render).
         if (part.type === "text") {
           if (isChild) return;
+          const mid = String(part.messageID ?? "");
+          if (mid && messageRoles.get(mid) === "user") return;
           const text = typeof part.text === "string" ? (part.text as string) : "";
+          // A NEW text part is a new paragraph — the engine emits one part per
+          // burst, and joining them bare produced run-on prose ("…first.Chess.com
+          // loaded…", user-reported). Separate at the part boundary.
+          const isNewPart = !textLen.has(partId);
+          const sep = isNewPart && textLen.size > 0 ? "\n\n" : "";
           if (typeof delta === "string" && delta.length > 0) {
-            ctx.publishDelta?.(delta);
+            ctx.publishDelta?.(sep + delta);
             textLen.set(partId, text.length);
           } else {
             const prev = textLen.get(partId) ?? 0;
             if (text.length > prev) {
-              ctx.publishDelta?.(text.slice(prev));
+              ctx.publishDelta?.(sep + text.slice(prev));
               textLen.set(partId, text.length);
             }
           }
@@ -611,8 +625,11 @@ export const opencodeServerAdapter: EngineAdapter = {
             const props = ((ev.properties ?? ev.data) ?? {}) as {
               part?: Record<string, unknown>;
               delta?: string;
-              info?: { id?: string; parentID?: string };
+              info?: { id?: string; parentID?: string; role?: string };
             };
+            if (ev.type === "message.updated" && props.info?.id && props.info.role) {
+              messageRoles.set(props.info.id, props.info.role);
+            }
             // Register subagent sessions: any session whose parent chains to ours
             // (direct child OR a child of an already-tracked child).
             if (
