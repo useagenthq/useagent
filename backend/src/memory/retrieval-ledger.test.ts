@@ -7,7 +7,8 @@ import type { MemoryIdentity, MemoryRecall } from "./team-memory";
 const identity: MemoryIdentity = {
   teamId: "team-1",
   agentId: "skynet-backend",
-  userId: "u-42",
+  userId: "skynet-team-pool",
+  actorUserId: "u-42",
   sessionId: "thread-9",
   runId: "run-1",
 };
@@ -37,7 +38,8 @@ describe("buildRetrievalPayload", () => {
     expect(p.query).toBe("what is fact one?");
     expect(p.scope).toEqual({
       teamId: "team-1",
-      userId: "u-42",
+      userId: "skynet-team-pool",
+      actorUserId: "u-42",
       agentId: "skynet-backend",
       sessionId: "thread-9",
     });
@@ -53,7 +55,7 @@ describe("buildRetrievalPayload", () => {
 
   test("scope carries only tenant ids — never transport credentials", () => {
     const p = buildRetrievalPayload(identity, "q", recall);
-    expect(Object.keys(p.scope)).toEqual(["teamId", "userId", "agentId", "sessionId"]);
+    expect(Object.keys(p.scope)).toEqual(["teamId", "userId", "actorUserId", "agentId", "sessionId"]);
     const json = JSON.stringify(p);
     expect(json).not.toContain("apiKey");
     expect(json).not.toContain("Bearer");
