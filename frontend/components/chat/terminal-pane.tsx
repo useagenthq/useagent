@@ -1,7 +1,10 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { cnExt as cn } from "@/utils/cn";
+// clsx-only (not cnExt): tailwind-merge misgroups the custom `text-mono-label`
+// utility with the `text-neutral-*` color in the same call and drops it, blowing
+// the tab labels up to the inherited 16px instead of the 11px mono-label rhythm.
+import { cn } from "@/utils/cn";
 import { InteractiveTerminal } from "@/components/chat/interactive-terminal";
 import {
   engineLabel,
