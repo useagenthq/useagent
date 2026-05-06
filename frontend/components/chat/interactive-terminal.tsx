@@ -24,10 +24,27 @@ import { useEffect, useRef } from "react";
 function resolveMonoFont(): string {
   const fallback = '"JetBrains Mono", ui-monospace, monospace';
   if (typeof window === "undefined") return fallback;
-  const v = getComputedStyle(document.documentElement)
-    .getPropertyValue("--font-mono")
-    .trim();
+  // next/font attaches the variable via a className, so it may live on <body>
+  // (or lower) rather than the root element — check both.
+  const v =
+    getComputedStyle(document.documentElement).getPropertyValue("--font-mono").trim() ||
+    getComputedStyle(document.body).getPropertyValue("--font-mono").trim();
   return v ? `${v}, ui-monospace, monospace` : fallback;
+}
+
+/** The canvas glyph atlas snapshots whatever font is AVAILABLE at Terminal
+ * construction — if the webfont hasn't finished loading, the terminal is stuck
+ * rasterizing the Courier fallback. Block briefly on the real face. */
+async function ensureMonoLoaded(family: string): Promise<void> {
+  try {
+    const first = family.split(",")[0]!.trim().replace(/^"|"$/g, "");
+    await Promise.race([
+      document.fonts.load(`13px "${first}"`),
+      new Promise((r) => setTimeout(r, 1500)),
+    ]);
+  } catch {
+    /* fonts API unavailable — render with whatever is loaded */
+  }
 }
 
 export function InteractiveTerminal({ runId }: { runId: string }) {
@@ -57,10 +74,13 @@ export function InteractiveTerminal({ runId }: { runId: string }) {
       const bg = getComputedStyle(host).backgroundColor;
       const background = /^rgb\(/.test(bg) ? bg : "#17181a";
 
+      const fontFamily = resolveMonoFont();
+      await ensureMonoLoaded(fontFamily);
+      if (disposed) return;
       term = new Terminal({
         cursorBlink: true,
         fontSize: 13,
-        fontFamily: resolveMonoFont(),
+        fontFamily,
         scrollback: 5000,
         theme: {
           background,
