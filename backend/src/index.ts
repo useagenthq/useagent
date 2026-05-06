@@ -9,7 +9,7 @@ import { connectorEmailConfig, env } from "./env";
 import { knowledgeRoutes } from "./knowledge/routes";
 import { desktopProxyRoutes } from "./runs/desktop-proxy";
 import { liveProxyRoutes } from "./runs/live-proxy";
-import { failStaleRuns } from "./runs/repo";
+import { recoverStaleRuns } from "./runs/recovery";
 import { runsRoutes } from "./runs/routes";
 import { terminalRoutes } from "./runs/terminal";
 import { schedulesRoutes } from "./schedules/routes";
@@ -27,9 +27,15 @@ await migrate(db, { migrationsFolder: `${import.meta.dir}/../drizzle` });
 // Idempotent boot seeding: dev org/user/member + the mocked skills.
 await seedDev();
 
-// Recover orphaned runs from a previous (unclean) shutdown.
-const recovered = await failStaleRuns();
-if (recovered > 0) console.log(`[boot] marked ${recovered} stale run(s) as failed`);
+// Recover orphaned runs from a previous (unclean) shutdown: reconcile the ones
+// whose native opencode session actually finished server-side, fail the rest
+// with an honest resumable summary. One-shot, self-bounded — never hangs boot.
+const recovery = await recoverStaleRuns();
+if (recovery.reconciled > 0 || recovery.failed > 0) {
+  console.log(
+    `[boot] stale-run recovery — ${recovery.reconciled} reconciled, ${recovery.failed} failed`,
+  );
+}
 
 const app = new Hono();
 
