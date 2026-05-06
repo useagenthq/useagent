@@ -27,6 +27,7 @@ export async function fireSchedule(
       engine: schedule.engine,
       parentRunId: null,
       threadId: runId,
+      repo: null,
     },
   });
   await pumpThread(runId);

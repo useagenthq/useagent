@@ -11,6 +11,7 @@ import {
   listRunsWithSteps,
 } from "./repo";
 import { acceptRunCommand } from "../commands";
+import { isKnownRepo } from "../github/repos";
 import { bus, channel, pumpThread, type BusEvent } from "../worker";
 import { turnStream } from "./turn-stream";
 import { assertNever } from "../util/exhaustive";
@@ -33,6 +34,7 @@ runsRoutes.post("/", async (c) => {
     model?: unknown;
     engine?: unknown;
     parent_run_id?: unknown;
+    repo?: unknown;
   };
   try {
     body = await c.req.json();
@@ -69,6 +71,7 @@ runsRoutes.post("/", async (c) => {
   // context is composed later (worker) by walking the thread, never nested here.
   let parentRunId: string | null = null;
   let threadId: string = id;
+  let inheritedRepo: string | null = null;
   if (body.parent_run_id !== undefined && body.parent_run_id !== null) {
     const rawParent =
       typeof body.parent_run_id === "string" ? body.parent_run_id.trim() : "";
@@ -79,6 +82,25 @@ runsRoutes.post("/", async (c) => {
     if (!parent) return c.json({ error: "parent run not found" }, 404);
     parentRunId = parent.id;
     threadId = parent.threadId;
+    inheritedRepo = parent.repo;
+  }
+
+  // Repo scope: a ROOT run may pick a repository (validated against the set
+  // GET /api/repos actually offers — an unknown/malformed value is a client
+  // error, never silently dropped). A REPLY inherits its thread's repo (the
+  // sandbox already holds the clone) and ignores any repo in its own body.
+  let repo: string | null = null;
+  if (parentRunId) {
+    repo = inheritedRepo;
+  } else if (body.repo !== undefined && body.repo !== null && body.repo !== "") {
+    const rawRepo = typeof body.repo === "string" ? body.repo.trim() : "";
+    if (!rawRepo) {
+      return c.json({ error: "repo must be an 'owner/name' string" }, 400);
+    }
+    if (!(await isKnownRepo(rawRepo))) {
+      return c.json({ error: `repo is not in the available set: ${rawRepo}` }, 400);
+    }
+    repo = rawRepo;
   }
 
   // Accept the run as a durable command. An `Idempotency-Key` makes a lost-
@@ -90,7 +112,7 @@ runsRoutes.post("/", async (c) => {
     idempotencyKey,
     orgId: c.get("orgId"),
     actorId: c.get("userId"),
-    run: { id, prompt, model, engine, parentRunId, threadId },
+    run: { id, prompt, model, engine, parentRunId, threadId, repo },
   });
 
   // Translate the acceptance outcome to the HTTP response (exhaustive — a new

@@ -7,6 +7,7 @@ import { startEmailConnector } from "./connectors/email";
 import { db } from "./db/client";
 import { allowDevOrg, connectorEmailConfig, env, googleAuthEnabled } from "./env";
 import { knowledgeRoutes } from "./knowledge/routes";
+import { reposRoutes } from "./github/routes";
 import { desktopProxyRoutes } from "./runs/desktop-proxy";
 import { liveProxyRoutes } from "./runs/live-proxy";
 import { recoverStaleRuns } from "./runs/recovery";
@@ -80,6 +81,9 @@ app.route("/api/live-proxy", liveProxyRoutes);
 // noVNC's static app over HTTP and its RFB WebSocket, injecting the Daytona
 // preview token on both (shares the `websocket` handler above).
 app.route("/api/desktop-proxy", desktopProxyRoutes);
+// Real GitHub repository list for the New Task composer's repo picker. The
+// backend-held token stays server-side; unconfigured → {configured:false}.
+app.route("/api/repos", reposRoutes);
 app.route("/api/skills", skillsRoutes);
 app.route("/api/schedules", schedulesRoutes);
 app.route("/api/knowledge", knowledgeRoutes);
