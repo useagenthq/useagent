@@ -317,6 +317,9 @@ export interface StepTrace {
   accent: TraceAccent;
   /** Nested subagent activity (was "↳ "-prefixed); render one indent deeper. */
   nested: boolean;
+  /** The step ended in error — a native tool error (`code_json.error`) or a
+   *  non-zero command exit. Drives the row's error styling. */
+  isError: boolean;
 }
 
 /** Engine ids that tag a sandbox lifecycle/boot row (chip === engine id). */
@@ -337,7 +340,12 @@ const TOOL_VERB: Record<string, { verb: string; glyph: TraceGlyph }> = {
   multiedit: { verb: "Edit", glyph: "edit" },
   notebookedit: { verb: "Edit", glyph: "edit" },
   patch: { verb: "Edit", glyph: "edit" },
+  apply_patch: { verb: "Edit", glyph: "edit" },
   bash: { verb: "Run", glyph: "run" },
+  shell: { verb: "Run", glyph: "run" },
+  // `todowrite` is intentionally NOT catalogued here — it's rendered specially by
+  // parseTodos → <TodoList>; its rare empty-plan fallback keeps the generic
+  // humanised row (`Todowrite`). `question`/`skill` humanise cleanly on their own.
 };
 
 const FILE_GLYPHS = new Set<TraceGlyph>(["read", "edit", "write", "list"]);
@@ -436,6 +444,9 @@ export function deriveTrace(step: ApiStep): StepTrace {
   const tool = pickString(code, ["tool"]);
   const input = asRecord(code?.input);
   const output = pickString(code, ["output", "stdout"]);
+  // Native tool error state the backend now stamps (`code_json.error`), the
+  // ID-backed replacement for guessing failure from output text.
+  const nativeError = code?.error === true;
 
   const base: StepTrace = {
     verb: "Thinking",
@@ -450,6 +461,7 @@ export function deriveTrace(step: ApiStep): StepTrace {
     dels: null,
     accent: null,
     nested,
+    isError: nativeError,
   };
 
   // 1. Subagent spawn — a fan-out of its own, distinctly accented.
@@ -494,6 +506,9 @@ export function deriveTrace(step: ApiStep): StepTrace {
     const cmd = parseCommandStep(step);
     const filePath = pickString(input, ["file_path", "filePath", "path", "filename"]);
     const map = tool ? TOOL_VERB[tool.toLowerCase()] : undefined;
+    // A shell-executed step also fails on a non-zero exit, not only a native
+    // tool error; file-shaped steps carry no exit and rely on `nativeError`.
+    const cmdError = nativeError || (cmd.exitCode !== null && cmd.exitCode !== 0);
 
     // File-shaped: an explicit file step, or a file tool that named a path.
     if (step.kind === "file" || (filePath && map && FILE_GLYPHS.has(map.glyph))) {
@@ -525,6 +540,7 @@ export function deriveTrace(step: ApiStep): StepTrace {
         detail: cmd.output,
         exitCode: cmd.exitCode,
         durationMs: cmd.durationMs,
+        isError: cmdError,
       };
     }
 
@@ -545,6 +561,7 @@ export function deriveTrace(step: ApiStep): StepTrace {
         detail: cmd.output,
         exitCode: cmd.exitCode,
         durationMs: cmd.durationMs,
+        isError: cmdError,
       };
     }
 
@@ -558,6 +575,7 @@ export function deriveTrace(step: ApiStep): StepTrace {
       detail: cmd.output,
       exitCode: cmd.exitCode,
       durationMs: cmd.durationMs,
+      isError: cmdError,
     };
   }
 
@@ -579,3 +597,46 @@ function humanizeTool(tool: string): string {
 // dedicated single-purpose module that folds this step projection into the
 // parent/child card structure the Agents rail and subagent pane render. It reuses
 // `asRecord`/`parseStepCode`/`deriveTrace` from here; the dependency flows one way.
+
+// ── Todos (opencode `todowrite` tool) ───────────────────────────────────────
+
+export type TodoStatus = "pending" | "in_progress" | "completed" | "cancelled";
+
+/** One plan item from a `todowrite` tool call. */
+export interface TodoItem {
+  content: string;
+  status: TodoStatus;
+}
+
+const TODO_STATUS = new Set<TodoStatus>([
+  "pending",
+  "in_progress",
+  "completed",
+  "cancelled",
+]);
+
+function normalizeTodoStatus(value: unknown): TodoStatus {
+  return typeof value === "string" && TODO_STATUS.has(value as TodoStatus)
+    ? (value as TodoStatus)
+    : "pending";
+}
+
+/**
+ * Parse a `todowrite` step's plan into typed todo items — the checklist the
+ * agent is working through. Returns null for any other step (so a caller can
+ * fall back to the normal trace row) or when the payload carries no items.
+ */
+export function parseTodos(step: ApiStep): TodoItem[] | null {
+  const code = asRecord(parseStepCode(step));
+  if (pickString(code, ["tool"])?.toLowerCase() !== "todowrite") return null;
+  const raw = asRecord(code?.input)?.todos;
+  if (!Array.isArray(raw)) return null;
+  const items: TodoItem[] = [];
+  for (const entry of raw) {
+    const rec = asRecord(entry);
+    const content = pickString(rec, ["content", "title", "text"]);
+    if (!content) continue;
+    items.push({ content, status: normalizeTodoStatus(rec?.status) });
+  }
+  return items.length > 0 ? items : null;
+}

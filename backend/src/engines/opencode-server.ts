@@ -555,6 +555,11 @@ export const opencodeServerAdapter: EngineAdapter = {
               tool: part.tool,
               input: st.input ?? {},
               output: output.slice(0, 2000),
+              // Preserve native tool error state (north star: stop dropping it).
+              // The completion overwrite flattens `st.error` into `output`, so
+              // without this flag the UI can't tell an errored tool from a
+              // successful one that happened to print to stderr.
+              error: status === "error",
               native: {
                 sessionID: sid,
                 messageID: typeof part.messageID === "string" ? part.messageID : null,
