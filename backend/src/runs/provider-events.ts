@@ -58,6 +58,9 @@ export async function recordProviderEvent(input: ProviderEventInput): Promise<vo
           payload,
           createdAt: sql`now()`,
         },
+        // Revisions can complete out of order (SSE + poller race) — an older
+        // revision must never overwrite a newer one (new_prompt.md audit).
+        setWhere: sql`${providerEvents.seq} < ${input.seq}`,
       });
 
     // Live-push the versioned native frame to any SSE subscriber (north star
