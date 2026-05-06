@@ -15,35 +15,12 @@
 // legacy "↳ marker → most-recently-spawned card" heuristic.
 
 import { asRecord, deriveTrace, parseStepCode, type ApiStep } from "./types";
+// The native-id reader is shared with the native session store (native-store.ts)
+// — one parser for `code_json.native`. Re-exported here so existing importers of
+// `nativeOf`/`NativeIds` from this module keep resolving.
+import { nativeOf, readString, type NativeIds } from "./native-ids";
 
-/** The native OpenCode ids stamped into a step's `code_json.native`. */
-export interface NativeIds {
-  /** Session the part belongs to — the root session for the primary agent, the
-   *  child session id for a subagent's own tool/file steps. */
-  readonly sessionID?: string;
-  readonly messageID?: string;
-  readonly partID?: string;
-  readonly callID?: string;
-  /** Child session a subagent spawn launched (subtask-part path). */
-  readonly childSessionID?: string;
-}
-
-const readString = (value: unknown): string | undefined =>
-  typeof value === "string" ? value : undefined;
-
-/** Read the stamped native ids off a step, or null for pre-83c6439 runs. */
-export function nativeOf(step: ApiStep): NativeIds | null {
-  const code = asRecord(parseStepCode(step));
-  const native = code ? asRecord(code.native) : null;
-  if (!native) return null;
-  return {
-    sessionID: readString(native.sessionID),
-    messageID: readString(native.messageID),
-    partID: readString(native.partID),
-    callID: readString(native.callID),
-    childSessionID: readString(native.childSessionID),
-  };
-}
+export { nativeOf, type NativeIds };
 
 /** The `<task id="ses_…">` opencode's task tool writes into its output once the
  *  child completes — the child session id for the `task`-tool spawn path. */

@@ -2,7 +2,8 @@
 // Run: `bun test components/chat/native-store.test.ts` (from frontend/).
 
 import { describe, expect, test } from "bun:test";
-import { createNativeStore, readNative } from "./native-store";
+import { createNativeStore } from "./native-store";
+import { nativeOf } from "./native-ids";
 import type { ApiStep, StepKind } from "./types";
 
 let seq = 0;
@@ -53,7 +54,7 @@ describe("native-store", () => {
     );
     const snap = s.getSnapshot();
     expect(snap.steps.length).toBe(1);
-    expect(readNative(snap.steps[0]).partID).toBe("prt_a");
+    expect(nativeOf(snap.steps[0])?.partID).toBe("prt_a");
     expect(snap.steps[0].code_json).toContain("file.txt"); // enriched, not dup
   });
 
@@ -120,8 +121,8 @@ describe("native-store", () => {
       0,
     );
     const snap = s.getSnapshot();
-    const childTool = snap.steps.find((st) => readNative(st).partID === "prt_w")!;
-    expect(snap.childSessionIds.has(readNative(childTool).sessionID!)).toBe(true);
+    const childTool = snap.steps.find((st) => nativeOf(st)?.partID === "prt_w")!;
+    expect(snap.childSessionIds.has(nativeOf(childTool)!.sessionID!)).toBe(true);
   });
 
   test("generation guard drops stale ingests; reset bumps generation", () => {
