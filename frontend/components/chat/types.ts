@@ -551,10 +551,13 @@ export function deriveTrace(step: ApiStep): StepTrace {
     // never touches recognized file/shell tools (they all resolve a `map`).
     if (tool && !map) {
       const fileBase = filePath ? basename(filePath) : null;
+      // Name-bearing inputs give the generic row a real target — a bare "Skill"
+      // row (user-reported) becomes "Skill fast-installs".
+      const named = pickString(input, ["name", "skill", "skill_name", "id", "query", "description"]);
       return {
         ...base,
         verb: humanizeTool(tool),
-        target: fileBase ?? "",
+        target: fileBase ?? named ?? "",
         monoTarget: Boolean(fileBase),
         glyph: "task",
         base: fileBase,
