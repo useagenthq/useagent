@@ -10,13 +10,13 @@ import { ToolStepRow } from "@/components/chat/tool-step-row";
 import { LoadingState } from "@/components/ai/loading-state";
 import { useRunStream } from "@/components/chat/use-run-stream";
 import {
-  deriveSubagents,
   engineLabel,
   isLiveStatus,
   type ApiRun,
   type EngineId,
   type RunStatus,
 } from "@/components/chat/types";
+import { deriveSubagents } from "@/components/chat/subagents";
 
 /**
  * Subagent viewing pane — the Omni pattern ported to the web. A subagent (any

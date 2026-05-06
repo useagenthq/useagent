@@ -3,12 +3,8 @@
 import { useEffect, useState } from "react";
 import { RiCheckLine, RiRobot2Line } from "@remixicon/react";
 import { cnExt as cn } from "@/utils/cn";
-import {
-  deriveSubagents,
-  formatDuration,
-  type ApiStep,
-  type SubagentCard,
-} from "@/components/chat/types";
+import { formatDuration, type ApiStep } from "@/components/chat/types";
+import { deriveSubagents, type SubagentCard } from "@/components/chat/subagents";
 
 /**
  * The right-rail "Agents" tab: one card per fanned-out subagent, mirroring

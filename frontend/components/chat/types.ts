@@ -342,7 +342,9 @@ const TOOL_VERB: Record<string, { verb: string; glyph: TraceGlyph }> = {
 
 const FILE_GLYPHS = new Set<TraceGlyph>(["read", "edit", "write", "list"]);
 
-function asRecord(v: unknown): Record<string, unknown> | null {
+/** Narrow an unknown JSON value to a plain object, or null. Shared with the
+ *  subagent-attribution module (`./subagents`) for reading `code_json.native`. */
+export function asRecord(v: unknown): Record<string, unknown> | null {
   return v && typeof v === "object" && !Array.isArray(v)
     ? (v as Record<string, unknown>)
     : null;
@@ -573,128 +575,7 @@ function humanizeTool(tool: string): string {
   return words.charAt(0).toUpperCase() + words.slice(1);
 }
 
-// ── Native OpenCode identity + subagent attribution ─────────────────────────
-//
-// Since backend commit 83c6439 every translated step carries the native
-// OpenCode ids that produced it in `code_json.native`. Tool/file steps carry the
-// session they ran in (`sessionID`); subagent spawn cards additionally identify
-// the child session they launched — either explicitly (`childSessionID`, the
-// `subtask` part path) or, for the `task`-tool path, inside the tool output XML
-// (`<task id="ses_…">`). This lets us attribute a subagent's nested activity by
-// real child-session id instead of guessing from spawn order.
-
-/** The native OpenCode ids stamped into a step's `code_json.native`. */
-export interface NativeIds {
-  /** Session the part belongs to — root for the primary agent, the child
-   *  session id for a subagent's own tool/file steps. */
-  sessionID?: string;
-  messageID?: string;
-  partID?: string;
-  callID?: string;
-  /** Child session a subagent spawn launched (subtask-part path only). */
-  childSessionID?: string | null;
-}
-
-/** Read the stamped native ids off a step, or null for pre-83c6439 runs. */
-export function nativeOf(step: ApiStep): NativeIds | null {
-  const code = asRecord(parseStepCode(step));
-  return code ? (asRecord(code.native) as NativeIds | null) : null;
-}
-
-/** The child session id a subagent-spawn card launched, if discoverable:
- *  `native.childSessionID` (subtask path) else the `<task id="ses_…">` in the
- *  task tool's output (populated once the child completes). Null while unknown. */
-const TASK_CHILD_RE = /<task\s+id="(ses_[^"]+)"/;
-export function childSessionOf(step: ApiStep): string | null {
-  const native = nativeOf(step);
-  if (native?.childSessionID) return native.childSessionID;
-  const output = pickString(asRecord(parseStepCode(step)), ["output"]);
-  const m = output ? TASK_CHILD_RE.exec(output) : null;
-  return m ? m[1] : null;
-}
-
-/** One subagent card, plus its latest attributed nested activity. */
-export interface SubagentCard {
-  /** Spawn step id — stable React key. */
-  id: string;
-  /** Description after "Subagent — " (reuses the trace grammar's derivation). */
-  title: string;
-  /** Native child session this card owns; null until known (or legacy runs). */
-  childSessionId: string | null;
-  /** Latest attributed nested activity label; null until the first one lands. */
-  status: string | null;
-  /** Spawn step `created_at`, ms. */
-  startedAt: number;
-  /** Last attributed activity `created_at`, ms — freezes the elapsed timer. */
-  lastActivityAt: number | null;
-}
-
-export interface SubagentModel {
-  cards: SubagentCard[];
-  /** stepId → owning card id, for every step attributed to a subagent. */
-  ownerByStep: Map<string, string>;
-}
-
-/**
- * Group a run's ordered steps into subagent cards, attributing each nested step
- * to the card whose native child session it ran in.
- *
- * Attribution is native-first: a non-card step whose `native.sessionID` matches a
- * card's child session id belongs to that card — exact even with N concurrent
- * subagents interleaved in one ordered stream. Only when a step carries NO native
- * ids (pre-83c6439 runs) do we fall back to the old "↳ marker → most-recently-
- * spawned card" heuristic. A step with native ids that we can't yet match (a
- * grandchild, or a child whose card hasn't resolved its id) is left unattributed
- * rather than mis-guessed — that resolves itself on the next render once the
- * owning card completes and its `<task id>` lands.
- */
-export function deriveSubagents(steps: ApiStep[]): SubagentModel {
-  const cards: SubagentCard[] = [];
-  const byChildSession = new Map<string, SubagentCard>();
-  const ownerByStep = new Map<string, string>();
-
-  for (const step of steps) {
-    if (step.chip === "subagent") {
-      const childSessionId = childSessionOf(step);
-      const card: SubagentCard = {
-        id: step.id,
-        title: deriveTrace(step).target,
-        childSessionId,
-        status: null,
-        startedAt: Date.parse(step.created_at),
-        lastActivityAt: null,
-      };
-      cards.push(card);
-      if (childSessionId) byChildSession.set(childSessionId, card);
-      continue;
-    }
-
-    const owner = attributeStep(step, byChildSession, cards);
-    if (!owner) continue;
-    ownerByStep.set(step.id, owner.id);
-    const label = (step.label ?? "").replace(/^↳\s*/, "").trim();
-    if (label) owner.status = label;
-    owner.lastActivityAt = Date.parse(step.created_at);
-  }
-
-  return { cards, ownerByStep };
-}
-
-function attributeStep(
-  step: ApiStep,
-  byChildSession: Map<string, SubagentCard>,
-  cards: SubagentCard[],
-): SubagentCard | null {
-  const native = nativeOf(step);
-  // Exact native attribution: the step ran inside a known native child session.
-  const sid = native?.sessionID;
-  if (sid && byChildSession.has(sid)) return byChildSession.get(sid) ?? null;
-  // Legacy fallback (pre-native-stamp runs only): a "↳ " marker with no native
-  // ids attaches to the most-recently-spawned card. We deliberately do NOT guess
-  // when native ids are present — mis-attributing an as-yet-unmatched session
-  // would reintroduce the very spawn-order bug this replaces.
-  if (!native && /^↳/.test(step.label ?? "") && cards.length > 0) {
-    return cards[cards.length - 1];
-  }
-  return null;
-}
+// Native-OpenCode identity and subagent attribution live in `./subagents` — a
+// dedicated single-purpose module that folds this step projection into the
+// parent/child card structure the Agents rail and subagent pane render. It reuses
+// `asRecord`/`parseStepCode`/`deriveTrace` from here; the dependency flows one way.
