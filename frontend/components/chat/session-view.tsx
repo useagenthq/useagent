@@ -129,12 +129,17 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
   }, [stream.live, refetchThread]);
 
   const handleReply = useCallback(
-    async (text: string, engine: EngineId, model: string) => {
+    async (text: string, engine: EngineId, model: string, idempotencyKey: string) => {
       setPendingReply(text);
       try {
         const res = await backendFetch("/api/runs", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+            // A lost-response retry with the same key observes the original run
+            // instead of starting a duplicate turn (backend durable command).
+            "Idempotency-Key": idempotencyKey,
+          },
           body: JSON.stringify({
             prompt: text,
             engine,
@@ -146,8 +151,11 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
         // Child run lives in this thread — pull it in and keep streaming here
         // instead of navigating to a fresh session.
         await refetchThread();
-      } catch {
+      } catch (err) {
+        // Don't swallow: clear the optimistic bubble and re-throw so the composer
+        // restores the draft and shows an explicit retry state.
         setPendingReply(null);
+        throw err;
       }
     },
     [newest.id, refetchThread],

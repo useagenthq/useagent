@@ -155,7 +155,9 @@ function PromptInputTextarea({
     // claim Enter/arrows via preventDefault before Enter submits the prompt.
     onKeyDown?.(e);
     if (e.defaultPrevented) return;
-    if (e.key === "Enter" && !e.shiftKey) {
+    // IME composition guard: while composing (e.g. selecting a CJK candidate),
+    // Enter confirms the candidate — it must not submit the prompt.
+    if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
       e.preventDefault();
       onSubmit?.();
     }

@@ -1,9 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import {
   RiAddLine,
   RiArrowUpLine,
+  RiErrorWarningLine,
   RiMicLine,
   RiToolsLine,
 } from "@remixicon/react";
@@ -28,6 +29,20 @@ import type { EngineId } from "@/components/chat/types";
 
 type Variant = "hero" | "compact";
 
+/**
+ * Submit a composed prompt. `idempotencyKey` is a stable per-submission id the
+ * handler forwards as the backend `Idempotency-Key`, so a lost-response retry
+ * observes the original run instead of duplicating it. Reject to signal failure:
+ * the composer restores the draft and shows a retry state (reusing the same
+ * key). A synchronous (void) handler is treated as accepted.
+ */
+export type ComposerSubmit = (
+  prompt: string,
+  engine: EngineId,
+  model: string,
+  idempotencyKey: string,
+) => void | Promise<void>;
+
 export type ComposerProps = {
   variant?: Variant;
   placeholder?: string;
@@ -42,7 +57,7 @@ export type ComposerProps = {
   defaultModel?: string;
   /** Engine slash commands for "/" autocomplete (reply composer, live thread). */
   commands?: SlashCommand[];
-  onSubmit: (prompt: string, engine: EngineId, model: string) => void;
+  onSubmit: ComposerSubmit;
 };
 
 /**
@@ -77,13 +92,20 @@ export function Composer({
   const [toolsOpen, setToolsOpen] = useState(false);
   const [cmdHighlight, setCmdHighlight] = useState(0);
   const [cmdDismissed, setCmdDismissed] = useState(false);
+  // Prompt-submission transaction: `submitting` guards the in-flight await (no
+  // duplicate submit); `failed` surfaces an explicit retry state; `retry` holds
+  // the draft + its idempotency key so a resend of the same text reuses the key.
+  const [submitting, setSubmitting] = useState(false);
+  const [failed, setFailed] = useState(false);
+  const retry = useRef<{ text: string; key: string } | null>(null);
 
   const engine = engineProp ?? engineState;
   const hero = variant === "hero";
   const allowAgent = enableAgentCommand ?? hero;
   const slashActive = allowAgent && !command && value.trimStart().startsWith("/");
   const showAgentPopover = slashActive || toolsOpen;
-  const canSend = value.trim().length > 0 && !pending;
+  const busy = pending || submitting;
+  const canSend = value.trim().length > 0 && !busy;
 
   // Slash-command autocomplete: live while the FIRST token is being typed
   // ("/rev" but not "/review changes"). A trailing space ends completion.
@@ -116,11 +138,31 @@ export function Composer({
     }
   }
 
-  function submit() {
+  async function submit() {
     const text = value.trim();
-    if (!text || pending) return;
-    setValue("");
-    onSubmit(text, engine, model);
+    if (!text || busy) return; // duplicate-submit guard (Enter spam / double-click)
+    // Reuse the idempotency key when resending the SAME failed text, so a retry
+    // after an ambiguous failure observes the original run instead of starting a
+    // duplicate; fresh text gets a fresh key.
+    const key =
+      retry.current && retry.current.text === text
+        ? retry.current.key
+        : crypto.randomUUID();
+    setSubmitting(true);
+    setFailed(false);
+    setValue(""); // optimistic clear — the pending bubble shows the text meanwhile
+    try {
+      await onSubmit(text, engine, model, key);
+      retry.current = null; // accepted — drop the retry key
+    } catch {
+      // Never silently swallow: restore the draft and show an explicit failed
+      // state; keep the key so the next send retries idempotently.
+      retry.current = { text, key };
+      setValue(text);
+      setFailed(true);
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   function pickAgent(agent: Agent) {
@@ -147,6 +189,16 @@ export function Composer({
         </div>
       )}
 
+      {failed && (
+        <div
+          role="alert"
+          className="text-error-base mb-1.5 flex items-center gap-1.5 px-1 text-paragraph-xs"
+        >
+          <RiErrorWarningLine className="size-3.5 shrink-0" aria-hidden />
+          Couldn&apos;t send — your message is restored. Press send to try again.
+        </div>
+      )}
+
       {/* No overflow-hidden here: the engine-picker popover opens upward past
           the card edge and must not be clipped. */}
       <div className="border-stroke-soft-200 bg-bg-white-0 shadow-regular-md rounded-2xl border">
@@ -156,6 +208,7 @@ export function Composer({
             setValue(v);
             setCmdDismissed(false);
             setCmdHighlight(0);
+            if (failed) setFailed(false); // editing dismisses the failed state
           }}
           onSubmit={submit}
           isLoading={pending}
@@ -240,7 +293,7 @@ export function Composer({
                     : "bg-bg-soft-200 text-text-soft-400 cursor-not-allowed",
                 )}
               >
-                {pending ? (
+                {busy ? (
                   <Loader variant="circular" size="sm" className="border-white" />
                 ) : (
                   <RiArrowUpLine className="size-5" aria-hidden />
