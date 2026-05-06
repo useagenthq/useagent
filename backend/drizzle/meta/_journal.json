@@ -64,6 +64,13 @@
       "when": 1786060000000,
       "tag": "0008_provider_events",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1785957026140,
+      "tag": "0009_add_commands",
+      "breakpoints": true
     }
   ]
 }

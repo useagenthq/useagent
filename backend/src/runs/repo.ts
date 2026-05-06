@@ -1,5 +1,5 @@
 import { and, desc, eq, inArray, isNotNull, isNull, ne, or } from "drizzle-orm";
-import { db } from "../db/client";
+import { db, type Executor } from "../db/client";
 import {
   runs,
   steps,
@@ -128,17 +128,22 @@ export async function failStaleRuns(): Promise<number> {
 // Runs
 // ---------------------------------------------------------------------------
 
-export async function createRun(input: {
-  id: string;
-  prompt: string;
-  model: string;
-  engine: EngineId;
-  orgId: string | null;
-  userId: string | null;
-  parentRunId: string | null;
-  threadId: string;
-}): Promise<void> {
-  await db.insert(runs).values({
+export async function createRun(
+  input: {
+    id: string;
+    prompt: string;
+    model: string;
+    engine: EngineId;
+    orgId: string | null;
+    userId: string | null;
+    parentRunId: string | null;
+    threadId: string;
+  },
+  /** Run the insert inside a caller's transaction (durable-command acceptance
+   *  commits the command + run atomically). Defaults to the shared pool. */
+  exec: Executor = db,
+): Promise<void> {
+  await exec.insert(runs).values({
     id: input.id,
     prompt: input.prompt,
     model: input.model,

@@ -3,7 +3,6 @@ import type { AppEnv } from "../http";
 import { ENGINE_IDS, type EngineId } from "../db/schema";
 import { orgScope } from "../middleware/org";
 import {
-  createRun,
   getRun,
   getRunForOrg,
   getRunWithSteps,
@@ -11,6 +10,7 @@ import {
   getThreadForRun,
   listRunsWithSteps,
 } from "./repo";
+import { acceptRunCommand, markCommandDispatched } from "../commands/repo";
 import { bus, channel, spawnWorker, type BusEvent } from "../worker";
 import { turnStream } from "./turn-stream";
 
@@ -75,19 +75,37 @@ runsRoutes.post("/", async (c) => {
     threadId = parent.threadId;
   }
 
-  await createRun({
-    id,
-    prompt,
-    model,
-    engine,
+  // Accept the run as a durable command. An `Idempotency-Key` makes a lost-
+  // response retry observe the ORIGINAL run instead of starting duplicate work;
+  // the un-keyed path behaves exactly as before (new run every call). Empty /
+  // whitespace-only keys are treated as absent.
+  const idempotencyKey = c.req.header("Idempotency-Key")?.trim() || null;
+  const accepted = await acceptRunCommand({
+    idempotencyKey,
     orgId: c.get("orgId"),
-    userId: c.get("userId"),
-    parentRunId,
-    threadId,
+    actorId: c.get("userId"),
+    run: { id, prompt, model, engine, parentRunId, threadId },
   });
-  spawnWorker(id);
 
-  return c.json({ id }, 201);
+  // Same key, different request — refuse to guess which turn the client meant.
+  if (accepted.kind === "conflict") {
+    return c.json(
+      { error: "idempotency_key_reused", detail: "same Idempotency-Key, different request" },
+      409,
+    );
+  }
+  // Replay of an already-accepted command: the original run's worker is already
+  // running (or finished) — return its id, do NOT re-dispatch.
+  if (accepted.kind === "replayed") {
+    return c.json({ id: accepted.runId }, 200);
+  }
+
+  // Freshly accepted → dispatch: spawn the worker, then mark the command
+  // dispatched (audit metadata; the worker owns the run regardless).
+  spawnWorker(accepted.runId);
+  await markCommandDispatched(accepted.commandId);
+
+  return c.json({ id: accepted.runId }, 201);
 });
 
 // List runs (newest first) with their steps, scoped to the active org. By
