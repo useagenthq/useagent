@@ -157,6 +157,10 @@ export const commands = pgTable(
       .on(t.orgId, t.idempotencyKey)
       .where(sql`${t.idempotencyKey} is not null`),
     index("idx_commands_run").on(t.runId),
+    // The durable per-thread mailbox: the dispatcher finds a thread's in-flight
+    // (state='dispatched') and its oldest queued command by (thread_id, state,
+    // created_at). Ordered so the head-of-queue lookup is index-only.
+    index("idx_commands_thread_state").on(t.threadId, t.state, t.createdAt),
   ],
 );
 

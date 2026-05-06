@@ -4,90 +4,112 @@ import type {
   HarnessReconciliation,
   HarnessSessionHandle,
 } from "../engines/types";
+import { completeRun, getLastStepAt, markRunFailed, STALE_SUMMARY } from "./repo";
 import {
-  completeRun,
-  getLastStepAt,
-  listStaleRuns,
-  markRunFailed,
-  STALE_SUMMARY,
-  type StaleRun,
-} from "./repo";
+  failCommandlessStaleRuns,
+  listActiveCommands,
+  settleCommandForRun,
+  type ActiveCommand,
+} from "../commands/dispatch";
+import { pumpThread } from "../worker";
 import { assertNever } from "../util/exhaustive";
 
 // ---------------------------------------------------------------------------
-// Restart recovery (north star Phase 3 "Restart recovery" + Crash Recovery
-// Matrix). On boot, a non-terminal run lost its in-memory worker. The old
-// behavior failed EVERY such run. This reconciles instead where it can safely,
-// through the typed HarnessAdapter seam: an opencode run whose native session
-// actually FINISHED server-side (while the backend was down) is marked completed
-// with the real assistant answer; anything unreachable/unfinished/ambiguous
-// falls back to the honest interrupted summary.
+// Restart recovery of the durable command lane (north star Phase 3 "Restart
+// recovery" + Crash Recovery Matrix). On boot the in-memory workers are gone,
+// so the mailbox on the `commands` table is the source of truth. Three phases:
 //
-// One-SHOT boot pass — no background loops. Each probe is self-bounded and they
-// run concurrently, so total boot time is ~one probe budget regardless of how
-// many stale runs (or dead sandboxes) there are.
+//  1. RESOLVE each in-flight (dispatched) command against its run:
+//       running  → reconcile the native session (completed) or fail honestly,
+//                  then mark the command completed;
+//       terminal → mark the command completed (crash between run-done and the
+//                  command settle — Crash Matrix "provider completed while Skynet
+//                  says terminal"): frees the thread for the next turn;
+//       queued   → requeue the command (worker died before the run started).
+//  2. PUMP every thread with a queued command → dispatch its head (order +
+//     one-in-flight preserved by the mailbox); cross-thread concurrent.
+//  3. FAIL any non-terminal run with no active command (legacy/orphan).
+//
+// ONE-SHOT boot pass — no background loops. Bounded per-run probes run
+// concurrently, so total boot time is ~one probe budget.
 // ---------------------------------------------------------------------------
 
-/** Hard per-run backstop. The harness reconcile bounds its own network work to
- *  ~9s; this race guarantees recoverOne resolves even if that ever leaks. */
+/** Hard per-run backstop; the harness reconcile bounds its own work to ~9s. */
 const RECONCILE_BUDGET_MS = 11_000;
 
 /** opencode's two adapter ids both run the resident-server path. */
 const OPENCODE_ENGINES = new Set(["opencode", "daytona"]);
 
-type RecoverOutcome = "reconciled" | "failed";
-
-export interface RecoveryResult {
-  readonly reconciled: number;
-  readonly failed: number;
-}
-
-/** The native-session probe — the HarnessAdapter.reconcile contract. Defaults to
- *  the opencode harness; a test injects a deterministic fake to exercise the
- *  orchestration without Daytona. */
+/** The native-session probe (HarnessAdapter.reconcile). Injectable for tests. */
 export type ReconcileProbe = (
   handle: HarnessSessionHandle,
   checkpoint: HarnessCheckpoint,
 ) => Promise<HarnessReconciliation>;
 
+export interface RecoveryResult {
+  readonly reconciled: number;
+  readonly failed: number;
+  readonly redispatched: number;
+}
+
 export async function recoverStaleRuns(
   reconcile: ReconcileProbe = (handle, checkpoint) => opencodeHarness.reconcile(handle, checkpoint),
 ): Promise<RecoveryResult> {
-  const stale = await listStaleRuns();
-  if (stale.length === 0) return { reconciled: 0, failed: 0 };
+  const active = await listActiveCommands();
 
-  const outcomes = await Promise.all(stale.map((run) => recoverOne(run, reconcile)));
-  return {
-    reconciled: outcomes.filter((o) => o === "reconciled").length,
-    failed: outcomes.filter((o) => o === "failed").length,
-  };
+  // Phase 1 — resolve in-flight commands (concurrent; different threads are
+  // independent, and a thread has at most one dispatched command).
+  const dispatched = active.filter((c) => c.state === "dispatched");
+  const resolutions = await Promise.all(dispatched.map((c) => resolveDispatched(c, reconcile)));
+  const reconciled = resolutions.filter((r) => r === "reconciled").length;
+  let failed = resolutions.filter((r) => r === "failed").length;
+
+  // Phase 2 — pump each distinct thread that had an active command. dispatched
+  // ones are now completed/requeued, so a queued head can claim the thread.
+  const threads = [...new Set(active.map((c) => c.threadId))];
+  const pumped = await Promise.all(threads.map((t) => pumpThread(t)));
+  const redispatched = pumped.filter((runId) => runId !== null).length;
+
+  // Phase 3 — fail legacy/orphan non-terminal runs that never joined the lane.
+  failed += await failCommandlessStaleRuns(STALE_SUMMARY);
+
+  return { reconciled, failed, redispatched };
 }
 
-/** A RUNNING opencode run that recorded both its native session id and sandbox
- *  id is the only reconcile candidate; everything else (queued, no native
- *  identity, other engines) fails with the honest summary. */
-function isReconcileCandidate(
-  run: StaleRun,
-): run is StaleRun & { engineSessionId: string; sandboxId: string } {
-  return (
-    run.status === "running" &&
-    OPENCODE_ENGINES.has(run.engine) &&
-    !!run.engineSessionId &&
-    !!run.sandboxId
-  );
+type DispatchedResolution = "reconciled" | "failed" | "settled";
+
+/** Resolve one dispatched command: reconcile/fail a still-running run, then
+ *  settle the command state (completed/requeued) so its thread is freed. */
+async function resolveDispatched(
+  cmd: ActiveCommand,
+  reconcile: ReconcileProbe,
+): Promise<DispatchedResolution> {
+  let outcome: DispatchedResolution = "settled";
+  if (cmd.runStatus === "running") {
+    outcome = await recoverRunningRun(cmd, reconcile);
+  }
+  // The run is now terminal (reconciled/failed) or was already terminal/queued;
+  // settle the command to completed (terminal) or requeued (queued).
+  await settleCommandForRun(cmd.runId);
+  return outcome;
 }
 
-async function recoverOne(run: StaleRun, reconcile: ReconcileProbe): Promise<RecoverOutcome> {
-  if (!isReconcileCandidate(run)) {
-    await markRunFailed(run.id, STALE_SUMMARY);
+async function recoverRunningRun(
+  cmd: ActiveCommand,
+  reconcile: ReconcileProbe,
+): Promise<"reconciled" | "failed"> {
+  const candidate =
+    OPENCODE_ENGINES.has(cmd.engine) && !!cmd.engineSessionId && !!cmd.sandboxId;
+  if (!candidate) {
+    await markRunFailed(cmd.runId, STALE_SUMMARY);
     return "failed";
   }
 
-  const lastStepAt = await getLastStepAt(run.id);
+  const lastStepAt = await getLastStepAt(cmd.runId);
   const handle: HarnessSessionHandle = {
     provider: "opencode",
-    sessionId: run.engineSessionId,
-    sandboxId: run.sandboxId,
+    sessionId: cmd.engineSessionId!,
+    sandboxId: cmd.sandboxId!,
   };
 
   let result: HarnessReconciliation;
@@ -102,19 +124,15 @@ async function recoverOne(run: StaleRun, reconcile: ReconcileProbe): Promise<Rec
     result = { status: "unreachable" };
   }
 
-  // Exhaustive: only a proven completion reconciles; every other status (and any
-  // future variant) fails safe with the resumable summary.
   switch (result.status) {
-    case "completed": {
-      const durationMs = Math.max(0, Date.now() - run.createdAt.getTime());
-      await completeRun(run.id, "completed", result.summary, durationMs);
+    case "completed":
+      await completeRun(cmd.runId, "completed", result.summary, 0);
       return "reconciled";
-    }
     case "in_progress":
     case "no_change":
     case "unreachable":
     case "unsupported_capability":
-      await markRunFailed(run.id, STALE_SUMMARY);
+      await markRunFailed(cmd.runId, STALE_SUMMARY);
       return "failed";
     default:
       return assertNever(result, "unhandled reconciliation status");

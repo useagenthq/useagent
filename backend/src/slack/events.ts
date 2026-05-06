@@ -15,8 +15,9 @@
  */
 import { slackConfig } from "../env";
 import { getDevContext } from "../seed";
-import { createRun, getRunForOrg } from "../runs/repo";
-import { spawnWorker } from "../worker";
+import { getRunForOrg } from "../runs/repo";
+import { acceptRunCommand } from "../commands";
+import { pumpThread } from "../worker";
 import { resolveSlackClient } from "./client";
 import { findSlackThread, linkSlackThread } from "./repo";
 import { watchSlackRun } from "./watcher";
@@ -142,17 +143,16 @@ export async function handleSlackEvent(body: SlackEnvelope): Promise<void> {
     }
   }
 
-  await createRun({
-    id: runId,
-    prompt,
-    model: config.model,
-    engine: config.defaultEngine,
+  // Enter through the durable command lane (no idempotency key — Slack dedupes
+  // by external event id upstream). The mailbox pump preserves per-thread order:
+  // a reply in an active Slack thread waits for the prior turn.
+  await acceptRunCommand({
+    idempotencyKey: null,
     orgId,
-    userId,
-    parentRunId,
-    threadId,
+    actorId: userId,
+    run: { id: runId, prompt, model: config.model, engine: config.defaultEngine, parentRunId, threadId },
   });
-  spawnWorker(runId);
+  await pumpThread(threadId);
 
   // First bot interaction in this Slack thread → remember it as the root.
   if (!link) {

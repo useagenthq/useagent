@@ -10,8 +10,8 @@ import {
   getThreadForRun,
   listRunsWithSteps,
 } from "./repo";
-import { acceptRunCommand, markCommandDispatched } from "../commands";
-import { bus, channel, spawnWorker, type BusEvent } from "../worker";
+import { acceptRunCommand } from "../commands";
+import { bus, channel, pumpThread, type BusEvent } from "../worker";
 import { turnStream } from "./turn-stream";
 import { assertNever } from "../util/exhaustive";
 import {
@@ -97,10 +97,9 @@ runsRoutes.post("/", async (c) => {
   // outcome variant is a compile error here).
   switch (accepted.status) {
     case "created":
-      // Dispatch: spawn the worker, then mark the command dispatched (audit
-      // metadata; the worker owns the run regardless).
-      spawnWorker(accepted.runId);
-      await markCommandDispatched(accepted.commandId);
+      // Enqueued durably; pump the thread's mailbox — dispatches this run now if
+      // the thread is idle, else it waits its turn (survives a restart).
+      await pumpThread(threadId);
       return c.json({ id: accepted.runId }, 201);
     case "replayed":
       // The original run's worker is already running (or finished) — return its

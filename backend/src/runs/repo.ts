@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, isNotNull, isNull, ne, or } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, isNull, ne } from "drizzle-orm";
 import { db, type Executor } from "../db/client";
 import {
   runs,
@@ -113,36 +113,6 @@ async function withSteps(runRows: RunRecord[]): Promise<ApiRun[]> {
  * the recovery action — replying resumes the same thread/session. */
 export const STALE_SUMMARY =
   "Interrupted — the backend restarted mid-run. Reply to continue in this thread.";
-
-/** A non-terminal run recovered on boot, with the native identity a reconciler
- * needs to probe whether it actually finished server-side. */
-export interface StaleRun {
-  id: string;
-  engine: EngineId;
-  status: RunStatus;
-  engineSessionId: string | null;
-  sandboxId: string | null;
-  threadId: string;
-  createdAt: Date;
-}
-
-/** Every run left queued/running after an unclean shutdown. The boot reconciler
- * (src/runs/recovery.ts) decides per run whether to reconcile-to-completed or
- * fail with {@link STALE_SUMMARY}. */
-export async function listStaleRuns(): Promise<StaleRun[]> {
-  return db
-    .select({
-      id: runs.id,
-      engine: runs.engine,
-      status: runs.status,
-      engineSessionId: runs.engineSessionId,
-      sandboxId: runs.sandboxId,
-      threadId: runs.threadId,
-      createdAt: runs.createdAt,
-    })
-    .from(runs)
-    .where(or(eq(runs.status, "queued"), eq(runs.status, "running")));
-}
 
 /** Timestamp of a run's most recent step — the "our last activity" watermark a
  * reconciler compares a native completed-message time against. */
