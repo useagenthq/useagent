@@ -6,9 +6,11 @@ import { useRouter } from 'next/navigation';
 import { type ComponentType, type FormEvent, useId, useState } from 'react';
 
 import { AsteriskMark } from '@/components/foundations/brand/asterisk-mark';
+import { GoogleSignInButton } from '@/components/auth/google-sign-in-button';
 import * as Input from '@/components/ui/input';
 import * as Label from '@/components/ui/label';
 import { backendFetch } from '@/lib/backend-fetch';
+import { useAuthConfig } from '@/lib/auth';
 import { cnExt } from '@/utils/cn';
 
 type AuthMode = 'signin' | 'signup';
@@ -79,6 +81,7 @@ function Field({
 export function AuthForm({ mode }: { mode: AuthMode }) {
   const router = useRouter();
   const copy = COPY[mode];
+  const authConfig = useAuthConfig();
 
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
@@ -131,8 +134,18 @@ export function AuthForm({ mode }: { mode: AuthMode }) {
           {copy.subtitle}
         </p>
 
+        <div className='mt-8'>
+          <GoogleSignInButton enabled={authConfig?.google ?? false} />
+        </div>
+
+        <div className='my-6 flex items-center gap-3' aria-hidden>
+          <span className='h-px flex-1 bg-stroke-soft-200' />
+          <span className='text-mono-label text-text-soft-400'>or</span>
+          <span className='h-px flex-1 bg-stroke-soft-200' />
+        </div>
+
         <form
-          className='mt-8 flex flex-col gap-4'
+          className='flex flex-col gap-4'
           onSubmit={handleSubmit}
           noValidate
         >
