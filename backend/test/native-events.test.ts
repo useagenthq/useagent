@@ -8,10 +8,11 @@ import { createRun, setRunStatus } from "../src/runs/repo";
 // seeded directly via recordProviderEvent, then observed on GET
 // /api/runs/:id/events. The step/delta/done lane is unaffected (asserted).
 
-/** Seed one native provider event (revisions reuse the same `pe_<partId>` id). */
+/** Seed one native provider event (revisions reuse the same `pe_<partId>` id).
+ *  The per-run sequencer mints the seq in call order, so callers seed in the
+ *  order they want the seqs assigned. */
 async function seed(
   runId: string,
-  seq: number,
   partId: string,
   payload: unknown,
   eventType = "part.tool.completed",
@@ -20,7 +21,6 @@ async function seed(
     id: `pe_${partId}`,
     runId,
     threadId: runId,
-    seq,
     provider: "opencode",
     eventType,
     nativeSessionId: "ses_x",
@@ -49,11 +49,11 @@ describe("native event SSE lane", () => {
     const id = await completedMockRun("native replay");
     // Four distinct parts, then a REVISION of p1 (same id, higher seq) — the
     // store upserts by native id, so p1 collapses to its latest seq.
-    await seed(id, 0, "p0", { n: 0 });
-    await seed(id, 1, "p1", { n: 1 });
-    await seed(id, 2, "p2", { n: 2 });
-    await seed(id, 3, "p3", { n: 3 });
-    await seed(id, 4, "p1", { n: 1, revised: true });
+    await seed(id, "p0", { n: 0 });
+    await seed(id, "p1", { n: 1 });
+    await seed(id, "p2", { n: 2 });
+    await seed(id, "p3", { n: 3 });
+    await seed(id, "p1", { n: 1, revised: true });
 
     // Full replay (no cursor).
     const all = nativeFrames(await readSse(await fetchApi(`/api/runs/${id}/events`), { timeoutMs: 8000 }));
@@ -78,7 +78,7 @@ describe("native event SSE lane", () => {
 
   test("the step/delta/done lane is unchanged alongside native frames", async () => {
     const id = await completedMockRun("native + steps");
-    await seed(id, 0, "px", { ok: true });
+    await seed(id, "px", { ok: true });
     const events = await readSse(await fetchApi(`/api/runs/${id}/events`), { timeoutMs: 8000 });
     // Steps still replay (8 scripted) and done still terminates the stream.
     expect(events.filter((e) => e.event === "step")).toHaveLength(8);
@@ -88,9 +88,9 @@ describe("native event SSE lane", () => {
 
   test("payloads are bounded: oversized → marker, small → parsed object", async () => {
     const id = await completedMockRun("native bounded");
-    await seed(id, 0, "small", { hello: "world" });
+    await seed(id, "small", { hello: "world" });
     // > 32KB stored JSON is sliced (invalid JSON) — surfaced as a bounded marker.
-    await seed(id, 1, "big", { blob: "x".repeat(40_000) });
+    await seed(id, "big", { blob: "x".repeat(40_000) });
 
     const frames = nativeFrames(await readSse(await fetchApi(`/api/runs/${id}/events`), { timeoutMs: 8000 }));
     const small = frames.find((f) => f.eventId === "pe_small");
@@ -116,7 +116,7 @@ describe("native event SSE lane", () => {
     const res = await fetchApi(`/api/runs/${id}/events`);
     const reading = readSse(res, { timeoutMs: 1500 }); // no done → reads until timeout
     await new Promise((r) => setTimeout(r, 200)); // let subscribe + empty replay settle
-    await seed(id, 0, "live1", { live: true });
+    await seed(id, "live1", { live: true });
 
     const frames = nativeFrames(await reading);
     const live = frames.find((f) => f.eventId === "pe_live1");

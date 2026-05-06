@@ -579,7 +579,8 @@ export const opencodeServerAdapter: EngineAdapter = {
       // Lossless native capture (north star Phase 1): persist every part — all
       // types, including ones the step translator ignores — keyed by native
       // part id (revisions upsert). Fire-and-forget; never blocks translation.
-      let captureSeq = 0;
+      // recordProviderEvent mints the seq + serializes persist→publish per run
+      // (see provider-events.ts), so no local seq counter is needed here.
       const capturePart = (part: Record<string, unknown>): void => {
         const partId = String(part.id ?? "");
         if (!partId) return;
@@ -588,7 +589,6 @@ export const opencodeServerAdapter: EngineAdapter = {
           id: `pe_${partId}`,
           runId: ctx.runId,
           threadId: ctx.threadId ?? ctx.runId,
-          seq: captureSeq++,
           provider: "opencode",
           eventType: `part.${String(part.type ?? "unknown")}${st?.status ? `.${st.status}` : ""}`,
           nativeSessionId: typeof part.sessionID === "string" ? part.sessionID : null,
@@ -649,7 +649,6 @@ export const opencodeServerAdapter: EngineAdapter = {
                 id: `pe_${props.info.id}_lifecycle`,
                 runId: ctx.runId,
                 threadId: ctx.threadId ?? ctx.runId,
-                seq: captureSeq++,
                 provider: "opencode",
                 eventType: ev.type,
                 nativeSessionId: props.info.id,

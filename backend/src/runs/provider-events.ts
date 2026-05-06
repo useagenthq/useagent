@@ -1,6 +1,6 @@
+import { eq, sql } from "drizzle-orm";
 import { db } from "../db/client";
 import { providerEvents } from "../db/schema";
-import { sql } from "drizzle-orm";
 import { makeNativeFrame, publishNativeFrame } from "./native-events";
 
 const PAYLOAD_CAP = 32_768; // bounded native payload (chars of JSON)
@@ -10,7 +10,6 @@ export type ProviderEventInput = {
   id: string;
   runId: string;
   threadId: string;
-  seq: number;
   provider: string;
   eventType: string;
   nativeSessionId?: string | null;
@@ -21,67 +20,143 @@ export type ProviderEventInput = {
   payload?: unknown;
 };
 
-/** Lossless-at-latest-revision capture: idempotent upsert by native identity
- * (the north star's allowed first implementation). MUST never fail a run —
- * callers fire-and-forget; failures are swallowed after a console warning. */
-export async function recordProviderEvent(input: ProviderEventInput): Promise<void> {
-  try {
-    let payload: string | null = null;
-    if (input.payload !== undefined) {
-      try {
-        payload = JSON.stringify(input.payload).slice(0, PAYLOAD_CAP);
-      } catch {
-        payload = null;
-      }
-    }
-    await db
-      .insert(providerEvents)
-      .values({
-        id: input.id,
-        runId: input.runId,
-        threadId: input.threadId,
-        seq: input.seq,
-        provider: input.provider,
-        eventType: input.eventType,
-        nativeSessionId: input.nativeSessionId ?? null,
-        nativeParentSessionId: input.nativeParentSessionId ?? null,
-        nativeMessageId: input.nativeMessageId ?? null,
-        nativePartId: input.nativePartId ?? null,
-        nativeCallId: input.nativeCallId ?? null,
-        payload,
-      })
-      .onConflictDoUpdate({
-        target: providerEvents.id,
-        set: {
-          seq: input.seq,
-          eventType: input.eventType,
-          payload,
-          createdAt: sql`now()`,
-        },
-        // Revisions can complete out of order (SSE + poller race) — an older
-        // revision must never overwrite a newer one (new_prompt.md audit).
-        setWhere: sql`${providerEvents.seq} < ${input.seq}`,
-      });
+// ---------------------------------------------------------------------------
+// Per-run native-frame SEQUENCER — the invariant the reconnect cursor depends on.
+//
+// The client's SSE reconnect sends `?cursor=<highest seq seen>` and the server
+// replays `seq > cursor` (native-events.getNativeFramesSince). That is lossless
+// ONLY if, for every run, the live lane assigns a UNIQUE, MONOTONIC seq and
+// PUBLISHES frames in ascending seq order — otherwise "highest seq seen" is not a
+// safe low-water mark and a lower seq is skipped forever on reconnect.
+//
+// Two ways that invariant used to break (the GAP-1 loss window):
+//   1. NON-UNIQUE seq — two independent emitters minted seq 0 for the same run
+//      (opencode capture started its counter at 0; the retrieval ledger hard-coded
+//      seq 0). A cursor of 0 then skipped the OTHER row that shared it.
+//   2. OUT-OF-ORDER publish — captures were fire-and-forget (`void
+//      recordProviderEvent`), so their durable insert+publish resolved in DB-
+//      latency order, not call order. A client that advanced its cursor to a
+//      higher seq lost a lower seq delivered late when the socket dropped between.
+//
+// Fix: a single per-run counter mints the seq (unique + monotonic across ALL
+// emitters), and a per-run serial chain runs persist→publish in call order so the
+// lane is strictly ascending. The counter is seeded lazily from the DB max (so a
+// re-created entry after idle eviction never resets), and the entry is evicted
+// once its chain goes idle so the map stays bounded.
+// ---------------------------------------------------------------------------
 
-    // Live-push the versioned native frame to any SSE subscriber (north star
-    // "Canonical Events"). After the persist, so a subscriber never sees a frame
-    // that isn't durable. Same bounded payload the replay path reads back.
-    publishNativeFrame(
-      input.runId,
-      makeNativeFrame({
-        eventId: input.id,
-        seq: input.seq,
-        provider: input.provider,
-        eventType: input.eventType,
-        sessionId: input.nativeSessionId ?? null,
-        parentSessionId: input.nativeParentSessionId ?? null,
-        messageId: input.nativeMessageId ?? null,
-        partId: input.nativePartId ?? null,
-        callId: input.nativeCallId ?? null,
-        payloadText: payload,
-      }),
-    );
-  } catch (err) {
-    console.warn("[provider-events] capture failed:", err instanceof Error ? err.message : err);
+interface RunSequencer {
+  /** Serial chain: each capture runs after the previous, so publishes are ordered. */
+  chain: Promise<void>;
+  /** Next seq to mint; null until seeded from the DB max on the first capture. */
+  nextSeq: number | null;
+}
+
+const runSequencers = new Map<string, RunSequencer>();
+
+/** Highest seq already persisted for a run (−1 when none) — seeds the counter so
+ *  a re-created sequencer continues the sequence instead of colliding. */
+async function highestSeq(runId: string): Promise<number> {
+  const [row] = await db
+    .select({ max: sql<number | null>`max(${providerEvents.seq})` })
+    .from(providerEvents)
+    .where(eq(providerEvents.runId, runId));
+  return row?.max ?? -1;
+}
+
+/**
+ * Lossless-at-latest-revision capture: idempotent upsert by native identity, then
+ * a live native frame published to SSE subscribers. Serialized per run and stamped
+ * with a unique, monotonic seq (see the sequencer note above) so the reconnect
+ * cursor never skips a frame. MUST never fail a run — callers fire-and-forget;
+ * failures are swallowed after a console warning. The returned promise resolves
+ * once THIS event (and every earlier one in the run's chain) has persisted.
+ */
+export function recordProviderEvent(input: ProviderEventInput): Promise<void> {
+  let seq = runSequencers.get(input.runId);
+  if (!seq) {
+    seq = { chain: Promise.resolve(), nextSeq: null };
+    runSequencers.set(input.runId, seq);
   }
+  const entry = seq;
+  const done = entry.chain
+    .then(() => persistAndPublish(input, entry))
+    .catch((err) =>
+      console.warn(
+        "[provider-events] capture failed:",
+        err instanceof Error ? err.message : err,
+      ),
+    );
+  entry.chain = done;
+  // Idle-evict when this link is the tail and has settled, so the map only holds
+  // runs with in-flight captures. A later event re-creates + re-seeds the entry.
+  void done.finally(() => {
+    if (runSequencers.get(input.runId) === entry && entry.chain === done) {
+      runSequencers.delete(input.runId);
+    }
+  });
+  return done;
+}
+
+async function persistAndPublish(input: ProviderEventInput, seq: RunSequencer): Promise<void> {
+  if (seq.nextSeq === null) seq.nextSeq = (await highestSeq(input.runId)) + 1;
+  const assignedSeq = seq.nextSeq++;
+
+  let payload: string | null = null;
+  if (input.payload !== undefined) {
+    try {
+      payload = JSON.stringify(input.payload).slice(0, PAYLOAD_CAP);
+    } catch {
+      payload = null;
+    }
+  }
+  await db
+    .insert(providerEvents)
+    .values({
+      id: input.id,
+      runId: input.runId,
+      threadId: input.threadId,
+      seq: assignedSeq,
+      provider: input.provider,
+      eventType: input.eventType,
+      nativeSessionId: input.nativeSessionId ?? null,
+      nativeParentSessionId: input.nativeParentSessionId ?? null,
+      nativeMessageId: input.nativeMessageId ?? null,
+      nativePartId: input.nativePartId ?? null,
+      nativeCallId: input.nativeCallId ?? null,
+      payload,
+    })
+    .onConflictDoUpdate({
+      target: providerEvents.id,
+      set: {
+        seq: assignedSeq,
+        eventType: input.eventType,
+        payload,
+        createdAt: sql`now()`,
+      },
+      // A revision always mints a HIGHER seq (the counter only grows), so this
+      // guard is normally true; it stays as defense against a stale write ever
+      // arriving after a re-seeded counter (new_prompt.md audit).
+      setWhere: sql`${providerEvents.seq} < ${assignedSeq}`,
+    });
+
+  // Live-push the versioned native frame to any SSE subscriber (north star
+  // "Canonical Events"). AFTER the persist, so a subscriber never sees a frame
+  // that isn't durable; and inside the serial chain, so frames go out in ascending
+  // seq order — the guarantee the reconnect cursor relies on.
+  publishNativeFrame(
+    input.runId,
+    makeNativeFrame({
+      eventId: input.id,
+      seq: assignedSeq,
+      provider: input.provider,
+      eventType: input.eventType,
+      sessionId: input.nativeSessionId ?? null,
+      parentSessionId: input.nativeParentSessionId ?? null,
+      messageId: input.nativeMessageId ?? null,
+      partId: input.nativePartId ?? null,
+      callId: input.nativeCallId ?? null,
+      payloadText: payload,
+    }),
+  );
 }
