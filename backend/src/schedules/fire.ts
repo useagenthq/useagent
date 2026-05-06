@@ -28,6 +28,8 @@ export async function fireSchedule(
       parentRunId: null,
       threadId: runId,
       repo: null,
+      // Scheduled runs are always fresh roots — organization memory by default.
+      memoryScope: "org",
     },
   });
   await pumpThread(runId);

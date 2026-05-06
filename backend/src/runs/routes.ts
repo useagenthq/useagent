@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import type { AppEnv } from "../http";
-import { ENGINE_IDS, type EngineId } from "../db/schema";
+import { ENGINE_IDS, MEMORY_SCOPES, type EngineId, type MemoryScope } from "../db/schema";
+import { isMemoryScope } from "../memory/scope";
 import { orgScope } from "../middleware/org";
 import {
   getRun,
@@ -35,6 +36,7 @@ runsRoutes.post("/", async (c) => {
     engine?: unknown;
     parent_run_id?: unknown;
     repo?: unknown;
+    memory_scope?: unknown;
   };
   try {
     body = await c.req.json();
@@ -72,6 +74,7 @@ runsRoutes.post("/", async (c) => {
   let parentRunId: string | null = null;
   let threadId: string = id;
   let inheritedRepo: string | null = null;
+  let parentScope: MemoryScope | null = null;
   if (body.parent_run_id !== undefined && body.parent_run_id !== null) {
     const rawParent =
       typeof body.parent_run_id === "string" ? body.parent_run_id.trim() : "";
@@ -83,6 +86,7 @@ runsRoutes.post("/", async (c) => {
     parentRunId = parent.id;
     threadId = parent.threadId;
     inheritedRepo = parent.repo;
+    parentScope = parent.memoryScope;
   }
 
   // Repo scope: a ROOT run may pick a repository (validated against the set
@@ -103,6 +107,23 @@ runsRoutes.post("/", async (c) => {
     repo = rawRepo;
   }
 
+  // Memory scope: an explicit choice from the authenticated user (validated) wins;
+  // otherwise a reply INHERITS its parent's scope and a root run defaults to "org".
+  // ONLY the scope enum is read from the body — never any identity (org/user is
+  // always server-resolved). An unknown value is a client error, not a fallback.
+  let memoryScope: MemoryScope;
+  if (body.memory_scope !== undefined && body.memory_scope !== null) {
+    if (!isMemoryScope(body.memory_scope)) {
+      return c.json(
+        { error: `memory_scope must be one of: ${MEMORY_SCOPES.join(", ")}` },
+        400,
+      );
+    }
+    memoryScope = body.memory_scope;
+  } else {
+    memoryScope = parentScope ?? "org";
+  }
+
   // Accept the run as a durable command. An `Idempotency-Key` makes a lost-
   // response retry observe the ORIGINAL run instead of starting duplicate work;
   // the un-keyed path behaves exactly as before (new run every call). Empty /
@@ -112,7 +133,7 @@ runsRoutes.post("/", async (c) => {
     idempotencyKey,
     orgId: c.get("orgId"),
     actorId: c.get("userId"),
-    run: { id, prompt, model, engine, parentRunId, threadId, repo },
+    run: { id, prompt, model, engine, parentRunId, threadId, repo, memoryScope },
   });
 
   // Translate the acceptance outcome to the HTTP response (exhaustive — a new

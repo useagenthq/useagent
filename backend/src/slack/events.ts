@@ -14,6 +14,7 @@
  *  - anything else                  → ignored (no channel-wide chatter).
  */
 import { slackConfig } from "../env";
+import type { MemoryScope } from "../db/schema";
 import { getDevContext } from "../seed";
 import { getRunForOrg } from "../runs/repo";
 import { acceptRunCommand } from "../commands";
@@ -136,11 +137,16 @@ export async function handleSlackEvent(body: SlackEnvelope): Promise<void> {
   let parentRunId: string | null = null;
   const runId = crypto.randomUUID();
   let threadId: string = runId;
+  // Slack has no scope selector: a reply inherits its thread-root's scope, a new
+  // thread defaults to "org". (Personal-scope Slack runs would need a verified
+  // per-actor identity, which the current dev-org fallback doesn't provide.)
+  let memoryScope: MemoryScope = "org";
   if (link) {
     const parent = await getRunForOrg(orgId, link.rootRunId);
     if (parent) {
       parentRunId = parent.id;
       threadId = parent.threadId;
+      memoryScope = parent.memoryScope;
     }
   }
 
@@ -151,7 +157,17 @@ export async function handleSlackEvent(body: SlackEnvelope): Promise<void> {
     idempotencyKey: null,
     orgId,
     actorId: userId,
-    run: { id: runId, prompt, model: config.model, engine: config.defaultEngine, parentRunId, threadId, repo: null },
+    run: {
+      id: runId,
+      prompt,
+      model: config.model,
+      engine: config.defaultEngine,
+      parentRunId,
+      threadId,
+      // Slack runs work in a bare sandbox (no repo picker) and default to org memory.
+      repo: null,
+      memoryScope,
+    },
   });
 
   // First bot interaction in this Slack thread → remember it as the root. Linked
