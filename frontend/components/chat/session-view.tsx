@@ -84,6 +84,7 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
           summary: stream.summary,
           live: stream.live,
           liveText: stream.liveText,
+          native: stream.native,
         }
       : {
           run,
