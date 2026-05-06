@@ -3,6 +3,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { Daytona, type Sandbox } from "@daytona/sdk";
 import type { EmitStep, EngineAdapter, EngineRunContext } from "./types";
+import { composeTurnPrompt } from "./types";
 import { basename, parseJsonLine, truncate } from "./util";
 
 // ---------------------------------------------------------------------------
@@ -430,7 +431,7 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
           ctx.saveEngineSessionId?.(sessionId);
 
           await ctx.emit({ kind: "task", label: `Running ${cfg.id} (resident)…`, chip: cfg.id });
-          const promptText = resumed ? ctx.prompt : ctx.contextPreamble + ctx.prompt;
+          const promptText = composeTurnPrompt(ctx, resumed);
           const result = await request("session/prompt", {
             sessionId,
             prompt: [{ type: "text", text: promptText }],
