@@ -5,7 +5,7 @@ import { migrate } from "drizzle-orm/postgres-js/migrator";
 import { auth } from "./auth";
 import { startEmailConnector } from "./connectors/email";
 import { db } from "./db/client";
-import { connectorEmailConfig, env } from "./env";
+import { allowDevOrg, connectorEmailConfig, env, googleAuthEnabled } from "./env";
 import { knowledgeRoutes } from "./knowledge/routes";
 import { desktopProxyRoutes } from "./runs/desktop-proxy";
 import { liveProxyRoutes } from "./runs/live-proxy";
@@ -31,9 +31,10 @@ await seedDev();
 // whose native opencode session actually finished server-side, fail the rest
 // with an honest resumable summary. One-shot, self-bounded — never hangs boot.
 const recovery = await recoverStaleRuns();
-if (recovery.reconciled > 0 || recovery.failed > 0) {
+if (recovery.reconciled > 0 || recovery.failed > 0 || recovery.redispatched > 0) {
   console.log(
-    `[boot] stale-run recovery — ${recovery.reconciled} reconciled, ${recovery.failed} failed`,
+    `[boot] command-lane recovery — ${recovery.reconciled} reconciled, ` +
+      `${recovery.failed} failed, ${recovery.redispatched} re-dispatched`,
   );
 }
 
@@ -52,6 +53,16 @@ app.use(
 );
 
 app.get("/api/health", (c) => c.json({ status: "ok" }));
+
+// Public client config — what the frontend needs to render auth affordances
+// (which social providers are enabled) without exposing any secret. `allowDevOrg`
+// lets the UI reflect that unauthenticated dev access is currently open.
+app.get("/api/config", (c) =>
+  c.json({
+    auth: { google: googleAuthEnabled(), emailPassword: true },
+    allowDevOrg: allowDevOrg(),
+  }),
+);
 
 // better-auth: email/password + organization plugin, mounted at /api/auth/*.
 app.on(["GET", "POST"], "/api/auth/*", (c) => auth.handler(c.req.raw));

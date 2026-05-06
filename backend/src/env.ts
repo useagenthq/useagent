@@ -19,6 +19,19 @@ export function devModeEnabled(): boolean {
   return (process.env.NODE_ENV ?? "development") !== "production";
 }
 
+/**
+ * Whether the seeded dev-org fallback for unauthenticated requests is allowed
+ * (middleware/org.ts). Dedicated production switch, independent of the broader
+ * dev-mode toggles: set `ALLOW_DEV_ORG=0` to force real auth on every domain
+ * route even in dev. Default follows {@link devModeEnabled} so nothing breaks
+ * today (ON in dev, OFF in production). Read per call so a deploy can flip it.
+ */
+export function allowDevOrg(): boolean {
+  const flag = process.env.ALLOW_DEV_ORG;
+  if (flag !== undefined) return flag === "1" || flag === "true";
+  return devModeEnabled();
+}
+
 const DEFAULT_AUTH_SECRET = "dev-skynet-secret-change-me";
 
 /** Resolve the auth secret. Production (dev mode off) must supply its own. */
@@ -80,6 +93,42 @@ export function memoryConfig(): MemoryConfig | null {
     agentId: process.env.MEMORY_AGENT_ID ?? "skynet-backend",
     userId: process.env.MEMORY_USER_ID ?? "skynet",
   };
+}
+
+/**
+ * Google social-sign-in config for better-auth (src/auth.ts). Gated exactly like
+ * slackConfig(): read per call; BOTH `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`
+ * must be set or the provider is off — `googleAuthConfig()` returns null, the
+ * "Continue with Google" button is disabled, and email/password still works. A
+ * partial (one of the two set) is a misconfiguration: warn and stay off rather
+ * than half-enable.
+ *
+ * The OAuth redirect URI Google must allow is `<BETTER_AUTH_URL>/api/auth/
+ * callback/google`; set `BETTER_AUTH_URL` to the public app origin so the session
+ * cookie lands first-party (the Next `/api/*` rewrite proxies it to the backend).
+ */
+export interface GoogleAuthConfig {
+  clientId: string;
+  clientSecret: string;
+}
+
+export function googleAuthConfig(): GoogleAuthConfig | null {
+  const clientId = process.env.GOOGLE_CLIENT_ID?.trim();
+  const clientSecret = process.env.GOOGLE_CLIENT_SECRET?.trim();
+  if (!clientId && !clientSecret) return null; // unset → silently off
+  if (!clientId || !clientSecret) {
+    console.warn(
+      "[auth] GOOGLE_CLIENT_ID/GOOGLE_CLIENT_SECRET is only partially set — " +
+        "Google sign-in disabled. Set both or neither.",
+    );
+    return null;
+  }
+  return { clientId, clientSecret };
+}
+
+/** True when the Google provider is fully configured (both keys present). */
+export function googleAuthEnabled(): boolean {
+  return googleAuthConfig() !== null;
 }
 
 /**
