@@ -3,7 +3,6 @@ import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import {
   buildThreadPreamble,
-  completeRun,
   getRun,
   getThreadEngineSession,
   insertStep,
@@ -216,7 +215,7 @@ async function runMock(runId: string): Promise<void> {
     bus.emit(channel(runId), { type: "end", status: "completed" } satisfies BusEvent);
   } catch (err) {
     console.error(`[worker] run ${runId} failed:`, err);
-    await completeRun(runId, "failed", "worker error", Date.now() - startedAt);
+    await finalizeRun(runId, "failed", "worker error", Date.now() - startedAt);
     bus.emit(channel(runId), { type: "end", status: "failed" } satisfies BusEvent);
   }
 }
@@ -256,7 +255,7 @@ async function runEngine(
 
   const adapter = adapters[engineId];
   if (!adapter) {
-    await completeRun(runId, "failed", `unknown engine: ${engineId}`, 0);
+    await finalizeRun(runId, "failed", `unknown engine: ${engineId}`, 0);
     bus.emit(channel(runId), { type: "end", status: "failed" } satisfies BusEvent);
     return;
   }
@@ -368,7 +367,7 @@ async function runEngine(
       : err instanceof Error && err.message
         ? `error: ${err.message.replace(/\s+/g, " ").slice(0, 180)}`
         : "engine error";
-    await completeRun(runId, "failed", reason, Date.now() - startedAt);
+    await finalizeRun(runId, "failed", reason, Date.now() - startedAt);
     bus.emit(channel(runId), { type: "end", status: "failed" } satisfies BusEvent);
   } finally {
     turnStream.end(runId);

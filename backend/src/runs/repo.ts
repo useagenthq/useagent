@@ -126,15 +126,6 @@ export async function getLastStepAt(runId: string): Promise<Date | null> {
   return row?.at ?? null;
 }
 
-/** Mark a single stale run failed with an explicit summary (the boot reconciler
- * uses this for runs it cannot safely reconcile). */
-export async function markRunFailed(id: string, summary: string): Promise<void> {
-  await db
-    .update(runs)
-    .set({ status: "failed", summary, updatedAt: new Date() })
-    .where(eq(runs.id, id));
-}
-
 // ---------------------------------------------------------------------------
 // Runs
 // ---------------------------------------------------------------------------

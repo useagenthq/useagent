@@ -153,12 +153,15 @@ export async function handleSlackEvent(body: SlackEnvelope): Promise<void> {
     actorId: userId,
     run: { id: runId, prompt, model: config.model, engine: config.defaultEngine, parentRunId, threadId },
   });
-  await pumpThread(threadId);
 
-  // First bot interaction in this Slack thread → remember it as the root.
+  // First bot interaction in this Slack thread → remember it as the root. Linked
+  // BEFORE dispatch so run finalization (runs/finalize.ts) can always resolve the
+  // Slack thread to enqueue the reply, even for a run that finishes near-instantly.
   if (!link) {
     await linkSlackThread({ channel, threadTs: slackThreadTs, rootRunId: runId, orgId });
   }
+
+  await pumpThread(threadId);
 
   const client = resolveSlackClient(config);
   // Durable receipt reaction (survives a restart; keyed once per message).
