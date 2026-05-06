@@ -45,6 +45,80 @@ interface AtomicSearchData {
   items: AtomicHit[];
 }
 
+// ── Per-run identity (north star Phase 2) ────────────────────────────────────
+// Resolve the memory isolation ids from the RUN ROW, not static MEMORY_* env.
+// One configured team stays the default; the user is the authenticated Skynet
+// user, the session is the canonical Skynet thread, and the run id rides along
+// as provenance. Never use an OpenCode/native session id as a product identity.
+
+export interface MemoryIdentity {
+  readonly teamId: string;
+  readonly agentId: string;
+  readonly userId: string;
+  /** MemoryCore `session_id` — the canonical Skynet threadId. */
+  readonly sessionId: string;
+  /** Provenance metadata (not an isolation key). */
+  readonly runId?: string;
+}
+
+/** A source pointer kept on every recalled item so the UI can cite/correct it. */
+export interface MemoryCitation {
+  readonly provider: "tencent-memorycore";
+  /** The L1 atomic-fact id (`data.items[].id`). */
+  readonly assetId: string;
+  readonly score?: number;
+}
+
+/** One recalled L1 fact as a structured, cited item (not just a text line). */
+export interface MemoryItem {
+  readonly kind: "memory";
+  readonly content: string;
+  readonly citation: MemoryCitation;
+  /** Retrieved material is REFERENCE, never instructions. */
+  readonly trust: "reference";
+}
+
+/** The result of a recall: the framed block for the prompt PLUS the structured
+ *  items + citations the retrieval ledger and "Context used" UX consume. */
+export interface MemoryRecall {
+  /** Framed reference block ready to use as `turnContext` ("" when nothing). */
+  readonly rendered: string;
+  readonly items: readonly MemoryItem[];
+  /** Some hits were dropped to stay under the char budget. */
+  readonly truncated: boolean;
+  readonly latencyMs: number;
+}
+
+const EMPTY_RECALL: MemoryRecall = {
+  rendered: "",
+  items: [],
+  truncated: false,
+  latencyMs: 0,
+};
+
+/**
+ * Resolve the memory identity for a run: the configured single team is the
+ * default, but the user/session/provenance come from the RUN ROW. Returns null
+ * when memory is disabled (`MEMORY_API_URL` unset) so callers gate cleanly.
+ */
+export function resolveMemoryIdentity(run: {
+  userId: string | null;
+  threadId: string;
+  id: string;
+}): MemoryIdentity | null {
+  const cfg = memoryConfig();
+  if (!cfg) return null;
+  return {
+    teamId: cfg.teamId,
+    agentId: cfg.agentId,
+    // Authenticated Skynet user; fall back to the team default for legacy/system
+    // runs with no user (keeps single-team recall working, never leaks across users).
+    userId: run.userId ?? cfg.userId,
+    sessionId: run.threadId,
+    runId: run.id,
+  };
+}
+
 /**
  * POST an isolation-scoped body to a v3 endpoint and return `data`, or null on
  * any failure (timeout, network error, non-2xx, non-zero business code, bad
@@ -80,42 +154,60 @@ async function post<T>(
   }
 }
 
-/** Render L1 hits as a capped, clearly-framed reference block. Returns "" when
- *  there is nothing to show (so callers can prepend unconditionally). */
-function formatMemoryBlock(items: AtomicHit[]): string {
+/** Build a recall from L1 hits: a capped, clearly-framed reference block for the
+ *  prompt PLUS the structured cited items the ledger/UX consume. Same char
+ *  budget and framing as before; `items` and `rendered` stay in lock-step (an
+ *  item exists iff its line was kept). `rendered` is "" when nothing to show. */
+function buildRecall(hits: AtomicHit[], latencyMs: number): MemoryRecall {
   const lines: string[] = [];
+  const items: MemoryItem[] = [];
   let used = 0;
-  for (const hit of items) {
+  let truncated = false;
+  for (const hit of hits) {
     const content = hit.content?.trim();
     if (!content) continue;
     const background = hit.background?.trim();
     const line = background ? `- ${content} (${background})` : `- ${content}`;
-    if (used + line.length + 1 > MAX_BLOCK_CHARS) break;
+    if (used + line.length + 1 > MAX_BLOCK_CHARS) {
+      truncated = true;
+      break;
+    }
     lines.push(line);
     used += line.length + 1;
+    items.push({
+      kind: "memory",
+      content,
+      citation: { provider: "tencent-memorycore", assetId: hit.id, score: hit.score },
+      trust: "reference",
+    });
   }
-  if (lines.length === 0) return "";
-  return `${BLOCK_HEADER}\n${lines.join("\n")}\n${BLOCK_FOOTER}\n\n`;
+  const rendered =
+    lines.length === 0 ? "" : `${BLOCK_HEADER}\n${lines.join("\n")}\n${BLOCK_FOOTER}\n\n`;
+  return { rendered, items, truncated, latencyMs };
 }
 
 /**
- * Fetch team memory relevant to `query` and return a compact, framed text block
- * ready to prepend to an engine's context preamble — or "" when memory is
- * disabled, empty, or unreachable. Never throws.
+ * Fetch team memory relevant to `query`, scoped to the run's {@link MemoryIdentity},
+ * and return a structured recall: `.rendered` is the framed reference block for
+ * `turnContext`; `.items` are the cited facts for the ledger/UX. Returns an empty
+ * recall when memory is disabled, the query is blank, or the service is
+ * unreachable. Never throws.
  */
 export async function searchTeamMemory(
   query: string,
+  identity: MemoryIdentity,
   opts: { limit?: number; timeoutMs?: number } = {},
-): Promise<string> {
+): Promise<MemoryRecall> {
   const cfg = memoryConfig();
-  if (!cfg || !query.trim()) return "";
+  if (!cfg || !query.trim()) return EMPTY_RECALL;
 
+  const started = Date.now();
   const data = await post<AtomicSearchData>(
     "/v3/atomic/search",
     {
-      team_id: cfg.teamId,
-      agent_id: cfg.agentId,
-      user_id: cfg.userId,
+      team_id: identity.teamId,
+      agent_id: identity.agentId,
+      user_id: identity.userId,
       query,
       limit: opts.limit ?? DEFAULT_LIMIT,
     },
@@ -123,7 +215,7 @@ export async function searchTeamMemory(
     opts.timeoutMs ?? DEFAULT_TIMEOUT_MS,
   );
 
-  return formatMemoryBlock(data?.items ?? []);
+  return buildRecall(data?.items ?? [], Date.now() - started);
 }
 
 /**
@@ -134,21 +226,19 @@ export async function searchTeamMemory(
  */
 export async function recordRunMemory(
   run: { prompt: string; summary: string },
-  opts: { sessionId?: string; timeoutMs?: number } = {},
+  identity: MemoryIdentity,
+  opts: { timeoutMs?: number } = {},
 ): Promise<void> {
   const cfg = memoryConfig();
   if (!cfg || !run.prompt.trim()) return;
 
-  const sessionId =
-    opts.sessionId ?? process.env.MEMORY_SESSION_ID ?? "skynet-runs";
-
   await post(
     "/v3/conversation/add",
     {
-      team_id: cfg.teamId,
-      agent_id: cfg.agentId,
-      user_id: cfg.userId,
-      session_id: sessionId,
+      team_id: identity.teamId,
+      agent_id: identity.agentId,
+      user_id: identity.userId,
+      session_id: identity.sessionId,
       messages: [
         { role: "user", content: run.prompt },
         { role: "assistant", content: run.summary },
