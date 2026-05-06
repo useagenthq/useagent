@@ -333,6 +333,15 @@ export const opencodeServerAdapter: EngineAdapter = {
         }
       };
 
+      // All part handling funnels through one serial chain — handlePart's
+      // emit-once dedupe (check, await emit, set) is only atomic if two sources
+      // (SSE pump / mid-turn poller / finalize) can never interleave on it.
+      let partChain: Promise<void> = Promise.resolve();
+      const enqueuePart = (part: Record<string, unknown>, delta?: string): Promise<void> => {
+        partChain = partChain.then(() => handlePart(part, delta)).catch(() => {});
+        return partChain;
+      };
+
       const pumpEvents = async (): Promise<void> => {
         const res = await fetch(`${baseUrl}/event`, {
           headers: authHeaders(token),
@@ -369,7 +378,7 @@ export const opencodeServerAdapter: EngineAdapter = {
               childSessions.add(props.info.id);
             }
             if (ev.type === "message.part.updated" && props.part) {
-              await handlePart(props.part, typeof props.delta === "string" ? props.delta : undefined);
+              await enqueuePart(props.part, typeof props.delta === "string" ? props.delta : undefined);
             }
           }
         }
@@ -412,6 +421,49 @@ export const opencodeServerAdapter: EngineAdapter = {
       const onAbort2 = () => turnAbort.abort();
       ctx.signal.addEventListener("abort", onAbort2, { once: true });
 
+      // Mid-turn history poller: the Daytona preview proxy sometimes buffers
+      // the /event SSE stream entirely, leaving a working run invisible until
+      // finalize. REST is reliable — poll parent + child histories and feed
+      // tool/subtask parts through the same serialized translator (text stays
+      // SSE-only: re-polling full text would fight the delta channel).
+      const pollAbort = new AbortController();
+      const poller = (async () => {
+        while (!pollAbort.signal.aborted) {
+          await new Promise((r) => setTimeout(r, 2500));
+          if (pollAbort.signal.aborted) break;
+          try {
+            const cres = await fetch(`${baseUrl}/session/${sessionId}/children${dirQ}`, {
+              headers,
+              signal: pollAbort.signal,
+            });
+            if (cres.ok) {
+              for (const c of (await cres.json()) as { id?: string }[]) {
+                if (c.id && !preTurnChildren.has(c.id)) childSessions.add(c.id);
+              }
+            }
+            for (const id of [sessionId, ...childSessions]) {
+              const res = await fetch(`${baseUrl}/session/${id}/message${dirQ}`, {
+                headers,
+                signal: pollAbort.signal,
+              });
+              if (!res.ok) continue;
+              const msgs = (await res.json()) as {
+                info?: { id?: string };
+                parts?: Record<string, unknown>[];
+              }[];
+              for (const m of msgs) {
+                if (m.info?.id && preTurnMessages.has(m.info.id)) continue;
+                for (const part of m.parts ?? []) {
+                  if (part.type === "tool" || part.type === "subtask") await enqueuePart(part);
+                }
+              }
+            }
+          } catch {
+            /* transient poll failure — next tick retries */
+          }
+        }
+      })();
+
       const postPrompt = async (text: string): Promise<Response> =>
         fetch(`${baseUrl}/session/${sessionId}/message${dirQ}`, {
           method: "POST",
@@ -449,8 +501,10 @@ export const opencodeServerAdapter: EngineAdapter = {
         // Give trailing SSE frames a beat to land, then close the stream.
         await new Promise((r) => setTimeout(r, 300));
         sseAbort.abort();
+        pollAbort.abort();
         ctx.signal.removeEventListener("abort", onParentAbort);
         await pump;
+        await poller;
       }
 
       // ── finalize from the AUTHORITATIVE session history ─────────────────────
@@ -474,7 +528,7 @@ export const opencodeServerAdapter: EngineAdapter = {
             // Prior turns' messages belong to prior worklogs.
             if (m.info?.id && preTurnMessages.has(m.info.id)) continue;
             for (const part of m.parts ?? []) {
-              if (part.type === "tool" || part.type === "subtask") await handlePart(part);
+              if (part.type === "tool" || part.type === "subtask") await enqueuePart(part);
             }
           }
         } catch {
