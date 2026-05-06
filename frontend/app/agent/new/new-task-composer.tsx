@@ -12,7 +12,8 @@ import {
 import * as Switch from "@/components/ui/switch";
 import { AsteriskMark } from "@/components/foundations/brand/asterisk-mark";
 import { backendFetch } from "@/lib/backend-fetch";
-import { ENGINES, type EngineId } from "@/components/chat/types";
+import { ENGINES, type EngineId, type MemoryScope } from "@/components/chat/types";
+import { MemoryScopePicker } from "@/components/chat/memory-scope-picker";
 import {
   filterCommands,
   SlashCommandPopover,
@@ -103,6 +104,7 @@ export function NewTaskComposer({ skills }: { skills: Skill[] }) {
   const [model, setModel] = useState(MODELS[0].value);
   const [machine, setMachine] = useState(MACHINES[0].value);
   const [engine, setEngine] = useState<string>(ENGINES[0].id);
+  const [memoryScope, setMemoryScope] = useState<MemoryScope>("org");
   const [branch, setBranch] = useState("main");
   const [planFirst, setPlanFirst] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -257,6 +259,7 @@ export function NewTaskComposer({ skills }: { skills: Skill[] }) {
         body: JSON.stringify({
           prompt: composed,
           engine,
+          memory_scope: memoryScope,
           ...(engine === "opencode" ? { model } : {}),
           ...(repo ? { repo } : {}),
         }),
@@ -354,6 +357,8 @@ export function NewTaskComposer({ skills }: { skills: Skill[] }) {
               value={machine}
               onChange={setMachine}
             />
+            {/* Team-memory pool this task reads/writes (org vs personal). */}
+            <MemoryScopePicker scope={memoryScope} onChange={setMemoryScope} />
           </div>
 
           {/* Secondary controls + CTA */}

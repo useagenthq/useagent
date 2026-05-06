@@ -14,6 +14,8 @@ export type EngineId =
   | "daytona"
   | "acp";
 export type StepKind = "command" | "file" | "task" | "done";
+/** Which team-memory pool a run reads/writes (backend `memory_scope`). */
+export type MemoryScope = "org" | "personal";
 export type { RunStatus };
 
 export interface ApiStep {
@@ -42,6 +44,10 @@ export interface ApiRun {
    * recorded for this run. The thread's latest non-null value deep-links the
    * "Live" tab straight into that session (see session-view.tsx / live-pane.tsx). */
   engine_session_id?: string | null;
+  /** Which team-memory pool this run reads/writes. A reply's composer defaults to
+   *  the thread's current scope (its newest run). Optional so a pre-scope run
+   *  shape still parses; treated as "org" when absent. */
+  memory_scope?: MemoryScope;
   created_at: string;
   updated_at: string;
   steps: ApiStep[];
