@@ -343,7 +343,11 @@ export const opencodeServerAdapter: EngineAdapter = {
       };
 
       const pumpEvents = async (): Promise<void> => {
-        const res = await fetch(`${baseUrl}/event`, {
+        // Workspace-scoped: /event WITHOUT ?directory attaches to the DEFAULT
+        // workspace instance's bus and hears nothing from this session (probe:
+        // 1 frame vs 39 for the same activity). This — not proxy buffering —
+        // was the live-dead-air culprit; the poller stays as belt-and-braces.
+        const res = await fetch(`${baseUrl}/event${dirQ}`, {
           headers: authHeaders(token),
           signal: sseAbort.signal,
         });
