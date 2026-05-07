@@ -13,6 +13,7 @@
  *   bun test/e2e/soak/lib/daytona.ts delete <id> [<id>…]  — delete + verify these ids
  */
 import { Daytona, type Sandbox } from "@daytona/sdk";
+import postgres from "postgres";
 
 export interface SandboxInfo {
   id: string;
@@ -81,9 +82,75 @@ export async function deleteById(
   return { deleted, failed };
 }
 
+/**
+ * Orphan sweep (lead-authorized). Deletes skynet-run sandboxes that are safe to
+ * reap, VERIFYING each deletion, and NEVER touching a box that belongs to live
+ * work. A sandbox is deleted iff:
+ *   (1) ORPHAN — its `skynet-run` label runId is NOT a row in the shared `skynet`
+ *       runs table (a run whose sandbox outlived its (throwaway) DB), OR
+ *   (2) STOPPED — its state is stopped/archived/paused (idle leftover).
+ * `keepIds` (e.g. ids an agent reports active) are always spared. `dryRun` reports
+ * the plan without deleting. Reads existing runIds from DATABASE_URL (read-only).
+ */
+export async function sweepOrphans(opts: { dryRun?: boolean; keepIds?: Set<string> } = {}): Promise<{
+  scanned: number;
+  existingRuns: number;
+  spared: Array<{ id: string; run: string; state: string; reason: string }>;
+  targeted: Array<{ id: string; run: string; state: string; reason: string }>;
+  deleted: string[];
+  failed: { id: string; error: string }[];
+}> {
+  const dbUrl = process.env.DATABASE_URL;
+  if (!dbUrl) throw new Error("DATABASE_URL (shared skynet) not set — cannot classify orphans");
+  const sql = postgres(dbUrl, { max: 1 });
+  let existing: Set<string>;
+  try {
+    const rows = (await sql`select id from runs`) as unknown as Array<{ id: string }>;
+    existing = new Set(rows.map((r) => r.id));
+  } finally {
+    await sql.end();
+  }
+  const boxes = await listSkynet();
+  const keep = opts.keepIds ?? new Set<string>();
+  const STOPPED = new Set(["stopped", "archived", "paused"]);
+  const spared: Array<{ id: string; run: string; state: string; reason: string }> = [];
+  const targeted: Array<{ id: string; run: string; state: string; reason: string }> = [];
+  for (const b of boxes) {
+    const run = b.labels["skynet-run"] ?? "";
+    const state = b.state ?? "unknown";
+    if (keep.has(b.id)) { spared.push({ id: b.id, run, state, reason: "keep-listed (agent active)" }); continue; }
+    const isOrphan = !run || !existing.has(run);
+    const isStopped = STOPPED.has(state);
+    if (isOrphan) targeted.push({ id: b.id, run, state, reason: "orphan (runId absent from skynet.runs)" });
+    else if (isStopped) targeted.push({ id: b.id, run, state, reason: `stopped (${state})` });
+    else spared.push({ id: b.id, run, state, reason: "active (runId present, started)" });
+  }
+  let deleted: string[] = [];
+  let failed: { id: string; error: string }[] = [];
+  if (!opts.dryRun && targeted.length > 0) {
+    const res = await deleteById(targeted.map((t) => t.id));
+    deleted = res.deleted;
+    failed = res.failed;
+  }
+  return { scanned: boxes.length, existingRuns: existing.size, spared, targeted, deleted, failed };
+}
+
 if (import.meta.main) {
   const [mode, ...rest] = process.argv.slice(2);
-  if (mode === "list") {
+  if (mode === "sweep-orphans" || mode === "sweep-dry") {
+    const keepIds = new Set(rest.filter((x) => x.length > 8)); // any ids to spare
+    const res = await sweepOrphans({ dryRun: mode === "sweep-dry", keepIds });
+    console.log(`DAYTONA_SWEEP=${JSON.stringify({
+      dryRun: mode === "sweep-dry",
+      scanned: res.scanned,
+      existingRuns: res.existingRuns,
+      targeted: res.targeted.map((t) => ({ id: t.id.slice(0, 12), run: t.run.slice(0, 8), state: t.state, reason: t.reason })),
+      spared: res.spared.map((s) => ({ id: s.id.slice(0, 12), run: s.run.slice(0, 8), state: s.state })),
+      deleted: res.deleted.length,
+      failed: res.failed,
+    })}`);
+    process.exit(res.failed.length === 0 ? 0 : 1);
+  } else if (mode === "list") {
     const skynet = await listSkynet();
     const all = await listAll();
     console.log(
