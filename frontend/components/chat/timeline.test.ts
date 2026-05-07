@@ -172,6 +172,42 @@ describe("canonical context markers", () => {
     expect(nodes.slice(2).some((n) => n.kind === "text" && n.text === "First burst.")).toBe(true);
   });
 
+  test("a playbook skill.loaded frame flags the marker as a playbook; a plain skill does not", () => {
+    const pb = turnStore();
+    pb.ingestNative(
+      skynetFrame("skillloaded_run-1", 0, "skill.loaded", {
+        skillId: "pb1",
+        version: 1,
+        kind: "playbook",
+        name: "Triage escalation",
+        contentHash: "def456",
+        source: "skill",
+        contentChars: 200,
+      }),
+      0,
+    );
+    expect(buildTimeline(pb.getSnapshot(), false)![0]).toMatchObject({
+      marker: { kind: "skill", playbook: true, name: "Triage escalation" },
+    });
+
+    // A frame without kind (or a plain skill) defaults to playbook:false.
+    const sk = turnStore();
+    sk.ingestNative(
+      skynetFrame("skillloaded_run-1", 0, "skill.loaded", {
+        skillId: "sk1",
+        version: 1,
+        name: "Answer in haiku",
+        contentHash: "abc",
+        source: "skill",
+        contentChars: 40,
+      }),
+      0,
+    );
+    expect(buildTimeline(sk.getSnapshot(), false)![0]).toMatchObject({
+      marker: { kind: "skill", playbook: false },
+    });
+  });
+
   test("an UNKNOWN skynet eventType is ignored (renders safely as nothing)", () => {
     const s = turnStore();
     s.ingestNative(skynetFrame("weird_run-1", 0, "policy.denied.future", { foo: 1 }), 0);
