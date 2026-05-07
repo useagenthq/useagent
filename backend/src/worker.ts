@@ -79,13 +79,44 @@ const SCRIPT: ScriptedStep[] = [
 
 const registry = new Map<string, Promise<void>>();
 
+// runId → abort the in-flight actor with a reason. Present ONLY while an actor
+// executes in THIS process. A durable `run.cancel` command records the intent
+// (commands/cancel.ts); this is the in-memory signal that stops the live turn
+// fast. Cleared in runWorker's finally.
+const cancellers = new Map<string, (reason: string) => void>();
+
+/** Signal the in-flight actor for `runId` to stop with `reason` (a user cancel).
+ *  Returns true if a live actor was signalled, false if none runs in this
+ *  process (queued/terminal/gone). Idempotent — the first reason wins. */
+export function signalCancel(runId: string, reason: string): boolean {
+  const cancel = cancellers.get(runId);
+  if (!cancel) return false;
+  cancel(reason);
+  return true;
+}
+
+/** Sleep that resolves early if `signal` aborts — so a scripted mock turn stops
+ *  within one step of a cancel instead of running to its next tick. */
+function abortableSleep(ms: number, signal: AbortSignal): Promise<void> {
+  if (signal.aborted) return Promise.resolve();
+  return new Promise((resolve) => {
+    const onAbort = () => {
+      clearTimeout(t);
+      resolve();
+    };
+    const t = setTimeout(() => {
+      signal.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    signal.addEventListener("abort", onAbort, { once: true });
+  });
+}
+
 // Optional test/dev knob: collapse the scripted per-step delay so a run
 // completes near-instantly. Unset in normal operation (real cadence preserved).
 const STEP_DELAY_OVERRIDE_MS = process.env.WORKER_STEP_DELAY_MS
   ? Number(process.env.WORKER_STEP_DELAY_MS)
   : null;
-
-const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
 function summarize(steps: ScriptedStep[]): string {
   const work = steps.filter((s) => s.kind !== "done");
@@ -142,6 +173,19 @@ async function runWorker(runId: string): Promise<void> {
   const run = await getRun(runId);
   if (!run) return; // deleted before the actor started
 
+  // Cancellation plumbing (durable cancel): ONE AbortController per actor,
+  // registered so an out-of-band `run.cancel` can abort THIS live turn. The
+  // engine timeout aborts the same signal; `cancelReason` (set only on a user
+  // cancel) is how the finalize path tells the two apart.
+  const ac = new AbortController();
+  let cancelReason: string | null = null;
+  const requestCancel = (reason: string): void => {
+    if (cancelReason === null) cancelReason = reason;
+    ac.abort();
+  };
+  const wasCancelled = (): string | null => cancelReason;
+  cancellers.set(runId, requestCancel);
+
   try {
     // Skill context (Phase 0 slice 0.1): resolve + record the run's pinned skill
     // FIRST, for ANY engine. A run that selected a skill "loaded" it regardless of
@@ -169,9 +213,10 @@ async function runWorker(runId: string): Promise<void> {
       });
     }
 
-    // `mock` is the scripted trace and ignores context entirely.
+    // `mock` is the scripted trace and ignores context entirely. It IS
+    // cancellable — the abortable sleep + signal make a live mock turn stop.
     if (run.engine === "mock") {
-      await runMock(runId);
+      await runMock(runId, ac.signal, wasCancelled);
       return;
     }
 
@@ -212,33 +257,64 @@ async function runWorker(runId: string): Promise<void> {
     // The completed-turn capture is enqueued by runs/finalize.ts (transactionally,
     // from the run row's scope) — not here — so it survives a crash in the old
     // completeRun→enqueue gap and covers the mock + boot-reconcile paths too.
-    await runEngine(
-      runId,
-      run.engine,
-      run.prompt,
-      bootstrapContext,
-      turnContext,
-      skillContext,
-      run.threadId,
-      run.model,
-      run.repos,
-      run.orgId,
-      run.userId,
-    );
+    // The hard timeout aborts the SAME controller the user cancel does; the
+    // adapter's AbortSignal fires for either. `wasCancelled()` distinguishes them
+    // in runEngine's finalize path (cancel → "Stopped by user", else timed out).
+    const timer = setTimeout(() => ac.abort(), ADAPTER_TIMEOUT_MS);
+    try {
+      await runEngine(
+        runId,
+        run.engine,
+        run.prompt,
+        bootstrapContext,
+        turnContext,
+        skillContext,
+        run.threadId,
+        run.model,
+        run.repos,
+        run.orgId,
+        run.userId,
+        ac.signal,
+        wasCancelled,
+      );
+    } finally {
+      clearTimeout(timer);
+    }
   } finally {
     // Free the thread and dispatch its next turn — whatever the outcome.
+    cancellers.delete(runId);
     await onRunSettled(runId, run.threadId);
   }
 }
 
-async function runMock(runId: string): Promise<void> {
+async function runMock(
+  runId: string,
+  signal: AbortSignal,
+  wasCancelled: () => string | null,
+): Promise<void> {
   const startedAt = Date.now();
   await setRunStatus(runId, "running");
 
   let idx = 0;
   try {
     for (const scripted of SCRIPT) {
-      await sleep(STEP_DELAY_OVERRIDE_MS ?? scripted.delayMs);
+      await abortableSleep(STEP_DELAY_OVERRIDE_MS ?? scripted.delayMs, signal);
+      // A user cancel settles the run honestly as "Stopped by user".
+      const reason = wasCancelled();
+      if (reason !== null) {
+        const done = await insertStep({
+          runId,
+          idx,
+          kind: "done",
+          label: reason,
+          chip: null,
+          code: null,
+        }).catch(() => null);
+        if (done) bus.emit(channel(runId), { type: "step", step: done } satisfies BusEvent);
+        await finalizeRun(runId, "failed", reason, Date.now() - startedAt);
+        bus.emit(channel(runId), { type: "end", status: "failed" } satisfies BusEvent);
+        return;
+      }
       // Bail if the run vanished (e.g. deleted) — defensive, keeps FK sane.
       if (!(await getRun(runId))) return;
       const step = await insertStep({
@@ -289,6 +365,10 @@ async function runEngine(
   repos: string[],
   orgId: string | null,
   userId: string | null,
+  /** Aborts on the hard timeout OR a user cancel (worker owns the controller). */
+  signal: AbortSignal,
+  /** Non-null once a user cancel fired — distinguishes cancel from timeout. */
+  wasCancelled: () => string | null,
 ): Promise<void> {
   const startedAt = Date.now();
   await setRunStatus(runId, "running");
@@ -342,9 +422,6 @@ async function runEngine(
     return persisted.id;
   };
 
-  const ac = new AbortController();
-  const timer = setTimeout(() => ac.abort(), ADAPTER_TIMEOUT_MS);
-
   const ctx: EngineRunContext = {
     runId,
     prompt,
@@ -365,7 +442,7 @@ async function runEngine(
         console.error(`[worker] failed to persist engine session id for ${runId}:`, err),
       );
     },
-    signal: ac.signal,
+    signal,
     emit,
     // In-place step enrichment (same idx → SSE clients upsert): a tool call
     // surfaces the moment it's invoked; its output lands on the SAME step.
@@ -390,7 +467,6 @@ async function runEngine(
 
   try {
     await adapter.run(ctx);
-    clearTimeout(timer);
     const finalSummary = summary ?? "run completed";
     // Finalize transactionally: commit `completed` AND enqueue the durable memory
     // capture (idempotent by runId) in one transaction, so a crash can never leave
@@ -399,24 +475,31 @@ async function runEngine(
     await finalizeRun(runId, "completed", finalSummary, summaryDuration ?? Date.now() - startedAt);
     bus.emit(channel(runId), { type: "end", status: "completed" } satisfies BusEvent);
   } catch (err) {
-    clearTimeout(timer);
-    const timedOut = ac.signal.aborted;
-    console.error(`[worker] engine ${engineId} run ${runId} failed:`, err);
+    // A user cancel wins over a coincident timeout: the abort was requested, so
+    // report it honestly as "Stopped by user" rather than a timeout/error.
+    const cancelledReason = wasCancelled();
+    const cancelled = cancelledReason !== null;
+    const timedOut = signal.aborted && !cancelled;
+    if (!cancelled) console.error(`[worker] engine ${engineId} run ${runId} failed:`, err);
     // Terminal done step so the trace shows why it stopped.
     await emit({
       kind: "done",
-      label: timedOut
-        ? `Timed out after ${ADAPTER_TIMEOUT_MS / 1000}s`
-        : "Engine error",
+      label: cancelled
+        ? cancelledReason
+        : timedOut
+          ? `Timed out after ${ADAPTER_TIMEOUT_MS / 1000}s`
+          : "Engine error",
       chip: null,
     }).catch(() => {});
     // Surface the REAL failure reason (truncated) — a bare "engine error"
     // summary tells the user nothing actionable (battle-test T6 finding).
-    const reason = timedOut
-      ? `timed out after ${ADAPTER_TIMEOUT_MS / 1000}s`
-      : err instanceof Error && err.message
-        ? `error: ${err.message.replace(/\s+/g, " ").slice(0, 180)}`
-        : "engine error";
+    const reason = cancelled
+      ? cancelledReason
+      : timedOut
+        ? `timed out after ${ADAPTER_TIMEOUT_MS / 1000}s`
+        : err instanceof Error && err.message
+          ? `error: ${err.message.replace(/\s+/g, " ").slice(0, 180)}`
+          : "engine error";
     await finalizeRun(runId, "failed", reason, Date.now() - startedAt);
     bus.emit(channel(runId), { type: "end", status: "failed" } satisfies BusEvent);
   } finally {

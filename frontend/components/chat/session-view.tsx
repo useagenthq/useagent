@@ -8,6 +8,7 @@ import {
   RiComputerLine,
   RiLayoutRightLine,
   RiRobot2Line,
+  RiStopCircleLine,
   RiTerminalBoxLine,
 } from "@remixicon/react";
 import { backendFetch } from "@/lib/backend-fetch";
@@ -69,6 +70,7 @@ function StatusPill({ status }: { status: RunStatus }) {
 export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
   const [thread, setThread] = useState(initialThread);
   const [pendingReply, setPendingReply] = useState<string | null>(null);
+  const [stopping, setStopping] = useState(false);
 
   const newest = thread[thread.length - 1];
   const rootId = thread[0].id;
@@ -172,6 +174,23 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
     [newest.id, refetchThread],
   );
 
+  // Stop the live turn: POST the durable cancel. The backend aborts the actor and
+  // settles the run "Stopped by user"; the SSE stream then emits its terminal
+  // event, so the pill flips and the wasLive effect refetches — nothing to do
+  // here but fire and let the stream drive the UI.
+  const canStop = stream.status === "queued" || stream.status === "running";
+  const handleStop = useCallback(async () => {
+    if (stopping) return;
+    setStopping(true);
+    try {
+      await backendFetch(`/api/runs/${newest.id}/cancel`, { method: "POST" });
+    } catch {
+      // Leave the button; the turn is still live so the user can retry Stop.
+    } finally {
+      setStopping(false);
+    }
+  }, [newest.id, stopping]);
+
   // Right rail: ONE tabbed panel (Editor | Terminal), not stacked panes. It only
   // claims width when there's REAL content (parseable file edits or command
   // output); empty panes never steal space from the conversation. The user can
@@ -274,6 +293,21 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
         <span className="text-mono-label text-text-soft-400">Session</span>
         <div className="flex items-center gap-3">
           <StatusPill status={stream.status} />
+          {/* Quiet Stop control — present only while the newest turn is live.
+              Cancels the run durably; the stream settles it "Stopped by user". */}
+          {canStop && (
+            <button
+              type="button"
+              onClick={handleStop}
+              disabled={stopping}
+              title="Stop this run"
+              aria-label="Stop this run"
+              className="border-stroke-soft-200 text-text-sub-600 hover:border-error-base hover:text-error-base flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-label-xs transition-colors disabled:opacity-50"
+            >
+              <RiStopCircleLine className="size-4" aria-hidden />
+              {stopping ? "Stopping…" : "Stop"}
+            </button>
+          )}
           <Link
             href="/agent/new"
             className="border-stroke-soft-200 text-text-sub-600 hover:bg-bg-weak-50 flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-label-xs transition-colors"
