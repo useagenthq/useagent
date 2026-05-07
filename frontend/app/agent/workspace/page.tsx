@@ -11,23 +11,25 @@ export const metadata: Metadata = {
 };
 
 /** SSR snapshot of the fleet so the status banner is in the first paint; the
- * client view refreshes it every 15s. Backend is the source of truth. */
-async function loadRuns(): Promise<WorkspaceRun[]> {
+ * client view refreshes it every 15s. Backend is the source of truth. A failed
+ * fetch is reported as `error` (a distinct, retryable state) — NOT an empty
+ * fleet, so an outage never renders as a calm "0 runs, all clear". */
+async function loadRuns(): Promise<{ runs: WorkspaceRun[]; error: boolean }> {
   try {
     const res = await backendFetch("/api/runs", { cache: "no-store" });
-    if (!res.ok) return [];
-    return extractRuns(await res.json());
+    if (!res.ok) return { runs: [], error: true };
+    return { runs: extractRuns(await res.json()), error: false };
   } catch {
-    return [];
+    return { runs: [], error: true };
   }
 }
 
 export default async function WorkspacePage() {
-  const initialRuns = await loadRuns();
+  const { runs: initialRuns, error: initialError } = await loadRuns();
 
   return (
     <AppShell activeTab="agent" sidebar={<AgentSidebar active="workspace" />}>
-      <WorkspaceView initialRuns={initialRuns} />
+      <WorkspaceView initialRuns={initialRuns} initialError={initialError} />
     </AppShell>
   );
 }

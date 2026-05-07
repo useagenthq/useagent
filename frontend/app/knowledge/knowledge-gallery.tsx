@@ -9,6 +9,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import * as Badge from "@/components/ui/badge";
 import * as Input from "@/components/ui/input";
+import { BackendUnreachable } from "@/components/shared/backend-unreachable";
 import { AddKnowledgeModal } from "./add-knowledge-modal";
 import { ContextCardStack } from "./context-card";
 import { EntryCard, PinnedCard } from "./knowledge-cards";
@@ -30,12 +31,15 @@ const MIN_SEARCH_LENGTH = 3;
 export function KnowledgeGallery({
   initialItems,
   initialLive,
+  initialError,
 }: {
   initialItems: KnowledgeItem[];
   initialLive: boolean;
+  initialError: boolean;
 }) {
   const [items, setItems] = useState<KnowledgeItem[]>(initialItems);
   const [live, setLive] = useState(initialLive);
+  const [error, setError] = useState(initialError);
   const [query, setQuery] = useState("");
   const [searchResults, setSearchResults] = useState<SearchResult[] | null>(
     null,
@@ -48,8 +52,11 @@ export function KnowledgeGallery({
       const fresh = await fetchKnowledgeItems();
       setItems(fresh);
       setLive(true);
+      setError(false);
     } catch {
-      // keep whatever we have — backend still unreachable
+      // backend still unreachable — flag the distinct error state (an empty
+      // list here would masquerade an outage as "no knowledge yet")
+      setError(true);
     }
   }, []);
 
@@ -208,11 +215,17 @@ export function KnowledgeGallery({
           )}
         </section>
       ) : pinned.length === 0 && grouped.length === 0 ? (
-        <p className="mt-10 text-paragraph-sm text-text-sub-600">
-          {isSearchMode
-            ? `No knowledge matches “${query.trim()}”.`
-            : "No knowledge yet — add your first fact to teach Skynet."}
-        </p>
+        isSearchMode ? (
+          <p className="mt-10 text-paragraph-sm text-text-sub-600">
+            No knowledge matches “{query.trim()}”.
+          </p>
+        ) : error ? (
+          <BackendUnreachable className="mt-10" onRetry={refetch} />
+        ) : (
+          <p className="mt-10 text-paragraph-sm text-text-sub-600">
+            No knowledge yet — add your first fact to teach Skynet.
+          </p>
+        )
       ) : (
         <>
           {/* Pinned */}

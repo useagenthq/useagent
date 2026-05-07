@@ -3,6 +3,7 @@ import { RiBookOpenLine, RiFileList3Line } from "@remixicon/react";
 
 import { AgentSidebar } from "@/components/shell/agent-sidebar";
 import { AppShell } from "@/components/shell/app-shell";
+import { BackendUnreachable } from "@/components/shared/backend-unreachable";
 import * as Badge from "@/components/ui/badge";
 import { AskRepoBar } from "./ask-repo-bar";
 import { TableOfContents } from "./table-of-contents";
@@ -24,10 +25,13 @@ export const metadata: Metadata = {
 // fetch shows an honest empty state rather than stale hardcoded pages.
 export default async function WikiPage() {
   let docs: WikiDoc[] = [];
+  let failed = false;
   try {
     docs = await fetchPublishedWikiDocuments();
   } catch {
-    // backend unreachable — render the empty state below
+    // backend unreachable — render the distinct error state below (NOT the
+    // empty state; an outage must never look like "no pages yet")
+    failed = true;
   }
 
   const sections = docs.map((d) => ({ id: sectionId(d), label: d.title }));
@@ -47,9 +51,9 @@ export default async function WikiPage() {
                 Published knowledge documents · your organization
               </p>
               <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
-                <Badge.Root variant="lighter" size="medium" color="gray">
+                <Badge.Root variant="lighter" size="medium" color={failed ? "orange" : "gray"}>
                   <Badge.Icon as={RiFileList3Line} />
-                  {docs.length} published
+                  {failed ? "unavailable" : `${docs.length} published`}
                 </Badge.Root>
               </div>
             </div>
@@ -61,7 +65,9 @@ export default async function WikiPage() {
           <TableOfContents sections={sections} />
 
           <article className="min-w-0 flex-1 space-y-12">
-            {docs.length === 0 ? (
+            {failed ? (
+              <BackendUnreachable />
+            ) : docs.length === 0 ? (
               <div className="rounded-2xl border border-stroke-soft-200 bg-bg-weak-50 p-10 text-center">
                 <RiFileList3Line
                   className="mx-auto size-7 text-text-soft-400"

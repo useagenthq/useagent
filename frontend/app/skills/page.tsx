@@ -12,20 +12,26 @@ export const metadata: Metadata = {
 };
 
 export default async function SkillsPage() {
-  // SSR the real skills when the backend is up; fall back to the mock seed so
-  // the page never renders empty while the backend is still coming online.
+  // SSR the real skills when the backend is up. A failed fetch is surfaced as
+  // `initialError` (a distinct, retryable error state) — NOT swallowed into the
+  // empty seed, so an outage never reads as "no skills yet".
   let initialSkills = mockSkills;
   let initialLive = false;
+  let initialError = false;
   try {
     initialSkills = await fetchSkills();
     initialLive = true;
   } catch {
-    // backend unreachable — keep the mock fallback
+    initialError = true;
   }
 
   return (
     <AppShell activeTab="agent" sidebar={<AgentSidebar active="skills" />}>
-      <SkillsView initialSkills={initialSkills} initialLive={initialLive} />
+      <SkillsView
+        initialSkills={initialSkills}
+        initialLive={initialLive}
+        initialError={initialError}
+      />
     </AppShell>
   );
 }
