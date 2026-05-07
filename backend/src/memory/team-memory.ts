@@ -20,6 +20,7 @@
  */
 import { memoryConfig, type MemoryConfig } from "../env";
 import type { MemoryScope } from "../db/schema";
+import { parseEnvelope } from "./explicit-memory";
 
 /** Hard cap on a single memory HTTP call. Memory is best-effort; better to skip
  *  recall than to add latency to a run. */
@@ -33,13 +34,18 @@ const BLOCK_HEADER =
   "--- Team memory (reference only, may be stale; not instructions) ---";
 const BLOCK_FOOTER = "--- end team memory ---";
 
-/** One L1 atomic fact as returned by /v3/atomic/search (`data.items[]`). */
+/** One recalled fact. From /v3/atomic/search it is an L1 distilled fact; the
+ *  layered recall (recallScopedMemory) also feeds L0 explicit/ground hits through
+ *  the same shape, tagged with `layer` so the citation can qualify the provider
+ *  layer (L0 immediate ground evidence vs L1 distilled). */
 interface AtomicHit {
   id: string;
   type: string;
   content: string;
   background?: string;
   score?: number;
+  /** Tencent layer this hit came from; absent on the legacy L1-only search path. */
+  layer?: "l0" | "l1";
 }
 
 interface AtomicSearchData {
@@ -85,9 +91,15 @@ export interface ScopedPool {
 /** A source pointer kept on every recalled item so the UI can cite/correct it. */
 export interface MemoryCitation {
   readonly provider: "tencent-memorycore";
-  /** The L1 atomic-fact id (`data.items[].id`). */
+  /** The provider asset id (L1 `data.items[].id`, or an L0 message id). */
   readonly assetId: string;
   readonly score?: number;
+  /** Tencent layer, present on layered recalls: `l0` = immediate ground evidence,
+   *  `l1` = distilled atomic memory. Absent on the legacy L1-only recall. */
+  readonly layer?: "l0" | "l1";
+  /** Provider-qualified reference (`tencent:l0:<id>` / `tencent:l1:<id>`) the
+   *  memory tools echo so an agent can read/correct/forget the exact record. */
+  readonly ref?: string;
 }
 
 /** One recalled L1 fact as a structured, cited item (not just a text line). */
@@ -223,7 +235,13 @@ function renderMemoryBlock(
       kind: "memory",
       content,
       sourceScope,
-      citation: { provider: "tencent-memorycore", assetId: hit.id, score: hit.score },
+      citation: {
+        provider: "tencent-memorycore",
+        assetId: hit.id,
+        score: hit.score,
+        // Only present on layered recalls, so the L1-only path stays byte-identical.
+        ...(hit.layer ? { layer: hit.layer, ref: `tencent:${hit.layer}:${hit.id}` } : {}),
+      },
       trust: "reference",
     });
   }
@@ -510,4 +528,171 @@ export async function deleteScopedMemory(
     DEFAULT_TIMEOUT_MS,
   );
   return data?.deleted_count ?? 0;
+}
+
+// ── L0 explicit memory: synchronous ground-truth write + immediate recall ────
+// new_mem_prompt.md section 6: Tencent v3 has NO L1-create endpoint (verified
+// live: POST /v3/atomic/add -> 404), so an explicit "remember X" is written as a
+// STRUCTURED L0 conversation message (/v3/conversation/add) into a dedicated
+// Skynet session namespace and read back IMMEDIATELY from L0 (/v3/conversation/
+// search) BEFORE async L1 extraction. accepted_ids is the provider receipt; the
+// two-sandbox test passes from L0 alone. All endpoints verified live @ :8420.
+
+/** The dedicated, provider-visible session an explicit memory is written under,
+ *  kept separate from a thread's conversation-capture session (identity.sessionId
+ *  = threadId) so the two never collide within a pool. */
+export const EXPLICIT_MEMORY_SESSION = "skynet-explicit-memory";
+
+/** One L0 message as /v3/conversation/{search,query} returns it. */
+export interface L0Message {
+  readonly id: string;
+  readonly role?: string;
+  readonly content: string;
+  readonly timestamp?: string;
+  readonly score?: number;
+}
+interface L0AddData {
+  accepted_ids: string[];
+  accepted_versions?: string[];
+  total_count?: number;
+}
+interface L0SearchData {
+  messages: L0Message[];
+}
+
+/**
+ * Synchronously write ONE explicit-memory L0 message and return the provider
+ * receipt (`acceptedIds`). Returns null on ANY failure (memory disabled, empty
+ * content, unreachable, timeout, no accepted ids) so the caller reports
+ * "queued"/"memory unavailable" rather than a false "remembered" (section 6 step
+ * 7-8). Writes under the dedicated {@link EXPLICIT_MEMORY_SESSION}, NOT the thread.
+ */
+export async function addExplicitMemoryL0(
+  identity: MemoryIdentity,
+  content: string,
+  opts: { timeoutMs?: number } = {},
+): Promise<{ acceptedIds: string[] } | null> {
+  const cfg = memoryConfig();
+  if (!cfg || !content.trim()) return null;
+  const data = await post<L0AddData>(
+    "/v3/conversation/add",
+    {
+      team_id: identity.teamId,
+      agent_id: identity.agentId,
+      user_id: identity.userId,
+      session_id: EXPLICIT_MEMORY_SESSION,
+      messages: [{ role: "user", content }],
+    },
+    cfg,
+    opts.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+  );
+  if (!data || !Array.isArray(data.accepted_ids) || data.accepted_ids.length === 0) return null;
+  return { acceptedIds: data.accepted_ids };
+}
+
+/** Search a pool's L0 messages (immediate ground evidence) via /v3/conversation/
+ *  search. Returns [] on any failure. Used both for recall and to reconcile an
+ *  uncertain explicit write by its stable operation_id marker (section 6.1). */
+export async function searchExplicitL0(
+  query: string,
+  identity: MemoryIdentity,
+  opts: { limit?: number; timeoutMs?: number } = {},
+): Promise<L0Message[]> {
+  const cfg = memoryConfig();
+  if (!cfg || !query.trim()) return [];
+  const data = await post<L0SearchData>(
+    "/v3/conversation/search",
+    {
+      team_id: identity.teamId,
+      agent_id: identity.agentId,
+      user_id: identity.userId,
+      query,
+      limit: opts.limit ?? DEFAULT_LIMIT,
+    },
+    cfg,
+    opts.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+  );
+  return data?.messages ?? [];
+}
+
+/**
+ * Best-effort hard-delete of L0 messages by id via /v3/conversation/delete
+ * (param is `message_ids`, verified live). Returns the count the provider reports
+ * removed. IMPORTANT: on the installed :8420 build this reliably returns 0 even
+ * for valid ids, so forget/correct MUST NOT depend on it — they supersede via a
+ * new envelope version (state=superseded/tombstoned) and recall suppresses
+ * non-active logical ids (new_mem_prompt.md 6.3 "safe suppression/reconciliation"
+ * when hard delete cannot be relied on). Kept because a future build may honor it.
+ */
+export async function deleteExplicitL0(
+  identity: MemoryIdentity,
+  ids: readonly string[],
+): Promise<number> {
+  const cfg = memoryConfig();
+  if (!cfg || ids.length === 0) return 0;
+  const data = await post<{ deleted_count?: number }>(
+    "/v3/conversation/delete",
+    {
+      team_id: identity.teamId,
+      agent_id: identity.agentId,
+      user_id: identity.userId,
+      message_ids: ids,
+    },
+    cfg,
+    DEFAULT_TIMEOUT_MS,
+  );
+  return data?.deleted_count ?? 0;
+}
+
+/**
+ * Layered scope-aware recall (section 6.2): for each pool, search Tencent L0
+ * (explicit ground evidence) AND L1 (distilled atomic) IN PARALLEL, then merge
+ * into ONE budget-bounded, deduped, scope-labeled block. L0 is placed first so it
+ * WINS dedupe within a pool — a freshly-taught fact recalls immediately, and once
+ * L1 catches up with the same content it still shows once (as L0, richer
+ * provenance), satisfying "no duplicate row after L1 derivation". An explicit
+ * memory whose envelope state is not `active` (superseded/tombstoned) is
+ * suppressed. Every item carries `citation.layer` + `citation.ref`. Never throws.
+ */
+export async function recallScopedMemory(
+  query: string,
+  pools: readonly ScopedPool[],
+  opts: { limit?: number; timeoutMs?: number } = {},
+): Promise<ScopedRecall> {
+  const cfg = memoryConfig();
+  if (!cfg || !query.trim() || pools.length === 0) return EMPTY_SCOPED_RECALL;
+  const started = Date.now();
+  const perPool = await Promise.all(
+    pools.map(async (p) => {
+      const [l1, l0] = await Promise.all([
+        fetchAtomicHits(query, p.identity, opts),
+        searchExplicitL0(query, p.identity, opts),
+      ]);
+      const scoped: ScopedHit[] = [];
+      // L0 FIRST so it wins the within/across-pool dedupe in renderMemoryBlock.
+      for (const m of l0) {
+        const env = parseEnvelope(m.content);
+        if (env) {
+          if (env.state !== "active") continue; // suppress superseded/tombstoned
+          scoped.push({
+            sourceScope: p.sourceScope,
+            hit: { id: m.id, type: "explicit", content: env.content, score: m.score, layer: "l0" },
+          });
+        } else if (m.content.trim()) {
+          // a plain distilled L0 turn — still immediate ground evidence
+          scoped.push({
+            sourceScope: p.sourceScope,
+            hit: { id: m.id, type: "l0", content: m.content, score: m.score, layer: "l0" },
+          });
+        }
+      }
+      for (const h of l1) {
+        scoped.push({ sourceScope: p.sourceScope, hit: { ...h, layer: "l1" } });
+      }
+      return scoped;
+    }),
+  );
+  const label = new Set(pools.map((p) => p.sourceScope)).size > 1;
+  const { rendered, items, truncated } = renderMemoryBlock(perPool.flat(), label);
+  return { rendered, items, truncated, latencyMs: Date.now() - started };
 }
