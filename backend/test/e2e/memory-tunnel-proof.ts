@@ -73,16 +73,19 @@ async function dropDb(): Promise<void> {
   await admin.end();
 }
 
-/** Start cloudflared quick tunnel to :PORT and resolve the public https origin. */
+/** Start cloudflared quick tunnel to :PORT and resolve the public https origin.
+ *  TRUNCATE the log ("w"): a prior run's dead origin lingering in an appended log
+ *  was silently reused, sending the sandbox at a dead tunnel (no tools). */
 async function startTunnel(): Promise<{ proc: Proc; origin: string }> {
-  const fd = openSync(tunnelLog, "a");
+  const fd = openSync(tunnelLog, "w");
   const proc = Bun.spawn(["cloudflared", "tunnel", "--url", `http://localhost:${PORT}`], { stdout: fd, stderr: fd });
   const deadline = Date.now() + 40_000;
   while (Date.now() < deadline) {
     try {
       const log = readFileSync(tunnelLog, "utf8");
-      const m = /https:\/\/[a-z0-9-]+\.trycloudflare\.com/i.exec(log);
-      if (m) return { proc, origin: m[0] };
+      // Take the LAST origin printed (belt + suspenders with the truncation above).
+      const all = log.match(/https:\/\/[a-z0-9-]+\.trycloudflare\.com/gi);
+      if (all && all.length > 0) return { proc, origin: all[all.length - 1]! };
     } catch {
       /* not written yet */
     }
