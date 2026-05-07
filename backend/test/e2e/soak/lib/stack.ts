@@ -25,8 +25,10 @@ export interface Hit {
   at: number;
 }
 
-/** A fault policy: given the request count so far, decide the HTTP response. */
-export type FaultFn = (n: number, hit: Hit) => { status: number; body?: any; headers?: Record<string, string> } | null;
+/** A fault policy: given the request count so far, decide the HTTP response. A
+ *  `delayMs` holds the response open that long (simulates an in-flight call that a
+ *  SIGKILL can orphan mid-delivery). */
+export type FaultFn = (n: number, hit: Hit) => { status: number; body?: any; headers?: Record<string, string>; delayMs?: number } | null;
 
 export class MockReceiver {
   readonly hits: Hit[] = [];
@@ -55,6 +57,7 @@ export class MockReceiver {
         const n = ++this.n;
         const f = this.fault?.(n, hit) ?? null;
         if (f) {
+          if (f.delayMs) await sleep(f.delayMs); // hold the response open (orphanable in-flight)
           return new Response(f.body !== undefined ? JSON.stringify(f.body) : "", {
             status: f.status,
             headers: { "content-type": "application/json", ...(f.headers ?? {}) },

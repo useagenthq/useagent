@@ -38,6 +38,7 @@ const STORMS: StormDef[] = [
   { name: "outbox", script: "storms/outbox.ts", env: { SOAK_PORT: BASE_PORT, SOAK_OUTBOX_SLACK: process.env.SOAK_OUTBOX_SLACK ?? "500", SOAK_OUTBOX_MEM: process.env.SOAK_OUTBOX_MEM ?? "500" } },
   { name: "idempotency", script: "storms/idempotency.ts", env: { SOAK_PORT: BASE_PORT, SOAK_IDEM_ROUNDS: process.env.SOAK_IDEM_ROUNDS ?? "18", SOAK_IDEM_CONCURRENCY: process.env.SOAK_IDEM_CONCURRENCY ?? "40" } },
   { name: "crash", script: "storms/crash.ts", env: { SOAK_PORT: "3517", SOAK_MEM_PORT: "3527", SOAK_SLACK_PORT: "3528", SOAK_CRASH_CYCLES: process.env.SOAK_CRASH_CYCLES ?? "10" } },
+  { name: "mem-atmost-once", script: "storms/mem-atmost-once.ts", env: { SOAK_PORT: "3519", SOAK_MEM_PORT: "3539", SOAK_MEMCRASH_CYCLES: process.env.SOAK_MEMCRASH_CYCLES ?? "6" } },
 ];
 
 // ── cumulative state ──────────────────────────────────────────────────────────
