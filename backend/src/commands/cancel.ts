@@ -3,6 +3,7 @@ import { db } from "../db/client";
 import { commands, runs, type RunStatus } from "../db/schema";
 import { isUniqueViolation } from "../db/pg-errors";
 import { completeRun } from "../runs/repo";
+import { publishThreadChange } from "../runs/thread-signals";
 import { RUN_CANCEL, RUN_CREATE } from "./repo";
 
 // ---------------------------------------------------------------------------
@@ -59,7 +60,11 @@ export async function acceptRunCancel(input: {
   if (prior) return { status: "already", threadId: prior };
 
   try {
-    return await db.transaction(async (tx) => {
+    // A queued run failed in-tx never reaches finalizeRun (it has no live actor),
+    // so the thread stream would not otherwise learn it settled without a worker
+    // step. Capture the thread of such a cancel and signal AFTER commit.
+    let queuedCancelledThreadId: string | null = null;
+    const outcome = await db.transaction(async (tx) => {
       const [run] = await tx
         .select()
         .from(runs)
@@ -92,10 +97,19 @@ export async function acceptRunCancel(input: {
         await tx.execute(sql`
           update commands set state = 'completed', updated_at = now()
           where run_id = ${input.runId} and kind = ${RUN_CREATE} and state <> 'completed'`);
+        queuedCancelledThreadId = run.threadId;
       }
 
       return { status: "accepted" as const, runStatusWas: run.status, threadId: run.threadId };
     });
+
+    // Post-commit thread signal (queued-cancel only): the run went failed with no
+    // worker step, so wake the thread stream to re-project it. A RUNNING cancel is
+    // finalized by the actor's teardown, which signals `settled` itself.
+    if (queuedCancelledThreadId) {
+      publishThreadChange(queuedCancelledThreadId, { runId: input.runId, kind: "cancelled" });
+    }
+    return outcome;
   } catch (err) {
     // A concurrent Stop won the unique index; the tx rolled back — resolve as replay.
     if (isUniqueViolation(err)) {

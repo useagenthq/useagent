@@ -7,6 +7,7 @@ import { enqueueCapture } from "../memory/capture-outbox";
 import { findSlackThreadByRoot } from "../slack/repo";
 import { composeSlackReplyText } from "../slack/reply";
 import { enqueuePostMessageTx, kickSlackOutbox } from "../slack/outbox";
+import { publishThreadChange } from "./thread-signals";
 
 // ---------------------------------------------------------------------------
 // Run finalization — the ONE place a run reaches a terminal state, so the
@@ -45,9 +46,11 @@ export async function finalizeRun(
   durationMs: number,
 ): Promise<void> {
   let kickSlack = false;
+  let settledThreadId: string | null = null;
   await db.transaction(async (tx) => {
     const [run] = await tx.select().from(runs).where(eq(runs.id, runId)).limit(1);
     if (!run) return; // deleted mid-flight — nothing to finalize
+    settledThreadId = run.threadId;
 
     await completeRun(runId, status, summary, durationMs, tx);
 
@@ -86,4 +89,11 @@ export async function finalizeRun(
   // Kick the relay AFTER commit (the row isn't visible to it until then). No-op
   // when Slack isn't configured (the relay isn't running).
   if (kickSlack) kickSlackOutbox();
+
+  // Post-commit thread signal: the run reached a terminal state, so wake any
+  // connected thread stream to re-project it (final status + summary). The
+  // per-run `end` bus already settles the run's transient text on the stream;
+  // this carries the durable summary the `done` frame does not. Skipped when the
+  // run was deleted mid-flight (settledThreadId stays null).
+  if (settledThreadId) publishThreadChange(settledThreadId, { runId, kind: "settled" });
 }
