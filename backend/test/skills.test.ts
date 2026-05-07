@@ -90,3 +90,60 @@ describe("skills CRUD + run", () => {
     expect(del.status).toBe(404);
   });
 });
+
+describe("skill kind (skills vs playbooks over one substrate)", () => {
+  test("defaults to skill; kind:playbook persists; ?kind splits the list", async () => {
+    const tag = `kind-${uid()}`;
+    // A plain skill (no kind) defaults to "skill".
+    const skill = await json<any>("/api/skills", {
+      method: "POST",
+      body: { name: `Skill ${uid()}`, description: "d", tags: [tag], sections: {} },
+    });
+    expect(skill.status).toBe(201);
+    expect(skill.body.kind).toBe("skill");
+
+    // A playbook is the same substrate with kind:"playbook".
+    const playbook = await json<any>("/api/skills", {
+      method: "POST",
+      body: {
+        name: `Playbook ${uid()}`,
+        kind: "playbook",
+        description: "d",
+        tags: [tag],
+        sections: { overview: ["o"], procedure: ["p"], verify: ["v"] },
+      },
+    });
+    expect(playbook.status).toBe(201);
+    expect(playbook.body.kind).toBe("playbook");
+
+    // ?kind=playbook returns the playbook, not the skill (scoped to this run's tag).
+    const onlyPlaybooks = await json<{ skills: any[] }>("/api/skills?kind=playbook");
+    const pbIds = onlyPlaybooks.body.skills.filter((s) => s.tags.includes(tag)).map((s) => s.id);
+    expect(pbIds).toContain(playbook.body.id);
+    expect(pbIds).not.toContain(skill.body.id);
+
+    // ?kind=skill is the mirror.
+    const onlySkills = await json<{ skills: any[] }>("/api/skills?kind=skill");
+    const skIds = onlySkills.body.skills.filter((s) => s.tags.includes(tag)).map((s) => s.id);
+    expect(skIds).toContain(skill.body.id);
+    expect(skIds).not.toContain(playbook.body.id);
+
+    // No filter → both kinds present.
+    const all = await json<{ skills: any[] }>("/api/skills");
+    const allIds = all.body.skills.filter((s) => s.tags.includes(tag)).map((s) => s.id);
+    expect(allIds).toContain(skill.body.id);
+    expect(allIds).toContain(playbook.body.id);
+  });
+
+  test("an unknown kind is a 400 on create and matches nothing on list", async () => {
+    const bad = await json<any>("/api/skills", {
+      method: "POST",
+      body: { name: `Bad ${uid()}`, kind: "workflow", description: "d", sections: {} },
+    });
+    expect(bad.status).toBe(400);
+
+    const list = await json<{ skills: any[] }>("/api/skills?kind=workflow");
+    expect(list.status).toBe(200);
+    expect(list.body.skills).toEqual([]);
+  });
+});

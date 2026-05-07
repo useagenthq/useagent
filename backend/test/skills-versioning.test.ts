@@ -130,10 +130,47 @@ describe("skill revisions + versioning", () => {
     expect(loaded.payload.version).toBe(1);
     expect(loaded.payload.contentHash).toBe(expectedHash);
     expect(loaded.payload.source).toBe("skill");
+    expect(loaded.payload.kind).toBe("skill");
     expect(loaded.payload.name).toBe(skill.name);
     // Bounded — the skill body is never in the marker.
     expect(loaded.payload).not.toHaveProperty("content");
     expect(loaded.payload).not.toHaveProperty("sections");
+  });
+
+  test("a pinned PLAYBOOK emits skill.loaded with kind:playbook (marker attribution)", async () => {
+    const s = await createOrgSession("pb-run");
+    const playbook = await createSkill(s.cookies, {
+      name: `PB ${uid()}`,
+      kind: "playbook",
+      description: "A structured procedure.",
+      tags: [],
+      sections: sections(["ov"], ["do the step"], ["confirm it"]),
+    });
+    expect(playbook.kind).toBe("playbook");
+
+    const run = await json<{ id: string }>("/api/runs", {
+      method: "POST",
+      cookies: s.cookies,
+      body: { prompt: "do the task", engine: "mock", skill: { id: playbook.id } },
+    });
+    expect(run.status).toBe(201);
+
+    const row = await waitFor(async () => {
+      const [r] = await db
+        .select()
+        .from(providerEvents)
+        .where(
+          and(
+            eq(providerEvents.runId, run.body.id),
+            eq(providerEvents.eventType, "skill.loaded"),
+          ),
+        );
+      return r ?? null;
+    });
+    // provider_events.payload is JSON stored as text (bounded audit lane).
+    const payload = JSON.parse(row.payload as string);
+    expect(payload.kind).toBe("playbook");
+    expect(payload.name).toBe(playbook.name);
   });
 
   test("editing a skill after a run does not alter the historical run's pinned version", async () => {

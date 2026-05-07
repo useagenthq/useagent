@@ -52,6 +52,14 @@ export interface SkillSections {
   verify: string[];
 }
 
+// A skill row is one of two user-facing kinds over the SAME substrate (mem_op:
+// "treat playbooks as versioned skills/content, not a second executor"). A
+// "playbook" is just a skill surfaced as a structured Overview/Procedure/Verify
+// procedure. Immutable per row — an edit mints a new content version, never a
+// kind change.
+export const SKILL_KINDS = ["skill", "playbook"] as const;
+export type SkillKind = (typeof SKILL_KINDS)[number];
+
 // ---------------------------------------------------------------------------
 // Runs + steps — the durable event log (ARCHITECTURE.md step 1), now on
 // Postgres. `org_id` / `user_id` are nullable so legacy/system runs still fit.
@@ -242,6 +250,9 @@ export const skills = pgTable(
     id: uuid("id").primaryKey().defaultRandom(),
     orgId: text("org_id").notNull(),
     name: text("name").notNull(),
+    // "skill" (default) or "playbook" — the SAME substrate surfaced under two
+    // product labels (mem_op: not a second executor). Immutable per row.
+    kind: text("kind").$type<SkillKind>().notNull().default("skill"),
     description: text("description").notNull().default(""),
     tags: text("tags")
       .array()
@@ -277,6 +288,10 @@ export const skillRevisions = pgTable(
       .notNull()
       .references(() => skills.id, { onDelete: "cascade" }),
     version: integer("version").notNull(),
+    // Denormalized from `skills.kind` so the worker materializes + attributes a
+    // pinned revision (skill.loaded marker) from a single-table read. Immutable,
+    // so no update anomaly vs the parent row.
+    kind: text("kind").$type<SkillKind>().notNull().default("skill"),
     name: text("name").notNull(),
     description: text("description").notNull().default(""),
     sections: jsonb("sections").$type<SkillSections>().notNull(),
