@@ -488,7 +488,12 @@ export function deriveTrace(step: ApiStep): StepTrace {
   }
 
   // 2. Sandbox lifecycle/boot rows (task steps chipped with the engine id).
+  // The live "Thinking…" indicator is NOT sandbox plumbing — render it as
+  // plain "Thinking" (user: "SandboxThinking change this to just thinking").
   if (step.kind === "task" && step.chip && ENGINE_CHIPS.has(step.chip)) {
+    if (/^Thinking/.test(label)) {
+      return { ...base, verb: "Thinking", target: "", glyph: "reasoning", accent: "boot" };
+    }
     return { ...base, verb: "Sandbox", target: label, glyph: "boot", accent: "boot" };
   }
 
