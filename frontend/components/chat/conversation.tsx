@@ -251,6 +251,23 @@ function TurnBlock({ turn }: { turn: Turn }) {
   // signal shows at a time.
   const narrating = live && liveText.length > 0;
 
+  // STANDARD queued rendering (matches opencode's steering-queue model): a
+  // follow-up sent while the thread is busy queues into the same session, and
+  // the UI shows ONLY the user's message with a queued tag - the assistant
+  // block materializes when processing starts. An empty assistant header for
+  // a queued turn read as broken (user report). "Send now" steering is a
+  // future control on top of the same queue.
+  if (status === "queued" && activity.length === 0 && !summary && !liveText) {
+    return (
+      <div className="space-y-1">
+        <UserBubble>{cleanPrompt(run.prompt)}</UserBubble>
+        <div className="flex justify-end">
+          <span className="text-label-xs text-text-soft-400">queued</span>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-4">
       <UserBubble>{cleanPrompt(run.prompt)}</UserBubble>
@@ -324,20 +341,15 @@ function TurnBlock({ turn }: { turn: Turn }) {
 
             {failed && !summary && <FailedNote />}
 
-            {/* A turn with NOTHING yet (rapid-fire replies queue serially per
-                thread; only the newest streams) rendered as a bare Skynet
-                header - which reads as broken (user report). Show an honest
-                waiting line instead. */}
+            {/* Started but nothing streamed yet: the working state (queued
+                turns never reach here - they early-return as a bare user
+                bubble above, per the opencode steering-queue standard). */}
             {!summary &&
               !narrating &&
               !failed &&
               activity.length === 0 &&
-              (status === "queued" || status === "running") && (
-                <span className="text-label-sm text-text-soft-400">
-                  {status === "queued"
-                    ? "Queued - starts when the previous turn finishes"
-                    : "Working..."}
-                </span>
+              status === "running" && (
+                <span className="text-label-sm text-text-soft-400">Working...</span>
               )}
           </>
         )}
