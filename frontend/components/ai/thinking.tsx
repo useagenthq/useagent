@@ -2,6 +2,7 @@
 
 import { useState, type ReactNode } from "react";
 import { RiArrowDownSLine, RiSparkling2Line } from "@remixicon/react";
+import { useReportWorking } from "@/components/shell/working-signal";
 import { cnExt as cn } from "@/utils/cn";
 
 export interface ThinkingProps {
@@ -31,6 +32,10 @@ export function Thinking({
 }: ThinkingProps) {
   const [expanded, setExpanded] = useState(open);
   const hasSteps = Boolean(children);
+  // A live "Thinking..." disclosure means the agent is streaming - report it so
+  // the brand mark keeps pulsing through the whole turn, not just the boot pill.
+  // A settled/folded disclosure passes active={false} and is a no-op.
+  useReportWorking(active);
 
   return (
     <div className={cn("flex w-full flex-col", className)}>
