@@ -34,6 +34,12 @@ export interface ThreadSnapshot {
 export interface ThreadStore {
   subscribe(listener: () => void): () => void;
   getSnapshot(): ThreadSnapshot;
+  /** Apply many mutations, then notify listeners ONCE. A burst of frames (e.g. an
+   *  SSE replay of hundreds of native frames when opening a long settled run) would
+   *  otherwise notify per frame → a full re-render + timeline rebuild each time
+   *  (O(n^2), the 600-frame run froze the tab for minutes). Batching folds the burst
+   *  into a single render, opencode-style "apply the burst, paint once". */
+  batch(apply: () => void): void;
   /** Hydrate/reconcile the complete durable thread. Merges (never resets): adding
    *  a run leaves every other run's slice intact. */
   applySnapshot(runs: readonly ApiRun[]): void;
@@ -63,9 +69,20 @@ export function createThreadStore(): ThreadStore {
   const listeners = new Set<() => void>();
   let snapshot: ThreadSnapshot | null = null;
 
+  // Batch depth: while > 0, mutations invalidate the snapshot but defer the single
+  // listener flush to batch-end (so an SSE replay burst renders once, not per frame).
+  let batchDepth = 0;
+  let pendingNotify = false;
+  const flush = (): void => {
+    for (const l of listeners) l();
+  };
   const notify = (): void => {
     snapshot = null; // invalidate; rebuilt lazily on read
-    for (const l of listeners) l();
+    if (batchDepth > 0) {
+      pendingNotify = true;
+      return;
+    }
+    flush();
   };
 
   /** Ensure a run has a native store + an order slot (idempotent). */
@@ -96,6 +113,19 @@ export function createThreadStore(): ThreadStore {
     subscribe(listener) {
       listeners.add(listener);
       return () => listeners.delete(listener);
+    },
+
+    batch(apply) {
+      batchDepth++;
+      try {
+        apply();
+      } finally {
+        batchDepth--;
+        if (batchDepth === 0 && pendingNotify) {
+          pendingNotify = false;
+          flush();
+        }
+      }
     },
 
     getSnapshot() {
