@@ -9,6 +9,8 @@ export interface RepoItem {
   full_name: string; // "owner/name" — the value sent + validated
   name: string;
   private?: boolean;
+  /** The repo's default branch — the branch picker falls back to this. */
+  default_branch: string;
 }
 
 export interface RepoMultiPickerProps {

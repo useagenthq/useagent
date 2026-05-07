@@ -6,10 +6,7 @@ import {
   RiBookMarkedLine,
   RiCpuLine,
   RiFlashlightLine,
-  RiGitBranchLine,
-  RiHardDrive2Line,
 } from "@remixicon/react";
-import * as Switch from "@/components/ui/switch";
 import { AsteriskMark } from "@/components/foundations/brand/asterisk-mark";
 import { backendFetch } from "@/lib/backend-fetch";
 import { ENGINES, type EngineId, type MemoryScope } from "@/components/chat/types";
@@ -22,6 +19,7 @@ import {
 import type { Skill } from "./skills-data";
 import { SearchablePicker, type PickerGroup } from "./searchable-picker";
 import { RepoMultiPicker, type RepoItem } from "./repo-multi-picker";
+import { RepoBranchBar } from "./repo-branch-bar";
 
 // Real backend model ids (`value`, sent verbatim in the POST body) paired with a
 // friendly `label`. Only meaningful for the opencode engine — see the picker below.
@@ -37,12 +35,6 @@ const MODELS: { value: string; label: string; tint: string }[] = [
   { value: "openai/gpt-5.6-sol-pro", label: "GPT-5.6 Sol Pro", tint: "text-teal-500" },
   { value: "openai/gpt-5.6-luna", label: "GPT-5.6 Luna", tint: "text-sky-500" },
   { value: "openai/gpt-5.6-terra", label: "GPT-5.6 Terra", tint: "text-amber-500" },
-];
-
-const MACHINES: { value: string; label: string; mono: boolean }[] = [
-  { value: "snapshot-2026-07-24", label: "snapshot-2026-07-24", mono: true },
-  { value: "snapshot-2026-07-19", label: "snapshot-2026-07-19", mono: true },
-  { value: "fresh", label: "Fresh machine", mono: false },
 ];
 
 /** Composer-specific caption for each selectable engine (POST /api/runs `engine`).
@@ -61,18 +53,6 @@ const modelGroups: PickerGroup[] = [
   },
 ];
 
-const machineGroups: PickerGroup[] = [
-  {
-    label: "Machines",
-    options: MACHINES.map((m) => ({
-      value: m.value,
-      label: m.label,
-      icon: RiHardDrive2Line,
-      mono: m.mono,
-    })),
-  },
-];
-
 const engineGroups: PickerGroup[] = [
   {
     label: "Engines",
@@ -87,13 +67,13 @@ const engineGroups: PickerGroup[] = [
 
 /**
  * The New Task composer: a prompt textarea over a control row of searchable
- * pickers (repo / playbook / model / engine / machine), a secondary row
- * (branch + "Plan first"), and the "Start agent" CTA. Client-side because it
- * owns every selection, the prompt, and the POST → redirect.
+ * pickers (repo / playbook / engine / model), a secondary row of per-repo branch
+ * pickers, and the "Start agent" CTA. Client-side because it owns every
+ * selection, the prompt, and the POST → redirect.
  *
- * `skills` are the local playbook seed. Only the prompt (with the playbook name
- * appended when one is chosen), the model and the engine are sent to
- * POST /api/runs; on success it routes to the run's /session view.
+ * Every control here reaches the backend: the prompt, engine, model (opencode
+ * only), selected repos, per-repo branches, memory scope and the pinned skill
+ * all ride into POST /api/runs; on success it routes to the run's /session view.
  */
 export function NewTaskComposer({ skills }: { skills: Skill[] }) {
   const router = useRouter();
@@ -103,11 +83,11 @@ export function NewTaskComposer({ skills }: { skills: Skill[] }) {
   const [repos, setRepos] = useState<RepoItem[]>([]);
   const [playbook, setPlaybook] = useState(""); // selected skill/playbook id, "" = none
   const [model, setModel] = useState(MODELS[0].value);
-  const [machine, setMachine] = useState(MACHINES[0].value);
   const [engine, setEngine] = useState<string>(ENGINES[0].id);
   const [memoryScope, setMemoryScope] = useState<MemoryScope>("org");
-  const [branch, setBranch] = useState("main");
-  const [planFirst, setPlanFirst] = useState(false);
+  // Per-repo branch overrides (repo full_name -> branch). An absent entry means
+  // "clone the repo's default branch"; only overrides are sent to the backend.
+  const [branches, setBranches] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -153,16 +133,26 @@ export function NewTaskComposer({ skills }: { skills: Skill[] }) {
         const res = await backendFetch("/api/repos");
         if (!res.ok) return;
         const data = (await res.json()) as {
-          repos?: { full_name?: string; name?: string; private?: boolean }[];
+          repos?: {
+            full_name?: string;
+            name?: string;
+            private?: boolean;
+            default_branch?: string;
+          }[];
         };
         if (cancelled || !Array.isArray(data.repos)) return;
         setRepos(
           data.repos
             .filter(
-              (r): r is { full_name: string; name?: string; private?: boolean } =>
+              (r): r is { full_name: string; name?: string; private?: boolean; default_branch?: string } =>
                 !!r.full_name,
             )
-            .map((r) => ({ full_name: r.full_name, name: r.name ?? r.full_name, private: r.private })),
+            .map((r) => ({
+              full_name: r.full_name,
+              name: r.name ?? r.full_name,
+              private: r.private,
+              default_branch: r.default_branch ?? "main",
+            })),
         );
       } catch {
         // no repos configured — the picker shows nothing to select
@@ -238,6 +228,12 @@ export function NewTaskComposer({ skills }: { skills: Skill[] }) {
     return groups;
   }, [skills]);
 
+  // The selected repos (with their default_branch) drive the per-repo branch strip.
+  const selectedRepoItems = useMemo(
+    () => repos.filter((r) => selectedRepos.includes(r.full_name)),
+    [repos, selectedRepos],
+  );
+
   const canSubmit = prompt.trim().length > 0 && !submitting;
 
   async function submit() {
@@ -251,6 +247,15 @@ export function NewTaskComposer({ skills }: { skills: Skill[] }) {
     // engine instructions. The user's prompt stays CLEAN (no name decoration).
     const selectedSkill = skills.find((s) => s.id === playbook);
 
+    // Per-repo branch overrides: only send entries for SELECTED repos whose
+    // chosen branch differs from the repo's default (a bare repo = default
+    // branch on the backend), so the payload stays minimal and honest.
+    const branchPayload: Record<string, string> = {};
+    for (const item of selectedRepoItems) {
+      const chosen = branches[item.full_name];
+      if (chosen && chosen !== item.default_branch) branchPayload[item.full_name] = chosen;
+    }
+
     try {
       const res = await backendFetch("/api/runs", {
         method: "POST",
@@ -263,6 +268,7 @@ export function NewTaskComposer({ skills }: { skills: Skill[] }) {
           memory_scope: memoryScope,
           ...(engine === "opencode" ? { model } : {}),
           ...(selectedRepos.length ? { repos: selectedRepos } : {}),
+          ...(Object.keys(branchPayload).length ? { branches: branchPayload } : {}),
           ...(selectedSkill
             ? { skill: { id: selectedSkill.id, version: selectedSkill.version } }
             : {}),
@@ -349,49 +355,29 @@ export function NewTaskComposer({ skills }: { skills: Skill[] }) {
                 onChange={setModel}
               />
             ) : null}
-            <SearchablePicker
-              ariaLabel="Select machine"
-              triggerLabel="Machine"
-              searchPlaceholder="Search machines..."
-              groups={machineGroups}
-              value={machine}
-              onChange={setMachine}
-            />
             {/* Team-memory pool this task reads/writes (org vs personal). */}
             <MemoryScopePicker scope={memoryScope} onChange={setMemoryScope} />
           </div>
+          {/* Removed: Machine (snapshot) and "Plan first" were cosmetic - neither
+              reached POST /api/runs. Snapshot selection isn't a real run option
+              yet, and a plan-first/approval flow lands with the durable
+              approvals workflow (task #77); re-add "Plan first" here then. */}
 
-          {/* Secondary controls + CTA */}
+          {/* Per-repo branch pickers + CTA. The branch strip only appears once a
+              repo is selected; every branch here is a real ref that rides into
+              the run and is cloned. */}
           <div className="flex flex-wrap items-center justify-between gap-3 border-t border-stroke-soft-200 pt-3">
-            <div className="flex flex-wrap items-center gap-4">
-              <label className="inline-flex items-center gap-1.5 rounded-xl border border-stroke-soft-200 px-2 py-1.5">
-                <RiGitBranchLine className="size-4 shrink-0 text-text-sub-600" aria-hidden />
-                <input
-                  value={branch}
-                  onChange={(event) => setBranch(event.target.value)}
-                  aria-label="Branch"
-                  className="w-24 min-w-0 bg-transparent font-mono text-paragraph-xs text-text-strong-950 outline-none placeholder:text-text-soft-400"
-                />
-              </label>
-
-              <label className="flex items-center gap-2.5">
-                <Switch.Root
-                  checked={planFirst}
-                  onCheckedChange={setPlanFirst}
-                  aria-label="Plan first"
-                />
-                <span className="text-label-sm text-text-strong-950">Plan first</span>
-                <span className="text-paragraph-xs text-text-soft-400">
-                  Review a plan before any edits
-                </span>
-              </label>
-            </div>
+            <RepoBranchBar
+              repos={selectedRepoItems}
+              value={branches}
+              onChange={setBranches}
+            />
 
             <button
               type="button"
               onClick={() => void submit()}
               disabled={!canSubmit}
-              className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-bg-strong-950 px-4 py-2 text-label-sm text-text-white-0 outline-none transition-opacity hover:opacity-90 focus-visible:ring-2 focus-visible:ring-stroke-strong-950 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-40"
+              className="ml-auto inline-flex shrink-0 items-center gap-1.5 rounded-full bg-bg-strong-950 px-4 py-2 text-label-sm text-text-white-0 outline-none transition-opacity hover:opacity-90 focus-visible:ring-2 focus-visible:ring-stroke-strong-950 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-40"
             >
               <AsteriskMark className="size-4" />
               {submitting ? "Starting…" : "Start agent"}
