@@ -113,7 +113,8 @@ export class Stack {
   constructor(readonly cfg: StackConfig) {
     this.dbUrl = `postgres://postgres@localhost:5432/${cfg.db}`;
     this.base = `http://localhost:${cfg.port}`;
-    this.sql = postgres(this.dbUrl, { max: 6 });
+    // connect_timeout absorbs transient PG connect stalls under heavy machine load.
+    this.sql = postgres(this.dbUrl, { max: 6, connect_timeout: 30 });
     this.signingSecret = cfg.signingSecret ?? "soak-signing-secret";
     this.mem = cfg.memPort
       ? new MockReceiver(cfg.memPort, null, (hit) =>
@@ -126,14 +127,25 @@ export class Stack {
   }
 
   async recreateDb(): Promise<void> {
-    const admin = postgres(ADMIN_URL, { max: 1 });
-    try {
-      await admin`SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = ${this.cfg.db} AND pid <> pg_backend_pid()`.catch(() => {});
-      await admin.unsafe(`DROP DATABASE IF EXISTS ${this.cfg.db}`);
-      await admin.unsafe(`CREATE DATABASE ${this.cfg.db}`);
-    } finally {
-      await admin.end();
+    // Retry the whole DROP+CREATE: under heavy machine load a PG connect can stall
+    // (CONNECT_TIMEOUT), and a half-done recreate would leave the storm querying an
+    // un-migrated DB ("relation … does not exist"). A few backoff attempts absorb it.
+    let last: unknown;
+    for (let i = 0; i < 8; i++) {
+      const admin = postgres(ADMIN_URL, { max: 1, connect_timeout: 30 });
+      try {
+        await admin`SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = ${this.cfg.db} AND pid <> pg_backend_pid()`.catch(() => {});
+        await admin.unsafe(`DROP DATABASE IF EXISTS ${this.cfg.db}`);
+        await admin.unsafe(`CREATE DATABASE ${this.cfg.db}`);
+        await admin.end();
+        return;
+      } catch (err) {
+        last = err;
+        await admin.end().catch(() => {});
+        await sleep(Math.min(10000, 1500 * (i + 1)));
+      }
     }
+    throw last;
   }
 
   private env(): Record<string, string> {
@@ -177,16 +189,30 @@ export class Stack {
     });
     this.proc = proc;
     const deadline = Date.now() + timeoutMs;
+    let healthy = false;
     while (Date.now() < deadline) {
       try {
         const r = await fetch(`${this.base}/api/health`);
-        if (r.ok) return;
+        if (r.ok) { healthy = true; break; }
       } catch {
         /* not up yet */
       }
       await sleep(150);
     }
-    throw new Error(`[${label}] backend did not come up on :${this.cfg.port}`);
+    if (!healthy) throw new Error(`[${label}] backend did not come up on :${this.cfg.port}`);
+    // Schema-ready gate: /api/health can respond before migrate's tables are visible
+    // to a SEPARATE connection under heavy load. Confirm a core table is queryable on
+    // OUR pool before the storm proceeds — else the storm races migrate ("relation
+    // … does not exist"). Cheap; retries within the same deadline budget.
+    while (Date.now() < deadline) {
+      try {
+        await this.sql`select 1 from runs limit 0`;
+        return;
+      } catch {
+        await sleep(200);
+      }
+    }
+    throw new Error(`[${label}] schema not ready on :${this.cfg.port} (runs table not queryable)`);
   }
 
   /** SIGKILL — no graceful shutdown, exactly like a crash. */
