@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
+  RiBookMarkedLine,
   RiCpuLine,
   RiFlashlightLine,
   RiGitBranchLine,
@@ -100,7 +101,7 @@ export function NewTaskComposer({ skills }: { skills: Skill[] }) {
   const [prompt, setPrompt] = useState("");
   const [selectedRepos, setSelectedRepos] = useState<string[]>([]);
   const [repos, setRepos] = useState<RepoItem[]>([]);
-  const [playbook, setPlaybook] = useState(""); // "" → No playbook
+  const [playbook, setPlaybook] = useState(""); // selected skill/playbook id, "" = none
   const [model, setModel] = useState(MODELS[0].value);
   const [machine, setMachine] = useState(MACHINES[0].value);
   const [engine, setEngine] = useState<string>(ENGINES[0].id);
@@ -212,25 +213,28 @@ export function NewTaskComposer({ skills }: { skills: Skill[] }) {
     }
     return false;
   }
-  // Deep-link preselect: the Skills page "Run skill" button routes here with
-  // ?skill=<id>, so the picker opens with that playbook already chosen.
+  // Deep-link preselect: the Skills and Playbooks pages' "Run" buttons route here
+  // with ?skill=<id> (any kind), so the picker opens with it already chosen.
   useEffect(() => {
     const preskill = new URLSearchParams(window.location.search).get("skill");
     if (preskill && skills.some((s) => s.id === preskill)) setPlaybook(preskill);
   }, [skills]);
 
-  const playbookGroups: PickerGroup[] = useMemo(() => {
-    const options = skills.map((s) => ({
+  // One combined picker over the shared substrate: a "None" option, then Skills
+  // and Playbooks as separate groups (the run pins exactly one, either kind).
+  const skillGroups: PickerGroup[] = useMemo(() => {
+    const toOption = (s: Skill) => ({
       value: s.id,
       label: s.name,
       caption: s.tags[0],
-      icon: RiFlashlightLine,
-    }));
-    const groups: PickerGroup[] = [{ options: [{ value: "", label: "No playbook" }] }];
-    if (options.length > 0) {
-      groups.push({ label: "Recents", options: options.slice(0, 2) });
-      groups.push({ label: "Playbooks", options });
-    }
+      icon: s.kind === "playbook" ? RiBookMarkedLine : RiFlashlightLine,
+    });
+    const skillOptions = skills.filter((s) => s.kind === "skill").map(toOption);
+    const playbookOptions = skills.filter((s) => s.kind === "playbook").map(toOption);
+    const groups: PickerGroup[] = [{ options: [{ value: "", label: "None" }] }];
+    if (skillOptions.length > 0) groups.push({ label: "Skills", options: skillOptions });
+    if (playbookOptions.length > 0)
+      groups.push({ label: "Playbooks", options: playbookOptions });
     return groups;
   }, [skills]);
 
@@ -318,10 +322,10 @@ export function NewTaskComposer({ skills }: { skills: Skill[] }) {
           <div className="flex flex-wrap items-center gap-0.5">
             <RepoMultiPicker repos={repos} value={selectedRepos} onChange={setSelectedRepos} />
             <SearchablePicker
-              ariaLabel="Select playbook"
-              triggerLabel="Playbook"
-              searchPlaceholder="Search playbooks..."
-              groups={playbookGroups}
+              ariaLabel="Select skill or playbook"
+              triggerLabel="Skill"
+              searchPlaceholder="Search skills and playbooks..."
+              groups={skillGroups}
               value={playbook}
               onChange={setPlaybook}
             />
