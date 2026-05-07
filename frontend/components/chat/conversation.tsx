@@ -417,6 +417,9 @@ function ReplyComposer({
   pending,
   commands,
   onReply,
+  running,
+  stopping,
+  onStop,
 }: {
   engine: EngineId;
   model: string;
@@ -424,6 +427,9 @@ function ReplyComposer({
   pending: boolean;
   commands?: SlashCommand[];
   onReply: ComposerSubmit;
+  running?: boolean;
+  stopping?: boolean;
+  onStop?: () => void;
 }) {
   return (
     <div className="border-stroke-soft-200 shrink-0 border-t p-3">
@@ -436,6 +442,9 @@ function ReplyComposer({
         pending={pending}
         commands={commands}
         onSubmit={onReply}
+        running={running}
+        stopping={stopping}
+        onStop={onStop}
       />
     </div>
   );
@@ -457,6 +466,9 @@ export function Conversation({
   onReply,
   sendNowFor,
   onSendNow,
+  running,
+  stopping,
+  onStop,
 }: {
   turns: Turn[];
   defaultEngine: EngineId;
@@ -471,6 +483,10 @@ export function Conversation({
    *  the "Send now" steering affordance (opencode's control on our harness). */
   sendNowFor?: string | null;
   onSendNow?: () => void;
+  /** A turn is running - the composer send button becomes Stop while empty. */
+  running?: boolean;
+  stopping?: boolean;
+  onStop?: () => void;
 }) {
   // Stick-to-bottom autoscroll: follow new turns/steps/narration as they
   // stream, but ONLY while the user is already near the bottom — scrolling up
@@ -512,6 +528,9 @@ export function Conversation({
         pending={pendingReply !== null}
         commands={commands}
         onReply={onReply}
+        running={running}
+        stopping={stopping}
+        onStop={onStop}
       />
     </div>
   );
