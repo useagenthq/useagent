@@ -312,8 +312,9 @@ async function doRead(claims: ToolTokenClaims, args: Record<string, unknown>): P
       { ref, layer },
     );
   }
+  // /v3/atomic/query rejects limit > 50 (400), so page-bound the browse lookup.
   const { browseScopedMemory } = await import("../../memory/team-memory");
-  const browse = await browseScopedMemory(plan.readPools, { limit: 200 });
+  const browse = await browseScopedMemory(plan.readPools, { limit: 50 });
   const found = browse.items.find((i) => i.id === id);
   if (!found) {
     return textResult(`No memory ${ref} is available to this run.`, undefined, true);

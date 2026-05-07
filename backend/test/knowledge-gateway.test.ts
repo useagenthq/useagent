@@ -151,11 +151,18 @@ describe("knowledge MCP gateway", () => {
     expect(r.body.result.serverInfo.name).toBe("skynet-knowledge");
   });
 
-  test("tools/list exposes exactly knowledge_search + knowledge_read", async () => {
+  test("tools/list exposes the knowledge + memory tools", async () => {
     const r = await rpc(tokenA, { jsonrpc: "2.0", id: 2, method: "tools/list" });
     expect(r.status).toBe(200);
     const names = (r.body.result.tools as { name: string }[]).map((t) => t.name).sort();
-    expect(names).toEqual(["knowledge_read", "knowledge_search"]);
+    // Knowledge (read-only) + Tencent-backed memory tools ride the same gateway.
+    expect(names).toEqual([
+      "knowledge_read",
+      "knowledge_search",
+      "memory_read",
+      "memory_remember",
+      "memory_search",
+    ]);
     // No tool declares a tenant/org input — identity is token-only.
     for (const t of r.body.result.tools as { inputSchema: any }[]) {
       const props = Object.keys(t.inputSchema.properties ?? {});
