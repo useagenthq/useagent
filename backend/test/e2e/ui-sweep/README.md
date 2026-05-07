@@ -6,7 +6,16 @@ a **real** backend + `skynet` DB — no mocking of app code. Only two failure
 injections use `page.route` (aborting a `/api/runs` POST) to exercise the
 composers' failed-send handling; everything else is genuine.
 
-## What it covers (11 scenarios, mapped to the 10 asks)
+Every run stamps a provenance line (commit SHA + dirty flag + branch + ISO
+timestamp + bun/platform + which scenarios ran) so a result is always bound to
+the exact code it exercised.
+
+## What it covers (17 scenarios)
+
+Scenarios 1–11 are the chat/session surface; 12–17 are the route-level product
+surfaces. Each 12–17 scenario **seeds its own real fixtures** (tagged `uisweep`)
+through the backend, then asserts the page renders that real data — or an honest
+empty/error — with zero fabricated strings. `cleanup.ts` deletes every fixture.
 
 1. **Hero composer** — send, duplicate-submit guard, single-POST-on-double-click,
    nav to `/session/{id}`, pickers feed the POST, failed-send error alert + draft
@@ -35,6 +44,25 @@ composers' failed-send handling; everything else is genuine.
     `localStorage["skynet.rail-width"]`, restored on reload.
 11. **Session a11y smoke** — no uncaught JS / console errors and no 404 resource
     requests on load + stream.
+12. **Skills** — seeds a real skill (`POST /api/skills`), asserts the library
+    card + its detail sections render, then the card's **Run** button deep-links
+    to `/agent/new?skill=<id>` with the playbook **preselected** in the composer.
+13. **Knowledge** — seeds a real record (`POST /api/knowledge/ingest`), asserts
+    it renders (found by its unique token), and the **Add** modal exposes real
+    name/content fields with no fabricated "saved" claim before submit.
+14. **Wiki** — asserts the honest empty branch iff zero published docs, then
+    creates + publishes a real document and asserts its **title + body** render.
+15. **Schedules** — creates a schedule through the **New schedule** modal, asserts
+    the new row lands in the list with its cron + **Disabled** status (created
+    off), and that it persisted server-side `enabled=false`.
+16. **Workspace** — the **Limits** card reflects real `/api/fleet` (per-model
+    burn + `tokens today`, or the honest "No model runs yet today."), and fleet
+    run rows link to **`/session/{id}`** (a real run id; never the dead
+    `/agent/runs/`).
+17. **Live Artifacts** (`/agent/artifacts`, the real one — `/artifacts` is a
+    placeholder gallery, not tested) — each card links to `/session/{runId}` for
+    a real run, or the honest "No artifacts yet" empty state with the Start-a-run
+    CTA.
 
 ## Running it
 
@@ -48,23 +76,24 @@ cd backend && PORT=3513 MEMORY_API_URL="" FRONTEND_ORIGIN="http://localhost:3200
 # frontend on :3413 proxying /api to :3513:
 cd frontend && SKYNET_API_ORIGIN="http://localhost:3513" ./node_modules/.bin/next dev -p 3413
 
-# playwright-core (system Chrome) is the only extra dep — it must be resolvable
-# from wherever you run the script. It lives here (backend/test/e2e/ui-sweep/,
-# OUTSIDE the app tsc `include`, so its playwright-core import never breaks
-# `bun run typecheck`). Install it once, e.g. in the frontend worktree, and run
-# with bun (bun resolves node_modules upward from the script's directory):
-cd backend && bun add -d playwright-core   # or reuse a frontend install
+# playwright-core (system Chrome) is a declared backend devDependency, so
+# `cd backend && bun install` restores it (bun resolves node_modules upward from
+# the script's directory). It lives OUTSIDE the app tsc `include`, so its
+# playwright-core import never breaks `bun run typecheck`.
+cd backend && bun install
 
 # run the sweep (all scenarios), or filter:
 FE_ORIGIN=http://localhost:3413 BE_ORIGIN=http://localhost:3513 bun backend/test/e2e/ui-sweep/sweep.ts
 SCENARIOS=1,4,8 bun backend/test/e2e/ui-sweep/sweep.ts
 WF_RID=<warm-opencode-run-id> bun backend/test/e2e/ui-sweep/sweep.ts   # reuse a warm fanout fixture
 
-# clean up the throwaway runs it created (only rows tagged 'uisweep'):
+# clean up EVERY throwaway fixture it created (only rows tagged 'uisweep' —
+# runs, skills, schedules, knowledge records + wiki documents):
 DATABASE_URL=postgres://postgres@localhost:5432/skynet bun backend/test/e2e/ui-sweep/cleanup.ts
 ```
 
 Real opencode fixtures use `model: claude-haiku-4-5` (cheap/fast). Every fixture
-prompt carries the `uisweep` tag so `cleanup.ts` deletes only this suite's rows.
+carries the `uisweep` tag (run prompt, skill/schedule name, knowledge
+external_id, document title) so `cleanup.ts` deletes only this suite's rows.
 Results are written to `/tmp/uisweep-results.json`; failure screenshots to
 `$UISWEEP_SHOTS` (default `/tmp/uisweep-shots/`).

@@ -52,6 +52,22 @@ export async function getRun(id: string): Promise<any> {
   return res.ok ? res.json() : null;
 }
 
+/** Generic JSON call to the backend, dev-org scoped (anonymous ⇒ dev org). Used
+ *  by the route scenarios to seed real fixtures (skills / knowledge / docs) that
+ *  the UI then renders. Every fixture carries the TAG so cleanup deletes only ours. */
+export async function beApi(
+  path: string,
+  opts: { method?: string; body?: unknown } = {},
+): Promise<{ status: number; body: any }> {
+  const res = await fetch(`${BE}${path}`, {
+    method: opts.method ?? (opts.body ? "POST" : "GET"),
+    headers: { "content-type": "application/json", Origin: "http://localhost:3200" },
+    body: opts.body === undefined ? undefined : JSON.stringify(opts.body),
+  });
+  const body = await res.json().catch(() => ({}));
+  return { status: res.status, body };
+}
+
 export async function getThread(id: string): Promise<any[]> {
   const res = await fetch(`${BE}/api/runs/${id}?thread=1`, { headers: { Origin: "http://localhost:3200" } });
   if (!res.ok) return [];
