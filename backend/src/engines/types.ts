@@ -39,6 +39,12 @@ export interface EngineRunContext {
    *  adapter keep per-thread state — e.g. the daytona engine reuses one cloud
    *  sandbox across a thread's turns instead of provisioning per reply. */
   threadId?: string;
+  /** The run's resolved organization + user (server-side identity from the run
+   *  row). Used ONLY to mint the run-scoped tool-gateway token an adapter injects
+   *  into the sandbox (knowledge tools) — never sent as prompt text. Null org →
+   *  no identity → the adapter skips gateway wiring (fail closed). */
+  orgId?: string | null;
+  userId?: string | null;
   /** The run's requested model id (bare Anthropic-style, e.g. "claude-opus-5").
    *  Adapters map it to their provider format and fall back to their own
    *  default when absent/unsupported. */

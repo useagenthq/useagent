@@ -190,6 +190,8 @@ async function runWorker(runId: string): Promise<void> {
       run.threadId,
       run.model,
       run.repos,
+      run.orgId,
+      run.userId,
     );
   } finally {
     // Free the thread and dispatch its next turn — whatever the outcome.
@@ -252,6 +254,8 @@ async function runEngine(
   threadId: string,
   model: string,
   repos: string[],
+  orgId: string | null,
+  userId: string | null,
 ): Promise<void> {
   const startedAt = Date.now();
   await setRunStatus(runId, "running");
@@ -315,6 +319,8 @@ async function runEngine(
     turnContext,
     workdir,
     threadId,
+    orgId,
+    userId,
     model,
     repos,
     engineSessionId,
