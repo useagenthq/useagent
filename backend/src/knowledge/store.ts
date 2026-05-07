@@ -15,6 +15,12 @@ import { toVectorLiteral } from "./embed";
 
 export const sql = postgres(env.databaseUrl, { max: 8, onnotice: () => {} });
 
+/** The pooled connection OR an open transaction — lets a caller run a store
+ *  write inside its own `sql.begin` so a multi-step lifecycle transition (e.g.
+ *  wiki publish/archive: doc status + knowledge_records) commits or rolls back
+ *  atomically instead of desyncing search on a partial failure. */
+export type StoreExec = typeof sql | postgres.TransactionSql;
+
 /** JSON-serializable value — what we hand to `sql.json()` for jsonb columns. */
 export type Json = null | string | number | boolean | Json[] | { [k: string]: Json };
 
@@ -201,10 +207,10 @@ export interface UpsertInput {
  * Re-ingest of the same identity REPLACES in place. `pinned` is intentionally
  * NOT overwritten on conflict, so a user's pin survives re-distillation.
  */
-export async function upsertRecord(input: UpsertInput): Promise<string> {
+export async function upsertRecord(input: UpsertInput, exec: StoreExec = sql): Promise<string> {
   await ready();
   const emb = input.embedding ? toVectorLiteral(input.embedding) : null;
-  const rows = await sql<{ id: string }[]>`
+  const rows = await exec<{ id: string }[]>`
     INSERT INTO knowledge_records
       (org_id, user_id, kind, title, body, refs, meta, external_id,
        connector_instance_id, content_hash, distillation_key, worth_saving, embedding, updated_at)
@@ -235,9 +241,10 @@ export async function findExisting(
   orgId: string,
   connectorInstanceId: string,
   externalId: string,
+  exec: StoreExec = sql,
 ): Promise<{ id: string; distillation_key: string; kind: string } | null> {
   await ready();
-  const rows = await sql<{ id: string; distillation_key: string; kind: string }[]>`
+  const rows = await exec<{ id: string; distillation_key: string; kind: string }[]>`
     SELECT id, distillation_key, kind FROM knowledge_records
     WHERE org_id = ${orgId} AND connector_instance_id = ${connectorInstanceId} AND external_id = ${externalId}
     LIMIT 1
@@ -293,9 +300,9 @@ export async function setPinned(orgId: string, id: string, pinned: boolean): Pro
   return rows[0] ?? null;
 }
 
-export async function deleteRecord(orgId: string, id: string): Promise<boolean> {
+export async function deleteRecord(orgId: string, id: string, exec: StoreExec = sql): Promise<boolean> {
   await ready();
-  const rows = await sql<{ id: string }[]>`
+  const rows = await exec<{ id: string }[]>`
     DELETE FROM knowledge_records WHERE org_id = ${orgId} AND id = ${id} RETURNING id
   `;
   return rows.length > 0;
