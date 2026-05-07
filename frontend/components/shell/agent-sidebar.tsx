@@ -7,6 +7,7 @@ import {
   RiCalendarScheduleLine,
   RiDatabase2Line,
   RiFlashlightLine,
+  RiKey2Line,
   RiLayoutGridLine,
   RiPlugLine,
   RiPulseLine,
@@ -89,6 +90,12 @@ export function AgentSidebar({ active }: AgentSidebarProps) {
         icon={RiBookMarkedLine}
         label='Playbooks'
         active={active === 'playbooks'}
+      />
+      <SidebarNavItem
+        href='/secrets'
+        icon={RiKey2Line}
+        label='Secrets'
+        active={active === 'secrets'}
       />
       <SidebarNavItem
         href='/settings'
