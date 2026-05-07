@@ -349,9 +349,18 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
             onReply={handleReply}
           />
           {/* Boot phase: engine spinning up, no steps yet — orb pill; clears the
-              moment the first step streams in (Thinking block takes over). */}
+              moment the first step streams in (Thinking block takes over).
+              Placement: centered ONLY on a fresh empty thread; once history
+              exists it docks to the panel's top-right corner so a queued
+              follow-up never floats over prior message text (user report). */}
           {booting && (
-            <div className="animate-ai-fade-up pointer-events-none absolute inset-x-0 top-1/2 z-20 flex -translate-y-1/2 justify-center">
+            <div
+              className={
+                turns.length === 0
+                  ? "animate-ai-fade-up pointer-events-none absolute inset-x-0 top-1/2 z-20 flex -translate-y-1/2 justify-center"
+                  : "animate-ai-fade-up pointer-events-none absolute right-4 top-4 z-20"
+              }
+            >
               <OrbBootIndicator engine={newest.engine} status={stream.status} />
             </div>
           )}
