@@ -5,17 +5,17 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { BackendUnreachable } from "@/components/shared/backend-unreachable";
-import { FeaturedSkill } from "./featured-skill";
 import { NewSkillModal } from "./new-skill-modal";
 import { fetchSkills } from "./skills-api";
-import { pickFeatured, type Skill } from "./skills-data";
+import { type Skill } from "./skills-data";
 import { SkillsLibrary } from "./skills-library";
 
 /**
  * Client owner for the Skills page: holds the skill list, hosts the "New skill"
  * modal, and wires the run action (optimistic usage bump + a check-flash
- * confirmation on the button). The highest-usage skill renders as the featured
- * card; the rest fill the library grid.
+ * confirmation on the button). All skills render as equal cards in the library
+ * grid - no single skill is featured/expanded (imported skills have long
+ * freeform bodies; a full-body featured card was noise, per user report).
  */
 export function SkillsView({
   initialSkills,
@@ -87,11 +87,6 @@ export function SkillsView({
     [flash, router],
   );
 
-  const featured = pickFeatured(skills);
-  const librarySkills = featured
-    ? skills.filter((s) => s.id !== featured.id)
-    : skills;
-
   return (
     <div className="mx-auto w-full max-w-[1040px] px-6 py-8 sm:px-10 sm:py-10">
       <div className="flex items-start justify-between gap-3">
@@ -119,25 +114,7 @@ export function SkillsView({
           </p>
         )
       ) : (
-        <>
-          {featured && (
-            <div className="mt-8">
-              <FeaturedSkill
-                skill={featured}
-                onRun={onRun}
-                ran={flashing.has(featured.id)}
-              />
-            </div>
-          )}
-
-          {librarySkills.length > 0 && (
-            <SkillsLibrary
-              skills={librarySkills}
-              onRun={onRun}
-              flashing={flashing}
-            />
-          )}
-        </>
+        <SkillsLibrary skills={skills} onRun={onRun} flashing={flashing} />
       )}
     </div>
   );
