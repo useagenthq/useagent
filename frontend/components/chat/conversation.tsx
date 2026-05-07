@@ -323,6 +323,22 @@ function TurnBlock({ turn }: { turn: Turn }) {
             {narrating && !summary && <LiveNarration text={liveText} />}
 
             {failed && !summary && <FailedNote />}
+
+            {/* A turn with NOTHING yet (rapid-fire replies queue serially per
+                thread; only the newest streams) rendered as a bare Skynet
+                header - which reads as broken (user report). Show an honest
+                waiting line instead. */}
+            {!summary &&
+              !narrating &&
+              !failed &&
+              activity.length === 0 &&
+              (status === "queued" || status === "running") && (
+                <span className="text-label-sm text-text-soft-400">
+                  {status === "queued"
+                    ? "Queued - starts when the previous turn finishes"
+                    : "Working..."}
+                </span>
+              )}
           </>
         )}
       </div>
