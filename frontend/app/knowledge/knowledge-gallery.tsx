@@ -223,7 +223,7 @@ export function KnowledgeGallery({
           <BackendUnreachable className="mt-10" onRetry={refetch} />
         ) : (
           <p className="mt-10 text-paragraph-sm text-text-sub-600">
-            No knowledge yet — add your first fact to teach Skynet.
+            No knowledge yet. Add your first fact to teach Skynet.
           </p>
         )
       ) : (

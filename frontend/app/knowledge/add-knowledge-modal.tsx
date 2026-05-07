@@ -179,7 +179,7 @@ export function AddKnowledgeModal({
           {status === "deferred" && (
             <p className="rounded-xl bg-warning-lighter px-3 py-2 text-paragraph-xs text-warning-dark">
               Distillation is unavailable right now, so this wasn&rsquo;t saved
-              yet. Your text is still here — press Save to retry once the model
+              yet. Your text is still here; press Save to retry once the model
               is reachable.
             </p>
           )}

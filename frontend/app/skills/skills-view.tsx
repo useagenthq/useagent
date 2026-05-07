@@ -115,7 +115,7 @@ export function SkillsView({
           <BackendUnreachable className="mt-10" onRetry={refetch} />
         ) : (
           <p className="mt-10 text-paragraph-sm text-text-sub-600">
-            No skills yet — capture your first playbook to get started.
+            No skills yet. Capture your first playbook to get started.
           </p>
         )
       ) : (

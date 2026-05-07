@@ -32,7 +32,7 @@ export function BackendUnreachable({
       <div className="min-w-0 flex-1">
         <p className="text-label-sm text-text-strong-950">Couldn’t reach the backend</p>
         <p className="text-paragraph-xs text-text-sub-600">
-          A connection problem — not an empty list.
+          A connection problem, not an empty list.
         </p>
       </div>
       <button
