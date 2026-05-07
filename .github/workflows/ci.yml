@@ -1,0 +1,121 @@
+# Deterministic CI for skynet — the fast, hermetic gate that runs on every push
+# and PR. Three jobs run in parallel (typecheck / backend tests / frontend), each
+# under ~10 min with bun's install cache warm.
+#
+# WHAT IS *NOT* HERE, ON PURPOSE — these stay MANUAL (see backend/package.json +
+# CLAUDE.md "Test + ops arsenal"), because they are non-deterministic, cost real
+# money, or need a browser + a full running stack:
+#   • `bun run e2e:real`  — provisions REAL Daytona sandboxes + real opencode +
+#                           real LLM tokens + the live memory gateway. Spends money,
+#                           timing-dependent. Release-gate it locally with E2E_STRICT=1.
+#   • `bun run soak`      — hours-long storm marathon; a regression soak, not a gate.
+#   • ui-sweep (Playwright over system Chrome) — needs a live FE+BE stack on real
+#                           ports and a desktop Chrome; run it on an isolated
+#                           instance (see backend/test/e2e/ui-sweep/README.md).
+# Keeping CI to the hermetic subset is what lets it stay green-means-green.
+name: CI
+
+on:
+  push:
+  pull_request:
+
+# A newer push to the same ref supersedes an in-flight run — no wasted minutes.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Pin the runtime so CI matches the machines that produced the lockfiles.
+  BUN_VERSION: "1.3.14"
+  NEXT_TELEMETRY_DISABLED: "1"
+
+jobs:
+  # ── Types across both apps (root `typecheck` = frontend tsc + backend tsc) ────
+  typecheck:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - name: Cache bun install store
+        uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: bun-store-${{ runner.os }}-${{ hashFiles('frontend/bun.lock', 'backend/bun.lock') }}
+          restore-keys: bun-store-${{ runner.os }}-
+      # Root `typecheck` runs the frontend tsc AND the backend tsc, so both apps
+      # need their deps installed first.
+      - run: bun install --frozen-lockfile
+        working-directory: frontend
+      - run: bun install --frozen-lockfile
+        working-directory: backend
+      - run: bun run typecheck
+
+  # ── Backend unit/integration tests against an isolated Postgres ──────────────
+  backend-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:16
+        # Passwordless `postgres` superuser so the test defaults connect verbatim
+        # (test/prepare-db.ts → postgres://postgres@localhost:5432/postgres,
+        #  test/preload.ts → .../skynet_test). No env override needed.
+        env:
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - name: Cache bun install store
+        uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: bun-store-${{ runner.os }}-${{ hashFiles('backend/bun.lock') }}
+          restore-keys: bun-store-${{ runner.os }}-
+      - run: bun install --frozen-lockfile
+        working-directory: backend
+      # `bun run test` = prepare-db (DROP+CREATE skynet_test) then `bun test`.
+      # The boot migrator builds the schema from committed Drizzle migrations, so
+      # a schema drift fails here. preload.ts strips LLM keys → fully deterministic.
+      - name: bun run test
+        working-directory: backend
+        run: bun run test
+
+  # ── Frontend: chat logic tests + a real production build ─────────────────────
+  frontend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - name: Cache bun install store
+        uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: bun-store-${{ runner.os }}-${{ hashFiles('frontend/bun.lock') }}
+          restore-keys: bun-store-${{ runner.os }}-
+      - run: bun install --frozen-lockfile
+        working-directory: frontend
+      # Chat is the surface we own end-to-end; its store/timeline/part-renderer
+      # logic is pure and deterministic.
+      - name: bun test components/chat
+        working-directory: frontend
+        run: bun test components/chat
+      # Next 16 production build — catches type/route/build regressions the dev
+      # server hides. Rewrites resolve at runtime, so no backend is needed.
+      - name: bun run build
+        working-directory: frontend
+        run: bun run build
