@@ -20,6 +20,7 @@ import { assertNever } from "../util/exhaustive";
 import { toolGatewayConfig } from "../knowledge/gateway/config";
 import { mintToolToken } from "../knowledge/gateway/token";
 import { MEMORY_SKILL_PATH, memorySkillText } from "../memory/memory-skill-text";
+import { composeSecretEnv, materializeSecretFiles } from "../secrets/inject";
 
 // ---------------------------------------------------------------------------
 // NATIVE opencode engine — the realtime path. Instead of one-shot CLI runs, the
@@ -530,7 +531,12 @@ export const opencodeServerAdapter: EngineAdapter = {
     const daytona = new Daytona({ apiKey, target: process.env.DAYTONA_TARGET ?? "us" });
     const budgetMs = Number(process.env.ENGINE_TIMEOUT_MS ?? 600_000);
 
-    const envVars: Record<string, string> = {};
+    // Org secrets first, then platform engine keys — a platform key of the same
+    // name always wins, so an org secret can never shadow the engine's own auth.
+    // composeSecretEnv also records the names-only `secrets.injected` marker;
+    // file-kind secrets ride in as PATHs here and are written after boot below.
+    const secretInjection = await composeSecretEnv(ctx);
+    const envVars: Record<string, string> = { ...secretInjection.env };
     if (process.env.ANTHROPIC_API_KEY) envVars.ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
     if (process.env.OPENROUTER_API_KEY) envVars.OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
 
@@ -608,6 +614,13 @@ export const opencodeServerAdapter: EngineAdapter = {
       // when the gateway is wired, else an explicit "no durable memory tools; do
       // not claim a save or write local files" (the observed no-gateway lie).
       await correctMemorySkillText(sandbox, toolsWired);
+
+      // Materialize any file-kind org secrets (0600) before the agent turn, so a
+      // path env var (e.g. GOOGLE_APPLICATION_CREDENTIALS) points at a real file.
+      await materializeSecretFiles(
+        (cmd) => sandbox!.process.executeCommand(cmd, undefined, undefined, 30),
+        secretInjection.files,
+      );
 
       // ── persistent server + preview endpoint ────────────────────────────────
       const { baseUrl, token, workdir } = await ensureServer(sandbox, npxFallback);

@@ -5,6 +5,7 @@ import { Daytona, type Sandbox } from "@daytona/sdk";
 import type { EmitStep, EngineAdapter, EngineRunContext } from "./types";
 import { composeTurnPrompt } from "./types";
 import { basename, parseJsonLine, truncate } from "./util";
+import { composeSecretEnv, materializeSecretFiles } from "../secrets/inject";
 
 // ---------------------------------------------------------------------------
 // Sandbox engine substrate — ALL user-facing engines (opencode / claude / codex)
@@ -419,7 +420,11 @@ function makeSandboxAdapter(spec: SandboxEngineSpec): EngineAdapter {
       const daytona = new Daytona({ apiKey, target: process.env.DAYTONA_TARGET ?? "us" });
 
       // Engine/provider keys ride as sandbox env — never on the command line.
-      const envVars: Record<string, string> = {};
+      // Org secrets compose first; platform keys of the same name win. Same seam
+      // as the opencode/acp adapters; also records the `secrets.injected` marker.
+      // file-kind secrets ride in as PATHs and are written after boot (below).
+      const secretInjection = await composeSecretEnv(ctx);
+      const envVars: Record<string, string> = { ...secretInjection.env };
       if (process.env.ANTHROPIC_API_KEY) envVars.ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
       if (process.env.OPENROUTER_API_KEY) envVars.OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
 
@@ -524,6 +529,13 @@ function makeSandboxAdapter(spec: SandboxEngineSpec): EngineAdapter {
         const rawModel = ctx.model?.trim() ?? "";
         const model = SAFE_ARG.test(rawModel) ? rawModel : DEFAULT_MODEL;
         const box = sandbox;
+
+        // Materialize any file-kind org secrets (0600) before the agent turn.
+        await materializeSecretFiles(
+          (cmd) => box.process.executeCommand(cmd, undefined, undefined, 30),
+          secretInjection.files,
+        );
+
         const budgetSec = Math.floor(Number(process.env.ENGINE_TIMEOUT_MS ?? 180_000) / 1000);
 
         const stagePrompt = async (text: string): Promise<void> => {
