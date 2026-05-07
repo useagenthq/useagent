@@ -57,3 +57,30 @@ export async function enqueueAddReaction(entry: {
   });
   if (created) kickSlackOutbox();
 }
+
+/** Durably enqueue an artifact upload into a thread. The bytes are already staged
+ *  on disk at `stagedPath`; the relay reads them and uploads (survives a restart).
+ *  Idempotent by `idempotencyKey`. */
+export async function enqueueUploadFile(entry: {
+  idempotencyKey: string;
+  channel: string;
+  threadTs?: string;
+  filename: string;
+  title?: string;
+  stagedPath: string;
+  size: number;
+}): Promise<void> {
+  const created = await enqueue({
+    kind: "upload_file",
+    idempotencyKey: entry.idempotencyKey,
+    payload: {
+      channel: entry.channel,
+      threadTs: entry.threadTs,
+      filename: entry.filename,
+      title: entry.title,
+      stagedPath: entry.stagedPath,
+      size: entry.size,
+    },
+  });
+  if (created) kickSlackOutbox();
+}

@@ -1,6 +1,7 @@
 import type { SlackConfig } from "../../env";
 import { resolveSlackClient, type DeliveryResult, type SlackClient } from "../client";
 import { assertNever } from "../../util/exhaustive";
+import { readStagedBytes, removeStaged } from "../upload-staging";
 import { claimDue, markDead, markDelivered, markRetry, resetStuckDelivering, type ClaimedRow } from "./repo";
 import type { ProcessResult, SlackDeliveryOutcome } from "./types";
 
@@ -22,15 +23,45 @@ function backoffMs(attempt: number): number {
 }
 
 /** Make the actual Slack call for a row, returning the classified result. */
-function attempt(client: SlackClient, row: ClaimedRow): Promise<DeliveryResult> {
+async function attempt(client: SlackClient, row: ClaimedRow): Promise<DeliveryResult> {
   const p = JSON.parse(row.payload) as Record<string, string | undefined>;
   switch (row.kind) {
     case "post_message":
       return client.postMessage({ channel: p.channel!, text: p.text!, threadTs: p.threadTs });
     case "add_reaction":
       return client.addReaction({ channel: p.channel!, timestamp: p.timestamp!, name: p.name! });
+    case "upload_file": {
+      // Bytes were staged on disk when the tool ran (sandbox alive). If the
+      // staged file is gone (already cleaned, or lost), there is nothing to
+      // deliver and no point retrying → permanent.
+      let bytes: Buffer;
+      try {
+        bytes = await readStagedBytes(p.stagedPath!);
+      } catch {
+        return { ok: false, class: "permanent", message: "staged_file_missing" };
+      }
+      return client.uploadFile({
+        channel: p.channel!,
+        threadTs: p.threadTs,
+        filename: p.filename!,
+        title: p.title,
+        bytes,
+      });
+    }
     default:
       return assertNever(row.kind, "unhandled slack outbox kind");
+  }
+}
+
+/** Remove an upload row's staged bytes once the row is terminal (delivered or
+ *  dead). A retry keeps them for the next attempt. No-op for other kinds. */
+async function cleanupStagedIfUpload(row: ClaimedRow): Promise<void> {
+  if (row.kind !== "upload_file") return;
+  try {
+    const p = JSON.parse(row.payload) as { stagedPath?: string };
+    if (p.stagedPath) await removeStaged(p.stagedPath);
+  } catch {
+    /* malformed payload — nothing to clean */
   }
 }
 
@@ -39,12 +70,14 @@ async function deliverOne(client: SlackClient, row: ClaimedRow): Promise<SlackDe
   const result = await attempt(client, row);
   if (result.ok) {
     await markDelivered(row.id);
+    await cleanupStagedIfUpload(row);
     return { status: "delivered" };
   }
 
   // A permanent error will never succeed → dead-letter immediately.
   if (result.class === "permanent") {
     await markDead(row.id, { errorClass: "permanent", lastError: result.message });
+    await cleanupStagedIfUpload(row);
     return { status: "dead", errorClass: "permanent" };
   }
 
@@ -52,6 +85,7 @@ async function deliverOne(client: SlackClient, row: ClaimedRow): Promise<SlackDe
   const attemptsAfter = row.attemptCount + 1;
   if (attemptsAfter >= row.maxAttempts) {
     await markDead(row.id, { errorClass: result.class, lastError: result.message });
+    await cleanupStagedIfUpload(row);
     return { status: "dead", errorClass: result.class };
   }
   // 429 honors Retry-After; transient uses exponential backoff.

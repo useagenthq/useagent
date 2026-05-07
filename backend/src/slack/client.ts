@@ -28,6 +28,23 @@ export interface SlackClient {
    * swallowed, so callers fire it unconditionally. NOT routed through the outbox.
    */
   setAssistantStatus(args: { channel: string; threadTs: string; status: string }): Promise<void>;
+  /**
+   * Upload a file into a thread. Ported from the QM bot (files.uploadV2,
+   * reference-eval src/slack/attachments.ts:189) and reference-bot (files_upload_v2,
+   * client.py:354) - both use the Slack SDK's uploadV2 helper. skynet has NO
+   * Slack SDK by design (thin fetch client), so we perform the identical
+   * sequence uploadV2 wraps: files.getUploadURLExternal -> POST the bytes to the
+   * returned URL -> files.completeUploadExternal (which shares it into
+   * `threadTs`). Returns a classified DeliveryResult so the outbox retries.
+   */
+  uploadFile(args: {
+    channel: string;
+    threadTs?: string;
+    filename: string;
+    title?: string;
+    initialComment?: string;
+    bytes: Uint8Array;
+  }): Promise<DeliveryResult>;
 }
 
 /** Slack `error` strings that will never succeed on retry → dead-letter fast. */
@@ -104,6 +121,60 @@ export function httpSlackClient(config: SlackConfig): SlackClient {
         thread_ts: threadTs,
         status,
       });
+    },
+    uploadFile: async ({ channel, threadTs, filename, title, initialComment, bytes }) => {
+      const auth = `Bearer ${config.botToken}`;
+      const rateLimited = (res: Response): DeliveryResult => {
+        const ra = Number(res.headers.get("retry-after") ?? "1");
+        return {
+          ok: false,
+          class: "rate_limited",
+          retryAfterMs: (Number.isFinite(ra) && ra > 0 ? ra : 1) * 1000,
+          message: "http_429",
+        };
+      };
+      const classify = (err: string): DeliveryResult =>
+        err === "ratelimited" || err === "rate_limited"
+          ? { ok: false, class: "rate_limited", retryAfterMs: 1000, message: err }
+          : { ok: false, class: PERMANENT_ERRORS.has(err) ? "permanent" : "transient", message: err };
+      try {
+        // 1) Reserve an upload URL. This method requires form-encoding.
+        const getRes = await fetch(`${config.apiUrl}files.getUploadURLExternal`, {
+          method: "POST",
+          headers: { authorization: auth, "content-type": "application/x-www-form-urlencoded" },
+          body: new URLSearchParams({ filename, length: String(bytes.length) }),
+        });
+        if (getRes.status === 429) return rateLimited(getRes);
+        const g = (await getRes.json().catch(() => ({}))) as {
+          ok?: boolean;
+          error?: string;
+          upload_url?: string;
+          file_id?: string;
+        };
+        if (!g.ok || !g.upload_url || !g.file_id) return classify(g.error ?? String(getRes.status));
+        // 2) Upload the bytes to the pre-signed URL (multipart; the URL is
+        //    pre-authorized, so it carries no bot token).
+        const form = new FormData();
+        form.append("file", new Blob([bytes]), filename);
+        const upRes = await fetch(g.upload_url, { method: "POST", body: form });
+        if (!upRes.ok) return { ok: false, class: "transient", message: `upload_url_${upRes.status}` };
+        // 3) Complete + share it into the thread.
+        const compRes = await fetch(`${config.apiUrl}files.completeUploadExternal`, {
+          method: "POST",
+          headers: { authorization: auth, "content-type": "application/json; charset=utf-8" },
+          body: JSON.stringify({
+            files: [{ id: g.file_id, title: title ?? filename }],
+            channel_id: channel,
+            ...(threadTs ? { thread_ts: threadTs } : {}),
+            ...(initialComment ? { initial_comment: initialComment } : {}),
+          }),
+        });
+        if (compRes.status === 429) return rateLimited(compRes);
+        const c = (await compRes.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+        return c.ok ? { ok: true } : classify(c.error ?? String(compRes.status));
+      } catch (err) {
+        return { ok: false, class: "transient", message: (err as Error).message };
+      }
     },
   };
 }

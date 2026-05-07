@@ -36,6 +36,7 @@ function recorder(result: () => DeliveryResult = () => ({ ok: true })): Recorder
       },
       addReaction: async () => result(),
       setAssistantStatus: async () => {},
+      uploadFile: async () => result(),
     },
   };
 }

@@ -350,7 +350,11 @@ export const slackThreads = pgTable(
 // ---------------------------------------------------------------------------
 
 export type SlackOutboxState = "pending" | "delivering" | "delivered" | "dead";
-export type SlackOutboxKind = "post_message" | "add_reaction";
+// `upload_file` delivers a run-produced artifact into the thread; its bytes are
+// staged on disk (server-side) and the payload carries only the staged path, so
+// the durable row stays small. `kind` is a text column, so a new kind needs no
+// migration.
+export type SlackOutboxKind = "post_message" | "add_reaction" | "upload_file";
 /** Classified delivery failure — drives retry vs dead-letter and observability. */
 export type SlackErrorClass = "rate_limited" | "transient" | "permanent";
 
