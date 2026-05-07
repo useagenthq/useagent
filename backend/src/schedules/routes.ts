@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import type { AppEnv } from "../http";
 import { ENGINE_IDS, type EngineId } from "../db/schema";
 import { orgScope } from "../middleware/org";
-import { isValidCron } from "./cron";
+import { isValidCron, isValidTimezone } from "./cron";
 import { fireSchedule } from "./fire";
 import {
   createSchedule,
@@ -47,6 +47,17 @@ schedulesRoutes.post("/", async (c) => {
   const prompt = typeof body.prompt === "string" ? body.prompt.trim() : "";
   if (!prompt) return c.json({ error: "prompt is required" }, 400);
 
+  // Optional IANA timezone. Absent/empty → null (server local). A malformed zone
+  // is a client error, never silently dropped (it would misfire every occurrence).
+  let timezone: string | null = null;
+  if (body.timezone !== undefined && body.timezone !== null && body.timezone !== "") {
+    const tz = typeof body.timezone === "string" ? body.timezone.trim() : "";
+    if (!isValidTimezone(tz)) {
+      return c.json({ error: "timezone must be a valid IANA name" }, 400);
+    }
+    timezone = tz;
+  }
+
   let engine: EngineId = "mock";
   if (body.engine !== undefined) {
     if (
@@ -68,6 +79,7 @@ schedulesRoutes.post("/", async (c) => {
     userId: c.get("userId"),
     name,
     cron,
+    timezone,
     prompt,
     engine,
     model,
@@ -88,6 +100,7 @@ schedulesRoutes.patch("/:id", async (c) => {
   const patch: Partial<{
     name: string;
     cron: string;
+    timezone: string | null;
     prompt: string;
     engine: EngineId;
     model: string;
@@ -95,6 +108,19 @@ schedulesRoutes.patch("/:id", async (c) => {
   }> = {};
 
   if (typeof body.enabled === "boolean") patch.enabled = body.enabled;
+  // timezone: an explicit "" or null clears it (→ server local); a non-empty
+  // string must be a valid IANA name.
+  if (body.timezone !== undefined) {
+    if (body.timezone === null || body.timezone === "") {
+      patch.timezone = null;
+    } else {
+      const tz = typeof body.timezone === "string" ? body.timezone.trim() : "";
+      if (!isValidTimezone(tz)) {
+        return c.json({ error: "timezone must be a valid IANA name" }, 400);
+      }
+      patch.timezone = tz;
+    }
+  }
   if (typeof body.name === "string" && body.name.trim())
     patch.name = body.name.trim();
   if (typeof body.prompt === "string" && body.prompt.trim())

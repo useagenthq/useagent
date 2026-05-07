@@ -93,17 +93,87 @@ function parse(expr: string): {
   };
 }
 
-/** True if `date` (in server local time) matches the 5-field cron `expr`. */
-export function cronMatches(expr: string, date: Date): boolean {
+/** The cron-relevant wall-clock fields of an instant. */
+interface WallClock {
+  minute: number;
+  hour: number;
+  dom: number;
+  month: number;
+  dow: number; // 0 = Sunday … 6 = Saturday (matches Date.getDay)
+}
+
+const WEEKDAY: Record<string, number> = {
+  Sun: 0,
+  Mon: 1,
+  Tue: 2,
+  Wed: 3,
+  Thu: 4,
+  Fri: 5,
+  Sat: 6,
+};
+
+/** Wall-clock fields in server LOCAL time (the pre-timezone behavior). */
+function localWallClock(date: Date): WallClock {
+  return {
+    minute: date.getMinutes(),
+    hour: date.getHours(),
+    dom: date.getDate(),
+    month: date.getMonth() + 1,
+    dow: date.getDay(),
+  };
+}
+
+/**
+ * Wall-clock fields of `date` as seen in IANA `timeZone`, dependency-free via
+ * `Intl.DateTimeFormat`. An invalid/unknown zone throws when the formatter is
+ * built — we fall back to server local time (defensive: a bad zone must never
+ * break the whole scheduler tick; the API validates the zone before it persists).
+ */
+function zonedWallClock(date: Date, timeZone: string): WallClock {
+  try {
+    const parts = new Intl.DateTimeFormat("en-US", {
+      timeZone,
+      hourCycle: "h23",
+      month: "numeric",
+      day: "numeric",
+      hour: "numeric",
+      minute: "numeric",
+      weekday: "short",
+    }).formatToParts(date);
+    const get = (type: string): string =>
+      parts.find((p) => p.type === type)?.value ?? "";
+    return {
+      minute: Number(get("minute")),
+      hour: Number(get("hour")),
+      dom: Number(get("day")),
+      month: Number(get("month")),
+      dow: WEEKDAY[get("weekday")] ?? date.getUTCDay(),
+    };
+  } catch {
+    return localWallClock(date);
+  }
+}
+
+/**
+ * True if `date` matches the 5-field cron `expr`. Evaluated in `timeZone` (an
+ * IANA name) when given, else in server local time. The timezone makes a
+ * schedule's wall-clock intent independent of where the box runs (mem_op 0.4).
+ */
+export function cronMatches(
+  expr: string,
+  date: Date,
+  timeZone?: string | null,
+): boolean {
   const p = parse(expr);
   if (!p) return false;
 
-  if (!p.minute.has(date.getMinutes())) return false;
-  if (!p.hour.has(date.getHours())) return false;
-  if (!p.month.has(date.getMonth() + 1)) return false;
+  const wc = timeZone ? zonedWallClock(date, timeZone) : localWallClock(date);
+  if (!p.minute.has(wc.minute)) return false;
+  if (!p.hour.has(wc.hour)) return false;
+  if (!p.month.has(wc.month)) return false;
 
-  const domMatch = p.dom.has(date.getDate());
-  const dowMatch = p.dow.has(date.getDay());
+  const domMatch = p.dom.has(wc.dom);
+  const dowMatch = p.dow.has(wc.dow);
 
   // Vixie cron: when BOTH day-of-month and day-of-week are restricted, the day
   // matches if EITHER does; otherwise a restricted field must match (a `*`
@@ -117,4 +187,15 @@ export function cronMatches(expr: string, date: Date): boolean {
 /** True if `expr` is a syntactically valid 5-field cron expression. */
 export function isValidCron(expr: string): boolean {
   return parse(expr) !== null;
+}
+
+/** True if `tz` is an IANA timezone Intl accepts (empty/undefined → false). */
+export function isValidTimezone(tz: string): boolean {
+  if (!tz) return false;
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: tz });
+    return true;
+  } catch {
+    return false;
+  }
 }
