@@ -17,14 +17,20 @@
  */
 import { slackConfig } from "../env";
 import { startSlackOutboxRelay } from "./outbox";
+import { startSlackSocketMode } from "./socket-mode";
 
 export { slackRoutes } from "./routes";
 export { slackEnabled } from "../env";
 export { setSlackClientForTest, type SlackClient } from "./client";
+export { stopSlackSocketMode } from "./socket-mode";
 
-/** Start the durable outbox delivery relay (boot recovery + interval). Called
+/** Start the durable outbox delivery relay (boot recovery + interval) and,
+ *  when SLACK_APP_TOKEN is set, the Socket Mode ingress (WebSocket lane - no
+ *  public URL required; shares the HTTP path's handler + deduper). Called
  *  from src/index.ts only when Slack is configured. No-op if unconfigured. */
 export function startSlackOutbox(): void {
   const cfg = slackConfig();
-  if (cfg) startSlackOutboxRelay(cfg);
+  if (!cfg) return;
+  startSlackOutboxRelay(cfg);
+  startSlackSocketMode();
 }
