@@ -29,9 +29,16 @@ export interface IngestInput {
   folder: string;
 }
 
+/**
+ * Mirrors the backend `IngestResult` (backend/src/knowledge/ingest.ts) — keep the
+ * status union in sync. `id` is null for the non-storing outcomes: `dropped`
+ * (worth_saving gate) and `deferred` (distillation unavailable in production, so
+ * NOTHING was stored and the caller should retry once the model is healthy). A
+ * silent success on `deferred` is the bug this type prevents.
+ */
 export interface IngestResult {
-  id: string;
-  status: "stored" | "skipped" | "dropped";
+  id: string | null;
+  status: "stored" | "skipped" | "dropped" | "deferred";
   kind?: string;
 }
 

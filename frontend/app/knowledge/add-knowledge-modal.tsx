@@ -18,12 +18,14 @@ import { ingestKnowledge } from "./knowledge-api";
  *
  * On Save it composes the fields into distillation text and POSTs to
  * `/api/knowledge/ingest`, showing a "Distilling…" state until the backend
- * responds. Skynet's worth_saving gate is surfaced honestly: a `dropped`
- * response shows a subtle notice; a `stored`/`skipped` response refetches the
- * list (via `onIngested`) so the resulting kind chip appears.
+ * responds. Every non-storing outcome is surfaced honestly instead of faking a
+ * save: `dropped` (worth_saving gate) and `deferred` (distillation unavailable,
+ * so the backend stored NOTHING) each show a subtle notice and keep the modal
+ * open so the user can adjust or retry; only a `stored`/`skipped` response
+ * refetches the list (via `onIngested`) and closes.
  */
 
-type SaveStatus = "idle" | "distilling" | "dropped" | "error";
+type SaveStatus = "idle" | "distilling" | "dropped" | "deferred" | "error";
 
 export function AddKnowledgeModal({
   folders,
@@ -58,8 +60,11 @@ export function AddKnowledgeModal({
         content: body.trim(),
         folder,
       });
-      if (result.status === "dropped") {
-        setStatus("dropped");
+      // Non-storing outcomes: nothing was written, so DON'T refetch or close —
+      // surface the honest reason and let the user adjust (dropped) or retry
+      // (deferred: distillation unavailable, id is null).
+      if (result.status === "dropped" || result.status === "deferred") {
+        setStatus(result.status);
         return;
       }
       await onIngested();
@@ -169,6 +174,13 @@ export function AddKnowledgeModal({
             <p className="rounded-xl bg-bg-weak-50 px-3 py-2 text-paragraph-xs text-text-sub-600">
               Skynet judged this not worth saving. Try adding more specific
               detail, or close to discard.
+            </p>
+          )}
+          {status === "deferred" && (
+            <p className="rounded-xl bg-warning-lighter px-3 py-2 text-paragraph-xs text-warning-dark">
+              Distillation is unavailable right now, so this wasn&rsquo;t saved
+              yet. Your text is still here — press Save to retry once the model
+              is reachable.
             </p>
           )}
           {status === "error" && (
