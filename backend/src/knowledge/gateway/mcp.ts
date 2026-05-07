@@ -1,4 +1,10 @@
 import { Hono } from "hono";
+import {
+  CallToolRequestSchema,
+  ErrorCode,
+  JSONRPCNotificationSchema,
+  JSONRPCRequestSchema,
+} from "@modelcontextprotocol/sdk/types.js";
 import { executeKnowledgeTool, KNOWLEDGE_TOOLS, KNOWLEDGE_TOOL_NAMES } from "./tools";
 import { executeMemoryTool, MEMORY_TOOLS, MEMORY_TOOL_NAMES } from "./memory-tools";
 import { verifyToolToken, type ToolTokenClaims } from "./token";
@@ -10,6 +16,13 @@ import { verifyToolToken, type ToolTokenClaims } from "./token";
 // single POST — every request gets an `application/json` response, every
 // notification a 202 (no SSE session state needed), which the MCP SDK client
 // (opencode's transport) accepts natively.
+//
+// PROTOCOL VALIDATION uses the OFFICIAL @modelcontextprotocol/sdk schemas + error
+// codes (#98): the SDK's JSONRPCRequestSchema/JSONRPCNotificationSchema classify
+// each message and CallToolRequestSchema validates a tool call, replacing the
+// hand-rolled parsing; error codes come from the SDK's `ErrorCode` enum. The
+// TRANSPORT stays this proven ~145-line stateless single-POST Hono handler (no
+// SSE sessions), and the response bytes are unchanged (pinned by mcp-wire.test).
 //
 // AUTH IS THE BOUNDARY: every request must carry `Authorization: Bearer <token>`.
 // The token is verified + decoded into server-trusted claims here; a missing,
@@ -43,30 +56,21 @@ function err(id: RpcRequest["id"], code: number, message: string): RpcResponse {
   return { jsonrpc: "2.0", id, error: { code, message } };
 }
 
-/** A message with no `id` is a JSON-RPC notification (no response). */
-function isRequest(msg: unknown): msg is RpcRequest {
-  return (
-    typeof msg === "object" &&
-    msg !== null &&
-    "method" in msg &&
-    typeof (msg as { method: unknown }).method === "string" &&
-    "id" in msg &&
-    (msg as { id: unknown }).id !== undefined
-  );
-}
-
 /**
- * Handle ONE decoded JSON-RPC message under already-verified claims. Returns a
- * response for a request, or `null` for a notification. Pure over (claims, msg)
- * apart from the tool side-effects — unit-testable without HTTP.
+ * Handle ONE JSON-RPC REQUEST under already-verified claims. The route validates
+ * the envelope with the SDK's JSONRPCRequestSchema before calling this; here the
+ * SDK's CallToolRequestSchema validates a tool call and the SDK's `ErrorCode`s are
+ * used, replacing the hand-rolled parsing. Returns a response, or null for a
+ * method with none. Response bytes are unchanged vs the prior version (mcp-wire.test).
  */
 export async function handleMcpMessage(
   claims: ToolTokenClaims,
   msg: RpcRequest,
 ): Promise<RpcResponse | null> {
+  const params = msg.params as Record<string, unknown> | undefined;
   switch (msg.method) {
     case "initialize": {
-      const requested = (msg.params?.protocolVersion as string) || DEFAULT_PROTOCOL_VERSION;
+      const requested = (params?.protocolVersion as string) || DEFAULT_PROTOCOL_VERSION;
       return ok(msg.id, {
         protocolVersion: requested,
         capabilities: { tools: { listChanged: false } },
@@ -81,24 +85,27 @@ export async function handleMcpMessage(
     }
     case "notifications/initialized":
     case "notifications/cancelled":
-      return null; // notification — no response
+      return null; // notification-shaped — no response
     case "ping":
       return ok(msg.id, {});
     case "tools/list":
       return ok(msg.id, { tools: [...KNOWLEDGE_TOOLS, ...MEMORY_TOOLS] });
     case "tools/call": {
-      const name = String(msg.params?.name ?? "");
-      const args = (msg.params?.arguments ?? {}) as Record<string, unknown>;
+      // SDK-validate the tool call (name required; arguments is an open record).
+      const parsed = CallToolRequestSchema.safeParse(msg);
+      if (!parsed.success) return err(msg.id, ErrorCode.InvalidParams, "Invalid params for tools/call");
+      const name = parsed.data.params.name;
+      const args = (parsed.data.params.arguments ?? {}) as Record<string, unknown>;
       if (KNOWLEDGE_TOOL_NAMES.has(name)) {
         return ok(msg.id, await executeKnowledgeTool(claims, name, args));
       }
       if (MEMORY_TOOL_NAMES.has(name)) {
         return ok(msg.id, await executeMemoryTool(claims, name, args));
       }
-      return err(msg.id, -32602, `Unknown tool: ${name}`);
+      return err(msg.id, ErrorCode.InvalidParams, `Unknown tool: ${name}`);
     }
     default:
-      return err(msg.id, -32601, `Method not found: ${msg.method}`);
+      return err(msg.id, ErrorCode.MethodNotFound, `Method not found: ${msg.method}`);
   }
 }
 
@@ -125,17 +132,20 @@ knowledgeMcpRoutes.post("/", async (c) => {
   try {
     body = await c.req.json();
   } catch {
-    return c.json(err(null, -32700, "Parse error"), 400);
+    return c.json(err(null, ErrorCode.ParseError, "Parse error"), 400);
   }
 
   const messages = Array.isArray(body) ? body : [body];
   const responses: RpcResponse[] = [];
   for (const raw of messages) {
-    if (isRequest(raw)) {
-      const res = await handleMcpMessage(claims, raw);
+    // Classify with the official SDK schemas (replaces the hand-rolled isRequest):
+    // a valid JSON-RPC request is handled; a notification or malformed message
+    // gets no response, exactly as before.
+    const req = JSONRPCRequestSchema.safeParse(raw);
+    if (req.success) {
+      const res = await handleMcpMessage(claims, req.data as unknown as RpcRequest);
       if (res) responses.push(res);
     }
-    // Non-request (notification / malformed-without-id) → no response, per spec.
   }
 
   // All-notifications payload → 202 Accepted, no body (SDK client handles this).
