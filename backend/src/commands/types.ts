@@ -22,9 +22,9 @@ export interface RunCommandInput {
     readonly engine: EngineId;
     readonly parentRunId: string | null;
     readonly threadId: string;
-    /** GitHub repo "owner/name" to work in (validated against GET /api/repos),
-     *  or null for a bare workdir. Part of the run's identity for idempotency. */
-    readonly repo: string | null;
+    /** GitHub repos to work in (each "owner/name"), validated against GET
+     *  /api/repos; empty = a bare workdir. Part of the run's identity. */
+    readonly repos: string[];
     /** Team-memory pool for the run — resolved at the boundary (explicit choice,
      *  parent inheritance, or the "org" default). Never taken from the sandbox. */
     readonly memoryScope: MemoryScope;

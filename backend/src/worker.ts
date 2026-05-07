@@ -189,7 +189,7 @@ async function runWorker(runId: string): Promise<void> {
       turnContext,
       run.threadId,
       run.model,
-      run.repo,
+      run.repos,
     );
   } finally {
     // Free the thread and dispatch its next turn — whatever the outcome.
@@ -251,7 +251,7 @@ async function runEngine(
   turnContext: string,
   threadId: string,
   model: string,
-  repo: string | null,
+  repos: string[],
 ): Promise<void> {
   const startedAt = Date.now();
   await setRunStatus(runId, "running");
@@ -316,7 +316,7 @@ async function runEngine(
     workdir,
     threadId,
     model,
-    repo,
+    repos,
     engineSessionId,
     // Durable fire-and-forget: the id is saved the moment the engine reveals it,
     // so even a later-failing run leaves a resumable session for the next turn.

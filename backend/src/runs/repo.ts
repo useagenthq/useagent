@@ -42,7 +42,10 @@ export interface ApiRun {
   parent_run_id: string | null;
   thread_id: string;
   engine_session_id: string | null;
+  /** Legacy single-repo mirror (= repos[0] ?? null), kept for back-compat. */
   repo: string | null;
+  /** GitHub repos this thread works in (each "owner/name"); [] = bare workdir. */
+  repos: string[];
   /** Which team-memory pool this run reads/writes (default "org"). The composer
    *  reads a thread's scope from its newest run so a reply inherits it. */
   memory_scope: MemoryScope;
@@ -79,6 +82,7 @@ function toRun(r: RunRecord, stepRows: StepRecord[]): ApiRun {
     thread_id: r.threadId,
     engine_session_id: r.engineSessionId,
     repo: r.repo,
+    repos: r.repos,
     memory_scope: r.memoryScope,
     created_at: r.createdAt.toISOString(),
     updated_at: r.updatedAt.toISOString(),
@@ -147,7 +151,7 @@ export async function createRun(
     userId: string | null;
     parentRunId: string | null;
     threadId: string;
-    repo?: string | null;
+    repos: string[];
     /** Team-memory pool for the run. Resolved server-side at the run-creation
      *  boundary (explicit choice, parent inheritance, or the "org" default). */
     memoryScope: MemoryScope;
@@ -166,7 +170,8 @@ export async function createRun(
     userId: input.userId,
     parentRunId: input.parentRunId,
     threadId: input.threadId,
-    repo: input.repo ?? null,
+    repos: input.repos ?? [],
+    repo: input.repos?.[0] ?? null, // legacy single-value mirror
     memoryScope: input.memoryScope,
   });
 }

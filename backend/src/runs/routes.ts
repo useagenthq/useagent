@@ -12,7 +12,7 @@ import {
   listRunsWithSteps,
 } from "./repo";
 import { acceptRunCommand } from "../commands";
-import { isKnownRepo } from "../github/repos";
+import { unknownRepos } from "../github/repos";
 import { bus, channel, pumpThread, type BusEvent } from "../worker";
 import { turnStream } from "./turn-stream";
 import { assertNever } from "../util/exhaustive";
@@ -36,6 +36,7 @@ runsRoutes.post("/", async (c) => {
     engine?: unknown;
     parent_run_id?: unknown;
     repo?: unknown;
+    repos?: unknown;
     memory_scope?: unknown;
   };
   try {
@@ -73,7 +74,7 @@ runsRoutes.post("/", async (c) => {
   // context is composed later (worker) by walking the thread, never nested here.
   let parentRunId: string | null = null;
   let threadId: string = id;
-  let inheritedRepo: string | null = null;
+  let inheritedRepos: string[] = [];
   let parentScope: MemoryScope | null = null;
   if (body.parent_run_id !== undefined && body.parent_run_id !== null) {
     const rawParent =
@@ -85,26 +86,39 @@ runsRoutes.post("/", async (c) => {
     if (!parent) return c.json({ error: "parent run not found" }, 404);
     parentRunId = parent.id;
     threadId = parent.threadId;
-    inheritedRepo = parent.repo;
+    inheritedRepos = parent.repos;
     parentScope = parent.memoryScope;
   }
 
-  // Repo scope: a ROOT run may pick a repository (validated against the set
+  // Repo scope: a ROOT run may pick REPOSITORIES (each validated against the set
   // GET /api/repos actually offers — an unknown/malformed value is a client
-  // error, never silently dropped). A REPLY inherits its thread's repo (the
-  // sandbox already holds the clone) and ignores any repo in its own body.
-  let repo: string | null = null;
+  // error, never silently dropped). A REPLY inherits its thread's repos (the
+  // sandbox already holds the clones) and ignores any repos in its own body.
+  // Accepts `repos: string[]` (preferred) or a single `repo` string (back-compat).
+  let repos: string[] = [];
   if (parentRunId) {
-    repo = inheritedRepo;
-  } else if (body.repo !== undefined && body.repo !== null && body.repo !== "") {
-    const rawRepo = typeof body.repo === "string" ? body.repo.trim() : "";
-    if (!rawRepo) {
-      return c.json({ error: "repo must be an 'owner/name' string" }, 400);
+    repos = inheritedRepos;
+  } else {
+    const raw = Array.isArray(body.repos)
+      ? body.repos
+      : body.repo !== undefined && body.repo !== null
+        ? [body.repo]
+        : [];
+    const wanted = [
+      ...new Set(
+        raw.map((r) => (typeof r === "string" ? r.trim() : "")).filter((r) => r.length > 0),
+      ),
+    ];
+    if (wanted.length > 0) {
+      const unknown = await unknownRepos(wanted);
+      if (unknown.length > 0) {
+        return c.json(
+          { error: `repos not in the available set: ${unknown.join(", ")}` },
+          400,
+        );
+      }
+      repos = wanted;
     }
-    if (!(await isKnownRepo(rawRepo))) {
-      return c.json({ error: `repo is not in the available set: ${rawRepo}` }, 400);
-    }
-    repo = rawRepo;
   }
 
   // Memory scope: an explicit choice from the authenticated user (validated) wins;
@@ -133,7 +147,7 @@ runsRoutes.post("/", async (c) => {
     idempotencyKey,
     orgId: c.get("orgId"),
     actorId: c.get("userId"),
-    run: { id, prompt, model, engine, parentRunId, threadId, repo, memoryScope },
+    run: { id, prompt, model, engine, parentRunId, threadId, repos, memoryScope },
   });
 
   // Translate the acceptance outcome to the HTTP response (exhaustive — a new

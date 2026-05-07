@@ -128,9 +128,10 @@ function shq(s: string): string {
 }
 
 /**
- * Clone the thread's selected repo into the sandbox workspace, idempotently —
- * called once on a thread's first turn; a resumed thread already has the clone,
- * so this is a fast skip. Public repos need no credential.
+ * Clone ONE selected repo into its OWN subdir of the sandbox workspace
+ * (`~/work/<name>`), idempotently — so multiple repos coexist (multi-repo) and
+ * a resumed thread (that subdir already cloned) is a fast skip. Public repos
+ * need no credential.
  *
  * TRUST BOUNDARY (new_prompt.md "narrowest practical credential"): a PRIVATE
  * clone uses the backend-held GitHub token, and the sandbox is untrusted — so
@@ -142,7 +143,7 @@ function shq(s: string): string {
  *     so the token does not persist on the sandbox disk.
  * Only this narrow read-scoped token ever enters the sandbox; broad backend
  * credentials never do. A fresh clone that FAILS fails the run honestly rather
- * than silently leaving an empty workdir the user did not ask for.
+ * than silently leaving the user's chosen repo missing.
  */
 async function ensureRepoClone(
   sandbox: Sandbox,
@@ -150,11 +151,11 @@ async function ensureRepoClone(
   repo: string,
   ctx: EngineRunContext,
 ): Promise<void> {
-  const gitDir = `${workdir}/.git`;
-  // Cheap pre-check so a resumed thread (clone already present) shows no noisy
-  // "Cloning" step — we only emit + clone when the workspace has no repo yet.
+  const dir = `${workdir}/${basename(repo)}`;
+  // Cheap pre-check so a resumed thread (this repo already cloned) shows no noisy
+  // "Cloning" step — we only emit + clone when the subdir has no repo yet.
   const check = await sandbox.process.executeCommand(
-    `[ -d ${shq(gitDir)} ] && echo yes || echo no`,
+    `[ -d ${shq(`${dir}/.git`)} ] && echo yes || echo no`,
     undefined,
     undefined,
     15,
@@ -163,17 +164,14 @@ async function ensureRepoClone(
 
   const token = githubConfig().token;
   const url = `https://github.com/${repo}.git`;
-  // Robust to a non-empty workdir: clone into a temp dir, then move ALL entries
-  // (incl. dotfiles like .git) via find — POSIX-portable, unlike bash `dotglob`.
+  // Each repo owns a fresh subdir, so a direct `git clone <url> <dir>` works (no
+  // temp+move dance). Clear any partial dir first so the clone starts clean.
   const script =
-    `set -e; DIR=${shq(workdir)}; ` +
+    `set -e; DIR=${shq(dir)}; ` +
     `if [ -d "$DIR/.git" ]; then echo clone:exists; exit 0; fi; ` +
-    `TMP="$(mktemp -d)"; ` +
-    `if git clone ${shq(url)} "$TMP/r" >"$TMP/log" 2>&1; then ` +
-    `mkdir -p "$DIR"; ` +
-    `( cd "$TMP/r" && find . -maxdepth 1 -mindepth 1 -exec mv -f {} "$DIR/" ';' ); ` +
-    `rm -rf "$TMP"; echo clone:ok; ` +
-    `else echo clone:failed; tail -c 300 "$TMP/log"; rm -rf "$TMP"; exit 1; fi`;
+    `rm -rf "$DIR"; L="$(mktemp)"; ` +
+    `if git clone ${shq(url)} "$DIR" >"$L" 2>&1; then rm -f "$L"; echo clone:ok; ` +
+    `else echo clone:failed; tail -c 300 "$L"; rm -rf "$L" "$DIR"; exit 1; fi`;
   // Token via ENV only (see trust-boundary note). Absent token → public clone.
   const cloneEnv: Record<string, string> = token
     ? {
@@ -186,7 +184,7 @@ async function ensureRepoClone(
   await ctx.emit({ kind: "command", label: `Cloning ${repo}`, chip: "git" });
   const res = await sandbox.process.executeCommand(script, undefined, cloneEnv, 300);
   const out = (res.result ?? "").trim();
-  if ((res.exitCode ?? 1) !== 0 || /clone:(failed|mktemp)/.test(out)) {
+  if ((res.exitCode ?? 1) !== 0 || /clone:failed/.test(out)) {
     // Never echo the credential — surface only the sanitized git tail.
     const detail = out.replace(/clone:\w+/g, "").trim() || "git clone error";
     throw new Error(`failed to clone ${repo}: ${truncate(detail, 200)}`);
@@ -477,12 +475,15 @@ export const opencodeServerAdapter: EngineAdapter = {
       const headers = { ...authHeaders(token), "content-type": "application/json" };
       const dirQ = `?directory=${encodeURIComponent(workdir)}`;
 
-      // Clone the thread's selected repo INTO the workspace before the turn —
-      // idempotent (a resumed thread already has it, so this is a fast skip).
+      // Clone EACH selected repo into its own workspace subdir before the turn —
+      // idempotent per repo (a resumed thread already has them, so fast skips).
       // Public repos need no credential; a private repo uses the backend-held
       // token as a narrow one-shot (see ensureRepoClone). A fresh clone that
-      // fails fails the run honestly, before the engine works in an empty dir.
-      if (ctx.repo) await ensureRepoClone(sandbox, workdir, ctx.repo, ctx);
+      // fails fails the run honestly, before the engine works without the repo.
+      for (const r of ctx.repos ?? []) {
+        if (ctx.signal.aborted) throw new Error("opencode run aborted (timeout)");
+        await ensureRepoClone(sandbox, workdir, r, ctx);
+      }
 
       const createSession = async (): Promise<string> => {
         const res = await fetch(`${baseUrl}/session${dirQ}`, {
