@@ -18,6 +18,7 @@ import { resolveGithubToken } from "../github/auth";
 import { assertNever } from "../util/exhaustive";
 import { toolGatewayConfig } from "../knowledge/gateway/config";
 import { mintToolToken } from "../knowledge/gateway/token";
+import { MEMORY_SKILL_PATH, MEMORY_SKILL_TEXT } from "../memory/memory-skill-text";
 
 // ---------------------------------------------------------------------------
 // NATIVE opencode engine — the realtime path. Instead of one-shot CLI runs, the
@@ -276,6 +277,30 @@ async function ensureKnowledgeGatewayConfig(sandbox: Sandbox, ctx: EngineRunCont
     console.log(`[opencode] knowledge MCP gateway wired for run ${ctx.runId} (org ${ctx.orgId})`);
   } catch (e) {
     console.warn(`[opencode] knowledge gateway config write failed (continuing without tools):`, (e as Error).message);
+  }
+}
+
+/**
+ * Overwrite the v17 snapshot's `/memory` skill (new_mem_prompt.md section 7) with
+ * honest, tools-based text BEFORE `opencode serve` boots, so the resident agent
+ * uses the Tencent-backed memory TOOLS instead of the snapshot's false claim that
+ * `/root/.skynet/memory.md` "is synced back ... and reloaded into your next
+ * session". Base64 write (no shell-escaping hazard, nothing sensitive here).
+ * Best-effort: a failure logs and continues (the corrected text is not
+ * load-bearing for authorization, only guidance). A WARM resumed thread already
+ * loaded the old skill; fresh sandboxes (the common case) always get the fix.
+ */
+async function correctMemorySkillText(sandbox: Sandbox): Promise<void> {
+  try {
+    const b64 = Buffer.from(MEMORY_SKILL_TEXT, "utf8").toString("base64");
+    await sandbox.process.executeCommand(
+      `mkdir -p "$(dirname ${shq(MEMORY_SKILL_PATH)})" && printf %s '${b64}' | base64 -d > ${shq(MEMORY_SKILL_PATH)}`,
+      undefined,
+      undefined,
+      15,
+    );
+  } catch (e) {
+    console.warn(`[opencode] memory skill correction failed (continuing):`, (e as Error).message);
   }
 }
 
@@ -558,6 +583,10 @@ export const opencodeServerAdapter: EngineAdapter = {
       // opencode config BEFORE booting the server, so the resident agent picks up
       // knowledge_search/knowledge_read at `opencode serve` start. Gated + best-effort.
       await ensureKnowledgeGatewayConfig(sandbox, ctx);
+
+      // Replace the snapshot's false-persistence memory skill with honest,
+      // tools-based text BEFORE the server boots (new_mem_prompt.md 7). Best-effort.
+      await correctMemorySkillText(sandbox);
 
       // ── persistent server + preview endpoint ────────────────────────────────
       const { baseUrl, token, workdir } = await ensureServer(sandbox, npxFallback);

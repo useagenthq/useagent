@@ -14,7 +14,7 @@ import {
 import type { RunStatus, StepKind } from "./db/schema";
 import { adapters } from "./engines";
 import type { EmitStep, EngineRunContext } from "./engines/types";
-import { searchScopedMemory } from "./memory/team-memory";
+import { recallScopedMemory } from "./memory/team-memory";
 import { resolveScopedMemory } from "./memory/scope";
 import { recordContextRetrieval } from "./memory/retrieval-ledger";
 import { getPinnedRevision } from "./skills/repo";
@@ -240,7 +240,11 @@ async function runWorker(runId: string): Promise<void> {
     // row — never the sandbox/prompt.
     const plan = resolveScopedMemory(run);
     const [recall, bootstrapContext] = await Promise.all([
-      plan ? searchScopedMemory(run.prompt, plan.readPools) : Promise.resolve(null),
+      // Layered recall (new_mem_prompt.md 6.2): Tencent L0 (immediate ground
+      // evidence, incl. explicit "remember X") + L1 (distilled) searched in
+      // parallel and merged, so a freshly-taught fact is injected into a NEW
+      // thread's context before L1 extraction even finishes.
+      plan ? recallScopedMemory(run.prompt, plan.readPools) : Promise.resolve(null),
       run.parentRunId ? buildThreadPreamble(run.threadId, run.id) : Promise.resolve(""),
     ]);
     const turnContext = recall?.rendered ?? "";
