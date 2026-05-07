@@ -78,7 +78,7 @@ export function ArtifactCard({ artifact }: { artifact: Artifact }) {
           {artifact.size} · {artifact.date}
         </p>
         <Link
-          href={`/agent/runs/${artifact.runId}`}
+          href={`/session/${artifact.runId}`}
           className="mt-0.5 inline-flex items-center gap-1.5 text-paragraph-xs text-text-sub-600 transition-colors hover:text-text-strong-950"
         >
           <RiPulseLine aria-hidden className="size-3.5 shrink-0" />
