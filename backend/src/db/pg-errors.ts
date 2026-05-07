@@ -12,9 +12,17 @@
 const UNIQUE_VIOLATION = "23505";
 
 function sqlStateOf(err: unknown): string | undefined {
-  if (typeof err === "object" && err !== null && "code" in err) {
-    const code = (err as { code?: unknown }).code;
-    if (typeof code === "string") return code;
+  // Walk the cause chain: drizzle wraps the driver error (DrizzleQueryError,
+  // code=undefined — the SQLSTATE lives on err.cause), so inspecting only the
+  // top level made every caller blind under drizzle (soak DEFECT-1: concurrent
+  // idempotent POSTs 500ed instead of replaying the winner).
+  let cur: unknown = err;
+  for (let depth = 0; typeof cur === "object" && cur !== null && depth < 5; depth++) {
+    if ("code" in cur) {
+      const code = (cur as { code?: unknown }).code;
+      if (typeof code === "string") return code;
+    }
+    cur = (cur as { cause?: unknown }).cause;
   }
   return undefined;
 }
