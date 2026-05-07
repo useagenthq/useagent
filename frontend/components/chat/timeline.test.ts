@@ -313,3 +313,17 @@ describe("memory tool markers", () => {
     expect(buildTimeline(s.getSnapshot(), false)!.some((n) => n.kind === "marker")).toBe(false);
   });
 });
+
+describe("memory read-outage chip (memory.failed op:search)", () => {
+  test("a search outage renders as a failed memory marker, never a 0-hit context row", () => {
+    const s = createNativeStore();
+    s.reset([], 0);
+    s.ingestNative(
+      memoryFrame("mfs_1", 0, "memory.failed", { source: "memory", op: "search", scope: "org", reason: "unavailable" }),
+      0,
+    );
+    expect(buildTimeline(s.getSnapshot(), false)![0]).toMatchObject({
+      marker: { kind: "memory", op: "search", failed: true },
+    });
+  });
+});

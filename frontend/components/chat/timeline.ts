@@ -39,7 +39,9 @@ export type TimelineMarker =
        *  forget, or the honest failure of one. Reads (memory.searched) render as
        *  a plain context marker instead. */
       readonly kind: "memory";
-      readonly op: "remember" | "correct" | "forget";
+      /** "search" appears only with failed:true (a read-path outage chip -
+       *  successful searches render as context markers instead). */
+      readonly op: "remember" | "correct" | "forget" | "search";
       readonly scope: "org" | "personal";
       readonly failed: boolean;
       /** remember only: true when the write was an idempotent no-op replay. */
@@ -109,7 +111,7 @@ function parseMarker(eventType: string, payload: unknown): TimelineMarker | null
   ) {
     const failed = eventType === "memory.failed";
     const op =
-      p.op === "correct" || p.op === "forget"
+      p.op === "correct" || p.op === "forget" || p.op === "search"
         ? p.op
         : eventType === "memory.updated"
           ? "correct"
