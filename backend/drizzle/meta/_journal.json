@@ -148,6 +148,13 @@
       "when": 1786300000000,
       "tag": "0022_skill_kind",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1786400000000,
+      "tag": "0023_drop_memory_files",
+      "breakpoints": true
     }
   ]
 }
