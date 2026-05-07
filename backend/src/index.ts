@@ -30,6 +30,7 @@ import { schedulesRoutes } from "./schedules/routes";
 import { startScheduler } from "./schedules/scheduler";
 import { startCaptureDelivery } from "./memory/capture-outbox";
 import { seedDev } from "./seed";
+import { skillImportRoutes } from "./skills/import-routes";
 import { skillsRoutes } from "./skills/routes";
 import { slackEnabled, slackRoutes, startSlackOutbox } from "./slack";
 
@@ -109,6 +110,9 @@ app.route("/api/repos", reposRoutes);
 // Real "Limits" numbers for the workspace: per-model token/cost burn today +
 // the org's live Daytona sandbox footprint. Org-scoped; no keys to the client.
 app.route("/api/fleet", fleetRoutes);
+// multi-repo skill import from the org's GitHub repos (scan + import). Mounted
+// before /api/skills so the /import subtree resolves to its own routes.
+app.route("/api/skills/import", skillImportRoutes);
 app.route("/api/skills", skillsRoutes);
 app.route("/api/schedules", schedulesRoutes);
 app.route("/api/knowledge", knowledgeRoutes);
