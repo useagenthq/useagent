@@ -277,7 +277,10 @@ export function NewTaskComposer({ skills }: { skills: Skill[] }) {
 
   return (
     <div>
-      <div className="overflow-hidden rounded-2xl border border-stroke-soft-200 bg-bg-white-0 shadow-regular-sm">
+      <div className="rounded-2xl border border-stroke-soft-200 bg-bg-white-0 shadow-regular-sm">
+      {/* No overflow-hidden: the slash-command popover drops below the textarea
+          and must float over the card edge instead of clipping at it (same rule
+          as the chat composer card). */}
         <div className="flex flex-col gap-3 p-3.5">
           <div className="relative">
             {cmdActive && (
