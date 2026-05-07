@@ -605,8 +605,10 @@ async function s12_skills(): Promise<Result> {
     checks.push({ name: "skills: detail section content visible (overview line)", ok: (await page.getByText(overview).count()) > 0, note: overview });
 
     // Run preselect: the card's Run button deep-links to /agent/new?skill=<id>,
-    // and the New Task composer opens with that playbook chosen.
-    const runBtn = card.getByRole("button", { name: /^Run$|^Ran$/ }).first();
+    // and the New Task composer opens with that playbook chosen. A lone skill
+    // renders as the FEATURED card ("Run skill"); with peers it's a library card
+    // ("Run") — match both, plus the post-click "Ran" state.
+    const runBtn = card.getByRole("button", { name: /^Run( skill)?$|^Ran$/i }).first();
     let preselected = false;
     if ((await runBtn.count()) > 0 && skillId) {
       await runBtn.click();
