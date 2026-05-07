@@ -9,7 +9,7 @@ import { Thinking } from "@/components/ai/thinking";
 import { LoadingState } from "@/components/ai/loading-state";
 import { Composer, type ComposerSubmit } from "@/components/chat/composer";
 import { Markdown } from "@/components/prompt-kit/markdown";
-import { ToolStepRow } from "@/components/chat/tool-step-row";
+import { MarkerRow, ToolStepRow } from "@/components/chat/tool-step-row";
 import type { SlashCommand } from "@/components/chat/slash-command";
 import { buildTimeline, hasNarration, type TimelineNode } from "@/components/chat/timeline";
 import type { NativeSnapshot } from "@/components/chat/native-store";
@@ -131,7 +131,9 @@ function Timeline({ nodes, live }: { nodes: TimelineNode[]; live: boolean }) {
   return (
     <div className="space-y-3">
       {nodes.map((node, i) =>
-        node.kind === "text" ? (
+        node.kind === "marker" ? (
+          <MarkerRow key={node.key} marker={node.marker} />
+        ) : node.kind === "text" ? (
           <TextBurst key={node.key} text={node.text} />
         ) : (
           <ToolStepRow
