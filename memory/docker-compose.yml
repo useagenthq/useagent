@@ -26,6 +26,15 @@ services:
     volumes:
       - ./tdai-gateway.yaml:/data/config/tdai-gateway.yaml:ro
       - skynet-memory-core-data:/data/tdai-memory
+      # English-output prompt overlays (see prompt-overrides/README.md): the
+      # upstream distillation prompts are written in Chinese and the extraction
+      # model follows the dominant prompt language, so English conversations got
+      # Chinese L1/L2/L3 memories. The image runs Bun on TS source, so mounting
+      # patched files over /app/src takes effect directly.
+      - ./prompt-overrides/l1-extraction.ts:/app/src/core/prompts/l1-extraction.ts:ro
+      - ./prompt-overrides/l1-dedup.ts:/app/src/core/prompts/l1-dedup.ts:ro
+      - ./prompt-overrides/scene-extraction.ts:/app/src/core/prompts/scene-extraction.ts:ro
+      - ./prompt-overrides/persona-generation.ts:/app/src/core/prompts/persona-generation.ts:ro
     restart: unless-stopped
 
 volumes:
