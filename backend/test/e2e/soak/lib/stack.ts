@@ -168,7 +168,7 @@ export class Stack {
   }
 
   /** Start (or restart) the backend subprocess; resolves once /api/health is up. */
-  async start(label = "boot", timeoutMs = 25_000): Promise<void> {
+  async start(label = "boot", timeoutMs = 45_000): Promise<void> {
     const proc = Bun.spawn(["bun", "src/index.ts"], {
       cwd: backendDir,
       env: this.env(),
