@@ -169,6 +169,13 @@
       "when": 1786500000000,
       "tag": "0025_reconcile_queue",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1786500000001,
+      "tag": "0026_org_secrets",
+      "breakpoints": true
     }
   ]
 }
