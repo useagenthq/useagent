@@ -992,19 +992,57 @@ export const opencodeServerAdapter: EngineAdapter = {
         });
 
       let reply: { parts?: { type?: string; text?: string }[] };
+      // The turn is driven by ONE long-held POST to the sandbox's opencode server
+      // through the Daytona preview proxy, which severs long/idle connections
+      // (~255s). A turn that runs longer than that (deep research, big evals) loses
+      // the POST connection while STILL RUNNING server-side. So a dropped POST that
+      // is NOT our own abort is RECOVERABLE: the turn keeps going and we detect its
+      // completion by polling the session history (a session runs as long as it
+      // needs; the sliding inactivity window stays the only cap, resetting on the
+      // live tool events the mid-turn poller keeps feeding).
+      const turnStartMs = Date.now();
+      const waitForCompletion = async (): Promise<typeof reply> => {
+        while (!ctx.signal.aborted) {
+          await new Promise((r) => setTimeout(r, 3000));
+          const r = await fetch(`${baseUrl}/session/${sessionId}/message${dirQ}`, {
+            headers,
+            signal: ctx.signal,
+          }).catch(() => null);
+          if (!r?.ok) continue;
+          const msgs = (await r.json()) as OcMessage[];
+          const last = msgs.filter((m) => m.info?.role === "assistant").at(-1);
+          const completed = last?.info?.time?.completed;
+          if (typeof completed === "number" && completed > turnStartMs) {
+            return { parts: (last?.parts ?? []) as { type?: string; text?: string }[] };
+          }
+        }
+        throw new Error("opencode run aborted (timeout)");
+      };
+      // Post the prompt; tolerate the proxy cutting the long connection (poll then).
+      const postOrPoll = async (text: string): Promise<Response | null> => {
+        try {
+          return await postPrompt(text);
+        } catch (postErr) {
+          if (ctx.signal.aborted) throw postErr; // our own abort → fatal below
+          return null; // proxy severed the long POST — turn still runs; poll for it
+        }
+      };
       try {
-        let res = await postPrompt(composeTurnPrompt(ctx, resumed));
-        if (res.status === 404 && resumed) {
+        let res = await postOrPoll(composeTurnPrompt(ctx, resumed));
+        if (res && res.status === 404 && resumed) {
           // Stale resume id (session from a previous sandbox/server incarnation)
           // — start fresh WITH the full bootstrap + per-turn context.
           sessionId = await createSession();
           resumed = false;
-          res = await postPrompt(composeTurnPrompt(ctx, false));
+          res = await postOrPoll(composeTurnPrompt(ctx, false));
         }
-        if (!res.ok) {
+        if (res === null) {
+          reply = await waitForCompletion();
+        } else if (!res.ok) {
           throw new Error(`opencode prompt failed: HTTP ${res.status} ${truncate(await res.text(), 200)}`);
+        } else {
+          reply = (await res.json()) as typeof reply;
         }
-        reply = (await res.json()) as typeof reply;
       } catch (err) {
         // Best-effort: tell the engine to stop the turn we abandoned.
         void fetch(`${baseUrl}/session/${sessionId}/abort${dirQ}`, { method: "POST", headers }).catch(() => {});
