@@ -7,7 +7,6 @@ import {
   RiCalendarScheduleLine,
   RiDatabase2Line,
   RiFlashlightLine,
-  RiKey2Line,
   RiLayoutGridLine,
   RiPlugLine,
   RiPulseLine,
@@ -91,12 +90,9 @@ export function AgentSidebar({ active }: AgentSidebarProps) {
         label='Playbooks'
         active={active === 'playbooks'}
       />
-      <SidebarNavItem
-        href='/secrets'
-        icon={RiKey2Line}
-        label='Secrets'
-        active={active === 'secrets'}
-      />
+      {/* Secrets is NOT a top-level nav item - it lives under Settings > Secrets
+          (one home, no duplicate sidebar entry, per user). /secrets still
+          resolves for deep links. */}
       <SidebarNavItem
         href='/settings'
         icon={RiSettings3Line}
