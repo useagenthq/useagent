@@ -156,10 +156,13 @@ async function outboxCycle(i: number): Promise<void> {
   const prompt = `crash-slack-${SEED}-${i}`;
   await stack.postSlackEvent({ type: "app_mention", channel, user: "U-H", text: `<@${BOT}> ${prompt}`, ts: rootTs }, BOT);
 
-  // Wait until the run completes AND its reply row is enqueued (pending/delivering),
-  // then kill BEFORE the (pushed-out) relay tick delivers it.
+  // Wait until the run completes AND its REPLY (post_message) row is enqueued
+  // (pending/delivering), then kill BEFORE the (pushed-out) relay tick delivers it.
+  // MUST filter kind='post_message': the app_mention also enqueues a fast
+  // add_reaction receipt whose payload carries the same ts, which would otherwise
+  // satisfy the delivered-gate before the reply itself lands (harness false-neg).
   const gotRow = await waitFor(async () => {
-    const r = (await stack.sql`select o.state from slack_outbox o where o.payload like ${"%" + rootTs + "%"}`) as unknown as Array<{ state: string }>;
+    const r = (await stack.sql`select o.state from slack_outbox o where o.kind = 'post_message' and o.payload like ${"%" + rootTs + "%"}`) as unknown as Array<{ state: string }>;
     return r.some((x) => x.state === "pending" || x.state === "delivering");
   }, 25_000);
   ev.enqueued = gotRow;
@@ -177,8 +180,9 @@ async function outboxCycle(i: number): Promise<void> {
     return;
   }
 
-  // Relay boot-recovery + tick must deliver the enqueued reply — never lost.
-  const delivered = await waitFor(async () => Number((await stack.sql`select count(*)::int as n from slack_outbox where state='delivered' and payload like ${"%" + rootTs + "%"}`)[0]!.n) >= 1, 30_000);
+  // Relay boot-recovery + tick must deliver the enqueued REPLY (post_message,
+  // NOT the reaction) — never lost.
+  const delivered = await waitFor(async () => Number((await stack.sql`select count(*)::int as n from slack_outbox where state='delivered' and kind='post_message' and payload like ${"%" + rootTs + "%"}`)[0]!.n) >= 1, 30_000);
   rec.check(delivered, "enqueued slack reply delivered after reboot (not lost)", "reply never delivered", ev);
 
   // at-least-once: the mock receiver saw the reply ≥1×; >1 = the documented crash dup.
