@@ -49,7 +49,7 @@ let proc: Proc | null = null;
 
 /** Retry a transient-failing async op (e.g. a PG CONNECT_TIMEOUT under marathon
  *  contention) a few times with backoff before giving up. */
-async function withRetry<T>(label: string, fn: () => Promise<T>, tries = 4): Promise<T> {
+async function withRetry<T>(label: string, fn: () => Promise<T>, tries = 12): Promise<T> {
   let last: unknown;
   for (let i = 0; i < tries; i++) {
     try {
@@ -57,7 +57,7 @@ async function withRetry<T>(label: string, fn: () => Promise<T>, tries = 4): Pro
     } catch (err) {
       last = err;
       console.error(`[${label}] attempt ${i + 1}/${tries} failed: ${err instanceof Error ? err.message : err}`);
-      await sleep(1000 * (i + 1));
+      await sleep(Math.min(15000, 2000 * (i + 1))); // ramp to 15s; ~120s total span survives a crash-storm window
     }
   }
   throw last;
@@ -132,12 +132,27 @@ async function recordSandbox(runId: string): Promise<string | null> {
   return sb ?? null;
 }
 
+/** Delete + VERIFY this thread's sandbox(es) as soon as the thread finishes, so at
+ *  most ONE sandbox is alive at a time (bounds cost + honors ≤4 concurrent) and the
+ *  batch does minimal DB churn (one recreateDb for many threads). */
+async function cleanupThread(kickId: string, ev: Record<string, unknown>): Promise<void> {
+  const ids = (await sql`select distinct sandbox_id from runs where thread_id = ${kickId} and sandbox_id is not null`.catch(() => []))
+    .map((r) => r.sandbox_id as string);
+  if (ids.length === 0) return;
+  const res = await deleteById(ids);
+  rec.bump("sandboxes_created", ids.length);
+  rec.bump("sandboxes_deleted", res.deleted.length);
+  for (const id of res.deleted) createdSandboxes.delete(id);
+  rec.check(res.failed.length === 0, "thread sandbox deleted + verified gone", `${res.deleted.length}/${ids.length}, ${res.failed.length} failed`, { ...ev, ids, failed: res.failed });
+}
+
 async function threadCycle(t: number): Promise<void> {
   const ev: Record<string, unknown> = { thread: t };
   const marker = `soakreal-${Date.now().toString(36)}-${t}`;
   // KICK — a fresh opencode session on a fresh sandbox.
   const kick = await createRun({ prompt: `${marker} Reply with just the word ready.`, engine: "opencode", model: MODEL });
   if (!kick) return void rec.check(false, "kick accepted", "no run id", ev);
+  try {
   const kr = await waitRun(kick, (r) => terminal(r.status), 300_000);
   rec.check(kr?.status === "completed", "kick completed on real sandbox", `status=${kr?.status}`, { ...ev, kick });
   const sb0 = await recordSandbox(kick);
@@ -213,6 +228,10 @@ async function threadCycle(t: number): Promise<void> {
     }
   }
   rec.bump("threads");
+  } finally {
+    // Reap THIS thread's sandbox immediately (≤1 alive; minimal DB churn per batch).
+    await cleanupThread(kick, ev).catch((e) => rec.check(false, "thread cleanup error", String(e), ev));
+  }
 }
 
 /** VERIFIED cleanup — delete every sandbox this batch created (by persisted id AND
