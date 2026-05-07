@@ -55,10 +55,15 @@ async function main(): Promise<void> {
       const runId = kick.id;
 
       // Run completes → capture enqueued (pending) → delivery loop claims it to
-      // `delivering` and blocks on the hanging receiver.
-      const delivering = await waitFor(async () => (await stack.sql`select state from memory_outbox where run_id = ${runId}`)[0]?.state === "delivering", 20_000);
-      rec.check(delivering, "capture row reached 'delivering' (claimed, mid-POST)", "never claimed", ev);
-      if (!delivering) continue;
+      // `delivering` and POSTs to the hanging receiver. Gate on the receiver having
+      // ACTUALLY received the POST (addsFor≥1) — the row flips to 'delivering' in
+      // claimDue BEFORE the POST is sent, so waiting only on state races the send.
+      const inFlight = await waitFor(async () => {
+        const st = (await stack.sql`select state from memory_outbox where run_id = ${runId}`)[0]?.state;
+        return st === "delivering" && addsFor(prompt) >= 1;
+      }, 20_000);
+      rec.check(inFlight, "capture POST in-flight to gateway (delivering + received)", "never reached in-flight", ev);
+      if (!inFlight) continue;
       const addsBeforeKill = addsFor(prompt);
       rec.check(addsBeforeKill === 1, "exactly one add attempt in flight at kill", `${addsBeforeKill}`, { ...ev, addsBeforeKill });
 
