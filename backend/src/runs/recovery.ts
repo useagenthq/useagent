@@ -1,11 +1,23 @@
+import { randomBytes } from "node:crypto";
 import { opencodeHarness } from "../engines/opencode-server";
 import type {
   HarnessCheckpoint,
   HarnessReconciliation,
   HarnessSessionHandle,
 } from "../engines/types";
-import { getLastStepAt, STALE_SUMMARY } from "./repo";
+import { getLastStepAt, getRun, STALE_SUMMARY } from "./repo";
 import { finalizeRun } from "./finalize";
+import { recordProviderEvent } from "./provider-events";
+import {
+  bumpReconcile,
+  claimDueReconciles,
+  deleteReconcile,
+  enqueueReconcile,
+  nextReconcileAction,
+  reconcileBackoffAt,
+  RECONCILE_PARK_BUDGET_MS,
+  type ReconcileEntry,
+} from "./reconcile-queue";
 import {
   failCommandlessStaleRuns,
   listActiveCommands,
@@ -14,6 +26,10 @@ import {
 } from "../commands/dispatch";
 import { pumpThread } from "../worker";
 import { assertNever } from "../util/exhaustive";
+
+/** The event type for the durable "reconciling after restart" marker. Distinct
+ *  from the terminal events so the timeline can show a run is being re-probed. */
+export const RUN_RECONCILING = "run.reconciling";
 
 // ---------------------------------------------------------------------------
 // Restart recovery of the durable command lane (north star Phase 3 "Restart
@@ -51,6 +67,9 @@ export interface RecoveryResult {
   readonly reconciled: number;
   readonly failed: number;
   readonly redispatched: number;
+  /** Runs whose one-shot probe was transient and were PARKED for the adaptive
+   *  background re-probe instead of honest-failed at boot (#63). */
+  readonly parked: number;
 }
 
 export async function recoverStaleRuns(
@@ -63,6 +82,7 @@ export async function recoverStaleRuns(
   const dispatched = active.filter((c) => c.state === "dispatched");
   const resolutions = await Promise.all(dispatched.map((c) => resolveDispatched(c, reconcile)));
   const reconciled = resolutions.filter((r) => r === "reconciled").length;
+  const parked = resolutions.filter((r) => r === "parked").length;
   let failed = resolutions.filter((r) => r === "failed").length;
 
   // Phase 2 — pump each distinct thread that had an active command. dispatched
@@ -74,13 +94,15 @@ export async function recoverStaleRuns(
   // Phase 3 — fail legacy/orphan non-terminal runs that never joined the lane.
   failed += await failCommandlessStaleRuns(STALE_SUMMARY);
 
-  return { reconciled, failed, redispatched };
+  return { reconciled, failed, redispatched, parked };
 }
 
-type DispatchedResolution = "reconciled" | "failed" | "settled";
+type DispatchedResolution = "reconciled" | "failed" | "parked" | "settled";
 
-/** Resolve one dispatched command: reconcile/fail a still-running run, then
- *  settle the command state (completed/requeued) so its thread is freed. */
+/** Resolve one dispatched command: reconcile / fail / PARK a still-running run,
+ *  then settle its command (completed/requeued) so the thread is freed — EXCEPT a
+ *  parked run keeps its command dispatched (the thread stays reserved because the
+ *  run may still be running; the reconcile loop settles it later). */
 async function resolveDispatched(
   cmd: ActiveCommand,
   reconcile: ReconcileProbe,
@@ -89,6 +111,7 @@ async function resolveDispatched(
   if (cmd.runStatus === "running") {
     outcome = await recoverRunningRun(cmd, reconcile);
   }
+  if (outcome === "parked") return outcome; // keep the command dispatched
   // The run is now terminal (reconciled/failed) or was already terminal/queued;
   // settle the command to completed (terminal) or requeued (queued).
   await settleCommandForRun(cmd.runId);
@@ -98,7 +121,7 @@ async function resolveDispatched(
 async function recoverRunningRun(
   cmd: ActiveCommand,
   reconcile: ReconcileProbe,
-): Promise<"reconciled" | "failed"> {
+): Promise<"reconciled" | "failed" | "parked"> {
   const candidate =
     OPENCODE_ENGINES.has(cmd.engine) && !!cmd.engineSessionId && !!cmd.sandboxId;
   if (!candidate) {
@@ -135,10 +158,137 @@ async function recoverRunningRun(
     case "in_progress":
     case "no_change":
     case "unreachable":
-    case "unsupported_capability":
-      await finalizeRun(cmd.runId, "failed", STALE_SUMMARY, 0);
-      return "failed";
+    case "unsupported_capability": {
+      // ADAPTIVE (#63): the sandbox session may still be finishing after a fast
+      // restart. Instead of honest-failing NOW, PARK for a bounded background
+      // re-probe (the run stays `running`). enqueue is idempotent, so a re-boot
+      // re-parks against the ORIGINAL deadline. A freshly parked run gets the
+      // "reconciling" marker; a non-candidate already failed above.
+      const now = Date.now();
+      const newlyParked = await enqueueReconcile({
+        runId: cmd.runId,
+        threadId: cmd.threadId,
+        sandboxId: cmd.sandboxId!,
+        sessionId: cmd.engineSessionId!,
+        sinceAt: lastStepAt ?? new Date(now),
+        nextAttemptAt: reconcileBackoffAt(now, 0),
+        deadline: new Date(now + RECONCILE_PARK_BUDGET_MS),
+      });
+      if (newlyParked) recordReconcilingMarker(cmd.runId, cmd.threadId, new Date(now + RECONCILE_PARK_BUDGET_MS));
+      return "parked";
+    }
     default:
       return assertNever(result, "unhandled reconciliation status");
   }
+}
+
+/** Emit the durable "reconciling after restart" marker on the native lane so the
+ *  timeline can show the run is being re-probed. Fire-and-forget; never throws. */
+function recordReconcilingMarker(runId: string, threadId: string, deadline: Date): void {
+  void recordProviderEvent({
+    id: `reconciling_${runId}_${randomBytes(4).toString("hex")}`,
+    runId,
+    threadId,
+    provider: "skynet",
+    eventType: RUN_RECONCILING,
+    payload: { reason: "boot-restart", deadline: deadline.toISOString() },
+  }).catch(() => {});
+}
+
+// ---------------------------------------------------------------------------
+// Adaptive background reconcile loop (#63). Re-probes parked runs on a short
+// backoff within their budget: adopt the finished session, honest-fail after the
+// deadline, else reschedule. Single-flight (one tick at a time) — single-replica
+// scope, so no row locking. Never throws; a tick error is logged.
+// ---------------------------------------------------------------------------
+
+/** One reconcile tick: process every DUE parked run. Returns counts for
+ *  tests/telemetry. The probe is injectable (tests). Never throws. */
+export async function runDueReconciles(
+  reconcile: ReconcileProbe = (handle, checkpoint) => opencodeHarness.reconcile(handle, checkpoint),
+): Promise<{ adopted: number; failed: number; retried: number; dropped: number }> {
+  const due = await claimDueReconciles();
+  let adopted = 0;
+  let failed = 0;
+  let retried = 0;
+  let dropped = 0;
+  for (const entry of due) {
+    // NO-DOUBLE-ADOPT: if the run already settled via another lane (a reply's
+    // worker took the thread, a cancel, a prior tick), just drop the parked row.
+    const run = await getRun(entry.runId);
+    if (!run || run.status !== "running") {
+      await deleteReconcile(entry.runId);
+      dropped++;
+      continue;
+    }
+    const result = await probeParked(entry, reconcile);
+    const action = nextReconcileAction(result.status === "completed", Date.now(), entry.deadlineMs);
+    if (action === "adopt") {
+      await finalizeRun(entry.runId, "completed", (result as { summary: string }).summary, 0);
+      await settleAndPump(entry.runId, entry.threadId);
+      await deleteReconcile(entry.runId);
+      adopted++;
+    } else if (action === "fail") {
+      await finalizeRun(entry.runId, "failed", STALE_SUMMARY, 0);
+      await settleAndPump(entry.runId, entry.threadId);
+      await deleteReconcile(entry.runId);
+      failed++;
+    } else {
+      await bumpReconcile(entry.runId, reconcileBackoffAt(Date.now(), entry.attempts));
+      retried++;
+    }
+  }
+  return { adopted, failed, retried, dropped };
+}
+
+/** Bounded native-session re-probe for one parked entry. Never throws. */
+async function probeParked(entry: ReconcileEntry, reconcile: ReconcileProbe): Promise<HarnessReconciliation> {
+  const handle: HarnessSessionHandle = {
+    provider: "opencode",
+    sessionId: entry.sessionId,
+    sandboxId: entry.sandboxId,
+  };
+  try {
+    return await Promise.race([
+      reconcile(handle, { sinceMs: entry.sinceMs }),
+      new Promise<HarnessReconciliation>((resolve) =>
+        setTimeout(() => resolve({ status: "unreachable" }), RECONCILE_BUDGET_MS),
+      ),
+    ]);
+  } catch {
+    return { status: "unreachable" };
+  }
+}
+
+/** Settle the just-finalized run's command and pump the thread's next turn —
+ *  the same free-the-thread step the live worker runs on every terminal. */
+async function settleAndPump(runId: string, threadId: string): Promise<void> {
+  await settleCommandForRun(runId).catch((err) =>
+    console.error(`[reconcile] settle command for run ${runId} failed:`, err),
+  );
+  await pumpThread(threadId).catch((err) =>
+    console.error(`[reconcile] pump thread ${threadId} failed:`, err),
+  );
+}
+
+let reconcileTimer: ReturnType<typeof setInterval> | null = null;
+let reconcileTicking = false;
+
+/** Start the adaptive reconcile loop (idempotent). Single-flight: a slow tick is
+ *  never overlapped by the next. `RECONCILE_TICK_MS` overrides the interval
+ *  (tests go fast). Best-effort — a tick failure is logged, never thrown. */
+export function startReconcileLoop(
+  intervalMs = Number(process.env.RECONCILE_TICK_MS ?? 15_000),
+): void {
+  if (reconcileTimer) return;
+  reconcileTimer = setInterval(() => {
+    if (reconcileTicking) return;
+    reconcileTicking = true;
+    void runDueReconciles()
+      .catch((err) => console.error("[reconcile] tick failed:", err))
+      .finally(() => {
+        reconcileTicking = false;
+      });
+  }, intervalMs);
+  if (typeof reconcileTimer.unref === "function") reconcileTimer.unref();
 }

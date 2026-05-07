@@ -23,7 +23,7 @@ import { reposRoutes } from "./github/routes";
 import { desktopProxyRoutes } from "./runs/desktop-proxy";
 import { fleetRoutes } from "./runs/fleet-routes";
 import { liveProxyRoutes } from "./runs/live-proxy";
-import { recoverStaleRuns } from "./runs/recovery";
+import { recoverStaleRuns, startReconcileLoop } from "./runs/recovery";
 import { runsRoutes } from "./runs/routes";
 import { terminalRoutes } from "./runs/terminal";
 import { schedulesRoutes } from "./schedules/routes";
@@ -48,10 +48,11 @@ await seedDev();
 // whose native opencode session actually finished server-side, fail the rest
 // with an honest resumable summary. One-shot, self-bounded — never hangs boot.
 const recovery = await recoverStaleRuns();
-if (recovery.reconciled > 0 || recovery.failed > 0 || recovery.redispatched > 0) {
+if (recovery.reconciled > 0 || recovery.failed > 0 || recovery.redispatched > 0 || recovery.parked > 0) {
   console.log(
     `[boot] command-lane recovery — ${recovery.reconciled} reconciled, ` +
-      `${recovery.failed} failed, ${recovery.redispatched} re-dispatched`,
+      `${recovery.failed} failed, ${recovery.redispatched} re-dispatched, ` +
+      `${recovery.parked} parked for re-probe`,
   );
 }
 
@@ -139,6 +140,12 @@ startScheduler();
 // memory is disabled (deliverTeamMemory no-ops). AT-MOST-once (crash-orphaned
 // `delivering` rows await manual inspection, never auto-retried).
 startCaptureDelivery();
+
+// Adaptive post-boot reconciler (#63, 15s tick). Re-probes runs PARKED by boot
+// recovery (native session may still be finishing after a fast restart): adopts
+// the finished session, honest-fails after the ~5min budget. Single-flight;
+// harmless when nothing is parked.
+startReconcileLoop();
 
 // Slack adapter: mounted only when SLACK_BOT_TOKEN + SLACK_SIGNING_SECRET are
 // set (env-gated). Handles the Events API at POST /api/slack/events, and starts
