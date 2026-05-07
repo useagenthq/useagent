@@ -40,24 +40,44 @@ const backendLog = `${scratch}/skynet-soak-real.log`;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const rec = new Recorder("real-kick-conversation");
-const sql = postgres(DB_URL, { max: 4 });
+// Longer connect_timeout: the shared Postgres is under heavy churn from the volume
+// marathon (backends + DB create/drop bursts), so a default connect can time out.
+const sql = postgres(DB_URL, { max: 4, connect_timeout: 30 });
 const createdSandboxes = new Set<string>();
 type Proc = ReturnType<typeof Bun.spawn>;
 let proc: Proc | null = null;
 
-async function recreateDb(): Promise<void> {
-  const admin = postgres(ADMIN_URL, { max: 1 });
-  try {
-    await admin`SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = ${DB} AND pid <> pg_backend_pid()`.catch(() => {});
-    await admin.unsafe(`DROP DATABASE IF EXISTS ${DB}`);
-    await admin.unsafe(`CREATE DATABASE ${DB}`);
-  } finally {
-    await admin.end();
+/** Retry a transient-failing async op (e.g. a PG CONNECT_TIMEOUT under marathon
+ *  contention) a few times with backoff before giving up. */
+async function withRetry<T>(label: string, fn: () => Promise<T>, tries = 4): Promise<T> {
+  let last: unknown;
+  for (let i = 0; i < tries; i++) {
+    try {
+      return await fn();
+    } catch (err) {
+      last = err;
+      console.error(`[${label}] attempt ${i + 1}/${tries} failed: ${err instanceof Error ? err.message : err}`);
+      await sleep(1000 * (i + 1));
+    }
   }
+  throw last;
+}
+
+async function recreateDb(): Promise<void> {
+  await withRetry("recreateDb", async () => {
+    const admin = postgres(ADMIN_URL, { max: 1, connect_timeout: 30 });
+    try {
+      await admin`SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = ${DB} AND pid <> pg_backend_pid()`.catch(() => {});
+      await admin.unsafe(`DROP DATABASE IF EXISTS ${DB}`);
+      await admin.unsafe(`CREATE DATABASE ${DB}`);
+    } finally {
+      await admin.end();
+    }
+  });
 }
 async function dropDb(): Promise<void> {
   await sql.end().catch(() => {});
-  const admin = postgres(ADMIN_URL, { max: 1 });
+  const admin = postgres(ADMIN_URL, { max: 1, connect_timeout: 30 });
   await admin`SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = ${DB} AND pid <> pg_backend_pid()`.catch(() => {});
   await admin.unsafe(`DROP DATABASE IF EXISTS ${DB}`).catch(() => {});
   await admin.end();
