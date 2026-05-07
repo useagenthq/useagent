@@ -95,7 +95,7 @@ function pickInstallation(
 ): GhInstallation {
   if (installations.length === 0) {
     throw new Error(
-      "GitHub App has no installations — install the App on the target org.",
+      "GitHub App has no installations; install the App on the target org.",
     );
   }
   if (org) {
@@ -105,7 +105,7 @@ function pickInstallation(
     if (match) return match;
     const logins = installations.map((i) => i.account?.login ?? "?").join(", ");
     throw new Error(
-      `GitHub App is not installed on org "${org}" — installed on: [${logins}]. ` +
+      `GitHub App is not installed on org "${org}"; installed on: [${logins}]. ` +
         "Set GITHUB_ORG to one of these or install the App on the org.",
     );
   }
@@ -113,7 +113,7 @@ function pickInstallation(
   if (installations.length === 1 && only) return only;
   const logins = installations.map((i) => i.account?.login ?? "?").join(", ");
   throw new Error(
-    `GitHub App has multiple installations ([${logins}]) — set GITHUB_ORG to disambiguate.`,
+    `GitHub App has multiple installations ([${logins}]); set GITHUB_ORG to disambiguate.`,
   );
 }
 
@@ -129,7 +129,7 @@ async function mintInstallationToken(
   if (!insRes.ok) {
     const hint =
       insRes.status === 401
-        ? " (JWT rejected — check GITHUB_APP_ID and GITHUB_APP_PRIVATE_KEY)"
+        ? " (JWT rejected: check GITHUB_APP_ID and GITHUB_APP_PRIVATE_KEY)"
         : "";
     throw new Error(`GitHub App installations lookup failed: HTTP ${insRes.status}${hint}`);
   }
