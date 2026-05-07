@@ -207,7 +207,7 @@ function WorklogCapsule({
 
 /** A single turn: the user's clean prompt, the agent's answer, and its activity
  * (open + streaming while live, a collapsed disclosure once settled). */
-function TurnBlock({ turn }: { turn: Turn }) {
+function TurnBlock({ turn, onSendNow }: { turn: Turn; onSendNow?: () => void }) {
   const { run, steps, status, summary, live, liveText } = turn;
   // Capture whether this turn was streaming when it first mounted, so its
   // summary typewriters in on arrival but settled history renders instantly.
@@ -261,8 +261,18 @@ function TurnBlock({ turn }: { turn: Turn }) {
     return (
       <div className="space-y-1">
         <UserBubble>{cleanPrompt(run.prompt)}</UserBubble>
-        <div className="flex justify-end">
+        <div className="flex items-center justify-end gap-2">
           <span className="text-label-xs text-text-soft-400">queued</span>
+          {onSendNow && (
+            <button
+              type="button"
+              onClick={onSendNow}
+              title="Stops the current turn; this message starts immediately"
+              className="text-label-xs text-primary-base cursor-pointer underline-offset-2 outline-none hover:underline focus-visible:underline"
+            >
+              Send now
+            </button>
+          )}
         </div>
       </div>
     );
@@ -403,6 +413,8 @@ export function Conversation({
   pendingReply,
   commands,
   onReply,
+  sendNowFor,
+  onSendNow,
 }: {
   turns: Turn[];
   defaultEngine: EngineId;
@@ -413,6 +425,10 @@ export function Conversation({
   /** Engine slash commands for the reply composer's "/" autocomplete. */
   commands?: SlashCommand[];
   onReply: ComposerSubmit;
+  /** Run id of the HEAD queued turn when a turn is running - that bubble gets
+   *  the "Send now" steering affordance (opencode's control on our harness). */
+  sendNowFor?: string | null;
+  onSendNow?: () => void;
 }) {
   // Stick-to-bottom autoscroll: follow new turns/steps/narration as they
   // stream, but ONLY while the user is already near the bottom — scrolling up
@@ -438,7 +454,11 @@ export function Conversation({
         className="min-h-0 flex-1 space-y-8 overflow-y-auto px-5 py-6"
       >
         {turns.map((turn) => (
-          <TurnBlock key={turn.run.id} turn={turn} />
+          <TurnBlock
+            key={turn.run.id}
+            turn={turn}
+            onSendNow={turn.run.id === sendNowFor ? onSendNow : undefined}
+          />
         ))}
         {pendingReply && <UserBubble>{pendingReply}</UserBubble>}
       </div>

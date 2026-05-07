@@ -225,6 +225,11 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
     [newest.id, refetchThread],
   );
 
+  // The ACTUALLY-RUNNING turn may not be the newest (rapid-fire replies make
+  // the newest a QUEUED run) - Stop and Send-now must target the running one.
+  const runningTurn = turns.find((t) => t.status === "running") ?? null;
+  const headQueuedId = turns.find((t) => t.status === "queued")?.run.id ?? null;
+
   // Stop the live turn: POST the durable cancel. The backend aborts the actor and
   // settles the run "Stopped by user"; the SSE stream then emits its terminal
   // event, so the pill flips and the wasLive effect refetches — nothing to do
@@ -234,13 +239,29 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
     if (stopping) return;
     setStopping(true);
     try {
-      await backendFetch(`/api/runs/${newest.id}/cancel`, { method: "POST" });
+      // Prefer the running turn (the newest may be a queued reply, and Stop
+      // means "stop the work", not "drop my message").
+      const target = runningTurn?.run.id ?? newest.id;
+      await backendFetch(`/api/runs/${target}/cancel`, { method: "POST" });
     } catch {
       // Leave the button; the turn is still live so the user can retry Stop.
     } finally {
       setStopping(false);
     }
-  }, [newest.id, stopping]);
+  }, [newest.id, runningTurn, stopping]);
+
+  // Send-now steering (opencode's control, matched to our harness): cancel the
+  // RUNNING turn; the per-thread command lane then auto-dispatches the head
+  // queued turn immediately (FIFO promotion is already the lane's behavior).
+  // Only offered on the HEAD queued message so the queue order is preserved.
+  const handleSendNow = useCallback(async () => {
+    if (!runningTurn) return;
+    try {
+      await backendFetch(`/api/runs/${runningTurn.run.id}/cancel`, { method: "POST" });
+    } catch {
+      // The queued bubble keeps its affordance; the user can retry.
+    }
+  }, [runningTurn]);
 
   // Right rail: ONE tabbed panel (Editor | Terminal), not stacked panes. It only
   // claims width when there's REAL content (parseable file edits or command
@@ -398,6 +419,8 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
             pendingReply={pendingReply}
             commands={commands}
             onReply={handleReply}
+            sendNowFor={runningTurn ? headQueuedId : null}
+            onSendNow={handleSendNow}
           />
           {/* Boot phase: engine spinning up, no steps yet — orb pill; clears the
               moment the first step streams in (Thinking block takes over).
