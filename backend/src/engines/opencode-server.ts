@@ -531,12 +531,13 @@ export const opencodeServerAdapter: EngineAdapter = {
     const daytona = new Daytona({ apiKey, target: process.env.DAYTONA_TARGET ?? "us" });
     const budgetMs = Number(process.env.ENGINE_TIMEOUT_MS ?? 600_000);
 
-    // Org secrets first, then platform engine keys — a platform key of the same
-    // name always wins, so an org secret can never shadow the engine's own auth.
-    // composeSecretEnv also records the names-only `secrets.injected` marker;
-    // file-kind secrets ride in as PATHs here and are written after boot below.
+    // Org secrets ride in via a BASH_ENV dotenv (createEnv), NOT as N env vars —
+    // Daytona rejects a create with a whole 400+ secret catalog. Platform engine
+    // keys are added after and win on name. composeSecretEnv also records the
+    // names-only `secrets.injected` marker; the dotenv + file-kind secrets are
+    // written into the sandbox after boot below.
     const secretInjection = await composeSecretEnv(ctx);
-    const envVars: Record<string, string> = { ...secretInjection.env };
+    const envVars: Record<string, string> = { ...secretInjection.createEnv };
     if (process.env.ANTHROPIC_API_KEY) envVars.ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
     if (process.env.OPENROUTER_API_KEY) envVars.OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
 
