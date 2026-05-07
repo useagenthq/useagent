@@ -155,7 +155,8 @@ describe("knowledge MCP gateway", () => {
     const r = await rpc(tokenA, { jsonrpc: "2.0", id: 2, method: "tools/list" });
     expect(r.status).toBe(200);
     const names = (r.body.result.tools as { name: string }[]).map((t) => t.name).sort();
-    // Knowledge (read-only) + Tencent-backed memory tools ride the same gateway.
+    // Knowledge (read-only) + Tencent-backed memory + Anthropic-native web_search
+    // all ride the same gateway.
     expect(names).toEqual([
       "knowledge_read",
       "knowledge_search",
@@ -164,6 +165,7 @@ describe("knowledge MCP gateway", () => {
       "memory_read",
       "memory_remember",
       "memory_search",
+      "web_search",
     ]);
     // No tool declares a tenant/org input — identity is token-only.
     for (const t of r.body.result.tools as { inputSchema: any }[]) {
