@@ -99,6 +99,13 @@
       "when": 1786060700000,
       "tag": "0015_run_repo",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1786060800000,
+      "tag": "0016_commands_catalog",
+      "breakpoints": true
     }
   ]
 }

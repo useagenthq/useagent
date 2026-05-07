@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   RiCpuLine,
@@ -13,6 +13,11 @@ import * as Switch from "@/components/ui/switch";
 import { AsteriskMark } from "@/components/foundations/brand/asterisk-mark";
 import { backendFetch } from "@/lib/backend-fetch";
 import { ENGINES, type EngineId } from "@/components/chat/types";
+import {
+  filterCommands,
+  SlashCommandPopover,
+  type SlashCommand,
+} from "@/components/chat/slash-command";
 import type { Skill } from "./skills-data";
 import { SearchablePicker, type PickerGroup } from "./searchable-picker";
 
@@ -116,6 +121,79 @@ export function NewTaskComposer({ skills }: { skills: Skill[] }) {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Slash-command autocomplete for the "/" first token. The catalog is the
+  // engine's real command list, cached per snapshot server-side (GET
+  // /api/commands) so it is available BEFORE any sandbox exists. Selection only
+  // completes the text — the command executes engine-side once the run starts.
+  const [commands, setCommands] = useState<SlashCommand[]>([]);
+  const [cmdHighlight, setCmdHighlight] = useState(0);
+  const [cmdDismissed, setCmdDismissed] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await backendFetch("/api/commands");
+        if (!res.ok) return;
+        const data = (await res.json()) as {
+          commands?: { name?: string; description?: string | null }[];
+        };
+        if (cancelled || !Array.isArray(data.commands)) return;
+        setCommands(
+          data.commands
+            .filter((c): c is { name: string; description?: string | null } => !!c.name)
+            .map((c) => ({ name: c.name, description: c.description ?? null })),
+        );
+      } catch {
+        // no catalog cached yet — the composer simply has no "/" popover
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Live while the FIRST token is being typed ("/rev" but not "/review x"); a
+  // trailing space ends completion. Mirrors composer.tsx exactly.
+  const cmdToken = /^\/([^\s]*)$/.exec(prompt.trimStart())?.[1];
+  const cmdMatches =
+    !cmdDismissed && commands.length && cmdToken !== undefined
+      ? filterCommands(commands, cmdToken)
+      : [];
+  const cmdActive = cmdMatches.length > 0;
+
+  function pickCommand(cmd: SlashCommand) {
+    setPrompt(`/${cmd.name} `);
+    setCmdHighlight(0);
+  }
+
+  /** Arrow/Enter/Tab/Esc drive the popover while it is open; returns true when
+   *  the key was consumed so the caller skips its own Enter-submits path. */
+  function handleCmdKeys(e: React.KeyboardEvent<HTMLTextAreaElement>): boolean {
+    if (!cmdActive) return false;
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setCmdHighlight((h) => (h + 1) % cmdMatches.length);
+      return true;
+    }
+    if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setCmdHighlight((h) => (h - 1 + cmdMatches.length) % cmdMatches.length);
+      return true;
+    }
+    if (e.key === "Enter" || e.key === "Tab") {
+      e.preventDefault();
+      pickCommand(cmdMatches[Math.min(cmdHighlight, cmdMatches.length - 1)]);
+      return true;
+    }
+    if (e.key === "Escape") {
+      e.preventDefault();
+      setCmdDismissed(true);
+      return true;
+    }
+    return false;
+  }
+
   const playbookGroups: PickerGroup[] = useMemo(() => {
     const options = skills.map((s) => ({
       value: s.id,
@@ -169,21 +247,37 @@ export function NewTaskComposer({ skills }: { skills: Skill[] }) {
     <div>
       <div className="overflow-hidden rounded-2xl border border-stroke-soft-200 bg-bg-white-0 shadow-regular-sm">
         <div className="flex flex-col gap-3 p-3.5">
-          <textarea
-            value={prompt}
-            onChange={(event) => setPrompt(event.target.value)}
-            rows={3}
-            placeholder="Describe the task — repo, goal, constraints..."
-            aria-label="Describe the task"
-            onKeyDown={(event) => {
-              // Plain Enter submits (chat convention); Shift+Enter = newline.
-              if (event.key === "Enter" && !event.shiftKey) {
-                event.preventDefault();
-                void submit();
-              }
-            }}
-            className="min-h-[104px] w-full resize-none bg-transparent px-1 text-paragraph-sm text-text-strong-950 outline-none placeholder:text-text-soft-400"
-          />
+          <div className="relative">
+            {cmdActive && (
+              <div className="absolute left-0 top-full z-30 mt-2 w-full">
+                <SlashCommandPopover
+                  matches={cmdMatches}
+                  highlight={Math.min(cmdHighlight, cmdMatches.length - 1)}
+                  onSelect={pickCommand}
+                />
+              </div>
+            )}
+            <textarea
+              value={prompt}
+              onChange={(event) => {
+                setPrompt(event.target.value);
+                setCmdDismissed(false);
+                setCmdHighlight(0);
+              }}
+              rows={3}
+              placeholder="Describe the task — repo, goal, constraints..."
+              aria-label="Describe the task"
+              onKeyDown={(event) => {
+                if (handleCmdKeys(event)) return; // consumed by the "/" popover
+                // Plain Enter submits (chat convention); Shift+Enter = newline.
+                if (event.key === "Enter" && !event.shiftKey) {
+                  event.preventDefault();
+                  void submit();
+                }
+              }}
+              className="min-h-[104px] w-full resize-none bg-transparent px-1 text-paragraph-sm text-text-strong-950 outline-none placeholder:text-text-soft-400"
+            />
+          </div>
 
           {/* Pickers */}
           <div className="flex flex-wrap items-center gap-0.5">
