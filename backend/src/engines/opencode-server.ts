@@ -251,10 +251,14 @@ async function ensureKnowledgeGatewayConfig(sandbox: Sandbox, ctx: EngineRunCont
     };
     cfg.mcp = mcp;
     // base64 avoids every shell-escaping hazard (the token/URL never touch argv
-    // unencoded, so they are not in `ps` or logs inside the box).
+    // unencoded, so they are not in `ps` or logs inside the box). Write BOTH the
+    // GLOBAL config (`~/.config/opencode/opencode.json`, loaded at serve boot for
+    // every session) AND the PROJECT config (`~/work/opencode.json`, loaded when a
+    // session scoped to ~/work resolves its project) — opencode merges them, so
+    // the same MCP entry in both is robust to either resolution path.
     const b64 = Buffer.from(JSON.stringify(cfg), "utf8").toString("base64");
     await sandbox.process.executeCommand(
-      `mkdir -p ~/.config/opencode && printf %s '${b64}' | base64 -d > ~/.config/opencode/opencode.json`,
+      `mkdir -p ~/.config/opencode ~/work && printf %s '${b64}' | base64 -d | tee ~/.config/opencode/opencode.json > ~/work/opencode.json`,
       undefined,
       undefined,
       15,
