@@ -57,6 +57,10 @@ export type ComposerProps = {
   className?: string;
   /** Enable the "/" Choose-Agent slash command (default on hero). */
   enableAgentCommand?: boolean;
+  /** Show the per-message model picker (default true). The lightweight Chat
+   *  surface talks to ONE backend-configured model, so it hides this rather than
+   *  present a control that changes nothing. */
+  enableModelPicker?: boolean;
   /** Starting model for the picker (thread's current model on replies). */
   defaultModel?: string;
   /** Starting memory scope (a reply inherits the thread's current scope). */
@@ -93,6 +97,7 @@ export function Composer({
   autoFocus = false,
   className,
   enableAgentCommand,
+  enableModelPicker = true,
   defaultModel = "claude-opus-5",
   defaultMemoryScope = "org",
   commands,
@@ -102,7 +107,10 @@ export function Composer({
   onStop,
 }: ComposerProps) {
   const [value, setValue] = useState("");
-  const [engineState, setEngineState] = useState<EngineId>(defaultEngine);
+  // Single fixed engine now; there is no setter (the meaningful per-message
+  // choice is the model / memory scope). Kept as state so `engineProp` can still
+  // override it without changing the call sites.
+  const [engineState] = useState<EngineId>(defaultEngine);
   const [model, setModel] = useState(defaultModel);
   const [memoryScope, setMemoryScope] = useState<MemoryScope>(defaultMemoryScope);
   const [command, setCommand] = useState<Agent | null>(null);
@@ -289,7 +297,7 @@ export function Composer({
               {/* Team-memory pool for the run (org vs personal), sibling to model. */}
               <MemoryScopePicker scope={memoryScope} onChange={setMemoryScope} />
               {/* One engine now — the meaningful per-message choice is the MODEL. */}
-              <ModelPicker model={model} onChange={setModel} />
+              {enableModelPicker && <ModelPicker model={model} onChange={setModel} />}
               {hero && (
                 <button
                   type="button"
