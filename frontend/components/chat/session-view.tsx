@@ -468,7 +468,7 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
             style={railWidth !== null ? ({ "--rail-w": `${railWidth}px` } as React.CSSProperties) : undefined}
             className={cn(
               "border-stroke-soft-200 bg-bg-white-0 flex min-h-[50vh] min-w-0 flex-col overflow-hidden rounded-2xl border md:min-h-0 md:shrink-0",
-              railWidth !== null ? "md:w-[var(--rail-w)]" : "md:w-[32%]",
+              railWidth !== null ? "md:w-[var(--rail-w)]" : "md:w-[30%]",
             )}
           >
             <div className="border-stroke-soft-200 flex shrink-0 items-center gap-2 border-b p-2">
