@@ -6,8 +6,11 @@ import { recordProviderEvent } from "../../runs/provider-events";
 import { resolveScopedMemory, type ScopedMemoryPlan } from "../../memory/scope";
 import {
   addExplicitMemoryL0,
+  deleteExplicitL0,
+  deleteScopedMemory,
   recallScopedMemory,
   searchExplicitL0,
+  updateScopedMemory,
 } from "../../memory/team-memory";
 import {
   EXPLICIT_MEMORY_KINDS,
@@ -106,6 +109,39 @@ export const MEMORY_TOOLS = [
       type: "object",
       properties: {
         memoryRef: { type: "string", description: "A ref from memory_search (e.g. tencent:l1:<id>)." },
+      },
+      required: ["memoryRef"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "memory_correct",
+    description:
+      "Correct a remembered fact identified by a ref from memory_search. Writes the " +
+      "corrected content and supersedes the old record. Use when a stored memory is " +
+      "wrong or out of date.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        memoryRef: { type: "string", description: "A ref from memory_search (tencent:l0:<id> / tencent:l1:<id>)." },
+        content: { type: "string", description: "The corrected fact, one clear sentence." },
+        idempotencyKey: { type: "string", description: "Optional stable id so a retried correction does not duplicate." },
+      },
+      required: ["memoryRef", "content"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "memory_forget",
+    description:
+      "Forget a remembered fact identified by a ref from memory_search. Reports " +
+      "honestly whether the provider removed it. Use only when a memory should no " +
+      "longer influence future sessions.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        memoryRef: { type: "string", description: "A ref from memory_search (tencent:l0:<id> / tencent:l1:<id>)." },
+        idempotencyKey: { type: "string", description: "Optional stable id so a retried forget is safe." },
       },
       required: ["memoryRef"],
       additionalProperties: false,
@@ -327,6 +363,92 @@ async function doRead(claims: ToolTokenClaims, args: Record<string, unknown>): P
   });
 }
 
+function isOrgPool(userId: string): boolean {
+  return userId.startsWith("org:");
+}
+function scopeWord(scope: MemoryScope): string {
+  return scope === "org" ? "organization" : "personal";
+}
+function optKey(v: unknown): string | undefined {
+  return typeof v === "string" && v.trim() ? v.trim().slice(0, 120) : undefined;
+}
+function parseRef(ref: string): { layer: "l0" | "l1"; id: string } | null {
+  const m = /^tencent:(l0|l1):(.+)$/.exec(ref.trim());
+  return m ? { layer: m[1] as "l0" | "l1", id: m[2]! } : null;
+}
+
+async function doCorrect(claims: ToolTokenClaims, args: Record<string, unknown>): Promise<ToolCallResult> {
+  const parsed = parseRef(typeof args.memoryRef === "string" ? args.memoryRef : "");
+  const content = (typeof args.content === "string" ? args.content : "").trim().slice(0, CONTENT_MAX);
+  if (!parsed || !content) return textResult("memory_correct needs a memoryRef and corrected `content`.", undefined, true);
+
+  const run = await resolveActiveRun(claims);
+  if (!run) return textResult("Memory unavailable: no active run to scope this correction.", undefined, true);
+  const plan = resolveScopedMemory(run);
+  if (!plan?.writePool) return textResult("Cannot correct memory: no writable pool for this run.", undefined, true);
+  const wp = plan.writePool;
+  const operationId = optKey(args.idempotencyKey) ?? `op-${randomUUID()}`;
+
+  // Personal L1 refs correct cleanly via atomic/update. Org L1 refs 403 on
+  // atomic/update (upstream ownership-check inconsistency for colon-namespaced
+  // pools), and L0 refs have no update endpoint - both take the 6.3
+  // replace-then-delete path (write the corrected fact, best-effort remove the old).
+  if (parsed.layer === "l1" && !isOrgPool(wp.identity.userId)) {
+    const ok = await updateScopedMemory(wp.identity, parsed.id, content);
+    recordMemoryEvent(run, ok ? MEMORY_EVENTS.updated : MEMORY_EVENTS.failed, {
+      op: "correct", ref: `tencent:l1:${parsed.id}`, scope: plan.scope,
+    });
+    return ok
+      ? textResult(`Corrected in ${scopeWord(plan.scope)} memory.`, { ref: `tencent:l1:${parsed.id}`, scope: plan.scope })
+      : textResult("The memory provider did not accept the correction.", { saved: false }, true);
+  }
+
+  const envelope = formatEnvelope({ logicalId: randomUUID(), operationId, version: 1, kind: "fact", state: "active", content });
+  const receipt = await addExplicitMemoryL0(wp.identity, envelope);
+  if (!receipt) {
+    recordMemoryEvent(run, MEMORY_EVENTS.failed, { op: "correct", ref: `tencent:${parsed.layer}:${parsed.id}`, scope: plan.scope });
+    return textResult("The memory provider did not accept the correction - nothing changed.", { saved: false }, true);
+  }
+  const removed = parsed.layer === "l1"
+    ? await deleteScopedMemory(wp.identity, [parsed.id])
+    : await deleteExplicitL0(wp.identity, [parsed.id]);
+  const newRef = `tencent:l0:${receipt.acceptedIds[0]}`;
+  recordMemoryEvent(run, MEMORY_EVENTS.updated, {
+    op: "correct", oldRef: `tencent:${parsed.layer}:${parsed.id}`, newRef, removed, scope: plan.scope,
+  });
+  const note = removed > 0
+    ? "The prior record was removed."
+    : "The prior record could not be hard-removed on this provider build and is superseded by the new one.";
+  return textResult(`Corrected in ${scopeWord(plan.scope)} memory. New ref: ${newRef}. ${note}`, {
+    ref: newRef, oldRef: `tencent:${parsed.layer}:${parsed.id}`, removed, scope: plan.scope,
+  });
+}
+
+async function doForget(claims: ToolTokenClaims, args: Record<string, unknown>): Promise<ToolCallResult> {
+  const parsed = parseRef(typeof args.memoryRef === "string" ? args.memoryRef : "");
+  if (!parsed) return textResult("memory_forget needs a memoryRef from memory_search.", undefined, true);
+
+  const run = await resolveActiveRun(claims);
+  if (!run) return textResult("Memory unavailable: no active run to scope this.", undefined, true);
+  const plan = resolveScopedMemory(run);
+  if (!plan?.writePool) return textResult("Cannot forget memory: no writable pool for this run.", undefined, true);
+  const wp = plan.writePool;
+
+  const removed = parsed.layer === "l1"
+    ? await deleteScopedMemory(wp.identity, [parsed.id])
+    : await deleteExplicitL0(wp.identity, [parsed.id]);
+  if (removed > 0) {
+    recordMemoryEvent(run, MEMORY_EVENTS.deleted, { op: "forget", ref: `tencent:${parsed.layer}:${parsed.id}`, removed, scope: plan.scope });
+    return textResult(`Forgot the memory from ${scopeWord(plan.scope)} memory.`, { ref: `tencent:${parsed.layer}:${parsed.id}`, removed, scope: plan.scope });
+  }
+  // Honest partial: nothing removed. Never claim a clean deletion.
+  recordMemoryEvent(run, MEMORY_EVENTS.failed, { op: "forget", ref: `tencent:${parsed.layer}:${parsed.id}`, removed: 0, scope: plan.scope });
+  const why = parsed.layer === "l0"
+    ? "L0 explicit memories cannot be hard-deleted on this provider build; use memory_correct to supersede it instead."
+    : "No matching memory was found in your scope to forget.";
+  return textResult(why, { removed: 0 }, true);
+}
+
 /** Dispatch a validated memory tools/call. Identity/scope resolved server-side;
  *  NEVER reads a tenant id from `args`. Unknown tool → error result. */
 export async function executeMemoryTool(
@@ -341,6 +463,10 @@ export async function executeMemoryTool(
       return doSearch(claims, args);
     case "memory_read":
       return doRead(claims, args);
+    case "memory_correct":
+      return doCorrect(claims, args);
+    case "memory_forget":
+      return doForget(claims, args);
     default:
       return textResult(`Unknown memory tool: ${name}`, undefined, true);
   }

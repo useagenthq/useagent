@@ -24,6 +24,8 @@ Your durable memory for this user lives in the Skynet team-memory service (Tence
 - **memory_search(query, limit?)** - recall relevant facts about this user/organization. Returns cited results with stable refs (tencent:l0:<id> / tencent:l1:<id>) and their scope (personal/organization) and layer. Call it whenever a task references something you should already know.
 - **memory_read(memoryRef)** - read one result in full by its ref from memory_search.
 - **memory_remember(content, kind?, key?)** - persist ONE durable fact. It writes synchronously to the memory provider and only reports success once the provider acknowledges it. Pass a stable \`key\` (e.g. favourite_color) for a fact you may later revise.
+- **memory_correct(memoryRef, content)** - replace a stored fact (by a ref from memory_search) with corrected content.
+- **memory_forget(memoryRef)** - remove a stored fact you should no longer act on. It reports honestly whether the provider actually removed it.
 
 You do not choose personal vs organization scope; the run decides it and the backend enforces it. You never pass org/user/team ids to these tools.
 

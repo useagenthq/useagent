@@ -47,6 +47,13 @@ function tencentMock() {
       return jsonResponse({ code: 0, data: { messages: hits } });
     }
     if (u.endsWith("/v3/atomic/search")) return jsonResponse({ code: 0, data: { items: [] } });
+    // L1 delete works on the real build; L1 update works for personal pools.
+    if (u.endsWith("/v3/atomic/delete")) {
+      return jsonResponse({ code: 0, data: { deleted_count: (body.ids as string[])?.length ?? 0 } });
+    }
+    if (u.endsWith("/v3/atomic/update")) return jsonResponse({ code: 0, data: { id: body.id, updated_at: "t" } });
+    // L0 hard-delete is a no-op on the installed build (deleted_count 0).
+    if (u.endsWith("/v3/conversation/delete")) return jsonResponse({ code: 0, data: { deleted_count: 0 } });
     return jsonResponse({ code: 0, data: {} });
   }) as unknown as typeof fetch;
   return { fetchImpl, msgs, state };
@@ -180,6 +187,47 @@ describe("memory_search", () => {
     expect(items[0]?.layer).toBe("l0");
     expect(items[0]?.ref).toContain("tencent:l0:");
     expect((await eventsFor(run.id, MEMORY_EVENTS.searched)).length).toBe(1);
+  });
+});
+
+describe("memory_correct / memory_forget", () => {
+  test("correcting an ORG L1 ref replaces-then-deletes (avoids the atomic/update 403)", async () => {
+    const mock = tencentMock();
+    globalThis.fetch = mock.fetchImpl;
+    const run = await insertRun({ orgId: "org-8", userId: "u-1", scope: "org" });
+    const res = await executeMemoryTool(claimsFor(run, "org-8"), "memory_correct", {
+      memoryRef: "tencent:l1:fact-xyz",
+      content: "The corrected fact.",
+    });
+    expect(res.isError).toBeUndefined();
+    // wrote a NEW L0 explicit memory as the replacement
+    expect(mock.msgs.some((m) => m.content.includes("The corrected fact."))).toBe(true);
+    expect(String(res.structuredContent?.ref)).toContain("tencent:l0:");
+    expect((await eventsFor(run.id, MEMORY_EVENTS.updated)).length).toBe(1);
+  });
+
+  test("forgetting an L1 ref deletes it and reports removed", async () => {
+    const mock = tencentMock();
+    globalThis.fetch = mock.fetchImpl;
+    const run = await insertRun({ orgId: "org-9", userId: "u-1", scope: "org" });
+    const res = await executeMemoryTool(claimsFor(run, "org-9"), "memory_forget", {
+      memoryRef: "tencent:l1:fact-1",
+    });
+    expect(res.isError).toBeUndefined();
+    expect(res.structuredContent?.removed).toBe(1);
+    expect((await eventsFor(run.id, MEMORY_EVENTS.deleted)).length).toBe(1);
+  });
+
+  test("forgetting an L0 ref is honest when the build cannot hard-delete", async () => {
+    const mock = tencentMock();
+    globalThis.fetch = mock.fetchImpl;
+    const run = await insertRun({ orgId: "org-10", userId: "u-1", scope: "org" });
+    const res = await executeMemoryTool(claimsFor(run, "org-10"), "memory_forget", {
+      memoryRef: "tencent:l0:msg-0",
+    });
+    expect(res.isError).toBe(true); // never claims a clean deletion
+    expect(res.structuredContent?.removed).toBe(0);
+    expect(String(res.content[0]?.text)).toContain("memory_correct");
   });
 });
 
