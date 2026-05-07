@@ -8,7 +8,6 @@ import {
   RiComputerLine,
   RiLayoutRightLine,
   RiRobot2Line,
-  RiStopCircleLine,
   RiTerminalBoxLine,
 } from "@remixicon/react";
 import { backendFetch } from "@/lib/backend-fetch";
@@ -21,7 +20,7 @@ import { EditorPane } from "@/components/chat/editor-pane";
 import { DesktopPane } from "@/components/chat/desktop-pane";
 import { TerminalPane } from "@/components/chat/terminal-pane";
 import { OrbBootIndicator } from "@/components/chat/orb-boot-indicator";
-import { useThreadStream } from "@/components/chat/use-thread-stream";
+import { useThreadStream, shouldRetireOptimistic } from "@/components/chat/use-thread-stream";
 import type { NativeSnapshot } from "@/components/chat/native-store";
 import type { ThreadRunView } from "@/components/chat/thread-store";
 import { SubagentChips } from "@/components/chat/subagent-pane";
@@ -73,7 +72,10 @@ function StatusPill({ status }: { status: RunStatus }) {
  * never navigating away, never reconnecting.
  */
 export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
-  const [pendingReply, setPendingReply] = useState<string | null>(null);
+  // Optimistic reply, keyed by the accepted run id: kept visible until the durable
+  // run is observed in the store, so a POST-accepted message never vanishes if SSE
+  // is momentarily down AND the reconcile fetch fails (Codex finding 4).
+  const [pending, setPending] = useState<{ text: string; runId: string | null } | null>(null);
   const [stopping, setStopping] = useState(false);
 
   // ONE realtime subscription for the whole conversation, keyed by the ROOT thread
@@ -139,7 +141,7 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
       idempotencyKey: string,
       memoryScope: MemoryScope,
     ) => {
-      setPendingReply(text);
+      setPending({ text, runId: null });
       try {
         const res = await backendFetch("/api/runs", {
           method: "POST",
@@ -160,22 +162,32 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
           }),
         });
         if (!res.ok) throw new Error(`backend ${res.status}`);
-        // The child run arrives on the OPEN thread stream (post-commit `created`
-        // signal) - no navigation, no reconnect. A one-shot reconcile is a safety
-        // net if SSE was momentarily down; applySnapshot MERGES, so it never blanks
-        // a turn, and clearing the optimistic bubble after it lands avoids a dup.
-        await reconcile();
+        // Key the optimistic bubble to the ACCEPTED run id and keep it until that
+        // durable run is observed in the store (retired by the effect below). The
+        // child run normally arrives on the OPEN thread stream (post-commit
+        // `created` signal); reconcile is a best-effort nudge if SSE was momentarily
+        // down. If BOTH are down, the message must NOT vanish - the backend accepted
+        // it (Codex finding 4).
+        const body = (await res.json().catch(() => ({}))) as { id?: unknown };
+        const runId = typeof body.id === "string" ? body.id : null;
+        setPending((p) => (p ? { ...p, runId } : { text, runId }));
+        void reconcile();
       } catch (err) {
-        // Don't swallow: clear the optimistic bubble and re-throw so the composer
+        // POST itself failed: drop the optimistic bubble and re-throw so the composer
         // restores the draft and shows an explicit retry state.
-        setPendingReply(null);
+        setPending(null);
         throw err;
-      } finally {
-        setPendingReply(null);
       }
     },
     [newest.id, reconcile],
   );
+
+  // Retire the optimistic bubble ONLY once its accepted run is present in the thread
+  // store (matched by run id, never prompt text) - so a POST-accepted reply survives
+  // an SSE/reconcile outage and is cleared exactly when the durable run lands.
+  useEffect(() => {
+    if (pending && shouldRetireOptimistic(pending.runId, snapshot)) setPending(null);
+  }, [pending, snapshot]);
 
   // The ACTUALLY-RUNNING turn may not be the newest (rapid-fire replies make
   // the newest a QUEUED run) - Stop and Send-now must target the running one.
@@ -194,7 +206,6 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
   // settles the run "Stopped by user"; the thread stream then emits its `done` +
   // `settled` frames, so the pill flips and the summary lands - nothing to do here
   // but fire and let the stream drive the UI.
-  const canStop = threadStatus === "queued" || threadStatus === "running";
   const handleStop = useCallback(async () => {
     if (stopping) return;
     setStopping(true);
@@ -325,21 +336,9 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
         <span className="text-mono-label text-text-soft-400">Session</span>
         <div className="flex items-center gap-3">
           <StatusPill status={threadStatus} />
-          {/* Quiet Stop control — present only while the newest turn is live.
-              Cancels the run durably; the stream settles it "Stopped by user". */}
-          {canStop && (
-            <button
-              type="button"
-              onClick={handleStop}
-              disabled={stopping}
-              title="Stop this run"
-              aria-label="Stop this run"
-              className="border-stroke-soft-200 text-text-sub-600 hover:border-error-base hover:text-error-base flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-label-xs transition-colors disabled:opacity-50"
-            >
-              <RiStopCircleLine className="size-4" aria-hidden />
-              {stopping ? "Stopping…" : "Stop"}
-            </button>
-          )}
+          {/* Stop lives in the composer send button (running+empty -> red Stop),
+              threaded through Conversation. The old top-bar Stop was removed so
+              there is exactly ONE Stop affordance (user: "i mean stop here"). */}
           <Link
             href="/agent/new"
             className="border-stroke-soft-200 text-text-sub-600 hover:bg-bg-weak-50 flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-label-xs transition-colors"
@@ -376,7 +375,7 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
             // A reply inherits the thread's current scope (its newest run); the
             // composer lets the user change it. Legacy runs w/o a scope → "org".
             defaultMemoryScope={newest.memory_scope ?? "org"}
-            pendingReply={pendingReply}
+            pendingReply={pending?.text ?? null}
             commands={commands}
             onReply={handleReply}
             sendNowFor={runningTurn ? headQueuedId : null}
