@@ -8,6 +8,7 @@ import { db } from "./db/client";
 import { allowDevOrg, connectorEmailConfig, env, googleAuthEnabled } from "./env";
 import { knowledgeRoutes } from "./knowledge/routes";
 import { knowledgeMcpRoutes } from "./knowledge/gateway/mcp";
+import { memoryRoutes } from "./memory/routes";
 import { commandsRoutes } from "./runs/command-catalog";
 import { reposRoutes } from "./github/routes";
 import { desktopProxyRoutes } from "./runs/desktop-proxy";
@@ -94,6 +95,10 @@ app.route("/api/fleet", fleetRoutes);
 app.route("/api/skills", skillsRoutes);
 app.route("/api/schedules", schedulesRoutes);
 app.route("/api/knowledge", knowledgeRoutes);
+// Memory Hub — human control surface over the team-memory pools (browse/search/
+// correct/delete), the capture outbox (inspect + manual recovery), and the
+// retrieval ledger. Org-scoped; memory transport credentials stay server-side.
+app.route("/api/memory", memoryRoutes);
 // Trusted knowledge MCP gateway (mem_op.md 0.2). Token-authed, NOT session/org
 // scoped — the resident opencode agent in an untrusted sandbox reaches it with a
 // short-lived run-scoped bearer token, and identity is derived from that token
