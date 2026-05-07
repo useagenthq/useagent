@@ -225,3 +225,91 @@ describe("canonical context markers", () => {
     expect(markers[1]).toMatchObject({ marker: { source: "knowledge", itemCount: 2 } });
   });
 });
+
+// Memory tool chips (provider "skynet-memory", frozen contract in
+// backend/src/knowledge/gateway/memory-tools.ts MEMORY_EVENTS).
+function memoryFrame(eventId: string, seq: number, eventType: string, payload: unknown): NativeFrame {
+  return { ...frame(eventId, seq, eventType, {}, payload), provider: "skynet-memory" };
+}
+
+describe("memory tool markers", () => {
+  test("memory.searched joins the context grammar (Recalled N items from memory)", () => {
+    const s = createNativeStore();
+    s.reset([], 0);
+    s.ingestNative(
+      memoryFrame("ms_1", 0, "memory.searched", {
+        source: "memory",
+        query: "deploy region",
+        scope: "org",
+        itemCount: 2,
+        latencyMs: 3,
+        refs: ["tencent:l0:a", "tencent:l1:b"],
+      }),
+      0,
+    );
+    expect(buildTimeline(s.getSnapshot(), false)![0]).toMatchObject({
+      kind: "marker",
+      marker: { kind: "context", source: "memory", itemCount: 2, query: "deploy region" },
+    });
+  });
+
+  test("l0_accepted / updated / deleted map to remember / correct / forget chips with scope", () => {
+    const s = createNativeStore();
+    s.reset([], 0);
+    s.ingestNative(
+      memoryFrame("ml0_1", 0, "memory.l0_accepted", {
+        source: "memory",
+        op: "remember",
+        scope: "org",
+        reconciled: false,
+        operationId: "op1",
+        refs: ["tencent:l0:x"],
+        content: "fact",
+      }),
+      0,
+    );
+    s.ingestNative(
+      memoryFrame("mu_1", 1, "memory.updated", { source: "memory", op: "correct", scope: "personal", ref: "tencent:l1:y" }),
+      0,
+    );
+    s.ingestNative(
+      memoryFrame("md_1", 2, "memory.deleted", { source: "memory", op: "forget", scope: "org", ref: "tencent:l1:z", removed: 1 }),
+      0,
+    );
+    const markers = buildTimeline(s.getSnapshot(), false)!.map((n) => (n.kind === "marker" ? n.marker : null));
+    expect(markers[0]).toMatchObject({ kind: "memory", op: "remember", scope: "org", failed: false, reconciled: false });
+    expect(markers[1]).toMatchObject({ kind: "memory", op: "correct", scope: "personal", failed: false });
+    expect(markers[2]).toMatchObject({ kind: "memory", op: "forget", scope: "org", failed: false });
+  });
+
+  test("a reconciled l0_accepted flags the idempotent no-op replay", () => {
+    const s = createNativeStore();
+    s.reset([], 0);
+    s.ingestNative(
+      memoryFrame("ml0_1", 0, "memory.l0_accepted", { source: "memory", op: "remember", scope: "org", reconciled: true, operationId: "op1", refs: [] }),
+      0,
+    );
+    expect(buildTimeline(s.getSnapshot(), false)![0]).toMatchObject({
+      marker: { kind: "memory", op: "remember", reconciled: true },
+    });
+  });
+
+  test("memory.failed keeps the failing op and never renders as a success chip", () => {
+    const s = createNativeStore();
+    s.reset([], 0);
+    s.ingestNative(
+      memoryFrame("mf_1", 0, "memory.failed", { source: "memory", op: "forget", scope: "org", reason: "fail_closed", removed: 0 }),
+      0,
+    );
+    expect(buildTimeline(s.getSnapshot(), false)![0]).toMatchObject({
+      marker: { kind: "memory", op: "forget", failed: true },
+    });
+  });
+
+  test("memory.l1_indexed (defined upstream but unused) is ignored safely", () => {
+    const s = createNativeStore();
+    s.reset([], 0);
+    s.ingestNative(memoryFrame("ml1_1", 0, "memory.l1_indexed", { source: "memory" }), 0);
+    expect(buildTimeline(s.getSnapshot(), false)!.some((n) => n.kind === "marker")).toBe(false);
+  });
+});

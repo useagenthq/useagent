@@ -33,6 +33,17 @@ export type TimelineMarker =
       readonly source: string; // "memory" | "knowledge" | …
       readonly itemCount: number;
       readonly query: string | null;
+    }
+  | {
+      /** A memory WRITE-path chip (provider skynet-memory): remember / correct /
+       *  forget, or the honest failure of one. Reads (memory.searched) render as
+       *  a plain context marker instead. */
+      readonly kind: "memory";
+      readonly op: "remember" | "correct" | "forget";
+      readonly scope: "org" | "personal";
+      readonly failed: boolean;
+      /** remember only: true when the write was an idempotent no-op replay. */
+      readonly reconciled: boolean;
     };
 
 /** One node of the interleaved timeline: a context marker, a narration burst, or
@@ -65,8 +76,14 @@ function parseMarker(eventType: string, payload: unknown): TimelineMarker | null
   // The knowledge gateway emits `knowledge.retrieved` (provider
   // skynet-knowledge); memory emits `context.retrieved` (provider skynet).
   // Both are context markers — the vocabulary split was an integration bug
-  // (recorded but never rendered) caught by external audit.
-  if (eventType === "context.retrieved" || eventType === "knowledge.retrieved") {
+  // (recorded but never rendered) caught by external audit. The memory-tool
+  // read path (`memory.searched`, provider skynet-memory) joins the same
+  // context grammar: "Recalled N items from memory".
+  if (
+    eventType === "context.retrieved" ||
+    eventType === "knowledge.retrieved" ||
+    eventType === "memory.searched"
+  ) {
     return {
       kind: "context",
       source:
@@ -77,6 +94,34 @@ function parseMarker(eventType: string, payload: unknown): TimelineMarker | null
             : "memory",
       itemCount: typeof p.itemCount === "number" ? p.itemCount : 0,
       query: typeof p.query === "string" ? p.query : null,
+    };
+  }
+  // Memory write-path chips (frozen contract, memory-tools.ts MEMORY_EVENTS):
+  // l0_accepted/updated/deleted are the success chips; memory.failed is the
+  // honest failure (never emitted alongside a success). `memory.l1_indexed` is
+  // defined upstream but UNUSED today (L1 distillation is async on the memory
+  // service and unobserved during a turn) — it falls through to null safely.
+  if (
+    eventType === "memory.l0_accepted" ||
+    eventType === "memory.updated" ||
+    eventType === "memory.deleted" ||
+    eventType === "memory.failed"
+  ) {
+    const failed = eventType === "memory.failed";
+    const op =
+      p.op === "correct" || p.op === "forget"
+        ? p.op
+        : eventType === "memory.updated"
+          ? "correct"
+          : eventType === "memory.deleted"
+            ? "forget"
+            : "remember";
+    return {
+      kind: "memory",
+      op,
+      scope: p.scope === "personal" ? "personal" : "org",
+      failed,
+      reconciled: p.reconciled === true,
     };
   }
   return null;
@@ -160,7 +205,12 @@ export function buildTimeline(
   // context pane. Reconnect replays them from the durable native lane like any
   // other frame. An unknown skynet eventType parses to null → rendered as nothing.
   for (const f of nativeFrames) {
-    if (f.provider !== "skynet" && f.provider !== "skynet-knowledge") continue;
+    if (
+      f.provider !== "skynet" &&
+      f.provider !== "skynet-knowledge" &&
+      f.provider !== "skynet-memory"
+    )
+      continue;
     const marker = parseMarker(f.eventType, f.payload);
     if (!marker) continue;
     ranked.push({
