@@ -15,6 +15,7 @@ import { composeTurnPrompt } from "./types";
 import { basename, parseJsonLine, truncate } from "./util";
 import { getThreadSandbox, setRunSandbox } from "../runs/repo";
 import { resolveGithubToken } from "../github/auth";
+import { parseRepoRef } from "../github/repo-ref";
 import { assertNever } from "../util/exhaustive";
 import { toolGatewayConfig } from "../knowledge/gateway/config";
 import { mintToolToken } from "../knowledge/gateway/token";
@@ -151,9 +152,12 @@ function shq(s: string): string {
 async function ensureRepoClone(
   sandbox: Sandbox,
   workdir: string,
-  repo: string,
+  entry: string,
   ctx: EngineRunContext,
 ): Promise<void> {
+  // The stored entry may carry a branch ("owner/name:branch"); split it so the
+  // subdir/URL use the clean repo and the clone checks out the chosen branch.
+  const { repo, branch } = parseRepoRef(entry);
   const dir = `${workdir}/${basename(repo)}`;
   // Cheap pre-check so a resumed thread (this repo already cloned) shows no noisy
   // "Cloning" step — we only emit + clone when the subdir has no repo yet.
@@ -170,13 +174,17 @@ async function ensureRepoClone(
   // carry a stale token). Absent → public clone.
   const token = await resolveGithubToken();
   const url = `https://github.com/${repo}.git`;
+  // A chosen branch clones with `-b <branch>` (a bare entry clones the repo's
+  // default branch). A branch that does not exist fails the clone, and so the
+  // run, honestly — better than silently landing on the wrong branch.
+  const branchArg = branch ? `-b ${shq(branch)} ` : "";
   // Each repo owns a fresh subdir, so a direct `git clone <url> <dir>` works (no
   // temp+move dance). Clear any partial dir first so the clone starts clean.
   const script =
     `set -e; DIR=${shq(dir)}; ` +
     `if [ -d "$DIR/.git" ]; then echo clone:exists; exit 0; fi; ` +
     `rm -rf "$DIR"; L="$(mktemp)"; ` +
-    `if git clone ${shq(url)} "$DIR" >"$L" 2>&1; then rm -f "$L"; echo clone:ok; ` +
+    `if git clone ${branchArg}${shq(url)} "$DIR" >"$L" 2>&1; then rm -f "$L"; echo clone:ok; ` +
     `else echo clone:failed; tail -c 300 "$L"; rm -rf "$L" "$DIR"; exit 1; fi`;
   // Token via ENV only (see trust-boundary note). Absent token → public clone.
   // Basic auth with the "x-access-token" username is the form GitHub's git
@@ -194,13 +202,18 @@ async function ensureRepoClone(
       }
     : {};
 
-  await ctx.emit({ kind: "command", label: `Cloning ${repo}`, chip: "git" });
+  await ctx.emit({
+    kind: "command",
+    label: branch ? `Cloning ${repo} (${branch})` : `Cloning ${repo}`,
+    chip: "git",
+  });
   const res = await sandbox.process.executeCommand(script, undefined, cloneEnv, 300);
   const out = (res.result ?? "").trim();
   if ((res.exitCode ?? 1) !== 0 || /clone:failed/.test(out)) {
     // Never echo the credential — surface only the sanitized git tail.
     const detail = out.replace(/clone:\w+/g, "").trim() || "git clone error";
-    throw new Error(`failed to clone ${repo}: ${truncate(detail, 200)}`);
+    const what = branch ? `${repo} (${branch})` : repo;
+    throw new Error(`failed to clone ${what}: ${truncate(detail, 200)}`);
   }
 }
 

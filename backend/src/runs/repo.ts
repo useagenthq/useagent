@@ -8,6 +8,7 @@ import {
   type RunStatus,
   type StepKind,
 } from "../db/schema";
+import { parseRepoRef, type RepoRef } from "../github/repo-ref";
 
 // ---------------------------------------------------------------------------
 // API serialization — preserve the exact snake_case shapes the frontend reads
@@ -42,10 +43,16 @@ export interface ApiRun {
   parent_run_id: string | null;
   thread_id: string;
   engine_session_id: string | null;
-  /** Legacy single-repo mirror (= repos[0] ?? null), kept for back-compat. */
+  /** Legacy single-repo mirror (= repos[0] ?? null), kept for back-compat.
+   *  Clean "owner/name" (any stored branch suffix is decoded away). */
   repo: string | null;
-  /** GitHub repos this thread works in (each "owner/name"); [] = bare workdir. */
+  /** GitHub repos this thread works in (each clean "owner/name"); [] = bare
+   *  workdir. Any per-repo branch lives in `repo_specs`, not here. */
   repos: string[];
+  /** Per-repo target the run actually clones: clean repo + the chosen branch
+   *  (null = the repo's default branch). Decoded from the stored refs so
+   *  replay/reconnect reports the SAME branch the sandbox was cloned at. */
+  repo_specs: RepoRef[];
   /** Which team-memory pool this run reads/writes (default "org"). The composer
    *  reads a thread's scope from its newest run so a reply inherits it. */
   memory_scope: MemoryScope;
@@ -73,6 +80,9 @@ function toStep(s: StepRecord): ApiStep {
 }
 
 function toRun(r: RunRecord, stepRows: StepRecord[]): ApiRun {
+  // Stored refs may carry a branch ("owner/name:branch"); decode so the wire
+  // stays clean "owner/name" and the branch surfaces in `repo_specs` instead.
+  const specs = r.repos.map(parseRepoRef);
   return {
     id: r.id,
     org_id: r.orgId,
@@ -86,8 +96,9 @@ function toRun(r: RunRecord, stepRows: StepRecord[]): ApiRun {
     parent_run_id: r.parentRunId,
     thread_id: r.threadId,
     engine_session_id: r.engineSessionId,
-    repo: r.repo,
-    repos: r.repos,
+    repo: r.repo ? parseRepoRef(r.repo).repo : null,
+    repos: specs.map((s) => s.repo),
+    repo_specs: specs,
     memory_scope: r.memoryScope,
     skill_id: r.skillId,
     skill_version: r.skillVersion,
@@ -182,7 +193,8 @@ export async function createRun(
     parentRunId: input.parentRunId,
     threadId: input.threadId,
     repos: input.repos ?? [],
-    repo: input.repos?.[0] ?? null, // legacy single-value mirror
+    // Legacy single-value mirror: clean "owner/name" (drop any branch suffix).
+    repo: input.repos?.[0] ? parseRepoRef(input.repos[0]).repo : null,
     memoryScope: input.memoryScope,
     skillId: input.skillId ?? null,
     skillVersion: input.skillVersion ?? null,
