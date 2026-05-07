@@ -28,7 +28,8 @@ import { slackEnabled, slackRoutes, startSlackOutbox } from "./slack";
 // resolved from this module so cwd doesn't matter.
 await migrate(db, { migrationsFolder: `${import.meta.dir}/../drizzle` });
 
-// Idempotent boot seeding: dev org/user/member + the mocked skills.
+// Idempotent boot seeding: dev org/user/member only. No demo content — the
+// Knowledge and Skills surfaces start empty and fill with real records.
 await seedDev();
 
 // Recover orphaned runs from a previous (unclean) shutdown: reconcile the ones

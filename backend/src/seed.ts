@@ -1,7 +1,6 @@
 import { eq } from "drizzle-orm";
 import { db } from "./db/client";
 import { member, organization, user } from "./db/schema";
-import { seedSkills } from "./skills/seed";
 
 // ---------------------------------------------------------------------------
 // Dev fallback identity. When a request has no session, the org-scoping
@@ -21,8 +20,10 @@ export function getDevContext(): { orgId: string; userId: string } {
   return { orgId: DEV_ORG_ID, userId: DEV_USER_ID };
 }
 
-/** Create the dev org, dev user, one membership row, and the seeded skills.
- * Every step is idempotent, so booting repeatedly is a no-op. */
+/** Create the dev org, dev user, and one membership row. Every step is
+ * idempotent, so booting repeatedly is a no-op. No demo content is planted —
+ * Knowledge and Skills start empty and fill only with real, user- or
+ * agent-authored records. */
 export async function seedDev(): Promise<void> {
   const now = new Date();
 
@@ -58,8 +59,6 @@ export async function seedDev(): Promise<void> {
       createdAt: now,
     })
     .onConflictDoNothing();
-
-  await seedSkills(DEV_ORG_ID);
 }
 
 /** The org id of the first membership for a user, or null if they have none. */
