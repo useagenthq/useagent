@@ -57,6 +57,8 @@ export function InteractiveTerminal({ runId }: { runId: string }) {
     let ws: WebSocket | null = null;
     let term: import("ghostty-web").Terminal | null = null;
     let observer: ResizeObserver | null = null;
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+    let reconnectDelay = 3000;
 
     void (async () => {
       const { init, Terminal, FitAddon } = await import("ghostty-web");
@@ -97,23 +99,38 @@ export function InteractiveTerminal({ runId }: { runId: string }) {
       fit.fit();
       term.focus();
 
+      // Connect with AUTO-RECONNECT: the PTY WS dies when the sandbox
+      // auto-stops; when it wakes (next run) nothing re-established the
+      // session, so the pane sat on "[disconnected]" until a Shell/Log
+      // tab-toggle remounted it (user-reported). Now we retry with backoff
+      // for as long as the pane is mounted — a resumed sandbox reattaches
+      // by itself.
       const proto = location.protocol === "https:" ? "wss" : "ws";
-      ws = new WebSocket(
-        `${proto}://${location.host}/api/runs/${runId}/terminal?cols=${term.cols}&rows=${term.rows}`,
-      );
-      const sock = ws;
-      // `disposed` guards: a buffered message or OUR OWN close event can fire
-      // after cleanup disposed the terminal (ui-sweep D1: "Terminal has been
-      // disposed" console error on tab-switch).
-      sock.onmessage = (e) => {
-        if (!disposed) term?.write(String(e.data));
+      const connect = () => {
+        if (disposed || !term) return;
+        const sock = new WebSocket(
+          `${proto}://${location.host}/api/runs/${runId}/terminal?cols=${term.cols}&rows=${term.rows}`,
+        );
+        ws = sock;
+        // `disposed` guards: a buffered message or OUR OWN close event can
+        // fire after cleanup disposed the terminal (ui-sweep D1).
+        sock.onopen = () => {
+          reconnectDelay = 3000;
+        };
+        sock.onmessage = (e) => {
+          if (!disposed) term?.write(String(e.data));
+        };
+        sock.onclose = () => {
+          if (disposed) return;
+          term?.write("\r\n\x1b[2m[disconnected — reconnecting…]\x1b[0m\r\n");
+          reconnectTimer = setTimeout(connect, reconnectDelay);
+          reconnectDelay = Math.min(reconnectDelay * 2, 15000);
+        };
       };
-      sock.onclose = () => {
-        if (!disposed) term?.write("\r\n\x1b[2m[disconnected]\x1b[0m\r\n");
-      };
+      connect();
       term.onData((data) => {
-        if (sock.readyState === WebSocket.OPEN) {
-          sock.send(JSON.stringify({ type: "input", data }));
+        if (ws && ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ type: "input", data }));
         }
       });
 
@@ -121,8 +138,8 @@ export function InteractiveTerminal({ runId }: { runId: string }) {
       // contract the backend bridge expects, engine-agnostic.
       observer = new ResizeObserver(() => {
         fit.fit();
-        if (term && sock.readyState === WebSocket.OPEN) {
-          sock.send(JSON.stringify({ type: "resize", cols: term.cols, rows: term.rows }));
+        if (term && ws && ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ type: "resize", cols: term.cols, rows: term.rows }));
         }
       });
       observer.observe(host);
@@ -130,6 +147,7 @@ export function InteractiveTerminal({ runId }: { runId: string }) {
 
     return () => {
       disposed = true;
+      if (reconnectTimer) clearTimeout(reconnectTimer);
       observer?.disconnect();
       // Detach handlers BEFORE close/dispose — close() fires onclose
       // synchronously-ish with a disposed terminal otherwise.
