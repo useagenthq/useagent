@@ -35,6 +35,13 @@ export type TimelineMarker =
       readonly query: string | null;
     }
   | {
+      /** Boot recovery parked this run for adaptive re-probing (provider skynet,
+       *  run.reconciling, frozen contract {reason, sinceMs, deadlineMs}). The
+       *  run stays status running for the whole window. */
+      readonly kind: "reconciling";
+      readonly deadlineMs: number | null;
+    }
+  | {
       /** A memory WRITE-path chip (provider skynet-memory): remember / correct /
        *  forget, or the honest failure of one. Reads (memory.searched) render as
        *  a plain context marker instead. */
@@ -96,6 +103,15 @@ function parseMarker(eventType: string, payload: unknown): TimelineMarker | null
             : "memory",
       itemCount: typeof p.itemCount === "number" ? p.itemCount : 0,
       query: typeof p.query === "string" ? p.query : null,
+    };
+  }
+  // Adaptive-reconcile park marker (frozen contract, recovery.ts
+  // RUN_RECONCILING): emitted once at boot-park; the run is potentially still
+  // executing server-side while the loop re-probes.
+  if (eventType === "run.reconciling") {
+    return {
+      kind: "reconciling",
+      deadlineMs: typeof p.deadlineMs === "number" ? p.deadlineMs : null,
     };
   }
   // Memory write-path chips (frozen contract, memory-tools.ts MEMORY_EVENTS):

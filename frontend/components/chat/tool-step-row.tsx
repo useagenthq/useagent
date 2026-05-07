@@ -103,6 +103,15 @@ function markerView(marker: TimelineMarker): {
       error: false,
     };
   }
+  if (marker.kind === "reconciling") {
+    return {
+      Icon: RiLoader4Line,
+      verb: "Reconciling",
+      target: "after a restart; the turn may still be completing",
+      badge: null,
+      error: false,
+    };
+  }
   if (marker.kind === "memory") {
     const pool = marker.scope === "personal" ? "personal memory" : "organization memory";
     if (marker.failed) {
