@@ -14,8 +14,21 @@ import { createHmac } from "node:crypto";
 import { setSlackClientForTest } from "../src/slack";
 import { fetchApi, json, uid, waitFor } from "./helpers";
 
-const SECRET = "test-signing-secret"; // must match preload.ts
+const SECRET = "test-signing-secret"; // this suite signs every inbound event with it
 const BOT = "U0BOTBOT";
+
+// Hermetic Slack env. Bun auto-loads backend/.env, so the REAL SLACK_* creds
+// leak into the test process and would override what this suite assumes: the
+// real signing secret makes every signed event fail verification (401), and a
+// real app token could open a live Socket Mode WS. Pin the values this suite
+// depends on and restore whatever .env carried, so it is hermetic regardless of
+// the machine's .env.
+const SLACK_ENV_OVERRIDES: Record<string, string | undefined> = {
+  SLACK_SIGNING_SECRET: SECRET,
+  SLACK_BOT_TOKEN: "xoxb-test-token",
+  SLACK_APP_TOKEN: undefined, // keep a real app token out of the suite entirely
+};
+const savedSlackEnv: Record<string, string | undefined> = {};
 
 interface Recorded {
   reactions: Array<{ channel: string; timestamp: string; name: string }>;
@@ -27,6 +40,11 @@ const rec: Recorded = { reactions: [], messages: [], statuses: [] };
 let statusFails = false;
 
 beforeAll(() => {
+  for (const [k, v] of Object.entries(SLACK_ENV_OVERRIDES)) {
+    savedSlackEnv[k] = process.env[k];
+    if (v === undefined) delete process.env[k];
+    else process.env[k] = v;
+  }
   setSlackClientForTest({
     addReaction: async (a) => {
       rec.reactions.push(a);
@@ -43,7 +61,13 @@ beforeAll(() => {
   });
 });
 
-afterAll(() => setSlackClientForTest(null));
+afterAll(() => {
+  setSlackClientForTest(null);
+  for (const [k, saved] of Object.entries(savedSlackEnv)) {
+    if (saved === undefined) delete process.env[k];
+    else process.env[k] = saved;
+  }
+});
 
 function sign(timestamp: string, raw: string): string {
   return "v0=" + createHmac("sha256", SECRET).update(`v0:${timestamp}:${raw}`).digest("hex");
