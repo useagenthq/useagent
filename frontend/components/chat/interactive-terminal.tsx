@@ -148,5 +148,5 @@ export function InteractiveTerminal({ runId }: { runId: string }) {
   // Without it the textarea escapes to the nearest positioned ancestor
   // (`<main class="relative">`) and its blinking caret shows at the main
   // column's top-left corner, by the SESSION label.
-  return <div ref={hostRef} className="relative h-full min-h-0 w-full bg-neutral-950 px-3.5 py-3" />;
+  return <div ref={hostRef} className="relative h-full min-h-0 w-full bg-neutral-950 px-3.5 py-3 [&_textarea]:opacity-0 [&_textarea]:caret-transparent" />;
 }
