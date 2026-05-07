@@ -7,6 +7,8 @@
     "build": "next build",
     "start": "next start -p 3400",
     "typecheck": "tsc --noEmit",
+    "lint": "biome lint",
+    "lint:fix": "biome check --write",
     "test": "bun test components"
   },
   "dependencies": {
@@ -44,12 +46,14 @@
     "tailwind-variants": "^3.3.1"
   },
   "devDependencies": {
+    "@biomejs/biome": "^2.5.7",
     "@tailwindcss/postcss": "4",
     "@types/node": "^26.1.2",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.4",
     "tailwindcss": "4",
     "tailwindcss-animate": "^1.0.7",
-    "typescript": "5.9"
+    "typescript": "5.9",
+    "ultracite": "^7.10.1"
   }
 }
