@@ -165,7 +165,7 @@ export const pullRequests: PullRequest[] = [
           lines: [
             'export function allow(key: string) {',
             '  const now = Date.now();',
-            '  windowStart = now; // reset on every call — window never expires',
+            '  windowStart = now; // reset on every call - window never expires',
             '  return hits(key) < LIMIT;',
           ],
           highlight: 2,
@@ -452,7 +452,7 @@ export const pullRequests: PullRequest[] = [
           startLine: 10,
           lines: [
             'for (const region of REGIONS) {',
-            '  await warm(region); // serial — prefer Promise.all',
+            '  await warm(region); // serial - prefer Promise.all',
             '}',
             "logger.info('cache warm complete');",
           ],
