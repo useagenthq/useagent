@@ -32,4 +32,12 @@ describe("runPayloadFingerprint", () => {
     expect(runPayloadFingerprint({ ...base, engine: "mock" })).not.toBe(fp);
     expect(runPayloadFingerprint({ ...base, parentRunId: "run-x" })).not.toBe(fp);
   });
+
+  test("memory scope is intent: org vs personal fingerprints differ (audit finding)", () => {
+    const org = runPayloadFingerprint({ ...base, memoryScope: "org" });
+    const personal = runPayloadFingerprint({ ...base, memoryScope: "personal" });
+    expect(org).not.toBe(personal);
+    // Legacy payloads without a scope stay stable relative to themselves.
+    expect(runPayloadFingerprint(base)).toBe(runPayloadFingerprint({ ...base }));
+  });
 });

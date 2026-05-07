@@ -68,16 +68,39 @@ export async function enqueueCapture(
    *  to the shared pool for standalone callers. */
   exec: Executor = db,
 ): Promise<void> {
-  const payload = JSON.stringify({
-    identity,
-    prompt: run.prompt,
-    summary: run.summary,
-    scope,
-  } satisfies CapturePayload).slice(0, PAYLOAD_CAP);
+  const payload = buildCapturePayload(identity, run, scope);
   await exec
     .insert(memoryOutbox)
     .values({ id: runId, runId, payload })
     .onConflictDoNothing({ target: memoryOutbox.id });
+}
+
+/**
+ * Serialize a capture envelope, capping at the FIELD level — never by slicing
+ * the serialized string. A string slice mid-JSON produced an unparseable
+ * payload that delivery dead-lettered, silently losing every over-cap capture
+ * (external audit finding). Prompt and summary are the only unbounded fields;
+ * shrink them until the whole envelope fits (JSON escaping can inflate, so
+ * verify and re-shrink rather than assume). Pure — unit-tested directly.
+ */
+export function buildCapturePayload(
+  identity: MemoryIdentity,
+  run: { prompt: string; summary: string },
+  scope: MemoryScope,
+): string {
+  let promptText = run.prompt;
+  let summaryText = run.summary;
+  for (let budget = PAYLOAD_CAP - 1_024; ; budget = Math.floor(budget * 0.8)) {
+    promptText = promptText.slice(0, Math.ceil(budget / 2));
+    summaryText = summaryText.slice(0, Math.ceil(budget / 2));
+    const payload = JSON.stringify({
+      identity,
+      prompt: promptText,
+      summary: summaryText,
+      scope,
+    } satisfies CapturePayload);
+    if (payload.length <= PAYLOAD_CAP || budget < 256) return payload;
+  }
 }
 
 interface ClaimedRow {

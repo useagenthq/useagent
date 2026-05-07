@@ -3,6 +3,7 @@ import { sql } from "drizzle-orm";
 import { db } from "../src/db/client";
 import {
   backoffAt,
+  buildCapturePayload,
   deliverDueCaptures,
   enqueueCapture,
   getCapture,
@@ -124,5 +125,40 @@ describe("capture-outbox pure policy", () => {
     expect(backoffAt(t0, 0).getTime()).toBe(t0 + 30_000);
     expect(backoffAt(t0, 1).getTime()).toBe(t0 + 60_000);
     expect(backoffAt(t0, 100).getTime()).toBe(t0 + 3_600_000); // capped
+  });
+});
+
+describe("buildCapturePayload — field-level cap (audit finding 1)", () => {
+  const identity = {
+    teamId: "org-x",
+    agentId: "skynet-backend",
+    userId: "org:org-x",
+    sessionId: "s1",
+    actorUserId: "u1",
+  } as never;
+
+  test("normal capture round-trips verbatim", () => {
+    const p = buildCapturePayload(identity, { prompt: "hi", summary: "there" }, "org");
+    const parsed = JSON.parse(p);
+    expect(parsed.prompt).toBe("hi");
+    expect(parsed.summary).toBe("there");
+    expect(parsed.scope).toBe("org");
+  });
+
+  test("oversize capture stays VALID JSON under the cap (never a string slice)", () => {
+    const big = "x".repeat(100_000);
+    const p = buildCapturePayload(identity, { prompt: big, summary: big }, "personal");
+    expect(p.length).toBeLessThanOrEqual(16_384);
+    const parsed = JSON.parse(p); // the old .slice() version threw here
+    expect(parsed.scope).toBe("personal");
+    expect(parsed.prompt.length).toBeGreaterThan(0);
+    expect(parsed.summary.length).toBeGreaterThan(0);
+  });
+
+  test("escape-heavy content (quotes/newlines) still fits and parses", () => {
+    const nasty = '"\n\\'.repeat(30_000);
+    const p = buildCapturePayload(identity, { prompt: nasty, summary: nasty }, "org");
+    expect(p.length).toBeLessThanOrEqual(16_384);
+    expect(() => JSON.parse(p)).not.toThrow();
   });
 });
