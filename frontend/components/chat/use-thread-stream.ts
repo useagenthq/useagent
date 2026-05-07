@@ -1,10 +1,18 @@
 "use client";
 
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { backendFetch } from "@/lib/backend-fetch";
 import { toThread, type ApiRun, type ApiStep, type RunStatus } from "./types";
 import { parseNativeFrame } from "./native-events";
 import { createThreadStore, type ThreadSnapshot, type ThreadStore } from "./thread-store";
+
+export interface ThreadStreamState {
+  /** The current thread projection (runs + per-run views). */
+  snapshot: ThreadSnapshot;
+  /** One-shot safety-net reconcile: fetch the durable thread once and MERGE it
+   *  (never resets). Used after a reply POST in case SSE was momentarily down. */
+  reconcile: () => Promise<void>;
+}
 
 // useThreadStream — the session page's realtime unit (final_fix.md §4.7). ONE
 // EventSource to the thread endpoint for the whole page lifetime, keyed by the
@@ -19,7 +27,7 @@ import { createThreadStore, type ThreadSnapshot, type ThreadStore } from "./thre
 
 const MAX_SSE_ATTEMPTS = 5;
 
-export function useThreadStream(rootRunId: string, initialThread: ApiRun[]): ThreadSnapshot {
+export function useThreadStream(rootRunId: string, initialThread: ApiRun[]): ThreadStreamState {
   // One store for the page lifetime, seeded from the SSR thread so first paint is
   // instant and the SSE snapshot later merges (never resets) onto it.
   const [store] = useState<ThreadStore>(() => {
@@ -31,6 +39,20 @@ export function useThreadStream(rootRunId: string, initialThread: ApiRun[]): Thr
   storeRef.current = store;
 
   const snapshot = useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot);
+
+  // One-shot reconcile safety net (final_fix.md §4.8): fetch the durable thread and
+  // MERGE it. applySnapshot never resets, so this can run alongside the live stream
+  // without blanking or duplicating anything.
+  const reconcile = useCallback(async () => {
+    try {
+      const res = await backendFetch(`/api/runs/${rootRunId}?thread=1`);
+      if (!res.ok) return;
+      const runs = toThread(await res.json());
+      if (runs.length) storeRef.current.applySnapshot(runs);
+    } catch {
+      // best-effort; the live stream remains the primary path
+    }
+  }, [rootRunId]);
 
   useEffect(() => {
     const s = storeRef.current;
@@ -151,5 +173,5 @@ export function useThreadStream(rootRunId: string, initialThread: ApiRun[]): Thr
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rootRunId]);
 
-  return snapshot;
+  return { snapshot, reconcile };
 }

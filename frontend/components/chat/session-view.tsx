@@ -21,12 +21,14 @@ import { EditorPane } from "@/components/chat/editor-pane";
 import { DesktopPane } from "@/components/chat/desktop-pane";
 import { TerminalPane } from "@/components/chat/terminal-pane";
 import { OrbBootIndicator } from "@/components/chat/orb-boot-indicator";
-import { useRunStream } from "@/components/chat/use-run-stream";
+import { useThreadStream } from "@/components/chat/use-thread-stream";
+import type { NativeSnapshot } from "@/components/chat/native-store";
+import type { ThreadRunView } from "@/components/chat/thread-store";
 import { SubagentChips } from "@/components/chat/subagent-pane";
 import {
+  isLiveStatus,
   normalizeEngine,
   parseFileEntries,
-  toThread,
   type ApiRun,
   type EngineId,
   type MemoryScope,
@@ -61,132 +63,73 @@ function StatusPill({ status }: { status: RunStatus }) {
 
 /**
  * The coding-session surface: a threaded conversation column beside a vertical
- * editor|terminal split. The whole thread renders as one conversation; a single
- * SSE subscription (`useRunStream`) watches the *newest* run and overrides its
- * static snapshot live. All runs' steps feed the editor tabs (files touched) and
- * the terminal (commands). A reply starts a child run in the same thread and we
- * refetch in place — never navigating away.
+ * editor|terminal split. The whole thread renders as one conversation, driven by
+ * a single thread-scoped SSE subscription (`useThreadStream`) whose lifetime is the
+ * ROOT thread - creating/queueing/starting/settling/cancelling a run never resets
+ * it. Every run's projection (durable steps + native frames + live narration) is
+ * owned by the thread store, so all runs stream concurrently through one connection.
+ * All runs' steps feed the editor tabs (files touched) and the terminal (commands).
+ * A reply starts a child run in the same thread and arrives on the open stream -
+ * never navigating away, never reconnecting.
  */
 export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
-  const [thread, setThread] = useState(initialThread);
   const [pendingReply, setPendingReply] = useState<string | null>(null);
   const [stopping, setStopping] = useState(false);
 
-  const newest = thread[thread.length - 1];
-  const rootId = thread[0].id;
-  // The stream must watch the turn PRODUCING events: the running run. Watching
-  // the newest froze the running turn's progress the moment a follow-up queued
-  // (newest became the queued reply, which streams nothing - user report).
-  // Falls back to newest on fresh/idle threads (SSE attaches when it starts).
-  const activeRun = thread.find((r) => r.status === "running") ?? newest;
-  const stream = useRunStream(activeRun);
+  // ONE realtime subscription for the whole conversation, keyed by the ROOT thread
+  // id for the page lifetime (final_fix.md): creating/queueing/starting/settling/
+  // cancelling a run never resets the store or reconnects. Every run's projection
+  // (durable steps + native frames + live narration) is owned by the thread store,
+  // so no run-switch transition can blank/freeze a turn or target the wrong run.
+  const rootId = initialThread[0]!.id;
+  const { snapshot, reconcile } = useThreadStream(rootId, initialThread);
+  const thread = snapshot.runs.length ? snapshot.runs : initialThread;
+  const newest = thread[thread.length - 1]!;
 
-  // Cache each run's RICHEST projection (stream overlay) so a turn never
-  // renders LESS than what was already on screen. Without this, a web reply
-  // mid-stream re-keyed the stream to the NEW run and the still-running old
-  // turn instantly lost its overlay - its DB steps had not been written yet,
-  // so it rendered a bare "Skynet" header until a later poll refilled it
-  // (user-reported flash; Slack replies dodged it only by timing).
-  const projectionCache = useRef(
-    new Map<string, { steps: Turn["steps"]; summary: string | null; native: Turn["native"] }>(),
-  );
-  if (stream.steps.length > 0 || stream.summary) {
-    projectionCache.current.set(activeRun.id, {
-      steps: stream.steps,
-      summary: stream.summary,
-      native: stream.native,
-    });
-  }
+  // A settled turn shows its native timeline ONLY when it actually has native
+  // frames (opencode tool rows live only on the native lane); a settled turn with
+  // no frames (mock / non-native engines) falls back to the worklog+answer
+  // rendering, exactly as before. A live turn always uses its native timeline.
+  const nativeFor = (v: ThreadRunView): NativeSnapshot | undefined =>
+    isLiveStatus(v.status) ? v.native : v.native.nativeFrames.length > 0 ? v.native : undefined;
 
-  // Newest run's live stream overrides its thread snapshot; older runs are
-  // settled history - served from the projection cache whenever it is richer
-  // than the (possibly lagging) DB snapshot.
+  // Every run renders from its OWN thread-store slice - no active-run selection, no
+  // projection cache: a reply never makes another turn render less than it already
+  // showed, because nothing switches the subscription (root-fix of the reply flash).
   const turns: Turn[] = thread.map((run) => {
-    if (run.id === activeRun.id) {
-      return {
-        run,
-        steps: stream.steps,
-        status: stream.status,
-        summary: stream.summary,
-        live: stream.live,
-        liveText: stream.liveText,
-        native: stream.native,
-      };
+    const v = snapshot.byId.get(run.id);
+    if (!v) {
+      return { run, steps: run.steps, status: run.status, summary: run.summary, live: false, liveText: "", native: undefined };
     }
-    const cached = projectionCache.current.get(run.id);
-    // ALWAYS prefer a cached native snapshot: opencode tool rows exist ONLY in
-    // the native frame lane (the DB steps table carries just boot/synthetic
-    // rows), so no thread refetch can ever re-render them - a step-count
-    // comparison here wrongly dropped the frames and re-blanked the turn
-    // (verified via network-trace repro: collapse at the new run's SSE
-    // subscribe, with DB steps present but unrenderable).
-    const useCached = cached !== undefined && (cached.native?.nativeFrames.length ?? 0) > 0;
     return {
-      run,
-      steps: useCached && cached.steps.length >= run.steps.length ? cached.steps : run.steps,
-      status: run.status,
-      summary: run.summary ?? cached?.summary ?? null,
-      live: false,
-      liveText: "",
-      native: useCached ? cached.native : undefined,
+      run: v.run,
+      steps: v.native.steps,
+      status: v.status,
+      summary: v.summary,
+      live: isLiveStatus(v.status),
+      liveText: v.liveText,
+      native: nativeFor(v),
     };
   });
   const allSteps = turns.flatMap((t) => t.steps);
-  const live = stream.live;
-  // Boot window: run accepted but nothing has streamed yet — the orb stands in
+  // Subagent fidelity is derived from native frames across the WHOLE thread.
+  const allFrames = turns.flatMap((t) => t.native?.nativeFrames ?? []);
+  const live = turns.some((t) => isLiveStatus(t.status));
+  // The turn currently producing events (running preferred; else the newest live
+  // turn about to start) - the boot orb + live indicators read from it.
+  const liveTurn =
+    turns.find((t) => t.status === "running") ?? turns.find((t) => isLiveStatus(t.status)) ?? null;
+  // Boot window: a live turn accepted but nothing streamed yet - the orb stands in
   // until the first narration token OR step arrives, then the conversation's live
-  // narration / Thinking disclosure takes over (keeps one live indicator at a time).
+  // narration / Thinking disclosure takes over (one live indicator at a time).
   const booting =
-    live &&
-    !stream.liveText &&
-    !stream.steps.some((s) => s.kind !== "done");
+    !!liveTurn && !liveTurn.liveText && !liveTurn.steps.some((s) => s.kind !== "done");
 
-  // Cheap change signature so the poll below can skip no-op setThread calls
-  // (toThread always builds fresh objects; unconditional set = 5s render churn).
-  const threadSig = (runs: typeof thread): string =>
-    runs.map((r) => `${r.id}:${r.status}:${r.steps.length}:${r.summary?.length ?? 0}`).join("|");
-
-  const refetchThread = useCallback(
-    async (opts?: { keepPending?: boolean }) => {
-      try {
-        const res = await backendFetch(`/api/runs/${rootId}?thread=1`);
-        if (res.ok) {
-          const next = toThread(await res.json());
-          if (next.length) {
-            setThread((cur) => (threadSig(cur) === threadSig(next) ? cur : next));
-          }
-        }
-      } catch {
-        // keep the current thread on a transient failure
-      } finally {
-        if (!opts?.keepPending) setPendingReply(null);
-      }
-    },
-    [rootId],
-  );
-
-  // Refetch the thread whenever the streamed run reaches a terminal state —
-  // run-level fields written during the turn (engine_session_id → the Live
-  // tab's deep-link, summary) only travel via thread fetches, and without this
-  // a FRESH session never learns them until a reply or a page reload.
-  const wasLive = useRef(false);
-  useEffect(() => {
-    if (wasLive.current && !stream.live) void refetchThread();
-    wasLive.current = stream.live;
-  }, [stream.live, refetchThread]);
-
-  // External turns (Slack mentions, schedules) create runs in this thread with
-  // no local action to trigger a refetch — the user had to reload the page to
-  // see them. Poll lightly while the tab is visible; keepPending so an
-  // in-flight optimistic reply bubble is never cleared by the poll. The change
-  // signature above makes a no-change poll render-free. (A thread-level push
-  // lane is #78's territory; this is the single-replica answer.)
-  useEffect(() => {
-    const id = setInterval(() => {
-      if (document.visibilityState === "visible") void refetchThread({ keepPending: true });
-    }, 5_000);
-    return () => clearInterval(id);
-  }, [refetchThread]);
+  // Removed with the cutover: the active-run projection cache, the terminal-state
+  // refetch, and the five-second external-turn discovery poll. The thread stream
+  // now delivers new runs (post-commit `created` signal), settled run fields
+  // (summary / engine_session_id via the `settled` frame), and external turns on
+  // the ONE open connection - no polling while SSE is healthy, no run-switch reset.
 
   const handleReply = useCallback(
     async (
@@ -217,29 +160,41 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
           }),
         });
         if (!res.ok) throw new Error(`backend ${res.status}`);
-        // Child run lives in this thread — pull it in and keep streaming here
-        // instead of navigating to a fresh session.
-        await refetchThread();
+        // The child run arrives on the OPEN thread stream (post-commit `created`
+        // signal) - no navigation, no reconnect. A one-shot reconcile is a safety
+        // net if SSE was momentarily down; applySnapshot MERGES, so it never blanks
+        // a turn, and clearing the optimistic bubble after it lands avoids a dup.
+        await reconcile();
       } catch (err) {
         // Don't swallow: clear the optimistic bubble and re-throw so the composer
         // restores the draft and shows an explicit retry state.
         setPendingReply(null);
         throw err;
+      } finally {
+        setPendingReply(null);
       }
     },
-    [newest.id, refetchThread],
+    [newest.id, reconcile],
   );
 
   // The ACTUALLY-RUNNING turn may not be the newest (rapid-fire replies make
   // the newest a QUEUED run) - Stop and Send-now must target the running one.
   const runningTurn = turns.find((t) => t.status === "running") ?? null;
   const headQueuedId = turns.find((t) => t.status === "queued")?.run.id ?? null;
+  // The session-bar status reflects the thread's current activity: running if any
+  // turn runs, else queued if any is waiting, else the newest turn's terminal state.
+  const newestTurn = turns[turns.length - 1] ?? null;
+  const threadStatus: RunStatus = runningTurn
+    ? "running"
+    : headQueuedId
+      ? "queued"
+      : newestTurn?.status ?? newest.status;
 
   // Stop the live turn: POST the durable cancel. The backend aborts the actor and
-  // settles the run "Stopped by user"; the SSE stream then emits its terminal
-  // event, so the pill flips and the wasLive effect refetches — nothing to do
-  // here but fire and let the stream drive the UI.
-  const canStop = stream.status === "queued" || stream.status === "running";
+  // settles the run "Stopped by user"; the thread stream then emits its `done` +
+  // `settled` frames, so the pill flips and the summary lands - nothing to do here
+  // but fire and let the stream drive the UI.
+  const canStop = threadStatus === "queued" || threadStatus === "running";
   const handleStop = useCallback(async () => {
     if (stopping) return;
     setStopping(true);
@@ -369,7 +324,7 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
       <div className="border-stroke-soft-200 bg-bg-white-0 flex shrink-0 items-center justify-between gap-3 border-b px-4 py-2">
         <span className="text-mono-label text-text-soft-400">Session</span>
         <div className="flex items-center gap-3">
-          <StatusPill status={stream.status} />
+          <StatusPill status={threadStatus} />
           {/* Quiet Stop control — present only while the newest turn is live.
               Cancels the run durably; the stream settles it "Stopped by user". */}
           {canStop && (
@@ -443,7 +398,10 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
                   : "animate-ai-fade-up pointer-events-none absolute right-4 top-4 z-20"
               }
             >
-              <OrbBootIndicator engine={newest.engine} status={stream.status} />
+              <OrbBootIndicator
+                engine={liveTurn?.run.engine ?? newest.engine}
+                status={liveTurn?.status ?? threadStatus}
+              />
             </div>
           )}
         </section>
@@ -521,7 +479,7 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
             </div>
             <div className="min-h-0 flex-1">
               {railTab === "agents" ? (
-                <AgentsRail steps={allSteps} live={live} frames={stream.native.nativeFrames} />
+                <AgentsRail steps={allSteps} live={live} frames={allFrames} />
               ) : railTab === "editor" ? (
                 <EditorPane steps={allSteps} live={live} />
               ) : railTab === "desktop" ? (
