@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { RiBookOpenLine, RiFileList3Line } from "@remixicon/react";
 
 import { AgentSidebar } from "@/components/shell/agent-sidebar";
@@ -6,11 +7,10 @@ import { AppShell } from "@/components/shell/app-shell";
 import { BackendUnreachable } from "@/components/shared/backend-unreachable";
 import * as Badge from "@/components/ui/badge";
 import { AskRepoBar } from "./ask-repo-bar";
-import { TableOfContents } from "./table-of-contents";
+import { PagesRail } from "./pages-rail";
 import {
   fetchPublishedWikiDocuments,
   relativeTime,
-  sectionId,
   type WikiDoc,
 } from "./wiki-data";
 
@@ -34,7 +34,12 @@ export default async function WikiPage() {
     failed = true;
   }
 
-  const sections = docs.map((d) => ({ id: sectionId(d), label: d.title }));
+  // First non-empty line as the card snippet (bodies are markdown-ish text).
+  const snippet = (d: WikiDoc): string =>
+    d.content
+      .split("\n")
+      .map((l) => l.replace(/^#+\s*/, "").trim())
+      .filter((l) => l.length > 0 && l !== d.title)[0] ?? "";
 
   return (
     <AppShell activeTab="agent" sidebar={<AgentSidebar active="wiki" />}>
@@ -60,11 +65,13 @@ export default async function WikiPage() {
           </div>
         </header>
 
-        {/* Body: TOC rail + articles */}
+        {/* Body: pages rail + INDEX cards. Each document has a dedicated page
+            (/wiki/[id]) - concatenating 100+ full documents onto one scroll was
+            unreadable (user report). */}
         <div className="mt-8 flex flex-col gap-8 lg:flex-row lg:gap-10">
-          <TableOfContents sections={sections} />
+          <PagesRail docs={docs} />
 
-          <article className="min-w-0 flex-1 space-y-12">
+          <article className="min-w-0 flex-1">
             {failed ? (
               <BackendUnreachable />
             ) : docs.length === 0 ? (
@@ -83,26 +90,30 @@ export default async function WikiPage() {
                 </p>
               </div>
             ) : (
-              docs.map((doc) => (
-                <section
-                  key={doc.id}
-                  id={sectionId(doc)}
-                  className="scroll-mt-24"
-                >
-                  <div className="flex items-baseline justify-between gap-3">
-                    <h2 className="text-title-h6 text-text-strong-950">
-                      {doc.title}
-                    </h2>
-                    <span className="shrink-0 text-paragraph-xs text-text-soft-400">
-                      updated {relativeTime(doc.updatedAt)}
-                    </span>
-                  </div>
-                  {/* Honest render of the published revision content. */}
-                  <div className="mt-3 whitespace-pre-wrap text-paragraph-md leading-7 text-text-sub-600">
-                    {doc.content}
-                  </div>
-                </section>
-              ))
+              <ul className="space-y-2">
+                {docs.map((doc) => (
+                  <li key={doc.id}>
+                    <Link
+                      href={`/wiki/${doc.id}`}
+                      className="border-stroke-soft-200 bg-bg-white-0 hover:bg-bg-weak-50 block rounded-xl border px-4 py-3 transition-colors"
+                    >
+                      <div className="flex items-baseline justify-between gap-3">
+                        <span className="text-label-md text-text-strong-950 truncate">
+                          {doc.title}
+                        </span>
+                        <span className="text-paragraph-xs text-text-soft-400 shrink-0">
+                          updated {relativeTime(doc.updatedAt)}
+                        </span>
+                      </div>
+                      {snippet(doc) && (
+                        <p className="text-paragraph-sm text-text-sub-600 mt-1 line-clamp-2">
+                          {snippet(doc)}
+                        </p>
+                      )}
+                    </Link>
+                  </li>
+                ))}
+              </ul>
             )}
 
             <AskRepoBar />
