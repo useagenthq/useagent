@@ -16,6 +16,7 @@ import {
   slackConfig,
 } from "./env";
 import { isPublicApiPath, orgScope } from "./middleware/org";
+import { chatRoutes } from "./chat/routes";
 import { toolGatewayConfig } from "./knowledge/gateway/config";
 import { knowledgeRoutes } from "./knowledge/routes";
 import { knowledgeMcpRoutes } from "./knowledge/gateway/mcp";
@@ -108,6 +109,12 @@ app.get("/api/config", (c) =>
 
 // better-auth: email/password + organization plugin, mounted at /api/auth/*.
 app.on(["GET", "POST"], "/api/auth/*", (c) => auth.handler(c.req.raw));
+
+// Lightweight Chat (#122): a NO-SANDBOX conversational surface at /. Streams a
+// model completion directly (OpenRouter), augmented with read-only retrieval
+// (org knowledge + published wiki + team memory). Org-scoped; inert without
+// OPENROUTER_API_KEY (503). Distinct from /api/runs (which spins sandboxes).
+app.route("/api/chat", chatRoutes);
 
 app.route("/api/runs", runsRoutes);
 // Interactive terminal WS bridge (browser xterm ⇄ sandbox PTY). Mounted before
