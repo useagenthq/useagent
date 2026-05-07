@@ -58,3 +58,5 @@ protocol. Architecture source of truth: `~/Documents/skynet-saas/ARCHITECTURE.md
 - The real dev DB is `skynet` (backend/.env), NOT `skynet_rebuild` (stale docs name).
 
 - No em dashes ("—") in code-level user-visible strings (labels, placeholders, summaries, aria); use hyphens or rephrase.
+
+- Never boot a second backend against the shared `skynet` DB: boot recovery (recoverStaleRuns) will reconcile/fail OTHER sessions in-flight runs. Tests use throwaway DBs.
