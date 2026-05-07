@@ -102,9 +102,11 @@ function clamp(s: string, n: number): string {
 
 // ---------------------------------------------------------------------------
 // Retrieval ledger — every tool call becomes a durable `knowledge.retrieved`
-// native frame (mem_op.md 0.2 / "Retrieval Ledger and UX"). Fire-and-forget so
-// it can never fail the agent turn. Attributed to the thread's CURRENTLY-ACTIVE
-// run (the one the agent is executing), falling back to the token's mint run.
+// native frame (mem_op.md 0.2 / "Retrieval Ledger and UX"). AWAITED by callers
+// (so the frame is durable before the tool result returns — a crash can't lose
+// evidence of a retrieval) but wrapped in .catch so a persist failure never
+// fails the agent turn. Attributed to the thread's CURRENTLY-ACTIVE run (the one
+// the agent is executing), falling back to the token's mint run.
 // ---------------------------------------------------------------------------
 
 /** Resolve the run a retrieval should be attributed to: the thread's running run
@@ -134,8 +136,9 @@ export interface LedgerItem {
   score?: number;
 }
 
-/** Record one knowledge retrieval as a native frame. Never throws; callers void
- *  it on the hot path. Skips silently if no attributable run exists. */
+/** Record one knowledge retrieval as a native frame. Callers AWAIT it (durable
+ *  before the tool result) and .catch a persist failure so it never fails the
+ *  turn. Skips silently if no attributable run exists. */
 export async function recordKnowledgeRetrieval(
   claims: ToolTokenClaims,
   tool: string,
@@ -207,13 +210,16 @@ async function doSearch(claims: ToolTokenClaims, args: Record<string, unknown>):
     rank: h.rank,
   }));
 
-  void recordKnowledgeRetrieval(
+  // AWAITED so the ledger frame is durable before the tool result returns to the
+  // agent (a crash can't lose evidence of a retrieval that succeeded); a persist
+  // failure is logged and never fails the tool call. Off the token-delta path.
+  await recordKnowledgeRetrieval(
     claims,
     "knowledge_search",
     query,
     results.map((r) => ({ id: r.id, title: r.title, citation: r.citation, score: r.rank })),
     latencyMs,
-  );
+  ).catch((err) => console.warn("[knowledge] retrieval ledger persist failed:", err));
 
   const text =
     results.length === 0
@@ -249,13 +255,14 @@ async function doRead(claims: ToolTokenClaims, args: Record<string, unknown>): P
       : `${row.connector_instance_id}#${row.external_id}`;
   const body = clamp(row.body, READ_MAX);
 
-  void recordKnowledgeRetrieval(
+  // AWAITED for the same durability guarantee as knowledge_search above.
+  await recordKnowledgeRetrieval(
     claims,
     "knowledge_read",
     id,
     [{ id: row.id, title: row.title, citation }],
     0,
-  );
+  ).catch((err) => console.warn("[knowledge] retrieval ledger persist failed:", err));
 
   return {
     content: [{ type: "text", text: `# ${row.title}\n\n${body}\n\nSource: ${citation}` }],
