@@ -102,8 +102,15 @@ export function InteractiveTerminal({ runId }: { runId: string }) {
         `${proto}://${location.host}/api/runs/${runId}/terminal?cols=${term.cols}&rows=${term.rows}`,
       );
       const sock = ws;
-      sock.onmessage = (e) => term?.write(String(e.data));
-      sock.onclose = () => term?.write("\r\n\x1b[2m[disconnected]\x1b[0m\r\n");
+      // `disposed` guards: a buffered message or OUR OWN close event can fire
+      // after cleanup disposed the terminal (ui-sweep D1: "Terminal has been
+      // disposed" console error on tab-switch).
+      sock.onmessage = (e) => {
+        if (!disposed) term?.write(String(e.data));
+      };
+      sock.onclose = () => {
+        if (!disposed) term?.write("\r\n\x1b[2m[disconnected]\x1b[0m\r\n");
+      };
       term.onData((data) => {
         if (sock.readyState === WebSocket.OPEN) {
           sock.send(JSON.stringify({ type: "input", data }));
@@ -124,8 +131,15 @@ export function InteractiveTerminal({ runId }: { runId: string }) {
     return () => {
       disposed = true;
       observer?.disconnect();
-      ws?.close();
+      // Detach handlers BEFORE close/dispose — close() fires onclose
+      // synchronously-ish with a disposed terminal otherwise.
+      if (ws) {
+        ws.onmessage = null;
+        ws.onclose = null;
+        ws.close();
+      }
       term?.dispose();
+      term = null;
     };
   }, [runId]);
 
