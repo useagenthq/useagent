@@ -37,8 +37,14 @@
  *   5. Retrieval ledger: a `ctxret_` frame exists for the recall run with cited
  *      items + the actorUserId scope.
  *   6. Knowledge/KB: org-scoped ingestion + hybrid search returns the seeded doc
- *      (API-level). The KB is NOT yet agent-callable (tool gateway deferred) —
- *      that gap is asserted as a note, never faked.
+ *      (API-level surface that always exists, no sandbox needed).
+ *  6b. Agent-callable knowledge: the trusted MCP gateway now EXISTS — a real
+ *      opencode run in a real sandbox answers a question it can ONLY answer by
+ *      calling knowledge_search through the gateway, proven by a
+ *      `knowledge.retrieved` ledger frame + the tool-only fact in the answer.
+ *      Needs a publicly-reachable backend, so it runs only when the e2e env
+ *      carries TOOL_GATEWAY_PUBLIC_URL (e.g. a cloudflared tunnel); otherwise it
+ *      SKIPs with an honest note — which E2E_STRICT (release mode) turns red.
  */
 import { createHmac } from "node:crypto";
 import { openSync, readFileSync } from "node:fs";
@@ -62,6 +68,13 @@ const backendDir = new URL("../..", import.meta.url).pathname;
 const scratch = process.env.SCRATCH_DIR ?? "/tmp";
 const backendLog = `${scratch}/skynet-e2e-real-backend.log`;
 
+// ── release mode ──────────────────────────────────────────────────────────────
+// E2E_STRICT=1 is the RELEASE gate: a SKIP is no longer "fine for dev" — it means
+// a capability went unexercised, so it counts as a FAILURE. The default (unset)
+// stays permissive so `bun run e2e:real` on a partial env (no cloudflared tunnel,
+// no memory gateway) still reports the honest PASS/SKIP mix without red.
+const STRICT = process.env.E2E_STRICT === "1";
+
 // ── result tracking ─────────────────────────────────────────────────────────
 type Status = "PASS" | "FAIL" | "SKIP";
 interface Result { stage: string; name: string; status: Status; detail: string }
@@ -77,11 +90,43 @@ function check(name: string, ok: boolean, detail = ""): void {
   console.log(`  ${ok ? "✅ PASS" : "❌ FAIL"} ${name}${detail ? ` — ${detail}` : ""}`);
 }
 function skip(name: string, reason: string): void {
+  // Under E2E_STRICT a skip is a failure — a released build must exercise the
+  // whole surface, so an unconfigured dependency is a gap, not an excuse.
+  if (STRICT) {
+    results.push({ stage: currentStage, name, status: "FAIL", detail: `SKIP under E2E_STRICT: ${reason}` });
+    console.log(`  ❌ FAIL ${name} — SKIP under E2E_STRICT (release gate): ${reason}`);
+    return;
+  }
   results.push({ stage: currentStage, name, status: "SKIP", detail: reason });
   console.log(`  ⏭  SKIP ${name} — ${reason}`);
 }
 function note(msg: string): void {
   console.log(`  · ${msg}`);
+}
+
+// ── provenance stamp ──────────────────────────────────────────────────────────
+// Every artifact must be bound to the exact commit + env it was produced under,
+// so a green run can never be silently attributed to code it didn't test.
+function sh(cmd: string): string {
+  try { return Bun.spawnSync(["bash", "-lc", cmd]).stdout.toString().trim(); } catch { return ""; }
+}
+function provenance(): { sha: string; dirty: boolean; branch: string; ts: string } {
+  const sha = sh("git rev-parse --short HEAD") || "unknown";
+  const dirty = sh("git status --porcelain") !== "";
+  const branch = sh("git rev-parse --abbrev-ref HEAD") || "?";
+  return { sha, dirty, branch, ts: new Date().toISOString() };
+}
+function printProvenance(p: { sha: string; dirty: boolean; branch: string; ts: string }): void {
+  console.log(
+    `  provenance: commit ${p.sha}${p.dirty ? "+dirty" : ""} (${p.branch}) · ${p.ts} · ` +
+      `bun ${Bun.version} · node ${process.version} · ${process.platform}/${process.arch}`,
+  );
+  const flag = (k: string, v: unknown) => `${k}=${v ? "on" : "off"}`;
+  console.log(
+    `  env: ${flag("E2E_STRICT", STRICT)} · ${flag("DAYTONA_API_KEY", process.env.DAYTONA_API_KEY)} · ` +
+      `${flag("ANTHROPIC_API_KEY", process.env.ANTHROPIC_API_KEY)} · ${flag("MEMORY_API_URL", process.env.MEMORY_API_URL)} · ` +
+      `${flag("TOOL_GATEWAY_PUBLIC_URL", process.env.TOOL_GATEWAY_PUBLIC_URL)} · ${flag("OPENAI_API_KEY", process.env.OPENAI_API_KEY)}`,
+  );
 }
 
 // ── mock Slack receiver (the ONLY mock) ───────────────────────────────────────
@@ -119,6 +164,12 @@ async function startBackend(label: string): Promise<Proc> {
       SLACK_DEFAULT_MODEL: MODEL,
       SLACK_OUTBOX_TICK_MS: "500",
       SLACK_OUTBOX_BASE_MS: "50",
+      // Agent-callable knowledge (Stage 6b): TOOL_GATEWAY_PUBLIC_URL rides through
+      // from the e2e env; give the run-scoped gateway token a generous TTL so a
+      // slow sandbox turn never outlives its auth.
+      ...(process.env.TOOL_GATEWAY_PUBLIC_URL
+        ? { TOOL_GATEWAY_TOKEN_TTL_MS: process.env.TOOL_GATEWAY_TOKEN_TTL_MS ?? String(30 * 60 * 1000) }
+        : {}),
     },
     stdout: fd,
     stderr: fd,
@@ -427,7 +478,72 @@ async function stage6_knowledge(): Promise<void> {
     return found;
   }, 15_000);
   check("hybrid search returns the seeded doc (by id)", found, `mode=${mode} (keyword-only ⇒ no OPENAI_API_KEY; still org-scoped retrieval)`);
-  note("KB is NOT yet agent-callable — the tool gateway is deferred; an agent cannot query this KB mid-run yet. Tested the org-scoped ingest+search API surface that EXISTS.");
+  note("this stage covers the ingest+search API surface only; Stage 6b proves the SAME KB is agent-callable mid-run through the trusted gateway.");
+}
+
+// Stage 6b — agent-callable knowledge over the trusted MCP gateway. A REAL
+// opencode run in a REAL sandbox reaches THIS backend over TOOL_GATEWAY_PUBLIC_URL
+// (a cloudflared tunnel in a release run) and answers a question it can ONLY
+// answer by calling knowledge_search. Reuses the machinery proven in
+// test/manual/knowledge-gateway-live.ts. Gated on TOOL_GATEWAY_PUBLIC_URL being
+// present in the e2e env (so the sandbox can reach us); when unset it SKIPs with
+// an honest note — E2E_STRICT (release mode) turns that skip red.
+async function stage6b_knowledgeGateway(): Promise<void> {
+  stage("Stage 6b: Knowledge is agent-callable — real opencode run calls knowledge_search via the gateway");
+  const publicUrl = process.env.TOOL_GATEWAY_PUBLIC_URL;
+  if (!publicUrl) {
+    skip(
+      "agent CALLS knowledge_search through the gateway (ledger frame + tool-only answer)",
+      "TOOL_GATEWAY_PUBLIC_URL unset — start a cloudflared tunnel to this backend and export it (see test/manual/knowledge-gateway-live.ts) to exercise the live gateway",
+    );
+    return;
+  }
+  note(`gateway reachable at ${publicUrl} (sandbox → backend); TTL=${process.env.TOOL_GATEWAY_TOKEN_TTL_MS ?? "default"}`);
+
+  // Seed a UNIQUE fact only the tool can reveal.
+  const code = `RB-${crypto.randomUUID().replace(/-/g, "").slice(0, 10).toUpperCase()}`;
+  const label = "nimbus";
+  const ingestRes = await fetch(`${BASE}/api/knowledge/ingest`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      meta: { source_type: "document", external_id: `e2e-gw-${code}`, connector_instance_id: "e2e-real:gateway", source_url: "https://example.com/e2e-gw" },
+      text:
+        `Deployment rollback codes. The rollback authorization code for the ${label} service is ${code}. ` +
+        `To roll back ${label}, run 'skynet rollback ${label} --code ${code}'. This value lives only in the knowledge base.`,
+    }),
+  });
+  const ingest = (await ingestRes.json()) as { status?: string };
+  check("unique fact ingested into the org KB", ingestRes.ok && (ingest.status === "stored" || ingest.status === "skipped"), `status=${ingest.status} code=${code}`);
+
+  // Real opencode run that MUST use the tool to answer.
+  const marker = `askgw-${crypto.randomUUID().slice(0, 6)}`;
+  const prompt =
+    `${marker} You do NOT know the rollback authorization code for the ${label} service — it is stored only in the ` +
+    `organization knowledge base. Call the knowledge_search tool (query for the ${label} rollback authorization code), ` +
+    `then reply with ONLY the code, nothing else.`;
+  const runId = await createRun({ prompt, engine: "opencode", model: MODEL });
+  note(`run ${runId} created; waiting for the real sandbox turn (up to 6 min)…`);
+
+  const deadline = Date.now() + 6 * 60 * 1000;
+  let row: any = null;
+  while (Date.now() < deadline) {
+    [row] = await sql`select id, status, summary from runs where id = ${runId}`;
+    if (row && (row.status === "completed" || row.status === "failed")) break;
+    await sleep(3000);
+  }
+  check("run reached a terminal state", row?.status === "completed" || row?.status === "failed", `status=${row?.status}`);
+
+  // THE proof: a knowledge.retrieved ledger frame means the sandbox agent actually
+  // CALLED the gateway (server-side), and the answer contains the tool-only code.
+  const ledger = await sql`select payload from provider_events where run_id = ${runId} and event_type = 'knowledge.retrieved'`;
+  check("agent CALLED the gateway (knowledge.retrieved ledger frame exists)", ledger.length > 0, `${ledger.length} frame(s)`);
+  if (ledger.length > 0) {
+    const p = JSON.parse(ledger[0]!.payload as string);
+    note(`ledger: tool=${p.tool} query="${String(p.query).slice(0, 60)}" items=${p.itemCount} org=${p.scope?.orgId}`);
+  }
+  const answer = String(row?.summary ?? "");
+  check("the run's answer contains the tool-only code", answer.includes(code), `code=${code} answer="${answer.slice(0, 80)}"`);
 }
 
 // Stage 2a — teach a canary through a real run so the capture outbox delivers it
@@ -824,6 +940,9 @@ async function cleanupSandboxes(): Promise<void> {
 async function main(): Promise<void> {
   console.log("AGGRESSIVE REAL E2E — real Daytona + opencode(claude-haiku-4-5) + real :8420 memory + mock Slack only");
   console.log(`  DB=${DB} PORT=${PORT} slack-mock=:${SLACK_PORT} backend-log=${backendLog}`);
+  const prov = provenance();
+  printProvenance(prov);
+  if (STRICT) console.log("  MODE: E2E_STRICT — every SKIP counts as a FAILURE (release gate).");
 
   // Preflight.
   if (!process.env.DAYTONA_API_KEY) {
@@ -849,6 +968,7 @@ async function main(): Promise<void> {
   const startedAt = Date.now();
   try {
     await runStage(stage6_knowledge);
+    await runStage(stage6b_knowledgeGateway);
     await runStage(stage7_apiGuardrails);
     const teach = await stage2a_teachSafe();
     await runStage(stage8_concurrency);
@@ -868,6 +988,7 @@ async function main(): Promise<void> {
   const fail = results.filter((r) => r.status === "FAIL").length;
   const skipped = results.filter((r) => r.status === "SKIP").length;
   console.log(`\n══ SUMMARY (${Math.round((Date.now() - startedAt) / 1000)}s) — ${pass} PASS / ${fail} FAIL / ${skipped} SKIP ══`);
+  printProvenance(prov);
   for (const r of results) {
     const icon = r.status === "PASS" ? "✅" : r.status === "FAIL" ? "❌" : "⏭ ";
     console.log(`  ${icon} [${r.stage.split(":")[0]}] ${r.name}${r.detail ? ` — ${r.detail}` : ""}`);
