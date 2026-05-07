@@ -32,13 +32,27 @@ describe("skills CRUD + run", () => {
     const list = await json<{ skills: any[] }>("/api/skills");
     expect(list.body.skills.some((s) => s.id === id)).toBe(true);
 
-    // Run twice → usage 0 → 2, last_run_at set.
-    let ran = await json<any>(`/api/skills/${id}/run`, { method: "POST" });
-    expect(ran.status).toBe(200);
-    expect(ran.body.usage_count).toBe(1);
-    ran = await json<any>(`/api/skills/${id}/run`, { method: "POST" });
-    expect(ran.body.usage_count).toBe(2);
-    expect(ran.body.last_run_at).not.toBeNull();
+    // Run: the endpoint now creates a REAL run through the command lane and
+    // requires a prompt (no more misleading metric-only "run").
+    const noPrompt = await json<any>(`/api/skills/${id}/run`, { method: "POST" });
+    expect(noPrompt.status).toBe(400);
+
+    // Two real runs → usage 0 → 2, last_run_at set.
+    let ran = await json<any>(`/api/skills/${id}/run`, {
+      method: "POST",
+      body: { prompt: "exercise the skill", engine: "mock" },
+    });
+    expect(ran.status).toBe(201);
+    expect(ran.body.id).toBeTruthy();
+    ran = await json<any>(`/api/skills/${id}/run`, {
+      method: "POST",
+      body: { prompt: "again", engine: "mock" },
+    });
+    expect(ran.status).toBe(201);
+    const afterRuns = await json<{ skills: any[] }>("/api/skills");
+    const mine = afterRuns.body.skills.find((s) => s.id === id);
+    expect(mine.usage_count).toBe(2);
+    expect(mine.last_run_at).not.toBeNull();
 
     // Patch.
     const patched = await json<any>(`/api/skills/${id}`, {

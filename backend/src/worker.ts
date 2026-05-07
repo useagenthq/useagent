@@ -17,6 +17,9 @@ import type { EmitStep, EngineRunContext } from "./engines/types";
 import { searchScopedMemory } from "./memory/team-memory";
 import { resolveScopedMemory } from "./memory/scope";
 import { recordContextRetrieval } from "./memory/retrieval-ledger";
+import { getPinnedRevision } from "./skills/repo";
+import { formatSkillMarkdown, frameSkillContext } from "./skills/format";
+import { recordSkillLoaded } from "./skills/skill-loaded";
 import { finalizeRun } from "./runs/finalize";
 import { turnStream } from "./runs/turn-stream";
 import { claimNextRun, settleCommandForRun } from "./commands/dispatch";
@@ -140,6 +143,31 @@ async function runWorker(runId: string): Promise<void> {
   if (!run) return; // deleted before the actor started
 
   try {
+    // Skill context (Phase 0 slice 0.1): resolve + record the run's pinned skill
+    // FIRST, for ANY engine. A run that selected a skill "loaded" it regardless of
+    // harness — mock ignores context, but the durable `skill.loaded` marker and
+    // provenance still hold. `skillContext` is the SKILL.md-shaped INSTRUCTIONS,
+    // injected below via the per-turn seam SEPARATELY from the (clean) user prompt.
+    const pinnedSkill =
+      run.skillId && run.skillVersion != null
+        ? await getPinnedRevision(run.skillId, run.skillVersion)
+        : null;
+    let skillContext = "";
+    if (pinnedSkill) {
+      const markdown = formatSkillMarkdown(pinnedSkill.content);
+      skillContext = frameSkillContext(markdown);
+      // Emit skill.loaded (metadata only, no body) on the durable native lane so
+      // it renders as a timeline row and survives reconnect. Fire-and-forget.
+      void recordSkillLoaded(run.id, run.threadId, {
+        skillId: pinnedSkill.skillId,
+        version: pinnedSkill.version,
+        name: pinnedSkill.content.name,
+        contentHash: pinnedSkill.contentHash,
+        source: "skill",
+        contentChars: markdown.length,
+      });
+    }
+
     // `mock` is the scripted trace and ignores context entirely.
     if (run.engine === "mock") {
       await runMock(runId);
@@ -165,11 +193,13 @@ async function runWorker(runId: string): Promise<void> {
       run.parentRunId ? buildThreadPreamble(run.threadId, run.id) : Promise.resolve(""),
     ]);
     const turnContext = recall?.rendered ?? "";
-    if (turnContext || bootstrapContext) {
+
+    if (turnContext || bootstrapContext || skillContext) {
       console.log(
         `[worker] run ${runId} thread ${run.threadId} scope=${plan?.scope ?? "off"}: ` +
           `turnContext ${turnContext.length} (${recall?.items.length ?? 0} memory items, ` +
-          `${recall?.latencyMs ?? 0}ms) + bootstrapContext ${bootstrapContext.length} chars`,
+          `${recall?.latencyMs ?? 0}ms) + bootstrapContext ${bootstrapContext.length}` +
+          ` + skillContext ${skillContext.length} chars`,
       );
     }
     // Retrieval ledger (Phase 3a): durably record + stream what was recalled as a
@@ -187,6 +217,7 @@ async function runWorker(runId: string): Promise<void> {
       run.prompt,
       bootstrapContext,
       turnContext,
+      skillContext,
       run.threadId,
       run.model,
       run.repos,
@@ -251,6 +282,7 @@ async function runEngine(
   prompt: string,
   bootstrapContext: string,
   turnContext: string,
+  skillContext: string,
   threadId: string,
   model: string,
   repos: string[],
@@ -317,6 +349,7 @@ async function runEngine(
     prompt,
     bootstrapContext,
     turnContext,
+    skillContext,
     workdir,
     threadId,
     orgId,

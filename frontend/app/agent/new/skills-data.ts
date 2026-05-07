@@ -10,6 +10,9 @@ export interface Skill {
   id: string;
   name: string;
   tags: string[];
+  /** The skill's current immutable revision — sent with the run so the backend
+   *  pins the exact version this composer offered. Defaults to 1. */
+  version: number;
 }
 
 function toSkill(value: unknown): Skill | null {
@@ -17,7 +20,9 @@ function toSkill(value: unknown): Skill | null {
   const s = value as Record<string, unknown>;
   if (typeof s.id !== "string" || typeof s.name !== "string") return null;
   const tags = Array.isArray(s.tags) ? s.tags.filter((t): t is string => typeof t === "string") : [];
-  return { id: s.id, name: s.name, tags };
+  const version =
+    typeof s.current_version === "number" && s.current_version > 0 ? s.current_version : 1;
+  return { id: s.id, name: s.name, tags, version };
 }
 
 /**

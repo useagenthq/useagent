@@ -45,10 +45,17 @@ describe("two-org isolation", () => {
     const delB = await json(`/api/skills/${skillId}`, { method: "DELETE", cookies: B.cookies });
     expect(delB.status).toBe(404);
 
-    // Positive control: A can still run it (untouched by B's attempts).
-    const runA = await json<any>(`/api/skills/${skillId}/run`, { method: "POST", cookies: A.cookies });
-    expect(runA.status).toBe(200);
-    expect(runA.body.usage_count).toBe(1);
+    // Positive control: A can still run it (untouched by B's attempts). The run
+    // endpoint now creates a REAL run (prompt required) and bumps usage.
+    const runA = await json<any>(`/api/skills/${skillId}/run`, {
+      method: "POST",
+      cookies: A.cookies,
+      body: { prompt: "run my own skill", engine: "mock" },
+    });
+    expect(runA.status).toBe(201);
+    expect(runA.body.id).toBeTruthy();
+    const listA2 = await json<{ skills: any[] }>("/api/skills", { cookies: A.cookies });
+    expect(listA2.body.skills.find((s) => s.id === skillId)?.usage_count).toBe(1);
   });
 
   test("knowledge: B cannot list, read, pin, or delete A's record", async () => {

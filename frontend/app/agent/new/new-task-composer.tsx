@@ -212,6 +212,12 @@ export function NewTaskComposer({ skills }: { skills: Skill[] }) {
     }
     return false;
   }
+  // Deep-link preselect: the Skills page "Run skill" button routes here with
+  // ?skill=<id>, so the picker opens with that playbook already chosen.
+  useEffect(() => {
+    const preskill = new URLSearchParams(window.location.search).get("skill");
+    if (preskill && skills.some((s) => s.id === preskill)) setPlaybook(preskill);
+  }, [skills]);
 
   const playbookGroups: PickerGroup[] = useMemo(() => {
     const options = skills.map((s) => ({
@@ -236,8 +242,10 @@ export function NewTaskComposer({ skills }: { skills: Skill[] }) {
     setSubmitting(true);
     setError(null);
 
-    const playbookName = skills.find((s) => s.id === playbook)?.name;
-    const composed = playbookName ? `${text} · playbook: ${playbookName}` : text;
+    // Skill/playbook selection is a REAL run contract now — send { id, version }
+    // so the backend pins the immutable revision and injects its SKILL.md as
+    // engine instructions. The user's prompt stays CLEAN (no name decoration).
+    const selectedSkill = skills.find((s) => s.id === playbook);
 
     try {
       const res = await backendFetch("/api/runs", {
@@ -246,11 +254,14 @@ export function NewTaskComposer({ skills }: { skills: Skill[] }) {
         // `model` only applies to opencode (any-model sandbox); other engines
         // manage their own model, so omit it for them.
         body: JSON.stringify({
-          prompt: composed,
+          prompt: text,
           engine,
           memory_scope: memoryScope,
           ...(engine === "opencode" ? { model } : {}),
           ...(selectedRepos.length ? { repos: selectedRepos } : {}),
+          ...(selectedSkill
+            ? { skill: { id: selectedSkill.id, version: selectedSkill.version } }
+            : {}),
         }),
       });
       if (!res.ok) throw new Error(String(res.status));

@@ -1,11 +1,12 @@
 "use client";
 
 import { RiFlashlightLine } from "@remixicon/react";
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { FeaturedSkill } from "./featured-skill";
 import { NewSkillModal } from "./new-skill-modal";
-import { fetchSkills, runSkill as runSkillApi } from "./skills-api";
+import { fetchSkills } from "./skills-api";
 import { pickFeatured, type Skill } from "./skills-data";
 import { SkillsLibrary } from "./skills-library";
 
@@ -22,8 +23,8 @@ export function SkillsView({
   initialSkills: Skill[];
   initialLive: boolean;
 }) {
+  const router = useRouter();
   const [skills, setSkills] = useState<Skill[]>(initialSkills);
-  const [live, setLive] = useState(initialLive);
   const [flashing, setFlashing] = useState<ReadonlySet<string>>(new Set());
   const timers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
 
@@ -31,7 +32,6 @@ export function SkillsView({
     try {
       const fresh = await fetchSkills();
       setSkills(fresh);
-      setLive(true);
     } catch {
       // backend still unreachable — keep current list
     }
@@ -68,27 +68,16 @@ export function SkillsView({
     );
   }, []);
 
+  // Running a skill means starting a task GOVERNED by it (a skill needs a prompt
+  // — mem_op 0.1). So open the New Task composer with this playbook preselected;
+  // the user provides the task there. The real usage bump + skill.loaded happen
+  // when that run is submitted, not on this click.
   const onRun = useCallback(
-    async (skill: Skill) => {
+    (skill: Skill) => {
       flash(skill.id);
-      // Optimistic usage bump.
-      setSkills((prev) =>
-        prev.map((s) =>
-          s.id === skill.id ? { ...s, usageCount: s.usageCount + 1 } : s,
-        ),
-      );
-      if (!live) return;
-      try {
-        const updated = await runSkillApi(skill.id);
-        setSkills((prev) => prev.map((s) => (s.id === skill.id ? updated : s)));
-      } catch {
-        // revert the optimistic bump on failure
-        setSkills((prev) =>
-          prev.map((s) => (s.id === skill.id ? { ...s, ...skill } : s)),
-        );
-      }
+      router.push(`/agent/new?skill=${encodeURIComponent(skill.id)}`);
     },
-    [flash, live],
+    [flash, router],
   );
 
   const featured = pickFeatured(skills);

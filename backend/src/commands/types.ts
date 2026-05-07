@@ -28,6 +28,12 @@ export interface RunCommandInput {
     /** Team-memory pool for the run — resolved at the boundary (explicit choice,
      *  parent inheritance, or the "org" default). Never taken from the sandbox. */
     readonly memoryScope: MemoryScope;
+    /** Pinned skill revision reference for this run, or null. Part of the run's
+     *  identity (the same prompt WITH a skill is a different turn). The content
+     *  hash is stored for provenance but derives from (skillId, version). */
+    readonly skillId: string | null;
+    readonly skillVersion: number | null;
+    readonly skillContentHash: string | null;
   };
 }
 

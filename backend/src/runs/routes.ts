@@ -12,6 +12,7 @@ import {
   listRunsWithSteps,
 } from "./repo";
 import { acceptRunCommand } from "../commands";
+import { resolveSkillSelection } from "../skills/repo";
 import { unknownRepos } from "../github/repos";
 import { bus, channel, pumpThread, type BusEvent } from "../worker";
 import { turnStream } from "./turn-stream";
@@ -38,6 +39,7 @@ runsRoutes.post("/", async (c) => {
     repo?: unknown;
     repos?: unknown;
     memory_scope?: unknown;
+    skill?: unknown;
   };
   try {
     body = await c.req.json();
@@ -138,6 +140,36 @@ runsRoutes.post("/", async (c) => {
     memoryScope = parentScope ?? "org";
   }
 
+  // Skill pinning: an optional `{ id, version? }` selects a versioned skill. It is
+  // resolved ORG-SCOPED and FAIL-CLOSED — an unknown skill, a cross-org id, or a
+  // bad version is a 400, never a silent no-skill run. The run stores an immutable
+  // (id + version + hash) reference so a later skill edit can't change what this
+  // run loaded; the worker materializes the pinned revision into the engine's
+  // context separately from the clean prompt and emits `skill.loaded`.
+  let skillId: string | null = null;
+  let skillVersion: number | null = null;
+  let skillContentHash: string | null = null;
+  if (body.skill !== undefined && body.skill !== null) {
+    const sel = body.skill as { id?: unknown; version?: unknown };
+    const rawId = typeof sel.id === "string" ? sel.id.trim() : "";
+    if (!rawId) {
+      return c.json({ error: "skill.id must be a skill id string" }, 400);
+    }
+    const version =
+      typeof sel.version === "number" &&
+      Number.isInteger(sel.version) &&
+      sel.version > 0
+        ? sel.version
+        : undefined;
+    const pinned = await resolveSkillSelection(c.get("orgId"), { id: rawId, version });
+    if (!pinned) {
+      return c.json({ error: "skill not found in this org (or unknown version)" }, 400);
+    }
+    skillId = pinned.skillId;
+    skillVersion = pinned.version;
+    skillContentHash = pinned.contentHash;
+  }
+
   // Accept the run as a durable command. An `Idempotency-Key` makes a lost-
   // response retry observe the ORIGINAL run instead of starting duplicate work;
   // the un-keyed path behaves exactly as before (new run every call). Empty /
@@ -147,7 +179,7 @@ runsRoutes.post("/", async (c) => {
     idempotencyKey,
     orgId: c.get("orgId"),
     actorId: c.get("userId"),
-    run: { id, prompt, model, engine, parentRunId, threadId, repos, memoryScope },
+    run: { id, prompt, model, engine, parentRunId, threadId, repos, memoryScope, skillId, skillVersion, skillContentHash },
   });
 
   // Translate the acceptance outcome to the HTTP response (exhaustive — a new

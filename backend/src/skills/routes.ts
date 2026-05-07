@@ -1,15 +1,22 @@
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { Hono } from "hono";
 import { db } from "../db/client";
-import { skills, type SkillSections } from "../db/schema";
+import { ENGINE_IDS, skills, type EngineId, type SkillSections } from "../db/schema";
 import type { AppEnv } from "../http";
 import { orgScope } from "../middleware/org";
+import { acceptRunCommand } from "../commands";
+import { pumpThread } from "../worker";
+import {
+  bumpSkillUsage,
+  createSkillWithRevision,
+  resolveSkillSelection,
+  updateSkillWithRevision,
+  type SkillRecord,
+} from "./repo";
 
 export const skillsRoutes = new Hono<AppEnv>();
 
 skillsRoutes.use("*", orgScope);
-
-type SkillRecord = typeof skills.$inferSelect;
 
 function toSkill(s: SkillRecord) {
   return {
@@ -19,6 +26,8 @@ function toSkill(s: SkillRecord) {
     description: s.description,
     tags: s.tags,
     sections: s.sections,
+    // The skill's current immutable revision — the version a new run pins.
+    current_version: s.currentVersion,
     usage_count: s.usageCount,
     last_run_at: s.lastRunAt ? s.lastRunAt.toISOString() : null,
     created_at: s.createdAt.toISOString(),
@@ -51,7 +60,7 @@ skillsRoutes.get("/", async (c) => {
   return c.json({ skills: rows.map(toSkill) });
 });
 
-// Create a skill.
+// Create a skill AND its version-1 revision (one transaction).
 skillsRoutes.post("/", async (c) => {
   let body: Record<string, unknown>;
   try {
@@ -63,21 +72,20 @@ skillsRoutes.post("/", async (c) => {
   const name = typeof body.name === "string" ? body.name.trim() : "";
   if (!name) return c.json({ error: "name is required" }, 400);
 
-  const [row] = await db
-    .insert(skills)
-    .values({
-      orgId: c.get("orgId"),
-      name,
-      description: typeof body.description === "string" ? body.description : "",
-      tags: coerceStringArray(body.tags),
-      sections: coerceSections(body.sections),
-    })
-    .returning();
-
-  return c.json(toSkill(row!), 201);
+  const row = await createSkillWithRevision({
+    orgId: c.get("orgId"),
+    name,
+    description: typeof body.description === "string" ? body.description : "",
+    tags: coerceStringArray(body.tags),
+    sections: coerceSections(body.sections),
+  });
+  if (!row) return c.json({ error: "a skill with that name already exists" }, 409);
+  return c.json(toSkill(row), 201);
 });
 
-// Update a skill (partial).
+// Update a skill (partial). A content change (name/description/sections) bumps
+// current_version and appends a new immutable revision — old runs, pinned to
+// their version, are never mutated. A tags-only edit doesn't mint a version.
 skillsRoutes.patch("/:id", async (c) => {
   const id = c.req.param("id");
   let body: Record<string, unknown>;
@@ -87,24 +95,24 @@ skillsRoutes.patch("/:id", async (c) => {
     return c.json({ error: "invalid JSON body" }, 400);
   }
 
-  const patch: Partial<typeof skills.$inferInsert> = { updatedAt: new Date() };
-  if (typeof body.name === "string" && body.name.trim())
-    patch.name = body.name.trim();
+  const patch: {
+    name?: string;
+    description?: string;
+    tags?: string[];
+    sections?: SkillSections;
+  } = {};
+  if (typeof body.name === "string" && body.name.trim()) patch.name = body.name.trim();
   if (typeof body.description === "string") patch.description = body.description;
   if (body.tags !== undefined) patch.tags = coerceStringArray(body.tags);
   if (body.sections !== undefined) patch.sections = coerceSections(body.sections);
 
-  const [row] = await db
-    .update(skills)
-    .set(patch)
-    .where(and(eq(skills.id, id), eq(skills.orgId, c.get("orgId"))))
-    .returning();
-
+  const row = await updateSkillWithRevision(c.get("orgId"), id, patch);
   if (!row) return c.json({ error: "skill not found" }, 404);
   return c.json(toSkill(row));
 });
 
-// Delete a skill.
+// Delete a skill (revisions cascade). A historical run keeps its own recorded
+// skill_id/version/hash for provenance even after the skill is gone.
 skillsRoutes.delete("/:id", async (c) => {
   const id = c.req.param("id");
   const [row] = await db
@@ -115,18 +123,75 @@ skillsRoutes.delete("/:id", async (c) => {
   return c.json({ deleted: true, id: row.id });
 });
 
-// Run a skill: bump usage_count + last_run_at, return the updated skill.
+// Run a skill: create a REAL run through the durable command lane with the skill
+// pinned to its current version (mem_op 0.1 — no more misleading metric-only
+// "run"). Requires a `prompt` (the task the skill governs); bumps usage on accept.
 skillsRoutes.post("/:id/run", async (c) => {
   const id = c.req.param("id");
-  const [row] = await db
-    .update(skills)
-    .set({
-      usageCount: sql`${skills.usageCount} + 1`,
-      lastRunAt: new Date(),
-      updatedAt: new Date(),
-    })
-    .where(and(eq(skills.id, id), eq(skills.orgId, c.get("orgId"))))
-    .returning();
-  if (!row) return c.json({ error: "skill not found" }, 404);
-  return c.json(toSkill(row));
+  let body: Record<string, unknown> = {};
+  try {
+    const text = await c.req.text();
+    if (text) body = JSON.parse(text) as Record<string, unknown>;
+  } catch {
+    return c.json({ error: "invalid JSON body" }, 400);
+  }
+
+  // Resolve + pin the skill's current version, org-scoped FIRST (fail closed →
+  // 404) so a cross-org id is indistinguishable from missing, before any other
+  // validation could leak its existence.
+  const pinned = await resolveSkillSelection(c.get("orgId"), { id });
+  if (!pinned) return c.json({ error: "skill not found" }, 404);
+
+  const prompt = typeof body.prompt === "string" ? body.prompt.trim() : "";
+  if (!prompt) {
+    return c.json(
+      { error: "prompt is required to run a skill (a skill governs a task)" },
+      400,
+    );
+  }
+
+  const model =
+    typeof body.model === "string" && body.model.trim()
+      ? body.model.trim()
+      : "claude-opus-5";
+  // Engine is optional; default to the scripted `mock`. An explicit unknown value
+  // is a client error, matching POST /api/runs.
+  let engine: EngineId = "mock";
+  if (body.engine !== undefined) {
+    if (
+      typeof body.engine !== "string" ||
+      !(ENGINE_IDS as readonly string[]).includes(body.engine)
+    ) {
+      return c.json({ error: `engine must be one of: ${ENGINE_IDS.join(", ")}` }, 400);
+    }
+    engine = body.engine as EngineId;
+  }
+
+  const runId = crypto.randomUUID();
+  const accepted = await acceptRunCommand({
+    idempotencyKey: c.req.header("Idempotency-Key")?.trim() || null,
+    orgId: c.get("orgId"),
+    actorId: c.get("userId"),
+    run: {
+      id: runId,
+      prompt,
+      model,
+      engine,
+      parentRunId: null,
+      threadId: runId,
+      // Skill runs are bare-workdir, organization-scoped fresh roots (like a
+      // scheduled firing) — the branch's multi-repo + memory-scope command shape.
+      repos: [],
+      memoryScope: "org",
+      skillId: pinned.skillId,
+      skillVersion: pinned.version,
+      skillContentHash: pinned.contentHash,
+    },
+  });
+  if (accepted.status === "conflict") {
+    return c.json({ error: "idempotency_key_reused", reason: accepted.reason }, 409);
+  }
+  if (accepted.status === "created") await pumpThread(accepted.runId);
+  await bumpSkillUsage(c.get("orgId"), id);
+  return c.json({ id: accepted.runId }, accepted.status === "created" ? 201 : 200);
 });
