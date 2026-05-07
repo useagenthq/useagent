@@ -271,10 +271,22 @@ async function runWorker(runId: string): Promise<void> {
     // The completed-turn capture is enqueued by runs/finalize.ts (transactionally,
     // from the run row's scope) — not here — so it survives a crash in the old
     // completeRun→enqueue gap and covers the mock + boot-reconcile paths too.
-    // The hard timeout aborts the SAME controller the user cancel does; the
-    // adapter's AbortSignal fires for either. `wasCancelled()` distinguishes them
-    // in runEngine's finalize path (cancel → "Stopped by user", else timed out).
-    const timer = setTimeout(() => ac.abort(), ADAPTER_TIMEOUT_MS);
+    // The timeout aborts the SAME controller the user cancel does; the adapter's
+    // AbortSignal fires for either. `wasCancelled()` distinguishes them in
+    // runEngine's finalize path (cancel → "Stopped by user", else timed out).
+    //
+    // SLIDING INACTIVITY window, not wall-clock: an absolute cap killed a
+    // healthy 45-tool demo-recording turn at 10min while events were streaming
+    // (user-observed via Slack) — "busy" is not "hung". Every published run
+    // event resets the timer; the abort fires only after ADAPTER_TIMEOUT_MS of
+    // SILENCE, or at the ADAPTER_MAX_MS absolute ceiling (runaway safety).
+    let timer = setTimeout(() => ac.abort(), ADAPTER_TIMEOUT_MS);
+    const ceiling = setTimeout(() => ac.abort(), ADAPTER_MAX_MS);
+    const onActivity = (): void => {
+      clearTimeout(timer);
+      timer = setTimeout(() => ac.abort(), ADAPTER_TIMEOUT_MS);
+    };
+    bus.on(channel(runId), onActivity);
     try {
       await runEngine(
         runId,
@@ -292,7 +304,9 @@ async function runWorker(runId: string): Promise<void> {
         wasCancelled,
       );
     } finally {
+      bus.off(channel(runId), onActivity);
       clearTimeout(timer);
+      clearTimeout(ceiling);
     }
   } finally {
     // Free the thread and dispatch its next turn — whatever the outcome.
@@ -360,12 +374,18 @@ async function runMock(
 
 export const RUNS_ROOT = join(import.meta.dir, "..", ".runs");
 
-// Hard cap on a single engine run. On expiry the adapter's AbortSignal fires,
-// killing its subprocess / SDK loop; the run is marked failed with a done step.
-// Overridable (test/ops) like the mock's WORKER_STEP_DELAY_MS knob.
+// INACTIVITY window on a single engine run: the abort fires only after this
+// much SILENCE on the run's event channel (every step/delta/native frame
+// resets it). Overridable (test/ops) like the mock's WORKER_STEP_DELAY_MS knob.
 const ADAPTER_TIMEOUT_MS = process.env.ENGINE_TIMEOUT_MS
   ? Number(process.env.ENGINE_TIMEOUT_MS)
-  : 600_000; // resident engines make long fanout turns legitimate
+  : 600_000; // 10min of silence = hung; long busy turns keep resetting this
+
+// Absolute ceiling regardless of activity — runaway protection only (an agent
+// looping forever WITH output would otherwise never time out).
+const ADAPTER_MAX_MS = process.env.ENGINE_MAX_MS
+  ? Number(process.env.ENGINE_MAX_MS)
+  : 4 * 60 * 60_000; // 4h
 
 async function runEngine(
   runId: string,
