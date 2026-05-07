@@ -11,6 +11,16 @@ import {
   setPinned,
   type KnowledgeRow,
 } from "./store";
+import {
+  addRevision,
+  archiveDocument,
+  createDocument,
+  getDocument,
+  listDocuments,
+  listRevisions,
+  publishDocument,
+  type DocStatus,
+} from "./wiki";
 import { seedIfEmpty } from "./seed";
 
 /**
@@ -122,6 +132,129 @@ knowledgeRoutes.post("/search", async (c) => {
   } catch (e) {
     console.error("[knowledge] search error:", (e as Error).message);
     return c.json({ error: "search failed" }, 500);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Wiki-over-Knowledge documents (mem_op.md 0.3). Session/org-scoped (orgScope),
+// for humans/editors. The Wiki page reads GET /documents?status=published; the
+// agent reaches published content through knowledge_search (via knowledge_records),
+// not these routes. Registered BEFORE /:id so the literal `documents` segment wins.
+// ---------------------------------------------------------------------------
+
+const DOC_STATUSES: DocStatus[] = ["draft", "published", "archived"];
+
+// GET /api/knowledge/documents?status=published|draft|archived|all — default
+// PUBLISHED (the Wiki view). Content is the published (or latest) revision.
+knowledgeRoutes.get("/documents", async (c) => {
+  const raw = c.req.query("status");
+  const status =
+    raw === "all" ? undefined : DOC_STATUSES.includes(raw as DocStatus) ? (raw as DocStatus) : "published";
+  try {
+    const documents = await listDocuments(c.get("orgId"), status);
+    return c.json({ documents });
+  } catch (e) {
+    console.error("[knowledge] documents list error:", (e as Error).message);
+    return c.json({ error: "list failed" }, 500);
+  }
+});
+
+// POST /api/knowledge/documents — create a DRAFT + first revision.
+knowledgeRoutes.post("/documents", async (c) => {
+  let body: { title?: unknown; content?: unknown; collection?: unknown; slug?: unknown; source?: unknown };
+  try {
+    body = (await c.req.json()) as typeof body;
+  } catch {
+    return c.json({ error: "invalid JSON body" }, 400);
+  }
+  const title = typeof body.title === "string" ? body.title.trim() : "";
+  const content = typeof body.content === "string" ? body.content : "";
+  if (!title) return c.json({ error: "`title` is required" }, 400);
+  if (!content.trim()) return c.json({ error: "`content` is required" }, 400);
+  try {
+    const document = await createDocument({
+      orgId: c.get("orgId"),
+      userId: c.get("userId"),
+      title,
+      content,
+      collection: typeof body.collection === "string" ? body.collection : undefined,
+      slug: typeof body.slug === "string" ? body.slug : null,
+      source: typeof body.source === "string" ? body.source : null,
+    });
+    return c.json({ document });
+  } catch (e) {
+    console.error("[knowledge] document create error:", (e as Error).message);
+    return c.json({ error: "create failed" }, 500);
+  }
+});
+
+// GET /api/knowledge/documents/:id — one document (+ its revisions).
+knowledgeRoutes.get("/documents/:id", async (c) => {
+  try {
+    const document = await getDocument(c.get("orgId"), c.req.param("id"));
+    if (!document) return c.json({ error: "document not found" }, 404);
+    const revisions = await listRevisions(c.get("orgId"), document.id);
+    return c.json({ document, revisions });
+  } catch (e) {
+    console.error("[knowledge] document get error:", (e as Error).message);
+    return c.json({ error: "get failed" }, 500);
+  }
+});
+
+// POST /api/knowledge/documents/:id/revisions — append an immutable revision.
+knowledgeRoutes.post("/documents/:id/revisions", async (c) => {
+  let body: { content?: unknown; source?: unknown };
+  try {
+    body = (await c.req.json()) as typeof body;
+  } catch {
+    return c.json({ error: "invalid JSON body" }, 400);
+  }
+  const content = typeof body.content === "string" ? body.content : "";
+  if (!content.trim()) return c.json({ error: "`content` is required" }, 400);
+  try {
+    const rev = await addRevision(c.get("orgId"), c.req.param("id"), {
+      content,
+      source: typeof body.source === "string" ? body.source : null,
+    });
+    if (!rev) return c.json({ error: "document not found" }, 404);
+    return c.json({ revisionId: rev.id });
+  } catch (e) {
+    console.error("[knowledge] add revision error:", (e as Error).message);
+    return c.json({ error: "revision failed" }, 500);
+  }
+});
+
+// POST /api/knowledge/documents/:id/publish — publish {revisionId?} → searchable.
+knowledgeRoutes.post("/documents/:id/publish", async (c) => {
+  let body: { revisionId?: unknown } = {};
+  try {
+    body = (await c.req.json().catch(() => ({}))) as typeof body;
+  } catch {
+    body = {};
+  }
+  try {
+    const document = await publishDocument(
+      c.get("orgId"),
+      c.req.param("id"),
+      typeof body.revisionId === "string" ? body.revisionId : undefined,
+    );
+    if (!document) return c.json({ error: "document or revision not found" }, 404);
+    return c.json({ document });
+  } catch (e) {
+    console.error("[knowledge] publish error:", (e as Error).message);
+    return c.json({ error: "publish failed" }, 500);
+  }
+});
+
+// POST /api/knowledge/documents/:id/archive — unpublish + drop from retrieval.
+knowledgeRoutes.post("/documents/:id/archive", async (c) => {
+  try {
+    const document = await archiveDocument(c.get("orgId"), c.req.param("id"));
+    if (!document) return c.json({ error: "document not found" }, 404);
+    return c.json({ document });
+  } catch (e) {
+    console.error("[knowledge] archive error:", (e as Error).message);
+    return c.json({ error: "archive failed" }, 500);
   }
 });
 
