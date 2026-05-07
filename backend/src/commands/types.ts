@@ -22,8 +22,13 @@ export interface RunCommandInput {
     readonly engine: EngineId;
     readonly parentRunId: string | null;
     readonly threadId: string;
-    /** GitHub repos to work in (each "owner/name"), validated against GET
-     *  /api/repos; empty = a bare workdir. Part of the run's identity. */
+    /** GitHub repos to work in, validated against GET /api/repos; empty = a bare
+     *  workdir. Each entry is "owner/name" for the default branch, OR
+     *  "owner/name:branch" when a branch was chosen - the optional ":branch"
+     *  suffix is how a per-repo branch rides through the string[] without a schema
+     *  change (see github/repo-ref.ts; ":" is invalid in both a repo ref and a git
+     *  ref name, so the split is unambiguous). Part of the run's identity, branch
+     *  included: a different branch is a different intent (see fingerprint.ts). */
     readonly repos: string[];
     /** Team-memory pool for the run — resolved at the boundary (explicit choice,
      *  parent inheritance, or the "org" default). Never taken from the sandbox. */

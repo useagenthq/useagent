@@ -13,6 +13,11 @@ export function runPayloadFingerprint(run: RunCommandInput["run"]): string {
     run.model,
     run.engine,
     run.parentRunId,
+    // Each repo entry is "owner/name" or "owner/name:branch" (see repo-ref.ts).
+    // Hashing the raw strings means a DIFFERENT branch on the same repo yields a
+    // DIFFERENT fingerprint - so an Idempotency-Key replay that changes the branch
+    // is (correctly) a payload mismatch, not a silent reuse of the other branch's
+    // run. This falls out of the encoding for free; the test asserts it stays true.
     run.repos,
     // A skill'd turn is a distinct intent from the same prompt without one; the
     // (id, version) reference is canonical (its content hash derives from it).

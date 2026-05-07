@@ -33,6 +33,20 @@ describe("runPayloadFingerprint", () => {
     expect(runPayloadFingerprint({ ...base, parentRunId: "run-x" })).not.toBe(fp);
   });
 
+  test("branch is intent: a different repo branch changes the fingerprint", () => {
+    // The chosen branch rides encoded on the repo string ("owner/name:branch"),
+    // so it participates in the fingerprint for free - a keyed replay that only
+    // changes the branch is a payload mismatch, NOT a silent reuse of the other
+    // branch's run.
+    const defaultBranch = runPayloadFingerprint({ ...base, repos: ["acme/api"] });
+    const develop = runPayloadFingerprint({ ...base, repos: ["acme/api:develop"] });
+    const feature = runPayloadFingerprint({ ...base, repos: ["acme/api:feat/x"] });
+    expect(develop).not.toBe(defaultBranch); // explicit branch != default
+    expect(develop).not.toBe(feature); // one branch != another
+    // Same repo + same branch is the same intent (deterministic replay).
+    expect(runPayloadFingerprint({ ...base, repos: ["acme/api:develop"] })).toBe(develop);
+  });
+
   test("memory scope is intent: org vs personal fingerprints differ (audit finding)", () => {
     const org = runPayloadFingerprint({ ...base, memoryScope: "org" });
     const personal = runPayloadFingerprint({ ...base, memoryScope: "personal" });
