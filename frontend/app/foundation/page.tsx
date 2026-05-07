@@ -86,7 +86,7 @@ export default function Home() {
         </div>
 
         {/* Buttons */}
-        <Section label='Button — variants & modes'>
+        <Section label='Button - variants & modes'>
           <div className='flex flex-wrap items-center gap-3'>
             <Button.Root variant='primary' mode='filled'>
               <Button.Icon as={RiSparkling2Line} />
@@ -109,7 +109,7 @@ export default function Home() {
         </Section>
 
         {/* Input */}
-        <Section label='Input — with leading icon'>
+        <Section label='Input - with leading icon'>
           <div className='max-w-sm'>
             <Input.Root>
               <Input.Wrapper>
@@ -121,7 +121,7 @@ export default function Home() {
         </Section>
 
         {/* Badges */}
-        <Section label='Badge — colors & variants'>
+        <Section label='Badge - colors & variants'>
           <div className='flex flex-wrap items-center gap-2'>
             <Badge.Root variant='filled' color='green'>
               Running
@@ -169,7 +169,7 @@ export default function Home() {
             </TabMenuHorizontal.List>
             <TabMenuHorizontal.Content value='overview' className='pt-4'>
               <p className='text-paragraph-sm text-text-sub-600'>
-                Overview panel — the active-tab indicator animates underneath.
+                Overview panel - the active-tab indicator animates underneath.
               </p>
             </TabMenuHorizontal.Content>
             <TabMenuHorizontal.Content value='runs' className='pt-4'>

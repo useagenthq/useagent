@@ -122,7 +122,7 @@ export function InteractiveTerminal({ runId }: { runId: string }) {
         };
         sock.onclose = () => {
           if (disposed) return;
-          term?.write("\r\n\x1b[2m[disconnected — reconnecting…]\x1b[0m\r\n");
+          term?.write("\r\n\x1b[2m[disconnected - reconnecting…]\x1b[0m\r\n");
           reconnectTimer = setTimeout(connect, reconnectDelay);
           reconnectDelay = Math.min(reconnectDelay * 2, 15000);
         };

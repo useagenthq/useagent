@@ -105,7 +105,7 @@ export function ComponentLab() {
         </div>
 
         {/* Buttons */}
-        <Section label='Button — variants, modes & sizes'>
+        <Section label='Button - variants, modes & sizes'>
           <div className='flex flex-wrap items-center gap-3'>
             <Button.Root variant='primary' mode='filled'>
               <Button.Icon as={RiSparkling2Line} />
@@ -131,7 +131,7 @@ export function ComponentLab() {
         </Section>
 
         {/* Badges */}
-        <Section label='Badge — colors & variants'>
+        <Section label='Badge - colors & variants'>
           <div className='flex flex-wrap items-center gap-2'>
             <Badge.Root variant='filled' color='green'>
               Running
@@ -153,7 +153,7 @@ export function ComponentLab() {
         </Section>
 
         {/* Status badges */}
-        <Section label='StatusBadge — run lifecycle'>
+        <Section label='StatusBadge - run lifecycle'>
           <div className='flex flex-wrap items-center gap-2'>
             <StatusBadge.Root variant='light' status='completed'>
               <StatusBadge.Dot />
@@ -175,7 +175,7 @@ export function ComponentLab() {
         </Section>
 
         {/* Input */}
-        <Section label='Input — leading icon & error state'>
+        <Section label='Input - leading icon & error state'>
           <div className='flex max-w-xl flex-col gap-3 sm:flex-row'>
             <Input.Root className='flex-1'>
               <Input.Wrapper>
@@ -192,7 +192,7 @@ export function ComponentLab() {
         </Section>
 
         {/* Select */}
-        <Section label='Select — model picker'>
+        <Section label='Select - model picker'>
           <div className='max-w-xs'>
             <Select.Root value={model} onValueChange={setModel}>
               <Select.Trigger>
@@ -243,7 +243,7 @@ export function ComponentLab() {
             </TabMenuHorizontal.List>
             <TabMenuHorizontal.Content value='overview' className='pt-4'>
               <p className='text-paragraph-sm text-text-sub-600'>
-                Overview panel — the active-tab indicator animates underneath.
+                Overview panel - the active-tab indicator animates underneath.
               </p>
             </TabMenuHorizontal.Content>
             <TabMenuHorizontal.Content value='runs' className='pt-4'>
@@ -266,7 +266,7 @@ export function ComponentLab() {
         </Section>
 
         {/* Table */}
-        <Section label='Table — recent runs'>
+        <Section label='Table - recent runs'>
           <Table.Root>
             <Table.Header>
               <Table.Row>
@@ -315,7 +315,7 @@ export function ComponentLab() {
               />
               <Modal.Body>
                 <p className='text-paragraph-sm text-text-sub-600'>
-                  This is a live AlignUI modal — Escape, the backdrop, and the
+                  This is a live AlignUI modal - Escape, the backdrop, and the
                   close button all dismiss it.
                 </p>
               </Modal.Body>
@@ -360,7 +360,7 @@ export function ComponentLab() {
         </Section>
 
         {/* Thinking orb */}
-        <Section label='Thinking orb — engine-driven agent loader'>
+        <Section label='Thinking orb - engine-driven agent loader'>
           <p className='text-paragraph-sm text-text-sub-600'>
             A canvas-rendered dotted thought-orb (vendored from chartden). Six
             states drive the “agent is thinking” moment; skynet-a uses the{' '}
@@ -390,7 +390,7 @@ export function ComponentLab() {
           <h2 className='text-title-h5 text-text-strong-950'>AI kit</h2>
           <p className='text-paragraph-md text-text-sub-600'>
             The <code>components/ai</code> primitives ported from beautiful-ui
-            onto AlignUI tokens — streaming, agent activity, approvals, and
+            onto AlignUI tokens - streaming, agent activity, approvals, and
             tables.
           </p>
         </div>
@@ -398,7 +398,7 @@ export function ComponentLab() {
         <Section label='AI kit · Streaming text'>
           <StreamingText
             key={streamKey}
-            text='Ported the AI component kit onto AlignUI tokens — streaming text, thinking disclosures, tool chips, approval cards and tables all read from the semantic scale, so they flip cleanly between light and the warm #20201f dark ladder.'
+            text='Ported the AI component kit onto AlignUI tokens - streaming text, thinking disclosures, tool chips, approval cards and tables all read from the semantic scale, so they flip cleanly between light and the warm #20201f dark ladder.'
             active
             sources={[
               { name: 'AGENTS.md', url: 'https://skynet-a.local/AGENTS.md' },
@@ -410,7 +410,7 @@ export function ComponentLab() {
         </Section>
 
         <Section label='AI kit · Thinking disclosure'>
-          <Thinking label='Working — analysing repository' active open>
+          <Thinking label='Working - analysing repository' active open>
             <p className='text-paragraph-sm text-text-sub-600'>
               Reading AGENTS.md and the tailwind token scale…
             </p>
@@ -455,7 +455,7 @@ export function ComponentLab() {
                 title: 'tailwind.config.ts',
                 meta: '512 chars',
                 icon: RiFileList2Line,
-                body: 'The AlignUI token scale bridged into Tailwind v4 — semantic bg / text / stroke families plus the state color ramps.',
+                body: 'The AlignUI token scale bridged into Tailwind v4 - semantic bg / text / stroke families plus the state color ramps.',
               },
               {
                 title: 'app/globals.css',
@@ -576,7 +576,7 @@ export function ComponentLab() {
           <RecordsTable
             rows={[
               {
-                company: 'Andes Snow Creamery — Quito',
+                company: 'Andes Snow Creamery - Quito',
                 categories: [
                   { label: 'Gelato', color: 'purple' },
                   { label: 'Catering', color: 'pink' },
@@ -585,7 +585,7 @@ export function ComponentLab() {
                 strength: { label: 'Very weak', tone: 'critical' },
               },
               {
-                company: 'Kumo Creamery — Osaka',
+                company: 'Kumo Creamery - Osaka',
                 categories: [
                   { label: 'Soft serve', color: 'sky' },
                   { label: 'Wholesale', color: 'teal' },
@@ -595,7 +595,7 @@ export function ComponentLab() {
                 links: [{ label: 'kumo.jp', href: 'https://example.com' }],
               },
               {
-                company: 'Aurora Scoops — Reykjavík',
+                company: 'Aurora Scoops - Reykjavík',
                 categories: [
                   { label: 'Gelato', color: 'purple' },
                   { label: 'Events', color: 'orange' },
@@ -606,7 +606,7 @@ export function ComponentLab() {
                 links: [{ label: 'aurora.is', href: 'https://example.com' }],
               },
               {
-                company: 'Maple Orbit — Montréal',
+                company: 'Maple Orbit - Montréal',
                 categories: [{ label: 'Sorbet', color: 'red' }],
                 lastInteraction: '6 months ago',
                 strength: { label: 'Medium', tone: 'neutral' },

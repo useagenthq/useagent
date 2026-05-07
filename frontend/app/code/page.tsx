@@ -7,7 +7,7 @@ import { FileTreeRail } from './file-tree-rail';
 import { TerminalStrip } from './terminal-strip';
 
 export const metadata: Metadata = {
-  title: 'Code — skynet-a',
+  title: 'Code - skynet-a',
   description: "The agent's live code workspace.",
 };
 

@@ -34,7 +34,7 @@ export function OrbBootIndicator({
     <OrbPill
       state={state}
       label={label}
-      ariaLabel={`${label} — ${engineLabel(engine)}`}
+      ariaLabel={`${label} - ${engineLabel(engine)}`}
     />
   );
 }

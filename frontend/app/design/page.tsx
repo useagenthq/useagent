@@ -5,8 +5,8 @@ import { ChatSidebar } from '@/components/shell/chat-sidebar';
 import { DesignGallery } from './design-gallery';
 
 export const metadata: Metadata = {
-  title: 'Design — skynet-a',
-  description: 'Your design canvas — frames Skynet is shaping with you.',
+  title: 'Design - skynet-a',
+  description: 'Your design canvas - frames Skynet is shaping with you.',
 };
 
 export default function DesignPage() {

@@ -71,12 +71,12 @@ export function RecentRunsTable({ runs }: { runs: DashRun[] }) {
                         color={run.engine && run.engine !== 'mock' ? 'purple' : 'gray'}
                         className='capitalize'
                       >
-                        {run.engine ?? '—'}
+                        {run.engine ?? '-'}
                       </Badge.Root>
                     </Table.Cell>
                     <Table.Cell>
                       <span className='whitespace-nowrap text-paragraph-sm text-text-sub-600'>
-                        {run.model ?? '—'}
+                        {run.model ?? '-'}
                       </span>
                     </Table.Cell>
                     <Table.Cell className='text-right'>

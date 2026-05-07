@@ -289,7 +289,7 @@ function TurnBlock({ turn }: { turn: Turn }) {
           <>
             {narrating ? null : live
               ? activity.length > 0 && (
-                  <Thinking label={`Working — ${latestLabel}`} active open>
+                  <Thinking label={`Working - ${latestLabel}`} active open>
                     {activity.map((step, i) => (
                       <ToolStepRow
                         key={step.id}

@@ -134,7 +134,7 @@ export default function SettingsPage() {
               <SettingsCard className="mb-4">
                 <SettingsRow label="Plan" description="Free while you get started.">
                   <Badge.Root variant="light" size="medium" color="gray">
-                    Starter — Free
+                    Starter - Free
                   </Badge.Root>
                 </SettingsRow>
               </SettingsCard>

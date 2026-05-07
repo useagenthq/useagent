@@ -29,7 +29,7 @@ const fontDisplay = Newsreader({
 });
 
 export const metadata: Metadata = {
-  title: 'skynet-a — Loop agent platform',
+  title: 'skynet-a - Loop agent platform',
   description: 'Internal agent platform for Loop, built on AlignUI + prompt-kit.',
 };
 
