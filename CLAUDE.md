@@ -45,3 +45,14 @@ protocol. Architecture source of truth: `~/Documents/skynet-saas/ARCHITECTURE.md
   furniture — wire it only when a genuine backend approval flow exists.
 - Keep the progress folders updated as work lands: `frontend/progress/YYYY-MM/YYYY-MM-DD.md`
   and `backend/progress/YYYY-MM/YYYY-MM-DD.md` (+ INDEX.md links) — small, factual entries.
+
+## Test + ops arsenal (2026-08-06 night program)
+- `cd backend && bun run e2e` (mock full-stack, ~fast) · `bun run e2e:real` (9-stage real
+  Daytona/opencode/memory suite, ~2min, self-cleaning) · `bun run soak` (storm marathon)
+  · ui sweep: `bun backend/test/e2e/ui-sweep/sweep.ts`.
+- Daytona hygiene: ALWAYS delete + API-verify sandboxes after tests;
+  orphan sweep: `bun backend/test/e2e/soak/lib/daytona.ts sweep-orphans`.
+- Drizzle migration trap: the boot migrator applies only entries with journal `when`
+  GREATER than the last applied — always stamp strictly above the journal tail
+  (hand-set future stamps have silently skipped later migrations twice).
+- The real dev DB is `skynet` (backend/.env), NOT `skynet_rebuild` (stale docs name).
