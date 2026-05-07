@@ -14,7 +14,7 @@ import type {
 import { composeTurnPrompt } from "./types";
 import { basename, parseJsonLine, truncate } from "./util";
 import { getThreadSandbox, setRunSandbox } from "../runs/repo";
-import { githubConfig } from "../env";
+import { resolveGithubToken } from "../github/auth";
 import { assertNever } from "../util/exhaustive";
 import { toolGatewayConfig } from "../knowledge/gateway/config";
 import { mintToolToken } from "../knowledge/gateway/token";
@@ -164,7 +164,10 @@ async function ensureRepoClone(
   );
   if ((check.result ?? "").includes("yes")) return;
 
-  const token = githubConfig().token;
+  // Resolve a credential per clone: a PAT, or a FRESHLY-valid GitHub App
+  // installation token (they expire ~1h, so we mint/reuse one here rather than
+  // carry a stale token). Absent → public clone.
+  const token = await resolveGithubToken();
   const url = `https://github.com/${repo}.git`;
   // Each repo owns a fresh subdir, so a direct `git clone <url> <dir>` works (no
   // temp+move dance). Clear any partial dir first so the clone starts clean.

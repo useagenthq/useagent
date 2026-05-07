@@ -1,11 +1,18 @@
-import { githubConfig, type GithubConfig } from "../env";
+import {
+  githubAppConfig,
+  githubAuthSource,
+  githubConfig,
+  githubConfigured,
+} from "../env";
+import { resolveGithubAuth, type GithubAuth } from "./auth";
 
 // ---------------------------------------------------------------------------
 // Real GitHub repository listing — the source for the New Task composer's repo
-// picker (replacing the old hardcoded mock). Backend-only: the token is read
-// here from env and NEVER sent to React; the API returns just the repo
-// identities. A short in-memory cache keeps the picker snappy without hammering
-// GitHub, and every failure degrades to an honest empty list rather than a 500.
+// picker (replacing the old hardcoded mock). Backend-only: the credential is
+// resolved here (PAT, GitHub App installation token, or anonymous) and NEVER
+// sent to React; the API returns just the repo identities. A short in-memory
+// cache keeps the picker snappy without hammering GitHub, and every failure
+// degrades to an honest empty list rather than a 500.
 // ---------------------------------------------------------------------------
 
 /** The minimal repo identity the picker + run validation need. */
@@ -17,9 +24,10 @@ export interface RepoInfo {
   default_branch: string;
 }
 
-/** What GET /api/repos returns. `configured:false` means no token AND no owner
- *  are set — the feature is dormant, not broken. `error` is set when configured
- *  but the fetch failed (still a 200 with an empty list — the UI stays usable). */
+/** What GET /api/repos returns. `configured:false` means no PAT, no GitHub App,
+ *  and no owner are set — the feature is dormant, not broken. `error` is set when
+ *  configured but the fetch failed (still a 200 with an empty list — the UI stays
+ *  usable). */
 export interface RepoListing {
   configured: boolean;
   repos: RepoInfo[];
@@ -41,12 +49,19 @@ const MAX_PAGES = 3; // ≤300 repos — bounded; the picker is searchable, not 
 const FETCH_TIMEOUT_MS = 8_000;
 const CACHE_TTL_MS = 5 * 60_000;
 
-/** Process-global cache. The token/owner are process env (one identity), so a
+/** Process-global cache. The credentials are process env (one identity), so a
  *  single entry keyed by the resolved scope is enough. */
 let cache: { key: string; at: number; listing: RepoListing } | null = null;
 
-function scopeKey(cfg: GithubConfig): string {
-  return `${cfg.owner ?? ""}|${cfg.token ? "auth" : "anon"}`;
+/** Cache key from sync config only — never mints a token. Owner + auth source
+ *  uniquely identify what a fetch returns; the App path's rotating installation
+ *  token doesn't change the scope, so it isn't part of the key. */
+function scopeKey(): string {
+  const source = githubAuthSource();
+  const owner =
+    githubConfig().owner ??
+    (source === "app" ? githubAppConfig()?.org ?? null : null);
+  return `${owner ?? ""}|${source}`;
 }
 
 function ghHeaders(token: string | null): Record<string, string> {
@@ -91,31 +106,61 @@ async function fetchAllPages(
 }
 
 /**
- * Resolve the org's repositories. Uncached probe:
+ * GET /installation/repositories — exactly the repos a GitHub App installation
+ * can access (private + public). Its payload is wrapped (`{repositories:[...]}`)
+ * rather than a bare array, so it needs its own pager.
+ */
+async function fetchInstallationRepos(
+  token: string,
+  signal: AbortSignal,
+): Promise<GhRepo[]> {
+  const out: GhRepo[] = [];
+  for (let page = 1; page <= MAX_PAGES; page++) {
+    const res = await fetch(
+      `${GITHUB_API}/installation/repositories?per_page=${PER_PAGE}&page=${page}`,
+      { headers: ghHeaders(token), signal },
+    );
+    if (!res.ok) throw new Error(`GitHub API ${res.status}`);
+    const body = (await res.json()) as { repositories?: GhRepo[] };
+    const batch = body.repositories ?? [];
+    if (batch.length === 0) break;
+    out.push(...batch);
+    if (batch.length < PER_PAGE) break; // last page
+  }
+  return out;
+}
+
+/**
+ * Resolve the org's repositories from the resolved auth. Uncached probe:
+ *  - App installation token → GET /installation/repositories (private + public
+ *    repos the App is installed on);
  *  - `owner` set → GET /orgs/{owner}/repos, falling back to /users/{owner}/repos
  *    (we don't know upfront whether the owner is an org or a user);
  *  - no owner but a token → GET /user/repos (the token user's own + org repos).
  * Sorted newest-activity first (GitHub's `sort=updated`), archived repos dropped.
  */
-async function fetchRepos(cfg: GithubConfig): Promise<RepoInfo[]> {
+async function fetchRepos(auth: GithubAuth): Promise<RepoInfo[]> {
   const ac = new AbortController();
   const timer = setTimeout(() => ac.abort(), FETCH_TIMEOUT_MS);
   try {
     let raw: GhRepo[];
-    if (cfg.owner) {
-      const orgUrl = `${GITHUB_API}/orgs/${encodeURIComponent(cfg.owner)}/repos?sort=updated&type=all`;
+    if (auth.source === "app") {
+      // The installation token already scopes the result to the org's repos.
+      raw = await fetchInstallationRepos(auth.token as string, ac.signal);
+    } else if (auth.owner) {
+      const orgUrl = `${GITHUB_API}/orgs/${encodeURIComponent(auth.owner)}/repos?sort=updated&type=all`;
       try {
-        raw = await fetchAllPages(orgUrl, cfg.token, ac.signal);
+        raw = await fetchAllPages(orgUrl, auth.token, ac.signal);
       } catch {
         // Not an org (404) or org path unavailable — treat the owner as a user.
-        const userUrl = `${GITHUB_API}/users/${encodeURIComponent(cfg.owner)}/repos?sort=updated&type=owner`;
-        raw = await fetchAllPages(userUrl, cfg.token, ac.signal);
+        const userUrl = `${GITHUB_API}/users/${encodeURIComponent(auth.owner)}/repos?sort=updated&type=owner`;
+        raw = await fetchAllPages(userUrl, auth.token, ac.signal);
       }
     } else {
       // Token only: the authenticated user's repos across their orgs.
       raw = await fetchAllPages(
         `${GITHUB_API}/user/repos?sort=updated&affiliation=owner,organization_member`,
-        cfg.token,
+        auth.token,
         ac.signal,
       );
     }
@@ -135,18 +180,17 @@ async function fetchRepos(cfg: GithubConfig): Promise<RepoInfo[]> {
  * rather than breaking the page.
  */
 export async function listRepos(): Promise<RepoListing> {
-  const cfg = githubConfig();
-  const configured = Boolean(cfg.token || cfg.owner);
-  if (!configured) return { configured: false, repos: [] };
+  if (!githubConfigured()) return { configured: false, repos: [] };
 
-  const key = scopeKey(cfg);
+  const key = scopeKey();
   const now = Date.now();
   if (cache && cache.key === key && now - cache.at < CACHE_TTL_MS) {
     return cache.listing;
   }
 
   try {
-    const repos = await fetchRepos(cfg);
+    const auth = await resolveGithubAuth();
+    const repos = await fetchRepos(auth);
     const listing: RepoListing = { configured: true, repos };
     cache = { key, at: now, listing };
     return listing;
