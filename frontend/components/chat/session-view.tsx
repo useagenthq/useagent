@@ -76,28 +76,50 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
   const rootId = thread[0].id;
   const stream = useRunStream(newest);
 
-  // Newest run's live stream overrides its thread snapshot; older runs are
-  // settled history.
-  const turns: Turn[] = thread.map((run) =>
-    run.id === newest.id
-      ? {
-          run,
-          steps: stream.steps,
-          status: stream.status,
-          summary: stream.summary,
-          live: stream.live,
-          liveText: stream.liveText,
-          native: stream.native,
-        }
-      : {
-          run,
-          steps: run.steps,
-          status: run.status,
-          summary: run.summary,
-          live: false,
-          liveText: "",
-        },
+  // Cache each run's RICHEST projection (stream overlay) so a turn never
+  // renders LESS than what was already on screen. Without this, a web reply
+  // mid-stream re-keyed the stream to the NEW run and the still-running old
+  // turn instantly lost its overlay - its DB steps had not been written yet,
+  // so it rendered a bare "Skynet" header until a later poll refilled it
+  // (user-reported flash; Slack replies dodged it only by timing).
+  const projectionCache = useRef(
+    new Map<string, { steps: Turn["steps"]; summary: string | null; native: Turn["native"] }>(),
   );
+  if (stream.steps.length > 0 || stream.summary) {
+    projectionCache.current.set(newest.id, {
+      steps: stream.steps,
+      summary: stream.summary,
+      native: stream.native,
+    });
+  }
+
+  // Newest run's live stream overrides its thread snapshot; older runs are
+  // settled history - served from the projection cache whenever it is richer
+  // than the (possibly lagging) DB snapshot.
+  const turns: Turn[] = thread.map((run) => {
+    if (run.id === newest.id) {
+      return {
+        run,
+        steps: stream.steps,
+        status: stream.status,
+        summary: stream.summary,
+        live: stream.live,
+        liveText: stream.liveText,
+        native: stream.native,
+      };
+    }
+    const cached = projectionCache.current.get(run.id);
+    const richer = cached !== undefined && cached.steps.length > run.steps.length;
+    return {
+      run,
+      steps: richer ? cached.steps : run.steps,
+      status: run.status,
+      summary: run.summary ?? cached?.summary ?? null,
+      live: false,
+      liveText: "",
+      native: richer ? cached.native : undefined,
+    };
+  });
   const allSteps = turns.flatMap((t) => t.steps);
   const live = stream.live;
   // Boot window: run accepted but nothing has streamed yet — the orb stands in
