@@ -174,7 +174,9 @@ async function recoverRunningRun(
         nextAttemptAt: reconcileBackoffAt(now, 0),
         deadline: new Date(now + RECONCILE_PARK_BUDGET_MS),
       });
-      if (newlyParked) recordReconcilingMarker(cmd.runId, cmd.threadId, new Date(now + RECONCILE_PARK_BUDGET_MS));
+      if (newlyParked) {
+        recordReconcilingMarker(cmd.runId, cmd.threadId, lastStepAt ?? new Date(now), now + RECONCILE_PARK_BUDGET_MS);
+      }
       return "parked";
     }
     default:
@@ -183,15 +185,17 @@ async function recoverRunningRun(
 }
 
 /** Emit the durable "reconciling after restart" marker on the native lane so the
- *  timeline can show the run is being re-probed. Fire-and-forget; never throws. */
-function recordReconcilingMarker(runId: string, threadId: string, deadline: Date): void {
+ *  timeline can show the run is being re-probed. Frozen frame contract (#63):
+ *  provider "skynet", eventType "run.reconciling", payload {reason, sinceMs,
+ *  deadlineMs}. Fire-and-forget; never throws. */
+function recordReconcilingMarker(runId: string, threadId: string, sinceAt: Date, deadlineMs: number): void {
   void recordProviderEvent({
     id: `reconciling_${runId}_${randomBytes(4).toString("hex")}`,
     runId,
     threadId,
     provider: "skynet",
     eventType: RUN_RECONCILING,
-    payload: { reason: "boot-restart", deadline: deadline.toISOString() },
+    payload: { reason: "boot-restart", sinceMs: sinceAt.getTime(), deadlineMs },
   }).catch(() => {});
 }
 
