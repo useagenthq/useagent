@@ -2,7 +2,8 @@
  * Shared test helpers. Everything runs IN-PROCESS against the Hono app's
  * `fetch` handler (imported from src/index) — no port is bound, no server is
  * spawned. The top-level `await seedDev()` in src/index runs once on import, so
- * the dev org + 7 skills are already seeded by the time any test executes.
+ * the dev org/user/member are present by the time any test executes. No demo
+ * skills or knowledge are seeded — those surfaces start empty.
  */
 import server from "../src/index";
 
