@@ -143,6 +143,11 @@ export interface ScopedRecall {
   readonly items: readonly ScopedMemoryItem[];
   readonly truncated: boolean;
   readonly latencyMs: number;
+  /** True when the provider was UNREACHABLE for every pool searched (down/timeout),
+   *  as opposed to reachable-but-empty. Lets a tool report "memory unavailable"
+   *  instead of a false 0-hit (new_mem_prompt.md 5.2). A disabled/empty recall is
+   *  NOT degraded. */
+  readonly degraded: boolean;
 }
 
 const EMPTY_SCOPED_RECALL: ScopedRecall = {
@@ -150,6 +155,7 @@ const EMPTY_SCOPED_RECALL: ScopedRecall = {
   items: [],
   truncated: false,
   latencyMs: 0,
+  degraded: false,
 };
 
 // Per-run pool resolution (org vs personal) lives in src/memory/scope.ts
@@ -157,16 +163,18 @@ const EMPTY_SCOPED_RECALL: ScopedRecall = {
 // module reads/writes. This module stays a pure Tencent-pool client.
 
 /**
- * POST an isolation-scoped body to a v3 endpoint and return `data`, or null on
- * any failure (timeout, network error, non-2xx, non-zero business code, bad
- * JSON). Never throws — memory is best-effort.
+ * POST an isolation-scoped body to a v3 endpoint. Returns `data` PLUS an
+ * `unreachable` flag that distinguishes the provider being DOWN (timeout, network
+ * error, 5xx) from a reached-but-empty/rejected response (2xx empty, 4xx, non-zero
+ * business code). The recall path uses `unreachable` to tell "memory unavailable"
+ * apart from "no results" (new_mem_prompt.md 5.2). Never throws — best-effort.
  */
-async function post<T>(
+async function postEx<T>(
   path: string,
   body: Record<string, unknown>,
   cfg: MemoryConfig,
   timeoutMs: number,
-): Promise<T | null> {
+): Promise<{ data: T | null; unreachable: boolean }> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
@@ -180,15 +188,28 @@ async function post<T>(
       body: JSON.stringify(body),
       signal: controller.signal,
     });
-    if (!res.ok) return null;
+    // 5xx / 0 = the service is down; 4xx = reached but rejected (auth/bad request).
+    if (!res.ok) return { data: null, unreachable: res.status === 0 || res.status >= 500 };
     const envelope = (await res.json()) as { code?: number; data?: T };
-    if (typeof envelope.code === "number" && envelope.code !== 0) return null;
-    return (envelope.data ?? null) as T | null;
+    if (typeof envelope.code === "number" && envelope.code !== 0) return { data: null, unreachable: false };
+    return { data: (envelope.data ?? null) as T | null, unreachable: false };
   } catch {
-    return null;
+    // fetch threw = timeout / DNS / connection refused → the service is unreachable.
+    return { data: null, unreachable: true };
   } finally {
     clearTimeout(timer);
   }
+}
+
+/** Thin wrapper: `data` or null, dropping the reachability signal. Most callers
+ *  (write, browse, update, delete) only need best-effort success/failure. */
+async function post<T>(
+  path: string,
+  body: Record<string, unknown>,
+  cfg: MemoryConfig,
+  timeoutMs: number,
+): Promise<T | null> {
+  return (await postEx<T>(path, body, cfg, timeoutMs)).data;
 }
 
 /** One L1 hit paired with the pool it was recalled from. */
@@ -303,7 +324,8 @@ export async function searchScopedMemory(
   // org recall stays byte-identical to the pre-scope block.
   const label = new Set(pools.map((p) => p.sourceScope)).size > 1;
   const { rendered, items, truncated } = renderMemoryBlock(perPool.flat(), label);
-  return { rendered, items, truncated, latencyMs: Date.now() - started };
+  // The legacy L1-only path does not track reachability; it is best-effort empty.
+  return { rendered, items, truncated, latencyMs: Date.now() - started, degraded: false };
 }
 
 /**
@@ -662,15 +684,25 @@ export async function recallScopedMemory(
   const cfg = memoryConfig();
   if (!cfg || !query.trim() || pools.length === 0) return EMPTY_SCOPED_RECALL;
   const started = Date.now();
+  const limit = opts.limit ?? DEFAULT_LIMIT;
+  const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const perPool = await Promise.all(
     pools.map(async (p) => {
-      const [l1, l0] = await Promise.all([
-        fetchAtomicHits(query, p.identity, opts),
-        searchExplicitL0(query, p.identity, opts),
+      const isoBody = {
+        team_id: p.identity.teamId,
+        agent_id: p.identity.agentId,
+        user_id: p.identity.userId,
+        query,
+        limit,
+      };
+      // postEx so we learn UNREACHABLE (down/timeout) vs reached-but-empty.
+      const [l1r, l0r] = await Promise.all([
+        postEx<AtomicSearchData>("/v3/atomic/search", isoBody, cfg, timeoutMs),
+        postEx<L0SearchData>("/v3/conversation/search", isoBody, cfg, timeoutMs),
       ]);
       const scoped: ScopedHit[] = [];
       // L0 FIRST so it wins the within/across-pool dedupe in renderMemoryBlock.
-      for (const m of l0) {
+      for (const m of l0r.data?.messages ?? []) {
         const env = parseEnvelope(m.content);
         if (env) {
           if (env.state !== "active") continue; // suppress superseded/tombstoned
@@ -686,13 +718,16 @@ export async function recallScopedMemory(
           });
         }
       }
-      for (const h of l1) {
+      for (const h of l1r.data?.items ?? []) {
         scoped.push({ sourceScope: p.sourceScope, hit: { ...h, layer: "l1" } });
       }
-      return scoped;
+      // A pool is unreachable only when BOTH its layer searches failed transport.
+      return { scoped, unreachable: l1r.unreachable && l0r.unreachable };
     }),
   );
+  // Degraded = the provider was unreachable for EVERY pool (not merely empty).
+  const degraded = perPool.length > 0 && perPool.every((p) => p.unreachable);
   const label = new Set(pools.map((p) => p.sourceScope)).size > 1;
-  const { rendered, items, truncated } = renderMemoryBlock(perPool.flat(), label);
-  return { rendered, items, truncated, latencyMs: Date.now() - started };
+  const { rendered, items, truncated } = renderMemoryBlock(perPool.flatMap((p) => p.scoped), label);
+  return { rendered, items, truncated, latencyMs: Date.now() - started, degraded };
 }

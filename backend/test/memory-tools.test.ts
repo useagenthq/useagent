@@ -188,6 +188,21 @@ describe("memory_search", () => {
     expect(items[0]?.ref).toContain("tencent:l0:");
     expect((await eventsFor(run.id, MEMORY_EVENTS.searched)).length).toBe(1);
   });
+
+  test("a provider OUTAGE reports unavailable, not a fake 0-hit (5.2)", async () => {
+    const mock = tencentMock();
+    mock.state.fail = true; // every call 502 -> unreachable
+    globalThis.fetch = mock.fetchImpl;
+    const run = await insertRun({ orgId: "org-11", userId: "u-1", scope: "org" });
+    const res = await executeMemoryTool(claimsFor(run, "org-11"), "memory_search", { query: "anything" });
+    expect(res.isError).toBe(true);
+    expect(res.structuredContent?.degraded).toBe(true);
+    // memory.failed op:search (drives the "unavailable" chip), NOT memory.searched.
+    const failed = await eventsFor(run.id, MEMORY_EVENTS.failed);
+    expect(failed.length).toBe(1);
+    expect(JSON.parse(failed[0].payload).op).toBe("search");
+    expect((await eventsFor(run.id, MEMORY_EVENTS.searched)).length).toBe(0);
+  });
 });
 
 describe("memory_correct / memory_forget", () => {

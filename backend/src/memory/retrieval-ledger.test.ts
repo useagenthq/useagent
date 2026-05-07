@@ -40,6 +40,7 @@ const recall: ScopedRecall = {
   ],
   truncated: false,
   latencyMs: 42,
+  degraded: false,
 };
 
 describe("buildRetrievalPayload", () => {

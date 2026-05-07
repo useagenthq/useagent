@@ -308,6 +308,15 @@ async function doSearch(claims: ToolTokenClaims, args: Record<string, unknown>):
   }
 
   const recall = await recallScopedMemory(query, plan.readPools, { limit });
+  // Outage honesty (section 5.2): a provider that was UNREACHABLE is not a 0-hit.
+  if (recall.degraded) {
+    recordMemoryEvent(run, MEMORY_EVENTS.failed, { op: "search", query, scope: plan.scope, reason: "unavailable" });
+    return textResult(
+      "Memory is temporarily unavailable (the provider could not be reached). This is NOT an empty result; try again shortly.",
+      { degraded: true, items: [] },
+      true,
+    );
+  }
   recordMemoryEvent(run, MEMORY_EVENTS.searched, {
     query,
     scope: plan.scope,
