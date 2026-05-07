@@ -21,9 +21,6 @@ import {
 import type { Skill } from "./skills-data";
 import { SearchablePicker, type PickerGroup } from "./searchable-picker";
 
-/** Mock repositories — no repo backend yet. */
-const REPOS = ["skynet-app", "skynet-web", "skynet-infra", "chartden"];
-
 // Real backend model ids (`value`, sent verbatim in the POST body) paired with a
 // friendly `label`. Only meaningful for the opencode engine — see the picker below.
 const MODELS: { value: string; label: string; tint: string }[] = [
@@ -54,17 +51,6 @@ const ENGINE_CAPTIONS: Partial<Record<EngineId, string>> = {
   claude: "cloud sandbox",
   codex: "cloud sandbox",
 };
-
-const repoGroups: PickerGroup[] = [
-  {
-    label: "Recents",
-    options: [REPOS[0], REPOS[3]].map((r) => ({ value: r, label: r, icon: RiFolderLine })),
-  },
-  {
-    label: "Repos",
-    options: REPOS.map((r) => ({ value: r, label: r, icon: RiFolderLine })),
-  },
-];
 
 const modelGroups: PickerGroup[] = [
   {
@@ -111,7 +97,8 @@ export function NewTaskComposer({ skills }: { skills: Skill[] }) {
   const router = useRouter();
 
   const [prompt, setPrompt] = useState("");
-  const [repo, setRepo] = useState(REPOS[0]);
+  const [repo, setRepo] = useState(""); // "" → No repo
+  const [repos, setRepos] = useState<{ full_name: string; name: string }[]>([]);
   const [playbook, setPlaybook] = useState(""); // "" → No playbook
   const [model, setModel] = useState(MODELS[0].value);
   const [machine, setMachine] = useState(MACHINES[0].value);
@@ -146,6 +133,33 @@ export function NewTaskComposer({ skills }: { skills: Skill[] }) {
         );
       } catch {
         // no catalog cached yet — the composer simply has no "/" popover
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Real repositories for the repo picker (GET /api/repos — the backend-held
+  // GitHub token stays server-side). Empty when unconfigured, so the picker
+  // simply offers "No repo".
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await backendFetch("/api/repos");
+        if (!res.ok) return;
+        const data = (await res.json()) as {
+          repos?: { full_name?: string; name?: string }[];
+        };
+        if (cancelled || !Array.isArray(data.repos)) return;
+        setRepos(
+          data.repos
+            .filter((r): r is { full_name: string; name?: string } => !!r.full_name)
+            .map((r) => ({ full_name: r.full_name, name: r.name ?? r.full_name })),
+        );
+      } catch {
+        // no repos configured — the picker just offers "No repo"
       }
     })();
     return () => {
@@ -209,6 +223,20 @@ export function NewTaskComposer({ skills }: { skills: Skill[] }) {
     return groups;
   }, [skills]);
 
+  // Repo picker groups: a "No repo" default first, then the real repos. Value is
+  // the full "owner/name" (what the backend validates + persists); the label is
+  // the bare repo name for readability.
+  const repoGroups: PickerGroup[] = useMemo(() => {
+    const groups: PickerGroup[] = [{ options: [{ value: "", label: "No repo" }] }];
+    if (repos.length > 0) {
+      groups.push({
+        label: "Repos",
+        options: repos.map((r) => ({ value: r.full_name, label: r.name, icon: RiFolderLine })),
+      });
+    }
+    return groups;
+  }, [repos]);
+
   const canSubmit = prompt.trim().length > 0 && !submitting;
 
   async function submit() {
@@ -230,6 +258,7 @@ export function NewTaskComposer({ skills }: { skills: Skill[] }) {
           prompt: composed,
           engine,
           ...(engine === "opencode" ? { model } : {}),
+          ...(repo ? { repo } : {}),
         }),
       });
       if (!res.ok) throw new Error(String(res.status));
