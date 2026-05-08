@@ -2,6 +2,7 @@ import { Daytona, type Sandbox } from "@daytona/sdk";
 import type { EmitStep, EngineAdapter, EngineRunContext } from "./types";
 import { composeTurnPrompt } from "./types";
 import { basename, parseJsonLine, truncate } from "./util";
+import { acpAutoApprove } from "../env";
 import { toolGatewayConfig } from "../knowledge/gateway/config";
 import { mintToolToken } from "../knowledge/gateway/token";
 import { composeSecretEnv, materializeSecretFiles } from "../secrets/inject";
@@ -426,19 +427,26 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
                 }
                 continue;
               }
-              // Server → client REQUEST (permissions): always approve — engines
-              // run yolo-only in the isolated sandbox, same policy as the CLIs.
+              // Server → client REQUEST (permissions): fail CLOSED (deny) unless the
+              // dev-only ACP_YOLO_APPROVE opt-in is set. See the handler below.
               if (typeof msg.id === "number" && msg.method === "session/request_permission") {
                 const params = (msg.params ?? {}) as { options?: { optionId?: string; kind?: string }[] };
                 const opts = params.options ?? [];
-                const allow =
-                  opts.find((o) => o.kind === "allow_always") ??
-                  opts.find((o) => o.kind === "allow_once") ??
-                  opts[0];
+                // SECURITY (final_harness.md P0): fail CLOSED. Deny the permission
+                // by default; auto-approval is a dev-only opt-in (ACP_YOLO_APPROVE).
+                // A real approval policy belongs in the trusted backend (Phase 3);
+                // never yolo-approve tool permissions in a team/SaaS deployment.
+                const allow = acpAutoApprove()
+                  ? (opts.find((o) => o.kind === "allow_always") ??
+                     opts.find((o) => o.kind === "allow_once") ??
+                     opts[0])
+                  : undefined;
                 void post({
                   jsonrpc: "2.0",
                   id: msg.id,
-                  result: { outcome: { outcome: "selected", optionId: allow?.optionId ?? "allow" } },
+                  result: allow
+                    ? { outcome: { outcome: "selected", optionId: allow.optionId ?? "allow" } }
+                    : { outcome: { outcome: "cancelled" } },
                 }).catch(() => {});
                 continue;
               }
