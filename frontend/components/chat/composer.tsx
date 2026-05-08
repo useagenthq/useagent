@@ -3,6 +3,7 @@
 import { useRef, useState } from "react";
 import {
   RiAddLine,
+  RiArrowDownSLine,
   RiArrowUpLine,
   RiStopFill,
   RiErrorWarningLine,
@@ -27,6 +28,7 @@ import {
   SlashCommandPopover,
   type SlashCommand,
 } from "@/components/chat/slash-command";
+import { ChatModelMenu, type ChatModelOption } from "@/components/chat/chat-model-menu";
 import type { EngineId, MemoryScope } from "@/components/chat/types";
 
 type Variant = "hero" | "compact";
@@ -61,11 +63,20 @@ export type ComposerProps = {
    *  surface talks to ONE backend-configured model, so it hides this rather than
    *  present a control that changes nothing. */
   enableModelPicker?: boolean;
-  /** Surface treatment (default "default" = the themed card that flips with the
-   *  app theme). "white" renders a clean WHITE rounded pill with a dark circular
-   *  send button, staying light even in dark mode (a "light island" via the
-   *  `.theme-light` scope) - used by the lightweight Chat page. */
+  /** Surface treatment. Both flip with the app theme (never a white island). "white"
+   *  is the lightweight Chat-page variant: a softer rounded-3xl pill; the card still
+   *  uses bg-bg-white-0, so it's a clean white pill in light mode and a native dark
+   *  pill in dark mode. "default" is the standard card used everywhere else. */
   surface?: "default" | "white";
+  /** Real MODEL picker for the lightweight Chat surface. When provided, a labeled
+   *  trigger opens the "Choose model" card (the honest replacement for the
+   *  placeholder agent picker) and `modelMenu.value` is the model submitted -
+   *  supersedes the internal model state + the "/" agent command. */
+  modelMenu?: {
+    options: ChatModelOption[];
+    value: string;
+    onChange: (value: string) => void;
+  };
   /** Starting model for the picker (thread's current model on replies). */
   defaultModel?: string;
   /** Starting memory scope (a reply inherits the thread's current scope). */
@@ -104,6 +115,7 @@ export function Composer({
   enableAgentCommand,
   enableModelPicker = true,
   surface = "default",
+  modelMenu,
   defaultModel = "claude-opus-5",
   defaultMemoryScope = "org",
   commands,
@@ -121,6 +133,7 @@ export function Composer({
   const [memoryScope, setMemoryScope] = useState<MemoryScope>(defaultMemoryScope);
   const [command, setCommand] = useState<Agent | null>(null);
   const [toolsOpen, setToolsOpen] = useState(false);
+  const [modelMenuOpen, setModelMenuOpen] = useState(false);
   const [cmdHighlight, setCmdHighlight] = useState(0);
   const [cmdDismissed, setCmdDismissed] = useState(false);
   // Prompt-submission transaction: `submitting` guards the in-flight await (no
@@ -133,16 +146,17 @@ export function Composer({
   const engine = engineProp ?? engineState;
   const hero = variant === "hero";
   const white = surface === "white";
+  // The real chat model picker (honest options) supersedes the placeholder agent
+  // picker on this composer when supplied.
+  const activeModelOption = modelMenu?.options.find((o) => o.value === modelMenu.value);
   const allowAgent = enableAgentCommand ?? hero;
   const slashActive = allowAgent && !command && value.trimStart().startsWith("/");
   const showAgentPopover = slashActive || toolsOpen;
   const busy = pending || submitting;
   const canSend = value.trim().length > 0 && !busy;
-  // The active send button tone: a dark circular button on the white surface
-  // (reference), the blue circular button otherwise.
-  const sendToneClass = white
-    ? "bg-static-black text-static-white hover:bg-static-black/90"
-    : "bg-blue-500 text-white hover:bg-blue-600";
+  // Circular blue send button - reads correctly on BOTH the dark (#20201f) and the
+  // light composer surface, so it theme-follows instead of forcing a static color.
+  const sendToneClass = "bg-blue-500 text-white hover:bg-blue-600";
 
   // Slash-command autocomplete: live while the FIRST token is being typed
   // ("/rev" but not "/review changes"). A trailing space ends completion.
@@ -189,7 +203,8 @@ export function Composer({
     setFailed(false);
     setValue(""); // optimistic clear — the pending bubble shows the text meanwhile
     try {
-      await onSubmit(text, engine, model, key, memoryScope);
+      // The chat model picker (when present) owns the model; else the internal state.
+      await onSubmit(text, engine, modelMenu?.value ?? model, key, memoryScope);
       retry.current = null; // accepted — drop the retry key
     } catch {
       // Never silently swallow: restore the draft and show an explicit failed
@@ -209,14 +224,37 @@ export function Composer({
   }
 
   return (
-    // `theme-light` forces the composer subtree to the light token set (even under
-    // .dark), so the "white" surface reads as a clean white pill with dark text and
-    // its child controls (memory-scope picker, placeholder) stay readable.
-    <div className={cn("relative w-full", white && "theme-light", className)}>
+    // The composer THEME-FOLLOWS: its card uses bg-bg-white-0 (white in light mode,
+    // #20201f in dark) so it reads as the reference's clean white pill in light and
+    // a native dark pill in dark - never a white island clashing with the dark page.
+    <div className={cn("relative w-full", className)}>
       {showAgentPopover && (
         <div className="absolute bottom-full left-0 z-30 mb-2 w-full">
           <ChooseAgentPopover query={slashActive ? value : ""} onSelect={pickAgent} />
         </div>
+      )}
+
+      {modelMenu && modelMenuOpen && (
+        <>
+          {/* Backdrop so a click anywhere closes the menu. */}
+          <button
+            type="button"
+            aria-hidden
+            tabIndex={-1}
+            className="fixed inset-0 z-20 cursor-default"
+            onClick={() => setModelMenuOpen(false)}
+          />
+          <div className="absolute bottom-full left-0 z-30 mb-2 w-full">
+            <ChatModelMenu
+              options={modelMenu.options}
+              value={modelMenu.value}
+              onSelect={(v) => {
+                modelMenu.onChange(v);
+                setModelMenuOpen(false);
+              }}
+            />
+          </div>
+        </>
       )}
 
       {cmdActive && (
@@ -296,7 +334,7 @@ export function Composer({
               <RiAddLine className="size-5" aria-hidden />
             </button>
 
-            {hero && (
+            {hero && !modelMenu && (
               <button
                 type="button"
                 aria-label="Tools & agents"
@@ -310,6 +348,36 @@ export function Composer({
                 )}
               >
                 <RiToolsLine className="size-[18px]" aria-hidden />
+              </button>
+            )}
+
+            {/* Real chat MODEL picker trigger (honest replacement for the
+                placeholder agent picker). Opens the "Choose model" card above. */}
+            {modelMenu && (
+              <button
+                type="button"
+                aria-haspopup="menu"
+                aria-expanded={modelMenuOpen}
+                aria-label={`Model: ${activeModelOption?.label ?? modelMenu.value}`}
+                onClick={() => setModelMenuOpen((o) => !o)}
+                className={cn(
+                  "flex h-9 items-center gap-1.5 rounded-xl border px-2.5 text-label-sm transition-colors",
+                  modelMenuOpen
+                    ? "border-stroke-soft-200 bg-bg-weak-50 text-text-strong-950"
+                    : "border-stroke-soft-200 text-text-sub-600 hover:bg-bg-weak-50",
+                )}
+              >
+                {activeModelOption && (
+                  <span
+                    className="size-2 shrink-0 rounded-full"
+                    style={{ backgroundColor: activeModelOption.color }}
+                    aria-hidden
+                  />
+                )}
+                <span className="max-w-[10rem] truncate">
+                  {activeModelOption?.label ?? "Model"}
+                </span>
+                <RiArrowDownSLine className="size-4 shrink-0" aria-hidden />
               </button>
             )}
 
