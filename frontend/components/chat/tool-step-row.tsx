@@ -169,7 +169,11 @@ function markerView(marker: TimelineMarker): {
 export const MarkerRow = memo(function MarkerRow({ marker }: { marker: TimelineMarker }) {
   const { Icon, verb, target, badge, error } = markerView(marker);
   return (
-    <div className="animate-ai-fade-up flex items-center gap-2 px-1.5 py-1">
+    <div
+      data-testid="marker-row"
+      data-marker-kind={marker.kind}
+      className="animate-ai-fade-up flex items-center gap-2 px-1.5 py-1"
+    >
       <span
         className={cn(
           "flex size-5 shrink-0 items-center justify-center rounded-md",
@@ -344,6 +348,8 @@ function TraceRow({ trace, state }: { trace: StepTrace; state: RowState }) {
 
   return (
     <div
+      data-testid="tool-row"
+      data-glyph={trace.glyph}
       className={cn(
         "animate-ai-fade-up",
         trace.nested && "border-stroke-soft-200 ml-2 border-l pl-3",
@@ -399,6 +405,7 @@ function TodoList({ todos, nested }: { todos: TodoItem[]; nested?: boolean }) {
   const done = todos.filter((t) => t.status === "completed").length;
   return (
     <div
+      data-testid="todo-list"
       className={cn(
         "animate-ai-fade-up",
         nested && "border-stroke-soft-200 ml-2 border-l pl-3",

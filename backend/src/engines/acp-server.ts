@@ -72,7 +72,7 @@ createServer((req, res) => {
 }).listen(PORT, "0.0.0.0");
 `;
 
-interface AcpEngineConfig {
+export interface AcpEngineConfig {
   id: "claude" | "codex";
   port: number;
   /** npm packages installed once per sandbox (user prefix); `bin` is the
@@ -84,6 +84,20 @@ interface AcpEngineConfig {
   agentEnv?: Record<string, string>;
   /** Idempotent per-turn sandbox prep (codex auth seeding). */
   prepare?(sandbox: Sandbox): Promise<void>;
+}
+
+/** Build the per-sandbox package install clause. Idempotency MUST key on the ACTUAL
+ *  install path (~/.local/bin/<bin>), NOT `command -v <bin>` - a <bin> that resolves
+ *  elsewhere on PATH (the base image ships `claude`) would skip the install, and the
+ *  exact path CLAUDE_CODE_EXECUTABLE points at (~/.local/bin/claude) would never get
+ *  created (#127). Exported so the regression test can assert this without a sandbox. */
+export function buildAcpInstallClause(packages: { pkg: string; bin: string }[]): string {
+  return packages
+    .map(
+      ({ pkg, bin }) =>
+        `[ -x "$HOME/.local/bin/${bin}" ] || npm install -g --prefix $HOME/.local --silent "${pkg}" >/dev/null 2>&1; `,
+    )
+    .join("");
 }
 
 interface ThreadRelay {
@@ -285,17 +299,8 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
           .join("");
         const boot = await box.process.executeCommand(
           `export PATH=$HOME/.local/bin:$PATH; mkdir -p ~/work; ` +
-            // Install the agent package(s) once per sandbox.
-            cfg.packages
-              .map(
-                // Idempotency keyed on the ACTUAL install path (~/.local/bin/<bin>),
-                // not `command -v` - else a <bin> resolving elsewhere on PATH skips
-                // the install and the exact path CLAUDE_CODE_EXECUTABLE points at
-                // (~/.local/bin/claude) never gets created (#127).
-                ({ pkg, bin }) =>
-                  `[ -x "$HOME/.local/bin/${bin}" ] || npm install -g --prefix $HOME/.local --silent "${pkg}" >/dev/null 2>&1; `,
-              )
-              .join("") +
+            // Install the agent package(s) once per sandbox (path-keyed idempotency).
+            buildAcpInstallClause(cfg.packages) +
             // Stage the relay + start it if not already answering.
             `printf '%s' '${relayB64}' | base64 -d > ~/acp-relay.mjs; ` +
             `if [ "$(${probeCmd})" = "000" ]; then ` +
@@ -535,7 +540,7 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
 
 // ── engine configs ──────────────────────────────────────────────────────────
 
-export const acpClaudeAdapter = makeAcpAdapter({
+export const claudeAcpConfig: AcpEngineConfig = {
   id: "claude",
   port: 4097,
   // claude-agent-acp embeds the Agent SDK; CLAUDE_CODE_EXECUTABLE points it at
@@ -547,9 +552,11 @@ export const acpClaudeAdapter = makeAcpAdapter({
   ],
   agentCmd: ["claude-agent-acp"],
   agentEnv: { CLAUDE_CODE_EXECUTABLE: "$HOME/.local/bin/claude" },
-});
+};
 
-export const acpCodexAdapter = makeAcpAdapter({
+export const acpClaudeAdapter = makeAcpAdapter(claudeAcpConfig);
+
+export const codexAcpConfig: AcpEngineConfig = {
   id: "codex",
   port: 4098,
   packages: [{ pkg: CODEX_ACP_PKG, bin: "codex-acp" }],
@@ -559,4 +566,6 @@ export const acpCodexAdapter = makeAcpAdapter({
   // (OPENAI_API_KEY) - we never copy the host operator's ~/.codex/auth.json (a
   // developer's ChatGPT login) into an untrusted customer sandbox. Fail-closed: an
   // enabled codex run without an injected credential fails on codex's own auth error.
-});
+};
+
+export const acpCodexAdapter = makeAcpAdapter(codexAcpConfig);

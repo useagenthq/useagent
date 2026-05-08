@@ -79,6 +79,77 @@ describe("OpenCode timeline golden (heavy sanitized fixture, both lanes)", () =>
   });
 });
 
+// Provably-clean guard (DB-free, runs every CI): assert the COMMITTED fixtures
+// contain only controlled-vocabulary string values - synthetic ids, placeholders,
+// the fixed timestamp, the task-marker shape, or a token that also appears in a
+// structural field (provider/eventType/type/tool/status/kind). Any string in a
+// content position that is NOT one of those is a leak. This locks in the extractor's
+// "zero customer data" claim so a future regeneration can't silently reintroduce
+// free-text (message text, tool output, paths, prompt) into the golden fixture.
+describe("committed fixtures are provably structural-only (zero customer data)", () => {
+  const SYNTH = /^(evt|ses|msg|prt|call|step)_\d+$/;
+  const TASK_MARKER = /^<task id="ses_\d+"><task_result>REDACTED<\/task_result><\/task>$/;
+  const PLACEHOLDER = new Set(["", "REDACTED", "REDACTED_TEXT", "run_fixture", "2026-01-01T00:00:00.000Z"]);
+
+  // Collect the controlled structural vocabulary from the fixtures' own structural
+  // fields - these positions only ever hold opencode's fixed tokens, never content.
+  function collectStructural(): Set<string> {
+    const s = new Set<string>();
+    const addFields = (o: Record<string, unknown>) => {
+      for (const k of ["provider", "eventType", "type", "tool", "kind"]) {
+        if (typeof o[k] === "string") s.add(o[k] as string);
+      }
+      const state = o.state as Record<string, unknown> | undefined;
+      if (state && typeof state.status === "string") s.add(state.status);
+    };
+    for (const f of frames as Record<string, unknown>[]) {
+      addFields(f);
+      if (f.payload && typeof f.payload === "object") addFields(f.payload as Record<string, unknown>);
+    }
+    for (const st of steps as unknown as Record<string, unknown>[]) {
+      addFields(st);
+      if (typeof st.code_json === "string" && st.code_json) {
+        try {
+          const c = JSON.parse(st.code_json) as Record<string, unknown>;
+          addFields(c);
+        } catch {}
+      }
+    }
+    return s;
+  }
+
+  // Every string VALUE across both fixtures (recursing into stringified code_json).
+  function collectValues(): string[] {
+    const out: string[] = [];
+    const walk = (v: unknown, insideCode = false) => {
+      if (typeof v === "string") {
+        // code_json is a stringified object: parse + recurse instead of treating
+        // the whole JSON blob as one value.
+        if (!insideCode && v.trim().startsWith("{")) {
+          try {
+            walk(JSON.parse(v), true);
+            return;
+          } catch {}
+        }
+        out.push(v);
+      } else if (Array.isArray(v)) for (const x of v) walk(x, insideCode);
+      else if (v && typeof v === "object") for (const x of Object.values(v)) walk(x, insideCode);
+    };
+    for (const f of frames) walk(f);
+    for (const st of steps) walk(st);
+    return out;
+  }
+
+  test("no free-text customer content survives in any fixture value", () => {
+    const structural = collectStructural();
+    const offenders = collectValues().filter(
+      (v) => !(PLACEHOLDER.has(v) || SYNTH.test(v) || TASK_MARKER.test(v) || structural.has(v)),
+    );
+    if (offenders.length) console.log("[golden] leak offenders:", offenders.slice(0, 10));
+    expect(offenders).toEqual([]);
+  });
+});
+
 // The heavy run had no subagents, so cover child derivation with synthetic task
 // frames (the branch buildTimeline/agents-rail depend on).
 const taskFrame = (over: Partial<NativeFrame> & { payload?: unknown }): unknown => ({
