@@ -51,3 +51,23 @@ describe("POST /api/chat", () => {
     expect(malformed.status).toBe(400);
   });
 });
+
+describe("GET /api/chat/models", () => {
+  test("returns the served catalog + default (no key required)", async () => {
+    const { status, body } = await json<{
+      models: { value: string; label: string; description: string }[];
+      default: string;
+    }>("/api/chat/models");
+    expect(status).toBe(200);
+    expect(Array.isArray(body.models)).toBe(true);
+    expect(body.models.length).toBeGreaterThan(0);
+    // Every option is a real, complete row (honest: no empty flavor text).
+    for (const m of body.models) {
+      expect(typeof m.value).toBe("string");
+      expect(m.label.length).toBeGreaterThan(0);
+      expect(m.description.length).toBeGreaterThan(0);
+    }
+    // The default is one of the offered options.
+    expect(body.models.some((m) => m.value === body.default)).toBe(true);
+  });
+});

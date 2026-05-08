@@ -13,7 +13,12 @@ import { AsteriskMark } from "@/components/foundations/brand/asterisk-mark";
 import { Composer } from "@/components/chat/composer";
 import { Loader } from "@/components/prompt-kit/loader";
 import { Message, MessageContent } from "@/components/prompt-kit/message";
+import type { ChatModelOption } from "@/components/chat/chat-model-menu";
 import type { MemoryScope } from "@/components/chat/types";
+
+/** Row tints for the model picker (decorative, cycled by position) - matches the
+ *  colored-glyph look of the reference dropdown. */
+const MODEL_TINTS = ["#F97316", "#22A7F0", "#7C3AED", "#EC4899", "#16A34A"];
 
 /** One retrieved source, mirrored from the backend `chat/retrieve.ts` contract. */
 type Citation = {
@@ -46,6 +51,41 @@ export function ChatView() {
   const [messages, setMessages] = useState<ChatMsg[]>([]);
   const [streaming, setStreaming] = useState(false);
   const [promoting, setPromoting] = useState(false);
+
+  // Real chat models (GET /api/chat/models) + the selected value. Fetched once;
+  // `model` seeds from the catalog default. A ref feeds `send` without stale
+  // closures. Empty until loaded -> the POST omits `model` and the backend uses
+  // its configured default.
+  const [models, setModels] = useState<ChatModelOption[]>([]);
+  const [model, setModel] = useState("");
+  const modelRef = useRef("");
+  useEffect(() => {
+    modelRef.current = model;
+  }, [model]);
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await backendFetch("/api/chat/models");
+        if (!res.ok) return;
+        const data = (await res.json()) as {
+          models?: { value: string; label: string; description: string }[];
+          default?: string;
+        };
+        if (cancelled || !Array.isArray(data.models)) return;
+        setModels(
+          data.models.map((m, i) => ({ ...m, color: MODEL_TINTS[i % MODEL_TINTS.length] })),
+        );
+        const fallback = data.models[0]?.value ?? "";
+        setModel(data.default && data.models.some((m) => m.value === data.default) ? data.default : fallback);
+      } catch {
+        // No picker; the composer omits `model` and the backend default is used.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // Mirror of `messages` for reading prior history / the promote transcript without
   // stale closures (the composer callbacks are created once).
@@ -211,6 +251,8 @@ export function ChatView() {
           body: JSON.stringify({
             messages: [...history, { role: "user", content: prompt }],
             memoryScope,
+            // The picked chat model; omitted until the catalog loads (backend default).
+            ...(modelRef.current ? { model: modelRef.current } : {}),
           }),
           signal: controller.signal,
         });
@@ -324,6 +366,7 @@ export function ChatView() {
               surface="white"
               enableAgentCommand={false}
               enableModelPicker={false}
+              modelMenu={{ options: models, value: model, onChange: setModel }}
               placeholder="Ask anything..."
               autoFocus
               onSubmit={send}
@@ -352,6 +395,7 @@ export function ChatView() {
                 surface="white"
                 enableAgentCommand={false}
                 enableModelPicker={false}
+                modelMenu={{ options: models, value: model, onChange: setModel }}
                 placeholder="Reply..."
                 onSubmit={send}
                 running={streaming}
