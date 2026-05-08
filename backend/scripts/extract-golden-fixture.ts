@@ -36,12 +36,25 @@ interface Row {
   payload: unknown;
 }
 
+interface StepRow {
+  idx: number;
+  kind: string;
+  label: string | null;
+  chip: string | null;
+  code_json: string | null;
+}
+
 const rows = (await sql`
   SELECT seq, provider, event_type, native_session_id, native_parent_session_id,
          native_message_id, native_part_id, native_call_id, payload
   FROM provider_events
   WHERE run_id = (SELECT id FROM runs WHERE id LIKE ${`${runPrefix}%`} LIMIT 1)
   ORDER BY seq ASC`) as unknown as Row[];
+const stepRows = (await sql`
+  SELECT idx, kind, label, chip, code_json
+  FROM steps
+  WHERE run_id = (SELECT id FROM runs WHERE id LIKE ${`${runPrefix}%`} LIMIT 1)
+  ORDER BY idx ASC`) as unknown as StepRow[];
 await sql.end();
 
 if (rows.length === 0) throw new Error(`no provider_events for run ${runPrefix}`);
@@ -57,6 +70,17 @@ const walk = (v: unknown) => {
   else if (v && typeof v === "object") for (const x of Object.values(v)) walk(x);
 };
 for (const r of rows) walk(r.payload);
+for (const s of stepRows) {
+  addSensitive(s.label);
+  addSensitive(s.chip);
+  if (s.code_json) {
+    try {
+      walk(JSON.parse(s.code_json));
+    } catch {
+      addSensitive(s.code_json);
+    }
+  }
+}
 
 // --- id remap: real -> synthetic stable handle, preserving relationships ---
 const maps = { ses: new Map<string, string>(), msg: new Map<string, string>(), prt: new Map<string, string>(), call: new Map<string, string>() };
@@ -113,8 +137,79 @@ const frames = rows.map((r, i) => ({
   payload: sanitizePayload(r.event_type, r.payload),
 }));
 
-// --- provable-clean scan: no sensitive source string may survive ---
-const serialized = JSON.stringify(frames);
+// --- sanitize one step's code_json: keep the real `tool` (so deriveTrace renders it
+//     as a tool ROW, not narration) + remapped native ids (so it orders against the
+//     frames via partID), redact all content. Shares the frame id maps. ---
+function sanitizeStepCode(codeStr: string | null): string | null {
+  if (!codeStr) return null;
+  let code: Record<string, unknown> | null = null;
+  try {
+    code = asRecord(JSON.parse(codeStr));
+  } catch {
+    return null;
+  }
+  if (!code) return null;
+  const n = asRecord(code.native);
+  const out: Record<string, unknown> = { output: "" };
+  if (typeof code.tool === "string") out.tool = code.tool;
+  if (typeof code.type === "string") out.type = code.type;
+  if (code.error === true) out.error = true;
+  if (n) {
+    out.native = {
+      sessionID: remap("ses", (n.sessionID as string | null) ?? null) ?? undefined,
+      messageID: remap("msg", (n.messageID as string | null) ?? null) ?? undefined,
+      partID: remap("prt", (n.partID as string | null) ?? null) ?? undefined,
+      callID: remap("call", (n.callID as string | null) ?? null) ?? undefined,
+      childSessionID: remap("ses", (n.childSessionID as string | null) ?? null) ?? undefined,
+    };
+  }
+  return JSON.stringify(out);
+}
+
+const steps = stepRows.map((s, i) => ({
+  id: `step_${i}`,
+  run_id: "run_fixture",
+  idx: typeof s.idx === "number" ? s.idx : i,
+  kind: s.kind,
+  label: "REDACTED",
+  chip: null,
+  code_json: sanitizeStepCode(s.code_json),
+  created_at: "2026-01-01T00:00:00.000Z",
+}));
+
+// The scan must NOT flag the structural vocabulary we intentionally keep (provider,
+// event types, tool names, status, type discriminants, step kinds, placeholders) -
+// those are opencode's fixed tokens, not customer data. Remove them from `sensitive`
+// so only real free-text content can register as a leak.
+const structural = new Set<string>([
+  "opencode", "skynet", "tool", "text", "completed", "error", "running", "pending",
+  "REDACTED", "REDACTED_TEXT", "run_fixture",
+]);
+for (const r of rows) {
+  if (r.provider) structural.add(r.provider);
+  structural.add(r.event_type);
+  const p = asRecord(r.payload);
+  if (p) {
+    if (typeof p.type === "string") structural.add(p.type);
+    if (typeof p.tool === "string") structural.add(p.tool);
+    const st = asRecord(p.state);
+    if (st && typeof st.status === "string") structural.add(st.status);
+  }
+}
+for (const s of stepRows) {
+  structural.add(s.kind);
+  try {
+    const c = asRecord(JSON.parse(s.code_json ?? "{}"));
+    if (c) {
+      if (typeof c.tool === "string") structural.add(c.tool);
+      if (typeof c.type === "string") structural.add(c.type);
+    }
+  } catch {}
+}
+for (const k of structural) sensitive.delete(k);
+
+// --- provable-clean scan: no sensitive source string may survive (frames OR steps) ---
+const serialized = JSON.stringify(frames) + JSON.stringify(steps);
 const leaks: string[] = [];
 for (const s of sensitive) {
   // ignore short structural tokens that legitimately recur (tool names, states)
@@ -126,8 +221,11 @@ if (leaks.length > 0) {
   throw new Error(`SANITIZATION FAILED - sensitive strings survived: ${JSON.stringify(leaks)}`);
 }
 
+const stepsOutPath = outPath.replace(/\.json$/, "-steps.json");
 await Bun.write(outPath, `${JSON.stringify(frames, null, 2)}\n`);
+await Bun.write(stepsOutPath, `${JSON.stringify(steps, null, 2)}\n`);
 console.log(
-  `[golden] wrote ${frames.length} sanitized frames -> ${outPath} | ids remapped: ` +
-    `${maps.ses.size} ses, ${maps.msg.size} msg, ${maps.call.size} call | scanned ${sensitive.size} source strings, 0 leaks`,
+  `[golden] wrote ${frames.length} frames -> ${outPath} + ${steps.length} steps -> ${stepsOutPath} | ` +
+    `ids remapped: ${maps.ses.size} ses, ${maps.msg.size} msg, ${maps.call.size} call | ` +
+    `scanned ${sensitive.size} source strings, 0 leaks`,
 );

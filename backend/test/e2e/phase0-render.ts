@@ -21,12 +21,23 @@ try {
   const t0 = performance.now();
   await page.goto(`${FE}/session/${RUN_ID}`, { waitUntil: "domcontentloaded", timeout: BUDGET_MS });
   // Wait for the timeline to actually paint content (not just an empty shell).
+  // Wait for the ACTUAL timeline surface to render (not just any body text).
   await page
-    .waitForFunction(() => (document.body?.innerText?.length ?? 0) > 200, { timeout: BUDGET_MS })
+    .waitForSelector('[data-testid="session-timeline"]', { timeout: BUDGET_MS })
     .catch(() => {});
   const readyMs = performance.now() - t0;
 
-  const bodyLen = await page.evaluate(() => document.body?.innerText?.length ?? 0);
+  // Real UI-surface probes, not body length: the timeline region exists and has
+  // rendered content, and the reply composer (every session has one) is present.
+  const ui = await page.evaluate(() => {
+    const timeline = document.querySelector('[data-testid="session-timeline"]');
+    const composer = document.querySelector("textarea");
+    return {
+      timelinePresent: !!timeline,
+      timelineChildren: timeline?.childElementCount ?? 0,
+      composerPresent: !!composer,
+    };
+  });
   // A hard React crash blanks to a tiny error page; catch that + any uncaught error.
   const crashed = pageErrors.some((e) => /Minified React error|Maximum update depth|is not a function/.test(e));
   await shot(page, `phase0-render-${RUN_ID.slice(0, 8)}`);
@@ -34,7 +45,9 @@ try {
   const checks = [
     { name: "no uncaught page errors", ok: pageErrors.length === 0, note: pageErrors.slice(0, 2).join(" | ") },
     { name: "no React crash signature", ok: !crashed },
-    { name: "timeline rendered (non-blank, >200 chars)", ok: bodyLen > 200, note: `${bodyLen} chars` },
+    { name: "session timeline surface present", ok: ui.timelinePresent },
+    { name: "timeline rendered content (>0 rows)", ok: ui.timelineChildren > 0, note: `${ui.timelineChildren} rows` },
+    { name: "reply composer present", ok: ui.composerPresent },
     { name: `usable within budget (${BUDGET_MS}ms)`, ok: readyMs < BUDGET_MS, note: `${Math.round(readyMs)}ms` },
   ];
   printResult(verdictOf(`phase0 OpenCode /session render (${RUN_ID.slice(0, 8)})`, checks));

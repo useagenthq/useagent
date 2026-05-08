@@ -1,0 +1,2892 @@
+[
+  {
+    "id": "step_0",
+    "run_id": "run_fixture",
+    "idx": 0,
+    "kind": "task",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": null,
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_1",
+    "run_id": "run_fixture",
+    "idx": 1,
+    "kind": "task",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": null,
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_2",
+    "run_id": "run_fixture",
+    "idx": 2,
+    "kind": "task",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": null,
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_3",
+    "run_id": "run_fixture",
+    "idx": 3,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"todowrite\",\"native\":{\"sessionID\":\"ses_1\",\"messageID\":\"msg_2\",\"partID\":\"prt_901\",\"callID\":\"call_1\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_4",
+    "run_id": "run_fixture",
+    "idx": 4,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_1\",\"messageID\":\"msg_3\",\"partID\":\"prt_902\",\"callID\":\"call_2\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_5",
+    "run_id": "run_fixture",
+    "idx": 5,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"skill\",\"native\":{\"sessionID\":\"ses_1\",\"messageID\":\"msg_3\",\"partID\":\"prt_903\",\"callID\":\"call_3\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_6",
+    "run_id": "run_fixture",
+    "idx": 6,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_1\",\"messageID\":\"msg_4\",\"partID\":\"prt_904\",\"callID\":\"call_4\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_7",
+    "run_id": "run_fixture",
+    "idx": 7,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_1\",\"messageID\":\"msg_5\",\"partID\":\"prt_905\",\"callID\":\"call_5\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_8",
+    "run_id": "run_fixture",
+    "idx": 8,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_1\",\"messageID\":\"msg_6\",\"partID\":\"prt_906\",\"callID\":\"call_6\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_9",
+    "run_id": "run_fixture",
+    "idx": 9,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_1\",\"messageID\":\"msg_7\",\"partID\":\"prt_907\",\"callID\":\"call_7\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_10",
+    "run_id": "run_fixture",
+    "idx": 10,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_1\",\"messageID\":\"msg_8\",\"partID\":\"prt_908\",\"callID\":\"call_8\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_11",
+    "run_id": "run_fixture",
+    "idx": 11,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_1\",\"messageID\":\"msg_8\",\"partID\":\"prt_909\",\"callID\":\"call_9\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_12",
+    "run_id": "run_fixture",
+    "idx": 12,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_1\",\"messageID\":\"msg_9\",\"partID\":\"prt_910\",\"callID\":\"call_10\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_13",
+    "run_id": "run_fixture",
+    "idx": 13,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_1\",\"messageID\":\"msg_10\",\"partID\":\"prt_911\",\"callID\":\"call_11\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_14",
+    "run_id": "run_fixture",
+    "idx": 14,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"webfetch\",\"native\":{\"sessionID\":\"ses_1\",\"messageID\":\"msg_10\",\"partID\":\"prt_912\",\"callID\":\"call_12\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_15",
+    "run_id": "run_fixture",
+    "idx": 15,
+    "kind": "task",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"task\",\"native\":{\"sessionID\":\"ses_1\",\"messageID\":\"msg_11\",\"partID\":\"prt_913\",\"callID\":\"call_13\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_16",
+    "run_id": "run_fixture",
+    "idx": 16,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"todowrite\",\"native\":{\"sessionID\":\"ses_2\",\"messageID\":\"msg_13\",\"partID\":\"prt_933\",\"callID\":\"call_33\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_17",
+    "run_id": "run_fixture",
+    "idx": 17,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_2\",\"messageID\":\"msg_14\",\"partID\":\"prt_934\",\"callID\":\"call_34\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_18",
+    "run_id": "run_fixture",
+    "idx": 18,
+    "kind": "task",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"task\",\"native\":{\"sessionID\":\"ses_1\",\"messageID\":\"msg_11\",\"partID\":\"prt_914\",\"callID\":\"call_14\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_19",
+    "run_id": "run_fixture",
+    "idx": 19,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_2\",\"messageID\":\"msg_15\",\"partID\":\"prt_935\",\"callID\":\"call_35\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_20",
+    "run_id": "run_fixture",
+    "idx": 20,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"todowrite\",\"native\":{\"sessionID\":\"ses_3\",\"messageID\":\"msg_17\",\"partID\":\"prt_986\",\"callID\":\"call_86\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_21",
+    "run_id": "run_fixture",
+    "idx": 21,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_2\",\"messageID\":\"msg_18\",\"partID\":\"prt_936\",\"callID\":\"call_36\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_22",
+    "run_id": "run_fixture",
+    "idx": 22,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_3\",\"messageID\":\"msg_19\",\"partID\":\"prt_987\",\"callID\":\"call_87\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_23",
+    "run_id": "run_fixture",
+    "idx": 23,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_2\",\"messageID\":\"msg_20\",\"partID\":\"prt_937\",\"callID\":\"call_37\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_24",
+    "run_id": "run_fixture",
+    "idx": 24,
+    "kind": "task",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"task\",\"native\":{\"sessionID\":\"ses_1\",\"messageID\":\"msg_11\",\"partID\":\"prt_915\",\"callID\":\"call_15\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_25",
+    "run_id": "run_fixture",
+    "idx": 25,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_3\",\"messageID\":\"msg_21\",\"partID\":\"prt_988\",\"callID\":\"call_88\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_26",
+    "run_id": "run_fixture",
+    "idx": 26,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"todowrite\",\"native\":{\"sessionID\":\"ses_4\",\"messageID\":\"msg_24\",\"partID\":\"prt_1067\",\"callID\":\"call_167\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_27",
+    "run_id": "run_fixture",
+    "idx": 27,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_3\",\"messageID\":\"msg_25\",\"partID\":\"prt_989\",\"callID\":\"call_89\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_28",
+    "run_id": "run_fixture",
+    "idx": 28,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"todowrite\",\"native\":{\"sessionID\":\"ses_2\",\"messageID\":\"msg_22\",\"partID\":\"prt_938\",\"callID\":\"call_38\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_29",
+    "run_id": "run_fixture",
+    "idx": 29,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_2\",\"messageID\":\"msg_28\",\"partID\":\"prt_939\",\"callID\":\"call_39\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_30",
+    "run_id": "run_fixture",
+    "idx": 30,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_4\",\"messageID\":\"msg_26\",\"partID\":\"prt_1068\",\"callID\":\"call_168\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_31",
+    "run_id": "run_fixture",
+    "idx": 31,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_3\",\"messageID\":\"msg_27\",\"partID\":\"prt_990\",\"callID\":\"call_90\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_32",
+    "run_id": "run_fixture",
+    "idx": 32,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_4\",\"messageID\":\"msg_29\",\"partID\":\"prt_1069\",\"callID\":\"call_169\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_33",
+    "run_id": "run_fixture",
+    "idx": 33,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_4\",\"messageID\":\"msg_32\",\"partID\":\"prt_1070\",\"callID\":\"call_170\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_34",
+    "run_id": "run_fixture",
+    "idx": 34,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_2\",\"messageID\":\"msg_30\",\"partID\":\"prt_940\",\"callID\":\"call_40\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_35",
+    "run_id": "run_fixture",
+    "idx": 35,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_3\",\"messageID\":\"msg_31\",\"partID\":\"prt_991\",\"callID\":\"call_91\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_36",
+    "run_id": "run_fixture",
+    "idx": 36,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_4\",\"messageID\":\"msg_33\",\"partID\":\"prt_1071\",\"callID\":\"call_171\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_37",
+    "run_id": "run_fixture",
+    "idx": 37,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_2\",\"messageID\":\"msg_34\",\"partID\":\"prt_941\",\"callID\":\"call_41\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_38",
+    "run_id": "run_fixture",
+    "idx": 38,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_4\",\"messageID\":\"msg_35\",\"partID\":\"prt_1072\",\"callID\":\"call_172\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_39",
+    "run_id": "run_fixture",
+    "idx": 39,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_4\",\"messageID\":\"msg_38\",\"partID\":\"prt_1073\",\"callID\":\"call_173\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_40",
+    "run_id": "run_fixture",
+    "idx": 40,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"todowrite\",\"native\":{\"sessionID\":\"ses_3\",\"messageID\":\"msg_36\",\"partID\":\"prt_992\",\"callID\":\"call_92\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_41",
+    "run_id": "run_fixture",
+    "idx": 41,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_2\",\"messageID\":\"msg_37\",\"partID\":\"prt_942\",\"callID\":\"call_42\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_42",
+    "run_id": "run_fixture",
+    "idx": 42,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_3\",\"messageID\":\"msg_39\",\"partID\":\"prt_993\",\"callID\":\"call_93\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_43",
+    "run_id": "run_fixture",
+    "idx": 43,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_3\",\"messageID\":\"msg_42\",\"partID\":\"prt_994\",\"callID\":\"call_94\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_44",
+    "run_id": "run_fixture",
+    "idx": 44,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_4\",\"messageID\":\"msg_40\",\"partID\":\"prt_1074\",\"callID\":\"call_174\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_45",
+    "run_id": "run_fixture",
+    "idx": 45,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_2\",\"messageID\":\"msg_41\",\"partID\":\"prt_943\",\"callID\":\"call_43\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_46",
+    "run_id": "run_fixture",
+    "idx": 46,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_3\",\"messageID\":\"msg_43\",\"partID\":\"prt_995\",\"callID\":\"call_95\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_47",
+    "run_id": "run_fixture",
+    "idx": 47,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_4\",\"messageID\":\"msg_45\",\"partID\":\"prt_1075\",\"callID\":\"call_175\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_48",
+    "run_id": "run_fixture",
+    "idx": 48,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_2\",\"messageID\":\"msg_44\",\"partID\":\"prt_944\",\"callID\":\"call_44\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_49",
+    "run_id": "run_fixture",
+    "idx": 49,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_2\",\"messageID\":\"msg_46\",\"partID\":\"prt_945\",\"callID\":\"call_45\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_50",
+    "run_id": "run_fixture",
+    "idx": 50,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_3\",\"messageID\":\"msg_47\",\"partID\":\"prt_996\",\"callID\":\"call_96\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_51",
+    "run_id": "run_fixture",
+    "idx": 51,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_2\",\"messageID\":\"msg_48\",\"partID\":\"prt_946\",\"callID\":\"call_46\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_52",
+    "run_id": "run_fixture",
+    "idx": 52,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_3\",\"messageID\":\"msg_49\",\"partID\":\"prt_997\",\"callID\":\"call_97\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_53",
+    "run_id": "run_fixture",
+    "idx": 53,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_2\",\"messageID\":\"msg_50\",\"partID\":\"prt_947\",\"callID\":\"call_47\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_54",
+    "run_id": "run_fixture",
+    "idx": 54,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_2\",\"messageID\":\"msg_52\",\"partID\":\"prt_948\",\"callID\":\"call_48\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_55",
+    "run_id": "run_fixture",
+    "idx": 55,
+    "kind": "file",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"write\",\"native\":{\"sessionID\":\"ses_3\",\"messageID\":\"msg_51\",\"partID\":\"prt_998\",\"callID\":\"call_98\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_56",
+    "run_id": "run_fixture",
+    "idx": 56,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_2\",\"messageID\":\"msg_53\",\"partID\":\"prt_949\",\"callID\":\"call_49\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_57",
+    "run_id": "run_fixture",
+    "idx": 57,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_3\",\"messageID\":\"msg_54\",\"partID\":\"prt_999\",\"callID\":\"call_99\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_58",
+    "run_id": "run_fixture",
+    "idx": 58,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_3\",\"messageID\":\"msg_56\",\"partID\":\"prt_1000\",\"callID\":\"call_100\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_59",
+    "run_id": "run_fixture",
+    "idx": 59,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_2\",\"messageID\":\"msg_55\",\"partID\":\"prt_950\",\"callID\":\"call_50\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_60",
+    "run_id": "run_fixture",
+    "idx": 60,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_4\",\"messageID\":\"msg_57\",\"partID\":\"prt_1076\",\"callID\":\"call_176\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_61",
+    "run_id": "run_fixture",
+    "idx": 61,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_3\",\"messageID\":\"msg_58\",\"partID\":\"prt_1001\",\"callID\":\"call_101\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_62",
+    "run_id": "run_fixture",
+    "idx": 62,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_4\",\"messageID\":\"msg_59\",\"partID\":\"prt_1077\",\"callID\":\"call_177\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_63",
+    "run_id": "run_fixture",
+    "idx": 63,
+    "kind": "file",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"write\",\"native\":{\"sessionID\":\"ses_3\",\"messageID\":\"msg_60\",\"partID\":\"prt_1002\",\"callID\":\"call_102\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_64",
+    "run_id": "run_fixture",
+    "idx": 64,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_3\",\"messageID\":\"msg_61\",\"partID\":\"prt_1003\",\"callID\":\"call_103\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_65",
+    "run_id": "run_fixture",
+    "idx": 65,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_3\",\"messageID\":\"msg_62\",\"partID\":\"prt_1004\",\"callID\":\"call_104\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_66",
+    "run_id": "run_fixture",
+    "idx": 66,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_4\",\"messageID\":\"msg_63\",\"partID\":\"prt_1078\",\"callID\":\"call_178\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_67",
+    "run_id": "run_fixture",
+    "idx": 67,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_3\",\"messageID\":\"msg_64\",\"partID\":\"prt_1005\",\"callID\":\"call_105\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_68",
+    "run_id": "run_fixture",
+    "idx": 68,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_2\",\"messageID\":\"msg_65\",\"partID\":\"prt_951\",\"callID\":\"call_51\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_69",
+    "run_id": "run_fixture",
+    "idx": 69,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_4\",\"messageID\":\"msg_66\",\"partID\":\"prt_1079\",\"callID\":\"call_179\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_70",
+    "run_id": "run_fixture",
+    "idx": 70,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_2\",\"messageID\":\"msg_67\",\"partID\":\"prt_952\",\"callID\":\"call_52\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_71",
+    "run_id": "run_fixture",
+    "idx": 71,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_4\",\"messageID\":\"msg_68\",\"partID\":\"prt_1080\",\"callID\":\"call_180\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_72",
+    "run_id": "run_fixture",
+    "idx": 72,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_2\",\"messageID\":\"msg_69\",\"partID\":\"prt_953\",\"callID\":\"call_53\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_73",
+    "run_id": "run_fixture",
+    "idx": 73,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_4\",\"messageID\":\"msg_70\",\"partID\":\"prt_1081\",\"callID\":\"call_181\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_74",
+    "run_id": "run_fixture",
+    "idx": 74,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_2\",\"messageID\":\"msg_71\",\"partID\":\"prt_954\",\"callID\":\"call_54\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_75",
+    "run_id": "run_fixture",
+    "idx": 75,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_2\",\"messageID\":\"msg_73\",\"partID\":\"prt_955\",\"callID\":\"call_55\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_76",
+    "run_id": "run_fixture",
+    "idx": 76,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_4\",\"messageID\":\"msg_72\",\"partID\":\"prt_1082\",\"callID\":\"call_182\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_77",
+    "run_id": "run_fixture",
+    "idx": 77,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_4\",\"messageID\":\"msg_75\",\"partID\":\"prt_1083\",\"callID\":\"call_183\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_78",
+    "run_id": "run_fixture",
+    "idx": 78,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"todowrite\",\"native\":{\"sessionID\":\"ses_2\",\"messageID\":\"msg_74\",\"partID\":\"prt_956\",\"callID\":\"call_56\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_79",
+    "run_id": "run_fixture",
+    "idx": 79,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_2\",\"messageID\":\"msg_77\",\"partID\":\"prt_957\",\"callID\":\"call_57\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_80",
+    "run_id": "run_fixture",
+    "idx": 80,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_3\",\"messageID\":\"msg_76\",\"partID\":\"prt_1006\",\"callID\":\"call_106\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_81",
+    "run_id": "run_fixture",
+    "idx": 81,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_2\",\"messageID\":\"msg_78\",\"partID\":\"prt_958\",\"callID\":\"call_58\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_82",
+    "run_id": "run_fixture",
+    "idx": 82,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_2\",\"messageID\":\"msg_80\",\"partID\":\"prt_959\",\"callID\":\"call_59\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_83",
+    "run_id": "run_fixture",
+    "idx": 83,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_3\",\"messageID\":\"msg_79\",\"partID\":\"prt_1007\",\"callID\":\"call_107\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_84",
+    "run_id": "run_fixture",
+    "idx": 84,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_2\",\"messageID\":\"msg_81\",\"partID\":\"prt_960\",\"callID\":\"call_60\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_85",
+    "run_id": "run_fixture",
+    "idx": 85,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_2\",\"messageID\":\"msg_83\",\"partID\":\"prt_961\",\"callID\":\"call_61\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_86",
+    "run_id": "run_fixture",
+    "idx": 86,
+    "kind": "file",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"edit\",\"native\":{\"sessionID\":\"ses_3\",\"messageID\":\"msg_82\",\"partID\":\"prt_1008\",\"callID\":\"call_108\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_87",
+    "run_id": "run_fixture",
+    "idx": 87,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_2\",\"messageID\":\"msg_84\",\"partID\":\"prt_962\",\"callID\":\"call_62\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_88",
+    "run_id": "run_fixture",
+    "idx": 88,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_3\",\"messageID\":\"msg_86\",\"partID\":\"prt_1009\",\"callID\":\"call_109\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_89",
+    "run_id": "run_fixture",
+    "idx": 89,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_2\",\"messageID\":\"msg_87\",\"partID\":\"prt_963\",\"callID\":\"call_63\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_90",
+    "run_id": "run_fixture",
+    "idx": 90,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_4\",\"messageID\":\"msg_85\",\"partID\":\"prt_1084\",\"callID\":\"call_184\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_91",
+    "run_id": "run_fixture",
+    "idx": 91,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_4\",\"messageID\":\"msg_90\",\"partID\":\"prt_1085\",\"callID\":\"call_185\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_92",
+    "run_id": "run_fixture",
+    "idx": 92,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_2\",\"messageID\":\"msg_89\",\"partID\":\"prt_964\",\"callID\":\"call_64\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_93",
+    "run_id": "run_fixture",
+    "idx": 93,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_3\",\"messageID\":\"msg_88\",\"partID\":\"prt_1010\",\"callID\":\"call_110\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_94",
+    "run_id": "run_fixture",
+    "idx": 94,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_4\",\"messageID\":\"msg_91\",\"partID\":\"prt_1086\",\"callID\":\"call_186\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_95",
+    "run_id": "run_fixture",
+    "idx": 95,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_2\",\"messageID\":\"msg_92\",\"partID\":\"prt_965\",\"callID\":\"call_65\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_96",
+    "run_id": "run_fixture",
+    "idx": 96,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_2\",\"messageID\":\"msg_94\",\"partID\":\"prt_966\",\"callID\":\"call_66\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_97",
+    "run_id": "run_fixture",
+    "idx": 97,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_4\",\"messageID\":\"msg_93\",\"partID\":\"prt_1087\",\"callID\":\"call_187\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_98",
+    "run_id": "run_fixture",
+    "idx": 98,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_2\",\"messageID\":\"msg_96\",\"partID\":\"prt_967\",\"callID\":\"call_67\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_99",
+    "run_id": "run_fixture",
+    "idx": 99,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_4\",\"messageID\":\"msg_97\",\"partID\":\"prt_1088\",\"callID\":\"call_188\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_100",
+    "run_id": "run_fixture",
+    "idx": 100,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_2\",\"messageID\":\"msg_98\",\"partID\":\"prt_968\",\"callID\":\"call_68\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_101",
+    "run_id": "run_fixture",
+    "idx": 101,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_4\",\"messageID\":\"msg_99\",\"partID\":\"prt_1089\",\"callID\":\"call_189\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_102",
+    "run_id": "run_fixture",
+    "idx": 102,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_4\",\"messageID\":\"msg_100\",\"partID\":\"prt_1090\",\"callID\":\"call_190\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_103",
+    "run_id": "run_fixture",
+    "idx": 103,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_2\",\"messageID\":\"msg_101\",\"partID\":\"prt_969\",\"callID\":\"call_69\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_104",
+    "run_id": "run_fixture",
+    "idx": 104,
+    "kind": "file",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"write\",\"native\":{\"sessionID\":\"ses_3\",\"messageID\":\"msg_95\",\"partID\":\"prt_1011\",\"callID\":\"call_111\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_105",
+    "run_id": "run_fixture",
+    "idx": 105,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_4\",\"messageID\":\"msg_102\",\"partID\":\"prt_1091\",\"callID\":\"call_191\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_106",
+    "run_id": "run_fixture",
+    "idx": 106,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_3\",\"messageID\":\"msg_104\",\"partID\":\"prt_1012\",\"callID\":\"call_112\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_107",
+    "run_id": "run_fixture",
+    "idx": 107,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_2\",\"messageID\":\"msg_103\",\"partID\":\"prt_970\",\"callID\":\"call_70\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_108",
+    "run_id": "run_fixture",
+    "idx": 108,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_4\",\"messageID\":\"msg_105\",\"partID\":\"prt_1092\",\"callID\":\"call_192\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_109",
+    "run_id": "run_fixture",
+    "idx": 109,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_4\",\"messageID\":\"msg_108\",\"partID\":\"prt_1093\",\"callID\":\"call_193\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_110",
+    "run_id": "run_fixture",
+    "idx": 110,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"todowrite\",\"native\":{\"sessionID\":\"ses_3\",\"messageID\":\"msg_106\",\"partID\":\"prt_1013\",\"callID\":\"call_113\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_111",
+    "run_id": "run_fixture",
+    "idx": 111,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_3\",\"messageID\":\"msg_109\",\"partID\":\"prt_1014\",\"callID\":\"call_114\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_112",
+    "run_id": "run_fixture",
+    "idx": 112,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_4\",\"messageID\":\"msg_110\",\"partID\":\"prt_1094\",\"callID\":\"call_194\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_113",
+    "run_id": "run_fixture",
+    "idx": 113,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_4\",\"messageID\":\"msg_111\",\"partID\":\"prt_1095\",\"callID\":\"call_195\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_114",
+    "run_id": "run_fixture",
+    "idx": 114,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_3\",\"messageID\":\"msg_112\",\"partID\":\"prt_1015\",\"callID\":\"call_115\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_115",
+    "run_id": "run_fixture",
+    "idx": 115,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_4\",\"messageID\":\"msg_113\",\"partID\":\"prt_1096\",\"callID\":\"call_196\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_116",
+    "run_id": "run_fixture",
+    "idx": 116,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"todowrite\",\"native\":{\"sessionID\":\"ses_2\",\"messageID\":\"msg_107\",\"partID\":\"prt_971\",\"callID\":\"call_71\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_117",
+    "run_id": "run_fixture",
+    "idx": 117,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_4\",\"messageID\":\"msg_114\",\"partID\":\"prt_1097\",\"callID\":\"call_197\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_118",
+    "run_id": "run_fixture",
+    "idx": 118,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_4\",\"messageID\":\"msg_116\",\"partID\":\"prt_1098\",\"callID\":\"call_198\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_119",
+    "run_id": "run_fixture",
+    "idx": 119,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_2\",\"messageID\":\"msg_115\",\"partID\":\"prt_972\",\"callID\":\"call_72\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_120",
+    "run_id": "run_fixture",
+    "idx": 120,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_3\",\"messageID\":\"msg_118\",\"partID\":\"prt_1016\",\"callID\":\"call_116\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_121",
+    "run_id": "run_fixture",
+    "idx": 121,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_4\",\"messageID\":\"msg_117\",\"partID\":\"prt_1099\",\"callID\":\"call_199\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_122",
+    "run_id": "run_fixture",
+    "idx": 122,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_2\",\"messageID\":\"msg_119\",\"partID\":\"prt_973\",\"callID\":\"call_73\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_123",
+    "run_id": "run_fixture",
+    "idx": 123,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_2\",\"messageID\":\"msg_122\",\"partID\":\"prt_974\",\"callID\":\"call_74\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_124",
+    "run_id": "run_fixture",
+    "idx": 124,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_4\",\"messageID\":\"msg_120\",\"partID\":\"prt_1100\",\"callID\":\"call_200\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_125",
+    "run_id": "run_fixture",
+    "idx": 125,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_3\",\"messageID\":\"msg_121\",\"partID\":\"prt_1017\",\"callID\":\"call_117\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_126",
+    "run_id": "run_fixture",
+    "idx": 126,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_2\",\"messageID\":\"msg_123\",\"partID\":\"prt_975\",\"callID\":\"call_75\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_127",
+    "run_id": "run_fixture",
+    "idx": 127,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_4\",\"messageID\":\"msg_124\",\"partID\":\"prt_1101\",\"callID\":\"call_201\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_128",
+    "run_id": "run_fixture",
+    "idx": 128,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_2\",\"messageID\":\"msg_125\",\"partID\":\"prt_976\",\"callID\":\"call_76\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_129",
+    "run_id": "run_fixture",
+    "idx": 129,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_4\",\"messageID\":\"msg_126\",\"partID\":\"prt_1102\",\"callID\":\"call_202\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_130",
+    "run_id": "run_fixture",
+    "idx": 130,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_2\",\"messageID\":\"msg_127\",\"partID\":\"prt_977\",\"callID\":\"call_77\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_131",
+    "run_id": "run_fixture",
+    "idx": 131,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_4\",\"messageID\":\"msg_128\",\"partID\":\"prt_1103\",\"callID\":\"call_203\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_132",
+    "run_id": "run_fixture",
+    "idx": 132,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_2\",\"messageID\":\"msg_129\",\"partID\":\"prt_978\",\"callID\":\"call_78\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_133",
+    "run_id": "run_fixture",
+    "idx": 133,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_4\",\"messageID\":\"msg_130\",\"partID\":\"prt_1104\",\"callID\":\"call_204\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_134",
+    "run_id": "run_fixture",
+    "idx": 134,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_4\",\"messageID\":\"msg_132\",\"partID\":\"prt_1105\",\"callID\":\"call_205\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_135",
+    "run_id": "run_fixture",
+    "idx": 135,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_4\",\"messageID\":\"msg_133\",\"partID\":\"prt_1106\",\"callID\":\"call_206\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_136",
+    "run_id": "run_fixture",
+    "idx": 136,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_2\",\"messageID\":\"msg_131\",\"partID\":\"prt_979\",\"callID\":\"call_79\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_137",
+    "run_id": "run_fixture",
+    "idx": 137,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"webfetch\",\"native\":{\"sessionID\":\"ses_4\",\"messageID\":\"msg_134\",\"partID\":\"prt_1107\",\"callID\":\"call_207\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_138",
+    "run_id": "run_fixture",
+    "idx": 138,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"webfetch\",\"native\":{\"sessionID\":\"ses_4\",\"messageID\":\"msg_136\",\"partID\":\"prt_1108\",\"callID\":\"call_208\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_139",
+    "run_id": "run_fixture",
+    "idx": 139,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_2\",\"messageID\":\"msg_135\",\"partID\":\"prt_980\",\"callID\":\"call_80\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_140",
+    "run_id": "run_fixture",
+    "idx": 140,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_2\",\"messageID\":\"msg_138\",\"partID\":\"prt_981\",\"callID\":\"call_81\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_141",
+    "run_id": "run_fixture",
+    "idx": 141,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_3\",\"messageID\":\"msg_140\",\"partID\":\"prt_1018\",\"callID\":\"call_118\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_142",
+    "run_id": "run_fixture",
+    "idx": 142,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"todowrite\",\"native\":{\"sessionID\":\"ses_4\",\"messageID\":\"msg_137\",\"partID\":\"prt_1109\",\"callID\":\"call_209\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_143",
+    "run_id": "run_fixture",
+    "idx": 143,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_3\",\"messageID\":\"msg_141\",\"partID\":\"prt_1019\",\"callID\":\"call_119\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_144",
+    "run_id": "run_fixture",
+    "idx": 144,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_4\",\"messageID\":\"msg_142\",\"partID\":\"prt_1110\",\"callID\":\"call_210\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_145",
+    "run_id": "run_fixture",
+    "idx": 145,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_2\",\"messageID\":\"msg_139\",\"partID\":\"prt_982\",\"callID\":\"call_82\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_146",
+    "run_id": "run_fixture",
+    "idx": 146,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_4\",\"messageID\":\"msg_143\",\"partID\":\"prt_1111\",\"callID\":\"call_211\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_147",
+    "run_id": "run_fixture",
+    "idx": 147,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_3\",\"messageID\":\"msg_144\",\"partID\":\"prt_1020\",\"callID\":\"call_120\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_148",
+    "run_id": "run_fixture",
+    "idx": 148,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_2\",\"messageID\":\"msg_147\",\"partID\":\"prt_983\",\"callID\":\"call_83\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_149",
+    "run_id": "run_fixture",
+    "idx": 149,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_4\",\"messageID\":\"msg_145\",\"partID\":\"prt_1112\",\"callID\":\"call_212\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_150",
+    "run_id": "run_fixture",
+    "idx": 150,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_3\",\"messageID\":\"msg_146\",\"partID\":\"prt_1021\",\"callID\":\"call_121\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_151",
+    "run_id": "run_fixture",
+    "idx": 151,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_4\",\"messageID\":\"msg_148\",\"partID\":\"prt_1113\",\"callID\":\"call_213\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_152",
+    "run_id": "run_fixture",
+    "idx": 152,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_2\",\"messageID\":\"msg_149\",\"partID\":\"prt_984\",\"callID\":\"call_84\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_153",
+    "run_id": "run_fixture",
+    "idx": 153,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_3\",\"messageID\":\"msg_151\",\"partID\":\"prt_1022\",\"callID\":\"call_122\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_154",
+    "run_id": "run_fixture",
+    "idx": 154,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_4\",\"messageID\":\"msg_150\",\"partID\":\"prt_1114\",\"callID\":\"call_214\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_155",
+    "run_id": "run_fixture",
+    "idx": 155,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_4\",\"messageID\":\"msg_154\",\"partID\":\"prt_1115\",\"callID\":\"call_215\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_156",
+    "run_id": "run_fixture",
+    "idx": 156,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_3\",\"messageID\":\"msg_153\",\"partID\":\"prt_1023\",\"callID\":\"call_123\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_157",
+    "run_id": "run_fixture",
+    "idx": 157,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_3\",\"messageID\":\"msg_156\",\"partID\":\"prt_1024\",\"callID\":\"call_124\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_158",
+    "run_id": "run_fixture",
+    "idx": 158,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_4\",\"messageID\":\"msg_155\",\"partID\":\"prt_1116\",\"callID\":\"call_216\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_159",
+    "run_id": "run_fixture",
+    "idx": 159,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"todowrite\",\"native\":{\"sessionID\":\"ses_2\",\"messageID\":\"msg_152\",\"partID\":\"prt_985\",\"callID\":\"call_85\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_160",
+    "run_id": "run_fixture",
+    "idx": 160,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"todowrite\",\"native\":{\"sessionID\":\"ses_3\",\"messageID\":\"msg_157\",\"partID\":\"prt_1025\",\"callID\":\"call_125\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_161",
+    "run_id": "run_fixture",
+    "idx": 161,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_4\",\"messageID\":\"msg_159\",\"partID\":\"prt_1117\",\"callID\":\"call_217\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_162",
+    "run_id": "run_fixture",
+    "idx": 162,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_3\",\"messageID\":\"msg_160\",\"partID\":\"prt_1026\",\"callID\":\"call_126\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_163",
+    "run_id": "run_fixture",
+    "idx": 163,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_4\",\"messageID\":\"msg_161\",\"partID\":\"prt_1118\",\"callID\":\"call_218\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_164",
+    "run_id": "run_fixture",
+    "idx": 164,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_3\",\"messageID\":\"msg_162\",\"partID\":\"prt_1027\",\"callID\":\"call_127\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_165",
+    "run_id": "run_fixture",
+    "idx": 165,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_4\",\"messageID\":\"msg_163\",\"partID\":\"prt_1119\",\"callID\":\"call_219\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_166",
+    "run_id": "run_fixture",
+    "idx": 166,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_3\",\"messageID\":\"msg_164\",\"partID\":\"prt_1028\",\"callID\":\"call_128\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_167",
+    "run_id": "run_fixture",
+    "idx": 167,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_3\",\"messageID\":\"msg_165\",\"partID\":\"prt_1029\",\"callID\":\"call_129\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_168",
+    "run_id": "run_fixture",
+    "idx": 168,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_3\",\"messageID\":\"msg_166\",\"partID\":\"prt_1030\",\"callID\":\"call_130\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_169",
+    "run_id": "run_fixture",
+    "idx": 169,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"webfetch\",\"native\":{\"sessionID\":\"ses_4\",\"messageID\":\"msg_167\",\"partID\":\"prt_1120\",\"callID\":\"call_220\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_170",
+    "run_id": "run_fixture",
+    "idx": 170,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_3\",\"messageID\":\"msg_168\",\"partID\":\"prt_1031\",\"callID\":\"call_131\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_171",
+    "run_id": "run_fixture",
+    "idx": 171,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_4\",\"messageID\":\"msg_169\",\"partID\":\"prt_1121\",\"callID\":\"call_221\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_172",
+    "run_id": "run_fixture",
+    "idx": 172,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_3\",\"messageID\":\"msg_170\",\"partID\":\"prt_1032\",\"callID\":\"call_132\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_173",
+    "run_id": "run_fixture",
+    "idx": 173,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_3\",\"messageID\":\"msg_172\",\"partID\":\"prt_1033\",\"callID\":\"call_133\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_174",
+    "run_id": "run_fixture",
+    "idx": 174,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_4\",\"messageID\":\"msg_171\",\"partID\":\"prt_1122\",\"callID\":\"call_222\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_175",
+    "run_id": "run_fixture",
+    "idx": 175,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_4\",\"messageID\":\"msg_173\",\"partID\":\"prt_1123\",\"callID\":\"call_223\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_176",
+    "run_id": "run_fixture",
+    "idx": 176,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_4\",\"messageID\":\"msg_174\",\"partID\":\"prt_1124\",\"callID\":\"call_224\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_177",
+    "run_id": "run_fixture",
+    "idx": 177,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_3\",\"messageID\":\"msg_175\",\"partID\":\"prt_1034\",\"callID\":\"call_134\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_178",
+    "run_id": "run_fixture",
+    "idx": 178,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_4\",\"messageID\":\"msg_176\",\"partID\":\"prt_1125\",\"callID\":\"call_225\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_179",
+    "run_id": "run_fixture",
+    "idx": 179,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_3\",\"messageID\":\"msg_177\",\"partID\":\"prt_1035\",\"callID\":\"call_135\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_180",
+    "run_id": "run_fixture",
+    "idx": 180,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_4\",\"messageID\":\"msg_178\",\"partID\":\"prt_1126\",\"callID\":\"call_226\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_181",
+    "run_id": "run_fixture",
+    "idx": 181,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_4\",\"messageID\":\"msg_179\",\"partID\":\"prt_1127\",\"callID\":\"call_227\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_182",
+    "run_id": "run_fixture",
+    "idx": 182,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_3\",\"messageID\":\"msg_180\",\"partID\":\"prt_1036\",\"callID\":\"call_136\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_183",
+    "run_id": "run_fixture",
+    "idx": 183,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_4\",\"messageID\":\"msg_181\",\"partID\":\"prt_1128\",\"callID\":\"call_228\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_184",
+    "run_id": "run_fixture",
+    "idx": 184,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_3\",\"messageID\":\"msg_182\",\"partID\":\"prt_1037\",\"callID\":\"call_137\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_185",
+    "run_id": "run_fixture",
+    "idx": 185,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_4\",\"messageID\":\"msg_183\",\"partID\":\"prt_1129\",\"callID\":\"call_229\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_186",
+    "run_id": "run_fixture",
+    "idx": 186,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_3\",\"messageID\":\"msg_184\",\"partID\":\"prt_1038\",\"callID\":\"call_138\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_187",
+    "run_id": "run_fixture",
+    "idx": 187,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_4\",\"messageID\":\"msg_185\",\"partID\":\"prt_1130\",\"callID\":\"call_230\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_188",
+    "run_id": "run_fixture",
+    "idx": 188,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_3\",\"messageID\":\"msg_186\",\"partID\":\"prt_1039\",\"callID\":\"call_139\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_189",
+    "run_id": "run_fixture",
+    "idx": 189,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_4\",\"messageID\":\"msg_187\",\"partID\":\"prt_1131\",\"callID\":\"call_231\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_190",
+    "run_id": "run_fixture",
+    "idx": 190,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"todowrite\",\"native\":{\"sessionID\":\"ses_3\",\"messageID\":\"msg_188\",\"partID\":\"prt_1040\",\"callID\":\"call_140\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_191",
+    "run_id": "run_fixture",
+    "idx": 191,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_3\",\"messageID\":\"msg_190\",\"partID\":\"prt_1041\",\"callID\":\"call_141\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_192",
+    "run_id": "run_fixture",
+    "idx": 192,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_4\",\"messageID\":\"msg_189\",\"partID\":\"prt_1132\",\"callID\":\"call_232\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_193",
+    "run_id": "run_fixture",
+    "idx": 193,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_3\",\"messageID\":\"msg_191\",\"partID\":\"prt_1042\",\"callID\":\"call_142\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_194",
+    "run_id": "run_fixture",
+    "idx": 194,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_3\",\"messageID\":\"msg_192\",\"partID\":\"prt_1043\",\"callID\":\"call_143\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_195",
+    "run_id": "run_fixture",
+    "idx": 195,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_3\",\"messageID\":\"msg_193\",\"partID\":\"prt_1044\",\"callID\":\"call_144\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_196",
+    "run_id": "run_fixture",
+    "idx": 196,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_3\",\"messageID\":\"msg_194\",\"partID\":\"prt_1045\",\"callID\":\"call_145\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_197",
+    "run_id": "run_fixture",
+    "idx": 197,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_4\",\"messageID\":\"msg_195\",\"partID\":\"prt_1133\",\"callID\":\"call_233\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_198",
+    "run_id": "run_fixture",
+    "idx": 198,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_4\",\"messageID\":\"msg_196\",\"partID\":\"prt_1134\",\"callID\":\"call_234\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_199",
+    "run_id": "run_fixture",
+    "idx": 199,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_3\",\"messageID\":\"msg_197\",\"partID\":\"prt_1046\",\"callID\":\"call_146\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_200",
+    "run_id": "run_fixture",
+    "idx": 200,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_3\",\"messageID\":\"msg_199\",\"partID\":\"prt_1047\",\"callID\":\"call_147\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_201",
+    "run_id": "run_fixture",
+    "idx": 201,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_4\",\"messageID\":\"msg_198\",\"partID\":\"prt_1135\",\"callID\":\"call_235\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_202",
+    "run_id": "run_fixture",
+    "idx": 202,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_3\",\"messageID\":\"msg_200\",\"partID\":\"prt_1048\",\"callID\":\"call_148\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_203",
+    "run_id": "run_fixture",
+    "idx": 203,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_3\",\"messageID\":\"msg_202\",\"partID\":\"prt_1049\",\"callID\":\"call_149\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_204",
+    "run_id": "run_fixture",
+    "idx": 204,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_4\",\"messageID\":\"msg_201\",\"partID\":\"prt_1136\",\"callID\":\"call_236\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_205",
+    "run_id": "run_fixture",
+    "idx": 205,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_3\",\"messageID\":\"msg_203\",\"partID\":\"prt_1050\",\"callID\":\"call_150\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_206",
+    "run_id": "run_fixture",
+    "idx": 206,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_3\",\"messageID\":\"msg_204\",\"partID\":\"prt_1051\",\"callID\":\"call_151\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_207",
+    "run_id": "run_fixture",
+    "idx": 207,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_4\",\"messageID\":\"msg_205\",\"partID\":\"prt_1137\",\"callID\":\"call_237\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_208",
+    "run_id": "run_fixture",
+    "idx": 208,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_3\",\"messageID\":\"msg_206\",\"partID\":\"prt_1052\",\"callID\":\"call_152\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_209",
+    "run_id": "run_fixture",
+    "idx": 209,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_4\",\"messageID\":\"msg_208\",\"partID\":\"prt_1138\",\"callID\":\"call_238\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_210",
+    "run_id": "run_fixture",
+    "idx": 210,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_3\",\"messageID\":\"msg_207\",\"partID\":\"prt_1053\",\"callID\":\"call_153\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_211",
+    "run_id": "run_fixture",
+    "idx": 211,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_4\",\"messageID\":\"msg_209\",\"partID\":\"prt_1139\",\"callID\":\"call_239\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_212",
+    "run_id": "run_fixture",
+    "idx": 212,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"webfetch\",\"native\":{\"sessionID\":\"ses_4\",\"messageID\":\"msg_211\",\"partID\":\"prt_1140\",\"callID\":\"call_240\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_213",
+    "run_id": "run_fixture",
+    "idx": 213,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_3\",\"messageID\":\"msg_210\",\"partID\":\"prt_1054\",\"callID\":\"call_154\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_214",
+    "run_id": "run_fixture",
+    "idx": 214,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_4\",\"messageID\":\"msg_212\",\"partID\":\"prt_1141\",\"callID\":\"call_241\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_215",
+    "run_id": "run_fixture",
+    "idx": 215,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_3\",\"messageID\":\"msg_213\",\"partID\":\"prt_1055\",\"callID\":\"call_155\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_216",
+    "run_id": "run_fixture",
+    "idx": 216,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_3\",\"messageID\":\"msg_214\",\"partID\":\"prt_1056\",\"callID\":\"call_156\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_217",
+    "run_id": "run_fixture",
+    "idx": 217,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_4\",\"messageID\":\"msg_215\",\"partID\":\"prt_1142\",\"callID\":\"call_242\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_218",
+    "run_id": "run_fixture",
+    "idx": 218,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_3\",\"messageID\":\"msg_216\",\"partID\":\"prt_1057\",\"callID\":\"call_157\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_219",
+    "run_id": "run_fixture",
+    "idx": 219,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_4\",\"messageID\":\"msg_218\",\"partID\":\"prt_1143\",\"callID\":\"call_243\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_220",
+    "run_id": "run_fixture",
+    "idx": 220,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_3\",\"messageID\":\"msg_217\",\"partID\":\"prt_1058\",\"callID\":\"call_158\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_221",
+    "run_id": "run_fixture",
+    "idx": 221,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_4\",\"messageID\":\"msg_219\",\"partID\":\"prt_1144\",\"callID\":\"call_244\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_222",
+    "run_id": "run_fixture",
+    "idx": 222,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_3\",\"messageID\":\"msg_220\",\"partID\":\"prt_1059\",\"callID\":\"call_159\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_223",
+    "run_id": "run_fixture",
+    "idx": 223,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_4\",\"messageID\":\"msg_221\",\"partID\":\"prt_1145\",\"callID\":\"call_245\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_224",
+    "run_id": "run_fixture",
+    "idx": 224,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_3\",\"messageID\":\"msg_222\",\"partID\":\"prt_1060\",\"callID\":\"call_160\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_225",
+    "run_id": "run_fixture",
+    "idx": 225,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_4\",\"messageID\":\"msg_223\",\"partID\":\"prt_1146\",\"callID\":\"call_246\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_226",
+    "run_id": "run_fixture",
+    "idx": 226,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_3\",\"messageID\":\"msg_224\",\"partID\":\"prt_1061\",\"callID\":\"call_161\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_227",
+    "run_id": "run_fixture",
+    "idx": 227,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_4\",\"messageID\":\"msg_225\",\"partID\":\"prt_1147\",\"callID\":\"call_247\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_228",
+    "run_id": "run_fixture",
+    "idx": 228,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_3\",\"messageID\":\"msg_226\",\"partID\":\"prt_1062\",\"callID\":\"call_162\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_229",
+    "run_id": "run_fixture",
+    "idx": 229,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_4\",\"messageID\":\"msg_227\",\"partID\":\"prt_1148\",\"callID\":\"call_248\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_230",
+    "run_id": "run_fixture",
+    "idx": 230,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_3\",\"messageID\":\"msg_228\",\"partID\":\"prt_1063\",\"callID\":\"call_163\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_231",
+    "run_id": "run_fixture",
+    "idx": 231,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_4\",\"messageID\":\"msg_229\",\"partID\":\"prt_1149\",\"callID\":\"call_249\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_232",
+    "run_id": "run_fixture",
+    "idx": 232,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_3\",\"messageID\":\"msg_230\",\"partID\":\"prt_1064\",\"callID\":\"call_164\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_233",
+    "run_id": "run_fixture",
+    "idx": 233,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_3\",\"messageID\":\"msg_232\",\"partID\":\"prt_1065\",\"callID\":\"call_165\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_234",
+    "run_id": "run_fixture",
+    "idx": 234,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_4\",\"messageID\":\"msg_231\",\"partID\":\"prt_1150\",\"callID\":\"call_250\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_235",
+    "run_id": "run_fixture",
+    "idx": 235,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_4\",\"messageID\":\"msg_233\",\"partID\":\"prt_1151\",\"callID\":\"call_251\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_236",
+    "run_id": "run_fixture",
+    "idx": 236,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"computer-use_open_url\",\"native\":{\"sessionID\":\"ses_4\",\"messageID\":\"msg_235\",\"partID\":\"prt_1152\",\"callID\":\"call_252\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_237",
+    "run_id": "run_fixture",
+    "idx": 237,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"computer-use_open_url\",\"native\":{\"sessionID\":\"ses_4\",\"messageID\":\"msg_236\",\"partID\":\"prt_1153\",\"callID\":\"call_253\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_238",
+    "run_id": "run_fixture",
+    "idx": 238,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"todowrite\",\"native\":{\"sessionID\":\"ses_3\",\"messageID\":\"msg_234\",\"partID\":\"prt_1066\",\"callID\":\"call_166\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_239",
+    "run_id": "run_fixture",
+    "idx": 239,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"computer-use_open_url\",\"native\":{\"sessionID\":\"ses_4\",\"messageID\":\"msg_237\",\"partID\":\"prt_1154\",\"callID\":\"call_254\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_240",
+    "run_id": "run_fixture",
+    "idx": 240,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"computer-use_open_url\",\"native\":{\"sessionID\":\"ses_4\",\"messageID\":\"msg_239\",\"partID\":\"prt_1155\",\"callID\":\"call_255\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_241",
+    "run_id": "run_fixture",
+    "idx": 241,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"webfetch\",\"native\":{\"sessionID\":\"ses_4\",\"messageID\":\"msg_240\",\"partID\":\"prt_1156\",\"callID\":\"call_256\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_242",
+    "run_id": "run_fixture",
+    "idx": 242,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_4\",\"messageID\":\"msg_241\",\"partID\":\"prt_1157\",\"callID\":\"call_257\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_243",
+    "run_id": "run_fixture",
+    "idx": 243,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_4\",\"messageID\":\"msg_242\",\"partID\":\"prt_1158\",\"callID\":\"call_258\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_244",
+    "run_id": "run_fixture",
+    "idx": 244,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_4\",\"messageID\":\"msg_243\",\"partID\":\"prt_1159\",\"callID\":\"call_259\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_245",
+    "run_id": "run_fixture",
+    "idx": 245,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_4\",\"messageID\":\"msg_244\",\"partID\":\"prt_1160\",\"callID\":\"call_260\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_246",
+    "run_id": "run_fixture",
+    "idx": 246,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_4\",\"messageID\":\"msg_245\",\"partID\":\"prt_1161\",\"callID\":\"call_261\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_247",
+    "run_id": "run_fixture",
+    "idx": 247,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_4\",\"messageID\":\"msg_246\",\"partID\":\"prt_1162\",\"callID\":\"call_262\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_248",
+    "run_id": "run_fixture",
+    "idx": 248,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_4\",\"messageID\":\"msg_247\",\"partID\":\"prt_1163\",\"callID\":\"call_263\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_249",
+    "run_id": "run_fixture",
+    "idx": 249,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_4\",\"messageID\":\"msg_248\",\"partID\":\"prt_1164\",\"callID\":\"call_264\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_250",
+    "run_id": "run_fixture",
+    "idx": 250,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_4\",\"messageID\":\"msg_249\",\"partID\":\"prt_1165\",\"callID\":\"call_265\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_251",
+    "run_id": "run_fixture",
+    "idx": 251,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"computer-use_open_url\",\"native\":{\"sessionID\":\"ses_4\",\"messageID\":\"msg_250\",\"partID\":\"prt_1166\",\"callID\":\"call_266\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_252",
+    "run_id": "run_fixture",
+    "idx": 252,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_4\",\"messageID\":\"msg_251\",\"partID\":\"prt_1167\",\"callID\":\"call_267\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_253",
+    "run_id": "run_fixture",
+    "idx": 253,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_4\",\"messageID\":\"msg_252\",\"partID\":\"prt_1168\",\"callID\":\"call_268\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_254",
+    "run_id": "run_fixture",
+    "idx": 254,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_4\",\"messageID\":\"msg_253\",\"partID\":\"prt_1169\",\"callID\":\"call_269\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_255",
+    "run_id": "run_fixture",
+    "idx": 255,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_4\",\"messageID\":\"msg_254\",\"partID\":\"prt_1170\",\"callID\":\"call_270\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_256",
+    "run_id": "run_fixture",
+    "idx": 256,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_4\",\"messageID\":\"msg_255\",\"partID\":\"prt_1171\",\"callID\":\"call_271\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_257",
+    "run_id": "run_fixture",
+    "idx": 257,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"todowrite\",\"native\":{\"sessionID\":\"ses_4\",\"messageID\":\"msg_256\",\"partID\":\"prt_1172\",\"callID\":\"call_272\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_258",
+    "run_id": "run_fixture",
+    "idx": 258,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"computer-use_open_url\",\"native\":{\"sessionID\":\"ses_4\",\"messageID\":\"msg_257\",\"partID\":\"prt_1173\",\"callID\":\"call_273\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_259",
+    "run_id": "run_fixture",
+    "idx": 259,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_4\",\"messageID\":\"msg_258\",\"partID\":\"prt_1174\",\"callID\":\"call_274\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_260",
+    "run_id": "run_fixture",
+    "idx": 260,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_4\",\"messageID\":\"msg_259\",\"partID\":\"prt_1175\",\"callID\":\"call_275\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_261",
+    "run_id": "run_fixture",
+    "idx": 261,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_4\",\"messageID\":\"msg_260\",\"partID\":\"prt_1176\",\"callID\":\"call_276\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_262",
+    "run_id": "run_fixture",
+    "idx": 262,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_4\",\"messageID\":\"msg_261\",\"partID\":\"prt_1177\",\"callID\":\"call_277\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_263",
+    "run_id": "run_fixture",
+    "idx": 263,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"computer-use_open_url\",\"native\":{\"sessionID\":\"ses_4\",\"messageID\":\"msg_262\",\"partID\":\"prt_1178\",\"callID\":\"call_278\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_264",
+    "run_id": "run_fixture",
+    "idx": 264,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_4\",\"messageID\":\"msg_263\",\"partID\":\"prt_1179\",\"callID\":\"call_279\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_265",
+    "run_id": "run_fixture",
+    "idx": 265,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"webfetch\",\"error\":true,\"native\":{\"sessionID\":\"ses_4\",\"messageID\":\"msg_264\",\"partID\":\"prt_1180\",\"callID\":\"call_280\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_266",
+    "run_id": "run_fixture",
+    "idx": 266,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"computer-use_open_url\",\"native\":{\"sessionID\":\"ses_4\",\"messageID\":\"msg_265\",\"partID\":\"prt_1181\",\"callID\":\"call_281\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_267",
+    "run_id": "run_fixture",
+    "idx": 267,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_4\",\"messageID\":\"msg_266\",\"partID\":\"prt_1182\",\"callID\":\"call_282\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_268",
+    "run_id": "run_fixture",
+    "idx": 268,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"computer-use_open_url\",\"native\":{\"sessionID\":\"ses_4\",\"messageID\":\"msg_267\",\"partID\":\"prt_1183\",\"callID\":\"call_283\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_269",
+    "run_id": "run_fixture",
+    "idx": 269,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"todowrite\",\"native\":{\"sessionID\":\"ses_4\",\"messageID\":\"msg_268\",\"partID\":\"prt_1184\",\"callID\":\"call_284\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_270",
+    "run_id": "run_fixture",
+    "idx": 270,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"todowrite\",\"native\":{\"sessionID\":\"ses_1\",\"messageID\":\"msg_270\",\"partID\":\"prt_916\",\"callID\":\"call_16\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_271",
+    "run_id": "run_fixture",
+    "idx": 271,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_1\",\"messageID\":\"msg_271\",\"partID\":\"prt_917\",\"callID\":\"call_17\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_272",
+    "run_id": "run_fixture",
+    "idx": 272,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_1\",\"messageID\":\"msg_271\",\"partID\":\"prt_918\",\"callID\":\"call_18\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_273",
+    "run_id": "run_fixture",
+    "idx": 273,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_1\",\"messageID\":\"msg_272\",\"partID\":\"prt_919\",\"callID\":\"call_19\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_274",
+    "run_id": "run_fixture",
+    "idx": 274,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_1\",\"messageID\":\"msg_273\",\"partID\":\"prt_920\",\"callID\":\"call_20\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_275",
+    "run_id": "run_fixture",
+    "idx": 275,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_1\",\"messageID\":\"msg_273\",\"partID\":\"prt_921\",\"callID\":\"call_21\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_276",
+    "run_id": "run_fixture",
+    "idx": 276,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_1\",\"messageID\":\"msg_274\",\"partID\":\"prt_922\",\"callID\":\"call_22\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_277",
+    "run_id": "run_fixture",
+    "idx": 277,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_1\",\"messageID\":\"msg_275\",\"partID\":\"prt_923\",\"callID\":\"call_23\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_278",
+    "run_id": "run_fixture",
+    "idx": 278,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_1\",\"messageID\":\"msg_275\",\"partID\":\"prt_924\",\"callID\":\"call_24\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_279",
+    "run_id": "run_fixture",
+    "idx": 279,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_1\",\"messageID\":\"msg_276\",\"partID\":\"prt_925\",\"callID\":\"call_25\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_280",
+    "run_id": "run_fixture",
+    "idx": 280,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_1\",\"messageID\":\"msg_277\",\"partID\":\"prt_926\",\"callID\":\"call_26\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_281",
+    "run_id": "run_fixture",
+    "idx": 281,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_1\",\"messageID\":\"msg_278\",\"partID\":\"prt_927\",\"callID\":\"call_27\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_282",
+    "run_id": "run_fixture",
+    "idx": 282,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_1\",\"messageID\":\"msg_279\",\"partID\":\"prt_928\",\"callID\":\"call_28\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_283",
+    "run_id": "run_fixture",
+    "idx": 283,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_1\",\"messageID\":\"msg_280\",\"partID\":\"prt_929\",\"callID\":\"call_29\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_284",
+    "run_id": "run_fixture",
+    "idx": 284,
+    "kind": "file",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"write\",\"native\":{\"sessionID\":\"ses_1\",\"messageID\":\"msg_281\",\"partID\":\"prt_930\",\"callID\":\"call_30\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_285",
+    "run_id": "run_fixture",
+    "idx": 285,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"bash\",\"native\":{\"sessionID\":\"ses_1\",\"messageID\":\"msg_282\",\"partID\":\"prt_931\",\"callID\":\"call_31\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_286",
+    "run_id": "run_fixture",
+    "idx": 286,
+    "kind": "command",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": "{\"output\":\"\",\"tool\":\"todowrite\",\"native\":{\"sessionID\":\"ses_1\",\"messageID\":\"msg_283\",\"partID\":\"prt_932\",\"callID\":\"call_32\"}}",
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_287",
+    "run_id": "run_fixture",
+    "idx": 287,
+    "kind": "task",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": null,
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "step_288",
+    "run_id": "run_fixture",
+    "idx": 288,
+    "kind": "done",
+    "label": "REDACTED",
+    "chip": null,
+    "code_json": null,
+    "created_at": "2026-01-01T00:00:00.000Z"
+  }
+]
