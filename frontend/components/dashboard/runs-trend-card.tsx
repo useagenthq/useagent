@@ -49,7 +49,7 @@ export function RunsTrendCard({
         <div className='flex flex-col gap-0.5'>
           <p className='text-paragraph-sm text-text-sub-600'>Token throughput</p>
           <div className='flex items-center gap-2'>
-            <p className='text-title-h5 tabular-nums text-text-strong-950'>{tokensLabel}</p>
+            <p className='text-label-lg font-semibold tracking-[-0.1px] tabular-nums text-text-strong-950'>{tokensLabel}</p>
             <Badge.Root variant='lighter' color='gray'>
               est.
             </Badge.Root>
@@ -63,8 +63,8 @@ export function RunsTrendCard({
           <ComposedChart data={data} margin={{ top: 8, right: 6, bottom: 0, left: 0 }}>
             <defs>
               <linearGradient id={gradientId} x1='0' y1='0' x2='0' y2='1'>
-                <stop offset='0%' stopColor='hsl(var(--primary-base))' stopOpacity={0.28} />
-                <stop offset='100%' stopColor='hsl(var(--primary-base))' stopOpacity={0} />
+                <stop offset='0%' stopColor='#519DFA' stopOpacity={0.28} />
+                <stop offset='100%' stopColor='#519DFA' stopOpacity={0} />
               </linearGradient>
             </defs>
             <CartesianGrid
@@ -96,10 +96,10 @@ export function RunsTrendCard({
             <Line
               type='monotone'
               dataKey='total'
-              stroke='hsl(var(--primary-base))'
+              stroke='#519DFA'
               strokeWidth={2.5}
               dot={false}
-              activeDot={{ r: 4, fill: 'hsl(var(--primary-base))', stroke: 'hsl(var(--bg-white-0))', strokeWidth: 2 }}
+              activeDot={{ r: 4, fill: '#519DFA', stroke: 'hsl(var(--bg-white-0))', strokeWidth: 2 }}
               isAnimationActive
               animationDuration={450}
             />
