@@ -85,16 +85,17 @@ export function cleanPrompt(prompt: string): string {
   return idx === -1 ? prompt.trim() : prompt.slice(idx + marker.length).trim();
 }
 
-// The user-selectable engines, in display order (opencode is the default = ENGINES[0]).
-// Every engine now runs one-shot in a cloud sandbox. The legacy ids
-// ("mock", "claude-sdk", "daytona", "acp") stay in the EngineId union so old
-// runs/rows still type, but are intentionally omitted here — they never render
-// as a choice and fall back to their raw id via engineLabel().
+// Display metadata for user-facing engines, in display order (opencode default).
+// This is a CATALOG, not the selectable set: the composer offers only engines the
+// SERVER reports enabled (GET /api/config -> `engines`, gated by ENABLED_ENGINES).
+// claude/codex run via the resident-ACP adapters (native-binary install verified,
+// #127) but stay OFF by default for SaaS safety, so they surface only when a
+// backend enabled them. The legacy ids ("mock","claude-sdk","daytona","acp") stay
+// in the EngineId union so old rows still type but never render as a choice.
 export const ENGINES: { id: EngineId; label: string; hint: string }[] = [
   { id: "opencode", label: "OpenCode", hint: "any model · cloud sandbox" },
-  // claude/codex are DEFERRED, not removed (task #15): their resident-ACP
-  // backend adapters exist and the ids stay valid — re-add rows here once the
-  // native-binary install path is verified.
+  { id: "claude", label: "Claude Code", hint: "Anthropic agent · ACP" },
+  { id: "codex", label: "Codex", hint: "OpenAI agent · ACP" },
 ];
 
 export function engineLabel(id: EngineId): string {

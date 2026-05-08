@@ -11,6 +11,7 @@ import { AsteriskMark } from "@/components/foundations/brand/asterisk-mark";
 import { backendFetch } from "@/lib/backend-fetch";
 import { ENGINES, type EngineId, type MemoryScope } from "@/components/chat/types";
 import { MemoryScopePicker } from "@/components/chat/memory-scope-picker";
+import { useEnabledEngines } from "@/components/chat/engine-picker";
 import {
   filterCommands,
   SlashCommandPopover,
@@ -53,17 +54,6 @@ const modelGroups: PickerGroup[] = [
   },
 ];
 
-const engineGroups: PickerGroup[] = [
-  {
-    label: "Engines",
-    options: ENGINES.map((e) => ({
-      value: e.id,
-      label: e.label,
-      caption: ENGINE_CAPTIONS[e.id],
-      icon: RiCpuLine,
-    })),
-  },
-];
 
 /**
  * The New Task composer: a prompt textarea over a control row of searchable
@@ -85,6 +75,11 @@ export function NewTaskComposer({ skills }: { skills: Skill[] }) {
   const [model, setModel] = useState(MODELS[0].value);
   const [engine, setEngine] = useState<string>(ENGINES[0].id);
   const [memoryScope, setMemoryScope] = useState<MemoryScope>("org");
+  // Only offer engines the SERVER enabled (GET /api/config, gated by
+  // ENABLED_ENGINES): claude/codex surface here only on a backend that turned them
+  // on, so the picker never lets a user start a run the backend would 403. This is
+  // the capability-driven engine manifest (final_harness Phase 2).
+  const enabledEngines = useEnabledEngines();
   // Per-repo branch overrides (repo full_name -> branch). An absent entry means
   // "clone the repo's default branch"; only overrides are sent to the backend.
   const [branches, setBranches] = useState<Record<string, string>>({});
@@ -209,6 +204,22 @@ export function NewTaskComposer({ skills }: { skills: Skill[] }) {
     const preskill = new URLSearchParams(window.location.search).get("skill");
     if (preskill && skills.some((s) => s.id === preskill)) setPlaybook(preskill);
   }, [skills]);
+
+  // The engine picker's options, filtered to the server-enabled set.
+  const engineGroups: PickerGroup[] = useMemo(
+    () => [
+      {
+        label: "Engines",
+        options: ENGINES.filter((e) => enabledEngines.includes(e.id)).map((e) => ({
+          value: e.id,
+          label: e.label,
+          caption: ENGINE_CAPTIONS[e.id],
+          icon: RiCpuLine,
+        })),
+      },
+    ],
+    [enabledEngines],
+  );
 
   // One combined picker over the shared substrate: a "None" option, then Skills
   // and Playbooks as separate groups (the run pins exactly one, either kind).

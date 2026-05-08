@@ -125,9 +125,10 @@ export function Composer({
   onStop,
 }: ComposerProps) {
   const [value, setValue] = useState("");
-  // Single fixed engine now; there is no setter (the meaningful per-message
-  // choice is the model / memory scope). Kept as state so `engineProp` can still
-  // override it without changing the call sites.
+  // Single fixed engine here; there is no setter (this composer serves replies -
+  // a thread is pinned to one engine - and the no-sandbox Chat surface). Engine
+  // SELECTION for a new task lives in NewTaskComposer. Kept as state so `engineProp`
+  // can still override it without changing the call sites.
   const [engineState] = useState<EngineId>(defaultEngine);
   const [model, setModel] = useState(defaultModel);
   const [memoryScope, setMemoryScope] = useState<MemoryScope>(defaultMemoryScope);

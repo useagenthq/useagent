@@ -1,9 +1,40 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { RiArrowDownSLine, RiCheckLine, RiCpuLine } from "@remixicon/react";
 import { cnExt as cn } from "@/utils/cn";
-import { MODELS, modelLabel } from "@/components/chat/types";
+import { ENGINES, MODELS, modelLabel, type EngineId } from "@/components/chat/types";
+
+/**
+ * Which agent engines the SERVER actually allows, from GET /api/config -> `engines`
+ * (gated by ENABLED_ENGINES). Defaults to just OpenCode until the fetch resolves, so
+ * the composer never offers claude/codex on a backend that would 403 them. This is
+ * the capability-driven source of truth for the engine picker (final_harness Phase 2).
+ */
+export function useEnabledEngines(): EngineId[] {
+  const [engines, setEngines] = useState<EngineId[]>(["opencode"]);
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetch("/api/config");
+        if (!res.ok) return;
+        const j = (await res.json()) as { engines?: unknown };
+        if (cancelled || !Array.isArray(j.engines)) return;
+        const ids = j.engines.filter(
+          (e): e is EngineId => typeof e === "string" && ENGINES.some((x) => x.id === e),
+        );
+        if (ids.length) setEngines(ids);
+      } catch {
+        // network/backend down: keep the safe OpenCode-only default.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  return engines;
+}
 
 /**
  * The `✳ <engine> ⌄` model picker from the HeyRico hero — an orange asterisk +
