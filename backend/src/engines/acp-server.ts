@@ -211,7 +211,12 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
       // written after the sandbox is up (below).
       const secretInjection = await composeSecretEnv(ctx);
       const envVars: Record<string, string> = { ...secretInjection.createEnv };
-      if (process.env.ANTHROPIC_API_KEY) envVars.ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
+      // SaaS-SAFE credentials (final_harness.md P0): do NOT inject the platform's
+      // broad ANTHROPIC_API_KEY into the untrusted sandbox. Claude ACP authenticates
+      // ONLY from per-tenant credentials the org supplies via secrets
+      // (composeSecretEnv above) - tenant-scoped and revocable - or, later, a trusted
+      // provider gateway (#121). Fail-closed: an enabled claude run with no org-
+      // provided key fails rather than running on the shared platform key.
 
       const autoStopInterval = Number(process.env.SANDBOX_AUTO_STOP_MIN ?? 30);
       const autoDeleteInterval = Number(process.env.SANDBOX_AUTO_DELETE_MIN ?? 4320);
