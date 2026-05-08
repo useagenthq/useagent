@@ -61,6 +61,11 @@ export type ComposerProps = {
    *  surface talks to ONE backend-configured model, so it hides this rather than
    *  present a control that changes nothing. */
   enableModelPicker?: boolean;
+  /** Surface treatment (default "default" = the themed card that flips with the
+   *  app theme). "white" renders a clean WHITE rounded pill with a dark circular
+   *  send button, staying light even in dark mode (a "light island" via the
+   *  `.theme-light` scope) - used by the lightweight Chat page. */
+  surface?: "default" | "white";
   /** Starting model for the picker (thread's current model on replies). */
   defaultModel?: string;
   /** Starting memory scope (a reply inherits the thread's current scope). */
@@ -98,6 +103,7 @@ export function Composer({
   className,
   enableAgentCommand,
   enableModelPicker = true,
+  surface = "default",
   defaultModel = "claude-opus-5",
   defaultMemoryScope = "org",
   commands,
@@ -126,11 +132,17 @@ export function Composer({
 
   const engine = engineProp ?? engineState;
   const hero = variant === "hero";
+  const white = surface === "white";
   const allowAgent = enableAgentCommand ?? hero;
   const slashActive = allowAgent && !command && value.trimStart().startsWith("/");
   const showAgentPopover = slashActive || toolsOpen;
   const busy = pending || submitting;
   const canSend = value.trim().length > 0 && !busy;
+  // The active send button tone: a dark circular button on the white surface
+  // (reference), the blue circular button otherwise.
+  const sendToneClass = white
+    ? "bg-static-black text-static-white hover:bg-static-black/90"
+    : "bg-blue-500 text-white hover:bg-blue-600";
 
   // Slash-command autocomplete: live while the FIRST token is being typed
   // ("/rev" but not "/review changes"). A trailing space ends completion.
@@ -197,7 +209,10 @@ export function Composer({
   }
 
   return (
-    <div className={cn("relative w-full", className)}>
+    // `theme-light` forces the composer subtree to the light token set (even under
+    // .dark), so the "white" surface reads as a clean white pill with dark text and
+    // its child controls (memory-scope picker, placeholder) stay readable.
+    <div className={cn("relative w-full", white && "theme-light", className)}>
       {showAgentPopover && (
         <div className="absolute bottom-full left-0 z-30 mb-2 w-full">
           <ChooseAgentPopover query={slashActive ? value : ""} onSelect={pickAgent} />
@@ -226,7 +241,13 @@ export function Composer({
 
       {/* No overflow-hidden here: the engine-picker popover opens upward past
           the card edge and must not be clipped. */}
-      <div className="border-stroke-soft-200 bg-bg-white-0 shadow-regular-md rounded-2xl border">
+      <div
+        className={cn(
+          "border-stroke-soft-200 bg-bg-white-0 shadow-regular-md border",
+          // A larger radius reads as the reference's soft rounded pill on white.
+          white ? "rounded-3xl" : "rounded-2xl",
+        )}
+      >
         <PromptInput
           value={value}
           onValueChange={(v) => {
@@ -339,7 +360,7 @@ export function Composer({
                     "flex items-center justify-center rounded-full transition-all",
                     hero ? "size-10" : "size-9",
                     canSend
-                      ? "bg-blue-500 text-white hover:bg-blue-600"
+                      ? sendToneClass
                       : "bg-bg-soft-200 text-text-soft-400 cursor-not-allowed",
                   )}
                 >
