@@ -2,6 +2,7 @@ import { Daytona, type Sandbox } from "@daytona/sdk";
 import type { EmitStep, EngineAdapter, EngineRunContext } from "./types";
 import { composeTurnPrompt } from "./types";
 import { basename, parseJsonLine, truncate } from "./util";
+import { allowPermissionBypass } from "./permission-policy";
 import { composeSecretEnv, materializeSecretFiles } from "../secrets/inject";
 
 // ---------------------------------------------------------------------------
@@ -188,15 +189,18 @@ function toolResultText(content: unknown): string {
   return "";
 }
 
-const claudeSpec: SandboxEngineSpec = {
+// Exported for the P0 CLI-argument regression test (permission-policy.test.ts):
+// the command string must not carry --dangerously-skip-permissions outside dev-yolo.
+export const claudeSpec: SandboxEngineSpec = {
   id: "claude",
   command: ({ resumeId }) => {
     // Model is engine-managed (Anthropic only); the picker applies to opencode.
     const resume = resumeId ? `--resume ${resumeId} ` : "";
-    return (
-      `claude -p ${resume}--model ${DEFAULT_MODEL} --output-format stream-json ` +
-      `--verbose --dangerously-skip-permissions`
-    );
+    // SECURITY (final_harness.md P0): only pass --dangerously-skip-permissions in
+    // verified-dev yolo mode (permission-policy.ts). Without it a non-interactive
+    // CLI cannot approve tools - fail-closed, the intended SaaS default.
+    const skip = allowPermissionBypass() ? " --dangerously-skip-permissions" : "";
+    return `claude -p ${resume}--model ${DEFAULT_MODEL} --output-format stream-json --verbose${skip}`;
   },
   install: { pkg: `@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}`, bin: "claude" },
   handleLine: (line, state) => {

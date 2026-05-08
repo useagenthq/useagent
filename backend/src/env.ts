@@ -70,6 +70,10 @@ export function isEngineEnabled(engine: string): boolean {
  * DENIED unless an operator explicitly sets ACP_YOLO_APPROVE=1 for a local run.
  */
 export function acpAutoApprove(): boolean {
+  // Require VERIFIED development mode: in production (NODE_ENV=production /
+  // SKYNET_DEV_MODE=false) this is always false no matter what ACP_YOLO_APPROVE
+  // is set to, so the escape hatch can never be flipped on for a real deployment.
+  if (!devModeEnabled()) return false;
   return process.env.ACP_YOLO_APPROVE === "1" || process.env.ACP_YOLO_APPROVE === "true";
 }
 

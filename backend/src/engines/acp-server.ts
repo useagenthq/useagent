@@ -2,7 +2,7 @@ import { Daytona, type Sandbox } from "@daytona/sdk";
 import type { EmitStep, EngineAdapter, EngineRunContext } from "./types";
 import { composeTurnPrompt } from "./types";
 import { basename, parseJsonLine, truncate } from "./util";
-import { acpAutoApprove } from "../env";
+import { decideAcpPermission } from "./permission-policy";
 import { toolGatewayConfig } from "../knowledge/gateway/config";
 import { mintToolToken } from "../knowledge/gateway/token";
 import { composeSecretEnv, materializeSecretFiles } from "../secrets/inject";
@@ -430,23 +430,13 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
               // Server → client REQUEST (permissions): fail CLOSED (deny) unless the
               // dev-only ACP_YOLO_APPROVE opt-in is set. See the handler below.
               if (typeof msg.id === "number" && msg.method === "session/request_permission") {
+                // SECURITY (final_harness.md P0): single fail-closed decision point
+                // (permission-policy.ts). DENY unless verified-dev yolo.
                 const params = (msg.params ?? {}) as { options?: { optionId?: string; kind?: string }[] };
-                const opts = params.options ?? [];
-                // SECURITY (final_harness.md P0): fail CLOSED. Deny the permission
-                // by default; auto-approval is a dev-only opt-in (ACP_YOLO_APPROVE).
-                // A real approval policy belongs in the trusted backend (Phase 3);
-                // never yolo-approve tool permissions in a team/SaaS deployment.
-                const allow = acpAutoApprove()
-                  ? (opts.find((o) => o.kind === "allow_always") ??
-                     opts.find((o) => o.kind === "allow_once") ??
-                     opts[0])
-                  : undefined;
                 void post({
                   jsonrpc: "2.0",
                   id: msg.id,
-                  result: allow
-                    ? { outcome: { outcome: "selected", optionId: allow.optionId ?? "allow" } }
-                    : { outcome: { outcome: "cancelled" } },
+                  result: decideAcpPermission(params.options ?? []),
                 }).catch(() => {});
                 continue;
               }

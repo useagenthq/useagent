@@ -1,9 +1,9 @@
 // Ported from reference bot (Apache-2.0): src/kiro_crew/acp/client.py
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import type { EmitStep, EngineAdapter, EngineRunContext } from "./types";
-import { acpAutoApprove } from "../env";
+import { decideAcpPermission } from "./permission-policy";
 import { composeTurnPrompt } from "./types";
 import { basename, childEnv, parseJsonLine, readLines, truncate } from "./util";
 
@@ -77,15 +77,6 @@ function resolveClaudeBin(): string {
   return existsSync(local) ? local : "claude";
 }
 
-/** Seed <workdir>/.claude/settings.local.json so the bridge starts yolo. */
-function seedBypassPermissions(workdir: string): void {
-  const dir = join(workdir, ".claude");
-  mkdirSync(dir, { recursive: true });
-  writeFileSync(
-    join(dir, "settings.local.json"),
-    JSON.stringify({ permissions: { defaultMode: "bypassPermissions" } }),
-  );
-}
 
 interface JsonRpcMsg {
   id?: number | string;
@@ -144,7 +135,9 @@ export const acpAdapter: EngineAdapter = {
 
   async run(ctx: EngineRunContext): Promise<void> {
     const startedAt = Date.now();
-    seedBypassPermissions(ctx.workdir);
+    // NO bypass-permissions seeding: the bridge runs in default (ask) mode, so it
+    // SENDS session/request_permission, which decideAcpPermission answers fail-
+    // closed (deny unless dev-yolo). See permission-policy.ts (final_harness.md P0).
 
     const env = childEnv(ctx.workdir);
     env.CLAUDE_CODE_EXECUTABLE = resolveClaudeBin();
@@ -277,24 +270,12 @@ export const acpAdapter: EngineAdapter = {
 
     const handleServerRequest = (msg: JsonRpcMsg): void => {
       if (msg.method === "session/request_permission") {
-        // SECURITY (final_harness.md P0): fail CLOSED - DENY by default. Auto-
-        // approval is a dev-only opt-in (ACP_YOLO_APPROVE); the real approval policy
-        // is enforced in the trusted backend (Phase 3). Never yolo-approve in SaaS.
+        // SECURITY (final_harness.md P0): single fail-closed decision point. DENY
+        // unless verified-dev yolo. See permission-policy.ts / Phase 3 (#77).
         const options =
-          (msg.params as { options?: Array<{ optionId: string; kind: string }> } | undefined)
+          (msg.params as { options?: Array<{ optionId?: string; kind?: string }> } | undefined)
             ?.options ?? [];
-        const pick = acpAutoApprove()
-          ? (options.find((o) => o.kind === "allow_once") ??
-             options.find((o) => o.kind === "allow_always") ??
-             options[0])
-          : undefined;
-        writeFrame({
-          jsonrpc: "2.0",
-          id: msg.id,
-          result: pick
-            ? { outcome: { outcome: "selected", optionId: pick.optionId } }
-            : { outcome: { outcome: "cancelled" } },
-        });
+        writeFrame({ jsonrpc: "2.0", id: msg.id, result: decideAcpPermission(options) });
         return;
       }
       // Any other server→client request (fs/*, terminal/*) — we serve none, so
