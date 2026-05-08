@@ -13,6 +13,7 @@ import {
 } from "./runs/repo";
 import type { RunStatus, StepKind } from "./db/schema";
 import { adapters } from "./engines";
+import { isEngineEnabled } from "./env";
 import type { EmitStep, EngineRunContext } from "./engines/types";
 import { recallScopedMemory } from "./memory/team-memory";
 import { resolveScopedMemory } from "./memory/scope";
@@ -419,6 +420,16 @@ async function runEngine(
   // the DB; hand it to the adapter so it resumes deterministically by id.
   const engineSessionId =
     (await getThreadEngineSession(threadId, engineId, runId)) ?? undefined;
+
+  // SECURITY GATE (final_harness.md P0), defense-in-depth: even if a run row
+  // exists with an unsafe/unproven engine (legacy row, non-HTTP channel, direct
+  // DB write), refuse to spawn its adapter unless the engine is explicitly enabled
+  // (ENABLED_ENGINES). Fail the run closed rather than activating it.
+  if (!isEngineEnabled(engineId)) {
+    await finalizeRun(runId, "failed", `engine not enabled: ${engineId}`, 0);
+    bus.emit(channel(runId), { type: "end", status: "failed" } satisfies BusEvent);
+    return;
+  }
 
   const adapter = adapters[engineId];
   if (!adapter) {
