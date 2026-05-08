@@ -1,6 +1,3 @@
-import { readFileSync } from "node:fs";
-import { homedir } from "node:os";
-import { join } from "node:path";
 import { Daytona, type Sandbox } from "@daytona/sdk";
 import type { EmitStep, EngineAdapter, EngineRunContext } from "./types";
 import { composeTurnPrompt } from "./types";
@@ -384,27 +381,12 @@ const codexSpec: SandboxEngineSpec = {
     }
     return [];
   },
-  // Codex has no API-key auth here — seed the host's ChatGPT-login credential
-  // into the sandbox (the user's own Daytona org; required for codex to run at
-  // all without an OPENAI_API_KEY). Idempotent overwrite each turn.
-  prepare: async (sandbox) => {
-    let auth: string;
-    try {
-      auth = readFileSync(join(homedir(), ".codex", "auth.json"), "utf8");
-    } catch {
-      throw new Error(
-        "codex engine needs ~/.codex/auth.json on the host (run `codex login`) - no OPENAI_API_KEY is configured",
-      );
-    }
-    const b64 = Buffer.from(auth, "utf8").toString("base64");
-    const res = await sandbox.process.executeCommand(
-      `mkdir -p ~/.codex && printf '%s' '${b64}' | base64 -d > ~/.codex/auth.json && chmod 600 ~/.codex/auth.json`,
-      undefined,
-      undefined,
-      30,
-    );
-    if ((res.exitCode ?? 1) !== 0) throw new Error("failed to seed codex auth into sandbox");
-  },
+  // SaaS-SAFE credentials (final_harness.md P0): Codex authenticates ONLY from
+  // per-tenant credentials injected via org secrets (e.g. OPENAI_API_KEY) - see
+  // src/secrets/inject.ts. We NEVER copy the host operator's ~/.codex/auth.json
+  // (a developer's ChatGPT login) into an untrusted customer sandbox. There is no
+  // `prepare` hook: an enabled codex run with no injected credential fails on
+  // codex's own auth error - fail-closed - rather than borrowing the host identity.
 };
 
 // ── the shared runner ────────────────────────────────────────────────────────
