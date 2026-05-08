@@ -5,7 +5,7 @@
 // through — testing it proves the fix for OpenCode, ACP, and the sandbox paths.
 
 import { describe, expect, test } from "bun:test";
-import { composeTurnPrompt } from "./types";
+import { AGENT_OPERATING_RULES, composeTurnPrompt } from "./types";
 
 const ctx = (over: Partial<{ prompt: string; bootstrapContext: string; turnContext: string }> = {}) => ({
   prompt: "USER",
@@ -14,15 +14,18 @@ const ctx = (over: Partial<{ prompt: string; bootstrapContext: string; turnConte
   ...over,
 });
 
+const R = AGENT_OPERATING_RULES;
+
 describe("composeTurnPrompt — fresh vs resumed context", () => {
-  test("fresh native session gets bootstrap + turn + prompt, in that order", () => {
-    expect(composeTurnPrompt(ctx(), false)).toBe("BOOTTURNUSER");
+  test("fresh native session gets operating-rules + bootstrap + turn + prompt, in that order", () => {
+    expect(composeTurnPrompt(ctx(), false)).toBe(`${R}BOOTTURNUSER`);
   });
 
-  test("resumed session gets turn + prompt, but NOT the bootstrap history", () => {
+  test("resumed session gets turn + prompt, but NOT bootstrap history or re-injected rules", () => {
     const out = composeTurnPrompt(ctx(), true);
     expect(out).toBe("TURNUSER");
     expect(out).not.toContain("BOOT"); // native session already holds the thread
+    expect(out).not.toContain("operating_rules"); // and already saw the rules on its first turn
   });
 
   test("REGRESSION: a resumed session STILL carries fresh turnContext (memory not dropped)", () => {
@@ -30,13 +33,15 @@ describe("composeTurnPrompt — fresh vs resumed context", () => {
     expect(composeTurnPrompt(ctx({ turnContext: "RECALLED_FACT" }), true)).toContain("RECALLED_FACT");
   });
 
-  test("no context → just the raw prompt, fresh or resumed", () => {
+  test("fresh run ALWAYS carries the operating rules (graceful-degradation guardrail)", () => {
     const bare = ctx({ bootstrapContext: "", turnContext: "" });
-    expect(composeTurnPrompt(bare, false)).toBe("USER");
+    expect(composeTurnPrompt(bare, false)).toBe(`${R}USER`);
+    expect(composeTurnPrompt(bare, false)).toContain("operating_rules");
+    // resumed stays lean — no bootstrap, no rules, just the fresh turn + prompt.
     expect(composeTurnPrompt(bare, true)).toBe("USER");
   });
 
-  test("root fresh run (no bootstrap yet) still injects turnContext", () => {
-    expect(composeTurnPrompt(ctx({ bootstrapContext: "" }), false)).toBe("TURNUSER");
+  test("root fresh run (no bootstrap yet) still injects rules + turnContext", () => {
+    expect(composeTurnPrompt(ctx({ bootstrapContext: "" }), false)).toBe(`${R}TURNUSER`);
   });
 });
