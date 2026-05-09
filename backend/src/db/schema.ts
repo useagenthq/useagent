@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import {
   type AnyPgColumn,
+  bigint,
   boolean,
   index,
   integer,
@@ -242,6 +243,35 @@ export const providerEvents = pgTable(
   (t) => [
     index("idx_provider_events_run").on(t.runId, t.seq),
     index("idx_provider_events_part").on(t.nativePartId),
+  ],
+);
+
+/**
+ * Canonical agent-event lane (final_harness Phase 1). Provider-neutral events the
+ * backend translates every harness INTO (see src/engines/canonical.ts). Persisted
+ * BEFORE publishing to the browser SSE so replay + live use the SAME rows. Runs
+ * ALONGSIDE provider_events (the bounded raw sidecar) - additive, not a replacement.
+ * `eventId` is stable per (run, native event) so a revision UPSERTS (idempotent).
+ */
+export const canonicalEvents = pgTable(
+  "canonical_events",
+  {
+    eventId: text("event_id").primaryKey(),
+    runId: text("run_id")
+      .notNull()
+      .references(() => runs.id),
+    threadId: text("thread_id").notNull(),
+    seq: integer("seq").notNull(), // Skynet's dense monotonic thread cursor
+    turnId: text("turn_id"),
+    kind: text("kind").notNull(),
+    ts: bigint("ts", { mode: "number" }).notNull(), // Skynet-assigned ms epoch
+    identity: jsonb("identity").$type<Record<string, unknown>>().notNull(),
+    body: jsonb("body").$type<Record<string, unknown>>().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("idx_canonical_events_run").on(t.runId, t.seq),
+    index("idx_canonical_events_thread").on(t.threadId, t.seq),
   ],
 );
 
