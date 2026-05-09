@@ -68,7 +68,7 @@ export type TimelineNode =
  * eventType renders safely as nothing (never a crash), per the canonical-marker
  * contract.
  */
-function parseMarker(eventType: string, payload: unknown): TimelineMarker | null {
+export function parseMarker(eventType: string, payload: unknown): TimelineMarker | null {
   const p = asRecord(payload);
   if (!p) return null;
   if (eventType === "skill.loaded") {

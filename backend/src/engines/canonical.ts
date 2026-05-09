@@ -70,7 +70,7 @@ export interface CanonicalPlanEntry {
 /** Skynet-generated context markers (memory/knowledge/skill/playbook/rule) that
  *  render identically for every engine because they originate in Skynet's lane,
  *  not the provider's. */
-export type ContextMarkerKind = "memory" | "knowledge" | "skill" | "playbook" | "rule";
+export type ContextMarkerKind = "memory" | "knowledge" | "skill" | "playbook" | "rule" | "reconciling";
 
 /**
  * The versioned, provider-neutral event union. Discriminated on `kind`; every
@@ -122,7 +122,18 @@ export type CanonicalEventBody =
   | { kind: "commands.updated"; commands: readonly string[] }
   | { kind: "mode.updated"; mode?: string; model?: string }
   | { kind: "usage.updated"; inputTokens?: number; outputTokens?: number; costUsd?: number }
-  | { kind: "context.marker"; markerType: ContextMarkerKind; title: string; detail?: string }
+  | {
+      kind: "context.marker";
+      markerType: ContextMarkerKind;
+      title: string;
+      detail?: string;
+      /** The originating skynet-lane frame (eventType + payload), carried verbatim so the
+       *  frontend reconstructs the FULL typed TimelineMarker with the SAME parser the
+       *  legacy native lane uses - no fabrication, no drift, deep-equal markers (H3). The
+       *  skynet lane is non-provider metadata the browser already receives natively. */
+      sourceEventType: string;
+      sourcePayload?: Record<string, unknown>;
+    }
   | { kind: "harness.warning"; message: string; rawEventType?: string }
   | { kind: "harness.error"; message: string; fatal: boolean };
 

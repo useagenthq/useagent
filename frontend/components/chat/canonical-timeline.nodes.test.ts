@@ -6,7 +6,7 @@
 
 import { describe, expect, test } from "bun:test";
 import { createNativeStore } from "./native-store";
-import { buildTimeline, type TimelineNode } from "./timeline";
+import { buildTimeline } from "./timeline";
 import { parseNativeFrame } from "./native-events";
 import { buildTimelineFromCanonical, type CanonicalEventLike } from "./canonical-timeline";
 import { translateOpenCode, type OpenCodeFrame, type OpenCodeStep } from "../../../backend/src/engines/opencode-canonical";
@@ -15,7 +15,6 @@ import type { ApiStep } from "./types";
 type F = OpenCodeFrame;
 type S = OpenCodeStep;
 const ctx = { runId: "r", threadId: "r" };
-const proj = (n: readonly TimelineNode[]) => n.map((x) => ({ kind: x.kind, key: x.key }));
 
 function frame(over: Partial<F> & { eventType: string; seq: number }): F {
   return {
@@ -69,22 +68,32 @@ describe("canonical<->legacy node equivalence (synthetic text / markers / child)
     const { legacy, canon } = bothWays(frames, steps);
     expect(legacy.filter((n) => n.kind === "text").length).toBe(2); // scenario is non-vacuous
     expect(legacy.filter((n) => n.kind === "tool").length).toBe(2);
-    expect(JSON.stringify(proj(canon))).toBe(JSON.stringify(proj(legacy)));
+    expect(canon).toEqual(legacy); // FULL deep equality (H3), not only kind+key
   });
 
-  test("skynet context markers lead the turn", () => {
+  test("skynet context markers lead the turn - FULL marker fidelity (every marker kind)", () => {
+    // Exercise EVERY TimelineMarker variant the skynet lane can emit, each with its full
+    // field set (version/hash, source/itemCount/query, op/scope/failed/reconciled,
+    // deadlineMs), and assert the canonical marker node is DEEP-EQUAL to legacy - proving
+    // the reconstruction is lossless, never fabricated (H3, review issue #5).
     const frames: F[] = [
-      frame({ eventType: "skill.loaded", seq: 0, provider: "skynet", native: {}, payload: { kind: "skill", name: "Deploy", version: 2, contentHash: "h" } }),
-      frame({ eventType: "context.retrieved", seq: 1, provider: "skynet", native: {}, payload: { source: "memory", itemCount: 3 } }),
-      frame({ eventType: "part.step-start", seq: 2, native: { messageId: "m1", partId: "ps1" } }),
-      frame({ eventType: "part.tool.completed", seq: 3, native: { messageId: "m1", partId: "pc1", callId: "c1" }, payload: { type: "tool", tool: "bash" } }),
-      frame({ eventType: "part.step-finish", seq: 4, native: { messageId: "m1", partId: "pf1" } }),
+      frame({ eventType: "skill.loaded", seq: 0, provider: "skynet", native: {}, payload: { kind: "playbook", name: "Deploy", version: 7, contentHash: "abc123" } }),
+      frame({ eventType: "context.retrieved", seq: 1, provider: "skynet", native: {}, payload: { source: "memory", itemCount: 3, query: "how to deploy" } }),
+      frame({ eventType: "knowledge.retrieved", seq: 2, provider: "skynet-knowledge", native: {}, payload: { itemCount: 5 } }),
+      frame({ eventType: "memory.l0_accepted", seq: 3, provider: "skynet-memory", native: {}, payload: { op: "remember", scope: "personal", reconciled: true } }),
+      frame({ eventType: "memory.failed", seq: 4, provider: "skynet-memory", native: {}, payload: { op: "correct", scope: "org" } }),
+      frame({ eventType: "run.reconciling", seq: 5, provider: "skynet", native: {}, payload: { reason: "boot-restart", sinceMs: 1000, deadlineMs: 9999 } }),
+      frame({ eventType: "part.step-start", seq: 6, native: { messageId: "m1", partId: "ps1" } }),
+      frame({ eventType: "part.tool.completed", seq: 7, native: { messageId: "m1", partId: "pc1", callId: "c1" }, payload: { type: "tool", tool: "bash" } }),
+      frame({ eventType: "part.step-finish", seq: 8, native: { messageId: "m1", partId: "pf1" } }),
     ];
     const steps: S[] = [step("s1", 0, { sessionID: "ses_root", messageID: "m1", partID: "pc1", callID: "c1" })];
     const { legacy, canon } = bothWays(frames, steps);
-    expect(legacy.filter((n) => n.kind === "marker").length).toBe(2);
+    expect(legacy.filter((n) => n.kind === "marker").length).toBe(6); // all six markers rendered
     expect(legacy[0].kind).toBe("marker"); // markers lead
-    expect(JSON.stringify(proj(canon))).toBe(JSON.stringify(proj(legacy)));
+    // The exact typed marker bodies (skill playbook+version+hash, context+query, memory
+    // op+scope+reconciled, reconciling+deadline) must round-trip.
+    expect(canon).toEqual(legacy);
   });
 
   test("child/subagent text is routed OUT of the main timeline (only the parent tool row remains)", () => {
@@ -99,6 +108,6 @@ describe("canonical<->legacy node equivalence (synthetic text / markers / child)
     const steps: S[] = [step("s1", 0, { sessionID: "ses_root", messageID: "m1", partID: "pc1", callID: "c1" }, "command")];
     const { legacy, canon } = bothWays(frames, steps);
     expect(legacy.some((n) => n.kind === "text")).toBe(false); // child text excluded
-    expect(JSON.stringify(proj(canon))).toBe(JSON.stringify(proj(legacy)));
+    expect(canon).toEqual(legacy); // FULL deep equality (H3)
   });
 });

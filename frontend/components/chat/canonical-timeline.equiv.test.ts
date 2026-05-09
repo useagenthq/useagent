@@ -52,6 +52,13 @@ describe("canonical timeline equivalence (protected golden fixture)", () => {
     expect(JSON.stringify(proj(canon))).toBe(JSON.stringify(proj(legacy)));
   });
 
+  test("FULL deep node equality (every field, not only kind+key) (H3)", () => {
+    // The whole node - kind, key, and body (step / text / marker) - must match the
+    // legacy node exactly, so the canonical render is indistinguishable, not merely
+    // aligned on identity.
+    expect(canon).toEqual(legacy);
+  });
+
   test("every canonical node is backed by the same ApiStep the legacy node used", () => {
     for (let i = 0; i < canon.length; i++) {
       expect((canon[i] as { step: ApiStep }).step.id).toBe((legacy[i] as { step: ApiStep }).step.id);
