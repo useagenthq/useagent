@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "
 import { backendFetch } from "@/lib/backend-fetch";
 import { toThread, type ApiRun, type ApiStep, type RunStatus } from "./types";
 import { parseNativeFrame } from "./native-events";
+import type { StoredCanonicalEvent } from "./canonical-timeline";
 import { createThreadStore, type ThreadSnapshot, type ThreadStore } from "./thread-store";
 import { createThreadConnection, type EventSourceLike, type ThreadConnection } from "./thread-connection";
 
@@ -27,7 +28,7 @@ export interface ThreadStreamState {
   reconcile: () => Promise<ReconcileResult>;
 }
 
-const FRAME_TYPES = ["snapshot", "run", "step", "delta", "native", "done"] as const;
+const FRAME_TYPES = ["snapshot", "run", "step", "delta", "native", "canonical", "done"] as const;
 
 /** Create + seed a store for a thread. Seeds from `initialThread` ONLY when it
  *  actually belongs to this root, so a stale SSR payload from a previously-viewed
@@ -98,6 +99,13 @@ function dispatchFrame(store: ThreadStore, event: string, data: string): void {
       if (!runId) return;
       const frame = parseNativeFrame((parsed as { frame?: unknown }).frame);
       if (frame) store.applyNative(runId, frame);
+      return;
+    }
+    case "canonical": {
+      const event = (parsed as { event?: StoredCanonicalEvent }).event;
+      if (event && typeof event.runId === "string" && typeof event.eventId === "string") {
+        store.applyCanonical(event);
+      }
       return;
     }
     case "done": {

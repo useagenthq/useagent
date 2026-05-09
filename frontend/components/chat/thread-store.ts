@@ -11,6 +11,7 @@
 
 import { createNativeStore, type NativeSnapshot, type NativeStore } from "./native-store";
 import type { NativeFrame } from "./native-events";
+import type { StoredCanonicalEvent } from "./canonical-timeline";
 import { isLiveStatus, type ApiRun, type ApiStep, type RunStatus } from "./types";
 
 /** One run's view within the thread: its metadata + live/settled projection. */
@@ -22,6 +23,10 @@ export interface ThreadRunView {
   liveText: string;
   /** The run's native-id projection (reused per-run native store snapshot). */
   native: NativeSnapshot;
+  /** The run's canonical events (final_harness Phase 1), latest revision per eventId,
+   *  ordered by deliverySeq. Empty until the canonical lane populates; the render path
+   *  uses it only behind the canonical-timeline flag (legacy native lane is default). */
+  canonical: readonly StoredCanonicalEvent[];
 }
 
 export interface ThreadSnapshot {
@@ -51,6 +56,8 @@ export interface ThreadStore {
   applyDelta(runId: string, delta: string): void;
   /** Update the addressed run's native lane only (highest seq wins). */
   applyNative(runId: string, frame: NativeFrame): void;
+  /** Add a canonical event to its run's lane (latest revision per eventId wins). */
+  applyCanonical(event: StoredCanonicalEvent): void;
   /** Settle the addressed run and clear only its transient text. */
   applyDone(runId: string, status: RunStatus): void;
 }
@@ -65,6 +72,8 @@ export function createThreadStore(): ThreadStore {
   const summary = new Map<string, string | null>();
   const liveText = new Map<string, string>();
   const stores = new Map<string, NativeStore>();
+  // Canonical lane (final_harness Phase 1): per-run eventId -> latest-revision event.
+  const canonicalByRun = new Map<string, Map<string, StoredCanonicalEvent>>();
 
   const listeners = new Set<() => void>();
   let snapshot: ThreadSnapshot | null = null;
@@ -140,12 +149,16 @@ export function createThreadStore(): ThreadStore {
         const run = runs.get(id);
         if (!run) continue; // step/native arrived before its run frame — skip until it does
         runsList.push(run);
+        const canonMap = canonicalByRun.get(id);
         byId.set(id, {
           run,
           status: status.get(id) ?? run.status,
           summary: summary.get(id) ?? run.summary,
           liveText: liveText.get(id) ?? "",
           native: ensureStore(id).getSnapshot(),
+          canonical: canonMap
+            ? [...canonMap.values()].sort((a, b) => a.deliverySeq - b.deliverySeq)
+            : [],
         });
       }
       snapshot = { runs: runsList, byId };
@@ -180,6 +193,20 @@ export function createThreadStore(): ThreadStore {
       // so a stale/duplicate frame is dropped WITHOUT a snapshot rebuild. This is the
       // hot path on a settled-run replay (hundreds of frames) - keep it O(1)/frame.
       if (ensureStore(runId).ingestNative(frame, 0)) notify();
+    },
+
+    applyCanonical(event) {
+      // Latest revision per eventId wins; a stale/duplicate revision is dropped
+      // WITHOUT a snapshot rebuild (hot path on a canonical replay burst).
+      let m = canonicalByRun.get(event.runId);
+      if (!m) {
+        m = new Map();
+        canonicalByRun.set(event.runId, m);
+      }
+      const prev = m.get(event.eventId);
+      if (prev && prev.revision >= event.revision) return;
+      m.set(event.eventId, event);
+      notify();
     },
 
     applyDone(runId, nextStatus) {

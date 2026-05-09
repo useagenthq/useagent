@@ -111,6 +111,7 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
       live: isLiveStatus(v.status),
       liveText: v.liveText,
       native: nativeFor(v),
+      canonical: v.canonical,
     };
   });
   const allSteps = turns.flatMap((t) => t.steps);
