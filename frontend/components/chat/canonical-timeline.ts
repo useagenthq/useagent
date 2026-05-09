@@ -46,10 +46,64 @@ export interface CanonicalEventLike {
  *  plus the identity needed to accumulate + dedupe (runId + eventId + immutable
  *  deliverySeq + revision). This is the SSE `canonical` frame's `event`. */
 export interface StoredCanonicalEvent extends CanonicalEventLike {
+  readonly schemaVersion: number;
   readonly eventId: string;
   readonly runId: string;
+  readonly threadId: string;
   readonly deliverySeq: number;
   readonly revision: number;
+}
+
+/** The canonical envelope version this client understands. MUST match the backend
+ *  CANONICAL_SCHEMA_VERSION; a frame carrying any other version is dropped (forward-
+ *  compat) rather than misapplied. */
+export const CANONICAL_SCHEMA_VERSION = 1;
+
+const isNonEmptyString = (v: unknown): v is string => typeof v === "string" && v.length > 0;
+const isFiniteNumber = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
+
+/** Validate a canonical SSE frame's `event` STRUCTURALLY before it touches the store (H4,
+ *  review issue #6). The old check accepted anything with a runId + eventId, so a frame
+ *  missing seq/deliverySeq/revision/kind would corrupt ordering (NaN sort) or dedupe.
+ *  Every envelope field is checked; `frameThreadId` (the frame's own threadId) must match
+ *  the event's threadId. Returns the typed event, or null to drop it. */
+export function validateCanonicalEvent(raw: unknown, frameThreadId: unknown): StoredCanonicalEvent | null {
+  if (typeof raw !== "object" || raw === null) return null;
+  const e = raw as Record<string, unknown>;
+  if (e.schemaVersion !== CANONICAL_SCHEMA_VERSION) return null;
+  if (!isNonEmptyString(e.kind)) return null;
+  if (!isNonEmptyString(e.eventId)) return null;
+  if (!isNonEmptyString(e.runId)) return null;
+  if (!isNonEmptyString(e.threadId)) return null;
+  if (!isFiniteNumber(e.seq)) return null;
+  if (!isFiniteNumber(e.deliverySeq) || e.deliverySeq <= 0) return null; // bigserial, always >= 1
+  if (!isFiniteNumber(e.revision) || e.revision < 0) return null;
+  // The stream is thread-scoped server-side; a frame whose event names a different thread
+  // than its envelope is malformed - never apply it cross-thread.
+  if (isNonEmptyString(frameThreadId) && e.threadId !== frameThreadId) return null;
+  // identity, when present, must be an object (the reducer reads identity.native*).
+  if (e.identity !== undefined && (typeof e.identity !== "object" || e.identity === null)) return null;
+  return e as unknown as StoredCanonicalEvent;
+}
+
+/** The render-path gate (H2+H4): use the canonical timeline for a turn ONLY when the flag
+ *  is on AND the run's canonicalization reached its durable completion record AND there
+ *  are canonical rows. A still-provisional (incomplete) or empty lane falls back to legacy,
+ *  so a partial/retrying snapshot never renders. Pure, so both flag states are testable. */
+export function shouldUseCanonicalTimeline(
+  flagOn: boolean,
+  turn: { readonly canonical?: readonly CanonicalEventLike[]; readonly canonicalComplete?: boolean },
+): boolean {
+  return flagOn && turn.canonicalComplete === true && !!turn.canonical && turn.canonical.length > 0;
+}
+
+/** Validate a canonical-complete frame's `complete` payload (H4). */
+export function validateCanonicalComplete(raw: unknown, frameThreadId: unknown): { runId: string } | null {
+  if (typeof raw !== "object" || raw === null) return null;
+  const c = raw as Record<string, unknown>;
+  if (!isNonEmptyString(c.runId)) return null;
+  if (isNonEmptyString(frameThreadId) && isNonEmptyString(c.threadId) && c.threadId !== frameThreadId) return null;
+  return { runId: c.runId };
 }
 
 /** Canonical context.marker -> TimelineMarker, LOSSLESS (H3): the translator carries the

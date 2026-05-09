@@ -6,7 +6,13 @@
 
 import { describe, expect, test } from "bun:test";
 import { createThreadStore } from "./thread-store";
-import { buildTimelineFromCanonical, type StoredCanonicalEvent } from "./canonical-timeline";
+import {
+  buildTimelineFromCanonical,
+  shouldUseCanonicalTimeline,
+  validateCanonicalComplete,
+  validateCanonicalEvent,
+  type StoredCanonicalEvent,
+} from "./canonical-timeline";
 import type { ApiRun, ApiStep } from "./types";
 
 const RUN = "run_x";
@@ -80,5 +86,77 @@ describe("thread store canonicalization-complete gate (H2)", () => {
     const first = store.getSnapshot();
     store.markCanonicalComplete(RUN); // repeat
     expect(store.getSnapshot()).toBe(first); // same cached snapshot object - no rebuild
+  });
+});
+
+describe("canonical SSE frame validation (H4 - issue #6)", () => {
+  const THREAD = "thread_v";
+  const valid = (): Record<string, unknown> => ({
+    schemaVersion: 1, kind: "message.delta", seq: 3, runId: "run_v", threadId: THREAD,
+    eventId: "e1", deliverySeq: 5, revision: 0, identity: { nativeSessionId: "ses_root" }, text: "hi",
+  });
+
+  test("accepts a well-formed event and returns it typed", () => {
+    const e = validateCanonicalEvent(valid(), THREAD);
+    expect(e).not.toBeNull();
+    expect(e!.eventId).toBe("e1");
+    expect(e!.deliverySeq).toBe(5);
+  });
+
+  test("rejects non-objects and every missing/ill-typed envelope field", () => {
+    expect(validateCanonicalEvent(null, THREAD)).toBeNull();
+    expect(validateCanonicalEvent("nope", THREAD)).toBeNull();
+    const bad: Array<Partial<Record<string, unknown>>> = [
+      { schemaVersion: 2 },            // unknown schema version
+      { schemaVersion: undefined },    // missing schema version
+      { kind: "" },                    // empty kind
+      { kind: 5 },                     // non-string kind
+      { eventId: "" },                 // empty eventId
+      { runId: undefined },            // missing runId
+      { threadId: "" },                // empty threadId
+      { seq: "3" },                    // non-numeric seq
+      { seq: NaN },                    // NaN seq (would corrupt ordering)
+      { deliverySeq: 0 },              // deliverySeq must be >= 1
+      { deliverySeq: undefined },      // missing deliverySeq (would corrupt dedupe)
+      { revision: -1 },                // negative revision
+      { identity: "x" },               // identity must be an object when present
+    ];
+    for (const patch of bad) {
+      expect(validateCanonicalEvent({ ...valid(), ...patch }, THREAD)).toBeNull();
+    }
+  });
+
+  test("rejects a frame whose event names a DIFFERENT thread than its envelope", () => {
+    expect(validateCanonicalEvent({ ...valid(), threadId: "thread_other" }, THREAD)).toBeNull();
+  });
+
+  test("identity may be absent (optional)", () => {
+    const e = { ...valid() };
+    delete e.identity;
+    expect(validateCanonicalEvent(e, THREAD)).not.toBeNull();
+  });
+
+  test("validateCanonicalComplete: needs a runId, rejects a cross-thread payload", () => {
+    expect(validateCanonicalComplete({ runId: "run_v", threadId: THREAD }, THREAD)).toEqual({ runId: "run_v" });
+    expect(validateCanonicalComplete({ runId: "" }, THREAD)).toBeNull();
+    expect(validateCanonicalComplete(null, THREAD)).toBeNull();
+    expect(validateCanonicalComplete({ runId: "run_v", threadId: "thread_other" }, THREAD)).toBeNull();
+  });
+});
+
+describe("canonical render gate (H2+H4 flag-on / partial-canonical)", () => {
+  const events = [{ kind: "message.delta", seq: 0 }] as const;
+  test("flag OFF never uses canonical, even when complete with events", () => {
+    expect(shouldUseCanonicalTimeline(false, { canonical: events, canonicalComplete: true })).toBe(false);
+  });
+  test("flag ON but NOT complete falls back to legacy (partial-canonical never renders)", () => {
+    expect(shouldUseCanonicalTimeline(true, { canonical: events, canonicalComplete: false })).toBe(false);
+    expect(shouldUseCanonicalTimeline(true, { canonical: events })).toBe(false); // no completion record
+  });
+  test("flag ON + complete but EMPTY lane falls back to legacy", () => {
+    expect(shouldUseCanonicalTimeline(true, { canonical: [], canonicalComplete: true })).toBe(false);
+  });
+  test("flag ON + complete + events uses canonical", () => {
+    expect(shouldUseCanonicalTimeline(true, { canonical: events, canonicalComplete: true })).toBe(true);
   });
 });
