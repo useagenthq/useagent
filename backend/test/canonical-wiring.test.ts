@@ -4,11 +4,28 @@
 // best-effort, idempotent. DB-backed (skynet_test).
 
 import { describe, expect, test, beforeAll } from "bun:test";
+import { sql } from "drizzle-orm";
 import { db } from "../src/db/client";
 import { runs, providerEvents, steps } from "../src/db/schema";
 import { finalizeRun } from "../src/runs/finalize";
 import { loadCanonicalThread } from "../src/runs/canonical-events";
+import { runCanonicalizationOutboxOnce } from "../src/runs/canonicalization-outbox";
 import { waitFor } from "./helpers"; // side-effect: imports src/index -> migrate
+
+/** Drain the canonicalization outbox to completion for a specific run, deterministically
+ *  (the background boot loop also ticks, so we poll for the `complete` record). Returns
+ *  the outbox row so callers can assert the explicit completion watermark. */
+async function drainCanonicalization(runId: string) {
+  for (let i = 0; i < 30; i++) {
+    await runCanonicalizationOutboxOnce();
+    const [row] = (await db.execute(
+      sql`select state, source_frame_max, source_step_count from canonicalization_outbox where run_id = ${runId}`,
+    )) as unknown as Array<{ state: string; source_frame_max: number | null; source_step_count: number | null }>;
+    if (row?.state === "complete" || row?.state === "dead") return row;
+    await new Promise((r) => setTimeout(r, 100));
+  }
+  return undefined;
+}
 
 const RUN = `cw_${crypto.randomUUID()}`;
 const THREAD = RUN;
@@ -38,13 +55,16 @@ async function loadRunCanonical() {
 }
 
 describe("canonical wiring: finalizeRun populates the canonical lane (skynet_test)", () => {
-  test("a settled OpenCode run gets canonical events (post-commit, alongside native)", async () => {
+  test("a settled OpenCode run gets canonical events (via the durable outbox)", async () => {
     await finalizeRun(RUN, "completed", "done", 100);
-    let canon = await loadRunCanonical();
-    for (let i = 0; i < 20 && canon.length === 0; i++) {
-      await new Promise((r) => setTimeout(r, 150));
-      canon = await loadRunCanonical();
-    }
+    // Translation is now durable+async via the outbox — drain it to the explicit
+    // `complete` record (source-watermark stability locked in), then read.
+    const outbox = await drainCanonicalization(RUN);
+    expect(outbox?.state).toBe("complete");
+    // the completion record carries the exact source watermark it translated (4 frames -> max seq 3, 1 step)
+    expect(Number(outbox?.source_frame_max)).toBe(3);
+    expect(Number(outbox?.source_step_count)).toBe(1);
+    const canon = await loadRunCanonical();
     const kinds = new Set(canon.map((e) => e.kind));
     expect(canon.length).toBeGreaterThan(0);
     expect(kinds.has("message.started")).toBe(true); // the anchor
@@ -54,10 +74,17 @@ describe("canonical wiring: finalizeRun populates the canonical lane (skynet_tes
     expect(canon.every((e) => typeof e.deliverySeq === "number")).toBe(true);
   });
 
-  test("idempotent: re-finalizing does NOT append duplicate canonical rows", async () => {
+  test("idempotent: re-finalizing a COMPLETE run does NOT re-arm or duplicate", async () => {
     const before = (await loadRunCanonical()).length;
+    // enqueueCanonicalization preserves a `complete` row (never regresses to pending),
+    // so the worker never reprocesses it — no duplicate rows.
     await finalizeRun(RUN, "completed", "done", 100);
-    await new Promise((r) => setTimeout(r, 400));
+    await runCanonicalizationOutboxOnce();
+    await new Promise((r) => setTimeout(r, 200));
+    const [row] = (await db.execute(
+      sql`select state from canonicalization_outbox where run_id = ${RUN}`,
+    )) as unknown as Array<{ state: string }>;
+    expect(row?.state).toBe("complete"); // stayed complete, was not re-armed
     const after = (await loadRunCanonical()).length;
     expect(after).toBe(before);
   });
@@ -85,11 +112,9 @@ describe("canonical wiring: a settled Claude ACP run also populates canonical", 
 
   test("claude tool step -> canonical tool.completed (done step excluded)", async () => {
     await finalizeRun(CRUN, "completed", "listed", 100);
-    let canon = (await loadCanonicalThread(CRUN, 0)).filter((e) => e.runId === CRUN);
-    for (let i = 0; i < 20 && canon.length === 0; i++) {
-      await new Promise((r) => setTimeout(r, 150));
-      canon = (await loadCanonicalThread(CRUN, 0)).filter((e) => e.runId === CRUN);
-    }
+    const outbox = await drainCanonicalization(CRUN);
+    expect(outbox?.state).toBe("complete");
+    const canon = (await loadCanonicalThread(CRUN, 0)).filter((e) => e.runId === CRUN);
     const tools = canon.filter((e) => e.kind === "tool.completed");
     // the command + the task step map to tool.completed (2); the done step does not.
     expect(tools.length).toBe(2);

@@ -8,7 +8,11 @@ import { findSlackThreadByRoot } from "../slack/repo";
 import { composeSlackReplyText } from "../slack/reply";
 import { enqueuePostMessageTx, kickSlackOutbox } from "../slack/outbox";
 import { publishThreadChange } from "./thread-signals";
-import { translateAndPersistRun } from "./canonical-events";
+import { enqueueCanonicalization } from "./canonicalization-outbox";
+
+/** Engines whose runs project into `steps` and are translated to the canonical lane.
+ *  OpenCode + the ACP engines (claude/codex); mock/daytona have nothing to translate. */
+const CANONICAL_ENGINES = new Set(["opencode", "claude", "codex"]);
 
 // ---------------------------------------------------------------------------
 // Run finalization — the ONE place a run reaches a terminal state, so the
@@ -48,12 +52,10 @@ export async function finalizeRun(
 ): Promise<void> {
   let kickSlack = false;
   let settledThreadId: string | null = null;
-  let settledEngine: string | null = null;
   await db.transaction(async (tx) => {
     const [run] = await tx.select().from(runs).where(eq(runs.id, runId)).limit(1);
     if (!run) return; // deleted mid-flight — nothing to finalize
     settledThreadId = run.threadId;
-    settledEngine = run.engine;
 
     await completeRun(runId, status, summary, durationMs, tx);
 
@@ -87,6 +89,16 @@ export async function finalizeRun(
         threadTs: slack.threadTs,
       });
     }
+
+    // Canonical lane (final_harness Phase 1): enqueue canonicalization durably IN this
+    // transaction, so the intent to translate commits ATOMICALLY with the terminal run
+    // - a crash never leaves a settled run with no canonical history. A background
+    // outbox worker translates with a source-watermark stability check + retry, and
+    // marks `complete` only when the whole source was translated. OpenCode + the ACP
+    // engines project into `steps`, which the step lane turns into canonical tool rows.
+    if (CANONICAL_ENGINES.has(run.engine)) {
+      await enqueueCanonicalization(runId, run.threadId, tx);
+    }
   });
 
   // Kick the relay AFTER commit (the row isn't visible to it until then). No-op
@@ -99,20 +111,4 @@ export async function finalizeRun(
   // this carries the durable summary the `done` frame does not. Skipped when the
   // run was deleted mid-flight (settledThreadId stays null).
   if (settledThreadId) publishThreadChange(settledThreadId, { runId, kind: "settled" });
-
-  // Canonical lane (final_harness Phase 1, slice 3b): translate this settled run's
-  // native frames + durable steps into provider-neutral canonical events and persist
-  // them (persist-before-publish) ALONGSIDE the native lane, so reconnect/reload can
-  // replay the canonical timeline. Post-commit + best-effort: a failure here NEVER
-  // affects the run (mirrors the team-memory rule). OpenCode + the ACP engines
-  // (claude/codex) all project into `steps`, which the step lane turns into canonical
-  // tool rows; claude/codex emit few native frames, so their timeline comes almost
-  // entirely from steps - exactly why the native-only buildTimeline left them blank.
-  const CANONICAL_ENGINES = new Set(["opencode", "claude", "codex"]);
-  if (settledThreadId && settledEngine && CANONICAL_ENGINES.has(settledEngine)) {
-    const threadId = settledThreadId;
-    void translateAndPersistRun(runId, threadId).catch((e) =>
-      console.error(`[canonical] translate/persist failed for run ${runId}:`, e),
-    );
-  }
 }
