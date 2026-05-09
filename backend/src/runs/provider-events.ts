@@ -54,6 +54,27 @@ interface RunSequencer {
 
 const runSequencers = new Map<string, RunSequencer>();
 
+/**
+ * Drain/seal barrier: await every provider-event write CURRENTLY in flight for a run.
+ * Captures are fire-and-forget (`void recordProviderEvent`), so at the moment the
+ * canonicalization outbox reads the source watermark a queued write may not have
+ * committed yet - it would then commit AFTER both watermark reads and be silently
+ * missed. Awaiting the run's serial chain here forces those in-flight writes to commit
+ * before the `before` watermark is taken; the `after` re-read still catches anything that
+ * arrives during the translate. For a SETTLED run no new captures start, so one drain
+ * seals the source. Process-local (single-replica scope, documented); resolves
+ * immediately when the run has no in-flight chain.
+ */
+export async function drainProviderEvents(runId: string): Promise<void> {
+  const entry = runSequencers.get(runId);
+  if (!entry) return;
+  try {
+    await entry.chain;
+  } catch {
+    /* chain failures are already swallowed+logged by recordProviderEvent */
+  }
+}
+
 /** Highest seq already persisted for a run (−1 when none) — seeds the counter so
  *  a re-created sequencer continues the sequence instead of colliding. */
 async function highestSeq(runId: string): Promise<number> {

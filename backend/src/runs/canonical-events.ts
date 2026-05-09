@@ -17,7 +17,7 @@
  */
 import { EventEmitter } from "node:events";
 import { and, asc, eq, gt, inArray, max } from "drizzle-orm";
-import { db } from "../db/client";
+import { db, type Executor } from "../db/client";
 import { canonicalEvents } from "../db/schema";
 import { CANONICAL_SCHEMA_VERSION, type CanonicalAgentEvent } from "../engines/canonical";
 
@@ -35,7 +35,7 @@ const canonicalCompleteChannel = (threadId: string): string => `canonical-comple
 
 /** The durable "this run's canonicalization is COMPLETE" signal (H2). Carries the
  *  source watermark it locked in. React trusts the canonical lane for a run ONLY once
- *  this arrives (replay from the outbox on reconnect, live on markComplete) - never on
+ *  this arrives (replay from the outbox on reconnect, live on completion) - never on
  *  the mere presence of provisional rows. */
 export interface CanonicalizationComplete {
   readonly runId: string;
@@ -145,21 +145,19 @@ export async function persistAndPublish(
   return delivered;
 }
 
-/** Atomically REPLACE a run's canonical rows (delete + fresh insert, revision 0) in
- *  one transaction. Used by the canonicalization outbox: while a run's canonicalization
- *  is still provisional (not yet `complete`), a retry replaces any partial output
- *  cleanly - safe because React never trusts canonical until the completion record
- *  exists. Once complete the outbox stops, so completed rows are never mutated. */
-export async function replaceCanonicalForRun(
+/** REPLACE a run's canonical rows (delete + fresh insert, revision 0) using a GIVEN
+ *  executor - so the caller can fold it into a larger transaction (the outbox writes the
+ *  rows AND flips the completion record in ONE tx, so canonical rows only ever exist for
+ *  a COMPLETE run; there are no provisional rows to go stale). */
+export async function replaceCanonicalRowsTx(
+  exec: Executor,
   runId: string,
   events: readonly CanonicalAgentEvent[],
 ): Promise<DeliveredCanonicalEvent[]> {
-  return db.transaction(async (tx) => {
-    await tx.delete(canonicalEvents).where(eq(canonicalEvents.runId, runId));
-    if (events.length === 0) return [];
-    const inserted = await tx.insert(canonicalEvents).values(events.map((e) => toInsertRow(e, 0))).returning();
-    return inserted.map(rowToDelivered);
-  });
+  await exec.delete(canonicalEvents).where(eq(canonicalEvents.runId, runId));
+  if (events.length === 0) return [];
+  const inserted = await exec.insert(canonicalEvents).values(events.map((e) => toInsertRow(e, 0))).returning();
+  return inserted.map(rowToDelivered);
 }
 
 /** Replay a THREAD's canonical events after a delivery cursor (reconnect/reload).
