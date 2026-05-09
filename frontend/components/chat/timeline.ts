@@ -159,7 +159,7 @@ function partText(payload: unknown): string | null {
  * accent). That text is already rendered from the native text frames, so it must
  * not also appear as a tool row (it double-rendered the final answer otherwise).
  */
-function isNarration(step: ApiStep): boolean {
+export function isNarration(step: ApiStep): boolean {
   const t = deriveTrace(step);
   return t.accent === null && t.glyph === "task" && t.verb === "Thinking";
 }

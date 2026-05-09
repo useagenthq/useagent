@@ -127,6 +127,20 @@ export function translateOpenCode(
     if (f.native.parentSessionId && f.native.sessionId) childSessions.add(f.native.sessionId);
   }
 
+  // Message-anchored ordering (mirrors buildTimeline): min seq per messageId (the
+  // stable step-start anchor) + partId->messageId, so step tool events can be
+  // emitted in the SAME order the legacy timeline places them.
+  const msgOrderKey = new Map<string, number>();
+  const partMessage = new Map<string, string>();
+  for (const f of orderedFrames) {
+    const mid = f.native.messageId;
+    if (mid) {
+      const prev = msgOrderKey.get(mid);
+      if (prev === undefined || f.seq < prev) msgOrderKey.set(mid, f.seq);
+      if (f.native.partId) partMessage.set(f.native.partId, mid);
+    }
+  }
+
   const emittedChild = new Set<string>();  // child sessionIds we've announced
   const seenTaskCall = new Set<string>();  // task-tool callIds we've opened
   const seenTool = new Set<string>();      // non-task tool callIds we've opened
@@ -225,6 +239,66 @@ export function translateOpenCode(
     }
 
     accounting.push({ sourceId: f.eventId, kind: et, provider: f.provider, produced, ...(produced.length === 0 ? { suppressed } : {}) });
+  }
+
+  // ── step lane ────────────────────────────────────────────────────────────────
+  // Tool ROWS in the legacy timeline come from the durable step projection, not the
+  // frames. Emit a canonical tool.completed per non-`done` step (LOSSLESS: incl.
+  // narration/boot pseudo-steps - the reducer applies display policy), ordered by the
+  // SAME message-anchored key buildTimeline uses so the canonical seq preserves the
+  // legacy timeline order. `done` steps are terminal markers (not timeline nodes) and
+  // are explicitly accounted, not silently dropped.
+  const MAX = Number.MAX_SAFE_INTEGER;
+  const stepKey = (s: OpenCodeStep): [number, number] => {
+    let partID: string | null = null, messageID: string | null = null;
+    if (s.code_json) {
+      try {
+        const n = rec(JSON.parse(s.code_json))?.native as Record<string, unknown> | undefined;
+        partID = str(n?.partID); messageID = str(n?.messageID);
+      } catch { /* keep nulls */ }
+    }
+    const mid = (partID && partMessage.get(partID)) || messageID || null;
+    const k0 = mid ? msgOrderKey.get(mid) ?? MAX : MAX;
+    return [k0, s.idx];
+  };
+  const orderedSteps = [...steps]
+    .map((s, i) => ({ s, i, k: stepKey(s) }))
+    .sort((a, b) => a.k[0] - b.k[0] || a.k[1] - b.k[1] || a.i - b.i);
+
+  for (const { s } of orderedSteps) {
+    if (s.kind === "done") {
+      accounting.push({ sourceId: s.id, kind: `step:${s.kind}`, provider: "opencode", produced: [], suppressed: "terminal done step (not a timeline node)" });
+      continue;
+    }
+    let callID: string | null = null, errored = false, native: Record<string, unknown> | undefined;
+    if (s.code_json) {
+      try {
+        const c = rec(JSON.parse(s.code_json));
+        native = rec(c?.native) ?? undefined;
+        callID = str(native?.callID);
+        errored = c?.error === true;
+      } catch { /* keep defaults */ }
+    }
+    const ident = {
+      nativeEventId: s.id, // step id = the reducer's node key + lookup handle
+      nativeSessionId: str(native?.sessionID) ?? undefined,
+    };
+    // Every non-done step is a tool ROW in the legacy timeline (command + file
+    // alike), so it maps to tool.completed for node-equivalence. (A separate
+    // file.changed for the editor pane is a later, additive refinement.)
+    const body: CanonicalEventBody = { kind: "tool.completed", toolCallId: callID ?? s.id, status: errored ? "error" : "ok" };
+    events.push({
+      schemaVersion: CANONICAL_SCHEMA_VERSION,
+      eventId: `${ctx.runId}:step:${s.id}`,
+      seq: cursor,
+      runId: ctx.runId,
+      threadId: ctx.threadId,
+      ts: tsOf(cursor),
+      identity: { provider: "opencode", ...ident },
+      ...body,
+    });
+    cursor++;
+    accounting.push({ sourceId: s.id, kind: `step:${s.kind}`, provider: "opencode", produced: [body.kind] });
   }
 
   return { events, accounting };
