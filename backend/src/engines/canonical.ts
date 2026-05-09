@@ -30,6 +30,11 @@ export interface CanonicalIdentity {
   nativeEventId?: string;
   /** Native monotonic sequence, when the provider assigns one. */
   nativeSeq?: number;
+  /** Native message id (opencode `msg_*`) - lets a view reducer anchor per-message
+   *  ordering + correlate parts to their message without provider knowledge. */
+  nativeMessageId?: string;
+  /** Native part id (opencode `prt_*`) - correlates a step/tool to its message. */
+  nativePartId?: string;
 }
 
 /** Envelope carried by EVERY canonical event. `seq` is Skynet's own monotonic
@@ -78,6 +83,7 @@ export type CanonicalEventBody =
   | { kind: "session.metadata"; metadata: Record<string, unknown> }
   | { kind: "turn.started" }
   | { kind: "turn.completed"; stopReason?: string }
+  | { kind: "message.started"; messageId: string }
   | { kind: "message.delta"; messageId: string; text: string }
   | { kind: "message.completed"; messageId: string; text?: string }
   | { kind: "reasoning.delta"; messageId: string; text: string }

@@ -20,6 +20,7 @@ function describeKind(e: CanonicalEventBody): string {
     case "session.metadata": return "session metadata";
     case "turn.started": return "turn started";
     case "turn.completed": return "turn completed";
+    case "message.started": return "message started";
     case "message.delta": return "message delta";
     case "message.completed": return "message completed";
     case "reasoning.delta": return "reasoning delta";
