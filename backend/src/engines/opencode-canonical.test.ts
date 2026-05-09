@@ -7,7 +7,7 @@
 
 import { describe, expect, test } from "bun:test";
 import heavy from "../../../frontend/components/chat/__fixtures__/opencode-heavy.json";
-import { translateOpenCode, type OpenCodeFrame } from "./opencode-canonical";
+import { translateOpenCode, type OpenCodeFrame, type OpenCodeStep } from "./opencode-canonical";
 import { assertNeverEvent, type CanonicalAgentEvent } from "./canonical";
 
 const frames = heavy as unknown as OpenCodeFrame[];
@@ -37,6 +37,25 @@ function assertKnownKind(e: CanonicalAgentEvent): void {
     default: assertNeverEvent(e);
   }
 }
+
+describe("engine provenance on step-derived events (P1-final #2)", () => {
+  const oneStep: OpenCodeStep[] = [
+    { id: "s0", idx: 0, kind: "command", label: "ls", code_json: JSON.stringify({ tool: "execute", native: { callID: "c1" } }) },
+  ];
+  for (const engine of ["opencode", "claude", "codex"] as const) {
+    test(`engine "${engine}" stamps its step tool row + accounting with provider "${engine}"`, () => {
+      const r = translateOpenCode([], { runId: "r", threadId: "r", engine }, oneStep);
+      const tool = r.events.find((e) => e.kind === "tool.completed");
+      expect(tool).toBeDefined();
+      expect((tool!.identity as { provider?: string }).provider).toBe(engine);
+      expect(r.accounting.every((d) => d.provider === engine)).toBe(true);
+    });
+  }
+  test("no engine defaults to opencode (backward compatible)", () => {
+    const r = translateOpenCode([], { runId: "r", threadId: "r" }, oneStep);
+    expect((r.events.find((e) => e.kind === "tool.completed")!.identity as { provider?: string }).provider).toBe("opencode");
+  });
+});
 
 describe("OpenCode -> canonical: accounting + losslessness (golden fixture)", () => {
   test("FULL accounting: one disposition per source frame, none silent", () => {
