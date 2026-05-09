@@ -25,6 +25,11 @@ import {
   subscribeNative,
   type NativeFrame,
 } from "./native-events";
+import {
+  loadCanonicalThread,
+  subscribeCanonicalThread,
+  type DeliveredCanonicalEvent,
+} from "./canonical-events";
 import { subscribeThread } from "./thread-signals";
 import type { ApiRun, ApiStep } from "./repo";
 
@@ -513,7 +518,8 @@ runsRoutes.get("/:rootRunId/thread-events", async (c) => {
     | { type: "step"; runId: string; step: ApiStep }
     | { type: "end"; runId: string; status: RunStatus }
     | { type: "delta"; runId: string; delta: string }
-    | { type: "native"; runId: string; frame: NativeFrame };
+    | { type: "native"; runId: string; frame: NativeFrame }
+    | { type: "canonical"; event: DeliveredCanonicalEvent };
 
   const body = new ReadableStream<Uint8Array>({
     start(controller) {
@@ -620,6 +626,16 @@ runsRoutes.get("/:rootRunId/thread-events", async (c) => {
         sendFrame("native", { threadId, runId, frame });
       };
 
+      // Canonical lane (final_harness Phase 1): the provider-neutral events, deduped
+      // by the IMMUTABLE thread delivery cursor - replay + live never re-send a cursor.
+      // Thread-scoped (threadId was authorized at route entry), so no per-run attach.
+      let canonicalCursor = 0;
+      const sendCanonical = (event: DeliveredCanonicalEvent): void => {
+        if (event.deliverySeq <= canonicalCursor) return;
+        canonicalCursor = event.deliverySeq;
+        sendFrame("canonical", { threadId, event });
+      };
+
       // Prime headers/first bytes.
       send(": open\n\n");
       const heartbeat = setInterval(() => send(": ping\n\n"), 25_000);
@@ -630,6 +646,7 @@ runsRoutes.get("/:rootRunId/thread-events", async (c) => {
         closed = true;
         clearInterval(heartbeat);
         unsubscribeThread();
+        unsubscribeCanonical();
         for (const off of perRunCleanups.values()) off();
         perRunCleanups.clear();
         attached.clear();
@@ -647,6 +664,10 @@ runsRoutes.get("/:rootRunId/thread-events", async (c) => {
       // handler only enqueues; the async drain re-reads durable state.
       const unsubscribeThread = subscribeThread(threadId, (change) =>
         push({ type: "signal", runId: change.runId }),
+      );
+      // Live canonical events for the whole thread (all runs, incl. later ones).
+      const unsubscribeCanonical = subscribeCanonicalThread(threadId, (event) =>
+        push({ type: "canonical", event }),
       );
 
       if (signal.aborted) return cleanup();
@@ -694,6 +715,13 @@ runsRoutes.get("/:rootRunId/thread-events", async (c) => {
           }
         }
 
+        // 3b. Replay the thread's durable canonical events (deduped by deliverySeq).
+        //     Thread-scoped + ordered; a reconnect resumes from canonicalCursor.
+        for (const event of await loadCanonicalThread(threadId, 0)) {
+          if (closed) return;
+          sendCanonical(event);
+        }
+
         // 4. Live loop — never closes on a single run settling; only the browser
         //    disconnect (abort) or a queue overflow closes it.
         while (!closed) {
@@ -716,6 +744,9 @@ runsRoutes.get("/:rootRunId/thread-events", async (c) => {
                 continue;
               case "native":
                 sendNative(ev.runId, ev.frame);
+                continue;
+              case "canonical":
+                sendCanonical(ev.event);
                 continue;
               case "end":
                 // Settle ONE run; keep the thread connection open for queued/future
