@@ -112,6 +112,7 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
       liveText: v.liveText,
       native: nativeFor(v),
       canonical: v.canonical,
+      canonicalComplete: v.canonicalComplete,
     };
   });
   const allSteps = turns.flatMap((t) => t.steps);

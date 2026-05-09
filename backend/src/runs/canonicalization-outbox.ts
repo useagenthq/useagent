@@ -20,7 +20,7 @@ import { canonicalizationOutbox } from "../db/schema";
 import { getNativeFramesSince } from "./native-events";
 import { getStepsApi } from "./repo";
 import { translateOpenCode, type OpenCodeFrame, type OpenCodeStep } from "../engines/opencode-canonical";
-import { publishDelivered, replaceCanonicalForRun } from "./canonical-events";
+import { publishDelivered, publishCanonicalizationComplete, replaceCanonicalForRun } from "./canonical-events";
 
 const BASE_BACKOFF_MS = 500;
 const MAX_BACKOFF_MS = 30_000;
@@ -128,13 +128,33 @@ export async function runCanonicalizationOutboxOnce(limit = 20): Promise<number>
   for (const c of claimed) {
     try {
       const res = await canonicalizeRun(c.runId, c.threadId);
-      if (res.complete) { await markComplete(c.runId, res.watermark); done++; }
-      else await markRetryOrDead(c, "source watermark moved during translate");
+      if (res.complete) {
+        await markComplete(c.runId, res.watermark);
+        // Durable-first: the `complete` row is committed, so a reconnecting client and a
+        // live client converge. Signal live subscribers that this run is now trustworthy.
+        publishCanonicalizationComplete({
+          runId: c.runId, threadId: c.threadId,
+          sourceFrameMax: res.watermark.frameMax, sourceStepCount: res.watermark.stepCount,
+        });
+        done++;
+      } else await markRetryOrDead(c, "source watermark moved during translate");
     } catch (e) {
       await markRetryOrDead(c, e instanceof Error ? e.message : String(e));
     }
   }
   return done;
+}
+
+/** The runs in a THREAD whose canonicalization has reached `complete` (H2 replay source).
+ *  A reconnecting thread stream loads these so React knows which runs to trust the
+ *  canonical lane for, independent of provisional rows still in flight. */
+export async function completeCanonicalRuns(threadId: string): Promise<Array<{ runId: string; sourceFrameMax: number; sourceStepCount: number }>> {
+  const rows = (await db.execute(sql`
+    select run_id, source_frame_max, source_step_count from canonicalization_outbox
+    where thread_id = ${threadId} and state = 'complete'`)) as unknown as Array<{
+    run_id: string; source_frame_max: number | null; source_step_count: number | null;
+  }>;
+  return rows.map((r) => ({ runId: r.run_id, sourceFrameMax: Number(r.source_frame_max ?? -1), sourceStepCount: Number(r.source_step_count ?? 0) }));
 }
 
 /** Boot recovery: a crash mid-translate leaves a `translating` row stranded. Reset it

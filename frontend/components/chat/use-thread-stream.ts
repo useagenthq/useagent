@@ -28,7 +28,7 @@ export interface ThreadStreamState {
   reconcile: () => Promise<ReconcileResult>;
 }
 
-const FRAME_TYPES = ["snapshot", "run", "step", "delta", "native", "canonical", "done"] as const;
+const FRAME_TYPES = ["snapshot", "run", "step", "delta", "native", "canonical", "canonical-complete", "done"] as const;
 
 /** Create + seed a store for a thread. Seeds from `initialThread` ONLY when it
  *  actually belongs to this root, so a stale SSR payload from a previously-viewed
@@ -106,6 +106,13 @@ function dispatchFrame(store: ThreadStore, event: string, data: string): void {
       if (event && typeof event.runId === "string" && typeof event.eventId === "string") {
         store.applyCanonical(event);
       }
+      return;
+    }
+    case "canonical-complete": {
+      // H2: mark a run's canonical projection trustworthy. Until this arrives the render
+      // path stays on the legacy native lane even if provisional canonical rows exist.
+      const complete = (parsed as { complete?: { runId?: unknown } }).complete;
+      if (complete && typeof complete.runId === "string") store.markCanonicalComplete(complete.runId);
       return;
     }
     case "done": {
