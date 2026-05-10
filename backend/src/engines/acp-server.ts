@@ -4,7 +4,7 @@ import { composeTurnPrompt } from "./types";
 import { parseAcpAvailableCommands } from "@skynet/agent-harness/canonical";
 import { basename, parseJsonLine, persistSandboxBeforeExecution, truncate } from "./util";
 import { prepareRepos } from "./repo-prep";
-import { cacheAcpCommands } from "../runs/command-catalog";
+import { cacheAcpCommands, cacheSessionCommands } from "../runs/command-catalog";
 import { buildSessionCancel, createAcpRpcClient, isAlreadyInitialized, relayStateAfterBoot } from "./acp-rpc";
 import { allowPermissionBypass, decideAcpPermission } from "./permission-policy";
 import { toolGatewayConfig } from "../knowledge/gateway/config";
@@ -523,12 +523,14 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
           const kind = String(u.sessionUpdate ?? "");
           if (kind === "available_commands_update") {
             // The provider's native slash-command catalog for THIS session - a REPLACEMENT
-            // snapshot (an empty list means "no commands right now"; parseAcpAvailableCommands
-            // returns [] for it so the eventual live thread-stream state honors the empty
-            // replacement). Prime the ORG-scoped New Task cache from a NON-empty snapshot only
-            // (a transient empty frame must not wipe the pre-session cache). Fire-and-forget:
-            // a caching failure must never disturb the turn.
-            void cacheAcpCommands(ctx.orgId ?? "", cfg.id, parseAcpAvailableCommands(u));
+            // snapshot (an empty list means "no commands right now"). Persist it PER-SESSION
+            // (incl. empty) - this is the source the run's canonical commands.updated reads, so
+            // an empty replacement is honored. ALSO prime the ORG New Task cache from a
+            // non-empty snapshot only (a transient empty frame must not wipe pre-session
+            // display). Fire-and-forget: a caching failure must never disturb the turn.
+            const snapshot = parseAcpAvailableCommands(u);
+            void cacheSessionCommands(ctx.threadId ?? ctx.runId, snapshot);
+            void cacheAcpCommands(ctx.orgId ?? "", cfg.id, snapshot);
             return;
           }
           if (kind === "agent_message_chunk") {
