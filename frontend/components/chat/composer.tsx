@@ -24,12 +24,15 @@ import {
   type Agent,
 } from "@/components/chat/agent-command";
 import {
+  commandOptionId,
   filterCommands,
   parseCommandIntent,
   SlashCommandPopover,
   slashInsertText,
+  type CommandPickerStatus,
   type SlashCommand,
 } from "@/components/chat/slash-command";
+import type { CommandCatalogState } from "@/components/chat/canonical-timeline";
 import { ChatModelMenu, type ChatModelOption } from "@/components/chat/chat-model-menu";
 import type { EngineId, MemoryScope } from "@/components/chat/types";
 
@@ -89,6 +92,10 @@ export type ComposerProps = {
   defaultMemoryScope?: MemoryScope;
   /** Engine slash commands for "/" autocomplete (reply composer, live thread). */
   commands?: SlashCommand[];
+  /** The honest command-catalog state (loading/unavailable/error/ready) + provider source, so the
+   *  "/" popover shows a truthful section label + state rows. When present it supersedes
+   *  `commands` (its ready catalog is used); absent -> the plain `commands` behavior (status ready). */
+  commandState?: CommandCatalogState;
   onSubmit: ComposerSubmit;
   /** A turn is running in this thread - the send button becomes a Stop control
    *  while the input is empty (ChatGPT/opencode pattern); typing turns it back
@@ -125,6 +132,7 @@ export function Composer({
   defaultModel = "claude-opus-5",
   defaultMemoryScope = "org",
   commands,
+  commandState,
   onSubmit,
   running = false,
   stopping = false,
@@ -167,12 +175,26 @@ export function Composer({
 
   // Slash-command autocomplete: live while the FIRST token is being typed
   // ("/rev" but not "/review changes"). A trailing space ends completion.
+  // The honest command-catalog state (Phase 7) supersedes the plain `commands` prop when present:
+  // its READY catalog is the source of options, and its status drives the loading/unavailable/
+  // error rows so the picker is always truthful instead of "just nothing".
+  const catalogStatus: CommandPickerStatus = commandState?.status ?? "ready";
+  const catalogSource = commandState?.status === "unavailable" || commandState?.status === "ready" ? commandState.source : undefined;
+  const catalogCommands: SlashCommand[] = commandState
+    ? commandState.status === "ready"
+      ? commandState.commands.map((c) => ({ name: c.name, description: c.description ?? null, input: c.input ?? null }))
+      : []
+    : commands ?? [];
   const cmdToken = /^\/([^\s]*)$/.exec(value.trimStart())?.[1];
-  const cmdMatches =
-    !allowAgent && !cmdDismissed && commands?.length && cmdToken !== undefined
-      ? filterCommands(commands, cmdToken)
-      : [];
-  const cmdActive = cmdMatches.length > 0;
+  const slashTyped = !allowAgent && !cmdDismissed && cmdToken !== undefined;
+  const cmdMatches = slashTyped ? filterCommands(catalogCommands, cmdToken!) : [];
+  // Show the popover while typing "/" when there is SOMETHING honest to show: matches, a
+  // non-ready state row (loading/unavailable/error), or a ready-but-no-match note when a catalog
+  // exists. A ready+empty catalog (the engine advertises none) shows nothing.
+  const cmdActive =
+    slashTyped && (cmdMatches.length > 0 || catalogStatus !== "ready" || catalogCommands.length > 0);
+  const cmdHighlightedName =
+    cmdMatches.length > 0 ? cmdMatches[Math.min(cmdHighlight, cmdMatches.length - 1)]?.name : undefined;
 
   function pickCommand(cmd: SlashCommand) {
     setValue(slashInsertText(cmd.name)); // verbatim `/name ` - sent as-is to the resident session
@@ -181,6 +203,15 @@ export function Composer({
 
   function handleCmdKeys(e: React.KeyboardEvent<HTMLTextAreaElement>) {
     if (!cmdActive) return;
+    // Escape closes the popover in any state (loading/unavailable/error/list).
+    if (e.key === "Escape") {
+      e.preventDefault();
+      setCmdDismissed(true);
+      return;
+    }
+    // Navigation + selection only apply when there are actual command options (a state row
+    // has none - guard against a `% 0` / picking `undefined`).
+    if (cmdMatches.length === 0) return;
     if (e.key === "ArrowDown") {
       e.preventDefault();
       setCmdHighlight((h) => (h + 1) % cmdMatches.length);
@@ -189,10 +220,7 @@ export function Composer({
       setCmdHighlight((h) => (h - 1 + cmdMatches.length) % cmdMatches.length);
     } else if (e.key === "Enter" || e.key === "Tab") {
       e.preventDefault();
-      pickCommand(cmdMatches[Math.min(cmdHighlight, cmdMatches.length - 1)]);
-    } else if (e.key === "Escape") {
-      e.preventDefault();
-      setCmdDismissed(true);
+      pickCommand(cmdMatches[Math.min(cmdHighlight, cmdMatches.length - 1)]!);
     }
   }
 
@@ -274,8 +302,10 @@ export function Composer({
         <div className="absolute bottom-full left-0 z-30 mb-2 w-full">
           <SlashCommandPopover
             matches={cmdMatches}
-            highlight={Math.min(cmdHighlight, cmdMatches.length - 1)}
+            highlight={Math.max(0, Math.min(cmdHighlight, cmdMatches.length - 1))}
             onSelect={pickCommand}
+            status={catalogStatus}
+            source={catalogSource}
           />
         </div>
       )}
@@ -324,6 +354,14 @@ export function Composer({
             <PromptInputTextarea
               autoFocus={autoFocus}
               placeholder={command ? "" : placeholder}
+              // ARIA combobox/listbox wiring for the "/" command popover: announce that a list is
+              // available, whether it is open, and which option is active (so a screen reader reads
+              // the highlighted command as the user arrows through it).
+              role="combobox"
+              aria-autocomplete="list"
+              aria-expanded={cmdActive}
+              aria-controls={cmdActive ? "slashcmd-label" : undefined}
+              aria-activedescendant={cmdActive && cmdHighlightedName ? commandOptionId(cmdHighlightedName) : undefined}
               onKeyDown={(e) => {
                 handleCmdKeys(e);
                 if (e.key === "Backspace" && value === "" && command) {

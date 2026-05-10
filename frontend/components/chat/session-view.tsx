@@ -436,6 +436,7 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
             defaultMemoryScope={newest.memory_scope ?? "org"}
             pendingReply={pending?.text ?? null}
             commands={commands}
+            commandState={catalogState}
             onReply={handleReply}
             sendNowFor={runningTurn ? headQueuedId : null}
             onSendNow={handleSendNow}
