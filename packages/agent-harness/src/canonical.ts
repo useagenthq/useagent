@@ -129,7 +129,16 @@ export type CanonicalEventBody =
   | { kind: "approval.resolved"; approvalId: string; decision: string }
   | { kind: "question.requested"; questionId: string; prompt: string; options?: readonly string[] }
   | { kind: "question.resolved"; questionId: string; answer: string }
-  | { kind: "commands.updated"; commands: readonly string[]; catalog?: readonly CanonicalCommand[] }
+  | {
+      kind: "commands.updated";
+      commands: readonly string[];
+      catalog?: readonly CanonicalCommand[];
+      /** Provider/engine that advertised this catalog (UI source label). */
+      source?: string;
+      /** Resident relay child generation the catalog was captured from, so a stale
+       *  pre-restart catalog is distinguishable from the live one. */
+      generation?: number;
+    }
   | { kind: "mode.updated"; mode?: string; model?: string }
   | { kind: "usage.updated"; inputTokens?: number; outputTokens?: number; costUsd?: number }
   | {
@@ -252,4 +261,44 @@ export function parseAcpAvailableCommands(update: Record<string, unknown>): Cano
 export function normalizeOpencodeCommands(raw: unknown): CanonicalCommand[] {
   if (!Array.isArray(raw)) return [];
   return dedupeCommands(raw.map(toCanonicalCommand).filter((c): c is CanonicalCommand => c !== null));
+}
+
+/** The provider-event `eventType` under which an ACP session's command-catalog REPLACEMENT
+ *  is captured in the ordered, durable provider-events lane - so it is sealed by the same
+ *  drain barrier and counted by the same canonicalization watermark as every other native
+ *  frame (canonicalization cannot complete until the run's command snapshot is durable).
+ *  One row per native session (id `<sessionId>:commands`, upserted so the LATEST replacement
+ *  wins and duplicates are idempotent). */
+export const ACP_COMMANDS_EVENT_TYPE = "acp.commands";
+
+/** The durable payload persisted with an {@link ACP_COMMANDS_EVENT_TYPE} provider event.
+ *  Carries the snapshot plus provenance sufficient to reject a stale catalog after a
+ *  native-session change or an adapter upgrade. */
+export interface AcpCommandsFramePayload {
+  /** Provider/engine id that advertised the catalog (claude|codex). */
+  readonly source: string;
+  /** The pinned ACP adapter package(s)+version that produced the snapshot. */
+  readonly adapter?: string;
+  /** The resident relay child generation the snapshot came from. */
+  readonly generation?: number;
+  /** Capture wall-clock (ms) - order/recency is authoritative from the frame `seq`. */
+  readonly ts?: number;
+  readonly commands: readonly CanonicalCommand[];
+}
+
+/** Parse an {@link ACP_COMMANDS_EVENT_TYPE} provider-event payload back into a normalized
+ *  catalog + provenance, re-normalized through the SAME command normalization as capture so
+ *  the translator stays total + safe. Returns null when the payload carries no command array
+ *  (an EMPTY array is a valid empty replacement, NOT null). */
+export function parseAcpCommandsFrame(
+  payload: unknown,
+): { catalog: CanonicalCommand[]; source?: string; generation?: number } | null {
+  const rec = payload as { commands?: unknown; source?: unknown; generation?: unknown } | null;
+  if (!rec || !Array.isArray(rec.commands)) return null;
+  const catalog = dedupeCommands(rec.commands.map(toCanonicalCommand).filter((c): c is CanonicalCommand => c !== null));
+  return {
+    catalog,
+    ...(typeof rec.source === "string" && rec.source ? { source: rec.source } : {}),
+    ...(typeof rec.generation === "number" ? { generation: rec.generation } : {}),
+  };
 }

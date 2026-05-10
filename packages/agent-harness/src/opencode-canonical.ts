@@ -16,7 +16,9 @@
  *     There are no silent `continue` drops; the test asserts full accounting.
  */
 import {
+  ACP_COMMANDS_EVENT_TYPE,
   CANONICAL_SCHEMA_VERSION,
+  parseAcpCommandsFrame,
   type CanonicalAgentEvent,
   type CanonicalEventBody,
   type CanonicalEventKind,
@@ -261,6 +263,23 @@ export function translateOpenCode(
       } else {
         produced.push(push(f.eventId, f.provider, { kind: "tool.progress", toolCallId: callId ?? f.eventId }, ident, "#tool-prog"));
       }
+    } else if (et === ACP_COMMANDS_EVENT_TYPE) {
+      // An ACP session's native command-catalog REPLACEMENT, captured durably into the
+      // provider-events lane. Emit it as a session-identified `commands.updated` (the
+      // `ident.nativeSessionId` set below carries the native session, so the client can
+      // scope the catalog to the CURRENT session). An EMPTY catalog is a genuine empty
+      // replacement, not a drop. One frame per session (upserted at capture), so the
+      // stable eventId keeps re-canonicalization idempotent (latest revision wins).
+      const parsed = parseAcpCommandsFrame(p);
+      if (parsed) {
+        produced.push(push(f.eventId, f.provider, {
+          kind: "commands.updated",
+          commands: parsed.catalog.map((c) => c.name),
+          catalog: parsed.catalog,
+          source: parsed.source ?? f.provider,
+          ...(parsed.generation != null ? { generation: parsed.generation } : {}),
+        }, ident));
+      } else suppressed = "acp.commands without a parseable catalog";
     } else {
       produced.push(push(f.eventId, f.provider, { kind: "harness.warning", message: "unmapped opencode event", rawEventType: et }, ident));
     }
