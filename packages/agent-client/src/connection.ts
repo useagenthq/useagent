@@ -67,6 +67,12 @@ export function createThreadConnection(opts: ThreadConnectionOptions): ThreadCon
   let pollTimer: unknown = null;
   let attempts = 0;
   let stopped = false;
+  // Bumped on every (re)connect and on stop(). Each EventSource's callbacks capture their
+  // generation and no-op if it is stale, so a REPLACED source that fires late (a buffered
+  // frame, or an onopen/onerror after close()) can never mutate the current connection's
+  // state. addEventListener listeners cannot be detached via EventSourceLike, so this guard
+  // is the only thing protecting the current connection from a stale source's frames.
+  let generation = 0;
 
   const clearReconnect = (): void => {
     if (reconnectTimer !== null) { timers.clearTimeout(reconnectTimer); reconnectTimer = null; }
@@ -82,7 +88,15 @@ export function createThreadConnection(opts: ThreadConnectionOptions): ThreadCon
     pollTimer = timers.setInterval(() => opts.poll(), pollMs);
   };
   const closeSource = (): void => {
-    if (source) { try { source.close(); } catch { /* ignore */ } source = null; }
+    if (source) {
+      // Detach onopen/onerror before close() so a synchronous close-driven callback on the
+      // old source cannot run (the addEventListener frames are covered by the generation
+      // guard, which cannot be detached).
+      source.onopen = null;
+      source.onerror = null;
+      try { source.close(); } catch { /* ignore */ }
+      source = null;
+    }
   };
 
   // A real health condition: reset the failure counter and stop any fallback poll,
@@ -112,6 +126,10 @@ export function createThreadConnection(opts: ThreadConnectionOptions): ThreadCon
     if (stopped) return;
     clearReconnect();
     closeSource();
+    const gen = ++generation; // this connection's generation; captured by its callbacks
+    // A callback is stale if the controller stopped OR a newer connection replaced this
+    // source. A stale source's frames/onopen/onerror must NOT touch current state.
+    const isStale = (): boolean => stopped || gen !== generation;
     let es: EventSourceLike;
     try {
       es = opts.createEventSource(opts.url);
@@ -122,6 +140,7 @@ export function createThreadConnection(opts: ThreadConnectionOptions): ThreadCon
     source = es;
     for (const type of opts.frameTypes) {
       es.addEventListener(type, (e) => {
+        if (isStale()) return;
         if (type === opts.healthFrame) markHealthy();
         opts.onFrame(type, e.data);
       });
@@ -130,10 +149,14 @@ export function createThreadConnection(opts: ThreadConnectionOptions): ThreadCon
       // Do NOT reset failures here: an accepted-then-dropped socket must still count
       // toward the fallback. Health is only reached if it STAYS open for healthyMs
       // (or a snapshot frame arrives first, which calls markHealthy above).
+      if (isStale()) return;
       clearHealth();
       healthTimer = timers.setTimeout(markHealthy, healthyMs);
     };
-    es.onerror = () => onFailure();
+    es.onerror = () => {
+      if (isStale()) return;
+      onFailure();
+    };
   }
 
   return {

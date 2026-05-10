@@ -161,3 +161,53 @@ describe("thread-connection", () => {
     ]);
   });
 });
+
+describe("thread-connection: stale-callback generation guard", () => {
+  test("a REPLACED source's frame is ignored; only the current source delivers", () => {
+    const h = harness();
+    h.conn.start(); // source 0
+    h.openThenError(); // onFailure → close source 0, schedule reconnect
+    h.clock.advance(6000); // reconnect → source 1 (current)
+    expect(h.sources.length).toBe(2);
+
+    // The OLD source 0 fires a buffered frame AFTER being replaced - it must be ignored.
+    h.sources[0]!.emit("run", '{"run":{"id":"stale"}}');
+    expect(h.frames).toEqual([]); // stale frame dropped by the generation guard
+
+    // The CURRENT source still delivers normally.
+    h.sources[1]!.emit("run", '{"run":{"id":"fresh"}}');
+    expect(h.frames).toEqual([{ event: "run", data: '{"run":{"id":"fresh"}}' }]);
+  });
+
+  test("a REPLACED source's snapshot cannot falsely mark healthy / stop the fallback poll", () => {
+    const h = harness();
+    h.conn.start();
+    h.openThenError();
+    for (let i = 2; i <= 5; i++) { h.clock.advance(6000); h.openThenError(); }
+    expect(h.conn.isPolling()).toBe(true); // fallback engaged
+    h.clock.advance(6000); // reconnect → a fresh current source
+    const staleSource = h.sources[0]!;
+
+    // A stale snapshot from the replaced source must NOT reset failures or stop the poll.
+    staleSource.emit("snapshot", '{"runs":[]}');
+    expect(h.conn.isPolling()).toBe(true); // still polling - the stale health frame was ignored
+
+    // A snapshot from the CURRENT source does stop the poll.
+    h.last().emit("snapshot", '{"runs":[]}');
+    expect(h.conn.isPolling()).toBe(false);
+  });
+
+  test("onopen/onerror are detached on a replaced source (no stale open/error path)", () => {
+    const h = harness();
+    h.conn.start(); // source 0
+    h.openThenError();
+    h.clock.advance(6000); // reconnect → source 1
+    expect(h.sources[0]!.onopen).toBeNull();
+    expect(h.sources[0]!.onerror).toBeNull();
+    // Even if a caller force-invokes the old callbacks, the guard makes them inert:
+    // there is exactly one health/reconnect timer regardless.
+    const timers = h.clock.timeoutCount();
+    h.sources[0]!.onopen?.(); // null -> no-op; guard would also block it
+    expect(h.clock.timeoutCount()).toBe(timers);
+  });
+});
