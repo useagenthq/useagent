@@ -60,3 +60,5 @@ protocol. Architecture source of truth: `~/Documents/skynet-saas/ARCHITECTURE.md
 - No em dashes ("—") in code-level user-visible strings (labels, placeholders, summaries, aria); use hyphens or rephrase.
 
 - Never boot a second backend against the shared `skynet` DB: boot recovery (recoverStaleRuns) will reconcile/fail OTHER sessions in-flight runs. Tests use throwaway DBs.
+
+- SINGLE-BACKEND DEPLOYMENT (this release): the canonical lane's provider-source seal (`drainProviderEvents`) and the realtime SSE fan-out (thread-signals + canonical-events EventEmitters) are PROCESS-LOCAL; `FOR UPDATE SKIP LOCKED` only protects canonicalization CLAIMING, not sealing/fan-out. Exactly ONE backend per database is supported. Boot acquires a per-database Postgres advisory lock (`src/db/single-backend.ts`); a duplicate warns by default and REFUSES to boot when `REQUIRE_SINGLE_BACKEND=1`. Production MUST set `REQUIRE_SINGLE_BACKEND=1` and run one replica. Multi-replica realtime needs a durable DB-backed seal first (do not claim multi-replica safety without it).

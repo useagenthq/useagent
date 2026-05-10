@@ -43,6 +43,7 @@ import { seedDev } from "./seed";
 import { skillImportRoutes } from "./skills/import-routes";
 import { skillsRoutes } from "./skills/routes";
 import { slackEnabled, slackRoutes, startSlackOutbox } from "./slack";
+import { enforceSingleBackend } from "./db/single-backend";
 import { wikiGenRoutes } from "./wiki-gen/routes";
 
 // Apply committed Drizzle migrations BEFORE anything reads or seeds the schema,
@@ -50,6 +51,13 @@ import { wikiGenRoutes } from "./wiki-gen/routes";
 // migrator is idempotent — already-applied migrations are skipped. Path is
 // resolved from this module so cwd doesn't matter.
 await migrate(db, { migrationsFolder: `${import.meta.dir}/../drizzle` });
+
+// Single-backend guard: canonicalization sealing + realtime SSE fan-out are process-local
+// (single-replica). Acquire the per-database singleton advisory lock BEFORE recovering or
+// mutating runs, so a duplicate replica can't split the realtime lane or reconcile another
+// backend's in-flight runs. Warn-and-continue by default (dev/test-safe); fatal only when
+// the release sets REQUIRE_SINGLE_BACKEND=1.
+await enforceSingleBackend();
 
 // Idempotent boot seeding: dev org/user/member only. No demo content — the
 // Knowledge and Skills surfaces start empty and fill with real records.
