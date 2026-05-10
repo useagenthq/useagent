@@ -16,7 +16,10 @@ const ORIGIN = "http://localhost:3200"; // dev org (anonymous)
 const ENGINE = process.env.E2E_ENGINE ?? "claude";
 const MODEL = process.env.E2E_MODEL ?? (ENGINE === "codex" ? "gpt-5" : "claude-haiku-4-5");
 const DB = process.env.DATABASE_URL ?? "postgres://postgres@localhost:5432/skynet";
-const BOOT_BUDGET = Number(process.env.E2E_BOOT_BUDGET_S ?? 240); // ACP relay install can be slow first time
+// CLIENT-side poll budget, NOT the backend timeout. The cold-ACP fix is the committed
+// backend default (acp-server resolveAcpTurnTimeoutMs: ACP_TURN_TIMEOUT_MS -> ENGINE_TIMEOUT_MS
+// -> 360s); this just polls at least that long so the test doesn't give up early.
+const BOOT_BUDGET = Number(process.env.E2E_BOOT_BUDGET_S ?? 360); // ACP relay install is slow first time
 
 const LONG_PROMPT =
   "Use the shell/execute tool to run EXACTLY this one command and WAIT for it to fully finish before you reply: " +

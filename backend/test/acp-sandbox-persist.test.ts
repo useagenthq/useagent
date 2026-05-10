@@ -53,6 +53,19 @@ describe("ACP sandbox_id persistence + reuse (Blocker 3)", () => {
     expect(await getThreadSandbox(root)).toBe("sbx_acp_2");
   });
 
+  test("setRunSandbox THROWS on a missing run row (no silent zero-row update) - P1-B fail-closed", async () => {
+    // A zero-row UPDATE must not read as success: the control plane would then believe the
+    // association was recorded when it was not. The adapter awaits this and fails the turn.
+    await expect(setRunSandbox(crypto.randomUUID(), "sbx_ghost")).rejects.toThrow(/not found/);
+  });
+
+  test("setRunSandbox succeeds (no throw) and records the id for an existing run row", async () => {
+    const root = crypto.randomUUID();
+    await enqueue(root, root, null);
+    await setRunSandbox(root, "sbx_real"); // must not throw for a real row
+    expect(await sandboxOf(root)).toBe("sbx_real");
+  });
+
   test("getThreadSandbox returns the MOST RECENT recorded sandbox (thread box can change)", async () => {
     const root = crypto.randomUUID();
     await enqueue(root, root, null);

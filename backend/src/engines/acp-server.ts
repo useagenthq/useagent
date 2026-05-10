@@ -1,7 +1,7 @@
 import { Daytona, type Sandbox } from "@daytona/sdk";
 import type { EmitStep, EngineAdapter, EngineRunContext } from "./types";
 import { composeTurnPrompt } from "./types";
-import { basename, parseJsonLine, truncate } from "./util";
+import { basename, parseJsonLine, persistSandboxBeforeExecution, truncate } from "./util";
 import { buildSessionCancel, createAcpRpcClient, isAlreadyInitialized, relayStateAfterBoot } from "./acp-rpc";
 import { allowPermissionBypass, decideAcpPermission } from "./permission-policy";
 import { toolGatewayConfig } from "../knowledge/gateway/config";
@@ -94,6 +94,27 @@ export interface AcpEngineConfig {
   preRelay?: string;
   /** Idempotent per-turn sandbox prep (codex auth seeding). */
   prepare?(sandbox: Sandbox): Promise<void>;
+}
+
+/** Total wall-clock budget for ONE ACP turn (drives the turn-abort timer). A fresh
+ *  Claude/Codex sandbox reinstalls the agent (~250MB) AND runs the turn's first tool, which
+ *  routinely exceeds the old 180s default and aborted real cold runs; the committed default
+ *  is now 360s so a cold first turn is reliable without runtime-only ENV tweaks. Precedence:
+ *    1. ACP_TURN_TIMEOUT_MS  (ACP-specific boundary)
+ *    2. ENGINE_TIMEOUT_MS    (shared, kept for back-compat)
+ *    3. 360_000              (safe default)
+ *  Each candidate must parse to a FINITE POSITIVE number or it is ignored - an invalid /
+ *  NaN / zero / non-finite value can never create a zero, NaN or unbounded timer. This does
+ *  NOT touch OpenCode's own budget (opencode-server keeps its 600s default) or the worker's
+ *  sliding inactivity window / absolute ceiling. Exported for focused tests. */
+export function resolveAcpTurnTimeoutMs(env: Record<string, string | undefined> = process.env): number {
+  const DEFAULT_MS = 360_000;
+  const valid = (raw: string | undefined): number | null => {
+    if (raw == null || raw === "") return null;
+    const n = Number(raw);
+    return Number.isFinite(n) && n > 0 ? n : null;
+  };
+  return valid(env.ACP_TURN_TIMEOUT_MS) ?? valid(env.ENGINE_TIMEOUT_MS) ?? DEFAULT_MS;
 }
 
 /** Build the per-sandbox package install clause. Idempotency MUST key on the ACTUAL
@@ -255,7 +276,7 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
       if (!apiKey) throw new Error(`${cfg.id} engine needs DAYTONA_API_KEY in the backend env`);
       const startedAt = Date.now();
       const daytona = new Daytona({ apiKey, target: process.env.DAYTONA_TARGET ?? "us" });
-      const budgetMs = Number(process.env.ENGINE_TIMEOUT_MS ?? 180_000);
+      const budgetMs = resolveAcpTurnTimeoutMs();
 
       // Org secrets ride in via a BASH_ENV dotenv (createEnv), not as N env vars
       // (Daytona rejects a create with a whole secret catalog). Platform engine
@@ -352,13 +373,19 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
         }
         if (ctx.signal.aborted) throw new Error(`${cfg.id} run aborted (timeout)`);
         const box = sandbox;
-        // Persist the sandbox id for THIS run (durable thread->sandbox mapping): EVERY
-        // ACP run - first or a resident reply reusing the box - records where it ran, so
-        // the UI terminal/preview/file lookups, cleanup and recovery can resolve it (ACP
-        // used to leave runs.sandbox_id NULL). A persist failure is logged, never swallowed.
-        void setRunSandbox(ctx.runId, box.id).catch((err) =>
-          console.error(`[acp:${cfg.id}] failed to persist sandbox_id for run ${ctx.runId}:`, err),
-        );
+        // Persist the sandbox id for THIS run (durable thread->sandbox mapping) BEFORE we
+        // prepare/boot/execute, so the UI terminal/preview/file lookups, cleanup and
+        // recovery can resolve it (ACP used to leave runs.sandbox_id NULL). AWAITED +
+        // FAIL-CLOSED: if the association cannot be recorded we abort the turn rather than
+        // run in a box the control plane can't see, and a box we JUST provisioned is torn
+        // down (a reused resident box is kept for the thread lifecycle below).
+        await persistSandboxBeforeExecution({
+          runId: ctx.runId,
+          sandboxId: box.id,
+          reused: retainForThread,
+          persist: setRunSandbox,
+          deleteFreshSandbox: () => box.delete(),
+        });
 
         await cfg.prepare?.(box);
 
