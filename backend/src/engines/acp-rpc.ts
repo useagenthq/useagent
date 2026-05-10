@@ -117,3 +117,30 @@ export function liveSessionAfterBoot(
 ): string | null {
   return relayRebooted ? null : liveSessionId;
 }
+
+/** Per-generation state of a resident ACP relay/agent process: whether it has been
+ *  ACP-`initialize`d and its live native session id. Both are valid only for the CURRENT
+ *  agent generation. */
+export interface RelayGenState {
+  readonly initialized: boolean;
+  readonly sessionId: string | null;
+}
+
+/** Advance the resident relay's per-generation state after a (re)boot. A relay/agent
+ *  (RE)START (`relayRebooted`) means a FRESH process: it must be `initialize`d again AND
+ *  its previous session id is dead. No restart carries both forward (a reused turn skips
+ *  re-initialize and reuses the live session). One source of truth for the whole state
+ *  machine so acp-server never re-derives it inline. */
+export function relayStateAfterBoot(prev: RelayGenState, relayRebooted: boolean): RelayGenState {
+  return relayRebooted
+    ? { initialized: false, sessionId: null }
+    : { initialized: prev.initialized, sessionId: liveSessionAfterBoot(prev.sessionId, relayRebooted) };
+}
+
+/** Whether an ACP error is the "Already initialized" (-32603) a codex-acp agent returns
+ *  when `initialize` is re-sent to an already-initialized resident process (e.g. a relay
+ *  that survived a backend restart, where our in-memory `initialized` flag was lost).
+ *  Treated as success by the caller. */
+export function isAlreadyInitialized(err: unknown): boolean {
+  return /already initialized/i.test(err instanceof Error ? err.message : String(err));
+}

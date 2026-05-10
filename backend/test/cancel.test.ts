@@ -6,6 +6,7 @@ import { acceptRunCommand } from "../src/commands";
 import { acceptRunCancel, CANCEL_SUMMARY } from "../src/commands/cancel";
 import { claimNextRun, listActiveCommands, settleCommandForRun } from "../src/commands/dispatch";
 import { completeRun, setRunStatus } from "../src/runs/repo";
+import { terminalOnReturn } from "../src/worker";
 import "./helpers"; // side-effect: imports src/index → migrate + seed
 
 // Durable cancellation (Fix: durable cancel). These exercise the command-layer
@@ -150,5 +151,22 @@ describe("durable run cancellation", () => {
   test("cancelling an unknown / cross-org run id is not_found", async () => {
     const out = await acceptRunCancel({ orgId: ORG, actorId: null, runId: crypto.randomUUID() });
     expect(out.status).toBe("not_found");
+  });
+});
+
+// Blocker 2: durable cancellation DOMINATES a coincident provider completion in the
+// worker's return path (an ACP agent that finishes the turn and returns normally after
+// a user cancel). terminalOnReturn is the pure decision; the cancel-while-running (throw)
+// path is the existing catch branch and is unchanged.
+describe("cancel dominates provider completion (worker return path)", () => {
+  test("adapter RETURNS but the run was cancelled → 'Stopped by user' (failed), not completed", () => {
+    // race: user cancel accepted AND the provider reports a completion concurrently
+    expect(terminalOnReturn(CANCEL_SUMMARY, "codex: ...done")).toEqual({ status: "failed", summary: CANCEL_SUMMARY });
+  });
+  test("adapter RETURNS with NO cancellation → the provider completion stands (real completion)", () => {
+    expect(terminalOnReturn(null, "PONG")).toEqual({ status: "completed", summary: "PONG" });
+  });
+  test("completion with no adapter summary falls back to 'run completed'", () => {
+    expect(terminalOnReturn(null, null)).toEqual({ status: "completed", summary: "run completed" });
   });
 });

@@ -256,8 +256,19 @@ runsRoutes.post("/:id/cancel", async (c) => {
     case "accepted":
       // A RUNNING actor is aborted in-process (its teardown finalizes the run
       // "Stopped by user" and pumps); a QUEUED run was already failed in-tx.
-      // Pump either way so the next queued turn dispatches.
-      if (outcome.runStatusWas === "running") signalCancel(id, CANCEL_SUMMARY);
+      // Pump either way so the next queued turn dispatches. Do NOT pretend a live
+      // process was signalled when it was not: a run the DB marks running but with no
+      // live canceller (e.g. after a crash) has its cancel recorded durably above and
+      // reconciled by recovery - surface the gap instead of hiding it.
+      if (outcome.runStatusWas === "running") {
+        const signalled = signalCancel(id, CANCEL_SUMMARY);
+        if (!signalled) {
+          console.warn(
+            `[cancel] run ${id} is 'running' but has no live canceller in this process; ` +
+              "the cancel is durable and will be reconciled by recovery.",
+          );
+        }
+      }
       await pumpThread(outcome.threadId);
       return c.json({ id, status: "cancelling" }, 202);
     default:

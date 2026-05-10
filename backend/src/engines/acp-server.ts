@@ -2,11 +2,12 @@ import { Daytona, type Sandbox } from "@daytona/sdk";
 import type { EmitStep, EngineAdapter, EngineRunContext } from "./types";
 import { composeTurnPrompt } from "./types";
 import { basename, parseJsonLine, truncate } from "./util";
-import { buildSessionCancel, createAcpRpcClient, liveSessionAfterBoot } from "./acp-rpc";
+import { buildSessionCancel, createAcpRpcClient, isAlreadyInitialized, relayStateAfterBoot } from "./acp-rpc";
 import { allowPermissionBypass, decideAcpPermission } from "./permission-policy";
 import { toolGatewayConfig } from "../knowledge/gateway/config";
 import { mintToolToken } from "../knowledge/gateway/token";
 import { composeSecretEnv, materializeSecretFiles } from "../secrets/inject";
+import { getThreadSandbox, setRunSandbox } from "../runs/repo";
 
 // ---------------------------------------------------------------------------
 // Resident claude/codex via ACP — the opencode-server equivalent for the other
@@ -117,6 +118,11 @@ interface ThreadRelay {
   /** ACP session id LIVE in the current agent process (also persisted to the
    *  DB; a dead process/sandbox invalidates it and we session/new again). */
   sessionId: string | null;
+  /** Whether the CURRENT resident agent process/generation has been ACP-`initialize`d.
+   *  ACP `initialize` is once per connection lifetime; a resident agent reused across
+   *  turns is already initialized and codex-acp rejects a re-`initialize` with -32603
+   *  "Already initialized". Reset to false when the relay/agent (re)starts. */
+  initialized: boolean;
 }
 
 /** threadId → per-engine relay state (a thread talks to ONE engine's relay). */
@@ -307,6 +313,29 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
             sandbox = null;
           }
         }
+        // Durable reuse across a BACKEND restart: no in-memory relay, but the thread
+        // recorded a sandbox (setRunSandbox below). Reconnect to it instead of
+        // provisioning a new one; the boot step re-probes/restarts the resident relay.
+        // A dead/unreachable persisted sandbox is NEVER trusted - fall through to fresh.
+        if (!sandbox && ctx.threadId) {
+          const priorId = await getThreadSandbox(ctx.threadId).catch(() => null);
+          if (priorId) {
+            try {
+              const prior = await daytona.get(priorId);
+              const state = (prior as { state?: string }).state;
+              if (state === "stopped" || state === "paused" || state === "archived") {
+                await ctx.emit({ kind: "task", label: `Resuming thread sandbox ${prior.id.slice(0, 8)}…`, chip: cfg.id });
+                await prior.start();
+              } else if (state !== "started") {
+                throw new Error(`unusable state: ${state}`);
+              }
+              sandbox = prior;
+              retainForThread = true;
+            } catch {
+              sandbox = null; // persisted sandbox is gone/unusable — provision fresh
+            }
+          }
+        }
         if (!sandbox) {
           await ctx.emit({ kind: "task", label: "Provisioning cloud sandbox…", chip: cfg.id });
           sandbox = await daytona.create({
@@ -323,6 +352,13 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
         }
         if (ctx.signal.aborted) throw new Error(`${cfg.id} run aborted (timeout)`);
         const box = sandbox;
+        // Persist the sandbox id for THIS run (durable thread->sandbox mapping): EVERY
+        // ACP run - first or a resident reply reusing the box - records where it ran, so
+        // the UI terminal/preview/file lookups, cleanup and recovery can resolve it (ACP
+        // used to leave runs.sandbox_id NULL). A persist failure is logged, never swallowed.
+        void setRunSandbox(ctx.runId, box.id).catch((err) =>
+          console.error(`[acp:${cfg.id}] failed to persist sandbox_id for run ${ctx.runId}:`, err),
+        );
 
         await cfg.prepare?.(box);
 
@@ -378,11 +414,16 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
             token: link.token ?? "",
             workdir: `${home}/work`,
             sessionId: null,
+            initialized: false,
           };
         }
         const live = relay; // narrowed non-null for the closures below
-        // Restart-generation guard (Slice 3): never reuse a pre-restart session id.
-        live.sessionId = liveSessionAfterBoot(live.sessionId, relayRebooted);
+        // Restart-generation state machine (single source of truth in acp-rpc): a relay/
+        // agent (re)start resets ACP initialization AND invalidates the stale session id;
+        // a reused turn carries both forward.
+        const gen = relayStateAfterBoot({ initialized: live.initialized, sessionId: live.sessionId }, relayRebooted);
+        live.initialized = gen.initialized;
+        live.sessionId = gen.sessionId;
         if (key) {
           threadRelays.set(key, live);
           retainForThread = true;
@@ -521,10 +562,23 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
         // ── ACP handshake + the turn ────────────────────────────────────────
         const turnTimeout = setTimeout(() => sseAbort.abort(), Math.max(10_000, budgetMs - (Date.now() - startedAt)));
         try {
-          await request("initialize", {
-            protocolVersion: 1,
-            clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false },
-          });
+          // Initialize ONCE per resident process generation. A reused turn skips it
+          // (the agent is already initialized); a (re)started agent has `initialized`
+          // reset above, so it initializes again. Belt-and-suspenders: if the relay
+          // survived a backend restart (our in-memory flag was lost) the agent is
+          // already initialized and codex-acp answers -32603 "Already initialized" -
+          // treat that as success; anything else is a real failure.
+          if (!live.initialized) {
+            try {
+              await request("initialize", {
+                protocolVersion: 1,
+                clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false },
+              });
+            } catch (e) {
+              if (!isAlreadyInitialized(e)) throw e;
+            }
+            live.initialized = true;
+          }
 
           // Knowledge MCP gateway at parity with opencode — minted ONCE per turn
           // and passed into both session/load and session/new (run-scoped token).
