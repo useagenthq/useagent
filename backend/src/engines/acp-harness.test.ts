@@ -21,7 +21,7 @@ describe("ACP harness capabilities are honest (not aspirational)", () => {
       expect(caps.streaming).toBe("parts");
       expect(caps.resume).toBe(true);
       // Everything not implemented today must be false - no over-claiming.
-      expect(caps.cancel).toBe(false); // no native session/cancel yet (Slice 4)
+      expect(caps.cancel).toBe(true); // native session/cancel IS wired (Slice 4 + reconcile)
       expect(caps.authoritativeHistory).toBe(false); // no ACP history reconcile
       expect(caps.childSessions).toBe(false); // ACP has no child-session emitter
       expect(caps.approvals).toBe(false);
@@ -40,9 +40,12 @@ describe("ACP harness capabilities are honest (not aspirational)", () => {
 
 describe("ACP harness control ops are typed-unsupported, never silent success", () => {
   for (const [name, harness] of [["claude", claudeHarness], ["codex", codexHarness]] as const) {
-    test(`${name}: cancel() -> unsupported_capability(cancel), never ok`, async () => {
+    test(`${name}: cancel() with no live relay for the session -> classified error, never a fabricated ok`, async () => {
+      // In a unit context there is no resident relay holding HANDLE's session, so a targeted
+      // native cancel finds nothing to cancel and reports a classified error (not `ok`, not a
+      // stale `unsupported_capability` - the capability IS wired, it just has no live session here).
       const r = await harness.cancel(HANDLE, "user stop");
-      expect(r).toEqual({ status: "unsupported_capability", provider: name, capability: "cancel" });
+      expect(r).toEqual({ status: "error", code: "session_invalid", message: "no live ACP relay holds this session" });
       expect(r.status).not.toBe("ok");
     });
     test(`${name}: reconcile() -> unsupported_capability(reconcile), never a fabricated completion`, async () => {

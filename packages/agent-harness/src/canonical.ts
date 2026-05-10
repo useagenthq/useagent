@@ -89,7 +89,7 @@ export type ContextMarkerKind = "memory" | "knowledge" | "skill" | "playbook" | 
  * that lacks the capability - React shows them only when real events arrive.
  */
 export type CanonicalEventBody =
-  | { kind: "session.started"; capabilities: NegotiatedCapabilities }
+  | { kind: "session.started"; capabilities: NegotiatedCapabilities; source?: string }
   | { kind: "session.metadata"; metadata: Record<string, unknown> }
   | { kind: "turn.started" }
   | { kind: "turn.completed"; stopReason?: string }
@@ -183,6 +183,19 @@ export interface NegotiatedCapabilities {
   resume: boolean;
   load: boolean;
   close: boolean;
+  // UI-surface RESOURCES (Phase 6) - runtime resources, not pure protocol negotiation, but part
+  // of the ONE capability map every surface gates on (so React never checks a provider name). A
+  // resource that is absent reads false and the surface is simply omitted/disabled honestly.
+  /** Native stop/cancel is actually wired (OpenCode abort / ACP session/cancel). */
+  stop: boolean;
+  /** Post-interruption reconciliation is supported. */
+  reconcile: boolean;
+  /** A usable VNC/desktop resource is provisioned for the session's sandbox. */
+  desktop: boolean;
+  /** An engine-native web/embed panel exists (e.g. OpenCode Live). */
+  nativeEmbed: boolean;
+  /** The provider actually loaded the Skynet knowledge MCP for this session. */
+  knowledgeTools: boolean;
 }
 
 /** The execution runtime a session is bound to. Managed Agents and future remote
@@ -284,6 +297,38 @@ export interface AcpCommandsFramePayload {
   /** Capture wall-clock (ms) - order/recency is authoritative from the frame `seq`. */
   readonly ts?: number;
   readonly commands: readonly CanonicalCommand[];
+}
+
+/** The provider-event `eventType` under which a real session's negotiated capabilities are
+ *  captured durably (parallel to {@link ACP_COMMANDS_EVENT_TYPE}); the translator emits the
+ *  canonical `session.started` from it. */
+export const SESSION_STARTED_EVENT_TYPE = "session.started";
+
+const CAP_KEYS: readonly (keyof NegotiatedCapabilities)[] = [
+  "streamingText", "reasoning", "plans", "toolProgress", "fileDiffs", "childSessions", "approvals",
+  "questions", "usage", "commands", "directTerminal", "resume", "load", "close",
+  "stop", "reconcile", "desktop", "nativeEmbed", "knowledgeTools",
+];
+
+/** Coerce a loosely-typed record into a complete {@link NegotiatedCapabilities} (missing/non-bool
+ *  keys default to false), so a producer or a forward-compat frame is always safe to render. This
+ *  is the ONE capability model - there is no second framework. */
+export function normalizeNegotiatedCapabilities(raw: unknown): NegotiatedCapabilities {
+  const rec = (raw ?? {}) as Record<string, unknown>;
+  const out = {} as Record<keyof NegotiatedCapabilities, boolean>;
+  for (const k of CAP_KEYS) out[k] = rec[k] === true;
+  return out as NegotiatedCapabilities;
+}
+
+/** Parse a {@link SESSION_STARTED_EVENT_TYPE} provider-event payload into the negotiated
+ *  capability map + source, or null when it carries no capabilities object. */
+export function parseSessionStartedFrame(payload: unknown): { capabilities: NegotiatedCapabilities; source?: string } | null {
+  const rec = payload as { capabilities?: unknown; source?: unknown } | null;
+  if (!rec || typeof rec !== "object" || rec.capabilities == null) return null;
+  return {
+    capabilities: normalizeNegotiatedCapabilities(rec.capabilities),
+    ...(typeof rec.source === "string" && rec.source ? { source: rec.source } : {}),
+  };
 }
 
 /** Parse an {@link ACP_COMMANDS_EVENT_TYPE} provider-event payload back into a normalized

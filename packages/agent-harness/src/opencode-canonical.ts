@@ -18,7 +18,9 @@
 import {
   ACP_COMMANDS_EVENT_TYPE,
   CANONICAL_SCHEMA_VERSION,
+  SESSION_STARTED_EVENT_TYPE,
   parseAcpCommandsFrame,
+  parseSessionStartedFrame,
   type CanonicalAgentEvent,
   type CanonicalEventBody,
   type CanonicalEventKind,
@@ -216,6 +218,19 @@ export function translateOpenCode(
       }
       else if (et === "secrets.injected") produced.push(push(f.eventId, f.provider, { kind: "session.metadata", metadata: { secretsInjected: true } }, ident));
       else produced.push(push(f.eventId, f.provider, { kind: "harness.warning", message: "unmapped skynet event", rawEventType: et }, ident));
+    } else if (et === SESSION_STARTED_EVENT_TYPE) {
+      // A real provider session was established: emit the session-identified `session.started`
+      // carrying the ONE capability map the UI gates every surface on (no provider-name guess).
+      // MUST precede the generic `session*` -> session.metadata branch (session.started also
+      // starts with "session").
+      const parsed = parseSessionStartedFrame(p);
+      if (parsed) {
+        produced.push(push(f.eventId, f.provider, {
+          kind: "session.started",
+          capabilities: parsed.capabilities,
+          source: parsed.source ?? f.provider,
+        }, ident));
+      } else suppressed = "session.started without a capabilities map";
     } else if (et.startsWith("session")) {
       produced.push(push(f.eventId, f.provider, { kind: "session.metadata", metadata: p ?? {} }, ident));
     } else if (et === "part.step-start") {
