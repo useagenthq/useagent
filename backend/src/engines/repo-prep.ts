@@ -49,21 +49,37 @@ export async function ensureRepoClone(
   // colliding on one directory (same-basename collision).
   const dir = `${workdir}/${repo}`;
   const wantBranch = branch ?? "";
-  // IDENTITY pre-check for a warm/reused sandbox. Report the EXACT state so we can act
-  // NON-DESTRUCTIVELY: reuse a matching checkout (quiet, token-free); switch branches IN PLACE
-  // (never rm) when the ORIGIN matches but the branch differs, preserving a warm checkout's
-  // work; only re-clone when the dir holds a DIFFERENT origin (a genuine collision) or nothing.
+  // NON-DESTRUCTIVE identity pre-check for a warm/reused sandbox. Report the EXACT state of the
+  // destination so we NEVER rm -rf an unexpected directory:
+  //   reuse       - a checkout of the RIGHT repo on the right branch -> fast skip.
+  //   branch      - the RIGHT repo, wrong branch -> switch in place (fetch+checkout).
+  //   owned-stale - a checkout WE created (carries the `.git/skynet-owned` marker) of a
+  //                 different repo -> safe to replace (we own it).
+  //   foreign     - a git repo we do NOT own with a different origin -> FAIL CLOSED.
+  //   occupied    - a non-git file/dir we do NOT own -> FAIL CLOSED.
+  //   absent      - nothing there -> clone.
+  // The ownership marker lives INSIDE `.git` so it never lands in the working tree or a commit.
   const idScript =
     `DIR=${shq(dir)}; ` +
-    `if [ -d "$DIR/.git" ]; then ` +
+    `if [ ! -e "$DIR" ]; then echo state:absent; ` +
+    `elif [ -d "$DIR/.git" ]; then ` +
     `U="$(git -C "$DIR" remote get-url origin 2>/dev/null)"; ` +
     `B="$(git -C "$DIR" rev-parse --abbrev-ref HEAD 2>/dev/null)"; ` +
-    `if [ "$U" != ${shq(url)} ]; then echo id:origin; ` +
-    `elif [ -n ${shq(wantBranch)} ] && [ "$B" != ${shq(wantBranch)} ]; then echo id:branch; ` +
-    `else echo id:reuse; fi; ` +
-    `else echo id:absent; fi`;
+    `if [ "$U" = ${shq(url)} ]; then ` +
+    `if [ -z ${shq(wantBranch)} ] || [ "$B" = ${shq(wantBranch)} ]; then echo state:reuse; else echo state:branch; fi; ` +
+    `elif [ -f "$DIR/.git/skynet-owned" ]; then echo state:owned-stale; ` +
+    `else echo state:foreign; fi; ` +
+    `else echo state:occupied; fi`;
   const idState = (await sandbox.process.executeCommand(idScript, undefined, undefined, 15)).result ?? "";
-  if (idState.includes("id:reuse")) return;
+  if (idState.includes("state:reuse")) return;
+
+  // Refuse to touch a destination we do not own: never delete unrelated workspace content.
+  if (idState.includes("state:foreign")) {
+    throw new Error(`refusing to prepare ${repo}: ${dir} holds a different git repository not created by Skynet`);
+  }
+  if (idState.includes("state:occupied")) {
+    throw new Error(`refusing to prepare ${repo}: ${dir} holds existing content not created by Skynet`);
+  }
 
   // One-shot GitHub credential (a PAT or a FRESHLY-valid App installation token). Passed via
   // GIT_CONFIG_* ENV ONLY (never the git argv / .git-config / logs / prompt), applied for THIS
@@ -79,7 +95,7 @@ export async function ensureRepoClone(
 
   // SAME repo, WRONG branch: switch in place (fetch + checkout). NON-DESTRUCTIVE - we never
   // rm -rf a checkout that IS the requested repo, so a warm checkout's local work survives.
-  if (idState.includes("id:branch") && branch) {
+  if (idState.includes("state:branch") && branch) {
     const switchScript =
       `set -e; DIR=${shq(dir)}; L="$(mktemp)"; ` +
       `if git -C "$DIR" fetch origin ${shq(branch)} --quiet >"$L" 2>&1 && git -C "$DIR" checkout ${shq(branch)} >"$L" 2>&1; ` +
@@ -94,14 +110,25 @@ export async function ensureRepoClone(
     return;
   }
 
-  // DIFFERENT origin (collision) or nothing there: (re-)clone fresh. A chosen branch clones
-  // with `-b <branch>`; a branch that does not exist fails the clone (and the run) honestly.
+  // ABSENT or a Skynet-OWNED stale checkout: clone into a UNIQUE TEMP sibling first, validate its
+  // origin, stamp the ownership marker, then ATOMICALLY rename into place - so a failed/interrupted
+  // clone only ever leaves the temp dir (which we clean), never a partial at the destination, and
+  // we replace the destination ONLY when it is absent or one WE own. A destination that turns
+  // unowned during preparation (race) fails closed. `-b <branch>` selects the branch; a missing
+  // branch fails the clone (and the run) honestly.
+  const allowReplace = idState.includes("state:owned-stale") ? "yes" : "no";
   const branchArg = branch ? `-b ${shq(branch)} ` : "";
   const script =
-    `set -e; DIR=${shq(dir)}; mkdir -p "$(dirname "$DIR")"; ` +
-    `rm -rf "$DIR"; L="$(mktemp)"; ` +
-    `if git clone ${branchArg}${shq(url)} "$DIR" >"$L" 2>&1; then rm -f "$L"; echo clone:ok; ` +
-    `else echo clone:failed; tail -c 300 "$L"; rm -rf "$L" "$DIR"; exit 1; fi`;
+    `set -e; DIR=${shq(dir)}; ALLOW=${allowReplace}; PARENT="$(dirname "$DIR")"; mkdir -p "$PARENT"; ` +
+    `TMP="$(mktemp -d "$PARENT/.skynet-clone.XXXXXX")"; L="$(mktemp)"; ` +
+    `if ! git clone ${branchArg}${shq(url)} "$TMP" >"$L" 2>&1; then echo clone:failed; tail -c 300 "$L"; rm -rf "$TMP" "$L"; exit 1; fi; ` +
+    `RU="$(git -C "$TMP" remote get-url origin 2>/dev/null)"; ` +
+    `if [ "$RU" != ${shq(url)} ]; then echo clone:badorigin; rm -rf "$TMP" "$L"; exit 1; fi; ` +
+    `printf 'skynet-owned repo=%s\\n' ${shq(repo)} > "$TMP/.git/skynet-owned"; ` +
+    `if [ -e "$DIR" ]; then ` +
+    `if [ "$ALLOW" = yes ] || [ -f "$DIR/.git/skynet-owned" ]; then rm -rf "$DIR"; ` +
+    `else echo clone:collision; rm -rf "$TMP" "$L"; exit 1; fi; fi; ` +
+    `mv "$TMP" "$DIR"; rm -f "$L"; echo clone:ok`;
   await ctx.emit({
     kind: "command",
     label: branch ? `Cloning ${repo} (${branch})` : `Cloning ${repo}`,
@@ -109,7 +136,11 @@ export async function ensureRepoClone(
   });
   const res = await sandbox.process.executeCommand(script, undefined, authEnv, 300);
   const out = (res.result ?? "").trim();
-  if ((res.exitCode ?? 1) !== 0 || /clone:failed/.test(out)) {
+  if ((res.exitCode ?? 1) !== 0 || /clone:(failed|badorigin|collision)/.test(out)) {
+    if (/clone:collision/.test(out)) {
+      throw new Error(`refusing to prepare ${repo}: ${dir} was occupied by unowned content during preparation`);
+    }
+    if (/clone:badorigin/.test(out)) throw new Error(`failed to clone ${repo}: unexpected origin after clone`);
     // Never echo the credential - surface only the sanitized git tail.
     const detail = out.replace(/clone:\w+/g, "").trim() || "git clone error";
     const what = branch ? `${repo} (${branch})` : repo;

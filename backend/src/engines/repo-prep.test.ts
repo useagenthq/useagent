@@ -3,10 +3,11 @@ import type { Sandbox } from "@daytona/sdk";
 import type { EngineRunContext } from "./types";
 import { ensureRepoClone, prepareRepos, shq } from "./repo-prep";
 
-// Slice 1 (+ review hardening): ONE shared, engine-neutral repository preparer. Exercised with
-// a fake sandbox (records every executeCommand + env) so script construction, OWNER-QUALIFIED
-// checkout dirs, identity reuse (origin + branch), same-basename/wrong-origin/wrong-branch
-// collision handling, token redaction, and partial failure are provable without a live sandbox.
+// Slice 1 + Phase 5 (non-destructive hardening): ONE shared, engine-neutral repository preparer.
+// Exercised with a fake sandbox (records every executeCommand + env) so script construction,
+// OWNER-QUALIFIED checkout dirs, the ownership-marker state machine (reuse / branch / owned-stale
+// / foreign / occupied / absent), clone-into-temp + atomic rename, fail-closed on unowned content,
+// token redaction, and partial failure are provable without a live sandbox.
 
 const SENTINEL = "ghp_TESTSENTINEL_do_not_log_0000";
 let priorToken: string | undefined;
@@ -23,10 +24,11 @@ interface Call {
   cmd: string;
   env: Record<string, string> | undefined;
 }
-/** `identity` is what the pre-check reports for an EXISTING dir: "reuse" (same origin+branch),
- *  "branch" (SAME origin, wrong branch -> switch in place, non-destructive), "origin" (DIFFERENT
- *  origin, a genuine collision -> re-clone), or "absent" (fresh - nothing there yet). */
-function fakeSandbox(opts: { identity?: "reuse" | "branch" | "origin" | "absent"; cloneExit?: number; cloneOut?: string; switchExit?: number; switchOut?: string } = {}): {
+/** `state` is what the pre-check reports for the destination: "reuse" (right repo+branch),
+ *  "branch" (right repo, wrong branch -> switch in place), "owned-stale" (a Skynet-owned checkout
+ *  of a different repo -> safe to replace), "foreign" (an UNOWNED git repo, different origin ->
+ *  fail closed), "occupied" (UNOWNED non-git content -> fail closed), "absent" (nothing there). */
+function fakeSandbox(opts: { state?: "reuse" | "branch" | "owned-stale" | "foreign" | "occupied" | "absent"; cloneExit?: number; cloneOut?: string; switchExit?: number; switchOut?: string } = {}): {
   sandbox: Sandbox;
   calls: Call[];
 } {
@@ -34,7 +36,7 @@ function fakeSandbox(opts: { identity?: "reuse" | "branch" | "origin" | "absent"
   const process = {
     executeCommand: async (cmd: string, _cwd?: string, env?: Record<string, string>) => {
       calls.push({ cmd, env });
-      if (/remote get-url origin/.test(cmd)) return { result: `id:${opts.identity ?? "absent"}`, exitCode: 0 };
+      if (/echo state:absent/.test(cmd) && !/git clone/.test(cmd)) return { result: `state:${opts.state ?? "absent"}`, exitCode: 0 };
       if (/git -C .* (fetch|checkout)/.test(cmd)) return { result: opts.switchOut ?? "switch:ok", exitCode: opts.switchExit ?? 0 };
       if (/git clone/.test(cmd)) return { result: opts.cloneOut ?? "clone:ok", exitCode: opts.cloneExit ?? 0 };
       return { result: "", exitCode: 0 };
@@ -52,17 +54,17 @@ function fakeCtx(repos?: string[]): { ctx: EngineRunContext; emits: { label?: st
   return { ctx, emits };
 }
 const cloneCmd = (calls: Call[]) => calls.find((c) => /git clone/.test(c.cmd));
-const idCmd = (calls: Call[]) => calls.find((c) => /remote get-url origin/.test(c.cmd));
+const idCmd = (calls: Call[]) => calls.find((c) => /echo state:absent/.test(c.cmd) && !/git clone/.test(c.cmd));
 const switchCmd = (calls: Call[]) => calls.find((c) => /git -C .* checkout/.test(c.cmd));
 
-describe("repo-prep: shared engine-neutral repository preparation (Slice 1)", () => {
+describe("repo-prep: shared engine-neutral repository preparation", () => {
   test("shq single-quotes and POSIX-escapes embedded quotes", () => {
     expect(shq("a b")).toBe("'a b'");
     expect(shq("it's")).toBe("'it'\\''s'");
   });
 
-  test("a fresh single repo clones into an OWNER-QUALIFIED subdir with the correct URL", async () => {
-    const { sandbox, calls } = fakeSandbox({ identity: "absent" });
+  test("a fresh single repo clones into an OWNER-QUALIFIED subdir via a temp dir + atomic rename", async () => {
+    const { sandbox, calls } = fakeSandbox({ state: "absent" });
     const { ctx, emits } = fakeCtx();
     await ensureRepoClone(sandbox, "/home/daytona/work", "acme/widget", ctx);
     const clone = cloneCmd(calls);
@@ -70,11 +72,15 @@ describe("repo-prep: shared engine-neutral repository preparation (Slice 1)", ()
     expect(clone?.cmd).toContain("git clone");
     expect(clone?.cmd).toContain("'https://github.com/acme/widget.git'");
     expect(clone?.cmd).toContain("/home/daytona/work/acme/widget"); // <owner>/<name>, not bare <name>
+    expect(clone?.cmd).toContain("mktemp -d"); // clone into a unique temp sibling first
+    expect(clone?.cmd).toContain('mv "$TMP" "$DIR"'); // then atomically rename into place
+    expect(clone?.cmd).toContain("ALLOW=no"); // absent destination -> never replace
+    expect(clone?.cmd).toContain("skynet-owned"); // stamps the ownership marker
     expect(emits.some((e) => e.label === "Cloning acme/widget")).toBe(true);
   });
 
   test("a branch override clones with -b <branch>, and the identity check requires that branch", async () => {
-    const { sandbox, calls } = fakeSandbox({ identity: "absent" });
+    const { sandbox, calls } = fakeSandbox({ state: "absent" });
     const { ctx, emits } = fakeCtx();
     await ensureRepoClone(sandbox, "/w", "acme/widget:dev", ctx);
     expect(cloneCmd(calls)?.cmd).toContain("-b 'dev'");
@@ -83,7 +89,7 @@ describe("repo-prep: shared engine-neutral repository preparation (Slice 1)", ()
   });
 
   test("prepareRepos clones EVERY selected repo (multi-repo workspace)", async () => {
-    const { sandbox, calls } = fakeSandbox({ identity: "absent" });
+    const { sandbox, calls } = fakeSandbox({ state: "absent" });
     const { ctx } = fakeCtx(["a/x", "b/y", "c/z"]);
     await prepareRepos(sandbox, "/w", ctx);
     const clones = calls.filter((c) => /git clone/.test(c.cmd));
@@ -93,7 +99,7 @@ describe("repo-prep: shared engine-neutral repository preparation (Slice 1)", ()
   });
 
   test("SAME-BASENAME repos from different owners get DISTINCT checkouts (no collision)", async () => {
-    const { sandbox, calls } = fakeSandbox({ identity: "absent" });
+    const { sandbox, calls } = fakeSandbox({ state: "absent" });
     const { ctx } = fakeCtx(["orgA/widget", "orgB/widget"]);
     await prepareRepos(sandbox, "/w", ctx);
     const clones = calls.filter((c) => /git clone/.test(c.cmd));
@@ -103,20 +109,18 @@ describe("repo-prep: shared engine-neutral repository preparation (Slice 1)", ()
     expect(clones[0]?.cmd).not.toContain("/w/orgB/widget");
   });
 
-  test("IDENTITY reuse: a checkout with matching origin+branch is a fast skip (no clone, no step)", async () => {
-    const { sandbox, calls } = fakeSandbox({ identity: "reuse" });
+  test("REUSE: a checkout with matching origin+branch is a fast skip (no clone, no step)", async () => {
+    const { sandbox, calls } = fakeSandbox({ state: "reuse" });
     const { ctx, emits } = fakeCtx();
     await ensureRepoClone(sandbox, "/w", "acme/widget", ctx);
     expect(cloneCmd(calls)).toBeUndefined();
     expect(emits.some((e) => e.label?.startsWith("Cloning"))).toBe(false);
   });
 
-  test("SAME origin, WRONG branch: switch IN PLACE (fetch+checkout), NEVER rm -rf a warm checkout", async () => {
-    const { sandbox, calls } = fakeSandbox({ identity: "branch" });
+  test("SAME repo, WRONG branch: switch IN PLACE (fetch+checkout), NEVER rm -rf a warm checkout", async () => {
+    const { sandbox, calls } = fakeSandbox({ state: "branch" });
     const { ctx, emits } = fakeCtx();
     await ensureRepoClone(sandbox, "/w", "acme/widget:main", ctx);
-    // The requested repo IS already there (same origin) - preserve its working tree: fetch +
-    // checkout the branch, no clone, no rm -rf. A warm checkout's local work survives.
     const sw = switchCmd(calls);
     expect(sw).toBeDefined();
     expect(sw?.cmd).toContain("git -C \"$DIR\" fetch origin 'main'");
@@ -124,13 +128,12 @@ describe("repo-prep: shared engine-neutral repository preparation (Slice 1)", ()
     expect(sw?.cmd).not.toContain("rm -rf");
     expect(cloneCmd(calls)).toBeUndefined();
     expect(emits.some((e) => e.label === "Checking out acme/widget (main)")).toBe(true);
-    // the one-shot GitHub credential rides in ENV on the fetch, never the command string
     expect(sw?.env?.GIT_CONFIG_VALUE_0).toContain(Buffer.from(`x-access-token:${SENTINEL}`).toString("base64"));
     expect(sw?.cmd).not.toContain(SENTINEL);
   });
 
-  test("a branch switch that FAILS throws a SANITIZED error (no marker, no token) and does not rm", async () => {
-    const { sandbox, calls } = fakeSandbox({ identity: "branch", switchExit: 1, switchOut: "switch:failed\nerror: pathspec 'main' did not match" });
+  test("a branch switch that FAILS throws a SANITIZED error and does not fall through to a re-clone", async () => {
+    const { sandbox, calls } = fakeSandbox({ state: "branch", switchExit: 1, switchOut: "switch:failed\nerror: pathspec 'main' did not match" });
     const { ctx } = fakeCtx();
     let msg = "";
     await ensureRepoClone(sandbox, "/w", "acme/widget:main", ctx).catch((e) => { msg = e instanceof Error ? e.message : String(e); });
@@ -138,25 +141,43 @@ describe("repo-prep: shared engine-neutral repository preparation (Slice 1)", ()
     expect(msg).toContain("error: pathspec 'main' did not match");
     expect(msg).not.toContain("switch:failed");
     expect(msg).not.toContain(SENTINEL);
-    expect(cloneCmd(calls)).toBeUndefined(); // a failed switch does NOT fall through to a destructive re-clone
+    expect(cloneCmd(calls)).toBeUndefined();
   });
 
-  test("DIFFERENT origin (genuine collision): the stale dir is RE-CLONED (rm -rf + git clone)", async () => {
-    const { sandbox, calls } = fakeSandbox({ identity: "origin" });
+  test("FOREIGN: an UNOWNED git repo with a different origin FAILS CLOSED (never rm, never clone)", async () => {
+    const { sandbox, calls } = fakeSandbox({ state: "foreign" });
+    const { ctx } = fakeCtx();
+    let msg = "";
+    await ensureRepoClone(sandbox, "/w", "acme/widget:main", ctx).catch((e) => { msg = e instanceof Error ? e.message : String(e); });
+    expect(msg).toContain("refusing to prepare acme/widget");
+    expect(msg).toContain("different git repository not created by Skynet");
+    expect(cloneCmd(calls)).toBeUndefined();
+    expect(switchCmd(calls)).toBeUndefined();
+  });
+
+  test("OCCUPIED: UNOWNED non-git content at the destination FAILS CLOSED (never rm, never clone)", async () => {
+    const { sandbox, calls } = fakeSandbox({ state: "occupied" });
+    const { ctx } = fakeCtx();
+    let msg = "";
+    await ensureRepoClone(sandbox, "/w", "acme/widget", ctx).catch((e) => { msg = e instanceof Error ? e.message : String(e); });
+    expect(msg).toContain("refusing to prepare acme/widget");
+    expect(msg).toContain("content not created by Skynet");
+    expect(cloneCmd(calls)).toBeUndefined();
+  });
+
+  test("OWNED-STALE: a Skynet-owned checkout of a different repo is safe to REPLACE (ALLOW=yes)", async () => {
+    const { sandbox, calls } = fakeSandbox({ state: "owned-stale" });
     const { ctx } = fakeCtx();
     await ensureRepoClone(sandbox, "/w", "acme/widget:main", ctx);
-    // A dir holding a DIFFERENT repo at this owner/name path is not the user's warm work for THIS
-    // repo - clear it and clone fresh.
-    expect(idCmd(calls)).toBeDefined();
-    expect(switchCmd(calls)).toBeUndefined();
     const clone = cloneCmd(calls);
     expect(clone).toBeDefined();
-    expect(clone?.cmd).toContain('rm -rf "$DIR"');
+    expect(clone?.cmd).toContain("ALLOW=yes"); // we own it -> may replace
+    expect(clone?.cmd).toContain("mktemp -d"); // still via temp + rename (clone succeeds before replacing)
     expect(clone?.cmd).toContain("-b 'main'");
   });
 
   test("token redaction: the PAT rides in ENV only, NEVER in the command string", async () => {
-    const { sandbox, calls } = fakeSandbox({ identity: "absent" });
+    const { sandbox, calls } = fakeSandbox({ state: "absent" });
     const { ctx } = fakeCtx();
     await ensureRepoClone(sandbox, "/w", "acme/private", ctx);
     const clone = cloneCmd(calls);
@@ -167,8 +188,8 @@ describe("repo-prep: shared engine-neutral repository preparation (Slice 1)", ()
     expect(clone?.cmd).not.toContain("x-access-token");
   });
 
-  test("partial failure: a failed clone throws a SANITIZED error (git tail only, no marker, no token)", async () => {
-    const { sandbox } = fakeSandbox({ identity: "absent", cloneExit: 1, cloneOut: "clone:failed\nfatal: repository not found" });
+  test("partial/interrupted clone: a failed clone throws a SANITIZED error (git tail only, no marker, no token)", async () => {
+    const { sandbox } = fakeSandbox({ state: "absent", cloneExit: 1, cloneOut: "clone:failed\nfatal: repository not found" });
     const { ctx } = fakeCtx();
     let msg = "";
     await ensureRepoClone(sandbox, "/w", "acme/ghost", ctx).catch((e) => { msg = e instanceof Error ? e.message : String(e); });
@@ -176,6 +197,14 @@ describe("repo-prep: shared engine-neutral repository preparation (Slice 1)", ()
     expect(msg).toContain("fatal: repository not found");
     expect(msg).not.toContain("clone:failed");
     expect(msg).not.toContain(SENTINEL);
+  });
+
+  test("a destination that turns UNOWNED during preparation (clone:collision) fails closed", async () => {
+    const { sandbox } = fakeSandbox({ state: "absent", cloneExit: 1, cloneOut: "clone:collision" });
+    const { ctx } = fakeCtx();
+    let msg = "";
+    await ensureRepoClone(sandbox, "/w", "acme/widget", ctx).catch((e) => { msg = e instanceof Error ? e.message : String(e); });
+    expect(msg).toContain("occupied by unowned content during preparation");
   });
 
   test("no repos selected is a no-op (bare thread)", async () => {
