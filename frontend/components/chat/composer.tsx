@@ -197,7 +197,8 @@ export function Composer({
   }
 
   async function submit() {
-    const text = value.trim();
+    const raw = value; // the ORIGINAL bytes, before any trim
+    const text = raw.trim();
     if (!text || busy) return; // duplicate-submit guard (Enter spam / double-click)
     // Reuse the idempotency key when resending the SAME failed text, so a retry
     // after an ambiguous failure observes the original run instead of starting a
@@ -211,8 +212,10 @@ export function Composer({
     setValue(""); // optimistic clear — the pending bubble shows the text meanwhile
     try {
       // A typed native-command intent when the text is a `/known-command ...` for THIS
-      // composer's catalog; else null (an ordinary prompt). The backend re-validates.
-      const intent = commands ? parseCommandIntent(text, commands) : null;
+      // composer's catalog; else null (an ordinary prompt). Parse from the RAW value (not the
+      // trimmed text) so a command's argument bytes reach the backend EXACTLY as typed - the
+      // backend rebuilds `/name <args>` verbatim from this intent. The backend re-validates.
+      const intent = commands ? parseCommandIntent(raw, commands) : null;
       // The chat model picker (when present) owns the model; else the internal state.
       await onSubmit(text, engine, modelMenu?.value ?? model, key, memoryScope, intent);
       retry.current = null; // accepted — drop the retry key

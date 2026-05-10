@@ -1,5 +1,5 @@
 import type { CanonicalCommand } from "@skynet/agent-harness/canonical";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { Hono } from "hono";
 import { db } from "../db/client";
 import { commandsCatalog, type CatalogCommand } from "../db/schema";
@@ -60,6 +60,38 @@ export async function cacheCommandCatalog(snapshot: string, rawBody: string): Pr
       target: commandsCatalog.snapshot,
       set: { commands, fetchedAt: new Date() },
     });
+}
+
+/** The AUTHORITATIVE command catalog for a SPECIFIC native session, read from the DURABLE
+ *  canonical stream: the LATEST `commands.updated` for that session in the thread. This is what
+ *  a native-command intent is validated against - exactly what THIS session advertised, not an
+ *  org-wide cache. Returns [] when the session advertised none, or null when the session has not
+ *  advertised a catalog yet (the caller then falls back to the pre-session org priming cache). */
+export async function readSessionCommandCatalog(
+  threadId: string,
+  sessionId: string,
+): Promise<CatalogCommand[] | null> {
+  const rows = (await db.execute(sql`
+    select body from canonical_events
+    where thread_id = ${threadId} and kind = 'commands.updated' and identity->>'nativeSessionId' = ${sessionId}
+    order by delivery_seq desc limit 1`)) as unknown as Array<{ body: { catalog?: unknown; commands?: unknown } }>;
+  const body = rows[0]?.body;
+  if (!body) return null;
+  const list = Array.isArray(body.catalog)
+    ? body.catalog
+    : Array.isArray(body.commands)
+      ? (body.commands as unknown[]).map((n) => ({ name: n }))
+      : [];
+  return list
+    .map((c) => {
+      const rec = c as { name?: unknown; description?: unknown; input?: unknown };
+      return {
+        name: typeof rec.name === "string" ? rec.name : "",
+        description: typeof rec.description === "string" ? rec.description : null,
+        input: typeof rec.input === "string" ? rec.input : null,
+      };
+    })
+    .filter((c) => c.name.length > 0);
 }
 
 /** Read a keyed catalog (snapshot name, or an `acp:<engine>` key), or null. */

@@ -6,7 +6,7 @@
 import { describe, expect, test, beforeAll } from "bun:test";
 import { eq } from "drizzle-orm";
 import { db } from "../src/db/client";
-import { commandsCatalog, runs } from "../src/db/schema";
+import { canonicalEvents, commandsCatalog, runs } from "../src/db/schema";
 import { acpCatalogKey } from "../src/runs/command-catalog";
 import { DEV_ORG_ID } from "../src/seed";
 import { fetchApi, waitFor } from "./helpers";
@@ -62,5 +62,53 @@ describe("POST /api/runs - typed native-command intent (Phase 3)", () => {
     const run = await getRun(r.id!);
     expect(run?.commandName).toBe("status");
     expect(run?.prompt).toBe("/status");
+  });
+});
+
+// Blockers #2 (session-authoritative validation) + #3 (active-run session identity): a REPLY is
+// validated against the CURRENT session's durable catalog (not the org cache), and the client
+// session id must match the server-derived active session.
+describe("POST /api/runs - session-authoritative command validation (blockers #2/#3)", () => {
+  const uid = () => crypto.randomUUID();
+  async function seedParentWithSession(sessionId: string, sessionCommands: string[]) {
+    const parentId = uid();
+    await db.insert(runs).values({
+      id: parentId, prompt: "root", model: "claude-haiku-4-5", engine: "mock", status: "completed",
+      threadId: parentId, engineSessionId: sessionId, orgId: DEV_ORG_ID,
+    }).onConflictDoNothing();
+    // the session's authoritative catalog, as a durable canonical commands.updated
+    await db.insert(canonicalEvents).values({
+      eventId: `${parentId}:${sessionId}:commands`, revision: 0, runId: parentId, threadId: parentId, seq: 0,
+      kind: "commands.updated", ts: 1,
+      identity: { provider: "mock", nativeSessionId: sessionId },
+      body: { commands: sessionCommands, catalog: sessionCommands.map((n) => ({ name: n })) },
+    }).onConflictDoNothing();
+    return parentId;
+  }
+
+  test("a reply command in the SESSION catalog validates (session-authoritative, matching sessionId)", async () => {
+    const parentId = await seedParentWithSession("ses_live", ["deploy"]); // NOT in the org cache
+    const r = await post({ prompt: "/deploy", engine: "mock", parent_run_id: parentId, command: { name: "deploy", sessionId: "ses_live" } });
+    expect(r.status).toBe(201);
+    expect((await getRun(r.id!))?.commandName).toBe("deploy");
+  });
+
+  test("a command in the ORG cache but NOT the current session is REJECTED (session overrides org cache)", async () => {
+    const parentId = await seedParentWithSession("ses_live2", ["deploy"]); // session has only `deploy`
+    // `review` IS in the org cache (seeded above) but NOT in this session's catalog -> 400.
+    const r = await post({ prompt: "/review", engine: "mock", parent_run_id: parentId, command: { name: "review", sessionId: "ses_live2" } });
+    expect(r.status).toBe(400);
+  });
+
+  test("a WRONG/stale session id is REJECTED even for a valid command name (#3)", async () => {
+    const parentId = await seedParentWithSession("ses_current", ["deploy"]);
+    const r = await post({ prompt: "/deploy", engine: "mock", parent_run_id: parentId, command: { name: "deploy", sessionId: "ses_OLD" } });
+    expect(r.status).toBe(400);
+  });
+
+  test("a session that advertised NONE (empty catalog) rejects any command (does not fall back to org cache)", async () => {
+    const parentId = await seedParentWithSession("ses_empty", []); // advertised none
+    const r = await post({ prompt: "/review", engine: "mock", parent_run_id: parentId, command: { name: "review", sessionId: "ses_empty" } });
+    expect(r.status).toBe(400);
   });
 });
