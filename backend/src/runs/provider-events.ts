@@ -75,6 +75,18 @@ export async function drainProviderEvents(runId: string): Promise<void> {
   }
 }
 
+/** Whether a provider event with this stable id is durably persisted. Used by strict/critical
+ *  callers (command catalogs) to verify a capture landed and retry the idempotent upsert if the
+ *  serial chain swallowed a failure. */
+export async function providerEventExists(id: string): Promise<boolean> {
+  const [row] = await db
+    .select({ id: providerEvents.id })
+    .from(providerEvents)
+    .where(eq(providerEvents.id, id))
+    .limit(1);
+  return !!row;
+}
+
 /** Highest seq already persisted for a run (−1 when none) — seeds the counter so
  *  a re-created sequencer continues the sequence instead of colliding. */
 async function highestSeq(runId: string): Promise<number> {
@@ -89,11 +101,15 @@ async function highestSeq(runId: string): Promise<number> {
  * Lossless-at-latest-revision capture: idempotent upsert by native identity, then
  * a live native frame published to SSE subscribers. Serialized per run and stamped
  * with a unique, monotonic seq (see the sequencer note above) so the reconnect
- * cursor never skips a frame. MUST never fail a run — callers fire-and-forget;
- * failures are swallowed after a console warning. The returned promise resolves
- * once THIS event (and every earlier one in the run's chain) has persisted.
+ * cursor never skips a frame. MUST never fail a run — the serial chain always stays
+ * resolvable (a rejected link would stall every later capture for the run), so a
+ * failure is caught + logged rather than propagated. Callers that AWAIT the returned
+ * promise get persist-before-continue; pass `{ critical: true }` for an authoritative
+ * frame (e.g. a command catalog) so a failure logs at ERROR level (visible), not just
+ * a warning. The returned promise resolves once THIS event (and every earlier one in
+ * the run's chain) has persisted (or been logged-and-swallowed).
  */
-export function recordProviderEvent(input: ProviderEventInput): Promise<void> {
+export function recordProviderEvent(input: ProviderEventInput, opts: { critical?: boolean } = {}): Promise<void> {
   let seq = runSequencers.get(input.runId);
   if (!seq) {
     seq = { chain: Promise.resolve(), nextSeq: null };
@@ -102,12 +118,14 @@ export function recordProviderEvent(input: ProviderEventInput): Promise<void> {
   const entry = seq;
   const done = entry.chain
     .then(() => persistAndPublish(input, entry))
-    .catch((err) =>
-      console.warn(
-        "[provider-events] capture failed:",
-        err instanceof Error ? err.message : err,
-      ),
-    );
+    .catch((err) => {
+      const msg = err instanceof Error ? err.message : String(err);
+      // The chain must stay resolved (a rejected link stalls the run's later captures), so
+      // failures are logged, not thrown. `critical` raises the level so an authoritative frame
+      // (a command catalog) fails VISIBLY instead of being silently dropped.
+      if (opts.critical) console.error(`[provider-events] CRITICAL capture failed (${input.eventType}):`, msg);
+      else console.warn("[provider-events] capture failed:", msg);
+    });
   entry.chain = done;
   // Idle-evict when this link is the tail and has settled, so the map only holds
   // runs with in-flight captures. A later event re-creates + re-seeds the entry.

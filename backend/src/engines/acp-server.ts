@@ -6,7 +6,7 @@ import { basename, parseJsonLine, persistSandboxBeforeExecution, truncate } from
 import { prepareRepos } from "./repo-prep";
 import { parseRepoRef } from "../github/repo-ref";
 import { cacheAcpCommands } from "../runs/command-catalog";
-import { recordProviderEvent } from "../runs/provider-events";
+import { providerEventExists, recordProviderEvent } from "../runs/provider-events";
 import { buildSessionCancel, createAcpRpcClient, isAlreadyInitialized, parseRelayHealth, relayRegenerated, relayStateAfterBoot } from "./acp-rpc";
 import { allowPermissionBypass, decideAcpPermission } from "./permission-policy";
 import { toolGatewayConfig } from "../knowledge/gateway/config";
@@ -47,15 +47,23 @@ const ARGS = process.argv.slice(4);
 let child = null;
 let generation = 0;   // bumps on every (re)boot of the ACP CHILD (the relay HTTP server stays up)
 let childAlive = false;
+let childReady = false; // the child is spawned AND has had a moment to come up (accept stdin)
 let lastExit = null;
+let shuttingDown = false;
 const clients = new Set();
 function emit(line) { for (const res of clients) res.write("data: " + line + "\\n\\n"); }
 function boot() {
   let buf = "";
   generation += 1;
+  childReady = false;
   child = spawn(CMD, ARGS, { stdio: ["pipe", "pipe", "pipe"], env: process.env });
   childAlive = true;
+  // READINESS: mark ready once the child produces its first stdout (an ACP agent greets on
+  // start), or after a short grace window - whichever comes first. Until then /send is rejected
+  // so we never write a prompt into a child that is not yet accepting input.
+  const readyTimer = setTimeout(() => { if (childAlive) childReady = true; }, 750);
   child.stdout.on("data", (d) => {
+    childReady = true;
     buf += d.toString("utf8");
     let i;
     while ((i = buf.indexOf("\\n")) !== -1) {
@@ -65,21 +73,27 @@ function boot() {
   });
   child.stderr.on("data", (d) => process.stderr.write(d));
   child.on("exit", (code, signal) => {
+    clearTimeout(readyTimer);
     childAlive = false;
+    childReady = false;
     lastExit = { code, signal };
     // Tell connected clients the ACP CHILD died: the backend fails pending RPC immediately and
     // treats the next turn as a NEW generation (never prompts the stale native session).
     emit(JSON.stringify({ __relay: "child_exit", generation, code, signal }));
-    setTimeout(boot, 1000); // respawn -> a NEW generation, sessions restart fresh
+    if (!shuttingDown) setTimeout(boot, 1000); // respawn -> a NEW generation (unless shutting down)
   });
 }
+// CLEANUP: on relay shutdown, stop respawning and kill the child so it is never orphaned.
+function cleanup() { shuttingDown = true; try { if (child) child.kill("SIGTERM"); } catch (e) {} process.exit(0); }
+process.on("SIGTERM", cleanup);
+process.on("SIGINT", cleanup);
 boot();
 createServer((req, res) => {
   if (req.url === "/health") {
     // JSON so the backend can distinguish RELAY health from ACP CHILD health and observe the
-    // child generation. No secrets - just liveness + generation + a sanitized last-exit.
+    // child generation + readiness. No secrets - just liveness + generation + a sanitized last-exit.
     res.writeHead(200, { "content-type": "application/json" });
-    res.end(JSON.stringify({ relay: "ok", generation, childAlive, pid: (child && child.pid) || null, lastExit }));
+    res.end(JSON.stringify({ relay: "ok", generation, childAlive, childReady, pid: (child && child.pid) || null, lastExit }));
     return;
   }
   if (req.url === "/events") {
@@ -94,8 +108,10 @@ createServer((req, res) => {
     let b = "";
     req.on("data", (c) => (b += c));
     req.on("end", () => {
+      // Guard: never write into a dead/not-yet-ready child (its stdin would throw or be lost).
+      if (!child || !childAlive || !childReady) { res.writeHead(503); res.end("child not ready"); return; }
       try { child.stdin.write(b.trim() + "\\n"); res.writeHead(204); res.end(); }
-      catch (e) { res.writeHead(500); res.end(String(e)); }
+      catch (e) { res.writeHead(503); res.end(String(e)); }
     });
     return;
   }
@@ -482,13 +498,20 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
         // native session of a dead child. Compare against the generation we last saw for THIS
         // relay; a change invalidates the session id + initialization just like a full restart.
         const priorGeneration = relay?.generation ?? null;
-        const healthOut = (await box.process.executeCommand(
-          `curl -s -m 3 http://127.0.0.1:${cfg.port}/health`,
-          undefined,
-          undefined,
-          15,
-        ).catch(() => ({ result: "" }))).result ?? "";
-        const health = parseRelayHealth(healthOut);
+        // Wait for the ACP CHILD to be READY (not just for the relay HTTP server) before the
+        // handshake - a prompt sent to a not-yet-ready child is rejected by the /send guard.
+        let health = { relay: "ok", generation: null as number | null, childAlive: true, childReady: false };
+        for (let i = 0; i < 24; i++) {
+          const out = (await box.process.executeCommand(
+            `curl -s -m 3 http://127.0.0.1:${cfg.port}/health`,
+            undefined,
+            undefined,
+            15,
+          ).catch(() => ({ result: "" }))).result ?? "";
+          health = parseRelayHealth(out);
+          if (health.childReady) break;
+          await new Promise((r) => setTimeout(r, 250));
+        }
         const childRegenerated = relayRegenerated(priorGeneration, health.generation);
 
         // Prepare the thread's selected repos into the workspace BEFORE the ACP session
@@ -585,7 +608,11 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
               ? params.sessionId
               : (live.sessionId ?? ctx.runId);
             const snapshot = parseAcpAvailableCommands(u);
-            void recordProviderEvent({
+            // STRICT command-catalog persistence: the catalog is authoritative for the session,
+            // so persist it durably before continuing (AWAIT, not fire-and-forget) with bounded
+            // retries and a VISIBLE error on final failure - never silently omit it. The upsert
+            // is idempotent, so a retry is safe.
+            const commandFrame = {
               // RUN-scoped id (the provider-events PK is global): a resumed session reuses its
               // sessionId across turns, so a bare `<sessionId>:commands` would collide and let
               // one turn's frame upsert another turn's row. `<runId>:<sessionId>:commands` keeps
@@ -602,7 +629,15 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
                 commands: snapshot,
                 ts: Date.now(),
               },
-            });
+            };
+            for (let attempt = 0; attempt < 3; attempt++) {
+              await recordProviderEvent(commandFrame, { critical: true });
+              // Read-back: the serial chain swallows a failed insert (it must stay resolvable),
+              // so verify the row landed and retry the idempotent upsert if it did not.
+              if (await providerEventExists(commandFrame.id)) break;
+              if (attempt === 2) console.error(`[acp:${cfg.id}] command catalog NOT persisted after retries (run ${ctx.runId})`);
+              else await new Promise((r) => setTimeout(r, 100 * (attempt + 1)));
+            }
             // Keep the ORG New Task priming cache SEPARATE from authoritative session state:
             // upsert only a NON-empty snapshot (a transient empty frame must not wipe the
             // pre-session picker). Fire-and-forget: a caching failure never disturbs the turn.

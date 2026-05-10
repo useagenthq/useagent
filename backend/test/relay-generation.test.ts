@@ -24,10 +24,11 @@ afterAll(() => {
   rmSync(scriptPath, { force: true });
 });
 
-async function health(): Promise<{ generation: number | null; childAlive: boolean; pid: number | null }> {
+async function health(): Promise<{ generation: number | null; childAlive: boolean; childReady: boolean; pid: number | null }> {
   const r = await fetch(`${BASE}/health`);
-  return (await r.json()) as { generation: number | null; childAlive: boolean; pid: number | null };
+  return (await r.json()) as { generation: number | null; childAlive: boolean; childReady: boolean; pid: number | null };
 }
+const send = (body: string) => fetch(`${BASE}/send`, { method: "POST", body }).then((r) => r.status);
 
 /** Read the /events SSE until a JSON data line satisfies `match`, or time out. */
 async function waitForFrame(match: (o: Record<string, unknown>) => boolean, budgetMs: number): Promise<Record<string, unknown> | null> {
@@ -67,9 +68,13 @@ describe("relay ACP child generation (real subprocess)", () => {
     }
     expect(up).toBe(true);
 
-    const before = await health();
+    // Readiness: the child produces no stdout, so it becomes ready via the grace timer (<=1s).
+    let before = await health();
+    for (let i = 0; i < 20 && !before.childReady; i++) { await sleep(100); before = await health(); }
     expect(before.generation).toBe(1); // first child boot
     expect(before.childAlive).toBe(true);
+    expect(before.childReady).toBe(true);
+    expect(await send('{"x":1}')).toBe(204); // a ready child accepts /send
     const childPid = before.pid!;
 
     // Start listening for the child_exit control frame, THEN kill only the ACP child.
@@ -81,6 +86,9 @@ describe("relay ACP child generation (real subprocess)", () => {
     expect(frame).not.toBeNull();
     expect(frame?.__relay).toBe("child_exit");
     expect(frame?.generation).toBe(1); // the exit is reported for the generation that died
+
+    // While the child is dead (before respawn), /send is GUARDED (503, not a lost write).
+    expect(await send('{"x":2}')).toBe(503);
 
     // The relay respawns the child (~1s) -> /health reports a HIGHER generation, still up.
     let after = before;
