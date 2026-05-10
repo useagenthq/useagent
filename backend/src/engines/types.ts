@@ -129,6 +129,11 @@ export function composeTurnPrompt(
   >,
   resumed: boolean,
 ): string {
+  // A native slash command must reach the provider BYTE-VERBATIM (`/name args` at the very
+  // start), or it is parsed as ordinary prose. So a command turn skips ALL injected context/
+  // rules/skill prefixes - the provider's own command system handles it. Non-command turns
+  // get the usual fresh/resumed context prefix.
+  if (ctx.prompt.trimStart().startsWith("/")) return ctx.prompt;
   const perTurn = (ctx.skillContext ?? "") + ctx.turnContext;
   const prefix = resumed ? perTurn : AGENT_OPERATING_RULES + ctx.bootstrapContext + perTurn;
   return prefix + ctx.prompt;
