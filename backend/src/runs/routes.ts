@@ -15,6 +15,8 @@ import { acceptRunCommand } from "../commands";
 import { isEngineEnabled } from "../env";
 import { acceptRunCancel, CANCEL_SUMMARY } from "../commands/cancel";
 import { resolveSkillSelection } from "../skills/repo";
+import { buildNativeCommandPrompt, validateCommandIntent, type CommandIntent } from "./command-intent";
+import { acpCatalogKey, defaultSnapshot, readCommandCatalog } from "./command-catalog";
 import { unknownRepos } from "../github/repos";
 import { formatRepoRef } from "../github/repo-ref";
 import { bus, channel, pumpThread, signalCancel, type BusEvent } from "../worker";
@@ -54,6 +56,7 @@ runsRoutes.post("/", async (c) => {
     branches?: unknown;
     memory_scope?: unknown;
     skill?: unknown;
+    command?: unknown;
   };
   try {
     body = await c.req.json();
@@ -201,6 +204,39 @@ runsRoutes.post("/", async (c) => {
     skillContentHash = pinned.contentHash;
   }
 
+  // TYPED NATIVE-COMMAND INTENT (Phase 3): a native provider command is an EXPLICIT typed
+  // intent, NOT arbitrary slash-prefixed prompt text. Only when a `command` intent is present
+  // AND its name is validated against the active authoritative catalog for the engine does this
+  // run become a native command - the trusted backend then builds the provider prompt EXACTLY
+  // ONCE as `/name` + the original argument bytes, and records the command name so the worker
+  // delivers it verbatim (no operating rules / memory / skill / context). A run WITHOUT a
+  // validated intent - even one whose prompt starts with "/" - stays a normal prompt and keeps
+  // the full context. Product skills are versioned skill IDs (handled above), never commands.
+  let finalPrompt = prompt;
+  let commandName: string | null = null;
+  if (body.command !== undefined && body.command !== null) {
+    const raw = body.command as { name?: unknown; args?: unknown; provider?: unknown; sessionId?: unknown; catalogRevision?: unknown };
+    const intent: CommandIntent = {
+      name: typeof raw.name === "string" ? raw.name : "",
+      args: typeof raw.args === "string" ? raw.args : undefined,
+      provider: typeof raw.provider === "string" ? raw.provider : undefined,
+      sessionId: typeof raw.sessionId === "string" ? raw.sessionId : undefined,
+      catalogRevision: typeof raw.catalogRevision === "number" ? raw.catalogRevision : undefined,
+    };
+    // The active authoritative catalog for the engine: the ACP engines' captured catalog keyed
+    // by org+engine, or OpenCode's snapshot catalog. The provider a client claims must match the
+    // run's engine (no cross-engine command).
+    if (intent.provider && intent.provider !== engine) {
+      return c.json({ error: "invalid_command", reason: "provider does not match engine" }, 400);
+    }
+    const key = engine !== "opencode" ? acpCatalogKey(c.get("orgId") ?? "", engine) : defaultSnapshot();
+    const catalog = (await readCommandCatalog(key))?.commands ?? [];
+    const v = validateCommandIntent(intent, catalog);
+    if (!v.ok) return c.json({ error: "invalid_command", reason: v.reason }, 400);
+    commandName = v.name;
+    finalPrompt = buildNativeCommandPrompt(v.name, v.args); // built ONCE in the trusted backend
+  }
+
   // Accept the run as a durable command. An `Idempotency-Key` makes a lost-
   // response retry observe the ORIGINAL run instead of starting duplicate work;
   // the un-keyed path behaves exactly as before (new run every call). Empty /
@@ -210,7 +246,7 @@ runsRoutes.post("/", async (c) => {
     idempotencyKey,
     orgId: c.get("orgId"),
     actorId: c.get("userId"),
-    run: { id, prompt, model, engine, parentRunId, threadId, repos, memoryScope, skillId, skillVersion, skillContentHash },
+    run: { id, prompt: finalPrompt, model, engine, parentRunId, threadId, repos, memoryScope, skillId, skillVersion, skillContentHash, commandName },
   });
 
   // Translate the acceptance outcome to the HTTP response (exhaustive — a new

@@ -177,6 +177,8 @@ export async function createRun(
     skillId?: string | null;
     skillVersion?: number | null;
     skillContentHash?: string | null;
+    /** Validated native-command name (Phase 3); non-null => prompt delivered verbatim. */
+    commandName?: string | null;
   },
   /** Run the insert inside a caller's transaction (durable-command acceptance
    *  commits the command + run atomically). Defaults to the shared pool. */
@@ -199,6 +201,7 @@ export async function createRun(
     skillId: input.skillId ?? null,
     skillVersion: input.skillVersion ?? null,
     skillContentHash: input.skillContentHash ?? null,
+    commandName: input.commandName ?? null,
   });
 }
 

@@ -125,6 +125,10 @@ export const runs = pgTable(
     skillId: text("skill_id"),
     skillVersion: integer("skill_version"),
     skillContentHash: text("skill_content_hash"),
+    /** Set ONLY for a VALIDATED native provider command turn (Phase 3): the command name,
+     *  checked against the active session catalog at acceptance. Non-null => the prompt is the
+     *  exact `/name args` bytes and the worker delivers it verbatim with no injected context. */
+    commandName: text("command_name"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),

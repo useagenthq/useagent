@@ -7,7 +7,7 @@
 import { describe, expect, test } from "bun:test";
 import { AGENT_OPERATING_RULES, composeTurnPrompt } from "./types";
 
-const ctx = (over: Partial<{ prompt: string; bootstrapContext: string; turnContext: string; skillContext: string }> = {}) => ({
+const ctx = (over: Partial<{ prompt: string; bootstrapContext: string; turnContext: string; skillContext: string; commandName: string | null }> = {}) => ({
   prompt: "USER",
   bootstrapContext: "BOOT",
   turnContext: "TURN",
@@ -45,12 +45,12 @@ describe("composeTurnPrompt — fresh vs resumed context", () => {
     expect(composeTurnPrompt(ctx({ bootstrapContext: "" }), false)).toBe(`${R}TURNUSER`);
   });
 
-  // A native slash command must reach the provider BYTE-VERBATIM ("/name args" at the very
-  // start) or the provider's command system never sees it - it is parsed as ordinary prose,
-  // so no context/rules/skill/memory prefix may be prepended.
-  describe("native slash command is delivered byte-verbatim", () => {
-    test("a fresh command turn skips ALL prefixes (rules/bootstrap/skill/memory)", () => {
-      const out = composeTurnPrompt(ctx({ prompt: "/review src/app.ts", skillContext: "SKILL" }), false);
+  // A VALIDATED native command (commandName set; prompt already the exact `/name args` bytes)
+  // is delivered BYTE-VERBATIM. Crucially the discriminator is the VALIDATED commandName, NOT
+  // the leading "/", so arbitrary slash-prefixed text can never silently bypass the context.
+  describe("validated native command is delivered byte-verbatim", () => {
+    test("a fresh validated command turn skips ALL prefixes (rules/bootstrap/skill/memory)", () => {
+      const out = composeTurnPrompt(ctx({ prompt: "/review src/app.ts", commandName: "review", skillContext: "SKILL" }), false);
       expect(out).toBe("/review src/app.ts");
       expect(out).not.toContain("operating_rules");
       expect(out).not.toContain("BOOT");
@@ -58,13 +58,19 @@ describe("composeTurnPrompt — fresh vs resumed context", () => {
       expect(out).not.toContain("TURN");
     });
 
-    test("a resumed command turn is verbatim too (no turnContext prepended)", () => {
-      expect(composeTurnPrompt(ctx({ prompt: "/status" }), true)).toBe("/status");
+    test("a resumed validated command turn is verbatim too (no turnContext prepended)", () => {
+      expect(composeTurnPrompt(ctx({ prompt: "/status", commandName: "status" }), true)).toBe("/status");
     });
 
-    test("leading whitespace before the slash is preserved and still treated as a command", () => {
-      const raw = "  /deploy prod";
-      expect(composeTurnPrompt(ctx({ prompt: raw }), false)).toBe(raw);
+    test("SECURITY: a raw prompt that starts with '/' but is NOT a validated command keeps the FULL prefix", () => {
+      // The old code skipped context for ANY leading-slash prompt; now only commandName does.
+      const out = composeTurnPrompt(ctx({ prompt: "/etc/passwd please read this", commandName: null }), false);
+      expect(out).toBe(`${R}BOOTTURN/etc/passwd please read this`);
+    });
+
+    test("SECURITY: leading whitespace + slash without a validated command still gets the prefix", () => {
+      const out = composeTurnPrompt(ctx({ prompt: "  /deploy prod" }), false);
+      expect(out).toBe(`${R}BOOTTURN  /deploy prod`);
     });
 
     test("a prompt that only MENTIONS a slash mid-sentence is NOT a command (keeps the prefix)", () => {

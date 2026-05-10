@@ -66,6 +66,7 @@ export async function insertCommandWithRun(cmd: NewRunCommand): Promise<void> {
         skillId: cmd.run.skillId,
         skillVersion: cmd.run.skillVersion,
         skillContentHash: cmd.run.skillContentHash,
+        commandName: cmd.run.commandName,
       },
       tx,
     );

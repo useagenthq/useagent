@@ -66,6 +66,12 @@ export interface EngineRunContext {
    *  turnContext accompanies the prompt); absent → fresh session (bootstrap +
    *  turnContext). See {@link composeTurnPrompt}. */
   engineSessionId?: string;
+  /** Set ONLY when this run is a VALIDATED native provider command (its name was checked
+   *  against the active session catalog at acceptance). When present, the run's `prompt` is
+   *  already the exact `/name args` bytes and {@link composeTurnPrompt} delivers it verbatim
+   *  with no injected context. Absent for every ordinary prompt - even one that happens to
+   *  start with "/". */
+  commandName?: string | null;
   /** Persist the engine session id this run created/used, so the next turn can
    *  resume it. Fire-and-forget durable write; adapters call it as soon as the
    *  engine reveals its session id. */
@@ -125,15 +131,17 @@ export const AGENT_OPERATING_RULES =
 export function composeTurnPrompt(
   ctx: Pick<
     EngineRunContext,
-    "prompt" | "bootstrapContext" | "turnContext" | "skillContext"
+    "prompt" | "bootstrapContext" | "turnContext" | "skillContext" | "commandName"
   >,
   resumed: boolean,
 ): string {
-  // A native slash command must reach the provider BYTE-VERBATIM (`/name args` at the very
-  // start), or it is parsed as ordinary prose. So a command turn skips ALL injected context/
-  // rules/skill prefixes - the provider's own command system handles it. Non-command turns
-  // get the usual fresh/resumed context prefix.
-  if (ctx.prompt.trimStart().startsWith("/")) return ctx.prompt;
+  // A VALIDATED native provider command (its name was checked against the active session
+  // catalog at acceptance, so `commandName` is set and `prompt` already holds the exact
+  // `/name args` bytes) is delivered BYTE-VERBATIM with NO injected context/rules/skill -
+  // the provider's own command system handles it. An arbitrary prompt that merely starts with
+  // "/" is NOT a command: it keeps the full fresh/resumed context prefix (operating rules +
+  // bootstrap + skill + memory), so raw slash-prefixed text can never silently bypass them.
+  if (ctx.commandName) return ctx.prompt;
   const perTurn = (ctx.skillContext ?? "") + ctx.turnContext;
   const prefix = resumed ? perTurn : AGENT_OPERATING_RULES + ctx.bootstrapContext + perTurn;
   return prefix + ctx.prompt;

@@ -46,6 +46,7 @@ export async function acceptRunCommand(input: RunCommandInput): Promise<RunComma
     memoryScope: input.run.memoryScope,
     skillId: input.run.skillId,
     skillVersion: input.run.skillVersion,
+    commandName: input.run.commandName,
   }).slice(0, PAYLOAD_CAP);
   const commandId = crypto.randomUUID();
 
