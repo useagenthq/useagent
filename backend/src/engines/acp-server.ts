@@ -2,7 +2,7 @@ import { Daytona, type Sandbox } from "@daytona/sdk";
 import type { EmitStep, EngineAdapter, EngineRunContext } from "./types";
 import { composeTurnPrompt } from "./types";
 import { basename, parseJsonLine, truncate } from "./util";
-import { createAcpRpcClient, liveSessionAfterBoot } from "./acp-rpc";
+import { buildSessionCancel, createAcpRpcClient, liveSessionAfterBoot } from "./acp-rpc";
 import { allowPermissionBypass, decideAcpPermission } from "./permission-policy";
 import { toolGatewayConfig } from "../knowledge/gateway/config";
 import { mintToolToken } from "../knowledge/gateway/token";
@@ -126,6 +126,29 @@ const relayKey = (threadId: string, engine: string): string => `${engine}:${thre
 
 function authHeaders(token: string): Record<string, string> {
   return { "x-daytona-preview-token": token };
+}
+
+/** Best-effort native ACP cancel: POST a `session/cancel` notification to the relay
+ *  so the agent stops the ongoing turn (ACP v1: it replies to the in-flight
+ *  session/prompt with stopReason "cancelled") instead of continuing server-side after
+ *  we drop the SSE. Own short-lived controller (NOT the run's sseAbort, which we are
+ *  about to fire) and swallowed errors: if the relay is already gone, closing the SSE
+ *  still ends the turn. Fire-and-forget. */
+async function sendSessionCancel(baseUrl: string, token: string, sessionId: string): Promise<void> {
+  const ac = new AbortController();
+  const budget = setTimeout(() => ac.abort(), 5_000);
+  try {
+    await fetch(`${baseUrl}/send`, {
+      method: "POST",
+      headers: { ...authHeaders(token), "content-type": "application/json" },
+      body: JSON.stringify(buildSessionCancel(sessionId)),
+      signal: ac.signal,
+    });
+  } catch {
+    /* best-effort - the SSE close below still ends the turn */
+  } finally {
+    clearTimeout(budget);
+  }
 }
 
 /**
@@ -367,8 +390,6 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
 
         // ── JSON-RPC client over the relay (SSE in, POST out) ───────────────
         const sseAbort = new AbortController();
-        const onParentAbort = () => sseAbort.abort();
-        ctx.signal.addEventListener("abort", onParentAbort, { once: true });
 
         const post = async (msg: Record<string, unknown>): Promise<void> => {
           const res = await fetch(`${live.baseUrl}/send`, {
@@ -385,6 +406,19 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
         const rpc = createAcpRpcClient(post);
         const request = (method: string, params: Record<string, unknown>): Promise<Record<string, unknown>> =>
           rpc.request(method, params);
+
+        // Product abort (Stop / run deadline) -> tell the agent to stop NATIVELY
+        // (ACP session/cancel) BEFORE we drop the SSE, so it does not keep running
+        // server-side after we disconnect. Reject the in-flight turn as `cancelled`
+        // (distinct from a relay death), then close the stream as before. Native cancel
+        // is wired + request-level tested; a live in-flight proof keeps the engines gated.
+        const onParentAbort = () => {
+          const sid = live.sessionId;
+          if (sid) void sendSessionCancel(live.baseUrl, live.token, sid);
+          rpc.failAll("cancelled", "run cancelled");
+          sseAbort.abort();
+        };
+        ctx.signal.addEventListener("abort", onParentAbort, { once: true });
 
         // Live translation state (reference bot contract: call → step, update → enrich).
         const toolSteps = new Map<string, string>(); // toolCallId → persisted step id
