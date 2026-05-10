@@ -25,6 +25,7 @@
     "@radix-ui/react-tabs": "^1.1.21",
     "@radix-ui/react-tooltip": "^1.2.16",
     "@remixicon/react": "^4.9.0",
+    "@skynet/agent-harness": "file:../packages/agent-harness",
     "class-variance-authority": "^0.7",
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",

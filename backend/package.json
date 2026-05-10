@@ -16,6 +16,7 @@
     "@anthropic-ai/sdk": "^0.115.0",
     "@daytona/sdk": "^0.203.0",
     "@modelcontextprotocol/sdk": "^1.30.0",
+    "@skynet/agent-harness": "file:../packages/agent-harness",
     "better-auth": "^1.6.25",
     "drizzle-orm": "^0.45.2",
     "hono": "^4.9.10",
