@@ -14,6 +14,7 @@ import { MemoryScopePicker } from "@/components/chat/memory-scope-picker";
 import { useEnabledEngines } from "@/components/chat/engine-picker";
 import {
   filterCommands,
+  slashInsertText,
   SlashCommandPopover,
   type SlashCommand,
 } from "@/components/chat/slash-command";
@@ -86,19 +87,21 @@ export function NewTaskComposer({ skills }: { skills: Skill[] }) {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Slash-command autocomplete for the "/" first token. The catalog is the
-  // engine's real command list, cached per snapshot server-side (GET
-  // /api/commands) so it is available BEFORE any sandbox exists. Selection only
-  // completes the text — the command executes engine-side once the run starts.
+  // Slash-command autocomplete for the "/" first token. ENGINE-AWARE: the catalog is the
+  // SELECTED engine's real command list, cached server-side (GET /api/commands?engine=) so it
+  // is available BEFORE any sandbox exists - opencode's snapshot catalog, or the org-scoped
+  // Claude/Codex native catalog. Refetches when the engine changes. Selection only completes
+  // the text; the command executes engine-side (verbatim `/name`) once the run starts.
   const [commands, setCommands] = useState<SlashCommand[]>([]);
   const [cmdHighlight, setCmdHighlight] = useState(0);
   const [cmdDismissed, setCmdDismissed] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
+    setCommands([]); // clear the prior engine's catalog while the new one loads (no stale mix)
     void (async () => {
       try {
-        const res = await backendFetch("/api/commands");
+        const res = await backendFetch(`/api/commands?engine=${encodeURIComponent(engine)}`);
         if (!res.ok) return;
         const data = (await res.json()) as {
           commands?: { name?: string; description?: string | null }[];
@@ -116,7 +119,7 @@ export function NewTaskComposer({ skills }: { skills: Skill[] }) {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [engine]);
 
   // Real repositories for the multi-select repo picker (GET /api/repos — the
   // backend-held GitHub token stays server-side). Empty when unconfigured, so the
@@ -168,7 +171,7 @@ export function NewTaskComposer({ skills }: { skills: Skill[] }) {
   const cmdActive = cmdMatches.length > 0;
 
   function pickCommand(cmd: SlashCommand) {
-    setPrompt(`/${cmd.name} `);
+    setPrompt(slashInsertText(cmd.name)); // verbatim `/name ` - executes engine-side as-is
     setCmdHighlight(0);
   }
 

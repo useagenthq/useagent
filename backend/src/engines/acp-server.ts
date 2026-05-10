@@ -522,11 +522,13 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
           const u = (params.update ?? {}) as Record<string, unknown>;
           const kind = String(u.sessionUpdate ?? "");
           if (kind === "available_commands_update") {
-            // The provider's native slash-command catalog (a REPLACEMENT snapshot). Cache it
-            // keyed by engine so the New Task composer can offer this engine's real commands
-            // BEFORE a session exists; a live session's fresh snapshot always overrides it.
-            // Fire-and-forget: a caching failure must never disturb the turn.
-            void cacheAcpCommands(cfg.id, parseAcpAvailableCommands(u));
+            // The provider's native slash-command catalog for THIS session - a REPLACEMENT
+            // snapshot (an empty list means "no commands right now"; parseAcpAvailableCommands
+            // returns [] for it so the eventual live thread-stream state honors the empty
+            // replacement). Prime the ORG-scoped New Task cache from a NON-empty snapshot only
+            // (a transient empty frame must not wipe the pre-session cache). Fire-and-forget:
+            // a caching failure must never disturb the turn.
+            void cacheAcpCommands(ctx.orgId ?? "", cfg.id, parseAcpAvailableCommands(u));
             return;
           }
           if (kind === "agent_message_chunk") {

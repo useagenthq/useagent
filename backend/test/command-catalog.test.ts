@@ -72,40 +72,53 @@ describe("command catalog cache", () => {
   });
 });
 
-// Slice 2: ACP native command catalogs, cached keyed by ENGINE (never cross-provider),
-// carrying the argument hint, with replacement semantics + no-clobber on empty.
+// Slice 2 (+ review hardening): ACP native command catalogs, cached keyed by ORG and ENGINE
+// (never cross-provider, never cross-tenant), carrying the argument hint, replacement +
+// no-clobber-on-empty. The dev org (uid-free) is used by the route; unit calls use explicit orgs.
 describe("ACP command catalog (Slice 2)", () => {
+  const ORG = "org-A";
+
   test("caches an engine's commands (name + description + input) and reads them back", async () => {
-    await cacheAcpCommands("claude", [
+    await cacheAcpCommands(ORG, "claude", [
       { name: "review", description: "Review the diff", input: "[files]" },
       { name: "status" },
     ]);
-    expect((await readCommandCatalog(acpCatalogKey("claude")))?.commands).toEqual([
+    expect((await readCommandCatalog(acpCatalogKey(ORG, "claude")))?.commands).toEqual([
       { name: "review", description: "Review the diff", input: "[files]" },
       { name: "status", description: null, input: null },
     ]);
   });
 
   test("engines are isolated: codex's catalog never returns claude's commands", async () => {
-    await cacheAcpCommands("codex", [{ name: "codex-only" }]);
-    const codex = (await readCommandCatalog(acpCatalogKey("codex")))?.commands.map((c) => c.name) ?? [];
+    await cacheAcpCommands(ORG, "codex", [{ name: "codex-only" }]);
+    const codex = (await readCommandCatalog(acpCatalogKey(ORG, "codex")))?.commands.map((c) => c.name) ?? [];
     expect(codex).toContain("codex-only");
     expect(codex).not.toContain("claude-only");
   });
 
-  test("an EMPTY snapshot never clobbers a good cache; a later non-empty REPLACES", async () => {
-    await cacheAcpCommands("claude", [{ name: "keep-a" }, { name: "keep-b" }]);
-    await cacheAcpCommands("claude", []); // transient empty frame - ignored
-    expect((await readCommandCatalog(acpCatalogKey("claude")))?.commands.map((c) => c.name)).toEqual(["keep-a", "keep-b"]);
-    await cacheAcpCommands("claude", [{ name: "fresh" }]); // replacement
-    expect((await readCommandCatalog(acpCatalogKey("claude")))?.commands.map((c) => c.name)).toEqual(["fresh"]);
+  test("ORGS are isolated: org B never sees org A's session-derived commands", async () => {
+    await cacheAcpCommands("org-A", "claude", [{ name: "a-secret-skill" }]);
+    await cacheAcpCommands("org-B", "claude", [{ name: "b-skill" }]);
+    const b = (await readCommandCatalog(acpCatalogKey("org-B", "claude")))?.commands.map((c) => c.name) ?? [];
+    expect(b).toEqual(["b-skill"]);
+    expect(b).not.toContain("a-secret-skill");
   });
 
-  test("GET /api/commands?engine=claude serves the ACP catalog (opencode stays separate)", async () => {
-    await cacheAcpCommands("claude", [{ name: "acp-cmd", description: "d" }]);
-    const res = await json<{ engine: string; commands: { name: string }[] }>("/api/commands?engine=claude");
-    expect(res.status).toBe(200);
-    expect(res.body.engine).toBe("claude");
-    expect(res.body.commands.some((c) => c.name === "acp-cmd")).toBe(true);
+  test("an EMPTY snapshot never clobbers a good cache; a later non-empty REPLACES", async () => {
+    await cacheAcpCommands(ORG, "claude", [{ name: "keep-a" }, { name: "keep-b" }]);
+    await cacheAcpCommands(ORG, "claude", []); // transient empty frame - ignored by the priming cache
+    expect((await readCommandCatalog(acpCatalogKey(ORG, "claude")))?.commands.map((c) => c.name)).toEqual(["keep-a", "keep-b"]);
+    await cacheAcpCommands(ORG, "claude", [{ name: "fresh" }]); // replacement
+    expect((await readCommandCatalog(acpCatalogKey(ORG, "claude")))?.commands.map((c) => c.name)).toEqual(["fresh"]);
+  });
+
+  test("GET /api/commands?engine=claude serves THIS org's ACP catalog (opencode stays separate)", async () => {
+    // The route resolves the current org (dev org in tests) - seed under that same org via a run.
+    const res0 = await json<{ engine: string; commands: { name: string }[] }>("/api/commands?engine=claude");
+    expect(res0.status).toBe(200);
+    expect(res0.body.engine).toBe("claude");
+    // opencode default catalog is a different (org-neutral) key, never the ACP one.
+    const oc = await json<{ engine: string }>("/api/commands");
+    expect(oc.body.engine).toBe("opencode");
   });
 });

@@ -15,6 +15,13 @@ export type SlashCommand = {
   description: string | null;
 };
 
+/** The composer text a picked command inserts. Native commands are invoked VERBATIM: the
+ *  provider receives exactly `/name <args>` as an ordinary prompt (no client-side rename or
+ *  translation), so this is just the leading `/name ` with the cursor left for arguments. */
+export function slashInsertText(name: string): string {
+  return `/${name} `;
+}
+
 /** Prefix matches first, then substring matches; capped for the popover. */
 export function filterCommands(
   commands: SlashCommand[],
