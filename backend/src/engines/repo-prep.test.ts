@@ -73,7 +73,9 @@ describe("repo-prep: shared engine-neutral repository preparation", () => {
     expect(clone?.cmd).toContain("'https://github.com/acme/widget.git'");
     expect(clone?.cmd).toContain("/home/daytona/work/acme/widget"); // <owner>/<name>, not bare <name>
     expect(clone?.cmd).toContain("mktemp -d"); // clone into a unique temp sibling first
-    expect(clone?.cmd).toContain('mv "$TMP" "$DIR"'); // then atomically rename into place
+    expect(clone?.cmd).toContain('mv -T "$TMP" "$DIR"'); // then atomically rename into place (mv -T = no nest)
+    expect(clone?.cmd).toContain('mv "$DIR" "$BAK"'); // owned/absent replace moves the old aside atomically first
+    expect(clone?.cmd).not.toContain('rm -rf "$DIR"'); // never rm the destination (race-safe move-aside instead)
     expect(clone?.cmd).toContain("ALLOW=no"); // absent destination -> never replace
     expect(clone?.cmd).toContain("skynet-owned"); // stamps the ownership marker
     expect(emits.some((e) => e.label === "Cloning acme/widget")).toBe(true);
