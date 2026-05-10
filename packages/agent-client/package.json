@@ -7,7 +7,9 @@
     ".": "./src/index.ts",
     "./api": "./src/api.ts",
     "./connection": "./src/connection.ts",
-    "./store": "./src/thread-store.ts"
+    "./events": "./src/thread-events.ts",
+    "./store": "./src/thread-store.ts",
+    "./selectors": "./src/selectors.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

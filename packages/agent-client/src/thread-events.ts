@@ -70,7 +70,12 @@ export function validateCanonicalThreadEvent(
   if (!isFiniteNumber(e.seq)) return null;
   if (!isFiniteNumber(e.deliverySeq) || e.deliverySeq <= 0) return null; // bigserial >= 1
   if (!isFiniteNumber(e.revision) || e.revision < 0) return null;
-  if (frameThreadId !== undefined && frameThreadId !== e.threadId) return null;
+  // The stream is thread-scoped server-side; a frame whose event names a different thread
+  // than its envelope is malformed. Enforced only when the frame carries a non-empty
+  // threadId (matches the product validator exactly, so decoding is behavior-identical).
+  if (isNonEmptyString(frameThreadId) && frameThreadId !== e.threadId) return null;
+  // identity, when present, must be an object (the reducer reads identity.native*).
+  if (e.identity !== undefined && (typeof e.identity !== "object" || e.identity === null)) return null;
   return raw as CanonicalThreadEvent;
 }
 
