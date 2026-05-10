@@ -4,6 +4,7 @@ import { composeTurnPrompt } from "./types";
 import { parseAcpAvailableCommands } from "@skynet/agent-harness/canonical";
 import { basename, parseJsonLine, persistSandboxBeforeExecution, truncate } from "./util";
 import { prepareRepos } from "./repo-prep";
+import { parseRepoRef } from "../github/repo-ref";
 import { cacheAcpCommands, cacheSessionCommands } from "../runs/command-catalog";
 import { buildSessionCancel, createAcpRpcClient, isAlreadyInitialized, relayStateAfterBoot } from "./acp-rpc";
 import { allowPermissionBypass, decideAcpPermission } from "./permission-policy";
@@ -453,10 +454,16 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
         const relayRebooted = / BOOTED=1/.test(boot.result ?? "");
 
         // Prepare the thread's selected repos into the workspace BEFORE the ACP session
-        // starts, so the resident agent works INSIDE them (its session cwd is ~/work).
-        // Shared, engine-neutral preparer - same secure clone as OpenCode; idempotent on
-        // a warm sandbox (already-cloned repos are fast skips).
+        // starts, so the resident agent works INSIDE them. Shared, engine-neutral preparer -
+        // same secure clone as OpenCode; idempotent on a warm sandbox (fast skips).
         await prepareRepos(box, `${home}/work`, ctx);
+        // EFFECTIVE working directory: a single-repo thread starts the session INSIDE that
+        // repo (`~/work/<owner>/<name>`), so relative tool paths, `git`, and file ops resolve
+        // in the repo the user chose - not a bare workspace root. Multi-repo or no-repo threads
+        // keep the workspace root so every repo is reachable.
+        const repoList = ctx.repos ?? [];
+        const effectiveCwd =
+          repoList.length === 1 ? `${home}/work/${parseRepoRef(repoList[0]!).repo}` : `${home}/work`;
 
         if (!relay) {
           const link = await box.getPreviewLink(cfg.port);
@@ -671,7 +678,7 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
             try {
               await request("session/load", {
                 sessionId: ctx.engineSessionId,
-                cwd: live.workdir,
+                cwd: effectiveCwd,
                 mcpServers,
               });
               sessionId = ctx.engineSessionId;
@@ -681,7 +688,7 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
             }
           }
           if (!sessionId) {
-            const res = await request("session/new", { cwd: live.workdir, mcpServers });
+            const res = await request("session/new", { cwd: effectiveCwd, mcpServers });
             sessionId = String(res.sessionId ?? "");
             if (!sessionId) throw new Error("ACP session/new returned no sessionId");
             resumed = false;
