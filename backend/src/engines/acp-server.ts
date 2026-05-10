@@ -505,6 +505,21 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
           }
         };
 
+        // Warm the Daytona preview-proxy route BEFORE we commit the long-lived /events
+        // stream + POST initialize. The boot health-probe runs via sandbox-exec (NOT the
+        // proxy), so the proxy path is COLD on first use and can drop the very first
+        // connection through it - observed as an intermittent turn-1 "event stream ended
+        // before response". A short GET /health establishes the upstream route first
+        // (the relay serves /health before it is even fully ready for JSON-RPC). Cheap
+        // and idempotent on a warm proxy (one 200); best-effort - never fails the turn.
+        for (let i = 0; i < 10; i++) {
+          const warm = await fetch(`${live.baseUrl}/health`, { headers: authHeaders(live.token), signal: sseAbort.signal })
+            .then((r) => r.ok)
+            .catch(() => false);
+          if (warm) break;
+          await new Promise((r) => setTimeout(r, 300));
+        }
+
         const pump = (async () => {
           const res = await fetch(`${live.baseUrl}/events`, {
             headers: authHeaders(live.token),
