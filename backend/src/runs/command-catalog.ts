@@ -1,3 +1,4 @@
+import type { CanonicalCommand } from "@skynet/agent-harness/canonical";
 import { eq } from "drizzle-orm";
 import { Hono } from "hono";
 import { db } from "../db/client";
@@ -61,16 +62,44 @@ export async function cacheCommandCatalog(snapshot: string, rawBody: string): Pr
     });
 }
 
-/** Read a snapshot's cached catalog, or null when it has never been cached. */
+/** Read a keyed catalog (snapshot name, or an `acp:<engine>` key), or null. */
 export async function readCommandCatalog(
-  snapshot: string,
+  key: string,
 ): Promise<{ commands: CatalogCommand[]; fetchedAt: Date } | null> {
   const [row] = await db
     .select()
     .from(commandsCatalog)
-    .where(eq(commandsCatalog.snapshot, snapshot))
+    .where(eq(commandsCatalog.snapshot, key))
     .limit(1);
   return row ? { commands: row.commands, fetchedAt: row.fetchedAt } : null;
+}
+
+/** The catalog cache key for an ACP engine's native commands. Keyed by ENGINE so a
+ *  Claude session never shows Codex/OpenCode commands; a live session snapshot always
+ *  overrides this pre-session cache. (The `snapshot` PK column doubles as a generic
+ *  catalog key - opencode uses the snapshot name, ACP uses `acp:<engine>`.) */
+export function acpCatalogKey(engine: string): string {
+  return `acp:${engine}`;
+}
+
+/**
+ * Cache an ACP engine's native command snapshot (from available_commands_update). Upserts
+ * only a NON-empty snapshot so a transient empty frame never clobbers a good cache; the live
+ * session's fresh snapshot is what the session UI shows, this cache only primes New Task.
+ * Never throws - callers fire-and-forget.
+ */
+export async function cacheAcpCommands(engine: string, commands: readonly CanonicalCommand[]): Promise<void> {
+  if (commands.length === 0) return;
+  const rows: CatalogCommand[] = commands.map((c) => ({
+    name: c.name,
+    description: c.description ?? null,
+    input: c.input ?? null,
+  }));
+  await db
+    .insert(commandsCatalog)
+    .values({ snapshot: acpCatalogKey(engine), commands: rows, fetchedAt: new Date() })
+    .onConflictDoUpdate({ target: commandsCatalog.snapshot, set: { commands: rows, fetchedAt: new Date() } })
+    .catch(() => {});
 }
 
 // ── Route ────────────────────────────────────────────────────────────────────
@@ -81,8 +110,13 @@ export const commandsRoutes = new Hono<AppEnv>();
 commandsRoutes.use("*", orgScope);
 
 commandsRoutes.get("/", async (c) => {
-  const cached = await readCommandCatalog(defaultSnapshot());
+  // `?engine=claude|codex` reads that ACP engine's native catalog; the default (opencode)
+  // reads the snapshot catalog. Keyed so no engine ever shows another engine's commands.
+  const engine = c.req.query("engine");
+  const key = engine && engine !== "opencode" ? acpCatalogKey(engine) : defaultSnapshot();
+  const cached = await readCommandCatalog(key);
   return c.json({
+    engine: engine ?? "opencode",
     commands: cached?.commands ?? [],
     fetched_at: cached ? cached.fetchedAt.toISOString() : null,
   });

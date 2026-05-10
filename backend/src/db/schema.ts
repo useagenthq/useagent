@@ -668,11 +668,13 @@ export const scheduleFirings = pgTable(
 // event-sourced state.
 // ---------------------------------------------------------------------------
 
-/** One entry in a snapshot's slash-command catalog (opencode's /command shape,
- *  normalized). */
+/** One entry in a command catalog, normalized across engines (opencode's /command
+ *  and ACP's available_commands_update). `input` is an optional argument hint. Stored
+ *  in jsonb, so the optional field is additive with NO migration. */
 export interface CatalogCommand {
   name: string;
   description: string | null;
+  input?: string | null;
 }
 
 export const commandsCatalog = pgTable("commands_catalog", {
