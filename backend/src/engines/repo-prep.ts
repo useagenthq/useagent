@@ -9,7 +9,7 @@ import type { Sandbox } from "@daytona/sdk";
 import { resolveGithubToken } from "../github/auth";
 import { parseRepoRef } from "../github/repo-ref";
 import type { EngineRunContext } from "./types";
-import { basename, truncate } from "./util";
+import { truncate } from "./util";
 
 /** POSIX single-quote a string for safe interpolation into a shell command. */
 export function shq(s: string): string {
@@ -43,32 +43,39 @@ export async function ensureRepoClone(
   // The stored entry may carry a branch ("owner/name:branch"); split it so the
   // subdir/URL use the clean repo and the clone checks out the chosen branch.
   const { repo, branch } = parseRepoRef(entry);
-  const dir = `${workdir}/${basename(repo)}`;
-  // Cheap pre-check so a resumed thread (this repo already cloned) shows no noisy
-  // "Cloning" step - we only emit + clone when the subdir has no repo yet.
-  const check = await sandbox.process.executeCommand(
-    `[ -d ${shq(`${dir}/.git`)} ] && echo yes || echo no`,
-    undefined,
-    undefined,
-    15,
-  );
-  if ((check.result ?? "").includes("yes")) return;
+  const url = `https://github.com/${repo}.git`;
+  // OWNER-QUALIFIED subdir (`<workdir>/<owner>/<name>`), NOT a bare basename. Two selected
+  // repos that share a basename (`a/widget` + `b/widget`) get distinct checkouts instead of
+  // colliding on one directory (same-basename collision).
+  const dir = `${workdir}/${repo}`;
+  const wantBranch = branch ?? "";
+  // IDENTITY pre-check for a warm/reused sandbox: reuse the existing checkout ONLY when it is
+  // the SAME repo (origin URL matches) AND, if a branch was requested, on that branch. A dir
+  // holding a different origin (stale/collision) or the wrong branch is NOT silently reused -
+  // it is re-cloned below. This is the cheap path that keeps a genuine reuse quiet + token-free.
+  const idScript =
+    `DIR=${shq(dir)}; ` +
+    `if [ -d "$DIR/.git" ]; then ` +
+    `U="$(git -C "$DIR" remote get-url origin 2>/dev/null)"; ` +
+    `B="$(git -C "$DIR" rev-parse --abbrev-ref HEAD 2>/dev/null)"; ` +
+    `if [ "$U" = ${shq(url)} ] && { [ -z ${shq(wantBranch)} ] || [ "$B" = ${shq(wantBranch)} ]; }; ` +
+    `then echo id:reuse; else echo id:stale; fi; ` +
+    `else echo id:absent; fi`;
+  const idCheck = await sandbox.process.executeCommand(idScript, undefined, undefined, 15);
+  if ((idCheck.result ?? "").includes("id:reuse")) return;
 
   // Resolve a credential per clone: a PAT, or a FRESHLY-valid GitHub App
   // installation token (they expire ~1h, so we mint/reuse one here rather than
   // carry a stale token). Absent -> public clone.
   const token = await resolveGithubToken();
-  const url = `https://github.com/${repo}.git`;
   // A chosen branch clones with `-b <branch>` (a bare entry clones the repo's
   // default branch). A branch that does not exist fails the clone, and so the
   // run, honestly - better than silently landing on the wrong branch.
   const branchArg = branch ? `-b ${shq(branch)} ` : "";
-  // Ensure the workspace root exists (the ACP boot creates ~/work; opencode's
-  // workspace also exists) then clone into a fresh subdir (clear any partial dir
-  // first so the clone starts clean).
+  // Create the owner parent dir, clear any stale/partial checkout (wrong-origin/wrong-branch or
+  // a failed prior clone), then clone fresh into the owner-qualified subdir.
   const script =
-    `set -e; mkdir -p ${shq(workdir)}; DIR=${shq(dir)}; ` +
-    `if [ -d "$DIR/.git" ]; then echo clone:exists; exit 0; fi; ` +
+    `set -e; DIR=${shq(dir)}; mkdir -p "$(dirname "$DIR")"; ` +
     `rm -rf "$DIR"; L="$(mktemp)"; ` +
     `if git clone ${branchArg}${shq(url)} "$DIR" >"$L" 2>&1; then rm -f "$L"; echo clone:ok; ` +
     `else echo clone:failed; tail -c 300 "$L"; rm -rf "$L" "$DIR"; exit 1; fi`;
