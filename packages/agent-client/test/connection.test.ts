@@ -3,7 +3,7 @@
 // state machine with zero real time or network.
 
 import { describe, expect, test } from "bun:test";
-import { createThreadConnection, type EventSourceLike, type TimerHost } from "./thread-connection";
+import { createThreadConnection, type EventSourceLike, type TimerHost } from "../src/connection";
 
 class Clock {
   now = 0;
