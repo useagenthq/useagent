@@ -2,6 +2,7 @@ import { Daytona, type Sandbox } from "@daytona/sdk";
 import type { EmitStep, EngineAdapter, EngineRunContext } from "./types";
 import { composeTurnPrompt } from "./types";
 import { basename, parseJsonLine, truncate } from "./util";
+import { createAcpRpcClient, liveSessionAfterBoot } from "./acp-rpc";
 import { allowPermissionBypass, decideAcpPermission } from "./permission-policy";
 import { toolGatewayConfig } from "../knowledge/gateway/config";
 import { mintToolToken } from "../knowledge/gateway/token";
@@ -320,7 +321,10 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
             buildAcpInstallClause(cfg.packages) +
             // Stage the relay + start it if not already answering.
             `printf '%s' '${relayB64}' | base64 -d > ~/acp-relay.mjs; ` +
-            `if [ "$(${probeCmd})" = "000" ]; then ` +
+            // `booted=1` ONLY when we actually (re)start the relay this call - i.e. the
+            // health probe found no live relay. A restart means a FRESH agent process,
+            // so any in-memory native session id from a prior turn is now stale.
+            `booted=0; if [ "$(${probeCmd})" = "000" ]; then booted=1; ` +
             // Per-engine pre-relay step, AFTER install so the agent bin is on PATH. Codex
             // uses it to seed auth (`codex login --with-api-key` -> ~/.codex/auth.json):
             // codex-acp requires the logged-in state, not just the OPENAI_API_KEY env.
@@ -328,7 +332,7 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
             `${agentEnvExports}cd ~/work && nohup node ~/acp-relay.mjs ${cfg.port} ${cfg.agentCmd.join(" ")} > /tmp/acp-relay-${cfg.id}.log 2>&1 & ` +
             `fi; ` +
             `up=0; for i in $(seq 1 30); do [ "$(${probeCmd})" != "000" ] && up=1 && break; sleep 1; done; ` +
-            `if [ "$up" = "1" ]; then echo "HOME=$HOME"; exit 0; fi; ` +
+            `if [ "$up" = "1" ]; then echo "HOME=$HOME BOOTED=$booted"; exit 0; fi; ` +
             `echo BOOT-TIMEOUT; tail -c 400 /tmp/acp-relay-${cfg.id}.log; exit 1`,
           undefined,
           undefined,
@@ -338,6 +342,10 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
           throw new Error(`${cfg.id} ACP relay failed to boot: ${truncate(boot.result ?? "", 200)}`);
         }
         const home = /HOME=(\S+)/.exec(boot.result ?? "")?.[1] ?? "/home/daytona";
+        // A relay (re)boot this call means a fresh agent process - the previous turn's
+        // in-memory native session id is dead. Invalidate it below so we session/load
+        // (persisted id) or session/new instead of prompting a stale session.
+        const relayRebooted = / BOOTED=1/.test(boot.result ?? "");
 
         if (!relay) {
           const link = await box.getPreviewLink(cfg.port);
@@ -350,6 +358,8 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
           };
         }
         const live = relay; // narrowed non-null for the closures below
+        // Restart-generation guard (Slice 3): never reuse a pre-restart session id.
+        live.sessionId = liveSessionAfterBoot(live.sessionId, relayRebooted);
         if (key) {
           threadRelays.set(key, live);
           retainForThread = true;
@@ -360,9 +370,6 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
         const onParentAbort = () => sseAbort.abort();
         ctx.signal.addEventListener("abort", onParentAbort, { once: true });
 
-        let nextId = 1;
-        const pending = new Map<number, { resolve: (v: Record<string, unknown>) => void; reject: (e: Error) => void }>();
-
         const post = async (msg: Record<string, unknown>): Promise<void> => {
           const res = await fetch(`${live.baseUrl}/send`, {
             method: "POST",
@@ -372,17 +379,12 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
           });
           if (!res.ok && res.status !== 204) throw new Error(`relay send failed: HTTP ${res.status}`);
         };
-        const request = (method: string, params: Record<string, unknown>): Promise<Record<string, unknown>> => {
-          const id = nextId++;
-          const p = new Promise<Record<string, unknown>>((resolve, reject) => {
-            pending.set(id, { resolve, reject });
-          });
-          void post({ jsonrpc: "2.0", id, method, params }).catch((e) => {
-            pending.get(id)?.reject(e as Error);
-            pending.delete(id);
-          });
-          return p;
-        };
+        // JSON-RPC request/response correlation lives in the pure, tested acp-rpc
+        // client (over our `post` transport). When the event pump below ends
+        // (EOF/error/abort) we `failAll` so no request hangs until the turn timeout.
+        const rpc = createAcpRpcClient(post);
+        const request = (method: string, params: Record<string, unknown>): Promise<Record<string, unknown>> =>
+          rpc.request(method, params);
 
         // Live translation state (reference bot contract: call → step, update → enrich).
         const toolSteps = new Map<string, string>(); // toolCallId → persisted step id
@@ -449,17 +451,8 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
                 .join("");
               const msg = parseJsonLine(data);
               if (!msg) continue;
-              // Response to one of our requests.
-              if (typeof msg.id === "number" && ("result" in msg || "error" in msg) && pending.has(msg.id)) {
-                const waiter = pending.get(msg.id)!;
-                pending.delete(msg.id);
-                if (msg.error) {
-                  waiter.reject(new Error(`ACP ${JSON.stringify(msg.error).slice(0, 200)}`));
-                } else {
-                  waiter.resolve((msg.result ?? {}) as Record<string, unknown>);
-                }
-                continue;
-              }
+              // Response to one of our requests (settled inside the rpc client).
+              if (rpc.dispatch(msg)) continue;
               // Server → client REQUEST (permissions): fail CLOSED (deny) unless the
               // dev-only ACP_YOLO_APPROVE opt-in is set. See the handler below.
               if (typeof msg.id === "number" && msg.method === "session/request_permission") {
@@ -479,7 +472,13 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
               }
             }
           }
-        })().catch(() => {});
+        })()
+          .catch(() => {})
+          // The event stream ended (normal turn-end abort, relay death, or network
+          // error). Reject EVERY still-pending JSON-RPC request NOW with a stable
+          // `relay_disconnected` instead of letting it hang until the turn timeout.
+          // Idempotent + a no-op on the happy path (all requests already settled).
+          .finally(() => rpc.failAll("relay_disconnected", "ACP relay event stream ended before response"));
 
         // Wait for the SSE to actually attach before any request (the relay
         // broadcasts only to connected clients — no replay).

@@ -22,6 +22,7 @@ import { getRun, getStepsApi } from "./repo";
 import { drainProviderEvents } from "./provider-events";
 import { translateOpenCode, type OpenCodeFrame, type OpenCodeStep } from "../engines/opencode-canonical";
 import type { CanonicalAgentEvent } from "../engines/canonical";
+import { canonicalEngine } from "../engines/engine-alias";
 import {
   publishDelivered,
   publishCanonicalizationComplete,
@@ -144,7 +145,9 @@ export async function canonicalizeRun(runId: string, threadId: string): Promise<
   const [run, frames, steps] = await Promise.all([getRun(runId), getNativeFramesSince(runId, -1), getStepsApi(runId)]);
   const { events } = translateOpenCode(
     frames as unknown as OpenCodeFrame[],
-    { runId, threadId, engine: run?.engine ?? "opencode" }, // honest step provenance
+    // Honest step provenance, with legacy aliases normalized (daytona -> opencode,
+    // claude-sdk -> claude) so an alias run renders IDENTICALLY to its base provider.
+    { runId, threadId, engine: canonicalEngine(run?.engine ?? "opencode") },
     steps as unknown as OpenCodeStep[],
   );
   const after = await sourceWatermark(runId);
