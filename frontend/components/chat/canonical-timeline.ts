@@ -222,18 +222,27 @@ export interface CanonicalCommandView {
   readonly input?: string | null;
 }
 
-/** The thread's native slash-command catalog read from the DURABLE canonical stream: the
- *  LATEST `commands.updated` across all of the thread's runs, by `deliverySeq` (the per-thread
- *  monotonic order). Because it comes from the durable stream, a reconnect/replay reconstructs
- *  the SAME catalog. An empty replacement legitimately yields []; a thread that NEVER advertised
- *  commands yields null, so the caller can fall back to the live catalog fetch. Pure + total. */
-export function selectThreadCommands(
+/** The CURRENT session's native slash-command catalog from the DURABLE canonical stream: the
+ *  LATEST `commands.updated` (by `deliverySeq`) whose `identity.nativeSessionId === sessionId`.
+ *  SESSION-SCOPED so a historical or other-session snapshot can NEVER mask the active session
+ *  (a restarted/new session that has not re-advertised yields null, not a stale catalog).
+ *  A reconnect/replay reconstructs the SAME catalog. An empty replacement legitimately yields
+ *  [] ("provider advertises none right now"); a session that has not advertised yields null, so
+ *  the caller falls back to the pre-session priming fetch. `sessionId` null => null. Pure. */
+export function selectSessionCommands(
   runs: readonly { readonly canonical: readonly StoredCanonicalEvent[] }[],
+  sessionId: string | null,
 ): CanonicalCommandView[] | null {
+  if (!sessionId) return null;
   let latest: StoredCanonicalEvent | null = null;
   for (const run of runs) {
     for (const e of run.canonical) {
-      if (e.kind === "commands.updated" && (latest === null || e.deliverySeq > latest.deliverySeq)) latest = e;
+      if (
+        e.kind === "commands.updated" &&
+        e.identity?.nativeSessionId === sessionId &&
+        (latest === null || e.deliverySeq > latest.deliverySeq)
+      )
+        latest = e;
     }
   }
   if (!latest) return null;
@@ -242,6 +251,37 @@ export function selectThreadCommands(
     description: c.description ?? null,
     input: c.input ?? null,
   }));
+}
+
+/** The command-picker's honest state, so the UI can distinguish absence, loading, an empty
+ *  (provider-advertises-none) catalog, a live catalog, a degraded pre-session/cached catalog,
+ *  and a fetch error - instead of collapsing them all to "no popover". Capability-driven: no
+ *  provider-name branching. */
+export type CommandCatalogState =
+  | { readonly status: "loading" }
+  | { readonly status: "unavailable"; readonly source?: string }
+  | { readonly status: "error" }
+  | { readonly status: "ready"; readonly commands: readonly CanonicalCommandView[]; readonly source?: string; readonly stale?: boolean };
+
+/** Combine the authoritative durable session catalog with the pre-session priming fetch into
+ *  ONE honest state. The live session snapshot ALWAYS wins: a non-empty durable catalog is
+ *  `ready`; an EMPTY durable catalog is `unavailable` (the session genuinely advertises none).
+ *  Only when THIS session has not advertised yet do we fall back to the fetch - `loading` while
+ *  it is in flight, `ready`+`stale` for a cached pre-session catalog, `unavailable` for an empty
+ *  fetch, `error` on failure. Pure + total. */
+export function resolveCommandCatalog(
+  durable: readonly CanonicalCommandView[] | null,
+  fetchState: { phase: "loading" | "done" | "error"; commands: readonly CanonicalCommandView[] },
+  source?: string,
+): CommandCatalogState {
+  if (durable !== null) {
+    return durable.length > 0 ? { status: "ready", commands: durable, source } : { status: "unavailable", source };
+  }
+  if (fetchState.phase === "loading") return { status: "loading" };
+  if (fetchState.phase === "error") return { status: "error" };
+  return fetchState.commands.length > 0
+    ? { status: "ready", commands: fetchState.commands, source, stale: true }
+    : { status: "unavailable", source };
 }
 
 /** Parse a step's native ids from code_json (mirrors native-ids.nativeOf). */
