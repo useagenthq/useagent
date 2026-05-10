@@ -20,7 +20,12 @@ import { composeSecretEnv, materializeSecretFiles } from "../secrets/inject";
 // ---------------------------------------------------------------------------
 
 const CLAUDE_ACP_PKG = "@agentclientprotocol/claude-agent-acp@0.64.2";
-const CODEX_ACP_PKG = "@agentclientprotocol/codex-acp@0.16.0";
+// codex-acp@0.16.0 does not exist under this namespace (that version belongs to
+// @zed-industries/codex-acp) - the 404 silently no-op'd the install so `codex-acp` never
+// landed and the relay's child spawn failed (BOOT-TIMEOUT). The real package is 1.1.x and
+// bundles @openai/codex (the `codex` binary) as a dependency, so installing it provisions
+// codex too (#128).
+const CODEX_ACP_PKG = "@agentclientprotocol/codex-acp@1.1.14";
 const CLAUDE_CODE_PKG = "@anthropic-ai/claude-code@2.1.222";
 
 /** The in-sandbox relay: stdin/stdout bridge to the ACP agent over plain HTTP
@@ -234,6 +239,15 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
       // trusted provider gateway (#121) replaces even the dev injection.
       if (allowPermissionBypass() && process.env.ANTHROPIC_API_KEY) {
         envVars.ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
+      }
+      // Codex parallel: the codex-acp NODE process reads OPENAI_API_KEY from its own env at
+      // launch, not from the bash-sourced org-secret dotenv (that only reaches the agent's
+      // bash TOOL commands, and lands under a home the ACP process may not read). So in
+      // verified-dev yolo, inject it as a DIRECT sandbox env var - same escape hatch as
+      // ANTHROPIC above. Production still relies on the org secret via the trusted gateway
+      // (#121); this dev key is NEVER injected outside yolo.
+      if (allowPermissionBypass() && process.env.OPENAI_API_KEY) {
+        envVars.OPENAI_API_KEY = process.env.OPENAI_API_KEY;
       }
 
       const autoStopInterval = Number(process.env.SANDBOX_AUTO_STOP_MIN ?? 30);
