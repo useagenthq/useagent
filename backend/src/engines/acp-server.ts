@@ -103,16 +103,23 @@ export interface AcpEngineConfig {
  *    1. ACP_TURN_TIMEOUT_MS  (ACP-specific boundary)
  *    2. ENGINE_TIMEOUT_MS    (shared, kept for back-compat)
  *    3. 360_000              (safe default)
- *  Each candidate must parse to a FINITE POSITIVE number or it is ignored - an invalid /
- *  NaN / zero / non-finite value can never create a zero, NaN or unbounded timer. This does
- *  NOT touch OpenCode's own budget (opencode-server keeps its 600s default) or the worker's
- *  sliding inactivity window / absolute ceiling. Exported for focused tests. */
+ *  Each candidate must parse to a FINITE POSITIVE number WITHIN the safe maximum or it is
+ *  ignored - an invalid / NaN / zero / non-finite value, AND any value above the safe max,
+ *  can never create a zero, NaN or (via setTimeout's 32-bit clamp) an effectively-immediate
+ *  1ms timer. This does NOT touch OpenCode's own budget (opencode-server keeps its 600s
+ *  default) or the worker's sliding inactivity window / absolute ceiling. Exported for
+ *  focused tests. */
+// Documented safe maximum: the largest delay Node/Bun's setTimeout accepts before it
+// overflows a signed 32-bit int and CLAMPS the delay to 1ms (firing almost immediately).
+// The worker's absolute ceiling (ENGINE_MAX_MS, default 4h = 14_400_000ms) sits far below
+// this, so every realistic turn budget passes; only pathological values are rejected.
+const MAX_TURN_TIMEOUT_MS = 2_147_483_647; // 2^31 - 1
 export function resolveAcpTurnTimeoutMs(env: Record<string, string | undefined> = process.env): number {
   const DEFAULT_MS = 360_000;
   const valid = (raw: string | undefined): number | null => {
     if (raw == null || raw === "") return null;
     const n = Number(raw);
-    return Number.isFinite(n) && n > 0 ? n : null;
+    return Number.isFinite(n) && n > 0 && n <= MAX_TURN_TIMEOUT_MS ? n : null;
   };
   return valid(env.ACP_TURN_TIMEOUT_MS) ?? valid(env.ENGINE_TIMEOUT_MS) ?? DEFAULT_MS;
 }
@@ -379,13 +386,22 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
         // FAIL-CLOSED: if the association cannot be recorded we abort the turn rather than
         // run in a box the control plane can't see, and a box we JUST provisioned is torn
         // down (a reused resident box is kept for the thread lifecycle below).
-        await persistSandboxBeforeExecution({
-          runId: ctx.runId,
-          sandboxId: box.id,
-          reused: retainForThread,
-          persist: setRunSandbox,
-          deleteFreshSandbox: () => box.delete(),
-        });
+        try {
+          await persistSandboxBeforeExecution({
+            runId: ctx.runId,
+            sandboxId: box.id,
+            reused: retainForThread,
+            persist: setRunSandbox,
+            deleteFreshSandbox: () => box.delete(),
+          });
+        } catch (err) {
+          // The helper already tore down a FRESHLY provisioned box; clear the ref so the
+          // run's finally (which also deletes on !succeeded) does not delete it a SECOND
+          // time. A reused resident box was NOT touched by the helper - leave `sandbox` set
+          // so its existing (unchanged) finally lifecycle still applies.
+          if (!retainForThread) sandbox = null;
+          throw err;
+        }
 
         await cfg.prepare?.(box);
 
