@@ -7,7 +7,7 @@ import { prepareRepos } from "./repo-prep";
 import { parseRepoRef } from "../github/repo-ref";
 import { cacheAcpCommands } from "../runs/command-catalog";
 import { recordProviderEvent } from "../runs/provider-events";
-import { buildSessionCancel, createAcpRpcClient, isAlreadyInitialized, relayStateAfterBoot } from "./acp-rpc";
+import { buildSessionCancel, createAcpRpcClient, isAlreadyInitialized, parseRelayHealth, relayRegenerated, relayStateAfterBoot } from "./acp-rpc";
 import { allowPermissionBypass, decideAcpPermission } from "./permission-policy";
 import { toolGatewayConfig } from "../knowledge/gateway/config";
 import { mintToolToken } from "../knowledge/gateway/token";
@@ -38,31 +38,50 @@ const CLAUDE_CODE_PKG = "@anthropic-ai/claude-code@2.1.222";
 /** The in-sandbox relay: stdin/stdout bridge to the ACP agent over plain HTTP
  *  (SSE out, POST in) — WebSockets are unnecessary and unproven through the
  *  preview proxy, SSE is proven (opencode /event). Node built-ins only. */
-const RELAY_SCRIPT = `
+export const RELAY_SCRIPT = `
 import { createServer } from "node:http";
 import { spawn } from "node:child_process";
 const PORT = Number(process.argv[2]);
 const CMD = process.argv[3];
 const ARGS = process.argv.slice(4);
 let child = null;
+let generation = 0;   // bumps on every (re)boot of the ACP CHILD (the relay HTTP server stays up)
+let childAlive = false;
+let lastExit = null;
 const clients = new Set();
+function emit(line) { for (const res of clients) res.write("data: " + line + "\\n\\n"); }
 function boot() {
   let buf = "";
+  generation += 1;
   child = spawn(CMD, ARGS, { stdio: ["pipe", "pipe", "pipe"], env: process.env });
+  childAlive = true;
   child.stdout.on("data", (d) => {
     buf += d.toString("utf8");
     let i;
     while ((i = buf.indexOf("\\n")) !== -1) {
       const line = buf.slice(0, i); buf = buf.slice(i + 1);
-      if (line.trim()) for (const res of clients) res.write("data: " + line + "\\n\\n");
+      if (line.trim()) emit(line);
     }
   });
   child.stderr.on("data", (d) => process.stderr.write(d));
-  child.on("exit", () => setTimeout(boot, 1000)); // agent died → respawn, sessions restart fresh
+  child.on("exit", (code, signal) => {
+    childAlive = false;
+    lastExit = { code, signal };
+    // Tell connected clients the ACP CHILD died: the backend fails pending RPC immediately and
+    // treats the next turn as a NEW generation (never prompts the stale native session).
+    emit(JSON.stringify({ __relay: "child_exit", generation, code, signal }));
+    setTimeout(boot, 1000); // respawn -> a NEW generation, sessions restart fresh
+  });
 }
 boot();
 createServer((req, res) => {
-  if (req.url === "/health") { res.writeHead(200); res.end("ok"); return; }
+  if (req.url === "/health") {
+    // JSON so the backend can distinguish RELAY health from ACP CHILD health and observe the
+    // child generation. No secrets - just liveness + generation + a sanitized last-exit.
+    res.writeHead(200, { "content-type": "application/json" });
+    res.end(JSON.stringify({ relay: "ok", generation, childAlive, pid: (child && child.pid) || null, lastExit }));
+    return;
+  }
   if (req.url === "/events") {
     res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache, no-transform", connection: "keep-alive" });
     res.write(":ok\\n\\n");
@@ -156,6 +175,10 @@ interface ThreadRelay {
    *  turns is already initialized and codex-acp rejects a re-`initialize` with -32603
    *  "Already initialized". Reset to false when the relay/agent (re)starts. */
   initialized: boolean;
+  /** The ACP CHILD generation last observed from the relay `/health`. The child can die +
+   *  respawn INSIDE a still-up relay HTTP server; a changed generation invalidates the
+   *  in-memory session id + initialization exactly like a full relay restart. */
+  generation: number | null;
 }
 
 /** threadId → per-engine relay state (a thread talks to ONE engine's relay). */
@@ -453,6 +476,20 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
         // in-memory native session id is dead. Invalidate it below so we session/load
         // (persisted id) or session/new instead of prompting a stale session.
         const relayRebooted = / BOOTED=1/.test(boot.result ?? "");
+        // Observe the ACP CHILD generation from /health. The relay HTTP server can survive while
+        // its child (the agent) dies + respawns internally (a NEW generation); BOOTED only
+        // detects an HTTP-server restart, so without this a warm turn would prompt the stale
+        // native session of a dead child. Compare against the generation we last saw for THIS
+        // relay; a change invalidates the session id + initialization just like a full restart.
+        const priorGeneration = relay?.generation ?? null;
+        const healthOut = (await box.process.executeCommand(
+          `curl -s -m 3 http://127.0.0.1:${cfg.port}/health`,
+          undefined,
+          undefined,
+          15,
+        ).catch(() => ({ result: "" }))).result ?? "";
+        const health = parseRelayHealth(healthOut);
+        const childRegenerated = relayRegenerated(priorGeneration, health.generation);
 
         // Prepare the thread's selected repos into the workspace BEFORE the ACP session
         // starts, so the resident agent works INSIDE them. Shared, engine-neutral preparer -
@@ -475,15 +512,19 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
             workdir: `${home}/work`,
             sessionId: null,
             initialized: false,
+            generation: health.generation,
           };
         }
         const live = relay; // narrowed non-null for the closures below
-        // Restart-generation state machine (single source of truth in acp-rpc): a relay/
-        // agent (re)start resets ACP initialization AND invalidates the stale session id;
-        // a reused turn carries both forward.
-        const gen = relayStateAfterBoot({ initialized: live.initialized, sessionId: live.sessionId }, relayRebooted);
+        // Restart-generation state machine (single source of truth in acp-rpc): a relay/agent
+        // (re)start OR an in-place ACP-child regeneration resets ACP initialization AND
+        // invalidates the stale session id; a reused turn on the SAME generation carries both
+        // forward.
+        const regenerated = relayRebooted || childRegenerated;
+        const gen = relayStateAfterBoot({ initialized: live.initialized, sessionId: live.sessionId }, regenerated);
         live.initialized = gen.initialized;
         live.sessionId = gen.sessionId;
+        live.generation = health.generation ?? live.generation;
         if (key) {
           threadRelays.set(key, live);
           retainForThread = true;
@@ -640,6 +681,15 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
                 .join("");
               const msg = parseJsonLine(data);
               if (!msg) continue;
+              // Relay control frame: the resident ACP CHILD died mid-turn. Fail every pending
+              // request NOW (don't hang until the turn timeout) and end the turn; the next turn
+              // observes the new generation via /health and re-initializes instead of prompting
+              // the dead session.
+              if ((msg as { __relay?: unknown }).__relay === "child_exit") {
+                rpc.failAll("relay_disconnected", "ACP child process exited");
+                sseAbort.abort();
+                continue;
+              }
               // Response to one of our requests (settled inside the rpc client).
               if (rpc.dispatch(msg)) continue;
               // Server → client REQUEST (permissions): fail CLOSED (deny) unless the

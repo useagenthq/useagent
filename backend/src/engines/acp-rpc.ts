@@ -137,6 +137,38 @@ export function relayStateAfterBoot(prev: RelayGenState, relayRebooted: boolean)
     : { initialized: prev.initialized, sessionId: liveSessionAfterBoot(prev.sessionId, relayRebooted) };
 }
 
+/** The relay's `/health` body, distinguishing RELAY liveness from ACP CHILD liveness and
+ *  carrying the child GENERATION (bumps each time the ACP child dies + respawns while the
+ *  relay HTTP server stays up). */
+export interface RelayHealth {
+  readonly relay: string;
+  readonly generation: number | null;
+  readonly childAlive: boolean;
+}
+
+/** Parse the relay `/health` JSON, tolerant of the legacy plain-text "ok" (generation null).
+ *  Pure + total; never throws. */
+export function parseRelayHealth(body: string): RelayHealth {
+  try {
+    const j = JSON.parse(body) as { relay?: unknown; generation?: unknown; childAlive?: unknown };
+    return {
+      relay: typeof j.relay === "string" ? j.relay : "ok",
+      generation: typeof j.generation === "number" ? j.generation : null,
+      childAlive: j.childAlive !== false,
+    };
+  } catch {
+    return { relay: body.trim() || "ok", generation: null, childAlive: true };
+  }
+}
+
+/** Whether the resident ACP CHILD has REGENERATED since we last observed it - i.e. the child
+ *  died and respawned (a new generation) even though the relay HTTP server stayed up. Only a
+ *  CHANGE from a KNOWN prior generation counts; a first observation (prior null) is not a
+ *  regeneration (the fresh-relay path already handles that via `relayRebooted`). Pure. */
+export function relayRegenerated(priorGeneration: number | null, currentGeneration: number | null): boolean {
+  return priorGeneration != null && currentGeneration != null && currentGeneration !== priorGeneration;
+}
+
 /** Whether an ACP error is the "Already initialized" (-32603) a codex-acp agent returns
  *  when `initialize` is re-sent to an already-initialized resident process (e.g. a relay
  *  that survived a backend restart, where our in-memory `initialized` flag was lost).
