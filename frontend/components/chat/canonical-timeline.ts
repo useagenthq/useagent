@@ -278,6 +278,32 @@ export function selectSessionCapabilities(
   return latest?.capabilities ?? null;
 }
 
+/** The ONE authoritative ACTIVE native-session id: the `session.started` of the CURRENT
+ *  (newest) run - NOT a `findLast` over every historical run's `engine_session_id`, which would
+ *  surface a REPLACED session's id while the new run has not started its session yet (letting a
+ *  stale S1 catalog/capability mask the active S2). Scoped to `newestRunId` so only the current
+ *  run decides identity; returns null until that run advertises `session.started` (the caller
+ *  then shows no stale catalog and may fall back to the newest run's persisted column). Pure. */
+export function selectActiveSessionId(
+  runs: readonly { readonly canonical: readonly StoredCanonicalEvent[] }[],
+  newestRunId: string | null,
+): string | null {
+  if (!newestRunId) return null;
+  let latest: StoredCanonicalEvent | null = null;
+  for (const run of runs) {
+    for (const e of run.canonical) {
+      if (
+        e.kind === "session.started" &&
+        e.runId === newestRunId &&
+        e.identity?.nativeSessionId &&
+        (latest === null || e.deliverySeq > latest.deliverySeq)
+      )
+        latest = e;
+    }
+  }
+  return latest?.identity?.nativeSessionId ?? null;
+}
+
 /** The command-picker's honest state, so the UI can distinguish absence, loading, an empty
  *  (provider-advertises-none) catalog, a live catalog, a degraded pre-session/cached catalog,
  *  and a fetch error - instead of collapsing them all to "no popover". Capability-driven: no

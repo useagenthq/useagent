@@ -35,6 +35,7 @@ import {
 } from "@/components/chat/types";
 import {
   resolveCommandCatalog,
+  selectActiveSessionId,
   selectSessionCapabilities,
   selectSessionCommands,
   type CanonicalCommandView,
@@ -93,6 +94,17 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
   const { snapshot, reconcile } = useThreadStream(rootId, initialThread);
   const thread = snapshot.runs.length ? snapshot.runs : initialThread;
   const newest = thread[thread.length - 1]!;
+
+  // The ONE active native-session id, from the CURRENT (newest) run's `session.started` - NEVER a
+  // findLast over historical runs (which surfaces a REPLACED session while the new run has not
+  // advertised, letting a stale S1 catalog/capability mask the active S2). Falls back to the
+  // newest run's persisted column (the durable form of the same session.started), else null so
+  // nothing stale is shown. Memoized + a handleReply dependency so a session change refreshes the
+  // command intent it sends (no stale-closure session id).
+  const engineSessionId = useMemo(
+    () => selectActiveSessionId([...snapshot.byId.values()], newest.id) ?? newest.engine_session_id ?? null,
+    [snapshot.byId, newest.id, newest.engine_session_id],
+  );
 
   // A settled turn shows its native timeline ONLY when it actually has native
   // frames (opencode tool rows live only on the native lane); a settled turn with
@@ -193,7 +205,7 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
         throw err;
       }
     },
-    [newest.id, reconcile],
+    [newest.id, reconcile, engineSessionId],
   );
 
   // Retire the optimistic bubble ONLY once its accepted run is present in the thread
@@ -261,11 +273,6 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
   // opencode threads carry a live resident server in their sandbox — offer its
   // own web UI as a "Live" tab (opt-in: the heavy iframe mounts only when picked).
   const isOpencode = thread.some((r) => normalizeEngine(r.engine) === "opencode");
-  // The engine's own session id for this thread — the LATEST non-null across its
-  // runs (oldest→newest, so `findLast`). Lets the Live tab open straight into the
-  // conversation's opencode session instead of the app's home screen.
-  const engineSessionId =
-    thread.findLast((r) => r.engine_session_id)?.engine_session_id ?? null;
   // The ONE negotiated capability map for the current session (Phase 6): surface visibility gates
   // on THIS, not a provider name. Null until session.started arrives, so a pre-session view falls
   // back to the engine heuristic (`isOpencode`) rather than flashing/hiding a surface wrongly.
