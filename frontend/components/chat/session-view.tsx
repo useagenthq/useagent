@@ -44,6 +44,9 @@ import {
 
 /** Narrowest useful rail — keeps the terminal/desktop panes workable. */
 const RAIL_MIN = 280;
+/** Absolute ceiling in addition to the container-relative 60% drag ceiling. */
+const RAIL_MAX = 960;
+const RAIL_DEFAULT = 480;
 
 function StatusPill({ status }: { status: RunStatus }) {
   const live = status === "queued" || status === "running";
@@ -80,6 +83,9 @@ function StatusPill({ status }: { status: RunStatus }) {
  * never navigating away, never reconnecting.
  */
 export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
+  const root = initialThread[0];
+  if (!root) throw new Error("SessionView requires a non-empty thread");
+
   // Optimistic reply, keyed by the accepted run id: kept visible until the durable
   // run is observed in the store, so a POST-accepted message never vanishes if SSE
   // is momentarily down AND the reconcile fetch fails (Codex finding 4).
@@ -91,10 +97,10 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
   // cancelling a run never resets the store or reconnects. Every run's projection
   // (durable steps + native frames + live narration) is owned by the thread store,
   // so no run-switch transition can blank/freeze a turn or target the wrong run.
-  const rootId = initialThread[0]!.id;
+  const rootId = root.id;
   const { snapshot, reconcile } = useThreadStream(rootId, initialThread);
   const thread = snapshot.runs.length ? snapshot.runs : initialThread;
-  const newest = thread[thread.length - 1]!;
+  const newest = thread.at(-1) ?? root;
 
   // The ONE active native-session id, from the CURRENT (newest) run's `session.started` - NEVER a
   // findLast over historical runs (which surfaces a REPLACED session while the new run has not
@@ -110,6 +116,12 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
   // with a native-command intent so the backend fail-closed authorization rejects a stale catalog.
   const commandCatalogRevision = useMemo(
     () => selectSessionCommandCatalog([...snapshot.byId.values()], engineSessionId)?.revision ?? null,
+    [snapshot.byId, engineSessionId],
+  );
+  // The ONE negotiated capability map for the current session: submission
+  // behavior and surface visibility consume the same contract.
+  const caps = useMemo(
+    () => selectSessionCapabilities([...snapshot.byId.values()], engineSessionId),
     [snapshot.byId, engineSessionId],
   );
 
@@ -182,7 +194,10 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
           body: JSON.stringify({
             prompt: text,
             engine,
-            model,
+            // Unsupported controls must not leak stale values into the API.
+            // ACP replies inherit the thread model server-side; OpenCode may
+            // send the user-selected per-turn override it actually supports.
+            ...(caps?.modelSelection === true ? { model } : {}),
             parent_run_id: newest.id,
             // The backend inherits the parent's scope when omitted; sending the
             // composer's choice lets the user change it for this reply.
@@ -212,7 +227,7 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
         throw err;
       }
     },
-    [newest.id, reconcile, engineSessionId, commandCatalogRevision],
+    [newest.id, reconcile, engineSessionId, commandCatalogRevision, caps?.modelSelection],
   );
 
   // Retire the optimistic bubble ONLY once its accepted run is present in the thread
@@ -277,13 +292,6 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
   const hasCommands = allSteps.some((s) => s.kind === "command");
   const hasSubagents = allSteps.some((s) => s.chip === "subagent");
   const hasRailContent = hasFiles || hasCommands || hasSubagents;
-  // The ONE negotiated capability map for the current session (Phase 6): every surface's
-  // visibility gates on THIS map, never a provider name. Null until session.started arrives (the
-  // durable event is replayed on reload, so a settled run has it immediately).
-  const caps = useMemo(
-    () => selectSessionCapabilities([...snapshot.byId.values()], engineSessionId),
-    [snapshot.byId, engineSessionId],
-  );
   const [railOverride, setRailOverride] = useState<boolean | null>(null);
   const railOpen = railOverride ?? hasRailContent;
   // Rail resize: a dragger between the conversation and the rail (md+). Width
@@ -295,7 +303,7 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
     const saved = Number(localStorage.getItem("skynet.rail-width"));
     if (Number.isFinite(saved) && saved >= RAIL_MIN) setRailWidth(saved);
   }, []);
-  function startRailDrag(e: React.PointerEvent<HTMLDivElement>) {
+  function startRailDrag(e: React.PointerEvent<HTMLElement>) {
     e.preventDefault();
     const handle = e.currentTarget;
     // Pointer capture keeps move events on the handle even over the terminal /
@@ -306,7 +314,8 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
       if (!body) return;
       const r = body.getBoundingClientRect();
       // Rail right edge sits at the body's right padding edge (p-3 = 12px).
-      const w = Math.min(Math.max(r.right - 12 - ev.clientX, RAIL_MIN), r.width * 0.6);
+      const max = Math.min(r.width * 0.6, RAIL_MAX);
+      const w = Math.min(Math.max(r.right - 12 - ev.clientX, RAIL_MIN), max);
       setRailWidth(Math.round(w));
     };
     const onUp = () => {
@@ -319,6 +328,27 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
     };
     handle.addEventListener("pointermove", onMove);
     handle.addEventListener("pointerup", onUp);
+  }
+  function resizeRailWithKeyboard(event: React.KeyboardEvent<HTMLHRElement>) {
+    const containerMax = bodyRef.current
+      ? Math.min(bodyRef.current.getBoundingClientRect().width * 0.6, RAIL_MAX)
+      : RAIL_MAX;
+    const current = railWidth ?? Math.min(RAIL_DEFAULT, containerMax);
+    const next =
+      event.key === "ArrowLeft"
+        ? Math.min(current + 16, containerMax)
+        : event.key === "ArrowRight"
+          ? Math.max(current - 16, RAIL_MIN)
+          : event.key === "Home"
+            ? RAIL_MIN
+            : event.key === "End"
+              ? containerMax
+              : null;
+    if (next === null) return;
+    event.preventDefault();
+    const rounded = Math.round(next);
+    setRailWidth(rounded);
+    localStorage.setItem("skynet.rail-width", String(rounded));
   }
   // Default to whichever pane actually has content; an explicit pick wins.
   // Agents leads when a run fanned out — that's the story you want to watch.
@@ -471,17 +501,21 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
         </section>
 
         {railOpen && (
-          <div
-            role="separator"
+          <hr
+            tabIndex={0}
             aria-orientation="vertical"
             aria-label="Resize the side panel"
+            aria-valuemin={RAIL_MIN}
+            aria-valuemax={RAIL_MAX}
+            aria-valuenow={railWidth ?? RAIL_DEFAULT}
             title="Drag to resize · double-click to reset"
             onPointerDown={startRailDrag}
+            onKeyDown={resizeRailWithKeyboard}
             onDoubleClick={() => {
               setRailWidth(null);
               localStorage.removeItem("skynet.rail-width");
             }}
-            className="hover:bg-stroke-sub-300 active:bg-stroke-sub-300 -mx-1.5 hidden w-1 shrink-0 cursor-col-resize touch-none self-stretch rounded-full transition-colors md:block"
+            className="hover:bg-stroke-sub-300 active:bg-stroke-sub-300 -mx-1.5 hidden w-1 shrink-0 cursor-col-resize touch-none self-stretch rounded-full border-0 transition-colors md:block"
           />
         )}
 

@@ -56,6 +56,7 @@ export function ModelPicker({
     <div className={cn("relative", className)}>
       <button
         type="button"
+        data-testid="model-picker"
         onClick={() => setOpen((o) => !o)}
         aria-haspopup="menu"
         aria-expanded={open}

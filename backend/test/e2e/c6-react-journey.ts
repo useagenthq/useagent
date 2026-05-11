@@ -40,16 +40,12 @@ const DIST = `.next-c6-${ENGINE}`;
 const ORIGIN = "http://localhost:3200";
 const BUDGET_MS = Number(process.env.E2E_TERMINAL_MS ?? (ENGINE === "opencode" ? 240_000 : 420_000));
 const MARKER = `C6MARK_${ENGINE}`;
-// The EXACT assistant reply the agent is told to produce. The C6 pass criterion is that a SINGLE
-// rendered assistant text node has this string as its trimmed CONTIGUOUS TAIL (endsWith) - proving
-// D1: the cumulative ACP text is ONE coherent node holding the whole reply intact. A token-per-line
-// regression renders N fragments and NO single node ends with the full contiguous reply, and the
-// echoed tool output ("echo C6MARK_x") is not an assistant node - so neither can satisfy it. We use
-// endsWith rather than strict === so a model that prepends its own preamble sentence in the same
-// paragraph (gpt-5/codex does) still passes on the RENDERING property without asserting model
-// obedience; opencode + claude in fact render it as the exact full node (a strict-=== superset).
+// The requested marker makes the live run easy to identify, but model obedience is NOT the
+// rendering oracle. The test compares React's assistant nodes to the durable canonical assistant
+// text produced by the provider. ACP must produce one stable node per contiguous text burst (with
+// tool boundaries preserved); a token-per-chunk regression therefore fails regardless of any
+// preamble the model adds.
 const ANSWER = `DONE${MARKER}`;
-const answersHaveReply = (answers: string[]) => answers.some((a) => a.endsWith(ANSWER));
 const backendDir = new URL("../..", import.meta.url).pathname;
 const frontendDir = new URL("../../../frontend", import.meta.url).pathname;
 const scratch = process.env.SCRATCH_DIR ?? "/tmp";
@@ -99,10 +95,41 @@ async function waitTerminal(id: string, budgetMs: number) {
 const timelineSource = (p: Page) => p.$$eval("[data-timeline-source]", (els) => els.map((e) => (e as HTMLElement).dataset.timelineSource ?? ""));
 const runIds = (p: Page) => p.$$eval("[data-run-id]", (els) => els.map((e) => (e as HTMLElement).getAttribute("data-run-id") ?? ""));
 const toolCount = (p: Page) => p.$$eval('[data-testid="tool-row"]', (els) => els.length).catch(() => 0);
-const timelineText = (p: Page) => p.$$eval('[data-testid="turn-block"]', (els) => els.map((e) => (e as HTMLElement).innerText).join("\n")).catch(() => "");
 // The trimmed text of every rendered assistant answer node (TextBurst -> data-testid="agent-answer").
-// EXACT-equality against ANSWER (not a substring of the whole timeline) is the C6 pass criterion.
-const answerTexts = (p: Page) => p.$$eval('[data-testid="agent-answer"]', (els) => els.map((e) => ((e as HTMLElement).innerText ?? "").trim())).catch(() => [] as string[]);
+// Exact array equality against durable canonical text (not a marker substring) is the C6 oracle.
+const answerTexts = (p: Page, runId: string) => p
+  .$$eval(
+    `[data-run-id="${runId}"] [data-testid="agent-answer"]`,
+    (els) => els.map((e) => ((e as HTMLElement).innerText ?? "").trim()),
+  )
+  .catch(() => [] as string[]);
+async function canonicalAnswerTexts(runId: string, sessionId: string): Promise<string[]> {
+  const rows = await sql`
+    select body, seq from (
+      select delta.body, delta.seq,
+        row_number() over (
+          partition by delta.event_id
+          order by delta.revision desc, delta.delivery_seq desc
+        ) as rank
+      from canonical_events delta
+      where delta.run_id = ${runId}
+        and delta.kind = 'message.delta'
+        and delta.identity->>'nativeSessionId' = ${sessionId}
+        and exists (
+          select 1
+          from canonical_events started
+          where started.run_id = delta.run_id
+            and started.kind = 'message.started'
+            and started.body->>'messageId' = delta.body->>'messageId'
+        )
+    ) latest
+    where rank = 1
+    order by seq`;
+  return rows
+    .map((row) => (row.body as { text?: unknown })?.text)
+    .filter((text): text is string => typeof text === "string" && text.trim().length > 0)
+    .map((text) => text.trim());
+}
 async function shot(page: Page, name: string) { await page.screenshot({ path: `${SHOTS}${ENGINE}-${name}.png`, fullPage: true }).catch(() => {}); }
 async function waitCanonical(page: Page, budgetMs = 60_000) {
   const deadline = Date.now() + budgetMs;
@@ -220,27 +247,34 @@ try {
   } else {
     pass("turn 1 completed on a REAL sandbox", settled?.status === "completed", `status=${settled?.status} sandbox=${short(box1)}`);
     await waitCanonical(page, 90_000);
-    // wait for the assistant answer node to actually carry the exact reply (streaming settles a
-    // moment after the run row goes terminal). Poll the exact-equality condition, not a substring.
+    if (!ses1) throw new Error("completed run has no provider session id");
+    const expectedAnswers1 = await canonicalAnswerTexts(runId, ses1);
+    // React can settle a moment after the run row and canonical DB projection. Compare the complete
+    // ordered node array to durable source truth; marker obedience is intentionally irrelevant.
     let answers1: string[] = [];
-    for (let i = 0; i < 30; i++) { answers1 = await answerTexts(page); if (answersHaveReply(answers1)) break; await sleep(1000); }
+    for (let i = 0; i < 30; i++) {
+      answers1 = await answerTexts(page, runId);
+      if (JSON.stringify(answers1) === JSON.stringify(expectedAnswers1)) break;
+      await sleep(1000);
+    }
     const tools1 = await toolCount(page);
-    // EXACT rendered text: a SINGLE assistant answer node ends with the contiguous "DONEC6MARK_<engine>"
-    // - one coherent node (D1), not the marker merely appearing somewhere in the timeline (which the
-    // echoed tool output or a token-per-line fragment stream would also satisfy).
-    {
-      const exact = answers1.find((a) => a === ANSWER);
-      const tail = answers1.find((a) => a.endsWith(ANSWER));
+    const r1steps = ((await api(`/api/runs/${runId}`))?.steps as { kind?: string }[]) ?? [];
+    const toolSteps1 = r1steps.filter((step) => step.kind === "command" || step.kind === "file");
+    const hadTool = toolSteps1.length > 0;
+    pass(
+      "React assistant nodes exactly equal the durable canonical answer nodes",
+      expectedAnswers1.length > 0 && JSON.stringify(answers1) === JSON.stringify(expectedAnswers1),
+      `canonical=${JSON.stringify(expectedAnswers1)} react=${JSON.stringify(answers1)}`,
+    );
+    if (ENGINE !== "opencode") {
       pass(
-        "React renders the EXACT assistant reply as one coherent node (not a substring/fragments)",
-        answersHaveReply(answers1),
-        exact ? `answer node == "${ANSWER}"` : tail ? `one coherent node ends with "${ANSWER}": "${tail}"` : `no answer node ends with "${ANSWER}"; nodes=${JSON.stringify(answers1.slice(0, 6))}`,
+        "ACP renders stable contiguous text bursts (never one node per stream chunk)",
+        expectedAnswers1.length > 0 && expectedAnswers1.length <= toolSteps1.length + 1,
+        `answerNodes=${expectedAnswers1.length} toolTransitions=${toolSteps1.length}`,
       );
     }
     // tie the DOM tool-row assertion to backend truth: a tool row must render IFF a real tool step
     // exists. If the agent chose no tool this turn, that is honest (na), not a UI failure.
-    const r1steps = ((await api(`/api/runs/${runId}`))?.steps as { kind?: string }[]) ?? [];
-    const hadTool = r1steps.some((s) => s.kind === "command" || s.kind === "file");
     if (hadTool) pass("React shows >=1 tool row (matches a real tool step)", tools1 > 0, `${tools1} tool rows`);
     else rec("React shows tool rows", "na", "the agent used no tool this turn (no command/file step)");
     pass("timeline rendered by the CANONICAL lane", (await timelineSource(page)).includes("canonical"));
@@ -273,6 +307,7 @@ try {
       if (cmdRunId) {
         myRunIds.push(cmdRunId);
         const d2 = await waitTerminal(cmdRunId, BUDGET_MS);
+        pass("native command turn reached a successful terminal state", d2?.status === "completed", `status=${d2?.status}`);
         pass(`command turn recorded command_name="${safeCmd}"`, (await dbRun(cmdRunId))?.command_name === safeCmd, `command_name=${(await dbRun(cmdRunId))?.command_name}`);
         pass("turn 2 reused the SAME sandbox + provider session", d2?.sandbox_id === box1 && d2?.engine_session_id === ses1, `box ${short(d2?.sandbox_id)} ses ${short(d2?.engine_session_id)}`);
       }
@@ -292,16 +327,30 @@ try {
     await page.reload({ waitUntil: "domcontentloaded" });
     await waitCanonical(page, 45_000);
     const ids = await runIds(page);
-    // after reload the EXACT answer node must persist (built from canonical, not re-streamed) - the
-    // token-per-line regression re-hydrated as fragments here, so exact-equality guards it.
+    // Reload must reconstruct the identical node array from durable canonical rows.
     let answersR: string[] = [];
-    for (let i = 0; i < 20; i++) { answersR = await answerTexts(page); if (answersHaveReply(answersR)) break; await sleep(1000); }
-    pass("reload: no duplicate/missing turns, EXACT answer node persists", new Set(ids).size === ids.length && ids.includes(runId) && answersHaveReply(answersR), `ids=${ids.length} answerExact=${answersHaveReply(answersR)}`);
+    for (let i = 0; i < 20; i++) {
+      answersR = await answerTexts(page, runId);
+      if (JSON.stringify(answersR) === JSON.stringify(expectedAnswers1)) break;
+      await sleep(1000);
+    }
+    const reloadAnswersMatch = JSON.stringify(answersR) === JSON.stringify(expectedAnswers1);
+    pass(
+      "reload: no duplicate/missing turns; canonical answer nodes persist exactly",
+      new Set(ids).size === ids.length && ids.includes(runId) && reloadAnswersMatch,
+      `ids=${ids.length} answerNodesMatch=${reloadAnswersMatch}`,
+    );
     await shot(page, "4-reload");
 
     // ── 5. truthful surface states (capability-driven) ──
     const [ssRow] = (await sql`SELECT body FROM canonical_events WHERE thread_id = ${runId} AND kind = 'session.started' AND identity->>'nativeSessionId' = ${ses1 ?? ""} ORDER BY delivery_seq DESC LIMIT 1`) as unknown as { body: { capabilities?: Record<string, boolean> } }[];
     const caps = ssRow?.body?.capabilities ?? {};
+    const modelPickers = await page.locator('[data-testid="model-picker"]').count();
+    pass(
+      "model picker presence matches the negotiated capability (no ignored control)",
+      (modelPickers > 0) === (caps.modelSelection === true),
+      `pickers=${modelPickers} caps.modelSelection=${caps.modelSelection}`,
+    );
     // capability truthfulness is the SOURCE the UI gates on: opencode has a noVNC desktop; a cold
     // ACP sandbox does not. Then the desktop TAB must render iff the capability says so (data-testid;
     // the rail is open because a tool ran) - never a fake tab.

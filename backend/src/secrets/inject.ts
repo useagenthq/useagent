@@ -20,10 +20,11 @@ import { decryptOrgSecrets, type DecryptedSecrets } from "./store";
 // Bonus: org secrets never appear in the container-create request at all, which
 // advances the "don't leak into untrusted sandboxes" posture (BUG-002 / #116).
 //
-// SPLIT (deliberate): the adapter keeps PLATFORM vars (model key, gateway, etc.)
-// in createEnv, NOT the dotenv, because the engine PROCESS (opencode/ACP node,
-// not a bash executeCommand) reads them at launch from its own env. Only ORG
-// secrets go in the bash-sourced dotenv.
+// SPLIT (deliberate): only ORG-managed secrets go in this dotenv. Provider
+// credentials must come from that tenant-scoped set in production; the adapters'
+// raw host-key path is a separately gated development escape hatch. The resident
+// OpenCode/ACP processes are launched by Daytona's non-interactive bash, so they
+// inherit the sourced org values as well as later tool commands.
 //
 // CAVEAT: BASH_ENV is honored by non-interactive BASH only. Daytona's shell is
 // bash (verified), so agent tool commands inherit the dotenv - but a tool that

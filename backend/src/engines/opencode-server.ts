@@ -17,12 +17,19 @@ import { getThreadSandbox, setRunSandbox } from "../runs/repo";
 import { prepareRepos, shq } from "./repo-prep";
 import { assertNever } from "../util/exhaustive";
 import { toolGatewayConfig } from "../knowledge/gateway/config";
-import { ACP_COMMANDS_EVENT_TYPE, SESSION_STARTED_EVENT_TYPE } from "@skynet/agent-harness/canonical";
+import {
+  ACP_COMMANDS_EVENT_TYPE,
+  SESSION_STARTED_EVENT_TYPE,
+  normalizeOpencodeCommands,
+  type CanonicalCommand,
+} from "@skynet/agent-harness/canonical";
 import { sessionCapabilities } from "./capabilities";
 import { mintToolToken } from "../knowledge/gateway/token";
 import { MEMORY_SKILL_PATH, memorySkillText } from "../memory/memory-skill-text";
 import { composeSecretEnv, materializeSecretFiles } from "../secrets/inject";
 import { hostProviderEnv } from "./host-provider-env";
+import { allowPermissionBypass } from "./permission-policy";
+import { revalidateCommandBeforeDispatch } from "../runs/command-intent";
 
 // ---------------------------------------------------------------------------
 // NATIVE opencode engine — the realtime path. Instead of one-shot CLI runs, the
@@ -456,13 +463,12 @@ export const opencodeServerAdapter: EngineAdapter = {
     // names-only `secrets.injected` marker; the dotenv + file-kind secrets are
     // written into the sandbox after boot below.
     const secretInjection = await composeSecretEnv(ctx);
-    // Inject ONLY the single host provider key this model reads (D6/#121): opencode
-    // routes a slug via OpenRouter and a bare name via Anthropic (modelBody), so the
-    // other key never needs to enter the sandbox. See host-provider-env.ts for the
-    // unresolved host-credential-exposure risk this minimizes (not resolves).
+    // Host provider credentials are DEV-ONLY for every engine. In production,
+    // the shell that launches `opencode serve` sources the org-secret BASH_ENV;
+    // the future trusted broker (#121) removes raw provider credentials entirely.
     const envVars: Record<string, string> = {
       ...secretInjection.createEnv,
-      ...hostProviderEnv("opencode", ctx.model),
+      ...hostProviderEnv("opencode", ctx.model, { allowHostKeys: allowPermissionBypass() }),
     };
 
     const snapshot = process.env.DAYTONA_SNAPSHOT ?? "skynet-agent-v17";
@@ -597,54 +603,70 @@ export const opencodeServerAdapter: EngineAdapter = {
       // the Live tab even though the session exists.
       else ctx.saveEngineSessionId?.(sessionId);
 
-      // session.started with the ONE negotiated capability map (Phase 6). OpenCode has the native
-      // web embed (Live) and the v17 snapshot ships noVNC (desktop), so both are true; knowledgeTools
-      // reflects whether the tool gateway is actually configured/reachable.
-      void recordProviderEvent({
-        id: `${ctx.runId}:${sessionId}:session`,
-        runId: ctx.runId,
-        threadId: ctx.threadId ?? ctx.runId,
-        provider: "opencode",
-        eventType: SESSION_STARTED_EVENT_TYPE,
-        nativeSessionId: sessionId,
-        payload: {
-          source: "opencode",
-          capabilities: sessionCapabilities("opencode", { desktop: true, knowledgeTools: toolGatewayConfig() !== null }),
-        },
-      });
+      const recordSessionStarted = (id: string): void => {
+        void recordProviderEvent({
+          id: `${ctx.runId}:${id}:session`,
+          runId: ctx.runId,
+          threadId: ctx.threadId ?? ctx.runId,
+          provider: "opencode",
+          eventType: SESSION_STARTED_EVENT_TYPE,
+          nativeSessionId: id,
+          payload: {
+            source: "opencode",
+            capabilities: sessionCapabilities("opencode", {
+              desktop: true,
+              knowledgeTools: toolGatewayConfig() !== null,
+            }),
+          },
+        });
+      };
+      recordSessionStarted(sessionId);
 
-      // C5/D3: capture OpenCode's native `/command` list into the SAME per-session `acp.commands`
-      // provider event the ACP engines write, so the translator emits a durable `commands.updated`
-      // for opencode too (ONE authoritative session-command lane; the snapshot cache is UI priming).
-      // AWAITED here - BEFORE the prompt is sent - so the catalog is durably persisted before the
-      // turn can seal (no fire-and-forget race with drainProviderEvents). An EMPTY list is a genuine
-      // "advertises none" REPLACEMENT and IS persisted (distinct from "not advertised yet"). Bounded
-      // (8s) + best-effort: a slow/failed /command never stalls the turn; with no durable catalog,
-      // command authorization simply fails closed (C3/C4).
-      if (!ctx.signal.aborted) {
+      // Capture the provider's CURRENT replacement catalog concurrently with
+      // the turn. Ordinary prompts do not pay this fetch in TTFT; every capture
+      // is joined before return so the provider-event drain cannot seal first.
+      // A command turn awaits the same task immediately before dispatch and
+      // fails closed unless the durable capture succeeded and still contains
+      // the accepted command.
+      const captureCommandCatalog = async (id: string): Promise<readonly CanonicalCommand[] | null> => {
+        if (ctx.signal.aborted) return null;
         try {
-          const res = await fetch(`${baseUrl}/command${dirQ}`, { headers: authHeaders(token), signal: AbortSignal.timeout(8000) });
-          const parsed = res.ok ? await res.json().catch(() => null) : null;
-          if (Array.isArray(parsed)) {
-            const frame = {
-              id: `${ctx.runId}:${sessionId}:commands`,
-              runId: ctx.runId,
-              threadId: ctx.threadId ?? ctx.runId,
-              provider: "opencode",
-              eventType: ACP_COMMANDS_EVENT_TYPE,
-              nativeSessionId: sessionId,
-              payload: { source: "opencode", commands: parsed, ts: Date.now() }, // parsed may be [] - persisted
-            };
-            for (let a = 0; a < 3; a++) {
-              await recordProviderEvent(frame, { critical: true });
-              if (await providerEventExists(frame.id)) break;
-              if (a < 2) await new Promise((r) => setTimeout(r, 100 * (a + 1)));
-            }
+          const signal = AbortSignal.any([ctx.signal, AbortSignal.timeout(8_000)]);
+          const res = await fetch(`${baseUrl}/command${dirQ}`, {
+            headers: authHeaders(token),
+            signal,
+          });
+          if (!res.ok) return null;
+          const parsed = await res.json().catch(() => null);
+          if (!Array.isArray(parsed)) return null;
+          const commands = normalizeOpencodeCommands(parsed);
+          const frame = {
+            id: `${ctx.runId}:${id}:commands`,
+            runId: ctx.runId,
+            threadId: ctx.threadId ?? ctx.runId,
+            provider: "opencode",
+            eventType: ACP_COMMANDS_EVENT_TYPE,
+            nativeSessionId: id,
+            payload: { source: "opencode", commands, ts: Date.now() },
+          };
+          for (let attempt = 0; attempt < 3; attempt++) {
+            await recordProviderEvent(frame, { critical: true });
+            if (await providerEventExists(frame.id)) return commands;
+            if (attempt < 2) await new Promise((resolve) => setTimeout(resolve, 100 * (attempt + 1)));
           }
         } catch {
-          /* best-effort: a slow/failed /command never blocks opencode chat (fail-closed command auth) */
+          // Core chat remains available; native-command dispatch fails closed
+          // against a null live catalog.
         }
-      }
+        return null;
+      };
+      const catalogCaptures: Promise<readonly CanonicalCommand[] | null>[] = [];
+      const startCatalogCapture = (id: string): Promise<readonly CanonicalCommand[] | null> => {
+        const task = captureCommandCatalog(id);
+        catalogCaptures.push(task);
+        return task;
+      };
+      let liveCatalog = startCatalogCapture(sessionId);
 
       // ── realtime: subscribe /event BEFORE prompting ─────────────────────────
       const sseAbort = new AbortController();
@@ -1014,13 +1036,52 @@ export const opencodeServerAdapter: EngineAdapter = {
           return null; // proxy severed the long POST — turn still runs; poll for it
         }
       };
+      const assertCommandAuthorized = async (
+        id: string,
+        catalog: Promise<readonly CanonicalCommand[] | null>,
+      ): Promise<void> => {
+        if (!ctx.commandName) return;
+        const reason = revalidateCommandBeforeDispatch(
+          {
+            name: ctx.commandName,
+            provider: ctx.commandProvider ?? null,
+            sessionId: ctx.commandSessionId ?? null,
+            catalogRevision: ctx.commandCatalogRevision ?? null,
+          },
+          { engine: "opencode", sessionId: id, catalog: await catalog },
+        );
+        if (reason) {
+          throw new Error(
+            `stale command "/${ctx.commandName}" rejected before dispatch: ${reason} - re-issue it against the current session`,
+          );
+        }
+      };
       try {
+        await assertCommandAuthorized(sessionId, liveCatalog);
         let res = await postOrPoll(composeTurnPrompt(ctx, resumed));
         if (res && res.status === 404 && resumed) {
           // Stale resume id (session from a previous sandbox/server incarnation)
-          // — start fresh WITH the full bootstrap + per-turn context.
+          // — start fresh WITH the full bootstrap + per-turn context. A command
+          // accepted for the old session is rejected before any retry; ordinary
+          // prompts may safely continue in the replacement session.
           sessionId = await createSession();
           resumed = false;
+          recordSessionStarted(sessionId);
+          liveCatalog = startCatalogCapture(sessionId);
+          if (ctx.commandName) {
+            const reason = revalidateCommandBeforeDispatch(
+              {
+                name: ctx.commandName,
+                provider: ctx.commandProvider ?? null,
+                sessionId: ctx.commandSessionId ?? null,
+                catalogRevision: ctx.commandCatalogRevision ?? null,
+              },
+              { engine: "opencode", sessionId, catalog: null },
+            );
+            throw new Error(
+              `stale command "/${ctx.commandName}" rejected before dispatch: ${reason ?? "session replaced"} - re-issue it against the current session`,
+            );
+          }
           res = await postOrPoll(composeTurnPrompt(ctx, false));
         }
         if (res === null) {
@@ -1046,6 +1107,7 @@ export const opencodeServerAdapter: EngineAdapter = {
         ctx.signal.removeEventListener("abort", onParentAbort);
         await pump;
         await poller;
+        await Promise.all(catalogCaptures);
       }
 
       // ── finalize from the AUTHORITATIVE session history ─────────────────────
