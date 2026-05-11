@@ -177,6 +177,9 @@ export interface NegotiatedCapabilities {
   approvals: boolean;
   questions: boolean;
   usage: boolean;
+  /** The engine lets the user choose the model per turn (opencode any-model sandbox); false for
+   *  engines that run a fixed provider model (ACP claude/codex) - the model picker is hidden. */
+  modelSelection: boolean;
   commands: boolean;
   directTerminal: boolean;
   /** ACP session/resume (reconnect live) and session/load (rebuild after restart). */
@@ -306,7 +309,7 @@ export const SESSION_STARTED_EVENT_TYPE = "session.started";
 
 const CAP_KEYS: readonly (keyof NegotiatedCapabilities)[] = [
   "streamingText", "reasoning", "plans", "toolProgress", "fileDiffs", "childSessions", "approvals",
-  "questions", "usage", "commands", "directTerminal", "resume", "load", "close",
+  "questions", "usage", "modelSelection", "commands", "directTerminal", "resume", "load", "close",
   "stop", "reconcile", "desktop", "nativeEmbed", "knowledgeTools",
 ];
 

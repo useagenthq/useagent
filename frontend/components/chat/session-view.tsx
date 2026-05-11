@@ -441,6 +441,7 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
             pendingReply={pending?.text ?? null}
             commands={commands}
             commandState={catalogState}
+            modelSelection={caps?.modelSelection === true}
             onReply={handleReply}
             sendNowFor={runningTurn ? headQueuedId : null}
             onSendNow={handleSendNow}

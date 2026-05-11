@@ -451,6 +451,7 @@ function ReplyComposer({
   pending,
   commands,
   commandState,
+  modelSelection,
   onReply,
   running,
   stopping,
@@ -462,6 +463,9 @@ function ReplyComposer({
   pending: boolean;
   commands?: SlashCommand[];
   commandState?: CommandCatalogState;
+  /** The session's negotiated model-selection capability - the per-message model picker shows ONLY
+   *  when the engine actually lets the user choose (opencode); ACP engines run a fixed model. */
+  modelSelection?: boolean;
   onReply: ComposerSubmit;
   running?: boolean;
   stopping?: boolean;
@@ -478,6 +482,7 @@ function ReplyComposer({
         pending={pending}
         commands={commands}
         commandState={commandState}
+        enableModelPicker={modelSelection === true}
         onSubmit={onReply}
         running={running}
         stopping={stopping}
@@ -501,6 +506,7 @@ export function Conversation({
   pendingReply,
   commands,
   commandState,
+  modelSelection,
   onReply,
   sendNowFor,
   onSendNow,
@@ -518,6 +524,8 @@ export function Conversation({
   commands?: SlashCommand[];
   /** The honest command-catalog state (source + loading/unavailable/error/ready). */
   commandState?: CommandCatalogState;
+  /** The session's negotiated model-selection capability (opencode true, ACP false). */
+  modelSelection?: boolean;
   onReply: ComposerSubmit;
   /** Run id of the HEAD queued turn when a turn is running - that bubble gets
    *  the "Send now" steering affordance (opencode's control on our harness). */
@@ -568,6 +576,7 @@ export function Conversation({
         pending={pendingReply !== null}
         commands={commands}
         commandState={commandState}
+        modelSelection={modelSelection}
         onReply={onReply}
         running={running}
         stopping={stopping}
