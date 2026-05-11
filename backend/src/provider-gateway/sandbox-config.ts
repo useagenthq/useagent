@@ -11,7 +11,10 @@ export interface OpenCodeProviderOptions {
   readonly apiKey: string;
 }
 
-export const SANDBOX_GENERATION = "provider-gateway-v8";
+// v10 invalidates sandboxes created before shell-neutral secret sourcing and
+// relay PID tracking. Daytona envVars are immutable after create, so those
+// sandboxes cannot be repaired safely during warm reuse.
+export const SANDBOX_GENERATION = "provider-gateway-v10";
 export const SANDBOX_GENERATION_LABEL = "skynet-provider-generation";
 const SANDBOX_MARKER = "$HOME/.skynet/provider-gateway-generation";
 const ANTHROPIC_TOKEN_FILE = "$HOME/.skynet/provider-anthropic.token";

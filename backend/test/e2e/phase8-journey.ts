@@ -30,6 +30,7 @@ import { Daytona } from "@daytona/sdk";
 import { deleteById, listAll } from "./soak/lib/daytona";
 import { DEFAULT_CODEX_MODEL } from "../../src/runs/model-policy";
 import { shq } from "../../src/engines/repo-prep";
+import { SANDBOX_GENERATION } from "../../src/provider-gateway/sandbox-config";
 
 type Engine = "opencode" | "claude" | "codex";
 const ENGINE = (process.env.E2E_ENGINE ?? "opencode") as Engine;
@@ -266,7 +267,7 @@ try {
         rawProviderEnv.result?.trim() || "raw provider env absent",
       );
       const marker = await box.process.executeCommand(
-        'test "$(cat $HOME/.skynet/provider-gateway-generation 2>/dev/null)" = "provider-gateway-v8"',
+        `test "$(cat $HOME/.skynet/provider-gateway-generation 2>/dev/null)" = "${SANDBOX_GENERATION}"`,
         undefined,
         undefined,
         15,
@@ -274,7 +275,7 @@ try {
       pass(
         "provider gateway: short-lived capability generation installed",
         marker.exitCode === 0,
-        `generation=${marker.exitCode === 0 ? "provider-gateway-v8" : "missing"}`,
+        `generation=${marker.exitCode === 0 ? SANDBOX_GENERATION : "missing"}`,
       );
     }
     const steps1 = (r1?.steps as Row[]) ?? [];

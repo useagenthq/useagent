@@ -108,7 +108,7 @@ describe("sandbox provider gateway config", () => {
     expect(verifyProviderToken(options.openrouter?.apiKey)).toMatchObject({ provider: "openrouter" });
     expect(providerGatewaySandboxLabels("run-a")).toEqual({
       "skynet-run": "run-a",
-      "skynet-provider-generation": "provider-gateway-v8",
+      "skynet-provider-generation": "provider-gateway-v10",
     });
   });
 
@@ -117,7 +117,10 @@ describe("sandbox provider gateway config", () => {
     process.env.PROVIDER_GATEWAY_SECRET = "provider-test-0123456789abcdef0123456789abcdef";
     let shellChecks = 0;
     const sandbox = {
-      labels: {},
+      labels: {
+        "skynet-run": "run-a",
+        "skynet-provider-generation": "provider-gateway-v9",
+      },
       process: {
         executeCommand: async () => {
           shellChecks++;

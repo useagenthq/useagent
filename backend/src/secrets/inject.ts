@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type { EngineRunContext } from "../engines/types";
 import { recordProviderEvent } from "../runs/provider-events";
 import { isReservedSecretName } from "./crypto";
@@ -7,17 +8,19 @@ import { decryptOrgSecrets, type DecryptedSecrets } from "./store";
 // Sandbox secret injection (task #100). At run boot each engine adapter composes
 // the org's decrypted secrets and records a durable `secrets.injected` marker on
 // the shared native lane (provider "skynet", like skill.loaded / context.retrieved).
-// The marker carries NAMES ONLY - never a value. Injection must never fail a run:
-// decryptOrgSecrets swallows per-secret failures, and a marker-persist failure is
-// swallowed by recordProviderEvent.
+// The marker carries NAMES ONLY - never a value. Decryption failures remain
+// availability-safe (a bad row is skipped), but materialization fails the turn:
+// running an agent after promising credentials that do not exist is both
+// misleading and operationally unsafe.
 //
 // DELIVERY (why a dotenv, not N env vars): passing hundreds of env vars to
 // daytona.create is rejected by Daytona (confirmed A/B: 2 vars create OK, 485
 // vars create FAILS - a real org catalog is 400+ secrets). So org secrets do NOT
 // ride in the container-create request. Instead a SINGLE tiny create-env var,
 // `BASH_ENV=<dotenv path>`, points at a 0600 dotenv written into the sandbox
-// after boot; Daytona's shell is /usr/bin/bash and auto-sources BASH_ENV on
-// EVERY command, so the agent's tool commands see every secret as an env var.
+// after boot. Engine launch commands also source that file explicitly because
+// Daytona snapshots are not shell-uniform: some launch through zsh, which does
+// not honor BASH_ENV. The engine process then passes the environment to tools.
 // Bonus: org secrets never appear in the container-create request at all, which
 // advances the "don't leak into untrusted sandboxes" posture (BUG-002 / #116).
 //
@@ -25,10 +28,9 @@ import { decryptOrgSecrets, type DecryptedSecrets } from "./store";
 // credentials are always withheld by the engine adapters and resolved tenant-
 // side by the trusted provider gateway. There is no raw host-key escape hatch.
 //
-// CAVEAT: BASH_ENV is honored by non-interactive BASH only. Daytona's shell is
-// bash (verified), so agent tool commands inherit the dotenv - but a tool that
-// spawns a non-bash shell (sh/dash) will not. Acceptable for the agent's bash
-// tool calls; file-kind secrets (an absolute path + a real file) work regardless.
+// BASH_ENV remains a compatibility path for non-interactive Bash commands, but
+// correctness does not depend on it. OpenCode, ACP, and CLI adapters explicitly
+// source the dotenv before starting the long-lived engine process.
 //
 // Two kinds inside the dotenv:
 //  - "env":  export NAME='value'.
@@ -40,13 +42,29 @@ import { decryptOrgSecrets, type DecryptedSecrets } from "./store";
 /** The native `eventType` for a secrets-injection marker. */
 export const SECRETS_INJECTED = "secrets.injected";
 
-/** Where file-kind secrets (and the dotenv) are materialized inside the sandbox.
- *  Overridable via SECRETS_FILE_DIR so ops can match the sandbox image's
- *  user/home without a code change (the default assumes a root sandbox). */
-export const SECRET_FILE_DIR =
-  process.env.SECRETS_FILE_DIR?.trim() || "/root/.secrets";
+const DEFAULT_SECRET_FILE_DIR = "$HOME/.skynet/secrets";
+const HOME_RELATIVE_DIR_RE = /^\$HOME(?:\/[A-Za-z0-9._-]+)+$/;
+const ABSOLUTE_DIR_RE = /^\/(?:[A-Za-z0-9._-]+\/?)+$/;
 
-/** The dotenv sourced by BASH_ENV on every sandbox command. */
+/** Where file-kind secrets (and the dotenv) are materialized inside the sandbox.
+ *  `$HOME` is intentionally left for the sandbox shell to expand: Daytona
+ *  snapshots currently include both root and non-root users. An absolute ops
+ *  override is still supported, but shell metacharacters are rejected at boot. */
+function resolveSecretFileDir(): string {
+  const configured = process.env.SECRETS_FILE_DIR?.trim();
+  const candidate = (configured || DEFAULT_SECRET_FILE_DIR).replace(/\/+$/, "");
+  if (!HOME_RELATIVE_DIR_RE.test(candidate) && !ABSOLUTE_DIR_RE.test(candidate)) {
+    throw new Error(
+      "SECRETS_FILE_DIR must be an absolute path or a safe $HOME-relative path",
+    );
+  }
+  return candidate;
+}
+
+export const SECRET_FILE_DIR = resolveSecretFileDir();
+
+/** The dotenv explicitly sourced at engine boot (and exposed through BASH_ENV
+ * for compatible non-interactive Bash commands). */
 export const SECRET_DOTENV_PATH = `${SECRET_FILE_DIR}/skynet-env.sh`;
 
 /** Bounded secrets.injected payload - the injected NAMES and their count, never
@@ -66,7 +84,7 @@ export interface SecretFile {
 /** The result of composing an org's secrets for one run's sandbox. */
 export interface SecretInjection {
   /** Env vars to pass to daytona.create - TINY: just `BASH_ENV` when any secret
-   *  exists (never the secrets themselves), so create is never rejected. */
+   *  exists (never the secrets themselves). Engine boot also sources the file. */
   createEnv: Record<string, string>;
   /** Files to materialize inside the sandbox AFTER boot: the dotenv first, then
    *  each file-kind secret's content. Written 0600 by materializeSecretFiles. */
@@ -109,10 +127,29 @@ export const PROVIDER_SECRET_NAMES = new Set([
   "CODEX_ACCESS_TOKEN",
 ]);
 
-/** POSIX single-quote a value for a `export NAME='...'` line (escapes embedded
- *  single quotes as '\'' so ANY byte sequence is preserved verbatim). */
+/** POSIX single-quote an opaque value. */
+function shellQuote(value: string): string {
+  return `'${value.replace(/'/g, "'\\''")}'`;
+}
+
+/** Render a validated sandbox path. `$HOME` paths use double quotes so the
+ *  sandbox user's real home is resolved when Bash sources or executes it. */
+function shellPath(path: string): string {
+  return path.startsWith("$HOME/") ? `"${path}"` : shellQuote(path);
+}
+
+/** Shell-neutral engine boot prefix. Do not rely on Daytona's command launcher
+ *  honoring BASH_ENV: current snapshots invoke both zsh and bash. */
+export const SECRET_SOURCE_COMMAND = `. ${shellPath(SECRET_DOTENV_PATH)}`;
+
+/** Export an opaque value without permitting shell evaluation. */
 function shellExport(name: string, value: string): string {
-  return `export ${name}='${value.replace(/'/g, "'\\''")}'`;
+  return `export ${name}=${shellQuote(value)}`;
+}
+
+/** Export one of this module's validated file paths with `$HOME` expansion. */
+function shellExportPath(name: string, path: string): string {
+  return `export ${name}=${shellPath(path)}`;
 }
 
 /** Read the standard project_id embedded in a Google service-account JSON file.
@@ -153,7 +190,7 @@ export function buildInjection(
     if (s.kind === "file") {
       const path = `${SECRET_FILE_DIR}/${s.name}`;
       files.push({ path, content: s.value });
-      lines.push(shellExport(s.name, path)); // the agent reads the file at this path
+      lines.push(shellExportPath(s.name, path)); // the agent reads the file at this path
     } else {
       lines.push(shellExport(s.name, s.value));
     }
@@ -172,7 +209,7 @@ export function buildInjection(
   );
   if (!canonicalGoogleCredential && legacyGoogleCredential) {
     lines.push(
-      shellExport(
+      shellExportPath(
         GOOGLE_APPLICATION_CREDENTIALS,
         `${SECRET_FILE_DIR}/${LEGACY_GCP_CREDENTIAL}`,
       ),
@@ -201,12 +238,10 @@ export function buildInjection(
 }
 
 /**
- * Decrypt the run's org secrets into an injectable form, emitting a names-only
- * `secrets.injected` marker when at least one secret is present. A null org, no
- * secrets, or an all-undecryptable set yields an empty injection and no marker.
- * Never throws - a decrypt failure of the whole set is caught here and a
- * per-secret failure is skipped inside decryptOrgSecrets - so secrets never fail
- * a run.
+ * Decrypt the run's org secrets into an injectable form. A null org, no secrets,
+ * or an all-undecryptable set yields an empty injection. This stage stays
+ * availability-safe; the later filesystem materialization is the fail-closed
+ * boundary.
  */
 export async function composeSecretEnv(
   ctx: EngineRunContext,
@@ -230,11 +265,17 @@ export async function composeSecretEnv(
 
   const out = buildInjection(decrypted, options);
 
-  if (out.names.length === 0) return EMPTY;
+  return out.names.length === 0 ? EMPTY : out;
+}
 
-  // recordProviderEvent is fire-and-forget-safe (it swallows its own failures and
-  // never rejects); await it so the marker is durable before the run can settle,
-  // mirroring recordSkillLoaded.
+/** Record successful injection only after the sandbox files exist. Keeping this
+ * separate from composition prevents a durable false-positive when Daytona
+ * cannot create the protected directory or write the dotenv. */
+export async function recordSecretsInjected(
+  ctx: EngineRunContext,
+  injection: SecretInjection,
+): Promise<void> {
+  if (injection.names.length === 0) return;
   await recordProviderEvent({
     id: `secretsinjected_${ctx.runId}`,
     runId: ctx.runId,
@@ -242,13 +283,11 @@ export async function composeSecretEnv(
     provider: "skynet",
     eventType: SECRETS_INJECTED,
     payload: {
-      names: out.names,
-      count: out.names.length,
+      names: injection.names,
+      count: injection.names.length,
       source: "secrets",
     } satisfies SecretsInjectedPayload,
   });
-
-  return out;
 }
 
 /**
@@ -256,24 +295,57 @@ export async function composeSecretEnv(
  * each 0600 under a 0700 dir. `runCmd` runs one shell command in the sandbox
  * (e.g. `sandbox.process.executeCommand`). Content is base64-piped so a secret
  * never appears literally on the command line and no shell-escaping of its bytes
- * is needed. Never throws - a failure is logged and the run proceeds.
+ * is needed. A failed or indeterminate command throws: the engine must not run
+ * with a credential surface that the control plane claimed to inject.
  */
 export async function materializeSecretFiles(
-  runCmd: (cmd: string) => Promise<unknown>,
+  runCmd: (cmd: string) => Promise<{
+    readonly exitCode?: number;
+    readonly result?: string;
+  }>,
   files: SecretFile[],
-): Promise<void> {
-  if (files.length === 0) return;
-  const cmds = [`mkdir -p ${SECRET_FILE_DIR} && chmod 700 ${SECRET_FILE_DIR}`];
-  for (const f of files) {
-    const b64 = Buffer.from(f.content, "utf8").toString("base64");
-    cmds.push(`printf '%s' '${b64}' | base64 -d > '${f.path}' && chmod 600 '${f.path}'`);
+): Promise<{ readonly changed: boolean }> {
+  // Reconciliation is intentional even for an empty current secret set: a warm
+  // sandbox may still contain a dotenv/files from a prior turn whose secrets
+  // were revoked. Keep an empty dotenv so every engine can source one fixed path.
+  const currentFiles = files.length > 0
+    ? files.toSorted((a, b) => a.path.localeCompare(b.path))
+    : [{ path: SECRET_DOTENV_PATH, content: "" }];
+  const pathPrefix = `${SECRET_FILE_DIR}/`;
+  if (currentFiles.some((file) => !file.path.startsWith(pathPrefix))) {
+    throw new Error("secret materialization path escaped the protected directory");
   }
-  try {
-    await runCmd(cmds.join(" && "));
-  } catch (err) {
-    console.warn(
-      "[secrets] file materialization failed:",
-      err instanceof Error ? err.message : err,
+
+  const digest = createHash("sha256");
+  for (const file of currentFiles) {
+    digest.update(file.path).update("\0").update(file.content).update("\0");
+  }
+  const revision = digest.digest("hex");
+  const directory = shellPath(SECRET_FILE_DIR);
+  const revisionPath = shellPath(`${SECRET_FILE_DIR}/.revision`);
+  const cmds = [
+    "umask 077",
+    `test ! -L ${directory}`,
+    `mkdir -p -- ${directory}`,
+    `test -d ${directory}`,
+    `chmod 700 -- ${directory}`,
+    `old_revision=$(cat ${revisionPath} 2>/dev/null || true)`,
+    `find ${directory} -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +`,
+  ];
+  for (const f of currentFiles) {
+    const b64 = Buffer.from(f.content, "utf8").toString("base64");
+    const path = shellPath(f.path);
+    cmds.push(`printf '%s' '${b64}' | base64 -d > ${path} && chmod 600 -- ${path}`);
+  }
+  cmds.push(
+    `printf '%s' '${revision}' > ${revisionPath} && chmod 600 -- ${revisionPath}`,
+    `if [ "$old_revision" = '${revision}' ]; then printf unchanged; else printf changed; fi`,
+  );
+  const result = await runCmd(cmds.join(" && "));
+  if (result.exitCode !== 0) {
+    throw new Error(
+      `secret materialization command exited ${result.exitCode ?? "without a status"}`,
     );
   }
+  return { changed: result.result?.trim().split(/\s+/).at(-1) !== "unchanged" };
 }

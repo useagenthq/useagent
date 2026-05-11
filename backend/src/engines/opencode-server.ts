@@ -30,6 +30,8 @@ import {
   composeSecretEnv,
   materializeSecretFiles,
   PROVIDER_SECRET_NAMES,
+  recordSecretsInjected,
+  SECRET_SOURCE_COMMAND,
 } from "../secrets/inject";
 import { revalidateCommandBeforeDispatch } from "../runs/command-intent";
 import {
@@ -172,7 +174,7 @@ async function ensureServer(
     await sandbox.process.executeSessionCommand(
       SERVER_PROCESS_SESSION,
       {
-        command: `cd ${shq(`${home}/work`)} && exec ${bin} serve --hostname 0.0.0.0 --port ${SERVE_PORT}`,
+        command: `${SECRET_SOURCE_COMMAND} && cd ${shq(`${home}/work`)} && exec ${bin} serve --hostname 0.0.0.0 --port ${SERVE_PORT}`,
         runAsync: true,
         suppressInputEcho: true,
       },
@@ -555,11 +557,10 @@ export const opencodeServerAdapter: EngineAdapter = {
     const daytona = new Daytona({ apiKey, target: process.env.DAYTONA_TARGET ?? "us" });
     const budgetMs = Number(process.env.ENGINE_TIMEOUT_MS ?? 600_000);
 
-    // Org secrets ride in via a BASH_ENV dotenv (createEnv), NOT as N env vars —
-    // Daytona rejects a create with a whole 400+ secret catalog. Platform engine
-    // keys are added after and win on name. composeSecretEnv also records the
-    // names-only `secrets.injected` marker; the dotenv + file-kind secrets are
-    // written into the sandbox after boot below.
+    // Org secrets live in a protected dotenv, not Daytona's immutable env catalog
+    // (which rejects large org catalogs). OpenCode sources it explicitly at boot;
+    // BASH_ENV is only a compatibility path. The names-only marker is recorded
+    // only after the sandbox files are materialized successfully.
     const secretInjection = await composeSecretEnv(ctx, {
       excludeNames: PROVIDER_SECRET_NAMES,
     });
@@ -675,6 +676,7 @@ export const opencodeServerAdapter: EngineAdapter = {
         (cmd) => sandbox!.process.executeCommand(cmd, undefined, undefined, 30),
         secretInjection.files,
       );
+      await recordSecretsInjected(ctx, secretInjection);
 
       // ── persistent server + preview endpoint ────────────────────────────────
       const { baseUrl, token, workdir } = await ensureServer(sandbox, npxFallback, ctx.signal);

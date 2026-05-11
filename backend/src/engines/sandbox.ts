@@ -7,6 +7,8 @@ import {
   composeSecretEnv,
   materializeSecretFiles,
   PROVIDER_SECRET_NAMES,
+  recordSecretsInjected,
+  SECRET_SOURCE_COMMAND,
 } from "../secrets/inject";
 import {
   prepareProviderGatewaySandbox,
@@ -422,10 +424,9 @@ function makeSandboxAdapter(spec: SandboxEngineSpec): EngineAdapter {
       const daytona = new Daytona({ apiKey, target: process.env.DAYTONA_TARGET ?? "us" });
 
       // Engine/provider keys ride as sandbox env — never on the command line.
-      // Org secrets ride in via a BASH_ENV dotenv (createEnv), not as N env vars;
-      // platform keys of the same name win. Same seam as the opencode/acp
-      // adapters; also records the `secrets.injected` marker. The dotenv +
-      // file-kind secrets are written after boot (below).
+      // Org secrets live in a protected dotenv that the CLI launch sources
+      // explicitly; BASH_ENV is only a compatibility path. The names-only marker
+      // is recorded only after the files are materialized successfully.
       const secretInjection = await composeSecretEnv(ctx, {
         excludeNames: PROVIDER_SECRET_NAMES,
       });
@@ -547,6 +548,7 @@ function makeSandboxAdapter(spec: SandboxEngineSpec): EngineAdapter {
           (cmd) => box.process.executeCommand(cmd, undefined, undefined, 30),
           secretInjection.files,
         );
+        await recordSecretsInjected(ctx, secretInjection);
 
         const budgetSec = Math.floor(Number(process.env.ENGINE_TIMEOUT_MS ?? 180_000) / 1000);
 
@@ -570,7 +572,7 @@ function makeSandboxAdapter(spec: SandboxEngineSpec): EngineAdapter {
         ): Promise<{ exitCode: number; state: ParseState; produced: boolean }> => {
           const command = spec.command({ model, resumeId: resume });
           const launch = await box.process.executeCommand(
-            `rm -f ${OUT_PATH} ${EXIT_PATH} ${PID_PATH}; export PATH=$HOME/.local/bin:$PATH; cd ~/work && ` +
+            `rm -f ${OUT_PATH} ${EXIT_PATH} ${PID_PATH}; ${SECRET_SOURCE_COMMAND} || exit 1; export PATH=$HOME/.local/bin:$PATH; cd ~/work && ` +
               `nohup sh -c '${command} < ${PROMPT_PATH}; echo $? > ${EXIT_PATH}' ` +
               `> ${OUT_PATH} 2>&1 & echo $! > ${PID_PATH}`,
             undefined,
