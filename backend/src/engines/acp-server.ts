@@ -15,13 +15,24 @@ import { cacheAcpCommands } from "../runs/command-catalog";
 import { revalidateCommandBeforeDispatch } from "../runs/command-intent";
 import { providerEventExists, recordProviderEvent } from "../runs/provider-events";
 import { buildSessionCancel, createAcpRpcClient, isAlreadyInitialized, parseRelayHealth, relayRegenerated, relayStateAfterBoot } from "./acp-rpc";
-import { allowPermissionBypass, decideAcpPermission } from "./permission-policy";
-import { hostProviderEnv } from "./host-provider-env";
+import { decideAcpPermission } from "./permission-policy";
 import { toolGatewayConfig } from "../knowledge/gateway/config";
 import { mintToolToken } from "../knowledge/gateway/token";
-import { composeSecretEnv, materializeSecretFiles } from "../secrets/inject";
+import {
+  composeSecretEnv,
+  materializeSecretFiles,
+  PROVIDER_SECRET_NAMES,
+} from "../secrets/inject";
 import { getThreadSandbox, setRunSandbox } from "../runs/repo";
 import { buildAcpToolStep, type AcpToolNativeIds } from "./acp-tool-step";
+import {
+  providerGatewayEnv,
+  providerGatewayWired,
+  prepareProviderGatewaySandbox,
+  providerGatewaySandboxIsCurrent,
+  providerGatewaySandboxLabels,
+} from "../provider-gateway/sandbox-config";
+import { extractAcpToolOutput } from "./acp-content";
 
 // ---------------------------------------------------------------------------
 // Resident claude/codex via ACP — the opencode-server equivalent for the other
@@ -35,14 +46,14 @@ import { buildAcpToolStep, type AcpToolNativeIds } from "./acp-tool-step";
 // `session/update` events translated live into steps + deltas.
 // ---------------------------------------------------------------------------
 
-const CLAUDE_ACP_PKG = "@agentclientprotocol/claude-agent-acp@0.64.2";
+const CLAUDE_ACP_PKG = "@agentclientprotocol/claude-agent-acp@0.66.0";
 // codex-acp@0.16.0 does not exist under this namespace (that version belongs to
 // @zed-industries/codex-acp) - the 404 silently no-op'd the install so `codex-acp` never
 // landed and the relay's child spawn failed (BOOT-TIMEOUT). The real package is 1.1.x and
 // bundles @openai/codex (the `codex` binary) as a dependency, so installing it provisions
 // codex too (#128).
 const CODEX_ACP_PKG = "@agentclientprotocol/codex-acp@1.1.14";
-const CLAUDE_CODE_PKG = "@anthropic-ai/claude-code@2.1.222";
+const CLAUDE_CODE_PKG = "@anthropic-ai/claude-code@2.1.226";
 
 /** The in-sandbox relay: stdin/stdout bridge to the ACP agent over plain HTTP
  *  (SSE out, POST in) — WebSockets are unnecessary and unproven through the
@@ -142,7 +153,7 @@ export interface AcpEngineConfig {
    *  is on PATH) and BEFORE the relay starts. Codex uses it to seed auth. Idempotent. */
   preRelay?: string;
   /** Idempotent per-turn sandbox prep (codex auth seeding). */
-  prepare?(sandbox: Sandbox): Promise<void>;
+  prepare?(sandbox: Sandbox, ctx: EngineRunContext): Promise<void>;
 }
 
 /** Total wall-clock budget for ONE ACP turn (drives the turn-abort timer). A fresh
@@ -268,7 +279,7 @@ export async function cancelAcpSession(sandboxId: string, sessionId: string): Pr
  * DB/embedding/tenant credentials. The gateway derives org/user/thread from the
  * token server-side. Same URL, TTL, and minted identity as the opencode path.
  *
- * Gated: empty unless TOOL_GATEWAY_PUBLIC_URL is set AND the run has an org
+ * Gated: empty unless GATEWAY_PUBLIC_URL is set AND the run has an org
  * identity (fail closed — no tools rather than an unscoped one). Off by default,
  * so existing ACP runs are byte-for-byte unchanged.
  *
@@ -300,18 +311,6 @@ export function acpKnowledgeMcpServers(ctx: EngineRunContext): Record<string, un
 
 // ── ACP session/update → step/delta translation ─────────────────────────────
 
-/** Flatten a tool_call_update's content blocks to text. */
-function acpContentText(content: unknown): string {
-  if (!Array.isArray(content)) return "";
-  return content
-    .map((c) => {
-      const inner = (c as { content?: { text?: string } }).content;
-      return typeof inner?.text === "string" ? inner.text : "";
-    })
-    .filter(Boolean)
-    .join("\n");
-}
-
 // ── the adapter ─────────────────────────────────────────────────────────────
 
 function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
@@ -321,6 +320,9 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
     async run(ctx: EngineRunContext): Promise<void> {
       const apiKey = process.env.DAYTONA_API_KEY;
       if (!apiKey) throw new Error(`${cfg.id} engine needs DAYTONA_API_KEY in the backend env`);
+      if (!providerGatewayWired()) {
+        throw new Error(`${cfg.id} engine requires a configured provider gateway`);
+      }
       const startedAt = Date.now();
       const daytona = new Daytona({ apiKey, target: process.env.DAYTONA_TARGET ?? "us" });
       const budgetMs = resolveAcpTurnTimeoutMs();
@@ -330,17 +332,14 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
       // keys are added after and win on name. composeSecretEnv also records the
       // `secrets.injected` marker (names only); the dotenv + file-kind secrets are
       // written after the sandbox is up (below).
-      const secretInjection = await composeSecretEnv(ctx);
-      // Credentials (final_harness.md P0 / D6 / #121): per-tenant creds arrive via org
-      // secrets (composeSecretEnv above) - the SaaS-safe path that works in prod. The
-      // host provider key (claude reads ANTHROPIC, codex reads OPENAI - NEVER both, and
-      // never the other engine's key) is injected ONLY in verified-dev yolo
-      // (allowPermissionBypass) so a developer can exercise claude/codex ACP locally
-      // without provisioning a secret; production NEVER receives it. See host-provider-env.ts;
-      // the trusted provider gateway (#121) removes even the dev injection.
+      const secretInjection = await composeSecretEnv(ctx, {
+        excludeNames: PROVIDER_SECRET_NAMES,
+      });
+      // Provider credentials never enter the sandbox. The dedicated gateway
+      // resolves the org credential server-side from the exact running run.
       const envVars: Record<string, string> = {
         ...secretInjection.createEnv,
-        ...hostProviderEnv(cfg.id, ctx.model, { allowHostKeys: allowPermissionBypass() }),
+        ...providerGatewayEnv(ctx, cfg.id),
       };
 
       const autoStopInterval = Number(process.env.SANDBOX_AUTO_STOP_MIN ?? 30);
@@ -350,7 +349,6 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
       let relay = key ? threadRelays.get(key) : undefined;
       let sandbox: Sandbox | null = null;
       let retainForThread = false;
-      let succeeded = false;
 
       try {
         // ── sandbox: reuse the thread's, else provision ─────────────────────
@@ -364,6 +362,10 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
               relay.sessionId = null; // agent process died with the stop
             } else if (state !== "started") {
               throw new Error(`unusable state: ${state}`);
+            }
+            if (!(await providerGatewaySandboxIsCurrent(prior))) {
+              await prior.delete().catch(() => {});
+              throw new Error("legacy sandbox credential generation");
             }
             sandbox = prior;
             retainForThread = true;
@@ -389,6 +391,10 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
               } else if (state !== "started") {
                 throw new Error(`unusable state: ${state}`);
               }
+              if (!(await providerGatewaySandboxIsCurrent(prior))) {
+                await prior.delete().catch(() => {});
+                throw new Error("legacy sandbox credential generation");
+              }
               sandbox = prior;
               retainForThread = true;
             } catch {
@@ -400,7 +406,7 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
           await ctx.emit({ kind: "task", label: "Provisioning cloud sandbox…", chip: cfg.id });
           sandbox = await daytona.create({
             envVars,
-            labels: { "skynet-run": ctx.runId },
+            labels: providerGatewaySandboxLabels(ctx.runId),
             autoStopInterval,
             autoDeleteInterval,
           });
@@ -435,7 +441,7 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
           throw err;
         }
 
-        await cfg.prepare?.(box);
+        await cfg.prepare?.(box, ctx);
 
         // Materialize any file-kind org secrets (0600) before the agent turn.
         await materializeSecretFiles(
@@ -745,7 +751,7 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
             const recorded = toolCalls.get(tcid);
             const call = recorded?.update ?? u;
             const stepId = toolSteps.get(tcid);
-            const output = acpContentText(u.content);
+            const output = extractAcpToolOutput(u.content, u.rawOutput);
             if (stepId) {
               await ctx.updateStep?.(stepId, {
                 tool: String(call.kind ?? "other"),
@@ -965,9 +971,11 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
         }
         await ctx.emit({ kind: "done", label: "Done", chip: null });
         ctx.setSummary(finalText.trim() || `${cfg.id} run completed`, Date.now() - startedAt);
-        succeeded = true;
       } finally {
-        if (sandbox && (!retainForThread || !succeeded)) {
+        // Once a relay is durable for a thread, a failed/cancelled TURN must not
+        // destroy the conversation's workspace and native session. A failure
+        // before relay registration still removes the unusable fresh sandbox.
+        if (sandbox && !retainForThread) {
           if (key) threadRelays.delete(key);
           await sandbox.delete().catch(() => {});
         }
@@ -990,6 +998,7 @@ export const claudeAcpConfig: AcpEngineConfig = {
   ],
   agentCmd: ["claude-agent-acp"],
   agentEnv: { CLAUDE_CODE_EXECUTABLE: "$HOME/.local/bin/claude" },
+  prepare: (sandbox, ctx) => prepareProviderGatewaySandbox(sandbox, ctx, "claude"),
 };
 
 export const acpClaudeAdapter = makeAcpAdapter(claudeAcpConfig);
@@ -999,16 +1008,10 @@ export const codexAcpConfig: AcpEngineConfig = {
   port: 4098,
   packages: [{ pkg: CODEX_ACP_PKG, bin: "codex-acp" }],
   agentCmd: ["codex-acp"],
-  // codex-acp requires codex to be LOGGED IN (~/.codex/auth.json), not merely to have
-  // OPENAI_API_KEY in env - otherwise it fails the session with "Authentication required".
-  // Seed the login from the injected key before the relay starts (idempotent; a no-key
-  // sandbox no-ops via `|| true`). `codex login --with-api-key` reads the key from stdin.
-  preRelay: 'if [ -n "$OPENAI_API_KEY" ]; then printf %s "$OPENAI_API_KEY" | codex login --with-api-key >/dev/null 2>&1 || true; fi; ',
-  // SaaS-SAFE credentials (final_harness.md P0): NO host-credential copy. Codex
-  // authenticates only from per-tenant credentials injected via org secrets
-  // (OPENAI_API_KEY) - we never copy the host operator's ~/.codex/auth.json (a
-  // developer's ChatGPT login) into an untrusted customer sandbox. Fail-closed: an
-  // enabled codex run without an injected credential fails on codex's own auth error.
+  prepare: (sandbox, ctx) => prepareProviderGatewaySandbox(sandbox, ctx, "codex"),
+  // SaaS-safe credentials: no host login or raw provider key is copied. Codex
+  // reads an exact-run capability from its private token file and calls only the
+  // trusted gateway; the backend resolves the tenant credential server-side.
 };
 
 export const acpCodexAdapter = makeAcpAdapter(codexAcpConfig);

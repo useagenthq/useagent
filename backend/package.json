@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "bun run --watch src/index.ts",
     "start": "bun run src/index.ts",
+    "gateway": "bun run src/gateway.ts",
     "test": "bun run test/prepare-db.ts && bun test",
     "e2e": "bun run test/e2e/full-stack.ts",
     "e2e:real": "bun run test/e2e/real-full-stack.ts",
@@ -19,12 +20,17 @@
     "@skynet/agent-harness": "file:../packages/agent-harness",
     "better-auth": "^1.6.25",
     "drizzle-orm": "^0.45.2",
-    "hono": "^4.9.10",
+    "hono": "^4.13.1",
     "postgres": "^3.4.9"
   },
   "devDependencies": {
     "@types/bun": "^1.3.14",
     "drizzle-kit": "^0.31.10",
     "playwright-core": "^1.62.1"
+  },
+  "overrides": {
+    "esbuild": "0.25.12",
+    "fast-uri": "3.1.5",
+    "hono": "4.13.1"
   }
 }

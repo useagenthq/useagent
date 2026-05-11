@@ -4,6 +4,10 @@
  */
 
 import { ENGINE_IDS, type EngineId } from "./db/schema";
+import {
+  authSecretMaterial,
+  runtimeDevModeEnabled,
+} from "./security/runtime-secrets";
 
 /**
  * Dev mode gates every fail-OPEN behavior in the app: the seeded dev-org
@@ -14,9 +18,7 @@ import { ENGINE_IDS, type EngineId } from "./db/schema";
  * it at runtime without a fresh process.
  */
 export function devModeEnabled(): boolean {
-  const flag = process.env.SKYNET_DEV_MODE;
-  if (flag !== undefined) return flag === "true";
-  return (process.env.NODE_ENV ?? "development") !== "production";
+  return runtimeDevModeEnabled();
 }
 
 /**
@@ -34,8 +36,8 @@ export function allowDevOrg(): boolean {
 
 /**
  * Which engines may actually run. SECURITY GATE (final_harness.md P0): the
- * Claude/Codex ACP adapters are registered but NOT production-proven or SaaS-safe
- * (auto-approve permissions, host-credential copy). They must never be activatable
+ * Claude/Codex ACP adapters are registered but still require an operator-provisioned
+ * provider gateway and an explicit permission posture. They must never be activatable
  * through a direct `engine` on POST /api/runs - or any channel - unless an operator
  * explicitly opts in. The base set is the proven OpenCode/scripted path; the
  * `ENABLED_ENGINES` env (comma list) only ADDS engines on top
@@ -77,8 +79,6 @@ export function acpAutoApprove(): boolean {
   return process.env.ACP_YOLO_APPROVE === "1" || process.env.ACP_YOLO_APPROVE === "true";
 }
 
-const DEFAULT_AUTH_SECRET = "dev-skynet-secret-change-me";
-
 /** Resolve the auth secret. Production (dev mode off) must supply its own. */
 function resolveAuthSecret(): string {
   const secret = process.env.BETTER_AUTH_SECRET;
@@ -93,7 +93,7 @@ function resolveAuthSecret(): string {
     "[env] BETTER_AUTH_SECRET is unset — using an insecure dev default. " +
       "Set it before deploying to production.",
   );
-  return DEFAULT_AUTH_SECRET;
+  return authSecretMaterial();
 }
 
 export const env = {
@@ -102,7 +102,12 @@ export const env = {
   PORT: Number(process.env.PORT ?? 3201),
   FRONTEND_ORIGIN: process.env.FRONTEND_ORIGIN ?? "http://localhost:3200",
   BETTER_AUTH_URL: process.env.BETTER_AUTH_URL ?? "http://localhost:3201",
-  BETTER_AUTH_SECRET: resolveAuthSecret(),
+  // Lazy so the dedicated gateway process can reuse non-auth configuration
+  // helpers without importing the backend's cookie-signing root. The full app's
+  // auth module reads this getter at boot and keeps the same fail-closed policy.
+  get BETTER_AUTH_SECRET(): string {
+    return resolveAuthSecret();
+  },
 } as const;
 
 /**

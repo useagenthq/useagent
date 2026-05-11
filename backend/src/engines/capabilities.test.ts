@@ -6,7 +6,7 @@ import { sessionCapabilities } from "./capabilities";
 describe("sessionCapabilities (truthful per-engine + resource-driven)", () => {
   const res = { desktop: false, knowledgeTools: false };
 
-  test("shared truths hold for every engine (streaming/tools/commands/terminal/stop/resume/children)", () => {
+  test("shared truths hold for every engine (streaming/tools/commands/terminal/stop/resume)", () => {
     for (const e of ["opencode", "claude", "codex"]) {
       const c = sessionCapabilities(e, res);
       expect(c.streamingText).toBe(true);
@@ -15,7 +15,6 @@ describe("sessionCapabilities (truthful per-engine + resource-driven)", () => {
       expect(c.directTerminal).toBe(true);
       expect(c.stop).toBe(true);
       expect(c.resume).toBe(true);
-      expect(c.childSessions).toBe(true);
     }
   });
 
@@ -27,6 +26,9 @@ describe("sessionCapabilities (truthful per-engine + resource-driven)", () => {
     expect(oc.reconcile).toBe(true);
     expect(oc.modelSelection).toBe(true); // opencode is an any-model sandbox
     expect(oc.close).toBe(false); // opencode stays resident
+    expect(oc.childSessions).toBe(true);
+    expect(oc.reasoning).toBe(true);
+    expect(oc.fileDiffs).toBe(true);
 
     for (const e of ["claude", "codex"]) {
       const c = sessionCapabilities(e, res);
@@ -36,6 +38,9 @@ describe("sessionCapabilities (truthful per-engine + resource-driven)", () => {
       expect(c.reconcile).toBe(false); // ACP control adapter is unsupported
       expect(c.modelSelection).toBe(false); // ACP runs a fixed model - no fake model picker
       expect(c.close).toBe(true);
+      expect(c.childSessions).toBe(false);
+      expect(c.reasoning).toBe(false);
+      expect(c.fileDiffs).toBe(false);
     }
   });
 

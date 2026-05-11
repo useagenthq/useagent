@@ -8,6 +8,7 @@ import {
   RiThumbDownLine,
   RiThumbUpLine,
 } from "@remixicon/react";
+import Image from "next/image";
 import { cnExt as cn } from "@/utils/cn";
 
 export interface StreamingSource {
@@ -58,8 +59,16 @@ function SourceAvatar({
   className?: string;
 }) {
   if (source.icon) {
-    // eslint-disable-next-line @next/next/no-img-element -- mock/remote favicons, no next/image loader
-    return <img src={source.icon} alt="" className={cn("object-cover", className)} />;
+    return (
+      <Image
+        src={source.icon}
+        alt=""
+        width={16}
+        height={16}
+        unoptimized
+        className={cn("object-cover", className)}
+      />
+    );
   }
   return (
     <span

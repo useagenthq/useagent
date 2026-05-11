@@ -6,9 +6,9 @@
 // and duplicate replay/live frames produce no visible duplicates.
 
 import { describe, expect, test } from "bun:test";
-import { createThreadStore } from "./thread-store";
-import { nativeOf } from "./native-ids";
 import type { NativeFrame } from "./native-events";
+import { nativeOf } from "./native-ids";
+import { createThreadStore } from "./thread-store";
 import type { ApiRun, ApiStep, RunStatus, StepKind } from "./types";
 
 let seq = 0;
@@ -220,6 +220,31 @@ describe("thread-store", () => {
     expect(snap.byId.get("A")!.status).toBe("completed");
     expect(snap.byId.get("A")!.native.steps.length).toBe(1);
     expect(snap.byId.get("B")!.status).toBe("queued");
+  });
+
+  test("live activity promotes a queued run when its running metadata frame is delayed", () => {
+    const stepStore = createThreadStore();
+    stepStore.applySnapshot([makeRun("step", { status: "queued" })]);
+    stepStore.applyStep("step", tool("step", 0, "bash", "part", "call", "session"));
+    expect(stepStore.getSnapshot().byId.get("step")?.status).toBe("running");
+
+    const deltaStore = createThreadStore();
+    deltaStore.applySnapshot([makeRun("delta", { status: "queued" })]);
+    deltaStore.applyDelta("delta", "working");
+    expect(deltaStore.getSnapshot().byId.get("delta")?.status).toBe("running");
+
+    const nativeStore = createThreadStore();
+    nativeStore.applySnapshot([makeRun("native", { status: "queued" })]);
+    nativeStore.applyNative("native", frame("native", "native-1", 1));
+    expect(nativeStore.getSnapshot().byId.get("native")?.status).toBe("running");
+  });
+
+  test("late activity never reopens a terminal run", () => {
+    const store = createThreadStore();
+    store.applySnapshot([makeRun("done", { status: "completed" })]);
+    store.applyDelta("done", "late");
+    store.applyNative("done", frame("done", "done-1", 1));
+    expect(store.getSnapshot().byId.get("done")?.status).toBe("completed");
   });
 
   test("getSnapshot is a stable reference until state changes", () => {

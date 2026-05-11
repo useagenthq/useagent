@@ -42,8 +42,8 @@
  *      opencode run in a real sandbox answers a question it can ONLY answer by
  *      calling knowledge_search through the gateway, proven by a
  *      `knowledge.retrieved` ledger frame + the tool-only fact in the answer.
- *      Needs a publicly-reachable backend, so it runs only when the e2e env
- *      carries TOOL_GATEWAY_PUBLIC_URL (e.g. a cloudflared tunnel); otherwise it
+ *      Needs a publicly-reachable dedicated gateway, so it runs only when the
+ *      e2e env carries GATEWAY_PUBLIC_URL (e.g. a tunnel to `bun run gateway`); otherwise it
  *      SKIPs with an honest note — which E2E_STRICT (release mode) turns red.
  */
 import { createHmac } from "node:crypto";
@@ -62,6 +62,8 @@ const SIGNING = "e2e-real-signing-secret";
 const BOT = "U0E2EREAL";
 const MODEL = "claude-haiku-4-5";
 const SERVE_PORT = 4096; // opencode serve port inside the sandbox
+const providerSigningSecret = `provider-real-${crypto.randomUUID()}-${crypto.randomUUID()}`;
+const toolSigningSecret = `tool-real-${crypto.randomUUID()}-${crypto.randomUUID()}`;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const backendDir = new URL("../..", import.meta.url).pathname;
@@ -125,7 +127,7 @@ function printProvenance(p: { sha: string; dirty: boolean; branch: string; ts: s
   console.log(
     `  env: ${flag("E2E_STRICT", STRICT)} · ${flag("DAYTONA_API_KEY", process.env.DAYTONA_API_KEY)} · ` +
       `${flag("ANTHROPIC_API_KEY", process.env.ANTHROPIC_API_KEY)} · ${flag("MEMORY_API_URL", process.env.MEMORY_API_URL)} · ` +
-      `${flag("TOOL_GATEWAY_PUBLIC_URL", process.env.TOOL_GATEWAY_PUBLIC_URL)} · ${flag("OPENAI_API_KEY", process.env.OPENAI_API_KEY)}`,
+      `${flag("GATEWAY_PUBLIC_URL", process.env.GATEWAY_PUBLIC_URL)} · ${flag("OPENAI_API_KEY", process.env.OPENAI_API_KEY)}`,
   );
 }
 
@@ -164,11 +166,15 @@ async function startBackend(label: string): Promise<Proc> {
       SLACK_DEFAULT_MODEL: MODEL,
       SLACK_OUTBOX_TICK_MS: "500",
       SLACK_OUTBOX_BASE_MS: "50",
-      // Agent-callable knowledge (Stage 6b): TOOL_GATEWAY_PUBLIC_URL rides through
-      // from the e2e env; give the run-scoped gateway token a generous TTL so a
+      // Agent-callable knowledge (Stage 6b): GATEWAY_PUBLIC_URL rides through
+      // from the e2e env and must target the dedicated gateway process; give the token a generous TTL so a
       // slow sandbox turn never outlives its auth.
-      ...(process.env.TOOL_GATEWAY_PUBLIC_URL
-        ? { TOOL_GATEWAY_TOKEN_TTL_MS: process.env.TOOL_GATEWAY_TOKEN_TTL_MS ?? String(30 * 60 * 1000) }
+      ...(process.env.GATEWAY_PUBLIC_URL
+        ? {
+            TOOL_GATEWAY_TOKEN_TTL_MS: process.env.TOOL_GATEWAY_TOKEN_TTL_MS ?? String(30 * 60 * 1000),
+            TOOL_GATEWAY_SECRET: toolSigningSecret,
+            PROVIDER_GATEWAY_SECRET: providerSigningSecret,
+          }
         : {}),
     },
     stdout: fd,
@@ -482,19 +488,19 @@ async function stage6_knowledge(): Promise<void> {
 }
 
 // Stage 6b — agent-callable knowledge over the trusted MCP gateway. A REAL
-// opencode run in a REAL sandbox reaches THIS backend over TOOL_GATEWAY_PUBLIC_URL
-// (a cloudflared tunnel in a release run) and answers a question it can ONLY
+// opencode run in a REAL sandbox reaches the dedicated gateway over GATEWAY_PUBLIC_URL
+// (a cloudflared tunnel to the gateway process in a release run) and answers a question it can ONLY
 // answer by calling knowledge_search. Reuses the machinery proven in
-// test/manual/knowledge-gateway-live.ts. Gated on TOOL_GATEWAY_PUBLIC_URL being
+// test/manual/knowledge-gateway-live.ts. Gated on GATEWAY_PUBLIC_URL being
 // present in the e2e env (so the sandbox can reach us); when unset it SKIPs with
 // an honest note — E2E_STRICT (release mode) turns that skip red.
 async function stage6b_knowledgeGateway(): Promise<void> {
   stage("Stage 6b: Knowledge is agent-callable — real opencode run calls knowledge_search via the gateway");
-  const publicUrl = process.env.TOOL_GATEWAY_PUBLIC_URL;
+  const publicUrl = process.env.GATEWAY_PUBLIC_URL;
   if (!publicUrl) {
     skip(
       "agent CALLS knowledge_search through the gateway (ledger frame + tool-only answer)",
-      "TOOL_GATEWAY_PUBLIC_URL unset — start a cloudflared tunnel to this backend and export it (see test/manual/knowledge-gateway-live.ts) to exercise the live gateway",
+      "GATEWAY_PUBLIC_URL unset — start `bun run gateway`, tunnel that narrow port, and export it (see test/manual/knowledge-gateway-live.ts)",
     );
     return;
   }

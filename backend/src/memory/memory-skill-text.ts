@@ -15,7 +15,7 @@ export const MEMORY_SKILL_PATH = "/opt/skynet/skills/memory/SKILL.md";
 /**
  * Pick the skill text for a run by whether the Skynet memory TOOLS are actually
  * wired into this sandbox. When the trusted gateway is NOT injected (e.g.
- * TOOL_GATEWAY_PUBLIC_URL unset), an agent with no tools was observed improvising
+ * GATEWAY_PUBLIC_URL unset), an agent with no tools was observed improvising
  * a local `/root/.skynet/memory.md` write and FALSELY telling the user "saved to
  * memory" - so the no-tools variant explicitly forbids that and tells the truth:
  * memory is captured automatically at session end, nothing is saved on demand.

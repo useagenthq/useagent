@@ -16,16 +16,17 @@
  * One sandbox per engine; deleted + API-verified at the end. Emits C6_EVIDENCE=<json>.
  * Run (from backend/):  E2E_ENGINE=opencode bun test/e2e/c6-react-journey.ts
  *                       E2E_ENGINE=claude   bun test/e2e/c6-react-journey.ts
- *                       E2E_ENGINE=codex    E2E_MODEL=gpt-5 bun test/e2e/c6-react-journey.ts
+ *                       E2E_ENGINE=codex    E2E_MODEL=gpt-5.6-sol bun test/e2e/c6-react-journey.ts
  */
 import { chromium, type Browser, type Page } from "playwright-core";
 import postgres from "postgres";
-import { openSync, readFileSync, writeFileSync, rmSync } from "node:fs";
+import { closeSync, openSync, readFileSync, writeFileSync, rmSync } from "node:fs";
 import { deleteById, listAll } from "./soak/lib/daytona";
+import { DEFAULT_CLAUDE_MODEL, DEFAULT_CODEX_MODEL } from "../../src/runs/model-policy";
 
 type Engine = "opencode" | "claude" | "codex";
 const ENGINE = (process.env.E2E_ENGINE ?? "opencode") as Engine;
-const MODEL = process.env.E2E_MODEL ?? (ENGINE === "opencode" ? "anthropic/claude-haiku-4.5" : "claude-haiku-4-5");
+const MODEL = process.env.E2E_MODEL ?? (ENGINE === "codex" ? DEFAULT_CODEX_MODEL : DEFAULT_CLAUDE_MODEL);
 const PORTS: Record<Engine, { be: number; fe: number }> = {
   opencode: { be: 3542, fe: 3443 }, claude: { be: 3543, fe: 3444 }, codex: { be: 3544, fe: 3445 },
 };
@@ -78,7 +79,7 @@ async function api(path: string): Promise<Record<string, unknown> | null> {
   return r.ok ? ((await r.json()) as Record<string, unknown>) : null;
 }
 async function dbRun(id: string) {
-  const [r] = await sql`SELECT id, engine, status, summary, thread_id, engine_session_id, sandbox_id, command_name FROM runs WHERE id = ${id}`;
+  const [r] = await sql`SELECT id, engine, status, summary, thread_id, engine_session_id, sandbox_id, command_name, repo FROM runs WHERE id = ${id}`;
   return r as Record<string, unknown> | undefined;
 }
 async function waitTerminal(id: string, budgetMs: number) {
@@ -155,20 +156,28 @@ try {
 
   // isolated backend (real Daytona/providers pass through)
   const beLog = openSync(`${scratch}/c6-${ENGINE}-be.log`, "a");
-  be = Bun.spawn(["bun", "src/index.ts"], {
-    cwd: backendDir,
-    env: { ...process.env, PORT: String(BE_PORT), DATABASE_URL: DB_URL, ALLOW_DEV_ORG: "1", FRONTEND_ORIGIN: FE, ENABLED_ENGINES: process.env.ENABLED_ENGINES ?? "opencode,claude,codex" },
-    stdout: beLog, stderr: beLog,
-  });
+  try {
+    be = Bun.spawn(["bun", "src/index.ts"], {
+      cwd: backendDir,
+      env: { ...process.env, PORT: String(BE_PORT), DATABASE_URL: DB_URL, ALLOW_DEV_ORG: "1", FRONTEND_ORIGIN: FE, ENABLED_ENGINES: process.env.ENABLED_ENGINES ?? "opencode,claude,codex" },
+      stdout: beLog, stderr: beLog,
+    });
+  } finally {
+    closeSync(beLog);
+  }
   pass("isolated flag-on stack: backend booted (throwaway DB)", await waitHttp(`${BE}/health`, 60_000), `db=${DB}`);
 
   // isolated flag-ON frontend (canonical timeline default-on for the journey), rewrites -> our BE
   const feLog = openSync(`${scratch}/c6-${ENGINE}-fe.log`, "a");
-  fe = Bun.spawn(["bun", "run", "dev", "--port", String(FE_PORT)], {
-    cwd: frontendDir,
-    env: { ...process.env, PORT: String(FE_PORT), SKYNET_API_ORIGIN: BE, SKYNET_BUILD_DIST: DIST, NEXT_PUBLIC_CANONICAL_TIMELINE: "1" },
-    stdout: feLog, stderr: feLog,
-  });
+  try {
+    fe = Bun.spawn(["bun", "run", "dev", "--port", String(FE_PORT)], {
+      cwd: frontendDir,
+      env: { ...process.env, PORT: String(FE_PORT), SKYNET_API_ORIGIN: BE, SKYNET_BUILD_DIST: DIST, NEXT_PUBLIC_CANONICAL_TIMELINE: "1" },
+      stdout: feLog, stderr: feLog,
+    });
+  } finally {
+    closeSync(feLog);
+  }
   pass("isolated flag-on stack: frontend booted", await waitHttp(`${FE}/agent/new`, 150_000));
 
   // author a real skill (selected in React via ?skill=)
@@ -179,10 +188,37 @@ try {
   const skillId = (await skillRes.json().catch(() => ({})))?.id as string | undefined;
   pass("authored a real skill (selectable in React)", !!skillId, `id=${short(skillId)}`);
 
+  // Resolve the same real repository catalog React consumes. The browser leg must select one and
+  // prove that exact identity reached the durable run; "repo optional" would leave the original
+  // ACP empty-workspace regression untested through the UI.
+  const repoListing = (await api("/api/repos")) as {
+    repos?: { full_name?: string; name?: string }[];
+  } | null;
+  const selectedRepo = repoListing?.repos?.find(
+    (repo): repo is { full_name: string; name?: string } => Boolean(repo.full_name),
+  );
+  pass(
+    "real repository catalog is available to the React journey",
+    Boolean(selectedRepo),
+    selectedRepo?.full_name ?? "no repository offered",
+  );
+
   browser = await chromium.launch({ channel: "chrome", headless: true });
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
   const consoleErrors: string[] = [];
+  const networkErrors: string[] = [];
   page.on("console", (m) => m.type() === "error" && consoleErrors.push(m.text()));
+  page.on("response", (response) => {
+    if (response.status() >= 400 && !/\/favicon\.ico(?:\?|$)/i.test(response.url())) {
+      networkErrors.push(`HTTP ${response.status()} ${response.url()}`);
+    }
+  });
+  page.on("requestfailed", (request) => {
+    const reason = request.failure()?.errorText ?? "request failed";
+    if (reason !== "net::ERR_ABORTED") {
+      networkErrors.push(`${reason} ${request.url()}`);
+    }
+  });
 
   // ── 1. New Task FORM: choose engine + skill (deep-link) + repo + prompt, in React ──
   await page.goto(`${FE}/agent/new${skillId ? `?skill=${skillId}` : ""}`, { waitUntil: "domcontentloaded", timeout: 120_000 });
@@ -205,16 +241,21 @@ try {
     } catch { await page.keyboard.press("Escape").catch(() => {}); await sleep(400); }
   }
   pass(`chose engine "${ENGINE}" in the React form`, engineChosen, engineChosen ? "picked" : "picker did not settle on the engine");
-  // repo: best-effort select the first available repo
+  // repo: select the exact first identity returned by the backend catalog and verify the trigger.
   let repoChosen = false;
-  try {
+  if (selectedRepo) try {
     await page.click('button[aria-label="Select repositories"], button[aria-label*="repositor" i]', { timeout: 5_000 });
-    await sleep(500);
-    await page.locator('[role="option"], li button, [role="listbox"] button').first().click({ timeout: 5_000 });
+    const search = page.getByRole("textbox", { name: "Search repositories" });
+    await search.fill(selectedRepo.full_name);
+    await page.getByRole("button", { name: selectedRepo.name ?? selectedRepo.full_name, exact: true }).click({ timeout: 8_000 });
     await page.keyboard.press("Escape").catch(() => {});
-    repoChosen = true;
-  } catch { /* repo optional */ }
-  rec("chose a repository in the React form", repoChosen ? "pass" : "na", repoChosen ? "selected" : "no repo picker/none available");
+    repoChosen = (await page.locator('button[aria-label="Select repositories"]').innerText()).includes("1 selected");
+  } catch { /* asserted below */ }
+  pass(
+    "chose a repository in the React form",
+    repoChosen,
+    repoChosen ? selectedRepo?.full_name ?? "selected" : "picker did not persist the selection",
+  );
   // skill preselected via ?skill= (deep-link) - assert the picker reflects it
   const skillShown = skillId ? await page.getByText(`c6 ${ENGINE} skill`, { exact: false }).first().isVisible().catch(() => false) : false;
   rec("chose a skill in the React form (deep-link preselect)", skillShown ? "pass" : "na", skillShown ? "shown" : "not visible");
@@ -237,13 +278,23 @@ try {
   const runEngine = (await dbRun(runId))?.engine;
   pass(`the created run is the SELECTED engine "${ENGINE}" (not a fallback)`, runEngine === ENGINE, `engine=${runEngine}`);
   if (runEngine !== ENGINE) throw new Error(`engine mis-selection: ran as ${runEngine}, expected ${ENGINE}`);
+  const runRepo = (await dbRun(runId))?.repo;
+  pass(
+    "the durable run received the repository selected in React",
+    runRepo === selectedRepo?.full_name,
+    `repo=${String(runRepo ?? "")}`,
+  );
 
   const settled = await waitTerminal(runId, BUDGET_MS);
   const box1 = (await dbRun(runId))?.sandbox_id as string | undefined;
   const ses1 = (await dbRun(runId))?.engine_session_id as string | undefined;
   if (!box1 && settled?.status !== "completed") {
     daytonaBlocked = true;
-    rec("LIVE Daytona sandbox provisioned", "blocked", `status=${settled?.status ?? "timeout"} - shared Daytona likely at capacity`);
+    rec(
+      "LIVE Daytona sandbox provisioned",
+      "blocked",
+      `status=${settled?.status ?? "timeout"} - inspect the isolated backend log for the exact external prerequisite failure`,
+    );
   } else {
     pass("turn 1 completed on a REAL sandbox", settled?.status === "completed", `status=${settled?.status} sandbox=${short(box1)}`);
     await waitCanonical(page, 90_000);
@@ -285,16 +336,24 @@ try {
     const catalog = (cmdRow?.body?.commands ?? []).filter((n) => typeof n === "string");
     const SAFE = new Set(["status", "diff", "help", "about", "compact", "models", "mcp", "review", "init", "usage", "context", "plan", "skills"]);
     const safeCmd = catalog.find((n) => SAFE.has(n));
-    rec("session advertised a LIVE command catalog (durable, unseeded)", catalog.length > 0 ? "pass" : "na", `[${catalog.slice(0, 6).join(",")}]`);
+    pass(
+      "session advertised a LIVE command catalog (durable, unseeded)",
+      catalog.length > 0,
+      `[${catalog.slice(0, 6).join(",")}]`,
+    );
     if (safeCmd) {
       const composer = page.locator('textarea[placeholder*="Reply to Skynet"]:visible');
       await composer.click();
-      await composer.fill("/");
+      // The real picker intentionally caps an unfiltered list to eight options.
+      // Type the provider command prefix like a user would so a safe command
+      // deeper in Claude's large catalog is exercised rather than assumed visible.
+      await composer.fill(`/${safeCmd}`);
       await sleep(1200);
       const opt = page.locator(`[role="option"]`, { hasText: safeCmd }).first();
       const picked = await opt.isVisible({ timeout: 10_000 }).catch(() => false);
-      if (picked) await opt.click();
-      else await composer.fill(`/${safeCmd} `); // fallback: type it verbatim
+      pass("LIVE React command picker rendered the selected provider command", picked, safeCmd);
+      if (!picked) throw new Error(`command picker did not render /${safeCmd}`);
+      await opt.click();
       await page.keyboard.press("Enter");
       // the 2nd turn (command) appears in the thread
       let cmdRunId = "";
@@ -312,14 +371,11 @@ try {
         pass("turn 2 reused the SAME sandbox + provider session", d2?.sandbox_id === box1 && d2?.engine_session_id === ses1, `box ${short(d2?.sandbox_id)} ses ${short(d2?.engine_session_id)}`);
       }
     } else {
-      rec("submitted a safe native command via the LIVE React picker", "na", "no safe command advertised (honest capability)");
-      // still prove a plain reply reuses the session
-      const composer = page.locator('textarea[placeholder*="Reply to Skynet"]:visible');
-      await composer.fill(`Reply with exactly RETAIN${MARKER}`);
-      await page.keyboard.press("Enter");
-      let r2 = "";
-      for (let i = 0; i < 90 && !r2; i++) { const thr = (await api(`/api/runs/${runId}?thread=1`)) as { thread?: { id: string }[] } | null; r2 = (thr?.thread ?? []).map((r) => r.id).find((id) => id !== runId) ?? ""; await sleep(1000); }
-      if (r2) { myRunIds.push(r2); const d2 = await waitTerminal(r2, BUDGET_MS); pass("turn 2 reused the SAME sandbox + provider session", d2?.sandbox_id === box1 && d2?.engine_session_id === ses1, `box ${short(d2?.sandbox_id)} ses ${short(d2?.engine_session_id)}`); }
+      pass(
+        "session advertised at least one allowlisted safe command",
+        false,
+        `catalog=[${catalog.slice(0, 12).join(",")}]`,
+      );
     }
     await shot(page, "3-turn2");
 
@@ -379,7 +435,15 @@ try {
       await sleep(750);
     }
     if (running) {
-      await page.getByRole("button", { name: /stop this run|stop/i }).first().click({ timeout: 8_000 }).catch(() => {});
+      const stopButton = page.getByRole("button", { name: "Stop this run", exact: true });
+      const clickedStop = await stopButton
+        .waitFor({ state: "visible", timeout: 20_000 })
+        .then(async () => {
+          await stopButton.click();
+          return true;
+        })
+        .catch(() => false);
+      pass("clicked the visible React Stop control", clickedStop, clickedStop ? "clicked" : "control never became clickable");
       const s = await waitTerminal(stopRun, 100_000);
       pass('stop: in-flight turn settles "Stopped by user"', s?.summary === "Stopped by user", `status=${s?.status} summary="${short(s?.summary, 20)}"`);
     } else {
@@ -387,7 +451,12 @@ try {
     }
     await shot(page, "5-stop");
 
-    const appErrors = consoleErrors.filter((e) => !/Failed to load resource|favicon|hydrat|ResizeObserver/i.test(e));
+    const appErrors = [
+      ...consoleErrors.filter(
+        (error) => !/Failed to load resource|favicon\.ico/i.test(error),
+      ),
+      ...networkErrors,
+    ];
     pass("no app console errors across the React journey", appErrors.length === 0, appErrors.slice(0, 2).join(" | "));
   }
   await page.close();
@@ -415,5 +484,5 @@ try {
   console.log(`\nC6_EVIDENCE=${JSON.stringify({ engine: ENGINE, model: MODEL, verdict, runIds: myRunIds, sandboxIds: [...sandboxIds], cells })}`);
   console.log(`\n${verdict === "PASS" ? "✅ PASS" : verdict === "BLOCKED" ? "⚠️  BLOCKED" : "❌ FAIL"} (${ENGINE}) - ${cells.filter((c) => c.status === "pass").length} pass, ${fails.length} fail`);
   if (fails.length) console.log("FAILED:", fails.map((c) => c.cell).join(" | "));
-  process.exit(verdict === "FAIL" ? 1 : 0);
+  process.exit(verdict === "PASS" ? 0 : verdict === "BLOCKED" ? 2 : 1);
 }

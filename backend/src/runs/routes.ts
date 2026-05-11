@@ -37,6 +37,7 @@ import {
 import { completeCanonicalRuns } from "./canonicalization-outbox";
 import { subscribeThread } from "./thread-signals";
 import type { ApiRun, ApiStep } from "./repo";
+import { defaultModelForEngine, isModelAllowedForEngine } from "./model-policy";
 
 export const runsRoutes = new Hono<AppEnv>();
 
@@ -123,7 +124,14 @@ runsRoutes.post("/", async (c) => {
   }
   // A reply whose UI has no model-selection capability omits `model`; inherit
   // the thread's stored model instead of silently resetting to a global default.
-  const model = requestedModel ?? parentModel ?? "claude-opus-5";
+  const inheritedModel =
+    parentModel && isModelAllowedForEngine(engine, parentModel)
+      ? parentModel
+      : defaultModelForEngine(engine);
+  const model = requestedModel ?? inheritedModel;
+  if (!isModelAllowedForEngine(engine, model)) {
+    return c.json({ error: "model_not_allowed", engine, model }, 400);
+  }
 
   // Repo scope: a ROOT run may pick REPOSITORIES (each validated against the set
   // GET /api/repos actually offers — an unknown/malformed value is a client

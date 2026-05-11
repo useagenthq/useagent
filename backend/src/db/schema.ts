@@ -258,6 +258,35 @@ export const providerEvents = pgTable(
   ],
 );
 
+// Trusted provider-gateway request receipts. This is deliberately separate from
+// provider_events: the gateway is a second process and must not participate in
+// the agent lane's process-local sequence allocator. Bodies, headers, and keys
+// are never stored—only authorization/spend metadata.
+export const providerGatewayAudit = pgTable(
+  "provider_gateway_audit",
+  {
+    id: text("id").primaryKey(),
+    runId: text("run_id")
+      .notNull()
+      .references(() => runs.id),
+    orgId: text("org_id").notNull(),
+    provider: text("provider").notNull(),
+    path: text("path").notNull(),
+    model: text("model").notNull(),
+    requestedOutputTokens: integer("requested_output_tokens").notNull().default(0),
+    outcome: text("outcome")
+      .$type<"started" | "responded" | "failed">()
+      .notNull(),
+    upstreamStatus: integer("upstream_status"),
+    durationMs: integer("duration_ms"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+  },
+  (t) => [index("idx_provider_gateway_audit_run").on(t.runId, t.createdAt)],
+);
+
 /**
  * Canonical agent-event lane (final_harness Phase 1). Provider-neutral events the
  * backend translates every harness INTO (see src/engines/canonical.ts). Persisted

@@ -17,16 +17,16 @@ import { cancelAcpSession } from "./acp-server";
 // capability map describes what the Skynet ACP path ACTUALLY implements today, not
 // what the ACP wire protocol could support upstream. Control operations that are
 // not wired return a typed `unsupported_capability` result - never a silent no-op
-// and never an OpenCode-shaped fabrication. Native `session/cancel` is deferred to
-// Slice 4; ACP history reconcile after a backend restart is not implemented, so
+// and never an OpenCode-shaped fabrication. Native `session/cancel` is wired;
+// ACP history reconcile after a backend restart is not implemented, so
 // reconcile is honestly unsupported (Section 4 "ACP recovery remains weaker").
 // ---------------------------------------------------------------------------
 
 /** What the resident ACP relay (acp-server.ts) implements right now:
  *  - session/new + session/load reuse the native session across turns  -> resume
  *  - agent_message_chunk + tool_call/tool_call_update stream as parts   -> streaming
- *  Everything else is deliberately false: no native session/cancel yet (Slice 4),
- *  no ACP history reconcile after restart, no child-session emitter (ACP has none),
+ *  Everything else is deliberately false: no ACP history reconcile after restart,
+ *  no child-session emitter (ACP has none),
  *  no approvals/questions surfacing (runs yolo), no reasoning/plan/patch/usage
  *  translation. These flip to true only when the corresponding path is real. */
 const ACP_CAPABILITIES: HarnessCapabilities = {

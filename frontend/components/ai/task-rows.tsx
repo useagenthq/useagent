@@ -61,6 +61,7 @@ function StatusGlyph({
       className="relative inline-flex size-6 items-center justify-center"
       aria-hidden
     >
+      {/* biome-ignore lint/a11y/noSvgWithoutTitle: this progress ring is decorative and hidden by its parent */}
       <svg
         width="24"
         height="24"

@@ -20,7 +20,6 @@ import { isPublicApiPath, orgScope } from "./middleware/org";
 import { chatRoutes } from "./chat/routes";
 import { toolGatewayConfig } from "./knowledge/gateway/config";
 import { knowledgeRoutes } from "./knowledge/routes";
-import { knowledgeMcpRoutes } from "./knowledge/gateway/mcp";
 import { memoryRoutes } from "./memory/routes";
 import { commandsRoutes } from "./runs/command-catalog";
 import { reposRoutes } from "./github/routes";
@@ -184,11 +183,6 @@ app.route("/api/wiki", wikiGenRoutes);
 // correct/delete), the capture outbox (inspect + manual recovery), and the
 // retrieval ledger. Org-scoped; memory transport credentials stay server-side.
 app.route("/api/memory", memoryRoutes);
-// Trusted knowledge MCP gateway (mem_op.md 0.2). Token-authed, NOT session/org
-// scoped — the resident opencode agent in an untrusted sandbox reaches it with a
-// short-lived run-scoped bearer token, and identity is derived from that token
-// alone (see gateway/mcp.ts). Mounted always; inert without a valid token.
-app.route("/api/mcp/knowledge", knowledgeMcpRoutes);
 // Snapshot-level slash-command catalog (cached from the live-proxy's /command
 // taps) — powers "/" autocomplete on the New Task composer before a sandbox
 // exists.

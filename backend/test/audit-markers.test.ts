@@ -1,11 +1,12 @@
 import { describe, expect, test } from "bun:test";
 import { and, eq } from "drizzle-orm";
-import { fetchApi, uid } from "./helpers";
+import { uid } from "./helpers";
 import { db } from "../src/db/client";
 import { providerEvents, runs } from "../src/db/schema";
 import { ingestOne } from "../src/knowledge/ingest";
 import { mintToolToken } from "../src/knowledge/gateway/token";
 import { KNOWLEDGE_RETRIEVED } from "../src/knowledge/gateway/tools";
+import { createGatewayApp } from "../src/gateway-app";
 
 // Fix 6 — audit markers are AWAITED, so a crash can't lose evidence of an action
 // that succeeded. The strongest deterministic proof is the knowledge retrieval
@@ -19,12 +20,13 @@ import { KNOWLEDGE_RETRIEVED } from "../src/knowledge/gateway/tools";
 //   - context.retrieved → the worker awaits it before the engine turn.
 
 const MCP = "/api/mcp/knowledge";
+const gateway = createGatewayApp();
 
 async function rpc(token: string, msg: unknown): Promise<{ status: number; body: any }> {
-  const res = await fetchApi(MCP, {
+  const res = await gateway.request(MCP, {
     method: "POST",
     headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
-    body: msg,
+    body: JSON.stringify(msg),
   });
   const text = await res.text();
   return { status: res.status, body: text ? JSON.parse(text) : null };

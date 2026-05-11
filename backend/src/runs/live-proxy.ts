@@ -10,6 +10,7 @@ import {
   resolvePreviewEndpoint,
   type PreviewEndpoint,
 } from "./preview-proxy";
+import { OPENCODE_ALLOWED_MODELS } from "./model-policy";
 
 // ---------------------------------------------------------------------------
 // LIVE PROXY — same-origin path bridge to a thread's opencode server, so the
@@ -42,15 +43,12 @@ const SERVE_PORT = 4096;
 // trim the catalog to the deployment's curated set HERE. Prompt POSTs go DIRECT to the
 // sandbox (not through this proxy) and still resolve every id, so the backend's
 // own runs are unaffected.
-const ALLOWED_MODELS: Record<string, ReadonlySet<string>> = {
-  anthropic: new Set(["claude-opus-5", "claude-sonnet-5", "claude-fable-5", "claude-haiku-4-5"]),
-  openrouter: new Set([
-    "openai/gpt-5.6-sol",
-    "openai/gpt-5.6-sol-pro",
-    "openai/gpt-5.6-luna",
-    "openai/gpt-5.6-terra",
+const ALLOWED_MODELS: Record<string, ReadonlySet<string>> = Object.fromEntries(
+  Object.entries(OPENCODE_ALLOWED_MODELS).map(([provider, models]) => [
+    provider,
+    new Set<string>(models),
   ]),
-};
+);
 const ALLOWED_PROVIDERS = new Set(Object.keys(ALLOWED_MODELS));
 
 /** Opportunistically cache the snapshot's slash-command catalog. `/command` is a

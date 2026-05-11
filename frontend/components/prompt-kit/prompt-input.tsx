@@ -51,7 +51,7 @@ export type PromptInputProps = {
   children: React.ReactNode;
   className?: string;
   disabled?: boolean;
-} & React.ComponentProps<"div">;
+} & Omit<React.ComponentProps<"fieldset">, "disabled">;
 
 function PromptInput({
   className,
@@ -62,7 +62,7 @@ function PromptInput({
   onSubmit,
   children,
   disabled = false,
-  onClick,
+  onPointerDown,
   ...props
 }: PromptInputProps) {
   const [internalValue, setInternalValue] = useState(value || "");
@@ -73,9 +73,9 @@ function PromptInput({
     onValueChange?.(newValue);
   };
 
-  const handleClick: React.MouseEventHandler<HTMLDivElement> = (e) => {
+  const handlePointerDown: React.PointerEventHandler<HTMLFieldSetElement> = (event) => {
     if (!disabled) textareaRef.current?.focus();
-    onClick?.(e);
+    onPointerDown?.(event);
   };
 
   return (
@@ -90,17 +90,18 @@ function PromptInput({
         textareaRef,
       }}
     >
-      <div
-        onClick={handleClick}
+      <fieldset
+        disabled={disabled}
+        onPointerDown={handlePointerDown}
         className={cn(
-          "border-stroke-soft-200 bg-bg-white-0 cursor-text rounded-2xl border p-2 shadow-regular-xs",
+          "border-stroke-soft-200 bg-bg-white-0 min-w-0 cursor-text rounded-2xl border p-2 shadow-regular-xs",
           disabled && "cursor-not-allowed opacity-60",
           className,
         )}
         {...props}
       >
         {children}
-      </div>
+      </fieldset>
     </PromptInputContext.Provider>
   );
 }

@@ -1,7 +1,7 @@
 import { and, asc, eq } from "drizzle-orm";
 import { db } from "../db/client";
 import { secrets, type SecretKind } from "../db/schema";
-import { isValidSecretName, openSecret, sealSecret } from "./crypto";
+import { isReservedSecretName, isValidSecretName, openSecret, sealSecret } from "./crypto";
 
 // ---------------------------------------------------------------------------
 // Org-secrets data access (task #100). Values are encrypted at rest (crypto.ts)
@@ -122,7 +122,7 @@ export async function decryptOrgSecrets(orgId: string): Promise<DecryptedSecrets
   for (const r of rows) {
     // Names are validated at write time; re-check so a hand-edited row can never
     // inject a malformed env key into the sandbox process.
-    if (!isValidSecretName(r.name)) {
+    if (!isValidSecretName(r.name) || isReservedSecretName(r.name)) {
       out.skipped.push(r.name);
       continue;
     }
@@ -143,4 +143,38 @@ export async function decryptOrgSecrets(orgId: string): Promise<DecryptedSecrets
     }
   }
   return out;
+}
+
+
+/** Decrypt exactly one named secret for a trusted control-plane consumer. This
+ * keeps provider-gateway plaintext exposure to the credential it needs instead
+ * of materializing the org's full secret catalog. */
+export async function decryptOrgSecretByName(
+  orgId: string,
+  name: string,
+): Promise<DecryptedSecret | null> {
+  if (!isValidSecretName(name)) return null;
+  const [row] = await db
+    .select()
+    .from(secrets)
+    .where(and(eq(secrets.orgId, orgId), eq(secrets.name, name)))
+    .limit(1);
+  if (!row) return null;
+  try {
+    return {
+      name: row.name,
+      kind: row.kind,
+      value: openSecret({
+        ciphertext: row.valueCiphertext,
+        iv: row.iv,
+        tag: row.tag,
+      }),
+    };
+  } catch (err) {
+    console.warn(
+      `[secrets] skipping undecryptable secret "${name}" for org ${orgId}:`,
+      err instanceof Error ? err.message : err,
+    );
+    return null;
+  }
 }

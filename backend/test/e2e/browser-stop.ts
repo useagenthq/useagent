@@ -13,9 +13,10 @@
  */
 import type { Browser, Page } from "playwright-core";
 import { BE, FE, createRun, getRun, waitRun, newPage, launch, shot, sleep } from "./ui-sweep/harness";
+import { DEFAULT_CLAUDE_MODEL, DEFAULT_CODEX_MODEL } from "../../src/runs/model-policy";
 
 const ENGINE = process.env.E2E_ENGINE ?? "opencode";
-const MODEL = process.env.E2E_MODEL ?? (ENGINE === "opencode" ? "anthropic/claude-haiku-4.5" : ENGINE === "codex" ? "gpt-5" : "claude-haiku-4-5");
+const MODEL = process.env.E2E_MODEL ?? (ENGINE === "codex" ? DEFAULT_CODEX_MODEL : DEFAULT_CLAUDE_MODEL);
 const RUN_BUDGET_MS = Number(process.env.E2E_TERMINAL_MS ?? (ENGINE === "opencode" ? 180_000 : 360_000));
 const LONG_PROMPT =
   "Use the shell/execute tool to run EXACTLY this one command and WAIT for it to fully finish before you reply: " +

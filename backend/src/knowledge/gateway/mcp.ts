@@ -10,6 +10,7 @@ import { executeMemoryTool, MEMORY_TOOLS, MEMORY_TOOL_NAMES } from "./memory-too
 import { executeSlackTool, SLACK_TOOLS, SLACK_TOOL_NAMES } from "./slack-tools";
 import { executeWebSearchTool, WEB_SEARCH_TOOLS, WEB_SEARCH_TOOL_NAMES } from "./web-search-tool";
 import { findSlackThreadByRoot } from "../../slack/repo";
+import { hasMatchingRunningToolRun } from "./run-authorization";
 import { verifyToolToken, type ToolTokenClaims } from "./token";
 
 // ---------------------------------------------------------------------------
@@ -38,6 +39,8 @@ import { verifyToolToken, type ToolTokenClaims } from "./token";
 // requested version when present so negotiation is a no-op for any supported peer.
 const DEFAULT_PROTOCOL_VERSION = "2025-06-18";
 const SERVER_INFO = { name: "skynet-knowledge", version: "1.0.0" } as const;
+const MAX_REQUEST_BYTES = 1024 * 1024;
+const MAX_BATCH_MESSAGES = 16;
 
 interface RpcRequest {
   jsonrpc: "2.0";
@@ -135,8 +138,8 @@ function bearer(header: string | undefined | null): string | null {
 
 export const knowledgeMcpRoutes = new Hono();
 
-// The MCP Streamable-HTTP endpoint. One POST carries a single JSON-RPC message
-// (opencode's client never batches), but a JSON-RPC batch array is tolerated.
+// The MCP Streamable-HTTP endpoint. One POST normally carries a single JSON-RPC
+// message. Batches remain protocol-compatible but are deliberately bounded.
 knowledgeMcpRoutes.post("/", async (c) => {
   const claims = verifyToolToken(bearer(c.req.header("authorization")));
   if (!claims) {
@@ -145,16 +148,37 @@ knowledgeMcpRoutes.post("/", async (c) => {
     return c.json({ error: "unauthorized" }, 401);
   }
 
+  // A warm process may retain the thread capability between turns, but it is
+  // deliberately inert unless this exact tenant/user/thread is running now.
+  const active = await hasMatchingRunningToolRun(claims).catch(() => false);
+  if (!active) return c.json({ error: "inactive_capability" }, 403);
+
+  const contentLength = Number(c.req.header("content-length") ?? 0);
+  if (Number.isFinite(contentLength) && contentLength > MAX_REQUEST_BYTES) {
+    return c.json({ error: "request_too_large" }, 413);
+  }
+
   let body: unknown;
   try {
-    body = await c.req.json();
+    const rawBody = await c.req.text();
+    if (Buffer.byteLength(rawBody, "utf8") > MAX_REQUEST_BYTES) {
+      return c.json({ error: "request_too_large" }, 413);
+    }
+    body = JSON.parse(rawBody);
   } catch {
     return c.json(err(null, ErrorCode.ParseError, "Parse error"), 400);
   }
 
   const messages = Array.isArray(body) ? body : [body];
+  if (messages.length > MAX_BATCH_MESSAGES) {
+    return c.json({ error: "batch_too_large" }, 413);
+  }
   const responses: RpcResponse[] = [];
   for (const raw of messages) {
+    // Re-check before every item: an expensive batch cannot outlive the exact
+    // run capability that admitted its first tool call.
+    const stillActive = await hasMatchingRunningToolRun(claims).catch(() => false);
+    if (!stillActive) return c.json({ error: "inactive_capability" }, 403);
     // Classify with the official SDK schemas (replaces the hand-rolled isRequest):
     // a valid JSON-RPC request is handled; a notification or malformed message
     // gets no response, exactly as before.

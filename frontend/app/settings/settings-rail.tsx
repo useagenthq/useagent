@@ -40,7 +40,9 @@ export function SettingsRail() {
       { rootMargin: "0px 0px -70% 0px", threshold: 0 },
     );
 
-    els.forEach((el) => observer.observe(el));
+    els.forEach((el) => {
+      observer.observe(el);
+    });
     return () => observer.disconnect();
   }, []);
 

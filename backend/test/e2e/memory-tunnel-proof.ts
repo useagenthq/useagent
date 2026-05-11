@@ -7,7 +7,7 @@
  * Boots an ISOLATED backend (throwaway DB `skynet_memtun_e2e`, PORT 3502 - NEVER
  * the shared `skynet` DB) with the REAL Daytona/opencode/:8420 keys, and exposes it
  * via `cloudflared` so the sandbox agent can reach the Skynet memory MCP gateway
- * (TOOL_GATEWAY_PUBLIC_URL = the tunnel origin). Then proves cross-sandbox memory:
+ * (GATEWAY_PUBLIC_URL = the dedicated-gateway tunnel origin). Then proves cross-sandbox memory:
  *
  *   A. Sandbox A: "remember my favourite color is teal-XXXX" -> the opencode agent
  *      calls the real memory_remember tool -> Tencent L0 accepted (memory.l0_accepted
@@ -19,15 +19,23 @@
  * Teardown: kill the tunnel, delete + API-verify every sandbox, drop the DB, and
  * sweep the teal marker's L1 fact from the shared pool.
  */
-import { openSync, readFileSync } from "node:fs";
+import { closeSync, openSync, readFileSync } from "node:fs";
 import { Daytona } from "@daytona/sdk";
 import postgres from "postgres";
+import { stopOwnedProcess, stopOwnedProcesses } from "./lib/process-lifecycle";
+import {
+  startPublicTunnel,
+  tunnelProviderOrder,
+  waitForPublicHttp,
+} from "./lib/public-tunnel";
 
 const ADMIN_URL = process.env.TEST_ADMIN_URL ?? "postgres://postgres@localhost:5432/postgres";
 const DB = "skynet_memtun_e2e";
 const DB_URL = `postgres://postgres@localhost:5432/${DB}`;
 const PORT = 3502;
 const BASE = `http://localhost:${PORT}`;
+const GATEWAY_PORT = 3503;
+const GATEWAY_BASE = `http://localhost:${GATEWAY_PORT}`;
 // Opus by default: reliable tool-calling is essential for a deterministic proof
 // (haiku intermittently narrated a save WITHOUT calling memory_remember). This
 // also mirrors real user sessions (the engine default is claude-opus-5).
@@ -35,8 +43,12 @@ const MODEL = process.env.PROOF_MODEL ?? "claude-opus-5";
 const backendDir = new URL("../..", import.meta.url).pathname;
 const scratch = process.env.SCRATCH_DIR ?? "/tmp";
 const backendLog = `${scratch}/skynet-memtun-backend.log`;
+const gatewayLog = `${scratch}/skynet-memtun-gateway.log`;
 const tunnelLog = `${scratch}/skynet-memtun-tunnel.log`;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+const providerSigningSecret = `provider-live-${crypto.randomUUID()}-${crypto.randomUUID()}`;
+const toolSigningSecret = `tool-live-${crypto.randomUUID()}-${crypto.randomUUID()}`;
+const secretsEncryptionKey = `encryption-live-${crypto.randomUUID()}-${crypto.randomUUID()}`;
 const MARKER = `teal-${crypto.randomUUID().slice(0, 8)}`;
 // Unauthenticated runs resolve to the seeded dev org (org middleware fallback),
 // so the memory pool is team_id=org-skynet-dev / user_id=org:org-skynet-dev.
@@ -73,26 +85,19 @@ async function dropDb(): Promise<void> {
   await admin.end();
 }
 
-/** Start cloudflared quick tunnel to :PORT and resolve the public https origin.
- *  TRUNCATE the log ("w"): a prior run's dead origin lingering in an appended log
- *  was silently reused, sending the sandbox at a dead tunnel (no tools). */
+/** Start a test-only public tunnel to the gateway-only port. Pinggy is the
+ * deterministic default for this paid proof; callers can select another shared
+ * provider through E2E_TUNNEL_PROVIDER. */
 async function startTunnel(): Promise<{ proc: Proc; origin: string }> {
-  const fd = openSync(tunnelLog, "w");
-  const proc = Bun.spawn(["cloudflared", "tunnel", "--url", `http://localhost:${PORT}`], { stdout: fd, stderr: fd });
-  const deadline = Date.now() + 40_000;
-  while (Date.now() < deadline) {
-    try {
-      const log = readFileSync(tunnelLog, "utf8");
-      // Take the LAST origin printed (belt + suspenders with the truncation above).
-      const all = log.match(/https:\/\/[a-z0-9-]+\.trycloudflare\.com/gi);
-      if (all && all.length > 0) return { proc, origin: all[all.length - 1]! };
-    } catch {
-      /* not written yet */
-    }
-    await sleep(500);
-  }
-  proc.kill(9);
-  throw new Error(`cloudflared did not print an origin (see ${tunnelLog})`);
+  const [provider] = tunnelProviderOrder(
+    process.env.E2E_TUNNEL_PROVIDER ?? "pinggy",
+  );
+  const tunnel = await startPublicTunnel({
+    localPort: GATEWAY_PORT,
+    logPath: tunnelLog,
+    provider: provider!,
+  });
+  return { proc: tunnel.process as Proc, origin: tunnel.publicUrl };
 }
 
 async function startBackend(publicUrl: string, memoryUrl?: string): Promise<Proc> {
@@ -100,12 +105,19 @@ async function startBackend(publicUrl: string, memoryUrl?: string): Promise<Proc
   const env: Record<string, string> = { ...process.env } as Record<string, string>;
   env.PORT = String(PORT);
   env.DATABASE_URL = DB_URL; // wins over .env's shared skynet
-  env.TOOL_GATEWAY_PUBLIC_URL = publicUrl; // sandbox-reachable gateway origin
-  env.FRONTEND_ORIGIN = publicUrl;
+  env.GATEWAY_PUBLIC_URL = publicUrl; // sandbox-reachable gateway-only origin
+  env.PROVIDER_GATEWAY_SECRET = providerSigningSecret;
+  env.TOOL_GATEWAY_SECRET = toolSigningSecret;
+  env.SECRETS_ENCRYPTION_KEY = secretsEncryptionKey;
   // Phase 3 points memory at a DEAD host to prove outage handling; else .env's :8420.
   if (memoryUrl !== undefined) env.MEMORY_API_URL = memoryUrl;
   // DAYTONA_* / ANTHROPIC_API_KEY / BETTER_AUTH_SECRET ride from .env.
-  const proc = Bun.spawn(["bun", "src/index.ts"], { cwd: backendDir, env, stdout: fd, stderr: fd });
+  let proc: Proc;
+  try {
+    proc = Bun.spawn(["bun", "src/index.ts"], { cwd: backendDir, env, stdout: fd, stderr: fd });
+  } finally {
+    closeSync(fd);
+  }
   const deadline = Date.now() + 30_000;
   while (Date.now() < deadline) {
     try {
@@ -118,12 +130,44 @@ async function startBackend(publicUrl: string, memoryUrl?: string): Promise<Proc
     }
     await sleep(250);
   }
+  await stopOwnedProcess(proc);
   throw new Error(`backend did not come up (see ${backendLog})`);
 }
-async function killProc(p: Proc | null): Promise<void> {
-  if (!p) return;
-  p.kill(9);
-  await p.exited.catch(() => {});
+async function startGateway(publicUrl: string, memoryUrl?: string): Promise<Proc> {
+  const fd = openSync(gatewayLog, "w");
+  const env: Record<string, string> = { ...process.env } as Record<string, string>;
+  env.GATEWAY_PORT = String(GATEWAY_PORT);
+  env.DATABASE_URL = DB_URL;
+  env.GATEWAY_PUBLIC_URL = publicUrl;
+  env.PROVIDER_GATEWAY_SECRET = providerSigningSecret;
+  env.TOOL_GATEWAY_SECRET = toolSigningSecret;
+  env.SECRETS_ENCRYPTION_KEY = secretsEncryptionKey;
+  if (memoryUrl !== undefined) env.MEMORY_API_URL = memoryUrl;
+  let proc: Proc;
+  try {
+    proc = Bun.spawn(["bun", "src/gateway.ts"], {
+      cwd: backendDir,
+      env,
+      stdout: fd,
+      stderr: fd,
+    });
+  } finally {
+    closeSync(fd);
+  }
+  const deadline = Date.now() + 15_000;
+  while (Date.now() < deadline) {
+    try {
+      if ((await fetch(`${GATEWAY_BASE}/api/health`)).ok) return proc;
+    } catch {
+      /* not up */
+    }
+    await sleep(250);
+  }
+  await stopOwnedProcess(proc);
+  throw new Error(`gateway did not come up (see ${gatewayLog})`);
+}
+async function waitForPublicGateway(origin: string): Promise<void> {
+  await waitForPublicHttp(`${origin}/api/health`, 90_000, tunnelLog);
 }
 function tailLog(path: string, lines = 30): void {
   try {
@@ -216,16 +260,23 @@ async function main(): Promise<void> {
   await recreateDb();
   let tunnel: { proc: Proc; origin: string } | null = null;
   let backend: Proc | null = null;
+  let gateway: Proc | null = null;
   try {
     tunnel = await startTunnel();
     console.log(`  tunnel origin: ${tunnel.origin}`);
     backend = await startBackend(tunnel.origin);
+    gateway = await startGateway(tunnel.origin);
+    await waitForPublicGateway(tunnel.origin);
 
     // Safety: confirm the throwaway DB before ANY real work.
     const probe = await api("/api/runs", { prompt: "db-probe", engine: "mock", model: MODEL });
     const onThrowaway = (await sql`select 1 from runs where id = ${probe.body.id}`).length === 1;
     if (!onThrowaway) { console.error("ABORT: NOT on the throwaway DB"); process.exit(2); }
     note("safety probe: backend is on the throwaway DB");
+    check(
+      "public tunnel exposes only gateway routes",
+      (await fetch(`${tunnel.origin}/api/runs`)).status === 404,
+    );
 
     // ── Sandbox A: remember ─────────────────────────────────────────────────
     // A UNIQUE fact key (project passphrase), not "favourite color": the shared
@@ -241,7 +292,10 @@ async function main(): Promise<void> {
     check("run A reached terminal", rowA?.status === "completed" || rowA?.status === "failed", `status=${rowA?.status}`);
 
     const l0 = await eventsOf(runA, "memory.l0_accepted");
-    const l0ok = l0.length > 0 && JSON.parse(l0[0].payload).refs?.[0]?.startsWith("tencent:l0:");
+    const acceptedRef = l0.length > 0
+      ? JSON.parse(l0[0].payload).refs?.[0]
+      : undefined;
+    const l0ok = typeof acceptedRef === "string" && acceptedRef.startsWith("tencent:l0:");
     check("sandbox A agent CALLED memory_remember -> Tencent L0 accepted", l0ok, l0.length ? `refs=${JSON.parse(l0[0].payload).refs}` : "no memory.l0_accepted event");
 
     // Provider-side confirmation: the fact is in Tencent L0 (not memory.md/Postgres).
@@ -271,19 +325,32 @@ async function main(): Promise<void> {
     // The recall came from Tencent (pre-turn context.retrieved and/or a memory_search).
     const ctx = await eventsOf(runB, "context.retrieved");
     const searched = await eventsOf(runB, "memory.searched");
-    const recallSawMarker =
-      ctx.some((e) => JSON.stringify(JSON.parse(e.payload)).includes(MARKER)) ||
-      searched.some((e) => JSON.stringify(JSON.parse(e.payload)).toLowerCase().includes("favourite"));
-    check("run B recall was Tencent-sourced (context.retrieved / memory.searched)", ctx.length > 0 || searched.length > 0, `context.retrieved=${ctx.length} memory.searched=${searched.length}`);
+    // Ledger payloads intentionally omit memory content. Prove that B recalled
+    // the exact fact by matching A's provider receipt ref, not by weakening the
+    // assertion to "some memory event happened" or leaking content into audit.
+    const recallSawAcceptedRef =
+      typeof acceptedRef === "string" &&
+      [...ctx, ...searched].some((event) => {
+        const refs = JSON.parse(event.payload).refs;
+        return Array.isArray(refs) && refs.includes(acceptedRef);
+      });
+    check(
+      "run B recall cites sandbox A's exact Tencent receipt",
+      recallSawAcceptedRef,
+      `context.retrieved=${ctx.length} memory.searched=${searched.length}`,
+    );
     check("no memory_files table exists (Postgres is not the memory store)", (await sql`select to_regclass('public.memory_files') as t`)[0].t === null);
-    note(`recall event marker-hit: ${recallSawMarker}`);
+    note(`recall event receipt-hit: ${recallSawAcceptedRef}`);
     note(`A answer: "${String(rowA?.summary ?? "").slice(0, 160).replace(/\n/g, "\\n")}"`);
     note(`B answer: "${answerB.slice(0, 160).replace(/\n/g, "\\n")}"`);
 
     // ── Phase 3: recall OUTAGE - the turn still completes, honestly (12.5) ────
-    note("phase 3: restarting the backend with memory pointed at a DEAD host…");
-    await killProc(backend);
-    backend = await startBackend(tunnel.origin, "http://127.0.0.1:9"); // unreachable memory
+    note("phase 3: restarting the backend + gateway with memory pointed at a DEAD host…");
+    await stopOwnedProcesses([backend, gateway]);
+    const deadMemoryUrl = "http://127.0.0.1:9";
+    backend = await startBackend(tunnel.origin, deadMemoryUrl);
+    gateway = await startGateway(tunnel.origin, deadMemoryUrl);
+    await waitForPublicGateway(tunnel.origin);
     const cRun = await api("/api/runs", {
       prompt: "Use your memory_search tool to look up my project passphrase, then tell me what you found.",
       engine: "opencode",
@@ -299,15 +366,18 @@ async function main(): Promise<void> {
     const cSearchFailed = cFailed.some((e) => JSON.parse(e.payload).op === "search");
     check("memory outage surfaced as memory.failed op:search (not a fake 0-hit)", cSearchFailed, `memory.failed events=${cFailed.length}`);
   } finally {
-    await killProc(backend);
-    await killProc(tunnel?.proc ?? null);
-    await cleanupSandboxes().catch((e) => console.log(`  cleanup error: ${(e as Error).message}`));
+    await stopOwnedProcesses([backend, gateway, tunnel?.proc]);
+    try {
+      await cleanupSandboxes();
+    } catch (error) {
+      check("proof sandbox cleanup completed", false, (error as Error).message);
+    }
     await sweepMarker().catch(() => {});
     await dropDb();
   }
 
   console.log(`\n══ ${pass} PASS / ${fail} FAIL ══`);
-  if (fail > 0) { tailLog(backendLog, 50); tailLog(tunnelLog, 10); }
+  if (fail > 0) { tailLog(backendLog, 50); tailLog(gatewayLog, 30); tailLog(tunnelLog, 10); }
   console.log(fail === 0 ? "\n✅ TWO-SANDBOX MEMORY E2E PASSED" : `\n❌ E2E FAILED (${fail})`);
   process.exit(fail === 0 ? 0 : 1);
 }

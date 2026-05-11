@@ -28,17 +28,25 @@ function ctx(over: Partial<EngineRunContext> = {}): EngineRunContext {
 }
 
 afterEach(() => {
+  delete process.env.GATEWAY_PUBLIC_URL;
   delete process.env.TOOL_GATEWAY_PUBLIC_URL;
+  delete process.env.TOOL_GATEWAY_SECRET;
 });
 
 describe("ACP knowledge MCP parity", () => {
   test("gateway UNWIRED → no MCP servers (ACP behavior unchanged)", () => {
-    delete process.env.TOOL_GATEWAY_PUBLIC_URL;
+    delete process.env.GATEWAY_PUBLIC_URL;
+    expect(acpKnowledgeMcpServers(ctx())).toEqual([]);
+  });
+
+  test("legacy full-backend tunnel variable is ignored", () => {
+    process.env.TOOL_GATEWAY_PUBLIC_URL = "https://full-backend.example.test";
     expect(acpKnowledgeMcpServers(ctx())).toEqual([]);
   });
 
   test("gateway wired + org identity → one http entry with a valid run-scoped token", () => {
-    process.env.TOOL_GATEWAY_PUBLIC_URL = "https://gw.example.test";
+    process.env.GATEWAY_PUBLIC_URL = "https://gw.example.test";
+    process.env.TOOL_GATEWAY_SECRET = "tool-test-0123456789abcdef0123456789abcdef0123";
     const servers = acpKnowledgeMcpServers(
       ctx({ orgId: "org-acme", userId: "user-7", threadId: "thread-1", runId: "run-1" }),
     );
@@ -67,7 +75,8 @@ describe("ACP knowledge MCP parity", () => {
   });
 
   test("gateway wired but run has NO org → fail closed (no entry, no unscoped token)", () => {
-    process.env.TOOL_GATEWAY_PUBLIC_URL = "https://gw.example.test";
+    process.env.GATEWAY_PUBLIC_URL = "https://gw.example.test";
+    process.env.TOOL_GATEWAY_SECRET = "tool-test-0123456789abcdef0123456789abcdef0123";
     expect(acpKnowledgeMcpServers(ctx({ orgId: null }))).toEqual([]);
   });
 });

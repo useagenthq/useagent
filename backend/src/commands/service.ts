@@ -4,6 +4,7 @@ import { findCommandByKey, insertCommandWithRun } from "./repo";
 import type { CommandRecord } from "./repo";
 import type { RunCommandInput, RunCommandOutcome } from "./types";
 import { publishThreadChange } from "../runs/thread-signals";
+import { isModelAllowedForEngine } from "../runs/model-policy";
 
 // ---------------------------------------------------------------------------
 // Command acceptance orchestration (north star "Durable Commands"). Decides,
@@ -35,6 +36,11 @@ function classifyReplay(existing: CommandRecord, fingerprint: string): RunComman
  * winner's outcome rather than surfacing a raw DB error.
  */
 export async function acceptRunCommand(input: RunCommandInput): Promise<RunCommandOutcome> {
+  if (!isModelAllowedForEngine(input.run.engine, input.run.model)) {
+    throw new Error(
+      `model ${input.run.model} is not allowed for engine ${input.run.engine}`,
+    );
+  }
   const fingerprint = runPayloadFingerprint(input.run);
   const payload = JSON.stringify({
     prompt: input.run.prompt,

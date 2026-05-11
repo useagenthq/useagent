@@ -170,21 +170,25 @@ export function SecretsManager({
             className="inline-flex shrink-0 rounded-full border border-stroke-soft-200 p-0.5"
           >
             {SECRET_KINDS.map((k) => (
-              <button
+              <label
                 key={k}
-                type="button"
-                role="radio"
-                aria-checked={kind === k}
-                onClick={() => setKind(k)}
                 className={cnExt(
-                  "rounded-full px-3 py-1 text-label-xs capitalize transition-colors",
+                  "cursor-pointer rounded-full px-3 py-1 text-label-xs capitalize transition-colors focus-within:ring-2 focus-within:ring-stroke-strong-950",
                   kind === k
                     ? "bg-bg-strong-950 text-text-white-0"
                     : "text-text-sub-600 hover:text-text-strong-950",
                 )}
               >
+                <input
+                  type="radio"
+                  name="secret-kind"
+                  value={k}
+                  checked={kind === k}
+                  onChange={() => setKind(k)}
+                  className="sr-only"
+                />
                 {k}
-              </button>
+              </label>
             ))}
           </div>
           <Button.Root

@@ -9,7 +9,7 @@ import {
 } from "@remixicon/react";
 import { AsteriskMark } from "@/components/foundations/brand/asterisk-mark";
 import { backendFetch } from "@/lib/backend-fetch";
-import { ENGINES, type EngineId, type MemoryScope } from "@/components/chat/types";
+import { ENGINES, MODELS, type EngineId, type MemoryScope } from "@/components/chat/types";
 import { MemoryScopePicker } from "@/components/chat/memory-scope-picker";
 import { useEnabledEngines } from "@/components/chat/engine-picker";
 import {
@@ -22,22 +22,6 @@ import type { Skill } from "./skills-data";
 import { SearchablePicker, type PickerGroup } from "./searchable-picker";
 import { RepoMultiPicker, type RepoItem } from "./repo-multi-picker";
 import { RepoBranchBar } from "./repo-branch-bar";
-
-// Real backend model ids (`value`, sent verbatim in the POST body) paired with a
-// friendly `label`. Only meaningful for the opencode engine — see the picker below.
-const MODELS: { value: string; label: string; tint: string }[] = [
-  // Bare ids → Anthropic direct; provider/model ids → OpenRouter (the backend
-  // maps them; OPENROUTER_API_KEY rides into the sandbox). Ids verified against
-  // openrouter.ai/api/v1/models.
-  { value: "claude-opus-5", label: "Opus 5", tint: "text-orange-500" },
-  { value: "claude-sonnet-5", label: "Sonnet 5", tint: "text-blue-500" },
-  { value: "claude-fable-5", label: "Fable 5", tint: "text-purple-500" },
-  { value: "claude-haiku-4-5", label: "Haiku 4.5", tint: "text-green-500" },
-  { value: "openai/gpt-5.6-sol", label: "GPT-5.6 Sol", tint: "text-teal-500" },
-  { value: "openai/gpt-5.6-sol-pro", label: "GPT-5.6 Sol Pro", tint: "text-teal-500" },
-  { value: "openai/gpt-5.6-luna", label: "GPT-5.6 Luna", tint: "text-sky-500" },
-  { value: "openai/gpt-5.6-terra", label: "GPT-5.6 Terra", tint: "text-amber-500" },
-];
 
 /** Composer-specific caption for each selectable engine (POST /api/runs `engine`).
  * Partial because the legacy EngineId values are never offered in the picker, so

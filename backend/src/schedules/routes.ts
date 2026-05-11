@@ -11,6 +11,7 @@ import {
   listSchedules,
   updateSchedule,
 } from "./repo";
+import { defaultModelForEngine, isModelAllowedForEngine } from "../runs/model-policy";
 
 export const schedulesRoutes = new Hono<AppEnv>();
 
@@ -18,7 +19,6 @@ schedulesRoutes.use("*", orgScope);
 
 // A schedule can run under any real engine (same set the runs route accepts).
 const ENGINES: readonly EngineId[] = ENGINE_IDS;
-const DEFAULT_MODEL = "claude-opus-5";
 
 // List all schedules for the active org (newest first).
 schedulesRoutes.get("/", async (c) =>
@@ -72,7 +72,10 @@ schedulesRoutes.post("/", async (c) => {
   const model =
     typeof body.model === "string" && body.model.trim()
       ? body.model.trim()
-      : DEFAULT_MODEL;
+      : defaultModelForEngine(engine);
+  if (!isModelAllowedForEngine(engine, model)) {
+    return c.json({ error: "model_not_allowed", engine, model }, 400);
+  }
 
   const schedule = await createSchedule({
     orgId: c.get("orgId"),
@@ -142,6 +145,16 @@ schedulesRoutes.patch("/:id", async (c) => {
       return c.json({ error: `engine must be one of: ${ENGINES.join(", ")}` }, 400);
     }
     patch.engine = body.engine as EngineId;
+  }
+
+  if (patch.engine !== undefined || patch.model !== undefined) {
+    const current = await getScheduleForOrg(c.get("orgId"), id);
+    if (!current) return c.json({ error: "schedule not found" }, 404);
+    const engine = patch.engine ?? current.engine;
+    const model = patch.model ?? current.model;
+    if (!isModelAllowedForEngine(engine, model)) {
+      return c.json({ error: "model_not_allowed", engine, model }, 400);
+    }
   }
 
   const updated = await updateSchedule(c.get("orgId"), id, patch);

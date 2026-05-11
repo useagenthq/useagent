@@ -1,5 +1,6 @@
 import type { EngineRunContext } from "../engines/types";
 import { recordProviderEvent } from "../runs/provider-events";
+import { isReservedSecretName } from "./crypto";
 import { decryptOrgSecrets, type DecryptedSecrets } from "./store";
 
 // ---------------------------------------------------------------------------
@@ -20,11 +21,9 @@ import { decryptOrgSecrets, type DecryptedSecrets } from "./store";
 // Bonus: org secrets never appear in the container-create request at all, which
 // advances the "don't leak into untrusted sandboxes" posture (BUG-002 / #116).
 //
-// SPLIT (deliberate): only ORG-managed secrets go in this dotenv. Provider
-// credentials must come from that tenant-scoped set in production; the adapters'
-// raw host-key path is a separately gated development escape hatch. The resident
-// OpenCode/ACP processes are launched by Daytona's non-interactive bash, so they
-// inherit the sourced org values as well as later tool commands.
+// SPLIT (deliberate): non-provider org secrets go in this dotenv. Provider
+// credentials are always withheld by the engine adapters and resolved tenant-
+// side by the trusted provider gateway. There is no raw host-key escape hatch.
 //
 // CAVEAT: BASH_ENV is honored by non-interactive BASH only. Daytona's shell is
 // bash (verified), so agent tool commands inherit the dotenv - but a tool that
@@ -78,6 +77,29 @@ export interface SecretInjection {
 
 const EMPTY: SecretInjection = { createEnv: {}, files: [], names: [] };
 
+/** Provider credentials never cross into an untrusted sandbox. */
+export const PROVIDER_SECRET_NAMES = new Set([
+  "ANTHROPIC_API_KEY",
+  "ANTHROPIC_AUTH_TOKEN",
+  "ANTHROPIC_AWS_API_KEY",
+  "ANTHROPIC_ENVIRONMENT_KEY",
+  "ANTHROPIC_FOUNDRY_API_KEY",
+  "ANTHROPIC_FOUNDRY_AUTH_TOKEN",
+  "ANTHROPIC_IDENTITY_TOKEN",
+  "ANTHROPIC_IDENTITY_TOKEN_FILE",
+  "CLAUDE_CODE_CLIENT_KEY",
+  "CLAUDE_CODE_CLIENT_KEY_PASSPHRASE",
+  "CLAUDE_CODE_HFI_BEARER_TOKEN",
+  "CLAUDE_CODE_OAUTH_REFRESH_TOKEN",
+  "CLAUDE_CODE_OAUTH_TOKEN",
+  "CLAUDE_CODE_SESSION_ACCESS_TOKEN",
+  "AZURE_OPENAI_API_KEY",
+  "OPENAI_API_KEY",
+  "OPENAI_ACCESS_TOKEN",
+  "OPENROUTER_API_KEY",
+  "CODEX_ACCESS_TOKEN",
+]);
+
 /** POSIX single-quote a value for a `export NAME='...'` line (escapes embedded
  *  single quotes as '\'' so ANY byte sequence is preserved verbatim). */
 function shellExport(name: string, value: string): string {
@@ -90,11 +112,19 @@ function shellExport(name: string, value: string): string {
  * file-kind content files, and a create-env of just `BASH_ENV`. Pure (no marker,
  * no I/O) so it is unit-testable.
  */
-export function buildInjection(decrypted: DecryptedSecrets): SecretInjection {
-  if (decrypted.names.length === 0) return { createEnv: {}, files: [], names: [] };
+export function buildInjection(
+  decrypted: DecryptedSecrets,
+  options: { readonly excludeNames?: ReadonlySet<string> } = {},
+): SecretInjection {
+  const included = decrypted.secrets.filter(
+    (secret) =>
+      !isReservedSecretName(secret.name) &&
+      !options.excludeNames?.has(secret.name),
+  );
+  if (included.length === 0) return { createEnv: {}, files: [], names: [] };
   const files: SecretFile[] = [];
   const lines: string[] = [];
-  for (const s of decrypted.secrets) {
+  for (const s of included) {
     if (s.kind === "file") {
       const path = `${SECRET_FILE_DIR}/${s.name}`;
       files.push({ path, content: s.value });
@@ -106,7 +136,11 @@ export function buildInjection(decrypted: DecryptedSecrets): SecretInjection {
   // The dotenv is written FIRST (BASH_ENV points at it); a trailing newline keeps
   // the last export well-formed.
   files.unshift({ path: SECRET_DOTENV_PATH, content: `${lines.join("\n")}\n` });
-  return { createEnv: { BASH_ENV: SECRET_DOTENV_PATH }, files, names: decrypted.names };
+  return {
+    createEnv: { BASH_ENV: SECRET_DOTENV_PATH },
+    files,
+    names: included.map((secret) => secret.name),
+  };
 }
 
 /**
@@ -119,6 +153,7 @@ export function buildInjection(decrypted: DecryptedSecrets): SecretInjection {
  */
 export async function composeSecretEnv(
   ctx: EngineRunContext,
+  options: { readonly excludeNames?: ReadonlySet<string> } = {},
 ): Promise<SecretInjection> {
   // Null org → no tenancy → inject nothing (fail closed, like gateway wiring).
   if (!ctx.orgId) return EMPTY;
@@ -136,7 +171,9 @@ export async function composeSecretEnv(
 
   if (decrypted.names.length === 0) return EMPTY; // no marker for a non-event
 
-  const out = buildInjection(decrypted);
+  const out = buildInjection(decrypted, options);
+
+  if (out.names.length === 0) return EMPTY;
 
   // recordProviderEvent is fire-and-forget-safe (it swallows its own failures and
   // never rejects); await it so the marker is durable before the run can settle,
@@ -148,8 +185,8 @@ export async function composeSecretEnv(
     provider: "skynet",
     eventType: SECRETS_INJECTED,
     payload: {
-      names: decrypted.names,
-      count: decrypted.names.length,
+      names: out.names,
+      count: out.names.length,
       source: "secrets",
     } satisfies SecretsInjectedPayload,
   });
@@ -175,7 +212,7 @@ export async function materializeSecretFiles(
     cmds.push(`printf '%s' '${b64}' | base64 -d > '${f.path}' && chmod 600 '${f.path}'`);
   }
   try {
-    await runCmd(cmds.join("; "));
+    await runCmd(cmds.join(" && "));
   } catch (err) {
     console.warn(
       "[secrets] file materialization failed:",
