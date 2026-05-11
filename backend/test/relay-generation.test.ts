@@ -7,7 +7,11 @@ import { describe, expect, test, afterAll } from "bun:test";
 import { RELAY_SCRIPT } from "../src/engines/acp-server";
 import { writeFileSync, rmSync } from "node:fs";
 
-const PORT = 34597;
+// EPHEMERAL port (never a fixed one that could collide with a parallel test/run): bind :0, read
+// the OS-assigned port, release it, and hand it to the relay.
+const probe = Bun.serve({ port: 0, fetch: () => new Response("ok") });
+const PORT = probe.port;
+probe.stop(true);
 const BASE = `http://127.0.0.1:${PORT}`;
 const scriptPath = `/tmp/skynet-relay-gen-${process.pid}.mjs`;
 writeFileSync(scriptPath, RELAY_SCRIPT);
@@ -100,4 +104,22 @@ describe("relay ACP child generation (real subprocess)", () => {
     expect(after.generation).toBeGreaterThan(1);
     expect(after.childAlive).toBe(true);
   }, 20000);
+
+  test("SIGTERM cleans up BOTH the relay HTTP server AND its resident ACP child (no leaks)", async () => {
+    // the resident child (respawned above) whose pid the relay owns
+    const childPid = (await health().catch(() => ({ pid: null } as const))).pid;
+    expect(childPid).not.toBeNull();
+    // SIGTERM the relay - its signal handler must kill the child before exiting
+    proc.kill(); // Bun sends SIGTERM
+    await proc.exited;
+    expect(proc.exitCode !== null || proc.signalCode !== null).toBe(true); // relay process exited
+    // the relay HTTP server is gone (nothing left listening on the ephemeral port)
+    await sleep(600);
+    const stillServing = await fetch(`${BASE}/health`).then(() => true).catch(() => false);
+    expect(stillServing).toBe(false);
+    // the resident child process is gone too (SIGTERM handler cleaned it up)
+    let childGone = false;
+    try { process.kill(childPid!, 0); } catch { childGone = true; } // ESRCH => already exited
+    expect(childGone).toBe(true);
+  }, 15000);
 });
