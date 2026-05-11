@@ -42,6 +42,13 @@ import {
   providerGatewayWired,
 } from "../provider-gateway/sandbox-config";
 import { opencodeAssistantError } from "./opencode-message";
+import {
+  ensureSandboxDesktop,
+  opencodeBrowserMcpConfig,
+  type SandboxDesktop,
+} from "./desktop";
+import { createSecretRedactor } from "../secrets/redact";
+import { DEFAULT_OPENCODE_MODEL } from "../runs/model-policy";
 
 // ---------------------------------------------------------------------------
 // NATIVE opencode engine — the realtime path. Instead of one-shot CLI runs, the
@@ -54,10 +61,21 @@ import { opencodeAssistantError } from "./opencode-message";
 // sandbox port model later carries the interactive terminal.
 // ---------------------------------------------------------------------------
 
-const DEFAULT_MODEL = "claude-opus-5";
+const DEFAULT_MODEL = DEFAULT_OPENCODE_MODEL;
 const SERVE_PORT = 4096;
 const OPENCODE_VERSION = "1.18.7";
 const SERVER_PROCESS_SESSION = "skynet-opencode-serve";
+
+export function buildOpencodeConfigWriteCommand(encodedConfig: string): string {
+  if (!/^[A-Za-z0-9+/=]+$/.test(encodedConfig)) {
+    throw new Error("opencode config must be base64 encoded");
+  }
+  return (
+    `mkdir -p ~/.config/opencode ~/work && ` +
+    `printf %s '${encodedConfig}' | base64 -d > ~/.config/opencode/opencode.json && ` +
+    `rm -f -- ~/work/opencode.json`
+  );
+}
 
 /** Per-thread live server: sandbox + resolved preview endpoint. In-memory (a
  *  backend restart re-resolves); sandbox auto-stop/auto-delete contain cost. */
@@ -230,14 +248,18 @@ async function ensureServer(
  * process after this function returns. The sandbox, checkout, and native session
  * remain warm while every provider capability stays bound to the exact run.
  */
-async function ensureKnowledgeGatewayConfig(
+async function ensureOpencodeSandboxConfig(
   sandbox: Sandbox,
   ctx: EngineRunContext,
-): Promise<{ knowledge: boolean; provider: boolean }> {
+  desktop: SandboxDesktop,
+): Promise<{ knowledge: boolean; provider: boolean; browser: boolean }> {
   const gw = toolGatewayConfig();
   const providerOptions = opencodeProviderGatewayOptions(ctx);
-  if (!ctx.orgId || (!gw && Object.keys(providerOptions).length === 0)) {
-    return { knowledge: false, provider: false };
+  const browser = desktop.browserTools && desktop.browserExecutable
+    ? opencodeBrowserMcpConfig(desktop.home, desktop.workdir, desktop.browserExecutable)
+    : null;
+  if ((!ctx.orgId || (!gw && Object.keys(providerOptions).length === 0)) && !browser) {
+    return { knowledge: false, provider: false, browser: false };
   }
   try {
     // Merge into any existing global config so snapshot-provided settings (models,
@@ -255,7 +277,8 @@ async function ensureKnowledgeGatewayConfig(
       }
     }
     cfg["$schema"] = cfg["$schema"] ?? "https://opencode.ai/config.json";
-    if (gw) {
+    const mcp = (typeof cfg.mcp === "object" && cfg.mcp ? (cfg.mcp as Record<string, unknown>) : {});
+    if (gw && ctx.orgId) {
       const token = mintToolToken(
         {
           orgId: ctx.orgId,
@@ -265,15 +288,16 @@ async function ensureKnowledgeGatewayConfig(
         },
         gw.tokenTtlMs,
       );
-      const mcp = (typeof cfg.mcp === "object" && cfg.mcp ? (cfg.mcp as Record<string, unknown>) : {});
       mcp["skynet-knowledge"] = {
         type: "remote",
         url: gw.mcpUrl,
         enabled: true,
         headers: { Authorization: `Bearer ${token}` },
       };
-      cfg.mcp = mcp;
-    }
+    } else delete mcp["skynet-knowledge"];
+    if (browser) mcp["skynet-browser"] = browser;
+    else delete mcp["skynet-browser"];
+    cfg.mcp = mcp;
     const providers =
       typeof cfg.provider === "object" && cfg.provider
         ? (cfg.provider as Record<string, unknown>)
@@ -291,26 +315,27 @@ async function ensureKnowledgeGatewayConfig(
     }
     if (Object.keys(providerOptions).length > 0) cfg.provider = providers;
     // base64 avoids every shell-escaping hazard (the token/URL never touch argv
-    // unencoded, so they are not in `ps` or logs inside the box). Write BOTH the
+    // unencoded, so they are not in `ps` or logs inside the box). Write the
     // GLOBAL config (`~/.config/opencode/opencode.json`, loaded at serve boot for
-    // every session) AND the PROJECT config (`~/work/opencode.json`, loaded when a
-    // session scoped to ~/work resolves its project) — opencode merges them, so
-    // the same MCP entry in both is robust to either resolution path.
+    // every session). Never place generated capability credentials in ~/work:
+    // that directory may later become a git repository or be inspected by tools.
     const b64 = Buffer.from(JSON.stringify(cfg), "utf8").toString("base64");
-    await sandbox.process.executeCommand(
-      `mkdir -p ~/.config/opencode ~/work && printf %s '${b64}' | base64 -d | tee ~/.config/opencode/opencode.json > ~/work/opencode.json`,
-      undefined,
-      undefined,
-      15,
-    );
+    await sandbox.process.executeCommand(buildOpencodeConfigWriteCommand(b64), undefined, undefined, 15);
     console.log(
       `[opencode] sandbox gateways wired for run ${ctx.runId} ` +
-        `(knowledge=${Boolean(gw)} provider=${Object.keys(providerOptions).length > 0})`,
+        `(knowledge=${Boolean(gw && ctx.orgId)} provider=${Object.keys(providerOptions).length > 0} browser=${Boolean(browser)})`,
     );
-    return { knowledge: Boolean(gw), provider: Object.keys(providerOptions).length > 0 };
+    return {
+      knowledge: Boolean(gw && ctx.orgId),
+      provider: Object.keys(providerOptions).length > 0,
+      browser: Boolean(browser),
+    };
   } catch (e) {
-    console.warn(`[opencode] knowledge gateway config write failed (continuing without tools):`, (e as Error).message);
-    return { knowledge: false, provider: false };
+    console.warn(
+      `[opencode] sandbox config write failed (continuing without optional tools):`,
+      (e as Error).message,
+    );
+    return { knowledge: false, provider: false, browser: false };
   }
 }
 
@@ -564,6 +589,7 @@ export const opencodeServerAdapter: EngineAdapter = {
     const secretInjection = await composeSecretEnv(ctx, {
       excludeNames: PROVIDER_SECRET_NAMES,
     });
+    const redact = createSecretRedactor(secretInjection.redactionValues);
     // Raw provider credentials are never placed in an untrusted sandbox. The
     // generated OpenCode provider config points only at the trusted gateway.
     const envVars: Record<string, string> = {
@@ -648,19 +674,29 @@ export const opencodeServerAdapter: EngineAdapter = {
         deleteFreshSandbox: () => box.delete(),
       });
 
-      // Inject the knowledge MCP gateway (run-scoped token only) into the global
-      // opencode config BEFORE booting the server, so the resident agent picks up
-      // knowledge_search/knowledge_read at `opencode serve` start. Gated + best-effort.
-      const gatewayState = await ensureKnowledgeGatewayConfig(sandbox, ctx);
+      // Install run-scoped gateways and the local browser MCP in the global
+      // OpenCode config before booting the resident server.
+      const desktop = await ensureSandboxDesktop(sandbox, ctx.signal);
+      if (!desktop.available || !desktop.browserTools) {
+        await ctx.emit({
+          kind: "task",
+          label: desktop.reason ?? "Desktop/browser tools unavailable in this sandbox",
+          chip: "warning",
+        });
+      }
+      const gatewayState = await ensureOpencodeSandboxConfig(sandbox, ctx, desktop);
       if (providerGatewayWired() && !gatewayState.provider) {
         throw new Error("provider gateway config could not be installed in the sandbox");
       }
       await markProviderGatewaySandboxCurrent(sandbox);
-      // The capability is bound to THIS run. OpenCode caches provider clients in
-      // its resident server, so a warm turn restarts only that small process to
-      // guarantee it loads the newly written token. The Daytona sandbox, repo,
-      // and OpenCode's on-disk native session all stay warm/persistent.
-      if (retainForThread && providerGatewayWired()) {
+      // Run-scoped provider/knowledge credentials and local MCP definitions are
+      // loaded by the resident server. Restart only that process on a warm turn;
+      // the Daytona sandbox, repository, browser profile, and native session all
+      // remain warm and persistent.
+      if (
+        retainForThread &&
+        (gatewayState.provider || gatewayState.knowledge || gatewayState.browser)
+      ) {
         await sandbox.process.deleteSession(SERVER_PROCESS_SESSION).catch(() => {});
       }
 
@@ -729,8 +765,8 @@ export const opencodeServerAdapter: EngineAdapter = {
           payload: {
             source: "opencode",
             capabilities: sessionCapabilities("opencode", {
-              desktop: true,
-              knowledgeTools: toolGatewayConfig() !== null,
+              desktop: desktop.available,
+              knowledgeTools: gatewayState.knowledge,
             }),
           },
         });
@@ -948,12 +984,15 @@ export const opencodeServerAdapter: EngineAdapter = {
           nativeMessageId: typeof part.messageID === "string" ? part.messageID : null,
           nativePartId: partId,
           nativeCallId: typeof part.callID === "string" ? part.callID : null,
-          payload: part,
+          payload: redact.unknown(part),
         });
       };
       const enqueuePart = (part: Record<string, unknown>, delta?: string): Promise<void> => {
-        capturePart(part);
-        partChain = partChain.then(() => handlePart(part, delta)).catch(() => {});
+        const safePart = redact.unknown(part);
+        capturePart(safePart);
+        partChain = partChain
+          .then(() => handlePart(safePart, typeof delta === "string" ? redact.text(delta) : delta))
+          .catch(() => {});
         return partChain;
       };
 

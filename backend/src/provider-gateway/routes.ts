@@ -11,6 +11,7 @@ import { applyProviderBodyPolicy, type OutputLimitField } from "./request-policy
 import { findRunningGatewayRun, type GatewayRun } from "./run-authorization";
 import { verifyProviderToken, type ProviderTokenClaims } from "./token";
 import { runtimeDevModeEnabled } from "../security/runtime-secrets";
+import { applyOpenRouterProviderRouting } from "./provider-routing";
 
 const MAX_BODY_BYTES = 8 * 1024 * 1024;
 
@@ -223,6 +224,9 @@ export function createProviderGatewayRoutes(deps: ProviderRouteDeps = {}): Hono 
       }
       upstreamBody = policy.body;
       requestedOutputTokens = policy.requestedOutputTokens;
+    }
+    if (target.provider === "openrouter") {
+      upstreamBody = applyOpenRouterProviderRouting(run.model, upstreamBody);
     }
 
     const credential = await resolveCredential(claims.orgId, target.provider);

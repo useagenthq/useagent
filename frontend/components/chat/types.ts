@@ -105,6 +105,11 @@ export function engineLabel(id: EngineId): string {
 /** The curated model set (single source of truth for every picker). Bare ids →
  * Anthropic direct; provider/model ids → OpenRouter. */
 export const MODELS: { value: string; label: string; tint: string }[] = [
+  {
+    value: "moonshotai/kimi-k3",
+    label: "Kimi K3 · Fast Agent",
+    tint: "text-fuchsia-500",
+  },
   { value: "claude-opus-5", label: "Opus 5", tint: "text-orange-500" },
   { value: "claude-sonnet-5", label: "Sonnet 5", tint: "text-blue-500" },
   { value: "claude-fable-5", label: "Fable 5", tint: "text-purple-500" },

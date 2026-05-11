@@ -1,5 +1,7 @@
 import type { EngineId } from "../db/schema";
 
+export const KIMI_K3_MODEL = "moonshotai/kimi-k3";
+
 /** Models that the OpenCode picker and provider gateway are allowed to spend. */
 export const OPENCODE_ALLOWED_MODELS = {
   anthropic: [
@@ -9,6 +11,7 @@ export const OPENCODE_ALLOWED_MODELS = {
     "claude-haiku-4-5",
   ],
   openrouter: [
+    KIMI_K3_MODEL,
     "openai/gpt-5.6-sol",
     "openai/gpt-5.6-sol-pro",
     "openai/gpt-5.6-luna",
@@ -18,6 +21,7 @@ export const OPENCODE_ALLOWED_MODELS = {
 
 const OPENCODE_MODELS = new Set<string>(Object.values(OPENCODE_ALLOWED_MODELS).flat());
 const CLAUDE_MODELS = new Set<string>(OPENCODE_ALLOWED_MODELS.anthropic);
+export const DEFAULT_OPENCODE_MODEL = KIMI_K3_MODEL;
 export const DEFAULT_CLAUDE_MODEL = "claude-opus-5";
 export const DEFAULT_CODEX_MODEL = "gpt-5.6-sol";
 
@@ -37,11 +41,12 @@ export function defaultModelForEngine(
   env: Record<string, string | undefined> = process.env,
 ): string {
   switch (engine) {
+    case "opencode":
+    case "daytona":
+      return DEFAULT_OPENCODE_MODEL;
     case "codex":
       return codexModels(env).values().next().value ?? DEFAULT_CODEX_MODEL;
     case "mock":
-    case "opencode":
-    case "daytona":
     case "claude":
     case "claude-sdk":
     case "acp":

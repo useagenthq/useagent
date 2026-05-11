@@ -91,9 +91,12 @@ export interface SecretInjection {
   files: SecretFile[];
   /** Every injected secret name (for the marker). */
   names: string[];
+  /** Values held in memory only so engine output can be redacted before it is
+   * persisted. Never include these in a marker, log, or provider event. */
+  redactionValues: string[];
 }
 
-const EMPTY: SecretInjection = { createEnv: {}, files: [], names: [] };
+const EMPTY: SecretInjection = { createEnv: {}, files: [], names: [], redactionValues: [] };
 
 const LEGACY_GCP_CREDENTIAL = "GCP_SERVICE_ACCOUNT_KEY";
 const GOOGLE_APPLICATION_CREDENTIALS = "GOOGLE_APPLICATION_CREDENTIALS";
@@ -182,7 +185,9 @@ export function buildInjection(
       !isReservedSecretName(secret.name) &&
       !options.excludeNames?.has(secret.name),
   );
-  if (included.length === 0) return { createEnv: {}, files: [], names: [] };
+  if (included.length === 0) {
+    return { createEnv: {}, files: [], names: [], redactionValues: [] };
+  }
   const files: SecretFile[] = [];
   const lines: string[] = [];
   const includedNames = new Set(included.map((secret) => secret.name));
@@ -234,6 +239,7 @@ export function buildInjection(
     createEnv: { BASH_ENV: SECRET_DOTENV_PATH },
     files,
     names: included.map((secret) => secret.name),
+    redactionValues: included.map((secret) => secret.value),
   };
 }
 

@@ -28,7 +28,8 @@ describe("provider gateway capability", () => {
     process.env.PROVIDER_GATEWAY_SECRET = "provider-test-secret";
     const token = mintProviderToken(claims, 10);
     expect(verifyProviderToken(token, Date.now() + 11)).toBeNull();
-    expect(verifyProviderToken(`${token.slice(0, -1)}x`)).toBeNull();
+    const differentLastCharacter = token.endsWith("x") ? "y" : "x";
+    expect(verifyProviderToken(`${token.slice(0, -1)}${differentLastCharacter}`)).toBeNull();
     process.env.PROVIDER_GATEWAY_SECRET = "different-secret";
     expect(verifyProviderToken(token)).toBeNull();
   });
