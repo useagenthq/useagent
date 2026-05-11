@@ -18,33 +18,42 @@ describe("buildNativeCommandPrompt (backend builds the provider prompt ONCE, byt
   });
 });
 
-describe("validateCommandIntent (against the active authoritative catalog)", () => {
-  test("a known command validates and returns the trimmed name + verbatim args", () => {
-    expect(validateCommandIntent({ name: "review", args: "  x " }, catalog)).toEqual({ ok: true, name: "review", args: "  x " });
-    expect(validateCommandIntent({ name: " status " }, catalog)).toEqual({ ok: true, name: "status", args: "" });
+describe("validateCommandIntent (FAIL-CLOSED against the live session catalog)", () => {
+  const active = { sessionId: "s_cur", revision: 7 };
+  const full = (over: Record<string, unknown>) => ({ name: "review", sessionId: "s_cur", catalogRevision: 7, ...over });
+
+  test("a fully-identified command for the live session validates (name + session + revision)", () => {
+    expect(validateCommandIntent(full({ args: "  x " }), catalog, active)).toEqual({ ok: true, name: "review", args: "  x " });
+    expect(validateCommandIntent(full({ name: " status ", args: undefined }), catalog, active)).toEqual({ ok: true, name: "status", args: "" });
+  });
+
+  test("NO active session -> rejected (a pre-session priming cache never authorizes execution)", () => {
+    expect(validateCommandIntent(full({ sessionId: undefined, catalogRevision: undefined }), catalog, { sessionId: null, revision: null }))
+      .toEqual({ ok: false, reason: "no active session" });
   });
 
   test("an UNKNOWN command is rejected (never silently executed)", () => {
-    expect(validateCommandIntent({ name: "notacommand" }, catalog)).toEqual({ ok: false, reason: "unknown command" });
+    expect(validateCommandIntent(full({ name: "notacommand" }), catalog, active)).toEqual({ ok: false, reason: "unknown command" });
   });
 
   test("an empty or malformed name is rejected", () => {
-    expect(validateCommandIntent({ name: "" }, catalog).ok).toBe(false);
-    expect(validateCommandIntent({ name: "has space" }, catalog)).toEqual({ ok: false, reason: "malformed command name" });
-    expect(validateCommandIntent({ name: "etc/passwd" }, catalog)).toEqual({ ok: false, reason: "malformed command name" });
+    expect(validateCommandIntent(full({ name: "" }), catalog, active).ok).toBe(false);
+    expect(validateCommandIntent(full({ name: "has space" }), catalog, active)).toEqual({ ok: false, reason: "malformed command name" });
+    expect(validateCommandIntent(full({ name: "etc/passwd" }), catalog, active)).toEqual({ ok: false, reason: "malformed command name" });
   });
 
-  test("a WRONG session is rejected (stale cross-session intent)", () => {
-    expect(validateCommandIntent({ name: "review", sessionId: "s_old" }, catalog, { sessionId: "s_cur" })).toEqual({ ok: false, reason: "stale session" });
-    expect(validateCommandIntent({ name: "review", sessionId: "s_cur" }, catalog, { sessionId: "s_cur" }).ok).toBe(true);
+  test("a MISSING or WRONG session id is rejected (client must prove the session)", () => {
+    expect(validateCommandIntent(full({ sessionId: undefined }), catalog, active)).toEqual({ ok: false, reason: "missing session id" });
+    expect(validateCommandIntent(full({ sessionId: "s_old" }), catalog, active)).toEqual({ ok: false, reason: "stale session" });
   });
 
-  test("a STALE catalog revision is rejected", () => {
-    expect(validateCommandIntent({ name: "review", catalogRevision: 1 }, catalog, { revision: 2 })).toEqual({ ok: false, reason: "stale catalog revision" });
-    expect(validateCommandIntent({ name: "review", catalogRevision: 2 }, catalog, { revision: 2 }).ok).toBe(true);
+  test("a MISSING or STALE catalog revision is rejected when the session carries one", () => {
+    expect(validateCommandIntent(full({ catalogRevision: undefined }), catalog, active)).toEqual({ ok: false, reason: "missing catalog revision" });
+    expect(validateCommandIntent(full({ catalogRevision: 6 }), catalog, active)).toEqual({ ok: false, reason: "stale catalog revision" });
+    expect(validateCommandIntent(full({ catalogRevision: 7 }), catalog, active).ok).toBe(true);
   });
 
   test("an empty catalog rejects everything (a session that advertises no commands)", () => {
-    expect(validateCommandIntent({ name: "review" }, []).ok).toBe(false);
+    expect(validateCommandIntent(full({}), [], active)).toEqual({ ok: false, reason: "unknown command" });
   });
 });

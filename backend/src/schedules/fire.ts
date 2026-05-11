@@ -67,6 +67,9 @@ export async function fireSchedule(
       skillContentHash: null,
       // A scheduled turn is never a native provider command.
       commandName: null,
+      commandProvider: null,
+      commandSessionId: null,
+      commandCatalogRevision: null,
     },
   });
 

@@ -173,6 +173,9 @@ export async function handleSlackEvent(body: SlackEnvelope): Promise<void> {
       skillContentHash: null,
       // Slack turns are never native provider commands (a "/cmd" from Slack is prose).
       commandName: null,
+      commandProvider: null,
+      commandSessionId: null,
+      commandCatalogRevision: null,
     },
   });
 

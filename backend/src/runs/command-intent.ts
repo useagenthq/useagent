@@ -37,25 +37,36 @@ export function buildNativeCommandPrompt(name: string, args?: string | null): st
   return a.length > 0 ? `/${name} ${a}` : `/${name}`;
 }
 
-/** Validate a native-command intent against the active authoritative catalog. The command
- *  NAME must appear in the catalog; when the client supplies a session id or catalog revision
- *  it must match the currently-active one (a stale cache or a wrong session is rejected, never
- *  silently executed). Product skills are versioned skill IDs handled elsewhere - a skill id is
- *  NEVER a native command, so it can never validate here. Pure. */
+/** FAIL-CLOSED validation of a native-command intent against the LIVE session's authoritative
+ *  catalog. A native command is authorized ONLY when it can be tied to a real, current session
+ *  and the exact catalog snapshot the client selected against:
+ *    - there MUST be an active session (`active.sessionId`); with none, no command authorizes
+ *      (a pre-session priming cache is UI-only and never authorizes execution);
+ *    - the NAME must appear in that session's catalog;
+ *    - the client MUST supply a session id, and it MUST equal the server-derived active session
+ *      (a stale/cross-session intent is rejected, never silently executed);
+ *    - when the session catalog carries a revision (its latest `commands.updated` deliverySeq -
+ *      which also advances on a relay regeneration re-advertisement), the client MUST supply a
+ *      matching `catalogRevision` (a stale snapshot is rejected).
+ *  Product skills are versioned skill IDs handled elsewhere - a skill id is NEVER a native
+ *  command, so it can never validate here. Pure. */
 export function validateCommandIntent(
   intent: CommandIntent,
   catalog: readonly { readonly name: string }[],
-  active?: { readonly sessionId?: string | null; readonly revision?: number | null },
+  active: { readonly sessionId: string | null; readonly revision: number | null },
 ): CommandValidation {
   const name = typeof intent.name === "string" ? intent.name.trim() : "";
   if (!name) return { ok: false, reason: "empty command name" };
   if (name.includes("/") || /\s/.test(name)) return { ok: false, reason: "malformed command name" };
+  // fail-closed: authorize ONLY against a live session's catalog (never a pre-session cache).
+  if (!active.sessionId) return { ok: false, reason: "no active session" };
   if (!catalog.some((c) => c.name === name)) return { ok: false, reason: "unknown command" };
-  if (intent.sessionId && active?.sessionId && intent.sessionId !== active.sessionId) {
-    return { ok: false, reason: "stale session" };
-  }
-  if (intent.catalogRevision != null && active?.revision != null && intent.catalogRevision !== active.revision) {
-    return { ok: false, reason: "stale catalog revision" };
+  // the client must PROVE which session + catalog snapshot it selected against.
+  if (!intent.sessionId) return { ok: false, reason: "missing session id" };
+  if (intent.sessionId !== active.sessionId) return { ok: false, reason: "stale session" };
+  if (active.revision != null) {
+    if (intent.catalogRevision == null) return { ok: false, reason: "missing catalog revision" };
+    if (intent.catalogRevision !== active.revision) return { ok: false, reason: "stale catalog revision" };
   }
   return { ok: true, name, args: typeof intent.args === "string" ? intent.args : "" };
 }

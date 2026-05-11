@@ -318,6 +318,7 @@ async function runWorker(runId: string): Promise<void> {
         ac.signal,
         wasCancelled,
         run.commandName ?? null,
+        run.commandSessionId ?? null,
       );
     } finally {
       bus.off(channel(runId), onActivity);
@@ -425,6 +426,9 @@ async function runEngine(
   wasCancelled: () => string | null,
   /** Validated native-command name (Phase 3); non-null => the prompt is delivered verbatim. */
   commandName: string | null,
+  /** The native session the command was AUTHORIZED against (fail-closed C3): the adapter
+   *  re-checks the LIVE session against this before sending, rejecting a stale command. */
+  commandSessionId: string | null,
 ): Promise<void> {
   const startedAt = Date.now();
   await setRunStatus(runId, "running");
@@ -504,6 +508,7 @@ async function runEngine(
     repos,
     engineSessionId,
     commandName,
+    commandSessionId,
     // Durable fire-and-forget: the id is saved the moment the engine reveals it,
     // so even a later-failing run leaves a resumable session for the next turn.
     saveEngineSessionId: (sid) => {

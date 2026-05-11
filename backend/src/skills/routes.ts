@@ -224,6 +224,9 @@ skillsRoutes.post("/:id/run", async (c) => {
       skillContentHash: pinned.contentHash,
       // A skill "Run" applies a versioned product skill; it is never a native provider command.
       commandName: null,
+      commandProvider: null,
+      commandSessionId: null,
+      commandCatalogRevision: null,
     },
   });
   if (accepted.status === "conflict") {

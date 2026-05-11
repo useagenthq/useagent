@@ -231,10 +231,22 @@ export interface CanonicalCommandView {
  *  A reconnect/replay reconstructs the SAME catalog. An empty replacement legitimately yields
  *  [] ("provider advertises none right now"); a session that has not advertised yields null, so
  *  the caller falls back to the pre-session priming fetch. `sessionId` null => null. Pure. */
-export function selectSessionCommands(
+export interface SessionCommandCatalog {
+  readonly commands: CanonicalCommandView[];
+  /** The latest `commands.updated` deliverySeq for this session - the catalog SNAPSHOT id the
+   *  backend fail-closed authorization matches a submitted command against (it also advances when
+   *  a relay regeneration re-advertises, so a stale pick is rejected). */
+  readonly revision: number;
+}
+
+/** The CURRENT session's command catalog AND its snapshot revision from the DURABLE canonical
+ *  stream (the latest `commands.updated` for the session, by deliverySeq). The revision is what a
+ *  submitted native command must carry so the backend can reject a stale snapshot. Null when the
+ *  session has not advertised (fail-closed: no revision to authorize against). Pure. */
+export function selectSessionCommandCatalog(
   runs: readonly { readonly canonical: readonly StoredCanonicalEvent[] }[],
   sessionId: string | null,
-): CanonicalCommandView[] | null {
+): SessionCommandCatalog | null {
   if (!sessionId) return null;
   let latest: StoredCanonicalEvent | null = null;
   for (const run of runs) {
@@ -248,11 +260,24 @@ export function selectSessionCommands(
     }
   }
   if (!latest) return null;
-  return [...(latest.catalog ?? [])].map((c) => ({
-    name: c.name,
-    description: c.description ?? null,
-    input: c.input ?? null,
-  }));
+  return {
+    commands: [...(latest.catalog ?? [])].map((c) => ({
+      name: c.name,
+      description: c.description ?? null,
+      input: c.input ?? null,
+    })),
+    revision: latest.deliverySeq,
+  };
+}
+
+/** The CURRENT session's native slash-command catalog (commands only) from the durable stream.
+ *  A thin projection of {@link selectSessionCommandCatalog}. Null => the session has not
+ *  advertised (caller falls back to the pre-session priming fetch). Pure. */
+export function selectSessionCommands(
+  runs: readonly { readonly canonical: readonly StoredCanonicalEvent[] }[],
+  sessionId: string | null,
+): CanonicalCommandView[] | null {
+  return selectSessionCommandCatalog(runs, sessionId)?.commands ?? null;
 }
 
 /** The negotiated capability map for the CURRENT session, from the DURABLE canonical stream's

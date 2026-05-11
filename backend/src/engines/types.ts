@@ -72,6 +72,11 @@ export interface EngineRunContext {
    *  with no injected context. Absent for every ordinary prompt - even one that happens to
    *  start with "/". */
   commandName?: string | null;
+  /** The native session the command was AUTHORIZED against at acceptance (fail-closed C3). An
+   *  ACP adapter re-checks the LIVE session against this BEFORE sending a command turn: if the
+   *  relay regenerated, session/load failed, or session/new returned a different id, the command
+   *  is stale and the run is rejected visibly rather than sent to the wrong session. */
+  commandSessionId?: string | null;
   /** Persist the engine session id this run created/used, so the next turn can
    *  resume it. Fire-and-forget durable write; adapters call it as soon as the
    *  engine reveals its session id. */
