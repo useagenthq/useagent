@@ -54,4 +54,26 @@ describe("runPayloadFingerprint", () => {
     // Legacy payloads without a scope stay stable relative to themselves.
     expect(runPayloadFingerprint(base)).toBe(runPayloadFingerprint({ ...base }));
   });
+
+  test("the FULL command identity is intent (D5): provider/session/revision each change the fingerprint", () => {
+    // A validated `/compact` on claude, authorized against session s1 @ revision 5.
+    const cmd = {
+      ...base,
+      commandName: "compact",
+      commandProvider: "claude",
+      commandSessionId: "s1",
+      commandCatalogRevision: 5,
+    };
+    const fp = runPayloadFingerprint(cmd);
+    // Same NAME but a different authorization (provider/session/revision) is a DIFFERENT intent -
+    // a keyed replay that changes any one of them must NOT silently reuse the other run.
+    expect(runPayloadFingerprint({ ...cmd, commandProvider: "codex" })).not.toBe(fp);
+    expect(runPayloadFingerprint({ ...cmd, commandSessionId: "s2" })).not.toBe(fp);
+    expect(runPayloadFingerprint({ ...cmd, commandCatalogRevision: 6 })).not.toBe(fp);
+    // Identical identity is the same intent (deterministic replay).
+    expect(runPayloadFingerprint({ ...cmd })).toBe(fp);
+    // The name alone no longer stands in for identity: a bare command name (no provider/session)
+    // differs from the fully-identified one.
+    expect(runPayloadFingerprint({ ...base, commandName: "compact" })).not.toBe(fp);
+  });
 });

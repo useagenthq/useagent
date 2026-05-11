@@ -30,6 +30,13 @@ export function runPayloadFingerprint(run: RunCommandInput["run"]): string {
     // A VALIDATED native-command turn is a distinct intent from the same text as a
     // normal prompt (it skips context + is delivered verbatim), so it participates.
     run.commandName ?? null,
+    // The FULL accepted command IDENTITY (D5): provider + native session + catalog revision. Two
+    // commands with the same NAME but a different provider/session/revision are DIFFERENT intents
+    // (a different authorization), so an Idempotency-Key replay that changes any of them must NOT
+    // silently reuse the other run - the identity participates in the fingerprint, not only the name.
+    run.commandProvider ?? null,
+    run.commandSessionId ?? null,
+    run.commandCatalogRevision ?? null,
   ]);
   return new Bun.CryptoHasher("sha256").update(canonical).digest("hex");
 }
