@@ -5,12 +5,14 @@
  *   - persisted STEPS (label + code_json)
  *   - provider_events.payload + canonical_events.body + runs.summary (tenant-visible product data)
  *   - the backend LOG file (host-log hygiene)
- *   - the SANDBOX: `git config --list` (no clone token baked into a remote URL) + a token-pattern
- *     scan of the sandbox env
+ *   - the SANDBOX: `git config --list` (no clone token baked into a remote URL) + a scan of the
+ *     sandbox env for the raw HOST provider-key VALUES
  * The hard gate: no raw HOST provider-key VALUE (Daytona/OpenRouter/Anthropic/OpenAI) in any
- * PERSISTED product surface or the backend log, and NO git clone token in the sandbox git config.
- * Injecting host provider keys INTO the sandbox env is the separate, known, out-of-scope BUG-002 -
- * reported here as INFO, not a failure.
+ * PERSISTED product surface, the backend log, OR the sandbox env, and NO git clone token in the
+ * sandbox git config. Injecting a host provider key into an untrusted customer sandbox is a REAL,
+ * UNRESOLVED credential-exposure risk (#121), so it is a FAILURE here, not informational - the
+ * audit stays red until the trusted provider gateway removes host keys from the sandbox. (D6
+ * minimizes the surface to the single key the run's engine+model reads; it does not resolve it.)
  *
  * Run (from backend/):  bun test/e2e/secret-audit-live.ts
  */
@@ -121,10 +123,19 @@ try {
       // a clone token would appear as x-access-token:<...>@ or a gh[psuo]_ token in the remote URL
       const gitTokenLeak = /x-access-token:[^@\s]+@|gh[psuo]_[A-Za-z0-9]{20,}/.test(gitCfg);
       pass("sandbox git config carries NO clone token in a remote URL", !gitTokenLeak, gitTokenLeak ? "TOKEN IN GIT CONFIG" : `${gitCfg.split("\n").length} config lines, clean`);
-      // sandbox env: host provider keys reaching the sandbox is the KNOWN, out-of-scope BUG-002 -
-      // report (not fail).
-      const env = (await sb.process.executeCommand("env | grep -iE 'openrouter|anthropic|openai|daytona' | sed 's/=.*/=<redacted>/' | head -20", undefined, undefined, 15).catch(() => ({ result: "" }))).result ?? "";
-      rec("sandbox env host-provider-key exposure (BUG-002, informational)", env.trim() ? "info" : "pass", env.trim() ? `keys present in sandbox env (known BUG-002): ${env.split("\n").filter(Boolean).length} vars` : "none");
+      // sandbox env: a raw HOST provider-key VALUE reaching an untrusted sandbox is a REAL,
+      // UNRESOLVED exposure risk (#121) - the agent can read it from its own env and exfiltrate /
+      // burn the operator's account. FAIL, not info. We match the actual host VALUES (never the var
+      // names), so a tenant's OWN org secret of the same name (a different value) does NOT
+      // false-positive - only the host operator's key does. The env dump is scanned in-process and
+      // never printed, so the audit itself does not echo any secret.
+      const envDump = (await sb.process.executeCommand("env", undefined, undefined, 15).catch(() => ({ result: "" }))).result ?? "";
+      const leakedHostKeys = secretVals.filter((v) => envDump.includes(v));
+      pass(
+        "no raw HOST provider-key value in the sandbox env (#121, UNRESOLVED)",
+        leakedHostKeys.length === 0,
+        leakedHostKeys.length ? `${leakedHostKeys.length} host provider-key value(s) present in the sandbox env - real exposure risk (#121)` : "none",
+      );
     } catch (e) {
       rec("sandbox git-config / env scan", "na", `sandbox exec failed: ${e instanceof Error ? e.message : String(e)}`);
     }

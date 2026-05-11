@@ -11,6 +11,7 @@ import { revalidateCommandBeforeDispatch } from "../runs/command-intent";
 import { providerEventExists, recordProviderEvent } from "../runs/provider-events";
 import { buildSessionCancel, createAcpRpcClient, isAlreadyInitialized, parseRelayHealth, relayRegenerated, relayStateAfterBoot } from "./acp-rpc";
 import { allowPermissionBypass, decideAcpPermission } from "./permission-policy";
+import { hostProviderEnv } from "./host-provider-env";
 import { toolGatewayConfig } from "../knowledge/gateway/config";
 import { mintToolToken } from "../knowledge/gateway/token";
 import { composeSecretEnv, materializeSecretFiles } from "../secrets/inject";
@@ -352,25 +353,17 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
       // `secrets.injected` marker (names only); the dotenv + file-kind secrets are
       // written after the sandbox is up (below).
       const secretInjection = await composeSecretEnv(ctx);
-      const envVars: Record<string, string> = { ...secretInjection.createEnv };
-      // Credentials (final_harness.md P0): per-tenant creds arrive via org secrets
-      // (composeSecretEnv above) - the SaaS-safe path that works in prod. The
-      // platform's broad ANTHROPIC_API_KEY is injected ONLY in verified-dev yolo
+      // Credentials (final_harness.md P0 / D6 / #121): per-tenant creds arrive via org
+      // secrets (composeSecretEnv above) - the SaaS-safe path that works in prod. The
+      // host provider key (claude reads ANTHROPIC, codex reads OPENAI - NEVER both, and
+      // never the other engine's key) is injected ONLY in verified-dev yolo
       // (allowPermissionBypass) so a developer can exercise claude/codex ACP locally
-      // without provisioning a secret; production NEVER receives it. Longer term the
-      // trusted provider gateway (#121) replaces even the dev injection.
-      if (allowPermissionBypass() && process.env.ANTHROPIC_API_KEY) {
-        envVars.ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
-      }
-      // Codex parallel: the codex-acp NODE process reads OPENAI_API_KEY from its own env at
-      // launch, not from the bash-sourced org-secret dotenv (that only reaches the agent's
-      // bash TOOL commands, and lands under a home the ACP process may not read). So in
-      // verified-dev yolo, inject it as a DIRECT sandbox env var - same escape hatch as
-      // ANTHROPIC above. Production still relies on the org secret via the trusted gateway
-      // (#121); this dev key is NEVER injected outside yolo.
-      if (allowPermissionBypass() && process.env.OPENAI_API_KEY) {
-        envVars.OPENAI_API_KEY = process.env.OPENAI_API_KEY;
-      }
+      // without provisioning a secret; production NEVER receives it. See host-provider-env.ts;
+      // the trusted provider gateway (#121) removes even the dev injection.
+      const envVars: Record<string, string> = {
+        ...secretInjection.createEnv,
+        ...hostProviderEnv(cfg.id, ctx.model, { allowHostKeys: allowPermissionBypass() }),
+      };
 
       const autoStopInterval = Number(process.env.SANDBOX_AUTO_STOP_MIN ?? 30);
       const autoDeleteInterval = Number(process.env.SANDBOX_AUTO_DELETE_MIN ?? 4320);

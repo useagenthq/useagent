@@ -22,6 +22,7 @@ import { sessionCapabilities } from "./capabilities";
 import { mintToolToken } from "../knowledge/gateway/token";
 import { MEMORY_SKILL_PATH, memorySkillText } from "../memory/memory-skill-text";
 import { composeSecretEnv, materializeSecretFiles } from "../secrets/inject";
+import { hostProviderEnv } from "./host-provider-env";
 
 // ---------------------------------------------------------------------------
 // NATIVE opencode engine — the realtime path. Instead of one-shot CLI runs, the
@@ -455,9 +456,14 @@ export const opencodeServerAdapter: EngineAdapter = {
     // names-only `secrets.injected` marker; the dotenv + file-kind secrets are
     // written into the sandbox after boot below.
     const secretInjection = await composeSecretEnv(ctx);
-    const envVars: Record<string, string> = { ...secretInjection.createEnv };
-    if (process.env.ANTHROPIC_API_KEY) envVars.ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
-    if (process.env.OPENROUTER_API_KEY) envVars.OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
+    // Inject ONLY the single host provider key this model reads (D6/#121): opencode
+    // routes a slug via OpenRouter and a bare name via Anthropic (modelBody), so the
+    // other key never needs to enter the sandbox. See host-provider-env.ts for the
+    // unresolved host-credential-exposure risk this minimizes (not resolves).
+    const envVars: Record<string, string> = {
+      ...secretInjection.createEnv,
+      ...hostProviderEnv("opencode", ctx.model),
+    };
 
     const snapshot = process.env.DAYTONA_SNAPSHOT ?? "skynet-agent-v17";
     let sandbox: Sandbox | null = null;

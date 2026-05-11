@@ -3,6 +3,7 @@ import type { EmitStep, EngineAdapter, EngineRunContext } from "./types";
 import { composeTurnPrompt } from "./types";
 import { basename, parseJsonLine, truncate } from "./util";
 import { allowPermissionBypass } from "./permission-policy";
+import { hostProviderEnv } from "./host-provider-env";
 import { composeSecretEnv, materializeSecretFiles } from "../secrets/inject";
 
 // ---------------------------------------------------------------------------
@@ -411,9 +412,15 @@ function makeSandboxAdapter(spec: SandboxEngineSpec): EngineAdapter {
       // adapters; also records the `secrets.injected` marker. The dotenv +
       // file-kind secrets are written after boot (below).
       const secretInjection = await composeSecretEnv(ctx);
-      const envVars: Record<string, string> = { ...secretInjection.createEnv };
-      if (process.env.ANTHROPIC_API_KEY) envVars.ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
-      if (process.env.OPENROUTER_API_KEY) envVars.OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
+      // Inject ONLY the single host key this engine's CLI reads, and only in the
+      // DEV-ONLY yolo escape hatch (D6/#121): claude reads ANTHROPIC, codex reads
+      // OPENAI - the old blanket ANTHROPIC+OPENROUTER leaked an OpenRouter key that
+      // neither CLI uses. Production (no bypass) injects no host key and relies on
+      // per-tenant org secrets. See host-provider-env.ts.
+      const envVars: Record<string, string> = {
+        ...secretInjection.createEnv,
+        ...hostProviderEnv(spec.id, ctx.model, { allowHostKeys: allowPermissionBypass() }),
+      };
 
       // The org's snapshot (2 vCPU / 8 GiB, opencode preinstalled). The bare
       // "skynet-agent" name does NOT exist — a wrong name silently drops every
