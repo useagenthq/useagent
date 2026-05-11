@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { buildNativeCommandPrompt, validateCommandIntent } from "./command-intent";
+import { buildNativeCommandPrompt, revalidateCommandBeforeDispatch, validateCommandIntent } from "./command-intent";
 import type { CanonicalCommand } from "@skynet/agent-harness/canonical";
 
 const catalog: CanonicalCommand[] = [{ name: "review" }, { name: "status" }, { name: "compact" }];
@@ -55,5 +55,28 @@ describe("validateCommandIntent (FAIL-CLOSED against the live session catalog)",
 
   test("an empty catalog rejects everything (a session that advertises no commands)", () => {
     expect(validateCommandIntent(full({}), [], active)).toEqual({ ok: false, reason: "unknown command" });
+  });
+});
+
+describe("revalidateCommandBeforeDispatch (D4: re-check against the LIVE session immediately before send)", () => {
+  const cmd = { name: "compact", provider: "claude", sessionId: "s1", catalogRevision: 5 };
+  const live = { engine: "claude", sessionId: "s1", catalog: [{ name: "compact" }, { name: "review" }], revision: 7 };
+
+  test("still-authorized command -> null (safe to dispatch); a re-advertisement that KEEPS it is fine", () => {
+    expect(revalidateCommandBeforeDispatch(cmd, live)).toBeNull(); // live.revision 7 > authorized 5, still a member
+  });
+  test("provider changed since acceptance -> rejected", () => {
+    expect(revalidateCommandBeforeDispatch({ ...cmd, provider: "codex" }, live)).toContain("provider");
+  });
+  test("session was replaced (relay regen / session/load fail / new id) -> rejected", () => {
+    expect(revalidateCommandBeforeDispatch(cmd, { ...live, sessionId: "s2" })).toContain("session");
+  });
+  test("the live session no longer advertises the command (membership) -> rejected", () => {
+    expect(revalidateCommandBeforeDispatch(cmd, { ...live, catalog: [{ name: "review" }] })).toContain("not in the live session catalog");
+    expect(revalidateCommandBeforeDispatch(cmd, { ...live, catalog: null })).toContain("not in the live session catalog");
+    expect(revalidateCommandBeforeDispatch(cmd, { ...live, catalog: [] })).toContain("not in the live session catalog");
+  });
+  test("the authorized catalog revision regressed -> rejected", () => {
+    expect(revalidateCommandBeforeDispatch(cmd, { ...live, revision: 4 })).toContain("revision regressed");
   });
 });
