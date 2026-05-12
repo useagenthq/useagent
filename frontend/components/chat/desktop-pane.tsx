@@ -1,6 +1,18 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
+
+export function buildDesktopFrameSrc(threadId: string): string {
+  const params = new URLSearchParams({
+    autoconnect: "true",
+    resize: "scale",
+    reconnect: "true",
+    // noVNC resolves `path` against vnc.html. Keep it root-relative so it does
+    // not duplicate the iframe's /api/desktop-proxy/<threadId>/ directory.
+    path: `/api/desktop-proxy/${threadId}/websockify`,
+  });
+  return `/api/desktop-proxy/${threadId}/vnc.html?${params.toString()}`;
+}
 
 /**
  * The "Desktop" tab: a live view of the conversation's sandbox GUI (multi-repo),
@@ -21,22 +33,8 @@ export function DesktopPane({ threadId }: { threadId: string }) {
   const [loaded, setLoaded] = useState(false);
   const [status, setStatus] = useState("Waiting for Daytona sandbox…");
 
-  const readySrc = useMemo(
-    () => `/api/desktop-proxy/${threadId}/ready`,
-    [threadId],
-  );
-
-  const src = useMemo(() => {
-    const params = new URLSearchParams({
-      autoconnect: "true",
-      resize: "scale",
-      reconnect: "true",
-      // noVNC rebuilds its socket URL from window.location + this path (query
-      // params dropped), so it must carry the full same-origin bridge path.
-      path: `api/desktop-proxy/${threadId}/websockify`,
-    });
-    return `/api/desktop-proxy/${threadId}/vnc.html?${params.toString()}`;
-  }, [threadId]);
+  const readySrc = `/api/desktop-proxy/${threadId}/ready`;
+  const src = buildDesktopFrameSrc(threadId);
 
   useEffect(() => {
     let cancelled = false;
