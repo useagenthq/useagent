@@ -37,6 +37,11 @@ import {
   providerGatewaySandboxLabels,
 } from "../provider-gateway/sandbox-config";
 import { extractAcpToolOutput } from "./acp-content";
+import {
+  forgetLiveThreadSandbox,
+  getLiveThreadSandbox,
+  rememberLiveThreadSandbox,
+} from "./sandbox-runtime";
 
 // ---------------------------------------------------------------------------
 // Resident claude/codex via ACP — the opencode-server equivalent for the other
@@ -379,7 +384,11 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
         // ── sandbox: reuse the thread's, else provision ─────────────────────
         if (relay) {
           try {
-            const prior = await daytona.get(relay.sandboxId);
+            const cachedSandbox = ctx.threadId ? getLiveThreadSandbox(ctx.threadId) : null;
+            const prior =
+              cachedSandbox?.id === relay.sandboxId
+                ? cachedSandbox
+                : await daytona.get(relay.sandboxId);
             const state = (prior as { state?: string }).state;
             if (state === "stopped" || state === "paused" || state === "archived") {
               await ctx.emit({ kind: "task", label: `Resuming thread sandbox ${prior.id.slice(0, 8)}…`, chip: cfg.id });
@@ -396,6 +405,7 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
             retainForThread = true;
           } catch {
             if (key) threadRelays.delete(key);
+            if (ctx.threadId) forgetLiveThreadSandbox(ctx.threadId, relay.sandboxId);
             relay = undefined;
             sandbox = null;
           }
@@ -408,7 +418,11 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
           const priorId = await getThreadSandbox(ctx.threadId).catch(() => null);
           if (priorId) {
             try {
-              const prior = await daytona.get(priorId);
+              const cachedSandbox = getLiveThreadSandbox(ctx.threadId);
+              const prior =
+                cachedSandbox?.id === priorId
+                  ? cachedSandbox
+                  : await daytona.get(priorId);
               const state = (prior as { state?: string }).state;
               if (state === "stopped" || state === "paused" || state === "archived") {
                 await ctx.emit({ kind: "task", label: `Resuming thread sandbox ${prior.id.slice(0, 8)}…`, chip: cfg.id });
@@ -423,6 +437,7 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
               sandbox = prior;
               retainForThread = true;
             } catch {
+              forgetLiveThreadSandbox(ctx.threadId, priorId);
               sandbox = null; // persisted sandbox is gone/unusable — provision fresh
             }
           }
@@ -457,6 +472,7 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
             persist: setRunSandbox,
             deleteFreshSandbox: () => box.delete(),
           });
+          if (ctx.threadId) rememberLiveThreadSandbox(ctx.threadId, box);
         } catch (err) {
           // The helper already tore down a FRESHLY provisioned box; clear the ref so the
           // run's finally (which also deletes on !succeeded) does not delete it a SECOND
@@ -853,9 +869,17 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
         // (the relay serves /health before it is even fully ready for JSON-RPC). Cheap
         // and idempotent on a warm proxy (one 200); best-effort - never fails the turn.
         for (let i = 0; i < 10; i++) {
-          const warm = await fetch(`${live.baseUrl}/health`, { headers: authHeaders(live.token), signal: sseAbort.signal })
-            .then((r) => r.ok)
-            .catch(() => false);
+          let warm = false;
+          try {
+            const response = await fetch(`${live.baseUrl}/health`, {
+              headers: authHeaders(live.token),
+              signal: sseAbort.signal,
+            });
+            warm = response.ok;
+            await response.body?.cancel();
+          } catch {
+            // A cold Daytona preview route is expected here; retry below.
+          }
           if (warm) break;
           await new Promise((r) => setTimeout(r, 300));
         }
@@ -1050,6 +1074,7 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
         // before relay registration still removes the unusable fresh sandbox.
         if (sandbox && !retainForThread) {
           if (key) threadRelays.delete(key);
+          if (ctx.threadId) forgetLiveThreadSandbox(ctx.threadId, sandbox.id);
           await sandbox.delete().catch(() => {});
         }
       }

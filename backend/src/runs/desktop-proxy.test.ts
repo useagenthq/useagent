@@ -8,5 +8,8 @@ describe("desktop proxy recovery", () => {
     expect(source).toContain("await ensureDesktopPreview(threadId)");
     expect(source).toContain("await ensureSandboxDesktopView(sandbox, AbortSignal.timeout(120_000))");
     expect(source).toContain("const desktopRepairs = new Map<string, Promise<void>>()");
+    expect(source).toContain('desktopProxyRoutes.get("/:threadId/ready"');
+    expect(source).toContain("const desktopReadyUntil = new Map<string, number>()");
+    expect(source).toContain("invalidateDesktopPreview(threadId)");
   });
 });

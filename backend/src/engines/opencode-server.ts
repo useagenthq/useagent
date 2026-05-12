@@ -53,11 +53,22 @@ import {
   forgetOpenCodeThreadServer,
   getOpenCodeThreadServer,
   rememberOpenCodeThreadServer,
+  type OpenCodeThreadServer,
 } from "./opencode-runtime";
 import {
   openCodeQuestionEventId,
   parseOpenCodeQuestionRequest,
 } from "./opencode-question";
+import {
+  activateOpenCodeRuntimeConfig,
+  verifyOpenCodeRuntimeConfig,
+  type OpenCodeRuntimeServer,
+} from "./opencode-runtime-config";
+import {
+  forgetLiveThreadSandbox,
+  getLiveThreadSandbox,
+  rememberLiveThreadSandbox,
+} from "./sandbox-runtime";
 
 // ---------------------------------------------------------------------------
 // NATIVE opencode engine — the realtime path. Instead of one-shot CLI runs, the
@@ -80,8 +91,9 @@ export function buildOpencodeConfigWriteCommand(encodedConfig: string): string {
     throw new Error("opencode config must be base64 encoded");
   }
   return (
-    `mkdir -p ~/.config/opencode ~/work && ` +
+    `mkdir -p ~/.config/opencode ~/work && chmod 700 ~/.config ~/.config/opencode && ` +
     `printf %s '${encodedConfig}' | base64 -d > ~/.config/opencode/opencode.json && ` +
+    `chmod 600 ~/.config/opencode/opencode.json && ` +
     `rm -f -- ~/work/opencode.json`
   );
 }
@@ -149,7 +161,7 @@ async function ensureServer(
   sandbox: Sandbox,
   npx: boolean,
   signal: AbortSignal,
-): Promise<{ baseUrl: string; token: string; workdir: string }> {
+): Promise<OpenCodeRuntimeServer> {
   const bin = npx ? `npx -y opencode-ai@${OPENCODE_VERSION}` : "opencode";
   const homeResult = await sandbox.process.executeCommand(
     'mkdir -p ~/work && printf %s "$HOME"',
@@ -162,26 +174,13 @@ async function ensureServer(
   const link = await sandbox.getPreviewLink(SERVE_PORT);
   const baseUrl = link.url.replace(/\/+$/, "");
   const token = link.token ?? "";
-
-  const healthStatus = async (): Promise<number | null> => {
-    try {
-      const response = await fetch(`${baseUrl}/global/health`, {
-        headers: authHeaders(token),
-        signal: AbortSignal.any([signal, AbortSignal.timeout(5_000)]),
-      });
-      const status = response.status;
-      await response.body?.cancel().catch(() => {});
-      return status;
-    } catch {
-      return null;
-    }
-  };
+  const server = { baseUrl, token, workdir: `${home}/work` };
 
   // A healthy resident process survives turns and is always reused. When the
   // sandbox was stopped/restarted, recreate Daytona's dedicated background
   // session: executeCommand is synchronous even with shell `&`, whereas an
   // async session command is Daytona's supported long-lived-process primitive.
-  const initialStatus = await healthStatus();
+  const initialStatus = await opencodeHealthStatus(server, signal);
   if (initialStatus === null || initialStatus < 200 || initialStatus >= 300) {
     await sandbox.process.deleteSession(SERVER_PROCESS_SESSION).catch(() => {});
     await sandbox.process.createSession(SERVER_PROCESS_SESSION);
@@ -199,22 +198,24 @@ async function ensureServer(
   const deadline = Date.now() + 120_000;
   let lastStatus: number | null = null;
   while (Date.now() < deadline && !signal.aborted) {
-    lastStatus = await healthStatus();
+    lastStatus = await opencodeHealthStatus(server, signal);
     if (lastStatus !== null && lastStatus >= 200 && lastStatus < 300) {
-      return { baseUrl, token, workdir: `${home}/work` };
+      return server;
     }
     await new Promise((resolve) => setTimeout(resolve, 1_000));
   }
   if (signal.aborted) throw new Error("opencode run aborted (timeout)");
-  const logs = await sandbox.process
-    .getSession(SERVER_PROCESS_SESSION)
-    .then((session) => session.commands.at(-1))
-    .then((command) =>
-      command?.id
-        ? sandbox.process.getSessionCommandLogs(SERVER_PROCESS_SESSION, command.id)
-        : null,
-    )
-    .catch(() => null);
+  let logs: { output?: string; stderr?: string; stdout?: string } | null = null;
+  try {
+    const session = await sandbox.process.getSession(SERVER_PROCESS_SESSION);
+    const command = session.commands.at(-1);
+    if (command?.id) {
+      logs = await sandbox.process.getSessionCommandLogs(SERVER_PROCESS_SESSION, command.id);
+    }
+  } catch {
+    // Readiness already failed. Logs are diagnostic only and must not mask the
+    // stable, redacted error below.
+  }
   const safeTail = (logs?.output ?? logs?.stderr ?? logs?.stdout ?? "")
     .replace(/v1\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/g, "<capability>")
     .trim();
@@ -223,39 +224,112 @@ async function ensureServer(
   );
 }
 
+async function opencodeHealthStatus(
+  server: OpenCodeRuntimeServer,
+  signal: AbortSignal,
+): Promise<number | null> {
+  try {
+    const response = await fetch(`${server.baseUrl}/global/health`, {
+      headers: authHeaders(server.token),
+      signal: AbortSignal.any([signal, AbortSignal.timeout(5_000)]),
+    });
+    const status = response.status;
+    await response.body?.cancel().catch(() => {});
+    return status;
+  } catch {
+    return null;
+  }
+}
+
+async function reuseHealthyResidentServer(
+  cached: OpenCodeThreadServer | null,
+  sandboxId: string,
+  signal: AbortSignal,
+): Promise<OpenCodeRuntimeServer | null> {
+  if (!cached || cached.sandboxId !== sandboxId) return null;
+  const status = await opencodeHealthStatus(cached, signal);
+  return status !== null && status >= 200 && status < 300 ? cached : null;
+}
+
+/** Stop the resident process and prove its preview endpoint is no longer serving
+ * before a fallback restart. Swallowing delete errors can otherwise let
+ * ensureServer observe the old healthy process and dispatch with stale config. */
+async function stopServerForConfigReload(
+  sandbox: Sandbox,
+  server: OpenCodeRuntimeServer,
+  signal: AbortSignal,
+): Promise<void> {
+  let deletionFailed = false;
+  try {
+    await sandbox.process.deleteSession(SERVER_PROCESS_SESSION);
+  } catch {
+    deletionFailed = true;
+  }
+  const deadline = Date.now() + 10_000;
+  do {
+    const status = await opencodeHealthStatus(server, signal);
+    if (status === null || status < 200 || status >= 300) return;
+    if (Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 100));
+  } while (!signal.aborted && Date.now() < deadline);
+  throw new Error(
+    deletionFailed
+      ? "OpenCode config fallback could not stop the resident server"
+      : "OpenCode resident server remained healthy after stop",
+  );
+}
+
 // shq / repo cloning live in the shared engine-neutral ./repo-prep (imported above).
 
 /**
- * Inject the Skynet knowledge MCP server into the sandbox's opencode config so
- * the resident agent can call `knowledge_search`/`knowledge_read` (mem_op.md 0.2).
+ * Prepare the exact global OpenCode config for one run. The returned object is
+ * minted once and is reused unchanged by the live-update and restart-fallback
+ * paths, preventing token drift between activation attempts.
  *
  * TRUST BOUNDARY: the ONLY thing that enters the untrusted sandbox is a
  * short-lived, run-scoped bearer TOKEN — never DB/embedding/tenant credentials.
  * The gateway derives org/user/thread from that token server-side. We write the
  * MCP entry into opencode's GLOBAL config (`~/.config/opencode/opencode.json`)
  * — merged with any snapshot config, immune to a repo clone into the workspace,
- * and loaded at `opencode serve` boot — so this MUST run BEFORE {@link ensureServer}.
+ * and loaded at `opencode serve` boot for a fresh sandbox. Warm turns apply it
+ * to the already-healthy server before any prompt dispatch.
  *
  * Gated: a no-op unless GATEWAY_PUBLIC_URL is set (the sandbox-reachable,
- * gateway-only origin) AND the run carries an org identity. Best-effort — a config
- * write failure logs and continues; the run just runs without knowledge tools.
+ * gateway-only origin) AND the run carries an org identity. Preparation failure
+ * is fail-closed whenever the provider gateway is required.
  *
- * Warm turns rewrite the on-disk config and restart only the resident OpenCode
- * process after this function returns. The sandbox, checkout, and native session
- * remain warm while every provider capability stays bound to the exact run.
+ * Fresh servers receive it on disk before boot. Warm servers receive it through
+ * OpenCode's authenticated global-config endpoint, which rebuilds provider/MCP
+ * instance state without killing the process.
  */
-async function ensureOpencodeSandboxConfig(
+interface OpenCodeGatewayState {
+  readonly knowledge: boolean;
+  readonly provider: boolean;
+  readonly browser: boolean;
+}
+
+interface PreparedOpenCodeConfig {
+  readonly config: Record<string, unknown>;
+  readonly state: OpenCodeGatewayState;
+  readonly required: boolean;
+}
+
+async function prepareOpencodeSandboxConfig(
   sandbox: Sandbox,
   ctx: EngineRunContext,
   desktop: SandboxDesktop,
-): Promise<{ knowledge: boolean; provider: boolean; browser: boolean }> {
+): Promise<PreparedOpenCodeConfig | null> {
   const gw = toolGatewayConfig();
   const providerOptions = opencodeProviderGatewayOptions(ctx);
   const browser = desktop.browserTools && desktop.browserExecutable
     ? opencodeBrowserMcpConfig(desktop.home, desktop.workdir)
     : null;
+  const state = {
+    knowledge: Boolean(gw && ctx.orgId),
+    provider: Object.keys(providerOptions).length > 0,
+    browser: Boolean(browser),
+  } satisfies OpenCodeGatewayState;
   if ((!ctx.orgId || (!gw && Object.keys(providerOptions).length === 0)) && !browser) {
-    return { knowledge: false, provider: false, browser: false };
+    return { config: {}, state, required: false };
   }
   try {
     // Merge into any existing global config so snapshot-provided settings (models,
@@ -310,28 +384,35 @@ async function ensureOpencodeSandboxConfig(
       providers[provider] = { ...existing, options: { ...existingOptions, ...options } };
     }
     if (Object.keys(providerOptions).length > 0) cfg.provider = providers;
-    // base64 avoids every shell-escaping hazard (the token/URL never touch argv
-    // unencoded, so they are not in `ps` or logs inside the box). Write the
-    // GLOBAL config (`~/.config/opencode/opencode.json`, loaded at serve boot for
-    // every session). Never place generated capability credentials in ~/work:
-    // that directory may later become a git repository or be inspected by tools.
-    const b64 = Buffer.from(JSON.stringify(cfg), "utf8").toString("base64");
-    await sandbox.process.executeCommand(buildOpencodeConfigWriteCommand(b64), undefined, undefined, 15);
     console.log(
-      `[opencode] sandbox gateways wired for run ${ctx.runId} ` +
-        `(knowledge=${Boolean(gw && ctx.orgId)} provider=${Object.keys(providerOptions).length > 0} browser=${Boolean(browser)})`,
+      `[opencode] sandbox gateways prepared for run ${ctx.runId} ` +
+        `(knowledge=${state.knowledge} provider=${state.provider} browser=${state.browser})`,
     );
-    return {
-      knowledge: Boolean(gw && ctx.orgId),
-      provider: Object.keys(providerOptions).length > 0,
-      browser: Boolean(browser),
-    };
+    return { config: cfg, state, required: true };
   } catch (e) {
     console.warn(
-      `[opencode] sandbox config write failed (continuing without optional tools):`,
+      `[opencode] sandbox config preparation failed:`,
       (e as Error).message,
     );
-    return { knowledge: false, provider: false, browser: false };
+    return null;
+  }
+}
+
+async function writeOpencodeSandboxConfig(
+  sandbox: Sandbox,
+  config: Record<string, unknown>,
+): Promise<void> {
+  // Base64 keeps tokens/URLs out of shell parsing and logs. The global config is
+  // private to the sandbox user and the repo-visible project copy is removed.
+  const encoded = Buffer.from(JSON.stringify(config), "utf8").toString("base64");
+  const result = await sandbox.process.executeCommand(
+    buildOpencodeConfigWriteCommand(encoded),
+    undefined,
+    undefined,
+    15,
+  );
+  if ((result.exitCode ?? 1) !== 0) {
+    throw new Error("OpenCode sandbox config write failed");
   }
 }
 
@@ -596,16 +677,20 @@ export const opencodeServerAdapter: EngineAdapter = {
     let sandbox: Sandbox | null = null;
     let npxFallback = false;
     let retainForThread = false;
-    let succeeded = false;
 
     try {
       // ── sandbox: reuse the thread's (memory cache → durable DB mapping) ─────
+      const rememberedServer = ctx.threadId ? getOpenCodeThreadServer(ctx.threadId) : null;
       const rememberedId =
-        (ctx.threadId ? getOpenCodeThreadServer(ctx.threadId)?.sandboxId : undefined) ??
+        rememberedServer?.sandboxId ??
         (ctx.threadId ? await getThreadSandbox(ctx.threadId) : null);
       if (rememberedId) {
         try {
-          const prior = await daytona.get(rememberedId);
+          const cachedSandbox = ctx.threadId ? getLiveThreadSandbox(ctx.threadId) : null;
+          const prior =
+            cachedSandbox?.id === rememberedId
+              ? cachedSandbox
+              : await daytona.get(rememberedId);
           const state = (prior as { state?: string }).state;
           if (state === "stopped" || state === "paused" || state === "archived") {
             await ctx.emit({ kind: "task", label: `Resuming thread sandbox ${prior.id.slice(0, 8)}…`, chip: "opencode" });
@@ -620,7 +705,10 @@ export const opencodeServerAdapter: EngineAdapter = {
           sandbox = prior;
           retainForThread = true;
         } catch {
-          if (ctx.threadId) forgetOpenCodeThreadServer(ctx.threadId);
+          if (ctx.threadId) {
+            forgetOpenCodeThreadServer(ctx.threadId);
+            forgetLiveThreadSandbox(ctx.threadId, rememberedId);
+          }
           sandbox = null;
         }
       }
@@ -669,10 +757,33 @@ export const opencodeServerAdapter: EngineAdapter = {
         persist: setRunSandbox,
         deleteFreshSandbox: () => box.delete(),
       });
+      if (ctx.threadId) rememberLiveThreadSandbox(ctx.threadId, box);
 
-      // Install run-scoped gateways and the local browser MCP in the global
-      // OpenCode config before booting the resident server.
-      const desktop = await ensureSandboxDesktop(sandbox, ctx.signal);
+      await ctx.emit({
+        kind: "task",
+        label: "Preparing browser, tools, and integrations…",
+        chip: "opencode",
+      });
+
+      // These probes are independent on a warm sandbox. Run them together so
+      // Daytona control-plane latency is paid once rather than serially. The
+      // cached server is only trusted after a live health response from the same
+      // sandbox; if it is absent/unhealthy, ensureServer starts it AFTER the
+      // current secret files are materialized so a resumed process cannot inherit
+      // stale or revoked credentials.
+      const [desktop, cachedRuntimeServer] = await Promise.all([
+        ensureSandboxDesktop(sandbox, ctx.signal),
+        reuseHealthyResidentServer(rememberedServer, sandbox.id, ctx.signal),
+        materializeSecretFiles(
+          (cmd) => sandbox!.process.executeCommand(cmd, undefined, undefined, 30),
+          secretInjection.files,
+        ),
+      ]);
+      await recordSecretsInjected(ctx, secretInjection);
+
+      // Prepare run-scoped gateways and the local browser MCP. A fresh server
+      // reads this config from disk at boot; a warm server applies the same
+      // immutable payload through OpenCode's runtime config API below.
       if (!desktop.available || !desktop.browserTools) {
         await ctx.emit({
           kind: "task",
@@ -680,38 +791,73 @@ export const opencodeServerAdapter: EngineAdapter = {
           chip: "warning",
         });
       }
-      const gatewayState = await ensureOpencodeSandboxConfig(sandbox, ctx, desktop);
+      const preparedConfig = await prepareOpencodeSandboxConfig(sandbox, ctx, desktop);
+      const gatewayState = preparedConfig?.state ?? {
+        knowledge: false,
+        provider: false,
+        browser: false,
+      };
       if (providerGatewayWired() && !gatewayState.provider) {
         throw new Error("provider gateway config could not be installed in the sandbox");
       }
-      await markProviderGatewaySandboxCurrent(sandbox);
-      // Run-scoped provider/knowledge credentials and local MCP definitions are
-      // loaded by the resident server. Restart only that process on a warm turn;
-      // the Daytona sandbox, repository, browser profile, and native session all
-      // remain warm and persistent.
-      if (
-        retainForThread &&
-        (gatewayState.provider || gatewayState.knowledge || gatewayState.browser)
-      ) {
-        await sandbox.process.deleteSession(SERVER_PROCESS_SESSION).catch(() => {});
+      if (!retainForThread && preparedConfig?.required) {
+        await writeOpencodeSandboxConfig(sandbox, preparedConfig.config);
       }
 
-      // Replace the snapshot's false-persistence memory skill BEFORE the server
-      // boots (new_mem_prompt.md 7), with text that MATCHES reality: tools-based
-      // when the gateway is wired, else an explicit "no durable memory tools; do
-      // not claim a save or write local files" (the observed no-gateway lie).
-      await correctMemorySkillText(sandbox, gatewayState.knowledge);
+      // Replace the snapshot's false-persistence memory skill with text that
+      // matches the capability actually negotiated for this turn. It is not an
+      // authorization boundary, so it can run alongside warm runtime activation.
+      const memoryCorrection = correctMemorySkillText(sandbox, gatewayState.knowledge);
 
-      // Materialize any file-kind org secrets (0600) before the agent turn, so a
-      // path env var (e.g. GOOGLE_APPLICATION_CREDENTIALS) points at a real file.
-      await materializeSecretFiles(
-        (cmd) => sandbox!.process.executeCommand(cmd, undefined, undefined, 30),
-        secretInjection.files,
-      );
-      await recordSecretsInjected(ctx, secretInjection);
+      await ctx.emit({ kind: "task", label: "Starting agent runtime…", chip: "opencode" });
 
       // ── persistent server + preview endpoint ────────────────────────────────
-      const { baseUrl, token, workdir } = await ensureServer(sandbox, npxFallback, ctx.signal);
+      let runtimeServer =
+        cachedRuntimeServer ?? await ensureServer(sandbox, npxFallback, ctx.signal);
+      if (preparedConfig?.required) {
+        if (retainForThread) {
+          try {
+            await Promise.all([
+              memoryCorrection,
+              activateOpenCodeRuntimeConfig({
+                server: runtimeServer,
+                config: preparedConfig.config,
+                sessionId: ctx.engineSessionId,
+                signal: ctx.signal,
+              }),
+            ]);
+          } catch (error) {
+            await memoryCorrection;
+            console.warn(
+              `[opencode] runtime config activation failed; restarting resident server:`,
+              error instanceof Error ? error.message : "unknown activation error",
+            );
+            await writeOpencodeSandboxConfig(sandbox, preparedConfig.config);
+            await stopServerForConfigReload(sandbox, runtimeServer, ctx.signal);
+            runtimeServer = await ensureServer(sandbox, npxFallback, ctx.signal);
+            await verifyOpenCodeRuntimeConfig({
+              server: runtimeServer,
+              config: preparedConfig.config,
+              sessionId: ctx.engineSessionId,
+              signal: ctx.signal,
+            });
+          }
+        } else {
+          await memoryCorrection;
+          await verifyOpenCodeRuntimeConfig({
+            server: runtimeServer,
+            config: preparedConfig.config,
+            signal: ctx.signal,
+          });
+        }
+      } else {
+        await memoryCorrection;
+      }
+      // Daytona labels are the credential-generation trust anchor. The marker is
+      // written only after the config is proven active, never before activation.
+      if (!retainForThread) await markProviderGatewaySandboxCurrent(sandbox);
+
+      const { baseUrl, token, workdir } = runtimeServer;
       if (ctx.threadId) {
         rememberOpenCodeThreadServer(ctx.threadId, {
           sandboxId: sandbox.id,
@@ -991,9 +1137,18 @@ export const opencodeServerAdapter: EngineAdapter = {
       const enqueuePart = (part: Record<string, unknown>, delta?: string): Promise<void> => {
         const safePart = redact.unknown(part);
         capturePart(safePart);
-        partChain = partChain
-          .then(() => handlePart(safePart, typeof delta === "string" ? redact.text(delta) : delta))
-          .catch(() => {});
+        const priorPart = partChain;
+        partChain = (async () => {
+          try {
+            await priorPart;
+            await handlePart(
+              safePart,
+              typeof delta === "string" ? redact.text(delta) : delta,
+            );
+          } catch {
+            // A malformed provider part must not break ordering for later parts.
+          }
+        })();
         return partChain;
       };
 
@@ -1374,7 +1529,6 @@ export const opencodeServerAdapter: EngineAdapter = {
         finalTexts[finalTexts.length - 1]?.trim() || "opencode run completed",
         Date.now() - startedAt,
       );
-      succeeded = true;
     } finally {
       // A thread's sandbox is the conversation's world (workspace + resident
       // server + sessions) — a failed TURN must not destroy it. Only runs

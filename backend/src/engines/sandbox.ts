@@ -17,6 +17,11 @@ import {
   providerGatewaySandboxLabels,
   providerGatewayWired,
 } from "../provider-gateway/sandbox-config";
+import {
+  forgetLiveThreadSandbox,
+  getLiveThreadSandbox,
+  rememberLiveThreadSandbox,
+} from "./sandbox-runtime";
 
 // ---------------------------------------------------------------------------
 // Sandbox engine substrate — ALL user-facing engines (opencode / claude / codex)
@@ -61,16 +66,6 @@ const FILE_TOOLS_CLAUDE = new Set(["Write", "Edit", "MultiEdit", "NotebookEdit"]
 const SPAWN_TOOLS_CLAUDE = new Set(["Task", "Agent"]);
 
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
-
-/** One live sandbox per conversation. In-memory (a restart re-provisions);
- *  cost containment lives on the sandbox: 10m idle auto-stop + 2h auto-delete. */
-const threadSandboxes = new Map<string, { sandboxId: string }>();
-
-/** The live sandbox backing a conversation, if any — consumed by the terminal
- *  WS bridge to attach a PTY to the same box the engine works in. */
-export function getThreadSandboxId(threadId: string): string | null {
-  return threadSandboxes.get(threadId)?.sandboxId ?? null;
-}
 
 /** A claude tool call already SURFACED as a step (reference bot's tool_call event);
  *  kept so its tool_result can enrich that same step with output. */
@@ -448,16 +443,15 @@ function makeSandboxAdapter(spec: SandboxEngineSpec): EngineAdapter {
       const autoDeleteInterval = Number(process.env.SANDBOX_AUTO_DELETE_MIN ?? 4320); // 3 days
       let sandbox: Sandbox | null = null;
       let retainForThread = false;
-      let succeeded = false;
 
       try {
         // Thread reuse: first turn provisions; later turns reuse (resuming an
         // idle-stopped sandbox), keeping ~/work AND the engine's on-disk session
         // store. Stale mappings fall through to a fresh create.
-        const remembered = ctx.threadId ? threadSandboxes.get(ctx.threadId) : undefined;
+        const remembered = ctx.threadId ? getLiveThreadSandbox(ctx.threadId) : null;
         if (remembered) {
           try {
-            const prior = await daytona.get(remembered.sandboxId);
+            const prior = remembered;
             const state = (prior as { state?: string }).state;
             if (state === "stopped" || state === "paused" || state === "archived") {
               await ctx.emit({
@@ -481,7 +475,7 @@ function makeSandboxAdapter(spec: SandboxEngineSpec): EngineAdapter {
               chip: spec.id,
             });
           } catch {
-            if (ctx.threadId) threadSandboxes.delete(ctx.threadId);
+            if (ctx.threadId) forgetLiveThreadSandbox(ctx.threadId, remembered.id);
             sandbox = null;
           }
         }
@@ -503,7 +497,7 @@ function makeSandboxAdapter(spec: SandboxEngineSpec): EngineAdapter {
             chip: spec.id,
           });
           if (ctx.threadId) {
-            threadSandboxes.set(ctx.threadId, { sandboxId: sandbox.id });
+            rememberLiveThreadSandbox(ctx.threadId, sandbox);
             retainForThread = true;
           }
         }
@@ -702,7 +696,6 @@ function makeSandboxAdapter(spec: SandboxEngineSpec): EngineAdapter {
           turn.state.lastText.trim() || turn.state.rawTail || `${spec.id} sandbox run completed`,
           Date.now() - startedAt,
         );
-        succeeded = true;
       } finally {
         // A thread's sandbox is the conversation's world — a failed TURN must
         // not destroy it (auto-stop/auto-delete contain cost). Only runs
