@@ -10,6 +10,41 @@ export interface AcpToolNativeIds {
   readonly callID: string;
 }
 
+function buildAcpToolCode(
+  update: Record<string, unknown>,
+  output: string | undefined,
+  native: AcpToolNativeIds | undefined,
+  failed: boolean,
+): Record<string, unknown> {
+  const kind = String(update.kind ?? "other");
+  const title = String(update.title ?? kind);
+  const tool = kind === "other" && title.startsWith("mcp__") ? title : kind;
+  return {
+    tool,
+    title,
+    input: (update.rawInput ?? {}) as Record<string, unknown>,
+    ...(output !== undefined ? { output: output.slice(0, 2000) } : {}),
+    ...(native ? { native } : {}),
+    ...(failed ? { error: true } : {}),
+  };
+}
+
+/** Persist the terminal state using the exact same normalization as the opening
+ * tool row. ACP reports MCP methods as kind=`other`; rebuilding this payload by
+ * hand used to overwrite the real `mcp__…` name when the result arrived, making
+ * completed browser actions render as the meaningless label “Other”. */
+export function buildAcpToolCompletion(
+  update: Record<string, unknown>,
+  output: string,
+  native: AcpToolNativeIds | undefined,
+  failed: boolean,
+): Record<string, unknown> {
+  return {
+    ...buildAcpToolCode(update, output, native, failed),
+    status: failed ? "failed" : "completed",
+  };
+}
+
 /** Translate one ACP tool notification into the provider-neutral step contract. */
 export function buildAcpToolStep(
   update: Record<string, unknown>,
@@ -45,13 +80,6 @@ export function buildAcpToolStep(
             : tool.startsWith("mcp__")
               ? "mcp"
               : kind,
-    code_json: {
-      tool,
-      title,
-      input: rawInput,
-      ...(output !== undefined ? { output: output.slice(0, 2000) } : {}),
-      ...(native ? { native } : {}),
-      ...(failed ? { error: true } : {}),
-    },
+    code_json: buildAcpToolCode(update, output, native, failed),
   };
 }

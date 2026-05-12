@@ -42,11 +42,8 @@ import {
   providerGatewayWired,
 } from "../provider-gateway/sandbox-config";
 import { opencodeAssistantError } from "./opencode-message";
-import {
-  ensureSandboxDesktop,
-  opencodeBrowserMcpConfig,
-  type SandboxDesktop,
-} from "./desktop";
+import { ensureSandboxDesktop, type SandboxDesktop } from "./desktop";
+import { opencodeBrowserMcpConfig } from "./browser-mcp";
 import { createSecretRedactor } from "../secrets/redact";
 import { DEFAULT_OPENCODE_MODEL } from "../runs/model-policy";
 import {
@@ -69,6 +66,11 @@ import {
   getLiveThreadSandbox,
   rememberLiveThreadSandbox,
 } from "./sandbox-runtime";
+import {
+  assertSandboxResources,
+  resolveSandboxResourceTarget,
+  sandboxMeetsResourceTarget,
+} from "./daytona-resources";
 
 // ---------------------------------------------------------------------------
 // NATIVE opencode engine — the realtime path. Instead of one-shot CLI runs, the
@@ -321,7 +323,7 @@ async function prepareOpencodeSandboxConfig(
   const gw = toolGatewayConfig();
   const providerOptions = opencodeProviderGatewayOptions(ctx);
   const browser = desktop.browserTools && desktop.browserExecutable
-    ? opencodeBrowserMcpConfig(desktop.home, desktop.workdir)
+    ? opencodeBrowserMcpConfig()
     : null;
   const state = {
     knowledge: Boolean(gw && ctx.orgId),
@@ -674,6 +676,7 @@ export const opencodeServerAdapter: EngineAdapter = {
     };
 
     const snapshot = process.env.DAYTONA_SNAPSHOT ?? "skynet-agent-v17";
+    const resourceTarget = resolveSandboxResourceTarget();
     let sandbox: Sandbox | null = null;
     let npxFallback = false;
     let retainForThread = false;
@@ -712,12 +715,29 @@ export const opencodeServerAdapter: EngineAdapter = {
           sandbox = null;
         }
       }
+      if (sandbox && !sandboxMeetsResourceTarget(sandbox, resourceTarget)) {
+        const staleId = sandbox.id;
+        await sandbox.delete().catch(() => {});
+        if (ctx.threadId) {
+          forgetOpenCodeThreadServer(ctx.threadId);
+          forgetLiveThreadSandbox(ctx.threadId, staleId);
+        }
+        sandbox = null;
+        retainForThread = false;
+        await ctx.emit({
+          kind: "task",
+          label: "Replacing an undersized retained sandbox…",
+          chip: "opencode",
+        });
+      }
+
       // Stop quickly (a stopped sandbox keeps its disk at ~zero cost and
       // restarts in seconds; ensureServer re-boots `opencode serve` on wake),
       // but keep the thread's world alive for DAYS before deletion.
       const autoStopInterval = Number(process.env.SANDBOX_AUTO_STOP_MIN ?? 30);
       const autoDeleteInterval = Number(process.env.SANDBOX_AUTO_DELETE_MIN ?? 4320); // 3 days
-      if (!sandbox) {
+      const provisionedFresh = !sandbox;
+      if (provisionedFresh) {
         await ctx.emit({ kind: "task", label: "Provisioning cloud sandbox…", chip: "opencode" });
         try {
           sandbox = await daytona.create({
@@ -736,9 +756,14 @@ export const opencodeServerAdapter: EngineAdapter = {
           });
           npxFallback = true;
         }
+      }
+      if (!sandbox) throw new Error("Daytona returned no sandbox");
+      const box = sandbox;
+      const resources = assertSandboxResources(box, resourceTarget);
+      if (provisionedFresh) {
         await ctx.emit({
           kind: "task",
-          label: `Sandbox ${sandbox.id.slice(0, 8)} ready in ${Math.round((Date.now() - startedAt) / 1000)}s`,
+          label: `Sandbox ${box.id.slice(0, 8)} ready in ${Math.round((Date.now() - startedAt) / 1000)}s (${resources.cpu} CPU / ${resources.memory} GiB)`,
           chip: "opencode",
         });
       }
@@ -749,14 +774,20 @@ export const opencodeServerAdapter: EngineAdapter = {
       // (same invariant as ACP): if the association cannot be recorded we abort the turn
       // rather than run in a box the terminal/preview/file/cleanup routes can't resolve, and
       // a box we JUST provisioned is torn down (a reused resident box is kept for the thread).
-      const box = sandbox;
-      await persistSandboxBeforeExecution({
-        runId: ctx.runId,
-        sandboxId: box.id,
-        reused: retainForThread,
-        persist: setRunSandbox,
-        deleteFreshSandbox: () => box.delete(),
-      });
+      try {
+        await persistSandboxBeforeExecution({
+          runId: ctx.runId,
+          sandboxId: box.id,
+          reused: retainForThread,
+          persist: setRunSandbox,
+          deleteFreshSandbox: () => box.delete(),
+        });
+      } catch (error) {
+        // persistSandboxBeforeExecution already deletes a fresh box. Clear the
+        // reference so this adapter's finally block cannot delete it twice.
+        if (!retainForThread) sandbox = null;
+        throw error;
+      }
       if (ctx.threadId) rememberLiveThreadSandbox(ctx.threadId, box);
 
       await ctx.emit({
@@ -1533,7 +1564,7 @@ export const opencodeServerAdapter: EngineAdapter = {
       // A thread's sandbox is the conversation's world (workspace + resident
       // server + sessions) — a failed TURN must not destroy it. Only runs
       // without a thread clean up their box.
-      if (sandbox && !ctx.threadId) {
+      if (sandbox && (!ctx.threadId || !retainForThread)) {
         await sandbox.delete().catch(() => {});
       }
     }

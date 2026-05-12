@@ -26,9 +26,14 @@ import {
   SECRET_SOURCE_COMMAND,
 } from "../secrets/inject";
 import { createSecretRedactor } from "../secrets/redact";
-import { acpBrowserMcpServer, ensureSandboxDesktop } from "./desktop";
+import { ensureSandboxDesktop, ensureSandboxDesktopView } from "./desktop";
+import { acpBrowserMcpServer, registerClaudeBrowserMcp } from "./browser-mcp";
 import { getThreadSandbox, setRunSandbox } from "../runs/repo";
-import { buildAcpToolStep, type AcpToolNativeIds } from "./acp-tool-step";
+import {
+  buildAcpToolCompletion,
+  buildAcpToolStep,
+  type AcpToolNativeIds,
+} from "./acp-tool-step";
 import {
   providerGatewayEnv,
   providerGatewayWired,
@@ -42,6 +47,11 @@ import {
   getLiveThreadSandbox,
   rememberLiveThreadSandbox,
 } from "./sandbox-runtime";
+import {
+  assertSandboxResources,
+  resolveSandboxResourceTarget,
+  sandboxMeetsResourceTarget,
+} from "./daytona-resources";
 
 // ---------------------------------------------------------------------------
 // Resident claude/codex via ACP — the opencode-server equivalent for the other
@@ -55,14 +65,14 @@ import {
 // `session/update` events translated live into steps + deltas.
 // ---------------------------------------------------------------------------
 
-const CLAUDE_ACP_PKG = "@agentclientprotocol/claude-agent-acp@0.66.0";
+export const CLAUDE_ACP_PKG = "@agentclientprotocol/claude-agent-acp@0.66.0";
 // codex-acp@0.16.0 does not exist under this namespace (that version belongs to
 // @zed-industries/codex-acp) - the 404 silently no-op'd the install so `codex-acp` never
 // landed and the relay's child spawn failed (BOOT-TIMEOUT). The real package is 1.1.x and
 // bundles @openai/codex (the `codex` binary) as a dependency, so installing it provisions
 // codex too (#128).
-const CODEX_ACP_PKG = "@agentclientprotocol/codex-acp@1.1.14";
-const CLAUDE_CODE_PKG = "@anthropic-ai/claude-code@2.1.226";
+export const CODEX_ACP_PKG = "@agentclientprotocol/codex-acp@1.1.14";
+export const CLAUDE_CODE_PKG = "@anthropic-ai/claude-code@2.1.226";
 
 /** The in-sandbox relay: stdin/stdout bridge to the ACP agent over plain HTTP
  *  (SSE out, POST in) — WebSockets are unnecessary and unproven through the
@@ -374,11 +384,14 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
 
       const autoStopInterval = Number(process.env.SANDBOX_AUTO_STOP_MIN ?? 30);
       const autoDeleteInterval = Number(process.env.SANDBOX_AUTO_DELETE_MIN ?? 4320);
+      const snapshot = process.env.DAYTONA_ACP_SNAPSHOT ?? "skynet-acp-v2";
+      const resourceTarget = resolveSandboxResourceTarget();
 
       const key = ctx.threadId ? relayKey(ctx.threadId, cfg.id) : null;
       let relay = key ? threadRelays.get(key) : undefined;
       let sandbox: Sandbox | null = null;
       let retainForThread = false;
+      let snapshotBacked = false;
 
       try {
         // ── sandbox: reuse the thread's, else provision ─────────────────────
@@ -442,22 +455,52 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
             }
           }
         }
-        if (!sandbox) {
+        if (sandbox && !sandboxMeetsResourceTarget(sandbox, resourceTarget)) {
+          const staleId = sandbox.id;
+          await sandbox.delete().catch(() => {});
+          if (key) threadRelays.delete(key);
+          if (ctx.threadId) forgetLiveThreadSandbox(ctx.threadId, staleId);
+          relay = undefined;
+          sandbox = null;
+          retainForThread = false;
+          await ctx.emit({
+            kind: "task",
+            label: "Replacing an undersized retained sandbox…",
+            chip: cfg.id,
+          });
+        }
+
+        const provisionedFresh = !sandbox;
+        if (provisionedFresh) {
           await ctx.emit({ kind: "task", label: "Provisioning cloud sandbox…", chip: cfg.id });
-          sandbox = await daytona.create({
+          const sandboxConfig = {
             envVars,
             labels: providerGatewaySandboxLabels(ctx.runId),
             autoStopInterval,
             autoDeleteInterval,
-          });
+          };
+          try {
+            // ACP dependencies are pinned in a non-root Daytona snapshot. This
+            // removes three fresh-thread npm installs while preserving the
+            // default `daytona` user Claude requires. A missing/inactive image
+            // degrades to the ordinary image and the idempotent install clause.
+            sandbox = await daytona.create({ snapshot, ...sandboxConfig });
+            snapshotBacked = true;
+          } catch {
+            sandbox = await daytona.create(sandboxConfig);
+          }
+        }
+        if (!sandbox) throw new Error("Daytona returned no sandbox");
+        const box = sandbox;
+        const resources = assertSandboxResources(box, resourceTarget);
+        if (provisionedFresh) {
           await ctx.emit({
             kind: "task",
-            label: `Sandbox ${sandbox.id.slice(0, 8)} ready in ${Math.round((Date.now() - startedAt) / 1000)}s`,
+            label: `Sandbox ${box.id.slice(0, 8)} ready in ${Math.round((Date.now() - startedAt) / 1000)}s (${resources.cpu} CPU / ${resources.memory} GiB)`,
             chip: cfg.id,
           });
         }
         if (ctx.signal.aborted) throw new Error(`${cfg.id} run aborted (timeout)`);
-        const box = sandbox;
         // Persist the sandbox id for THIS run (durable thread->sandbox mapping) BEFORE we
         // prepare/boot/execute, so the UI terminal/preview/file lookups, cleanup and
         // recovery can resolve it (ACP used to leave runs.sandbox_id NULL). AWAITED +
@@ -481,6 +524,25 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
           if (!retainForThread) sandbox = null;
           throw err;
         }
+
+        await ctx.emit({
+          kind: "task",
+          label: "Preparing browser, tools, and integrations…",
+          chip: cfg.id,
+        });
+
+        // A snapshot-backed box already has every pinned binary, so its desktop,
+        // resident browser MCP, and Claude MCP registration can warm while the
+        // trusted control plane materializes run-scoped gateway credentials and
+        // boots the ACP relay. A fallback/legacy box starts only the VNC view
+        // early: its npm installs remain sequential to avoid corrupting the shared
+        // user prefix with concurrent global installs.
+        const desktopPreparation = snapshotBacked
+          ? ensureSandboxDesktop(box, ctx.signal)
+          : ensureSandboxDesktopView(box, ctx.signal);
+        const earlyClaudeBrowserRegistration = snapshotBacked && cfg.id === "claude"
+          ? registerClaudeBrowserMcp(box)
+          : Promise.resolve(false);
 
         await cfg.prepare?.(box, ctx);
 
@@ -551,11 +613,23 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
           throw new Error(`${cfg.id} ACP relay failed to boot: ${truncate(boot.result ?? "", 200)}`);
         }
         const home = /HOME=(\S+)/.exec(boot.result ?? "")?.[1] ?? "/home/daytona";
-        const desktop = await ensureSandboxDesktop(box, ctx.signal);
-        if (!desktop.available || !desktop.browserTools) {
+        const preparedDesktop = await desktopPreparation;
+        const desktop = snapshotBacked
+          ? preparedDesktop
+          : await ensureSandboxDesktop(box, ctx.signal);
+        const browserToolsReady = desktop.browserTools && (
+          cfg.id !== "claude" ||
+          await earlyClaudeBrowserRegistration ||
+          await registerClaudeBrowserMcp(box)
+        );
+        if (!desktop.available || !browserToolsReady) {
           await ctx.emit({
             kind: "task",
-            label: desktop.reason ?? "Desktop/browser tools unavailable in this sandbox",
+            label: desktop.reason ?? (
+              desktop.browserTools
+                ? "Claude browser MCP registration failed"
+                : "Desktop/browser tools unavailable in this sandbox"
+            ),
             chip: "warning",
           });
         }
@@ -836,15 +910,15 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
             const stepId = toolSteps.get(tcid);
             const output = extractAcpToolOutput(u.content, u.rawOutput);
             if (stepId) {
-              await ctx.updateStep?.(stepId, {
-                tool: String(call.kind ?? "other"),
-                title: String(call.title ?? ""),
-                input: (call.rawInput ?? {}) as Record<string, unknown>,
-                output: output.slice(0, 2000),
-                status,
-                ...(recorded ? { native: recorded.native } : {}),
-                ...(status === "failed" ? { error: true } : {}),
-              });
+              await ctx.updateStep?.(
+                stepId,
+                buildAcpToolCompletion(
+                  call,
+                  output,
+                  recorded?.native,
+                  status === "failed",
+                ),
+              );
             }
             if (recorded) {
               recordAcpFrame(
@@ -972,8 +1046,8 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
           // and passed into both session/load and session/new (run-scoped token).
           const knowledgeMcpServers = acpKnowledgeMcpServers(ctx);
           const browserMcpServers =
-            desktop.browserTools && desktop.browserExecutable
-              ? [acpBrowserMcpServer(home, `${home}/work`)]
+            browserToolsReady && desktop.browserExecutable
+              ? [acpBrowserMcpServer()]
               : [];
           const mcpServers = [...knowledgeMcpServers, ...browserMcpServers];
 
