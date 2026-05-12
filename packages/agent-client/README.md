@@ -15,6 +15,7 @@ typed API, the reconnect/replay connection, the canonical reducer, and selectors
 | Subpath | Contents |
 |---|---|
 | `@skynet/agent-client/api` | `createAgentClient` (typed API over injected fetch: createRun / reply / cancel / getThread / connectThread), `AgentClientError` (classified http/network/decode). |
+| `@skynet/agent-client/artifacts` | Durable `ArtifactDescriptor` validation and artifact response decoders. |
 | `@skynet/agent-client/connection` | `createThreadConnection` - the pure SSE reconnect / health / fallback-poll state machine. |
 | `@skynet/agent-client/events` | The thread SSE frame vocabulary + `CanonicalThreadEvent` wire type + the pure `decodeFrame`. |
 | `@skynet/agent-client/store` | `createCanonicalThreadStore` - the pure canonical reducer (dedupe by eventId/latest-revision, order by deliverySeq, batch, stable snapshots). |
@@ -40,10 +41,9 @@ inferred project root is the app dir, so it rejects the out-of-root symlinked `p
 specifiers to the package sources + `transpilePackages`. A non-Turbopack consumer (bun,
 Node, Vite) needs none of this - see `packages/conformance` for a framework-free example.
 
-## Future: durable artifacts + renderer registry
+## Durable artifacts + future renderer registry
 
-The Cloudflare-OS-informed future output architecture is documented in
-[`ARTIFACTS.md`](./ARTIFACTS.md). This library's future role: index artifacts by stable
-id/version from the thread stream and expose them to a **product-owned**
-`ArtifactRendererRegistry` (kept in the app, not this library). No artifact runtime exists
-yet.
+The implemented file-transfer architecture and remaining renderer/storage work
+are documented in [`ARTIFACTS.md`](./ARTIFACTS.md). The client owns strict
+artifact wire decoding and typed list/get operations. A future
+`ArtifactRendererRegistry` remains product-owned and stays out of this package.

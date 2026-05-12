@@ -8,11 +8,19 @@ import { handleMcpMessage } from "../src/knowledge/gateway/mcp";
 import { KNOWLEDGE_TOOLS } from "../src/knowledge/gateway/tools";
 import { MEMORY_TOOLS } from "../src/knowledge/gateway/memory-tools";
 import { WEB_SEARCH_TOOLS } from "../src/knowledge/gateway/web-search-tool";
+import { ARTIFACT_TOOLS } from "../src/knowledge/gateway/artifact-tools";
 import type { ToolTokenClaims } from "../src/knowledge/gateway/token";
 
 const CLAIMS: ToolTokenClaims = { orgId: "o", userId: "u", threadId: "t", runId: "r", exp: Date.now() + 60_000 };
 const req = (id: number, method: string, params?: Record<string, unknown>) =>
   ({ jsonrpc: "2.0" as const, id, method, ...(params ? { params } : {}) });
+
+function resultRecord(response: Awaited<ReturnType<typeof handleMcpMessage>>): Record<string, unknown> {
+  if (!response?.result || typeof response.result !== "object" || Array.isArray(response.result)) {
+    throw new Error("expected a JSON-RPC object result");
+  }
+  return response.result as Record<string, unknown>;
+}
 
 describe("MCP wire is byte-identical after the SDK-schema adoption (#98)", () => {
   test("ping result envelope is byte-identical", async () => {
@@ -35,15 +43,22 @@ describe("MCP wire is byte-identical after the SDK-schema adoption (#98)", () =>
   });
 
   test("initialize echoes the requested protocolVersion + static capabilities/serverInfo", async () => {
-    const r = (await handleMcpMessage(CLAIMS, req(1, "initialize", { protocolVersion: "2025-06-18" }))) as any;
-    expect(r.result.protocolVersion).toBe("2025-06-18");
-    expect(r.result.capabilities).toEqual({ tools: { listChanged: false } });
-    expect(r.result.serverInfo).toEqual({ name: "skynet-knowledge", version: "1.0.0" });
+    const result = resultRecord(
+      await handleMcpMessage(CLAIMS, req(1, "initialize", { protocolVersion: "2025-06-18" })),
+    );
+    expect(result.protocolVersion).toBe("2025-06-18");
+    expect(result.capabilities).toEqual({ tools: { listChanged: false } });
+    expect(result.serverInfo).toEqual({ name: "skynet-knowledge", version: "1.0.0" });
   });
 
-  test("tools/list returns the knowledge + memory + web_search tool set", async () => {
-    const r = (await handleMcpMessage(CLAIMS, req(2, "tools/list"))) as any;
-    expect(r.result.tools).toEqual([...KNOWLEDGE_TOOLS, ...MEMORY_TOOLS, ...WEB_SEARCH_TOOLS]);
+  test("tools/list returns the knowledge + memory + web_search + artifact tool set", async () => {
+    const result = resultRecord(await handleMcpMessage(CLAIMS, req(2, "tools/list")));
+    expect(result.tools).toEqual([
+      ...KNOWLEDGE_TOOLS,
+      ...MEMORY_TOOLS,
+      ...WEB_SEARCH_TOOLS,
+      ...ARTIFACT_TOOLS,
+    ]);
   });
 
   test("a notification-shaped method returns null (no response)", async () => {

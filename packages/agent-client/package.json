@@ -6,6 +6,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./api": "./src/api.ts",
+    "./artifacts": "./src/artifacts.ts",
     "./connection": "./src/connection.ts",
     "./events": "./src/thread-events.ts",
     "./store": "./src/thread-store.ts",

@@ -502,10 +502,9 @@ export const slackThreads = pgTable(
 // ---------------------------------------------------------------------------
 
 export type SlackOutboxState = "pending" | "delivering" | "delivered" | "dead";
-// `upload_file` delivers a run-produced artifact into the thread; its bytes are
-// staged on disk (server-side) and the payload carries only the staged path, so
-// the durable row stays small. `kind` is a text column, so a new kind needs no
-// migration.
+// `upload_file` delivers a run-produced artifact into the thread. New rows carry
+// only an immutable artifact id; legacy rows may still carry a staged path.
+// `kind` is a text column, so a new kind needs no migration.
 export type SlackOutboxKind = "post_message" | "add_reaction" | "upload_file";
 /** Classified delivery failure — drives retry vs dead-letter and observability. */
 export type SlackErrorClass = "rate_limited" | "transient" | "permanent";
@@ -537,6 +536,38 @@ export const slackOutbox = pgTable(
   (t) => [
     // The delivery worker claims due rows by (state, next_attempt_at).
     index("idx_slack_outbox_due").on(t.state, t.nextAttemptAt),
+  ],
+);
+
+// ---------------------------------------------------------------------------
+// Durable run artifacts. Bytes live behind the ArtifactStorage boundary; this
+// table stores only tenant/run identity, immutable content metadata, and the
+// opaque storage key. Re-publishing the exact same run path + digest is
+// idempotent, while changing the file at that path creates a new version.
+// ---------------------------------------------------------------------------
+
+export const artifacts = pgTable(
+  "artifacts",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orgId: text("org_id").notNull(),
+    userId: text("user_id"),
+    runId: text("run_id")
+      .notNull()
+      .references(() => runs.id, { onDelete: "cascade" }),
+    threadId: text("thread_id").notNull(),
+    sourcePath: text("source_path").notNull(),
+    name: text("name").notNull(),
+    contentType: text("content_type").notNull(),
+    sizeBytes: integer("size_bytes").notNull(),
+    sha256: text("sha256").notNull(),
+    storageKey: text("storage_key").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("uq_artifacts_run_path_sha").on(t.runId, t.sourcePath, t.sha256),
+    index("idx_artifacts_org_created").on(t.orgId, t.createdAt),
+    index("idx_artifacts_thread_created").on(t.threadId, t.createdAt),
   ],
 );
 

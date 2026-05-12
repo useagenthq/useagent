@@ -28,7 +28,8 @@ function assertKnownKind(e: CanonicalAgentEvent): void {
     case "turn.completed": case "message.started": case "message.delta": case "message.completed":
     case "reasoning.delta": case "reasoning.completed": case "plan.updated":
     case "tool.started": case "tool.progress": case "tool.completed":
-    case "file.changed": case "terminal.output": case "child.started":
+    case "file.changed": case "artifact.created": case "artifact.delivered":
+    case "terminal.output": case "child.started":
     case "child.updated": case "child.completed": case "approval.requested":
     case "approval.resolved": case "question.requested": case "question.resolved":
     case "commands.updated": case "mode.updated": case "usage.updated":
@@ -182,5 +183,56 @@ describe("native question translation", () => {
       status: "answered",
     });
     expect(dispositions.every((item) => item.produced.length === 1)).toBe(true);
+  });
+});
+
+describe("durable artifact translation", () => {
+  const descriptor = {
+    id: "a1",
+    name: "report.pdf",
+    size_bytes: 123,
+    sha256: "f".repeat(64),
+    content_type: "application/pdf",
+  };
+
+  test("maps lifecycle frames without losing immutable identity", () => {
+    const artifactFrames: OpenCodeFrame[] = [
+      {
+        eventId: "artifact-created",
+        seq: 1,
+        provider: "skynet",
+        eventType: "artifact.created",
+        native: { sessionId: null, parentSessionId: null, messageId: null, partId: null, callId: null },
+        payload: descriptor,
+      },
+      {
+        eventId: "artifact-delivered",
+        seq: 2,
+        provider: "skynet",
+        eventType: "artifact.delivered",
+        native: { sessionId: null, parentSessionId: null, messageId: null, partId: null, callId: null },
+        payload: { ...descriptor, destination: "slack" },
+      },
+    ];
+    const result = translateOpenCode(artifactFrames, CTX);
+    expect(result.events.map((event) => event.kind)).toEqual([
+      "artifact.created",
+      "artifact.delivered",
+    ]);
+    expect(result.events[0]).toMatchObject({
+      kind: "artifact.created",
+      name: "report.pdf",
+      artifact: {
+        artifactId: "a1",
+        bytes: 123,
+        sha256: "f".repeat(64),
+        contentType: "application/pdf",
+      },
+    });
+    expect(result.events[1]).toMatchObject({
+      kind: "artifact.delivered",
+      destination: "slack",
+    });
+    expect(result.accounting.every((entry) => entry.produced.length === 1)).toBe(true);
   });
 });

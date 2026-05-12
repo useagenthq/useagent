@@ -1,89 +1,121 @@
 import {
+  RiDownloadLine,
+  RiExternalLinkLine,
+  RiFileCodeLine,
   RiFileTextLine,
-  RiFolder3Line,
   RiImageLine,
   RiPulseLine,
-  RiTerminalBoxLine,
   type RemixiconComponentType,
 } from "@remixicon/react";
+import Image from "next/image";
 import Link from "next/link";
-import { StatusDot } from "@/components/shared/status-dot";
-import type { Artifact, ArtifactCategory } from "./derive";
+import {
+  categoryForArtifact,
+  extensionLabel,
+  formatArtifactDate,
+  formatArtifactSize,
+  type ArtifactCategory,
+  type ArtifactDescriptor,
+} from "@/components/artifacts/model";
 
 const CATEGORY_ICON: Record<ArtifactCategory, RemixiconComponentType> = {
-  code: RiTerminalBoxLine,
+  files: RiFileCodeLine,
   docs: RiFileTextLine,
   media: RiImageLine,
 };
 
-function truncate(value: string, max = 42): string {
-  return value.length > max ? `${value.slice(0, max - 1).trimEnd()}…` : value;
+function shortId(value: string): string {
+  return value.length > 12 ? `${value.slice(0, 8)}…` : value;
 }
 
-/** Amber, gently pulsing "LIVE" chip for the newest file of a running run. */
-function LiveChip() {
-  return (
-    <span className="inline-flex items-center gap-1.5 rounded-full border border-stroke-soft-200 bg-bg-white-0 px-2 py-1 shadow-regular-xs">
-      <StatusDot tone="away" pulse />
-      <span className="text-mono-label text-text-sub-600">Live</span>
-    </span>
+function isRasterImage(contentType: string): boolean {
+  return ["image/gif", "image/jpeg", "image/png", "image/webp"].includes(
+    contentType.split(";", 1)[0]?.toLowerCase() ?? "",
   );
 }
 
-/** Floating folder chip — the run's workspace lane. */
-function FolderChip({ label }: { label: string }) {
+function ArtifactPreview({ artifact }: { artifact: ArtifactDescriptor }) {
+  const category = categoryForArtifact(artifact);
+  const Icon = CATEGORY_ICON[category];
+  if (isRasterImage(artifact.content_type)) {
+    return (
+      <Image
+        src={artifact.preview_url}
+        alt={`Preview of ${artifact.name}`}
+        fill
+        unoptimized
+        sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
+        className="object-contain p-4"
+      />
+    );
+  }
   return (
-    <span className="inline-flex max-w-[9rem] items-center gap-1.5 rounded-lg border border-stroke-soft-200 bg-bg-white-0 px-2.5 py-1.5 shadow-regular-xs">
-      <RiFolder3Line aria-hidden className="size-3.5 shrink-0 text-text-soft-400" />
-      <span className="truncate text-label-xs text-text-sub-600">{label}</span>
-    </span>
+    <div className="absolute inset-0 flex flex-col items-center justify-center gap-2.5">
+      <Icon aria-hidden className="size-9 text-text-sub-600" />
+      <span className="font-mono text-label-xs text-text-soft-400">
+        {extensionLabel(artifact.name)}
+      </span>
+    </div>
   );
 }
 
-/**
- * A single artifact: a preview scene (folder chip + centered file-type tile on
- * the secondary canvas) over the filename, a mono "size · date" caption, and a
- * link back to the run that produced it.
- */
-export function ArtifactCard({ artifact }: { artifact: Artifact }) {
-  const Icon = CATEGORY_ICON[artifact.category];
-  const type = artifact.ext.replace(".", "").toUpperCase();
-
+/** One durable artifact record. Preview and download use the authenticated
+ * backend byte endpoint; no filename, size, status, or content is synthesized. */
+export function ArtifactCard({ artifact }: { artifact: ArtifactDescriptor }) {
   return (
-    <article className="flex flex-col overflow-hidden rounded-2xl border border-stroke-soft-200 bg-bg-white-0 shadow-regular-xs transition-colors hover:border-stroke-sub-300">
-      {/* Preview scene */}
+    <article className="group flex min-w-0 flex-col overflow-hidden rounded-xl border border-stroke-soft-200 bg-bg-white-0 shadow-regular-xs transition-colors hover:border-stroke-sub-300">
       <div className="relative h-44 overflow-hidden bg-bg-weak-50 bg-halftone">
-        <div className="absolute left-4 top-4">
-          <FolderChip label={artifact.lane} />
-        </div>
-        {artifact.live && (
-          <div className="absolute right-4 top-4">
-            <LiveChip />
-          </div>
-        )}
-        <div className="absolute inset-x-0 bottom-4 flex justify-center">
-          <div className="flex w-32 flex-col items-center gap-2 rounded-xl border border-stroke-soft-200 bg-bg-white-0 px-4 py-4 shadow-regular-xs">
-            <Icon aria-hidden className="size-7 text-text-sub-600" />
-            <span className="text-mono-label text-text-soft-400">{type}</span>
-          </div>
+        <ArtifactPreview artifact={artifact} />
+        <div className="absolute right-3 top-3 flex items-center gap-1.5 opacity-100 transition-opacity sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100">
+          <a
+            href={artifact.preview_url}
+            target="_blank"
+            rel="noreferrer"
+            aria-label={`Preview ${artifact.name}`}
+            title="Preview"
+            className="flex size-8 items-center justify-center rounded-lg border border-stroke-soft-200 bg-bg-white-0 text-text-sub-600 shadow-regular-xs outline-none hover:text-text-strong-950 focus-visible:ring-2 focus-visible:ring-stroke-strong-950"
+          >
+            <RiExternalLinkLine aria-hidden className="size-4" />
+          </a>
+          <a
+            href={artifact.download_url}
+            download={artifact.name}
+            aria-label={`Download ${artifact.name}`}
+            title="Download"
+            className="flex size-8 items-center justify-center rounded-lg border border-stroke-soft-200 bg-bg-white-0 text-text-sub-600 shadow-regular-xs outline-none hover:text-text-strong-950 focus-visible:ring-2 focus-visible:ring-stroke-strong-950"
+          >
+            <RiDownloadLine aria-hidden className="size-4" />
+          </a>
         </div>
       </div>
 
-      {/* Meta */}
-      <div className="flex flex-col gap-1 px-4 py-3.5">
-        <p className="truncate text-label-sm text-text-strong-950" title={artifact.name}>
-          {artifact.name}
+      <div className="flex min-w-0 flex-col gap-1 px-4 py-3.5">
+        <div className="flex min-w-0 items-center justify-between gap-3">
+          <p className="truncate text-label-sm text-text-strong-950" title={artifact.name}>
+            {artifact.name}
+          </p>
+          <span className="shrink-0 font-mono text-paragraph-xs text-text-soft-400">
+            {formatArtifactSize(artifact.size_bytes)}
+          </span>
+        </div>
+        <p className="truncate font-mono text-paragraph-xs text-text-soft-400" title={artifact.source_path}>
+          {artifact.source_path}
         </p>
-        <p className="font-mono text-paragraph-xs text-text-soft-400">
-          {artifact.size} · {artifact.date}
-        </p>
-        <Link
-          href={`/session/${artifact.runId}`}
-          className="mt-0.5 inline-flex items-center gap-1.5 text-paragraph-xs text-text-sub-600 transition-colors hover:text-text-strong-950"
-        >
-          <RiPulseLine aria-hidden className="size-3.5 shrink-0" />
-          <span className="truncate">{truncate(artifact.runPrompt)}</span>
-        </Link>
+        <div className="mt-1 flex min-w-0 items-center justify-between gap-3">
+          <Link
+            href={`/session/${artifact.thread_id}`}
+            className="inline-flex min-w-0 items-center gap-1.5 text-paragraph-xs text-text-sub-600 outline-none transition-colors hover:text-text-strong-950 focus-visible:underline"
+          >
+            <RiPulseLine aria-hidden className="size-3.5 shrink-0" />
+            <span className="truncate">Run {shortId(artifact.run_id)}</span>
+          </Link>
+          <time
+            dateTime={artifact.created_at}
+            className="shrink-0 text-paragraph-xs text-text-soft-400"
+          >
+            {formatArtifactDate(artifact.created_at)}
+          </time>
+        </div>
       </div>
     </article>
   );

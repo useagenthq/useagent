@@ -3,6 +3,7 @@ import { websocket } from "hono/bun";
 import { cors } from "hono/cors";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
 import { auth } from "./auth";
+import { artifactRoutes } from "./artifacts/routes";
 import { startEmailConnector } from "./connectors/email";
 import { db } from "./db/client";
 import type { AppEnv } from "./http";
@@ -143,6 +144,9 @@ app.on(["GET", "POST"], "/api/auth/*", (c) => auth.handler(c.req.raw));
 app.route("/api/chat", chatRoutes);
 
 app.route("/api/runs", runsRoutes);
+// Durable run artifacts. The backend owns the immutable bytes and authorization;
+// browsers and connector deliveries resolve the same artifact id.
+app.route("/api/artifacts", artifactRoutes);
 // Interactive terminal WS bridge (browser xterm ⇄ sandbox PTY). Mounted before
 // nothing — separate router so the SSE/step routes stay untouched.
 app.route("/api/runs", terminalRoutes);

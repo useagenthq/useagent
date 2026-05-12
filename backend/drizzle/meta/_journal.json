@@ -218,6 +218,13 @@
 			"when": 1787100000000,
 			"tag": "0032_provider_gateway_output_budget",
 			"breakpoints": true
+		},
+		{
+			"idx": 31,
+			"version": "7",
+			"when": 1787200000000,
+			"tag": "0033_artifacts",
+			"breakpoints": true
 		}
 	]
 }

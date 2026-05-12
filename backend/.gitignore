@@ -12,5 +12,9 @@ node_modules/
 # by the outbox once delivered/dead).
 .slack-uploads/
 
+# Content-addressed local artifact bytes. Production can replace the storage
+# adapter; local blobs are runtime state and must never enter git.
+.artifacts/
+
 # NOTE: drizzle/ (migrations + meta/_journal.json) IS committed — the boot
 # migrator (src/index.ts) needs the journal to apply migrations on a fresh DB.

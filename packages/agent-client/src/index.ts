@@ -14,6 +14,7 @@
  *   - `@skynet/agent-client/store`      - the pure canonical thread store
  */
 export * from "./api";
+export * from "./artifacts";
 export * from "./connection";
 export * from "./thread-events";
 export * from "./thread-store";

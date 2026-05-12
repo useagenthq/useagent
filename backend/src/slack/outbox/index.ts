@@ -58,16 +58,15 @@ export async function enqueueAddReaction(entry: {
   if (created) kickSlackOutbox();
 }
 
-/** Durably enqueue an artifact upload into a thread. The bytes are already staged
- *  on disk at `stagedPath`; the relay reads them and uploads (survives a restart).
- *  Idempotent by `idempotencyKey`. */
+/** Durably enqueue an artifact upload into a thread. The relay reads the same
+ * immutable artifact bytes served to the browser. Idempotent by key. */
 export async function enqueueUploadFile(entry: {
   idempotencyKey: string;
   channel: string;
   threadTs?: string;
   filename: string;
   title?: string;
-  stagedPath: string;
+  artifactId: string;
   size: number;
 }): Promise<void> {
   const created = await enqueue({
@@ -78,7 +77,7 @@ export async function enqueueUploadFile(entry: {
       threadTs: entry.threadTs,
       filename: entry.filename,
       title: entry.title,
-      stagedPath: entry.stagedPath,
+      artifactId: entry.artifactId,
       size: entry.size,
     },
   });

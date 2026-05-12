@@ -96,6 +96,59 @@ describe("canonical<->legacy node equivalence (synthetic text / markers / child)
     expect(canon).toEqual(legacy);
   });
 
+  test("durable artifact creation and Slack delivery render identically in both lanes", () => {
+    const descriptor = {
+      id: "artifact-1",
+      name: "demo.png",
+      size_bytes: 2048,
+      sha256: "a".repeat(64),
+      content_type: "image/png",
+    };
+    const frames: F[] = [
+      frame({
+        eventType: "artifact.created",
+        seq: 0,
+        provider: "skynet",
+        native: {},
+        payload: descriptor,
+      }),
+      frame({
+        eventType: "artifact.delivered",
+        seq: 1,
+        provider: "skynet",
+        native: {},
+        payload: { ...descriptor, destination: "slack" },
+      }),
+    ];
+    const { legacy, canon } = bothWays(frames, []);
+    expect(legacy).toEqual([
+      {
+        kind: "artifact",
+        key: "e0",
+        artifact: {
+          id: "artifact-1",
+          name: "demo.png",
+          bytes: 2048,
+          sha256: "a".repeat(64),
+          contentType: "image/png",
+        },
+      },
+      {
+        kind: "artifact",
+        key: "e1",
+        artifact: {
+          id: "artifact-1",
+          name: "demo.png",
+          bytes: 2048,
+          sha256: "a".repeat(64),
+          contentType: "image/png",
+          destination: "slack",
+        },
+      },
+    ]);
+    expect(canon).toEqual(legacy);
+  });
+
   // D1: ACP records ONE text part per assistant message (stable partId), UPSERTED with the
   // cumulative text on every chunk. provider_events therefore holds ONE row (the final text), so
   // canonicalization emits ONE message.delta -> ONE coherent text node with the EXACT full text -

@@ -2,6 +2,9 @@ import type { SlackConfig } from "../../env";
 import { resolveSlackClient, type DeliveryResult, type SlackClient } from "../client";
 import { assertNever } from "../../util/exhaustive";
 import { readStagedBytes, removeStaged } from "../upload-staging";
+import { getArtifact, toArtifactDescriptor } from "../../artifacts/repo";
+import { artifactStorage } from "../../artifacts/storage";
+import { recordProviderEvent } from "../../runs/provider-events";
 import { claimDue, markDead, markDelivered, markRetry, resetStuckDelivering, type ClaimedRow } from "./repo";
 import type { ProcessResult, SlackDeliveryOutcome } from "./types";
 
@@ -24,27 +27,65 @@ function backoffMs(attempt: number): number {
 
 /** Make the actual Slack call for a row, returning the classified result. */
 async function attempt(client: SlackClient, row: ClaimedRow): Promise<DeliveryResult> {
-  const p = JSON.parse(row.payload) as Record<string, string | undefined>;
+  let p: Record<string, unknown>;
+  try {
+    const parsed: unknown = JSON.parse(row.payload);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return { ok: false, class: "permanent", message: "invalid_payload" };
+    }
+    p = parsed as Record<string, unknown>;
+  } catch {
+    return { ok: false, class: "permanent", message: "invalid_payload" };
+  }
+  const string = (key: string): string | undefined =>
+    typeof p[key] === "string" && p[key] ? p[key] : undefined;
   switch (row.kind) {
-    case "post_message":
-      return client.postMessage({ channel: p.channel!, text: p.text!, threadTs: p.threadTs });
-    case "add_reaction":
-      return client.addReaction({ channel: p.channel!, timestamp: p.timestamp!, name: p.name! });
+    case "post_message": {
+      const channel = string("channel");
+      const text = string("text");
+      if (!channel || !text) return { ok: false, class: "permanent", message: "invalid_payload" };
+      return client.postMessage({ channel, text, threadTs: string("threadTs") });
+    }
+    case "add_reaction": {
+      const channel = string("channel");
+      const timestamp = string("timestamp");
+      const name = string("name");
+      if (!channel || !timestamp || !name) {
+        return { ok: false, class: "permanent", message: "invalid_payload" };
+      }
+      return client.addReaction({ channel, timestamp, name });
+    }
     case "upload_file": {
-      // Bytes were staged on disk when the tool ran (sandbox alive). If the
-      // staged file is gone (already cleaned, or lost), there is nothing to
-      // deliver and no point retrying → permanent.
+      const channel = string("channel");
+      const filename = string("filename");
+      if (!channel || !filename) {
+        return { ok: false, class: "permanent", message: "invalid_payload" };
+      }
       let bytes: Buffer;
       try {
-        bytes = await readStagedBytes(p.stagedPath!);
+        const artifactId = string("artifactId");
+        const stagedPath = string("stagedPath");
+        if (artifactId) {
+          const artifact = await getArtifact(artifactId);
+          if (!artifact) return { ok: false, class: "permanent", message: "artifact_missing" };
+          const stored = await artifactStorage().read(artifact.storageKey);
+          if (stored.byteLength !== artifact.sizeBytes) {
+            return { ok: false, class: "permanent", message: "artifact_size_mismatch" };
+          }
+          bytes = Buffer.from(stored);
+        } else if (stagedPath) {
+          bytes = await readStagedBytes(stagedPath);
+        } else {
+          return { ok: false, class: "permanent", message: "upload_source_missing" };
+        }
       } catch {
-        return { ok: false, class: "permanent", message: "staged_file_missing" };
+        return { ok: false, class: "permanent", message: "artifact_bytes_missing" };
       }
       return client.uploadFile({
-        channel: p.channel!,
-        threadTs: p.threadTs,
-        filename: p.filename!,
-        title: p.title,
+        channel,
+        threadTs: string("threadTs"),
+        filename,
+        title: string("title"),
         bytes,
       });
     }
@@ -65,11 +106,39 @@ async function cleanupStagedIfUpload(row: ClaimedRow): Promise<void> {
   }
 }
 
+/** Emit a truthful timeline receipt only after Slack accepted the upload. The
+ * outbox remains the delivery authority; enqueue alone is not delivery. */
+async function recordArtifactDelivered(row: ClaimedRow): Promise<void> {
+  if (row.kind !== "upload_file") return;
+  let artifactId: string | undefined;
+  try {
+    const payload = JSON.parse(row.payload) as { artifactId?: unknown };
+    artifactId = typeof payload.artifactId === "string" ? payload.artifactId : undefined;
+  } catch {
+    return;
+  }
+  if (!artifactId) return; // legacy staged-path row
+  const artifact = await getArtifact(artifactId);
+  if (!artifact) return;
+  await recordProviderEvent(
+    {
+      id: `artifact.delivered:${artifact.runId}:${artifact.id}`,
+      runId: artifact.runId,
+      threadId: artifact.threadId,
+      provider: "skynet",
+      eventType: "artifact.delivered",
+      payload: { ...toArtifactDescriptor(artifact), destination: "slack" },
+    },
+    { critical: true },
+  );
+}
+
 /** Deliver one claimed row and transition its state. */
 async function deliverOne(client: SlackClient, row: ClaimedRow): Promise<SlackDeliveryOutcome> {
   const result = await attempt(client, row);
   if (result.ok) {
     await markDelivered(row.id);
+    await recordArtifactDelivered(row);
     await cleanupStagedIfUpload(row);
     return { status: "delivered" };
   }

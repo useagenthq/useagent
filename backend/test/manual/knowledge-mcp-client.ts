@@ -71,7 +71,11 @@ try {
 
   const tools = await client.listTools();
   const names = tools.tools.map((t) => t.name).sort();
-  check("tools/list returns knowledge_search + knowledge_read", JSON.stringify(names) === JSON.stringify(["knowledge_read", "knowledge_search"]), names.join(","));
+  check(
+    "tools/list returns knowledge search/read plus artifact publishing",
+    ["artifact_publish", "knowledge_read", "knowledge_search"].every((name) => names.includes(name)),
+    names.join(","),
+  );
 
   const res = (await client.callTool({ name: "knowledge_search", arguments: { query: `${canary} restart worker` } })) as {
     content: { type: string; text: string }[];

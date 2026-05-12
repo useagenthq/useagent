@@ -55,12 +55,48 @@ export type TimelineMarker =
       readonly reconciled: boolean;
     };
 
+export interface TimelineArtifact {
+  readonly id: string;
+  readonly name: string;
+  readonly bytes: number;
+  readonly sha256: string;
+  readonly contentType: string;
+  readonly destination?: string;
+}
+
 /** One node of the interleaved timeline: a context marker, a narration burst, or
  *  a tool row. */
+/** Provider-neutral rows rendered in the conversation, including durable artifact receipts. */
 export type TimelineNode =
   | { kind: "marker"; key: string; marker: TimelineMarker }
   | { kind: "text"; key: string; text: string }
+  | { kind: "artifact"; key: string; artifact: TimelineArtifact }
   | { kind: "tool"; key: string; step: ApiStep };
+
+function parseArtifact(eventType: string, payload: unknown): TimelineArtifact | null {
+  if (eventType !== "artifact.created" && eventType !== "artifact.delivered") return null;
+  const item = asRecord(payload);
+  if (
+    !item ||
+    typeof item.id !== "string" ||
+    typeof item.name !== "string" ||
+    typeof item.size_bytes !== "number" ||
+    typeof item.sha256 !== "string" ||
+    typeof item.content_type !== "string"
+  ) {
+    return null;
+  }
+  return {
+    id: item.id,
+    name: item.name,
+    bytes: item.size_bytes,
+    sha256: item.sha256,
+    contentType: item.content_type,
+    ...(eventType === "artifact.delivered" && typeof item.destination === "string"
+      ? { destination: item.destination }
+      : {}),
+  };
+}
 
 /**
  * Parse a skynet-lane native frame (skill.loaded / context.retrieved) into a
@@ -215,6 +251,20 @@ export function buildTimeline(
 
   type Ranked = { node: TimelineNode; k0: number; k1: number; k2: number };
   const ranked: Ranked[] = [];
+
+  // Durable artifact lifecycle rows appear after the turn's narration/tools.
+  // Creation exposes preview/download; delivery is a separate connector receipt.
+  for (const f of nativeFrames) {
+    if (f.provider !== "skynet") continue;
+    const artifact = parseArtifact(f.eventType, f.payload);
+    if (!artifact) continue;
+    ranked.push({
+      node: { kind: "artifact", key: f.eventId, artifact },
+      k0: Number.MAX_SAFE_INTEGER,
+      k1: 2,
+      k2: f.seq,
+    });
+  }
 
   // Canonical context markers (skynet lane): skill.loaded + context.retrieved.
   // Emitted at run START (lowest seqs), so they LEAD the turn (k0 below the boot

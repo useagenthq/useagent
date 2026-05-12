@@ -1,7 +1,15 @@
 "use client";
 
 import { memo, useEffect, useMemo, useRef, useState } from "react";
-import { RiArrowDownSLine, RiCheckLine, RiCloseLine } from "@remixicon/react";
+import {
+  RiArrowDownSLine,
+  RiCheckLine,
+  RiCloseLine,
+  RiDownloadLine,
+  RiExternalLinkLine,
+  RiFileLine,
+  RiSlackLine,
+} from "@remixicon/react";
 import { AsteriskMark } from "@/components/foundations/brand/asterisk-mark";
 import { cnExt as cn } from "@/utils/cn";
 import * as Badge from "@/components/ui/badge";
@@ -21,6 +29,7 @@ import {
 import type { NativeSnapshot } from "@/components/chat/native-store";
 import { QuestionCard } from "@/components/chat/question-card";
 import type { PendingQuestion } from "@/components/chat/question-state";
+import { formatArtifactSize } from "@/components/artifacts/model";
 
 // Canonical-timeline cutover flag (final_harness Phase 1, slice 4). OFF by default:
 // the legacy native/steps derivation renders unless a backend + build opt in via
@@ -140,6 +149,50 @@ const TextBurst = memo(function TextBurst({ text }: { text: string }) {
   );
 });
 
+function ArtifactRow({ node }: { node: Extract<TimelineNode, { kind: "artifact" }> }) {
+  const { artifact } = node;
+  const content = `/api/artifacts/${artifact.id}/content`;
+  return (
+    <div className="flex min-w-0 items-center gap-3 rounded-xl border border-stroke-soft-200 bg-bg-weak-50 px-3 py-2.5">
+      <RiFileLine aria-hidden className="size-5 shrink-0 text-text-sub-600" />
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-label-sm text-text-strong-950">{artifact.name}</p>
+        <p className="text-paragraph-xs text-text-soft-400">
+          {artifact.destination
+            ? `Delivered to ${artifact.destination}`
+            : formatArtifactSize(artifact.bytes)}
+        </p>
+      </div>
+      {artifact.destination === "slack" && (
+        <RiSlackLine aria-label="Delivered to Slack" className="size-4 shrink-0 text-text-soft-400" />
+      )}
+      {!artifact.destination && (
+        <div className="flex shrink-0 items-center gap-1">
+          <a
+            href={content}
+            target="_blank"
+            rel="noreferrer"
+            aria-label={`Preview ${artifact.name}`}
+            title="Preview"
+            className="flex size-8 items-center justify-center rounded-lg text-text-sub-600 outline-none hover:bg-bg-white-0 hover:text-text-strong-950 focus-visible:ring-2 focus-visible:ring-stroke-strong-950"
+          >
+            <RiExternalLinkLine aria-hidden className="size-4" />
+          </a>
+          <a
+            href={`${content}?download=1`}
+            download={artifact.name}
+            aria-label={`Download ${artifact.name}`}
+            title="Download"
+            className="flex size-8 items-center justify-center rounded-lg text-text-sub-600 outline-none hover:bg-bg-white-0 hover:text-text-strong-950 focus-visible:ring-2 focus-visible:ring-stroke-strong-950"
+          >
+            <RiDownloadLine aria-hidden className="size-4" />
+          </a>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /**
  * The interleaved turn timeline: narration bursts and the tool rows that followed
  * them, in TRUE ORDER (opencode-style) from the native ordered frames. While live,
@@ -159,6 +212,8 @@ function Timeline({ nodes, live }: { nodes: TimelineNode[]; live: boolean }) {
             <MarkerRow key={node.key} marker={node.marker} />
           ) : node.kind === "text" ? (
             <TextBurst key={node.key} text={node.text} />
+          ) : node.kind === "artifact" ? (
+            <ArtifactRow key={node.key} node={node} />
           ) : (
             <ToolStepRow key={node.key} step={node.step} state={i === last ? "running" : "done"} />
           ),
@@ -173,7 +228,7 @@ function Timeline({ nodes, live }: { nodes: TimelineNode[]; live: boolean }) {
   // otherwise dumps every row and buries the answer (user report / BUG-010).
   // A lone tool between bursts stays inline (nothing to collapse).
   type Group =
-    | { kind: "inline"; key: string; node: TimelineNode }
+    | { kind: "inline"; key: string; node: Exclude<TimelineNode, { kind: "tool" }> }
     | { kind: "tools"; key: string; steps: TimelineNode[] };
   const groups: Group[] = [];
   for (const node of nodes) {
@@ -191,8 +246,10 @@ function Timeline({ nodes, live }: { nodes: TimelineNode[]; live: boolean }) {
         if (g.kind === "inline") {
           return g.node.kind === "marker" ? (
             <MarkerRow key={g.key} marker={g.node.marker} />
+          ) : g.node.kind === "artifact" ? (
+            <ArtifactRow key={g.key} node={g.node} />
           ) : (
-            <TextBurst key={g.key} text={(g.node as { text: string }).text} />
+            <TextBurst key={g.key} text={g.node.text} />
           );
         }
         const stepOf = (n: TimelineNode) =>

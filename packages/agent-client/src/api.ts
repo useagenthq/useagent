@@ -6,6 +6,11 @@
 // never a raw throw or an unbounded provider payload.
 
 import { createThreadConnection, type EventSourceLike, type ThreadConnection, type TimerHost } from "./connection";
+import {
+  decodeArtifactList,
+  decodeArtifactResult,
+  type ArtifactDescriptor,
+} from "./artifacts";
 import { decodeFrame, THREAD_FRAME_TYPES, type DecodedFrame } from "./thread-events";
 
 /** Minimal injected fetch/response surface (works with the browser fetch, a Node/Bun
@@ -83,6 +88,11 @@ export interface OperationResult {
   readonly status: string;
 }
 
+export interface ArtifactListInput {
+  readonly runId?: string;
+  readonly threadId?: string;
+}
+
 export interface ConnectThreadDeps {
   createEventSource: (url: string) => EventSourceLike;
   timers: TimerHost;
@@ -99,6 +109,8 @@ export interface AgentClient {
   reply(parentRunId: string, input: Omit<CreateRunInput, "parentRunId">): Promise<RunHandle>;
   cancel(runId: string): Promise<OperationResult>;
   getThread(rootRunId: string): Promise<ThreadSnapshot>;
+  listArtifacts(input?: ArtifactListInput): Promise<readonly ArtifactDescriptor[]>;
+  getArtifact(artifactId: string): Promise<ArtifactDescriptor>;
   /** Open ONE SSE to the thread, decoding each frame to a typed {@link DecodedFrame}
    *  before handing it to the sink. Returns the connection controller (start/stop). */
   connectThread(rootRunId: string, sink: (frame: DecodedFrame) => void, deps: ConnectThreadDeps): ThreadConnection;
@@ -161,6 +173,26 @@ export function createAgentClient(config: AgentClientConfig): AgentClient {
         (r): r is RunSummary => !!r && typeof r === "object" && typeof (r as { id?: unknown }).id === "string",
       );
       return { runs };
+    },
+
+    async listArtifacts(input = {}) {
+      const query: string[] = [];
+      if (input.runId) query.push(`run_id=${encodeURIComponent(input.runId)}`);
+      if (input.threadId) query.push(`thread_id=${encodeURIComponent(input.threadId)}`);
+      const json = await send(`/api/artifacts${query.length > 0 ? `?${query.join("&")}` : ""}`, {});
+      const artifacts = decodeArtifactList(json);
+      if (!artifacts) {
+        throw new AgentClientError("decode_error", "GET /api/artifacts returned invalid artifact metadata");
+      }
+      return artifacts;
+    },
+
+    async getArtifact(artifactId) {
+      const path = `/api/artifacts/${encodeURIComponent(artifactId)}`;
+      const json = await send(path, {});
+      const result = decodeArtifactResult(json);
+      if (!result) throw new AgentClientError("decode_error", `${path} returned invalid artifact metadata`);
+      return result.artifact;
     },
 
     connectThread(rootRunId, sink, deps) {
