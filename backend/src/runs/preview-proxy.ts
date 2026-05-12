@@ -1,5 +1,5 @@
-import { Daytona } from "@daytona/sdk";
-import { getOpencodeThreadSandboxId } from "../engines/opencode-server";
+import { Daytona, type Sandbox } from "@daytona/sdk";
+import { getOpencodeThreadSandboxId } from "../engines/opencode-runtime";
 import { getThreadSandbox } from "./repo";
 
 // ---------------------------------------------------------------------------
@@ -51,6 +51,21 @@ export async function resolvePreviewEndpoint(
     const cached = endpoints.get(key);
     if (cached) return cached;
   }
+  const sandbox = await resolvePreviewSandbox(threadId);
+  const link = await sandbox.getPreviewLink(port);
+  const ep: PreviewEndpoint = {
+    sandboxId: sandbox.id,
+    baseUrl: link.url.replace(/\/+$/, ""),
+    token: link.token ?? "",
+  };
+  endpoints.set(key, ep);
+  return ep;
+}
+
+/** Resolve and wake the durable Daytona sandbox behind a thread. Kept beside
+ * preview-link resolution so terminal/desktop proxies do not duplicate sandbox
+ * identity or lifecycle rules. */
+export async function resolvePreviewSandbox(threadId: string): Promise<Sandbox> {
   const apiKey = process.env.DAYTONA_API_KEY;
   if (!apiKey) throw new Error("preview proxy needs DAYTONA_API_KEY in the backend env");
 
@@ -64,14 +79,7 @@ export async function resolvePreviewEndpoint(
   if (state === "stopped" || state === "paused" || state === "archived") {
     await sandbox.start();
   }
-  const link = await sandbox.getPreviewLink(port);
-  const ep: PreviewEndpoint = {
-    sandboxId,
-    baseUrl: link.url.replace(/\/+$/, ""),
-    token: link.token ?? "",
-  };
-  endpoints.set(key, ep);
-  return ep;
+  return sandbox;
 }
 
 /** Drop a cached endpoint so the next resolve re-fetches (and wakes the box). */

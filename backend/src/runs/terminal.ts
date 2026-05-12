@@ -3,7 +3,7 @@ import { Hono } from "hono";
 import { upgradeWebSocket } from "hono/bun";
 import type { AppEnv } from "../http";
 import { orgScope } from "../middleware/org";
-import { getOpencodeThreadSandboxId } from "../engines/opencode-server";
+import { getOpencodeThreadSandboxId } from "../engines/opencode-runtime";
 import { getThreadSandboxId } from "../engines/sandbox";
 import { getRunForOrg, getThreadSandbox } from "./repo";
 

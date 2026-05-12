@@ -5,6 +5,7 @@ export const PLAYWRIGHT_MCP_VERSION = "0.0.79";
 
 const DESKTOP_PROCESS_SESSION = "skynet-desktop";
 const DISPLAY = ":1";
+const BROWSER_CDP_ENDPOINT = "http://127.0.0.1:9222";
 
 export interface SandboxDesktop {
   readonly available: boolean;
@@ -15,9 +16,12 @@ export interface SandboxDesktop {
   readonly reason?: string;
 }
 
-/** One long-lived process group owns the virtual display, window manager, VNC
- * server, and noVNC bridge. x11vnc listens on loopback only; the browser reaches
- * websockify through Skynet's authenticated same-origin desktop proxy. */
+/** One long-lived process group owns the virtual display, browser, window manager,
+ * VNC server, and noVNC bridge. The browser is deliberately NOT owned by an MCP
+ * child: every harness attaches to its loopback-only CDP endpoint, so restarting
+ * OpenCode/Claude/Codex or their MCP transport cannot close the user's tabs.
+ * x11vnc listens on loopback only; the browser reaches websockify through
+ * Skynet's authenticated same-origin desktop proxy. */
 export function buildDesktopLaunchCommand(): string {
   return [
     "set -eu",
@@ -31,18 +35,33 @@ export function buildDesktopLaunchCommand(): string {
     "elif command -v openbox >/dev/null 2>&1; then",
     "  openbox >\"$HOME/.skynet/desktop-session.log\" 2>&1 &",
     "fi",
+    // One-time migration from the old MCP-owned Chrome (`remote-debugging-pipe`).
+    // Match only Chrome's process name so this shell cannot kill itself even
+    // though its command text contains the same flag.
+    "ps -eo pid=,comm=,args= | awk '$2 ~ /(chrome|chromium)/ && /--remote-debugging-pipe/ {print $1}' | xargs -r kill -TERM",
+    "sleep 1",
+    'browser=$(command -v google-chrome 2>/dev/null || command -v chromium 2>/dev/null || command -v chromium-browser 2>/dev/null)',
+    'mkdir -p "$HOME/.skynet/browser-profile"',
+    '"$browser" --no-sandbox --disable-dev-shm-usage --no-first-run --no-default-browser-check ' +
+      '--remote-debugging-address=127.0.0.1 --remote-debugging-port=9222 ' +
+      "'--remote-allow-origins=*' " +
+      '--user-data-dir="$HOME/.skynet/browser-profile" --restore-last-session --window-size=1440,900 about:blank ' +
+      '>"$HOME/.skynet/chrome.log" 2>&1 &',
+    `for i in $(seq 1 80); do curl -fsS -m 1 -o /dev/null ${BROWSER_CDP_ENDPOINT}/json/version && break; sleep 0.25; done`,
+    `curl -fsS -m 3 -o /dev/null ${BROWSER_CDP_ENDPOINT}/json/version`,
     "x11vnc -display :1 -localhost -nopw -forever -shared -rfbport 5900 >\"$HOME/.skynet/x11vnc.log\" 2>&1 &",
     "exec websockify --web=/usr/share/novnc 0.0.0.0:6080 127.0.0.1:5900",
   ].join("\n");
 }
 
-function browserArgs(home: string, workdir: string, executable: string): string[] {
+function browserArgs(workdir: string): string[] {
   return [
-    "--executable-path",
-    executable,
-    "--no-sandbox",
-    "--user-data-dir",
-    `${home}/.skynet/browser-profile`,
+    "--cdp-endpoint",
+    BROWSER_CDP_ENDPOINT,
+    "--caps",
+    "vision",
+    "--image-responses",
+    "allow",
     "--output-dir",
     `${workdir}/.skynet-browser`,
     "--viewport-size",
@@ -55,12 +74,11 @@ function browserArgs(home: string, workdir: string, executable: string): string[
 export function acpBrowserMcpServer(
   home: string,
   workdir: string,
-  executable: string,
 ): Record<string, unknown> {
   return {
     name: "skynet-browser",
     command: `${home}/.local/bin/playwright-mcp`,
-    args: browserArgs(home, workdir, executable),
+    args: browserArgs(workdir),
     env: [{ name: "DISPLAY", value: DISPLAY }],
   };
 }
@@ -70,11 +88,10 @@ export function acpBrowserMcpServer(
 export function opencodeBrowserMcpConfig(
   home: string,
   workdir: string,
-  executable: string,
 ): Record<string, unknown> {
   return {
     type: "local",
-    command: [`${home}/.local/bin/playwright-mcp`, ...browserArgs(home, workdir, executable)],
+    command: [`${home}/.local/bin/playwright-mcp`, ...browserArgs(workdir)],
     enabled: true,
     environment: { DISPLAY },
   };
@@ -89,10 +106,19 @@ async function localDesktopHealthy(sandbox: Sandbox): Promise<boolean> {
       10,
     )
     .catch(() => null);
-  return probe?.exitCode === 0;
+  if (probe?.exitCode !== 0) return false;
+  const browser = await sandbox.process
+    .executeCommand(
+      `curl -fsS -m 3 -o /dev/null ${BROWSER_CDP_ENDPOINT}/json/version`,
+      undefined,
+      undefined,
+      10,
+    )
+    .catch(() => null);
+  return browser?.exitCode === 0;
 }
 
-async function provisionSandboxDesktop(
+async function provisionSandboxDesktopView(
   sandbox: Sandbox,
   signal: AbortSignal,
 ): Promise<SandboxDesktop> {
@@ -155,6 +181,22 @@ async function provisionSandboxDesktop(
     };
   }
 
+  return {
+    available: true,
+    browserTools: false,
+    home,
+    workdir,
+    browserExecutable,
+  };
+}
+
+async function provisionSandboxDesktop(
+  sandbox: Sandbox,
+  signal: AbortSignal,
+): Promise<SandboxDesktop> {
+  const desktop = await provisionSandboxDesktopView(sandbox, signal);
+  if (!desktop.available || !desktop.browserExecutable) return desktop;
+
   const install = await sandbox.process.executeCommand(
     `export PATH="$HOME/.local/bin:$PATH"; ` +
       `[ -x "$HOME/.local/bin/playwright-mcp" ] || ` +
@@ -166,13 +208,31 @@ async function provisionSandboxDesktop(
   );
   const browserTools = install.exitCode === 0;
   return {
-    available,
+    ...desktop,
     browserTools,
-    home,
-    workdir,
-    browserExecutable,
     ...(!browserTools ? { reason: "Playwright MCP installation failed" } : {}),
   };
+}
+
+/** Make only the user-visible noVNC surface ready. This intentionally skips the
+ * Playwright MCP installation: opening Desktop must never wait on an agent-tool
+ * dependency that the iframe does not use. */
+export async function ensureSandboxDesktopView(
+  sandbox: Sandbox,
+  signal: AbortSignal,
+): Promise<SandboxDesktop> {
+  try {
+    return await provisionSandboxDesktopView(sandbox, signal);
+  } catch {
+    return {
+      available: false,
+      browserTools: false,
+      home: "/home/daytona",
+      workdir: "/home/daytona/work",
+      browserExecutable: null,
+      reason: "desktop provisioning failed",
+    };
+  }
 }
 
 /** Provision a truthful desktop resource in any engine sandbox. Failure is a

@@ -5,6 +5,7 @@ import {
   acpBrowserMcpServer,
   buildDesktopLaunchCommand,
   ensureSandboxDesktop,
+  ensureSandboxDesktopView,
   opencodeBrowserMcpConfig,
 } from "./desktop";
 
@@ -13,6 +14,11 @@ describe("shared sandbox desktop", () => {
     const command = buildDesktopLaunchCommand();
 
     expect(command).toContain("Xvfb :1");
+    expect(command).toContain("--remote-debugging-address=127.0.0.1 --remote-debugging-port=9222");
+    expect(command).toContain('--user-data-dir="$HOME/.skynet/browser-profile"');
+    expect(command).toContain("--restore-last-session");
+    expect(command).toContain("--remote-debugging-pipe");
+    expect(command).toContain("http://127.0.0.1:9222/json/version");
     expect(command).toContain("x11vnc -display :1 -localhost -nopw -forever -shared -rfbport 5900");
     expect(command).toContain("websockify --web=/usr/share/novnc 0.0.0.0:6080 127.0.0.1:5900");
     expect(command).not.toContain("0.0.0.0:5900");
@@ -21,17 +27,18 @@ describe("shared sandbox desktop", () => {
   });
 
   test("ACP receives one pinned local Playwright MCP bound to the visible display", () => {
-    const server = acpBrowserMcpServer("/home/daytona", "/home/daytona/work", "/usr/bin/chromium");
+    const server = acpBrowserMcpServer("/home/daytona", "/home/daytona/work");
 
     expect(server).toEqual({
       name: "skynet-browser",
       command: "/home/daytona/.local/bin/playwright-mcp",
       args: [
-        "--executable-path",
-        "/usr/bin/chromium",
-        "--no-sandbox",
-        "--user-data-dir",
-        "/home/daytona/.skynet/browser-profile",
+        "--cdp-endpoint",
+        "http://127.0.0.1:9222",
+        "--caps",
+        "vision",
+        "--image-responses",
+        "allow",
         "--output-dir",
         "/home/daytona/work/.skynet-browser",
         "--viewport-size",
@@ -41,8 +48,8 @@ describe("shared sandbox desktop", () => {
     });
   });
 
-  test("OpenCode receives the same browser MCP and persistent profile", () => {
-    const config = opencodeBrowserMcpConfig("/root", "/root/work", "/usr/bin/google-chrome");
+  test("OpenCode receives vision tools attached to the persistent Desktop browser", () => {
+    const config = opencodeBrowserMcpConfig("/root", "/root/work");
 
     expect(config).toMatchObject({
       type: "local",
@@ -51,10 +58,11 @@ describe("shared sandbox desktop", () => {
     });
     expect(config.command).toEqual(expect.arrayContaining([
       "/root/.local/bin/playwright-mcp",
-      "--executable-path",
-      "/usr/bin/google-chrome",
+      "--cdp-endpoint",
+      "http://127.0.0.1:9222",
+      "--caps",
+      "vision",
     ]));
-    expect(JSON.stringify(config)).toContain("/root/.skynet/browser-profile");
     expect(JSON.stringify(config)).toContain("/root/work/.skynet-browser");
     expect(PLAYWRIGHT_MCP_VERSION).toMatch(/^\d+\.\d+\.\d+$/);
   });
@@ -76,5 +84,32 @@ describe("shared sandbox desktop", () => {
       browserExecutable: null,
       reason: "desktop provisioning failed",
     });
+  });
+
+  test("readies the user-visible desktop without installing agent browser tools", async () => {
+    const commands: string[] = [];
+    const sandbox = {
+      process: {
+        executeCommand: async (command: string) => {
+          commands.push(command);
+          if (command.includes("printf \"HOME=")) {
+            return {
+              exitCode: 0,
+              result: "HOME=/home/daytona\nBROWSER=/usr/bin/chromium\nMISSING=\n",
+            };
+          }
+          return { exitCode: 0, result: "" };
+        },
+      },
+    } as unknown as Sandbox;
+
+    await expect(
+      ensureSandboxDesktopView(sandbox, new AbortController().signal),
+    ).resolves.toMatchObject({
+      available: true,
+      browserTools: false,
+      browserExecutable: "/usr/bin/chromium",
+    });
+    expect(commands).not.toEqual(expect.arrayContaining([expect.stringContaining("npm install")]));
   });
 });

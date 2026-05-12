@@ -49,6 +49,15 @@ import {
 } from "./desktop";
 import { createSecretRedactor } from "../secrets/redact";
 import { DEFAULT_OPENCODE_MODEL } from "../runs/model-policy";
+import {
+  forgetOpenCodeThreadServer,
+  getOpenCodeThreadServer,
+  rememberOpenCodeThreadServer,
+} from "./opencode-runtime";
+import {
+  openCodeQuestionEventId,
+  parseOpenCodeQuestionRequest,
+} from "./opencode-question";
 
 // ---------------------------------------------------------------------------
 // NATIVE opencode engine — the realtime path. Instead of one-shot CLI runs, the
@@ -75,19 +84,6 @@ export function buildOpencodeConfigWriteCommand(encodedConfig: string): string {
     `printf %s '${encodedConfig}' | base64 -d > ~/.config/opencode/opencode.json && ` +
     `rm -f -- ~/work/opencode.json`
   );
-}
-
-/** Per-thread live server: sandbox + resolved preview endpoint. In-memory (a
- *  backend restart re-resolves); sandbox auto-stop/auto-delete contain cost. */
-interface ThreadServer {
-  sandboxId: string;
-  baseUrl: string;
-  token: string;
-}
-const threadServers = new Map<string, ThreadServer>();
-
-export function getOpencodeThreadSandboxId(threadId: string): string | null {
-  return threadServers.get(threadId)?.sandboxId ?? null;
 }
 
 function authHeaders(token: string): Record<string, string> {
@@ -256,7 +252,7 @@ async function ensureOpencodeSandboxConfig(
   const gw = toolGatewayConfig();
   const providerOptions = opencodeProviderGatewayOptions(ctx);
   const browser = desktop.browserTools && desktop.browserExecutable
-    ? opencodeBrowserMcpConfig(desktop.home, desktop.workdir, desktop.browserExecutable)
+    ? opencodeBrowserMcpConfig(desktop.home, desktop.workdir)
     : null;
   if ((!ctx.orgId || (!gw && Object.keys(providerOptions).length === 0)) && !browser) {
     return { knowledge: false, provider: false, browser: false };
@@ -605,7 +601,7 @@ export const opencodeServerAdapter: EngineAdapter = {
     try {
       // ── sandbox: reuse the thread's (memory cache → durable DB mapping) ─────
       const rememberedId =
-        (ctx.threadId ? threadServers.get(ctx.threadId)?.sandboxId : undefined) ??
+        (ctx.threadId ? getOpenCodeThreadServer(ctx.threadId)?.sandboxId : undefined) ??
         (ctx.threadId ? await getThreadSandbox(ctx.threadId) : null);
       if (rememberedId) {
         try {
@@ -624,7 +620,7 @@ export const opencodeServerAdapter: EngineAdapter = {
           sandbox = prior;
           retainForThread = true;
         } catch {
-          if (ctx.threadId) threadServers.delete(ctx.threadId);
+          if (ctx.threadId) forgetOpenCodeThreadServer(ctx.threadId);
           sandbox = null;
         }
       }
@@ -717,7 +713,12 @@ export const opencodeServerAdapter: EngineAdapter = {
       // ── persistent server + preview endpoint ────────────────────────────────
       const { baseUrl, token, workdir } = await ensureServer(sandbox, npxFallback, ctx.signal);
       if (ctx.threadId) {
-        threadServers.set(ctx.threadId, { sandboxId: sandbox.id, baseUrl, token });
+        rememberOpenCodeThreadServer(ctx.threadId, {
+          sandboxId: sandbox.id,
+          baseUrl,
+          token,
+          workdir,
+        });
         retainForThread = true;
       }
       const headers = { ...authHeaders(token), "content-type": "application/json" };
@@ -1024,7 +1025,8 @@ export const opencodeServerAdapter: EngineAdapter = {
             if (!ev) continue;
             // v1 wraps payloads in `properties`; tolerate `data` in case a build
             // uses the newer envelope. Token deltas ride inline as `delta`.
-            const props = ((ev.properties ?? ev.data) ?? {}) as {
+            const rawProps = ((ev.properties ?? ev.data) ?? {}) as Record<string, unknown>;
+            const props = rawProps as {
               part?: Record<string, unknown>;
               delta?: string;
               info?: { id?: string; parentID?: string; role?: string };
@@ -1051,6 +1053,56 @@ export const opencodeServerAdapter: EngineAdapter = {
                 nativeParentSessionId: props.info.parentID ?? null,
                 payload: props.info,
               });
+            }
+            if (ev.type === "question.asked") {
+              const question = parseOpenCodeQuestionRequest(rawProps);
+              if (
+                question &&
+                (question.sessionID === sessionId || childSessions.has(question.sessionID))
+              ) {
+                await recordProviderEvent(
+                  {
+                    id: openCodeQuestionEventId(ctx.runId, question.id, "asked"),
+                    runId: ctx.runId,
+                    threadId: ctx.threadId ?? ctx.runId,
+                    provider: "opencode",
+                    eventType: ev.type,
+                    nativeSessionId: question.sessionID,
+                    nativeMessageId: question.tool?.messageID ?? null,
+                    nativeCallId: question.tool?.callID ?? null,
+                    payload: question,
+                  },
+                  { critical: true },
+                );
+              }
+            }
+            if (ev.type === "question.replied" || ev.type === "question.rejected") {
+              const requestId =
+                typeof rawProps.requestID === "string" ? rawProps.requestID : null;
+              const questionSessionId =
+                typeof rawProps.sessionID === "string" ? rawProps.sessionID : null;
+              if (
+                requestId &&
+                questionSessionId &&
+                (questionSessionId === sessionId || childSessions.has(questionSessionId))
+              ) {
+                await recordProviderEvent(
+                  {
+                    id: openCodeQuestionEventId(
+                      ctx.runId,
+                      requestId,
+                      ev.type === "question.replied" ? "replied" : "rejected",
+                    ),
+                    runId: ctx.runId,
+                    threadId: ctx.threadId ?? ctx.runId,
+                    provider: "opencode",
+                    eventType: ev.type,
+                    nativeSessionId: questionSessionId,
+                    payload: rawProps,
+                  },
+                  { critical: true },
+                );
+              }
             }
             if (ev.type === "message.part.updated" && props.part) {
               await enqueuePart(props.part, typeof props.delta === "string" ? props.delta : undefined);

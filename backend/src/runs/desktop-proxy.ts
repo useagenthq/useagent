@@ -8,8 +8,10 @@ import {
   buildProxyResponse,
   invalidatePreviewEndpoint,
   resolvePreviewEndpoint,
+  resolvePreviewSandbox,
   type PreviewEndpoint,
 } from "./preview-proxy";
+import { ensureSandboxDesktopView } from "../engines/desktop";
 
 // ---------------------------------------------------------------------------
 // DESKTOP PROXY — same-origin bridge to the noVNC GUI running INSIDE a thread's
@@ -36,6 +38,25 @@ import {
 // ---------------------------------------------------------------------------
 
 const DESKTOP_PORT = 6080;
+const desktopRepairs = new Map<string, Promise<void>>();
+
+/** Old retained sandboxes may predate desktop provisioning, and a stopped box
+ * may wake without its process session. Repair exactly once per thread while
+ * concurrent iframe/static/WebSocket requests wait on the same promise. */
+async function ensureDesktopPreview(threadId: string): Promise<void> {
+  const existing = desktopRepairs.get(threadId);
+  if (existing) return existing;
+
+  const repair = (async () => {
+    const sandbox = await resolvePreviewSandbox(threadId);
+    const desktop = await ensureSandboxDesktopView(sandbox, AbortSignal.timeout(120_000));
+    if (!desktop.available) {
+      throw new Error(desktop.reason ?? "desktop service unavailable");
+    }
+  })().finally(() => desktopRepairs.delete(threadId));
+  desktopRepairs.set(threadId, repair);
+  return repair;
+}
 
 export const desktopProxyRoutes = new Hono<AppEnv>();
 desktopProxyRoutes.use("*", orgScope);
@@ -60,6 +81,7 @@ desktopProxyRoutes.get(
             // Org gate: threadId IS its root run's id (see live-proxy).
             if (!(await getRunForOrg(orgId, threadId))) throw new Error("thread not found");
 
+            await ensureDesktopPreview(threadId);
             const ep = await resolvePreviewEndpoint(threadId, DESKTOP_PORT);
             const wsUrl = `${ep.baseUrl.replace(/^http/, "ws")}/websockify${search}`;
             // Bun's WebSocket client takes custom headers (browsers can't) — this
@@ -140,6 +162,21 @@ desktopProxyRoutes.all("/:threadId/*", async (c) => {
   const prefix = `/api/desktop-proxy/${threadId}`;
   const subpath = url.pathname.slice(prefix.length) || "/";
 
+  // The pane probes vnc.html before mounting its iframe. Treat that one HTML
+  // request as the lifecycle boundary: wake/repair the Desktop there, without
+  // repeating Daytona health checks for every noVNC JS/CSS asset.
+  if (subpath === "/vnc.html") {
+    try {
+      await ensureDesktopPreview(threadId);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      if (message === "no-sandbox") {
+        return c.json({ error: "no live sandbox for this conversation yet - send a message first" }, 409);
+      }
+      return c.json({ error: `desktop proxy failed: ${message}` }, 502);
+    }
+  }
+
   const method = c.req.method;
   const body =
     method === "GET" || method === "HEAD" ? undefined : await c.req.arrayBuffer();
@@ -164,6 +201,8 @@ desktopProxyRoutes.all("/:threadId/*", async (c) => {
     // A stale preview link (sandbox stopped/rotated since we cached it) surfaces
     // as a transport failure or a 5xx — re-resolve once (wakes the box) and retry.
     if (upstream.status === 502 || upstream.status === 503) {
+      await ensureDesktopPreview(threadId);
+      invalidatePreviewEndpoint(threadId, DESKTOP_PORT);
       ep = await resolvePreviewEndpoint(threadId, DESKTOP_PORT, true);
       upstream = await forward(ep);
     }

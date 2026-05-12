@@ -133,3 +133,54 @@ describe("child derivation equivalence (synthetic task frames)", () => {
     expect(done.find((e) => e.status === "error")).toBeTruthy();
   });
 });
+
+describe("native question translation", () => {
+  const questionFrames: OpenCodeFrame[] = [
+    {
+      eventId: "question-asked",
+      seq: 1,
+      provider: "opencode",
+      eventType: "question.asked",
+      native: { sessionId: "ses_p", parentSessionId: null, messageId: "m1", partId: null, callId: "call_q" },
+      payload: {
+        id: "que_1",
+        sessionID: "ses_p",
+        questions: [
+          {
+            header: "Target",
+            question: "Where should I deploy?",
+            options: [{ label: "Staging", description: "Safer" }],
+            multiple: false,
+            custom: false,
+          },
+        ],
+      },
+    },
+    {
+      eventId: "question-replied",
+      seq: 2,
+      provider: "opencode",
+      eventType: "question.replied",
+      native: { sessionId: "ses_p", parentSessionId: null, messageId: null, partId: null, callId: null },
+      payload: { sessionID: "ses_p", requestID: "que_1", answers: [["Staging"]] },
+    },
+  ];
+
+  test("preserves structured request and resolution", () => {
+    const { events: translated, accounting: dispositions } = translateOpenCode(questionFrames, CTX);
+    const asked = translated.find((event) => event.kind === "question.requested");
+    const replied = translated.find((event) => event.kind === "question.resolved");
+    expect(asked).toMatchObject({
+      questionId: "que_1",
+      prompt: "Where should I deploy?",
+      options: ["Staging"],
+    });
+    expect(replied).toMatchObject({
+      questionId: "que_1",
+      answer: "Staging",
+      answers: [["Staging"]],
+      status: "answered",
+    });
+    expect(dispositions.every((item) => item.produced.length === 1)).toBe(true);
+  });
+});

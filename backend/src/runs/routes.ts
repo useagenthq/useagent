@@ -38,6 +38,10 @@ import { completeCanonicalRuns } from "./canonicalization-outbox";
 import { subscribeThread } from "./thread-signals";
 import type { ApiRun, ApiStep } from "./repo";
 import { defaultModelForEngine, isModelAllowedForEngine } from "./model-policy";
+import {
+  OpenCodeQuestionError,
+  replyToOpenCodeQuestion,
+} from "../engines/opencode-question";
 
 export const runsRoutes = new Hono<AppEnv>();
 
@@ -342,6 +346,43 @@ runsRoutes.post("/:id/cancel", async (c) => {
       return c.json({ id, status: "cancelling" }, 202);
     default:
       return assertNever(outcome);
+  }
+});
+
+// Resolve a native OpenCode Question request IN the currently-running turn.
+// This is control traffic, not a new user turn: answering must unblock the
+// resident session rather than enqueue another run behind the blocked one.
+runsRoutes.post("/:id/questions/:questionId/reply", async (c) => {
+  const run = await getRunForOrg(c.get("orgId"), c.req.param("id"));
+  if (!run) return c.json({ error: "run not found" }, 404);
+  if (run.engine !== "opencode") {
+    return c.json({ error: "questions_not_supported", engine: run.engine }, 409);
+  }
+  if (run.status !== "running" || !run.engineSessionId) {
+    return c.json({ error: "question_session_not_active" }, 409);
+  }
+  let body: { answers?: unknown };
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: "invalid JSON body" }, 400);
+  }
+  try {
+    const result = await replyToOpenCodeQuestion({
+      runId: run.id,
+      threadId: run.threadId,
+      sessionId: run.engineSessionId,
+      questionId: c.req.param("questionId"),
+      answers: body.answers,
+      signal: c.req.raw.signal,
+    });
+    return c.json({ ok: true, already_answered: result.alreadyAnswered });
+  } catch (error) {
+    if (error instanceof OpenCodeQuestionError) {
+      return c.json({ error: error.code, message: error.message }, error.status);
+    }
+    console.error(`[question] reply failed for run ${run.id}:`, error);
+    return c.json({ error: "question_reply_failed" }, 502);
   }
 });
 

@@ -218,6 +218,62 @@ export function translateOpenCode(
       }
       else if (et === "secrets.injected") produced.push(push(f.eventId, f.provider, { kind: "session.metadata", metadata: { secretsInjected: true } }, ident));
       else produced.push(push(f.eventId, f.provider, { kind: "harness.warning", message: "unmapped skynet event", rawEventType: et }, ident));
+    } else if (et === "question.asked") {
+      const questionId = str(p?.id);
+      const rawQuestions = Array.isArray(p?.questions) ? p.questions : [];
+      const questions = rawQuestions.flatMap((raw) => {
+        const question = rec(raw);
+        if (!question || typeof question.question !== "string") return [];
+        const options = Array.isArray(question.options)
+          ? question.options.flatMap((rawOption) => {
+              const option = rec(rawOption);
+              return option && typeof option.label === "string"
+                ? [{
+                    label: option.label,
+                    ...(typeof option.description === "string"
+                      ? { description: option.description }
+                      : {}),
+                  }]
+                : [];
+            })
+          : [];
+        return [{
+          ...(typeof question.header === "string" ? { header: question.header } : {}),
+          prompt: question.question,
+          options,
+          multiple: question.multiple === true,
+          custom: question.custom !== false,
+        }];
+      });
+      const first = questions[0];
+      if (questionId && first && questions.length === rawQuestions.length) {
+        produced.push(push(f.eventId, f.provider, {
+          kind: "question.requested",
+          questionId,
+          prompt: first.prompt,
+          options: first.options.map((option) => option.label),
+          questions,
+        }, ident));
+      } else suppressed = "malformed question request";
+    } else if (et === "question.replied" || et === "question.rejected") {
+      const questionId = str(p?.requestID);
+      const answers = Array.isArray(p?.answers)
+        ? p.answers.flatMap((raw) =>
+            Array.isArray(raw) && raw.every((answer) => typeof answer === "string")
+              ? [raw as string[]]
+              : [],
+          )
+        : [];
+      if (questionId) {
+        const rejected = et === "question.rejected";
+        produced.push(push(f.eventId, f.provider, {
+          kind: "question.resolved",
+          questionId,
+          answer: rejected ? "Rejected" : answers.flat().join(", "),
+          answers,
+          status: rejected ? "rejected" : "answered",
+        }, ident));
+      } else suppressed = "question resolution without requestID";
     } else if (et === SESSION_STARTED_EVENT_TYPE) {
       // A real provider session was established: emit the session-identified `session.started`
       // carrying the ONE capability map the UI gates every surface on (no provider-name guess).

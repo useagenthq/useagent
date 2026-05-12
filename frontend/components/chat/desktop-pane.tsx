@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 /**
  * The "Desktop" tab: a live view of the conversation's sandbox GUI (multi-repo),
@@ -12,17 +12,14 @@ import { useMemo, useState } from "react";
  * so the token never reaches the browser; `autoconnect` opens it on load and
  * `resize=scale` fits the remote screen to the pane.
  *
- * Without a live sandbox (pre-session, or a non-opencode thread) we show a
- * placeholder instead of a dead connection.
+ * The tab is always present. Before a sandbox exists, or while a retained
+ * sandbox's desktop service is being repaired, probe the authenticated proxy
+ * and show a product-owned waiting state instead of embedding raw error JSON.
  */
-export function DesktopPane({
-  threadId,
-  hasSandbox,
-}: {
-  threadId: string;
-  hasSandbox: boolean;
-}) {
+export function DesktopPane({ threadId }: { threadId: string }) {
+  const [ready, setReady] = useState(false);
   const [loaded, setLoaded] = useState(false);
+  const [status, setStatus] = useState("Waiting for Daytona sandbox…");
 
   const src = useMemo(() => {
     const params = new URLSearchParams({
@@ -36,10 +33,41 @@ export function DesktopPane({
     return `/api/desktop-proxy/${threadId}/vnc.html?${params.toString()}`;
   }, [threadId]);
 
-  if (!hasSandbox) {
+  useEffect(() => {
+    let cancelled = false;
+    let retry: ReturnType<typeof setTimeout> | undefined;
+    setReady(false);
+    setLoaded(false);
+    setStatus("Waiting for Daytona sandbox…");
+
+    const probe = async (): Promise<void> => {
+      try {
+        const response = await fetch(src, { cache: "no-store" });
+        await response.body?.cancel();
+        if (cancelled) return;
+        if (response.ok) {
+          setReady(true);
+          return;
+        }
+        setStatus(response.status === 409 ? "Waiting for Daytona sandbox…" : "Starting sandbox desktop…");
+      } catch {
+        if (cancelled) return;
+        setStatus("Reconnecting to sandbox desktop…");
+      }
+      retry = setTimeout(() => void probe(), 1_000);
+    };
+
+    void probe();
+    return () => {
+      cancelled = true;
+      if (retry) clearTimeout(retry);
+    };
+  }, [src]);
+
+  if (!ready) {
     return (
       <div className="text-text-soft-400 flex size-full items-center justify-center px-6 text-center text-paragraph-sm">
-        No live sandbox yet - send a message to start one.
+        {status}
       </div>
     );
   }
