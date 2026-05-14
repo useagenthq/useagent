@@ -23,6 +23,14 @@ import { authSecretMaterial } from "../../security/runtime-secrets";
 const VERSION = "v1";
 const DERIVE_LABEL = "skynet-tool-gateway-v1";
 
+/** How the capability binds to a turn (perf run-invariant-config slice):
+ *  "run" (legacy default) is inert unless the exact minted run is running now;
+ *  "thread" is inert unless THIS thread has a currently-running turn - the
+ *  gateway resolves that live run per call and attributes to it. Thread scope
+ *  exists so a resident process's config can stay byte-stable across warm
+ *  turns; outside a live turn both scopes fail closed, and TTL is unchanged. */
+export type ToolTokenScope = "run" | "thread";
+
 /** The identity a verified token authorizes. Every field is server-trusted:
  *  the gateway uses these, and ONLY these, to scope a tool call. */
 export interface ToolTokenClaims {
@@ -33,6 +41,7 @@ export interface ToolTokenClaims {
   /** The run this token was minted for. Ledger attribution resolves the thread's
    *  currently-active run at call time and falls back to this. */
   runId: string;
+  scope: ToolTokenScope;
   /** Expiry, epoch ms. A token past this is rejected (fail closed). */
   exp: number;
 }
@@ -44,6 +53,8 @@ interface WirePayload {
   t: string;
   r: string;
   e: number;
+  /** Scope marker; absent (legacy tokens) means "run". */
+  k?: "t";
 }
 
 /** Signing key, derived once. TOOL_GATEWAY_SECRET overrides the derivation. */
@@ -64,12 +75,16 @@ function sign(signingInput: string): string {
 }
 
 /** Mint a token for one run's execution. TTL is bounded by the caller. */
-export function mintToolToken(claims: Omit<ToolTokenClaims, "exp">, ttlMs: number): string {
+export function mintToolToken(
+  claims: Omit<ToolTokenClaims, "exp" | "scope"> & { scope?: ToolTokenScope },
+  ttlMs: number,
+): string {
   const payload: WirePayload = {
     o: claims.orgId,
     u: claims.userId,
     t: claims.threadId,
     r: claims.runId,
+    ...(claims.scope === "thread" ? { k: "t" as const } : {}),
     // No clamp: a caller that passes a non-positive TTL gets an already-expired
     // token, which correctly fails closed. Production callers always pass a
     // bounded positive TTL (toolGatewayConfig validates > 0).
@@ -117,12 +132,14 @@ export function verifyToolToken(token: string | null | undefined, nowMs = Date.n
   }
   if (!wire.o) return null; // no org → no identity → reject
   if (wire.e <= nowMs) return null; // expired
+  if (wire.k !== undefined && wire.k !== "t") return null;
 
   return {
     orgId: wire.o,
     userId: typeof wire.u === "string" ? wire.u : "",
     threadId: wire.t,
     runId: wire.r,
+    scope: wire.k === "t" ? "thread" : "run",
     exp: wire.e,
   };
 }

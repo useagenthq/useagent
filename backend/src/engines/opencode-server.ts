@@ -26,6 +26,8 @@ import {
 } from "@skynet/agent-harness/canonical";
 import { sessionCapabilities } from "./capabilities";
 import { mintToolToken } from "../knowledge/gateway/token";
+import { ThreadTokenMemo } from "../util/token-memo";
+import { createHash } from "node:crypto";
 import { MEMORY_SKILL_PATH, memorySkillText } from "../memory/memory-skill-text";
 import {
   composeSecretEnv,
@@ -88,6 +90,19 @@ const DEFAULT_MODEL = DEFAULT_OPENCODE_MODEL;
 const SERVE_PORT = 4096;
 const OPENCODE_VERSION = "1.18.7";
 const SERVER_PROCESS_SESSION = "skynet-opencode-serve";
+
+// Run-invariant config (perf slice): thread-scoped tool tokens memoized so warm
+// turns build byte-identical MCP config, and the hash of the last SUCCESSFULLY
+// activated config per thread+sandbox so an unchanged warm config skips the
+// PATCH + poll cycle (a single fast verify still proves it live; any failure
+// falls back to the full activation/restart path - fail closed unchanged).
+const opencodeToolTokens = new ThreadTokenMemo();
+const TOOL_TOKEN_REUSE_MS = 8 * 60 * 60 * 1000;
+const threadActivatedConfigHash = new Map<string, string>();
+
+function configHash(config: Record<string, unknown>): string {
+  return createHash("md5").update(JSON.stringify(config)).digest("hex");
+}
 
 export function buildOpencodeConfigWriteCommand(encodedConfig: string): string {
   if (!/^[A-Za-z0-9+/=]+$/.test(encodedConfig)) {
@@ -358,15 +373,36 @@ async function prepareOpencodeSandboxConfig(
     cfg["$schema"] = cfg["$schema"] ?? "https://opencode.ai/config.json";
     const mcp = (typeof cfg.mcp === "object" && cfg.mcp ? (cfg.mcp as Record<string, unknown>) : {});
     if (gw && ctx.orgId) {
-      const token = mintToolToken(
-        {
-          orgId: ctx.orgId,
-          userId: ctx.userId ?? "",
-          threadId: ctx.threadId ?? ctx.runId,
-          runId: ctx.runId,
-        },
-        gw.tokenTtlMs,
-      );
+      const orgId = ctx.orgId;
+      // Thread-scoped + memoized so warm turns build a byte-identical MCP entry
+      // (run-invariant config); a single-shot run keeps the strict run binding.
+      const token = ctx.threadId
+        ? opencodeToolTokens.get(
+            `${orgId}:${ctx.threadId}:tool`,
+            // Turn-cover TTL + reuse window; refresh when remaining validity
+            // drops below the turn-cover TTL (same guarantee as a run token).
+            { ttlMs: gw.tokenTtlMs + TOOL_TOKEN_REUSE_MS, refreshMarginMs: gw.tokenTtlMs },
+            () =>
+              mintToolToken(
+                {
+                  orgId,
+                  userId: ctx.userId ?? "",
+                  threadId: ctx.threadId!,
+                  runId: ctx.runId,
+                  scope: "thread",
+                },
+                gw.tokenTtlMs + TOOL_TOKEN_REUSE_MS,
+              ),
+          )
+        : mintToolToken(
+            {
+              orgId,
+              userId: ctx.userId ?? "",
+              threadId: ctx.runId,
+              runId: ctx.runId,
+            },
+            gw.tokenTtlMs,
+          );
       mcp["skynet-knowledge"] = {
         type: "remote",
         url: gw.mcpUrl,
@@ -863,17 +899,35 @@ export const opencodeServerAdapter: EngineAdapter = {
       let runtimeServer =
         cachedRuntimeServer ?? await ensureServer(sandbox, npxFallback, ctx.signal);
       if (preparedConfig?.required) {
+        // Run-invariant fast path: thread-scoped memoized tokens make the warm
+        // config byte-stable, so when its hash matches the last SUCCESSFUL
+        // activation on this exact thread+sandbox, skip the PATCH + rebuild
+        // poll and only run one verify (fast when already active). Any
+        // mismatch or verify failure takes the full activate/restart path.
+        const desiredHash = configHash(preparedConfig.config);
+        const hashKey = ctx.threadId ? `${ctx.threadId}:${box.id}` : null;
+        const configUnchanged =
+          retainForThread && hashKey !== null &&
+          threadActivatedConfigHash.get(hashKey) === desiredHash;
         if (retainForThread) {
           try {
             await stagesTogether([
               memoryCorrection,
               () =>
-                activateOpenCodeRuntimeConfig({
-                  server: runtimeServer,
-                  config: preparedConfig.config,
-                  sessionId: ctx.engineSessionId,
-                  signal: ctx.signal,
-                }),
+                configUnchanged
+                  ? verifyOpenCodeRuntimeConfig({
+                      server: runtimeServer,
+                      config: preparedConfig.config,
+                      sessionId: ctx.engineSessionId,
+                      signal: ctx.signal,
+                      timeoutMs: 3_000,
+                    })
+                  : activateOpenCodeRuntimeConfig({
+                      server: runtimeServer,
+                      config: preparedConfig.config,
+                      sessionId: ctx.engineSessionId,
+                      signal: ctx.signal,
+                    }),
             ]);
           } catch (error) {
             await memoryCorrection();
@@ -899,6 +953,9 @@ export const opencodeServerAdapter: EngineAdapter = {
             signal: ctx.signal,
           });
         }
+        // Record only after the config is PROVEN active (either lane above threw
+        // otherwise), so the fast path can never trust an unproven config.
+        if (hashKey) threadActivatedConfigHash.set(hashKey, desiredHash);
       } else {
         await memoryCorrection();
       }

@@ -34,3 +34,34 @@ describe("provider gateway capability", () => {
     expect(verifyProviderToken(token)).toBeNull();
   });
 });
+
+describe("thread-scoped capability wire format", () => {
+  const base = {
+    orgId: "org-a",
+    userId: "user-a",
+    threadId: "thread-a",
+    issuedRunId: "run-a",
+    engine: "opencode" as const,
+    provider: "openrouter" as const,
+  };
+
+  test("legacy tokens (no scope marker) verify as run scope", () => {
+    process.env.PROVIDER_GATEWAY_SECRET = "provider-test-secret";
+    const token = mintProviderToken(base, 60_000);
+    expect(verifyProviderToken(token)?.scope).toBe("run");
+  });
+
+  test("thread scope round-trips and stays signed", () => {
+    process.env.PROVIDER_GATEWAY_SECRET = "provider-test-secret";
+    const token = mintProviderToken({ ...base, scope: "thread" }, 60_000);
+    const verified = verifyProviderToken(token);
+    expect(verified?.scope).toBe("thread");
+    expect(verified).toMatchObject(base);
+    // Corrupt a MIDDLE character: the final base64url char can carry padding
+    // bits, so flipping it may decode to identical signature bytes (a known
+    // flaky-tamper pattern in this repo).
+    const mid = Math.floor(token.length / 2);
+    const flipped = token[mid] === "A" ? "B" : "A";
+    expect(verifyProviderToken(`${token.slice(0, mid)}${flipped}${token.slice(mid + 1)}`)).toBeNull();
+  });
+});

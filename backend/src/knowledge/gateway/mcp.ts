@@ -15,7 +15,7 @@ import {
   executeArtifactTool,
 } from "./artifact-tools";
 import { findSlackThreadByRoot } from "../../slack/repo";
-import { hasMatchingRunningToolRun } from "./run-authorization";
+import { resolveToolRunIdentity } from "./run-authorization";
 import { verifyToolToken, type ToolTokenClaims } from "./token";
 
 // ---------------------------------------------------------------------------
@@ -163,10 +163,13 @@ knowledgeMcpRoutes.post("/", async (c) => {
     return c.json({ error: "unauthorized" }, 401);
   }
 
-  // A warm process may retain the thread capability between turns, but it is
-  // deliberately inert unless this exact tenant/user/thread is running now.
-  const active = await hasMatchingRunningToolRun(claims).catch(() => false);
-  if (!active) return c.json({ error: "inactive_capability" }, 403);
+  // A warm process may retain the capability between turns, but it is
+  // deliberately inert unless its bound turn is running now. For a
+  // thread-scoped capability this ALSO substitutes the identity of the
+  // CURRENT live run (user + run id) - user-scoped tools must never act as
+  // the minting user on a teammate's later turn.
+  const resolved = await resolveToolRunIdentity(claims).catch(() => null);
+  if (!resolved) return c.json({ error: "inactive_capability" }, 403);
 
   const contentLength = Number(c.req.header("content-length") ?? 0);
   if (Number.isFinite(contentLength) && contentLength > MAX_REQUEST_BYTES) {
@@ -190,16 +193,17 @@ knowledgeMcpRoutes.post("/", async (c) => {
   }
   const responses: RpcResponse[] = [];
   for (const raw of messages) {
-    // Re-check before every item: an expensive batch cannot outlive the exact
-    // run capability that admitted its first tool call.
-    const stillActive = await hasMatchingRunningToolRun(claims).catch(() => false);
-    if (!stillActive) return c.json({ error: "inactive_capability" }, 403);
+    // Re-resolve before every item: an expensive batch cannot outlive the
+    // capability that admitted its first tool call, and a thread-scoped batch
+    // must track the CURRENT live run's identity item by item.
+    const current = await resolveToolRunIdentity(claims).catch(() => null);
+    if (!current) return c.json({ error: "inactive_capability" }, 403);
     // Classify with the official SDK schemas (replaces the hand-rolled isRequest):
     // a valid JSON-RPC request is handled; a notification or malformed message
     // gets no response, exactly as before.
     const req = JSONRPCRequestSchema.safeParse(raw);
     if (req.success) {
-      const res = await handleMcpMessage(claims, req.data as unknown as RpcRequest);
+      const res = await handleMcpMessage(current, req.data as unknown as RpcRequest);
       if (res) responses.push(res);
     }
   }
