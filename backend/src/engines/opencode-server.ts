@@ -704,19 +704,21 @@ export const opencodeServerAdapter: EngineAdapter = {
     const daytona = daytonaProvider(apiKey);
     const budgetMs = Number(process.env.ENGINE_TIMEOUT_MS ?? 600_000);
 
-    // Org secrets live in a protected dotenv, not Daytona's immutable env catalog
-    // (which rejects large org catalogs). OpenCode sources it explicitly at boot;
-    // BASH_ENV is only a compatibility path. The names-only marker is recorded
-    // only after the sandbox files are materialized successfully.
+    // Org secrets live in a protected dotenv materialized as FILES after the
+    // sandbox exists (materializeSecretFiles below), and OpenCode sources it
+    // explicitly at boot (SECRET_SOURCE_COMMAND) - correctness never depends on
+    // create-time env. So the create passes NO custom env: that is exactly what
+    // makes an OpenCode create eligible for a Daytona warm pool (a pool serves
+    // only creates that use the snapshot's default user with no custom env,
+    // volumes, or secrets). The BASH_ENV compatibility path is baked into the
+    // snapshot image instead (build-opencode-snapshot.ts). Raw provider
+    // credentials are never placed in an untrusted sandbox regardless - the
+    // generated OpenCode provider config points only at the trusted gateway. The
+    // names-only marker is recorded only after the files are materialized.
     const secretInjection = await composeSecretEnv(ctx, {
       excludeNames: PROVIDER_SECRET_NAMES,
     });
     const redact = createSecretRedactor(secretInjection.redactionValues);
-    // Raw provider credentials are never placed in an untrusted sandbox. The
-    // generated OpenCode provider config points only at the trusted gateway.
-    const envVars: Record<string, string> = {
-      ...secretInjection.createEnv,
-    };
 
     const snapshot = process.env.DAYTONA_SNAPSHOT ?? "skynet-agent-v17";
     const resourceTarget = resolveSandboxResourceTarget();
@@ -784,16 +786,17 @@ export const opencodeServerAdapter: EngineAdapter = {
       if (provisionedFresh) {
         await ctx.emit({ kind: "task", label: "Provisioning cloud sandbox…", chip: "opencode" });
         try {
+          // No `envVars`: keeps this create warm-pool eligible (see the secret
+          // injection note above). Labels + auto-stop/delete do not disqualify a
+          // pool claim.
           sandbox = await daytona.create({
             snapshot,
-            envVars,
             labels: providerGatewaySandboxLabels(ctx.runId),
             autoStopInterval,
             autoDeleteInterval,
           });
         } catch {
           sandbox = await daytona.create({
-            envVars,
             labels: providerGatewaySandboxLabels(ctx.runId),
             autoStopInterval,
             autoDeleteInterval,

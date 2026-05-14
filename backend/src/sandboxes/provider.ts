@@ -33,9 +33,35 @@ export type SandboxHandle = Sandbox;
  *  drift from the real client. */
 export type SandboxProvider = Pick<Daytona, "create" | "get" | "list">;
 
+/** The Daytona region target, defaulting to "us" (unchanged from every prior
+ *  call site). Shared by the SDK client and the warm-pool control plane so both
+ *  act on the same region. */
+const daytonaTarget = (): string => process.env.DAYTONA_TARGET ?? "us";
+
+/** The Daytona control-plane base URL, matching the SDK's own default resolution
+ *  (`DAYTONA_API_URL` env, else app.daytona.io). Used by warm-pool.ts, which
+ *  talks to the same REST endpoint the SDK client does. */
+const daytonaApiUrl = (): string =>
+  process.env.DAYTONA_API_URL?.trim() || "https://app.daytona.io/api";
+
 /** Construct the configured sandbox provider. Centralizes the single
- *  `new Daytona(...)` construction for all of backend/src. `target` defaults to
- *  "us", unchanged from every prior call site. */
+ *  `new Daytona(...)` construction for all of backend/src. */
 export function daytonaProvider(apiKey: string): SandboxProvider {
-  return new Daytona({ apiKey, target: process.env.DAYTONA_TARGET ?? "us" });
+  return new Daytona({ apiKey, target: daytonaTarget() });
+}
+
+/** Resolved Daytona connection parameters, shared through the port so the
+ *  warm-pool module authenticates against the same endpoint/region as the
+ *  sandbox client instead of re-deriving them. */
+export interface DaytonaApiConfig {
+  apiKey: string;
+  apiUrl: string;
+  target: string;
+}
+
+/** The Daytona connection for a given API key (endpoint + region resolved from
+ *  the same env the SDK reads). Keeps all Daytona endpoint resolution inside the
+ *  port module. */
+export function daytonaApiConfig(apiKey: string): DaytonaApiConfig {
+  return { apiKey, apiUrl: daytonaApiUrl(), target: daytonaTarget() };
 }

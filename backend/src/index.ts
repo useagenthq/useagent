@@ -44,6 +44,7 @@ import { skillImportRoutes } from "./skills/import-routes";
 import { skillsRoutes } from "./skills/routes";
 import { slackEnabled, slackRoutes, startSlackOutbox } from "./slack";
 import { enforceSingleBackend } from "./db/single-backend";
+import { ensureWarmPool, warmPoolSize } from "./sandboxes/warm-pool";
 import { wikiGenRoutes } from "./wiki-gen/routes";
 
 // Apply committed Drizzle migrations BEFORE anything reads or seeds the schema,
@@ -214,6 +215,26 @@ startCanonicalizationOutbox();
 // the finished session, honest-fails after the ~5min budget. Single-flight;
 // harmless when nothing is parked.
 startReconcileLoop();
+
+// Daytona warm pool for the OpenCode snapshot (perf plan Phase 3), OFF by
+// default. Only when DAYTONA_WARM_POOL_SIZE is set AND an explicit OpenCode
+// snapshot (DAYTONA_SNAPSHOT) is configured do we provision/reconcile a pool so
+// new-thread creates claim a ready machine instead of building one (gate:
+// sandbox usable p95 <1.5s). Best-effort and fire-and-forget: a pool error never
+// blocks boot or any turn.
+const warmPoolTarget = warmPoolSize();
+const openCodeSnapshot = process.env.DAYTONA_SNAPSHOT?.trim();
+if (warmPoolTarget && openCodeSnapshot) {
+  void ensureWarmPool(openCodeSnapshot, warmPoolTarget)
+    .then((pool) =>
+      console.log(
+        `[warm-pool] opencode ${pool.snapshot} target=${pool.target} ready=${pool.ready}/${pool.desired}`,
+      ),
+    )
+    .catch((err) =>
+      console.warn("[warm-pool] ensure failed:", err instanceof Error ? err.message : err),
+    );
+}
 
 // Slack adapter: mounted only when SLACK_BOT_TOKEN + SLACK_SIGNING_SECRET are
 // set (env-gated). Handles the Events API at POST /api/slack/events, and starts
