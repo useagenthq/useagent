@@ -10,6 +10,7 @@ import {
 import { sessionCapabilities } from "./capabilities";
 import { parseJsonLine, persistSandboxBeforeExecution, truncate } from "./util";
 import { prepareRepos, shq } from "./repo-prep";
+import { serialStartup } from "../util/startup";
 import { parseRepoRef } from "../github/repo-ref";
 import { cacheAcpCommands } from "../runs/command-catalog";
 import { revalidateCommandBeforeDispatch } from "../runs/command-intent";
@@ -395,6 +396,7 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
 
       try {
         // ── sandbox: reuse the thread's, else provision ─────────────────────
+        const endSandboxSpan = ctx.timing?.begin("sandbox");
         if (relay) {
           try {
             const cachedSandbox = ctx.threadId ? getLiveThreadSandbox(ctx.threadId) : null;
@@ -525,11 +527,13 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
           throw err;
         }
 
+        endSandboxSpan?.();
         await ctx.emit({
           kind: "task",
           label: "Preparing browser, tools, and integrations…",
           chip: cfg.id,
         });
+        const endPrepareSpan = ctx.timing?.begin("prepare");
 
         // A snapshot-backed box already has every pinned binary, so its desktop,
         // resident browser MCP, and Claude MCP registration can warm while the
@@ -543,6 +547,12 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
         const earlyClaudeBrowserRegistration = snapshotBacked && cfg.id === "claude"
           ? registerClaudeBrowserMcp(box)
           : Promise.resolve(false);
+        // Rollback flag: sequence the floated preparation before continuing (same
+        // DAG at concurrency 1). Errors still surface at the original await sites.
+        if (serialStartup()) {
+          await desktopPreparation.catch(() => {});
+          await earlyClaudeBrowserRegistration.catch(() => {});
+        }
 
         await cfg.prepare?.(box, ctx);
 
@@ -658,11 +668,14 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
           await new Promise((r) => setTimeout(r, 250));
         }
         const childRegenerated = relayRegenerated(priorGeneration, health.generation);
+        endPrepareSpan?.();
 
         // Prepare the thread's selected repos into the workspace BEFORE the ACP session
         // starts, so the resident agent works INSIDE them. Shared, engine-neutral preparer -
         // same secure clone as OpenCode; idempotent on a warm sandbox (fast skips).
+        const endReposSpan = ctx.timing?.begin("repos");
         await prepareRepos(box, `${home}/work`, ctx);
+        endReposSpan?.();
         // EFFECTIVE working directory: a single-repo thread starts the session INSIDE that
         // repo (`~/work/<owner>/<name>`), so relative tool paths, `git`, and file ops resolve
         // in the repo the user chose - not a bare workspace root. Multi-repo or no-repo threads
@@ -1117,6 +1130,7 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
           await ctx.emit({ kind: "task", label: `Running ${cfg.id} (resident)…`, chip: cfg.id });
           const promptText = composeTurnPrompt(ctx, resumed);
           acceptingTurnOutput = true;
+          ctx.timing?.mark("dispatch");
           const result = await request("session/prompt", {
             sessionId,
             prompt: [{ type: "text", text: promptText }],

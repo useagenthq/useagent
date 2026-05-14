@@ -206,6 +206,15 @@ export function translateOpenCode(
     };
     let suppressed: string | undefined;
 
+    // Run-timing ledger frames (perf plan Phase 0) are developer diagnostics on
+    // the durable lane - deliberately NOT timeline nodes. Suppressed BEFORE any
+    // event emission (incl. child establishment) with a named reason so lossless
+    // accounting still records them.
+    if (et.startsWith("timing.")) {
+      accounting.push({ sourceId: f.eventId, kind: et, provider: f.provider, produced: [], suppressed: "run-timing diagnostic (not a timeline node)" });
+      continue;
+    }
+
     ensureChild(produced, f); // lossless child-session establishment
 
     if (f.provider.startsWith("skynet")) {

@@ -16,6 +16,7 @@ import { basename, parseJsonLine, persistSandboxBeforeExecution, truncate } from
 import { getThreadSandbox, setRunSandbox } from "../runs/repo";
 import { prepareRepos, shq } from "./repo-prep";
 import { assertNever } from "../util/exhaustive";
+import { nextPollDelayMs, stagesTogether } from "../util/startup";
 import { toolGatewayConfig } from "../knowledge/gateway/config";
 import {
   ACP_COMMANDS_EVENT_TYPE,
@@ -199,12 +200,18 @@ async function ensureServer(
 
   const deadline = Date.now() + 120_000;
   let lastStatus: number | null = null;
+  // Bounded exponential polling (perf plan Phase 1): a server that is ready in
+  // 200ms is seen in ~200ms instead of at the next full-second tick; the overall
+  // deadline is unchanged.
+  let pollDelay: number | null = null;
   while (Date.now() < deadline && !signal.aborted) {
     lastStatus = await opencodeHealthStatus(server, signal);
     if (lastStatus !== null && lastStatus >= 200 && lastStatus < 300) {
       return server;
     }
-    await new Promise((resolve) => setTimeout(resolve, 1_000));
+    const delay = nextPollDelayMs(pollDelay);
+    pollDelay = delay;
+    await new Promise((resolve) => setTimeout(resolve, delay));
   }
   if (signal.aborted) throw new Error("opencode run aborted (timeout)");
   let logs: { output?: string; stderr?: string; stdout?: string } | null = null;
@@ -683,6 +690,7 @@ export const opencodeServerAdapter: EngineAdapter = {
 
     try {
       // ── sandbox: reuse the thread's (memory cache → durable DB mapping) ─────
+      const endSandboxSpan = ctx.timing?.begin("sandbox");
       const rememberedServer = ctx.threadId ? getOpenCodeThreadServer(ctx.threadId) : null;
       const rememberedId =
         rememberedServer?.sandboxId ??
@@ -789,12 +797,14 @@ export const opencodeServerAdapter: EngineAdapter = {
         throw error;
       }
       if (ctx.threadId) rememberLiveThreadSandbox(ctx.threadId, box);
+      endSandboxSpan?.();
 
       await ctx.emit({
         kind: "task",
         label: "Preparing browser, tools, and integrations…",
         chip: "opencode",
       });
+      const endPrepareSpan = ctx.timing?.begin("prepare");
 
       // These probes are independent on a warm sandbox. Run them together so
       // Daytona control-plane latency is paid once rather than serially. The
@@ -802,13 +812,14 @@ export const opencodeServerAdapter: EngineAdapter = {
       // sandbox; if it is absent/unhealthy, ensureServer starts it AFTER the
       // current secret files are materialized so a resumed process cannot inherit
       // stale or revoked credentials.
-      const [desktop, cachedRuntimeServer] = await Promise.all([
-        ensureSandboxDesktop(sandbox, ctx.signal),
-        reuseHealthyResidentServer(rememberedServer, sandbox.id, ctx.signal),
-        materializeSecretFiles(
-          (cmd) => sandbox!.process.executeCommand(cmd, undefined, undefined, 30),
-          secretInjection.files,
-        ),
+      const [desktop, cachedRuntimeServer] = await stagesTogether([
+        () => ensureSandboxDesktop(box, ctx.signal),
+        () => reuseHealthyResidentServer(rememberedServer, box.id, ctx.signal),
+        () =>
+          materializeSecretFiles(
+            (cmd) => box.process.executeCommand(cmd, undefined, undefined, 30),
+            secretInjection.files,
+          ),
       ]);
       await recordSecretsInjected(ctx, secretInjection);
 
@@ -838,9 +849,15 @@ export const opencodeServerAdapter: EngineAdapter = {
       // Replace the snapshot's false-persistence memory skill with text that
       // matches the capability actually negotiated for this turn. It is not an
       // authorization boundary, so it can run alongside warm runtime activation.
-      const memoryCorrection = correctMemorySkillText(sandbox, gatewayState.knowledge);
+      // Lazy + memoized so the serial-startup rollback flag genuinely sequences
+      // it (an eagerly-started promise would still race under the flag).
+      let memoryCorrectionStarted: Promise<void> | null = null;
+      const memoryCorrection = (): Promise<void> =>
+        (memoryCorrectionStarted ??= correctMemorySkillText(box, gatewayState.knowledge));
+      endPrepareSpan?.();
 
       await ctx.emit({ kind: "task", label: "Starting agent runtime…", chip: "opencode" });
+      const endRuntimeSpan = ctx.timing?.begin("runtime");
 
       // ── persistent server + preview endpoint ────────────────────────────────
       let runtimeServer =
@@ -848,17 +865,18 @@ export const opencodeServerAdapter: EngineAdapter = {
       if (preparedConfig?.required) {
         if (retainForThread) {
           try {
-            await Promise.all([
+            await stagesTogether([
               memoryCorrection,
-              activateOpenCodeRuntimeConfig({
-                server: runtimeServer,
-                config: preparedConfig.config,
-                sessionId: ctx.engineSessionId,
-                signal: ctx.signal,
-              }),
+              () =>
+                activateOpenCodeRuntimeConfig({
+                  server: runtimeServer,
+                  config: preparedConfig.config,
+                  sessionId: ctx.engineSessionId,
+                  signal: ctx.signal,
+                }),
             ]);
           } catch (error) {
-            await memoryCorrection;
+            await memoryCorrection();
             console.warn(
               `[opencode] runtime config activation failed; restarting resident server:`,
               error instanceof Error ? error.message : "unknown activation error",
@@ -874,7 +892,7 @@ export const opencodeServerAdapter: EngineAdapter = {
             });
           }
         } else {
-          await memoryCorrection;
+          await memoryCorrection();
           await verifyOpenCodeRuntimeConfig({
             server: runtimeServer,
             config: preparedConfig.config,
@@ -882,11 +900,12 @@ export const opencodeServerAdapter: EngineAdapter = {
           });
         }
       } else {
-        await memoryCorrection;
+        await memoryCorrection();
       }
       // Daytona labels are the credential-generation trust anchor. The marker is
       // written only after the config is proven active, never before activation.
       if (!retainForThread) await markProviderGatewaySandboxCurrent(sandbox);
+      endRuntimeSpan?.();
 
       const { baseUrl, token, workdir } = runtimeServer;
       if (ctx.threadId) {
@@ -905,7 +924,9 @@ export const opencodeServerAdapter: EngineAdapter = {
       // via the shared engine-neutral preparer (idempotent per repo; a resumed
       // thread already has them, so fast skips). A fresh clone that fails fails
       // the run honestly, before the engine works without the repo.
+      const endReposSpan = ctx.timing?.begin("repos");
       await prepareRepos(sandbox, workdir, ctx);
+      endReposSpan?.();
 
       const createSession = async (): Promise<string> => {
         const res = await fetch(`${baseUrl}/session${dirQ}`, {
@@ -1377,6 +1398,7 @@ export const opencodeServerAdapter: EngineAdapter = {
         }
       })();
 
+      ctx.timing?.mark("dispatch");
       const postPrompt = async (text: string): Promise<Response> =>
         fetch(`${baseUrl}/session/${sessionId}/message${dirQ}`, {
           method: "POST",

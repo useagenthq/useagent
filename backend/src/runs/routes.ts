@@ -38,6 +38,7 @@ import { completeCanonicalRuns } from "./canonicalization-outbox";
 import { subscribeThread } from "./thread-signals";
 import type { ApiRun, ApiStep } from "./repo";
 import { defaultModelForEngine, isModelAllowedForEngine } from "./model-policy";
+import { getRunTimingTable } from "./run-timing";
 import {
   OpenCodeQuestionError,
   replyToOpenCodeQuestion,
@@ -410,6 +411,17 @@ runsRoutes.get("/:id", async (c) => {
   const run = await getRunWithSteps(orgId, id);
   if (!run) return c.json({ error: "run not found" }, 404);
   return c.json(run);
+});
+
+// Per-run developer timing table (perf plan Phase 0): the run's recorded stage
+// spans/marks plus dispatch-to-first-provider-event, derived from the durable
+// timing rows. Diagnostics only - numbers and stage names, nothing sensitive.
+runsRoutes.get("/:id/timings", async (c) => {
+  const orgId = c.get("orgId");
+  const id = c.req.param("id");
+  if (!(await getRunForOrg(orgId, id))) return c.json({ error: "run not found" }, 404);
+  const table = await getRunTimingTable(id);
+  return c.json(table);
 });
 
 // SSE trace stream: replay existing steps, then live-push new ones.

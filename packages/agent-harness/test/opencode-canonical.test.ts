@@ -236,3 +236,38 @@ describe("durable artifact translation", () => {
     expect(result.accounting.every((entry) => entry.produced.length === 1)).toBe(true);
   });
 });
+
+describe("run-timing diagnostics are suppressed, never timeline nodes (perf Phase 0)", () => {
+  const timingFrames: OpenCodeFrame[] = [
+    {
+      eventId: "run_test:timing:sandbox",
+      seq: 1,
+      provider: "skynet-timing",
+      eventType: "timing.span",
+      native: { sessionId: null, parentSessionId: null, messageId: null, partId: null, callId: null },
+      payload: { stage: "sandbox", startedAt: 1000, endedAt: 1400, durMs: 400 },
+    },
+    {
+      eventId: "run_test:timing:dispatch",
+      seq: 2,
+      provider: "skynet-timing",
+      eventType: "timing.mark",
+      native: { sessionId: null, parentSessionId: null, messageId: null, partId: null, callId: null },
+      payload: { stage: "dispatch", at: 1500 },
+    },
+  ];
+
+  test("timing frames produce ZERO canonical events (no harness.warning noise)", () => {
+    const result = translateOpenCode(timingFrames, CTX);
+    expect(result.events).toEqual([]);
+  });
+
+  test("suppression is ACCOUNTED with a named reason (lossless accounting holds)", () => {
+    const result = translateOpenCode(timingFrames, CTX);
+    expect(result.accounting.length).toBe(timingFrames.length);
+    for (const d of result.accounting) {
+      expect(d.produced).toEqual([]);
+      expect(d.suppressed).toBe("run-timing diagnostic (not a timeline node)");
+    }
+  });
+});
