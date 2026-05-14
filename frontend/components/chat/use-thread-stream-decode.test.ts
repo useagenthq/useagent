@@ -63,6 +63,23 @@ describe("applyDecodedFrame maps decoded frames onto the product store", () => {
     expect(s.getSnapshot().byId.get("r1")?.canonical).toHaveLength(0); // dropped, never applied cross-thread
   });
 
+  test("delta (no kind) -> applyDelta answer narration", () => {
+    const s = createThreadStore();
+    seedRun(s);
+    apply(s, "delta", { runId: "r1", delta: "hello" });
+    expect(s.getSnapshot().byId.get("r1")?.liveText).toBe("hello");
+    expect(s.getSnapshot().byId.get("r1")?.liveReasoning).toBe("");
+  });
+
+  test("delta with kind:reasoning -> live thinking buffer, never the answer", () => {
+    const s = createThreadStore();
+    seedRun(s);
+    apply(s, "delta", { runId: "r1", delta: "thinking...", kind: "reasoning" });
+    const run = s.getSnapshot().byId.get("r1");
+    expect(run?.liveReasoning).toBe("thinking...");
+    expect(run?.liveText).toBe("");
+  });
+
   test("malformed JSON and unknown event kinds are ignored, never fatal", () => {
     const s = createThreadStore();
     applyDecodedFrame(s, decodeFrame("canonical", "{not json"));

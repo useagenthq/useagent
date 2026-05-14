@@ -273,4 +273,21 @@ describe("thread-store", () => {
     expect(snap.native.steps.length).toBe(1); // the earlier step is now visible
     expect(snap.native.nativeFrames.length).toBe(1);
   });
+
+  test("reasoning deltas feed liveReasoning, separate from liveText, cleared on settle", () => {
+    const s = createThreadStore();
+    s.applySnapshot([makeRun("A", { status: "running" })]);
+    s.applyDelta("A", "let me think... ", "reasoning");
+    s.applyDelta("A", "hello ");
+    s.applyDelta("A", "still thinking", "reasoning");
+
+    const live = s.getSnapshot().byId.get("A")!;
+    expect(live.liveReasoning).toBe("let me think... still thinking");
+    expect(live.liveText).toBe("hello "); // answer buffer untouched by reasoning
+
+    s.applyDone("A", "completed");
+    const settled = s.getSnapshot().byId.get("A")!;
+    expect(settled.liveReasoning).toBe(""); // thinking is live-only
+    expect(settled.liveText).toBe("");
+  });
 });

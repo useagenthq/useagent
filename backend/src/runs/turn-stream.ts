@@ -15,15 +15,21 @@
 // channel), where QM's listeners were notified of Slack lifecycle events only.
 // ---------------------------------------------------------------------------
 
-export type TurnStreamListener = (delta: string) => void;
+/** A live delta's classification: undefined = answer text (buffered for late-
+ *  subscriber catch-up); "reasoning" = provider thinking (fanned out live only,
+ *  never buffered, so the catch-up snapshot stays pure answer narration). */
+export type DeltaKind = "reasoning";
+
+export type TurnStreamListener = (delta: string, kind?: DeltaKind) => void;
 
 export interface TurnStream {
   /** Mark a run's stream open (idempotent); cancels a pending grace eviction. */
   begin(runId: string): void;
   /** Whether the run is currently streaming (not yet end()ed). */
   alive(runId: string): boolean;
-  /** Append a delta to the capped buffer and fan it out to live subscribers. */
-  publish(runId: string, delta: string): void;
+  /** Append a delta to the capped buffer and fan it out to live subscribers.
+   *  Only answer deltas (no `kind`) are buffered; "reasoning" is live-only. */
+  publish(runId: string, delta: string, kind?: DeltaKind): void;
   /** The full buffered text so far, or null if nothing has been published. */
   snapshot(runId: string): string | null;
   /** Subscribe to a run's deltas; returns an unsubscribe fn. */
@@ -81,7 +87,7 @@ export function createTurnStream(opts: TurnStreamOptions = {}): TurnStream {
       return runs.get(runId)?.live ?? false;
     },
 
-    publish(runId, delta) {
+    publish(runId, delta, kind) {
       if (!delta) return;
       const entry = ensure(runId);
       entry.live = true;
@@ -90,10 +96,12 @@ export function createTurnStream(opts: TurnStreamOptions = {}): TurnStream {
         clearTimeout(entry.timer);
         entry.timer = null;
       }
-      if (entry.text.length < maxChars) {
+      // Reasoning is transient live narration; keep it OUT of the buffered
+      // answer text so the late-subscriber catch-up snapshot is pure answer.
+      if (kind === undefined && entry.text.length < maxChars) {
         entry.text = (entry.text + delta).slice(0, maxChars);
       }
-      for (const listener of listeners.get(runId) ?? []) listener(delta);
+      for (const listener of listeners.get(runId) ?? []) listener(delta, kind);
     },
 
     snapshot(runId) {

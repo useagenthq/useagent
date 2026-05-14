@@ -33,6 +33,23 @@ describe("turn-stream", () => {
     expect(b).toEqual(["x"]);
   });
 
+  it("delivers a reasoning delta with its kind but keeps it OUT of the buffer", () => {
+    const ts = createTurnStream();
+    const got: Array<{ delta: string; kind?: string }> = [];
+    ts.subscribe(R, (delta, kind) => got.push({ delta, kind }));
+    ts.publish(R, "answer ");
+    ts.publish(R, "thinking...", "reasoning");
+    ts.publish(R, "more answer");
+    // Subscribers see reasoning tagged distinctly...
+    expect(got).toEqual([
+      { delta: "answer ", kind: undefined },
+      { delta: "thinking...", kind: "reasoning" },
+      { delta: "more answer", kind: undefined },
+    ]);
+    // ...but the catch-up snapshot is pure answer narration (no thinking).
+    expect(ts.snapshot(R)).toBe("answer more answer");
+  });
+
   it("ignores empty deltas (no snapshot, no notification)", () => {
     const ts = createTurnStream();
     const got: string[] = [];

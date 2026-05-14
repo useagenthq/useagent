@@ -1088,6 +1088,10 @@ export const opencodeServerAdapter: EngineAdapter = {
       // their tool activity renders (↳-tagged) instead of being filtered out.
       const childSessions = new Set<string>();
       const textLen = new Map<string, number>();
+      // Reasoning ("thinking") deltas by part id - streamed live as a subdued
+      // Thinking affordance ahead of the answer. Tracked separately from textLen
+      // so a reasoning part and an answer part never share a cursor.
+      const reasoningLen = new Map<string, number>();
       // message id → role, from message.updated events. The engine emits
       // part updates for the USER'S own prompt message too — streaming those
       // echoed the prompt into live narration (user-reported).
@@ -1130,6 +1134,30 @@ export const opencodeServerAdapter: EngineAdapter = {
             }
           }
           if (text) textParts.set(partId, text);
+          return;
+        }
+
+        // REASONING — provider "thinking" tokens (config `reasoning: true`).
+        // Published LIVE as a distinct `reasoning` delta so the UI shows a subdued
+        // "Thinking" affordance the moment the model starts reasoning, typically
+        // seconds before any answer text. Live-only narration: durability is the
+        // provider-event lane (capturePart records part.reasoning), which the
+        // canonical translator maps to reasoning.delta/completed - so nothing here
+        // emits a step or changes the persistence contract. Child-session
+        // reasoning is subagent chatter; keep the parent channel clean.
+        if (part.type === "reasoning") {
+          if (isChild) return;
+          const text = typeof part.text === "string" ? (part.text as string) : "";
+          if (typeof delta === "string" && delta.length > 0) {
+            ctx.publishDelta?.(delta, "reasoning");
+            reasoningLen.set(partId, text.length);
+          } else {
+            const prev = reasoningLen.get(partId) ?? 0;
+            if (text.length > prev) {
+              ctx.publishDelta?.(text.slice(prev), "reasoning");
+              reasoningLen.set(partId, text.length);
+            }
+          }
           return;
         }
 

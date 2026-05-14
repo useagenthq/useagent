@@ -57,6 +57,9 @@ export type Turn = {
   live: boolean;
   /** Accumulated token deltas while this turn is live; "" once settled. */
   liveText: string;
+  /** Accumulated provider "thinking" deltas while this turn is live; "" once
+   *  settled. Surfaced as a subdued Thinking affordance ahead of the answer. */
+  liveReasoning: string;
   /** Native ordered-frame projection (text + tool parts by seq) for the watched
    *  run — the source for the interleaved timeline. Absent on settled history runs
    *  (no frame stream), which fall back to the narration-blob + worklog rendering. */
@@ -137,6 +140,25 @@ function LiveNarration({ text }: { text: string }) {
     </div>
   );
 }
+
+// Subdued variant of MD_CLASS for streamed reasoning (tailwind-merge lets the
+// muted text color win over MD_CLASS's strong default).
+const MD_CLASS_REASONING = cn(MD_CLASS, "text-text-sub-600");
+
+/** Live provider "thinking" surfaced AHEAD of the answer: a subdued, truthful
+ *  Thinking disclosure streaming the real reasoning tokens. It fills the
+ *  pre-answer gap with real provider output (never a fabricated spinner) and
+ *  yields once the answer text begins. Memoized by text so a streaming sibling
+ *  or a completing tool never re-renders it. */
+const LiveThinking = memo(function LiveThinking({ text }: { text: string }) {
+  return (
+    <Thinking label="Thinking" active open>
+      <div data-testid="live-thinking">
+        <Markdown className={MD_CLASS_REASONING}>{text}</Markdown>
+      </div>
+    </Thinking>
+  );
+});
 
 /** One narration burst of the interleaved timeline — the same progressive-markdown
  *  treatment LiveNarration uses, memoized by its text so a streaming sibling burst
@@ -329,7 +351,7 @@ function WorklogCapsule({
 /** A single turn: the user's clean prompt, the agent's answer, and its activity
  * (open + streaming while live, a collapsed disclosure once settled). */
 function TurnBlock({ turn, onSendNow }: { turn: Turn; onSendNow?: () => void }) {
-  const { run, steps, status, summary, live, liveText } = turn;
+  const { run, steps, status, summary, live, liveText, liveReasoning } = turn;
   // Capture whether this turn was streaming when it first mounted, so its
   // summary typewriters in on arrival but settled history renders instantly.
   const [wasLive] = useState(() => live);
@@ -386,6 +408,11 @@ function TurnBlock({ turn, onSendNow }: { turn: Turn; onSendNow?: () => void }) 
   // fading text + caret and suppress the Thinking shimmer so only one live
   // signal shows at a time.
   const narrating = live && liveText.length > 0;
+  // The live thinking affordance yields the moment answer text begins, in either
+  // render path: fallback narration (liveText), the durable summary, or an answer
+  // burst inside the interleaved timeline.
+  const answerStarted =
+    liveText.length > 0 || Boolean(summary) || (timeline != null && hasNarration(timeline));
 
   // STANDARD queued rendering (matches opencode's steering-queue model): a
   // follow-up sent while the thread is busy queues into the same session, and
@@ -431,6 +458,10 @@ function TurnBlock({ turn, onSendNow }: { turn: Turn; onSendNow?: () => void }) 
             {engineLabel(run.engine)}
           </span>
         </div>
+
+        {/* Thinking surfaced ahead of the answer: real streamed reasoning tokens
+            (not a spinner), yielding the instant answer text starts. */}
+        {live && !answerStarted && liveReasoning && <LiveThinking text={liveReasoning} />}
 
         {timeline ? (
           /* Native turn: the interleaved timeline IS the turn — narration bursts
@@ -622,7 +653,7 @@ export function Conversation({
   const scrollRef = useRef<HTMLDivElement>(null);
   const stickRef = useRef(true);
   const scrollSignature = turns
-    .map((t) => `${t.steps.length}:${t.liveText.length}:${t.summary ? 1 : 0}`)
+    .map((t) => `${t.steps.length}:${t.liveText.length}:${t.liveReasoning.length}:${t.summary ? 1 : 0}`)
     .join("|");
   useEffect(() => {
     const el = scrollRef.current;
