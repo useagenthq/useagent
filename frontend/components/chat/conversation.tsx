@@ -160,6 +160,21 @@ const LiveThinking = memo(function LiveThinking({ text }: { text: string }) {
   );
 });
 
+/** A SETTLED reasoning burst in the interleaved timeline: a collapsed, subdued
+ *  "Thought" disclosure (reuses the Thinking primitive, inactive - no shimmer),
+ *  expandable to read the real thoughts. Duration is intentionally omitted -
+ *  native frames carry no timestamps, so deriving one would break the canonical
+ *  vs native timeline equivalence the reducers are held to. */
+const SettledThought = memo(function SettledThought({ text }: { text: string }) {
+  return (
+    <Thinking label="Thought" active={false}>
+      <div data-testid="settled-thought">
+        <Markdown className={MD_CLASS_REASONING}>{text}</Markdown>
+      </div>
+    </Thinking>
+  );
+});
+
 /** One narration burst of the interleaved timeline — the same progressive-markdown
  *  treatment LiveNarration uses, memoized by its text so a streaming sibling burst
  *  or a completing tool never re-renders the settled ones (no fanout churn). */
@@ -236,6 +251,8 @@ function Timeline({ nodes, live }: { nodes: TimelineNode[]; live: boolean }) {
             <TextBurst key={node.key} text={node.text} />
           ) : node.kind === "artifact" ? (
             <ArtifactRow key={node.key} node={node} />
+          ) : node.kind === "reasoning" ? (
+            <SettledThought key={node.key} text={node.text} />
           ) : (
             <ToolStepRow key={node.key} step={node.step} state={i === last ? "running" : "done"} />
           ),
@@ -270,6 +287,8 @@ function Timeline({ nodes, live }: { nodes: TimelineNode[]; live: boolean }) {
             <MarkerRow key={g.key} marker={g.node.marker} />
           ) : g.node.kind === "artifact" ? (
             <ArtifactRow key={g.key} node={g.node} />
+          ) : g.node.kind === "reasoning" ? (
+            <SettledThought key={g.key} text={g.node.text} />
           ) : (
             <TextBurst key={g.key} text={g.node.text} />
           );
