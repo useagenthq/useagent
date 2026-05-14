@@ -1,13 +1,13 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import type { Sandbox } from "@daytona/sdk";
+import type { SandboxHandle } from "../sandboxes/provider";
 import {
   forgetLiveThreadSandbox,
   getLiveThreadSandbox,
   rememberLiveThreadSandbox,
 } from "./sandbox-runtime";
 
-function sandbox(id: string): Sandbox {
-  return { id } as Sandbox;
+function sandbox(id: string): SandboxHandle {
+  return { id } as SandboxHandle;
 }
 
 describe("live thread sandbox registry", () => {

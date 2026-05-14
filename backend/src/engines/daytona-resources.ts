@@ -1,4 +1,4 @@
-import type { Sandbox } from "@daytona/sdk";
+import type { SandboxHandle } from "../sandboxes/provider";
 
 export interface SandboxResourceTarget {
   cpu: number;
@@ -50,7 +50,7 @@ export function resolveSandboxResourceTarget(
  * retained box or reject a fresh provision before starting the agent.
  */
 export function sandboxMeetsResourceTarget(
-  sandbox: Sandbox,
+  sandbox: SandboxHandle,
   target = resolveSandboxResourceTarget(),
 ): boolean {
   return (
@@ -62,7 +62,7 @@ export function sandboxMeetsResourceTarget(
 }
 
 export function assertSandboxResources(
-  sandbox: Sandbox,
+  sandbox: SandboxHandle,
   target = resolveSandboxResourceTarget(),
 ): SandboxResourceTarget {
   if (!sandboxMeetsResourceTarget(sandbox, target)) {

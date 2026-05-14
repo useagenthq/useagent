@@ -1,4 +1,4 @@
-import type { Sandbox } from "@daytona/sdk";
+import type { SandboxHandle } from "../sandboxes/provider";
 import {
   BROWSER_CDP_ENDPOINT,
   BROWSER_DISPLAY,
@@ -76,7 +76,7 @@ export function buildDesktopLaunchCommand(): string {
   ].join("\n");
 }
 
-async function localDesktopHealthy(sandbox: Sandbox): Promise<boolean> {
+async function localDesktopHealthy(sandbox: SandboxHandle): Promise<boolean> {
   const probe = await sandbox.process
     .executeCommand(
       `curl -fsS -m 3 -o /dev/null http://127.0.0.1:${DESKTOP_PORT}/vnc.html && ` +
@@ -91,7 +91,7 @@ async function localDesktopHealthy(sandbox: Sandbox): Promise<boolean> {
 }
 
 async function provisionSandboxDesktopView(
-  sandbox: Sandbox,
+  sandbox: SandboxHandle,
   signal: AbortSignal,
 ): Promise<SandboxDesktop> {
   const probe = await sandbox.process.executeCommand(
@@ -191,7 +191,7 @@ async function provisionSandboxDesktopView(
  * MCP installation stays outside this lock so opening Desktop never waits for
  * an unrelated npm install on genuinely old snapshots. */
 async function serializedDesktopView(
-  sandbox: Sandbox,
+  sandbox: SandboxHandle,
   signal: AbortSignal,
 ): Promise<SandboxDesktop> {
   const key: string | object = sandbox.id || sandbox;
@@ -216,7 +216,7 @@ async function serializedDesktopView(
 }
 
 async function provisionSandboxDesktop(
-  sandbox: Sandbox,
+  sandbox: SandboxHandle,
   signal: AbortSignal,
 ): Promise<SandboxDesktop> {
   const desktop = await serializedDesktopView(sandbox, signal);
@@ -253,7 +253,7 @@ async function provisionSandboxDesktop(
  * Playwright MCP installation: opening Desktop must never wait on an agent-tool
  * dependency that the iframe does not use. */
 export async function ensureSandboxDesktopView(
-  sandbox: Sandbox,
+  sandbox: SandboxHandle,
   signal: AbortSignal,
 ): Promise<SandboxDesktop> {
   try {
@@ -274,7 +274,7 @@ export async function ensureSandboxDesktopView(
  * capability degradation, not a coding-run failure: callers advertise
  * `desktop:false` and continue the agent turn. */
 export async function ensureSandboxDesktop(
-  sandbox: Sandbox,
+  sandbox: SandboxHandle,
   signal: AbortSignal,
 ): Promise<SandboxDesktop> {
   try {

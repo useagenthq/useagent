@@ -5,7 +5,7 @@
 // inside the chosen repositories - never an empty workspace. One implementation,
 // one trust boundary; do not copy this per engine.
 // ---------------------------------------------------------------------------
-import type { Sandbox } from "@daytona/sdk";
+import type { SandboxHandle } from "../sandboxes/provider";
 import { resolveGithubToken } from "../github/auth";
 import { parseRepoRef } from "../github/repo-ref";
 import type { EngineRunContext } from "./types";
@@ -35,7 +35,7 @@ export function shq(s: string): string {
  * than silently leaving the user's chosen repo missing.
  */
 export async function ensureRepoClone(
-  sandbox: Sandbox,
+  sandbox: SandboxHandle,
   workdir: string,
   entry: string,
   ctx: EngineRunContext,
@@ -163,7 +163,7 @@ export async function ensureRepoClone(
  * is a fast skip once cloned); a fresh clone that fails fails the run honestly.
  */
 export async function prepareRepos(
-  sandbox: Sandbox,
+  sandbox: SandboxHandle,
   workdir: string,
   ctx: EngineRunContext,
 ): Promise<void> {

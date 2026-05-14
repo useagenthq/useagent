@@ -1,4 +1,4 @@
-import { Daytona } from "@daytona/sdk";
+import { daytonaProvider } from "../sandboxes/provider";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { db } from "../db/client";
 import { runs } from "../db/schema";
@@ -121,7 +121,7 @@ const INVENTORY_TTL_MS = 30_000;
 async function refreshInventory(): Promise<void> {
   const apiKey = process.env.DAYTONA_API_KEY;
   if (!apiKey) return;
-  const daytona = new Daytona({ apiKey, target: process.env.DAYTONA_TARGET ?? "us" });
+  const daytona = daytonaProvider(apiKey);
   const boxes: SandboxRow[] = [];
   for await (const sb of daytona.list()) {
     const labels = (sb as { labels?: Record<string, string> }).labels ?? {};

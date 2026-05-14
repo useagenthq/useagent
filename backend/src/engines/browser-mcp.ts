@@ -1,4 +1,4 @@
-import type { Sandbox } from "@daytona/sdk";
+import type { SandboxHandle } from "../sandboxes/provider";
 
 export const PLAYWRIGHT_MCP_VERSION = "0.0.79";
 export const BROWSER_DISPLAY = ":1";
@@ -61,7 +61,7 @@ export function opencodeBrowserMcpConfig(): Record<string, unknown> {
  * is created. `alwaysLoad` turns a silent model-visible omission into a bounded
  * startup connection gate; the endpoint has no credentials and is reachable
  * only inside this thread's sandbox. */
-export async function registerClaudeBrowserMcp(sandbox: Sandbox): Promise<boolean> {
+export async function registerClaudeBrowserMcp(sandbox: SandboxHandle): Promise<boolean> {
   const config = JSON.stringify({
     type: "http",
     url: BROWSER_MCP_URL,
@@ -87,7 +87,7 @@ function browserMcpLaunchCommand(workdir: string): string {
   ].join("\n");
 }
 
-async function residentBrowserMcpListening(sandbox: Sandbox): Promise<boolean> {
+async function residentBrowserMcpListening(sandbox: SandboxHandle): Promise<boolean> {
   const probe = await sandbox.process
     .executeCommand(
       // A body-less GET intentionally returns HTTP 400. curl without -f still
@@ -139,7 +139,7 @@ function browserMcpGuardCommand(): string {
   ].join("; ");
 }
 
-async function browserMcpGuardHealthy(sandbox: Sandbox): Promise<boolean> {
+async function browserMcpGuardHealthy(sandbox: SandboxHandle): Promise<boolean> {
   const ping = JSON.stringify({
     jsonrpc: "2.0",
     id: "skynet-browser-guard-ping",
@@ -162,7 +162,7 @@ async function browserMcpGuardHealthy(sandbox: Sandbox): Promise<boolean> {
   return probe?.exitCode === 0;
 }
 
-async function createBrowserMcpGuard(sandbox: Sandbox): Promise<boolean> {
+async function createBrowserMcpGuard(sandbox: SandboxHandle): Promise<boolean> {
   const result = await sandbox.process
     .executeCommand(browserMcpGuardCommand(), undefined, undefined, 20)
     .catch(() => null);
@@ -170,7 +170,7 @@ async function createBrowserMcpGuard(sandbox: Sandbox): Promise<boolean> {
 }
 
 export async function ensureResidentBrowserMcp(
-  sandbox: Sandbox,
+  sandbox: SandboxHandle,
   workdir: string,
   signal: AbortSignal,
 ): Promise<boolean> {

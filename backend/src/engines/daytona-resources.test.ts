@@ -1,12 +1,12 @@
 import { describe, expect, test } from "bun:test";
-import type { Sandbox } from "@daytona/sdk";
+import type { SandboxHandle } from "../sandboxes/provider";
 import {
   assertSandboxResources,
   resolveSandboxResourceTarget,
   sandboxMeetsResourceTarget,
 } from "./daytona-resources";
 
-const sandboxWithResources = (cpu: number, memory: number) => ({ cpu, memory }) as Sandbox;
+const sandboxWithResources = (cpu: number, memory: number) => ({ cpu, memory }) as SandboxHandle;
 
 describe("Daytona sandbox resource policy", () => {
   test("defaults browser-capable engines to the proven 2 CPU / 8 GiB profile", () => {

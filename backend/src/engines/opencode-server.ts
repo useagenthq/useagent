@@ -1,4 +1,4 @@
-import { Daytona, type Sandbox } from "@daytona/sdk";
+import { daytonaProvider, type SandboxHandle } from "../sandboxes/provider";
 import { providerEventExists, recordProviderEvent } from "../runs/provider-events";
 import type {
   EmitStep,
@@ -176,7 +176,7 @@ function toolStep(
  *  instead poll OpenCode's real health endpoint through the same preview link
  *  used for the session, with one bounded fetch per attempt. */
 async function ensureServer(
-  sandbox: Sandbox,
+  sandbox: SandboxHandle,
   npx: boolean,
   signal: AbortSignal,
 ): Promise<OpenCodeRuntimeServer> {
@@ -279,7 +279,7 @@ async function reuseHealthyResidentServer(
  * before a fallback restart. Swallowing delete errors can otherwise let
  * ensureServer observe the old healthy process and dispatch with stale config. */
 async function stopServerForConfigReload(
-  sandbox: Sandbox,
+  sandbox: SandboxHandle,
   server: OpenCodeRuntimeServer,
   signal: AbortSignal,
 ): Promise<void> {
@@ -338,7 +338,7 @@ interface PreparedOpenCodeConfig {
 }
 
 async function prepareOpencodeSandboxConfig(
-  sandbox: Sandbox,
+  sandbox: SandboxHandle,
   ctx: EngineRunContext,
   desktop: SandboxDesktop,
 ): Promise<PreparedOpenCodeConfig | null> {
@@ -444,7 +444,7 @@ async function prepareOpencodeSandboxConfig(
 }
 
 async function writeOpencodeSandboxConfig(
-  sandbox: Sandbox,
+  sandbox: SandboxHandle,
   config: Record<string, unknown>,
 ): Promise<void> {
   // Base64 keeps tokens/URLs out of shell parsing and logs. The global config is
@@ -475,7 +475,7 @@ async function writeOpencodeSandboxConfig(
  * false the text explicitly forbids claiming a durable save or writing a local
  * memory file (the observed no-gateway failure mode) - honesty over pretend tools.
  */
-async function correctMemorySkillText(sandbox: Sandbox, hasTools: boolean): Promise<void> {
+async function correctMemorySkillText(sandbox: SandboxHandle, hasTools: boolean): Promise<void> {
   try {
     const b64 = Buffer.from(memorySkillText(hasTools), "utf8").toString("base64");
     await sandbox.process.executeCommand(
@@ -540,7 +540,7 @@ async function openResidentServer(
   const apiKey = process.env.DAYTONA_API_KEY;
   if (!apiKey) return null;
   try {
-    const daytona = new Daytona({ apiKey, target: process.env.DAYTONA_TARGET ?? "us" });
+    const daytona = daytonaProvider(apiKey);
     const sandbox = await daytona.get(sandboxId).catch(() => null);
     if (!sandbox) return null;
     if ((sandbox as { state?: string }).state !== "started") return null;
@@ -701,7 +701,7 @@ export const opencodeServerAdapter: EngineAdapter = {
       throw new Error("opencode engine requires a configured provider gateway");
     }
     const startedAt = Date.now();
-    const daytona = new Daytona({ apiKey, target: process.env.DAYTONA_TARGET ?? "us" });
+    const daytona = daytonaProvider(apiKey);
     const budgetMs = Number(process.env.ENGINE_TIMEOUT_MS ?? 600_000);
 
     // Org secrets live in a protected dotenv, not Daytona's immutable env catalog
@@ -720,7 +720,7 @@ export const opencodeServerAdapter: EngineAdapter = {
 
     const snapshot = process.env.DAYTONA_SNAPSHOT ?? "skynet-agent-v17";
     const resourceTarget = resolveSandboxResourceTarget();
-    let sandbox: Sandbox | null = null;
+    let sandbox: SandboxHandle | null = null;
     let npxFallback = false;
     let retainForThread = false;
 

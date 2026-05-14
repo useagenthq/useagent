@@ -1,4 +1,4 @@
-import { Daytona, type Sandbox } from "@daytona/sdk";
+import { daytonaProvider, type SandboxHandle } from "../sandboxes/provider";
 import type { EmitStep, EngineAdapter, EngineRunContext } from "./types";
 import {
   assertSandboxResources,
@@ -131,7 +131,7 @@ interface SandboxEngineSpec {
   handleLine(line: string, state: ParseState): SpecAction[];
   /** Extra sandbox preparation (e.g. codex auth seeding). Runs after create AND
    *  after reuse — must be idempotent and cheap. */
-  prepare?(sandbox: Sandbox, ctx: EngineRunContext): Promise<void>;
+  prepare?(sandbox: SandboxHandle, ctx: EngineRunContext): Promise<void>;
 }
 
 /** Track the last MEANINGFUL non-JSON line for error surfacing. npm's install
@@ -421,7 +421,7 @@ function makeSandboxAdapter(spec: SandboxEngineSpec): EngineAdapter {
         throw new Error(`${spec.id} engine requires a configured provider gateway`);
       }
       const startedAt = Date.now();
-      const daytona = new Daytona({ apiKey, target: process.env.DAYTONA_TARGET ?? "us" });
+      const daytona = daytonaProvider(apiKey);
 
       // Engine/provider keys ride as sandbox env — never on the command line.
       // Org secrets live in a protected dotenv that the CLI launch sources
@@ -448,7 +448,7 @@ function makeSandboxAdapter(spec: SandboxEngineSpec): EngineAdapter {
       const autoDeleteInterval = Number(process.env.SANDBOX_AUTO_DELETE_MIN ?? 4320); // 3 days
       const snapshot = process.env.DAYTONA_ACP_SNAPSHOT ?? "skynet-acp-v2";
       const resourceTarget = resolveSandboxResourceTarget();
-      let sandbox: Sandbox | null = null;
+      let sandbox: SandboxHandle | null = null;
       let retainForThread = false;
 
       try {

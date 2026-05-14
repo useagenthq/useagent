@@ -8,7 +8,7 @@
  * The downloader is swappable for tests (setSandboxDownloaderForTest) so the
  * tool + outbox can be exercised without a live sandbox.
  */
-import { Daytona } from "@daytona/sdk";
+import { daytonaProvider } from "../sandboxes/provider";
 
 export interface SandboxFile {
   bytes: Buffer;
@@ -20,7 +20,7 @@ export type SandboxDownloader = (sandboxId: string, path: string, maxBytes: numb
 async function daytonaDownload(sandboxId: string, path: string, maxBytes: number): Promise<SandboxFile> {
   const apiKey = process.env.DAYTONA_API_KEY;
   if (!apiKey) throw new Error("DAYTONA_API_KEY is not set");
-  const daytona = new Daytona({ apiKey, target: process.env.DAYTONA_TARGET ?? "us" });
+  const daytona = daytonaProvider(apiKey);
   const sandbox = await daytona.get(sandboxId);
   const info = await sandbox.fs.getFileDetails(path);
   const declared = Number((info as { size?: number }).size ?? 0);
