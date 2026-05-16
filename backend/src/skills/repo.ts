@@ -1,4 +1,4 @@
-import { and, eq, sql } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import { db, type Executor } from "../db/client";
 import { skillRevisions, skills, type SkillKind, type SkillSections } from "../db/schema";
 import { formatSkillMarkdown, hashSkillContent, type SkillContent } from "./format";
@@ -13,6 +13,15 @@ import { formatSkillMarkdown, hashSkillContent, type SkillContent } from "./form
 
 export type SkillRecord = typeof skills.$inferSelect;
 export type SkillRevisionRecord = typeof skillRevisions.$inferSelect;
+
+export interface SkillCatalogEntry {
+  id: string;
+  kind: SkillKind;
+  name: string;
+  description: string;
+  tags: string[];
+  currentVersion: number;
+}
 
 /** A resolved, pinned skill revision — everything a run needs to materialize and
  *  attribute the skill it loaded. */
@@ -166,6 +175,27 @@ export async function getSkillForOrg(
     .where(and(eq(skills.id, id), eq(skills.orgId, orgId)))
     .limit(1);
   return row ?? null;
+}
+
+/**
+ * Return the current org-scoped skill catalog for agent-side semantic choice.
+ * The catalog carries descriptions and tags, never instruction bodies or
+ * cross-tenant rows. Selection is deliberately left to the model rather than a
+ * keyword/synonym scorer in the control plane.
+ */
+export async function listSkillCatalogForOrg(orgId: string): Promise<SkillCatalogEntry[]> {
+  return db
+    .select({
+      id: skills.id,
+      kind: skills.kind,
+      name: skills.name,
+      description: skills.description,
+      tags: skills.tags,
+      currentVersion: skills.currentVersion,
+    })
+    .from(skills)
+    .where(eq(skills.orgId, orgId))
+    .orderBy(desc(skills.usageCount), desc(skills.updatedAt), desc(skills.id));
 }
 
 /**

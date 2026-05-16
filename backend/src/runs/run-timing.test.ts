@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import {
+  createFirstOutputMarker,
   createRunTimer,
   deriveTimingTable,
   recordStageMark,
@@ -51,6 +52,23 @@ describe("run-timing ledger", () => {
     expect(events[1]!.id).toBe("run-2:timing:dispatch");
   });
 
+  test("records only the first visible, reasoning, and text output milestones", () => {
+    const stages: string[] = [];
+    const markOutput = createFirstOutputMarker({ mark: (stage) => stages.push(stage) });
+
+    markOutput("   ", "reasoning");
+    markOutput("thinking", "reasoning");
+    markOutput("more thinking", "reasoning");
+    markOutput("answer");
+    markOutput("more answer");
+
+    expect(stages).toEqual([
+      "first_reasoning_delta",
+      "first_visible_delta",
+      "first_text_delta",
+    ]);
+  });
+
   test("a throwing sink never propagates (timing must not fail a run)", () => {
     const timer = createRunTimer("run-3", "thread-3", () => {
       throw new Error("sink down");
@@ -68,15 +86,29 @@ describe("deriveTimingTable", () => {
     { eventType: TIMING_SPAN, payload: JSON.stringify({ stage: "sandbox", startedAt: 100, endedAt: 400, durMs: 300 }) },
     { eventType: TIMING_SPAN, payload: { stage: "prepare", startedAt: 400, endedAt: 900, durMs: 500 } },
     { eventType: TIMING_MARK, payload: { stage: "dispatch", at: 950 } },
+    { eventType: TIMING_MARK, payload: { stage: "first_reasoning_delta", at: 1200 } },
+    { eventType: TIMING_MARK, payload: { stage: "first_visible_delta", at: 1200 } },
+    { eventType: TIMING_MARK, payload: { stage: "first_text_delta", at: 1500 } },
     { eventType: TIMING_SPAN, payload: { stage: "engine.turn", startedAt: 50, endedAt: 2000, durMs: 1950 } },
   ];
 
   test("orders by start, extracts dispatch, computes total", () => {
     const table = deriveTimingTable(rows);
-    expect(table.rows.map((r) => r.stage)).toEqual(["engine.turn", "sandbox", "prepare", "dispatch"]);
+    expect(table.rows.map((r) => r.stage)).toEqual([
+      "engine.turn",
+      "sandbox",
+      "prepare",
+      "dispatch",
+      "first_reasoning_delta",
+      "first_visible_delta",
+      "first_text_delta",
+    ]);
     expect(table.dispatchAt).toBe(950);
     expect(table.totalMs).toBe(2000 - 50);
     expect(table.timeToFirstEventMs).toBeNull(); // no first-event input supplied
+    expect(table.timeToFirstReasoningMs).toBe(250);
+    expect(table.timeToFirstVisibleMs).toBe(250);
+    expect(table.timeToFirstTextMs).toBe(550);
   });
 
   test("computes dispatch-to-first-event when supplied", () => {

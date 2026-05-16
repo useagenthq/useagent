@@ -1,4 +1,8 @@
-import { daytonaProvider } from "../sandboxes/provider";
+import {
+  sandboxProvider,
+  sandboxProviderApiKey,
+  sandboxProviderKind,
+} from "../sandboxes/provider";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { db } from "../db/client";
 import { runs } from "../db/schema";
@@ -91,9 +95,9 @@ export async function getModelBurn(orgId: string): Promise<ModelBurnSummary> {
   };
 }
 
-// ── Machine (Daytona footprint) ─────────────────────────────────────────────
+// ── Machine (sandbox-provider footprint) ────────────────────────────────────
 
-/** Real machine snapshot for the Limits card. `sandboxes` is null when Daytona
+/** Real machine snapshot for the Limits card. `sandboxes` is null when the provider
  *  is unconfigured or its inventory hasn't been fetched yet — the frontend shows
  *  the snapshot alone rather than an invented meter. */
 export interface MachineStats {
@@ -107,8 +111,8 @@ interface SandboxRow {
 }
 
 /**
- * Cached raw Daytona inventory (skynet-labeled boxes only; org-independent — the
- * org filter is applied per-request against the runs table). `daytona.list()` is
+ * Cached raw provider inventory (skynet-labeled boxes only; org-independent — the
+ * org filter is applied per-request against the runs table). Provider listing is
  * slow and latency-variable (seconds to minutes), so it is NEVER awaited on the
  * request path: a stale entry is served immediately while a single background
  * refresh runs. The very first request (cold cache) reports `sandboxes: null`
@@ -119,11 +123,11 @@ let refreshing: Promise<void> | null = null;
 const INVENTORY_TTL_MS = 30_000;
 
 async function refreshInventory(): Promise<void> {
-  const apiKey = process.env.DAYTONA_API_KEY;
-  if (!apiKey) return;
-  const daytona = daytonaProvider(apiKey);
+  const apiKey = sandboxProviderApiKey();
+  if (apiKey === undefined) return;
+  const provider = sandboxProvider(apiKey);
   const boxes: SandboxRow[] = [];
-  for await (const sb of daytona.list()) {
+  for await (const sb of provider.list()) {
     const labels = (sb as { labels?: Record<string, string> }).labels ?? {};
     const runId = labels["skynet-run"];
     if (!runId) continue; // only sandboxes this platform provisioned
@@ -139,7 +143,7 @@ function ensureInventory(): void {
   if (stale && !refreshing) {
     refreshing = refreshInventory()
       .catch((err) =>
-        console.warn("[fleet] daytona inventory refresh failed:", err instanceof Error ? err.message : err),
+        console.warn("[fleet] sandbox inventory refresh failed:", err instanceof Error ? err.message : err),
       )
       .finally(() => {
         refreshing = null;
@@ -150,15 +154,17 @@ function ensureInventory(): void {
 const STOPPED_STATES = new Set(["stopped", "archived", "paused"]);
 
 /**
- * The org's live Daytona footprint: how many of its sandboxes are running
+ * The org's live sandbox footprint: how many of its sandboxes are running
  * (`active`) vs idle-but-retained (`idle`), and how many distinct conversation
  * threads are backed by a running box. Org scope is enforced by joining each
  * sandbox's `skynet-run` label (a runId) to this org's runs — a box whose run
  * isn't ours is invisible here.
  */
 export async function getMachineStats(orgId: string): Promise<MachineStats> {
-  const snapshot = process.env.DAYTONA_SNAPSHOT ?? "skynet-agent-v17";
-  if (!process.env.DAYTONA_API_KEY) return { snapshot, sandboxes: null };
+  const snapshot = sandboxProviderKind() === "cube"
+    ? process.env.CUBE_TEMPLATE_ID ?? "unconfigured"
+    : process.env.DAYTONA_SNAPSHOT ?? "skynet-agent-v17";
+  if (sandboxProviderApiKey() === undefined) return { snapshot, sandboxes: null };
 
   ensureInventory();
   const inv = inventoryCache;

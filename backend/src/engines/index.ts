@@ -3,7 +3,15 @@ import { claudeHarness, codexHarness } from "./acp-harness";
 import { acpClaudeAdapter, acpCodexAdapter } from "./acp-server";
 import { opencodeHarness, opencodeServerAdapter } from "./opencode-server";
 import { sandboxClaudeAdapter, sandboxCodexAdapter } from "./sandbox";
+import {
+  t3ClaudeAdapter,
+  t3CodexAdapter,
+  t3OpenCodeAdapter,
+  t3RunAdapterEngineSelected,
+  t3RunAdapterSelected,
+} from "./t3-adapter";
 import type { EngineAdapter, HarnessAdapter } from "./types";
+import { routeT3Harness } from "./t3-harness";
 
 // Registry of the real engine adapters, keyed by engine id. `mock` is NOT here —
 // it stays the scripted worker path (worker.ts) and is the default. Every
@@ -14,16 +22,28 @@ import type { EngineAdapter, HarnessAdapter } from "./types";
 // (sandbox.ts) if the resident transport misbehaves. `daytona` / `claude-sdk`
 // are legacy aliases so pre-consolidation rows (and their replies) still resolve.
 const cliFallback = process.env.ENGINE_TRANSPORT === "cli";
-const claude = cliFallback ? sandboxClaudeAdapter : acpClaudeAdapter;
-const codex = cliFallback ? sandboxCodexAdapter : acpCodexAdapter;
+const legacyClaude = cliFallback ? sandboxClaudeAdapter : acpClaudeAdapter;
+const legacyCodex = cliFallback ? sandboxCodexAdapter : acpCodexAdapter;
+
+function routeT3(legacy: EngineAdapter, t3: EngineAdapter): EngineAdapter {
+  return {
+    id: legacy.id,
+    run: (ctx) =>
+      (t3RunAdapterEngineSelected(legacy.id) && t3RunAdapterSelected(ctx) ? t3 : legacy).run(ctx),
+  };
+}
+
+const claude = routeT3(legacyClaude, t3ClaudeAdapter);
+const codex = routeT3(legacyCodex, t3CodexAdapter);
+const opencode = routeT3(opencodeServerAdapter, t3OpenCodeAdapter);
 
 export const adapters: Record<string, EngineAdapter> = {
   acp: acpAdapter,
   claude,
   "claude-sdk": claude,
   codex,
-  daytona: opencodeServerAdapter,
-  opencode: opencodeServerAdapter,
+  daytona: opencode,
+  opencode,
 };
 
 // The typed HarnessAdapter control seam (capabilities / cancel / reconcile),
@@ -33,11 +53,11 @@ export const adapters: Record<string, EngineAdapter> = {
 // OpenCode implements real behavior; the ACP engines report honest capabilities
 // and typed `unsupported_capability` for control ops not yet wired (see acp-harness).
 export const harnessAdapters: Record<string, HarnessAdapter> = {
-  claude: claudeHarness,
-  "claude-sdk": claudeHarness,
-  codex: codexHarness,
-  daytona: opencodeHarness,
-  opencode: opencodeHarness,
+  claude: routeT3Harness(claudeHarness),
+  "claude-sdk": routeT3Harness(claudeHarness),
+  codex: routeT3Harness(codexHarness),
+  daytona: routeT3Harness(opencodeHarness),
+  opencode: routeT3Harness(opencodeHarness),
 };
 
 /** Resolve the control adapter for a provider/engine id, or undefined if none is

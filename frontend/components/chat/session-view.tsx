@@ -29,9 +29,15 @@ import {
   type PendingQuestion,
 } from "@/components/chat/question-state";
 import {
+  selectPendingApproval,
+  type ApprovalDecision,
+  type PendingApproval,
+} from "@/components/chat/approval-state";
+import {
   isLiveStatus,
   normalizeEngine,
   parseFileEntries,
+  supportsPreSessionModelSelection,
   type ApiRun,
   type EngineId,
   type MemoryScope,
@@ -98,6 +104,8 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
   const [stopError, setStopError] = useState<string | null>(null);
   const [answeringQuestion, setAnsweringQuestion] = useState(false);
   const [questionError, setQuestionError] = useState<string | null>(null);
+  const [answeringApproval, setAnsweringApproval] = useState(false);
+  const [approvalError, setApprovalError] = useState<string | null>(null);
 
   // ONE realtime subscription for the whole conversation, keyed by the ROOT thread
   // id for the page lifetime (final_fix.md): creating/queueing/starting/settling/
@@ -131,6 +139,11 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
     () => selectSessionCapabilities([...snapshot.byId.values()], engineSessionId),
     [snapshot.byId, engineSessionId],
   );
+  // `session.started` can arrive after the composer first renders. Until then,
+  // derive only this one capability from the engine's curated model catalog.
+  // Once negotiated capabilities exist, an explicit false remains authoritative.
+  const modelSelection =
+    caps?.modelSelection ?? supportsPreSessionModelSelection(newest.engine);
 
   // A settled turn shows its native timeline ONLY when it actually has native
   // frames (opencode tool rows live only on the native lane); a settled turn with
@@ -190,6 +203,15 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
     activeQuestion?.request.questions.length === 1 &&
     activeQuestion.request.questions[0]?.custom === true;
 
+  const activeApproval = useMemo(() => {
+    for (const turn of turns.toReversed()) {
+      if (!isLiveStatus(turn.status)) continue;
+      const request = selectPendingApproval(turn.native?.nativeFrames ?? []);
+      if (request) return { runId: turn.run.id, request };
+    }
+    return null;
+  }, [turns]);
+
   const submitQuestionAnswers = useCallback(
     async (target: { runId: string; request: PendingQuestion }, answers: string[][]) => {
       if (answeringQuestion) return false;
@@ -235,6 +257,51 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
     setQuestionError(null);
   }, [activeQuestion?.request.id]);
 
+  const submitApproval = useCallback(
+    async (target: { runId: string; request: PendingApproval }, decision: ApprovalDecision) => {
+      if (answeringApproval) return false;
+      setAnsweringApproval(true);
+      setApprovalError(null);
+      try {
+        const response = await backendFetch(
+          `/api/runs/${target.runId}/approvals/${target.request.id}/reply`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ decision }),
+          },
+        );
+        if (!response.ok) {
+          const body = (await response.json().catch(() => ({}))) as {
+            error?: unknown;
+            message?: unknown;
+          };
+          const message =
+            typeof body.message === "string"
+              ? body.message
+              : typeof body.error === "string"
+                ? body.error
+                : `backend ${response.status}`;
+          throw new Error(message);
+        }
+        void reconcile();
+        return true;
+      } catch (error) {
+        setApprovalError(
+          error instanceof Error ? error.message : "Could not respond to this approval",
+        );
+        return false;
+      } finally {
+        setAnsweringApproval(false);
+      }
+    },
+    [answeringApproval, reconcile],
+  );
+
+  useEffect(() => {
+    setApprovalError(null);
+  }, [activeApproval?.request.id]);
+
   // Removed with the cutover: the active-run projection cache, the terminal-state
   // refetch, and the five-second external-turn discovery poll. The thread stream
   // now delivers new runs (post-commit `created` signal), settled run fields
@@ -273,7 +340,7 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
             // Unsupported controls must not leak stale values into the API.
             // ACP replies inherit the thread model server-side; OpenCode may
             // send the user-selected per-turn override it actually supports.
-            ...(caps?.modelSelection === true ? { model } : {}),
+            ...(modelSelection ? { model } : {}),
             parent_run_id: newest.id,
             // The backend inherits the parent's scope when omitted; sending the
             // composer's choice lets the user change it for this reply.
@@ -305,7 +372,7 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
     },
     [
       activeQuestion,
-      caps?.modelSelection,
+      modelSelection,
       commandCatalogRevision,
       composerCanAnswerQuestion,
       engineSessionId,
@@ -564,13 +631,19 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
             pendingReply={pending?.text ?? null}
             commands={commands}
             commandState={catalogState}
-            modelSelection={caps?.modelSelection === true}
+            modelSelection={modelSelection}
             onReply={handleReply}
             pendingQuestion={activeQuestion?.request ?? null}
             answeringQuestion={answeringQuestion}
             questionError={questionError}
             onAnswerQuestion={async (answers) => {
               if (activeQuestion) await submitQuestionAnswers(activeQuestion, answers);
+            }}
+            pendingApproval={activeApproval?.request ?? null}
+            answeringApproval={answeringApproval}
+            approvalError={approvalError}
+            onAnswerApproval={async (decision) => {
+              if (activeApproval) await submitApproval(activeApproval, decision);
             }}
             sendNowFor={runningTurn ? headQueuedId : null}
             onSendNow={handleSendNow}
@@ -602,20 +675,20 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
 
         {railOpen && (
           <hr
+            data-testid="rail-resize-grip"
             tabIndex={0}
             aria-orientation="vertical"
-            aria-label="Resize the side panel"
+            aria-label="Resize the side panel; double-click to reset"
             aria-valuemin={RAIL_MIN}
             aria-valuemax={RAIL_MAX}
             aria-valuenow={railWidth ?? RAIL_DEFAULT}
-            title="Drag to resize · double-click to reset"
             onPointerDown={startRailDrag}
             onKeyDown={resizeRailWithKeyboard}
             onDoubleClick={() => {
               setRailWidth(null);
               localStorage.removeItem("skynet.rail-width");
             }}
-            className="before:bg-stroke-soft-200 hover:before:bg-stroke-sub-300 focus-visible:before:bg-primary-base relative -mx-1.5 hidden w-3 shrink-0 cursor-col-resize touch-none self-stretch outline-none before:absolute before:inset-y-3 before:left-1/2 before:w-px before:-translate-x-1/2 before:rounded-full before:content-[''] hover:before:w-1 focus-visible:before:w-1 md:block"
+            className="before:bg-stroke-soft-200 hover:before:bg-primary-base focus-visible:before:bg-primary-base relative -mx-1.5 hidden w-3 shrink-0 cursor-col-resize touch-none self-stretch border-0 outline-none before:pointer-events-none before:absolute before:left-1/2 before:top-1/2 before:h-10 before:w-1 before:-translate-x-1/2 before:-translate-y-1/2 before:rounded-full before:content-[''] md:block"
           />
         )}
 
@@ -656,7 +729,7 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
                     Terminal
                   </SegmentedControl.Trigger>
                   {/* Desktop is a stable product surface. The pane itself waits
-                      for or wakes the thread's Daytona sandbox on demand. */}
+                      for or wakes the thread's sandbox on demand. */}
                   <SegmentedControl.Trigger value="desktop" data-testid="rail-tab-desktop">
                     <RiComputerLine className="size-4" aria-hidden />
                     Desktop

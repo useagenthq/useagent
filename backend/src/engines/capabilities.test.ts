@@ -18,7 +18,7 @@ describe("sessionCapabilities (truthful per-engine + resource-driven)", () => {
     }
   });
 
-  test("OpenCode-only truths: nativeEmbed, plans, usage, reconcile, modelSelection; ACP: close", () => {
+  test("OpenCode-only truths: nativeEmbed, plans, usage, reconcile; selectable-model truths; ACP: close", () => {
     const oc = sessionCapabilities("opencode", res);
     expect(oc.nativeEmbed).toBe(true);
     expect(oc.plans).toBe(true);
@@ -30,18 +30,21 @@ describe("sessionCapabilities (truthful per-engine + resource-driven)", () => {
     expect(oc.reasoning).toBe(true);
     expect(oc.fileDiffs).toBe(true);
 
+    const codex = sessionCapabilities("codex", res);
+    expect(codex.modelSelection).toBe(true); // Codex accepts an explicit backend-policy model id
+
     for (const e of ["claude", "codex"]) {
       const c = sessionCapabilities(e, res);
       expect(c.nativeEmbed).toBe(false); // no opencode web embed
       expect(c.plans).toBe(false);
       expect(c.usage).toBe(false);
       expect(c.reconcile).toBe(false); // ACP control adapter is unsupported
-      expect(c.modelSelection).toBe(false); // ACP runs a fixed model - no fake model picker
       expect(c.close).toBe(true);
       expect(c.childSessions).toBe(false);
       expect(c.reasoning).toBe(false);
       expect(c.fileDiffs).toBe(false);
     }
+    expect(sessionCapabilities("claude", res).modelSelection).toBe(false);
   });
 
   test("legacy aliases normalize (daytona->opencode, claude-sdk->claude)", () => {
@@ -55,10 +58,29 @@ describe("sessionCapabilities (truthful per-engine + resource-driven)", () => {
     expect(sessionCapabilities("claude", { desktop: false, knowledgeTools: false }).desktop).toBe(false); // cold ACP sandbox
   });
 
-  test("approvals/questions are false (yolo / fail-closed) - never a fake approval UI", () => {
+  test("non-T3 approvals stay false while OpenCode advertises its wired question flow", () => {
     for (const e of ["opencode", "claude", "codex"]) {
       expect(sessionCapabilities(e, res).approvals).toBe(false);
-      expect(sessionCapabilities(e, res).questions).toBe(false);
     }
+    expect(sessionCapabilities("opencode", res).questions).toBe(true);
+    expect(sessionCapabilities("claude", res).questions).toBe(false);
+    expect(sessionCapabilities("codex", res).questions).toBe(false);
+  });
+
+  test("T3 advertises only the canonical surfaces its orchestration adapter wires", () => {
+    const capabilities = sessionCapabilities("codex", {
+      ...res,
+      t3Orchestration: true,
+    });
+    expect(capabilities).toMatchObject({
+      approvals: true,
+      questions: true,
+      childSessions: true,
+      reasoning: true,
+      plans: true,
+      usage: true,
+      reconcile: true,
+      nativeEmbed: false,
+    });
   });
 });

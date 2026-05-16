@@ -439,6 +439,13 @@ async function s7_terminal(wf: string): Promise<Result> {
 async function s8_desktop(wf: string): Promise<Result> {
   const checks: Result["checks"] = [];
   const { page } = await newPage(browser);
+  let desktopKeyFrames = 0;
+  page.on("websocket", (socket) => {
+    if (!socket.url().includes("/api/desktop-proxy/")) return;
+    socket.on("framesent", ({ payload }) => {
+      if (typeof payload !== "string" && payload[0] === 4) desktopKeyFrames += 1;
+    });
+  });
   try {
     await page.goto(`${FE}/session/${wf}`, { waitUntil: "domcontentloaded" });
     await page.waitForTimeout(2000);
@@ -447,8 +454,31 @@ async function s8_desktop(wf: string): Promise<Result> {
     await tab.click();
     await page.waitForTimeout(1500);
     const iframe = page.locator('iframe[title="Sandbox desktop"]');
+    await iframe.waitFor({ state: "visible" });
     const src = (await iframe.getAttribute("src").catch(() => "")) ?? "";
     checks.push({ name: "desktop: pane renders the noVNC iframe (vnc.html via desktop-proxy)", ok: /\/api\/desktop-proxy\/.+\/vnc\.html/.test(src), note: src.slice(0, 80) });
+    checks.push({ name: "desktop: iframe starts inert so it cannot steal composer input", ok: (await iframe.evaluate((node) => node.style.pointerEvents)) === "none" });
+    const control = page.getByRole("button", { name: "Control sandbox desktop" });
+    await control.waitFor({ state: "visible" });
+    await control.click();
+    await page.waitForFunction(() => document.querySelector<HTMLIFrameElement>('iframe[title="Sandbox desktop"]')?.style.pointerEvents === "auto");
+    checks.push({ name: "desktop: explicit control enables noVNC input", ok: (await iframe.evaluate((node) => node.style.pointerEvents)) === "auto" });
+    const keyFramesBeforeDesktopInput = desktopKeyFrames;
+    await page.keyboard.type(`DESKTOP_ONLY_${crypto.randomUUID().slice(0, 8)}`);
+    await page.waitForTimeout(250);
+    checks.push({ name: "desktop: controlled noVNC receives keyboard frames", ok: desktopKeyFrames > keyFramesBeforeDesktopInput, note: `frames=${desktopKeyFrames - keyFramesBeforeDesktopInput}` });
+
+    const composer = page.locator('textarea[placeholder="Reply to Skynet…"]');
+    await composer.click();
+    await page.waitForFunction(() => document.querySelector<HTMLIFrameElement>('iframe[title="Sandbox desktop"]')?.style.pointerEvents === "none");
+    const keyFramesBeforeComposerInput = desktopKeyFrames;
+    const sentinel = `COMPOSER_ONLY_${crypto.randomUUID().slice(0, 8)}`;
+    await page.keyboard.type(sentinel);
+    await page.waitForTimeout(250);
+    checks.push({ name: "desktop: clicking composer releases noVNC input capture", ok: (await iframe.evaluate((node) => node.style.pointerEvents)) === "none" });
+    checks.push({ name: "desktop: composer owns browser focus after release", ok: await composer.evaluate((node) => document.activeElement === node) });
+    checks.push({ name: "desktop: keyboard input stays in the composer", ok: (await composer.inputValue()) === sentinel });
+    checks.push({ name: "desktop: composer typing emits no noVNC keyboard frames", ok: desktopKeyFrames === keyFramesBeforeComposerInput, note: `frames=${desktopKeyFrames - keyFramesBeforeComposerInput}` });
     // The proxied vnc.html must actually serve (sandbox reachable).
     const vncUrl = `${FE}${src.startsWith("/") ? src : "/" + src}`;
     const r = await fetch(vncUrl, { headers: { Origin: "http://localhost:3200" } }).catch(() => null);

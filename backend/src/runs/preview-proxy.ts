@@ -1,4 +1,9 @@
-import { daytonaProvider, type SandboxHandle } from "../sandboxes/provider";
+import {
+  sandboxPreviewHeaders,
+  sandboxProvider,
+  sandboxProviderApiKey,
+  type SandboxHandle,
+} from "../sandboxes/provider";
 import {
   forgetLiveThreadSandbox,
   getLiveThreadSandbox,
@@ -36,6 +41,8 @@ const STRIP_REQUEST = new Set([
   "content-length",
   "accept-encoding",
   "cookie",
+  "cube-traffic-access-token",
+  "e2b-traffic-access-token",
   "x-daytona-preview-token",
 ]);
 const STRIP_RESPONSE = new Set([
@@ -97,14 +104,14 @@ export async function resolvePreviewSandbox(threadId: string): Promise<SandboxHa
     }
   }
 
-  const apiKey = process.env.DAYTONA_API_KEY;
-  if (!apiKey) throw new Error("preview proxy needs DAYTONA_API_KEY in the backend env");
+  const apiKey = sandboxProviderApiKey();
+  if (apiKey === undefined) throw new Error("preview proxy needs sandbox provider credentials");
 
   const sandboxId = await getThreadSandbox(threadId);
   if (!sandboxId) throw new Error("no-sandbox");
 
-  const daytona = daytonaProvider(apiKey);
-  const sandbox = await daytona.get(sandboxId);
+  const provider = sandboxProvider(apiKey);
+  const sandbox = await provider.get(sandboxId);
   const state = (sandbox as { state?: string }).state;
   if (state === "stopped" || state === "paused" || state === "archived") {
     await sandbox.start();
@@ -123,7 +130,9 @@ export function buildForwardHeaders(src: Headers, token: string): Headers {
   src.forEach((value, key) => {
     if (!STRIP_REQUEST.has(key.toLowerCase())) headers.set(key, value);
   });
-  headers.set("x-daytona-preview-token", token);
+  for (const [name, value] of Object.entries(sandboxPreviewHeaders(token))) {
+    headers.set(name, value);
+  }
   return headers;
 }
 

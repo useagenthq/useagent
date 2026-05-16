@@ -54,8 +54,9 @@ export const RUN_RECONCILING = "run.reconciling";
 /** Hard per-run backstop; the harness reconcile bounds its own work to ~9s. */
 const RECONCILE_BUDGET_MS = 11_000;
 
-/** opencode's two adapter ids both run the resident-server path. */
+/** OpenCode's two adapter ids run the legacy resident-server path. */
 const OPENCODE_ENGINES = new Set(["opencode", "daytona"]);
+const T3_SESSION_PREFIX = "skynet-thread-";
 
 /** The native-session probe (HarnessAdapter.reconcile). Injectable for tests. */
 export type ReconcileProbe = (
@@ -134,8 +135,11 @@ async function recoverRunningRun(
   cmd: ActiveCommand,
   reconcile: ReconcileProbe,
 ): Promise<"reconciled" | "failed" | "parked"> {
+  const t3Session = cmd.engineSessionId?.startsWith(T3_SESSION_PREFIX) ?? false;
   const candidate =
-    OPENCODE_ENGINES.has(cmd.engine) && !!cmd.engineSessionId && !!cmd.sandboxId;
+    !!cmd.engineSessionId &&
+    !!cmd.sandboxId &&
+    (t3Session || OPENCODE_ENGINES.has(cmd.engine));
   if (!candidate) {
     await finalizeRun(cmd.runId, "failed", STALE_SUMMARY, 0);
     return "failed";
@@ -143,7 +147,7 @@ async function recoverRunningRun(
 
   const lastStepAt = await getLastStepAt(cmd.runId);
   const handle: HarnessSessionHandle = {
-    provider: "opencode",
+    provider: cmd.engine === "daytona" ? "opencode" : cmd.engine,
     sessionId: cmd.engineSessionId!,
     sandboxId: cmd.sandboxId!,
   };

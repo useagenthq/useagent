@@ -60,7 +60,7 @@ function parseQuestion(frame: NativeFrame): PendingQuestion | null {
 export function selectPendingQuestion(frames: readonly NativeFrame[]): PendingQuestion | null {
   const pending = new Map<string, PendingQuestion>();
   for (const frame of [...frames].sort((a, b) => a.seq - b.seq)) {
-    if (frame.provider !== "opencode") continue;
+    if (frame.provider !== "opencode" && frame.provider !== "t3") continue;
     if (frame.eventType === "question.asked") {
       const question = parseQuestion(frame);
       if (question) pending.set(question.id, question);

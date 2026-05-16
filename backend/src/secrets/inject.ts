@@ -109,6 +109,10 @@ const GOOGLE_PROJECT_ID_RE = /^[a-z][a-z0-9-]{4,28}[a-z0-9]$/;
 
 /** Provider credentials never cross into an untrusted sandbox. */
 export const PROVIDER_SECRET_NAMES = new Set([
+  // External cloud credentials stay in the trusted control plane. Sandboxes use
+  // run-bound gateway tools such as gcs_list_buckets instead of raw key files.
+  "GCP_SERVICE_ACCOUNT_KEY",
+  "GOOGLE_APPLICATION_CREDENTIALS",
   "ANTHROPIC_API_KEY",
   "ANTHROPIC_AUTH_TOKEN",
   "ANTHROPIC_AWS_API_KEY",
@@ -329,13 +333,28 @@ export async function materializeSecretFiles(
   const revision = digest.digest("hex");
   const directory = shellPath(SECRET_FILE_DIR);
   const revisionPath = shellPath(`${SECRET_FILE_DIR}/.revision`);
+  const unchangedChecks = [
+    `[ "$(cat ${revisionPath} 2>/dev/null || true)" = '${revision}' ]`,
+    `test -f ${revisionPath} && test ! -L ${revisionPath}`,
+    `[ "$(stat -c %a -- ${revisionPath} 2>/dev/null || true)" = 600 ]`,
+    `[ "$(find ${directory} -mindepth 1 -maxdepth 1 | wc -l)" -eq ${currentFiles.length + 1} ]`,
+    ...currentFiles.flatMap((file) => {
+      const path = shellPath(file.path);
+      const contentHash = createHash("sha256").update(file.content).digest("hex");
+      return [
+        `test -f ${path} && test ! -L ${path}`,
+        `[ "$(stat -c %a -- ${path} 2>/dev/null || true)" = 600 ]`,
+        `[ "$(sha256sum -- ${path} 2>/dev/null | cut -d ' ' -f1)" = '${contentHash}' ]`,
+      ];
+    }),
+  ];
   const cmds = [
     "umask 077",
     `test ! -L ${directory}`,
     `mkdir -p -- ${directory}`,
     `test -d ${directory}`,
     `chmod 700 -- ${directory}`,
-    `old_revision=$(cat ${revisionPath} 2>/dev/null || true)`,
+    `if ${unchangedChecks.join(" && ")}; then printf unchanged; exit 0; fi`,
     `find ${directory} -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +`,
   ];
   for (const f of currentFiles) {
@@ -345,7 +364,7 @@ export async function materializeSecretFiles(
   }
   cmds.push(
     `printf '%s' '${revision}' > ${revisionPath} && chmod 600 -- ${revisionPath}`,
-    `if [ "$old_revision" = '${revision}' ]; then printf unchanged; else printf changed; fi`,
+    "printf changed",
   );
   const result = await runCmd(cmds.join(" && "));
   if (result.exitCode !== 0) {

@@ -47,6 +47,102 @@ describe("decideAcpPermission - actual response payloads (pure logic)", () => {
       outcome: { outcome: "cancelled" },
     });
   });
+
+  test("production auto-approves only trusted active-run gateway tools", () => {
+    expect(
+      decideAcpPermission(
+        [ALLOW_ONCE, ALLOW_ALWAYS],
+        false,
+        "mcp.skynet-knowledge.computer_screenshot",
+      ),
+    ).toEqual({ outcome: { outcome: "selected", optionId: "opt-once" } });
+    expect(
+      decideAcpPermission(
+        [ALLOW_ONCE, ALLOW_ALWAYS],
+        false,
+        "mcp.skynet-knowledge.desktop_recording_start",
+      ),
+    ).toEqual({ outcome: { outcome: "selected", optionId: "opt-once" } });
+    expect(
+      decideAcpPermission(
+        [ALLOW_ONCE],
+        false,
+        "mcp.skynet-knowledge.desktop_recording_stop",
+      ),
+    ).toEqual({ outcome: { outcome: "selected", optionId: "opt-once" } });
+    expect(
+      decideAcpPermission(
+        [ALLOW_ONCE],
+        false,
+        "mcp.skynet-knowledge.github_repositories",
+      ),
+    ).toEqual({ outcome: { outcome: "selected", optionId: "opt-once" } });
+    expect(
+      decideAcpPermission(
+        [ALLOW_ONCE],
+        false,
+        "mcp.skynet-knowledge.github_clone_repository",
+      ),
+    ).toEqual({ outcome: { outcome: "selected", optionId: "opt-once" } });
+    expect(
+      decideAcpPermission([ALLOW_ONCE], false, "mcp.skynet-knowledge.loop_login_open"),
+    ).toEqual({ outcome: { outcome: "selected", optionId: "opt-once" } });
+    expect(
+      decideAcpPermission([ALLOW_ONCE], false, "mcp.skynet-knowledge.loop_login_destroy"),
+    ).toEqual({ outcome: { outcome: "selected", optionId: "opt-once" } });
+    expect(
+      decideAcpPermission([ALLOW_ONCE], false, "mcp.skynet-knowledge.skills_list"),
+    ).toEqual({ outcome: { outcome: "selected", optionId: "opt-once" } });
+    expect(
+      decideAcpPermission([ALLOW_ONCE], false, "mcp.skynet-knowledge.skill_activate"),
+    ).toEqual({ outcome: { outcome: "selected", optionId: "opt-once" } });
+    expect(
+      decideAcpPermission(
+        [ALLOW_ALWAYS],
+        false,
+        "mcp.skynet-knowledge.loop_login_destroy",
+      ),
+    ).toEqual({ outcome: { outcome: "cancelled" } });
+    expect(
+      decideAcpPermission([ALLOW_ONCE], false, "mcp.skynet-knowledge.computer_future"),
+    ).toEqual({ outcome: { outcome: "cancelled" } });
+    expect(
+      decideAcpPermission([ALLOW_ONCE], false, "mcp.skynet-knowledge.loop_login_delete_all"),
+    ).toEqual({ outcome: { outcome: "cancelled" } });
+    expect(
+      decideAcpPermission(
+        [ALLOW_ONCE],
+        false,
+        "mcp.skynet-knowledge.artifact_publish",
+      ),
+    ).toEqual({ outcome: { outcome: "selected", optionId: "opt-once" } });
+    expect(
+      decideAcpPermission([ALLOW_ONCE], false, "mcp.skynet-knowledge.web_search"),
+    ).toEqual({ outcome: { outcome: "selected", optionId: "opt-once" } });
+    expect(
+      decideAcpPermission([ALLOW_ONCE], false, "mcp.skynet-knowledge.gcs_list_buckets"),
+    ).toEqual({ outcome: { outcome: "selected", optionId: "opt-once" } });
+    expect(
+      decideAcpPermission([ALLOW_ONCE], false, "mcp.skynet-knowledge.gcs_delete_bucket"),
+    ).toEqual({ outcome: { outcome: "cancelled" } });
+    expect(
+      decideAcpPermission(
+        [ALLOW_ONCE],
+        false,
+        "mcp.skynet-browser.browser_navigate",
+      ),
+    ).toEqual({ outcome: { outcome: "cancelled" } });
+    expect(
+      decideAcpPermission(
+        [ALLOW_ONCE],
+        false,
+        "mcp.attacker-skynet-browser.browser_navigate",
+      ),
+    ).toEqual({ outcome: { outcome: "cancelled" } });
+    expect(decideAcpPermission([ALLOW_ONCE], false, "shell")).toEqual({
+      outcome: { outcome: "cancelled" },
+    });
+  });
 });
 
 describe("dev-mode gate holds (env-derived default)", () => {

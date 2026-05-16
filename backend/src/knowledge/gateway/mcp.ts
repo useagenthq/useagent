@@ -14,12 +14,35 @@ import {
   ARTIFACT_TOOL_NAMES,
   executeArtifactTool,
 } from "./artifact-tools";
+import {
+  executeRecordingTool,
+  RECORDING_TOOLS,
+  RECORDING_TOOL_NAMES,
+} from "./recording-tools";
+import {
+  COMPUTER_USE_TOOLS,
+  COMPUTER_USE_TOOL_NAMES,
+  executeComputerUseTool,
+} from "./computer-use-tools";
+import {
+  executeRepositoryTool,
+  REPOSITORY_TOOLS,
+  REPOSITORY_TOOL_NAMES,
+} from "./repository-tools";
+import {
+  executeLoopLoginTool,
+  LOOP_LOGIN_TOOLS,
+  LOOP_LOGIN_TOOL_NAMES,
+  loopLoginConfigured,
+} from "./loop-login-tools";
 import { findSlackThreadByRoot } from "../../slack/repo";
 import { resolveToolRunIdentity } from "./run-authorization";
 import { verifyToolToken, type ToolTokenClaims } from "./token";
+import { executeSkillTool, SKILL_TOOLS, SKILL_TOOL_NAMES } from "./skill-tools";
+import { executeGcsTool, GCS_TOOLS, GCS_TOOL_NAMES } from "./gcs-tools";
 
 // ---------------------------------------------------------------------------
-// Trusted knowledge MCP gateway (mem_op.md 0.2 / new_prompt.md "Trusted Tool
+// Trusted capability MCP gateway (mem_op.md 0.2 / new_prompt.md "Trusted Tool
 // Gateway"). A stateless MCP Streamable-HTTP server the resident opencode agent
 // connects to as a `type:"remote"` MCP server. It speaks plain JSON-RPC over a
 // single POST — every request gets an `application/json` response, every
@@ -91,7 +114,22 @@ export async function handleMcpMessage(
           "knowledge_read. Memory (Tencent-backed, this user/org): memory_search to " +
           "recall, memory_remember to persist a durable fact, memory_read to read one " +
           "by ref. Artifacts: artifact_publish makes a completed sandbox file durable " +
-          "and available to the browser. Slack (only for Slack-originated runs): " +
+          "and available to the browser. Desktop recording: desktop_recording_start " +
+          "starts an FFmpeg H.264 capture after desktop readiness; desktop_recording_stop " +
+          "validates and publishes it with working preview/download links. " +
+          "Computer use: computer_screenshot plus computer_click / computer_move / computer_drag / " +
+          "computer_type / computer_key / computer_hotkey / computer_scroll drive the visible desktop " +
+          "through Daytona's native API or Cube's OS-level X11 controls. " +
+          "GitHub repositories: github_repositories resolves organization repo aliases and " +
+          "github_clone_repository securely clones an accessible public or private repo into " +
+          "the current sandbox without exposing GitHub credentials. " +
+          "Google Cloud Storage: gcs_list_buckets lists workspace bucket names read-only " +
+          "without exposing the service-account credential to the sandbox. " +
+          "Skills and playbooks: skills_list exposes the org catalog and skill_activate " +
+          "loads the semantically appropriate immutable procedure for the active turn. " +
+          "Loop login (when configured and pinned to login-as): loop_login_open creates, verifies, " +
+          "and opens a guarded ephemeral identity without exposing its token; loop_login_destroy " +
+          "removes it during cleanup. Slack (only for Slack-originated runs): " +
           "slack_upload delivers that artifact or a sandbox file " +
           "you produced back to the Slack thread the task came from. Scope (personal vs " +
           "organization) is decided by the run, not by tool arguments. Never store " +
@@ -112,6 +150,12 @@ export async function handleMcpMessage(
         ...MEMORY_TOOLS,
         ...WEB_SEARCH_TOOLS,
         ...ARTIFACT_TOOLS,
+        ...RECORDING_TOOLS,
+        ...COMPUTER_USE_TOOLS,
+        ...REPOSITORY_TOOLS,
+        ...GCS_TOOLS,
+        ...SKILL_TOOLS,
+        ...(loopLoginConfigured() ? LOOP_LOGIN_TOOLS : []),
       ];
       if (await findSlackThreadByRoot(claims.threadId)) tools.push(...SLACK_TOOLS);
       return ok(msg.id, { tools });
@@ -130,6 +174,24 @@ export async function handleMcpMessage(
       }
       if (ARTIFACT_TOOL_NAMES.has(name)) {
         return ok(msg.id, await executeArtifactTool(claims, name, args));
+      }
+      if (RECORDING_TOOL_NAMES.has(name)) {
+        return ok(msg.id, await executeRecordingTool(claims, name, args));
+      }
+      if (COMPUTER_USE_TOOL_NAMES.has(name)) {
+        return ok(msg.id, await executeComputerUseTool(claims, name, args));
+      }
+      if (REPOSITORY_TOOL_NAMES.has(name)) {
+        return ok(msg.id, await executeRepositoryTool(claims, name, args));
+      }
+      if (GCS_TOOL_NAMES.has(name)) {
+        return ok(msg.id, await executeGcsTool(claims, name, args));
+      }
+      if (SKILL_TOOL_NAMES.has(name)) {
+        return ok(msg.id, await executeSkillTool(claims, name, args));
+      }
+      if (LOOP_LOGIN_TOOL_NAMES.has(name) && loopLoginConfigured()) {
+        return ok(msg.id, await executeLoopLoginTool(claims, name, args));
       }
       if (SLACK_TOOL_NAMES.has(name)) {
         return ok(msg.id, await executeSlackTool(claims, name, args));

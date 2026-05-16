@@ -81,6 +81,19 @@ describe("repo-prep: shared engine-neutral repository preparation", () => {
     expect(emits.some((e) => e.label === "Cloning acme/widget")).toBe(true);
   });
 
+  test("a public gateway clone never injects the organization GitHub credential", async () => {
+    const { sandbox, calls } = fakeSandbox({ state: "absent" });
+    const { ctx } = fakeCtx();
+    await ensureRepoClone(
+      sandbox,
+      "/root/work",
+      "octocat/Hello-World",
+      ctx,
+      { useGithubCredential: false },
+    );
+    expect(cloneCmd(calls)?.env).toEqual({});
+  });
+
   test("a branch override clones with -b <branch>, and the identity check requires that branch", async () => {
     const { sandbox, calls } = fakeSandbox({ state: "absent" });
     const { ctx, emits } = fakeCtx();

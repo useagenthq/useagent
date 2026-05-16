@@ -1,27 +1,33 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
 import {
   RiBookMarkedLine,
   RiCpuLine,
   RiFlashlightLine,
 } from "@remixicon/react";
-import { AsteriskMark } from "@/components/foundations/brand/asterisk-mark";
-import { backendFetch } from "@/lib/backend-fetch";
-import { ENGINES, MODELS, type EngineId, type MemoryScope } from "@/components/chat/types";
+import { useRouter } from "next/navigation";
+import { useEffect, useMemo, useState } from "react";
+import { useEnabledEngineConfig } from "@/components/chat/engine-picker";
 import { MemoryScopePicker } from "@/components/chat/memory-scope-picker";
-import { useEnabledEngines } from "@/components/chat/engine-picker";
 import {
   filterCommands,
-  slashInsertText,
-  SlashCommandPopover,
   type SlashCommand,
+  SlashCommandPopover,
+  slashInsertText,
 } from "@/components/chat/slash-command";
-import type { Skill } from "./skills-data";
-import { SearchablePicker, type PickerGroup } from "./searchable-picker";
-import { RepoMultiPicker, type RepoItem } from "./repo-multi-picker";
+import {
+  ENGINES,
+  type EngineId,
+  type MemoryScope,
+  modelOptionsForEngine,
+  selectableModelsForEngine,
+} from "@/components/chat/types";
+import { AsteriskMark } from "@/components/foundations/brand/asterisk-mark";
+import { backendFetch } from "@/lib/backend-fetch";
 import { RepoBranchBar } from "./repo-branch-bar";
+import { type RepoItem, RepoMultiPicker } from "./repo-multi-picker";
+import { type PickerGroup, SearchablePicker } from "./searchable-picker";
+import type { Skill } from "./skills-data";
 
 /** Composer-specific caption for each selectable engine (POST /api/runs `engine`).
  * Partial because the legacy EngineId values are never offered in the picker, so
@@ -31,14 +37,6 @@ const ENGINE_CAPTIONS: Partial<Record<EngineId, string>> = {
   claude: "cloud sandbox",
   codex: "cloud sandbox",
 };
-
-const modelGroups: PickerGroup[] = [
-  {
-    label: "Models",
-    options: MODELS.map((m) => ({ value: m.value, label: m.label, markTint: m.tint })),
-  },
-];
-
 
 /**
  * The New Task composer: a prompt textarea over a control row of searchable
@@ -57,14 +55,30 @@ export function NewTaskComposer({ skills }: { skills: Skill[] }) {
   const [selectedRepos, setSelectedRepos] = useState<string[]>([]);
   const [repos, setRepos] = useState<RepoItem[]>([]);
   const [playbook, setPlaybook] = useState(""); // selected skill/playbook id, "" = none
-  const [model, setModel] = useState(MODELS[0].value);
+  const [model, setModel] = useState(selectableModelsForEngine("opencode")[0]?.value ?? "");
   const [engine, setEngine] = useState<string>(ENGINES[0].id);
   const [memoryScope, setMemoryScope] = useState<MemoryScope>("org");
   // Only offer engines the SERVER enabled (GET /api/config, gated by
   // ENABLED_ENGINES): claude/codex surface here only on a backend that turned them
   // on, so the picker never lets a user start a run the backend would 403. This is
   // the capability-driven engine manifest (final_harness Phase 2).
-  const enabledEngines = useEnabledEngines();
+  const engineConfig = useEnabledEngineConfig();
+  const enabledEngines = engineConfig.engines;
+  const engineId = engine as EngineId;
+  const selectableModels = modelOptionsForEngine(engineId, engineConfig.models[engineId]);
+  const modelGroups: PickerGroup[] = useMemo(
+    () => [
+      {
+        label: "Models",
+        options: selectableModels.map((m) => ({
+          value: m.value,
+          label: m.label,
+          markTint: m.tint,
+        })),
+      },
+    ],
+    [selectableModels],
+  );
   // Per-repo branch overrides (repo full_name -> branch). An absent entry means
   // "clone the repo's default branch"; only overrides are sent to the backend.
   const [branches, setBranches] = useState<Record<string, string>>({});
@@ -104,6 +118,13 @@ export function NewTaskComposer({ skills }: { skills: Skill[] }) {
       cancelled = true;
     };
   }, [engine]);
+
+  useEffect(() => {
+    if (selectableModels.length === 0) return;
+    if (!selectableModels.some((m) => m.value === model)) {
+      setModel(selectableModels[0]?.value ?? "");
+    }
+  }, [model, selectableModels]);
 
   // Real repositories for the multi-select repo picker (GET /api/repos — the
   // backend-held GitHub token stays server-side). Empty when unconfigured, so the
@@ -258,13 +279,13 @@ export function NewTaskComposer({ skills }: { skills: Skill[] }) {
       const res = await backendFetch("/api/runs", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        // `model` only applies to opencode (any-model sandbox); other engines
-        // manage their own model, so omit it for them.
+        // Send a model only for engines with an explicit picker/catalog. Codex
+        // uses bare backend-policy ids; OpenCode uses provider-qualified ids.
         body: JSON.stringify({
           prompt: text,
           engine,
           memory_scope: memoryScope,
-          ...(engine === "opencode" ? { model } : {}),
+          ...(selectableModels.length > 0 ? { model } : {}),
           ...(selectedRepos.length ? { repos: selectedRepos } : {}),
           ...(Object.keys(branchPayload).length ? { branches: branchPayload } : {}),
           ...(selectedSkill
@@ -341,9 +362,9 @@ export function NewTaskComposer({ skills }: { skills: Skill[] }) {
               value={engine}
               onChange={setEngine}
             />
-            {/* Model only applies to the opencode any-model sandbox; other
-                engines manage their own model, so the picker is hidden. */}
-            {engine === "opencode" ? (
+            {/* Model is shown only for engines whose backend policy accepts an
+                explicit user choice (OpenCode and Codex). */}
+            {selectableModels.length > 0 ? (
               <SearchablePicker
                 ariaLabel="Select model"
                 triggerLabel="Model"

@@ -67,7 +67,7 @@ export function assertSandboxResources(
 ): SandboxResourceTarget {
   if (!sandboxMeetsResourceTarget(sandbox, target)) {
     throw new Error(
-      `Daytona sandbox resources are below the required target (${target.cpu} CPU, ${target.memory} GiB RAM)`,
+      `Sandbox resources are below the required target (${target.cpu} CPU, ${target.memory} GiB RAM)`,
     );
   }
   return { cpu: sandbox.cpu, memory: sandbox.memory };

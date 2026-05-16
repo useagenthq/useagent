@@ -2,6 +2,8 @@ import { describe, expect, test } from "bun:test";
 import type { SandboxHandle } from "../sandboxes/provider";
 import {
   buildDesktopLaunchCommand,
+  buildDesktopReadinessCommand,
+  DESKTOP_REQUIRED_BINARIES,
   ensureSandboxDesktop,
   ensureSandboxDesktopView,
 } from "./desktop";
@@ -11,6 +13,9 @@ describe("shared sandbox desktop", () => {
     const command = buildDesktopLaunchCommand();
 
     expect(command).toContain("Xvfb :1");
+    expect(command).toContain("dbus-launch --exit-with-session startxfce4");
+    expect(command).toContain('xfce4-clipman >"$HOME/.skynet/clipman.log" 2>&1 &');
+    expect(command).not.toContain("openbox");
     expect(command).toContain("--remote-debugging-address=127.0.0.1 --remote-debugging-port=9222");
     expect(command).toContain('--user-data-dir="$HOME/.skynet/browser-profile"');
     expect(command).toContain("--restore-last-session");
@@ -25,6 +30,24 @@ describe("shared sandbox desktop", () => {
     expect(command).toContain("websockify --web=/usr/share/novnc 0.0.0.0:6080 127.0.0.1:5900");
     expect(command).not.toContain("0.0.0.0:5900");
     expect(command).not.toContain("&;");
+    expect(Bun.spawnSync(["bash", "-n", "-c", command]).exitCode).toBe(0);
+  });
+
+  test("requires the complete workstation in desktop readiness", () => {
+    const command = buildDesktopReadinessCommand();
+
+    expect(command).toContain("/vnc.html");
+    expect(command).toContain("/json/version");
+    for (const process of [
+      "xfce4-session",
+      "xfwm4",
+      "xfce4-panel",
+      "xfdesktop",
+      "xfce4-clipman",
+    ]) {
+      expect(command).toContain(`pgrep -x ${process}`);
+    }
+    expect(DESKTOP_REQUIRED_BINARIES).toContain("xdotool");
     expect(Bun.spawnSync(["bash", "-n", "-c", command]).exitCode).toBe(0);
   });
 
@@ -57,7 +80,7 @@ describe("shared sandbox desktop", () => {
             return {
               exitCode: 0,
               result:
-                "HOME=/home/daytona\nBROWSER=/usr/bin/chromium\nMISSING=\nVNC=1\nRFB=1\nCDP=1\nMCP=0\n",
+                "HOME=/home/daytona\nBROWSER=/usr/bin/chromium\nMISSING=\nVNC=1\nRFB=1\nCDP=1\nXFCE=1\nMCP=0\n",
             };
           }
           return { exitCode: 0, result: "" };
@@ -76,14 +99,27 @@ describe("shared sandbox desktop", () => {
     expect(commands[0]).toContain("/vnc.html");
     expect(commands[0]).toContain("socket.create_connection(('127.0.0.1',5900),1)");
     expect(commands[0]).toContain("/json/version");
+    for (const binary of [
+      "startxfce4",
+      "xfce4-panel",
+      "xfwm4",
+      "xfdesktop",
+      "xfce4-terminal",
+      "thunar",
+      "xfce4-settings-manager",
+      "xfce4-clipman",
+    ]) {
+      expect(commands[0]).toContain(binary);
+    }
     expect(commands).not.toEqual(expect.arrayContaining([expect.stringContaining("npm install")]));
   });
 
-  test("repairs the desktop when noVNC, RFB, or CDP is unhealthy", async () => {
+  test("repairs the desktop when noVNC, RFB, XFCE, or CDP is unhealthy", async () => {
     for (const firstHealth of [
-      "VNC=1\nRFB=1\nCDP=0",
-      "VNC=1\nRFB=0\nCDP=1",
-      "VNC=0\nRFB=1\nCDP=1",
+      "VNC=1\nRFB=1\nCDP=0\nXFCE=1",
+      "VNC=1\nRFB=0\nCDP=1\nXFCE=1",
+      "VNC=0\nRFB=1\nCDP=1\nXFCE=1",
+      "VNC=1\nRFB=1\nCDP=1\nXFCE=0",
     ]) {
       const commands: string[] = [];
       const deleted: string[] = [];
@@ -147,8 +183,8 @@ describe("shared sandbox desktop", () => {
             return {
               exitCode: 0,
               result: wasHealthy
-                ? "HOME=/home/daytona\nBROWSER=/usr/bin/chromium\nMISSING=\nVNC=1\nRFB=1\nCDP=1\nMCP=1\n"
-                : "HOME=/home/daytona\nBROWSER=/usr/bin/chromium\nMISSING=\nVNC=0\nRFB=0\nCDP=0\nMCP=1\n",
+                ? "HOME=/home/daytona\nBROWSER=/usr/bin/chromium\nMISSING=\nVNC=1\nRFB=1\nCDP=1\nXFCE=1\nMCP=1\n"
+                : "HOME=/home/daytona\nBROWSER=/usr/bin/chromium\nMISSING=\nVNC=0\nRFB=0\nCDP=0\nXFCE=0\nMCP=1\n",
             };
           }
           if (command.includes("skynet-browser-guard-ping")) {

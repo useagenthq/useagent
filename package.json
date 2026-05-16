@@ -4,6 +4,7 @@
   "scripts": {
     "dev:frontend": "bun run --cwd frontend dev",
     "dev:backend": "bun run --cwd backend dev",
+    "stage:t3-dist": "bash deploy/hetzner/stage-t3-dist.sh",
     "typecheck": "bun run --cwd frontend typecheck && (cd backend && bunx tsc --noEmit) && (cd packages/agent-harness && bunx tsc --noEmit) && (cd packages/agent-client && bunx tsc --noEmit) && (cd packages/conformance && bunx tsc --noEmit)"
   }
 }

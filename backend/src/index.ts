@@ -34,6 +34,7 @@ import { terminalRoutes } from "./runs/terminal";
 import { schedulesRoutes } from "./schedules/routes";
 import { startScheduler } from "./schedules/scheduler";
 import { startCaptureDelivery } from "./memory/capture-outbox";
+import { sandboxProvider, sandboxProviderApiKey, sandboxProviderKind } from "./sandboxes/provider";
 import {
   resetStuckCanonicalization,
   startCanonicalizationOutbox,
@@ -45,7 +46,22 @@ import { skillsRoutes } from "./skills/routes";
 import { slackEnabled, slackRoutes, startSlackOutbox } from "./slack";
 import { enforceSingleBackend } from "./db/single-backend";
 import { ensureWarmPool, warmPoolSize } from "./sandboxes/warm-pool";
+import {
+  cubeT3WarmPoolSize,
+  cubeWarmPoolSize,
+  startCubeWarmPool,
+} from "./sandboxes/cube-warm-pool";
+import { providerGatewaySandboxLabels } from "./provider-gateway/sandbox-config";
+import { prewarmOpenCodeRuntime } from "./engines/opencode-server";
+import {
+  T3_CUBE_WARM_POOL_NAME,
+  T3_RUNTIME_GENERATION,
+  T3_RUNTIME_GENERATION_LABEL,
+} from "./engines/t3-environment";
+import { prewarmT3EnvironmentAccess } from "./engines/t3-environment-client";
+import { prewarmT3ProviderBridge } from "./engines/t3-provider-bridge";
 import { wikiGenRoutes } from "./wiki-gen/routes";
+import { allowedModelsForEngine } from "./runs/model-policy";
 
 // Apply committed Drizzle migrations BEFORE anything reads or seeds the schema,
 // so a fresh clone (or a fresh database) boots with the tables in place. The
@@ -68,7 +84,12 @@ await seedDev();
 // whose native opencode session actually finished server-side, fail the rest
 // with an honest resumable summary. One-shot, self-bounded — never hangs boot.
 const recovery = await recoverStaleRuns();
-if (recovery.reconciled > 0 || recovery.failed > 0 || recovery.redispatched > 0 || recovery.parked > 0) {
+if (
+  recovery.reconciled > 0 ||
+  recovery.failed > 0 ||
+  recovery.redispatched > 0 ||
+  recovery.parked > 0
+) {
   console.log(
     `[boot] command-lane recovery — ${recovery.reconciled} reconciled, ` +
       `${recovery.failed} failed, ${recovery.redispatched} re-dispatched, ` +
@@ -80,7 +101,8 @@ if (recovery.reconciled > 0 || recovery.failed > 0 || recovery.redispatched > 0 
 // `translating` row. Reset it to `pending` so the worker retries — SAFE because
 // canonicalization is an idempotent full replace while still provisional.
 const canonReset = await resetStuckCanonicalization();
-if (canonReset > 0) console.log(`[boot] canonicalization recovery — ${canonReset} stuck rows re-armed`);
+if (canonReset > 0)
+  console.log(`[boot] canonicalization recovery — ${canonReset} stuck rows re-armed`);
 
 const app = new Hono<AppEnv>();
 
@@ -122,10 +144,13 @@ app.get("/api/config", (c) => {
   // composer never offers an engine the backend would 403 as engine_not_enabled.
   const enabled = enabledEngines();
   const engines = (["opencode", "claude", "codex"] as const).filter((id) => enabled.has(id));
+  const models = Object.fromEntries(engines.map((id) => [id, allowedModelsForEngine(id)]));
   return c.json({
     auth: { google: googleAuthEnabled(), emailPassword: true },
     allowDevOrg: allowDevOrg(),
     engines,
+    models,
+    sandbox: { provider: sandboxProviderKind() },
     capabilities: {
       github: githubConfigured(),
       slack: slackConfig() !== null,
@@ -224,7 +249,7 @@ startReconcileLoop();
 // blocks boot or any turn.
 const warmPoolTarget = warmPoolSize();
 const openCodeSnapshot = process.env.DAYTONA_SNAPSHOT?.trim();
-if (warmPoolTarget && openCodeSnapshot) {
+if (sandboxProviderKind() === "daytona" && warmPoolTarget && openCodeSnapshot) {
   void ensureWarmPool(openCodeSnapshot, warmPoolTarget)
     .then((pool) =>
       console.log(
@@ -234,6 +259,61 @@ if (warmPoolTarget && openCodeSnapshot) {
     .catch((err) =>
       console.warn("[warm-pool] ensure failed:", err instanceof Error ? err.message : err),
     );
+}
+
+const cubePoolTarget = cubeWarmPoolSize();
+const cubeTemplate = process.env.CUBE_TEMPLATE_ID?.trim();
+if (sandboxProviderKind() === "cube" && cubePoolTarget && cubeTemplate) {
+  const apiKey = sandboxProviderApiKey();
+  const autoStopInterval = Number(process.env.SANDBOX_AUTO_STOP_MIN ?? 30);
+  const autoDeleteInterval = Number(process.env.SANDBOX_AUTO_DELETE_MIN ?? 4320);
+  startCubeWarmPool({
+    provider: sandboxProvider(apiKey),
+    size: cubePoolTarget,
+    createOptions: {
+      snapshot: cubeTemplate,
+      labels: providerGatewaySandboxLabels("warm-pool"),
+      autoStopInterval,
+      autoDeleteInterval,
+    },
+    warmRuntime: async (sandbox, signal) => {
+      await prewarmOpenCodeRuntime(sandbox, signal);
+    },
+  });
+  console.log(`[cube-warm-pool] target=${cubePoolTarget} template=${cubeTemplate}`);
+}
+
+const cubeT3PoolTarget = cubeT3WarmPoolSize();
+const cubeT3Template = process.env.T3_CUBE_TEMPLATE_ID?.trim();
+if (sandboxProviderKind() === "cube" && cubeT3PoolTarget && cubeT3Template) {
+  const apiKey = sandboxProviderApiKey();
+  const autoStopInterval = Number(process.env.SANDBOX_AUTO_STOP_MIN ?? 30);
+  const autoDeleteInterval = Number(process.env.SANDBOX_AUTO_DELETE_MIN ?? 4320);
+  startCubeWarmPool({
+    name: T3_CUBE_WARM_POOL_NAME,
+    provider: sandboxProvider(apiKey),
+    size: cubeT3PoolTarget,
+    createOptions: {
+      snapshot: cubeT3Template,
+      labels: {
+        ...providerGatewaySandboxLabels(`warm-pool:${T3_RUNTIME_GENERATION}`),
+        [T3_RUNTIME_GENERATION_LABEL]: T3_RUNTIME_GENERATION,
+      },
+      autoStopInterval,
+      autoDeleteInterval,
+    },
+    warmRuntime: async (sandbox, signal) => {
+      const t3PrewarmEnv = { ...process.env, T3_ENVIRONMENT_ENABLED: "true" };
+      await prewarmT3ProviderBridge(sandbox, t3PrewarmEnv);
+      await Promise.all([
+        prewarmT3EnvironmentAccess(sandbox, signal),
+        prewarmOpenCodeRuntime(sandbox, signal),
+      ]);
+    },
+  });
+  console.log(
+    `[cube-warm-pool:${T3_CUBE_WARM_POOL_NAME}] target=${cubeT3PoolTarget} template=${cubeT3Template}`,
+  );
 }
 
 // Slack adapter: mounted only when SLACK_BOT_TOKEN + SLACK_SIGNING_SECRET are
@@ -261,6 +341,7 @@ if (emailConnector) {
 console.log(`[skynet] backend listening on http://localhost:${env.PORT}`);
 
 export default {
+  hostname: "127.0.0.1",
   port: env.PORT,
   fetch: app.fetch,
   // Bun WebSocket handler for the terminal bridge (hono/bun upgradeWebSocket).

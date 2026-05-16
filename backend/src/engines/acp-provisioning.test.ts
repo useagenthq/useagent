@@ -9,6 +9,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   buildAcpInstallClause,
+  codexModelSelectionRequest,
   buildAcpRuntimeEnvExports,
   claudeAcpConfig,
   codexAcpConfig,
@@ -25,10 +26,12 @@ describe("ACP executable provisioning (#127)", () => {
 
   test("installs to the ~/.local user prefix (so the path check can find it)", () => {
     const clause = buildAcpInstallClause([{ pkg: "@scope/pkg@1.2.3", bin: "mybin" }]);
+    expect(clause).toContain('/usr/local/share/skynet-provider-bin/mybin');
+    expect(clause).toContain('ln -sfn "/usr/local/share/skynet-provider-bin/mybin"');
     expect(clause).toContain("npm install -g --prefix $HOME/.local");
     expect(clause).toContain('"@scope/pkg@1.2.3"');
-    // check-then-install ordering: skip install only when the path is already executable.
-    expect(clause).toMatch(/\[ -x "\$HOME\/\.local\/bin\/mybin" \] \|\| npm install/);
+    // check-then-seed/install ordering: skip all work only when the exact user path exists.
+    expect(clause).toMatch(/\[ -x "\$HOME\/\.local\/bin\/mybin" \] \|\| \{/);
   });
 
   test("one clause per package, each independently path-guarded", () => {
@@ -38,6 +41,7 @@ describe("ACP executable provisioning (#127)", () => {
     ]);
     expect(clause).toContain('[ -x "$HOME/.local/bin/abin" ]');
     expect(clause).toContain('[ -x "$HOME/.local/bin/bbin" ]');
+    expect((clause.match(/\/usr\/local\/share\/skynet-provider-bin/g) ?? []).length).toBe(4);
     expect((clause.match(/npm install -g --prefix \$HOME\/\.local/g) ?? []).length).toBe(2);
   });
 
@@ -57,6 +61,18 @@ describe("ACP executable provisioning (#127)", () => {
     const clause = buildAcpInstallClause(codexAcpConfig.packages);
     expect(clause).toContain('[ -x "$HOME/.local/bin/codex-acp" ]');
     expect(clause).not.toContain("command -v");
+  });
+
+  test("codex: applies the selected model through the resident ACP session", () => {
+    expect(codexModelSelectionRequest("codex", "session-1", "gpt-5.6-terra")).toEqual({
+      method: "session/set_config_option",
+      params: {
+        configId: "model",
+        sessionId: "session-1",
+        value: "gpt-5.6-terra",
+      },
+    });
+    expect(codexModelSelectionRequest("claude", "session-1", "claude-opus-5")).toBeNull();
   });
 
   test("runtime env exports refresh gateway endpoints while preserving $HOME expansion", () => {

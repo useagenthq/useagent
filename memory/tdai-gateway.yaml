@@ -3,9 +3,9 @@
 # This is the exact config used to smoke-test the Skynet integration.
 #
 # `instanceId` MUST match the backend's MEMORY_SERVICE_ID (x-tdai-service-id).
-# To enable semantic recall + L0→L1/L2/L3 distillation, fill in `llm.*` with any
-# OpenAI-compatible endpoint (see README). Left empty, writes still persist and
-# the API answers, but atomic/search returns no distilled facts.
+# The production compose service overrides `llm.*` through TDAI_LLM_* variables
+# from a root-owned env file. These empty values are deliberate safe defaults:
+# writes still persist without credentials, but no facts are distilled.
 deployMode: standalone
 stateBackend: local
 instanceId: skynet

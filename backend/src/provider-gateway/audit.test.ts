@@ -48,7 +48,6 @@ describe("provider gateway durable audit", () => {
         maxRequestsPerRun: 2,
         maxConcurrentPerRun: 1,
         maxOutputTokens: 100,
-        maxOutputTokensPerRun: 1_000,
         upstreamTimeoutMs: 1_000,
       },
     );
@@ -95,7 +94,6 @@ describe("provider gateway durable audit", () => {
       maxRequestsPerRun: 2,
       maxConcurrentPerRun: 1,
       maxOutputTokens: 100,
-      maxOutputTokensPerRun: 1_000,
       upstreamTimeoutMs: 60_000,
     };
     const start = (id: string) =>
@@ -126,7 +124,7 @@ describe("provider gateway durable audit", () => {
     );
   });
 
-  test("reserves a cumulative output-token budget per run", async () => {
+  test("does not count unused per-request output ceilings as consumed tokens", async () => {
     const runId = `run-${crypto.randomUUID()}`;
     runIds.push(runId);
     await db.insert(runs).values({
@@ -140,29 +138,42 @@ describe("provider gateway durable audit", () => {
       threadId: runId,
     });
     const limits = {
-      maxRequestsPerRun: 10,
-      maxConcurrentPerRun: 10,
+      maxRequestsPerRun: 40,
+      maxConcurrentPerRun: 1,
       maxOutputTokens: 100,
-      maxOutputTokensPerRun: 100,
       upstreamTimeoutMs: 60_000,
     };
-    const start = (requestedOutputTokens: number) =>
-      beginProviderGatewayAudit(
+    const completeRequest = async () => {
+      const id = `audit-${crypto.randomUUID()}`;
+      await beginProviderGatewayAudit(
         {
-          id: `audit-${crypto.randomUUID()}`,
+          id,
           runId,
           orgId: "org-a",
           provider: "openai",
           path: "/v1/responses",
           model: "gpt-5",
-          requestedOutputTokens,
+          requestedOutputTokens: limits.maxOutputTokens,
         },
         limits,
       );
-    await start(60);
-    await expect(start(41)).rejects.toEqual(
-      new ProviderGatewayAdmissionError("output_budget_exhausted"),
-    );
-    await start(40);
+      await finishProviderGatewayAudit({
+        id,
+        outcome: "responded",
+        upstreamStatus: 200,
+        durationMs: 1,
+      });
+    };
+
+    for (let request = 0; request < 35; request += 1) {
+      await completeRequest();
+    }
+
+    const receipts = await db
+      .select()
+      .from(providerGatewayAudit)
+      .where(eq(providerGatewayAudit.runId, runId));
+    expect(receipts).toHaveLength(35);
+    expect(receipts.every((receipt) => receipt.outcome === "responded")).toBe(true);
   });
 });

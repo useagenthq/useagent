@@ -1,5 +1,5 @@
 import { and, eq } from "drizzle-orm";
-import { db } from "../db/client";
+import { db, type Executor } from "../db/client";
 import { commands, type CommandState } from "../db/schema";
 import { createRun } from "../runs/repo";
 import type { RunCommandInput } from "./types";
@@ -32,8 +32,9 @@ export interface NewRunCommand {
 export async function findCommandByKey(
   orgId: string,
   key: string,
+  exec: Executor = db,
 ): Promise<CommandRecord | null> {
-  const [row] = await db
+  const [row] = await exec
     .select()
     .from(commands)
     .where(and(eq(commands.orgId, orgId), eq(commands.idempotencyKey, key)))
@@ -49,8 +50,11 @@ export async function findCommandByKey(
  * `run_id` FK is satisfiable in-transaction. Throws on a unique-key violation —
  * the caller decides what a conflict means.
  */
-export async function insertCommandWithRun(cmd: NewRunCommand): Promise<void> {
-  await db.transaction(async (tx) => {
+export async function insertCommandWithRun(
+  cmd: NewRunCommand,
+  exec: Executor = db,
+): Promise<void> {
+  const insert = async (tx: Executor): Promise<void> => {
     await createRun(
       {
         id: cmd.run.id,
@@ -86,5 +90,7 @@ export async function insertCommandWithRun(cmd: NewRunCommand): Promise<void> {
       state: "queued" satisfies CommandState,
       attemptCount: 0,
     });
-  });
+  };
+  if (exec === db) await db.transaction(insert);
+  else await insert(exec);
 }

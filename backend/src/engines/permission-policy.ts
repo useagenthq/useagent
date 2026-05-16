@@ -31,8 +31,19 @@ export type AcpPermissionOutcome =
 export function decideAcpPermission(
   options: readonly AcpPermissionOption[],
   autoApprove: boolean = acpAutoApprove(),
+  toolTitle?: string,
 ): AcpPermissionOutcome {
-  if (!autoApprove) return { outcome: { outcome: "cancelled" } };
+  const trustedActiveRunMcp =
+    typeof toolTitle === "string" && TRUSTED_ACTIVE_RUN_MCP_TOOLS.has(toolTitle);
+  if (!autoApprove && !trustedActiveRunMcp) {
+    return { outcome: { outcome: "cancelled" } };
+  }
+  if (trustedActiveRunMcp && !autoApprove) {
+    const allowOnce = options.find((option) => option.kind === "allow_once");
+    return allowOnce?.optionId
+      ? { outcome: { outcome: "selected", optionId: allowOnce.optionId } }
+      : { outcome: { outcome: "cancelled" } };
+  }
   const pick =
     options.find((o) => o.kind === "allow_once") ??
     options.find((o) => o.kind === "allow_always") ??
@@ -41,6 +52,28 @@ export function decideAcpPermission(
     ? { outcome: { outcome: "selected", optionId: pick.optionId } }
     : { outcome: { outcome: "cancelled" } };
 }
+
+const TRUSTED_ACTIVE_RUN_MCP_TOOLS: ReadonlySet<string> = new Set([
+  "mcp.skynet-knowledge.computer_screenshot",
+  "mcp.skynet-knowledge.computer_click",
+  "mcp.skynet-knowledge.computer_move",
+  "mcp.skynet-knowledge.computer_drag",
+  "mcp.skynet-knowledge.computer_type",
+  "mcp.skynet-knowledge.computer_key",
+  "mcp.skynet-knowledge.computer_hotkey",
+  "mcp.skynet-knowledge.computer_scroll",
+  "mcp.skynet-knowledge.desktop_recording_start",
+  "mcp.skynet-knowledge.desktop_recording_stop",
+  "mcp.skynet-knowledge.artifact_publish",
+  "mcp.skynet-knowledge.web_search",
+  "mcp.skynet-knowledge.gcs_list_buckets",
+  "mcp.skynet-knowledge.github_repositories",
+  "mcp.skynet-knowledge.github_clone_repository",
+  "mcp.skynet-knowledge.loop_login_open",
+  "mcp.skynet-knowledge.loop_login_destroy",
+  "mcp.skynet-knowledge.skills_list",
+  "mcp.skynet-knowledge.skill_activate",
+]);
 
 /**
  * Whether to pass a permission-SKIPPING CLI flag (claude's

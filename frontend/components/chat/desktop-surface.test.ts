@@ -29,6 +29,11 @@ describe("Desktop product surface", () => {
 
     expect(sessionView).toContain("<hr");
     expect(sessionView).toContain("before:bg-stroke-soft-200");
+    expect(sessionView).toContain('data-testid="rail-resize-grip"');
+    expect(sessionView).toContain("top-1/2");
+    expect(sessionView).toContain("-translate-y-1/2");
+    expect(sessionView).toContain('aria-label="Resize the side panel; double-click to reset"');
+    expect(sessionView).not.toContain('title="Drag to resize');
     expect(sessionView).toContain("cursor-col-resize");
   });
 
@@ -64,7 +69,12 @@ describe("Desktop product surface", () => {
     expect(DESKTOP_PROBE_MAX_DELAY).toBe(2000);
     // Monotonic non-decreasing (never regresses to a faster poll mid-backoff).
     for (let i = 1; i < schedule.length; i++) {
-      expect(schedule[i]!).toBeGreaterThanOrEqual(schedule[i - 1]!);
+      const current = schedule[i];
+      const previous = schedule[i - 1];
+      if (current === undefined || previous === undefined) {
+        throw new Error("missing desktop probe delay");
+      }
+      expect(current).toBeGreaterThanOrEqual(previous);
     }
   });
 
@@ -75,10 +85,24 @@ describe("Desktop product surface", () => {
     if (!path) throw new Error("desktop frame is missing its noVNC WebSocket path");
     expect(frameUrl.searchParams.get("reconnect")).toBe("true");
     expect(frameUrl.searchParams.get("reconnect_delay")).toBe("500");
-    // Match noVNC 1.6's `new URL(path, location.href)` behavior. Without the
-    // leading slash, the entire desktop-proxy prefix is duplicated.
-    const socketUrl = new URL(path, frameUrl);
+    // Current noVNC resolves relative to vnc.html.
+    const currentSocketUrl = new URL(path, frameUrl);
+    // The Cube template currently carries a legacy noVNC that concatenates
+    // `ws(s)://host/` + path. URL parsing normalizes the traversal segments.
+    const legacySocketUrl = new URL(`wss://localhost/${path}`);
 
-    expect(socketUrl.pathname).toBe(`/api/desktop-proxy/${threadId}/websockify`);
+    expect(currentSocketUrl.pathname).toBe(`/api/desktop-proxy/${threadId}/websockify`);
+    expect(legacySocketUrl.pathname).toBe(`/api/desktop-proxy/${threadId}/websockify`);
+  });
+
+  test("the embedded noVNC iframe cannot steal composer focus implicitly", () => {
+    const desktopPane = read("./desktop-pane.tsx");
+
+    expect(desktopPane).toContain("tabIndex={-1}");
+    expect(desktopPane).toContain('data-testid="desktop-frame"');
+    expect(desktopPane).toContain('pointerEvents: loaded && inputCaptured ? "auto" : "none"');
+    expect(desktopPane).toContain('aria-label="Control sandbox desktop"');
+    expect(desktopPane).toContain('window.addEventListener("focusin", releaseDesktopInput, true)');
+    expect(desktopPane).toContain('window.addEventListener("pointerdown", releaseDesktopInput, true)');
   });
 });

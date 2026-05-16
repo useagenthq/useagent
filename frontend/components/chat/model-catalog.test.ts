@@ -1,0 +1,62 @@
+import { describe, expect, test } from "bun:test";
+import {
+  CODEX_MODELS,
+  MODELS,
+  modelLabel,
+  modelOptionsForEngine,
+  selectableModelsForEngine,
+  supportsPreSessionModelSelection,
+} from "@/components/chat/types";
+
+describe("engine model catalog", () => {
+  test("Codex picker uses backend-policy model ids, not OpenRouter ids", () => {
+    expect(CODEX_MODELS.map((m) => m.value)).toEqual([
+      "gpt-5.6-sol",
+      "gpt-5.6-terra",
+      "gpt-5.6-luna",
+    ]);
+    expect(selectableModelsForEngine("codex").map((m) => m.value)).toEqual([
+      "gpt-5.6-sol",
+      "gpt-5.6-terra",
+      "gpt-5.6-luna",
+    ]);
+    expect(selectableModelsForEngine("codex").some((m) => m.value.startsWith("openai/"))).toBe(
+      false,
+    );
+  });
+
+  test("OpenCode picker keeps provider-qualified model ids", () => {
+    expect(selectableModelsForEngine("opencode")).toEqual(MODELS);
+    expect(selectableModelsForEngine("opencode").map((m) => m.value)).toContain(
+      "openai/gpt-5.6-luna",
+    );
+  });
+
+  test("non-selectable engines expose no model choices", () => {
+    expect(selectableModelsForEngine("claude")).toEqual([]);
+    expect(selectableModelsForEngine("acp")).toEqual([]);
+  });
+
+  test("keeps model selection available while supported sessions are booting", () => {
+    expect(supportsPreSessionModelSelection("codex")).toBe(true);
+    expect(supportsPreSessionModelSelection("opencode")).toBe(true);
+    expect(supportsPreSessionModelSelection("claude")).toBe(false);
+  });
+
+  test("labels resolve against the engine-specific catalog", () => {
+    expect(modelLabel("gpt-5.6-terra", "codex")).toBe("GPT-5.6 Terra");
+    expect(modelLabel("openai/gpt-5.6-terra", "opencode")).toBe("GPT-5.6 Terra");
+    expect(modelLabel("gpt-5.6-terra", "opencode")).toBe("gpt-5.6-terra");
+  });
+
+  test("backend-configured catalogs filter and preserve exact submitted ids", () => {
+    expect(modelOptionsForEngine("codex", ["gpt-5.6-luna", "gpt-5.4"])).toEqual([
+      { value: "gpt-5.6-luna", label: "GPT-5.6 Luna · Fast", tint: "text-sky-500" },
+      { value: "gpt-5.4", label: "gpt-5.4", tint: "text-text-sub-600" },
+    ]);
+    expect(modelOptionsForEngine("opencode", ["openai/gpt-5.6-sol"])[0]?.value).toBe(
+      "openai/gpt-5.6-sol",
+    );
+    expect(modelOptionsForEngine("claude", ["claude-opus-5"])).toEqual([]);
+  });
+});

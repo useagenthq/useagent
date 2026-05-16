@@ -43,6 +43,10 @@ import {
   OpenCodeQuestionError,
   replyToOpenCodeQuestion,
 } from "../engines/opencode-question";
+import { releaseRunSandbox } from "./sandbox-release";
+import { isT3ThreadSessionId } from "../engines/t3-orchestration";
+import { replyToT3Question } from "../engines/t3-question";
+import { replyToT3Approval, T3ApprovalError } from "../engines/t3-approval";
 
 export const runsRoutes = new Hono<AppEnv>();
 
@@ -350,13 +354,14 @@ runsRoutes.post("/:id/cancel", async (c) => {
   }
 });
 
-// Resolve a native OpenCode Question request IN the currently-running turn.
+// Resolve a native provider Question request IN the currently-running turn.
 // This is control traffic, not a new user turn: answering must unblock the
 // resident session rather than enqueue another run behind the blocked one.
 runsRoutes.post("/:id/questions/:questionId/reply", async (c) => {
   const run = await getRunForOrg(c.get("orgId"), c.req.param("id"));
   if (!run) return c.json({ error: "run not found" }, 404);
-  if (run.engine !== "opencode") {
+  const t3Session = isT3ThreadSessionId(run.engineSessionId ?? "");
+  if (!t3Session && run.engine !== "opencode") {
     return c.json({ error: "questions_not_supported", engine: run.engine }, 409);
   }
   if (run.status !== "running" || !run.engineSessionId) {
@@ -369,7 +374,8 @@ runsRoutes.post("/:id/questions/:questionId/reply", async (c) => {
     return c.json({ error: "invalid JSON body" }, 400);
   }
   try {
-    const result = await replyToOpenCodeQuestion({
+    const reply = t3Session ? replyToT3Question : replyToOpenCodeQuestion;
+    const result = await reply({
       runId: run.id,
       threadId: run.threadId,
       sessionId: run.engineSessionId,
@@ -385,6 +391,57 @@ runsRoutes.post("/:id/questions/:questionId/reply", async (c) => {
     console.error(`[question] reply failed for run ${run.id}:`, error);
     return c.json({ error: "question_reply_failed" }, 502);
   }
+});
+
+// Resolve a native T3 provider approval inside the active turn. The response is
+// dispatched to T3's resident provider session and durably recorded before the
+// UI considers the approval closed.
+runsRoutes.post("/:id/approvals/:requestId/reply", async (c) => {
+  const run = await getRunForOrg(c.get("orgId"), c.req.param("id"));
+  if (!run) return c.json({ error: "run not found" }, 404);
+  if (
+    run.status !== "running" ||
+    !run.engineSessionId ||
+    !isT3ThreadSessionId(run.engineSessionId)
+  ) {
+    return c.json({ error: "approval_session_not_active" }, 409);
+  }
+  let body: { decision?: unknown };
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: "invalid JSON body" }, 400);
+  }
+  try {
+    const result = await replyToT3Approval({
+      runId: run.id,
+      threadId: run.threadId,
+      sessionId: run.engineSessionId,
+      requestId: c.req.param("requestId"),
+      decision: body.decision,
+      signal: c.req.raw.signal,
+    });
+    return c.json({ ok: true, already_answered: result.alreadyAnswered });
+  } catch (error) {
+    if (error instanceof T3ApprovalError) {
+      return c.json({ error: error.code, message: error.message }, error.status);
+    }
+    console.error(`[approval] reply failed for run ${run.id}:`, error);
+    return c.json({ error: "approval_reply_failed" }, 502);
+  }
+});
+
+// Explicit eval/test cleanup. Product threads remain warm by default; callers
+// release only when they no longer need resume state. Org scope + active-run
+// checks prevent cross-tenant deletion or tearing down a live turn.
+runsRoutes.delete("/:id/sandbox", async (c) => {
+  const result = await releaseRunSandbox(c.get("orgId"), c.req.param("id"));
+  if (!result.ok) {
+    if (result.reason === "not_found") return c.json({ error: "run not found" }, 404);
+    if (result.reason === "thread_active") return c.json({ error: "thread is active" }, 409);
+    return c.json({ error: "sandbox release failed" }, 502);
+  }
+  return c.json(result);
 });
 
 // List runs (newest first) with their steps, scoped to the active org. By

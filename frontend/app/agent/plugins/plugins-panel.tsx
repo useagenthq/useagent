@@ -24,6 +24,7 @@ interface Capabilities {
 
 interface ConfigResponse {
   auth?: { google?: boolean };
+  sandbox?: { provider?: "cube" | "daytona" };
   capabilities?: Capabilities;
 }
 
@@ -123,8 +124,8 @@ export function PluginsPanel() {
         />
         <CapabilityRow
           icon={RiPlugLine}
-          name="Sandbox tool gateway"
-          detail="Knowledge and memory tools callable from inside sandboxes"
+          name={`${config?.sandbox?.provider === "cube" ? "Cube" : config?.sandbox?.provider === "daytona" ? "Daytona" : "Sandbox"} runtime`}
+          detail="Deployment-wide sandbox provider; knowledge and memory tools enabled"
           enabled={caps?.toolGateway ?? false}
         />
         <CapabilityRow

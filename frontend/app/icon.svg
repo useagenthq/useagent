@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <title>Skynet</title>
+  <rect width="64" height="64" rx="16" fill="#20201f"/>
+  <path d="M32 8v48M8 32h48M15 15l34 34M49 15 15 49" stroke="#fff" stroke-width="6" stroke-linecap="round"/>
+  <circle cx="32" cy="32" r="7" fill="#20201f"/>
+</svg>

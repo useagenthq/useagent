@@ -1,4 +1,10 @@
-import { daytonaProvider, type SandboxHandle } from "../sandboxes/provider";
+import {
+  sandboxPreviewHeaders,
+  sandboxProvider,
+  sandboxProviderApiKey,
+  sandboxTemplate,
+  type SandboxHandle,
+} from "../sandboxes/provider";
 import type { EngineAdapter, EngineRunContext } from "./types";
 import { composeTurnPrompt } from "./types";
 import {
@@ -10,14 +16,14 @@ import {
 import { sessionCapabilities } from "./capabilities";
 import { parseJsonLine, persistSandboxBeforeExecution, truncate } from "./util";
 import { prepareRepos, shq } from "./repo-prep";
-import { serialStartup } from "../util/startup";
+import { serialStartup, stagesTogether } from "../util/startup";
 import { parseRepoRef } from "../github/repo-ref";
 import { cacheAcpCommands } from "../runs/command-catalog";
 import { revalidateCommandBeforeDispatch } from "../runs/command-intent";
 import { providerEventExists, recordProviderEvent } from "../runs/provider-events";
 import { buildSessionCancel, createAcpRpcClient, isAlreadyInitialized, parseRelayHealth, relayRegenerated, relayStateAfterBoot } from "./acp-rpc";
 import { decideAcpPermission } from "./permission-policy";
-import { toolGatewayConfig } from "../knowledge/gateway/config";
+import { toolGatewayConfig, type ToolGatewayConfig } from "../knowledge/gateway/config";
 import { mintToolToken } from "../knowledge/gateway/token";
 import {
   composeSecretEnv,
@@ -27,8 +33,7 @@ import {
   SECRET_SOURCE_COMMAND,
 } from "../secrets/inject";
 import { createSecretRedactor } from "../secrets/redact";
-import { ensureSandboxDesktop, ensureSandboxDesktopView } from "./desktop";
-import { acpBrowserMcpServer, registerClaudeBrowserMcp } from "./browser-mcp";
+import { ensureSandboxDesktopView } from "./desktop";
 import { getThreadSandbox, setRunSandbox } from "../runs/repo";
 import {
   buildAcpToolCompletion,
@@ -204,16 +209,26 @@ export function resolveAcpTurnTimeoutMs(env: Record<string, string | undefined> 
   return valid(env.ACP_TURN_TIMEOUT_MS) ?? valid(env.ENGINE_TIMEOUT_MS) ?? DEFAULT_MS;
 }
 
+const PRESEEDED_PROVIDER_BIN_DIR = "/usr/local/share/skynet-provider-bin";
+
 /** Build the per-sandbox package install clause. Idempotency MUST key on the ACTUAL
  *  install path (~/.local/bin/<bin>), NOT `command -v <bin>` - a <bin> that resolves
  *  elsewhere on PATH (the base image ships `claude`) would skip the install, and the
  *  exact path CLAUDE_CODE_EXECUTABLE points at (~/.local/bin/claude) would never get
- *  created (#127). Exported so the regression test can assert this without a sandbox. */
+ *  created (#127). Cube images expose version-pinned binaries through a Skynet-owned
+ *  seed directory because secure sandboxes run with a fresh uid/home; other providers
+ *  retain the network-install fallback. */
 export function buildAcpInstallClause(packages: { pkg: string; bin: string }[]): string {
   return packages
     .map(
-      ({ pkg, bin }) =>
-        `[ -x "$HOME/.local/bin/${bin}" ] || npm install -g --prefix $HOME/.local --silent "${pkg}" >/dev/null 2>&1; `,
+      ({ pkg, bin }) => {
+        const seeded = `${PRESEEDED_PROVIDER_BIN_DIR}/${bin}`;
+        return (
+          `[ -x "$HOME/.local/bin/${bin}" ] || { mkdir -p "$HOME/.local/bin"; ` +
+          `if [ -x "${seeded}" ]; then ln -sfn "${seeded}" "$HOME/.local/bin/${bin}"; ` +
+          `else npm install -g --prefix $HOME/.local --silent "${pkg}" >/dev/null 2>&1; fi; }; `
+        );
+      },
     )
     .join("");
 }
@@ -237,7 +252,35 @@ export function buildAcpRuntimeEnvExports(env: Readonly<Record<string, string>>)
     .join("");
 }
 
-interface ThreadRelay {
+/** Codex ACP keeps its process and native session warm across turns. Apply the
+ * per-turn model through ACP so changing the picker affects that resident
+ * session immediately instead of only rewriting config for the next process. */
+export function codexModelSelectionRequest(
+  engine: string,
+  sessionId: string,
+  model: string,
+): {
+  method: "session/set_config_option";
+  params: { configId: "model"; sessionId: string; value: string };
+} | null {
+  if (engine !== "codex" || !model.trim()) return null;
+  return {
+    method: "session/set_config_option",
+    params: { configId: "model", sessionId, value: model },
+  };
+}
+
+export interface AcpGatewayDescriptorState {
+  /** Gateway descriptor installed in the live ACP session. `undefined` means
+   *  this process has not yet observed/configured the resident session. */
+  mcpGatewayUrl: string | null | undefined;
+  /** User identity bound into the installed descriptor's signed capability. */
+  mcpUserId: string | null | undefined;
+  /** Expiry of the bearer embedded in that live descriptor. */
+  mcpTokenExpiresAt: number | null;
+}
+
+interface ThreadRelay extends AcpGatewayDescriptorState {
   sandboxId: string;
   baseUrl: string;
   token: string;
@@ -265,8 +308,15 @@ const threadRelays = new Map<string, ThreadRelay>();
 
 const relayKey = (threadId: string, engine: string): string => `${engine}:${threadId}`;
 
+/** Drop process-local relay metadata after an explicit sandbox release. */
+export function forgetAcpThreadRelays(threadId: string): void {
+  for (const key of threadRelays.keys()) {
+    if (key.endsWith(`:${threadId}`)) threadRelays.delete(key);
+  }
+}
+
 function authHeaders(token: string): Record<string, string> {
-  return { "x-daytona-preview-token": token };
+  return sandboxPreviewHeaders(token);
 }
 
 /** Best-effort native ACP cancel: POST a `session/cancel` notification to the relay
@@ -315,9 +365,13 @@ export async function cancelAcpSession(sandboxId: string, sessionId: string): Pr
  * knowledge_search / knowledge_read, at parity with opencode.
  *
  * TRUST BOUNDARY (identical to opencode): the ONLY thing that enters the
- * untrusted sandbox is a short-lived, run-scoped bearer TOKEN over HTTP — never
+ * untrusted sandbox is a short-lived, thread-scoped bearer TOKEN over HTTP — never
  * DB/embedding/tenant credentials. The gateway derives org/user/thread from the
- * token server-side. Same URL, TTL, and minted identity as the opencode path.
+ * token server-side. ACP uses thread scope because resident Codex sessions can
+ * retain the first turn's MCP config; a run-scoped retained token becomes
+ * `inactive_capability` as soon as that old run completes. The gateway still
+ * fails closed unless the same org/thread/user has exactly one currently-running
+ * run, then resolves that current run server-side.
  *
  * Gated: empty unless GATEWAY_PUBLIC_URL is set AND the run has an org
  * identity (fail closed — no tools rather than an unscoped one). Off by default,
@@ -327,8 +381,10 @@ export async function cancelAcpSession(sandboxId: string, sessionId: string): Pr
  * The descriptor is contract-tested and has been exercised by the live Claude
  * journey; absence is represented honestly as an empty server list.
  */
-export function acpKnowledgeMcpServers(ctx: EngineRunContext): Record<string, unknown>[] {
-  const gw = toolGatewayConfig();
+function buildAcpKnowledgeMcpServers(
+  ctx: EngineRunContext,
+  gw: ToolGatewayConfig | null,
+): Record<string, unknown>[] {
   if (!gw || !ctx.orgId) return [];
   const token = mintToolToken(
     {
@@ -336,6 +392,7 @@ export function acpKnowledgeMcpServers(ctx: EngineRunContext): Record<string, un
       userId: ctx.userId ?? "",
       threadId: ctx.threadId ?? ctx.runId,
       runId: ctx.runId,
+      scope: "thread",
     },
     gw.tokenTtlMs,
   );
@@ -349,6 +406,156 @@ export function acpKnowledgeMcpServers(ctx: EngineRunContext): Record<string, un
   ];
 }
 
+export function acpKnowledgeMcpServers(ctx: EngineRunContext): Record<string, unknown>[] {
+  return buildAcpKnowledgeMcpServers(ctx, toolGatewayConfig());
+}
+
+const ACP_GATEWAY_TOKEN_REFRESH_SAFETY_MS = 60_000;
+
+/** A live ACP session cannot replace its MCP descriptor in place. Restart the
+ *  small relay and session/load before the retained bearer could expire during
+ *  the next turn. The workspace and desktop remain warm. */
+export function acpGatewayTokenNeedsRefresh(
+  expiresAt: number | null,
+  turnBudgetMs: number,
+  nowMs = Date.now(),
+): boolean {
+  return (
+    expiresAt === null ||
+    expiresAt - nowMs <= turnBudgetMs + ACP_GATEWAY_TOKEN_REFRESH_SAFETY_MS
+  );
+}
+
+export function acpGatewayDescriptorNeedsRefresh(
+  current: AcpGatewayDescriptorState,
+  desired: { gatewayUrl: string | null; userId: string | null },
+  turnBudgetMs: number,
+  nowMs = Date.now(),
+): boolean {
+  return (
+    current.mcpGatewayUrl !== desired.gatewayUrl ||
+    current.mcpUserId !== desired.userId ||
+    (desired.gatewayUrl !== null &&
+      acpGatewayTokenNeedsRefresh(current.mcpTokenExpiresAt, turnBudgetMs, nowMs))
+  );
+}
+
+export function acpSessionLoadParams(
+  sessionId: string,
+  cwd: string,
+  mcpServers: readonly Record<string, unknown>[],
+): Record<string, unknown> {
+  return { sessionId, cwd, mcpServers };
+}
+
+export async function refreshAcpRelayConfigurationIfNeeded(input: {
+  retainForThread: boolean;
+  secretChanged: boolean;
+  reconnectingToResidentProcess: boolean;
+  descriptor: AcpGatewayDescriptorState | null;
+  desiredGatewayUrl: string | null;
+  desiredGatewayUserId: string | null;
+  turnBudgetMs: number;
+  stopRelay: () => Promise<void>;
+}): Promise<boolean> {
+  const gatewayChanged = Boolean(
+    input.descriptor &&
+      acpGatewayDescriptorNeedsRefresh(
+        input.descriptor,
+        { gatewayUrl: input.desiredGatewayUrl, userId: input.desiredGatewayUserId },
+        input.turnBudgetMs,
+      ),
+  );
+  const needsRestart =
+    input.retainForThread &&
+    (input.secretChanged || input.reconnectingToResidentProcess || gatewayChanged);
+  if (!needsRestart) return false;
+  await input.stopRelay();
+  return true;
+}
+
+export async function establishAcpSession(input: {
+  liveSessionId: string | null;
+  persistedSessionId?: string | null;
+  cwd: string;
+  mcpServers: readonly Record<string, unknown>[];
+  request: (
+    method: string,
+    params: Record<string, unknown>,
+  ) => Promise<Record<string, unknown>>;
+}): Promise<{
+  sessionId: string;
+  resumed: boolean;
+  configuredGatewayDescriptor: boolean;
+}> {
+  if (input.liveSessionId) {
+    return {
+      sessionId: input.liveSessionId,
+      resumed: true,
+      configuredGatewayDescriptor: false,
+    };
+  }
+  if (input.persistedSessionId) {
+    try {
+      await input.request(
+        "session/load",
+        acpSessionLoadParams(input.persistedSessionId, input.cwd, input.mcpServers),
+      );
+      return {
+        sessionId: input.persistedSessionId,
+        resumed: true,
+        configuredGatewayDescriptor: true,
+      };
+    } catch {
+      // The persisted provider session cannot be restored; create a fresh one.
+    }
+  }
+  const response = await input.request("session/new", {
+    cwd: input.cwd,
+    mcpServers: input.mcpServers,
+  });
+  const sessionId = String(response.sessionId ?? "");
+  if (!sessionId) throw new Error("ACP session/new returned no sessionId");
+  return { sessionId, resumed: false, configuredGatewayDescriptor: true };
+}
+
+/** Parse the built-in Codex `/mcp` status without accepting the session-only
+ *  fallback line (`- <name>`), which proves configuration but not readiness.
+ *  A positive tool count is the contract needed before the first real turn. */
+export function acpMcpServerToolCount(status: string, serverName: string): number | null {
+  const escapedName = serverName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const match = new RegExp(`^- ${escapedName}: (\\d+) tools(?:,|$)`, "m").exec(status);
+  return match?.[1] === undefined ? null : Number(match[1]);
+}
+
+/** codex-acp deliberately completes session/new and session/load before its
+ *  asynchronous MCP startup notification settles. Poll its local `/mcp`
+ *  command (no model call, no external traffic) so the first user prompt never
+ *  races an empty tool snapshot. */
+export async function awaitAcpMcpServerTools(input: {
+  serverName: string;
+  readStatus: () => Promise<string>;
+  attempts?: number;
+  intervalMs?: number;
+  wait?: (delayMs: number) => Promise<void>;
+}): Promise<number> {
+  const attempts = Math.max(1, input.attempts ?? 20);
+  const intervalMs = Math.max(0, input.intervalMs ?? 250);
+  const wait = input.wait ?? ((delayMs: number) => new Promise<void>((resolve) => {
+    setTimeout(resolve, delayMs);
+  }));
+  let lastStatus = "";
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    lastStatus = await input.readStatus();
+    const toolCount = acpMcpServerToolCount(lastStatus, input.serverName);
+    if (toolCount !== null && toolCount > 0) return toolCount;
+    if (attempt + 1 < attempts) await wait(intervalMs);
+  }
+  throw new Error(
+    `${input.serverName} MCP tools did not become ready: ${truncate(lastStatus, 200) || "no status"}`,
+  );
+}
+
 // ── ACP session/update → step/delta translation ─────────────────────────────
 
 // ── the adapter ─────────────────────────────────────────────────────────────
@@ -358,14 +565,23 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
     id: cfg.id,
 
     async run(ctx: EngineRunContext): Promise<void> {
-      const apiKey = process.env.DAYTONA_API_KEY;
-      if (!apiKey) throw new Error(`${cfg.id} engine needs DAYTONA_API_KEY in the backend env`);
+      const apiKey = sandboxProviderApiKey();
+      if (apiKey === undefined) throw new Error(`${cfg.id} engine needs sandbox provider credentials`);
       if (!providerGatewayWired()) {
         throw new Error(`${cfg.id} engine requires a configured provider gateway`);
       }
       const startedAt = Date.now();
-      const daytona = daytonaProvider(apiKey);
+      const provider = sandboxProvider(apiKey);
       const budgetMs = resolveAcpTurnTimeoutMs();
+      const gateway = toolGatewayConfig();
+      if (
+        gateway &&
+        gateway.tokenTtlMs <= budgetMs + ACP_GATEWAY_TOKEN_REFRESH_SAFETY_MS
+      ) {
+        throw new Error(
+          "TOOL_GATEWAY_TOKEN_TTL_MS must exceed the ACP turn timeout plus the refresh safety margin",
+        );
+      }
 
       // Org secrets live in a protected dotenv, not in Daytona's immutable env
       // catalog (which rejects large org catalogs). The ACP relay sources it
@@ -385,7 +601,7 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
 
       const autoStopInterval = Number(process.env.SANDBOX_AUTO_STOP_MIN ?? 30);
       const autoDeleteInterval = Number(process.env.SANDBOX_AUTO_DELETE_MIN ?? 4320);
-      const snapshot = process.env.DAYTONA_ACP_SNAPSHOT ?? "skynet-acp-v2";
+      const snapshot = sandboxTemplate("DAYTONA_ACP_SNAPSHOT", "skynet-acp-v3");
       const resourceTarget = resolveSandboxResourceTarget();
 
       const key = ctx.threadId ? relayKey(ctx.threadId, cfg.id) : null;
@@ -403,7 +619,7 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
             const prior =
               cachedSandbox?.id === relay.sandboxId
                 ? cachedSandbox
-                : await daytona.get(relay.sandboxId);
+                : await provider.get(relay.sandboxId);
             const state = (prior as { state?: string }).state;
             if (state === "stopped" || state === "paused" || state === "archived") {
               await ctx.emit({ kind: "task", label: `Resuming thread sandbox ${prior.id.slice(0, 8)}…`, chip: cfg.id });
@@ -437,7 +653,7 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
               const prior =
                 cachedSandbox?.id === priorId
                   ? cachedSandbox
-                  : await daytona.get(priorId);
+                  : await provider.get(priorId);
               const state = (prior as { state?: string }).state;
               if (state === "stopped" || state === "paused" || state === "archived") {
                 await ctx.emit({ kind: "task", label: `Resuming thread sandbox ${prior.id.slice(0, 8)}…`, chip: cfg.id });
@@ -486,13 +702,13 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
             // removes three fresh-thread npm installs while preserving the
             // default `daytona` user Claude requires. A missing/inactive image
             // degrades to the ordinary image and the idempotent install clause.
-            sandbox = await daytona.create({ snapshot, ...sandboxConfig });
+            sandbox = await provider.create({ snapshot, ...sandboxConfig });
             snapshotBacked = true;
           } catch {
-            sandbox = await daytona.create(sandboxConfig);
+            sandbox = await provider.create(sandboxConfig);
           }
         }
-        if (!sandbox) throw new Error("Daytona returned no sandbox");
+        if (!sandbox) throw new Error("Sandbox provider returned no sandbox");
         const box = sandbox;
         const resources = assertSandboxResources(box, resourceTarget);
         if (provisionedFresh) {
@@ -541,20 +757,12 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
         // boots the ACP relay. A fallback/legacy box starts only the VNC view
         // early: its npm installs remain sequential to avoid corrupting the shared
         // user prefix with concurrent global installs.
-        const desktopPreparation = snapshotBacked
-          ? ensureSandboxDesktop(box, ctx.signal)
-          : ensureSandboxDesktopView(box, ctx.signal);
-        const earlyClaudeBrowserRegistration = snapshotBacked && cfg.id === "claude"
-          ? registerClaudeBrowserMcp(box)
-          : Promise.resolve(false);
+        const desktopPreparation = ensureSandboxDesktopView(box, ctx.signal);
         // Rollback flag: sequence the floated preparation before continuing (same
         // DAG at concurrency 1). Errors still surface at the original await sites.
         if (serialStartup()) {
           await desktopPreparation.catch(() => {});
-          await earlyClaudeBrowserRegistration.catch(() => {});
         }
-
-        await cfg.prepare?.(box, ctx);
 
         const probeCmd = `curl -s -m 2 -o /dev/null -w '%{http_code}' http://127.0.0.1:${cfg.port}/health`;
         const relayPidPath = `/tmp/acp-relay-${cfg.id}.pid`;
@@ -564,28 +772,47 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
         // loses the in-memory relay/session generation, so restart rather than
         // session/load into an already-loaded child. In both cases only the
         // small relay restarts; the Daytona workspace and native session stay.
-        const secretState = await materializeSecretFiles(
-          (cmd) => box.process.executeCommand(cmd, undefined, undefined, 30),
-          secretInjection.files,
-        );
+        const [, secretState] = await stagesTogether([
+          async () => {
+            await cfg.prepare?.(box, ctx);
+          },
+          () =>
+            materializeSecretFiles(
+              (cmd) => box.process.executeCommand(cmd, undefined, undefined, 30),
+              secretInjection.files,
+            ),
+        ]);
         await recordSecretsInjected(ctx, secretInjection);
         const reconnectingToResidentProcess = retainForThread && !relay;
-        if (retainForThread && (secretState.changed || reconnectingToResidentProcess)) {
-          const stopped = await box.process.executeCommand(
-            `if [ -f ${relayPidPath} ]; then ` +
-              `relay_pid=$(cat ${relayPidPath}); ` +
-              `kill "$relay_pid" 2>/dev/null || true; ` +
-              `fi; ` +
-              `for i in $(seq 1 40); do [ "$(${probeCmd})" = "000" ] && break; sleep 0.25; done; ` +
-              `[ "$(${probeCmd})" = "000" ] && rm -f ${relayPidPath}`,
-            undefined,
-            undefined,
-            30,
-          );
-          if ((stopped.exitCode ?? 1) !== 0) {
-            throw new Error(`${cfg.id} ACP relay did not stop after secret revision change`);
-          }
-        }
+        const desiredGatewayUrl = gateway && ctx.orgId ? gateway.mcpUrl : null;
+        const desiredGatewayUserId = desiredGatewayUrl ? (ctx.userId ?? "") : null;
+        await refreshAcpRelayConfigurationIfNeeded({
+          retainForThread,
+          secretChanged: secretState.changed,
+          reconnectingToResidentProcess,
+          descriptor: relay ?? null,
+          desiredGatewayUrl,
+          desiredGatewayUserId,
+          turnBudgetMs: budgetMs,
+          stopRelay: async () => {
+            const stopped = await box.process.executeCommand(
+              `if [ -f ${relayPidPath} ]; then ` +
+                `relay_pid=$(cat ${relayPidPath}); ` +
+                `kill "$relay_pid" 2>/dev/null || true; ` +
+                `fi; ` +
+                `for i in $(seq 1 40); do [ "$(${probeCmd})" = "000" ] && break; sleep 0.25; done; ` +
+                `[ "$(${probeCmd})" = "000" ] && rm -f ${relayPidPath}`,
+              undefined,
+              undefined,
+              30,
+            );
+            if ((stopped.exitCode ?? 1) !== 0) {
+              throw new Error(
+                `${cfg.id} ACP relay did not stop for runtime configuration refresh`,
+              );
+            }
+          },
+        });
 
         // ── resident agent: install once, relay up, resolve endpoint ────────
         const relayB64 = Buffer.from(RELAY_SCRIPT, "utf8").toString("base64");
@@ -623,23 +850,12 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
           throw new Error(`${cfg.id} ACP relay failed to boot: ${truncate(boot.result ?? "", 200)}`);
         }
         const home = /HOME=(\S+)/.exec(boot.result ?? "")?.[1] ?? "/home/daytona";
-        const preparedDesktop = await desktopPreparation;
-        const desktop = snapshotBacked
-          ? preparedDesktop
-          : await ensureSandboxDesktop(box, ctx.signal);
-        const browserToolsReady = desktop.browserTools && (
-          cfg.id !== "claude" ||
-          await earlyClaudeBrowserRegistration ||
-          await registerClaudeBrowserMcp(box)
-        );
-        if (!desktop.available || !browserToolsReady) {
+        const desktop = await desktopPreparation;
+        const computerToolsReady = desktop.available && Boolean(gateway && ctx.orgId);
+        if (!computerToolsReady) {
           await ctx.emit({
             kind: "task",
-            label: desktop.reason ?? (
-              desktop.browserTools
-                ? "Claude browser MCP registration failed"
-                : "Desktop/browser tools unavailable in this sandbox"
-            ),
+            label: desktop.reason ?? "Desktop computer-use tools unavailable in this sandbox",
             chip: "warning",
           });
         }
@@ -695,6 +911,9 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
             initialized: false,
             generation: health.generation,
             commandCatalog: null,
+            mcpGatewayUrl: undefined,
+            mcpUserId: undefined,
+            mcpTokenExpiresAt: null,
           };
         }
         const live = relay; // narrowed non-null for the closures below
@@ -707,7 +926,12 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
         live.initialized = gen.initialized;
         live.sessionId = gen.sessionId;
         live.generation = health.generation ?? live.generation;
-        if (regenerated) live.commandCatalog = null;
+        if (regenerated) {
+          live.commandCatalog = null;
+          live.mcpGatewayUrl = undefined;
+          live.mcpUserId = undefined;
+          live.mcpTokenExpiresAt = null;
+        }
         if (key) {
           threadRelays.set(key, live);
           retainForThread = true;
@@ -757,6 +981,10 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
         // to the new run. The ordered relay stream guarantees every pre-response
         // replay frame is drained before request("session/load") resolves.
         let acceptingTurnOutput = false;
+        // Codex's built-in `/mcp` readiness probe is handled locally by codex-acp.
+        // Capture its response before ordinary turn output is accepted, so the
+        // probe stays invisible while still proving the actual tool catalog.
+        let mcpStatusCapture: { text: string } | null = null;
 
         // ACP streams chunks but does not assign assistant-message ids. Synthesize one stable
         // message/part per CONTIGUOUS text burst: every chunk within a burst UPSERTS the same
@@ -884,6 +1112,11 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
               // pre-session picker). Fire-and-forget: a caching failure never disturbs the turn.
               void cacheAcpCommands(ctx.orgId ?? "", cfg.id, snapshot);
             }
+            return;
+          }
+          if (mcpStatusCapture && kind === "agent_message_chunk") {
+            const text = ((u.content ?? {}) as { text?: string }).text;
+            if (typeof text === "string") mcpStatusCapture.text += text;
             return;
           }
           if (!acceptingTurnOutput) return;
@@ -1048,16 +1281,27 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
               }
               // Response to one of our requests (settled inside the rpc client).
               if (rpc.dispatch(msg)) continue;
-              // Server → client REQUEST (permissions): fail CLOSED (deny) unless the
-              // dev-only ACP_YOLO_APPROVE opt-in is set. See the handler below.
+              // Server → client REQUEST (permissions): fail CLOSED unless the
+              // dev-only ACP_YOLO_APPROVE opt-in is set. Production permits only
+              // exact trusted active-run gateway methods from permission-policy;
+              // capability authorization remains server-side and this never opens
+              // a generic shell or arbitrary MCP approval path.
               if (typeof msg.id === "number" && msg.method === "session/request_permission") {
-                // SECURITY (final_harness.md P0): single fail-closed decision point
-                // (permission-policy.ts). DENY unless verified-dev yolo.
-                const params = (msg.params ?? {}) as { options?: { optionId?: string; kind?: string }[] };
+                const params = (msg.params ?? {}) as {
+                  options?: { optionId?: string; kind?: string }[];
+                  toolCall?: { title?: string; toolCallId?: string };
+                };
+                const toolCallId = params.toolCall?.toolCallId;
+                const recordedTitle = toolCallId
+                  ? toolCalls.get(toolCallId)?.update.title
+                  : undefined;
+                const toolTitle = typeof recordedTitle === "string"
+                  ? recordedTitle
+                  : params.toolCall?.title;
                 void post({
                   jsonrpc: "2.0",
                   id: msg.id,
-                  result: decideAcpPermission(params.options ?? []),
+                  result: decideAcpPermission(params.options ?? [], undefined, toolTitle),
                 }).catch(() => {});
                 continue;
               }
@@ -1100,41 +1344,67 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
             live.initialized = true;
           }
 
-          // Knowledge MCP gateway at parity with opencode — minted ONCE per turn
-          // and passed into both session/load and session/new (run-scoped token).
-          const knowledgeMcpServers = acpKnowledgeMcpServers(ctx);
-          const browserMcpServers =
-            browserToolsReady && desktop.browserExecutable
-              ? [acpBrowserMcpServer()]
-              : [];
-          const mcpServers = [...knowledgeMcpServers, ...browserMcpServers];
+          // Trusted capability gateway at parity with OpenCode. ACP sessions can
+          // stay resident and retain an older descriptor, so this token is scoped
+          // to the thread and signed user; the gateway resolves the current live run
+          // per call. Retained run-scoped tokens would otherwise surface as
+          // `inactive_capability` after the previous run completes.
+          const knowledgeMcpServers = buildAcpKnowledgeMcpServers(ctx, gateway);
+          // Computer use is exposed only through the trusted gateway. The
+          // visible X11 desktop is the canonical GUI surface.
+          const mcpServers = knowledgeMcpServers;
 
           // Session: live in-process one wins; else try loading the persisted
-          // id; else a fresh session (with the composed preamble).
-          let sessionId = live.sessionId;
-          let resumed = Boolean(sessionId);
-          if (!sessionId && ctx.engineSessionId) {
-            try {
-              await request("session/load", {
-                sessionId: ctx.engineSessionId,
-                cwd: effectiveCwd,
-                mcpServers,
-              });
-              sessionId = ctx.engineSessionId;
-              resumed = true;
-            } catch {
-              sessionId = null; // agent can't load it (fresh process/no support)
-            }
-          }
-          if (!sessionId) {
-            const res = await request("session/new", { cwd: effectiveCwd, mcpServers });
-            sessionId = String(res.sessionId ?? "");
-            if (!sessionId) throw new Error("ACP session/new returned no sessionId");
-            resumed = false;
-          }
+          // id with the current gateway descriptor; else create a fresh session.
+          const {
+            sessionId,
+            resumed,
+            configuredGatewayDescriptor,
+          } = await establishAcpSession({
+            liveSessionId: live.sessionId,
+            persistedSessionId: ctx.engineSessionId,
+            cwd: effectiveCwd,
+            mcpServers,
+            request,
+          });
           live.sessionId = sessionId;
+          if (configuredGatewayDescriptor) {
+            live.mcpGatewayUrl = desiredGatewayUrl;
+            live.mcpUserId = desiredGatewayUserId;
+            live.mcpTokenExpiresAt = desiredGatewayUrl && gateway
+              ? Date.now() + gateway.tokenTtlMs
+              : null;
+          }
           if (live.commandCatalog?.sessionId !== sessionId) live.commandCatalog = null;
           ctx.saveEngineSessionId?.(sessionId);
+
+          if (cfg.id === "codex" && configuredGatewayDescriptor && knowledgeMcpServers.length > 0) {
+            await awaitAcpMcpServerTools({
+              serverName: "skynet-knowledge",
+              readStatus: async () => {
+                const capture = { text: "" };
+                mcpStatusCapture = capture;
+                try {
+                  await request("session/prompt", {
+                    sessionId,
+                    prompt: [{ type: "text", text: "/mcp" }],
+                  });
+                  return capture.text;
+                } finally {
+                  mcpStatusCapture = null;
+                }
+              },
+            });
+          }
+
+          const modelSelection = codexModelSelectionRequest(
+            cfg.id,
+            sessionId,
+            ctx.model?.trim() ?? "",
+          );
+          if (modelSelection) {
+            await request(modelSelection.method, modelSelection.params);
+          }
 
           // C3/D4 fail-closed re-validation IMMEDIATELY before dispatch: a native command must STILL
           // be authorized against the LIVE session. Re-check against the resident provider's current

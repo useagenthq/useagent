@@ -57,14 +57,17 @@ describe("ACP harness control ops are typed-unsupported, never silent success", 
 });
 
 describe("harness registry resolves control adapters by provider", () => {
-  test("opencode + daytona alias resolve to the OpenCode harness (behavior unchanged)", () => {
-    expect(resolveHarness("opencode")).toBe(opencodeHarness);
-    expect(resolveHarness("daytona")).toBe(opencodeHarness);
+  test("opencode + daytona alias preserve the OpenCode harness contract", () => {
+    expect(resolveHarness("opencode")?.provider).toBe(opencodeHarness.provider);
+    expect(resolveHarness("daytona")?.provider).toBe(opencodeHarness.provider);
+    expect(resolveHarness("opencode")?.capabilities()).toEqual(opencodeHarness.capabilities());
   });
-  test("claude/claude-sdk/codex resolve to the ACP control adapters", () => {
-    expect(resolveHarness("claude")).toBe(claudeHarness);
-    expect(resolveHarness("claude-sdk")).toBe(claudeHarness);
-    expect(resolveHarness("codex")).toBe(codexHarness);
+  test("claude/claude-sdk/codex preserve the legacy provider capabilities", () => {
+    expect(resolveHarness("claude")?.provider).toBe(claudeHarness.provider);
+    expect(resolveHarness("claude-sdk")?.provider).toBe(claudeHarness.provider);
+    expect(resolveHarness("codex")?.provider).toBe(codexHarness.provider);
+    expect(resolveHarness("claude")?.capabilities()).toEqual(claudeHarness.capabilities());
+    expect(resolveHarness("codex")?.capabilities()).toEqual(codexHarness.capabilities());
   });
   test("an unregistered provider resolves to undefined (e.g. mock/legacy acp)", () => {
     expect(resolveHarness("mock")).toBeUndefined();

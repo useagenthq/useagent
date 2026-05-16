@@ -9,9 +9,21 @@ import { KNOWLEDGE_TOOLS } from "../src/knowledge/gateway/tools";
 import { MEMORY_TOOLS } from "../src/knowledge/gateway/memory-tools";
 import { WEB_SEARCH_TOOLS } from "../src/knowledge/gateway/web-search-tool";
 import { ARTIFACT_TOOLS } from "../src/knowledge/gateway/artifact-tools";
+import { RECORDING_TOOLS } from "../src/knowledge/gateway/recording-tools";
+import { COMPUTER_USE_TOOLS } from "../src/knowledge/gateway/computer-use-tools";
+import { REPOSITORY_TOOLS } from "../src/knowledge/gateway/repository-tools";
+import { GCS_TOOLS } from "../src/knowledge/gateway/gcs-tools";
+import { SKILL_TOOLS } from "../src/knowledge/gateway/skill-tools";
 import type { ToolTokenClaims } from "../src/knowledge/gateway/token";
 
-const CLAIMS: ToolTokenClaims = { orgId: "o", userId: "u", threadId: "t", runId: "r", exp: Date.now() + 60_000 };
+const CLAIMS: ToolTokenClaims = {
+  orgId: "o",
+  userId: "u",
+  threadId: "t",
+  runId: "r",
+  scope: "run",
+  exp: Date.now() + 60_000,
+};
 const req = (id: number, method: string, params?: Record<string, unknown>) =>
   ({ jsonrpc: "2.0" as const, id, method, ...(params ? { params } : {}) });
 
@@ -51,13 +63,18 @@ describe("MCP wire is byte-identical after the SDK-schema adoption (#98)", () =>
     expect(result.serverInfo).toEqual({ name: "skynet-knowledge", version: "1.0.0" });
   });
 
-  test("tools/list returns the knowledge + memory + web_search + artifact tool set", async () => {
+  test("tools/list returns the knowledge, execution, and semantic skill tool set", async () => {
     const result = resultRecord(await handleMcpMessage(CLAIMS, req(2, "tools/list")));
     expect(result.tools).toEqual([
       ...KNOWLEDGE_TOOLS,
       ...MEMORY_TOOLS,
       ...WEB_SEARCH_TOOLS,
       ...ARTIFACT_TOOLS,
+      ...RECORDING_TOOLS,
+      ...COMPUTER_USE_TOOLS,
+      ...REPOSITORY_TOOLS,
+      ...GCS_TOOLS,
+      ...SKILL_TOOLS,
     ]);
   });
 

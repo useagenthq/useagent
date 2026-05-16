@@ -29,6 +29,8 @@ import {
 import type { NativeSnapshot } from "@/components/chat/native-store";
 import { QuestionCard } from "@/components/chat/question-card";
 import type { PendingQuestion } from "@/components/chat/question-state";
+import { NativeApprovalCard } from "@/components/chat/native-approval-card";
+import type { ApprovalDecision, PendingApproval } from "@/components/chat/approval-state";
 import { formatArtifactSize } from "@/components/artifacts/model";
 
 // Canonical-timeline cutover flag (final_harness Phase 1, slice 4). OFF by default:
@@ -630,6 +632,10 @@ export function Conversation({
   answeringQuestion,
   questionError,
   onAnswerQuestion,
+  pendingApproval,
+  answeringApproval,
+  approvalError,
+  onAnswerApproval,
   sendNowFor,
   onSendNow,
   running,
@@ -656,6 +662,12 @@ export function Conversation({
   answeringQuestion?: boolean;
   questionError?: string | null;
   onAnswerQuestion?: (answers: string[][]) => void | Promise<void>;
+  /** A native provider permission request blocks the active T3 turn until the
+   * user chooses one of T3's four approval decisions. */
+  pendingApproval?: PendingApproval | null;
+  answeringApproval?: boolean;
+  approvalError?: string | null;
+  onAnswerApproval?: (decision: ApprovalDecision) => void | Promise<void>;
   /** Run id of the HEAD queued turn when a turn is running - that bubble gets
    *  the "Send now" steering affordance (opencode's control on our harness). */
   sendNowFor?: string | null;
@@ -677,12 +689,13 @@ export function Conversation({
   useEffect(() => {
     const el = scrollRef.current;
     if (el && stickRef.current) el.scrollTop = el.scrollHeight;
-  }, [scrollSignature, pendingReply, pendingQuestion?.id, turns.length]);
+  }, [scrollSignature, pendingReply, pendingQuestion?.id, pendingApproval?.id, turns.length]);
 
   const composerCanAnswerQuestion =
     pendingQuestion?.questions.length === 1 &&
     pendingQuestion.questions[0]?.custom === true;
-  const questionLocksComposer = !!pendingQuestion && !composerCanAnswerQuestion;
+  const controlLocksComposer =
+    !!pendingApproval || (!!pendingQuestion && !composerCanAnswerQuestion);
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -710,6 +723,15 @@ export function Conversation({
             onSubmit={onAnswerQuestion}
           />
         )}
+        {pendingApproval && onAnswerApproval && (
+          <NativeApprovalCard
+            key={pendingApproval.id}
+            request={pendingApproval}
+            submitting={answeringApproval === true}
+            error={approvalError ?? null}
+            onRespond={onAnswerApproval}
+          />
+        )}
         {pendingReply && <UserBubble>{pendingReply}</UserBubble>}
       </div>
 
@@ -721,9 +743,11 @@ export function Conversation({
         commands={commands}
         commandState={commandState}
         modelSelection={modelSelection}
-        locked={questionLocksComposer}
+        locked={controlLocksComposer}
         placeholder={
-          pendingQuestion
+          pendingApproval
+            ? "Respond to the approval above to continue…"
+            : pendingQuestion
             ? composerCanAnswerQuestion
               ? "Answer Skynet’s question…"
               : "Answer the question above to continue…"

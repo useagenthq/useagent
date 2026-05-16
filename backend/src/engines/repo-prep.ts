@@ -11,6 +11,8 @@ import { parseRepoRef } from "../github/repo-ref";
 import type { EngineRunContext } from "./types";
 import { truncate } from "./util";
 
+type RepoCloneContext = Pick<EngineRunContext, "emit">;
+
 /** POSIX single-quote a string for safe interpolation into a shell command. */
 export function shq(s: string): string {
   return `'${s.replace(/'/g, `'\\''`)}'`;
@@ -38,7 +40,8 @@ export async function ensureRepoClone(
   sandbox: SandboxHandle,
   workdir: string,
   entry: string,
-  ctx: EngineRunContext,
+  ctx: RepoCloneContext,
+  options: { readonly useGithubCredential?: boolean } = {},
 ): Promise<void> {
   // The stored entry may carry a branch ("owner/name:branch"); split it so the
   // subdir/URL use the clean repo and the clone checks out the chosen branch.
@@ -84,7 +87,9 @@ export async function ensureRepoClone(
   // One-shot GitHub credential (a PAT or a FRESHLY-valid App installation token). Passed via
   // GIT_CONFIG_* ENV ONLY (never the git argv / .git-config / logs / prompt), applied for THIS
   // operation and never persisted. Absent -> public repo. Shared by the switch + clone paths.
-  const token = await resolveGithubToken();
+  const token = options.useGithubCredential === false
+    ? null
+    : await resolveGithubToken();
   const authEnv: Record<string, string> = token
     ? {
         GIT_CONFIG_COUNT: "1",

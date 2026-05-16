@@ -62,9 +62,50 @@ function statusOf(card: SubagentCard, fidelity: ChildFidelity | undefined, runLi
   return fidelity?.status ?? (runLive ? "running" : "completed");
 }
 
+const isChildActive = (status: ChildStatus): boolean =>
+  status === "pending" || status === "running" || status === "waiting";
+
+const childStatusLabel = (status: ChildStatus): string => {
+  switch (status) {
+    case "pending":
+      return "Pending";
+    case "running":
+      return "Running";
+    case "waiting":
+      return "Waiting";
+    case "idle":
+      return "Idle · resumable";
+    case "completed":
+      return "Completed";
+    case "failed":
+      return "Failed";
+    case "cancelled":
+      return "Cancelled";
+    case "interrupted":
+      return "Interrupted";
+    default:
+      status satisfies never;
+      return "Unknown";
+  }
+};
+
+const compactCount = (value: number): string =>
+  new Intl.NumberFormat("en", { notation: "compact", maximumFractionDigits: 1 }).format(value);
+
+function fidelityFor(
+  card: SubagentCard,
+  fidelity: ReadonlyMap<string, ChildFidelity>,
+): ChildFidelity | undefined {
+  for (const id of card.aliases) {
+    const match = fidelity.get(id);
+    if (match) return match;
+  }
+  return undefined;
+}
+
 /** Per-child state indicator: running pulse / completed check / failed warning. */
 function ChildStateDot({ status }: { status: ChildStatus }) {
-  if (status === "running") {
+  if (isChildActive(status)) {
     return (
       <span
         className="ai-loading-pixel bg-blue-500 size-1.5 shrink-0 rounded-full"
@@ -73,7 +114,7 @@ function ChildStateDot({ status }: { status: ChildStatus }) {
       />
     );
   }
-  if (status === "failed") {
+  if (status === "failed" || status === "cancelled" || status === "interrupted") {
     return <RiErrorWarningLine className="text-error-base size-4 shrink-0" aria-label="failed" />;
   }
   return <RiCheckLine className="text-success-base size-4 shrink-0" aria-label="completed" />;
@@ -81,20 +122,20 @@ function ChildStateDot({ status }: { status: ChildStatus }) {
 
 function AgentCardRow({
   card,
-  status,
+  fidelity,
+  runLive,
   onOpen,
 }: {
   card: SubagentCard;
-  status: ChildStatus;
+  fidelity: ChildFidelity | undefined;
+  runLive: boolean;
   onOpen: () => void;
 }) {
-  const live = status === "running";
+  const status = statusOf(card, fidelity, runLive);
+  const live = isChildActive(status);
   const now = useNow(live);
   const elapsed = elapsedOf(card, now, live);
-  const statusLine =
-    status === "failed"
-      ? (card.status ?? "Failed")
-      : (card.status ?? (live ? "Starting…" : "No activity recorded"));
+  const statusLine = fidelity?.progress ?? card.status ?? childStatusLabel(status);
 
   return (
     <button
@@ -125,6 +166,7 @@ function AgentCardRow({
             {statusLine}
           </span>
           <span className="text-text-soft-400 shrink-0 font-mono text-label-xs tabular-nums">
+            {fidelity?.usage ? `${compactCount(fidelity.usage.totalTokens)} tok · ` : ""}
             {formatDuration(elapsed)}
           </span>
         </div>
@@ -141,20 +183,21 @@ function AgentCardRow({
  */
 function AgentDetail({
   card,
-  status,
-  resultText,
+  fidelity,
+  runLive,
   steps,
   ownerByStep,
   onBack,
 }: {
   card: SubagentCard;
-  status: ChildStatus;
-  resultText: string | null;
+  fidelity: ChildFidelity | undefined;
+  runLive: boolean;
   steps: ApiStep[];
   ownerByStep: ReadonlyMap<string, string>;
   onBack: () => void;
 }) {
-  const live = status === "running";
+  const status = statusOf(card, fidelity, runLive);
+  const live = isChildActive(status);
   const now = useNow(live);
   const elapsed = elapsedOf(card, now, live);
 
@@ -201,7 +244,7 @@ function AgentDetail({
           </p>
         )}
 
-        {resultText && (
+        {fidelity?.resultText && (
           <div
             className={cn(
               "rounded-xl border p-3",
@@ -219,17 +262,37 @@ function AgentDetail({
                 status === "failed" ? "text-error-base" : "text-text-strong-950",
               )}
             >
-              {resultText}
+              {fidelity.resultText}
             </p>
           </div>
         )}
 
-        {activity.length === 0 ? (
+        {(fidelity?.usage || fidelity?.lastToolName) && (
+          <div className="text-mono-label text-text-soft-400 flex flex-wrap gap-x-3 gap-y-1">
+            {fidelity.lastToolName && <span>Last tool: {fidelity.lastToolName}</span>}
+            {fidelity.usage && <span>{compactCount(fidelity.usage.totalTokens)} tokens</span>}
+            {fidelity?.usage?.toolUses !== undefined && (
+              <span>{fidelity.usage.toolUses} tool uses</span>
+            )}
+          </div>
+        )}
+
+        {activity.length === 0 && (fidelity?.recentActivity.length ?? 0) === 0 ? (
           <p className="text-paragraph-sm text-text-soft-400 py-6 text-center">
-            {live ? "Waiting for the first step…" : "No activity recorded."}
+            {live ? "Waiting for the first native activity…" : childStatusLabel(status)}
           </p>
         ) : (
           <div className="space-y-2.5">
+            {fidelity?.recentActivity.map((entry, index) => (
+              <div
+                key={`${entry.at}:${index}:${entry.summary}`}
+                className="border-stroke-soft-200 bg-bg-weak-50 rounded-lg border px-3 py-2"
+              >
+                <p className="text-paragraph-xs text-text-sub-600 break-words">
+                  {entry.summary}
+                </p>
+              </div>
+            ))}
             {activity.map((step, i) => (
               <ToolStepRow
                 key={step.id}
@@ -274,12 +337,12 @@ export function AgentsRail({
   // Selection survives live re-derivation because card ids are stable.
   const selected = selectedId ? cards.find((c) => c.id === selectedId) : null;
   if (selected) {
-    const f = selected.callId ? fidelity.get(selected.callId) : undefined;
+    const f = fidelityFor(selected, fidelity);
     return (
       <AgentDetail
         card={selected}
-        status={statusOf(selected, f, runLive)}
-        resultText={f?.resultText ?? null}
+        fidelity={f}
+        runLive={runLive}
         steps={steps}
         ownerByStep={ownerByStep}
         onBack={() => setSelectedId(null)}
@@ -293,7 +356,8 @@ export function AgentsRail({
         <AgentCardRow
           key={card.id}
           card={card}
-          status={statusOf(card, card.callId ? fidelity.get(card.callId) : undefined, runLive)}
+          fidelity={fidelityFor(card, fidelity)}
+          runLive={runLive}
           onOpen={() => setSelectedId(card.id)}
         />
       ))}

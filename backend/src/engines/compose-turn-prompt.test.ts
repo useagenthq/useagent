@@ -5,7 +5,11 @@
 // through — testing it proves the fix for OpenCode, ACP, and the sandbox paths.
 
 import { describe, expect, test } from "bun:test";
-import { AGENT_OPERATING_RULES, composeTurnPrompt } from "./types";
+import {
+  AGENT_OPERATING_RULES,
+  AGENT_SKILL_DISCOVERY_RULES,
+  composeTurnPrompt,
+} from "./types";
 
 const ctx = (over: Partial<{ prompt: string; bootstrapContext: string; turnContext: string; skillContext: string; commandName: string | null }> = {}) => ({
   prompt: "USER",
@@ -15,17 +19,20 @@ const ctx = (over: Partial<{ prompt: string; bootstrapContext: string; turnConte
 });
 
 const R = AGENT_OPERATING_RULES;
+const S = AGENT_SKILL_DISCOVERY_RULES;
 
 describe("composeTurnPrompt — fresh vs resumed context", () => {
   test("fresh native session gets operating-rules + bootstrap + turn + prompt, in that order", () => {
-    expect(composeTurnPrompt(ctx(), false)).toBe(`${R}BOOTTURNUSER`);
+    expect(composeTurnPrompt(ctx(), false)).toBe(`${R}BOOT${S}TURNUSER`);
   });
 
-  test("resumed session gets turn + prompt, but NOT bootstrap history or re-injected rules", () => {
+  test("resumed session gets current skill discovery + turn + prompt, but not bootstrap history", () => {
     const out = composeTurnPrompt(ctx(), true);
-    expect(out).toBe("TURNUSER");
+    expect(out).toBe(`${S}TURNUSER`);
     expect(out).not.toContain("BOOT"); // native session already holds the thread
-    expect(out).not.toContain("operating_rules"); // and already saw the rules on its first turn
+    expect(out).not.toContain("operating_rules"); // and already saw the global rules on its first turn
+    expect(out).toContain("skills_list");
+    expect(out).toContain("skill_activate");
   });
 
   test("REGRESSION: a resumed session STILL carries fresh turnContext (memory not dropped)", () => {
@@ -35,21 +42,23 @@ describe("composeTurnPrompt — fresh vs resumed context", () => {
 
   test("fresh run ALWAYS carries the operating rules (graceful-degradation guardrail)", () => {
     const bare = ctx({ bootstrapContext: "", turnContext: "" });
-    expect(composeTurnPrompt(bare, false)).toBe(`${R}USER`);
+    expect(composeTurnPrompt(bare, false)).toBe(`${R}${S}USER`);
     expect(composeTurnPrompt(bare, false)).toContain("operating_rules");
-    // resumed stays lean — no bootstrap, no rules, just the fresh turn + prompt.
-    expect(composeTurnPrompt(bare, true)).toBe("USER");
+    // resumed stays lean but still receives current catalog-discovery guidance.
+    expect(composeTurnPrompt(bare, true)).toBe(`${S}USER`);
   });
 
-  test("fresh browser sessions prefer bounded DOM work with a vision fallback", () => {
+  test("fresh browser sessions use bounded inspection without publishing internal frames", () => {
     expect(R).toContain("prefer bounded DOM/locator actions");
     expect(R).toContain("limit it by target or depth");
     expect(R).toContain("viewport screenshot plus coordinate tools");
+    expect(R).toContain("Inspection screenshots stay internal");
+    expect(R).toContain("publish an artifact only when the user requests");
     expect(R).toContain("Do not close the browser unless the user asks");
   });
 
   test("root fresh run (no bootstrap yet) still injects rules + turnContext", () => {
-    expect(composeTurnPrompt(ctx({ bootstrapContext: "" }), false)).toBe(`${R}TURNUSER`);
+    expect(composeTurnPrompt(ctx({ bootstrapContext: "" }), false)).toBe(`${R}${S}TURNUSER`);
   });
 
   // A VALIDATED native command (commandName set; prompt already the exact `/name args` bytes)
@@ -72,17 +81,17 @@ describe("composeTurnPrompt — fresh vs resumed context", () => {
     test("SECURITY: a raw prompt that starts with '/' but is NOT a validated command keeps the FULL prefix", () => {
       // The old code skipped context for ANY leading-slash prompt; now only commandName does.
       const out = composeTurnPrompt(ctx({ prompt: "/etc/passwd please read this", commandName: null }), false);
-      expect(out).toBe(`${R}BOOTTURN/etc/passwd please read this`);
+      expect(out).toBe(`${R}BOOT${S}TURN/etc/passwd please read this`);
     });
 
     test("SECURITY: leading whitespace + slash without a validated command still gets the prefix", () => {
       const out = composeTurnPrompt(ctx({ prompt: "  /deploy prod" }), false);
-      expect(out).toBe(`${R}BOOTTURN  /deploy prod`);
+      expect(out).toBe(`${R}BOOT${S}TURN  /deploy prod`);
     });
 
     test("a prompt that only MENTIONS a slash mid-sentence is NOT a command (keeps the prefix)", () => {
       const out = composeTurnPrompt(ctx({ prompt: "run the /review command please" }), false);
-      expect(out).toBe(`${R}BOOTTURNrun the /review command please`);
+      expect(out).toBe(`${R}BOOT${S}TURNrun the /review command please`);
     });
   });
 });

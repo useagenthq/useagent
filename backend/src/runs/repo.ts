@@ -251,6 +251,70 @@ export async function getThreadSandbox(threadId: string): Promise<string | null>
   return row?.sid ?? null;
 }
 
+export async function getThreadSandboxForOrg(
+  orgId: string,
+  threadId: string,
+  exec: Executor = db,
+): Promise<string | null> {
+  const [row] = await exec
+    .select({ sid: runs.sandboxId })
+    .from(runs)
+    .where(
+      and(
+        eq(runs.orgId, orgId),
+        eq(runs.threadId, threadId),
+        isNotNull(runs.sandboxId),
+      ),
+    )
+    .orderBy(desc(runs.createdAt), desc(runs.id))
+    .limit(1);
+  return row?.sid ?? null;
+}
+
+/** Whether a thread still has work that may be using its sandbox. */
+export async function threadHasActiveRuns(
+  orgId: string,
+  threadId: string,
+  exec: Executor = db,
+): Promise<boolean> {
+  const [row] = await exec
+    .select({ id: runs.id })
+    .from(runs)
+    .where(
+      and(
+        eq(runs.orgId, orgId),
+        eq(runs.threadId, threadId),
+        inArray(runs.status, ["queued", "running"]),
+      ),
+    )
+    .limit(1);
+  return Boolean(row);
+}
+
+/**
+ * Clear a thread's durable sandbox mapping after the provider confirms deletion.
+ * The expected id prevents a delayed release from clearing a replacement box.
+ */
+export async function clearThreadSandbox(
+  orgId: string,
+  threadId: string,
+  expectedSandboxId: string,
+  exec: Executor = db,
+): Promise<number> {
+  const rows = await exec
+    .update(runs)
+    .set({ sandboxId: null, updatedAt: new Date() })
+    .where(
+      and(
+        eq(runs.orgId, orgId),
+        eq(runs.threadId, threadId),
+        eq(runs.sandboxId, expectedSandboxId),
+      ),
+    )
+    .returning({ id: runs.id });
+  return rows.length;
+}
+
 /** The most recent engine session id recorded in this thread FOR THE SAME
  * engine (a thread can mix engines; sessions don't transfer across them).
  * Null → the adapter starts a fresh native session with the composed preamble. */
@@ -280,8 +344,9 @@ export async function getThreadEngineSession(
 export async function getRunForOrg(
   orgId: string,
   id: string,
+  exec: Executor = db,
 ): Promise<RunRecord | null> {
-  const [row] = await db
+  const [row] = await exec
     .select()
     .from(runs)
     .where(and(eq(runs.id, id), eq(runs.orgId, orgId)))
@@ -398,6 +463,42 @@ export async function setRunStatus(id: string, status: RunStatus): Promise<void>
     .update(runs)
     .set({ status, updatedAt: new Date() })
     .where(eq(runs.id, id));
+}
+
+/**
+ * Pin a skill revision to the currently-running turn.
+ *
+ * This is the persistence boundary used by the trusted `skill_activate` gateway
+ * tool. Identity is resolved from the tool capability before this function is
+ * called; the update still binds run + thread + org + running state so a stale
+ * capability cannot rewrite a settled turn or a turn in another tenant.
+ */
+export async function pinSkillToActiveRun(input: {
+  runId: string;
+  threadId: string;
+  orgId: string;
+  skillId: string;
+  skillVersion: number;
+  skillContentHash: string;
+}): Promise<boolean> {
+  const [row] = await db
+    .update(runs)
+    .set({
+      skillId: input.skillId,
+      skillVersion: input.skillVersion,
+      skillContentHash: input.skillContentHash,
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(runs.id, input.runId),
+        eq(runs.threadId, input.threadId),
+        eq(runs.orgId, input.orgId),
+        eq(runs.status, "running"),
+      ),
+    )
+    .returning({ id: runs.id });
+  return Boolean(row);
 }
 
 export async function completeRun(

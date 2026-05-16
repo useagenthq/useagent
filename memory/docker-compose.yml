@@ -12,10 +12,10 @@
 # README.md § "Full stack".
 services:
   memory-core:
-    image: agentmemory/memory-core:latest
+    image: "${MEMORY_CORE_IMAGE:-agentmemory/memory-core:latest}"
     container_name: skynet-memory-core
     ports:
-      - "${MEMORY_CORE_PORT:-8420}:8420"
+      - "${MEMORY_CORE_BIND:-127.0.0.1}:${MEMORY_CORE_PORT:-8420}:8420"
     environment:
       TDAI_GATEWAY_PORT: "8420"
       TDAI_GATEWAY_HOST: "0.0.0.0"
@@ -23,6 +23,14 @@ services:
       # exposing beyond loopback, and set the backend's MEMORY_API_KEY to match.
       TDAI_GATEWAY_API_KEY: "${MEMORY_CORE_GATEWAY_API_KEY:-}"
       TDAI_DATA_DIR: "/data/tdai-memory"
+      # memory-core reads these environment variables ahead of the mounted
+      # config file. Keep the credential in the root-owned host env file; never
+      # bake it into this compose file or the image.
+      TDAI_LLM_BASE_URL: "${MEMORY_LLM_BASE_URL:-}"
+      TDAI_LLM_API_KEY: "${MEMORY_LLM_API_KEY:-}"
+      TDAI_LLM_MODEL: "${MEMORY_LLM_MODEL:-}"
+      TDAI_LLM_MAX_TOKENS: "${MEMORY_LLM_MAX_TOKENS:-8192}"
+      TDAI_LLM_TIMEOUT_MS: "${MEMORY_LLM_TIMEOUT_MS:-60000}"
     volumes:
       - ./tdai-gateway.yaml:/data/config/tdai-gateway.yaml:ro
       - skynet-memory-core-data:/data/tdai-memory

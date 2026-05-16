@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 export function buildDesktopFrameSrc(threadId: string): string {
   const params = new URLSearchParams({
@@ -8,10 +8,10 @@ export function buildDesktopFrameSrc(threadId: string): string {
     resize: "scale",
     reconnect: "true",
     reconnect_delay: "500",
-    // noVNC 1.6 resolves this value with `new URL(path, location.href)`.
-    // Keep it root-relative so the proxied vnc.html directory is not prepended
-    // a second time to the websocket route.
-    path: `/api/desktop-proxy/${threadId}/websockify`,
+    // The Cube template's legacy noVNC builds `ws(s)://host/` + path, while
+    // current noVNC resolves path relative to vnc.html. This traversal-safe
+    // relative form normalizes to the same root route in both implementations.
+    path: `../../../api/desktop-proxy/${threadId}/websockify`,
   });
   return `/api/desktop-proxy/${threadId}/vnc.html?${params.toString()}`;
 }
@@ -37,7 +37,7 @@ export function nextDesktopProbeDelay(previous: number | null): number {
  * The "Desktop" tab: a live view of the conversation's sandbox GUI (multi-repo),
  * via noVNC. The sandbox runtime keeps Xvfb + XFCE + x11vnc + noVNC alive on
  * :6080; we iframe noVNC's own `vnc.html` served THROUGH the same-origin
- * `/api/desktop-proxy/<threadId>` bridge (backend injects the Daytona preview
+ * `/api/desktop-proxy/<threadId>` bridge (backend injects the provider preview
  * token on both the static app and the RFB WebSocket — see backend
  * runs/desktop-proxy.ts). `path` points noVNC's socket back at that same bridge
  * so the token never reaches the browser; `autoconnect` opens it on load and
@@ -50,7 +50,10 @@ export function nextDesktopProbeDelay(previous: number | null): number {
 export function DesktopPane({ threadId }: { threadId: string }) {
   const [ready, setReady] = useState(false);
   const [loaded, setLoaded] = useState(false);
-  const [status, setStatus] = useState("Waiting for Daytona sandbox…");
+  const [inputCaptured, setInputCaptured] = useState(false);
+  const [status, setStatus] = useState("Waiting for sandbox…");
+  const surfaceRef = useRef<HTMLDivElement>(null);
+  const frameRef = useRef<HTMLIFrameElement>(null);
 
   const readySrc = `/api/desktop-proxy/${threadId}/ready`;
   const src = buildDesktopFrameSrc(threadId);
@@ -63,7 +66,8 @@ export function DesktopPane({ threadId }: { threadId: string }) {
     let delay: number | null = null;
     setReady(false);
     setLoaded(false);
-    setStatus("Waiting for Daytona sandbox…");
+    setInputCaptured(false);
+    setStatus("Waiting for sandbox…");
 
     const probe = async (): Promise<void> => {
       try {
@@ -74,9 +78,7 @@ export function DesktopPane({ threadId }: { threadId: string }) {
           setReady(true);
           return;
         }
-        setStatus(
-          response.status === 409 ? "Waiting for Daytona sandbox…" : "Starting sandbox desktop…",
-        );
+        setStatus(response.status === 409 ? "Waiting for sandbox…" : "Starting sandbox desktop…");
       } catch {
         if (cancelled) return;
         setStatus("Reconnecting to sandbox desktop…");
@@ -92,6 +94,29 @@ export function DesktopPane({ threadId }: { threadId: string }) {
     };
   }, [readySrc]);
 
+  useEffect(() => {
+    if (!inputCaptured) return;
+
+    const releaseDesktopInput = (event: FocusEvent | PointerEvent) => {
+      const target = event.target;
+      if (target instanceof Node && surfaceRef.current?.contains(target)) return;
+      setInputCaptured(false);
+      try {
+        frameRef.current?.contentWindow?.blur();
+      } catch {
+        // The desktop proxy is normally same-origin. If a browser treats it as
+        // cross-origin, disabling pointer events still prevents re-capture.
+      }
+    };
+
+    window.addEventListener("focusin", releaseDesktopInput, true);
+    window.addEventListener("pointerdown", releaseDesktopInput, true);
+    return () => {
+      window.removeEventListener("focusin", releaseDesktopInput, true);
+      window.removeEventListener("pointerdown", releaseDesktopInput, true);
+    };
+  }, [inputCaptured]);
+
   if (!ready) {
     return (
       <div className="text-text-soft-400 flex size-full items-center justify-center px-6 text-center text-paragraph-sm">
@@ -101,18 +126,40 @@ export function DesktopPane({ threadId }: { threadId: string }) {
   }
 
   return (
-    <div className="relative size-full bg-neutral-950">
+    <div ref={surfaceRef} className="relative size-full bg-neutral-950">
       <iframe
+        ref={frameRef}
+        data-testid="desktop-frame"
         title="Sandbox desktop"
         src={src}
-        onLoad={() => setLoaded(true)}
+        tabIndex={-1}
+        onLoad={(event) => {
+          setLoaded(true);
+          event.currentTarget.blur();
+        }}
         className="size-full border-0"
+        style={{ pointerEvents: loaded && inputCaptured ? "auto" : "none" }}
         allow="clipboard-read; clipboard-write"
       />
       {!loaded && (
         <div className="bg-bg-white-0 text-text-soft-400 absolute inset-0 flex items-center justify-center text-paragraph-sm">
           Connecting to desktop…
         </div>
+      )}
+      {loaded && !inputCaptured && (
+        <button
+          type="button"
+          aria-label="Control sandbox desktop"
+          onClick={() => {
+            setInputCaptured(true);
+            requestAnimationFrame(() => frameRef.current?.contentWindow?.focus());
+          }}
+          className="absolute inset-0 flex items-end justify-center bg-transparent p-3 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white/70"
+        >
+          <span className="rounded-full bg-neutral-950/80 px-3 py-1.5 text-label-xs text-white shadow-lg backdrop-blur-sm">
+            Click to control desktop
+          </span>
+        </button>
       )}
     </div>
   );

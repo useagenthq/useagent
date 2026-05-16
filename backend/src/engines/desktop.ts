@@ -1,23 +1,24 @@
 import type { SandboxHandle } from "../sandboxes/provider";
+import { BROWSER_CDP_ENDPOINT, ensureResidentBrowserMcp, PLAYWRIGHT_MCP_VERSION } from "./browser-mcp";
 import {
-  BROWSER_CDP_ENDPOINT,
-  BROWSER_DISPLAY,
-  ensureResidentBrowserMcp,
-  PLAYWRIGHT_MCP_VERSION,
-} from "./browser-mcp";
+  buildDesktopLaunchCommand,
+  buildDesktopReadinessCommand,
+  DESKTOP_PORT,
+  DESKTOP_REQUIRED_BINARIES,
+  rfbProbeCommand,
+  xfceSessionProbeCommand,
+} from "./desktop-workstation";
 
-export const DESKTOP_PORT = 6080;
+export {
+  buildDesktopLaunchCommand,
+  buildDesktopReadinessCommand,
+  DESKTOP_PORT,
+  DESKTOP_REQUIRED_BINARIES,
+} from "./desktop-workstation";
 
 const DESKTOP_PROCESS_SESSION = "skynet-desktop";
 const BROWSER_MCP_PROCESS_SESSION = "skynet-browser-mcp";
 const desktopViewOperations = new Map<string | object, Promise<SandboxDesktop>>();
-
-function rfbProbeCommand(): string {
-  // curl's telnet transport exits 28 after reading the banner when x11vnc keeps
-  // the protocol socket open. A direct socket read gives the readiness check
-  // one unambiguous success condition and no shell-pipeline exit-code trap.
-  return "python3 -c \"import socket; s=socket.create_connection(('127.0.0.1',5900),1); assert s.recv(4)==b'RFB '\"";
-}
 
 export interface SandboxDesktop {
   readonly available: boolean;
@@ -28,60 +29,10 @@ export interface SandboxDesktop {
   readonly reason?: string;
 }
 
-/** One long-lived process group owns the virtual display, browser, window manager,
- * VNC server, and noVNC bridge. The browser is deliberately NOT owned by an MCP
- * child: every harness attaches to its loopback-only CDP endpoint, so restarting
- * OpenCode/Claude/Codex or their MCP transport cannot close the user's tabs.
- * x11vnc listens on loopback only; the browser reaches websockify through
- * Skynet's authenticated same-origin desktop proxy. */
-export function buildDesktopLaunchCommand(): string {
-  return [
-    "set -eu",
-    `export DISPLAY=${BROWSER_DISPLAY}`,
-    'mkdir -p "$HOME/.skynet"',
-    'Xvfb :1 -screen 0 1440x900x24 -ac -nolisten tcp >"$HOME/.skynet/xvfb.log" 2>&1 &',
-    "for i in $(seq 1 40); do xdpyinfo -display :1 >/dev/null 2>&1 && break; sleep 0.25; done",
-    "xdpyinfo -display :1 >/dev/null 2>&1",
-    "if command -v startxfce4 >/dev/null 2>&1; then",
-    '  startxfce4 >"$HOME/.skynet/desktop-session.log" 2>&1 &',
-    "elif command -v openbox >/dev/null 2>&1; then",
-    '  openbox >"$HOME/.skynet/desktop-session.log" 2>&1 &',
-    "fi",
-    // One-time migration from the old MCP-owned Chrome (`remote-debugging-pipe`).
-    // Match only Chrome's process name so this shell cannot kill itself even
-    // though its command text contains the same flag.
-    "ps -eo pid=,comm=,args= | awk '$2 ~ /(chrome|chromium)/ && /--remote-debugging-pipe/ {print $1}' | xargs -r kill -TERM",
-    "sleep 1",
-    "browser=$(command -v google-chrome 2>/dev/null || command -v chromium 2>/dev/null || command -v chromium-browser 2>/dev/null)",
-    'mkdir -p "$HOME/.skynet/browser-profile"',
-    // Chrome can be killed by a renderer/browser crash on large dynamic sites.
-    // Keep its lifecycle under the desktop process session so the next MCP call
-    // can reconnect to CDP instead of retrying ECONNREFUSED until the run dies.
-    "(",
-    "  while true; do",
-    '    "$browser" --no-sandbox --disable-dev-shm-usage --disable-gpu --no-first-run --no-default-browser-check ' +
-      "--remote-debugging-address=127.0.0.1 --remote-debugging-port=9222 " +
-      "'--remote-allow-origins=*' " +
-      '--user-data-dir="$HOME/.skynet/browser-profile" --restore-last-session --window-size=1440,900 about:blank ' +
-      '>>"$HOME/.skynet/chrome.log" 2>&1 || true',
-    "    sleep 0.5",
-    "  done",
-    ") &",
-    `for i in $(seq 1 80); do curl -fsS -m 1 -o /dev/null ${BROWSER_CDP_ENDPOINT}/json/version && break; sleep 0.25; done`,
-    `curl -fsS -m 3 -o /dev/null ${BROWSER_CDP_ENDPOINT}/json/version`,
-    'x11vnc -display :1 -localhost -nopw -forever -shared -rfbport 5900 >"$HOME/.skynet/x11vnc.log" 2>&1 &',
-    `for i in $(seq 1 40); do ${rfbProbeCommand()} && break; sleep 0.25; done`,
-    rfbProbeCommand(),
-    "exec websockify --web=/usr/share/novnc 0.0.0.0:6080 127.0.0.1:5900",
-  ].join("\n");
-}
-
 async function localDesktopHealthy(sandbox: SandboxHandle): Promise<boolean> {
   const probe = await sandbox.process
     .executeCommand(
-      `curl -fsS -m 3 -o /dev/null http://127.0.0.1:${DESKTOP_PORT}/vnc.html && ` +
-        `${rfbProbeCommand()} && ` +
-        `curl -fsS -m 3 -o /dev/null ${BROWSER_CDP_ENDPOINT}/json/version`,
+      buildDesktopReadinessCommand(),
       undefined,
       undefined,
       10,
@@ -96,12 +47,13 @@ async function provisionSandboxDesktopView(
 ): Promise<SandboxDesktop> {
   const probe = await sandbox.process.executeCommand(
     "mkdir -p ~/work; browser=$(command -v google-chrome 2>/dev/null || command -v chromium 2>/dev/null || command -v chromium-browser 2>/dev/null || true); " +
-      'missing=""; for bin in Xvfb xdpyinfo x11vnc websockify; do command -v "$bin" >/dev/null 2>&1 || missing="$missing $bin"; done; ' +
+      `missing=""; for bin in ${DESKTOP_REQUIRED_BINARIES.join(" ")}; do command -v "$bin" >/dev/null 2>&1 || missing="$missing $bin"; done; ` +
       `vnc=0; curl -fsS -m 3 -o /dev/null http://127.0.0.1:${DESKTOP_PORT}/vnc.html && vnc=1; ` +
       `rfb=0; ${rfbProbeCommand()} && rfb=1; ` +
       `cdp=0; curl -fsS -m 3 -o /dev/null ${BROWSER_CDP_ENDPOINT}/json/version && cdp=1; ` +
+      `xfce=0; ${xfceSessionProbeCommand()} && xfce=1; ` +
       'mcp=0; [ -x "$HOME/.local/bin/playwright-mcp" ] && mcp=1; ' +
-      'printf "HOME=%s\\nBROWSER=%s\\nMISSING=%s\\nVNC=%s\\nRFB=%s\\nCDP=%s\\nMCP=%s\\n" "$HOME" "$browser" "$missing" "$vnc" "$rfb" "$cdp" "$mcp"',
+      'printf "HOME=%s\\nBROWSER=%s\\nMISSING=%s\\nVNC=%s\\nRFB=%s\\nCDP=%s\\nXFCE=%s\\nMCP=%s\\n" "$HOME" "$browser" "$missing" "$vnc" "$rfb" "$cdp" "$xfce" "$mcp"',
     undefined,
     undefined,
     20,
@@ -111,7 +63,11 @@ async function provisionSandboxDesktopView(
   const workdir = `${home}/work`;
   const browserExecutable = /^BROWSER=(.*)$/m.exec(output)?.[1]?.trim() || null;
   const missing = /^MISSING=(.*)$/m.exec(output)?.[1]?.trim() || "";
-  const healthy = /^VNC=1$/m.test(output) && /^RFB=1$/m.test(output) && /^CDP=1$/m.test(output);
+  const healthy =
+    /^VNC=1$/m.test(output) &&
+    /^RFB=1$/m.test(output) &&
+    /^CDP=1$/m.test(output) &&
+    /^XFCE=1$/m.test(output);
   const browserTools = /^MCP=1$/m.test(output);
   if ((probe.exitCode ?? 1) !== 0 || missing) {
     return {
@@ -171,7 +127,7 @@ async function provisionSandboxDesktopView(
       browserExecutable,
       reason: signal.aborted
         ? "run aborted while starting desktop"
-        : "noVNC, RFB, or browser CDP failed readiness",
+        : "noVNC, RFB, XFCE, or browser CDP failed readiness",
     };
   }
 

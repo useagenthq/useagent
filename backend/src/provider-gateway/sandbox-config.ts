@@ -6,16 +6,19 @@ import { type ProviderId } from "./provider";
 import { mintProviderToken } from "./token";
 import { DEFAULT_CODEX_MODEL } from "../runs/model-policy";
 import { ThreadTokenMemo } from "../util/token-memo";
+import { toolGatewayConfig } from "../knowledge/gateway/config";
+import { mintToolToken } from "../knowledge/gateway/token";
 
 export interface OpenCodeProviderOptions {
   readonly baseURL: string;
   readonly apiKey: string;
 }
 
-// v10 invalidates sandboxes created before shell-neutral secret sourcing and
-// relay PID tracking. Daytona envVars are immutable after create, so those
-// sandboxes cannot be repaired safely during warm reuse.
-export const SANDBOX_GENERATION = "provider-gateway-v10";
+// v12 invalidates resident Codex processes started before the trusted
+// skynet-knowledge MCP was written into config.toml. ACP's session-level MCP
+// descriptor is retained as a compatibility path, but native Codex must also
+// receive the gateway through its supported host configuration.
+export const SANDBOX_GENERATION = "provider-gateway-v12-native-computer-use";
 export const SANDBOX_GENERATION_LABEL = "skynet-provider-generation";
 const SANDBOX_MARKER = "$HOME/.skynet/provider-gateway-generation";
 const ANTHROPIC_TOKEN_FILE = "$HOME/.skynet/provider-anthropic.token";
@@ -53,6 +56,7 @@ function mint(ctx: EngineRunContext, engine: EngineId, provider: ProviderId): st
 // a freshly minted run token (adversarial-review finding).
 const THREAD_TOKEN_REUSE_MS = 8 * 60 * 60 * 1000;
 const opencodeThreadTokens = new ThreadTokenMemo();
+const codexToolThreadTokens = new ThreadTokenMemo();
 
 function mintOpencodeThreadToken(
   ctx: EngineRunContext,
@@ -61,18 +65,19 @@ function mintOpencodeThreadToken(
   const config = providerGatewayConfig();
   if (!config || !ctx.orgId) return null;
   const orgId = ctx.orgId;
+  const userId = ctx.userId ?? "";
   // No thread → single-shot run: a memoized thread token buys nothing, keep the
   // strict exact-run binding.
   if (!ctx.threadId) return mint(ctx, "opencode", provider);
   const threadId = ctx.threadId;
   return opencodeThreadTokens.get(
-    `${orgId}:${threadId}:opencode:${provider}`,
+    `${orgId}:${userId}:${threadId}:opencode:${provider}`,
     { ttlMs: config.tokenTtlMs + THREAD_TOKEN_REUSE_MS, refreshMarginMs: config.tokenTtlMs },
     () =>
       mintProviderToken(
         {
           orgId,
-          userId: ctx.userId ?? "",
+          userId,
           threadId,
           issuedRunId: ctx.runId,
           engine: "opencode",
@@ -99,16 +104,22 @@ export function providerGatewayEnv(
     return {};
   }
   if (engine !== "claude" && engine !== "claude-sdk") return {};
+  return claudeProviderGatewayEnvironment(ctx.model);
+}
+
+/** Stable, non-secret Claude process configuration. Provider capabilities stay
+ * in the private helper file and are refreshed per run. */
+export function claudeProviderGatewayEnvironment(model?: string): Record<string, string> {
   const baseUrl = endpoint("anthropic", false);
   if (!baseUrl) return {};
-  const model = ctx.model?.trim() || "claude-opus-5";
+  const selectedModel = model?.trim() || "claude-opus-5";
   // Claude Code's documented `[1m]` selector is local model metadata only; it
   // strips the suffix before calling the Anthropic-compatible gateway. Keep the
   // durable run/model policy on the canonical API model id while making the
   // runtime honor the model's real context window without disabling compaction.
-  const runtimeModel = CLAUDE_ONE_MILLION_CONTEXT_MODELS.has(model)
-    ? `${model}[1m]`
-    : model;
+  const runtimeModel = CLAUDE_ONE_MILLION_CONTEXT_MODELS.has(selectedModel)
+    ? `${selectedModel}[1m]`
+    : selectedModel;
   return {
     ANTHROPIC_BASE_URL: baseUrl,
     // The snapshot's user-level Claude plugins/skills are neither tenant-owned
@@ -160,7 +171,10 @@ export function providerGatewaySandboxLabels(runId: string): Record<string, stri
 }
 
 /** User-level Codex config; unlike OPENAI_BASE_URL, this seam is explicitly supported. */
-export function codexProviderConfigToml(model: string): string | null {
+export function codexProviderConfigToml(
+  model: string,
+  toolGateway?: { readonly url: string; readonly bearerToken: string },
+): string | null {
   const baseUrl = endpoint("openai", true);
   if (!baseUrl) return null;
   return [
@@ -186,6 +200,17 @@ export function codexProviderConfigToml(model: string): string | null {
     "refresh_interval_ms = 1",
     "timeout_ms = 5000",
     "",
+    ...(toolGateway
+      ? [
+          "[mcp_servers.skynet-knowledge]",
+          `url = ${JSON.stringify(toolGateway.url)}`,
+          `http_headers = { Authorization = ${JSON.stringify(`Bearer ${toolGateway.bearerToken}`)} }`,
+          "enabled = true",
+          "required = true",
+          'default_tools_approval_mode = "auto"',
+          "",
+        ]
+      : []),
   ].join("\n");
 }
 
@@ -244,7 +269,27 @@ export async function prepareProviderGatewaySandbox(
   }
 
   const token = mint(ctx, "codex", "openai");
-  const config = codexProviderConfigToml(ctx.model?.trim() || DEFAULT_CODEX_MODEL);
+  const toolConfig = toolGatewayConfig();
+  const toolToken = toolConfig && ctx.orgId
+    ? codexToolThreadTokens.get(
+        `${ctx.orgId}:${ctx.userId ?? ""}:${ctx.threadId ?? ctx.runId}:codex:tools`,
+        {
+          ttlMs: toolConfig.tokenTtlMs + THREAD_TOKEN_REUSE_MS,
+          refreshMarginMs: toolConfig.tokenTtlMs,
+        },
+        () => mintToolToken({
+          orgId: ctx.orgId!,
+          userId: ctx.userId ?? "",
+          threadId: ctx.threadId ?? ctx.runId,
+          runId: ctx.runId,
+          scope: ctx.threadId ? "thread" : "run",
+        }, toolConfig.tokenTtlMs + THREAD_TOKEN_REUSE_MS),
+      )
+    : null;
+  const config = codexProviderConfigToml(
+    ctx.model?.trim() || DEFAULT_CODEX_MODEL,
+    toolConfig && toolToken ? { url: toolConfig.mcpUrl, bearerToken: toolToken } : undefined,
+  );
   if (!token || !config) throw new Error("provider gateway could not mint Codex capability");
   await writePrivateFiles(sandbox, [
     { path: OPENAI_TOKEN_FILE, content: token },

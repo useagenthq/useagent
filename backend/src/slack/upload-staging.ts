@@ -14,8 +14,11 @@ import { mkdir, writeFile, readFile, unlink } from "node:fs/promises";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 
-// Sibling of the per-run workdirs (.runs/); both are gitignored.
-export const STAGING_ROOT = join(import.meta.dir, "..", "..", ".slack-uploads");
+// Sibling of the per-run workdirs (.runs/); both are gitignored by default and
+// relocatable for hardened deployments whose application tree is read-only.
+export const STAGING_ROOT =
+  process.env.SLACK_UPLOAD_STAGING_ROOT?.trim() ||
+  join(import.meta.dir, "..", "..", ".slack-uploads");
 
 /** Write bytes to a fresh staged file and return its absolute path. */
 export async function stageUploadBytes(filename: string, bytes: Buffer): Promise<string> {

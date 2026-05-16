@@ -16,6 +16,8 @@ export interface CapabilityResources {
   readonly desktop: boolean;
   /** The provider actually loaded the Skynet knowledge MCP for this session. */
   readonly knowledgeTools: boolean;
+  /** This provider session is owned by T3's canonical orchestration runtime. */
+  readonly t3Orchestration?: boolean;
 }
 
 /** The truthful negotiated capability map for a real session of `engine`, given its runtime
@@ -23,30 +25,33 @@ export interface CapabilityResources {
 export function sessionCapabilities(engine: string, res: CapabilityResources): NegotiatedCapabilities {
   const e = canonicalEngine(engine); // normalize legacy aliases (daytona->opencode, claude-sdk->claude)
   const isOpencode = e === "opencode";
+  const isCodex = e === "codex";
+  const isT3 = res.t3Orchestration === true;
   return {
     // Streaming, tool progress, commands and the sandbox terminal are real for
     // every engine. Native reasoning/child/patch projections only exist on the
-    // OpenCode protocol today; ACP must not advertise aspirational UI surfaces.
+    // OpenCode protocol and the T3 canonical adapter today; legacy ACP must not
+    // advertise aspirational UI surfaces.
     streamingText: true,
     toolProgress: true,
-    fileDiffs: isOpencode,
+    fileDiffs: isOpencode || isT3,
     commands: true,
     directTerminal: true, // the thread sandbox has a terminal for every engine
-    childSessions: isOpencode,
-    reasoning: isOpencode,
+    childSessions: isOpencode || isT3,
+    reasoning: isOpencode || isT3,
     resume: true, // opencode continuation / ACP session/load
     load: true,
     stop: true, // opencode POST /abort · ACP session/cancel (both wired)
     // Honest per-engine differences:
-    plans: isOpencode, // only opencode emits plan.updated today
-    usage: isOpencode, // only opencode captures step-finish usage today
-    modelSelection: isOpencode, // only opencode is an any-model sandbox; ACP engines run a fixed model
+    plans: isOpencode || isT3,
+    usage: isOpencode || isT3,
+    modelSelection: isOpencode || isCodex, // OpenCode uses provider ids; Codex accepts explicit backend-policy ids
 
-    reconcile: isOpencode, // opencode has authoritative-history reconcile; ACP control adapter is unsupported
-    close: !isOpencode, // ACP session/close; opencode stays resident
-    nativeEmbed: isOpencode, // only opencode has the native web-app embed (Live)
-    approvals: false, // one-shot yolo / fail-closed ACP permissions -> no approval UI flow yet
-    questions: false,
+    reconcile: isOpencode || isT3,
+    close: !isOpencode && !isT3,
+    nativeEmbed: isOpencode && !isT3,
+    approvals: isT3,
+    questions: isOpencode || isT3,
     // Runtime resources (caller-provided truth):
     desktop: res.desktop,
     knowledgeTools: res.knowledgeTools,

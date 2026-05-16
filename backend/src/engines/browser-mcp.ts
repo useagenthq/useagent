@@ -4,9 +4,71 @@ export const PLAYWRIGHT_MCP_VERSION = "0.0.79";
 export const BROWSER_DISPLAY = ":1";
 export const BROWSER_CDP_ENDPOINT = "http://127.0.0.1:9222";
 
+const CDP_RESULT_MARKER = "__SKYNET_CDP_RESULT__";
+
+/** Evaluate a bounded expression in the visible Chromium page without exposing
+ * the browser's loopback-only CDP port outside its sandbox. This is a trusted
+ * control-plane primitive used for readiness checks, not a provider-specific
+ * agent tool. */
+export async function evaluateVisibleBrowserPage<T>(
+  sandbox: SandboxHandle,
+  expression: string,
+  timeoutSeconds = 10,
+): Promise<T> {
+  const script = `
+(async () => {
+const targets = await fetch(${JSON.stringify(`${BROWSER_CDP_ENDPOINT}/json/list`)}).then((response) => response.json());
+const page = targets.find((target) => target.type === "page" && !String(target.url || "").startsWith("devtools://"));
+if (!page?.webSocketDebuggerUrl) throw new Error("visible browser page is unavailable");
+const socket = new WebSocket(page.webSocketDebuggerUrl);
+await new Promise((resolve, reject) => {
+  const timer = setTimeout(() => reject(new Error("CDP connection timed out")), 5000);
+  socket.addEventListener("open", () => { clearTimeout(timer); resolve(); }, { once: true });
+  socket.addEventListener("error", () => { clearTimeout(timer); reject(new Error("CDP connection failed")); }, { once: true });
+});
+const id = 1;
+socket.send(JSON.stringify({
+  id,
+  method: "Runtime.evaluate",
+  params: { expression: ${JSON.stringify(expression)}, awaitPromise: true, returnByValue: true },
+}));
+const message = await new Promise((resolve, reject) => {
+  const timer = setTimeout(() => reject(new Error("CDP evaluation timed out")), 5000);
+  socket.addEventListener("message", (event) => {
+    const value = JSON.parse(String(event.data));
+    if (value.id !== id) return;
+    clearTimeout(timer);
+    resolve(value);
+  });
+  socket.addEventListener("error", () => { clearTimeout(timer); reject(new Error("CDP evaluation failed")); }, { once: true });
+});
+socket.close();
+if (message.error) throw new Error(message.error.message || "CDP evaluation failed");
+if (message.result?.exceptionDetails) throw new Error(message.result.exceptionDetails.text || "browser expression failed");
+process.stdout.write(${JSON.stringify(CDP_RESULT_MARKER)} + JSON.stringify(message.result?.result?.value));
+})().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});
+`;
+  const encoded = Buffer.from(script, "utf8").toString("base64");
+  const evaluated = await sandbox.process.executeCommand(
+    `node -e "eval(Buffer.from('${encoded}','base64').toString('utf8'))"`,
+    undefined,
+    undefined,
+    timeoutSeconds,
+  );
+  const output = evaluated.result ?? "";
+  const marker = output.lastIndexOf(CDP_RESULT_MARKER);
+  if ((evaluated.exitCode ?? 1) !== 0 || marker < 0) {
+    throw new Error(output.trim() || "browser inspection failed");
+  }
+  return JSON.parse(output.slice(marker + CDP_RESULT_MARKER.length)) as T;
+}
+
 const BROWSER_MCP_PROCESS_SESSION = "skynet-browser-mcp";
 const BROWSER_MCP_PORT = 8931;
-const BROWSER_MCP_URL = `http://localhost:${BROWSER_MCP_PORT}/mcp`;
+export const BROWSER_MCP_URL = `http://localhost:${BROWSER_MCP_PORT}/mcp`;
 const BROWSER_MCP_GUARD_FILE = "$HOME/.skynet/browser-mcp-guard.session";
 
 function browserArgs(workdir: string): string[] {
@@ -139,7 +201,14 @@ function browserMcpGuardCommand(): string {
   ].join("; ");
 }
 
-async function browserMcpGuardHealthy(sandbox: SandboxHandle): Promise<boolean> {
+type ResidentBrowserMcpStatus = "down" | "listening" | "healthy";
+
+/** One sandbox command checks both the listener and its keepalive guard. Daytona
+ * command setup is a meaningful warm-turn cost, so these dependent local probes
+ * share one remote round trip while retaining the three distinct outcomes. */
+async function residentBrowserMcpStatus(
+  sandbox: SandboxHandle,
+): Promise<ResidentBrowserMcpStatus> {
   const ping = JSON.stringify({
     jsonrpc: "2.0",
     id: "skynet-browser-guard-ping",
@@ -148,18 +217,20 @@ async function browserMcpGuardHealthy(sandbox: SandboxHandle): Promise<boolean> 
   });
   const probe = await sandbox.process
     .executeCommand(
-      `guard_session=$(cat ${BROWSER_MCP_GUARD_FILE} 2>/dev/null || true); ` +
-        'test -n "$guard_session"; ' +
-        `curl -fsS -m 2 -o /dev/null ` +
+      `if ! curl -sS -m 2 -o /dev/null ${BROWSER_MCP_URL}; then printf down; exit 0; fi; ` +
+        `guard_session=$(cat ${BROWSER_MCP_GUARD_FILE} 2>/dev/null || true); ` +
+        `if test -n "$guard_session" && curl -fsS -m 2 -o /dev/null ` +
         "-H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' " +
         '-H "Mcp-Session-Id: $guard_session" ' +
-        `--data '${ping}' ${BROWSER_MCP_URL}`,
+        `--data '${ping}' ${BROWSER_MCP_URL}; then printf healthy; else printf listening; fi`,
       undefined,
       undefined,
       10,
     )
     .catch(() => null);
-  return probe?.exitCode === 0;
+  if (probe?.exitCode !== 0) return "down";
+  const status = probe.result?.trim().split(/\s+/).at(-1);
+  return status === "healthy" || status === "listening" ? status : "down";
 }
 
 async function createBrowserMcpGuard(sandbox: SandboxHandle): Promise<boolean> {
@@ -174,8 +245,9 @@ export async function ensureResidentBrowserMcp(
   workdir: string,
   signal: AbortSignal,
 ): Promise<boolean> {
-  let listening = await residentBrowserMcpListening(sandbox);
-  if (listening && (await browserMcpGuardHealthy(sandbox))) return true;
+  const status = await residentBrowserMcpStatus(sandbox);
+  if (status === "healthy") return true;
+  let listening = status === "listening";
 
   if (!listening) {
     await sandbox.process.deleteSession(BROWSER_MCP_PROCESS_SESSION).catch(() => {});

@@ -137,6 +137,33 @@ describe("skill revisions + versioning", () => {
     expect(loaded.payload).not.toHaveProperty("sections");
   });
 
+  test("a continuation does not inherit a prior skill unless it is explicitly selected", async () => {
+    const s = await createOrgSession("skill-continuation");
+    const skill = await createSkill(s.cookies, {
+      name: `Continuation ${uid()}`,
+      description: "Only govern the turn that selected or activated this procedure.",
+      tags: [],
+      sections: sections(["ov"], ["proc"], ["ver"]),
+    });
+    const root = await json<{ id: string }>("/api/runs", {
+      method: "POST",
+      cookies: s.cookies,
+      body: { prompt: "first task", engine: "mock", skill: { id: skill.id } },
+    });
+    expect(root.status).toBe(201);
+
+    const reply = await json<{ id: string }>("/api/runs", {
+      method: "POST",
+      cookies: s.cookies,
+      body: { prompt: "different follow-up task", engine: "mock", parent_run_id: root.body.id },
+    });
+    expect(reply.status).toBe(201);
+    const stored = await json<any>(`/api/runs/${reply.body.id}`, { cookies: s.cookies });
+    expect(stored.body.skill_id).toBeNull();
+    expect(stored.body.skill_version).toBeNull();
+    expect(stored.body.skill_content_hash).toBeNull();
+  });
+
   test("a pinned PLAYBOOK emits skill.loaded with kind:playbook (marker attribution)", async () => {
     const s = await createOrgSession("pb-run");
     const playbook = await createSkill(s.cookies, {

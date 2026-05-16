@@ -25,8 +25,14 @@ describe("OpenCode generated config placement", () => {
     expect(source).toContain("reuseHealthyResidentServer(rememberedServer, box.id, ctx.signal)");
     // Perf Phase 1: the same concurrent stages now flow through stagesTogether,
     // which honors the SKYNET_SERIAL_STARTUP rollback flag (same DAG, concurrency 1).
-    expect(source).toContain("const [desktop, cachedRuntimeServer] = await stagesTogether([");
-    expect(source).toContain("await stopServerForConfigReload(sandbox, runtimeServer, ctx.signal)");
+    expect(source).toContain(
+      "const [desktop, cachedRuntimeServer, , baseOpenCodeConfig] = await stagesTogether([",
+    );
+    expect(source).toContain(
+      'prepareStage("base_config", () => readOpencodeSandboxConfig(box))',
+    );
+    expect(source).toContain("await stagesTogether([activateRuntime, prepareRepositories])");
+    expect(source).toContain("await stopServerForConfigReload(box, runtimeServer, ctx.signal)");
     expect(source).toContain("await verifyOpenCodeRuntimeConfig({");
     expect(source).not.toContain(
       "await sandbox.process.deleteSession(SERVER_PROCESS_SESSION).catch(() => {});\n      }",

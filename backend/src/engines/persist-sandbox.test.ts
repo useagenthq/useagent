@@ -102,9 +102,10 @@ describe("both engine adapters obey the persistence-before-execution invariant (
     expect(acp.indexOf("await persistSandboxBeforeExecution({")).toBeLessThan(
       acp.indexOf("cfg.prepare?.(box, ctx)"),
     );
+    expect(acp).toContain("const [, secretState] = await stagesTogether([");
     // OpenCode: persist precedes wiring the knowledge gateway + booting `opencode serve`.
     expect(opencode.indexOf("await persistSandboxBeforeExecution({")).toBeLessThan(
-      opencode.indexOf("prepareOpencodeSandboxConfig(sandbox, ctx, desktop)"),
+      opencode.indexOf("prepareOpencodeSandboxConfig(box, ctx, baseOpenCodeConfig)"),
     );
   });
 

@@ -157,8 +157,21 @@ export const AGENT_OPERATING_RULES =
   "never request an unbounded full accessibility snapshot: limit it by target or depth. " +
   "If structural inspection times out once, switch to a viewport screenshot plus coordinate " +
   "tools instead of repeating the same snapshot. Do not close the browser unless the user " +
-  "asks you to.\n" +
+  "asks you to. Inspection screenshots stay internal; publish an artifact only when the user " +
+  "requests a screenshot file or durable proof.\n" +
   "</operating_rules>\n\n";
+
+/** Repeated every turn because an already-resident provider session may predate
+ *  a deployment that added or changed the workspace catalog. This is semantic
+ *  model-side selection from authenticated metadata, never backend text matching. */
+export const AGENT_SKILL_DISCOVERY_RULES =
+  "<skill_discovery>\n" +
+  "Before any non-trivial or recurring organization workflow, call skills_list, inspect the " +
+  "available catalog by meaning, and call skill_activate for the best-fitting procedure before " +
+  "acting. Do not guess a skill from keywords, improvise a known workflow, or ask for an org, " +
+  "repository, or account identifier when the activated procedure and trusted gateway can resolve " +
+  "it from the authenticated workspace.\n" +
+  "</skill_discovery>\n\n";
 
 export function composeTurnPrompt(
   ctx: Pick<
@@ -174,7 +187,7 @@ export function composeTurnPrompt(
   // "/" is NOT a command: it keeps the full fresh/resumed context prefix (operating rules +
   // bootstrap + skill + memory), so raw slash-prefixed text can never silently bypass them.
   if (ctx.commandName) return ctx.prompt;
-  const perTurn = (ctx.skillContext ?? "") + ctx.turnContext;
+  const perTurn = AGENT_SKILL_DISCOVERY_RULES + (ctx.skillContext ?? "") + ctx.turnContext;
   const prefix = resumed ? perTurn : AGENT_OPERATING_RULES + ctx.bootstrapContext + perTurn;
   return prefix + ctx.prompt;
 }

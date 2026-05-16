@@ -52,7 +52,8 @@ export function parseNativeFrame(raw: unknown): NativeFrame | null {
   if (eventId === null || eventType === null || seq === null) return null;
 
   const native = asRecord(o.native);
-  const schemaVersion = typeof o.schemaVersion === "number" ? o.schemaVersion : NATIVE_SCHEMA_VERSION;
+  const schemaVersion =
+    typeof o.schemaVersion === "number" ? o.schemaVersion : NATIVE_SCHEMA_VERSION;
   return {
     schemaVersion,
     eventId,
@@ -73,7 +74,30 @@ export function parseNativeFrame(raw: unknown): NativeFrame | null {
 // ── Child fidelity ──────────────────────────────────────────────────────────
 
 /** Authoritative child-session status, from native state (not parent liveness). */
-export type ChildStatus = "running" | "completed" | "failed";
+export type ChildStatus =
+  | "pending"
+  | "running"
+  | "waiting"
+  | "idle"
+  | "completed"
+  | "failed"
+  | "cancelled"
+  | "interrupted";
+
+export interface ChildUsage {
+  readonly totalTokens: number;
+  readonly inputTokens?: number;
+  readonly cachedInputTokens?: number;
+  readonly outputTokens?: number;
+  readonly reasoningOutputTokens?: number;
+  readonly toolUses?: number;
+  readonly durationMs?: number;
+}
+
+export interface ChildActivityEntry {
+  readonly at: string;
+  readonly summary: string;
+}
 
 export interface ChildFidelity {
   /** The parent's `task`-tool call id — the stable link to the subagent card. */
@@ -83,9 +107,15 @@ export interface ChildFidelity {
   readonly status: ChildStatus;
   /** The child's returned answer (task result / last assistant text), if any. */
   readonly resultText: string | null;
+  /** Latest bounded native progress, independent of terminal result text. */
+  readonly progress: string | null;
+  readonly lastToolName: string | null;
+  readonly recentActivity: readonly ChildActivityEntry[];
+  /** Provider-cumulative usage. Duplicate/late frames max-merge idempotently. */
+  readonly usage: ChildUsage | null;
 }
 
-const TASK_CHILD_ID = /<task\s+id="(ses_[^"]+)"/;
+const TASK_CHILD_ID = /<task\s+id="([^"]+)"/;
 const TASK_RESULT = /<task_result>\s*([\s\S]*?)\s*<\/task_result>/;
 
 /** running/completed/failed from a `part.tool.<status>` event type. */
@@ -93,6 +123,90 @@ function statusFromEventType(eventType: string): ChildStatus {
   if (eventType.endsWith(".error")) return "failed";
   if (eventType.endsWith(".completed")) return "completed";
   return "running";
+}
+
+const T3_CHILD_STATUSES = new Set<ChildStatus>([
+  "pending",
+  "running",
+  "waiting",
+  "idle",
+  "completed",
+  "failed",
+  "cancelled",
+  "interrupted",
+]);
+
+function t3TaskStatus(
+  eventType: string,
+  payload: Record<string, unknown>,
+  prior?: ChildStatus,
+): ChildStatus {
+  const activityPayload = asRecord(payload.payload);
+  const explicit = activityPayload ? readString(activityPayload.status) : null;
+  if (explicit && T3_CHILD_STATUSES.has(explicit as ChildStatus)) {
+    return explicit as ChildStatus;
+  }
+  if (explicit === "stopped") return "interrupted";
+  if (eventType.endsWith("task.completed") || explicit === "completed") return "completed";
+  if (eventType.endsWith("task.started")) return "running";
+  return prior ?? "running";
+}
+
+function count(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : undefined;
+}
+
+function optionalCount(key: string, raw: Record<string, unknown>): Record<string, number> {
+  const value = count(raw[key]);
+  return value === undefined ? {} : { [key]: value };
+}
+
+function childUsage(value: unknown): ChildUsage | null {
+  const raw = asRecord(value);
+  const totalTokens = raw ? count(raw.totalTokens) : undefined;
+  if (!raw || totalTokens === undefined) return null;
+  return {
+    totalTokens,
+    ...optionalCount("inputTokens", raw),
+    ...optionalCount("cachedInputTokens", raw),
+    ...optionalCount("outputTokens", raw),
+    ...optionalCount("reasoningOutputTokens", raw),
+    ...optionalCount("toolUses", raw),
+    ...optionalCount("durationMs", raw),
+  };
+}
+
+function optionalMax(
+  key: string,
+  current: ChildUsage,
+  incoming: ChildUsage,
+): Record<string, number> {
+  const a = current[key as keyof ChildUsage];
+  const b = incoming[key as keyof ChildUsage];
+  if (typeof a !== "number") return typeof b === "number" ? { [key]: b } : {};
+  return typeof b === "number" ? { [key]: Math.max(a, b) } : { [key]: a };
+}
+
+function mergeUsage(current: ChildUsage | null, incoming: ChildUsage | null): ChildUsage | null {
+  if (!incoming) return current;
+  if (!current) return incoming;
+  return {
+    totalTokens: Math.max(current.totalTokens, incoming.totalTokens),
+    ...optionalMax("inputTokens", current, incoming),
+    ...optionalMax("cachedInputTokens", current, incoming),
+    ...optionalMax("outputTokens", current, incoming),
+    ...optionalMax("reasoningOutputTokens", current, incoming),
+    ...optionalMax("toolUses", current, incoming),
+    ...optionalMax("durationMs", current, incoming),
+  };
+}
+
+function appendActivity(
+  entries: readonly ChildActivityEntry[],
+  entry: ChildActivityEntry,
+): readonly ChildActivityEntry[] {
+  if (entries.at(-1)?.summary === entry.summary) return entries;
+  return [...entries, entry].slice(-8);
 }
 
 /**
@@ -118,6 +232,57 @@ export function deriveChildFidelity(
   for (const frame of ordered) {
     const payload = asRecord(frame.payload);
 
+    if (frame.provider === "t3" && frame.eventType === "t3.activity.tool.progress") {
+      const activityPayload = payload ? asRecord(payload.payload) : null;
+      const taskId = activityPayload ? readString(activityPayload.taskId) : null;
+      const prior = taskId ? byCall.get(taskId) : undefined;
+      const lastToolName = activityPayload ? readString(activityPayload.toolName) : null;
+      if (!taskId || !prior || !lastToolName) continue;
+      byCall.set(taskId, {
+        ...prior,
+        progress: `Running ${lastToolName}`,
+        lastToolName,
+        recentActivity: appendActivity(prior.recentActivity, {
+          at: readString(payload?.createdAt) ?? "",
+          summary: `Running ${lastToolName}`,
+        }),
+      });
+      continue;
+    }
+
+    if (frame.provider === "t3" && frame.eventType.startsWith("t3.activity.task.")) {
+      const activityPayload = payload ? asRecord(payload.payload) : null;
+      const taskId =
+        frame.native.callId ?? (activityPayload ? readString(activityPayload.taskId) : null);
+      if (!taskId || !payload || !activityPayload || activityPayload.agentKind !== "agent") {
+        continue;
+      }
+      const prior = byCall.get(taskId);
+      const summary = readString(activityPayload.summary) ?? readString(activityPayload.detail);
+      const error = readString(activityPayload.error);
+      const lastToolName = readString(activityPayload.lastToolName);
+      const status = t3TaskStatus(frame.eventType, payload, prior?.status);
+      const isCompletion = frame.eventType.endsWith("task.completed");
+      const progress = summary ?? (lastToolName ? `Running ${lastToolName}` : prior?.progress ?? null);
+      const recentActivity = summary || lastToolName
+          ? appendActivity(prior?.recentActivity ?? [], {
+            at: readString(payload.createdAt) ?? "",
+            summary: summary ?? `Running ${lastToolName}`,
+          })
+        : prior?.recentActivity ?? [];
+      byCall.set(taskId, {
+        callId: taskId,
+        childSessionId: taskId,
+        status,
+        resultText: error ?? (isCompletion ? summary : null) ?? prior?.resultText ?? null,
+        progress,
+        lastToolName: lastToolName ?? prior?.lastToolName ?? null,
+        recentActivity,
+        usage: mergeUsage(prior?.usage ?? null, childUsage(activityPayload.typedUsage)),
+      });
+      continue;
+    }
+
     if (frame.eventType.startsWith("part.text")) {
       const sid = frame.native.sessionId;
       const text = payload ? readString(payload.text) : null;
@@ -128,13 +293,17 @@ export function deriveChildFidelity(
     const isTaskTool = payload?.type === "tool" && payload.tool === "task";
     if (isTaskTool && frame.native.callId) {
       const state = asRecord(payload.state);
-      const output = state ? readString(state.output) ?? "" : "";
+      const output = state ? (readString(state.output) ?? "") : "";
       const prior = byCall.get(frame.native.callId);
       byCall.set(frame.native.callId, {
         callId: frame.native.callId,
         childSessionId: TASK_CHILD_ID.exec(output)?.[1] ?? prior?.childSessionId ?? null,
         status: statusFromEventType(frame.eventType),
         resultText: TASK_RESULT.exec(output)?.[1]?.trim() || prior?.resultText || null,
+        progress: prior?.progress ?? null,
+        lastToolName: prior?.lastToolName ?? null,
+        recentActivity: prior?.recentActivity ?? [],
+        usage: prior?.usage ?? null,
       });
     }
   }
@@ -145,7 +314,7 @@ export function deriveChildFidelity(
   for (const [callId, fidelity] of byCall) {
     const resultText =
       fidelity.resultText ??
-      (fidelity.childSessionId ? lastTextBySession.get(fidelity.childSessionId) ?? null : null);
+      (fidelity.childSessionId ? (lastTextBySession.get(fidelity.childSessionId) ?? null) : null);
     out.set(callId, { ...fidelity, resultText });
   }
   return out;

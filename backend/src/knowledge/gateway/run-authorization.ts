@@ -13,9 +13,9 @@ import type { ToolTokenClaims } from "./token";
  * "thread" scope (perf run-invariant-config slice): the thread must have its
  * SINGLE currently-running turn in the same org - a deliberate, documented
  * relaxation that lets a resident process keep a byte-stable config across warm
- * turns. Outside a live turn the token stays inert; ambiguity (two running
- * rows, an invariant breach) fails closed; attribution resolves the active run
- * at call time exactly as before.
+ * turns by the SAME user. Outside a live turn the token stays inert; ambiguity
+ * (two running rows, an invariant breach) or a different current user fails
+ * closed; attribution resolves the active run at call time.
  */
 export async function hasMatchingRunningToolRun(claims: ToolTokenClaims): Promise<boolean> {
   return (await resolveToolRunIdentity(claims)) !== null;
@@ -25,11 +25,10 @@ export async function hasMatchingRunningToolRun(claims: ToolTokenClaims): Promis
  * Resolve the AUTHORITATIVE identity for this capability, or null (fail closed).
  *
  * For "run" scope the token's own identity stands (it was minted for exactly
- * this run/user). For "thread" scope the token's userId/runId are provenance
- * only - a later turn on the same thread may belong to a DIFFERENT org member,
- * and user-scoped tools (personal memory) MUST act as the CURRENT turn's user,
- * never the minting user. Identity always comes from the run row (D-series
- * rule), so the returned claims carry the resolved run's id and user.
+ * this run/user). For "thread" scope the run id is resolved at call time, but
+ * the signed user id remains an authorization boundary: a different org member
+ * must receive a newly configured capability. Identity always comes from the
+ * run row, and a mismatch fails closed rather than impersonating either user.
  */
 export async function resolveToolRunIdentity(
   claims: ToolTokenClaims,
@@ -49,7 +48,9 @@ export async function resolveToolRunIdentity(
     const [run] = rows;
     // Ambiguity (two running rows = invariant breach) fails closed.
     if (rows.length !== 1 || !run) return null;
-    return { ...claims, runId: run.id, userId: run.userId ?? "" };
+    const currentUserId = run.userId ?? "";
+    if (currentUserId !== claims.userId) return null;
+    return { ...claims, runId: run.id, userId: currentUserId };
   }
   const [run] = await db
     .select({ userId: runs.userId })

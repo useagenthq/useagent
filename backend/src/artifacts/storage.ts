@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, rename, unlink, writeFile } from "node:fs/promises";
+import { chmod, mkdir, rename, unlink, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
 export interface ArtifactByteRange {
@@ -33,11 +33,24 @@ export class LocalArtifactStorage implements ArtifactStorage {
 
   async put(storageKey: string, bytes: Uint8Array): Promise<void> {
     const target = this.path(storageKey);
+    // Content-addressed bytes may already have been published by the other
+    // trusted service account. That process owns the file, so chmod would fail
+    // even though the shared skynet-data group can already read it.
     if (await Bun.file(target).exists()) return;
-    await mkdir(dirname(target), { recursive: true });
+    const directory = dirname(target);
+    const createdDirectory = await mkdir(directory, { recursive: true });
+    // Backend and trusted gateway run as separate users in the shared
+    // skynet-data group. Both services use a restrictive umask, so explicitly
+    // restore group traversal/read after creation rather than producing rows
+    // whose bytes only the publishing process can serve.
+    // An existing digest-prefix directory may be owned by the sibling trusted
+    // service account. It already inherits the shared-group mode from the
+    // deployment root; only chmod a directory this process actually created.
+    if (createdDirectory) await chmod(directory, 0o2770);
     const temporary = `${target}.${randomUUID()}.tmp`;
     try {
       await writeFile(temporary, bytes, { flag: "wx" });
+      await chmod(temporary, 0o660);
       await rename(temporary, target);
     } finally {
       await unlink(temporary).catch(() => {});

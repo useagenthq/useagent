@@ -5,6 +5,7 @@ import type { CommandRecord } from "./repo";
 import type { RunCommandInput, RunCommandOutcome } from "./types";
 import { publishThreadChange } from "../runs/thread-signals";
 import { isModelAllowedForEngine } from "../runs/model-policy";
+import { withThreadLifecycleLock } from "../runs/thread-lifecycle-lock";
 
 // ---------------------------------------------------------------------------
 // Command acceptance orchestration (north star "Durable Commands"). Decides,
@@ -59,31 +60,44 @@ export async function acceptRunCommand(input: RunCommandInput): Promise<RunComma
   }).slice(0, PAYLOAD_CAP);
   const commandId = crypto.randomUUID();
 
-  // Fast path: a keyed replay short-circuits before a doomed insert.
-  if (input.idempotencyKey) {
-    const existing = await findCommandByKey(input.orgId, input.idempotencyKey);
-    if (existing) return classifyReplay(existing, fingerprint);
-  }
-
+  let outcome: RunCommandOutcome | null;
   try {
-    await insertCommandWithRun({
-      commandId,
-      idempotencyKey: input.idempotencyKey,
-      orgId: input.orgId,
-      actorId: input.actorId,
-      payloadFingerprint: fingerprint,
-      payload,
-      run: input.run,
-    });
+    outcome = await withThreadLifecycleLock(
+      input.orgId,
+      input.run.threadId,
+      async (tx) => {
+        // Fast path: a keyed replay short-circuits before a doomed insert.
+        if (input.idempotencyKey) {
+          const existing = await findCommandByKey(input.orgId, input.idempotencyKey, tx);
+          if (existing) return classifyReplay(existing, fingerprint);
+        }
+
+        await insertCommandWithRun(
+          {
+            commandId,
+            idempotencyKey: input.idempotencyKey,
+            orgId: input.orgId,
+            actorId: input.actorId,
+            payloadFingerprint: fingerprint,
+            payload,
+            run: input.run,
+          },
+          tx,
+        );
+        return null;
+      },
+    );
   } catch (err) {
-    // A concurrent request with the same key won the unique index; our run +
-    // command rolled back together. Resolve against the winner.
+    // A concurrent request with the same org/key but a different root thread can
+    // win the unique index. The losing transaction is aborted, so resolve the
+    // winner only AFTER withThreadLifecycleLock rolls it back.
     if (input.idempotencyKey && isUniqueViolation(err)) {
       const existing = await findCommandByKey(input.orgId, input.idempotencyKey);
       if (existing) return classifyReplay(existing, fingerprint);
     }
     throw err;
   }
+  if (outcome) return outcome;
 
   // Post-commit thread signal (final_fix.md §4.5): the run + command committed, so
   // wake any connected thread stream to discover this newly accepted run WITHOUT

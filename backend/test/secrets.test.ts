@@ -454,6 +454,8 @@ describe("secrets — file kind (materialized to a sandbox file, env var = path)
           { name: "ANTHROPIC_FOUNDRY_API_KEY", kind: "env", value: "raw-foundry" },
           { name: "ANTHROPIC_AWS_API_KEY", kind: "env", value: "raw-anthropic-aws" },
           { name: "CODEX_ACCESS_TOKEN", kind: "env", value: "raw-codex" },
+          { name: "GCP_SERVICE_ACCOUNT_KEY", kind: "file", value: "raw-gcp" },
+          { name: "GOOGLE_APPLICATION_CREDENTIALS", kind: "file", value: "raw-google" },
           { name: "CUSTOM_INTEGRATION_TOKEN", kind: "env", value: "kept" },
         ],
         names: [
@@ -465,6 +467,8 @@ describe("secrets — file kind (materialized to a sandbox file, env var = path)
           "ANTHROPIC_FOUNDRY_API_KEY",
           "ANTHROPIC_AWS_API_KEY",
           "CODEX_ACCESS_TOKEN",
+          "GCP_SERVICE_ACCOUNT_KEY",
+          "GOOGLE_APPLICATION_CREDENTIALS",
           "CUSTOM_INTEGRATION_TOKEN",
         ],
         skipped: [],
@@ -482,6 +486,8 @@ describe("secrets — file kind (materialized to a sandbox file, env var = path)
     expect(dotenv).not.toContain("raw-foundry");
     expect(dotenv).not.toContain("raw-anthropic-aws");
     expect(dotenv).not.toContain("raw-codex");
+    expect(dotenv).not.toContain("raw-gcp");
+    expect(dotenv).not.toContain("raw-google");
   });
 
   test("materializeSecretFiles writes each file 0600 via base64, never inline", async () => {
@@ -498,6 +504,12 @@ describe("secrets — file kind (materialized to a sandbox file, env var = path)
     expect(cmd).toContain(`find "${SECRET_FILE_DIR}" -mindepth 1 -maxdepth 1`);
     expect(cmd).toContain(`chmod 600 -- "${SECRET_FILE_DIR}/PEM"`);
     expect(cmd).toContain("base64 -d");
+    expect(cmd).toContain("printf unchanged; exit 0");
+    expect(cmd).toContain(`sha256sum -- "${SECRET_FILE_DIR}/PEM"`);
+    expect(cmd).toContain(`find "${SECRET_FILE_DIR}" -mindepth 1 -maxdepth 1 | wc -l`);
+    expect(cmd.indexOf("printf unchanged; exit 0")).toBeLessThan(
+      cmd.indexOf(`find "${SECRET_FILE_DIR}" -mindepth 1 -maxdepth 1 -exec rm`),
+    );
     // The raw secret content must NOT appear literally on the command line.
     expect(cmd).not.toContain("BEGIN KEY");
     expect(cmd).toContain(Buffer.from("-----BEGIN KEY-----\nsecret\n-----END KEY-----").toString("base64"));
