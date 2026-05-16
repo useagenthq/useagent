@@ -475,52 +475,46 @@
 }
 
 /* ===========================================================================
- * Editorial display ramp — Newsreader serif (--font-display).
+ * Display ramp: Inter Tight (--font-display).
  *
- * The one high-contrast transitional serif that signals editorial quality
- * against the grotesque Inter UI (Conduit/Tiempos playbook). Reserve for the
- * SINGLE top-level page hero; keep section/card headings in the sans title-*
- * scale so the hierarchy contrast reads. font-optical-sizing:auto drives
- * Newsreader's opsz axis, so display sizes get delicate contrasting strokes.
+ * Inter Tight adds a distinctive, compact display voice without reducing the
+ * readability of dense product UI. Reserve it for top-level page heroes; keep
+ * section headings, cards, navigation, chat, and tool output in Inter.
  *
- *   font-display     apply the serif family at any size
- *   text-display-lg  ~40px — dedicated onboarding / welcome heroes
- *   text-display-md  ~32px — primary page heroes (dashboard, agent/new)
- *   text-display-sm  ~24px — in-header page titles (runs, settings, knowledge)
+ *   font-display     apply the display family at any size
+ *   text-display-lg  ~40px, dedicated onboarding / welcome heroes
+ *   text-display-md  ~32px, primary page heroes (dashboard, agent/new)
+ *   text-display-sm  ~24px, in-header page titles (runs, settings, knowledge)
  * ========================================================================= */
 @utility font-display {
-  font-family: var(--font-display), ui-serif, Georgia, serif;
-  font-feature-settings: normal;
-  font-optical-sizing: auto;
+  font-family: var(--font-display), var(--font-sans), ui-sans-serif, system-ui, sans-serif;
+  font-feature-settings: 'cv11', 'ss01', 'liga', 'calt';
 }
 
 @utility text-display-lg {
-  font-family: var(--font-display), ui-serif, Georgia, serif;
-  font-feature-settings: normal;
-  font-optical-sizing: auto;
+  font-family: var(--font-display), var(--font-sans), ui-sans-serif, system-ui, sans-serif;
+  font-feature-settings: 'cv11', 'ss01', 'liga', 'calt';
   font-size: 2.5rem; /* 40px */
   line-height: 1.05;
-  letter-spacing: -0.02em;
+  letter-spacing: -0.035em;
   font-weight: 500;
 }
 
 @utility text-display-md {
-  font-family: var(--font-display), ui-serif, Georgia, serif;
-  font-feature-settings: normal;
-  font-optical-sizing: auto;
+  font-family: var(--font-display), var(--font-sans), ui-sans-serif, system-ui, sans-serif;
+  font-feature-settings: 'cv11', 'ss01', 'liga', 'calt';
   font-size: 2rem; /* 32px */
   line-height: 1.1;
-  letter-spacing: -0.02em;
+  letter-spacing: -0.03em;
   font-weight: 500;
 }
 
 @utility text-display-sm {
-  font-family: var(--font-display), ui-serif, Georgia, serif;
-  font-feature-settings: normal;
-  font-optical-sizing: auto;
+  font-family: var(--font-display), var(--font-sans), ui-sans-serif, system-ui, sans-serif;
+  font-feature-settings: 'cv11', 'ss01', 'liga', 'calt';
   font-size: 1.5rem; /* 24px */
   line-height: 1.15;
-  letter-spacing: -0.015em;
+  letter-spacing: -0.025em;
   font-weight: 500;
 }
 

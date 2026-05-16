@@ -26,8 +26,10 @@ Layer map (canonical paths):
 - **Next.js 16** (App Router, **Turbopack**) + **React 19** + **TypeScript**.
 - **Tailwind CSS v4** (CSS-first, via `@tailwindcss/postcss`).
 - **bun** for everything (`bun install`, `bun run …`, `bunx …`).
-- Font: **Inter** (`--font-sans`) + **JetBrains Mono** (`--font-mono`), both via
-  `next/font/google` in `app/layout.tsx`.
+- Fonts: **Inter Tight** (`--font-display`) for page-level display headings,
+  **Inter** (`--font-sans`) for product UI, and **JetBrains Mono** (`--font-mono`)
+  for code and technical metadata. All load through `next/font/google` in
+  `app/layout.tsx`.
 - Theme: **dark by default** on first load (the reference screenshots are dark);
   light is available via the toggle. Class strategy on `<html>` (`next-themes`,
   `attribute="class"`, `defaultTheme="dark"`). See the ladder section below.
