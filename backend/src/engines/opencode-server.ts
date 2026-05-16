@@ -44,6 +44,7 @@ import {
   SECRET_DOTENV_PATH,
   SECRET_SOURCE_COMMAND,
 } from "../secrets/inject";
+import { materializeRunInputs } from "../uploads/materialize";
 import { revalidateCommandBeforeDispatch } from "../runs/command-intent";
 import {
   markProviderGatewaySandboxCurrent,
@@ -929,6 +930,7 @@ export const opencodeServerAdapter: EngineAdapter = {
             ),
           ),
         () => prepareStage("base_config", () => readOpencodeSandboxConfig(box)),
+        () => prepareStage("inputs", () => materializeRunInputs(box, ctx.inputFiles)),
       ]);
 
       // Prepare run-scoped gateways. A fresh server

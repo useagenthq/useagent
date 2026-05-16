@@ -287,6 +287,11 @@ class CubeFileSystem implements SandboxFileSystem {
     const sandbox = await this.sandbox();
     return Buffer.from(await sandbox.files.read(path, { format: "bytes" }));
   }
+
+  async uploadFile(file: Buffer, remotePath: string): Promise<void> {
+    const sandbox = await this.sandbox();
+    await sandbox.files.write(remotePath, new Blob([new Uint8Array(file)]));
+  }
 }
 
 class CubeSandboxHandle implements SandboxHandle {

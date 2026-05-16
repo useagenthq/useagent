@@ -316,6 +316,7 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
       idempotencyKey: string,
       memoryScope: MemoryScope,
       command?: { name: string; args: string } | null,
+      attachmentIds: readonly string[] = [],
     ) => {
       // A free-text reply to a native question resumes the resident OpenCode
       // turn. It must never enqueue a child run behind the blocked parent.
@@ -345,6 +346,7 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
             // The backend inherits the parent's scope when omitted; sending the
             // composer's choice lets the user change it for this reply.
             memory_scope: memoryScope,
+            ...(attachmentIds.length > 0 ? { attachments: attachmentIds } : {}),
             // TYPED native-command intent (Phase 3): present ONLY for a `/known-command ...`
             // from the current session's catalog. Carries the provider + native session id so
             // the backend rejects a stale/cross-session intent; the backend re-validates before

@@ -1,12 +1,13 @@
 "use client";
 
 import {
+  RiAddLine,
   RiBookMarkedLine,
   RiCpuLine,
   RiFlashlightLine,
 } from "@remixicon/react";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useEnabledEngineConfig } from "@/components/chat/engine-picker";
 import { MemoryScopePicker } from "@/components/chat/memory-scope-picker";
 import {
@@ -28,6 +29,7 @@ import { RepoBranchBar } from "./repo-branch-bar";
 import { type RepoItem, RepoMultiPicker } from "./repo-multi-picker";
 import { type PickerGroup, SearchablePicker } from "./searchable-picker";
 import type { Skill } from "./skills-data";
+import { RunUploadChips, useRunUploads } from "@/components/chat/run-uploads";
 
 /** Composer-specific caption for each selectable engine (POST /api/runs `engine`).
  * Partial because the legacy EngineId values are never offered in the picker, so
@@ -84,6 +86,8 @@ export function NewTaskComposer({ skills }: { skills: Skill[] }) {
   const [branches, setBranches] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const fileInput = useRef<HTMLInputElement>(null);
+  const runUploads = useRunUploads();
 
   // Slash-command autocomplete for the "/" first token. ENGINE-AWARE: the catalog is the
   // SELECTED engine's real command list, cached server-side (GET /api/commands?engine=) so it
@@ -253,7 +257,7 @@ export function NewTaskComposer({ skills }: { skills: Skill[] }) {
     [repos, selectedRepos],
   );
 
-  const canSubmit = prompt.trim().length > 0 && !submitting;
+  const canSubmit = prompt.trim().length > 0 && !submitting && !runUploads.blocked;
 
   async function submit() {
     const text = prompt.trim();
@@ -288,6 +292,7 @@ export function NewTaskComposer({ skills }: { skills: Skill[] }) {
           ...(selectableModels.length > 0 ? { model } : {}),
           ...(selectedRepos.length ? { repos: selectedRepos } : {}),
           ...(Object.keys(branchPayload).length ? { branches: branchPayload } : {}),
+          ...(runUploads.readyIds.length > 0 ? { attachments: runUploads.readyIds } : {}),
           ...(selectedSkill
             ? { skill: { id: selectedSkill.id, version: selectedSkill.version } }
             : {}),
@@ -311,6 +316,20 @@ export function NewTaskComposer({ skills }: { skills: Skill[] }) {
           and must float over the card edge instead of clipping at it (same rule
           as the chat composer card). */}
         <div className="flex flex-col gap-3 p-3.5">
+          <input
+            ref={fileInput}
+            type="file"
+            multiple
+            className="hidden"
+            onChange={(event) => {
+              if (event.target.files) void runUploads.addFiles(event.target.files);
+              event.target.value = "";
+            }}
+          />
+          <RunUploadChips
+            uploads={runUploads.uploads}
+            onRemove={(upload) => void runUploads.remove(upload)}
+          />
           <div className="relative">
             {cmdActive && (
               <div className="absolute left-0 top-full z-30 mt-2 w-full">
@@ -345,6 +364,14 @@ export function NewTaskComposer({ skills }: { skills: Skill[] }) {
 
           {/* Pickers */}
           <div className="flex flex-wrap items-center gap-0.5">
+            <button
+              type="button"
+              onClick={() => fileInput.current?.click()}
+              className="text-text-sub-600 hover:bg-bg-weak-50 inline-flex h-9 items-center gap-1.5 rounded-lg px-2 text-label-sm"
+            >
+              <RiAddLine className="size-4" aria-hidden />
+              Add files
+            </button>
             <RepoMultiPicker repos={repos} value={selectedRepos} onChange={setSelectedRepos} />
             <SearchablePicker
               ariaLabel="Select skill or playbook"

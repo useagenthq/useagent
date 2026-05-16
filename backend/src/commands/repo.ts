@@ -3,6 +3,7 @@ import { db, type Executor } from "../db/client";
 import { commands, type CommandState } from "../db/schema";
 import { createRun } from "../runs/repo";
 import type { RunCommandInput } from "./types";
+import { claimUploadsForRun, UploadClaimError } from "../uploads/repo";
 
 // ---------------------------------------------------------------------------
 // Command persistence — pure data access, no decisions. The service layer
@@ -77,6 +78,19 @@ export async function insertCommandWithRun(
       },
       tx,
     );
+    const attachmentIds = cmd.run.attachmentIds ?? [];
+    if (attachmentIds.length > 0) {
+      if (!cmd.actorId) throw new UploadClaimError();
+      await claimUploadsForRun(
+        {
+          ids: attachmentIds,
+          orgId: cmd.orgId,
+          userId: cmd.actorId,
+          runId: cmd.run.id,
+        },
+        tx,
+      );
+    }
     await tx.insert(commands).values({
       id: cmd.commandId,
       idempotencyKey: cmd.idempotencyKey,

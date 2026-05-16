@@ -12,12 +12,63 @@ export interface ArtifactDescriptor {
   readonly created_at: string;
   readonly preview_url: string;
   readonly download_url: string;
+  readonly workpiece: ArtifactWorkpieceDescriptor | null;
+}
+
+export type ArtifactWorkpieceKind = "document" | "spreadsheet";
+export type ArtifactWorkpieceState = Readonly<{ text: string }> | Readonly<{ csv: string }>;
+
+export interface ArtifactWorkpieceDescriptor {
+  readonly kind: ArtifactWorkpieceKind;
+  /** Immutable source identity. A changed source produces a new artifact digest. */
+  readonly source_version: string;
+  readonly state_revision: number;
+  readonly state_url: string;
+  readonly actions: readonly ["preview", "download", "edit"];
+}
+
+export interface ArtifactWorkpieceResult {
+  readonly workpiece: ArtifactWorkpieceDescriptor;
+  readonly state: ArtifactWorkpieceState | null;
 }
 
 function record(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : null;
+}
+
+function decodeWorkpiece(value: unknown): ArtifactWorkpieceDescriptor | null {
+  const item = record(value);
+  if (!item) return null;
+  if (item.kind !== "document" && item.kind !== "spreadsheet") return null;
+  if (
+    typeof item.source_version !== "string" ||
+    !/^[a-f0-9]{64}$/.test(item.source_version) ||
+    typeof item.state_url !== "string" ||
+    !item.state_url ||
+    !Number.isSafeInteger(item.state_revision) ||
+    Number(item.state_revision) < 0 ||
+    !Array.isArray(item.actions) ||
+    item.actions.join(",") !== "preview,download,edit"
+  ) {
+    return null;
+  }
+  return item as unknown as ArtifactWorkpieceDescriptor;
+}
+
+function decodeWorkpieceState(
+  kind: ArtifactWorkpieceKind,
+  value: unknown,
+): ArtifactWorkpieceState | null | undefined {
+  if (value === null) return null;
+  const item = record(value);
+  if (!item) return undefined;
+  const key = kind === "spreadsheet" ? "csv" : "text";
+  const entries = Object.entries(item);
+  return entries.length === 1 && entries[0]?.[0] === key && typeof entries[0][1] === "string"
+    ? (item as ArtifactWorkpieceState)
+    : undefined;
 }
 
 export function decodeArtifact(value: unknown): ArtifactDescriptor | null {
@@ -39,7 +90,11 @@ export function decodeArtifact(value: unknown): ArtifactDescriptor | null {
     return null;
   }
   if (!Number.isSafeInteger(item.size_bytes) || Number(item.size_bytes) < 0) return null;
-  return item as unknown as ArtifactDescriptor;
+  const workpiece = item.workpiece === null || item.workpiece === undefined
+    ? null
+    : decodeWorkpiece(item.workpiece);
+  if (item.workpiece !== null && item.workpiece !== undefined && !workpiece) return null;
+  return { ...(item as unknown as Omit<ArtifactDescriptor, "workpiece">), workpiece };
 }
 
 export function decodeArtifactList(value: unknown): ArtifactDescriptor[] | null {
@@ -60,4 +115,12 @@ export function decodeArtifactResult(
     artifact,
     ...(typeof envelope?.created === "boolean" ? { created: envelope.created } : {}),
   };
+}
+
+export function decodeWorkpieceResult(value: unknown): ArtifactWorkpieceResult | null {
+  const envelope = record(value);
+  const workpiece = decodeWorkpiece(envelope?.workpiece);
+  if (!workpiece || !envelope || !("state" in envelope)) return null;
+  const state = decodeWorkpieceState(workpiece.kind, envelope.state);
+  return state === undefined ? null : { workpiece, state };
 }

@@ -47,6 +47,7 @@ import { releaseRunSandbox } from "./sandbox-release";
 import { isT3ThreadSessionId } from "../engines/t3-orchestration";
 import { replyToT3Question } from "../engines/t3-question";
 import { replyToT3Approval, T3ApprovalError } from "../engines/t3-approval";
+import { UploadClaimError } from "../uploads/repo";
 
 export const runsRoutes = new Hono<AppEnv>();
 
@@ -67,6 +68,7 @@ runsRoutes.post("/", async (c) => {
     memory_scope?: unknown;
     skill?: unknown;
     command?: unknown;
+    attachments?: unknown;
   };
   try {
     body = await c.req.json();
@@ -76,6 +78,24 @@ runsRoutes.post("/", async (c) => {
 
   const prompt = typeof body.prompt === "string" ? body.prompt.trim() : "";
   if (!prompt) return c.json({ error: "prompt is required" }, 400);
+
+  const rawAttachments = body.attachments ?? [];
+  if (!Array.isArray(rawAttachments) || rawAttachments.length > 10) {
+    return c.json({ error: "attachments must be an array of at most 10 upload ids" }, 400);
+  }
+  const attachmentIds = [...new Set(rawAttachments)];
+  if (
+    attachmentIds.some(
+      (id) =>
+        typeof id !== "string" ||
+        !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id),
+    )
+  ) {
+    return c.json({ error: "attachments contain an invalid upload id" }, 400);
+  }
+  if (attachmentIds.length > 0 && !c.get("userId")) {
+    return c.json({ error: "authenticated user required for attachments" }, 401);
+  }
 
   const requestedModel =
     typeof body.model === "string" && body.model.trim()
@@ -284,12 +304,20 @@ runsRoutes.post("/", async (c) => {
   // the un-keyed path behaves exactly as before (new run every call). Empty /
   // whitespace-only keys are treated as absent.
   const idempotencyKey = c.req.header("Idempotency-Key")?.trim() || null;
-  const accepted = await acceptRunCommand({
-    idempotencyKey,
-    orgId: c.get("orgId"),
-    actorId: c.get("userId"),
-    run: { id, prompt: finalPrompt, model, engine, parentRunId, threadId, repos, memoryScope, skillId, skillVersion, skillContentHash, commandName, commandProvider, commandSessionId, commandCatalogRevision },
-  });
+  let accepted;
+  try {
+    accepted = await acceptRunCommand({
+      idempotencyKey,
+      orgId: c.get("orgId"),
+      actorId: c.get("userId"),
+      run: { id, prompt: finalPrompt, model, engine, parentRunId, threadId, repos, attachmentIds, memoryScope, skillId, skillVersion, skillContentHash, commandName, commandProvider, commandSessionId, commandCatalogRevision },
+    });
+  } catch (error) {
+    if (error instanceof UploadClaimError) {
+      return c.json({ error: "upload_unavailable" }, 409);
+    }
+    throw error;
+  }
 
   // Translate the acceptance outcome to the HTTP response (exhaustive — a new
   // outcome variant is a compile error here).

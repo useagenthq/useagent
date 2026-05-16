@@ -37,6 +37,7 @@ import { sandboxProviderKind } from "../sandboxes/provider";
 import { recordProviderEvent } from "../runs/provider-events";
 import { SESSION_STARTED_EVENT_TYPE } from "@skynet/agent-harness/canonical";
 import { sessionCapabilities } from "./capabilities";
+import { materializeRunInputs } from "../uploads/materialize";
 import {
   T3_CUBE_WARM_POOL_NAME,
   T3_RUNTIME_GENERATION,
@@ -350,6 +351,7 @@ function makeT3Adapter(engine: T3EngineId): EngineAdapter {
           ),
           prepareStage("provider_bridge", () => prepareT3ProviderBridge(sandbox, ctx, engine)),
           prepareStage("repos", () => prepareRepos(sandbox, workdir, ctx)),
+          prepareStage("inputs", () => materializeRunInputs(sandbox, ctx.inputFiles)),
         ]);
         await prepareStage("secrets_marker", () => recordSecretsInjected(ctx, secretInjection));
         const desktop = await desktopPromise;

@@ -80,6 +80,12 @@ describe("durable artifacts", () => {
       content_type: "text/plain; charset=utf-8",
       size_bytes: SOURCE_BYTES.byteLength,
       sha256: SHA256,
+      workpiece: {
+        kind: "document",
+        source_version: SHA256,
+        state_revision: 0,
+        actions: ["preview", "download", "edit"],
+      },
     });
 
     const duplicate = await publish(owner, runId, "/root/work/output/report.txt");
@@ -158,12 +164,63 @@ describe("durable artifacts", () => {
     const content = await fetchApi(path, { cookies: owner.cookies });
     expect(content.headers.get("content-disposition")).toContain("attachment");
 
+    const metadata = await json<{ artifact: ArtifactDescriptor }>(
+      `/api/artifacts/${published.artifact.id}`,
+      { cookies: owner.cookies },
+    );
+    expect(metadata.body.artifact.workpiece).toBeNull();
+
     const invalid = await fetchApi(path, {
       cookies: owner.cookies,
       headers: { range: `bytes=${SOURCE_BYTES.byteLength}-` },
     });
     expect(invalid.status).toBe(416);
     expect(invalid.headers.get("content-range")).toBe(`bytes */${SOURCE_BYTES.byteLength}`);
+  });
+
+  test("persists typed workpiece state with optimistic concurrency and tenant isolation", async () => {
+    const runId = await createSandboxRun(owner);
+    const published = await publish(owner, runId, "notes.md");
+    const path = `/api/artifacts/${published.artifact.id}/workpiece`;
+
+    const initial = await json<{
+      workpiece: NonNullable<ArtifactDescriptor["workpiece"]>;
+      state: null;
+    }>(path, { cookies: owner.cookies });
+    expect(initial.status).toBe(200);
+    expect(initial.body.workpiece).toMatchObject({
+      kind: "document",
+      source_version: SHA256,
+      state_revision: 0,
+    });
+    expect(initial.body.state).toBeNull();
+
+    const updated = await json<{
+      workpiece: NonNullable<ArtifactDescriptor["workpiece"]>;
+      state: { text: string };
+    }>(path, {
+      method: "PATCH",
+      cookies: owner.cookies,
+      body: { expected_revision: 0, state: { text: "edited in Skynet" } },
+    });
+    expect(updated.status).toBe(200);
+    expect(updated.body.workpiece.state_revision).toBe(1);
+    expect(updated.body.state).toEqual({ text: "edited in Skynet" });
+
+    const stale = await fetchApi(path, {
+      method: "PATCH",
+      cookies: owner.cookies,
+      body: { expected_revision: 0, state: { text: "stale overwrite" } },
+    });
+    expect(stale.status).toBe(409);
+    expect(await stale.json()).toMatchObject({
+      error: "revision conflict",
+      workpiece: { state_revision: 1 },
+      state: { text: "edited in Skynet" },
+    });
+
+    const outside = await fetchApi(path, { cookies: outsider.cookies });
+    expect(outside.status).toBe(404);
   });
 
   test("encodes non-ASCII and reserved filename characters safely", async () => {

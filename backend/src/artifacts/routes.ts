@@ -6,9 +6,11 @@ import {
   getArtifactForOrg,
   listArtifactsForOrg,
   toArtifactDescriptor,
+  updateArtifactWorkpiece,
   type ArtifactRecord,
 } from "./repo";
 import { artifactStorage, type ArtifactByteRange } from "./storage";
+import { parseWorkpieceState } from "./workpiece";
 
 function disposition(name: string, inline: boolean): string {
   const fallback = name.replace(/[^\x20-\x7e]/g, "_").replace(/["\\]/g, "_");
@@ -83,6 +85,54 @@ artifactRoutes.get("/", async (c) => {
 artifactRoutes.get("/:id", async (c) => {
   const row = await getArtifactForOrg(c.get("orgId"), c.req.param("id"));
   return row ? c.json({ artifact: toArtifactDescriptor(row) }) : c.json({ error: "not found" }, 404);
+});
+
+function workpieceResponse(artifact: ArtifactRecord) {
+  return {
+    workpiece: toArtifactDescriptor(artifact).workpiece,
+    state: artifact.workpieceState ?? null,
+  };
+}
+
+artifactRoutes.get("/:id/workpiece", async (c) => {
+  const artifact = await getArtifactForOrg(c.get("orgId"), c.req.param("id"));
+  if (!artifact?.workpieceKind) return c.json({ error: "not found" }, 404);
+  return c.json(workpieceResponse(artifact));
+});
+
+artifactRoutes.patch("/:id/workpiece", async (c) => {
+  const artifact = await getArtifactForOrg(c.get("orgId"), c.req.param("id"));
+  if (!artifact?.workpieceKind) return c.json({ error: "not found" }, 404);
+
+  let body: unknown;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: "invalid JSON" }, 400);
+  }
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    return c.json({ error: "invalid workpiece update" }, 400);
+  }
+  const input = body as Record<string, unknown>;
+  const expectedRevision = input.expected_revision;
+  if (!Number.isSafeInteger(expectedRevision) || Number(expectedRevision) < 0) {
+    return c.json({ error: "expected_revision must be a non-negative integer" }, 400);
+  }
+  const state = parseWorkpieceState(artifact.workpieceKind, input.state);
+  if (!state) return c.json({ error: "invalid workpiece state" }, 400);
+
+  const updated = await updateArtifactWorkpiece({
+    orgId: c.get("orgId"),
+    id: artifact.id,
+    expectedRevision: Number(expectedRevision),
+    state,
+  });
+  if (updated) return c.json(workpieceResponse(updated));
+
+  const current = await getArtifactForOrg(c.get("orgId"), artifact.id);
+  return current?.workpieceKind
+    ? c.json({ error: "revision conflict", ...workpieceResponse(current) }, 409)
+    : c.json({ error: "not found" }, 404);
 });
 
 async function serveContent(c: Context<AppEnv>) {

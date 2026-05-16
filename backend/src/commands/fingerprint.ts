@@ -19,6 +19,7 @@ export function runPayloadFingerprint(run: RunCommandInput["run"]): string {
     // is (correctly) a payload mismatch, not a silent reuse of the other branch's
     // run. This falls out of the encoding for free; the test asserts it stays true.
     run.repos,
+    run.attachmentIds ?? [],
     // A skill'd turn is a distinct intent from the same prompt without one; the
     // (id, version) reference is canonical (its content hash derives from it).
     run.skillId ?? null,

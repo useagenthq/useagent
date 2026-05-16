@@ -21,6 +21,8 @@ import {
 
 export type RunStatus = "queued" | "running" | "completed" | "failed";
 export type StepKind = "command" | "file" | "task" | "done";
+export type ArtifactWorkpieceKind = "document" | "spreadsheet";
+export type ArtifactWorkpieceState = Readonly<{ text: string }> | Readonly<{ csv: string }>;
 
 /** Which team-memory pool a run reads and writes (see src/memory/scope.ts).
  *  - "org": read + capture ORGANIZATION memory only (every org member shares it).
@@ -562,12 +564,44 @@ export const artifacts = pgTable(
     sizeBytes: integer("size_bytes").notNull(),
     sha256: text("sha256").notNull(),
     storageKey: text("storage_key").notNull(),
+    workpieceKind: text("workpiece_kind").$type<ArtifactWorkpieceKind>(),
+    workpieceState: jsonb("workpiece_state").$type<ArtifactWorkpieceState>(),
+    workpieceRevision: integer("workpiece_revision").notNull().default(0),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
     uniqueIndex("uq_artifacts_run_path_sha").on(t.runId, t.sourcePath, t.sha256),
     index("idx_artifacts_org_created").on(t.orgId, t.createdAt),
     index("idx_artifacts_thread_created").on(t.threadId, t.createdAt),
+  ],
+);
+
+// ---------------------------------------------------------------------------
+// User-provided run inputs. Bytes reuse the content-addressed ArtifactStorage
+// boundary, but uploads have their own lifecycle because they exist before a
+// run. A ready upload is atomically claimed by exactly one run during durable
+// command acceptance; ownership never comes from a prompt or sandbox.
+// ---------------------------------------------------------------------------
+
+export const userUploads = pgTable(
+  "user_uploads",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orgId: text("org_id").notNull(),
+    userId: text("user_id").notNull(),
+    runId: text("run_id").references(() => runs.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    contentType: text("content_type").notNull(),
+    sizeBytes: integer("size_bytes").notNull(),
+    sha256: text("sha256").notNull(),
+    storageKey: text("storage_key").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  },
+  (t) => [
+    index("idx_user_uploads_owner_created").on(t.orgId, t.userId, t.createdAt),
+    index("idx_user_uploads_run").on(t.runId),
+    index("idx_user_uploads_expires").on(t.expiresAt),
   ],
 );
 

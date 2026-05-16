@@ -52,6 +52,7 @@ export interface SandboxProcess {
 export interface SandboxFileSystem {
   getFileDetails(path: string): Promise<{ size?: number }>;
   downloadFile(path: string): Promise<Buffer>;
+  uploadFile(file: Buffer, remotePath: string, timeout?: number): Promise<void>;
 }
 
 export interface SandboxHandle {

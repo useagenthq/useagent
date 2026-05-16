@@ -22,6 +22,16 @@ export interface EmitStep {
  *  live "Thinking" affordance ahead of the answer. */
 export type DeltaKind = "reasoning";
 
+export interface RunInputFile {
+  readonly id: string;
+  readonly name: string;
+  readonly contentType: string;
+  readonly sizeBytes: number;
+  readonly sha256: string;
+  readonly storageKey: string;
+  readonly sandboxPath: string;
+}
+
 /** Everything an adapter needs to execute one run and stream it into the log. */
 export interface EngineRunContext {
   runId: string;
@@ -44,6 +54,12 @@ export interface EngineRunContext {
    *  resumed session's history. SEPARATE from the user's clean `prompt`. Compose
    *  via {@link composeTurnPrompt}. */
   skillContext?: string;
+  /** Trusted descriptors for user uploads claimed by this run. Adapters copy
+   * the bytes into sandboxPath before dispatch; only paths and metadata enter
+   * the model context. */
+  inputFiles?: readonly RunInputFile[];
+  /** Structured, control-plane-authored file references for this turn. */
+  inputContext?: string;
   /** Isolated working directory (already created) — the ONLY place an engine
    *  may touch the filesystem. Never the repo itself. */
   workdir: string;
@@ -176,7 +192,7 @@ export const AGENT_SKILL_DISCOVERY_RULES =
 export function composeTurnPrompt(
   ctx: Pick<
     EngineRunContext,
-    "prompt" | "bootstrapContext" | "turnContext" | "skillContext" | "commandName"
+    "prompt" | "bootstrapContext" | "turnContext" | "skillContext" | "inputContext" | "commandName"
   >,
   resumed: boolean,
 ): string {
@@ -187,7 +203,11 @@ export function composeTurnPrompt(
   // "/" is NOT a command: it keeps the full fresh/resumed context prefix (operating rules +
   // bootstrap + skill + memory), so raw slash-prefixed text can never silently bypass them.
   if (ctx.commandName) return ctx.prompt;
-  const perTurn = AGENT_SKILL_DISCOVERY_RULES + (ctx.skillContext ?? "") + ctx.turnContext;
+  const perTurn =
+    AGENT_SKILL_DISCOVERY_RULES +
+    (ctx.skillContext ?? "") +
+    (ctx.inputContext ?? "") +
+    ctx.turnContext;
   const prefix = resumed ? perTurn : AGENT_OPERATING_RULES + ctx.bootstrapContext + perTurn;
   return prefix + ctx.prompt;
 }

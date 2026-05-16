@@ -27,7 +27,9 @@ export function fetchApi(path: string, init: ApiInit = {}): Promise<Response> {
   };
   let body: BodyInit | undefined;
   if (init.body !== undefined) {
-    if (typeof init.body === "string") {
+    if (init.body instanceof FormData) {
+      body = init.body;
+    } else if (typeof init.body === "string") {
       body = init.body;
     } else {
       body = JSON.stringify(init.body);

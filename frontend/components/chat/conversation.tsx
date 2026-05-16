@@ -601,6 +601,7 @@ function ReplyComposer({
         locked={locked}
         commands={commands}
         commandState={commandState}
+        enableUploads
         enableModelPicker={modelSelection === true}
         onSubmit={onReply}
         running={running}

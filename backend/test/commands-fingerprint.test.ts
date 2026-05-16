@@ -55,6 +55,12 @@ describe("runPayloadFingerprint", () => {
     expect(runPayloadFingerprint(base)).toBe(runPayloadFingerprint({ ...base }));
   });
 
+  test("attached upload ids are part of the durable intent", () => {
+    const withoutFiles = runPayloadFingerprint({ ...base, attachmentIds: [] });
+    const withFile = runPayloadFingerprint({ ...base, attachmentIds: [crypto.randomUUID()] });
+    expect(withFile).not.toBe(withoutFiles);
+  });
+
   test("the FULL command identity is intent (D5): provider/session/revision each change the fingerprint", () => {
     // A validated `/compact` on claude, authorized against session s1 @ revision 5.
     const cmd = {

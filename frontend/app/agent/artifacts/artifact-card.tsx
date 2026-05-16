@@ -1,5 +1,6 @@
 import {
   RiDownloadLine,
+  RiEditLine,
   RiExternalLinkLine,
   RiFileCodeLine,
   RiFileTextLine,
@@ -67,6 +68,16 @@ export function ArtifactCard({ artifact }: { artifact: ArtifactDescriptor }) {
       <div className="relative h-44 overflow-hidden bg-bg-weak-50 bg-halftone">
         <ArtifactPreview artifact={artifact} />
         <div className="absolute right-3 top-3 flex items-center gap-1.5 opacity-100 transition-opacity sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100">
+          {artifact.workpiece && (
+            <Link
+              href={`/agent/artifacts/${artifact.id}`}
+              aria-label={`Edit ${artifact.name}`}
+              title="Edit"
+              className="flex size-8 items-center justify-center rounded-lg border border-stroke-soft-200 bg-bg-white-0 text-text-sub-600 shadow-regular-xs outline-none hover:text-text-strong-950 focus-visible:ring-2 focus-visible:ring-stroke-strong-950"
+            >
+              <RiEditLine aria-hidden className="size-4" />
+            </Link>
+          )}
           <a
             href={artifact.preview_url}
             target="_blank"

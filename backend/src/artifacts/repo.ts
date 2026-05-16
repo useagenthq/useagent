@@ -1,6 +1,11 @@
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import { db } from "../db/client";
-import { artifacts } from "../db/schema";
+import {
+  artifacts,
+  type ArtifactWorkpieceKind,
+  type ArtifactWorkpieceState,
+} from "../db/schema";
+import { inferWorkpieceKind } from "./workpiece";
 
 export type ArtifactRecord = typeof artifacts.$inferSelect;
 
@@ -16,6 +21,15 @@ export interface ArtifactDescriptor {
   readonly created_at: string;
   readonly preview_url: string;
   readonly download_url: string;
+  readonly workpiece: ArtifactWorkpieceDescriptor | null;
+}
+
+export interface ArtifactWorkpieceDescriptor {
+  readonly kind: ArtifactWorkpieceKind;
+  readonly source_version: string;
+  readonly state_revision: number;
+  readonly state_url: string;
+  readonly actions: readonly ["preview", "download", "edit"];
 }
 
 export function toArtifactDescriptor(row: ArtifactRecord): ArtifactDescriptor {
@@ -32,6 +46,15 @@ export function toArtifactDescriptor(row: ArtifactRecord): ArtifactDescriptor {
     created_at: row.createdAt.toISOString(),
     preview_url: content,
     download_url: `${content}?download=1`,
+    workpiece: row.workpieceKind
+      ? {
+          kind: row.workpieceKind,
+          source_version: row.sha256,
+          state_revision: row.workpieceRevision,
+          state_url: `/api/artifacts/${row.id}/workpiece`,
+          actions: ["preview", "download", "edit"],
+        }
+      : null,
   };
 }
 
@@ -46,10 +69,13 @@ export async function createArtifactRecord(input: {
   readonly sizeBytes: number;
   readonly sha256: string;
   readonly storageKey: string;
+  readonly workpieceKind?: ArtifactWorkpieceKind | null;
 }): Promise<{ row: ArtifactRecord; created: boolean }> {
+  const workpieceKind =
+    input.workpieceKind ?? inferWorkpieceKind(input.name, input.contentType);
   const [inserted] = await db
     .insert(artifacts)
-    .values(input)
+    .values({ ...input, workpieceKind })
     .onConflictDoNothing({
       target: [artifacts.runId, artifacts.sourcePath, artifacts.sha256],
     })
@@ -69,6 +95,29 @@ export async function createArtifactRecord(input: {
     .limit(1);
   if (!existing) throw new Error("artifact idempotency conflict could not be resolved");
   return { row: existing, created: false };
+}
+
+export async function updateArtifactWorkpiece(input: {
+  readonly orgId: string;
+  readonly id: string;
+  readonly expectedRevision: number;
+  readonly state: ArtifactWorkpieceState;
+}): Promise<ArtifactRecord | null> {
+  const [updated] = await db
+    .update(artifacts)
+    .set({
+      workpieceState: input.state,
+      workpieceRevision: sql`${artifacts.workpieceRevision} + 1`,
+    })
+    .where(
+      and(
+        eq(artifacts.orgId, input.orgId),
+        eq(artifacts.id, input.id),
+        eq(artifacts.workpieceRevision, input.expectedRevision),
+      ),
+    )
+    .returning();
+  return updated ?? null;
 }
 
 export async function getArtifact(id: string): Promise<ArtifactRecord | null> {
