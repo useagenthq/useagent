@@ -1,7 +1,7 @@
-import type { EngineId } from "../db/schema";
+import { ENGINE_IDS, type EngineId } from "../db/schema";
 import {
+  engineModelReadyForDispatch,
   engineResolutionErrorBody,
-  modelProviderReadyForEngine,
   resolveAcceptedEngine,
 } from "../runs/engine-readiness";
 import { defaultModelForEngine, isModelAllowedForEngine } from "../runs/model-policy";
@@ -39,7 +39,7 @@ function parseTimezone(value: unknown): string | null | undefined {
   return timezone;
 }
 
-function resolveEngine(rawEngine: unknown): EngineId {
+function resolveReadyEngine(rawEngine: unknown): EngineId {
   const resolved = resolveAcceptedEngine(rawEngine);
   if (!resolved.ok) {
     throw new ScheduleServiceError(resolved.status, engineResolutionErrorBody(resolved));
@@ -47,12 +47,28 @@ function resolveEngine(rawEngine: unknown): EngineId {
   return resolved.engine;
 }
 
-function assertModelReady(engine: EngineId, model: string): void {
+function resolveDraftEngine(rawEngine: unknown): EngineId {
+  if (rawEngine === undefined || rawEngine === null || rawEngine === "") {
+    return resolveReadyEngine(rawEngine);
+  }
+  if (typeof rawEngine !== "string" || !ENGINE_IDS.includes(rawEngine as EngineId)) {
+    throw new ScheduleServiceError(400, {
+      error: `engine must be one of: ${ENGINE_IDS.join(", ")}`,
+    });
+  }
+  return rawEngine as EngineId;
+}
+
+function assertModelAllowed(engine: EngineId, model: string): void {
   if (!isModelAllowedForEngine(engine, model)) {
     throw new ScheduleServiceError(400, { error: "model_not_allowed", engine, model });
   }
-  if (!modelProviderReadyForEngine(engine, model)) {
-    throw new ScheduleServiceError(403, { error: "model_provider_not_ready", engine, model });
+}
+
+function assertDispatchReady(engine: EngineId, model: string): void {
+  assertModelAllowed(engine, model);
+  if (!engineModelReadyForDispatch(engine, model)) {
+    throw new ScheduleServiceError(403, { error: "engine_model_not_ready", engine, model });
   }
 }
 
@@ -73,9 +89,12 @@ export async function createScheduleForOrg(
   if (!prompt) throw new ScheduleServiceError(400, { error: "prompt is required" });
 
   const timezone = parseTimezone(body.timezone) ?? null;
-  const engine = resolveEngine(body.engine);
+  // Creation is an inert draft operation. Persist valid engine/model intent
+  // even while a paid provider is temporarily unavailable; readiness is
+  // enforced at enable and by the shared command lane at execution time.
+  const engine = resolveDraftEngine(body.engine);
   const model = textField(body, "model") || defaultModelForEngine(engine);
-  assertModelReady(engine, model);
+  assertModelAllowed(engine, model);
 
   return createSchedule({
     orgId: identity.orgId,
@@ -126,12 +145,20 @@ export async function updateScheduleForOrg(
     patch.cron = cron;
   }
 
-  if (body.engine !== undefined) patch.engine = resolveEngine(body.engine);
+  if (body.engine !== undefined) patch.engine = resolveDraftEngine(body.engine);
 
-  if (patch.engine !== undefined || patch.model !== undefined) {
+  if (
+    patch.engine !== undefined ||
+    patch.model !== undefined ||
+    patch.enabled === true
+  ) {
     const current = await getScheduleForOrg(orgId, id);
     if (!current) throw new ScheduleServiceError(404, { error: "schedule not found" });
-    assertModelReady(patch.engine ?? current.engine, patch.model ?? current.model);
+    const engine = patch.engine ?? current.engine;
+    const model = patch.model ?? current.model;
+    assertModelAllowed(engine, model);
+    const remainsEnabled = patch.enabled ?? current.enabled;
+    if (remainsEnabled) assertDispatchReady(engine, model);
   }
 
   const updated = await updateSchedule(orgId, id, patch);

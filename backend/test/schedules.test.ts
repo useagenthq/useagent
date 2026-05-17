@@ -74,6 +74,37 @@ describe("schedules API", () => {
     expect(list.body.schedules.some((x) => x.id === created.id)).toBe(true);
   });
 
+  test("allows an unavailable provider draft but refuses to enable it", async () => {
+    const s = await createOrgSession("sched-unready-draft");
+    const previousEngine = process.env.ENGINE_READINESS_CODEX;
+    try {
+      process.env.ENGINE_READINESS_CODEX = "failed";
+      const created = await createSchedule(s.cookies, {
+        name: "Provider recovery draft",
+        cron: "0 4 * * *",
+        prompt: "run after provider recovery",
+        engine: "codex",
+        model: "gpt-5.6-sol",
+      });
+      expect(created.enabled).toBe(false);
+
+      const enabled = await json<any>(`/api/schedules/${created.id}`, {
+        method: "PATCH",
+        body: { enabled: true },
+        cookies: s.cookies,
+      });
+      expect(enabled.status).toBe(403);
+      expect(enabled.body).toMatchObject({
+        error: "engine_model_not_ready",
+        engine: "codex",
+        model: "gpt-5.6-sol",
+      });
+    } finally {
+      if (previousEngine === undefined) delete process.env.ENGINE_READINESS_CODEX;
+      else process.env.ENGINE_READINESS_CODEX = previousEngine;
+    }
+  });
+
   test("PATCH enable/disable/edit; 404 for unknown id", async () => {
     const s = await createOrgSession("sched-patch");
     const created = await createSchedule(s.cookies, {

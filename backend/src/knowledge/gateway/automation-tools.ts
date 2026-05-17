@@ -1,5 +1,6 @@
 import type { ToolCallResult } from "./tools";
 import { mintToolToken, type ToolTokenClaims } from "./token";
+import { getRunForOrg } from "../../runs/repo";
 import { getScheduleForOrg, listFirings, listSchedules } from "../../schedules/repo";
 import {
   createScheduleForOrg,
@@ -22,7 +23,7 @@ export const AUTOMATION_TOOLS = [
   {
     name: "automation_create",
     description:
-      "Create a Skynet scheduled automation in this organization. New automations are always created disabled and never auto-run until automation_update enables them. Use this for workspace recurring-task requests.",
+      "Create a Skynet scheduled automation in this organization. New automations are always created disabled and never auto-run until automation_update enables them. Engine and model default to the current run when omitted. Use this for workspace recurring-task requests.",
     inputSchema: {
       type: "object",
       properties: {
@@ -134,9 +135,16 @@ async function createAutomation(
     return errorResult("automation_create always creates disabled automations; enable later with automation_update.");
   }
   try {
+    const input = { ...args };
+    if (input.engine === undefined) {
+      const run = await getRunForOrg(claims.orgId, claims.runId);
+      if (!run) return errorResult("Current run was not found for this automation capability.");
+      input.engine = run.engine;
+      if (input.model === undefined) input.model = run.model;
+    }
     const schedule = await createScheduleForOrg(
       { orgId: claims.orgId, userId: claims.userId || null },
-      args,
+      input,
     );
     return textResult(
       `Created disabled automation ${schedule.name} (${schedule.id}). It will not run until enabled.`,

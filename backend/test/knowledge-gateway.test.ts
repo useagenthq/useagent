@@ -407,6 +407,23 @@ describe("knowledge MCP gateway", () => {
   });
 
   test("automation tools create disabled, require explicit enable, run, history, and delete", async () => {
+    const inherited = await rpc(tokenA, call(29, "automation_create", {
+      name: "Inherited engine draft",
+      cron: "15 5 * * *",
+      prompt: "say inherited ok",
+    }));
+    expect(inherited.body.result.isError).toBeFalsy();
+    expect(inherited.body.result.structuredContent.automation).toMatchObject({
+      engine: "opencode",
+      model: "claude-haiku-4-5",
+      enabled: false,
+    });
+    const inheritedId = inherited.body.result.structuredContent.automation.id;
+    const removedInherited = await rpc(tokenA, call(291, "automation_delete", {
+      id: inheritedId,
+    }));
+    expect(removedInherited.body.result.structuredContent.deleted).toBe(true);
+
     const created = await rpc(tokenA, call(30, "automation_create", {
       name: "Gateway automation lifecycle",
       cron: "0 6 * * *",
