@@ -347,6 +347,26 @@ describe("T3 orchestration projection", () => {
       summary: "Tool started",
       payload: { itemType: "collab_agent_tool_call" },
     })).toBe(false);
+    const anonymousCompletion = {
+      ...collabActivity,
+      id: "anonymous-complete",
+      summary: "Tool",
+      payload: { itemType: "collab_agent_tool_call", data: {} },
+    };
+    expect(shouldProjectT3Activity(anonymousCompletion)).toBe(true);
+    expect(shouldProjectT3Activity(anonymousCompletion, [{
+      id: "authoritative-child",
+      tone: "info",
+      kind: "task.updated",
+      summary: "calc_a",
+      payload: {
+        taskId: "ses_calc_a",
+        agentKind: "agent",
+        title: "calc_a",
+        status: "idle",
+      },
+      turnId: "turn",
+    }])).toBe(false);
     expect(shouldProjectT3Activity({
       ...collabActivity,
       id: "anonymous-mcp-start",
