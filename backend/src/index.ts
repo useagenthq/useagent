@@ -63,6 +63,7 @@ import { wikiGenRoutes } from "./wiki-gen/routes";
 import { engineModelsForReadyEngines, readyUserFacingEngines } from "./runs/engine-readiness";
 import { uploadRoutes } from "./uploads/routes";
 import { startUploadCleanup } from "./uploads/cleanup";
+import { internalAutomationRoutes } from "./schedules/internal-routes";
 
 // Apply committed Drizzle migrations BEFORE anything reads or seeds the schema,
 // so a fresh clone (or a fresh database) boots with the tables in place. The
@@ -131,6 +132,7 @@ app.use("/api/*", async (c, next) => {
 });
 
 app.get("/api/health", (c) => c.json({ status: "ok" }));
+app.route("/api/internal/automation", internalAutomationRoutes);
 
 // Public client config — what the frontend needs to render auth affordances
 // (which social providers are enabled) without exposing any secret. `allowDevOrg`
