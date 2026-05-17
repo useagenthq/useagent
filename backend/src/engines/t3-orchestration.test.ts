@@ -379,6 +379,34 @@ describe("T3 orchestration projection", () => {
     });
     expect(activityStep({
       ...collabActivity,
+      id: "dynamic-sequence",
+      summary: "skynet-knowledge_computer_sequence",
+      payload: {
+        itemType: "dynamic_tool_call",
+        data: {
+          toolCallId: "sequence-1",
+          arguments: {
+            actions: [
+              { action: "hotkey", keys: "ctrl+l" },
+              { action: "type", text: "https://example.com" },
+              { action: "key", key: "ENTER" },
+            ],
+            screenshot: true,
+          },
+        },
+      },
+    })).toMatchObject({
+      code_json: {
+        server: "skynet-knowledge",
+        tool: "computer_sequence",
+        input: {
+          actions: [{ action: "hotkey" }, { action: "type" }, { action: "key" }],
+          screenshot: true,
+        },
+      },
+    });
+    expect(activityStep({
+      ...collabActivity,
       id: "mcp-complete",
       summary: "skynet-knowledge · computer_screenshot started",
       payload: {

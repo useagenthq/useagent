@@ -92,6 +92,20 @@ function semanticToolIdentity(
   return { server: null, tool: null };
 }
 
+function t3ToolInput(
+  payload: Readonly<Record<string, unknown>> | null,
+  data: Readonly<Record<string, unknown>> | null,
+  item: Readonly<Record<string, unknown>> | null,
+): unknown {
+  return item?.arguments ??
+    data?.arguments ??
+    data?.input ??
+    payload?.arguments ??
+    payload?.input ??
+    data ??
+    payload;
+}
+
 /**
  * T3 deliberately keeps provider-native tool records lossless. Codex MCP calls
  * arrive under `data.item`, while other providers expose their identity at the
@@ -126,7 +140,7 @@ function t3ToolProjection(activity: T3Activity): {
     item,
     server: firstNonEmptyString(payload?.server, data?.server, item?.server) ?? semantic.server,
     tool,
-    input: item?.arguments ?? data ?? activity.payload,
+    input: t3ToolInput(payload, data, item),
   };
 }
 

@@ -57,6 +57,39 @@ function result(text: string, structuredContent?: Record<string, unknown>): Comp
   };
 }
 
+function sequenceActionNames(actions: readonly ComputerSequenceAction[]): string[] {
+  return actions.map(({ action }) => action);
+}
+
+function sequenceReceipt(actionNames: readonly string[]): string {
+  return `Computer sequence completed. Executed actions: ${actionNames.join(", ")}.`;
+}
+
+function withSequenceReceipt(
+  captured: ComputerToolResult,
+  actions: readonly ComputerSequenceAction[],
+): ComputerToolResult {
+  const actionNames = sequenceActionNames(actions);
+  const receipt = sequenceReceipt(actionNames);
+  const textIndex = captured.content.findIndex(({ type }) => type === "text");
+  const content = textIndex < 0
+    ? [...captured.content, { type: "text" as const, text: receipt }]
+    : captured.content.with(textIndex, {
+      type: "text",
+      text: `${captured.content[textIndex]!.type === "text" ? captured.content[textIndex]!.text : ""} ${receipt}`.trim(),
+    });
+  return {
+    ...captured,
+    content,
+    structuredContent: {
+      ...(captured.structuredContent ?? {}),
+      action: "computer_sequence",
+      action_count: actions.length,
+      executed_actions: actionNames,
+    },
+  };
+}
+
 function failure(text: string): ComputerToolResult {
   return { content: [{ type: "text", text }], isError: true };
 }
@@ -550,16 +583,14 @@ export async function executeComputerUseTool(
       }
       if (args.screenshot === true) {
         const captured = await service.screenshot(claims);
-        return {
-          ...captured,
-          structuredContent: {
-            ...(captured.structuredContent ?? {}),
-            action: name,
-            action_count: actions.length,
-          },
-        };
+        return withSequenceReceipt(captured, actions);
       }
-      return result(`${name} completed`, { action: name, action_count: actions.length });
+      const actionNames = sequenceActionNames(actions);
+      return result(sequenceReceipt(actionNames), {
+        action: name,
+        action_count: actions.length,
+        executed_actions: actionNames,
+      });
     }
     switch (name) {
       case "computer_click":

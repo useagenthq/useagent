@@ -135,6 +135,12 @@ describe("computer-use gateway tools", () => {
       path: "/root/work/screenshots/proof.png",
       action: "computer_sequence",
       action_count: 4,
+      executed_actions: ["click", "type", "key", "wait"],
+    });
+    expect(response.content.at(-1)).toEqual({
+      type: "text",
+      text: "Desktop screenshot captured at /root/work/screenshots/proof.png. " +
+        "Computer sequence completed. Executed actions: click, type, key, wait.",
     });
   });
 
