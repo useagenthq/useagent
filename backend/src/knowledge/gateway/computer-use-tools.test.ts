@@ -139,8 +139,8 @@ describe("computer-use gateway tools", () => {
     });
     expect(response.content.at(-1)).toEqual({
       type: "text",
-      text: "Desktop screenshot captured at /root/work/screenshots/proof.png. " +
-        "Computer sequence completed. Executed actions: click, type, key, wait.",
+      text: "Computer sequence completed. Executed actions: click, type, key, wait. " +
+        "Desktop screenshot captured at /root/work/screenshots/proof.png.",
     });
   });
 

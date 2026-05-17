@@ -76,7 +76,7 @@ function withSequenceReceipt(
     ? [...captured.content, { type: "text" as const, text: receipt }]
     : captured.content.with(textIndex, {
       type: "text",
-      text: `${captured.content[textIndex]!.type === "text" ? captured.content[textIndex]!.text : ""} ${receipt}`.trim(),
+      text: `${receipt} ${captured.content[textIndex]!.type === "text" ? captured.content[textIndex]!.text : ""}`.trim(),
     });
   return {
     ...captured,
