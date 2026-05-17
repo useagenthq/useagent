@@ -376,6 +376,42 @@ describe("T3 activity fidelity", () => {
     });
     expect(result.accounting[0]?.produced).toEqual(["tool.started", "tool.completed"]);
   });
+
+  test("uses provider activity as the single lifecycle when the durable T3 step is also present", () => {
+    const frames = [
+      t3Frame("tool-start", 1, "t3.activity.tool.started", {
+        kind: "tool.started",
+        summary: "Fetch quote",
+        payload: { toolUseId: "tool_1", toolName: "webfetch" },
+      }),
+      t3Frame("tool-done", 2, "t3.activity.tool.completed", {
+        kind: "tool.completed",
+        summary: "Fetched current quote",
+        payload: { toolUseId: "tool_1", toolName: "webfetch" },
+      }),
+    ];
+    const steps: OpenCodeStep[] = [{
+      id: "step_t3_tool",
+      idx: 0,
+      kind: "command",
+      label: "Fetch quote",
+      chip: "webfetch",
+      code_json: JSON.stringify({
+        source: "t3",
+        tool: "webfetch",
+        output: "Fetched current quote",
+        native: { callID: "tool_1", sessionID: "ses_t3" },
+      }),
+    }];
+
+    const result = translateOpenCode(frames, { ...CTX, engine: "codex" }, steps);
+    expect(result.events.map((event) => event.kind)).toEqual(["tool.started", "tool.completed"]);
+    expect(result.accounting.at(-1)).toMatchObject({
+      sourceId: "step_t3_tool",
+      produced: [],
+      suppressed: "t3 provider activity lifecycle is authoritative",
+    });
+  });
 });
 
 describe("native question translation", () => {

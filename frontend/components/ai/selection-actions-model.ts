@@ -1,4 +1,10 @@
-export type SelectionActionsPhase = "idle" | "thinking" | "streaming" | "result" | "accepted";
+export type SelectionActionsPhase =
+  | "idle"
+  | "thinking"
+  | "streaming"
+  | "result"
+  | "error"
+  | "accepted";
 
 export interface SelectionActionsState {
   phase: SelectionActionsPhase;
@@ -10,6 +16,7 @@ export type SelectionActionsEvent =
   | { type: "request"; request: string }
   | { type: "stream"; replacement: string }
   | { type: "complete" }
+  | { type: "reject" }
   | { type: "keep" }
   | { type: "discard" }
   | { type: "retry" };
@@ -37,6 +44,8 @@ export function selectionActionsReducer(
       return { ...state, phase: "streaming", replacement: event.replacement };
     case "complete":
       return state.replacement ? { ...state, phase: "result" } : state;
+    case "reject":
+      return state.request ? { ...state, phase: "error", replacement: null } : state;
     case "keep":
       return state.phase === "result" ? { ...state, phase: "accepted" } : state;
     case "discard":

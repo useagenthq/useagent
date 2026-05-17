@@ -50,4 +50,27 @@ describe("selection actions state", () => {
       replacement: null,
     });
   });
+
+  test("recovers from a rejected rewrite without leaving the toolbar busy", () => {
+    const thinking = createSelectionActionsState({
+      phase: "thinking",
+      request: "improve",
+    });
+
+    expect(selectionActionsReducer(thinking, { type: "reject" })).toEqual({
+      phase: "error",
+      request: "improve",
+      replacement: null,
+    });
+    expect(
+      selectionActionsReducer(
+        selectionActionsReducer(thinking, { type: "reject" }),
+        { type: "retry" },
+      ),
+    ).toEqual({
+      phase: "thinking",
+      request: "improve",
+      replacement: null,
+    });
+  });
 });

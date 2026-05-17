@@ -262,6 +262,7 @@ export function translateOpenCode(
   const seenTaskCall = new Set<string>();  // task-tool callIds we've opened
   const seenTool = new Set<string>();      // non-task tool callIds we've opened
   const seenT3Tool = new Set<string>();    // T3 tool callIds we've opened
+  const authoritativeT3ActivityIds = new Set<string>();
   const t3TaskToolUseIds = new Set<string>();
   const events: CanonicalAgentEvent[] = [];
   const accounting: Disposition[] = [];
@@ -452,6 +453,7 @@ export function translateOpenCode(
         terminal: boolean,
         errored: boolean,
       ): void {
+        authoritativeT3ActivityIds.add(callId);
         if (activityKind.endsWith(".started")) {
           seenT3Tool.add(callId);
           produced.push(push(f.eventId, f.provider, {
@@ -661,6 +663,16 @@ export function translateOpenCode(
       nativeEventId: s.id, // step id = the reducer's node key + lookup handle
       nativeSessionId: str(native?.sessionID) ?? undefined,
     };
+    if (code?.source === "t3" && callID && authoritativeT3ActivityIds.has(callID)) {
+      accounting.push({
+        sourceId: s.id,
+        kind: `step:${s.kind}`,
+        provider: stepProvider,
+        produced: [],
+        suppressed: "t3 provider activity lifecycle is authoritative",
+      });
+      continue;
+    }
     // Every non-done step is a tool ROW in the legacy timeline (command + file
     // alike), so it maps to tool.completed for node-equivalence. (A separate
     // file.changed for the editor pane is a later, additive refinement.)
