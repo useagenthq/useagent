@@ -87,11 +87,14 @@ export interface LaneGroup {
 /** Group runs into the four lanes, newest-first within each lane. */
 export function groupIntoLanes(runs: readonly WorkspaceRun[]): LaneGroup[] {
   const byLane = new Map<Lane, WorkspaceRun[]>(LANES.map((name) => [name, []]));
-  for (const run of runs) byLane.get(laneForRun(run))!.push(run);
+  for (const run of runs) {
+    const laneRuns = byLane.get(laneForRun(run));
+    if (laneRuns) laneRuns.push(run);
+  }
   return LANES.map((name) => {
-    const laneRuns = byLane
-      .get(name)!
-      .toSorted((a, b) => timestamp(b.created_at) - timestamp(a.created_at));
+    const laneRuns = (byLane.get(name) ?? []).toSorted(
+      (a, b) => timestamp(b.created_at) - timestamp(a.created_at),
+    );
     return {
       name,
       runs: laneRuns,

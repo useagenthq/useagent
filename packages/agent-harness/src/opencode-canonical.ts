@@ -89,9 +89,108 @@ export interface TranslateResult {
 const rec = (v: unknown): Record<string, unknown> | null =>
   v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : null;
 const str = (v: unknown): string | null => (typeof v === "string" ? v : null);
+const num = (v: unknown): number | null => (typeof v === "number" && Number.isFinite(v) ? v : null);
+
+const MAX_PREVIEW_CHARS = 240;
+
+function firstString(...values: unknown[]): string | null {
+  for (const value of values) {
+    const text = str(value)?.trim();
+    if (text) return text;
+  }
+  return null;
+}
+
+function boundedPreview(...values: unknown[]): string | undefined {
+  const text = firstString(...values)?.replace(/\s+/g, " ");
+  if (!text) return undefined;
+  return text.length > MAX_PREVIEW_CHARS ? `${text.slice(0, MAX_PREVIEW_CHARS - 1)}…` : text;
+}
+
+function appendDuration(preview: string | undefined, durationMs: number | null): string | undefined {
+  if (durationMs === null) return preview;
+  const suffix = `${Math.round(durationMs)}ms`;
+  if (!preview) return suffix;
+  return preview.includes(suffix) ? preview : boundedPreview(`${preview} (${suffix})`);
+}
 
 const TASK_CHILD_ID = /<task\s+id="(ses_[^"]+)"/;
 const TASK_RESULT = /<task_result>\s*([\s\S]*?)\s*<\/task_result>/;
+
+function t3Payload(activity: Record<string, unknown> | null): Record<string, unknown> | null {
+  return rec(activity?.payload);
+}
+
+function t3ActivityKind(eventType: string, activity: Record<string, unknown> | null): string {
+  return str(activity?.kind) ?? eventType.slice("t3.activity.".length);
+}
+
+function t3ToolName(payload: Record<string, unknown> | null): string {
+  const data = rec(payload?.data);
+  const item = rec(data?.item);
+  return firstString(
+    payload?.toolName,
+    payload?.tool,
+    data?.toolName,
+    data?.tool,
+    item?.tool,
+    item?.name,
+    payload?.itemType,
+  ) ?? "tool";
+}
+
+function t3ToolCallId(
+  f: OpenCodeFrame,
+  activity: Record<string, unknown> | null,
+  payload: Record<string, unknown> | null,
+): string {
+  const data = rec(payload?.data);
+  const item = rec(data?.item);
+  return firstString(
+    f.native.callId,
+    payload?.taskId,
+    payload?.toolCallId,
+    payload?.toolUseId,
+    payload?.callId,
+    payload?.id,
+    item?.id,
+    activity?.id,
+    f.eventId,
+  ) ?? f.eventId;
+}
+
+function t3Preview(
+  activity: Record<string, unknown> | null,
+  payload: Record<string, unknown> | null,
+): string | undefined {
+  const data = rec(payload?.data);
+  const item = rec(data?.item);
+  const durationMs = num(payload?.durationMs) ?? num(rec(payload?.typedUsage)?.durationMs) ?? num(data?.durationMs);
+  return appendDuration(
+    boundedPreview(
+      payload?.summary,
+      activity?.summary,
+      payload?.detail,
+      activity?.detail,
+      payload?.error,
+      item?.text,
+      item?.message,
+    ),
+    durationMs,
+  );
+}
+
+function t3Errored(activityKind: string, activity: Record<string, unknown> | null, payload: Record<string, unknown> | null): boolean {
+  const status = str(payload?.status)?.toLowerCase();
+  const tone = str(activity?.tone)?.toLowerCase();
+  return activityKind.endsWith(".error")
+    || activityKind.endsWith(".failed")
+    || activityKind.endsWith(".denied")
+    || status === "error"
+    || status === "failed"
+    || tone === "error"
+    || Boolean(payload?.error);
+}
 
 function markerFromSkynet(eventType: string, p: Record<string, unknown> | null):
   | { markerType: ContextMarkerKind; title: string; detail?: string }
@@ -136,7 +235,7 @@ export function translateOpenCode(
   steps: readonly OpenCodeStep[] = [],
 ): TranslateResult {
   const tsOf = ctx.ts ?? ((seq: number) => seq);
-  const orderedFrames = [...frames].sort((a, b) => a.seq - b.seq);
+  const orderedFrames = frames.toSorted((a, b) => a.seq - b.seq);
 
   // Child sessions: any session linked to a parent (task fan-out). Established
   // LOSSLESSLY via child.started so reducers - not the translator - decide hiding.
@@ -162,9 +261,18 @@ export function translateOpenCode(
   const emittedChild = new Set<string>();  // child sessionIds we've announced
   const seenTaskCall = new Set<string>();  // task-tool callIds we've opened
   const seenTool = new Set<string>();      // non-task tool callIds we've opened
+  const seenT3Tool = new Set<string>();    // T3 tool callIds we've opened
+  const t3TaskToolUseIds = new Set<string>();
   const events: CanonicalAgentEvent[] = [];
   const accounting: Disposition[] = [];
   let cursor = 0;
+
+  for (const f of orderedFrames) {
+    if (!f.eventType.startsWith("t3.activity.task.")) continue;
+    const payload = t3Payload(rec(f.payload));
+    const toolUseId = firstString(payload?.toolUseId, payload?.toolCallId);
+    if (toolUseId) t3TaskToolUseIds.add(toolUseId);
+  }
 
   const push = (id: string, provider: string, body: CanonicalEventBody, ident: Partial<CanonicalAgentEvent["identity"]> = {}, suffix = ""): CanonicalEventKind => {
     events.push({
@@ -303,6 +411,127 @@ export function translateOpenCode(
           status: rejected ? "rejected" : "answered",
         }, ident));
       } else suppressed = "question resolution without requestID";
+    } else if (et.startsWith("t3.activity.")) {
+      const activity = p;
+      const activityKind = t3ActivityKind(et, activity);
+      const payload = t3Payload(activity);
+      const preview = t3Preview(activity, payload);
+
+      function emitChildActivity(
+        childId: string,
+        title: string | undefined,
+        terminal: boolean,
+        errored: boolean,
+      ): void {
+        if (activityKind.endsWith(".started")) {
+          produced.push(push(f.eventId, f.provider, {
+            kind: "child.started",
+            childId,
+            title,
+          }, ident, "#child-start"));
+        } else if (terminal) {
+          produced.push(push(f.eventId, f.provider, {
+            kind: "child.completed",
+            childId,
+            status: errored ? "error" : "ok",
+            result: preview,
+          }, ident, "#child-done"));
+        } else {
+          produced.push(push(f.eventId, f.provider, {
+            kind: "child.updated",
+            childId,
+            status: preview ?? firstString(payload?.status) ?? "running",
+          }, ident, "#child-upd"));
+        }
+      }
+
+      function emitToolActivity(
+        callId: string,
+        name: string,
+        title: string | undefined,
+        terminal: boolean,
+        errored: boolean,
+      ): void {
+        if (activityKind.endsWith(".started")) {
+          seenT3Tool.add(callId);
+          produced.push(push(f.eventId, f.provider, {
+            kind: "tool.started",
+            toolCallId: callId,
+            name,
+            title,
+          }, ident, "#tool-start"));
+        } else if (terminal) {
+          if (!seenT3Tool.has(callId)) {
+            seenT3Tool.add(callId);
+            produced.push(push(f.eventId, f.provider, {
+              kind: "tool.started",
+              toolCallId: callId,
+              name,
+              title,
+            }, ident, "#tool-start"));
+          }
+          produced.push(push(f.eventId, f.provider, {
+            kind: "tool.completed",
+            toolCallId: callId,
+            status: errored ? "error" : "ok",
+            ...(preview ? { preview } : {}),
+            ...(errored && preview ? { error: preview } : {}),
+          }, ident, "#tool-done"));
+        } else {
+          produced.push(push(f.eventId, f.provider, {
+            kind: "tool.progress",
+            toolCallId: callId,
+            ...(preview ? { preview } : {}),
+          }, ident, "#tool-prog"));
+        }
+      }
+
+      if (activityKind.startsWith("context-window.")) {
+        suppressed = "t3 context-window diagnostic (not a timeline node)";
+      } else if (activityKind.startsWith("task.")) {
+        const nativeTaskId = firstString(payload?.taskId, f.native.callId);
+        const isAgentTask = payload?.agentKind === "agent";
+        const title = firstString(payload?.title, payload?.role, activity?.summary) ?? undefined;
+        const errored = t3Errored(activityKind, activity, payload);
+        const terminal = activityKind.endsWith(".completed") || activityKind.endsWith(".error") || activityKind.endsWith(".failed");
+
+        if (isAgentTask && !nativeTaskId) {
+          suppressed = "t3 agent task without provider child identity";
+        } else if (isAgentTask && nativeTaskId) {
+          emitChildActivity(nativeTaskId, title, terminal, errored);
+        } else {
+          const callId = nativeTaskId ?? firstString(activity?.id, f.eventId) ?? f.eventId;
+          const name = title ?? "task";
+          emitToolActivity(callId, name, title, terminal, errored);
+        }
+      } else if (activityKind.startsWith("tool.")) {
+        const callId = t3ToolCallId(f, activity, payload);
+        const itemType = str(payload?.itemType);
+        const explicitChildId = firstString(payload?.childSessionId, payload?.taskId);
+        if (itemType === "collab_agent_tool_call" && t3TaskToolUseIds.has(callId)) {
+          suppressed = "duplicate t3 collaboration wrapper (task lifecycle is authoritative)";
+        } else if (itemType === "collab_agent_tool_call" && explicitChildId) {
+          // A collaboration wrapper is a child only when the transport provides
+          // a real child session/task identity. Tool/activity ids identify the
+          // wrapper call, not a child, and must never be promoted to child ids.
+          const title = firstString(activity?.summary, payload?.summary, payload?.title) ?? undefined;
+          const errored = t3Errored(activityKind, activity, payload);
+          const terminal = activityKind.endsWith(".completed") ||
+            activityKind.endsWith(".error") ||
+            activityKind.endsWith(".failed") ||
+            activityKind.endsWith(".denied");
+          emitChildActivity(explicitChildId, title, terminal, errored);
+        } else {
+          const name = t3ToolName(payload);
+          const title = firstString(activity?.summary, payload?.summary) ?? undefined;
+          const errored = t3Errored(activityKind, activity, payload);
+          const terminal = activityKind.endsWith(".completed") || activityKind.endsWith(".error") || activityKind.endsWith(".failed") || activityKind.endsWith(".denied");
+
+          emitToolActivity(callId, name, title, terminal, errored);
+        }
+      } else {
+        produced.push(push(f.eventId, f.provider, { kind: "harness.warning", message: "unmapped t3 activity", rawEventType: et }, ident));
+      }
     } else if (et === SESSION_STARTED_EVENT_TYPE) {
       // A real provider session was established: emit the session-identified `session.started`
       // carrying the ONE capability map the UI gates every surface on (no provider-name guess).
@@ -410,22 +639,22 @@ export function translateOpenCode(
     const k0 = mid ? msgOrderKey.get(mid) ?? MAX : MAX;
     return [k0, s.idx];
   };
-  const orderedSteps = [...steps]
+  const orderedSteps = steps
     .map((s, i) => ({ s, i, k: stepKey(s) }))
-    .sort((a, b) => a.k[0] - b.k[0] || a.k[1] - b.k[1] || a.i - b.i);
+    .toSorted((a, b) => a.k[0] - b.k[0] || a.k[1] - b.k[1] || a.i - b.i);
 
   for (const { s } of orderedSteps) {
     if (s.kind === "done") {
       accounting.push({ sourceId: s.id, kind: `step:${s.kind}`, provider: stepProvider, produced: [], suppressed: "terminal done step (not a timeline node)" });
       continue;
     }
-    let callID: string | null = null, errored = false, native: Record<string, unknown> | undefined;
+    let callID: string | null = null, errored = false, native: Record<string, unknown> | undefined, code: Record<string, unknown> | null = null;
     if (s.code_json) {
       try {
-        const c = rec(JSON.parse(s.code_json));
-        native = rec(c?.native) ?? undefined;
+        code = rec(JSON.parse(s.code_json));
+        native = rec(code?.native) ?? undefined;
         callID = str(native?.callID);
-        errored = c?.error === true;
+        errored = code?.error === true;
       } catch { /* keep defaults */ }
     }
     const ident = {
@@ -435,19 +664,30 @@ export function translateOpenCode(
     // Every non-done step is a tool ROW in the legacy timeline (command + file
     // alike), so it maps to tool.completed for node-equivalence. (A separate
     // file.changed for the editor pane is a later, additive refinement.)
-    const body: CanonicalEventBody = { kind: "tool.completed", toolCallId: callID ?? s.id, status: errored ? "error" : "ok" };
-    events.push({
-      schemaVersion: CANONICAL_SCHEMA_VERSION,
-      eventId: `${ctx.runId}:step:${s.id}`,
-      seq: cursor,
-      runId: ctx.runId,
-      threadId: ctx.threadId,
-      ts: tsOf(cursor),
-      identity: { provider: stepProvider, ...ident },
-      ...body,
-    });
-    cursor++;
-    accounting.push({ sourceId: s.id, kind: `step:${s.kind}`, provider: stepProvider, produced: [body.kind] });
+    const toolCallId = callID ?? s.id;
+    const stepToolName = code?.source === "t3" ? firstString(code?.tool, code?.name, s.chip, s.kind) : null;
+    const stepPreview = code?.source === "t3"
+      ? boundedPreview(code?.output, code?.summary, code?.error, s.label)
+      : undefined;
+    const produced: CanonicalEventKind[] = [];
+    if (stepToolName) {
+      const startBody: CanonicalEventBody = {
+        kind: "tool.started",
+        toolCallId,
+        name: stepToolName,
+        ...(s.label ? { title: s.label } : {}),
+      };
+      produced.push(push(`step:${s.id}`, stepProvider, startBody, ident, "#tool-start"));
+    }
+    const body: CanonicalEventBody = {
+      kind: "tool.completed",
+      toolCallId,
+      status: errored ? "error" : "ok",
+      ...(stepPreview ? { preview: stepPreview } : {}),
+      ...(errored && stepPreview ? { error: stepPreview } : {}),
+    };
+    produced.push(push(`step:${s.id}`, stepProvider, body, ident));
+    accounting.push({ sourceId: s.id, kind: `step:${s.kind}`, provider: stepProvider, produced });
   }
 
   return { events, accounting };

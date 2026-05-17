@@ -16,7 +16,10 @@ export interface ArtifactDescriptor {
 }
 
 export type ArtifactWorkpieceKind = "document" | "spreadsheet";
-export type ArtifactWorkpieceState = Readonly<{ text: string }> | Readonly<{ csv: string }>;
+export type ArtifactWorkpieceState =
+  | Readonly<{ text: string }>
+  | Readonly<{ html: string }>
+  | Readonly<{ csv: string }>;
 
 export interface ArtifactWorkpieceDescriptor {
   readonly kind: ArtifactWorkpieceKind;
@@ -64,11 +67,15 @@ function decodeWorkpieceState(
   if (value === null) return null;
   const item = record(value);
   if (!item) return undefined;
-  const key = kind === "spreadsheet" ? "csv" : "text";
   const entries = Object.entries(item);
-  return entries.length === 1 && entries[0]?.[0] === key && typeof entries[0][1] === "string"
-    ? (item as ArtifactWorkpieceState)
-    : undefined;
+  const entry = entries[0];
+  if (entry === undefined || entries.length !== 1 || typeof entry[1] !== "string") {
+    return undefined;
+  }
+  const keyMatchesKind = kind === "spreadsheet"
+    ? entry[0] === "csv"
+    : entry[0] === "text" || entry[0] === "html";
+  return keyMatchesKind ? (item as ArtifactWorkpieceState) : undefined;
 }
 
 export function decodeArtifact(value: unknown): ArtifactDescriptor | null {

@@ -22,7 +22,10 @@ import {
 export type RunStatus = "queued" | "running" | "completed" | "failed";
 export type StepKind = "command" | "file" | "task" | "done";
 export type ArtifactWorkpieceKind = "document" | "spreadsheet";
-export type ArtifactWorkpieceState = Readonly<{ text: string }> | Readonly<{ csv: string }>;
+export type ArtifactWorkpieceState =
+  | Readonly<{ text: string }>
+  | Readonly<{ html: string }>
+  | Readonly<{ csv: string }>;
 
 /** Which team-memory pool a run reads and writes (see src/memory/scope.ts).
  *  - "org": read + capture ORGANIZATION memory only (every org member shares it).

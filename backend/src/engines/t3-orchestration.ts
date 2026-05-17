@@ -305,6 +305,66 @@ export function assistantText(snapshot: T3ThreadSnapshot): string {
   return snapshot.thread.messages.findLast((message) => message.role === "assistant")?.text ?? "";
 }
 
+const TRANSPORT_PLACEHOLDER_LABELS = new Set([
+  "mcp tool call",
+  "subagent",
+  "subagent started",
+  "task",
+  "task started",
+  "tool",
+  "tool started",
+]);
+
+function descriptiveActivityLabel(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const label = value.trim();
+  return label && !TRANSPORT_PLACEHOLDER_LABELS.has(label.toLowerCase()) ? label : null;
+}
+
+function taskActivityLabel(
+  activity: T3Activity,
+  payload: Readonly<Record<string, unknown>>,
+  isAgent: boolean,
+): string {
+  const taskId = descriptiveActivityLabel(payload.taskId);
+  return descriptiveActivityLabel(payload.title) ??
+    descriptiveActivityLabel(payload.role) ??
+    taskId?.replaceAll(/[_-]+/gu, " ") ??
+    descriptiveActivityLabel(activity.summary) ??
+    (isAgent ? "Subagent" : "Task");
+}
+
+function toolActivityLabel(
+  activity: T3Activity,
+  projection: ReturnType<typeof t3ToolProjection>,
+  tool: string,
+): string {
+  if (projection.server && projection.tool) return `${projection.server} · ${projection.tool}`;
+  return descriptiveActivityLabel(activity.summary) ??
+    descriptiveActivityLabel(projection.tool) ??
+    descriptiveActivityLabel(tool) ??
+    "Tool";
+}
+
+function toolActivityName(
+  itemType: string | null,
+  projectedTool: string | null,
+  isSubagent: boolean,
+): string {
+  if (isSubagent) return "subagent";
+  if (projectedTool) return projectedTool;
+  switch (itemType) {
+    case "command_execution":
+      return "bash";
+    case "file_change":
+      return "edit";
+    case "web_search":
+      return "websearch";
+    default:
+      return itemType ?? "tool";
+  }
+}
+
 export function activityStep(activity: T3Activity): EmitStep {
   const payload = record(activity.payload);
   const detail = typeof payload?.detail === "string" ? payload.detail : undefined;
@@ -326,15 +386,9 @@ export function activityStep(activity: T3Activity): EmitStep {
     };
   }
   if (activity.kind.startsWith("task.")) {
-    const taskType = typeof payload?.taskType === "string" ? payload.taskType : null;
     const isAgent = payload?.agentKind === "agent";
     const taskId = typeof payload?.taskId === "string" ? payload.taskId : undefined;
-    const title =
-      typeof payload?.title === "string"
-        ? payload.title
-        : typeof payload?.role === "string"
-          ? payload.role
-          : activity.summary;
+    const title = taskActivityLabel(activity, payload ?? {}, isAgent);
     return {
       kind: "task",
       label: title,
@@ -345,7 +399,7 @@ export function activityStep(activity: T3Activity): EmitStep {
         activityKind: activity.kind,
         tool: isAgent ? "subagent" : "task",
         input: {
-          ...(title ? { description: title } : {}),
+          description: title,
           ...(detail ? { prompt: detail } : {}),
         },
         ...(typeof payload?.summary === "string" ? { output: payload.summary } : {}),
@@ -369,20 +423,10 @@ export function activityStep(activity: T3Activity): EmitStep {
     const childSessionId = isSubagent && detail
       ? /<task\s+id="([^"]+)"/u.exec(detail)?.[1] ?? null
       : null;
-    const tool = isSubagent
-      ? "subagent"
-      : projection.tool
-      ? projection.tool
-      : itemType === "command_execution"
-        ? "bash"
-        : itemType === "file_change"
-          ? "edit"
-          : itemType === "web_search"
-            ? "websearch"
-            : itemType ?? "tool";
+    const tool = toolActivityName(itemType, projection.tool, isSubagent);
     return {
       kind: itemType === "file_change" ? "file" : isSubagent ? "task" : "command",
-      label: activity.summary,
+      label: toolActivityLabel(activity, projection, tool),
       chip: isSubagent ? "subagent" : itemType === "web_search" ? "search" : activity.kind,
       code_json: {
         source: "t3",

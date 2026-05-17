@@ -5,6 +5,7 @@ import type { CommandRecord } from "./repo";
 import type { RunCommandInput, RunCommandOutcome } from "./types";
 import { publishThreadChange } from "../runs/thread-signals";
 import { isModelAllowedForEngine } from "../runs/model-policy";
+import { engineModelReadyForDispatch } from "../runs/engine-readiness";
 import { withThreadLifecycleLock } from "../runs/thread-lifecycle-lock";
 
 // ---------------------------------------------------------------------------
@@ -37,11 +38,6 @@ function classifyReplay(existing: CommandRecord, fingerprint: string): RunComman
  * winner's outcome rather than surfacing a raw DB error.
  */
 export async function acceptRunCommand(input: RunCommandInput): Promise<RunCommandOutcome> {
-  if (!isModelAllowedForEngine(input.run.engine, input.run.model)) {
-    throw new Error(
-      `model ${input.run.model} is not allowed for engine ${input.run.engine}`,
-    );
-  }
   const fingerprint = runPayloadFingerprint(input.run);
   const payload = JSON.stringify({
     prompt: input.run.prompt,
@@ -71,6 +67,21 @@ export async function acceptRunCommand(input: RunCommandInput): Promise<RunComma
         if (input.idempotencyKey) {
           const existing = await findCommandByKey(input.orgId, input.idempotencyKey, tx);
           if (existing) return classifyReplay(existing, fingerprint);
+        }
+
+        // Readiness applies only when accepting NEW work. A matching keyed
+        // replay is a read of an already-durable decision and must keep
+        // returning the original run even if policy or provider health later
+        // changes.
+        if (!isModelAllowedForEngine(input.run.engine, input.run.model)) {
+          throw new Error(
+            `model ${input.run.model} is not allowed for engine ${input.run.engine}`,
+          );
+        }
+        if (!engineModelReadyForDispatch(input.run.engine, input.run.model)) {
+          throw new Error(
+            `engine/model not ready: ${input.run.engine}/${input.run.model}`,
+          );
         }
 
         await insertCommandWithRun(

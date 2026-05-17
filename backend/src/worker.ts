@@ -11,9 +11,9 @@ import {
   updateStepCode,
   type ApiStep,
 } from "./runs/repo";
-import type { RunStatus, StepKind } from "./db/schema";
+import type { EngineId, RunStatus, StepKind } from "./db/schema";
 import { adapters } from "./engines";
-import { isEngineEnabled } from "./env";
+import { engineModelReadyForDispatch } from "./runs/engine-readiness";
 import type { EmitStep, EngineRunContext, RunInputFile } from "./engines/types";
 import { recallScopedMemory } from "./memory/team-memory";
 import { resolveScopedMemory } from "./memory/scope";
@@ -543,8 +543,9 @@ async function runEngine(
   // exists with an unsafe/unproven engine (legacy row, non-HTTP channel, direct
   // DB write), refuse to spawn its adapter unless the engine is explicitly enabled
   // (ENABLED_ENGINES). Fail the run closed rather than activating it.
-  if (!isEngineEnabled(engineId)) {
-    await finalizeRun(runId, "failed", `engine not enabled: ${engineId}`, 0);
+  const engine = engineId as EngineId;
+  if (!engineModelReadyForDispatch(engine, model)) {
+    await finalizeRun(runId, "failed", `engine/model not ready: ${engineId}/${model}`, 0);
     bus.emit(channel(runId), { type: "end", status: "failed" } satisfies BusEvent);
     return;
   }

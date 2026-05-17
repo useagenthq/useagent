@@ -4,6 +4,7 @@
 // (the risk area is the error envelope + codes) - a before/after guarantee that
 // the SDK swap is transparent. Tool execution is covered by knowledge-gateway.test.
 import { describe, expect, test } from "bun:test";
+import "../src/index";
 import { handleMcpMessage } from "../src/knowledge/gateway/mcp";
 import { KNOWLEDGE_TOOLS } from "../src/knowledge/gateway/tools";
 import { MEMORY_TOOLS } from "../src/knowledge/gateway/memory-tools";
@@ -13,6 +14,7 @@ import { RECORDING_TOOLS } from "../src/knowledge/gateway/recording-tools";
 import { COMPUTER_USE_TOOLS } from "../src/knowledge/gateway/computer-use-tools";
 import { REPOSITORY_TOOLS } from "../src/knowledge/gateway/repository-tools";
 import { GCS_TOOLS } from "../src/knowledge/gateway/gcs-tools";
+import { AUTOMATION_TOOLS } from "../src/knowledge/gateway/automation-tools";
 import { SKILL_TOOLS } from "../src/knowledge/gateway/skill-tools";
 import type { ToolTokenClaims } from "../src/knowledge/gateway/token";
 
@@ -74,6 +76,7 @@ describe("MCP wire is byte-identical after the SDK-schema adoption (#98)", () =>
       ...COMPUTER_USE_TOOLS,
       ...REPOSITORY_TOOLS,
       ...GCS_TOOLS,
+      ...AUTOMATION_TOOLS,
       ...SKILL_TOOLS,
     ]);
   });

@@ -1,6 +1,5 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import {
   RiArrowLeftLine,
   RiArrowRightSLine,
@@ -8,16 +7,17 @@ import {
   RiErrorWarningLine,
   RiRobot2Line,
 } from "@remixicon/react";
-import { cnExt as cn } from "@/utils/cn";
-import { ToolStepRow } from "@/components/chat/tool-step-row";
-import { deriveTrace, formatDuration, type ApiStep } from "@/components/chat/types";
-import { deriveSubagents, type SubagentCard } from "@/components/chat/subagents";
+import { useEffect, useState } from "react";
 import {
-  deriveChildFidelity,
   type ChildFidelity,
   type ChildStatus,
+  deriveChildFidelity,
   type NativeFrame,
 } from "@/components/chat/native-events";
+import { deriveSubagents, type SubagentCard } from "@/components/chat/subagents";
+import { ToolStepRow } from "@/components/chat/tool-step-row";
+import { type ApiStep, deriveTrace, formatDuration } from "@/components/chat/types";
+import { cnExt as cn } from "@/utils/cn";
 
 /**
  * The right-rail "Agents" tab: one card per fanned-out subagent, mirroring
@@ -58,7 +58,7 @@ function elapsedOf(card: SubagentCard, now: number, live: boolean): number {
 
 /** Resolve a card's authoritative status: native fidelity first, else fall back
  *  to the parent run's liveness (pre-native runs / before the lane loads). */
-function statusOf(card: SubagentCard, fidelity: ChildFidelity | undefined, runLive: boolean): ChildStatus {
+function statusOf(fidelity: ChildFidelity | undefined, runLive: boolean): ChildStatus {
   return fidelity?.status ?? (runLive ? "running" : "completed");
 }
 
@@ -131,7 +131,7 @@ function AgentCardRow({
   runLive: boolean;
   onOpen: () => void;
 }) {
-  const status = statusOf(card, fidelity, runLive);
+  const status = statusOf(fidelity, runLive);
   const live = isChildActive(status);
   const now = useNow(live);
   const elapsed = elapsedOf(card, now, live);
@@ -196,7 +196,7 @@ function AgentDetail({
   ownerByStep: ReadonlyMap<string, string>;
   onBack: () => void;
 }) {
-  const status = statusOf(card, fidelity, runLive);
+  const status = statusOf(fidelity, runLive);
   const live = isChildActive(status);
   const now = useNow(live);
   const elapsed = elapsedOf(card, now, live);
@@ -288,9 +288,7 @@ function AgentDetail({
                 key={`${entry.at}:${index}:${entry.summary}`}
                 className="border-stroke-soft-200 bg-bg-weak-50 rounded-lg border px-3 py-2"
               >
-                <p className="text-paragraph-xs text-text-sub-600 break-words">
-                  {entry.summary}
-                </p>
+                <p className="text-paragraph-xs text-text-sub-600 break-words">{entry.summary}</p>
               </div>
             ))}
             {activity.map((step, i) => (

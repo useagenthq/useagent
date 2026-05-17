@@ -8,6 +8,8 @@ import {
   type ArtifactDescriptor,
   type ArtifactRecord,
 } from "./repo";
+import { db } from "../db/client";
+import { sql } from "drizzle-orm";
 import { artifactStorage } from "./storage";
 import { getRunForOrg } from "../runs/repo";
 import { recordProviderEvent } from "../runs/provider-events";
@@ -46,21 +48,38 @@ export async function publishSandboxArtifact(input: {
   const file = await downloadSandboxFile(run.sandboxId, sourcePath, MAX_ARTIFACT_BYTES);
   const digest = createHash("sha256").update(file.bytes).digest("hex");
   const name = safeName(sourcePath, input.name);
-  await artifactStorage().put(digest, file.bytes);
-  const storedSize = await artifactStorage().size(digest);
-  if (storedSize !== file.bytes.length) throw new Error("artifact storage size verification failed");
-
-  const stored = await createArtifactRecord({
-    orgId: input.orgId,
-    userId: input.userId,
-    runId: run.id,
-    threadId: run.threadId,
-    sourcePath,
-    name,
-    contentType: contentTypeForName(name),
-    sizeBytes: file.bytes.length,
-    sha256: digest,
-    storageKey: digest,
+  const stored = await db.transaction(async (tx) => {
+    // Serialize one logical publication across processes. Without this lock, a
+    // creator that fails storage verification can roll back metadata already
+    // returned by a concurrent idempotent publisher.
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${[
+      "artifact-publish",
+      input.orgId,
+      run.id,
+      sourcePath,
+      digest,
+    ].join(":")}))`);
+    const record = await createArtifactRecord({
+      orgId: input.orgId,
+      userId: input.userId,
+      runId: run.id,
+      threadId: run.threadId,
+      sourcePath,
+      name,
+      contentType: contentTypeForName(name),
+      sizeBytes: file.bytes.length,
+      sha256: digest,
+      storageKey: digest,
+    }, tx);
+    // Metadata is transactional but must precede bytes so orphan reclamation's
+    // final database check sees the in-flight publication. A storage failure
+    // rolls the row back while retaining at most a reclaimable content blob.
+    await artifactStorage().put(digest, file.bytes);
+    const storedSize = await artifactStorage().size(digest);
+    if (storedSize !== file.bytes.length) {
+      throw new Error("artifact storage size verification failed");
+    }
+    return record;
   });
 
   const descriptor = toArtifactDescriptor(stored.row);

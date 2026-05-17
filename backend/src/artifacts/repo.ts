@@ -1,5 +1,5 @@
 import { and, desc, eq, sql } from "drizzle-orm";
-import { db } from "../db/client";
+import { db, type Executor } from "../db/client";
 import {
   artifacts,
   type ArtifactWorkpieceKind,
@@ -70,10 +70,10 @@ export async function createArtifactRecord(input: {
   readonly sha256: string;
   readonly storageKey: string;
   readonly workpieceKind?: ArtifactWorkpieceKind | null;
-}): Promise<{ row: ArtifactRecord; created: boolean }> {
+}, exec: Executor = db): Promise<{ row: ArtifactRecord; created: boolean }> {
   const workpieceKind =
-    input.workpieceKind ?? inferWorkpieceKind(input.name, input.contentType);
-  const [inserted] = await db
+    input.workpieceKind ?? inferWorkpieceKind(input.name, input.contentType, input.sizeBytes);
+  const [inserted] = await exec
     .insert(artifacts)
     .values({ ...input, workpieceKind })
     .onConflictDoNothing({
@@ -82,7 +82,7 @@ export async function createArtifactRecord(input: {
     .returning();
   if (inserted) return { row: inserted, created: true };
 
-  const [existing] = await db
+  const [existing] = await exec
     .select()
     .from(artifacts)
     .where(

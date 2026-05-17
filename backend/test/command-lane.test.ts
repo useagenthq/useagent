@@ -31,6 +31,44 @@ async function retire(threadId: string): Promise<void> {
 }
 
 describe("durable command lane", () => {
+  test("replays an accepted key even after provider readiness changes", async () => {
+    const threadId = crypto.randomUUID();
+    const idempotencyKey = `replay-after-health-change:${crypto.randomUUID()}`;
+    const input = {
+      idempotencyKey,
+      orgId: ORG,
+      actorId: null,
+      run: {
+        id: threadId,
+        prompt: "durable replay",
+        model: "gpt-5.6-sol",
+        engine: "codex" as const,
+        parentRunId: null,
+        threadId,
+        repos: [],
+        memoryScope: "org" as const,
+        skillId: null,
+        skillVersion: null,
+        skillContentHash: null,
+        commandName: null,
+        commandProvider: null,
+        commandSessionId: null,
+        commandCatalogRevision: null,
+      },
+    };
+
+    expect(await acceptRunCommand(input)).toMatchObject({ status: "created", runId: threadId });
+    const previous = process.env.PROVIDER_HEALTH_OPENAI;
+    process.env.PROVIDER_HEALTH_OPENAI = "failed";
+    try {
+      expect(await acceptRunCommand(input)).toEqual({ status: "replayed", runId: threadId });
+    } finally {
+      if (previous === undefined) delete process.env.PROVIDER_HEALTH_OPENAI;
+      else process.env.PROVIDER_HEALTH_OPENAI = previous;
+      await retire(threadId);
+    }
+  });
+
   test("per-thread: strict order + at most one command in flight", async () => {
     const T = crypto.randomUUID();
     await enqueue(T, null); // root A, run id === thread id === T

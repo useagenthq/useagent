@@ -9,11 +9,7 @@ import { cnExt } from "@/utils/cn";
 import { Panel } from "./panel";
 import { formatDuration } from "@/utils/format";
 import type { RunStatus } from "@/lib/runs";
-import {
-  type FleetStats,
-  type LaneGroup,
-  type WorkspaceRun,
-} from "./workspace-data";
+import type { FleetStats, LaneGroup, WorkspaceRun } from "./workspace-data";
 
 /** 12×12 status disc keyed to a run's status. */
 function RunStatusDot({ status }: { status: RunStatus }) {

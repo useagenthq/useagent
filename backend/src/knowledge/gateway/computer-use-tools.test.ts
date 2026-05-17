@@ -69,6 +69,7 @@ describe("computer-use gateway tools", () => {
   test("advertises only explicit OS-level computer actions", () => {
     expect(COMPUTER_USE_TOOLS.map((tool) => tool.name)).toEqual([
       "computer_screenshot",
+      "computer_sequence",
       "computer_click",
       "computer_move",
       "computer_drag",
@@ -107,6 +108,58 @@ describe("computer-use gateway tools", () => {
       "key:ctrl+shift:l",
       "scroll:40:50:down:4",
     ]);
+  });
+
+  test("dispatches a bounded action sequence and can return one private screenshot", async () => {
+    const calls: string[] = [];
+    setComputerUseServiceForTest(testService(calls));
+
+    const response = await executeComputerUseTool(claims, "computer_sequence", {
+      actions: [
+        { action: "click", x: 12, y: 34 },
+        { action: "type", text: "hello", delay_ms: 1 },
+        { action: "key", key: "Enter" },
+        { action: "wait", ms: 0 },
+      ],
+      screenshot: true,
+    });
+
+    expect(response.isError).toBeUndefined();
+    expect(calls).toEqual([
+      "click:12:34:left:false",
+      "type:hello:1",
+      "key::Enter",
+    ]);
+    expect(response.content[0]).toEqual({ type: "image", data: "cG5n", mimeType: "image/png" });
+    expect(response.structuredContent).toEqual({
+      path: "/root/work/screenshots/proof.png",
+      action: "computer_sequence",
+      action_count: 4,
+    });
+  });
+
+  test("rejects invalid action sequences before touching the sandbox", async () => {
+    const calls: string[] = [];
+    setComputerUseServiceForTest(testService(calls));
+
+    const tooMany = await executeComputerUseTool(claims, "computer_sequence", {
+      actions: Array.from({ length: 9 }, () => ({ action: "wait", ms: 0 })),
+    });
+    const unsafeText = await executeComputerUseTool(claims, "computer_sequence", {
+      actions: [{ action: "type", text: "x".repeat(2_001) }],
+    });
+
+    expect(tooMany).toMatchObject({ isError: true });
+    expect(tooMany.content[0]).toEqual({
+      type: "text",
+      text: "actions must contain 1 to 8 items",
+    });
+    expect(unsafeText).toMatchObject({ isError: true });
+    expect(unsafeText.content[0]).toEqual({
+      type: "text",
+      text: "actions[0].text must be a non-empty string no longer than 2000 characters",
+    });
+    expect(calls).toEqual([]);
   });
 
   test("rejects invalid buttons and modifiers before touching the sandbox", async () => {

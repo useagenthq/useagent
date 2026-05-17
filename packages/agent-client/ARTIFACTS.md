@@ -93,11 +93,12 @@ Safe source artifacts can additionally carry a provider-neutral `workpiece`
 descriptor. The immutable `source_version` is the artifact SHA-256. Mutable edits
 advance a separate integer `state_revision`; they never rewrite the original bytes.
 
-The behavior registry recognizes plain text, Markdown, JSON, XML, and CSV by safe
-MIME type or extension and validates exactly one state shape: `{ text }` for a
-document or `{ csv }` for a spreadsheet. The registry is pure schema and behavior;
-tenant state remains in the artifact row and all reads and writes stay behind the
-existing organization authorization boundary.
+The behavior registry recognizes plain text, Markdown, JSON, XML, CSV, and
+bounded DOCX/XLSX companion workpieces by safe MIME type or extension. It
+validates exactly one state shape per write: `{ text }` or sanitized `{ html }`
+for a document, or `{ csv }` for a spreadsheet. The registry is pure schema and
+behavior; tenant state remains in the artifact row and all reads and writes stay
+behind the existing organization authorization boundary.
 
 `createAgentClient` exposes:
 
@@ -105,9 +106,11 @@ existing organization authorization boundary.
 - `updateArtifactWorkpiece(artifactId, { expectedRevision, state })`
 
 Writes use optimistic concurrency. A stale revision returns the latest durable
-workpiece and state so the UI can surface the conflict without overwriting another
-editor. Active HTML, SVG, DOCX, XLSX, and other binary formats do not receive an
-editor contract and retain their safe preview or download path.
+workpiece and state so the UI can surface the conflict without overwriting
+another editor. Active HTML, SVG, over-limit Office files, and other binary
+formats do not receive an editor contract and retain their safe preview or
+download path. DOCX/XLSX workpiece edits are explicit browser companion exports;
+they never rewrite the original Office bytes.
 
 ## Verification
 

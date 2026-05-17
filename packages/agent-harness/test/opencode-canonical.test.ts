@@ -135,6 +135,249 @@ describe("child derivation equivalence (synthetic task frames)", () => {
   });
 });
 
+describe("T3 activity fidelity", () => {
+  const t3Frame = (
+    eventId: string,
+    seq: number,
+    eventType: string,
+    payload: unknown,
+    callId: string | null = null,
+  ): OpenCodeFrame => ({
+    eventId,
+    seq,
+    provider: "t3",
+    eventType,
+    native: { sessionId: "ses_t3", parentSessionId: null, messageId: null, partId: null, callId },
+    payload,
+  });
+
+  test("maps T3 tool lifecycle to named tool events with bounded detail and no raw argument exposure", () => {
+    const result = translateOpenCode([
+      t3Frame("tool-start", 1, "t3.activity.tool.started", {
+        id: "act_tool_start",
+        kind: "tool.started",
+        summary: "Fetch quote",
+        payload: {
+          toolUseId: "tool_1",
+          toolName: "webfetch",
+          data: { item: { arguments: { url: "https://finance.example/private" } } },
+        },
+      }),
+      t3Frame("tool-progress", 2, "t3.activity.tool.progress", {
+        id: "act_tool_progress",
+        kind: "tool.progress",
+        detail: "Opening finance source",
+        payload: { toolUseId: "tool_1", toolName: "webfetch" },
+      }),
+      t3Frame("tool-done", 3, "t3.activity.tool.completed", {
+        id: "act_tool_done",
+        kind: "tool.completed",
+        summary: "Fetched current quote",
+        payload: { toolUseId: "tool_1", toolName: "webfetch", typedUsage: { durationMs: 1234 } },
+      }),
+    ], CTX);
+
+    expect(result.events.map((event) => event.kind)).toEqual(["tool.started", "tool.progress", "tool.completed"]);
+    expect(result.events[0]).toMatchObject({ kind: "tool.started", toolCallId: "tool_1", name: "webfetch", title: "Fetch quote" });
+    expect(result.events[0]).not.toHaveProperty("input");
+    expect(result.events[1]).toMatchObject({ kind: "tool.progress", toolCallId: "tool_1", preview: "Opening finance source" });
+    expect(result.events[2]).toMatchObject({ kind: "tool.completed", toolCallId: "tool_1", status: "ok", preview: "Fetched current quote (1234ms)" });
+  });
+
+  test("creates synthetic start for terminal-only T3 tool frames so selectors keep the tool name", () => {
+    const result = translateOpenCode([
+      t3Frame("tool-done", 1, "t3.activity.tool.completed", {
+        id: "act_tool_done",
+        kind: "tool.completed",
+        summary: "Fetched current quote",
+        payload: { toolUseId: "tool_1", toolName: "webfetch" },
+      }),
+    ], CTX);
+
+    expect(result.events.map((event) => event.kind)).toEqual(["tool.started", "tool.completed"]);
+    expect(result.events[0]).toMatchObject({ kind: "tool.started", toolCallId: "tool_1", name: "webfetch" });
+    expect(result.accounting[0]?.produced).toEqual(["tool.started", "tool.completed"]);
+  });
+
+  test("maps T3 agent task lifecycle to child events with stable task identity", () => {
+    const result = translateOpenCode([
+      t3Frame("task-start", 1, "t3.activity.task.started", {
+        id: "act_task_start",
+        kind: "task.started",
+        summary: "Start price researcher",
+        payload: { taskId: "task_1", agentKind: "agent", title: "Price researcher" },
+      }),
+      t3Frame("task-progress", 2, "t3.activity.task.progress", {
+        id: "act_task_progress",
+        kind: "task.progress",
+        summary: "Checking Yahoo Finance",
+        payload: { taskId: "task_1", agentKind: "agent", status: "running" },
+      }),
+      t3Frame("task-complete", 3, "t3.activity.task.completed", {
+        id: "act_task_complete",
+        kind: "task.completed",
+        summary: "NVIDIA quote found",
+        payload: { taskId: "task_1", agentKind: "agent" },
+      }),
+    ], CTX);
+
+    expect(result.events.map((event) => event.kind)).toEqual(["child.started", "child.updated", "child.completed"]);
+    expect(result.events[0]).toMatchObject({ kind: "child.started", childId: "task_1", title: "Price researcher" });
+    expect(result.events[1]).toMatchObject({ kind: "child.updated", childId: "task_1", status: "Checking Yahoo Finance" });
+    expect(result.events[2]).toMatchObject({ kind: "child.completed", childId: "task_1", status: "ok", result: "NVIDIA quote found" });
+  });
+
+  test("suppresses agent tasks that lack a provider child identity", () => {
+    const result = translateOpenCode([
+      t3Frame("task-start-missing-id", 1, "t3.activity.task.started", {
+        id: "presentation-only-activity-id",
+        kind: "task.started",
+        summary: "Start price researcher",
+        payload: { agentKind: "agent", title: "Price researcher" },
+      }),
+    ], CTX);
+
+    expect(result.events).toEqual([]);
+    expect(result.accounting[0]).toMatchObject({
+      produced: [],
+      suppressed: "t3 agent task without provider child identity",
+    });
+  });
+
+  test("suppresses context-window diagnostics and duplicate collaboration wrappers explicitly", () => {
+    const result = translateOpenCode([
+      t3Frame("ctx", 1, "t3.activity.context-window.updated", {
+        id: "ctx",
+        kind: "context-window.updated",
+        payload: { tokenCount: 12345 },
+      }),
+      t3Frame("task-start", 2, "t3.activity.task.started", {
+        id: "act_task_start",
+        kind: "task.started",
+        payload: { taskId: "task_1", toolUseId: "tool_wrap_1", agentKind: "agent", title: "Researcher" },
+      }),
+      t3Frame("wrapper-start", 3, "t3.activity.tool.started", {
+        id: "act_wrapper_start",
+        kind: "tool.started",
+        payload: { toolUseId: "tool_wrap_1", itemType: "collab_agent_tool_call", toolName: "subagent" },
+      }),
+    ], CTX);
+
+    expect(result.events.map((event) => event.kind)).toEqual(["child.started"]);
+    expect(result.accounting[0]).toMatchObject({ produced: [], suppressed: "t3 context-window diagnostic (not a timeline node)" });
+    expect(result.accounting[2]).toMatchObject({ produced: [], suppressed: "duplicate t3 collaboration wrapper (task lifecycle is authoritative)" });
+  });
+
+  test("keeps standalone collaboration wrappers as child lifecycle events", () => {
+    const result = translateOpenCode([
+      t3Frame("wrapper-start", 1, "t3.activity.tool.started", {
+        id: "act_wrapper_start",
+        kind: "tool.started",
+        summary: "Price researcher",
+        payload: {
+          toolUseId: "tool_wrap_2",
+          childSessionId: "child_2",
+          itemType: "collab_agent_tool_call",
+          toolName: "subagent",
+        },
+      }),
+      t3Frame("wrapper-progress", 2, "t3.activity.tool.progress", {
+        id: "act_wrapper_progress",
+        kind: "tool.progress",
+        summary: "Checking the quote",
+        payload: {
+          toolUseId: "tool_wrap_2",
+          childSessionId: "child_2",
+          itemType: "collab_agent_tool_call",
+        },
+      }),
+      t3Frame("wrapper-done", 3, "t3.activity.tool.completed", {
+        id: "act_wrapper_done",
+        kind: "tool.completed",
+        summary: "Quote found",
+        payload: {
+          toolUseId: "tool_wrap_2",
+          childSessionId: "child_2",
+          itemType: "collab_agent_tool_call",
+        },
+      }),
+    ], CTX);
+
+    expect(result.events.map((event) => event.kind)).toEqual([
+      "child.started",
+      "child.updated",
+      "child.completed",
+    ]);
+    expect(result.events[0]).toMatchObject({
+      kind: "child.started",
+      childId: "child_2",
+      title: "Price researcher",
+    });
+    expect(result.events[2]).toMatchObject({
+      kind: "child.completed",
+      childId: "child_2",
+      status: "ok",
+      result: "Quote found",
+    });
+  });
+
+  test("does not invent child identity from a standalone collaboration tool call", () => {
+    const result = translateOpenCode([
+      t3Frame("wrapper-only", 1, "t3.activity.tool.started", {
+        id: "activity-only",
+        kind: "tool.started",
+        summary: "Price researcher",
+        payload: {
+          toolUseId: "tool-call-only",
+          itemType: "collab_agent_tool_call",
+          toolName: "subagent",
+        },
+      }),
+    ], CTX);
+
+    expect(result.events).toHaveLength(1);
+    expect(result.events[0]).toMatchObject({
+      kind: "tool.started",
+      toolCallId: "tool-call-only",
+      name: "subagent",
+    });
+    expect(result.events[0]?.kind).not.toBe("child.started");
+  });
+
+  test("names T3 durable step replay events before completion", () => {
+    const steps: OpenCodeStep[] = [{
+      id: "step_t3_tool",
+      idx: 0,
+      kind: "command",
+      label: "Fetch quote",
+      chip: "webfetch",
+      code_json: JSON.stringify({
+        source: "t3",
+        tool: "webfetch",
+        output: "Fetched current quote",
+        native: { callID: "tool_1", sessionID: "ses_t3" },
+      }),
+    }];
+
+    const result = translateOpenCode([], { ...CTX, engine: "codex" }, steps);
+    expect(result.events.map((event) => event.kind)).toEqual(["tool.started", "tool.completed"]);
+    expect(result.events[0]).toMatchObject({
+      kind: "tool.started",
+      toolCallId: "tool_1",
+      name: "webfetch",
+      title: "Fetch quote",
+      identity: { provider: "codex", nativeSessionId: "ses_t3" },
+    });
+    expect(result.events[1]).toMatchObject({
+      kind: "tool.completed",
+      toolCallId: "tool_1",
+      preview: "Fetched current quote",
+      identity: { provider: "codex", nativeSessionId: "ses_t3" },
+    });
+    expect(result.accounting[0]?.produced).toEqual(["tool.started", "tool.completed"]);
+  });
+});
+
 describe("native question translation", () => {
   const questionFrames: OpenCodeFrame[] = [
     {

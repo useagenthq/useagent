@@ -40,6 +40,17 @@ for (const k of [
 
 process.env.WORKER_STEP_DELAY_MS = process.env.WORKER_STEP_DELAY_MS ?? "5";
 
+// Unit fixtures intentionally exercise every provider lane without making paid
+// calls. Mark those synthetic lanes as proven so the same centralized
+// acceptance gate used in production remains active during tests.
+process.env.ENABLED_ENGINES = "opencode,claude,codex";
+for (const engine of ["OPENCODE", "CLAUDE", "CODEX"] as const) {
+  process.env[`ENGINE_READINESS_${engine}`] = "verified";
+}
+for (const provider of ["ANTHROPIC", "OPENAI", "OPENROUTER"] as const) {
+  process.env[`PROVIDER_HEALTH_${provider}`] = "verified";
+}
+
 process.env.SLACK_BOT_TOKEN = process.env.SLACK_BOT_TOKEN ?? "xoxb-test-token";
 process.env.SLACK_SIGNING_SECRET =
   process.env.SLACK_SIGNING_SECRET ?? "test-signing-secret";

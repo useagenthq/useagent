@@ -28,6 +28,11 @@ bun run dev:frontend    # http://localhost:3400
 
 # typecheck both
 bun run typecheck
+
+# complete hosted release gate: 26 hard journeys, evidence-backed readiness,
+# malware rejection, wiki retrieval, workpieces, noVNC, and focus isolation
+# (requires the SSH key, authenticated cookie, and canary org/user identifiers)
+bun run release:hosted
 ```
 
 Backend needs Postgres and its `.env` (see `backend/`); it runs the idempotent boot
@@ -48,3 +53,16 @@ migrator on start. Runtime is **bun** everywhere — do not use npm on this mach
 The previous monorepo — Daytona per-session sandboxes, OpenCode driven as an iframe, and
 a Slack control-plane — lives in git history before branch `rebuild/skynet-a`. It is
 superseded; do not resurrect the iframe or the in-sandbox harness.
+
+## Current release evidence
+
+The progress folders are historical logs. Treat dated claims as point-in-time
+evidence, not as a live status page. Current hosted releases should use
+`bun run release:hosted`. It first proves every Codex and OpenCode hard journey
+without advertising the candidates, promotes only readiness justified by that
+evidence, reruns the matrix through the authenticated public API, and verifies
+live malware rejection, repo-wiki retrieval, upload-to-workpiece handling,
+noVNC, and composer focus isolation. A failure after promotion restores the
+exact pre-release source tree, previous readiness environment, and all application
+services automatically. The deploy wrapper refuses tracked local changes so the
+hosted source can always be traced to the recorded `.release-commit`.

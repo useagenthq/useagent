@@ -9,6 +9,7 @@ import {
   getOwnedUpload,
   toUserUploadDescriptor,
 } from "./repo";
+import { scanUploadBytes, UploadScanError } from "./scan";
 
 export const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
 const MAX_UPLOADS_OVERHEAD = 1024 * 1024;
@@ -60,18 +61,34 @@ uploadRoutes.post("/", async (c) => {
   if (value.size > MAX_UPLOAD_BYTES) return c.json({ error: "file exceeds 25 MB limit" }, 413);
 
   const bytes = new Uint8Array(await value.arrayBuffer());
+  const contentType = trustedContentType(name, value.type);
+  try {
+    await scanUploadBytes({ name, contentType, bytes });
+  } catch (error) {
+    if (error instanceof UploadScanError) {
+      return c.json({ error: error.code }, 422);
+    }
+    throw error;
+  }
   const sha256 = new Bun.CryptoHasher("sha256").update(bytes).digest("hex");
-  await artifactStorage().put(sha256, bytes);
   const row = await createUserUpload({
     orgId: c.get("orgId"),
     userId,
     name,
-    contentType: trustedContentType(name, value.type),
+    contentType,
     sizeBytes: bytes.byteLength,
     sha256,
     storageKey: sha256,
     expiresAt: new Date(Date.now() + UPLOAD_TTL_MS),
   });
+  try {
+    // The metadata reference must exist before byte publication so concurrent
+    // orphan reclamation retains this digest. Roll it back if storage fails.
+    await artifactStorage().put(sha256, bytes);
+  } catch (error) {
+    await deleteReadyUpload(c.get("orgId"), userId, row.id);
+    throw error;
+  }
   return c.json({ upload: toUserUploadDescriptor(row) }, 201);
 });
 

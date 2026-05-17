@@ -19,6 +19,15 @@ interface ComputerToolResult {
 
 type Button = "left" | "middle" | "right";
 type Direction = "up" | "down";
+type ComputerSequenceAction =
+  | { readonly action: "click"; readonly x: number; readonly y: number; readonly button: Button; readonly double: boolean }
+  | { readonly action: "move"; readonly x: number; readonly y: number }
+  | { readonly action: "drag"; readonly startX: number; readonly startY: number; readonly endX: number; readonly endY: number }
+  | { readonly action: "type"; readonly text: string; readonly delayMs: number }
+  | { readonly action: "key"; readonly key: string; readonly modifiers: readonly string[] }
+  | { readonly action: "hotkey"; readonly keys: string }
+  | { readonly action: "scroll"; readonly x: number; readonly y: number; readonly direction: Direction; readonly amount: number }
+  | { readonly action: "wait"; readonly ms: number };
 
 interface ComputerUseService {
   screenshot(claims: ToolTokenClaims): Promise<ComputerToolResult>;
@@ -37,6 +46,9 @@ const MAX_TEXT_LENGTH = 20_000;
 const KEY_RE = /^[A-Za-z0-9_+ -]{1,80}$/;
 const BUTTONS = new Set<Button>(["left", "middle", "right"]);
 const MODIFIERS = new Set(["ctrl", "alt", "shift", "cmd"]);
+const MAX_SEQUENCE_ACTIONS = 8;
+const MAX_SEQUENCE_TEXT_LENGTH = 2_000;
+const MAX_SEQUENCE_WAIT_MS = 5_000;
 
 function result(text: string, structuredContent?: Record<string, unknown>): ComputerToolResult {
   return {
@@ -114,12 +126,126 @@ function buttonName(value: unknown): Button {
   return button as Button;
 }
 
+function scrollDirection(value: unknown, name: string): Direction {
+  if (value === "up" || value === "down") return value;
+  throw new Error(`${name} must be up or down`);
+}
+
 function modifiers(value: unknown): string[] {
   if (value === undefined) return [];
   if (!Array.isArray(value) || value.some((modifier) => typeof modifier !== "string" || !MODIFIERS.has(modifier))) {
     throw new Error("modifiers must contain only ctrl, alt, shift, or cmd");
   }
   return value;
+}
+
+function record(value: unknown, name: string): Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error(`${name} must be an object`);
+  }
+  return value as Record<string, unknown>;
+}
+
+function parseSequenceAction(value: unknown, index: number): ComputerSequenceAction {
+  const action = record(value, `actions[${index}]`);
+  const kind = action.action;
+  if (typeof kind !== "string") throw new Error(`actions[${index}].action must be a string`);
+  switch (kind) {
+    case "click":
+      return {
+        action: "click",
+        x: integer(action.x, `actions[${index}].x`),
+        y: integer(action.y, `actions[${index}].y`),
+        button: buttonName(action.button),
+        double: action.double === true,
+      };
+    case "move":
+      return {
+        action: "move",
+        x: integer(action.x, `actions[${index}].x`),
+        y: integer(action.y, `actions[${index}].y`),
+      };
+    case "drag":
+      return {
+        action: "drag",
+        startX: integer(action.start_x, `actions[${index}].start_x`),
+        startY: integer(action.start_y, `actions[${index}].start_y`),
+        endX: integer(action.end_x, `actions[${index}].end_x`),
+        endY: integer(action.end_y, `actions[${index}].end_y`),
+      };
+    case "type":
+      return {
+        action: "type",
+        text: string(action.text, `actions[${index}].text`, MAX_SEQUENCE_TEXT_LENGTH),
+        delayMs: integer(action.delay_ms ?? 10, `actions[${index}].delay_ms`, 0, 1000),
+      };
+    case "key":
+      return {
+        action: "key",
+        key: keyName(action.key, `actions[${index}].key`),
+        modifiers: modifiers(action.modifiers),
+      };
+    case "hotkey":
+      return {
+        action: "hotkey",
+        keys: keyName(action.keys, `actions[${index}].keys`),
+      };
+    case "scroll": {
+      return {
+        action: "scroll",
+        x: integer(action.x, `actions[${index}].x`),
+        y: integer(action.y, `actions[${index}].y`),
+        direction: scrollDirection(action.direction, `actions[${index}].direction`),
+        amount: integer(action.amount ?? 3, `actions[${index}].amount`, 1, 100),
+      };
+    }
+    case "wait":
+      return {
+        action: "wait",
+        ms: integer(action.ms ?? 250, `actions[${index}].ms`, 0, MAX_SEQUENCE_WAIT_MS),
+      };
+    default:
+      throw new Error(`actions[${index}].action must be one of click, move, drag, type, key, hotkey, scroll, wait`);
+  }
+}
+
+function sequenceActions(value: unknown): ComputerSequenceAction[] {
+  if (!Array.isArray(value) || value.length === 0 || value.length > MAX_SEQUENCE_ACTIONS) {
+    throw new Error(`actions must contain 1 to ${MAX_SEQUENCE_ACTIONS} items`);
+  }
+  return value.map(parseSequenceAction);
+}
+
+async function executeSequenceAction(
+  service: ComputerUseService,
+  claims: ToolTokenClaims,
+  action: ComputerSequenceAction,
+): Promise<void> {
+  switch (action.action) {
+    case "click":
+      await service.click(claims, action.x, action.y, action.button, action.double);
+      return;
+    case "move":
+      await service.move(claims, action.x, action.y);
+      return;
+    case "drag":
+      await service.drag(claims, action.startX, action.startY, action.endX, action.endY);
+      return;
+    case "type":
+      await service.type(claims, action.text, action.delayMs);
+      return;
+    case "key":
+      await service.key(claims, action.key, [...action.modifiers]);
+      return;
+    case "hotkey":
+      await service.hotkey(claims, action.keys);
+      return;
+    case "scroll":
+      await service.scroll(claims, action.x, action.y, action.direction, action.amount);
+      return;
+    case "wait":
+      await Bun.sleep(action.ms);
+  }
 }
 
 async function computerSandbox(claims: ToolTokenClaims): Promise<SandboxHandle> {
@@ -156,7 +282,14 @@ async function cubeCommand(sandbox: SandboxHandle, command: string): Promise<str
 }
 
 function buttonNumber(button: Button): number {
-  return button === "left" ? 1 : button === "middle" ? 2 : 3;
+  switch (button) {
+    case "left":
+      return 1;
+    case "middle":
+      return 2;
+    case "right":
+      return 3;
+  }
 }
 
 async function screenshot(claims: ToolTokenClaims): Promise<ComputerToolResult> {
@@ -250,14 +383,154 @@ export function setComputerUseServiceForTest(service: ComputerUseService | null)
 }
 
 export const COMPUTER_USE_TOOLS = [
-  { name: "computer_screenshot", description: "Capture the current full desktop for model inspection without publishing a user-facing artifact. Always inspect this before and after coordinate actions. Use artifact_publish only when the user requests the screenshot file.", inputSchema: { type: "object", properties: {}, additionalProperties: false } },
-  { name: "computer_click", description: "Click an absolute desktop coordinate.", inputSchema: { type: "object", properties: { x: { type: "integer" }, y: { type: "integer" }, button: { type: "string", enum: ["left", "middle", "right"] }, double: { type: "boolean" } }, required: ["x", "y"], additionalProperties: false } },
-  { name: "computer_move", description: "Move the desktop pointer to an absolute coordinate.", inputSchema: { type: "object", properties: { x: { type: "integer" }, y: { type: "integer" } }, required: ["x", "y"], additionalProperties: false } },
-  { name: "computer_drag", description: "Drag with the left mouse button between absolute desktop coordinates.", inputSchema: { type: "object", properties: { start_x: { type: "integer" }, start_y: { type: "integer" }, end_x: { type: "integer" }, end_y: { type: "integer" } }, required: ["start_x", "start_y", "end_x", "end_y"], additionalProperties: false } },
-  { name: "computer_type", description: "Type text into the currently focused desktop application.", inputSchema: { type: "object", properties: { text: { type: "string" }, delay_ms: { type: "integer", minimum: 0, maximum: 1000 } }, required: ["text"], additionalProperties: false } },
-  { name: "computer_key", description: "Press one desktop key with optional modifiers.", inputSchema: { type: "object", properties: { key: { type: "string" }, modifiers: { type: "array", items: { type: "string", enum: ["ctrl", "alt", "shift", "cmd"] } } }, required: ["key"], additionalProperties: false } },
-  { name: "computer_hotkey", description: "Press one atomic desktop hotkey chord such as ctrl+l or alt+tab.", inputSchema: { type: "object", properties: { keys: { type: "string" } }, required: ["keys"], additionalProperties: false } },
-  { name: "computer_scroll", description: "Scroll at an absolute desktop coordinate.", inputSchema: { type: "object", properties: { x: { type: "integer" }, y: { type: "integer" }, direction: { type: "string", enum: ["up", "down"] }, amount: { type: "integer", minimum: 1, maximum: 100 } }, required: ["x", "y", "direction"], additionalProperties: false } },
+  {
+    name: "computer_screenshot",
+    description:
+      "Capture the current full desktop for model inspection without publishing a user-facing artifact. Always inspect this before and after coordinate actions. Use artifact_publish only when the user requests the screenshot file.",
+    inputSchema: { type: "object", properties: {}, additionalProperties: false },
+  },
+  {
+    name: "computer_sequence",
+    description:
+      "Run 1-8 OS-level desktop actions in order, then optionally return one private post-sequence screenshot for inspection. Use for short low-level action batches that do not need intermediate visual feedback. Actions support click, move, drag, type, key, hotkey, scroll, and wait.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        actions: {
+          type: "array",
+          minItems: 1,
+          maxItems: MAX_SEQUENCE_ACTIONS,
+          items: {
+            type: "object",
+            properties: {
+              action: {
+                type: "string",
+                enum: ["click", "move", "drag", "type", "key", "hotkey", "scroll", "wait"],
+              },
+              x: { type: "integer" },
+              y: { type: "integer" },
+              start_x: { type: "integer" },
+              start_y: { type: "integer" },
+              end_x: { type: "integer" },
+              end_y: { type: "integer" },
+              button: { type: "string", enum: ["left", "middle", "right"] },
+              double: { type: "boolean" },
+              text: { type: "string" },
+              delay_ms: { type: "integer", minimum: 0, maximum: 1000 },
+              key: { type: "string" },
+              keys: { type: "string" },
+              modifiers: {
+                type: "array",
+                items: { type: "string", enum: ["ctrl", "alt", "shift", "cmd"] },
+              },
+              direction: { type: "string", enum: ["up", "down"] },
+              amount: { type: "integer", minimum: 1, maximum: 100 },
+              ms: { type: "integer", minimum: 0, maximum: MAX_SEQUENCE_WAIT_MS },
+            },
+            required: ["action"],
+            additionalProperties: false,
+          },
+        },
+        screenshot: { type: "boolean" },
+      },
+      required: ["actions"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "computer_click",
+    description: "Click an absolute desktop coordinate.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        x: { type: "integer" },
+        y: { type: "integer" },
+        button: { type: "string", enum: ["left", "middle", "right"] },
+        double: { type: "boolean" },
+      },
+      required: ["x", "y"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "computer_move",
+    description: "Move the desktop pointer to an absolute coordinate.",
+    inputSchema: {
+      type: "object",
+      properties: { x: { type: "integer" }, y: { type: "integer" } },
+      required: ["x", "y"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "computer_drag",
+    description: "Drag with the left mouse button between absolute desktop coordinates.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        start_x: { type: "integer" },
+        start_y: { type: "integer" },
+        end_x: { type: "integer" },
+        end_y: { type: "integer" },
+      },
+      required: ["start_x", "start_y", "end_x", "end_y"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "computer_type",
+    description: "Type text into the currently focused desktop application.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        text: { type: "string" },
+        delay_ms: { type: "integer", minimum: 0, maximum: 1000 },
+      },
+      required: ["text"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "computer_key",
+    description: "Press one desktop key with optional modifiers.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        key: { type: "string" },
+        modifiers: {
+          type: "array",
+          items: { type: "string", enum: ["ctrl", "alt", "shift", "cmd"] },
+        },
+      },
+      required: ["key"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "computer_hotkey",
+    description: "Press one atomic desktop hotkey chord such as ctrl+l or alt+tab.",
+    inputSchema: {
+      type: "object",
+      properties: { keys: { type: "string" } },
+      required: ["keys"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "computer_scroll",
+    description: "Scroll at an absolute desktop coordinate.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        x: { type: "integer" },
+        y: { type: "integer" },
+        direction: { type: "string", enum: ["up", "down"] },
+        amount: { type: "integer", minimum: 1, maximum: 100 },
+      },
+      required: ["x", "y", "direction"],
+      additionalProperties: false,
+    },
+  },
 ] as const;
 
 export const COMPUTER_USE_TOOL_NAMES: ReadonlySet<string> = new Set(COMPUTER_USE_TOOLS.map((tool) => tool.name));
@@ -270,24 +543,54 @@ export async function executeComputerUseTool(
   const service = serviceOverride ?? productionService;
   try {
     if (name === "computer_screenshot") return await service.screenshot(claims);
-    if (name === "computer_click") {
-      await service.click(claims, integer(args.x, "x"), integer(args.y, "y"), buttonName(args.button), args.double === true);
-    } else if (name === "computer_move") {
-      await service.move(claims, integer(args.x, "x"), integer(args.y, "y"));
-    } else if (name === "computer_drag") {
-      await service.drag(claims, integer(args.start_x, "start_x"), integer(args.start_y, "start_y"), integer(args.end_x, "end_x"), integer(args.end_y, "end_y"));
-    } else if (name === "computer_type") {
-      await service.type(claims, string(args.text, "text"), integer(args.delay_ms ?? 10, "delay_ms", 0, 1000));
-    } else if (name === "computer_key") {
-      await service.key(claims, keyName(args.key), modifiers(args.modifiers));
-    } else if (name === "computer_hotkey") {
-      await service.hotkey(claims, keyName(args.keys, "keys"));
-    } else if (name === "computer_scroll") {
-      const direction = args.direction === "up" ? "up" : args.direction === "down" ? "down" : null;
-      if (!direction) throw new Error("direction must be up or down");
-      await service.scroll(claims, integer(args.x, "x"), integer(args.y, "y"), direction, integer(args.amount ?? 3, "amount", 1, 100));
-    } else {
-      return failure(`Unknown tool: ${name}`);
+    if (name === "computer_sequence") {
+      const actions = sequenceActions(args.actions);
+      for (const action of actions) {
+        await executeSequenceAction(service, claims, action);
+      }
+      if (args.screenshot === true) {
+        const captured = await service.screenshot(claims);
+        return {
+          ...captured,
+          structuredContent: {
+            ...(captured.structuredContent ?? {}),
+            action: name,
+            action_count: actions.length,
+          },
+        };
+      }
+      return result(`${name} completed`, { action: name, action_count: actions.length });
+    }
+    switch (name) {
+      case "computer_click":
+        await service.click(claims, integer(args.x, "x"), integer(args.y, "y"), buttonName(args.button), args.double === true);
+        break;
+      case "computer_move":
+        await service.move(claims, integer(args.x, "x"), integer(args.y, "y"));
+        break;
+      case "computer_drag":
+        await service.drag(claims, integer(args.start_x, "start_x"), integer(args.start_y, "start_y"), integer(args.end_x, "end_x"), integer(args.end_y, "end_y"));
+        break;
+      case "computer_type":
+        await service.type(claims, string(args.text, "text"), integer(args.delay_ms ?? 10, "delay_ms", 0, 1000));
+        break;
+      case "computer_key":
+        await service.key(claims, keyName(args.key), modifiers(args.modifiers));
+        break;
+      case "computer_hotkey":
+        await service.hotkey(claims, keyName(args.keys, "keys"));
+        break;
+      case "computer_scroll":
+        await service.scroll(
+          claims,
+          integer(args.x, "x"),
+          integer(args.y, "y"),
+          scrollDirection(args.direction, "direction"),
+          integer(args.amount ?? 3, "amount", 1, 100),
+        );
+        break;
+      default:
+        return failure(`Unknown tool: ${name}`);
     }
     return result(`${name} completed`, { action: name });
   } catch (error) {

@@ -269,7 +269,7 @@ describe("T3 orchestration projection", () => {
       turnId: "turn",
     })).toMatchObject({
       kind: "task",
-      label: "Tool",
+      label: "google price",
       chip: "subagent",
       code_json: {
         tool: "subagent",

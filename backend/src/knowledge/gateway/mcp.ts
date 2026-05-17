@@ -40,6 +40,11 @@ import { resolveToolRunIdentity } from "./run-authorization";
 import { verifyToolToken, type ToolTokenClaims } from "./token";
 import { executeSkillTool, SKILL_TOOLS, SKILL_TOOL_NAMES } from "./skill-tools";
 import { executeGcsTool, GCS_TOOLS, GCS_TOOL_NAMES } from "./gcs-tools";
+import {
+  AUTOMATION_TOOLS,
+  AUTOMATION_TOOL_NAMES,
+  executeAutomationTool,
+} from "./automation-tools";
 
 // ---------------------------------------------------------------------------
 // Trusted capability MCP gateway (mem_op.md 0.2 / new_prompt.md "Trusted Tool
@@ -117,7 +122,7 @@ export async function handleMcpMessage(
           "and available to the browser. Desktop recording: desktop_recording_start " +
           "starts an FFmpeg H.264 capture after desktop readiness; desktop_recording_stop " +
           "validates and publishes it with working preview/download links. " +
-          "Computer use: computer_screenshot plus computer_click / computer_move / computer_drag / " +
+          "Computer use: computer_screenshot, computer_sequence, plus computer_click / computer_move / computer_drag / " +
           "computer_type / computer_key / computer_hotkey / computer_scroll drive the visible desktop " +
           "through Daytona's native API or Cube's OS-level X11 controls. " +
           "GitHub repositories: github_repositories resolves organization repo aliases and " +
@@ -125,6 +130,10 @@ export async function handleMcpMessage(
           "the current sandbox without exposing GitHub credentials. " +
           "Google Cloud Storage: gcs_list_buckets lists workspace bucket names read-only " +
           "without exposing the service-account credential to the sandbox. " +
+          "Automations: automation_list / automation_create / automation_update / " +
+          "automation_run_now / automation_history / automation_delete manage Skynet " +
+          "scheduled automations in this organization; new automations are disabled by " +
+          "default and enabling one requires an explicit user request. " +
           "Skills and playbooks: skills_list exposes the org catalog and skill_activate " +
           "loads the semantically appropriate immutable procedure for the active turn. " +
           "Loop login (when configured and pinned to login-as): loop_login_open creates, verifies, " +
@@ -154,6 +163,7 @@ export async function handleMcpMessage(
         ...COMPUTER_USE_TOOLS,
         ...REPOSITORY_TOOLS,
         ...GCS_TOOLS,
+        ...AUTOMATION_TOOLS,
         ...SKILL_TOOLS,
         ...(loopLoginConfigured() ? LOOP_LOGIN_TOOLS : []),
       ];
@@ -186,6 +196,9 @@ export async function handleMcpMessage(
       }
       if (GCS_TOOL_NAMES.has(name)) {
         return ok(msg.id, await executeGcsTool(claims, name, args));
+      }
+      if (AUTOMATION_TOOL_NAMES.has(name)) {
+        return ok(msg.id, await executeAutomationTool(claims, name, args));
       }
       if (SKILL_TOOL_NAMES.has(name)) {
         return ok(msg.id, await executeSkillTool(claims, name, args));
