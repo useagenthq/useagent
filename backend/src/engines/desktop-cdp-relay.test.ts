@@ -11,9 +11,9 @@ describe("authenticated desktop CDP relay", () => {
   test("limits the provider-facing surface and keeps raw CDP on loopback", () => {
     const source = desktopCdpRelaySource();
 
-    expect(() => new Bun.Transpiler({ loader: "ts" }).transformSync(source)).not.toThrow();
-    expect(source).toContain('hostname: "0.0.0.0"');
-    expect(source).toContain('url.hostname = "127.0.0.1"');
+    expect(() => new Bun.Transpiler({ loader: "js" }).transformSync(source)).not.toThrow();
+    expect(source).toContain('server.listen(PORT, "0.0.0.0")');
+    expect(source).toContain('connect(9222, "127.0.0.1"');
     expect(source).toContain('path.startsWith("/devtools/page/")');
     expect(source).toContain('["/json/list", "/json/version"]');
     expect(source).toContain("timingSafeEqual");
@@ -46,6 +46,7 @@ describe("authenticated desktop CDP relay", () => {
 
     expect(token).toMatch(/^[a-f0-9]{64}$/);
     expect(files.get("/home/daytona/.skynet/cdp-relay.token")?.toString()).toBe(`${token}\n`);
+    expect(files.has("/home/daytona/.skynet/cdp-relay.mjs")).toBe(true);
     expect(commands.join("\n")).not.toContain(token);
     await expect(desktopCdpRelayToken(sandbox)).resolves.toBe(token);
   });

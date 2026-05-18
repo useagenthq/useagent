@@ -9,7 +9,7 @@ export const DESKTOP_PORT = 6080;
 export const DESKTOP_REQUIRED_BINARIES = [
   "Xvfb",
   "dbus-launch",
-  "bun",
+  "node",
   "pgrep",
   "startxfce4",
   "thunar",
@@ -82,7 +82,7 @@ export function buildDesktopLaunchCommand(): string {
     ") &",
     `for i in $(seq 1 80); do curl -fsS -m 1 -o /dev/null ${BROWSER_CDP_ENDPOINT}/json/version && break; sleep 0.25; done`,
     `curl -fsS -m 3 -o /dev/null ${BROWSER_CDP_ENDPOINT}/json/version`,
-    'bun "$HOME/.skynet/cdp-relay.ts" >>"$HOME/.skynet/cdp-relay.log" 2>&1 &',
+    'node "$HOME/.skynet/cdp-relay.mjs" >>"$HOME/.skynet/cdp-relay.log" 2>&1 &',
     `for i in $(seq 1 40); do ${desktopCdpRelayProbeCommand()} && break; sleep 0.25; done`,
     desktopCdpRelayProbeCommand(),
     'x11vnc -display :1 -localhost -nopw -forever -shared -rfbport 5900 >"$HOME/.skynet/x11vnc.log" 2>&1 &',

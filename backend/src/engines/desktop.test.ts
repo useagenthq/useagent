@@ -35,7 +35,7 @@ describe("shared sandbox desktop", () => {
     expect(command).toContain("--restore-last-session");
     expect(command).toContain("--remote-debugging-pipe");
     expect(command).toContain("http://127.0.0.1:9222/json/version");
-    expect(command).toContain('bun "$HOME/.skynet/cdp-relay.ts"');
+    expect(command).toContain('node "$HOME/.skynet/cdp-relay.mjs"');
     expect(command).toContain("--disable-gpu");
     expect(command).toContain("while true; do");
     expect(command).toContain('>>"$HOME/.skynet/chrome.log" 2>&1 || true');
@@ -64,7 +64,7 @@ describe("shared sandbox desktop", () => {
       expect(command).toContain(`pgrep -x ${process}`);
     }
     expect(DESKTOP_REQUIRED_BINARIES).toContain("xdotool");
-    expect(DESKTOP_REQUIRED_BINARIES).toContain("bun");
+    expect(DESKTOP_REQUIRED_BINARIES).toContain("node");
     expect(Bun.spawnSync(["bash", "-n", "-c", command]).exitCode).toBe(0);
   });
 
