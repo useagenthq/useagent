@@ -2,12 +2,15 @@ import {
   sandboxPreviewHeaders,
   type SandboxHandle,
 } from "../sandboxes/provider";
+import {
+  desktopCdpRelayToken,
+  DESKTOP_CDP_RELAY_PORT,
+} from "./desktop-cdp-relay";
 
 export const PLAYWRIGHT_MCP_VERSION = "0.0.79";
 export const BROWSER_DISPLAY = ":1";
 export const BROWSER_CDP_ENDPOINT = "http://127.0.0.1:9222";
 
-const BROWSER_CDP_PORT = 9222;
 const CDP_TIMEOUT_MS = 10_000;
 
 interface CdpTarget {
@@ -130,9 +133,15 @@ function externalCdpUrl(baseUrl: string, targetUrl: string): URL {
 }
 
 async function visibleCdpConnection(sandbox: SandboxHandle): Promise<CdpConnection> {
-  const link = await sandbox.getPreviewLink(BROWSER_CDP_PORT);
+  const [link, relayToken] = await Promise.all([
+    sandbox.getPreviewLink(DESKTOP_CDP_RELAY_PORT),
+    desktopCdpRelayToken(sandbox),
+  ]);
   const baseUrl = link.url.replace(/\/+$/, "");
-  const headers = sandboxPreviewHeaders(link.token ?? "");
+  const headers = {
+    ...sandboxPreviewHeaders(link.token ?? ""),
+    authorization: `Bearer ${relayToken}`,
+  };
   const response = await fetch(`${baseUrl}/json/list`, {
     headers,
     signal: AbortSignal.timeout(CDP_TIMEOUT_MS),

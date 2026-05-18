@@ -8,6 +8,20 @@ import {
   ensureSandboxDesktopView,
 } from "./desktop";
 
+function relayFileSystem() {
+  const files = new Map<string, Buffer>();
+  return {
+    downloadFile: async (path: string) => {
+      const file = files.get(path);
+      if (!file) throw new Error("missing file");
+      return file;
+    },
+    uploadFile: async (file: Buffer, path: string) => {
+      files.set(path, file);
+    },
+  };
+}
+
 describe("shared sandbox desktop", () => {
   test("launches a private VNC server behind the existing websockify preview", () => {
     const command = buildDesktopLaunchCommand();
@@ -21,6 +35,7 @@ describe("shared sandbox desktop", () => {
     expect(command).toContain("--restore-last-session");
     expect(command).toContain("--remote-debugging-pipe");
     expect(command).toContain("http://127.0.0.1:9222/json/version");
+    expect(command).toContain('bun "$HOME/.skynet/cdp-relay.ts"');
     expect(command).toContain("--disable-gpu");
     expect(command).toContain("while true; do");
     expect(command).toContain('>>"$HOME/.skynet/chrome.log" 2>&1 || true');
@@ -38,6 +53,7 @@ describe("shared sandbox desktop", () => {
 
     expect(command).toContain("/vnc.html");
     expect(command).toContain("/json/version");
+    expect(command).toContain('00000000:4B16');
     for (const process of [
       "xfce4-session",
       "xfwm4",
@@ -48,16 +64,19 @@ describe("shared sandbox desktop", () => {
       expect(command).toContain(`pgrep -x ${process}`);
     }
     expect(DESKTOP_REQUIRED_BINARIES).toContain("xdotool");
+    expect(DESKTOP_REQUIRED_BINARIES).toContain("bun");
     expect(Bun.spawnSync(["bash", "-n", "-c", command]).exitCode).toBe(0);
   });
 
   test("degrades the capability when Daytona provisioning fails", async () => {
     const sandbox = {
+      id: "sandbox-provision-failure",
       process: {
         executeCommand: async () => {
           throw new Error("sensitive provider failure");
         },
       },
+      fs: relayFileSystem(),
     } as unknown as SandboxHandle;
 
     await expect(ensureSandboxDesktop(sandbox, new AbortController().signal)).resolves.toEqual({
@@ -73,6 +92,7 @@ describe("shared sandbox desktop", () => {
   test("readies the user-visible desktop without installing agent browser tools", async () => {
     const commands: string[] = [];
     const sandbox = {
+      id: "sandbox-ready-view",
       process: {
         executeCommand: async (command: string) => {
           commands.push(command);
@@ -80,12 +100,13 @@ describe("shared sandbox desktop", () => {
             return {
               exitCode: 0,
               result:
-                "HOME=/home/daytona\nBROWSER=/usr/bin/chromium\nMISSING=\nVNC=1\nRFB=1\nCDP=1\nXFCE=1\nMCP=0\n",
+                "HOME=/home/daytona\nBROWSER=/usr/bin/chromium\nMISSING=\nVNC=1\nRFB=1\nCDP=1\nCDP_RELAY=1\nXFCE=1\nMCP=0\n",
             };
           }
           return { exitCode: 0, result: "" };
         },
       },
+      fs: relayFileSystem(),
     } as unknown as SandboxHandle;
 
     await expect(
@@ -95,10 +116,10 @@ describe("shared sandbox desktop", () => {
       browserTools: false,
       browserExecutable: "/usr/bin/chromium",
     });
-    expect(commands).toHaveLength(1);
-    expect(commands[0]).toContain("/vnc.html");
-    expect(commands[0]).toContain("socket.create_connection(('127.0.0.1',5900),1)");
-    expect(commands[0]).toContain("/json/version");
+    const probe = commands.find((command) => command.includes('printf "HOME='));
+    expect(probe).toContain("/vnc.html");
+    expect(probe).toContain("socket.create_connection(('127.0.0.1',5900),1)");
+    expect(probe).toContain("/json/version");
     for (const binary of [
       "startxfce4",
       "xfce4-panel",
@@ -109,17 +130,18 @@ describe("shared sandbox desktop", () => {
       "xfce4-settings-manager",
       "xfce4-clipman",
     ]) {
-      expect(commands[0]).toContain(binary);
+      expect(probe).toContain(binary);
     }
     expect(commands).not.toEqual(expect.arrayContaining([expect.stringContaining("npm install")]));
   });
 
-  test("repairs the desktop when noVNC, RFB, XFCE, or CDP is unhealthy", async () => {
+  test("repairs the desktop when noVNC, RFB, XFCE, CDP, or its relay is unhealthy", async () => {
     for (const firstHealth of [
-      "VNC=1\nRFB=1\nCDP=0\nXFCE=1",
-      "VNC=1\nRFB=0\nCDP=1\nXFCE=1",
-      "VNC=0\nRFB=1\nCDP=1\nXFCE=1",
-      "VNC=1\nRFB=1\nCDP=1\nXFCE=0",
+      "VNC=1\nRFB=1\nCDP=0\nCDP_RELAY=1\nXFCE=1",
+      "VNC=1\nRFB=0\nCDP=1\nCDP_RELAY=1\nXFCE=1",
+      "VNC=0\nRFB=1\nCDP=1\nCDP_RELAY=1\nXFCE=1",
+      "VNC=1\nRFB=1\nCDP=1\nCDP_RELAY=1\nXFCE=0",
+      "VNC=1\nRFB=1\nCDP=1\nCDP_RELAY=0\nXFCE=1",
     ]) {
       const commands: string[] = [];
       const deleted: string[] = [];
@@ -127,6 +149,7 @@ describe("shared sandbox desktop", () => {
       const launched: string[] = [];
       let healthChecks = 0;
       const sandbox = {
+        id: `sandbox-repair-${firstHealth}`,
         process: {
           executeCommand: async (command: string) => {
             commands.push(command);
@@ -136,7 +159,7 @@ describe("shared sandbox desktop", () => {
                 result: `HOME=/home/daytona\nBROWSER=/usr/bin/chromium\nMISSING=\n${firstHealth}\n`,
               };
             }
-            healthChecks += 1;
+            if (command.includes("/vnc.html")) healthChecks += 1;
             return { exitCode: 0, result: "" };
           },
           deleteSession: async (name: string) => deleted.push(name),
@@ -146,6 +169,7 @@ describe("shared sandbox desktop", () => {
             return { id: "desktop-command" };
           },
         },
+        fs: relayFileSystem(),
       } as unknown as SandboxHandle;
 
       await expect(
@@ -183,8 +207,8 @@ describe("shared sandbox desktop", () => {
             return {
               exitCode: 0,
               result: wasHealthy
-                ? "HOME=/home/daytona\nBROWSER=/usr/bin/chromium\nMISSING=\nVNC=1\nRFB=1\nCDP=1\nXFCE=1\nMCP=1\n"
-                : "HOME=/home/daytona\nBROWSER=/usr/bin/chromium\nMISSING=\nVNC=0\nRFB=0\nCDP=0\nXFCE=0\nMCP=1\n",
+                ? "HOME=/home/daytona\nBROWSER=/usr/bin/chromium\nMISSING=\nVNC=1\nRFB=1\nCDP=1\nCDP_RELAY=1\nXFCE=1\nMCP=1\n"
+                : "HOME=/home/daytona\nBROWSER=/usr/bin/chromium\nMISSING=\nVNC=0\nRFB=0\nCDP=0\nCDP_RELAY=0\nXFCE=0\nMCP=1\n",
             };
           }
           if (command.includes("skynet-browser-guard-ping")) {
@@ -192,6 +216,9 @@ describe("shared sandbox desktop", () => {
           }
           if (command.includes("localhost:8931/mcp")) {
             return { exitCode: 0, result: "400" };
+          }
+          if (command.startsWith('chmod 700 "$HOME/.skynet"')) {
+            return { exitCode: 0, result: "" };
           }
           return { exitCode: desktopHealthy ? 0 : 1, result: "" };
         },
@@ -205,6 +232,7 @@ describe("shared sandbox desktop", () => {
           return { cmdId: `${name}-command` };
         },
       },
+      fs: relayFileSystem(),
     } as unknown as SandboxHandle;
 
     const signal = new AbortController().signal;
