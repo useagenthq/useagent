@@ -1,69 +1,228 @@
-import type { SandboxHandle } from "../sandboxes/provider";
+import {
+  sandboxPreviewHeaders,
+  type SandboxHandle,
+} from "../sandboxes/provider";
 
 export const PLAYWRIGHT_MCP_VERSION = "0.0.79";
 export const BROWSER_DISPLAY = ":1";
 export const BROWSER_CDP_ENDPOINT = "http://127.0.0.1:9222";
 
-const CDP_RESULT_MARKER = "__SKYNET_CDP_RESULT__";
+const BROWSER_CDP_PORT = 9222;
+const CDP_TIMEOUT_MS = 10_000;
 
-/** Evaluate a bounded expression in the visible Chromium page without exposing
- * the browser's loopback-only CDP port outside its sandbox. This is a trusted
- * control-plane primitive used for readiness checks, not a provider-specific
- * agent tool. */
+interface CdpTarget {
+  readonly type?: string;
+  readonly url?: string;
+  readonly webSocketDebuggerUrl?: string;
+}
+
+interface CdpResponse {
+  readonly id?: number;
+  readonly error?: { readonly message?: string };
+  readonly result?: {
+    readonly result?: { readonly value?: unknown };
+    readonly frameId?: string;
+  };
+  readonly exceptionDetails?: { readonly text?: string };
+}
+
+export interface BrowserControlTransport {
+  evaluate<T>(sandbox: SandboxHandle, expression: string): Promise<T>;
+  navigate(sandbox: SandboxHandle, url: string): Promise<void>;
+}
+
+export type CdpSocket = Pick<
+  WebSocket,
+  "addEventListener" | "removeEventListener" | "close"
+>;
+
+class CdpConnection {
+  private requestId = 0;
+
+  private constructor(private readonly socket: WebSocket) {}
+
+  static async connect(url: URL, headers: Record<string, string>): Promise<CdpConnection> {
+    const socket = new WebSocket(url, { headers });
+    await waitForCdpSocketOpen(socket);
+    return new CdpConnection(socket);
+  }
+
+  async request(method: string, params: Record<string, unknown> = {}): Promise<CdpResponse> {
+    const id = ++this.requestId;
+    this.socket.send(JSON.stringify({ id, method, params }));
+    return await new Promise<CdpResponse>((resolve, reject) => {
+      const cleanup = (): void => {
+        clearTimeout(timer);
+        this.socket.removeEventListener("message", receive);
+        this.socket.removeEventListener("error", fail);
+        this.socket.removeEventListener("close", fail);
+      };
+      const fail = (): void => {
+        cleanup();
+        reject(new Error("CDP request failed"));
+      };
+      const receive = (event: MessageEvent): void => {
+        let response: CdpResponse;
+        try {
+          response = JSON.parse(String(event.data)) as CdpResponse;
+        } catch {
+          return;
+        }
+        if (response.id !== id) return;
+        cleanup();
+        if (response.error) reject(new Error(response.error.message || "CDP request failed"));
+        else resolve(response);
+      };
+      const timer = setTimeout(() => {
+        cleanup();
+        reject(new Error("CDP request timed out"));
+      }, CDP_TIMEOUT_MS);
+      this.socket.addEventListener("message", receive);
+      this.socket.addEventListener("error", fail, { once: true });
+      this.socket.addEventListener("close", fail, { once: true });
+    });
+  }
+
+  close(): void {
+    this.socket.close();
+  }
+}
+
+/** Resolve only after a live CDP socket opens. Failed or timed-out sockets are
+ * closed here so callers never lose ownership of an authenticated connection. */
+export async function waitForCdpSocketOpen(
+  socket: CdpSocket,
+  timeoutMs = CDP_TIMEOUT_MS,
+): Promise<void> {
+  await new Promise<void>((resolve, reject) => {
+    let timer: ReturnType<typeof setTimeout>;
+    const cleanup = (): void => {
+      clearTimeout(timer);
+      socket.removeEventListener("open", opened);
+      socket.removeEventListener("error", failed);
+    };
+    const opened = (): void => {
+      cleanup();
+      resolve();
+    };
+    const failed = (): void => {
+      cleanup();
+      socket.close();
+      reject(new Error("CDP connection failed"));
+    };
+    timer = setTimeout(() => {
+      cleanup();
+      socket.close();
+      reject(new Error("CDP connection timed out"));
+    }, timeoutMs);
+    socket.addEventListener("open", opened, { once: true });
+    socket.addEventListener("error", failed, { once: true });
+  });
+}
+
+function externalCdpUrl(baseUrl: string, targetUrl: string): URL {
+  const external = new URL(baseUrl);
+  const target = new URL(targetUrl);
+  external.protocol = external.protocol === "https:" ? "wss:" : "ws:";
+  external.pathname = target.pathname;
+  external.search = target.search;
+  return external;
+}
+
+async function visibleCdpConnection(sandbox: SandboxHandle): Promise<CdpConnection> {
+  const link = await sandbox.getPreviewLink(BROWSER_CDP_PORT);
+  const baseUrl = link.url.replace(/\/+$/, "");
+  const headers = sandboxPreviewHeaders(link.token ?? "");
+  const response = await fetch(`${baseUrl}/json/list`, {
+    headers,
+    signal: AbortSignal.timeout(CDP_TIMEOUT_MS),
+  });
+  if (!response.ok) throw new Error("browser control endpoint is unavailable");
+  const targets = (await response.json()) as CdpTarget[];
+  let visible: CdpConnection | null = null;
+  for (const target of targets) {
+    if (
+      target.type !== "page" ||
+      !target.webSocketDebuggerUrl ||
+      target.url?.startsWith("devtools://")
+    ) continue;
+    let candidate: CdpConnection | null = null;
+    try {
+      candidate = await CdpConnection.connect(
+        externalCdpUrl(baseUrl, target.webSocketDebuggerUrl),
+        headers,
+      );
+      const state = await candidate.request("Runtime.evaluate", {
+        expression: '({ visible: document.visibilityState === "visible", focused: document.hasFocus() })',
+        returnByValue: true,
+      });
+      const value = state.result?.result?.value as { visible?: boolean; focused?: boolean } | undefined;
+      if (value?.visible && value.focused) {
+        visible?.close();
+        return candidate;
+      }
+      if (value?.visible && !visible) visible = candidate;
+      else candidate.close();
+    } catch {
+      candidate?.close();
+    }
+  }
+  if (!visible) throw new Error("visible browser page is unavailable");
+  return visible;
+}
+
+const productionBrowserControl: BrowserControlTransport = {
+  async evaluate<T>(sandbox: SandboxHandle, expression: string) {
+    const connection = await visibleCdpConnection(sandbox);
+    try {
+      const response = await connection.request("Runtime.evaluate", {
+        expression,
+        awaitPromise: true,
+        returnByValue: true,
+      });
+      if (response.exceptionDetails) {
+        throw new Error(response.exceptionDetails.text || "browser expression failed");
+      }
+      return response.result?.result?.value as T;
+    } finally {
+      connection.close();
+    }
+  },
+  async navigate(sandbox: SandboxHandle, url: string) {
+    const connection = await visibleCdpConnection(sandbox);
+    try {
+      await connection.request("Page.navigate", { url });
+    } finally {
+      connection.close();
+    }
+  },
+};
+
+let browserControlOverride: BrowserControlTransport | null = null;
+
+export function setBrowserControlTransportForTest(
+  transport: BrowserControlTransport | null,
+): void {
+  browserControlOverride = transport;
+}
+
+/** Evaluate a bounded expression over a host-owned CDP connection. The browser
+ * preview credential and expression never enter sandbox shell commands. */
 export async function evaluateVisibleBrowserPage<T>(
   sandbox: SandboxHandle,
   expression: string,
-  timeoutSeconds = 10,
 ): Promise<T> {
-  const script = `
-(async () => {
-const targets = await fetch(${JSON.stringify(`${BROWSER_CDP_ENDPOINT}/json/list`)}).then((response) => response.json());
-const page = targets.find((target) => target.type === "page" && !String(target.url || "").startsWith("devtools://"));
-if (!page?.webSocketDebuggerUrl) throw new Error("visible browser page is unavailable");
-const socket = new WebSocket(page.webSocketDebuggerUrl);
-await new Promise((resolve, reject) => {
-  const timer = setTimeout(() => reject(new Error("CDP connection timed out")), 5000);
-  socket.addEventListener("open", () => { clearTimeout(timer); resolve(); }, { once: true });
-  socket.addEventListener("error", () => { clearTimeout(timer); reject(new Error("CDP connection failed")); }, { once: true });
-});
-const id = 1;
-socket.send(JSON.stringify({
-  id,
-  method: "Runtime.evaluate",
-  params: { expression: ${JSON.stringify(expression)}, awaitPromise: true, returnByValue: true },
-}));
-const message = await new Promise((resolve, reject) => {
-  const timer = setTimeout(() => reject(new Error("CDP evaluation timed out")), 5000);
-  socket.addEventListener("message", (event) => {
-    const value = JSON.parse(String(event.data));
-    if (value.id !== id) return;
-    clearTimeout(timer);
-    resolve(value);
-  });
-  socket.addEventListener("error", () => { clearTimeout(timer); reject(new Error("CDP evaluation failed")); }, { once: true });
-});
-socket.close();
-if (message.error) throw new Error(message.error.message || "CDP evaluation failed");
-if (message.result?.exceptionDetails) throw new Error(message.result.exceptionDetails.text || "browser expression failed");
-process.stdout.write(${JSON.stringify(CDP_RESULT_MARKER)} + JSON.stringify(message.result?.result?.value));
-})().catch((error) => {
-  console.error(error);
-  process.exitCode = 1;
-});
-`;
-  const encoded = Buffer.from(script, "utf8").toString("base64");
-  const evaluated = await sandbox.process.executeCommand(
-    `node -e "eval(Buffer.from('${encoded}','base64').toString('utf8'))"`,
-    undefined,
-    undefined,
-    timeoutSeconds,
-  );
-  const output = evaluated.result ?? "";
-  const marker = output.lastIndexOf(CDP_RESULT_MARKER);
-  if ((evaluated.exitCode ?? 1) !== 0 || marker < 0) {
-    throw new Error(output.trim() || "browser inspection failed");
-  }
-  return JSON.parse(output.slice(marker + CDP_RESULT_MARKER.length)) as T;
+  return await (browserControlOverride ?? productionBrowserControl).evaluate<T>(sandbox, expression);
+}
+
+/** Navigate the visible browser from the trusted host control plane. Secret
+ * URLs travel only over the authenticated CDP transport, never via xdotool or
+ * a sandbox process argument. */
+export async function navigateVisibleBrowserPage(
+  sandbox: SandboxHandle,
+  url: string,
+): Promise<void> {
+  await (browserControlOverride ?? productionBrowserControl).navigate(sandbox, url);
 }
 
 const BROWSER_MCP_PROCESS_SESSION = "skynet-browser-mcp";

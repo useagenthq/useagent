@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import {
+  buildCubeSequenceCommand,
+  COMPUTER_USE_TOOL_NAMES,
   COMPUTER_USE_TOOLS,
   executeComputerUseTool,
   setComputerUseServiceForTest,
@@ -16,6 +18,18 @@ const claims: ToolTokenClaims = {
   scope: "run",
   exp: Date.now() + 60_000,
 };
+
+test("builds fail-fast Cube action batches", () => {
+  expect(buildCubeSequenceCommand([
+    { action: "hotkey", keys: "ctrl+l" },
+    { action: "type", text: "https://example.com", delayMs: 0 },
+    { action: "key", key: "Enter", modifiers: [] },
+  ])).toContain(" && ");
+  expect(buildCubeSequenceCommand([
+    { action: "wait", ms: 0 },
+    { action: "wait", ms: 0 },
+  ])).not.toContain("; ");
+});
 
 function testService(calls: string[]) {
   return {
@@ -47,6 +61,22 @@ function testService(calls: string[]) {
     scroll: async (_claims: ToolTokenClaims, x: number, y: number, direction: string, amount: number) => {
       calls.push(`scroll:${x}:${y}:${direction}:${amount}`);
     },
+    sequence: async (
+      _claims: ToolTokenClaims,
+      actions: readonly { readonly action: string }[],
+      captureScreenshot: boolean,
+    ) => {
+      calls.push(`sequence:${actions.map(({ action }) => action).join(",")}:${captureScreenshot}`);
+      return captureScreenshot
+        ? {
+            content: [
+              { type: "image" as const, data: "cG5n", mimeType: "image/png" as const },
+              { type: "text" as const, text: "Desktop screenshot captured at /root/work/screenshots/proof.png." },
+            ],
+            structuredContent: { path: "/root/work/screenshots/proof.png" },
+          }
+        : null;
+    },
   };
 }
 
@@ -66,8 +96,12 @@ describe("computer-use gateway tools", () => {
     );
   });
 
-  test("advertises only explicit OS-level computer actions", () => {
+  test("advertises the bounded sequence path while retaining legacy atomic execution compatibility", () => {
     expect(COMPUTER_USE_TOOLS.map((tool) => tool.name)).toEqual([
+      "computer_screenshot",
+      "computer_sequence",
+    ]);
+    expect(COMPUTER_USE_TOOL_NAMES).toEqual(new Set([
       "computer_screenshot",
       "computer_sequence",
       "computer_click",
@@ -77,7 +111,7 @@ describe("computer-use gateway tools", () => {
       "computer_key",
       "computer_hotkey",
       "computer_scroll",
-    ]);
+    ]));
     expect(COMPUTER_USE_TOOLS.map((tool) => tool.name).join(" ")).not.toContain("browser_");
   });
 
@@ -125,22 +159,18 @@ describe("computer-use gateway tools", () => {
     });
 
     expect(response.isError).toBeUndefined();
-    expect(calls).toEqual([
-      "click:12:34:left:false",
-      "type:hello:1",
-      "key::Enter",
-    ]);
-    expect(response.content[0]).toEqual({ type: "image", data: "cG5n", mimeType: "image/png" });
+    expect(calls).toEqual(["sequence:click,type,key,wait:true"]);
+    expect(response.content[0]).toEqual({
+      type: "text",
+      text: "Computer sequence completed. Executed actions: click, type, key, wait. " +
+        "Desktop screenshot captured at /root/work/screenshots/proof.png.",
+    });
+    expect(response.content[1]).toEqual({ type: "image", data: "cG5n", mimeType: "image/png" });
     expect(response.structuredContent).toEqual({
       path: "/root/work/screenshots/proof.png",
       action: "computer_sequence",
       action_count: 4,
       executed_actions: ["click", "type", "key", "wait"],
-    });
-    expect(response.content.at(-1)).toEqual({
-      type: "text",
-      text: "Computer sequence completed. Executed actions: click, type, key, wait. " +
-        "Desktop screenshot captured at /root/work/screenshots/proof.png.",
     });
   });
 

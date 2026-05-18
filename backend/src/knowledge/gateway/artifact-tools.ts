@@ -23,8 +23,11 @@ export const ARTIFACT_TOOLS = [
     description:
       "Publish a file from your sandbox as a durable Skynet artifact. The trusted " +
       "backend pulls and size-checks the bytes once, records an immutable digest, " +
-      "and returns browser preview/download references. Use this for screenshots, " +
-      "reports, PDFs, presentations, spreadsheets, videos, and other outputs the user needs.",
+      "and returns browser preview/download references. Text and CSV files open directly " +
+      "in Skynet's editor. For editable DOCX or XLSX outputs, also provide editable_path " +
+      "to a small HTML or CSV companion produced in the sandbox; the Office bytes remain " +
+      "immutable. Use this for screenshots, reports, documents, spreadsheets, videos, " +
+      "and other outputs the user needs.",
     inputSchema: {
       type: "object",
       properties: {
@@ -35,6 +38,11 @@ export const ARTIFACT_TOOLS = [
         name: {
           type: "string",
           description: "Optional download filename. Defaults to the sandbox basename.",
+        },
+        editable_path: {
+          type: "string",
+          description:
+            "Optional sandbox path to editable HTML for a DOCX or CSV for an XLSX.",
         },
       },
       required: ["path"],
@@ -64,6 +72,9 @@ export async function executeArtifactTool(
       path,
       ...(typeof args.name === "string" && args.name.trim()
         ? { name: args.name.trim() }
+        : {}),
+      ...(typeof args.editable_path === "string" && args.editable_path.trim()
+        ? { editablePath: args.editable_path.trim() }
         : {}),
     });
     return result(

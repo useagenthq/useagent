@@ -33,6 +33,14 @@ function extension(name: string): string {
   return dot < 0 ? "" : name.slice(dot + 1).toLowerCase();
 }
 
+function decodeUtf8(bytes: Uint8Array): string | null {
+  try {
+    return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+  } catch {
+    return null;
+  }
+}
+
 /** Pure behavior/schema registry. It contains no tenant data and is shared by
  * artifact creation and state validation rather than inferred from prompts. */
 export function inferWorkpieceKind(
@@ -153,4 +161,41 @@ export function parseWorkpieceState(
   return new TextEncoder().encode(JSON.stringify(value)).byteLength <= MAX_WORKPIECE_STATE_BYTES
     ? value
     : null;
+}
+
+/** Build the first browser-editable revision without interpreting Office
+ * container bytes in the control plane. Text and CSV files seed themselves;
+ * Office files require a small, explicit companion produced in the same
+ * sandbox. The original artifact remains immutable in either case. */
+export function buildInitialWorkpieceState(input: {
+  readonly kind: ArtifactWorkpieceKind;
+  readonly sourceName: string;
+  readonly sourceContentType?: string;
+  readonly sourceBytes: Uint8Array;
+  readonly editable?: {
+    readonly name: string;
+    readonly bytes: Uint8Array;
+  };
+}): ArtifactWorkpieceState | null {
+  const sourceSuffix = extension(input.sourceName);
+  const sourceMime = input.sourceContentType?.split(";", 1)[0]?.trim().toLowerCase() ?? "";
+  const officeDocument = sourceSuffix === "docx" || sourceMime === RICH_DOCUMENT_MIME_TYPE;
+  const officeSpreadsheet = sourceSuffix === "xlsx" || sourceMime === RICH_SPREADSHEET_MIME_TYPE;
+
+  const editableText = input.editable ? decodeUtf8(input.editable.bytes) : null;
+  if (input.kind === "spreadsheet") {
+    if (officeSpreadsheet) {
+      if (extension(input.editable?.name ?? "") !== "csv" || editableText === null) return null;
+      return parseWorkpieceState("spreadsheet", { csv: editableText });
+    }
+    const sourceText = decodeUtf8(input.sourceBytes);
+    return sourceText === null ? null : parseWorkpieceState("spreadsheet", { csv: sourceText });
+  }
+
+  if (officeDocument) {
+    if (extension(input.editable?.name ?? "") !== "html" || editableText === null) return null;
+    return parseWorkpieceState("document", { html: editableText });
+  }
+  const sourceText = decodeUtf8(input.sourceBytes);
+  return sourceText === null ? null : parseWorkpieceState("document", { text: sourceText });
 }

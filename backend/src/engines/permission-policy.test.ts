@@ -60,6 +60,13 @@ describe("decideAcpPermission - actual response payloads (pure logic)", () => {
       decideAcpPermission(
         [ALLOW_ONCE, ALLOW_ALWAYS],
         false,
+        "mcp.skynet-knowledge.computer_sequence",
+      ),
+    ).toEqual({ outcome: { outcome: "selected", optionId: "opt-once" } });
+    expect(
+      decideAcpPermission(
+        [ALLOW_ONCE, ALLOW_ALWAYS],
+        false,
         "mcp.skynet-knowledge.desktop_recording_start",
       ),
     ).toEqual({ outcome: { outcome: "selected", optionId: "opt-once" } });
@@ -96,6 +103,12 @@ describe("decideAcpPermission - actual response payloads (pure logic)", () => {
     expect(
       decideAcpPermission([ALLOW_ONCE], false, "mcp.skynet-knowledge.skill_activate"),
     ).toEqual({ outcome: { outcome: "selected", optionId: "opt-once" } });
+    expect(
+      decideAcpPermission([ALLOW_ONCE], false, "mcp.skynet-knowledge.automation_create"),
+    ).toEqual({ outcome: { outcome: "selected", optionId: "opt-once" } });
+    expect(
+      decideAcpPermission([ALLOW_ONCE], false, "mcp.skynet-knowledge.automation_delete"),
+    ).toEqual({ outcome: { outcome: "cancelled" } });
     expect(
       decideAcpPermission(
         [ALLOW_ALWAYS],

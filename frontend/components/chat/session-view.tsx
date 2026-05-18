@@ -6,6 +6,7 @@ import {
   RiAddLine,
   RiCodeSSlashLine,
   RiComputerLine,
+  RiFileList2Line,
   RiLayoutRightLine,
   RiRobot2Line,
   RiTerminalBoxLine,
@@ -16,6 +17,7 @@ import * as SegmentedControl from "@/components/ui/segmented-control";
 import { Conversation, type Turn } from "@/components/chat/conversation";
 import type { SlashCommand } from "@/components/chat/slash-command";
 import { AgentsRail } from "@/components/chat/agents-rail";
+import { ArtifactsRail } from "@/components/chat/artifacts-rail";
 import { EditorPane } from "@/components/chat/editor-pane";
 import { DesktopPane } from "@/components/chat/desktop-pane";
 import { TerminalPane } from "@/components/chat/terminal-pane";
@@ -522,7 +524,7 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
   // Default to whichever pane actually has content; an explicit pick wins.
   // Agents leads when a run fanned out — that's the story you want to watch.
   const [railTabOverride, setRailTabOverride] = useState<
-    "agents" | "editor" | "terminal" | "desktop" | null
+    "agents" | "artifacts" | "editor" | "terminal" | "desktop" | null
   >(null);
   const railTab =
     railTabOverride ??
@@ -710,7 +712,9 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
                 className="flex-1"
                 value={railTab}
                 onValueChange={(v) =>
-                  setRailTabOverride(v as "agents" | "editor" | "terminal" | "desktop")
+                  setRailTabOverride(
+                    v as "agents" | "artifacts" | "editor" | "terminal" | "desktop",
+                  )
                 }
               >
                 <SegmentedControl.List>
@@ -722,6 +726,10 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
                       Agents
                     </SegmentedControl.Trigger>
                   )}
+                  <SegmentedControl.Trigger value="artifacts" data-testid="rail-tab-artifacts">
+                    <RiFileList2Line className="size-4" aria-hidden />
+                    Files
+                  </SegmentedControl.Trigger>
                   <SegmentedControl.Trigger value="editor" data-testid="rail-tab-editor">
                     <RiCodeSSlashLine className="size-4" aria-hidden />
                     Editor
@@ -766,6 +774,8 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
                 <div className="absolute inset-0">
                   {railTab === "agents" ? (
                     <AgentsRail steps={allSteps} live={live} frames={allFrames} />
+                  ) : railTab === "artifacts" ? (
+                    <ArtifactsRail threadId={rootId} live={live} />
                   ) : railTab === "editor" ? (
                     <EditorPane steps={allSteps} live={live} />
                   ) : (
@@ -784,6 +794,7 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
             className="border-stroke-soft-200 bg-bg-white-0 text-text-soft-400 hover:bg-bg-weak-50 hover:text-text-sub-600 hidden shrink-0 flex-col items-center gap-3 rounded-2xl border px-2 py-4 transition-colors lg:flex"
           >
             <RiCodeSSlashLine className="size-4" aria-hidden />
+            <RiFileList2Line className="size-4" aria-hidden />
             <RiTerminalBoxLine className="size-4" aria-hidden />
             <RiComputerLine className="size-4" aria-hidden />
           </button>

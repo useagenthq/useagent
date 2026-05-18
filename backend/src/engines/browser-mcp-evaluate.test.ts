@@ -1,40 +1,78 @@
-import { describe, expect, test } from "bun:test";
-import { evaluateVisibleBrowserPage } from "./browser-mcp";
+import { afterEach, describe, expect, test } from "bun:test";
 import type { SandboxHandle } from "../sandboxes/provider";
+import {
+  evaluateVisibleBrowserPage,
+  navigateVisibleBrowserPage,
+  setBrowserControlTransportForTest,
+  waitForCdpSocketOpen,
+} from "./browser-mcp";
 
-describe("evaluateVisibleBrowserPage", () => {
-  test("returns the value produced by the sandbox-local CDP evaluator", async () => {
-    let command = "";
-    const sandbox = {
-      process: {
-        executeCommand: async (value: string) => {
-          command = value;
-          return { exitCode: 0, result: 'noise\n__SKYNET_CDP_RESULT__{"ready":true}' };
-        },
+class FakeWebSocket extends EventTarget {
+  closeCalls = 0;
+
+  close(): void {
+    this.closeCalls += 1;
+  }
+}
+
+describe("host-owned browser control", () => {
+  afterEach(() => setBrowserControlTransportForTest(null));
+
+  test("evaluates and navigates without a sandbox command", async () => {
+    const calls: string[] = [];
+    const sandbox = {} as SandboxHandle;
+    setBrowserControlTransportForTest({
+      evaluate: async <T>(_sandbox: SandboxHandle, expression: string) => {
+        calls.push(`evaluate:${expression}`);
+        return { ready: true } as T;
       },
-    } as unknown as SandboxHandle;
+      navigate: async (_sandbox, url) => {
+        calls.push(`navigate:${url}`);
+      },
+    });
 
     await expect(
       evaluateVisibleBrowserPage<{ ready: boolean }>(sandbox, "({ ready: true })"),
     ).resolves.toEqual({ ready: true });
-    expect(command).toContain("node -e");
-    expect(command).not.toContain("ready: true");
-    const encoded = command.match(/Buffer\.from\('([^']+)'/)?.[1];
-    expect(encoded).toBeTruthy();
-    const script = Buffer.from(encoded!, "base64").toString("utf8");
-    expect(() => new Function(script)).not.toThrow();
-    expect(script).toContain("(async () => {");
+    await navigateVisibleBrowserPage(sandbox, "https://example.com/secret");
+    expect(calls).toEqual([
+      "evaluate:({ ready: true })",
+      "navigate:https://example.com/secret",
+    ]);
   });
 
-  test("fails closed when the evaluator does not return its result marker", async () => {
-    const sandbox = {
-      process: {
-        executeCommand: async () => ({ exitCode: 1, result: "CDP unavailable" }),
+  test("fails closed when host control fails", async () => {
+    setBrowserControlTransportForTest({
+      evaluate: async () => {
+        throw new Error("CDP unavailable");
       },
-    } as unknown as SandboxHandle;
+      navigate: async () => {},
+    });
 
     await expect(
-      evaluateVisibleBrowserPage(sandbox, "location.href"),
+      evaluateVisibleBrowserPage({} as SandboxHandle, "location.href"),
     ).rejects.toThrow("CDP unavailable");
+  });
+
+  test("closes a socket that does not open before the deadline", async () => {
+    const socket = new FakeWebSocket();
+
+    await expect(waitForCdpSocketOpen(socket, 1)).rejects.toThrow(
+      "CDP connection timed out",
+    );
+    expect(socket.closeCalls).toBe(1);
+
+    socket.dispatchEvent(new Event("open"));
+    expect(socket.closeCalls).toBe(1);
+  });
+
+  test("closes a socket that fails while connecting", async () => {
+    const socket = new FakeWebSocket();
+    const opening = waitForCdpSocketOpen(socket, 1_000);
+
+    socket.dispatchEvent(new Event("error"));
+
+    await expect(opening).rejects.toThrow("CDP connection failed");
+    expect(socket.closeCalls).toBe(1);
   });
 });
