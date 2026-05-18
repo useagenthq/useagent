@@ -72,4 +72,114 @@ describe("provider gateway upstream retries", () => {
     expect(bodies).toEqual(["stable-body", "stable-body"]);
     expect(delays).toEqual([25]);
   });
+
+  test("does not retry a terminal quota response and tells the downstream SDK to stop", async () => {
+    let calls = 0;
+    const response = await fetchProviderUpstream("https://api.openai.test/v1/responses", {
+      method: "POST",
+      body: "stable-body",
+    }, {
+      fetch: async () => {
+        calls += 1;
+        return Response.json({
+          error: {
+            type: "insufficient_quota",
+            code: "insufficient_quota",
+            message: "You have no credits remaining. Add credits to continue using the API.",
+          },
+        }, { status: 429 });
+      },
+      maxRetries: 10,
+      sleep: async () => {
+        throw new Error("terminal quota failures must not sleep");
+      },
+    });
+
+    expect(calls).toBe(1);
+    expect(response.status).toBe(429);
+    expect(response.headers.get("x-should-retry")).toBe("false");
+    const payload = await response.json() as { error: { code: string } };
+    expect(payload.error.code).toBe("insufficient_quota");
+  });
+
+  test("keeps ordinary rate limits retryable when their body is not a terminal quota error", async () => {
+    let calls = 0;
+    const response = await fetchProviderUpstream("https://api.openai.test/v1/responses", {
+      method: "POST",
+      body: "stable-body",
+    }, {
+      fetch: async () => {
+        calls += 1;
+        return calls === 1
+          ? Response.json({ error: { type: "rate_limit_error", message: "Too many requests" } }, {
+            status: 429,
+          })
+          : new Response("ok", { status: 200 });
+      },
+      maxRetries: 2,
+      sleep: async () => undefined,
+    });
+
+    expect(calls).toBe(2);
+    expect(await response.text()).toBe("ok");
+  });
+
+  test("marks terminal provider auth and billing failures as non-retryable", async () => {
+    for (const status of [401, 402, 403]) {
+      const response = await fetchProviderUpstream("https://api.openai.test/v1/responses", {
+        method: "POST",
+        body: "stable-body",
+      }, {
+        fetch: async () => new Response(`terminal-${status}`, { status }),
+        maxRetries: 10,
+        sleep: async () => {
+          throw new Error("terminal provider failures must not sleep");
+        },
+      });
+
+      expect(response.status).toBe(status);
+      expect(response.headers.get("x-should-retry")).toBe("false");
+      expect(await response.text()).toBe(`terminal-${status}`);
+    }
+  });
+
+  test("preserves an explicit provider retry directive on terminal statuses", async () => {
+    const response = await fetchProviderUpstream("https://api.openai.test/v1/responses", {
+      method: "POST",
+    }, {
+      fetch: async () => new Response("refreshable", {
+        status: 401,
+        headers: { "x-should-retry": "true" },
+      }),
+      maxRetries: 0,
+    });
+
+    expect(response.headers.get("x-should-retry")).toBe("true");
+  });
+
+  test("rejects oversized provider backoff instead of making the downstream SDK sleep for minutes", async () => {
+    let calls = 0;
+    const response = await fetchProviderUpstream("https://api.openai.test/v1/responses", {
+      method: "POST",
+      body: "stable-body",
+    }, {
+      fetch: async () => {
+        calls += 1;
+        return new Response("try much later", {
+          status: 429,
+          headers: { "retry-after": "120" },
+        });
+      },
+      maxRetries: 10,
+      sleep: async () => {
+        throw new Error("oversized provider backoff must not sleep locally");
+      },
+    });
+
+    expect(calls).toBe(1);
+    expect(response.status).toBe(429);
+    expect(response.headers.get("retry-after")).toBe("120");
+    expect(response.headers.get("x-should-retry")).toBe("false");
+    expect(await response.text()).toBe("try much later");
+  });
 });
