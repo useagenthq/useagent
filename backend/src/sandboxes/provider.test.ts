@@ -1,14 +1,27 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
+import { DaytonaProvider } from "./daytona-provider";
 import {
+  sandboxProvider,
   sandboxProviderApiKey,
   sandboxProviderKind,
   sandboxPreviewHeaders,
   sandboxTemplate,
 } from "./provider";
 
+const originalEnv = { ...process.env };
+
+afterEach(() => {
+  process.env = { ...originalEnv };
+});
+
 describe("sandbox provider selection", () => {
   test("keeps Daytona as the default", () => {
     expect(sandboxProviderKind({})).toBe("daytona");
+  });
+
+  test("constructs the explicit Daytona adapter", () => {
+    delete process.env.SANDBOX_PROVIDER;
+    expect(sandboxProvider("daytona-key")).toBeInstanceOf(DaytonaProvider);
   });
 
   test("selects Cube explicitly", () => {
@@ -58,11 +71,16 @@ describe("sandbox provider selection", () => {
 });
 
 describe("sandbox preview authentication", () => {
-  test("supports Daytona and Cube traffic tokens during migration", () => {
-    expect(sandboxPreviewHeaders("preview-token")).toEqual({
+  test("emits only Daytona preview authentication for Daytona", () => {
+    expect(sandboxPreviewHeaders("preview-token", "daytona")).toEqual({
+      "x-daytona-preview-token": "preview-token",
+    });
+  });
+
+  test("supports Cube's E2B-compatible traffic token names", () => {
+    expect(sandboxPreviewHeaders("preview-token", "cube")).toEqual({
       "cube-traffic-access-token": "preview-token",
       "e2b-traffic-access-token": "preview-token",
-      "x-daytona-preview-token": "preview-token",
     });
   });
 

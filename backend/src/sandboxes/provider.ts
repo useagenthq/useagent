@@ -1,5 +1,5 @@
-import { Daytona, type ComputerUse } from "@daytona/sdk";
 import { cubeSandboxProvider } from "./cube-provider";
+import { daytonaSandboxProvider } from "./daytona-provider";
 
 export type SandboxProviderKind = "daytona" | "cube";
 
@@ -55,6 +55,53 @@ export interface SandboxFileSystem {
   uploadFile(file: Buffer, remotePath: string, timeout?: number): Promise<void>;
 }
 
+export interface SandboxRecording {
+  durationSeconds?: number;
+  fileName: string;
+  filePath: string;
+  id: string;
+  startTime: string;
+  status: string;
+}
+
+export interface SandboxComputerUse {
+  start(): Promise<unknown>;
+  readonly mouse: {
+    click(x: number, y: number, button?: string, double?: boolean): Promise<unknown>;
+    move(x: number, y: number): Promise<unknown>;
+    drag(
+      startX: number,
+      startY: number,
+      endX: number,
+      endY: number,
+      button?: string,
+    ): Promise<unknown>;
+    scroll(x: number, y: number, direction: "up" | "down", amount?: number): Promise<boolean>;
+  };
+  readonly keyboard: {
+    type(text: string, delay?: number): Promise<void>;
+    press(key: string, modifiers?: string[]): Promise<void>;
+    hotkey(keys: string): Promise<void>;
+  };
+  readonly screenshot: {
+    takeFullScreen(showCursor?: boolean): Promise<{ screenshot?: string; sizeBytes?: number }>;
+  };
+  readonly display: {
+    getInfo(): Promise<{
+      displays?: Array<{ height?: number; isActive?: boolean; width?: number }>;
+    }>;
+  };
+  readonly recording: {
+    start(label?: string): Promise<SandboxRecording>;
+    stop(id: string): Promise<SandboxRecording>;
+  };
+}
+
+export interface SandboxPreviewLink {
+  url: string;
+  token?: string;
+}
+
 export interface SandboxHandle {
   readonly id: string;
   readonly cpu: number;
@@ -63,12 +110,12 @@ export interface SandboxHandle {
   labels?: Record<string, string>;
   readonly process: SandboxProcess;
   readonly fs: SandboxFileSystem;
-  /** Daytona exposes this natively. Cube intentionally omits it and the trusted
-   * gateway drives the sandbox's X11 workstation with xdotool instead. */
-  readonly computerUse?: ComputerUse;
+  /** Native computer-use access when the provider exposes it. Cube intentionally
+   * omits it and the trusted gateway drives the workstation through X11. */
+  readonly computerUse?: SandboxComputerUse;
   start(): Promise<void>;
   delete(): Promise<void>;
-  getPreviewLink(port: number): Promise<{ url: string; token?: string }>;
+  getPreviewLink(port: number): Promise<SandboxPreviewLink>;
 }
 
 export interface SandboxCreateOptions {
@@ -104,13 +151,17 @@ export function sandboxProviderApiKey(
   return env.DAYTONA_API_KEY?.trim() || undefined;
 }
 
-export function sandboxPreviewHeaders(token: string): Record<string, string> {
+export function sandboxPreviewHeaders(
+  token: string,
+  provider?: SandboxProviderKind,
+): Record<string, string> {
   if (!token) return {};
-  return {
-    "cube-traffic-access-token": token,
-    "e2b-traffic-access-token": token,
-    "x-daytona-preview-token": token,
-  };
+  return (provider ?? sandboxProviderKind()) === "daytona"
+    ? { "x-daytona-preview-token": token }
+    : {
+        "cube-traffic-access-token": token,
+        "e2b-traffic-access-token": token,
+      };
 }
 
 export function sandboxTemplate(
@@ -133,7 +184,7 @@ const daytonaApiUrl = (): string =>
 export function sandboxProvider(apiKey = sandboxProviderApiKey()): SandboxProvider {
   if (sandboxProviderKind() === "cube") return cubeSandboxProvider(apiKey ?? "");
   if (!apiKey) throw new Error("DAYTONA_API_KEY is required when SANDBOX_PROVIDER=daytona");
-  return new Daytona({ apiKey, target: daytonaTarget() });
+  return daytonaSandboxProvider(daytonaApiConfig(apiKey));
 }
 
 /** Backward-compatible name for external callers while the internal call sites migrate. */
