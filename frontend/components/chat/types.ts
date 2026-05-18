@@ -122,9 +122,9 @@ export const MODELS: { value: string; label: string; tint: string }[] = [
 
 /** Codex model ids are the backend-policy ids accepted by the Codex runner. */
 export const CODEX_MODELS: { value: string; label: string; tint: string }[] = [
-  { value: "gpt-5.6-sol", label: "GPT-5.6 Sol", tint: "text-teal-500" },
-  { value: "gpt-5.6-terra", label: "GPT-5.6 Terra", tint: "text-amber-500" },
   { value: "gpt-5.6-luna", label: "GPT-5.6 Luna · Fast", tint: "text-sky-500" },
+  { value: "gpt-5.6-terra", label: "GPT-5.6 Terra", tint: "text-amber-500" },
+  { value: "gpt-5.6-sol", label: "GPT-5.6 Sol", tint: "text-teal-500" },
 ];
 
 export type ModelOption = { value: string; label: string; tint: string };

@@ -1,8 +1,10 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { eq } from "drizzle-orm";
+import "../../index"; // run committed migrations before DB-backed gateway assertions
 import { db } from "../../db/client";
 import { providerEvents, runs, skills } from "../../db/schema";
 import { createRun, getRunForOrg, setRunStatus } from "../../runs/repo";
+import { formatSkillCatalogPage } from "../../skills/catalog";
 import { createSkillWithRevision } from "../../skills/repo";
 import { executeSkillTool, SKILL_TOOLS } from "./skill-tools";
 import { resolveToolRunIdentity } from "./run-authorization";
@@ -117,6 +119,27 @@ describe("agent-selected skill gateway", () => {
     expect(ids).not.toContain(otherSkillId);
     expect(result.content[0]?.text).toContain("inspect-production-dashboard");
     expect(result.content[0]?.text).not.toContain("cross-tenant-secret");
+  });
+
+  test("uses the shared catalog page formatter for tool text and structured payload", async () => {
+    const { claims, skillId } = await fixture();
+    const result = await executeSkillTool(claims, "skills_list", {});
+    const expected = formatSkillCatalogPage([
+      {
+        id: skillId,
+        kind: "skill",
+        name: "inspect-production-dashboard",
+        description: "Inspect a production dashboard using the authenticated workspace tools.",
+        tags: ["dashboard", "inspection"],
+        currentVersion: 1,
+      },
+    ]);
+
+    expect(result.content[0]?.text).toBe(expected.text);
+    expect(result.structuredContent).toEqual({
+      skills: expected.skills,
+      nextCursor: expected.nextCursor,
+    });
   });
 
   test("activates the current immutable revision and returns its full procedure", async () => {

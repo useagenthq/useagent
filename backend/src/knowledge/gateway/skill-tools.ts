@@ -1,5 +1,12 @@
 import type { ToolTokenClaims } from "./token";
 import type { ToolCallResult } from "./tools";
+import {
+  DEFAULT_CATALOG_PAGE_SIZE,
+  MAX_CATALOG_PAGE_SIZE,
+  boundedCatalogCursor,
+  boundedCatalogLimit,
+  formatSkillCatalogPage,
+} from "../../skills/catalog";
 import { formatSkillMarkdown } from "../../skills/format";
 import {
   bumpSkillUsage,
@@ -8,10 +15,6 @@ import {
 } from "../../skills/repo";
 import { pinSkillToActiveRun } from "../../runs/repo";
 import { recordSkillLoaded } from "../../skills/skill-loaded";
-
-const DEFAULT_CATALOG_PAGE_SIZE = 50;
-const MAX_CATALOG_PAGE_SIZE = 100;
-const MAX_DESCRIPTION_CHARS = 500;
 
 export const SKILL_TOOLS = [
   {
@@ -61,44 +64,17 @@ function error(text: string): ToolCallResult {
   return { content: [{ type: "text", text }], isError: true };
 }
 
-function boundedInteger(value: unknown, fallback: number, min: number, max: number): number {
-  return typeof value === "number" && Number.isInteger(value)
-    ? Math.min(max, Math.max(min, value))
-    : fallback;
-}
-
 async function listSkills(
   claims: ToolTokenClaims,
   args: Record<string, unknown>,
 ): Promise<ToolCallResult> {
-  const cursor = boundedInteger(args.cursor, 0, 0, Number.MAX_SAFE_INTEGER);
-  const limit = boundedInteger(
-    args.limit,
-    DEFAULT_CATALOG_PAGE_SIZE,
-    1,
-    MAX_CATALOG_PAGE_SIZE,
-  );
+  const cursor = boundedCatalogCursor(args.cursor);
+  const limit = boundedCatalogLimit(args.limit);
   const entries = await listSkillCatalogForOrg(claims.orgId);
-  const catalog = entries
-    .slice(cursor, cursor + limit)
-    .map((entry) => ({
-      ...entry,
-      description: entry.description.slice(0, MAX_DESCRIPTION_CHARS),
-    }));
-  const text = catalog.length === 0
-    ? "No skills or playbooks are available to this organization."
-    : catalog
-        .map(
-          (entry) =>
-            `[${entry.id}] ${entry.kind}: ${entry.name} (v${entry.currentVersion})\n` +
-            `${entry.description || "No description."}` +
-            `${entry.tags.length > 0 ? `\nTags: ${entry.tags.join(", ")}` : ""}`,
-        )
-        .join("\n\n");
-  const nextCursor = cursor + catalog.length < entries.length ? cursor + catalog.length : null;
+  const { skills, text, nextCursor } = formatSkillCatalogPage(entries, { cursor, limit });
   return {
     content: [{ type: "text", text }],
-    structuredContent: { skills: catalog, nextCursor },
+    structuredContent: { skills, nextCursor },
   };
 }
 

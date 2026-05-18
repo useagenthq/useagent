@@ -46,9 +46,10 @@ const ENGINE_CAPTIONS: Partial<Record<EngineId, string>> = {
  * pickers, and the "Start agent" CTA. Client-side because it owns every
  * selection, the prompt, and the POST → redirect.
  *
- * Every control here reaches the backend: the prompt, engine, model (opencode
- * only), selected repos, per-repo branches, memory scope and the pinned skill
- * all ride into POST /api/runs; on success it routes to the run's /session view.
+ * Every control here reaches the backend: the prompt, engine, model (when the
+ * engine exposes a curated catalog), selected repos, per-repo branches, memory
+ * scope and the pinned skill all ride into POST /api/runs; on success it routes
+ * to the run's /session view.
  */
 export function NewTaskComposer({ skills }: { skills: Skill[] }) {
   const router = useRouter();
