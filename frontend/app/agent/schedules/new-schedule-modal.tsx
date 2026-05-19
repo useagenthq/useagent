@@ -70,7 +70,7 @@ export function NewScheduleModal({
       reset();
       onClose();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to create schedule");
+      setError(e instanceof Error ? e.message : "Failed to create automation");
       setBusy(false);
     }
   };
@@ -87,7 +87,7 @@ export function NewScheduleModal({
     >
       <Modal.Content className="max-w-[520px]">
         <Modal.Header
-          title="New schedule"
+          title="New automation"
           description="Describe the work and the cron cadence Skynet should start it on. Created off - enable it from the list."
         />
 

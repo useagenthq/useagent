@@ -176,7 +176,7 @@ function HistoryDrawer({
             <p className="text-paragraph-sm text-text-soft-400">Loading…</p>
           ) : firings.length === 0 ? (
             <p className="text-paragraph-sm text-text-soft-400">
-              No runs yet. Use “Run now” or enable the schedule.
+              No runs yet. Use “Run now” or enable the automation.
             </p>
           ) : (
             <ul className="flex flex-col gap-2.5">
@@ -225,7 +225,7 @@ export function SchedulesView() {
         setList(rows);
         setError(null);
       })
-      .catch(() => setError("Couldn’t load schedules. Is the backend running?"));
+      .catch(() => setError("Couldn’t load automations. Is the backend running?"));
   }, []);
 
   useEffect(() => {
@@ -276,7 +276,7 @@ export function SchedulesView() {
         <div className="flex items-start gap-2.5">
           <RiCalendarScheduleLine aria-hidden className="mt-0.5 size-5 text-text-strong-950" />
           <div className="flex flex-col gap-0.5">
-            <h1 className="text-display-sm text-text-strong-950">Schedules</h1>
+            <h1 className="text-display-sm text-text-strong-950">Automations</h1>
             <p className="text-paragraph-sm text-text-sub-600">
               Recurring runs Skynet starts on its own, on a cron cadence
             </p>
@@ -287,7 +287,7 @@ export function SchedulesView() {
           onClick={() => setModalOpen(true)}
           className="inline-flex h-9 shrink-0 cursor-pointer items-center rounded-full bg-bg-strong-950 px-4 text-label-sm text-text-white-0 shadow-regular-xs outline-none transition-opacity hover:opacity-90 focus-visible:ring-2 focus-visible:ring-stroke-strong-950 focus-visible:ring-offset-2"
         >
-          New schedule
+          New automation
         </button>
       </div>
 
@@ -296,7 +296,7 @@ export function SchedulesView() {
         <RiRobot2Line aria-hidden className="mt-0.5 size-[18px] shrink-0 text-text-soft-400" />
         <p className="text-paragraph-xs text-text-sub-600">
           <span className="text-mono-label mr-1.5 text-text-soft-400">Automations</span>
-          New schedules are created disabled. Enable one and its prompt fires as a
+          New automations are created disabled. Enable one and its prompt fires as a
           real run on each cron match; runs appear in Active runs.
         </p>
       </div>
@@ -321,7 +321,7 @@ export function SchedulesView() {
         </div>
       ) : (
         <p className="mt-10 text-paragraph-sm text-text-sub-600">
-          No schedules yet. Create one to have Skynet run it on a cron cadence.
+          No automations yet. Create one to have Skynet run it on a cron cadence.
         </p>
       )}
 
