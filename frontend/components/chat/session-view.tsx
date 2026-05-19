@@ -1,7 +1,5 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import Link from "next/link";
 import {
   RiAddLine,
   RiCodeSSlashLine,
@@ -11,48 +9,47 @@ import {
   RiRobot2Line,
   RiTerminalBoxLine,
 } from "@remixicon/react";
-import { backendFetch } from "@/lib/backend-fetch";
-import { cnExt as cn } from "@/utils/cn";
-import * as SegmentedControl from "@/components/ui/segmented-control";
-import { Conversation, type Turn } from "@/components/chat/conversation";
-import type { SlashCommand } from "@/components/chat/slash-command";
+import Link from "next/link";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AgentsRail } from "@/components/chat/agents-rail";
-import { ArtifactsRail } from "@/components/chat/artifacts-rail";
-import { EditorPane } from "@/components/chat/editor-pane";
-import { DesktopPane } from "@/components/chat/desktop-pane";
-import { TerminalPane } from "@/components/chat/terminal-pane";
-import { OrbBootIndicator } from "@/components/chat/orb-boot-indicator";
-import { useThreadStream, shouldRetireOptimistic } from "@/components/chat/use-thread-stream";
-import type { NativeSnapshot } from "@/components/chat/native-store";
-import type { ThreadRunView } from "@/components/chat/thread-store";
-import { SubagentChips } from "@/components/chat/subagent-pane";
 import {
-  selectPendingQuestion,
-  type PendingQuestion,
-} from "@/components/chat/question-state";
-import {
-  selectPendingApproval,
   type ApprovalDecision,
   type PendingApproval,
+  selectPendingApproval,
 } from "@/components/chat/approval-state";
+import { ArtifactsRail } from "@/components/chat/artifacts-rail";
 import {
-  isLiveStatus,
-  normalizeEngine,
-  parseFileEntries,
-  supportsPreSessionModelSelection,
-  type ApiRun,
-  type EngineId,
-  type MemoryScope,
-  type RunStatus,
-} from "@/components/chat/types";
-import {
+  type CanonicalCommandView,
   resolveCommandCatalog,
   selectActiveSessionId,
   selectSessionCapabilities,
-  selectSessionCommands,
   selectSessionCommandCatalog,
-  type CanonicalCommandView,
+  selectSessionCommands,
 } from "@/components/chat/canonical-timeline";
+import { Conversation, type Turn } from "@/components/chat/conversation";
+import { DesktopPane } from "@/components/chat/desktop-pane";
+import { EditorPane } from "@/components/chat/editor-pane";
+import type { NativeSnapshot } from "@/components/chat/native-store";
+import { OrbBootIndicator } from "@/components/chat/orb-boot-indicator";
+import { type PendingQuestion, selectPendingQuestion } from "@/components/chat/question-state";
+import type { SlashCommand } from "@/components/chat/slash-command";
+import { SubagentChips } from "@/components/chat/subagent-pane";
+import { TerminalPane } from "@/components/chat/terminal-pane";
+import type { ThreadRunView } from "@/components/chat/thread-store";
+import {
+  type ApiRun,
+  type EngineId,
+  isLiveStatus,
+  type MemoryScope,
+  normalizeEngine,
+  parseFileEntries,
+  type RunStatus,
+  supportsPreSessionModelSelection,
+} from "@/components/chat/types";
+import { shouldRetireOptimistic, useThreadStream } from "@/components/chat/use-thread-stream";
+import * as SegmentedControl from "@/components/ui/segmented-control";
+import { backendFetch } from "@/lib/backend-fetch";
+import { cnExt as cn } from "@/utils/cn";
 
 /** Narrowest useful rail — keeps the terminal/desktop panes workable. */
 const RAIL_MIN = 280;
@@ -75,9 +72,7 @@ function StatusPill({ status }: { status: RunStatus }) {
         map[status],
       )}
     >
-      {live && (
-        <span className="ai-loading-pixel size-1.5 rounded-full bg-blue-500" />
-      )}
+      {live && <span className="ai-loading-pixel size-1.5 rounded-full bg-blue-500" />}
       {status}
     </span>
   );
@@ -126,13 +121,17 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
   // nothing stale is shown. Memoized + a handleReply dependency so a session change refreshes the
   // command intent it sends (no stale-closure session id).
   const engineSessionId = useMemo(
-    () => selectActiveSessionId([...snapshot.byId.values()], newest.id) ?? newest.engine_session_id ?? null,
+    () =>
+      selectActiveSessionId([...snapshot.byId.values()], newest.id) ??
+      newest.engine_session_id ??
+      null,
     [snapshot.byId, newest.id, newest.engine_session_id],
   );
   // The active session catalog's SNAPSHOT revision (latest commands.updated deliverySeq) - sent
   // with a native-command intent so the backend fail-closed authorization rejects a stale catalog.
   const commandCatalogRevision = useMemo(
-    () => selectSessionCommandCatalog([...snapshot.byId.values()], engineSessionId)?.revision ?? null,
+    () =>
+      selectSessionCommandCatalog([...snapshot.byId.values()], engineSessionId)?.revision ?? null,
     [snapshot.byId, engineSessionId],
   );
   // The ONE negotiated capability map for the current session: submission
@@ -144,8 +143,7 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
   // `session.started` can arrive after the composer first renders. Until then,
   // derive only this one capability from the engine's curated model catalog.
   // Once negotiated capabilities exist, an explicit false remains authoritative.
-  const modelSelection =
-    caps?.modelSelection ?? supportsPreSessionModelSelection(newest.engine);
+  const modelSelection = caps?.modelSelection ?? supportsPreSessionModelSelection(newest.engine);
 
   // A settled turn shows its native timeline ONLY when it actually has native
   // frames (opencode tool rows live only on the native lane); a settled turn with
@@ -160,7 +158,16 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
   const turns: Turn[] = thread.map((run) => {
     const v = snapshot.byId.get(run.id);
     if (!v) {
-      return { run, steps: run.steps, status: run.status, summary: run.summary, live: false, liveText: "", liveReasoning: "", native: undefined };
+      return {
+        run,
+        steps: run.steps,
+        status: run.status,
+        summary: run.summary,
+        live: false,
+        liveText: "",
+        liveReasoning: "",
+        native: undefined,
+      };
     }
     return {
       run: v.run,
@@ -176,6 +183,7 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
     };
   });
   const allSteps = turns.flatMap((t) => t.steps);
+  const allCanonicalEvents = turns.flatMap((t) => t.canonical ?? []);
   // Subagent fidelity is derived from native frames across the WHOLE thread.
   const allFrames = turns.flatMap((t) => t.native?.nativeFrames ?? []);
   const live = turns.some((t) => isLiveStatus(t.status));
@@ -244,9 +252,7 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
         void reconcile();
         return true;
       } catch (error) {
-        setQuestionError(
-          error instanceof Error ? error.message : "Could not continue this turn",
-        );
+        setQuestionError(error instanceof Error ? error.message : "Could not continue this turn");
         return false;
       } finally {
         setAnsweringQuestion(false);
@@ -353,7 +359,16 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
             // from the current session's catalog. Carries the provider + native session id so
             // the backend rejects a stale/cross-session intent; the backend re-validates before
             // delivering it verbatim. Absent => an ordinary prompt keeps its full context.
-            ...(command ? { command: { ...command, provider: engine, sessionId: engineSessionId ?? undefined, catalogRevision: commandCatalogRevision ?? undefined } } : {}),
+            ...(command
+              ? {
+                  command: {
+                    ...command,
+                    provider: engine,
+                    sessionId: engineSessionId ?? undefined,
+                    catalogRevision: commandCatalogRevision ?? undefined,
+                  },
+                }
+              : {}),
           }),
         });
         if (!res.ok) throw new Error(`backend ${res.status}`);
@@ -404,7 +419,7 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
     ? "running"
     : headQueuedId
       ? "queued"
-      : newestTurn?.status ?? newest.status;
+      : (newestTurn?.status ?? newest.status);
 
   // Stop the live turn: POST the durable cancel. The backend aborts the actor and
   // settles the run "Stopped by user"; the thread stream then emits its `done` +
@@ -421,9 +436,7 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
       const response = await backendFetch(`/api/runs/${target}/cancel`, { method: "POST" });
       if (!response.ok) {
         const body = (await response.json().catch(() => ({}))) as { error?: unknown };
-        throw new Error(
-          typeof body.error === "string" ? body.error : `backend ${response.status}`,
-        );
+        throw new Error(typeof body.error === "string" ? body.error : `backend ${response.status}`);
       }
     } catch (error) {
       // Leave the button and surface the failure; the turn is still live so the
@@ -446,7 +459,9 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
     if (!runningTurn) return;
     setStopError(null);
     try {
-      const response = await backendFetch(`/api/runs/${runningTurn.run.id}/cancel`, { method: "POST" });
+      const response = await backendFetch(`/api/runs/${runningTurn.run.id}/cancel`, {
+        method: "POST",
+      });
       if (!response.ok) throw new Error(`backend ${response.status}`);
     } catch (error) {
       // The queued bubble keeps its affordance; the user can retry with an
@@ -458,11 +473,11 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
   // Right rail: one tabbed panel, not stacked panes. Desktop and terminal are
   // useful before the first tool call, so the rail starts open on every real
   // session. The user can still collapse/reopen it explicitly.
-  const hasFiles = allSteps.some(
-    (s) => s.kind === "file" && parseFileEntries(s).length > 0,
-  );
+  const hasFiles = allSteps.some((s) => s.kind === "file" && parseFileEntries(s).length > 0);
   const hasCommands = allSteps.some((s) => s.kind === "command");
-  const hasSubagents = allSteps.some((s) => s.chip === "subagent");
+  const hasSubagents =
+    allCanonicalEvents.some((event) => event.kind === "child.started") ||
+    allSteps.some((s) => s.chip === "subagent");
   const [railOverride, setRailOverride] = useState<boolean | null>(null);
   const railOpen = railOverride ?? true;
   // Rail resize: a dragger between the conversation and the rail (md+). Width
@@ -545,7 +560,10 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
     [snapshot.byId, engineSessionId],
   );
   const hasDurable = durableCommands !== null;
-  const [fetchState, setFetchState] = useState<{ phase: "loading" | "done" | "error"; commands: CanonicalCommandView[] }>({
+  const [fetchState, setFetchState] = useState<{
+    phase: "loading" | "done" | "error";
+    commands: CanonicalCommandView[];
+  }>({
     phase: "loading",
     commands: [],
   });
@@ -562,14 +580,23 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
         // by opencode too, C5) is authoritative and supersedes this the moment the session advertises.
         const res = await backendFetch(`/api/commands?engine=${encodeURIComponent(engine)}`);
         if (!res.ok) return fail();
-        const list = ((await res.json()) as { commands?: { name?: string; description?: string; input?: string }[] }).commands ?? [];
+        const list =
+          (
+            (await res.json()) as {
+              commands?: { name?: string; description?: string; input?: string }[];
+            }
+          ).commands ?? [];
         if (cancelled) return;
         if (!Array.isArray(list)) return fail();
         setFetchState({
           phase: "done",
           commands: list
             .filter((c): c is { name: string; description?: string; input?: string } => !!c.name)
-            .map((c) => ({ name: c.name, description: c.description ?? null, input: typeof c.input === "string" ? c.input : null })),
+            .map((c) => ({
+              name: c.name,
+              description: c.description ?? null,
+              input: typeof c.input === "string" ? c.input : null,
+            })),
         });
       } catch {
         fail();
@@ -701,7 +728,11 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
           // its header; the active pane fills the body bare (its own border/round
           // is dropped so this panel owns the single card edge).
           <section
-            style={railWidth !== null ? ({ "--rail-w": `${railWidth}px` } as React.CSSProperties) : undefined}
+            style={
+              railWidth !== null
+                ? ({ "--rail-w": `${railWidth}px` } as React.CSSProperties)
+                : undefined
+            }
             className={cn(
               "border-stroke-soft-200 bg-bg-white-0 flex min-h-[50vh] min-w-0 flex-col overflow-hidden rounded-2xl border md:min-h-0 md:shrink-0",
               railWidth !== null ? "md:w-[var(--rail-w)]" : "md:w-[30%]",
@@ -773,13 +804,23 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
               {railTab !== "desktop" && (
                 <div className="absolute inset-0">
                   {railTab === "agents" ? (
-                    <AgentsRail steps={allSteps} live={live} frames={allFrames} />
+                    <AgentsRail
+                      steps={allSteps}
+                      live={live}
+                      frames={allFrames}
+                      canonicalEvents={allCanonicalEvents}
+                    />
                   ) : railTab === "artifacts" ? (
                     <ArtifactsRail threadId={rootId} live={live} />
                   ) : railTab === "editor" ? (
                     <EditorPane steps={allSteps} live={live} />
                   ) : (
-                    <TerminalPane steps={allSteps} live={live} engine={newest.engine} runId={newest.id} />
+                    <TerminalPane
+                      steps={allSteps}
+                      live={live}
+                      engine={newest.engine}
+                      runId={newest.id}
+                    />
                   )}
                 </div>
               )}

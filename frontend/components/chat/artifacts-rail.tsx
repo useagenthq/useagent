@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 import { ArtifactCard } from "@/app/agent/artifacts/artifact-card";
 import { type ArtifactDescriptor, extractArtifacts } from "@/components/artifacts/model";
 import * as Button from "@/components/ui/button";
+import { useOrgChanges } from "@/hooks/use-org-changes";
 import { backendFetch } from "@/lib/backend-fetch";
 import { artifactQueryForThread } from "./artifacts-rail-model";
 
@@ -42,6 +43,10 @@ export function ArtifactsRail({
     },
     [threadId],
   );
+
+  useOrgChanges((change) => {
+    if (change.type === "artifact" && change.threadId === threadId) void load();
+  });
 
   useEffect(() => {
     const controller = new AbortController();

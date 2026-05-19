@@ -15,6 +15,8 @@ import { COMPUTER_USE_TOOLS } from "../src/knowledge/gateway/computer-use-tools"
 import { REPOSITORY_TOOLS } from "../src/knowledge/gateway/repository-tools";
 import { GCS_TOOLS } from "../src/knowledge/gateway/gcs-tools";
 import { AUTOMATION_TOOLS } from "../src/knowledge/gateway/automation-tools";
+import { BLUEPRINT_TOOLS } from "../src/knowledge/gateway/blueprint-tools";
+import { KNOWLEDGE_MANAGEMENT_TOOLS } from "../src/knowledge/gateway/knowledge-management-tools";
 import { SKILL_TOOLS } from "../src/knowledge/gateway/skill-tools";
 import type { ToolTokenClaims } from "../src/knowledge/gateway/token";
 
@@ -69,6 +71,7 @@ describe("MCP wire is byte-identical after the SDK-schema adoption (#98)", () =>
     const result = resultRecord(await handleMcpMessage(CLAIMS, req(2, "tools/list")));
     expect(result.tools).toEqual([
       ...KNOWLEDGE_TOOLS,
+      ...KNOWLEDGE_MANAGEMENT_TOOLS,
       ...MEMORY_TOOLS,
       ...WEB_SEARCH_TOOLS,
       ...ARTIFACT_TOOLS,
@@ -77,6 +80,7 @@ describe("MCP wire is byte-identical after the SDK-schema adoption (#98)", () =>
       ...REPOSITORY_TOOLS,
       ...GCS_TOOLS,
       ...AUTOMATION_TOOLS,
+      ...BLUEPRINT_TOOLS,
       ...SKILL_TOOLS,
     ]);
   });

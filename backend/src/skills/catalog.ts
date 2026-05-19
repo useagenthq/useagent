@@ -36,6 +36,27 @@ interface SkillCatalogFormatOptions {
   maxTagChars?: number;
 }
 
+interface SkillCatalogPrefillPolicy {
+  hasPinnedSkill: boolean;
+  commandName: string | null;
+  orgId: string | null;
+  engineSessionId: string | undefined;
+}
+
+/**
+ * A native resumed session already contains the catalog from its first turn.
+ * Keep later turns small while preserving semantic discovery through the
+ * compact fallback guidance in `composeTurnPrompt`.
+ */
+export function shouldPrefillSkillCatalog({
+  hasPinnedSkill,
+  commandName,
+  orgId,
+  engineSessionId,
+}: SkillCatalogPrefillPolicy): boolean {
+  return !hasPinnedSkill && commandName === null && orgId !== null && engineSessionId === undefined;
+}
+
 export function boundedCatalogLimit(value: unknown): number {
   return typeof value === "number" && Number.isInteger(value)
     ? Math.min(MAX_CATALOG_PAGE_SIZE, Math.max(1, value))

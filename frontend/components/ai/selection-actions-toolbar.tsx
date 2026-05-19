@@ -75,7 +75,7 @@ export function SelectionActionsToolbar({
       exit={reducedMotion ? { opacity: 0 } : { opacity: 0, scale: 0.94, y: -3 }}
       className={`flex h-10 max-w-[calc(100vw-2rem)] items-center justify-center overflow-hidden rounded-full p-1 [box-shadow:0_18px_40px_-14px_hsl(var(--overlay)),0_0_0_1px_hsl(var(--stroke-sub-300))] ${
         resultVisible || errorVisible
-          ? "bg-bg-strong-950 text-text-white-0"
+          ? "bg-[#202226] text-white"
           : "bg-bg-weak-50 text-text-strong-950"
       }`}
     >
@@ -114,17 +114,17 @@ export function SelectionActionsToolbar({
             <button
               type="button"
               onClick={onDiscard}
-              className="inline-flex h-8 items-center gap-1.5 rounded-full px-3 text-paragraph-md text-text-white-0 outline-none transition-[background-color,transform] hover:bg-bg-surface-800 active:scale-[0.97] focus-visible:bg-bg-surface-800 focus-visible:ring-2 focus-visible:ring-primary-base"
+              className="inline-flex h-8 items-center gap-1.5 rounded-full px-3 text-paragraph-md text-white outline-none transition-[background-color,transform] hover:bg-white/10 active:scale-[0.97] focus-visible:bg-white/10 focus-visible:ring-2 focus-visible:ring-primary-base"
             >
               <RiCloseLine className="size-4" aria-hidden />
               Discard
             </button>
-            <span className="mx-1 h-5 w-px bg-text-white-0/20" aria-hidden />
+            <span className="mx-1 h-5 w-px bg-white/15" aria-hidden />
             <button
               type="button"
               aria-label="Regenerate rewrite"
               onClick={onRetry}
-              className="flex size-8 items-center justify-center rounded-full text-text-white-0/70 outline-none transition-[background-color,color,transform] hover:bg-bg-surface-800 hover:text-text-white-0 active:scale-[0.96] focus-visible:bg-bg-surface-800 focus-visible:text-text-white-0 focus-visible:ring-2 focus-visible:ring-primary-base"
+              className="flex size-8 items-center justify-center rounded-full text-white/70 outline-none transition-[background-color,color,transform] hover:bg-white/10 hover:text-white active:scale-[0.96] focus-visible:bg-white/10 focus-visible:text-white focus-visible:ring-2 focus-visible:ring-primary-base"
             >
               <RiRefreshLine className="size-5" aria-hidden />
             </button>

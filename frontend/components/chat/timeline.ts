@@ -13,9 +13,9 @@
 // messages by their min seq (the stable step-start anchor) and, within a message,
 // put the narration text before its tools in call order (ApiStep.idx).
 
-import { asRecord, deriveTrace, type ApiStep } from "./types";
 import { nativeOf } from "./native-ids";
 import type { NativeSnapshot } from "./native-store";
+import { type ApiStep, asRecord, deriveTrace, isRenderableTimelineStep } from "./types";
 
 /** A canonical context marker — a typed row (skill.loaded / context.retrieved)
  *  rendered in the SHARED timeline grammar, not a parallel context pane. */
@@ -64,6 +64,20 @@ export interface TimelineArtifact {
   readonly destination?: string;
 }
 
+/** A durable file receipt. The patch body stays out of the event stream; when a
+ * diff exists, the row links to its immutable artifact instead of fabricating
+ * inline content or line counts. */
+export interface TimelineFileChange {
+  readonly path: string;
+  readonly changeType: "create" | "edit" | "delete";
+  readonly diff?: {
+    readonly artifactId: string;
+    readonly bytes: number;
+    readonly sha256: string;
+    readonly contentType: string;
+  };
+}
+
 /** One node of the interleaved timeline: a context marker, a narration burst, or
  *  a tool row. */
 /** Provider-neutral rows rendered in the conversation, including durable artifact receipts. */
@@ -72,6 +86,7 @@ export type TimelineNode =
   | { kind: "text"; key: string; text: string }
   | { kind: "reasoning"; key: string; text: string }
   | { kind: "artifact"; key: string; artifact: TimelineArtifact }
+  | { kind: "file"; key: string; file: TimelineFileChange }
   | { kind: "tool"; key: string; step: ApiStep };
 
 function parseArtifact(eventType: string, payload: unknown): TimelineArtifact | null {
@@ -208,10 +223,7 @@ export function isNarration(step: ApiStep): boolean {
  * `live` keeps the sandbox boot rows (the pre-session gap signal) while the run is
  * live and drops them once settled — matching the worklog's boot filter.
  */
-export function buildTimeline(
-  native: NativeSnapshot,
-  live: boolean,
-): TimelineNode[] | null {
+export function buildTimeline(native: NativeSnapshot, live: boolean): TimelineNode[] | null {
   const { nativeFrames } = native;
   if (nativeFrames.length === 0) return null;
 
@@ -333,6 +345,7 @@ export function buildTimeline(
   // rows carry no message and own the pre-session gap (live only).
   for (const step of native.steps) {
     if (step.kind === "done") continue;
+    if (!isRenderableTimelineStep(step)) continue;
     if (isNarration(step)) continue; // rendered from text frames, not as a row
     if (deriveTrace(step).accent === "boot") {
       if (!live) continue;
@@ -343,7 +356,7 @@ export function buildTimeline(
     const mid = (ids?.partID && partMessage.get(ids.partID)) || ids?.messageID || null;
     ranked.push({
       node: { kind: "tool", key: step.id, step },
-      k0: mid ? msgOrderKey.get(mid) ?? Number.MAX_SAFE_INTEGER : Number.MAX_SAFE_INTEGER,
+      k0: mid ? (msgOrderKey.get(mid) ?? Number.MAX_SAFE_INTEGER) : Number.MAX_SAFE_INTEGER,
       k1: 1,
       k2: step.idx,
     });

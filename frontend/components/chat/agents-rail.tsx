@@ -8,6 +8,8 @@ import {
   RiRobot2Line,
 } from "@remixicon/react";
 import { useEffect, useState } from "react";
+import { deriveCanonicalChildren } from "@/components/chat/canonical-children";
+import type { CanonicalEventLike } from "@/components/chat/canonical-timeline";
 import {
   type ChildFidelity,
   type ChildStatus,
@@ -310,13 +312,18 @@ export function AgentsRail({
   steps,
   live,
   frames = [],
+  canonicalEvents = [],
 }: {
   steps: ApiStep[];
   live: boolean;
   frames?: readonly NativeFrame[];
+  canonicalEvents?: readonly CanonicalEventLike[];
 }) {
-  const { cards, ownerByStep } = deriveSubagents(steps);
-  const fidelity = deriveChildFidelity(frames);
+  const canonical = deriveCanonicalChildren(canonicalEvents);
+  const legacy = deriveSubagents(steps);
+  const hasCanonicalChildren = canonical.cards.length > 0;
+  const { cards, ownerByStep } = hasCanonicalChildren ? canonical : legacy;
+  const fidelity = hasCanonicalChildren ? canonical.fidelity : deriveChildFidelity(frames);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   // Fallback liveness for cards without a native status frame: the run is live
   // and hasn't emitted its terminal `done` step.

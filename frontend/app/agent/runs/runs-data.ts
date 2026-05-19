@@ -1,7 +1,8 @@
 /**
  * Shared, isomorphic helpers for the Active runs surface. Imported by both the
  * server page (initial SSR fetch, so real prompts render server-side) and the
- * client poller (`runs-list.tsx`, refreshes every 15s).
+ * realtime invalidation stream plus a low-frequency recovery poll in
+ * `runs-list.tsx`.
  *
  * Fetching goes through `lib/backend-fetch` — on the server it hits the backend
  * origin directly and forwards the session cookie; on the client it uses a
@@ -31,8 +32,8 @@ export interface Run {
   steps?: RunStep[];
 }
 
-export async function fetchRuns(): Promise<Run[]> {
-  const res = await backendFetch('/api/runs', { cache: 'no-store' });
+export async function fetchRuns(signal?: AbortSignal): Promise<Run[]> {
+  const res = await backendFetch('/api/runs', { cache: 'no-store', signal });
   if (!res.ok) throw new Error(`runs request failed: ${res.status}`);
   const data = (await res.json()) as { runs?: Run[] };
   return data.runs ?? [];

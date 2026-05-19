@@ -1,37 +1,39 @@
 "use client";
 
-import { memo, useEffect, useMemo, useRef, useState } from "react";
 import {
   RiArrowDownSLine,
   RiCheckLine,
   RiCloseLine,
   RiDownloadLine,
   RiExternalLinkLine,
+  RiFileEditLine,
   RiFileLine,
+  RiImageLine,
   RiSlackLine,
 } from "@remixicon/react";
-import { AsteriskMark } from "@/components/foundations/brand/asterisk-mark";
-import { cnExt as cn } from "@/utils/cn";
-import * as Badge from "@/components/ui/badge";
-import { Thinking } from "@/components/ai/thinking";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { LoadingState } from "@/components/ai/loading-state";
-import { Composer, type ComposerSubmit } from "@/components/chat/composer";
-import { Markdown } from "@/components/prompt-kit/markdown";
-import { MarkerRow, ToolStepRow } from "@/components/chat/tool-step-row";
-import type { SlashCommand } from "@/components/chat/slash-command";
-import { buildTimeline, hasNarration, type TimelineNode } from "@/components/chat/timeline";
+import { Thinking } from "@/components/ai/thinking";
+import { formatArtifactSize } from "@/components/artifacts/model";
+import type { ApprovalDecision, PendingApproval } from "@/components/chat/approval-state";
 import {
   buildTimelineFromCanonical,
-  shouldUseCanonicalTimeline,
   type CommandCatalogState,
   type StoredCanonicalEvent,
+  shouldUseCanonicalTimeline,
 } from "@/components/chat/canonical-timeline";
+import { Composer, type ComposerSubmit } from "@/components/chat/composer";
+import { NativeApprovalCard } from "@/components/chat/native-approval-card";
 import type { NativeSnapshot } from "@/components/chat/native-store";
 import { QuestionCard } from "@/components/chat/question-card";
 import type { PendingQuestion } from "@/components/chat/question-state";
-import { NativeApprovalCard } from "@/components/chat/native-approval-card";
-import type { ApprovalDecision, PendingApproval } from "@/components/chat/approval-state";
-import { formatArtifactSize } from "@/components/artifacts/model";
+import type { SlashCommand } from "@/components/chat/slash-command";
+import { buildTimeline, hasNarration, type TimelineNode } from "@/components/chat/timeline";
+import { MarkerRow, ToolStepRow } from "@/components/chat/tool-step-row";
+import { AsteriskMark } from "@/components/foundations/brand/asterisk-mark";
+import { Markdown } from "@/components/prompt-kit/markdown";
+import * as Badge from "@/components/ui/badge";
+import { cnExt as cn } from "@/utils/cn";
 
 // Canonical-timeline cutover flag (final_harness Phase 1, slice 4). OFF by default:
 // the legacy native/steps derivation renders unless a backend + build opt in via
@@ -39,13 +41,16 @@ import { formatArtifactSize } from "@/components/artifacts/model";
 // equivalent (canonical-timeline.equiv/.nodes tests); this flag lets us flip it on
 // deliberately and fall straight back to legacy if a run has no canonical events.
 const CANONICAL_TIMELINE = process.env.NEXT_PUBLIC_CANONICAL_TIMELINE === "1";
+
 import {
-  cleanPrompt,
-  deriveTrace,
-  engineLabel,
   type ApiRun,
   type ApiStep,
+  basename,
+  cleanPrompt,
+  deriveTrace,
   type EngineId,
+  engineLabel,
+  isRenderableTimelineStep,
   type MemoryScope,
   type RunStatus,
 } from "@/components/chat/types";
@@ -96,9 +101,7 @@ const MD_CLASS = cn(
 /** Terminal note for a run that failed before writing a summary. */
 function FailedNote() {
   return (
-    <p className="text-paragraph-sm text-error-base">
-      This run failed before producing a summary.
-    </p>
+    <p className="text-paragraph-sm text-error-base">This run failed before producing a summary.</p>
   );
 }
 
@@ -188,45 +191,89 @@ const TextBurst = memo(function TextBurst({ text }: { text: string }) {
   );
 });
 
+function ArtifactActions({
+  id,
+  name,
+  previewLabel = `Preview ${name}`,
+}: {
+  id: string;
+  name: string;
+  previewLabel?: string;
+}) {
+  const content = `/api/artifacts/${id}/content`;
+  return (
+    <div className="flex shrink-0 items-center gap-1">
+      <a
+        href={content}
+        target="_blank"
+        rel="noreferrer"
+        aria-label={previewLabel}
+        title={previewLabel}
+        className="flex size-8 items-center justify-center rounded-lg text-text-sub-600 outline-none hover:bg-bg-white-0 hover:text-text-strong-950 focus-visible:ring-2 focus-visible:ring-stroke-strong-950"
+      >
+        <RiExternalLinkLine aria-hidden className="size-4" />
+      </a>
+      <a
+        href={`${content}?download=1`}
+        download={name}
+        aria-label={`Download ${name}`}
+        title={`Download ${name}`}
+        className="flex size-8 items-center justify-center rounded-lg text-text-sub-600 outline-none hover:bg-bg-white-0 hover:text-text-strong-950 focus-visible:ring-2 focus-visible:ring-stroke-strong-950"
+      >
+        <RiDownloadLine aria-hidden className="size-4" />
+      </a>
+    </div>
+  );
+}
+
 function ArtifactRow({ node }: { node: Extract<TimelineNode, { kind: "artifact" }> }) {
   const { artifact } = node;
-  const content = `/api/artifacts/${artifact.id}/content`;
+  const media =
+    artifact.contentType.startsWith("image/") || artifact.contentType.startsWith("video/");
+  const Icon = media ? RiImageLine : RiFileLine;
   return (
     <div className="flex min-w-0 items-center gap-3 rounded-xl border border-stroke-soft-200 bg-bg-weak-50 px-3 py-2.5">
-      <RiFileLine aria-hidden className="size-5 shrink-0 text-text-sub-600" />
+      <Icon aria-hidden className="size-5 shrink-0 text-text-sub-600" />
       <div className="min-w-0 flex-1">
         <p className="truncate text-label-sm text-text-strong-950">{artifact.name}</p>
         <p className="text-paragraph-xs text-text-soft-400">
           {artifact.destination
             ? `Delivered to ${artifact.destination}`
-            : formatArtifactSize(artifact.bytes)}
+            : `${media ? "Generated media" : "Artifact"} · ${formatArtifactSize(artifact.bytes)}`}
         </p>
       </div>
       {artifact.destination === "slack" && (
-        <RiSlackLine aria-label="Delivered to Slack" className="size-4 shrink-0 text-text-soft-400" />
+        <RiSlackLine
+          aria-label="Delivered to Slack"
+          className="size-4 shrink-0 text-text-soft-400"
+        />
       )}
-      {!artifact.destination && (
-        <div className="flex shrink-0 items-center gap-1">
-          <a
-            href={content}
-            target="_blank"
-            rel="noreferrer"
-            aria-label={`Preview ${artifact.name}`}
-            title="Preview"
-            className="flex size-8 items-center justify-center rounded-lg text-text-sub-600 outline-none hover:bg-bg-white-0 hover:text-text-strong-950 focus-visible:ring-2 focus-visible:ring-stroke-strong-950"
-          >
-            <RiExternalLinkLine aria-hidden className="size-4" />
-          </a>
-          <a
-            href={`${content}?download=1`}
-            download={artifact.name}
-            aria-label={`Download ${artifact.name}`}
-            title="Download"
-            className="flex size-8 items-center justify-center rounded-lg text-text-sub-600 outline-none hover:bg-bg-white-0 hover:text-text-strong-950 focus-visible:ring-2 focus-visible:ring-stroke-strong-950"
-          >
-            <RiDownloadLine aria-hidden className="size-4" />
-          </a>
-        </div>
+      {!artifact.destination && <ArtifactActions id={artifact.id} name={artifact.name} />}
+    </div>
+  );
+}
+
+function FileChangeRow({ node }: { node: Extract<TimelineNode, { kind: "file" }> }) {
+  const { file } = node;
+  const name = basename(file.path);
+  const action =
+    file.changeType === "create" ? "Created" : file.changeType === "delete" ? "Deleted" : "Edited";
+  return (
+    <div className="flex min-w-0 items-center gap-3 rounded-xl border border-stroke-soft-200 bg-bg-weak-50 px-3 py-2.5">
+      <RiFileEditLine aria-hidden className="size-5 shrink-0 text-text-sub-600" />
+      <div className="min-w-0 flex-1">
+        <p className="truncate font-mono text-label-sm text-text-strong-950">{name}</p>
+        <p className="truncate text-paragraph-xs text-text-soft-400">
+          {action}
+          {file.diff ? ` · diff ${formatArtifactSize(file.diff.bytes)}` : ""}
+        </p>
+      </div>
+      {file.diff && (
+        <ArtifactActions
+          id={file.diff.artifactId}
+          name={`${name}.diff`}
+          previewLabel={`View diff for ${name}`}
+        />
       )}
     </div>
   );
@@ -253,6 +300,8 @@ function Timeline({ nodes, live }: { nodes: TimelineNode[]; live: boolean }) {
             <TextBurst key={node.key} text={node.text} />
           ) : node.kind === "artifact" ? (
             <ArtifactRow key={node.key} node={node} />
+          ) : node.kind === "file" ? (
+            <FileChangeRow key={node.key} node={node} />
           ) : node.kind === "reasoning" ? (
             <SettledThought key={node.key} text={node.text} />
           ) : (
@@ -289,14 +338,15 @@ function Timeline({ nodes, live }: { nodes: TimelineNode[]; live: boolean }) {
             <MarkerRow key={g.key} marker={g.node.marker} />
           ) : g.node.kind === "artifact" ? (
             <ArtifactRow key={g.key} node={g.node} />
+          ) : g.node.kind === "file" ? (
+            <FileChangeRow key={g.key} node={g.node} />
           ) : g.node.kind === "reasoning" ? (
             <SettledThought key={g.key} text={g.node.text} />
           ) : (
             <TextBurst key={g.key} text={g.node.text} />
           );
         }
-        const stepOf = (n: TimelineNode) =>
-          (n as Extract<TimelineNode, { kind: "tool" }>).step;
+        const stepOf = (n: TimelineNode) => (n as Extract<TimelineNode, { kind: "tool" }>).step;
         if (g.steps.length === 1) {
           return <ToolStepRow key={g.key} step={stepOf(g.steps[0])} state="done" />;
         }
@@ -405,10 +455,14 @@ function TurnBlock({ turn, onSendNow }: { turn: Turn; onSendNow?: () => void }) 
   // Which lane actually drove the timeline above - a test/debug hook (asserted by the
   // flag-on browser E2E to prove the canonical path really rendered, not just that a
   // timeline appeared). Cheap + pure.
-  const timelineSource: "canonical" | "native" =
-    shouldUseCanonicalTimeline(CANONICAL_TIMELINE, turn) ? "canonical" : "native";
+  const timelineSource: "canonical" | "native" = shouldUseCanonicalTimeline(
+    CANONICAL_TIMELINE,
+    turn,
+  )
+    ? "canonical"
+    : "native";
 
-  const activity = steps.filter((s) => s.kind !== "done");
+  const activity = steps.filter((s) => s.kind !== "done" && isRenderableTimelineStep(s));
   const latestLabel = activity.at(-1)?.label ?? "Starting up";
   const failed = status === "failed";
   // Settled history drops sandbox plumbing rows ("Sandbox — Thinking…" etc.):
@@ -418,9 +472,7 @@ function TurnBlock({ turn, onSendNow }: { turn: Turn; onSendNow?: () => void }) 
   // Settled-state weight (beautiful-ui): fanout turns earn the full Worklog
   // capsule; plain tool runs settle into the quiet "Ran N tools" trace.
   const hasSubagents = settled.some((s) => s.chip === "subagent");
-  const toolCount = settled.filter(
-    (s) => s.kind === "command" || s.kind === "file",
-  ).length;
+  const toolCount = settled.filter((s) => s.kind === "command" || s.kind === "file").length;
   const traceLabel =
     toolCount > 0
       ? `Ran ${toolCount} tool${toolCount === 1 ? "" : "s"}`
@@ -475,9 +527,7 @@ function TurnBlock({ turn, onSendNow }: { turn: Turn; onSendNow?: () => void }) 
             <AsteriskMark className="text-text-strong-950 size-3" />
           </span>
           <span className="text-label-sm text-text-strong-950">Skynet</span>
-          <span className="text-mono-label text-text-soft-400">
-            {engineLabel(run.engine)}
-          </span>
+          <span className="text-mono-label text-text-soft-400">{engineLabel(run.engine)}</span>
         </div>
 
         {/* Thinking surfaced ahead of the answer: real streamed reasoning tokens
@@ -502,36 +552,36 @@ function TurnBlock({ turn, onSendNow }: { turn: Turn; onSendNow?: () => void }) 
              fanouts (and failures, which need the status badge) keep the Worklog
              capsule; plain tool runs collapse to the quiet trace. */
           <>
-            {narrating ? null : live
-              ? activity.length > 0 && (
-                  <Thinking label={`Working - ${latestLabel}`} active open>
-                    {activity.map((step, i) => (
-                      <ToolStepRow
-                        key={step.id}
-                        step={step}
-                        state={i === activity.length - 1 ? "running" : "done"}
-                      />
-                    ))}
-                  </Thinking>
-                )
-              : settled.length > 0 &&
-                (hasSubagents || failed ? (
-                  <WorklogCapsule count={settled.length} failed={failed}>
-                    {settled.map((step) => (
-                      <ToolStepRow key={step.id} step={step} state="done" />
-                    ))}
-                  </WorklogCapsule>
-                ) : (
-                  <Thinking label={traceLabel} active={false}>
-                    {settled.map((step) => (
-                      <ToolStepRow key={step.id} step={step} state="done" />
-                    ))}
-                  </Thinking>
-                ))}
+            {narrating
+              ? null
+              : live
+                ? activity.length > 0 && (
+                    <Thinking label={`Working - ${latestLabel}`} active open>
+                      {activity.map((step, i) => (
+                        <ToolStepRow
+                          key={step.id}
+                          step={step}
+                          state={i === activity.length - 1 ? "running" : "done"}
+                        />
+                      ))}
+                    </Thinking>
+                  )
+                : settled.length > 0 &&
+                  (hasSubagents || failed ? (
+                    <WorklogCapsule count={settled.length} failed={failed}>
+                      {settled.map((step) => (
+                        <ToolStepRow key={step.id} step={step} state="done" />
+                      ))}
+                    </WorklogCapsule>
+                  ) : (
+                    <Thinking label={traceLabel} active={false}>
+                      {settled.map((step) => (
+                        <ToolStepRow key={step.id} step={step} state="done" />
+                      ))}
+                    </Thinking>
+                  ))}
 
-            {summary && (
-              <AgentAnswer summary={summary} stream={wasLive && !sawNarration} />
-            )}
+            {summary && <AgentAnswer summary={summary} stream={wasLive && !sawNarration} />}
 
             {/* Answer-in-progress: the run's live tokens stream in word-by-word
                 until the durable summary/markdown takes over on completion. */}
@@ -542,13 +592,9 @@ function TurnBlock({ turn, onSendNow }: { turn: Turn; onSendNow?: () => void }) 
             {/* Started but nothing streamed yet: the working state (queued
                 turns never reach here - they early-return as a bare user
                 bubble above, per the opencode steering-queue standard). */}
-            {!summary &&
-              !narrating &&
-              !failed &&
-              activity.length === 0 &&
-              status === "running" && (
-                <span className="text-label-sm text-text-soft-400">Working...</span>
-              )}
+            {!summary && !narrating && !failed && activity.length === 0 && status === "running" && (
+              <span className="text-label-sm text-text-soft-400">Working...</span>
+            )}
           </>
         )}
       </div>
@@ -685,7 +731,10 @@ export function Conversation({
   const scrollRef = useRef<HTMLDivElement>(null);
   const stickRef = useRef(true);
   const scrollSignature = turns
-    .map((t) => `${t.steps.length}:${t.liveText.length}:${t.liveReasoning.length}:${t.summary ? 1 : 0}`)
+    .map(
+      (t) =>
+        `${t.steps.length}:${t.liveText.length}:${t.liveReasoning.length}:${t.summary ? 1 : 0}`,
+    )
     .join("|");
   useEffect(() => {
     const el = scrollRef.current;
@@ -693,8 +742,7 @@ export function Conversation({
   }, [scrollSignature, pendingReply, pendingQuestion?.id, pendingApproval?.id, turns.length]);
 
   const composerCanAnswerQuestion =
-    pendingQuestion?.questions.length === 1 &&
-    pendingQuestion.questions[0]?.custom === true;
+    pendingQuestion?.questions.length === 1 && pendingQuestion.questions[0]?.custom === true;
   const controlLocksComposer =
     !!pendingApproval || (!!pendingQuestion && !composerCanAnswerQuestion);
 
@@ -749,10 +797,10 @@ export function Conversation({
           pendingApproval
             ? "Respond to the approval above to continue…"
             : pendingQuestion
-            ? composerCanAnswerQuestion
-              ? "Answer Skynet’s question…"
-              : "Answer the question above to continue…"
-            : undefined
+              ? composerCanAnswerQuestion
+                ? "Answer Skynet’s question…"
+                : "Answer the question above to continue…"
+              : undefined
         }
         onReply={onReply}
         running={running}

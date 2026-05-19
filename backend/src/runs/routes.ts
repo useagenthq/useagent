@@ -35,6 +35,7 @@ import {
 } from "./canonical-events";
 import { completeCanonicalRuns } from "./canonicalization-outbox";
 import { subscribeThread } from "./thread-signals";
+import { subscribeOrg } from "./org-signals";
 import type { ApiRun, ApiStep } from "./repo";
 import { defaultModelForEngine, isModelAllowedForEngine } from "./model-policy";
 import {
@@ -56,6 +57,61 @@ import { UploadClaimError } from "../uploads/repo";
 export const runsRoutes = new Hono<AppEnv>();
 
 runsRoutes.use("*", orgScope);
+
+// One lightweight, tenant-scoped invalidation stream for ambient product
+// surfaces (Workspace, Runs, Recents, Artifacts). The database remains the
+// source of truth: events carry IDs only and tell clients which snapshot to
+// refresh. The active conversation keeps its richer thread-events stream.
+runsRoutes.get("/changes", (c) => {
+  const orgId = c.get("orgId");
+  const encoder = new TextEncoder();
+  const signal = c.req.raw.signal;
+
+  const body = new ReadableStream<Uint8Array>({
+    start(controller) {
+      let closed = false;
+      const send = (frame: string): void => {
+        if (closed) return;
+        try {
+          controller.enqueue(encoder.encode(frame));
+        } catch {
+          cleanup();
+        }
+      };
+      const unsubscribe = subscribeOrg(orgId, (change) => {
+        send(`event: change\ndata: ${JSON.stringify(change)}\n\n`);
+      });
+      const heartbeat = setInterval(() => send(": ping\n\n"), 25_000);
+      heartbeat.unref?.();
+
+      function cleanup(): void {
+        if (closed) return;
+        closed = true;
+        clearInterval(heartbeat);
+        unsubscribe();
+        signal.removeEventListener("abort", cleanup);
+        try {
+          controller.close();
+        } catch {
+          // The browser may already have closed the stream.
+        }
+      }
+
+      send(": open\nretry: 1500\n\n");
+      if (signal.aborted) cleanup();
+      else signal.addEventListener("abort", cleanup);
+    },
+  });
+
+  return new Response(body, {
+    headers: {
+      "Content-Type": "text/event-stream; charset=utf-8",
+      "Cache-Control": "no-cache, no-transform",
+      Connection: "keep-alive",
+      "X-Accel-Buffering": "no",
+    },
+  });
+});
 
 runsRoutes.post("/", async (c) => {
   let body: {

@@ -3,7 +3,7 @@ import { runPayloadFingerprint } from "./fingerprint";
 import { findCommandByKey, insertCommandWithRun } from "./repo";
 import type { CommandRecord } from "./repo";
 import type { RunCommandInput, RunCommandOutcome } from "./types";
-import { publishThreadChange } from "../runs/thread-signals";
+import { publishRunLifecycleChange } from "../runs/org-signals";
 import { isModelAllowedForEngine } from "../runs/model-policy";
 import { engineModelReadyForDispatch } from "../runs/engine-readiness";
 import { withThreadLifecycleLock } from "../runs/thread-lifecycle-lock";
@@ -117,7 +117,12 @@ export async function acceptRunCommand(input: RunCommandInput): Promise<RunComma
   // Skills Run all accept here, so none grows its own UI notification code. Only
   // fired on a fresh `created`; an idempotent replay returns above and re-signals
   // nothing (no duplicate run signal). IDs only, never secrets/payloads.
-  publishThreadChange(input.run.threadId, { runId: input.run.id, kind: "created" });
+  publishRunLifecycleChange({
+    orgId: input.orgId,
+    threadId: input.run.threadId,
+    runId: input.run.id,
+    kind: "created",
+  });
 
   return { status: "created", runId: input.run.id, commandId };
 }

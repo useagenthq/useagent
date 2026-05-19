@@ -1,5 +1,6 @@
 "use client";
 
+import { RiCodeSSlashLine, RiFileCopyLine } from "@remixicon/react";
 import { AnimatePresence, MotionConfig, motion, useReducedMotion } from "motion/react";
 import {
   type KeyboardEvent,
@@ -231,12 +232,20 @@ export function SelectionActions({
     <MotionConfig reducedMotion="user" transition={{ duration: 0.22 }}>
       <div
         className={cn(
-          "flex min-h-[272px] w-full items-center overflow-hidden rounded-2xl border border-stroke-soft-200 bg-bg-white-0 px-5 py-16 shadow-regular-xs sm:px-14 lg:px-[72px]",
+          "relative flex min-h-[272px] w-full items-center overflow-hidden rounded-[24px] border border-[#303237] bg-[#18191b] px-5 py-16 shadow-regular-xs sm:px-14 lg:px-[72px]",
           className,
         )}
       >
-        <div ref={hostRef} className="relative w-full pb-14">
-          <p className="text-paragraph-md leading-7 text-text-strong-950">
+        <div className="absolute top-6 right-6 hidden items-center gap-2 sm:flex" aria-hidden>
+          <span className="inline-flex size-11 items-center justify-center rounded-[18px] border border-[#383a3f] bg-[#202124] text-text-sub-600 shadow-regular-xs">
+            <RiFileCopyLine className="size-5" />
+          </span>
+          <span className="inline-flex size-11 items-center justify-center rounded-[18px] border border-[#383a3f] bg-[#202124] text-text-sub-600 shadow-regular-xs">
+            <RiCodeSSlashLine className="size-5" />
+          </span>
+        </div>
+        <div ref={hostRef} className="relative mx-auto w-full max-w-[770px] pb-14">
+          <p className="text-[24px] leading-[1.45] text-text-strong-950">
             {leadingText}
             <span
               ref={selectionRef}
@@ -244,7 +253,7 @@ export function SelectionActions({
                 "box-decoration-clone rounded-[3px] transition-[color,background-color] duration-200",
                 state.phase === "accepted"
                   ? "text-text-strong-950"
-                  : "bg-primary-alpha-16 text-text-strong-950",
+                  : "bg-[#2a384c] text-text-strong-950",
               )}
             >
               {displayText}

@@ -140,7 +140,11 @@ export function t3RunSnapshot(
     if (!template) throw new Error("T3_CUBE_TEMPLATE_ID is required for the T3 Cube adapter");
     return template;
   }
-  return env.T3_DAYTONA_SNAPSHOT?.trim() || "skynet-agent-t3-v2";
+  return (
+    env.T3_DAYTONA_SNAPSHOT?.trim() ||
+    env.DAYTONA_SNAPSHOT?.trim() ||
+    "skynet-agent-v17"
+  );
 }
 
 export function t3RuntimeMode(

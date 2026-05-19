@@ -12,6 +12,7 @@ import * as Table from '@/components/ui/table';
 import { LoadingState } from '@/components/ai/loading-state';
 import { SubagentPeekButton } from '@/components/chat/subagent-pane';
 import { StatusDot } from '@/components/shared/status-dot';
+import { useOrgChanges } from '@/hooks/use-org-changes';
 import { formatDuration } from '@/utils/format';
 import { type Run, type RunTone, TONE_TO_DOT, fetchRuns, statusTone } from './runs-data';
 
@@ -144,30 +145,32 @@ export function RunsList({
     initialRuns.length === 0 && !initialError,
   );
 
-  React.useEffect(() => {
-    let cancelled = false;
-
-    async function poll() {
+  const load = React.useCallback(async (signal?: AbortSignal) => {
       try {
-        const next = await fetchRuns();
-        if (cancelled) return;
+        const next = await fetchRuns(signal);
         setRuns(next);
         setErrored(false);
       } catch {
-        if (cancelled) return;
+        if (signal?.aborted) return;
         setErrored(true);
       } finally {
-        if (!cancelled) setLoading(false);
+        if (!signal?.aborted) setLoading(false);
       }
-    }
+  }, []);
 
-    void poll();
-    const id = setInterval(poll, POLL_MS);
+  useOrgChanges((change) => {
+    if (change.type === 'run') void load();
+  });
+
+  React.useEffect(() => {
+    const controller = new AbortController();
+    void load(controller.signal);
+    const id = setInterval(() => void load(controller.signal), POLL_MS);
     return () => {
-      cancelled = true;
+      controller.abort();
       clearInterval(id);
     };
-  }, []);
+  }, [load]);
 
   // Keep the last good list on transient failures; only surface the error
   // panel when a poll failed and we have nothing to show.

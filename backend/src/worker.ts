@@ -19,12 +19,16 @@ import { recallScopedMemory } from "./memory/team-memory";
 import { resolveScopedMemory } from "./memory/scope";
 import { recordContextRetrieval } from "./memory/retrieval-ledger";
 import { getPinnedRevision, listSkillCatalogForOrg } from "./skills/repo";
-import { formatSkillCatalogPrefill, frameSkillCatalogContext } from "./skills/catalog";
+import {
+  formatSkillCatalogPrefill,
+  frameSkillCatalogContext,
+  shouldPrefillSkillCatalog,
+} from "./skills/catalog";
 import { formatSkillMarkdown, frameSkillContext } from "./skills/format";
 import { recordSkillLoaded } from "./skills/skill-loaded";
 import { finalizeRun } from "./runs/finalize";
 import { turnStream } from "./runs/turn-stream";
-import { publishThreadChange } from "./runs/thread-signals";
+import { publishRunLifecycleChange } from "./runs/org-signals";
 import { claimNextRun, settleCommandForRun } from "./commands/dispatch";
 import {
   createFirstOutputMarker,
@@ -196,9 +200,13 @@ async function onRunSettled(runId: string, threadId: string): Promise<void> {
  * context or runtime preparation can add seconds of silent UI time. The row is
  * durable (so reload/reconnect sees the same state) and also published live.
  * Returns the next step index for the engine adapter. */
-export async function beginEngineRun(runId: string, threadId: string): Promise<number> {
+export async function beginEngineRun(
+  runId: string,
+  threadId: string,
+  orgId: string | null,
+): Promise<number> {
   await setRunStatus(runId, "running");
-  publishThreadChange(threadId, { runId, kind: "running" });
+  publishRunLifecycleChange({ orgId, threadId, runId, kind: "running" });
   const step = await insertStep({
     runId,
     idx: 0,
@@ -239,7 +247,7 @@ async function runWorker(runId: string): Promise<void> {
     // exact scripted fixture; every real engine starts its own rows at index 1.
     const endAccept = stageLedger?.begin("worker.accept_to_running");
     const firstEngineStep =
-      run.engine === "mock" ? 0 : await beginEngineRun(run.id, run.threadId);
+      run.engine === "mock" ? 0 : await beginEngineRun(run.id, run.threadId, run.orgId);
     endAccept?.();
 
     // Skill context (Phase 0 slice 0.1): resolve + record the run's pinned skill
@@ -287,7 +295,7 @@ async function runWorker(runId: string): Promise<void> {
     // `mock` is the scripted trace and ignores context entirely. It IS
     // cancellable — the abortable sleep + signal make a live mock turn stop.
     if (run.engine === "mock") {
-      await runMock(runId, run.threadId, ac.signal, wasCancelled);
+      await runMock(runId, run.threadId, run.orgId, ac.signal, wasCancelled);
       return;
     }
 
@@ -305,6 +313,14 @@ async function runWorker(runId: string): Promise<void> {
     // captures into; null when memory is disabled. Identity is ALWAYS from the run
     // row — never the sandbox/prompt.
     const plan = resolveScopedMemory(run);
+    // Start the native-session lookup alongside every other independent context
+    // source. The result both controls fresh-only catalog prefill and is reused
+    // by the adapter, avoiding a second DB lookup before dispatch.
+    const engineSessionPromise = getThreadEngineSession(
+      run.threadId,
+      run.engine,
+      run.id,
+    ).then((sessionId) => sessionId ?? undefined);
     const endContext = stageLedger?.begin("worker.context");
     const timedContextOperation = async <T>(
       stage: string,
@@ -317,9 +333,8 @@ async function runWorker(runId: string): Promise<void> {
         end?.();
       }
     };
-    const shouldPrefillSkillCatalog =
-      !skillContext && !run.commandName && run.orgId !== null;
-    const [recall, bootstrapContext, skillCatalogPage] = await Promise.all([
+    const [engineSessionId, recall, bootstrapContext, skillCatalogPage] = await Promise.all([
+      engineSessionPromise,
       // Layered recall (new_mem_prompt.md 6.2): Tencent L0 (immediate ground
       // evidence, incl. explicit "remember X") + L1 (distilled) searched in
       // parallel and merged, so a freshly-taught fact is injected into a NEW
@@ -331,7 +346,18 @@ async function runWorker(runId: string): Promise<void> {
         run.parentRunId ? buildThreadPreamble(run.threadId, run.id) : Promise.resolve(""),
       ),
       timedContextOperation("worker.skill_catalog", async () => {
-        if (!shouldPrefillSkillCatalog || run.orgId === null) return null;
+        const engineSessionId = await engineSessionPromise;
+        if (
+          !shouldPrefillSkillCatalog({
+            hasPinnedSkill: skillContext.length > 0,
+            commandName: run.commandName ?? null,
+            orgId: run.orgId,
+            engineSessionId,
+          }) ||
+          run.orgId === null
+        ) {
+          return null;
+        }
         try {
           const entries = await listSkillCatalogForOrg(run.orgId);
           return formatSkillCatalogPrefill(entries);
@@ -412,6 +438,7 @@ async function runWorker(runId: string): Promise<void> {
         skillContext,
         skillCatalogContext,
         run.threadId,
+        engineSessionId,
         run.model,
         run.repos,
         run.orgId,
@@ -450,6 +477,7 @@ async function runWorker(runId: string): Promise<void> {
 async function runMock(
   runId: string,
   threadId: string,
+  orgId: string | null,
   signal: AbortSignal,
   wasCancelled: () => string | null,
 ): Promise<void> {
@@ -457,7 +485,7 @@ async function runMock(
   await setRunStatus(runId, "running");
   // Wake connected thread streams to re-project the queued→running transition
   // (the status change carries no worker step of its own).
-  publishThreadChange(threadId, { runId, kind: "running" });
+  publishRunLifecycleChange({ orgId, threadId, runId, kind: "running" });
 
   let idx = 0;
   try {
@@ -533,6 +561,7 @@ async function runEngine(
   skillContext: string,
   skillCatalogContext: string,
   threadId: string,
+  engineSessionId: string | undefined,
   model: string,
   repos: string[],
   orgId: string | null,
@@ -555,12 +584,6 @@ async function runEngine(
   firstEngineStep: number,
 ): Promise<void> {
   const startedAt = Date.now();
-
-  // Explicit native-session resume (reference bot's set_resume_session_id model): the
-  // thread's previous turn on the SAME engine recorded its engine session id in
-  // the DB; hand it to the adapter so it resumes deterministically by id.
-  const engineSessionId =
-    (await getThreadEngineSession(threadId, engineId, runId)) ?? undefined;
 
   // SECURITY GATE (final_harness.md P0), defense-in-depth: even if a run row
   // exists with an unsafe/unproven engine (legacy row, non-HTTP channel, direct

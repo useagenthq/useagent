@@ -10,6 +10,7 @@ import {
   type ArtifactDescriptor,
 } from "@/components/artifacts/model";
 import * as SegmentedControl from "@/components/ui/segmented-control";
+import { useOrgChanges } from "@/hooks/use-org-changes";
 import { backendFetch } from "@/lib/backend-fetch";
 import { ArtifactCard } from "./artifact-card";
 
@@ -99,6 +100,10 @@ export function LiveArtifacts({
       if (!signal?.aborted) setRefreshing(false);
     }
   }, []);
+
+  useOrgChanges((change) => {
+    if (change.type === "artifact") void load();
+  });
 
   useEffect(() => {
     const controller = new AbortController();
