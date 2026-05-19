@@ -7,6 +7,7 @@
     "dev": "bun run --watch src/index.ts",
     "start": "bun run src/index.ts",
     "gateway": "bun run src/gateway.ts",
+    "typecheck:release": "bunx tsc --noEmit --strict --noUncheckedIndexedAccess --skipLibCheck --types bun --lib ESNext --target ESNext --module ESNext --moduleResolution bundler ../deploy/hetzner/provider-readiness-canary.ts ../deploy/hetzner/provider-readiness-response.ts",
     "test": "bun run test/prepare-db.ts && bun test",
     "e2e": "bun run test/e2e/full-stack.ts",
     "e2e:real": "bun run test/e2e/real-full-stack.ts",

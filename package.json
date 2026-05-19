@@ -7,6 +7,6 @@
     "stage:t3-dist": "bash deploy/hetzner/stage-t3-dist.sh",
     "canary:hosted-release": "bun run deploy/hetzner/hosted-release-canary.ts",
     "release:hosted": "bash deploy/hetzner/deploy-release.sh",
-    "typecheck": "bun run --cwd frontend typecheck && (cd backend && bunx tsc --noEmit) && (cd packages/agent-harness && bunx tsc --noEmit) && (cd packages/agent-client && bunx tsc --noEmit) && (cd packages/conformance && bunx tsc --noEmit)"
+    "typecheck": "bun run --cwd frontend typecheck && (cd backend && bunx tsc --noEmit) && bun run --cwd backend typecheck:release && (cd packages/agent-harness && bunx tsc --noEmit) && (cd packages/agent-client && bunx tsc --noEmit) && (cd packages/conformance && bunx tsc --noEmit)"
   }
 }

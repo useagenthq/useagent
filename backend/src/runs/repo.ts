@@ -510,11 +510,13 @@ export async function completeRun(
    *  status and its durable side-effects (memory capture, slack reply) atomically
    *  (see runs/finalize.ts). Defaults to the shared pool. */
   exec: Executor = db,
-): Promise<void> {
-  await exec
+): Promise<boolean> {
+  const [row] = await exec
     .update(runs)
     .set({ status, summary, durationMs, updatedAt: new Date() })
-    .where(eq(runs.id, id));
+    .where(eq(runs.id, id))
+    .returning({ id: runs.id });
+  return Boolean(row);
 }
 
 /** Replace a step's code_json in place (same id/idx). Serves the tool_call →
