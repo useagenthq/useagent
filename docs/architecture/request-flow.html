@@ -1,0 +1,485 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Skynet request flow</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --ink: #0c0a09;
+        --body: #4e4e4e;
+        --muted: #777169;
+        --line: #d6d3d1;
+        --line-soft: #e7e5e4;
+        --canvas: #f5f5f5;
+        --surface: #ffffff;
+        --surface-soft: #fafafa;
+        --mint: #a7e5d3;
+        --peach: #f4c5a8;
+        --lavender: #c8b8e0;
+        --sky: #a8c8e8;
+        --rose: #e8b8c4;
+        --success: #15803d;
+        --danger: #b91c1c;
+        --shadow: 0 4px 16px rgb(12 10 9 / 5%);
+      }
+
+      * { box-sizing: border-box; }
+
+      html { scroll-behavior: smooth; }
+
+      body {
+        margin: 0;
+        background: var(--canvas);
+        color: var(--ink);
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        font-size: 15px;
+        line-height: 1.5;
+      }
+
+      button { font: inherit; }
+
+      .page {
+        width: min(1640px, calc(100% - 48px));
+        margin: 0 auto;
+        padding: 48px 0 80px;
+      }
+
+      .eyebrow,
+      .zone-label,
+      .node-kicker,
+      .legend-label {
+        font-size: 11px;
+        font-weight: 650;
+        letter-spacing: 0.09em;
+        text-transform: uppercase;
+      }
+
+      .eyebrow { color: var(--muted); }
+
+      h1 {
+        max-width: 900px;
+        margin: 14px 0 16px;
+        font-family: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, serif;
+        font-size: clamp(42px, 6vw, 72px);
+        font-weight: 400;
+        letter-spacing: -0.035em;
+        line-height: 0.98;
+      }
+
+      .lede {
+        max-width: 820px;
+        margin: 0;
+        color: var(--body);
+        font-size: 17px;
+      }
+
+      .toolbar {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin: 28px 0 24px;
+      }
+
+      .filter {
+        min-height: 40px;
+        padding: 9px 16px;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        background: transparent;
+        color: var(--body);
+        cursor: pointer;
+      }
+
+      .filter:hover,
+      .filter:focus-visible { border-color: var(--ink); color: var(--ink); }
+
+      .filter[aria-pressed="true"] {
+        border-color: var(--ink);
+        background: var(--ink);
+        color: white;
+      }
+
+      .architecture {
+        position: relative;
+        overflow: hidden;
+        border: 1px solid var(--line-soft);
+        border-radius: 24px;
+        background:
+          radial-gradient(circle at 8% 0%, color-mix(in srgb, var(--mint) 34%, transparent) 0, transparent 21%),
+          radial-gradient(circle at 94% 22%, color-mix(in srgb, var(--lavender) 30%, transparent) 0, transparent 20%),
+          var(--surface-soft);
+        box-shadow: var(--shadow);
+      }
+
+      .zone {
+        padding: 22px;
+        border-bottom: 1px solid var(--line-soft);
+      }
+
+      .zone:last-child { border-bottom: 0; }
+
+      .zone-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        margin-bottom: 14px;
+      }
+
+      .zone-label { color: var(--body); }
+
+      .trust {
+        display: inline-flex;
+        align-items: center;
+        gap: 7px;
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .trust::before {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: var(--zone-color, var(--line));
+        content: "";
+      }
+
+      .rail {
+        display: grid;
+        grid-template-columns: repeat(6, minmax(150px, 1fr));
+        gap: 28px;
+      }
+
+      .rail.return { direction: rtl; }
+      .rail.return > * { direction: ltr; }
+
+      .node {
+        --accent: var(--line);
+        position: relative;
+        min-height: 150px;
+        padding: 16px;
+        border: 1px solid var(--line-soft);
+        border-top: 3px solid var(--accent);
+        border-radius: 16px;
+        background: color-mix(in srgb, white 91%, var(--accent));
+        transition: opacity 180ms ease, transform 180ms ease, box-shadow 180ms ease;
+      }
+
+      .node::after {
+        position: absolute;
+        top: 50%;
+        right: -23px;
+        width: 15px;
+        height: 15px;
+        border-top: 1.5px solid var(--ink);
+        border-right: 1.5px solid var(--ink);
+        content: "";
+        transform: translateY(-50%) rotate(45deg);
+        opacity: 0.55;
+      }
+
+      .rail.return .node::after {
+        right: auto;
+        left: -23px;
+        transform: translateY(-50%) rotate(-135deg);
+      }
+
+      .node:last-child::after { display: none; }
+
+      .node:hover {
+        box-shadow: 0 10px 30px rgb(12 10 9 / 8%);
+        transform: translateY(-2px);
+      }
+
+      .node-kicker { color: var(--muted); }
+
+      .node h2 {
+        margin: 7px 0 8px;
+        font-size: 17px;
+        font-weight: 600;
+        line-height: 1.25;
+      }
+
+      .node p { margin: 0; color: var(--body); font-size: 13px; }
+
+      .node ul {
+        margin: 9px 0 0;
+        padding: 0;
+        list-style: none;
+        color: var(--body);
+        font-size: 12px;
+      }
+
+      .node li::before { content: "· "; color: var(--ink); }
+
+      .node.is-dimmed { opacity: 0.22; }
+      .node.is-active { box-shadow: 0 8px 28px rgb(12 10 9 / 10%); }
+
+      .callout-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 12px;
+      }
+
+      .callout {
+        padding: 16px;
+        border: 1px solid var(--line-soft);
+        border-radius: 16px;
+        background: rgb(255 255 255 / 72%);
+      }
+
+      .callout strong { display: block; margin-bottom: 5px; font-size: 14px; }
+      .callout span { color: var(--body); font-size: 13px; }
+
+      .security {
+        display: grid;
+        grid-template-columns: 1.2fr 1fr 1fr 1fr;
+        gap: 12px;
+      }
+
+      .boundary {
+        padding: 16px;
+        border: 1px dashed var(--line);
+        border-radius: 16px;
+      }
+
+      .boundary strong { display: block; margin-bottom: 4px; }
+      .boundary p { margin: 0; color: var(--body); font-size: 13px; }
+
+      .legend {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 18px;
+        margin-top: 16px;
+        color: var(--body);
+        font-size: 12px;
+      }
+
+      .legend-item { display: inline-flex; align-items: center; gap: 7px; }
+      .swatch { width: 18px; height: 6px; border-radius: 999px; background: var(--swatch); }
+
+      .footnote {
+        display: flex;
+        justify-content: space-between;
+        gap: 16px;
+        margin-top: 18px;
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      @media (max-width: 1180px) {
+        .rail { grid-template-columns: repeat(3, 1fr); }
+        .node:nth-child(3)::after { display: none; }
+        .security { grid-template-columns: repeat(2, 1fr); }
+      }
+
+      @media (max-width: 720px) {
+        .page { width: min(100% - 24px, 1640px); padding-top: 28px; }
+        .rail,
+        .rail.return,
+        .callout-grid,
+        .security { grid-template-columns: 1fr; direction: ltr; }
+        .node { min-height: 0; }
+        .node::after,
+        .rail.return .node::after {
+          top: auto;
+          right: auto;
+          bottom: -22px;
+          left: 50%;
+          transform: translateX(-50%) rotate(135deg);
+        }
+        .node:nth-child(3)::after { display: block; }
+        .node:last-child::after { display: none; }
+        .footnote { flex-direction: column; }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="page">
+      <div class="eyebrow">Skynet architecture · live control plane</div>
+      <h1>One request, from intent to durable result.</h1>
+      <p class="lede">
+        The browser submits a durable command. The control plane prepares scoped context,
+        dispatches an isolated resident agent, brokers every privileged capability through
+        signed gateways, and streams persisted events back to one realtime thread.
+      </p>
+
+      <nav class="toolbar" aria-label="Highlight a request path">
+        <button class="filter" type="button" data-filter="all" aria-pressed="true">Whole system</button>
+        <button class="filter" type="button" data-filter="request" aria-pressed="false">Request path</button>
+        <button class="filter" type="button" data-filter="tool" aria-pressed="false">Tool and model calls</button>
+        <button class="filter" type="button" data-filter="return" aria-pressed="false">Realtime return</button>
+      </nav>
+
+      <section class="architecture" aria-label="Skynet request-flow architecture">
+        <div class="zone" style="--zone-color: var(--sky)">
+          <div class="zone-head">
+            <span class="zone-label">01 · Durable request path</span>
+            <span class="trust">Browser edge to trusted control plane</span>
+          </div>
+          <div class="rail">
+            <article class="node" style="--accent: var(--sky)" data-path="request">
+              <div class="node-kicker">Ingress</div>
+              <h2>Web, Slack, schedule, API</h2>
+              <p>One authenticated command shape, regardless of where the request starts.</p>
+              <ul><li>Org and user identity</li><li>Prompt, files, repos, model</li></ul>
+            </article>
+            <article class="node" style="--accent: var(--peach)" data-path="request">
+              <div class="node-kicker">Admission</div>
+              <h2>Auth + command boundary</h2>
+              <p>Checks tenant, model policy, readiness, and idempotency before accepting work.</p>
+              <ul><li>Thread advisory lock</li><li>Command + run in one transaction</li></ul>
+            </article>
+            <article class="node" style="--accent: var(--mint)" data-path="request return">
+              <div class="node-kicker">Source of truth</div>
+              <h2>Postgres event core</h2>
+              <p>Queued run, steps, native frames, canonical events, audit, and outboxes.</p>
+              <ul><li>Persist before publish</li><li>Replay after reconnect</li></ul>
+            </article>
+            <article class="node" style="--accent: var(--lavender)" data-path="request">
+              <div class="node-kicker">Context</div>
+              <h2>Parallel run preparation</h2>
+              <p>Loads only the context required for this turn, concurrently.</p>
+              <ul><li>Memory + thread preamble</li><li>Skill catalog + pinned skill</li><li>User uploads</li></ul>
+            </article>
+            <article class="node" style="--accent: var(--rose)" data-path="request tool">
+              <div class="node-kicker">Isolation</div>
+              <h2>Cube or Daytona sandbox</h2>
+              <p>Warm thread workspace with resident Codex, OpenCode, or Claude runtime.</p>
+              <ul><li>Repos and terminal</li><li>Desktop + recording</li><li>No long-lived provider keys</li></ul>
+            </article>
+            <article class="node" style="--accent: var(--peach)" data-path="request tool">
+              <div class="node-kicker">Agent loop</div>
+              <h2>Native engine harness</h2>
+              <p>The selected agent reasons, edits, runs tools, delegates, and emits native events.</p>
+              <ul><li>Resume by native session ID</li><li>Approvals and cancellation</li></ul>
+            </article>
+          </div>
+        </div>
+
+        <div class="zone" style="--zone-color: var(--lavender)">
+          <div class="zone-head">
+            <span class="zone-label">02 · Signed capability plane</span>
+            <span class="trust">Sandbox is isolated; gateways hold authority</span>
+          </div>
+          <div class="callout-grid">
+            <article class="callout node" style="--accent: var(--lavender)" data-path="tool">
+              <div class="node-kicker">Model traffic</div>
+              <h2>Provider gateway</h2>
+              <p>Validates the live run capability, resolves the org credential server-side, applies limits and retry policy, then audits the upstream request.</p>
+            </article>
+            <article class="callout node" style="--accent: var(--mint)" data-path="tool">
+              <div class="node-kicker">MCP traffic</div>
+              <h2>Knowledge + tool gateway</h2>
+              <p>Lists only tools allowed for the live run, then executes with tenant, user, thread, and run identity taken from the signed token.</p>
+            </article>
+            <article class="callout node" style="--accent: var(--sky)" data-path="tool">
+              <div class="node-kicker">External systems</div>
+              <h2>Models, web, apps, repos</h2>
+              <p>OpenAI, Anthropic, OpenRouter, memory, browser, GitHub, Slack, Loop login, artifact publishing, automations, and child sessions.</p>
+            </article>
+          </div>
+        </div>
+
+        <div class="zone" style="--zone-color: var(--mint)">
+          <div class="zone-head">
+            <span class="zone-label">03 · Realtime return path</span>
+            <span class="trust">Durable replay plus low-latency live deltas</span>
+          </div>
+          <div class="rail return">
+            <article class="node" style="--accent: var(--sky)" data-path="return">
+              <div class="node-kicker">Product surface</div>
+              <h2>Unified session UI</h2>
+              <p>Chat, tool details, agents, editor, terminal, desktop, artifacts, and approvals share one thread state.</p>
+            </article>
+            <article class="node" style="--accent: var(--mint)" data-path="return">
+              <div class="node-kicker">Client state</div>
+              <h2>Canonical thread store</h2>
+              <p>Upserts stable event IDs, collapses replay/live overlap, and renders without a refresh.</p>
+            </article>
+            <article class="node" style="--accent: var(--lavender)" data-path="return">
+              <div class="node-kicker">Transport</div>
+              <h2>One thread SSE</h2>
+              <p>Snapshots, run lifecycle, steps, deltas, native frames, canonical events, and completion.</p>
+            </article>
+            <article class="node" style="--accent: var(--peach)" data-path="return">
+              <div class="node-kicker">Normalization</div>
+              <h2>Canonical event lane</h2>
+              <p>Preserves provider-native detail while projecting shared tool, subagent, approval, artifact, and message semantics.</p>
+            </article>
+            <article class="node" style="--accent: var(--rose)" data-path="return">
+              <div class="node-kicker">Write order</div>
+              <h2>Persist, then publish</h2>
+              <p>Steps and provider frames land in Postgres before they become visible to connected clients.</p>
+            </article>
+            <article class="node" style="--accent: var(--sky)" data-path="return tool">
+              <div class="node-kicker">Engine output</div>
+              <h2>Text, tools, files, status</h2>
+              <p>Native engine events and transient token deltas leave the sandbox through the adapter.</p>
+            </article>
+          </div>
+        </div>
+
+        <div class="zone" style="--zone-color: var(--peach)">
+          <div class="zone-head">
+            <span class="zone-label">04 · Trust boundaries and failure behavior</span>
+            <span class="trust">Least authority, bounded recovery</span>
+          </div>
+          <div class="security">
+            <article class="boundary">
+              <strong>Browser edge</strong>
+              <p>Session auth and org membership are resolved server-side. Browser IDs never establish tenant authority.</p>
+            </article>
+            <article class="boundary">
+              <strong>Sandbox boundary</strong>
+              <p>Ephemeral signed capabilities replace database, memory, and provider credentials inside the runtime.</p>
+            </article>
+            <article class="boundary">
+              <strong>Gateway boundary</strong>
+              <p>Every privileged call is bound to a currently active run and is logged with bounded request metadata.</p>
+            </article>
+            <article class="boundary">
+              <strong>Recovery boundary</strong>
+              <p>Idempotent commands, durable events, native session IDs, and SSE replay make reconnect and resume safe.</p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <div class="legend" aria-label="Color legend">
+        <span class="legend-label">Signal</span>
+        <span class="legend-item"><i class="swatch" style="--swatch: var(--sky)"></i> ingress and UI</span>
+        <span class="legend-item"><i class="swatch" style="--swatch: var(--mint)"></i> durable state and tools</span>
+        <span class="legend-item"><i class="swatch" style="--swatch: var(--lavender)"></i> context and gateways</span>
+        <span class="legend-item"><i class="swatch" style="--swatch: var(--peach)"></i> policy and admission</span>
+        <span class="legend-item"><i class="swatch" style="--swatch: var(--rose)"></i> isolated runtime</span>
+      </div>
+
+      <div class="footnote">
+        <span>Source-backed against the current control plane, worker, gateway, and realtime-store implementation.</span>
+        <span>Interactive: use the pills above to isolate a path.</span>
+      </div>
+    </main>
+
+    <script>
+      const buttons = document.querySelectorAll("[data-filter]");
+      const nodes = document.querySelectorAll("[data-path]");
+
+      for (const button of buttons) {
+        button.addEventListener("click", () => {
+          const filter = button.dataset.filter;
+          for (const candidate of buttons) {
+            candidate.setAttribute("aria-pressed", String(candidate === button));
+          }
+          for (const node of nodes) {
+            const active = filter === "all" || node.dataset.path.split(" ").includes(filter);
+            node.classList.toggle("is-active", active && filter !== "all");
+            node.classList.toggle("is-dimmed", !active);
+          }
+        });
+      }
+    </script>
+  </body>
+</html>
