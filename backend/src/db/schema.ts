@@ -474,6 +474,73 @@ export const secrets = pgTable(
 );
 
 // ---------------------------------------------------------------------------
+// Provider connections — per-user, per-organization credentials for model
+// providers. These are NOT sandbox secrets: plaintext is write-only at the HTTP
+// boundary and decrypted only by trusted backend callers. Metadata is limited to
+// safe display fields; credential material is AES-256-GCM sealed with the shared
+// secrets crypto implementation.
+// ---------------------------------------------------------------------------
+
+export const PROVIDER_CONNECTION_PROVIDERS = [
+  "openai",
+  "anthropic",
+  "openrouter",
+] as const;
+export type ProviderConnectionProvider =
+  (typeof PROVIDER_CONNECTION_PROVIDERS)[number];
+
+export const PROVIDER_CONNECTION_AUTH_METHODS = [
+  "chatgpt_oauth",
+  "api_key",
+] as const;
+export type ProviderConnectionAuthMethod =
+  (typeof PROVIDER_CONNECTION_AUTH_METHODS)[number];
+
+export const PROVIDER_CONNECTION_STATUSES = [
+  "connected",
+  "reauth_required",
+  "revoked",
+] as const;
+export type ProviderConnectionStatus =
+  (typeof PROVIDER_CONNECTION_STATUSES)[number];
+
+export interface ProviderConnectionMetadata {
+  email?: string;
+  planType?: string;
+}
+
+export const providerConnections = pgTable(
+  "provider_connections",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orgId: text("org_id").notNull(),
+    userId: text("user_id").notNull(),
+    provider: text("provider").$type<ProviderConnectionProvider>().notNull(),
+    authMethod: text("auth_method").$type<ProviderConnectionAuthMethod>().notNull(),
+    status: text("status").$type<ProviderConnectionStatus>().notNull(),
+    metadata: jsonb("metadata")
+      .$type<ProviderConnectionMetadata>()
+      .notNull()
+      .default(sql`'{}'::jsonb`),
+    credentialCiphertext: text("credential_ciphertext").notNull(),
+    iv: text("iv").notNull(),
+    tag: text("tag").notNull(),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("idx_provider_connections_org_user").on(t.orgId, t.userId),
+    uniqueIndex("uq_provider_connections_scope").on(
+      t.orgId,
+      t.userId,
+      t.provider,
+      t.authMethod,
+    ),
+  ],
+);
+
+// ---------------------------------------------------------------------------
 // Slack adapter — maps a Slack thread to the skynet run that ROOTED it, so a
 // later reply in that Slack thread becomes a `parent_run_id` follow-up (shared
 // thread, clean prompts). One row per Slack thread the bot has engaged; the
