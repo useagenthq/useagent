@@ -92,14 +92,29 @@ describe("T3 run adapter gate", () => {
 
   test("keeps semantic prompt composition and native T3 activity projection", () => {
     const source = readFileSync(new URL("./t3-adapter.ts", import.meta.url), "utf8");
-    expect(source).toContain("composeTurnPrompt(ctx, threadExists)");
+    expect(source).toContain("composeTurnPrompt(ctx, established.resumed)");
+    expect(source).toContain("await establishProviderSession({");
+    expect(source).toContain("const steerResult = await driver.steer({");
+    expect(source).toContain("metadata: { runtimeMode, createdAt }");
     expect(source).toContain("activityStep(activity)");
     expect(source).toContain("ctx.publishDelta?.(delta)");
     expect(source).toContain("warmPool: T3_CUBE_WARM_POOL_NAME");
     expect(source).toContain("requiredLabels:");
-    expect(source).toContain("if (ctx.signal.aborted) await interruptActiveT3Turn(ctx, sandbox)");
-    expect(source).toContain("buildT3TurnInterruptCommand(threadId, turnId)");
+    expect(source).toContain("await driver.cancel(session, \"turn aborted\")");
+    expect(source).toContain("providerGatewayWired()");
+    expect(source).toContain("acquireThreadSandbox(ctx");
+    expect(source).toContain("prepareT3ProviderBridge(sandbox, ctx, engine)");
+    expect(source).not.toContain("runManagedCodexSubscriptionTurn");
+    expect(source).not.toContain('runtimeKind: "managed_codex_app_server"');
     expect(source).not.toContain("prompt.includes(");
     expect(source).not.toContain("keyword");
+  });
+
+  test("requires durable session persistence before T3 steering", () => {
+    const source = readFileSync(new URL("./t3-adapter.ts", import.meta.url), "utf8");
+    expect(source).toContain("persistSession: async (nativeSessionId) => {");
+    expect(source).toContain("T3 session persistence is unavailable");
+    expect(source).toContain("await ctx.saveEngineSessionId(nativeSessionId)");
+    expect(source).not.toContain("ctx.saveEngineSessionId?.(");
   });
 });

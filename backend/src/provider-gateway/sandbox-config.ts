@@ -5,9 +5,18 @@ import { providerGatewayConfig, PROVIDER_GATEWAY_PATH } from "./config";
 import { type ProviderId } from "./provider";
 import { mintProviderToken } from "./token";
 import { DEFAULT_CODEX_MODEL } from "../runs/model-policy";
-import { ThreadTokenMemo } from "../util/token-memo";
+import {
+  THREAD_TOKEN_REUSE_WINDOW_MS,
+  ThreadTokenMemo,
+  threadTokenMemoOptions,
+} from "../util/token-memo";
 import { toolGatewayConfig } from "../knowledge/gateway/config";
-import { mintToolToken } from "../knowledge/gateway/token";
+import {
+  buildToolGatewayCapabilityDescriptor,
+  describeToolGatewayCapabilityDescriptor,
+  toCodexToolGatewayConfig,
+  type ToolGatewayCapabilityDescriptor,
+} from "../knowledge/gateway/descriptor";
 
 export interface OpenCodeProviderOptions {
   readonly baseURL: string;
@@ -24,6 +33,7 @@ const SANDBOX_MARKER = "$HOME/.skynet/provider-gateway-generation";
 const ANTHROPIC_TOKEN_FILE = "$HOME/.skynet/provider-anthropic.token";
 const OPENAI_TOKEN_FILE = "$HOME/.skynet/provider-openai.token";
 const CLAUDE_CONFIG_DIR = "/tmp/skynet-claude-config";
+const CLAUDE_MCP_CONFIG_FILE = `${CLAUDE_CONFIG_DIR}/skynet-mcp.json`;
 const CLAUDE_ONE_MILLION_CONTEXT_MODELS = new Set([
   "claude-opus-5",
   "claude-sonnet-5",
@@ -49,14 +59,10 @@ function mint(ctx: EngineRunContext, engine: EngineId, provider: ProviderId): st
 // config slice), memoized so warm turns reuse identical bytes and the sandbox
 // config stays byte-stable. The gateway resolves the thread's LIVE run per
 // request, so outside a running turn the token is inert - the exact-run
-// enforcement moved server-side, it did not weaken. TTL = turn-cover TTL
-// (tokenTtlMs, sized to the worker's absolute run ceiling) + a bounded reuse
-// window; refresh when remaining validity drops below the turn-cover TTL, so a
-// turn dispatched on a reused token has the SAME in-turn validity guarantee as
-// a freshly minted run token (adversarial-review finding).
-const THREAD_TOKEN_REUSE_MS = 8 * 60 * 60 * 1000;
+// enforcement moved server-side, it did not weaken. The configured TTL is the
+// signed lifetime ceiling; a bounded reuse window is reserved inside it.
 const opencodeThreadTokens = new ThreadTokenMemo();
-const codexToolThreadTokens = new ThreadTokenMemo();
+const toolThreadTokens = new ThreadTokenMemo();
 
 function mintOpencodeThreadToken(
   ctx: EngineRunContext,
@@ -72,7 +78,7 @@ function mintOpencodeThreadToken(
   const threadId = ctx.threadId;
   return opencodeThreadTokens.get(
     `${orgId}:${userId}:${threadId}:opencode:${provider}`,
-    { ttlMs: config.tokenTtlMs + THREAD_TOKEN_REUSE_MS, refreshMarginMs: config.tokenTtlMs },
+    threadTokenMemoOptions(config.tokenTtlMs, THREAD_TOKEN_REUSE_WINDOW_MS),
     () =>
       mintProviderToken(
         {
@@ -84,7 +90,7 @@ function mintOpencodeThreadToken(
           provider,
           scope: "thread",
         },
-        config.tokenTtlMs + THREAD_TOKEN_REUSE_MS,
+        config.tokenTtlMs,
       ),
   );
 }
@@ -93,6 +99,62 @@ function endpoint(provider: ProviderId, versioned: boolean): string | null {
   const config = providerGatewayConfig();
   if (!config) return null;
   return `${config.publicUrl}${PROVIDER_GATEWAY_PATH}/${provider}${versioned ? "/v1" : ""}`;
+}
+
+function toolGatewayDescriptor(
+  ctx: EngineRunContext,
+  engine: "claude" | "codex",
+): ToolGatewayCapabilityDescriptor | null {
+  const config = toolGatewayConfig();
+  const orgId = ctx.orgId?.trim();
+  if (!config || !orgId) return null;
+  const binding = {
+    orgId,
+    userId: ctx.userId ?? "",
+    threadId: ctx.threadId ?? ctx.runId,
+    runId: ctx.runId,
+  };
+  if (!ctx.threadId) {
+    return buildToolGatewayCapabilityDescriptor(binding, { config });
+  }
+
+  const ttlMs = config.tokenTtlMs;
+  const nowMs = Date.now();
+  const bearerToken = toolThreadTokens.get(
+    `${orgId}:${ctx.userId ?? ""}:${ctx.threadId}:${engine}:tools`,
+    threadTokenMemoOptions(ttlMs, THREAD_TOKEN_REUSE_WINDOW_MS),
+    () => {
+      const descriptor = buildToolGatewayCapabilityDescriptor(binding, {
+        config,
+        scope: "thread",
+        ttlMs,
+        nowMs,
+      });
+      if (!descriptor) throw new Error(`tool gateway could not mint ${engine} capability`);
+      return descriptor.bearerToken;
+    },
+    nowMs,
+  );
+  return describeToolGatewayCapabilityDescriptor(binding, {
+    config,
+    scope: "thread",
+    bearerToken,
+    expiresAt: nowMs + ttlMs,
+  });
+}
+
+function claudeMcpConfig(descriptor: ToolGatewayCapabilityDescriptor | null): string {
+  return JSON.stringify({
+    mcpServers: descriptor
+      ? {
+          [descriptor.serverName]: {
+            type: "http",
+            url: descriptor.url,
+            headers: { Authorization: descriptor.authorizationHeader },
+          },
+        }
+      : {},
+  });
 }
 
 /** Non-secret process configuration for resident ACP or one-shot CLI processes. */
@@ -135,20 +197,25 @@ export function claudeProviderGatewayEnvironment(model?: string): Record<string,
   };
 }
 
-/** Both OpenCode providers are pre-wired so a warm thread can switch models. */
+/** OpenCode providers are pre-wired so a warm thread can switch models. */
 export function opencodeProviderGatewayOptions(
   ctx: EngineRunContext,
-): Partial<Record<"anthropic" | "openrouter", OpenCodeProviderOptions>> {
+): Partial<Record<ProviderId, OpenCodeProviderOptions>> {
   const anthropicToken = mintOpencodeThreadToken(ctx, "anthropic");
+  const openaiToken = mintOpencodeThreadToken(ctx, "openai");
   const openrouterToken = mintOpencodeThreadToken(ctx, "openrouter");
-  // OpenCode passes provider options directly to the AI SDK; its documented
-  // Anthropic baseURL includes `/v1` (the SDK appends `/messages`). Claude Code's
+  // OpenCode passes provider options directly to the AI SDK; provider baseURLs
+  // include `/v1` for the SDK-specific endpoint suffixes. Claude Code's
   // ANTHROPIC_BASE_URL seam differs and appends `/v1/messages` itself.
   const anthropicBase = endpoint("anthropic", true);
+  const openaiBase = endpoint("openai", true);
   const openrouterBase = endpoint("openrouter", true);
   return {
     ...(anthropicToken && anthropicBase
       ? { anthropic: { baseURL: anthropicBase, apiKey: anthropicToken } }
+      : {}),
+    ...(openaiToken && openaiBase
+      ? { openai: { baseURL: openaiBase, apiKey: openaiToken } }
       : {}),
     ...(openrouterToken && openrouterBase
       ? { openrouter: { baseURL: openrouterBase, apiKey: openrouterToken } }
@@ -260,35 +327,21 @@ export async function prepareProviderGatewaySandbox(
     if (!token) throw new Error("provider gateway could not mint Claude capability");
     const settings = await readJsonFile(sandbox, `${CLAUDE_CONFIG_DIR}/settings.json`);
     settings.apiKeyHelper = `cat \"${ANTHROPIC_TOKEN_FILE}\"`;
+    const toolDescriptor = toolGatewayDescriptor(ctx, "claude");
     await writePrivateFiles(sandbox, [
       { path: ANTHROPIC_TOKEN_FILE, content: token },
       { path: `${CLAUDE_CONFIG_DIR}/settings.json`, content: JSON.stringify(settings) },
+      { path: CLAUDE_MCP_CONFIG_FILE, content: claudeMcpConfig(toolDescriptor) },
       { path: SANDBOX_MARKER, content: SANDBOX_GENERATION },
     ]);
     return;
   }
 
   const token = mint(ctx, "codex", "openai");
-  const toolConfig = toolGatewayConfig();
-  const toolToken = toolConfig && ctx.orgId
-    ? codexToolThreadTokens.get(
-        `${ctx.orgId}:${ctx.userId ?? ""}:${ctx.threadId ?? ctx.runId}:codex:tools`,
-        {
-          ttlMs: toolConfig.tokenTtlMs + THREAD_TOKEN_REUSE_MS,
-          refreshMarginMs: toolConfig.tokenTtlMs,
-        },
-        () => mintToolToken({
-          orgId: ctx.orgId!,
-          userId: ctx.userId ?? "",
-          threadId: ctx.threadId ?? ctx.runId,
-          runId: ctx.runId,
-          scope: ctx.threadId ? "thread" : "run",
-        }, toolConfig.tokenTtlMs + THREAD_TOKEN_REUSE_MS),
-      )
-    : null;
+  const toolDescriptor = toolGatewayDescriptor(ctx, "codex");
   const config = codexProviderConfigToml(
     ctx.model?.trim() || DEFAULT_CODEX_MODEL,
-    toolConfig && toolToken ? { url: toolConfig.mcpUrl, bearerToken: toolToken } : undefined,
+    toolDescriptor ? toCodexToolGatewayConfig(toolDescriptor) : undefined,
   );
   if (!token || !config) throw new Error("provider gateway could not mint Codex capability");
   await writePrivateFiles(sandbox, [

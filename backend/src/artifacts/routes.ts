@@ -1,6 +1,8 @@
 import { Hono, type Context } from "hono";
+import { isArtifactWorkpieceState, type ArtifactWorkpieceKind } from "@skynet/artifact-workspace";
 import type { AppEnv } from "../http";
 import { orgScope } from "../middleware/org";
+import { ArtifactAuthoringError, createAuthoredArtifact, exportWorkpieceState } from "./authoring";
 import { canPreviewInline } from "./mime";
 import {
   getArtifactForOrg,
@@ -12,6 +14,7 @@ import {
 import { artifactStorage, type ArtifactByteRange } from "./storage";
 import { parseWorkpieceState } from "./workpiece";
 import { publishOrgChange } from "../runs/org-signals";
+import { UploadClaimError } from "../uploads/repo";
 
 function disposition(name: string, inline: boolean): string {
   const fallback = name.replace(/[^\x20-\x7e]/g, "_").replace(/["\\]/g, "_");
@@ -83,6 +86,56 @@ artifactRoutes.get("/", async (c) => {
   return c.json({ artifacts: rows.map(toArtifactDescriptor) });
 });
 
+function parseWorkpieceKind(value: unknown): ArtifactWorkpieceKind | null {
+  return value === "document" ||
+      value === "spreadsheet" ||
+      value === "presentation" ||
+      value === "pdf"
+    ? value
+    : null;
+}
+
+artifactRoutes.post("/", async (c) => {
+  let body: unknown;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: "invalid JSON" }, 400);
+  }
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    return c.json({ error: "invalid artifact create request" }, 400);
+  }
+  const input = body as Record<string, unknown>;
+  const runId = typeof input.run_id === "string" ? input.run_id.trim() : "";
+  const threadId = typeof input.thread_id === "string" ? input.thread_id.trim() : undefined;
+  const kind = parseWorkpieceKind(input.kind);
+  const name = typeof input.name === "string" ? input.name : undefined;
+  const uploadId = typeof input.upload_id === "string" ? input.upload_id.trim() : undefined;
+  if (!runId) return c.json({ error: "run_id is required" }, 400);
+  if (!kind) return c.json({ error: "kind must be document, spreadsheet, presentation, or pdf" }, 400);
+  try {
+    const created = await createAuthoredArtifact({
+      orgId: c.get("orgId"),
+      userId: c.get("userId"),
+      runId,
+      threadId,
+      kind,
+      name,
+      state: input.state,
+      uploadId,
+    });
+    return c.json({ artifact: created.artifact, created: created.created }, created.created ? 201 : 200);
+  } catch (error) {
+    if (error instanceof ArtifactAuthoringError) {
+      return c.json({ error: error.message }, error.status);
+    }
+    if (error instanceof UploadClaimError) {
+      return c.json({ error: error.message, code: error.code }, 409);
+    }
+    throw error;
+  }
+});
+
 artifactRoutes.get("/:id", async (c) => {
   const row = await getArtifactForOrg(c.get("orgId"), c.req.param("id"));
   return row ? c.json({ artifact: toArtifactDescriptor(row) }) : c.json({ error: "not found" }, 404);
@@ -99,6 +152,40 @@ artifactRoutes.get("/:id/workpiece", async (c) => {
   const artifact = await getArtifactForOrg(c.get("orgId"), c.req.param("id"));
   if (!artifact?.workpieceKind) return c.json({ error: "not found" }, 404);
   return c.json(workpieceResponse(artifact));
+});
+
+artifactRoutes.get("/:id/workpiece/export", async (c) => {
+  const artifact = await getArtifactForOrg(c.get("orgId"), c.req.param("id"));
+  if (!artifact?.workpieceKind || !artifact.workpieceState) {
+    return c.json({ error: "not found" }, 404);
+  }
+  if (!isArtifactWorkpieceState(artifact.workpieceKind, artifact.workpieceState)) {
+    return c.json({ error: "invalid stored workpiece state" }, 409);
+  }
+  let exported;
+  try {
+    exported = await exportWorkpieceState({
+      name: artifact.name,
+      kind: artifact.workpieceKind,
+      state: artifact.workpieceState,
+      format: c.req.query("format"),
+    });
+  } catch (error) {
+    if (error instanceof ArtifactAuthoringError) {
+      return c.json({ error: error.message }, error.status);
+    }
+    throw error;
+  }
+  return new Response(exported.bytes, {
+    headers: {
+      "cache-control": "private, no-store",
+      "content-disposition": disposition(exported.filename, false),
+      "content-length": String(exported.bytes.byteLength),
+      "content-type": exported.contentType,
+      "cross-origin-resource-policy": "same-origin",
+      "x-content-type-options": "nosniff",
+    },
+  });
 });
 
 artifactRoutes.patch("/:id/workpiece", async (c) => {

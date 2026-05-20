@@ -28,6 +28,7 @@
     "@remixicon/react": "^4.9.0",
     "@skynet/agent-client": "file:../packages/agent-client",
     "@skynet/agent-harness": "file:../packages/agent-harness",
+    "@skynet/artifact-workspace": "file:../packages/artifact-workspace",
     "class-variance-authority": "^0.7",
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",

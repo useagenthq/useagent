@@ -1,5 +1,11 @@
 import { describe, expect, test } from "bun:test";
-import type { SandboxHandle } from "../sandboxes/provider";
+import type { SandboxProcess } from "../sandboxes/provider";
+import {
+  RUN_TIMING_OUTCOMES,
+  RUN_TIMING_STAGES,
+  type RunStageTimer,
+  type RunTimingOutcome,
+} from "../runs/run-timing";
 import {
   buildT3EnvironmentLaunchCommand,
   buildT3EnvironmentReadinessCommand,
@@ -8,6 +14,26 @@ import {
   T3_ENVIRONMENT_PORT,
   t3EnvironmentEnabled,
 } from "./t3-environment";
+
+type T3TestProcess = Pick<
+  SandboxProcess,
+  "createSession" | "deleteSession" | "executeCommand" | "executeSessionCommand"
+>;
+
+function t3Sandbox(
+  id: string,
+  process: Pick<T3TestProcess, "executeCommand"> & Partial<T3TestProcess>,
+): { readonly id: string; readonly process: T3TestProcess } {
+  return {
+    id,
+    process: {
+      createSession: async () => {},
+      deleteSession: async () => {},
+      executeSessionCommand: async () => ({ cmdId: "unused" }),
+      ...process,
+    },
+  };
+}
 
 describe("T3 Cube environment", () => {
   test("is opt-in until hosted parity is proven", () => {
@@ -40,20 +66,26 @@ describe("T3 Cube environment", () => {
 
   test("reuses a healthy resident environment without restarting it", async () => {
     const commands: string[] = [];
-    const sandbox = {
-      id: "cube-t3-healthy",
-      process: {
+    const spans: { stage: string; outcome?: RunTimingOutcome }[] = [];
+    const timing = {
+      begin: (stage: string) => (outcome?: RunTimingOutcome) => {
+        spans.push({ stage, outcome });
+      },
+    } satisfies Pick<RunStageTimer, "begin">;
+    const sandbox = t3Sandbox("cube-t3-healthy", {
         executeCommand: async (command: string) => {
           commands.push(command);
           return { exitCode: 0, result: "" };
         },
-      },
-    } as unknown as SandboxHandle;
+    });
 
     await expect(
-      ensureT3Environment(sandbox, new AbortController().signal),
+      ensureT3Environment(sandbox, new AbortController().signal, timing),
     ).resolves.toMatchObject({ sandboxId: "cube-t3-healthy", port: T3_ENVIRONMENT_PORT });
     expect(commands).toEqual([buildT3EnvironmentReadinessCommand()]);
+    expect(spans).toEqual([
+      { stage: RUN_TIMING_STAGES.runtimeReadiness, outcome: RUN_TIMING_OUTCOMES.ready },
+    ]);
   });
 
   test("repairs an unhealthy resident environment and proves readiness", async () => {
@@ -61,9 +93,7 @@ describe("T3 Cube environment", () => {
     const created: string[] = [];
     const launched: string[] = [];
     let probes = 0;
-    const sandbox = {
-      id: "cube-t3-cold",
-      process: {
+    const sandbox = t3Sandbox("cube-t3-cold", {
         executeCommand: async () => ({ exitCode: probes++ === 0 ? 1 : 0, result: "" }),
         deleteSession: async (name: string) => deleted.push(name),
         createSession: async (name: string) => created.push(name),
@@ -71,8 +101,7 @@ describe("T3 Cube environment", () => {
           launched.push(`${name}:${request.command}`);
           return { cmdId: "t3-command", exitCode: 0 };
         },
-      },
-    } as unknown as SandboxHandle;
+    });
 
     await expect(
       ensureT3Environment(sandbox, new AbortController().signal),
@@ -84,16 +113,39 @@ describe("T3 Cube environment", () => {
     expect(probes).toBe(2);
   });
 
+  test("repairs after a failed probe when the stale session is already absent", async () => {
+    let probes = 0;
+    let launches = 0;
+    const sandbox = t3Sandbox("cube-t3-missing-session", {
+        executeCommand: async () => {
+          if (probes++ === 0) throw new Error("probe transport failed");
+          return { exitCode: 0, result: "" };
+        },
+        deleteSession: async () => {
+          throw new Error("session not found");
+        },
+        createSession: async () => {},
+        executeSessionCommand: async () => {
+          launches += 1;
+          return { cmdId: "t3-command", exitCode: 0 };
+        },
+    });
+
+    await expect(
+      ensureT3Environment(sandbox, new AbortController().signal),
+    ).resolves.toMatchObject({ sandboxId: "cube-t3-missing-session" });
+    expect(probes).toBe(2);
+    expect(launches).toBe(1);
+  });
+
   test("does no work while the migration flag is disabled", async () => {
     let calls = 0;
-    const sandbox = {
-      process: {
+    const sandbox = t3Sandbox("cube-t3-disabled", {
         executeCommand: async () => {
           calls += 1;
           return { exitCode: 0, result: "" };
         },
-      },
-    } as unknown as SandboxHandle;
+    });
 
     await prewarmT3Environment(sandbox, new AbortController().signal, {});
     expect(calls).toBe(0);

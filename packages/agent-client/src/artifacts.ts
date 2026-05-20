@@ -1,39 +1,25 @@
-/** Durable artifact wire contract shared by every Skynet UI consumer. Bytes
- * remain out of band; these descriptors carry tenant-authorized content URLs. */
-export interface ArtifactDescriptor {
-  readonly id: string;
-  readonly run_id: string;
-  readonly thread_id: string;
-  readonly name: string;
-  readonly source_path: string;
-  readonly content_type: string;
-  readonly size_bytes: number;
-  readonly sha256: string;
-  readonly created_at: string;
-  readonly preview_url: string;
-  readonly download_url: string;
-  readonly workpiece: ArtifactWorkpieceDescriptor | null;
-}
+import {
+  ARTIFACT_WORKPIECE_ACTIONS,
+  artifactWorkpieceExports,
+  isArtifactWorkpieceState,
+  type ArtifactDescriptor,
+  type ArtifactWorkpieceDescriptor,
+  type ArtifactWorkpieceKind,
+  type ArtifactWorkpieceResult,
+  type ArtifactWorkpieceState,
+} from "@skynet/artifact-workspace";
 
-export type ArtifactWorkpieceKind = "document" | "spreadsheet";
-export type ArtifactWorkpieceState =
-  | Readonly<{ text: string }>
-  | Readonly<{ html: string }>
-  | Readonly<{ csv: string }>;
+export { ARTIFACT_WORKPIECE_ACTIONS, artifactWorkpieceExports };
 
-export interface ArtifactWorkpieceDescriptor {
-  readonly kind: ArtifactWorkpieceKind;
-  /** Immutable source identity. A changed source produces a new artifact digest. */
-  readonly source_version: string;
-  readonly state_revision: number;
-  readonly state_url: string;
-  readonly actions: readonly ["preview", "download", "edit"];
-}
-
-export interface ArtifactWorkpieceResult {
-  readonly workpiece: ArtifactWorkpieceDescriptor;
-  readonly state: ArtifactWorkpieceState | null;
-}
+export type {
+  ArtifactDescriptor,
+  ArtifactPresentationSlide,
+  ArtifactWorkpieceAction,
+  ArtifactWorkpieceDescriptor,
+  ArtifactWorkpieceKind,
+  ArtifactWorkpieceResult,
+  ArtifactWorkpieceState,
+} from "@skynet/artifact-workspace";
 
 function record(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object" && !Array.isArray(value)
@@ -41,41 +27,55 @@ function record(value: unknown): Record<string, unknown> | null {
     : null;
 }
 
-function decodeWorkpiece(value: unknown): ArtifactWorkpieceDescriptor | null {
+export function decodeWorkpiece(value: unknown): ArtifactWorkpieceDescriptor | null {
   const item = record(value);
   if (!item) return null;
-  if (item.kind !== "document" && item.kind !== "spreadsheet") return null;
+  if (
+    item.kind !== "document" &&
+    item.kind !== "spreadsheet" &&
+    item.kind !== "presentation" &&
+    item.kind !== "pdf"
+  ) return null;
   if (
     typeof item.source_version !== "string" ||
     !/^[a-f0-9]{64}$/.test(item.source_version) ||
     typeof item.state_url !== "string" ||
     !item.state_url ||
     !Number.isSafeInteger(item.state_revision) ||
-    Number(item.state_revision) < 0 ||
-    !Array.isArray(item.actions) ||
-    item.actions.join(",") !== "preview,download,edit"
+    Number(item.state_revision) < 0
   ) {
     return null;
   }
-  return item as unknown as ArtifactWorkpieceDescriptor;
+
+  const actions = ARTIFACT_WORKPIECE_ACTIONS.filter((action) =>
+    Array.isArray(item.actions) && item.actions.includes(action)
+  );
+  const expectedExports = artifactWorkpieceExports(item.kind);
+  const exportMetadata = typeof item.export_url === "string" && !!item.export_url &&
+    Array.isArray(item.exports) &&
+    JSON.stringify(item.exports) === JSON.stringify(expectedExports)
+    ? { export_url: item.export_url, exports: expectedExports }
+    : null;
+  const normalizedActions = exportMetadata && !actions.includes("export")
+    ? [...actions, "export" as const]
+    : actions.filter((action) => action !== "export" || !!exportMetadata);
+
+  return {
+    kind: item.kind,
+    source_version: item.source_version,
+    state_revision: Number(item.state_revision),
+    state_url: item.state_url,
+    actions: normalizedActions,
+    ...(exportMetadata ?? {}),
+  } as ArtifactWorkpieceDescriptor;
 }
 
-function decodeWorkpieceState(
-  kind: ArtifactWorkpieceKind,
+export function decodeWorkpieceState<Kind extends ArtifactWorkpieceKind>(
+  kind: Kind,
   value: unknown,
-): ArtifactWorkpieceState | null | undefined {
+): ArtifactWorkpieceState<Kind> | null | undefined {
   if (value === null) return null;
-  const item = record(value);
-  if (!item) return undefined;
-  const entries = Object.entries(item);
-  const entry = entries[0];
-  if (entry === undefined || entries.length !== 1 || typeof entry[1] !== "string") {
-    return undefined;
-  }
-  const keyMatchesKind = kind === "spreadsheet"
-    ? entry[0] === "csv"
-    : entry[0] === "text" || entry[0] === "html";
-  return keyMatchesKind ? (item as ArtifactWorkpieceState) : undefined;
+  return isArtifactWorkpieceState(kind, value) ? value : undefined;
 }
 
 export function decodeArtifact(value: unknown): ArtifactDescriptor | null {
@@ -129,5 +129,5 @@ export function decodeWorkpieceResult(value: unknown): ArtifactWorkpieceResult |
   const workpiece = decodeWorkpiece(envelope?.workpiece);
   if (!workpiece || !envelope || !("state" in envelope)) return null;
   const state = decodeWorkpieceState(workpiece.kind, envelope.state);
-  return state === undefined ? null : { workpiece, state };
+  return state === undefined ? null : { workpiece, state } as ArtifactWorkpieceResult;
 }

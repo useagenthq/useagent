@@ -11,12 +11,12 @@ import { publishRunLifecycleChange } from "./org-signals";
 import { enqueueCanonicalization } from "./canonicalization-outbox";
 import { canonicalEngine } from "../engines/engine-alias";
 
-/** Providers whose runs project into `steps` and are translated to the canonical lane.
- *  OpenCode + the ACP engines (claude/codex). Legacy aliases (daytona -> opencode,
+/** Providers whose runs project native events and/or `steps` into the canonical lane.
+ *  OpenCode + the ACP engines (acp/claude/codex). Legacy aliases (daytona -> opencode,
  *  claude-sdk -> claude) run the same adapter, so they normalize into this set via
  *  {@link canonicalEngine} and are NOT left silently outside the lane. Only `mock`
- *  (scripted) and the generic `acp` have nothing to translate. */
-const CANONICAL_ENGINES = new Set(["opencode", "claude", "codex"]);
+ *  (scripted) has no provider source to translate. */
+const CANONICAL_ENGINES = new Set(["opencode", "acp", "claude", "codex"]);
 
 // ---------------------------------------------------------------------------
 // Run finalization — the ONE place a run reaches a terminal state, so the

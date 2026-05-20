@@ -1,6 +1,44 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
-import { buildOpencodeConfigWriteCommand } from "./opencode-server";
+import type { EngineRunContext } from "./types";
+import type { SandboxHandle } from "../sandboxes/provider";
+import {
+  buildOpencodeConfigWriteCommand,
+  prepareOpencodeSandboxConfig,
+} from "./opencode-server";
+import { verifyToolToken } from "../knowledge/gateway/token";
+
+const original = { ...process.env };
+
+afterEach(() => {
+  for (const name of [
+    "GATEWAY_PUBLIC_URL",
+    "PROVIDER_GATEWAY_SECRET",
+    "TOOL_GATEWAY_SECRET",
+    "TOOL_GATEWAY_TOKEN_TTL_MS",
+  ]) {
+    const value = original[name];
+    if (value === undefined) delete process.env[name];
+    else process.env[name] = value;
+  }
+});
+
+function runContext(): EngineRunContext {
+  return {
+    runId: "run-opencode-config",
+    prompt: "x",
+    bootstrapContext: "",
+    turnContext: "",
+    workdir: "/work",
+    threadId: "thread-opencode-config",
+    orgId: "org-a",
+    userId: "user-a",
+    model: "claude-opus-5",
+    signal: new AbortController().signal,
+    emit: async () => undefined,
+    setSummary: () => {},
+  };
+}
 
 describe("OpenCode generated config placement", () => {
   test("writes capabilities to the global config and removes the project copy", () => {
@@ -16,6 +54,31 @@ describe("OpenCode generated config placement", () => {
     expect(() => buildOpencodeConfigWriteCommand("$(touch /tmp/nope)")).toThrow(
       "opencode config must be base64 encoded",
     );
+  });
+
+  test("keeps the memoized knowledge token within the configured TTL", async () => {
+    process.env.GATEWAY_PUBLIC_URL = "https://gateway.example.test";
+    process.env.PROVIDER_GATEWAY_SECRET = "provider-test-0123456789abcdef0123456789abcdef";
+    process.env.TOOL_GATEWAY_SECRET = "tool-test-0123456789abcdef0123456789abcdef";
+    process.env.TOOL_GATEWAY_TOKEN_TTL_MS = "60000";
+    const before = Date.now();
+
+    const prepared = await prepareOpencodeSandboxConfig(
+      {} as SandboxHandle,
+      runContext(),
+      {},
+    );
+    const after = Date.now();
+    const mcp = prepared?.config.mcp as Record<
+      string,
+      { headers: { Authorization: string } }
+    >;
+    const token = mcp["skynet-knowledge"]!.headers.Authorization.replace(/^Bearer /, "");
+    const claims = verifyToolToken(token, before);
+
+    expect(claims).not.toBeNull();
+    expect(claims!.exp).toBeGreaterThanOrEqual(before + 60_000);
+    expect(claims!.exp).toBeLessThanOrEqual(after + 60_000);
   });
 
   test("activates warm config in-process with a verified restart fallback", () => {

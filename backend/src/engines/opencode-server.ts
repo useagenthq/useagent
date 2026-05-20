@@ -26,14 +26,34 @@ import { assertNever } from "../util/exhaustive";
 import { nextPollDelayMs, stagesTogether } from "../util/startup";
 import { toolGatewayConfig } from "../knowledge/gateway/config";
 import {
+  buildToolGatewayCapabilityDescriptor,
+  describeToolGatewayCapabilityDescriptor,
+  toOpenCodeKnowledgeMcpEntry,
+} from "../knowledge/gateway/descriptor";
+import {
   ACP_COMMANDS_EVENT_TYPE,
-  SESSION_STARTED_EVENT_TYPE,
   normalizeOpencodeCommands,
   type CanonicalCommand,
+  type HarnessSession,
 } from "@skynet/agent-harness/canonical";
+import {
+  providerDriverUnsupported,
+  type HarnessResult,
+  type ProviderDriver,
+  type ProviderResumeRequest,
+  type ProviderStartRequest,
+  type ProviderSteerRequest,
+} from "@skynet/agent-harness/control";
+import {
+  establishProviderSession,
+  providerSessionStartedEvent,
+} from "./provider-turn";
 import { sessionCapabilities } from "./capabilities";
-import { mintToolToken } from "../knowledge/gateway/token";
-import { ThreadTokenMemo } from "../util/token-memo";
+import {
+  THREAD_TOKEN_REUSE_WINDOW_MS,
+  ThreadTokenMemo,
+  threadTokenMemoOptions,
+} from "../util/token-memo";
 import { createHash } from "node:crypto";
 import { MEMORY_SKILL_PATH, memorySkillText } from "../memory/memory-skill-text";
 import {
@@ -106,7 +126,6 @@ const SERVER_PROCESS_SESSION = "skynet-opencode-serve";
 // PATCH + poll cycle (a single fast verify still proves it live; any failure
 // falls back to the full activation/restart path - fail closed unchanged).
 const opencodeToolTokens = new ThreadTokenMemo();
-const TOOL_TOKEN_REUSE_MS = 8 * 60 * 60 * 1000;
 const threadActivatedConfigHash = new Map<string, string>();
 
 function configHash(config: Record<string, unknown>): string {
@@ -130,6 +149,9 @@ function authHeaders(token: string): Record<string, string> {
 }
 
 function modelBody(model: string): { providerID: string; modelID: string } {
+  if (model.startsWith("openai/")) {
+    return { providerID: "openai", modelID: model.slice("openai/".length) };
+  }
   return model.includes("/")
     ? { providerID: "openrouter", modelID: model }
     : { providerID: "anthropic", modelID: model };
@@ -417,39 +439,49 @@ export async function prepareOpencodeSandboxConfig(
       const orgId = ctx.orgId;
       // Thread-scoped + memoized so warm turns build a byte-identical MCP entry
       // (run-invariant config); a single-shot run keeps the strict run binding.
-      const token = ctx.threadId
-        ? opencodeToolTokens.get(
-            `${orgId}:${ctx.threadId}:${ctx.userId ?? ""}:tool`,
-            // Turn-cover TTL + reuse window; refresh when remaining validity
-            // drops below the turn-cover TTL (same guarantee as a run token).
-            { ttlMs: gw.tokenTtlMs + TOOL_TOKEN_REUSE_MS, refreshMarginMs: gw.tokenTtlMs },
-            () =>
-              mintToolToken(
-                {
-                  orgId,
-                  userId: ctx.userId ?? "",
-                  threadId: ctx.threadId!,
-                  runId: ctx.runId,
-                  scope: "thread",
-                },
-                gw.tokenTtlMs + TOOL_TOKEN_REUSE_MS,
-              ),
-          )
-        : mintToolToken(
+      const descriptor = ctx.threadId
+        ? (() => {
+            const ttlMs = gw.tokenTtlMs;
+            const nowMs = Date.now();
+            const token = opencodeToolTokens.get(
+              `${orgId}:${ctx.threadId}:${ctx.userId ?? ""}:tool`,
+              threadTokenMemoOptions(ttlMs, THREAD_TOKEN_REUSE_WINDOW_MS),
+              () => {
+                const minted = buildToolGatewayCapabilityDescriptor(
+                  {
+                    orgId,
+                    userId: ctx.userId ?? "",
+                    threadId: ctx.threadId!,
+                    runId: ctx.runId,
+                  },
+                  { config: gw, scope: "thread", ttlMs, nowMs },
+                );
+                if (!minted) throw new Error("tool gateway could not mint OpenCode capability");
+                return minted.bearerToken;
+              },
+              nowMs,
+            );
+            return describeToolGatewayCapabilityDescriptor(
+              {
+                orgId,
+                userId: ctx.userId ?? "",
+                threadId: ctx.threadId,
+                runId: ctx.runId,
+              },
+              { config: gw, scope: "thread", bearerToken: token, expiresAt: nowMs + ttlMs },
+            );
+          })()
+        : buildToolGatewayCapabilityDescriptor(
             {
               orgId,
               userId: ctx.userId ?? "",
               threadId: ctx.runId,
               runId: ctx.runId,
             },
-            gw.tokenTtlMs,
+            { config: gw },
           );
-      mcp["skynet-knowledge"] = {
-        type: "remote",
-        url: gw.mcpUrl,
-        enabled: true,
-        headers: { Authorization: `Bearer ${token}` },
-      };
+      if (!descriptor) throw new Error("tool gateway could not mint OpenCode capability");
+      mcp["skynet-knowledge"] = toOpenCodeKnowledgeMcpEntry(descriptor);
     } else delete mcp["skynet-knowledge"];
     if (browser) mcp["skynet-browser"] = browser;
     else delete mcp["skynet-browser"];
@@ -575,9 +607,15 @@ type OcMessage = {
  *  unconfigured, gone, or NOT already `started` — we never wake a stopped
  *  sandbox just to read/cancel (north star: don't wake to read history). Shared
  *  by reconcile + cancel; never throws. */
+interface ResidentOpenCodeServer {
+  baseUrl: string;
+  token: string;
+  dirQ: string;
+}
+
 async function openResidentServer(
   sandboxId: string,
-): Promise<{ baseUrl: string; token: string; dirQ: string } | null> {
+): Promise<ResidentOpenCodeServer | null> {
   const apiKey = sandboxProviderApiKey();
   if (apiKey === undefined) return null;
   try {
@@ -675,36 +713,19 @@ export const opencodeHarness: HarnessAdapter = {
 
   async cancel(
     handle: HarnessSessionHandle,
-    _reason: string,
+    reason: string,
   ): Promise<HarnessOperationResult> {
-    // Defensive: a provider whose capabilities().cancel is false returns a typed
-    // unsupported result rather than a silent no-op (opencode's is true).
-    if (!OPENCODE_CAPABILITIES.cancel) {
-      return { status: "unsupported_capability", provider: "opencode", capability: "cancel" };
-    }
-    const ac = new AbortController();
-    const budget = setTimeout(() => ac.abort(), 9_000);
-    try {
-      const server = await openResidentServer(handle.sandboxId);
-      if (!server) {
-        return { status: "error", code: "sandbox_unreachable", message: "resident opencode server not reachable" };
-      }
-      const res = await fetch(
-        `${server.baseUrl}/session/${handle.sessionId}/abort${server.dirQ}`,
-        { method: "POST", headers: authHeaders(server.token), signal: ac.signal },
-      );
-      return res.ok
-        ? { status: "ok" }
-        : { status: "error", code: "abort_failed", message: `HTTP ${res.status}` };
-    } catch (err) {
-      return {
-        status: "error",
-        code: "cancel_failed",
-        message: err instanceof Error ? err.message : "unknown cancel error",
-      };
-    } finally {
-      clearTimeout(budget);
-    }
+    return opencodeProviderDriver.cancel(
+      {
+        provider: opencodeProviderDriver.provider,
+        nativeSessionId: handle.sessionId,
+        runtime: { kind: "sandbox", id: handle.sandboxId },
+        protocolVersion: opencodeProviderDriver.descriptor.protocol.name,
+        capabilities: opencodeProviderDriver.descriptor.capabilities,
+        generation: 1,
+      },
+      reason,
+    );
   },
 
   async reconcile(
@@ -732,10 +753,240 @@ export const opencodeHarness: HarnessAdapter = {
   },
 };
 
-export const opencodeServerAdapter: EngineAdapter = {
-  id: "opencode",
+const OPENCODE_PROVIDER_DRIVER_CAPABILITIES = sessionCapabilities("opencode", {
+  desktop: false,
+  knowledgeTools: false,
+});
 
-  async run(ctx: EngineRunContext): Promise<void> {
+type ResidentServerResolver = (sandboxId: string) => Promise<ResidentOpenCodeServer | null>;
+
+interface OpenCodeProviderDriverDeps {
+  resolveResidentServer?: ResidentServerResolver;
+  fetcher?: typeof fetch;
+}
+
+function operationSignal(signal: AbortSignal | undefined, timeoutMs: number): AbortSignal {
+  return signal
+    ? AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)])
+    : AbortSignal.timeout(timeoutMs);
+}
+
+function openCodeDriverError(
+  code: string,
+  message: string,
+): { status: "error"; code: string; message: string } {
+  return { status: "error", code, message };
+}
+
+function sandboxRuntimeId(session: Pick<HarnessSession, "runtime">): string | null {
+  return session.runtime.kind === "sandbox" ? session.runtime.id : null;
+}
+
+function openCodeSessionFromStart(
+  request: ProviderStartRequest,
+  nativeSessionId: string,
+): HarnessSession {
+  return {
+    provider: "opencode",
+    nativeSessionId,
+    runtime: request.runtime,
+    protocolVersion: "opencode-server",
+    capabilities: OPENCODE_PROVIDER_DRIVER_CAPABILITIES,
+    generation: 1,
+  };
+}
+
+export function makeOpenCodeProviderDriver(
+  deps: OpenCodeProviderDriverDeps = {},
+): ProviderDriver {
+  const resolveResidentServer = deps.resolveResidentServer ?? openResidentServer;
+  const fetcher = deps.fetcher ?? fetch;
+
+  return {
+    provider: "opencode",
+    descriptor: {
+      provider: "opencode",
+      protocol: { name: "opencode-server", version: "compat" },
+      capabilities: OPENCODE_PROVIDER_DRIVER_CAPABILITIES,
+      model: {
+        selection: "per_turn",
+        defaultModel: DEFAULT_OPENCODE_MODEL,
+        supportsArbitraryModel: true,
+      },
+      tools: {
+        mode: "skynet_brokered",
+        approval: "skynet",
+      },
+    },
+
+    async start(request: ProviderStartRequest): Promise<HarnessResult<HarnessSession>> {
+      if (request.runtime.kind !== "sandbox") {
+        return openCodeDriverError(
+          "invalid_runtime",
+          "OpenCode provider start requires an existing sandbox runtime",
+        );
+      }
+      const server = await resolveResidentServer(request.runtime.id);
+      if (!server) {
+        return openCodeDriverError(
+          "sandbox_unreachable",
+          "resident opencode server not reachable",
+        );
+      }
+      try {
+        const res = await fetcher(`${server.baseUrl}/session${server.dirQ}`, {
+          method: "POST",
+          headers: { ...authHeaders(server.token), "content-type": "application/json" },
+          body: JSON.stringify({}),
+          signal: operationSignal(request.signal, 9_000),
+        });
+        if (!res.ok) {
+          return openCodeDriverError("session_create_failed", `HTTP ${res.status}`);
+        }
+        const id = String(((await res.json()) as { id?: string }).id ?? "");
+        if (!id) {
+          return openCodeDriverError(
+            "session_create_failed",
+            "opencode session create returned no id",
+          );
+        }
+        return { status: "ok", value: openCodeSessionFromStart(request, id) };
+      } catch (error) {
+        return openCodeDriverError(
+          "session_create_failed",
+          error instanceof Error ? error.message : "unknown session create error",
+        );
+      }
+    },
+
+    async resume(request: ProviderResumeRequest): Promise<HarnessResult<HarnessSession>> {
+      const sandboxId = sandboxRuntimeId(request.session);
+      if (!sandboxId) {
+        return openCodeDriverError(
+          "invalid_runtime",
+          "OpenCode provider resume requires a sandbox runtime",
+        );
+      }
+      const server = await resolveResidentServer(sandboxId);
+      if (!server) {
+        return openCodeDriverError(
+          "sandbox_unreachable",
+          "resident opencode server not reachable",
+        );
+      }
+      try {
+        const res = await fetcher(
+          `${server.baseUrl}/session/${encodeURIComponent(request.session.nativeSessionId)}${server.dirQ}`,
+          {
+            headers: authHeaders(server.token),
+            signal: operationSignal(request.signal, 9_000),
+          },
+        );
+        if (res.ok) return { status: "ok", value: request.session };
+        return openCodeDriverError(
+          res.status === 404 ? "session_invalid" : "session_resume_failed",
+          `HTTP ${res.status}`,
+        );
+      } catch (error) {
+        return openCodeDriverError(
+          "session_resume_failed",
+          error instanceof Error ? error.message : "unknown session resume error",
+        );
+      }
+    },
+
+    async steer(request: ProviderSteerRequest): Promise<HarnessOperationResult> {
+      if (request.input.kind !== "prompt") {
+        return providerDriverUnsupported(
+          "opencode",
+          "steer",
+          "OpenCode provider driver currently supports prompt steering only",
+        );
+      }
+      const sandboxId = sandboxRuntimeId(request.session);
+      if (!sandboxId) {
+        return openCodeDriverError(
+          "invalid_runtime",
+          "OpenCode provider steer requires a sandbox runtime",
+        );
+      }
+      const server = await resolveResidentServer(sandboxId);
+      if (!server) {
+        return openCodeDriverError(
+          "sandbox_unreachable",
+          "resident opencode server not reachable",
+        );
+      }
+      try {
+        const model = request.input.model?.trim() || DEFAULT_MODEL;
+        const res = await fetcher(
+          `${server.baseUrl}/session/${encodeURIComponent(request.session.nativeSessionId)}/message${server.dirQ}`,
+          {
+            method: "POST",
+            headers: { ...authHeaders(server.token), "content-type": "application/json" },
+            body: JSON.stringify({
+              model: modelBody(model),
+              parts: [{ type: "text", text: request.input.text }],
+            }),
+            signal: operationSignal(request.signal, 600_000),
+            timeout: 0,
+          } as FetchInit,
+        );
+        if (res.ok) return { status: "ok" };
+        const code = res.status === 404 ? "session_invalid" : "prompt_failed";
+        return openCodeDriverError(code, `HTTP ${res.status} ${truncate(await res.text(), 200)}`);
+      } catch (error) {
+        return openCodeDriverError(
+          request.signal?.aborted ? "prompt_failed" : "prompt_transport_interrupted",
+          error instanceof Error ? error.message : "unknown prompt steer error",
+        );
+      }
+    },
+
+    async cancel(session, _reason): Promise<HarnessOperationResult> {
+      const sandboxId = sandboxRuntimeId(session);
+      if (!sandboxId) {
+        return openCodeDriverError(
+          "invalid_runtime",
+          "OpenCode provider cancel requires a sandbox runtime",
+        );
+      }
+      const server = await resolveResidentServer(sandboxId);
+      if (!server) {
+        return openCodeDriverError(
+          "sandbox_unreachable",
+          "resident opencode server not reachable",
+        );
+      }
+      try {
+        const res = await fetcher(
+          `${server.baseUrl}/session/${encodeURIComponent(session.nativeSessionId)}/abort${server.dirQ}`,
+          {
+            method: "POST",
+            headers: authHeaders(server.token),
+            signal: operationSignal(undefined, 9_000),
+          },
+        );
+        return res.ok
+          ? { status: "ok" }
+          : openCodeDriverError("abort_failed", `HTTP ${res.status}`);
+      } catch (error) {
+        return openCodeDriverError(
+          "cancel_failed",
+          error instanceof Error ? error.message : "unknown cancel error",
+        );
+      }
+    },
+  };
+}
+
+export const opencodeProviderDriver = makeOpenCodeProviderDriver();
+
+export function makeOpenCodeServerAdapter(driver: ProviderDriver): EngineAdapter {
+  return {
+    id: "opencode",
+
+    async run(ctx: EngineRunContext): Promise<void> {
     const apiKey = sandboxProviderApiKey();
     if (apiKey === undefined) throw new Error("opencode engine needs sandbox provider credentials");
     if (!providerGatewayWired()) {
@@ -1077,49 +1328,32 @@ export const opencodeServerAdapter: EngineAdapter = {
       const headers = { ...authHeaders(token), "content-type": "application/json" };
       const dirQ = `?directory=${encodeURIComponent(workdir)}`;
 
-      const createSession = async (): Promise<string> => {
-        const res = await fetch(`${baseUrl}/session${dirQ}`, {
-          method: "POST",
-          headers,
-          body: JSON.stringify({}),
-          signal: ctx.signal,
-        });
-        if (!res.ok) throw new Error(`opencode session create failed: HTTP ${res.status}`);
-        const id = String(((await res.json()) as { id?: string }).id ?? "");
-        if (!id) throw new Error("opencode session create returned no id");
-        ctx.saveEngineSessionId?.(id);
-        return id;
-      };
-
-      // Resume the thread's native session; a stored id may predate this server
-      // (CLI-era session in a dead sandbox) — the prompt POST 404s then and we
-      // fall back to a fresh session WITH the composed preamble.
-      let sessionId = ctx.engineSessionId ?? null;
-      let resumed = Boolean(sessionId);
-      if (!sessionId) sessionId = await createSession();
-      // Resumed turns must ALSO stamp the id on THEIR run row — a thread whose
-      // only stamped run gets deleted (or a race) would otherwise go dark for
-      // the Live tab even though the session exists.
-      else ctx.saveEngineSessionId?.(sessionId);
-
-      const recordSessionStarted = (id: string): void => {
-        void recordProviderEvent({
-          id: `${ctx.runId}:${id}:session`,
-          runId: ctx.runId,
-          threadId: ctx.threadId ?? ctx.runId,
+      const negotiatedCapabilities = sessionCapabilities("opencode", {
+        desktop: desktop.available,
+        knowledgeTools: gatewayState.knowledge,
+      });
+      const established = await establishProviderSession({
+        driver,
+        ctx,
+        runtime: { kind: "sandbox", id: box.id },
+        capabilities: negotiatedCapabilities,
+        persistSession: async (nativeSessionId) => {
+          if (!ctx.saveEngineSessionId) {
+            throw new Error("OpenCode session persistence is unavailable");
+          }
+          await ctx.saveEngineSessionId(nativeSessionId);
+        },
+      });
+      const session = established.session;
+      const sessionId = session.nativeSessionId;
+      const resumed = established.resumed;
+      await recordProviderEvent(
+        providerSessionStartedEvent(ctx, session, {
           provider: "opencode",
-          eventType: SESSION_STARTED_EVENT_TYPE,
-          nativeSessionId: id,
-          payload: {
-            source: "opencode",
-            capabilities: sessionCapabilities("opencode", {
-              desktop: desktop.available,
-              knowledgeTools: gatewayState.knowledge,
-            }),
-          },
-        });
-      };
-      recordSessionStarted(sessionId);
+          source: "opencode",
+        }),
+        { critical: true },
+      );
 
       // Capture the provider's CURRENT replacement catalog concurrently with
       // the turn. Ordinary prompts do not pay this fetch in TTFT; every capture
@@ -1165,7 +1399,7 @@ export const opencodeServerAdapter: EngineAdapter = {
         catalogCaptures.push(task);
         return task;
       };
-      let liveCatalog = startCatalogCapture(sessionId);
+      const liveCatalog = startCatalogCapture(sessionId);
 
       // ── realtime: subscribe /event BEFORE prompting ─────────────────────────
       const sseAbort = new AbortController();
@@ -1198,7 +1432,13 @@ export const opencodeServerAdapter: EngineAdapter = {
         const isChild = childSessions.has(sid);
         if (sid !== sessionId && !isChild) return;
         const partId = String(part.id ?? "");
-        const p = part as Record<string, any>;
+        const providerPart = part as {
+          agent?: unknown;
+          description?: unknown;
+          prompt?: unknown;
+          sessionID?: unknown;
+          state?: unknown;
+        };
 
         // TEXT — the main turn's live narration. Child-session text is subagent
         // chatter; keep the parent delta channel clean (their TOOLS still render).
@@ -1255,7 +1495,7 @@ export const opencodeServerAdapter: EngineAdapter = {
         // ToolPart (deduped by description) carries the running→completed
         // lifecycle if it arrives.
         if (part.type === "subtask") {
-          const desc = String(p.description ?? p.agent ?? "subagent");
+          const desc = String(providerPart.description ?? providerPart.agent ?? "subagent");
           if (emittedSubagents.has(desc)) return;
           emittedSubagents.add(desc);
           const id = await ctx.emit({
@@ -1263,10 +1503,14 @@ export const opencodeServerAdapter: EngineAdapter = {
             label: `Subagent — ${truncate(desc, 50)}`,
             chip: "subagent",
             code_json: {
-              agent: p.agent,
-              description: p.description,
-              prompt: p.prompt,
-              native: { sessionID: sid, partID: partId, childSessionID: p.sessionID ?? null },
+              agent: providerPart.agent,
+              description: providerPart.description,
+              prompt: providerPart.prompt,
+              native: {
+                sessionID: sid,
+                partID: partId,
+                childSessionID: providerPart.sessionID ?? null,
+              },
             },
           });
           if (id) toolSteps.set(partId, id);
@@ -1277,7 +1521,7 @@ export const opencodeServerAdapter: EngineAdapter = {
         // toolSteps pairing. `task` → "Subagent — …" (chip subagent); child-
         // session tools get a "↳ " prefix.
         if (part.type === "tool" && typeof part.tool === "string") {
-          const st = (p.state ?? {}) as {
+          const st = (providerPart.state ?? {}) as {
             status?: string;
             input?: Record<string, unknown>;
             output?: string;
@@ -1287,7 +1531,13 @@ export const opencodeServerAdapter: EngineAdapter = {
           if (toolDone.has(partId)) return;
           const status = st.status;
           const isTask = part.tool === "task";
-          const taskDesc = isTask ? String((st.input?.description as string) ?? st.title ?? "subagent") : "";
+          const taskDesc = isTask
+            ? String(
+                typeof st.input?.description === "string"
+                  ? st.input.description
+                  : (st.title ?? "subagent"),
+              )
+            : "";
           const active = status === "running" || status === "completed" || status === "error";
           if (!toolSteps.has(partId) && active) {
             // Skip if a subtask part already rendered this subagent (no lifecycle
@@ -1576,21 +1826,6 @@ export const opencodeServerAdapter: EngineAdapter = {
       })();
 
       ctx.timing?.mark("dispatch");
-      const postPrompt = async (text: string): Promise<Response> =>
-        fetch(`${baseUrl}/session/${sessionId}/message${dirQ}`, {
-          method: "POST",
-          headers,
-          body: JSON.stringify({
-            model: modelBody(model),
-            parts: [{ type: "text", text }],
-          }),
-          signal: turnAbort.signal,
-          // The turn's reply arrives only at the END, so this socket is "idle" the
-          // whole time and Bun cut it at 5min (BUN_CONFIG_HTTP_IDLE_TIMEOUT). Disable
-          // per-request (Bun PR #33647) so a long turn completes on the connection.
-          timeout: 0,
-        } as FetchInit);
-
       let reply: OcMessage;
       // The turn is driven by ONE long-held POST to the sandbox's opencode server
       // through the Daytona preview proxy, which severs long/idle connections
@@ -1603,7 +1838,6 @@ export const opencodeServerAdapter: EngineAdapter = {
       const turnStartMs = Date.now();
       const waitForCompletion = async (): Promise<typeof reply> => {
         while (!ctx.signal.aborted) {
-          await new Promise((r) => setTimeout(r, 3000));
           const r = await fetch(`${baseUrl}/session/${sessionId}/message${dirQ}`, {
             headers,
             signal: ctx.signal,
@@ -1615,17 +1849,9 @@ export const opencodeServerAdapter: EngineAdapter = {
           if (typeof completed === "number" && completed > turnStartMs) {
             return last ?? {};
           }
+          await new Promise((resolve) => setTimeout(resolve, 3000));
         }
         throw new Error("opencode run aborted (timeout)");
-      };
-      // Post the prompt; tolerate the proxy cutting the long connection (poll then).
-      const postOrPoll = async (text: string): Promise<Response | null> => {
-        try {
-          return await postPrompt(text);
-        } catch (postErr) {
-          if (ctx.signal.aborted) throw postErr; // our own abort → fatal below
-          return null; // proxy severed the long POST — turn still runs; poll for it
-        }
       };
       const assertCommandAuthorized = async (
         id: string,
@@ -1649,39 +1875,33 @@ export const opencodeServerAdapter: EngineAdapter = {
       };
       try {
         await assertCommandAuthorized(sessionId, liveCatalog);
-        let res = await postOrPoll(composeTurnPrompt(ctx, resumed));
-        if (res && res.status === 404 && resumed) {
-          // Stale resume id (session from a previous sandbox/server incarnation)
-          // — start fresh WITH the full bootstrap + per-turn context. A command
-          // accepted for the old session is rejected before any retry; ordinary
-          // prompts may safely continue in the replacement session.
-          sessionId = await createSession();
-          resumed = false;
-          recordSessionStarted(sessionId);
-          liveCatalog = startCatalogCapture(sessionId);
-          if (ctx.commandName) {
-            const reason = revalidateCommandBeforeDispatch(
-              {
-                name: ctx.commandName,
-                provider: ctx.commandProvider ?? null,
-                sessionId: ctx.commandSessionId ?? null,
-                catalogRevision: ctx.commandCatalogRevision ?? null,
-              },
-              { engine: "opencode", sessionId, catalog: null },
-            );
+        const steerResult = await driver.steer({
+          runId: ctx.runId,
+          threadId: ctx.threadId ?? ctx.runId,
+          session,
+          input: {
+            kind: "prompt",
+            text: composeTurnPrompt(ctx, resumed),
+            model,
+          },
+          signal: turnAbort.signal,
+        });
+        if (steerResult.status !== "ok") {
+          // The Daytona preview can sever the long POST while OpenCode continues
+          // server-side. Preserve the established recovery behavior only for an
+          // unclassified prompt transport failure; classified provider responses
+          // (including a stale session) remain terminal.
+          if (
+            steerResult.status !== "error" ||
+            steerResult.code !== "prompt_transport_interrupted" ||
+            ctx.signal.aborted
+          ) {
             throw new Error(
-              `stale command "/${ctx.commandName}" rejected before dispatch: ${reason ?? "session replaced"} - re-issue it against the current session`,
+              `opencode prompt failed (${steerResult.status}): ${steerResult.message ?? "unsupported"}`,
             );
           }
-          res = await postOrPoll(composeTurnPrompt(ctx, false));
         }
-        if (res === null) {
-          reply = await waitForCompletion();
-        } else if (!res.ok) {
-          throw new Error(`opencode prompt failed: HTTP ${res.status} ${truncate(await res.text(), 200)}`);
-        } else {
-          reply = (await res.json()) as typeof reply;
-        }
+        reply = await waitForCompletion();
       } catch (err) {
         // Best-effort: tell the engine to stop the turn we abandoned.
         void fetch(`${baseUrl}/session/${sessionId}/abort${dirQ}`, { method: "POST", headers }).catch(() => {});
@@ -1767,5 +1987,6 @@ export const opencodeServerAdapter: EngineAdapter = {
         await sandbox.delete().catch(() => {});
       }
     }
-  },
-};
+    },
+  };
+}

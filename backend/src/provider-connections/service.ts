@@ -1,33 +1,40 @@
+import type { ProviderConnectionAuthMethod, ProviderConnectionProvider } from "../db/schema";
+import { publishOrgChange } from "../runs/org-signals";
 import { openSecret, sealSecret } from "../secrets/crypto";
 import {
   findProviderConnection,
   listProviderConnections,
-  revokeProviderConnection,
-  upsertProviderConnection,
   type ProviderConnectionRecord,
   type ProviderConnectionScope,
+  revokeProviderConnection,
+  upsertProviderConnection,
+  upsertProviderConnectionUnlessRevoked,
 } from "./repo";
 import {
+  assertManagedCodexAppServerSession,
   assertTrustedOAuthBundle,
+  type ManagedCodexAppServerSession,
+  type ProviderConnectionChangeAction,
   type ProviderConnectionCredential,
+  type ProviderConnectionMeta,
   type ProviderConnectionMetadata,
   type TrustedChatGptOAuthBundle,
 } from "./types";
-import type {
-  ProviderConnectionAuthMethod,
-  ProviderConnectionProvider,
-  ProviderConnectionStatus,
-} from "../db/schema";
 
-export interface ProviderConnectionMeta {
-  id: string;
-  provider: ProviderConnectionProvider;
-  authMethod: ProviderConnectionAuthMethod;
-  status: ProviderConnectionStatus;
+export type { ProviderConnectionMeta } from "./types";
+
+export interface CodexSubscriptionAuth {
+  accessToken: string;
+  accountId: string;
+  planType: string;
+  expiresAt: string | null;
+}
+
+export interface CodexSubscriptionRuntimeSelection {
+  authMethod: "chatgpt_oauth";
+  mode: "managed_codex_app_server";
+  codexHome: string;
   metadata: ProviderConnectionMetadata;
-  createdAt: string;
-  updatedAt: string;
-  revokedAt: string | null;
 }
 
 function toMeta(row: ProviderConnectionRecord): ProviderConnectionMeta {
@@ -43,6 +50,21 @@ function toMeta(row: ProviderConnectionRecord): ProviderConnectionMeta {
   };
 }
 
+function publishProviderConnectionChange(
+  row: ProviderConnectionRecord,
+  action: ProviderConnectionChangeAction,
+): void {
+  publishOrgChange(row.orgId, {
+    type: "provider_connection",
+    action,
+    targetUserId: row.userId,
+    connectionId: row.id,
+    provider: row.provider,
+    authMethod: row.authMethod,
+    status: row.status,
+  });
+}
+
 function sealCredential(credential: ProviderConnectionCredential) {
   return sealSecret(JSON.stringify(credential));
 }
@@ -56,6 +78,47 @@ function openCredential(row: ProviderConnectionRecord): ProviderConnectionCreden
     }),
   ) as ProviderConnectionCredential;
   return parsed;
+}
+
+function sameProviderMetadata(
+  left: ProviderConnectionMetadata,
+  right: ProviderConnectionMetadata,
+): boolean {
+  return left.email === right.email && left.planType === right.planType;
+}
+
+function sameManagedCodexSession(
+  left: ManagedCodexAppServerSession,
+  right: ManagedCodexAppServerSession,
+): boolean {
+  return left.codexHome === right.codexHome &&
+    left.email === right.email &&
+    left.planType === right.planType;
+}
+
+const managedCodexSessionWriteTails = new Map<string, Promise<void>>();
+
+async function serializeManagedCodexSessionWrite<T>(
+  scope: ProviderConnectionScope & { provider: "openai" },
+  operation: () => Promise<T>,
+): Promise<T> {
+  const key = `${scope.orgId}\0${scope.userId}\0${scope.provider}`;
+  const previous = managedCodexSessionWriteTails.get(key) ?? Promise.resolve();
+  const { promise: finished, resolve } = Promise.withResolvers<void>();
+  const tail = (async () => {
+    await previous;
+    await finished;
+  })();
+  managedCodexSessionWriteTails.set(key, tail);
+  await previous;
+  try {
+    return await operation();
+  } finally {
+    resolve();
+    if (managedCodexSessionWriteTails.get(key) === tail) {
+      managedCodexSessionWriteTails.delete(key);
+    }
+  }
 }
 
 export async function listCurrentUserProviderConnections(
@@ -90,6 +153,7 @@ export async function upsertApiKeyProviderConnection(
     iv: sealed.iv,
     tag: sealed.tag,
   });
+  publishProviderConnectionChange(row, "updated");
   return toMeta(row);
 }
 
@@ -115,7 +179,68 @@ export async function storeTrustedChatGptOAuthProviderConnection(
     iv: sealed.iv,
     tag: sealed.tag,
   });
+  publishProviderConnectionChange(row, "updated");
   return toMeta(row);
+}
+
+export async function storeManagedCodexAppServerProviderConnection(
+  scope: ProviderConnectionScope & {
+    provider?: "openai";
+    session: ManagedCodexAppServerSession;
+    metadata: ProviderConnectionMetadata;
+    allowReconnect?: boolean;
+  },
+): Promise<ProviderConnectionMeta> {
+  const session = assertManagedCodexAppServerSession(scope.session);
+  const provider = scope.provider ?? "openai";
+  return serializeManagedCodexSessionWrite(
+    { orgId: scope.orgId, userId: scope.userId, provider },
+    async () => {
+      const existing = await findProviderConnection({
+        ...scope,
+        provider,
+        authMethod: "chatgpt_oauth",
+      });
+      if (existing?.status === "connected") {
+        const credential = openCredential(existing);
+        if (
+          credential.authMethod === "chatgpt_oauth" &&
+          typeof credential.value !== "string" &&
+          "type" in credential.value &&
+          credential.value.type === "managed_codex_app_server" &&
+          sameManagedCodexSession(assertManagedCodexAppServerSession(credential.value), session) &&
+          sameProviderMetadata(existing.metadata, scope.metadata)
+        ) {
+          return toMeta(existing);
+        }
+      }
+      const sealed = sealCredential({ authMethod: "chatgpt_oauth", value: session });
+      const connectionInput = {
+        ...scope,
+        provider,
+        authMethod: "chatgpt_oauth",
+        status: "connected",
+        metadata: scope.metadata,
+        credentialCiphertext: sealed.ciphertext,
+        iv: sealed.iv,
+        tag: sealed.tag,
+      } as const;
+      const row = scope.allowReconnect === false
+        ? await upsertProviderConnectionUnlessRevoked(connectionInput)
+        : await upsertProviderConnection(connectionInput);
+      if (!row) {
+        const current = await findProviderConnection({
+          ...scope,
+          provider,
+          authMethod: "chatgpt_oauth",
+        });
+        if (!current) throw new Error("provider connection conditional upsert returned no row");
+        return toMeta(current);
+      }
+      publishProviderConnectionChange(row, "updated");
+      return toMeta(row);
+    },
+  );
 }
 
 export async function revokeCurrentUserProviderConnection(
@@ -125,6 +250,7 @@ export async function revokeCurrentUserProviderConnection(
   },
 ): Promise<ProviderConnectionMeta | null> {
   const row = await revokeProviderConnection(scope);
+  if (row) publishProviderConnectionChange(row, "revoked");
   return row ? toMeta(row) : null;
 }
 
@@ -142,4 +268,64 @@ export async function getTrustedProviderCredential(
   const row = await findProviderConnection(scope);
   if (!row || row.status !== "connected") return null;
   return openCredential(row);
+}
+
+export async function getTrustedCodexSubscriptionAuth(
+  scope: ProviderConnectionScope & {
+    provider?: "openai";
+  },
+): Promise<CodexSubscriptionAuth | null> {
+  const row = await findProviderConnection({
+    ...scope,
+    provider: scope.provider ?? "openai",
+    authMethod: "chatgpt_oauth",
+  });
+  if (!row || row.status !== "connected") return null;
+  const credential = openCredential(row);
+  if (
+    credential.authMethod !== "chatgpt_oauth" ||
+    typeof credential.value === "string" ||
+    "type" in credential.value && credential.value.type === "managed_codex_app_server"
+  ) {
+    return null;
+  }
+  const bundle = assertTrustedOAuthBundle(credential.value);
+  if (bundle.expiresAt && Number.isNaN(Date.parse(bundle.expiresAt))) {
+    return null;
+  }
+  return {
+    accessToken: bundle.accessToken,
+    accountId: bundle.accountId,
+    planType: bundle.planType,
+    expiresAt: bundle.expiresAt ?? null,
+  };
+}
+
+export async function getCodexSubscriptionRuntimeSelection(
+  scope: ProviderConnectionScope & {
+    provider?: "openai";
+  },
+): Promise<CodexSubscriptionRuntimeSelection | null> {
+  const row = await findProviderConnection({
+    ...scope,
+    provider: scope.provider ?? "openai",
+    authMethod: "chatgpt_oauth",
+  });
+  if (!row || row.status !== "connected") return null;
+  const credential = openCredential(row);
+  if (
+    credential.authMethod !== "chatgpt_oauth" ||
+    typeof credential.value === "string" ||
+    !("type" in credential.value) ||
+    credential.value.type !== "managed_codex_app_server"
+  ) {
+    return null;
+  }
+  const session = assertManagedCodexAppServerSession(credential.value);
+  return {
+    authMethod: "chatgpt_oauth",
+    mode: "managed_codex_app_server",
+    codexHome: session.codexHome,
+    metadata: row.metadata,
+  };
 }

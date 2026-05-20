@@ -6,6 +6,7 @@ import * as Button from "@/components/ui/button";
 import { AgentSidebar } from "@/components/shell/agent-sidebar";
 import { AppShell } from "@/components/shell/app-shell";
 import { GeneralCard } from "./general-card";
+import { ProviderConnectionsCard } from "./provider-connections-card";
 import { SecretsCard } from "./secrets-card";
 import { SettingsCard, SettingsRow } from "./settings-rows";
 import { SettingsRail } from "./settings-rail";
@@ -116,6 +117,15 @@ export default function SettingsPage() {
             {/* Secrets */}
             <Section id="secrets" title="Secrets" description="Persisted for every future session on this workspace.">
               <SecretsCard />
+            </Section>
+
+            {/* Provider connections */}
+            <Section
+              id="providers"
+              title="Provider connections"
+              description="Your model provider accounts and write-only API keys."
+            >
+              <ProviderConnectionsCard />
             </Section>
 
             {/* Team */}

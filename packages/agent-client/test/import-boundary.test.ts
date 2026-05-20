@@ -1,15 +1,18 @@
 // The client must be browser/runtime-neutral (Section 1.1 / Slice 5): its `src/**` may
-// import ONLY relative "./..." modules or the zero-dependency `@skynet/agent-harness/
-// canonical` protocol subpath - never React, Next, a provider translator, backend,
-// database, Daytona, or a Node-only runtime module. A leak here would let a UI pull
-// server code into the browser through the client.
+// import ONLY relative "./..." modules or the zero-dependency shared contract
+// packages - never React, Next, a provider translator, backend, database, Daytona,
+// or a Node-only runtime module. A leak here would let a UI pull server code into
+// the browser through the client.
 
 import { describe, expect, test } from "bun:test";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 const SRC_DIR = join(import.meta.dir, "..", "src");
-const ALLOWED_BARE = new Set(["@skynet/agent-harness/canonical"]);
+const ALLOWED_BARE = new Set([
+  "@skynet/agent-harness/canonical",
+  "@skynet/artifact-workspace",
+]);
 
 function specifiersOf(source: string): string[] {
   const out: string[] = [];
@@ -34,7 +37,7 @@ describe("agent-client import boundary", () => {
     expect(files.length).toBeGreaterThan(0);
   });
 
-  test("every src import is relative './' or the allowed canonical protocol subpath", () => {
+  test("every src import is relative './' or an allowed shared contract package", () => {
     const violations: { file: string; specifier: string }[] = [];
     for (const file of files) {
       for (const spec of specifiersOf(readFileSync(file, "utf8"))) {

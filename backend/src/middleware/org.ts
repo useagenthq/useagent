@@ -31,6 +31,7 @@ const PUBLIC_API_EXACT = new Set([
   "/api/health",
   "/api/config",
   "/api/internal/automation",
+  "/api/internal/gateway-approval/consume",
 ]);
 const PUBLIC_API_PREFIXES = ["/api/auth/", "/api/slack/"];
 

@@ -42,8 +42,11 @@ export interface CanonicalEventLike {
   readonly name?: string;
   readonly toolCallId?: string;
   readonly input?: unknown;
+  readonly server?: string;
   readonly preview?: string;
   readonly status?: string;
+  readonly nativeStatus?: string;
+  readonly durationMs?: number;
   readonly result?: string;
   readonly error?: string;
   readonly entries?: readonly {
@@ -63,6 +66,8 @@ export interface CanonicalEventLike {
   readonly chunk?: string;
   readonly message?: string;
   readonly fatal?: boolean;
+  readonly rawEventType?: string;
+  readonly rawPayload?: unknown;
   readonly destination?: string;
   readonly artifact?: {
     readonly artifactId: string;
@@ -202,8 +207,11 @@ interface ToolLifecycle {
   readonly name: string;
   readonly title: string;
   readonly input?: unknown;
+  readonly server?: string;
   readonly preview?: string;
   readonly status?: string;
+  readonly nativeStatus?: string;
+  readonly durationMs?: number;
   readonly error?: string;
 }
 
@@ -249,8 +257,11 @@ function collectToolLifecycles(
       name: event.name ?? previous?.name ?? "tool",
       title: event.title ?? previous?.title ?? event.name ?? "Tool",
       input: event.input ?? previous?.input,
+      server: event.server ?? previous?.server,
       preview: event.preview ?? previous?.preview,
       status: event.status ?? previous?.status,
+      nativeStatus: event.nativeStatus ?? previous?.nativeStatus,
+      durationMs: event.durationMs ?? previous?.durationMs,
       error: event.error ?? previous?.error,
     });
   }
@@ -267,8 +278,11 @@ function projectToolLifecycle(lifecycle: ToolLifecycle, event: CanonicalEventLik
       chip: null,
       code: {
         tool: lifecycle.name,
+        ...(lifecycle.server ? { server: lifecycle.server } : {}),
         ...(lifecycle.input === undefined ? {} : { input: lifecycle.input }),
         ...(detail === undefined ? {} : { output: detail }),
+        ...(lifecycle.nativeStatus ? { status: lifecycle.nativeStatus } : {}),
+        ...(lifecycle.durationMs === undefined ? {} : { durationMs: lifecycle.durationMs }),
         ...(lifecycle.status === "error" || lifecycle.error ? { error: true } : {}),
       },
     },
@@ -440,13 +454,22 @@ export function buildTimelineFromCanonical(
     }
     if ((e.kind === "harness.warning" || e.kind === "harness.error") && e.message) {
       const error = e.kind === "harness.error";
+      let rawDetail: string | undefined;
+      if (e.rawPayload !== undefined) {
+        try {
+          rawDetail = JSON.stringify(e.rawPayload, null, 2);
+        } catch {
+          rawDetail = "Native payload could not be serialized";
+        }
+      }
       const step = projectedStep(e, {
         kind: "command",
         label: e.message,
         chip: null,
         code: {
           tool: error ? "error" : "warning",
-          input: { description: e.message },
+          input: { description: e.rawEventType ?? e.message },
+          ...(rawDetail ? { output: rawDetail } : {}),
           ...(error ? { error: true } : {}),
         },
       });

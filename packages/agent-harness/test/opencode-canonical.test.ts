@@ -135,6 +135,139 @@ describe("child derivation equivalence (synthetic task frames)", () => {
   });
 });
 
+describe("provider-neutral native lifecycle identity", () => {
+  const providers = ["codex", "claude", "opencode", "pi", "acp"] as const;
+
+  for (const provider of providers) {
+    test(`${provider} tool lifecycle keeps provider and native call detail`, () => {
+      const native = {
+        sessionId: `${provider}-session`,
+        parentSessionId: null,
+        messageId: `${provider}-message`,
+        partId: `${provider}-part`,
+        callId: `${provider}-call`,
+      };
+      const result = translateOpenCode([
+        {
+          eventId: `${provider}-tool-start`,
+          seq: 1,
+          provider,
+          eventType: "part.tool.running",
+          native,
+          payload: { type: "tool", tool: "shell" },
+        },
+        {
+          eventId: `${provider}-tool-done`,
+          seq: 2,
+          provider,
+          eventType: "part.tool.completed",
+          native,
+          payload: { type: "tool", tool: "shell" },
+        },
+      ], CTX);
+
+      expect(result.events).toMatchObject([
+        {
+          kind: "tool.started",
+          toolCallId: `${provider}-call`,
+          name: "shell",
+          identity: {
+            provider,
+            nativeSessionId: `${provider}-session`,
+            nativeMessageId: `${provider}-message`,
+            nativePartId: `${provider}-part`,
+          },
+        },
+        {
+          kind: "tool.completed",
+          toolCallId: `${provider}-call`,
+          status: "ok",
+          identity: { provider },
+        },
+      ]);
+    });
+
+    test(`${provider} subagent lifecycle keeps the provider child identity`, () => {
+      const result = translateOpenCode([{
+        eventId: `${provider}-child-done`,
+        seq: 1,
+        provider,
+        eventType: "part.tool.completed",
+        native: {
+          sessionId: `${provider}-parent`,
+          parentSessionId: null,
+          messageId: `${provider}-message`,
+          partId: `${provider}-part`,
+          callId: `${provider}-launch`,
+        },
+        payload: {
+          type: "tool",
+          tool: "task",
+          title: "Research provider parity",
+          state: {
+            status: "completed",
+            output: `<task id="ses_${provider}_child"><task_result>verified</task_result></task>`,
+          },
+        },
+      }], CTX);
+
+      expect(result.events).toMatchObject([
+        {
+          kind: "child.started",
+          childId: `ses_${provider}_child`,
+          launchToolCallId: `${provider}-launch`,
+          identity: { provider, nativeSessionId: `${provider}-parent` },
+        },
+        {
+          kind: "child.completed",
+          childId: `ses_${provider}_child`,
+          status: "ok",
+          result: "verified",
+          identity: { provider, nativeSessionId: `${provider}-parent` },
+        },
+      ]);
+    });
+  }
+
+  test("an unknown native event remains accounted with provider and native identity", () => {
+    const payload = { capability: "future-tool", detail: { version: 2 } };
+    const result = translateOpenCode([{
+      eventId: "pi-experimental-1",
+      seq: 7,
+      provider: "pi",
+      eventType: "pi.experimental.capability",
+      native: {
+        sessionId: "pi-session",
+        parentSessionId: null,
+        messageId: "pi-message",
+        partId: "pi-part",
+        callId: "pi-call",
+      },
+      payload,
+    }], CTX);
+
+    expect(result.events).toMatchObject([{
+      kind: "harness.warning",
+      rawEventType: "pi.experimental.capability",
+      rawPayload: payload,
+      identity: {
+        provider: "pi",
+        nativeEventId: "pi-experimental-1",
+        nativeSessionId: "pi-session",
+        nativeSeq: 7,
+        nativeMessageId: "pi-message",
+        nativePartId: "pi-part",
+      },
+    }]);
+    expect(result.accounting).toEqual([{
+      sourceId: "pi-experimental-1",
+      kind: "pi.experimental.capability",
+      provider: "pi",
+      produced: ["harness.warning"],
+    }]);
+  });
+});
+
 describe("T3 activity fidelity", () => {
   const t3Frame = (
     eventId: string,
@@ -149,6 +282,26 @@ describe("T3 activity fidelity", () => {
     eventType,
     native: { sessionId: "ses_t3", parentSessionId: null, messageId: null, partId: null, callId },
     payload,
+  });
+
+  test("does not expose transport placeholders as canonical tool names", () => {
+    for (const [index, placeholder] of ["task", "mcp tool call"].entries()) {
+      const result = translateOpenCode([
+        t3Frame(`placeholder-${index}`, index + 1, "t3.activity.tool.completed", {
+          id: `activity-${index}`,
+          kind: "tool.completed",
+          summary: placeholder,
+          payload: {
+            data: { item: { id: `call-${index}`, toolName: placeholder } },
+          },
+        }),
+      ], CTX);
+
+      expect(result.events).toMatchObject([
+        { kind: "tool.started", name: "tool" },
+        { kind: "tool.completed", toolCallId: `call-${index}` },
+      ]);
+    }
   });
 
   test("maps T3 tool lifecycle to named tool events with bounded detail and no raw argument exposure", () => {
@@ -181,7 +334,86 @@ describe("T3 activity fidelity", () => {
     expect(result.events[0]).toMatchObject({ kind: "tool.started", toolCallId: "tool_1", name: "webfetch", title: "Fetch quote" });
     expect(result.events[0]).not.toHaveProperty("input");
     expect(result.events[1]).toMatchObject({ kind: "tool.progress", toolCallId: "tool_1", preview: "Opening finance source" });
-    expect(result.events[2]).toMatchObject({ kind: "tool.completed", toolCallId: "tool_1", status: "ok", preview: "Fetched current quote (1234ms)" });
+    expect(result.events[2]).toMatchObject({
+      kind: "tool.completed",
+      toolCallId: "tool_1",
+      status: "ok",
+      preview: "Fetched current quote",
+      durationMs: 1234,
+    });
+  });
+
+  test("preserves nested MCP identity, status, result, and duration without exposing arguments", () => {
+    const result = translateOpenCode([
+      t3Frame("mcp-done", 1, "t3.activity.tool.completed", {
+        id: "activity-mcp-done",
+        kind: "tool.completed",
+        summary: "Create the pull request",
+        payload: {
+          itemType: "mcp_tool_call",
+          data: {
+            item: {
+              id: "call-pr-1",
+              server: "github",
+              toolName: "create_pull_request",
+              arguments: { title: "Preserve canonical fidelity" },
+              status: "completed",
+              result: "pull request #42 created",
+              durationMs: 1_234,
+            },
+          },
+        },
+      }),
+    ], CTX);
+
+    expect(result.events).toMatchObject([
+      {
+        kind: "tool.started",
+        toolCallId: "call-pr-1",
+        name: "create_pull_request",
+        server: "github",
+      },
+      {
+        kind: "tool.completed",
+        toolCallId: "call-pr-1",
+        status: "ok",
+        nativeStatus: "completed",
+        preview: "pull request #42 created",
+        durationMs: 1_234,
+      },
+    ]);
+    expect(result.events[0]).not.toHaveProperty("input");
+  });
+
+  test("preserves nested provider failure status and error detail", () => {
+    const result = translateOpenCode([
+      t3Frame("mcp-error", 1, "t3.activity.tool.completed", {
+        id: "activity-mcp-error",
+        kind: "tool.completed",
+        summary: "Create the pull request",
+        payload: {
+          itemType: "mcp_tool_call",
+          data: {
+            item: {
+              id: "call-pr-error",
+              server: "github",
+              toolName: "create_pull_request",
+              status: "failed",
+              error: "permission denied",
+            },
+          },
+        },
+      }),
+    ], CTX);
+
+    expect(result.events.at(-1)).toMatchObject({
+      kind: "tool.completed",
+      toolCallId: "call-pr-error",
+      status: "error",
+      nativeStatus: "failed",
+      preview: "permission denied",
+      error: "permission denied",
+    });
   });
 
   test("creates synthetic start for terminal-only T3 tool frames so selectors keep the tool name", () => {
@@ -225,6 +457,73 @@ describe("T3 activity fidelity", () => {
     expect(result.events[0]).toMatchObject({ kind: "child.started", childId: "task_1", title: "Price researcher" });
     expect(result.events[1]).toMatchObject({ kind: "child.updated", childId: "task_1", status: "Checking Yahoo Finance" });
     expect(result.events[2]).toMatchObject({ kind: "child.completed", childId: "task_1", status: "ok", result: "NVIDIA quote found" });
+  });
+
+  test("preserves structured provider child state without deriving it from summary words", () => {
+    const result = translateOpenCode([
+      t3Frame("task-start", 1, "t3.activity.task.started", {
+        id: "act_task_start",
+        kind: "task.started",
+        summary: "Research delegation accepted",
+        payload: {
+          taskId: "task_structured",
+          agentKind: "agent",
+          status: "running",
+          summary: "Provider assigned the child",
+          lastToolName: "web_search",
+          typedUsage: { inputTokens: 12, outputTokens: 3, providerCacheReads: 4 },
+          model: "gpt-5.6-luna",
+          role: "researcher",
+          resumable: true,
+        },
+      }),
+      t3Frame("task-idle", 2, "t3.activity.task.progress", {
+        id: "act_task_idle",
+        kind: "task.progress",
+        summary: "This sentence contains no lifecycle keyword",
+        payload: {
+          taskId: "task_structured",
+          agentKind: "agent",
+          status: "idle",
+          summary: "Awaiting another turn",
+          lastToolName: "browser",
+          typedUsage: { totalTokens: 21, inputTokens: 16, outputTokens: 5 },
+          model: "gpt-5.6-luna",
+          role: "researcher",
+          resumable: true,
+        },
+      }),
+    ], CTX);
+
+    expect(result.events).toMatchObject([
+      {
+        kind: "child.started",
+        childId: "task_structured",
+        state: {
+          status: "running",
+          summary: "Provider assigned the child",
+          lastToolName: "web_search",
+          usage: { inputTokens: 12, outputTokens: 3, providerCacheReads: 4 },
+          model: "gpt-5.6-luna",
+          role: "researcher",
+          resumable: true,
+        },
+      },
+      {
+        kind: "child.updated",
+        childId: "task_structured",
+        status: "Awaiting another turn",
+        state: {
+          status: "idle",
+          summary: "Awaiting another turn",
+          lastToolName: "browser",
+          usage: { totalTokens: 21, inputTokens: 16, outputTokens: 5 },
+          model: "gpt-5.6-luna",
+          role: "researcher",
+          resumable: true,
+        },
+      },
+    ]);
   });
 
   test("suppresses agent tasks that lack a provider child identity", () => {
@@ -455,6 +754,59 @@ describe("T3 activity fidelity", () => {
       produced: [],
       suppressed: "t3 provider activity lifecycle is authoritative",
     });
+  });
+
+  test("mirrors durable T3 tool-call identity precedence for every supported shape", () => {
+    const identityCases = [
+      {
+        name: "payload.toolCallId",
+        activityId: "activity-payload-tool-call",
+        payload: {
+          toolCallId: "payload-call",
+          data: { item: { id: "item-call" } },
+        },
+        expected: "payload-call",
+      },
+      {
+        name: "data.toolCallId",
+        activityId: "activity-data-tool-call",
+        payload: {
+          toolCallId: "payload-call",
+          data: { toolCallId: "data-call", item: { id: "item-call" } },
+        },
+        expected: "data-call",
+      },
+      {
+        name: "data.item.id",
+        activityId: "activity-item-id",
+        payload: {
+          toolUseId: "tool-use-call",
+          data: { item: { id: "item-call" } },
+        },
+        expected: "item-call",
+      },
+      {
+        name: "activity id fallback",
+        activityId: "fallback-activity",
+        payload: { detail: "identity-free native activity" },
+        expected: "fallback-activity",
+      },
+    ] as const;
+
+    for (const [index, identityCase] of identityCases.entries()) {
+      const result = translateOpenCode([
+        t3Frame(`frame-${identityCase.name}`, index + 1, "t3.activity.tool.completed", {
+          id: identityCase.activityId,
+          kind: "tool.completed",
+          summary: identityCase.name,
+          payload: identityCase.payload,
+        }),
+      ], CTX);
+      expect(result.events).toMatchObject([
+        { kind: "tool.started", toolCallId: identityCase.expected },
+        { kind: "tool.completed", toolCallId: identityCase.expected },
+      ]);
+    }
   });
 
   test("uses agent task activity as the single lifecycle over its durable task replay", () => {

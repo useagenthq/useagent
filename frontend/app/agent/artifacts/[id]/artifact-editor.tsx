@@ -3,6 +3,7 @@
 import { RiArrowLeftLine, RiDownloadLine, RiSaveLine } from "@remixicon/react";
 import {
   type ArtifactDescriptor,
+  type ArtifactPresentationSlide,
   type ArtifactWorkpieceState,
   decodeWorkpieceResult,
 } from "@skynet/agent-client";
@@ -10,10 +11,11 @@ import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { backendFetch } from "@/lib/backend-fetch";
 import {
-  isRichDocumentArtifact,
-  isRichSpreadsheetArtifact,
+  artifactEditorMode,
   isSheetWithinGridLimit,
   parseCsv,
+  pdfTextTemplate,
+  presentationTemplate,
   richDocumentTemplate,
   sanitizeRichHtml,
   serializeCsv,
@@ -25,14 +27,9 @@ import {
   SpreadsheetGridSurface,
 } from "./artifact-editor-surfaces";
 
-type Mode = "source-document" | "rich-document" | "grid" | "sheet-source";
+import { artifactActionContractFor } from "@skynet/artifact-workspace";
 
-function modeForArtifact(artifact: ArtifactDescriptor): Mode {
-  if (artifact.workpiece?.kind === "spreadsheet") {
-    return isRichSpreadsheetArtifact(artifact) ? "grid" : "sheet-source";
-  }
-  return isRichDocumentArtifact(artifact) ? "rich-document" : "source-document";
-}
+type Mode = ReturnType<typeof artifactEditorMode>;
 
 function labelForMode(mode: Mode): string {
   switch (mode) {
@@ -44,7 +41,35 @@ function labelForMode(mode: Mode): string {
       return "Rich document";
     case "source-document":
       return "Document source";
+    case "slides-json":
+      return "Presentation slides";
+    case "pdf-text":
+      return "PDF text";
   }
+}
+
+function parseSlidesJson(value: string): readonly ArtifactPresentationSlide[] {
+  const parsed = JSON.parse(value) as unknown;
+  const slides = Array.isArray(parsed)
+    ? parsed
+    : parsed && typeof parsed === "object" && "slides" in parsed
+    ? (parsed as { slides: unknown }).slides
+    : null;
+  if (!Array.isArray(slides)) throw new Error("slides must be an array or { slides } object");
+  return slides.map((slide, index) => {
+    if (!slide || typeof slide !== "object" || Array.isArray(slide)) {
+      throw new Error(`slide ${index + 1} must be an object`);
+    }
+    const item = slide as Record<string, unknown>;
+    if (typeof item.title !== "string" || typeof item.body !== "string") {
+      throw new Error(`slide ${index + 1} needs string title and body`);
+    }
+    return {
+      title: item.title,
+      body: item.body,
+      ...(typeof item.notes === "string" ? { notes: item.notes } : {}),
+    };
+  });
 }
 
 function stateForMode(mode: Mode, value: string): ArtifactWorkpieceState {
@@ -54,19 +79,13 @@ function stateForMode(mode: Mode, value: string): ArtifactWorkpieceState {
       return { csv: value };
     case "rich-document":
       return { html: value };
+    case "slides-json":
+      return { slides: parseSlidesJson(value) };
+    case "pdf-text":
+      return { pdfText: value };
     case "source-document":
       return { text: value };
   }
-}
-
-function downloadText(name: string, contentType: string, value: string): void {
-  const blob = new Blob([value], { type: contentType });
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = name;
-  anchor.click();
-  URL.revokeObjectURL(url);
 }
 
 function spreadsheetRows(value: string): string[][] {
@@ -78,7 +97,8 @@ function spreadsheetRows(value: string): string[][] {
 
 export function ArtifactEditor({ artifact }: { readonly artifact: ArtifactDescriptor }) {
   const workpiece = artifact.workpiece;
-  const mode = modeForArtifact(artifact);
+  const actionContract = artifactActionContractFor(artifact);
+  const mode = artifactEditorMode(artifact);
   const richEditorRef = useRef<HTMLDivElement>(null);
   const [revision, setRevision] = useState(workpiece?.state_revision ?? 0);
   const [value, setValue] = useState("");
@@ -92,8 +112,6 @@ export function ArtifactEditor({ artifact }: { readonly artifact: ArtifactDescri
   const editorMode = mode === "grid" && !isGrid ? "sheet-source" : mode;
   const isRich = editorMode === "rich-document";
   const isSpreadsheet = workpiece?.kind === "spreadsheet";
-  const exportBaseName = artifact.name.replace(/\.[^.]+$/, "");
-  const exportName = isSpreadsheet ? `${exportBaseName}.csv` : `${exportBaseName}.html`;
 
   const normalizeValue = useCallback(
     (next: string) => (isRich ? sanitizeRichHtml(next) : next),
@@ -120,6 +138,8 @@ export function ArtifactEditor({ artifact }: { readonly artifact: ArtifactDescri
         text = await sourceResponse.text();
       }
       if (text === null && isRich) text = richDocumentTemplate(artifact.name);
+      if (text === null && mode === "slides-json") text = presentationTemplate(artifact.name);
+      if (text === null && mode === "pdf-text") text = pdfTextTemplate(artifact.name);
       const normalized = normalizeValue(text ?? "");
       setRevision(result.workpiece.state_revision);
       setEditorValue(normalized);
@@ -156,7 +176,14 @@ export function ArtifactEditor({ artifact }: { readonly artifact: ArtifactDescri
     setSaving(true);
     setError(null);
     const nextValue = currentValue();
-    const state = stateForMode(editorMode, nextValue);
+    let state: ArtifactWorkpieceState;
+    try {
+      state = stateForMode(editorMode, nextValue);
+    } catch (cause) {
+      setSaving(false);
+      setError(cause instanceof Error ? cause.message : "The workpiece state is invalid.");
+      return;
+    }
     try {
       const response = await backendFetch(workpiece.state_url, {
         method: "PATCH",
@@ -203,43 +230,43 @@ export function ArtifactEditor({ artifact }: { readonly artifact: ArtifactDescri
           <p className="mt-1 text-paragraph-sm text-text-sub-600">
             {label} · revision {revision}
           </p>
-          {(isRichDocumentArtifact(artifact) || isRichSpreadsheetArtifact(artifact)) && (
+          {actionContract.edit?.mode === "companion" && (
             <p className="mt-2 max-w-2xl text-paragraph-xs text-text-soft-400">
-              Original Office bytes stay immutable. Edits are saved as a browser workpiece and
-              exported explicitly.
+              Original bytes stay immutable. Edits are saved as a browser workpiece and can export
+              either native Office/PDF files or canonical companion formats.
             </p>
           )}
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <a
-            href={artifact.download_url}
-            download={artifact.name}
-            className="inline-flex h-9 items-center gap-2 rounded-lg border border-stroke-soft-200 bg-bg-white-0 px-3 text-label-sm text-text-sub-600 outline-none hover:bg-bg-weak-50 hover:text-text-strong-950 focus-visible:ring-2 focus-visible:ring-stroke-strong-950 focus-visible:ring-offset-2"
-          >
-            <RiDownloadLine aria-hidden className="size-4" /> Original
-          </a>
-          <button
-            type="button"
-            onClick={() =>
-              downloadText(
-                exportName,
-                isSpreadsheet ? "text/csv;charset=utf-8" : "text/html;charset=utf-8",
-                currentValue(),
-              )
-            }
-            disabled={loading}
-            className="inline-flex h-9 items-center gap-2 rounded-lg border border-stroke-soft-200 bg-bg-white-0 px-3 text-label-sm text-text-sub-600 outline-none hover:bg-bg-weak-50 hover:text-text-strong-950 focus-visible:ring-2 focus-visible:ring-stroke-strong-950 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            <RiDownloadLine aria-hidden className="size-4" /> Export
-          </button>
-          <button
-            type="button"
-            onClick={() => void save()}
-            disabled={loading || saving || !dirty}
-            className="inline-flex h-9 items-center gap-2 rounded-lg bg-bg-strong-950 px-4 text-label-sm text-text-white-0 outline-none hover:opacity-90 focus-visible:ring-2 focus-visible:ring-stroke-strong-950 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            <RiSaveLine aria-hidden className="size-4" /> {saving ? "Saving..." : "Save"}
-          </button>
+          {actionContract.actions.includes("download") && (
+            <a
+              href={artifact.download_url}
+              download={artifact.name}
+              className="inline-flex h-9 items-center gap-2 rounded-lg border border-stroke-soft-200 bg-bg-white-0 px-3 text-label-sm text-text-sub-600 outline-none hover:bg-bg-weak-50 hover:text-text-strong-950 focus-visible:ring-2 focus-visible:ring-stroke-strong-950 focus-visible:ring-offset-2"
+            >
+              <RiDownloadLine aria-hidden className="size-4" /> Original
+            </a>
+          )}
+          {actionContract.actions.includes("export") && (
+            <a
+              href={workpiece.export_url}
+              download
+              aria-disabled={loading}
+              className="inline-flex h-9 items-center gap-2 rounded-lg border border-stroke-soft-200 bg-bg-white-0 px-3 text-label-sm text-text-sub-600 outline-none hover:bg-bg-weak-50 hover:text-text-strong-950 focus-visible:ring-2 focus-visible:ring-stroke-strong-950 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              <RiDownloadLine aria-hidden className="size-4" /> Export
+            </a>
+          )}
+          {actionContract.actions.includes("edit") && (
+            <button
+              type="button"
+              onClick={() => void save()}
+              disabled={loading || saving || !dirty}
+              className="inline-flex h-9 items-center gap-2 rounded-lg bg-bg-strong-950 px-4 text-label-sm text-text-white-0 outline-none hover:opacity-90 focus-visible:ring-2 focus-visible:ring-stroke-strong-950 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              <RiSaveLine aria-hidden className="size-4" /> {saving ? "Saving..." : "Save"}
+            </button>
+          )}
         </div>
       </div>
 

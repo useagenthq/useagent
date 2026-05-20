@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { parseOrgChange, subscribeOrgChanges } from "@/lib/org-changes";
+import { type OrgChange, parseOrgChange, subscribeOrgChanges } from "@/lib/org-changes";
 
 class FakeEventSource extends EventTarget {
   static readonly instances: FakeEventSource[] = [];
@@ -17,13 +17,13 @@ class FakeEventSource extends EventTarget {
     this.closed = true;
   }
 
-  emitChange(change: unknown): void {
+  emitChange(change: OrgChange): void {
     this.dispatchEvent(new MessageEvent("change", { data: JSON.stringify(change) }));
   }
 }
 
 describe("org change protocol", () => {
-  test("accepts IDs-only run and artifact invalidations", () => {
+  test("accepts IDs-only product invalidations", () => {
     expect(
       parseOrgChange({
         type: "run",
@@ -48,6 +48,34 @@ describe("org change protocol", () => {
       runId: "run-1",
       threadId: "thread-1",
     });
+
+    expect(
+      parseOrgChange({
+        type: "provider_connection",
+        action: "revoked",
+        provider: "openai",
+        authMethod: "chatgpt_oauth",
+      }),
+    ).toEqual({
+      type: "provider_connection",
+      action: "revoked",
+      provider: "openai",
+      authMethod: "chatgpt_oauth",
+    });
+
+    expect(
+      parseOrgChange({
+        type: "automation",
+        action: "fired",
+        automationId: "automation-1",
+        runId: "run-1",
+      }),
+    ).toEqual({
+      type: "automation",
+      action: "fired",
+      automationId: "automation-1",
+      runId: "run-1",
+    });
   });
 
   test("rejects malformed or unknown invalidations", () => {
@@ -57,6 +85,28 @@ describe("org change protocol", () => {
     ).toBeNull();
     expect(
       parseOrgChange({ type: "artifact", action: "created", runId: "r", threadId: "t" }),
+    ).toBeNull();
+    expect(
+      parseOrgChange({
+        type: "provider_connection",
+        action: "updated",
+        provider: "stripe",
+        authMethod: "api_key",
+      }),
+    ).toBeNull();
+    expect(
+      parseOrgChange({
+        type: "provider_connection",
+        action: "created",
+        provider: "openai",
+        authMethod: "api_key",
+      }),
+    ).toBeNull();
+    expect(
+      parseOrgChange({ type: "automation", action: "fired", automationId: "automation-1" }),
+    ).toBeNull();
+    expect(
+      parseOrgChange({ type: "automation", action: "paused", automationId: "automation-1" }),
     ).toBeNull();
   });
 
@@ -69,8 +119,8 @@ describe("org change protocol", () => {
       value: FakeEventSource,
     });
 
-    const first: unknown[] = [];
-    const second: unknown[] = [];
+    const first: OrgChange[] = [];
+    const second: OrgChange[] = [];
     const unsubscribeFirst = subscribeOrgChanges((change) => first.push(change));
     const unsubscribeSecond = subscribeOrgChanges((change) => second.push(change));
 
@@ -79,11 +129,10 @@ describe("org change protocol", () => {
       const source = FakeEventSource.instances[0];
       if (!source) throw new Error("expected the shared EventSource to connect");
       const change = {
-        type: "run",
-        action: "running",
-        runId: "run-live",
-        threadId: "thread-live",
-      };
+        type: "automation",
+        action: "updated",
+        automationId: "automation-live",
+      } satisfies OrgChange;
       source.emitChange(change);
       source.emitChange(change);
       await Promise.resolve();

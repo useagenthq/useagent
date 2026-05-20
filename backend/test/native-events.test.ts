@@ -133,6 +133,44 @@ describe("native event SSE lane", () => {
     expect(JSON.stringify(big).length).toBeLessThan(33_000);
   });
 
+  test("preserves an unknown provider event and its native correlation fields", async () => {
+    const id = await completedMockRun("unknown native event");
+    await recordProviderEvent({
+      id: eventId(id, "pi-experimental"),
+      runId: id,
+      threadId: id,
+      provider: "pi",
+      eventType: "pi.experimental.capability",
+      nativeSessionId: "pi-session",
+      nativeParentSessionId: "pi-parent",
+      nativeMessageId: "pi-message",
+      nativePartId: "pi-part",
+      nativeCallId: "pi-call",
+      payload: { capability: "future-tool", detail: { version: 2 } },
+    });
+
+    const frames = nativeFrames(
+      await readSse(await fetchApi(`/api/runs/${id}/events`), {
+        timeoutMs: 8000,
+      }),
+    );
+    expect(frames.find((frame) => frame.eventId === eventId(id, "pi-experimental"))).toEqual({
+      schemaVersion: 1,
+      eventId: eventId(id, "pi-experimental"),
+      seq: 0,
+      provider: "pi",
+      eventType: "pi.experimental.capability",
+      native: {
+        sessionId: "pi-session",
+        parentSessionId: "pi-parent",
+        messageId: "pi-message",
+        partId: "pi-part",
+        callId: "pi-call",
+      },
+      payload: { capability: "future-tool", detail: { version: 2 } },
+    });
+  });
+
   test("live-pushes a native frame persisted after the client connects", async () => {
     // A running run keeps the SSE open (no `done`), so a post-connect emit must
     // arrive via the live lane, not replay (the native lane is empty at connect).

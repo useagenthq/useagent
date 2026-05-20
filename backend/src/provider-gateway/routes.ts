@@ -111,6 +111,15 @@ function requestHeaders(provider: ProviderId, incoming: Headers, credential: str
   return headers;
 }
 
+function normalizeOpenAIModelForUpstream(run: GatewayRun, body: string): string {
+  if (run.engine !== "opencode" || !run.model.startsWith("openai/") || !body) return body;
+  const parsed = JSON.parse(body) as Record<string, unknown>;
+  if (parsed.model === run.model) {
+    parsed.model = run.model.slice("openai/".length);
+  }
+  return JSON.stringify(parsed);
+}
+
 function responseHeaders(upstream: Headers): Headers {
   const headers = new Headers();
   for (const name of [
@@ -259,6 +268,8 @@ export function createProviderGatewayRoutes(deps: ProviderRouteDeps = {}): Hono 
     }
     if (target.provider === "openrouter") {
       upstreamBody = applyOpenRouterProviderRouting(run.model, upstreamBody);
+    } else if (target.provider === "openai") {
+      upstreamBody = normalizeOpenAIModelForUpstream(run, upstreamBody);
     }
 
     const credential = await resolveCredential({

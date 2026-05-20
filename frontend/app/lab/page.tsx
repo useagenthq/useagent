@@ -6,7 +6,7 @@ import { ComponentLab } from './component-lab';
 
 export const metadata: Metadata = {
   title: 'Component lab - skynet-a',
-  description: 'The parts bin for skynet-a - every vendored AlignUI primitive.',
+  description: 'Skynet agent UI primitives and the complete vendored component parts bin.',
 };
 
 export default function LabPage() {

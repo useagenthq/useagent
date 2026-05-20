@@ -83,6 +83,105 @@ describe("canonical activity projection", () => {
     expect(trace.isError).toBe(false);
   });
 
+  test("projects provider-neutral MCP metadata instead of the transport wrapper label", () => {
+    const projected = onlyTool([
+      event("tool.started", 1, {
+        toolCallId: "call-1",
+        name: "mcp_tool_call",
+        title: "MCP tool call",
+        input: {
+          server: "github",
+          name: "create_issue",
+          arguments: { title: "checkout regression" },
+        },
+      }),
+      event("tool.completed", 2, {
+        toolCallId: "call-1",
+        status: "ok",
+        preview: "created issue #42",
+      }),
+    ]);
+
+    expect(projected.id).toBe("canonical-tool-call-1");
+    const trace = deriveTrace(projected);
+    expect(trace.verb).toBe("Create issue");
+    expect(trace.target).toBe("github");
+    expect(trace.detail).toBe("created issue #42");
+  });
+
+  test("preserves canonical server, native status, and numeric duration in the shared trace", () => {
+    const projected = onlyTool([
+      event("tool.started", 1, {
+        toolCallId: "call-1",
+        name: "create_issue",
+        server: "github",
+        input: { title: "checkout regression" },
+      }),
+      event("tool.completed", 2, {
+        toolCallId: "call-1",
+        status: "ok",
+        nativeStatus: "completed",
+        preview: "created issue #42",
+        durationMs: 1_234,
+      }),
+    ]);
+
+    expect(JSON.parse(projected.code_json ?? "{}")).toMatchObject({
+      tool: "create_issue",
+      server: "github",
+      status: "completed",
+      durationMs: 1_234,
+    });
+    expect(deriveTrace(projected)).toMatchObject({
+      verb: "Create issue",
+      target: "github",
+      durationMs: 1_234,
+    });
+  });
+
+  test("keeps unknown native payload available in the fallback disclosure", () => {
+    const projected = onlyTool([
+      event("harness.warning", 1, {
+        message: "unmapped provider event",
+        rawEventType: "provider.experimental",
+        rawPayload: { nested: { value: 42 } },
+      }),
+    ]);
+
+    expect(deriveTrace(projected)).toMatchObject({
+      verb: "Warning",
+      target: "provider.experimental",
+      detail: '{\n  "nested": {\n    "value": 42\n  }\n}',
+    });
+  });
+
+  test("keeps lifecycle row identity stable across realtime update and replay", () => {
+    const started = [
+      event("tool.started", 1, {
+        toolCallId: "stable-call",
+        name: "bash",
+        title: "Run tests",
+        input: { command: "bun test" },
+      }),
+    ];
+    const completed = [
+      ...started,
+      event("tool.completed", 2, {
+        toolCallId: "stable-call",
+        status: "ok",
+        preview: "passed",
+      }),
+    ];
+
+    const startedNode = buildTimelineFromCanonical(started, new Map(), true)[0];
+    const completedNode = buildTimelineFromCanonical(completed, new Map(), false)[0];
+
+    expect(startedNode?.kind).toBe("tool");
+    expect(completedNode?.kind).toBe("tool");
+    expect(startedNode?.key).toBe("canonical-tool-stable-call");
+    expect(completedNode?.key).toBe("canonical-tool-stable-call");
+  });
+
   test("renders only the latest plan snapshot through the shared todo grammar", () => {
     const projected = onlyTool([
       event("plan.updated", 1, {

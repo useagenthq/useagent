@@ -5,6 +5,7 @@ import { db } from "../src/db/client";
 import { commands, runs, userUploads } from "../src/db/schema";
 import { getRun } from "../src/runs/repo";
 import {
+  claimUploadForRun,
   createUserUpload,
   deleteExpiredReadyUploads,
   getOwnedUpload,
@@ -92,6 +93,36 @@ describe("user uploads", () => {
     createdRuns.add(runId);
     expect((await command(runId, [input.id])).status).toBe("created");
     expect((await getOwnedUpload(input.orgId, input.userId, input.id))?.runId).toBe(runId);
+  });
+
+  test("claims one owned upload atomically and rejects reuse", async () => {
+    const input = await upload();
+    const firstRunId = crypto.randomUUID();
+    const secondRunId = crypto.randomUUID();
+    createdRuns.add(firstRunId);
+    createdRuns.add(secondRunId);
+    expect((await command(firstRunId, [])).status).toBe("created");
+    expect((await command(secondRunId, [])).status).toBe("created");
+
+    const claimed = await db.transaction((tx) =>
+      claimUploadForRun({
+        id: input.id,
+        orgId: input.orgId,
+        userId: input.userId,
+        runId: firstRunId,
+      }, tx)
+    );
+    expect(claimed.id).toBe(input.id);
+    expect(claimed.runId).toBe(firstRunId);
+    await expect(db.transaction((tx) =>
+      claimUploadForRun({
+        id: input.id,
+        orgId: input.orgId,
+        userId: input.userId,
+        runId: secondRunId,
+      }, tx)
+    )).rejects.toBeInstanceOf(UploadClaimError);
+    expect((await getOwnedUpload(input.orgId, input.userId, input.id))?.runId).toBe(firstRunId);
   });
 
   test("rejects cross-user claims and rolls the run back", async () => {

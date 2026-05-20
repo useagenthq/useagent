@@ -10,6 +10,7 @@ import { useOrgChanges } from "@/hooks/use-org-changes";
 import { relativeTime } from "@/utils/format";
 import { fetchHistory } from "./schedules-api";
 import { cadenceLabel, engineLabel, type FiringRecord, type ScheduleRecord } from "./schedules-data";
+import { useAutomationRecovery } from "./use-automation-recovery";
 
 function badgeStatus(status: string | null): "completed" | "failed" | "pending" | "disabled" {
   if (status === "completed") return "completed";
@@ -32,26 +33,36 @@ export function AutomationHistoryDrawer({
   const [firings, setFirings] = useState<FiringRecord[] | null>(null);
   const [error, setError] = useState(false);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (signal?: AbortSignal) => {
     if (!schedule) return;
     try {
-      setFirings(await fetchHistory(schedule.id));
+      setFirings(await fetchHistory(schedule.id, signal));
       setError(false);
     } catch {
+      if (signal?.aborted) return;
       setError(true);
     }
   }, [schedule]);
 
   useEffect(() => {
-    if (!schedule) return;
     setFirings(null);
-    void load();
-    const timer = setInterval(() => void load(), 15_000);
-    return () => clearInterval(timer);
-  }, [load, schedule]);
+  }, [schedule?.id]);
+
+  useAutomationRecovery(load, schedule?.id ?? null);
 
   useOrgChanges((change) => {
-    if (schedule && change.type === "run") void load();
+    if (!schedule) return;
+    if (change.type === "automation" && change.automationId === schedule.id) {
+      if (change.action === "deleted") {
+        onClose();
+        return;
+      }
+      void load();
+      return;
+    }
+    if (change.type === "run" && firings?.some((firing) => firing.run_id === change.runId)) {
+      void load();
+    }
   });
 
   return (

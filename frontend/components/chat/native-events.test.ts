@@ -260,7 +260,7 @@ describe("deriveChildFidelity", () => {
       frame("start", 1, "task.started", { title: "Price researcher" }),
       frame("progress", 2, "task.progress", {
         summary: "Reading the latest quote",
-        typedUsage: { totalTokens: 120, inputTokens: 100, outputTokens: 20 },
+        typedUsage: { inputTokens: 100, outputTokens: 15, reasoningOutputTokens: 5 },
       }),
       frame("late-smaller-usage", 3, "task.progress", {
         typedUsage: { totalTokens: 90, outputTokens: 10 },
@@ -272,7 +272,12 @@ describe("deriveChildFidelity", () => {
     expect(fidelity.get("agent-a")).toMatchObject({
       status: "idle",
       progress: "Reading the latest quote",
-      usage: { totalTokens: 120, inputTokens: 100, outputTokens: 20 },
+      usage: {
+        totalTokens: 120,
+        inputTokens: 100,
+        outputTokens: 15,
+        reasoningOutputTokens: 5,
+      },
       recentActivity: [{ summary: "Reading the latest quote" }],
     });
   });

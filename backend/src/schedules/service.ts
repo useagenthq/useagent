@@ -1,4 +1,9 @@
-import { ENGINE_IDS, type AutomationJson, type EngineId } from "../db/schema";
+import {
+  ENGINE_IDS,
+  type AutomationJson,
+  type EngineId,
+  type ScheduleTrigger,
+} from "../db/schema";
 import { unknownRepos } from "../github/repos";
 import {
   engineModelReadyForDispatch,
@@ -6,6 +11,7 @@ import {
   resolveAcceptedEngine,
 } from "../runs/engine-readiness";
 import { defaultModelForEngine, isModelAllowedForEngine } from "../runs/model-policy";
+import { publishOrgChange, type OrgChange } from "../runs/org-signals";
 import { resolveSkillSelection } from "../skills/repo";
 import { isValidCron, isValidTimezone } from "./cron";
 import {
@@ -14,7 +20,14 @@ import {
   getScheduleForOrg,
   updateSchedule,
   type ApiSchedule,
+  type ScheduleRecord,
 } from "./repo";
+
+type AutomationChange = Extract<OrgChange, { readonly type: "automation" }>;
+
+function publishAutomationChange(orgId: string, change: AutomationChange): void {
+  publishOrgChange(orgId, change);
+}
 
 export class ScheduleServiceError extends Error {
   readonly status: 400 | 403 | 404;
@@ -204,7 +217,7 @@ export async function createScheduleForOrg(
   const approvalPolicy = jsonObjectField(body, "approvalPolicy") ?? null;
   const enablementPolicy = jsonObjectField(body, "enablementPolicy") ?? null;
 
-  return createSchedule({
+  const schedule = await createSchedule({
     orgId: identity.orgId,
     userId: identity.userId,
     name,
@@ -228,6 +241,12 @@ export async function createScheduleForOrg(
     approvalPolicy,
     enablementPolicy,
   });
+  publishAutomationChange(identity.orgId, {
+    type: "automation",
+    action: "created",
+    automationId: schedule.id,
+  });
+  return schedule;
 }
 
 export async function updateScheduleForOrg(
@@ -346,10 +365,44 @@ export async function updateScheduleForOrg(
 
   const updated = await updateSchedule(orgId, id, patch);
   if (!updated) throw new ScheduleServiceError(404, { error: "schedule not found" });
+  publishAutomationChange(orgId, {
+    type: "automation",
+    action: "updated",
+    automationId: updated.id,
+  });
   return updated;
 }
 
 export async function deleteScheduleForOrg(orgId: string, id: string): Promise<void> {
   const deleted = await deleteSchedule(orgId, id);
   if (!deleted) throw new ScheduleServiceError(404, { error: "schedule not found" });
+  publishAutomationChange(orgId, {
+    type: "automation",
+    action: "deleted",
+    automationId: id,
+  });
+}
+
+export async function fireScheduleForOrg(
+  schedule: ScheduleRecord,
+  trigger: ScheduleTrigger,
+  occurrence: Date = new Date(),
+): Promise<string> {
+  // Keep service imports safe for the standalone gateway; the worker graph is
+  // loaded only for an explicit fire mutation.
+  const { fireScheduleWithOutcome } = await import("./fire");
+  const { runId, firingRecorded } = await fireScheduleWithOutcome(
+    schedule,
+    trigger,
+    occurrence,
+  );
+  if (firingRecorded) {
+    publishAutomationChange(schedule.orgId, {
+      type: "automation",
+      action: "fired",
+      automationId: schedule.id,
+      runId,
+    });
+  }
+  return runId;
 }

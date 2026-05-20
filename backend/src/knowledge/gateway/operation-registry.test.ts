@@ -8,6 +8,7 @@ import {
   gatewayCompactToolListEnabled,
   gatewayMetaToolDescriptors,
   gatewayToolListDescriptors,
+  gatewayToolRequiresApproval,
   isGatewayMetaToolName,
 } from "./operation-registry";
 import { SLACK_TOOLS } from "./slack-tools";
@@ -63,6 +64,12 @@ describe("gateway operation registry", () => {
     ).toBe(true);
   });
 
+  test("keeps names unique across always-on and conditional families", () => {
+    const names = advertisedGatewayToolDescriptors(ALL_OPTIONS).map((tool) => tool.name);
+
+    expect(new Set(names).size).toBe(names.length);
+  });
+
   test("advertises conditional capabilities only when their trusted context is present", () => {
     const baseNames = new Set(
       advertisedGatewayToolDescriptors({
@@ -114,6 +121,41 @@ describe("gateway operation registry", () => {
     expect(compactNames.every(isGatewayMetaToolName)).toBe(true);
   });
 
+  test("preserves semantic discovery while marking exact sensitive operations", () => {
+    const descriptors = advertisedGatewayToolDescriptors(ALL_OPTIONS);
+    const update = descriptors.find((tool) => tool.name === "automation_update");
+    const list = descriptors.find((tool) => tool.name === "automation_list");
+    const publish = descriptors.find((tool) => tool.name === "knowledge_draft_publish");
+    if (!update || !list || !publish) throw new Error("expected sensitive descriptors");
+    const updateSchema = update.inputSchema as {
+      readonly properties?: Readonly<Record<string, unknown>>;
+      readonly required?: readonly string[];
+    };
+    const listSchema = list.inputSchema as {
+      readonly properties?: Readonly<Record<string, unknown>>;
+      readonly required?: readonly string[];
+    };
+    const publishSchema = publish.inputSchema as {
+      readonly properties?: Readonly<Record<string, unknown>>;
+      readonly required?: readonly string[];
+    };
+
+    expect(gatewayToolRequiresApproval("automation_update")).toBe(true);
+    expect(gatewayToolRequiresApproval("automation_run_now")).toBe(true);
+    expect(gatewayToolRequiresApproval("automation_delete")).toBe(true);
+    expect(gatewayToolRequiresApproval("knowledge_draft_publish")).toBe(true);
+    expect(gatewayToolRequiresApproval("knowledge_draft_archive")).toBe(true);
+    expect(gatewayToolRequiresApproval("automation_list")).toBe(false);
+    expect(gatewayToolRequiresApproval("made_up_delete_task")).toBe(false);
+    expect(updateSchema.required).toContain("approvalCapability");
+    expect(updateSchema.properties).toHaveProperty("approvalCapability");
+    expect(updateSchema.properties).not.toHaveProperty("confirmEnable");
+    expect(listSchema.properties).not.toHaveProperty("approvalCapability");
+    expect(publishSchema.required).toContain("approvalCapability");
+    expect(publishSchema.properties).not.toHaveProperty("confirmPublish");
+    expect(publishSchema.properties).not.toHaveProperty("confirmationToken");
+  });
+
   test("meta tools search and describe the live gateway catalog", async () => {
     const search = await executeRegisteredGatewayTool(
       CLAIMS,
@@ -135,12 +177,16 @@ describe("gateway operation registry", () => {
     );
     expect(describe.matched).toBe(true);
     if (!describe.matched) throw new Error("gateway_tool_describe was not registered");
-    expect(structuredContent(describe.result).tool).toMatchObject({
-      name: "automation_create",
-      inputSchema: expect.objectContaining({
-        type: "object",
-        required: expect.arrayContaining(["name", "prompt", "cron"]),
-      }),
-    });
+    const tool = structuredContent(describe.result).tool;
+    if (!tool || typeof tool !== "object") {
+      throw new Error(`Expected described tool object: ${JSON.stringify(describe.result)}`);
+    }
+    const descriptor = tool as {
+      readonly name?: unknown;
+      readonly inputSchema?: { readonly type?: unknown; readonly required?: unknown };
+    };
+    expect(descriptor.name).toBe("automation_create");
+    expect(descriptor.inputSchema?.type).toBe("object");
+    expect(descriptor.inputSchema?.required).toEqual(["name", "cron", "prompt"]);
   });
 });

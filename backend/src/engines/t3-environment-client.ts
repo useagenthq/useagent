@@ -9,6 +9,31 @@ import {
 const T3_AUTH_DIRECTORY = `${T3_ENVIRONMENT_HOME}/skynet-auth`;
 const T3_COOKIE_JAR = `${T3_AUTH_DIRECTORY}/session.cookies`;
 const T3_REQUEST_TIMEOUT_SECONDS = 15;
+const T3_HTTP_STATUS_MARKER = "__SKYNET_T3_HTTP_STATUS__";
+
+export class T3EnvironmentRequestError extends Error {
+  readonly status: number | undefined;
+  readonly response: Readonly<Record<string, unknown>> | undefined;
+
+  constructor(
+    message: string,
+    options: {
+      readonly status?: number;
+      readonly response?: Readonly<Record<string, unknown>>;
+    } = {},
+  ) {
+    super(message);
+    this.name = "T3EnvironmentRequestError";
+    this.status = options.status;
+    this.response = options.response;
+  }
+}
+
+export function isT3EnvironmentMissingSessionError(error: unknown): boolean {
+  return error instanceof T3EnvironmentRequestError &&
+    (error.status === 404 ||
+      (error.response?.code === "not_found" && error.response.reason === "thread_not_found"));
+}
 
 export type T3EnvironmentHttpPath =
   | "/api/orchestration/snapshot"
@@ -123,10 +148,11 @@ export function buildT3EnvironmentRequestCommand(request: T3EnvironmentRequest):
   }
 
   const curl = [
-    "curl -fsS",
+    "curl -sS",
     `-m ${T3_REQUEST_TIMEOUT_SECONDS}`,
     `-b "${T3_COOKIE_JAR}"`,
     "-H 'accept: application/json'",
+    `-w '\n${T3_HTTP_STATUS_MARKER}:%{http_code}'`,
   ];
   if (request.method === "POST") {
     const payload = Buffer.from(JSON.stringify(request.payload), "utf8").toString("base64");
@@ -233,6 +259,56 @@ async function executeT3EnvironmentRequest(
   );
 }
 
+interface T3EnvironmentResponse {
+  readonly body: string;
+  readonly status?: number;
+}
+
+function parseT3EnvironmentResponse(result: SandboxExecuteResult): T3EnvironmentResponse {
+  const output = result.result ?? "";
+  const marker = output.match(new RegExp(`\\n${T3_HTTP_STATUS_MARKER}:(\\d{3})`));
+  if (!marker || marker.index === undefined) return { body: output };
+  return {
+    body: output.slice(0, marker.index),
+    status: Number(marker[1]),
+  };
+}
+
+function parseT3EnvironmentErrorResponse(
+  body: string,
+): Readonly<Record<string, unknown>> | undefined {
+  try {
+    const value: unknown = JSON.parse(body);
+    return typeof value === "object" && value !== null && !Array.isArray(value)
+      ? value as Readonly<Record<string, unknown>>
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function t3EnvironmentRequestError(
+  request: T3EnvironmentRequest,
+  response: T3EnvironmentResponse,
+): T3EnvironmentRequestError {
+  const status = response.status;
+  const errorResponse = parseT3EnvironmentErrorResponse(response.body);
+  return new T3EnvironmentRequestError(
+    `T3 environment ${request.method} request failed${status === undefined ? "" : ` (HTTP ${status})`}`,
+    {
+      ...(status === undefined ? {} : { status }),
+      ...(errorResponse === undefined ? {} : { response: errorResponse }),
+    },
+  );
+}
+
+function t3EnvironmentRequestFailed(
+  result: SandboxExecuteResult,
+  response: T3EnvironmentResponse,
+): boolean {
+  return (result.exitCode ?? 1) !== 0 || (response.status !== undefined && response.status >= 400);
+}
+
 export async function requestT3Environment<T>(
   sandbox: SandboxHandle,
   request: T3EnvironmentRequest,
@@ -241,17 +317,21 @@ export async function requestT3Environment<T>(
   await ensureT3EnvironmentAccess(sandbox, signal);
   if (signal.aborted) throw new Error("T3 environment request aborted");
   let result = await executeT3EnvironmentRequest(sandbox, request);
-  if ((result.exitCode ?? 1) !== 0) {
+  let response = parseT3EnvironmentResponse(result);
+  if (t3EnvironmentRequestFailed(result, response)) {
+    const error = t3EnvironmentRequestError(request, response);
+    if (isT3EnvironmentMissingSessionError(error)) throw error;
     invalidateT3EnvironmentAccess(sandbox);
     await ensureT3EnvironmentAccess(sandbox, signal, true);
     if (signal.aborted) throw new Error("T3 environment request aborted");
     result = await executeT3EnvironmentRequest(sandbox, request);
+    response = parseT3EnvironmentResponse(result);
   }
-  if ((result.exitCode ?? 1) !== 0) {
-    throw new Error(`T3 environment ${request.method} request failed`);
+  if (t3EnvironmentRequestFailed(result, response)) {
+    throw t3EnvironmentRequestError(request, response);
   }
   try {
-    return JSON.parse(result.result ?? "") as T;
+    return JSON.parse(response.body) as T;
   } catch {
     throw new Error("T3 environment returned invalid JSON");
   }

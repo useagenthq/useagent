@@ -3,8 +3,8 @@
 // this is the Postgres-backed translation — a plain 60s interval tick.
 
 import { cronMatches } from "./cron";
-import { fireSchedule } from "./fire";
 import { listEnabledSchedules, markFired } from "./repo";
+import { fireScheduleForOrg } from "./service";
 
 const TICK_MS = process.env.SCHEDULER_TICK_MS
   ? Number(process.env.SCHEDULER_TICK_MS)
@@ -43,7 +43,7 @@ export async function tick(now: Date = new Date()): Promise<void> {
       // Pass the tick time as the occurrence so the firing's idempotency key
       // buckets to this minute — the durable safety net that makes fire-then-
       // stamp safe (a re-fire for the same occurrence resolves to one run).
-      await fireSchedule(s, "cron", now);
+      await fireScheduleForOrg(s, "cron", now);
       await markFired(s.id, now);
       console.log(`[scheduler] fired schedule ${s.id} (${s.name})`);
     } catch (err) {

@@ -22,36 +22,45 @@ The backend is the control plane for Skynet. It listens on `:3201` by default an
 1. The frontend posts a run to `POST /api/runs`.
 2. The backend resolves org and user server-side, then validates the request against the current org, engine policy, repos, branches, uploads, and skill selection.
 3. The run and its durable command record are written atomically.
-4. The selected engine adapter opens or resumes the thread sandbox and starts streaming steps, deltas, native frames, and control events.
-5. The thread SSE endpoint multiplexes snapshots, runs, steps, live deltas, native frames, and canonical events to the frontend.
+4. The worker resolves the selected engine through the production provider registry. Native OpenCode and selected T3 routes receive a concrete `ProviderDriver`; explicitly marked ACP compatibility registrations continue through their existing adapter.
+5. The thread SSE endpoint multiplexes snapshots, runs, steps, live deltas, native frames, and canonical events to the frontend. A reconnect receives a fresh authoritative snapshot. The separate `/api/runs/changes` stream carries live org invalidations only; it has no replay log.
 6. Finalization records the terminal run state and enqueues follow-up work such as memory capture, Slack delivery, and canonicalization.
 
 ## Trusted Gateway
 
 The backend has two separate trust boundaries:
 
-- `src/provider-gateway/*` mints and verifies signed provider capabilities, then proxies provider traffic with backend-owned credentials.
+- `src/provider-gateway/*` mints and verifies signed provider capabilities, then proxies provider traffic with a user connection when present and the tenant credential as fallback.
 - `src/knowledge/gateway/*` exposes the trusted MCP tool surface to resident engine sessions. The sandbox gets a short-lived token, not raw database or provider credentials.
 
 Both gateways fail closed:
 
 - org and thread identity come from server-side token claims.
 - upstream provider hosts are HTTPS-only outside local development.
-- gateway tools are statically registered. The base tool families are always listed together, and only Loop login plus Slack are conditional.
+- provider retries happen before a response is exposed to the sandbox. The gateway keeps one request body, bounds retry count and delay, honors provider retry directives, and marks terminal auth, billing, quota, or exhausted-budget responses non-retryable.
+- built-in gateway tools use a process-wide dispatch index for the base and conditional capability families. Child sessions, Loop login, and Slack are advertised only when their trusted context is present.
+- compact discovery is opt-in and advertises two separately dispatched meta tools instead of the full catalog. Current tests prove uniqueness across the base and conditional families, not one global namespace that also includes the meta tools or external MCP servers.
 
 ## Engine Adapters
 
-`src/engines/index.ts` is the registry for the real engine adapters.
+`src/engines/index.ts` is the production provider registry, and
+`src/worker.ts` dispatches real turns through `runProviderTurn`. For `claude`,
+`codex`, and `opencode`, an enabled T3 route resolves a native T3
+`ProviderDriver` before compatibility execution. The table below describes the
+non-T3 route.
 
 | Adapter | Where it runs | Notes |
 |---|---|---|
-| `opencode` | Resident `opencode serve` inside the thread sandbox | Native resume, tool progress, child sessions, reasoning, file diffs, and commands. |
-| `claude` | Resident ACP relay or CLI fallback | Honest capability surface, but weaker than OpenCode for history and child-session reconciliation. |
-| `codex` | Resident ACP relay or CLI fallback | Same ACP control shape as Claude, with provider-specific model handling. |
+| `opencode` | Resident `opencode serve` inside the thread sandbox | Uses the native OpenCode `ProviderDriver` for start, resume, steer, and cancel. |
+| `claude` | Resident ACP relay or CLI fallback | Used when T3 routing is not selected. Its registration declares start, resume, and steer as compatibility-owned rather than pretending the portable lifecycle is native. |
+| `codex` | Resident ACP relay or CLI fallback | Used when T3 routing is not selected; it has the same explicit compatibility boundary as Claude, with provider-specific model handling. |
 | `daytona` | Alias for the OpenCode path | Keeps old thread rows and replies readable after the provider rename. |
 | `mock` | Scripted worker path | Used for deterministic local runs and tests. |
 
-Transport selection is controlled by `ENGINE_TRANSPORT=cli` for the legacy CLI poll-tail path. `daytona` and `claude-sdk` remain aliases for older rows.
+Selected T3 routes for Codex, Claude, and OpenCode use native T3 lifecycle
+drivers. `ENGINE_TRANSPORT=cli` selects the legacy per-turn CLI poll-tail fallback for
+the non-T3 Claude and Codex routes. It does not disable an independently enabled
+T3 route. `daytona` and `claude-sdk` remain aliases for older rows.
 
 ### Capability Notes
 
@@ -64,7 +73,12 @@ Transport selection is controlled by `ENGINE_TRANSPORT=cli` for the legacy CLI p
 
 ## Sandbox Provider Matrix
 
-`src/sandboxes/provider.ts` selects the provider with `SANDBOX_PROVIDER`.
+`src/sandboxes/provider.ts` defines the provider-neutral contract and selects
+the provider with `SANDBOX_PROVIDER`. The matrix describes implemented source
+capabilities, not current hosted proof. Daytona invokes a small shared
+create/get/list conformance fixture, then adds Daytona-specific tests. Cube has
+its own provider-specific suite and does not invoke that fixture, so the two
+adapters do not yet share one complete conformance helper.
 
 | Capability | Daytona | Cube | Notes |
 |---|---|---|---|
@@ -79,7 +93,10 @@ Transport selection is controlled by `ENGINE_TRANSPORT=cli` for the legacy CLI p
 | Resume after timeout | Yes | Yes | Cube pauses and resumes through its provider lifecycle; Daytona resumes through its own provider lifecycle. |
 | Pause, checkpoint, snapshot primitives in the shared interface | No | No | This is still a bounded roadmap item. |
 
-The code default is Daytona unless `SANDBOX_PROVIDER=cube` is set. The deployment scripts can choose either provider at host bootstrap.
+The library default is Daytona unless `SANDBOX_PROVIDER=cube` is set. The
+current Hetzner bootstrap configures Cube explicitly. Hosted Daytona
+credentials, preview-header behavior, confirmed deletion, and latency remain
+unproven for the current tree.
 
 ## Skills, Knowledge, Memory, Playbooks, Automations
 
@@ -111,6 +128,8 @@ The code default is Daytona unless `SANDBOX_PROVIDER=cube` is set. The deploymen
 - New automations are always created disabled.
 - Enabling requires an explicit confirmation flag.
 - Scheduled firings use the same durable run lane as interactive work.
+- Create, update, delete, and fire mutations publish tenant-scoped invalidations after the durable mutation. The Automations list and history drawer refetch from the shared browser EventSource, with bounded polling retained as recovery.
+- The invalidation bus is process-local. It supports the enforced single-backend deployment, not horizontal fanout.
 
 ## Development
 
@@ -131,7 +150,7 @@ Notes:
 - `bun run dev` runs the backend in watch mode on `:3201`.
 - `bun run start` runs the backend once, without watch mode.
 - `bun run gateway` starts the sandbox gateway on `:3202`.
-- `bun run test` prepares `skynet_test` and then runs the backend test suite.
+- `bun run test` prepares `skynet_test` and then runs the backend test suite; it requires a reachable PostgreSQL test database.
 - `bun run e2e:real` and `bun run soak` are the manual runtime checks.
 
 ### Local Environment
@@ -151,7 +170,7 @@ The important variables are:
 
 - `deploy/hetzner/deploy-release.sh` refuses tracked local changes, snapshots source, and runs the release gate.
 - `deploy/hetzner/release-gate.sh` handles the hosted release workflow.
-- `deploy/hetzner/configure-host.sh` provisions the host runtime, gateways, memory, and systemd wiring.
+- `deploy/hetzner/configure-host.sh` provisions one backend, a separate restricted gateway service, Cube, memory, and systemd wiring. Production sets `REQUIRE_SINGLE_BACKEND=true` because ambient org invalidation is process-local.
 - `infra/terraform/prod/README.md` documents the Terraform scope. It only manages Cloudflare DNS.
 
 ## Current Versus Bounded
@@ -159,18 +178,23 @@ The important variables are:
 ### Current
 
 - Single-backend operation is enforced with a database lock.
-- Runs, SSE, canonicalization, uploads, artifacts, memory capture, and connector delivery are all wired.
+- Runs, SSE, canonicalization, uploads, artifacts, native artifact export, memory capture, and connector delivery are all wired.
 - The provider gateway and knowledge gateway are real backend services, not placeholders.
-- T3 and OpenCode have the strongest adapter surface today.
+- The worker routes production turns through the provider registry. OpenCode and selected T3 turns use native `ProviderDriver` lifecycles; non-T3 Claude/Codex remain explicit compatibility execution.
 - Cube and Daytona both run real sandboxes, but with different provider-specific capabilities.
+- Desktop readiness and repair cover noVNC, RFB, the XFCE process set, browser CDP, and the restricted CDP relays. Failure degrades the advertised capability instead of failing the coding run.
 
 ### Bounded Roadmap
 
 - Multi-replica backend operation is not supported yet.
+- The org-change SSE bus must move to durable pub/sub or outbox fanout before multi-replica operation.
 - The sandbox provider interface still lacks explicit pause, checkpoint, and snapshot operations.
+- Hosted Daytona credentials, preview isolation, deletion, and latency still require release-gate evidence.
 - Legacy ACP restart reconciliation is weaker than the OpenCode and T3 paths.
 - Artifact storage is still local to the backend node.
-- Richer artifact renderers and shared object storage remain future work.
+- Rich Office/PDF binary round-trip editors, PDF import, and shared object
+  storage remain future work. The current presentation and PDF editors operate
+  on bounded slide-JSON and text companion state.
 
 ## See Also
 

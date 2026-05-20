@@ -1,24 +1,14 @@
+import { ENGINES } from "@/components/chat/types";
 import type { DotTone } from "@/components/shared/status-dot";
 
 /**
- * Domain types + helpers for the Schedules surface. Pure and isomorphic (no
+ * Domain types + helpers for the Automations surface. Pure and isomorphic (no
  * React, no "use client") so both the server page and the client view can
  * import it. Fetching lives in `schedules-api.ts`.
  */
 
-/** Engines a schedule can run under — the real backend adapters, no `mock`. */
-export const SCHEDULE_ENGINES = [
-  "codex",
-  "opencode",
-  "claude-sdk",
-  "daytona",
-] as const;
-export type ScheduleEngine = (typeof SCHEDULE_ENGINES)[number];
-
-/** Display label for an engine id (tolerates ids outside the create list). */
-export const ENGINE_LABEL: Record<string, string> = {
-  codex: "Codex",
-  opencode: "OpenCode",
+/** Legacy display metadata only. These ids must never become picker options. */
+const LEGACY_ENGINE_LABEL: Record<string, string> = {
   "claude-sdk": "Claude SDK",
   daytona: "Daytona",
   mock: "Mock",
@@ -26,10 +16,44 @@ export const ENGINE_LABEL: Record<string, string> = {
 };
 
 export function engineLabel(engine: string): string {
-  return ENGINE_LABEL[engine] ?? engine;
+  return ENGINES.find(({ id }) => id === engine)?.label ?? LEGACY_ENGINE_LABEL[engine] ?? engine;
 }
 
-/** Wire shape from `GET /api/schedules` (snake_case, per the backend contract). */
+export interface AutomationEngineOption {
+  id: string;
+  label: string;
+}
+
+/** Project the server-enabled ids through chat's current engine catalog. */
+export function automationEngineOptions(
+  enabledEngines: readonly string[],
+): AutomationEngineOption[] {
+  return ENGINES.filter(({ id }) => enabledEngines.includes(id)).map(({ id, label }) => ({
+    id,
+    label,
+  }));
+}
+
+/** Keep a disabled draft's stored engine visible while editing it. The engine
+ * remains unavailable for new automations and cannot run until connected. */
+export function automationEditorEngineOptions(
+  enabledEngines: readonly string[],
+  storedEngine?: string,
+): AutomationEngineOption[] {
+  const options = automationEngineOptions(enabledEngines);
+  if (!storedEngine || options.some(({ id }) => id === storedEngine)) return options;
+  return [{ id: storedEngine, label: `${engineLabel(storedEngine)} (unavailable)` }, ...options];
+}
+
+/** Keep a new draft on a live option as server capabilities resolve or change. */
+export function reconcileAutomationEngine(
+  options: readonly AutomationEngineOption[],
+  current: string,
+): string {
+  return options.some(({ id }) => id === current) ? current : (options[0]?.id ?? "");
+}
+
+/** Wire shape from `GET /api/automations` (snake_case, per the backend contract). */
 export interface ScheduleRecord {
   id: string;
   org_id: string;
@@ -108,7 +132,7 @@ export function scheduleZone(schedule: Pick<ScheduleRecord, "timezone">): string
   return schedule.timezone ?? "Server timezone";
 }
 
-/** Wire shape from `GET /api/schedules/:id/history`. */
+/** Wire shape from `GET /api/automations/:id/history`. */
 export interface FiringRecord {
   id: string;
   schedule_id: string;

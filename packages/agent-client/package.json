@@ -9,6 +9,8 @@
     "./artifacts": "./src/artifacts.ts",
     "./connection": "./src/connection.ts",
     "./events": "./src/thread-events.ts",
+    "./org-changes": "./src/org-changes.ts",
+    "./provider-connections": "./src/provider-connections.ts",
     "./store": "./src/thread-store.ts",
     "./selectors": "./src/selectors.ts"
   },
@@ -17,7 +19,8 @@
     "test": "bun test"
   },
   "dependencies": {
-    "@skynet/agent-harness": "file:../agent-harness"
+    "@skynet/agent-harness": "file:../agent-harness",
+    "@skynet/artifact-workspace": "file:../artifact-workspace"
   },
   "devDependencies": {
     "@types/bun": "^1.3.14"

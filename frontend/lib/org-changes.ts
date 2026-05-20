@@ -1,52 +1,9 @@
-export type OrgChange =
-  | {
-      readonly type: "run";
-      readonly action: "created" | "running" | "settled" | "cancelled";
-      readonly runId: string;
-      readonly threadId: string;
-    }
-  | {
-      readonly type: "artifact";
-      readonly action: "created" | "updated";
-      readonly artifactId: string;
-      readonly runId: string;
-      readonly threadId: string;
-    };
+import { decodeOrgChange, type OrgChange } from "@skynet/agent-client/org-changes";
+
+export type { OrgChange };
 
 type Listener = (change: OrgChange) => void;
-type RunAction = Extract<OrgChange, { type: "run" }>["action"];
-type ArtifactAction = Extract<OrgChange, { type: "artifact" }>["action"];
-
-const RUN_ACTIONS = new Set<RunAction>(["created", "running", "settled", "cancelled"]);
-const ARTIFACT_ACTIONS = new Set<ArtifactAction>(["created", "updated"]);
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-export function parseOrgChange(value: unknown): OrgChange | null {
-  if (!isRecord(value)) return null;
-  const { type, action, runId, threadId } = value;
-  if (typeof runId !== "string" || typeof threadId !== "string") return null;
-  if (type === "run" && typeof action === "string" && RUN_ACTIONS.has(action as RunAction)) {
-    return { type, action: action as RunAction, runId, threadId };
-  }
-  if (
-    type === "artifact" &&
-    typeof action === "string" &&
-    ARTIFACT_ACTIONS.has(action as ArtifactAction) &&
-    typeof value.artifactId === "string"
-  ) {
-    return {
-      type,
-      action: action as ArtifactAction,
-      artifactId: value.artifactId,
-      runId,
-      threadId,
-    };
-  }
-  return null;
-}
+export const parseOrgChange = decodeOrgChange;
 
 const listeners = new Set<Listener>();
 const pending = new Map<string, OrgChange>();
@@ -69,7 +26,14 @@ function flush(): void {
 }
 
 function enqueue(change: OrgChange): void {
-  const key = change.type === "run" ? `run:${change.runId}` : `artifact:${change.artifactId}`;
+  const key =
+    change.type === "run"
+      ? `run:${change.runId}`
+      : change.type === "artifact"
+        ? `artifact:${change.artifactId}`
+        : change.type === "automation"
+          ? `automation:${change.automationId}`
+          : `provider_connection:${change.provider}:${change.authMethod}`;
   pending.set(key, change);
   if (flushScheduled) return;
   flushScheduled = true;

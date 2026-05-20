@@ -43,9 +43,10 @@ export const AGENT_WORKFLOW_ROUTING_RULES =
 
 export const AGENT_SKILL_DISCOVERY_RULES =
   "<skill_discovery>\n" +
-  "When no pinned skill and no skill_catalog metadata are already present, before any non-trivial " +
+  "When no exact explicit skill is already active, before any non-trivial " +
   "organization workflow, call skills_list, inspect the available catalog by meaning, and call " +
-  "skill_activate for the best-fitting procedure before acting.\n" +
+  "skill_activate with the exact returned skill id for the best-fitting procedure before acting. " +
+  "Cached skill_catalog metadata may supplement this discovery but never replaces these calls.\n" +
   "</skill_discovery>\n\n";
 
 /**
@@ -56,7 +57,8 @@ export const AGENT_SKILL_DISCOVERY_RULES =
  */
 export function composeTurnPrompt(ctx: TurnPromptContext, resumed: boolean): string {
   if (ctx.commandName) return ctx.prompt;
-  const skillReference = ctx.skillContext || ctx.skillCatalogContext || AGENT_SKILL_DISCOVERY_RULES;
+  const skillReference = ctx.skillContext ||
+    AGENT_SKILL_DISCOVERY_RULES + (ctx.skillCatalogContext ?? "");
   const perTurn =
     AGENT_WORKFLOW_ROUTING_RULES +
     skillReference +

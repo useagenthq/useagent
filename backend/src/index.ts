@@ -65,6 +65,10 @@ import { engineModelsForReadyEngines, readyUserFacingEngines } from "./runs/engi
 import { uploadRoutes } from "./uploads/routes";
 import { startUploadCleanup } from "./uploads/cleanup";
 import { internalAutomationRoutes } from "./schedules/internal-routes";
+import {
+  gatewayApprovalRoutes,
+  internalGatewayApprovalRoutes,
+} from "./knowledge/gateway/approval-routes";
 
 // Apply committed Drizzle migrations BEFORE anything reads or seeds the schema,
 // so a fresh clone (or a fresh database) boots with the tables in place. The
@@ -134,6 +138,7 @@ app.use("/api/*", async (c, next) => {
 
 app.get("/api/health", (c) => c.json({ status: "ok" }));
 app.route("/api/internal/automation", internalAutomationRoutes);
+app.route("/api/internal/gateway-approval/consume", internalGatewayApprovalRoutes);
 
 // Public client config — what the frontend needs to render auth affordances
 // (which social providers are enabled) without exposing any secret. `allowDevOrg`
@@ -172,6 +177,9 @@ app.on(["GET", "POST"], "/api/auth/*", (c) => auth.handler(c.req.raw));
 app.route("/api/chat", chatRoutes);
 
 app.route("/api/runs", runsRoutes);
+// Session-authenticated human approval minting. This stays on the product API;
+// the sandbox-reachable gateway can only consume the resulting exact capability.
+app.route("/api/gateway/approvals", gatewayApprovalRoutes);
 // Durable run artifacts. The backend owns the immutable bytes and authorization;
 // browsers and connector deliveries resolve the same artifact id.
 app.route("/api/artifacts", artifactRoutes);
@@ -203,6 +211,9 @@ app.route("/api/fleet", fleetRoutes);
 // before /api/skills so the /import subtree resolves to its own routes.
 app.route("/api/skills/import", skillImportRoutes);
 app.route("/api/skills", skillsRoutes);
+app.route("/api/automations", schedulesRoutes);
+// Backward-compatible alias for sessions and frontend bundles created before
+// the product surface was renamed to Automations.
 app.route("/api/schedules", schedulesRoutes);
 // Org Secrets — encrypted named secrets injected as env vars into the per-thread
 // sandbox at boot. Org-scoped; values are write-only at this boundary (set/delete
@@ -227,7 +238,7 @@ app.route("/api/memory", memoryRoutes);
 app.route("/api/commands", commandsRoutes);
 
 // Always-on scheduler loop (60s tick). Harmless when no schedule is enabled —
-// schedules default disabled, so nothing auto-fires until a human turns it on.
+// Automations default disabled, so nothing auto-fires until a human turns it on.
 startScheduler();
 
 // Abandoned pre-run uploads expire after 24h. Reclaim only their metadata;

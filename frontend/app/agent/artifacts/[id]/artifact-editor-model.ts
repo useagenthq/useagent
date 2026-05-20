@@ -1,61 +1,56 @@
 import type { ArtifactDescriptor, ArtifactWorkpieceResult } from "@skynet/agent-client";
+import {
+  artifactActionContractFor,
+  artifactFileExtension,
+  isArtifactRichHtmlAttribute,
+  isArtifactRichHtmlTag,
+  normalizeArtifactRichHtml,
+} from "@skynet/artifact-workspace";
 
 export const SHEET_ROW_LIMIT = 100;
 export const SHEET_COLUMN_LIMIT = 26;
 
-const RICH_DOCUMENT_TYPE =
-  "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
-const RICH_SPREADSHEET_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+export {
+  parseArtifactCsv as parseCsv,
+  serializeArtifactCsv as serializeCsv,
+} from "@skynet/artifact-workspace";
 
-const ALLOWED_RICH_TAGS = new Set([
-  "A",
-  "B",
-  "BR",
-  "DIV",
-  "EM",
-  "H1",
-  "H2",
-  "H3",
-  "I",
-  "LI",
-  "OL",
-  "P",
-  "STRONG",
-  "TABLE",
-  "TBODY",
-  "TD",
-  "TH",
-  "THEAD",
-  "TR",
-  "U",
-  "UL",
-]);
+export type ArtifactEditorMode =
+  | "source-document"
+  | "rich-document"
+  | "grid"
+  | "sheet-source"
+  | "slides-json"
+  | "pdf-text";
 
-function extension(name: string): string {
-  const dot = name.lastIndexOf(".");
-  return dot > -1 ? name.slice(dot + 1).toLowerCase() : "";
-}
-
-function mime(artifact: Pick<ArtifactDescriptor, "content_type">): string {
-  return artifact.content_type.split(";", 1)[0]?.trim().toLowerCase() ?? "";
-}
-
-export function isRichDocumentArtifact(
-  artifact: Pick<ArtifactDescriptor, "content_type" | "name">,
-): boolean {
-  return mime(artifact) === RICH_DOCUMENT_TYPE || extension(artifact.name) === "docx";
-}
-
-export function isRichSpreadsheetArtifact(
-  artifact: Pick<ArtifactDescriptor, "content_type" | "name">,
-): boolean {
-  return mime(artifact) === RICH_SPREADSHEET_TYPE || extension(artifact.name) === "xlsx";
+export function artifactEditorMode(
+  artifact: Pick<ArtifactDescriptor, "content_type" | "name" | "size_bytes"> &
+    Readonly<{
+      workpiece: Pick<NonNullable<ArtifactDescriptor["workpiece"]>, "kind" | "actions"> | null;
+    }>,
+): ArtifactEditorMode {
+  const edit = artifactActionContractFor(artifact).edit;
+  if (!edit) return "source-document";
+  switch (edit.state) {
+    case "html":
+      return "rich-document";
+    case "csv":
+      return edit.mode === "companion" ? "grid" : "sheet-source";
+    case "slides":
+      return "slides-json";
+    case "pdfText":
+      return "pdf-text";
+    case "text":
+      return "source-document";
+  }
 }
 
 export function stateValue(result: ArtifactWorkpieceResult): string | null {
   if (!result.state) return null;
   if ("csv" in result.state) return result.state.csv;
   if ("html" in result.state) return result.state.html;
+  if ("slides" in result.state) return JSON.stringify({ slides: result.state.slides }, null, 2);
+  if ("pdfText" in result.state) return result.state.pdfText;
   return result.state.text;
 }
 
@@ -68,11 +63,27 @@ function escapeHtml(value: string): string {
 }
 
 export function richDocumentTemplate(name: string): string {
-  return `<h1>${escapeHtml(name.replace(/\.[^.]+$/, ""))}</h1><p></p>`;
+  const suffix = artifactFileExtension(name);
+  const stem = suffix ? name.slice(0, -(suffix.length + 1)) : name;
+  return `<h1>${escapeHtml(stem)}</h1><p></p>`;
+}
+
+export function presentationTemplate(name: string): string {
+  const suffix = artifactFileExtension(name);
+  const stem = suffix ? name.slice(0, -(suffix.length + 1)) : name;
+  return JSON.stringify({ slides: [{ title: stem, body: "", notes: "" }] }, null, 2);
+}
+
+export function pdfTextTemplate(name: string): string {
+  const suffix = artifactFileExtension(name);
+  const stem = suffix ? name.slice(0, -(suffix.length + 1)) : name;
+  return `${stem}\n`;
 }
 
 export function sanitizeRichHtml(value: string): string {
-  if (typeof document === "undefined") return value.replace(/<[^>]*>/g, "");
+  if (typeof document === "undefined") {
+    return normalizeArtifactRichHtml(value) ?? escapeHtml(value.replace(/<[^>]*>/g, ""));
+  }
   const template = document.createElement("template");
   template.innerHTML = value;
   const visit = (node: Node): void => {
@@ -83,27 +94,12 @@ export function sanitizeRichHtml(value: string): string {
       }
       if (child.nodeType !== Node.ELEMENT_NODE) continue;
       const element = child as HTMLElement;
-      if (!ALLOWED_RICH_TAGS.has(element.tagName)) {
+      if (!isArtifactRichHtmlTag(element.tagName)) {
         element.replaceWith(document.createTextNode(element.textContent ?? ""));
         continue;
       }
       for (const attribute of Array.from(element.attributes)) {
-        const name = attribute.name.toLowerCase();
-        const text = attribute.value.trim().toLowerCase();
-        if (
-          name.startsWith("on") ||
-          name === "style" ||
-          (name !== "href" && name !== "colspan" && name !== "rowspan")
-        ) {
-          element.removeAttribute(attribute.name);
-          continue;
-        }
-        if (
-          name === "href" &&
-          !text.startsWith("https://") &&
-          !text.startsWith("http://") &&
-          !text.startsWith("mailto:")
-        ) {
+        if (!isArtifactRichHtmlAttribute(element.tagName, attribute.name, attribute.value)) {
           element.removeAttribute(attribute.name);
         }
       }
@@ -111,49 +107,8 @@ export function sanitizeRichHtml(value: string): string {
     }
   };
   visit(template.content);
-  return template.innerHTML;
-}
-
-export function parseCsv(csv: string): string[][] {
-  const rows: string[][] = [[]];
-  let value = "";
-  let quoted = false;
-  for (let index = 0; index < csv.length; index += 1) {
-    const character = csv[index];
-    if (quoted) {
-      if (character === '"' && csv[index + 1] === '"') {
-        value += '"';
-        index += 1;
-      } else if (character === '"') {
-        quoted = false;
-      } else {
-        value += character;
-      }
-      continue;
-    }
-    if (character === '"') {
-      quoted = true;
-    } else if (character === ",") {
-      rows[rows.length - 1]?.push(value);
-      value = "";
-    } else if (character === "\n") {
-      rows[rows.length - 1]?.push(value);
-      rows.push([]);
-      value = "";
-    } else if (character !== "\r") {
-      value += character;
-    }
-  }
-  rows[rows.length - 1]?.push(value);
-  return rows;
-}
-
-function serializeCsvCell(value: string): string {
-  return /[",\n\r]/.test(value) ? `"${value.replaceAll('"', '""')}"` : value;
-}
-
-export function serializeCsv(rows: readonly (readonly string[])[]): string {
-  return rows.map((row) => row.map(serializeCsvCell).join(",")).join("\n");
+  return normalizeArtifactRichHtml(template.innerHTML) ??
+    escapeHtml(template.content.textContent ?? "");
 }
 
 export function isSheetWithinGridLimit(rows: readonly (readonly string[])[]): boolean {

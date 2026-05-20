@@ -1,4 +1,5 @@
 import type { GatewayToolDescriptor } from "./operation-registry";
+import { errorResult } from "./tool-results";
 
 export const GATEWAY_META_TOOLS = [
   {
@@ -37,6 +38,27 @@ export const GATEWAY_META_TOOLS = [
       additionalProperties: false,
     },
   },
+  {
+    name: "gateway_tool_call",
+    description:
+      "Invoke one exact signed Skynet gateway tool discovered through gateway_tools_search and gateway_tool_describe. Use this bridge when compact tool discovery is enabled; the target must be available to the current live run.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        name: {
+          type: "string",
+          description: "Exact non-meta tool name returned by gateway_tools_search.",
+        },
+        arguments: {
+          type: "object",
+          description: "Arguments matching the schema returned by gateway_tool_describe.",
+          additionalProperties: true,
+        },
+      },
+      required: ["name"],
+      additionalProperties: false,
+    },
+  },
 ] as const satisfies readonly GatewayToolDescriptor[];
 
 const GATEWAY_META_TOOL_NAMES: ReadonlySet<string> = new Set(
@@ -68,11 +90,17 @@ function descriptorSearchText(tool: GatewayToolDescriptor): string {
   return `${tool.name} ${tool.description}`.toLowerCase();
 }
 
-export function executeGatewayMetaTool(
+type GatewayToolInvoker = (
+  name: string,
+  args: Record<string, unknown>,
+) => Promise<unknown>;
+
+export async function executeGatewayMetaTool(
   name: string,
   args: Record<string, unknown>,
   availableTools: readonly GatewayToolDescriptor[],
-): unknown | null {
+  invoke?: GatewayToolInvoker,
+): Promise<unknown | null> {
   if (name === "gateway_tools_search") {
     const query = compactText(args.query);
     if (!query) {
@@ -118,6 +146,26 @@ export function executeGatewayMetaTool(
       content: [{ type: "text", text: JSON.stringify(tool, null, 2) }],
       structuredContent: { tool },
     };
+  }
+
+  if (name === "gateway_tool_call") {
+    const toolName = typeof args.name === "string" ? args.name.trim() : "";
+    if (!toolName) return errorResult("gateway_tool_call requires an exact `name`.");
+    if (isGatewayMetaToolName(toolName)) {
+      return errorResult("gateway_tool_call cannot invoke gateway meta-tools.");
+    }
+    if (!availableTools.some((tool) => tool.name === toolName) || !invoke) {
+      return errorResult(`Gateway tool ${toolName} is not available to this run.`);
+    }
+    const toolArguments = args.arguments ?? {};
+    if (
+      typeof toolArguments !== "object" ||
+      toolArguments === null ||
+      Array.isArray(toolArguments)
+    ) {
+      return errorResult("gateway_tool_call `arguments` must be an object.");
+    }
+    return invoke(toolName, toolArguments as Record<string, unknown>);
   }
 
   return null;

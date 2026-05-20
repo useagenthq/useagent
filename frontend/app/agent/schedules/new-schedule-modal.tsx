@@ -1,7 +1,8 @@
 "use client";
 
 import { RiCalendarScheduleLine, RiErrorWarningLine, RiTimeZoneLine } from "@remixicon/react";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useEnabledEngines } from "@/components/chat/engine-picker";
 import * as Button from "@/components/ui/button";
 import * as Hint from "@/components/ui/hint";
 import * as Input from "@/components/ui/input";
@@ -11,9 +12,9 @@ import * as Textarea from "@/components/ui/textarea";
 import { cnExt } from "@/utils/cn";
 import type { CreateScheduleInput } from "./schedules-api";
 import {
+  automationEditorEngineOptions,
   cadenceLabel,
-  engineLabel,
-  SCHEDULE_ENGINES,
+  reconcileAutomationEngine,
   type ScheduleRecord,
 } from "./schedules-data";
 
@@ -47,7 +48,12 @@ export function AutomationEditorModal({
   const [prompt, setPrompt] = useState("");
   const [cron, setCron] = useState<string>(CADENCE_PRESETS[2].cron);
   const [timezone, setTimezone] = useState(localZone);
-  const [engine, setEngine] = useState<string>(SCHEDULE_ENGINES[0]);
+  const enabledEngines = useEnabledEngines();
+  const engineOptions = useMemo(
+    () => automationEditorEngineOptions(enabledEngines, schedule?.engine),
+    [enabledEngines, schedule?.engine],
+  );
+  const [engine, setEngine] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -56,14 +62,21 @@ export function AutomationEditorModal({
     setName(schedule?.name ?? "");
     setPrompt(schedule?.prompt ?? "");
     setCron(schedule?.cron ?? CADENCE_PRESETS[2].cron);
-    setTimezone(schedule?.timezone ?? localZone());
-    setEngine(schedule?.engine ?? SCHEDULE_ENGINES[0]);
+    setTimezone(schedule ? (schedule.timezone ?? "") : localZone());
+    setEngine(schedule?.engine ?? "");
     setBusy(false);
     setError(null);
   }, [open, schedule]);
 
+  useEffect(() => {
+    if (!open || schedule) return;
+    setEngine((current) => reconcileAutomationEngine(engineOptions, current));
+  }, [engineOptions, open, schedule]);
+
   const cronValid = looksLikeCron(cron);
-  const canSubmit = Boolean(name.trim() && prompt.trim() && timezone.trim() && cronValid && !busy);
+  const canSubmit = Boolean(
+    name.trim() && prompt.trim() && engine && cronValid && !busy,
+  );
 
   const submit = async () => {
     if (!canSubmit) return;
@@ -74,7 +87,7 @@ export function AutomationEditorModal({
         name: name.trim(),
         prompt: prompt.trim(),
         cron: cron.trim(),
-        timezone: timezone.trim(),
+        timezone: timezone.trim() || null,
         engine,
       });
       onClose();
@@ -181,7 +194,7 @@ export function AutomationEditorModal({
                   <Input.Icon as={RiTimeZoneLine} />
                   <Input.Input
                     id="automation-timezone"
-                    placeholder="Asia/Kolkata"
+                    placeholder={schedule ? "Server timezone" : "Asia/Kolkata"}
                     value={timezone}
                     onChange={(event) => setTimezone(event.target.value)}
                     spellCheck={false}
@@ -201,8 +214,10 @@ export function AutomationEditorModal({
                 <Select.Value />
               </Select.Trigger>
               <Select.Content>
-                {SCHEDULE_ENGINES.map((id) => (
-                  <Select.Item key={id} value={id}>{engineLabel(id)}</Select.Item>
+                {engineOptions.map(({ id, label }) => (
+                  <Select.Item key={id} value={id}>
+                    {label}
+                  </Select.Item>
                 ))}
               </Select.Content>
             </Select.Root>

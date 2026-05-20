@@ -1,10 +1,16 @@
 import type { ToolCallResult } from "./tools";
+import type { GatewayToolDescriptor } from "./descriptor";
 import { errorResult, textResult } from "./tool-results";
+import {
+  argumentsWithoutApproval,
+  consumeApprovalCapability,
+  type ApprovalCapabilityStore,
+} from "./approval-capability";
 import { mintToolToken, type ToolTokenClaims } from "./token";
 import {
   AUTOMATION_CONTRACT,
   AUTOMATION_TOOL_NAMES,
-  AUTOMATION_TOOLS,
+  AUTOMATION_TOOLS as AUTOMATION_TOOL_CATALOG,
 } from "./automation-tool-catalog";
 import { getRunForOrg } from "../../runs/repo";
 import { getScheduleForOrg, listFirings, listSchedules, type ApiSchedule, type ScheduleRecord } from "../../schedules/repo";
@@ -15,13 +21,64 @@ import {
   updateScheduleForOrg,
 } from "../../schedules/service";
 
-export { AUTOMATION_TOOL_NAMES, AUTOMATION_TOOLS };
+export { AUTOMATION_TOOL_NAMES };
+
+export const AUTOMATION_APPROVAL_REQUIRED_TOOL_NAMES: ReadonlySet<string> = new Set([
+  "automation_update",
+  "automation_run_now",
+  "automation_delete",
+]);
+
+const APPROVAL_CAPABILITY_SCHEMA = {
+  type: "string",
+  description:
+    "Opaque, short-lived, one-shot capability minted by the authenticated Skynet backend for this exact tool and argument object after user approval.",
+} as const;
+
+export const AUTOMATION_TOOLS: readonly GatewayToolDescriptor[] = AUTOMATION_TOOL_CATALOG.map((tool) => {
+  if (!AUTOMATION_APPROVAL_REQUIRED_TOOL_NAMES.has(tool.name)) return tool;
+  const schema = tool.inputSchema as {
+    readonly properties: Readonly<Record<string, unknown>>;
+    readonly required?: readonly string[];
+  };
+  const properties = { ...schema.properties };
+  delete properties.confirmEnable;
+  return {
+    ...tool,
+    description:
+      `${tool.description} This operation requires a server-minted one-shot approval capability bound to these exact arguments.`,
+    inputSchema: {
+      ...tool.inputSchema,
+      properties: { ...properties, approvalCapability: APPROVAL_CAPABILITY_SCHEMA },
+      required: [...new Set([...(schema.required ?? []), "approvalCapability"])],
+    },
+  };
+});
+
+const APPROVAL_AUTOMATION_CONTRACT = {
+  ...AUTOMATION_CONTRACT,
+  enable:
+    "automation_update requires a server-minted, short-lived, one-shot approval capability bound to the exact run, tool, and normalized arguments",
+} as const;
+
+export interface AutomationToolExecutionOptions {
+  readonly approvalStore?: ApprovalCapabilityStore;
+  readonly nowMs?: number;
+}
 
 function serviceError(error: ScheduleServiceError): ToolCallResult {
-  return errorResult(String(error.body.error ?? error.message), {
+  const body =
+    error.body.error === "schedule not found"
+      ? { ...error.body, error: "automation not found" }
+      : error.body;
+  return errorResult(String(body.error ?? error.message), {
     status: error.status,
-    error: error.body,
+    error: body,
   });
+}
+
+function automationNotFound(): ToolCallResult {
+  return errorResult("automation not found", { status: 404 });
 }
 
 function promptPreview(prompt: string): string {
@@ -63,7 +120,7 @@ function automationSummary(schedule: ApiSchedule | ScheduleRecord): Record<strin
   };
 }
 
-function scheduleId(args: Record<string, unknown>): string | null {
+function automationId(args: Record<string, unknown>): string | null {
   const id = typeof args.id === "string" ? args.id.trim() : "";
   return id || null;
 }
@@ -101,11 +158,8 @@ async function updateAutomation(
   claims: ToolTokenClaims,
   args: Record<string, unknown>,
 ): Promise<ToolCallResult> {
-  const id = scheduleId(args);
+  const id = automationId(args);
   if (!id) return errorResult("automation_update requires an automation id.");
-  if (args.enabled === true && args.confirmEnable !== true) {
-    return errorResult("Refusing to enable automation without confirmEnable=true after an explicit user request.");
-  }
   const patch = { ...args };
   delete patch.confirmEnable;
   delete patch.id;
@@ -124,10 +178,10 @@ async function getAutomation(
   claims: ToolTokenClaims,
   args: Record<string, unknown>,
 ): Promise<ToolCallResult> {
-  const id = scheduleId(args);
+  const id = automationId(args);
   if (!id) return errorResult("automation_get requires an automation id.");
   const schedule = await getScheduleForOrg(claims.orgId, id);
-  if (!schedule) return errorResult("schedule not found", { status: 404 });
+  if (!schedule) return automationNotFound();
   return textResult(`Automation ${schedule.name} (${schedule.id}).`, {
     automation: automationSummary(schedule),
   });
@@ -137,15 +191,15 @@ async function runAutomationNow(
   claims: ToolTokenClaims,
   args: Record<string, unknown>,
 ): Promise<ToolCallResult> {
-  const id = scheduleId(args);
+  const id = automationId(args);
   if (!id) return errorResult("automation_run_now requires an automation id.");
   const schedule = await getScheduleForOrg(claims.orgId, id);
-  if (!schedule) return errorResult("schedule not found", { status: 404 });
+  if (!schedule) return automationNotFound();
   // Keep the standalone tool gateway importable without loading the backend's
   // command worker and authentication root. The execution graph is needed only
   // for this explicit mutating call.
-  const { fireSchedule } = await import("../../schedules/fire");
-  const runId = await fireSchedule(schedule, "manual");
+  const { fireScheduleForOrg } = await import("../../schedules/service");
+  const runId = await fireScheduleForOrg(schedule, "manual");
   return textResult(`Started automation ${schedule.name} now as run ${runId}.`, {
     run_id: runId,
     automation_id: schedule.id,
@@ -156,10 +210,10 @@ async function automationHistory(
   claims: ToolTokenClaims,
   args: Record<string, unknown>,
 ): Promise<ToolCallResult> {
-  const id = scheduleId(args);
+  const id = automationId(args);
   if (!id) return errorResult("automation_history requires an automation id.");
   const schedule = await getScheduleForOrg(claims.orgId, id);
-  if (!schedule) return errorResult("schedule not found", { status: 404 });
+  if (!schedule) return automationNotFound();
   const firings = await listFirings(schedule.id);
   return textResult(
     firings.length === 0
@@ -173,7 +227,7 @@ async function deleteAutomation(
   claims: ToolTokenClaims,
   args: Record<string, unknown>,
 ): Promise<ToolCallResult> {
-  const id = scheduleId(args);
+  const id = automationId(args);
   if (!id) return errorResult("automation_delete requires an automation id.");
   try {
     await deleteScheduleForOrg(claims.orgId, id);
@@ -188,7 +242,24 @@ export async function executeAutomationToolLocal(
   claims: ToolTokenClaims,
   name: string,
   args: Record<string, unknown>,
+  options: AutomationToolExecutionOptions = {},
 ): Promise<ToolCallResult> {
+  const operationArgs = argumentsWithoutApproval(args);
+  if (AUTOMATION_APPROVAL_REQUIRED_TOOL_NAMES.has(name)) {
+    const capability =
+      typeof args.approvalCapability === "string" ? args.approvalCapability : null;
+    const approved = await consumeApprovalCapability(
+      { capability, claims, toolName: name, arguments: operationArgs },
+      options.approvalStore,
+      options.nowMs,
+    );
+    if (!approved) {
+      return errorResult(
+        `A valid server-minted one-shot approval capability is required for ${name}.`,
+        { error: "approval_required" },
+      );
+    }
+  }
   if (name === "automation_list") {
     const automations = await listSchedules(claims.orgId);
     return textResult(
@@ -199,14 +270,16 @@ export async function executeAutomationToolLocal(
     );
   }
   if (name === "automation_schema") {
-    return textResult("Skynet automation contract r10.", { schema: AUTOMATION_CONTRACT });
+    return textResult(`Skynet automation contract ${APPROVAL_AUTOMATION_CONTRACT.version}.`, {
+      schema: APPROVAL_AUTOMATION_CONTRACT,
+    });
   }
-  if (name === "automation_get") return getAutomation(claims, args);
-  if (name === "automation_create") return createAutomation(claims, args);
-  if (name === "automation_update") return updateAutomation(claims, args);
-  if (name === "automation_run_now") return runAutomationNow(claims, args);
-  if (name === "automation_history") return automationHistory(claims, args);
-  if (name === "automation_delete") return deleteAutomation(claims, args);
+  if (name === "automation_get") return getAutomation(claims, operationArgs);
+  if (name === "automation_create") return createAutomation(claims, operationArgs);
+  if (name === "automation_update") return updateAutomation(claims, operationArgs);
+  if (name === "automation_run_now") return runAutomationNow(claims, operationArgs);
+  if (name === "automation_history") return automationHistory(claims, operationArgs);
+  if (name === "automation_delete") return deleteAutomation(claims, operationArgs);
   return errorResult(`Unknown tool: ${name}`);
 }
 

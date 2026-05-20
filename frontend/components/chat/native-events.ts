@@ -7,7 +7,10 @@
 // row); `seq` is the monotonic per-run cursor. A part revision re-emits the SAME
 // eventId with a HIGHER seq — consumers keep the largest seq (native-store.ts).
 
+import { type ChildUsage, mergeChildUsage, normalizeChildUsage } from "./child-usage";
 import { asRecord } from "./types";
+
+export type { ChildUsage } from "./child-usage";
 
 /** Wire schema version this client understands. Bumped on the backend when the
  *  {@link NativeFrame} shape changes; older frames upcast, newer parse best-effort
@@ -84,16 +87,6 @@ export type ChildStatus =
   | "cancelled"
   | "interrupted";
 
-export interface ChildUsage {
-  readonly totalTokens: number;
-  readonly inputTokens?: number;
-  readonly cachedInputTokens?: number;
-  readonly outputTokens?: number;
-  readonly reasoningOutputTokens?: number;
-  readonly toolUses?: number;
-  readonly durationMs?: number;
-}
-
 export interface ChildActivityEntry {
   readonly at: string;
   readonly summary: string;
@@ -150,55 +143,6 @@ function t3TaskStatus(
   if (eventType.endsWith("task.completed") || explicit === "completed") return "completed";
   if (eventType.endsWith("task.started")) return "running";
   return prior ?? "running";
-}
-
-function count(value: unknown): number | undefined {
-  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : undefined;
-}
-
-function optionalCount(key: string, raw: Record<string, unknown>): Record<string, number> {
-  const value = count(raw[key]);
-  return value === undefined ? {} : { [key]: value };
-}
-
-function childUsage(value: unknown): ChildUsage | null {
-  const raw = asRecord(value);
-  const totalTokens = raw ? count(raw.totalTokens) : undefined;
-  if (!raw || totalTokens === undefined) return null;
-  return {
-    totalTokens,
-    ...optionalCount("inputTokens", raw),
-    ...optionalCount("cachedInputTokens", raw),
-    ...optionalCount("outputTokens", raw),
-    ...optionalCount("reasoningOutputTokens", raw),
-    ...optionalCount("toolUses", raw),
-    ...optionalCount("durationMs", raw),
-  };
-}
-
-function optionalMax(
-  key: string,
-  current: ChildUsage,
-  incoming: ChildUsage,
-): Record<string, number> {
-  const a = current[key as keyof ChildUsage];
-  const b = incoming[key as keyof ChildUsage];
-  if (typeof a !== "number") return typeof b === "number" ? { [key]: b } : {};
-  return typeof b === "number" ? { [key]: Math.max(a, b) } : { [key]: a };
-}
-
-function mergeUsage(current: ChildUsage | null, incoming: ChildUsage | null): ChildUsage | null {
-  if (!incoming) return current;
-  if (!current) return incoming;
-  return {
-    totalTokens: Math.max(current.totalTokens, incoming.totalTokens),
-    ...optionalMax("inputTokens", current, incoming),
-    ...optionalMax("cachedInputTokens", current, incoming),
-    ...optionalMax("outputTokens", current, incoming),
-    ...optionalMax("reasoningOutputTokens", current, incoming),
-    ...optionalMax("toolUses", current, incoming),
-    ...optionalMax("durationMs", current, incoming),
-  };
 }
 
 function appendActivity(
@@ -278,7 +222,10 @@ export function deriveChildFidelity(
         progress,
         lastToolName: lastToolName ?? prior?.lastToolName ?? null,
         recentActivity,
-        usage: mergeUsage(prior?.usage ?? null, childUsage(activityPayload.typedUsage)),
+        usage: mergeChildUsage(
+          prior?.usage ?? null,
+          normalizeChildUsage(activityPayload.typedUsage),
+        ),
       });
       continue;
     }

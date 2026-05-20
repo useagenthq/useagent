@@ -23,6 +23,15 @@ export function firingKey(
   return `schedule:${scheduleId}:manual:${occurrence.getTime()}`;
 }
 
+export interface ScheduleFireOutcome {
+  readonly runId: string;
+  /** True only for the command-lane transaction that created this occurrence. */
+  readonly created: boolean;
+  /** True only when this call committed the durable firing row. This also
+   * identifies crash recovery after command acceptance but before recording. */
+  readonly firingRecorded: boolean;
+}
+
 /**
  * Fire a schedule: create a run through the durable command lane (the same
  * `acceptRunCommand` + mailbox pump `POST /api/runs` uses) and append an
@@ -36,14 +45,14 @@ export function firingKey(
  * `(org, idempotency_key)` index is the claim: it cannot accept two runs for one
  * occurrence). The firing row carries the same key under its own UNIQUE index,
  * so recording it is likewise idempotent — a retry re-records the original run's
- * firing rather than appending a second. Returns the accepted run id (fresh on
- * the first fire, the original on a replay).
+ * firing rather than appending a second. Returns the accepted run id plus the
+ * command lane's atomic created/replayed classification.
  */
-export async function fireSchedule(
+export async function fireScheduleWithOutcome(
   schedule: ScheduleRecord,
   trigger: ScheduleTrigger,
   occurrence: Date = new Date(),
-): Promise<string> {
+): Promise<ScheduleFireOutcome> {
   const idempotencyKey = firingKey(schedule.id, trigger, occurrence);
   const runId = crypto.randomUUID();
   const outcome = await acceptRunCommand({
@@ -87,11 +96,25 @@ export async function fireSchedule(
   await pumpThread(acceptedRunId);
   // Idempotent (unique idempotency_key + onConflictDoNothing) — a retry after a
   // crash-before-record re-records the ORIGINAL run's firing, never a duplicate.
-  await recordFiring({
+  const firingRecorded = await recordFiring({
     scheduleId: schedule.id,
     runId: acceptedRunId,
     trigger,
     idempotencyKey,
   });
-  return acceptedRunId;
+  return {
+    runId: acceptedRunId,
+    created: outcome.status === "created",
+    firingRecorded,
+  };
+}
+
+/** Preserve the original run-id-only contract for callers that do not need to
+ * distinguish a fresh logical firing from an idempotent replay. */
+export async function fireSchedule(
+  schedule: ScheduleRecord,
+  trigger: ScheduleTrigger,
+  occurrence: Date = new Date(),
+): Promise<string> {
+  return (await fireScheduleWithOutcome(schedule, trigger, occurrence)).runId;
 }

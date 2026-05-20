@@ -1,5 +1,11 @@
 import { describe, expect, test } from "bun:test";
-import { createAgentClient, decodeArtifactList } from "../src";
+import {
+  artifactWorkpieceExports,
+  createAgentClient,
+  decodeArtifactList,
+  decodeArtifactResult,
+  decodeWorkpieceResult,
+} from "../src";
 import type { FetchLike, ResponseLike } from "../src/api";
 
 const descriptor = {
@@ -22,6 +28,16 @@ const workpiece = {
   source_version: "a".repeat(64),
   state_revision: 2,
   state_url: "/api/artifacts/artifact-1/workpiece",
+  export_url: "/api/artifacts/artifact-1/workpiece/export",
+  exports: artifactWorkpieceExports("document"),
+  actions: ["preview", "download", "edit", "export"],
+} as const;
+
+const legacyWorkpiece = {
+  kind: "document",
+  source_version: "a".repeat(64),
+  state_revision: 2,
+  state_url: "/api/artifacts/artifact-1/workpiece",
   actions: ["preview", "download", "edit"],
 } as const;
 
@@ -38,6 +54,81 @@ describe("artifact client contract", () => {
   test("rejects partial descriptors at the package boundary", () => {
     expect(decodeArtifactList({ artifacts: [descriptor] })).toEqual([descriptor]);
     expect(decodeArtifactList({ artifacts: [{ ...descriptor, sha256: null }] })).toBeNull();
+  });
+
+  test("decodes artifact and workpiece API envelopes", () => {
+    expect(decodeArtifactResult({ artifact: descriptor, created: true })).toEqual({
+      artifact: descriptor,
+      created: true,
+    });
+    expect(decodeArtifactResult({ artifact: descriptor, created: "yes" })).toBeNull();
+    expect(decodeWorkpieceResult({ workpiece, state: { html: "<h1>Brief</h1>" } })).toEqual({
+      workpiece,
+      state: { html: "<h1>Brief</h1>" },
+    });
+    expect(decodeWorkpieceResult({ workpiece, state: { csv: "wrong" } })).toBeNull();
+  });
+
+  test("keeps artifact lists available across old and new workpiece metadata", () => {
+    const decoded = decodeArtifactList({
+      artifacts: [
+        { ...descriptor, id: "legacy", workpiece: legacyWorkpiece },
+        {
+          ...descriptor,
+          id: "transitional",
+          workpiece: {
+            ...workpiece,
+            actions: legacyWorkpiece.actions,
+          },
+        },
+        { ...descriptor, id: "current", workpiece },
+        {
+          ...descriptor,
+          id: "partial",
+          workpiece: {
+            ...workpiece,
+            export_url: undefined,
+            exports: undefined,
+          },
+        },
+      ],
+    });
+
+    expect(decoded).not.toBeNull();
+    expect(decoded?.[0]?.workpiece).toEqual(legacyWorkpiece);
+    expect(decoded?.[1]?.workpiece).toEqual(workpiece);
+    expect(decoded?.[2]?.workpiece).toEqual(workpiece);
+    expect(decoded?.[3]?.workpiece).toMatchObject({
+      kind: "document",
+      actions: ["preview", "download", "edit"],
+    });
+    expect(decoded?.[3]?.workpiece).not.toHaveProperty("export_url");
+    expect(decoded?.[3]?.workpiece).not.toHaveProperty("exports");
+  });
+
+  test("ignores unknown additive actions instead of rejecting a durable descriptor", () => {
+    const decoded = decodeArtifactList({
+      artifacts: [{
+        ...descriptor,
+        workpiece: {
+          ...workpiece,
+          actions: [...workpiece.actions, "future-action"],
+        },
+      }],
+    });
+
+    expect(decoded?.[0]?.workpiece?.actions).toEqual([
+      "preview",
+      "download",
+      "edit",
+      "export",
+    ]);
+  });
+
+  test("owns artifact wire decoders outside the workspace domain package", async () => {
+    const workspace = await import("../../artifact-workspace/src");
+    expect(workspace).not.toHaveProperty("decodeArtifact");
+    expect(workspace).not.toHaveProperty("decodeWorkpieceResult");
   });
 
   test("lists artifacts with encoded filters", async () => {

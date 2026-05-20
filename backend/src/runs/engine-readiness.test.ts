@@ -68,11 +68,18 @@ describe("engine readiness advertisement", () => {
       ...PROD,
       ENGINE_READINESS_OPENCODE: "verified",
       PROVIDER_HEALTH_ANTHROPIC: "invalid",
+      PROVIDER_HEALTH_OPENAI: "verified",
       PROVIDER_HEALTH_OPENROUTER: "verified",
     });
 
     expect(Object.keys(models)).toEqual(["opencode"]);
-    expect(models.opencode?.every((model) => model.includes("/"))).toBe(true);
+    expect(models.opencode).toEqual([
+      "openai/gpt-5.6-sol",
+      "openai/gpt-5.6-sol-pro",
+      "openai/gpt-5.6-luna",
+      "openai/gpt-5.6-terra",
+      "moonshotai/kimi-k3",
+    ]);
   });
 
   test("explicit model switches cannot bypass provider readiness", () => {
@@ -81,7 +88,8 @@ describe("engine readiness advertisement", () => {
       ENABLED_ENGINES: "opencode",
       ENGINE_READINESS_OPENCODE: "verified",
       PROVIDER_HEALTH_ANTHROPIC: "401",
-      PROVIDER_HEALTH_OPENROUTER: "verified",
+      PROVIDER_HEALTH_OPENAI: "verified",
+      PROVIDER_HEALTH_OPENROUTER: "401",
     };
 
     expect(modelProviderReadyForEngine("opencode", "claude-opus-5", env)).toBe(false);

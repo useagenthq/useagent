@@ -6,18 +6,7 @@
 import { describe, expect, test } from "bun:test";
 import "../src/index";
 import { handleMcpMessage } from "../src/knowledge/gateway/mcp";
-import { KNOWLEDGE_TOOLS } from "../src/knowledge/gateway/tools";
-import { MEMORY_TOOLS } from "../src/knowledge/gateway/memory-tools";
-import { WEB_SEARCH_TOOLS } from "../src/knowledge/gateway/web-search-tool";
-import { ARTIFACT_TOOLS } from "../src/knowledge/gateway/artifact-tools";
-import { RECORDING_TOOLS } from "../src/knowledge/gateway/recording-tools";
-import { COMPUTER_USE_TOOLS } from "../src/knowledge/gateway/computer-use-tools";
-import { REPOSITORY_TOOLS } from "../src/knowledge/gateway/repository-tools";
-import { GCS_TOOLS } from "../src/knowledge/gateway/gcs-tools";
-import { AUTOMATION_TOOLS } from "../src/knowledge/gateway/automation-tools";
-import { BLUEPRINT_TOOLS } from "../src/knowledge/gateway/blueprint-tools";
-import { KNOWLEDGE_MANAGEMENT_TOOLS } from "../src/knowledge/gateway/knowledge-management-tools";
-import { SKILL_TOOLS } from "../src/knowledge/gateway/skill-tools";
+import { advertisedGatewayToolDescriptors } from "../src/knowledge/gateway/operation-registry";
 import type { ToolTokenClaims } from "../src/knowledge/gateway/token";
 
 const CLAIMS: ToolTokenClaims = {
@@ -69,20 +58,13 @@ describe("MCP wire is byte-identical after the SDK-schema adoption (#98)", () =>
 
   test("tools/list returns the knowledge, execution, and semantic skill tool set", async () => {
     const result = resultRecord(await handleMcpMessage(CLAIMS, req(2, "tools/list")));
-    expect(result.tools).toEqual([
-      ...KNOWLEDGE_TOOLS,
-      ...KNOWLEDGE_MANAGEMENT_TOOLS,
-      ...MEMORY_TOOLS,
-      ...WEB_SEARCH_TOOLS,
-      ...ARTIFACT_TOOLS,
-      ...RECORDING_TOOLS,
-      ...COMPUTER_USE_TOOLS,
-      ...REPOSITORY_TOOLS,
-      ...GCS_TOOLS,
-      ...AUTOMATION_TOOLS,
-      ...BLUEPRINT_TOOLS,
-      ...SKILL_TOOLS,
-    ]);
+    expect(result.tools).toEqual(
+      advertisedGatewayToolDescriptors({
+        childSessions: false,
+        loopLogin: false,
+        slack: false,
+      }),
+    );
   });
 
   test("a notification-shaped method returns null (no response)", async () => {

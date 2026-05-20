@@ -106,16 +106,20 @@ export const t3Harness: HarnessAdapter = {
   },
 };
 
+function routeT3HarnessForSession(
+  legacy: HarnessAdapter,
+  handle?: Pick<HarnessSessionHandle, "sessionId">,
+): HarnessAdapter {
+  return handle && isT3ThreadSessionId(handle.sessionId) ? t3Harness : legacy;
+}
+
 export function routeT3Harness(legacy: HarnessAdapter): HarnessAdapter {
   return {
     provider: legacy.provider,
-    capabilities: () => legacy.capabilities(),
+    capabilities: (handle) => routeT3HarnessForSession(legacy, handle).capabilities(handle),
     cancel: (handle, reason) =>
-      (isT3ThreadSessionId(handle.sessionId) ? t3Harness : legacy).cancel(handle, reason),
+      routeT3HarnessForSession(legacy, handle).cancel(handle, reason),
     reconcile: (handle, checkpoint) =>
-      (isT3ThreadSessionId(handle.sessionId) ? t3Harness : legacy).reconcile(
-        handle,
-        checkpoint,
-      ),
+      routeT3HarnessForSession(legacy, handle).reconcile(handle, checkpoint),
   };
 }

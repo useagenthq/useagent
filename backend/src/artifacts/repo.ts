@@ -1,36 +1,18 @@
 import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import { db, type Executor } from "../db/client";
 import {
-  artifacts,
+  ARTIFACT_LEGACY_WORKPIECE_ACTIONS,
+  artifactWorkpieceExports,
+  type ArtifactDescriptor,
+  type ArtifactWorkpieceDescriptor,
   type ArtifactWorkpieceKind,
   type ArtifactWorkpieceState,
-} from "../db/schema";
+} from "@skynet/artifact-workspace";
+import { artifacts } from "../db/schema";
 import { inferWorkpieceKind } from "./workpiece";
 
 export type ArtifactRecord = typeof artifacts.$inferSelect;
-
-export interface ArtifactDescriptor {
-  readonly id: string;
-  readonly run_id: string;
-  readonly thread_id: string;
-  readonly name: string;
-  readonly source_path: string;
-  readonly content_type: string;
-  readonly size_bytes: number;
-  readonly sha256: string;
-  readonly created_at: string;
-  readonly preview_url: string;
-  readonly download_url: string;
-  readonly workpiece: ArtifactWorkpieceDescriptor | null;
-}
-
-export interface ArtifactWorkpieceDescriptor {
-  readonly kind: ArtifactWorkpieceKind;
-  readonly source_version: string;
-  readonly state_revision: number;
-  readonly state_url: string;
-  readonly actions: readonly ["preview", "download", "edit"];
-}
+export type { ArtifactDescriptor, ArtifactWorkpieceDescriptor } from "@skynet/artifact-workspace";
 
 export function toArtifactDescriptor(row: ArtifactRecord): ArtifactDescriptor {
   const content = `/api/artifacts/${row.id}/content`;
@@ -52,7 +34,9 @@ export function toArtifactDescriptor(row: ArtifactRecord): ArtifactDescriptor {
           source_version: row.sha256,
           state_revision: row.workpieceRevision,
           state_url: `/api/artifacts/${row.id}/workpiece`,
-          actions: ["preview", "download", "edit"],
+          export_url: `/api/artifacts/${row.id}/workpiece/export`,
+          exports: artifactWorkpieceExports(row.workpieceKind),
+          actions: ARTIFACT_LEGACY_WORKPIECE_ACTIONS,
         }
       : null,
   };
@@ -127,6 +111,19 @@ export async function createArtifactRecord(input: {
     throw new Error("artifact editable companion conflicts with the existing publication");
   }
   return { row: existing, created: false };
+}
+
+export async function getArtifactForRunSourcePath(
+  runId: string,
+  sourcePath: string,
+  exec: Executor = db,
+): Promise<ArtifactRecord | null> {
+  const [row] = await exec
+    .select()
+    .from(artifacts)
+    .where(and(eq(artifacts.runId, runId), eq(artifacts.sourcePath, sourcePath)))
+    .limit(1);
+  return row ?? null;
 }
 
 export async function updateArtifactWorkpiece(input: {

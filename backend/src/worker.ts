@@ -1,5 +1,5 @@
 import { EventEmitter } from "node:events";
-import { mkdir } from "node:fs/promises";
+import { lstat, mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import {
   buildThreadPreamble,
@@ -12,7 +12,7 @@ import {
   type ApiStep,
 } from "./runs/repo";
 import type { EngineId, RunStatus, StepKind } from "./db/schema";
-import { adapters } from "./engines";
+import { resolveProviderRegistration, runProviderTurn } from "./engines";
 import { engineModelReadyForDispatch } from "./runs/engine-readiness";
 import type { EmitStep, EngineRunContext, RunInputFile } from "./engines/types";
 import { recallScopedMemory } from "./memory/team-memory";
@@ -33,6 +33,8 @@ import { claimNextRun, settleCommandForRun } from "./commands/dispatch";
 import {
   createFirstOutputMarker,
   createRunTimer,
+  RUN_TIMING_OUTCOMES,
+  RUN_TIMING_STAGES,
   type RunStageTimer,
 } from "./runs/run-timing";
 import { listRunUploads } from "./uploads/repo";
@@ -124,6 +126,45 @@ function abortableSleep(ms: number, signal: AbortSignal): Promise<void> {
     }, ms);
     signal.addEventListener("abort", onAbort, { once: true });
   });
+}
+
+type InitializeGitBoundary = (workdir: string) => Promise<boolean>;
+
+const initializeGitBoundary: InitializeGitBoundary = async (workdir) => {
+  const exitCode = await Bun.spawn(["git", "init", "-q"], {
+    cwd: workdir,
+    stdout: "ignore",
+    stderr: "ignore",
+  }).exited.catch(() => null);
+  return exitCode === 0;
+};
+
+async function hasGitBoundary(workdir: string): Promise<boolean> {
+  try {
+    const gitDirectory = await lstat(join(workdir, ".git"));
+    if (!gitDirectory.isDirectory()) return false;
+    return (await lstat(join(workdir, ".git", "HEAD"))).isFile();
+  } catch {
+    return false;
+  }
+}
+
+/** Ensure the thread jail has a project boundary. Resumed turns avoid spawning
+ * `git init` once the boundary already exists; initialization remains best-effort. */
+export async function ensureRunWorkdir(
+  workdir: string,
+  initializeGit: InitializeGitBoundary = initializeGitBoundary,
+): Promise<"hit" | "ready" | "unavailable"> {
+  await mkdir(workdir, { recursive: true });
+  if (await hasGitBoundary(workdir)) return RUN_TIMING_OUTCOMES.hit;
+  try {
+    if (!(await initializeGit(workdir))) return RUN_TIMING_OUTCOMES.unavailable;
+    return (await hasGitBoundary(workdir))
+      ? RUN_TIMING_OUTCOMES.ready
+      : RUN_TIMING_OUTCOMES.unavailable;
+  } catch {
+    return RUN_TIMING_OUTCOMES.unavailable;
+  }
 }
 
 // Optional test/dev knob: collapse the scripted per-step delay so a run
@@ -596,8 +637,7 @@ async function runEngine(
     return;
   }
 
-  const adapter = adapters[engineId];
-  if (!adapter) {
+  if (!resolveProviderRegistration(engineId)) {
     await finalizeRun(runId, "failed", `unknown engine: ${engineId}`, 0);
     bus.emit(channel(runId), { type: "end", status: "failed" } satisfies BusEvent);
     return;
@@ -608,16 +648,18 @@ async function runEngine(
   // workdir — the engine's own on-disk session store. That gives engines with
   // native session support (opencode `-c`) FULL first-party conversation memory
   // across turns, reference bot-style, instead of a reconstructed text preamble.
+  const timing = createRunTimer(runId, threadId);
   const workdir = join(RUNS_ROOT, threadId);
-  await mkdir(workdir, { recursive: true });
   // Make the workdir a self-contained project root. A `.git` boundary stops an
   // engine (notably OpenCode, which resolves its project by walking UP from cwd)
   // from escaping into the real repo and executing there. Best-effort.
-  await Bun.spawn(["git", "init", "-q"], {
-    cwd: workdir,
-    stdout: "ignore",
-    stderr: "ignore",
-  }).exited.catch(() => {});
+  const endWorkdirBoundary = timing.begin(RUN_TIMING_STAGES.workdirBoundary);
+  try {
+    endWorkdirBoundary(await ensureRunWorkdir(workdir));
+  } catch (error) {
+    endWorkdirBoundary(RUN_TIMING_OUTCOMES.failure);
+    throw error;
+  }
 
   let idx = firstEngineStep;
   let summary: string | null = null;
@@ -641,7 +683,6 @@ async function runEngine(
 
   // Perf Phase 0: stage timer for the adapter's startup phases. Same durable
   // lane as the worker spans (absolute epoch ms keeps the instances coherent).
-  const timing = createRunTimer(runId, threadId);
   const markFirstOutput = createFirstOutputMarker(timing);
 
   const ctx: EngineRunContext = {
@@ -665,12 +706,15 @@ async function runEngine(
     commandSessionId,
     commandProvider,
     commandCatalogRevision,
-    // Durable fire-and-forget: the id is saved the moment the engine reveals it,
-    // so even a later-failing run leaves a resumable session for the next turn.
+    // OpenCode awaits this durability boundary before dispatching. Keep the
+    // existing rejection handler for compatibility with adapters that still
+    // save best-effort, while returning the original promise to awaited callers.
     saveEngineSessionId: (sid) => {
-      void setRunEngineSession(runId, sid).catch((err) =>
+      const persistence = setRunEngineSession(runId, sid);
+      void persistence.catch((err) =>
         console.error(`[worker] failed to persist engine session id for ${runId}:`, err),
       );
+      return persistence;
     },
     signal,
     emit,
@@ -701,14 +745,15 @@ async function runEngine(
   const endTurnSpan = timing.begin("engine.turn");
 
   try {
-    await adapter.run(ctx);
+    const dispatched = await runProviderTurn(engineId, ctx);
+    if (!dispatched) throw new Error(`provider registration disappeared: ${engineId}`);
     // Durable cancellation DOMINATES a coincident provider completion (Blocker 2): a
     // user cancel aborts ctx.signal, but some ACP agents (codex) finish the turn and
     // return NORMALLY instead of erroring. `terminalOnReturn` (pure, tested) resolves
     // the terminal: a durably-accepted cancel -> "Stopped by user" (failed); else the
     // provider's completion. Finalize transactionally (a `completed` also enqueues the
     // durable memory capture in one tx). Exactly ONE finalize + ONE terminal end event;
-    // the adapter already emitted its terminal step, so no duplicate `done`.
+    // the provider turn already emitted its terminal step, so no duplicate `done`.
     const outcome = terminalOnReturn(wasCancelled(), summary);
     await finalizeRun(runId, outcome.status, outcome.summary, summaryDuration ?? Date.now() - startedAt);
     bus.emit(channel(runId), { type: "end", status: outcome.status } satisfies BusEvent);

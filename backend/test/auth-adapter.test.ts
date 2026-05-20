@@ -18,6 +18,7 @@ describe("isPublicApiPath — the allowlist is the ONLY escape from org scoping"
     expect(isPublicApiPath("/api/auth/sign-in")).toBe(true);
     expect(isPublicApiPath("/api/auth/session")).toBe(true);
     expect(isPublicApiPath("/api/slack/events")).toBe(true); // signature verified
+    expect(isPublicApiPath("/api/internal/gateway-approval/consume")).toBe(true);
   });
 
   test("every domain route is protected (not on the allowlist)", () => {
@@ -28,6 +29,7 @@ describe("isPublicApiPath — the allowlist is the ONLY escape from org scoping"
       "/api/memory",
       "/api/knowledge",
       "/api/skills",
+      "/api/automations",
       "/api/schedules",
       "/api/fleet",
       "/api/repos",
@@ -36,6 +38,7 @@ describe("isPublicApiPath — the allowlist is the ONLY escape from org scoping"
       "/api/commands",
       "/api/mcp/knowledge",
       "/api/provider/openai/v1/responses",
+      "/api/gateway/approvals",
     ]) {
       expect(isPublicApiPath(p)).toBe(false);
     }
@@ -80,5 +83,17 @@ describe("adapter end-to-end through the real app", () => {
     expect(res.status).toBe(200);
     const body = (await res.json()) as { secrets?: unknown[] };
     expect(Array.isArray(body.secrets)).toBe(true);
+  });
+
+  test("the approval mint route is mounted behind org auth", async () => {
+    const res = await server.fetch(
+      new Request(BASE + "/api/gateway/approvals", {
+        method: "POST",
+        headers: { origin: ORIGIN, "content-type": "application/json" },
+        body: JSON.stringify({}),
+      }),
+    );
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: "invalid_run_id" });
   });
 });

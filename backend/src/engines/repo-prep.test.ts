@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import type { SandboxHandle } from "../sandboxes/provider";
 import type { EngineRunContext } from "./types";
 import { ensureRepoClone, prepareRepos, shq } from "./repo-prep";
+import { RUN_TIMING_OUTCOMES, RUN_TIMING_STAGES, type TimingSpanEnd } from "../runs/run-timing";
 
 // Slice 1 + Phase 5 (non-destructive hardening): ONE shared, engine-neutral repository preparer.
 // Exercised with a fake sandbox (records every executeCommand + env) so script construction,
@@ -44,14 +45,25 @@ function fakeSandbox(opts: { state?: "reuse" | "branch" | "owned-stale" | "forei
   };
   return { sandbox: { process } as unknown as SandboxHandle, calls };
 }
-function fakeCtx(repos?: string[]): { ctx: EngineRunContext; emits: { label?: string }[] } {
+function fakeCtx(repos?: string[]): {
+  ctx: EngineRunContext;
+  emits: { label?: string }[];
+  timing: { stage: string; outcome?: string }[];
+} {
   const emits: { label?: string }[] = [];
+  const timing: { stage: string; outcome?: string }[] = [];
   const ctx = {
     emit: async (s: { label?: string }) => { emits.push(s); return "step-id"; },
     signal: new AbortController().signal,
     repos,
+    timing: {
+      begin: (stage: string): TimingSpanEnd => (outcome) => {
+        timing.push({ stage, outcome });
+      },
+      mark: () => {},
+    },
   } as unknown as EngineRunContext;
-  return { ctx, emits };
+  return { ctx, emits, timing };
 }
 const cloneCmd = (calls: Call[]) => calls.find((c) => /git clone/.test(c.cmd));
 const idCmd = (calls: Call[]) => calls.find((c) => /echo state:absent/.test(c.cmd) && !/git clone/.test(c.cmd));
@@ -224,8 +236,22 @@ describe("repo-prep: shared engine-neutral repository preparation", () => {
 
   test("no repos selected is a no-op (bare thread)", async () => {
     const { sandbox, calls } = fakeSandbox();
-    const { ctx } = fakeCtx(undefined);
+    const { ctx, timing } = fakeCtx(undefined);
     await prepareRepos(sandbox, "/w", ctx);
     expect(calls).toHaveLength(0);
+    expect(timing).toEqual([
+      { stage: RUN_TIMING_STAGES.repoPrep, outcome: RUN_TIMING_OUTCOMES.skipped },
+    ]);
+  });
+
+  test("prepareRepos records one low-cardinality success outcome across selected repos", async () => {
+    const { sandbox } = fakeSandbox({ state: "absent" });
+    const { ctx, timing } = fakeCtx(["acme/one", "acme/two"]);
+
+    await prepareRepos(sandbox, "/w", ctx);
+
+    expect(timing).toEqual([
+      { stage: RUN_TIMING_STAGES.repoPrep, outcome: RUN_TIMING_OUTCOMES.success },
+    ]);
   });
 });

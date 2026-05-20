@@ -32,6 +32,14 @@ import { EditorPane } from "@/components/chat/editor-pane";
 import type { NativeSnapshot } from "@/components/chat/native-store";
 import { OrbBootIndicator } from "@/components/chat/orb-boot-indicator";
 import { type PendingQuestion, selectPendingQuestion } from "@/components/chat/question-state";
+import {
+  RAIL_DEFAULT,
+  RAIL_MAX,
+  RAIL_MIN,
+  RailResizer,
+  railWidthForKey,
+  railWidthFromPointer,
+} from "@/components/chat/rail-resizer";
 import type { SlashCommand } from "@/components/chat/slash-command";
 import { SubagentChips } from "@/components/chat/subagent-pane";
 import { TerminalPane } from "@/components/chat/terminal-pane";
@@ -50,12 +58,6 @@ import { shouldRetireOptimistic, useThreadStream } from "@/components/chat/use-t
 import * as SegmentedControl from "@/components/ui/segmented-control";
 import { backendFetch } from "@/lib/backend-fetch";
 import { cnExt as cn } from "@/utils/cn";
-
-/** Narrowest useful rail — keeps the terminal/desktop panes workable. */
-const RAIL_MIN = 280;
-/** Absolute ceiling in addition to the container-relative 60% drag ceiling. */
-const RAIL_MAX = 960;
-const RAIL_DEFAULT = 480;
 
 function StatusPill({ status }: { status: RunStatus }) {
   const live = status === "queued" || status === "running";
@@ -489,49 +491,31 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
     const saved = Number(localStorage.getItem("skynet.rail-width"));
     if (Number.isFinite(saved) && saved >= RAIL_MIN) setRailWidth(saved);
   }, []);
-  function startRailDrag(e: React.PointerEvent<HTMLElement>) {
-    e.preventDefault();
-    const handle = e.currentTarget;
-    // Pointer capture keeps move events on the handle even over the terminal /
-    // desktop iframes, which would otherwise swallow the drag.
-    handle.setPointerCapture(e.pointerId);
-    const onMove = (ev: PointerEvent) => {
-      const body = bodyRef.current;
-      if (!body) return;
-      const r = body.getBoundingClientRect();
-      // Rail right edge sits at the body's right padding edge (p-3 = 12px).
-      const max = Math.min(r.width * 0.6, RAIL_MAX);
-      const w = Math.min(Math.max(r.right - 12 - ev.clientX, RAIL_MIN), max);
-      setRailWidth(Math.round(w));
-    };
-    const onUp = () => {
-      handle.removeEventListener("pointermove", onMove);
-      handle.removeEventListener("pointerup", onUp);
-      setRailWidth((w) => {
-        if (w !== null) localStorage.setItem("skynet.rail-width", String(w));
-        return w;
-      });
-    };
-    handle.addEventListener("pointermove", onMove);
-    handle.addEventListener("pointerup", onUp);
+  function resizeRailFromPointer(pointerX: number) {
+    const body = bodyRef.current;
+    if (!body) return;
+    const bounds = body.getBoundingClientRect();
+    setRailWidth(
+      railWidthFromPointer({
+        containerRight: bounds.right,
+        containerWidth: bounds.width,
+        pointerX,
+      }),
+    );
   }
-  function resizeRailWithKeyboard(event: React.KeyboardEvent<HTMLElement>) {
+  function persistRailWidth() {
+    setRailWidth((width) => {
+      if (width !== null) localStorage.setItem("skynet.rail-width", String(width));
+      return width;
+    });
+  }
+  function resizeRailWithKeyboard(key: string) {
     const containerMax = bodyRef.current
       ? Math.min(bodyRef.current.getBoundingClientRect().width * 0.6, RAIL_MAX)
       : RAIL_MAX;
     const current = railWidth ?? Math.min(RAIL_DEFAULT, containerMax);
-    const next =
-      event.key === "ArrowLeft"
-        ? Math.min(current + 16, containerMax)
-        : event.key === "ArrowRight"
-          ? Math.max(current - 16, RAIL_MIN)
-          : event.key === "Home"
-            ? RAIL_MIN
-            : event.key === "End"
-              ? containerMax
-              : null;
+    const next = railWidthForKey({ key, current, maximum: containerMax });
     if (next === null) return;
-    event.preventDefault();
     const rounded = Math.round(next);
     setRailWidth(rounded);
     localStorage.setItem("skynet.rail-width", String(rounded));
@@ -705,21 +689,15 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
         </section>
 
         {railOpen && (
-          <hr
-            data-testid="rail-resize-grip"
-            tabIndex={0}
-            aria-orientation="vertical"
-            aria-label="Resize the side panel; double-click to reset"
-            aria-valuemin={RAIL_MIN}
-            aria-valuemax={RAIL_MAX}
-            aria-valuenow={railWidth ?? RAIL_DEFAULT}
-            onPointerDown={startRailDrag}
+          <RailResizer
+            value={railWidth ?? RAIL_DEFAULT}
+            onMove={resizeRailFromPointer}
+            onCommit={persistRailWidth}
             onKeyDown={resizeRailWithKeyboard}
-            onDoubleClick={() => {
+            onReset={() => {
               setRailWidth(null);
               localStorage.removeItem("skynet.rail-width");
             }}
-            className="before:bg-stroke-soft-200 hover:before:bg-primary-base focus-visible:before:bg-primary-base relative -mx-1.5 hidden w-3 shrink-0 cursor-col-resize touch-none self-stretch border-0 outline-none before:pointer-events-none before:absolute before:left-1/2 before:top-1/2 before:h-10 before:w-1 before:-translate-x-1/2 before:-translate-y-1/2 before:rounded-full before:content-[''] md:block"
           />
         )}
 

@@ -1,7 +1,15 @@
 import { and, eq } from "drizzle-orm";
 import { db } from "../../db/client";
-import { runs } from "../../db/schema";
+import { runs, type MemoryScope } from "../../db/schema";
 import type { ToolTokenClaims } from "./token";
+
+export interface AuthorizedToolRun {
+  readonly id: string;
+  readonly orgId: string;
+  readonly userId: string | null;
+  readonly threadId: string;
+  readonly memoryScope: MemoryScope;
+}
 
 /**
  * A tool capability is usable only while its bound turn is live.
@@ -18,7 +26,51 @@ import type { ToolTokenClaims } from "./token";
  * closed; attribution resolves the active run at call time.
  */
 export async function hasMatchingRunningToolRun(claims: ToolTokenClaims): Promise<boolean> {
-  return (await resolveToolRunIdentity(claims)) !== null;
+  return (await resolveAuthorizedToolRun(claims)) !== null;
+}
+
+/**
+ * Resolve the single live database row authorized by a tool capability.
+ *
+ * This is the gateway's only current-run lookup. Callers that need persisted
+ * run attributes (for example memory scope or event attribution) consume this
+ * row instead of independently selecting a newest or fallback run.
+ */
+export async function resolveAuthorizedToolRun(
+  claims: ToolTokenClaims,
+): Promise<AuthorizedToolRun | null> {
+  const identity = and(
+    eq(runs.orgId, claims.orgId),
+    eq(runs.threadId, claims.threadId),
+    eq(runs.status, "running"),
+  );
+  const rows = await db
+    .select({
+      id: runs.id,
+      orgId: runs.orgId,
+      userId: runs.userId,
+      threadId: runs.threadId,
+      memoryScope: runs.memoryScope,
+    })
+    .from(runs)
+    .where(claims.scope === "thread" ? identity : and(identity, eq(runs.id, claims.runId)))
+    .limit(2);
+  const [run] = rows;
+  if (rows.length !== 1 || !run) return null;
+  if (
+    run.orgId !== claims.orgId ||
+    run.threadId !== claims.threadId ||
+    (run.userId ?? "") !== claims.userId
+  ) {
+    return null;
+  }
+  return {
+    id: run.id,
+    orgId: run.orgId,
+    userId: run.userId,
+    threadId: run.threadId,
+    memoryScope: run.memoryScope,
+  };
 }
 
 /**
@@ -33,37 +85,13 @@ export async function hasMatchingRunningToolRun(claims: ToolTokenClaims): Promis
 export async function resolveToolRunIdentity(
   claims: ToolTokenClaims,
 ): Promise<ToolTokenClaims | null> {
-  if (claims.scope === "thread") {
-    const rows = await db
-      .select({ id: runs.id, userId: runs.userId })
-      .from(runs)
-      .where(
-        and(
-          eq(runs.orgId, claims.orgId),
-          eq(runs.threadId, claims.threadId),
-          eq(runs.status, "running"),
-        ),
-      )
-      .limit(2);
-    const [run] = rows;
-    // Ambiguity (two running rows = invariant breach) fails closed.
-    if (rows.length !== 1 || !run) return null;
-    const currentUserId = run.userId ?? "";
-    if (currentUserId !== claims.userId) return null;
-    return { ...claims, runId: run.id, userId: currentUserId };
-  }
-  const [run] = await db
-    .select({ userId: runs.userId })
-    .from(runs)
-    .where(
-      and(
-        eq(runs.id, claims.runId),
-        eq(runs.orgId, claims.orgId),
-        eq(runs.threadId, claims.threadId),
-        eq(runs.status, "running"),
-      ),
-    )
-    .limit(1);
-  if (!run || (run.userId ?? "") !== claims.userId) return null;
-  return claims;
+  const run = await resolveAuthorizedToolRun(claims);
+  if (!run) return null;
+  return {
+    ...claims,
+    orgId: run.orgId,
+    userId: run.userId ?? "",
+    threadId: run.threadId,
+    runId: run.id,
+  };
 }

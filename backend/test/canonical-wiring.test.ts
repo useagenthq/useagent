@@ -123,3 +123,105 @@ describe("canonical wiring: a settled Claude ACP run also populates canonical", 
     expect(canon.some((e) => e.kind === "done" || e.identity.nativeEventId === `${CRUN}-s2`)).toBe(false);
   });
 });
+
+describe("canonical wiring: a deliberately selected generic ACP run populates canonical", () => {
+  test("recorded ACP native events flow through the outbox with only supplied capabilities", async () => {
+    const runId = `cwa_${crypto.randomUUID()}`;
+    const sessionId = `ses_${crypto.randomUUID()}`;
+    const messageId = `msg_${crypto.randomUUID()}`;
+    await db.insert(runs).values({
+      id: runId,
+      prompt: "generic acp",
+      model: "provider-owned",
+      engine: "acp",
+      status: "running",
+      threadId: runId,
+    });
+    await db.insert(providerEvents).values([
+      {
+        id: `${runId}-session`,
+        runId,
+        threadId: runId,
+        seq: 0,
+        provider: "acp",
+        eventType: "session.started",
+        nativeSessionId: sessionId,
+        payload: JSON.stringify({
+          source: "acp",
+          capabilities: { streamingText: true, toolProgress: true },
+        }),
+      },
+      {
+        id: `${runId}-start`,
+        runId,
+        threadId: runId,
+        seq: 1,
+        provider: "acp",
+        eventType: "part.step-start",
+        nativeSessionId: sessionId,
+        nativeMessageId: messageId,
+        nativePartId: `${messageId}-start`,
+        payload: "{}",
+      },
+      {
+        id: `${runId}-text`,
+        runId,
+        threadId: runId,
+        seq: 2,
+        provider: "acp",
+        eventType: "part.text",
+        nativeSessionId: sessionId,
+        nativeMessageId: messageId,
+        nativePartId: `${messageId}-text`,
+        payload: JSON.stringify({ text: "native ACP answer" }),
+      },
+      {
+        id: `${runId}-finish`,
+        runId,
+        threadId: runId,
+        seq: 3,
+        provider: "acp",
+        eventType: "part.step-finish",
+        nativeSessionId: sessionId,
+        nativeMessageId: messageId,
+        nativePartId: `${messageId}-finish`,
+        payload: "{}",
+      },
+    ]);
+
+    await finalizeRun(runId, "completed", "native ACP answer", 100);
+    expect((await drainCanonicalization(runId))?.state).toBe("complete");
+
+    const canonical = (await loadCanonicalThread(runId, 0)).filter((event) => event.runId === runId);
+    expect(canonical.some((event) => event.kind === "message.delta" && event.text === "native ACP answer")).toBe(true);
+    const session = canonical.find((event) => event.kind === "session.started");
+    expect(session?.kind).toBe("session.started");
+    if (session?.kind === "session.started") {
+      expect(session.source).toBe("acp");
+      expect(session.capabilities.streamingText).toBe(true);
+      expect(session.capabilities.toolProgress).toBe(true);
+      expect(session.capabilities.reasoning).toBe(false);
+      expect(session.capabilities.childSessions).toBe(false);
+      expect(session.capabilities.approvals).toBe(false);
+      expect(session.capabilities.usage).toBe(false);
+    }
+  });
+
+  test("finalization does not fabricate an ACP session capability event", async () => {
+    const runId = `cwa_empty_${crypto.randomUUID()}`;
+    await db.insert(runs).values({
+      id: runId,
+      prompt: "generic acp without native session metadata",
+      model: "provider-owned",
+      engine: "acp",
+      status: "running",
+      threadId: runId,
+    });
+
+    await finalizeRun(runId, "completed", "done", 100);
+    expect((await drainCanonicalization(runId))?.state).toBe("complete");
+
+    const canonical = (await loadCanonicalThread(runId, 0)).filter((event) => event.runId === runId);
+    expect(canonical.some((event) => event.kind === "session.started")).toBe(false);
+  });
+});
