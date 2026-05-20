@@ -71,14 +71,9 @@ export function createProviderConnectionsRoutes(input: {
   providerConnectionsRoutes.post("/openai/chatgpt-oauth/start", async (c) => {
     const scope = requireUserScope(c);
     if (!scope) return c.json({ error: "user_required" }, 403);
-    let body: Record<string, unknown> = {};
-    try {
-      body = await c.req.json() as Record<string, unknown>;
-    } catch {
-      body = {};
-    }
-    const loginMethod = body.loginMethod === "device_code" ? "device_code" : "chatgpt";
-    const login = await codexChatGptOAuth.start({ scope, loginMethod });
+    // Hosted connections cannot receive Codex's loopback browser callback. Keep
+    // this server-side invariant so stale clients cannot restart that flow.
+    const login = await codexChatGptOAuth.start({ scope, loginMethod: "device_code" });
     return c.json({ login });
   });
 

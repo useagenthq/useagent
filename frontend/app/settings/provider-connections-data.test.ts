@@ -69,9 +69,8 @@ describe("provider connection presentation", () => {
 
   test("accepts only browser-safe ChatGPT login URLs", () => {
     expect(safeExternalAuthUrl("https://chatgpt.com/auth")).toBe("https://chatgpt.com/auth");
-    expect(safeExternalAuthUrl("http://localhost:1455/device")).toBe(
-      "http://localhost:1455/device",
-    );
+    expect(safeExternalAuthUrl("http://localhost:1455/device")).toBeNull();
+    expect(safeExternalAuthUrl("http://127.0.0.1:1455/device")).toBeNull();
     expect(safeExternalAuthUrl("javascript:alert(1)")).toBeNull();
     expect(safeExternalAuthUrl("not a url")).toBeNull();
 
