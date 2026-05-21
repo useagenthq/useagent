@@ -1,15 +1,15 @@
+import { RiCameraLine, RiPencilLine } from "@remixicon/react";
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
-import { RiCameraLine, RiPencilLine } from "@remixicon/react";
+import { AppShell } from "@/components/shell/app-shell";
+import { ThreadSidebar } from "@/components/shell/thread-sidebar";
 import * as Badge from "@/components/ui/badge";
 import * as Button from "@/components/ui/button";
-import { AgentSidebar } from "@/components/shell/agent-sidebar";
-import { AppShell } from "@/components/shell/app-shell";
 import { GeneralCard } from "./general-card";
 import { ProviderConnectionsCard } from "./provider-connections-card";
 import { SecretsCard } from "./secrets-card";
-import { SettingsCard, SettingsRow } from "./settings-rows";
 import { SettingsRail } from "./settings-rail";
+import { SettingsCard, SettingsRow } from "./settings-rows";
 import { TeamCard } from "./team-card";
 import { UsageMeters } from "./usage-meters";
 
@@ -56,7 +56,7 @@ function Section({
 
 export default function SettingsPage() {
   return (
-    <AppShell activeTab="agent" sidebar={<AgentSidebar active="settings" />}>
+    <AppShell sidebar={<ThreadSidebar active="settings" />}>
       <div className="mx-auto w-full max-w-4xl px-6 py-8 lg:px-10">
         <h1 className="text-display-sm text-text-strong-950">Settings</h1>
 
@@ -76,7 +76,11 @@ export default function SettingsPage() {
             </Section>
 
             {/* Usage */}
-            <Section id="usage" title="Usage" description="Your plan and model consumption this cycle.">
+            <Section
+              id="usage"
+              title="Usage"
+              description="Your plan and model consumption this cycle."
+            >
               <SettingsCard className="mb-4">
                 <SettingsRow label="Plan" description="Free while you get started.">
                   <Badge.Root variant="light" size="medium" color="gray">
@@ -93,7 +97,11 @@ export default function SettingsPage() {
             </Section>
 
             {/* Machine */}
-            <Section id="machine" title="Machine" description="The saved VM state new sessions boot from.">
+            <Section
+              id="machine"
+              title="Machine"
+              description="The saved VM state new sessions boot from."
+            >
               <div className="flex flex-col gap-3 rounded-xl border border-stroke-soft-200 bg-bg-weak-50 p-4">
                 <div className="flex items-center gap-2">
                   <span className="inline-flex items-center rounded-md bg-bg-white-0 px-2 py-0.5 font-mono text-[0.6875rem] text-text-sub-600 ring-1 ring-inset ring-stroke-soft-200">
@@ -102,7 +110,12 @@ export default function SettingsPage() {
                 </div>
                 <p className="text-paragraph-xs text-text-sub-600">Node 24 · pnpm · Playwright</p>
                 <div className="flex flex-wrap gap-2">
-                  <Button.Root className="rounded-full" variant="neutral" mode="stroke" size="xsmall">
+                  <Button.Root
+                    className="rounded-full"
+                    variant="neutral"
+                    mode="stroke"
+                    size="xsmall"
+                  >
                     <Button.Icon as={RiPencilLine} />
                     Edit machine
                   </Button.Root>
@@ -115,7 +128,11 @@ export default function SettingsPage() {
             </Section>
 
             {/* Secrets */}
-            <Section id="secrets" title="Secrets" description="Persisted for every future session on this workspace.">
+            <Section
+              id="secrets"
+              title="Secrets"
+              description="Persisted for every future session on this workspace."
+            >
               <SecretsCard />
             </Section>
 

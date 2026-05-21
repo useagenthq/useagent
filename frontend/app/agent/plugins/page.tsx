@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
-import { AgentSidebar } from "@/components/shell/agent-sidebar";
 import { AppShell } from "@/components/shell/app-shell";
+import { LibrarySidebar } from "@/components/shell/library-sidebar";
 import { PluginsPanel } from "./plugins-panel";
 
 export const metadata: Metadata = {
@@ -10,7 +10,7 @@ export const metadata: Metadata = {
 
 export default function AgentPluginsPage() {
   return (
-    <AppShell activeTab="agent" sidebar={<AgentSidebar active="plugins" />}>
+    <AppShell sidebar={<LibrarySidebar active="plugins" />}>
       <div className="flex justify-center p-6 lg:p-12">
         <div className="w-full max-w-sm">
           <h1 className="sr-only">Plugins</h1>

@@ -1,9 +1,8 @@
 import type { Metadata } from "next";
-
-import { AgentSidebar } from "@/components/shell/agent-sidebar";
-import { AppShell } from "@/components/shell/app-shell";
 import { fetchSkills } from "@/app/skills/skills-api";
 import { mockSkills } from "@/app/skills/skills-data";
+import { AppShell } from "@/components/shell/app-shell";
+import { LibrarySidebar } from "@/components/shell/library-sidebar";
 import { PlaybooksView } from "./playbooks-view";
 
 export const metadata: Metadata = {
@@ -27,7 +26,7 @@ export default async function PlaybooksPage() {
   }
 
   return (
-    <AppShell activeTab="agent" sidebar={<AgentSidebar active="playbooks" />}>
+    <AppShell sidebar={<LibrarySidebar active="playbooks" />}>
       <PlaybooksView
         initialPlaybooks={initialPlaybooks}
         initialLive={initialLive}

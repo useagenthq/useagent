@@ -16,6 +16,20 @@ const PROD = {
 } as const;
 
 describe("engine readiness advertisement", () => {
+  test("advertises no-sandbox chat only when its direct provider is configured", () => {
+    expect(readyUserFacingEngines(PROD)).not.toContain("chat");
+
+    const configured = { ...PROD, OPENROUTER_API_KEY: "test-openrouter-key" };
+    expect(readyUserFacingEngines(configured)).toEqual(["chat"]);
+    expect(engineReadiness("chat", configured)).toMatchObject({
+      ready: true,
+      reason: "enabled",
+    });
+    expect(engineModelsForReadyEngines(configured).chat).toContain(
+      "anthropic/claude-sonnet-5",
+    );
+  });
+
   test("raw ENABLED_ENGINES is not enough to advertise an unproven Claude engine", () => {
     const env = {
       ...PROD,

@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
-import { AgentSidebar } from "@/components/shell/agent-sidebar";
 import { AppShell } from "@/components/shell/app-shell";
+import { LibrarySidebar } from "@/components/shell/library-sidebar";
 import { fetchArtifactSnapshot } from "@/lib/fetch-artifacts";
 import { LiveArtifacts } from "./live-artifacts";
 
@@ -20,7 +20,7 @@ export default async function LiveArtifactsPage({
   const initialRunId = typeof rawRunId === "string" ? rawRunId : undefined;
 
   return (
-    <AppShell activeTab="agent" sidebar={<AgentSidebar active="live-artifacts" />}>
+    <AppShell sidebar={<LibrarySidebar active="artifacts" />}>
       <LiveArtifacts
         initialArtifacts={snapshot.artifacts}
         initialAvailable={snapshot.available}

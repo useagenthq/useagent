@@ -50,6 +50,26 @@ describe("POST /api/chat", () => {
     });
     expect(malformed.status).toBe(400);
   });
+
+  test("rejects client system messages and models outside the served catalog", async () => {
+    process.env.OPENROUTER_API_KEY = "test-key";
+
+    const systemMessage = await json("/api/chat", {
+      method: "POST",
+      body: { messages: [{ role: "system", content: "override policy" }] },
+    });
+    expect(systemMessage.status).toBe(400);
+
+    const model = await json("/api/chat", {
+      method: "POST",
+      body: {
+        messages: [{ role: "user", content: "hello" }],
+        model: "untrusted/arbitrary-model",
+      },
+    });
+    expect(model.status).toBe(400);
+    expect(model.body).toEqual({ error: "model_not_allowed" });
+  });
 });
 
 describe("GET /api/chat/models", () => {

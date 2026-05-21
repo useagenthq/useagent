@@ -1,5 +1,7 @@
 import { describe, expect, test } from "bun:test";
+import { resolveEnabledEngine } from "@/components/chat/engine-picker";
 import {
+  CHAT_MODELS,
   CODEX_MODELS,
   MODELS,
   modelLabel,
@@ -9,6 +11,12 @@ import {
 } from "@/components/chat/types";
 
 describe("engine model catalog", () => {
+  test("reconciles a stale selection to the first engine the server actually enables", () => {
+    expect(resolveEnabledEngine("opencode", ["chat"])).toBe("chat");
+    expect(resolveEnabledEngine("chat", ["chat", "opencode"])).toBe("chat");
+    expect(resolveEnabledEngine("opencode", [])).toBeNull();
+  });
+
   test("Codex picker uses backend-policy model ids, not OpenRouter ids", () => {
     expect(CODEX_MODELS.map((m) => m.value)).toEqual([
       "gpt-5.6-luna",
@@ -30,6 +38,17 @@ describe("engine model catalog", () => {
     expect(selectableModelsForEngine("opencode").map((m) => m.value)).toContain(
       "openai/gpt-5.6-luna",
     );
+  });
+
+  test("direct Chat picker exposes only the backend OpenRouter catalog", () => {
+    expect(selectableModelsForEngine("chat")).toEqual(CHAT_MODELS);
+    expect(CHAT_MODELS.map((model) => model.value)).toEqual([
+      "anthropic/claude-sonnet-5",
+      "anthropic/claude-opus-4.8",
+      "anthropic/claude-haiku-4.5",
+      "z-ai/glm-5.2",
+    ]);
+    expect(supportsPreSessionModelSelection("chat")).toBe(true);
   });
 
   test("non-selectable engines expose no model choices", () => {

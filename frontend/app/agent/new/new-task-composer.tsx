@@ -1,15 +1,11 @@
 "use client";
 
-import {
-  RiAddLine,
-  RiBookMarkedLine,
-  RiCpuLine,
-  RiFlashlightLine,
-} from "@remixicon/react";
+import { RiAddLine, RiBookMarkedLine, RiCpuLine, RiFlashlightLine } from "@remixicon/react";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useEnabledEngineConfig } from "@/components/chat/engine-picker";
+import { resolveEnabledEngine, useEnabledEngineConfig } from "@/components/chat/engine-picker";
 import { MemoryScopePicker } from "@/components/chat/memory-scope-picker";
+import { RunUploadChips, useRunUploads } from "@/components/chat/run-uploads";
 import {
   filterCommands,
   type SlashCommand,
@@ -29,12 +25,12 @@ import { RepoBranchBar } from "./repo-branch-bar";
 import { type RepoItem, RepoMultiPicker } from "./repo-multi-picker";
 import { type PickerGroup, SearchablePicker } from "./searchable-picker";
 import type { Skill } from "./skills-data";
-import { RunUploadChips, useRunUploads } from "@/components/chat/run-uploads";
 
 /** Composer-specific caption for each selectable engine (POST /api/runs `engine`).
  * Partial because the legacy EngineId values are never offered in the picker, so
  * they need no caption. */
 const ENGINE_CAPTIONS: Partial<Record<EngineId, string>> = {
+  chat: "direct model · no sandbox",
   opencode: "any model · cloud sandbox",
   claude: "cloud sandbox",
   codex: "cloud sandbox",
@@ -51,7 +47,13 @@ const ENGINE_CAPTIONS: Partial<Record<EngineId, string>> = {
  * scope and the pinned skill all ride into POST /api/runs; on success it routes
  * to the run's /session view.
  */
-export function NewTaskComposer({ skills }: { skills: Skill[] }) {
+export function NewTaskComposer({
+  skills,
+  initialRepository = null,
+}: {
+  skills: Skill[];
+  initialRepository?: string | null;
+}) {
   const router = useRouter();
 
   const [prompt, setPrompt] = useState("");
@@ -89,6 +91,11 @@ export function NewTaskComposer({ skills }: { skills: Skill[] }) {
   const [error, setError] = useState<string | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const runUploads = useRunUploads();
+
+  useEffect(() => {
+    const resolved = resolveEnabledEngine(engineId, enabledEngines);
+    if (resolved && resolved !== engineId) setEngine(resolved);
+  }, [enabledEngines, engineId]);
 
   // Slash-command autocomplete for the "/" first token. ENGINE-AWARE: the catalog is the
   // SELECTED engine's real command list, cached server-side (GET /api/commands?engine=) so it
@@ -149,19 +156,30 @@ export function NewTaskComposer({ skills }: { skills: Skill[] }) {
           }[];
         };
         if (cancelled || !Array.isArray(data.repos)) return;
-        setRepos(
-          data.repos
-            .filter(
-              (r): r is { full_name: string; name?: string; private?: boolean; default_branch?: string } =>
-                !!r.full_name,
-            )
-            .map((r) => ({
-              full_name: r.full_name,
-              name: r.name ?? r.full_name,
-              private: r.private,
-              default_branch: r.default_branch ?? "main",
-            })),
-        );
+        const offeredRepos = data.repos
+          .filter(
+            (
+              r,
+            ): r is {
+              full_name: string;
+              name?: string;
+              private?: boolean;
+              default_branch?: string;
+            } => !!r.full_name,
+          )
+          .map((r) => ({
+            full_name: r.full_name,
+            name: r.name ?? r.full_name,
+            private: r.private,
+            default_branch: r.default_branch ?? "main",
+          }));
+        setRepos(offeredRepos);
+        if (
+          initialRepository &&
+          offeredRepos.some((repo) => repo.full_name === initialRepository)
+        ) {
+          setSelectedRepos([initialRepository]);
+        }
       } catch {
         // no repos configured — the picker shows nothing to select
       }
@@ -169,7 +187,7 @@ export function NewTaskComposer({ skills }: { skills: Skill[] }) {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [initialRepository]);
 
   // Live while the FIRST token is being typed ("/rev" but not "/review x"); a
   // trailing space ends completion. Mirrors composer.tsx exactly.
@@ -247,8 +265,7 @@ export function NewTaskComposer({ skills }: { skills: Skill[] }) {
     const playbookOptions = skills.filter((s) => s.kind === "playbook").map(toOption);
     const groups: PickerGroup[] = [{ options: [{ value: "", label: "None" }] }];
     if (skillOptions.length > 0) groups.push({ label: "Skills", options: skillOptions });
-    if (playbookOptions.length > 0)
-      groups.push({ label: "Playbooks", options: playbookOptions });
+    if (playbookOptions.length > 0) groups.push({ label: "Playbooks", options: playbookOptions });
     return groups;
   }, [skills]);
 
@@ -305,7 +322,7 @@ export function NewTaskComposer({ skills }: { skills: Skill[] }) {
       router.push(`/session/${data.id}`);
       // Keep `submitting` true through the navigation.
     } catch {
-      setError("Couldn't start the agent. Check the backend and try again.");
+      setError("Couldn't start the thread. Check the backend and try again.");
       setSubmitting(false);
     }
   }
@@ -313,7 +330,7 @@ export function NewTaskComposer({ skills }: { skills: Skill[] }) {
   return (
     <div>
       <div className="rounded-2xl border border-stroke-soft-200 bg-bg-white-0 shadow-regular-sm">
-      {/* No overflow-hidden: the slash-command popover drops below the textarea
+        {/* No overflow-hidden: the slash-command popover drops below the textarea
           and must float over the card edge instead of clipping at it (same rule
           as the chat composer card). */}
         <div className="flex flex-col gap-3 p-3.5">
@@ -349,8 +366,8 @@ export function NewTaskComposer({ skills }: { skills: Skill[] }) {
                 setCmdHighlight(0);
               }}
               rows={3}
-              placeholder="Describe the task - repo, goal, constraints..."
-              aria-label="Describe the task"
+              placeholder="Describe what you need - task, question, repo, constraints..."
+              aria-label="Describe what you need"
               onKeyDown={(event) => {
                 if (handleCmdKeys(event)) return; // consumed by the "/" popover
                 // Plain Enter submits (chat convention); Shift+Enter = newline.
@@ -414,11 +431,7 @@ export function NewTaskComposer({ skills }: { skills: Skill[] }) {
               repo is selected; every branch here is a real ref that rides into
               the run and is cloned. */}
           <div className="flex flex-wrap items-center justify-between gap-3 border-t border-stroke-soft-200 pt-3">
-            <RepoBranchBar
-              repos={selectedRepoItems}
-              value={branches}
-              onChange={setBranches}
-            />
+            <RepoBranchBar repos={selectedRepoItems} value={branches} onChange={setBranches} />
 
             <button
               type="button"
@@ -427,7 +440,7 @@ export function NewTaskComposer({ skills }: { skills: Skill[] }) {
               className="ml-auto inline-flex shrink-0 items-center gap-1.5 rounded-full bg-bg-strong-950 px-4 py-2 text-label-sm text-text-white-0 outline-none transition-opacity hover:opacity-90 focus-visible:ring-2 focus-visible:ring-stroke-strong-950 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-40"
             >
               <AsteriskMark className="size-4" />
-              {submitting ? "Starting…" : "Start agent"}
+              {submitting ? "Starting..." : "Start thread"}
             </button>
           </div>
         </div>

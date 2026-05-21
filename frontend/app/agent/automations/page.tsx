@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
-
-import { AgentSidebar } from "@/components/shell/agent-sidebar";
 import { AppShell } from "@/components/shell/app-shell";
+import { LibrarySidebar } from "@/components/shell/library-sidebar";
 import { AutomationsView } from "../schedules/automations-view";
 
 export const metadata: Metadata = {
@@ -11,7 +10,7 @@ export const metadata: Metadata = {
 
 export default function AutomationsPage() {
   return (
-    <AppShell activeTab="agent" sidebar={<AgentSidebar active="automations" />}>
+    <AppShell sidebar={<LibrarySidebar active="automations" />}>
       <AutomationsView />
     </AppShell>
   );

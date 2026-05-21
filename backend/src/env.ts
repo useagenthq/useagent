@@ -39,23 +39,29 @@ export function allowDevOrg(): boolean {
  * Claude/Codex ACP adapters are registered but still require an operator-provisioned
  * provider gateway and an explicit permission posture. They must never be activatable
  * through a direct `engine` on POST /api/runs - or any channel - unless an operator
- * explicitly opts in. The base set is the proven OpenCode/scripted path; the
+ * explicitly opts in. The base set is the proven Chat/OpenCode/scripted path; the
  * `ENABLED_ENGINES` env (comma list) only ADDS engines on top
  * (e.g. `ENABLED_ENGINES=claude,codex`) and can never disable the base. Read per
  * call so a deploy flips it without a rebuild; unknown ids are ignored.
  */
-const BASE_ENABLED_ENGINES: readonly EngineId[] = ["mock", "opencode", "daytona"];
+const BASE_ENABLED_ENGINES: readonly EngineId[] = ["mock", "opencode", "daytona", "chat"];
 
-export function enabledEngines(): Set<EngineId> {
+export function enabledEnginesForEnv(
+  env: Record<string, string | undefined>,
+): Set<EngineId> {
   const set = new Set<EngineId>(BASE_ENABLED_ENGINES);
-  const extra = process.env.ENABLED_ENGINES;
+  const extra = env.ENABLED_ENGINES;
   if (extra) {
     for (const raw of extra.split(",")) {
-      const id = raw.trim();
+      const id = raw.trim().toLowerCase();
       if ((ENGINE_IDS as readonly string[]).includes(id)) set.add(id as EngineId);
     }
   }
   return set;
+}
+
+export function enabledEngines(): Set<EngineId> {
+  return enabledEnginesForEnv(process.env);
 }
 
 /** True iff `engine` is permitted to run in this deployment. Fail closed: an

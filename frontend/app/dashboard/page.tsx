@@ -1,40 +1,39 @@
-import type { Metadata } from 'next';
 import {
   RiBookOpenLine,
   RiCheckboxCircleLine,
   RiPlayCircleLine,
   RiSparkling2Line,
-} from '@remixicon/react';
-
-import { backendFetch } from '@/lib/backend-fetch';
-import { AppShell } from '@/components/shell/app-shell';
-import { ChatSidebar } from '@/components/shell/chat-sidebar';
-import { ContributionsCard } from '@/components/dashboard/contributions-card';
-import { DashboardLiveRefresh } from '@/components/dashboard/dashboard-live-refresh';
+} from "@remixicon/react";
+import type { Metadata } from "next";
+import { ContributionsCard } from "@/components/dashboard/contributions-card";
 import {
   buildHeatmap,
   computeStats,
   extractCount,
   extractRuns,
   runsPerDay,
-} from '@/components/dashboard/dashboard-data';
-import { compactNumber, estimatedTokens } from '@/utils/format';
-import { RecentRunsTable } from '@/components/dashboard/recent-runs-table';
-import { RunsBarChartCard } from '@/components/dashboard/runs-bar-chart-card';
-import { RunsTrendCard } from '@/components/dashboard/runs-trend-card';
-import { StatCards, type StatItem } from '@/components/dashboard/stat-cards';
-import { WelcomeHeader } from '@/components/dashboard/welcome-header';
+} from "@/components/dashboard/dashboard-data";
+import { DashboardLiveRefresh } from "@/components/dashboard/dashboard-live-refresh";
+import { RecentRunsTable } from "@/components/dashboard/recent-runs-table";
+import { RunsBarChartCard } from "@/components/dashboard/runs-bar-chart-card";
+import { RunsTrendCard } from "@/components/dashboard/runs-trend-card";
+import { StatCards, type StatItem } from "@/components/dashboard/stat-cards";
+import { WelcomeHeader } from "@/components/dashboard/welcome-header";
+import { AppShell } from "@/components/shell/app-shell";
+import { ThreadSidebar } from "@/components/shell/thread-sidebar";
+import { backendFetch } from "@/lib/backend-fetch";
+import { compactNumber, estimatedTokens } from "@/utils/format";
 
 export const metadata: Metadata = {
-  title: 'Dashboard - skynet-a',
+  title: "Dashboard - skynet-a",
 };
 
 // Auth cookies are forwarded per-request, so this page must render dynamically.
-export const dynamic = 'force-dynamic';
+export const dynamic = "force-dynamic";
 
 async function getJson(path: string): Promise<unknown> {
   try {
-    const res = await backendFetch(path, { cache: 'no-store' });
+    const res = await backendFetch(path, { cache: "no-store" });
     if (!res.ok) return null;
     return await res.json();
   } catch {
@@ -43,20 +42,20 @@ async function getJson(path: string): Promise<unknown> {
 }
 
 function toMillis(value: string | number): number {
-  const n = typeof value === 'number' ? value : Date.parse(value);
+  const n = typeof value === "number" ? value : Date.parse(value);
   return Number.isFinite(n) ? n : 0;
 }
 
 export default async function DashboardPage() {
   const [runsData, skillsData, knowledgeData] = await Promise.all([
-    getJson('/api/runs'),
-    getJson('/api/skills'),
-    getJson('/api/knowledge'),
+    getJson("/api/runs"),
+    getJson("/api/skills"),
+    getJson("/api/knowledge"),
   ]);
 
   const runs = extractRuns(runsData);
-  const skillsCount = extractCount(skillsData, 'skills');
-  const knowledgeCount = extractCount(knowledgeData, 'records');
+  const skillsCount = extractCount(skillsData, "skills");
+  const knowledgeCount = extractCount(knowledgeData, "records");
 
   const stats = computeStats(runs);
   const week = runsPerDay(runs, 7);
@@ -72,38 +71,38 @@ export default async function DashboardPage() {
   const statItems: StatItem[] = [
     {
       icon: RiPlayCircleLine,
-      label: 'Total runs',
+      label: "Total runs",
       value: compactNumber(stats.total),
       delta: stats.running > 0 ? `${stats.running} live` : undefined,
-      deltaColor: 'blue',
+      deltaColor: "blue",
     },
     {
       icon: RiCheckboxCircleLine,
-      label: 'Completed today',
+      label: "Completed today",
       value: compactNumber(stats.completedToday),
       delta: stats.failed > 0 ? `${stats.failed} failed` : undefined,
-      deltaColor: 'red',
+      deltaColor: "red",
     },
     {
       icon: RiBookOpenLine,
-      label: 'Knowledge records',
+      label: "Knowledge records",
       value: compactNumber(knowledgeCount),
     },
     {
       icon: RiSparkling2Line,
-      label: 'Skills',
+      label: "Skills",
       value: compactNumber(skillsCount),
     },
   ];
 
   return (
-    <AppShell activeTab='chat' sidebar={<ChatSidebar />}>
+    <AppShell sidebar={<ThreadSidebar />}>
       <DashboardLiveRefresh />
-      <div className='mx-auto flex max-w-[1200px] flex-col gap-6 p-6 lg:p-8'>
+      <div className="mx-auto flex max-w-[1200px] flex-col gap-6 p-6 lg:p-8">
         <WelcomeHeader liveCount={stats.running} />
         <StatCards stats={statItems} />
 
-        <div className='grid grid-cols-1 gap-4 lg:grid-cols-2'>
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
           <RunsBarChartCard data={week} total={weekTotal} />
           <RunsTrendCard data={fortnight} tokensLabel={estimatedTokens(fortnightTotal)} />
         </div>

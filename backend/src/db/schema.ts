@@ -53,17 +53,19 @@ export type StepKind = "command" | "file" | "task" | "done";
 export const MEMORY_SCOPES = ["org", "personal"] as const;
 export type MemoryScope = (typeof MEMORY_SCOPES)[number];
 
-/** Which harness executes a run. `mock` is the scripted trace; the user-facing
- *  engines (opencode / claude / codex) ALL execute inside a per-thread Daytona
- *  cloud sandbox (src/engines/sandbox.ts). `daytona` and `claude-sdk` are legacy
- *  ids kept so pre-consolidation rows still resolve (aliased in the registry);
- *  `acp` is the ACP bridge (registered, hidden from the UI). This list is THE
- *  accepted set at every API boundary (runs, schedules, Slack default). */
+/** Which harness executes a run. `mock` is the scripted trace; `chat` is the
+ *  no-sandbox conversational OpenRouter path; the agent engines (opencode /
+ *  claude / codex) execute inside the selected per-thread Cube or Daytona
+ *  sandbox. `daytona` and `claude-sdk` are legacy ids kept so
+ *  pre-consolidation rows still resolve (aliased in the registry); `acp` is the
+ *  ACP bridge (registered, hidden from the UI). This list is THE accepted set at
+ *  every API boundary (runs, schedules, Slack default). */
 export const ENGINE_IDS = [
   "mock",
   "opencode",
   "claude",
   "codex",
+  "chat",
   "daytona",
   "claude-sdk",
   "acp",

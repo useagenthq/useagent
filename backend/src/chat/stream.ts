@@ -18,8 +18,10 @@ export class ChatStreamError extends Error {}
 const DEFAULT_CHAT_MODEL = "anthropic/claude-sonnet-5";
 
 /** True when the chat LLM is configured (an OpenRouter key is present). */
-export function chatLlmEnabled(): boolean {
-  return Boolean(process.env.OPENROUTER_API_KEY);
+export function chatLlmEnabled(
+  env: Record<string, string | undefined> = process.env,
+): boolean {
+  return Boolean(env.OPENROUTER_API_KEY);
 }
 
 /**
@@ -28,8 +30,10 @@ export function chatLlmEnabled(): boolean {
  * (A deployment that already runs the wiki/distiller pipeline can point
  * `CHAT_MODEL` at `wikiModel()`'s value to reuse the same model.)
  */
-export function chatModel(): string {
-  return process.env.CHAT_MODEL?.trim() || DEFAULT_CHAT_MODEL;
+export function chatModel(
+  env: Record<string, string | undefined> = process.env,
+): string {
+  return env.CHAT_MODEL?.trim() || DEFAULT_CHAT_MODEL;
 }
 
 interface StreamChunk {

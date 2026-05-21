@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
-import { AgentSidebar } from "@/components/shell/agent-sidebar";
 import { AppShell } from "@/components/shell/app-shell";
+import { ThreadSidebar } from "@/components/shell/thread-sidebar";
 import { backendFetch } from "@/lib/backend-fetch";
 import { extractRuns, type WorkspaceRun } from "./workspace-data";
 import { WorkspaceView } from "./workspace-view";
@@ -28,7 +28,7 @@ export default async function WorkspacePage() {
   const { runs: initialRuns, error: initialError } = await loadRuns();
 
   return (
-    <AppShell activeTab="agent" sidebar={<AgentSidebar active="workspace" />}>
+    <AppShell sidebar={<ThreadSidebar active="projects" />}>
       <WorkspaceView initialRuns={initialRuns} initialError={initialError} />
     </AppShell>
   );

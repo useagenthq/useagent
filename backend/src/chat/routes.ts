@@ -4,6 +4,7 @@ import { auth } from "../auth";
 import { orgScope } from "../middleware/org";
 import { isMemoryScope, type MemoryScope } from "../memory/scope";
 import { chatModelCatalog } from "./models";
+import { CHAT_SYSTEM_PROMPT } from "./prompt";
 import { retrieveChatContext } from "./retrieve";
 import { chatLlmEnabled, chatModel, streamChat, type ChatMessage } from "./stream";
 
@@ -20,14 +21,7 @@ export const chatRoutes = new Hono<AppEnv>();
 
 chatRoutes.use("*", orgScope);
 
-const SYSTEM_PROMPT =
-  "You are Skynet, a helpful assistant for the team. Answer conversationally and " +
-  "concisely. You are on a lightweight chat surface with NO sandbox: you cannot run " +
-  "code, edit files, or browse. If a task needs real execution, tell the user to use " +
-  "the Promote to Agent action to start a sandbox run. Use any retrieved reference " +
-  "material only when it is actually relevant.";
-
-const MESSAGE_ROLES = new Set(["user", "assistant", "system"]);
+const MESSAGE_ROLES = new Set(["user", "assistant"]);
 
 /** Validate the request's `messages` into a typed list, or null on any malformed
  *  entry / a history with no user turn. */
@@ -90,6 +84,9 @@ chatRoutes.post("/", async (c) => {
 
   const model =
     typeof body.model === "string" && body.model.trim() ? body.model.trim() : chatModel();
+  if (!chatModelCatalog().models.some((candidate) => candidate.value === model)) {
+    return c.json({ error: "model_not_allowed" }, 400);
+  }
   const memoryScope: MemoryScope = isMemoryScope(body.memoryScope) ? body.memoryScope : "org";
 
   const orgId = c.get("orgId");
@@ -143,15 +140,15 @@ chatRoutes.post("/", async (c) => {
           if (closed) return;
           sendEvent("context", { citations: context.citations });
 
-          const system = context.block ? `${SYSTEM_PROMPT}\n\n${context.block}` : SYSTEM_PROMPT;
+          const system = context.block ? `${CHAT_SYSTEM_PROMPT}\n\n${context.block}` : CHAT_SYSTEM_PROMPT;
           const llmMessages: ChatMessage[] = [{ role: "system", content: system }, ...messages];
           for await (const delta of streamChat(llmMessages, model, signal)) {
             if (closed) return;
             sendEvent("delta", { delta });
           }
           if (!closed) sendEvent("done", {});
-        } catch (err) {
-          if (!closed) sendEvent("error", { error: (err as Error).message });
+        } catch {
+          if (!closed) sendEvent("error", { error: "chat request failed" });
         } finally {
           cleanup();
         }

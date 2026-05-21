@@ -1,18 +1,13 @@
+import { RiArrowLeftLine } from "@remixicon/react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { RiArrowLeftLine } from "@remixicon/react";
-
-import { AgentSidebar } from "@/components/shell/agent-sidebar";
-import { AppShell } from "@/components/shell/app-shell";
 import { BackendUnreachable } from "@/components/shared/backend-unreachable";
+import { AppShell } from "@/components/shell/app-shell";
+import { LibrarySidebar } from "@/components/shell/library-sidebar";
 import { AskRepoBar } from "../ask-repo-bar";
 import { PagesRail } from "../pages-rail";
-import {
-  fetchPublishedWikiDocuments,
-  relativeTime,
-  type WikiDoc,
-} from "../wiki-data";
+import { fetchPublishedWikiDocuments, relativeTime, type WikiDoc } from "../wiki-data";
 
 export const metadata: Metadata = {
   title: "Wiki",
@@ -21,11 +16,7 @@ export const metadata: Metadata = {
 
 /** Dedicated page per published document; the rail lists siblings for
  *  navigation. Content is the same store the agent searches. */
-export default async function WikiDocPage({
-  params,
-}: {
-  params: Promise<{ id: string }>;
-}) {
+export default async function WikiDocPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   let docs: WikiDoc[] = [];
   let failed = false;
@@ -38,7 +29,7 @@ export default async function WikiDocPage({
   if (!failed && !doc) notFound();
 
   return (
-    <AppShell activeTab="agent" sidebar={<AgentSidebar active="wiki" />}>
+    <AppShell sidebar={<LibrarySidebar active="wiki" />}>
       <div className="mx-auto w-full max-w-6xl p-6 pb-24 lg:p-8 lg:pb-24">
         <Link
           href="/wiki"

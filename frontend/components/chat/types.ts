@@ -8,6 +8,7 @@ export type EngineId =
   | "opencode"
   | "claude"
   | "codex"
+  | "chat"
   // Legacy ids kept so old runs/rows still type; never offered in the picker.
   | "mock"
   | "claude-sdk"
@@ -94,6 +95,7 @@ export function cleanPrompt(prompt: string): string {
 // in the EngineId union so old rows still type but never render as a choice.
 export const ENGINES: { id: EngineId; label: string; hint: string }[] = [
   { id: "opencode", label: "OpenCode", hint: "any model · cloud sandbox" },
+  { id: "chat", label: "Chat", hint: "direct model · no sandbox" },
   { id: "claude", label: "Claude Code", hint: "Anthropic agent · ACP" },
   { id: "codex", label: "Codex", hint: "OpenAI agent · ACP" },
 ];
@@ -127,12 +129,32 @@ export const CODEX_MODELS: { value: string; label: string; tint: string }[] = [
   { value: "gpt-5.6-sol", label: "GPT-5.6 Sol", tint: "text-teal-500" },
 ];
 
+export const CHAT_MODELS: { value: string; label: string; tint: string }[] = [
+  {
+    value: "anthropic/claude-sonnet-5",
+    label: "Claude Sonnet 5",
+    tint: "text-blue-500",
+  },
+  {
+    value: "anthropic/claude-opus-4.8",
+    label: "Claude Opus 4.8",
+    tint: "text-orange-500",
+  },
+  {
+    value: "anthropic/claude-haiku-4.5",
+    label: "Claude Haiku 4.5",
+    tint: "text-green-500",
+  },
+  { value: "z-ai/glm-5.2", label: "GLM 5.2", tint: "text-purple-500" },
+];
+
 export type ModelOption = { value: string; label: string; tint: string };
 
 export function selectableModelsForEngine(engine: EngineId): ModelOption[] {
   const normalized = normalizeEngine(engine);
   if (normalized === "opencode") return MODELS;
   if (normalized === "codex") return CODEX_MODELS;
+  if (normalized === "chat") return CHAT_MODELS;
   return [];
 }
 

@@ -62,6 +62,9 @@ describe("paid model policy", () => {
         CODEX_ALLOWED_MODELS: "gpt-5.6-luna,gpt-5.4",
       }),
     ).toEqual(["gpt-5.6-luna", "gpt-5.4"]);
+    expect(allowedModelsForEngine("chat", {})).toContain("anthropic/claude-sonnet-5");
+    expect(isModelAllowedForEngine("chat", "anthropic/claude-sonnet-5", {})).toBe(true);
+    expect(isModelAllowedForEngine("chat", "openai/unbounded", {})).toBe(false);
     expect(allowedModelsForEngine("opencode", {})).toEqual(
       Object.values(OPENCODE_ALLOWED_MODELS).flat(),
     );

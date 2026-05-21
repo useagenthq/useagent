@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
-
-import { AgentSidebar } from "@/components/shell/agent-sidebar";
 import { AppShell } from "@/components/shell/app-shell";
+import { LibrarySidebar } from "@/components/shell/library-sidebar";
 import { fetchBrowse, fetchCaptures, fetchRecalls } from "./memory-api";
 import type { BrowseResponse, CaptureRow, RecallLedgerRow } from "./memory-data";
 import { MemoryHub } from "./memory-hub";
@@ -30,7 +29,7 @@ export default async function MemoryPage() {
   }
 
   return (
-    <AppShell activeTab="agent" sidebar={<AgentSidebar active="memory" />}>
+    <AppShell sidebar={<LibrarySidebar active="memory" />}>
       <MemoryHub
         initialBrowse={initialBrowse}
         initialCaptures={initialCaptures}

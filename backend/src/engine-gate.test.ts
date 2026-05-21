@@ -17,11 +17,12 @@ afterEach(() => {
 });
 
 describe("engine enablement gate (P0 security)", () => {
-  test("safe default: opencode/mock/daytona ON; claude/codex/acp/claude-sdk OFF", () => {
+  test("safe default: chat/opencode/mock/daytona ON; claude/codex/acp/claude-sdk OFF", () => {
     delete process.env.ENABLED_ENGINES;
     expect(isEngineEnabled("opencode")).toBe(true);
     expect(isEngineEnabled("mock")).toBe(true);
     expect(isEngineEnabled("daytona")).toBe(true);
+    expect(isEngineEnabled("chat")).toBe(true);
     // The unsafe/unproven ACP surfaces are closed unless explicitly enabled.
     expect(isEngineEnabled("claude")).toBe(false);
     expect(isEngineEnabled("codex")).toBe(false);

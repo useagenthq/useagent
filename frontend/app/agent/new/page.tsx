@@ -1,17 +1,17 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { AgentSidebar } from "@/components/shell/agent-sidebar";
-import { AppShell } from "@/components/shell/app-shell";
 import { AsteriskMark } from "@/components/foundations/brand/asterisk-mark";
-import { StatusDot, type DotTone } from "@/components/shared/status-dot";
+import { type DotTone, StatusDot } from "@/components/shared/status-dot";
+import { AppShell } from "@/components/shell/app-shell";
+import { ThreadSidebar } from "@/components/shell/thread-sidebar";
 import { backendFetch } from "@/lib/backend-fetch";
-import { fetchSkills } from "./skills-data";
 import { relativeTime } from "@/utils/format";
 import { NewTaskComposer } from "./new-task-composer";
+import { fetchSkills } from "./skills-data";
 
 export const metadata: Metadata = {
-  title: "New task",
-  description: "Describe a task and hand it to Skynet.",
+  title: "New thread",
+  description: "Start a direct conversation or a sandbox-backed task with Skynet.",
 };
 
 interface RecentRun {
@@ -34,9 +34,7 @@ async function fetchRecentRuns(): Promise<RecentRun[]> {
         ? (data as { runs: RecentRun[] }).runs
         : [];
     return runs
-      .toSorted(
-        (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
-      )
+      .toSorted((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
       .slice(0, 3);
   } catch {
     return [];
@@ -75,21 +73,27 @@ function RecentTasks({ runs }: { runs: RecentRun[] }) {
   );
 }
 
-export default async function NewTaskPage() {
+export default async function NewTaskPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ repo?: string | string[] }>;
+}) {
+  const requestedRepo = (await searchParams).repo;
+  const initialRepository = typeof requestedRepo === "string" ? requestedRepo : null;
   const [skills, recentRuns] = await Promise.all([fetchSkills(), fetchRecentRuns()]);
 
   return (
-    <AppShell activeTab="agent" sidebar={<AgentSidebar active="new-task" />}>
+    <AppShell sidebar={<ThreadSidebar active="new" />}>
       <div className="flex min-h-full flex-col items-center px-4 sm:px-6">
         <div className="w-full max-w-2xl py-10 sm:py-14">
           <div className="flex flex-col items-center gap-3 text-center">
             <AsteriskMark className="size-6 text-text-strong-950" />
-            <p className="text-mono-label text-text-soft-400">New task</p>
-            <h1 className="text-display-md text-text-strong-950">What should Skynet ship?</h1>
+            <p className="text-mono-label text-text-soft-400">New thread</p>
+            <h1 className="text-display-md text-text-strong-950">What should Skynet do?</h1>
           </div>
 
           <div className="mt-8">
-            <NewTaskComposer skills={skills} />
+            <NewTaskComposer skills={skills} initialRepository={initialRepository} />
           </div>
 
           {recentRuns.length > 0 ? <RecentTasks runs={recentRuns} /> : null}
