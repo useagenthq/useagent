@@ -559,6 +559,7 @@ function ReplyComposer({
   threadError,
   onDismissThreadError,
   engineUnavailable,
+  draftKey,
 }: {
   engine: EngineId;
   model: string;
@@ -580,6 +581,8 @@ function ReplyComposer({
   threadError?: string | null;
   onDismissThreadError?: () => void;
   engineUnavailable?: boolean;
+  /** Thread key for per-thread draft persistence (the root run id). */
+  draftKey?: string | null;
 }) {
   return (
     <div className="shrink-0 px-4 pb-4 pt-2">
@@ -605,6 +608,7 @@ function ReplyComposer({
           threadError={threadError}
           onDismissThreadError={onDismissThreadError}
           engineUnavailable={engineUnavailable}
+          draftKey={draftKey}
         />
       </div>
     </div>
@@ -804,6 +808,7 @@ export function Conversation({
         threadError={threadError}
         onDismissThreadError={handleDismissThreadError}
         engineUnavailable={engineUnavailable}
+        draftKey={turns[0]?.run.id ?? null}
       />
     </div>
   );
