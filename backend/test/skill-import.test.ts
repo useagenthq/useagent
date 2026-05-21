@@ -1,13 +1,18 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, beforeEach, describe, expect, mock, test } from "bun:test";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
 import { clearRepoCache } from "../src/github/repos";
 import { createOrgSession, json, type OrgSession } from "./helpers";
 
 // ---------------------------------------------------------------------------
-// GitHub skill-import routes, end-to-end against the real Hono app + test DB,
-// with GitHub HTTP mocked at globalThis.fetch (the same seam github-app-auth.test
-// uses). A PAT in env forces resolveGithubAuth down the no-network path, so every
-// api.github.com call is served from an in-memory repo fixture. Non-github
-// requests pass through, so the in-process app fetch is untouched.
+// GitHub skill-import routes, end-to-end against the real Hono app + test DB.
+// Scan discovery works from a server-side git clone, so the clone module is
+// mocked (mock.module) to materialize the fixture files into a temp dir; the
+// pinned-commit import read stays on the /contents API, mocked at
+// globalThis.fetch (the same seam github-app-auth.test uses). A PAT in env
+// forces resolveGithubAuth down the no-network path. Non-github requests pass
+// through, so the in-process app fetch is untouched.
 // ---------------------------------------------------------------------------
 
 const realFetch = globalThis.fetch;
@@ -76,27 +81,6 @@ function installGithubMock(): void {
     if (url.hostname !== "api.github.com") return realFetch(input as never, init);
     const p = url.pathname;
 
-    if (/^\/repos\/[^/]+\/[^/]+$/.test(p)) {
-      return json200({ default_branch: fixture.defaultBranch });
-    }
-    if (/^\/repos\/[^/]+\/[^/]+\/commits\/.+$/.test(p)) {
-      return json200({ sha: fixture.commitSha, commit: { tree: { sha: `tree-${fixture.commitSha}` } } });
-    }
-    if (/^\/repos\/[^/]+\/[^/]+\/git\/trees\/[^/]+$/.test(p)) {
-      const tree = Object.entries(fixture.files).map(([path, f]) => ({
-        path,
-        type: "blob",
-        sha: blobShaFor(path),
-        size: fileSize(f),
-      }));
-      return json200({ sha: "tree", tree, truncated: false });
-    }
-    const blob = /^\/repos\/[^/]+\/[^/]+\/git\/blobs\/(.+)$/.exec(p);
-    if (blob) {
-      const entry = Object.entries(fixture.files).find(([path]) => blobShaFor(path) === blob[1]);
-      if (!entry) return new Response(JSON.stringify({ message: "Not Found" }), { status: 404 });
-      return json200({ content: b64(entry[1].text), encoding: "base64", size: fileSize(entry[1]) });
-    }
     const contents = /^\/repos\/[^/]+\/[^/]+\/contents\/(.+)$/.exec(p);
     if (contents) {
       const path = decodeURIComponent(contents[1]);
@@ -115,6 +99,39 @@ function installGithubMock(): void {
   }) as unknown as typeof fetch;
 }
 
+/** Fake clone: write the fixture files into a fresh temp dir. Declared-size
+ *  entries are padded to that many bytes so the on-disk stat matches. */
+async function materializeFixtureClone(): Promise<string> {
+  const dir = await mkdtemp(join(tmpdir(), "skill-import-test-"));
+  for (const [path, f] of Object.entries(fixture.files)) {
+    const abs = join(dir, path);
+    await mkdir(dirname(abs), { recursive: true });
+    await writeFile(abs, f.size !== undefined ? Buffer.alloc(f.size, 0x78) : f.text);
+  }
+  return dir;
+}
+
+const realClone = await import("../src/wiki-gen/clone");
+
+function installCloneMock(): void {
+  mock.module("../src/wiki-gen/clone", () => ({
+    ...realClone,
+    cloneRepoAtHead: async (repo: string) => {
+      if (!realClone.isValidRepoRef(repo)) throw new Error(`invalid repo ref: ${repo}`);
+      const dir = await materializeFixtureClone();
+      return {
+        dir,
+        defaultBranch: fixture.defaultBranch,
+        commitSha: fixture.commitSha,
+        cleanup: async () => {
+          await rm(dir, { recursive: true, force: true });
+        },
+      };
+    },
+    resolveRemoteHeadSha: async () => fixture.commitSha,
+  }));
+}
+
 let A: OrgSession;
 let B: OrgSession;
 
@@ -122,6 +139,7 @@ beforeAll(async () => {
   process.env.GITHUB_TOKEN = "ghp_faketest_import"; // PAT path: no network for auth
   clearRepoCache();
   installGithubMock();
+  installCloneMock();
   A = await createOrgSession("imp-a");
   B = await createOrgSession("imp-b");
 });
@@ -130,6 +148,7 @@ afterAll(() => {
   globalThis.fetch = realFetch;
   delete process.env.GITHUB_TOKEN;
   clearRepoCache();
+  mock.module("../src/wiki-gen/clone", () => ({ ...realClone }));
 });
 
 beforeEach(() => {
