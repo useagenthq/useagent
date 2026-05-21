@@ -225,24 +225,28 @@ async function ensureServer(
   const token = link.token ?? "";
   const server = { baseUrl, token, workdir: `${home}/work` };
 
-  // A healthy resident process survives turns and is always reused. When the
-  // sandbox was stopped/restarted, recreate Daytona's dedicated background
-  // session: executeCommand is synchronous even with shell `&`, whereas an
-  // async session command is Daytona's supported long-lived-process primitive.
+  // A healthy resident process survives turns and is always reused: the liveness
+  // probe here already proves it is serving, so return immediately and skip the
+  // readiness poll's redundant first probe (perf plan Phase 1 item 4 - skip probes
+  // once a prior step proves liveness). Only when the sandbox was stopped/restarted
+  // (probe not 2xx) do we recreate Daytona's dedicated background session:
+  // executeCommand is synchronous even with shell `&`, whereas an async session
+  // command is Daytona's supported long-lived-process primitive.
   const initialStatus = await opencodeHealthStatus(server, signal);
-  if (initialStatus === null || initialStatus < 200 || initialStatus >= 300) {
-    await sandbox.process.deleteSession(SERVER_PROCESS_SESSION).catch(() => {});
-    await sandbox.process.createSession(SERVER_PROCESS_SESSION);
-    await sandbox.process.executeSessionCommand(
-      SERVER_PROCESS_SESSION,
-      {
-        command: `${SECRET_SOURCE_COMMAND} && cd ${shq(`${home}/work`)} && exec ${bin} serve --hostname 0.0.0.0 --port ${SERVE_PORT}`,
-        runAsync: true,
-        suppressInputEcho: true,
-      },
-      30,
-    );
+  if (initialStatus !== null && initialStatus >= 200 && initialStatus < 300) {
+    return server;
   }
+  await sandbox.process.deleteSession(SERVER_PROCESS_SESSION).catch(() => {});
+  await sandbox.process.createSession(SERVER_PROCESS_SESSION);
+  await sandbox.process.executeSessionCommand(
+    SERVER_PROCESS_SESSION,
+    {
+      command: `${SECRET_SOURCE_COMMAND} && cd ${shq(`${home}/work`)} && exec ${bin} serve --hostname 0.0.0.0 --port ${SERVE_PORT}`,
+      runAsync: true,
+      suppressInputEcho: true,
+    },
+    30,
+  );
 
   const deadline = Date.now() + 120_000;
   let lastStatus: number | null = null;
