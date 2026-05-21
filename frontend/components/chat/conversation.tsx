@@ -341,9 +341,13 @@ function Timeline({
     () => segmentTimeline(nodes, live),
     [nodes, live],
   );
+  // Artifacts are deliverables, not narration: they render AFTER the prose and
+  // tool activity so an answer never appears below its own attachment.
+  const artifactSegs = segments.filter((s) => s.kind !== "tools" && s.node.kind === "artifact");
+  const flowSegs = segments.filter((s) => s.kind === "tools" || s.node.kind !== "artifact");
   return (
     <div className="space-y-3" data-testid="session-timeline">
-      {segments.map((seg) =>
+      {flowSegs.map((seg) =>
         seg.kind === "tools" ? (
           <WorkGroup key={seg.key} entries={seg.entries} turnSettled={!live} />
         ) : seg.node.kind === "marker" ? (
@@ -357,6 +361,11 @@ function Timeline({
         ) : (
           <TextBurst key={seg.key} text={seg.node.text} />
         ),
+      )}
+      {artifactSegs.map((seg) =>
+        seg.kind !== "tools" && seg.node.kind === "artifact" ? (
+          <ArtifactRow key={seg.key} node={seg.node} />
+        ) : null,
       )}
       {live && <WorkingIndicator createdAt={workingSince ?? null} stepLabel={workingLabel} />}
     </div>
