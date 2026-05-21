@@ -5,8 +5,6 @@ import {
   RiArrowDownSLine,
   RiBookMarkedLine,
   RiBookOpenLine,
-  RiCheckboxBlankCircleLine,
-  RiCheckboxCircleFill,
   RiCheckLine,
   RiCloseLine,
   RiDatabase2Line,
@@ -19,7 +17,6 @@ import {
   RiFlashlightLine,
   RiGlobalLine,
   RiImageLine,
-  RiIndeterminateCircleLine,
   RiListCheck,
   RiLoader4Line,
   RiReactjsLine,
@@ -30,6 +27,7 @@ import {
   RiTerminalLine,
 } from "@remixicon/react";
 import { memo, useState } from "react";
+import { PlanChecklist } from "@/components/agent-ui/plan-checklist";
 import type { TimelineMarker } from "@/components/chat/timeline";
 import {
   type ApiStep,
@@ -39,7 +37,6 @@ import {
   parseTodos,
   type StepTrace,
   type TodoItem,
-  type TodoStatus,
   type TraceGlyph,
 } from "@/components/chat/types";
 import { cnExt as cn } from "@/utils/cn";
@@ -390,62 +387,24 @@ function TraceRow({ trace, state }: { trace: StepTrace; state: RowState }) {
 
 // ── Todos (opencode `todowrite`) ─────────────────────────────────────────────
 
-const TODO_ICON: Record<TodoStatus, RemixiconComponentType> = {
-  pending: RiCheckboxBlankCircleLine,
-  in_progress: RiLoader4Line,
-  completed: RiCheckboxCircleFill,
-  cancelled: RiIndeterminateCircleLine,
-};
-const TODO_TONE: Record<TodoStatus, string> = {
-  pending: "text-text-soft-400",
-  in_progress: "text-blue-500",
-  completed: "text-success-base",
-  cancelled: "text-text-disabled-300",
-};
-
-/** The agent's plan from a `todowrite` step, rendered as a live checklist —
- *  mirrors opencode's todos part instead of collapsing it to a generic row. */
+/** The agent's plan from a `todowrite` step, rendered through the shared beUI
+ *  Todo List card — a collapsible checklist that morphs by state instead of
+ *  collapsing the plan to a generic row. Maps the durable `TodoItem` shape onto
+ *  the canonical plan-entry props; content is the stable key so a live status
+ *  flip transitions in place. */
 function TodoList({ todos, nested }: { todos: TodoItem[]; nested?: boolean }) {
-  const done = todos.filter((t) => t.status === "completed").length;
+  const entries = todos.map((todo, index) => ({
+    id: `${index}-${todo.content}`,
+    text: todo.content,
+    status: todo.status,
+  }));
   return (
-    <div
-      data-testid="todo-list"
-      className={cn("animate-ai-fade-up", nested && "border-stroke-soft-200 ml-2 border-l pl-3")}
-    >
-      <div className="flex items-center gap-2 px-1.5 py-1">
-        <RiListCheck className="text-text-soft-400 size-4 shrink-0" aria-hidden />
-        <span className="text-label-sm text-text-strong-950 font-medium">Todos</span>
-        <span className="text-text-soft-400 text-label-xs tabular-nums">
-          {done}/{todos.length}
-        </span>
-      </div>
-      <ul className="ml-1.5 space-y-1 py-0.5">
-        {todos.map((todo) => {
-          const Icon = TODO_ICON[todo.status];
-          const struck = todo.status === "completed" || todo.status === "cancelled";
-          return (
-            <li key={todo.content} className="flex items-start gap-2 px-1.5">
-              <Icon
-                className={cn(
-                  "mt-0.5 size-3.5 shrink-0",
-                  TODO_TONE[todo.status],
-                  todo.status === "in_progress" && "animate-spin",
-                )}
-                aria-hidden
-              />
-              <span
-                className={cn(
-                  "text-paragraph-xs",
-                  struck ? "text-text-soft-400 line-through" : "text-text-sub-600",
-                )}
-              >
-                {todo.content}
-              </span>
-            </li>
-          );
-        })}
-      </ul>
-    </div>
+    <PlanChecklist
+      title="Todos"
+      entries={entries}
+      testId="todo-list"
+      className={cn("animate-ai-fade-up", nested && "ml-4")}
+    />
   );
 }
 
