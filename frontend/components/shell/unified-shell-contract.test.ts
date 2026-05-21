@@ -189,7 +189,7 @@ describe("unified shell contract", () => {
     const mark = readFromFrontend("components/foundations/brand/orbit-knot-mark.tsx");
     const { sidebarBrand } = shellSources();
 
-    expect(mark).toContain("orbit-knot-ramp");
+    expect(mark).toContain("useId");
     expect(mark).toContain('strokeLinejoin="round"');
     expect(mark).toContain('strokeLinecap="round"');
     expect(mark).toContain("motion-safe:animate-");

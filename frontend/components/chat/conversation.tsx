@@ -20,6 +20,7 @@ import {
   shouldUseCanonicalTimeline,
 } from "@/components/chat/canonical-timeline";
 import { Composer, type ComposerSubmit } from "@/components/chat/composer";
+import { useEnabledEngines } from "@/components/chat/engine-picker";
 import { NativeApprovalCard } from "@/components/chat/native-approval-card";
 import type { NativeSnapshot } from "@/components/chat/native-store";
 import { QuestionCard } from "@/components/chat/question-card";
@@ -32,6 +33,7 @@ import { Markdown } from "@/components/prompt-kit/markdown";
 import { segmentTimelineForT3, workEntriesFromTimeline } from "@/components/t3-ui/adapter";
 import { T3ExpandedImageDialog } from "@/components/t3-ui/expanded-image-dialog";
 import { T3MessageCopyButton } from "@/components/t3-ui/message-copy-button";
+import { MessageScrollerRail } from "@/components/t3-ui/message-scroller-rail";
 import { unavailableEngineLabel } from "@/components/t3-ui/provider-status-banner";
 import { T3QueuedMessagePill } from "@/components/t3-ui/queued-message-pill";
 import {
@@ -40,7 +42,6 @@ import {
   isThreadErrorBannerDismissedForSession,
   shouldShowThreadErrorBanner,
 } from "@/components/t3-ui/thread-error-banner";
-import { useEnabledEngines } from "@/components/chat/engine-picker";
 import { T3WorkGroup } from "@/components/t3-ui/work-group";
 import { T3WorkingIndicator } from "@/components/t3-ui/working-indicator";
 import { cnExt as cn } from "@/utils/cn";
@@ -336,7 +337,10 @@ function Timeline({
   live: boolean;
   workingSince?: string;
 }) {
-  const { segments, workingLabel } = useMemo(() => segmentTimelineForT3(nodes, live), [nodes, live]);
+  const { segments, workingLabel } = useMemo(
+    () => segmentTimelineForT3(nodes, live),
+    [nodes, live],
+  );
   return (
     <div className="space-y-3" data-testid="session-timeline">
       {segments.map((seg) =>
@@ -464,7 +468,7 @@ function TurnBlock({
       <div className="group/turn space-y-3">
         <div className="flex items-center gap-2">
           <span className="ring-stroke-soft-200 bg-bg-weak-50 flex size-5 shrink-0 items-center justify-center rounded-full ring-1 ring-inset">
-            <OrbitKnotMark className="size-3.5" />
+            <OrbitKnotMark className="size-3.5" stroke={2.2} />
           </span>
           <span className="text-label-sm text-text-strong-950">Skynet</span>
           <span className="text-mono-label text-text-soft-400">{engineLabel(run.engine)}</span>
@@ -744,41 +748,44 @@ export function Conversation({
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div
-        ref={scrollRef}
-        onScroll={(e) => {
-          const el = e.currentTarget;
-          stickRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
-        }}
-        className="min-h-0 flex-1 space-y-8 overflow-y-auto px-5 py-6"
-      >
-        {turns.map((turn) => (
-          <TurnBlock
-            key={turn.run.id}
-            turn={turn}
-            queuePosition={queuedPositions.get(turn.run.id)}
-            onSendNow={turn.run.id === sendNowFor ? onSendNow : undefined}
-          />
-        ))}
-        {pendingQuestion && onAnswerQuestion && (
-          <QuestionCard
-            key={pendingQuestion.id}
-            request={pendingQuestion}
-            submitting={answeringQuestion === true}
-            error={questionError ?? null}
-            onSubmit={onAnswerQuestion}
-          />
-        )}
-        {pendingApproval && onAnswerApproval && (
-          <NativeApprovalCard
-            key={pendingApproval.id}
-            request={pendingApproval}
-            submitting={answeringApproval === true}
-            error={approvalError ?? null}
-            onRespond={onAnswerApproval}
-          />
-        )}
-        {pendingReply && <UserBubble>{pendingReply}</UserBubble>}
+      <div className="relative min-h-0 flex-1">
+        <div
+          ref={scrollRef}
+          onScroll={(e) => {
+            const el = e.currentTarget;
+            stickRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+          }}
+          className="h-full space-y-8 overflow-y-auto px-5 py-6"
+        >
+          {turns.map((turn) => (
+            <TurnBlock
+              key={turn.run.id}
+              turn={turn}
+              queuePosition={queuedPositions.get(turn.run.id)}
+              onSendNow={turn.run.id === sendNowFor ? onSendNow : undefined}
+            />
+          ))}
+          {pendingQuestion && onAnswerQuestion && (
+            <QuestionCard
+              key={pendingQuestion.id}
+              request={pendingQuestion}
+              submitting={answeringQuestion === true}
+              error={questionError ?? null}
+              onSubmit={onAnswerQuestion}
+            />
+          )}
+          {pendingApproval && onAnswerApproval && (
+            <NativeApprovalCard
+              key={pendingApproval.id}
+              request={pendingApproval}
+              submitting={answeringApproval === true}
+              error={approvalError ?? null}
+              onRespond={onAnswerApproval}
+            />
+          )}
+          {pendingReply && <UserBubble>{pendingReply}</UserBubble>}
+        </div>
+        <MessageScrollerRail turns={turns} scrollRef={scrollRef} />
       </div>
 
       <ReplyComposer

@@ -1,19 +1,30 @@
+"use client";
+
+import { useId } from "react";
 import { cn } from "@/utils/cn";
 
+// The woven orbit knot: a smooth two-winding {7/2} star curve (r = R + A cos(7t/2)
+// sampled over 4 pi, Catmull-Rom smoothed). Regenerate via the recipe in this
+// header rather than editing point data by hand.
+const KNOT_PATH =
+  "M 12.00 1.10 C 12.52 1.10 13.10 1.28 13.57 1.58 C 14.04 1.88 14.48 2.37 14.81 2.87 C 15.15 3.38 15.38 4.03 15.56 4.61 C 15.73 5.19 15.79 5.83 15.86 6.34 C 15.93 6.86 15.91 7.33 15.99 7.70 C 16.06 8.07 16.12 8.34 16.30 8.57 C 16.48 8.80 16.73 8.91 17.08 9.07 C 17.42 9.22 17.89 9.31 18.38 9.50 C 18.86 9.68 19.47 9.88 19.99 10.18 C 20.52 10.47 21.10 10.85 21.52 11.29 C 21.94 11.72 22.32 12.26 22.51 12.79 C 22.69 13.31 22.74 13.92 22.63 14.43 C 22.51 14.94 22.20 15.46 21.81 15.85 C 21.42 16.24 20.84 16.56 20.27 16.77 C 19.70 16.99 19.01 17.07 18.41 17.11 C 17.81 17.15 17.18 17.07 16.66 17.02 C 16.14 16.98 15.68 16.85 15.30 16.84 C 14.92 16.83 14.65 16.83 14.39 16.96 C 14.12 17.08 13.96 17.30 13.73 17.60 C 13.50 17.90 13.31 18.34 13.02 18.77 C 12.73 19.21 12.41 19.76 12.00 20.20 C 11.59 20.64 11.09 21.13 10.58 21.44 C 10.06 21.76 9.44 22.01 8.89 22.07 C 8.34 22.13 7.74 22.05 7.27 21.82 C 6.80 21.59 6.36 21.18 6.06 20.71 C 5.77 20.24 5.58 19.60 5.50 19.00 C 5.43 18.40 5.50 17.71 5.59 17.11 C 5.68 16.52 5.91 15.92 6.07 15.43 C 6.23 14.93 6.45 14.51 6.54 14.14 C 6.64 13.77 6.70 13.51 6.64 13.22 C 6.57 12.94 6.40 12.73 6.15 12.44 C 5.91 12.15 5.53 11.87 5.17 11.49 C 4.81 11.11 4.35 10.67 4.01 10.18 C 3.66 9.68 3.30 9.09 3.11 8.51 C 2.92 7.94 2.81 7.28 2.87 6.73 C 2.93 6.18 3.15 5.61 3.48 5.20 C 3.80 4.79 4.31 4.46 4.83 4.27 C 5.36 4.09 6.02 4.05 6.62 4.11 C 7.22 4.17 7.88 4.39 8.44 4.61 C 9.00 4.84 9.53 5.19 9.98 5.45 C 10.43 5.72 10.79 6.03 11.13 6.20 C 11.46 6.38 11.71 6.50 12.00 6.50 C 12.29 6.50 12.54 6.38 12.87 6.20 C 13.21 6.03 13.57 5.72 14.02 5.45 C 14.47 5.19 15.00 4.84 15.56 4.61 C 16.12 4.39 16.78 4.17 17.38 4.11 C 17.98 4.05 18.64 4.09 19.17 4.27 C 19.69 4.46 20.20 4.79 20.52 5.20 C 20.85 5.61 21.07 6.18 21.13 6.73 C 21.19 7.28 21.08 7.94 20.89 8.51 C 20.70 9.09 20.34 9.68 19.99 10.18 C 19.65 10.67 19.19 11.11 18.83 11.49 C 18.47 11.87 18.09 12.15 17.85 12.44 C 17.60 12.73 17.43 12.94 17.36 13.22 C 17.30 13.51 17.36 13.77 17.46 14.14 C 17.55 14.51 17.77 14.93 17.93 15.42 C 18.09 15.92 18.32 16.52 18.41 17.11 C 18.50 17.71 18.57 18.40 18.50 19.00 C 18.42 19.60 18.23 20.24 17.94 20.71 C 17.64 21.18 17.20 21.59 16.73 21.82 C 16.26 22.05 15.66 22.13 15.11 22.07 C 14.56 22.01 13.94 21.76 13.42 21.44 C 12.91 21.13 12.41 20.64 12.00 20.20 C 11.59 19.76 11.27 19.21 10.98 18.77 C 10.69 18.34 10.50 17.90 10.27 17.60 C 10.04 17.30 9.88 17.08 9.61 16.96 C 9.35 16.83 9.08 16.83 8.70 16.84 C 8.32 16.85 7.86 16.98 7.34 17.02 C 6.82 17.07 6.19 17.15 5.59 17.11 C 4.99 17.07 4.30 16.99 3.73 16.78 C 3.16 16.56 2.58 16.24 2.19 15.85 C 1.80 15.46 1.49 14.94 1.37 14.43 C 1.26 13.92 1.31 13.31 1.49 12.79 C 1.68 12.26 2.06 11.72 2.48 11.29 C 2.90 10.85 3.48 10.47 4.01 10.18 C 4.53 9.88 5.14 9.68 5.62 9.50 C 6.11 9.31 6.58 9.22 6.92 9.07 C 7.27 8.91 7.52 8.80 7.70 8.57 C 7.88 8.34 7.94 8.07 8.01 7.70 C 8.09 7.33 8.07 6.86 8.14 6.34 C 8.21 5.83 8.27 5.19 8.44 4.61 C 8.62 4.03 8.85 3.38 9.19 2.87 C 9.52 2.37 9.96 1.88 10.43 1.58 C 10.90 1.28 11.48 1.10 12.00 1.10 Z";
+
 /**
- * Skynet orbit-knot mark: a single-stroke rounded {7/2} star knot - seven
- * petals woven from one continuous line, matching the product reference.
- * Brand layer exception: the light-cyan to blue ramp is part of the mark and
- * is the one place a raw color ramp is allowed. Size via className; the knot
- * spins slowly while `active` (reduced-motion safe via motion-safe).
+ * Skynet orbit-knot mark: seven woven petals from one continuous stroke, in
+ * the brand light-cyan to blue ramp. Brand layer exception: the raw gradient
+ * is part of the mark. Size via className; `stroke` thickens small renders
+ * (turn headers) for legibility. Spins slowly while `active`, motion-safe.
  */
 export function OrbitKnotMark({
   className,
   active = false,
+  stroke = 1.6,
 }: {
   className?: string;
   active?: boolean;
+  stroke?: number;
 }) {
+  const gid = useId();
   return (
     <svg
       viewBox="0 0 24 24"
@@ -26,22 +37,15 @@ export function OrbitKnotMark({
       )}
     >
       <defs>
-        <linearGradient
-          id="orbit-knot-ramp"
-          x1="5"
-          y1="4"
-          x2="19"
-          y2="20"
-          gradientUnits="userSpaceOnUse"
-        >
+        <linearGradient id={gid} x1="6" y1="3" x2="18" y2="21" gradientUnits="userSpaceOnUse">
           <stop stopColor="#8be0fc" />
           <stop offset="1" stopColor="#3b82f6" />
         </linearGradient>
       </defs>
       <path
-        d="M 8.23 7.52 Q 12.00 2.80 15.77 7.52 L 17.20 9.32 Q 20.97 14.05 15.53 16.67 L 13.45 17.67 Q 8.01 20.29 6.66 14.40 L 6.15 12.15 Q 4.81 6.26 10.85 6.26 L 13.15 6.26 Q 19.19 6.26 17.85 12.15 L 17.34 14.40 Q 15.99 20.29 10.55 17.67 L 8.47 16.67 Q 3.03 14.05 6.80 9.32 L 8.23 7.52 Z"
-        stroke="url(#orbit-knot-ramp)"
-        strokeWidth="1.9"
+        d={KNOT_PATH}
+        stroke={`url(#${gid})`}
+        strokeWidth={stroke}
         strokeLinejoin="round"
         strokeLinecap="round"
       />
