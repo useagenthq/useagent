@@ -25,7 +25,7 @@ interface ProtocolDependencies {
   readonly bindThread: (providerThreadId: string) => Promise<void>;
 }
 
-interface ParsedFrame {
+export interface ParsedCodexSubscriptionFrame {
   readonly id?: JsonRpcId;
   readonly method?: string;
   readonly params?: JsonObject;
@@ -47,7 +47,7 @@ export class CodexSubscriptionProtocol {
   }
 
   async acceptClientFrame(raw: string): Promise<void> {
-    const frame = parseFrame(raw);
+    const frame = parseCodexSubscriptionFrame(raw);
     if (!frame.method) {
       if (frame.id === undefined || !frame.hasResponse) {
         throw new Error("client frame must be a request or correlated response");
@@ -68,7 +68,7 @@ export class CodexSubscriptionProtocol {
   }
 
   async observeServerFrame(raw: string): Promise<void> {
-    const frame = parseFrame(raw);
+    const frame = parseCodexSubscriptionFrame(raw);
     if (frame.method) {
       if (frame.id !== undefined) {
         assertRequestCapacity(this.#pendingServerRequests, frame.id, "server");
@@ -160,7 +160,7 @@ export class CodexSubscriptionProtocol {
   }
 }
 
-function parseFrame(raw: string): ParsedFrame {
+export function parseCodexSubscriptionFrame(raw: string): ParsedCodexSubscriptionFrame {
   if (textEncoder.encode(raw).byteLength > MAX_FRAME_BYTES) {
     throw new Error("app-server frame exceeds the relay limit");
   }
