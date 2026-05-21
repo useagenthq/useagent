@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 
-import { PulseMark } from "@/components/foundations/brand/pulse-mark";
+import { OrbitKnotMark } from "@/components/foundations/brand/orbit-knot-mark";
 import { useWorkingSignal } from "./working-signal";
 
 export function SidebarBrand({ label = "Skynet" }: { label?: string }) {
@@ -15,7 +15,7 @@ export function SidebarBrand({ label = "Skynet" }: { label?: string }) {
         aria-label="Skynet new thread"
         className="flex min-w-0 items-center gap-2.5 rounded-lg px-2 py-1.5 text-label-sm text-text-sub-600 outline-none transition-colors hover:bg-bg-weak-50 hover:text-text-strong-950 focus-visible:ring-2 focus-visible:ring-stroke-strong-950"
       >
-        <PulseMark className="size-6 shrink-0 text-brand-orbit" active={working} />
+        <OrbitKnotMark className="size-6" active={working} />
         <span className="truncate">{label}</span>
       </Link>
     </div>
