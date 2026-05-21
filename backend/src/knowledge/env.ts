@@ -9,8 +9,14 @@ function opt(name: string, fallback: string): string {
 }
 
 export const env = {
-  /** Postgres — the retrieval store (tsvector + pgvector). */
-  databaseUrl: opt("DATABASE_URL", "postgres://postgres@localhost:5432/skynet"),
+  /** Postgres — the retrieval store (tsvector + pgvector). Inside the sandbox
+   *  gateway process GATEWAY_DATABASE_URL carries the restricted role; it must
+   *  win WITHOUT the gateway env file defining DATABASE_URL, because deploy
+   *  scripts source backend.env and gateway.env into one shell and a gateway
+   *  DATABASE_URL would shadow the privileged one (it broke a release gate). */
+  databaseUrl:
+    process.env.GATEWAY_DATABASE_URL ??
+    opt("DATABASE_URL", "postgres://postgres@localhost:5432/skynet"),
 
   /** Default org when the caller resolves none (headers wired later). */
   defaultOrg: opt("KNOWLEDGE_DEFAULT_ORG", "skynet-dev"),
