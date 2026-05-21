@@ -33,7 +33,13 @@ const PUBLIC_API_EXACT = new Set([
   "/api/internal/automation",
   "/api/internal/gateway-approval/consume",
 ]);
-const PUBLIC_API_PREFIXES = ["/api/auth/", "/api/slack/"];
+const PUBLIC_API_PREFIXES = [
+  "/api/auth/",
+  "/api/slack/",
+  // One-use, short-lived run capabilities authenticate this WebSocket. The
+  // relay re-resolves the exact org/user connection before start and every turn.
+  "/api/internal/codex-relay/",
+];
 
 /** True when `path` authenticates itself (or is public) and must NOT be forced
  *  through org-session scoping. Pure + exported so the fail-closed default is

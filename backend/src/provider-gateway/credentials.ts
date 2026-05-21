@@ -1,6 +1,6 @@
 import { decryptOrgSecretByName } from "../secrets/store";
 import { runtimeDevModeEnabled } from "../security/runtime-secrets";
-import { getTrustedProviderCredential } from "../provider-connections/service";
+import { resolveGatewayProviderApiKeyCredential } from "./api-key-credentials";
 import { providerCredentialName, type ProviderId } from "./provider";
 
 /** Resolve one provider credential in the trusted backend, tenant first. */
@@ -32,19 +32,12 @@ export async function resolveProviderCredentialForRun(input: {
   provider: ProviderId;
 }): Promise<string | null> {
   if (input.userId) {
-    const userCredential = await getTrustedProviderCredential({
+    const userCredential = await resolveGatewayProviderApiKeyCredential({
       orgId: input.orgId,
       userId: input.userId,
       provider: input.provider,
-      authMethod: "api_key",
     });
-    if (
-      userCredential?.authMethod === "api_key" &&
-      typeof userCredential.value === "string" &&
-      userCredential.value.trim()
-    ) {
-      return userCredential.value.trim();
-    }
+    if (userCredential) return userCredential;
   }
   return resolveProviderCredential(input.orgId, input.provider);
 }

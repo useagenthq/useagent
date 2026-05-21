@@ -540,6 +540,61 @@ describe("T3 orchestration projection", () => {
     });
   });
 
+  test("projects only the latest turn's exact assistant output", () => {
+    const exactOutput = `EXACT_${crypto.randomUUID()}`;
+    const snapshot: T3ThreadSnapshot = {
+      snapshotSequence: 12,
+      thread: {
+        id: "skynet-thread-thread-1",
+        latestTurn: {
+          turnId: "turn-2",
+          state: "completed",
+          assistantMessageId: "assistant-2",
+        },
+        messages: [
+          {
+            id: "assistant-1",
+            role: "assistant",
+            text: "prior turn must not prefix the resumed answer",
+            turnId: "turn-1",
+            streaming: false,
+          },
+          {
+            id: "assistant-2",
+            role: "assistant",
+            text: exactOutput,
+            turnId: "turn-2",
+            streaming: false,
+          },
+        ],
+        activities: [],
+        session: { status: "ready", lastError: null },
+      },
+    };
+
+    expect(assistantText(snapshot)).toBe(exactOutput);
+  });
+
+  test("keeps resumed-turn provider events on the product thread and current run", () => {
+    expect(t3ActivityProviderEvent(
+      { runId: "run-2", threadId: "thread-1" },
+      "skynet-thread-thread-1",
+      {
+        id: "activity-resumed-turn",
+        tone: "tool",
+        kind: "tool.completed",
+        summary: "Completed on the resumed provider thread",
+        payload: { callId: "call-2" },
+        turnId: "provider-turn-2",
+      },
+    )).toMatchObject({
+      runId: "run-2",
+      threadId: "thread-1",
+      nativeSessionId: "skynet-thread-thread-1",
+      payload: { turnId: "provider-turn-2" },
+    });
+  });
+
   test("uses canonical tool-call identity precedence without losing the native payload", () => {
     const identityCases = [
       {

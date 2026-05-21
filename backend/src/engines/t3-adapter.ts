@@ -3,7 +3,10 @@ import { composeTurnPrompt } from "./types";
 import { acquireThreadSandbox } from "./thread-sandbox";
 import { ensureSandboxDesktopView } from "./desktop";
 import { prepareRepos } from "./repo-prep";
-import { prepareT3ProviderBridge } from "./t3-provider-bridge";
+import {
+  prepareT3ProviderBridge,
+  type T3ProviderBridgeLease,
+} from "./t3-provider-bridge";
 import { requestT3Environment } from "./t3-environment-client";
 import { subscribeT3Thread } from "./t3-event-stream";
 import {
@@ -262,6 +265,7 @@ export function makeT3Adapter(engine: T3EngineId, driver: ProviderDriver): Engin
       });
       endSandbox?.();
       const { sandbox } = lease;
+      let providerBridgeLease: T3ProviderBridgeLease | undefined;
 
       try {
         await ctx.emit({
@@ -291,7 +295,9 @@ export function makeT3Adapter(engine: T3EngineId, driver: ProviderDriver): Engin
               secretInjection.files,
             ),
           ),
-          prepareStage("provider_bridge", () => prepareT3ProviderBridge(sandbox, ctx, engine)),
+          prepareStage("provider_bridge", async () => {
+            providerBridgeLease = await prepareT3ProviderBridge(sandbox, ctx, engine, workdir);
+          }),
           prepareStage("repos", () => prepareRepos(sandbox, workdir, ctx)),
           prepareStage("inputs", () => materializeRunInputs(sandbox, ctx.inputFiles)),
         ]);
@@ -396,6 +402,7 @@ export function makeT3Adapter(engine: T3EngineId, driver: ProviderDriver): Engin
           }
         }
       } finally {
+        await providerBridgeLease?.close().catch(() => {});
         if (lease.releaseAfterRun) await sandbox.delete().catch(() => {});
       }
     },

@@ -552,7 +552,9 @@ describe("provider connections", () => {
     ).toBeNull();
     await expect(resolveT3CodexSubscriptionRuntime({ orgId: session.orgId })).resolves.toBeNull();
     await expect(resolveT3CodexSubscriptionRuntime({ userId })).resolves.toBeNull();
-    await expect(resolveT3CodexSubscriptionRuntime({ orgId: session.orgId, userId })).resolves.toEqual({
+    await expect(resolveT3CodexSubscriptionRuntime({ orgId: session.orgId, userId })).resolves.toMatchObject({
+      connectionId: connection.id,
+      authEpoch: expect.stringMatching(/^[a-f0-9]{64}$/),
       authMethod: "chatgpt_oauth",
       mode: "managed_codex_app_server",
       codexHome: "/srv/skynet/codex-home/user-a",
@@ -609,7 +611,9 @@ describe("provider connections", () => {
       status: "connected",
       metadata: { email: "complete@example.com", planType: "team" },
     });
-    await expect(resolveT3CodexSubscriptionRuntime({ orgId: session.orgId, userId })).resolves.toEqual({
+    await expect(resolveT3CodexSubscriptionRuntime({ orgId: session.orgId, userId })).resolves.toMatchObject({
+      connectionId: connection.id,
+      authEpoch: expect.stringMatching(/^[a-f0-9]{64}$/),
       authMethod: "chatgpt_oauth",
       mode: "managed_codex_app_server",
       codexHome: "/srv/skynet/codex-home/completed-user",
@@ -706,8 +710,13 @@ describe("provider connections", () => {
       },
       metadata: { email: account.email, planType: account.planType },
     });
+    const originalRuntime = await getCodexSubscriptionRuntimeSelection(scope);
+    expect(originalRuntime?.authEpoch).toMatch(/^[a-f0-9]{64}$/);
 
     await readManagedCodexChatGptStatus({ scope, appServer });
+    await expect(getCodexSubscriptionRuntimeSelection(scope)).resolves.toMatchObject({
+      authEpoch: originalRuntime?.authEpoch,
+    });
     await expect(
       getTrustedProviderCredential({
         ...scope,
@@ -755,9 +764,11 @@ describe("provider connections", () => {
       throw new Error("expected a managed Codex app-server credential");
     }
     expect(credential.value.connectedAt).not.toBe(connectedAt);
-    await expect(getCodexSubscriptionRuntimeSelection(scope)).resolves.toMatchObject({
+    const replacementRuntime = await getCodexSubscriptionRuntimeSelection(scope);
+    expect(replacementRuntime).toMatchObject({
       metadata: { email: "replacement@example.com", planType: "pro" },
     });
+    expect(replacementRuntime?.authEpoch).not.toBe(originalRuntime?.authEpoch);
   });
 
   test("concurrent initial managed Codex status reads persist and publish once", async () => {

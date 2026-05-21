@@ -18,6 +18,10 @@ import {
 } from "./opencode-server";
 import { T3_ENVIRONMENT_HOME } from "./t3-environment";
 import { t3EnvironmentEnabled } from "./t3-environment";
+import {
+  prepareT3CodexSubscription,
+  type T3CodexSubscriptionLease,
+} from "./t3-codex-subscription";
 
 const T3_SETTINGS_PATH = `${T3_ENVIRONMENT_HOME}/userdata/settings.json`;
 const T3_BIN_DIRECTORY = `${T3_ENVIRONMENT_HOME}/skynet-bin`;
@@ -36,6 +40,12 @@ interface BootstrapState {
 const bootstrapStates = new Map<string | object, BootstrapState>();
 
 type T3EngineId = Extract<EngineId, "codex" | "claude" | "opencode">;
+
+export type T3ProviderBridgeLease = T3CodexSubscriptionLease;
+
+const NOOP_PROVIDER_BRIDGE_LEASE: T3ProviderBridgeLease = {
+  async close() {},
+};
 
 function encode(value: string): string {
   return Buffer.from(value, "utf8").toString("base64");
@@ -169,16 +179,26 @@ export async function prepareT3ProviderBridge(
   sandbox: SandboxHandle,
   ctx: EngineRunContext,
   engine: T3EngineId,
-): Promise<void> {
+  workdir: string,
+): Promise<T3ProviderBridgeLease> {
+  const claudeEnvironment = providerGatewayEnv(ctx, "claude");
+  const command = buildT3ProviderBootstrapCommand(claudeEnvironment);
+
   if (engine === "opencode") {
     await prepareOpenCodeGateway(sandbox, ctx);
+  } else if (engine === "claude") {
+    await prepareProviderGatewaySandbox(sandbox, ctx, engine);
   } else {
+    const subscription = await resolveT3CodexSubscriptionRuntime(ctx);
+    if (subscription) {
+      await ensureT3ProviderBootstrap(sandbox, command);
+      return prepareT3CodexSubscription({ sandbox, ctx, workdir, runtime: subscription });
+    }
     await prepareProviderGatewaySandbox(sandbox, ctx, engine);
   }
 
-  const claudeEnvironment = providerGatewayEnv(ctx, "claude");
-  const command = buildT3ProviderBootstrapCommand(claudeEnvironment);
   await ensureT3ProviderBootstrap(sandbox, command);
+  return NOOP_PROVIDER_BRIDGE_LEASE;
 }
 
 /** Install stable provider driver paths before a warm T3 server starts. No
