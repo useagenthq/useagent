@@ -1,5 +1,11 @@
 import { describe, expect, test } from "bun:test";
-import { RAIL_MAX, RAIL_MIN, railWidthForKey, railWidthFromPointer } from "./rail-resizer";
+import {
+  RAIL_DEFAULT,
+  RAIL_MAX,
+  RAIL_MIN,
+  railWidthForKey,
+  railWidthFromPointer,
+} from "./rail-resizer";
 
 describe("rail resizing", () => {
   test("maps pointer position into the bounded side-panel width", () => {
@@ -13,6 +19,7 @@ describe("rail resizing", () => {
       railWidthFromPointer({ containerRight: 1_600, containerWidth: 1_200, pointerX: 100 }),
     ).toBe(720);
     expect(RAIL_MAX).toBe(960);
+    expect(RAIL_DEFAULT).toBe(360);
   });
 
   test("supports accessible keyboard resizing without interpreting other keys", () => {

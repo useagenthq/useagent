@@ -2,7 +2,7 @@
 
 import { RiSidebarFoldLine, RiSidebarUnfoldLine } from "@remixicon/react";
 import type { ReactNode } from "react";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { cn } from "@/utils/cn";
 import { useWorkingSignal } from "./working-signal";
@@ -26,27 +26,52 @@ export interface AppShellProps {
 export function AppShell({ sidebar, children }: AppShellProps) {
   const working = useWorkingSignal();
   const previousWorking = useRef(working);
+  const sidebarContainerRef = useRef<HTMLDivElement>(null);
+  const sidebarRestoreRef = useRef<HTMLButtonElement>(null);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [mobileOpen, setMobileOpen] = useState(false);
+
+  const collapseSidebar = useCallback(() => {
+    const focusWasInside = sidebarContainerRef.current?.contains(document.activeElement) ?? false;
+    setSidebarCollapsed(true);
+    if (focusWasInside) requestAnimationFrame(() => sidebarRestoreRef.current?.focus());
+  }, []);
 
   useEffect(() => {
-    if (working && !previousWorking.current) setSidebarCollapsed(true);
+    if (working && !previousWorking.current) collapseSidebar();
     previousWorking.current = working;
-  }, [working]);
+  }, [collapseSidebar, working]);
+
+  useEffect(() => {
+    if (!mobileOpen) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setMobileOpen(false);
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [mobileOpen]);
 
   return (
     <div className="relative flex h-dvh w-full overflow-hidden bg-bg-white-0">
       <div
+        ref={sidebarContainerRef}
+        aria-hidden={sidebarCollapsed}
+        inert={sidebarCollapsed}
         className={cn(
           "hidden h-full shrink-0 overflow-hidden transition-[width] duration-200 md:block",
-          sidebarCollapsed ? "w-0" : "w-64",
+          sidebarCollapsed ? "pointer-events-none w-0" : "w-64",
         )}
         data-testid="primary-sidebar-shell"
       >
         {sidebar}
       </div>
       <button
+        ref={sidebarRestoreRef}
         type="button"
-        onClick={() => setSidebarCollapsed((collapsed) => !collapsed)}
+        onClick={() => {
+          if (sidebarCollapsed) setSidebarCollapsed(false);
+          else collapseSidebar();
+        }}
         aria-label={sidebarCollapsed ? "Open navigation" : "Collapse navigation"}
         aria-pressed={sidebarCollapsed}
         className={cn(
@@ -60,6 +85,25 @@ export function AppShell({ sidebar, children }: AppShellProps) {
           <RiSidebarFoldLine className="size-4" aria-hidden />
         )}
       </button>
+      <button
+        type="button"
+        onClick={() => setMobileOpen(true)}
+        aria-label="Open navigation"
+        className="absolute left-3 top-3 z-40 flex size-8 items-center justify-center rounded-lg text-text-soft-400 outline-none hover:bg-bg-weak-50 hover:text-text-strong-950 focus-visible:ring-2 focus-visible:ring-stroke-strong-950 md:hidden"
+      >
+        <RiSidebarUnfoldLine className="size-4" aria-hidden />
+      </button>
+      {mobileOpen ? (
+        <div className="fixed inset-0 z-50 flex md:hidden">
+          <button
+            type="button"
+            aria-label="Close navigation"
+            onClick={() => setMobileOpen(false)}
+            className="absolute inset-0 bg-overlay backdrop-blur-sm"
+          />
+          <div className="relative h-full w-64">{sidebar}</div>
+        </div>
+      ) : null}
       <main className="relative isolate min-h-0 min-w-0 flex-1 overflow-y-auto bg-bg-white-0">
         <div
           aria-hidden

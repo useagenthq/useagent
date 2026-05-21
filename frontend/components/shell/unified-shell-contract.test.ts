@@ -149,9 +149,24 @@ describe("unified shell contract", () => {
     expect(appShell).toContain("useWorkingSignal()");
     expect(appShell).toContain("previousWorking.current");
     expect(appShell).toContain("setSidebarCollapsed(true)");
+    expect(appShell).toContain("inert={sidebarCollapsed}");
+    expect(appShell).toContain("aria-hidden={sidebarCollapsed}");
+    expect(appShell).toContain("pointer-events-none w-0");
+    expect(appShell).toContain("sidebarRestoreRef.current?.focus()");
     expect(appShell).toContain(
       'aria-label={sidebarCollapsed ? "Open navigation" : "Collapse navigation"}',
     );
+  });
+
+  test("keeps navigation, search, theme, and account reachable on mobile", () => {
+    const { appShell, threadSidebar } = shellSources();
+
+    expect(appShell).toContain('aria-label="Open navigation"');
+    expect(appShell).toContain('aria-label="Close navigation"');
+    expect(appShell).toContain("mobileOpen ? (");
+    expect(threadSidebar).toContain("<SearchCommand");
+    expect(threadSidebar).toContain("<ThemeToggle");
+    expect(threadSidebar).toContain("<UserMenu");
   });
 
   test("provides a direct Open a surface chooser for the right inspector", () => {
