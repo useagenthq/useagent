@@ -70,7 +70,7 @@ test("renders the real run summary as a prominent dismissible alert", () => {
   );
   expect(html).toContain('data-t3-ui="thread-error-banner"');
   expect(html).toContain('role="alert"');
-  expect(html).toContain("This run failed");
+  expect(html).toContain("Run failed");
   expect(html).toContain("Sandbox provisioning failed: quota exceeded");
   expect(html).toContain('aria-label="Dismiss error"');
 });
