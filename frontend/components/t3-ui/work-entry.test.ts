@@ -62,6 +62,27 @@ describe("heading + preview grammar", () => {
     expect(toolWorkEntryHeading(tool({ toolTitle: "read file complete" }))).toBe("Read file");
   });
 
+  test("heading is never empty (bare chevron+status row regression)", () => {
+    // The exact shapes that used to blank the heading: no label at all, a
+    // whitespace label, and a label the compact normalization strips to "".
+    expect(toolWorkEntryHeading(tool({ label: "" }))).toBe("Tool");
+    expect(toolWorkEntryHeading(tool({ label: "   " }))).toBe("Tool");
+    expect(toolWorkEntryHeading(tool({ label: " completed" }))).toBe("Tool");
+    expect(toolWorkEntryHeading(tool({ label: "", toolTitle: "  " }))).toBe("Tool");
+    // An empty toolTitle falls back to the label instead of blanking the row.
+    expect(toolWorkEntryHeading(tool({ label: "Run", toolTitle: " completed" }))).toBe("Run");
+    // Structural fallbacks keep child-session/task rows identifiable.
+    expect(toolWorkEntryHeading(tool({ label: "", itemType: "dynamic_tool_call" }))).toBe(
+      "Tool call",
+    );
+    expect(toolWorkEntryHeading(tool({ label: "", itemType: "collab_agent_tool_call" }))).toBe(
+      "Subagent",
+    );
+    expect(toolWorkEntryHeading(tool({ label: "", taskId: "task-1" }))).toBe("Subagent");
+    expect(toolWorkEntryHeading(tool({ label: "", requestKind: "command" }))).toBe("Run");
+    expect(toolWorkEntryHeading(tool({ label: "", tone: "thinking" }))).toBe("Thinking");
+  });
+
   test("preview precedence: command > detail > changed files", () => {
     expect(workEntryPreview(tool({ command: "ls", detail: "out" }), undefined)).toBe("ls");
     expect(workEntryPreview(tool({ detail: "out" }), undefined)).toBe("out");
