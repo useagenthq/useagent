@@ -12,6 +12,7 @@ import {
 } from "./child-session-tools";
 import { COMPUTER_USE_TOOLS, executeComputerUseTool } from "./computer-use-tools";
 import { executeGcsTool, GCS_TOOLS } from "./gcs-tools";
+import { executeGithubTool, GITHUB_TOOLS } from "./github-tools";
 import {
   executeGatewayMetaTool,
   GATEWAY_META_TOOLS,
@@ -104,6 +105,7 @@ const BASE_TOOL_FAMILIES = [
   { tools: RECORDING_TOOLS, execute: executeRecordingTool },
   { tools: COMPUTER_USE_TOOLS, execute: executeComputerUseTool },
   { tools: REPOSITORY_TOOLS, execute: executeRepositoryTool },
+  { tools: GITHUB_TOOLS, execute: executeGithubTool },
   { tools: GCS_TOOLS, execute: executeGcsTool },
   { tools: AUTOMATION_TOOLS, execute: executeAutomationTool },
   { tools: BLUEPRINT_TOOLS, execute: executeBlueprintTool },
