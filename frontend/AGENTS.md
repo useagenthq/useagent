@@ -211,6 +211,15 @@ Never inline a copy.
 - `AGENTS.md` is hand-maintained; `agentRules: false` in `next.config.ts` stops
   Next from regenerating it.
 
+## Naming (vendored code)
+
+Name by FUNCTION, attribute by HEADER. Vendored/adapted components never carry
+the source product's name in identifiers, paths, or data attributes - the
+MIT/source notice in the file header is the attribution. The vendored UI layer
+is `components/session-ui/` (neutral names like `WorkEntryRow`, `ThreadRow`);
+`data-session-ui` is its DOM marker. Product names are allowed only where code
+speaks that product's real wire protocol (backend adapters).
+
 ## String style
 - No em dashes ("—") in code: user-visible strings, labels, placeholders, aria text, and HTML/JSX element text use plain hyphens or restructured sentences instead.
 
