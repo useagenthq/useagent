@@ -1,11 +1,11 @@
 'use client';
 
+import { OrbitKnotMark } from "@/components/foundations/brand/orbit-knot-mark";
 import { RiLockLine, RiMailLine, RiUserLine } from '@remixicon/react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { type ComponentType, type FormEvent, useId, useState } from 'react';
 
-import { AsteriskMark } from '@/components/foundations/brand/asterisk-mark';
 import { GoogleSignInButton } from '@/components/auth/google-sign-in-button';
 import * as Input from '@/components/ui/input';
 import * as Label from '@/components/ui/label';
@@ -128,7 +128,7 @@ export function AuthForm({ mode }: { mode: AuthMode }) {
   return (
     <main className='flex min-h-dvh w-full items-center justify-center bg-bg-weak-50 p-4 sm:p-6'>
       <div className='animate-ai-fade-up mx-auto flex w-full max-w-[420px] flex-col rounded-2xl border border-stroke-soft-200 bg-bg-white-0 px-6 py-10 shadow-regular-md sm:px-8'>
-        <AsteriskMark className='size-7 text-text-strong-950' />
+        <OrbitKnotMark className='size-8' />
         <h1 className='mt-5 text-display-sm text-text-strong-950'>{copy.title}</h1>
         <p className='mt-1.5 text-paragraph-sm text-text-sub-600'>
           {copy.subtitle}
