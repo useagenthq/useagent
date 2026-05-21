@@ -26,14 +26,28 @@ import type { NativeSnapshot } from "@/components/chat/native-store";
 import { QuestionCard } from "@/components/chat/question-card";
 import type { PendingQuestion } from "@/components/chat/question-state";
 import type { SlashCommand } from "@/components/chat/slash-command";
-import { buildTimeline, hasNarration, type TimelineNode } from "@/components/chat/timeline";
+import {
+  buildTimeline,
+  hasNarration,
+  type TimelineMarker,
+  type TimelineNode,
+} from "@/components/chat/timeline";
 import { MarkerRow } from "@/components/chat/tool-step-row";
 import { OrbitKnotMark } from "@/components/foundations/brand/orbit-knot-mark";
 import { Markdown } from "@/components/prompt-kit/markdown";
-import { segmentTimeline, workEntriesFromTimeline } from "@/components/session-ui/adapter";
+import {
+  segmentTimeline,
+  type TimelineSegment,
+  workEntriesFromTimeline,
+} from "@/components/session-ui/adapter";
+import {
+  ContextRecallFold,
+  isContextRecallMarker,
+} from "@/components/session-ui/context-recall-fold";
 import { ExpandedImageDialog } from "@/components/session-ui/expanded-image-dialog";
 import { MessageCopyButton } from "@/components/session-ui/message-copy-button";
 import { MessageScrollerRail } from "@/components/session-ui/message-scroller-rail";
+import { ScrollToEndPill } from "@/components/session-ui/scroll-to-end-pill";
 import { unavailableEngineLabel } from "@/components/session-ui/provider-status-banner";
 import { QueuedMessagePill } from "@/components/session-ui/queued-message-pill";
 import {
@@ -342,6 +356,43 @@ function FileChangeRow({ node }: { node: Extract<TimelineNode, { kind: "file" }>
  * is represented by the T3 working indicator's step suffix (upstream filters
  * in-progress rows from the group), which also replaces the old LoadingState tail.
  */
+/** One render unit of the flow: either a fold of consecutive context-recall
+ *  markers, or a single passthrough segment. */
+type FlowUnit =
+  | { kind: "recall"; key: string; markers: { key: string; marker: TimelineMarker }[] }
+  | { kind: "seg"; seg: TimelineSegment };
+
+/**
+ * Fold a turn's consecutive context-recall markers (skill/playbook loads +
+ * memory/knowledge retrievals) into ONE quiet disclosure, like the "+N previous
+ * tool calls" fold. A lone receipt renders as its own MarkerRow (a fold of one
+ * hides nothing); memory writes and the reconcile marker never fold - they are
+ * turn events, not context the run pulled in.
+ */
+function groupContextRecall(segs: readonly TimelineSegment[]): FlowUnit[] {
+  const units: FlowUnit[] = [];
+  let run: { key: string; marker: TimelineMarker }[] = [];
+  const flush = () => {
+    if (run.length >= 2) {
+      units.push({ kind: "recall", key: `recall-${run[0].key}`, markers: run });
+    } else if (run.length === 1) {
+      const { key, marker } = run[0];
+      units.push({ kind: "seg", seg: { kind: "node", key, node: { kind: "marker", key, marker } } });
+    }
+    run = [];
+  };
+  for (const seg of segs) {
+    if (seg.kind === "node" && seg.node.kind === "marker" && isContextRecallMarker(seg.node.marker)) {
+      run.push({ key: seg.key, marker: seg.node.marker });
+    } else {
+      flush();
+      units.push({ kind: "seg", seg });
+    }
+  }
+  flush();
+  return units;
+}
+
 export function Timeline({
   nodes,
   live,
@@ -359,21 +410,24 @@ export function Timeline({
   // tool activity so an answer never appears below its own attachment.
   const artifactSegs = segments.filter((s) => s.kind !== "tools" && s.node.kind === "artifact");
   const flowSegs = segments.filter((s) => s.kind === "tools" || s.node.kind !== "artifact");
+  const flowUnits = groupContextRecall(flowSegs);
   return (
     <div className="space-y-3" data-testid="session-timeline">
-      {flowSegs.map((seg) =>
-        seg.kind === "tools" ? (
-          <WorkGroup key={seg.key} entries={seg.entries} turnSettled={!live} />
-        ) : seg.node.kind === "marker" ? (
-          <MarkerRow key={seg.key} marker={seg.node.marker} />
-        ) : seg.node.kind === "artifact" ? (
-          <ArtifactRow key={seg.key} node={seg.node} />
-        ) : seg.node.kind === "file" ? (
-          <FileChangeRow key={seg.key} node={seg.node} />
-        ) : seg.node.kind === "reasoning" ? (
-          <SettledThought key={seg.key} text={seg.node.text} />
+      {flowUnits.map((unit) =>
+        unit.kind === "recall" ? (
+          <ContextRecallFold key={unit.key} markers={unit.markers} />
+        ) : unit.seg.kind === "tools" ? (
+          <WorkGroup key={unit.seg.key} entries={unit.seg.entries} turnSettled={!live} />
+        ) : unit.seg.node.kind === "marker" ? (
+          <MarkerRow key={unit.seg.key} marker={unit.seg.node.marker} />
+        ) : unit.seg.node.kind === "artifact" ? (
+          <ArtifactRow key={unit.seg.key} node={unit.seg.node} />
+        ) : unit.seg.node.kind === "file" ? (
+          <FileChangeRow key={unit.seg.key} node={unit.seg.node} />
+        ) : unit.seg.node.kind === "reasoning" ? (
+          <SettledThought key={unit.seg.key} text={unit.seg.node.text} />
         ) : (
-          <TextBurst key={seg.key} text={seg.node.text} />
+          <TextBurst key={unit.seg.key} text={unit.seg.node.text} />
         ),
       )}
       {artifactSegs.map((seg) =>
@@ -772,7 +826,7 @@ export function Conversation({
             const el = e.currentTarget;
             stickRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
           }}
-          className="h-full space-y-8 overflow-y-auto px-5 py-6"
+          className="scrollbar-slim h-full space-y-8 overflow-y-auto px-5 py-6"
         >
           {turns.map((turn) => (
             <TurnBlock
@@ -803,6 +857,7 @@ export function Conversation({
           {pendingReply && <UserBubble>{pendingReply}</UserBubble>}
         </div>
         <MessageScrollerRail turns={turns} scrollRef={scrollRef} />
+        <ScrollToEndPill scrollRef={scrollRef} />
       </div>
 
       <ReplyComposer

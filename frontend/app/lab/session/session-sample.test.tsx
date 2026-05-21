@@ -18,7 +18,13 @@ test("renders one synthetic session through the real timeline + chrome renderers
 
   // The conversation runs through the REAL leaf renderers, not a fork.
   expect(html).toContain('data-testid="session-timeline"');
-  expect(html).toContain('data-testid="marker-row"'); // context markers
+  // Leading context receipts (skill + memory + knowledge) minify into ONE quiet
+  // fold; its collapsed summary states the counts.
+  expect(html).toContain('data-session-ui="context-recall-fold"');
+  expect(html).toContain("3 memory, 5 knowledge, 1 playbook");
+  // Non-recall markers stay as their own rows (the memory write chip, the
+  // reconcile marker) - the marker-row probe still resolves.
+  expect(html).toContain('data-testid="marker-row"');
   expect(html).toContain("Remembered"); // memory write chip
   expect(html).toContain("rate-limit-diagram.png"); // artifact card below the answer
 

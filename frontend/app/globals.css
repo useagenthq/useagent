@@ -561,6 +561,33 @@
   mask-image: linear-gradient(to bottom, black, transparent);
 }
 
+/* ---------------------------------------------------------------------------
+ * scrollbar-slim - a thin, themed scroll affordance for a SCOPED scroll
+ * container (the session conversation), replacing the platform's fat native
+ * scrollbar. Semantic tokens only, so it flips with the theme. Applied ONLY to
+ * the element that opts in via the class - never global.
+ * ------------------------------------------------------------------------- */
+.scrollbar-slim {
+  scrollbar-width: thin;
+  scrollbar-color: hsl(var(--stroke-sub-300)) transparent;
+}
+.scrollbar-slim::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+.scrollbar-slim::-webkit-scrollbar-track {
+  background: transparent;
+}
+.scrollbar-slim::-webkit-scrollbar-thumb {
+  background-color: hsl(var(--stroke-sub-300));
+  border-radius: 9999px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+.scrollbar-slim::-webkit-scrollbar-thumb:hover {
+  background-color: hsl(var(--text-soft-400));
+}
+
 /* ===========================================================================
  * Display ramp: Inter Tight (--font-display).
  *

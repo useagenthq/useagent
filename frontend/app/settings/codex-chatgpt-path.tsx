@@ -9,6 +9,7 @@ import * as Button from "@/components/ui/button";
 import * as StatusBadge from "@/components/ui/status-badge";
 import {
   codexAccountLabel,
+  codexAuthBadgeStatus,
   codexAuthStatusLabel,
   codexLoginUrl,
   isActiveConnection,
@@ -47,13 +48,10 @@ export function CodexChatGptPath({
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
             <p className="text-label-sm text-text-strong-950">ChatGPT account connection</p>
-            <StatusBadge.Root
-              variant="light"
-              status={
-                active ? "completed" : connection?.status === "revoked" ? "disabled" : "pending"
-              }
-            >
-              <StatusBadge.Dot />
+            <StatusBadge.Root variant="light" status={codexAuthBadgeStatus(status, connection)}>
+              <StatusBadge.Dot
+                className={connection?.status === "revoked" ? "text-error-base" : undefined}
+              />
               {codexAuthStatusLabel(status, connection)}
             </StatusBadge.Root>
           </div>
@@ -107,13 +105,7 @@ export function CodexChatGptPath({
           <p className="text-label-sm text-text-strong-950">Codex sandbox execution</p>
           <StatusBadge.Root
             variant="light"
-            status={
-              sandboxExecutionEnabled === null
-                ? "pending"
-                : sandboxExecutionEnabled
-                  ? "completed"
-                  : "disabled"
-            }
+            status={sandboxExecutionEnabled ? "completed" : "disabled"}
           >
             <StatusBadge.Dot />
             {sandboxExecutionEnabled === null
