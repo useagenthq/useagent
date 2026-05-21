@@ -10,6 +10,7 @@ import {
   getCodexSubscriptionRuntimeSelection,
   type CodexSubscriptionRuntimeSelection,
 } from "../provider-connections/service";
+import { engineAuthMode } from "../runs/engine-auth-mode";
 import type { EngineRunContext } from "./types";
 import {
   prepareOpencodeSandboxConfig,
@@ -175,6 +176,23 @@ export async function resolveT3CodexSubscriptionRuntime(
   });
 }
 
+export type CodexBridgeAuthPath = "subscription" | "provider_gateway";
+
+/** Decide the one credential boundary used for a Codex turn. Subscription-only
+ * mode never falls back to an API key, while hybrid preserves the historical
+ * prefer-account-then-gateway behavior. */
+export function codexBridgeAuthPath(
+  subscriptionAvailable: boolean,
+  env: Record<string, string | undefined> = process.env,
+): CodexBridgeAuthPath {
+  const mode = engineAuthMode("codex", env);
+  if (!mode) throw new Error("invalid ENGINE_AUTH_MODE_CODEX");
+  if (mode === "provider_gateway") return "provider_gateway";
+  if (subscriptionAvailable) return "subscription";
+  if (mode === "subscription") throw new Error("codex_subscription_required");
+  return "provider_gateway";
+}
+
 export async function prepareT3ProviderBridge(
   sandbox: SandboxHandle,
   ctx: EngineRunContext,
@@ -189,8 +207,14 @@ export async function prepareT3ProviderBridge(
   } else if (engine === "claude") {
     await prepareProviderGatewaySandbox(sandbox, ctx, engine);
   } else {
-    const subscription = await resolveT3CodexSubscriptionRuntime(ctx);
-    if (subscription) {
+    const mode = engineAuthMode("codex");
+    if (!mode) throw new Error("invalid ENGINE_AUTH_MODE_CODEX");
+    const subscription = mode === "provider_gateway"
+      ? null
+      : await resolveT3CodexSubscriptionRuntime(ctx);
+    const authPath = codexBridgeAuthPath(subscription !== null);
+    if (authPath === "subscription") {
+      if (!subscription) throw new Error("codex_subscription_runtime_missing");
       await ensureT3ProviderBootstrap(sandbox, command);
       return prepareT3CodexSubscription({ sandbox, ctx, workdir, runtime: subscription });
     }

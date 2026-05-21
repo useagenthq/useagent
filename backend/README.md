@@ -53,6 +53,16 @@ provider thread is durably bound to the same connection epoch before resume.
 These are locally tested boundaries; hosted execution is not claimed until the
 guarded canary passes.
 
+Readiness follows the selected credential mode rather than the engine name.
+`ENGINE_AUTH_MODE_CODEX=subscription` requires the exact connected account and
+does not depend on, mutate, or promote `PROVIDER_HEALTH_OPENAI`. The compatibility
+default is `hybrid`, which prefers the managed subscription and falls back to the
+signed provider gateway when no connected account exists. `provider_gateway`
+never queries managed subscription state. Release evidence records one stable
+auth mode per engine and promotes only the engines present in the complete
+evidence matrix; an unproven OpenCode credential cannot block or be promoted by
+a subscription-only Codex release.
+
 ## Engine Adapters
 
 `src/engines/index.ts` is the production provider registry, and

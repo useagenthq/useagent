@@ -5,6 +5,7 @@ import { join } from "node:path";
 import type { SandboxHandle } from "../sandboxes/provider";
 import {
   buildT3ProviderBootstrapCommand,
+  codexBridgeAuthPath,
   prewarmT3ProviderBridge,
   resetT3ProviderBridgeCacheForTest,
 } from "./t3-provider-bridge";
@@ -28,6 +29,21 @@ afterEach(() => {
 });
 
 describe("T3 provider bridge", () => {
+  test("routes Codex credentials without silently weakening subscription mode", () => {
+    expect(codexBridgeAuthPath(true, { ENGINE_AUTH_MODE_CODEX: "subscription" }))
+      .toBe("subscription");
+    expect(() => codexBridgeAuthPath(false, { ENGINE_AUTH_MODE_CODEX: "subscription" }))
+      .toThrow("codex_subscription_required");
+    expect(codexBridgeAuthPath(true, { ENGINE_AUTH_MODE_CODEX: "provider_gateway" }))
+      .toBe("provider_gateway");
+    expect(codexBridgeAuthPath(true, { ENGINE_AUTH_MODE_CODEX: "hybrid" }))
+      .toBe("subscription");
+    expect(codexBridgeAuthPath(false, { ENGINE_AUTH_MODE_CODEX: "hybrid" }))
+      .toBe("provider_gateway");
+    expect(() => codexBridgeAuthPath(true, { ENGINE_AUTH_MODE_CODEX: "unknown" }))
+      .toThrow("invalid ENGINE_AUTH_MODE_CODEX");
+  });
+
   test("uses private dynamic provider files instead of persisted credentials", () => {
     const command = buildT3ProviderBootstrapCommand({
       ANTHROPIC_BASE_URL: "https://gateway.example.test/provider/anthropic",
