@@ -76,7 +76,7 @@ describe("T3 no-progress watchdog", () => {
     }
     expect(failure).toBeInstanceOf(NoProgressError);
     expect((failure as Error).message).toBe(
-      "T3 provider made no progress (8 consecutive retry warnings): " +
+      "Provider made no progress (8 consecutive retry warnings): " +
         "retry attempt 8: Internal Server Error: Internal Server Error",
     );
   });

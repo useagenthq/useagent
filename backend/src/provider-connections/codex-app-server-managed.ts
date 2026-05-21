@@ -85,11 +85,19 @@ export async function handleManagedCodexChatGptLoginCompleted(input: {
   appServer: ManagedCodexAppServerClient;
   notification: unknown;
 }): Promise<ProviderConnectionMeta | null> {
-  const completion = completeCodexChatGptAppServerLogin(
-    input.notification && typeof input.notification === "object"
-      ? input.notification as { loginId: string | null; success: boolean; error: string | null }
-      : { loginId: null, success: false, error: "invalid_completion" },
-  );
+  // The app server is an external process; tolerate both camelCase and
+  // snake_case completion params rather than dropping a real login on a naming
+  // mismatch (a dropped completion strands the durable row as revoked/stale).
+  const raw = input.notification && typeof input.notification === "object"
+    ? input.notification as Record<string, unknown>
+    : {};
+  const completion = completeCodexChatGptAppServerLogin({
+    loginId: typeof raw.loginId === "string"
+      ? raw.loginId
+      : typeof raw.login_id === "string" ? raw.login_id : null,
+    success: raw.success === true,
+    error: typeof raw.error === "string" ? raw.error : null,
+  });
   if (!completion.success) return null;
   const status = await readCodexChatGptAppServerStatus(input.appServer);
   return persistManagedAccount(input.scope, input.appServer, status.account, true);

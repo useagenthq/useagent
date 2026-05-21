@@ -182,6 +182,9 @@ export class CodexAppServerClientPool<T extends PooledCodexAppServerClient> {
         notification: input.notification,
       });
       if (!authenticated) {
+        console.warn(
+          `[codex-pool] login completion for ${input.key} did not authenticate; closing app server`,
+        );
         this.closeEntry(input.key, input.entry, input.appServer);
         return;
       }
@@ -192,7 +195,10 @@ export class CodexAppServerClientPool<T extends PooledCodexAppServerClient> {
       clearTimeout(input.entry.loginDeadline);
       input.entry.authenticated = true;
       input.appServer.scheduleIdleClose();
-    } catch {
+    } catch (error) {
+      // A swallowed failure here strands the durable connection row while the
+      // app server holds live auth - always leave a trace for operators.
+      console.error(`[codex-pool] login completion for ${input.key} failed:`, error);
       this.closeEntry(input.key, input.entry, input.appServer);
     }
   }
