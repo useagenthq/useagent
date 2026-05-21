@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { readFileSync } from "node:fs";
 
 import { composerPlaceholder, getComposerAction } from "./composer";
 
@@ -53,5 +54,22 @@ describe("composer placeholder honesty", () => {
 
   test("no slash affordance means no hint - @ files and $ skills are never advertised", () => {
     expect(composerPlaceholder({ agentSlash: false, commandCount: 0 })).toBe("Ask anything...");
+  });
+});
+
+describe("composer banner stack contract", () => {
+  test("stacks error, provider, then live-status above the input card - one slot, no fetches", () => {
+    const src = readFileSync(new URL("./composer.tsx", import.meta.url), "utf8");
+    const error = src.indexOf("<T3ThreadErrorBanner");
+    const provider = src.indexOf("<T3ProviderStatusBanner");
+    const pill = src.indexOf("<T3BackgroundStatusPill");
+    const inputCard = src.indexOf("<PromptInput");
+
+    expect(error).toBeGreaterThan(-1);
+    expect(provider).toBeGreaterThan(error);
+    expect(pill).toBeGreaterThan(provider);
+    expect(inputCard).toBeGreaterThan(pill);
+    // The banners are call-site fed props; the composer itself adds no fetch.
+    expect(src).not.toContain("fetch(");
   });
 });

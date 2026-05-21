@@ -26,10 +26,12 @@ import {
   SlashCommandPopover,
   slashInsertText,
 } from "@/components/chat/slash-command";
-import type { EngineId, MemoryScope } from "@/components/chat/types";
+import { type EngineId, engineLabel, type MemoryScope } from "@/components/chat/types";
 import { Loader } from "@/components/prompt-kit/loader";
 import { PromptInput, PromptInputTextarea } from "@/components/prompt-kit/prompt-input";
 import { T3BackgroundStatusPill } from "@/components/t3-ui/background-status-pill";
+import { T3ProviderStatusBanner } from "@/components/t3-ui/provider-status-banner";
+import { T3ThreadErrorBanner } from "@/components/t3-ui/thread-error-banner";
 import { cnExt as cn } from "@/utils/cn";
 
 type Variant = "hero" | "compact";
@@ -149,6 +151,17 @@ export type ComposerProps = {
   /** ISO start of the RUNNING turn (its run.created_at) - powers the status
    *  pill's elapsed timer; absent shows the pill without elapsed. */
   runStartedAt?: string | null;
+  /** The thread's latest-run FAILURE summary (run.summary) - non-null fronts the
+   *  banner stack with the T3 error banner. The call site computes visibility
+   *  (latest run failed + not session-dismissed, see thread-error-banner helpers)
+   *  from thread-store state it already has. */
+  threadError?: string | null;
+  /** Records the session-scoped dismissal at the call site; absent hides the X. */
+  onDismissThreadError?: () => void;
+  /** The selected engine is missing from the server's ready-engines manifest
+   *  (GET /api/config `engines`, see unavailableEngineLabel) - shows the slim
+   *  provider status banner. Computed by the call site; no fetch here. */
+  engineUnavailable?: boolean;
 };
 
 /**
@@ -186,6 +199,9 @@ export function Composer({
   stopError,
   onStop,
   runStartedAt,
+  threadError,
+  onDismissThreadError,
+  engineUnavailable = false,
 }: ComposerProps) {
   const [value, setValue] = useState("");
   // Single fixed engine here; there is no setter (this composer serves replies -
@@ -413,18 +429,26 @@ export function Composer({
         </div>
       )}
 
-      {/* Persistent status pill while this thread's turn runs (T3 desktop
-          grammar): the Stop here stays reachable even while a Steer draft is
-          being typed (the send button is Steer then, not Stop). Same existing
-          durable cancel handler as the button - never a second API path. */}
-      {running && onStop && (
-        <div className="mb-1.5">
-          <T3BackgroundStatusPill
-            label="Run in progress"
-            startedAt={runStartedAt}
-            onStop={onStop}
-            stopping={stopping}
-          />
+      {/* T3 banner stack above the input card, ordered error -> provider ->
+          live-status. Every banner's state is computed by the call site (no
+          fetches here). The status pill keeps the persistent Stop reachable
+          even while a Steer draft is being typed (the send button is Steer
+          then, not Stop) - same existing durable cancel handler as the button,
+          never a second API path. */}
+      {(threadError || engineUnavailable || (running && onStop)) && (
+        <div className="mb-1.5 flex flex-col gap-1.5">
+          {threadError && (
+            <T3ThreadErrorBanner error={threadError} onDismiss={onDismissThreadError} />
+          )}
+          {engineUnavailable && <T3ProviderStatusBanner engineLabel={engineLabel(engine)} />}
+          {running && onStop && (
+            <T3BackgroundStatusPill
+              label="Run in progress"
+              startedAt={runStartedAt}
+              onStop={onStop}
+              stopping={stopping}
+            />
+          )}
         </div>
       )}
 

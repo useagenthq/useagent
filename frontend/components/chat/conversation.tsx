@@ -30,6 +30,17 @@ import { MarkerRow } from "@/components/chat/tool-step-row";
 import { AsteriskMark } from "@/components/foundations/brand/asterisk-mark";
 import { Markdown } from "@/components/prompt-kit/markdown";
 import { segmentTimelineForT3, workEntriesFromTimeline } from "@/components/t3-ui/adapter";
+import { T3ExpandedImageDialog } from "@/components/t3-ui/expanded-image-dialog";
+import { T3MessageCopyButton } from "@/components/t3-ui/message-copy-button";
+import { unavailableEngineLabel } from "@/components/t3-ui/provider-status-banner";
+import { T3QueuedMessagePill } from "@/components/t3-ui/queued-message-pill";
+import {
+  dismissThreadErrorBannerForSession,
+  getThreadErrorBannerKey,
+  isThreadErrorBannerDismissedForSession,
+  shouldShowThreadErrorBanner,
+} from "@/components/t3-ui/thread-error-banner";
+import { useEnabledEngines } from "@/components/chat/engine-picker";
 import { T3WorkGroup } from "@/components/t3-ui/work-group";
 import { T3WorkingIndicator } from "@/components/t3-ui/working-indicator";
 import { cnExt as cn } from "@/utils/cn";
@@ -227,11 +238,15 @@ function ArtifactActions({
 
 function ArtifactRow({ node }: { node: Extract<TimelineNode, { kind: "artifact" }> }) {
   const { artifact } = node;
-  const media =
-    artifact.contentType.startsWith("image/") || artifact.contentType.startsWith("video/");
+  const image = artifact.contentType.startsWith("image/");
+  const media = image || artifact.contentType.startsWith("video/");
   const Icon = media ? RiImageLine : RiFileLine;
-  return (
-    <div className="flex min-w-0 items-center gap-3 rounded-xl border border-stroke-soft-200 bg-bg-weak-50 px-3 py-2.5">
+  // Click-to-expand lightbox for image artifacts with local content (delivered
+  // artifacts have no content endpoint here). Leaf-local state only - no store.
+  const [expanded, setExpanded] = useState(false);
+  const expandable = image && !artifact.destination;
+  const body = (
+    <>
       <Icon aria-hidden className="size-5 shrink-0 text-text-sub-600" />
       <div className="min-w-0 flex-1">
         <p className="truncate text-label-sm text-text-strong-950">{artifact.name}</p>
@@ -241,6 +256,22 @@ function ArtifactRow({ node }: { node: Extract<TimelineNode, { kind: "artifact" 
             : `${media ? "Generated media" : "Artifact"} · ${formatArtifactSize(artifact.bytes)}`}
         </p>
       </div>
+    </>
+  );
+  return (
+    <div className="flex min-w-0 items-center gap-3 rounded-xl border border-stroke-soft-200 bg-bg-weak-50 px-3 py-2.5">
+      {expandable ? (
+        <button
+          type="button"
+          onClick={() => setExpanded(true)}
+          aria-label={`Expand ${artifact.name}`}
+          className="flex min-w-0 flex-1 cursor-zoom-in items-center gap-3 rounded-lg text-left outline-none focus-visible:ring-2 focus-visible:ring-stroke-strong-950"
+        >
+          {body}
+        </button>
+      ) : (
+        body
+      )}
       {artifact.destination === "slack" && (
         <RiSlackLine
           aria-label="Delivered to Slack"
@@ -248,6 +279,15 @@ function ArtifactRow({ node }: { node: Extract<TimelineNode, { kind: "artifact" 
         />
       )}
       {!artifact.destination && <ArtifactActions id={artifact.id} name={artifact.name} />}
+      {expanded && (
+        <T3ExpandedImageDialog
+          preview={{
+            images: [{ src: `/api/artifacts/${artifact.id}/content`, name: artifact.name }],
+            index: 0,
+          }}
+          onClose={() => setExpanded(false)}
+        />
+      )}
     </div>
   );
 }
@@ -332,7 +372,16 @@ function toolNodesFromSteps(steps: readonly ApiStep[]): TimelineNode[] {
 
 /** A single turn: the user's clean prompt, the agent's answer, and its activity
  * (open + streaming while live, a collapsed disclosure once settled). */
-function TurnBlock({ turn, onSendNow }: { turn: Turn; onSendNow?: () => void }) {
+function TurnBlock({
+  turn,
+  queuePosition,
+  onSendNow,
+}: {
+  turn: Turn;
+  /** 1-based place among this thread's queued turns (queued rendering only). */
+  queuePosition?: number;
+  onSendNow?: () => void;
+}) {
   const { run, steps, status, summary, live, liveText, liveReasoning } = turn;
   // Capture whether this turn was streaming when it first mounted, so its
   // summary typewriters in on arrival but settled history renders instantly.
@@ -400,19 +449,7 @@ function TurnBlock({ turn, onSendNow }: { turn: Turn; onSendNow?: () => void }) 
     return (
       <div className="space-y-1" data-testid="turn-block" data-run-id={run.id}>
         <UserBubble>{cleanPrompt(run.prompt)}</UserBubble>
-        <div className="flex items-center justify-end gap-2">
-          <span className="text-label-xs text-text-soft-400">queued</span>
-          {onSendNow && (
-            <button
-              type="button"
-              onClick={onSendNow}
-              title="Stops the current turn; this message starts immediately"
-              className="text-label-xs text-primary-base cursor-pointer underline-offset-2 outline-none hover:underline focus-visible:underline"
-            >
-              Send now
-            </button>
-          )}
-        </div>
+        <T3QueuedMessagePill position={queuePosition ?? 1} onSendNow={onSendNow} />
       </div>
     );
   }
@@ -424,7 +461,7 @@ function TurnBlock({ turn, onSendNow }: { turn: Turn; onSendNow?: () => void }) 
       {/* Assistant block: avatar + name on a header row, with the answer and the
           worklog capsule aligned to the same left content edge as every other
           assistant turn — one column, symmetric with the user bubble's bounds. */}
-      <div className="space-y-3">
+      <div className="group/turn space-y-3">
         <div className="flex items-center gap-2">
           <span className="ring-stroke-soft-200 bg-bg-weak-50 flex size-5 shrink-0 items-center justify-center rounded-full ring-1 ring-inset">
             <AsteriskMark className="text-text-strong-950 size-3" />
@@ -489,6 +526,15 @@ function TurnBlock({ turn, onSendNow }: { turn: Turn; onSendNow?: () => void }) 
             )}
           </>
         )}
+
+        {/* Hover copy on the settled answer (T3 grammar). The durable summary IS
+            the answer markdown even when the timeline's final narration burst
+            rendered it, so one affordance covers both render paths. */}
+        {!live && summary && (
+          <div className="flex opacity-0 transition-opacity focus-within:opacity-100 group-hover/turn:opacity-100">
+            <T3MessageCopyButton text={summary} />
+          </div>
+        )}
       </div>
     </div>
   );
@@ -509,6 +555,10 @@ function ReplyComposer({
   stopping,
   stopError,
   onStop,
+  runStartedAt,
+  threadError,
+  onDismissThreadError,
+  engineUnavailable,
 }: {
   engine: EngineId;
   model: string;
@@ -526,6 +576,10 @@ function ReplyComposer({
   stopping?: boolean;
   stopError?: string | null;
   onStop?: () => void;
+  runStartedAt?: string | null;
+  threadError?: string | null;
+  onDismissThreadError?: () => void;
+  engineUnavailable?: boolean;
 }) {
   return (
     <div className="shrink-0 px-4 pb-4 pt-2">
@@ -547,6 +601,10 @@ function ReplyComposer({
           stopping={stopping}
           stopError={stopError}
           onStop={onStop}
+          runStartedAt={runStartedAt}
+          threadError={threadError}
+          onDismissThreadError={onDismissThreadError}
+          engineUnavailable={engineUnavailable}
         />
       </div>
     </div>
@@ -583,6 +641,7 @@ export function Conversation({
   stopping,
   stopError,
   onStop,
+  runStartedAt,
 }: {
   turns: Turn[];
   defaultEngine: EngineId;
@@ -618,6 +677,9 @@ export function Conversation({
   stopping?: boolean;
   stopError?: string | null;
   onStop?: () => void;
+  /** ISO start of the RUNNING turn (its run.created_at) - powers the composer
+   *  status pill's elapsed timer. */
+  runStartedAt?: string | null;
 }) {
   // Stick-to-bottom autoscroll: follow new turns/steps/narration as they
   // stream, but ONLY while the user is already near the bottom — scrolling up
@@ -640,6 +702,42 @@ export function Conversation({
   const controlLocksComposer =
     !!pendingApproval || (!!pendingQuestion && !composerCanAnswerQuestion);
 
+  // 1-based FIFO position per queued turn: the queued pill states the honest
+  // place in line (position 1 waits only on the running turn).
+  const queuedPositions = new Map(
+    turns.filter((t) => t.status === "queued").map((t, i) => [t.run.id, i + 1] as const),
+  );
+
+  // Thread-error banner: the newest FAILED run's real summary, dismissible for
+  // the session (a NEW error re-appears because the key includes the message).
+  // No banner while a turn is running - the live pill owns that state.
+  const newestFailed = running
+    ? undefined
+    : [...turns].reverse().find((t) => t.run.status === "failed" && t.run.summary);
+  const threadErrorKey = getThreadErrorBannerKey(
+    newestFailed?.run.id ?? "",
+    newestFailed?.run.summary ?? null,
+  );
+  const [, bumpDismissTick] = useState(0);
+  const threadError =
+    newestFailed &&
+    shouldShowThreadErrorBanner(
+      newestFailed.run.id,
+      newestFailed.run.summary,
+      isThreadErrorBannerDismissedForSession(threadErrorKey),
+    )
+      ? newestFailed.run.summary
+      : null;
+  const handleDismissThreadError = () => {
+    dismissThreadErrorBannerForSession(threadErrorKey);
+    bumpDismissTick((t) => t + 1);
+  };
+
+  // Provider banner: flag the thread's engine only when a NON-EMPTY manifest
+  // omits it (empty manifest means not yet resolved, never a warning).
+  const enabledEngines = useEnabledEngines();
+  const engineUnavailable = unavailableEngineLabel(defaultEngine, enabledEngines) !== null;
+
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div
@@ -654,6 +752,7 @@ export function Conversation({
           <TurnBlock
             key={turn.run.id}
             turn={turn}
+            queuePosition={queuedPositions.get(turn.run.id)}
             onSendNow={turn.run.id === sendNowFor ? onSendNow : undefined}
           />
         ))}
@@ -701,6 +800,10 @@ export function Conversation({
         stopping={stopping}
         stopError={stopError}
         onStop={onStop}
+        runStartedAt={runStartedAt}
+        threadError={threadError}
+        onDismissThreadError={handleDismissThreadError}
+        engineUnavailable={engineUnavailable}
       />
     </div>
   );
