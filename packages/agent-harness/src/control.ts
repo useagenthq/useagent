@@ -70,11 +70,30 @@ export type HarnessOperationResult =
   | { status: "error"; code: string; message: string }
   | HarnessUnsupported;
 
+/** A single native event a reconcile probe surfaces while a run is still
+ *  `in_progress`, so the recovery loop can append it to the canonical run and the
+ *  timeline advances DURING adoption instead of showing a frozen marker. `id` is
+ *  the provider's stable event id (opencode `pe_<partId>`); ingestion upserts on
+ *  it, so a re-probe and the live lane never create a duplicate row. */
+export interface HarnessInterimEvent {
+  id: string;
+  provider: string;
+  eventType: string;
+  sessionId?: string | null;
+  messageId?: string | null;
+  partId?: string | null;
+  callId?: string | null;
+  payload?: unknown;
+}
+
 /** Result of a reconcile probe - the provider-neutral projection of what the
- *  native session's history shows after an interruption. */
+ *  native session's history shows after an interruption. `in_progress` may carry
+ *  the interim events seen since the checkpoint so the caller can keep the
+ *  timeline alive while it re-probes; a provider that cannot surface them just
+ *  omits the field (graceful degrade, no faked progress). */
 export type HarnessReconciliation =
   | { status: "completed"; summary: string }
-  | { status: "in_progress" }
+  | { status: "in_progress"; events?: readonly HarnessInterimEvent[] }
   | { status: "no_change" }
   | { status: "unreachable" }
   | HarnessUnsupported;

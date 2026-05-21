@@ -1,13 +1,15 @@
-import { randomBytes } from "node:crypto";
 import { resolveHarness } from "../engines";
 import type {
   HarnessCheckpoint,
+  HarnessInterimEvent,
   HarnessReconciliation,
   HarnessSessionHandle,
 } from "../engines/types";
 import { getLastStepAt, getRun, STALE_SUMMARY } from "./repo";
 import { finalizeRun } from "./finalize";
 import { recordProviderEvent } from "./provider-events";
+import { createSecretRedactor, type SecretRedactor } from "../secrets/redact";
+import { decryptOrgSecrets } from "../secrets/store";
 import {
   bumpReconcile,
   claimDueReconciles,
@@ -191,7 +193,11 @@ async function recoverRunningRun(
         deadline: new Date(now + RECONCILE_PARK_BUDGET_MS),
       });
       if (newlyParked) {
-        recordReconcilingMarker(cmd.runId, cmd.threadId, lastStepAt ?? new Date(now), now + RECONCILE_PARK_BUDGET_MS);
+        recordReconcilingMarker(cmd.runId, cmd.threadId, {
+          reason: "boot-restart",
+          sinceMs: (lastStepAt ?? new Date(now)).getTime(),
+          deadlineMs: now + RECONCILE_PARK_BUDGET_MS,
+        });
       }
       return "parked";
     }
@@ -200,19 +206,82 @@ async function recoverRunningRun(
   }
 }
 
-/** Emit the durable "reconciling after restart" marker on the native lane so the
- *  timeline can show the run is being re-probed. Frozen frame contract (#63):
- *  provider "skynet", eventType "run.reconciling", payload {reason, sinceMs,
- *  deadlineMs}. Fire-and-forget; never throws. */
-function recordReconcilingMarker(runId: string, threadId: string, sinceAt: Date, deadlineMs: number): void {
+/** Payload of the durable "reconciling after restart" marker. `reason` is
+ *  "boot-restart" for the initial park frame and "reprobe" for a re-probe
+ *  heartbeat; the heartbeat also carries `lastProbeAt` + `eventsRecovered`. */
+interface ReconcilingMarkerPayload {
+  reason: "boot-restart" | "reprobe";
+  sinceMs: number;
+  deadlineMs: number;
+  lastProbeAt?: number;
+  eventsRecovered?: number;
+}
+
+/** Upsert the durable "reconciling after restart" marker on the native lane so
+ *  the timeline shows the run is being re-probed. Frozen frame contract (#63):
+ *  provider "skynet", eventType "run.reconciling". The id is STABLE per run, so
+ *  the boot-park frame and every re-probe heartbeat address the SAME row — one
+ *  marker that keeps advancing (each upsert mints a fresh seq → SSE subscribers
+ *  see a live heartbeat) instead of a frozen frame or a pile of duplicate rows.
+ *  Fire-and-forget; never throws. */
+function recordReconcilingMarker(runId: string, threadId: string, payload: ReconcilingMarkerPayload): void {
   void recordProviderEvent({
-    id: `reconciling_${runId}_${randomBytes(4).toString("hex")}`,
+    id: `reconciling_${runId}`,
     runId,
     threadId,
     provider: "skynet",
     eventType: RUN_RECONCILING,
-    payload: { reason: "boot-restart", sinceMs: sinceAt.getTime(), deadlineMs },
+    payload,
   }).catch(() => {});
+}
+
+/** Build the redactor for interim-event payloads from the run's org secrets, so a
+ *  re-probe redacts exactly what the live capture lane does. A null org (or a
+ *  decrypt failure) still yields a baseline redactor that scrubs JWTs and signed
+ *  capabilities. Never throws. */
+async function reconcileRedactor(orgId: string | null): Promise<SecretRedactor> {
+  if (!orgId) return createSecretRedactor([]);
+  try {
+    const decrypted = await decryptOrgSecrets(orgId);
+    return createSecretRedactor(decrypted.secrets.map((s) => s.value));
+  } catch {
+    return createSecretRedactor([]);
+  }
+}
+
+/** Append the interim native events a re-probe surfaced to the canonical run, so
+ *  SSE subscribers watch the timeline advance while the run is being adopted.
+ *  Idempotent: recordProviderEvent upserts on the stable provider event id
+ *  (opencode `pe_<partId>`), the SAME key the live lane uses, so re-probes and the
+ *  pre-restart lane never create a duplicate row. Payloads are redacted like the
+ *  live lane. Returns the number ingested this probe. Never throws. */
+async function ingestInterimEvents(
+  entry: ReconcileEntry,
+  orgId: string | null,
+  events: readonly HarnessInterimEvent[],
+): Promise<number> {
+  const redact = await reconcileRedactor(orgId);
+  let recovered = 0;
+  for (const ev of events) {
+    try {
+      await recordProviderEvent({
+        id: ev.id,
+        runId: entry.runId,
+        threadId: entry.threadId,
+        provider: ev.provider,
+        eventType: ev.eventType,
+        nativeSessionId: ev.sessionId ?? null,
+        nativeMessageId: ev.messageId ?? null,
+        nativePartId: ev.partId ?? null,
+        nativeCallId: ev.callId ?? null,
+        payload: redact.unknown(ev.payload),
+      });
+      recovered++;
+    } catch {
+      /* a single malformed event must never abort the probe */
+    }
+  }
+  return recovered;
 }
 
 // ---------------------------------------------------------------------------
@@ -226,12 +295,13 @@ function recordReconcilingMarker(runId: string, threadId: string, sinceAt: Date,
  *  tests/telemetry. The probe is injectable (tests). Never throws. */
 export async function runDueReconciles(
   reconcile: ReconcileProbe = defaultReconcile,
-): Promise<{ adopted: number; failed: number; retried: number; dropped: number }> {
+): Promise<{ adopted: number; failed: number; retried: number; dropped: number; eventsRecovered: number }> {
   const due = await claimDueReconciles();
   let adopted = 0;
   let failed = 0;
   let retried = 0;
   let dropped = 0;
+  let eventsRecovered = 0;
   for (const entry of due) {
     // NO-DOUBLE-ADOPT: if the run already settled via another lane (a reply's
     // worker took the thread, a cancel, a prior tick), just drop the parked row.
@@ -242,6 +312,16 @@ export async function runDueReconciles(
       continue;
     }
     const result = await probeParked(entry, reconcile);
+    // CONTINUITY (#63): while the run is still parked and its session is reachable
+    // and generating, ingest the interim native events so the timeline advances
+    // during adoption instead of freezing. Idempotent across probes (upsert on the
+    // live-lane part id). A provider that can't surface interim events (ACP) just
+    // returns none — today's frozen-marker behavior, no faked progress.
+    const recovered =
+      result.status === "in_progress" && result.events?.length
+        ? await ingestInterimEvents(entry, run.orgId, result.events)
+        : 0;
+    eventsRecovered += recovered;
     const action = nextReconcileAction(result.status === "completed", Date.now(), entry.deadlineMs);
     if (action === "adopt") {
       await finalizeRun(entry.runId, "completed", (result as { summary: string }).summary, 0);
@@ -254,11 +334,23 @@ export async function runDueReconciles(
       await deleteReconcile(entry.runId);
       failed++;
     } else {
+      // Retry: heartbeat the reconciling marker so the row shows liveness — but
+      // ONLY when we actually reached the session (in_progress / no_change). An
+      // unreachable probe learns nothing, so it must not fake a heartbeat.
+      if (result.status === "in_progress" || result.status === "no_change") {
+        recordReconcilingMarker(entry.runId, entry.threadId, {
+          reason: "reprobe",
+          sinceMs: entry.sinceMs,
+          deadlineMs: entry.deadlineMs,
+          lastProbeAt: Date.now(),
+          eventsRecovered: recovered,
+        });
+      }
       await bumpReconcile(entry.runId, reconcileBackoffAt(Date.now(), entry.attempts));
       retried++;
     }
   }
-  return { adopted, failed, retried, dropped };
+  return { adopted, failed, retried, dropped, eventsRecovered };
 }
 
 /** Bounded native-session re-probe for one parked entry. Never throws. */
