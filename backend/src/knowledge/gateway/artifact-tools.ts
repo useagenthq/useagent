@@ -1,4 +1,6 @@
 import { publishSandboxArtifact } from "../../artifacts/publish";
+import type { ArtifactDescriptor } from "../../artifacts/repo";
+import { absoluteArtifactUrl, absoluteArtifactUrlContent } from "./artifact-links";
 import type { ToolTokenClaims } from "./token";
 
 interface ToolResult {
@@ -69,6 +71,19 @@ export const ARTIFACT_TOOL_NAMES: ReadonlySet<string> = new Set(
   ARTIFACT_TOOLS.map((tool) => tool.name),
 );
 
+type SandboxArtifactPublisher = (
+  input: Parameters<typeof publishSandboxArtifact>[0],
+) => Promise<{ artifact: ArtifactDescriptor; created: boolean }>;
+
+let publisherOverride: SandboxArtifactPublisher | null = null;
+
+/** Test-only seam: production always publishes through the artifacts pipeline. */
+export function setSandboxArtifactPublisherForTest(
+  publisher: SandboxArtifactPublisher | null,
+): void {
+  publisherOverride = publisher;
+}
+
 export async function executeArtifactTool(
   claims: ToolTokenClaims,
   name: string,
@@ -83,7 +98,7 @@ export async function executeArtifactTool(
     );
   }
   try {
-    const published = await publishSandboxArtifact({
+    const published = await (publisherOverride ?? publishSandboxArtifact)({
       orgId: claims.orgId,
       userId: claims.userId,
       runId: claims.runId,
@@ -96,8 +111,15 @@ export async function executeArtifactTool(
     });
     return result(
       `${published.created ? "Published" : "Already published"} ${published.artifact.name} ` +
-        `(${published.artifact.size_bytes} bytes) as artifact ${published.artifact.id}.`,
-      { artifact: published.artifact, created: published.created },
+        `(${published.artifact.size_bytes} bytes) as artifact ${published.artifact.id}.\n` +
+        "Preview URL (use exactly as written, never substitute another host): " +
+        `${absoluteArtifactUrl(published.artifact.preview_url)}\n` +
+        `Download URL (use exactly as written): ${absoluteArtifactUrl(published.artifact.download_url)}`,
+      {
+        artifact: published.artifact,
+        created: published.created,
+        ...absoluteArtifactUrlContent(published.artifact),
+      },
     );
   } catch (error) {
     const message = error instanceof Error ? error.message : "artifact publish failed";
