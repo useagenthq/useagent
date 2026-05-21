@@ -196,7 +196,7 @@ describe("production provider registry", () => {
     expect(driver?.provider).toBe("codex");
     expect(driver?.descriptor.protocol).toEqual({
       name: "t3-orchestration",
-      version: "t3-v2",
+      version: "t3-v3",
     });
     expect(validateProviderDriver(driver)).toEqual({ status: "ok" });
   });

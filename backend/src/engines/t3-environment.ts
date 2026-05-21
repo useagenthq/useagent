@@ -7,7 +7,7 @@ import {
 
 export const T3_ENVIRONMENT_PORT = 37_733;
 export const T3_RUNTIME_GENERATION_LABEL = "skynet.runtime";
-export const T3_RUNTIME_GENERATION = "t3-v2";
+export const T3_RUNTIME_GENERATION = "t3-v3";
 export const T3_CUBE_WARM_POOL_NAME = T3_RUNTIME_GENERATION;
 const T3_ENVIRONMENT_PROCESS_SESSION = "skynet-t3-environment";
 export const T3_ENVIRONMENT_HOME = "$HOME/.skynet/t3";
