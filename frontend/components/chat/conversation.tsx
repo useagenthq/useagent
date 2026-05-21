@@ -1,9 +1,6 @@
 "use client";
 
 import {
-  RiArrowDownSLine,
-  RiCheckLine,
-  RiCloseLine,
   RiDownloadLine,
   RiExternalLinkLine,
   RiFileEditLine,
@@ -29,10 +26,12 @@ import { QuestionCard } from "@/components/chat/question-card";
 import type { PendingQuestion } from "@/components/chat/question-state";
 import type { SlashCommand } from "@/components/chat/slash-command";
 import { buildTimeline, hasNarration, type TimelineNode } from "@/components/chat/timeline";
-import { MarkerRow, ToolStepRow } from "@/components/chat/tool-step-row";
+import { MarkerRow } from "@/components/chat/tool-step-row";
 import { AsteriskMark } from "@/components/foundations/brand/asterisk-mark";
 import { Markdown } from "@/components/prompt-kit/markdown";
-import * as Badge from "@/components/ui/badge";
+import { segmentTimelineForT3, workEntriesFromTimeline } from "@/components/t3-ui/adapter";
+import { T3WorkGroup } from "@/components/t3-ui/work-group";
+import { T3WorkingIndicator } from "@/components/t3-ui/working-indicator";
 import { cnExt as cn } from "@/utils/cn";
 
 // Canonical-timeline cutover flag (final_harness Phase 1, slice 4). OFF by default:
@@ -280,84 +279,42 @@ function FileChangeRow({ node }: { node: Extract<TimelineNode, { kind: "file" }>
 }
 
 /**
- * The interleaved turn timeline: narration bursts and the tool rows that followed
- * them, in TRUE ORDER (opencode-style) from the native ordered frames. While live,
- * the last tool reads as running and a LoadingState tails the block; the final
- * narration burst is the turn's answer (so the summary is not re-rendered below).
- * Each node is memoized (TextBurst by text, ToolStepRow by step) so a 20-way
- * fanout doesn't restorm on every frame.
+ * The interleaved turn timeline: narration bursts and the tool work that followed
+ * them, in TRUE ORDER (opencode-style). Non-tool nodes (markers, text, reasoning,
+ * artifacts, files) keep their own renderers; consecutive tool nodes fold into the
+ * vendored T3 work grammar (compact rows, expand disclosure, failed/success
+ * affordances, "+N previous tool calls" overflow). While live, the in-flight tool
+ * is represented by the T3 working indicator's step suffix (upstream filters
+ * in-progress rows from the group), which also replaces the old LoadingState tail.
  */
-function Timeline({ nodes, live }: { nodes: TimelineNode[]; live: boolean }) {
-  // LIVE: render flat so every tool row streams in view as it happens.
-  if (live) {
-    const last = nodes.length - 1;
-    return (
-      <div className="space-y-3" data-testid="session-timeline">
-        {nodes.map((node, i) =>
-          node.kind === "marker" ? (
-            <MarkerRow key={node.key} marker={node.marker} />
-          ) : node.kind === "text" ? (
-            <TextBurst key={node.key} text={node.text} />
-          ) : node.kind === "artifact" ? (
-            <ArtifactRow key={node.key} node={node} />
-          ) : node.kind === "file" ? (
-            <FileChangeRow key={node.key} node={node} />
-          ) : node.kind === "reasoning" ? (
-            <SettledThought key={node.key} text={node.text} />
-          ) : (
-            <ToolStepRow key={node.key} step={node.step} state={i === last ? "running" : "done"} />
-          ),
-        )}
-        <LoadingState label="Working" className="mt-1" />
-      </div>
-    );
-  }
-
-  // SETTLED: keep narration + markers inline, but FOLD consecutive tool rows
-  // into a collapsed "Ran N tools" disclosure - a long turn (15 tool calls)
-  // otherwise dumps every row and buries the answer (user report / BUG-010).
-  // A lone tool between bursts stays inline (nothing to collapse).
-  type Group =
-    | { kind: "inline"; key: string; node: Exclude<TimelineNode, { kind: "tool" }> }
-    | { kind: "tools"; key: string; steps: TimelineNode[] };
-  const groups: Group[] = [];
-  for (const node of nodes) {
-    if (node.kind === "tool") {
-      const last = groups.at(-1);
-      if (last && last.kind === "tools") last.steps.push(node);
-      else groups.push({ kind: "tools", key: node.key, steps: [node] });
-    } else {
-      groups.push({ kind: "inline", key: node.key, node });
-    }
-  }
+function Timeline({
+  nodes,
+  live,
+  workingSince,
+}: {
+  nodes: TimelineNode[];
+  live: boolean;
+  workingSince?: string;
+}) {
+  const { segments, workingLabel } = useMemo(() => segmentTimelineForT3(nodes, live), [nodes, live]);
   return (
     <div className="space-y-3" data-testid="session-timeline">
-      {groups.map((g) => {
-        if (g.kind === "inline") {
-          return g.node.kind === "marker" ? (
-            <MarkerRow key={g.key} marker={g.node.marker} />
-          ) : g.node.kind === "artifact" ? (
-            <ArtifactRow key={g.key} node={g.node} />
-          ) : g.node.kind === "file" ? (
-            <FileChangeRow key={g.key} node={g.node} />
-          ) : g.node.kind === "reasoning" ? (
-            <SettledThought key={g.key} text={g.node.text} />
-          ) : (
-            <TextBurst key={g.key} text={g.node.text} />
-          );
-        }
-        const stepOf = (n: TimelineNode) => (n as Extract<TimelineNode, { kind: "tool" }>).step;
-        if (g.steps.length === 1) {
-          return <ToolStepRow key={g.key} step={stepOf(g.steps[0])} state="done" />;
-        }
-        return (
-          <Thinking key={g.key} label={`Ran ${g.steps.length} tools`} active={false}>
-            {g.steps.map((n) => (
-              <ToolStepRow key={n.key} step={stepOf(n)} state="done" />
-            ))}
-          </Thinking>
-        );
-      })}
+      {segments.map((seg) =>
+        seg.kind === "tools" ? (
+          <T3WorkGroup key={seg.key} entries={seg.entries} turnSettled={!live} />
+        ) : seg.node.kind === "marker" ? (
+          <MarkerRow key={seg.key} marker={seg.node.marker} />
+        ) : seg.node.kind === "artifact" ? (
+          <ArtifactRow key={seg.key} node={seg.node} />
+        ) : seg.node.kind === "file" ? (
+          <FileChangeRow key={seg.key} node={seg.node} />
+        ) : seg.node.kind === "reasoning" ? (
+          <SettledThought key={seg.key} text={seg.node.text} />
+        ) : (
+          <TextBurst key={seg.key} text={seg.node.text} />
+        ),
+      )}
+      {live && <T3WorkingIndicator createdAt={workingSince ?? null} stepLabel={workingLabel} />}
     </div>
   );
 }
@@ -367,56 +324,10 @@ function Timeline({ nodes, live }: { nodes: TimelineNode[]; live: boolean }) {
 // fake approval card mid-run was actively misleading. When a real approval flow
 // lands backend-side, compose `@/components/ai/approval-card` here again.
 
-/**
- * Settled worklog, beautiful-ui capsule style: a pill row with a status circle,
- * step count, and Completed/Failed badge that expands to the full step cards.
- * Live activity keeps the Thinking shimmer — this is only the settled state.
- */
-function WorklogCapsule({
-  count,
-  failed,
-  children,
-}: {
-  count: number;
-  failed: boolean;
-  children: React.ReactNode;
-}) {
-  const [open, setOpen] = useState(false);
-  const Icon = failed ? RiCloseLine : RiCheckLine;
-  return (
-    <div className="space-y-2.5">
-      <button
-        type="button"
-        aria-expanded={open}
-        onClick={() => setOpen((o) => !o)}
-        className="border-stroke-soft-200 bg-bg-white-0 hover:bg-bg-weak-50 flex items-center gap-2.5 rounded-full border py-1.5 pl-1.5 pr-2.5 transition-colors"
-      >
-        <span
-          className={cn(
-            "text-static-white flex size-5 shrink-0 items-center justify-center rounded-full",
-            failed ? "bg-error-base" : "bg-success-base",
-          )}
-        >
-          <Icon className="size-3" aria-hidden />
-        </span>
-        <span className="text-label-sm text-text-strong-950">Worklog</span>
-        <span className="text-paragraph-xs text-text-soft-400">
-          {count} step{count === 1 ? "" : "s"}
-        </span>
-        <Badge.Root variant="light" color={failed ? "red" : "green"} size="medium">
-          {failed ? "Failed" : "Completed"}
-        </Badge.Root>
-        <RiArrowDownSLine
-          className={cn(
-            "text-text-soft-400 size-4 shrink-0 transition-transform duration-200",
-            open && "rotate-180",
-          )}
-          aria-hidden
-        />
-      </button>
-      {open && <div className="space-y-2.5">{children}</div>}
-    </div>
-  );
+/** Wrap legacy ApiStep rows as canonical tool nodes so the T3 adapter stays the
+ *  ONE step-to-work-entry mapping (no parallel grammar for the fallback lane). */
+function toolNodesFromSteps(steps: readonly ApiStep[]): TimelineNode[] {
+  return steps.map((step) => ({ kind: "tool", key: step.id, step }));
 }
 
 /** A single turn: the user's clean prompt, the agent's answer, and its activity
@@ -469,14 +380,6 @@ function TurnBlock({ turn, onSendNow }: { turn: Turn; onSendNow?: () => void }) 
   // they're live indicators, not work worth re-reading. Live rendering keeps
   // them — they ARE the signal during the boot gap.
   const settled = activity.filter((s) => deriveTrace(s).accent !== "boot");
-  // Settled-state weight (beautiful-ui): fanout turns earn the full Worklog
-  // capsule; plain tool runs settle into the quiet "Ran N tools" trace.
-  const hasSubagents = settled.some((s) => s.chip === "subagent");
-  const toolCount = settled.filter((s) => s.kind === "command" || s.kind === "file").length;
-  const traceLabel =
-    toolCount > 0
-      ? `Ran ${toolCount} tool${toolCount === 1 ? "" : "s"}`
-      : `${settled.length} step${settled.length === 1 ? "" : "s"}`;
   // While narration is streaming it IS this turn's live indicator: show the
   // fading text + caret and suppress the Thinking shimmer so only one live
   // signal shows at a time.
@@ -540,46 +443,35 @@ function TurnBlock({ turn, onSendNow }: { turn: Turn; onSendNow?: () => void }) 
              burst is the answer, so the durable summary is re-rendered only when
              the timeline carried no narration (a tool-only turn). */
           <div data-timeline-source={timelineSource}>
-            <Timeline nodes={timeline} live={live} />
+            <Timeline nodes={timeline} live={live} workingSince={run.created_at} />
             {summary && !hasNarration(timeline) && <AgentAnswer summary={summary} />}
             {failed && !summary && !hasNarration(timeline) && <FailedNote />}
           </div>
         ) : (
           /* Fallback (no native frames): activity first, then the answer. One live
              indicator at a time — while narration streams it IS the indicator, so
-             the Thinking block is suppressed (the boot gap is owned by the
-             session's OrbBootIndicator). Settled history splits by weight: subagent
-             fanouts (and failures, which need the status badge) keep the Worklog
-             capsule; plain tool runs collapse to the quiet trace. */
+             the working row is suppressed (the boot gap is owned by the session's
+             OrbBootIndicator). Steps render through the same T3 work grammar as
+             the interleaved timeline: settled work folds behind "+N previous tool
+             calls"; live work tails with the T3 working indicator. */
           <>
             {narrating
               ? null
               : live
                 ? activity.length > 0 && (
-                    <Thinking label={`Working - ${latestLabel}`} active open>
-                      {activity.map((step, i) => (
-                        <ToolStepRow
-                          key={step.id}
-                          step={step}
-                          state={i === activity.length - 1 ? "running" : "done"}
-                        />
-                      ))}
-                    </Thinking>
+                    <>
+                      <T3WorkGroup
+                        entries={workEntriesFromTimeline(toolNodesFromSteps(activity), true)}
+                        turnSettled={false}
+                      />
+                      <T3WorkingIndicator createdAt={run.created_at} stepLabel={latestLabel} />
+                    </>
                   )
-                : settled.length > 0 &&
-                  (hasSubagents || failed ? (
-                    <WorklogCapsule count={settled.length} failed={failed}>
-                      {settled.map((step) => (
-                        <ToolStepRow key={step.id} step={step} state="done" />
-                      ))}
-                    </WorklogCapsule>
-                  ) : (
-                    <Thinking label={traceLabel} active={false}>
-                      {settled.map((step) => (
-                        <ToolStepRow key={step.id} step={step} state="done" />
-                      ))}
-                    </Thinking>
-                  ))}
+                : settled.length > 0 && (
+                    <T3WorkGroup
+                      entries={workEntriesFromTimeline(toolNodesFromSteps(settled), false)}
+                    />
+                  )}
 
             {summary && <AgentAnswer summary={summary} stream={wasLive && !sawNarration} />}
 

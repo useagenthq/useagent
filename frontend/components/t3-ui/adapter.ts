@@ -14,7 +14,12 @@
 
 import { type TimelineNode } from "@/components/chat/timeline";
 import { deriveTrace } from "@/components/chat/types";
-import { type T3WorkEntry } from "./work-entry";
+import {
+  normalizeCompactToolLabel,
+  type T3WorkEntry,
+  toolWorkEntryHeading,
+  workEntryPreview,
+} from "./work-entry";
 
 export type T3RowState = "running" | "done";
 
@@ -87,4 +92,67 @@ export function workEntriesFromTimeline(
     if (entry) entries.push(entry);
   }
   return entries;
+}
+
+// ── Session-timeline segmentation (conversation.tsx binding) ─────────────────
+//
+// Upstream renders the timeline as message rows interleaved with WorkGroupSection
+// bursts, plus ONE working row at the tail while a turn is in flight; in-progress
+// tool entries never render as rows (groupWorkEntryOverflow filters neutral
+// status) - the working indicator's step suffix represents them instead.
+
+export type T3TimelineSegment =
+  | { kind: "node"; key: string; node: Exclude<TimelineNode, { kind: "tool" }> }
+  | { kind: "tools"; key: string; entries: T3WorkEntry[] };
+
+export interface T3TimelineProjection {
+  segments: T3TimelineSegment[];
+  /** "Heading - preview" of the in-flight tool while live (T3WorkingIndicator's
+   *  stepLabel, upstream workingStepLabel); null unless the timeline currently
+   *  ends in a running tool. */
+  workingLabel: string | null;
+}
+
+/** Compact "Heading - preview" label for one entry (the row's own collapsed grammar). */
+function entryDisplayLabel(entry: T3WorkEntry): string {
+  const heading = toolWorkEntryHeading(entry);
+  const preview = workEntryPreview(entry, undefined);
+  if (
+    !preview ||
+    normalizeCompactToolLabel(preview).toLowerCase() ===
+      normalizeCompactToolLabel(heading).toLowerCase()
+  ) {
+    return heading;
+  }
+  return `${heading} - ${preview}`;
+}
+
+/**
+ * Segment a canonical timeline for the session conversation: non-tool nodes stay
+ * in true order under their own renderers; consecutive tool nodes fold into one
+ * T3 work group. While live, the trailing tool maps to "running" (the group
+ * filters it) and its label rides out as `workingLabel`.
+ */
+export function segmentTimelineForT3(
+  nodes: readonly TimelineNode[],
+  live: boolean,
+): T3TimelineProjection {
+  const segments: T3TimelineSegment[] = [];
+  let workingLabel: string | null = null;
+  for (const [index, node] of nodes.entries()) {
+    if (node.kind !== "tool") {
+      segments.push({ kind: "node", key: node.key, node });
+      continue;
+    }
+    const state: T3RowState = live && index === nodes.length - 1 ? "running" : "done";
+    const entry = workEntryFromTimelineNode(node, state);
+    if (!entry) continue;
+    const last = segments.at(-1);
+    if (last?.kind === "tools") last.entries.push(entry);
+    else segments.push({ kind: "tools", key: node.key, entries: [entry] });
+    if (state === "running" && entry.toolLifecycleStatus === "inProgress") {
+      workingLabel = entryDisplayLabel(entry);
+    }
+  }
+  return { segments, workingLabel };
 }
