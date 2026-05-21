@@ -10,7 +10,7 @@ import { SearchCommand } from "./search-command";
 import { SidebarBrand } from "./sidebar-brand";
 import { Sidebar, SidebarNavItem } from "./sidebar-nav";
 import { SidebarProjects } from "./sidebar-projects";
-import { SidebarRecents } from "./sidebar-recents";
+import { SidebarThreads } from "./sidebar-threads";
 import { ThemeToggle } from "./theme-toggle";
 import { UserMenu } from "./user-menu";
 import { WorkingProjectStatus } from "./working-project-status";
@@ -68,7 +68,7 @@ export function ThreadSidebar({ active }: { active?: ThreadSidebarActive }) {
         trailing={<WorkingProjectStatus />}
       />
       <SidebarProjects />
-      <SidebarRecents />
+      <SidebarThreads />
     </Sidebar>
   );
 }
