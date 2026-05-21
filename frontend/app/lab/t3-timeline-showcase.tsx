@@ -8,8 +8,18 @@
 
 import { type TimelineNode } from "@/components/chat/timeline";
 import { type ApiStep } from "@/components/chat/types";
-import { workEntriesFromTimeline, workEntryFromTimelineNode } from "@/components/t3-ui/adapter";
+import {
+  changedFilesFromTimeline,
+  contextWindowFromChildUsage,
+  workEntriesFromTimeline,
+  workEntryFromTimelineNode,
+} from "@/components/t3-ui/adapter";
 import { T3BackgroundStatusPill } from "@/components/t3-ui/background-status-pill";
+import { T3ChangedFilesCard } from "@/components/t3-ui/changed-files-tree";
+import {
+  T3ContextWindowDetails,
+  T3ContextWindowMeter,
+} from "@/components/t3-ui/context-window-meter";
 import { T3QueuedMessagePill } from "@/components/t3-ui/queued-message-pill";
 import { T3SyncStatusPill } from "@/components/t3-ui/sync-status-pill";
 import { T3WorkEntryRow } from "@/components/t3-ui/work-entry-row";
@@ -84,6 +94,56 @@ const MOCK_RUNNING: TimelineNode = toolNode("bash", {
   input: { command: "bun run typecheck" },
 });
 
+// A settled turn's file mutations (edit/write tool steps + a durable file
+// receipt), aggregated by the adapter into the changed-files card. The second
+// routes.ts edit proves per-path merging (stats sum, first-touched order).
+const MOCK_FILE_NODES: readonly TimelineNode[] = [
+  toolNode("edit", {
+    tool: "edit",
+    input: {
+      file_path: "backend/src/provider-gateway/routes.ts",
+      old_string: "const retries = 1;",
+      new_string: "const retries = 3;\nconst backoffMs = 250;\nconst jitter = true;",
+    },
+  }),
+  toolNode("edit", {
+    tool: "edit",
+    input: {
+      file_path: "backend/src/provider-gateway/retry.ts",
+      old_string: "return attempt;\n// no budget",
+      new_string: "const budget = budgetFor(attempt);\nreturn { attempt, budget };\n// scoped per chain",
+    },
+  }),
+  toolNode("write", {
+    tool: "write",
+    input: {
+      file_path: "frontend/components/t3-ui/changed-files-tree.tsx",
+      content: "export const T3ChangedFilesTree = () => null;",
+    },
+  }),
+  toolNode("edit", {
+    tool: "edit",
+    input: {
+      file_path: "backend/src/provider-gateway/routes.ts",
+      old_string: "export { retry };\n// end",
+      new_string: "export { retry, budgetFor };\nexport type { RetryBudget };\n// end",
+    },
+  }),
+  {
+    kind: "file",
+    key: "t3-mock-file-receipt",
+    file: { path: "backend/src/knowledge/gateway/operation-registry.ts", changeType: "create" },
+  },
+];
+
+const MOCK_CHANGED_FILES = changedFilesFromTimeline(MOCK_FILE_NODES);
+
+// Context-window bindings: ChildUsage cumulative totals are the only token
+// signal the frontend receives today; the 200k limit here is a mock prop.
+const USAGE_STEADY = contextWindowFromChildUsage({ totalTokens: 61_400 }, 200_000);
+const USAGE_OVERLOADED = contextWindowFromChildUsage({ totalTokens: 191_000 }, 200_000);
+const USAGE_NO_LIMIT = contextWindowFromChildUsage({ totalTokens: 61_400 });
+
 function Panel({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div className="rounded-10 border border-stroke-soft-200 bg-bg-white-0 p-3">
@@ -151,6 +211,32 @@ export function T3TimelineShowcase() {
 
       <Panel title="sync status pill">
         <T3SyncStatusPill label="Catching up on this thread" />
+      </Panel>
+
+      <Panel title="changed files / per-turn aggregate tree + compact preview">
+        <div className="space-y-3">
+          <T3ChangedFilesCard files={MOCK_CHANGED_FILES} defaultExpanded onOpenFile={() => {}} />
+          <T3ChangedFilesCard files={MOCK_CHANGED_FILES} onOpenFile={() => {}} />
+        </div>
+      </Panel>
+
+      <Panel title="context window meter / steady + overloaded + no limit">
+        <div className="flex items-center gap-2">
+          <T3ContextWindowMeter usage={USAGE_STEADY} providerDisplayName="OpenCode" />
+          <T3ContextWindowMeter usage={USAGE_OVERLOADED} providerDisplayName="OpenCode" />
+          <T3ContextWindowMeter usage={USAGE_NO_LIMIT} />
+        </div>
+        <div className="mt-3 rounded-10 border border-stroke-soft-200 p-3">
+          <T3ContextWindowDetails
+            usage={{
+              usedTokens: 132_000,
+              maxTokens: 200_000,
+              totalProcessedTokens: 1_240_000,
+              compactsAutomatically: true,
+            }}
+            providerDisplayName="OpenCode"
+          />
+        </div>
       </Panel>
     </div>
   );
