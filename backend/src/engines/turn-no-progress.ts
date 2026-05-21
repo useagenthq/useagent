@@ -9,12 +9,12 @@ import type { T3Activity } from "./t3-orchestration";
  * real underlying reason, never silently switch models, and never resend a
  * steer. `waitForT3Turn` in t3-adapter.ts is the single owner.
  */
-export const T3_MAX_CONSECUTIVE_RETRY_WARNINGS = 8;
+export const MAX_CONSECUTIVE_RETRY_WARNINGS = 8;
 
-export class T3NoProgressError extends Error {
+export class NoProgressError extends Error {
   constructor(message: string) {
     super(message);
-    this.name = "T3NoProgressError";
+    this.name = "NoProgressError";
   }
 }
 
@@ -26,7 +26,7 @@ function asRecord(value: unknown): Readonly<Record<string, unknown>> | null {
 
 /** Surface the provider's real failure reason (for example the gateway HTTP
  * status message) instead of a generic Working state. */
-export function t3RetryWarningReason(activity: T3Activity): string {
+export function retryWarningReason(activity: T3Activity): string {
   const payload = asRecord(activity.payload);
   const detail = asRecord(payload?.detail);
   const attempt = typeof detail?.attempt === "number" ? detail.attempt : null;
@@ -38,10 +38,10 @@ export function t3RetryWarningReason(activity: T3Activity): string {
 }
 
 export interface T3NoProgressWatchdog {
-  /** Aborted with a T3NoProgressError when the no-progress timeout elapses,
+  /** Aborted with a NoProgressError when the no-progress timeout elapses,
    * so the owning turn stream closes and surfaces that reason. */
   readonly signal: AbortSignal;
-  /** Throws T3NoProgressError when consecutive retry warnings hit the bound;
+  /** Throws NoProgressError when consecutive retry warnings hit the bound;
    * any other activity kind counts as real progress. */
   observeActivity(activity: T3Activity): void;
   /** Real progress (assistant text) resets both bounds. */
@@ -49,10 +49,10 @@ export interface T3NoProgressWatchdog {
   dispose(): void;
 }
 
-export function createT3NoProgressWatchdog(
+export function createNoProgressWatchdog(
   timeoutMs: number,
   sanitize: (text: string) => string = (text) => text,
-  maxConsecutiveRetryWarnings: number = T3_MAX_CONSECUTIVE_RETRY_WARNINGS,
+  maxConsecutiveRetryWarnings: number = MAX_CONSECUTIVE_RETRY_WARNINGS,
 ): T3NoProgressWatchdog {
   const controller = new AbortController();
   let consecutiveRetryWarnings = 0;
@@ -60,8 +60,8 @@ export function createT3NoProgressWatchdog(
   let disposed = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
 
-  const noProgressError = (bound: string): T3NoProgressError =>
-    new T3NoProgressError(
+  const noProgressError = (bound: string): NoProgressError =>
+    new NoProgressError(
       `T3 provider made no progress (${bound}): ${latestReason ?? "no provider activity"}`,
     );
   const settle = () => {
@@ -94,7 +94,7 @@ export function createT3NoProgressWatchdog(
         observeProgress();
         return;
       }
-      latestReason = sanitize(t3RetryWarningReason(activity));
+      latestReason = sanitize(retryWarningReason(activity));
       consecutiveRetryWarnings += 1;
       if (consecutiveRetryWarnings >= maxConsecutiveRetryWarnings) {
         const error = noProgressError(

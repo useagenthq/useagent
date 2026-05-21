@@ -1,11 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import type { T3Activity } from "./t3-orchestration";
 import {
-  createT3NoProgressWatchdog,
-  T3_MAX_CONSECUTIVE_RETRY_WARNINGS,
-  T3NoProgressError,
-  t3RetryWarningReason,
-} from "./t3-no-progress";
+  createNoProgressWatchdog,
+  MAX_CONSECUTIVE_RETRY_WARNINGS,
+  NoProgressError,
+  retryWarningReason,
+} from "./turn-no-progress";
 
 function retryWarning(id: number, message: string, attempt?: number): T3Activity {
   return {
@@ -44,9 +44,9 @@ function abortReason(signal: AbortSignal): Promise<unknown> {
 describe("T3 no-progress watchdog", () => {
   test("surfaces the provider's real reason from a retry warning", () => {
     expect(
-      t3RetryWarningReason(retryWarning(1, "Internal Server Error: Internal Server Error", 8)),
+      retryWarningReason(retryWarning(1, "Internal Server Error: Internal Server Error", 8)),
     ).toBe("retry attempt 8: Internal Server Error: Internal Server Error");
-    expect(t3RetryWarningReason(retryWarning(2, "HTTP 500 from provider gateway"))).toBe(
+    expect(retryWarningReason(retryWarning(2, "HTTP 500 from provider gateway"))).toBe(
       "HTTP 500 from provider gateway",
     );
     const summaryOnly: T3Activity = {
@@ -57,14 +57,14 @@ describe("T3 no-progress watchdog", () => {
       payload: null,
       turnId: null,
     };
-    expect(t3RetryWarningReason(summaryOnly)).toBe("Rate limited");
+    expect(retryWarningReason(summaryOnly)).toBe("Rate limited");
   });
 
   test("terminates a stream of consecutive retry warnings with the surfaced reason", () => {
-    const watchdog = createT3NoProgressWatchdog(60_000);
+    const watchdog = createNoProgressWatchdog(60_000);
     let failure: unknown;
     try {
-      for (let attempt = 1; attempt <= T3_MAX_CONSECUTIVE_RETRY_WARNINGS; attempt += 1) {
+      for (let attempt = 1; attempt <= MAX_CONSECUTIVE_RETRY_WARNINGS; attempt += 1) {
         watchdog.observeActivity(
           retryWarning(attempt, "Internal Server Error: Internal Server Error", attempt),
         );
@@ -74,7 +74,7 @@ describe("T3 no-progress watchdog", () => {
     } finally {
       watchdog.dispose();
     }
-    expect(failure).toBeInstanceOf(T3NoProgressError);
+    expect(failure).toBeInstanceOf(NoProgressError);
     expect((failure as Error).message).toBe(
       "T3 provider made no progress (8 consecutive retry warnings): " +
         "retry attempt 8: Internal Server Error: Internal Server Error",
@@ -82,10 +82,10 @@ describe("T3 no-progress watchdog", () => {
   });
 
   test("real activity progress resets the consecutive retry-warning count", () => {
-    const watchdog = createT3NoProgressWatchdog(60_000);
+    const watchdog = createNoProgressWatchdog(60_000);
     try {
       for (let round = 0; round < 3; round += 1) {
-        for (let attempt = 1; attempt < T3_MAX_CONSECUTIVE_RETRY_WARNINGS; attempt += 1) {
+        for (let attempt = 1; attempt < MAX_CONSECUTIVE_RETRY_WARNINGS; attempt += 1) {
           watchdog.observeActivity(retryWarning(round * 10 + attempt, "HTTP 500", attempt));
         }
         watchdog.observeActivity(toolActivity(round));
@@ -96,7 +96,7 @@ describe("T3 no-progress watchdog", () => {
   });
 
   test("redacts the surfaced reason through the injected sanitizer", () => {
-    const watchdog = createT3NoProgressWatchdog(
+    const watchdog = createNoProgressWatchdog(
       60_000,
       (text) => text.replaceAll("sk-secret-token", "<redacted>"),
       1,
@@ -114,13 +114,13 @@ describe("T3 no-progress watchdog", () => {
   });
 
   test("aborts with the latest retry reason when no progress arrives in time", async () => {
-    const watchdog = createT3NoProgressWatchdog(20);
+    const watchdog = createNoProgressWatchdog(20);
     try {
       watchdog.observeActivity(
         retryWarning(1, "Internal Server Error: Internal Server Error", 3),
       );
       const reason = await abortReason(watchdog.signal);
-      expect(reason).toBeInstanceOf(T3NoProgressError);
+      expect(reason).toBeInstanceOf(NoProgressError);
       expect((reason as Error).message).toContain("retry warnings in 20ms");
       expect((reason as Error).message).toContain(
         "retry attempt 3: Internal Server Error: Internal Server Error",
@@ -131,7 +131,7 @@ describe("T3 no-progress watchdog", () => {
   });
 
   test("real progress rearms the no-progress clock", async () => {
-    const watchdog = createT3NoProgressWatchdog(100);
+    const watchdog = createNoProgressWatchdog(100);
     try {
       // Without rearming, the 100ms bound would fire during this 200ms window.
       for (let tick = 0; tick < 10; tick += 1) {
@@ -145,7 +145,7 @@ describe("T3 no-progress watchdog", () => {
   });
 
   test("dispose stops the timer once the turn settles", async () => {
-    const watchdog = createT3NoProgressWatchdog(10);
+    const watchdog = createNoProgressWatchdog(10);
     watchdog.dispose();
     await Bun.sleep(30);
     expect(watchdog.signal.aborted).toBe(false);

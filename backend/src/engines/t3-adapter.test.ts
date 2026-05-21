@@ -124,7 +124,7 @@ describe("T3 run adapter gate", () => {
   test("bounds a provider retry storm with one no-progress watchdog owner", () => {
     const source = readFileSync(new URL("./t3-adapter.ts", import.meta.url), "utf8");
     expect(source).toContain(
-      "createT3NoProgressWatchdog(t3NoProgressTimeoutMs(), redact.text)",
+      "createNoProgressWatchdog(t3NoProgressTimeoutMs(), redact.text)",
     );
     expect(source).toContain("watchdog.observeActivity(activity)");
     expect(source).toContain("watchdog.observeProgress()");
@@ -132,7 +132,7 @@ describe("T3 run adapter gate", () => {
     expect(source).toContain("if (watchdog.signal.aborted) throw watchdog.signal.reason;");
     expect(source).toContain('await driver.cancel(session, "provider made no progress")');
     // One watchdog owner and no steer replay after the turn may have started.
-    expect(source.split("createT3NoProgressWatchdog(").length - 1).toBe(1);
+    expect(source.split("createNoProgressWatchdog(").length - 1).toBe(1);
     expect(source.split("driver.steer(").length - 1).toBe(1);
   });
 

@@ -48,7 +48,7 @@ import {
   T3_RUNTIME_GENERATION,
   T3_RUNTIME_GENERATION_LABEL,
 } from "./t3-environment";
-import { createT3NoProgressWatchdog, T3NoProgressError } from "./t3-no-progress";
+import { createNoProgressWatchdog, NoProgressError } from "./turn-no-progress";
 import { T3_SESSION_GENERATION, t3ProviderDrivers } from "./t3-provider-driver";
 
 const T3_POLL_INTERVAL_MS = 125;
@@ -202,7 +202,7 @@ async function waitForT3Turn(
   // Single owner of the turn-stream no-progress bound: a provider retry storm
   // (only runtime.warning activities, no tool/text progress) must terminate
   // the run with the real provider reason instead of running forever.
-  const watchdog = createT3NoProgressWatchdog(t3NoProgressTimeoutMs(), redact.text);
+  const watchdog = createNoProgressWatchdog(t3NoProgressTimeoutMs(), redact.text);
   let publishedText = "";
   let finalText = "";
   const applySnapshot = async (snapshot: T3ThreadSnapshot): Promise<boolean> => {
@@ -406,7 +406,7 @@ export function makeT3Adapter(engine: T3EngineId, driver: ProviderDriver): Engin
           await ctx.emit({ kind: "done", label: "Done", chip: null });
           ctx.setSummary(summary.trim() || `T3 ${engine} run completed`, Date.now() - startedAt);
         } catch (error) {
-          if (error instanceof T3NoProgressError && !ctx.signal.aborted) {
+          if (error instanceof NoProgressError && !ctx.signal.aborted) {
             // The durable run is failing with the provider's real reason; also
             // stop the sandbox-side turn so a persistent thread does not keep
             // retrying against the provider gateway. Best-effort only: a cancel
