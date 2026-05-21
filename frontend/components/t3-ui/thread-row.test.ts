@@ -72,6 +72,17 @@ describe("row density (upstream resolveThreadRowClassName)", () => {
     expect(className).toContain("text-text-strong-950");
   });
 
+  test("a git line trades the fixed height for a two-line column", () => {
+    for (const active of [true, false]) {
+      const className = resolveThreadRowClassName({ active, gitLine: true });
+      expect(className).toContain("flex-col");
+      expect(className).toContain("py-1.5");
+      expect(className).not.toContain("h-8");
+      expect(className).toContain("px-2.5");
+      expect(className).toContain("select-none");
+    }
+  });
+
   test("resting rows brighten on hover only", () => {
     const className = resolveThreadRowClassName({ active: false });
     expect(className).toContain("hover:bg-bg-weak-50");

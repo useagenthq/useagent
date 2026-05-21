@@ -7,6 +7,7 @@ import {
   RiComputerLine,
   RiExpandDiagonal2Line,
   RiFileList2Line,
+  RiGitMergeLine,
   RiLayoutRightLine,
   RiRobot2Line,
   RiTerminalBoxLine,
@@ -30,6 +31,7 @@ import {
 } from "@/components/chat/canonical-timeline";
 import { Conversation, type Turn } from "@/components/chat/conversation";
 import { DesktopPane } from "@/components/chat/desktop-pane";
+import { DiffPane } from "@/components/chat/diff-pane";
 import { EditorPane } from "@/components/chat/editor-pane";
 import type { NativeSnapshot } from "@/components/chat/native-store";
 import { OrbBootIndicator } from "@/components/chat/orb-boot-indicator";
@@ -58,6 +60,7 @@ import {
   supportsPreSessionModelSelection,
 } from "@/components/chat/types";
 import { shouldRetireOptimistic, useThreadStream } from "@/components/chat/use-thread-stream";
+import { runGitRefs, T3GitChips } from "@/components/t3-ui/git-chip";
 import * as SegmentedControl from "@/components/ui/segmented-control";
 import { backendFetch } from "@/lib/backend-fetch";
 import { cnExt as cn } from "@/utils/cn";
@@ -538,11 +541,13 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
         ? "Agents"
         : railTab === "artifacts"
           ? "Files"
-          : railTab === "editor"
-            ? "Editor"
-            : railTab === "terminal"
-              ? "Terminal"
-              : "Desktop";
+          : railTab === "diff"
+            ? "Diff"
+            : railTab === "editor"
+              ? "Editor"
+              : railTab === "terminal"
+                ? "Terminal"
+                : "Desktop";
   const [desktopEverOpened, setDesktopEverOpened] = useState(false);
   useEffect(() => {
     if (railTab === "desktop") setDesktopEverOpened(true);
@@ -630,7 +635,13 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
     <div className="flex h-full flex-col">
       {/* Compact thread bar. Brand and search belong to the collapsible sidebar. */}
       <div className="bg-bg-white-0 flex shrink-0 items-center justify-between gap-3 px-4 py-2">
-        <span className="text-mono-label text-text-soft-400">Session</span>
+        <div className="flex min-w-0 items-center gap-2">
+          <span className="text-mono-label text-text-soft-400">Session</span>
+          {/* The thread's git identity: repos (+ chosen branch) come from the
+              ROOT run's durable wire row - repos are inherited across a thread,
+              so the SSR-provided root is authoritative for the page lifetime. */}
+          <T3GitChips refs={runGitRefs(root)} />
+        </div>
         <div className="flex items-center gap-3">
           <StatusPill status={threadStatus} />
           {/* Stop lives in the composer send button (running+empty -> red Stop),
@@ -773,6 +784,14 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
                     <RiFileList2Line className="size-4" aria-hidden />
                     Files
                   </SegmentedControl.Trigger>
+                  {/* Diff appears once a real change set exists - the chooser
+                      card's "available when a real patch exists" promise. */}
+                  {hasFiles && (
+                    <SegmentedControl.Trigger value="diff" data-testid="rail-tab-diff">
+                      <RiGitMergeLine className="size-4" aria-hidden />
+                      Diff
+                    </SegmentedControl.Trigger>
+                  )}
                   <SegmentedControl.Trigger value="editor" data-testid="rail-tab-editor">
                     <RiCodeSSlashLine className="size-4" aria-hidden />
                     Editor
@@ -839,7 +858,11 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
               {railTab !== "desktop" && (
                 <div className="absolute inset-0">
                   {railTab === null ? (
-                    <SurfaceChooser agentsAvailable={hasSubagents} onSelect={setRailTabOverride} />
+                    <SurfaceChooser
+                      agentsAvailable={hasSubagents}
+                      diffAvailable={hasFiles}
+                      onSelect={setRailTabOverride}
+                    />
                   ) : railTab === "agents" ? (
                     <AgentsRail
                       steps={allSteps}
@@ -849,6 +872,8 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
                     />
                   ) : railTab === "artifacts" ? (
                     <ArtifactsRail threadId={rootId} live={live} />
+                  ) : railTab === "diff" ? (
+                    <DiffPane turns={turns} />
                   ) : railTab === "editor" ? (
                     <EditorPane steps={allSteps} live={live} />
                   ) : (
