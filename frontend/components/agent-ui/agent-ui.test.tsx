@@ -5,6 +5,7 @@ import { ApprovalRequest } from "./approval-request";
 import { ArtifactPreview } from "./artifact-preview";
 import { LiveSubagentStatus } from "./live-subagent-status";
 import { PlanChecklist } from "./plan-checklist";
+import { QuestionRequest } from "./question-request";
 import { RichToolResult } from "./rich-tool-result";
 
 describe("agent UI accessibility contracts", () => {
@@ -79,6 +80,33 @@ describe("agent UI accessibility contracts", () => {
     expect(html.match(/disabled=""/g)).toHaveLength(4);
     expect(html).toContain("Approval required to change files");
     expect(html).toContain("Response could not be delivered");
+  });
+
+  test("promotes the durable question state through the shared question card", () => {
+    const html = renderToStaticMarkup(
+      <QuestionRequest
+        request={{
+          id: "question-1",
+          sessionId: "session-1",
+          questions: [
+            {
+              header: "Scope",
+              question: "What should the lab surface show?",
+              options: [{ label: "Inventory", description: "Show the registry and examples" }],
+              multiple: false,
+              custom: true,
+            },
+          ],
+        }}
+        submitting={false}
+        error={null}
+        onSubmit={() => {}}
+      />,
+    );
+
+    expect(html).toContain('data-testid="native-question-card"');
+    expect(html).toContain("Skynet needs your input");
+    expect(html).toContain("What should the lab surface show?");
   });
 
   test("announces tool and subagent lifecycle state without provider-specific data", () => {
