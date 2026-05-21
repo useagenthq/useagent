@@ -33,6 +33,39 @@ export function nextDesktopProbeDelay(previous: number | null): number {
   return Math.min(Math.ceil(previous * 1.5), DESKTOP_PROBE_MAX_DELAY);
 }
 
+/** Minimal structural slice of the frame's Document the focus guard needs. */
+export interface DesktopFocusGuardDoc {
+  addEventListener(type: "focusin", listener: () => void, capture: boolean): void;
+  removeEventListener(type: "focusin", listener: () => void, capture: boolean): void;
+}
+
+/**
+ * noVNC's full client focuses its canvas once the RFB connection settles
+ * (app/ui.js calls rfb.focus() on connect). That happens AFTER iframe load -
+ * the websocket handshake is async - so the one-shot onLoad blur cannot stop
+ * it, and the first keystrokes meant for the composer land in the VNC pane.
+ * While the pane is only being watched (input not captured), bounce any focus
+ * that lands inside the frame straight back to the app. The pane captures
+ * keys only after an explicit click into it. Returns a cleanup function.
+ */
+export function guardDesktopFocusSteal({
+  innerDoc,
+  isCaptured,
+  restoreFocus,
+}: {
+  innerDoc: DesktopFocusGuardDoc | null;
+  isCaptured: () => boolean;
+  restoreFocus: () => void;
+}): () => void {
+  if (!innerDoc) return () => {};
+  const bounce = () => {
+    if (isCaptured()) return;
+    restoreFocus();
+  };
+  innerDoc.addEventListener("focusin", bounce, true);
+  return () => innerDoc.removeEventListener("focusin", bounce, true);
+}
+
 /**
  * The "Desktop" tab: a live view of the conversation's sandbox GUI (multi-repo),
  * via noVNC. The sandbox runtime keeps Xvfb + XFCE + x11vnc + noVNC alive on
@@ -54,6 +87,12 @@ export function DesktopPane({ threadId }: { threadId: string }) {
   const [status, setStatus] = useState("Waiting for sandbox…");
   const surfaceRef = useRef<HTMLDivElement>(null);
   const frameRef = useRef<HTMLIFrameElement>(null);
+  // Mirrors inputCaptured synchronously so the focus-steal guard cannot race
+  // the requestAnimationFrame focus issued by the explicit capture click.
+  const inputCapturedRef = useRef(false);
+  // The last focused element OUTSIDE this pane (usually the composer) - where
+  // stolen focus gets returned to.
+  const lastOuterFocusRef = useRef<HTMLElement | null>(null);
 
   const readySrc = `/api/desktop-proxy/${threadId}/ready`;
   const src = buildDesktopFrameSrc(threadId);
@@ -66,6 +105,7 @@ export function DesktopPane({ threadId }: { threadId: string }) {
     let delay: number | null = null;
     setReady(false);
     setLoaded(false);
+    inputCapturedRef.current = false;
     setInputCaptured(false);
     setStatus("Waiting for sandbox…");
 
@@ -100,6 +140,7 @@ export function DesktopPane({ threadId }: { threadId: string }) {
     const releaseDesktopInput = (event: FocusEvent | PointerEvent) => {
       const target = event.target;
       if (target instanceof Node && surfaceRef.current?.contains(target)) return;
+      inputCapturedRef.current = false;
       setInputCaptured(false);
       try {
         frameRef.current?.contentWindow?.blur();
@@ -116,6 +157,50 @@ export function DesktopPane({ threadId }: { threadId: string }) {
       window.removeEventListener("pointerdown", releaseDesktopInput, true);
     };
   }, [inputCaptured]);
+
+  useEffect(() => {
+    if (!loaded) return;
+
+    // Remember where keyboard focus legitimately lives outside the pane, so a
+    // steal can be undone. Seeded from the moment the frame finishes loading
+    // (the composer, if the user was typing when they opened Desktop).
+    const active = document.activeElement;
+    if (active instanceof HTMLElement && !surfaceRef.current?.contains(active)) {
+      lastOuterFocusRef.current = active;
+    }
+    const rememberOuterFocus = (event: FocusEvent) => {
+      const target = event.target;
+      if (!(target instanceof HTMLElement)) return;
+      if (surfaceRef.current?.contains(target)) return;
+      lastOuterFocusRef.current = target;
+    };
+    window.addEventListener("focusin", rememberOuterFocus, true);
+
+    let innerDoc: DesktopFocusGuardDoc | null = null;
+    try {
+      innerDoc = frameRef.current?.contentDocument ?? null;
+    } catch {
+      // The desktop proxy is normally same-origin. If a browser treats it as
+      // cross-origin, tabIndex=-1 + pointer-events none still block capture.
+    }
+    const releaseGuard = guardDesktopFocusSteal({
+      innerDoc,
+      isCaptured: () => inputCapturedRef.current,
+      restoreFocus: () => {
+        const previous = lastOuterFocusRef.current;
+        if (previous?.isConnected) {
+          previous.focus();
+          return;
+        }
+        frameRef.current?.blur();
+      },
+    });
+
+    return () => {
+      window.removeEventListener("focusin", rememberOuterFocus, true);
+      releaseGuard();
+    };
+  }, [loaded]);
 
   if (!ready) {
     return (
@@ -151,6 +236,7 @@ export function DesktopPane({ threadId }: { threadId: string }) {
           type="button"
           aria-label="Control sandbox desktop"
           onClick={() => {
+            inputCapturedRef.current = true;
             setInputCaptured(true);
             requestAnimationFrame(() => frameRef.current?.contentWindow?.focus());
           }}

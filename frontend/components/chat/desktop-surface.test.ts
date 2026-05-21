@@ -4,8 +4,10 @@ import {
   buildDesktopFrameSrc,
   DESKTOP_PROBE_MAX_DELAY,
   DESKTOP_PROBE_MIN_DELAY,
+  guardDesktopFocusSteal,
   nextDesktopProbeDelay,
 } from "./desktop-pane";
+import type { DesktopFocusGuardDoc } from "./desktop-pane";
 
 describe("Desktop product surface", () => {
   const read = (path: string) => readFileSync(new URL(path, import.meta.url), "utf8");
@@ -113,5 +115,80 @@ describe("Desktop product surface", () => {
     expect(desktopPane).toContain(
       'window.addEventListener("pointerdown", releaseDesktopInput, true)',
     );
+  });
+
+  test("the mount/connect path never grabs keyboard focus: noVNC steals are bounced", () => {
+    const desktopPane = read("./desktop-pane.tsx");
+
+    // The guard watches the frame's own document, because noVNC focuses its
+    // canvas on RFB connect - AFTER iframe load, where the onLoad blur cannot
+    // reach it.
+    expect(desktopPane).toContain("guardDesktopFocusSteal({");
+    expect(desktopPane).toContain("frameRef.current?.contentDocument ?? null");
+    expect(desktopPane).toContain("isCaptured: () => inputCapturedRef.current");
+    // Stolen focus returns to the last legitimate outer element (the composer).
+    expect(desktopPane).toContain(
+      'window.addEventListener("focusin", rememberOuterFocus, true)',
+    );
+    expect(desktopPane).toContain("lastOuterFocusRef.current = target");
+    expect(desktopPane).toContain("previous.focus()");
+    // The ONLY programmatic focus into the frame is the explicit capture click.
+    const focusCalls = desktopPane.split("contentWindow?.focus()").length - 1;
+    expect(focusCalls).toBe(1);
+    expect(desktopPane).toContain("inputCapturedRef.current = true;");
+    // Release resets the synchronous mirror too, so the guard resumes bouncing.
+    expect(desktopPane).toContain("inputCapturedRef.current = false;");
+  });
+
+  test("the focus-steal guard bounces only while input is not captured", () => {
+    const listeners = new Map<string, { listener: () => void; capture: boolean }>();
+    const innerDoc: DesktopFocusGuardDoc = {
+      addEventListener: (type, listener, capture) => listeners.set(type, { listener, capture }),
+      removeEventListener: (type) => listeners.delete(type),
+    };
+    let captured = false;
+    let restores = 0;
+
+    const release = guardDesktopFocusSteal({
+      innerDoc,
+      isCaptured: () => captured,
+      restoreFocus: () => {
+        restores += 1;
+      },
+    });
+
+    // Installed as a capture-phase focusin listener on the frame document.
+    const entry = listeners.get("focusin");
+    if (!entry) throw new Error("guard did not watch focusin on the frame document");
+    expect(entry.capture).toBe(true);
+
+    // First open: noVNC autofocuses its canvas on connect - focus is handed back.
+    entry.listener();
+    expect(restores).toBe(1);
+
+    // After the user explicitly clicks to control, focus may live in the pane.
+    captured = true;
+    entry.listener();
+    expect(restores).toBe(1);
+
+    // Clicking outside releases capture - the guard bounces again.
+    captured = false;
+    entry.listener();
+    expect(restores).toBe(2);
+
+    // Cleanup detaches the listener.
+    release();
+    expect(listeners.has("focusin")).toBe(false);
+  });
+
+  test("the focus-steal guard degrades to a no-op without a same-origin document", () => {
+    const release = guardDesktopFocusSteal({
+      innerDoc: null,
+      isCaptured: () => false,
+      restoreFocus: () => {
+        throw new Error("must not restore focus without a document to guard");
+      },
+    });
+    expect(() => release()).not.toThrow();
   });
 });
