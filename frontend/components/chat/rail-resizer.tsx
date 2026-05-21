@@ -5,7 +5,7 @@ import { cnExt } from "@/utils/cn";
 
 export const RAIL_MIN = 280;
 export const RAIL_MAX = 960;
-export const RAIL_DEFAULT = 480;
+export const RAIL_DEFAULT = 360;
 
 export function railWidthFromPointer({
   containerRight,

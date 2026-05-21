@@ -4,55 +4,68 @@ import {
   RiBookMarkedLine,
   RiFolderLine,
   RiSettings3Line,
-} from '@remixicon/react';
+} from "@remixicon/react";
 
-import { SearchCommand } from './search-command';
-import { Sidebar, SidebarNavItem } from './sidebar-nav';
-import { SidebarProjects } from './sidebar-projects';
-import { SidebarRecents } from './sidebar-recents';
+import { SearchCommand } from "./search-command";
+import { SidebarBrand } from "./sidebar-brand";
+import { Sidebar, SidebarNavItem } from "./sidebar-nav";
+import { SidebarProjects } from "./sidebar-projects";
+import { SidebarRecents } from "./sidebar-recents";
+import { ThemeToggle } from "./theme-toggle";
+import { UserMenu } from "./user-menu";
+import { WorkingProjectStatus } from "./working-project-status";
 
-export type ThreadSidebarActive = 'new' | 'projects' | 'usage' | 'library' | 'settings';
+export type ThreadSidebarActive = "new" | "projects" | "usage" | "library" | "settings";
 
 function ThreadSidebarFooter({ active }: { active?: ThreadSidebarActive }) {
   return (
-    <nav aria-label='Workspace utilities' className='border-t border-stroke-soft-200 p-3'>
+    <nav aria-label="Workspace utilities" className="border-t border-stroke-soft-200 p-3">
       <SidebarNavItem
-        href='/settings#usage'
+        href="/settings#usage"
         icon={RiBarChartBoxLine}
-        label='Usage'
-        active={active === 'usage'}
+        label="Usage"
+        active={active === "usage"}
       />
       <SidebarNavItem
-        href='/skills'
+        href="/skills"
         icon={RiBookMarkedLine}
-        label='Library'
-        active={active === 'library'}
+        label="Library"
+        active={active === "library"}
       />
       <SidebarNavItem
-        href='/settings'
+        href="/settings"
         icon={RiSettings3Line}
-        label='Settings'
-        active={active === 'settings'}
+        label="Settings"
+        active={active === "settings"}
       />
+      <div className="mt-2 flex items-center gap-1 px-2">
+        <ThemeToggle />
+        <UserMenu />
+      </div>
     </nav>
   );
 }
 
 export function ThreadSidebar({ active }: { active?: ThreadSidebarActive }) {
   return (
-    <Sidebar ariaLabel='Thread navigation' footer={<ThreadSidebarFooter active={active} />}>
+    <Sidebar
+      ariaLabel="Thread navigation"
+      header={<SidebarBrand />}
+      footer={<ThreadSidebarFooter active={active} />}
+    >
       <SidebarNavItem
-        href='/agent/new'
+        href="/agent/new"
         icon={RiAddLine}
-        label='New thread'
-        active={active === 'new'}
+        label="New thread"
+        active={active === "new"}
       />
-      <SearchCommand variant='sidebar' />
+      <SearchCommand />
       <SidebarNavItem
-        href='/agent/workspace'
+        href="/agent/workspace"
         icon={RiFolderLine}
-        label='All projects'
-        active={active === 'projects'}
+        label="All projects"
+        active={active === "projects"}
+        trailing={<WorkingProjectStatus />}
       />
       <SidebarProjects />
       <SidebarRecents />

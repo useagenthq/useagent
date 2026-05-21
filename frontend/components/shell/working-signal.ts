@@ -1,11 +1,11 @@
-import { useEffect, useSyncExternalStore } from 'react';
+import { useEffect, useSyncExternalStore } from "react";
 
 /**
  * Global "is anything working right now" signal - a tiny ref-counted store, no
  * polling and no cross-component prop threading. Any component that renders only
  * while work is happening (the OrbPill working/boot capsules) reports itself via
- * useReportWorking() for its lifetime; the brand mark in the top nav reads the
- * aggregate via useWorkingSignal() and pulses inward while the count is > 0.
+ * useReportWorking() for its lifetime; the app shell and sidebar read the
+ * aggregate via useWorkingSignal() for folding and live brand/status motion.
  */
 let count = 0;
 const listeners = new Set<() => void>();

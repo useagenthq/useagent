@@ -10,7 +10,7 @@ this file (`@AGENTS.md`) — edit here, never fork the content.
 Layer map (canonical paths):
 - **foundation** — `components/ui/**` (vendored AlignUI), `components/foundations/**`
   (brand), tokens + motion utilities in `app/globals.css`.
-- **app shell** - `components/shell/**` (AppShell, TopNav, ThreadSidebar,
+- **app shell** - `components/shell/**` (AppShell, ThreadSidebar,
   LibrarySidebar, search-command ⌘K, user-menu, theme-toggle).
 - **chat surface** — `components/chat/**` (vendored prompt-kit + composer +
   session panes).

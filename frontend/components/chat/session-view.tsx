@@ -44,6 +44,7 @@ import {
 } from "@/components/chat/rail-resizer";
 import type { SlashCommand } from "@/components/chat/slash-command";
 import { SubagentChips } from "@/components/chat/subagent-pane";
+import { type SurfaceChoice, SurfaceChooser } from "@/components/chat/surface-chooser";
 import { TerminalPane } from "@/components/chat/terminal-pane";
 import type { ThreadRunView } from "@/components/chat/thread-store";
 import {
@@ -525,23 +526,23 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
     localStorage.setItem("skynet.rail-width", String(rounded));
   }
   // Default to whichever pane actually has content; an explicit pick wins.
-  // Agents leads when a run fanned out — that's the story you want to watch.
-  const [railTabOverride, setRailTabOverride] = useState<
-    "agents" | "artifacts" | "editor" | "terminal" | "desktop" | null
-  >(null);
+  // A quiet thread starts on the provider-neutral surface chooser.
+  const [railTabOverride, setRailTabOverride] = useState<SurfaceChoice | "editor" | null>(null);
   const railTab =
     railTabOverride ??
-    (hasSubagents ? "agents" : hasFiles ? "editor" : hasCommands ? "terminal" : "editor");
+    (hasSubagents ? "agents" : hasFiles ? "artifacts" : hasCommands ? "terminal" : null);
   const railTabLabel =
-    railTab === "agents"
-      ? "Agents"
-      : railTab === "artifacts"
-        ? "Files"
-        : railTab === "editor"
-          ? "Editor"
-          : railTab === "terminal"
-            ? "Terminal"
-            : "Desktop";
+    railTab === null
+      ? "Surface"
+      : railTab === "agents"
+        ? "Agents"
+        : railTab === "artifacts"
+          ? "Files"
+          : railTab === "editor"
+            ? "Editor"
+            : railTab === "terminal"
+              ? "Terminal"
+              : "Desktop";
   useEffect(() => {
     if (!railOpen && railExpanded) setRailExpanded(false);
   }, [railExpanded, railOpen]);
@@ -623,8 +624,7 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
 
   return (
     <div className="flex h-full flex-col">
-      {/* Compact session bar - the shell's TopNav + ThreadSidebar (⌘K included)
-          wrap this view, so the brand/search chrome lives there now. */}
+      {/* Compact thread bar. Brand and search belong to the collapsible sidebar. */}
       <div className="border-stroke-soft-200 bg-bg-white-0 flex shrink-0 items-center justify-between gap-3 border-b px-4 py-2">
         <span className="text-mono-label text-text-soft-400">Session</span>
         <div className="flex items-center gap-3">
@@ -651,12 +651,12 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
           Editor|Terminal panel. ONE live indicator at a time: the boot gap is the
           orb below, and once steps stream the conversation's Thinking block takes
           over — the old floating WorkingPill duplicate is gone. */}
-      <div ref={bodyRef} className="flex min-h-0 flex-1 flex-col gap-3 p-3 md:flex-row">
+      <div ref={bodyRef} className="flex min-h-0 flex-1 flex-col md:flex-row">
         {/* Conversation */}
         <section
           aria-hidden={railExpanded}
           className={cn(
-            "border-stroke-soft-200 bg-bg-white-0 relative flex min-h-[60vh] min-w-0 flex-1 flex-col overflow-hidden rounded-2xl border md:min-h-0",
+            "border-stroke-soft-200 bg-bg-white-0 relative flex min-h-[60vh] min-w-0 flex-1 flex-col overflow-hidden border-r md:min-h-0",
             railExpanded && "hidden",
           )}
         >
@@ -743,21 +743,17 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
                 : undefined
             }
             className={cn(
-              "border-stroke-soft-200 bg-bg-white-0 flex min-h-[50vh] min-w-0 flex-col overflow-hidden rounded-2xl border transition-[width] md:min-h-0",
+              "border-stroke-soft-200 bg-bg-white-0 flex min-h-[50vh] min-w-0 flex-col overflow-hidden border-l transition-[width] md:min-h-0",
               railExpanded
                 ? "flex-1 md:w-auto"
-                : cn("md:shrink-0", railWidth !== null ? "md:w-[var(--rail-w)]" : "md:w-[30%]"),
+                : cn("md:shrink-0", railWidth !== null ? "md:w-[var(--rail-w)]" : "md:w-[22%]"),
             )}
           >
             <div className="border-stroke-soft-200 flex shrink-0 items-center gap-2 border-b p-2">
               <SegmentedControl.Root
                 className="flex-1"
-                value={railTab}
-                onValueChange={(v) =>
-                  setRailTabOverride(
-                    v as "agents" | "artifacts" | "editor" | "terminal" | "desktop",
-                  )
-                }
+                value={railTab ?? ""}
+                onValueChange={(v) => setRailTabOverride(v as SurfaceChoice | "editor")}
               >
                 <SegmentedControl.List>
                   {/* Agents leads the switcher, but only once a run has fanned
@@ -784,7 +780,7 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
                       for or wakes the thread's sandbox on demand. */}
                   <SegmentedControl.Trigger value="desktop" data-testid="rail-tab-desktop">
                     <RiComputerLine className="size-4" aria-hidden />
-                    Desktop
+                    Browser
                   </SegmentedControl.Trigger>
                 </SegmentedControl.List>
               </SegmentedControl.Root>
@@ -836,7 +832,9 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
               </div>
               {railTab !== "desktop" && (
                 <div className="absolute inset-0">
-                  {railTab === "agents" ? (
+                  {railTab === null ? (
+                    <SurfaceChooser agentsAvailable={hasSubagents} onSelect={setRailTabOverride} />
+                  ) : railTab === "agents" ? (
                     <AgentsRail
                       steps={allSteps}
                       live={live}
