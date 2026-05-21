@@ -87,6 +87,10 @@ When promoting a newly built Cube runtime, set
 `RELEASE_T3_CUBE_TEMPLATE_ID=tpl-...`; the gate validates the id, activates it
 only inside the rollback-bound candidate environment, and restores the exact
 previous environment if any preflight or parity journey fails.
+The same gate installs the repository's Caddyfile only after backing up the live
+configuration. It validates and reloads the candidate, and restores the prior
+file on failure. The only direct backend WebSocket ingress is the one-use Codex
+relay capability path; other product traffic remains behind the frontend.
 
 ## Shared Packages
 
