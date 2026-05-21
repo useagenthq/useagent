@@ -3,7 +3,9 @@
 import {
   RiAddLine,
   RiCodeSSlashLine,
+  RiCollapseDiagonal2Line,
   RiComputerLine,
+  RiExpandDiagonal2Line,
   RiFileList2Line,
   RiLayoutRightLine,
   RiRobot2Line,
@@ -481,6 +483,7 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
     allCanonicalEvents.some((event) => event.kind === "child.started") ||
     allSteps.some((s) => s.chip === "subagent");
   const [railOverride, setRailOverride] = useState<boolean | null>(null);
+  const [railExpanded, setRailExpanded] = useState(false);
   const railOpen = railOverride ?? true;
   // Rail resize: a dragger between the conversation and the rail (md+). Width
   // in px, persisted per browser; null → the 32% default. Loaded in an effect
@@ -528,6 +531,27 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
   const railTab =
     railTabOverride ??
     (hasSubagents ? "agents" : hasFiles ? "editor" : hasCommands ? "terminal" : "editor");
+  const railTabLabel =
+    railTab === "agents"
+      ? "Agents"
+      : railTab === "artifacts"
+        ? "Files"
+        : railTab === "editor"
+          ? "Editor"
+          : railTab === "terminal"
+            ? "Terminal"
+            : "Desktop";
+  useEffect(() => {
+    if (!railOpen && railExpanded) setRailExpanded(false);
+  }, [railExpanded, railOpen]);
+  useEffect(() => {
+    if (!railExpanded) return;
+    const restoreOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setRailExpanded(false);
+    };
+    window.addEventListener("keydown", restoreOnEscape);
+    return () => window.removeEventListener("keydown", restoreOnEscape);
+  }, [railExpanded]);
 
   // Slash-command catalog for the reply composer's "/" autocomplete - the SELECTED engine's
   // real native commands, capability-driven (no provider-name gate). Authoritative source is
@@ -628,7 +652,13 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
           over — the old floating WorkingPill duplicate is gone. */}
       <div ref={bodyRef} className="flex min-h-0 flex-1 flex-col gap-3 p-3 md:flex-row">
         {/* Conversation */}
-        <section className="border-stroke-soft-200 bg-bg-white-0 relative flex min-h-[60vh] min-w-0 flex-1 flex-col overflow-hidden rounded-2xl border md:min-h-0">
+        <section
+          aria-hidden={railExpanded}
+          className={cn(
+            "border-stroke-soft-200 bg-bg-white-0 relative flex min-h-[60vh] min-w-0 flex-1 flex-col overflow-hidden rounded-2xl border md:min-h-0",
+            railExpanded && "hidden",
+          )}
+        >
           {/* PRIMARY CHAT = our native React conversation (user decision
               2026-08-05, second pass): owning the rendering layer keeps the
               extension surface ours — artifact/PPT/PDF viewers, custom panes —
@@ -688,7 +718,7 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
           )}
         </section>
 
-        {railOpen && (
+        {railOpen && !railExpanded && (
           <RailResizer
             value={railWidth ?? RAIL_DEFAULT}
             onMove={resizeRailFromPointer}
@@ -712,8 +742,10 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
                 : undefined
             }
             className={cn(
-              "border-stroke-soft-200 bg-bg-white-0 flex min-h-[50vh] min-w-0 flex-col overflow-hidden rounded-2xl border md:min-h-0 md:shrink-0",
-              railWidth !== null ? "md:w-[var(--rail-w)]" : "md:w-[30%]",
+              "border-stroke-soft-200 bg-bg-white-0 flex min-h-[50vh] min-w-0 flex-col overflow-hidden rounded-2xl border transition-[width] md:min-h-0",
+              railExpanded
+                ? "flex-1 md:w-auto"
+                : cn("md:shrink-0", railWidth !== null ? "md:w-[var(--rail-w)]" : "md:w-[30%]"),
             )}
           >
             <div className="border-stroke-soft-200 flex shrink-0 items-center gap-2 border-b p-2">
@@ -757,7 +789,29 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
               </SegmentedControl.Root>
               <button
                 type="button"
-                onClick={() => setRailOverride(false)}
+                onClick={() => setRailExpanded((expanded) => !expanded)}
+                title={railExpanded ? "Restore panel" : `Expand ${railTabLabel}`}
+                aria-label={
+                  railExpanded
+                    ? `Restore ${railTabLabel} panel to side rail`
+                    : `Expand ${railTabLabel} panel to main canvas`
+                }
+                aria-pressed={railExpanded}
+                aria-keyshortcuts={railExpanded ? "Escape" : undefined}
+                className="text-text-soft-400 hover:bg-bg-weak-50 hover:text-text-sub-600 flex size-7 shrink-0 items-center justify-center rounded-lg transition-colors"
+              >
+                {railExpanded ? (
+                  <RiCollapseDiagonal2Line className="size-4" aria-hidden />
+                ) : (
+                  <RiExpandDiagonal2Line className="size-4" aria-hidden />
+                )}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setRailExpanded(false);
+                  setRailOverride(false);
+                }}
                 title="Collapse panel"
                 aria-label="Collapse side panel"
                 className="text-text-soft-400 hover:bg-bg-weak-50 hover:text-text-sub-600 flex size-7 shrink-0 items-center justify-center rounded-lg transition-colors"
