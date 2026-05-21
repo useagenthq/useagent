@@ -28,8 +28,8 @@ export const MAX_SKILL_BYTES = 64 * 1024;
 /** Upper bound on how many SKILL.md files one scan reads. Reads come from a
  *  local shallow clone (cheap disk I/O, not per-file API calls), so this only
  *  bounds the response payload; a repo with more is reported `truncated`.
- *  Sized above the largest real skill repo (120+) with headroom. */
-const MAX_CANDIDATES = 500;
+ *  Sized above the largest real skill repo (542 files) with headroom. */
+const MAX_CANDIDATES = 1000;
 
 /** One discovered SKILL.md. `text` is null when the file is over the size cap
  *  (still surfaced so the caller can report the skip honestly). */
