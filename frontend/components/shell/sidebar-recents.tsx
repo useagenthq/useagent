@@ -6,6 +6,7 @@ import { fetchRuns, type Run, statusTone, TONE_TO_DOT } from "@/app/agent/runs/r
 import { StatusDot } from "@/components/shared/status-dot";
 import { useOrgChanges } from "@/hooks/use-org-changes";
 import { SidebarNavItem, SidebarSectionLabel } from "./sidebar-nav";
+import { WorkingProjectStatus, type SidebarRun } from "./working-project-status";
 
 const POLL_MS = 30_000;
 const MAX = 8;
@@ -62,6 +63,7 @@ export function SidebarRecents() {
           href={`/session/${run.id}`}
           label={run.prompt || "Untitled run"}
           leading={<StatusDot {...TONE_TO_DOT[statusTone(run.status)]} />}
+          trailing={<WorkingProjectStatus run={run as SidebarRun} />}
         />
       ))}
     </>
