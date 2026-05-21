@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
 import { RiArrowDownSLine, RiSparkling2Line } from "@remixicon/react";
+import { type ReactNode, useState } from "react";
 import { useReportWorking } from "@/components/shell/working-signal";
 import { cnExt as cn } from "@/utils/cn";
 
@@ -45,23 +45,20 @@ export function Thinking({
         onClick={() => hasSteps && setExpanded((e) => !e)}
         disabled={!hasSteps}
         className={cn(
-          "-mx-1.5 flex w-fit items-center gap-2 rounded-lg px-1.5 py-1 transition-colors duration-100",
+          "-mx-1.5 flex w-fit items-center gap-1.5 rounded-md px-1.5 py-0.5 transition-colors duration-100",
           hasSteps ? "hover:bg-bg-soft-200" : "cursor-default",
         )}
       >
-        <RiSparkling2Line
-          className="size-4 shrink-0 text-text-sub-600"
-          aria-hidden
-        />
+        <RiSparkling2Line className="size-3.5 shrink-0 text-text-sub-600" aria-hidden />
         {active ? (
-          <span className="agent-progress-loading-text text-label-sm">{label}</span>
+          <span className="agent-progress-loading-text text-label-xs">{label}</span>
         ) : (
-          <span className="text-label-sm text-text-sub-600">{label}</span>
+          <span className="text-label-xs text-text-sub-600">{label}</span>
         )}
         {hasSteps && (
           <RiArrowDownSLine
             className={cn(
-              "size-4 shrink-0 text-text-soft-400 transition-transform duration-300",
+              "size-3.5 shrink-0 text-text-soft-400 transition-transform duration-300",
               expanded && "rotate-180",
             )}
             aria-hidden
@@ -78,8 +75,8 @@ export function Thinking({
           }}
         >
           <div className="overflow-hidden">
-            <div className="mt-1 ml-[7px] border-l border-stroke-soft-200 pl-4">
-              <div className="flex flex-col gap-1.5 py-1">{children}</div>
+            <div className="mt-1 ml-1.5 border-l border-stroke-soft-200/60 pl-3">
+              <div className="flex flex-col gap-1 py-0.5">{children}</div>
             </div>
           </div>
         </div>

@@ -55,16 +55,16 @@ export function LibrarySidebar({ active }: { active?: LibrarySidebarActive }) {
       ariaLabel="Library navigation"
       header={<SidebarBrand label="Library" />}
       footer={
-        <nav aria-label="Library utilities" className="border-t border-stroke-soft-200 p-3">
+        <nav aria-label="Library utilities" className="p-3">
           <SidebarNavItem
             href="/settings"
             icon={RiSettings3Line}
             label="Settings"
             active={active === "settings"}
           />
-          <div className="mt-2 flex items-center gap-1 px-2">
-            <ThemeToggle />
+          <div className="mt-2 flex items-center justify-between px-2">
             <UserMenu />
+            <ThemeToggle />
           </div>
         </nav>
       }

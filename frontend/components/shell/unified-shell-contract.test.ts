@@ -7,8 +7,10 @@ const readFromFrontend = (path: string) =>
 
 const shellSources = () => ({
   appShell: read("./app-shell.tsx"),
+  compactSidebarRail: read("./compact-sidebar-rail.tsx"),
   librarySidebar: read("./library-sidebar.tsx"),
   searchCommand: read("./search-command.tsx"),
+  sidebarBrand: read("./sidebar-brand.tsx"),
   threadSidebar: read("./thread-sidebar.tsx"),
 });
 
@@ -143,19 +145,22 @@ describe("unified shell contract", () => {
     expect(searchCommand).not.toContain('variant === "top"');
   });
 
-  test("folds the project rail on a real working transition and keeps a restore control", () => {
-    const { appShell } = shellSources();
+  test("folds the project rail to a useful compact rail on a real working transition", () => {
+    const { appShell, compactSidebarRail } = shellSources();
 
     expect(appShell).toContain("useWorkingSignal()");
     expect(appShell).toContain("previousWorking.current");
     expect(appShell).toContain("setSidebarCollapsed(true)");
     expect(appShell).toContain("inert={sidebarCollapsed}");
     expect(appShell).toContain("aria-hidden={sidebarCollapsed}");
-    expect(appShell).toContain("pointer-events-none w-0");
+    expect(appShell).toContain("<CompactSidebarRail");
+    expect(appShell).toContain('sidebarCollapsed ? "w-0" : "w-64"');
     expect(appShell).toContain("sidebarRestoreRef.current?.focus()");
-    expect(appShell).toContain(
-      'aria-label={sidebarCollapsed ? "Open navigation" : "Collapse navigation"}',
-    );
+    expect(compactSidebarRail).toContain('aria-label="Expand navigation"');
+    expect(compactSidebarRail).toContain("<SearchCommand compact");
+    expect(compactSidebarRail).toContain('href="/agent/workspace"');
+    expect(compactSidebarRail).toContain('href="/skills"');
+    expect(compactSidebarRail).toContain("<UserMenu");
   });
 
   test("keeps navigation, search, theme, and account reachable on mobile", () => {
@@ -182,10 +187,15 @@ describe("unified shell contract", () => {
 
   test("uses the cyan orbit brand mark and animates it only while working", () => {
     const mark = readFromFrontend("components/foundations/brand/pulse-mark.tsx");
+    const { sidebarBrand } = shellSources();
 
     expect(mark).toContain("<ellipse");
+    expect(mark).toContain('strokeWidth="0.85"');
+    expect(mark).toContain('strokeLinecap="round"');
     expect(mark).toContain("skynet-orbit-active");
     expect(mark).toContain("active &&");
+    expect(sidebarBrand).toContain("text-brand-orbit");
+    expect(sidebarBrand).not.toContain("border-b");
   });
 
   test("keeps the reply composer compact and avoids a second boxed wrapper", () => {
