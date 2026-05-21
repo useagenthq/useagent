@@ -318,6 +318,7 @@ if (sandboxProviderKind() === "cube" && cubeT3PoolTarget && cubeT3Template) {
     name: T3_CUBE_WARM_POOL_NAME,
     provider: sandboxProvider(apiKey),
     size: cubeT3PoolTarget,
+    requireDesktop: false,
     createOptions: {
       snapshot: cubeT3Template,
       labels: {

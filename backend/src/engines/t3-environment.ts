@@ -14,6 +14,8 @@ export const T3_ENVIRONMENT_HOME = "$HOME/.skynet/t3";
 export const T3_ENVIRONMENT_WORKDIR = "$HOME/work";
 const T3_READINESS_DEADLINE_MS = 60_000;
 const T3_READINESS_DELAY_MS = 100;
+const DEFAULT_T3_FIRST_ACTIVITY_TIMEOUT_MS = 45_000;
+const DEFAULT_T3_NO_PROGRESS_TIMEOUT_MS = 120_000;
 type TimingRecorder = Pick<RunStageTimer, "begin">;
 type T3EnvironmentSandbox = Pick<SandboxHandle, "id"> & {
   readonly process: Pick<
@@ -40,6 +42,24 @@ export function t3EnvironmentEnabled(
 
 export function buildT3EnvironmentReadinessCommand(): string {
   return `curl -fsS -m 3 -o /dev/null http://127.0.0.1:${T3_ENVIRONMENT_PORT}/api/auth/session`;
+}
+
+export function t3FirstActivityTimeoutMs(
+  env: Readonly<Record<string, string | undefined>> = process.env,
+): number {
+  const parsed = Number(env.T3_FIRST_ACTIVITY_TIMEOUT_MS?.trim());
+  return Number.isFinite(parsed) && parsed > 0
+    ? Math.trunc(parsed)
+    : DEFAULT_T3_FIRST_ACTIVITY_TIMEOUT_MS;
+}
+
+export function t3NoProgressTimeoutMs(
+  env: Readonly<Record<string, string | undefined>> = process.env,
+): number {
+  const parsed = Number(env.T3_NO_PROGRESS_TIMEOUT_MS?.trim());
+  return Number.isFinite(parsed) && parsed > 0
+    ? Math.trunc(parsed)
+    : DEFAULT_T3_NO_PROGRESS_TIMEOUT_MS;
 }
 
 export function buildT3EnvironmentLaunchCommand(): string {
