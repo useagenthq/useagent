@@ -187,4 +187,14 @@ describe("unified shell contract", () => {
     expect(mark).toContain("skynet-orbit-active");
     expect(mark).toContain("active &&");
   });
+
+  test("keeps the reply composer compact and avoids a second boxed wrapper", () => {
+    const composer = readFromFrontend("components/chat/composer.tsx");
+    const conversation = readFromFrontend("components/chat/conversation.tsx");
+
+    expect(composer).toContain("maxHeight={hero ? 220 : 96}");
+    expect(composer).toContain('hero ? "pt-1 text-paragraph-lg" : "min-h-8 text-paragraph-sm"');
+    expect(conversation).toContain("mx-auto w-full max-w-5xl");
+    expect(conversation).not.toContain("shrink-0 border-t p-3");
+  });
 });

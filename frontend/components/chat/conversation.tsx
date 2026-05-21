@@ -636,25 +636,27 @@ function ReplyComposer({
   onStop?: () => void;
 }) {
   return (
-    <div className="border-stroke-soft-200 shrink-0 border-t p-3">
-      <Composer
-        variant="compact"
-        placeholder={placeholder ?? "Reply to Skynet…"}
-        defaultEngine={engine}
-        defaultModel={model}
-        defaultMemoryScope={memoryScope}
-        pending={pending}
-        locked={locked}
-        commands={commands}
-        commandState={commandState}
-        enableUploads
-        enableModelPicker={modelSelection === true}
-        onSubmit={onReply}
-        running={running}
-        stopping={stopping}
-        stopError={stopError}
-        onStop={onStop}
-      />
+    <div className="shrink-0 px-4 pb-4 pt-2">
+      <div className="mx-auto w-full max-w-5xl">
+        <Composer
+          variant="compact"
+          placeholder={placeholder ?? "Reply to Skynet…"}
+          defaultEngine={engine}
+          defaultModel={model}
+          defaultMemoryScope={memoryScope}
+          pending={pending}
+          locked={locked}
+          commands={commands}
+          commandState={commandState}
+          enableUploads
+          enableModelPicker={modelSelection === true}
+          onSubmit={onReply}
+          running={running}
+          stopping={stopping}
+          stopError={stopError}
+          onStop={onStop}
+        />
+      </div>
     </div>
   );
 }
