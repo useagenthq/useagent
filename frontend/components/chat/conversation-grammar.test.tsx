@@ -154,7 +154,7 @@ function fanOutEvents(): StoredCanonicalEvent[] {
 
 test("fan-out turn rows always render a visible heading", () => {
   const html = render([makeTurn("run-fanout", "completed", fanOutEvents())]);
-  const rows = html.split('data-t3-ui="work-entry-row"').slice(1);
+  const rows = html.split('data-session-ui="work-entry-row"').slice(1);
   expect(rows.length).toBeGreaterThan(0);
   for (const row of rows) {
     const heading = /<span class="min-w-0 shrink truncate[^"]*">([^<]*)<\/span>/.exec(row)?.[1];
@@ -169,8 +169,8 @@ test("settled turn renders tool bursts through the T3 work grammar", () => {
 
   // The canonical lane drove the timeline, and tools render as T3 work rows.
   expect(html).toContain('data-timeline-source="canonical"');
-  expect(html).toContain('data-t3-ui="work-group"');
-  expect(html).toContain('data-t3-ui="work-entry-row"');
+  expect(html).toContain('data-session-ui="work-group"');
+  expect(html).toContain('data-session-ui="work-entry-row"');
   // The legacy ToolStepRow grammar no longer renders tool nodes.
   expect(html).not.toContain('data-testid="tool-row"');
 
@@ -205,14 +205,14 @@ test("settled turn surfaces the failed tool once the fold is expanded", () => {
     ]),
   ]);
   expect(htmlNewestFailure).toContain('aria-label="Failed"');
-  expect(html).toContain('data-t3-ui="work-group"');
+  expect(html).toContain('data-session-ui="work-group"');
 });
 
 test("live turn tails with the T3 working indicator and hides the in-flight row", () => {
   const html = render([makeTurn("run-live", "running", liveEvents())]);
 
   // Working indicator with the self-ticking timer and the in-flight step suffix.
-  expect(html).toContain('data-t3-ui="working-indicator"');
+  expect(html).toContain('data-session-ui="working-indicator"');
   expect(html).toContain("Working for");
   expect(html).toContain("bun run typecheck");
   // The old LoadingState "Working" shimmer tail is gone from the timeline (no
@@ -220,6 +220,6 @@ test("live turn tails with the T3 working indicator and hides the in-flight row"
   expect(html).not.toContain("agent-progress-loading-text");
 
   // Completed work folds T3-style even while live (newest visible, older hidden).
-  expect(html).toContain('data-t3-ui="work-group"');
+  expect(html).toContain('data-session-ui="work-group"');
   expect(html).toContain("+1 previous tool call");
 });

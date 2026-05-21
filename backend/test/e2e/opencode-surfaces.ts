@@ -100,9 +100,9 @@ try {
   // ── Tool rows: expand the folded disclosures, then count real trace rows ─────
   await expandDisclosures(page);
   // Tool rows render through the vendored T3 work-entry grammar since the
-  // t3-ui timeline wiring; the legacy testid stays as a pre-cutover fallback.
+  // session-ui timeline wiring; the legacy testid stays as a pre-cutover fallback.
   const toolRows =
-    (await count(page, '[data-t3-ui="work-entry-row"]')) +
+    (await count(page, '[data-session-ui="work-entry-row"]')) +
     (await count(page, '[data-testid="tool-row"]'));
   const todoRows = await count(page, '[data-testid="todo-list"]');
   if (want.hasCommands || want.hasFiles) {

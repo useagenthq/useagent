@@ -30,20 +30,20 @@ import { buildTimeline, hasNarration, type TimelineNode } from "@/components/cha
 import { MarkerRow } from "@/components/chat/tool-step-row";
 import { OrbitKnotMark } from "@/components/foundations/brand/orbit-knot-mark";
 import { Markdown } from "@/components/prompt-kit/markdown";
-import { segmentTimelineForT3, workEntriesFromTimeline } from "@/components/t3-ui/adapter";
-import { T3ExpandedImageDialog } from "@/components/t3-ui/expanded-image-dialog";
-import { T3MessageCopyButton } from "@/components/t3-ui/message-copy-button";
-import { MessageScrollerRail } from "@/components/t3-ui/message-scroller-rail";
-import { unavailableEngineLabel } from "@/components/t3-ui/provider-status-banner";
-import { T3QueuedMessagePill } from "@/components/t3-ui/queued-message-pill";
+import { segmentTimeline, workEntriesFromTimeline } from "@/components/session-ui/adapter";
+import { ExpandedImageDialog } from "@/components/session-ui/expanded-image-dialog";
+import { MessageCopyButton } from "@/components/session-ui/message-copy-button";
+import { MessageScrollerRail } from "@/components/session-ui/message-scroller-rail";
+import { unavailableEngineLabel } from "@/components/session-ui/provider-status-banner";
+import { QueuedMessagePill } from "@/components/session-ui/queued-message-pill";
 import {
   dismissThreadErrorBannerForSession,
   getThreadErrorBannerKey,
   isThreadErrorBannerDismissedForSession,
   shouldShowThreadErrorBanner,
-} from "@/components/t3-ui/thread-error-banner";
-import { T3WorkGroup } from "@/components/t3-ui/work-group";
-import { T3WorkingIndicator } from "@/components/t3-ui/working-indicator";
+} from "@/components/session-ui/thread-error-banner";
+import { WorkGroup } from "@/components/session-ui/work-group";
+import { WorkingIndicator } from "@/components/session-ui/working-indicator";
 import { cnExt as cn } from "@/utils/cn";
 
 // Canonical-timeline cutover flag (final_harness Phase 1, slice 4). OFF by default:
@@ -281,7 +281,7 @@ function ArtifactRow({ node }: { node: Extract<TimelineNode, { kind: "artifact" 
       )}
       {!artifact.destination && <ArtifactActions id={artifact.id} name={artifact.name} />}
       {expanded && (
-        <T3ExpandedImageDialog
+        <ExpandedImageDialog
           preview={{
             images: [{ src: `/api/artifacts/${artifact.id}/content`, name: artifact.name }],
             index: 0,
@@ -338,14 +338,14 @@ function Timeline({
   workingSince?: string;
 }) {
   const { segments, workingLabel } = useMemo(
-    () => segmentTimelineForT3(nodes, live),
+    () => segmentTimeline(nodes, live),
     [nodes, live],
   );
   return (
     <div className="space-y-3" data-testid="session-timeline">
       {segments.map((seg) =>
         seg.kind === "tools" ? (
-          <T3WorkGroup key={seg.key} entries={seg.entries} turnSettled={!live} />
+          <WorkGroup key={seg.key} entries={seg.entries} turnSettled={!live} />
         ) : seg.node.kind === "marker" ? (
           <MarkerRow key={seg.key} marker={seg.node.marker} />
         ) : seg.node.kind === "artifact" ? (
@@ -358,7 +358,7 @@ function Timeline({
           <TextBurst key={seg.key} text={seg.node.text} />
         ),
       )}
-      {live && <T3WorkingIndicator createdAt={workingSince ?? null} stepLabel={workingLabel} />}
+      {live && <WorkingIndicator createdAt={workingSince ?? null} stepLabel={workingLabel} />}
     </div>
   );
 }
@@ -453,7 +453,7 @@ function TurnBlock({
     return (
       <div className="space-y-1" data-testid="turn-block" data-run-id={run.id}>
         <UserBubble>{cleanPrompt(run.prompt)}</UserBubble>
-        <T3QueuedMessagePill position={queuePosition ?? 1} onSendNow={onSendNow} />
+        <QueuedMessagePill position={queuePosition ?? 1} onSendNow={onSendNow} />
       </div>
     );
   }
@@ -501,15 +501,15 @@ function TurnBlock({
               : live
                 ? activity.length > 0 && (
                     <>
-                      <T3WorkGroup
+                      <WorkGroup
                         entries={workEntriesFromTimeline(toolNodesFromSteps(activity), true)}
                         turnSettled={false}
                       />
-                      <T3WorkingIndicator createdAt={run.created_at} stepLabel={latestLabel} />
+                      <WorkingIndicator createdAt={run.created_at} stepLabel={latestLabel} />
                     </>
                   )
                 : settled.length > 0 && (
-                    <T3WorkGroup
+                    <WorkGroup
                       entries={workEntriesFromTimeline(toolNodesFromSteps(settled), false)}
                     />
                   )}
@@ -536,7 +536,7 @@ function TurnBlock({
             rendered it, so one affordance covers both render paths. */}
         {!live && summary && (
           <div className="flex opacity-0 transition-opacity focus-within:opacity-100 group-hover/turn:opacity-100">
-            <T3MessageCopyButton text={summary} />
+            <MessageCopyButton text={summary} />
           </div>
         )}
       </div>

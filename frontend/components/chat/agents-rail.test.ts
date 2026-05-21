@@ -61,7 +61,7 @@ describe("agents rail rows", () => {
     const html = renderToStaticMarkup(
       createElement(AgentsRail, { steps: [], live: true, canonicalEvents: events }),
     );
-    expect(html).toContain('data-t3-ui="agent-panel-row"');
+    expect(html).toContain('data-session-ui="agent-panel-row"');
     expect(html).toContain('data-testid="subagent-card"');
     expect(html).toContain("Open subagent: Research checkout");
     expect(html).toContain("Reading checkout files");

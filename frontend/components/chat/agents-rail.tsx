@@ -23,13 +23,13 @@ import {
 import { deriveSubagents, type SubagentCard } from "@/components/chat/subagents";
 import { ToolStepRow } from "@/components/chat/tool-step-row";
 import { type ApiStep, deriveTrace, formatDuration } from "@/components/chat/types";
-import { formatSubagentTokenCount, T3AgentPanelRow } from "@/components/t3-ui/agent-panel-row";
+import { formatSubagentTokenCount, AgentPanelRow } from "@/components/session-ui/agent-panel-row";
 import { cnExt as cn } from "@/utils/cn";
 
 /**
  * The right-rail "Agents" tab: one card per fanned-out subagent, mirroring
  * the reference tool's session view. Each card renders through the vendored T3 fleet row
- * (`t3-ui/agent-panel-row`): status dot, current/last activity line, elapsed,
+ * (`session-ui/agent-panel-row`): status dot, current/last activity line, elapsed,
  * token usage when known, result preview once settled — and, crucially, its OWN
  * run-state.
  *
@@ -158,7 +158,7 @@ function AgentCardRow({
   const elapsed = childElapsedMs(card, now, live, fidelity?.usage?.durationMs ?? null);
 
   return (
-    <T3AgentPanelRow
+    <AgentPanelRow
       agent={{
         title: card.title,
         role: fidelity?.role ?? null,

@@ -129,7 +129,7 @@ const T3_CHILD_STATUSES = new Set<ChildStatus>([
   "interrupted",
 ]);
 
-function t3TaskStatus(
+function taskStatus(
   eventType: string,
   payload: Record<string, unknown>,
   prior?: ChildStatus,
@@ -205,7 +205,7 @@ export function deriveChildFidelity(
       const summary = readString(activityPayload.summary) ?? readString(activityPayload.detail);
       const error = readString(activityPayload.error);
       const lastToolName = readString(activityPayload.lastToolName);
-      const status = t3TaskStatus(frame.eventType, payload, prior?.status);
+      const status = taskStatus(frame.eventType, payload, prior?.status);
       const isCompletion = frame.eventType.endsWith("task.completed");
       const progress = summary ?? (lastToolName ? `Running ${lastToolName}` : prior?.progress ?? null);
       const recentActivity = summary || lastToolName

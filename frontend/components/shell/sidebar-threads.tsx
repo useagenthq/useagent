@@ -4,7 +4,7 @@ import { usePathname } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
 import { fetchRuns, type Run } from "@/app/agent/runs/runs-data";
-import { T3ThreadRow } from "@/components/t3-ui/thread-row";
+import { ThreadRow } from "@/components/session-ui/thread-row";
 import { useOrgChanges } from "@/hooks/use-org-changes";
 import { SidebarSectionLabel } from "./sidebar-nav";
 
@@ -13,7 +13,7 @@ const MAX = 8;
 
 /**
  * The sidebar thread list, rendered with the vendored T3 thread-row treatment
- * (components/t3-ui/thread-row.tsx). Same data lane as the Active-runs surface
+ * (components/session-ui/thread-row.tsx). Same data lane as the Active-runs surface
  * (`fetchRuns` + org-change invalidation + a low-frequency recovery poll);
  * supersedes SidebarRecents' row rendering. Client leaf so the server
  * `ThreadSidebar` stays static; renders nothing until at least one run exists
@@ -61,7 +61,7 @@ export function SidebarThreads() {
       ) : null}
       {runs.slice(0, MAX).map((run) => {
         const href = `/session/${run.id}`;
-        return <T3ThreadRow key={run.id} run={run} href={href} active={pathname === href} />;
+        return <ThreadRow key={run.id} run={run} href={href} active={pathname === href} />;
       })}
     </>
   );

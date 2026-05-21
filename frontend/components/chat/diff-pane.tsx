@@ -15,8 +15,8 @@ import {
 import type { NativeSnapshot } from "@/components/chat/native-store";
 import { buildTimeline, type TimelineNode } from "@/components/chat/timeline";
 import { type ApiStep, isRenderableTimelineStep } from "@/components/chat/types";
-import { changedFilesFromTimeline } from "@/components/t3-ui/adapter";
-import { filePatchesFromSteps, T3FileDiffView } from "@/components/t3-ui/file-diff-view";
+import { changedFilesFromTimeline } from "@/components/session-ui/adapter";
+import { filePatchesFromSteps, FileDiffView } from "@/components/session-ui/file-diff-view";
 
 // Same flag read as conversation.tsx (module-local there): the canonical lane
 // drives a turn's projection only when its completion record landed (H2).
@@ -71,7 +71,7 @@ export function DiffPane({ turns }: { turns: readonly DiffTurn[] }) {
 
   return (
     <div className="h-full overflow-y-auto pt-3" data-testid="diff-pane">
-      <T3FileDiffView files={files} patches={patches} />
+      <FileDiffView files={files} patches={patches} />
     </div>
   );
 }

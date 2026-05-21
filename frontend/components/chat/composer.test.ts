@@ -60,9 +60,9 @@ describe("composer placeholder honesty", () => {
 describe("composer banner stack contract", () => {
   test("stacks error, provider, then live-status above the input card - one slot, no fetches", () => {
     const src = readFileSync(new URL("./composer.tsx", import.meta.url), "utf8");
-    const error = src.indexOf("<T3ThreadErrorBanner");
-    const provider = src.indexOf("<T3ProviderStatusBanner");
-    const pill = src.indexOf("<T3BackgroundStatusPill");
+    const error = src.indexOf("<ThreadErrorBanner");
+    const provider = src.indexOf("<ProviderStatusBanner");
+    const pill = src.indexOf("<BackgroundStatusPill");
     const inputCard = src.indexOf("<PromptInput");
 
     expect(error).toBeGreaterThan(-1);
