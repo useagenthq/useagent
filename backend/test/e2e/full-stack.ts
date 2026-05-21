@@ -271,12 +271,25 @@ async function stage3_slackMemory(): Promise<{ channel: string; rootTs: string }
     slackHits.some((h) => h.method === "chat.postMessage" && h.body.channel === channel && h.body.thread_ts === rootTs && h.body.text === root.summary));
   check("Slack reply delivered to the mock receiver (run summary)", gotReply);
 
-  // GAP 2: the memory capture was delivered to the mock Memory gateway.
+  // GAP 2: the memory capture was delivered to the mock Memory gateway. Key the
+  // wait on this run's UNIQUE prompt: the mock summary is a CONSTANT shared by
+  // every mock run (summarize(SCRIPT)), so matching on the summary alone is
+  // satisfied by an EARLIER run's identical capture (db-probe, stage 1) and never
+  // actually waits for THIS run's delivery.
   const gotCapture = await waitFor(async () =>
-    memHits.some((h) => h.path === "/v3/conversation/add" && JSON.stringify(h.body?.messages ?? []).includes(root.summary)));
+    memHits.some((h) => {
+      if (h.path !== "/v3/conversation/add") return false;
+      const msgs = JSON.stringify(h.body?.messages ?? []);
+      return msgs.includes(rootPrompt) && msgs.includes(root.summary);
+    }));
   check("memory capture delivered to the mock gateway (prompt+summary)", gotCapture);
-  const capRow = await sql`select state from memory_outbox where run_id = ${root.id}`;
-  check("memory_outbox row marked delivered", capRow[0]?.state === "delivered", `state=${capRow[0]?.state}`);
+  // The delivery HTTP call is observable a hair before the outbox commits
+  // `delivered` (claim → POST → mark), so wait for THIS run's row to settle
+  // rather than reading it once and racing the delivery tick.
+  const capDelivered = await waitFor(async () =>
+    (await sql`select state from memory_outbox where run_id = ${root.id}`)[0]?.state === "delivered");
+  const [capRow] = await sql`select state from memory_outbox where run_id = ${root.id}`;
+  check("memory_outbox row marked delivered", capDelivered, `state=${capRow?.state}`);
 
   // Threaded reply recalls team memory (canary) — the recall PATH fires.
   const replyPrompt = `what is our canary rollout gate check id ${rootTs}`;
