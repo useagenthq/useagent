@@ -478,6 +478,208 @@
     --social-amazon: 0 0% 100%;
     --social-zendesk: 0 0% 100%;
   }
+
+  .aura {
+    /* -------------------------------------------------------------------
+     * Aura - violet dark theme.
+     *
+     * A dark-scheme sibling of the Tokyo Night ("Midnight") ramp, tuned to a
+     * vivid-violet accent over a violet-tinted neutral canvas. Values are
+     * translated from an OKLCH reference palette into the SAME semantic token
+     * slots the `.dark` block uses (canvas -> bg-white-0, raised -> bg-sub-300,
+     * accent -> the blue/primary ramp), so components keep consuming semantic
+     * tokens and never key on a theme name. `color-scheme` is pinned dark so
+     * native form controls and anything resolving the scheme treat Aura as
+     * dark even though the class is not `.dark`. Hex in comments is the sRGB
+     * value each HSL triple encodes.
+     * ------------------------------------------------------------------- */
+    color-scheme: dark;
+    --brand-orbit: 259.01 99.96% 73.33%; /* #a277ff vivid violet */
+
+    --neutral-0: 0 0% 100%;
+    --neutral-50: 269.96 5.63% 92.94%; /* #edecee */
+    --neutral-100: 269.98 1.2% 67.83%; /* #adacae */
+    --neutral-200: 240 0% 42.75%; /* #6d6d6d */
+    --neutral-300: 258.54 4.04% 35.39%; /* #59575e */
+    --neutral-400: 259.81 12.45% 31.53%; /* #4d465a */
+    --neutral-500: 259.73 11.8% 34.85%; /* #554e63 */
+    --neutral-600: 259.77 12.11% 33.76%; /* #534c61 */
+    --neutral-700: 266.63 13.44% 13.13%; /* #211d26 raised */
+    --neutral-800: 248.57 14.88% 9.21%; /* #15141b canvas */
+    --neutral-900: 253.37 19.61% 7.22%; /* #100f16 chrome */
+    --neutral-950: 250.67 24.67% 4.76%; /* #0a090f */
+
+    --neutral-alpha-24: 240 0% 42.75% / 24%;
+    --neutral-alpha-16: 240 0% 42.75% / 16%;
+    --neutral-alpha-10: 240 0% 42.75% / 10%;
+
+    /* Blue ramp repurposed as the violet accent (primary + information + links
+       + send/loading affordances all read the blue ramp). */
+    --blue-950: 258.84 43.39% 47.32%; /* #6544ad primary button */
+    --blue-900: 257.28 43.64% 31.33%; /* #412d73 */
+    --blue-800: 257.58 43.8% 38%; /* #4f368b primary active */
+    --blue-700: 258.89 60.57% 61.56%; /* #8762d8 */
+    --blue-600: 259.01 99.96% 73.33%; /* #a277ff vivid violet */
+    --blue-500: 259.01 99.96% 73.33%; /* #a277ff vivid violet */
+    --blue-400: 260.56 100% 80.5%; /* #be9cff */
+    --blue-300: 262.4 100% 85.11%; /* #cfb3ff */
+    --blue-200: 262.32 70.9% 73.55%; /* #af8ceb */
+    --blue-100: 258.84 43.39% 47.32% / 24%;
+    --blue-50: 258.84 43.39% 47.32% / 16%;
+
+    --blue-alpha-24: 258.84 43.39% 47.32% / 24%;
+    --blue-alpha-16: 258.84 43.39% 47.32% / 16%;
+    --blue-alpha-10: 258.84 43.39% 47.32% / 10%;
+
+    --orange-600: 31.64 83.85% 68.58%; /* #f2b36c */
+    --orange-500: 33.91 100% 76.08%; /* #ffca85 warning */
+    --orange-400: 36.17 100% 80.61%; /* #ffd89c */
+
+    --orange-alpha-24: 33.91 100% 76.08% / 24%;
+    --orange-alpha-16: 33.91 100% 76.08% / 16%;
+    --orange-alpha-10: 33.91 100% 76.08% / 10%;
+
+    --red-600: 359.98 100% 70.2%; /* #ff6767 error */
+    --red-500: 359.98 100% 70.2%; /* #ff6767 */
+    --red-400: 1.77 100% 76.05%; /* #ff8885 */
+
+    --red-alpha-24: 359.98 100% 70.2% / 24%;
+    --red-alpha-16: 359.98 100% 70.2% / 16%;
+    --red-alpha-10: 359.98 100% 70.2% / 10%;
+
+    --green-600: 163.01 75.3% 43.84%; /* #1cc494 success */
+    --green-500: 160.8 73.66% 57.58%; /* #43e3b0 */
+    --green-400: 159.9 99.98% 69.01%; /* #61ffca */
+
+    --green-alpha-24: 160.8 73.66% 57.58% / 24%;
+    --green-alpha-16: 160.8 73.66% 57.58% / 16%;
+    --green-alpha-10: 160.8 73.66% 57.58% / 10%;
+
+    --yellow-600: 37 81.87% 68.46%; /* #f0be6d */
+    --yellow-500: 33.91 100% 76.08%; /* #ffca85 */
+    --yellow-400: 37.65 100% 80.36%; /* #ffda9b */
+
+    --yellow-alpha-24: 33.91 100% 76.08% / 24%;
+    --yellow-alpha-16: 33.91 100% 76.08% / 16%;
+    --yellow-alpha-10: 33.91 100% 76.08% / 10%;
+
+    --purple-600: 264.62 77.61% 67.14%; /* #a06aec */
+    --purple-500: 265.82 93.74% 74.87%; /* #b783fb feature */
+    --purple-400: 270.04 100% 81.64%; /* #d0a1ff */
+
+    --purple-alpha-24: 265.82 93.74% 74.87% / 24%;
+    --purple-alpha-16: 265.82 93.74% 74.87% / 16%;
+    --purple-alpha-10: 265.82 93.74% 74.87% / 10%;
+
+    --sky-600: 203.09 76.93% 58.51%; /* #44a8e7 verified */
+    --sky-500: 201.13 92.64% 67.77%; /* #61c3f9 */
+    --sky-400: 200.3 97.32% 74.89%; /* #81d3fd */
+
+    --sky-alpha-24: 201.13 92.64% 67.77% / 24%;
+    --sky-alpha-16: 201.13 92.64% 67.77% / 16%;
+    --sky-alpha-10: 201.13 92.64% 67.77% / 10%;
+
+    --pink-600: 297.98 70.5% 69.87%; /* #e57ce8 highlighted */
+    --pink-500: 294.97 99.95% 79.01%; /* #f694ff secondary pink */
+    --pink-400: 294.97 99.95% 79.01%; /* #f694ff */
+
+    --pink-alpha-24: 294.97 99.95% 79.01% / 24%;
+    --pink-alpha-16: 294.97 99.95% 79.01% / 16%;
+    --pink-alpha-10: 294.97 99.95% 79.01% / 10%;
+
+    --teal-600: 166.99 53.49% 48.23%; /* #39bda0 stable */
+    --teal-500: 163.6 62.09% 59.32%; /* #57d8b4 */
+    --teal-400: 161.26 81.07% 68.52%; /* #6ef0c7 */
+
+    --teal-alpha-24: 163.6 62.09% 59.32% / 24%;
+    --teal-alpha-16: 163.6 62.09% 59.32% / 16%;
+    --teal-alpha-10: 163.6 62.09% 59.32% / 10%;
+
+    --primary-dark: var(--blue-950);
+    --primary-darker: var(--blue-800);
+    --primary-base: var(--blue-950);
+    --primary-alpha-24: var(--blue-alpha-24);
+    --primary-alpha-16: var(--blue-alpha-16);
+    --primary-alpha-10: var(--blue-alpha-10);
+
+    --bg-strong-950: var(--neutral-50);
+    --bg-surface-800: var(--neutral-100);
+    --bg-sub-300: var(--neutral-700);
+    --bg-soft-200: var(--neutral-900);
+    --bg-weak-50: 250.8 21.4% 6.08%; /* #0d0c13 - Aura muted row */
+    --bg-white-0: var(--neutral-800);
+
+    --text-strong-950: var(--neutral-50);
+    --text-sub-600: var(--neutral-100);
+    --text-soft-400: var(--neutral-200);
+    --text-disabled-300: var(--neutral-300);
+    --text-white-0: var(--neutral-800);
+
+    --stroke-strong-950: var(--neutral-50);
+    --stroke-sub-300: var(--neutral-400);
+    --stroke-soft-200: 259.96 19.06% 24.71%; /* #3b334b - Aura border */
+    --stroke-white-0: var(--neutral-800);
+
+    --faded-dark: var(--neutral-100);
+    --faded-base: var(--neutral-200);
+    --faded-light: var(--neutral-alpha-24);
+    --faded-lighter: var(--neutral-alpha-16);
+
+    --information-dark: var(--blue-400);
+    --information-base: var(--blue-950);
+    --information-light: var(--blue-alpha-24);
+    --information-lighter: var(--blue-alpha-16);
+
+    --warning-dark: var(--orange-400);
+    --warning-base: var(--orange-500);
+    --warning-light: var(--orange-alpha-24);
+    --warning-lighter: var(--orange-alpha-16);
+
+    --error-dark: var(--red-400);
+    --error-base: var(--red-600);
+    --error-light: var(--red-alpha-24);
+    --error-lighter: var(--red-alpha-16);
+
+    --success-dark: var(--green-400);
+    --success-base: var(--green-600);
+    --success-light: var(--green-alpha-24);
+    --success-lighter: var(--green-alpha-16);
+
+    --away-dark: var(--yellow-400);
+    --away-base: var(--yellow-600);
+    --away-light: var(--yellow-alpha-24);
+    --away-lighter: var(--yellow-alpha-16);
+
+    --feature-dark: var(--purple-400);
+    --feature-base: var(--purple-500);
+    --feature-light: var(--purple-alpha-24);
+    --feature-lighter: var(--purple-alpha-16);
+
+    --verified-dark: var(--sky-400);
+    --verified-base: var(--sky-600);
+    --verified-light: var(--sky-alpha-24);
+    --verified-lighter: var(--sky-alpha-16);
+
+    --highlighted-dark: var(--pink-400);
+    --highlighted-base: var(--pink-600);
+    --highlighted-light: var(--pink-alpha-24);
+    --highlighted-lighter: var(--pink-alpha-16);
+
+    --stable-dark: var(--teal-400);
+    --stable-base: var(--teal-600);
+    --stable-light: var(--teal-alpha-24);
+    --stable-lighter: var(--teal-alpha-16);
+
+    --overlay: 250.67 24.67% 4.76% / 72%; /* #0a090f scrim */
+
+    --social-apple: 0 0% 100%;
+    --social-twitter: 0 0% 100%;
+    --social-github: 0 0% 100%;
+    --social-notion: 0 0% 100%;
+    --social-tidal: 0 0% 100%;
+    --social-amazon: 0 0% 100%;
+    --social-zendesk: 0 0% 100%;
+  }
   /*#endregion Colors */
 
   html {
@@ -507,7 +709,8 @@
     --illustration-strong-400: var(--neutral-400);
   }
 
-  .dark {
+  .dark,
+  .aura {
     --illustration-white-0: var(--neutral-950);
     --illustration-weak-100: var(--neutral-900);
     --illustration-soft-200: var(--neutral-800);
@@ -533,6 +736,29 @@
     -webkit-mask-composite: xor;
     mask-composite: exclude;
   }
+}
+
+/* ---------------------------------------------------------------------------
+ * Theme-picker swatches - a fixed per-theme preview dot (canvas + accent split)
+ * shown beside each option in the theme menu. These are deliberately constant
+ * (NOT semantic tokens) so every option shows its OWN colors regardless of the
+ * active theme; the literal hex lives here in the style layer, never in a
+ * component. Keep in sync with each theme's canvas (bg-white-0) and accent.
+ * ------------------------------------------------------------------------- */
+.theme-swatch {
+  background-image: linear-gradient(135deg, var(--swatch-canvas) 0 50%, var(--swatch-accent) 50% 100%);
+}
+.theme-swatch-light {
+  --swatch-canvas: #f4f5f7;
+  --swatch-accent: #0eb8f6;
+}
+.theme-swatch-dark {
+  --swatch-canvas: #1a1b26;
+  --swatch-accent: #7aa2f7;
+}
+.theme-swatch-aura {
+  --swatch-canvas: #15141b;
+  --swatch-accent: #a277ff;
 }
 
 /* ===========================================================================
@@ -744,7 +970,9 @@
  * wrapper, so tokens render on the card's bg-bg-weak-50.
  * ------------------------------------------------------------------------- */
 .dark .shiki,
-.dark .shiki span {
+.dark .shiki span,
+.aura .shiki,
+.aura .shiki span {
   color: var(--shiki-dark) !important;
   font-style: var(--shiki-dark-font-style) !important;
   font-weight: var(--shiki-dark-font-weight) !important;

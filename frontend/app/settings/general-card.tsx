@@ -57,7 +57,7 @@ export function GeneralCard() {
             </Input.Wrapper>
           </Input.Root>
         </SettingsRow>
-        <SettingsRow label="Theme" description="Switch between the light and dark themes.">
+        <SettingsRow label="Theme" description="Choose your interface theme.">
           <ThemeToggle />
         </SettingsRow>
       </SettingsCard>
