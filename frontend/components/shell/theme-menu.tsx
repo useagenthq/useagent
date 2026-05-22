@@ -10,9 +10,9 @@ import { cn } from '@/utils/cn';
 /**
  * Theme options shown in the picker. UI copy is intentional: our default
  * Tokyo Night dark ramp reads as "Midnight", the violet dark ramp as "Aura",
- * and the deep blue-slate dark ramp as "Midnight Harbor" - the token classes
- * on <html> stay `dark` / `aura` / `harbor` (see globals.css). `swatch` is a
- * fixed per-theme preview class defined in globals.css.
+ * and the deep blue-slate dark ramp as "Harbor" - the token classes on <html>
+ * stay `dark` / `aura` / `harbor` (see globals.css). `swatch` is a fixed
+ * per-theme preview class defined in globals.css.
  */
 export const THEME_OPTIONS = [
   { value: 'light', label: 'Light', swatch: 'theme-swatch-light' },
