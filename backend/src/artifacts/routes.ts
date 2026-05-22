@@ -1,5 +1,6 @@
 import { Hono, type Context } from "hono";
 import { isArtifactWorkpieceState, type ArtifactWorkpieceKind } from "@skynet/artifact-workspace";
+import { buildArtifactBundle, type ArtifactBundleEntry } from "@skynet/artifact-formats";
 import type { AppEnv } from "../http";
 import { orgScope } from "../middleware/org";
 import { ArtifactAuthoringError, createAuthoredArtifact, exportWorkpieceState } from "./authoring";
@@ -74,6 +75,12 @@ function contentHeaders(
   return headers;
 }
 
+// A run's artifacts are packaged in-memory before streaming, so both the count
+// and the summed byte size are bounded. The count cap matches the artifact list
+// page size; a run with more artifacts archives its most recent ones.
+const ARCHIVE_MAX_ARTIFACTS = 100;
+const ARCHIVE_MAX_TOTAL_BYTES = 100 * 1024 * 1024;
+
 export const artifactRoutes = new Hono<AppEnv>();
 artifactRoutes.use("*", orgScope);
 
@@ -84,6 +91,42 @@ artifactRoutes.get("/", async (c) => {
     threadId: c.req.query("thread_id") || undefined,
   });
   return c.json({ artifacts: rows.map(toArtifactDescriptor) });
+});
+
+// Download every published artifact of a run as one ZIP. Org-scoped like every
+// other read; bounded in count and total size so the bundle is built safely in
+// memory before streaming.
+artifactRoutes.get("/runs/:runId/archive", async (c) => {
+  const orgId = c.get("orgId");
+  const runId = c.req.param("runId");
+  const rows = await listArtifactsForOrg({ orgId, runId, limit: ARCHIVE_MAX_ARTIFACTS });
+  if (rows.length === 0) return c.json({ error: "no artifacts to archive" }, 404);
+
+  const totalBytes = rows.reduce((sum, row) => sum + row.sizeBytes, 0);
+  if (totalBytes > ARCHIVE_MAX_TOTAL_BYTES) {
+    return c.json({ error: "run artifacts exceed the archive size limit" }, 413);
+  }
+
+  const entries: ArtifactBundleEntry[] = [];
+  try {
+    for (const row of rows) {
+      entries.push({ name: row.name, bytes: await artifactStorage().read(row.storageKey) });
+    }
+  } catch {
+    return c.json({ error: "artifact bytes unavailable" }, 410);
+  }
+
+  const bundle = await buildArtifactBundle(entries);
+  return new Response(bundle.bytes, {
+    headers: {
+      "cache-control": "private, no-store",
+      "content-disposition": disposition(`run-${runId}-artifacts.zip`, false),
+      "content-length": String(bundle.bytes.byteLength),
+      "content-type": bundle.contentType,
+      "cross-origin-resource-policy": "same-origin",
+      "x-content-type-options": "nosniff",
+    },
+  });
 });
 
 function parseWorkpieceKind(value: unknown): ArtifactWorkpieceKind | null {

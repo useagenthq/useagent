@@ -1,9 +1,16 @@
 import {
+  AlignmentType,
   Document,
+  ExternalHyperlink,
   HeadingLevel,
+  LevelFormat,
   Packer,
   Paragraph,
+  Table,
+  TableCell,
+  TableRow,
   TextRun,
+  WidthType,
 } from "docx";
 import ExcelJS from "exceljs";
 import JSZip from "jszip";
@@ -136,10 +143,254 @@ function splitMarkdownParagraphs(text: string): Paragraph[] {
   });
 }
 
+const ORDERED_LIST_REFERENCE = "skynet-ordered-list";
+const INLINE_HTML_TAGS = new Set(["a", "b", "br", "em", "i", "span", "strong", "u"]);
+const MAX_HTML_NESTING = 8;
+
+interface HtmlElement {
+  readonly type: "element";
+  readonly tag: string;
+  readonly attributes: Readonly<Record<string, string>>;
+  readonly children: HtmlNode[];
+}
+interface HtmlText {
+  readonly type: "text";
+  readonly value: string;
+}
+type HtmlNode = HtmlElement | HtmlText;
+interface InlineFormat {
+  readonly bold?: boolean;
+  readonly italics?: boolean;
+  readonly underline?: boolean;
+}
+
+function decodeHtmlEntities(value: string): string {
+  return value
+    .replace(/&nbsp;/g, " ")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#0*39;|&#x0*27;/gi, "'")
+    .replace(/&#(\d{1,7});/g, (_, code) => String.fromCodePoint(Number(code)))
+    .replace(/&#x([0-9a-f]{1,6});/gi, (_, code) => String.fromCodePoint(Number.parseInt(code, 16)))
+    .replace(/&amp;/g, "&");
+}
+
+function parseHtmlAttributes(source: string): Record<string, string> {
+  const attributes: Record<string, string> = {};
+  for (const match of source.matchAll(/([a-z][a-z0-9-]*)\s*=\s*(?:"([^"]*)"|'([^']*)')/gi)) {
+    const name = match[1]?.toLowerCase();
+    if (name) attributes[name] = decodeHtmlEntities(match[2] ?? match[3] ?? "");
+  }
+  return attributes;
+}
+
+/** Parse the deliberately small, pre-validated rich-HTML subset into a node
+ * tree. The stored state has already passed `normalizeArtifactRichHtml`, so the
+ * markup is well-formed and limited to the safe tag/attribute set. */
+function parseHtmlSubset(html: string): HtmlNode[] {
+  const root: HtmlElement = { type: "element", tag: "#root", attributes: {}, children: [] };
+  const stack: HtmlElement[] = [root];
+  const tokens = /<(\/?)([a-z0-9]+)([^>]*?)(\/?)>/gi;
+  let cursor = 0;
+  let match: RegExpExecArray | null;
+  const pushText = (text: string) => {
+    if (text) stack[stack.length - 1]?.children.push({ type: "text", value: text });
+  };
+  while ((match = tokens.exec(html))) {
+    pushText(html.slice(cursor, match.index));
+    cursor = tokens.lastIndex;
+    const closing = match[1] === "/";
+    const tag = (match[2] ?? "").toLowerCase();
+    const selfClosing = match[4] === "/" || tag === "br";
+    if (closing) {
+      for (let index = stack.length - 1; index > 0; index -= 1) {
+        if (stack[index]?.tag === tag) {
+          stack.length = index;
+          break;
+        }
+      }
+      continue;
+    }
+    const element: HtmlElement = {
+      type: "element",
+      tag,
+      attributes: parseHtmlAttributes(match[3] ?? ""),
+      children: [],
+    };
+    stack[stack.length - 1]?.children.push(element);
+    if (!selfClosing && stack.length < MAX_HTML_NESTING) stack.push(element);
+  }
+  pushText(html.slice(cursor));
+  return root.children;
+}
+
+function inlineNodesToRuns(
+  nodes: readonly HtmlNode[],
+  format: InlineFormat = {},
+): (TextRun | ExternalHyperlink)[] {
+  const runs: (TextRun | ExternalHyperlink)[] = [];
+  for (const node of nodes) {
+    if (node.type === "text") {
+      const text = decodeHtmlEntities(node.value).replace(/\s+/g, " ");
+      if (text) {
+        runs.push(new TextRun({
+          text,
+          bold: format.bold,
+          italics: format.italics,
+          underline: format.underline ? {} : undefined,
+        }));
+      }
+      continue;
+    }
+    if (node.tag === "br") {
+      runs.push(new TextRun({ text: "", break: 1 }));
+      continue;
+    }
+    if (node.tag === "a") {
+      const link = node.attributes.href;
+      const children = inlineNodesToRuns(node.children, { ...format, underline: true })
+        .filter((run): run is TextRun => run instanceof TextRun);
+      if (link) {
+        runs.push(new ExternalHyperlink({ children, link }));
+      } else {
+        runs.push(...children);
+      }
+      continue;
+    }
+    const nextFormat: InlineFormat = {
+      bold: format.bold || node.tag === "strong" || node.tag === "b",
+      italics: format.italics || node.tag === "em" || node.tag === "i",
+      underline: format.underline || node.tag === "u",
+    };
+    runs.push(...inlineNodesToRuns(node.children, nextFormat));
+  }
+  return runs;
+}
+
+function listItemsToParagraphs(list: HtmlElement, ordered: boolean, level: number): Paragraph[] {
+  const paragraphs: Paragraph[] = [];
+  for (const item of list.children) {
+    if (item.type !== "element" || item.tag !== "li") continue;
+    const nestedLists = item.children.filter(
+      (child): child is HtmlElement =>
+        child.type === "element" && (child.tag === "ul" || child.tag === "ol"),
+    );
+    const inline = item.children.filter((child) => !nestedLists.includes(child as HtmlElement));
+    paragraphs.push(new Paragraph({
+      children: inlineNodesToRuns(inline),
+      ...(ordered
+        ? { numbering: { reference: ORDERED_LIST_REFERENCE, level: Math.min(level, 2) } }
+        : { bullet: { level: Math.min(level, 2) } }),
+    }));
+    for (const nested of nestedLists) {
+      paragraphs.push(...listItemsToParagraphs(nested, nested.tag === "ol", level + 1));
+    }
+  }
+  return paragraphs;
+}
+
+function tableRowsFrom(node: HtmlElement): HtmlElement[] {
+  const rows: HtmlElement[] = [];
+  for (const child of node.children) {
+    if (child.type !== "element") continue;
+    if (child.tag === "tr") rows.push(child);
+    else if (child.tag === "thead" || child.tag === "tbody") rows.push(...tableRowsFrom(child));
+  }
+  return rows;
+}
+
+function tableToDocx(node: HtmlElement): Table | null {
+  const rows = tableRowsFrom(node)
+    .map((row) =>
+      row.children.filter(
+        (cell): cell is HtmlElement =>
+          cell.type === "element" && (cell.tag === "td" || cell.tag === "th"),
+      )
+    )
+    .filter((cells) => cells.length > 0)
+    .map((cells) =>
+      new TableRow({
+        children: cells.map((cell) => {
+          const runs = inlineNodesToRuns(cell.children, cell.tag === "th" ? { bold: true } : {});
+          const columnSpan = Number(cell.attributes.colspan);
+          const rowSpan = Number(cell.attributes.rowspan);
+          return new TableCell({
+            children: [new Paragraph({ children: runs })],
+            columnSpan: Number.isInteger(columnSpan) && columnSpan > 1 ? columnSpan : undefined,
+            rowSpan: Number.isInteger(rowSpan) && rowSpan > 1 ? rowSpan : undefined,
+          });
+        }),
+      })
+    );
+  return rows.length > 0
+    ? new Table({ rows, width: { size: 100, type: WidthType.PERCENTAGE } })
+    : null;
+}
+
+function headingLevelFor(tag: string) {
+  return tag === "h1"
+    ? HeadingLevel.HEADING_1
+    : tag === "h2"
+    ? HeadingLevel.HEADING_2
+    : HeadingLevel.HEADING_3;
+}
+
+/** Map the rich-HTML document companion into real DOCX structure (headings,
+ * bold/italic/underline runs, ordered and bulleted lists, hyperlinks, tables)
+ * so exporting an edited document to Word preserves its formatting instead of
+ * flattening everything to plain text. */
+function richHtmlToDocxChildren(html: string): (Paragraph | Table)[] {
+  const nodes = parseHtmlSubset(html);
+  const children: (Paragraph | Table)[] = [];
+  let inlineBuffer: HtmlNode[] = [];
+  const flushInline = () => {
+    if (inlineBuffer.length === 0) return;
+    const runs = inlineNodesToRuns(inlineBuffer);
+    inlineBuffer = [];
+    if (runs.length > 0) children.push(new Paragraph({ children: runs }));
+  };
+  for (const node of nodes) {
+    if (node.type === "text" || INLINE_HTML_TAGS.has(node.tag)) {
+      inlineBuffer.push(node);
+      continue;
+    }
+    flushInline();
+    if (node.tag === "h1" || node.tag === "h2" || node.tag === "h3") {
+      children.push(new Paragraph({
+        heading: headingLevelFor(node.tag),
+        children: inlineNodesToRuns(node.children),
+      }));
+    } else if (node.tag === "ul" || node.tag === "ol") {
+      children.push(...listItemsToParagraphs(node, node.tag === "ol", 0));
+    } else if (node.tag === "table") {
+      const table = tableToDocx(node);
+      if (table) children.push(table);
+    } else {
+      // p, div, and any other block wrapper: render its content as a paragraph.
+      children.push(new Paragraph({ children: inlineNodesToRuns(node.children) }));
+    }
+  }
+  flushInline();
+  return children;
+}
+
 async function renderDocx(state: WorkpieceState): Promise<Uint8Array> {
-  const text = textForState(state);
-  const children = splitMarkdownParagraphs(text);
+  const children = "html" in state
+    ? richHtmlToDocxChildren(state.html)
+    : splitMarkdownParagraphs(textForState(state));
   const doc = new Document({
+    numbering: {
+      config: [{
+        reference: ORDERED_LIST_REFERENCE,
+        levels: [0, 1, 2].map((level) => ({
+          level,
+          format: LevelFormat.DECIMAL,
+          text: `%${level + 1}.`,
+          alignment: AlignmentType.LEFT,
+        })),
+      }],
+    },
     sections: [{
       properties: {},
       children: children.length > 0 ? children : [new Paragraph("")],
@@ -309,6 +560,48 @@ export async function renderArtifactExport(
   return format === "docx" || format === "xlsx" || format === "pptx" || format === "pdf"
     ? renderNative(state, format)
     : renderCanonical(state, format);
+}
+
+export const ARTIFACT_BUNDLE_CONTENT_TYPE = "application/zip";
+
+export interface ArtifactBundleEntry {
+  readonly name: string;
+  readonly bytes: Uint8Array;
+}
+
+function sanitizeBundleName(name: string): string {
+  const base = name.replaceAll("\\", "/").split("/").pop() ?? "";
+  const cleaned = [...base]
+    .filter((character) => {
+      const code = character.codePointAt(0) ?? 0;
+      return code >= 0x20 && code !== 0x7f;
+    })
+    .join("")
+    .trim();
+  return cleaned && cleaned !== "." && cleaned !== ".." ? cleaned : "artifact";
+}
+function uniqueBundleName(used: Map<string, number>, name: string): string {
+  const base = sanitizeBundleName(name);
+  const seen = used.get(base) ?? 0;
+  used.set(base, seen + 1);
+  if (seen === 0) return base;
+  const dot = base.lastIndexOf(".");
+  const suffix = ` (${seen + 1})`;
+  return dot > 0 ? `${base.slice(0, dot)}${suffix}${base.slice(dot)}` : `${base}${suffix}`;
+}
+
+/** Package multiple artifacts' bytes into one ZIP. Colliding filenames are
+ * disambiguated with a numeric suffix so every entry survives the bundle. */
+export async function buildArtifactBundle(
+  entries: readonly ArtifactBundleEntry[],
+): Promise<FormatExport> {
+  const zip = new JSZip();
+  const used = new Map<string, number>();
+  for (const entry of entries) {
+    zip.file(uniqueBundleName(used, entry.name), entry.bytes);
+  }
+  const bytes = await zip.generateAsync({ type: "uint8array" });
+  return { bytes, contentType: ARTIFACT_BUNDLE_CONTENT_TYPE, extension: "zip" };
 }
 
 function xmlText(value: string): string {
