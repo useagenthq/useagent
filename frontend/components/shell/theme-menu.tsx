@@ -18,7 +18,7 @@ export const THEME_OPTIONS = [
   { value: 'light', label: 'Light', swatch: 'theme-swatch-light' },
   { value: 'dark', label: 'Midnight', swatch: 'theme-swatch-dark' },
   { value: 'aura', label: 'Aura', swatch: 'theme-swatch-aura' },
-  { value: 'harbor', label: 'Midnight Harbor', swatch: 'theme-swatch-harbor' },
+  { value: 'harbor', label: 'Harbor', swatch: 'theme-swatch-harbor' },
 ] as const;
 
 export type ThemeValue = (typeof THEME_OPTIONS)[number]['value'];
