@@ -81,7 +81,7 @@ function t3EnvironmentAccessKey(sandbox: SandboxHandle): string {
   return `${T3_RUNTIME_GENERATION}:${sandbox.id}`;
 }
 
-function invalidateT3EnvironmentAccess(sandbox: SandboxHandle): void {
+export function invalidateT3EnvironmentAccess(sandbox: SandboxHandle): void {
   validatedAccess.delete(t3EnvironmentAccessKey(sandbox));
 }
 

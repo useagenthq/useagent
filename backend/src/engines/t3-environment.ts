@@ -14,6 +14,7 @@ export const T3_ENVIRONMENT_HOME = "$HOME/.skynet/t3";
 export const T3_ENVIRONMENT_WORKDIR = "$HOME/work";
 const T3_READINESS_DEADLINE_MS = 60_000;
 const T3_READINESS_DELAY_MS = 100;
+const T3_STOP_DEADLINE_MS = 15_000;
 const DEFAULT_T3_FIRST_ACTIVITY_TIMEOUT_MS = 45_000;
 const DEFAULT_T3_NO_PROGRESS_TIMEOUT_MS = 120_000;
 type TimingRecorder = Pick<RunStageTimer, "begin">;
@@ -177,6 +178,42 @@ export async function ensureT3Environment(
       environmentOperations.delete(key);
     }
   }
+}
+
+/** Stop the resident T3 server and wait until it is confirmed down, so a
+ * follow-up start binds a free port and boots against the current settings.json
+ * instead of the readiness probe passing on the still-dying old process.
+ * Bounded: throws an explicit error if the process never stops responding. */
+async function stopT3Environment(
+  sandbox: T3EnvironmentSandbox,
+  signal: AbortSignal,
+): Promise<void> {
+  await deleteT3EnvironmentSessionIfPresent(sandbox);
+  const deadline = Date.now() + T3_STOP_DEADLINE_MS;
+  while (!signal.aborted) {
+    if (!(await t3EnvironmentHealthy(sandbox))) return;
+    if (Date.now() >= deadline) {
+      throw new Error("T3 environment did not stop for restart");
+    }
+    await new Promise((resolve) => setTimeout(resolve, T3_READINESS_DELAY_MS));
+  }
+  throw new Error("T3 environment restart aborted");
+}
+
+/** Restart the resident T3 server for a sandbox: force it down, then bring it
+ * back up through the ordinary provisioning path. Codex subscription runs need
+ * this so T3 reads the per-run relay config (patched into settings.json) at boot
+ * instead of racing its asynchronous settings-watch reconcile; otherwise the
+ * turn binds to the pre-reconcile, relay-less codex instance and falls back to a
+ * local, unauthenticated app-server. Idempotent (a cold environment simply
+ * starts) and bounded (both the stop and readiness waits fail closed). */
+export async function restartT3Environment(
+  sandbox: T3EnvironmentSandbox,
+  signal: AbortSignal,
+  timing?: TimingRecorder,
+): Promise<T3EnvironmentRuntime> {
+  await stopT3Environment(sandbox, signal);
+  return ensureT3Environment(sandbox, signal, timing);
 }
 
 export async function prewarmT3Environment(

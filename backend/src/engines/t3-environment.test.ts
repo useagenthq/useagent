@@ -10,6 +10,7 @@ import {
   buildT3EnvironmentLaunchCommand,
   buildT3EnvironmentReadinessCommand,
   ensureT3Environment,
+  restartT3Environment,
   prewarmT3Environment,
   T3_ENVIRONMENT_PORT,
   t3FirstActivityTimeoutMs,
@@ -127,6 +128,51 @@ describe("T3 Cube environment", () => {
     expect(launched).toHaveLength(1);
     expect(launched[0]).toContain("exec t3 serve");
     expect(probes).toBe(2);
+  });
+
+  test("restarts a healthy environment so it reloads settings, then proves readiness", async () => {
+    // A codex subscription run patches its per-run relay config into settings.json
+    // and must force the warm T3 server to reboot so it reads that config at boot.
+    let running = true;
+    const deleted: string[] = [];
+    const created: string[] = [];
+    const launched: string[] = [];
+    const sandbox = t3Sandbox("cube-t3-restart", {
+      executeCommand: async () => ({ exitCode: running ? 0 : 1, result: "" }),
+      deleteSession: async (name: string) => {
+        deleted.push(name);
+        running = false;
+      },
+      createSession: async (name: string) => {
+        created.push(name);
+      },
+      executeSessionCommand: async (name: string, request: { command: string }) => {
+        launched.push(`${name}:${request.command}`);
+        running = true;
+        return { cmdId: "t3-command", exitCode: 0 };
+      },
+    });
+
+    await expect(
+      restartT3Environment(sandbox, new AbortController().signal),
+    ).resolves.toMatchObject({ sandboxId: "cube-t3-restart", port: T3_ENVIRONMENT_PORT });
+    // Force-stopped even though the environment was healthy, then relaunched once.
+    expect(deleted).toContain("skynet-t3-environment");
+    expect(created).toEqual(["skynet-t3-environment"]);
+    expect(launched).toHaveLength(1);
+    expect(launched[0]).toContain("exec t3 serve");
+  });
+
+  test("fails closed when a restart is aborted before the environment stops", async () => {
+    const controller = new AbortController();
+    controller.abort();
+    const sandbox = t3Sandbox("cube-t3-restart-aborted", {
+      executeCommand: async () => ({ exitCode: 0, result: "" }),
+    });
+
+    await expect(
+      restartT3Environment(sandbox, controller.signal),
+    ).rejects.toThrow("T3 environment restart aborted");
   });
 
   test("repairs after a failed probe when the stale session is already absent", async () => {
