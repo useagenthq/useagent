@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
   activityStep,
   assistantText,
+  hasOpenT3ToolCall,
   buildT3ProjectCreateCommand,
   buildT3ThreadCreateCommand,
   buildT3TurnStartCommand,
@@ -716,5 +717,51 @@ describe("T3 orchestration projection", () => {
       eventType: "question.asked",
       nativeSessionId: "skynet-thread-thread-1",
     });
+  });
+});
+
+describe("hasOpenT3ToolCall", () => {
+  const tool = (kind: string, callId: string, tone: "tool" | "error" = "tool") => ({
+    id: `${kind}-${callId}-${Math.abs(kind.length * 31 + callId.length)}`,
+    tone,
+    kind,
+    summary: kind,
+    payload: { toolCallId: callId },
+    turnId: "turn-1",
+  });
+
+  test("an open tool call (started, no terminal) counts as in flight", () => {
+    expect(hasOpenT3ToolCall([tool("tool.started", "call-1")])).toBe(true);
+    expect(hasOpenT3ToolCall([
+      tool("tool.started", "call-1"),
+      tool("tool.updated", "call-1"),
+    ])).toBe(true);
+  });
+
+  test("a completed or denied call is not in flight", () => {
+    expect(hasOpenT3ToolCall([
+      tool("tool.started", "call-1"),
+      tool("tool.completed", "call-1"),
+    ])).toBe(false);
+    expect(hasOpenT3ToolCall([
+      tool("tool.started", "call-1"),
+      tool("tool.denied", "call-1"),
+    ])).toBe(false);
+  });
+
+  test("an errored call does not hold the turn open", () => {
+    expect(hasOpenT3ToolCall([
+      tool("tool.started", "call-1"),
+      tool("tool.updated", "call-1", "error"),
+    ])).toBe(false);
+  });
+
+  test("one open call among settled ones keeps the turn in flight", () => {
+    expect(hasOpenT3ToolCall([
+      tool("tool.started", "call-1"),
+      tool("tool.completed", "call-1"),
+      tool("tool.started", "call-2"),
+    ])).toBe(true);
+    expect(hasOpenT3ToolCall([])).toBe(false);
   });
 });
