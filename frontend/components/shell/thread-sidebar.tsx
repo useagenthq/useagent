@@ -2,6 +2,7 @@ import {
   RiAddLine,
   RiBarChartBoxLine,
   RiBookShelfLine,
+  RiDashboardLine,
   RiFolderLine,
   RiSettings3Line,
 } from "@remixicon/react";
@@ -15,7 +16,13 @@ import { ThemeToggle } from "./theme-toggle";
 import { UserMenu } from "./user-menu";
 import { WorkingProjectStatus } from "./working-project-status";
 
-export type ThreadSidebarActive = "new" | "projects" | "usage" | "library" | "settings";
+export type ThreadSidebarActive =
+  | "new"
+  | "projects"
+  | "dashboard"
+  | "usage"
+  | "library"
+  | "settings";
 
 function ThreadSidebarFooter({ active }: { active?: ThreadSidebarActive }) {
   return (
@@ -60,6 +67,12 @@ export function ThreadSidebar({ active }: { active?: ThreadSidebarActive }) {
         label="All projects"
         active={active === "projects"}
         trailing={<WorkingProjectStatus />}
+      />
+      <SidebarNavItem
+        href="/dashboard"
+        icon={RiDashboardLine}
+        label="Dashboard"
+        active={active === "dashboard"}
       />
       <SidebarNavItem
         href="/skills"
