@@ -7,6 +7,7 @@ import {
   RiCalendarScheduleLine,
   RiDatabase2Line,
   RiFlashlightLine,
+  RiGitPullRequestLine,
   RiKey2Line,
   RiPlugLine,
   RiSettings3Line,
@@ -25,6 +26,7 @@ export type LibrarySidebarActive =
   | "knowledge"
   | "memory"
   | "wiki"
+  | "reviews"
   | "apps"
   | "artifacts"
   | "plugins"
@@ -43,6 +45,7 @@ const LIBRARY_ITEMS = [
   { key: "knowledge", href: "/knowledge", icon: RiBrainLine, label: "Knowledge" },
   { key: "memory", href: "/memory", icon: RiDatabase2Line, label: "Memory" },
   { key: "wiki", href: "/wiki", icon: RiBook2Line, label: "Wiki" },
+  { key: "reviews", href: "/review", icon: RiGitPullRequestLine, label: "Reviews" },
   { key: "apps", href: "/apps", icon: RiAppsLine, label: "Apps" },
   { key: "artifacts", href: "/agent/artifacts", icon: RiBroadcastLine, label: "Artifacts" },
   { key: "plugins", href: "/agent/plugins", icon: RiPlugLine, label: "Plugins" },

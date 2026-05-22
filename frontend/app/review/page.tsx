@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 
 import { AppShell } from "@/components/shell/app-shell";
-import { ThreadSidebar } from "@/components/shell/thread-sidebar";
+import { LibrarySidebar } from "@/components/shell/library-sidebar";
 import { ReviewWorkspace } from "./review-workspace";
 
 export const metadata: Metadata = {
@@ -11,7 +11,7 @@ export const metadata: Metadata = {
 
 export default function ReviewPage() {
   return (
-    <AppShell sidebar={<ThreadSidebar />}>
+    <AppShell sidebar={<LibrarySidebar active="reviews" />}>
       <ReviewWorkspace />
     </AppShell>
   );

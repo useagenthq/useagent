@@ -63,7 +63,7 @@ export function CompactSidebarRail({
           <RiSidebarUnfoldLine className="size-4" aria-hidden />
         </button>
         <SearchCommand compact />
-        <RailLink href="/agent/workspace" label="All projects">
+        <RailLink href="/dashboard" label="All projects">
           <RiFolderLine className="size-4" aria-hidden />
         </RailLink>
         <RailLink href="/skills" label="Library">

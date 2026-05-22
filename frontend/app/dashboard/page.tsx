@@ -19,6 +19,13 @@ import { RunsBarChartCard } from "@/components/dashboard/runs-bar-chart-card";
 import { RunsTrendCard } from "@/components/dashboard/runs-trend-card";
 import { StatCards, type StatItem } from "@/components/dashboard/stat-cards";
 import { WelcomeHeader } from "@/components/dashboard/welcome-header";
+import { Fleet } from "@/components/fleet/fleet-lanes";
+import {
+  computeStats as computeFleetStats,
+  extractRuns as extractFleetRuns,
+  groupIntoLanes,
+} from "@/components/fleet/fleet-lanes-data";
+import { FleetLimits } from "@/components/fleet/fleet-limits";
 import { AppShell } from "@/components/shell/app-shell";
 import { ThreadSidebar } from "@/components/shell/thread-sidebar";
 import { backendFetch } from "@/lib/backend-fetch";
@@ -56,6 +63,12 @@ export default async function DashboardPage() {
   const runs = extractRuns(runsData);
   const skillsCount = extractCount(skillsData, "skills");
   const knowledgeCount = extractCount(knowledgeData, "records");
+
+  // Per-project fleet lanes are derived from the same /api/runs snapshot so the
+  // grouping refreshes with the rest of the dashboard on DashboardLiveRefresh.
+  const fleetRuns = extractFleetRuns(runsData);
+  const lanes = groupIntoLanes(fleetRuns);
+  const fleetStats = computeFleetStats(fleetRuns);
 
   const stats = computeStats(runs);
   const week = runsPerDay(runs, 7);
@@ -96,7 +109,7 @@ export default async function DashboardPage() {
   ];
 
   return (
-    <AppShell sidebar={<ThreadSidebar />}>
+    <AppShell sidebar={<ThreadSidebar active="projects" />}>
       <DashboardLiveRefresh />
       <div className="mx-auto flex max-w-[1200px] flex-col gap-6 p-6 lg:p-8">
         <WelcomeHeader liveCount={stats.running} />
@@ -106,6 +119,16 @@ export default async function DashboardPage() {
           <RunsBarChartCard data={week} total={weekTotal} />
           <RunsTrendCard data={fortnight} tokensLabel={estimatedTokens(fortnightTotal)} />
         </div>
+
+        <section className="flex flex-col gap-3">
+          <h2 className="text-label-lg text-text-strong-950">Fleet by project</h2>
+          <Fleet lanes={lanes} stats={fleetStats} />
+        </section>
+
+        <section className="flex flex-col gap-3">
+          <h2 className="text-label-lg text-text-strong-950">Limits</h2>
+          <FleetLimits />
+        </section>
 
         <ContributionsCard cells={heat.cells} total={heat.total} />
 

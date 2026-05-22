@@ -50,13 +50,15 @@ const ENGINE_CAPTIONS: Partial<Record<EngineId, string>> = {
 export function NewTaskComposer({
   skills,
   initialRepository = null,
+  initialPrompt = "",
 }: {
   skills: Skill[];
   initialRepository?: string | null;
+  initialPrompt?: string;
 }) {
   const router = useRouter();
 
-  const [prompt, setPrompt] = useState("");
+  const [prompt, setPrompt] = useState(initialPrompt);
   const [selectedRepos, setSelectedRepos] = useState<string[]>([]);
   const [repos, setRepos] = useState<RepoItem[]>([]);
   const [playbook, setPlaybook] = useState(""); // selected skill/playbook id, "" = none

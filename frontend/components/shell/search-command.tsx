@@ -16,7 +16,6 @@ import {
   RiFlaskLine,
   RiGitPullRequestLine,
   RiKey2Line,
-  RiLayoutGridLine,
   RiPenNibLine,
   RiPlugLine,
   RiPulseLine,
@@ -50,7 +49,6 @@ type Cmd = {
 const COMMANDS: Cmd[] = [
   { href: "/agent/new", label: "New thread", icon: RiAddLine, group: "Threads" },
   { href: "/agent/runs", label: "Threads", icon: RiPulseLine, group: "Threads" },
-  { href: "/agent/workspace", label: "All projects", icon: RiLayoutGridLine, group: "Threads" },
 
   { href: "/skills", label: "Skills", icon: RiFlashlightLine, group: "Library" },
   { href: "/playbooks", label: "Playbooks", icon: RiBookMarkedLine, group: "Library" },

@@ -61,7 +61,7 @@ export function ThreadSidebar({ active }: { active?: ThreadSidebarActive }) {
         active={active === "new"}
       />
       <SidebarNavItem
-        href="/agent/workspace"
+        href="/dashboard"
         icon={RiFolderLine}
         label="All projects"
         active={active === "projects"}

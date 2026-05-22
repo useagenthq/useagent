@@ -76,10 +76,14 @@ function RecentTasks({ runs }: { runs: RecentRun[] }) {
 export default async function NewTaskPage({
   searchParams,
 }: {
-  searchParams: Promise<{ repo?: string | string[] }>;
+  searchParams: Promise<{ repo?: string | string[]; prompt?: string | string[] }>;
 }) {
-  const requestedRepo = (await searchParams).repo;
+  const params = await searchParams;
+  const requestedRepo = params.repo;
   const initialRepository = typeof requestedRepo === "string" ? requestedRepo : null;
+  // Deep-link prefill: surfaces like "Discuss PR" open the composer with the
+  // prompt already drafted (e.g. the repo + PR number the agent should read).
+  const initialPrompt = typeof params.prompt === "string" ? params.prompt : "";
   const [skills, recentRuns] = await Promise.all([fetchSkills(), fetchRecentRuns()]);
 
   return (
@@ -93,7 +97,11 @@ export default async function NewTaskPage({
           </div>
 
           <div className="mt-8">
-            <NewTaskComposer skills={skills} initialRepository={initialRepository} />
+            <NewTaskComposer
+              skills={skills}
+              initialRepository={initialRepository}
+              initialPrompt={initialPrompt}
+            />
           </div>
 
           {recentRuns.length > 0 ? <RecentTasks runs={recentRuns} /> : null}

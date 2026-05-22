@@ -1,7 +1,7 @@
 /**
- * Types + defensive normalizer for the /agent/workspace "Limits" card, fed by
- * the real backend GET /api/fleet. No React, no "use client" — pure so it can be
- * shared and unit-reasoned. Everything here reflects live data (the runs +
+ * Types + defensive normalizer for the fleet "Limits" card, fed by the real
+ * backend GET /api/fleet. No React, no "use client" — pure so it can be shared
+ * and unit-reasoned. Everything here reflects live data (the runs +
  * provider_events log and the Daytona control plane); nothing is fabricated.
  */
 

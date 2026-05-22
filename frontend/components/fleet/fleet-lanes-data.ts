@@ -1,12 +1,12 @@
 /**
- * Pure helpers + types for the /agent/workspace fleet overview. No React, no
- * "use client" — safe to import from both the server page (SSR fetch) and the
- * client view (15s refresh), so the banner math stays identical on both sides.
+ * Pure helpers + types for the fleet-by-project overview (the lane grouping). No
+ * React, no "use client" — safe to import from a server page (SSR fetch) and any
+ * client view alike, so the lane math stays identical on both sides.
  */
 
 import { envelope, toRunStatus, type RunStatus } from "@/lib/runs";
 
-/** The slim run shape the workspace needs — steps/trace are irrelevant here. */
+/** The slim run shape the fleet lanes need — steps/trace are irrelevant here. */
 export interface WorkspaceRun {
   id: string;
   prompt: string;

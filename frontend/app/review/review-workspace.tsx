@@ -1,11 +1,13 @@
 'use client';
 
 import {
+  RiChat3Line,
   RiExternalLinkLine,
   RiGitPullRequestLine,
   RiGithubLine,
   RiInboxLine,
 } from '@remixicon/react';
+import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
 
 import * as Avatar from '@/components/ui/avatar';
@@ -14,57 +16,94 @@ import { BackendUnreachable } from '@/components/shared/backend-unreachable';
 import { relativeTime } from '@/utils/format';
 import { fetchPulls, type PullRequestItem, type PullsResult } from './review-api';
 
+/**
+ * Deep-link to the New Task composer with the PR already described in the
+ * prompt, so the run can read it deeply via the GitHub PR-detail gateway tool.
+ * The repo is preselected too (when it matches an available repo) so the agent
+ * has the code alongside the PR.
+ */
+function discussHref(pr: PullRequestItem): string {
+  const prompt =
+    `Let's discuss pull request ${pr.repo} #${pr.number}: "${pr.title}". ` +
+    'Read it in detail - the diff, description, and review comments - using the ' +
+    'GitHub PR detail tool, then summarize what it changes and flag any risks. ' +
+    pr.url;
+  return `/agent/new?${new URLSearchParams({ repo: pr.repo, prompt }).toString()}`;
+}
+
 /** First two letters of the author login — the avatar fallback when GitHub has
  *  no avatar url. */
 function initials(login: string): string {
   return login.slice(0, 2).toUpperCase();
 }
 
-/** One PR row: links out to the PR on GitHub. Keeps the list's visual language
- *  (mono repo #num, title, author, state badge, relative time). */
+/** One PR row: title links out to GitHub, a "Discuss" action opens a run
+ *  pre-seeded with the PR context. Keeps the list's visual language (mono repo
+ *  #num, title, author, state badge, relative time). */
 function PrRow({ pr }: { pr: PullRequestItem }) {
   return (
-    <a
-      href={pr.url}
-      target='_blank'
-      rel='noopener noreferrer'
-      className='group flex flex-col gap-2 rounded-2xl border border-stroke-soft-200 bg-bg-white-0 px-4 py-3.5 outline-none transition-colors hover:bg-bg-weak-50 focus-visible:ring-2 focus-visible:ring-stroke-strong-950'
-    >
+    <div className='flex flex-col gap-2 rounded-2xl border border-stroke-soft-200 bg-bg-white-0 px-4 py-3.5 transition-colors hover:bg-bg-weak-50'>
       <div className='flex items-center justify-between gap-2'>
         <span className='[font-family:var(--font-mono)] text-label-xs text-text-soft-400'>
           {pr.repo} #{pr.number}
         </span>
-        <span className='inline-flex shrink-0 items-center gap-1.5 text-paragraph-xs text-text-soft-400'>
+        <span className='shrink-0 text-paragraph-xs text-text-soft-400'>
           {relativeTime(pr.updated_at)}
-          <RiExternalLinkLine
-            className='size-3.5 opacity-0 transition-opacity group-hover:opacity-100'
-            aria-hidden
-          />
         </span>
       </div>
 
-      <h3 className='line-clamp-2 text-label-sm text-text-strong-950'>{pr.title}</h3>
+      <a
+        href={pr.url}
+        target='_blank'
+        rel='noopener noreferrer'
+        className='group/title rounded outline-none focus-visible:ring-2 focus-visible:ring-stroke-strong-950'
+      >
+        <h3 className='line-clamp-2 text-label-sm text-text-strong-950 group-hover/title:underline'>
+          {pr.title}
+        </h3>
+      </a>
 
-      <div className='flex flex-wrap items-center gap-1.5'>
-        <Avatar.Root size='20' color='gray'>
-          {pr.author_avatar_url ? (
-            <Avatar.Image src={pr.author_avatar_url} alt={pr.author} />
+      <div className='flex flex-wrap items-center justify-between gap-2'>
+        <div className='flex flex-wrap items-center gap-1.5'>
+          <Avatar.Root size='20' color='gray'>
+            {pr.author_avatar_url ? (
+              <Avatar.Image src={pr.author_avatar_url} alt={pr.author} />
+            ) : (
+              initials(pr.author)
+            )}
+          </Avatar.Root>
+          <span className='text-label-xs text-text-sub-600'>{pr.author}</span>
+          {pr.draft ? (
+            <Badge.Root variant='lighter' color='gray'>
+              Draft
+            </Badge.Root>
           ) : (
-            initials(pr.author)
+            <Badge.Root variant='light' color='green'>
+              Open
+            </Badge.Root>
           )}
-        </Avatar.Root>
-        <span className='text-label-xs text-text-sub-600'>{pr.author}</span>
-        {pr.draft ? (
-          <Badge.Root variant='lighter' color='gray'>
-            Draft
-          </Badge.Root>
-        ) : (
-          <Badge.Root variant='light' color='green'>
-            Open
-          </Badge.Root>
-        )}
+        </div>
+
+        <div className='flex shrink-0 items-center gap-1'>
+          <Link
+            href={discussHref(pr)}
+            className='inline-flex items-center gap-1 rounded-lg px-2 py-1 text-label-xs text-text-sub-600 outline-none transition-colors hover:bg-bg-weak-50 hover:text-text-strong-950 focus-visible:ring-2 focus-visible:ring-stroke-strong-950'
+          >
+            <RiChat3Line className='size-3.5' aria-hidden />
+            Discuss
+          </Link>
+          <a
+            href={pr.url}
+            target='_blank'
+            rel='noopener noreferrer'
+            className='inline-flex items-center gap-1 rounded-lg px-2 py-1 text-label-xs text-text-soft-400 outline-none transition-colors hover:bg-bg-weak-50 hover:text-text-strong-950 focus-visible:ring-2 focus-visible:ring-stroke-strong-950'
+          >
+            <RiExternalLinkLine className='size-3.5' aria-hidden />
+            GitHub
+          </a>
+        </div>
       </div>
-    </a>
+    </div>
   );
 }
 

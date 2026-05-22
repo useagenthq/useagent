@@ -44,7 +44,7 @@ function ModelRow({ model, totalTokens }: { model: ModelBurn; totalTokens: numbe
       </div>
       <div className="flex shrink-0 flex-col items-end gap-1">
         <span className="font-mono text-label-sm tabular-nums text-text-strong-950">
-          {model.tokens > 0 ? compactNumber(model.tokens) : "—"}
+          {model.tokens > 0 ? compactNumber(model.tokens) : "-"}
         </span>
         {model.cost > 0 && (
           <span className="font-mono text-label-xs tabular-nums text-text-soft-400">
@@ -110,7 +110,7 @@ function MachinePanel({ machine }: { machine: MachineStats | null }) {
       <PanelHeading
         right={
           <span className="inline-flex items-center rounded-md bg-bg-weak-50 px-2 py-0.5 font-mono text-[0.6875rem] text-text-sub-600">
-            {machine?.snapshot ?? "—"}
+            {machine?.snapshot ?? "-"}
           </span>
         }
       >
