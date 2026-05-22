@@ -50,7 +50,10 @@ function app(options: {
       findActiveThreadRun: async () =>
         options.activeThreadRun === undefined ? null : options.activeThreadRun,
       resolveCredential: options.resolveCredential ??
-        (async () => options.credential === undefined ? "real-upstream-key" : options.credential),
+        (async () => {
+          if (options.credential === null) return null;
+          return { value: options.credential ?? "real-upstream-key", source: "backend_env" };
+        }),
       fetchUpstream: options.fetchUpstream,
       beginAudit: options.beginAudit ?? (async () => undefined),
       finishAudit: options.finishAudit ?? (async () => undefined),
@@ -199,7 +202,7 @@ describe("provider gateway routes", () => {
     const response = await app({
       resolveCredential: async (input) => {
         captured.credentialInput = input;
-        return "user-owned-key";
+        return { value: "user-owned-key", source: "user_connection" };
       },
       fetchUpstream: async (_input, init) => {
         captured.authorization = new Headers(init?.headers).get("authorization");
@@ -218,6 +221,27 @@ describe("provider gateway routes", () => {
       provider: "openrouter",
     });
     expect(captured.authorization).toBe("Bearer user-owned-key");
+  });
+
+  test("an invalid customer key surfaces the provider error, never falls back to the house key", async () => {
+    const attempts: string[] = [];
+    const response = await app({
+      // A connected customer key was resolved for this run.
+      resolveCredential: async () => ({ value: "customer-key", source: "user_connection" }),
+      fetchUpstream: async (_input, init) => {
+        attempts.push(new Headers(init?.headers).get("authorization") ?? "");
+        return Response.json({ error: { message: "invalid api key" } }, { status: 401 });
+      },
+    }).request("/api/provider/openrouter/v1/chat/completions", {
+      method: "POST",
+      headers: { authorization: "Bearer sandbox-capability" },
+      body: JSON.stringify({ model: run.model }),
+    });
+
+    // The provider's real 401 is proxied back; the gateway does not retry with a
+    // different (house) key - that would silently bill the wrong account.
+    expect(response.status).toBe(401);
+    expect(attempts).toEqual(["Bearer customer-key"]);
   });
 
   test("enforces throughput-first, tool-capable routing for Kimi K3", async () => {
@@ -335,7 +359,7 @@ describe("provider gateway routes", () => {
       activeRun,
       resolveCredential: async (input) => {
         captured.credentialInput = input;
-        return "user-openai-key";
+        return { value: "user-openai-key", source: "user_connection" };
       },
       fetchUpstream: async (input, init) => {
         captured.body = String(init?.body ?? "");

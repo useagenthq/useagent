@@ -42,6 +42,7 @@ import { formatInputContext, sandboxInputPath } from "./uploads/materialize";
 import { CHAT_SYSTEM_PROMPT } from "./chat/prompt";
 import { retrieveChatContext } from "./chat/retrieve";
 import { streamChat, type ChatMessage } from "./chat/stream";
+import { resolveChatProviderCredential } from "./provider-gateway/credentials";
 
 // ---------------------------------------------------------------------------
 // Event bus — the worker pushes trace events here; SSE clients subscribe.
@@ -641,7 +642,14 @@ async function runChat(
       { role: "user", content: run.prompt },
     ];
 
-    for await (const delta of streamChat(messages, run.model, signal)) {
+    const resolvedChat = await resolveChatProviderCredential({
+      orgId: run.orgId,
+      userId: run.userId,
+    });
+    if (!resolvedChat) throw new Error("chat is not configured (no OpenRouter credential)");
+    console.info(`[chat] run ${run.id} served by ${resolvedChat.source}`);
+
+    for await (const delta of streamChat(messages, run.model, resolvedChat.value, signal)) {
       const reason = wasCancelled();
       if (reason !== null) throw new Error(reason);
       answer += delta;

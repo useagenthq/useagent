@@ -43,17 +43,20 @@ interface StreamChunk {
 
 /**
  * Stream a chat completion from OpenRouter, yielding text deltas as they arrive.
- * Throws ChatStreamError when no key is configured or the call fails; the caller
- * (routes.ts) surfaces that as an SSE `error` frame. `signal` aborts the fetch
- * (used for the client's Stop control).
+ * `apiKey` is the credential resolved by the caller (a customer's BYO OpenRouter
+ * key when connected, else the house key) - this function never picks a key, so
+ * an invalid customer key surfaces the real OpenRouter error rather than falling
+ * back to the house. Throws ChatStreamError when no key is passed or the call
+ * fails; the caller surfaces that as an SSE `error` frame. `signal` aborts the
+ * fetch (used for the client's Stop control).
  */
 export async function* streamChat(
   messages: ChatMessage[],
   model: string,
+  apiKey: string,
   signal?: AbortSignal,
 ): AsyncGenerator<string, void, unknown> {
-  const apiKey = process.env.OPENROUTER_API_KEY;
-  if (!apiKey) throw new ChatStreamError("OPENROUTER_API_KEY is not configured");
+  if (!apiKey) throw new ChatStreamError("no OpenRouter credential resolved");
 
   const baseUrl = process.env.OPENROUTER_BASE_URL ?? "https://openrouter.ai/api/v1";
   const res = await fetch(`${baseUrl}/chat/completions`, {
