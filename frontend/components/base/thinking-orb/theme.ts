@@ -1,6 +1,6 @@
-// Theme resolution: explicit prop → ancestor data-theme/.dark|.aura|.light
-// class (watched live) → prefers-color-scheme (subscribed live). `.aura` is a
-// dark-scheme theme, so it resolves dark like `.dark`.
+// Theme resolution: explicit prop → ancestor data-theme/.dark|.aura|.harbor|
+// .light class (watched live) → prefers-color-scheme (subscribed live). `.aura`
+// and `.harbor` are dark-scheme themes, so they resolve dark like `.dark`.
 // SSR-safe via useSyncExternalStore: the server snapshot is dark, the
 // client subscribes to the media query + a MutationObserver on the tree.
 
@@ -16,6 +16,7 @@ function ancestorTheme(el: Element | null): boolean | null {
     if (attr === 'light') return false;
     if (node.classList.contains('dark')) return true;
     if (node.classList.contains('aura')) return true;
+    if (node.classList.contains('harbor')) return true;
     if (node.classList.contains('light')) return false;
     node = node.parentElement;
   }
