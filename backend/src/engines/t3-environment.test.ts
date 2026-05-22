@@ -133,15 +133,24 @@ describe("T3 Cube environment", () => {
   test("restarts a healthy environment so it reloads settings, then proves readiness", async () => {
     // A codex subscription run patches its per-run relay config into settings.json
     // and must force the warm T3 server to reboot so it reads that config at boot.
+    // The setsid-detached server is killed by command line (cube deleteSession
+    // cannot reach it), so a health probe only reports down after that kill.
     let running = true;
     const deleted: string[] = [];
     const created: string[] = [];
     const launched: string[] = [];
+    let killCommand: string | undefined;
     const sandbox = t3Sandbox("cube-t3-restart", {
-      executeCommand: async () => ({ exitCode: running ? 0 : 1, result: "" }),
+      executeCommand: async (command: string) => {
+        if (command.includes("[t]3 serve")) {
+          killCommand = command;
+          running = false;
+          return { exitCode: 0, result: "" };
+        }
+        return { exitCode: running ? 0 : 1, result: "" };
+      },
       deleteSession: async (name: string) => {
         deleted.push(name);
-        running = false;
       },
       createSession: async (name: string) => {
         created.push(name);
@@ -156,7 +165,12 @@ describe("T3 Cube environment", () => {
     await expect(
       restartT3Environment(sandbox, new AbortController().signal),
     ).resolves.toMatchObject({ sandboxId: "cube-t3-restart", port: T3_ENVIRONMENT_PORT });
-    // Force-stopped even though the environment was healthy, then relaunched once.
+    // Force-stopped even though the environment was healthy: the server process is
+    // killed directly by command line (self-safe pattern, cube deleteSession
+    // cannot reach the detached process), the session directory is cleaned, then
+    // it is relaunched.
+    expect(killCommand).toContain("pkill");
+    expect(killCommand).toContain("[t]3 serve");
     expect(deleted).toContain("skynet-t3-environment");
     expect(created).toEqual(["skynet-t3-environment"]);
     expect(launched).toHaveLength(1);
