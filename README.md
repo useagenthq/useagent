@@ -18,11 +18,15 @@ Skynet is a multi-package repository for the Loop agent platform. The repo has o
 
 ## Product Surface
 
-- `frontend/app/page.tsx` is the lightweight chat surface.
+- `frontend/app/page.tsx` is the lightweight chat surface. It streams answers over SSE with read-only knowledge, wiki, and memory retrieval cited inline, and can promote a chat into a full agent run.
 - `frontend/app/agent/new/page.tsx` is the task composer that starts agent runs.
-- `frontend/app/session/[id]/page.tsx` is the thread view for a live or settled run.
+- `frontend/app/session/[id]/page.tsx` is the thread view for a live or settled run. The timeline renders the canonical event log through one vendored session grammar: work-entry tool groups with folds, reasoning disclosures, collapsible context-recall receipts, live todo and plan cards, per-file unified diffs with a changed-files index, git chips, queue pills, a quiet one-line failure banner, a message-scroller tick rail, and artifact cards after the answer text. Side panes host files, an editor, a terminal, and the noVNC desktop.
+- `frontend/app/lab/` is the component lab; `frontend/app/lab/session/` renders one synthetic session through the real timeline components so every event type can be reviewed on a single page.
+- Skills at `/skills` include one-click import from GitHub: the backend scans a repository for `SKILL.md` files over a server-side shallow clone and imports selected ones as versioned skills pinned to a commit.
+- Knowledge, wiki, memory hub, artifacts, secrets, review, automations, and settings all have real UI and backend paths.
+- Themes: light plus two dark themes, Midnight (the default, Tokyo Night derived) and Aura (violet), selected from a theme menu and applied wholesale through semantic design tokens.
 - The backend exposes the API and orchestration layer at `:3201`.
-- The frontend runs at `:3400` and proxies browser `/api/*` requests to the backend.
+- The frontend runs at `:3400` and proxies browser `/api/*` requests to the backend. The one direct backend WebSocket ingress is the run-bound Codex relay capability path.
 
 ## What Every Piece Means
 
@@ -49,6 +53,10 @@ Skynet is a multi-package repository for the Loop agent platform. The repo has o
 | Provider connection | A user-owned API key or managed account identity stored by the trusted backend. Metadata is visible to the UI; reusable secrets are write-only. | Provider connection service |
 | Codex subscription relay | A one-use, run-bound WebSocket capability. Codex app-server and ChatGPT OAuth stay on the trusted backend while only Codex exec-server runs in Cube or Daytona. | Provider connection and T3 engine layers |
 | MCP tool | A typed operation offered to an engine, such as searching knowledge, cloning a repository, controlling the desktop, or publishing an artifact. | Knowledge gateway |
+| Gateway tool families | The full in-run tool surface: knowledge search, memory remember and recall, skills list and activate, automations with an approval capability gating destructive operations, GitHub pull-request and issue reads bound to the run's repository, GCS listing, web search, desktop computer-use controls with screenshots, desktop recording that publishes a real MP4 artifact, guarded ephemeral login, and artifact publishing with absolute links. | Knowledge gateway |
+| Skill import | Scan a GitHub repository for `SKILL.md` files and import selected paths as versioned skills. Discovery runs over a server-side shallow clone with head resolution via `git ls-remote`, because the REST git-data surface is not dependable for org installations; imports are pinned to a commit and idempotent by source. | Skill catalog and GitHub service |
+| Restart reconciliation | When the backend restarts under a live run, the sandbox keeps executing; a background loop re-probes the session, streams the interim provider events into the timeline with a visible heartbeat, and adopts the real result or honestly fails at a bounded deadline. | Backend run recovery |
+| Connection reconcile | The durable provider-connection row heals from broker truth: a revoked row may only be reclaimed when the live account email differs from the revoked one, which proves a genuinely new login rather than a stale pre-logout snapshot. | Provider connection service |
 | Skill | Versioned, reusable instructions selected semantically and activated by exact id for the current task. | Skill catalog |
 | Playbook | A skill whose content describes a repeatable end-to-end operating procedure. | Skill catalog |
 | Knowledge | Organization-scoped source material the agent can search and read. It is reference data, not executable instructions. | Knowledge service |
@@ -112,10 +120,27 @@ relay capability path; other product traffic remains behind the frontend.
 | Optional team memory | [`memory/README.md`](memory/README.md) |
 | Production DNS | [`infra/terraform/prod/README.md`](infra/terraform/prod/README.md) |
 
+## Deployment Lanes
+
+| Lane | What it does |
+|---|---|
+| Guarded release (`bun run release:hosted`) | The full certification: eight fail-closed gates covering identity, source sync, service restart, readiness (credential-mode aware), wiki generation, and per-engine parity canaries, with automatic rollback of source, env, Caddy, and services on any failure. Releases run from a clean worktree of the pushed commit, never from a working tree. |
+| Provider-connection bootstrap | Deploys the full source tree and proves the account lifecycle surface without claiming runtime parity. Used to converge production onto a verified commit between certifications. |
+| Atomic frontend release | Builds into an isolated dist dir, verifies BUILD_ID, swaps under a brief stop and start, checks public health and that backend and gateway PIDs never moved, and parks the previous dist as a rollback dir. |
+
+Operational invariants: exactly one backend per database (a boot-time advisory lock enforces it; production sets `REQUIRE_SINGLE_BACKEND=1`), the sandbox gateway uses a restricted database role with explicit grants and no DDL, and secrets are write-only through the API.
+
+## Verification Arsenal
+
+- Backend suite (isolated throwaway database), frontend suite, shared package suites, and root typecheck across every package.
+- `bun run e2e` is a mock full-stack pass including Slack and memory outbox delivery and crash-survival stages; `bun run e2e:real` exercises real sandboxes end to end; a soak marathon and a UI sweep exist for storm and browser coverage.
+- Release parity canaries run real engine journeys (repo clone, computer use, desktop recording, artifact publish, automations, subagent fan-out, thread resume, model switch, web search) against a candidate before it can ship.
+
 ## Current State
 
 - Direct chat is implemented as a no-sandbox surface with read-only retrieval.
-- Agent runs are implemented as threaded sessions backed by sandboxes and streamed events.
+- Agent runs are implemented as threaded sessions backed by sandboxes and streamed events; the canonical session grammar is the default rendering in the live thread view.
+- Runs survive backend restarts: recovery parks and re-probes in-flight sessions, streams recovered events live, and adopts the finished result instead of failing work that actually completed.
 - Production turn dispatch enters the provider registry first. Native OpenCode and selected T3 turns receive a concrete `ProviderDriver`; legacy ACP execution remains an explicit compatibility branch.
 - User API keys are resolved inside the signed provider gateway. Managed Codex subscription turns use a separate host-owned app-server relay and never copy OAuth state into T3 or a sandbox. Engine readiness is credential-mode-aware: a subscription-only Codex release must prove the connected account and native turn path, while API-key engines must prove their mapped gateway provider. Local protocol, isolation, and release-policy tests are green; hosted subscription execution remains a release-gated proof.
 - Skills and playbooks share one immutable substrate.
@@ -125,10 +150,11 @@ relay capability path; other product traffic remains behind the frontend.
 
 ## Bounded Roadmap
 
-- Canonical timeline rendering in the frontend is still opt-in.
+- Hosted Codex subscription execution is blocked on shipping a sandbox runtime template that contains the relay-aware driver; the backend contract, relay route, account lifecycle, and reconcile barrier are in place and the template rebuild is the remaining step.
+- The release parity canaries assert tool names that predate the current canonical step naming; several journeys succeed in substance (real artifacts, recordings, listings) while the assertions under-report, and the suite needs a remap before parity can be claimed honestly.
+- Internal canary and diagnostic runs should be tagged and filtered out of the user's thread list.
 - The sandbox provider interface does not expose explicit pause, checkpoint, or snapshot operations yet.
-- Legacy ACP restart reconciliation and authoritative child/history surfaces are still weaker than the OpenCode and T3 paths.
-- Current source and local tests do not prove hosted Daytona credentials, preview behavior, deletion, or latency.
+- Turn-start latency work continues: warm-pool-claimable creation, parallelized post-sandbox preparation, and config-refresh caching are in; regional always-on topology and the remaining perceived-latency budgets are not.
 - Multi-replica realtime requires durable org-event fanout before adding backend replicas.
 - Artifact storage is still local to the backend node.
 
