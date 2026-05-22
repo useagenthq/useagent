@@ -83,7 +83,16 @@ terminalRoutes.get(
             send("\x1b[2m[skynet] connected to sandbox " + sandboxId.slice(0, 8) + "\x1b[0m\r\n");
             await pty.sendInput("cd ~/work 2>/dev/null; clear\n");
           } catch (err) {
-            send(`\r\n\x1b[31m[skynet] ${err instanceof Error ? err.message : String(err)}\x1b[0m\r\n`);
+            const message = err instanceof Error ? err.message : String(err);
+            // A reaped/absent sandbox is the NORMAL idle state between runs,
+            // not a fault: send the dim "no live sandbox" notice (the client
+            // filters that phrase into one calm waiting line) instead of a red
+            // error that repeats on every reconnect.
+            if (/not found|no live sandbox/i.test(message)) {
+              send("\r\n\x1b[2m[skynet] no live sandbox yet\x1b[0m\r\n");
+            } else {
+              send(`\r\n\x1b[31m[skynet] ${message}\x1b[0m\r\n`);
+            }
             try {
               ws.close();
             } catch {
