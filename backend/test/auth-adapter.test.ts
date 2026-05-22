@@ -64,6 +64,7 @@ describe("adapter end-to-end through the real app", () => {
     const body = (await res.json()) as {
       capabilities?: unknown;
       models?: Record<string, unknown>;
+      artifacts?: { fidelity?: { kind: string; uploadImport: string }[] };
     };
     expect(body.capabilities).toBeDefined();
     expect(body.models).toBeDefined();
@@ -71,6 +72,16 @@ describe("adapter end-to-end through the real app", () => {
     // evidence. This adapter test proves only that the public config boundary
     // remains reachable without weakening the protected-path default.
     expect(body.models).toBeObject();
+    // The public config honestly labels per-format editing fidelity, and never
+    // pretends uploaded PDF editing works.
+    const fidelity = body.artifacts?.fidelity ?? [];
+    expect(fidelity.map((entry) => entry.kind)).toEqual([
+      "document",
+      "spreadsheet",
+      "presentation",
+      "pdf",
+    ]);
+    expect(fidelity.find((entry) => entry.kind === "pdf")?.uploadImport).toBe("unsupported");
   });
 
   test("a protected path is org-scoped by the adapter (identity resolved, not bypassed)", async () => {

@@ -1,6 +1,16 @@
 "use client";
 
-import { RiAddLine, RiBold, RiH1, RiH2, RiItalic } from "@remixicon/react";
+import {
+  RiAddLine,
+  RiArrowDownLine,
+  RiArrowUpLine,
+  RiBold,
+  RiDeleteBinLine,
+  RiH1,
+  RiH2,
+  RiItalic,
+} from "@remixicon/react";
+import type { ArtifactPresentationSlide } from "@skynet/agent-client";
 import type { RefObject } from "react";
 import * as Table from "@/components/ui/table";
 import { sanitizeRichHtml } from "./artifact-editor-model";
@@ -169,6 +179,132 @@ export function SpreadsheetGridSurface({
           ))}
         </Table.Body>
       </Table.Root>
+    </section>
+  );
+}
+
+/** Structure-aware slide editor over the canonical presentation state (title,
+ * body, and speaker notes per slide). Round-trips through the same revisioned
+ * workpiece state as every other surface; the native PPTX export is derived from
+ * it. Slide visuals, layouts, and media are out of scope (see the fidelity note). */
+export function SlidesSurface({
+  slides,
+  loading,
+  onChange,
+}: {
+  readonly slides: readonly ArtifactPresentationSlide[];
+  readonly loading: boolean;
+  readonly onChange: (slides: ArtifactPresentationSlide[]) => void;
+}) {
+  const clone = () => slides.map((slide) => ({ ...slide }));
+  const patch = (index: number, next: Partial<ArtifactPresentationSlide>) =>
+    onChange(slides.map((slide, position) => (position === index ? { ...slide, ...next } : { ...slide })));
+  const addSlide = () =>
+    onChange([...clone(), { title: `Slide ${slides.length + 1}`, body: "", notes: "" }]);
+  const removeSlide = (index: number) =>
+    onChange(slides.filter((_, position) => position !== index).map((slide) => ({ ...slide })));
+  const move = (index: number, delta: number) => {
+    const target = index + delta;
+    if (target < 0 || target >= slides.length) return;
+    const next = clone();
+    const moved = next[index];
+    const displaced = next[target];
+    if (!moved || !displaced) return;
+    next[index] = displaced;
+    next[target] = moved;
+    onChange(next);
+  };
+
+  return (
+    <section className="mt-6 flex min-h-0 flex-1 flex-col gap-4">
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-label-sm text-text-strong-950">Slides ({slides.length})</p>
+        <button
+          type="button"
+          onClick={addSlide}
+          disabled={loading}
+          className="inline-flex h-8 items-center gap-2 rounded-lg border border-stroke-soft-200 px-3 text-label-sm hover:bg-bg-weak-50 disabled:opacity-50"
+        >
+          <RiAddLine aria-hidden className="size-4" />
+          Add slide
+        </button>
+      </div>
+      <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-auto pb-2">
+        {slides.map((slide, index) => (
+          <article
+            key={index}
+            className="rounded-xl border border-stroke-soft-200 bg-bg-white-0 p-4"
+          >
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-mono-label text-text-soft-400">Slide {index + 1}</span>
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => move(index, -1)}
+                  disabled={loading || index === 0}
+                  aria-label={`Move slide ${index + 1} up`}
+                  title="Move up"
+                  className="grid size-8 place-items-center rounded-lg text-text-sub-600 hover:bg-bg-weak-50 disabled:opacity-30"
+                >
+                  <RiArrowUpLine aria-hidden className="size-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => move(index, 1)}
+                  disabled={loading || index === slides.length - 1}
+                  aria-label={`Move slide ${index + 1} down`}
+                  title="Move down"
+                  className="grid size-8 place-items-center rounded-lg text-text-sub-600 hover:bg-bg-weak-50 disabled:opacity-30"
+                >
+                  <RiArrowDownLine aria-hidden className="size-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => removeSlide(index)}
+                  disabled={loading}
+                  aria-label={`Delete slide ${index + 1}`}
+                  title="Delete slide"
+                  className="grid size-8 place-items-center rounded-lg text-text-sub-600 hover:bg-bg-weak-50 hover:text-error-base disabled:opacity-30"
+                >
+                  <RiDeleteBinLine aria-hidden className="size-4" />
+                </button>
+              </div>
+            </div>
+            <label className="mt-3 block text-label-xs text-text-sub-600">
+              Title
+              <input
+                value={slide.title}
+                disabled={loading}
+                onChange={(event) => patch(index, { title: event.currentTarget.value })}
+                className="mt-1 h-9 w-full rounded-lg border border-stroke-soft-200 bg-bg-white-0 px-3 text-label-sm text-text-strong-950 outline-none focus:border-stroke-strong-950 focus:ring-2 focus:ring-stroke-soft-200 disabled:opacity-50"
+              />
+            </label>
+            <label className="mt-3 block text-label-xs text-text-sub-600">
+              Body
+              <textarea
+                value={slide.body}
+                disabled={loading}
+                onChange={(event) => patch(index, { body: event.currentTarget.value })}
+                className="mt-1 min-h-24 w-full resize-y rounded-lg border border-stroke-soft-200 bg-bg-white-0 p-3 text-paragraph-sm text-text-strong-950 outline-none focus:border-stroke-strong-950 focus:ring-2 focus:ring-stroke-soft-200 disabled:opacity-50"
+              />
+            </label>
+            <label className="mt-3 block text-label-xs text-text-sub-600">
+              Speaker notes
+              <textarea
+                value={slide.notes ?? ""}
+                disabled={loading}
+                onChange={(event) => patch(index, { notes: event.currentTarget.value })}
+                className="mt-1 min-h-16 w-full resize-y rounded-lg border border-stroke-soft-200 bg-bg-white-0 p-3 text-paragraph-sm text-text-strong-950 outline-none focus:border-stroke-strong-950 focus:ring-2 focus:ring-stroke-soft-200 disabled:opacity-50"
+              />
+            </label>
+          </article>
+        ))}
+        {slides.length === 0 && (
+          <p className="rounded-xl border border-dashed border-stroke-soft-200 px-4 py-8 text-center text-paragraph-sm text-text-sub-600">
+            No slides yet. Add the first slide to start the deck.
+          </p>
+        )}
+      </div>
     </section>
   );
 }

@@ -2,9 +2,11 @@ import { describe, expect, test } from "bun:test";
 import {
   ARTIFACT_AUTHORING_PROFILES,
   ARTIFACT_AUTHORING_ACTIONS,
+  ARTIFACT_FIDELITY,
   ARTIFACT_LEGACY_WORKPIECE_ACTIONS,
   artifactActionContractFor,
   artifactCapabilitiesFor,
+  artifactFidelityFor,
   artifactWorkpieceExports,
   artifactSurfaceCategoryFor,
   canPreviewInline,
@@ -218,6 +220,34 @@ describe("artifact workspace capabilities", () => {
       ["quote", 'a "b"'],
     ]);
     expect(serializeArtifactCsv(rows)).toBe(source);
+  });
+
+  test("publishes one honest fidelity record per workpiece kind", () => {
+    // Exactly the four canonical kinds, in profile order, no duplicates.
+    expect(ARTIFACT_FIDELITY.map((entry) => entry.kind)).toEqual([
+      "document",
+      "spreadsheet",
+      "presentation",
+      "pdf",
+    ]);
+
+    for (const entry of ARTIFACT_FIDELITY) {
+      expect(artifactFidelityFor(entry.kind)).toBe(entry);
+      // Every kind states both what it keeps and what it drops - never silent.
+      expect(entry.preserved.length).toBeGreaterThan(0);
+      expect(entry.notPreserved.length).toBeGreaterThan(0);
+      expect(entry.summary.length).toBeGreaterThan(0);
+      expect(entry.importNote.length).toBeGreaterThan(0);
+      expect(["companion", "authored", "unsupported"]).toContain(entry.uploadImport);
+    }
+
+    // The one hard boundary the product must never fake: uploaded PDF editing.
+    expect(artifactFidelityFor("pdf").uploadImport).toBe("unsupported");
+    expect(artifactFidelityFor("pdf").importNote).toContain("cannot be imported");
+    // Companion kinds are labelled as companions, not rich round-trips.
+    for (const kind of ["document", "spreadsheet", "presentation"] as const) {
+      expect(artifactFidelityFor(kind).uploadImport).toBe("companion");
+    }
   });
 
   test("validates browser-normalized rich HTML with attribute context intact", () => {

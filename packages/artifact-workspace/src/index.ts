@@ -636,6 +636,104 @@ export function artifactWorkpieceExports(kind: ArtifactWorkpieceKind): readonly 
   return artifactAuthoringProfile(kind).exports;
 }
 
+/** How a native upload of this kind becomes editable browser state:
+ *  - `companion`: a bounded text/CSV/slide-JSON projection is imported (not a
+ *    rich binary round-trip);
+ *  - `authored`: state is authored in the browser and rendered to native bytes;
+ *  - `unsupported`: the original stays download-only (no tested importer yet). */
+export type ArtifactImportSupport = "companion" | "authored" | "unsupported";
+
+/** The single source of truth for how honest each workpiece kind's editing is.
+ * Both the product UI and the public API render these exact strings so a user is
+ * never told a canonical companion is a rich binary round-trip. */
+export interface ArtifactFidelity {
+  readonly kind: ArtifactWorkpieceKind;
+  /** One-line, plain-language description of what the editor actually edits. */
+  readonly summary: string;
+  /** Aspects the canonical edit round-trips into the native export. */
+  readonly preserved: readonly string[];
+  /** Aspects the canonical edit deliberately drops (stated, never hidden). */
+  readonly notPreserved: readonly string[];
+  readonly uploadImport: ArtifactImportSupport;
+  /** Honest note shown wherever import is offered or withheld. */
+  readonly importNote: string;
+}
+
+const ARTIFACT_FIDELITY_BY_KIND = {
+  document: {
+    kind: "document",
+    summary: "Rich text: headings, emphasis, lists, links, and simple tables.",
+    preserved: [
+      "Headings (H1-H3)",
+      "Bold, italic, and underline",
+      "Bulleted and numbered lists",
+      "Hyperlinks",
+      "Tables with basic row and column spans",
+    ],
+    notPreserved: [
+      "Images and drawings",
+      "Page layout, headers and footers, and columns",
+      "Fonts, colors, and theme styling",
+      "Comments and tracked changes",
+    ],
+    uploadImport: "companion",
+    importNote:
+      "Uploaded Word files import as editable text; the original formatting is not reconstructed.",
+  },
+  spreadsheet: {
+    kind: "spreadsheet",
+    summary: "Cell values in a single grid.",
+    preserved: ["Cell text and numbers", "Rows and columns of the first sheet"],
+    notPreserved: [
+      "Formulas (values only)",
+      "Multiple worksheets",
+      "Cell formatting, colors, and number formats",
+      "Charts, images, and comments",
+    ],
+    uploadImport: "companion",
+    importNote:
+      "Uploaded Excel files import the first worksheet as cell values; formulas and formatting are dropped.",
+  },
+  presentation: {
+    kind: "presentation",
+    summary: "Slides with a title, body, and speaker notes.",
+    preserved: ["Slide title and body text", "Speaker notes", "Slide order"],
+    notPreserved: [
+      "Layouts, themes, and master slides",
+      "Shapes, images, charts, and tables",
+      "Animations and transitions",
+    ],
+    uploadImport: "companion",
+    importNote: "Uploaded PowerPoint files import slide text only.",
+  },
+  pdf: {
+    kind: "pdf",
+    summary: "Plain text rendered to a fresh PDF.",
+    preserved: ["Body text", "Automatic line wrapping and pagination"],
+    notPreserved: [
+      "The original page layout, fonts, and images",
+      "Tables, columns, and form fields",
+      "Non-Latin scripts without an embedded font",
+    ],
+    uploadImport: "unsupported",
+    importNote:
+      "Uploaded PDFs cannot be imported for editing yet; the original stays downloadable.",
+  },
+} as const satisfies { readonly [Kind in ArtifactWorkpieceKind]: ArtifactFidelity };
+
+export const ARTIFACT_FIDELITY = [
+  ARTIFACT_FIDELITY_BY_KIND.document,
+  ARTIFACT_FIDELITY_BY_KIND.spreadsheet,
+  ARTIFACT_FIDELITY_BY_KIND.presentation,
+  ARTIFACT_FIDELITY_BY_KIND.pdf,
+] as const satisfies readonly ArtifactFidelity[];
+
+export function artifactFidelityFor<Kind extends ArtifactWorkpieceKind>(
+  kind: Kind,
+): (typeof ARTIFACT_FIDELITY_BY_KIND)[Kind] {
+  return ARTIFACT_FIDELITY_BY_KIND[kind];
+}
+
 export function artifactSurfaceCategoryFor(
   artifact: Pick<ArtifactDescriptor, "content_type" | "name">,
 ): ArtifactSurfaceCategory {

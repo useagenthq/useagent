@@ -4,6 +4,7 @@ import { RiArrowLeftLine, RiDownloadLine, RiSaveLine } from "@remixicon/react";
 import {
   type ArtifactDescriptor,
   type ArtifactPresentationSlide,
+  type ArtifactWorkpieceKind,
   type ArtifactWorkpieceState,
   decodeWorkpieceResult,
 } from "@skynet/agent-client";
@@ -23,11 +24,12 @@ import {
 } from "./artifact-editor-model";
 import {
   RichDocumentSurface,
+  SlidesSurface,
   SourceSurface,
   SpreadsheetGridSurface,
 } from "./artifact-editor-surfaces";
 
-import { artifactActionContractFor } from "@skynet/artifact-workspace";
+import { artifactActionContractFor, artifactFidelityFor } from "@skynet/artifact-workspace";
 
 type Mode = ReturnType<typeof artifactEditorMode>;
 
@@ -72,6 +74,44 @@ function parseSlidesJson(value: string): readonly ArtifactPresentationSlide[] {
   });
 }
 
+/** One canonical string form of a deck, used for both the saved baseline and the
+ * dirty check so the structured editor and the wire agree bit for bit. */
+function serializeSlides(slides: readonly ArtifactPresentationSlide[]): string {
+  return JSON.stringify({
+    slides: slides.map((slide) => ({
+      title: slide.title,
+      body: slide.body,
+      ...(slide.notes ? { notes: slide.notes } : {}),
+    })),
+  });
+}
+
+function slidesFromValue(value: string): ArtifactPresentationSlide[] {
+  try {
+    return [...parseSlidesJson(value)];
+  } catch {
+    return [];
+  }
+}
+
+function ArtifactFidelityNote({ kind }: { readonly kind: ArtifactWorkpieceKind }) {
+  const fidelity = artifactFidelityFor(kind);
+  return (
+    <div className="mt-2 max-w-2xl text-paragraph-xs text-text-soft-400">
+      <p>
+        {fidelity.summary} Original bytes stay immutable; edits save as a browser workpiece and
+        export native or canonical files.
+      </p>
+      <p className="mt-1">
+        <span className="text-success-base">Preserved:</span> {fidelity.preserved.join(", ")}.
+      </p>
+      <p className="mt-0.5">
+        <span className="text-warning-base">Not preserved:</span> {fidelity.notPreserved.join(", ")}.
+      </p>
+    </div>
+  );
+}
+
 function stateForMode(mode: Mode, value: string): ArtifactWorkpieceState {
   switch (mode) {
     case "grid":
@@ -104,6 +144,7 @@ export function ArtifactEditor({ artifact }: { readonly artifact: ArtifactDescri
   const [value, setValue] = useState("");
   const [savedValue, setSavedValue] = useState("");
   const [rows, setRows] = useState<string[][]>([["", "", ""]]);
+  const [slides, setSlides] = useState<ArtifactPresentationSlide[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -111,6 +152,7 @@ export function ArtifactEditor({ artifact }: { readonly artifact: ArtifactDescri
   const isGrid = mode === "grid" && isSheetWithinGridLimit(rows);
   const editorMode = mode === "grid" && !isGrid ? "sheet-source" : mode;
   const isRich = editorMode === "rich-document";
+  const isSlidesEditor = editorMode === "slides-json";
   const isSpreadsheet = workpiece?.kind === "spreadsheet";
 
   const normalizeValue = useCallback(
@@ -142,9 +184,17 @@ export function ArtifactEditor({ artifact }: { readonly artifact: ArtifactDescri
       if (text === null && mode === "pdf-text") text = pdfTextTemplate(artifact.name);
       const normalized = normalizeValue(text ?? "");
       setRevision(result.workpiece.state_revision);
-      setEditorValue(normalized);
-      setSavedValue(normalized);
-      if (isSpreadsheet) setRows(spreadsheetRows(normalized));
+      if (isSlidesEditor) {
+        const parsed = slidesFromValue(normalized);
+        const canonical = serializeSlides(parsed);
+        setSlides(parsed);
+        setValue(canonical);
+        setSavedValue(canonical);
+      } else {
+        setEditorValue(normalized);
+        setSavedValue(normalized);
+        if (isSpreadsheet) setRows(spreadsheetRows(normalized));
+      }
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "The workpiece could not be loaded.");
     } finally {
@@ -154,6 +204,7 @@ export function ArtifactEditor({ artifact }: { readonly artifact: ArtifactDescri
     artifact.name,
     artifact.preview_url,
     isRich,
+    isSlidesEditor,
     isSpreadsheet,
     mode,
     normalizeValue,
@@ -168,6 +219,7 @@ export function ArtifactEditor({ artifact }: { readonly artifact: ArtifactDescri
   const currentValue = () => {
     if (isGrid) return serializeCsv(rows);
     if (isRich) return sanitizeRichHtml(richEditorRef.current?.innerHTML ?? value);
+    if (isSlidesEditor) return serializeSlides(slides);
     return value;
   };
 
@@ -194,9 +246,17 @@ export function ArtifactEditor({ artifact }: { readonly artifact: ArtifactDescri
       if (response.status === 409 && result) {
         const latest = normalizeValue(stateValue(result) ?? "");
         setRevision(result.workpiece.state_revision);
-        setEditorValue(latest);
-        setSavedValue(latest);
-        if (isSpreadsheet) setRows(spreadsheetRows(latest));
+        if (isSlidesEditor) {
+          const parsed = slidesFromValue(latest);
+          const canonical = serializeSlides(parsed);
+          setSlides(parsed);
+          setValue(canonical);
+          setSavedValue(canonical);
+        } else {
+          setEditorValue(latest);
+          setSavedValue(latest);
+          if (isSpreadsheet) setRows(spreadsheetRows(latest));
+        }
         setError("A newer edit was saved. The latest revision has been loaded.");
         return;
       }
@@ -230,11 +290,8 @@ export function ArtifactEditor({ artifact }: { readonly artifact: ArtifactDescri
           <p className="mt-1 text-paragraph-sm text-text-sub-600">
             {label} · revision {revision}
           </p>
-          {actionContract.edit?.mode === "companion" && (
-            <p className="mt-2 max-w-2xl text-paragraph-xs text-text-soft-400">
-              Original bytes stay immutable. Edits are saved as a browser workpiece and can export
-              either native Office/PDF files or canonical companion formats.
-            </p>
+          {actionContract.edit && workpiece && (
+            <ArtifactFidelityNote kind={workpiece.kind} />
           )}
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -282,7 +339,10 @@ export function ArtifactEditor({ artifact }: { readonly artifact: ArtifactDescri
         <RichDocumentSurface editorRef={richEditorRef} loading={loading} onChange={setValue} />
       )}
       {isGrid && <SpreadsheetGridSurface rows={rows} onChange={setRows} />}
-      {!isRich && !isGrid && (
+      {isSlidesEditor && (
+        <SlidesSurface slides={slides} loading={loading} onChange={setSlides} />
+      )}
+      {!isRich && !isGrid && !isSlidesEditor && (
         <SourceSurface
           label={label}
           loading={loading}
