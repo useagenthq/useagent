@@ -136,23 +136,39 @@ describe("T3 run adapter gate", () => {
     expect(source.split("driver.steer(").length - 1).toBe(1);
   });
 
-  test("restarts T3 for codex so the per-run relay config is read before steering", () => {
+  test("barriers on the codex reconcile (restart fallback) before steering", () => {
     const source = readFileSync(new URL("./t3-adapter.ts", import.meta.url), "utf8");
     // Scoped to codex-engine runs only; opencode/claude never patch settings and
-    // must not pay the restart.
+    // must not pay the barrier or restart.
     expect(source).toContain('if (engine === "codex") {');
+    // (B) Content barrier is attempted first (fast path, no restart cost).
+    expect(source).toContain(
+      "awaitT3CodexProviderReady(sandbox, ctx.signal, T3_CODEX_BARRIER_DEADLINE_MS)",
+    );
+    // (A) Deterministic restart is the fallback, then a single verify.
     expect(source).toContain("restartT3Environment(sandbox, ctx.signal)");
     expect(source).toContain("invalidateT3EnvironmentAccess(sandbox)");
-    // Exactly one restart, on the prepare path.
+    expect(source).toContain(
+      "awaitT3CodexProviderReady(sandbox, ctx.signal, T3_CODEX_VERIFY_DEADLINE_MS)",
+    );
+    expect(source).toContain(
+      "T3 codex subscription runtime did not become ready after restart",
+    );
+    // Exactly one restart; the barrier probe runs twice (barrier + post-restart verify).
     expect(source.split("restartT3Environment(").length - 1).toBe(1);
-    // Ordering: restart happens after the provider-bridge settings patch and
-    // before the provider session is established / the turn is steered.
+    expect(source.split("awaitT3CodexProviderReady(").length - 1).toBe(2);
+    // Ordering: barrier after the provider-bridge settings patch; restart after the
+    // barrier; both before the provider session is established / the turn is steered.
     const bridgeIdx = source.indexOf("prepareT3ProviderBridge(sandbox, ctx, engine, workdir)");
+    const barrierIdx = source.indexOf(
+      "awaitT3CodexProviderReady(sandbox, ctx.signal, T3_CODEX_BARRIER_DEADLINE_MS)",
+    );
     const restartIdx = source.indexOf("restartT3Environment(sandbox, ctx.signal)");
     const establishIdx = source.indexOf("await establishProviderSession({");
     const steerIdx = source.indexOf("const steerResult = await driver.steer({");
     expect(bridgeIdx).toBeGreaterThan(-1);
-    expect(restartIdx).toBeGreaterThan(bridgeIdx);
+    expect(barrierIdx).toBeGreaterThan(bridgeIdx);
+    expect(restartIdx).toBeGreaterThan(barrierIdx);
     expect(establishIdx).toBeGreaterThan(restartIdx);
     expect(steerIdx).toBeGreaterThan(establishIdx);
   });

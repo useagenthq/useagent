@@ -4,9 +4,11 @@ import type { CodexSubscriptionRelayBinding } from "../provider-connections/code
 import type { CodexSubscriptionRuntimeSelection } from "../provider-connections/service";
 import type { EngineRunContext } from "./types";
 import {
+  awaitT3CodexProviderReady,
   buildCodexExecServerCommand,
   buildCodexExecServerReadinessCommand,
   buildT3CodexProviderInstanceCommand,
+  buildT3CodexProviderReadyProbeCommand,
   prepareT3CodexSubscription,
   previewWebSocketUrl,
 } from "./t3-codex-subscription";
@@ -171,6 +173,68 @@ describe("T3 Codex subscription lease", () => {
       "cube",
       env,
     )).toThrow("outside the Cube sandbox domain");
+  });
+
+  test("readiness probe keys on the subscription instance display name in the cache", () => {
+    const command = buildT3CodexProviderReadyProbeCommand();
+    // Reads the status cache CONTENT (not mtime) for the subscription-only marker.
+    expect(command).toContain("caches/codex.json");
+    expect(command).toContain("displayName");
+    expect(command).toContain("Codex subscription");
+    // The probe marker matches the display name the provider-instance patch sets.
+    const patch = buildT3CodexProviderInstanceCommand({
+      relayUrl: "wss://skynet.example.test/api/internal/codex-relay/opaque",
+      environmentId: "skynet-run-1",
+      workdir: "/root/work",
+    });
+    const encoded = patch.match(/CODEX_INSTANCE_B64='([^']+)'/)?.[1] ?? "";
+    const instance = JSON.parse(Buffer.from(encoded, "base64").toString("utf8")) as {
+      displayName?: string;
+    };
+    expect(instance.displayName).toBe("Codex subscription");
+  });
+
+  test("readiness barrier confirms once the status cache reports the remote instance", async () => {
+    let ready = false;
+    const commands: string[] = [];
+    const sandbox = {
+      process: {
+        async executeCommand(command: string) {
+          commands.push(command);
+          return { exitCode: ready ? 0 : 1 } satisfies Partial<SandboxExecuteResult>;
+        },
+      },
+    } as unknown as SandboxHandle;
+
+    // A zero-length deadline that never confirms falls back (returns false).
+    await expect(
+      awaitT3CodexProviderReady(sandbox, new AbortController().signal, 0),
+    ).resolves.toBe(false);
+    // Once the cache reports the subscription instance, the barrier confirms.
+    ready = true;
+    await expect(
+      awaitT3CodexProviderReady(sandbox, new AbortController().signal, 0),
+    ).resolves.toBe(true);
+    expect(commands.every((command) => command.includes("caches/codex.json"))).toBe(true);
+  });
+
+  test("readiness barrier stops immediately when the run is aborted", async () => {
+    const controller = new AbortController();
+    controller.abort();
+    let calls = 0;
+    const sandbox = {
+      process: {
+        async executeCommand() {
+          calls += 1;
+          return { exitCode: 1 } satisfies Partial<SandboxExecuteResult>;
+        },
+      },
+    } as unknown as SandboxHandle;
+
+    await expect(
+      awaitT3CodexProviderReady(sandbox, controller.signal, 5_000),
+    ).resolves.toBe(false);
+    expect(calls).toBe(0);
   });
 });
 
