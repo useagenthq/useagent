@@ -708,12 +708,17 @@ const ARTIFACT_FIDELITY_BY_KIND = {
   },
   pdf: {
     kind: "pdf",
-    summary: "Plain text rendered to a fresh PDF.",
-    preserved: ["Body text", "Automatic line wrapping and pagination"],
+    summary: "Plain text rendered to a fresh PDF, plus page reorder and delete on published PDFs.",
+    preserved: [
+      "Body text",
+      "Automatic line wrapping and pagination",
+      "Reordering and deleting whole pages of a published PDF (page structure)",
+    ],
     notPreserved: [
       "The original page layout, fonts, and images",
       "Tables, columns, and form fields",
       "Non-Latin scripts without an embedded font",
+      "Editing the text or visual content inside an uploaded or published PDF page",
     ],
     uploadImport: "unsupported",
     importNote:

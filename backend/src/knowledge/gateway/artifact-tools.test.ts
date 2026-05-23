@@ -15,7 +15,10 @@ describe("artifact gateway contract", () => {
     expect(publish?.inputSchema.required).toEqual(["path"]);
     expect(publish?.inputSchema.properties.editable_path).toEqual({
       type: "string",
-      description: "Optional sandbox path to editable HTML for a DOCX or CSV for an XLSX.",
+      description:
+        "Optional sandbox path to an editable companion so the file previews and edits in " +
+        "Skynet: HTML for a DOCX, CSV for an XLSX, or slide-text JSON for a PPTX. Without it, " +
+        "an Office file is download-only.",
     });
     expect(publish?.inputSchema.properties.purpose).toEqual({
       type: "string",
@@ -25,6 +28,7 @@ describe("artifact gateway contract", () => {
     });
     expect(publish?.description).toContain("Office bytes remain immutable");
     expect(publish?.description).toContain("purpose=user_requested_proof");
+    expect(publish?.description).toContain("download-only");
   });
 
   test("rejects private inspection screenshots before sandbox publication unless proof is explicit", async () => {

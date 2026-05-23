@@ -1,7 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import JSZip from "jszip";
-import { decodePDFRawStream, PDFDocument, PDFRawStream } from "pdf-lib";
+import { decodePDFRawStream, PDFDocument, PDFRawStream, StandardFonts } from "pdf-lib";
 import {
+  applyPdfPageOperation,
   ARTIFACT_BUNDLE_CONTENT_TYPE,
   buildArtifactBundle,
   DOCX_CONTENT_TYPE,
@@ -9,6 +10,8 @@ import {
   extractPptxSlides,
   extractXlsxCsv,
   PDF_CONTENT_TYPE,
+  pdfPageCount,
+  PdfPageOperationError,
   PPTX_CONTENT_TYPE,
   renderArtifactExport,
   UnsupportedPdfUnicodeError,
@@ -61,6 +64,45 @@ describe("artifact native formats", () => {
         unsupportedCharacters: ["🚀", "東", "京"],
       });
     }
+  });
+
+  test("reorders PDF pages as new bytes without touching the source", async () => {
+    const fixture = await threePageFixture();
+    expect(await pdfPageCount(fixture)).toBe(3);
+
+    const reordered = await applyPdfPageOperation(fixture, { type: "reorder", order: [2, 0, 1] });
+    // Page identity is carried by width (201/202/203); reordering rewrites order.
+    expect(await pageWidths(reordered)).toEqual([203, 201, 202]);
+    // Source bytes are untouched by the pure operation.
+    expect(await pageWidths(fixture)).toEqual([201, 202, 203]);
+    // Every page's drawn marker text survives the copy, none is lost.
+    const streams = await decodedPdfStreams(reordered);
+    for (const marker of ["<5031>", "<5032>", "<5033>"]) expect(streams).toContain(marker);
+  });
+
+  test("deletes PDF pages, keeping count and remaining order", async () => {
+    const fixture = await threePageFixture();
+    const deleted = await applyPdfPageOperation(fixture, { type: "delete", pages: [1] });
+    expect(await pdfPageCount(deleted)).toBe(2);
+    expect(await pageWidths(deleted)).toEqual([201, 203]);
+    const streams = await decodedPdfStreams(deleted);
+    expect(streams).toContain("<5031>"); // page 1 marker "P1"
+    expect(streams).toContain("<5033>"); // page 3 marker "P3"
+    expect(streams).not.toContain("<5032>"); // deleted page 2 marker "P2" is gone
+  });
+
+  test("rejects invalid PDF page operations instead of corrupting bytes", async () => {
+    const fixture = await threePageFixture();
+    await expect(applyPdfPageOperation(fixture, { type: "reorder", order: [0, 1] })).rejects
+      .toBeInstanceOf(PdfPageOperationError);
+    await expect(applyPdfPageOperation(fixture, { type: "reorder", order: [0, 1, 1] })).rejects
+      .toThrow("duplicated");
+    await expect(applyPdfPageOperation(fixture, { type: "delete", pages: [0, 1, 2] })).rejects
+      .toThrow("cannot delete every page");
+    await expect(applyPdfPageOperation(fixture, { type: "delete", pages: [9] })).rejects
+      .toThrow("out of range");
+    await expect(applyPdfPageOperation(new Uint8Array([1, 2, 3]), { type: "delete", pages: [0] }))
+      .rejects.toBeInstanceOf(PdfPageOperationError);
   });
 
   for (const [format, extract] of [
@@ -130,6 +172,23 @@ describe("artifact native formats", () => {
 });
 
 const decoder = new TextDecoder();
+
+// Three pages whose per-page identity is encoded in a distinct width (201/202/
+// 203) plus a drawn text marker ("P1"/"P2"/"P3", hex-encoded as <5031>..<5033>).
+async function threePageFixture(): Promise<Uint8Array> {
+  const doc = await PDFDocument.create();
+  const font = await doc.embedFont(StandardFonts.Helvetica);
+  ["P1", "P2", "P3"].forEach((marker, index) => {
+    const page = doc.addPage([201 + index, 300]);
+    page.drawText(marker, { x: 20, y: 150, size: 24, font });
+  });
+  return doc.save();
+}
+
+async function pageWidths(bytes: Uint8Array): Promise<number[]> {
+  const doc = await PDFDocument.load(bytes);
+  return doc.getPages().map((page) => Math.round(page.getWidth()));
+}
 
 async function decodedPdfStreams(bytes: Uint8Array): Promise<string> {
   const pdf = await PDFDocument.load(bytes);

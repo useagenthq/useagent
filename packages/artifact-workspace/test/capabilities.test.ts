@@ -244,6 +244,11 @@ describe("artifact workspace capabilities", () => {
     // The one hard boundary the product must never fake: uploaded PDF editing.
     expect(artifactFidelityFor("pdf").uploadImport).toBe("unsupported");
     expect(artifactFidelityFor("pdf").importNote).toContain("cannot be imported");
+    // Page-structure ops are recorded as preserved; content editing stays dropped.
+    const pdfPreserved = artifactFidelityFor("pdf").preserved.join(" ").toLowerCase();
+    expect(pdfPreserved).toContain("reorder");
+    expect(pdfPreserved).toContain("delet");
+    expect(artifactFidelityFor("pdf").notPreserved.join(" ").toLowerCase()).toContain("content");
     // Companion kinds are labelled as companions, not rich round-trips.
     for (const kind of ["document", "spreadsheet", "presentation"] as const) {
       expect(artifactFidelityFor(kind).uploadImport).toBe("companion");
