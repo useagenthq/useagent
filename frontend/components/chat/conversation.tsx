@@ -8,10 +8,12 @@ import {
   RiImageLine,
   RiSlackLine,
 } from "@remixicon/react";
+import { artifactAuthoringProfile, inferWorkpieceKind } from "@skynet/artifact-workspace";
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { LoadingState } from "@/components/ai/loading-state";
 import { Thinking } from "@/components/ai/thinking";
 import { formatArtifactSize } from "@/components/artifacts/model";
+import { useOpenWorkpiece } from "@/components/chat/workspace-open-context";
 import type { ApprovalDecision, PendingApproval } from "@/components/chat/approval-state";
 import {
   buildTimelineFromCanonical,
@@ -274,22 +276,47 @@ function ArtifactRow({ node }: { node: Extract<TimelineNode, { kind: "artifact" 
   // artifacts have no content endpoint here). Leaf-local state only - no store.
   const [expanded, setExpanded] = useState(false);
   const expandable = image && !artifact.destination;
+  // A canonical workpiece (document/spreadsheet/deck/pdf, not a delivered copy)
+  // opens IN the session side pane; raw binaries keep card/download. The provider
+  // is null outside a session (the standalone artifacts page), so the card keeps
+  // its plain behavior there.
+  const openWorkpiece = useOpenWorkpiece();
+  const workpieceKind =
+    openWorkpiece && !artifact.destination
+      ? inferWorkpieceKind(artifact.name, artifact.contentType, artifact.bytes)
+      : null;
+  const canOpen = !!openWorkpiece && workpieceKind !== null;
+  const subtitle = artifact.destination
+    ? `Delivered to ${artifact.destination}`
+    : workpieceKind
+      ? `${artifactAuthoringProfile(workpieceKind).label} · ${formatArtifactSize(artifact.bytes)} · Click to open`
+      : `${media ? "Generated media" : "Artifact"} · ${formatArtifactSize(artifact.bytes)}`;
   const body = (
     <>
       <Icon aria-hidden className="size-5 shrink-0 text-text-sub-600" />
       <div className="min-w-0 flex-1">
         <p className="truncate text-label-sm text-text-strong-950">{artifact.name}</p>
-        <p className="text-paragraph-xs text-text-soft-400">
-          {artifact.destination
-            ? `Delivered to ${artifact.destination}`
-            : `${media ? "Generated media" : "Artifact"} · ${formatArtifactSize(artifact.bytes)}`}
-        </p>
+        <p className="text-paragraph-xs text-text-soft-400">{subtitle}</p>
       </div>
     </>
   );
   return (
-    <div className="flex min-w-0 items-center gap-3 rounded-xl border border-stroke-soft-200 bg-bg-weak-50 px-3 py-2.5">
-      {expandable ? (
+    <div
+      className={cn(
+        "flex min-w-0 items-center gap-3 rounded-xl border border-stroke-soft-200 bg-bg-weak-50 px-3 py-2.5",
+        canOpen && "transition-colors hover:border-stroke-sub-300",
+      )}
+    >
+      {canOpen ? (
+        <button
+          type="button"
+          onClick={() => openWorkpiece?.(artifact)}
+          aria-label={`Open ${artifact.name} in workspace`}
+          className="flex min-w-0 flex-1 cursor-pointer items-center gap-3 rounded-lg text-left outline-none focus-visible:ring-2 focus-visible:ring-stroke-strong-950"
+        >
+          {body}
+        </button>
+      ) : expandable ? (
         <button
           type="button"
           onClick={() => setExpanded(true)}

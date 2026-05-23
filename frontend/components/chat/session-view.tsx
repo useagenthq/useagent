@@ -9,6 +9,7 @@ import {
   RiFileList2Line,
   RiGitMergeLine,
   RiLayoutRightLine,
+  RiPagesLine,
   RiRobot2Line,
   RiTerminalBoxLine,
 } from "@remixicon/react";
@@ -49,6 +50,9 @@ import { SubagentChips } from "@/components/chat/subagent-pane";
 import { type SurfaceChoice, SurfaceChooser } from "@/components/chat/surface-chooser";
 import { TerminalPane } from "@/components/chat/terminal-pane";
 import type { ThreadRunView } from "@/components/chat/thread-store";
+import type { TimelineArtifact } from "@/components/chat/timeline";
+import { WorkspaceOpenProvider } from "@/components/chat/workspace-open-context";
+import { type OpenWorkpieceTab, WorkspacePane } from "@/components/chat/workspace-pane";
 import {
   type ApiRun,
   type EngineId,
@@ -528,12 +532,42 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
     setRailWidth(rounded);
     localStorage.setItem("skynet.rail-width", String(rounded));
   }
+  // Canonical workpieces opened from the conversation into the Workspace surface.
+  // Every open workpiece stays mounted (visibility-toggled) so a tab switch never
+  // drops in-flight edits; the Workspace tab appears only once one is open.
+  const [openWorkpieces, setOpenWorkpieces] = useState<OpenWorkpieceTab[]>([]);
+  const [activeWorkpieceId, setActiveWorkpieceId] = useState<string | null>(null);
+  const [workspaceEverOpened, setWorkspaceEverOpened] = useState(false);
+
   // Default to whichever pane actually has content; an explicit pick wins.
   // A quiet thread starts on the provider-neutral surface chooser.
-  const [railTabOverride, setRailTabOverride] = useState<SurfaceChoice | "editor" | null>(null);
+  const [railTabOverride, setRailTabOverride] = useState<SurfaceChoice | "editor" | "workspace" | null>(
+    null,
+  );
   const railTab =
     railTabOverride ??
     (hasSubagents ? "agents" : hasFiles ? "artifacts" : hasCommands ? "terminal" : null);
+
+  const openWorkpiece = useCallback((artifact: TimelineArtifact) => {
+    setOpenWorkpieces((prev) =>
+      prev.some((w) => w.id === artifact.id) ? prev : [...prev, { id: artifact.id, name: artifact.name }],
+    );
+    setActiveWorkpieceId(artifact.id);
+    setRailOverride(true);
+    setRailTabOverride("workspace");
+  }, []);
+  const closeWorkpiece = useCallback(
+    (id: string) => {
+      const remaining = openWorkpieces.filter((w) => w.id !== id);
+      setOpenWorkpieces(remaining);
+      if (activeWorkpieceId === id) {
+        setActiveWorkpieceId(remaining[remaining.length - 1]?.id ?? null);
+      }
+      // The Workspace tab disappears with its last workpiece; land on Files.
+      if (remaining.length === 0 && railTabOverride === "workspace") setRailTabOverride("artifacts");
+    },
+    [activeWorkpieceId, openWorkpieces, railTabOverride],
+  );
   const railTabLabel =
     railTab === null
       ? "Surface"
@@ -545,12 +579,15 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
             ? "Diff"
             : railTab === "editor"
               ? "Editor"
-              : railTab === "terminal"
-                ? "Terminal"
-                : "Desktop";
+              : railTab === "workspace"
+                ? "Workspace"
+                : railTab === "terminal"
+                  ? "Terminal"
+                  : "Desktop";
   const [desktopEverOpened, setDesktopEverOpened] = useState(false);
   useEffect(() => {
     if (railTab === "desktop") setDesktopEverOpened(true);
+    if (railTab === "workspace") setWorkspaceEverOpened(true);
   }, [railTab]);
   useEffect(() => {
     if (!railOpen && railExpanded) setRailExpanded(false);
@@ -632,7 +669,8 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
       : [];
 
   return (
-    <div className="flex h-full flex-col">
+    <WorkspaceOpenProvider value={openWorkpiece}>
+      <div className="flex h-full flex-col">
       {/* Compact thread bar. Brand and search belong to the collapsible sidebar. */}
       <div className="bg-bg-white-0 flex shrink-0 items-center justify-between gap-3 px-4 py-2">
         <div className="flex min-w-0 items-center gap-2">
@@ -769,7 +807,7 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
               <SegmentedControl.Root
                 className="flex-1"
                 value={railTab ?? ""}
-                onValueChange={(v) => setRailTabOverride(v as SurfaceChoice | "editor")}
+                onValueChange={(v) => setRailTabOverride(v as SurfaceChoice | "editor" | "workspace")}
               >
                 <SegmentedControl.List>
                   {/* Agents leads the switcher, but only once a run has fanned
@@ -784,6 +822,14 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
                     <RiFileList2Line className="size-4" aria-hidden />
                     Files
                   </SegmentedControl.Trigger>
+                  {/* Workspace holds the canonical workpieces the user opened from
+                      the conversation - only present once at least one is open. */}
+                  {openWorkpieces.length > 0 && (
+                    <SegmentedControl.Trigger value="workspace" data-testid="rail-tab-workspace">
+                      <RiPagesLine className="size-4" aria-hidden />
+                      Workspace
+                    </SegmentedControl.Trigger>
+                  )}
                   {/* Diff appears once a real change set exists - the chooser
                       card's "available when a real patch exists" promise. */}
                   {hasFiles && (
@@ -855,7 +901,25 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
                   <DesktopPane threadId={rootId} />
                 </div>
               ) : null}
-              {railTab !== "desktop" && (
+              {/* Workspace stays mounted once opened (like Desktop) so switching
+                  rail tabs never discards a workpiece editor's in-flight edits. */}
+              {workspaceEverOpened ? (
+                <div
+                  aria-hidden={railTab !== "workspace"}
+                  className={cn(
+                    "absolute inset-0",
+                    railTab === "workspace" ? "visible" : "pointer-events-none invisible",
+                  )}
+                >
+                  <WorkspacePane
+                    tabs={openWorkpieces}
+                    activeId={activeWorkpieceId}
+                    onSelect={setActiveWorkpieceId}
+                    onClose={closeWorkpiece}
+                  />
+                </div>
+              ) : null}
+              {railTab !== "desktop" && railTab !== "workspace" && (
                 <div className="absolute inset-0">
                   {railTab === null ? (
                     <SurfaceChooser
@@ -903,6 +967,7 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
           </button>
         ) : null}
       </div>
-    </div>
+      </div>
+    </WorkspaceOpenProvider>
   );
 }
