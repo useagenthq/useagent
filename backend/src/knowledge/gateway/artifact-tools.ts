@@ -1,3 +1,5 @@
+import type { ArtifactWorkpieceKind } from "@skynet/artifact-workspace";
+import { ArtifactAuthoringError, createAuthoredArtifact } from "../../artifacts/authoring";
 import { publishSandboxArtifact } from "../../artifacts/publish";
 import { proposeWorkpieceEdit } from "../../artifacts/proposals";
 import type { ArtifactDescriptor } from "../../artifacts/repo";
@@ -34,23 +36,26 @@ export const ARTIFACT_TOOLS = [
     description:
       "Publish a file from your sandbox as a durable Skynet artifact. The trusted " +
       "backend pulls and size-checks the bytes once, records an immutable digest, " +
-      "and returns browser preview/download references. Text and CSV files open directly " +
-      "in Skynet's editor, and PDFs preview inline. To make a document, spreadsheet, or " +
-      "deck editable and previewable instead of download-only, publish the native file AND " +
-      "pass editable_path to a companion produced in the same sandbox (HTML for a DOCX, CSV " +
-      "for an XLSX, and for a PPTX a deck JSON {deck:{schemaVersion:2,theme,slides:[{id,blocks}]}} " +
-      "carrying the VISUAL DESIGN: theme colors, backgrounds, positioned heading/text/image " +
-      "blocks - publish artwork as separate image artifacts and reference their absolute URLs " +
-      "in image blocks). PREFER authoring decks as deck JSON over scripting PPTX binaries: the " +
-      "workspace renders the design natively and Export produces the designed PPTX for you. " +
-      "The Office bytes remain immutable. " +
+      "and returns browser preview/download references. Use this for FILES the user " +
+      "explicitly wants AS files - screenshots, exported reports, videos, archives, and " +
+      "other raw outputs. Text and CSV files open directly in Skynet's editor, and PDFs " +
+      "preview inline. " +
+      "To make a DOCUMENT, SPREADSHEET, or DECK the user will read or edit, do NOT script an " +
+      "Office binary: call workpiece_create with the canonical state (for a deck, deck JSON " +
+      "{deck:{schemaVersion:2,theme,slides:[{id,blocks}]}} carrying the VISUAL DESIGN - theme " +
+      "colors, backgrounds, positioned heading/text/image blocks, with artwork published as " +
+      "separate image artifacts referenced by absolute URL in image blocks). The workspace " +
+      "renders it natively, it opens in the user's workspace, and Export produces the Office " +
+      "file for them. " +
+      "If you already have a native Office file on disk, you may still pass editable_path to a " +
+      "companion produced in the same sandbox (HTML for a DOCX, CSV for an XLSX, deck JSON for a " +
+      "PPTX) so it previews and edits. The Office bytes remain immutable. " +
       "Publishing a raw .docx, .xlsx, or .pptx with no companion yields a download-only card " +
-      "with no preview or editor, so prefer the companion for deliverables the user will read " +
-      "or edit. When you REGENERATE a file you already published (a new version of the same " +
-      "deliverable), pass updates_artifact_id with that artifact's id: the new bytes + companion " +
-      "land as a NEW REVISION of the same artifact (one tab, with history) instead of a second " +
-      "card. Use this for screenshots, reports, documents, spreadsheets, videos, " +
-      "and other outputs the user needs. Private desktop inspection screenshots produced " +
+      "with no editor (a PDF preview is attached when it can be rendered). When you REGENERATE a " +
+      "file you already published (a new version of the same deliverable), pass " +
+      "updates_artifact_id with that artifact's id: the new bytes + companion land as a NEW " +
+      "REVISION of the same artifact (one tab, with history) instead of a second card. " +
+      "Private desktop inspection screenshots produced " +
       "by computer_screenshot or computer_sequence require purpose=user_requested_proof; " +
       "do not publish intermediate inspection screenshots.",
     inputSchema: {
@@ -137,6 +142,46 @@ export const ARTIFACT_TOOLS = [
       additionalProperties: false,
     },
   },
+  {
+    name: "workpiece_create",
+    description:
+      "Create an editable, previewable workpiece natively from its canonical state - no file, no " +
+      "editable_path, no scripting an Office binary. This is the EASIEST and preferred way to " +
+      "produce a document, spreadsheet, or deck the user will read or edit: pass the kind, a name, " +
+      "and the canonical v2 state, and Skynet creates the artifact, renders it natively, and opens " +
+      "it in the user's workspace. Export then produces the Office file (DOCX/XLSX/PPTX/PDF). " +
+      "State by kind: document a themed rich document " +
+      "{document:{schemaVersion:2,theme:{background,heading,body,accent},html}} (or {html} / {text}); " +
+      "spreadsheet a workbook {workbook:{schemaVersion:2,activeSheetId,sheets:[{id,name,rowCount,colCount,cells}]}} " +
+      "(or {csv}); presentation a deck {deck:{schemaVersion:2,theme,slides:[{id,blocks:[{id,type,x,y,w,h,content}]}]}} " +
+      "(or {slides:[{title,body,notes?}]}) - publish artwork as separate image artifacts and reference their " +
+      "absolute URLs in image blocks; pdf-text a text-authored PDF {pdfText:string}.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        kind: {
+          type: "string",
+          enum: ["document", "spreadsheet", "presentation", "pdf-text"],
+          description: "The workpiece kind to author.",
+        },
+        name: {
+          type: "string",
+          description:
+            'The workpiece file name, e.g. "Q3 plan.docx". An extension matching the kind is added if you omit one.',
+        },
+        state: {
+          type: "object",
+          description: "The full canonical v2 state for the kind (see the tool description).",
+        },
+        summary: {
+          type: "string",
+          description: "Optional one-line note about what you created, shown in the run timeline.",
+        },
+      },
+      required: ["kind", "name", "state"],
+      additionalProperties: false,
+    },
+  },
 ] as const;
 
 export const ARTIFACT_TOOL_NAMES: ReadonlySet<string> = new Set(
@@ -162,6 +207,7 @@ export async function executeArtifactTool(
   args: Record<string, unknown>,
 ): Promise<ToolResult> {
   if (name === "workpiece_propose_edit") return proposeWorkpieceEditTool(claims, args);
+  if (name === "workpiece_create") return workpieceCreateTool(claims, args);
   if (name !== "artifact_publish") return failure(`Unknown tool: ${name}`);
   const path = typeof args.path === "string" ? args.path.trim() : "";
   if (!path) return failure("artifact_publish requires a `path` inside the sandbox.");
@@ -271,5 +317,68 @@ async function proposeWorkpieceEditTool(
   } catch (error) {
     const message = error instanceof Error ? error.message : "workpiece proposal failed";
     return failure(`Could not propose changes to ${artifactId}: ${message}`);
+  }
+}
+
+/** Map the tool's authoring kind onto the canonical workpiece kind. `pdf-text`
+ * names the only natively-authorable PDF (text rendered to a fresh PDF). */
+function workpieceCreateKind(value: unknown): ArtifactWorkpieceKind | null {
+  if (value === "document" || value === "spreadsheet" || value === "presentation") return value;
+  if (value === "pdf-text" || value === "pdf") return "pdf";
+  return null;
+}
+
+async function workpieceCreateTool(
+  claims: ToolTokenClaims,
+  args: Record<string, unknown>,
+): Promise<ToolResult> {
+  const kind = workpieceCreateKind(args.kind);
+  if (!kind) {
+    return failure("workpiece_create requires kind = document, spreadsheet, presentation, or pdf-text.");
+  }
+  const name = typeof args.name === "string" && args.name.trim() ? args.name.trim() : "";
+  if (!name) return failure("workpiece_create requires a `name` for the workpiece.");
+  if (!args.state || typeof args.state !== "object" || Array.isArray(args.state)) {
+    return failure(
+      `workpiece_create requires a \`state\` object matching the kind (${
+        WORKPIECE_STATE_SHAPES[kind] ?? "the kind's documented shape"
+      }).`,
+    );
+  }
+  try {
+    const created = await createAuthoredArtifact({
+      orgId: claims.orgId,
+      userId: claims.userId,
+      runId: claims.runId,
+      threadId: claims.threadId,
+      kind,
+      name,
+      state: args.state,
+    });
+    const note = typeof args.summary === "string" && args.summary.trim()
+      ? ` ${args.summary.trim()}`
+      : "";
+    return result(
+      `Created ${created.artifact.name} as artifact ${created.artifact.id}. It renders natively and ` +
+        `is now open in the user's workspace; Export produces the Office file.${note}\n` +
+        "Preview URL (use exactly as written, never substitute another host): " +
+        `${absoluteArtifactUrl(created.artifact.preview_url)}\n` +
+        `Download URL (use exactly as written): ${absoluteArtifactUrl(created.artifact.download_url)}`,
+      {
+        artifact: created.artifact,
+        created: created.created,
+        ...absoluteArtifactUrlContent(created.artifact),
+      },
+    );
+  } catch (error) {
+    if (error instanceof ArtifactAuthoringError) {
+      return failure(
+        `Could not create ${name}: ${error.message}. Send the full ${kind} state as ${
+          WORKPIECE_STATE_SHAPES[kind] ?? "the kind's documented shape"
+        }.`,
+      );
+    }
+    const message = error instanceof Error ? error.message : "workpiece create failed";
+    return failure(`Could not create ${name}: ${message}`);
   }
 }

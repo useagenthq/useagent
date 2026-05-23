@@ -480,6 +480,7 @@ describe("knowledge MCP gateway", () => {
       "skill_activate",
       "skills_list",
       "web_search",
+      "workpiece_create",
       "workpiece_propose_edit",
     ]);
     // No tool declares a tenant/org input — identity is token-only.

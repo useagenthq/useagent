@@ -30,6 +30,20 @@ describe("artifact gateway contract", () => {
     expect(publish?.description).toContain("Office bytes remain immutable");
     expect(publish?.description).toContain("purpose=user_requested_proof");
     expect(publish?.description).toContain("download-only");
+    // Guidance is flipped: deliverables are steered to native authoring.
+    expect(publish?.description).toContain("call workpiece_create");
+  });
+
+  test("exposes workpiece_create for one-call native authoring", () => {
+    const create = ARTIFACT_TOOLS.find((tool) => tool.name === "workpiece_create");
+    expect(create?.inputSchema.required).toEqual(["kind", "name", "state"]);
+    expect(create?.inputSchema.additionalProperties).toBe(false);
+    expect(create?.inputSchema.properties.kind).toMatchObject({
+      type: "string",
+      enum: ["document", "spreadsheet", "presentation", "pdf-text"],
+    });
+    expect(create?.description).toContain("renders it natively");
+    expect(create?.description).toContain("no file");
   });
 
   test("rejects private inspection screenshots before sandbox publication unless proof is explicit", async () => {
