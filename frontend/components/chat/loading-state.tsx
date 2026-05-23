@@ -3,7 +3,7 @@ import { cnExt as cn } from "@/utils/cn";
 /**
  * Pixel-matrix loading state — a 5×5 grid pulsing on a diagonal stagger
  * (`.ai-loading-pixel`) over a shimmer label (`.agent-progress-loading-text`).
- * Used as the session route's fetch fallback (app/session/[id]/loading.tsx).
+ * Used as the session route's fetch fallback (app/session/(thread)/[id]/loading.tsx (historical note: now the content-area skeleton)).
  */
 export function LoadingState({
   label = "Loading session",
