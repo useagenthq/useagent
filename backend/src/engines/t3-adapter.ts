@@ -329,13 +329,16 @@ export function makeT3Adapter(engine: T3EngineId, driver: ProviderDriver): Engin
         const workdir = await prepareStage("workspace_root", () =>
           resolveWorkspaceRoot(ctx, sandbox),
         );
-        await Promise.all([
-          prepareStage("secrets", () =>
-            materializeSecretFiles(
-              (command) => sandbox.process.executeCommand(command, undefined, undefined, 30),
-              secretInjection.files,
-            ),
+        // Secrets land BEFORE the parallel stages: provider_bridge may launch
+        // (or restart) the T3 environment, whose boot sources the secrets
+        // dotenv. Racing them left cold launches without org secrets in env.
+        await prepareStage("secrets", () =>
+          materializeSecretFiles(
+            (command) => sandbox.process.executeCommand(command, undefined, undefined, 30),
+            secretInjection.files,
           ),
+        );
+        await Promise.all([
           prepareStage("provider_bridge", async () => {
             providerBridgeLease = await prepareT3ProviderBridge(sandbox, ctx, engine, workdir);
           }),
