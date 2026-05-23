@@ -5,6 +5,7 @@ import {
   type ArtifactDescriptor,
   type ArtifactWorkpieceDescriptor,
   type ArtifactWorkpieceKind,
+  type ArtifactWorkpieceProposalDescriptor,
   type ArtifactWorkpieceResult,
   type ArtifactWorkpieceState,
 } from "@skynet/artifact-workspace";
@@ -14,9 +15,11 @@ export { ARTIFACT_WORKPIECE_ACTIONS, artifactWorkpieceExports };
 export type {
   ArtifactDescriptor,
   ArtifactPresentationSlide,
+  ArtifactProposalStatus,
   ArtifactWorkpieceAction,
   ArtifactWorkpieceDescriptor,
   ArtifactWorkpieceKind,
+  ArtifactWorkpieceProposalDescriptor,
   ArtifactWorkpieceResult,
   ArtifactWorkpieceState,
 } from "@skynet/artifact-workspace";
@@ -130,4 +133,67 @@ export function decodeWorkpieceResult(value: unknown): ArtifactWorkpieceResult |
   if (!workpiece || !envelope || !("state" in envelope)) return null;
   const state = decodeWorkpieceState(workpiece.kind, envelope.state);
   return state === undefined ? null : { workpiece, state } as ArtifactWorkpieceResult;
+}
+
+/** An agent-proposed workpiece revision. Validated exactly like a workpiece so a
+ *  malformed proposal never reaches the review UI; a proposal always carries a
+ *  full, valid state for its kind (that is what the diff renders). */
+export function decodeWorkpieceProposal(
+  value: unknown,
+): ArtifactWorkpieceProposalDescriptor | null {
+  const item = record(value);
+  if (!item) return null;
+  if (
+    item.kind !== "document" &&
+    item.kind !== "spreadsheet" &&
+    item.kind !== "presentation" &&
+    item.kind !== "pdf"
+  ) {
+    return null;
+  }
+  const requiredStrings = ["id", "artifact_id", "proposer_run_id", "created_at"] as const;
+  if (requiredStrings.some((key) => typeof item[key] !== "string" || !item[key])) return null;
+  if (item.status !== "pending" && item.status !== "accepted" && item.status !== "dismissed") {
+    return null;
+  }
+  if (!Number.isSafeInteger(item.base_revision) || Number(item.base_revision) < 0) return null;
+  if (item.summary != null && typeof item.summary !== "string") return null;
+  if (item.resolved_at != null && typeof item.resolved_at !== "string") return null;
+  if (item.resolved_by != null && typeof item.resolved_by !== "string") return null;
+  if (
+    item.resolved_revision != null &&
+    (!Number.isSafeInteger(item.resolved_revision) || Number(item.resolved_revision) < 0)
+  ) {
+    return null;
+  }
+  const state = decodeWorkpieceState(item.kind, item.state);
+  if (!state) return null;
+  return {
+    id: item.id,
+    artifact_id: item.artifact_id,
+    proposer_run_id: item.proposer_run_id,
+    kind: item.kind,
+    base_revision: Number(item.base_revision),
+    summary: typeof item.summary === "string" ? item.summary : null,
+    status: item.status,
+    created_at: item.created_at,
+    resolved_at: typeof item.resolved_at === "string" ? item.resolved_at : null,
+    resolved_by: typeof item.resolved_by === "string" ? item.resolved_by : null,
+    resolved_revision:
+      typeof item.resolved_revision === "number" ? Number(item.resolved_revision) : null,
+    state,
+  } as ArtifactWorkpieceProposalDescriptor;
+}
+
+export function decodeWorkpieceProposalList(
+  value: unknown,
+): ArtifactWorkpieceProposalDescriptor[] | null {
+  const envelope = record(value);
+  if (!envelope || !Array.isArray(envelope.proposals)) return null;
+  const parsed = envelope.proposals.map(decodeWorkpieceProposal);
+  return parsed.every(
+    (item): item is ArtifactWorkpieceProposalDescriptor => item !== null,
+  )
+    ? parsed
+    : null;
 }
