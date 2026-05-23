@@ -513,6 +513,12 @@ describe("secrets — file kind (materialized to a sandbox file, env var = path)
     // The raw secret content must NOT appear literally on the command line.
     expect(cmd).not.toContain("BEGIN KEY");
     expect(cmd).toContain(Buffer.from("-----BEGIN KEY-----\nsecret\n-----END KEY-----").toString("base64"));
+    // Tool-shell delivery: idempotent rc hooks source the dotenv at shell spawn.
+    // The hooks run BEFORE the unchanged early-exit so warm sandboxes get them,
+    // and the hook line carries no secret material.
+    expect(cmd).toContain('"$HOME/.bashrc" "$HOME/.profile" "$HOME/.zshenv"');
+    expect(cmd).toContain("grep -qsF 'skynet-env.sh'");
+    expect(cmd.indexOf("grep -qsF")).toBeLessThan(cmd.indexOf("printf unchanged; exit 0"));
   });
 
   test("materializeSecretFiles rejects a non-zero sandbox command result", async () => {
