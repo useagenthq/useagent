@@ -37,8 +37,13 @@ export const ARTIFACT_TOOLS = [
       "and returns browser preview/download references. Text and CSV files open directly " +
       "in Skynet's editor, and PDFs preview inline. To make a document, spreadsheet, or " +
       "deck editable and previewable instead of download-only, publish the native file AND " +
-      "pass editable_path to a small companion produced in the same sandbox (HTML for a " +
-      "DOCX, CSV for an XLSX, slide-text JSON for a PPTX); the Office bytes remain immutable. " +
+      "pass editable_path to a companion produced in the same sandbox (HTML for a DOCX, CSV " +
+      "for an XLSX, and for a PPTX a deck JSON {deck:{schemaVersion:2,theme,slides:[{id,blocks}]}} " +
+      "carrying the VISUAL DESIGN: theme colors, backgrounds, positioned heading/text/image " +
+      "blocks - publish artwork as separate image artifacts and reference their absolute URLs " +
+      "in image blocks). PREFER authoring decks as deck JSON over scripting PPTX binaries: the " +
+      "workspace renders the design natively and Export produces the designed PPTX for you. " +
+      "The Office bytes remain immutable. " +
       "Publishing a raw .docx, .xlsx, or .pptx with no companion yields a download-only card " +
       "with no preview or editor, so prefer the companion for deliverables the user will read " +
       "or edit. Use this for screenshots, reports, documents, spreadsheets, videos, " +
@@ -60,7 +65,8 @@ export const ARTIFACT_TOOLS = [
           type: "string",
           description:
             "Optional sandbox path to an editable companion so the file previews and edits in " +
-            "Skynet: HTML for a DOCX, CSV for an XLSX, or slide-text JSON for a PPTX. Without it, " +
+            "Skynet: HTML for a DOCX, CSV for an XLSX, or a v2 deck JSON (theme + positioned blocks, " +
+            "the full visual design) for a PPTX. Without it, " +
             "an Office file is download-only.",
         },
         purpose: {
