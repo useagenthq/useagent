@@ -19,16 +19,96 @@ export type ArtifactAction = (typeof ARTIFACT_ACTIONS)[number];
 export type ArtifactAuthoringAction = (typeof ARTIFACT_AUTHORING_ACTIONS)[number];
 export type ArtifactWorkpieceKind = "document" | "spreadsheet" | "presentation" | "pdf";
 
+/** The legacy (v1) slide shape: a title, body, and optional speaker notes. Kept
+ * because it is what a PPTX text extraction yields and what a v1 state upgrades
+ * from; the canonical presentation state is the v2 deck below. */
 export interface ArtifactPresentationSlide {
   readonly title: string;
   readonly body: string;
   readonly notes?: string;
 }
 
+// ---------------------------------------------------------------------------
+// Presentation deck v2 (web-native canonical model).
+//
+// A deck is a theme plus an ordered list of slides; each slide is a list of
+// absolutely-positioned blocks on a 16:9 reference canvas. Block coordinates are
+// PERCENTAGES of the reference so the one renderer draws at any scale (full
+// canvas and filmstrip thumbnail alike). Deck theme colors are DOCUMENT data
+// (like the brand-mark exception), so they carry raw hex values, not tokens.
+// ---------------------------------------------------------------------------
+
+/** Bumped when the deck shape changes; v1 title/body states upgrade to this. */
+export const PRESENTATION_SCHEMA_VERSION = 2 as const;
+/** The reference canvas that block percentages and font sizes are relative to. */
+export const DECK_REFERENCE_WIDTH = 1920;
+export const DECK_REFERENCE_HEIGHT = 1080;
+
+export type DeckBlockType = "heading" | "text" | "image" | "shape";
+export type DeckTextAlign = "left" | "center" | "right";
+
+export interface DeckBlockStyle {
+  /** Text color override (hex `#rgb`/`#rrggbb`); falls back to the theme role. */
+  readonly color?: string;
+  /** Font size in px on the 1080-tall reference (renderer + export scale it). */
+  readonly fontSize?: number;
+  readonly bold?: boolean;
+  readonly italic?: boolean;
+  readonly align?: DeckTextAlign;
+  /** Shape fill (hex); falls back to the theme accent for shape blocks. */
+  readonly fill?: string;
+  /** Shape corner radius in px on the reference. */
+  readonly radius?: number;
+}
+
+export interface DeckBlock {
+  readonly id: string;
+  readonly type: DeckBlockType;
+  /** Percent of the reference width/height (0-100). */
+  readonly x: number;
+  readonly y: number;
+  readonly w: number;
+  readonly h: number;
+  /** heading/text: the text; image: an asset URL; shape: unused (uses fill). */
+  readonly content: string;
+  readonly style?: DeckBlockStyle;
+}
+
+export type DeckBackground =
+  | Readonly<{ type: "color"; color: string }>
+  | Readonly<{ type: "gradient"; from: string; to: string; angle?: number }>
+  | Readonly<{ type: "image"; url: string }>;
+
+export interface DeckTheme {
+  readonly background: DeckBackground;
+  /** Default heading text color (hex). */
+  readonly heading: string;
+  /** Default body text color (hex). */
+  readonly body: string;
+  /** Accent color for shapes and rules (hex). */
+  readonly accent: string;
+}
+
+export interface DeckSlide {
+  readonly id: string;
+  readonly blocks: readonly DeckBlock[];
+  /** Optional per-slide background override; falls back to the deck theme. */
+  readonly background?: DeckBackground;
+  readonly notes?: string;
+}
+
+export interface PresentationDeck {
+  readonly schemaVersion: typeof PRESENTATION_SCHEMA_VERSION;
+  readonly theme: DeckTheme;
+  readonly slides: readonly DeckSlide[];
+}
+
 export interface ArtifactWorkpieceStateByKind {
   readonly document: Readonly<{ text: string }> | Readonly<{ html: string }>;
   readonly spreadsheet: Readonly<{ csv: string }>;
-  readonly presentation: Readonly<{ slides: readonly ArtifactPresentationSlide[] }>;
+  /** Canonical v2 form: `{ deck }`. v1 `{ slides }` states upgrade on load
+   * (see `coercePresentationState`) so stored v1 rows never break. */
+  readonly presentation: Readonly<{ deck: PresentationDeck }>;
   readonly pdf: Readonly<{ pdfText: string }>;
 }
 
