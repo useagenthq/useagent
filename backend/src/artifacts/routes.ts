@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { Hono, type Context } from "hono";
 import {
   ARTIFACT_PROPOSAL_STATUSES,
+  coerceDocumentState,
   coercePresentationState,
   coerceSpreadsheetState,
   type ArtifactWorkpieceKind,
@@ -206,9 +207,10 @@ artifactRoutes.get("/:id", async (c) => {
 });
 
 /** The stored workpiece state upgraded to its canonical shape for the wire. A v1
- * `{slides}` presentation row is migrated to the v2 `{deck}`, and a v1 `{csv}`
- * spreadsheet row to the v2 `{workbook}`, on read so every reader sees one shape;
- * other kinds pass through unchanged. */
+ * `{slides}` presentation row is migrated to the v2 `{deck}`, a v1 `{csv}`
+ * spreadsheet row to the v2 `{workbook}`, and a v1 `{html}` document row to the
+ * themed v2 `{document}`, on read so every reader sees one shape; other kinds pass
+ * through unchanged. */
 function canonicalWorkpieceState(artifact: ArtifactRecord): ArtifactWorkpieceState | null {
   const state = artifact.workpieceState ?? null;
   if (!state) return null;
@@ -217,6 +219,9 @@ function canonicalWorkpieceState(artifact: ArtifactRecord): ArtifactWorkpieceSta
   }
   if (artifact.workpieceKind === "spreadsheet") {
     return coerceSpreadsheetState(state) ?? state;
+  }
+  if (artifact.workpieceKind === "document") {
+    return coerceDocumentState(state) ?? state;
   }
   return state;
 }

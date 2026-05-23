@@ -1,6 +1,7 @@
 import {
   ARTIFACT_WORKPIECE_ACTIONS,
   artifactWorkpieceExports,
+  coerceDocumentState,
   coercePresentationState,
   coerceSpreadsheetState,
   isArtifactWorkpieceState,
@@ -24,6 +25,9 @@ export type {
   ArtifactWorkpieceProposalDescriptor,
   ArtifactWorkpieceResult,
   ArtifactWorkpieceState,
+  // Themed-document v2 model, re-exported for browser consumers.
+  DocumentTheme,
+  ThemedDocument,
   // Presentation deck v2 model, re-exported for browser consumers.
   DeckBackground,
   DeckBlock,
@@ -104,6 +108,11 @@ export function decodeWorkpieceState<Kind extends ArtifactWorkpieceKind>(
   }
   if (kind === "spreadsheet") {
     return (coerceSpreadsheetState(value) as ArtifactWorkpieceState<Kind> | null) ?? undefined;
+  }
+  // Document upgrades any wire v1 `{html}` companion to the themed v2 `{document}`,
+  // while a plain-text `{text}` source document passes through unchanged.
+  if (kind === "document") {
+    return (coerceDocumentState(value) as ArtifactWorkpieceState<Kind> | null) ?? undefined;
   }
   return isArtifactWorkpieceState(kind, value) ? value : undefined;
 }

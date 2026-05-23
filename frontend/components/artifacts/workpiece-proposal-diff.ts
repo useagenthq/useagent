@@ -291,11 +291,16 @@ export function deckSlideChanges(before: PresentationDeck, after: PresentationDe
 /** Canonical text form of a text-like state (document / pdf), for the line diff. */
 function stateText(state: ArtifactWorkpieceState | null): string {
   if (!state) return "";
-  if ("html" in state) return state.html;
+  if ("document" in state) return state.document.html;
   if ("pdfText" in state) return state.pdfText;
   if ("text" in state) return state.text;
   if ("workbook" in state) return workbookToCsv(state.workbook);
   return "";
+}
+
+/** The document theme of a state, or null (a plain-text source doc / non-document). */
+function documentTheme(state: ArtifactWorkpieceState | null): string | null {
+  return state && "document" in state ? JSON.stringify(state.document.theme) : null;
 }
 
 export interface TextProposalDiff {
@@ -303,6 +308,8 @@ export interface TextProposalDiff {
   readonly lines: DiffLine[];
   readonly additions: number;
   readonly deletions: number;
+  /** The document theme (background/colors) changed between mainline and proposed. */
+  readonly themeChanged: boolean;
   readonly unchanged: boolean;
 }
 export interface SheetProposalDiff {
@@ -346,12 +353,18 @@ export function workpieceProposalDiff(
   }
   const lines = computeLineDiff(stateText(mainline), stateText(proposed));
   const { additions, deletions } = countLineChanges(lines);
+  // A themed document can change only its theme (background/colors) with no body
+  // edit; surface that as a change so an accept is never mislabelled "no change".
+  const beforeTheme = documentTheme(mainline);
+  const themeChanged = kind === "document" && beforeTheme !== null &&
+    beforeTheme !== documentTheme(proposed);
   return {
     type: "text",
     lines,
     additions,
     deletions,
-    unchanged: additions === 0 && deletions === 0,
+    themeChanged,
+    unchanged: additions === 0 && deletions === 0 && !themeChanged,
   };
 }
 

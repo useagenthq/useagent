@@ -1,11 +1,11 @@
 import {
   artifactFileExtension,
+  coerceDocumentState,
   coercePresentationState,
   coerceSpreadsheetState,
   DOCX_CONTENT_TYPE,
   isArtifactWorkpieceState,
   MAX_WORKPIECE_STATE_BYTES as ARTIFACT_MAX_WORKPIECE_STATE_BYTES,
-  normalizeArtifactRichHtml,
   normalizeArtifactContentType,
   PDF_CONTENT_TYPE,
   PPTX_CONTENT_TYPE,
@@ -64,14 +64,15 @@ export function parseWorkpieceState(
     const coerced = coerceSpreadsheetState(value);
     return coerced ? withinStateByteCap(coerced) : null;
   }
-  if (!isArtifactWorkpieceState(kind, value)) return null;
-  let state: ArtifactWorkpieceState = value;
-  if ("html" in value) {
-    const html = normalizeArtifactRichHtml(value.html);
-    if (html === null) return null;
-    state = { html };
+  // Document upgrades a v1 `{html}` companion into the themed v2 `{document}` and
+  // validates the theme + rich-HTML body in one shared, fail-closed pass; a
+  // plain-text `{text}` source document is validated and kept as-is.
+  if (kind === "document") {
+    const coerced = coerceDocumentState(value);
+    return coerced ? withinStateByteCap(coerced) : null;
   }
-  return withinStateByteCap(state);
+  if (!isArtifactWorkpieceState(kind, value)) return null;
+  return withinStateByteCap(value);
 }
 
 /** Build the first browser-editable revision without interpreting Office

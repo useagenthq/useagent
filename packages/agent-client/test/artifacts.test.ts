@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { DEFAULT_DOCUMENT_THEME } from "@skynet/artifact-workspace";
 import {
   artifactWorkpieceExports,
   createAgentClient,
@@ -7,6 +8,11 @@ import {
   decodeWorkpieceResult,
 } from "../src";
 import type { FetchLike, ResponseLike } from "../src/api";
+
+/** A v1 `{ html }` document companion upgrades on the wire to the themed v2 shape. */
+const UPGRADED_DOCUMENT = {
+  document: { schemaVersion: 2, theme: DEFAULT_DOCUMENT_THEME, html: "<h1>Brief</h1>" },
+} as const;
 
 const descriptor = {
   id: "artifact-1",
@@ -64,7 +70,7 @@ describe("artifact client contract", () => {
     expect(decodeArtifactResult({ artifact: descriptor, created: "yes" })).toBeNull();
     expect(decodeWorkpieceResult({ workpiece, state: { html: "<h1>Brief</h1>" } })).toEqual({
       workpiece,
-      state: { html: "<h1>Brief</h1>" },
+      state: UPGRADED_DOCUMENT,
     });
     expect(decodeWorkpieceResult({ workpiece, state: { csv: "wrong" } })).toBeNull();
   });
@@ -174,7 +180,7 @@ describe("artifact client contract", () => {
     });
     expect(await client.getArtifactWorkpiece("artifact-1")).toEqual({
       workpiece,
-      state: { html: "<h1>Brief</h1>" },
+      state: UPGRADED_DOCUMENT,
     });
   });
 

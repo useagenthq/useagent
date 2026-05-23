@@ -10,7 +10,9 @@
 import {
   contentTypeForName,
   DECK_THEME_PRESETS,
+  DOCUMENT_THEME_PRESETS,
   migrateSlidesToDeck,
+  type DocumentTheme,
   type PresentationDeck,
   type Workbook,
 } from "@skynet/artifact-workspace";
@@ -154,6 +156,11 @@ export function WorkspaceSample() {
 
   const docRef = useRef<HTMLDivElement>(null);
   const [docHtml, setDocHtml] = useState(SAMPLE_DOC_HTML);
+  // A themed document fixture: the "Paper" preset (warm page + dark ink) shows the
+  // deck-style theme applied to a rich document.
+  const [docTheme, setDocTheme] = useState<DocumentTheme>(
+    DOCUMENT_THEME_PRESETS.find((preset) => preset.id === "paper")!.theme,
+  );
   const [workbook, setWorkbook] = useState<Workbook>(SAMPLE_WORKBOOK);
   const [deck, setDeck] = useState<PresentationDeck>(SAMPLE_DECK);
 
@@ -250,7 +257,13 @@ export function WorkspaceSample() {
                           ) : viewMode === "code" ? (
                             <WorkpieceCodeView label={kindLabel(tab.id)} source={sourceFor(tab.id)} />
                           ) : tab.id === "wp-doc" ? (
-                            <RichDocumentSurface editorRef={docRef} loading={false} onChange={setDocHtml} />
+                            <RichDocumentSurface
+                              editorRef={docRef}
+                              loading={false}
+                              onChange={setDocHtml}
+                              theme={docTheme}
+                              onThemeChange={setDocTheme}
+                            />
                           ) : tab.id === "wp-sheet" ? (
                             <SheetGridSurface workbook={workbook} loading={false} onChange={setWorkbook} />
                           ) : (

@@ -224,7 +224,7 @@ describe("artifact native formats", () => {
     await expect(extractDocxText(output.bytes)).rejects.toThrow("output size limit");
   });
 
-  test("preserves rich document formatting when exporting HTML to DOCX", async () => {
+  test("preserves rich document formatting and theme when exporting a themed document to DOCX", async () => {
     const html =
       '<h1>Quarterly Report</h1>' +
       '<p>Revenue was <strong>up 20%</strong> and <em>margins improved</em>. ' +
@@ -233,7 +233,20 @@ describe("artifact native formats", () => {
       "<ol><li>First step</li><li>Second step</li></ol>" +
       '<table><tbody><tr><th>Metric</th><th>Value</th></tr>' +
       '<tr><td colspan="2">Latency 42ms</td></tr></tbody></table>';
-    const output = await renderArtifactExport({ html }, "docx");
+    // Distinct theme colors so the DOCX mapping is unambiguous in the assertions.
+    const document_ = {
+      document: {
+        schemaVersion: 2 as const,
+        theme: {
+          background: { type: "color" as const, color: "#223344" },
+          heading: "#ff0000",
+          body: "#00ff00",
+          accent: "#0000ff",
+        },
+        html,
+      },
+    };
+    const output = await renderArtifactExport(document_, "docx");
     expect(output.contentType).toBe(DOCX_CONTENT_TYPE);
 
     const zip = await JSZip.loadAsync(output.bytes);
@@ -245,6 +258,10 @@ describe("artifact native formats", () => {
     expect(document).toMatch(/<w:tbl>/); // <table> maps to a Word table
     expect(document).toMatch(/<w:numPr>/); // <ol> maps to a numbered list
     expect(document).toMatch(/<w:gridSpan/); // colspan maps to a grid span
+    // Theme maps honestly: a solid page background, heading + body run colors.
+    expect(document).toMatch(/<w:background[^>]*w:color="223344"/); // page background
+    expect(document).toMatch(/<w:color w:val="FF0000"/); // heading color
+    expect(document).toMatch(/<w:color w:val="00FF00"/); // body color
 
     // Content still round-trips through extraction.
     const text = await extractDocxText(output.bytes);

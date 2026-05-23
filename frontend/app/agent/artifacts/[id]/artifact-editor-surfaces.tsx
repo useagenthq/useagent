@@ -33,9 +33,10 @@ import {
   type DeckBlockType,
   type DeckSlide,
   type DeckTheme,
+  type DocumentTheme,
   type PresentationDeck,
 } from "@skynet/artifact-workspace";
-import { type RefObject, useState } from "react";
+import { type CSSProperties, type RefObject, useId, useState } from "react";
 import type { WorkpieceEditorController } from "./artifact-editor-state";
 import { sanitizeRichHtml } from "./artifact-editor-model";
 import { DeckSlideCanvas } from "./deck-canvas";
@@ -164,17 +165,40 @@ function isSafeLinkHref(value: string): boolean {
   return href.startsWith("https://") || href.startsWith("http://") || href.startsWith("mailto:");
 }
 
+/** The CSS background for a document theme background: a solid color, a linear
+ * gradient, or a cover image (mirrors the deck-canvas resolution). */
+function documentBackgroundStyle(background: DeckBackground): CSSProperties {
+  if (background.type === "gradient") {
+    return {
+      background: `linear-gradient(${background.angle ?? 160}deg, ${background.from}, ${background.to})`,
+    };
+  }
+  if (background.type === "image") {
+    return { backgroundImage: `url("${background.url}")`, backgroundSize: "cover", backgroundPosition: "center" };
+  }
+  return { background: background.color };
+}
+
 export function RichDocumentSurface({
   editorRef,
   loading,
   onChange,
+  theme,
+  onThemeChange,
 }: {
   readonly editorRef: RefObject<HTMLDivElement | null>;
   readonly loading: boolean;
   readonly onChange: (html: string) => void;
+  /** The document theme applied to the rendered/edited surface (background +
+   * heading/body colors); its picker reuses the deck preset pattern. */
+  readonly theme: DocumentTheme;
+  readonly onThemeChange: (theme: DocumentTheme) => void;
 }) {
   const [linkOpen, setLinkOpen] = useState(false);
   const [linkValue, setLinkValue] = useState("https://");
+  // A stable class scopes the heading-color rule to THIS editor so two mounted
+  // rich documents never bleed themes into each other.
+  const themeClass = `doc-theme-${useId().replace(/[^a-zA-Z0-9]/g, "")}`;
 
   const emit = () => {
     const editor = editorRef.current;
@@ -201,9 +225,26 @@ export function RichDocumentSurface({
 
   return (
     <>
-      <p id="workpiece-rich-label" className="text-label-sm text-text-strong-950">
-        Rich document
-      </p>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p id="workpiece-rich-label" className="text-label-sm text-text-strong-950">
+          Rich document
+        </p>
+        <details className="group">
+          <summary className="cursor-pointer list-none rounded-lg border border-stroke-soft-200 px-2.5 py-1 text-label-xs text-text-sub-600 outline-none hover:bg-bg-weak-50 hover:text-text-strong-950">
+            Theme
+          </summary>
+          <div className="absolute right-3 z-10 mt-1 w-72 max-w-[calc(100%-1.5rem)] rounded-xl border border-stroke-soft-200 bg-bg-white-0 p-1 shadow-regular-md">
+            <ThemeControls
+              theme={theme}
+              onChange={(next) => onThemeChange(next)}
+              label="Document theme"
+            />
+          </div>
+        </details>
+      </div>
+      {/* Scoped heading color so the theme's heading role paints h1-h3 in the
+          contentEditable without touching any other editor on the page. */}
+      <style>{`.${themeClass} h1,.${themeClass} h2,.${themeClass} h3{color:${theme.heading}}`}</style>
       <div className="mt-3 flex flex-wrap items-center gap-1 border-y border-stroke-soft-200 py-2">
         {RICH_TOOLBAR.map(([command, title, Icon]) => (
           <button
@@ -271,7 +312,10 @@ export function RichDocumentSurface({
         tabIndex={loading ? -1 : 0}
         suppressContentEditableWarning
         onInput={() => onChange(sanitizeRichHtml(editorRef.current?.innerHTML ?? ""))}
-        className="prose prose-sm mt-4 min-h-[420px] w-full flex-1 overflow-auto rounded-xl border border-stroke-soft-200 bg-bg-white-0 p-6 text-text-strong-950 outline-none focus:border-stroke-strong-950 focus:ring-2 focus:ring-stroke-soft-200 aria-disabled:opacity-50"
+        // The theme paints the rendered/edited surface: page background + body
+        // text color inline, heading color through the scoped rule above.
+        style={{ ...documentBackgroundStyle(theme.background), color: theme.body }}
+        className={`${themeClass} prose prose-sm mt-4 min-h-[420px] w-full flex-1 overflow-auto rounded-xl border border-stroke-soft-200 p-6 outline-none focus:border-stroke-strong-950 focus:ring-2 focus:ring-stroke-soft-200 aria-disabled:opacity-50`}
       />
     </>
   );
@@ -483,18 +527,21 @@ function BlockInspector({
   );
 }
 
-/** Deck theme picker: tasteful presets plus custom heading/body/accent and a
- * solid background color. Deck colors are document data (raw hex is allowed). */
+/** Theme picker shared by the deck and the themed document: tasteful presets plus
+ * custom heading/body/accent and a solid background color. Theme colors are
+ * document data (raw hex is allowed). */
 function ThemeControls({
   theme,
   onChange,
+  label = "Deck theme",
 }: {
   readonly theme: DeckTheme;
   readonly onChange: (theme: DeckTheme) => void;
+  readonly label?: string;
 }) {
   return (
     <div className="flex flex-col gap-2 rounded-xl border border-stroke-soft-200 p-3">
-      <p className="text-label-sm text-text-strong-950">Deck theme</p>
+      <p className="text-label-sm text-text-strong-950">{label}</p>
       <div className="flex flex-wrap gap-2">
         {DECK_THEME_PRESETS.map((preset) => (
           <button
@@ -1006,6 +1053,8 @@ export function WorkpieceSurfaces({
         editorRef={editor.richEditorRef}
         loading={editor.loading}
         onChange={editor.onRichChange}
+        theme={editor.documentTheme}
+        onThemeChange={editor.setDocumentTheme}
       />
     );
   }

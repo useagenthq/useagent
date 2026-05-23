@@ -46,7 +46,9 @@ export function artifactEditorMode(
 export function stateValue(result: ArtifactWorkpieceResult): string | null {
   if (!result.state) return null;
   if ("workbook" in result.state) return JSON.stringify(result.state.workbook, null, 2);
-  if ("html" in result.state) return result.state.html;
+  // A themed document surfaces its HTML body to the editor; the theme rides
+  // alongside in the controller state (see useWorkpieceEditor).
+  if ("document" in result.state) return result.state.document.html;
   if ("deck" in result.state) return JSON.stringify(result.state.deck, null, 2);
   if ("pdfText" in result.state) return result.state.pdfText;
   return result.state.text;

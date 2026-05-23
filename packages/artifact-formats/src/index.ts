@@ -42,6 +42,7 @@ import {
   type DeckBlock,
   type DeckSlide,
   type DeckTheme,
+  type DocumentTheme,
   type PresentationDeck,
   type SheetCell,
   type SheetCellFormat,
@@ -135,7 +136,7 @@ function plainTextFromHtml(html: string): string {
 
 function textForState(state: WorkpieceState): string {
   if ("text" in state) return state.text;
-  if ("html" in state) return plainTextFromHtml(state.html);
+  if ("document" in state) return plainTextFromHtml(state.document.html);
   if ("workbook" in state) return workbookToCsv(state.workbook);
   if ("pdfText" in state) return state.pdfText;
   // Presentation: flatten the deck to title/body/notes text for the non-native
@@ -187,6 +188,8 @@ interface InlineFormat {
   readonly bold?: boolean;
   readonly italics?: boolean;
   readonly underline?: boolean;
+  /** Default run color (6-hex, no `#`) from the document theme role. */
+  readonly color?: string;
 }
 
 function decodeHtmlEntities(value: string): string {
@@ -264,6 +267,7 @@ function inlineNodesToRuns(
           bold: format.bold,
           italics: format.italics,
           underline: format.underline ? {} : undefined,
+          color: format.color,
         }));
       }
       continue;
@@ -287,13 +291,19 @@ function inlineNodesToRuns(
       bold: format.bold || node.tag === "strong" || node.tag === "b",
       italics: format.italics || node.tag === "em" || node.tag === "i",
       underline: format.underline || node.tag === "u",
+      color: format.color,
     };
     runs.push(...inlineNodesToRuns(node.children, nextFormat));
   }
   return runs;
 }
 
-function listItemsToParagraphs(list: HtmlElement, ordered: boolean, level: number): Paragraph[] {
+function listItemsToParagraphs(
+  list: HtmlElement,
+  ordered: boolean,
+  level: number,
+  color?: string,
+): Paragraph[] {
   const paragraphs: Paragraph[] = [];
   for (const item of list.children) {
     if (item.type !== "element" || item.tag !== "li") continue;
@@ -303,13 +313,13 @@ function listItemsToParagraphs(list: HtmlElement, ordered: boolean, level: numbe
     );
     const inline = item.children.filter((child) => !nestedLists.includes(child as HtmlElement));
     paragraphs.push(new Paragraph({
-      children: inlineNodesToRuns(inline),
+      children: inlineNodesToRuns(inline, { color }),
       ...(ordered
         ? { numbering: { reference: ORDERED_LIST_REFERENCE, level: Math.min(level, 2) } }
         : { bullet: { level: Math.min(level, 2) } }),
     }));
     for (const nested of nestedLists) {
-      paragraphs.push(...listItemsToParagraphs(nested, nested.tag === "ol", level + 1));
+      paragraphs.push(...listItemsToParagraphs(nested, nested.tag === "ol", level + 1, color));
     }
   }
   return paragraphs;
@@ -325,7 +335,7 @@ function tableRowsFrom(node: HtmlElement): HtmlElement[] {
   return rows;
 }
 
-function tableToDocx(node: HtmlElement): Table | null {
+function tableToDocx(node: HtmlElement, color?: string): Table | null {
   const rows = tableRowsFrom(node)
     .map((row) =>
       row.children.filter(
@@ -337,7 +347,10 @@ function tableToDocx(node: HtmlElement): Table | null {
     .map((cells) =>
       new TableRow({
         children: cells.map((cell) => {
-          const runs = inlineNodesToRuns(cell.children, cell.tag === "th" ? { bold: true } : {});
+          const runs = inlineNodesToRuns(
+            cell.children,
+            cell.tag === "th" ? { bold: true, color } : { color },
+          );
           const columnSpan = Number(cell.attributes.colspan);
           const rowSpan = Number(cell.attributes.rowspan);
           return new TableCell({
@@ -361,17 +374,43 @@ function headingLevelFor(tag: string) {
     : HeadingLevel.HEADING_3;
 }
 
+/** A hex color (with or without `#`, 3/4/6/8 digits) to the 6-digit RRGGBB docx
+ * wants (no `#`), upper-cased, or undefined when it cannot be parsed. */
+function docxColor(hex: string | undefined): string | undefined {
+  const raw = (hex ?? "").replace(/^#/, "");
+  const six = raw.length === 3
+    ? [...raw].map((c) => c + c).join("")
+    : raw.length === 4
+    ? [...raw.slice(0, 3)].map((c) => c + c).join("")
+    : raw.length >= 6
+    ? raw.slice(0, 6)
+    : "";
+  return /^[0-9a-fA-F]{6}$/.test(six) ? six.toUpperCase() : undefined;
+}
+
+/** The solid page background color a document theme maps to in DOCX (gradients
+ * export as their start color; an image background has no DOCX equivalent). */
+function documentBackgroundColor(theme: DocumentTheme): string | undefined {
+  const background = theme.background;
+  if (background.type === "color") return docxColor(background.color);
+  if (background.type === "gradient") return docxColor(background.from);
+  return undefined;
+}
+
 /** Map the rich-HTML document companion into real DOCX structure (headings,
  * bold/italic/underline runs, ordered and bulleted lists, hyperlinks, tables)
  * so exporting an edited document to Word preserves its formatting instead of
- * flattening everything to plain text. */
-function richHtmlToDocxChildren(html: string): (Paragraph | Table)[] {
+ * flattening everything to plain text. When a document theme is supplied, heading
+ * and body runs carry the theme's heading/body colors. */
+function richHtmlToDocxChildren(html: string, theme?: DocumentTheme): (Paragraph | Table)[] {
+  const headingColor = theme ? docxColor(theme.heading) : undefined;
+  const bodyColor = theme ? docxColor(theme.body) : undefined;
   const nodes = parseHtmlSubset(html);
   const children: (Paragraph | Table)[] = [];
   let inlineBuffer: HtmlNode[] = [];
   const flushInline = () => {
     if (inlineBuffer.length === 0) return;
-    const runs = inlineNodesToRuns(inlineBuffer);
+    const runs = inlineNodesToRuns(inlineBuffer, { color: bodyColor });
     inlineBuffer = [];
     if (runs.length > 0) children.push(new Paragraph({ children: runs }));
   };
@@ -384,16 +423,16 @@ function richHtmlToDocxChildren(html: string): (Paragraph | Table)[] {
     if (node.tag === "h1" || node.tag === "h2" || node.tag === "h3") {
       children.push(new Paragraph({
         heading: headingLevelFor(node.tag),
-        children: inlineNodesToRuns(node.children),
+        children: inlineNodesToRuns(node.children, { color: headingColor }),
       }));
     } else if (node.tag === "ul" || node.tag === "ol") {
-      children.push(...listItemsToParagraphs(node, node.tag === "ol", 0));
+      children.push(...listItemsToParagraphs(node, node.tag === "ol", 0, bodyColor));
     } else if (node.tag === "table") {
-      const table = tableToDocx(node);
+      const table = tableToDocx(node, bodyColor);
       if (table) children.push(table);
     } else {
       // p, div, and any other block wrapper: render its content as a paragraph.
-      children.push(new Paragraph({ children: inlineNodesToRuns(node.children) }));
+      children.push(new Paragraph({ children: inlineNodesToRuns(node.children, { color: bodyColor }) }));
     }
   }
   flushInline();
@@ -401,10 +440,16 @@ function richHtmlToDocxChildren(html: string): (Paragraph | Table)[] {
 }
 
 async function renderDocx(state: WorkpieceState): Promise<Uint8Array> {
-  const children = "html" in state
-    ? richHtmlToDocxChildren(state.html)
+  // A themed document maps the theme's heading/body colors onto its runs and a
+  // solid page background where the docx lib supports one; a plain-text document
+  // (and any other kind flattened to text) renders markdown paragraphs.
+  const theme = "document" in state ? state.document.theme : undefined;
+  const children = "document" in state
+    ? richHtmlToDocxChildren(state.document.html, theme)
     : splitMarkdownParagraphs(textForState(state));
+  const background = theme ? documentBackgroundColor(theme) : undefined;
   const doc = new Document({
+    ...(background ? { background: { color: background } } : {}),
     numbering: {
       config: [{
         reference: ORDERED_LIST_REFERENCE,
@@ -704,8 +749,8 @@ async function renderPdf(state: WorkpieceState): Promise<Uint8Array> {
 
 function renderCanonical(state: WorkpieceState, format: CanonicalArtifactFormat): FormatExport {
   if (format === "html") {
-    const html = "html" in state
-      ? state.html
+    const html = "document" in state
+      ? state.document.html
       : `<p>${textForState(state).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll("\n", "<br>")}</p>`;
     return { bytes: encoder.encode(html), contentType: "text/html; charset=utf-8", extension: "html" };
   }
