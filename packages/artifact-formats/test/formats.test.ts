@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import ExcelJS from "exceljs";
 import JSZip from "jszip";
+import PptxGenJS from "pptxgenjs";
 import { decodePDFRawStream, PDFDocument, PDFRawStream, StandardFonts } from "pdf-lib";
 import {
   DECK_THEME_PRESETS,
@@ -15,6 +16,7 @@ import {
   buildArtifactBundle,
   DOCX_CONTENT_TYPE,
   extractDocxText,
+  extractPptxDeck,
   extractPptxSlides,
   extractXlsxWorkbook,
   PDF_CONTENT_TYPE,
@@ -269,6 +271,136 @@ describe("artifact native formats", () => {
     expect(text).toContain("up 20%");
     expect(text).toContain("North region");
     expect(text).toContain("Latency 42ms");
+  });
+
+  test("round-trips a PPTX export back into an editable native deck", async () => {
+    const deck = {
+      schemaVersion: 2 as const,
+      theme: {
+        background: { type: "color" as const, color: "#101828" },
+        heading: "#ffffff",
+        body: "#c8c8e0",
+        accent: "#5eb0ff",
+      },
+      slides: [
+        {
+          id: "s1",
+          background: { type: "color" as const, color: "#0b1220" },
+          blocks: [
+            {
+              id: "h",
+              type: "heading" as const,
+              x: 6,
+              y: 8,
+              w: 88,
+              h: 17,
+              content: "Quarterly Review",
+              style: { fontSize: 96, bold: true, align: "left" as const, color: "#ffd166" },
+            },
+            {
+              id: "b",
+              type: "text" as const,
+              x: 6,
+              y: 30,
+              w: 88,
+              h: 50,
+              content: "First point\nSecond point",
+              style: { fontSize: 44, align: "center" as const, color: "#c8c8e0" },
+            },
+          ],
+        },
+      ],
+    };
+    const output = await renderArtifactExport({ deck }, "pptx");
+    const imported = await extractPptxDeck(output.bytes);
+    expect(imported).not.toBeNull();
+    expect(imported!.images).toHaveLength(0);
+    expect(imported!.deck.slides).toHaveLength(1);
+
+    const slide = imported!.deck.slides[0]!;
+    // Solid slide background is recovered.
+    expect(slide.background).toEqual({ type: "color", color: "#0b1220" });
+
+    const heading = slide.blocks.find((block) => block.type === "heading");
+    const body = slide.blocks.find((block) => block.type === "text");
+    expect(heading).toBeDefined();
+    expect(body).toBeDefined();
+
+    // Position round-trips exactly (EMU math mirrors the export).
+    expect(Math.round(heading!.x)).toBe(6);
+    expect(Math.round(heading!.y)).toBe(8);
+    expect(Math.round(heading!.w)).toBe(88);
+    expect(Math.round(heading!.h)).toBe(17);
+
+    // Content, size, weight, color, and alignment are preserved.
+    expect(heading!.content).toBe("Quarterly Review");
+    expect(heading!.style?.fontSize).toBe(96);
+    expect(heading!.style?.bold).toBe(true);
+    expect(heading!.style?.color).toBe("#ffd166");
+    expect(heading!.style?.align).toBe("left");
+
+    expect(body!.content).toBe("First point\nSecond point");
+    expect(body!.style?.fontSize).toBe(44);
+    expect(body!.style?.align).toBe("center");
+    expect(body!.style?.color).toBe("#c8c8e0");
+  });
+
+  test("skips import when a PPTX has no parsable text (behaves as download-only)", async () => {
+    // A deck with only a shape block yields no text boxes -> null (no native import).
+    const deck = {
+      schemaVersion: 2 as const,
+      theme: {
+        background: { type: "color" as const, color: "#101828" },
+        heading: "#ffffff",
+        body: "#c8c8e0",
+        accent: "#5eb0ff",
+      },
+      slides: [
+        {
+          id: "s1",
+          blocks: [
+            {
+              id: "shape",
+              type: "shape" as const,
+              x: 10,
+              y: 10,
+              w: 30,
+              h: 20,
+              content: "",
+              style: { fill: "#5eb0ff" },
+            },
+          ],
+        },
+      ],
+    };
+    const output = await renderArtifactExport({ deck }, "pptx");
+    expect(await extractPptxDeck(output.bytes)).toBeNull();
+  });
+
+  test("extracts embedded PPTX images as placed media for artifact storage", async () => {
+    // A 1x1 PNG embedded via pptxgenjs lands in ppt/media and is referenced by a
+    // slide <p:pic>; the parser recovers its bytes + geometry for the caller to
+    // store as an image artifact and reference from an image block.
+    const png =
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==";
+    const pptx = new PptxGenJS();
+    pptx.defineLayout({ name: "DECK", width: 10, height: 5.625 });
+    pptx.layout = "DECK";
+    const slide = pptx.addSlide();
+    slide.addText("Cover", { x: 0.5, y: 0.4, w: 8, h: 1, fontSize: 40 });
+    slide.addImage({ data: `image/png;base64,${png}`, x: 1, y: 2, w: 3, h: 2 });
+    const written = await pptx.write({ outputType: "nodebuffer" });
+    const bytes = written instanceof Uint8Array ? written : new Uint8Array(written as ArrayBuffer);
+
+    const imported = await extractPptxDeck(bytes);
+    expect(imported).not.toBeNull();
+    expect(imported!.images).toHaveLength(1);
+    const image = imported!.images[0]!;
+    expect(image.contentType).toBe("image/png");
+    expect(image.bytes.byteLength).toBeGreaterThan(0);
+    expect(image.slideIndex).toBe(0);
+    expect(Math.round(image.x)).toBe(10); // 1in / 10in
+    expect(Math.round(image.w)).toBe(30); // 3in / 10in
   });
 
   test("bundles multiple artifacts into one ZIP, disambiguating name collisions", async () => {

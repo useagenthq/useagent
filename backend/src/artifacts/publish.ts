@@ -23,10 +23,13 @@ import { getRunForOrg } from "../runs/repo";
 import { publishOrgChange } from "../runs/org-signals";
 import { recordProviderEvent } from "../runs/provider-events";
 import { downloadSandboxFile } from "../slack/sandbox-file";
+import { extractPptxDeck, type PptxImportResult } from "@skynet/artifact-formats";
+import type { DeckBlock, PresentationDeck } from "@skynet/artifact-workspace";
 import {
   buildInitialWorkpieceState,
   inferWorkpieceKind,
   MAX_WORKPIECE_STATE_BYTES,
+  parseWorkpieceState,
 } from "./workpiece";
 
 export const MAX_ARTIFACT_BYTES = 50 * 1024 * 1024;
@@ -90,6 +93,70 @@ async function attachOfficePreview(
   })) ?? input.record;
 }
 
+const IMPORT_IMAGE_EXTENSION: Readonly<Record<string, string>> = {
+  "image/png": "png",
+  "image/jpeg": "jpg",
+  "image/gif": "gif",
+  "image/webp": "webp",
+};
+
+/** Store each image a PPTX import lifted out of its slides as a linked image
+ * artifact and add an image block (referencing that artifact's URL) to the deck,
+ * so an imported deck shows its real pictures. Image artifacts are content-
+ * addressed and idempotent by (run, sourcePath, digest), so a re-publish reuses
+ * them. Returns the deck with image blocks added. */
+async function materializePptxImages(
+  imported: PptxImportResult,
+  ctx: {
+    readonly orgId: string;
+    readonly userId: string | null;
+    readonly run: { readonly id: string; readonly threadId: string };
+    readonly sourcePath: string;
+    readonly deckName: string;
+  },
+): Promise<PresentationDeck> {
+  if (imported.images.length === 0) return imported.deck;
+  const stem = ctx.deckName.replace(/\.[^.]+$/, "") || "deck";
+  const blocksBySlide = new Map<number, DeckBlock[]>();
+  for (let index = 0; index < imported.images.length; index += 1) {
+    const image = imported.images[index]!;
+    const digest = createHash("sha256").update(image.bytes).digest("hex");
+    const extension = IMPORT_IMAGE_EXTENSION[image.contentType] ?? "img";
+    const created = await createArtifactRecord({
+      orgId: ctx.orgId,
+      userId: ctx.userId,
+      runId: ctx.run.id,
+      threadId: ctx.run.threadId,
+      sourcePath: `${ctx.sourcePath}::media/${index + 1}`,
+      name: `${stem}-image-${index + 1}.${extension}`,
+      contentType: image.contentType,
+      sizeBytes: image.bytes.byteLength,
+      sha256: digest,
+      storageKey: digest,
+      workpieceKind: null,
+      workpieceState: null,
+    });
+    await artifactStorage().put(digest, image.bytes);
+    const block: DeckBlock = {
+      id: `slide-${image.slideIndex + 1}-image-${index + 1}`,
+      type: "image",
+      x: image.x,
+      y: image.y,
+      w: image.w,
+      h: image.h,
+      content: `/api/artifacts/${created.row.id}/content`,
+    };
+    const list = blocksBySlide.get(image.slideIndex) ?? [];
+    list.push(block);
+    blocksBySlide.set(image.slideIndex, list);
+  }
+  const slides = imported.deck.slides.map((slide, index) => {
+    const extra = blocksBySlide.get(index);
+    return extra ? { ...slide, blocks: [...slide.blocks, ...extra] } : slide;
+  });
+  return { ...imported.deck, slides };
+}
+
 export async function publishSandboxArtifact(input: {
   readonly orgId: string;
   readonly userId: string | null;
@@ -121,7 +188,7 @@ export async function publishSandboxArtifact(input: {
   const editable = editablePath
     ? await downloadSandboxFile(run.sandboxId, editablePath, MAX_WORKPIECE_STATE_BYTES)
     : null;
-  const workpieceState = workpieceKind
+  let workpieceState = workpieceKind
     ? buildInitialWorkpieceState({
         kind: workpieceKind,
         sourceName: name,
@@ -134,6 +201,28 @@ export async function publishSandboxArtifact(input: {
     : null;
   if (editable && !workpieceState) {
     throw new Error("editable_path must be valid UTF-8 HTML for documents or CSV for spreadsheets");
+  }
+
+  // A companion-less PPTX: attempt a structured native import so a script-generated
+  // deck CONVERGES to an editable native workpiece on arrival, instead of a
+  // download-only card. The item-3 PDF preview still attaches as the true-bytes
+  // view; a PPTX with no parsable text stays download-only exactly as before.
+  if (!workpieceState && workpieceKind === "presentation") {
+    try {
+      const imported = await extractPptxDeck(file.bytes);
+      if (imported) {
+        const deck = await materializePptxImages(imported, {
+          orgId: input.orgId,
+          userId: input.userId,
+          run: { id: run.id, threadId: run.threadId },
+          sourcePath,
+          deckName: name,
+        });
+        workpieceState = parseWorkpieceState("presentation", { deck });
+      }
+    } catch (error) {
+      console.log(`[pptx-import] native import unavailable for ${name}: ${error}`);
+    }
   }
 
   // Republish-as-revision: instead of creating a new artifact, replace an existing
