@@ -140,7 +140,15 @@ export function decodeArtifact(value: unknown): ArtifactDescriptor | null {
     ? null
     : decodeWorkpiece(item.workpiece);
   if (item.workpiece !== null && item.workpiece !== undefined && !workpiece) return null;
-  return { ...(item as unknown as Omit<ArtifactDescriptor, "workpiece">), workpiece };
+  // Additive: older wire payloads omit preview_pdf_url; treat any non-string as null.
+  const preview_pdf_url = typeof item.preview_pdf_url === "string" && item.preview_pdf_url
+    ? item.preview_pdf_url
+    : null;
+  return {
+    ...(item as unknown as Omit<ArtifactDescriptor, "workpiece" | "preview_pdf_url">),
+    preview_pdf_url,
+    workpiece,
+  };
 }
 
 export function decodeArtifactList(value: unknown): ArtifactDescriptor[] | null {

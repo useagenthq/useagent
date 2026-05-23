@@ -5,6 +5,7 @@ import {
   coerceDocumentState,
   coercePresentationState,
   coerceSpreadsheetState,
+  PDF_CONTENT_TYPE,
   type ArtifactWorkpieceKind,
   type ArtifactWorkpieceState,
 } from "@skynet/artifact-workspace";
@@ -237,6 +238,30 @@ artifactRoutes.get("/:id/workpiece", async (c) => {
   const artifact = await getArtifactForOrg(c.get("orgId"), c.req.param("id"));
   if (!artifact?.workpieceKind) return c.json({ error: "not found" }, 404);
   return c.json(workpieceResponse(artifact));
+});
+
+// The rendered-PDF preview of an Office binary (from an in-sandbox soffice
+// conversion), served read-only and inline. Org-scoped like every other read.
+artifactRoutes.get("/:id/preview", async (c) => {
+  const artifact = await getArtifactForOrg(c.get("orgId"), c.req.param("id"));
+  if (!artifact?.previewStorageKey) return c.json({ error: "not found" }, 404);
+  let bytes: Uint8Array;
+  try {
+    bytes = await artifactStorage().read(artifact.previewStorageKey);
+  } catch {
+    return c.json({ error: "artifact preview unavailable" }, 410);
+  }
+  const previewName = `${artifact.name.replace(/\.[^.]+$/, "") || "artifact"}.pdf`;
+  return new Response(bytes, {
+    headers: {
+      "cache-control": "private, max-age=300",
+      "content-disposition": disposition(previewName, true),
+      "content-length": String(bytes.byteLength),
+      "content-type": PDF_CONTENT_TYPE,
+      "cross-origin-resource-policy": "same-origin",
+      "x-content-type-options": "nosniff",
+    },
+  });
 });
 
 artifactRoutes.get("/:id/workpiece/export", async (c) => {

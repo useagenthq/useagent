@@ -228,6 +228,9 @@ export interface ArtifactDescriptor {
   readonly created_at: string;
   readonly preview_url: string;
   readonly download_url: string;
+  /** A rendered-PDF preview of an Office binary (from an in-sandbox soffice
+   * conversion), served read-only. Null when no preview was produced. */
+  readonly preview_pdf_url: string | null;
   readonly workpiece: ArtifactWorkpieceDescriptor | null;
 }
 

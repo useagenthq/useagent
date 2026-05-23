@@ -207,6 +207,7 @@ describe("agent UI accessibility contracts", () => {
           created_at: "2026-08-16T12:00:00.000Z",
           preview_url: "/preview/artifact-1",
           download_url: "/download/artifact-1",
+          preview_pdf_url: null,
           workpiece: null,
         }}
         textPreview={{ content: "# Result", language: "markdown" }}

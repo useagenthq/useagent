@@ -951,11 +951,20 @@ export function SourceSurface({
   );
 }
 
-/** A published (byte-authoritative) PDF: render the immutable source bytes as an
- * inline embedded preview, never as raw text. Page reorder and delete are its
- * supported revisions; its text and visual content are not editable here (the
- * honest note reuses ARTIFACT_FIDELITY.pdf via the fidelity note elsewhere). */
-export function PdfEmbedSurface({ url }: { readonly url: string }) {
+/** The default honest note for a byte-authoritative (published) PDF embed. */
+const PUBLISHED_PDF_NOTE =
+  "Published PDF. Page reorder and delete are the supported revisions; the text and visual content are not editable here.";
+
+/** Render PDF bytes as an inline embedded preview, never as raw text. Reused for
+ * both a byte-authoritative (published) PDF workpiece and the rendered-PDF preview
+ * of an Office binary; the note explains which surface is showing. */
+export function PdfEmbedSurface({
+  url,
+  note = PUBLISHED_PDF_NOTE,
+}: {
+  readonly url: string;
+  readonly note?: string;
+}) {
   return (
     <div className="mt-4 flex min-h-0 flex-1 flex-col gap-2">
       <object
@@ -978,10 +987,7 @@ export function PdfEmbedSurface({ url }: { readonly url: string }) {
           </p>
         </div>
       </object>
-      <p className="text-paragraph-xs text-text-soft-400">
-        Published PDF. Page reorder and delete are the supported revisions; the text and visual
-        content are not editable here.
-      </p>
+      <p className="text-paragraph-xs text-text-soft-400">{note}</p>
     </div>
   );
 }

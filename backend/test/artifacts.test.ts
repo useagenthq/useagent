@@ -5,6 +5,7 @@ import * as artifactFormats from "@skynet/artifact-formats";
 import { csvToWorkbook, migrateHtmlToDocument } from "@skynet/artifact-workspace";
 import type { ArtifactDescriptor } from "../src/artifacts/repo";
 import { setArtifactStorageForTest } from "../src/artifacts/storage";
+import { setOfficePreviewConverterForTest } from "../src/artifacts/office-preview";
 import { executeArtifactTool } from "../src/knowledge/gateway/artifact-tools";
 import { createRun, setRunSandbox } from "../src/runs/repo";
 import { setSandboxDownloaderForTest } from "../src/slack/sandbox-file";
@@ -67,10 +68,14 @@ beforeAll(async () => {
     if (sandboxBytes.byteLength > maxBytes) throw new Error("test fixture exceeds cap");
     return { bytes: Buffer.from(sandboxBytes), size: sandboxBytes.byteLength };
   });
+  // Office->PDF preview is off by default in tests (no live sandbox); the specific
+  // preview test overrides this to assert the attach/serve path.
+  setOfficePreviewConverterForTest(async () => null);
 });
 
 afterAll(() => {
   setSandboxDownloaderForTest(null);
+  setOfficePreviewConverterForTest(null);
   setArtifactStorageForTest(null);
 });
 
@@ -665,6 +670,49 @@ describe("durable artifacts", () => {
         if (sandboxBytes.byteLength > maxBytes) throw new Error("test fixture exceeds cap");
         return { bytes: Buffer.from(sandboxBytes), size: sandboxBytes.byteLength };
       });
+    }
+  });
+
+  test("attaches and serves a rendered PDF preview for a published Office binary", async () => {
+    const runId = await createSandboxRun(owner);
+    const pdf = new Uint8Array([0x25, 0x50, 0x44, 0x46, 0x2d, 0x31, 0x2e, 0x37]); // %PDF-1.7
+    const previous = sandboxBytes;
+    try {
+      sandboxBytes = new Uint8Array([0x50, 0x4b, 0x03, 0x04, 0x66, 0x61, 0x6b, 0x65]); // PK.. (office-ish)
+
+      // Success: the converter yields a PDF, so the artifact carries a preview URL
+      // and the preview route serves those exact bytes as application/pdf.
+      setOfficePreviewConverterForTest(async () => pdf);
+      const deck = await publish(owner, runId, "/root/work/slides.pptx");
+      expect(deck.artifact.preview_pdf_url).toBe(`/api/artifacts/${deck.artifact.id}/preview`);
+      const preview = await fetchApi(`/api/artifacts/${deck.artifact.id}/preview`, {
+        cookies: owner.cookies,
+      });
+      expect(preview.status).toBe(200);
+      expect(preview.headers.get("content-type")).toBe("application/pdf");
+      expect(new Uint8Array(await preview.arrayBuffer())).toEqual(pdf);
+      // Org-scoped: another org cannot read the preview.
+      const foreign = await fetchApi(`/api/artifacts/${deck.artifact.id}/preview`, {
+        cookies: outsider.cookies,
+      });
+      expect(foreign.status).toBe(404);
+
+      // A failed conversion is silent: no preview URL, download-only as before.
+      setOfficePreviewConverterForTest(async () => null);
+      const doc = await publish(owner, runId, "/root/work/report.docx");
+      expect(doc.artifact.preview_pdf_url).toBeNull();
+      const missing = await fetchApi(`/api/artifacts/${doc.artifact.id}/preview`, {
+        cookies: owner.cookies,
+      });
+      expect(missing.status).toBe(404);
+
+      // A non-Office file is never converted (the converter is not even consulted).
+      setOfficePreviewConverterForTest(async () => pdf);
+      const txt = await publish(owner, runId, "/root/work/notes.txt");
+      expect(txt.artifact.preview_pdf_url).toBeNull();
+    } finally {
+      setOfficePreviewConverterForTest(async () => null);
+      sandboxBytes = previous;
     }
   });
 
