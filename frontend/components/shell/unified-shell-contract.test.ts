@@ -85,7 +85,7 @@ describe("unified shell contract", () => {
     const sessionView = readFromFrontend("components/chat/session-view.tsx");
 
     expect(sessionView).toContain("const [railTabOverride, setRailTabOverride] = useState<");
-    expect(sessionView).toContain('SurfaceChoice | "editor" | null');
+    expect(sessionView).toContain('SurfaceChoice | "editor" | "workspace" | null');
     expect(sessionView).toContain('value={railTab ?? ""}');
     for (const tab of ["agents", "artifacts", "editor", "terminal", "desktop"]) {
       expect(sessionView).toContain(`value="${tab}" data-testid="rail-tab-${tab}"`);
