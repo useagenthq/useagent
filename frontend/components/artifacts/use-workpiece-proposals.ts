@@ -10,6 +10,21 @@ import {
 import { useCallback, useEffect, useState } from "react";
 import { useOrgChanges } from "@/hooks/use-org-changes";
 import { backendFetch } from "@/lib/backend-fetch";
+import type { OrgChange } from "@/lib/org-changes";
+
+/** Refetch the proposals lane when THIS workpiece's proposal state changes: a
+ *  proposal appearing mid-run ("proposed"), or an accept advancing mainline
+ *  ("updated"). A brand-new artifact ("created") starts with an empty lane the
+ *  mount fetch already covers, and other artifacts / change types are ignored.
+ *  Pure so the live-banner contract is unit-locked, matching
+ *  `shouldReloadOnArtifactSignal`. */
+export function shouldRefetchProposalsOnSignal(change: OrgChange, artifactId: string): boolean {
+  return (
+    change.type === "artifact" &&
+    change.artifactId === artifactId &&
+    (change.action === "proposed" || change.action === "updated")
+  );
+}
 
 export interface WorkpieceProposalsController {
   /** Pending proposals for this workpiece, oldest first. */
@@ -69,13 +84,7 @@ export function useWorkpieceProposals(artifact: ArtifactDescriptor): WorkpiecePr
   }, [refetch]);
 
   useOrgChanges((change) => {
-    if (
-      change.type === "artifact" &&
-      change.artifactId === artifactId &&
-      (change.action === "proposed" || change.action === "updated")
-    ) {
-      void refetch();
-    }
+    if (shouldRefetchProposalsOnSignal(change, artifactId)) void refetch();
   });
 
   const resolve = useCallback(
