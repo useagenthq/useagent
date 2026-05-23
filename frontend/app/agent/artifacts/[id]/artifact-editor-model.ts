@@ -74,12 +74,6 @@ export function presentationTemplate(name: string): string {
   return JSON.stringify({ slides: [{ title: stem, body: "", notes: "" }] }, null, 2);
 }
 
-export function pdfTextTemplate(name: string): string {
-  const suffix = artifactFileExtension(name);
-  const stem = suffix ? name.slice(0, -(suffix.length + 1)) : name;
-  return `${stem}\n`;
-}
-
 export function sanitizeRichHtml(value: string): string {
   if (typeof document === "undefined") {
     return normalizeArtifactRichHtml(value) ?? escapeHtml(value.replace(/<[^>]*>/g, ""));

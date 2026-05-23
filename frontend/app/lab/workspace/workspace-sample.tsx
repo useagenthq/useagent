@@ -11,6 +11,8 @@ import type { ArtifactPresentationSlide } from "@skynet/agent-client";
 import { contentTypeForName, serializeArtifactCsv } from "@skynet/artifact-workspace";
 import { useEffect, useRef, useState } from "react";
 import {
+  PdfBinaryCodeView,
+  PdfEmbedSurface,
   RichDocumentSurface,
   SlidesSurface,
   SpreadsheetGridSurface,
@@ -30,7 +32,13 @@ const FILES = [
   { id: "wp-doc", name: "Q2 Kickoff Brief.docx", kindLabel: "Document" },
   { id: "wp-sheet", name: "Pipeline model.xlsx", kindLabel: "Spreadsheet" },
   { id: "wp-deck", name: "Series B narrative.pptx", kindLabel: "Presentation" },
+  { id: "wp-pdf", name: "Investor update.pdf", kindLabel: "PDF" },
 ] as const;
+
+// A published (byte-authoritative) PDF fixture: no editable text state, so the
+// pane renders an embedded preview + honest code note, never raw "%PDF" bytes.
+const SAMPLE_PDF_URL = "/lab/byte-pdf-sample.pdf";
+const SAMPLE_PDF_BYTES = 3_391;
 
 const SAMPLE_DOC_HTML =
   "<h1>Q2 Kickoff Brief</h1>" +
@@ -167,7 +175,13 @@ export function WorkspaceSample() {
                           exportUrl="#"
                         />
                         <div className="flex min-h-0 flex-1 flex-col overflow-auto px-3 pb-3">
-                          {viewMode === "code" ? (
+                          {tab.id === "wp-pdf" ? (
+                            viewMode === "code" ? (
+                              <PdfBinaryCodeView sizeBytes={SAMPLE_PDF_BYTES} />
+                            ) : (
+                              <PdfEmbedSurface url={SAMPLE_PDF_URL} />
+                            )
+                          ) : viewMode === "code" ? (
                             <WorkpieceCodeView label={kindLabel(tab.id)} source={sourceFor(tab.id)} />
                           ) : tab.id === "wp-doc" ? (
                             <RichDocumentSurface editorRef={docRef} loading={false} onChange={setDocHtml} />

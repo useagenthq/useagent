@@ -651,6 +651,61 @@ export function SourceSurface({
   );
 }
 
+/** A published (byte-authoritative) PDF: render the immutable source bytes as an
+ * inline embedded preview, never as raw text. Page reorder and delete are its
+ * supported revisions; its text and visual content are not editable here (the
+ * honest note reuses ARTIFACT_FIDELITY.pdf via the fidelity note elsewhere). */
+export function PdfEmbedSurface({ url }: { readonly url: string }) {
+  return (
+    <div className="mt-4 flex min-h-0 flex-1 flex-col gap-2">
+      <object
+        data={url}
+        type="application/pdf"
+        aria-label="Embedded PDF preview"
+        className="min-h-[420px] w-full flex-1 rounded-xl border border-stroke-soft-200 bg-bg-weak-50"
+      >
+        <div className="grid h-full place-items-center p-6 text-center text-paragraph-sm text-text-sub-600">
+          <p>
+            This PDF cannot preview inline here.{" "}
+            <a
+              href={url}
+              target="_blank"
+              rel="noreferrer"
+              className="text-primary-base underline underline-offset-2"
+            >
+              Open the PDF
+            </a>
+          </p>
+        </div>
+      </object>
+      <p className="text-paragraph-xs text-text-soft-400">
+        Published PDF. Page reorder and delete are the supported revisions; the text and visual
+        content are not editable here.
+      </p>
+    </div>
+  );
+}
+
+function formatKb(sizeBytes: number): string {
+  return `${Math.max(1, Math.round(sizeBytes / 1024))} KB`;
+}
+
+/** The Code view for a byte-authoritative PDF: an honest one-line summary of the
+ * binary source, never the raw %PDF bytes. */
+export function PdfBinaryCodeView({ sizeBytes }: { readonly sizeBytes: number }) {
+  return (
+    <div className="mt-4 flex min-h-0 flex-1 flex-col">
+      <p className="text-label-sm text-text-strong-950">PDF source</p>
+      <p className="mt-1 text-paragraph-xs text-text-soft-400">
+        Read-only. A published PDF stores immutable bytes, not editable text.
+      </p>
+      <pre className="mt-2 min-h-0 flex-1 overflow-auto rounded-xl border border-stroke-soft-200 bg-bg-weak-50 p-4 font-mono text-paragraph-xs text-text-strong-950">
+        Binary PDF source ({formatKb(sizeBytes)}) - not text
+      </pre>
+    </div>
+  );
+}
+
 /** The read-only Code view: the exact canonical serialization that a save
  * writes, so the rendered|Code toggle never fakes what is stored. */
 export function WorkpieceCodeView({
@@ -682,6 +737,13 @@ export function WorkpieceSurfaces({
   readonly editor: WorkpieceEditorController;
   readonly viewMode: "rendered" | "code";
 }) {
+  if (editor.pdfEmbed) {
+    return viewMode === "code" ? (
+      <PdfBinaryCodeView sizeBytes={editor.sizeBytes} />
+    ) : (
+      <PdfEmbedSurface url={editor.pdfPreviewUrl} />
+    );
+  }
   if (viewMode === "code") {
     return <WorkpieceCodeView label={editor.label} source={editor.canonicalSource()} />;
   }
