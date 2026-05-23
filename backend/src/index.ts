@@ -23,12 +23,14 @@ import { toolGatewayConfig } from "./knowledge/gateway/config";
 import { knowledgeRoutes } from "./knowledge/routes";
 import { memoryRoutes } from "./memory/routes";
 import { commandsRoutes } from "./runs/command-catalog";
+import { createOperatorRoutes } from "./runs/operator-routes";
 import { reposRoutes } from "./github/routes";
 import { pullsRoutes } from "./github/pulls-routes";
 import { desktopProxyRoutes } from "./runs/desktop-proxy";
 import { fleetRoutes } from "./runs/fleet-routes";
 import { liveProxyRoutes } from "./runs/live-proxy";
 import { recoverStaleRuns, startReconcileLoop } from "./runs/recovery";
+import { pumpThread, signalCancel } from "./worker";
 import { runsRoutes } from "./runs/routes";
 import { terminalRoutes } from "./runs/terminal";
 import { schedulesRoutes } from "./schedules/routes";
@@ -148,6 +150,10 @@ app.get("/api/health", (c) => c.json({ status: "ok" }));
 app.route("/api/internal/automation", internalAutomationRoutes);
 app.route("/api/internal/gateway-approval/consume", internalGatewayApprovalRoutes);
 app.route("/api/internal/codex-relay", codexSubscriptionRelayRoutes);
+// Loopback-only operator dispatch bridge (see runs/operator-routes.ts): lets
+// the release-lane parity canary run turns IN THIS PROCESS so the codex relay
+// rendezvous works. Secret-authenticated; proxied requests are rejected.
+app.route("/api/internal/operator", createOperatorRoutes({ pump: pumpThread, cancel: signalCancel }));
 
 // Public client config — what the frontend needs to render auth affordances
 // (which social providers are enabled) without exposing any secret. `allowDevOrg`
