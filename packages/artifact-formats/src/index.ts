@@ -1181,15 +1181,24 @@ const IMPORT_MEDIA_CONTENT_TYPE: Readonly<Record<string, string>> = {
   gif: "image/gif",
   webp: "image/webp",
 };
-/** Honest bounds so one deck cannot spawn unbounded image artifacts. */
-const MAX_IMPORT_IMAGES = 60;
-const MAX_IMPORT_IMAGE_BYTES = 12 * 1024 * 1024;
+/** Honest bounds so one deck cannot spawn unbounded image artifacts. Excess
+ * images and oversize bytes are dropped (the importNote states this). */
+const MAX_IMPORT_IMAGES = 12;
+const MAX_IMPORT_IMAGE_BYTES = 5 * 1024 * 1024;
 
-/** A picture placement lifted from a slide: its geometry (percent of the slide)
- * plus the raw media bytes, to be stored as a linked image artifact by the caller
- * (only the caller has DB + storage) and referenced from an image block. */
+/** A picture that covers ~the whole slide is the generated background-art case: it
+ * maps to the slide's background image, not a positioned block. */
+function coversFullSlide(x: number, y: number, w: number, h: number): boolean {
+  return x <= 4 && y <= 4 && x + w >= 96 && y + h >= 96;
+}
+
+/** A picture placement lifted from a slide: its geometry (percent of the slide),
+ * whether it is a full-slide background or a positioned block, and the raw media
+ * bytes - to be stored as a linked image artifact by the caller (only the caller
+ * has DB + storage) and referenced from a slide background or an image block. */
 export interface PptxImportImage {
   readonly slideIndex: number;
+  readonly role: "background" | "block";
   readonly x: number;
   readonly y: number;
   readonly w: number;
@@ -1247,6 +1256,7 @@ async function importSlideImages(
   const rels = await slideImageRels(zip, slideFile);
   if (rels.size === 0) return [];
   const images: PptxImportImage[] = [];
+  let slideHasBackground = false;
   for (const pic of slideXml.matchAll(/<p:pic>([\s\S]*?)<\/p:pic>/g)) {
     if (budget.remaining <= 0) break;
     const seg = pic[1] ?? "";
@@ -1259,12 +1269,21 @@ async function importSlideImages(
     if (!contentType) continue; // non-web image (emf/wmf/...): left in the original only
     const bytes = await zip.file(mediaPath)?.async("uint8array");
     if (!bytes || bytes.byteLength === 0 || bytes.byteLength > MAX_IMPORT_IMAGE_BYTES) continue;
+    const x = importClamp(importPercent(xf.x, slideWidth), -20, 120);
+    const y = importClamp(importPercent(xf.y, slideHeight), -20, 120);
+    const w = importClamp(importPercent(xf.cx, slideWidth), 1, 140);
+    const h = importClamp(importPercent(xf.cy, slideHeight), 1, 140);
+    // The first full-slide picture is the background (generated background art);
+    // every other picture is a positioned block.
+    const isBackground = !slideHasBackground && coversFullSlide(x, y, w, h);
+    if (isBackground) slideHasBackground = true;
     images.push({
       slideIndex,
-      x: importClamp(importPercent(xf.x, slideWidth), -20, 120),
-      y: importClamp(importPercent(xf.y, slideHeight), -20, 120),
-      w: importClamp(importPercent(xf.cx, slideWidth), 1, 140),
-      h: importClamp(importPercent(xf.cy, slideHeight), 1, 140),
+      role: isBackground ? "background" : "block",
+      x,
+      y,
+      w,
+      h,
       bytes,
       contentType,
     });
