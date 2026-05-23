@@ -11,6 +11,7 @@ import {
   artifactSurfaceCategoryFor,
   canPreviewInline,
   contentTypeForName,
+  csvToWorkbook,
   DOCX_CONTENT_TYPE,
   inferWorkpieceKind,
   isArtifactWorkpieceState,
@@ -188,7 +189,12 @@ describe("artifact workspace capabilities", () => {
     expect(inferWorkpieceKind("metrics.csv", "text/csv; charset=utf-8")).toBe("spreadsheet");
     expect(isArtifactWorkpieceState("document", { text: "# Notes" })).toBe(true);
     expect(isArtifactWorkpieceState("document", { csv: "wrong" })).toBe(false);
-    expect(isArtifactWorkpieceState("spreadsheet", { csv: "name,value\nrun,42" })).toBe(true);
+    // Spreadsheet canonical state is the v2 workbook; v1 `{ csv }` is not
+    // canonical (it upgrades on load, see the spreadsheet migration tests).
+    expect(isArtifactWorkpieceState("spreadsheet", { workbook: csvToWorkbook("name,value\nrun,42") })).toBe(
+      true,
+    );
+    expect(isArtifactWorkpieceState("spreadsheet", { csv: "name,value\nrun,42" })).toBe(false);
     expect(isArtifactWorkpieceState("spreadsheet", { html: "<p>wrong</p>" })).toBe(false);
     // Presentation canonical state is the v2 deck; v1 `{ slides }` is not
     // canonical (it upgrades on load, see the presentation migration tests).

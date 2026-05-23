@@ -13,9 +13,13 @@ import {
   type ArtifactWorkpieceState,
 } from "./contracts";
 import { migrateSlidesToDeck, normalizeDeck } from "./presentation";
+import { csvToWorkbook, normalizeWorkbook } from "./spreadsheet";
 
 export * from "./contracts";
+export * from "./csv";
+export * from "./formula";
 export * from "./presentation";
+export * from "./spreadsheet";
 
 const CONTENT_TYPES: Readonly<Record<string, string>> = {
   ".csv": "text/csv; charset=utf-8",
@@ -249,7 +253,7 @@ const AUTHORING_PROFILE_BY_KIND = {
     companion: { extension: "csv", contentType: "text/csv; charset=utf-8" },
     exports: SPREADSHEET_EXPORTS,
     actions: ARTIFACT_AUTHORING_ACTIONS,
-    defaultState: (_name: string) => ({ csv: "Name,Value\n" }),
+    defaultState: (_name: string) => ({ workbook: csvToWorkbook("Name,Value\n") }),
   },
   presentation: {
     kind: "presentation",
@@ -313,50 +317,6 @@ export function artifactExtensionLabel(name: string): string {
 export function contentTypeForName(name: string): string {
   const extension = artifactFileExtension(name);
   return CONTENT_TYPES[extension ? `.${extension}` : ""] ?? "application/octet-stream";
-}
-
-export function parseArtifactCsv(csv: string): string[][] {
-  const rows: string[][] = [];
-  let row: string[] = [];
-  let cell = "";
-  let quoted = false;
-  for (let index = 0; index < csv.length; index += 1) {
-    const character = csv[index];
-    if (quoted) {
-      if (character === '"' && csv[index + 1] === '"') {
-        cell += '"';
-        index += 1;
-      } else if (character === '"') {
-        quoted = false;
-      } else {
-        cell += character;
-      }
-      continue;
-    }
-    if (character === '"') {
-      quoted = true;
-    } else if (character === ",") {
-      row.push(cell);
-      cell = "";
-    } else if (character === "\n") {
-      row.push(cell);
-      rows.push(row);
-      row = [];
-      cell = "";
-    } else if (character !== "\r") {
-      cell += character;
-    }
-  }
-  row.push(cell);
-  if (row.some((value) => value.length > 0) || rows.length === 0) rows.push(row);
-  return rows;
-}
-
-export function serializeArtifactCsv(rows: readonly (readonly string[])[]): string {
-  return rows.map((row) =>
-    row.map((value) => /[",\n\r]/.test(value) ? `"${value.replaceAll('"', '""')}"` : value)
-      .join(",")
-  ).join("\n");
 }
 
 export function isArtifactRichHtmlTag(tag: string): boolean {
@@ -684,17 +644,25 @@ const ARTIFACT_FIDELITY_BY_KIND = {
   },
   spreadsheet: {
     kind: "spreadsheet",
-    summary: "Cell values in a single grid.",
-    preserved: ["Cell text and numbers", "Rows and columns of the first sheet"],
-    notPreserved: [
-      "Formulas (values only)",
+    summary:
+      "A web-native workbook: multiple sheets of A1-keyed cells with formulas, number formats, and basic styling.",
+    preserved: [
+      "Cell text and numbers",
+      "Formulas in the supported set (arithmetic, cell refs, ranges, SUM, AVG, MIN, MAX, COUNT, IF, cross-sheet refs)",
       "Multiple worksheets",
-      "Cell formatting, colors, and number formats",
-      "Charts, images, and comments",
+      "Number formats (currency, percent, decimals)",
+      "Bold, italic, alignment, text color, and cell fill",
+      "Per-column widths",
+    ],
+    notPreserved: [
+      "VLOOKUP and other functions beyond the supported set",
+      "Charts, pivot tables, and images",
+      "Conditional formatting and data validation",
+      "Merged cells and cell comments",
     ],
     uploadImport: "companion",
     importNote:
-      "Uploaded Excel files import the first worksheet as cell values; formulas and formatting are dropped.",
+      "Uploaded Excel files import cell values, formulas in the supported set, and basic formats across sheets; charts, pivots, and conditional formatting are dropped.",
   },
   presentation: {
     kind: "presentation",
@@ -769,7 +737,9 @@ export function isArtifactWorkpieceState<Kind extends ArtifactWorkpieceKind>(
   if (entry === undefined || entries.length !== 1) {
     return false;
   }
-  if (kind === "spreadsheet") return entry[0] === "csv" && typeof entry[1] === "string";
+  // Spreadsheet canonical state is the v2 workbook. v1 `{ csv }` inputs are
+  // upgraded on load via `coerceSpreadsheetState`, never accepted as canonical.
+  if (kind === "spreadsheet") return entry[0] === "workbook" && normalizeWorkbook(entry[1]) !== null;
   if (kind === "document") {
     return (entry[0] === "text" || entry[0] === "html") && typeof entry[1] === "string";
   }

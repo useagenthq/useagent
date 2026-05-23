@@ -2,6 +2,7 @@ import {
   ARTIFACT_WORKPIECE_ACTIONS,
   artifactWorkpieceExports,
   coercePresentationState,
+  coerceSpreadsheetState,
   isArtifactWorkpieceState,
   type ArtifactDescriptor,
   type ArtifactWorkpieceDescriptor,
@@ -32,6 +33,13 @@ export type {
   DeckTextAlign,
   DeckTheme,
   PresentationDeck,
+  // Spreadsheet workbook v2 model, re-exported for browser consumers.
+  SheetCell,
+  SheetCellAlign,
+  SheetCellFormat,
+  SheetNumberFormat,
+  Workbook,
+  Worksheet,
 } from "@skynet/artifact-workspace";
 
 function record(value: unknown): Record<string, unknown> | null {
@@ -88,10 +96,14 @@ export function decodeWorkpieceState<Kind extends ArtifactWorkpieceKind>(
   value: unknown,
 ): ArtifactWorkpieceState<Kind> | null | undefined {
   if (value === null) return null;
-  // Presentation upgrades any wire v1 `{slides}` to the canonical v2 `{deck}` so
-  // the browser only ever handles one shape (the backend already coerces reads).
+  // Presentation upgrades any wire v1 `{slides}` to the canonical v2 `{deck}`, and
+  // spreadsheet any wire v1 `{csv}` to the v2 `{workbook}`, so the browser only
+  // ever handles one shape (the backend already coerces reads).
   if (kind === "presentation") {
     return (coercePresentationState(value) as ArtifactWorkpieceState<Kind> | null) ?? undefined;
+  }
+  if (kind === "spreadsheet") {
+    return (coerceSpreadsheetState(value) as ArtifactWorkpieceState<Kind> | null) ?? undefined;
   }
   return isArtifactWorkpieceState(kind, value) ? value : undefined;
 }
