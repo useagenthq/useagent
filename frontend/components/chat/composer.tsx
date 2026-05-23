@@ -166,6 +166,11 @@ export type ComposerProps = {
    *  reload or thread switch restores unsent text. Cleared on submit. Absent
    *  keeps the composer stateless (hero/new-task surfaces). */
   draftKey?: string | null;
+  /** Externally seed the composer with a ready-to-send message and focus it. The
+   *  `nonce` makes each request re-apply even when the text repeats (e.g. a second
+   *  "Ask agent to redo"); the text replaces the current draft so the user can send
+   *  or edit it. Absent leaves the composer fully user-driven. */
+  prefill?: { readonly text: string; readonly nonce: number } | null;
 };
 
 /**
@@ -207,6 +212,7 @@ export function Composer({
   onDismissThreadError,
   engineUnavailable = false,
   draftKey,
+  prefill,
 }: ComposerProps) {
   // Draft restore is a lazy initializer so SSR (no window) and draft-less
   // composers stay on the empty string with zero effect churn.
@@ -220,6 +226,21 @@ export function Composer({
     if (value) window.localStorage.setItem(key, value);
     else window.localStorage.removeItem(key);
   }, [draftKey, value]);
+  // External prefill (e.g. "Ask agent to redo" on a conflicted proposal): apply
+  // once per nonce so a repeat request still lands, replacing the draft and moving
+  // focus + caret to the end so the message is one keystroke from sending.
+  const rootRef = useRef<HTMLDivElement>(null);
+  const appliedPrefillNonce = useRef(0);
+  useEffect(() => {
+    if (!prefill || prefill.nonce === appliedPrefillNonce.current) return;
+    appliedPrefillNonce.current = prefill.nonce;
+    setValue(prefill.text);
+    const textarea = rootRef.current?.querySelector("textarea");
+    if (textarea) {
+      textarea.focus();
+      textarea.setSelectionRange(prefill.text.length, prefill.text.length);
+    }
+  }, [prefill]);
   // Single fixed engine here; there is no setter (this composer serves replies -
   // a thread is pinned to one engine - and the no-sandbox Chat surface). Engine
   // SELECTION for a new task lives in NewTaskComposer. Kept as state so `engineProp`
@@ -382,7 +403,7 @@ export function Composer({
     // The composer THEME-FOLLOWS: its card uses bg-bg-white-0 (white in light mode,
     // #20201f in dark) so it reads as the reference's clean white pill in light and
     // a native dark pill in dark - never a white island clashing with the dark page.
-    <div className={cn("relative w-full", className)}>
+    <div ref={rootRef} className={cn("relative w-full", className)}>
       {showAgentPopover && (
         <div className="absolute bottom-full left-0 z-30 mb-2 w-full">
           <ChooseAgentPopover query={slashActive ? value : ""} onSelect={pickAgent} />

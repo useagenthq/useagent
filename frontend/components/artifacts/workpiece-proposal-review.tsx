@@ -13,10 +13,11 @@ import type {
   ArtifactWorkpieceState,
 } from "@skynet/agent-client";
 import { useMemo, useState } from "react";
+import { useComposerPrefill } from "@/components/chat/composer-prefill-context";
 import { DiffStatLabel } from "@/components/session-ui/diff-stat-label";
 import { DiffLines } from "@/components/session-ui/file-diff-view";
 import { cn } from "@/utils/cn";
-import { useWorkpieceProposals } from "./use-workpiece-proposals";
+import { proposalConflictsWithMainline, useWorkpieceProposals } from "./use-workpiece-proposals";
 import {
   proposedPreviewText,
   type SheetCellChange,
@@ -26,6 +27,14 @@ import {
 } from "./workpiece-proposal-diff";
 
 const SHEET_CELL_CAP = 200;
+
+/** The reply seeded by "Ask agent to redo" on a conflicted proposal: asks the
+ *  agent to re-author its change against the CURRENT version so the new proposal
+ *  applies cleanly. Pure so the wording stays testable. */
+export function askAgentRedoMessage(summary: string | null, artifactName: string): string {
+  const change = summary?.trim() ? `'${summary.trim()}'` : "the proposed edit";
+  return `Re-propose your change ${change} against the current version of ${artifactName}.`;
+}
 
 function NoChange() {
   return (
@@ -137,15 +146,23 @@ export function ProposalCard({
   proposal,
   mainlineState,
   busy,
+  conflicted = false,
   onAccept,
   onDismiss,
+  onAskRedo,
 }: {
   readonly kind: ArtifactWorkpieceKind;
   readonly proposal: ArtifactWorkpieceProposalDescriptor;
   readonly mainlineState: ArtifactWorkpieceState | null;
   readonly busy: boolean;
+  /** Mainline advanced past this proposal's base revision: accepting would 409
+   *  forever, so Accept is disabled and the user is steered to re-propose. */
+  readonly conflicted?: boolean;
   readonly onAccept: () => void;
   readonly onDismiss: () => void;
+  /** Seeds the composer to ask the agent to re-propose against current mainline.
+   *  Absent outside a session (the standalone editor has no composer). */
+  readonly onAskRedo?: () => void;
 }) {
   const [view, setView] = useState<"diff" | "proposed">("diff");
   const diff = useMemo(
@@ -217,24 +234,63 @@ export function ProposalCard({
         )}
       </div>
 
-      <div className="mt-3 flex items-center justify-end gap-2">
-        <button
-          type="button"
-          onClick={onDismiss}
-          disabled={busy}
-          className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-stroke-soft-200 px-3 text-label-xs text-text-sub-600 hover:bg-bg-weak-50 hover:text-text-strong-950 disabled:opacity-40"
-        >
-          <RiCloseLine aria-hidden className="size-3.5" /> Dismiss
-        </button>
-        <button
-          type="button"
-          onClick={onAccept}
-          disabled={busy}
-          className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-bg-strong-950 px-3 text-label-xs text-text-white-0 hover:opacity-90 disabled:opacity-40"
-        >
-          <RiCheckLine aria-hidden className="size-3.5" /> Accept
-        </button>
-      </div>
+      {conflicted ? (
+        // Dead-end guard: mainline moved on, so Accept can only 409. Explain why
+        // inline, make Dismiss the primary action, and offer a one-click re-propose.
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+          <p className="text-paragraph-xs text-warning-base">
+            Cannot apply - written against an older version
+          </p>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              disabled
+              aria-disabled
+              title="This proposal was written against an older version and can no longer be applied."
+              className="inline-flex h-8 cursor-not-allowed items-center gap-1.5 rounded-lg border border-stroke-soft-200 px-3 text-label-xs text-text-disabled-300"
+            >
+              <RiCheckLine aria-hidden className="size-3.5" /> Accept
+            </button>
+            {onAskRedo && (
+              <button
+                type="button"
+                onClick={onAskRedo}
+                disabled={busy}
+                className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-stroke-soft-200 px-3 text-label-xs text-text-sub-600 hover:bg-bg-weak-50 hover:text-text-strong-950 disabled:opacity-40"
+              >
+                <RiSparkling2Line aria-hidden className="size-3.5" /> Ask agent to redo
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={onDismiss}
+              disabled={busy}
+              className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-bg-strong-950 px-3 text-label-xs text-text-white-0 hover:opacity-90 disabled:opacity-40"
+            >
+              <RiCloseLine aria-hidden className="size-3.5" /> Dismiss
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="mt-3 flex items-center justify-end gap-2">
+          <button
+            type="button"
+            onClick={onDismiss}
+            disabled={busy}
+            className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-stroke-soft-200 px-3 text-label-xs text-text-sub-600 hover:bg-bg-weak-50 hover:text-text-strong-950 disabled:opacity-40"
+          >
+            <RiCloseLine aria-hidden className="size-3.5" /> Dismiss
+          </button>
+          <button
+            type="button"
+            onClick={onAccept}
+            disabled={busy}
+            className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-bg-strong-950 px-3 text-label-xs text-text-white-0 hover:opacity-90 disabled:opacity-40"
+          >
+            <RiCheckLine aria-hidden className="size-3.5" /> Accept
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -246,19 +302,26 @@ export function WorkpieceProposalBanner({
   kind,
   pending,
   mainlineState,
+  mainlineRevision = null,
   busyId,
   error,
   onAccept,
   onDismiss,
+  onAskRedo,
   defaultOpen = false,
 }: {
   readonly kind: ArtifactWorkpieceKind;
   readonly pending: readonly ArtifactWorkpieceProposalDescriptor[];
   readonly mainlineState: ArtifactWorkpieceState | null;
+  /** Current mainline revision - a proposal whose base_revision is behind it is a
+   *  conflict (Accept would 409). Null (unknown) treats every proposal as clean. */
+  readonly mainlineRevision?: number | null;
   readonly busyId: string | null;
   readonly error: string | null;
   readonly onAccept: (proposalId: string) => void;
   readonly onDismiss: (proposalId: string) => void;
+  /** Ask the agent to re-propose a conflicted change against current mainline. */
+  readonly onAskRedo?: (proposal: ArtifactWorkpieceProposalDescriptor) => void;
   readonly defaultOpen?: boolean;
 }) {
   const [open, setOpen] = useState(defaultOpen);
@@ -307,8 +370,10 @@ export function WorkpieceProposalBanner({
               proposal={proposal}
               mainlineState={mainlineState}
               busy={busyId !== null}
+              conflicted={proposalConflictsWithMainline(proposal, mainlineRevision)}
               onAccept={() => onAccept(proposal.id)}
               onDismiss={() => onDismiss(proposal.id)}
+              onAskRedo={onAskRedo ? () => onAskRedo(proposal) : undefined}
             />
           ))}
         </div>
@@ -324,8 +389,11 @@ export function WorkpieceProposalBanner({
  *  editor around the shared workpiece editor hook. */
 export function WorkpieceProposalReview({ artifact }: { readonly artifact: ArtifactDescriptor }) {
   const workpiece = artifact.workpiece;
-  const { pending, mainlineState, busyId, error, accept, dismiss } =
+  const { pending, mainlineState, mainlineRevision, busyId, error, accept, dismiss } =
     useWorkpieceProposals(artifact);
+  // Only present inside a session (the standalone editor page has no composer);
+  // absent -> the "Ask agent to redo" affordance hides itself.
+  const prefillComposer = useComposerPrefill();
 
   if (!workpiece) return null;
 
@@ -334,10 +402,17 @@ export function WorkpieceProposalReview({ artifact }: { readonly artifact: Artif
       kind={workpiece.kind}
       pending={pending}
       mainlineState={mainlineState}
+      mainlineRevision={mainlineRevision}
       busyId={busyId}
       error={error}
       onAccept={(id) => void accept(id)}
       onDismiss={(id) => void dismiss(id)}
+      onAskRedo={
+        prefillComposer
+          ? (proposal) =>
+              prefillComposer(askAgentRedoMessage(proposal.summary, artifact.name))
+          : undefined
+      }
     />
   );
 }

@@ -26,11 +26,26 @@ export function shouldRefetchProposalsOnSignal(change: OrgChange, artifactId: st
   );
 }
 
+/** A proposal is dead on arrival when mainline has advanced past the revision it
+ *  was authored against: the backend accept gates on `base_revision === current`
+ *  and returns 409 otherwise (artifacts/proposals.ts), so accepting would loop
+ *  forever. Detecting it up front lets the card disable Accept and steer the user
+ *  to re-propose instead of hitting the dead end. Pure so the state is unit-locked. */
+export function proposalConflictsWithMainline(
+  proposal: Pick<ArtifactWorkpieceProposalDescriptor, "base_revision">,
+  mainlineRevision: number | null,
+): boolean {
+  return mainlineRevision !== null && proposal.base_revision !== mainlineRevision;
+}
+
 export interface WorkpieceProposalsController {
   /** Pending proposals for this workpiece, oldest first. */
   readonly pending: readonly ArtifactWorkpieceProposalDescriptor[];
   /** Current mainline state, so a proposal renders as a diff against truth. */
   readonly mainlineState: ArtifactWorkpieceState | null;
+  /** Current mainline revision, so a stale proposal (base_revision behind this)
+   *  is flagged as a conflict before its Accept can 409. Null until first load. */
+  readonly mainlineRevision: number | null;
   readonly loading: boolean;
   /** The id of the proposal whose accept/dismiss is in flight, if any. */
   readonly busyId: string | null;
@@ -50,6 +65,7 @@ export function useWorkpieceProposals(artifact: ArtifactDescriptor): WorkpiecePr
   const artifactId = artifact.id;
   const [pending, setPending] = useState<readonly ArtifactWorkpieceProposalDescriptor[]>([]);
   const [mainlineState, setMainlineState] = useState<ArtifactWorkpieceState | null>(null);
+  const [mainlineRevision, setMainlineRevision] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -70,7 +86,10 @@ export function useWorkpieceProposals(artifact: ArtifactDescriptor): WorkpiecePr
       }
       if (stateResponse.ok) {
         const result = decodeWorkpieceResult(await stateResponse.json());
-        if (result) setMainlineState(result.state);
+        if (result) {
+          setMainlineState(result.state);
+          setMainlineRevision(result.workpiece.state_revision);
+        }
       }
     } catch {
       // Transient; the next org-change signal or remount repairs the view.
@@ -120,5 +139,5 @@ export function useWorkpieceProposals(artifact: ArtifactDescriptor): WorkpiecePr
   const accept = useCallback((proposalId: string) => resolve(proposalId, "accept"), [resolve]);
   const dismiss = useCallback((proposalId: string) => resolve(proposalId, "dismiss"), [resolve]);
 
-  return { pending, mainlineState, loading, busyId, error, accept, dismiss };
+  return { pending, mainlineState, mainlineRevision, loading, busyId, error, accept, dismiss };
 }

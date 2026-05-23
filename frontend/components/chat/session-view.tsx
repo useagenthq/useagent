@@ -52,6 +52,7 @@ import { type SurfaceChoice, SurfaceChooser } from "@/components/chat/surface-ch
 import { TerminalPane } from "@/components/chat/terminal-pane";
 import type { ThreadRunView } from "@/components/chat/thread-store";
 import type { TimelineArtifact } from "@/components/chat/timeline";
+import { ComposerPrefillProvider } from "@/components/chat/composer-prefill-context";
 import { useWorkpieceAutoOpen } from "@/components/chat/use-workpiece-auto-open";
 import { shouldFocusAutoOpened } from "@/components/chat/workpiece-auto-open";
 import { WorkspaceOpenProvider } from "@/components/chat/workspace-open-context";
@@ -575,6 +576,15 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
   const activeWorkpieceIdRef = useRef(activeWorkpieceId);
   activeWorkpieceIdRef.current = activeWorkpieceId;
   const workspaceDirtyRef = useRef<Map<string, boolean>>(new Map());
+  // Lets a rail surface (e.g. a conflicted workpiece proposal) seed the reply
+  // composer. The nonce re-applies a repeat of the same text; SessionView owns it
+  // and hands the setter to the rail via context.
+  const [composerPrefill, setComposerPrefill] = useState<{ text: string; nonce: number } | null>(
+    null,
+  );
+  const prefillComposer = useCallback((text: string) => {
+    setComposerPrefill((prev) => ({ text, nonce: (prev?.nonce ?? 0) + 1 }));
+  }, []);
 
   // Default to whichever pane actually has content; an explicit pick wins.
   // A quiet thread starts on the provider-neutral surface chooser.
@@ -736,6 +746,7 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
 
   return (
     <WorkspaceOpenProvider value={openWorkpiece}>
+      <ComposerPrefillProvider value={prefillComposer}>
       <div className="flex h-full flex-col">
       {/* Compact thread bar. Brand and search belong to the collapsible sidebar. */}
       <div className="bg-bg-white-0 flex shrink-0 items-center justify-between gap-3 px-4 py-2">
@@ -817,6 +828,7 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
             stopping={stopping}
             stopError={stopError}
             onStop={handleStop}
+            prefill={composerPrefill}
           />
           {/* Boot phase: engine spinning up, no steps yet — orb pill; clears the
               moment the first step streams in (Thinking block takes over).
@@ -1036,6 +1048,7 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
         ) : null}
       </div>
       </div>
+      </ComposerPrefillProvider>
     </WorkspaceOpenProvider>
   );
 }

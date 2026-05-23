@@ -1,6 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import type { OrgChange } from "@/lib/org-changes";
-import { shouldRefetchProposalsOnSignal } from "./use-workpiece-proposals";
+import {
+  proposalConflictsWithMainline,
+  shouldRefetchProposalsOnSignal,
+} from "./use-workpiece-proposals";
 
 const proposed: OrgChange = {
   type: "artifact",
@@ -41,5 +44,20 @@ describe("proposals lane refetch gate", () => {
       threadId: "thread-1",
     };
     expect(shouldRefetchProposalsOnSignal(runChange, "artifact-1")).toBe(false);
+  });
+});
+
+describe("proposal conflict detection (base_revision vs mainline)", () => {
+  test("a proposal written against the current revision is clean", () => {
+    expect(proposalConflictsWithMainline({ base_revision: 3 }, 3)).toBe(false);
+  });
+
+  test("a proposal whose base_revision trails mainline is a conflict", () => {
+    // Backend accept gates on base_revision === current; a trailing base 409s forever.
+    expect(proposalConflictsWithMainline({ base_revision: 1 }, 3)).toBe(true);
+  });
+
+  test("an unknown mainline revision (not yet loaded) never flags a conflict", () => {
+    expect(proposalConflictsWithMainline({ base_revision: 1 }, null)).toBe(false);
   });
 });
