@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import type { ArtifactWorkpieceProposalDescriptor } from "@skynet/agent-client";
+import { csvToWorkbook } from "@skynet/artifact-workspace";
 import { renderToStaticMarkup } from "react-dom/server";
 import {
   askAgentRedoMessage,
@@ -100,8 +101,8 @@ test("a spreadsheet proposal card renders changed cells old -> new", () => {
   const html = renderToStaticMarkup(
     <ProposalCard
       kind="spreadsheet"
-      proposal={proposal({ kind: "spreadsheet", state: { csv: "name,value\nrun,7" } })}
-      mainlineState={{ csv: "name,value\nrun,42" }}
+      proposal={proposal({ kind: "spreadsheet", state: { workbook: csvToWorkbook("name,value\nrun,7") } })}
+      mainlineState={{ workbook: csvToWorkbook("name,value\nrun,42") }}
       busy={false}
       onAccept={() => {}}
       onDismiss={() => {}}

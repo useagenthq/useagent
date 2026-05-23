@@ -1,12 +1,17 @@
 import { describe, expect, test } from "bun:test";
-import { DECK_THEME_PRESETS, migrateSlidesToDeck } from "@skynet/artifact-workspace";
+import {
+  csvToWorkbook,
+  DECK_THEME_PRESETS,
+  migrateSlidesToDeck,
+  type Workbook,
+} from "@skynet/artifact-workspace";
 import {
   columnName,
   computeLineDiff,
   countLineChanges,
   deckSlideChanges,
   proposedPreviewText,
-  sheetCellChanges,
+  workbookCellChanges,
   workpieceProposalDiff,
 } from "./workpiece-proposal-diff";
 
@@ -46,20 +51,37 @@ describe("columnName", () => {
   });
 });
 
-describe("sheetCellChanges", () => {
-  test("reports a changed cell old -> new with its A1 ref", () => {
-    expect(sheetCellChanges("a,b\n1,2", "a,X\n1,2")).toEqual([
-      { ref: "B1", before: "b", after: "X", kind: "changed" },
+describe("workbookCellChanges", () => {
+  test("reports a changed cell old -> new with its A1 ref and sheet", () => {
+    expect(workbookCellChanges(csvToWorkbook("a,b\n1,2"), csvToWorkbook("a,X\n1,2"))).toEqual([
+      { sheet: "Sheet 1", ref: "B1", before: "b", after: "X", kind: "changed", formatChanged: false },
     ]);
   });
 
   test("classifies added and removed cells", () => {
-    expect(sheetCellChanges("a", "a,b")).toEqual([
-      { ref: "B1", before: "", after: "b", kind: "added" },
+    expect(workbookCellChanges(csvToWorkbook("a"), csvToWorkbook("a,b"))).toEqual([
+      { sheet: "Sheet 1", ref: "B1", before: "", after: "b", kind: "added", formatChanged: false },
     ]);
-    expect(sheetCellChanges("a,b", "a")).toEqual([
-      { ref: "B1", before: "b", after: "", kind: "removed" },
+    expect(workbookCellChanges(csvToWorkbook("a,b"), csvToWorkbook("a"))).toEqual([
+      { sheet: "Sheet 1", ref: "B1", before: "b", after: "", kind: "removed", formatChanged: false },
     ]);
+  });
+
+  test("reports a pure format change and a formula's raw text", () => {
+    const base = csvToWorkbook("a\n1");
+    const formatted: Workbook = {
+      ...base,
+      sheets: [{ ...base.sheets[0]!, cells: { ...base.sheets[0]!.cells, A1: { v: "a", fmt: { bold: true } } } }],
+    };
+    const [fmtChange] = workbookCellChanges(base, formatted);
+    expect(fmtChange).toMatchObject({ ref: "A1", kind: "changed", formatChanged: true, before: "a", after: "a" });
+
+    const withFormula: Workbook = {
+      ...base,
+      sheets: [{ ...base.sheets[0]!, cells: { ...base.sheets[0]!.cells, A3: { v: 1, f: "=SUM(A2:A2)" } } }],
+    };
+    const [formulaChange] = workbookCellChanges(base, withFormula);
+    expect(formulaChange).toMatchObject({ ref: "A3", after: "=SUM(A2:A2)", kind: "added" });
   });
 });
 
@@ -122,7 +144,11 @@ describe("workpieceProposalDiff", () => {
   });
 
   test("builds cell changes for spreadsheets and slide changes for presentations", () => {
-    const sheet = workpieceProposalDiff("spreadsheet", { csv: "a,b" }, { csv: "a,c" });
+    const sheet = workpieceProposalDiff(
+      "spreadsheet",
+      { workbook: csvToWorkbook("a,b") },
+      { workbook: csvToWorkbook("a,c") },
+    );
     expect(sheet).toMatchObject({
       type: "sheet",
       cells: [{ ref: "B1", before: "b", after: "c", kind: "changed" }],

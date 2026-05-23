@@ -2,14 +2,12 @@ import type { ArtifactDescriptor, ArtifactWorkpieceResult } from "@skynet/agent-
 import {
   artifactActionContractFor,
   artifactFileExtension,
+  emptyWorkbook,
   isArtifactRichHtmlAttribute,
   isArtifactRichHtmlTag,
   migrateSlidesToDeck,
   normalizeArtifactRichHtml,
 } from "@skynet/artifact-workspace";
-
-export const SHEET_ROW_LIMIT = 100;
-export const SHEET_COLUMN_LIMIT = 26;
 
 export {
   parseArtifactCsv as parseCsv,
@@ -19,8 +17,7 @@ export {
 export type ArtifactEditorMode =
   | "source-document"
   | "rich-document"
-  | "grid"
-  | "sheet-source"
+  | "sheet-grid"
   | "slides-json"
   | "pdf-text";
 
@@ -36,7 +33,7 @@ export function artifactEditorMode(
     case "html":
       return "rich-document";
     case "csv":
-      return edit.mode === "companion" ? "grid" : "sheet-source";
+      return "sheet-grid";
     case "slides":
       return "slides-json";
     case "pdfText":
@@ -48,7 +45,7 @@ export function artifactEditorMode(
 
 export function stateValue(result: ArtifactWorkpieceResult): string | null {
   if (!result.state) return null;
-  if ("csv" in result.state) return result.state.csv;
+  if ("workbook" in result.state) return JSON.stringify(result.state.workbook, null, 2);
   if ("html" in result.state) return result.state.html;
   if ("deck" in result.state) return JSON.stringify(result.state.deck, null, 2);
   if ("pdfText" in result.state) return result.state.pdfText;
@@ -73,6 +70,10 @@ export function presentationTemplate(name: string): string {
   const suffix = artifactFileExtension(name);
   const stem = suffix ? name.slice(0, -(suffix.length + 1)) : name;
   return JSON.stringify(migrateSlidesToDeck([{ title: stem, body: "", notes: "" }]), null, 2);
+}
+
+export function spreadsheetTemplate(): string {
+  return JSON.stringify(emptyWorkbook(), null, 2);
 }
 
 export function sanitizeRichHtml(value: string): string {
@@ -104,8 +105,4 @@ export function sanitizeRichHtml(value: string): string {
   visit(template.content);
   return normalizeArtifactRichHtml(template.innerHTML) ??
     escapeHtml(template.content.textContent ?? "");
-}
-
-export function isSheetWithinGridLimit(rows: readonly (readonly string[])[]): boolean {
-  return rows.length <= SHEET_ROW_LIMIT && rows.every((row) => row.length <= SHEET_COLUMN_LIMIT);
 }

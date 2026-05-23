@@ -2,7 +2,6 @@ import { describe, expect, test } from "bun:test";
 import { normalizeArtifactRichHtml } from "@skynet/artifact-workspace";
 import {
   artifactEditorMode,
-  isSheetWithinGridLimit,
   parseCsv,
   richDocumentTemplate,
   sanitizeRichHtml,
@@ -19,8 +18,8 @@ describe("artifact editor model", () => {
     });
 
     expect(artifactEditorMode(artifact("document", "Plan.docx"))).toBe("rich-document");
-    expect(artifactEditorMode(artifact("spreadsheet", "Model.xlsx"))).toBe("grid");
-    expect(artifactEditorMode(artifact("spreadsheet", "Model.csv"))).toBe("sheet-source");
+    expect(artifactEditorMode(artifact("spreadsheet", "Model.xlsx"))).toBe("sheet-grid");
+    expect(artifactEditorMode(artifact("spreadsheet", "Model.csv"))).toBe("sheet-grid");
     expect(artifactEditorMode(artifact("presentation", "Deck.pptx"))).toBe("slides-json");
     expect(artifactEditorMode(artifact("pdf", "Report.pdf"))).toBe("pdf-text");
   });
@@ -35,10 +34,8 @@ describe("artifact editor model", () => {
     expect(serializeCsv(rows)).toBe('name,notes\n"ACME, Inc.","line 1\nline 2"\nquote,"a ""b"""');
   });
 
-  test("keeps rich document and sheet editing bounded", () => {
+  test("keeps rich document editing bounded", () => {
     expect(richDocumentTemplate("<unsafe>.docx")).toContain("&lt;unsafe&gt;");
-    expect(isSheetWithinGridLimit([Array.from({ length: 26 }, () => "")])).toBe(true);
-    expect(isSheetWithinGridLimit([Array.from({ length: 27 }, () => "")])).toBe(false);
   });
 
   test("never returns rich HTML that the shared save contract rejects", () => {

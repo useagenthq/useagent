@@ -6,10 +6,13 @@ import {
   type ArtifactWorkpieceState,
   decodeWorkpieceResult,
   type PresentationDeck,
+  type Workbook,
 } from "@skynet/agent-client";
 import {
   artifactActionContractFor,
   coercePresentationState,
+  coerceSpreadsheetState,
+  emptyWorkbook,
   migrateSlidesToDeck,
 } from "@skynet/artifact-workspace";
 import { type RefObject, useCallback, useEffect, useRef, useState } from "react";
@@ -19,12 +22,10 @@ import type { OrgChange } from "@/lib/org-changes";
 import {
   type ArtifactEditorMode,
   artifactEditorMode,
-  isSheetWithinGridLimit,
-  parseCsv,
   presentationTemplate,
   richDocumentTemplate,
   sanitizeRichHtml,
-  serializeCsv,
+  spreadsheetTemplate,
   stateValue,
 } from "./artifact-editor-model";
 
@@ -34,10 +35,8 @@ const AUTOSAVE_DELAY_MS = 800;
 
 export function labelForMode(mode: ArtifactEditorMode): string {
   switch (mode) {
-    case "grid":
-      return "Spreadsheet grid";
-    case "sheet-source":
-      return "Spreadsheet source";
+    case "sheet-grid":
+      return "Spreadsheet";
     case "rich-document":
       return "Rich document";
     case "source-document":
@@ -73,11 +72,34 @@ function deckFromValue(value: string): PresentationDeck | null {
   }
 }
 
+/** Parse workbook JSON (a v2 `{workbook}` / bare workbook, or a v1 `{csv}` / bare
+ * CSV string) into a validated canonical workbook, throwing on invalid input so a
+ * bad Code-view edit surfaces as a save error instead of a silent drop. */
+export function parseWorkbookJson(value: string): Workbook {
+  const parsed = JSON.parse(value) as unknown;
+  const state = coerceSpreadsheetState(parsed);
+  if (!state) throw new Error("spreadsheet state must be a valid workbook or CSV");
+  return state.workbook;
+}
+
+/** One canonical string form of a workbook, used for both the saved baseline and
+ * the dirty check so the grid editor and the wire agree bit for bit. */
+export function serializeWorkbook(workbook: Workbook): string {
+  return JSON.stringify(workbook);
+}
+
+function workbookFromValue(value: string): Workbook | null {
+  try {
+    return parseWorkbookJson(value);
+  } catch {
+    return null;
+  }
+}
+
 function stateForMode(mode: ArtifactEditorMode, value: string): ArtifactWorkpieceState {
   switch (mode) {
-    case "grid":
-    case "sheet-source":
-      return { csv: value };
+    case "sheet-grid":
+      return { workbook: parseWorkbookJson(value) };
     case "rich-document":
       return { html: value };
     case "slides-json":
@@ -120,13 +142,6 @@ function withCacheBust(url: string, nonce: number): string {
   return `${url}${url.includes("?") ? "&" : "?"}v=${nonce}`;
 }
 
-function spreadsheetRows(value: string): string[][] {
-  const parsed = parseCsv(value);
-  if (!isSheetWithinGridLimit(parsed)) return parsed;
-  const width = Math.max(3, ...parsed.map((row) => row.length));
-  return parsed.map((row) => [...row, ...Array.from({ length: width - row.length }, () => "")]);
-}
-
 /** The one editing state machine for a canonical workpiece: loads the current
  * revision, tracks the structured surface value, and saves with optimistic
  * concurrency (409 -> reload latest, never a silent overwrite). Shared by the
@@ -137,10 +152,9 @@ export interface WorkpieceEditorController {
   readonly mode: ArtifactEditorMode;
   readonly editorMode: ArtifactEditorMode;
   readonly label: string;
-  readonly isGrid: boolean;
   readonly isRich: boolean;
   readonly isSlidesEditor: boolean;
-  readonly isSpreadsheet: boolean;
+  readonly isSheetGrid: boolean;
   /** A byte-authoritative (published) PDF: render the embedded preview, never
    * the text editor or raw bytes. */
   readonly pdfEmbed: boolean;
@@ -154,12 +168,13 @@ export interface WorkpieceEditorController {
   readonly revision: number;
   readonly dirty: boolean;
   readonly value: string;
-  readonly rows: string[][];
   /** The current deck for the presentation editor, or null before load. */
   readonly deck: PresentationDeck | null;
+  /** The current workbook for the spreadsheet editor, or null before load. */
+  readonly workbook: Workbook | null;
   readonly richEditorRef: RefObject<HTMLDivElement | null>;
-  readonly setRows: (rows: string[][]) => void;
   readonly setDeck: (deck: PresentationDeck) => void;
+  readonly setWorkbook: (workbook: Workbook) => void;
   readonly setSource: (value: string) => void;
   readonly onRichChange: (html: string) => void;
   readonly save: () => Promise<void>;
@@ -180,8 +195,8 @@ export function useWorkpieceEditor(
   const [revision, setRevision] = useState(workpiece?.state_revision ?? 0);
   const [value, setValue] = useState("");
   const [savedValue, setSavedValue] = useState("");
-  const [rows, setRows] = useState<string[][]>([["", "", ""]]);
   const [deck, setDeck] = useState<PresentationDeck | null>(null);
+  const [workbook, setWorkbook] = useState<Workbook | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -194,11 +209,10 @@ export function useWorkpieceEditor(
   const [changeNonce, setChangeNonce] = useState(0);
   const bump = useCallback(() => setChangeNonce((nonce) => nonce + 1), []);
 
-  const isGrid = mode === "grid" && isSheetWithinGridLimit(rows);
-  const editorMode = mode === "grid" && !isGrid ? "sheet-source" : mode;
+  const editorMode = mode;
   const isRich = editorMode === "rich-document";
   const isSlidesEditor = editorMode === "slides-json";
-  const isSpreadsheet = workpiece?.kind === "spreadsheet";
+  const isSheetGrid = editorMode === "sheet-grid";
 
   const normalizeValue = useCallback(
     (next: string) => (isRich ? sanitizeRichHtml(next) : next),
@@ -223,13 +237,14 @@ export function useWorkpieceEditor(
       // its bytes into the text editor - it renders as an embedded preview.
       const byteAuthoritativePdf = isByteAuthoritativePdf(mode, text);
       setPdfEmbed(byteAuthoritativePdf);
-      if (text === null && !isRich && mode !== "grid" && mode !== "pdf-text") {
+      if (text === null && !isRich && mode !== "sheet-grid" && mode !== "pdf-text") {
         const sourceResponse = await backendFetch(artifact.preview_url, { cache: "no-store" });
         if (!sourceResponse.ok) throw new Error(`source request failed (${sourceResponse.status})`);
         text = await sourceResponse.text();
       }
       if (text === null && isRich) text = richDocumentTemplate(artifact.name);
       if (text === null && mode === "slides-json") text = presentationTemplate(artifact.name);
+      if (text === null && isSheetGrid) text = spreadsheetTemplate();
       const normalized = normalizeValue(text ?? "");
       setRevision(result.workpiece.state_revision);
       setReloadNonce((nonce) => nonce + 1);
@@ -239,10 +254,15 @@ export function useWorkpieceEditor(
         setDeck(parsedDeck);
         setValue(canonical);
         setSavedValue(canonical);
+      } else if (isSheetGrid) {
+        const parsedWorkbook = workbookFromValue(normalized) ?? emptyWorkbook();
+        const canonical = serializeWorkbook(parsedWorkbook);
+        setWorkbook(parsedWorkbook);
+        setValue(canonical);
+        setSavedValue(canonical);
       } else {
         setEditorValue(normalized);
         setSavedValue(normalized);
-        if (isSpreadsheet) setRows(spreadsheetRows(normalized));
       }
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "The workpiece could not be loaded.");
@@ -253,8 +273,8 @@ export function useWorkpieceEditor(
     artifact.name,
     artifact.preview_url,
     isRich,
+    isSheetGrid,
     isSlidesEditor,
-    isSpreadsheet,
     mode,
     normalizeValue,
     setEditorValue,
@@ -266,16 +286,17 @@ export function useWorkpieceEditor(
   }, [load]);
 
   const currentValue = useCallback(() => {
-    if (isGrid) return serializeCsv(rows);
     if (isRich) return sanitizeRichHtml(richEditorRef.current?.innerHTML ?? value);
     if (isSlidesEditor) return deck ? serializeDeck(deck) : savedValue;
+    if (isSheetGrid) return workbook ? serializeWorkbook(workbook) : savedValue;
     return value;
-  }, [deck, isGrid, isRich, isSlidesEditor, rows, savedValue, value]);
+  }, [deck, isRich, isSheetGrid, isSlidesEditor, savedValue, value, workbook]);
 
   const canonicalSource = useCallback(() => {
     if (isSlidesEditor) return deck ? JSON.stringify(deck, null, 2) : "";
+    if (isSheetGrid) return workbook ? JSON.stringify(workbook, null, 2) : "";
     return currentValue();
-  }, [currentValue, deck, isSlidesEditor]);
+  }, [currentValue, deck, isSheetGrid, isSlidesEditor, workbook]);
 
   const save = useCallback(async () => {
     if (!workpiece) return;
@@ -306,10 +327,15 @@ export function useWorkpieceEditor(
           setDeck(parsedDeck);
           setValue(canonical);
           setSavedValue(canonical);
+        } else if (isSheetGrid) {
+          const parsedWorkbook = workbookFromValue(latest) ?? emptyWorkbook();
+          const canonical = serializeWorkbook(parsedWorkbook);
+          setWorkbook(parsedWorkbook);
+          setValue(canonical);
+          setSavedValue(canonical);
         } else {
           setEditorValue(latest);
           setSavedValue(latest);
-          if (isSpreadsheet) setRows(spreadsheetRows(latest));
         }
         setError("A newer edit was saved. The latest revision has been loaded.");
         return;
@@ -326,8 +352,8 @@ export function useWorkpieceEditor(
   }, [
     currentValue,
     editorMode,
+    isSheetGrid,
     isSlidesEditor,
-    isSpreadsheet,
     normalizeValue,
     revision,
     setEditorValue,
@@ -358,13 +384,6 @@ export function useWorkpieceEditor(
     if (shouldReloadOnArtifactSignal(change, artifact.id, { loading, saving, dirty })) void load();
   });
 
-  const setRowsTracked = useCallback(
-    (next: string[][]) => {
-      setRows(next);
-      bump();
-    },
-    [bump],
-  );
   const setDeckTracked = useCallback(
     (next: PresentationDeck) => {
       setDeck(next);
@@ -372,13 +391,19 @@ export function useWorkpieceEditor(
     },
     [bump],
   );
+  const setWorkbookTracked = useCallback(
+    (next: Workbook) => {
+      setWorkbook(next);
+      bump();
+    },
+    [bump],
+  );
   const setSource = useCallback(
     (next: string) => {
       setValue(next);
-      if (isSpreadsheet) setRows(spreadsheetRows(next));
       bump();
     },
-    [bump, isSpreadsheet],
+    [bump],
   );
   const onRichChange = useCallback(
     (html: string) => {
@@ -394,10 +419,9 @@ export function useWorkpieceEditor(
     mode,
     editorMode,
     label: labelForMode(editorMode),
-    isGrid,
     isRich,
     isSlidesEditor,
-    isSpreadsheet,
+    isSheetGrid,
     pdfEmbed,
     pdfPreviewUrl: pdfEmbed ? withCacheBust(artifact.preview_url, reloadNonce) : artifact.preview_url,
     sizeBytes: artifact.size_bytes,
@@ -407,11 +431,11 @@ export function useWorkpieceEditor(
     revision,
     dirty,
     value,
-    rows,
     deck,
+    workbook,
     richEditorRef,
-    setRows: setRowsTracked,
     setDeck: setDeckTracked,
+    setWorkbook: setWorkbookTracked,
     setSource,
     onRichChange,
     save,
