@@ -7,18 +7,22 @@
 // without a backend. The click-to-open flow is the real WorkspaceOpenProvider ->
 // ArtifactRow context path used in a live session.
 
-import type { ArtifactPresentationSlide } from "@skynet/agent-client";
-import { contentTypeForName, serializeArtifactCsv } from "@skynet/artifact-workspace";
+import {
+  contentTypeForName,
+  DECK_THEME_PRESETS,
+  migrateSlidesToDeck,
+  type PresentationDeck,
+  serializeArtifactCsv,
+} from "@skynet/artifact-workspace";
 import { useEffect, useRef, useState } from "react";
 import {
+  DeckSurface,
   PdfBinaryCodeView,
   PdfEmbedSurface,
   RichDocumentSurface,
-  SlidesSurface,
   SpreadsheetGridSurface,
   WorkpieceCodeView,
 } from "@/app/agent/artifacts/[id]/artifact-editor-surfaces";
-import { serializeSlides } from "@/app/agent/artifacts/[id]/artifact-editor-state";
 import { Timeline } from "@/components/chat/conversation";
 import type { TimelineNode } from "@/components/chat/timeline";
 import { WorkspaceOpenProvider } from "@/components/chat/workspace-open-context";
@@ -56,11 +60,32 @@ const SAMPLE_ROWS: string[][] = [
   ["Total", "3,720,000", "1,420,000", "38"],
 ];
 
-const SAMPLE_SLIDES: ArtifactPresentationSlide[] = [
-  { title: "Series B narrative", body: "Why now\nMarket inflection\nOur wedge", notes: "Open confident" },
-  { title: "Traction", body: "3.2x YoY revenue\nNRR 128%\n40 logos", notes: "Lead with NRR" },
-  { title: "The ask", body: "$25M to scale GTM\n18-month runway", notes: "" },
-];
+// A themed deck fixture (v2): the sky preset plus an accent shape on the opener,
+// so the pane review shows the deck canvas, filmstrip, theme, and blocks.
+const SAMPLE_DECK: PresentationDeck = (() => {
+  const base = migrateSlidesToDeck(
+    [
+      { title: "Series B narrative", body: "Why now\nMarket inflection\nOur wedge", notes: "Open confident" },
+      { title: "Traction", body: "3.2x YoY revenue\nNRR 128%\n40 logos", notes: "Lead with NRR" },
+      { title: "The ask", body: "$25M to scale GTM\n18-month runway" },
+    ],
+    DECK_THEME_PRESETS.find((preset) => preset.id === "sky")!.theme,
+  );
+  return {
+    ...base,
+    slides: base.slides.map((slide, index) =>
+      index === 0
+        ? {
+          ...slide,
+          blocks: [
+            ...slide.blocks,
+            { id: "s1-accent", type: "shape", x: 6, y: 84, w: 24, h: 4, content: "", style: { fill: "#ffd166", radius: 6 } },
+          ],
+        }
+        : slide
+    ),
+  };
+})();
 
 function artifactNode(id: string, name: string): TimelineNode {
   return {
@@ -85,7 +110,7 @@ export function WorkspaceSample() {
   const docRef = useRef<HTMLDivElement>(null);
   const [docHtml, setDocHtml] = useState(SAMPLE_DOC_HTML);
   const [rows, setRows] = useState<string[][]>(SAMPLE_ROWS);
-  const [slides, setSlides] = useState<ArtifactPresentationSlide[]>(SAMPLE_SLIDES);
+  const [deck, setDeck] = useState<PresentationDeck>(SAMPLE_DECK);
 
   // Seed the contenteditable once, the way the real editor's load() does.
   useEffect(() => {
@@ -110,11 +135,7 @@ export function WorkspaceSample() {
   const sourceFor = (id: string) => {
     if (id === "wp-doc") return docHtml;
     if (id === "wp-sheet") return serializeArtifactCsv(rows);
-    try {
-      return JSON.stringify({ slides }, null, 2);
-    } catch {
-      return serializeSlides(slides);
-    }
+    return JSON.stringify(deck, null, 2);
   };
   const dirtyFor = (id: string) => (id === "wp-doc" ? docHtml !== SAMPLE_DOC_HTML : false);
 
@@ -188,7 +209,7 @@ export function WorkspaceSample() {
                           ) : tab.id === "wp-sheet" ? (
                             <SpreadsheetGridSurface rows={rows} onChange={setRows} />
                           ) : (
-                            <SlidesSurface slides={slides} loading={false} onChange={setSlides} />
+                            <DeckSurface deck={deck} loading={false} onChange={setDeck} />
                           )}
                         </div>
                       </div>

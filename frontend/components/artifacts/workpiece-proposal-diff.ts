@@ -6,9 +6,13 @@
 
 import {
   parseArtifactCsv as parseCsv,
-  type ArtifactPresentationSlide,
+  primaryHeadingBlock,
   type ArtifactWorkpieceKind,
   type ArtifactWorkpieceState,
+  type DeckBlock,
+  type DeckBlockType,
+  type DeckSlide,
+  type PresentationDeck,
 } from "@skynet/artifact-workspace";
 import type { DiffLine } from "@/components/session-ui/file-diff-view";
 
@@ -120,53 +124,85 @@ export function sheetCellChanges(before: string, after: string): SheetCellChange
   return changes;
 }
 
-export type SlideField = "title" | "body" | "notes";
+export type DeckBlockChangeKind = "added" | "removed" | "moved" | "edited";
 
-export interface SlideFieldChange {
-  readonly field: SlideField;
-  readonly before: string;
-  readonly after: string;
+export interface DeckBlockChange {
+  readonly id: string;
+  readonly kind: DeckBlockChangeKind;
+  readonly type: DeckBlockType;
+  /** A short human label for the block (its text preview, or the block type). */
+  readonly label: string;
 }
 
-export interface SlideChange {
+export interface DeckSlideChange {
   readonly index: number;
   readonly kind: "added" | "removed" | "changed";
   readonly label: string;
-  readonly fields: readonly SlideFieldChange[];
+  readonly blocks: readonly DeckBlockChange[];
+  readonly backgroundChanged: boolean;
+  readonly notesChanged: boolean;
 }
 
-const EMPTY_SLIDE: ArtifactPresentationSlide = { title: "", body: "", notes: "" };
-
-function slideFieldChanges(
-  before: ArtifactPresentationSlide,
-  after: ArtifactPresentationSlide,
-): SlideFieldChange[] {
-  const fields: SlideField[] = ["title", "body", "notes"];
-  return fields
-    .map((field): SlideFieldChange => ({
-      field,
-      before: before[field] ?? "",
-      after: after[field] ?? "",
-    }))
-    .filter((change) => change.before !== change.after);
+function blockLabel(block: DeckBlock): string {
+  if (block.type === "image") return "image";
+  if (block.type === "shape") return "shape";
+  const text = block.content.replace(/\s+/g, " ").trim();
+  return text ? (text.length > 40 ? `${text.slice(0, 40)}...` : text) : block.type;
 }
 
-/** Per-slide changes (added / removed / changed with the changed fields). */
-export function slideChanges(
-  before: readonly ArtifactPresentationSlide[],
-  after: readonly ArtifactPresentationSlide[],
-): SlideChange[] {
-  const max = Math.max(before.length, after.length);
-  const changes: SlideChange[] = [];
+function slideLabel(slide: DeckSlide, index: number): string {
+  return primaryHeadingBlock(slide)?.content?.trim() || `Slide ${index + 1}`;
+}
+
+function positionChanged(a: DeckBlock, b: DeckBlock): boolean {
+  return a.x !== b.x || a.y !== b.y || a.w !== b.w || a.h !== b.h;
+}
+
+/** Block-level changes within one slide, matched by block id. */
+function blockChanges(before: DeckSlide, after: DeckSlide): DeckBlockChange[] {
+  const beforeById = new Map(before.blocks.map((block) => [block.id, block]));
+  const afterById = new Map(after.blocks.map((block) => [block.id, block]));
+  const changes: DeckBlockChange[] = [];
+  for (const block of after.blocks) {
+    const prior = beforeById.get(block.id);
+    if (!prior) {
+      changes.push({ id: block.id, kind: "added", type: block.type, label: blockLabel(block) });
+      continue;
+    }
+    if (prior.content !== block.content || JSON.stringify(prior.style) !== JSON.stringify(block.style)) {
+      changes.push({ id: block.id, kind: "edited", type: block.type, label: blockLabel(block) });
+    } else if (positionChanged(prior, block)) {
+      changes.push({ id: block.id, kind: "moved", type: block.type, label: blockLabel(block) });
+    }
+  }
+  for (const block of before.blocks) {
+    if (!afterById.has(block.id)) {
+      changes.push({ id: block.id, kind: "removed", type: block.type, label: blockLabel(block) });
+    }
+  }
+  return changes;
+}
+
+/** Per-slide deck changes (added / removed / changed) with block-level detail. */
+export function deckSlideChanges(before: PresentationDeck, after: PresentationDeck): DeckSlideChange[] {
+  const max = Math.max(before.slides.length, after.slides.length);
+  const changes: DeckSlideChange[] = [];
   for (let index = 0; index < max; index++) {
-    const b = before[index];
-    const a = after[index];
+    const b = before.slides[index];
+    const a = after.slides[index];
     if (!b && a) {
       changes.push({
         index,
         kind: "added",
-        label: a.title || `Slide ${index + 1}`,
-        fields: slideFieldChanges(EMPTY_SLIDE, a),
+        label: slideLabel(a, index),
+        blocks: a.blocks.map((block) => ({
+          id: block.id,
+          kind: "added" as const,
+          type: block.type,
+          label: blockLabel(block),
+        })),
+        backgroundChanged: !!a.background,
+        notesChanged: !!a.notes,
       });
       continue;
     }
@@ -174,20 +210,24 @@ export function slideChanges(
       changes.push({
         index,
         kind: "removed",
-        label: b.title || `Slide ${index + 1}`,
-        fields: slideFieldChanges(b, EMPTY_SLIDE),
+        label: slideLabel(b, index),
+        blocks: b.blocks.map((block) => ({
+          id: block.id,
+          kind: "removed" as const,
+          type: block.type,
+          label: blockLabel(block),
+        })),
+        backgroundChanged: !!b.background,
+        notesChanged: !!b.notes,
       });
       continue;
     }
     if (!a || !b) continue;
-    const fields = slideFieldChanges(b, a);
-    if (fields.length > 0) {
-      changes.push({
-        index,
-        kind: "changed",
-        label: a.title || b.title || `Slide ${index + 1}`,
-        fields,
-      });
+    const blocks = blockChanges(b, a);
+    const backgroundChanged = JSON.stringify(b.background) !== JSON.stringify(a.background);
+    const notesChanged = (b.notes ?? "") !== (a.notes ?? "");
+    if (blocks.length > 0 || backgroundChanged || notesChanged) {
+      changes.push({ index, kind: "changed", label: slideLabel(a, index), blocks, backgroundChanged, notesChanged });
     }
   }
   return changes;
@@ -217,7 +257,9 @@ export interface SheetProposalDiff {
 }
 export interface SlidesProposalDiff {
   readonly type: "slides";
-  readonly slides: SlideChange[];
+  readonly slides: DeckSlideChange[];
+  /** The deck theme (background/colors) changed between mainline and proposed. */
+  readonly themeChanged: boolean;
   readonly unchanged: boolean;
 }
 export type WorkpieceProposalDiff = TextProposalDiff | SheetProposalDiff | SlidesProposalDiff;
@@ -236,10 +278,16 @@ export function workpieceProposalDiff(
     return { type: "sheet", cells, unchanged: cells.length === 0 };
   }
   if (kind === "presentation") {
-    const before = mainline && "slides" in mainline ? mainline.slides : [];
-    const after = "slides" in proposed ? proposed.slides : [];
-    const slides = slideChanges(before, after);
-    return { type: "slides", slides, unchanged: slides.length === 0 };
+    const beforeDeck = mainline && "deck" in mainline ? mainline.deck : null;
+    const afterDeck = "deck" in proposed ? proposed.deck : null;
+    if (!afterDeck) return { type: "slides", slides: [], themeChanged: false, unchanged: true };
+    // A brand-new deck (no mainline) diffs against an empty deck of the same theme.
+    const baseline: PresentationDeck = beforeDeck ??
+      { schemaVersion: afterDeck.schemaVersion, theme: afterDeck.theme, slides: [] };
+    const slides = deckSlideChanges(baseline, afterDeck);
+    const themeChanged = !!beforeDeck &&
+      JSON.stringify(beforeDeck.theme) !== JSON.stringify(afterDeck.theme);
+    return { type: "slides", slides, themeChanged, unchanged: slides.length === 0 && !themeChanged };
   }
   const lines = computeLineDiff(stateText(mainline), stateText(proposed));
   const { additions, deletions } = countLineChanges(lines);
@@ -254,11 +302,16 @@ export function workpieceProposalDiff(
 
 /** Read-only canonical text for the "View proposed" panel (all kinds). */
 export function proposedPreviewText(state: ArtifactWorkpieceState): string {
-  if ("slides" in state) {
-    return state.slides
+  if ("deck" in state) {
+    return state.deck.slides
       .map((slide, index) => {
+        const text = slide.blocks
+          .filter((block) => block.type === "heading" || block.type === "text")
+          .map((block) => block.content)
+          .filter(Boolean)
+          .join("\n");
         const notes = slide.notes ? `\nNotes: ${slide.notes}` : "";
-        return `Slide ${index + 1}: ${slide.title}\n${slide.body}${notes}`;
+        return `Slide ${index + 1}:\n${text}${notes}`;
       })
       .join("\n\n");
   }

@@ -2,12 +2,16 @@
 
 import {
   type ArtifactDescriptor,
-  type ArtifactPresentationSlide,
   type ArtifactWorkpieceDescriptor,
   type ArtifactWorkpieceState,
   decodeWorkpieceResult,
+  type PresentationDeck,
 } from "@skynet/agent-client";
-import { artifactActionContractFor } from "@skynet/artifact-workspace";
+import {
+  artifactActionContractFor,
+  coercePresentationState,
+  migrateSlidesToDeck,
+} from "@skynet/artifact-workspace";
 import { type RefObject, useCallback, useEffect, useRef, useState } from "react";
 import { useOrgChanges } from "@/hooks/use-org-changes";
 import { backendFetch } from "@/lib/backend-fetch";
@@ -45,47 +49,27 @@ export function labelForMode(mode: ArtifactEditorMode): string {
   }
 }
 
-export function parseSlidesJson(value: string): readonly ArtifactPresentationSlide[] {
+/** Parse deck JSON (a v2 `{deck}` / bare deck, a v1 `{slides}`, or a bare slide
+ * array) into a validated canonical deck, throwing on invalid input so a bad
+ * Code-view edit surfaces as a save error instead of a silent drop. */
+export function parseDeckJson(value: string): PresentationDeck {
   const parsed = JSON.parse(value) as unknown;
-  const slides = Array.isArray(parsed)
-    ? parsed
-    : parsed && typeof parsed === "object" && "slides" in parsed
-      ? (parsed as { slides: unknown }).slides
-      : null;
-  if (!Array.isArray(slides)) throw new Error("slides must be an array or { slides } object");
-  return slides.map((slide, index) => {
-    if (!slide || typeof slide !== "object" || Array.isArray(slide)) {
-      throw new Error(`slide ${index + 1} must be an object`);
-    }
-    const item = slide as Record<string, unknown>;
-    if (typeof item.title !== "string" || typeof item.body !== "string") {
-      throw new Error(`slide ${index + 1} needs string title and body`);
-    }
-    return {
-      title: item.title,
-      body: item.body,
-      ...(typeof item.notes === "string" ? { notes: item.notes } : {}),
-    };
-  });
+  const state = coercePresentationState(parsed);
+  if (!state) throw new Error("presentation state must be a valid deck or slide array");
+  return state.deck;
 }
 
 /** One canonical string form of a deck, used for both the saved baseline and the
  * dirty check so the structured editor and the wire agree bit for bit. */
-export function serializeSlides(slides: readonly ArtifactPresentationSlide[]): string {
-  return JSON.stringify({
-    slides: slides.map((slide) => ({
-      title: slide.title,
-      body: slide.body,
-      ...(slide.notes ? { notes: slide.notes } : {}),
-    })),
-  });
+export function serializeDeck(deck: PresentationDeck): string {
+  return JSON.stringify(deck);
 }
 
-function slidesFromValue(value: string): ArtifactPresentationSlide[] {
+function deckFromValue(value: string): PresentationDeck | null {
   try {
-    return [...parseSlidesJson(value)];
+    return parseDeckJson(value);
   } catch {
-    return [];
+    return null;
   }
 }
 
@@ -97,7 +81,7 @@ function stateForMode(mode: ArtifactEditorMode, value: string): ArtifactWorkpiec
     case "rich-document":
       return { html: value };
     case "slides-json":
-      return { slides: parseSlidesJson(value) };
+      return { deck: parseDeckJson(value) };
     case "pdf-text":
       return { pdfText: value };
     case "source-document":
@@ -171,10 +155,11 @@ export interface WorkpieceEditorController {
   readonly dirty: boolean;
   readonly value: string;
   readonly rows: string[][];
-  readonly slides: ArtifactPresentationSlide[];
+  /** The current deck for the presentation editor, or null before load. */
+  readonly deck: PresentationDeck | null;
   readonly richEditorRef: RefObject<HTMLDivElement | null>;
   readonly setRows: (rows: string[][]) => void;
-  readonly setSlides: (slides: ArtifactPresentationSlide[]) => void;
+  readonly setDeck: (deck: PresentationDeck) => void;
   readonly setSource: (value: string) => void;
   readonly onRichChange: (html: string) => void;
   readonly save: () => Promise<void>;
@@ -196,7 +181,7 @@ export function useWorkpieceEditor(
   const [value, setValue] = useState("");
   const [savedValue, setSavedValue] = useState("");
   const [rows, setRows] = useState<string[][]>([["", "", ""]]);
-  const [slides, setSlides] = useState<ArtifactPresentationSlide[]>([]);
+  const [deck, setDeck] = useState<PresentationDeck | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -249,9 +234,9 @@ export function useWorkpieceEditor(
       setRevision(result.workpiece.state_revision);
       setReloadNonce((nonce) => nonce + 1);
       if (isSlidesEditor) {
-        const parsed = slidesFromValue(normalized);
-        const canonical = serializeSlides(parsed);
-        setSlides(parsed);
+        const parsedDeck = deckFromValue(normalized) ?? migrateSlidesToDeck([]);
+        const canonical = serializeDeck(parsedDeck);
+        setDeck(parsedDeck);
         setValue(canonical);
         setSavedValue(canonical);
       } else {
@@ -283,20 +268,14 @@ export function useWorkpieceEditor(
   const currentValue = useCallback(() => {
     if (isGrid) return serializeCsv(rows);
     if (isRich) return sanitizeRichHtml(richEditorRef.current?.innerHTML ?? value);
-    if (isSlidesEditor) return serializeSlides(slides);
+    if (isSlidesEditor) return deck ? serializeDeck(deck) : savedValue;
     return value;
-  }, [isGrid, isRich, isSlidesEditor, rows, slides, value]);
+  }, [deck, isGrid, isRich, isSlidesEditor, rows, savedValue, value]);
 
   const canonicalSource = useCallback(() => {
-    if (isSlidesEditor) {
-      try {
-        return JSON.stringify({ slides }, null, 2);
-      } catch {
-        return serializeSlides(slides);
-      }
-    }
+    if (isSlidesEditor) return deck ? JSON.stringify(deck, null, 2) : "";
     return currentValue();
-  }, [currentValue, isSlidesEditor, slides]);
+  }, [currentValue, deck, isSlidesEditor]);
 
   const save = useCallback(async () => {
     if (!workpiece) return;
@@ -322,9 +301,9 @@ export function useWorkpieceEditor(
         const latest = normalizeValue(stateValue(result) ?? "");
         setRevision(result.workpiece.state_revision);
         if (isSlidesEditor) {
-          const parsed = slidesFromValue(latest);
-          const canonical = serializeSlides(parsed);
-          setSlides(parsed);
+          const parsedDeck = deckFromValue(latest) ?? migrateSlidesToDeck([]);
+          const canonical = serializeDeck(parsedDeck);
+          setDeck(parsedDeck);
           setValue(canonical);
           setSavedValue(canonical);
         } else {
@@ -386,9 +365,9 @@ export function useWorkpieceEditor(
     },
     [bump],
   );
-  const setSlidesTracked = useCallback(
-    (next: ArtifactPresentationSlide[]) => {
-      setSlides(next);
+  const setDeckTracked = useCallback(
+    (next: PresentationDeck) => {
+      setDeck(next);
       bump();
     },
     [bump],
@@ -429,10 +408,10 @@ export function useWorkpieceEditor(
     dirty,
     value,
     rows,
-    slides,
+    deck,
     richEditorRef,
     setRows: setRowsTracked,
-    setSlides: setSlidesTracked,
+    setDeck: setDeckTracked,
     setSource,
     onRichChange,
     save,
