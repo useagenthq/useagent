@@ -53,6 +53,7 @@ import { TerminalPane } from "@/components/chat/terminal-pane";
 import type { ThreadRunView } from "@/components/chat/thread-store";
 import type { TimelineArtifact } from "@/components/chat/timeline";
 import { ComposerPrefillProvider } from "@/components/chat/composer-prefill-context";
+import { SessionLatestRunProvider } from "@/components/chat/session-run-context";
 import { useWorkpieceAutoOpen } from "@/components/chat/use-workpiece-auto-open";
 import { shouldFocusAutoOpened } from "@/components/chat/workpiece-auto-open";
 import { WorkspaceOpenProvider } from "@/components/chat/workspace-open-context";
@@ -747,6 +748,10 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
   return (
     <WorkspaceOpenProvider value={openWorkpiece}>
       <ComposerPrefillProvider value={prefillComposer}>
+      {/* The thread's current/latest run, so an agent proposal that lands on an
+          open workpiece can tell a requested edit (from the user's own last
+          message's run) from an unsolicited one. */}
+      <SessionLatestRunProvider value={newest.id}>
       <div className="flex h-full flex-col">
       {/* Compact thread bar. Brand and search belong to the collapsible sidebar. */}
       <div className="bg-bg-white-0 flex shrink-0 items-center justify-between gap-3 px-4 py-2">
@@ -1048,6 +1053,7 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
         ) : null}
       </div>
       </div>
+      </SessionLatestRunProvider>
       </ComposerPrefillProvider>
     </WorkspaceOpenProvider>
   );

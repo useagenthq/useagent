@@ -19,12 +19,13 @@ import {
   contentTypeForName,
   inferWorkpieceKind,
 } from "@skynet/artifact-workspace";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useWorkpieceEditor } from "@/app/agent/artifacts/[id]/artifact-editor-state";
 import {
   ArtifactFidelityNote,
   WorkpieceSurfaces,
 } from "@/app/agent/artifacts/[id]/artifact-editor-surfaces";
+import { EDIT_ACTIVITY_WINDOW_MS } from "@/components/artifacts/requested-edit-auto-accept";
 import { WorkpieceProposalReview } from "@/components/artifacts/workpiece-proposal-review";
 import { backendFetch } from "@/lib/backend-fetch";
 import { cnExt as cn } from "@/utils/cn";
@@ -246,6 +247,26 @@ function WorkpieceEditorView({
     onDirtyChangeRef.current?.(dirty);
     return () => onDirtyChangeRef.current?.(false);
   }, [dirty]);
+  // Requested-edit auto-accept gate: read live (from refs) at the instant an agent
+  // proposal arrives, so a clean+idle editor applies the change directly while an
+  // edit in flight (dirty) or a just-touched editor (typed/focused within the
+  // window) always keeps the proposal banner. markActivity fires on focus/typing
+  // inside the workspace surface below.
+  const dirtyRef = useRef(dirty);
+  dirtyRef.current = dirty;
+  const lastActivityRef = useRef<number | null>(null);
+  const markActivity = useCallback(() => {
+    lastActivityRef.current = Date.now();
+  }, []);
+  const readEditorGate = useCallback(
+    () => ({
+      dirty: dirtyRef.current,
+      recentlyActive:
+        lastActivityRef.current !== null &&
+        Date.now() - lastActivityRef.current < EDIT_ACTIVITY_WINDOW_MS,
+    }),
+    [],
+  );
   const workpiece = editor.workpiece;
   if (!workpiece) return null;
 
@@ -285,12 +306,16 @@ function WorkpieceEditorView({
         </p>
       )}
       <div className="px-3 pt-2">
-        <WorkpieceProposalReview artifact={artifact} />
+        <WorkpieceProposalReview artifact={artifact} editorGate={readEditorGate} />
       </div>
       {/* Marks the live editing region: an auto-open checks whether focus sits
-          inside a workspace surface here before it decides to steal focus. */}
+          inside a workspace surface here before it decides to steal focus, and
+          focus/typing here marks recent activity so a requested-edit auto-accept
+          never lands on top of an edit in progress. */}
       <div
         data-workspace-surface
+        onFocusCapture={markActivity}
+        onInputCapture={markActivity}
         className="flex min-h-0 flex-1 flex-col overflow-auto px-3 pb-3"
       >
         <WorkpieceSurfaces editor={editor} viewMode={viewMode} />

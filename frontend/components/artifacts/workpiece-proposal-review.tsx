@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  RiArrowGoBackLine,
   RiArrowRightSLine,
   RiCheckLine,
   RiCloseLine,
@@ -12,12 +13,17 @@ import type {
   ArtifactWorkpieceProposalDescriptor,
   ArtifactWorkpieceState,
 } from "@skynet/agent-client";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useComposerPrefill } from "@/components/chat/composer-prefill-context";
+import { useSessionLatestRun } from "@/components/chat/session-run-context";
 import { DiffStatLabel } from "@/components/session-ui/diff-stat-label";
 import { DiffLines } from "@/components/session-ui/file-diff-view";
 import { cn } from "@/utils/cn";
-import { proposalConflictsWithMainline, useWorkpieceProposals } from "./use-workpiece-proposals";
+import {
+  proposalConflictsWithMainline,
+  type RequestedEditAutoAcceptToast,
+  useWorkpieceProposals,
+} from "./use-workpiece-proposals";
 import {
   proposedPreviewText,
   type SheetCellChange,
@@ -27,6 +33,9 @@ import {
 } from "./workpiece-proposal-diff";
 
 const SHEET_CELL_CAP = 200;
+
+/** How long an "Agent edit applied - Undo" toast lingers before it quietly clears. */
+const AUTO_ACCEPT_TOAST_MS = 10_000;
 
 /** The reply seeded by "Ask agent to redo" on a conflicted proposal: asks the
  *  agent to re-author its change against the CURRENT version so the new proposal
@@ -382,15 +391,115 @@ export function WorkpieceProposalBanner({
   );
 }
 
+/** One quiet "Agent edit applied - Undo" toast. Our design language, not an alarm:
+ *  a compact card that self-clears after AUTO_ACCEPT_TOAST_MS unless the user acts.
+ *  Undo re-saves the pre-accept state as a new revision through the normal lane. */
+function RequestedEditToast({
+  toast,
+  onUndo,
+  onDismiss,
+}: {
+  readonly toast: RequestedEditAutoAcceptToast;
+  readonly onUndo: (id: string) => void;
+  readonly onDismiss: (id: string) => void;
+}) {
+  useEffect(() => {
+    if (toast.status !== "applied") return;
+    const timer = setTimeout(() => onDismiss(toast.id), AUTO_ACCEPT_TOAST_MS);
+    return () => clearTimeout(timer);
+  }, [toast.status, toast.id, onDismiss]);
+
+  return (
+    <div className="animate-ai-fade-up flex items-center gap-2 rounded-10 border border-stroke-soft-200 bg-bg-white-0 px-3 py-2 shadow-regular-sm">
+      <RiSparkling2Line aria-hidden className="size-4 shrink-0 text-feature-base" />
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-label-sm text-text-strong-950">Agent edit applied</p>
+        {toast.summary && (
+          <p className="truncate text-paragraph-xs text-text-soft-400">{toast.summary}</p>
+        )}
+      </div>
+      {toast.status === "error" ? (
+        <span className="text-paragraph-xs text-warning-base">Could not undo</span>
+      ) : (
+        <button
+          type="button"
+          onClick={() => onUndo(toast.id)}
+          disabled={toast.status === "undoing"}
+          className="inline-flex h-7 items-center gap-1.5 rounded-lg border border-stroke-soft-200 px-2.5 text-label-xs text-text-sub-600 hover:bg-bg-weak-50 hover:text-text-strong-950 disabled:opacity-40"
+        >
+          <RiArrowGoBackLine aria-hidden className="size-3.5" />
+          {toast.status === "undoing" ? "Undoing..." : "Undo"}
+        </button>
+      )}
+      <button
+        type="button"
+        onClick={() => onDismiss(toast.id)}
+        aria-label="Dismiss"
+        className="grid size-6 shrink-0 place-items-center rounded text-text-soft-400 hover:bg-bg-weak-50 hover:text-text-strong-950"
+      >
+        <RiCloseLine aria-hidden className="size-3.5" />
+      </button>
+    </div>
+  );
+}
+
+function RequestedEditToasts({
+  toasts,
+  onUndo,
+  onDismiss,
+}: {
+  readonly toasts: readonly RequestedEditAutoAcceptToast[];
+  readonly onUndo: (id: string) => void;
+  readonly onDismiss: (id: string) => void;
+}) {
+  if (toasts.length === 0) return null;
+  return (
+    <div className="flex shrink-0 flex-col gap-2">
+      {toasts.map((toast) => (
+        <RequestedEditToast key={toast.id} toast={toast} onUndo={onUndo} onDismiss={onDismiss} />
+      ))}
+    </div>
+  );
+}
+
 /** The agent-proposed-changes review lane for a workpiece: loads pending
  *  proposals + mainline and feeds the pure banner. The rendered surface keeps
  *  showing mainline until an accept lands; "View proposed" shows the proposed
  *  content, clearly labelled. Mounted by both the side pane and the full-page
- *  editor around the shared workpiece editor hook. */
-export function WorkpieceProposalReview({ artifact }: { readonly artifact: ArtifactDescriptor }) {
+ *  editor around the shared workpiece editor hook.
+ *
+ *  Inside a session, a proposal that lands on an OPEN, clean, idle workpiece from
+ *  the user's own latest run applies directly (their chat message was the
+ *  acceptance): the rendered view refreshes through the existing live-reload lane
+ *  and a quiet Undo toast appears. `editorGate` (the open editor's dirty +
+ *  recent-activity signal) enables that; without it, or without a session run, the
+ *  normal banner is the only path. */
+export function WorkpieceProposalReview({
+  artifact,
+  editorGate,
+}: {
+  readonly artifact: ArtifactDescriptor;
+  readonly editorGate?: () => { readonly dirty: boolean; readonly recentlyActive: boolean };
+}) {
   const workpiece = artifact.workpiece;
-  const { pending, mainlineState, mainlineRevision, busyId, error, accept, dismiss } =
-    useWorkpieceProposals(artifact);
+  const latestRunId = useSessionLatestRun();
+  const {
+    pending,
+    mainlineState,
+    mainlineRevision,
+    busyId,
+    error,
+    accept,
+    dismiss,
+    autoAcceptToasts,
+    undoAutoAccept,
+    dismissAutoAcceptToast,
+  } = useWorkpieceProposals(
+    artifact,
+    // Auto-accept is a session affordance: it needs both the thread's latest run
+    // and the open editor's live gate. The standalone editor supplies neither.
+    editorGate && latestRunId !== null ? { latestRunId, readEditorGate: editorGate } : undefined,
+  );
   // Only present inside a session (the standalone editor page has no composer);
   // absent -> the "Ask agent to redo" affordance hides itself.
   const prefillComposer = useComposerPrefill();
@@ -398,21 +507,27 @@ export function WorkpieceProposalReview({ artifact }: { readonly artifact: Artif
   if (!workpiece) return null;
 
   return (
-    <WorkpieceProposalBanner
-      kind={workpiece.kind}
-      pending={pending}
-      mainlineState={mainlineState}
-      mainlineRevision={mainlineRevision}
-      busyId={busyId}
-      error={error}
-      onAccept={(id) => void accept(id)}
-      onDismiss={(id) => void dismiss(id)}
-      onAskRedo={
-        prefillComposer
-          ? (proposal) =>
-              prefillComposer(askAgentRedoMessage(proposal.summary, artifact.name))
-          : undefined
-      }
-    />
+    <div className="flex flex-col gap-2">
+      <WorkpieceProposalBanner
+        kind={workpiece.kind}
+        pending={pending}
+        mainlineState={mainlineState}
+        mainlineRevision={mainlineRevision}
+        busyId={busyId}
+        error={error}
+        onAccept={(id) => void accept(id)}
+        onDismiss={(id) => void dismiss(id)}
+        onAskRedo={
+          prefillComposer
+            ? (proposal) => prefillComposer(askAgentRedoMessage(proposal.summary, artifact.name))
+            : undefined
+        }
+      />
+      <RequestedEditToasts
+        toasts={autoAcceptToasts}
+        onUndo={(id) => void undoAutoAccept(id)}
+        onDismiss={dismissAutoAcceptToast}
+      />
+    </div>
   );
 }
