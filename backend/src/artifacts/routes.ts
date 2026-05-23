@@ -1,6 +1,10 @@
 import { createHash } from "node:crypto";
 import { Hono, type Context } from "hono";
-import { isArtifactWorkpieceState, type ArtifactWorkpieceKind } from "@skynet/artifact-workspace";
+import {
+  ARTIFACT_PROPOSAL_STATUSES,
+  isArtifactWorkpieceState,
+  type ArtifactWorkpieceKind,
+} from "@skynet/artifact-workspace";
 import {
   applyPdfPageOperation,
   buildArtifactBundle,
@@ -22,6 +26,13 @@ import {
 } from "./repo";
 import { artifactStorage, type ArtifactByteRange } from "./storage";
 import { parseWorkpieceState } from "./workpiece";
+import {
+  acceptWorkpieceProposal,
+  dismissWorkpieceProposal,
+  getWorkpieceProposalForOrg,
+  listWorkpieceProposals,
+  toProposalDescriptor,
+} from "./proposals";
 import { publishOrgChange } from "../runs/org-signals";
 import { UploadClaimError } from "../uploads/repo";
 
@@ -281,6 +292,94 @@ artifactRoutes.patch("/:id/workpiece", async (c) => {
   return current?.workpieceKind
     ? c.json({ error: "revision conflict", ...workpieceResponse(current) }, 409)
     : c.json({ error: "not found" }, 404);
+});
+
+// Agent-proposed workpiece revisions. Agents write here (via the gateway tool),
+// not to mainline; the human reviews and accepts/dismisses through these routes.
+// The rendered view keeps showing mainline until an accept lands.
+artifactRoutes.get("/:id/proposals", async (c) => {
+  const artifact = await getArtifactForOrg(c.get("orgId"), c.req.param("id"));
+  if (!artifact?.workpieceKind) return c.json({ error: "not found" }, 404);
+  const proposals = await listWorkpieceProposals({
+    orgId: c.get("orgId"),
+    artifactId: artifact.id,
+    statuses: c.req.query("status") === "all" ? ARTIFACT_PROPOSAL_STATUSES : ["pending"],
+  });
+  return c.json({ proposals: proposals.map(toProposalDescriptor) });
+});
+
+// Fold a pending proposal into mainline as a new revision, preserving provenance.
+artifactRoutes.post("/:id/proposals/:proposalId/accept", async (c) => {
+  const orgId = c.get("orgId");
+  const artifact = await getArtifactForOrg(orgId, c.req.param("id"));
+  if (!artifact?.workpieceKind) return c.json({ error: "not found" }, 404);
+
+  const result = await acceptWorkpieceProposal({
+    orgId,
+    artifactId: artifact.id,
+    proposalId: c.req.param("proposalId"),
+    resolvedBy: c.get("userId") || null,
+  });
+
+  if (result.outcome === "not_found") return c.json({ error: "not found" }, 404);
+  if (result.outcome === "already_resolved") {
+    return c.json(
+      { error: "proposal already resolved", proposal: toProposalDescriptor(result.proposal) },
+      409,
+    );
+  }
+  if (result.outcome === "revision_conflict") {
+    const current = await getArtifactForOrg(orgId, artifact.id);
+    return current?.workpieceKind
+      ? c.json({ error: "revision conflict", ...workpieceResponse(current) }, 409)
+      : c.json({ error: "not found" }, 404);
+  }
+  publishOrgChange(orgId, {
+    type: "artifact",
+    action: "updated",
+    artifactId: result.artifact.id,
+    runId: result.artifact.runId,
+    threadId: result.artifact.threadId,
+  });
+  return c.json({
+    ...workpieceResponse(result.artifact),
+    proposal: toProposalDescriptor(result.proposal),
+  });
+});
+
+// Drop a pending proposal, recording the dismissal in history; mainline untouched.
+artifactRoutes.post("/:id/proposals/:proposalId/dismiss", async (c) => {
+  const orgId = c.get("orgId");
+  const artifact = await getArtifactForOrg(orgId, c.req.param("id"));
+  if (!artifact?.workpieceKind) return c.json({ error: "not found" }, 404);
+
+  const dismissed = await dismissWorkpieceProposal({
+    orgId,
+    artifactId: artifact.id,
+    proposalId: c.req.param("proposalId"),
+    resolvedBy: c.get("userId") || null,
+  });
+  if (!dismissed) {
+    const existing = await getWorkpieceProposalForOrg({
+      orgId,
+      artifactId: artifact.id,
+      proposalId: c.req.param("proposalId"),
+    });
+    return existing
+      ? c.json(
+          { error: "proposal already resolved", proposal: toProposalDescriptor(existing) },
+          409,
+        )
+      : c.json({ error: "not found" }, 404);
+  }
+  publishOrgChange(orgId, {
+    type: "artifact",
+    action: "proposed",
+    artifactId: artifact.id,
+    runId: artifact.runId,
+    threadId: artifact.threadId,
+  });
+  return c.json({ proposal: toProposalDescriptor(dismissed) });
 });
 
 function parsePdfPageOperation(value: unknown): PdfPageOperation | null {

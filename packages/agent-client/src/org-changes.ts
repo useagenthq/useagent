@@ -6,7 +6,9 @@ import {
 export const RUN_CHANGE_ACTIONS = ["created", "running", "settled", "cancelled"] as const;
 export type RunChangeAction = (typeof RUN_CHANGE_ACTIONS)[number];
 
-export const ARTIFACT_CHANGE_ACTIONS = ["created", "updated"] as const;
+// "created"/"updated" mean mainline changed; "proposed" means an agent proposal
+// lane changed (a proposal appeared or was dismissed) while mainline is untouched.
+export const ARTIFACT_CHANGE_ACTIONS = ["created", "updated", "proposed"] as const;
 export type ArtifactChangeAction = (typeof ARTIFACT_CHANGE_ACTIONS)[number];
 
 export const AUTOMATION_CHANGE_ACTIONS = ["created", "updated", "deleted", "fired"] as const;
