@@ -5,6 +5,7 @@ import type {
   ArtifactWorkpieceResult,
   ArtifactWorkpieceState,
   PresentationDeck,
+  Workbook,
 } from "@skynet/artifact-workspace";
 import type {
   ArtifactDescriptor,
@@ -34,6 +35,12 @@ type _PresentationResultStateIsCorrelated = Assert<
   Equal<
     Extract<ArtifactWorkpieceResult, { workpiece: { kind: "presentation" } }>["state"],
     Readonly<{ deck: PresentationDeck }> | null
+  >
+>;
+type _SpreadsheetResultStateIsCorrelated = Assert<
+  Equal<
+    Extract<ArtifactWorkpieceResult, { workpiece: { kind: "spreadsheet" } }>["state"],
+    Readonly<{ workbook: Workbook }> | null
   >
 >;
 

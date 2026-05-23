@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import ExcelJS from "exceljs";
 import JSZip from "jszip";
 import { decodePDFRawStream, PDFDocument, PDFRawStream, StandardFonts } from "pdf-lib";
 import {
@@ -6,6 +7,7 @@ import {
   migrateSlidesToDeck,
   type DeckBlock,
   type PresentationDeck,
+  type Workbook,
 } from "@skynet/artifact-workspace";
 import {
   applyPdfPageOperation,
@@ -14,7 +16,7 @@ import {
   DOCX_CONTENT_TYPE,
   extractDocxText,
   extractPptxSlides,
-  extractXlsxCsv,
+  extractXlsxWorkbook,
   PDF_CONTENT_TYPE,
   pdfPageCount,
   PdfPageOperationError,
@@ -32,10 +34,61 @@ describe("artifact native formats", () => {
     expect(await extractDocxText(output.bytes)).toContain("Hello Loop");
   });
 
-  test("renders and extracts XLSX CSV", async () => {
-    const output = await renderArtifactExport({ csv: "Name,Value\nLatency,42" }, "xlsx");
+  test("renders a workbook to XLSX faithfully: sheet names, a formula, a numFmt, bold + fill", async () => {
+    const workbook: Workbook = {
+      schemaVersion: 2,
+      activeSheetId: "sheet-1",
+      sheets: [
+        {
+          id: "sheet-1",
+          name: "Summary",
+          rowCount: 4,
+          colCount: 2,
+          colWidths: { A: 160 },
+          cells: {
+            A1: { v: "Region", fmt: { bold: true, fill: "#dbeafe" } },
+            B1: { v: "Pipeline", fmt: { bold: true } },
+            A2: { v: "APAC" },
+            B2: { v: 1200000, fmt: { numFmt: "currency" } },
+            A3: { v: "EMEA" },
+            B3: { v: 980000, fmt: { numFmt: "currency" } },
+            A4: { v: "Total" },
+            // A real formula cell with a cached result.
+            B4: { v: 2180000, f: "=SUM(B2:B3)" },
+          },
+        },
+        { id: "sheet-2", name: "Data", rowCount: 1, colCount: 1, cells: { A1: { v: "raw" } } },
+      ],
+    };
+
+    const output = await renderArtifactExport({ workbook }, "xlsx");
     expect(output.contentType).toBe(XLSX_CONTENT_TYPE);
-    expect(await extractXlsxCsv(output.bytes)).toContain("Latency,42");
+
+    // Byte-open the XLSX and inspect the real cell structure exceljs wrote.
+    const reloaded = new ExcelJS.Workbook();
+    const buffer = Buffer.from(output.bytes);
+    await reloaded.xlsx.load(buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength));
+    expect(reloaded.worksheets.map((sheet) => sheet.name)).toEqual(["Summary", "Data"]);
+    const summary = reloaded.getWorksheet("Summary")!;
+    expect(summary.getCell("B4").formula).toBe("SUM(B2:B3)"); // a real formula, not text
+    expect(summary.getCell("B2").numFmt).toContain("$"); // currency number format
+    expect(summary.getCell("A1").font?.bold).toBe(true); // bold header cell
+    const fill = summary.getCell("A1").fill as { fgColor?: { argb?: string } };
+    expect(fill.fgColor?.argb).toBe("FFDBEAFE"); // cell fill color
+    expect(summary.getColumn(1).width).toBeGreaterThan(0); // column width applied
+
+    // Round-trips back into the canonical workbook through import.
+    const imported = await extractXlsxWorkbook(output.bytes);
+    expect(imported.sheets.map((sheet) => sheet.name)).toEqual(["Summary", "Data"]);
+    const cells = imported.sheets[0]!.cells;
+    expect(cells.B4?.f).toBe("=SUM(B2:B3)");
+    expect(cells.A1?.fmt?.bold).toBe(true);
+    expect(cells.A1?.fmt?.fill).toBe("#dbeafe");
+    expect(cells.B2?.fmt?.numFmt).toBe("currency");
+
+    // The CSV canonical export downgrades the active sheet to values.
+    const csv = await renderArtifactExport({ workbook }, "csv");
+    expect(new TextDecoder().decode(csv.bytes)).toContain("APAC,1200000");
   });
 
   test("renders a themed deck to PPTX: slide count, text runs, background fill, shape, notes", async () => {
@@ -156,7 +209,7 @@ describe("artifact native formats", () => {
 
   for (const [format, extract] of [
     ["DOCX", extractDocxText],
-    ["XLSX", extractXlsxCsv],
+    ["XLSX", extractXlsxWorkbook],
     ["PPTX", extractPptxSlides],
   ] as const) {
     test(`rejects excessive ${format} decompressed size before extraction`, async () => {

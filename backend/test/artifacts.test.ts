@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, spyOn, test } from "bun:test";
 import { createHash } from "node:crypto";
 import JSZip from "jszip";
 import * as artifactFormats from "@skynet/artifact-formats";
+import { csvToWorkbook } from "@skynet/artifact-workspace";
 import type { ArtifactDescriptor } from "../src/artifacts/repo";
 import { setArtifactStorageForTest } from "../src/artifacts/storage";
 import { executeArtifactTool } from "../src/knowledge/gateway/artifact-tools";
@@ -454,13 +455,14 @@ describe("durable artifacts", () => {
     expect(rejectedHtml.status).toBe(400);
 
     const sheetPath = `/api/artifacts/${xlsx.artifact.id}/workpiece`;
-    const savedCsv = await json<{ state: { csv: string } }>(sheetPath, {
+    // A v1 { csv } PATCH is upgraded to the canonical v2 { workbook } on the wire.
+    const savedCsv = await json<{ state: unknown }>(sheetPath, {
       method: "PATCH",
       cookies: owner.cookies,
       body: { expected_revision: 0, state: { csv: "name,value\nrun,42" } },
     });
     expect(savedCsv.status).toBe(200);
-    expect(savedCsv.body.state).toEqual({ csv: "name,value\nrun,42" });
+    expect(savedCsv.body.state).toEqual({ workbook: csvToWorkbook("name,value\nrun,42") });
 
     const content = await fetchApi(`/api/artifacts/${docx.artifact.id}/content`, {
       cookies: owner.cookies,
@@ -517,12 +519,14 @@ describe("durable artifacts", () => {
         `/api/artifacts/${docArtifact.id}/workpiece`,
         { cookies: owner.cookies },
       );
-      const sheetState = await json<{ state: { csv: string } }>(
+      const sheetState = await json<{ state: unknown }>(
         `/api/artifacts/${sheetArtifact.id}/workpiece`,
         { cookies: owner.cookies },
       );
       expect(docState.body.state).toEqual({ html: new TextDecoder().decode(html) });
-      expect(sheetState.body.state).toEqual({ csv: new TextDecoder().decode(csv) });
+      expect(sheetState.body.state).toEqual({
+        workbook: csvToWorkbook(new TextDecoder().decode(csv)),
+      });
 
       const conflictingDoc = await executeArtifactTool(claims, "artifact_publish", {
         path: "/root/work/brief.docx",

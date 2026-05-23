@@ -1,6 +1,7 @@
 import {
   artifactFileExtension,
   coercePresentationState,
+  coerceSpreadsheetState,
   DOCX_CONTENT_TYPE,
   isArtifactWorkpieceState,
   MAX_WORKPIECE_STATE_BYTES as ARTIFACT_MAX_WORKPIECE_STATE_BYTES,
@@ -55,6 +56,12 @@ export function parseWorkpieceState(
   // validates blocks/theme in one shared, fail-closed pass.
   if (kind === "presentation") {
     const coerced = coercePresentationState(value);
+    return coerced ? withinStateByteCap(coerced) : null;
+  }
+  // Spreadsheet upgrades v1 CSV states into the canonical v2 workbook and
+  // validates cells/formulas/formats in one shared, fail-closed pass.
+  if (kind === "spreadsheet") {
+    const coerced = coerceSpreadsheetState(value);
     return coerced ? withinStateByteCap(coerced) : null;
   }
   if (!isArtifactWorkpieceState(kind, value)) return null;

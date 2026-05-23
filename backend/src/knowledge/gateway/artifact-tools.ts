@@ -82,7 +82,10 @@ export const ARTIFACT_TOOLS = [
       "The edit is recorded as a PROPOSED revision for the user to review: it does NOT change " +
       "what the user currently sees until they accept it. Pass the artifact id returned by " +
       "artifact_publish and the FULL replacement state for the workpiece's kind - document: " +
-      '{"text": string} or {"html": string}; spreadsheet: {"csv": string}; presentation: a deck ' +
+      '{"text": string} or {"html": string}; spreadsheet: a workbook ' +
+      '{"workbook": {"schemaVersion": 2, "activeSheetId": "sheet-1", "sheets": [{"id","name","rowCount","colCount",' +
+      '"cells": {"A1": {"v": string|number, "f"?: "=SUM(A2:A9)", "fmt"?: {"bold"?, "numFmt"?: "currency"|"percent"|"0"|"0.00"}}}}]}} ' +
+      'or, more simply, {"csv": string} which is upgraded to a single-sheet workbook automatically; presentation: a deck ' +
       '{"deck": {"schemaVersion": 2, "theme": {...}, "slides": [{"id","blocks":[{id,type,x,y,w,h,content}]}]}} ' +
       'or, more simply, {"slides": [{"title": string, "body": string, "notes"?: string}]} which is ' +
       'upgraded to a deck automatically; pdf: {"pdfText": string}. ' +
@@ -99,8 +102,10 @@ export const ARTIFACT_TOOLS = [
           type: "object",
           description:
             "Full replacement workpiece state for the artifact's kind: document {text|html}, " +
-            "spreadsheet {csv}, presentation {deck:{schemaVersion,theme,slides}} (or {slides:[{title,body,notes?}]} " +
-            "which is upgraded to a deck), or pdf {pdfText}.",
+            "spreadsheet {workbook:{schemaVersion,activeSheetId,sheets:[{id,name,rowCount,colCount,cells}]}} " +
+            "(or {csv} which is upgraded to a single-sheet workbook), presentation " +
+            "{deck:{schemaVersion,theme,slides}} (or {slides:[{title,body,notes?}]} which is upgraded to a deck), " +
+            "or pdf {pdfText}.",
         },
         summary: {
           type: "string",
@@ -177,7 +182,8 @@ export async function executeArtifactTool(
 
 const WORKPIECE_STATE_SHAPES: Readonly<Record<string, string>> = {
   document: '{"text": string} or {"html": string}',
-  spreadsheet: '{"csv": string}',
+  spreadsheet:
+    '{"workbook": {"schemaVersion": 2, "activeSheetId", "sheets": [{"id", "name", "rowCount", "colCount", "cells"}]}} or {"csv": string}',
   presentation:
     '{"deck": {"schemaVersion": 2, "theme": {...}, "slides": [...]}} or {"slides": [{"title", "body", "notes"?}]}',
   pdf: '{"pdfText": string}',

@@ -18,17 +18,23 @@ import mammoth from "mammoth";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import PptxGenJS from "pptxgenjs";
 import {
+  columnLabel,
   DECK_REFERENCE_HEIGHT,
   deckToSlides,
   DOCX_CONTENT_TYPE,
+  formatA1,
   MAX_RICH_WORKPIECE_SOURCE_BYTES,
   MAX_WORKPIECE_STATE_BYTES,
+  parseA1,
   PDF_CONTENT_TYPE,
   parseArtifactCsv as parseCsv,
   PPTX_CONTENT_TYPE,
   resolveBlockColor,
   resolveSlideBackground,
-  serializeArtifactCsv as serializeCsv,
+  SHEET_MAX_COLS,
+  SHEET_MAX_ROWS,
+  WORKBOOK_MAX_SHEETS,
+  workbookToCsv,
   XLSX_CONTENT_TYPE,
   type ArtifactPresentationSlide as PresentationSlide,
   type ArtifactWorkpieceState as WorkpieceState,
@@ -37,6 +43,11 @@ import {
   type DeckSlide,
   type DeckTheme,
   type PresentationDeck,
+  type SheetCell,
+  type SheetCellFormat,
+  type SheetNumberFormat,
+  type Workbook,
+  type Worksheet,
 } from "@skynet/artifact-workspace";
 
 /** The concrete slide object pptxgenjs hands back from `addSlide()`. */
@@ -125,7 +136,7 @@ function plainTextFromHtml(html: string): string {
 function textForState(state: WorkpieceState): string {
   if ("text" in state) return state.text;
   if ("html" in state) return plainTextFromHtml(state.html);
-  if ("csv" in state) return state.csv;
+  if ("workbook" in state) return workbookToCsv(state.workbook);
   if ("pdfText" in state) return state.pdfText;
   // Presentation: flatten the deck to title/body/notes text for the non-native
   // canonical exports (docx/pdf/text/html) that a deck may be shared through.
@@ -413,18 +424,93 @@ async function renderDocx(state: WorkpieceState): Promise<Uint8Array> {
   return Packer.toBuffer(doc);
 }
 
+/** A hex color (`#rgb`/`#rrggbb`) to the 8-digit ARGB exceljs wants, or null. */
+function argbColor(hex: string | undefined): string | null {
+  if (!hex) return null;
+  const raw = hex.replace(/^#/, "");
+  const six = raw.length === 3 ? [...raw].map((c) => c + c).join("") : raw.slice(0, 6);
+  return /^[0-9a-fA-F]{6}$/.test(six) ? `FF${six.toUpperCase()}` : null;
+}
+
+/** Map a canonical number format to the Excel format code exceljs writes. */
+function excelNumberFormat(numFmt: SheetNumberFormat | undefined): string | null {
+  switch (numFmt) {
+    case "currency":
+      return '"$"#,##0.00';
+    case "percent":
+      return "0.##%";
+    case "0":
+      return "0";
+    case "0.00":
+      return "0.00";
+    default:
+      return null;
+  }
+}
+
+/** Excel column width (in characters) approximated from a pixel width. */
+function excelColumnWidth(px: number): number {
+  return Math.max(2, Math.round(((px - 5) / 7) * 100) / 100);
+}
+
+function applyCellStyle(target: ExcelJS.Cell, fmt: SheetCellFormat): void {
+  const fontColor = argbColor(fmt.color);
+  if (fmt.bold || fmt.italic || fontColor) {
+    target.font = {
+      ...(fmt.bold ? { bold: true } : {}),
+      ...(fmt.italic ? { italic: true } : {}),
+      ...(fontColor ? { color: { argb: fontColor } } : {}),
+    };
+  }
+  if (fmt.align) target.alignment = { horizontal: fmt.align };
+  const fill = argbColor(fmt.fill);
+  if (fill) {
+    target.fill = { type: "pattern", pattern: "solid", fgColor: { argb: fill } };
+  }
+  const numFmt = excelNumberFormat(fmt.numFmt);
+  if (numFmt) target.numFmt = numFmt;
+}
+
+function setCellValue(target: ExcelJS.Cell, cell: SheetCell): void {
+  if (cell.f !== undefined) {
+    // A real Excel formula (exceljs stores the formula without the leading =),
+    // plus the cached result so a viewer that does not recompute still shows it.
+    target.value = { formula: cell.f.replace(/^=/, ""), result: cell.v };
+  } else {
+    target.value = cell.v;
+  }
+  if (cell.fmt) applyCellStyle(target, cell.fmt);
+}
+
+function renderWorkbookXlsx(book: Workbook): Promise<Buffer | ArrayBuffer> {
+  const workbook = new ExcelJS.Workbook();
+  workbook.creator = "Skynet";
+  for (const sheetModel of book.sheets) {
+    const sheet = workbook.addWorksheet(sheetModel.name.slice(0, 31) || "Sheet");
+    for (const [ref, cell] of Object.entries(sheetModel.cells)) {
+      const position = parseA1(ref);
+      if (!position) continue;
+      setCellValue(sheet.getCell(position.row + 1, position.col + 1), cell);
+    }
+    for (const [label, px] of Object.entries(sheetModel.colWidths ?? {})) {
+      sheet.getColumn(label).width = excelColumnWidth(px);
+    }
+  }
+  return workbook.xlsx.writeBuffer();
+}
+
 async function renderXlsx(state: WorkpieceState): Promise<Uint8Array> {
-  const rows = parseCsv("csv" in state ? state.csv : textForState(state));
+  if ("workbook" in state) {
+    const bytes = await renderWorkbookXlsx(state.workbook);
+    return bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+  }
+  // A non-spreadsheet state exported to XLSX: one sheet of its flattened text.
+  const rows = parseCsv(textForState(state));
   const workbook = new ExcelJS.Workbook();
   workbook.creator = "Skynet";
   const sheet = workbook.addWorksheet("Sheet 1");
   rows.forEach((row) => {
     sheet.addRow(row);
-  });
-  sheet.columns.forEach((column) => {
-    const values = column.values ?? [];
-    const width = Math.max(8, ...values.map((value) => String(value ?? "").length + 2));
-    column.width = Math.min(width, 48);
   });
   const bytes = await workbook.xlsx.writeBuffer();
   return bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
@@ -625,7 +711,7 @@ function renderCanonical(state: WorkpieceState, format: CanonicalArtifactFormat)
   }
   if (format === "csv") {
     return {
-      bytes: encoder.encode("csv" in state ? state.csv : textForState(state)),
+      bytes: encoder.encode(textForState(state)),
       contentType: "text/csv; charset=utf-8",
       extension: "csv",
     };
@@ -798,22 +884,140 @@ export async function extractDocxText(bytes: Uint8Array): Promise<string> {
   return text;
 }
 
-export async function extractXlsxCsv(bytes: Uint8Array): Promise<string> {
+
+const IMPORT_CONTROL_CHARS = /[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g;
+
+function stripControl(value: string): string {
+  return value.replace(IMPORT_CONTROL_CHARS, " ");
+}
+
+/** An exceljs ARGB (`FFRRGGBB`) or RGB hex to canonical `#rrggbb`, or undefined. */
+function hexFromArgb(argb: unknown): string | undefined {
+  if (typeof argb !== "string") return undefined;
+  const six = argb.length === 8 ? argb.slice(2) : argb.length === 6 ? argb : "";
+  return /^[0-9a-fA-F]{6}$/.test(six) ? `#${six.toLowerCase()}` : undefined;
+}
+
+/** Reverse-map an Excel number format code to our bounded canonical set. */
+function importNumberFormat(code: string | undefined): SheetNumberFormat | undefined {
+  if (!code || code === "General") return undefined;
+  if (code.includes("%")) return "percent";
+  if (code.includes("$") || code.includes("¤")) return "currency";
+  if (code.includes("0.00")) return "0.00";
+  if (code === "0" || code === "#,##0") return "0";
+  return undefined;
+}
+
+function importCellFormat(cell: ExcelJS.Cell): SheetCellFormat | undefined {
+  const fmt: {
+    bold?: boolean;
+    italic?: boolean;
+    align?: SheetCellFormat["align"];
+    numFmt?: SheetNumberFormat;
+    fill?: string;
+    color?: string;
+  } = {};
+  const font = cell.font;
+  if (font?.bold) fmt.bold = true;
+  if (font?.italic) fmt.italic = true;
+  const color = hexFromArgb(font?.color?.argb);
+  if (color) fmt.color = color;
+  const align = cell.alignment?.horizontal;
+  if (align === "left" || align === "center" || align === "right") fmt.align = align;
+  const numFmt = importNumberFormat(cell.numFmt);
+  if (numFmt) fmt.numFmt = numFmt;
+  const rawFill = cell.fill as { pattern?: string; fgColor?: { argb?: string } } | undefined;
+  const fill = rawFill?.pattern === "solid" ? hexFromArgb(rawFill.fgColor?.argb) : undefined;
+  if (fill) fmt.fill = fill;
+  return Object.keys(fmt).length > 0 ? fmt : undefined;
+}
+
+function importCellValue(cell: ExcelJS.Cell): { v: string | number; f?: string } | null {
+  if (cell.type === ExcelJS.ValueType.Formula) {
+    const formula = typeof cell.formula === "string" ? cell.formula : "";
+    const result = cell.result;
+    const v = typeof result === "number" && Number.isFinite(result)
+      ? result
+      : result == null
+      ? ""
+      : stripControl(String(result));
+    return formula ? { v, f: `=${formula}` } : { v };
+  }
+  const value = cell.value;
+  if (value == null) return null;
+  if (typeof value === "number") return Number.isFinite(value) ? { v: value } : null;
+  if (typeof value === "boolean") return { v: value ? "TRUE" : "FALSE" };
+  if (value instanceof Date) return { v: value.toISOString() };
+  if (typeof value === "string") {
+    const text = stripControl(value);
+    return text ? { v: text } : null;
+  }
+  if (typeof value === "object") {
+    const rich = value as { richText?: { text?: string }[]; text?: string; error?: string };
+    if (Array.isArray(rich.richText)) {
+      const text = stripControl(rich.richText.map((part) => part.text ?? "").join(""));
+      return text ? { v: text } : null;
+    }
+    if (typeof rich.text === "string") {
+      const text = stripControl(rich.text);
+      return text ? { v: text } : null;
+    }
+    if (typeof rich.error === "string") return { v: stripControl(rich.error) };
+  }
+  return null;
+}
+
+function importWorksheet(sheet: ExcelJS.Worksheet, index: number): Worksheet {
+  const cells: Record<string, SheetCell> = {};
+  let maxRow = 0;
+  let maxCol = 0;
+  sheet.eachRow({ includeEmpty: false }, (row, rowNumber) => {
+    if (rowNumber > SHEET_MAX_ROWS) return;
+    row.eachCell({ includeEmpty: false }, (cell, colNumber) => {
+      if (colNumber > SHEET_MAX_COLS) return;
+      const parsed = importCellValue(cell);
+      if (!parsed) return;
+      const fmt = importCellFormat(cell);
+      cells[formatA1(rowNumber - 1, colNumber - 1)] = { ...parsed, ...(fmt ? { fmt } : {}) };
+      if (rowNumber - 1 > maxRow) maxRow = rowNumber - 1;
+      if (colNumber - 1 > maxCol) maxCol = colNumber - 1;
+    });
+  });
+  const colWidths: Record<string, number> = {};
+  sheet.columns?.forEach((column, columnIndex) => {
+    if (columnIndex > maxCol || typeof column.width !== "number") return;
+    colWidths[columnLabel(columnIndex)] = Math.round(column.width * 7 + 5);
+  });
+  return {
+    id: `sheet-${index + 1}`,
+    name: stripControl(sheet.name).slice(0, 128) || `Sheet ${index + 1}`,
+    cells,
+    rowCount: Math.max(1, Math.min(SHEET_MAX_ROWS, maxRow + 1)),
+    colCount: Math.max(1, Math.min(SHEET_MAX_COLS, maxCol + 1)),
+    ...(Object.keys(colWidths).length > 0 ? { colWidths } : {}),
+  };
+}
+
+/** Import an uploaded XLSX into a canonical v2 workbook: every worksheet, cell
+ * values, formulas in cells (exceljs preserves the formula string), number
+ * formats, bold/italic/align, text/fill colors, and column widths. Charts,
+ * pivots, and conditional formatting are dropped (the documented import edge).
+ * The result is still funnelled through the shared validator by the caller. */
+export async function extractXlsxWorkbook(bytes: Uint8Array): Promise<Workbook> {
   await loadBoundedOfficeZip(bytes);
   const workbook = new ExcelJS.Workbook();
   const buffer = Buffer.from(bytes);
   const data = buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength);
   await workbook.xlsx.load(data);
-  const sheet = workbook.worksheets[0];
-  if (!sheet) return "";
-  const rows: string[][] = [];
-  sheet.eachRow((row) => {
-    const values = Array.isArray(row.values) ? row.values.slice(1) : [];
-    rows.push(values.map((value) => String(value ?? "")));
-  });
-  const csv = serializeCsv(rows);
-  assertBoundedOfficeOutput({ csv });
-  return csv;
+  const sheets = workbook.worksheets
+    .slice(0, WORKBOOK_MAX_SHEETS)
+    .map((sheet, index) => importWorksheet(sheet, index));
+  if (sheets.length === 0) {
+    sheets.push({ id: "sheet-1", name: "Sheet 1", cells: {}, rowCount: 1, colCount: 1 });
+  }
+  const result: Workbook = { schemaVersion: 2, sheets, activeSheetId: sheets[0]!.id };
+  assertBoundedOfficeOutput(result);
+  return result;
 }
 
 export async function extractPptxSlides(bytes: Uint8Array): Promise<PresentationSlide[]> {
