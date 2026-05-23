@@ -9,7 +9,9 @@ import {
   RiFileTextLine,
   RiPagesLine,
   RiSaveLine,
+  RiSendPlane2Line,
   RiSlideshowLine,
+  RiSparkling2Line,
   RiTableLine,
   type RemixiconComponentType,
 } from "@remixicon/react";
@@ -28,6 +30,8 @@ import {
 } from "@/app/agent/artifacts/[id]/artifact-editor-surfaces";
 import { EDIT_ACTIVITY_WINDOW_MS } from "@/components/artifacts/requested-edit-auto-accept";
 import { WorkpieceProposalReview } from "@/components/artifacts/workpiece-proposal-review";
+import { workpieceFollowUpMessage } from "@/components/artifacts/workpiece-follow-up";
+import { useComposerPrefill } from "@/components/chat/composer-prefill-context";
 import { backendFetch } from "@/lib/backend-fetch";
 import { cnExt as cn } from "@/utils/cn";
 
@@ -227,6 +231,67 @@ export function WorkpieceHeader({
   );
 }
 
+/** The per-workpiece "Ask a follow-up" composer in the pane header: a compact
+ * input that seeds the session reply composer with a typed workpieceRef context
+ * prefix (id + name + kind + revision) so the agent edits exactly this canonical
+ * document (its edits then flow propose/auto-accept as normal). Reuses the
+ * composer-prefill lane, so outside a session (the standalone editor page has no
+ * composer) it hides itself. */
+export function WorkpieceFollowUpComposer({
+  artifact,
+  kind,
+  revision,
+}: {
+  readonly artifact: ArtifactDescriptor;
+  readonly kind: ArtifactWorkpieceKind;
+  readonly revision: number;
+}) {
+  const prefillComposer = useComposerPrefill();
+  const [text, setText] = useState("");
+  if (!prefillComposer) return null;
+
+  const submit = () => {
+    const trimmed = text.trim();
+    if (!trimmed) return;
+    prefillComposer(
+      workpieceFollowUpMessage(
+        { artifactId: artifact.id, name: artifact.name, kind, revision },
+        trimmed,
+      ),
+    );
+    setText("");
+  };
+
+  return (
+    <div className="flex shrink-0 items-center gap-1.5 border-t border-stroke-soft-200 px-3 py-2">
+      <RiSparkling2Line aria-hidden className="size-4 shrink-0 text-feature-base" />
+      <input
+        value={text}
+        onChange={(event) => setText(event.currentTarget.value)}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" && !event.shiftKey) {
+            event.preventDefault();
+            submit();
+          }
+        }}
+        aria-label="Ask a follow-up about this file"
+        placeholder="Ask a follow-up about this file..."
+        className="h-8 min-w-0 flex-1 rounded-lg border border-stroke-soft-200 bg-bg-white-0 px-2.5 text-label-xs text-text-strong-950 outline-none placeholder:text-text-soft-400 focus:border-stroke-strong-950"
+      />
+      <button
+        type="button"
+        onClick={submit}
+        disabled={!text.trim()}
+        aria-label="Send follow-up"
+        title="Send to the agent"
+        className="grid size-8 shrink-0 place-items-center rounded-lg bg-bg-strong-950 text-text-white-0 hover:opacity-90 disabled:opacity-40"
+      >
+        <RiSendPlane2Line aria-hidden className="size-4" />
+      </button>
+    </div>
+  );
+}
+
 /** The mounted editor for one loaded workpiece descriptor. Auto-saves (debounced)
  * through the shared revision flow. Reports its dirty state up so an auto-open
  * never steals focus from an edit in progress. */
@@ -288,6 +353,7 @@ function WorkpieceEditorView({
           editor.actionContract.actions.includes("export") ? workpiece.export_url : undefined
         }
       />
+      <WorkpieceFollowUpComposer artifact={artifact} kind={workpiece.kind} revision={editor.revision} />
       {editor.actionContract.edit && (
         <details className="shrink-0 border-t border-stroke-soft-200 px-3 py-1.5">
           <summary className="cursor-pointer text-label-xs text-text-sub-600 outline-none marker:text-text-soft-400 hover:text-text-strong-950">

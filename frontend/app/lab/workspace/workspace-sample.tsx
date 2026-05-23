@@ -7,10 +7,12 @@
 // without a backend. The click-to-open flow is the real WorkspaceOpenProvider ->
 // ArtifactRow context path used in a live session.
 
+import type { ArtifactDescriptor } from "@skynet/agent-client";
 import {
   contentTypeForName,
   DECK_THEME_PRESETS,
   DOCUMENT_THEME_PRESETS,
+  inferWorkpieceKind,
   migrateSlidesToDeck,
   type DocumentTheme,
   type PresentationDeck,
@@ -25,11 +27,13 @@ import {
   SheetGridSurface,
   WorkpieceCodeView,
 } from "@/app/agent/artifacts/[id]/artifact-editor-surfaces";
+import { ComposerPrefillProvider } from "@/components/chat/composer-prefill-context";
 import { Timeline } from "@/components/chat/conversation";
 import type { TimelineNode } from "@/components/chat/timeline";
 import { WorkspaceOpenProvider } from "@/components/chat/workspace-open-context";
 import {
   type OpenWorkpieceTab,
+  WorkpieceFollowUpComposer,
   WorkpieceHeader,
   WorkpieceTabStrip,
 } from "@/components/chat/workspace-pane";
@@ -191,7 +195,28 @@ export function WorkspaceSample() {
   };
   const dirtyFor = (id: string) => (id === "wp-doc" ? docHtml !== SAMPLE_DOC_HTML : false);
 
+  // The "Ask a follow-up" composer feeds the session reply lane through the prefill
+  // context; the lab captures the seeded message to show the workpieceRef prefix.
+  const [followUp, setFollowUp] = useState<string | null>(null);
+  const labArtifact = (tab: OpenWorkpieceTab): ArtifactDescriptor => ({
+    id: tab.id,
+    run_id: "run-lab",
+    thread_id: "thread-lab",
+    name: tab.name,
+    source_path: `/work/${tab.name}`,
+    content_type: contentTypeForName(tab.name),
+    size_bytes: 4096,
+    sha256: "0".repeat(64),
+    created_at: "2026-08-18T00:00:00.000Z",
+    preview_url: `/api/artifacts/${tab.id}/content`,
+    download_url: `/api/artifacts/${tab.id}/content?download=1`,
+    preview_pdf_url: null,
+    workpiece: null,
+  });
+  const labKind = (name: string) => inferWorkpieceKind(name, contentTypeForName(name)) ?? "document";
+
   return (
+    <ComposerPrefillProvider value={setFollowUp}>
     <WorkspaceOpenProvider value={openWorkpiece}>
       <main data-testid="workspace-sample" className="min-h-full bg-bg-white-0 p-6">
         <div className="mx-auto max-w-6xl">
@@ -247,6 +272,17 @@ export function WorkspaceSample() {
                           downloadUrl="#"
                           exportUrl="#"
                         />
+                        <WorkpieceFollowUpComposer
+                          artifact={labArtifact(tab)}
+                          kind={labKind(tab.name)}
+                          revision={3}
+                        />
+                        {followUp && (
+                          <div className="shrink-0 border-b border-feature-base/30 bg-feature-lighter/30 px-3 py-1.5 text-paragraph-xs text-text-sub-600">
+                            Seeded the reply composer:{" "}
+                            <span className="text-text-strong-950">{followUp.replace(/\n/g, " ")}</span>
+                          </div>
+                        )}
                         <div className="flex min-h-0 flex-1 flex-col overflow-auto px-3 pb-3">
                           {tab.id === "wp-pdf" ? (
                             viewMode === "code" ? (
@@ -280,5 +316,6 @@ export function WorkspaceSample() {
         </div>
       </main>
     </WorkspaceOpenProvider>
+    </ComposerPrefillProvider>
   );
 }
