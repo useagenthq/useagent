@@ -180,6 +180,42 @@ export async function applyArtifactPdfPageRevision(input: {
   return updated ?? null;
 }
 
+/** Land a republished file as a NEW REVISION of an existing artifact rather than a
+ * new artifact: replace the immutable content (new digest + storage key + size +
+ * content type + name) and its editable workpiece state, and bump the revision so
+ * a regenerated deliverable shows as one tab with history. The stable artifact id
+ * is kept so existing preview/download references still resolve. The revision bump
+ * is a plain mainline advance (like a human save), so any proposal authored against
+ * the old base_revision conflicts on accept exactly as it would after a human edit. */
+export async function reviseArtifactPublication(input: {
+  readonly orgId: string;
+  readonly id: string;
+  readonly name: string;
+  readonly contentType: string;
+  readonly sha256: string;
+  readonly storageKey: string;
+  readonly sizeBytes: number;
+  readonly workpieceKind: ArtifactWorkpieceKind | null;
+  readonly workpieceState: ArtifactWorkpieceState | null;
+  readonly exec?: Executor;
+}): Promise<ArtifactRecord | null> {
+  const [updated] = await (input.exec ?? db)
+    .update(artifacts)
+    .set({
+      name: input.name,
+      contentType: input.contentType,
+      sha256: input.sha256,
+      storageKey: input.storageKey,
+      sizeBytes: input.sizeBytes,
+      workpieceKind: input.workpieceKind,
+      workpieceState: input.workpieceState,
+      workpieceRevision: sql`${artifacts.workpieceRevision} + 1`,
+    })
+    .where(and(eq(artifacts.orgId, input.orgId), eq(artifacts.id, input.id)))
+    .returning();
+  return updated ?? null;
+}
+
 export async function getArtifact(id: string): Promise<ArtifactRecord | null> {
   const [row] = await db.select().from(artifacts).where(eq(artifacts.id, id)).limit(1);
   return row ?? null;

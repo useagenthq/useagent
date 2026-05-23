@@ -4,6 +4,7 @@ import { contentTypeForName } from "./mime";
 import {
   createArtifactRecord,
   getArtifactForOrg,
+  reviseArtifactPublication,
   toArtifactDescriptor,
   type ArtifactDescriptor,
   type ArtifactRecord,
@@ -44,6 +45,9 @@ export async function publishSandboxArtifact(input: {
   readonly path: string;
   readonly name?: string;
   readonly editablePath?: string;
+  /** When set, the new bytes + companion land as a NEW REVISION of this existing
+   * artifact (same org + same workpiece kind), not a new artifact. */
+  readonly updatesArtifactId?: string;
 }): Promise<{ artifact: ArtifactDescriptor; record: ArtifactRecord; created: boolean }> {
   const sourcePath = checkedSourcePath(input.path);
   const run = await getRunForOrg(input.orgId, input.runId);
@@ -78,6 +82,59 @@ export async function publishSandboxArtifact(input: {
   if (editable && !workpieceState) {
     throw new Error("editable_path must be valid UTF-8 HTML for documents or CSV for spreadsheets");
   }
+
+  // Republish-as-revision: instead of creating a new artifact, replace an existing
+  // artifact's bytes + companion in place as a new revision, so a regenerated
+  // deliverable stays one tab with history. Same org (getArtifactForOrg) and same
+  // workpiece kind family are required; provenance is the publishing run.
+  if (input.updatesArtifactId) {
+    const target = await getArtifactForOrg(input.orgId, input.updatesArtifactId);
+    if (!target) throw new Error("artifact to update was not found in this workspace");
+    if (!target.workpieceKind || !workpieceKind || target.workpieceKind !== workpieceKind) {
+      throw new Error(
+        `republished file kind does not match the artifact being updated (expected ${
+          target.workpieceKind ?? "non-workpiece"
+        })`,
+      );
+    }
+    await artifactStorage().put(digest, file.bytes);
+    if ((await artifactStorage().size(digest)) !== file.bytes.length) {
+      throw new Error("artifact storage size verification failed");
+    }
+    const revised = await reviseArtifactPublication({
+      orgId: input.orgId,
+      id: target.id,
+      name,
+      contentType,
+      sha256: digest,
+      storageKey: digest,
+      sizeBytes: file.bytes.length,
+      workpieceKind,
+      workpieceState,
+    });
+    if (!revised) throw new Error("artifact revision could not be applied");
+    const descriptor = toArtifactDescriptor(revised);
+    await recordProviderEvent(
+      {
+        id: `artifact.revised:${revised.id}:${revised.workpieceRevision}`,
+        runId: run.id,
+        threadId: run.threadId,
+        provider: "skynet",
+        eventType: "artifact.revised",
+        payload: descriptor,
+      },
+      { critical: true },
+    );
+    publishOrgChange(input.orgId, {
+      type: "artifact",
+      action: "updated",
+      artifactId: revised.id,
+      runId: revised.runId,
+      threadId: revised.threadId,
+    });
+    return { artifact: descriptor, record: revised, created: false };
+  }
+
   const stored = await db.transaction(async (tx) => {
     // Serialize one logical publication across processes. Without this lock, a
     // creator that fails storage verification can roll back metadata already
