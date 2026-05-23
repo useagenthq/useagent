@@ -1,8 +1,9 @@
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
-import type {
-  ArtifactProposalStatus,
-  ArtifactWorkpieceKind,
-  ArtifactWorkpieceProposalDescriptor,
+import {
+  coercePresentationState,
+  type ArtifactProposalStatus,
+  type ArtifactWorkpieceKind,
+  type ArtifactWorkpieceProposalDescriptor,
 } from "@skynet/artifact-workspace";
 import { db } from "../db/client";
 import { artifacts, artifactWorkpieceProposals } from "../db/schema";
@@ -12,6 +13,11 @@ import { parseWorkpieceState } from "./workpiece";
 export type ProposalRecord = typeof artifactWorkpieceProposals.$inferSelect;
 
 export function toProposalDescriptor(row: ProposalRecord): ArtifactWorkpieceProposalDescriptor {
+  // Upgrade a legacy v1 presentation proposal to the canonical v2 deck for the
+  // wire so the review diff always compares one shape against mainline.
+  const state = row.kind === "presentation"
+    ? coercePresentationState(row.state) ?? row.state
+    : row.state;
   return {
     id: row.id,
     artifact_id: row.artifactId,
@@ -24,7 +30,7 @@ export function toProposalDescriptor(row: ProposalRecord): ArtifactWorkpieceProp
     resolved_at: row.resolvedAt ? row.resolvedAt.toISOString() : null,
     resolved_by: row.resolvedBy,
     resolved_revision: row.resolvedRevision,
-    state: row.state,
+    state,
   };
 }
 

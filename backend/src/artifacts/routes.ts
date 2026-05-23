@@ -2,8 +2,9 @@ import { createHash } from "node:crypto";
 import { Hono, type Context } from "hono";
 import {
   ARTIFACT_PROPOSAL_STATUSES,
-  isArtifactWorkpieceState,
+  coercePresentationState,
   type ArtifactWorkpieceKind,
+  type ArtifactWorkpieceState,
 } from "@skynet/artifact-workspace";
 import {
   applyPdfPageOperation,
@@ -203,10 +204,22 @@ artifactRoutes.get("/:id", async (c) => {
   return row ? c.json({ artifact: toArtifactDescriptor(row) }) : c.json({ error: "not found" }, 404);
 });
 
+/** The stored workpiece state upgraded to its canonical shape for the wire. A v1
+ * `{slides}` presentation row is migrated to the v2 `{deck}` on read so every
+ * reader sees one shape; other kinds pass through unchanged. */
+function canonicalWorkpieceState(artifact: ArtifactRecord): ArtifactWorkpieceState | null {
+  const state = artifact.workpieceState ?? null;
+  if (!state) return null;
+  if (artifact.workpieceKind === "presentation") {
+    return coercePresentationState(state) ?? state;
+  }
+  return state;
+}
+
 function workpieceResponse(artifact: ArtifactRecord) {
   return {
     workpiece: toArtifactDescriptor(artifact).workpiece,
-    state: artifact.workpieceState ?? null,
+    state: canonicalWorkpieceState(artifact),
   };
 }
 
@@ -221,7 +234,8 @@ artifactRoutes.get("/:id/workpiece/export", async (c) => {
   if (!artifact?.workpieceKind || !artifact.workpieceState) {
     return c.json({ error: "not found" }, 404);
   }
-  if (!isArtifactWorkpieceState(artifact.workpieceKind, artifact.workpieceState)) {
+  const state = canonicalWorkpieceState(artifact);
+  if (!state) {
     return c.json({ error: "invalid stored workpiece state" }, 409);
   }
   let exported;
@@ -229,7 +243,7 @@ artifactRoutes.get("/:id/workpiece/export", async (c) => {
     exported = await exportWorkpieceState({
       name: artifact.name,
       kind: artifact.workpieceKind,
-      state: artifact.workpieceState,
+      state,
       format: c.req.query("format"),
     });
   } catch (error) {

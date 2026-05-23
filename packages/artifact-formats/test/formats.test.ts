@@ -2,6 +2,12 @@ import { describe, expect, test } from "bun:test";
 import JSZip from "jszip";
 import { decodePDFRawStream, PDFDocument, PDFRawStream, StandardFonts } from "pdf-lib";
 import {
+  DECK_THEME_PRESETS,
+  migrateSlidesToDeck,
+  type DeckBlock,
+  type PresentationDeck,
+} from "@skynet/artifact-workspace";
+import {
   applyPdfPageOperation,
   ARTIFACT_BUNDLE_CONTENT_TYPE,
   buildArtifactBundle,
@@ -32,14 +38,57 @@ describe("artifact native formats", () => {
     expect(await extractXlsxCsv(output.bytes)).toContain("Latency,42");
   });
 
-  test("renders and extracts PPTX slide text", async () => {
-    const output = await renderArtifactExport({
-      slides: [{ title: "Release", body: "Ship it", notes: "Check metrics" }],
-    }, "pptx");
+  test("renders a themed deck to PPTX: slide count, text runs, background fill, shape, notes", async () => {
+    // Sky preset carries a gradient background (start #1d5fd0); the export maps a
+    // gradient to a solid slide fill of its start color.
+    const base = migrateSlidesToDeck(
+      [
+        { title: "Release", body: "Ship it", notes: "Check metrics" },
+        { title: "Metrics", body: "All green" },
+      ],
+      DECK_THEME_PRESETS.find((preset) => preset.id === "sky")!.theme,
+    );
+    const shape: DeckBlock = {
+      id: "s1-shape",
+      type: "shape",
+      x: 8,
+      y: 82,
+      w: 30,
+      h: 6,
+      content: "",
+      style: { fill: "#ffd166", radius: 8 },
+    };
+    const deck: PresentationDeck = {
+      ...base,
+      slides: base.slides.map((slide, index) =>
+        index === 0 ? { ...slide, blocks: [...slide.blocks, shape] } : slide
+      ),
+    };
+
+    const output = await renderArtifactExport({ deck }, "pptx");
     expect(output.contentType).toBe(PPTX_CONTENT_TYPE);
+
+    // Byte-open the PPTX (a zip) and inspect the slide XML the deck produced.
+    const zip = await JSZip.loadAsync(output.bytes);
+    const slideNames = Object.keys(zip.files).filter((name) =>
+      /^ppt\/slides\/slide\d+\.xml$/.test(name)
+    );
+    expect(slideNames.length).toBe(2); // one slide per deck slide
+
+    const slide1 = (await zip.file("ppt/slides/slide1.xml")?.async("string")) ?? "";
+    expect(slide1).toContain("<a:t>Release</a:t>"); // heading text run present
+    expect(slide1).toContain("<a:t>Ship it</a:t>"); // body text run present
+    // Background fill is set from the theme (gradient start color, upper-cased).
+    expect(slide1).toMatch(/<p:bg>[\s\S]*<a:srgbClr val="1D5FD0"/);
+    expect(slide1).toContain('<a:srgbClr val="FFD166"'); // shape fill color
+
+    // Round-trips back to title/body through extraction.
     const slides = await extractPptxSlides(output.bytes);
     expect(slides[0]).toMatchObject({ title: "Release" });
     expect(slides[0]?.body).toContain("Ship it");
+
+    // Speaker notes survive as a notes slide.
+    expect(Object.keys(zip.files).some((name) => /notesSlide\d+\.xml$/.test(name))).toBe(true);
   });
 
   test("renders supported PDF text into the PDF content stream", async () => {

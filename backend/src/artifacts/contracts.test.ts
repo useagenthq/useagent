@@ -4,6 +4,7 @@ import type {
   ArtifactWorkpieceDescriptor as CanonicalArtifactWorkpieceDescriptor,
   ArtifactWorkpieceResult,
   ArtifactWorkpieceState,
+  PresentationDeck,
 } from "@skynet/artifact-workspace";
 import type {
   ArtifactDescriptor,
@@ -32,7 +33,7 @@ type _PdfStateIsCorrelated = Assert<
 type _PresentationResultStateIsCorrelated = Assert<
   Equal<
     Extract<ArtifactWorkpieceResult, { workpiece: { kind: "presentation" } }>["state"],
-    Readonly<{ slides: readonly { readonly title: string; readonly body: string; readonly notes?: string }[] }> | null
+    Readonly<{ deck: PresentationDeck }> | null
   >
 >;
 
