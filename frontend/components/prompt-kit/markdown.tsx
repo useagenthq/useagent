@@ -109,6 +109,24 @@ const INITIAL_COMPONENTS: Partial<Components> = {
   },
 };
 
+// Flow-element prose styling shared by EVERY Markdown consumer. The AlignUI
+// foundation ships no @tailwindcss/typography, and Tailwind preflight strips
+// list markers - so lists, headings, paragraphs and links are mapped to brand
+// tokens HERE, once. Callers may still extend/override via className (cnExt
+// merges with caller classes winning). Historically this lived only in the
+// conversation surface, which left every other consumer with bulletless lists.
+const FLOW_CLASS = cn(
+  // First/last block flush to the container's edges; even rhythm elsewhere.
+  "[&>*:first-child]:mt-0 [&>*:last-child]:mb-0",
+  "[&_p]:my-2",
+  "[&_h1]:text-label-md [&_h1]:font-medium [&_h1]:mt-4 [&_h1]:mb-1.5",
+  "[&_h2]:text-label-sm [&_h2]:font-medium [&_h2]:mt-4 [&_h2]:mb-1.5",
+  "[&_h3]:text-label-sm [&_h3]:font-medium [&_h3]:mt-3 [&_h3]:mb-1",
+  "[&_h4]:text-label-xs [&_h4]:font-medium [&_h4]:mt-3 [&_h4]:mb-1",
+  "[&_ul]:my-2 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:my-2 [&_ol]:list-decimal [&_ol]:pl-5 [&_li]:my-1",
+  "[&_a]:text-blue-500 [&_a]:underline [&_a]:underline-offset-2 [&_strong]:font-medium",
+);
+
 const MemoizedMarkdownBlock = memo(
   function MarkdownBlock({
     content,
@@ -144,7 +162,7 @@ function MarkdownComponent({
   const blocks = useMemo(() => parseMarkdownIntoBlocks(children), [children]);
 
   return (
-    <div className={className}>
+    <div className={cn(FLOW_CLASS, className)}>
       {blocks.map((block, index) => (
         <MemoizedMarkdownBlock
           key={`${blockId}-block-${index}`}
