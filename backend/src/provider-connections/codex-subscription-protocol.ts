@@ -46,7 +46,17 @@ export class CodexSubscriptionProtocol {
     this.#dependencies = dependencies;
   }
 
-  async acceptClientFrame(raw: string): Promise<void> {
+  /** Validate a client frame and return the frame to forward upstream. Almost
+   *  always the input unchanged; the one rewrite: a `thread/start` for a thread
+   *  this run relay has ALREADY bound becomes a `thread/resume` of the bound
+   *  provider thread. The T3 driver falls back to `thread/start` whenever its
+   *  local resume cursor is missing (per-run relay instances are torn down and
+   *  re-patched between turns, so the cursor rarely survives) - honoring the
+   *  start verbatim would fork the provider-side conversation, and rejecting it
+   *  killed every reply turn ("no first activity", 2026-08-19). Start and
+   *  resume share their params shape (resume = start + threadId) and their
+   *  response schema, so the rewrite is invisible to the driver. */
+  async acceptClientFrame(raw: string): Promise<string> {
     const frame = parseCodexSubscriptionFrame(raw);
     if (!frame.method) {
       if (frame.id === undefined || !frame.hasResponse) {
@@ -55,16 +65,34 @@ export class CodexSubscriptionProtocol {
       if (!this.#pendingServerRequests.delete(frame.id)) {
         throw new Error("uncorrelated app-server response");
       }
-      return;
+      return raw;
     }
     if (!CLIENT_METHODS.has(frame.method)) {
       throw new Error("app-server method is unavailable through the run relay");
     }
-    await this.#assertBoundRequest(frame.method, frame.params);
+    let method = frame.method;
+    let outbound = raw;
+    if (method === "thread/start") {
+      const values = frame.params ?? {};
+      assertModelAndCwd(values, this.#binding);
+      assertHostOwnedThreadFields(values);
+      const bound = await this.#dependencies.loadThreadBinding();
+      if (bound) {
+        method = "thread/resume";
+        const envelope = JSON.parse(raw) as Record<string, unknown>;
+        envelope.method = method;
+        envelope.params = { ...values, threadId: bound };
+        outbound = JSON.stringify(envelope);
+        this.#knownProviderThreads.add(bound);
+      }
+    } else {
+      await this.#assertBoundRequest(method, frame.params);
+    }
     if (frame.id !== undefined) {
       assertRequestCapacity(this.#pendingClientRequests, frame.id, "client");
-      this.#pendingClientRequests.set(frame.id, frame.method);
+      this.#pendingClientRequests.set(frame.id, method);
     }
+    return outbound;
   }
 
   async observeServerFrame(raw: string): Promise<void> {
@@ -108,14 +136,8 @@ export class CodexSubscriptionProtocol {
           throw new Error("Codex MCP reload params are host-owned");
         }
         return;
-      case "thread/start": {
-        assertModelAndCwd(values, this.#binding);
-        assertHostOwnedThreadFields(values);
-        if (await this.#dependencies.loadThreadBinding()) {
-          throw new Error("Codex thread is already bound; resume is required");
-        }
-        return;
-      }
+      // "thread/start" is validated (and rewritten to a resume when the thread
+      // is already bound) inline in acceptClientFrame - it never reaches here.
       case "thread/resume": {
         assertModelAndCwd(values, this.#binding);
         assertHostOwnedThreadFields(values);
