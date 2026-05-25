@@ -11,13 +11,26 @@
  */
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { createHmac } from "node:crypto";
+import { eq } from "drizzle-orm";
+import { db } from "../src/db/client";
+import { userUploads } from "../src/db/schema";
+import { DEV_ORG_ID, DEV_USER_ID } from "../src/seed";
 import { setSlackClientForTest } from "../src/slack";
+import { setInboundFileDownloaderForTest } from "../src/slack/inbound-files";
 import { dispatchSocketFrame } from "../src/slack/socket-mode";
 import { composeSlackReplyText } from "../src/slack/reply";
+import {
+  findSlackWorkspace,
+  syncSlackWorkspaceBindings,
+  upsertSlackWorkspace,
+} from "../src/slack/workspaces";
 import { fetchApi, json, uid, waitFor } from "./helpers";
 
 const SECRET = "test-signing-secret"; // this suite signs every inbound event with it
 const BOT = "U0BOTBOT";
+// The mapped test workspace: registered in beforeAll (slack_workspaces), so its
+// events are attributed to the dev org/user. Unmapped teams must be IGNORED.
+const TEAM = "T0TESTTEAM";
 
 // Hermetic Slack env. Bun auto-loads backend/.env, so the REAL SLACK_* creds
 // leak into the test process and would override what this suite assumes: the
@@ -50,12 +63,15 @@ const rec: Recorded = { reactions: [], messages: [], statuses: [] };
 /** When true the mock rejects setAssistantStatus — the non-assistant fallback case. */
 let statusFails = false;
 
-beforeAll(() => {
+beforeAll(async () => {
   for (const [k, v] of Object.entries(SLACK_ENV_OVERRIDES)) {
     savedSlackEnv[k] = process.env[k];
     if (v === undefined) delete process.env[k];
     else process.env[k] = v;
   }
+  // Bind the test workspace to the dev org/user — ingress fails closed for any
+  // team without such a row (covered below).
+  await upsertSlackWorkspace({ teamId: TEAM, orgId: DEV_ORG_ID, userId: DEV_USER_ID });
   setSlackClientForTest({
     addReaction: async (a) => {
       rec.reactions.push(a);
@@ -103,10 +119,15 @@ async function postSlack(
   });
 }
 
-function eventCallback(event: Record<string, unknown>): Record<string, unknown> {
+function eventCallback(
+  event: Record<string, unknown>,
+  /** The envelope's workspace; `null` omits team_id entirely (fail-closed case). */
+  teamId: string | null = TEAM,
+): Record<string, unknown> {
   return {
     type: "event_callback",
     event_id: `Ev${uid("id")}`,
+    ...(teamId === null ? {} : { team_id: teamId }),
     authorizations: [{ user_id: BOT }],
     event,
   };
@@ -434,5 +455,241 @@ describe("slack socket-mode ingest shares the HTTP handler", () => {
     expect(closed).toBe(0);
     dispatchSocketFrame(JSON.stringify({ type: "disconnect" }), () => {}, () => closed++);
     expect(closed).toBe(1);
+  });
+});
+
+// Workspace identity fails CLOSED: only events from a team with a
+// slack_workspaces mapping are accepted; there is no seeded-org fallback.
+describe("slack workspace identity (fail closed)", () => {
+  test("an event from an unmapped workspace is ignored", async () => {
+    const marker = uid("noteam");
+    const res = await postSlack(
+      eventCallback(
+        {
+          type: "app_mention",
+          channel: `C${uid("ch")}`,
+          user: "U-HUMAN",
+          text: `<@${BOT}> hi ${marker}`,
+          ts: `${uid("ts")}.1`,
+        },
+        `T-UNMAPPED-${uid("t")}`,
+      ),
+    );
+    expect(res.status).toBe(200); // acknowledged to Slack...
+    await new Promise((r) => setTimeout(r, 150));
+    expect(await findRunByPrompt(`hi ${marker}`)).toBeNull(); // ...but no run
+  });
+
+  test("an event carrying no team_id at all is ignored", async () => {
+    const marker = uid("teamless");
+    await postSlack(
+      eventCallback(
+        {
+          type: "app_mention",
+          channel: `C${uid("ch")}`,
+          user: "U-HUMAN",
+          text: `<@${BOT}> hi ${marker}`,
+          ts: `${uid("ts")}.1`,
+        },
+        null,
+      ),
+    );
+    await new Promise((r) => setTimeout(r, 150));
+    expect(await findRunByPrompt(`hi ${marker}`)).toBeNull();
+  });
+
+  test("SLACK_WORKSPACE_BINDINGS syncs mappings at boot (malformed entries skipped)", async () => {
+    const team = `T-BIND-${uid("t")}`;
+    const saved = process.env.SLACK_WORKSPACE_BINDINGS;
+    process.env.SLACK_WORKSPACE_BINDINGS = `${team}:${DEV_ORG_ID}:${DEV_USER_ID}, malformed-entry`;
+    try {
+      await syncSlackWorkspaceBindings();
+    } finally {
+      if (saved === undefined) delete process.env.SLACK_WORKSPACE_BINDINGS;
+      else process.env.SLACK_WORKSPACE_BINDINGS = saved;
+    }
+    expect(await findSlackWorkspace(team)).toEqual({
+      orgId: DEV_ORG_ID,
+      userId: DEV_USER_ID,
+    });
+    expect(await findSlackWorkspace("malformed-entry")).toBeNull();
+  });
+});
+
+// Inbound attachments: files on an accepted message are downloaded bounded
+// (Slack-hosted URLs only, size + count caps) and staged through the uploads
+// lane, then claimed by the created run as its input files.
+describe("slack inbound attachments", () => {
+  const downloaded: string[] = [];
+  let payload = new TextEncoder().encode("hello slack bytes");
+
+  beforeAll(() => {
+    setInboundFileDownloaderForTest(async (url) => {
+      downloaded.push(url);
+      return payload;
+    });
+  });
+
+  afterAll(() => {
+    setInboundFileDownloaderForTest(null);
+  });
+
+  function slackFile(name: string, extra: Record<string, unknown> = {}): Record<string, unknown> {
+    return {
+      id: `F${uid("f")}`,
+      name,
+      size: payload.byteLength,
+      mimetype: "text/plain",
+      url_private_download: `https://files.slack.com/files-pri/${TEAM}/${name}`,
+      ...extra,
+    };
+  }
+
+  async function uploadsByName(name: string) {
+    return db.select().from(userUploads).where(eq(userUploads.name, name));
+  }
+
+  test("a mention with a file stages it and claims it for the created run", async () => {
+    const marker = uid("attach");
+    const fileName = `${marker}.txt`;
+    await postSlack(
+      eventCallback({
+        type: "app_mention",
+        channel: `C${uid("ch")}`,
+        user: "U-HUMAN",
+        text: `<@${BOT}> summarize ${marker}`,
+        ts: `${uid("ts")}.1`,
+        files: [slackFile(fileName)],
+      }),
+    );
+    const run = await waitFor(async () => findRunByPrompt(`summarize ${marker}`));
+
+    const rows = await waitFor(async () => {
+      const found = await uploadsByName(fileName);
+      return found.length > 0 ? found : null;
+    });
+    expect(rows).toHaveLength(1);
+    const upload = rows[0]!;
+    expect(upload.runId).toBe(run.id); // claimed atomically with acceptance
+    expect(upload.orgId).toBe(DEV_ORG_ID);
+    expect(upload.userId).toBe(DEV_USER_ID);
+    expect(upload.contentType).toBe("text/plain; charset=utf-8");
+    expect(upload.sizeBytes).toBe(payload.byteLength);
+    expect(upload.sha256).toBe(
+      new Bun.CryptoHasher("sha256").update(payload).digest("hex"),
+    );
+  });
+
+  test("a files-only DM (file_share subtype, no text) still creates a run", async () => {
+    const fileName = `${uid("filesonly")}.txt`;
+    await postSlack(
+      eventCallback({
+        type: "message",
+        subtype: "file_share",
+        channel: `D${uid("dm")}`,
+        channel_type: "im",
+        user: "U-HUMAN",
+        text: "",
+        ts: `${uid("ts")}.1`,
+        files: [slackFile(fileName)],
+      }),
+    );
+    const upload = await waitFor(async () => (await uploadsByName(fileName))[0] ?? null);
+    expect(upload.runId).toBeTruthy();
+    const { body: run } = await json<any>(`/api/runs/${upload.runId}`);
+    expect(run.prompt).toBe("Review the attached files.");
+  });
+
+  test("count cap: only the first 5 of 7 files are staged", async () => {
+    const marker = uid("cap");
+    const names = Array.from({ length: 7 }, (_, i) => `${marker}-${i}.txt`);
+    await postSlack(
+      eventCallback({
+        type: "message",
+        channel: `D${uid("dm")}`,
+        channel_type: "im",
+        user: "U-HUMAN",
+        text: `cap ${marker}`,
+        ts: `${uid("ts")}.1`,
+        files: names.map((n) => slackFile(n)),
+      }),
+    );
+    await waitFor(async () => findRunByPrompt(`cap ${marker}`));
+    const staged = await waitFor(async () => {
+      const rows = await Promise.all(names.map(uploadsByName));
+      const flat = rows.flat();
+      return flat.length >= 5 ? flat : null;
+    });
+    expect(staged).toHaveLength(5);
+    expect(await uploadsByName(names[5]!)).toHaveLength(0);
+    expect(await uploadsByName(names[6]!)).toHaveLength(0);
+  });
+
+  test("size cap: an over-declared file is skipped without downloading", async () => {
+    const marker = uid("big");
+    const fileName = `${marker}.bin`;
+    const before = downloaded.length;
+    await postSlack(
+      eventCallback({
+        type: "message",
+        channel: `D${uid("dm")}`,
+        channel_type: "im",
+        user: "U-HUMAN",
+        text: `big ${marker}`,
+        ts: `${uid("ts")}.1`,
+        files: [slackFile(fileName, { size: 21 * 1024 * 1024 })],
+      }),
+    );
+    await waitFor(async () => findRunByPrompt(`big ${marker}`));
+    expect(await uploadsByName(fileName)).toHaveLength(0);
+    expect(downloaded.length).toBe(before); // rejected on declared size, never fetched
+  });
+
+  test("only Slack-hosted https URLs are fetched (bot token never leaves Slack)", async () => {
+    const marker = uid("offhost");
+    const fileName = `${marker}.txt`;
+    const before = downloaded.length;
+    await postSlack(
+      eventCallback({
+        type: "message",
+        channel: `D${uid("dm")}`,
+        channel_type: "im",
+        user: "U-HUMAN",
+        text: `offhost ${marker}`,
+        ts: `${uid("ts")}.1`,
+        files: [
+          slackFile(fileName, {
+            url_private_download: `https://evil.example.com/steal-token/${fileName}`,
+          }),
+        ],
+      }),
+    );
+    await waitFor(async () => findRunByPrompt(`offhost ${marker}`));
+    expect(await uploadsByName(fileName)).toHaveLength(0);
+    expect(downloaded.length).toBe(before);
+  });
+
+  test("a lying declared size is caught after download (post-check cap)", async () => {
+    const marker = uid("liar");
+    const fileName = `${marker}.bin`;
+    const original = payload;
+    payload = new Uint8Array(20 * 1024 * 1024 + 1); // real bytes over the cap
+    try {
+      await postSlack(
+        eventCallback({
+          type: "message",
+          channel: `D${uid("dm")}`,
+          channel_type: "im",
+          user: "U-HUMAN",
+          text: `liar ${marker}`,
+          ts: `${uid("ts")}.1`,
+          files: [slackFile(fileName, { size: 100 })],
+        }),
+      );
+      await waitFor(async () => findRunByPrompt(`liar ${marker}`));
+      expect(await uploadsByName(fileName)).toHaveLength(0);
+    } finally {
+      payload = original;
+    }
   });
 });

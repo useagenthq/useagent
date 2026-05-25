@@ -302,6 +302,20 @@
 			"when": 1788200000000,
 			"tag": "0044_runs_origin",
 			"breakpoints": true
+		},
+		{
+			"idx": 43,
+			"version": "7",
+			"when": 1788300000000,
+			"tag": "0045_slack_workspaces",
+			"breakpoints": true
+		},
+		{
+			"idx": 44,
+			"version": "7",
+			"when": 1788400000000,
+			"tag": "0046_schedule_firings_run_index",
+			"breakpoints": true
 		}
 	]
 }

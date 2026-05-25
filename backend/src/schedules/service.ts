@@ -12,6 +12,7 @@ import {
 } from "../runs/engine-readiness";
 import { defaultModelForEngine, isModelAllowedForEngine } from "../runs/model-policy";
 import { publishOrgChange, type OrgChange } from "../runs/org-signals";
+import { automationSlackConfigError } from "../slack/automation";
 import { resolveSkillSelection } from "../skills/repo";
 import { isValidCron, isValidTimezone } from "./cron";
 import {
@@ -174,10 +175,13 @@ function assertAutomationIntegrationsReady(schedule: {
   delivery: AutomationJson | null;
   notifications: AutomationJson | null;
 }): void {
-  if (schedule.delivery || schedule.notifications) {
+  // Slack targets ({ slack: { channel } }) are executable through the durable
+  // Slack outbox; anything else present can be drafted but not enabled.
+  const error = automationSlackConfigError(schedule);
+  if (error) {
     throw new ScheduleServiceError(403, {
       error: "automation_delivery_not_ready",
-      detail: "delivery and notification metadata can be drafted, but cannot be enabled until the integration is live",
+      detail: error,
     });
   }
 }

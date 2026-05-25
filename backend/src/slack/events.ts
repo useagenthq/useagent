@@ -1,9 +1,10 @@
 /**
  * Slack Events-API ingest, adapted to the runs model. Given a verified
- * `event_callback` envelope, this decides whether the message is for us, maps it
- * onto a run (root or `parent_run_id` reply), 👀-acks, and registers a
- * completion watcher. Kept deliberately small — QM's turn-handler (approvals,
- * reactions, mirroring, attachments, agent-requests) is DEFERRED.
+ * `event_callback` envelope, this resolves the workspace to a tenant identity
+ * (fail closed), decides whether the message is for us, stages inbound
+ * attachments, maps it onto a run (root or `parent_run_id` reply), 👀-acks, and
+ * registers a completion watcher. Kept deliberately small — QM's turn-handler
+ * (approvals, reactions, mirroring, agent-requests) is DEFERRED.
  *
  * Gating (from QM's events.ts, condensed):
  *  - DM (`channel_type: "im"`)      → always ours.
@@ -15,13 +16,14 @@
  */
 import { slackConfig } from "../env";
 import type { MemoryScope } from "../db/schema";
-import { getDevContext } from "../seed";
 import { getRunForOrg } from "../runs/repo";
 import { acceptRunCommand } from "../commands";
 import { pumpThread } from "../worker";
 import { resolveSlackClient } from "./client";
+import { stageInboundSlackFiles, type SlackInboundFileMeta } from "./inbound-files";
 import { findSlackThread, linkSlackThread } from "./repo";
 import { watchSlackRun } from "./watcher";
+import { resolveSlackWorkspace } from "./workspaces";
 import { enqueueAddReaction } from "./outbox";
 
 // Bounded FIFO deduper — collapses Slack retries AND the app_mention/message
@@ -50,6 +52,9 @@ const deduper = createDeduper();
 export interface SlackEnvelope {
   type?: string;
   challenge?: string;
+  /** The workspace the event came from — resolved to an org/user via
+   *  slack_workspaces (fail closed; see workspaces.ts). */
+  team_id?: string;
   authorizations?: Array<{ user_id?: string }>;
   event?: {
     type?: string;
@@ -61,6 +66,9 @@ export interface SlackEnvelope {
     text?: string;
     ts?: string;
     thread_ts?: string;
+    /** Inbound attachments (Slack file objects) — downloaded bounded and staged
+     *  through the uploads lane (see inbound-files.ts). */
+    files?: SlackInboundFileMeta[];
   };
 }
 
@@ -89,11 +97,12 @@ export async function handleSlackEvent(body: SlackEnvelope): Promise<void> {
   if (!event || (type !== "app_mention" && type !== "message")) return;
 
   // Never react to bot-authored messages (loop guard) or non-plain message
-  // subtypes (edits/deletes/joins — deferred).
+  // subtypes (edits/deletes/joins — deferred). `file_share` is the one subtype
+  // let through: it is how a plain message with attachments arrives.
   if (event.bot_id) return;
   const botUserId = botUserIdOf(body);
   if (botUserId && event.user === botUserId) return;
-  if (type === "message" && event.subtype) return;
+  if (type === "message" && event.subtype && event.subtype !== "file_share") return;
 
   const channel = event.channel;
   const ts = event.ts;
@@ -122,24 +131,41 @@ export async function handleSlackEvent(body: SlackEnvelope): Promise<void> {
     if (!link) return; // a thread we have no stake in
   }
 
+  // Workspace identity — FAIL CLOSED. An event from a workspace with no
+  // slack_workspaces mapping is ignored (logged once per team id); nothing ever
+  // falls back to a seeded org. Resolved BEFORE dedupe so an unmapped
+  // workspace's event never reserves a dedupe key (a retry after the operator
+  // adds the mapping still lands).
+  const workspace = await resolveSlackWorkspace(body.team_id);
+  if (!workspace) return;
+
   // Dedupe last, so a genuinely-ours message reserves its key exactly once.
   const key = `${channel}:${ts}`;
   if (deduper.seen(key)) return;
 
-  const prompt = cleanPrompt(rawText, botUserId);
-  if (!prompt) {
-    deduper.forget(key);
-    return;
-  }
+  // Org identity: an existing thread keeps its original org; a new thread is
+  // scoped by the workspace mapping. The actor is the workspace's bound user.
+  const orgId = link?.orgId ?? workspace.orgId;
+  const userId = workspace.userId;
 
-  // Org identity: v1 is single-tenant - a Slack request has no better-auth
-  // session. SLACK_DEFAULT_ORG_ID / SLACK_DEFAULT_USER_ID pin new Slack threads
-  // to the operator's real workspace (an existing thread keeps its original
-  // org); without them the seeded dev org remains the fallback. Proper
-  // multi-workspace -> org mapping is in flight and supersedes this.
-  const defaultOrgId = process.env.SLACK_DEFAULT_ORG_ID?.trim() || getDevContext().orgId;
-  const orgId = link?.orgId ?? defaultOrgId;
-  const userId = process.env.SLACK_DEFAULT_USER_ID?.trim() || getDevContext().userId;
+  // Inbound attachments: download bounded (count/size caps, Slack CDN only) and
+  // stage through the uploads lane so the run claims them like browser uploads.
+  const files = Array.isArray(event.files) ? event.files : [];
+  const attachmentIds =
+    files.length > 0
+      ? await stageInboundSlackFiles({ files, botToken: config.botToken, orgId, userId })
+      : [];
+
+  let prompt = cleanPrompt(rawText, botUserId);
+  if (!prompt) {
+    // A files-only message still runs (the attachments ARE the request); an
+    // empty message with no staged files stays a no-op.
+    if (attachmentIds.length === 0) {
+      deduper.forget(key);
+      return;
+    }
+    prompt = "Review the attached files.";
+  }
 
   // Threading: an existing Slack thread → reply under its root run (inherits the
   // skynet thread); a new thread → a root run under its own id.
@@ -148,7 +174,7 @@ export async function handleSlackEvent(body: SlackEnvelope): Promise<void> {
   let threadId: string = runId;
   // Slack has no scope selector: a reply inherits its thread-root's scope, a new
   // thread defaults to "org". (Personal-scope Slack runs would need a verified
-  // per-actor identity, which the current dev-org fallback doesn't provide.)
+  // per-Slack-user identity; the workspace mapping binds one actor per team.)
   let memoryScope: MemoryScope = "org";
   // A reply MUST run on the thread's original engine and model - engines keep
   // per-thread native session state in the sandbox, and a cross-engine turn
@@ -184,6 +210,8 @@ export async function handleSlackEvent(body: SlackEnvelope): Promise<void> {
       threadId,
       // Slack runs work in a bare sandbox (no repo picker) and default to org memory.
       repos: [],
+      // Staged inbound attachments — claimed atomically with run acceptance.
+      ...(attachmentIds.length > 0 ? { attachmentIds } : {}),
       memoryScope,
       // Slack turns don't pin a skill yet.
       skillId: null,
