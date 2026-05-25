@@ -13,6 +13,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { createHmac } from "node:crypto";
 import { setSlackClientForTest } from "../src/slack";
 import { dispatchSocketFrame } from "../src/slack/socket-mode";
+import { composeSlackReplyText } from "../src/slack/reply";
 import { fetchApi, json, uid, waitFor } from "./helpers";
 
 const SECRET = "test-signing-secret"; // this suite signs every inbound event with it
@@ -179,13 +180,18 @@ describe("slack event → run", () => {
       rec.reactions.some((r) => r.channel === channel && r.timestamp === ts && r.name === "eyes") || null,
     );
 
-    // On completion the summary is posted back into the Slack thread (thread_ts = message ts).
+    // On settle the reply is posted back into the Slack thread (thread_ts =
+    // message ts), composed by the ONE real compose function. Asserting through
+    // it keeps the check strict while staying agnostic to whether a
+    // credential-less test environment completes or honestly fails the run
+    // (the previous equality-with-summary only held because stale test-db
+    // state let the run complete; a fresh database fails it).
     const msg = await waitFor(async () =>
       rec.messages.find((m) => m.channel === channel && m.threadTs === ts) ?? null,
     );
     expect(msg.text.length).toBeGreaterThan(0);
     const done = await json<any>(`/api/runs/${run.id}`);
-    expect(msg.text).toBe(done.body.summary);
+    expect(msg.text).toBe(composeSlackReplyText(done.body.status, done.body.summary));
   });
 
   test("the channel allowlist drops events from unlisted channels and admits listed ones", async () => {
