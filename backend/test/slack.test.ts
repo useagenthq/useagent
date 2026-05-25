@@ -179,6 +179,42 @@ describe("slack event → run", () => {
     expect(msg.text).toBe(done.body.summary);
   });
 
+  test("the channel allowlist drops events from unlisted channels and admits listed ones", async () => {
+    const allowed = `C${uid("ok")}`;
+    process.env.SLACK_CHANNEL_ALLOWLIST = ` ${allowed} , C0LISTED2 `;
+    try {
+      const blockedMarker = uid("blocked");
+      const blockedRes = await postSlack(
+        eventCallback({
+          type: "app_mention",
+          channel: `C${uid("nope")}`,
+          user: "U-HUMAN",
+          text: `<@${BOT}> build ${blockedMarker}`,
+          ts: `${uid("ts")}.1`,
+        }),
+      );
+      expect(blockedRes.status).toBe(200); // acked to Slack, silently dropped
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      expect(await findRunByPrompt(`build ${blockedMarker}`)).toBeNull();
+
+      const allowedMarker = uid("allowed");
+      const allowedRes = await postSlack(
+        eventCallback({
+          type: "app_mention",
+          channel: allowed,
+          user: "U-HUMAN",
+          text: `<@${BOT}> build ${allowedMarker}`,
+          ts: `${uid("ts")}.1`,
+        }),
+      );
+      expect(allowedRes.status).toBe(200);
+      const run = await waitFor(async () => findRunByPrompt(`build ${allowedMarker}`));
+      expect(run.prompt).toBe(`build ${allowedMarker}`);
+    } finally {
+      delete process.env.SLACK_CHANNEL_ALLOWLIST;
+    }
+  });
+
   test("a thread reply becomes a parent_run_id follow-up in the same thread", async () => {
     const marker = uid("thread");
     const channel = `C${uid("ch")}`;

@@ -99,6 +99,12 @@ export async function handleSlackEvent(body: SlackEnvelope): Promise<void> {
   const ts = event.ts;
   if (!channel || !ts) return;
 
+  // Operator channel allowlist: when set, ONLY events from listed channel ids
+  // are processed (DMs included - a DM channel id is not in the list). Keeps a
+  // freshly connected workspace scoped to a designated test channel until the
+  // adapter is opened up.
+  if (config.channelAllowlist.size > 0 && !config.channelAllowlist.has(channel)) return;
+
   const rawText = typeof event.text === "string" ? event.text : "";
   const threadTs = typeof event.thread_ts === "string" ? event.thread_ts : undefined;
   const isDm = event.channel_type === "im";
