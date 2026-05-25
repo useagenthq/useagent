@@ -4,6 +4,7 @@ import { findCommandByKey, insertCommandWithRun } from "./repo";
 import type { CommandRecord } from "./repo";
 import type { RunCommandInput, RunCommandOutcome } from "./types";
 import { publishRunLifecycleChange } from "../runs/org-signals";
+import { deriveRunOrigin } from "../runs/origin";
 import { isModelAllowedForEngine } from "../runs/model-policy";
 import { engineModelReadyForDispatch } from "../runs/engine-readiness";
 import { withThreadLifecycleLock } from "../runs/thread-lifecycle-lock";
@@ -93,6 +94,10 @@ export async function acceptRunCommand(input: RunCommandInput): Promise<RunComma
             payloadFingerprint: fingerprint,
             payload,
             run: input.run,
+            // Internal-run marker (parity canaries / e2e harnesses), derived from
+            // the explicit identifiers those tools stamp — never the prompt. Null
+            // for every product run; internal runs skip org-memory capture.
+            origin: deriveRunOrigin(input.idempotencyKey, input.run.id),
           },
           tx,
         );

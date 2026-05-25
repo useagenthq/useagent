@@ -27,6 +27,10 @@ export interface NewRunCommand {
   readonly payloadFingerprint: string;
   readonly payload: string;
   readonly run: RunCommandInput["run"];
+  /** Internal-run marker derived at acceptance (src/runs/origin.ts); null for a
+   *  real product run. Persisted on the run row so downstream policy (memory
+   *  capture exclusion) reads the row, never re-derives. */
+  readonly origin: string | null;
 }
 
 /** Look up a prior command by its per-tenant idempotency key. */
@@ -75,6 +79,7 @@ export async function insertCommandWithRun(
         commandProvider: cmd.run.commandProvider,
         commandSessionId: cmd.run.commandSessionId,
         commandCatalogRevision: cmd.run.commandCatalogRevision,
+        origin: cmd.origin,
       },
       tx,
     );

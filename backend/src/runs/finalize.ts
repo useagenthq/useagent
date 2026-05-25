@@ -4,6 +4,9 @@ import { runs, type RunStatus } from "../db/schema";
 import { completeRun } from "./repo";
 import { resolveScopedMemory } from "../memory/scope";
 import { enqueueCapture } from "../memory/capture-outbox";
+import { collectRunEvidence } from "../memory/capture-evidence";
+import { assessCaptureSalience } from "../memory/capture-salience";
+import { isInternalRunOrigin } from "./origin";
 import { findSlackThreadByRoot } from "../slack/repo";
 import { composeSlackReplyText } from "../slack/reply";
 import { enqueuePostMessageTx, kickSlackOutbox } from "../slack/outbox";
@@ -70,14 +73,22 @@ export async function finalizeRun(
     // (personal→personal, org→org), resolved from the run row's memory_scope +
     // authenticated identity. `plan` is null when memory is disabled and
     // `writePool` is null when a personal run failed closed (no auth user) —
-    // either way a clean no-op.
-    if (status === "completed") {
+    // either way a clean no-op. INTERNAL runs (parity canaries, e2e harnesses —
+    // runs.origin, src/runs/origin.ts) never enqueue: evaluation traffic must
+    // not pollute org memory. Non-SALIENT summaries (trivial one-liners,
+    // apologies, raw command output) are gated out by assessCaptureSalience
+    // BEFORE anything durable is written.
+    if (status === "completed" && !isInternalRunOrigin(run.origin)) {
       const plan = resolveScopedMemory(run);
-      if (plan?.writePool) {
+      if (plan?.writePool && assessCaptureSalience({ prompt: run.prompt, summary }).salient) {
+        // Verified outcome (item 5): capture the structured facts alongside the
+        // prose — artifacts published, tool counts, status/duration/engine/model,
+        // and the user-correction signal — all readable in THIS transaction.
+        const evidence = await collectRunEvidence(run, status, durationMs, tx);
         await enqueueCapture(
           runId,
           plan.writePool.identity,
-          { prompt: run.prompt, summary },
+          { prompt: run.prompt, summary, evidence },
           plan.scope,
           tx,
         );
