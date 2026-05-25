@@ -91,11 +91,25 @@ describe("finalizeRun — transactional memory capture (GAP 2)", () => {
   test("enqueue is idempotent — finalizing twice yields one capture row", async () => {
     await withMemory(async () => {
       const id = await freshRun();
-      await finalizeRun(id, "completed", "sum", 1);
-      await finalizeRun(id, "completed", "sum", 1);
+      const summary = "Summed the ledger: 42 EUR total across 7 invoices";
+      await finalizeRun(id, "completed", summary, 1);
+      await finalizeRun(id, "completed", summary, 1);
       const cap = await getCapture(id);
       expect(cap).not.toBeNull();
       expect(cap!.attemptCount).toBe(0); // still the original pending row
+    });
+  });
+
+  test("a NON-SALIENT summary (trivial one-liner) does NOT enqueue a capture", async () => {
+    await withMemory(async () => {
+      const trivial = await freshRun("quick check");
+      await finalizeRun(trivial, "completed", "OK", 5);
+      expect((await getRun(trivial))?.status).toBe("completed");
+      expect(await getCapture(trivial)).toBeNull();
+
+      const apology = await freshRun("fetch the report");
+      await finalizeRun(apology, "completed", "I'm sorry, I couldn't reach the reporting API.", 5);
+      expect(await getCapture(apology)).toBeNull();
     });
   });
 
@@ -114,14 +128,18 @@ describe("finalizeRun — transactional memory capture (GAP 2)", () => {
       await db.execute(sql`update commands set state='dispatched' where run_id=${id} and kind='run.create'`);
 
       const reconcile: ReconcileProbe = async (h) =>
-        h.sessionId === "ses_done" ? { status: "completed", summary: "reconciled answer" } : { status: "unreachable" };
+        h.sessionId === "ses_done"
+          ? { status: "completed", summary: "Reconciled after restart: the session finished with 3 edits" }
+          : { status: "unreachable" };
       const res = await recoverStaleRuns(reconcile);
       expect(res.reconciled).toBeGreaterThanOrEqual(1);
 
       expect((await getRun(id))?.status).toBe("completed");
       const cap = await getCapture(id);
       expect(cap).not.toBeNull();
-      expect((JSON.parse(cap!.payload) as { summary: string }).summary).toBe("reconciled answer");
+      expect((JSON.parse(cap!.payload) as { summary: string }).summary).toBe(
+        "Reconciled after restart: the session finished with 3 edits",
+      );
     });
   });
 });
