@@ -1,5 +1,12 @@
 import { acceptRunCommand } from "../commands";
+import { slackConfig } from "../env";
 import { pumpThread } from "../worker";
+import {
+  composeAutomationFireText,
+  parseSlackAutomationTarget,
+  slackChannelAllowed,
+} from "../slack/automation";
+import { enqueuePostMessage } from "../slack/outbox";
 import { recordFiring, type ScheduleRecord } from "./repo";
 import type { ScheduleTrigger } from "../db/schema";
 
@@ -90,18 +97,40 @@ export async function fireScheduleWithOutcome(
   }
 
   const acceptedRunId = outcome.runId;
-  // Dispatch the thread's mailbox. On `created` this starts the run; on `replayed`
-  // it is an idempotent no-op if the original is already in flight (claimNextRun
-  // CAS) and closes the gap if a prior fire crashed after accept but before pump.
-  await pumpThread(acceptedRunId);
   // Idempotent (unique idempotency_key + onConflictDoNothing) — a retry after a
   // crash-before-record re-records the ORIGINAL run's firing, never a duplicate.
+  // Recorded BEFORE the pump so run finalization (which resolves the automation
+  // by run id for delivery.slack) always finds the firing row, even for a run
+  // that finishes near-instantly. A crash between record and pump is closed by
+  // the retry's pump below.
   const firingRecorded = await recordFiring({
     scheduleId: schedule.id,
     runId: acceptedRunId,
     trigger,
     idempotencyKey,
   });
+
+  // Fire notification (notifications.slack): durably enqueue "automation fired"
+  // to the configured channel through the existing Slack outbox. Keyed by the
+  // occurrence's firing key, so a replayed/double-fired occurrence enqueues at
+  // most once; the allowlist is re-checked at fire time (env may have changed
+  // since enable). Skipped entirely when Slack is unconfigured (nothing could
+  // deliver it) — the run itself is never blocked by notification config.
+  const notifyTarget = parseSlackAutomationTarget(schedule.notifications);
+  const slack = slackConfig();
+  if (notifyTarget && slack && slackChannelAllowed(notifyTarget.channel, slack)) {
+    await enqueuePostMessage({
+      idempotencyKey: `automation-notify:${idempotencyKey}`,
+      channel: notifyTarget.channel,
+      text: composeAutomationFireText(schedule.name, acceptedRunId),
+    });
+  }
+
+  // Dispatch the thread's mailbox. On `created` this starts the run; on `replayed`
+  // it is an idempotent no-op if the original is already in flight (claimNextRun
+  // CAS) and closes the gap if a prior fire crashed after accept but before pump.
+  await pumpThread(acceptedRunId);
+
   return {
     runId: acceptedRunId,
     created: outcome.status === "created",

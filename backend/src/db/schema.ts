@@ -940,6 +940,9 @@ export const scheduleFirings = pgTable(
   (t) => [
     index("idx_firings_schedule").on(t.scheduleId, t.firedAt),
     uniqueIndex("uq_firings_idem").on(t.idempotencyKey),
+    // Run finalization resolves "was this run fired by an automation?" by run id
+    // (Slack delivery of the terminal summary), so the lookup must be indexed.
+    index("idx_firings_run").on(t.runId),
   ],
 );
 

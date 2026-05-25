@@ -1,5 +1,5 @@
 import { and, desc, eq } from "drizzle-orm";
-import { db } from "../db/client";
+import { db, type Executor } from "../db/client";
 import {
   runs,
   scheduleFirings,
@@ -231,6 +231,22 @@ export async function deleteSchedule(orgId: string, id: string): Promise<boolean
 /** Enabled schedules across ALL orgs — the scheduler loop's tick query. */
 export async function listEnabledSchedules(): Promise<ScheduleRecord[]> {
   return db.select().from(schedules).where(eq(schedules.enabled, true));
+}
+
+/** The schedule whose firing created `runId`, or null for a non-automation run.
+ *  Takes an Executor so run finalization can resolve it inside its transaction
+ *  (Slack delivery of the terminal summary enqueues atomically with terminal). */
+export async function findScheduleForRun(
+  runId: string,
+  exec: Executor = db,
+): Promise<ScheduleRecord | null> {
+  const [row] = await exec
+    .select({ schedule: schedules })
+    .from(scheduleFirings)
+    .innerJoin(schedules, eq(scheduleFirings.scheduleId, schedules.id))
+    .where(eq(scheduleFirings.runId, runId))
+    .limit(1);
+  return row?.schedule ?? null;
 }
 
 /** Stamp the last-fired minute so the loop won't re-fire within the same minute. */
