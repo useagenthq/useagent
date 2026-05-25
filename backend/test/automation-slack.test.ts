@@ -16,7 +16,27 @@ import { createOrgSession, json, uid, waitFor, type OrgSession } from "./helpers
 
 const messages: Array<{ channel: string; text: string; threadTs?: string }> = [];
 
+// Hermetic Slack env (same rationale as test/slack.test.ts): Bun auto-loads
+// backend/.env, and a machine-level channel allowlist or engine selection
+// would 403 this suite's synthetic channels or route runs to live engines.
+const SLACK_ENV_OVERRIDES: Record<string, string | undefined> = {
+  SLACK_SIGNING_SECRET: "test-signing-secret",
+  SLACK_BOT_TOKEN: "xoxb-test-token",
+  SLACK_APP_TOKEN: undefined,
+  SLACK_CHANNEL_ALLOWLIST: undefined,
+  SLACK_DEFAULT_ORG_ID: undefined,
+  SLACK_DEFAULT_USER_ID: undefined,
+  SLACK_DEFAULT_ENGINE: undefined,
+  SLACK_DEFAULT_MODEL: undefined,
+};
+const savedSlackEnv: Record<string, string | undefined> = {};
+
 beforeAll(() => {
+  for (const [k, v] of Object.entries(SLACK_ENV_OVERRIDES)) {
+    savedSlackEnv[k] = process.env[k];
+    if (v === undefined) delete process.env[k];
+    else process.env[k] = v;
+  }
   setSlackClientForTest({
     postMessage: async (m) => {
       messages.push(m);
@@ -30,6 +50,10 @@ beforeAll(() => {
 
 afterAll(() => {
   setSlackClientForTest(null);
+  for (const [k, saved] of Object.entries(savedSlackEnv)) {
+    if (saved === undefined) delete process.env[k];
+    else process.env[k] = saved;
+  }
 });
 
 async function createAutomation(
