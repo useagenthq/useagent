@@ -1,31 +1,18 @@
 import { Hono } from "hono";
 import type { AppEnv } from "../http";
-import { contentTypeForName } from "../artifacts/mime";
 import { artifactStorage } from "../artifacts/storage";
 import { orgScope } from "../middleware/org";
-import {
-  createUserUpload,
-  deleteReadyUpload,
-  getOwnedUpload,
-  toUserUploadDescriptor,
-} from "./repo";
-import { scanUploadBytes, UploadScanError } from "./scan";
+import { ingestUserUpload } from "./ingest";
+import { deleteReadyUpload, getOwnedUpload, toUserUploadDescriptor } from "./repo";
+import { UploadScanError } from "./scan";
 
 export const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
 const MAX_UPLOADS_OVERHEAD = 1024 * 1024;
-const UPLOAD_TTL_MS = 24 * 60 * 60 * 1000;
-const SAFE_MIME = /^[a-z0-9][a-z0-9!#$&^_.+-]*\/[a-z0-9][a-z0-9!#$&^_.+-]*(?:\s*;\s*charset=[a-z0-9._-]+)?$/i;
 
 export function validateUploadName(raw: string): string | null {
   const name = raw.normalize("NFKC").trim();
   if (!name || name.length > 180 || /[\\/\0\r\n]/.test(name)) return null;
   return name;
-}
-
-function trustedContentType(name: string, supplied: string): string {
-  const inferred = contentTypeForName(name);
-  if (inferred !== "application/octet-stream") return inferred;
-  return SAFE_MIME.test(supplied) ? supplied.toLowerCase() : inferred;
 }
 
 function disposition(name: string): string {
@@ -61,32 +48,19 @@ uploadRoutes.post("/", async (c) => {
   if (value.size > MAX_UPLOAD_BYTES) return c.json({ error: "file exceeds 25 MB limit" }, 413);
 
   const bytes = new Uint8Array(await value.arrayBuffer());
-  const contentType = trustedContentType(name, value.type);
+  let row;
   try {
-    await scanUploadBytes({ name, contentType, bytes });
+    row = await ingestUserUpload({
+      orgId: c.get("orgId"),
+      userId,
+      name,
+      suppliedContentType: value.type,
+      bytes,
+    });
   } catch (error) {
     if (error instanceof UploadScanError) {
       return c.json({ error: error.code }, 422);
     }
-    throw error;
-  }
-  const sha256 = new Bun.CryptoHasher("sha256").update(bytes).digest("hex");
-  const row = await createUserUpload({
-    orgId: c.get("orgId"),
-    userId,
-    name,
-    contentType,
-    sizeBytes: bytes.byteLength,
-    sha256,
-    storageKey: sha256,
-    expiresAt: new Date(Date.now() + UPLOAD_TTL_MS),
-  });
-  try {
-    // The metadata reference must exist before byte publication so concurrent
-    // orphan reclamation retains this digest. Roll it back if storage fails.
-    await artifactStorage().put(sha256, bytes);
-  } catch (error) {
-    await deleteReadyUpload(c.get("orgId"), userId, row.id);
     throw error;
   }
   return c.json({ upload: toUserUploadDescriptor(row) }, 201);
