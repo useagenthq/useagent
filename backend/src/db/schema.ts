@@ -460,6 +460,102 @@ export const skillRevisions = pgTable(
 );
 
 // ---------------------------------------------------------------------------
+// Human-governed learning lane (memory self-improvement items 4 + 6). NOTHING
+// in this lane auto-publishes:
+//  - a HIGH-VALUE completed run (published artifacts, or a long multi-tool run;
+//    see src/learning/salience.ts) produces a knowledge DRAFT here — never a
+//    knowledge_records row. Only an explicit org-admin accept turns a draft
+//    into real, agent-searchable knowledge (via the existing store upsert).
+//  - repeated ACCEPTED drafts (deterministic title-keyword similarity; see
+//    src/learning/similarity.ts) surface a skill revision PROPOSAL, which
+//    changes a live skill only on an explicit org-admin accept through the
+//    existing skills code path (createSkillWithRevision/updateSkillWithRevision).
+// Both tables are written ONLY by the trusted backend (producer hook + admin
+// routes) — the sandbox gateway never touches them, so no gateway grants.
+// ---------------------------------------------------------------------------
+
+export const KNOWLEDGE_DRAFT_STATUSES = ["draft", "accepted", "dismissed"] as const;
+export type KnowledgeDraftStatus = (typeof KNOWLEDGE_DRAFT_STATUSES)[number];
+
+/** Why the producer judged the source run high-value (deterministic salience). */
+export type KnowledgeDraftReason = "published_artifacts" | "long_multi_tool_run";
+
+/** The deterministic facts a draft was proposed FROM — shown to the reviewer. */
+export interface KnowledgeDraftEvidence {
+  reason: KnowledgeDraftReason;
+  engine: string;
+  model: string;
+  durationMs: number | null;
+  stepCount: number;
+  distinctStepKinds: number;
+  artifactCount: number;
+  artifactNames: string[];
+}
+
+export const knowledgeDrafts = pgTable(
+  "knowledge_drafts",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orgId: text("org_id").notNull(),
+    // The completed run the draft was distilled from (provenance + idempotency).
+    runId: text("run_id")
+      .notNull()
+      .references(() => runs.id, { onDelete: "cascade" }),
+    threadId: text("thread_id").notNull(),
+    title: text("title").notNull(),
+    /** Proposed knowledge body (markdown) — becomes the record body on accept. */
+    content: text("content").notNull(),
+    evidence: jsonb("evidence").$type<KnowledgeDraftEvidence>().notNull(),
+    status: text("status").$type<KnowledgeDraftStatus>().notNull().default("draft"),
+    /** The knowledge_records id the accept created (provenance link). */
+    acceptedRecordId: text("accepted_record_id"),
+    /** The user who accepted/dismissed; null while the draft is open. */
+    resolvedBy: text("resolved_by"),
+    resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    // One draft per run — the post-finalize producer is naturally idempotent.
+    uniqueIndex("uq_knowledge_drafts_run").on(t.runId),
+    index("idx_knowledge_drafts_org_status").on(t.orgId, t.status, t.createdAt),
+  ],
+);
+
+export const SKILL_PROPOSAL_STATUSES = ["proposed", "accepted", "dismissed"] as const;
+export type SkillProposalStatus = (typeof SKILL_PROPOSAL_STATUSES)[number];
+
+export const skillRevisionProposals = pgTable(
+  "skill_revision_proposals",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orgId: text("org_id").notNull(),
+    // The existing skill this proposes a revision OF; null = brand-new-skill
+    // proposal. set null (not cascade): the proposal record outlives the skill.
+    skillId: uuid("skill_id").references(() => skills.id, { onDelete: "set null" }),
+    name: text("name").notNull(),
+    description: text("description").notNull().default(""),
+    /** Proposed instruction content — the SKILL.md text is derived from these
+     *  sections via formatSkillMarkdown (one source of truth, no divergence). */
+    sections: jsonb("sections").$type<SkillSections>().notNull(),
+    /** The accepted knowledge_drafts ids the proposal was assembled from. */
+    sourceDraftIds: jsonb("source_draft_ids")
+      .$type<string[]>()
+      .notNull()
+      .default(sql`'[]'::jsonb`),
+    status: text("status").$type<SkillProposalStatus>().notNull().default("proposed"),
+    resolvedBy: text("resolved_by"),
+    resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+    /** The skill + version the accept produced (provenance link). */
+    resolvedSkillId: uuid("resolved_skill_id"),
+    resolvedVersion: integer("resolved_version"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("idx_skill_proposals_org_status").on(t.orgId, t.status, t.createdAt)],
+);
+
+// ---------------------------------------------------------------------------
 // Org Secrets — org-scoped named secrets injected into the per-thread sandbox at
 // boot (task #100). The value is AES-256-GCM encrypted at rest
 // (src/secrets/crypto.ts); `iv` + `tag` are the GCM nonce and auth tag. The

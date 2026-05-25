@@ -21,6 +21,7 @@ import { isPublicApiPath, orgScope } from "./middleware/org";
 import { chatRoutes } from "./chat/routes";
 import { toolGatewayConfig } from "./knowledge/gateway/config";
 import { knowledgeRoutes } from "./knowledge/routes";
+import { knowledgeDraftRoutes, skillProposalRoutes } from "./learning/routes";
 import { memoryRoutes } from "./memory/routes";
 import { commandsRoutes } from "./runs/command-catalog";
 import { createOperatorRoutes } from "./runs/operator-routes";
@@ -229,6 +230,9 @@ app.route("/api/fleet", fleetRoutes);
 // multi-repo skill import from the org's GitHub repos (scan + import). Mounted
 // before /api/skills so the /import subtree resolves to its own routes.
 app.route("/api/skills/import", skillImportRoutes);
+// Learning lane (item 6): human-gated skill revision proposals. Mounted before
+// /api/skills so the /proposals subtree resolves to its own routes.
+app.route("/api/skills/proposals", skillProposalRoutes);
 app.route("/api/skills", skillsRoutes);
 app.route("/api/automations", schedulesRoutes);
 // Backward-compatible alias for sessions and frontend bundles created before
@@ -241,6 +245,9 @@ app.route("/api/secrets", secretsRoutes);
 // User-scoped provider credentials. Values are encrypted at rest and write-only
 // over HTTP; trusted backend consumers use src/provider-connections/service.ts.
 app.route("/api/provider-connections", providerConnectionsRoutes);
+// Learning lane (item 4): reviewable knowledge drafts from high-value runs.
+// Mounted before /api/knowledge so the /drafts subtree resolves to its own routes.
+app.route("/api/knowledge/drafts", knowledgeDraftRoutes);
 app.route("/api/knowledge", knowledgeRoutes);
 // Repo-wiki generator: POST /api/wiki/generate clones an offered repo and lands
 // a per-page architecture wiki as org-scoped published documents + immutable
