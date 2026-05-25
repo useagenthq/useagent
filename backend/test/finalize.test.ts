@@ -33,9 +33,9 @@ async function withMemory<T>(fn: () => Promise<T>): Promise<T> {
   }
 }
 
-async function freshRun(prompt = "capture me"): Promise<string> {
+async function freshRun(prompt = "capture me", origin: string | null = null): Promise<string> {
   const id = crypto.randomUUID();
-  await createRun({ id, prompt, model: "claude-opus-5", engine: "mock", orgId: ORG, userId: null, parentRunId: null, threadId: id });
+  await createRun({ id, prompt, model: "claude-opus-5", engine: "mock", orgId: ORG, userId: null, parentRunId: null, threadId: id, origin });
   return id;
 }
 
@@ -59,6 +59,15 @@ describe("finalizeRun — transactional memory capture (GAP 2)", () => {
       const payload = JSON.parse(cap!.payload) as { prompt: string; summary: string };
       expect(payload.prompt).toBe("what is the canary id");
       expect(payload.summary).toBe("the answer is RC-42");
+    });
+  });
+
+  test("an INTERNAL run (canary/e2e origin) does NOT enqueue a capture", async () => {
+    await withMemory(async () => {
+      const id = await freshRun("t3 parity probe: list the repo files", "t3-parity");
+      await finalizeRun(id, "completed", "Listed 14 files across src and test directories", 500);
+      expect((await getRun(id))?.status).toBe("completed");
+      expect(await getCapture(id)).toBeNull();
     });
   });
 

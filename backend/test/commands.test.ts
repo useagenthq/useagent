@@ -40,6 +40,30 @@ describe("durable commands / idempotency", () => {
     expect(list.body.runs.length).toBe(1);
   });
 
+  test("an internal-marker Idempotency-Key persists runs.origin; a product key stays null", async () => {
+    const s = await createOrgSession("origin");
+
+    const internal = await post(
+      { prompt: "parity probe" },
+      { "Idempotency-Key": `e2e-${crypto.randomUUID()}` },
+      s.cookies,
+    );
+    expect(internal.status).toBe(201);
+    const { db } = await import("../src/db/client");
+    const { sql } = await import("drizzle-orm");
+    const [internalRow] = (await db.execute(
+      sql`select origin from runs where id = ${internal.body.id!}`,
+    )) as unknown as Array<{ origin: string | null }>;
+    expect(internalRow?.origin).toBe("e2e");
+
+    const product = await post({ prompt: "real work" }, { "Idempotency-Key": uid("key") }, s.cookies);
+    expect(product.status).toBe(201);
+    const [productRow] = (await db.execute(
+      sql`select origin from runs where id = ${product.body.id!}`,
+    )) as unknown as Array<{ origin: string | null }>;
+    expect(productRow?.origin).toBeNull();
+  });
+
   test("concurrent same-key root submissions resolve after the losing transaction rolls back", async () => {
     const s = await createOrgSession("idem-concurrent");
     const key = uid("idem-key");

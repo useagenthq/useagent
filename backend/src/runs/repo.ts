@@ -183,6 +183,8 @@ export async function createRun(
     commandProvider?: string | null;
     commandSessionId?: string | null;
     commandCatalogRevision?: number | null;
+    /** Internal-run marker (src/runs/origin.ts); null for a real product run. */
+    origin?: string | null;
   },
   /** Run the insert inside a caller's transaction (durable-command acceptance
    *  commits the command + run atomically). Defaults to the shared pool. */
@@ -209,6 +211,7 @@ export async function createRun(
     commandProvider: input.commandProvider ?? null,
     commandSessionId: input.commandSessionId ?? null,
     commandCatalogRevision: input.commandCatalogRevision ?? null,
+    origin: input.origin ?? null,
   });
 }
 

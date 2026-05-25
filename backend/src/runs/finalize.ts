@@ -4,6 +4,7 @@ import { runs, type RunStatus } from "../db/schema";
 import { completeRun } from "./repo";
 import { resolveScopedMemory } from "../memory/scope";
 import { enqueueCapture } from "../memory/capture-outbox";
+import { isInternalRunOrigin } from "./origin";
 import { findSlackThreadByRoot } from "../slack/repo";
 import { composeSlackReplyText } from "../slack/reply";
 import { enqueuePostMessageTx, kickSlackOutbox } from "../slack/outbox";
@@ -69,8 +70,10 @@ export async function finalizeRun(
     // (personal→personal, org→org), resolved from the run row's memory_scope +
     // authenticated identity. `plan` is null when memory is disabled and
     // `writePool` is null when a personal run failed closed (no auth user) —
-    // either way a clean no-op.
-    if (status === "completed") {
+    // either way a clean no-op. INTERNAL runs (parity canaries, e2e harnesses —
+    // runs.origin, src/runs/origin.ts) never enqueue: evaluation traffic must
+    // not pollute org memory.
+    if (status === "completed" && !isInternalRunOrigin(run.origin)) {
       const plan = resolveScopedMemory(run);
       if (plan?.writePool) {
         await enqueueCapture(
