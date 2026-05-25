@@ -10,6 +10,7 @@ import { enqueuePostMessageTx, kickSlackOutbox } from "../slack/outbox";
 import { publishRunLifecycleChange } from "./org-signals";
 import { enqueueCanonicalization } from "./canonicalization-outbox";
 import { canonicalEngine } from "../engines/engine-alias";
+import { proposeKnowledgeDraftForRun } from "../learning/drafts";
 
 /** Providers whose runs project native events and/or `steps` into the canonical lane.
  *  OpenCode + the ACP engines (acp/claude/codex). Legacy aliases (daytona -> opencode,
@@ -123,5 +124,17 @@ export async function finalizeRun(
       runId,
       kind: "settled",
     });
+  }
+
+  // Learning lane (item 4), post-commit + best-effort: a completed HIGH-VALUE
+  // run proposes a reviewable knowledge DRAFT (never a knowledge record —
+  // publishing is org-admin-gated). Idempotent per run, and a failure here must
+  // never affect the already-finalized run.
+  if (status === "completed" && settledOrgId) {
+    try {
+      await proposeKnowledgeDraftForRun(runId);
+    } catch (err) {
+      console.error("[learning] draft proposal failed:", (err as Error).message);
+    }
   }
 }

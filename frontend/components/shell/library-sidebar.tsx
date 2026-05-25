@@ -9,6 +9,7 @@ import {
   RiFlashlightLine,
   RiGitPullRequestLine,
   RiKey2Line,
+  RiLightbulbLine,
   RiPlugLine,
   RiSettings3Line,
   RiStackLine,
@@ -25,6 +26,7 @@ export type LibrarySidebarActive =
   | "automations"
   | "knowledge"
   | "memory"
+  | "learnings"
   | "wiki"
   | "reviews"
   | "apps"
@@ -44,6 +46,7 @@ const LIBRARY_ITEMS = [
   },
   { key: "knowledge", href: "/knowledge", icon: RiBrainLine, label: "Knowledge" },
   { key: "memory", href: "/memory", icon: RiDatabase2Line, label: "Memory" },
+  { key: "learnings", href: "/learnings", icon: RiLightbulbLine, label: "Learnings" },
   { key: "wiki", href: "/wiki", icon: RiBook2Line, label: "Wiki" },
   { key: "reviews", href: "/review", icon: RiGitPullRequestLine, label: "Reviews" },
   { key: "apps", href: "/apps", icon: RiAppsLine, label: "Apps" },
