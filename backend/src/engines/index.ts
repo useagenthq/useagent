@@ -190,7 +190,7 @@ export async function runProviderTurn(
 
   if (driver.descriptor.protocol.name === "t3-orchestration") {
     if (!isT3EngineId(driver.provider)) {
-      throw new Error(`T3 driver has unsupported provider '${driver.provider}'`);
+      throw new Error(`Engine driver has unsupported provider '${driver.provider}'`);
     }
     await makeT3Adapter(driver.provider, driver).run(ctx);
     return true;

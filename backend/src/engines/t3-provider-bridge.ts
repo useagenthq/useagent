@@ -55,7 +55,7 @@ function encode(value: string): string {
 function assertSafeUrl(value: string): void {
   const url = new URL(value);
   if (url.protocol !== "https:" && url.protocol !== "http:") {
-    throw new Error("T3 provider gateway URL must use HTTP(S)");
+    throw new Error("the provider runtime provider gateway URL must use HTTP(S)");
   }
 }
 
@@ -71,7 +71,7 @@ export function buildT3ProviderBootstrapCommand(
   const anthropicBaseUrl = claudeEnvironment.ANTHROPIC_BASE_URL;
   const claudeConfigDir = claudeEnvironment.CLAUDE_CONFIG_DIR;
   if (!anthropicBaseUrl || !claudeConfigDir) {
-    throw new Error("T3 Claude provider gateway configuration is incomplete");
+    throw new Error("the provider runtime Claude provider gateway configuration is incomplete");
   }
   assertSafeUrl(anthropicBaseUrl);
 
@@ -134,7 +134,7 @@ async function ensureT3ProviderBootstrap(
   const operation = (async () => {
     const result = await sandbox.process.executeCommand(command, undefined, undefined, 20);
     if ((result.exitCode ?? 1) !== 0) {
-      throw new Error("T3 provider bridge bootstrap failed");
+      throw new Error("the provider runtime provider bridge bootstrap failed");
     }
   })();
   const state = { command, operation } satisfies BootstrapState;
@@ -154,7 +154,7 @@ async function prepareOpenCodeGateway(
   const baseConfig = await readOpencodeSandboxConfig(sandbox);
   const prepared = await prepareOpencodeSandboxConfig(sandbox, ctx, baseConfig);
   if (!prepared?.state.provider) {
-    throw new Error("T3 OpenCode provider gateway configuration failed");
+    throw new Error("the provider runtime OpenCode provider gateway configuration failed");
   }
   await writeOpencodeSandboxConfig(sandbox, prepared.config);
   await markProviderGatewaySandboxCurrent(sandbox);

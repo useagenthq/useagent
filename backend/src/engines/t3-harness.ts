@@ -35,7 +35,7 @@ const T3_CAPABILITIES: HarnessCapabilities = {
 
 async function t3Sandbox(handle: HarnessSessionHandle) {
   if (!isT3ThreadSessionId(handle.sessionId)) {
-    throw new Error("session is not a T3 thread");
+    throw new Error("session is not a provider-runtime thread");
   }
   return await sandboxProvider(sandboxProviderApiKey()).get(handle.sandboxId);
 }

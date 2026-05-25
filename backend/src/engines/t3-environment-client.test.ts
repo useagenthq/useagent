@@ -79,7 +79,7 @@ describe("T3 environment client", () => {
         method: "GET",
         path: "/api/orchestration/threads/thread-1;touch-/tmp/nope",
       }),
-    ).toThrow("invalid T3 loopback path");
+    ).toThrow("invalid runtime loopback path");
   });
 
   test("skips repeated readiness and auth probes after validated access", async () => {

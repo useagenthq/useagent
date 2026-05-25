@@ -122,7 +122,7 @@ export function t3RunSnapshot(
 ): string {
   if (sandboxProviderKind(env) === "cube") {
     const template = env.T3_CUBE_TEMPLATE_ID?.trim() || env.CUBE_TEMPLATE_ID?.trim();
-    if (!template) throw new Error("T3_CUBE_TEMPLATE_ID is required for the T3 Cube adapter");
+    if (!template) throw new Error("T3_CUBE_TEMPLATE_ID is required for the Cube runtime adapter");
     return template;
   }
   return (
@@ -161,7 +161,7 @@ async function resolveWorkspaceRoot(
   );
   const workdir = result.result?.trim();
   if ((result.exitCode ?? 1) !== 0 || !workdir?.startsWith("/")) {
-    throw new Error(`T3 run ${ctx.runId} could not resolve its sandbox workspace`);
+    throw new Error(`Run ${ctx.runId} could not resolve its sandbox workspace`);
   }
   return workdir;
 }
@@ -194,12 +194,12 @@ async function waitForNewT3TurnSnapshot(
     }
     if (Date.now() >= deadline) {
       throw new Error(
-        `T3 produced no first activity within ${t3FirstActivityTimeoutMs()}ms`,
+        `The provider produced no first activity within ${t3FirstActivityTimeoutMs()}ms`,
       );
     }
     await Bun.sleep(T3_POLL_INTERVAL_MS);
   }
-  throw new Error("T3 turn projection aborted");
+  throw new Error("Turn projection aborted");
 }
 
 async function waitForT3Turn(
@@ -286,7 +286,7 @@ async function waitForT3Turn(
   }
   if (watchdog.signal.aborted) throw watchdog.signal.reason;
   if (!ctx.signal.aborted) return finalText;
-  throw new Error("T3 run aborted (timeout)");
+  throw new Error("Run aborted (timeout)");
 }
 
 export function makeT3Adapter(engine: T3EngineId, driver: ProviderDriver): EngineAdapter {
@@ -294,7 +294,7 @@ export function makeT3Adapter(engine: T3EngineId, driver: ProviderDriver): Engin
     id: engine,
     async run(ctx): Promise<void> {
       if (!providerGatewayWired()) {
-        throw new Error("T3 engine requires a configured provider gateway");
+        throw new Error("Engine requires a configured provider gateway");
       }
       const startedAt = Date.now();
       const secretInjection = await composeSecretEnv(ctx, { excludeNames: PROVIDER_SECRET_NAMES });
@@ -373,7 +373,7 @@ export function makeT3Adapter(engine: T3EngineId, driver: ProviderDriver): Engin
             if (
               !(await awaitT3CodexProviderReady(sandbox, ctx.signal, T3_CODEX_VERIFY_DEADLINE_MS))
             ) {
-              throw new Error("T3 codex subscription runtime did not become ready after restart");
+              throw new Error("Codex runtime did not become ready after restart");
             }
           });
         }
@@ -405,7 +405,7 @@ export function makeT3Adapter(engine: T3EngineId, driver: ProviderDriver): Engin
           startMetadata: { workspaceRoot: workdir, runtimeMode, createdAt },
           persistSession: async (nativeSessionId) => {
             if (!ctx.saveEngineSessionId) {
-              throw new Error("T3 session persistence is unavailable");
+              throw new Error("Session persistence is unavailable");
             }
             await ctx.saveEngineSessionId(nativeSessionId);
           },
@@ -443,7 +443,7 @@ export function makeT3Adapter(engine: T3EngineId, driver: ProviderDriver): Engin
         endDispatch?.();
         if (steerResult.status !== "ok") {
           throw new Error(
-            `T3 ${engine} steer failed (${steerResult.status}): ${steerResult.message ?? "unsupported"}`,
+            `the provider runtime ${engine} steer failed (${steerResult.status}): ${steerResult.message ?? "unsupported"}`,
           );
         }
         const endTurn = ctx.timing?.begin("t3.turn_wait");
@@ -477,7 +477,7 @@ export function makeT3Adapter(engine: T3EngineId, driver: ProviderDriver): Engin
             const cancelResult = await driver.cancel(session, "turn aborted");
             if (cancelResult.status !== "ok") {
               throw new Error(
-                `T3 ${engine} cancel failed (${cancelResult.status}): ${cancelResult.message ?? "unsupported"}`,
+                `the provider runtime ${engine} cancel failed (${cancelResult.status}): ${cancelResult.message ?? "unsupported"}`,
               );
             }
           }

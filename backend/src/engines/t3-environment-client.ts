@@ -72,7 +72,7 @@ function t3LoopbackUrl(path: T3LoopbackPath): string {
     path !== "/api/orchestration/dispatch" &&
     !/^\/api\/orchestration\/threads\/[a-zA-Z0-9._~%-]+$/.test(path)
   ) {
-    throw new Error("invalid T3 loopback path");
+    throw new Error("invalid runtime loopback path");
   }
   return `http://127.0.0.1:${T3_ENVIRONMENT_PORT}${path}`;
 }
@@ -141,10 +141,10 @@ export function buildT3EnvironmentAuthenticationCommand(): string {
 
 export function buildT3EnvironmentRequestCommand(request: T3EnvironmentRequest): string {
   if (request.method === "POST" && request.payload === undefined) {
-    throw new Error("T3 POST request requires a payload");
+    throw new Error("the provider runtime POST request requires a payload");
   }
   if (request.method === "GET" && request.payload !== undefined) {
-    throw new Error("T3 GET request does not accept a payload");
+    throw new Error("the provider runtime GET request does not accept a payload");
   }
 
   const curl = [
@@ -168,7 +168,7 @@ async function authenticateT3Environment(
   sandbox: SandboxHandle,
   signal: AbortSignal,
 ): Promise<void> {
-  if (signal.aborted) throw new Error("T3 environment authentication aborted");
+  if (signal.aborted) throw new Error("Provider runtime authentication aborted");
   const key: string | object = sandbox.id || sandbox;
   const previous = authenticationOperations.get(key);
   const operation = (async () => {
@@ -181,7 +181,7 @@ async function authenticateT3Environment(
       .executeCommand(buildT3EnvironmentSessionProbeCommand(), undefined, undefined, 7)
       .catch(() => null);
     if (authenticated?.exitCode === 0) return;
-    if (signal.aborted) throw new Error("T3 environment authentication aborted");
+    if (signal.aborted) throw new Error("Provider runtime authentication aborted");
     const result = await sandbox.process.executeCommand(
       buildT3EnvironmentAuthenticationCommand(),
       undefined,
@@ -189,7 +189,7 @@ async function authenticateT3Environment(
       30,
     );
     if ((result.exitCode ?? 1) !== 0) {
-      throw new Error("T3 environment authentication failed");
+      throw new Error("Provider runtime authentication failed");
     }
   })();
   authenticationOperations.set(key, operation);
@@ -217,7 +217,7 @@ async function ensureT3EnvironmentAccess(
   signal: AbortSignal,
   force = false,
 ): Promise<void> {
-  if (signal.aborted) throw new Error("T3 environment access aborted");
+  if (signal.aborted) throw new Error("Provider runtime access aborted");
   const key = t3EnvironmentAccessKey(sandbox);
   if (!force && validatedAccess.has(key)) return;
 
@@ -318,7 +318,7 @@ export async function requestT3Environment<T>(
   signal: AbortSignal,
 ): Promise<T> {
   await ensureT3EnvironmentAccess(sandbox, signal);
-  if (signal.aborted) throw new Error("T3 environment request aborted");
+  if (signal.aborted) throw new Error("Provider runtime request aborted");
   let result = await executeT3EnvironmentRequest(sandbox, request);
   let response = parseT3EnvironmentResponse(result);
   if (t3EnvironmentRequestFailed(result, response)) {
@@ -326,7 +326,7 @@ export async function requestT3Environment<T>(
     if (isT3EnvironmentMissingSessionError(error)) throw error;
     invalidateT3EnvironmentAccess(sandbox);
     await ensureT3EnvironmentAccess(sandbox, signal, true);
-    if (signal.aborted) throw new Error("T3 environment request aborted");
+    if (signal.aborted) throw new Error("Provider runtime request aborted");
     result = await executeT3EnvironmentRequest(sandbox, request);
     response = parseT3EnvironmentResponse(result);
   }
@@ -336,7 +336,7 @@ export async function requestT3Environment<T>(
   try {
     return JSON.parse(response.body) as T;
   } catch {
-    throw new Error("T3 environment returned invalid JSON");
+    throw new Error("Provider runtime returned invalid JSON");
   }
 }
 
@@ -347,7 +347,7 @@ export async function issueT3EnvironmentWebSocketTicket(
   signal: AbortSignal,
 ): Promise<string> {
   await ensureT3EnvironmentAccess(sandbox, signal);
-  if (signal.aborted) throw new Error("T3 websocket ticket request aborted");
+  if (signal.aborted) throw new Error("the provider runtime websocket ticket request aborted");
   let result = await sandbox.process.executeCommand(
     buildT3EnvironmentWebSocketTicketCommand(),
     undefined,
@@ -357,7 +357,7 @@ export async function issueT3EnvironmentWebSocketTicket(
   if ((result.exitCode ?? 1) !== 0) {
     invalidateT3EnvironmentAccess(sandbox);
     await ensureT3EnvironmentAccess(sandbox, signal, true);
-    if (signal.aborted) throw new Error("T3 websocket ticket request aborted");
+    if (signal.aborted) throw new Error("the provider runtime websocket ticket request aborted");
     result = await sandbox.process.executeCommand(
       buildT3EnvironmentWebSocketTicketCommand(),
       undefined,
@@ -366,7 +366,7 @@ export async function issueT3EnvironmentWebSocketTicket(
     );
   }
   if ((result.exitCode ?? 1) !== 0) {
-    throw new Error("T3 websocket ticket request failed");
+    throw new Error("the provider runtime websocket ticket request failed");
   }
   try {
     const response = JSON.parse(result.result ?? "") as T3WebSocketTicket;
@@ -375,6 +375,6 @@ export async function issueT3EnvironmentWebSocketTicket(
     }
     return response.ticket;
   } catch {
-    throw new Error("T3 websocket ticket response was invalid");
+    throw new Error("the provider runtime websocket ticket response was invalid");
   }
 }

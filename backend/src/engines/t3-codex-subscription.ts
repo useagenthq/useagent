@@ -254,7 +254,7 @@ async function patchT3CodexProviderInstance(
     10,
   );
   if ((result.exitCode ?? 1) !== 0) {
-    throw new Error("T3 Codex subscription provider configuration failed");
+    throw new Error("the provider runtime Codex subscription provider configuration failed");
   }
 }
 
