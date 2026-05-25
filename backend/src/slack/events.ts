@@ -1,9 +1,10 @@
 /**
  * Slack Events-API ingest, adapted to the runs model. Given a verified
- * `event_callback` envelope, this decides whether the message is for us, maps it
- * onto a run (root or `parent_run_id` reply), 👀-acks, and registers a
- * completion watcher. Kept deliberately small — QM's turn-handler (approvals,
- * reactions, mirroring, attachments, agent-requests) is DEFERRED.
+ * `event_callback` envelope, this resolves the workspace to a tenant identity
+ * (fail closed), decides whether the message is for us, maps it onto a run
+ * (root or `parent_run_id` reply), 👀-acks, and registers a completion
+ * watcher. Kept deliberately small — QM's turn-handler (approvals, reactions,
+ * mirroring, attachments, agent-requests) is DEFERRED.
  *
  * Gating (from QM's events.ts, condensed):
  *  - DM (`channel_type: "im"`)      → always ours.
@@ -15,13 +16,13 @@
  */
 import { slackConfig } from "../env";
 import type { MemoryScope } from "../db/schema";
-import { getDevContext } from "../seed";
 import { getRunForOrg } from "../runs/repo";
 import { acceptRunCommand } from "../commands";
 import { pumpThread } from "../worker";
 import { resolveSlackClient } from "./client";
 import { findSlackThread, linkSlackThread } from "./repo";
 import { watchSlackRun } from "./watcher";
+import { resolveSlackWorkspace } from "./workspaces";
 import { enqueueAddReaction } from "./outbox";
 
 // Bounded FIFO deduper — collapses Slack retries AND the app_mention/message
@@ -50,6 +51,9 @@ const deduper = createDeduper();
 export interface SlackEnvelope {
   type?: string;
   challenge?: string;
+  /** The workspace the event came from — resolved to an org/user via
+   *  slack_workspaces (fail closed; see workspaces.ts). */
+  team_id?: string;
   authorizations?: Array<{ user_id?: string }>;
   event?: {
     type?: string;
@@ -116,21 +120,28 @@ export async function handleSlackEvent(body: SlackEnvelope): Promise<void> {
     if (!link) return; // a thread we have no stake in
   }
 
+  // Workspace identity — FAIL CLOSED. An event from a workspace with no
+  // slack_workspaces mapping is ignored (logged once per team id); nothing ever
+  // falls back to a seeded org. Resolved BEFORE dedupe so an unmapped
+  // workspace's event never reserves a dedupe key (a retry after the operator
+  // adds the mapping still lands).
+  const workspace = await resolveSlackWorkspace(body.team_id);
+  if (!workspace) return;
+
   // Dedupe last, so a genuinely-ours message reserves its key exactly once.
   const key = `${channel}:${ts}`;
   if (deduper.seen(key)) return;
+
+  // Org identity: an existing thread keeps its original org; a new thread is
+  // scoped by the workspace mapping. The actor is the workspace's bound user.
+  const orgId = link?.orgId ?? workspace.orgId;
+  const userId = workspace.userId;
 
   const prompt = cleanPrompt(rawText, botUserId);
   if (!prompt) {
     deduper.forget(key);
     return;
   }
-
-  // Org identity: v1 is single-tenant — a Slack request has no better-auth
-  // session, so runs are scoped to the seeded dev org (an existing thread keeps
-  // its original org). Multi-workspace → org mapping is deferred.
-  const orgId = link?.orgId ?? getDevContext().orgId;
-  const userId = getDevContext().userId;
 
   // Threading: an existing Slack thread → reply under its root run (inherits the
   // skynet thread); a new thread → a root run under its own id.
@@ -139,7 +150,7 @@ export async function handleSlackEvent(body: SlackEnvelope): Promise<void> {
   let threadId: string = runId;
   // Slack has no scope selector: a reply inherits its thread-root's scope, a new
   // thread defaults to "org". (Personal-scope Slack runs would need a verified
-  // per-actor identity, which the current dev-org fallback doesn't provide.)
+  // per-Slack-user identity; the workspace mapping binds one actor per team.)
   let memoryScope: MemoryScope = "org";
   if (link) {
     const parent = await getRunForOrg(orgId, link.rootRunId);
