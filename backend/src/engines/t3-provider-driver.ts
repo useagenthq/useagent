@@ -14,8 +14,8 @@ import { sessionCapabilities } from "./capabilities";
 import {
   isT3EnvironmentMissingSessionError,
   requestT3Environment,
-} from "./t3-environment-client";
-import { T3_RUNTIME_GENERATION } from "./t3-environment";
+} from "./runtime-environment-client";
+import { T3_RUNTIME_GENERATION } from "./runtime-environment";
 import {
   assistantText,
   buildT3ProjectCreateCommand,
@@ -27,7 +27,7 @@ import {
   type T3EngineId,
   type T3RuntimeMode,
   type T3ThreadSnapshot,
-} from "./t3-orchestration";
+} from "./runtime-orchestration";
 
 const T3_POLL_INTERVAL_MS = 125;
 export const T3_SESSION_GENERATION = 2;

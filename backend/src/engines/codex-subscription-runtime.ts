@@ -12,7 +12,7 @@ import type { CodexSubscriptionRuntimeSelection } from "../provider-connections/
 import { DEFAULT_CODEX_MODEL } from "../runs/model-policy";
 import { codexToolGatewayDescriptor } from "../provider-gateway/sandbox-config";
 import type { EngineRunContext } from "./types";
-import { T3_ENVIRONMENT_HOME, T3_RUNTIME_GENERATION } from "./t3-environment";
+import { T3_ENVIRONMENT_HOME, T3_RUNTIME_GENERATION } from "./runtime-environment";
 
 const CODEX_EXEC_SERVER_PORT = 37_734;
 const CODEX_EXEC_SERVER_SESSION = "skynet-codex-exec-server";

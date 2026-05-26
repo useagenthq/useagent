@@ -8,7 +8,7 @@ import {
   codexBridgeAuthPath,
   prewarmT3ProviderBridge,
   resetT3ProviderBridgeCacheForTest,
-} from "./t3-provider-bridge";
+} from "./runtime-provider-bridge";
 
 const previousGatewayUrl = process.env.PROVIDER_GATEWAY_PUBLIC_URL;
 const previousGatewaySecret = process.env.PROVIDER_GATEWAY_SECRET;

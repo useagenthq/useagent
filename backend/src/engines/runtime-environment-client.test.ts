@@ -10,8 +10,8 @@ import {
   prewarmT3EnvironmentAccess,
   requestT3Environment,
   T3EnvironmentRequestError,
-} from "./t3-environment-client";
-import { buildT3EnvironmentReadinessCommand } from "./t3-environment";
+} from "./runtime-environment-client";
+import { buildT3EnvironmentReadinessCommand } from "./runtime-environment";
 
 describe("T3 environment client", () => {
   test("decodes the bounded HTTP status marker for runtime and canary callers", () => {

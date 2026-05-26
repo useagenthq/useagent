@@ -6,9 +6,9 @@ import {
   T3EnvironmentRequestError,
   type T3EnvironmentRequest,
   type requestT3Environment,
-} from "./t3-environment-client";
+} from "./runtime-environment-client";
 import { makeT3ProviderDriver, t3ProviderDrivers } from "./t3-provider-driver";
-import type { T3ThreadSnapshot } from "./t3-orchestration";
+import type { T3ThreadSnapshot } from "./runtime-orchestration";
 
 function sessionFor(driver: ReturnType<typeof makeT3ProviderDriver>): HarnessSession {
   return {

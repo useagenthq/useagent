@@ -11,7 +11,7 @@ import {
   buildT3CodexProviderReadyProbeCommand,
   prepareT3CodexSubscription,
   previewWebSocketUrl,
-} from "./t3-codex-subscription";
+} from "./codex-subscription-runtime";
 
 describe("T3 Codex subscription lease", () => {
   test("binds the host relay to the exact run and remote execution environment", async () => {

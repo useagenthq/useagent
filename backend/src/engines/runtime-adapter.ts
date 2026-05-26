@@ -5,13 +5,13 @@ import { prepareRepos } from "./repo-prep";
 import {
   prepareT3ProviderBridge,
   type T3ProviderBridgeLease,
-} from "./t3-provider-bridge";
+} from "./runtime-provider-bridge";
 import {
   invalidateT3EnvironmentAccess,
   requestT3Environment,
-} from "./t3-environment-client";
-import { awaitT3CodexProviderReady } from "./t3-codex-subscription";
-import { subscribeT3Thread } from "./t3-event-stream";
+} from "./runtime-environment-client";
+import { awaitT3CodexProviderReady } from "./codex-subscription-runtime";
+import { subscribeT3Thread } from "./runtime-event-stream";
 import {
   activityStep,
   assistantText,
@@ -26,7 +26,7 @@ import {
   type T3EngineId,
   type T3RuntimeMode,
   type T3ThreadSnapshot,
-} from "./t3-orchestration";
+} from "./runtime-orchestration";
 import {
   composeSecretEnv,
   materializeSecretFiles,
@@ -53,7 +53,7 @@ import {
   t3NoProgressTimeoutMs,
   T3_RUNTIME_GENERATION,
   T3_RUNTIME_GENERATION_LABEL,
-} from "./t3-environment";
+} from "./runtime-environment";
 import { createNoProgressWatchdog, NoProgressError } from "./turn-no-progress";
 import { T3_SESSION_GENERATION, t3ProviderDrivers } from "./t3-provider-driver";
 

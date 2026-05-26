@@ -7,7 +7,7 @@ import {
   t3RunAdapterSelected,
   t3RunSnapshot,
   t3RuntimeMode,
-} from "./t3-adapter";
+} from "./runtime-adapter";
 
 describe("T3 run adapter gate", () => {
   test("is disabled unless explicitly enabled", () => {
@@ -91,7 +91,7 @@ describe("T3 run adapter gate", () => {
   });
 
   test("keeps semantic prompt composition and native T3 activity projection", () => {
-    const source = readFileSync(new URL("./t3-adapter.ts", import.meta.url), "utf8");
+    const source = readFileSync(new URL("./runtime-adapter.ts", import.meta.url), "utf8");
     expect(source).toContain("composeTurnPrompt(ctx, established.resumed)");
     expect(source).toContain("await establishProviderSession({");
     expect(source).toContain("const steerResult = await driver.steer({");
@@ -112,7 +112,7 @@ describe("T3 run adapter gate", () => {
   });
 
   test("keeps desktop/noVNC readiness off the ordinary T3 turn critical path", () => {
-    const source = readFileSync(new URL("./t3-adapter.ts", import.meta.url), "utf8");
+    const source = readFileSync(new URL("./runtime-adapter.ts", import.meta.url), "utf8");
     expect(source).toContain("Preparing T3 runtime and integrations");
     expect(source).toContain("Waiting for T3 activity");
     expect(source).toContain("t3FirstActivityTimeoutMs()");
@@ -122,7 +122,7 @@ describe("T3 run adapter gate", () => {
   });
 
   test("bounds a provider retry storm with one no-progress watchdog owner", () => {
-    const source = readFileSync(new URL("./t3-adapter.ts", import.meta.url), "utf8");
+    const source = readFileSync(new URL("./runtime-adapter.ts", import.meta.url), "utf8");
     expect(source).toContain(
       "createNoProgressWatchdog(t3NoProgressTimeoutMs(), redact.text)",
     );
@@ -137,7 +137,7 @@ describe("T3 run adapter gate", () => {
   });
 
   test("barriers on the codex reconcile (restart fallback) before steering", () => {
-    const source = readFileSync(new URL("./t3-adapter.ts", import.meta.url), "utf8");
+    const source = readFileSync(new URL("./runtime-adapter.ts", import.meta.url), "utf8");
     // Scoped to codex-engine runs only; opencode/claude never patch settings and
     // must not pay the barrier or restart.
     expect(source).toContain('if (engine === "codex") {');
@@ -174,7 +174,7 @@ describe("T3 run adapter gate", () => {
   });
 
   test("requires durable session persistence before T3 steering", () => {
-    const source = readFileSync(new URL("./t3-adapter.ts", import.meta.url), "utf8");
+    const source = readFileSync(new URL("./runtime-adapter.ts", import.meta.url), "utf8");
     expect(source).toContain("persistSession: async (nativeSessionId) => {");
     expect(source).toContain("Session persistence is unavailable");
     expect(source).toContain("await ctx.saveEngineSessionId(nativeSessionId)");

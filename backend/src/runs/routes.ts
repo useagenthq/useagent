@@ -49,9 +49,9 @@ import {
   replyToOpenCodeQuestion,
 } from "../engines/opencode-question";
 import { releaseRunSandbox } from "./sandbox-release";
-import { isT3ThreadSessionId } from "../engines/t3-orchestration";
-import { replyToT3Question } from "../engines/t3-question";
-import { replyToT3Approval, T3ApprovalError } from "../engines/t3-approval";
+import { isT3ThreadSessionId } from "../engines/runtime-orchestration";
+import { replyToT3Question } from "../engines/runtime-question";
+import { replyToT3Approval, T3ApprovalError } from "../engines/runtime-approval";
 import { UploadClaimError } from "../uploads/repo";
 
 export const runsRoutes = new Hono<AppEnv>();

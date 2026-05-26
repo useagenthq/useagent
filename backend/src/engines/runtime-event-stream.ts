@@ -2,8 +2,8 @@ import {
   sandboxPreviewHeaders,
   type SandboxHandle,
 } from "../sandboxes/provider";
-import { T3_ENVIRONMENT_PORT } from "./t3-environment";
-import { issueT3EnvironmentWebSocketTicket } from "./t3-environment-client";
+import { T3_ENVIRONMENT_PORT } from "./runtime-environment";
+import { issueT3EnvironmentWebSocketTicket } from "./runtime-environment-client";
 
 const T3_SUBSCRIPTION_REQUEST_ID = 1;
 const T3_SUBSCRIPTION_TAG = "orchestration.subscribeThread";

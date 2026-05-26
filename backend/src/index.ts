@@ -60,9 +60,9 @@ import {
   T3_CUBE_WARM_POOL_NAME,
   T3_RUNTIME_GENERATION,
   T3_RUNTIME_GENERATION_LABEL,
-} from "./engines/t3-environment";
-import { prewarmT3EnvironmentAccess } from "./engines/t3-environment-client";
-import { prewarmT3ProviderBridge } from "./engines/t3-provider-bridge";
+} from "./engines/runtime-environment";
+import { prewarmT3EnvironmentAccess } from "./engines/runtime-environment-client";
+import { prewarmT3ProviderBridge } from "./engines/runtime-provider-bridge";
 import { providerConnectionsRoutes } from "./provider-connections/routes";
 import { codexSubscriptionRelayRoutes } from "./provider-connections/codex-subscription-relay";
 import { wikiGenRoutes } from "./wiki-gen/routes";

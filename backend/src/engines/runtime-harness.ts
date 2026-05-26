@@ -9,13 +9,13 @@ import type {
   HarnessReconciliation,
   HarnessSessionHandle,
 } from "./types";
-import { requestT3Environment } from "./t3-environment-client";
+import { requestT3Environment } from "./runtime-environment-client";
 import {
   assistantText,
   buildT3TurnInterruptCommand,
   isT3ThreadSessionId,
   type T3ThreadSnapshot,
-} from "./t3-orchestration";
+} from "./runtime-orchestration";
 
 const T3_CONTROL_TIMEOUT_MS = 10_000;
 

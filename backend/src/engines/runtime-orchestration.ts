@@ -3,7 +3,7 @@ import { DEFAULT_CODEX_MODEL, DEFAULT_OPENCODE_MODEL } from "../runs/model-polic
 import type { EmitStep, EngineRunContext } from "./types";
 import type { ProviderEventInput } from "../runs/provider-events";
 import { questionEventId, type ProviderQuestionRequest } from "./provider-question";
-import { approvalEventId, t3ApprovalRequest } from "./t3-approval";
+import { approvalEventId, t3ApprovalRequest } from "./runtime-approval";
 import { firstSemanticT3ToolName } from "@skynet/agent-harness";
 
 export type T3EngineId = Extract<EngineId, "codex" | "claude" | "opencode">;

@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { ProviderQuestionError } from "./provider-question";
-import { t3QuestionAnswers } from "./t3-question";
-import type { T3ThreadSnapshot } from "./t3-orchestration";
+import { t3QuestionAnswers } from "./runtime-question";
+import type { T3ThreadSnapshot } from "./runtime-orchestration";
 
 function snapshot(resolved = false): T3ThreadSnapshot {
   return {

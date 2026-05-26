@@ -16,7 +16,7 @@ import {
   t3FirstActivityTimeoutMs,
   t3NoProgressTimeoutMs,
   t3EnvironmentEnabled,
-} from "./t3-environment";
+} from "./runtime-environment";
 
 type T3TestProcess = Pick<
   SandboxProcess,

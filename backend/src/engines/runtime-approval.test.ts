@@ -3,8 +3,8 @@ import {
   assertT3ApprovalPending,
   T3ApprovalError,
   validateT3ApprovalDecision,
-} from "./t3-approval";
-import type { T3ThreadSnapshot } from "./t3-orchestration";
+} from "./runtime-approval";
+import type { T3ThreadSnapshot } from "./runtime-orchestration";
 
 function snapshot(resolved = false): T3ThreadSnapshot {
   return {

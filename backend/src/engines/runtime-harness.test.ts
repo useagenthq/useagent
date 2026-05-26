@@ -1,11 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import type { HarnessAdapter } from "./types";
-import { routeT3Harness, t3Harness } from "./t3-harness";
+import { routeT3Harness, t3Harness } from "./runtime-harness";
 import {
   buildT3TurnInterruptCommand,
   isT3ThreadSessionId,
-} from "./t3-orchestration";
+} from "./runtime-orchestration";
 
 const LEGACY_CAPABILITIES = {
   resume: true,
@@ -40,7 +40,7 @@ describe("T3 control harness", () => {
   });
 
   test("cancels the projected turn by its native turn id", () => {
-    const source = readFileSync(new URL("./t3-harness.ts", import.meta.url), "utf8");
+    const source = readFileSync(new URL("./runtime-harness.ts", import.meta.url), "utf8");
     expect(source).toContain("snapshot.thread.latestTurn?.turnId");
   });
 

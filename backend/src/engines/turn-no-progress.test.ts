@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { T3Activity } from "./t3-orchestration";
+import type { T3Activity } from "./runtime-orchestration";
 import {
   createNoProgressWatchdog,
   MAX_CONSECUTIVE_RETRY_WARNINGS,
