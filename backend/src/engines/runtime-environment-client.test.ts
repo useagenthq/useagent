@@ -1,21 +1,21 @@
 import { describe, expect, test } from "bun:test";
 import type { SandboxHandle } from "../sandboxes/provider";
 import {
-  buildT3EnvironmentAuthenticationCommand,
-  buildT3EnvironmentRequestCommand,
-  buildT3EnvironmentSessionProbeCommand,
-  buildT3EnvironmentWebSocketTicketCommand,
-  decodeT3EnvironmentCommandOutput,
-  issueT3EnvironmentWebSocketTicket,
-  prewarmT3EnvironmentAccess,
-  requestT3Environment,
-  T3EnvironmentRequestError,
-} from "./t3-environment-client";
-import { buildT3EnvironmentReadinessCommand } from "./t3-environment";
+  buildRuntimeEnvironmentAuthenticationCommand,
+  buildRuntimeEnvironmentRequestCommand,
+  buildRuntimeEnvironmentSessionProbeCommand,
+  buildRuntimeEnvironmentWebSocketTicketCommand,
+  decodeRuntimeEnvironmentCommandOutput,
+  issueRuntimeEnvironmentWebSocketTicket,
+  prewarmRuntimeEnvironmentAccess,
+  requestRuntimeEnvironment,
+  RuntimeEnvironmentRequestError,
+} from "./runtime-environment-client";
+import { buildRuntimeEnvironmentReadinessCommand } from "./runtime-environment";
 
 describe("T3 environment client", () => {
   test("decodes the bounded HTTP status marker for runtime and canary callers", () => {
-    expect(decodeT3EnvironmentCommandOutput([
+    expect(decodeRuntimeEnvironmentCommandOutput([
       '{"projects":[],"threads":[]}',
       "__SKYNET_T3_HTTP_STATUS__:200",
     ].join("\n"))).toEqual({
@@ -25,7 +25,7 @@ describe("T3 environment client", () => {
   });
 
   test("keeps the one-time pairing credential and cookie inside the sandbox", () => {
-    const command = buildT3EnvironmentAuthenticationCommand();
+    const command = buildRuntimeEnvironmentAuthenticationCommand();
 
     expect(command).toContain("t3 auth pairing create");
     expect(command).toContain('--json >"$PAIRING"');
@@ -38,7 +38,7 @@ describe("T3 environment client", () => {
   });
 
   test("uses only the private loopback cookie for session checks", () => {
-    const command = buildT3EnvironmentSessionProbeCommand();
+    const command = buildRuntimeEnvironmentSessionProbeCommand();
 
     expect(command).toContain("127.0.0.1:37733/api/auth/session");
     expect(command).toContain("session.cookies");
@@ -48,7 +48,7 @@ describe("T3 environment client", () => {
 
   test("base64-encodes POST JSON instead of interpolating prompt text", () => {
     const hostile = `hello'; touch /tmp/not-allowed; #`;
-    const command = buildT3EnvironmentRequestCommand({
+    const command = buildRuntimeEnvironmentRequestCommand({
       method: "POST",
       path: "/api/orchestration/dispatch",
       payload: { message: hostile },
@@ -62,20 +62,20 @@ describe("T3 environment client", () => {
 
   test("rejects invalid method and payload combinations", () => {
     expect(() =>
-      buildT3EnvironmentRequestCommand({
+      buildRuntimeEnvironmentRequestCommand({
         method: "POST",
         path: "/api/orchestration/dispatch",
       }),
     ).toThrow("requires a payload");
     expect(() =>
-      buildT3EnvironmentRequestCommand({
+      buildRuntimeEnvironmentRequestCommand({
         method: "GET",
         path: "/api/orchestration/shell",
         payload: { unexpected: true },
       }),
     ).toThrow("does not accept a payload");
     expect(() =>
-      buildT3EnvironmentRequestCommand({
+      buildRuntimeEnvironmentRequestCommand({
         method: "GET",
         path: "/api/orchestration/threads/thread-1;touch-/tmp/nope",
       }),
@@ -89,10 +89,10 @@ describe("T3 environment client", () => {
       process: {
         executeCommand: async (command: string) => {
           commands.push(command);
-          if (command === buildT3EnvironmentReadinessCommand()) {
+          if (command === buildRuntimeEnvironmentReadinessCommand()) {
             return { exitCode: 0, result: "" };
           }
-          if (command === buildT3EnvironmentSessionProbeCommand()) {
+          if (command === buildRuntimeEnvironmentSessionProbeCommand()) {
             return { exitCode: 0, result: "" };
           }
           return { exitCode: 0, result: '{"projects":[],"threads":[]}' };
@@ -101,14 +101,14 @@ describe("T3 environment client", () => {
     } as unknown as SandboxHandle;
 
     await expect(
-      requestT3Environment<{ projects: unknown[]; threads: unknown[] }>(
+      requestRuntimeEnvironment<{ projects: unknown[]; threads: unknown[] }>(
         sandbox,
         { method: "GET", path: "/api/orchestration/shell" },
         new AbortController().signal,
       ),
     ).resolves.toEqual({ projects: [], threads: [] });
     await expect(
-      requestT3Environment<{ projects: unknown[]; threads: unknown[] }>(
+      requestRuntimeEnvironment<{ projects: unknown[]; threads: unknown[] }>(
         sandbox,
         { method: "GET", path: "/api/orchestration/shell" },
         new AbortController().signal,
@@ -116,8 +116,8 @@ describe("T3 environment client", () => {
     ).resolves.toEqual({ projects: [], threads: [] });
     expect(commands).toHaveLength(4);
     expect(commands).toEqual([
-      buildT3EnvironmentReadinessCommand(),
-      buildT3EnvironmentSessionProbeCommand(),
+      buildRuntimeEnvironmentReadinessCommand(),
+      buildRuntimeEnvironmentSessionProbeCommand(),
       expect.stringContaining("/api/orchestration/shell"),
       expect.stringContaining("/api/orchestration/shell"),
     ]);
@@ -130,13 +130,13 @@ describe("T3 environment client", () => {
       process: {
         executeCommand: async (command: string) => {
           commands.push(command);
-          if (command === buildT3EnvironmentReadinessCommand()) {
+          if (command === buildRuntimeEnvironmentReadinessCommand()) {
             return { exitCode: 0, result: "" };
           }
-          if (command === buildT3EnvironmentSessionProbeCommand()) {
+          if (command === buildRuntimeEnvironmentSessionProbeCommand()) {
             return { exitCode: 1, result: "" };
           }
-          if (command === buildT3EnvironmentAuthenticationCommand()) {
+          if (command === buildRuntimeEnvironmentAuthenticationCommand()) {
             return { exitCode: 0, result: "" };
           }
           return { exitCode: 0, result: '{"projects":[]}' };
@@ -145,13 +145,13 @@ describe("T3 environment client", () => {
     } as unknown as SandboxHandle;
 
     await expect(
-      requestT3Environment<{ projects: unknown[] }>(
+      requestRuntimeEnvironment<{ projects: unknown[] }>(
         sandbox,
         { method: "GET", path: "/api/orchestration/snapshot" },
         new AbortController().signal,
       ),
     ).resolves.toEqual({ projects: [] });
-    expect(commands).toContain(buildT3EnvironmentAuthenticationCommand());
+    expect(commands).toContain(buildRuntimeEnvironmentAuthenticationCommand());
     expect(commands).toHaveLength(4);
   });
 
@@ -162,13 +162,13 @@ describe("T3 environment client", () => {
       process: {
         executeCommand: async (command: string) => {
           commands.push(command);
-          if (command === buildT3EnvironmentReadinessCommand()) {
+          if (command === buildRuntimeEnvironmentReadinessCommand()) {
             return { exitCode: 0, result: "" };
           }
-          if (command === buildT3EnvironmentSessionProbeCommand()) {
+          if (command === buildRuntimeEnvironmentSessionProbeCommand()) {
             return { exitCode: 1, result: "" };
           }
-          if (command === buildT3EnvironmentAuthenticationCommand()) {
+          if (command === buildRuntimeEnvironmentAuthenticationCommand()) {
             return { exitCode: 0, result: "" };
           }
           throw new Error("unexpected orchestration request");
@@ -177,12 +177,12 @@ describe("T3 environment client", () => {
     } as unknown as SandboxHandle;
 
     await expect(
-      prewarmT3EnvironmentAccess(sandbox, new AbortController().signal),
+      prewarmRuntimeEnvironmentAccess(sandbox, new AbortController().signal),
     ).resolves.toBeUndefined();
     expect(commands).toEqual([
-      buildT3EnvironmentReadinessCommand(),
-      buildT3EnvironmentSessionProbeCommand(),
-      buildT3EnvironmentAuthenticationCommand(),
+      buildRuntimeEnvironmentReadinessCommand(),
+      buildRuntimeEnvironmentSessionProbeCommand(),
+      buildRuntimeEnvironmentAuthenticationCommand(),
     ]);
   });
 
@@ -194,10 +194,10 @@ describe("T3 environment client", () => {
       process: {
         executeCommand: async (command: string) => {
           commands.push(command);
-          if (command === buildT3EnvironmentReadinessCommand()) {
+          if (command === buildRuntimeEnvironmentReadinessCommand()) {
             return { exitCode: 0, result: "" };
           }
-          if (command === buildT3EnvironmentSessionProbeCommand()) {
+          if (command === buildRuntimeEnvironmentSessionProbeCommand()) {
             return { exitCode: 0, result: "" };
           }
           orchestrationRequests += 1;
@@ -209,14 +209,14 @@ describe("T3 environment client", () => {
     } as unknown as SandboxHandle;
 
     await expect(
-      requestT3Environment<{ projects: unknown[]; threads: unknown[] }>(
+      requestRuntimeEnvironment<{ projects: unknown[]; threads: unknown[] }>(
         sandbox,
         { method: "GET", path: "/api/orchestration/shell" },
         new AbortController().signal,
       ),
     ).resolves.toEqual({ projects: [], threads: [] });
     await expect(
-      requestT3Environment<{ projects: unknown[]; threads: unknown[] }>(
+      requestRuntimeEnvironment<{ projects: unknown[]; threads: unknown[] }>(
         sandbox,
         { method: "GET", path: "/api/orchestration/shell" },
         new AbortController().signal,
@@ -224,12 +224,12 @@ describe("T3 environment client", () => {
     ).resolves.toEqual({ projects: [], threads: [] });
 
     expect(commands).toEqual([
-      buildT3EnvironmentReadinessCommand(),
-      buildT3EnvironmentSessionProbeCommand(),
+      buildRuntimeEnvironmentReadinessCommand(),
+      buildRuntimeEnvironmentSessionProbeCommand(),
       expect.stringContaining("/api/orchestration/shell"),
       expect.stringContaining("/api/orchestration/shell"),
-      buildT3EnvironmentReadinessCommand(),
-      buildT3EnvironmentSessionProbeCommand(),
+      buildRuntimeEnvironmentReadinessCommand(),
+      buildRuntimeEnvironmentSessionProbeCommand(),
       expect.stringContaining("/api/orchestration/shell"),
     ]);
   });
@@ -241,10 +241,10 @@ describe("T3 environment client", () => {
       process: {
         executeCommand: async (command: string) => {
           commands.push(command);
-          if (command === buildT3EnvironmentReadinessCommand()) {
+          if (command === buildRuntimeEnvironmentReadinessCommand()) {
             return { exitCode: 0, result: "" };
           }
-          if (command === buildT3EnvironmentSessionProbeCommand()) {
+          if (command === buildRuntimeEnvironmentSessionProbeCommand()) {
             return { exitCode: 0, result: "" };
           }
           return {
@@ -262,13 +262,13 @@ describe("T3 environment client", () => {
       },
     } as unknown as SandboxHandle;
 
-    const request = requestT3Environment(
+    const request = requestRuntimeEnvironment(
       sandbox,
       { method: "GET", path: "/api/orchestration/threads/thread-missing" },
       new AbortController().signal,
     );
 
-    await expect(request).rejects.toBeInstanceOf(T3EnvironmentRequestError);
+    await expect(request).rejects.toBeInstanceOf(RuntimeEnvironmentRequestError);
     await expect(request).rejects.toMatchObject({
       status: 404,
       response: {
@@ -278,8 +278,8 @@ describe("T3 environment client", () => {
       },
     });
     expect(commands).toEqual([
-      buildT3EnvironmentReadinessCommand(),
-      buildT3EnvironmentSessionProbeCommand(),
+      buildRuntimeEnvironmentReadinessCommand(),
+      buildRuntimeEnvironmentSessionProbeCommand(),
       expect.stringContaining("/api/orchestration/threads/thread-missing"),
     ]);
   });
@@ -292,13 +292,13 @@ describe("T3 environment client", () => {
       process: {
         executeCommand: async (command: string) => {
           commands.push(command);
-          if (command === buildT3EnvironmentReadinessCommand()) {
+          if (command === buildRuntimeEnvironmentReadinessCommand()) {
             return { exitCode: 0, result: "" };
           }
-          if (command === buildT3EnvironmentSessionProbeCommand()) {
+          if (command === buildRuntimeEnvironmentSessionProbeCommand()) {
             return { exitCode: 0, result: "" };
           }
-          if (command === buildT3EnvironmentWebSocketTicketCommand()) {
+          if (command === buildRuntimeEnvironmentWebSocketTicketCommand()) {
             ticketRequests += 1;
             return ticketRequests === 2
               ? { exitCode: 1, result: "" }
@@ -310,20 +310,20 @@ describe("T3 environment client", () => {
     } as unknown as SandboxHandle;
 
     await expect(
-      issueT3EnvironmentWebSocketTicket(sandbox, new AbortController().signal),
+      issueRuntimeEnvironmentWebSocketTicket(sandbox, new AbortController().signal),
     ).resolves.toBe("0123456789abcdef");
     await expect(
-      issueT3EnvironmentWebSocketTicket(sandbox, new AbortController().signal),
+      issueRuntimeEnvironmentWebSocketTicket(sandbox, new AbortController().signal),
     ).resolves.toBe("0123456789abcdef");
 
     expect(commands).toEqual([
-      buildT3EnvironmentReadinessCommand(),
-      buildT3EnvironmentSessionProbeCommand(),
-      buildT3EnvironmentWebSocketTicketCommand(),
-      buildT3EnvironmentWebSocketTicketCommand(),
-      buildT3EnvironmentReadinessCommand(),
-      buildT3EnvironmentSessionProbeCommand(),
-      buildT3EnvironmentWebSocketTicketCommand(),
+      buildRuntimeEnvironmentReadinessCommand(),
+      buildRuntimeEnvironmentSessionProbeCommand(),
+      buildRuntimeEnvironmentWebSocketTicketCommand(),
+      buildRuntimeEnvironmentWebSocketTicketCommand(),
+      buildRuntimeEnvironmentReadinessCommand(),
+      buildRuntimeEnvironmentSessionProbeCommand(),
+      buildRuntimeEnvironmentWebSocketTicketCommand(),
     ]);
   });
 });

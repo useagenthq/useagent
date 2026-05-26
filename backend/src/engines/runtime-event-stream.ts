@@ -2,32 +2,32 @@ import {
   sandboxPreviewHeaders,
   type SandboxHandle,
 } from "../sandboxes/provider";
-import { T3_ENVIRONMENT_PORT } from "./t3-environment";
-import { issueT3EnvironmentWebSocketTicket } from "./t3-environment-client";
+import { RUNTIME_ENVIRONMENT_PORT } from "./runtime-environment";
+import { issueRuntimeEnvironmentWebSocketTicket } from "./runtime-environment-client";
 
-const T3_SUBSCRIPTION_REQUEST_ID = 1;
-const T3_SUBSCRIPTION_TAG = "orchestration.subscribeThread";
+const SUBSCRIPTION_REQUEST_ID = 1;
+const SUBSCRIPTION_TAG = "orchestration.subscribeThread";
 
-export type T3ThreadStreamItem =
+export type RuntimeThreadStreamItem =
   | { readonly kind: "snapshot"; readonly snapshot: unknown }
   | { readonly kind: "event"; readonly event: unknown }
   | { readonly kind: "synchronized" };
 
-type T3RpcFrame = Readonly<Record<string, unknown>>;
+type RuntimeRpcFrame = Readonly<Record<string, unknown>>;
 
-type T3RpcChunk = T3RpcFrame & {
+type RuntimeRpcChunk = RuntimeRpcFrame & {
   readonly _tag: "Chunk";
   readonly requestId: string | number;
   readonly values: readonly unknown[];
 };
 
-type T3RpcExit = T3RpcFrame & {
+type RuntimeRpcExit = RuntimeRpcFrame & {
   readonly _tag: "Exit";
   readonly requestId: string | number;
   readonly exit: { readonly _tag: "Success" | "Failure" };
 };
 
-function isT3RpcChunk(frame: T3RpcFrame): frame is T3RpcChunk {
+function isRuntimeRpcChunk(frame: RuntimeRpcFrame): frame is RuntimeRpcChunk {
   return (
     frame._tag === "Chunk" &&
     (typeof frame.requestId === "string" || typeof frame.requestId === "number") &&
@@ -35,7 +35,7 @@ function isT3RpcChunk(frame: T3RpcFrame): frame is T3RpcChunk {
   );
 }
 
-function isT3RpcExit(frame: T3RpcFrame): frame is T3RpcExit {
+function isRuntimeRpcExit(frame: RuntimeRpcFrame): frame is RuntimeRpcExit {
   if (
     frame._tag !== "Exit" ||
     (typeof frame.requestId !== "string" && typeof frame.requestId !== "number") ||
@@ -48,21 +48,21 @@ function isT3RpcExit(frame: T3RpcFrame): frame is T3RpcExit {
   return tag === "Success" || tag === "Failure";
 }
 
-function parseT3RpcFrame(data: string): T3RpcFrame | undefined {
+function parseRuntimeRpcFrame(data: string): RuntimeRpcFrame | undefined {
   const parsed = JSON.parse(data) as unknown;
   return parsed && typeof parsed === "object"
-    ? parsed as T3RpcFrame
+    ? parsed as RuntimeRpcFrame
     : undefined;
 }
 
-export function buildT3ThreadSubscriptionRequest(
+export function buildRuntimeThreadSubscriptionRequest(
   threadId: string,
   afterSequence: number,
 ): Readonly<Record<string, unknown>> {
   return {
     _tag: "Request",
-    id: T3_SUBSCRIPTION_REQUEST_ID,
-    tag: T3_SUBSCRIPTION_TAG,
+    id: SUBSCRIPTION_REQUEST_ID,
+    tag: SUBSCRIPTION_TAG,
     payload: {
       threadId,
       afterSequence,
@@ -72,17 +72,17 @@ export function buildT3ThreadSubscriptionRequest(
   };
 }
 
-export function decodeT3ThreadStreamItems(data: string): readonly T3ThreadStreamItem[] {
-  const frame = parseT3RpcFrame(data);
+export function decodeRuntimeThreadStreamItems(data: string): readonly RuntimeThreadStreamItem[] {
+  const frame = parseRuntimeRpcFrame(data);
   if (
     !frame ||
-    !isT3RpcChunk(frame) ||
-    frame.requestId !== T3_SUBSCRIPTION_REQUEST_ID ||
+    !isRuntimeRpcChunk(frame) ||
+    frame.requestId !== SUBSCRIPTION_REQUEST_ID ||
     !frame.values.length
   ) {
     return [];
   }
-  return frame.values.filter((value): value is T3ThreadStreamItem => {
+  return frame.values.filter((value): value is RuntimeThreadStreamItem => {
     if (!value || typeof value !== "object" || !("kind" in value)) return false;
     const kind = (value as { readonly kind?: unknown }).kind;
     return kind === "snapshot" || kind === "event" || kind === "synchronized";
@@ -98,16 +98,16 @@ function messageText(data: unknown): Promise<string> {
   return Promise.reject(new Error("The provider stream returned an unsupported frame"));
 }
 
-export async function subscribeT3Thread(
+export async function subscribeRuntimeThread(
   sandbox: SandboxHandle,
   threadId: string,
   afterSequence: number,
   signal: AbortSignal,
-  onItem: (item: T3ThreadStreamItem) => Promise<boolean>,
+  onItem: (item: RuntimeThreadStreamItem) => Promise<boolean>,
 ): Promise<void> {
   const [ticket, preview] = await Promise.all([
-    issueT3EnvironmentWebSocketTicket(sandbox, signal),
-    sandbox.getPreviewLink(T3_ENVIRONMENT_PORT),
+    issueRuntimeEnvironmentWebSocketTicket(sandbox, signal),
+    sandbox.getPreviewLink(RUNTIME_ENVIRONMENT_PORT),
   ]);
   const url = new URL(preview.url.replace(/^http/, "ws"));
   url.pathname = "/ws";
@@ -136,7 +136,7 @@ export async function subscribeT3Thread(
       if (socket.readyState === WebSocket.OPEN) {
         socket.send(JSON.stringify({
           _tag: "Interrupt",
-          requestId: T3_SUBSCRIPTION_REQUEST_ID,
+          requestId: SUBSCRIPTION_REQUEST_ID,
         }));
       }
       finish();
@@ -145,24 +145,24 @@ export async function subscribeT3Thread(
 
     socket.onopen = () => {
       socket.send(
-        JSON.stringify(buildT3ThreadSubscriptionRequest(threadId, afterSequence)),
+        JSON.stringify(buildRuntimeThreadSubscriptionRequest(threadId, afterSequence)),
       );
     };
     socket.onmessage = (event) => {
       processing = processing
         .then(async () => {
           const text = await messageText(event.data);
-          const frame = parseT3RpcFrame(text);
+          const frame = parseRuntimeRpcFrame(text);
           if (!frame) return;
           if (
-            isT3RpcChunk(frame) &&
-            frame.requestId === T3_SUBSCRIPTION_REQUEST_ID
+            isRuntimeRpcChunk(frame) &&
+            frame.requestId === SUBSCRIPTION_REQUEST_ID
           ) {
             socket.send(JSON.stringify({
               _tag: "Ack",
-              requestId: T3_SUBSCRIPTION_REQUEST_ID,
+              requestId: SUBSCRIPTION_REQUEST_ID,
             }));
-            for (const item of decodeT3ThreadStreamItems(text)) {
+            for (const item of decodeRuntimeThreadStreamItems(text)) {
               if (!(await onItem(item))) {
                 finish();
                 return;
@@ -171,8 +171,8 @@ export async function subscribeT3Thread(
             return;
           }
           if (
-            isT3RpcExit(frame) &&
-            frame.requestId === T3_SUBSCRIPTION_REQUEST_ID
+            isRuntimeRpcExit(frame) &&
+            frame.requestId === SUBSCRIPTION_REQUEST_ID
           ) {
             finish(
               frame.exit._tag === "Failure"

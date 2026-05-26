@@ -9,17 +9,17 @@ import type {
   HarnessReconciliation,
   HarnessSessionHandle,
 } from "./types";
-import { requestT3Environment } from "./t3-environment-client";
+import { requestRuntimeEnvironment } from "./runtime-environment-client";
 import {
   assistantText,
-  buildT3TurnInterruptCommand,
-  isT3ThreadSessionId,
-  type T3ThreadSnapshot,
-} from "./t3-orchestration";
+  buildRuntimeTurnInterruptCommand,
+  isRuntimeThreadSessionId,
+  type RuntimeThreadSnapshot,
+} from "./runtime-orchestration";
 
-const T3_CONTROL_TIMEOUT_MS = 10_000;
+const RUNTIME_CONTROL_TIMEOUT_MS = 10_000;
 
-const T3_CAPABILITIES: HarnessCapabilities = {
+const RUNTIME_CAPABILITIES: HarnessCapabilities = {
   resume: true,
   cancel: true,
   streaming: "parts",
@@ -33,42 +33,44 @@ const T3_CAPABILITIES: HarnessCapabilities = {
   usage: true,
 };
 
-async function t3Sandbox(handle: HarnessSessionHandle) {
-  if (!isT3ThreadSessionId(handle.sessionId)) {
+async function runtimeSandbox(handle: HarnessSessionHandle) {
+  if (!isRuntimeThreadSessionId(handle.sessionId)) {
     throw new Error("session is not a provider-runtime thread");
   }
   return await sandboxProvider(sandboxProviderApiKey()).get(handle.sandboxId);
 }
 
-export const t3Harness: HarnessAdapter = {
+export const runtimeHarness: HarnessAdapter = {
+  // Frozen VALUE: "t3" is the stored provider tag for this lane in durable
+  // events and session records; only code identifiers were renamed.
   provider: "t3",
 
   capabilities(): HarnessCapabilities {
-    return { ...T3_CAPABILITIES };
+    return { ...RUNTIME_CAPABILITIES };
   },
 
   async cancel(handle): Promise<HarnessOperationResult> {
     try {
-      const sandbox = await t3Sandbox(handle);
-      const snapshot = await requestT3Environment<T3ThreadSnapshot>(
+      const sandbox = await runtimeSandbox(handle);
+      const snapshot = await requestRuntimeEnvironment<RuntimeThreadSnapshot>(
         sandbox,
         {
           method: "GET",
           path: `/api/orchestration/threads/${encodeURIComponent(handle.sessionId)}`,
         },
-        AbortSignal.timeout(T3_CONTROL_TIMEOUT_MS),
+        AbortSignal.timeout(RUNTIME_CONTROL_TIMEOUT_MS),
       );
-      await requestT3Environment(
+      await requestRuntimeEnvironment(
         sandbox,
         {
           method: "POST",
           path: "/api/orchestration/dispatch",
-          payload: buildT3TurnInterruptCommand(
+          payload: buildRuntimeTurnInterruptCommand(
             handle.sessionId,
             snapshot.thread.latestTurn?.turnId,
           ),
         },
-        AbortSignal.timeout(T3_CONTROL_TIMEOUT_MS),
+        AbortSignal.timeout(RUNTIME_CONTROL_TIMEOUT_MS),
       );
       return { status: "ok" };
     } catch (error) {
@@ -82,21 +84,21 @@ export const t3Harness: HarnessAdapter = {
 
   async reconcile(handle): Promise<HarnessReconciliation> {
     try {
-      const sandbox = await t3Sandbox(handle);
-      const snapshot = await requestT3Environment<T3ThreadSnapshot>(
+      const sandbox = await runtimeSandbox(handle);
+      const snapshot = await requestRuntimeEnvironment<RuntimeThreadSnapshot>(
         sandbox,
         {
           method: "GET",
           path: `/api/orchestration/threads/${encodeURIComponent(handle.sessionId)}`,
         },
-        AbortSignal.timeout(T3_CONTROL_TIMEOUT_MS),
+        AbortSignal.timeout(RUNTIME_CONTROL_TIMEOUT_MS),
       );
       const state = snapshot.thread.latestTurn?.state;
       if (state === "running") return { status: "in_progress" };
       if (state === "completed") {
         return {
           status: "completed",
-          summary: assistantText(snapshot).trim() || "T3 run completed",
+          summary: assistantText(snapshot).trim() || "Run completed",
         };
       }
       return { status: "no_change" };
@@ -106,20 +108,20 @@ export const t3Harness: HarnessAdapter = {
   },
 };
 
-function routeT3HarnessForSession(
+function routeRuntimeHarnessForSession(
   legacy: HarnessAdapter,
   handle?: Pick<HarnessSessionHandle, "sessionId">,
 ): HarnessAdapter {
-  return handle && isT3ThreadSessionId(handle.sessionId) ? t3Harness : legacy;
+  return handle && isRuntimeThreadSessionId(handle.sessionId) ? runtimeHarness : legacy;
 }
 
-export function routeT3Harness(legacy: HarnessAdapter): HarnessAdapter {
+export function routeRuntimeHarness(legacy: HarnessAdapter): HarnessAdapter {
   return {
     provider: legacy.provider,
-    capabilities: (handle) => routeT3HarnessForSession(legacy, handle).capabilities(handle),
+    capabilities: (handle) => routeRuntimeHarnessForSession(legacy, handle).capabilities(handle),
     cancel: (handle, reason) =>
-      routeT3HarnessForSession(legacy, handle).cancel(handle, reason),
+      routeRuntimeHarnessForSession(legacy, handle).cancel(handle, reason),
     reconcile: (handle, checkpoint) =>
-      routeT3HarnessForSession(legacy, handle).reconcile(handle, checkpoint),
+      routeRuntimeHarnessForSession(legacy, handle).reconcile(handle, checkpoint),
   };
 }

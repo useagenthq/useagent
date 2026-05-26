@@ -134,20 +134,20 @@ describe("child session gateway tools", () => {
       "child_session_create",
     );
 
-    const t3CodexClaims = await fixture("codex", { t3: true });
-    const t3CodexToken = mintToolToken(t3CodexClaims, 60_000);
-    const t3Codex = await app.request("/api/mcp/knowledge", {
+    const runtimeCodexClaims = await fixture("codex", { t3: true });
+    const runtimeCodexToken = mintToolToken(runtimeCodexClaims, 60_000);
+    const runtimeCodex = await app.request("/api/mcp/knowledge", {
       method: "POST",
       headers: {
-        authorization: `Bearer ${t3CodexToken}`,
+        authorization: `Bearer ${runtimeCodexToken}`,
         "content-type": "application/json",
       },
       body: JSON.stringify({ jsonrpc: "2.0", id: 2, method: "tools/list" }),
     });
-    const t3CodexBody = (await t3Codex.json()) as {
+    const runtimeCodexBody = (await runtimeCodex.json()) as {
       result: { tools: Array<{ name: string }> };
     };
-    expect(t3CodexBody.result.tools.map((tool) => tool.name)).toContain(
+    expect(runtimeCodexBody.result.tools.map((tool) => tool.name)).toContain(
       "child_session_create",
     );
 

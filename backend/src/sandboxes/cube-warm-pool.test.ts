@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import {
   CubeWarmPool,
   claimCubeWarmSandbox,
-  cubeT3WarmPoolSize,
+  cubeRuntimeWarmPoolSize,
   cubeWarmPoolSize,
   resetCubeWarmPoolForTest,
   startCubeWarmPool,
@@ -118,8 +118,8 @@ describe("cubeWarmPoolSize gating", () => {
   });
 
   test("the T3 pool uses an independent default-off size gate", () => {
-    expect(cubeT3WarmPoolSize({ CUBE_WARM_POOL_SIZE: "3" })).toBeNull();
-    expect(cubeT3WarmPoolSize({ CUBE_T3_WARM_POOL_SIZE: "2" })).toBe(2);
+    expect(cubeRuntimeWarmPoolSize({ CUBE_WARM_POOL_SIZE: "3" })).toBeNull();
+    expect(cubeRuntimeWarmPoolSize({ CUBE_T3_WARM_POOL_SIZE: "2" })).toBe(2);
   });
 });
 
@@ -434,7 +434,7 @@ describe("CubeWarmPool", () => {
       warmDesktop: desktop,
       logger: quietLogger,
     });
-    const t3Pool = startCubeWarmPool({
+    const runtimePool = startCubeWarmPool({
       name: "t3-v2",
       provider: provider([t3]),
       size: 1,
@@ -444,7 +444,7 @@ describe("CubeWarmPool", () => {
     });
 
     await waitFor(() => legacyPool.status().ready, 1);
-    await waitFor(() => t3Pool.status().ready, 1);
+    await waitFor(() => runtimePool.status().ready, 1);
     await expect(claimCubeWarmSandbox("t3-v2")).resolves.toBe(t3);
     await expect(claimCubeWarmSandbox()).resolves.toBe(legacy);
   });

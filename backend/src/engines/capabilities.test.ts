@@ -70,7 +70,7 @@ describe("sessionCapabilities (truthful per-engine + resource-driven)", () => {
   test("T3 advertises only the canonical surfaces its orchestration adapter wires", () => {
     const capabilities = sessionCapabilities("codex", {
       ...res,
-      t3Orchestration: true,
+      runtimeOrchestration: true,
     });
     expect(capabilities).toMatchObject({
       approvals: true,

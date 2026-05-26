@@ -3,13 +3,13 @@ import { DEFAULT_CODEX_MODEL, DEFAULT_OPENCODE_MODEL } from "../runs/model-polic
 import type { EmitStep, EngineRunContext } from "./types";
 import type { ProviderEventInput } from "../runs/provider-events";
 import { questionEventId, type ProviderQuestionRequest } from "./provider-question";
-import { approvalEventId, t3ApprovalRequest } from "./t3-approval";
+import { approvalEventId, runtimeApprovalRequest } from "./runtime-approval";
 import { firstSemanticT3ToolName } from "@skynet/agent-harness";
 
-export type T3EngineId = Extract<EngineId, "codex" | "claude" | "opencode">;
-export type T3RuntimeMode = "approval-required" | "auto-accept-edits" | "auto" | "full-access";
+export type RuntimeEngineId = Extract<EngineId, "codex" | "claude" | "opencode">;
+export type RuntimeMode = "approval-required" | "auto-accept-edits" | "auto" | "full-access";
 
-export interface T3Message {
+export interface RuntimeMessage {
   readonly id: string;
   readonly role: "user" | "assistant" | "system";
   readonly text: string;
@@ -17,7 +17,7 @@ export interface T3Message {
   readonly streaming: boolean;
 }
 
-export interface T3Activity {
+export interface RuntimeActivity {
   readonly id: string;
   readonly tone: "info" | "tool" | "approval" | "error";
   readonly kind: string;
@@ -32,7 +32,7 @@ export interface T3Activity {
  * replaces their payload as the provider reports newer state. The adapter must
  * therefore dedupe by revision, never by id alone.
  */
-export function t3ActivityRevision(activity: T3Activity): string {
+export function runtimeActivityRevision(activity: RuntimeActivity): string {
   return activity.sequence === undefined
     ? JSON.stringify(activity)
     : String(activity.sequence);
@@ -44,7 +44,7 @@ export function t3ActivityRevision(activity: T3Activity): string {
  * Durable consumers fall back to activity.id only after this list. Keep this
  * mirrored by the canonical T3 translator so both lanes name the same call.
  */
-function t3ToolCallId(activity: T3Activity): string | null {
+function runtimeToolCallId(activity: RuntimeActivity): string | null {
   if (!activity.kind.startsWith("tool.")) return null;
   const payload = record(activity.payload);
   const data = record(payload?.data);
@@ -69,7 +69,7 @@ function firstNonEmptyString(...values: readonly unknown[]): string | null {
   ) ?? null;
 }
 
-function t3ToolInput(
+function runtimeToolInput(
   payload: Readonly<Record<string, unknown>> | null,
   data: Readonly<Record<string, unknown>> | null,
   item: Readonly<Record<string, unknown>> | null,
@@ -89,7 +89,7 @@ function t3ToolInput(
  * activity payload or data level. Normalize those transport shapes here so the
  * rest of Skynet renders one provider-neutral tool contract.
  */
-function t3ToolProjection(activity: T3Activity): {
+function runtimeToolProjection(activity: RuntimeActivity): {
   readonly data: Readonly<Record<string, unknown>> | null;
   readonly item: Readonly<Record<string, unknown>> | null;
   readonly server: string | null;
@@ -114,11 +114,11 @@ function t3ToolProjection(activity: T3Activity): {
     item,
     server: firstNonEmptyString(payload?.server, data?.server, item?.server),
     tool,
-    input: t3ToolInput(payload, data, item),
+    input: runtimeToolInput(payload, data, item),
   };
 }
 
-function t3ChildSessionId(activity: T3Activity): string | null {
+function runtimeChildSessionId(activity: RuntimeActivity): string | null {
   const payload = record(activity.payload);
   const data = record(payload?.data);
   const item = record(data?.item);
@@ -140,14 +140,14 @@ function t3ChildSessionId(activity: T3Activity): string | null {
  * Prefer the provider's stable call id so one tool/subagent renders as one
  * evolving row instead of a started/updated/completed row fan-out.
  */
-export function t3ActivityStepKey(activity: T3Activity): string {
+export function runtimeActivityStepKey(activity: RuntimeActivity): string {
   if (activity.kind.startsWith("task.")) {
     const payload = record(activity.payload);
     if (typeof payload?.taskId === "string" && payload.taskId.length > 0) {
       return `task:${payload.taskId}`;
     }
   }
-  const toolCallId = t3ToolCallId(activity);
+  const toolCallId = runtimeToolCallId(activity);
   return toolCallId ? `tool:${toolCallId}` : `activity:${activity.id}`;
 }
 
@@ -159,11 +159,11 @@ export function t3ActivityStepKey(activity: T3Activity): string {
  * so the turn watchdog must treat an open call as real progress instead of
  * timing out a healthy install or build as "no provider activity".
  */
-export function hasOpenT3ToolCall(activities: readonly T3Activity[]): boolean {
-  const latestKindByCall = new Map<string, T3Activity>();
+export function hasOpenRuntimeToolCall(activities: readonly RuntimeActivity[]): boolean {
+  const latestKindByCall = new Map<string, RuntimeActivity>();
   for (const activity of activities) {
     if (!activity.kind.startsWith("tool.")) continue;
-    const key = t3ToolCallId(activity) ?? activity.id;
+    const key = runtimeToolCallId(activity) ?? activity.id;
     latestKindByCall.set(key, activity);
   }
   for (const activity of latestKindByCall.values()) {
@@ -178,23 +178,23 @@ export function hasOpenT3ToolCall(activities: readonly T3Activity[]): boolean {
  * task lifecycle for providers with native child-agent events. OpenCode may
  * expose only the collaboration tool lifecycle, so retain that row unless a
  * task lifecycle with the same provider tool-use id is present. */
-export function shouldProjectT3Activity(
-  activity: T3Activity,
-  activities: readonly T3Activity[] = [],
+export function shouldProjectRuntimeActivity(
+  activity: RuntimeActivity,
+  activities: readonly RuntimeActivity[] = [],
 ): boolean {
   if (!activity.kind.startsWith("tool.")) return true;
   const payload = record(activity.payload);
   const itemType = typeof payload?.itemType === "string" ? payload.itemType : null;
   if (
     (itemType === "dynamic_tool_call" || itemType === "mcp_tool_call") &&
-    !t3ToolProjection(activity).tool
+    !runtimeToolProjection(activity).tool
   ) {
     // A completed transport wrapper with no semantic tool identity is still
     // useful in the provider-event ledger, but it cannot produce a meaningful
     // or reconcilable UI row. Do not expose generic "Mcp tool call" noise.
     return false;
   }
-  const toolCallId = t3ToolCallId(activity);
+  const toolCallId = runtimeToolCallId(activity);
   if (
     !toolCallId &&
     (activity.kind.endsWith(".started") ||
@@ -236,7 +236,7 @@ export function shouldProjectT3Activity(
   });
 }
 
-export interface T3ThreadSnapshot {
+export interface RuntimeThreadSnapshot {
   readonly snapshotSequence: number;
   readonly thread: {
     readonly id: string;
@@ -245,8 +245,8 @@ export interface T3ThreadSnapshot {
       readonly state: "running" | "interrupted" | "completed" | "error";
       readonly assistantMessageId: string | null;
     };
-    readonly messages: readonly T3Message[];
-    readonly activities: readonly T3Activity[];
+    readonly messages: readonly RuntimeMessage[];
+    readonly activities: readonly RuntimeActivity[];
     readonly session: null | {
       readonly status: string;
       readonly lastError: string | null;
@@ -254,13 +254,13 @@ export interface T3ThreadSnapshot {
   };
 }
 
-const PROVIDER_INSTANCE: Record<T3EngineId, string> = {
+const PROVIDER_INSTANCE: Record<RuntimeEngineId, string> = {
   codex: "codex",
   claude: "claudeAgent",
   opencode: "opencode",
 };
 
-const DEFAULT_MODEL: Record<T3EngineId, string> = {
+const DEFAULT_MODEL: Record<RuntimeEngineId, string> = {
   codex: DEFAULT_CODEX_MODEL,
   claude: "claude-opus-5",
   opencode: DEFAULT_OPENCODE_MODEL,
@@ -272,7 +272,7 @@ const DEFAULT_MODEL: Record<T3EngineId, string> = {
  * OpenAI-native ids keep their `openai/` provider prefix so T3 can spend a
  * connected OpenAI key instead of routing through OpenRouter.
  */
-export function t3ModelId(engine: T3EngineId, requested?: string): string {
+export function runtimeModelId(engine: RuntimeEngineId, requested?: string): string {
   const selected = requested?.trim() || DEFAULT_MODEL[engine];
   if (engine !== "opencode") return selected;
   if (
@@ -289,7 +289,7 @@ function stableId(prefix: string, value: string): string {
   return `${prefix}-${value}`.replace(/[^a-zA-Z0-9._~-]/g, "-");
 }
 
-function t3PlanTodos(value: unknown): ReadonlyArray<Readonly<Record<string, unknown>>> {
+function runtimePlanTodos(value: unknown): ReadonlyArray<Readonly<Record<string, unknown>>> {
   if (!Array.isArray(value)) return [];
   return value.flatMap((raw) => {
     const item = record(raw);
@@ -301,20 +301,20 @@ function t3PlanTodos(value: unknown): ReadonlyArray<Readonly<Record<string, unkn
   });
 }
 
-export function t3ProjectId(ctx: Pick<EngineRunContext, "threadId" | "runId">): string {
+export function runtimeProjectId(ctx: Pick<EngineRunContext, "threadId" | "runId">): string {
   return stableId("skynet-project", ctx.threadId ?? ctx.runId);
 }
 
-export function t3ThreadId(ctx: Pick<EngineRunContext, "threadId" | "runId">): string {
+export function runtimeThreadId(ctx: Pick<EngineRunContext, "threadId" | "runId">): string {
   return stableId("skynet-thread", ctx.threadId ?? ctx.runId);
 }
 
-export function buildT3ProjectCreateCommand(
+export function buildRuntimeProjectCreateCommand(
   ctx: Pick<EngineRunContext, "threadId" | "runId">,
   workspaceRoot: string,
   createdAt: string,
 ): Readonly<Record<string, unknown>> {
-  const projectId = t3ProjectId(ctx);
+  const projectId = runtimeProjectId(ctx);
   return {
     type: "project.create",
     commandId: stableId("skynet-project-create", ctx.runId),
@@ -325,22 +325,22 @@ export function buildT3ProjectCreateCommand(
   };
 }
 
-export function buildT3ThreadCreateCommand(
+export function buildRuntimeThreadCreateCommand(
   ctx: Pick<EngineRunContext, "threadId" | "runId" | "model">,
-  engine: T3EngineId,
+  engine: RuntimeEngineId,
   createdAt: string,
-  runtimeMode: T3RuntimeMode = "full-access",
+  runtimeMode: RuntimeMode = "full-access",
 ): Readonly<Record<string, unknown>> {
   const modelSelection = {
     instanceId: PROVIDER_INSTANCE[engine],
-    model: t3ModelId(engine, ctx.model),
+    model: runtimeModelId(engine, ctx.model),
     options: [],
   };
   return {
     type: "thread.create",
     commandId: stableId("skynet-thread-create", ctx.runId),
-    threadId: t3ThreadId(ctx),
-    projectId: t3ProjectId(ctx),
+    threadId: runtimeThreadId(ctx),
+    projectId: runtimeProjectId(ctx),
     title: `Skynet ${ctx.threadId ?? ctx.runId}`,
     modelSelection,
     runtimeMode,
@@ -351,19 +351,19 @@ export function buildT3ThreadCreateCommand(
   };
 }
 
-export function buildT3TurnStartCommand(
+export function buildRuntimeTurnStartCommand(
   ctx: Pick<EngineRunContext, "threadId" | "runId" | "model">,
-  engine: T3EngineId,
+  engine: RuntimeEngineId,
   prompt: string,
   createdAt: string,
   createThread: boolean,
-  runtimeMode: T3RuntimeMode = "full-access",
+  runtimeMode: RuntimeMode = "full-access",
 ): Readonly<Record<string, unknown>> {
-  const projectId = t3ProjectId(ctx);
-  const threadId = t3ThreadId(ctx);
+  const projectId = runtimeProjectId(ctx);
+  const threadId = runtimeThreadId(ctx);
   const modelSelection = {
     instanceId: PROVIDER_INSTANCE[engine],
-    model: t3ModelId(engine, ctx.model),
+    model: runtimeModelId(engine, ctx.model),
     options: [],
   };
   return {
@@ -399,7 +399,7 @@ export function buildT3TurnStartCommand(
   };
 }
 
-export function buildT3TurnInterruptCommand(
+export function buildRuntimeTurnInterruptCommand(
   threadId: string,
   turnId?: string,
   createdAt = new Date().toISOString(),
@@ -413,11 +413,11 @@ export function buildT3TurnInterruptCommand(
   };
 }
 
-export function isT3ThreadSessionId(sessionId: string): boolean {
+export function isRuntimeThreadSessionId(sessionId: string): boolean {
   return sessionId.startsWith("skynet-thread-");
 }
 
-export function assistantText(snapshot: T3ThreadSnapshot): string {
+export function assistantText(snapshot: RuntimeThreadSnapshot): string {
   const messageId = snapshot.thread.latestTurn?.assistantMessageId;
   const matching = messageId
     ? snapshot.thread.messages.find((message) => message.id === messageId)
@@ -443,7 +443,7 @@ function descriptiveActivityLabel(value: unknown): string | null {
 }
 
 function taskActivityLabel(
-  activity: T3Activity,
+  activity: RuntimeActivity,
   payload: Readonly<Record<string, unknown>>,
   isAgent: boolean,
 ): string {
@@ -456,8 +456,8 @@ function taskActivityLabel(
 }
 
 function toolActivityLabel(
-  activity: T3Activity,
-  projection: ReturnType<typeof t3ToolProjection>,
+  activity: RuntimeActivity,
+  projection: ReturnType<typeof runtimeToolProjection>,
   tool: string,
 ): string {
   if (projection.server && projection.tool) return `${projection.server} · ${projection.tool}`;
@@ -486,7 +486,9 @@ function toolActivityName(
   }
 }
 
-export function activityStep(activity: T3Activity): EmitStep {
+// The literal "t3" source tag in step code_json below is a frozen stored VALUE:
+// historical steps carry it and the frontend matches on it.
+export function activityStep(activity: RuntimeActivity): EmitStep {
   const payload = record(activity.payload);
   const detail = typeof payload?.detail === "string" ? payload.detail : undefined;
   if (activity.kind === "turn.plan.updated") {
@@ -499,7 +501,7 @@ export function activityStep(activity: T3Activity): EmitStep {
         activityId: activity.id,
         activityKind: activity.kind,
         tool: "todowrite",
-        input: { todos: t3PlanTodos(payload?.plan) },
+        input: { todos: runtimePlanTodos(payload?.plan) },
         ...(typeof payload?.explanation === "string"
           ? { output: payload.explanation }
           : {}),
@@ -539,9 +541,9 @@ export function activityStep(activity: T3Activity): EmitStep {
   if (activity.kind.startsWith("tool.")) {
     const itemType = typeof payload?.itemType === "string" ? payload.itemType : null;
     const isSubagent = itemType === "collab_agent_tool_call";
-    const projection = t3ToolProjection(activity);
-    const toolCallId = t3ToolCallId(activity);
-    const childSessionId = isSubagent ? t3ChildSessionId(activity) : null;
+    const projection = runtimeToolProjection(activity);
+    const toolCallId = runtimeToolCallId(activity);
+    const childSessionId = isSubagent ? runtimeChildSessionId(activity) : null;
     const tool = toolActivityName(itemType, projection.tool, isSubagent);
     return {
       kind: itemType === "file_change" ? "file" : isSubagent ? "task" : "command",
@@ -586,8 +588,8 @@ function record(value: unknown): Readonly<Record<string, unknown>> | null {
     : null;
 }
 
-export function t3QuestionRequest(
-  activity: T3Activity,
+export function runtimeQuestionRequest(
+  activity: RuntimeActivity,
   sessionId: string,
 ): ProviderQuestionRequest | null {
   if (activity.kind !== "user-input.requested") return null;
@@ -625,13 +627,15 @@ export function t3QuestionRequest(
   return { id: payload.requestId, sessionID: sessionId, questions };
 }
 
-export function t3ActivityProviderEvent(
+// provider "t3", the "t3.activity." event-type prefix, and the pe_.._t3_ id
+// scheme are frozen stored VALUES in the provider_events ledger.
+export function runtimeActivityProviderEvent(
   ctx: Pick<EngineRunContext, "runId" | "threadId">,
   sessionId: string,
-  activity: T3Activity,
+  activity: RuntimeActivity,
 ): ProviderEventInput {
-  const question = t3QuestionRequest(activity, sessionId);
-  const approval = t3ApprovalRequest(activity, sessionId);
+  const question = runtimeQuestionRequest(activity, sessionId);
+  const approval = runtimeApprovalRequest(activity, sessionId);
   const payload = record(activity.payload);
   const requestId = typeof payload?.requestId === "string" ? payload.requestId : null;
   const taskId = typeof payload?.taskId === "string" ? payload.taskId : null;
@@ -675,12 +679,12 @@ export function t3ActivityProviderEvent(
   };
 }
 
-export function t3TurnSettled(snapshot: T3ThreadSnapshot): boolean {
+export function runtimeTurnSettled(snapshot: RuntimeThreadSnapshot): boolean {
   const state = snapshot.thread.latestTurn?.state;
   return state === "completed" || state === "interrupted" || state === "error";
 }
 
-export function t3TurnError(snapshot: T3ThreadSnapshot): string | null {
+export function runtimeTurnError(snapshot: RuntimeThreadSnapshot): string | null {
   if (snapshot.thread.latestTurn?.state !== "error") return null;
-  return snapshot.thread.session?.lastError ?? "T3 provider turn failed";
+  return snapshot.thread.session?.lastError ?? "The provider turn failed";
 }

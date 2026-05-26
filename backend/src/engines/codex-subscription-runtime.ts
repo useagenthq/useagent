@@ -12,20 +12,20 @@ import type { CodexSubscriptionRuntimeSelection } from "../provider-connections/
 import { DEFAULT_CODEX_MODEL } from "../runs/model-policy";
 import { codexToolGatewayDescriptor } from "../provider-gateway/sandbox-config";
 import type { EngineRunContext } from "./types";
-import { T3_ENVIRONMENT_HOME, T3_RUNTIME_GENERATION } from "./t3-environment";
+import { RUNTIME_ENVIRONMENT_HOME, RUNTIME_GENERATION } from "./runtime-environment";
 
 const CODEX_EXEC_SERVER_PORT = 37_734;
 const CODEX_EXEC_SERVER_SESSION = "skynet-codex-exec-server";
-const T3_SETTINGS_PATH = `${T3_ENVIRONMENT_HOME}/userdata/settings.json`;
+const RUNTIME_SETTINGS_PATH = `${RUNTIME_ENVIRONMENT_HOME}/userdata/settings.json`;
 /** Display name carried only by the subscription (relay-backed) codex instance.
  * T3's legacy `providers.codex` synthesis uses the driver default ("Codex"), so
  * this string appearing in the provider status cache is a reliable content marker
  * that the settings-watch reconcile published the remote instance. */
-export const T3_CODEX_SUBSCRIPTION_DISPLAY_NAME = "Codex subscription";
-const T3_CODEX_STATUS_CACHE_PATH = `${T3_ENVIRONMENT_HOME}/caches/codex.json`;
-const T3_CODEX_READY_POLL_MS = 150;
+export const CODEX_SUBSCRIPTION_DISPLAY_NAME = "Codex subscription";
+const CODEX_STATUS_CACHE_PATH = `${RUNTIME_ENVIRONMENT_HOME}/caches/codex.json`;
+const CODEX_READY_POLL_MS = 150;
 
-export interface T3CodexSubscriptionLease {
+export interface CodexSubscriptionLease {
   close(): Promise<void>;
 }
 
@@ -39,13 +39,13 @@ const defaultDependencies: SubscriptionDependencies = {
   issueRelay: issueCodexSubscriptionRelayCapability,
 };
 
-export async function prepareT3CodexSubscription(input: {
+export async function prepareCodexSubscription(input: {
   readonly sandbox: SandboxHandle;
   readonly ctx: EngineRunContext;
   readonly workdir: string;
   readonly runtime: CodexSubscriptionRuntimeSelection;
   readonly dependencies?: SubscriptionDependencies;
-}): Promise<T3CodexSubscriptionLease> {
+}): Promise<CodexSubscriptionLease> {
   const { sandbox, ctx, workdir, runtime } = input;
   const dependencies = input.dependencies ?? defaultDependencies;
   const orgId = requiredIdentity(ctx.orgId, "organization");
@@ -96,7 +96,7 @@ export async function prepareT3CodexSubscription(input: {
       authEpoch: runtime.authEpoch,
       model: ctx.model?.trim() || DEFAULT_CODEX_MODEL,
       sandboxId: sandbox.id,
-      sandboxGeneration: T3_RUNTIME_GENERATION,
+      sandboxGeneration: RUNTIME_GENERATION,
       environmentId,
       cwd: workdir,
     };
@@ -106,7 +106,7 @@ export async function prepareT3CodexSubscription(input: {
       execServerUrl: execBridge.url,
       toolGateway: codexToolGatewayDescriptor(ctx),
     });
-    await patchT3CodexProviderInstance(sandbox, {
+    await patchCodexProviderInstance(sandbox, {
       relayUrl: relay.url,
       environmentId,
       workdir,
@@ -123,7 +123,7 @@ export async function prepareT3CodexSubscription(input: {
     async close() {
       if (closed) return;
       closed = true;
-      await removeT3CodexProviderInstance(sandbox).catch(() => {});
+      await removeCodexProviderInstance(sandbox).catch(() => {});
       relay?.close();
       execBridge?.close();
       await sandbox.process.deleteSession(CODEX_EXEC_SERVER_SESSION).catch(() => {});
@@ -153,14 +153,14 @@ export function buildCodexExecServerReadinessCommand(): string {
   return `node -e ${JSON.stringify(script)}`;
 }
 
-export function buildT3CodexProviderInstanceCommand(input: {
+export function buildCodexProviderInstanceCommand(input: {
   readonly relayUrl: string;
   readonly environmentId: string;
   readonly workdir: string;
 }): string {
   const providerInstance = {
     driver: "codex",
-    displayName: T3_CODEX_SUBSCRIPTION_DISPLAY_NAME,
+    displayName: CODEX_SUBSCRIPTION_DISPLAY_NAME,
     enabled: true,
     environment: [
       { name: "T3_CODEX_APP_SERVER_WS_URL", value: input.relayUrl, sensitive: true },
@@ -188,7 +188,7 @@ export function buildT3CodexProviderInstanceCommand(input: {
   const patch = Buffer.from(JSON.stringify(providerInstance), "utf8").toString("base64");
   return [
     "set -eu",
-    `SETTINGS="${T3_SETTINGS_PATH}"`,
+    `SETTINGS="${RUNTIME_SETTINGS_PATH}"`,
     `export CODEX_INSTANCE_B64='${patch}'`,
     'node -e \'const fs=require("node:fs");const path=process.argv[1];const instance=JSON.parse(Buffer.from(process.env.CODEX_INSTANCE_B64,"base64").toString("utf8"));let current={};try{current=JSON.parse(fs.readFileSync(path,"utf8"))}catch{};current.providerInstances={...(current.providerInstances??{}),codex:instance};const tmp=path+".tmp";fs.writeFileSync(tmp,JSON.stringify(current));fs.chmodSync(tmp,0o600);fs.renameSync(tmp,path)\' "$SETTINGS"',
   ].join("\n");
@@ -200,16 +200,16 @@ export function buildT3CodexProviderInstanceCommand(input: {
  * a false positive. The subscription instance is the only codex instance we mark
  * with this display name, so its presence proves the relay-backed remote instance
  * is live. */
-export function buildT3CodexProviderReadyProbeCommand(): string {
+export function buildCodexProviderReadyProbeCommand(): string {
   const script = [
     'const fs=require("node:fs")',
     "let v",
     'try{v=JSON.parse(fs.readFileSync(process.argv[1],"utf8"))}catch{process.exit(1)}',
-    `process.exit(v&&v.displayName===${JSON.stringify(T3_CODEX_SUBSCRIPTION_DISPLAY_NAME)}?0:1)`,
+    `process.exit(v&&v.displayName===${JSON.stringify(CODEX_SUBSCRIPTION_DISPLAY_NAME)}?0:1)`,
   ].join(";");
   return [
     "set -eu",
-    `node -e ${JSON.stringify(script)} ${JSON.stringify(T3_CODEX_STATUS_CACHE_PATH)}`,
+    `node -e ${JSON.stringify(script)} ${JSON.stringify(CODEX_STATUS_CACHE_PATH)}`,
   ].join("\n");
 }
 
@@ -217,12 +217,12 @@ export function buildT3CodexProviderReadyProbeCommand(): string {
  * provider status cache, bounded by `deadlineMs`. Returns false on timeout or
  * abort so the caller can fall back to a deterministic T3 restart. Runs a plain
  * loopback exec, so it needs no T3 auth and works immediately after a restart. */
-export async function awaitT3CodexProviderReady(
+export async function awaitCodexProviderReady(
   sandbox: Pick<SandboxHandle, "process">,
   signal: AbortSignal,
   deadlineMs: number,
 ): Promise<boolean> {
-  const command = buildT3CodexProviderReadyProbeCommand();
+  const command = buildCodexProviderReadyProbeCommand();
   const deadline = Date.now() + deadlineMs;
   while (!signal.aborted) {
     const probe = await sandbox.process
@@ -230,25 +230,25 @@ export async function awaitT3CodexProviderReady(
       .catch(() => null);
     if ((probe?.exitCode ?? 1) === 0) return true;
     if (Date.now() >= deadline) return false;
-    await Bun.sleep(T3_CODEX_READY_POLL_MS);
+    await Bun.sleep(CODEX_READY_POLL_MS);
   }
   return false;
 }
 
-function buildRemoveT3CodexProviderInstanceCommand(): string {
+function buildRemoveCodexProviderInstanceCommand(): string {
   return [
     "set -eu",
-    `SETTINGS="${T3_SETTINGS_PATH}"`,
+    `SETTINGS="${RUNTIME_SETTINGS_PATH}"`,
     'node -e \'const fs=require("node:fs");const path=process.argv[1];let current={};try{current=JSON.parse(fs.readFileSync(path,"utf8"))}catch{};if(current.providerInstances){delete current.providerInstances.codex}const tmp=path+".tmp";fs.writeFileSync(tmp,JSON.stringify(current));fs.chmodSync(tmp,0o600);fs.renameSync(tmp,path)\' "$SETTINGS"',
   ].join("\n");
 }
 
-async function patchT3CodexProviderInstance(
+async function patchCodexProviderInstance(
   sandbox: SandboxHandle,
-  input: Parameters<typeof buildT3CodexProviderInstanceCommand>[0],
+  input: Parameters<typeof buildCodexProviderInstanceCommand>[0],
 ): Promise<void> {
   const result = await sandbox.process.executeCommand(
-    buildT3CodexProviderInstanceCommand(input),
+    buildCodexProviderInstanceCommand(input),
     undefined,
     undefined,
     10,
@@ -258,9 +258,9 @@ async function patchT3CodexProviderInstance(
   }
 }
 
-async function removeT3CodexProviderInstance(sandbox: SandboxHandle): Promise<void> {
+async function removeCodexProviderInstance(sandbox: SandboxHandle): Promise<void> {
   await sandbox.process.executeCommand(
-    buildRemoveT3CodexProviderInstanceCommand(),
+    buildRemoveCodexProviderInstanceCommand(),
     undefined,
     undefined,
     10,

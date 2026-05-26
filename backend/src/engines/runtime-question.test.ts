@@ -1,9 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import { ProviderQuestionError } from "./provider-question";
-import { t3QuestionAnswers } from "./t3-question";
-import type { T3ThreadSnapshot } from "./t3-orchestration";
+import { runtimeQuestionAnswers } from "./runtime-question";
+import type { RuntimeThreadSnapshot } from "./runtime-orchestration";
 
-function snapshot(resolved = false): T3ThreadSnapshot {
+function snapshot(resolved = false): RuntimeThreadSnapshot {
   return {
     snapshotSequence: resolved ? 3 : 2,
     thread: {
@@ -48,7 +48,7 @@ function snapshot(resolved = false): T3ThreadSnapshot {
 
 describe("T3 native user input", () => {
   test("maps ordered Skynet card answers to T3's native question ids", () => {
-    expect(t3QuestionAnswers(
+    expect(runtimeQuestionAnswers(
       snapshot(),
       "skynet-thread-thread-1",
       "request-1",
@@ -57,7 +57,7 @@ describe("T3 native user input", () => {
   });
 
   test("fails closed after the native request resolves", () => {
-    expect(() => t3QuestionAnswers(
+    expect(() => runtimeQuestionAnswers(
       snapshot(true),
       "skynet-thread-thread-1",
       "request-1",

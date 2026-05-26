@@ -1,17 +1,17 @@
 import type { SandboxExecuteResult, SandboxHandle } from "../sandboxes/provider";
 import {
-  ensureT3Environment,
-  T3_ENVIRONMENT_HOME,
-  T3_ENVIRONMENT_PORT,
-  T3_RUNTIME_GENERATION,
-} from "./t3-environment";
+  ensureRuntimeEnvironment,
+  RUNTIME_ENVIRONMENT_HOME,
+  RUNTIME_ENVIRONMENT_PORT,
+  RUNTIME_GENERATION,
+} from "./runtime-environment";
 
-const T3_AUTH_DIRECTORY = `${T3_ENVIRONMENT_HOME}/skynet-auth`;
-const T3_COOKIE_JAR = `${T3_AUTH_DIRECTORY}/session.cookies`;
-const T3_REQUEST_TIMEOUT_SECONDS = 15;
-const T3_HTTP_STATUS_MARKER = "__SKYNET_T3_HTTP_STATUS__";
+const RUNTIME_AUTH_DIRECTORY = `${RUNTIME_ENVIRONMENT_HOME}/skynet-auth`;
+const RUNTIME_COOKIE_JAR = `${RUNTIME_AUTH_DIRECTORY}/session.cookies`;
+const RUNTIME_REQUEST_TIMEOUT_SECONDS = 15;
+const RUNTIME_HTTP_STATUS_MARKER = "__SKYNET_T3_HTTP_STATUS__";
 
-export class T3EnvironmentRequestError extends Error {
+export class RuntimeEnvironmentRequestError extends Error {
   readonly status: number | undefined;
   readonly response: Readonly<Record<string, unknown>> | undefined;
 
@@ -23,32 +23,32 @@ export class T3EnvironmentRequestError extends Error {
     } = {},
   ) {
     super(message);
-    this.name = "T3EnvironmentRequestError";
+    this.name = "RuntimeEnvironmentRequestError";
     this.status = options.status;
     this.response = options.response;
   }
 }
 
-export function isT3EnvironmentMissingSessionError(error: unknown): boolean {
-  return error instanceof T3EnvironmentRequestError &&
+export function isRuntimeEnvironmentMissingSessionError(error: unknown): boolean {
+  return error instanceof RuntimeEnvironmentRequestError &&
     (error.status === 404 ||
       (error.response?.code === "not_found" && error.response.reason === "thread_not_found"));
 }
 
-export type T3EnvironmentHttpPath =
+export type RuntimeEnvironmentHttpPath =
   | "/api/orchestration/snapshot"
   | "/api/orchestration/shell"
   | `/api/orchestration/threads/${string}`
   | "/api/orchestration/dispatch";
 
-interface T3WebSocketTicket {
+interface RuntimeWebSocketTicket {
   readonly ticket: string;
   readonly expiresAt?: string;
 }
 
-export interface T3EnvironmentRequest {
+export interface RuntimeEnvironmentRequest {
   readonly method: "GET" | "POST";
-  readonly path: T3EnvironmentHttpPath;
+  readonly path: RuntimeEnvironmentHttpPath;
   readonly payload?: Readonly<Record<string, unknown>>;
 }
 
@@ -56,13 +56,13 @@ const authenticationOperations = new Map<string | object, Promise<void>>();
 const validatedAccess = new Set<string>();
 const accessOperations = new Map<string, Promise<void>>();
 
-type T3LoopbackPath =
-  | T3EnvironmentHttpPath
+type RuntimeLoopbackPath =
+  | RuntimeEnvironmentHttpPath
   | "/api/auth/session"
   | "/api/auth/browser-session"
   | "/api/auth/websocket-ticket";
 
-function t3LoopbackUrl(path: T3LoopbackPath): string {
+function runtimeLoopbackUrl(path: RuntimeLoopbackPath): string {
   if (
     path !== "/api/auth/session" &&
     path !== "/api/auth/browser-session" &&
@@ -74,21 +74,21 @@ function t3LoopbackUrl(path: T3LoopbackPath): string {
   ) {
     throw new Error("invalid runtime loopback path");
   }
-  return `http://127.0.0.1:${T3_ENVIRONMENT_PORT}${path}`;
+  return `http://127.0.0.1:${RUNTIME_ENVIRONMENT_PORT}${path}`;
 }
 
-function t3EnvironmentAccessKey(sandbox: SandboxHandle): string {
-  return `${T3_RUNTIME_GENERATION}:${sandbox.id}`;
+function runtimeEnvironmentAccessKey(sandbox: SandboxHandle): string {
+  return `${RUNTIME_GENERATION}:${sandbox.id}`;
 }
 
-export function invalidateT3EnvironmentAccess(sandbox: SandboxHandle): void {
-  validatedAccess.delete(t3EnvironmentAccessKey(sandbox));
+export function invalidateRuntimeEnvironmentAccess(sandbox: SandboxHandle): void {
+  validatedAccess.delete(runtimeEnvironmentAccessKey(sandbox));
 }
 
-export function buildT3EnvironmentWebSocketTicketCommand(): string {
+export function buildRuntimeEnvironmentWebSocketTicketCommand(): string {
   return [
     "set -eu",
-    `curl -fsS -m 5 -X POST -b "${T3_COOKIE_JAR}" -H 'accept: application/json' ${t3LoopbackUrl("/api/auth/websocket-ticket")}`,
+    `curl -fsS -m 5 -X POST -b "${RUNTIME_COOKIE_JAR}" -H 'accept: application/json' ${runtimeLoopbackUrl("/api/auth/websocket-ticket")}`,
   ].join("\n");
 }
 
@@ -99,12 +99,12 @@ function sessionAssertionPipeline(): string {
   ].join(" ");
 }
 
-export function buildT3EnvironmentSessionProbeCommand(): string {
+export function buildRuntimeEnvironmentSessionProbeCommand(): string {
   return [
     "set -eu",
-    `COOKIE="${T3_COOKIE_JAR}"`,
+    `COOKIE="${RUNTIME_COOKIE_JAR}"`,
     'test -s "$COOKIE"',
-    `curl -fsS -m 5 -b "$COOKIE" ${t3LoopbackUrl("/api/auth/session")} | ${sessionAssertionPipeline()}`,
+    `curl -fsS -m 5 -b "$COOKIE" ${runtimeLoopbackUrl("/api/auth/session")} | ${sessionAssertionPipeline()}`,
   ].join("\n");
 }
 
@@ -114,32 +114,32 @@ export function buildT3EnvironmentSessionProbeCommand(): string {
  * the loopback auth endpoint, and consumed by T3. Only the resulting HttpOnly
  * session cookie remains in the sandbox; neither secret reaches the backend.
  */
-export function buildT3EnvironmentAuthenticationCommand(): string {
+export function buildRuntimeEnvironmentAuthenticationCommand(): string {
   return [
     "set -eu",
-    `T3_HOME="${T3_ENVIRONMENT_HOME}"`,
-    `AUTH_DIR="${T3_AUTH_DIRECTORY}"`,
-    `COOKIE="${T3_COOKIE_JAR}"`,
+    `RUNTIME_HOME="${RUNTIME_ENVIRONMENT_HOME}"`,
+    `AUTH_DIR="${RUNTIME_AUTH_DIRECTORY}"`,
+    `COOKIE="${RUNTIME_COOKIE_JAR}"`,
     'install -d -m 700 "$AUTH_DIR"',
-    `if [ -s "$COOKIE" ] && curl -fsS -m 5 -b "$COOKIE" ${t3LoopbackUrl("/api/auth/session")} | ${sessionAssertionPipeline()}; then exit 0; fi`,
+    `if [ -s "$COOKIE" ] && curl -fsS -m 5 -b "$COOKIE" ${runtimeLoopbackUrl("/api/auth/session")} | ${sessionAssertionPipeline()}; then exit 0; fi`,
     'rm -f "$COOKIE"',
     'PAIRING="$(mktemp "$AUTH_DIR/pairing.XXXXXX")"',
     'COOKIE_TMP="$(mktemp "$AUTH_DIR/session.XXXXXX")"',
     'cleanup() { rm -f "$PAIRING" "$COOKIE_TMP"; }',
     "trap cleanup EXIT HUP INT TERM",
-    't3 auth pairing create --base-dir "$T3_HOME" --ttl 24h --label skynet-control-plane --json >"$PAIRING"',
+    't3 auth pairing create --base-dir "$RUNTIME_HOME" --ttl 24h --label skynet-control-plane --json >"$PAIRING"',
     [
       `node -e 'const fs=require("node:fs");const v=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));process.stdout.write(JSON.stringify({credential:v.credential}))' "$PAIRING"`,
-      `curl -fsS -m 10 -c "$COOKIE_TMP" -H 'content-type: application/json' --data-binary @- ${t3LoopbackUrl("/api/auth/browser-session")} >/dev/null`,
+      `curl -fsS -m 10 -c "$COOKIE_TMP" -H 'content-type: application/json' --data-binary @- ${runtimeLoopbackUrl("/api/auth/browser-session")} >/dev/null`,
     ].join(" | "),
     'test -s "$COOKIE_TMP"',
     'chmod 600 "$COOKIE_TMP"',
     'mv "$COOKIE_TMP" "$COOKIE"',
-    `curl -fsS -m 5 -b "$COOKIE" ${t3LoopbackUrl("/api/auth/session")} | ${sessionAssertionPipeline()}`,
+    `curl -fsS -m 5 -b "$COOKIE" ${runtimeLoopbackUrl("/api/auth/session")} | ${sessionAssertionPipeline()}`,
   ].join("\n");
 }
 
-export function buildT3EnvironmentRequestCommand(request: T3EnvironmentRequest): string {
+export function buildRuntimeEnvironmentRequestCommand(request: RuntimeEnvironmentRequest): string {
   if (request.method === "POST" && request.payload === undefined) {
     throw new Error("the provider runtime POST request requires a payload");
   }
@@ -149,22 +149,22 @@ export function buildT3EnvironmentRequestCommand(request: T3EnvironmentRequest):
 
   const curl = [
     "curl -sS",
-    `-m ${T3_REQUEST_TIMEOUT_SECONDS}`,
-    `-b "${T3_COOKIE_JAR}"`,
+    `-m ${RUNTIME_REQUEST_TIMEOUT_SECONDS}`,
+    `-b "${RUNTIME_COOKIE_JAR}"`,
     "-H 'accept: application/json'",
-    `-w '\n${T3_HTTP_STATUS_MARKER}:%{http_code}'`,
+    `-w '\n${RUNTIME_HTTP_STATUS_MARKER}:%{http_code}'`,
   ];
   if (request.method === "POST") {
     const payload = Buffer.from(JSON.stringify(request.payload), "utf8").toString("base64");
     return [
       "set -eu",
-      `printf %s '${payload}' | base64 -d | ${curl.join(" ")} -H 'content-type: application/json' --data-binary @- ${t3LoopbackUrl(request.path)}`,
+      `printf %s '${payload}' | base64 -d | ${curl.join(" ")} -H 'content-type: application/json' --data-binary @- ${runtimeLoopbackUrl(request.path)}`,
     ].join("\n");
   }
-  return ["set -eu", `${curl.join(" ")} ${t3LoopbackUrl(request.path)}`].join("\n");
+  return ["set -eu", `${curl.join(" ")} ${runtimeLoopbackUrl(request.path)}`].join("\n");
 }
 
-async function authenticateT3Environment(
+async function authenticateRuntimeEnvironment(
   sandbox: SandboxHandle,
   signal: AbortSignal,
 ): Promise<void> {
@@ -178,12 +178,12 @@ async function authenticateT3Environment(
       // A failed predecessor must not poison the sandbox's auth queue.
     }
     const authenticated = await sandbox.process
-      .executeCommand(buildT3EnvironmentSessionProbeCommand(), undefined, undefined, 7)
+      .executeCommand(buildRuntimeEnvironmentSessionProbeCommand(), undefined, undefined, 7)
       .catch(() => null);
     if (authenticated?.exitCode === 0) return;
     if (signal.aborted) throw new Error("Provider runtime authentication aborted");
     const result = await sandbox.process.executeCommand(
-      buildT3EnvironmentAuthenticationCommand(),
+      buildRuntimeEnvironmentAuthenticationCommand(),
       undefined,
       undefined,
       30,
@@ -205,20 +205,20 @@ async function authenticateT3Environment(
 /** Warm only T3's private loopback control session. The one-time pairing
  * credential never leaves the sandbox, and no tenant/provider capability is
  * minted until a real run is assigned. */
-export async function prewarmT3EnvironmentAccess(
+export async function prewarmRuntimeEnvironmentAccess(
   sandbox: SandboxHandle,
   signal: AbortSignal,
 ): Promise<void> {
-  await ensureT3EnvironmentAccess(sandbox, signal);
+  await ensureRuntimeEnvironmentAccess(sandbox, signal);
 }
 
-async function ensureT3EnvironmentAccess(
+async function ensureRuntimeEnvironmentAccess(
   sandbox: SandboxHandle,
   signal: AbortSignal,
   force = false,
 ): Promise<void> {
   if (signal.aborted) throw new Error("Provider runtime access aborted");
-  const key = t3EnvironmentAccessKey(sandbox);
+  const key = runtimeEnvironmentAccessKey(sandbox);
   if (!force && validatedAccess.has(key)) return;
 
   const previous = accessOperations.get(key);
@@ -233,8 +233,8 @@ async function ensureT3EnvironmentAccess(
     } catch {
       // A failed predecessor must not poison the sandbox's access queue.
     }
-    await ensureT3Environment(sandbox, signal);
-    await authenticateT3Environment(sandbox, signal);
+    await ensureRuntimeEnvironment(sandbox, signal);
+    await authenticateRuntimeEnvironment(sandbox, signal);
     validatedAccess.add(key);
   })();
   accessOperations.set(key, operation);
@@ -247,25 +247,25 @@ async function ensureT3EnvironmentAccess(
   }
 }
 
-async function executeT3EnvironmentRequest(
+async function executeRuntimeEnvironmentRequest(
   sandbox: SandboxHandle,
-  request: T3EnvironmentRequest,
+  request: RuntimeEnvironmentRequest,
 ): Promise<SandboxExecuteResult> {
   return await sandbox.process.executeCommand(
-    buildT3EnvironmentRequestCommand(request),
+    buildRuntimeEnvironmentRequestCommand(request),
     undefined,
     undefined,
-    T3_REQUEST_TIMEOUT_SECONDS + 2,
+    RUNTIME_REQUEST_TIMEOUT_SECONDS + 2,
   );
 }
 
-interface T3EnvironmentResponse {
+interface RuntimeEnvironmentResponse {
   readonly body: string;
   readonly status?: number;
 }
 
-export function decodeT3EnvironmentCommandOutput(output: string): T3EnvironmentResponse {
-  const marker = output.match(new RegExp(`\\n${T3_HTTP_STATUS_MARKER}:(\\d{3})`));
+export function decodeRuntimeEnvironmentCommandOutput(output: string): RuntimeEnvironmentResponse {
+  const marker = output.match(new RegExp(`\\n${RUNTIME_HTTP_STATUS_MARKER}:(\\d{3})`));
   if (!marker || marker.index === undefined) return { body: output };
   return {
     body: output.slice(0, marker.index),
@@ -273,11 +273,11 @@ export function decodeT3EnvironmentCommandOutput(output: string): T3EnvironmentR
   };
 }
 
-function parseT3EnvironmentResponse(result: SandboxExecuteResult): T3EnvironmentResponse {
-  return decodeT3EnvironmentCommandOutput(result.result ?? "");
+function parseRuntimeEnvironmentResponse(result: SandboxExecuteResult): RuntimeEnvironmentResponse {
+  return decodeRuntimeEnvironmentCommandOutput(result.result ?? "");
 }
 
-function parseT3EnvironmentErrorResponse(
+function parseRuntimeEnvironmentErrorResponse(
   body: string,
 ): Readonly<Record<string, unknown>> | undefined {
   try {
@@ -290,14 +290,14 @@ function parseT3EnvironmentErrorResponse(
   }
 }
 
-function t3EnvironmentRequestError(
-  request: T3EnvironmentRequest,
-  response: T3EnvironmentResponse,
-): T3EnvironmentRequestError {
+function runtimeEnvironmentRequestError(
+  request: RuntimeEnvironmentRequest,
+  response: RuntimeEnvironmentResponse,
+): RuntimeEnvironmentRequestError {
   const status = response.status;
-  const errorResponse = parseT3EnvironmentErrorResponse(response.body);
-  return new T3EnvironmentRequestError(
-    `T3 environment ${request.method} request failed${status === undefined ? "" : ` (HTTP ${status})`}`,
+  const errorResponse = parseRuntimeEnvironmentErrorResponse(response.body);
+  return new RuntimeEnvironmentRequestError(
+    `The provider runtime ${request.method} request failed${status === undefined ? "" : ` (HTTP ${status})`}`,
     {
       ...(status === undefined ? {} : { status }),
       ...(errorResponse === undefined ? {} : { response: errorResponse }),
@@ -305,33 +305,33 @@ function t3EnvironmentRequestError(
   );
 }
 
-function t3EnvironmentRequestFailed(
+function runtimeEnvironmentRequestFailed(
   result: SandboxExecuteResult,
-  response: T3EnvironmentResponse,
+  response: RuntimeEnvironmentResponse,
 ): boolean {
   return (result.exitCode ?? 1) !== 0 || (response.status !== undefined && response.status >= 400);
 }
 
-export async function requestT3Environment<T>(
+export async function requestRuntimeEnvironment<T>(
   sandbox: SandboxHandle,
-  request: T3EnvironmentRequest,
+  request: RuntimeEnvironmentRequest,
   signal: AbortSignal,
 ): Promise<T> {
-  await ensureT3EnvironmentAccess(sandbox, signal);
+  await ensureRuntimeEnvironmentAccess(sandbox, signal);
   if (signal.aborted) throw new Error("Provider runtime request aborted");
-  let result = await executeT3EnvironmentRequest(sandbox, request);
-  let response = parseT3EnvironmentResponse(result);
-  if (t3EnvironmentRequestFailed(result, response)) {
-    const error = t3EnvironmentRequestError(request, response);
-    if (isT3EnvironmentMissingSessionError(error)) throw error;
-    invalidateT3EnvironmentAccess(sandbox);
-    await ensureT3EnvironmentAccess(sandbox, signal, true);
+  let result = await executeRuntimeEnvironmentRequest(sandbox, request);
+  let response = parseRuntimeEnvironmentResponse(result);
+  if (runtimeEnvironmentRequestFailed(result, response)) {
+    const error = runtimeEnvironmentRequestError(request, response);
+    if (isRuntimeEnvironmentMissingSessionError(error)) throw error;
+    invalidateRuntimeEnvironmentAccess(sandbox);
+    await ensureRuntimeEnvironmentAccess(sandbox, signal, true);
     if (signal.aborted) throw new Error("Provider runtime request aborted");
-    result = await executeT3EnvironmentRequest(sandbox, request);
-    response = parseT3EnvironmentResponse(result);
+    result = await executeRuntimeEnvironmentRequest(sandbox, request);
+    response = parseRuntimeEnvironmentResponse(result);
   }
-  if (t3EnvironmentRequestFailed(result, response)) {
-    throw t3EnvironmentRequestError(request, response);
+  if (runtimeEnvironmentRequestFailed(result, response)) {
+    throw runtimeEnvironmentRequestError(request, response);
   }
   try {
     return JSON.parse(response.body) as T;
@@ -342,24 +342,24 @@ export async function requestT3Environment<T>(
 
 /** Mint a one-time, short-lived websocket ticket for the trusted backend. The
  * ticket exists only in process memory and is consumed on the next T3 socket. */
-export async function issueT3EnvironmentWebSocketTicket(
+export async function issueRuntimeEnvironmentWebSocketTicket(
   sandbox: SandboxHandle,
   signal: AbortSignal,
 ): Promise<string> {
-  await ensureT3EnvironmentAccess(sandbox, signal);
+  await ensureRuntimeEnvironmentAccess(sandbox, signal);
   if (signal.aborted) throw new Error("the provider runtime websocket ticket request aborted");
   let result = await sandbox.process.executeCommand(
-    buildT3EnvironmentWebSocketTicketCommand(),
+    buildRuntimeEnvironmentWebSocketTicketCommand(),
     undefined,
     undefined,
     7,
   );
   if ((result.exitCode ?? 1) !== 0) {
-    invalidateT3EnvironmentAccess(sandbox);
-    await ensureT3EnvironmentAccess(sandbox, signal, true);
+    invalidateRuntimeEnvironmentAccess(sandbox);
+    await ensureRuntimeEnvironmentAccess(sandbox, signal, true);
     if (signal.aborted) throw new Error("the provider runtime websocket ticket request aborted");
     result = await sandbox.process.executeCommand(
-      buildT3EnvironmentWebSocketTicketCommand(),
+      buildRuntimeEnvironmentWebSocketTicketCommand(),
       undefined,
       undefined,
       7,
@@ -369,7 +369,7 @@ export async function issueT3EnvironmentWebSocketTicket(
     throw new Error("the provider runtime websocket ticket request failed");
   }
   try {
-    const response = JSON.parse(result.result ?? "") as T3WebSocketTicket;
+    const response = JSON.parse(result.result ?? "") as RuntimeWebSocketTicket;
     if (typeof response.ticket !== "string" || response.ticket.length < 16) {
       throw new Error("invalid ticket");
     }
