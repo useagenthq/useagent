@@ -66,7 +66,7 @@ protocol. Architecture source of truth: `~/Documents/skynet-saas/ARCHITECTURE.md
 - NAMING: name code by FUNCTION, attribute by HEADER. Third-party product names
   (t3, beui, etc.) never appear in our identifiers, component names, directories,
   or data attributes EXCEPT at a true protocol boundary (code that speaks that
-  product's actual wire protocol, e.g. backend `t3-adapter`/`t3-provider-driver`
+  product's actual wire protocol, e.g. backend `t3-provider-driver`
   and the `opencode-t3` frame parsers). Vendored code keeps its MIT/source
   attribution in the file header, not in the symbol names. Frontend vendored UI
   lives in `components/session-ui/` with neutral names.
