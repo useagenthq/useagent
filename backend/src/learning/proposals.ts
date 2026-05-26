@@ -69,12 +69,14 @@ export async function maybeProposeSkillRevision(
     .toSorted((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
   if (similar.length < MIN_SIMILAR_PRIOR_DRAFTS) return null;
 
-  // Oldest → newest; the newest draft names the proposal and its procedure
-  // traces (when recorded) assemble the executable backbone.
+  // Oldest → newest; the newest draft names the proposal and its executable
+  // procedures (v2 preferred, v1 legacy fallback) assemble the sequence-aligned
+  // backbone (self_improving 6.3).
   const group = [...similar, draft].map((d) => ({
     id: d.id,
     runId: d.runId,
     title: d.title,
+    ...(d.evidence.procedureV2 ? { procedureV2: d.evidence.procedureV2 } : {}),
     ...(d.evidence.procedure ? { procedure: d.evidence.procedure } : {}),
   }));
   const assembled = assembleSkillProposal(group);

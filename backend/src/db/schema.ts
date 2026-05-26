@@ -546,6 +546,27 @@ export interface ProcedureTraceStep {
   ok: boolean;
 }
 
+/** One step of the Evidence-Model-v2 procedure (self_improving 6.2). The
+ *  structural shape mirrors src/learning/procedure-v2.ts ProcedureStep; kept
+ *  inline here so schema does not depend on the learning lane. Additive inside
+ *  the evidence jsonb — no migration. */
+export interface ProcedureStepV2 {
+  ordinal: number;
+  tool: string;
+  operation: string;
+  normalizedArgs: Record<string, unknown>;
+  preconditions: string[];
+  result: "succeeded" | "failed" | "reverted" | "unknown";
+  verificationRefs: string[];
+  sourceEventIds: string[];
+}
+
+/** The reviewable-asset class the verified-outcome gate assigned (6.4). */
+export type LearningCandidateClass =
+  | "personal_memory"
+  | "knowledge_draft"
+  | "playbook_proposal";
+
 /** The deterministic facts a draft was proposed FROM — shown to the reviewer. */
 export interface KnowledgeDraftEvidence {
   reason: KnowledgeDraftReason;
@@ -563,6 +584,16 @@ export interface KnowledgeDraftEvidence {
   /** How many trailing steps the trace cap elided (rendered honestly as
    *  "... N more steps"). Absent when nothing was elided. */
   procedureElided?: number;
+  /** Evidence-Model-v2 (self_improving 6.2/6.3). The EXECUTABLE procedure
+   *  (succeeded steps, order + repeats preserved) and ADVICE (failed/reverted
+   *  recovery steps, retained but not executable). Additive; a run with no v2
+   *  extraction simply lacks these. */
+  procedureV2?: ProcedureStepV2[];
+  advice?: ProcedureStepV2[];
+  /** The verified-outcome gate's classification + whether a verified
+   *  postcondition existed (artifact / passing test / user acceptance). */
+  candidateClass?: LearningCandidateClass;
+  verified?: boolean;
 }
 
 export const knowledgeDrafts = pgTable(
@@ -626,6 +657,54 @@ export const skillRevisionProposals = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index("idx_skill_proposals_org_status").on(t.orgId, t.status, t.createdAt)],
+);
+
+// ---------------------------------------------------------------------------
+// Learning outbox (self_improving 6.1) — the DURABLE learning intent. A run's
+// learning candidate used to be built AFTER finalizeRun committed (a crash in
+// that gap lost it, and re-finalize/reconcile never re-armed it). This row is
+// written INSIDE the finalization transaction for every eligible completed run,
+// so "completed => learning intent enqueued" holds atomically. A boot-started
+// delivery worker (src/learning/learning-outbox.ts) claims pending rows, builds
+// the evidence-backed candidate, and writes the knowledge_draft — retryable,
+// dead-lettering with an operator-visible reason, and it NEVER fails the
+// already-completed run. Idempotent by run_id (one candidate per run, exactly
+// like knowledge_drafts.uq_knowledge_drafts_run downstream).
+// ---------------------------------------------------------------------------
+
+export type LearningOutboxStatus = "pending" | "processing" | "done" | "dead";
+
+export const learningOutbox = pgTable(
+  "learning_outbox",
+  {
+    /** = runId — one learning candidate per run, so enqueue is idempotent. */
+    runId: text("run_id").primaryKey(),
+    orgId: text("org_id").notNull(),
+    /** The run's authenticated actor (null for an org run with no user). */
+    userId: text("user_id"),
+    /** Which memory pool the run read/wrote — carried so a preference candidate
+     *  is classified into the right pool without re-reading the run row. */
+    memoryScope: text("memory_scope").$type<MemoryScope>().notNull().default("org"),
+    /** The run's origin marker (src/runs/origin.ts); null for a real product run.
+     *  Recorded for the operator; eligible runs are non-internal by construction. */
+    origin: text("origin"),
+    /** The candidate-builder policy version this intent was enqueued under, so a
+     *  later builder change is auditable per row (self_improving 6.1). */
+    policyVersion: integer("policy_version").notNull().default(1),
+    status: text("status").$type<LearningOutboxStatus>().notNull().default("pending"),
+    attempts: integer("attempts").notNull().default(0),
+    maxAttempts: integer("max_attempts").notNull().default(6),
+    /** Earliest a pending row may be (re)processed — exponential backoff. */
+    nextAttemptAt: timestamp("next_attempt_at", { withTimezone: true }).notNull().defaultNow(),
+    lastError: text("last_error"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    // The worker claims due rows by (status, next_attempt_at).
+    index("idx_learning_outbox_due").on(t.status, t.nextAttemptAt),
+    index("idx_learning_outbox_org").on(t.orgId),
+  ],
 );
 
 // ---------------------------------------------------------------------------

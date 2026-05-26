@@ -16,6 +16,9 @@ import { buildProcedureTrace } from "../memory/procedure-trace";
 import { orgSecretRedactor } from "../secrets/store";
 import { maybeProposeSkillRevision } from "./proposals";
 import { highValueReason } from "./salience";
+import { extractProcedure } from "./procedure-v2";
+import { classifyCandidate, outcomeFactsFrom } from "./classify";
+import { syncAcceptedLearningToContextIndex } from "./context-sync";
 
 // ---------------------------------------------------------------------------
 // Knowledge drafts (item 4) — the reviewable learning lane. The producer runs
@@ -69,8 +72,16 @@ export function buildDraftContent(input: {
  * Post-finalize producer: propose a knowledge DRAFT for a completed high-value
  * run. Idempotent per run (unique run_id, onConflictDoNothing) — re-finalizing
  * or replaying never duplicates a draft. Returns the created row, or null when
- * the run is missing / not completed / not org-scoped / not high-value / already
- * drafted. Never writes knowledge_records.
+ * the run is missing / not completed / not org-scoped / not high-value /
+ * unverified (the verified-outcome gate, self_improving 6.4) / already drafted.
+ * Never writes knowledge_records.
+ *
+ * VERIFIED-OUTCOME GATE (6.4): provider completion alone is not success. When
+ * the run's salience is `long_multi_tool_run` (no published artifact), a
+ * procedure candidate is produced ONLY if a verified postcondition exists — a
+ * passing verification step in the executable procedure, or explicit user
+ * acceptance. A long unverified run is dropped (returns null). A run that
+ * published a durable artifact is verified by construction and always drafts.
  */
 export async function proposeKnowledgeDraftForRun(
   runId: string,
@@ -83,7 +94,7 @@ export async function proposeKnowledgeDraftForRun(
     .from(artifacts)
     .where(eq(artifacts.runId, runId));
   const stepRows = await db
-    .select({ kind: steps.kind, label: steps.label, chip: steps.chip, codeJson: steps.codeJson })
+    .select({ id: steps.id, kind: steps.kind, label: steps.label, chip: steps.chip, codeJson: steps.codeJson })
     .from(steps)
     .where(eq(steps.runId, runId))
     .orderBy(asc(steps.idx));
@@ -97,10 +108,31 @@ export async function proposeKnowledgeDraftForRun(
   });
   if (!reason) return null;
 
+  const redact = await orgSecretRedactor(run.orgId);
+
   // The ordered executable trace (bounded, redacted) — the step labels were
   // already redacted at capture time; the org redactor here is defense in depth
   // for anything replayed or reconciled into the log after the fact.
-  const trace = buildProcedureTrace(stepRows, await orgSecretRedactor(run.orgId));
+  const trace = buildProcedureTrace(stepRows, redact);
+
+  // Evidence Model v2 (6.2/6.3): the ordered EXECUTABLE procedure (order +
+  // repeats preserved, ids parameterized, verification/publish steps flagged)
+  // and the failed/reverted steps retained as ADVICE.
+  const procedureV2 = extractProcedure(stepRows, redact);
+
+  // Verified-outcome gate (6.4). A published artifact is a durable verified
+  // postcondition; otherwise the executable procedure must carry a passing
+  // verification step. (Explicit user acceptance is not resolvable at
+  // finalize-time here, so it stays false — a future follow-up-accept path can
+  // set it.) An unverified long run produces NO procedure candidate.
+  const facts = outcomeFactsFrom({
+    scope: run.memoryScope,
+    artifactCount: artifactRows.length,
+    userAccepted: false,
+    procedure: procedureV2,
+  });
+  const candidateClass = classifyCandidate(facts);
+  if (candidateClass === "none") return null;
 
   const artifactNames = artifactRows.map((r) => r.name);
   const evidence: KnowledgeDraftEvidence = {
@@ -114,6 +146,10 @@ export async function proposeKnowledgeDraftForRun(
     artifactNames,
     ...(trace.steps.length > 0 ? { procedure: trace.steps } : {}),
     ...(trace.elided > 0 ? { procedureElided: trace.elided } : {}),
+    ...(procedureV2.executable.length > 0 ? { procedureV2: procedureV2.executable } : {}),
+    ...(procedureV2.advice.length > 0 ? { advice: procedureV2.advice } : {}),
+    candidateClass,
+    verified: true,
   };
   const [row] = await db
     .insert(knowledgeDrafts)
@@ -233,6 +269,17 @@ export async function acceptKnowledgeDraft(
     .set({ acceptedRecordId: recordId, updatedAt: new Date() })
     .where(eq(knowledgeDrafts.id, draftId));
   draft.acceptedRecordId = recordId;
+
+  // Item 4: feed the unified context index. The store upsert above created the
+  // agent-searchable knowledge_records row, but (unlike the wiki publish path)
+  // does not itself project into context_index — so project it here, matching
+  // wiki.ts. Best-effort + non-fatal; never undoes the accept.
+  await syncAcceptedLearningToContextIndex({
+    recordId,
+    orgId,
+    title: draft.title,
+    body: draft.content,
+  });
 
   // Item 6: a repeated procedure raises a skill revision PROPOSAL (still
   // human-gated). Best-effort — a failure here never undoes the accept.
