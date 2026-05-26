@@ -10,16 +10,34 @@
  */
 import type { SlackConfig } from "../env";
 
-/** Outcome of a single Slack delivery attempt — drives the outbox state machine. */
+/** Outcome of a single Slack delivery attempt — drives the outbox state machine.
+ *  A successful post/update carries the message `ts` (Slack's `message.ts`) so a
+ *  card post can persist it for later `chat.update`s; undefined for calls with no
+ *  message identity (reactions) or a client that does not surface it. */
 export type DeliveryResult =
-  | { ok: true }
+  | { ok: true; ts?: string }
   | { ok: false; class: "rate_limited"; retryAfterMs: number; message: string }
   | { ok: false; class: "transient"; message: string }
   | { ok: false; class: "permanent"; message: string };
 
 export interface SlackClient {
-  /** Post a message; `threadTs` keeps every reply inside the Slack thread. */
-  postMessage(args: { channel: string; text: string; threadTs?: string }): Promise<DeliveryResult>;
+  /** Post a message; `threadTs` keeps every reply inside the Slack thread.
+   *  `blocks` posts Block Kit (the run card); `text` stays the notification /
+   *  fallback string. A successful post returns the message `ts`. */
+  postMessage(args: {
+    channel: string;
+    text: string;
+    threadTs?: string;
+    blocks?: unknown[];
+  }): Promise<DeliveryResult>;
+  /** Update an existing message IN PLACE (chat.update) by its `ts` - advances a
+   *  run card's status/answer without posting a new message. */
+  updateMessage(args: {
+    channel: string;
+    ts: string;
+    text: string;
+    blocks?: unknown[];
+  }): Promise<DeliveryResult>;
   /** Add a reaction emoji (name without colons) to a specific message. */
   addReaction(args: { channel: string; timestamp: string; name: string }): Promise<DeliveryResult>;
   /**
@@ -85,8 +103,12 @@ export function httpSlackClient(config: SlackConfig): SlackClient {
           message: "http_429",
         };
       }
-      const data = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
-      if (data.ok) return { ok: true };
+      const data = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        error?: string;
+        ts?: string;
+      };
+      if (data.ok) return typeof data.ts === "string" ? { ok: true, ts: data.ts } : { ok: true };
       const err = data.error ?? String(res.status);
       // App-level rate limit is also possible with a 200 body.
       if (err === "ratelimited" || err === "rate_limited") {
@@ -104,13 +126,21 @@ export function httpSlackClient(config: SlackConfig): SlackClient {
   }
 
   return {
-    postMessage: ({ channel, text, threadTs }) =>
+    postMessage: ({ channel, text, threadTs, blocks }) =>
       call("chat.postMessage", {
         channel,
         text,
+        ...(blocks ? { blocks } : {}),
         ...(threadTs ? { thread_ts: threadTs } : {}),
         unfurl_links: false,
         unfurl_media: false,
+      }),
+    updateMessage: ({ channel, ts, text, blocks }) =>
+      call("chat.update", {
+        channel,
+        ts,
+        text,
+        ...(blocks ? { blocks } : {}),
       }),
     addReaction: ({ channel, timestamp, name }) =>
       call("reactions.add", { channel, timestamp, name }),
