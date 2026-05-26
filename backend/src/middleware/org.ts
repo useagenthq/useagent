@@ -32,6 +32,9 @@ const PUBLIC_API_EXACT = new Set([
   "/api/config",
   "/api/internal/automation",
   "/api/internal/gateway-approval/consume",
+  // Approval-request lane bridge - authenticates its own short-lived run
+  // capability exactly like /api/internal/automation.
+  "/api/internal/gateway-approval-requests",
 ]);
 const PUBLIC_API_PREFIXES = [
   "/api/auth/",

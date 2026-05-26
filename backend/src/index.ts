@@ -76,6 +76,8 @@ import {
   gatewayApprovalRoutes,
   internalGatewayApprovalRoutes,
 } from "./knowledge/gateway/approval-routes";
+import { internalApprovalRequestRoutes } from "./knowledge/gateway/approval-request-tools";
+import { approveApprovalRequestAsRunOwner } from "./knowledge/gateway/approval-requests";
 
 // Apply committed Drizzle migrations BEFORE anything reads or seeds the schema,
 // so a fresh clone (or a fresh database) boots with the tables in place. The
@@ -152,11 +154,19 @@ app.use("/api/*", async (c, next) => {
 app.get("/api/health", (c) => c.json({ status: "ok" }));
 app.route("/api/internal/automation", internalAutomationRoutes);
 app.route("/api/internal/gateway-approval/consume", internalGatewayApprovalRoutes);
+app.route("/api/internal/gateway-approval-requests", internalApprovalRequestRoutes);
 app.route("/api/internal/codex-relay", codexSubscriptionRelayRoutes);
 // Loopback-only operator dispatch bridge (see runs/operator-routes.ts): lets
 // the release-lane parity canary run turns IN THIS PROCESS so the codex relay
 // rendezvous works. Secret-authenticated; proxied requests are rejected.
-app.route("/api/internal/operator", createOperatorRoutes({ pump: pumpThread, cancel: signalCancel }));
+app.route(
+  "/api/internal/operator",
+  createOperatorRoutes({
+    pump: pumpThread,
+    cancel: signalCancel,
+    approveGatewayRequest: approveApprovalRequestAsRunOwner,
+  }),
+);
 
 // Public client config — what the frontend needs to render auth affordances
 // (which social providers are enabled) without exposing any secret. `allowDevOrg`
