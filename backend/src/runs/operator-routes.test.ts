@@ -4,7 +4,11 @@ import { createOperatorRoutes } from "./operator-routes";
 const SECRET = "operator-test-secret";
 
 function makeApp() {
-  const calls: { pump: string[]; cancel: Array<[string, string]> } = { pump: [], cancel: [] };
+  const calls: { pump: string[]; cancel: Array<[string, string]>; approve: string[] } = {
+    pump: [],
+    cancel: [],
+    approve: [],
+  };
   const app = createOperatorRoutes({
     pump: async (threadId) => {
       calls.pump.push(threadId);
@@ -13,6 +17,10 @@ function makeApp() {
     cancel: (runId, reason) => {
       calls.cancel.push([runId, reason]);
       return true;
+    },
+    approveGatewayRequest: async (requestId) => {
+      calls.approve.push(requestId);
+      return { approved: true };
     },
   });
   return { app, calls };
@@ -59,6 +67,18 @@ describe("operator dispatch bridge", () => {
     expect(calls.cancel).toEqual([["run-9", "gate teardown"]]);
   });
 
+  test("approves a gateway approval request through the canary hook", async () => {
+    const { app, calls } = makeApp();
+    const response = await app.fetch(
+      post("/approve-gateway-request", { requestId: "req-1" }, {
+        authorization: `Bearer ${SECRET}`,
+      }),
+    );
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ approved: true });
+    expect(calls.approve).toEqual(["req-1"]);
+  });
+
   test("rejects a missing or wrong secret without touching the worker", async () => {
     const { app, calls } = makeApp();
     expect((await app.fetch(post("/pump-thread", { threadId: "t" }))).status).toBe(401);
@@ -92,13 +112,18 @@ describe("operator dispatch bridge", () => {
     expect(calls.pump).toEqual([]);
   });
 
-  test("requires a threadId / runId", async () => {
+  test("requires a threadId / runId / requestId", async () => {
     const { app } = makeApp();
     expect(
       (await app.fetch(post("/pump-thread", {}, { authorization: `Bearer ${SECRET}` }))).status,
     ).toBe(400);
     expect(
       (await app.fetch(post("/signal-cancel", {}, { authorization: `Bearer ${SECRET}` }))).status,
+    ).toBe(400);
+    expect(
+      (await app.fetch(
+        post("/approve-gateway-request", {}, { authorization: `Bearer ${SECRET}` }),
+      )).status,
     ).toBe(400);
   });
 });

@@ -437,6 +437,8 @@ describe("knowledge MCP gateway", () => {
     // advertises child-session orchestration. Focused child-session tests cover
     // the fail-closed catalog states.
     expect(names).toEqual([
+      "approval_poll",
+      "approval_request",
       "artifact_publish",
       "automation_create",
       "automation_delete",
