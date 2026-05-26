@@ -458,6 +458,8 @@ describe("knowledge MCP gateway", () => {
       "child_session_list",
       "computer_screenshot",
       "computer_sequence",
+      "context_read",
+      "context_search",
       "desktop_recording_start",
       "desktop_recording_stop",
       "gcs_list_buckets",
