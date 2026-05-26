@@ -8,7 +8,7 @@ describe("slack outbox payload bounding", () => {
     const created = await enqueue({
       kind: "post_message",
       idempotencyKey: key,
-      payload: { channel: "C1", text: "x".repeat(9_000), threadTs: "1.1" },
+      payload: { channel: "C1", text: "x".repeat(50_000), threadTs: "1.1" },
     });
     expect(created).toBe(true);
     const row = await getByKey(key);
@@ -16,6 +16,6 @@ describe("slack outbox payload bounding", () => {
     expect(payload.channel).toBe("C1");
     expect(payload.threadTs).toBe("1.1");
     expect(payload.text.endsWith("... (truncated; full reply in the app)")).toBe(true);
-    expect(row!.payload.length).toBeLessThanOrEqual(8_192);
+    expect(row!.payload.length).toBeLessThanOrEqual(48_000);
   });
 });

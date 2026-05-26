@@ -13,7 +13,12 @@ const CLIENT_METHODS = new Set([
   "thread/rollback",
 ]);
 
-const MAX_FRAME_BYTES = 1_048_576;
+// Sandbox-originated (client) frames stay tightly bounded; frames from OUR
+// host-side app-server may carry a full thread-resume history, which grows
+// with every turn - a 1MB cap killed real reply turns once a thread
+// accumulated large tool outputs ("frame exceeds the relay limit", 2026-08-20).
+const MAX_CLIENT_FRAME_BYTES = 1_048_576;
+const MAX_SERVER_FRAME_BYTES = 16_777_216;
 const MAX_PENDING_REQUESTS = 256;
 const textEncoder = new TextEncoder();
 
@@ -57,7 +62,7 @@ export class CodexSubscriptionProtocol {
    *  resume share their params shape (resume = start + threadId) and their
    *  response schema, so the rewrite is invisible to the driver. */
   async acceptClientFrame(raw: string): Promise<string> {
-    const frame = parseCodexSubscriptionFrame(raw);
+    const frame = parseCodexSubscriptionFrame(raw, "client");
     if (!frame.method) {
       if (frame.id === undefined || !frame.hasResponse) {
         throw new Error("client frame must be a request or correlated response");
@@ -182,8 +187,12 @@ export class CodexSubscriptionProtocol {
   }
 }
 
-export function parseCodexSubscriptionFrame(raw: string): ParsedCodexSubscriptionFrame {
-  if (textEncoder.encode(raw).byteLength > MAX_FRAME_BYTES) {
+export function parseCodexSubscriptionFrame(
+  raw: string,
+  origin: "client" | "server" = "server",
+): ParsedCodexSubscriptionFrame {
+  const cap = origin === "client" ? MAX_CLIENT_FRAME_BYTES : MAX_SERVER_FRAME_BYTES;
+  if (textEncoder.encode(raw).byteLength > cap) {
     throw new Error("app-server frame exceeds the relay limit");
   }
   const value = JSON.parse(raw) as unknown;

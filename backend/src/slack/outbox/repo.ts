@@ -8,9 +8,9 @@ import type { SlackOutboxEnqueue } from "./types";
 // delivery.ts; this only reads/writes rows.
 // ---------------------------------------------------------------------------
 
-const PAYLOAD_CAP = 8_192;
+const PAYLOAD_CAP = 48_000;
 // Free-text cap leaves generous headroom for the JSON envelope and other fields.
-const TEXT_FIELD_CAP = 7_000;
+const TEXT_FIELD_CAP = 40_000; // Slack's own message-text ceiling
 
 export type SlackOutboxRow = typeof slackOutbox.$inferSelect;
 
