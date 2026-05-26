@@ -111,7 +111,7 @@ function sign(timestamp: string, raw: string): string {
 
 async function postSlack(
   envelope: unknown,
-  opts: { timestamp?: string; signature?: string } = {},
+  opts: { timestamp?: string; signature?: string; headers?: Record<string, string> } = {},
 ): Promise<Response> {
   const raw = JSON.stringify(envelope);
   const ts = opts.timestamp ?? Math.floor(Date.now() / 1000).toString();
@@ -123,6 +123,7 @@ async function postSlack(
       "content-type": "application/json",
       "x-slack-signature": signature,
       "x-slack-request-timestamp": ts,
+      ...(opts.headers ?? {}),
     },
   });
 }
@@ -541,6 +542,69 @@ describe("slack event → run", () => {
     } finally {
       statusFails = false;
     }
+  });
+});
+
+// Ack-first ingress: the events route 200s immediately after signature
+// verification; processing (staging, acceptance) happens BEHIND the ack.
+describe("slack ack-first ingress", () => {
+  test("the 200 does not wait for event processing (slow attachment staging)", async () => {
+    // A 600ms attachment download would blow a synchronous handler way past
+    // this assertion; ack-first returns while staging is still in flight.
+    setInboundFileDownloaderForTest(async () => {
+      await new Promise((r) => setTimeout(r, 600));
+      return new TextEncoder().encode("slow bytes");
+    });
+    try {
+      const marker = uid("ackfirst");
+      const started = Date.now();
+      const res = await postSlack(
+        eventCallback({
+          type: "message",
+          channel: `D${uid("dm")}`,
+          channel_type: "im",
+          user: "U-HUMAN",
+          text: `stage ${marker}`,
+          ts: `${uid("ts")}.1`,
+          files: [
+            {
+              id: `F${uid("f")}`,
+              name: `${marker}.txt`,
+              size: 10,
+              mimetype: "text/plain",
+              url_private_download: `https://files.slack.com/files-pri/${TEAM}/${marker}.txt`,
+            },
+          ],
+        }),
+      );
+      expect(res.status).toBe(200);
+      expect(Date.now() - started).toBeLessThan(400); // acked BEFORE the 600ms download
+      // The event still fully processes after the ack.
+      const run = await waitFor(async () => findRunByPrompt(`stage ${marker}`));
+      expect(run.id).toBeTruthy();
+    } finally {
+      setInboundFileDownloaderForTest(null);
+    }
+  });
+
+  test("a Slack retry delivery (x-slack-retry-num) is acked without a second run", async () => {
+    const marker = uid("retry");
+    const channel = `C${uid("ch")}`;
+    const envelope = eventCallback({
+      type: "app_mention",
+      channel,
+      user: "U-HUMAN",
+      text: `<@${BOT}> retry ${marker}`,
+      ts: `${uid("ts")}.1`,
+    });
+    await postSlack(envelope);
+    await waitFor(async () => findRunByPrompt(`retry ${marker}`));
+
+    const res = await postSlack(envelope, { headers: { "x-slack-retry-num": "1", "x-slack-retry-reason": "http_timeout" } });
+    expect(res.status).toBe(200); // acked immediately...
+    await new Promise((r) => setTimeout(r, 300));
+    const { body } = await json<{ runs: any[] }>("/api/runs?all=1");
+    expect(body.runs.filter((r) => r.prompt === `retry ${marker}`).length).toBe(1); // ...never reprocessed
   });
 });
 

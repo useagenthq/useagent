@@ -91,9 +91,10 @@ function cleanPrompt(text: string, botUserId: string): string {
 }
 
 /**
- * Process a verified `event_callback`. Awaited by the route so a created run is
- * observable the moment the POST returns — the DB writes are fast (well inside
- * Slack's 3s ack budget); outbound Slack calls are fire-and-forget / deferred.
+ * Process a verified `event_callback`. Runs ASYNC behind the transport ack
+ * (both the HTTP route and Socket Mode ack first, then hand the envelope here),
+ * so run acceptance, attachment staging, and outbound calls never eat into
+ * Slack's 3s ack budget.
  */
 export async function handleSlackEvent(body: SlackEnvelope): Promise<void> {
   const config = slackConfig();
