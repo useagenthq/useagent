@@ -11,6 +11,12 @@ import { backendFetch } from "@/lib/backend-fetch";
 export type KnowledgeDraftStatus = "draft" | "accepted" | "dismissed";
 export type SkillProposalStatus = "proposed" | "accepted" | "dismissed";
 
+export interface ProcedureTraceStep {
+  tool: string;
+  gist: string;
+  ok: boolean;
+}
+
 export interface DraftEvidence {
   reason: "published_artifacts" | "long_multi_tool_run";
   engine: string;
@@ -20,6 +26,10 @@ export interface DraftEvidence {
   distinctStepKinds: number;
   artifactCount: number;
   artifactNames: string[];
+  /** Ordered executable trace of the source run; absent on pre-feature drafts. */
+  procedure?: ProcedureTraceStep[];
+  /** Trailing steps the trace cap dropped ("... N more steps"). */
+  procedureElided?: number;
 }
 
 export interface KnowledgeDraft {

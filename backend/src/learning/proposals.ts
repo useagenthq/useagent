@@ -4,6 +4,7 @@ import {
   knowledgeDrafts,
   skillRevisionProposals,
   skills,
+  type KnowledgeDraftEvidence,
   type SkillProposalStatus,
 } from "../db/schema";
 import {
@@ -35,6 +36,7 @@ interface AcceptedDraftLike {
   orgId: string;
   runId: string;
   title: string;
+  evidence: KnowledgeDraftEvidence;
 }
 
 /**
@@ -51,6 +53,7 @@ export async function maybeProposeSkillRevision(
       id: knowledgeDrafts.id,
       runId: knowledgeDrafts.runId,
       title: knowledgeDrafts.title,
+      evidence: knowledgeDrafts.evidence,
       createdAt: knowledgeDrafts.createdAt,
     })
     .from(knowledgeDrafts)
@@ -66,10 +69,13 @@ export async function maybeProposeSkillRevision(
     .toSorted((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
   if (similar.length < MIN_SIMILAR_PRIOR_DRAFTS) return null;
 
+  // Oldest → newest; the newest draft names the proposal and its procedure
+  // traces (when recorded) assemble the executable backbone.
   const group = [...similar, draft].map((d) => ({
     id: d.id,
     runId: d.runId,
     title: d.title,
+    ...(d.evidence.procedure ? { procedure: d.evidence.procedure } : {}),
   }));
   const assembled = assembleSkillProposal(group);
 
