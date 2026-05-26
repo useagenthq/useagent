@@ -316,6 +316,13 @@
 			"when": 1788400000000,
 			"tag": "0046_schedule_firings_run_index",
 			"breakpoints": true
+		},
+		{
+			"idx": 45,
+			"version": "7",
+			"when": 1788500000000,
+			"tag": "0047_gateway_approval_requests",
+			"breakpoints": true
 		}
 	]
 }
