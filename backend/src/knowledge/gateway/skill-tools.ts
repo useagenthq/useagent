@@ -86,7 +86,11 @@ async function activateSkill(
   if (!skillId) return error("skill_activate requires an exact `skillId` from skills_list.");
 
   const pinned = await resolveSkillSelection(claims.orgId, { id: skillId });
-  if (!pinned) return error("That skill is not available to this organization.");
+  if (!pinned) {
+    return error(
+      "That skill is not available to this organization. Call skills_list to see the available skills and activate one of those by exact name.",
+    );
+  }
   const activated = await pinSkillToActiveRun({
     runId: claims.runId,
     threadId: claims.threadId,

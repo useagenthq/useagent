@@ -843,7 +843,9 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
           300,
         );
         if ((boot.exitCode ?? 1) !== 0) {
-          throw new Error(`${cfg.id} ACP relay failed to boot: ${truncate(boot.result ?? "", 200)}`);
+          throw new Error(
+            `${cfg.id} engine relay failed to boot (usually transient - retry the run): ${truncate(boot.result ?? "", 200)}`,
+          );
         }
         const home = /HOME=(\S+)/.exec(boot.result ?? "")?.[1] ?? "/home/daytona";
         const desktop = await desktopPreparation;

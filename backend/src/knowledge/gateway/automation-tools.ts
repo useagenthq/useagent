@@ -255,7 +255,7 @@ export async function executeAutomationToolLocal(
     );
     if (!approved) {
       return errorResult(
-        `A valid server-minted one-shot approval capability is required for ${name}.`,
+        `A valid server-minted one-shot approval capability is required for ${name}. Approvals cannot be issued from inside a run: ask the user to approve this exact operation in skynet (an org member issues it via POST /api/gateway/approvals with this run id, tool name, and arguments), then retry with the returned approvalCapability.`,
         { error: "approval_required" },
       );
     }
@@ -348,7 +348,9 @@ export async function executeAutomationTool(
 ): Promise<ToolCallResult> {
   const origin = primaryApiOrigin();
   if (process.env.GATEWAY_DATABASE_URL && !origin) {
-    return errorResult("automation control plane is not configured");
+    return errorResult(
+      "automation control plane is not configured; ask the workspace operator to set SKYNET_API_ORIGIN for the gateway, then retry",
+    );
   }
   return origin
     ? executeThroughPrimaryApi(origin, claims, name, args)

@@ -222,7 +222,11 @@ export async function executeGcsTool(
       claims.orgId,
       deps.decryptSecret ?? decryptOrgSecretByName,
     );
-    if (!credential) return failure("Google Cloud Storage is not configured for this workspace.");
+    if (!credential) {
+      return failure(
+        "Google Cloud Storage is not configured for this workspace; ask the workspace operator to add the GCP service-account key as an org secret named GOOGLE_APPLICATION_CREDENTIALS (or GCP_SERVICE_ACCOUNT_KEY), then retry.",
+      );
+    }
     const account = parseServiceAccount(credential.value);
     const fetchGoogle = deps.fetchGoogle ?? fetch;
     const accessToken = await exchangeAccessToken(
