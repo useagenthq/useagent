@@ -3,7 +3,12 @@ import type { AppEnv } from "../http";
 import { artifactStorage } from "../artifacts/storage";
 import { orgScope } from "../middleware/org";
 import { ingestUserUpload } from "./ingest";
-import { deleteReadyUpload, getOwnedUpload, toUserUploadDescriptor } from "./repo";
+import {
+  deleteReadyUpload,
+  getOrgRunUpload,
+  getOwnedUpload,
+  toUserUploadDescriptor,
+} from "./repo";
 import { UploadScanError } from "./scan";
 
 export const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
@@ -76,7 +81,14 @@ uploadRoutes.delete("/:id", async (c) => {
 uploadRoutes.get("/:id/content", async (c) => {
   const userId = c.get("userId");
   if (!userId) return c.json({ error: "authenticated user required" }, 401);
-  const row = await getOwnedUpload(c.get("orgId"), userId, c.req.param("id"));
+  const id = c.req.param("id");
+  const orgId = c.get("orgId");
+  // A claimed (run-bound) upload is a durable part of the thread: any org member
+  // viewing the conversation can fetch its bytes, org-scoped exactly like an
+  // artifact. An UNCLAIMED draft stays private to the uploader (owner-scoped) and
+  // is hidden once expired, so a not-yet-attached file never leaks across users.
+  const row =
+    (await getOrgRunUpload(orgId, id)) ?? (await getOwnedUpload(orgId, userId, id));
   if (!row) return c.json({ error: "not found" }, 404);
   if (!row.runId && row.expiresAt.getTime() <= Date.now()) {
     return c.json({ error: "not found" }, 404);

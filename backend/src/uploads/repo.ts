@@ -1,4 +1,4 @@
-import { and, asc, eq, gt, inArray, isNull, lte } from "drizzle-orm";
+import { and, asc, eq, gt, inArray, isNotNull, isNull, lte } from "drizzle-orm";
 import { db, type Executor } from "../db/client";
 import { userUploads } from "../db/schema";
 
@@ -12,6 +12,27 @@ export interface UserUploadDescriptor {
   readonly sha256: string;
   readonly created_at: string;
   readonly download_url: string;
+}
+
+/** Compact inbound-attachment descriptor rendered on a run's user turn. No
+ * storage key / sha / expiry - only what the timeline needs to show the
+ * attachment and fetch its bytes from the content route. */
+export interface RunUploadDescriptor {
+  readonly id: string;
+  readonly name: string;
+  readonly content_type: string;
+  readonly size_bytes: number;
+  readonly created_at: string;
+}
+
+export function toRunUploadDescriptor(row: UserUploadRecord): RunUploadDescriptor {
+  return {
+    id: row.id,
+    name: row.name,
+    content_type: row.contentType,
+    size_bytes: row.sizeBytes,
+    created_at: row.createdAt.toISOString(),
+  };
 }
 
 export class UploadClaimError extends Error {
@@ -164,4 +185,48 @@ export async function listRunUploads(runId: string): Promise<UserUploadRecord[]>
     .from(userUploads)
     .where(eq(userUploads.runId, runId))
     .orderBy(asc(userUploads.createdAt));
+}
+
+/** Inbound attachments for a SET of runs, batched into one query and grouped by
+ * run id (oldest-first within each run). Powers the compact `uploads` array the
+ * thread/run payload carries so the timeline needs no extra round trip. */
+export async function listUploadsForRuns(
+  runIds: readonly string[],
+): Promise<Map<string, RunUploadDescriptor[]>> {
+  const byRun = new Map<string, RunUploadDescriptor[]>();
+  if (runIds.length === 0) return byRun;
+  const rows = await db
+    .select()
+    .from(userUploads)
+    .where(inArray(userUploads.runId, [...new Set(runIds)]))
+    .orderBy(asc(userUploads.createdAt));
+  for (const row of rows) {
+    if (!row.runId) continue;
+    const list = byRun.get(row.runId) ?? [];
+    list.push(toRunUploadDescriptor(row));
+    byRun.set(row.runId, list);
+  }
+  return byRun;
+}
+
+/** An upload ALREADY CLAIMED by a run, scoped to the org (any org member viewing
+ * the thread can fetch the inbound image, matching the artifact content route's
+ * org-scope). Unclaimed (draft) uploads stay user-private and resolve via
+ * getOwnedUpload instead. Returns null (-> 404) for a cross-org or unclaimed id. */
+export async function getOrgRunUpload(
+  orgId: string,
+  id: string,
+): Promise<UserUploadRecord | null> {
+  const [row] = await db
+    .select()
+    .from(userUploads)
+    .where(
+      and(
+        eq(userUploads.id, id),
+        eq(userUploads.orgId, orgId),
+        isNotNull(userUploads.runId),
+      ),
+    )
+    .limit(1);
+  return row ?? null;
 }
