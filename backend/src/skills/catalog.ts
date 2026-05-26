@@ -44,17 +44,21 @@ interface SkillCatalogPrefillPolicy {
 }
 
 /**
- * A native resumed session already contains the catalog from its first turn.
- * Keep later turns small while preserving semantic discovery through the
- * compact fallback guidance in `composeTurnPrompt`.
+ * Prefill on EVERY unpinned ordinary turn, resumed sessions included. The
+ * first-turn-only policy ("the resumed session already saw the catalog")
+ * starved exactly the turns where procedures matter most - follow-ups like
+ * "show me a demo" arrive as replies, and with relevance ranking the visible
+ * page CHANGES with each prompt, so the first turn's page is stale for the
+ * follow-up ask. Usage data made the cost plain: 1 of 78 playbooks ever
+ * activated. The prefill stays on the compact budget, so the per-turn token
+ * cost is bounded.
  */
 export function shouldPrefillSkillCatalog({
   hasPinnedSkill,
   commandName,
   orgId,
-  engineSessionId,
 }: SkillCatalogPrefillPolicy): boolean {
-  return !hasPinnedSkill && commandName === null && orgId !== null && engineSessionId === undefined;
+  return !hasPinnedSkill && commandName === null && orgId !== null;
 }
 
 export function boundedCatalogLimit(value: unknown): number {
