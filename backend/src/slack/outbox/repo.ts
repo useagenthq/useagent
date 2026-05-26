@@ -9,8 +9,8 @@ import type { SlackOutboxEnqueue } from "./types";
 // ---------------------------------------------------------------------------
 
 const PAYLOAD_CAP = 48_000;
-// Free-text cap leaves generous headroom for the JSON envelope and other fields.
-const TEXT_FIELD_CAP = 40_000; // Slack's own message-text ceiling
+/** Appended to the last kept chunk when trailing chunks had to be dropped. */
+const TRUNCATION_MARKER = "\n\n_(truncated; full reply in the app)_";
 
 export type SlackOutboxRow = typeof slackOutbox.$inferSelect;
 
@@ -40,12 +40,22 @@ export async function enqueue(
   // Bound the payload at the FIELD level, never by slicing serialized JSON -
   // a byte-slice cut a production reply mid-string (8,978-char summary ->
   // exactly 8,192 stored, unparseable, permanently dead-lettered as
-  // invalid_payload). Only free-text fields are truncated (with an honest
-  // marker); a payload that is still oversized after that is a programming
-  // error and refuses loudly instead of corrupting.
+  // invalid_payload). A chunked post_message sheds WHOLE trailing chunks (with
+  // an honest marker on the last kept one) until the row fits; a payload that
+  // is still oversized after that is a programming error and refuses loudly
+  // instead of corrupting.
   const bounded: Record<string, unknown> = { ...(entry.payload as Record<string, unknown>) };
-  if (typeof bounded.text === "string" && bounded.text.length > TEXT_FIELD_CAP) {
-    bounded.text = `${bounded.text.slice(0, TEXT_FIELD_CAP)}\n... (truncated; full reply in the app)`;
+  if (Array.isArray(bounded.chunks)) {
+    let chunks = bounded.chunks as string[];
+    let dropped = false;
+    while (chunks.length > 1 && JSON.stringify({ ...bounded, chunks }).length > PAYLOAD_CAP) {
+      chunks = chunks.slice(0, -1);
+      dropped = true;
+    }
+    if (dropped) {
+      chunks = chunks.with(-1, chunks.at(-1)!.replace(/\n\n_\(continued…\)_$/, "") + TRUNCATION_MARKER);
+    }
+    bounded.chunks = chunks;
   }
   const payload = JSON.stringify(bounded);
   if (payload.length > PAYLOAD_CAP) {
@@ -95,6 +105,13 @@ export async function claimDue(limit = 20): Promise<ClaimedRow[]> {
     attemptCount: Number(r.attempt_count),
     maxAttempts: Number(r.max_attempts),
   }));
+}
+
+/** Persist delivery progress on a claimed row (the chunk cursor): after each
+ *  posted chunk the remaining ones are written back, so a mid-sequence retry
+ *  resumes at the failed chunk instead of re-posting delivered ones. */
+export async function updatePayload(id: string, payload: string): Promise<void> {
+  await db.update(slackOutbox).set({ payload, updatedAt: new Date() }).where(eq(slackOutbox.id, id));
 }
 
 export async function markDelivered(id: string): Promise<void> {

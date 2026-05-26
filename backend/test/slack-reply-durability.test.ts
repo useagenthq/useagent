@@ -39,10 +39,10 @@ describe("slack reply durability at finalization (GAP 3)", () => {
     const row = await getSlackOutbox(`slack-reply:${runId}`);
     expect(row).not.toBeNull();
     expect(row!.kind).toBe("post_message");
-    const payload = JSON.parse(row!.payload) as { channel: string; text: string; threadTs?: string };
+    const payload = JSON.parse(row!.payload) as { channel: string; chunks: string[]; threadTs?: string };
     expect(payload.channel).toBe(channel);
     expect(payload.threadTs).toBe(ts);
-    expect(payload.text).toBe("here is the result"); // completed → the summary
+    expect(payload.chunks).toEqual(["here is the result"]); // completed → the summary
   });
 
   test("a FAILED Slack run replies with a warning notice", async () => {
@@ -50,7 +50,7 @@ describe("slack reply durability at finalization (GAP 3)", () => {
     await finalizeRun(runId, "failed", "boom", 0);
     const row = await getSlackOutbox(`slack-reply:${runId}`);
     expect(row).not.toBeNull();
-    expect((JSON.parse(row!.payload) as { text: string }).text).toBe(":warning: Run failed: boom");
+    expect((JSON.parse(row!.payload) as { chunks: string[] }).chunks).toEqual([":warning: Run failed: boom"]);
   });
 
   test("a non-Slack run enqueues NO reply", async () => {
@@ -93,6 +93,6 @@ describe("slack reply durability at finalization (GAP 3)", () => {
 
     const row = await getSlackOutbox(`slack-reply:${runId}`);
     expect(row).not.toBeNull();
-    expect((JSON.parse(row!.payload) as { text: string; channel: string }).text).toBe("reconciled reply");
+    expect((JSON.parse(row!.payload) as { chunks: string[] }).chunks).toEqual(["reconciled reply"]);
   });
 });
