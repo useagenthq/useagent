@@ -16,6 +16,8 @@ import { db } from "../src/db/client";
 import { artifacts, userUploads } from "../src/db/schema";
 import { artifactStorage } from "../src/artifacts/storage";
 import { finalizeRun } from "../src/runs/finalize";
+import { createRun } from "../src/runs/repo";
+import { linkSlackThread } from "../src/slack/repo";
 import { DEV_ORG_ID, DEV_USER_ID } from "../src/seed";
 import { setSlackClientForTest } from "../src/slack";
 import { setInboundFileDownloaderForTest } from "../src/slack/inbound-files";
@@ -316,6 +318,32 @@ describe("slack event → run", () => {
     );
     expect(upload.threadTs).toBe(ts);
     expect(Buffer.from(upload.bytes).toString()).toBe("png-bytes");
+  });
+
+  test("a long reply is CHUNKED into sequential thread messages, in order", async () => {
+    // Root a Slack thread directly (no HTTP round trip needed) and finalize with
+    // a summary far past one Slack message: the outbox relay must deliver it as
+    // ordered chunks in the SAME thread, continuation-marked, none truncated.
+    const runId = crypto.randomUUID();
+    const channel = `C${uid("long")}`;
+    const ts = `${uid("ts")}.1`;
+    await createRun({ id: runId, prompt: "long reply", model: "claude-opus-5", engine: "mock", orgId: DEV_ORG_ID, userId: null, parentRunId: null, threadId: runId });
+    await linkSlackThread({ channel, threadTs: ts, rootRunId: runId, orgId: DEV_ORG_ID });
+    const summary = Array.from({ length: 50 }, (_, i) => `finding ${i}: ${"detail ".repeat(30)}`).join("\n\n");
+    await finalizeRun(runId, "completed", summary, 1);
+
+    await waitFor(async () =>
+      rec.messages.filter((m) => m.channel === channel).length >= 3 ? true : null,
+    );
+    const mine = rec.messages.filter((m) => m.channel === channel);
+    expect(mine.length).toBeGreaterThanOrEqual(3);
+    for (const m of mine) {
+      expect(m.threadTs).toBe(ts); // every chunk stays in the thread
+      expect(m.text.length).toBeLessThanOrEqual(3900);
+    }
+    expect(mine[0]!.text.startsWith("finding 0:")).toBe(true); // head first
+    for (const m of mine.slice(0, -1)) expect(m.text.endsWith("_(continued…)_")).toBe(true);
+    expect(mine.at(-1)!.text).toContain("finding 49:"); // nothing dropped
   });
 
   test("the channel allowlist drops events from unlisted channels and admits listed ones", async () => {
