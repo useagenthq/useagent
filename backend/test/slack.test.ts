@@ -183,6 +183,26 @@ describe("slack signature verification", () => {
 });
 
 describe("slack event → run", () => {
+  test("a linked GitHub repo becomes the run's bound repository", async () => {
+    const marker = uid("repo");
+    const res = await postSlack(
+      eventCallback({
+        type: "app_mention",
+        channel: `C${uid("ch")}`,
+        user: "U-HUMAN",
+        text: `<@${BOT}> test ${marker} <https://github.com/upstream-org/backend/pull/19625>`,
+        ts: `${uid("ts")}.1`,
+      }),
+    );
+    expect(res.status).toBe(200);
+    const run = await waitFor(async () =>
+      (await json<{ runs: any[] }>("/api/runs?all=1")).body.runs.find((r) =>
+        r.prompt.includes(`test ${marker}`),
+      ) ?? null,
+    );
+    expect(run.repos).toEqual(["upstream-org/backend"]);
+  });
+
   test("app_mention creates a root run, 👀-acks, and posts the summary", async () => {
     const marker = uid("mention");
     const channel = `C${uid("ch")}`;
