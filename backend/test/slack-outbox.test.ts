@@ -34,6 +34,7 @@ function recorder(result: () => DeliveryResult = () => ({ ok: true })): Recorder
         posted.push(m);
         return result();
       },
+      updateMessage: async () => result(),
       addReaction: async () => result(),
       setAssistantStatus: async () => {},
       uploadFile: async () => result(),

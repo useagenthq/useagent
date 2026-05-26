@@ -764,6 +764,11 @@ export const slackThreads = pgTable(
       .notNull()
       .references(() => runs.id),
     orgId: text("org_id").notNull(),
+    // Slack message ts of the run CARD (Block Kit) posted into this thread, so
+    // later progress/completion updates target the SAME message via chat.update.
+    // Null until the card is posted (or when the card post failed and the plain
+    // reply is used instead). One card per rooted Slack thread.
+    cardTs: text("card_ts"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -784,8 +789,15 @@ export const slackThreads = pgTable(
 export type SlackOutboxState = "pending" | "delivering" | "delivered" | "dead";
 // `upload_file` delivers a run-produced artifact into the thread. New rows carry
 // only an immutable artifact id; legacy rows may still carry a staged path.
-// `kind` is a text column, so a new kind needs no migration.
-export type SlackOutboxKind = "post_message" | "add_reaction" | "upload_file";
+// `post_card`/`update_card` post + advance the Block Kit run card in place (the
+// card ts is stored on slack_threads). `kind` is a text column, so a new kind
+// needs no migration.
+export type SlackOutboxKind =
+  | "post_message"
+  | "add_reaction"
+  | "upload_file"
+  | "post_card"
+  | "update_card";
 /** Classified delivery failure — drives retry vs dead-letter and observability. */
 export type SlackErrorClass = "rate_limited" | "transient" | "permanent";
 

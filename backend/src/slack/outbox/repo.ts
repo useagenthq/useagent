@@ -45,17 +45,26 @@ export async function enqueue(
   // is still oversized after that is a programming error and refuses loudly
   // instead of corrupting.
   const bounded: Record<string, unknown> = { ...(entry.payload as Record<string, unknown>) };
-  if (Array.isArray(bounded.chunks)) {
-    let chunks = bounded.chunks as string[];
+  // Shed WHOLE trailing chunks (never a byte-slice) from whichever chunk field
+  // this kind carries: `chunks` (post_message) or `fallbackChunks` (update_card's
+  // plain-text fallback). The Block Kit `blocks` are already length-capped by the
+  // pure card builder, so only the free-text answer can overflow.
+  const chunkField = Array.isArray(bounded.chunks)
+    ? "chunks"
+    : Array.isArray(bounded.fallbackChunks)
+      ? "fallbackChunks"
+      : null;
+  if (chunkField) {
+    let chunks = bounded[chunkField] as string[];
     let dropped = false;
-    while (chunks.length > 1 && JSON.stringify({ ...bounded, chunks }).length > PAYLOAD_CAP) {
+    while (chunks.length > 1 && JSON.stringify({ ...bounded, [chunkField]: chunks }).length > PAYLOAD_CAP) {
       chunks = chunks.slice(0, -1);
       dropped = true;
     }
     if (dropped) {
       chunks = chunks.with(-1, chunks.at(-1)!.replace(/\n\n_\(continued…\)_$/, "") + TRUNCATION_MARKER);
     }
-    bounded.chunks = chunks;
+    bounded[chunkField] = chunks;
   }
   const payload = JSON.stringify(bounded);
   if (payload.length > PAYLOAD_CAP) {

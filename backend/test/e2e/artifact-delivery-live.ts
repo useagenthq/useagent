@@ -207,6 +207,7 @@ try {
   const uploads: Array<{ filename: string; bytes: Uint8Array }> = [];
   const recordingSlack: SlackClient = {
     postMessage: async () => ({ ok: true }),
+    updateMessage: async () => ({ ok: true }),
     addReaction: async () => ({ ok: true }),
     setAssistantStatus: async () => {},
     uploadFile: async ({ filename, bytes }) => {

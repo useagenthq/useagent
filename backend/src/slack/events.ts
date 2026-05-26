@@ -14,7 +14,7 @@
  *  - channel `message` thread reply → only if we already root that thread.
  *  - anything else                  → ignored (no channel-wide chatter).
  */
-import { slackConfig } from "../env";
+import { env, slackConfig } from "../env";
 import type { MemoryScope } from "../db/schema";
 import { getRunForOrg } from "../runs/repo";
 import { acceptRunCommand } from "../commands";
@@ -26,7 +26,9 @@ import { watchSlackRun } from "./watcher";
 import { githubRepoRefs } from "./repo-refs";
 import { unknownRepos } from "../github/repos";
 import { resolveSlackWorkspace } from "./workspaces";
-import { enqueueAddReaction, enqueuePostMessage } from "./outbox";
+import { enqueueAddReaction, enqueuePostCard, enqueuePostMessage } from "./outbox";
+import { buildRunCard, deriveTitle, sessionUrl } from "./card";
+import { parseRepoRef } from "../github/repo-ref";
 import { defaultModelForEngine, isModelAllowedForEngine } from "../runs/model-policy";
 import {
   isSlackSwitchableEngine,
@@ -329,6 +331,25 @@ export async function handleSlackEvent(body: SlackEnvelope): Promise<void> {
   // Slack thread to enqueue the reply, even for a run that finishes near-instantly.
   if (!link) {
     await linkSlackThread({ channel, threadTs: slackThreadTs, rootRunId: runId, orgId });
+    // Post the Block Kit RUN CARD ONCE per Slack thread (on the root run). The
+    // relay posts it and stores the message ts on slack_threads; later progress
+    // (watcher) + the settled answer (finalize) UPDATE that same card in place.
+    // Durable + idempotent by the root run id, so a retry never double-posts.
+    const card = buildRunCard({
+      title: deriveTitle(prompt),
+      phase: "queued",
+      model,
+      repoSpecs: boundRepos.map(parseRepoRef),
+      webUrl: sessionUrl(env.FRONTEND_ORIGIN, threadId),
+    });
+    void enqueuePostCard({
+      idempotencyKey: `slack-card:${runId}`,
+      channel,
+      threadTs: slackThreadTs,
+      rootRunId: runId,
+      blocks: card.blocks,
+      text: card.text,
+    });
   }
 
   await pumpThread(threadId);
@@ -341,5 +362,5 @@ export async function handleSlackEvent(body: SlackEnvelope): Promise<void> {
     timestamp: ts,
     name: "eyes",
   });
-  watchSlackRun({ runId, client, channel, threadTs: slackThreadTs });
+  watchSlackRun({ runId, rootRunId: threadId, client, channel, threadTs: slackThreadTs });
 }
