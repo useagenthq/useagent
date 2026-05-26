@@ -179,7 +179,7 @@ describe("production provider registry", () => {
     const source = readFileSync(new URL("./index.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("export const harnessAdapters");
-    expect(source).not.toContain("routeT3Harness");
+    expect(source).not.toContain("routeRuntimeHarness");
   });
 
   test("selected T3 turns resolve a native T3 ProviderDriver before ACP fallback", () => {

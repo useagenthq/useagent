@@ -3,29 +3,29 @@ import { composeTurnPrompt } from "./types";
 import { acquireThreadSandbox } from "./thread-sandbox";
 import { prepareRepos } from "./repo-prep";
 import {
-  prepareT3ProviderBridge,
-  type T3ProviderBridgeLease,
+  prepareRuntimeProviderBridge,
+  type RuntimeProviderBridgeLease,
 } from "./runtime-provider-bridge";
 import {
-  invalidateT3EnvironmentAccess,
-  requestT3Environment,
+  invalidateRuntimeEnvironmentAccess,
+  requestRuntimeEnvironment,
 } from "./runtime-environment-client";
-import { awaitT3CodexProviderReady } from "./codex-subscription-runtime";
-import { subscribeT3Thread } from "./runtime-event-stream";
+import { awaitCodexProviderReady } from "./codex-subscription-runtime";
+import { subscribeRuntimeThread } from "./runtime-event-stream";
 import {
   activityStep,
   assistantText,
-  hasOpenT3ToolCall,
-  t3ActivityProviderEvent,
-  t3ActivityRevision,
-  t3ActivityStepKey,
-  shouldProjectT3Activity,
-  t3ThreadId,
-  t3TurnError,
-  t3TurnSettled,
-  type T3EngineId,
-  type T3RuntimeMode,
-  type T3ThreadSnapshot,
+  hasOpenRuntimeToolCall,
+  runtimeActivityProviderEvent,
+  runtimeActivityRevision,
+  runtimeActivityStepKey,
+  shouldProjectRuntimeActivity,
+  runtimeThreadId,
+  runtimeTurnError,
+  runtimeTurnSettled,
+  type RuntimeEngineId,
+  type RuntimeMode,
+  type RuntimeThreadSnapshot,
 } from "./runtime-orchestration";
 import {
   composeSecretEnv,
@@ -47,37 +47,37 @@ import {
 } from "./provider-turn";
 import { materializeRunInputs } from "../uploads/materialize";
 import {
-  restartT3Environment,
-  T3_CUBE_WARM_POOL_NAME,
-  t3FirstActivityTimeoutMs,
-  t3NoProgressTimeoutMs,
-  T3_RUNTIME_GENERATION,
-  T3_RUNTIME_GENERATION_LABEL,
+  restartRuntimeEnvironment,
+  RUNTIME_CUBE_WARM_POOL_NAME,
+  runtimeFirstActivityTimeoutMs,
+  runtimeNoProgressTimeoutMs,
+  RUNTIME_GENERATION,
+  RUNTIME_GENERATION_LABEL,
 } from "./runtime-environment";
 import { createNoProgressWatchdog, NoProgressError } from "./turn-no-progress";
 import { T3_SESSION_GENERATION, t3ProviderDrivers } from "./t3-provider-driver";
 
-const T3_POLL_INTERVAL_MS = 125;
+const RUNTIME_POLL_INTERVAL_MS = 125;
 // Codex subscription writes its per-run relay config into the sandbox's T3
 // settings.json, which T3 applies through an asynchronous settings-watch
 // reconcile. Wait for the reconcile to publish the remote instance before
 // steering; if it does not land in time, fall back to a deterministic restart.
-const T3_CODEX_BARRIER_DEADLINE_MS = 5_000;
-const T3_CODEX_VERIFY_DEADLINE_MS = 8_000;
+const CODEX_BARRIER_DEADLINE_MS = 5_000;
+const CODEX_VERIFY_DEADLINE_MS = 8_000;
 
-interface T3ShellSnapshot {
+interface RuntimeShellSnapshot {
   readonly projects: readonly { readonly id: string }[];
   readonly threads: readonly { readonly id: string }[];
 }
 
-export function t3RunAdapterEnabled(
+export function runtimeAdapterEnabled(
   env: Readonly<Record<string, string | undefined>> = process.env,
 ): boolean {
   const value = env.T3_RUN_ADAPTER_ENABLED?.trim().toLowerCase();
   return value === "1" || value === "true";
 }
 
-export function t3RunAdapterEngineSelected(
+export function runtimeAdapterEngineSelected(
   engine: string,
   env: Readonly<Record<string, string | undefined>> = process.env,
 ): boolean {
@@ -90,11 +90,11 @@ export function t3RunAdapterEngineSelected(
     .includes(engine.toLowerCase());
 }
 
-export type T3RunAdapterMode = "canary" | "all";
+export type RuntimeAdapterMode = "canary" | "all";
 
-export function t3RunAdapterMode(
+export function runtimeAdapterMode(
   env: Readonly<Record<string, string | undefined>> = process.env,
-): T3RunAdapterMode {
+): RuntimeAdapterMode {
   const mode = env.T3_RUN_ADAPTER_MODE?.trim().toLowerCase() || "canary";
   if (mode !== "canary" && mode !== "all") {
     throw new Error("T3_RUN_ADAPTER_MODE must be canary or all");
@@ -102,12 +102,12 @@ export function t3RunAdapterMode(
   return mode;
 }
 
-export function t3RunAdapterSelected(
+export function runtimeAdapterSelected(
   ctx: Pick<EngineRunContext, "runId" | "threadId">,
   env: Readonly<Record<string, string | undefined>> = process.env,
 ): boolean {
-  if (!t3RunAdapterEnabled(env)) return false;
-  if (t3RunAdapterMode(env) === "all") return true;
+  if (!runtimeAdapterEnabled(env)) return false;
+  if (runtimeAdapterMode(env) === "all") return true;
   const allowlist = new Set(
     (env.T3_CANARY_THREAD_IDS ?? "")
       .split(",")
@@ -117,7 +117,7 @@ export function t3RunAdapterSelected(
   return allowlist.has(ctx.threadId ?? "") || allowlist.has(ctx.runId);
 }
 
-export function t3RunSnapshot(
+export function runtimeRunSnapshot(
   env: Readonly<Record<string, string | undefined>> = process.env,
 ): string {
   if (sandboxProviderKind(env) === "cube") {
@@ -132,9 +132,9 @@ export function t3RunSnapshot(
   );
 }
 
-export function t3RuntimeMode(
+export function configuredRuntimeMode(
   env: Readonly<Record<string, string | undefined>> = process.env,
-): T3RuntimeMode {
+): RuntimeMode {
   const mode = env.T3_RUNTIME_MODE?.trim() || "full-access";
   if (
     mode !== "approval-required" &&
@@ -169,23 +169,23 @@ async function resolveWorkspaceRoot(
 async function readThreadSnapshot(
   ctx: EngineRunContext,
   sandbox: Awaited<ReturnType<typeof acquireThreadSandbox>>["sandbox"],
-): Promise<T3ThreadSnapshot> {
-  return await requestT3Environment<T3ThreadSnapshot>(
+): Promise<RuntimeThreadSnapshot> {
+  return await requestRuntimeEnvironment<RuntimeThreadSnapshot>(
     sandbox,
     {
       method: "GET",
-      path: `/api/orchestration/threads/${encodeURIComponent(t3ThreadId(ctx))}`,
+      path: `/api/orchestration/threads/${encodeURIComponent(runtimeThreadId(ctx))}`,
     },
     ctx.signal,
   );
 }
 
-async function waitForNewT3TurnSnapshot(
+async function waitForNewRuntimeTurnSnapshot(
   ctx: EngineRunContext,
   sandbox: Awaited<ReturnType<typeof acquireThreadSandbox>>["sandbox"],
   priorTurnId: string | null,
-): Promise<T3ThreadSnapshot> {
-  const deadline = Date.now() + t3FirstActivityTimeoutMs();
+): Promise<RuntimeThreadSnapshot> {
+  const deadline = Date.now() + runtimeFirstActivityTimeoutMs();
   while (!ctx.signal.aborted) {
     const snapshot = await readThreadSnapshot(ctx, sandbox).catch(() => null);
     const latestTurnId = snapshot?.thread.latestTurn?.turnId ?? null;
@@ -194,15 +194,15 @@ async function waitForNewT3TurnSnapshot(
     }
     if (Date.now() >= deadline) {
       throw new Error(
-        `The provider produced no first activity within ${t3FirstActivityTimeoutMs()}ms`,
+        `The provider produced no first activity within ${runtimeFirstActivityTimeoutMs()}ms`,
       );
     }
-    await Bun.sleep(T3_POLL_INTERVAL_MS);
+    await Bun.sleep(RUNTIME_POLL_INTERVAL_MS);
   }
   throw new Error("Turn projection aborted");
 }
 
-async function waitForT3Turn(
+async function waitForRuntimeTurn(
   ctx: EngineRunContext,
   sandbox: Awaited<ReturnType<typeof acquireThreadSandbox>>["sandbox"],
   preExistingActivities: ReadonlyMap<string, string>,
@@ -214,7 +214,7 @@ async function waitForT3Turn(
   // Single owner of the turn-stream no-progress bound: a provider retry storm
   // (only runtime.warning activities, no tool/text progress) must terminate
   // the run with the real provider reason instead of running forever.
-  const watchdog = createNoProgressWatchdog(t3NoProgressTimeoutMs(), redact.text);
+  const watchdog = createNoProgressWatchdog(runtimeNoProgressTimeoutMs(), redact.text);
   // A long-running tool emits no new activity revisions while it executes, so
   // the event stream goes silent even though the turn is making real progress.
   // While the latest snapshot shows an open tool call, tick the watchdog on a
@@ -226,20 +226,20 @@ async function waitForT3Turn(
   toolHeartbeat.unref?.();
   let publishedText = "";
   let finalText = "";
-  const applySnapshot = async (snapshot: T3ThreadSnapshot): Promise<boolean> => {
-    toolInFlight = hasOpenT3ToolCall(snapshot.thread.activities);
+  const applySnapshot = async (snapshot: RuntimeThreadSnapshot): Promise<boolean> => {
+    toolInFlight = hasOpenRuntimeToolCall(snapshot.thread.activities);
     for (const activity of snapshot.thread.activities) {
-      const revision = t3ActivityRevision(activity);
+      const revision = runtimeActivityRevision(activity);
       if (activityRevisions.get(activity.id) === revision) continue;
       activityRevisions.set(activity.id, revision);
-      await recordProviderEvent(t3ActivityProviderEvent(ctx, t3ThreadId(ctx), activity), {
+      await recordProviderEvent(runtimeActivityProviderEvent(ctx, runtimeThreadId(ctx), activity), {
         critical:
           activity.kind === "user-input.requested" || activity.kind === "approval.requested",
       });
       watchdog.observeActivity(activity);
-      if (!shouldProjectT3Activity(activity, snapshot.thread.activities)) continue;
+      if (!shouldProjectRuntimeActivity(activity, snapshot.thread.activities)) continue;
       const step = redact.unknown(activityStep(activity));
-      const activityStepKey = t3ActivityStepKey(activity);
+      const activityStepKey = runtimeActivityStepKey(activity);
       const priorStepId = activitySteps.get(activityStepKey);
       if (priorStepId && ctx.updateStep) {
         await ctx.updateStep(priorStepId, step.code_json ?? null);
@@ -259,20 +259,20 @@ async function waitForT3Turn(
     }
     publishedText = text;
 
-    const error = t3TurnError(snapshot);
+    const error = runtimeTurnError(snapshot);
     if (error) throw new Error(redact.text(error));
     finalText = text;
-    return !t3TurnSettled(snapshot);
+    return !runtimeTurnSettled(snapshot);
   };
   // Dispatch commits before the read projection necessarily observes the new
   // turn. Poll only this short projection hand-off; all subsequent updates use
   // T3's native replayable websocket stream.
   try {
-    const initial = await waitForNewT3TurnSnapshot(ctx, sandbox, priorTurnId);
+    const initial = await waitForNewRuntimeTurnSnapshot(ctx, sandbox, priorTurnId);
     if (!(await applySnapshot(initial))) return finalText;
-    await subscribeT3Thread(
+    await subscribeRuntimeThread(
       sandbox,
-      t3ThreadId(ctx),
+      runtimeThreadId(ctx),
       initial.snapshotSequence,
       AbortSignal.any([ctx.signal, watchdog.signal]),
       async (item) => {
@@ -289,7 +289,7 @@ async function waitForT3Turn(
   throw new Error("Run aborted (timeout)");
 }
 
-export function makeT3Adapter(engine: T3EngineId, driver: ProviderDriver): EngineAdapter {
+export function makeRuntimeAdapter(engine: RuntimeEngineId, driver: ProviderDriver): EngineAdapter {
   return {
     id: engine,
     async run(ctx): Promise<void> {
@@ -299,23 +299,25 @@ export function makeT3Adapter(engine: T3EngineId, driver: ProviderDriver): Engin
       const startedAt = Date.now();
       const secretInjection = await composeSecretEnv(ctx, { excludeNames: PROVIDER_SECRET_NAMES });
       const redact = createSecretRedactor(secretInjection.redactionValues);
+      // The "t3.*" timing stage names are frozen VALUES: they are stored in the
+      // run-timing ledger and pinned by the hosted-cutover canary.
       const endSandbox = ctx.timing?.begin("t3.sandbox_acquire");
       const lease = await acquireThreadSandbox(ctx, {
-        snapshot: t3RunSnapshot(),
-        chip: `t3:${engine}`,
-        warmPool: T3_CUBE_WARM_POOL_NAME,
-        labels: { [T3_RUNTIME_GENERATION_LABEL]: T3_RUNTIME_GENERATION },
-        requiredLabels: { [T3_RUNTIME_GENERATION_LABEL]: T3_RUNTIME_GENERATION },
+        snapshot: runtimeRunSnapshot(),
+        chip: `runtime:${engine}`,
+        warmPool: RUNTIME_CUBE_WARM_POOL_NAME,
+        labels: { [RUNTIME_GENERATION_LABEL]: RUNTIME_GENERATION },
+        requiredLabels: { [RUNTIME_GENERATION_LABEL]: RUNTIME_GENERATION },
       });
       endSandbox?.();
       const { sandbox } = lease;
-      let providerBridgeLease: T3ProviderBridgeLease | undefined;
+      let providerBridgeLease: RuntimeProviderBridgeLease | undefined;
 
       try {
         await ctx.emit({
           kind: "task",
-          label: "Preparing T3 runtime and integrations…",
-          chip: `t3:${engine}`,
+          label: "Preparing runtime and integrations…",
+          chip: `runtime:${engine}`,
         });
         const endPrepare = ctx.timing?.begin("t3.prepare");
         const prepareStage = async <T>(stage: string, operation: () => Promise<T>): Promise<T> => {
@@ -340,7 +342,7 @@ export function makeT3Adapter(engine: T3EngineId, driver: ProviderDriver): Engin
         );
         await Promise.all([
           prepareStage("provider_bridge", async () => {
-            providerBridgeLease = await prepareT3ProviderBridge(sandbox, ctx, engine, workdir);
+            providerBridgeLease = await prepareRuntimeProviderBridge(sandbox, ctx, engine, workdir);
           }),
           prepareStage("repos", () => prepareRepos(sandbox, workdir, ctx)),
           prepareStage("inputs", () => materializeRunInputs(sandbox, ctx.inputFiles)),
@@ -360,7 +362,7 @@ export function makeT3Adapter(engine: T3EngineId, driver: ProviderDriver): Engin
             // mtime: health refreshes rewrite the cache for the legacy instance
             // too. Fast path, no restart cost.
             if (
-              await awaitT3CodexProviderReady(sandbox, ctx.signal, T3_CODEX_BARRIER_DEADLINE_MS)
+              await awaitCodexProviderReady(sandbox, ctx.signal, CODEX_BARRIER_DEADLINE_MS)
             ) {
               return;
             }
@@ -368,10 +370,10 @@ export function makeT3Adapter(engine: T3EngineId, driver: ProviderDriver): Engin
             // reads the relay config synchronously and builds the remote instance
             // from the start, then verify once before steering. Honest error if
             // the runtime never reports ready.
-            await restartT3Environment(sandbox, ctx.signal);
-            invalidateT3EnvironmentAccess(sandbox);
+            await restartRuntimeEnvironment(sandbox, ctx.signal);
+            invalidateRuntimeEnvironmentAccess(sandbox);
             if (
-              !(await awaitT3CodexProviderReady(sandbox, ctx.signal, T3_CODEX_VERIFY_DEADLINE_MS))
+              !(await awaitCodexProviderReady(sandbox, ctx.signal, CODEX_VERIFY_DEADLINE_MS))
             ) {
               throw new Error("Codex runtime did not become ready after restart");
             }
@@ -380,20 +382,20 @@ export function makeT3Adapter(engine: T3EngineId, driver: ProviderDriver): Engin
         endPrepare?.();
 
         const endShell = ctx.timing?.begin("t3.shell");
-        const shell = await requestT3Environment<T3ShellSnapshot>(
+        const shell = await requestRuntimeEnvironment<RuntimeShellSnapshot>(
           sandbox,
           { method: "GET", path: "/api/orchestration/shell" },
           ctx.signal,
         );
         endShell?.();
-        const threadId = t3ThreadId(ctx);
+        const threadId = runtimeThreadId(ctx);
         const threadExists = shell.threads.some((thread) => thread.id === threadId);
         const createdAt = new Date().toISOString();
-        const runtimeMode = t3RuntimeMode();
+        const runtimeMode = configuredRuntimeMode();
         const negotiatedCapabilities = sessionCapabilities(engine, {
           desktop: false,
           knowledgeTools: true,
-          t3Orchestration: true,
+          runtimeOrchestration: true,
         });
         const established = await establishProviderSession({
           driver,
@@ -417,7 +419,7 @@ export function makeT3Adapter(engine: T3EngineId, driver: ProviderDriver): Engin
         const preExistingActivities = new Map(
           priorSnapshot?.thread.activities.map((activity) => [
             activity.id,
-            t3ActivityRevision(activity),
+            runtimeActivityRevision(activity),
           ]) ?? [],
         );
         const priorTurnId = priorSnapshot?.thread.latestTurn?.turnId ?? null;
@@ -449,11 +451,11 @@ export function makeT3Adapter(engine: T3EngineId, driver: ProviderDriver): Engin
         const endTurn = ctx.timing?.begin("t3.turn_wait");
         await ctx.emit({
           kind: "task",
-          label: "Waiting for T3 activity…",
-          chip: `t3:${engine}`,
+          label: "Waiting for provider activity…",
+          chip: `runtime:${engine}`,
         });
         try {
-          const summary = await waitForT3Turn(
+          const summary = await waitForRuntimeTurn(
             ctx,
             sandbox,
             preExistingActivities,
@@ -461,7 +463,7 @@ export function makeT3Adapter(engine: T3EngineId, driver: ProviderDriver): Engin
             redact,
           );
           await ctx.emit({ kind: "done", label: "Done", chip: null });
-          ctx.setSummary(summary.trim() || `T3 ${engine} run completed`, Date.now() - startedAt);
+          ctx.setSummary(summary.trim() || `${engine} run completed`, Date.now() - startedAt);
         } catch (error) {
           if (error instanceof NoProgressError && !ctx.signal.aborted) {
             // The durable run is failing with the provider's real reason; also
@@ -490,6 +492,6 @@ export function makeT3Adapter(engine: T3EngineId, driver: ProviderDriver): Engin
   };
 }
 
-export const t3CodexAdapter = makeT3Adapter("codex", t3ProviderDrivers.codex);
-export const t3ClaudeAdapter = makeT3Adapter("claude", t3ProviderDrivers.claude);
-export const t3OpenCodeAdapter = makeT3Adapter("opencode", t3ProviderDrivers.opencode);
+export const runtimeCodexAdapter = makeRuntimeAdapter("codex", t3ProviderDrivers.codex);
+export const runtimeClaudeAdapter = makeRuntimeAdapter("claude", t3ProviderDrivers.claude);
+export const runtimeOpenCodeAdapter = makeRuntimeAdapter("opencode", t3ProviderDrivers.opencode);

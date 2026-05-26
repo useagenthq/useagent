@@ -16,8 +16,8 @@ export interface CapabilityResources {
   readonly desktop: boolean;
   /** The provider actually loaded the Skynet knowledge MCP for this session. */
   readonly knowledgeTools: boolean;
-  /** This provider session is owned by T3's canonical orchestration runtime. */
-  readonly t3Orchestration?: boolean;
+  /** This provider session is owned by the canonical orchestration runtime. */
+  readonly runtimeOrchestration?: boolean;
 }
 
 /** The truthful negotiated capability map for a real session of `engine`, given its runtime
@@ -26,32 +26,32 @@ export function sessionCapabilities(engine: string, res: CapabilityResources): N
   const e = canonicalEngine(engine); // normalize legacy aliases (daytona->opencode, claude-sdk->claude)
   const isOpencode = e === "opencode";
   const isCodex = e === "codex";
-  const isT3 = res.t3Orchestration === true;
+  const isRuntime = res.runtimeOrchestration === true;
   return {
     // Streaming, tool progress, commands and the sandbox terminal are real for
     // every engine. Native reasoning/child/patch projections only exist on the
-    // OpenCode protocol and the T3 canonical adapter today; legacy ACP must not
+    // OpenCode protocol and the canonical runtime adapter today; legacy ACP must not
     // advertise aspirational UI surfaces.
     streamingText: true,
     toolProgress: true,
-    fileDiffs: isOpencode || isT3,
+    fileDiffs: isOpencode || isRuntime,
     commands: true,
     directTerminal: true, // the thread sandbox has a terminal for every engine
-    childSessions: isOpencode || isT3,
-    reasoning: isOpencode || isT3,
+    childSessions: isOpencode || isRuntime,
+    reasoning: isOpencode || isRuntime,
     resume: true, // opencode continuation / ACP session/load
     load: true,
     stop: true, // opencode POST /abort · ACP session/cancel (both wired)
     // Honest per-engine differences:
-    plans: isOpencode || isT3,
-    usage: isOpencode || isT3,
+    plans: isOpencode || isRuntime,
+    usage: isOpencode || isRuntime,
     modelSelection: isOpencode || isCodex, // OpenCode uses provider ids; Codex accepts explicit backend-policy ids
 
-    reconcile: isOpencode || isT3,
-    close: !isOpencode && !isT3,
-    nativeEmbed: isOpencode && !isT3,
-    approvals: isT3,
-    questions: isOpencode || isT3,
+    reconcile: isOpencode || isRuntime,
+    close: !isOpencode && !isRuntime,
+    nativeEmbed: isOpencode && !isRuntime,
+    approvals: isRuntime,
+    questions: isOpencode || isRuntime,
     // Runtime resources (caller-provided truth):
     desktop: res.desktop,
     knowledgeTools: res.knowledgeTools,

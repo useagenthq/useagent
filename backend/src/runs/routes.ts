@@ -49,9 +49,9 @@ import {
   replyToOpenCodeQuestion,
 } from "../engines/opencode-question";
 import { releaseRunSandbox } from "./sandbox-release";
-import { isT3ThreadSessionId } from "../engines/runtime-orchestration";
-import { replyToT3Question } from "../engines/runtime-question";
-import { replyToT3Approval, T3ApprovalError } from "../engines/runtime-approval";
+import { isRuntimeThreadSessionId } from "../engines/runtime-orchestration";
+import { replyToRuntimeQuestion } from "../engines/runtime-question";
+import { replyToRuntimeApproval, RuntimeApprovalError } from "../engines/runtime-approval";
 import { UploadClaimError } from "../uploads/repo";
 
 export const runsRoutes = new Hono<AppEnv>();
@@ -451,8 +451,8 @@ runsRoutes.post("/:id/cancel", async (c) => {
 runsRoutes.post("/:id/questions/:questionId/reply", async (c) => {
   const run = await getRunForOrg(c.get("orgId"), c.req.param("id"));
   if (!run) return c.json({ error: "run not found" }, 404);
-  const t3Session = isT3ThreadSessionId(run.engineSessionId ?? "");
-  if (!t3Session && run.engine !== "opencode") {
+  const runtimeSession = isRuntimeThreadSessionId(run.engineSessionId ?? "");
+  if (!runtimeSession && run.engine !== "opencode") {
     return c.json({ error: "questions_not_supported", engine: run.engine }, 409);
   }
   if (run.status !== "running" || !run.engineSessionId) {
@@ -465,7 +465,7 @@ runsRoutes.post("/:id/questions/:questionId/reply", async (c) => {
     return c.json({ error: "invalid JSON body" }, 400);
   }
   try {
-    const reply = t3Session ? replyToT3Question : replyToOpenCodeQuestion;
+    const reply = runtimeSession ? replyToRuntimeQuestion : replyToOpenCodeQuestion;
     const result = await reply({
       runId: run.id,
       threadId: run.threadId,
@@ -484,8 +484,8 @@ runsRoutes.post("/:id/questions/:questionId/reply", async (c) => {
   }
 });
 
-// Resolve a native T3 provider approval inside the active turn. The response is
-// dispatched to T3's resident provider session and durably recorded before the
+// Resolve a native provider approval inside the active turn. The response is
+// dispatched to the runtime resident provider session and durably recorded before the
 // UI considers the approval closed.
 runsRoutes.post("/:id/approvals/:requestId/reply", async (c) => {
   const run = await getRunForOrg(c.get("orgId"), c.req.param("id"));
@@ -493,7 +493,7 @@ runsRoutes.post("/:id/approvals/:requestId/reply", async (c) => {
   if (
     run.status !== "running" ||
     !run.engineSessionId ||
-    !isT3ThreadSessionId(run.engineSessionId)
+    !isRuntimeThreadSessionId(run.engineSessionId)
   ) {
     return c.json({ error: "approval_session_not_active" }, 409);
   }
@@ -504,7 +504,7 @@ runsRoutes.post("/:id/approvals/:requestId/reply", async (c) => {
     return c.json({ error: "invalid JSON body" }, 400);
   }
   try {
-    const result = await replyToT3Approval({
+    const result = await replyToRuntimeApproval({
       runId: run.id,
       threadId: run.threadId,
       sessionId: run.engineSessionId,
@@ -514,7 +514,7 @@ runsRoutes.post("/:id/approvals/:requestId/reply", async (c) => {
     });
     return c.json({ ok: true, already_answered: result.alreadyAnswered });
   } catch (error) {
-    if (error instanceof T3ApprovalError) {
+    if (error instanceof RuntimeApprovalError) {
       return c.json({ error: error.code, message: error.message }, error.status);
     }
     console.error(`[approval] reply failed for run ${run.id}:`, error);

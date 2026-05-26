@@ -8,9 +8,9 @@ import {
 } from "./opencode-server";
 import { sandboxClaudeAdapter, sandboxCodexAdapter } from "./sandbox";
 import {
-  makeT3Adapter,
-  t3RunAdapterEngineSelected,
-  t3RunAdapterSelected,
+  makeRuntimeAdapter,
+  runtimeAdapterEngineSelected,
+  runtimeAdapterSelected,
 } from "./runtime-adapter";
 import { T3_SESSION_GENERATION, t3ProviderDrivers } from "./t3-provider-driver";
 import {
@@ -25,7 +25,7 @@ import {
   type ProviderDriverCapability,
 } from "@skynet/agent-harness/control";
 import type { EngineAdapter, EngineRunContext, HarnessAdapter } from "./types";
-import { isT3ThreadSessionId, type T3EngineId } from "./runtime-orchestration";
+import { isRuntimeThreadSessionId, type RuntimeEngineId } from "./runtime-orchestration";
 import { sessionCapabilities } from "./capabilities";
 
 // Build the ACP compatibility adapters before registering them beside native
@@ -153,7 +153,7 @@ const providerRegistry: Readonly<Record<string, ProviderRegistration>> = {
   opencode: opencodeRegistration,
 };
 
-function isT3EngineId(provider: string): provider is T3EngineId {
+function isRuntimeEngineId(provider: string): provider is RuntimeEngineId {
   return provider === "codex" || provider === "claude" || provider === "opencode";
 }
 
@@ -170,9 +170,9 @@ export function resolveProviderDriver(
   if (!registration) return undefined;
   const canonicalProvider = registration.driver.provider;
   return ctx &&
-    isT3EngineId(canonicalProvider) &&
-    t3RunAdapterEngineSelected(canonicalProvider, env) &&
-    t3RunAdapterSelected(ctx, env)
+    isRuntimeEngineId(canonicalProvider) &&
+    runtimeAdapterEngineSelected(canonicalProvider, env) &&
+    runtimeAdapterSelected(ctx, env)
     ? t3ProviderDrivers[canonicalProvider]
     : registration.driver;
 }
@@ -189,10 +189,10 @@ export async function runProviderTurn(
   if (!registration || !driver) return false;
 
   if (driver.descriptor.protocol.name === "t3-orchestration") {
-    if (!isT3EngineId(driver.provider)) {
+    if (!isRuntimeEngineId(driver.provider)) {
       throw new Error(`Engine driver has unsupported provider '${driver.provider}'`);
     }
-    await makeT3Adapter(driver.provider, driver).run(ctx);
+    await makeRuntimeAdapter(driver.provider, driver).run(ctx);
     return true;
   }
 
@@ -213,8 +213,8 @@ export function resolveHarness(provider: string): HarnessAdapter | undefined {
 
   const controlDriver = (sessionId?: string): ProviderDriver =>
     sessionId &&
-      isT3ThreadSessionId(sessionId) &&
-      isT3EngineId(registration.driver.provider)
+      isRuntimeThreadSessionId(sessionId) &&
+      isRuntimeEngineId(registration.driver.provider)
       ? t3ProviderDrivers[registration.driver.provider]
       : registration.driver;
   const controlSession = (

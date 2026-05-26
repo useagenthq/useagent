@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { T3Activity } from "./runtime-orchestration";
+import type { RuntimeActivity } from "./runtime-orchestration";
 import {
   createNoProgressWatchdog,
   MAX_CONSECUTIVE_RETRY_WARNINGS,
@@ -7,7 +7,7 @@ import {
   retryWarningReason,
 } from "./turn-no-progress";
 
-function retryWarning(id: number, message: string, attempt?: number): T3Activity {
+function retryWarning(id: number, message: string, attempt?: number): RuntimeActivity {
   return {
     id: `warning-${id}`,
     tone: "info",
@@ -23,7 +23,7 @@ function retryWarning(id: number, message: string, attempt?: number): T3Activity
   };
 }
 
-function toolActivity(id: number): T3Activity {
+function toolActivity(id: number): RuntimeActivity {
   return {
     id: `tool-${id}`,
     tone: "tool",
@@ -49,7 +49,7 @@ describe("T3 no-progress watchdog", () => {
     expect(retryWarningReason(retryWarning(2, "HTTP 500 from provider gateway"))).toBe(
       "HTTP 500 from provider gateway",
     );
-    const summaryOnly: T3Activity = {
+    const summaryOnly: RuntimeActivity = {
       id: "warning-summary",
       tone: "info",
       kind: "runtime.warning",
