@@ -39,9 +39,11 @@ for (const k of [
   delete process.env[k];
 }
 
-// Never let a dev .env's periodic skill resync start its boot sweep inside the
-// unit suite (the app import in helpers.ts runs startSkillsResync).
+// Never let a dev .env's periodic skill resync / code indexer start its boot
+// sweep inside the unit suite (the app import runs startSkillsResync +
+// startCodeIndex).
 delete process.env.SKILLS_RESYNC_INTERVAL_MIN;
+delete process.env.CODE_INDEX_INTERVAL_MIN;
 
 process.env.WORKER_STEP_DELAY_MS = process.env.WORKER_STEP_DELAY_MS ?? "5";
 

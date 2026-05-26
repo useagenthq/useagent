@@ -5,6 +5,8 @@ import {
   CONTEXT_KINDS,
   type ContextKind,
 } from "../../context/store";
+import { parseCodeRef } from "../../context/code/projector";
+import { readFileAtCommit } from "../../wiki-gen/clone";
 import { formatSkillMarkdown } from "../../skills/format";
 import { resolveSkillSelection } from "../../skills/repo";
 import { getScheduleForOrg } from "../../schedules/repo";
@@ -36,10 +38,12 @@ export const CONTEXT_TOOLS = [
     name: "context_search",
     description:
       "Search this organization's UNIFIED context index across knowledge, skills, " +
-      "playbooks, blueprints, and automations in ONE call. Returns bounded, typed " +
-      "results (kind, title, snippet, source_ref, version) ranked by relevance. Use " +
-      "this first when you need org-specific context and are not sure which store " +
-      "holds it; pass a source_ref to context_read for the full authoritative content.",
+      "playbooks, blueprints, automations, and repository CODE (docs, config, domains, " +
+      "symbols, manifests) in ONE call. Returns bounded, typed results (kind, title, " +
+      "snippet, source_ref, version) ranked by relevance. Use this first when you need " +
+      "org-specific context and are not sure which store holds it - including terms that " +
+      "live only in code; pass a source_ref to context_read for the full content or the " +
+      "cited source excerpt.",
     inputSchema: {
       type: "object",
       properties: {
@@ -49,13 +53,13 @@ export const CONTEXT_TOOLS = [
           items: { type: "string", enum: [...CONTEXT_KINDS] },
           description:
             "Optional filter to a subset of kinds (knowledge, skill, playbook, " +
-            "blueprint, automation, memory). Omit to search every kind.",
+            "blueprint, automation, memory, code). Omit to search every kind.",
         },
         repo: {
           type: "string",
           description:
-            "Optional repository filter, reserved for the future code/config kind. " +
-            "Accepted but not yet applied in this phase (documented no-op).",
+            'Optional repository filter ("owner/name") that narrows results to CODE ' +
+            "rows from that one repository. Ignored for non-code kinds.",
         },
         limit: {
           type: "integer",
@@ -73,8 +77,9 @@ export const CONTEXT_TOOLS = [
     description:
       "Resolve a source_ref from context_search to its FULL authoritative content " +
       "from the real store (skill/playbook body, knowledge document, automation " +
-      "prompt). Org-scoped: it never returns another organization's row. Refuses an " +
-      "unresolvable ref and names the remedy.",
+      "prompt) or, for a code: ref, the cited source excerpt fetched from the repo " +
+      "at that commit. Org-scoped: it never returns another organization's row. " +
+      "Refuses an unresolvable ref and names the remedy.",
     inputSchema: {
       type: "object",
       properties: {
@@ -82,7 +87,8 @@ export const CONTEXT_TOOLS = [
           type: "string",
           description:
             'Stable typed pointer from a context_search result, e.g. "skill:<id>@<version>", ' +
-            '"knowledge:<recordId>", "automation:<scheduleId>".',
+            '"knowledge:<recordId>", "automation:<scheduleId>", ' +
+            '"code:<owner/name>@<sha>:<file>#L<line>".',
         },
       },
       required: ["source_ref"],
@@ -121,11 +127,10 @@ async function doSearch(
   const rawLimit = typeof args.limit === "number" ? Math.floor(args.limit) : DEFAULT_LIMIT;
   const limit = Math.max(1, Math.min(rawLimit, MAX_LIMIT));
   const kinds = parseKinds(args.kinds);
-  // `repo` is accepted for the future code kind; it is a documented no-op now
-  // (the projection carries no repo dimension yet), so it does not filter.
+  // `repo` narrows to CODE rows from that repo (filters on the code: source_ref).
+  const repo = typeof args.repo === "string" && args.repo.trim() ? args.repo.trim() : undefined;
 
   // Bring our own query vector when embeddings are available; else keyword-only.
-  // The blend is dormant in Phase 1 (no projected embeddings) but the path exists.
   let queryEmbedding: number[] | null = null;
   if (embeddingsEnabled()) {
     queryEmbedding = await embedOne(query).catch(() => null);
@@ -135,6 +140,7 @@ async function doSearch(
     orgId: claims.orgId,
     query,
     kinds,
+    repo,
     k: limit,
     queryEmbedding,
   });
@@ -260,6 +266,73 @@ async function readAutomation(claims: ToolTokenClaims, id: string): Promise<Tool
   };
 }
 
+/** Lines of surrounding context returned around the cited line for a code: read. */
+const CODE_CONTEXT_LINES = 20;
+
+/** How a code: ref's file bytes are fetched at the pinned commit. Overridable for
+ *  tests (production always fetches from the repo over git). */
+type CodeFileReader = (
+  repo: string,
+  commitSha: string,
+  file: string,
+) => Promise<string | null>;
+let codeFileReader: CodeFileReader = readFileAtCommit;
+
+/** Test-only seam: production always reads the excerpt from the repo at the sha. */
+export function setCodeFileReaderForTest(reader: CodeFileReader | null): void {
+  codeFileReader = reader ?? readFileAtCommit;
+}
+
+/** Read a code: ref -> the cited file excerpt at that commit. ORG-SCOPED: the ref
+ *  must resolve to a code row in THIS org's projection first (fail closed, no
+ *  cross-tenant repo oracle), then the excerpt is fetched from the repo at the
+ *  pinned commit. Bounded to a window around the cited line. */
+async function readCode(claims: ToolTokenClaims, ref: string): Promise<ToolCallResult> {
+  // Gate on the org's projection: a code row this org never indexed is not
+  // readable through here (a valid ref for another org resolves to null).
+  const projected = await getContextBySourceRef(claims.orgId, ref).catch(() => null);
+  if (!projected || projected.kind !== "code") {
+    return error(
+      "That code source_ref is not available to your organization. Run context_search again to get a current source_ref.",
+    );
+  }
+  const parsed = parseCodeRef(ref);
+  if (!parsed) {
+    return error(
+      'That code source_ref is malformed. Use a value returned by context_search, e.g. "code:<owner/name>@<sha>:<file>#L<line>".',
+    );
+  }
+  const text = await codeFileReader(parsed.repo, parsed.commitSha, parsed.file).catch(
+    () => null,
+  );
+  if (text === null) {
+    return error(
+      `The cited file is no longer readable at that commit (${parsed.repo}@${parsed.commitSha.slice(0, 8)}:${parsed.file}). Run context_search again to get a current source_ref.`,
+    );
+  }
+  const lines = text.split("\n");
+  const start = Math.max(0, parsed.line - 1 - CODE_CONTEXT_LINES);
+  const end = Math.min(lines.length, parsed.line + CODE_CONTEXT_LINES);
+  const excerpt = lines
+    .slice(start, end)
+    .map((l, i) => `${start + i + 1}: ${l}`)
+    .join("\n");
+  const body = clamp(excerpt, READ_MAX);
+  const provenance = `${parsed.repo}@${parsed.commitSha}:${parsed.file}#L${parsed.line}`;
+  return {
+    content: [{ type: "text", text: `# ${parsed.file} (line ${parsed.line})\n${provenance}\n\n${body}` }],
+    structuredContent: {
+      kind: "code",
+      source_ref: ref,
+      repo: parsed.repo,
+      commit: parsed.commitSha,
+      file: parsed.file,
+      line: parsed.line,
+      body,
+    },
+  };
+}
+
 async function doRead(
   claims: ToolTokenClaims,
   args: Record<string, unknown>,
@@ -267,6 +340,11 @@ async function doRead(
   const ref = typeof args.source_ref === "string" ? args.source_ref.trim() : "";
   if (!ref) {
     return error("context_read requires a `source_ref` from a context_search result.");
+  }
+  // A code: ref carries colons in its file path, so it can't go through the
+  // colon-split parseSourceRef; dispatch it up front.
+  if (ref.startsWith("code:")) {
+    return readCode(claims, ref);
   }
   const parsed = parseSourceRef(ref);
   if (!parsed) {
