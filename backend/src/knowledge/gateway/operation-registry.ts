@@ -14,6 +14,7 @@ import {
   childSessionToolsEnabled,
   executeChildSessionTool,
 } from "./child-session-tools";
+import { CONTEXT_TOOLS, executeContextTool } from "./context-tools";
 import { COMPUTER_USE_TOOLS, executeComputerUseTool } from "./computer-use-tools";
 import { executeGcsTool, GCS_TOOLS } from "./gcs-tools";
 import { executeGithubTool, GITHUB_TOOLS } from "./github-tools";
@@ -105,6 +106,7 @@ const APPROVED_KNOWLEDGE_MANAGEMENT_TOOLS = KNOWLEDGE_MANAGEMENT_TOOLS.map(
 
 const BASE_TOOL_FAMILIES = [
   { tools: KNOWLEDGE_TOOLS, execute: executeKnowledgeTool },
+  { tools: CONTEXT_TOOLS, execute: executeContextTool },
   { tools: APPROVED_KNOWLEDGE_MANAGEMENT_TOOLS, execute: executeKnowledgeManagementTool },
   { tools: MEMORY_TOOLS, execute: executeMemoryTool },
   { tools: WEB_SEARCH_TOOLS, execute: executeWebSearchTool },

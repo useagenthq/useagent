@@ -4,6 +4,10 @@ import {
   type EngineId,
   type ScheduleTrigger,
 } from "../db/schema";
+import {
+  removeFromContextIndex,
+  syncAutomationToContextIndex,
+} from "../context/projector";
 import { unknownRepos } from "../github/repos";
 import {
   engineModelReadyForDispatch,
@@ -250,6 +254,14 @@ export async function createScheduleForOrg(
     action: "created",
     automationId: schedule.id,
   });
+  await syncAutomationToContextIndex({
+    id: schedule.id,
+    orgId: schedule.org_id,
+    name: schedule.name,
+    prompt: schedule.prompt,
+    cron: schedule.cron,
+    tags: schedule.tags,
+  });
   return schedule;
 }
 
@@ -374,6 +386,14 @@ export async function updateScheduleForOrg(
     action: "updated",
     automationId: updated.id,
   });
+  await syncAutomationToContextIndex({
+    id: updated.id,
+    orgId: updated.org_id,
+    name: updated.name,
+    prompt: updated.prompt,
+    cron: updated.cron,
+    tags: updated.tags,
+  });
   return updated;
 }
 
@@ -385,6 +405,7 @@ export async function deleteScheduleForOrg(orgId: string, id: string): Promise<v
     action: "deleted",
     automationId: id,
   });
+  await removeFromContextIndex(orgId, `automation:${id}`);
 }
 
 export async function fireScheduleForOrg(
