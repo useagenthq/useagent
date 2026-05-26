@@ -88,7 +88,9 @@ export async function executeSlackTool(
   // Gate: only Slack-originated runs (their thread maps to a Slack thread).
   const thread = await findSlackThreadByRoot(claims.threadId);
   if (!thread) {
-    return toolError("This run is not linked to a Slack thread, so files cannot be delivered to Slack.");
+    return toolError(
+      "This run is not linked to a Slack thread, so files cannot be delivered to Slack. Publish the file as an artifact instead (artifact_publish) so the user can download it.",
+    );
   }
 
   let artifact;

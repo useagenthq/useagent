@@ -143,7 +143,11 @@ function checkedBranch(value: unknown): string | null {
 
 async function availableRepos(): Promise<RepoInfo[]> {
   const listing = await listRepos();
-  if (!listing.configured) throw new Error("GitHub is not configured");
+  if (!listing.configured) {
+    throw new Error(
+      "GitHub is not configured; ask the workspace operator to connect GitHub (GitHub App installation or access token), then retry",
+    );
+  }
   if (listing.error && listing.repos.length === 0) throw new Error(listing.error);
   return listing.repos;
 }
@@ -198,7 +202,9 @@ const productionService: RepositoryService = {
       .trim()
       .split("\n");
     if ((revision.exitCode ?? 1) !== 0 || !/^[0-9a-f]{40}$/.test(commit)) {
-      throw new Error(`failed to verify cloned repository ${fullName}`);
+      throw new Error(
+        `failed to verify cloned repository ${fullName}; the clone likely failed (network or access) - retry once, and report it if it repeats`,
+      );
     }
     return {
       repository: fullName,

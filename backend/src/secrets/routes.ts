@@ -34,7 +34,10 @@ secretsRoutes.put("/:name", orgAdminScope, async (c) => {
     );
   }
   if (isReservedSecretName(name)) {
-    return c.json({ error: "name is reserved for sandbox runtime control" }, 400);
+    return c.json(
+      { error: "name is reserved for sandbox runtime control; choose a different name" },
+      400,
+    );
   }
 
   let body: Record<string, unknown>;

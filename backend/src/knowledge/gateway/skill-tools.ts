@@ -99,7 +99,11 @@ async function activateSkill(
     skillVersion: pinned.version,
     skillContentHash: pinned.contentHash,
   });
-  if (!activated) return error("The skill can only be activated for the current running turn.");
+  if (!activated) {
+    return error(
+      "The skill can only be activated for the current running turn; call skill_activate from within the active run, not after it settles.",
+    );
+  }
 
   const markdown = formatSkillMarkdown(pinned.content);
   await Promise.all([

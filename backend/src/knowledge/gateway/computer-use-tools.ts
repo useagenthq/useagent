@@ -286,7 +286,9 @@ async function cubeCommand(sandbox: SandboxHandle, command: string): Promise<str
     60,
   );
   if ((executed.exitCode ?? 1) !== 0) {
-    throw new Error((executed.result ?? "computer-use command failed").trim());
+    throw new Error(
+      (executed.result ?? "computer-use command failed; the desktop may still be starting - retry once").trim(),
+    );
   }
   return executed.result ?? "";
 }
@@ -330,7 +332,11 @@ async function executeNativeSequenceAction(
   action: ComputerSequenceAction,
 ): Promise<void> {
   const computerUse = sandbox.computerUse;
-  if (!computerUse) throw new Error("native computer use is unavailable");
+  if (!computerUse) {
+    throw new Error(
+      "native computer use is unavailable in this sandbox; retry the run, and report it if the task requires the desktop",
+    );
+  }
   switch (action.action) {
     case "click":
       await computerUse.mouse.click(action.x, action.y, action.button, action.double);

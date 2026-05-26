@@ -137,7 +137,7 @@ async function create(
   const run = await currentRun(claims);
   if (!run || !(await childSessionToolsEnabled(claims))) {
     return errorResult(
-      "Child sessions are not enabled for the current live run.",
+      "Child sessions are not enabled for the current live run; they require an active turn on an engine that supports them (claude or codex).",
     );
   }
   const idempotencyKey = cleanString(args.idempotencyKey);
@@ -180,7 +180,7 @@ async function list(
 ): Promise<ToolCallResult> {
   if (!(await childSessionToolsEnabled(claims))) {
     return errorResult(
-      "Child sessions are not enabled for the current live run.",
+      "Child sessions are not enabled for the current live run; they require an active turn on an engine that supports them (claude or codex).",
     );
   }
   const children = await listChildSessions({
