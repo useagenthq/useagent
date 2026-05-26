@@ -525,10 +525,21 @@ export async function completeRun(
    *  (see runs/finalize.ts). Defaults to the shared pool. */
   exec: Executor = db,
 ): Promise<boolean> {
+  // Non-terminal precondition: the FIRST finalizer wins. Two finalizers can now
+  // race the same run (interactive zombie-cancel vs the reconcile loop's
+  // adopt/fail) - without this guard the later writer flips a completed run to
+  // failed AND its transaction independently enqueues a memory capture, so a
+  // user-stopped run could still capture. Returning false on a no-op update
+  // lets finalizeRun skip all side-effects for the loser.
   const [row] = await exec
     .update(runs)
     .set({ status, summary, durationMs, updatedAt: new Date() })
-    .where(eq(runs.id, id))
+    .where(
+      and(
+        eq(runs.id, id),
+        inArray(runs.status, ["queued", "running"]),
+      ),
+    )
     .returning({ id: runs.id });
   return Boolean(row);
 }

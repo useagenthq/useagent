@@ -74,7 +74,16 @@ export async function finalizeRun(
     settledThreadId = run.threadId;
     settledOrgId = run.orgId;
 
-    await completeRun(runId, status, summary, durationMs, tx);
+    // FIRST finalizer wins (completeRun guards on a non-terminal status). A
+    // concurrent second finalizer - zombie-cancel racing the reconcile loop -
+    // updates zero rows; skip EVERY side-effect so it can never flip the status
+    // or double-enqueue a capture for an already-settled run.
+    const finalized = await completeRun(runId, status, summary, durationMs, tx);
+    if (!finalized) {
+      settledThreadId = null;
+      settledOrgId = null;
+      return;
+    }
 
     // Memory capture — completed runs only, into the run's WRITE pool
     // (personal→personal, org→org), resolved from the run row's memory_scope +

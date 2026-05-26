@@ -288,6 +288,13 @@ export async function runDueReconciles(
   let dropped = 0;
   let eventsRecovered = 0;
   for (const entry of due) {
+   // PER-ENTRY ISOLATION: a throw on ONE entry (a stuck finalize, a DB error)
+   // must not abort the whole batch and leave every other parked run stranded.
+   // Combined with the tick watchdog in startReconcileLoop, a single wedged
+   // entry can no longer freeze the reconciler for all runs (the 2026-08-20
+   // 25-minute idle: one post-park tick never settled, single-flight then
+   // blocked every later tick forever).
+   try {
     // NO-DOUBLE-ADOPT: if the run already settled via another lane (a reply's
     // worker took the thread, a cancel, a prior tick), just drop the parked row.
     const run = await getRun(entry.runId);
@@ -334,6 +341,14 @@ export async function runDueReconciles(
       await bumpReconcile(entry.runId, reconcileBackoffAt(Date.now(), entry.attempts));
       retried++;
     }
+   } catch (err) {
+     // Bump this entry's next attempt so a persistently failing one backs off
+     // instead of hot-looping, and move on to the rest of the batch.
+     console.error(`[reconcile] entry ${entry.runId} failed, skipping:`, err);
+     await bumpReconcile(entry.runId, reconcileBackoffAt(Date.now(), entry.attempts)).catch(
+       () => {},
+     );
+   }
   }
   return { adopted, failed, retried, dropped, eventsRecovered };
 }
@@ -370,17 +385,33 @@ async function settleAndPump(runId: string, threadId: string): Promise<void> {
 
 let reconcileTimer: ReturnType<typeof setInterval> | null = null;
 let reconcileTicking = false;
+let reconcileTickStartedAt = 0;
 
 /** Start the adaptive reconcile loop (idempotent). Single-flight: a slow tick is
  *  never overlapped by the next. `RECONCILE_TICK_MS` overrides the interval
- *  (tests go fast). Best-effort — a tick failure is logged, never thrown. */
+ *  (tests go fast). Best-effort — a tick failure is logged, never thrown.
+ *
+ *  WATCHDOG: single-flight used to be permanent - if a tick's promise never
+ *  settled (an unbounded DB await wedged), `reconcileTicking` stayed true and
+ *  every later interval early-returned, killing the reconciler for good (the
+ *  2026-08-20 25-minute idle). Now a tick still in flight past the watchdog
+ *  window is treated as lost: the flag is cleared and the next interval runs a
+ *  fresh tick. `runDueReconciles` is idempotent (it re-claims due rows), so an
+ *  overlapping resurrected tick is safe. */
 export function startReconcileLoop(
   intervalMs = Number(process.env.RECONCILE_TICK_MS ?? 15_000),
 ): void {
   if (reconcileTimer) return;
+  const watchdogMs = Math.max(intervalMs * 8, 120_000);
   reconcileTimer = setInterval(() => {
-    if (reconcileTicking) return;
+    if (reconcileTicking) {
+      if (Date.now() - reconcileTickStartedAt < watchdogMs) return;
+      console.error(
+        `[reconcile] tick exceeded ${watchdogMs}ms watchdog; resetting single-flight`,
+      );
+    }
     reconcileTicking = true;
+    reconcileTickStartedAt = Date.now();
     void runDueReconciles()
       .catch((err) => console.error("[reconcile] tick failed:", err))
       .finally(() => {

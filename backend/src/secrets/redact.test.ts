@@ -29,6 +29,30 @@ describe("sandbox output secret redaction", () => {
     );
   });
 
+  test("scrubs inline credentials that are not registered org secrets", () => {
+    // Procedure traces record command lines - a literal credential in a command
+    // is not a stored org secret, so exact-value redaction misses it.
+    const redact = createSecretRedactor([]);
+    expect(redact.text('curl -H "Authorization: Bearer sk-abc123DEF456ghi789JKL" api')).toContain(
+      "<redacted>",
+    );
+    expect(redact.text('curl -H "Authorization: Bearer sk-abc123DEF456ghi789JKL" api')).not.toContain(
+      "sk-abc123DEF456ghi789JKL",
+    );
+    expect(redact.text("psql PGPASSWORD=hunter2secret host")).toBe(
+      "psql PGPASSWORD=<redacted> host",
+    );
+    expect(redact.text("export API_KEY=ZYXW9876abcd1234")).toBe("export API_KEY=<redacted>");
+    expect(redact.text("token ghp_0123456789abcdefghijABCDEFG stored")).toBe(
+      "token <redacted> stored",
+    );
+    expect(redact.text("mysql -phunter2secret db")).toBe("mysql -p<redacted> db");
+    // A benign path with no credential shape is untouched.
+    expect(redact.text("cd /root/work/upstream-org/backend && bun test")).toBe(
+      "cd /root/work/upstream-org/backend && bun test",
+    );
+  });
+
   test("does not mutate the original native frame", () => {
     const original = { state: { output: "prefix super-secret-token-value suffix" } };
     const redact = createSecretRedactor(["super-secret-token-value"]);

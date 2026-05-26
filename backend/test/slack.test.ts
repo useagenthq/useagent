@@ -183,7 +183,12 @@ describe("slack signature verification", () => {
 });
 
 describe("slack event → run", () => {
-  test("a linked GitHub repo becomes the run's bound repository", async () => {
+  test("a linked GitHub repo is dropped when it is not in the offered set", async () => {
+    // Security (S1): a Slack link must never bind a repo the web composer would
+    // refuse. With GitHub unconfigured in this suite, unknownRepos treats every
+    // ref as unknown, so the run binds none - fail closed, not "clone anything
+    // the App token can reach". (Repo-ref PARSING is unit-tested in
+    // repo-refs.test.ts; this asserts the ingress allowlist gate.)
     const marker = uid("repo");
     const res = await postSlack(
       eventCallback({
@@ -200,7 +205,7 @@ describe("slack event → run", () => {
         r.prompt.includes(`test ${marker}`),
       ) ?? null,
     );
-    expect(run.repos).toEqual(["upstream-org/backend"]);
+    expect(run.repos).toEqual([]);
   });
 
   test("app_mention creates a root run, 👀-acks, and posts the summary", async () => {
@@ -298,31 +303,21 @@ describe("slack event → run", () => {
   });
 
   test("a completed slack run shares its artifacts back into the thread", async () => {
-    const marker = uid("share");
+    // Build a running run directly (finalizeRun is now first-writer-wins, so a
+    // re-finalize of an already-settled run is a no-op by design - the artifact
+    // must exist BEFORE the single finalize). Root a Slack thread, publish the
+    // artifact, then finalize ONCE as completed.
+    const runId = crypto.randomUUID();
     const channel = `C${uid("ch")}`;
     const ts = `${uid("ts")}.1`;
-    await postSlack(
-      eventCallback({
-        type: "app_mention",
-        channel,
-        user: "U-HUMAN",
-        text: `<@${BOT}> build ${marker}`,
-        ts,
-      }),
-    );
-    const run = await waitFor(async () => findRunByPrompt(`build ${marker}`));
-
-    // Publish an artifact on the run BEFORE it settles is racy in this suite
-    // (the mock run settles fast), so store bytes + row now and re-finalize:
-    // finalizeRun is idempotent and the share enqueue is keyed per (run,
-    // artifact), so the replay enqueues exactly the new upload.
-    await waitFor(async () => ((await json<any>(`/api/runs/${run.id}`)).body.status !== "running" ? true : null));
+    await createRun({ id: runId, prompt: "share build", model: "claude-opus-5", engine: "mock", orgId: DEV_ORG_ID, userId: null, parentRunId: null, threadId: runId });
+    await linkSlackThread({ channel, threadTs: ts, rootRunId: runId, orgId: DEV_ORG_ID });
     const storageKey = "c".repeat(64); // content-addressed: keys are sha256 hex
     await artifactStorage().put(storageKey, Buffer.from("png-bytes"));
     await db.insert(artifacts).values({
-      orgId: run.org_id,
-      runId: run.id,
-      threadId: run.thread_id,
+      orgId: DEV_ORG_ID,
+      runId,
+      threadId: runId,
       sourcePath: "/work/shot.png",
       name: "shot.png",
       contentType: "image/png",
@@ -330,10 +325,7 @@ describe("slack event → run", () => {
       sha256: "b".repeat(64),
       storageKey,
     });
-    // Re-finalize as COMPLETED (shares fire on completion only; the
-    // credential-less test run settles failed). finalizeRun is idempotent and
-    // the replay enqueues exactly the new artifact upload.
-    await finalizeRun(run.id, "completed", "All done, screenshot attached.", 1);
+    await finalizeRun(runId, "completed", "All done, screenshot attached.", 1);
 
     const upload = await waitFor(async () =>
       rec.uploads.find((u) => u.channel === channel && u.filename === "shot.png") ?? null,
