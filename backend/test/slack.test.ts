@@ -20,6 +20,7 @@ import { createRun } from "../src/runs/repo";
 import { linkSlackThread } from "../src/slack/repo";
 import { DEV_ORG_ID, DEV_USER_ID } from "../src/seed";
 import { setSlackClientForTest } from "../src/slack";
+import { resetSlackDeduperForTest } from "../src/slack/events";
 import { setInboundFileDownloaderForTest } from "../src/slack/inbound-files";
 import { dispatchSocketFrame } from "../src/slack/socket-mode";
 import { composeSlackReplyText } from "../src/slack/reply";
@@ -542,6 +543,88 @@ describe("slack event → run", () => {
     } finally {
       statusFails = false;
     }
+  });
+});
+
+// Durable inbound dedupe: the command lane is keyed by the Slack event identity
+// (slack-event:<team>:<event_id>, channel:ts fallback), so a duplicate that
+// OUTLIVES the in-memory deduper (process restart, cross-lane double delivery)
+// still collapses to one run. resetSlackDeduperForTest simulates the restart.
+describe("slack durable inbound dedupe (survives a restart)", () => {
+  test("the same event_id re-delivered after a 'restart' does not create a second run", async () => {
+    const marker = uid("durable");
+    const envelope = eventCallback({
+      type: "app_mention",
+      channel: `C${uid("ch")}`,
+      user: "U-HUMAN",
+      text: `<@${BOT}> durable ${marker}`,
+      ts: `${uid("ts")}.1`,
+    });
+    await postSlack(envelope);
+    await waitFor(async () => findRunByPrompt(`durable ${marker}`));
+
+    resetSlackDeduperForTest(); // the in-memory fast path forgets everything
+    const res = await postSlack(envelope); // same event_id -> durable replay
+    expect(res.status).toBe(200);
+    await new Promise((r) => setTimeout(r, 300));
+    const { body } = await json<{ runs: any[] }>("/api/runs?all=1");
+    expect(body.runs.filter((r) => r.prompt === `durable ${marker}`).length).toBe(1);
+  });
+
+  test("a duplicate whose replay regenerated attachment ids (conflict) is still dropped", async () => {
+    setInboundFileDownloaderForTest(async () => new TextEncoder().encode("dup bytes"));
+    try {
+      const marker = uid("dupconflict");
+      const envelope = eventCallback({
+        type: "message",
+        channel: `D${uid("dm")}`,
+        channel_type: "im",
+        user: "U-HUMAN",
+        text: `attach ${marker}`,
+        ts: `${uid("ts")}.1`,
+        files: [
+          {
+            id: `F${uid("f")}`,
+            name: `${marker}.txt`,
+            size: 9,
+            mimetype: "text/plain",
+            url_private_download: `https://files.slack.com/files-pri/${TEAM}/${marker}.txt`,
+          },
+        ],
+      });
+      await postSlack(envelope);
+      await waitFor(async () => findRunByPrompt(`attach ${marker}`));
+
+      resetSlackDeduperForTest();
+      // The replay stages FRESH upload ids -> a different payload fingerprint
+      // under the same durable key -> conflict -> dropped, no second run.
+      expect((await postSlack(envelope)).status).toBe(200);
+      await new Promise((r) => setTimeout(r, 300));
+      const { body } = await json<{ runs: any[] }>("/api/runs?all=1");
+      expect(body.runs.filter((r) => r.prompt === `attach ${marker}`).length).toBe(1);
+    } finally {
+      setInboundFileDownloaderForTest(null);
+    }
+  });
+
+  test("an envelope with NO event_id falls back to the channel:ts durable key", async () => {
+    const marker = uid("fallback");
+    const envelope = eventCallback({
+      type: "app_mention",
+      channel: `C${uid("ch")}`,
+      user: "U-HUMAN",
+      text: `<@${BOT}> fallback ${marker}`,
+      ts: `${uid("ts")}.1`,
+    });
+    delete (envelope as Record<string, unknown>).event_id;
+    await postSlack(envelope);
+    await waitFor(async () => findRunByPrompt(`fallback ${marker}`));
+
+    resetSlackDeduperForTest();
+    expect((await postSlack(envelope)).status).toBe(200);
+    await new Promise((r) => setTimeout(r, 300));
+    const { body } = await json<{ runs: any[] }>("/api/runs?all=1");
+    expect(body.runs.filter((r) => r.prompt === `fallback ${marker}`).length).toBe(1);
   });
 });
 

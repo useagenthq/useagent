@@ -54,11 +54,20 @@ function createDeduper(max = 1000): { seen(key: string): boolean; forget(key: st
   };
 }
 
-const deduper = createDeduper();
+let deduper = createDeduper();
+
+/** TEST ONLY: drop all in-memory dedupe state, simulating a process restart so
+ *  suites can prove the DURABLE dedupe (the command-lane idempotency key). */
+export function resetSlackDeduperForTest(): void {
+  deduper = createDeduper();
+}
 
 export interface SlackEnvelope {
   type?: string;
   challenge?: string;
+  /** Slack's unique delivery id for the event (`Ev...`) — retries reuse it, so
+   *  it is the durable dedupe identity (falls back to channel:ts). */
+  event_id?: string;
   /** The workspace the event came from — resolved to an org/user via
    *  slack_workspaces (fail closed; see workspaces.ts). */
   team_id?: string;
@@ -248,11 +257,17 @@ export async function handleSlackEvent(body: SlackEnvelope): Promise<void> {
     model = defaultModelForEngine(engine);
   }
 
-  // Enter through the durable command lane (no idempotency key — Slack dedupes
-  // by external event id upstream). The mailbox pump preserves per-thread order:
-  // a reply in an active Slack thread waits for the prior turn.
-  await acceptRunCommand({
-    idempotencyKey: null,
+  // Enter through the durable command lane keyed by the SLACK EVENT IDENTITY
+  // (event_id when present - retries reuse it - else channel:ts), so a
+  // duplicate delivery that outlives the in-memory deduper (restart, cross-lane
+  // HTTP+socket double delivery) still collapses to ONE run. The mailbox pump
+  // preserves per-thread order: a reply in an active Slack thread waits for the
+  // prior turn.
+  const durableKey = body.event_id
+    ? `slack-event:${body.team_id}:${body.event_id}`
+    : `slack-event:${body.team_id}:${channel}:${ts}`;
+  const outcome = await acceptRunCommand({
+    idempotencyKey: durableKey,
     orgId,
     actorId: userId,
     run: {
@@ -278,6 +293,21 @@ export async function handleSlackEvent(body: SlackEnvelope): Promise<void> {
       commandCatalogRevision: null,
     },
   });
+
+  // A durable duplicate (the in-memory fast path missed it - restart or
+  // cross-lane double delivery): the ORIGINAL acceptance stands. `replayed`
+  // means an identical payload - heal a missing thread link (a crash between
+  // acceptance and linking) and stop. `conflict` means the same external event
+  // whose replay regenerated ids (fresh staged-attachment ids shift the
+  // fingerprint) - same message, so drop it too. No second ack fires either
+  // way: the receipt reaction is keyed slack-ack:<channel>:<ts>.
+  if (outcome.status !== "created") {
+    if (outcome.status === "replayed" && !link) {
+      await linkSlackThread({ channel, threadTs: slackThreadTs, rootRunId: outcome.runId, orgId });
+    }
+    console.log(`[slack] duplicate event ignored (${outcome.status}): ${durableKey}`);
+    return;
+  }
 
   // First bot interaction in this Slack thread → remember it as the root. Linked
   // BEFORE dispatch so run finalization (runs/finalize.ts) can always resolve the
