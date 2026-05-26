@@ -27,6 +27,38 @@ export async function enqueuePostMessageTx(
   );
 }
 
+/** Enqueue an artifact upload INSIDE a caller's transaction (run finalization),
+ *  mirroring enqueuePostMessageTx: the file share commits atomically with the
+ *  run reaching terminal. Returns whether a NEW row was created. */
+export async function enqueueUploadFileTx(
+  exec: Executor,
+  entry: {
+    idempotencyKey: string;
+    channel: string;
+    threadTs?: string;
+    filename: string;
+    title?: string;
+    artifactId: string;
+    size: number;
+  },
+): Promise<boolean> {
+  return enqueue(
+    {
+      kind: "upload_file",
+      idempotencyKey: entry.idempotencyKey,
+      payload: {
+        channel: entry.channel,
+        threadTs: entry.threadTs,
+        filename: entry.filename,
+        title: entry.title,
+        artifactId: entry.artifactId,
+        size: entry.size,
+      },
+    },
+    exec,
+  );
+}
+
 /** Durably enqueue the run-completion reply; the relay delivers it (survives a
  *  restart). Idempotent by `idempotencyKey`. */
 export async function enqueuePostMessage(entry: {
