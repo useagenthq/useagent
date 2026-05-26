@@ -42,6 +42,7 @@ beforeAll(() => {
       messages.push(m);
       return { ok: true };
     },
+    updateMessage: async () => ({ ok: true }),
     addReaction: async () => ({ ok: true }),
     setAssistantStatus: async () => {},
     uploadFile: async () => ({ ok: true }),

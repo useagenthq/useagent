@@ -15,9 +15,13 @@ import "./helpers"; // side-effect: imports src/index → migrate + seed
 // gap lost it). It now enqueues transactionally at finalization (runs/finalize.ts),
 // keyed `slack-reply:<runId>`, so it's durable BEFORE any watcher/relay runs.
 //
+// The row is now an `update_card` (the settled Block Kit run card, advanced in
+// place at delivery), carrying the SAME plain-text answer in `fallbackChunks` -
+// what `chunks` used to hold - so the answer lands even when no card ts exists.
+//
 // These tests read the slack_outbox ROW directly (no relay/mock), i.e. they prove
 // the durable INTENT is committed with the run — the delivery mechanism is already
-// covered by slack-outbox.test.ts.
+// covered by slack-outbox.test.ts + slack.test.ts.
 
 const ORG = "org-skynet-dev";
 
@@ -38,11 +42,17 @@ describe("slack reply durability at finalization (GAP 3)", () => {
 
     const row = await getSlackOutbox(`slack-reply:${runId}`);
     expect(row).not.toBeNull();
-    expect(row!.kind).toBe("post_message");
-    const payload = JSON.parse(row!.payload) as { channel: string; chunks: string[]; threadTs?: string };
+    expect(row!.kind).toBe("update_card");
+    const payload = JSON.parse(row!.payload) as {
+      channel: string;
+      fallbackChunks: string[];
+      threadTs?: string;
+      rootRunId: string;
+    };
     expect(payload.channel).toBe(channel);
     expect(payload.threadTs).toBe(ts);
-    expect(payload.chunks).toEqual(["here is the result"]); // completed → the summary
+    expect(payload.rootRunId).toBe(runId);
+    expect(payload.fallbackChunks).toEqual(["here is the result"]); // completed → the summary
   });
 
   test("a FAILED Slack run replies with a warning notice", async () => {
@@ -50,7 +60,7 @@ describe("slack reply durability at finalization (GAP 3)", () => {
     await finalizeRun(runId, "failed", "boom", 0);
     const row = await getSlackOutbox(`slack-reply:${runId}`);
     expect(row).not.toBeNull();
-    expect((JSON.parse(row!.payload) as { chunks: string[] }).chunks).toEqual([":warning: Run failed: boom"]);
+    expect((JSON.parse(row!.payload) as { fallbackChunks: string[] }).fallbackChunks).toEqual([":warning: Run failed: boom"]);
   });
 
   test("a non-Slack run enqueues NO reply", async () => {
@@ -93,6 +103,6 @@ describe("slack reply durability at finalization (GAP 3)", () => {
 
     const row = await getSlackOutbox(`slack-reply:${runId}`);
     expect(row).not.toBeNull();
-    expect((JSON.parse(row!.payload) as { chunks: string[] }).chunks).toEqual(["reconciled reply"]);
+    expect((JSON.parse(row!.payload) as { fallbackChunks: string[] }).fallbackChunks).toEqual(["reconciled reply"]);
   });
 });
