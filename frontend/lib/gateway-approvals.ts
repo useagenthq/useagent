@@ -2,12 +2,14 @@
 // Approve/Deny flow. Everything that touches this wire shape lives here so any
 // backend drift reconciles in this single file.
 //
-// Contract (backend built in parallel):
-//   GET  /api/gateway/approvals?runId=<id>
-//     -> { approvals: [{ id, runId, toolName, arguments (object),
-//          status: "pending"|"approved"|"denied"|"expired", requestedAt, resolvedAt }] }
-//   POST /api/gateway/approvals/:id/approve -> { status: "approved" }  (409 race, 403 non-member)
-//   POST /api/gateway/approvals/:id/deny    -> { status: "denied" }
+// Contract (reconciled against the landed backend, approval-routes.ts):
+//   GET  /api/gateway/approvals/requests?runId=<id>
+//     -> { requests: [{ id, run_id, thread_id, tool_name, arguments (object),
+//          status: "pending"|"approved"|"denied"|"expired", requested_at,
+//          expires_at, resolved_at, resolved_by }] }  (PENDING rows only; a
+//          resolved row leaves the list - the POST response carries its state)
+//   POST /api/gateway/approvals/requests/:id/approve -> { id, status }  (409 race, 403 non-member)
+//   POST /api/gateway/approvals/requests/:id/deny    -> { id, status }
 
 import { asRecord } from "@/components/chat/types";
 import { backendFetch } from "@/lib/backend-fetch";
@@ -41,7 +43,11 @@ const STATUSES: ReadonlySet<string> = new Set([
 export function parseGatewayApproval(raw: unknown): GatewayApproval | null {
   const record = asRecord(raw);
   if (!record) return null;
-  const { id, runId, toolName, status, requestedAt } = record;
+  const id = record.id;
+  const runId = record.run_id;
+  const toolName = record.tool_name;
+  const status = record.status;
+  const requestedAt = record.requested_at;
   if (typeof id !== "string" || !id) return null;
   if (typeof runId !== "string" || !runId) return null;
   if (typeof toolName !== "string" || !toolName) return null;
@@ -54,8 +60,8 @@ export function parseGatewayApproval(raw: unknown): GatewayApproval | null {
     arguments: asRecord(record.arguments) ?? {},
     status: status as GatewayApprovalStatus,
     requestedAt,
-    resolvedAt: typeof record.resolvedAt === "string" ? record.resolvedAt : null,
-    resolvedBy: typeof record.resolvedBy === "string" ? record.resolvedBy : null,
+    resolvedAt: typeof record.resolved_at === "string" ? record.resolved_at : null,
+    resolvedBy: typeof record.resolved_by === "string" ? record.resolved_by : null,
   };
 }
 
@@ -73,13 +79,13 @@ export class GatewayApprovalRequestError extends Error {
 
 export async function fetchGatewayApprovals(runId: string): Promise<GatewayApproval[]> {
   const response = await backendFetch(
-    `/api/gateway/approvals?runId=${encodeURIComponent(runId)}`,
+    `/api/gateway/approvals/requests?runId=${encodeURIComponent(runId)}`,
   );
   if (!response.ok) {
     throw new GatewayApprovalRequestError(response.status, `backend ${response.status}`);
   }
-  const body = (await response.json().catch(() => null)) as { approvals?: unknown } | null;
-  const list = Array.isArray(body?.approvals) ? body.approvals : [];
+  const body = (await response.json().catch(() => null)) as { requests?: unknown } | null;
+  const list = Array.isArray(body?.requests) ? body.requests : [];
   return list.flatMap((item) => {
     const approval = parseGatewayApproval(item);
     return approval ? [approval] : [];
@@ -91,7 +97,7 @@ export async function resolveGatewayApproval(
   decision: GatewayApprovalDecision,
 ): Promise<GatewayApprovalStatus> {
   const response = await backendFetch(
-    `/api/gateway/approvals/${encodeURIComponent(id)}/${decision}`,
+    `/api/gateway/approvals/requests/${encodeURIComponent(id)}/${decision}`,
     { method: "POST" },
   );
   if (!response.ok) {

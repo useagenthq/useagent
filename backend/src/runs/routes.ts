@@ -13,6 +13,8 @@ import {
 } from "./repo";
 import { acceptRunCommand } from "../commands";
 import { acceptRunCancel, CANCEL_SUMMARY } from "../commands/cancel";
+import { finalizeRun } from "./finalize";
+import { deleteReconcile } from "./reconcile-queue";
 import { resolveSkillSelection } from "../skills/repo";
 import { buildNativeCommandPrompt, validateCommandIntent, type CommandIntent } from "./command-intent";
 import { readSessionCommandCatalog } from "./command-catalog";
@@ -432,10 +434,17 @@ runsRoutes.post("/:id/cancel", async (c) => {
       if (outcome.runStatusWas === "running") {
         const signalled = signalCancel(id, CANCEL_SUMMARY);
         if (!signalled) {
+          // ZOMBIE: the DB says running but no actor in this process owns the
+          // run - its engine died with a restart. The user said stop; honor it
+          // NOW instead of waiting on the reconcile re-probe (a user sat on a
+          // dead "Send now" for 25 minutes this way, 2026-08-20). Finalize as
+          // stopped, drop any parked re-probe, and let the pump promote the
+          // queue. finalizeRun is idempotent against a concurrent settle.
           console.warn(
-            `[cancel] run ${id} is 'running' but has no live canceller in this process; ` +
-              "the cancel is durable and will be reconciled by recovery.",
+            `[cancel] run ${id} is 'running' with no live canceller; finalizing as stopped now.`,
           );
+          await finalizeRun(id, "failed", CANCEL_SUMMARY, 0);
+          await deleteReconcile(id);
         }
       }
       await pumpThread(outcome.threadId);

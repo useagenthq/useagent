@@ -175,14 +175,15 @@ describe("optimistic resolution machine", () => {
 });
 
 describe("wire parse (contract boundary)", () => {
+  // Snake_case per the landed backend serializer (approvalRequestSummary).
   const wire = {
     id: "appr-1",
-    runId: "run-1",
-    toolName: "deploy_service",
+    run_id: "run-1",
+    tool_name: "deploy_service",
     arguments: { service: "billing" },
     status: "pending",
-    requestedAt: "2026-08-20T10:00:00Z",
-    resolvedAt: null,
+    requested_at: "2026-08-20T10:00:00Z",
+    resolved_at: null,
   };
 
   test("parses a contract-shaped record", () => {
@@ -210,8 +211,8 @@ describe("wire parse (contract boundary)", () => {
         ...wire,
         arguments: ["not", "a", "record"],
         status: "approved",
-        resolvedAt: "2026-08-20T10:01:00Z",
-        resolvedBy: "dana",
+        resolved_at: "2026-08-20T10:01:00Z",
+        resolved_by: "dana",
       }),
     ).toMatchObject({ arguments: {}, resolvedAt: "2026-08-20T10:01:00Z", resolvedBy: "dana" });
   });
