@@ -14,10 +14,13 @@ export interface SlackThreadLink {
   orgId: string;
 }
 
-/** Where a Slack-originated run's reply must be posted (the thread it rooted). */
+/** Where a Slack-originated run's reply must be posted (the thread it rooted).
+ *  `cardTs` is the Block Kit run card's message ts when one has been posted, so a
+ *  final update targets the SAME card (null = no card yet; post a fresh reply). */
 export interface SlackThreadTarget {
   channel: string;
   threadTs: string;
+  cardTs: string | null;
 }
 
 /** The skynet root run for a Slack thread, or null if the bot hasn't engaged it. */
@@ -42,7 +45,11 @@ export async function findSlackThreadByRoot(
   exec: Executor = db,
 ): Promise<SlackThreadTarget | null> {
   const [row] = await exec
-    .select({ channel: slackThreads.channel, threadTs: slackThreads.threadTs })
+    .select({
+      channel: slackThreads.channel,
+      threadTs: slackThreads.threadTs,
+      cardTs: slackThreads.cardTs,
+    })
     .from(slackThreads)
     .where(eq(slackThreads.rootRunId, rootRunId))
     .limit(1);
@@ -58,4 +65,37 @@ export async function linkSlackThread(input: {
   orgId: string;
 }): Promise<void> {
   await db.insert(slackThreads).values(input).onConflictDoNothing();
+}
+
+/** Persist the Block Kit run card's message ts on the thread it was posted into,
+ *  so later progress/completion updates target the SAME card. Keyed by
+ *  (channel, threadTs) - the card lives in exactly one thread. */
+export async function setSlackCardTs(
+  channel: string,
+  threadTs: string,
+  cardTs: string,
+): Promise<void> {
+  await db
+    .update(slackThreads)
+    .set({ cardTs })
+    .where(and(eq(slackThreads.channel, channel), eq(slackThreads.threadTs, threadTs)));
+}
+
+/** The run card's message ts for a rooted Slack thread (null before it is posted).
+ *  Used by the live-progress watcher to advance the card in place. */
+export async function getSlackCardTsByRoot(rootRunId: string): Promise<{
+  channel: string;
+  threadTs: string;
+  cardTs: string | null;
+} | null> {
+  const [row] = await db
+    .select({
+      channel: slackThreads.channel,
+      threadTs: slackThreads.threadTs,
+      cardTs: slackThreads.cardTs,
+    })
+    .from(slackThreads)
+    .where(eq(slackThreads.rootRunId, rootRunId))
+    .limit(1);
+  return row ?? null;
 }

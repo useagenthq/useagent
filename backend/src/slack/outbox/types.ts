@@ -33,12 +33,39 @@ export type UploadFilePayload = {
   readonly size: number;
 };
 
+/** Post the Block Kit RUN CARD into a thread and persist its message ts on
+ *  slack_threads so later updates target it. `rootRunId` keys the thread row the
+ *  ts is stored on; `text` is the plain-text notification/fallback string. */
+export type PostCardPayload = {
+  readonly channel: string;
+  readonly threadTs: string;
+  readonly rootRunId: string;
+  readonly blocks: readonly unknown[];
+  readonly text: string;
+};
+
+/** Advance the run card IN PLACE (chat.update) to its final state. The card ts is
+ *  resolved from slack_threads at delivery (it may not exist yet at enqueue). When
+ *  no card ts is found or the update fails permanently, the delivery falls back to
+ *  posting the answer as CHUNKED plain messages so the reply is NEVER lost. */
+export type UpdateCardPayload = {
+  readonly channel: string;
+  readonly threadTs: string;
+  readonly rootRunId: string;
+  readonly blocks: readonly unknown[];
+  readonly text: string;
+  /** The full answer, chunked - the plain-text fallback when no card ts exists. */
+  readonly fallbackChunks: readonly string[];
+};
+
 /** A request to durably enqueue one outbound Slack call. `idempotencyKey` makes
  *  enqueue idempotent AND bounds delivery to once per logical message. */
 export type SlackOutboxEnqueue =
   | { readonly kind: "post_message"; readonly idempotencyKey: string; readonly payload: PostMessagePayload }
   | { readonly kind: "add_reaction"; readonly idempotencyKey: string; readonly payload: AddReactionPayload }
-  | { readonly kind: "upload_file"; readonly idempotencyKey: string; readonly payload: UploadFilePayload };
+  | { readonly kind: "upload_file"; readonly idempotencyKey: string; readonly payload: UploadFilePayload }
+  | { readonly kind: "post_card"; readonly idempotencyKey: string; readonly payload: PostCardPayload }
+  | { readonly kind: "update_card"; readonly idempotencyKey: string; readonly payload: UpdateCardPayload };
 
 /** How a claimed row transitioned after a delivery attempt. */
 export type SlackDeliveryOutcome =

@@ -6,6 +6,7 @@ import { getArtifact, toArtifactDescriptor } from "../../artifacts/repo";
 import { artifactStorage } from "../../artifacts/storage";
 import { recordProviderEvent } from "../../runs/provider-events";
 import { claimDue, markDead, markDelivered, markRetry, resetStuckDelivering, updatePayload, type ClaimedRow } from "./repo";
+import { getSlackCardTsByRoot, setSlackCardTs } from "../repo";
 import type { ProcessResult, SlackDeliveryOutcome } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -106,6 +107,63 @@ async function attempt(client: SlackClient, row: ClaimedRow): Promise<DeliveryRe
         title: string("title"),
         bytes,
       });
+    }
+    case "post_card": {
+      const channel = string("channel");
+      const threadTs = string("threadTs");
+      const rootRunId = string("rootRunId");
+      const text = string("text");
+      const blocks = Array.isArray(p.blocks) ? p.blocks : undefined;
+      if (!channel || !threadTs || !rootRunId || !text) {
+        return { ok: false, class: "permanent", message: "invalid_payload" };
+      }
+      const res = await client.postMessage({ channel, text, threadTs, blocks });
+      // Persist the card ts so later updates target the SAME message. A crash
+      // between the post and this write redelivers the row (at-least-once): the
+      // idempotency key already bounds it, and a re-post is a benign duplicate
+      // card - the update path still finds a ts on the healed row next time.
+      if (res.ok && res.ts) await setSlackCardTs(channel, threadTs, res.ts);
+      return res;
+    }
+    case "update_card": {
+      const channel = string("channel");
+      const threadTs = string("threadTs");
+      const rootRunId = string("rootRunId");
+      const text = string("text");
+      const blocks = Array.isArray(p.blocks) ? p.blocks : undefined;
+      // The plain-text fallback (chunked) - posted when there is no card to update.
+      const fallbackChunks = Array.isArray(p.fallbackChunks)
+        ? p.fallbackChunks.filter((c): c is string => typeof c === "string" && c.length > 0)
+        : [];
+      if (!channel || !threadTs || !rootRunId || !text) {
+        return { ok: false, class: "permanent", message: "invalid_payload" };
+      }
+      // Resolve the card ts written by the post_card row. When it exists, advance
+      // the card in place; a transient/rate-limited failure retries the whole row.
+      const link = await getSlackCardTsByRoot(rootRunId);
+      if (link?.cardTs) {
+        const res = await client.updateMessage({ channel, ts: link.cardTs, text, blocks });
+        // chat.update succeeded, or failed transiently (retry the row) - but a
+        // PERMANENT update failure (card deleted, message not found) must not
+        // strand the answer: fall through to posting it as a fresh reply below.
+        if (res.ok || res.class !== "permanent") return res;
+      }
+      // No card ts (post never landed) or the card is gone: post the answer as a
+      // fresh CHUNKED reply so the answer is NEVER lost. Cursor-resumes like
+      // post_message so a mid-sequence retry does not re-post delivered chunks.
+      if (fallbackChunks.length === 0) {
+        return { ok: false, class: "permanent", message: "invalid_payload" };
+      }
+      for (let i = 0; i < fallbackChunks.length; i++) {
+        const res = await client.postMessage({ channel, text: fallbackChunks[i]!, threadTs });
+        if (!res.ok) {
+          if (i > 0) {
+            await updatePayload(row.id, JSON.stringify({ ...p, fallbackChunks: fallbackChunks.slice(i) }));
+          }
+          return res;
+        }
+      }
+      return { ok: true };
     }
     default:
       return assertNever(row.kind, "unhandled slack outbox kind");
