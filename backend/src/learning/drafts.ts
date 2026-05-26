@@ -1,4 +1,4 @@
-import { and, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq } from "drizzle-orm";
 import { db } from "../db/client";
 import {
   artifacts,
@@ -12,6 +12,8 @@ import {
 import { contentHash } from "../knowledge/distill";
 import { embeddingsEnabled, embedOne } from "../knowledge/embed";
 import { upsertRecord } from "../knowledge/store";
+import { buildProcedureTrace } from "../memory/procedure-trace";
+import { orgSecretRedactor } from "../secrets/store";
 import { maybeProposeSkillRevision } from "./proposals";
 import { highValueReason } from "./salience";
 
@@ -81,9 +83,10 @@ export async function proposeKnowledgeDraftForRun(
     .from(artifacts)
     .where(eq(artifacts.runId, runId));
   const stepRows = await db
-    .select({ kind: steps.kind })
+    .select({ kind: steps.kind, label: steps.label, chip: steps.chip, codeJson: steps.codeJson })
     .from(steps)
-    .where(eq(steps.runId, runId));
+    .where(eq(steps.runId, runId))
+    .orderBy(asc(steps.idx));
   const distinctStepKinds = new Set(stepRows.map((r) => r.kind)).size;
 
   const reason = highValueReason({
@@ -93,6 +96,11 @@ export async function proposeKnowledgeDraftForRun(
     distinctStepKinds,
   });
   if (!reason) return null;
+
+  // The ordered executable trace (bounded, redacted) — the step labels were
+  // already redacted at capture time; the org redactor here is defense in depth
+  // for anything replayed or reconciled into the log after the fact.
+  const trace = buildProcedureTrace(stepRows, await orgSecretRedactor(run.orgId));
 
   const artifactNames = artifactRows.map((r) => r.name);
   const evidence: KnowledgeDraftEvidence = {
@@ -104,6 +112,8 @@ export async function proposeKnowledgeDraftForRun(
     distinctStepKinds,
     artifactCount: artifactRows.length,
     artifactNames,
+    ...(trace.steps.length > 0 ? { procedure: trace.steps } : {}),
+    ...(trace.elided > 0 ? { procedureElided: trace.elided } : {}),
   };
   const [row] = await db
     .insert(knowledgeDrafts)

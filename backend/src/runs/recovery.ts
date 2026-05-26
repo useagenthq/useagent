@@ -8,8 +8,7 @@ import type {
 import { getLastStepAt, getRun, STALE_SUMMARY } from "./repo";
 import { finalizeRun } from "./finalize";
 import { recordProviderEvent } from "./provider-events";
-import { createSecretRedactor, type SecretRedactor } from "../secrets/redact";
-import { decryptOrgSecrets } from "../secrets/store";
+import { orgSecretRedactor } from "../secrets/store";
 import {
   bumpReconcile,
   claimDueReconciles,
@@ -235,20 +234,6 @@ function recordReconcilingMarker(runId: string, threadId: string, payload: Recon
   }).catch(() => {});
 }
 
-/** Build the redactor for interim-event payloads from the run's org secrets, so a
- *  re-probe redacts exactly what the live capture lane does. A null org (or a
- *  decrypt failure) still yields a baseline redactor that scrubs JWTs and signed
- *  capabilities. Never throws. */
-async function reconcileRedactor(orgId: string | null): Promise<SecretRedactor> {
-  if (!orgId) return createSecretRedactor([]);
-  try {
-    const decrypted = await decryptOrgSecrets(orgId);
-    return createSecretRedactor(decrypted.secrets.map((s) => s.value));
-  } catch {
-    return createSecretRedactor([]);
-  }
-}
-
 /** Append the interim native events a re-probe surfaced to the canonical run, so
  *  SSE subscribers watch the timeline advance while the run is being adopted.
  *  Idempotent: recordProviderEvent upserts on the stable provider event id
@@ -260,7 +245,7 @@ async function ingestInterimEvents(
   orgId: string | null,
   events: readonly HarnessInterimEvent[],
 ): Promise<number> {
-  const redact = await reconcileRedactor(orgId);
+  const redact = await orgSecretRedactor(orgId);
   let recovered = 0;
   for (const ev of events) {
     try {
