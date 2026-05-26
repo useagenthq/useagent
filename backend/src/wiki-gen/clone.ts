@@ -139,3 +139,55 @@ export async function cloneRepoAtHead(repo: string): Promise<ClonedRepoAtHead> {
     throw e;
   }
 }
+
+/**
+ * Fetch ONE file's text at an EXACT commit (not necessarily HEAD) over the git
+ * smart-HTTP protocol. Used by context_read to return the cited `code:` excerpt
+ * from the pinned commit. `git init` + shallow `fetch <sha>` + `show <sha>:<path>`
+ * avoids a full history clone. Returns null when the path is absent at that
+ * commit; throws (credential-free) on a transport/ref failure. `path` is
+ * repo-relative and must be a plain path (no `..`, no leading `/`).
+ */
+export async function readFileAtCommit(
+  repo: string,
+  commitSha: string,
+  path: string,
+): Promise<string | null> {
+  if (!isValidRepoRef(repo)) throw new Error(`invalid repo ref: ${repo}`);
+  if (!/^[0-9a-f]{7,40}$/.test(commitSha)) throw new Error(`invalid commit sha`);
+  if (path.includes("..") || path.startsWith("/")) throw new Error(`invalid file path`);
+  const token = await resolveGithubToken();
+  const url = `https://github.com/${repo}.git`;
+  const env = gitAuthEnv(token);
+  const dir = await mkdtemp(join(tmpdir(), "skynet-read-"));
+  const cleanup = async () => {
+    await rm(dir, { recursive: true, force: true }).catch(() => {});
+  };
+  try {
+    await exec("git", ["-C", dir, "init", "-q"], { env, timeout: 15_000 });
+    await exec("git", ["-C", dir, "remote", "add", "origin", url], { env, timeout: 15_000 });
+    await exec(
+      "git",
+      ["-C", dir, "fetch", "-q", "--depth", "1", "origin", commitSha],
+      { env, timeout: CLONE_TIMEOUT_MS, maxBuffer: 16 * 1024 * 1024 },
+    );
+    try {
+      const { stdout } = await exec("git", ["-C", dir, "show", `${commitSha}:${path}`], {
+        timeout: 15_000,
+        maxBuffer: 16 * 1024 * 1024,
+      });
+      return stdout;
+    } catch {
+      // Path absent at that commit (git show exits non-zero) -> honest null.
+      return null;
+    }
+  } catch (e) {
+    const msg =
+      e instanceof Error
+        ? e.message.replace(/x-access-token:[^@\s]+/g, "x-access-token:***")
+        : String(e);
+    throw new Error(`failed to read ${repo}@${commitSha}:${path}: ${msg.slice(0, 200)}`);
+  } finally {
+    await cleanup();
+  }
+}
