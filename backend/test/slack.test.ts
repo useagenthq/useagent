@@ -215,6 +215,58 @@ describe("slack event → run", () => {
     expect(msg.text).toBe(composeSlackReplyText(done.body.status, done.body.summary));
   });
 
+  test("a model directive picks the model for a new thread and strips from the prompt", async () => {
+    const marker = uid("directive");
+    const channel = `C${uid("ch")}`;
+    const res = await postSlack(
+      eventCallback({
+        type: "app_mention",
+        channel,
+        user: "U-HUMAN",
+        text: `<@${BOT}> model:sonnet build ${marker}`,
+        ts: `${uid("ts")}.1`,
+      }),
+    );
+    expect(res.status).toBe(200);
+    const run = await waitFor(async () => findRunByPrompt(`build ${marker}`));
+    expect(run.model).toBe("claude-sonnet-5");
+    expect(run.engine).toBe("opencode");
+  });
+
+  test("a mid-thread engine switch request gets guidance instead of a cross-engine run", async () => {
+    const marker = uid("engswitch");
+    const channel = `C${uid("ch")}`;
+    const rootTs = `${uid("ts")}.1`;
+    await postSlack(
+      eventCallback({
+        type: "app_mention",
+        channel,
+        user: "U-HUMAN",
+        text: `<@${BOT}> build ${marker}`,
+        ts: rootTs,
+      }),
+    );
+    const root = await waitFor(async () => findRunByPrompt(`build ${marker}`));
+
+    const res = await postSlack(
+      eventCallback({
+        type: "message",
+        channel,
+        user: "U-HUMAN",
+        text: `engine:codex continue ${marker}`,
+        ts: `${uid("ts")}.2`,
+        thread_ts: rootTs,
+      }),
+    );
+    expect(res.status).toBe(200);
+    // Guidance reply lands in the thread; NO cross-engine run is created.
+    const msg = await waitFor(async () =>
+      rec.messages.find((m) => m.channel === channel && m.threadTs === rootTs && m.text.includes("cannot switch engines")) ?? null,
+    );
+    expect(msg.text).toContain(root.engine);
+    expect(await findRunByPrompt(`continue ${marker}`)).toBeNull();
+  });
+
   test("the channel allowlist drops events from unlisted channels and admits listed ones", async () => {
     const allowed = `C${uid("ok")}`;
     process.env.SLACK_CHANNEL_ALLOWLIST = ` ${allowed} , C0LISTED2 `;

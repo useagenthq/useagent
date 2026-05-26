@@ -24,7 +24,14 @@ import { stageInboundSlackFiles, type SlackInboundFileMeta } from "./inbound-fil
 import { findSlackThread, linkSlackThread } from "./repo";
 import { watchSlackRun } from "./watcher";
 import { resolveSlackWorkspace } from "./workspaces";
-import { enqueueAddReaction } from "./outbox";
+import { enqueueAddReaction, enqueuePostMessage } from "./outbox";
+import { defaultModelForEngine, isModelAllowedForEngine } from "../runs/model-policy";
+import {
+  isSlackSwitchableEngine,
+  modelCatalogLine,
+  parseSlackDirectives,
+  resolveModelToken,
+} from "./model-directive";
 
 // Bounded FIFO deduper — collapses Slack retries AND the app_mention/message
 // pair for a channel mention (both carry the same `channel:ts`). No LRU dep;
@@ -183,8 +190,9 @@ export async function handleSlackEvent(body: SlackEnvelope): Promise<void> {
   // API reply path, which inherits the parent engine and refuses mismatches.
   let engine = config.defaultEngine;
   let model = config.model;
+  let parent: Awaited<ReturnType<typeof getRunForOrg>> | null = null;
   if (link) {
-    const parent = await getRunForOrg(orgId, link.rootRunId);
+    parent = await getRunForOrg(orgId, link.rootRunId);
     if (parent) {
       parentRunId = parent.id;
       threadId = parent.threadId;
@@ -192,6 +200,51 @@ export async function handleSlackEvent(body: SlackEnvelope): Promise<void> {
       engine = parent.engine as typeof engine;
       model = parent.model;
     }
+  }
+
+  // In-message switching: `engine:x` / `model:y` tokens at the start of the
+  // message. Model switches apply to any turn (same-engine model switching is
+  // a supported provider capability); engine switches only start NEW threads -
+  // an existing thread's engine owns its native session state.
+  const { directives, rest } = parseSlackDirectives(prompt);
+  const guide = (text: string) =>
+    enqueuePostMessage({
+      idempotencyKey: `slack-directive:${channel}:${ts}`,
+      channel,
+      text,
+      threadTs: slackThreadTs,
+    });
+  if (directives.engine || directives.model) {
+    if (rest) prompt = rest;
+    else if (attachmentIds.length === 0) {
+      await guide("Include your request in the same message as the directive, e.g. `model:sol summarize this thread`.");
+      return;
+    }
+    if (directives.engine) {
+      if (!isSlackSwitchableEngine(directives.engine)) {
+        await guide(`Unknown engine \`${directives.engine}\`. Available: opencode, claude, codex.`);
+        return;
+      }
+      if (parent && directives.engine !== engine) {
+        await guide(`This thread runs on \`${engine}\` and cannot switch engines mid-thread. Start a new thread to use \`${directives.engine}\`.`);
+        return;
+      }
+      if (!parent && directives.engine !== engine) {
+        engine = directives.engine;
+        model = defaultModelForEngine(engine);
+      }
+    }
+    if (directives.model) {
+      const resolved = resolveModelToken(engine, directives.model);
+      if (!resolved) {
+        await guide(`Unknown model \`${directives.model}\` for \`${engine}\`. Available: ${modelCatalogLine(engine)}.`);
+        return;
+      }
+      model = resolved;
+    }
+  }
+  if (!isModelAllowedForEngine(engine, model)) {
+    model = defaultModelForEngine(engine);
   }
 
   // Enter through the durable command lane (no idempotency key — Slack dedupes
