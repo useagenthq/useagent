@@ -155,6 +155,29 @@ describe("skill catalog formatter", () => {
     expect(page.skills[0]?.tags[0]).toHaveLength(PREFILL_MAX_CATALOG_TAG_CHARS);
   });
 
+  test("prefill ranks prompt-relevant skills into the visible page", () => {
+    // 20 irrelevant high-usage entries ahead of the one relevant playbook: by
+    // usage order alone it would be invisible (page size 20).
+    const filler = Array.from({ length: PREFILL_CATALOG_PAGE_SIZE }, (_, index) =>
+      entry({ id: `filler-${index}`, name: `sales outreach ${index}`, description: "crm cadence" }),
+    );
+    const relevant = entry({
+      id: "pr-demo",
+      name: "loop-pr-demo",
+      description: "Test a GitHub pull request and record a product demo video",
+      tags: ["github", "demo"],
+    });
+    const page = formatSkillCatalogPrefill(
+      [...filler, relevant],
+      "test this pr github.com/upstream-org/backend/pull/19625 and record a demo",
+    );
+
+    expect(page.skills[0]?.id).toBe("pr-demo");
+    // Without a prompt the usage order is preserved unchanged.
+    const unranked = formatSkillCatalogPrefill([...filler, relevant]);
+    expect(unranked.skills.some((s) => s.id === "pr-demo")).toBe(false);
+  });
+
   test("frames malicious descriptions as untrusted data, not instructions", () => {
     const page = formatSkillCatalogPage([
       entry({

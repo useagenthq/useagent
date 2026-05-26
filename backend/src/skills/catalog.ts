@@ -113,15 +113,77 @@ export function formatSkillCatalogPage(
   return { skills, nextCursor, text };
 }
 
+/** Tokens too generic to signal relevance between a prompt and a skill. */
+const RELEVANCE_STOPWORDS = new Set([
+  "the", "and", "for", "with", "this", "that", "from", "into", "then", "them",
+  "please", "can", "you", "our", "your", "using", "use", "make", "check",
+  "need", "want", "show", "run", "get", "all", "any", "how", "what", "when",
+]);
+
+function relevanceTokens(text: string): Set<string> {
+  return new Set(
+    text
+      .toLowerCase()
+      .split(/[^a-z0-9]+/)
+      .filter((token) => token.length > 2 && !RELEVANCE_STOPWORDS.has(token)),
+  );
+}
+
+/**
+ * Deterministic prompt-relevance score: token overlap against the entry's
+ * name (x3), tags (x2), and description (x1). No model call - cheap enough
+ * for every turn, and stable for tests.
+ */
+export function scoreSkillRelevance(
+  promptTokens: ReadonlySet<string>,
+  entry: SkillCatalogEntry,
+): number {
+  if (promptTokens.size === 0) return 0;
+  let score = 0;
+  for (const token of relevanceTokens(entry.name)) {
+    if (promptTokens.has(token)) score += 3;
+  }
+  for (const tag of entry.tags) {
+    for (const token of relevanceTokens(tag)) {
+      if (promptTokens.has(token)) score += 2;
+    }
+  }
+  for (const token of relevanceTokens(entry.description ?? "")) {
+    if (promptTokens.has(token)) score += 1;
+  }
+  return score;
+}
+
 /**
  * Keep ordinary-turn prefill materially smaller than explicit `skills_list`
  * output. The model still sees enough metadata for semantic selection and can
  * page the complete catalog through the trusted tool when no entry fits.
+ *
+ * With hundreds of org skills, "top N by usage" is effectively arbitrary while
+ * usage counts are sparse - the one relevant playbook stays invisible and the
+ * model activates a plausible-sounding wrong one (the expect-video incident).
+ * When the turn's prompt is provided, entries are re-ranked by deterministic
+ * prompt relevance FIRST (usage order breaks ties and fills the remainder), so
+ * the procedures that match the ask surface in the visible page.
  */
 export function formatSkillCatalogPrefill(
   entries: readonly SkillCatalogEntry[],
+  prompt?: string,
 ): SkillCatalogPage {
-  return formatSkillCatalogPage(entries, {
+  let ranked = entries;
+  if (prompt?.trim()) {
+    const promptTokens = relevanceTokens(prompt);
+    const scored = entries.map((entry, index) => ({
+      entry,
+      score: scoreSkillRelevance(promptTokens, entry),
+      index,
+    }));
+    // Stable: relevance desc, then the incoming usage order.
+    ranked = scored
+      .toSorted((a, b) => b.score - a.score || a.index - b.index)
+      .map(({ entry }) => entry);
+  }
+  return formatSkillCatalogPage(ranked, {
     limit: PREFILL_CATALOG_PAGE_SIZE,
     maxDescriptionChars: PREFILL_MAX_CATALOG_DESCRIPTION_CHARS,
     maxNameChars: PREFILL_MAX_CATALOG_NAME_CHARS,
