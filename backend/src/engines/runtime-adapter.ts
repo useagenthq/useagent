@@ -56,6 +56,7 @@ import {
 } from "./runtime-environment";
 import { createNoProgressWatchdog, NoProgressError } from "./turn-no-progress";
 import { T3_SESSION_GENERATION, t3ProviderDrivers } from "./t3-provider-driver";
+import { operatorEnv } from "./runtime-env";
 
 const RUNTIME_POLL_INTERVAL_MS = 125;
 // Codex subscription writes its per-run relay config into the sandbox's T3
@@ -73,7 +74,9 @@ interface RuntimeShellSnapshot {
 export function runtimeAdapterEnabled(
   env: Readonly<Record<string, string | undefined>> = process.env,
 ): boolean {
-  const value = env.T3_RUN_ADAPTER_ENABLED?.trim().toLowerCase();
+  const value = operatorEnv(env, "RUNTIME_RUN_ADAPTER_ENABLED", "T3_RUN_ADAPTER_ENABLED")
+    ?.trim()
+    .toLowerCase();
   return value === "1" || value === "true";
 }
 
@@ -81,7 +84,7 @@ export function runtimeAdapterEngineSelected(
   engine: string,
   env: Readonly<Record<string, string | undefined>> = process.env,
 ): boolean {
-  const configured = env.T3_RUN_ADAPTER_ENGINES?.trim();
+  const configured = operatorEnv(env, "RUNTIME_RUN_ADAPTER_ENGINES", "T3_RUN_ADAPTER_ENGINES")?.trim();
   if (!configured) return engine === "codex" || engine === "opencode";
   return configured
     .split(",")
@@ -95,9 +98,11 @@ export type RuntimeAdapterMode = "canary" | "all";
 export function runtimeAdapterMode(
   env: Readonly<Record<string, string | undefined>> = process.env,
 ): RuntimeAdapterMode {
-  const mode = env.T3_RUN_ADAPTER_MODE?.trim().toLowerCase() || "canary";
+  const mode = operatorEnv(env, "RUNTIME_RUN_ADAPTER_MODE", "T3_RUN_ADAPTER_MODE")
+    ?.trim()
+    .toLowerCase() || "canary";
   if (mode !== "canary" && mode !== "all") {
-    throw new Error("T3_RUN_ADAPTER_MODE must be canary or all");
+    throw new Error("RUNTIME_RUN_ADAPTER_MODE (legacy T3_RUN_ADAPTER_MODE) must be canary or all");
   }
   return mode;
 }
@@ -109,7 +114,7 @@ export function runtimeAdapterSelected(
   if (!runtimeAdapterEnabled(env)) return false;
   if (runtimeAdapterMode(env) === "all") return true;
   const allowlist = new Set(
-    (env.T3_CANARY_THREAD_IDS ?? "")
+    (operatorEnv(env, "RUNTIME_CANARY_THREAD_IDS", "T3_CANARY_THREAD_IDS") ?? "")
       .split(",")
       .map((value) => value.trim())
       .filter(Boolean),
@@ -121,12 +126,17 @@ export function runtimeRunSnapshot(
   env: Readonly<Record<string, string | undefined>> = process.env,
 ): string {
   if (sandboxProviderKind(env) === "cube") {
-    const template = env.T3_CUBE_TEMPLATE_ID?.trim() || env.CUBE_TEMPLATE_ID?.trim();
-    if (!template) throw new Error("T3_CUBE_TEMPLATE_ID is required for the Cube runtime adapter");
+    const template = operatorEnv(env, "RUNTIME_CUBE_TEMPLATE_ID", "T3_CUBE_TEMPLATE_ID")?.trim() ||
+      env.CUBE_TEMPLATE_ID?.trim();
+    if (!template) {
+      throw new Error(
+        "RUNTIME_CUBE_TEMPLATE_ID (legacy T3_CUBE_TEMPLATE_ID) is required for the Cube runtime adapter",
+      );
+    }
     return template;
   }
   return (
-    env.T3_DAYTONA_SNAPSHOT?.trim() ||
+    operatorEnv(env, "RUNTIME_DAYTONA_SNAPSHOT", "T3_DAYTONA_SNAPSHOT")?.trim() ||
     env.DAYTONA_SNAPSHOT?.trim() ||
     "skynet-agent-v17"
   );
@@ -135,7 +145,7 @@ export function runtimeRunSnapshot(
 export function configuredRuntimeMode(
   env: Readonly<Record<string, string | undefined>> = process.env,
 ): RuntimeMode {
-  const mode = env.T3_RUNTIME_MODE?.trim() || "full-access";
+  const mode = operatorEnv(env, "RUNTIME_MODE", "T3_RUNTIME_MODE")?.trim() || "full-access";
   if (
     mode !== "approval-required" &&
     mode !== "auto-accept-edits" &&
@@ -143,7 +153,7 @@ export function configuredRuntimeMode(
     mode !== "full-access"
   ) {
     throw new Error(
-      "T3_RUNTIME_MODE must be approval-required, auto-accept-edits, auto, or full-access",
+      "RUNTIME_MODE (legacy T3_RUNTIME_MODE) must be approval-required, auto-accept-edits, auto, or full-access",
     );
   }
   return mode;
