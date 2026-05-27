@@ -26,6 +26,7 @@ import { fetchApi } from "./helpers";
 import { InMemoryArtifactStorage } from "./in-memory-artifact-storage";
 
 const ORG = "org-skynet-dev";
+const TEAM = "T-SKYNET-DEV";
 const storage = new InMemoryArtifactStorage();
 
 function claimsFor(runId: string): ToolTokenClaims {
@@ -39,7 +40,7 @@ async function slackRunWithSandbox(prompt: string): Promise<{ runId: string; cha
   const ts = `${runId.slice(0, 6)}.1`;
   await createRun({ id: runId, prompt, model: "claude-opus-5", engine: "mock", orgId: ORG, userId: null, parentRunId: null, threadId: runId });
   await setRunSandbox(runId, "sb-123");
-  await linkSlackThread({ channel, threadTs: ts, rootRunId: runId, orgId: ORG });
+  await linkSlackThread({ teamId: TEAM, channel, threadTs: ts, rootRunId: runId, orgId: ORG });
   return { runId, channel, ts };
 }
 
@@ -124,7 +125,10 @@ describe("slack_upload tool", () => {
       postMessage: async () => ({ ok: true }),
       updateMessage: async () => ({ ok: true }),
       addReaction: async () => ({ ok: true }),
-      setAssistantStatus: async () => {},
+      setSessionStatus: async () => ({ ok: true }),
+      startStream: async () => ({ ok: true, ts: "stream.1" }),
+      appendStream: async () => ({ ok: true }),
+      stopStream: async () => ({ ok: true }),
       uploadFile: async (a) => {
         uploads.push(a);
         return { ok: true };
@@ -176,7 +180,10 @@ describe("slack_upload tool", () => {
       postMessage: async () => ({ ok: true }),
       updateMessage: async () => ({ ok: true }),
       addReaction: async () => ({ ok: true }),
-      setAssistantStatus: async () => {},
+      setSessionStatus: async () => ({ ok: true }),
+      startStream: async () => ({ ok: true, ts: "stream.1" }),
+      appendStream: async () => ({ ok: true }),
+      stopStream: async () => ({ ok: true }),
       uploadFile: async ({ bytes }) => {
         uploads.push(bytes);
         return { ok: true };

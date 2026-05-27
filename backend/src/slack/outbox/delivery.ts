@@ -6,8 +6,14 @@ import { getArtifact, toArtifactDescriptor } from "../../artifacts/repo";
 import { artifactStorage } from "../../artifacts/storage";
 import { recordProviderEvent } from "../../runs/provider-events";
 import { claimDue, markDead, markDelivered, markRetry, resetStuckDelivering, updatePayload, type ClaimedRow } from "./repo";
-import { getSlackCardTsByRoot, setSlackCardTs } from "../repo";
+import {
+  createSlackRunResponse,
+  findSlackRunResponse,
+  setSlackFallbackMessageTs,
+  setSlackNativeStream,
+} from "../repo";
 import type { ProcessResult, SlackDeliveryOutcome } from "./types";
+import type { SlackSessionStatus, SlackStreamChunk, SlackStreamTaskDisplayMode } from "../streaming";
 
 // ---------------------------------------------------------------------------
 // Slack outbox delivery worker + relay. Claims due rows, calls Slack, and on
@@ -24,6 +30,47 @@ const TICK_MS = Number(process.env.SLACK_OUTBOX_TICK_MS ?? 2000);
 function backoffMs(attempt: number): number {
   const exp = Math.min(CAP_MS, BASE_MS * 2 ** Math.max(0, attempt - 1));
   return exp + Math.floor(Math.random() * Math.min(1000, exp * 0.25));
+}
+
+function streamChunks(value: unknown): readonly SlackStreamChunk[] {
+  return Array.isArray(value)
+    ? value.filter((chunk): chunk is SlackStreamChunk => {
+        if (!chunk || typeof chunk !== "object" || Array.isArray(chunk)) return false;
+        const type = (chunk as { type?: unknown }).type;
+        return type === "markdown_text" || type === "task_update" || type === "task";
+      })
+    : [];
+}
+
+function sessionStatus(value: unknown): SlackSessionStatus | undefined {
+  return value === "processing" || value === "active" ? value : undefined;
+}
+
+function taskDisplayMode(value: unknown): SlackStreamTaskDisplayMode | undefined {
+  return value === "task_update" || value === "plan" ? value : undefined;
+}
+
+async function postFallbackChunks(
+  client: SlackClient,
+  row: ClaimedRow,
+  payload: Record<string, unknown>,
+  channel: string,
+  threadTs: string,
+  fallbackChunks: readonly string[],
+): Promise<DeliveryResult> {
+  if (fallbackChunks.length === 0) {
+    return { ok: false, class: "permanent", message: "invalid_payload" };
+  }
+  for (let i = 0; i < fallbackChunks.length; i++) {
+    const res = await client.postMessage({ channel, text: fallbackChunks[i]!, threadTs });
+    if (!res.ok) {
+      if (i > 0) {
+        await updatePayload(row.id, JSON.stringify({ ...payload, fallbackChunks: fallbackChunks.slice(i) }));
+      }
+      return res;
+    }
+  }
+  return { ok: true };
 }
 
 /** Make the actual Slack call for a row, returning the classified result. */
@@ -109,12 +156,13 @@ async function attempt(client: SlackClient, row: ClaimedRow): Promise<DeliveryRe
       });
     }
     case "post_card": {
+      const teamId = string("teamId");
       const channel = string("channel");
       const threadTs = string("threadTs");
-      const rootRunId = string("rootRunId");
+      const runId = string("runId") ?? string("rootRunId");
       const text = string("text");
       const blocks = Array.isArray(p.blocks) ? p.blocks : undefined;
-      if (!channel || !threadTs || !rootRunId || !text) {
+      if (!teamId || !channel || !threadTs || !runId || !text) {
         return { ok: false, class: "permanent", message: "invalid_payload" };
       }
       const res = await client.postMessage({ channel, text, threadTs, blocks });
@@ -122,27 +170,31 @@ async function attempt(client: SlackClient, row: ClaimedRow): Promise<DeliveryRe
       // between the post and this write redelivers the row (at-least-once): the
       // idempotency key already bounds it, and a re-post is a benign duplicate
       // card - the update path still finds a ts on the healed row next time.
-      if (res.ok && res.ts) await setSlackCardTs(channel, threadTs, res.ts);
+      if (res.ok && res.ts) {
+        await createSlackRunResponse({ runId, teamId, channel, threadTs });
+        await setSlackFallbackMessageTs(runId, res.ts);
+      }
       return res;
     }
     case "update_card": {
+      const teamId = string("teamId");
       const channel = string("channel");
       const threadTs = string("threadTs");
-      const rootRunId = string("rootRunId");
+      const runId = string("runId") ?? string("rootRunId");
       const text = string("text");
       const blocks = Array.isArray(p.blocks) ? p.blocks : undefined;
       // The plain-text fallback (chunked) - posted when there is no card to update.
       const fallbackChunks = Array.isArray(p.fallbackChunks)
         ? p.fallbackChunks.filter((c): c is string => typeof c === "string" && c.length > 0)
         : [];
-      if (!channel || !threadTs || !rootRunId || !text) {
+      if (!teamId || !channel || !threadTs || !runId || !text) {
         return { ok: false, class: "permanent", message: "invalid_payload" };
       }
       // Resolve the card ts written by the post_card row. When it exists, advance
       // the card in place; a transient/rate-limited failure retries the whole row.
-      const link = await getSlackCardTsByRoot(rootRunId);
-      if (link?.cardTs) {
-        const res = await client.updateMessage({ channel, ts: link.cardTs, text, blocks });
+      const response = await findSlackRunResponse(runId);
+      if (response?.fallbackMessageTs) {
+        const res = await client.updateMessage({ channel, ts: response.fallbackMessageTs, text, blocks });
         // chat.update succeeded, or failed transiently (retry the row) - but a
         // PERMANENT update failure (card deleted, message not found) must not
         // strand the answer: fall through to posting it as a fresh reply below.
@@ -151,19 +203,87 @@ async function attempt(client: SlackClient, row: ClaimedRow): Promise<DeliveryRe
       // No card ts (post never landed) or the card is gone: post the answer as a
       // fresh CHUNKED reply so the answer is NEVER lost. Cursor-resumes like
       // post_message so a mid-sequence retry does not re-post delivered chunks.
-      if (fallbackChunks.length === 0) {
+      return postFallbackChunks(client, row, p, channel, threadTs, fallbackChunks);
+    }
+    case "set_session_status": {
+      const teamId = string("teamId");
+      const channel = string("channel");
+      const threadTs = string("threadTs");
+      const status = sessionStatus(p.status);
+      if (!teamId || !channel || !threadTs || !status) {
         return { ok: false, class: "permanent", message: "invalid_payload" };
       }
-      for (let i = 0; i < fallbackChunks.length; i++) {
-        const res = await client.postMessage({ channel, text: fallbackChunks[i]!, threadTs });
-        if (!res.ok) {
-          if (i > 0) {
-            await updatePayload(row.id, JSON.stringify({ ...p, fallbackChunks: fallbackChunks.slice(i) }));
-          }
-          return res;
-        }
+      return client.setSessionStatus({ channel, threadTs, status });
+    }
+    case "start_stream": {
+      const teamId = string("teamId");
+      const channel = string("channel");
+      const threadTs = string("threadTs");
+      const runId = string("runId") ?? string("rootRunId");
+      const mode = taskDisplayMode(p.taskDisplayMode);
+      const chunks = streamChunks(p.chunks);
+      const fallbackBlocks = Array.isArray(p.fallbackBlocks) ? p.fallbackBlocks : undefined;
+      const fallbackText = string("fallbackText");
+      if (!teamId || !channel || !threadTs || !runId || !mode || chunks.length === 0 || !fallbackText) {
+        return { ok: false, class: "permanent", message: "invalid_payload" };
       }
-      return { ok: true };
+      await createSlackRunResponse({ runId, teamId, channel, threadTs });
+      const stream = await client.startStream({ channel, threadTs, taskDisplayMode: mode, chunks });
+      if (stream.ok) {
+        if (stream.ts) await setSlackNativeStream(runId, stream.ts, mode);
+        return stream.ts ? stream : { ok: false, class: "transient", message: "stream_ts_missing" };
+      }
+      if (stream.class !== "permanent") return stream;
+      const fallback = await client.postMessage({ channel, threadTs, text: fallbackText, blocks: fallbackBlocks });
+      if (fallback.ok && fallback.ts) await setSlackFallbackMessageTs(runId, fallback.ts);
+      return fallback;
+    }
+    case "append_stream": {
+      const teamId = string("teamId");
+      const channel = string("channel");
+      const threadTs = string("threadTs");
+      const runId = string("runId") ?? string("rootRunId");
+      const chunks = streamChunks(p.chunks);
+      const fallbackBlocks = Array.isArray(p.fallbackBlocks) ? p.fallbackBlocks : undefined;
+      const fallbackText = string("fallbackText");
+      if (!teamId || !channel || !threadTs || !runId || chunks.length === 0 || !fallbackText) {
+        return { ok: false, class: "permanent", message: "invalid_payload" };
+      }
+      const response = await findSlackRunResponse(runId);
+      if (!response) return { ok: false, class: "transient", message: "stream_not_started" };
+      if (response.nativeStreamTs) {
+        const stream = await client.appendStream({ channel, threadTs, messageTs: response.nativeStreamTs, chunks });
+        if (stream.ok || stream.class !== "permanent") return stream;
+      }
+      if (response.fallbackMessageTs) {
+        return client.updateMessage({ channel, ts: response.fallbackMessageTs, text: fallbackText, blocks: fallbackBlocks });
+      }
+      return { ok: false, class: "transient", message: "stream_not_started" };
+    }
+    case "stop_stream": {
+      const teamId = string("teamId");
+      const channel = string("channel");
+      const threadTs = string("threadTs");
+      const runId = string("runId") ?? string("rootRunId");
+      const text = string("text");
+      const chunks = streamChunks(p.chunks);
+      const blocks = Array.isArray(p.blocks) ? p.blocks : undefined;
+      const fallbackChunks = Array.isArray(p.fallbackChunks)
+        ? p.fallbackChunks.filter((c): c is string => typeof c === "string" && c.length > 0)
+        : [];
+      if (!teamId || !channel || !threadTs || !runId || !text || chunks.length === 0 || !blocks) {
+        return { ok: false, class: "permanent", message: "invalid_payload" };
+      }
+      const response = await findSlackRunResponse(runId);
+      if (response?.nativeStreamTs) {
+        const stopped = await client.stopStream({ channel, threadTs, messageTs: response.nativeStreamTs, chunks, blocks });
+        if (stopped.ok || stopped.class !== "permanent") return stopped;
+      }
+      if (response?.fallbackMessageTs) {
+        const updated = await client.updateMessage({ channel, ts: response.fallbackMessageTs, text, blocks });
+        if (updated.ok || updated.class !== "permanent") return updated;
+      }
+      return postFallbackChunks(client, row, p, channel, threadTs, fallbackChunks);
     }
     default:
       return assertNever(row.kind, "unhandled slack outbox kind");

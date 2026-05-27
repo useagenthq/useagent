@@ -1,13 +1,14 @@
 import { isUniqueViolation } from "../db/pg-errors";
-import { runPayloadFingerprint } from "./fingerprint";
+import { runIntentFingerprint, runIntentFromAcceptedRun } from "./fingerprint";
 import { findCommandByKey, insertCommandWithRun } from "./repo";
 import type { CommandRecord } from "./repo";
-import type { RunCommandInput, RunCommandOutcome } from "./types";
+import type { RunCommandInput, RunCommandIntent, RunCommandOutcome } from "./types";
 import { publishRunLifecycleChange } from "../runs/org-signals";
 import { deriveRunOrigin } from "../runs/origin";
 import { isModelAllowedForEngine } from "../runs/model-policy";
 import { engineModelReadyForDispatch } from "../runs/engine-readiness";
 import { withThreadLifecycleLock } from "../runs/thread-lifecycle-lock";
+import { assertRunAdmissionOpen } from "./admission";
 
 // ---------------------------------------------------------------------------
 // Command acceptance orchestration (north star "Durable Commands"). Decides,
@@ -29,6 +30,24 @@ function classifyReplay(existing: CommandRecord, fingerprint: string): RunComman
 }
 
 /**
+ * Read a previously accepted keyed decision before any external preflight.
+ * Missing/unkeyed submissions return null and must continue through normal
+ * authorization. This helper never reserves a key or accepts new work.
+ */
+export async function preflightRunCommandReplay(input: {
+  readonly orgId: string;
+  readonly idempotencyKey: string | null;
+  readonly intent: RunCommandIntent;
+}): Promise<RunCommandOutcome | null> {
+  if (input.idempotencyKey) {
+    const existing = await findCommandByKey(input.orgId, input.idempotencyKey);
+    if (existing) return classifyReplay(existing, runIntentFingerprint(input.intent));
+  }
+  await assertRunAdmissionOpen();
+  return null;
+}
+
+/**
  * Accept a `run.create` command. Idempotent by (org, idempotencyKey):
  *  - keyed replay with a matching payload → the ORIGINAL run id (no new work);
  *  - keyed replay with a different payload → conflict (never silently rerun);
@@ -39,7 +58,8 @@ function classifyReplay(existing: CommandRecord, fingerprint: string): RunComman
  * winner's outcome rather than surfacing a raw DB error.
  */
 export async function acceptRunCommand(input: RunCommandInput): Promise<RunCommandOutcome> {
-  const fingerprint = runPayloadFingerprint(input.run);
+  const intent = input.intent ?? runIntentFromAcceptedRun(input.run);
+  const fingerprint = runIntentFingerprint(intent);
   const payload = JSON.stringify({
     prompt: input.run.prompt,
     model: input.run.model,
@@ -47,6 +67,7 @@ export async function acceptRunCommand(input: RunCommandInput): Promise<RunComma
     parentRunId: input.run.parentRunId,
     threadId: input.run.threadId,
     repos: input.run.repos,
+    resolvedResources: input.run.resolvedResources ?? [],
     attachmentIds: input.run.attachmentIds ?? [],
     memoryScope: input.run.memoryScope,
     skillId: input.run.skillId,
@@ -55,6 +76,7 @@ export async function acceptRunCommand(input: RunCommandInput): Promise<RunComma
     commandProvider: input.run.commandProvider,
     commandSessionId: input.run.commandSessionId,
     commandCatalogRevision: input.run.commandCatalogRevision,
+    intent,
   }).slice(0, PAYLOAD_CAP);
   const commandId = crypto.randomUUID();
 
@@ -69,6 +91,11 @@ export async function acceptRunCommand(input: RunCommandInput): Promise<RunComma
           const existing = await findCommandByKey(input.orgId, input.idempotencyKey, tx);
           if (existing) return classifyReplay(existing, fingerprint);
         }
+
+        // Shared transaction lock closes the preflight-vs-insert race: a deploy
+        // close waits for already-accepting transactions, then every later new
+        // acceptance observes the durable closed state.
+        await assertRunAdmissionOpen(tx);
 
         // Readiness applies only when accepting NEW work. A matching keyed
         // replay is a read of an already-durable decision and must keep

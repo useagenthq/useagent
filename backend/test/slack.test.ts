@@ -11,16 +11,18 @@
  */
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { createHmac } from "node:crypto";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { db } from "../src/db/client";
-import { artifacts, userUploads } from "../src/db/schema";
+import { artifacts, runs, slackOutbox, slackRunResponses, slackThreads, userUploads } from "../src/db/schema";
 import { artifactStorage } from "../src/artifacts/storage";
 import { finalizeRun } from "../src/runs/finalize";
 import { createRun } from "../src/runs/repo";
-import { linkSlackThread, findSlackThreadByRoot } from "../src/slack/repo";
+import {
+  createSlackRunResponse,
+  findSlackRunResponse,
+  linkSlackThread,
+} from "../src/slack/repo";
 import { enqueuePostCard } from "../src/slack/outbox";
-import { resolveSlackClient } from "../src/slack/client";
-import { slackConfig } from "../src/env";
 import { buildRunCard } from "../src/slack/card";
 import { DEV_ORG_ID, DEV_USER_ID } from "../src/seed";
 import { setSlackClientForTest } from "../src/slack";
@@ -29,8 +31,10 @@ import { setInboundFileDownloaderForTest } from "../src/slack/inbound-files";
 import { dispatchSocketFrame } from "../src/slack/socket-mode";
 import { composeSlackReplyText } from "../src/slack/reply";
 import {
+  findSlackUser,
   findSlackWorkspace,
   syncSlackWorkspaceBindings,
+  upsertSlackUser,
   upsertSlackWorkspace,
 } from "../src/slack/workspaces";
 import { fetchApi, json, uid, waitFor } from "./helpers";
@@ -67,14 +71,24 @@ interface Recorded {
   reactions: Array<{ channel: string; timestamp: string; name: string }>;
   messages: Array<{ channel: string; text: string; threadTs?: string; blocks?: unknown[] }>;
   updates: Array<{ channel: string; ts: string; text: string; blocks?: unknown[] }>;
-  statuses: Array<{ channel: string; threadTs: string; status: string }>;
+  sessionStatuses: Array<{ channel: string; threadTs: string; status: "processing" | "active" }>;
+  streams: Array<{
+    op: "start" | "append" | "stop";
+    channel: string;
+    threadTs: string;
+    messageTs?: string;
+    blocks?: readonly unknown[];
+    chunks?: readonly unknown[];
+  }>;
   uploads: Array<{ channel: string; filename: string; threadTs?: string; bytes: Buffer }>;
 }
-const rec: Recorded = { reactions: [], messages: [], updates: [], statuses: [], uploads: [] };
-/** When true the mock rejects setAssistantStatus — the non-assistant fallback case. */
+const rec: Recorded = { reactions: [], messages: [], updates: [], sessionStatuses: [], streams: [], uploads: [] };
+/** When true the mock rejects agents.sessions.setStatus — the non-assistant fallback case. */
 let statusFails = false;
 /** When set, chat.update returns this failure (drives the update-fallback path). */
 let updateResult: import("../src/slack/client").DeliveryResult = { ok: true };
+/** When set, chat.stopStream returns this failure (drives stream fallback paths). */
+let stopStreamResult: import("../src/slack/client").DeliveryResult = { ok: true };
 /** Synthetic message ts source — the card post returns one so updates can target it. */
 let tsSeq = 1000;
 
@@ -83,6 +97,18 @@ let tsSeq = 1000;
  *  assertion is agnostic to whether the answer updated the card or fell back to a
  *  fresh post. */
 function finalAnswerFor(channel: string, threadTs: string): string | null {
+  const stopped = [...rec.streams].reverse().find((s) => s.op === "stop" && s.channel === channel && s.threadTs === threadTs);
+  if (stopped?.chunks) {
+    const text = stopped.chunks
+      .map((chunk) =>
+        chunk && typeof chunk === "object" && "markdown_text" in chunk
+          ? String((chunk as { markdown_text: unknown }).markdown_text)
+          : "",
+      )
+      .filter(Boolean)
+      .join("\n");
+    if (text) return text;
+  }
   const update = [...rec.updates].reverse().find((u) => u.channel === channel);
   if (update) return update.text;
   const msg = [...rec.messages].reverse().find((m) => m.channel === channel && m.threadTs === threadTs);
@@ -98,6 +124,12 @@ beforeAll(async () => {
   // Bind the test workspace to the dev org/user — ingress fails closed for any
   // team without such a row (covered below).
   await upsertSlackWorkspace({ teamId: TEAM, orgId: DEV_ORG_ID, userId: DEV_USER_ID });
+  await upsertSlackUser({
+    teamId: TEAM,
+    slackUserId: "U-HUMAN",
+    orgId: DEV_ORG_ID,
+    userId: DEV_USER_ID,
+  });
   setSlackClientForTest({
     addReaction: async (a) => {
       rec.reactions.push(a);
@@ -112,9 +144,22 @@ beforeAll(async () => {
       if (updateResult.ok) rec.updates.push(u);
       return updateResult;
     },
-    setAssistantStatus: async (s) => {
-      if (statusFails) throw new Error("invalid_thread (not an assistant container)");
-      rec.statuses.push(s);
+    setSessionStatus: async (s) => {
+      if (statusFails) return { ok: false, class: "permanent", message: "invalid_thread" };
+      rec.sessionStatuses.push(s);
+      return { ok: true };
+    },
+    startStream: async (s) => {
+      rec.streams.push({ op: "start", channel: s.channel, threadTs: s.threadTs, chunks: s.chunks });
+      return { ok: true, ts: `${tsSeq++}.1` };
+    },
+    appendStream: async (s) => {
+      rec.streams.push({ op: "append", channel: s.channel, threadTs: s.threadTs, messageTs: s.messageTs, chunks: s.chunks });
+      return { ok: true };
+    },
+    stopStream: async (s) => {
+      rec.streams.push({ op: "stop", channel: s.channel, threadTs: s.threadTs, messageTs: s.messageTs, chunks: s.chunks, blocks: s.blocks });
+      return stopStreamResult;
     },
     uploadFile: async (u) => {
       rec.uploads.push(u);
@@ -174,6 +219,19 @@ async function findRunByPrompt(prompt: string): Promise<any | null> {
   return body.runs.find((r) => r.prompt === prompt) ?? null;
 }
 
+async function deleteSlackDeliveryRows(runId: string, teamId = TEAM): Promise<void> {
+  await db.delete(slackRunResponses).where(eq(slackRunResponses.runId, runId));
+  await db.execute(sql`
+    delete from ${slackOutbox}
+    where idempotency_key in (
+      ${`slack-status:start:${teamId}:${runId}`},
+      ${`slack-stream:start:${teamId}:${runId}`},
+      ${`slack-status:final:${teamId}:${runId}`},
+      ${`slack-reply:${teamId}:${runId}`}
+    )
+  `);
+}
+
 describe("slack signature verification", () => {
   test("url_verification handshake echoes the challenge (signed)", async () => {
     const res = await postSlack({ type: "url_verification", challenge: "c-123" });
@@ -208,29 +266,35 @@ describe("slack signature verification", () => {
 });
 
 describe("slack event → run", () => {
-  test("a linked GitHub repo is dropped when it is not in the offered set", async () => {
-    // Security (S1): a Slack link must never bind a repo the web composer would
-    // refuse. With GitHub unconfigured in this suite, unknownRepos treats every
-    // ref as unknown, so the run binds none - fail closed, not "clone anything
-    // the App token can reach". (Repo-ref PARSING is unit-tested in
-    // repo-refs.test.ts; this asserts the ingress allowlist gate.)
+  test("an unavailable linked GitHub repo blocks the run with actionable guidance", async () => {
     const marker = uid("repo");
+    const channel = `C${uid("ch")}`;
+    const ts = `${uid("ts")}.1`;
     const res = await postSlack(
       eventCallback({
         type: "app_mention",
-        channel: `C${uid("ch")}`,
+        channel,
         user: "U-HUMAN",
         text: `<@${BOT}> test ${marker} <https://github.com/upstream-org/backend/pull/19625>`,
-        ts: `${uid("ts")}.1`,
+        ts,
       }),
     );
     expect(res.status).toBe(200);
-    const run = await waitFor(async () =>
-      (await json<{ runs: any[] }>("/api/runs?all=1")).body.runs.find((r) =>
-        r.prompt.includes(`test ${marker}`),
-      ) ?? null,
-    );
-    expect(run.repos).toEqual([]);
+    const outcome = await waitFor(async () => {
+      const run = await findRunByPrompt(
+        `test ${marker} <https://github.com/upstream-org/backend/pull/19625>`,
+      );
+      const guidance = rec.messages.find(
+        (message) =>
+          message.channel === channel &&
+          message.threadTs === ts &&
+          /upstream-org\/backend/i.test(message.text) &&
+          /access|connect|select/i.test(message.text),
+      );
+      return run || guidance ? { run, guidance } : null;
+    });
+    expect(outcome.run).toBeNull();
+    expect(outcome.guidance?.text).toMatch(/access|connect|select/i);
   });
 
   test("app_mention creates a root run, 👀-acks, and posts the summary", async () => {
@@ -261,21 +325,18 @@ describe("slack event → run", () => {
       rec.reactions.some((r) => r.channel === channel && r.timestamp === ts && r.name === "eyes") || null,
     );
 
-    // A Block Kit RUN CARD is posted into the thread (thread_ts = message ts) with
-    // blocks and an "Open in Skynet" url button; on settle it is UPDATED in place
-    // (chat.update) to its final state, never a second bare message. Asserting the
-    // card + its update stays agnostic to whether the credential-less test env
-    // completes or honestly fails the run.
-    const card = await waitFor(async () =>
-      rec.messages.find((m) => m.channel === channel && m.threadTs === ts && m.blocks) ?? null,
+    // A Slack-native stream opens in the thread; on settle it is stopped with
+    // final chunks and Block Kit blocks.
+    await waitFor(async () =>
+      rec.streams.find((s) => s.op === "start" && s.channel === channel && s.threadTs === ts) ?? null,
     );
-    const actions = (card.blocks as any[]).find((b) => b.type === "actions");
-    expect(actions.elements[0].url).toContain(`/session/${run.thread_id}`);
-    // The settled answer arrives via a card update (in place), not a new post.
     const answer = await waitFor(async () => finalAnswerFor(channel, ts));
     expect(answer!.length).toBeGreaterThan(0);
     const done = await json<any>(`/api/runs/${run.id}`);
     expect(answer).toBe(composeSlackReplyText(done.body.status, done.body.summary));
+    const stopped = rec.streams.find((s) => s.op === "stop" && s.channel === channel && s.threadTs === ts);
+    const actions = (stopped?.blocks as any[]).find((b) => b.type === "actions");
+    expect(actions.elements[0].url).toContain(`/session/${run.thread_id}`);
   });
 
   test("a model directive picks the model for a new thread and strips from the prompt", async () => {
@@ -339,7 +400,8 @@ describe("slack event → run", () => {
     const channel = `C${uid("ch")}`;
     const ts = `${uid("ts")}.1`;
     await createRun({ id: runId, prompt: "share build", model: "claude-opus-5", engine: "mock", orgId: DEV_ORG_ID, userId: null, parentRunId: null, threadId: runId });
-    await linkSlackThread({ channel, threadTs: ts, rootRunId: runId, orgId: DEV_ORG_ID });
+    await linkSlackThread({ teamId: TEAM, channel, threadTs: ts, rootRunId: runId, orgId: DEV_ORG_ID });
+    await createSlackRunResponse({ runId, teamId: TEAM, channel, threadTs: ts });
     const storageKey = "c".repeat(64); // content-addressed: keys are sha256 hex
     await artifactStorage().put(storageKey, Buffer.from("png-bytes"));
     await db.insert(artifacts).values({
@@ -370,7 +432,8 @@ describe("slack event → run", () => {
     const channel = `C${uid("long")}`;
     const ts = `${uid("ts")}.1`;
     await createRun({ id: runId, prompt: "long reply", model: "claude-opus-5", engine: "mock", orgId: DEV_ORG_ID, userId: null, parentRunId: null, threadId: runId });
-    await linkSlackThread({ channel, threadTs: ts, rootRunId: runId, orgId: DEV_ORG_ID });
+    await linkSlackThread({ teamId: TEAM, channel, threadTs: ts, rootRunId: runId, orgId: DEV_ORG_ID });
+    await createSlackRunResponse({ runId, teamId: TEAM, channel, threadTs: ts });
     const summary = Array.from({ length: 50 }, (_, i) => `finding ${i}: ${"detail ".repeat(30)}`).join("\n\n");
     await finalizeRun(runId, "completed", summary, 1);
 
@@ -453,6 +516,55 @@ describe("slack event → run", () => {
     // The whole thread reads back oldest→newest from the run API.
     const thread = await json<{ thread: any[] }>(`/api/runs/${root.id}?thread=1`);
     expect(thread.body.thread.map((r) => r.id)).toEqual([root.id, reply.id]);
+  });
+
+  test("a link-free thread reply reauthorizes a legacy repository before inheriting it", async () => {
+    const rootId = crypto.randomUUID();
+    const marker = uid("repo-follow");
+    const channel = `C${uid("ch")}`;
+    const rootTs = `${uid("ts")}.1`;
+    await createRun({
+      id: rootId,
+      prompt: `test the linked PR ${marker}`,
+      model: "claude-opus-5",
+      engine: "mock",
+      orgId: DEV_ORG_ID,
+      userId: DEV_USER_ID,
+      parentRunId: null,
+      threadId: rootId,
+      repos: ["upstream-org/backend:feature/pr-19625"],
+      memoryScope: "org",
+    });
+    await linkSlackThread({
+      teamId: TEAM,
+      channel,
+      threadTs: rootTs,
+      rootRunId: rootId,
+      orgId: DEV_ORG_ID,
+    });
+
+    await postSlack(
+      eventCallback({
+        type: "message",
+        channel,
+        channel_type: "channel",
+        user: "U-HUMAN",
+        text: `verify both deployments ${marker}`,
+        ts: `${uid("ts")}.2`,
+        thread_ts: rootTs,
+      }),
+    );
+
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    expect(await findRunByPrompt(`verify both deployments ${marker}`)).toBeNull();
+    await waitFor(async () =>
+      rec.messages.find(
+        (message) =>
+          message.channel === channel &&
+          message.threadTs === rootTs &&
+          message.text.includes("GitHub is not connected"),
+      ) ?? null,
+    );
   });
 
   test("a non-mention thread reply is followed when the bot rooted that thread", async () => {
@@ -554,17 +666,15 @@ describe("slack event → run", () => {
     );
     const run = await waitFor(async () => findRunByPrompt(`go ${marker}`));
 
-    // The shimmer clears ("") only when the watcher finishes (run settled) - wait
-    // on it directly so the assertion never races the async clear.
+    // The official Agents session status clears back to "active" when the run settles.
     await waitFor(async () =>
-      rec.statuses.some((s) => s.channel === channel && s.threadTs === ts && s.status === "") || null,
+      rec.sessionStatuses.some((s) => s.channel === channel && s.threadTs === ts && s.status === "active") || null,
     );
 
-    // …and the assistant shimmer bracketed the run: "Starting up…" first, "" (clear) last.
-    const mine = rec.statuses.filter((s) => s.channel === channel && s.threadTs === ts);
+    const mine = rec.sessionStatuses.filter((s) => s.channel === channel && s.threadTs === ts);
     expect(mine.length).toBeGreaterThanOrEqual(2);
-    expect(mine[0]?.status).toBe("Starting up…");
-    expect(mine[mine.length - 1]?.status).toBe("");
+    expect(mine[0]?.status).toBe("processing");
+    expect(mine[mine.length - 1]?.status).toBe("active");
     expect(run.id).toBeTruthy();
   });
 
@@ -578,30 +688,26 @@ describe("slack event → run", () => {
         eventCallback({ type: "app_mention", channel, user: "U-HUMAN", text: `<@${BOT}> run ${marker}`, ts }),
       );
       await waitFor(async () => findRunByPrompt(`run ${marker}`));
-      // setStatus rejects every call, yet the completion post still lands.
-      const msg = await waitFor(async () =>
-        rec.messages.find((m) => m.channel === channel && m.threadTs === ts) ?? null,
-      );
-      expect(msg.text.length).toBeGreaterThan(0);
+      // setStatus rejects every call, yet the completion surface still lands.
+      const answer = await waitFor(async () => finalAnswerFor(channel, ts));
+      expect(answer!.length).toBeGreaterThan(0);
     } finally {
       statusFails = false;
     }
   });
 });
 
-// Block Kit RUN CARD: a Slack-started run posts ONE structured card that is
-// UPDATED in place (chat.update on the stored ts) as it progresses + settles. The
+// Slack-native stream delivery keeps the legacy Block Kit card as fallback. The
 // durable outbox relay delivers each row; assertions waitFor the delivered state.
-describe("slack run card (Block Kit, updated in place)", () => {
-  const client = () => resolveSlackClient(slackConfig()!);
-
+describe("slack native stream and Block Kit fallback", () => {
   /** Root a Slack thread with a run, WITHOUT posting a card (card_ts stays null). */
   async function rootThread(prompt: string): Promise<{ runId: string; channel: string; ts: string }> {
     const runId = crypto.randomUUID();
     const channel = `C${uid("card")}`;
     const ts = `${uid("ts")}.1`;
     await createRun({ id: runId, prompt, model: "claude-opus-5", engine: "mock", orgId: DEV_ORG_ID, userId: null, parentRunId: null, threadId: runId });
-    await linkSlackThread({ channel, threadTs: ts, rootRunId: runId, orgId: DEV_ORG_ID });
+    await linkSlackThread({ teamId: TEAM, channel, threadTs: ts, rootRunId: runId, orgId: DEV_ORG_ID });
+    await createSlackRunResponse({ runId, teamId: TEAM, channel, threadTs: ts });
     return { runId, channel, ts };
   }
 
@@ -615,10 +721,11 @@ describe("slack run card (Block Kit, updated in place)", () => {
       webUrl: `https://app.example.com/session/${runId}`,
     });
     await enqueuePostCard({
-      idempotencyKey: `slack-card:${runId}`,
+      idempotencyKey: `slack-card:${TEAM}:${runId}`,
+      teamId: TEAM,
       channel,
       threadTs: ts,
-      rootRunId: runId,
+      runId,
       blocks: card.blocks,
       text: card.text,
     });
@@ -630,34 +737,35 @@ describe("slack run card (Block Kit, updated in place)", () => {
     expect(actions.elements[0].url).toBe(`https://app.example.com/session/${runId}`);
     // The returned ts is persisted on the thread for later chat.update.
     const link = await waitFor(async () => {
-      const l = await findSlackThreadByRoot(runId);
-      return l?.cardTs ? l : null;
+      const l = await findSlackRunResponse(runId);
+      return l?.fallbackMessageTs ? l : null;
     });
-    expect(link.cardTs).toBeTruthy();
+    expect(link.fallbackMessageTs).toBeTruthy();
   });
 
-  test("update_card advances the SAME card in place (chat.update) when a ts exists", async () => {
-    const { runId, channel, ts } = await rootThread("card update");
-    // Post the card first so a ts is stored.
-    const queued = buildRunCard({ title: "card update", phase: "queued", model: "m", repoSpecs: [], webUrl: "https://x/session/1" });
-    await enqueuePostCard({ idempotencyKey: `slack-card:${runId}`, channel, threadTs: ts, rootRunId: runId, blocks: queued.blocks, text: queued.text });
+  test("finalize updates the fallback card when only a fallback message ts exists", async () => {
+    const { runId, channel, ts } = await rootThread("stream stop");
+    const queued = buildRunCard({ title: "stream stop", phase: "queued", model: "m", repoSpecs: [], webUrl: "https://x/session/1" });
+    await enqueuePostCard({ idempotencyKey: `slack-card:${TEAM}:${runId}`, teamId: TEAM, channel, threadTs: ts, runId, blocks: queued.blocks, text: queued.text });
     const cardTs = (await waitFor(async () => {
-      const l = await findSlackThreadByRoot(runId);
-      return l?.cardTs ? l : null;
-    })).cardTs!;
+      const l = await findSlackRunResponse(runId);
+      return l?.fallbackMessageTs ? l : null;
+    })).fallbackMessageTs!;
     expect(cardTs).toBeTruthy();
 
-    // Finalize enqueues the settled update_card; the relay updates in place.
+    const beforeMessages = rec.messages.length;
     await finalizeRun(runId, "completed", "the answer", 1);
-    await waitFor(async () => (rec.updates.some((u) => u.ts === cardTs) ? true : null));
-    const update = rec.updates.find((u) => u.ts === cardTs)!;
+    const update = await waitFor(async () =>
+      rec.updates.find((u) => u.channel === channel && u.ts === cardTs) ?? null,
+    );
     expect(update.channel).toBe(channel);
-    expect(update.text).toBe(composeSlackReplyText("completed", "the answer"));
+    expect(finalAnswerFor(channel, ts)).toBe(composeSlackReplyText("completed", "the answer"));
     // Re-finalizing never double-posts (idempotent by slack-reply:<runId>).
-    const before = rec.updates.length + rec.messages.length;
+    const before = rec.streams.length + rec.updates.length + rec.messages.length;
     await finalizeRun(runId, "completed", "the answer", 1);
     await new Promise((r) => setTimeout(r, 150));
-    expect(rec.updates.length + rec.messages.length).toBe(before);
+    expect(rec.streams.length + rec.updates.length + rec.messages.length).toBe(before);
+    expect(rec.messages.length).toBe(beforeMessages);
   });
 
   test("update_card falls back to a plain post when there is NO card ts (answer never lost)", async () => {
@@ -673,42 +781,33 @@ describe("slack run card (Block Kit, updated in place)", () => {
     expect(rec.updates.some((u) => u.channel === channel)).toBe(false);
   });
 
-  test("a PERMANENT chat.update failure falls back to posting the answer as a fresh reply", async () => {
-    const { runId, channel, ts } = await rootThread("update fails");
-    const queued = buildRunCard({ title: "update fails", phase: "queued", model: "m", repoSpecs: [], webUrl: "https://x/session/1" });
-    await enqueuePostCard({ idempotencyKey: `slack-card:${runId}`, channel, threadTs: ts, rootRunId: runId, blocks: queued.blocks, text: queued.text });
+  test("permanent stream and card update failures fall back to a fresh reply", async () => {
+    const { runId, channel, ts } = await rootThread("stream update fails");
+    const queued = buildRunCard({ title: "stream update fails", phase: "queued", model: "m", repoSpecs: [], webUrl: "https://x/session/1" });
+    await enqueuePostCard({ idempotencyKey: `slack-card:${TEAM}:${runId}`, teamId: TEAM, channel, threadTs: ts, runId, blocks: queued.blocks, text: queued.text });
     await waitFor(async () => {
-      const l = await findSlackThreadByRoot(runId);
-      return l?.cardTs ? true : null;
+      const l = await findSlackRunResponse(runId);
+      return l?.fallbackMessageTs ? true : null;
     });
 
+    stopStreamResult = { ok: false, class: "permanent", message: "stream_not_found" };
     updateResult = { ok: false, class: "permanent", message: "message_not_found" };
     try {
       await finalizeRun(runId, "completed", "recovered answer", 1);
-      // The permanent update failure must not strand the answer: it posts fresh.
+      // The permanent stream/card failures must not strand the answer: it posts fresh.
       const msg = await waitFor(async () =>
         rec.messages.find((m) => m.channel === channel && !m.blocks && m.text.includes("recovered answer")) ?? null,
       );
       expect(msg.threadTs).toBe(ts);
     } finally {
+      stopStreamResult = { ok: true };
       updateResult = { ok: true };
     }
   });
 
-  test("progress: a queued->running card update carries a 'working: <step>' line", async () => {
-    // Build the running-phase card the watcher would send and update in place.
-    const { runId, channel, ts } = await rootThread("progress");
-    const queued = buildRunCard({ title: "progress", phase: "queued", model: "m", repoSpecs: [], webUrl: "https://x/session/1" });
-    await enqueuePostCard({ idempotencyKey: `slack-card:${runId}`, channel, threadTs: ts, rootRunId: runId, blocks: queued.blocks, text: queued.text });
-    const cardTs = (await waitFor(async () => {
-      const l = await findSlackThreadByRoot(runId);
-      return l?.cardTs ? l : null;
-    })).cardTs!;
-
+  test("progress fallback card carries a 'working: <step>' line", () => {
     const running = buildRunCard({ title: "progress", phase: "running", model: "m", repoSpecs: [], webUrl: "https://x/session/1", workingStep: "cloning repo" });
-    await client().updateMessage({ channel, ts: cardTs, text: running.text, blocks: running.blocks });
-    const update = rec.updates.find((u) => u.ts === cardTs)!;
-    const contexts = (update.blocks as any[]).filter((b) => b.type === "context");
+    const contexts = (running.blocks as any[]).filter((b) => b.type === "context");
     expect(contexts.some((c) => c.elements[0].text.includes("working: cloning repo"))).toBe(true);
   });
 });
@@ -738,8 +837,73 @@ describe("slack durable inbound dedupe (survives a restart)", () => {
     expect(body.runs.filter((r) => r.prompt === `durable ${marker}`).length).toBe(1);
   });
 
-  test("a duplicate whose replay regenerated attachment ids (conflict) is still dropped", async () => {
-    setInboundFileDownloaderForTest(async () => new TextEncoder().encode("dup bytes"));
+  test("replay heals a missing response row and non-terminal start stream", async () => {
+    const marker = uid("healstart");
+    const channel = `C${uid("ch")}`;
+    const ts = `${uid("ts")}.1`;
+    const envelope = eventCallback({
+      type: "app_mention",
+      channel,
+      user: "U-HUMAN",
+      text: `<@${BOT}> heal ${marker}`,
+      ts,
+    });
+    await postSlack(envelope);
+    const run = await waitFor(async () => findRunByPrompt(`heal ${marker}`));
+    await waitFor(async () => finalAnswerFor(channel, ts));
+
+    await db.update(runs).set({ status: "queued", summary: null }).where(eq(runs.id, run.id));
+    await deleteSlackDeliveryRows(run.id);
+    const beforeStarts = rec.streams.filter((s) => s.op === "start" && s.channel === channel && s.threadTs === ts).length;
+    resetSlackDeduperForTest();
+
+    expect((await postSlack(envelope)).status).toBe(200);
+
+    await waitFor(async () => {
+      const response = await findSlackRunResponse(run.id);
+      const starts = rec.streams.filter((s) => s.op === "start" && s.channel === channel && s.threadTs === ts);
+      return response && starts.length > beforeStarts ? { response, starts } : null;
+    });
+    expect(rec.sessionStatuses.some((s) => s.channel === channel && s.threadTs === ts && s.status === "processing")).toBe(true);
+    expect(rec.reactions.some((r) => r.channel === channel && r.timestamp === ts && r.name === "eyes")).toBe(true);
+  });
+
+  test("replay heals a missing response row for an already-terminal run", async () => {
+    const marker = uid("healfinal");
+    const channel = `C${uid("ch")}`;
+    const ts = `${uid("ts")}.1`;
+    const envelope = eventCallback({
+      type: "app_mention",
+      channel,
+      user: "U-HUMAN",
+      text: `<@${BOT}> final ${marker}`,
+      ts,
+    });
+    await postSlack(envelope);
+    const run = await waitFor(async () => findRunByPrompt(`final ${marker}`));
+    await waitFor(async () => finalAnswerFor(channel, ts));
+
+    await deleteSlackDeliveryRows(run.id);
+    const beforeMessages = rec.messages.filter((m) => m.channel === channel && m.threadTs === ts && !m.blocks).length;
+    resetSlackDeduperForTest();
+
+    expect((await postSlack(envelope)).status).toBe(200);
+
+    const healed = await waitFor(async () => {
+      const response = await findSlackRunResponse(run.id);
+      const replies = rec.messages.filter((m) => m.channel === channel && m.threadTs === ts && !m.blocks);
+      return response && replies.length > beforeMessages ? replies.at(-1) : null;
+    });
+    expect(healed.text.length).toBeGreaterThan(0);
+    expect(rec.sessionStatuses.some((s) => s.channel === channel && s.threadTs === ts && s.status === "active")).toBe(true);
+  });
+
+  test("an attachment replay returns before restaging provider files", async () => {
+    let downloads = 0;
+    setInboundFileDownloaderForTest(async () => {
+      downloads += 1;
+      return new TextEncoder().encode("dup bytes");
+    });
     try {
       const marker = uid("dupconflict");
       const envelope = eventCallback({
@@ -761,12 +925,14 @@ describe("slack durable inbound dedupe (survives a restart)", () => {
       });
       await postSlack(envelope);
       await waitFor(async () => findRunByPrompt(`attach ${marker}`));
+      expect(downloads).toBe(1);
 
       resetSlackDeduperForTest();
-      // The replay stages FRESH upload ids -> a different payload fingerprint
-      // under the same durable key -> conflict -> dropped, no second run.
+      // Stable Slack file identity matches the durable raw intent, so the
+      // replay is recognized before downloading or staging the file again.
       expect((await postSlack(envelope)).status).toBe(200);
       await new Promise((r) => setTimeout(r, 300));
+      expect(downloads).toBe(1);
       const { body } = await json<{ runs: any[] }>("/api/runs?all=1");
       expect(body.runs.filter((r) => r.prompt === `attach ${marker}`).length).toBe(1);
     } finally {
@@ -792,6 +958,94 @@ describe("slack durable inbound dedupe (survives a restart)", () => {
     await new Promise((r) => setTimeout(r, 300));
     const { body } = await json<{ runs: any[] }>("/api/runs?all=1");
     expect(body.runs.filter((r) => r.prompt === `fallback ${marker}`).length).toBe(1);
+  });
+});
+
+describe("slack legacy team adoption", () => {
+  test("a matching __legacy__ thread is atomically adopted for the resolved workspace", async () => {
+    const marker = uid("legacy");
+    const channel = `C${uid("legacy")}`;
+    const rootTs = `${uid("ts")}.1`;
+    const rootRunId = crypto.randomUUID();
+    await createRun({
+      id: rootRunId,
+      prompt: `legacy root ${marker}`,
+      model: "claude-opus-5",
+      engine: "mock",
+      orgId: DEV_ORG_ID,
+      userId: DEV_USER_ID,
+      parentRunId: null,
+      threadId: rootRunId,
+      repos: [],
+      memoryScope: "org",
+    });
+    await db.insert(slackThreads).values({
+      teamId: "__legacy__",
+      channel,
+      threadTs: rootTs,
+      rootRunId,
+      orgId: DEV_ORG_ID,
+    });
+    await createSlackRunResponse({ runId: rootRunId, teamId: "__legacy__", channel, threadTs: rootTs });
+
+    const res = await postSlack(
+      eventCallback({
+        type: "message",
+        channel,
+        user: "U-HUMAN",
+        text: `continue ${marker}`,
+        ts: `${uid("ts")}.2`,
+        thread_ts: rootTs,
+      }),
+    );
+    expect(res.status).toBe(200);
+
+    const reply = await waitFor(async () => findRunByPrompt(`continue ${marker}`));
+    expect(reply.parent_run_id).toBe(rootRunId);
+    const [adopted] = await db.select().from(slackThreads).where(eq(slackThreads.rootRunId, rootRunId)).limit(1);
+    expect(adopted?.teamId).toBe(TEAM);
+    const rootResponse = await findSlackRunResponse(rootRunId);
+    expect(rootResponse?.teamId).toBe(TEAM);
+  });
+
+  test("a cross-org __legacy__ thread is not adopted", async () => {
+    const marker = uid("legacyxorg");
+    const channel = `C${uid("legacy")}`;
+    const rootTs = `${uid("ts")}.1`;
+    const rootRunId = crypto.randomUUID();
+    await createRun({
+      id: rootRunId,
+      prompt: `legacy cross root ${marker}`,
+      model: "claude-opus-5",
+      engine: "mock",
+      orgId: DEV_ORG_ID,
+      userId: DEV_USER_ID,
+      parentRunId: null,
+      threadId: rootRunId,
+      repos: [],
+      memoryScope: "org",
+    });
+    await db.insert(slackThreads).values({
+      teamId: "__legacy__",
+      channel,
+      threadTs: rootTs,
+      rootRunId,
+      orgId: "org-other",
+    });
+
+    expect((await postSlack(eventCallback({
+      type: "message",
+      channel,
+      user: "U-HUMAN",
+      text: `ignored ${marker}`,
+      ts: `${uid("ts")}.2`,
+      thread_ts: rootTs,
+    }))).status).toBe(200);
+
+    await new Promise((r) => setTimeout(r, 300));
+    expect(await findRunByPrompt(`ignored ${marker}`)).toBeNull();
+    const [legacy] = await db.select().from(slackThreads).where(eq(slackThreads.rootRunId, rootRunId)).limit(1);
+    expect(legacy?.teamId).toBe("__legacy__");
   });
 });
 
@@ -884,14 +1138,12 @@ describe("slack socket-mode ingest shares the HTTP handler", () => {
     const run = await waitFor(async () => findRunByPrompt(`socket ${marker}`));
     expect(run.org_id).toBe("org-skynet-dev");
 
-    // watchSlackRun attached downstream: the 👀 ack + the run CARD land, and the
-    // settled answer updates the card in place.
+    // watchSlackRun attached downstream: the 👀 ack + native stream land, and the
+    // settled answer stops the stream.
     await waitFor(async () =>
       rec.reactions.some((r) => r.channel === channel && r.timestamp === ts && r.name === "eyes") || null,
     );
-    await waitFor(async () =>
-      rec.messages.find((m) => m.channel === channel && m.threadTs === ts && m.blocks) ?? null,
-    );
+    await waitFor(async () => rec.streams.find((s) => s.op === "start" && s.channel === channel && s.threadTs === ts) ?? null);
     const answer = await waitFor(async () => finalAnswerFor(channel, ts));
     expect(answer!.length).toBeGreaterThan(0);
   });
@@ -908,6 +1160,82 @@ describe("slack socket-mode ingest shares the HTTP handler", () => {
 // Workspace identity fails CLOSED: only events from a team with a
 // slack_workspaces mapping are accepted; there is no seeded-org fallback.
 describe("slack workspace identity (fail closed)", () => {
+  test("rejects an existing thread link owned by another organization", async () => {
+    const marker = uid("cross-org");
+    const channel = `C${uid("ch")}`;
+    const threadTs = `${uid("ts")}.1`;
+    const rootRunId = crypto.randomUUID();
+    const otherOrgId = `org-other-${uid("org")}`;
+    await createRun({
+      id: rootRunId,
+      prompt: `other org root ${marker}`,
+      model: "claude-opus-5",
+      engine: "mock",
+      orgId: otherOrgId,
+      userId: null,
+      parentRunId: null,
+      threadId: rootRunId,
+    });
+    await linkSlackThread({
+      teamId: TEAM,
+      channel,
+      threadTs,
+      rootRunId,
+      orgId: otherOrgId,
+    });
+
+    await postSlack(eventCallback({
+      type: "message",
+      channel,
+      channel_type: "channel",
+      user: "U-HUMAN",
+      text: `cross org ${marker}`,
+      ts: `${uid("ts")}.2`,
+      thread_ts: threadTs,
+    }));
+
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    expect(await findRunByPrompt(`cross org ${marker}`)).toBeNull();
+  });
+
+  test("uses an explicit Slack-sender mapping for run attribution", async () => {
+    const marker = uid("sender");
+    await postSlack(eventCallback({
+      type: "message",
+      channel: `D${uid("dm")}`,
+      channel_type: "im",
+      user: "U-HUMAN",
+      text: `sender ${marker}`,
+      ts: `${uid("ts")}.1`,
+    }));
+    const run = await waitFor(async () => findRunByPrompt(`sender ${marker}`));
+    expect(run.user_id).toBe(DEV_USER_ID);
+  });
+
+  test("blocks every run for an unmapped Slack sender", async () => {
+    const marker = uid("unmapped-sender");
+    const channel = `D${uid("dm")}`;
+    await postSlack(eventCallback({
+      type: "message",
+      channel,
+      channel_type: "im",
+      user: `U-${uid("unknown")}`,
+      text: `summarize this workspace ${marker}`,
+      ts: `${uid("ts")}.1`,
+    }));
+
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    expect(await findRunByPrompt(`summarize this workspace ${marker}`)).toBeNull();
+    await waitFor(async () =>
+      rec.messages.find(
+        (message) =>
+          message.channel === channel &&
+          message.text.includes("Slack user is not linked") &&
+          message.text.includes("SLACK_USER_BINDINGS"),
+      ) ?? null,
+    );
+  });
+
   test("an event from an unmapped workspace is ignored", async () => {
     const marker = uid("noteam");
     const res = await postSlack(
@@ -948,14 +1276,23 @@ describe("slack workspace identity (fail closed)", () => {
   test("SLACK_WORKSPACE_BINDINGS syncs mappings at boot (malformed entries skipped)", async () => {
     const team = `T-BIND-${uid("t")}`;
     const saved = process.env.SLACK_WORKSPACE_BINDINGS;
+    const savedUsers = process.env.SLACK_USER_BINDINGS;
     process.env.SLACK_WORKSPACE_BINDINGS = `${team}:${DEV_ORG_ID}:${DEV_USER_ID}, malformed-entry`;
+    process.env.SLACK_USER_BINDINGS =
+      `${team}:U-BOUND:${DEV_ORG_ID}:${DEV_USER_ID}, malformed-user-entry`;
     try {
       await syncSlackWorkspaceBindings();
     } finally {
       if (saved === undefined) delete process.env.SLACK_WORKSPACE_BINDINGS;
       else process.env.SLACK_WORKSPACE_BINDINGS = saved;
+      if (savedUsers === undefined) delete process.env.SLACK_USER_BINDINGS;
+      else process.env.SLACK_USER_BINDINGS = savedUsers;
     }
     expect(await findSlackWorkspace(team)).toEqual({
+      orgId: DEV_ORG_ID,
+      userId: DEV_USER_ID,
+    });
+    expect(await findSlackUser(team, "U-BOUND")).toEqual({
       orgId: DEV_ORG_ID,
       userId: DEV_USER_ID,
     });

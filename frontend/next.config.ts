@@ -42,6 +42,7 @@ export default function nextConfig(phase: string): NextConfig {
       },
     },
     distDir: resolveDistDir(phase),
+    generateBuildId: async () => process.env.NEXT_PUBLIC_SKYNET_RELEASE_COMMIT || null,
     // We maintain AGENTS.md by hand — stop Next 16 from regenerating it.
     agentRules: false,
     allowedDevOrigins: ["127.0.0.1"],

@@ -31,6 +31,7 @@ interface FakeRepo {
 }
 
 interface Calls {
+  listedOrgs: string[];
   sleeps: number[];
   headChecks: string[];
   scans: string[];
@@ -41,13 +42,22 @@ function fakeDeps(
   repos: FakeRepo[],
   overrides: Partial<SkillsResyncDeps> = {},
 ): { deps: SkillsResyncDeps; calls: Calls } {
-  const calls: Calls = { sleeps: [], headChecks: [], scans: [], imports: [] };
+  const calls: Calls = {
+    listedOrgs: [],
+    sleeps: [],
+    headChecks: [],
+    scans: [],
+    imports: [],
+  };
   const byName = new Map(repos.map((r) => [r.name, r]));
   const deps: SkillsResyncDeps = {
-    listRepos: async () => ({
-      configured: true,
-      repos: repos.map((r) => ({ full_name: r.name })),
-    }),
+    listRepos: async (orgId) => {
+      calls.listedOrgs.push(orgId);
+      return {
+        configured: true,
+        repos: repos.map((r) => ({ full_name: r.name })),
+      };
+    },
     resolveHeadSha: async (repo) => {
       calls.headChecks.push(repo);
       const r = byName.get(repo)!;
@@ -133,6 +143,7 @@ describe("runSkillsResyncSweep", () => {
       skippedPaths: 1,
     });
     expect(calls.scans).toEqual(["acme/tools", "acme/infra"]);
+    expect(calls.listedOrgs).toEqual([ORG]);
     expect(calls.imports).toEqual([
       { repo: "acme/tools", paths: ["a/SKILL.md", "b/SKILL.md"] },
       { repo: "acme/infra", paths: ["c/SKILL.md", "d/SKILL.md"] },

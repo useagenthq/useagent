@@ -17,7 +17,14 @@ import {
 import { defaultModelForEngine, isModelAllowedForEngine } from "../runs/model-policy";
 import { publishOrgChange, type OrgChange } from "../runs/org-signals";
 import { automationSlackConfigError } from "../slack/automation";
+import {
+  resolveExecutableSkillPin,
+  SkillPinIntegrityError,
+  type SkillPinReference,
+} from "../skills/pins";
 import { resolveSkillSelection } from "../skills/repo";
+import { RunIntakeError } from "../resources/run-intake";
+import { RunAdmissionClosedError } from "../commands";
 import { isValidCron, isValidTimezone } from "./cron";
 import {
   createSchedule,
@@ -35,10 +42,10 @@ function publishAutomationChange(orgId: string, change: AutomationChange): void 
 }
 
 export class ScheduleServiceError extends Error {
-  readonly status: 400 | 403 | 404;
+  readonly status: 400 | 403 | 404 | 409 | 503;
   readonly body: Record<string, unknown>;
 
-  constructor(status: 400 | 403 | 404, body: Record<string, unknown>) {
+  constructor(status: 400 | 403 | 404 | 409 | 503, body: Record<string, unknown>) {
     super(String(body.error ?? "schedule_error"));
     this.status = status;
     this.body = body;
@@ -84,11 +91,14 @@ function stringArrayField(
   return [...new Set(values)];
 }
 
-async function parseRepos(body: Record<string, unknown>): Promise<string[] | undefined> {
+async function parseRepos(
+  orgId: string,
+  body: Record<string, unknown>,
+): Promise<string[] | undefined> {
   const repos = stringArrayField(body, "repos");
   if (repos === undefined) return undefined;
   if (repos.length > 0) {
-    const unknown = await unknownRepos(repos);
+    const unknown = await unknownRepos(repos, orgId);
     if (unknown.length > 0) {
       throw new ScheduleServiceError(400, {
         error: `repos not in the available set: ${unknown.join(", ")}`,
@@ -190,6 +200,20 @@ function assertAutomationIntegrationsReady(schedule: {
   }
 }
 
+async function assertAutomationSkillPinExecutable(pin: SkillPinReference): Promise<void> {
+  try {
+    await resolveExecutableSkillPin(pin, { requireContentHash: true });
+  } catch (error) {
+    if (error instanceof SkillPinIntegrityError) {
+      throw new ScheduleServiceError(error.code === "invalid_skill_pin" ? 400 : 409, {
+        error: error.code,
+        detail: error.message,
+      });
+    }
+    throw error;
+  }
+}
+
 export async function createScheduleForOrg(
   identity: { orgId: string; userId: string | null },
   body: Record<string, unknown>,
@@ -214,7 +238,7 @@ export async function createScheduleForOrg(
   const model = textField(body, "model") || defaultModelForEngine(engine);
   assertModelAllowed(engine, model);
   const skill = await parseSkillPin(identity.orgId, body.skill);
-  const repos = (await parseRepos(body)) ?? [];
+  const repos = (await parseRepos(identity.orgId, body)) ?? [];
   const tags = stringArrayField(body, "tags") ?? [];
   const delivery = jsonObjectField(body, "delivery") ?? null;
   const notifications = jsonObjectField(body, "notifications") ?? null;
@@ -320,7 +344,7 @@ export async function updateScheduleForOrg(
   const skill = await parseSkillPin(orgId, body.skill);
   if (skill !== undefined) Object.assign(patch, skill);
 
-  const repos = await parseRepos(body);
+  const repos = await parseRepos(orgId, body);
   if (repos !== undefined) patch.repos = repos;
 
   const tags = stringArrayField(body, "tags");
@@ -376,6 +400,11 @@ export async function updateScheduleForOrg(
       if ((skillId && (!skillVersion || !skillHash)) || (!skillId && (skillVersion || skillHash))) {
         throw new ScheduleServiceError(400, { error: "invalid skill pin" });
       }
+      await assertAutomationSkillPinExecutable({
+        skillId,
+        skillVersion,
+        skillContentHash: skillHash,
+      });
     }
   }
 
@@ -416,11 +445,31 @@ export async function fireScheduleForOrg(
   // Keep service imports safe for the standalone gateway; the worker graph is
   // loaded only for an explicit fire mutation.
   const { fireScheduleWithOutcome } = await import("./fire");
-  const { runId, firingRecorded } = await fireScheduleWithOutcome(
-    schedule,
-    trigger,
-    occurrence,
-  );
+  let fired: Awaited<ReturnType<typeof fireScheduleWithOutcome>>;
+  try {
+    fired = await fireScheduleWithOutcome(schedule, trigger, occurrence);
+  } catch (error) {
+    if (error instanceof SkillPinIntegrityError) {
+      throw new ScheduleServiceError(error.code === "invalid_skill_pin" ? 400 : 409, {
+        error: error.code,
+        detail: error.message,
+      });
+    }
+    if (error instanceof RunIntakeError) {
+      throw new ScheduleServiceError(
+        error.code === "resource_unauthorized" ? 403 : 400,
+        { error: error.code, ...error.diagnostic },
+      );
+    }
+    if (error instanceof RunAdmissionClosedError) {
+      throw new ScheduleServiceError(503, {
+        error: error.code,
+        retryable: true,
+      });
+    }
+    throw error;
+  }
+  const { runId, firingRecorded } = fired;
   if (firingRecorded) {
     publishAutomationChange(schedule.orgId, {
       type: "automation",

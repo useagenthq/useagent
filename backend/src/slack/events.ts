@@ -15,20 +15,32 @@
  *  - anything else                  → ignored (no channel-wide chatter).
  */
 import { env, slackConfig } from "../env";
-import type { MemoryScope } from "../db/schema";
+import { runs, type MemoryScope, type RunStatus } from "../db/schema";
+import { db } from "../db/client";
 import { getRunForOrg } from "../runs/repo";
-import { acceptRunCommand } from "../commands";
+import {
+  acceptRunCommand,
+  preflightRunCommandReplay,
+  RunAdmissionClosedError,
+  type RunCommandIntent,
+} from "../commands";
 import { pumpThread } from "../worker";
-import { resolveSlackClient } from "./client";
 import { stageInboundSlackFiles, type SlackInboundFileMeta } from "./inbound-files";
-import { findSlackThread, linkSlackThread } from "./repo";
+import { createSlackRunResponse, findOrAdoptSlackThread, linkSlackThread } from "./repo";
 import { watchSlackRun } from "./watcher";
-import { githubRepoRefs } from "./repo-refs";
-import { unknownRepos } from "../github/repos";
-import { resolveSlackWorkspace } from "./workspaces";
-import { enqueueAddReaction, enqueuePostCard, enqueuePostMessage } from "./outbox";
+import { resolveSlackSender, resolveSlackWorkspace } from "./workspaces";
+import {
+  enqueueAddReactionTx,
+  enqueuePostMessage,
+  enqueueSessionStatusTx,
+  enqueueStartStreamTx,
+  kickSlackOutbox,
+} from "./outbox";
 import { buildRunCard, deriveTitle, sessionUrl } from "./card";
 import { parseRepoRef } from "../github/repo-ref";
+import { openingStreamChunks } from "./streaming";
+import { enqueueSlackTerminalDeliveryForRunTx } from "../runs/finalize";
+import { eq } from "drizzle-orm";
 import { defaultModelForEngine, isModelAllowedForEngine } from "../runs/model-policy";
 import {
   isSlackSwitchableEngine,
@@ -36,6 +48,13 @@ import {
   parseSlackDirectives,
   resolveModelToken,
 } from "./model-directive";
+import { createRunResourceAuthorization } from "../resources/authorization";
+import {
+  legacyParentResources,
+  resolveRunIntake,
+  RunIntakeError,
+  type RunResource,
+} from "../resources/run-intake";
 
 // Bounded FIFO deduper — collapses Slack retries AND the app_mention/message
 // pair for a channel mention (both carry the same `channel:ts`). No LRU dep;
@@ -66,14 +85,83 @@ export function resetSlackDeduperForTest(): void {
   deduper = createDeduper();
 }
 
+const TERMINAL_STATUSES = new Set<RunStatus>(["completed", "failed"]);
+
+async function healSlackRunDelivery(input: {
+  runId: string;
+  teamId: string;
+  channel: string;
+  threadTs: string;
+  messageTs: string;
+}): Promise<void> {
+  let kickSlack = false;
+  await db.transaction(async (tx) => {
+    const [run] = await tx.select().from(runs).where(eq(runs.id, input.runId)).limit(1);
+    if (!run) return;
+
+    await createSlackRunResponse({
+      runId: input.runId,
+      teamId: input.teamId,
+      channel: input.channel,
+      threadTs: input.threadTs,
+    }, tx);
+
+    if (TERMINAL_STATUSES.has(run.status)) {
+      kickSlack = (await enqueueSlackTerminalDeliveryForRunTx(
+        tx,
+        run,
+        run.status,
+        run.summary ?? "",
+      )) || kickSlack;
+    } else {
+      const title = deriveTitle(run.prompt);
+      const card = buildRunCard({
+        title,
+        phase: "queued",
+        model: run.model,
+        repoSpecs: run.repos.map(parseRepoRef),
+        webUrl: sessionUrl(env.FRONTEND_ORIGIN, run.threadId),
+      });
+      const statusCreated = await enqueueSessionStatusTx(tx, {
+        idempotencyKey: `slack-status:start:${input.teamId}:${input.runId}`,
+        teamId: input.teamId,
+        channel: input.channel,
+        threadTs: input.threadTs,
+        status: "processing",
+      });
+      const streamCreated = await enqueueStartStreamTx(tx, {
+        idempotencyKey: `slack-stream:start:${input.teamId}:${input.runId}`,
+        teamId: input.teamId,
+        channel: input.channel,
+        threadTs: input.threadTs,
+        runId: input.runId,
+        taskDisplayMode: "task_update",
+        chunks: openingStreamChunks({ title, mode: "task_update" }),
+        fallbackBlocks: card.blocks,
+        fallbackText: card.text,
+      });
+      kickSlack = kickSlack || statusCreated || streamCreated;
+    }
+
+    const reactionCreated = await enqueueAddReactionTx(tx, {
+      idempotencyKey: `slack-ack:${input.teamId}:${input.channel}:${input.messageTs}`,
+      channel: input.channel,
+      timestamp: input.messageTs,
+      name: "eyes",
+    });
+    kickSlack = kickSlack || reactionCreated;
+  });
+  if (kickSlack) kickSlackOutbox();
+}
+
 export interface SlackEnvelope {
   type?: string;
   challenge?: string;
   /** Slack's unique delivery id for the event (`Ev...`) — retries reuse it, so
    *  it is the durable dedupe identity (falls back to channel:ts). */
   event_id?: string;
-  /** The workspace the event came from — resolved to an org/user via
-   *  slack_workspaces (fail closed; see workspaces.ts). */
+  /** The workspace the event came from — resolved to an org via
+   *  slack_workspaces; sender identity is resolved separately (fail closed). */
   team_id?: string;
   authorizations?: Array<{ user_id?: string }>;
   event?: {
@@ -127,7 +215,8 @@ export async function handleSlackEvent(body: SlackEnvelope): Promise<void> {
 
   const channel = event.channel;
   const ts = event.ts;
-  if (!channel || !ts) return;
+  const teamId = body.team_id;
+  if (!channel || !ts || !teamId) return;
 
   // Operator channel allowlist: when set, ONLY events from listed channel ids
   // are processed (DMs included - a DM channel id is not in the list). Keeps a
@@ -141,15 +230,10 @@ export async function handleSlackEvent(body: SlackEnvelope): Promise<void> {
   const isThreadReply = Boolean(threadTs && threadTs !== ts);
   const isMention = botUserId ? rawText.includes(`<@${botUserId}>`) : false;
 
-  // A message threads under its thread root (replies) or under itself (top-level).
-  const slackThreadTs = threadTs ?? ts;
-  const link = await findSlackThread(channel, slackThreadTs);
-
   // Gating for non-DM plain `message` events.
   if (!isDm && type === "message") {
     if (isMention) return; // the paired app_mention handles it
     if (!isThreadReply) return; // untargeted channel chatter
-    if (!link) return; // a thread we have no stake in
   }
 
   // Workspace identity — FAIL CLOSED. An event from a workspace with no
@@ -157,31 +241,51 @@ export async function handleSlackEvent(body: SlackEnvelope): Promise<void> {
   // falls back to a seeded org. Resolved BEFORE dedupe so an unmapped
   // workspace's event never reserves a dedupe key (a retry after the operator
   // adds the mapping still lands).
-  const workspace = await resolveSlackWorkspace(body.team_id);
+  const workspace = await resolveSlackWorkspace(teamId);
   if (!workspace) return;
 
+  // A message threads under its thread root (replies) or under itself (top-level).
+  const slackThreadTs = threadTs ?? ts;
+  const link = await findOrAdoptSlackThread({
+    teamId,
+    channel,
+    threadTs: slackThreadTs,
+    orgId: workspace.orgId,
+  });
+  if (!isDm && type === "message" && isThreadReply && !link) return;
+
+  // Workspace mapping establishes the tenant only. Every run also receives org
+  // memory, provider access, and sandbox secrets, so an unmapped sender cannot
+  // safely run even an apparently "org-only" prompt. Require the explicit
+  // per-Slack-user mapping before dedupe or any durable work.
+  const sender = await resolveSlackSender(workspace, teamId, event.user);
+  if (!sender) {
+    await enqueuePostMessage({
+      idempotencyKey: `slack-sender-guidance:${teamId}:${channel}:${ts}`,
+      channel,
+      threadTs: slackThreadTs,
+      text: "Your Slack user is not linked to a product account. Ask an operator to add a SLACK_USER_BINDINGS mapping and retry.",
+    });
+    return;
+  }
+
   // Dedupe last, so a genuinely-ours message reserves its key exactly once.
-  const key = `${channel}:${ts}`;
+  const key = `${teamId}:${channel}:${ts}`;
   if (deduper.seen(key)) return;
 
-  // Org identity: an existing thread keeps its original org; a new thread is
-  // scoped by the workspace mapping. The actor is the workspace's bound user.
-  const orgId = link?.orgId ?? workspace.orgId;
-  const userId = workspace.userId;
+  const orgId = workspace.orgId;
+  const userId = sender.userId;
 
-  // Inbound attachments: download bounded (count/size caps, Slack CDN only) and
-  // stage through the uploads lane so the run claims them like browser uploads.
+  const durableKey = body.event_id
+    ? `slack-event:${teamId}:${body.event_id}`
+    : `slack-event:${teamId}:${channel}:${ts}`;
   const files = Array.isArray(event.files) ? event.files : [];
-  const attachmentIds =
-    files.length > 0
-      ? await stageInboundSlackFiles({ files, botToken: config.botToken, orgId, userId })
-      : [];
 
   let prompt = cleanPrompt(rawText, botUserId);
   if (!prompt) {
     // A files-only message still runs (the attachments ARE the request); an
-    // empty message with no staged files stays a no-op.
-    if (attachmentIds.length === 0) {
+    // empty message with no attached files stays a no-op.
+    if (files.length === 0) {
       deduper.forget(key);
       return;
     }
@@ -194,8 +298,8 @@ export async function handleSlackEvent(body: SlackEnvelope): Promise<void> {
   const runId = crypto.randomUUID();
   let threadId: string = runId;
   // Slack has no scope selector: a reply inherits its thread-root's scope, a new
-  // thread defaults to "org". (Personal-scope Slack runs would need a verified
-  // per-Slack-user identity; the workspace mapping binds one actor per team.)
+  // thread defaults to "org". Personal scope is accepted only when the verified
+  // per-Slack-user mapping matches the thread owner.
   let memoryScope: MemoryScope = "org";
   // A reply MUST run on the thread's original engine and model - engines keep
   // per-thread native session state in the sandbox, and a cross-engine turn
@@ -204,8 +308,9 @@ export async function handleSlackEvent(body: SlackEnvelope): Promise<void> {
   // API reply path, which inherits the parent engine and refuses mismatches.
   let engine = config.defaultEngine;
   let model = config.model;
+  let inheritedResources: readonly RunResource[] = [];
   let parent: Awaited<ReturnType<typeof getRunForOrg>> | null = null;
-  if (link) {
+  if (link && isThreadReply) {
     parent = await getRunForOrg(orgId, link.rootRunId);
     if (parent) {
       parentRunId = parent.id;
@@ -213,6 +318,22 @@ export async function handleSlackEvent(body: SlackEnvelope): Promise<void> {
       memoryScope = parent.memoryScope;
       engine = parent.engine as typeof engine;
       model = parent.model;
+      inheritedResources =
+        parent.resolvedResources.length > 0
+          ? parent.resolvedResources
+          : legacyParentResources(parent.repos, "slack");
+      if (
+        memoryScope === "personal" &&
+        parent.userId !== userId
+      ) {
+        await enqueuePostMessage({
+          idempotencyKey: `slack-sender-guidance:${teamId}:${channel}:${ts}`,
+          channel,
+          threadTs: slackThreadTs,
+          text: "This thread uses personal resources and your Slack user is not linked to its owner. Link the sender identity or start a new org-scoped thread.",
+        });
+        return;
+      }
     }
   }
 
@@ -223,14 +344,14 @@ export async function handleSlackEvent(body: SlackEnvelope): Promise<void> {
   const { directives, rest } = parseSlackDirectives(prompt);
   const guide = (text: string) =>
     enqueuePostMessage({
-      idempotencyKey: `slack-directive:${channel}:${ts}`,
+      idempotencyKey: `slack-directive:${teamId}:${channel}:${ts}`,
       channel,
       text,
       threadTs: slackThreadTs,
     });
   if (directives.engine || directives.model) {
     if (rest) prompt = rest;
-    else if (attachmentIds.length === 0) {
+    else if (files.length === 0) {
       await guide("Include your request in the same message as the directive, e.g. `model:sol summarize this thread`.");
       return;
     }
@@ -261,16 +382,111 @@ export async function handleSlackEvent(body: SlackEnvelope): Promise<void> {
     model = defaultModelForEngine(engine);
   }
 
-  // Repositories linked in the message bind to the run - but ONLY after the
-  // SAME allowlist the web composer enforces (unknownRepos): a Slack link must
-  // never let the installation token reach a repo outside the offered set. An
-  // unknown ref is dropped (the run proceeds without it) rather than failing
-  // the whole message.
-  const linkedRepos = githubRepoRefs(rawText);
-  let boundRepos: string[] = [];
-  if (linkedRepos.length > 0) {
-    const unknown = new Set(await unknownRepos(linkedRepos));
-    boundRepos = linkedRepos.filter((repo) => !unknown.has(repo));
+  const attachmentIntentIds = files.slice(0, 5).map((file, index) =>
+    file.id?.trim() || JSON.stringify([
+      "slack-file",
+      index,
+      file.name ?? null,
+      file.size ?? null,
+      file.mimetype ?? null,
+    ]),
+  );
+  const intent: RunCommandIntent = {
+    prompt,
+    model,
+    engine,
+    parentRunId,
+    requestedRepos: [],
+    attachmentIds: attachmentIntentIds,
+    memoryScope,
+    skillId: null,
+    skillVersion: null,
+    commandName: null,
+    commandProvider: null,
+    commandSessionId: null,
+    commandCatalogRevision: null,
+  };
+  let replay;
+  try {
+    replay = await preflightRunCommandReplay({
+      orgId,
+      idempotencyKey: durableKey,
+      intent,
+    });
+  } catch (error) {
+    if (!(error instanceof RunAdmissionClosedError)) throw error;
+    deduper.forget(key);
+    await enqueuePostMessage({
+      idempotencyKey: `slack-admission-guidance:${teamId}:${channel}:${ts}`,
+      channel,
+      threadTs: slackThreadTs,
+      text: "New runs are temporarily paused for a deployment. Retry this message shortly.",
+    });
+    return;
+  }
+  if (replay) {
+    if (replay.status === "replayed" && !link) {
+      await linkSlackThread({
+        channel,
+        teamId,
+        threadTs: slackThreadTs,
+        rootRunId: replay.runId,
+        orgId,
+      });
+      await healSlackRunDelivery({ runId: replay.runId, teamId, channel, threadTs: slackThreadTs, messageTs: ts });
+    } else if (replay.status === "replayed") {
+      await healSlackRunDelivery({ runId: replay.runId, teamId, channel, threadTs: slackThreadTs, messageTs: ts });
+    }
+    console.log(`[slack] duplicate event ignored (${replay.status}): ${durableKey}`);
+    return;
+  }
+
+  // Only a first acceptance downloads and stages Slack files. A lost-response
+  // retry above uses Slack's stable file identity and never touches the CDN.
+  const attachmentIds = files.length > 0
+    ? await stageInboundSlackFiles({
+        files,
+        botToken: config.botToken,
+        orgId,
+        userId,
+      })
+    : [];
+
+  let resources: readonly RunResource[];
+  let boundRepos: string[];
+  try {
+    const authorize = createRunResourceAuthorization(orgId);
+    const intake = await resolveRunIntake(
+      { source: "slack", text: prompt, inheritedResources },
+      {
+        authorize: async (resource) => {
+          if (
+            !userId &&
+            (resource.kind === "code.repository" ||
+              resource.kind === "code.change" ||
+              resource.kind === "file")
+          ) {
+            return {
+              available: false,
+              message:
+                "Your Slack user is not linked to a product account, so private resource access is blocked.",
+            };
+          }
+          return await authorize(resource);
+        },
+      },
+    );
+    resources = intake.resources;
+    boundRepos = [...intake.repos];
+  } catch (error) {
+    if (!(error instanceof RunIntakeError)) throw error;
+    await enqueuePostMessage({
+      idempotencyKey: `slack-resource-guidance:${teamId}:${channel}:${ts}`,
+      channel,
+      threadTs: slackThreadTs,
+      text: `${error.diagnostic.message} ${error.diagnostic.action}`,
+    });
+    return;
   }
 
   // Enter through the durable command lane keyed by the SLACK EVENT IDENTITY
@@ -279,48 +495,62 @@ export async function handleSlackEvent(body: SlackEnvelope): Promise<void> {
   // HTTP+socket double delivery) still collapses to ONE run. The mailbox pump
   // preserves per-thread order: a reply in an active Slack thread waits for the
   // prior turn.
-  const durableKey = body.event_id
-    ? `slack-event:${body.team_id}:${body.event_id}`
-    : `slack-event:${body.team_id}:${channel}:${ts}`;
-  const outcome = await acceptRunCommand({
-    idempotencyKey: durableKey,
-    orgId,
-    actorId: userId,
-    run: {
-      id: runId,
-      prompt,
-      model,
-      engine,
-      parentRunId,
-      threadId,
-      // Repositories the message links, VALIDATED against the offered set above
-      // (mirrors the web composer). An unlinked message keeps the bare sandbox.
-      repos: boundRepos,
-      // Staged inbound attachments — claimed atomically with run acceptance.
-      ...(attachmentIds.length > 0 ? { attachmentIds } : {}),
-      memoryScope,
-      // Slack turns don't pin a skill yet.
-      skillId: null,
-      skillVersion: null,
-      skillContentHash: null,
-      // Slack turns are never native provider commands (a "/cmd" from Slack is prose).
-      commandName: null,
-      commandProvider: null,
-      commandSessionId: null,
-      commandCatalogRevision: null,
-    },
-  });
+  let outcome;
+  try {
+    outcome = await acceptRunCommand({
+      idempotencyKey: durableKey,
+      orgId,
+      actorId: userId,
+      intent,
+      run: {
+        id: runId,
+        prompt,
+        model,
+        engine,
+        parentRunId,
+        threadId,
+        // Repositories the message links, VALIDATED against the offered set above
+        // (mirrors the web composer). An unlinked message keeps the bare sandbox.
+        repos: boundRepos,
+        resolvedResources: resources,
+        // Staged inbound attachments — claimed atomically with run acceptance.
+        ...(attachmentIds.length > 0 ? { attachmentIds } : {}),
+        memoryScope,
+        // Slack turns don't pin a skill yet.
+        skillId: null,
+        skillVersion: null,
+        skillContentHash: null,
+        // Slack turns are never native provider commands (a "/cmd" from Slack is prose).
+        commandName: null,
+        commandProvider: null,
+        commandSessionId: null,
+        commandCatalogRevision: null,
+      },
+    });
+  } catch (error) {
+    if (!(error instanceof RunAdmissionClosedError)) throw error;
+    deduper.forget(key);
+    await enqueuePostMessage({
+      idempotencyKey: `slack-admission-guidance:${teamId}:${channel}:${ts}`,
+      channel,
+      threadTs: slackThreadTs,
+      text: "New runs are temporarily paused for a deployment. Retry this message shortly.",
+    });
+    return;
+  }
 
   // A durable duplicate (the in-memory fast path missed it - restart or
   // cross-lane double delivery): the ORIGINAL acceptance stands. `replayed`
   // means an identical payload - heal a missing thread link (a crash between
   // acceptance and linking) and stop. `conflict` means the same external event
-  // whose replay regenerated ids (fresh staged-attachment ids shift the
-  // fingerprint) - same message, so drop it too. No second ack fires either
-  // way: the receipt reaction is keyed slack-ack:<channel>:<ts>.
+  // whose raw intent differs under the same external event identity. No second
+  // ack fires either way: the receipt reaction is keyed slack-ack:<channel>:<ts>.
   if (outcome.status !== "created") {
     if (outcome.status === "replayed" && !link) {
-      await linkSlackThread({ channel, threadTs: slackThreadTs, rootRunId: outcome.runId, orgId });
+      await linkSlackThread({ teamId, channel, threadTs: slackThreadTs, rootRunId: outcome.runId, orgId });
+      await healSlackRunDelivery({ runId: outcome.runId, teamId, channel, threadTs: slackThreadTs, messageTs: ts });
+    } else if (outcome.status === "replayed") {
+      await healSlackRunDelivery({ runId: outcome.runId, teamId, channel, threadTs: slackThreadTs, messageTs: ts });
     }
     console.log(`[slack] duplicate event ignored (${outcome.status}): ${durableKey}`);
     return;
@@ -330,37 +560,11 @@ export async function handleSlackEvent(body: SlackEnvelope): Promise<void> {
   // BEFORE dispatch so run finalization (runs/finalize.ts) can always resolve the
   // Slack thread to enqueue the reply, even for a run that finishes near-instantly.
   if (!link) {
-    await linkSlackThread({ channel, threadTs: slackThreadTs, rootRunId: runId, orgId });
-    // Post the Block Kit RUN CARD ONCE per Slack thread (on the root run). The
-    // relay posts it and stores the message ts on slack_threads; later progress
-    // (watcher) + the settled answer (finalize) UPDATE that same card in place.
-    // Durable + idempotent by the root run id, so a retry never double-posts.
-    const card = buildRunCard({
-      title: deriveTitle(prompt),
-      phase: "queued",
-      model,
-      repoSpecs: boundRepos.map(parseRepoRef),
-      webUrl: sessionUrl(env.FRONTEND_ORIGIN, threadId),
-    });
-    void enqueuePostCard({
-      idempotencyKey: `slack-card:${runId}`,
-      channel,
-      threadTs: slackThreadTs,
-      rootRunId: runId,
-      blocks: card.blocks,
-      text: card.text,
-    });
+    await linkSlackThread({ teamId, channel, threadTs: slackThreadTs, rootRunId: runId, orgId });
   }
+  await healSlackRunDelivery({ runId, teamId, channel, threadTs: slackThreadTs, messageTs: ts });
 
   await pumpThread(threadId);
 
-  const client = resolveSlackClient(config);
-  // Durable receipt reaction (survives a restart; keyed once per message).
-  void enqueueAddReaction({
-    idempotencyKey: `slack-ack:${channel}:${ts}`,
-    channel,
-    timestamp: ts,
-    name: "eyes",
-  });
-  watchSlackRun({ runId, rootRunId: threadId, client, channel, threadTs: slackThreadTs });
+  watchSlackRun({ runId, rootRunId: threadId, teamId, channel, threadTs: slackThreadTs });
 }

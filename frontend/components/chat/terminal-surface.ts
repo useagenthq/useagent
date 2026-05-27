@@ -106,6 +106,17 @@ export interface TerminalGrid {
   readonly rows: number;
 }
 
+/** Backend notices that mean the PTY has no live sandbox yet. Keep these out of
+ * the terminal buffer so reconnect backoff cannot turn one idle state into an
+ * ever-growing wall of wrapped status text. */
+export function isIdleTerminalNotice(text: string): boolean {
+  return (
+    text.includes("no live sandbox") ||
+    /\[skynet\][^\n]*not found/i.test(text) ||
+    /\[skynet\][^\n]*sandbox is probably not running anymore/i.test(text)
+  );
+}
+
 /** Whether the PTY needs a resize message: only on settled dimension change. */
 export function gridChanged(previous: TerminalGrid | null, next: TerminalGrid): boolean {
   return previous === null || previous.cols !== next.cols || previous.rows !== next.rows;

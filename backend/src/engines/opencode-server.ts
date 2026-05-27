@@ -6,7 +6,11 @@ import {
   sandboxTemplate,
   type SandboxHandle,
 } from "../sandboxes/provider";
-import { providerEventExists, recordProviderEvent } from "../runs/provider-events";
+import {
+  providerEventExists,
+  recordProviderEvent,
+  scopedProviderEventId,
+} from "../runs/provider-events";
 import type {
   EmitStep,
   EngineAdapter,
@@ -22,7 +26,7 @@ import type {
 import { composeTurnPrompt } from "./types";
 import { basename, parseJsonLine, persistSandboxBeforeExecution, truncate } from "./util";
 import { getThreadSandbox, setRunSandbox } from "../runs/repo";
-import { prepareRepos, shq } from "./repo-prep";
+import { checkoutPullRequestResources, prepareRepos, shq } from "./repo-prep";
 import { assertNever } from "../util/exhaustive";
 import { nextPollDelayMs, stagesTogether } from "../util/startup";
 import { toolGatewayConfig } from "../knowledge/gateway/config";
@@ -599,10 +603,10 @@ export type OpencodeReconcile =
   /** Session reachable but nothing completed newer than our last step. */
   | { outcome: "no_new_message" };
 
-/** Project one opencode message part into the provider-neutral capture shape,
- *  keyed by the SAME stable id (`pe_<partId>`) the live lane uses — so the SSE
- *  capture, restart-recovery ingest, and revisions all upsert the same row rather
- *  than duplicating it. Returns null for a part with no native id (nothing to
+/** Project one opencode message part into the provider-neutral capture shape.
+ *  Callers namespace this native `pe_<partId>` identity by run before persistence,
+ *  so live capture and restart recovery upsert the same row without colliding
+ *  with another run. Returns null for a part with no native id (nothing to
  *  address). Pure; the payload is passed through verbatim (callers redact). */
 export function projectOpencodePart(part: Record<string, unknown>): HarnessInterimEvent | null {
   const partId = String(part.id ?? "");
@@ -1355,6 +1359,12 @@ export function makeOpenCodeServerAdapter(driver: ProviderDriver): EngineAdapter
         const endReposSpan = ctx.timing?.begin("repos");
         try {
           await prepareRepos(box, runtimeServer.workdir, ctx);
+          await checkoutPullRequestResources(
+            box,
+            runtimeServer.workdir,
+            ctx.resolvedResources ?? [],
+            ctx,
+          );
         } finally {
           endReposSpan?.();
         }
@@ -1648,7 +1658,7 @@ export function makeOpenCodeServerAdapter(driver: ProviderDriver): EngineAdapter
         const projected = projectOpencodePart(part);
         if (!projected) return;
         void recordProviderEvent({
-          id: projected.id,
+          id: scopedProviderEventId(ctx.runId, projected.id),
           runId: ctx.runId,
           threadId: ctx.threadId ?? ctx.runId,
           provider: "opencode",

@@ -23,8 +23,15 @@ beforeAll(async () => {
     .onConflictDoUpdate({ target: commandsCatalog.snapshot, set: { commands: cache } });
 });
 
-async function post(body: unknown): Promise<{ status: number; id?: string }> {
-  const res = await fetchApi("/api/runs", { method: "POST", body: JSON.stringify(body) });
+async function post(
+  body: unknown,
+  headers: Record<string, string> = {},
+): Promise<{ status: number; id?: string }> {
+  const res = await fetchApi("/api/runs", {
+    method: "POST",
+    body: JSON.stringify(body),
+    headers,
+  });
   const j = (await res.json().catch(() => ({}))) as { id?: string };
   return { status: res.status, id: j.id };
 }
@@ -68,6 +75,34 @@ describe("POST /api/runs - fail-closed: a command REQUIRES a live session (C3)",
 });
 
 describe("POST /api/runs - session-authoritative command authorization (C3)", () => {
+  test("an accepted command replays after its live session and catalog disappear", async () => {
+    const { parentId, revision } = await seedParentWithSession(
+      "ses_replay_gone",
+      ["deploy"],
+    );
+    const key = `command-replay:${crypto.randomUUID()}`;
+    const body = {
+      prompt: "/deploy x  y",
+      engine: "mock",
+      parent_run_id: parentId,
+      command: {
+        name: "deploy",
+        args: "x  y",
+        provider: "mock",
+        sessionId: "ses_replay_gone",
+        catalogRevision: revision,
+      },
+    };
+    const first = await post(body, { "Idempotency-Key": key });
+    expect(first.status).toBe(201);
+
+    await db.delete(canonicalEvents).where(eq(canonicalEvents.runId, parentId));
+    await db.update(runs).set({ engineSessionId: null }).where(eq(runs.id, parentId));
+
+    const replay = await post(body, { "Idempotency-Key": key });
+    expect(replay).toEqual({ status: 200, id: first.id });
+  });
+
   test("a reply command in the session catalog with matching provider+session+revision validates + persists identity", async () => {
     const { parentId, revision } = await seedParentWithSession("ses_live", ["deploy"]); // NOT in the org cache
     const r = await post({ prompt: "/deploy x  y", engine: "mock", parent_run_id: parentId, command: { name: "deploy", args: "x  y", provider: "mock", sessionId: "ses_live", catalogRevision: revision } });
@@ -79,6 +114,27 @@ describe("POST /api/runs - session-authoritative command authorization (C3)", ()
     expect(run?.commandProvider).toBe("mock");
     expect(run?.commandSessionId).toBe("ses_live");
     expect(Number(run?.commandCatalogRevision)).toBe(revision);
+  });
+
+  test("native command bytes never discover or widen resources", async () => {
+    const { parentId, revision } = await seedParentWithSession("ses_resource_bytes", ["deploy"]);
+    const args = "https://github.com/Other/private/pull/7";
+    const r = await post({
+      prompt: `/deploy ${args}`,
+      engine: "mock",
+      parent_run_id: parentId,
+      command: {
+        name: "deploy",
+        args,
+        provider: "mock",
+        sessionId: "ses_resource_bytes",
+        catalogRevision: revision,
+      },
+    });
+    expect(r.status).toBe(201);
+    const run = await getRun(r.id!);
+    expect(run?.prompt).toBe(`/deploy ${args}`);
+    expect(run?.resolvedResources).toEqual([]);
   });
 
   test("a MISSING catalog revision is rejected (client must prove the snapshot it selected)", async () => {

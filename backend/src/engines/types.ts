@@ -1,5 +1,6 @@
 import type { EngineId, StepKind } from "../db/schema";
 import type { TimingSpanEnd } from "../runs/run-timing";
+import type { RunResource } from "../resources/types";
 
 export {
   AGENT_OPERATING_RULES,
@@ -95,6 +96,8 @@ export interface EngineRunContext {
    *  adapter can ensure each clone exists in the workspace before the turn —
    *  idempotently (per repo dir), so a resumed thread keeps its existing clones. */
   repos?: string[];
+  /** Typed, authorized resource scope persisted at run acceptance. */
+  resolvedResources?: readonly RunResource[];
   /** The engine's native session id recorded by this thread's PREVIOUS turn on
    *  the same engine (from the DB). Present → resume that session explicitly (only
    *  turnContext accompanies the prompt); absent → fresh session (bootstrap +
@@ -139,6 +142,11 @@ export interface EngineRunContext {
    *  "reasoning" tags provider thinking so the UI surfaces it as a subdued live
    *  "Thinking" affordance ahead of the answer text (default/omitted = answer). */
   publishDelta?(delta: string, kind?: DeltaKind): void;
+  /** Canonical low-cost liveness pulse for the worker's outer sliding silence
+   * watchdog. Adapters call it only for real provider activity that does not
+   * already surface as a step, delta, or native frame (for example, an open
+   * long-running tool heartbeat). */
+  reportActivity?(): void;
   /** Record the run's final assistant text + wall-clock duration. */
   setSummary(summary: string, durationMs: number): void;
   /** Optional per-run stage timer (perf plan Phase 0). Adapters wrap startup

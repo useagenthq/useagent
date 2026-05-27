@@ -17,7 +17,11 @@ name: CI
 
 on:
   push:
+    paths-ignore:
+      - "docs-site/**"
   pull_request:
+    paths-ignore:
+      - "docs-site/**"
 
 # A newer push to the same ref supersedes an in-flight run — no wasted minutes.
 concurrency:

@@ -254,7 +254,7 @@ export function NewTaskComposer({
     [enabledEngines],
   );
 
-  // One combined picker over the shared substrate: a "None" option, then Skills
+  // One combined picker over the shared substrate: an explicit empty option, then Skills
   // and Playbooks as separate groups (the run pins exactly one, either kind).
   const skillGroups: PickerGroup[] = useMemo(() => {
     const toOption = (s: Skill) => ({
@@ -265,7 +265,7 @@ export function NewTaskComposer({
     });
     const skillOptions = skills.filter((s) => s.kind === "skill").map(toOption);
     const playbookOptions = skills.filter((s) => s.kind === "playbook").map(toOption);
-    const groups: PickerGroup[] = [{ options: [{ value: "", label: "None" }] }];
+    const groups: PickerGroup[] = [{ options: [{ value: "", label: "No skill or playbook" }] }];
     if (skillOptions.length > 0) groups.push({ label: "Skills", options: skillOptions });
     if (playbookOptions.length > 0) groups.push({ label: "Playbooks", options: playbookOptions });
     return groups;
@@ -395,7 +395,7 @@ export function NewTaskComposer({
             <RepoMultiPicker repos={repos} value={selectedRepos} onChange={setSelectedRepos} />
             <SearchablePicker
               ariaLabel="Select skill or playbook"
-              triggerLabel="Skill"
+              triggerLabel="Skill / playbook"
               searchPlaceholder="Search skills and playbooks..."
               groups={skillGroups}
               value={playbook}

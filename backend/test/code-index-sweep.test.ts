@@ -29,6 +29,7 @@ interface FakeRepo {
 }
 
 interface Calls {
+  listedOrgs: string[];
   sleeps: number[];
   headChecks: string[];
   snapshots: string[];
@@ -39,13 +40,22 @@ function fakeDeps(
   repos: FakeRepo[],
   overrides: Partial<CodeIndexDeps> = {},
 ): { deps: CodeIndexDeps; calls: Calls } {
-  const calls: Calls = { sleeps: [], headChecks: [], snapshots: [], projections: [] };
+  const calls: Calls = {
+    listedOrgs: [],
+    sleeps: [],
+    headChecks: [],
+    snapshots: [],
+    projections: [],
+  };
   const byName = new Map(repos.map((r) => [r.name, r]));
   const deps: CodeIndexDeps = {
-    listRepos: async () => ({
-      configured: true,
-      repos: repos.map((r) => ({ full_name: r.name })),
-    }),
+    listRepos: async (orgId) => {
+      calls.listedOrgs.push(orgId);
+      return {
+        configured: true,
+        repos: repos.map((r) => ({ full_name: r.name })),
+      };
+    },
     resolveHeadSha: async (repo) => {
       calls.headChecks.push(repo);
       const r = byName.get(repo)!;
@@ -115,6 +125,7 @@ describe("runCodeIndexSweep", () => {
       recordsProjected: 8,
     });
     expect(calls.snapshots).toEqual(["acme/dns", "acme/web"]);
+    expect(calls.listedOrgs).toEqual([ORG]);
   });
 
   test("paces BETWEEN repos: n-1 sleeps, none before the first", async () => {

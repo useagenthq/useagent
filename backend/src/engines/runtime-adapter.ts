@@ -1,7 +1,7 @@
 import type { EngineAdapter, EngineRunContext } from "./types";
 import { composeTurnPrompt } from "./types";
 import { acquireThreadSandbox } from "./thread-sandbox";
-import { prepareRepos } from "./repo-prep";
+import { checkoutPullRequestResources, prepareRepos } from "./repo-prep";
 import {
   prepareRuntimeProviderBridge,
   type RuntimeProviderBridgeLease,
@@ -231,7 +231,10 @@ async function waitForRuntimeTurn(
   // timer; provider stalls (no tool running, no text) stay fully guarded.
   let toolInFlight = false;
   const toolHeartbeat = setInterval(() => {
-    if (toolInFlight) watchdog.observeProgress();
+    if (toolInFlight) {
+      watchdog.observeProgress();
+      ctx.reportActivity?.();
+    }
   }, 15_000);
   toolHeartbeat.unref?.();
   let publishedText = "";
@@ -354,7 +357,15 @@ export function makeRuntimeAdapter(engine: RuntimeEngineId, driver: ProviderDriv
           prepareStage("provider_bridge", async () => {
             providerBridgeLease = await prepareRuntimeProviderBridge(sandbox, ctx, engine, workdir);
           }),
-          prepareStage("repos", () => prepareRepos(sandbox, workdir, ctx)),
+          prepareStage("repos", async () => {
+            await prepareRepos(sandbox, workdir, ctx);
+            await checkoutPullRequestResources(
+              sandbox,
+              workdir,
+              ctx.resolvedResources ?? [],
+              ctx,
+            );
+          }),
           prepareStage("inputs", () => materializeRunInputs(sandbox, ctx.inputFiles)),
         ]);
         await prepareStage("secrets_marker", () => recordSecretsInjected(ctx, secretInjection));

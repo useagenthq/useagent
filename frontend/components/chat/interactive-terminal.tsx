@@ -6,6 +6,7 @@ import {
   TERMINAL_FONT_LOAD_TEXT,
   applyDevicePixelRatio,
   gridChanged,
+  isIdleTerminalNotice,
   terminalFontFamily,
   terminalFontLoadRequests,
   terminalTheme,
@@ -181,7 +182,7 @@ export function InteractiveTerminal({ runId }: { runId: string }) {
           // waiting line (below) instead of letting them spam each reconnect.
           // Covers the "no live sandbox" notice and the older red
           // "[skynet] Sandbox <id> not found" variant from the provider.
-          if (text.includes("no live sandbox") || /\[skynet\][^\n]*not found/i.test(text)) return;
+          if (isIdleTerminalNotice(text)) return;
           waitingShown = false; // real output flowing again
           term?.write(text);
         };

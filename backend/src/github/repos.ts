@@ -3,6 +3,7 @@ import {
   githubAuthSource,
   githubConfig,
   githubConfigured,
+  githubTenantOrgId,
 } from "../env";
 import { resolveGithubAuth, type GithubAuth } from "./auth";
 
@@ -49,19 +50,38 @@ const MAX_PAGES = 3; // ≤300 repos — bounded; the picker is searchable, not 
 const FETCH_TIMEOUT_MS = 8_000;
 const CACHE_TTL_MS = 5 * 60_000;
 
-/** Process-global cache. The credentials are process env (one identity), so a
- *  single entry keyed by the resolved scope is enough. */
-let cache: { key: string; at: number; listing: RepoListing } | null = null;
+/** Repository listings are isolated by the product org that owns the shared
+ *  credential. There is currently one configured tenant, but keeping separate
+ *  entries prevents an unauthorized request from ever reading or poisoning an
+ *  authorized tenant's cached result. */
+const cache = new Map<string, { at: number; listing: RepoListing }>();
 
-/** Cache key from sync config only — never mints a token. Owner + auth source
- *  uniquely identify what a fetch returns; the App path's rotating installation
- *  token doesn't change the scope, so it isn't part of the key. */
-function scopeKey(): string {
+/** Cache key from product tenant + sync config only — never mints a token. The
+ *  App path's rotating installation token does not change the scope, so it is
+ *  intentionally absent from the key. */
+function scopeKey(orgId: string): string {
   const source = githubAuthSource();
   const owner =
     githubConfig().owner ??
     (source === "app" ? githubAppConfig()?.org ?? null : null);
-  return `${owner ?? ""}|${source}`;
+  return `${orgId}|${owner ?? ""}|${source}`;
+}
+
+/** Return the reason this product org cannot use the deployment-wide GitHub
+ *  connection, or null when it owns the connection. Callers must evaluate this
+ *  before resolving credentials or consulting caches. */
+export function githubOrgAccessError(orgId: string): string | null {
+  const tenantOrgId = githubTenantOrgId();
+  if (!tenantOrgId) {
+    return (
+      "GitHub is connected but not assigned to a product organization; set " +
+      "GITHUB_TENANT_ORG_ID to the owning organization id and retry"
+    );
+  }
+  if (orgId !== tenantOrgId) {
+    return "GitHub repository access is not available to this organization";
+  }
+  return null;
 }
 
 function ghHeaders(token: string | null): Record<string, string> {
@@ -167,7 +187,7 @@ async function fetchRepos(auth: GithubAuth): Promise<RepoInfo[]> {
     return raw
       .filter((r) => !r.archived)
       .map(toRepoInfo)
-      .sort((a, b) => a.full_name.localeCompare(b.full_name));
+      .toSorted((a, b) => a.full_name.localeCompare(b.full_name));
   } finally {
     clearTimeout(timer);
   }
@@ -179,20 +199,23 @@ async function fetchRepos(auth: GithubAuth): Promise<RepoInfo[]> {
  * returns `{configured:true, repos:[], error}` so the picker degrades to empty
  * rather than breaking the page.
  */
-export async function listRepos(): Promise<RepoListing> {
+export async function listRepos(orgId: string): Promise<RepoListing> {
   if (!githubConfigured()) return { configured: false, repos: [] };
+  const accessError = githubOrgAccessError(orgId);
+  if (accessError) return { configured: true, repos: [], error: accessError };
 
-  const key = scopeKey();
+  const key = scopeKey(orgId);
   const now = Date.now();
-  if (cache && cache.key === key && now - cache.at < CACHE_TTL_MS) {
-    return cache.listing;
+  const hit = cache.get(key);
+  if (hit && now - hit.at < CACHE_TTL_MS) {
+    return hit.listing;
   }
 
   try {
     const auth = await resolveGithubAuth();
     const repos = await fetchRepos(auth);
     const listing: RepoListing = { configured: true, repos };
-    cache = { key, at: now, listing };
+    cache.set(key, { at: now, listing });
     return listing;
   } catch (err) {
     const listing: RepoListing = {
@@ -202,7 +225,7 @@ export async function listRepos(): Promise<RepoListing> {
     };
     // Cache the failure briefly too, so a hard-down GitHub doesn't get hammered
     // on every keystroke; the short TTL means it recovers within minutes.
-    cache = { key, at: now, listing };
+    cache.set(key, { at: now, listing });
     return listing;
   }
 }
@@ -249,7 +272,7 @@ async function fetchBranches(fullName: string, token: string | null): Promise<st
     return batch
       .map((b) => b.name)
       .filter((n): n is string => typeof n === "string" && n.length > 0)
-      .sort((a, b) => a.localeCompare(b));
+      .toSorted((a, b) => a.localeCompare(b));
   } finally {
     clearTimeout(timer);
   }
@@ -261,15 +284,22 @@ async function fetchBranches(fullName: string, token: string | null): Promise<st
  * set) → {configured, error}; a failed fetch → {configured:true, error}. The UI
  * degrades to the repo's default branch on anything but a clean list.
  */
-export async function listBranches(fullName: string): Promise<BranchListing> {
+export async function listBranches(
+  fullName: string,
+  orgId: string,
+): Promise<BranchListing> {
   if (!githubConfigured()) return { configured: false, branches: [] };
+  const accessError = githubOrgAccessError(orgId);
+  if (accessError) {
+    return { configured: true, branches: [], error: accessError };
+  }
   if (!isValidRepoRef(fullName)) {
     return { configured: true, branches: [], error: "invalid repo reference" };
   }
 
   // Only branches for a repo we actually offer — this scopes the proxy AND gives
   // us the default_branch to echo back.
-  const listing = await listRepos();
+  const listing = await listRepos(orgId);
   const known = listing.repos.find((r) => r.full_name === fullName);
   if (!known) {
     return {
@@ -279,7 +309,7 @@ export async function listBranches(fullName: string): Promise<BranchListing> {
     };
   }
 
-  const key = `${scopeKey()}|${fullName}`;
+  const key = `${scopeKey(orgId)}|${fullName}`;
   const now = Date.now();
   const hit = branchCache.get(key);
   if (hit && now - hit.at < CACHE_TTL_MS) return hit.listing;
@@ -316,9 +346,12 @@ export function isValidRepoRef(ref: string): boolean {
  * the backend actually offers). Returns false when unconfigured — a repo can't
  * be accepted if the feature is off.
  */
-export async function isKnownRepo(fullName: string): Promise<boolean> {
+export async function isKnownRepo(
+  fullName: string,
+  orgId: string,
+): Promise<boolean> {
   if (!isValidRepoRef(fullName)) return false;
-  const listing = await listRepos();
+  const listing = await listRepos(orgId);
   if (!listing.configured) return false;
   return listing.repos.some((r) => r.full_name === fullName);
 }
@@ -329,8 +362,11 @@ export async function isKnownRepo(fullName: string): Promise<boolean> {
  * lookup for the whole batch. When unconfigured, everything is "unknown" — a
  * repo can't be accepted if the feature is off.
  */
-export async function unknownRepos(refs: string[]): Promise<string[]> {
-  const listing = await listRepos();
+export async function unknownRepos(
+  refs: string[],
+  orgId: string,
+): Promise<string[]> {
+  const listing = await listRepos(orgId);
   if (!listing.configured) return [...refs];
   const known = new Set(listing.repos.map((r) => r.full_name));
   return refs.filter((r) => !isValidRepoRef(r) || !known.has(r));
@@ -338,6 +374,6 @@ export async function unknownRepos(refs: string[]): Promise<string[]> {
 
 /** Test/ops hook: drop the repo + branch caches so the next list re-fetches. */
 export function clearRepoCache(): void {
-  cache = null;
+  cache.clear();
   branchCache.clear();
 }

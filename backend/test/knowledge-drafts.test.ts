@@ -22,7 +22,11 @@ import { createOrgSession, json, uid, type OrgSession } from "./helpers";
 // intent finalizeRun enqueues IN its terminal transaction (self_improving 6.1),
 // not synchronously at finalize. Drain the worker so a draft is materialized.
 async function drainLearning(): Promise<void> {
-  await processDueLearning();
+  for (let i = 0; i < 100; i++) {
+    const { built, skipped, retried, dead } = await processDueLearning();
+    if (built + skipped + retried + dead === 0) return;
+  }
+  throw new Error("drainLearning did not settle after 100 passes");
 }
 
 interface DraftApi {
@@ -116,6 +120,27 @@ describe("knowledge drafts — producer", () => {
     const knowledge = await json<{ records: unknown[] }>("/api/knowledge", { cookies: org.cookies });
     expect(knowledge.status).toBe(200);
     expect(knowledge.body.records).toHaveLength(0);
+  });
+
+  test("drainLearning exhausts backlog beyond one worker batch", async () => {
+    const org = await createOrgSession("kd-backlog");
+
+    // Fill the outbox past the worker batch size so a one-shot drain would
+    // leave the newest row pending.
+    for (let i = 0; i < 21; i++) {
+      const filler = await newRun(org, `Backlog filler ${i}`);
+      await addSteps(filler, 12, ["command", "file"]);
+      await finalizeRun(filler, "completed", `Filler ${i}.`, 100);
+    }
+
+    const target = await newRun(org, "Investigate the flaky payment webhook retries\nDetails follow.");
+    await addSteps(target, 12, ["command", "file"]);
+    await finalizeRun(target, "completed", "Root-caused the retry storm and fixed the backoff.", 4200);
+
+    await drainLearning();
+
+    const { body } = await listDrafts(org);
+    expect(body.drafts.some((draft) => draft.run_id === target)).toBe(true);
   });
 
   test("draft evidence carries the ordered, redacted procedure trace and round-trips the API", async () => {

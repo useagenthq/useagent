@@ -1,4 +1,9 @@
-import { acceptRunCommand } from "../commands";
+import {
+  acceptRunCommand,
+  preflightRunCommandReplay,
+  type RunCommandIntent,
+  type RunCommandOutcome,
+} from "../commands";
 import { slackConfig } from "../env";
 import { pumpThread } from "../worker";
 import {
@@ -9,6 +14,12 @@ import {
 import { enqueuePostMessage } from "../slack/outbox";
 import { recordFiring, type ScheduleRecord } from "./repo";
 import type { ScheduleTrigger } from "../db/schema";
+import { createRunResourceAuthorization } from "../resources/authorization";
+import {
+  explicitRepositoryResources,
+  resolveRunIntake,
+} from "../resources/run-intake";
+import { resolveExecutableSkillPin } from "../skills/pins";
 
 /**
  * Deterministic per-occurrence idempotency key. A cron firing keys on the MINUTE
@@ -60,32 +71,74 @@ export async function fireScheduleWithOutcome(
   trigger: ScheduleTrigger,
   occurrence: Date = new Date(),
 ): Promise<ScheduleFireOutcome> {
-  const idempotencyKey = firingKey(schedule.id, trigger, occurrence);
-  const runId = crypto.randomUUID();
-  const outcome = await acceptRunCommand({
-    idempotencyKey,
-    orgId: schedule.orgId,
-    actorId: schedule.userId,
-    run: {
-      id: runId,
-      prompt: schedule.prompt,
-      model: schedule.model,
-      engine: schedule.engine,
-      parentRunId: null,
-      threadId: runId,
-      repos: schedule.repos,
-      // Scheduled runs are always fresh roots — organization memory by default.
-      memoryScope: "org",
+  await resolveExecutableSkillPin(
+    {
       skillId: schedule.skillId,
       skillVersion: schedule.skillVersion,
       skillContentHash: schedule.skillContentHash,
-      // A scheduled turn is never a native provider command.
-      commandName: null,
-      commandProvider: null,
-      commandSessionId: null,
-      commandCatalogRevision: null,
     },
+    { requireContentHash: true },
+  );
+  const idempotencyKey = firingKey(schedule.id, trigger, occurrence);
+  const runId = crypto.randomUUID();
+  const intent: RunCommandIntent = {
+    prompt: schedule.prompt,
+    model: schedule.model,
+    engine: schedule.engine,
+    parentRunId: null,
+    requestedRepos: schedule.repos,
+    attachmentIds: [],
+    memoryScope: "org",
+    skillId: schedule.skillId,
+    skillVersion: schedule.skillVersion,
+    commandName: null,
+    commandProvider: null,
+    commandSessionId: null,
+    commandCatalogRevision: null,
+  };
+  let outcome: RunCommandOutcome | null = await preflightRunCommandReplay({
+    orgId: schedule.orgId,
+    idempotencyKey,
+    intent,
   });
+  if (!outcome) {
+    // A first occurrence still resolves immediately before persistence. Removed
+    // access or an unavailable provider fails before a run/firing is created.
+    const intake = await resolveRunIntake(
+      {
+        source: "automation",
+        text: schedule.prompt,
+        explicitResources: explicitRepositoryResources(schedule.repos),
+      },
+      { authorize: createRunResourceAuthorization(schedule.orgId) },
+    );
+    outcome = await acceptRunCommand({
+      idempotencyKey,
+      orgId: schedule.orgId,
+      actorId: schedule.userId,
+      intent,
+      run: {
+        id: runId,
+        prompt: schedule.prompt,
+        model: schedule.model,
+        engine: schedule.engine,
+        parentRunId: null,
+        threadId: runId,
+        repos: [...intake.repos],
+        resolvedResources: intake.resources,
+        // Scheduled runs are always fresh roots — organization memory by default.
+        memoryScope: "org",
+        skillId: schedule.skillId,
+        skillVersion: schedule.skillVersion,
+        skillContentHash: schedule.skillContentHash,
+        // A scheduled turn is never a native provider command.
+        commandName: null,
+        commandProvider: null,
+        commandSessionId: null,
+        commandCatalogRevision: null,
+      },
+    });
+  }
 
   // A firing key can only conflict if the schedule's prompt/model/engine changed
   // between a crash and its retry (the payload fingerprint differs under the same

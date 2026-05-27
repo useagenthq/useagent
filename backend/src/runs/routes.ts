@@ -1,6 +1,12 @@
 import { Hono } from "hono";
 import type { AppEnv } from "../http";
-import { MEMORY_SCOPES, type EngineId, type MemoryScope, type RunStatus } from "../db/schema";
+import {
+  ENGINE_IDS,
+  MEMORY_SCOPES,
+  type EngineId,
+  type MemoryScope,
+  type RunStatus,
+} from "../db/schema";
 import { isMemoryScope } from "../memory/scope";
 import { orgScope } from "../middleware/org";
 import {
@@ -11,15 +17,27 @@ import {
   getThreadForRun,
   listRunsWithSteps,
 } from "./repo";
-import { acceptRunCommand } from "../commands";
+import {
+  acceptRunCommand,
+  preflightRunCommandReplay,
+  RunAdmissionClosedError,
+  type RunCommandIntent,
+} from "../commands";
 import { acceptRunCancel, CANCEL_SUMMARY } from "../commands/cancel";
 import { finalizeRun } from "./finalize";
 import { deleteReconcile } from "./reconcile-queue";
 import { resolveSkillSelection } from "../skills/repo";
 import { buildNativeCommandPrompt, validateCommandIntent, type CommandIntent } from "./command-intent";
 import { readSessionCommandCatalog } from "./command-catalog";
-import { unknownRepos } from "../github/repos";
 import { formatRepoRef } from "../github/repo-ref";
+import { createRunResourceAuthorization } from "../resources/authorization";
+import {
+  explicitRepositoryResources,
+  legacyParentResources,
+  resolveRunIntake,
+  RunIntakeError,
+  type RunResource,
+} from "../resources/run-intake";
 import { bus, channel, pumpThread, signalCancel, type BusEvent } from "../worker";
 import { turnStream, type DeltaKind } from "./turn-stream";
 import { assertNever } from "../util/exhaustive";
@@ -163,6 +181,16 @@ runsRoutes.post("/", async (c) => {
     typeof body.model === "string" && body.model.trim()
       ? body.model.trim()
       : null;
+  let requestedEngine: EngineId | null = null;
+  if (body.engine !== undefined && body.engine !== null && body.engine !== "") {
+    if (
+      typeof body.engine !== "string" ||
+      !(ENGINE_IDS as readonly string[]).includes(body.engine)
+    ) {
+      return c.json({ error: `engine must be one of: ${ENGINE_IDS.join(", ")}` }, 400);
+    }
+    requestedEngine = body.engine as EngineId;
+  }
 
   const id = crypto.randomUUID();
 
@@ -173,6 +201,7 @@ runsRoutes.post("/", async (c) => {
   let parentRunId: string | null = null;
   let threadId: string = id;
   let inheritedRepos: string[] = [];
+  let inheritedResources: readonly RunResource[] = [];
   let parentScope: MemoryScope | null = null;
   let parentModel: string | null = null;
   let parentEngine: EngineId | null = null;
@@ -191,42 +220,15 @@ runsRoutes.post("/", async (c) => {
     parentRunId = parent.id;
     threadId = parent.threadId;
     inheritedRepos = parent.repos;
+    inheritedResources =
+      parent.resolvedResources.length > 0
+        ? parent.resolvedResources
+        : legacyParentResources(parent.repos, "web");
     parentScope = parent.memoryScope;
     parentModel = parent.model;
     parentEngine = parent.engine;
     activeSessionId = parent.engineSessionId ?? null;
   }
-  if (
-    parentEngine &&
-    body.engine !== undefined &&
-    body.engine !== null &&
-    body.engine !== "" &&
-    body.engine !== parentEngine
-  ) {
-    return c.json({ error: "reply_engine_mismatch", engine: parentEngine }, 400);
-  }
-  // Public SDK replies intentionally send only parent_run_id. Resolve the
-  // org-scoped parent first, then inherit its engine so production replies do
-  // not depend on a global DEFAULT_RUN_ENGINE.
-  const resolvedEngine = resolveAcceptedEngine(parentEngine ?? body.engine);
-  if (!resolvedEngine.ok) {
-    return c.json(engineResolutionErrorBody(resolvedEngine), resolvedEngine.status);
-  }
-  const engine = resolvedEngine.engine;
-  // A reply whose UI has no model-selection capability omits `model`; inherit
-  // the thread's stored model instead of silently resetting to a global default.
-  const inheritedModel =
-    parentModel && isModelAllowedForEngine(engine, parentModel)
-      ? parentModel
-      : defaultModelForEngine(engine);
-  const model = requestedModel ?? inheritedModel;
-  if (!isModelAllowedForEngine(engine, model)) {
-    return c.json({ error: "model_not_allowed", engine, model }, 400);
-  }
-  if (!modelProviderReadyForEngine(engine, model)) {
-    return c.json({ error: "model_provider_not_ready", engine, model }, 403);
-  }
-
   // Repo scope: a ROOT run may pick REPOSITORIES (each validated against the set
   // GET /api/repos actually offers — an unknown/malformed value is a client
   // error, never silently dropped). A REPLY inherits its thread's repos (the
@@ -237,6 +239,7 @@ runsRoutes.post("/", async (c) => {
   // encoded onto the stored ref (see repo-ref.ts) so replay/reconnect clones the
   // SAME branch; the validated set stays clean "owner/name".
   let repos: string[] = [];
+  let requestedRepos: string[] = [];
   if (parentRunId) {
     repos = inheritedRepos;
   } else {
@@ -251,21 +254,15 @@ runsRoutes.post("/", async (c) => {
       ),
     ];
     if (wanted.length > 0) {
-      const unknown = await unknownRepos(wanted);
-      if (unknown.length > 0) {
-        return c.json(
-          { error: `repos not in the available set: ${unknown.join(", ")}` },
-          400,
-        );
-      }
       const branchMap =
         body.branches && typeof body.branches === "object" && !Array.isArray(body.branches)
           ? (body.branches as Record<string, unknown>)
           : {};
-      repos = wanted.map((r) => {
+      requestedRepos = wanted.map((r) => {
         const b = branchMap[r];
         return formatRepoRef(r, typeof b === "string" ? b : null);
       });
+      repos = requestedRepos;
     }
   }
 
@@ -274,6 +271,7 @@ runsRoutes.post("/", async (c) => {
   // ONLY the scope enum is read from the body — never any identity (org/user is
   // always server-resolved). An unknown value is a client error, not a fallback.
   let memoryScope: MemoryScope;
+  let requestedMemoryScope: MemoryScope | null = null;
   if (body.memory_scope !== undefined && body.memory_scope !== null) {
     if (!isMemoryScope(body.memory_scope)) {
       return c.json(
@@ -281,20 +279,19 @@ runsRoutes.post("/", async (c) => {
         400,
       );
     }
-    memoryScope = body.memory_scope;
+    requestedMemoryScope = body.memory_scope;
+    memoryScope = requestedMemoryScope;
   } else {
     memoryScope = parentScope ?? "org";
   }
 
-  // Skill pinning: an optional `{ id, version? }` selects a versioned skill. It is
-  // resolved ORG-SCOPED and FAIL-CLOSED — an unknown skill, a cross-org id, or a
-  // bad version is a 400, never a silent no-skill run. The run stores an immutable
-  // (id + version + hash) reference so a later skill edit can't change what this
-  // run loaded; the worker materializes the pinned revision into the engine's
-  // context separately from the clean prompt and emits `skill.loaded`.
+  // Parse the stable skill selection before the replay lookup. Its mutable
+  // org-scoped revision is resolved only for a genuinely new acceptance below.
   let skillId: string | null = null;
   let skillVersion: number | null = null;
   let skillContentHash: string | null = null;
+  let requestedSkillId: string | null = null;
+  let requestedSkillVersion: number | null = null;
   if (body.skill !== undefined && body.skill !== null) {
     const sel = body.skill as { id?: unknown; version?: unknown };
     const rawId = typeof sel.id === "string" ? sel.id.trim() : "";
@@ -307,23 +304,14 @@ runsRoutes.post("/", async (c) => {
       sel.version > 0
         ? sel.version
         : undefined;
-    const pinned = await resolveSkillSelection(c.get("orgId"), { id: rawId, version });
-    if (!pinned) {
-      return c.json({ error: "skill not found in this org (or unknown version)" }, 400);
-    }
-    skillId = pinned.skillId;
-    skillVersion = pinned.version;
-    skillContentHash = pinned.contentHash;
+    requestedSkillId = rawId;
+    requestedSkillVersion = version ?? null;
   }
 
-  // TYPED NATIVE-COMMAND INTENT (Phase 3): a native provider command is an EXPLICIT typed
-  // intent, NOT arbitrary slash-prefixed prompt text. Only when a `command` intent is present
-  // AND its name is validated against the active authoritative catalog for the engine does this
-  // run become a native command - the trusted backend then builds the provider prompt EXACTLY
-  // ONCE as `/name` + the original argument bytes, and records the command name so the worker
-  // delivers it verbatim (no operating rules / memory / skill / context). A run WITHOUT a
-  // validated intent - even one whose prompt starts with "/" - stays a normal prompt and keeps
-  // the full context. Product skills are versioned skill IDs (handled above), never commands.
+  // Parse the typed native-command request without authorizing it yet. Building
+  // its intended provider prompt is pure and preserves the exact argument bytes,
+  // so an accepted replay can be identified even if the live session/catalog is
+  // later gone. A first acceptance still validates the live catalog below.
   let finalPrompt = prompt;
   let commandName: string | null = null;
   // The ACCEPTED command identity persisted with the durable run (not just the name): which
@@ -332,54 +320,164 @@ runsRoutes.post("/", async (c) => {
   let commandProvider: string | null = null;
   let commandSessionId: string | null = null;
   let commandCatalogRevision: number | null = null;
+  let requestedCommand: CommandIntent | null = null;
   if (body.command !== undefined && body.command !== null) {
     const raw = body.command as { name?: unknown; args?: unknown; provider?: unknown; sessionId?: unknown; catalogRevision?: unknown };
-    const intent: CommandIntent = {
+    requestedCommand = {
       name: typeof raw.name === "string" ? raw.name : "",
       args: typeof raw.args === "string" ? raw.args : undefined,
       provider: typeof raw.provider === "string" ? raw.provider : undefined,
       sessionId: typeof raw.sessionId === "string" ? raw.sessionId : undefined,
       catalogRevision: typeof raw.catalogRevision === "number" ? raw.catalogRevision : undefined,
     };
-    // The provider a client claims is REQUIRED and MUST match the run's engine (no cross-engine,
-    // no unattributed command).
-    if (!intent.provider || intent.provider !== engine) {
+    finalPrompt = buildNativeCommandPrompt(
+      requestedCommand.name.trim(),
+      requestedCommand.args,
+    );
+  }
+
+  const idempotencyKey = c.req.header("Idempotency-Key")?.trim() || null;
+  const intent: RunCommandIntent = {
+    prompt: finalPrompt,
+    model: requestedModel,
+    engine: requestedEngine,
+    parentRunId,
+    requestedRepos,
+    attachmentIds,
+    memoryScope: requestedMemoryScope,
+    skillId: requestedSkillId,
+    skillVersion: requestedSkillVersion,
+    commandName: requestedCommand?.name.trim() || null,
+    commandProvider: requestedCommand?.provider ?? null,
+    commandSessionId: requestedCommand?.sessionId ?? null,
+    commandCatalogRevision: requestedCommand?.catalogRevision ?? null,
+  };
+  let replay;
+  try {
+    replay = await preflightRunCommandReplay({
+      orgId: c.get("orgId"),
+      idempotencyKey,
+      intent,
+    });
+  } catch (error) {
+    if (error instanceof RunAdmissionClosedError) {
+      return c.json({ error: error.code, retryable: true }, 503);
+    }
+    throw error;
+  }
+  if (replay?.status === "replayed") {
+    return c.json({ id: replay.runId }, 200);
+  }
+  if (replay?.status === "conflict") {
+    return c.json({ error: "idempotency_key_reused", reason: replay.reason }, 409);
+  }
+
+  // Everything below is mutable authorization/readiness state and therefore
+  // applies only to first acceptance. Matching durable replays returned above.
+  if (parentEngine && requestedEngine && requestedEngine !== parentEngine) {
+    return c.json({ error: "reply_engine_mismatch", engine: parentEngine }, 400);
+  }
+  const resolvedEngine = resolveAcceptedEngine(parentEngine ?? requestedEngine);
+  if (!resolvedEngine.ok) {
+    return c.json(engineResolutionErrorBody(resolvedEngine), resolvedEngine.status);
+  }
+  const engine = resolvedEngine.engine;
+  const inheritedModel =
+    parentModel && isModelAllowedForEngine(engine, parentModel)
+      ? parentModel
+      : defaultModelForEngine(engine);
+  const model = requestedModel ?? inheritedModel;
+  if (!isModelAllowedForEngine(engine, model)) {
+    return c.json({ error: "model_not_allowed", engine, model }, 400);
+  }
+  if (!modelProviderReadyForEngine(engine, model)) {
+    return c.json({ error: "model_provider_not_ready", engine, model }, 403);
+  }
+
+  if (requestedSkillId) {
+    const pinned = await resolveSkillSelection(c.get("orgId"), {
+      id: requestedSkillId,
+      version: requestedSkillVersion ?? undefined,
+    });
+    if (!pinned) {
+      return c.json({ error: "skill not found in this org (or unknown version)" }, 400);
+    }
+    skillId = pinned.skillId;
+    skillVersion = pinned.version;
+    skillContentHash = pinned.contentHash;
+  }
+
+  if (requestedCommand) {
+    if (!requestedCommand.provider || requestedCommand.provider !== engine) {
       return c.json({ error: "invalid_command", reason: "provider does not match engine" }, 400);
     }
-    // FAIL-CLOSED authorization: a native command is validated ONLY against the LIVE session's
-    // authoritative catalog (the durable commands.updated for the server-derived active session,
-    // with its snapshot revision). The pre-session org priming cache is UI-ONLY and NEVER
-    // authorizes execution - so with no active session, or a session that has not advertised, the
-    // command is rejected. The client must also prove the session id + catalog revision it saw.
-    const sessionCatalog = activeSessionId ? await readSessionCommandCatalog(threadId, engine, activeSessionId) : null;
-    const v = validateCommandIntent(intent, sessionCatalog?.commands ?? [], {
-      sessionId: activeSessionId,
-      revision: sessionCatalog?.revision ?? null,
-    });
-    if (!v.ok) return c.json({ error: "invalid_command", reason: v.reason }, 400);
-    commandName = v.name;
-    commandProvider = intent.provider;
+    const sessionCatalog = activeSessionId
+      ? await readSessionCommandCatalog(threadId, engine, activeSessionId)
+      : null;
+    const validated = validateCommandIntent(
+      requestedCommand,
+      sessionCatalog?.commands ?? [],
+      {
+        sessionId: activeSessionId,
+        revision: sessionCatalog?.revision ?? null,
+      },
+    );
+    if (!validated.ok) {
+      return c.json({ error: "invalid_command", reason: validated.reason }, 400);
+    }
+    commandName = validated.name;
+    commandProvider = requestedCommand.provider;
     commandSessionId = activeSessionId;
     commandCatalogRevision = sessionCatalog?.revision ?? null;
-    finalPrompt = buildNativeCommandPrompt(v.name, v.args); // built ONCE in the trusted backend
+    finalPrompt = buildNativeCommandPrompt(validated.name, validated.args);
+  }
+
+  let resolvedResources: readonly RunResource[];
+  try {
+    const intake = await resolveRunIntake(
+      {
+        source: "web",
+        // Native provider commands are control traffic. Their argument bytes
+        // are delivered verbatim and never widen the run's resource scope.
+        text: commandName ? "" : prompt,
+        explicitResources: parentRunId
+          ? []
+          : explicitRepositoryResources(repos),
+        inheritedResources,
+      },
+      { authorize: createRunResourceAuthorization(c.get("orgId")) },
+    );
+    repos = [...intake.repos];
+    resolvedResources = intake.resources;
+  } catch (error) {
+    if (error instanceof RunIntakeError) {
+      return c.json(
+        { error: error.code, ...error.diagnostic },
+        error.code === "resource_unauthorized" ? 403 : 400,
+      );
+    }
+    throw error;
   }
 
   // Accept the run as a durable command. An `Idempotency-Key` makes a lost-
   // response retry observe the ORIGINAL run instead of starting duplicate work;
   // the un-keyed path behaves exactly as before (new run every call). Empty /
   // whitespace-only keys are treated as absent.
-  const idempotencyKey = c.req.header("Idempotency-Key")?.trim() || null;
   let accepted;
   try {
     accepted = await acceptRunCommand({
       idempotencyKey,
       orgId: c.get("orgId"),
       actorId: c.get("userId"),
-      run: { id, prompt: finalPrompt, model, engine, parentRunId, threadId, repos, attachmentIds, memoryScope, skillId, skillVersion, skillContentHash, commandName, commandProvider, commandSessionId, commandCatalogRevision },
+      intent,
+      run: { id, prompt: finalPrompt, model, engine, parentRunId, threadId, repos, resolvedResources, attachmentIds, memoryScope, skillId, skillVersion, skillContentHash, commandName, commandProvider, commandSessionId, commandCatalogRevision },
     });
   } catch (error) {
     if (error instanceof UploadClaimError) {
       return c.json({ error: "upload_unavailable" }, 409);
+    }
+    if (error instanceof RunAdmissionClosedError) {
+      return c.json({ error: error.code, retryable: true }, 503);
     }
     throw error;
   }

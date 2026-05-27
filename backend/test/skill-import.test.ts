@@ -81,6 +81,22 @@ function installGithubMock(): void {
     if (url.hostname !== "api.github.com") return realFetch(input as never, init);
     const p = url.pathname;
 
+    if (p === "/user/repos") {
+      return json200([
+        "acme/tools",
+        "acme/skip",
+        "acme/idem",
+        "acme/protected",
+        "iso/repo",
+      ].map((fullName) => ({
+        full_name: fullName,
+        name: fullName.split("/")[1],
+        private: true,
+        default_branch: "main",
+        archived: false,
+      })));
+    }
+
     const contents = /^\/repos\/[^/]+\/[^/]+\/contents\/(.+)$/.exec(p);
     if (contents) {
       const path = decodeURIComponent(contents[1]);
@@ -142,11 +158,14 @@ beforeAll(async () => {
   installCloneMock();
   A = await createOrgSession("imp-a");
   B = await createOrgSession("imp-b");
+  process.env.GITHUB_TENANT_ORG_ID = A.orgId;
+  clearRepoCache();
 });
 
 afterAll(() => {
   globalThis.fetch = realFetch;
   delete process.env.GITHUB_TOKEN;
+  delete process.env.GITHUB_TENANT_ORG_ID;
   clearRepoCache();
   mock.module("../src/wiki-gen/clone", () => ({ ...realClone }));
 });
@@ -303,7 +322,7 @@ describe("POST /api/skills/import — created / updated / unchanged idempotency"
 });
 
 describe("org isolation", () => {
-  test("org A's imports are invisible to org B; B imports its own copy", async () => {
+  test("only the organization owning the GitHub connection can scan or import", async () => {
     fixture = {
       defaultBranch: "main",
       commitSha: "sha-iso1",
@@ -325,18 +344,16 @@ describe("org isolation", () => {
     const listB = await json<{ skills: any[] }>(`/api/skills`, { cookies: B.cookies });
     expect(listB.body.skills.some((s) => s.name === "IsoSkill")).toBe(false);
 
-    // B's scan of the SAME repo path shows alreadyImported:false (A's import is
-    // another tenant's data), and B can import its own independent copy.
+    // The shared deployment credential belongs to A. B cannot use it as a
+    // cross-tenant repository oracle or import source.
     const scanB = await json<any>(`/api/skills/import/scan?repo=${repo}`, { cookies: B.cookies });
-    const candB = scanB.body.candidates.find((c: any) => c.path === P);
-    expect(candB.alreadyImported).toBe(false);
+    expect(scanB.status).toBe(403);
 
     const impB = await json<any>(`/api/skills/import`, {
       method: "POST",
       cookies: B.cookies,
       body: { repo, paths: [P] },
     });
-    expect(impB.body.results[0].action).toBe("created");
-    expect(impB.body.results[0].skillId).not.toBe(impA.body.results[0].skillId);
+    expect(impB.status).toBe(403);
   });
 });

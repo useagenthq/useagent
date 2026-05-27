@@ -12,6 +12,7 @@ import type {
   ArtifactWorkpieceKind,
   ArtifactWorkpieceState,
 } from "@skynet/artifact-workspace";
+import type { RunResource } from "../resources/types";
 import { sql } from "drizzle-orm";
 import {
   type AnyPgColumn,
@@ -138,6 +139,13 @@ export const runs = pgTable(
     // "owner/name" in `repos` plus the branch in `repo_specs`. `repo` above is the
     // legacy single-value mirror (clean repos[0] ?? null), kept for back-compat.
     repos: jsonb("repos").$type<string[]>().notNull().default(sql`'[]'::jsonb`),
+    // Typed resources accepted at the run boundary. These are the durable,
+    // authorized identities used by downstream tools; legacy rows and callers
+    // intentionally read as an empty list.
+    resolvedResources: jsonb("resolved_resources")
+      .$type<RunResource[]>()
+      .notNull()
+      .default(sql`'[]'::jsonb`),
     // Which team-memory pool this run reads/writes. Default "org" so every
     // pre-existing (pre-migration) run behaves as an organization-scoped run.
     // A reply inherits its parent's scope unless the authenticated user changes
@@ -820,11 +828,10 @@ export const providerConnectionThreads = pgTable(
 // composite key is the Slack thread's identity `(channel, thread root ts)`.
 // ---------------------------------------------------------------------------
 
-// Maps a Slack WORKSPACE (team id) to the tenant identity its events act as:
-// the org runs are scoped to and the user they are attributed to. Ingress fails
-// CLOSED — an event from a team with no row here is ignored (no seeded-org
-// fallback). Rows are provisioned by an operator (SLACK_WORKSPACE_BINDINGS env
-// sync at boot, or direct insert).
+// Maps a Slack WORKSPACE (team id) to its tenant. `user_id` is the provisioning
+// operator retained for compatibility; event attribution never uses it. A
+// sender must have a separate slack_users row before accessing private data.
+// Ingress fails CLOSED for an unmapped workspace.
 export const slackWorkspaces = pgTable("slack_workspaces", {
   teamId: text("team_id").primaryKey(),
   orgId: text("org_id").notNull(),
@@ -834,9 +841,29 @@ export const slackWorkspaces = pgTable("slack_workspaces", {
     .defaultNow(),
 });
 
+// Verified Slack sender -> product user mapping. Workspace ownership alone is
+// never enough to impersonate its operator: private resources require this
+// per-sender identity, while unmapped senders may still create org-only runs.
+export const slackUsers = pgTable(
+  "slack_users",
+  {
+    teamId: text("team_id")
+      .notNull()
+      .references(() => slackWorkspaces.teamId, { onDelete: "cascade" }),
+    slackUserId: text("slack_user_id").notNull(),
+    orgId: text("org_id").notNull(),
+    userId: text("user_id").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.teamId, t.slackUserId] })],
+);
+
 export const slackThreads = pgTable(
   "slack_threads",
   {
+    teamId: text("team_id").notNull(),
     channel: text("channel").notNull(),
     threadTs: text("thread_ts").notNull(),
     rootRunId: text("root_run_id")
@@ -852,7 +879,33 @@ export const slackThreads = pgTable(
       .notNull()
       .defaultNow(),
   },
-  (t) => [primaryKey({ columns: [t.channel, t.threadTs] })],
+  (t) => [primaryKey({ columns: [t.teamId, t.channel, t.threadTs] })],
+);
+
+export const slackRunResponses = pgTable(
+  "slack_run_responses",
+  {
+    runId: text("run_id")
+      .notNull()
+      .references(() => runs.id),
+    teamId: text("team_id").notNull(),
+    channel: text("channel").notNull(),
+    threadTs: text("thread_ts").notNull(),
+    nativeStreamTs: text("native_stream_ts"),
+    nativeStreamMode: text("native_stream_mode").$type<"task_update" | "plan">(),
+    fallbackMessageTs: text("fallback_message_ts"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.runId, t.teamId, t.channel, t.threadTs] }),
+    index("idx_slack_run_responses_run").on(t.runId),
+    index("idx_slack_run_responses_thread").on(t.teamId, t.channel, t.threadTs),
+  ],
 );
 
 // ---------------------------------------------------------------------------
@@ -876,7 +929,11 @@ export type SlackOutboxKind =
   | "add_reaction"
   | "upload_file"
   | "post_card"
-  | "update_card";
+  | "update_card"
+  | "set_session_status"
+  | "start_stream"
+  | "append_stream"
+  | "stop_stream";
 /** Classified delivery failure — drives retry vs dead-letter and observability. */
 export type SlackErrorClass = "rate_limited" | "transient" | "permanent";
 

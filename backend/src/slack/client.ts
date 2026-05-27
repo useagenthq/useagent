@@ -1,14 +1,13 @@
 /**
- * Minimal Slack Web API client. The durable outbox (src/slack/outbox) drives the
- * two delivery calls (`postMessage` reply, `addReaction` receipt) and needs to
- * KNOW the outcome to retry/backoff/dead-letter, so those return a classified
- * {@link DeliveryResult} instead of swallowing. `setAssistantStatus` is the live
- * shimmer — best-effort and NOT durable, so it still swallows.
+ * Minimal Slack Web API client. The durable outbox (src/slack/outbox) drives
+ * Slack delivery and needs to KNOW each outcome to retry/backoff/dead-letter, so
+ * these methods return a classified {@link DeliveryResult} instead of swallowing.
  *
  * A module-level override (`setSlackClientForTest`) lets tests record calls (and
  * simulate 429 / errors) instead of hitting the network.
  */
 import type { SlackConfig } from "../env";
+import type { SlackSessionStatus, SlackStreamChunk, SlackStreamTaskDisplayMode } from "./streaming";
 
 /** Outcome of a single Slack delivery attempt — drives the outbox state machine.
  *  A successful post/update carries the message `ts` (Slack's `message.ts`) so a
@@ -28,7 +27,7 @@ export interface SlackClient {
     channel: string;
     text: string;
     threadTs?: string;
-    blocks?: unknown[];
+    blocks?: readonly unknown[];
   }): Promise<DeliveryResult>;
   /** Update an existing message IN PLACE (chat.update) by its `ts` - advances a
    *  run card's status/answer without posting a new message. */
@@ -36,16 +35,10 @@ export interface SlackClient {
     channel: string;
     ts: string;
     text: string;
-    blocks?: unknown[];
+    blocks?: readonly unknown[];
   }): Promise<DeliveryResult>;
   /** Add a reaction emoji (name without colons) to a specific message. */
   addReaction(args: { channel: string; timestamp: string; name: string }): Promise<DeliveryResult>;
-  /**
-   * Slack AI-Apps assistant status — the shimmering "Starting up…" line. Empty
-   * `status` clears it. Best-effort: non-assistant contexts error and are
-   * swallowed, so callers fire it unconditionally. NOT routed through the outbox.
-   */
-  setAssistantStatus(args: { channel: string; threadTs: string; status: string }): Promise<void>;
   /**
    * Upload a file into a thread. Ported from the QM bot (files.uploadV2,
    * reference-eval src/slack/attachments.ts:189) and reference-bot (files_upload_v2,
@@ -62,6 +55,34 @@ export interface SlackClient {
     title?: string;
     initialComment?: string;
     bytes: Uint8Array;
+  }): Promise<DeliveryResult>;
+  /** Slack AI Apps session state. `processing` shows the native loading UX;
+   * `active` clears it. */
+  setSessionStatus(args: {
+    channel: string;
+    threadTs: string;
+    status: SlackSessionStatus;
+  }): Promise<DeliveryResult>;
+  /** Start a Slack-native streaming reply. Blocks are intentionally not
+   * accepted here; Slack only allows blocks at stopStream. */
+  startStream(args: {
+    channel: string;
+    threadTs: string;
+    taskDisplayMode: SlackStreamTaskDisplayMode;
+    chunks: readonly SlackStreamChunk[];
+  }): Promise<DeliveryResult>;
+  appendStream(args: {
+    channel: string;
+    threadTs: string;
+    messageTs: string;
+    chunks: readonly SlackStreamChunk[];
+  }): Promise<DeliveryResult>;
+  stopStream(args: {
+    channel: string;
+    threadTs: string;
+    messageTs: string;
+    chunks: readonly SlackStreamChunk[];
+    blocks?: readonly unknown[];
   }): Promise<DeliveryResult>;
 }
 
@@ -144,14 +165,34 @@ export function httpSlackClient(config: SlackConfig): SlackClient {
       }),
     addReaction: ({ channel, timestamp, name }) =>
       call("reactions.add", { channel, timestamp, name }),
-    setAssistantStatus: async ({ channel, threadTs, status }) => {
-      // Best-effort shimmer: swallow the classified result.
-      await call("assistant.threads.setStatus", {
+    setSessionStatus: ({ channel, threadTs, status }) =>
+      call("agents.sessions.setStatus", {
         channel_id: channel,
         thread_ts: threadTs,
         status,
-      });
-    },
+      }),
+    startStream: ({ channel, threadTs, taskDisplayMode, chunks }) =>
+      call("chat.startStream", {
+        channel,
+        thread_ts: threadTs,
+        task_display_mode: taskDisplayMode,
+        chunks,
+      }),
+    appendStream: ({ channel, threadTs, messageTs, chunks }) =>
+      call("chat.appendStream", {
+        channel,
+        thread_ts: threadTs,
+        message_ts: messageTs,
+        chunks,
+      }),
+    stopStream: ({ channel, threadTs, messageTs, chunks, blocks }) =>
+      call("chat.stopStream", {
+        channel,
+        thread_ts: threadTs,
+        message_ts: messageTs,
+        chunks,
+        ...(blocks ? { blocks } : {}),
+      }),
     uploadFile: async ({ channel, threadTs, filename, title, initialComment, bytes }) => {
       const auth = `Bearer ${config.botToken}`;
       const rateLimited = (res: Response): DeliveryResult => {

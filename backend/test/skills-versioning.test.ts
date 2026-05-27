@@ -2,7 +2,10 @@ import { describe, expect, test } from "bun:test";
 import { and, eq } from "drizzle-orm";
 import { db } from "../src/db/client";
 import { providerEvents, skillRevisions } from "../src/db/schema";
+import { acceptRunCommand, type RunCommandIntent } from "../src/commands";
+import { getRunWithSteps } from "../src/runs/repo";
 import { formatSkillMarkdown, hashSkillContent } from "../src/skills/format";
+import { pumpThread } from "../src/worker";
 import { createOrgSession, fetchApi, json, readSse, uid, waitFor } from "./helpers";
 
 const sections = (overview: string[], procedure: string[], verify: string[]) => ({
@@ -15,6 +18,59 @@ async function createSkill(cookies: string, body: Record<string, unknown>): Prom
   const res = await json<any>("/api/skills", { method: "POST", cookies, body });
   expect(res.status).toBe(201);
   return res.body;
+}
+
+async function createQueuedPinnedRun(input: {
+  orgId: string;
+  userId: string | null;
+  prompt: string;
+  skillId: string;
+  skillVersion: number;
+  skillContentHash: string;
+}): Promise<string> {
+  const runId = crypto.randomUUID();
+  const intent: RunCommandIntent = {
+    prompt: input.prompt,
+    model: "claude-opus-5",
+    engine: "mock",
+    parentRunId: null,
+    requestedRepos: [],
+    attachmentIds: [],
+    memoryScope: "org",
+    skillId: input.skillId,
+    skillVersion: input.skillVersion,
+    commandName: null,
+    commandProvider: null,
+    commandSessionId: null,
+    commandCatalogRevision: null,
+  };
+  const accepted = await acceptRunCommand({
+    idempotencyKey: `test-skill-pin:${runId}`,
+    orgId: input.orgId,
+    actorId: input.userId,
+    intent,
+    run: {
+      id: runId,
+      prompt: input.prompt,
+      model: "claude-opus-5",
+      engine: "mock",
+      parentRunId: null,
+      threadId: runId,
+      repos: [],
+      resolvedResources: [],
+      attachmentIds: [],
+      memoryScope: "org",
+      skillId: input.skillId,
+      skillVersion: input.skillVersion,
+      skillContentHash: input.skillContentHash,
+      commandName: null,
+      commandProvider: null,
+      commandSessionId: null,
+      commandCatalogRevision: null,
+    },
+  });
+  expect(accepted.status).toBe("created");
+  return runId;
 }
 
 /** The content hash the backend pins for a skill's current content. */
@@ -198,6 +254,74 @@ describe("skill revisions + versioning", () => {
     const payload = JSON.parse(row.payload as string);
     expect(payload.kind).toBe("playbook");
     expect(payload.name).toBe(playbook.name);
+  });
+
+  test("worker fails closed when a pinned revision disappears before dispatch", async () => {
+    const s = await createOrgSession("skill-pin-missing");
+    const skill = await createSkill(s.cookies, {
+      name: `Missing ${uid()}`,
+      description: "This revision must exist at dispatch.",
+      tags: [],
+      sections: sections(["ov"], ["proc"], ["ver"]),
+    });
+    const runId = await createQueuedPinnedRun({
+      orgId: s.orgId,
+      userId: null,
+      prompt: "must not run without its pinned revision",
+      skillId: skill.id,
+      skillVersion: 1,
+      skillContentHash: hashOf(skill),
+    });
+
+    await db
+      .delete(skillRevisions)
+      .where(and(eq(skillRevisions.skillId, skill.id), eq(skillRevisions.version, 1)));
+
+    await pumpThread(runId);
+    const failed = await waitFor(async () => {
+      const run = await getRunWithSteps(s.orgId, runId);
+      return run?.status === "failed" ? run : null;
+    });
+    expect(failed.summary).toContain("pinned skill revision is missing");
+    expect(failed.steps.map((step) => step.label)).not.toContain("Cloning repository");
+
+    const loaded = await db
+      .select()
+      .from(providerEvents)
+      .where(and(eq(providerEvents.runId, runId), eq(providerEvents.eventType, "skill.loaded")));
+    expect(loaded).toEqual([]);
+  });
+
+  test("worker fails closed when a pinned revision hash no longer matches", async () => {
+    const s = await createOrgSession("skill-pin-hash");
+    const skill = await createSkill(s.cookies, {
+      name: `Hash ${uid()}`,
+      description: "This hash is part of the executable snapshot.",
+      tags: [],
+      sections: sections(["ov"], ["proc"], ["ver"]),
+    });
+    const expectedHash = hashOf(skill);
+    const runId = await createQueuedPinnedRun({
+      orgId: s.orgId,
+      userId: null,
+      prompt: "must not run with mutated pinned content",
+      skillId: skill.id,
+      skillVersion: 1,
+      skillContentHash: expectedHash,
+    });
+
+    await db
+      .update(skillRevisions)
+      .set({ contentHash: `corrupt-${expectedHash}` })
+      .where(and(eq(skillRevisions.skillId, skill.id), eq(skillRevisions.version, 1)));
+
+    await pumpThread(runId);
+    const failed = await waitFor(async () => {
+      const run = await getRunWithSteps(s.orgId, runId);
+      return run?.status === "failed" ? run : null;
+    });
+    expect(failed.summary).toContain("pinned skill revision hash mismatch");
+    expect(failed.steps.map((step) => step.label)).not.toContain("Cloning repository");
   });
 
   test("editing a skill after a run does not alter the historical run's pinned version", async () => {

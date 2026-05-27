@@ -12,6 +12,8 @@
  * safe to pull into the client bundle (the per-feature api layers that use it
  * are shared by client components).
  */
+import { handleReleaseMismatch, withClientReleaseHeader } from "./release-compat";
+
 const API_ORIGIN = process.env.SKYNET_API_ORIGIN ?? "http://localhost:3201";
 
 export async function backendFetch(
@@ -25,5 +27,8 @@ export async function backendFetch(
     if (cookieHeader) headers.set("cookie", cookieHeader);
     return fetch(`${API_ORIGIN}${path}`, { ...init, headers });
   }
-  return fetch(path, { ...init, credentials: "include" });
+  const browserInit = withClientReleaseHeader(path, init);
+  const response = await fetch(path, { ...browserInit, credentials: "include" });
+  handleReleaseMismatch(response, browserInit);
+  return response;
 }

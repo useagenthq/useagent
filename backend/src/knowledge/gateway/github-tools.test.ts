@@ -3,6 +3,7 @@ import {
   executeGithubTool,
   GITHUB_TOOLS,
   setGithubReadServiceForTest,
+  type GithubPullRequestGrant,
   type GithubReadService,
 } from "./github-tools";
 import { baseGatewayToolDescriptors } from "./operation-registry";
@@ -18,17 +19,29 @@ const claims: ToolTokenClaims = {
 };
 
 const BOUND = ["upstream-org/backend", "upstream-org/frontend"];
+const originalGithubTenantOrgId = process.env.GITHUB_TENANT_ORG_ID;
 
 function mockGithub(
   responses: Record<string, unknown> = {},
   bound: string[] = BOUND,
-): { fetched: string[]; boundCalls: number } {
-  const state = { fetched: [] as string[], boundCalls: 0 };
+  grants: readonly GithubPullRequestGrant[] = [{
+      repository: "upstream-org/backend",
+      number: 7,
+      revision: "abc123",
+      capabilities: ["change.read", "change.checks.read", "deployment.read"],
+    }],
+): { fetched: string[]; boundCalls: number; grantCalls: number } {
+  const state = { fetched: [] as string[], boundCalls: 0, grantCalls: 0 };
   const service: GithubReadService = {
     async boundRepos(tokenClaims) {
       expect(tokenClaims).toBe(claims);
       state.boundCalls += 1;
       return bound;
+    },
+    async pullRequestGrants(tokenClaims) {
+      expect(tokenClaims).toBe(claims);
+      state.grantCalls += 1;
+      return grants;
     },
     async fetchJson(path) {
       state.fetched.push(path);
@@ -40,7 +53,11 @@ function mockGithub(
   return state;
 }
 
-afterEach(() => setGithubReadServiceForTest(null));
+afterEach(() => {
+  setGithubReadServiceForTest(null);
+  if (originalGithubTenantOrgId === undefined) delete process.env.GITHUB_TENANT_ORG_ID;
+  else process.env.GITHUB_TENANT_ORG_ID = originalGithubTenantOrgId;
+});
 
 describe("github gateway tool catalog", () => {
   test("advertises the read-only PR and issue tools without tenant or credential inputs", () => {
@@ -67,6 +84,27 @@ describe("github gateway tool catalog", () => {
 });
 
 describe("repo binding", () => {
+  test("rejects another product org before every production GitHub read path", async () => {
+    setGithubReadServiceForTest(null);
+    process.env.GITHUB_TENANT_ORG_ID = "org-primary";
+
+    for (const [name, args] of [
+      ["github_list_prs", { repo: "upstream-org/backend" }],
+      ["github_list_issues", { repo: "upstream-org/backend" }],
+      ["github_pr_detail", { repo: "upstream-org/backend", number: 7 }],
+    ] as const) {
+      const response = await executeGithubTool(
+        { ...claims, orgId: "org-other" },
+        name,
+        args,
+      );
+      expect(response.isError).toBe(true);
+      expect(response.content[0]?.text).toContain(
+        "GitHub repository access is not available to this organization",
+      );
+    }
+  });
+
   test("rejects a repository outside the run's bound set without fetching", async () => {
     const mock = mockGithub();
     const response = await executeGithubTool(claims, "github_list_prs", {
@@ -194,6 +232,48 @@ describe("github_list_prs", () => {
 });
 
 describe("github_pr_detail", () => {
+  test("requires an exact persisted PR grant, not only a bound repository", async () => {
+    const mock = mockGithub({}, BOUND, []);
+    const response = await executeGithubTool(claims, "github_pr_detail", {
+      repo: "upstream-org/backend",
+      number: 7,
+    });
+
+    expect(response.isError).toBe(true);
+    expect(response.content[0]?.text).toContain("is not authorized for this run");
+    expect(mock.fetched).toEqual([]);
+  });
+
+  test("requires the pinned revision and every PR-detail capability", async () => {
+    const withoutRevision = mockGithub({}, BOUND, [{
+      repository: "upstream-org/backend",
+      number: 7,
+      revision: null,
+      capabilities: ["change.read", "change.checks.read", "deployment.read"],
+    }]);
+    const missingRevision = await executeGithubTool(claims, "github_pr_detail", {
+      repo: "upstream-org/backend",
+      number: 7,
+    });
+    expect(missingRevision.isError).toBe(true);
+    expect(missingRevision.content[0]?.text).toContain("no pinned authorized revision");
+    expect(withoutRevision.fetched).toEqual([]);
+
+    const withoutDeployment = mockGithub({}, BOUND, [{
+      repository: "upstream-org/backend",
+      number: 7,
+      revision: "abc123",
+      capabilities: ["change.read", "change.checks.read"],
+    }]);
+    const missingCapability = await executeGithubTool(claims, "github_pr_detail", {
+      repo: "upstream-org/backend",
+      number: 7,
+    });
+    expect(missingCapability.isError).toBe(true);
+    expect(missingCapability.content[0]?.text).toContain("deployment.read");
+    expect(withoutDeployment.fetched).toEqual([]);
+  });
+
   test("returns a bounded detail summary with truncated body and files", async () => {
     const longBody = "x".repeat(5_000);
     mockGithub({
@@ -205,7 +285,7 @@ describe("github_pr_detail", () => {
         body: longBody,
         html_url: "https://github.com/upstream-org/backend/pull/7",
         user: { login: "octocat" },
-        head: { ref: "fix/retries" },
+        head: { ref: "fix/retries", sha: "abc123" },
         base: { ref: "main" },
         merged_at: "2026-08-03T00:00:00Z",
         commits: 3,
@@ -245,6 +325,416 @@ describe("github_pr_detail", () => {
     expect(response.isError).toBe(true);
     expect(response.content[0]?.text).toContain("positive pull request number");
     expect(mock.fetched).toEqual([]);
+  });
+
+  test("returns bounded check runs, HTTPS summary links, and legacy commit statuses", async () => {
+    const oversizedSummary =
+      "Open [browser preview](https://preview.example.test/pr-7).\n" +
+      "x".repeat(2_100) +
+      "\n[insecure fallback](http://preview.example.test/pr-7).";
+    mockGithub({
+      "/repos/upstream-org/backend/pulls/7": {
+        number: 7,
+        title: "Ship preview",
+        state: "open",
+        head: { ref: "feat/preview", sha: "abc123" },
+        base: { ref: "main" },
+      },
+      "/repos/upstream-org/backend/pulls/7/files?per_page=50": [],
+      "/repos/upstream-org/backend/commits/abc123/check-runs?per_page=50": {
+        total_count: 2,
+        check_runs: [
+          {
+            name: "build",
+            status: "completed",
+            conclusion: "success",
+            details_url: "https://github.com/upstream-org/backend/actions/runs/10",
+            started_at: "2026-08-20T10:00:00Z",
+            completed_at: "2026-08-20T10:03:00Z",
+            app: { slug: "github-actions" },
+          },
+          {
+            name: "preview smoke",
+            status: "in_progress",
+            conclusion: null,
+            details_url: "https://checks.example.test/preview",
+            started_at: "2026-08-20T10:01:00Z",
+            completed_at: null,
+            app: { slug: "preview-bot" },
+            output: {
+              title: "Preview ready",
+              summary: oversizedSummary,
+            },
+          },
+        ],
+      },
+      "/repos/upstream-org/backend/deployments?sha=abc123&per_page=30": [],
+      "/repos/upstream-org/backend/commits/abc123/status?per_page=50": {
+        state: "pending",
+        total_count: 1,
+        statuses: [
+          {
+            id: 500,
+            context: "legacy/preview",
+            state: "pending",
+            description: "Preview is starting",
+            target_url: "https://legacy-checks.example.test/500",
+            creator: { login: "legacy-bot" },
+          },
+        ],
+      },
+    });
+
+    const response = await executeGithubTool(claims, "github_pr_detail", {
+      repo: "upstream-org/backend",
+      number: 7,
+    });
+
+    expect(response.isError).toBeUndefined();
+    expect(response.structuredContent).toMatchObject({
+      head_sha: "abc123",
+      check_runs: [
+        {
+          name: "build",
+          status: "completed",
+          conclusion: "success",
+          details_url: "https://github.com/upstream-org/backend/actions/runs/10",
+          app: "github-actions",
+        },
+        {
+          name: "preview smoke",
+          status: "in_progress",
+          conclusion: null,
+          details_url: "https://checks.example.test/preview",
+          app: "preview-bot",
+          output_title: "Preview ready",
+          output_summary_truncated: true,
+          links: [{ label: "browser preview", url: "https://preview.example.test/pr-7" }],
+        },
+      ],
+      check_runs_total: 2,
+      check_runs_truncated: false,
+      check_runs_available: true,
+      check_runs_error: null,
+      commit_status_state: "pending",
+      commit_statuses: [
+        {
+          id: 500,
+          context: "legacy/preview",
+          state: "pending",
+          description: "Preview is starting",
+          target_url: "https://legacy-checks.example.test/500",
+          creator: "legacy-bot",
+        },
+      ],
+      commit_statuses_available: true,
+      commit_statuses_error: null,
+    });
+    const checkRuns = response.structuredContent?.check_runs as Array<Record<string, unknown>>;
+    expect(checkRuns[1]?.output_summary as string).toContain("[summary truncated]");
+    expect((checkRuns[1]?.output_summary as string).length).toBeLessThan(oversizedSummary.length);
+  });
+
+  test("requests independent head-revision evidence in parallel", async () => {
+    const checks = Promise.withResolvers<unknown>();
+    const deployments = Promise.withResolvers<unknown>();
+    const statuses = Promise.withResolvers<unknown>();
+    const started: string[] = [];
+    setGithubReadServiceForTest({
+      async boundRepos() {
+        return BOUND;
+      },
+      async pullRequestGrants() {
+        return [{
+          repository: "upstream-org/backend",
+          number: 7,
+          revision: "abc123",
+          capabilities: ["change.read", "change.checks.read", "deployment.read"],
+        }];
+      },
+      async fetchJson(path) {
+        if (path === "/repos/upstream-org/backend/pulls/7") {
+          return {
+            number: 7,
+            title: "Parallel evidence",
+            head: { ref: "feat/preview", sha: "abc123" },
+            base: { ref: "main" },
+          };
+        }
+        if (path === "/repos/upstream-org/backend/pulls/7/files?per_page=50") return [];
+        if (path.includes("/check-runs")) {
+          started.push("checks");
+          return await checks.promise;
+        }
+        if (path.includes("/deployments?")) {
+          started.push("deployments");
+          return await deployments.promise;
+        }
+        if (path.includes("/status?")) {
+          started.push("statuses");
+          return await statuses.promise;
+        }
+        throw new Error(`unexpected path: ${path}`);
+      },
+    });
+
+    const responsePromise = executeGithubTool(claims, "github_pr_detail", {
+      repo: "upstream-org/backend",
+      number: 7,
+    });
+    await Bun.sleep(0);
+
+    expect(started.toSorted()).toEqual(["checks", "deployments", "statuses"]);
+    checks.resolve({ total_count: 0, check_runs: [] });
+    deployments.resolve([]);
+    statuses.resolve({ state: "pending", total_count: 0, statuses: [] });
+    expect((await responsePromise).isError).toBeUndefined();
+  });
+
+  test("returns every deployment environment and its latest status", async () => {
+    mockGithub({
+      "/repos/upstream-org/backend/pulls/7": {
+        number: 7,
+        title: "Ship preview",
+        state: "open",
+        head: { ref: "feat/preview", sha: "abc123" },
+        base: { ref: "main" },
+      },
+      "/repos/upstream-org/backend/pulls/7/files?per_page=50": [],
+      "/repos/upstream-org/backend/commits/abc123/check-runs?per_page=50": {
+        total_count: 0,
+        check_runs: [],
+      },
+      "/repos/upstream-org/backend/commits/abc123/status?per_page=50": {
+        state: "success",
+        total_count: 0,
+        statuses: [],
+      },
+      "/repos/upstream-org/backend/deployments?sha=abc123&per_page=30": [
+        {
+          id: 101,
+          environment: "Primary",
+          description: "Primary deployment",
+          ref: "feat/preview",
+          sha: "abc123",
+          created_at: "2026-08-20T10:00:00Z",
+          updated_at: "2026-08-20T10:03:00Z",
+        },
+        {
+          id: 102,
+          environment: "Browser preview",
+          description: "PR browser-test deployment",
+          ref: "feat/preview",
+          sha: "abc123",
+          created_at: "2026-08-20T10:01:00Z",
+          updated_at: "2026-08-20T10:04:00Z",
+        },
+      ],
+      "/repos/upstream-org/backend/deployments/101/statuses?per_page=1": [
+        {
+          state: "success",
+          environment_url: "https://primary.example.test",
+          log_url: "https://deploy.example.test/101",
+          created_at: "2026-08-20T10:03:00Z",
+          updated_at: "2026-08-20T10:03:00Z",
+        },
+      ],
+      "/repos/upstream-org/backend/deployments/102/statuses?per_page=1": [
+        {
+          state: "success",
+          environment_url: "https://pr-7.preview.example.test",
+          log_url: "https://deploy.example.test/102",
+          created_at: "2026-08-20T10:04:00Z",
+          updated_at: "2026-08-20T10:04:00Z",
+        },
+      ],
+    });
+
+    const response = await executeGithubTool(claims, "github_pr_detail", {
+      repo: "upstream-org/backend",
+      number: 7,
+    });
+
+    expect(response.isError).toBeUndefined();
+    expect(response.structuredContent).toMatchObject({
+      deployments: [
+        {
+          id: 101,
+          environment: "Primary",
+          state: "success",
+          environment_url: "https://primary.example.test",
+          status_available: true,
+          status_error: null,
+        },
+        {
+          id: 102,
+          environment: "Browser preview",
+          state: "success",
+          environment_url: "https://pr-7.preview.example.test",
+          status_available: true,
+          status_error: null,
+        },
+      ],
+      deployments_truncated: false,
+      deployments_available: true,
+      deployments_error: null,
+    });
+    expect(response.content[0]?.text).toContain("Primary: success https://primary.example.test");
+    expect(response.content[0]?.text).toContain(
+      "Browser preview: success https://pr-7.preview.example.test",
+    );
+  });
+
+  test("bounds concurrent deployment-status requests", async () => {
+    let active = 0;
+    let maxActive = 0;
+    const deployments = Array.from({ length: 12 }, (_, index) => ({
+      id: index + 1,
+      environment: `preview-${index + 1}`,
+      sha: "abc123",
+    }));
+    setGithubReadServiceForTest({
+      async boundRepos() {
+        return BOUND;
+      },
+      async pullRequestGrants() {
+        return [{
+          repository: "upstream-org/backend",
+          number: 7,
+          revision: "abc123",
+          capabilities: ["change.read", "change.checks.read", "deployment.read"],
+        }];
+      },
+      async fetchJson(path) {
+        if (path === "/repos/upstream-org/backend/pulls/7") {
+          return { number: 7, title: "Bounded", head: { ref: "feat/x", sha: "abc123" } };
+        }
+        if (path === "/repos/upstream-org/backend/pulls/7/files?per_page=50") return [];
+        if (path.includes("/check-runs")) return { total_count: 0, check_runs: [] };
+        if (path.includes("/status?")) return { state: "success", total_count: 0, statuses: [] };
+        if (path.includes("/deployments?")) return deployments;
+        if (/\/deployments\/\d+\/statuses/.test(path)) {
+          active += 1;
+          maxActive = Math.max(maxActive, active);
+          await Bun.sleep(5);
+          active -= 1;
+          return [{ state: "success" }];
+        }
+        throw new Error(`unexpected path: ${path}`);
+      },
+    });
+
+    const response = await executeGithubTool(claims, "github_pr_detail", {
+      repo: "upstream-org/backend",
+      number: 7,
+    });
+    expect(response.isError).toBeUndefined();
+    expect((response.structuredContent?.deployments as unknown[]).length).toBe(12);
+    expect(maxActive).toBeLessThanOrEqual(5);
+    expect(maxActive).toBeGreaterThan(1);
+  });
+
+  test("keeps base PR detail when every optional evidence API is unavailable", async () => {
+    mockGithub({
+      "/repos/upstream-org/backend/pulls/7": {
+        number: 7,
+        title: "Still readable",
+        state: "open",
+        head: { ref: "feat/preview", sha: "abc123" },
+        base: { ref: "main" },
+      },
+      "/repos/upstream-org/backend/pulls/7/files?per_page=50": [],
+    });
+
+    const response = await executeGithubTool(claims, "github_pr_detail", {
+      repo: "upstream-org/backend",
+      number: 7,
+    });
+
+    expect(response.isError).toBeUndefined();
+    expect(response.structuredContent).toMatchObject({
+      title: "Still readable",
+      check_runs: [],
+      check_runs_available: false,
+      check_runs_error: "GitHub API 404",
+      deployments: [],
+      deployments_available: false,
+      deployments_error: "GitHub API 404",
+      commit_statuses: [],
+      commit_statuses_available: false,
+      commit_statuses_error: "GitHub API 404",
+    });
+    expect(response.content[0]?.text).toContain("Check runs unavailable: GitHub API 404");
+    expect(response.content[0]?.text).toContain("Deployments unavailable: GitHub API 404");
+    expect(response.content[0]?.text).toContain("Commit statuses unavailable: GitHub API 404");
+  });
+
+  test("rejects detail when GitHub no longer returns the authorized head SHA", async () => {
+    const mock = mockGithub({
+      "/repos/upstream-org/backend/pulls/7": {
+        number: 7,
+        title: "Missing revision",
+        state: "open",
+        head: { ref: "feat/preview" },
+        base: { ref: "main" },
+      },
+      "/repos/upstream-org/backend/pulls/7/files?per_page=50": [],
+    });
+
+    const response = await executeGithubTool(claims, "github_pr_detail", {
+      repo: "upstream-org/backend",
+      number: 7,
+    });
+
+    expect(response.isError).toBe(true);
+    expect(response.content[0]?.text).toContain("no longer matches its authorized revision");
+    expect(mock.fetched).toEqual(["/repos/upstream-org/backend/pulls/7"]);
+  });
+
+  test("reports a failed latest deployment status without hiding the deployment", async () => {
+    mockGithub({
+      "/repos/upstream-org/backend/pulls/7": {
+        number: 7,
+        title: "Partial deployment evidence",
+        state: "open",
+        head: { ref: "feat/preview", sha: "abc123" },
+        base: { ref: "main" },
+      },
+      "/repos/upstream-org/backend/pulls/7/files?per_page=50": [],
+      "/repos/upstream-org/backend/commits/abc123/check-runs?per_page=50": {
+        total_count: 0,
+        check_runs: [],
+      },
+      "/repos/upstream-org/backend/commits/abc123/status?per_page=50": {
+        state: "pending",
+        total_count: 0,
+        statuses: [],
+      },
+      "/repos/upstream-org/backend/deployments?sha=abc123&per_page=30": [
+        { id: 101, environment: "Browser preview", sha: "abc123" },
+      ],
+    });
+
+    const response = await executeGithubTool(claims, "github_pr_detail", {
+      repo: "upstream-org/backend",
+      number: 7,
+    });
+
+    expect(response.isError).toBeUndefined();
+    expect(response.structuredContent).toMatchObject({
+      deployments_available: true,
+      deployments_error: null,
+      deployments: [
+        {
+          id: 101,
+          environment: "Browser preview",
+          state: null,
+          status_available: false,
+          status_error: "GitHub API 404",
+        },
+      ],
+    });
+    expect(response.content[0]?.text).toContain("Browser preview: status unavailable (GitHub API 404)");
   });
 });
 

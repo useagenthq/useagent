@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { createOrgSession, fetchApi, json, uid } from "./helpers";
+import { acceptRunCommand, type RunCommandIntent } from "../src/commands";
 
 // Durable-command idempotency on POST /api/runs. Runs use the fast scripted
 // `mock` engine (no sandbox), so these are pure in-process API assertions.
@@ -18,6 +19,153 @@ async function post(
 }
 
 describe("durable commands / idempotency", () => {
+  test("an accepted PR request replays before unavailable GitHub preflight", async () => {
+    const s = await createOrgSession("idem-pr-down");
+    const key = uid("idem-pr-down");
+    const prompt = "inspect https://github.com/acme/api/pull/42";
+    const runId = crypto.randomUUID();
+    const intent: RunCommandIntent = {
+      prompt,
+      model: null,
+      engine: "mock",
+      parentRunId: null,
+      requestedRepos: [],
+      attachmentIds: [],
+      memoryScope: null,
+      skillId: null,
+      skillVersion: null,
+      commandName: null,
+      commandProvider: null,
+      commandSessionId: null,
+      commandCatalogRevision: null,
+    };
+    expect(await acceptRunCommand({
+      idempotencyKey: key,
+      orgId: s.orgId,
+      actorId: null,
+      intent,
+      run: {
+        id: runId,
+        prompt,
+        model: "claude-opus-5",
+        engine: "mock",
+        parentRunId: null,
+        threadId: runId,
+        repos: ["acme/api:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"],
+        resolvedResources: [],
+        memoryScope: "org",
+        skillId: null,
+        skillVersion: null,
+        skillContentHash: null,
+        commandName: null,
+        commandProvider: null,
+        commandSessionId: null,
+        commandCatalogRevision: null,
+      },
+    })).toMatchObject({ status: "created", runId });
+
+    // This org has no GitHub connection. The route can return 200 only if it
+    // recognizes the durable raw intent before resolveRunIntake consults it.
+    const replay = await post(
+      { prompt, engine: "mock" },
+      { "Idempotency-Key": key },
+      s.cookies,
+    );
+    expect(replay).toEqual({ status: 200, body: { id: runId } });
+  });
+
+  test("an accepted retry bypasses later provider-readiness failure, but changed intent conflicts", async () => {
+    const s = await createOrgSession("idem-provider-down");
+    const key = uid("idem-provider-down");
+    const prompt = "continue the codex task";
+    const model = "gpt-5.6-sol";
+    const runId = crypto.randomUUID();
+    const intent: RunCommandIntent = {
+      prompt,
+      model,
+      engine: "codex",
+      parentRunId: null,
+      requestedRepos: [],
+      attachmentIds: [],
+      memoryScope: null,
+      skillId: null,
+      skillVersion: null,
+      commandName: null,
+      commandProvider: null,
+      commandSessionId: null,
+      commandCatalogRevision: null,
+    };
+    expect(await acceptRunCommand({
+      idempotencyKey: key,
+      orgId: s.orgId,
+      actorId: null,
+      intent,
+      run: {
+        id: runId,
+        prompt,
+        model,
+        engine: "codex",
+        parentRunId: null,
+        threadId: runId,
+        repos: [],
+        resolvedResources: [],
+        memoryScope: "org",
+        skillId: null,
+        skillVersion: null,
+        skillContentHash: null,
+        commandName: null,
+        commandProvider: null,
+        commandSessionId: null,
+        commandCatalogRevision: null,
+      },
+    })).toMatchObject({ status: "created", runId });
+
+    const previous = process.env.PROVIDER_HEALTH_OPENAI;
+    process.env.PROVIDER_HEALTH_OPENAI = "failed";
+    try {
+      expect(await post(
+        { prompt, engine: "codex", model },
+        { "Idempotency-Key": key },
+        s.cookies,
+      )).toEqual({ status: 200, body: { id: runId } });
+      expect((await post(
+        { prompt: `${prompt} changed`, engine: "codex", model },
+        { "Idempotency-Key": key },
+        s.cookies,
+      )).status).toBe(409);
+    } finally {
+      if (previous === undefined) delete process.env.PROVIDER_HEALTH_OPENAI;
+      else process.env.PROVIDER_HEALTH_OPENAI = previous;
+    }
+  });
+
+  test("an accepted run with a selected skill replays after the skill is deleted", async () => {
+    const s = await createOrgSession("idem-deleted-skill");
+    const skill = await json<{ id: string }>("/api/skills", {
+      method: "POST",
+      body: { name: `Disposable ${uid("skill")}` },
+      cookies: s.cookies,
+    });
+    expect(skill.status).toBe(201);
+    const key = uid("idem-deleted-skill");
+    const body = {
+      prompt: "apply the selected skill",
+      engine: "mock",
+      skill: { id: skill.body.id },
+    };
+    const first = await post(body, { "Idempotency-Key": key }, s.cookies);
+    expect(first.status).toBe(201);
+    expect((await json(`/api/skills/${skill.body.id}`, {
+      method: "DELETE",
+      cookies: s.cookies,
+    })).status).toBe(200);
+
+    expect(await post(body, { "Idempotency-Key": key }, s.cookies)).toEqual({
+      status: 200,
+      body: { id: first.body.id },
+    });
+  });
+
   test("same Idempotency-Key twice → ONE run, second returns the original id (200)", async () => {
     // Isolated org so a run count is unambiguous.
     const s = await createOrgSession("idem");

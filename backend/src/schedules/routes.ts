@@ -69,8 +69,13 @@ schedulesRoutes.patch("/:id", async (c) => {
 schedulesRoutes.post("/:id/run-now", async (c) => {
   const schedule = await getScheduleForOrg(c.get("orgId"), c.req.param("id"));
   if (!schedule) return c.json({ error: "schedule not found" }, 404);
-  const runId = await fireScheduleForOrg(schedule, "manual");
-  return c.json({ run_id: runId }, 201);
+  try {
+    const runId = await fireScheduleForOrg(schedule, "manual");
+    return c.json({ run_id: runId }, 201);
+  } catch (error) {
+    if (error instanceof ScheduleServiceError) return c.json(error.body, error.status);
+    throw error;
+  }
 });
 
 // Firing history for a schedule (org-scoped), newest first.

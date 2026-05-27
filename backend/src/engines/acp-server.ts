@@ -15,7 +15,7 @@ import {
 } from "@skynet/agent-harness/canonical";
 import { sessionCapabilities } from "./capabilities";
 import { parseJsonLine, persistSandboxBeforeExecution, truncate } from "./util";
-import { prepareRepos, shq } from "./repo-prep";
+import { checkoutPullRequestResources, prepareRepos, shq } from "./repo-prep";
 import { serialStartup, stagesTogether } from "../util/startup";
 import { parseRepoRef } from "../github/repo-ref";
 import { cacheAcpCommands } from "../runs/command-catalog";
@@ -889,6 +889,12 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
         // same secure clone as OpenCode; idempotent on a warm sandbox (fast skips).
         const endReposSpan = ctx.timing?.begin("repos");
         await prepareRepos(box, `${home}/work`, ctx);
+        await checkoutPullRequestResources(
+          box,
+          `${home}/work`,
+          ctx.resolvedResources ?? [],
+          ctx,
+        );
         endReposSpan?.();
         // EFFECTIVE working directory: a single-repo thread starts the session INSIDE that
         // repo (`~/work/<owner>/<name>`), so relative tool paths, `git`, and file ops resolve

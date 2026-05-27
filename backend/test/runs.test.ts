@@ -29,6 +29,25 @@ describe("runs", () => {
     expect(body.error).toBeDefined();
   });
 
+  test("POST /api/runs maps resource failures and persists no run", async () => {
+    const marker = crypto.randomUUID();
+    const { status, body } = await json<{ error: string; action: string }>(
+      "/api/runs",
+      {
+        method: "POST",
+        body: {
+          prompt: `test ${marker} https://github.com/upstream-org/backend/pull/19625`,
+        },
+      },
+    );
+    expect(status).toBe(403);
+    expect(body.error).toBe("resource_unauthorized");
+    expect(body.action).toMatch(/connect|select/i);
+
+    const listed = await json<{ runs: Array<{ prompt: string }> }>("/api/runs?all=1");
+    expect(listed.body.runs.some((run) => run.prompt.includes(marker))).toBe(false);
+  });
+
   test("create → worker completes → steps persisted → list/get shapes", async () => {
     // Create a run.
     const created = await json<{ id: string }>("/api/runs", {

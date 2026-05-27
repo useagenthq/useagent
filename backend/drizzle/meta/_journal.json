@@ -344,6 +344,27 @@
 			"when": 1788800000000,
 			"tag": "0050_learning_outbox",
 			"breakpoints": true
+		},
+		{
+			"idx": 49,
+			"version": "7",
+			"when": 1788900000000,
+			"tag": "0051_run_resolved_resources",
+			"breakpoints": true
+		},
+		{
+			"idx": 50,
+			"version": "7",
+			"when": 1789000000000,
+			"tag": "0052_slack_users",
+			"breakpoints": true
+		},
+		{
+			"idx": 51,
+			"version": "7",
+			"when": 1789100000000,
+			"tag": "0053_slack_team_responses",
+			"breakpoints": true
 		}
 	]
 }

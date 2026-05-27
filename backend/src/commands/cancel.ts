@@ -134,3 +134,8 @@ async function findCancel(orgId: string, runId: string): Promise<string | null> 
     .limit(1);
   return row ? (row.threadId ?? "") : null;
 }
+
+/** Whether the trusted command lane already committed a stop for this run. */
+export async function hasRunCancelIntent(orgId: string, runId: string): Promise<boolean> {
+  return (await findCancel(orgId, runId)) !== null;
+}

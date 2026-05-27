@@ -1,10 +1,17 @@
 import { describe, expect, test } from "bun:test";
-import { sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { db } from "../src/db/client";
-import { acceptRunCommand } from "../src/commands";
+import { runs } from "../src/db/schema";
+import {
+  acceptRunCommand,
+  preflightRunCommandReplay,
+} from "../src/commands";
+import { firingKey } from "../src/schedules/fire";
+import type { RunCommandInput, RunCommandIntent } from "../src/commands/types";
 import { claimNextRun, settleCommandForRun } from "../src/commands/dispatch";
 import { completeRun } from "../src/runs/repo";
-import { waitFor } from "./helpers"; // side-effect: imports src/index → migrate + seed
+import "./helpers"; // side-effect: imports src/index → migrate + seed
+import { createChildSession } from "../src/runs/child-sessions";
 
 // Mailbox primitives for the durable per-session command lane. These drive the
 // claim/settle CAS directly (no worker execution) so ordering, one-in-flight,
@@ -31,6 +38,160 @@ async function retire(threadId: string): Promise<void> {
 }
 
 describe("durable command lane", () => {
+  test("a moving PR head replays before resource resolution", async () => {
+    const runId = crypto.randomUUID();
+    const key = `moving-pr:${crypto.randomUUID()}`;
+    const intent: RunCommandIntent = {
+      prompt: "test https://github.com/acme/api/pull/42",
+      model: "claude-opus-5",
+      engine: "mock",
+      parentRunId: null,
+      requestedRepos: [],
+      attachmentIds: [],
+      memoryScope: "org",
+      skillId: null,
+      skillVersion: null,
+      commandName: null,
+      commandProvider: null,
+      commandSessionId: null,
+      commandCatalogRevision: null,
+    };
+    const input: RunCommandInput = {
+      idempotencyKey: key,
+      orgId: ORG,
+      actorId: null,
+      intent,
+      run: {
+        id: runId,
+        prompt: intent.prompt,
+        model: intent.model,
+        engine: intent.engine,
+        parentRunId: null,
+        threadId: runId,
+        repos: ["acme/api:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"],
+        resolvedResources: [],
+        memoryScope: "org",
+        skillId: null,
+        skillVersion: null,
+        skillContentHash: null,
+        commandName: null,
+        commandProvider: null,
+        commandSessionId: null,
+        commandCatalogRevision: null,
+      },
+    };
+    expect(await acceptRunCommand(input)).toMatchObject({ status: "created", runId });
+
+    let resolutionCalls = 0;
+    const replay = await preflightRunCommandReplay({
+      orgId: ORG,
+      idempotencyKey: key,
+      intent,
+    });
+    if (!replay) resolutionCalls += 1;
+    expect(replay).toEqual({ status: "replayed", runId });
+    expect(resolutionCalls).toBe(0);
+    await retire(runId);
+  });
+
+  test("a lost-response retry succeeds while GitHub is unavailable", async () => {
+    const runId = crypto.randomUUID();
+    const key = `github-down:${crypto.randomUUID()}`;
+    const intent = {
+      ...runIntentForTest("inspect https://github.com/acme/api/pull/9"),
+    } satisfies RunCommandIntent;
+    await acceptRunCommand(commandForTest(runId, key, intent));
+
+    const resolveGithub = async (): Promise<never> => {
+      throw new Error("GitHub unavailable");
+    };
+    const replay = await preflightRunCommandReplay({ orgId: ORG, idempotencyKey: key, intent });
+    if (!replay) await resolveGithub();
+    expect(replay).toEqual({ status: "replayed", runId });
+    await retire(runId);
+  });
+
+  test("the same key with a changed raw prompt conflicts before resolution", async () => {
+    const runId = crypto.randomUUID();
+    const key = `changed-prompt:${crypto.randomUUID()}`;
+    const intent = runIntentForTest("inspect the PR");
+    await acceptRunCommand(commandForTest(runId, key, intent));
+    expect(
+      await preflightRunCommandReplay({
+        orgId: ORG,
+        idempotencyKey: key,
+        intent: { ...intent, prompt: "deploy the PR" },
+      }),
+    ).toEqual({ status: "conflict", reason: "payload_mismatch" });
+    await retire(runId);
+  });
+
+  test("the same schedule occurrence replays before resource preflight", async () => {
+    const runId = crypto.randomUUID();
+    const occurrence = new Date("2026-08-21T05:31:42.000Z");
+    const key = firingKey(crypto.randomUUID(), "cron", occurrence);
+    const intent = {
+      ...runIntentForTest("verify the scheduled PR"),
+      requestedRepos: ["acme/api"],
+      skillId: "skill-1",
+      skillVersion: 3,
+    } satisfies RunCommandIntent;
+    await acceptRunCommand(commandForTest(runId, key, intent));
+    expect(
+      await preflightRunCommandReplay({ orgId: ORG, idempotencyKey: key, intent }),
+    ).toEqual({ status: "replayed", runId });
+    await retire(runId);
+  });
+
+  test("a child-session replay does not reauthorize newly unavailable inherited resources", async () => {
+    const parentId = crypto.randomUUID();
+    await acceptRunCommand(commandForTest(parentId, `parent:${crypto.randomUUID()}`, runIntentForTest("parent")));
+    const childInput = {
+      orgId: ORG,
+      actorId: null,
+      parentRunId: parentId,
+      threadId: parentId,
+      prompt: "delegate once",
+      engine: "mock" as const,
+      model: "claude-opus-5",
+      repos: [],
+      memoryScope: "org" as const,
+      idempotencyKey: `child:${crypto.randomUUID()}`,
+    };
+    const first = await createChildSession(childInput);
+    expect(first.status).toBe("created");
+    if (first.status === "conflict") throw new Error("unexpected conflict");
+
+    await db.update(runs).set({
+      repos: ["acme/api:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"],
+      resolvedResources: [{
+        kind: "code.change",
+        provider: "github",
+        locator: {
+          type: "github.pull_request",
+          repository: "acme/api",
+          number: 42,
+          revision: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        },
+        capabilities: ["change.read"],
+        provenance: [{
+          source: "user_text",
+          channel: "web",
+          raw: "https://github.com/acme/api/pull/42",
+          start: 0,
+          end: 39,
+        }],
+      }],
+    }).where(eq(runs.id, parentId));
+
+    const replay = await createChildSession(childInput);
+    expect(replay.status).toBe("replayed");
+    if (replay.status === "conflict") throw new Error("unexpected conflict");
+    expect(replay.child.id).toBe(first.child.id);
+    await retire(parentId);
+    await retire(first.child.id);
+  });
+
   test("replays an accepted key even after provider readiness changes", async () => {
     const threadId = crypto.randomUUID();
     const idempotencyKey = `replay-after-health-change:${crypto.randomUUID()}`;
@@ -126,3 +287,51 @@ describe("durable command lane", () => {
     await retire(T);
   });
 });
+
+function runIntentForTest(prompt: string): RunCommandIntent {
+  return {
+    prompt,
+    model: "claude-opus-5",
+    engine: "mock",
+    parentRunId: null,
+    requestedRepos: [],
+    attachmentIds: [],
+    memoryScope: "org",
+    skillId: null,
+    skillVersion: null,
+    commandName: null,
+    commandProvider: null,
+    commandSessionId: null,
+    commandCatalogRevision: null,
+  };
+}
+
+function commandForTest(
+  runId: string,
+  idempotencyKey: string,
+  intent: RunCommandIntent,
+): RunCommandInput {
+  return {
+    idempotencyKey,
+    orgId: ORG,
+    actorId: null,
+    intent,
+    run: {
+      id: runId,
+      prompt: intent.prompt,
+      model: intent.model,
+      engine: intent.engine,
+      parentRunId: intent.parentRunId,
+      threadId: runId,
+      repos: [...intent.requestedRepos],
+      memoryScope: intent.memoryScope,
+      skillId: intent.skillId,
+      skillVersion: intent.skillVersion,
+      skillContentHash: null,
+      commandName: intent.commandName,
+      commandProvider: intent.commandProvider,
+      commandSessionId: intent.commandSessionId,
+      commandCatalogRevision: intent.commandCatalogRevision,
+    },
+  };
+}

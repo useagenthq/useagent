@@ -4,6 +4,9 @@ import { db } from "../src/db/client";
 import { startSlackOutbox } from "../src/slack";
 import type { DeliveryResult, SlackClient } from "../src/slack/client";
 import { enqueue } from "../src/slack/outbox/repo";
+import { createRun } from "../src/runs/repo";
+import { createSlackRunResponse, findSlackRunResponse, linkSlackThread } from "../src/slack/repo";
+import { openingStreamChunks } from "../src/slack/streaming";
 import {
   enqueuePostMessage,
   getSlackOutbox,
@@ -22,21 +25,75 @@ import { uid } from "./helpers";
 interface Recorder {
   client: SlackClient;
   posted: Array<{ channel: string; text: string; threadTs?: string }>;
+  updates: Array<{ channel: string; ts: string; text: string }>;
+  streams: Array<{
+    op: "start" | "append" | "stop";
+    channel: string;
+    threadTs: string;
+    messageTs?: string;
+    taskDisplayMode?: string;
+    chunks?: readonly unknown[];
+  }>;
+  statuses: Array<{ channel: string; threadTs: string; status: "processing" | "active" }>;
 }
 
 /** A recording client whose delivery result is fixed for this test. */
 function recorder(result: () => DeliveryResult = () => ({ ok: true })): Recorder {
   const posted: Recorder["posted"] = [];
+  const updates: Recorder["updates"] = [];
+  const streams: Recorder["streams"] = [];
+  const statuses: Recorder["statuses"] = [];
   return {
     posted,
+    updates,
+    streams,
+    statuses,
     client: {
       postMessage: async (m) => {
         posted.push(m);
+        const res = result();
+        return res.ok ? { ok: true, ts: "stream.1" } : res;
+      },
+      updateMessage: async (m) => {
+        updates.push({ channel: m.channel, ts: m.ts, text: m.text });
         return result();
       },
-      updateMessage: async () => result(),
       addReaction: async () => result(),
-      setAssistantStatus: async () => {},
+      setSessionStatus: async (s) => {
+        statuses.push(s);
+        return result();
+      },
+      startStream: async (s) => {
+        streams.push({
+          op: "start",
+          channel: s.channel,
+          threadTs: s.threadTs,
+          taskDisplayMode: s.taskDisplayMode,
+          chunks: s.chunks,
+        });
+        const res = result();
+        return res.ok ? { ok: true, ts: "stream.1" } : res;
+      },
+      appendStream: async (s) => {
+        streams.push({
+          op: "append",
+          channel: s.channel,
+          threadTs: s.threadTs,
+          messageTs: s.messageTs,
+          chunks: s.chunks,
+        });
+        return result();
+      },
+      stopStream: async (s) => {
+        streams.push({
+          op: "stop",
+          channel: s.channel,
+          threadTs: s.threadTs,
+          messageTs: s.messageTs,
+          chunks: s.chunks,
+        });
+        return result();
+      },
       uploadFile: async () => result(),
     },
   };
@@ -46,10 +103,32 @@ beforeAll(() => stopSlackOutboxRelay());
 afterAll(() => startSlackOutbox()); // restart for the other slack tests' kick-driven delivery
 beforeEach(async () => {
   await db.execute(sql`delete from slack_outbox`);
+  await db.execute(sql`delete from slack_run_responses`);
+  await db.execute(sql`delete from slack_threads`);
 });
 
 const forceDue = (key: string) =>
   db.execute(sql`update slack_outbox set next_attempt_at = now() - interval '1 second' where idempotency_key = ${key}`);
+
+async function linkedSlackRun(): Promise<{ runId: string; teamId: string; channel: string; threadTs: string }> {
+  const runId = crypto.randomUUID();
+  const teamId = `T${uid("team")}`;
+  const channel = `C${uid("stream")}`;
+  const threadTs = `${uid("ts")}.1`;
+  await createRun({
+    id: runId,
+    prompt: "stream run",
+    model: "m",
+    engine: "mock",
+    orgId: "org-skynet-dev",
+    userId: null,
+    parentRunId: null,
+    threadId: runId,
+  });
+  await linkSlackThread({ teamId, channel, threadTs, rootRunId: runId, orgId: "org-skynet-dev" });
+  await createSlackRunResponse({ runId, teamId, channel, threadTs });
+  return { runId, teamId, channel, threadTs };
+}
 
 describe("durable slack outbox", () => {
   test("enqueues a committed row and delivers it exactly once", async () => {
@@ -180,5 +259,243 @@ describe("chunked reply delivery", () => {
     await processDue(rec.client);
     expect((await getSlackOutbox(key))?.state).toBe("delivered");
     expect(rec.posted.map((p) => p.text)).toEqual(["two", "three"]); // "one" never re-posts
+  });
+});
+
+describe("native slack streaming outbox", () => {
+  test("start_stream opens a native stream and stores its message ts", async () => {
+    const { runId, teamId, channel, threadTs } = await linkedSlackRun();
+    const key = uid("stream-start");
+    await enqueue({
+      kind: "start_stream",
+      idempotencyKey: key,
+      payload: {
+        channel,
+        teamId,
+        threadTs,
+        runId,
+        taskDisplayMode: "task_update",
+        chunks: openingStreamChunks({ title: "Queued", mode: "task_update" }),
+        fallbackBlocks: [{ type: "section", text: { type: "mrkdwn", text: "Queued" } }],
+        fallbackText: "Queued",
+      },
+    });
+
+    const rec = recorder(() => ({ ok: true }));
+    await processDue(rec.client);
+    expect((await getSlackOutbox(key))?.state).toBe("delivered");
+    expect(rec.streams.map((s) => s.op)).toEqual(["start"]);
+    expect(rec.streams[0]?.taskDisplayMode).toBe("task_update");
+    expect(rec.streams[0]?.chunks).toEqual(openingStreamChunks({ title: "Queued", mode: "task_update" }));
+  });
+
+  test("append_stream uses the stored stream message ts", async () => {
+    const { runId, teamId, channel, threadTs } = await linkedSlackRun();
+    await enqueue({
+      kind: "start_stream",
+      idempotencyKey: uid("stream-start"),
+      payload: {
+        channel,
+        teamId,
+        threadTs,
+        runId,
+        taskDisplayMode: "task_update",
+        chunks: [{ type: "markdown_text", markdown_text: "Queued" }],
+        fallbackBlocks: [],
+        fallbackText: "Queued",
+      },
+    });
+    await processDue(recorder(() => ({ ok: true })).client);
+
+    const key = uid("stream-append");
+    await enqueue({
+      kind: "append_stream",
+      idempotencyKey: key,
+      payload: {
+        channel,
+        teamId,
+        threadTs,
+        runId,
+        chunks: [
+          {
+            type: "task_update",
+            task: { task_id: "step_1", title: "Ran command", status: "in_progress" },
+          },
+        ],
+        fallbackBlocks: [{ type: "section", text: { type: "mrkdwn", text: "Running" } }],
+        fallbackText: "Running",
+      },
+    });
+
+    const rec = recorder(() => ({ ok: true }));
+    await processDue(rec.client);
+    expect((await getSlackOutbox(key))?.state).toBe("delivered");
+    expect(rec.streams).toHaveLength(1);
+    expect(rec.streams[0]).toMatchObject({
+      op: "append",
+      channel,
+      threadTs,
+      messageTs: "stream.1",
+      chunks: [{ type: "task_update", task: { task_id: "step_1", title: "Ran command", status: "in_progress" } }],
+    });
+  });
+
+  test("plan display mode passes native plan task chunks through unchanged", async () => {
+    const { runId, teamId, channel, threadTs } = await linkedSlackRun();
+    const key = uid("stream-plan");
+    await enqueue({
+      kind: "start_stream",
+      idempotencyKey: key,
+      payload: {
+        channel,
+        teamId,
+        threadTs,
+        runId,
+        taskDisplayMode: "plan",
+        chunks: [{ type: "task", id: "inspect", text: "Inspect request", status: "in_progress" }],
+        fallbackBlocks: [],
+        fallbackText: "Planning",
+      },
+    });
+
+    const rec = recorder(() => ({ ok: true }));
+    await processDue(rec.client);
+    expect((await getSlackOutbox(key))?.state).toBe("delivered");
+    expect(rec.streams[0]?.taskDisplayMode).toBe("plan");
+    expect(rec.streams[0]?.chunks).toEqual([
+      { type: "task", id: "inspect", text: "Inspect request", status: "in_progress" },
+    ]);
+  });
+
+  test("start_stream fallback stores only fallback ts and append_stream updates that fallback", async () => {
+    const { runId, teamId, channel, threadTs } = await linkedSlackRun();
+    await enqueue({
+      kind: "start_stream",
+      idempotencyKey: uid("stream-fallback-start"),
+      payload: {
+        channel,
+        teamId,
+        threadTs,
+        runId,
+        taskDisplayMode: "task_update",
+        chunks: [{ type: "markdown_text", markdown_text: "Queued" }],
+        fallbackBlocks: [{ type: "section", text: { type: "mrkdwn", text: "Queued" } }],
+        fallbackText: "Queued",
+      },
+    });
+    const startRec = recorder(() => ({ ok: true }));
+    startRec.client.startStream = async (s) => {
+      startRec.streams.push({ op: "start", channel: s.channel, threadTs: s.threadTs });
+      return { ok: false, class: "permanent", message: "method_not_supported" };
+    };
+    await processDue(startRec.client);
+    const response = await findSlackRunResponse(runId);
+    expect(response?.nativeStreamTs).toBeNull();
+    expect(response?.fallbackMessageTs).toBe("stream.1");
+
+    const appendKey = uid("stream-fallback-append");
+    await enqueue({
+      kind: "append_stream",
+      idempotencyKey: appendKey,
+      payload: {
+        channel,
+        teamId,
+        threadTs,
+        runId,
+        chunks: [{ type: "task_update", task: { task_id: "step_2", title: "Ran command", status: "in_progress" } }],
+        fallbackBlocks: [{ type: "section", text: { type: "mrkdwn", text: "Running" } }],
+        fallbackText: "Running",
+      },
+    });
+    const appendRec = recorder(() => ({ ok: true }));
+    await processDue(appendRec.client);
+    expect((await getSlackOutbox(appendKey))?.state).toBe("delivered");
+    expect(appendRec.streams).toHaveLength(0);
+    expect(appendRec.updates).toEqual([{ channel, ts: "stream.1", text: "Running" }]);
+  });
+
+  test("stop_stream after start fallback updates fallback instead of stopping native stream", async () => {
+    const { runId, teamId, channel, threadTs } = await linkedSlackRun();
+    await enqueue({
+      kind: "start_stream",
+      idempotencyKey: uid("stream-stop-after-fallback-start"),
+      payload: {
+        channel,
+        teamId,
+        threadTs,
+        runId,
+        taskDisplayMode: "task_update",
+        chunks: [{ type: "markdown_text", markdown_text: "Queued" }],
+        fallbackBlocks: [],
+        fallbackText: "Queued",
+      },
+    });
+    const startRec = recorder(() => ({ ok: true }));
+    startRec.client.startStream = async (s) => {
+      startRec.streams.push({ op: "start", channel: s.channel, threadTs: s.threadTs });
+      return { ok: false, class: "permanent", message: "method_not_supported" };
+    };
+    await processDue(startRec.client);
+
+    const stopKey = uid("stream-stop-after-fallback");
+    await enqueue({
+      kind: "stop_stream",
+      idempotencyKey: stopKey,
+      payload: {
+        channel,
+        teamId,
+        threadTs,
+        runId,
+        chunks: [{ type: "markdown_text", markdown_text: "answer" }],
+        blocks: [{ type: "section", text: { type: "mrkdwn", text: "answer" } }],
+        text: "answer",
+        fallbackChunks: ["answer"],
+      },
+    });
+    const stopRec = recorder(() => ({ ok: true }));
+    await processDue(stopRec.client);
+    expect((await getSlackOutbox(stopKey))?.state).toBe("delivered");
+    expect(stopRec.streams).toHaveLength(0);
+    expect(stopRec.updates).toEqual([{ channel, ts: "stream.1", text: "answer" }]);
+    expect(stopRec.posted).toHaveLength(0);
+  });
+
+  test("stop_stream falls back to a plain chunked reply when no message ts exists", async () => {
+    const { runId, teamId, channel, threadTs } = await linkedSlackRun();
+    const key = uid("stream-stop-fallback");
+    await enqueue({
+      kind: "stop_stream",
+      idempotencyKey: key,
+      payload: {
+        channel,
+        teamId,
+        threadTs,
+        runId,
+        chunks: [{ type: "markdown_text", markdown_text: "answer" }],
+        blocks: [{ type: "section", text: { type: "mrkdwn", text: "answer" } }],
+        text: "answer",
+        fallbackChunks: ["answer"],
+      },
+    });
+
+    const rec = recorder(() => ({ ok: true }));
+    await processDue(rec.client);
+    expect((await getSlackOutbox(key))?.state).toBe("delivered");
+    expect(rec.streams).toHaveLength(0);
+    expect(rec.posted).toEqual([{ channel, text: "answer", threadTs }]);
+  });
+
+  test("set_session_status delivers official processing and active statuses", async () => {
+    const key = uid("session-status");
+    await enqueue({
+      kind: "set_session_status",
+      idempotencyKey: key,
+      payload: { teamId: "T1", channel: "C1", threadTs: "1.1", status: "processing" },
+    });
+
+    const rec = recorder(() => ({ ok: true }));
+    await processDue(rec.client);
+    expect((await getSlackOutbox(key))?.state).toBe("delivered");
+    expect(rec.statuses).toEqual([{ channel: "C1", threadTs: "1.1", status: "processing" }]);
   });
 });

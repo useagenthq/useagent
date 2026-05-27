@@ -20,6 +20,12 @@ export type ProviderEventInput = {
   payload?: unknown;
 };
 
+/** Namespace provider-native event ids by run before using the global row key. */
+export function scopedProviderEventId(runId: string, eventId: string): string {
+  const prefix = `${runId}:`;
+  return eventId.startsWith(prefix) ? eventId : `${prefix}${eventId}`;
+}
+
 // ---------------------------------------------------------------------------
 // Per-run native-frame SEQUENCER — the invariant the reconnect cursor depends on.
 //

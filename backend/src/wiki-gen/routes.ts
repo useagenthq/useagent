@@ -46,7 +46,7 @@ wikiGenRoutes.post("/generate", async (c) => {
   const repo = typeof body.repo === "string" ? body.repo.trim() : "";
   if (!isValidRepoRef(repo)) return c.json({ error: "`repo` must be 'owner/name'" }, 400);
   // Only generate for repos the backend actually offers (same gate as run.repo).
-  if (!(await isKnownRepo(repo))) {
+  if (!(await isKnownRepo(repo, c.get("orgId")))) {
     return c.json({ error: `repo not available: ${repo}` }, 400);
   }
   const job = submitJob(c.get("orgId"), c.get("userId"), repo);

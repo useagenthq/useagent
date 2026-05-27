@@ -2,8 +2,10 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { and, eq, sql } from "drizzle-orm";
 import { db } from "../src/db/client";
 import { providerEvents, reconcileQueue } from "../src/db/schema";
+import type { EngineId } from "../src/db/schema";
 import type { HarnessInterimEvent } from "../src/engines/types";
 import { acceptRunCommand } from "../src/commands";
+import { acceptRunCancel, CANCEL_SUMMARY } from "../src/commands/cancel";
 import {
   recoverStaleRuns,
   runDueReconciles,
@@ -24,13 +26,22 @@ const transientProbe: ReconcileProbe = async () => ({ status: "unreachable" });
 const completedProbe: ReconcileProbe = async () => ({ status: "completed", summary: "adopted answer" });
 
 /** Seed a running opencode run with a dispatched command + a step watermark. */
-async function seedRunning(): Promise<{ runId: string; threadId: string }> {
+async function seedRunning(
+  engine: EngineId = "opencode",
+): Promise<{ runId: string; threadId: string }> {
   const id = uid("run");
   await acceptRunCommand({
     idempotencyKey: null,
     orgId: ORG,
     actorId: null,
-    run: { id, prompt: "x", model: "claude-opus-5", engine: "opencode", parentRunId: null, threadId: id },
+    run: {
+      id,
+      prompt: "x",
+      model: engine === "codex" ? "gpt-5.6-luna" : "claude-opus-5",
+      engine,
+      parentRunId: null,
+      threadId: id,
+    },
   });
   await setRunStatus(id, "running");
   await setRunEngineSession(id, "ses_x");
@@ -88,6 +99,36 @@ describe("boot PARK instead of honest-fail (#63)", () => {
 });
 
 describe("background re-probe loop", () => {
+  test("re-probes with the parked run's actual provider", async () => {
+    const { runId, threadId } = await seedRunning("codex");
+    await park(runId, threadId);
+    const providers: string[] = [];
+
+    await runDueReconciles(async (handle) => {
+      providers.push(handle.provider);
+      return { status: "unreachable" };
+    });
+
+    expect(providers).toEqual(["codex"]);
+  });
+
+  test("a durable cancel settles a parked run without another provider probe", async () => {
+    const { runId, threadId } = await seedRunning();
+    await park(runId, threadId);
+    await acceptRunCancel({ orgId: ORG, actorId: null, runId });
+    let probed = false;
+
+    const out = await runDueReconciles(async () => {
+      probed = true;
+      return { status: "completed", summary: "must not win" };
+    });
+
+    expect(probed).toBe(false);
+    expect(out.failed).toBe(1);
+    expect((await getRun(runId))?.summary).toBe(CANCEL_SUMMARY);
+    expect(await getReconcile(runId)).toBeNull();
+  });
+
   test("reconcile-after-delay: a finished session is ADOPTED", async () => {
     const { runId, threadId } = await seedRunning();
     await park(runId, threadId);
@@ -162,7 +203,7 @@ describe("continuity during re-probe (interim events + heartbeat)", () => {
     return db
       .select()
       .from(providerEvents)
-      .where(and(eq(providerEvents.runId, runId), sql`${providerEvents.id} like 'pe\\_%'`));
+      .where(and(eq(providerEvents.runId, runId), sql`${providerEvents.eventType} like 'part.%'`));
   }
 
   test("interim in_progress events are ingested once and stay deduped across probes", async () => {
@@ -172,7 +213,9 @@ describe("continuity during re-probe (interim events + heartbeat)", () => {
     const first = await runDueReconciles(inProgressProbe);
     expect(first.retried).toBe(1); // still running, rescheduled
     expect(first.eventsRecovered).toBe(2);
-    expect((await interimRows(runId)).length).toBe(2);
+    const firstRows = await interimRows(runId);
+    expect(firstRows).toHaveLength(2);
+    expect(firstRows.every((row) => row.id.startsWith(`${runId}:`))).toBe(true);
     expect((await getRun(runId))?.status).toBe("running"); // finalize untouched
 
     // Make the parked row due again and re-probe with the SAME events.

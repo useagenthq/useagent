@@ -60,6 +60,23 @@ const windowDescriptor = Object.getOwnPropertyDescriptor(globalThis, "window");
 let calls: FetchCall[] = [];
 let responses: Response[] = [];
 
+function plainHeaders(headers: HeadersInit | undefined): Record<string, string> | undefined {
+  if (!headers) return undefined;
+  return Object.fromEntries(new Headers(headers).entries());
+}
+
+function normalizedCalls() {
+  return calls.map(({ input, init }) => ({
+    input,
+    init: init
+      ? {
+          ...init,
+          headers: plainHeaders(init.headers),
+        }
+      : init,
+  }));
+}
+
 beforeEach(() => {
   calls = [];
   responses = [];
@@ -86,12 +103,15 @@ describe("Automations API client", () => {
     const result = await fetchSchedules(controller.signal);
 
     expect(result).toEqual([automation]);
-    expect(calls).toEqual([
+    expect(normalizedCalls()).toEqual([
       {
         input: "/api/automations",
         init: {
           cache: "no-store",
           credentials: "include",
+          headers: {
+            "x-skynet-client-release": "run-events-v1:dev",
+          },
           signal: controller.signal,
         },
       },
@@ -105,12 +125,15 @@ describe("Automations API client", () => {
     const result = await fetchHistory(automation.id, controller.signal);
 
     expect(result).toEqual([firing]);
-    expect(calls).toEqual([
+    expect(normalizedCalls()).toEqual([
       {
         input: `/api/automations/${automation.id}/history`,
         init: {
           cache: "no-store",
           credentials: "include",
+          headers: {
+            "x-skynet-client-release": "run-events-v1:dev",
+          },
           signal: controller.signal,
         },
       },
@@ -130,12 +153,15 @@ describe("Automations API client", () => {
     const result = await createSchedule(input);
 
     expect(result).toEqual(automation);
-    expect(calls).toEqual([
+    expect(normalizedCalls()).toEqual([
       {
         input: "/api/automations",
         init: {
           method: "POST",
-          headers: { "content-type": "application/json" },
+          headers: {
+            "content-type": "application/json",
+            "x-skynet-client-release": "run-events-v1:dev",
+          },
           body: JSON.stringify(input),
           credentials: "include",
         },
@@ -149,12 +175,15 @@ describe("Automations API client", () => {
     const result = await updateSchedule(automation.id, { enabled: true });
 
     expect(result.enabled).toBeTrue();
-    expect(calls).toEqual([
+    expect(normalizedCalls()).toEqual([
       {
         input: `/api/automations/${automation.id}`,
         init: {
           method: "PATCH",
-          headers: { "content-type": "application/json" },
+          headers: {
+            "content-type": "application/json",
+            "x-skynet-client-release": "run-events-v1:dev",
+          },
           body: JSON.stringify({ enabled: true }),
           credentials: "include",
         },
@@ -168,10 +197,16 @@ describe("Automations API client", () => {
     const runId = await runScheduleNow(automation.id);
 
     expect(runId).toBe(firing.run_id);
-    expect(calls).toEqual([
+    expect(normalizedCalls()).toEqual([
       {
         input: `/api/automations/${automation.id}/run-now`,
-        init: { method: "POST", credentials: "include" },
+        init: {
+          method: "POST",
+          credentials: "include",
+          headers: {
+            "x-skynet-client-release": "run-events-v1:dev",
+          },
+        },
       },
     ]);
   });
@@ -181,10 +216,16 @@ describe("Automations API client", () => {
 
     await deleteSchedule(automation.id);
 
-    expect(calls).toEqual([
+    expect(normalizedCalls()).toEqual([
       {
         input: `/api/automations/${automation.id}`,
-        init: { method: "DELETE", credentials: "include" },
+        init: {
+          method: "DELETE",
+          credentials: "include",
+          headers: {
+            "x-skynet-client-release": "run-events-v1:dev",
+          },
+        },
       },
     ]);
   });

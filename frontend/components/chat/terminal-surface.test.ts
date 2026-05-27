@@ -7,6 +7,7 @@ import {
   terminalFontFamily,
   terminalFontLoadRequests,
   terminalTheme,
+  isIdleTerminalNotice,
 } from "./terminal-surface";
 
 describe("quoteTerminalFontFamilies", () => {
@@ -115,5 +116,18 @@ describe("gridChanged", () => {
   test("notifies when either axis changes", () => {
     expect(gridChanged({ cols: 80, rows: 24 }, { cols: 81, rows: 24 })).toBe(true);
     expect(gridChanged({ cols: 80, rows: 24 }, { cols: 80, rows: 25 })).toBe(true);
+  });
+});
+
+describe("isIdleTerminalNotice", () => {
+  test("recognizes every backend dead or idle sandbox notice", () => {
+    expect(isIdleTerminalNotice("[skynet] no live sandbox for this run")).toBe(true);
+    expect(isIdleTerminalNotice("[skynet] Sandbox tpl-123 not found")).toBe(true);
+    expect(isIdleTerminalNotice("[skynet] Sandbox is probably not running anymore")).toBe(true);
+  });
+
+  test("preserves real terminal output", () => {
+    expect(isIdleTerminalNotice("root@tpl-123:~/work# bun test")).toBe(false);
+    expect(isIdleTerminalNotice("Sandbox integration tests passed")).toBe(false);
   });
 });

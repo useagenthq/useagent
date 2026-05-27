@@ -76,7 +76,7 @@ export interface RepoSnapshot {
 /** The sweep's collaborators, injectable so tests drive orchestration (pacing,
  *  bounds, error isolation, unchanged-sha skip) with fakes and zero GitHub/DB. */
 export interface CodeIndexDeps {
-  listRepos: () => Promise<{
+  listRepos: (orgId: string) => Promise<{
     configured: boolean;
     repos: readonly { full_name: string }[];
     error?: string;
@@ -210,7 +210,7 @@ export async function runCodeIndexSweep(
 
   let listing: Awaited<ReturnType<CodeIndexDeps["listRepos"]>>;
   try {
-    listing = await deps.listRepos();
+    listing = await deps.listRepos(orgId);
   } catch (err) {
     console.error("[code-index] repo listing failed:", err);
     return summary;

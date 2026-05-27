@@ -9,6 +9,7 @@ import {
   type StepKind,
 } from "../db/schema";
 import { parseRepoRef, type RepoRef } from "../github/repo-ref";
+import type { RunResource } from "../resources/types";
 import { listUploadsForRuns, type RunUploadDescriptor } from "../uploads/repo";
 
 // ---------------------------------------------------------------------------
@@ -54,6 +55,8 @@ export interface ApiRun {
    *  (null = the repo's default branch). Decoded from the stored refs so
    *  replay/reconnect reports the SAME branch the sandbox was cloned at. */
   repo_specs: RepoRef[];
+  /** Typed resources accepted for this run. [] for legacy runs/callers. */
+  resolved_resources: RunResource[];
   /** Which team-memory pool this run reads/writes (default "org"). The composer
    *  reads a thread's scope from its newest run so a reply inherits it. */
   memory_scope: MemoryScope;
@@ -108,6 +111,7 @@ function toRun(
     repo: r.repo ? parseRepoRef(r.repo).repo : null,
     repos: specs.map((s) => s.repo),
     repo_specs: specs,
+    resolved_resources: r.resolvedResources ?? [],
     memory_scope: r.memoryScope,
     skill_id: r.skillId,
     skill_version: r.skillVersion,
@@ -176,6 +180,7 @@ export async function createRun(
     parentRunId: string | null;
     threadId: string;
     repos: string[];
+    resolvedResources?: readonly RunResource[];
     /** Team-memory pool for the run. Resolved server-side at the run-creation
      *  boundary (explicit choice, parent inheritance, or the "org" default). */
     memoryScope: MemoryScope;
@@ -206,6 +211,7 @@ export async function createRun(
     parentRunId: input.parentRunId,
     threadId: input.threadId,
     repos: input.repos ?? [],
+    resolvedResources: [...(input.resolvedResources ?? [])],
     // Legacy single-value mirror: clean "owner/name" (drop any branch suffix).
     repo: input.repos?.[0] ? parseRepoRef(input.repos[0]).repo : null,
     memoryScope: input.memoryScope,

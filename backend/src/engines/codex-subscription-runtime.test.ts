@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import type { SandboxHandle, SandboxExecuteResult } from "../sandboxes/provider";
 import type { CodexSubscriptionRelayBinding } from "../provider-connections/codex-subscription-relay";
 import type { CodexSubscriptionRuntimeSelection } from "../provider-connections/service";
@@ -12,6 +12,21 @@ import {
   prepareCodexSubscription,
   previewWebSocketUrl,
 } from "./codex-subscription-runtime";
+
+const priorGatewayUrl = process.env.PROVIDER_GATEWAY_PUBLIC_URL;
+const priorGatewaySecret = process.env.PROVIDER_GATEWAY_SECRET;
+
+beforeEach(() => {
+  process.env.PROVIDER_GATEWAY_PUBLIC_URL = "https://gateway.example.test";
+  process.env.PROVIDER_GATEWAY_SECRET = "provider-test-0123456789abcdef0123456789abcdef";
+});
+
+afterEach(() => {
+  if (priorGatewayUrl === undefined) delete process.env.PROVIDER_GATEWAY_PUBLIC_URL;
+  else process.env.PROVIDER_GATEWAY_PUBLIC_URL = priorGatewayUrl;
+  if (priorGatewaySecret === undefined) delete process.env.PROVIDER_GATEWAY_SECRET;
+  else process.env.PROVIDER_GATEWAY_SECRET = priorGatewaySecret;
+});
 
 describe("T3 Codex subscription lease", () => {
   test("binds the host relay to the exact run and remote execution environment", async () => {
@@ -69,11 +84,16 @@ describe("T3 Codex subscription lease", () => {
     expect(relayRuntime).toEqual(runtime());
     expect(relayExecServerUrl).toBe("ws://127.0.0.1:43111/grant");
 
-    const providerPatch = harness.commands.at(-1)?.command ?? "";
+    const providerPatch = harness.commands.find(({ command }) =>
+      command.includes("CODEX_INSTANCE_B64"),
+    )?.command ?? "";
     expect(providerPatch).toContain("CODEX_INSTANCE_B64");
     expect(providerPatch).not.toContain("/host/codex-home");
     expect(providerPatch).not.toContain("preview-secret");
     expect(providerPatch).not.toContain("SKYNET_TOOL_GATEWAY_BEARER_TOKEN");
+    expect(
+      harness.commands.some(({ command }) => command.includes("provider-gateway-generation")),
+    ).toBe(true);
 
     await lease.close();
     await lease.close();
