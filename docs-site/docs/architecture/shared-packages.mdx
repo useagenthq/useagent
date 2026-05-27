@@ -1,0 +1,46 @@
+---
+title: Shared packages
+description: The runtime-neutral contracts that let the frontend and backend agree without depending on each other's internals.
+sidebar:
+  order: 4
+---
+
+The shared packages define the public thread-event and canonical-engine schemas.
+The backend event log and each live provider stay authoritative for persisted and
+native state; the packages are the contract layer on top.
+
+## The packages
+
+| Package | What it owns |
+| --- | --- |
+| `@skynet/agent-client` | The browser-side client: reconnect to SSE, reduce events into thread state, and expose selectors to the UI, plus typed API helpers. |
+| `@skynet/agent-harness` | Provider-neutral canonical event, capability, session, and `ProviderDriver` lifecycle types. The engine control contract. |
+| `@skynet/artifact-formats` | Native DOCX, XLSX, PPTX, and PDF renderers, plus bounded Office text extraction. |
+| `@skynet/artifact-workspace` | Provider-neutral workpiece kinds, actions, and the native export capability matrix shared by backend and frontend. |
+| `@skynet/conformance` | Deterministic, framework-free contract tests for the client and harness packages. It does not run live providers. |
+
+## Why the contract lives in packages
+
+<CardGroup cols={2}>
+  <Card title="One schema, two consumers" icon="git-compare">
+    The frontend and backend both depend on the same event and capability types,
+    so a change to the contract is a change both sides see at build time.
+  </Card>
+  <Card title="Engine neutrality" icon="plug">
+    `agent-harness` is where "any engine renders through one UI" is actually
+    enforced. Adapters implement its `ProviderDriver` lifecycle.
+  </Card>
+</CardGroup>
+
+## The conformance suite
+
+`packages/conformance` holds deterministic tests for the public contracts:
+reducer behavior, replay, and capability gating. It runs without a live provider,
+so it is fast and stable in CI. Live provider parity is a separate,
+environment-gated proof covered under [Verification](/operations/verification).
+
+:::note
+Sandbox adapters share a provider-neutral interface but keep provider-specific
+tests for native capabilities. The neutral contract is verified by conformance;
+the provider-specific behavior is verified per provider.
+:::

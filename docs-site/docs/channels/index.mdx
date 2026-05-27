@@ -1,0 +1,52 @@
+---
+title: Channels
+description: Why a run behaves the same whether it starts in the web app, in Slack, or from a schedule. One durable command lane, one door.
+sidebar:
+  label: The single door
+  order: 1
+---
+
+A run does not care where it came from. The web app, Slack, and scheduled
+automations all submit work through the **same durable command lane**, so every
+channel inherits the same reliability, threading, and rendering.
+
+## One command lane
+
+<Steps>
+  <Step title="A channel accepts input">
+    A message, a mention, or a schedule firing produces a command with an
+    idempotency key.
+  </Step>
+  <Step title="The lane is shared">
+    That command enters the exact same durable lane the web composer uses. There
+    is no per-channel run engine.
+  </Step>
+  <Step title="Results flow back to the channel">
+    Answers, artifacts, and approval cards are delivered back to wherever the run
+    started, through the outbox.
+  </Step>
+</Steps>
+
+## Why this matters
+
+Because ingress is a single door, adding a new channel is mostly a matter of
+translating that channel's messages into commands and delivering results back. A
+new channel gets durable commands, threaded replies, restart survival, and the
+approval lane for free, with no bespoke run UI.
+
+<CardGroup cols={2}>
+  <Card title="Reliable by construction" icon="shield-check">
+    A new channel reuses the durable command lane and the thread stream, so it is
+    reliable without reimplementing orchestration.
+  </Card>
+  <Card title="Slack today" href="/channels/slack" icon="message-square">
+    Slack is the first fully built channel: mention-to-run, threaded replies,
+    inbound attachments, and results back in the thread.
+  </Card>
+</CardGroup>
+
+:::note
+Automations are themselves a channel in this sense: a durable scheduled trigger
+that submits work through the same command lane as an interactive user. New
+automations start disabled.
+:::

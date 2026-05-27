@@ -1,0 +1,65 @@
+---
+title: Architecture
+description: The settled architecture. Verify-gated, Event-sourced, Replaceable-engine Actors, and why each property is load-bearing.
+sidebar:
+  label: VERA
+  order: 1
+---
+
+Skynet's architecture has a name and a short set of settled decisions behind it.
+VERA stands for **Verify-gated, Event-sourced, Replaceable-engine Actors**. Each
+word is a commitment the rest of the system leans on.
+
+## The four properties
+
+<CardGroup cols={2}>
+  <Card title="Verify-gated" icon="shield-check">
+    Outcomes are gated on verification, and the verify authority is designed not
+    to be self-graded by the engine that did the work. Provider completion alone
+    is not success.
+  </Card>
+  <Card title="Event-sourced" icon="git-commit-horizontal">
+    The run and step log in Postgres is the source of truth. State is the reduction
+    of an ordered, durable event sequence, so runs replay and survive restarts.
+  </Card>
+  <Card title="Replaceable-engine" icon="plug">
+    The inner loop is rented behind a neutral adapter. Codex, Claude, and OpenCode
+    are interchangeable at the contract boundary.
+  </Card>
+  <Card title="Actors" icon="box">
+    Each run is an isolated actor with its own sandbox and working directory,
+    driven from outside by the harness.
+  </Card>
+</CardGroup>
+
+## The harness lives outside the sandbox
+
+This is the decision everything else follows from. The backend is the harness:
+the event log, the workers, the SSE fan-out, org scoping, and knowledge all live
+on the trusted side. The sandbox runs the engine and the work. The UI renders the
+log, never a live process.
+
+The consequences are concrete:
+
+- A run **survives a backend restart**, because its truth is the log, not a
+  process' memory.
+- Three different engines render through **one UI contract**, because their output
+  is canonicalized before it is stored.
+- A sandbox never holds long-lived credentials, because privileged work goes
+  through the [gateway](/concepts/gateway-tools-and-approvals).
+
+:::note
+Several tempting alternatives were evaluated and set aside: running the harness
+inside the sandbox, building a bespoke inner agent loop, and embedding an
+engine's own web UI. Each was rejected for recorded reasons. The architecture is
+deliberately thin.
+:::
+
+## Where to go next
+
+- [Request flow](/architecture/request-flow) traces one turn from prompt to
+  rendered timeline.
+- [Realtime and canonicalization](/architecture/realtime) covers the streams and
+  the single-backend constraint.
+- [Shared packages](/architecture/shared-packages) are the contracts that keep the
+  frontend and backend honest.

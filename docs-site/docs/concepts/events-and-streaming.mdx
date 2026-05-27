@@ -1,0 +1,60 @@
+---
+title: Events and streaming
+description: Canonical events, native frames, and the two server-sent streams that carry a run to the browser.
+sidebar:
+  order: 3
+---
+
+The event log is the product. This page covers what an event is, why there are
+two shapes of it, and how events reach the UI.
+
+## Canonical event
+
+Skynet's provider-neutral representation of engine output. Canonicalization is
+what lets Codex, Claude, and OpenCode render through one UI contract: each
+engine's native stream is translated into the same canonical shape, so the
+timeline components never need to know which engine produced a run.
+
+## Native frame
+
+The original engine event, retained alongside the canonical one for fidelity and
+debugging when the canonical shape cannot yet express every provider detail. The
+backend event log and each live provider remain authoritative for persisted and
+native runtime state; the shared packages define the public schema on top.
+
+## The two streams
+
+Skynet uses two distinct server-sent event streams, and it is important not to
+conflate them:
+
+<CardGroup cols={2}>
+  <Card title="Thread stream" icon="messages-square">
+    A one-way stream scoped to a thread. On reconnect it delivers a fresh durable
+    snapshot, then live steps. This is how a session view stays current and how
+    it recovers after a drop without losing history.
+  </Card>
+  <Card title="Org-change stream" icon="bell">
+    A single authenticated org stream that carries live invalidations only. It is
+    not event replay and not distributed pub/sub; subscribed views refetch their
+    authoritative APIs after an event arrives.
+  </Card>
+</CardGroup>
+
+The thread stream replays missed history from the durable snapshot. The
+org-change stream does **not** replay; it only tells ambient views (Automations,
+Provider Connections, and similar) that something changed so they can refetch.
+
+## How the UI consumes events
+
+The browser-side [`agent-client`](/architecture/shared-packages) package
+reconnects to the thread stream, reduces the event sequence into thread state,
+and exposes selectors to the UI. The session grammar then renders each step as a
+card or row: work-entry tool groups with folds, reasoning disclosures, recall
+receipts, live todo and plan cards, per-file diffs, and artifact cards after the
+answer text.
+
+:::tip
+A reconnect is not a re-fetch of everything from scratch. The thread stream hands
+back a durable snapshot, so a flaky network produces a clean resync rather than a
+flash of empty or duplicated content.
+:::
