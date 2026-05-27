@@ -1,0 +1,43 @@
+---
+title: Learnings review
+description: The human gate on self-improvement. Where proposed knowledge drafts and skill revisions wait for an admin to accept or dismiss.
+sidebar:
+  order: 8
+---
+
+`/learnings` is the review queue for the self-improvement lane. It is the point
+where the machinery stops and a human decides. Nothing on this page publishes on
+its own.
+
+## Two kinds of proposal
+
+<CardGroup cols={2}>
+  <Card title="Knowledge drafts" icon="file-plus">
+    Proposed from high-value runs, each carrying the ordered, redacted procedure
+    trace of what actually worked. `GET /api/knowledge/drafts`.
+  </Card>
+  <Card title="Skill revisions" icon="git-pull-request-arrow">
+    Assembled from accepted drafts that cluster, with a procedure built from the
+    real traces. `GET /api/skills/proposals`.
+  </Card>
+</CardGroup>
+
+## The review action
+
+Each proposal is accepted or dismissed by an organization admin:
+
+- A knowledge draft is accepted via `POST /api/knowledge/drafts/:id/accept`, or
+  dismissed.
+- A skill proposal is accepted via `POST /api/skills/proposals/:id/accept`, or
+  dismissed.
+
+Accepting a draft publishes it to the stores and re-projects it into retrieval,
+so an accepted learning compounds: it becomes findable in future runs.
+
+:::note
+The pipeline that fills this queue is complete. What gates throughput is
+deliberate: a person has to accept the first draft before anything compounds.
+There is no unattended write path into the knowledge stores. See the [learning
+lane](/concepts/knowledge-and-learning#the-learning-lane) for how proposals are
+built.
+:::

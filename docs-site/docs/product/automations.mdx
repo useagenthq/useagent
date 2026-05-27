@@ -1,0 +1,42 @@
+---
+title: Automations
+description: Runs that start on a schedule or a trigger, through the same command lane as a person. The /agent/automations surface.
+sidebar:
+  order: 10
+---
+
+An automation is a durable trigger that submits work on its own. It is not a
+separate execution path: an automation enters the same command lane as an
+interactive user, so a scheduled run is just a run.
+
+## The surface
+
+`/agent/automations` lists recurring and triggered runs, with an editor, a
+history drawer, and a fire-now control:
+
+| Operation | Endpoint |
+| --- | --- |
+| List, create | `GET`, `POST /api/automations` |
+| Edit, remove | `PATCH`, `DELETE /api/automations/:id` |
+| Fire now | `POST /api/automations/:id/run-now` |
+| History | `GET /api/automations/:id/history` |
+
+The list refreshes on create, update, and delete so the surface stays current.
+
+## Safe by default
+
+<CardGroup cols={2}>
+  <Card title="Starts disabled" icon="toggle-left">
+    A new automation is created disabled. It fires nothing until you enable it.
+  </Card>
+  <Card title="Same lane, same guarantees" icon="shield-check">
+    A triggered run gets durable commands, threading, restart survival, and the
+    approval lane, exactly like a manual run.
+  </Card>
+</CardGroup>
+
+:::note
+Because an automation submits through the command lane with an idempotency key, a
+misfire or a retry cannot double-run the same scheduled work. Fire-now is a
+convenience for testing a trigger without waiting for its schedule.
+:::

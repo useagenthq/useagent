@@ -3,7 +3,7 @@ import { defineMeta } from "blume";
 export default defineMeta({
   title: "Concepts",
   icon: "boxes",
-  order: 2,
+  order: 3,
   pages: [
     "index",
     "runs-threads-commands",

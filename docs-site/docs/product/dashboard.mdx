@@ -1,0 +1,45 @@
+---
+title: Dashboard
+description: The workspace hub. Recent runs, activity over time, fleet lanes per project, and where usage stands against limits.
+sidebar:
+  order: 4
+---
+
+The dashboard at `/dashboard` is the workspace's home. It answers "what has been
+happening, and where do we stand" at a glance.
+
+## What it shows
+
+<CardGroup cols={2}>
+  <Card title="Recent runs" icon="history">
+    A table of recent runs across the organization, each a link into its session.
+  </Card>
+  <Card title="Activity" icon="calendar-days">
+    A contributions heatmap and a runs trend, so cadence is visible over time.
+  </Card>
+  <Card title="Fleet lanes" icon="columns-3">
+    Per-project lanes showing runs grouped by the repository or project they act
+    on.
+  </Card>
+  <Card title="Usage and limits" icon="gauge">
+    A limits card summarizing model burn and the sandbox footprint against
+    available headroom.
+  </Card>
+</CardGroup>
+
+The usage figures come from real run accounting rather than estimates, so the
+limits card reflects actual model and sandbox consumption. See
+[Fleet and usage](/platform/fleet-and-usage) for where those numbers originate.
+
+## The live runs list
+
+For a focused view of what is executing right now, `/agent/runs` lists live agent
+runs straight from the orchestrator. It is deliberately dynamic: it reflects the
+current state of the fleet rather than a cached snapshot.
+
+:::tip
+The dashboard and the runs list both refetch on the ambient org-change stream, so
+starting or finishing a run updates them without a manual refresh. That stream
+carries invalidations only, not the run data itself. See
+[Realtime](/architecture/realtime).
+:::
