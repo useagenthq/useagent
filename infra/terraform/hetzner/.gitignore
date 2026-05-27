@@ -1,0 +1,14 @@
+# Terraform state and secrets never get committed.
+.terraform/
+*.tfstate
+*.tfstate.*
+crash.log
+crash.*.log
+terraform.tfvars
+*.auto.tfvars
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+tfplan
+*.tfplan
