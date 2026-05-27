@@ -1,0 +1,56 @@
+---
+title: Getting started
+description: What the platform is made of, and the shortest path from a clone to a running stack.
+sidebar:
+  label: Overview
+  order: 1
+---
+
+Skynet is a multi-package repository with one product UI, one backend control
+plane, and shared TypeScript packages that define the cross-package contracts.
+Everything a user sees is a rendering of the backend's durable event log.
+
+## The three moving parts
+
+<CardGroup cols={3}>
+  <Card title="Frontend" icon="monitor">
+    A Next.js UI at port `3400`. Chat, agent sessions, skills, playbooks, wiki,
+    artifacts, secrets, learnings review, automations, and settings. Browser
+    `/api/*` calls are proxied to the backend.
+  </Card>
+  <Card title="Backend" icon="server">
+    A Hono and Postgres control plane at port `3201`. Auth, org scoping, runs,
+    sandboxes, engines, knowledge, memory, skills, automations, artifacts,
+    uploads, and connectors.
+  </Card>
+  <Card title="Shared packages" icon="package">
+    Runtime-neutral client and harness contracts, artifact renderers, and the
+    deterministic conformance suite that guards them.
+  </Card>
+</CardGroup>
+
+## How a request travels
+
+<Steps>
+  <Step title="A command enters the lane">
+    A prompt from the web app, Slack, or a scheduled automation becomes a durable
+    command with an idempotency key, so retries never duplicate work.
+  </Step>
+  <Step title="A run executes in a sandbox">
+    The backend claims a sandbox, spawns the engine one-shot, and streams its
+    output into the event log as canonical steps.
+  </Step>
+  <Step title="The UI renders the log">
+    The session view subscribes to a thread-scoped stream and reduces events into
+    a timeline. Reconnects receive a fresh durable snapshot.
+  </Step>
+</Steps>
+
+Read [Quickstart](/getting-started/quickstart) to run it locally, then
+[Repository map](/getting-started/repository-map) for where each piece lives. The
+[Concepts](/concepts) section defines every term used above.
+
+:::tip
+The runtime is **Bun** everywhere. The two apps carry their own lockfiles, so you
+install inside each app rather than at the root.
+:::

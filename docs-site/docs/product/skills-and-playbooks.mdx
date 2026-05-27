@@ -1,0 +1,52 @@
+---
+title: Skills and playbooks
+description: The reusable-procedure catalog. Where an organization's know-how is stored, imported from GitHub, and surfaced by relevance each turn.
+sidebar:
+  order: 5
+---
+
+Skills and playbooks are the procedures an organization reuses. They share one
+immutable substrate and two catalog surfaces: `/skills` and `/playbooks`.
+
+## Two views of one substrate
+
+<CardGroup cols={2}>
+  <Card title="Skills" icon="wand-sparkles" href="/skills">
+    Versioned, reusable instructions, selected semantically and activated by exact
+    id for a task.
+  </Card>
+  <Card title="Playbooks" icon="book-open-text" href="/playbooks">
+    A skill whose content is a repeatable end-to-end operating procedure.
+  </Card>
+</CardGroup>
+
+The distinction is content, not mechanism: a playbook is a skill that reads as a
+full procedure. Both are versioned and both are activated the same way.
+
+## Imported from GitHub
+
+GitHub is the source of an organization's procedures. From `/skills` you can
+import `SKILL.md` files from a repository with one click, and an optional hourly
+resync keeps the catalog current.
+
+- Discovery runs over a server-side shallow clone, resolving the head with
+  `git ls-remote`.
+- Imports are pinned to a commit and idempotent by source, so re-importing never
+  duplicates.
+
+See [Knowledge and learning](/concepts/knowledge-and-learning#skill-import) for
+the mechanism.
+
+## Surfaced by relevance
+
+The catalog the model sees each turn is not a fixed top-N by usage. On every
+unpinned turn it is re-ranked by relevance to the prompt, so the procedures that
+match the current ask surface into context. You can also pin a specific skill or
+playbook from the [composer](/product/task-composer) when you want it guaranteed
+in the turn.
+
+:::tip
+A pinned procedure is always in context for that turn; an unpinned catalog is
+re-ranked per prompt. Pin when you know exactly which procedure applies; rely on
+ranking when you want the system to choose.
+:::

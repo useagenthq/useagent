@@ -1,0 +1,67 @@
+---
+title: Themes and design
+description: The token-driven design system behind every surface, the four themes, and the places you can explore both.
+sidebar:
+  order: 14
+---
+
+The product's look is one coherent system: semantic design tokens, a small set of
+typefaces, and themes that flip the whole palette at once.
+
+## Four themes
+
+A theme menu in the top navigation switches between four palettes:
+
+<CardGroup cols={2}>
+  <Card title="Midnight" icon="moon">
+    The default. A Tokyo Night derived dark palette.
+  </Card>
+  <Card title="Aura" icon="sparkles">
+    A violet dark theme.
+  </Card>
+  <Card title="Harbor" icon="anchor">
+    A blue dark theme.
+  </Card>
+  <Card title="Light" icon="sun">
+    The light palette.
+  </Card>
+</CardGroup>
+
+A theme is applied wholesale through semantic tokens rather than per-component
+overrides, so switching palettes recolors the entire app consistently. Components
+reference tokens like a strong-text or a canvas-surface role, and the active theme
+supplies the values.
+
+## Typography
+
+Three typefaces cover three roles:
+
+| Role | Typeface |
+| --- | --- |
+| Display and headings | Inter Tight |
+| Body and UI | Inter |
+| Code and technical labels | JetBrains Mono |
+
+## Explore it
+
+Two surfaces let you see the system directly:
+
+- **`/foundation`** is the design-foundation explorer: theme swatches, the token
+  set, the typography scale, and the semantic color roles.
+- **`/lab`** is the component lab: the vendored component library, the AI kit, and
+  timeline samples. `/lab/session` renders one synthetic session through the real
+  timeline components, so every canonical event type can be reviewed on a single
+  page, and `/lab/workspace` shows the workpiece editor surfaces in context.
+
+:::note
+The UI foundation is a vendored component library used through namespace imports,
+with neutral names rather than the vendor's product name. Styling is
+token-driven, so there are no per-component dark-mode branches to keep in sync.
+:::
+
+## Why a component lab
+
+The lab is not decoration. Because the timeline must render every event type
+correctly for every engine, `/lab/session` gives a single page where a synthetic
+run exercises the whole grammar. It is where a rendering regression is caught
+before it reaches a real session.

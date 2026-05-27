@@ -1,0 +1,67 @@
+---
+title: Quickstart
+description: Install the two apps and bring up the backend and frontend dev servers.
+sidebar:
+  order: 2
+---
+
+Skynet runs as two standalone apps that share a Postgres database. This page gets
+both dev servers up locally.
+
+## Prerequisites
+
+- **Bun** as the runtime and package manager. Skynet uses Bun everywhere, never npm.
+- **Postgres**. The backend is the source of truth and applies its Drizzle
+  migrations on boot, so an empty database is enough to start.
+
+:::warning
+Exactly one backend may run against a given database. A boot-time advisory lock
+enforces it, and boot recovery reconciles in-flight runs, so a second backend on
+the same database will interfere with the first. Point new work at a throwaway
+database. See [Operational invariants](/operations/invariants).
+:::
+
+## Install
+
+Each app carries its own lockfile, so install inside each one:
+
+```bash
+(cd frontend && bun install)
+(cd backend && bun install)
+```
+
+## Run the dev servers
+
+From the repository root:
+
+```bash
+bun run dev:backend    # Hono control plane on :3201
+bun run dev:frontend   # Next.js UI on :3400
+```
+
+The frontend proxies browser `/api/*` requests to the backend, so you interact
+with the product entirely through `http://localhost:3400`.
+
+<Steps>
+  <Step title="Backend is listening">
+    `:3201` answers and the boot migrator has applied the schema.
+  </Step>
+  <Step title="Frontend is up">
+    `http://localhost:3400` loads the chat surface.
+  </Step>
+  <Step title="A run streams">
+    Start an agent run and watch steps arrive live in the session timeline.
+  </Step>
+</Steps>
+
+## Root scripts
+
+The common root scripts cover every package at once:
+
+```bash
+bun run typecheck        # frontend, backend, and shared packages
+bun run release:hosted   # the hosted release gate in deploy/hetzner/
+```
+
+`bun run typecheck` must pass before any change is considered done. For the full
+test and operations toolset, see [Verification](/operations/verification).

@@ -1,0 +1,45 @@
+---
+title: Operations
+description: How Skynet ships, how it proves a release, and the invariants production runs on.
+sidebar:
+  label: Overview
+  order: 1
+---
+
+Operations in Skynet are built around one principle: a release must prove itself
+before it ships, and roll back cleanly if it cannot.
+
+<CardGroup cols={3}>
+  <Card title="Deployment lanes" href="/operations/deployment" icon="rocket">
+    The guarded release, the provider-connection bootstrap, and the atomic
+    frontend release.
+  </Card>
+  <Card title="Verification" href="/operations/verification" icon="check-check">
+    The test and parity arsenal, from isolated-database unit suites to real
+    engine journeys.
+  </Card>
+  <Card title="Invariants" href="/operations/invariants" icon="lock">
+    Single backend per database, write-only secrets, a restricted gateway role,
+    and clean-worktree releases.
+  </Card>
+</CardGroup>
+
+## The shape of a safe change
+
+<Steps>
+  <Step title="Type-check everything">
+    `bun run typecheck` covers the frontend, backend, and shared packages, and
+    must pass before a change is done.
+  </Step>
+  <Step title="Verify in isolation">
+    Suites run against a throwaway database so they never disturb a live one.
+  </Step>
+  <Step title="Certify a candidate">
+    The guarded release runs fail-closed gates and per-engine parity canaries
+    against a candidate before it can ship.
+  </Step>
+  <Step title="Roll back on any failure">
+    Source, environment, Caddy configuration, and services all restore to the
+    prior state if any preflight or parity journey fails.
+  </Step>
+</Steps>

@@ -1,0 +1,62 @@
+---
+title: Sandboxes and desktop
+description: The isolated Linux workstation a run executes in, the provider behind it, warm pools, the visible desktop, and how a run survives a backend restart.
+sidebar:
+  order: 5
+---
+
+Work runs inside an isolated sandbox, not in the backend process. The backend
+drives the sandbox from outside and records everything it observes.
+
+## Sandbox
+
+The isolated Linux workstation where agent commands, repositories, browser
+automation, desktop apps, and recordings run. One run gets one sandbox and one
+working directory.
+
+## Sandbox provider
+
+A vendor-specific implementation selected behind a provider-neutral sandbox
+contract. **Daytona** and **Cube** expose the same required process, filesystem,
+PTY, preview, and lifecycle boundary, then keep provider-specific behavior and
+tests for native capabilities. Code above the contract does not branch on the
+provider.
+
+## Warm pool
+
+Prepared sandboxes kept ready so a new run avoids most cold-start work. Warm-pool
+claimable creation and parallelized post-sandbox preparation are part of the
+turn-start latency effort.
+
+## Desktop
+
+The visible XFCE and Chromium workstation shown through noVNC. Readiness is
+strict: it requires the noVNC page, RFB, XFCE, browser CDP, and both CDP relays.
+Daytona can drive the desktop natively, while Cube uses trusted X11 controls. An
+engine controls it through the desktop computer-use tools, and desktop recording
+publishes a real MP4 artifact.
+
+## Restart reconciliation
+
+Because the sandbox runs independently of the backend, a backend restart does not
+kill a live run:
+
+<Steps>
+  <Step title="The sandbox keeps executing">
+    The engine process inside the sandbox is unaffected by a backend bounce.
+  </Step>
+  <Step title="A recovery loop re-probes">
+    On restart, a background loop finds the in-flight session and streams the
+    interim provider events into the timeline with a visible heartbeat.
+  </Step>
+  <Step title="The real result is adopted">
+    The recovered run adopts the finished result, or fails honestly at a bounded
+    deadline, rather than discarding work that actually completed.
+  </Step>
+</Steps>
+
+:::warning
+The sandbox provider interface does not expose explicit pause, checkpoint, or
+snapshot operations yet. Recovery re-probes and adopts; it does not resume from a
+saved snapshot.
+:::

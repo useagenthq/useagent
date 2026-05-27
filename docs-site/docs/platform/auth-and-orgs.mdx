@@ -1,0 +1,38 @@
+---
+title: Auth and organizations
+description: The tenant boundary. How sign-in works, how every resource is scoped to an organization, and why dev mode is fail-closed.
+sidebar:
+  order: 5
+---
+
+Every resource in Skynet, a run, a secret, a skill, a piece of knowledge, an
+integration, belongs to exactly one organization. That boundary is enforced by the
+backend, not trusted from the client.
+
+## Sign-in
+
+`/login` and `/signup` authenticate against the backend auth service
+(`POST /api/auth`). Sessions are managed by the auth layer, and the browser talks
+to the backend through the frontend proxy.
+
+## Organization scoping
+
+The organization is the tenant boundary. Membership determines what a user can
+see and do, and the scope is resolved server-side on every request. The backend
+does not trust an organization id supplied by the client; it derives scope from
+the authenticated session, so a client cannot ask for another organization's data
+by changing a header.
+
+## Fail-closed dev mode
+
+A development mode exists to ease local work, but it is fail-closed in production:
+the shortcuts it enables are refused unless the environment explicitly opts in. In
+production the dev bypass simply does not apply, so nothing about local
+convenience weakens a deployed instance.
+
+:::warning
+Org scoping is load-bearing for every other guarantee in the platform. Secrets,
+memory pools, knowledge, and runs are all partitioned by organization. The
+boundary is enforced at the backend and the database, so a bug in a single UI page
+cannot cross tenants.
+:::

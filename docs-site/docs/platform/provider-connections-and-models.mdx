@@ -1,0 +1,63 @@
+---
+title: Provider connections and models
+description: Two ways to authenticate an engine, the gateway providers behind them, and the model families served, with the credential never entering a sandbox.
+sidebar:
+  order: 2
+---
+
+An engine needs credentials to run. Skynet stores them on the trusted backend and
+resolves them at turn time, so a sandbox never holds a reusable secret.
+
+## Two authentication methods
+
+<CardGroup cols={2}>
+  <Card title="Managed account" icon="user-check">
+    A ChatGPT or Codex account connected with an OAuth device flow. The token
+    bundle is stored encrypted and used from the trusted backend.
+  </Card>
+  <Card title="API key" icon="key-round">
+    A provider key stored write-only, encrypted with AES-256-GCM, resolved inside
+    the signed provider gateway.
+  </Card>
+</CardGroup>
+
+The connection lifecycle is driven from [Settings](/product/settings):
+
+| Operation | Endpoint |
+| --- | --- |
+| List, create, update | `GET`, `POST`, `PUT /api/provider-connections` |
+| Managed account OAuth | `.../openai/chatgpt-oauth/start`, `/status`, `/cancel`, `/revoke` |
+| Per-provider key | `.../:provider/api-key`, `.../:provider/revoke` |
+
+## Gateway providers and models
+
+API-key engines are served through the provider gateway, which fronts three
+upstreams:
+
+| Provider | Endpoint | Models |
+| --- | --- | --- |
+| Anthropic | `api.anthropic.com` | `claude-*` |
+| OpenAI | `api.openai.com` | `gpt-*` |
+| OpenRouter | `openrouter.ai/api` | Aggregated across providers |
+
+OpenCode runs against its own native models. Which engines and models are
+selectable in the UI is gated by the enabled-engines set for the organization.
+
+## The Codex subscription relay
+
+A managed Codex subscription does not put OAuth state in a sandbox. The Codex
+app-server and the ChatGPT OAuth stay on the trusted backend, and only the Codex
+exec-server runs inside the sandbox, reached over a one-use, run-bound relay. See
+[Engines](/concepts/engines-and-adapters#codex-subscription-relay).
+
+## Connection reconcile
+
+A provider-connection row heals from broker truth. A revoked row may only be
+reclaimed when the live account email differs from the revoked one, which proves a
+genuinely new login rather than a stale pre-logout snapshot.
+
+:::warning
+Only connection metadata is ever visible to the UI. The reusable secret, whether
+an API key or an OAuth token, is write-only and is resolved inside the gateway. It
+does not travel to the browser and it does not travel to a sandbox.
+:::
