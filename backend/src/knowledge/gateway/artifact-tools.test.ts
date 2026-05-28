@@ -121,6 +121,13 @@ describe("artifact gateway contract", () => {
         h: { type: "number", minimum: 0, maximum: 100 },
       },
     });
+    const workbookState = stateBranches.find((branch) => hasSchemaProperty(branch, "workbook"));
+    const cells = workbookState!.properties.workbook!.properties!.sheets!.items!.properties!.cells!;
+    const cell = cells.additionalProperties as JsonSchemaLike;
+    expect(cell.anyOf).toEqual([
+      { required: ["v"] },
+      { required: ["f"] },
+    ]);
     expect(block.properties!.content).not.toHaveProperty("properties");
     expect(block.properties!.style).toMatchObject({
       type: "object",

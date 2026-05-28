@@ -238,7 +238,7 @@ const sheetCellSchema = {
       additionalProperties: false,
     },
   },
-  required: ["v"],
+  anyOf: [{ required: ["v"] }, { required: ["f"] }],
   additionalProperties: false,
 } as const;
 
