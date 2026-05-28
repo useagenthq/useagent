@@ -1,4 +1,9 @@
 import { ensureSandboxDesktopView, type SandboxDesktop } from "../engines/desktop";
+import {
+  durablyBoundSandboxIds,
+  reconcileCubeWarmPoolCandidates,
+  withWarmPoolTemplateLabel,
+} from "./cube-warm-pool-reconcile";
 import type { SandboxCreateOptions, SandboxHandle, SandboxProvider } from "./provider";
 
 const CUBE_WARM_POOL_SIZE_ENV = "CUBE_WARM_POOL_SIZE";
@@ -9,6 +14,17 @@ const WARM_TIMEOUT_MS = 120_000;
 const CLAIM_PROBE_TIMEOUT_SECONDS = 5;
 const INITIAL_RETRY_DELAY_MS = 2_000;
 const MAX_RETRY_DELAY_MS = 60_000;
+type RetryMode = "refill" | "reconcile";
+
+class CleanupDeleteError extends Error {
+  override readonly cause: unknown;
+
+  constructor(message: string, cause: unknown) {
+    super(message);
+    this.name = "CleanupDeleteError";
+    this.cause = cause;
+  }
+}
 
 function configuredPoolSize(
   name: string,
@@ -43,6 +59,7 @@ export interface CubeWarmPoolOptions {
   readonly initialRetryDelayMs?: number;
   readonly maxRetryDelayMs?: number;
   readonly refillAfterClaim?: boolean;
+  readonly protectedSandboxIds?: () => Promise<ReadonlySet<string>>;
   readonly logger?: Pick<typeof console, "log" | "warn">;
 }
 
@@ -68,19 +85,21 @@ export class CubeWarmPool {
   private readonly initialRetryDelayMs: number;
   private readonly maxRetryDelayMs: number;
   private readonly refillAfterClaim: boolean;
+  private readonly protectedSandboxIds: () => Promise<ReadonlySet<string>>;
   private readonly logger: Pick<typeof console, "log" | "warn">;
   private readonly ready: SandboxHandle[] = [];
   private creating = 0;
   private failures = 0;
   private retryDelayMs = INITIAL_RETRY_DELAY_MS;
   private retryTimer: ReturnType<typeof setTimeout> | null = null;
+  private reconciling = false;
   private started = false;
 
   constructor(options: CubeWarmPoolOptions) {
     this.name = options.name?.trim() || DEFAULT_CUBE_WARM_POOL_NAME;
     this.provider = options.provider;
     this.size = Math.max(0, Math.trunc(options.size));
-    this.createOptions = options.createOptions;
+    this.createOptions = withWarmPoolTemplateLabel(options.createOptions);
     this.warmDesktop = options.warmDesktop ?? ensureSandboxDesktopView;
     this.warmRuntime = options.warmRuntime ?? (async () => undefined);
     this.requireDesktop = options.requireDesktop ?? true;
@@ -90,6 +109,7 @@ export class CubeWarmPool {
       options.maxRetryDelayMs ?? MAX_RETRY_DELAY_MS,
     );
     this.refillAfterClaim = options.refillAfterClaim ?? true;
+    this.protectedSandboxIds = options.protectedSandboxIds ?? durablyBoundSandboxIds;
     this.retryDelayMs = this.initialRetryDelayMs;
     this.logger = options.logger ?? console;
   }
@@ -97,7 +117,7 @@ export class CubeWarmPool {
   start(): void {
     if (this.started || this.size <= 0) return;
     this.started = true;
-    this.refill();
+    this.reconcileThenRefill();
   }
 
   stop(): void {
@@ -113,7 +133,6 @@ export class CubeWarmPool {
     while (this.started) {
       const candidate = this.ready.shift();
       if (!candidate) return null;
-      if (this.refillAfterClaim) this.refill();
 
       let sandbox = candidate;
       try {
@@ -129,6 +148,7 @@ export class CubeWarmPool {
           CLAIM_PROBE_TIMEOUT_SECONDS,
         );
         if (probe.exitCode !== 0) throw new Error(`claim probe exited ${probe.exitCode}`);
+        if (this.refillAfterClaim) this.refill();
         return sandbox;
       } catch (error) {
         this.failures += 1;
@@ -136,7 +156,19 @@ export class CubeWarmPool {
           `[cube-warm-pool:${this.name}] discarded stale ${candidate.id.slice(0, 8)}:`,
           error instanceof Error ? error.message : error,
         );
-        await sandbox.delete().catch(() => candidate.delete().catch(() => {}));
+        try {
+          await this.deleteResolvedCandidate(sandbox, candidate);
+        } catch (deleteError) {
+          this.failures += 1;
+          this.logger.warn(
+            `[cube-warm-pool:${this.name}] failed to delete discarded stale ${candidate.id.slice(0, 8)}:`,
+            deleteError instanceof Error ? deleteError.message : deleteError,
+          );
+          this.scheduleRetry("reconcile");
+          throw deleteError;
+        }
+        if (this.refillAfterClaim) this.refill();
+        await this.waitForInFlightRefill();
       }
     }
     return null;
@@ -155,67 +187,154 @@ export class CubeWarmPool {
   async dispose(): Promise<void> {
     this.stop();
     const candidates = this.ready.splice(0);
-    await Promise.all(candidates.map((sandbox) => sandbox.delete().catch(() => {})));
+    await Promise.all(candidates.map((sandbox) => sandbox.delete()));
   }
 
   private refill(): void {
+    if (this.reconciling) return;
     while (this.started && this.ready.length + this.creating < this.size) {
       this.creating += 1;
-      let failed = false;
-      void this.createOne()
-        .catch((error) => {
-          failed = true;
-          this.failures += 1;
-          this.logger.warn(
-            `[cube-warm-pool:${this.name}] refill failed:`,
-            error instanceof Error ? error.message : error,
-          );
-        })
-        .finally(() => {
-          this.creating -= 1;
-          if (failed) {
-            this.scheduleRetry();
-            return;
-          }
-          this.retryDelayMs = this.initialRetryDelayMs;
-          this.refill();
-        });
+      void this.createOneAndContinue();
     }
   }
 
-  private scheduleRetry(): void {
+  private async createOneAndContinue(): Promise<void> {
+    let failed = false;
+    let retryMode: RetryMode = "refill";
+    try {
+      await this.createOne();
+    } catch (error) {
+      failed = true;
+      if (error instanceof CleanupDeleteError) retryMode = "reconcile";
+      this.failures += 1;
+      this.logger.warn(
+        `[cube-warm-pool:${this.name}] refill failed:`,
+        error instanceof Error ? error.message : error,
+      );
+    } finally {
+      this.creating -= 1;
+    }
+    if (failed) {
+      this.scheduleRetry(retryMode);
+      return;
+    }
+    this.retryDelayMs = this.initialRetryDelayMs;
+    this.refill();
+  }
+
+  private scheduleRetry(mode: RetryMode): void {
     if (!this.started || this.retryTimer) return;
     const delay = this.retryDelayMs;
     this.retryDelayMs = Math.min(this.retryDelayMs * 2, this.maxRetryDelayMs);
     this.retryTimer = setTimeout(() => {
       this.retryTimer = null;
-      this.refill();
+      if (mode === "reconcile") this.reconcileThenRefill();
+      else this.refill();
     }, delay);
     this.retryTimer.unref?.();
+  }
+
+  private async waitForInFlightRefill(): Promise<void> {
+    const deadline = Date.now() + 1_000;
+    while (this.started && this.ready.length === 0 && this.creating > 0 && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
   }
 
   private async createOne(): Promise<void> {
     const sandbox = await this.provider.create(this.createOptions);
     try {
-      const signal = AbortSignal.timeout(WARM_TIMEOUT_MS);
-      if (this.requireDesktop) {
-        const [desktop] = await Promise.all([
-          this.warmDesktop(sandbox, signal),
-          this.warmRuntime(sandbox, signal),
-        ]);
-        if (!desktop.available) {
-          throw new Error(desktop.reason ?? "desktop computer-use surface unavailable");
-        }
-      } else {
-        await this.warmRuntime(sandbox, signal);
+      await this.proveReady(sandbox);
+      if (!this.started) {
+        await this.deleteForCleanup(sandbox, "created sandbox after stop");
+        return;
       }
       this.ready.push(sandbox);
       this.logger.log(
         `[cube-warm-pool:${this.name}] ready ${sandbox.id.slice(0, 8)} (${this.ready.length}/${this.size})`,
       );
     } catch (error) {
-      await sandbox.delete().catch(() => {});
+      if (!(error instanceof CleanupDeleteError)) {
+        await this.deleteForCleanup(sandbox, "failed warmup sandbox");
+      }
       throw error;
+    }
+  }
+
+  private reconcileThenRefill(): void {
+    if (this.reconciling) return;
+    this.reconciling = true;
+    void this.reconcileExistingAndRefill();
+  }
+
+  private async reconcileExistingAndRefill(): Promise<void> {
+    let failed = false;
+    try {
+      await this.reconcileExisting();
+    } catch (error) {
+      failed = true;
+      this.failures += 1;
+      this.logger.warn(
+        `[cube-warm-pool:${this.name}] startup reconcile failed:`,
+        error instanceof Error ? error.message : error,
+      );
+    } finally {
+      this.reconciling = false;
+    }
+    if (failed) {
+      this.scheduleRetry("reconcile");
+      return;
+    }
+    this.retryDelayMs = this.initialRetryDelayMs;
+    this.refill();
+  }
+
+  private async reconcileExisting(): Promise<void> {
+    this.failures += await reconcileCubeWarmPoolCandidates({
+      name: this.name,
+      provider: this.provider,
+      createOptions: this.createOptions,
+      ready: this.ready,
+      size: this.size,
+      isStarted: () => this.started,
+      protectedSandboxIds: this.protectedSandboxIds,
+      proveReady: (sandbox) => this.proveReady(sandbox),
+      logger: this.logger,
+    });
+  }
+
+  private async proveReady(sandbox: SandboxHandle): Promise<void> {
+    const signal = AbortSignal.timeout(WARM_TIMEOUT_MS);
+    if (this.requireDesktop) {
+      const [desktop] = await Promise.all([
+        this.warmDesktop(sandbox, signal),
+        this.warmRuntime(sandbox, signal),
+      ]);
+      if (!desktop.available) {
+        throw new Error(desktop.reason ?? "desktop computer-use surface unavailable");
+      }
+      return;
+    }
+    await this.warmRuntime(sandbox, signal);
+  }
+
+  private async deleteForCleanup(sandbox: SandboxHandle, context: string): Promise<void> {
+    try {
+      await sandbox.delete();
+    } catch (error) {
+      throw new CleanupDeleteError(`${context} delete failed`, error);
+    }
+  }
+
+  private async deleteResolvedCandidate(
+    sandbox: SandboxHandle,
+    candidate: SandboxHandle,
+  ): Promise<void> {
+    try {
+      await sandbox.delete();
+    } catch (error) {
+      if (sandbox.id !== candidate.id) await candidate.delete();
+      throw new CleanupDeleteError(`discarded candidate delete failed`, error);
     }
   }
 }

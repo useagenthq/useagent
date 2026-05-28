@@ -7,6 +7,7 @@ import {
   resetCubeWarmPoolForTest,
   startCubeWarmPool,
 } from "./cube-warm-pool";
+import { SKYNET_WARM_POOL_TEMPLATE_LABEL } from "./cube-warm-pool-reconcile";
 import type {
   SandboxCreateOptions,
   SandboxFileSystem,
@@ -64,9 +65,12 @@ function sandbox(id: string): SandboxHandle & { deleted: boolean } {
 
 function provider(
   boxes: Array<SandboxHandle & { deleted: boolean }>,
+  listed: Array<SandboxHandle & { deleted: boolean }> = [],
 ): SandboxProvider & { creates: SandboxCreateOptions[] } {
   const creates: SandboxCreateOptions[] = [];
-  const created = new Map<string, SandboxHandle & { deleted: boolean }>();
+  const created = new Map<string, SandboxHandle & { deleted: boolean }>(
+    listed.map((box) => [box.id, box]),
+  );
   return {
     creates,
     create: async (options = {}) => {
@@ -82,7 +86,11 @@ function provider(
       if (!found || found.deleted) throw new Error("sandbox not running");
       return found;
     },
-    list: async function* list() {},
+    list: async function* list() {
+      for (const box of created.values()) {
+        if (!box.deleted) yield box;
+      }
+    },
   };
 }
 
@@ -156,7 +164,10 @@ describe("CubeWarmPool", () => {
     expect(warmStages).toEqual(["desktop", "runtime"]);
     expect(fakeProvider.creates[0]).toEqual({
       snapshot: "tpl-1",
-      labels: { "skynet-run": "warm-pool" },
+      labels: {
+        "skynet-run": "warm-pool",
+        [SKYNET_WARM_POOL_TEMPLATE_LABEL]: "tpl-1",
+      },
     });
   });
 
@@ -396,6 +407,58 @@ describe("CubeWarmPool", () => {
     expect(await pool.claim()).toBe(good);
   });
 
+  test("reconciles a failed warmup when cleanup delete fails before creating replacements", async () => {
+    const bad = sandbox("cube-bad-delete-fails");
+    const good = sandbox("cube-good-after-cleanup");
+    const fakeProvider = provider([bad, good]);
+    let warmAttempts = 0;
+    let deleteAttempts = 0;
+    bad.delete = async () => {
+      deleteAttempts += 1;
+      if (deleteAttempts === 1) throw new Error("delete failed");
+      bad.deleted = true;
+    };
+
+    const pool = new CubeWarmPool({
+      provider: fakeProvider,
+      size: 1,
+      createOptions: { snapshot: "tpl-1", labels: { "skynet-run": "warm-pool" } },
+      warmDesktop: async () => {
+        warmAttempts += 1;
+        return warmAttempts < 3
+          ? {
+              available: false,
+              browserTools: false,
+              home: "/home/daytona",
+              workdir: "/home/daytona/work",
+              browserExecutable: null,
+              reason: "browser failed",
+            }
+          : {
+              available: true,
+              browserTools: true,
+              home: "/home/daytona",
+              workdir: "/home/daytona/work",
+              browserExecutable: "/usr/bin/chromium",
+            };
+      },
+      protectedSandboxIds: async () => new Set(),
+      initialRetryDelayMs: 100,
+      maxRetryDelayMs: 100,
+      logger: quietLogger,
+    });
+
+    pool.start();
+    await waitFor(() => pool.status().failures, 1);
+    expect(fakeProvider.creates).toHaveLength(1);
+    expect(bad.deleted).toBe(false);
+    await waitFor(() => pool.status().ready, 1);
+    expect(deleteAttempts).toBe(2);
+    expect(bad.deleted).toBe(true);
+    expect(fakeProvider.creates).toHaveLength(2);
+    expect((await pool.claim())?.id).toBe("cube-good-after-cleanup");
+  });
+
   test("singleton claim is inert until the pool is started", async () => {
     expect(await claimCubeWarmSandbox()).toBeNull();
 
@@ -504,5 +567,414 @@ describe("CubeWarmPool", () => {
     expect(runtimeCalls).toBe(1);
     expect(desktopCalls).toBe(0);
     expect(await pool.claim()).toBe(box);
+  });
+
+  test("adopts existing exact-pool candidates on restart before creating replacements", async () => {
+    const first = sandbox("cube-existing-1");
+    const second = sandbox("cube-existing-2");
+    const fakeProvider = provider([], [first, second]);
+    const warmed: string[] = [];
+    first.labels = {
+      "skynet-run": "warm-pool:t3-v3",
+      "cube.master.appsnapshot.template.id": "tpl-t3",
+    };
+    second.labels = {
+      "skynet-run": "warm-pool:t3-v3",
+      "cube.master.appsnapshot.template.id": "tpl-t3",
+    };
+
+    const pool = new CubeWarmPool({
+      name: "t3-v3",
+      provider: fakeProvider,
+      size: 2,
+      requireDesktop: false,
+      createOptions: {
+        snapshot: "tpl-t3",
+        labels: { "skynet-run": "warm-pool:t3-v3" },
+      },
+      warmRuntime: async (box) => {
+        warmed.push(box.id);
+      },
+      protectedSandboxIds: async () => new Set(),
+      logger: quietLogger,
+    });
+
+    pool.start();
+    await waitFor(() => pool.status().ready, 2);
+    expect(fakeProvider.creates).toHaveLength(0);
+    expect(warmed.toSorted()).toEqual(["cube-existing-1", "cube-existing-2"]);
+    expect((await pool.claim())?.id).toBe("cube-existing-1");
+  });
+
+  test("does not adopt an exact-pool candidate from an older Cube template", async () => {
+    const oldTemplate = sandbox("cube-old-template");
+    const currentTemplate = sandbox("cube-current-template");
+    oldTemplate.labels = {
+      "skynet-run": "warm-pool:t3-v3",
+      "cube.master.appsnapshot.template.id": "tpl-old",
+    };
+    currentTemplate.labels = {
+      "skynet-run": "warm-pool:t3-v3",
+      "cube.master.appsnapshot.template.id": "tpl-new",
+    };
+
+    const pool = new CubeWarmPool({
+      name: "t3-v3",
+      provider: provider([], [oldTemplate, currentTemplate]),
+      size: 1,
+      requireDesktop: false,
+      createOptions: {
+        snapshot: "tpl-new",
+        labels: { "skynet-run": "warm-pool:t3-v3" },
+      },
+      protectedSandboxIds: async () => new Set(),
+      logger: quietLogger,
+    });
+
+    pool.start();
+    await waitFor(() => pool.status().ready, 1);
+    expect(oldTemplate.deleted).toBe(true);
+    expect((await pool.claim())?.id).toBe("cube-current-template");
+  });
+
+  test("uses the Skynet template label before Cube system labels", async () => {
+    const conflictingTemplate = sandbox("cube-conflicting-template");
+    const currentTemplate = sandbox("cube-current-template");
+    conflictingTemplate.labels = {
+      "skynet-run": "warm-pool:t3-v3",
+      [SKYNET_WARM_POOL_TEMPLATE_LABEL]: "tpl-old",
+      "cube.master.appsnapshot.template.id": "tpl-new",
+    };
+    currentTemplate.labels = {
+      "skynet-run": "warm-pool:t3-v3",
+      [SKYNET_WARM_POOL_TEMPLATE_LABEL]: "tpl-new",
+    };
+
+    const pool = new CubeWarmPool({
+      name: "t3-v3",
+      provider: provider([], [conflictingTemplate, currentTemplate]),
+      size: 1,
+      requireDesktop: false,
+      createOptions: {
+        snapshot: "tpl-new",
+        labels: { "skynet-run": "warm-pool:t3-v3" },
+      },
+      protectedSandboxIds: async () => new Set(),
+      logger: quietLogger,
+    });
+
+    pool.start();
+    await waitFor(() => pool.status().ready, 1);
+    expect(conflictingTemplate.deleted).toBe(true);
+    expect((await pool.claim())?.id).toBe("cube-current-template");
+  });
+
+  test("deletes unbound pool candidates with missing template metadata", async () => {
+    const missingTemplate = sandbox("cube-missing-template");
+    const fresh = sandbox("cube-fresh");
+    const fakeProvider = provider([fresh], [missingTemplate]);
+    missingTemplate.labels = { "skynet-run": "warm-pool" };
+
+    const pool = new CubeWarmPool({
+      provider: fakeProvider,
+      size: 1,
+      createOptions: {
+        snapshot: "tpl-opencode",
+        labels: { "skynet-run": "warm-pool" },
+      },
+      warmDesktop: async () => ({
+        available: true,
+        browserTools: true,
+        home: "/home/daytona",
+        workdir: "/home/daytona/work",
+        browserExecutable: "/usr/bin/chromium",
+      }),
+      protectedSandboxIds: async () => new Set(),
+      logger: quietLogger,
+    });
+
+    pool.start();
+    await waitFor(() => missingTemplate.deleted, true);
+    await waitFor(() => pool.status().ready, 1);
+    expect(fakeProvider.creates).toHaveLength(1);
+    expect((await pool.claim())?.id).toBe("cube-fresh");
+  });
+
+  test("retries reconciliation after delete failure without creating extra sandboxes", async () => {
+    const oldTemplate = sandbox("cube-old-template-delete-fails");
+    const fresh = sandbox("cube-fresh-after-delete-retry");
+    const fakeProvider = provider([fresh], [oldTemplate]);
+    let deleteAttempts = 0;
+    oldTemplate.labels = {
+      "skynet-run": "warm-pool",
+      "cube.master.appsnapshot.template.id": "tpl-old",
+    };
+    oldTemplate.delete = async () => {
+      deleteAttempts += 1;
+      if (deleteAttempts === 1) throw new Error("delete failed");
+      oldTemplate.deleted = true;
+    };
+
+    const pool = new CubeWarmPool({
+      provider: fakeProvider,
+      size: 1,
+      createOptions: {
+        snapshot: "tpl-new",
+        labels: { "skynet-run": "warm-pool" },
+      },
+      warmDesktop: async () => ({
+        available: true,
+        browserTools: true,
+        home: "/home/daytona",
+        workdir: "/home/daytona/work",
+        browserExecutable: "/usr/bin/chromium",
+      }),
+      protectedSandboxIds: async () => new Set(),
+      initialRetryDelayMs: 10,
+      maxRetryDelayMs: 10,
+      logger: quietLogger,
+    });
+
+    pool.start();
+    await waitFor(() => pool.status().failures, 1);
+    expect(oldTemplate.deleted).toBe(false);
+    expect(fakeProvider.creates).toHaveLength(0);
+    await waitFor(() => pool.status().ready, 1);
+    expect(deleteAttempts).toBe(2);
+    expect(oldTemplate.deleted).toBe(true);
+    expect(fakeProvider.creates).toHaveLength(1);
+    expect((await pool.claim())?.id).toBe("cube-fresh-after-delete-retry");
+  });
+
+  test("keeps adopted candidates ready when a later surplus delete retries", async () => {
+    const adopted = sandbox("cube-adopted-before-delete-fails");
+    const surplus = sandbox("cube-surplus-delete-retries");
+    const fakeProvider = provider([], [adopted, surplus]);
+    let deleteAttempts = 0;
+    adopted.labels = {
+      "skynet-run": "warm-pool",
+      "cube.master.appsnapshot.template.id": "tpl-opencode",
+    };
+    surplus.labels = {
+      "skynet-run": "warm-pool",
+      "cube.master.appsnapshot.template.id": "tpl-opencode",
+    };
+    surplus.delete = async () => {
+      deleteAttempts += 1;
+      if (deleteAttempts === 1) throw new Error("delete failed");
+      surplus.deleted = true;
+    };
+
+    const pool = new CubeWarmPool({
+      provider: fakeProvider,
+      size: 1,
+      createOptions: {
+        snapshot: "tpl-opencode",
+        labels: { "skynet-run": "warm-pool" },
+      },
+      warmDesktop: async () => ({
+        available: true,
+        browserTools: true,
+        home: "/home/daytona",
+        workdir: "/home/daytona/work",
+        browserExecutable: "/usr/bin/chromium",
+      }),
+      protectedSandboxIds: async () => new Set(),
+      initialRetryDelayMs: 10,
+      maxRetryDelayMs: 10,
+      logger: quietLogger,
+    });
+
+    pool.start();
+    await waitFor(() => pool.status().failures, 1);
+    expect(pool.status().ready).toBe(1);
+    expect(adopted.deleted).toBe(false);
+    expect(surplus.deleted).toBe(false);
+    expect(fakeProvider.creates).toHaveLength(0);
+    await waitFor(() => surplus.deleted, true);
+    expect(deleteAttempts).toBe(2);
+    expect(adopted.deleted).toBe(false);
+    expect(fakeProvider.creates).toHaveLength(0);
+    expect((await pool.claim())?.id).toBe("cube-adopted-before-delete-fails");
+  });
+
+  test("deletes only unbound surplus exact-pool candidates after adopting the target", async () => {
+    const keep = sandbox("cube-keep");
+    const surplus = sandbox("cube-surplus");
+    keep.labels = {
+      "skynet-run": "warm-pool",
+      "cube.master.appsnapshot.template.id": "tpl-opencode",
+    };
+    surplus.labels = {
+      "skynet-run": "warm-pool",
+      "cube.master.appsnapshot.template.id": "tpl-opencode",
+    };
+
+    const pool = new CubeWarmPool({
+      provider: provider([], [keep, surplus]),
+      size: 1,
+      createOptions: {
+        snapshot: "tpl-opencode",
+        labels: { "skynet-run": "warm-pool" },
+      },
+      warmDesktop: async () => ({
+        available: true,
+        browserTools: true,
+        home: "/home/daytona",
+        workdir: "/home/daytona/work",
+        browserExecutable: "/usr/bin/chromium",
+      }),
+      protectedSandboxIds: async () => new Set(),
+      logger: quietLogger,
+    });
+
+    pool.start();
+    await waitFor(() => pool.status().ready, 1);
+    expect(keep.deleted).toBe(false);
+    expect(surplus.deleted).toBe(true);
+  });
+
+  test("never adopts or deletes exact-pool candidates durably bound to runs or threads", async () => {
+    const protectedBox = sandbox("cube-thread");
+    const unbound = sandbox("cube-unbound");
+    protectedBox.labels = { "skynet-run": "warm-pool:t3-v3" };
+    unbound.labels = {
+      "skynet-run": "warm-pool:t3-v3",
+      "cube.master.appsnapshot.template.id": "tpl-t3",
+    };
+
+    const pool = new CubeWarmPool({
+      name: "t3-v3",
+      provider: provider([], [protectedBox, unbound]),
+      size: 1,
+      requireDesktop: false,
+      createOptions: {
+        snapshot: "tpl-t3",
+        labels: { "skynet-run": "warm-pool:t3-v3" },
+      },
+      protectedSandboxIds: async () => new Set(["cube-thread"]),
+      logger: quietLogger,
+    });
+
+    pool.start();
+    await waitFor(() => pool.status().ready, 1);
+    expect(protectedBox.deleted).toBe(false);
+    expect((await pool.claim())?.id).toBe("cube-unbound");
+  });
+
+  test("ignores retained thread sandboxes with non-pool run labels", async () => {
+    const retained = sandbox("cube-retained-thread");
+    const warm = sandbox("cube-warm");
+    const fakeProvider = provider([], [retained, warm]);
+    retained.labels = { "skynet-run": "run-123" };
+    warm.labels = {
+      "skynet-run": "warm-pool",
+      "cube.master.appsnapshot.template.id": "tpl-opencode",
+    };
+
+    const pool = new CubeWarmPool({
+      provider: fakeProvider,
+      size: 1,
+      createOptions: {
+        snapshot: "tpl-opencode",
+        labels: { "skynet-run": "warm-pool" },
+      },
+      warmDesktop: async () => ({
+        available: true,
+        browserTools: true,
+        home: "/home/daytona",
+        workdir: "/home/daytona/work",
+        browserExecutable: "/usr/bin/chromium",
+      }),
+      protectedSandboxIds: async () => new Set(),
+      logger: quietLogger,
+    });
+
+    pool.start();
+    await waitFor(() => pool.status().ready, 1);
+    expect(retained.deleted).toBe(false);
+    expect((await pool.claim())?.id).toBe("cube-warm");
+  });
+
+  test("deletes an adopted candidate instead of readying it if the pool stops during readiness proof", async () => {
+    const gate = deferred<void>();
+    const candidate = sandbox("cube-adopting");
+    candidate.labels = {
+      "skynet-run": "warm-pool",
+      "cube.master.appsnapshot.template.id": "tpl-opencode",
+    };
+    let runtimeStarted = false;
+
+    const pool = new CubeWarmPool({
+      provider: provider([], [candidate]),
+      size: 1,
+      requireDesktop: false,
+      createOptions: {
+        snapshot: "tpl-opencode",
+        labels: { "skynet-run": "warm-pool" },
+      },
+      warmRuntime: async () => {
+        runtimeStarted = true;
+        await gate.promise;
+      },
+      protectedSandboxIds: async () => new Set(),
+      logger: quietLogger,
+    });
+
+    pool.start();
+    await waitFor(() => runtimeStarted, true);
+    pool.stop();
+    gate.resolve();
+    await waitFor(() => candidate.deleted, true);
+    expect(pool.status().ready).toBe(0);
+  });
+
+  test("deletes stale unbound exact-pool candidates and refills to target", async () => {
+    const stale = sandbox("cube-stale-existing");
+    const fresh = sandbox("cube-fresh");
+    const fakeProvider = provider([fresh], [stale]);
+    stale.labels = {
+      "skynet-run": "warm-pool",
+      "cube.master.appsnapshot.template.id": "tpl-opencode",
+    };
+    let warmAttempts = 0;
+
+    const pool = new CubeWarmPool({
+      provider: fakeProvider,
+      size: 1,
+      createOptions: {
+        snapshot: "tpl-opencode",
+        labels: { "skynet-run": "warm-pool" },
+      },
+      warmDesktop: async () => {
+        warmAttempts += 1;
+        if (warmAttempts === 1) {
+          return {
+            available: false,
+            browserTools: false,
+            home: "/home/daytona",
+            workdir: "/home/daytona/work",
+            browserExecutable: null,
+            reason: "stale desktop",
+          };
+        }
+        return {
+          available: true,
+          browserTools: true,
+          home: "/home/daytona",
+          workdir: "/home/daytona/work",
+          browserExecutable: "/usr/bin/chromium",
+        };
+      },
+      protectedSandboxIds: async () => new Set(),
+      logger: quietLogger,
+    });
+
+    pool.start();
+    await waitFor(() => pool.status().failures, 1);
+    await waitFor(() => pool.status().ready, 1);
+    expect(stale.deleted).toBe(true);
+    expect(fakeProvider.creates).toHaveLength(1);
+    expect((await pool.claim())?.id).toBe("cube-fresh");
   });
 });
