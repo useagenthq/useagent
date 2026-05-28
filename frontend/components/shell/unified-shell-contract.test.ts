@@ -159,7 +159,7 @@ describe("unified shell contract", () => {
     const contextMenu = readFromFrontend("app/agent/new/new-task-context-menu.tsx");
 
     expect(composer).toContain("<NewTaskContextMenu");
-    expect(contextMenu).toContain('triggerLabel="Skill or playbook"');
+    expect(contextMenu).toContain("visibleSkills.map");
     expect(composer).toContain('label: "No skill or playbook"');
   });
 
@@ -171,7 +171,10 @@ describe("unified shell contract", () => {
     expect(contextMenu).toContain("Add photos &amp; files");
     expect(contextMenu).toContain("Company knowledge");
     expect(contextMenu).toContain("Personal memory");
+    expect(contextMenu).toContain("Type to search skills and playbooks");
+    expect(contextMenu).not.toContain("<SearchablePicker");
     expect(composer).toContain("min-w-40");
+    expect(composer).toContain('e.id !== "chat"');
     expect(composer).not.toContain("<AsteriskMark");
     expect(composer).not.toContain("border-t border-stroke-soft-200 pt-3");
   });

@@ -34,12 +34,13 @@ export function allowDevOrg(): boolean {
   return devModeEnabled();
 }
 
-/** Self-service account creation is a development convenience only. Production
- * users must arrive through an existing account or an administrator-managed
- * invitation; there is deliberately no environment override that can reopen
- * public signup on a production process. */
-export function selfSignupEnabled(): boolean {
-  return devModeEnabled();
+/** Self-service account creation is a development convenience only. A production
+ * process always fails closed even if SKYNET_DEV_MODE was accidentally left on. */
+export function selfSignupEnabled(
+  source: Record<string, string | undefined> = process.env,
+): boolean {
+  if ((source.NODE_ENV ?? "development") === "production") return false;
+  return runtimeDevModeEnabled(source);
 }
 
 /**

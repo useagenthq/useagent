@@ -243,12 +243,14 @@ export function NewTaskComposer({
     () => [
       {
         label: "Engines",
-        options: ENGINES.filter((e) => enabledEngines.includes(e.id)).map((e) => ({
-          value: e.id,
-          label: e.label,
-          caption: ENGINE_CAPTIONS[e.id],
-          icon: RiCpuLine,
-        })),
+        options: ENGINES.filter((e) => e.id !== "chat" && enabledEngines.includes(e.id)).map(
+          (e) => ({
+            value: e.id,
+            label: e.label,
+            caption: ENGINE_CAPTIONS[e.id],
+            icon: RiCpuLine,
+          }),
+        ),
       },
     ],
     [enabledEngines],
