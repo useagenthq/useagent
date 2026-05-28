@@ -1,6 +1,6 @@
 import { cn } from "@/utils/cn";
 
-/** Skynet's six-lobed orbit. The narrow stroke and compact ellipse geometry are
+/** useAgent's six-lobed orbit. The narrow stroke and compact ellipse geometry are
  * traced from the product reference instead of using a generic atom icon. */
 export function PulseMark({ className, active = false }: { className?: string; active?: boolean }) {
   return (

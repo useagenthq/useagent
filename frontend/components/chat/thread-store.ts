@@ -1,5 +1,5 @@
 // Thread-owned projection store (final_fix.md §4.6) — the lifetime + reconciliation
-// boundary for a whole Skynet conversation, NOT whichever run is selected.
+// boundary for a whole useAgent conversation, NOT whichever run is selected.
 //
 // It does NOT reimplement native dedupe/child-attribution/sorting: each run's
 // projection is an INSTANCE of the existing per-run `createNativeStore`, and this

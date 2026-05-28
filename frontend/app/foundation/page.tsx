@@ -66,7 +66,7 @@ export default function Home() {
             <div className='flex flex-col'>
               <span className='text-label-lg text-text-strong-950'>useAgent</span>
               <span className='text-mono-label text-text-soft-400'>
-                Loop · agent platform
+                multi-harness agent platform
               </span>
             </div>
           </div>

@@ -38,7 +38,7 @@ function KnotSvg({
 }
 
 /**
- * Skynet orbit-knot mark: seven woven petals from one continuous stroke in the
+ * useAgent orbit-knot mark: seven woven petals from one continuous stroke in the
  * brand cyan-to-blue ramp (135deg: #6DD5FA -> #55B9F3 -> #20A9F5). Brand layer
  * exception: the raw gradient is part of the mark. Size via className;
  * `stroke` thickens small renders for legibility.

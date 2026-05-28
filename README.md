@@ -1,6 +1,6 @@
 # useAgent
 
-useAgent is a multi-package repository for the Loop agent platform. The repo has one product UI, one backend control plane, and shared TypeScript packages that define the cross-package contracts.
+useAgent is a multi-package repository for a multi-harness coding-agent control plane. The repo has one product UI, one backend control plane, and shared TypeScript packages that define the cross-package contracts.
 
 ## Repo Map
 
