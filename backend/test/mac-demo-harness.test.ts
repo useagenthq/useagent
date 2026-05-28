@@ -81,9 +81,13 @@ describe("mac demo harness", () => {
 
     const hotkey = run(["--dry-run", "hotkey", "cmd", "shift", "f"]);
     expect(hotkey.exitCode).toBe(0);
-    expect(hotkey.stdout).toContain("kd:cmd,shift");
-    expect(hotkey.stdout).toContain("kp:f");
-    expect(hotkey.stdout).toContain("ku:cmd,shift");
+    expect(hotkey.stdout).toContain("osascript:");
+    expect(hotkey.stdout).toContain(String.raw`keystroke\ \"f\"`);
+    expect(hotkey.stdout).toContain(String.raw`command\ down\,shift\ down`);
+
+    const specialHotkey = run(["--dry-run", "hotkey", "cmd", "arrow-left"]);
+    expect(specialHotkey.exitCode).toBe(0);
+    expect(specialHotkey.stdout).toContain("kp:arrow-left");
 
     const shotDir = await mkdtemp(join(tmpdir(), "skynet-demo-harness-shot-"));
     try {

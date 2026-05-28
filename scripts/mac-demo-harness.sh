@@ -389,6 +389,28 @@ hotkey() {
   local mods=("${@:1:$#-1}")
   local modarg
   modarg="$(IFS=,; printf '%s' "${mods[*]}")"
+  if [[ "$key" =~ ^[[:print:]]$ ]]; then
+    local apple_mods=()
+    local modifier
+    for modifier in "${mods[@]}"; do
+      case "$modifier" in
+        cmd|command) apple_mods+=("command down") ;;
+        shift) apple_mods+=("shift down") ;;
+        ctrl|control) apple_mods+=("control down") ;;
+        alt|option) apple_mods+=("option down") ;;
+        *) die "unsupported hotkey modifier: $modifier" ;;
+      esac
+    done
+    local apple_modarg
+    apple_modarg="$(IFS=,; printf '%s' "${apple_mods[*]}")"
+    local script="tell application \"System Events\" to keystroke \"$key\" using {$apple_modarg}"
+    if [[ "$dry_run" -eq 1 ]]; then
+      printf 'osascript: %s -e %q\n' "$OSASCRIPT_BIN" "$script"
+      return 0
+    fi
+    "$OSASCRIPT_BIN" -e "$script"
+    return 0
+  fi
   if [[ "$dry_run" -eq 1 ]]; then
     printf 'cliclick: %s kd:%s kp:%s ku:%s\n' "$CLICK_BIN" "$modarg" "$key" "$modarg"
     return 0

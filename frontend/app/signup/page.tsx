@@ -1,12 +1,5 @@
-import type { Metadata } from 'next';
-
-import { AuthForm } from '../login/auth-form';
-
-export const metadata: Metadata = {
-  title: 'Create account - skynet-a',
-  description: 'Create your skynet-a account.',
-};
+import { redirect } from "next/navigation";
 
 export default function SignupPage() {
-  return <AuthForm mode='signup' />;
+  redirect("/login");
 }
