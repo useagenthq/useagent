@@ -1,12 +1,12 @@
 import { defineConfig } from "blume";
 
 export default defineConfig({
-  title: "Skynet",
+  title: "useAgent",
   description:
-    "The Loop agent platform. An event-sourced harness drives replaceable coding engines in isolated sandboxes and renders every run from one canonical event log.",
+    "A multi-harness agent platform. An event-sourced control plane drives replaceable coding engines in isolated sandboxes and renders every run from one canonical event log.",
 
   logo: {
-    text: "Skynet",
+    text: "useAgent",
   },
 
   github: {

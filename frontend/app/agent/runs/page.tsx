@@ -6,7 +6,7 @@ import { RunsList } from "./runs-list";
 
 export const metadata: Metadata = {
   title: "Active runs",
-  description: "Live agent runs from the Skynet orchestrator.",
+  description: "Live agent runs from the useAgent orchestrator.",
 };
 
 // Always render fresh — the runs list is live data.

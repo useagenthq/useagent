@@ -2,7 +2,7 @@
 
 Server-side agent-harness contracts. Translates native harnesses (OpenCode, Claude ACP,
 Codex ACP, future) into ONE provider-neutral canonical event vocabulary and exposes a
-typed control seam. Knows provider protocols; knows nothing about the Skynet backend,
+typed control seam. Knows provider protocols; knows nothing about the useAgent backend,
 database, Daytona, or the React UI.
 
 `private: true`. No build step - raw TypeScript consumed via `file:` links.
@@ -20,11 +20,11 @@ database, Daytona, or the React UI.
 
 ```
 OpenCode native ─┐
-Claude ACP ───────┼─> @skynet/agent-harness -> CanonicalAgentEvent -> Skynet backend
+Claude ACP ───────┼─> @skynet/agent-harness -> CanonicalAgentEvent -> useAgent backend
 Codex ACP ────────┘        (translate + control)   (persist -> thread SSE)
 ```
 
-Skynet keeps the trusted control plane (execution, Daytona, auth/policy, DB/outbox, memory
+useAgent keeps the trusted control plane (execution, Daytona, auth/policy, DB/outbox, memory
 /KB, the thread stream). This package is only the translation + control CONTRACT.
 
 ## Provider driver contract
@@ -41,12 +41,12 @@ terms of existing package vocabulary:
   capability map.
 - `descriptor.model` describes fixed versus per-turn model selection.
 - `descriptor.tools` describes whether tools are absent, provider-native, or
-  Skynet-brokered.
+  useAgent-brokered.
 
 The driver does not allocate canonical event ids or durable sequence numbers. Native
 event translation is a separate package concern; the trusted control plane enriches,
 persists, and publishes translated event bodies. Keeping lifecycle control separate from
-event accounting prevents a provider plugin from inventing Skynet ordering metadata.
+event accounting prevents a provider plugin from inventing useAgent ordering metadata.
 
 Unsupported behavior must return `providerDriverUnsupported(...)` with status
 `"unsupported_capability"` rather than throwing or pretending success. Use
@@ -66,5 +66,5 @@ recorded in [`../agent-client/ARTIFACTS.md`](../agent-client/ARTIFACTS.md). The 
 responsibility in that flow is narrow: a translator emits a small canonical **artifact
 lifecycle reference** (`created`/`updated`/`completed`/`failed` + a stable id/version), and
 NEVER the bytes. Ingestion, the `ArtifactDescriptor`, ACL, and out-of-band storage are
-Skynet backend responsibilities, not this library's. No schema or runtime for this exists
+useAgent backend responsibilities, not this library's. No schema or runtime for this exists
 yet; do not present it as implemented.

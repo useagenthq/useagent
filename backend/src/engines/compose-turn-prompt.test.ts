@@ -33,6 +33,11 @@ const S = AGENT_SKILL_DISCOVERY_RULES;
 const W = AGENT_WORKFLOW_ROUTING_RULES;
 
 describe("composeTurnPrompt — fresh vs resumed context", () => {
+  test("uses the current product brand in model-visible workflow guidance", () => {
+    expect(W).toContain("useAgent automations");
+    expect(W).not.toContain("Skynet automations");
+  });
+
   test("fresh native session gets operating-rules + bootstrap + turn + prompt, in that order", () => {
     expect(composeTurnPrompt(ctx(), false)).toBe(`${R}BOOT${W}${S}TURNUSER`);
   });

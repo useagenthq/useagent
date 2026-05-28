@@ -5,7 +5,7 @@ import { LibrarySidebar } from "@/components/shell/library-sidebar";
 import { ReviewWorkspace } from "./review-workspace";
 
 export const metadata: Metadata = {
-  title: "Pull requests - skynet-a",
+  title: "Pull requests - useAgent",
   description: "Open pull requests across your connected GitHub repositories.",
 };
 

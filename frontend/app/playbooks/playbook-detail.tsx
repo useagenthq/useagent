@@ -15,7 +15,7 @@ import { tagChipColor, usageCaption, type Skill } from "@/app/skills/skills-data
 /**
  * The detail view of one playbook: its Overview / Procedure / Verify content
  * rendered as read-only sections, with the version + usage caption and Edit /
- * Run actions. The copy is deliberately honest - Skynet FOLLOWS the procedure as
+ * Run actions. The copy is deliberately honest - useAgent FOLLOWS the procedure as
  * guidance; it is not a deterministic, step-by-step workflow engine.
  */
 
@@ -148,7 +148,7 @@ export function PlaybookDetail({
             </div>
 
             <p className="text-paragraph-xs text-text-soft-400">
-              Skynet follows this procedure as guidance when the playbook is
+              useAgent follows this procedure as guidance when the playbook is
               attached to a run. It is not a fixed, step-by-step workflow - the
               agent applies judgement and the steps shape how it works.
             </p>

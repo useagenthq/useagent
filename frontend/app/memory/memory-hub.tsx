@@ -209,7 +209,7 @@ export function MemoryHub({
         <div className="flex flex-col gap-0.5">
           <h1 className="text-display-sm text-text-strong-950">Memory</h1>
           <p className="text-paragraph-sm text-text-sub-600">
-            The team memory Skynet recalls, captures, and can correct
+            The team memory useAgent recalls, captures, and can correct
           </p>
         </div>
       </div>

@@ -5,7 +5,7 @@ import { AutomationsView } from "../schedules/automations-view";
 
 export const metadata: Metadata = {
   title: "Automations",
-  description: "Recurring and triggered runs Skynet starts on its own.",
+  description: "Recurring and triggered runs useAgent starts on its own.",
 };
 
 export default function AutomationsPage() {

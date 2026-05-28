@@ -115,7 +115,7 @@ export function ModelPicker({
         aria-expanded={open}
         className="text-text-strong-950 hover:bg-bg-weak-50 flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-label-sm transition-colors"
       >
-        {/* Engine chip glyph — the AsteriskMark is Skynet's brand, not an
+        {/* Engine chip glyph — the AsteriskMark is useAgent's brand, not an
             engine's; match the composer's neutral cpu icon instead. */}
         <RiCpuLine className="text-text-sub-600 size-4" aria-hidden />
         <span>{modelLabel(model, engine)}</span>

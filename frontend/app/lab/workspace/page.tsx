@@ -5,7 +5,7 @@ import { ThreadSidebar } from "@/components/shell/thread-sidebar";
 import { WorkspaceSample } from "./workspace-sample";
 
 export const metadata: Metadata = {
-  title: "Workspace pane - skynet-a",
+  title: "Workspace pane - useAgent",
   description:
     "The session Workspace side pane rendered through the real workpiece editor surfaces, for visual review.",
 };

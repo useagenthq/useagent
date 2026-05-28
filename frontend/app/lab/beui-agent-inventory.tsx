@@ -336,7 +336,7 @@ export function QuestionRequest(...) {
             sources={[
               { name: "beUI agents", url: BEUI_AGENT_SOURCE_URL },
               { name: "AlignUI tokens", url: "https://alignui.com" },
-              { name: "Skynet lab", url: "/lab" },
+              { name: "useAgent lab", url: "/lab" },
             ]}
             onRegenerate={() => {}}
           />

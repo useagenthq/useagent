@@ -252,7 +252,7 @@ export const RECORDING_TOOLS = [
     name: "desktop_recording_stop",
     description:
       "Stop the active provider-native desktop recording, validate the MP4, and publish it as " +
-      "a durable authenticated Skynet artifact. Returns working preview and download URLs.",
+      "a durable authenticated useAgent artifact. Returns working preview and download URLs.",
     inputSchema: {
       type: "object",
       properties: {},

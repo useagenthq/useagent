@@ -15,7 +15,7 @@ type IconComponent = ComponentType<{ className?: string }>;
 
 const COPY = {
   title: "Welcome back",
-  subtitle: "Sign in to your Skynet workspace",
+  subtitle: "Sign in to your useAgent workspace",
   submit: "Sign in",
   pending: "Signing in…",
   endpoint: "/api/auth/sign-in/email",

@@ -5,7 +5,7 @@ import { ThreadSidebar } from "@/components/shell/thread-sidebar";
 import { SessionSample } from "./session-sample";
 
 export const metadata: Metadata = {
-  title: "Session sample - skynet-a",
+  title: "Session sample - useAgent",
   description:
     "One synthetic session rendered through the real chat timeline and session chrome - every canonical event type in one place, for visual review.",
 };

@@ -532,7 +532,7 @@ function setCellValue(target: ExcelJS.Cell, cell: SheetCell): void {
 
 function renderWorkbookXlsx(book: Workbook): Promise<Buffer | ArrayBuffer> {
   const workbook = new ExcelJS.Workbook();
-  workbook.creator = "Skynet";
+  workbook.creator = "useAgent";
   for (const sheetModel of book.sheets) {
     const sheet = workbook.addWorksheet(sheetModel.name.slice(0, 31) || "Sheet");
     for (const [ref, cell] of Object.entries(sheetModel.cells)) {
@@ -555,7 +555,7 @@ async function renderXlsx(state: WorkpieceState): Promise<Uint8Array> {
   // A non-spreadsheet state exported to XLSX: one sheet of its flattened text.
   const rows = parseCsv(textForState(state));
   const workbook = new ExcelJS.Workbook();
-  workbook.creator = "Skynet";
+  workbook.creator = "useAgent";
   const sheet = workbook.addWorksheet("Sheet 1");
   rows.forEach((row) => {
     sheet.addRow(row);

@@ -7,7 +7,7 @@ import { MemoryHub } from "./memory-hub";
 
 export const metadata: Metadata = {
   title: "Memory",
-  description: "The team memory Skynet recalls, captures, and can correct.",
+  description: "The team memory useAgent recalls, captures, and can correct.",
 };
 
 export default async function MemoryPage() {

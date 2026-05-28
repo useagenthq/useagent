@@ -49,7 +49,7 @@ user's turn in the timeline.
 
 Durable follow-up work written together with run state inside the finalization
 transaction, then processed safely after the transaction commits. The outbox
-pattern is how Skynet does things like canonicalization and Slack delivery
+pattern is how useAgent does things like canonicalization and Slack delivery
 without a crash window: the intent is committed atomically with the run, and a
 worker delivers it afterward.
 

@@ -1,9 +1,9 @@
 ---
-title: Skynet
-description: The Loop agent platform. An event-sourced harness drives replaceable coding engines in isolated sandboxes and renders every run from one canonical event log.
+title: Overview
+description: A multi-harness agent platform. An event-sourced control plane drives replaceable coding engines in isolated sandboxes and renders every run from one canonical event log.
 ---
 
-Skynet is the control plane for the Loop agent platform. It turns a prompt into a
+useAgent is a control plane for coding agents. It turns a prompt into a
 durable, replayable **run**: a coding engine works inside an isolated Linux
 sandbox, streams what it does as an ordered event log, and the product UI renders
 that log live and on reload. The same run can arrive from the web app, from Slack,
@@ -11,7 +11,7 @@ or from a scheduled automation, and it flows through one durable command lane.
 
 ## The core idea
 
-Skynet is built on one architectural commitment, named **VERA**: Verify-gated,
+useAgent is built on one architectural commitment, named **VERA**: Verify-gated,
 Event-sourced, Replaceable-engine Actors.
 
 <CardGroup cols={3}>
@@ -21,7 +21,7 @@ Event-sourced, Replaceable-engine Actors.
   </Card>
   <Card title="Engines are rented, not built" icon="plug">
     The inner agent loop is Codex, Claude, or OpenCode behind a neutral adapter.
-    Skynet owns orchestration, history, approvals, and rendering.
+    useAgent owns orchestration, history, approvals, and rendering.
   </Card>
   <Card title="One canonical event contract" icon="git-branch">
     Every engine's output is translated into provider-neutral canonical events,
@@ -53,10 +53,10 @@ loses work that actually completed.
   </Card>
 </CardGroup>
 
-## What Skynet is not
+## What useAgent is not
 
 :::note
-Skynet does not run its harness inside the sandbox, does not embed an engine's
+useAgent does not run its harness inside the sandbox, does not embed an engine's
 own web UI, and does not build its own inner agent loop. Each of those was
 evaluated and set aside for reasons recorded in the architecture notes. The
 sandbox runs the engine and the work; everything authoritative lives outside it.

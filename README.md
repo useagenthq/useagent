@@ -1,6 +1,6 @@
-# skynet
+# useAgent
 
-Skynet is a multi-package repository for the Loop agent platform. The repo has one product UI, one backend control plane, and shared TypeScript packages that define the cross-package contracts.
+useAgent is a multi-package repository for a multi-harness coding-agent control plane. The repo has one product UI, one backend control plane, and shared TypeScript packages that define the cross-package contracts.
 
 ## Repo Map
 
@@ -40,10 +40,10 @@ Skynet is a multi-package repository for the Loop agent platform. The repo has o
 | Command | The durable instruction that starts, steers, cancels, or resumes a run. It carries an idempotency key so retries do not create duplicate work. | Backend command service |
 | Step | A durable timeline item such as text, reasoning, a tool call, a question, an approval, or an artifact. | Backend event log |
 | SSE stream | A one-way server stream. Thread-stream reconnects receive a fresh durable snapshot; the separate org-change stream carries live invalidations only and does not replay missed changes. | Agent client and backend |
-| Canonical event | Skynet's provider-neutral representation of engine output. It lets Codex, Claude, and OpenCode render through one UI contract. | Agent harness and backend canonicalizer |
+| Canonical event | useAgent's provider-neutral representation of engine output. It lets Codex, Claude, and OpenCode render through one UI contract. | Agent harness and backend canonicalizer |
 | Native frame | The original engine event retained for fidelity and debugging when the canonical shape cannot express every provider detail yet. | Engine adapter and backend |
 | Engine | The coding agent runtime, such as Codex, Claude, or OpenCode. It decides what to do and emits native events. | Engine adapter |
-| Engine adapter | The translator between an engine's protocol and Skynet's thread, command, and event contracts. | Backend `src/engines/` |
+| Engine adapter | The translator between an engine's protocol and useAgent's thread, command, and event contracts. | Backend `src/engines/` |
 | Runtime path | The primary orchestration route (backend `src/engines/runtime-*`) for authoritative history, approvals, questions, child agents, patches, todos, reasoning, and usage. It is an adapter path, not a second product UI. Named by function; the vendored protocol name appears only at true wire boundaries (the provider driver and frame parsers). | Backend engine layer |
 | ACP | Agent Client Protocol, used by the legacy resident Codex and Claude route when the runtime path is not selected. It has fewer authoritative lifecycle surfaces than the runtime path. | Backend ACP adapter |
 | Sandbox | The isolated Linux workstation where agent commands, repositories, browser automation, desktop apps, and recordings run. | Sandbox provider |
@@ -106,7 +106,7 @@ relay capability path; other product traffic remains behind the frontend.
 
 ## Run Your Own Instance
 
-To stand up Skynet on your own server, [`infra/terraform/hetzner/`](infra/terraform/hetzner/README.md)
+To stand up useAgent on your own server, [`infra/terraform/hetzner/`](infra/terraform/hetzner/README.md)
 provisions a Hetzner Cloud host (server, firewall, PostgreSQL 16 + pgvector, bun,
 Node, Docker, Caddy) with one `terraform apply`, and `deploy-app.sh` brings up the
 **core stack** (backend + frontend + Caddy) with a single command:
