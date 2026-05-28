@@ -170,7 +170,7 @@ async function pollApproval(
     );
   }
   return textResult(
-    `Approved. Immediately call ${request.toolName} with the exact same arguments plus this approvalCapability. It is single use${handout.expiresAt ? ` and expires at ${handout.expiresAt.toISOString()}` : ""}.`,
+    `Approved. Immediately call ${request.toolName} with the exact same arguments plus approvalCapability=${handout.capability}. It is single use${handout.expiresAt ? ` and expires at ${handout.expiresAt.toISOString()}` : ""}.`,
     {
       approval_request_id: request.id,
       status: "approved",
