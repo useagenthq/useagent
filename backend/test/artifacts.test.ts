@@ -15,6 +15,7 @@ import { executeArtifactTool } from "../src/knowledge/gateway/artifact-tools";
 import { createRun, setRunSandbox } from "../src/runs/repo";
 import { type OrgChange, subscribeOrg } from "../src/runs/org-signals";
 import { setSandboxDownloaderForTest } from "../src/slack/sandbox-file";
+import { deleteSecret, upsertSecret } from "../src/secrets/store";
 import { createOrgSession, fetchApi, json, type OrgSession } from "./helpers";
 import { InMemoryArtifactStorage } from "./in-memory-artifact-storage";
 
@@ -86,6 +87,35 @@ afterAll(() => {
 });
 
 describe("durable artifacts", () => {
+  test("rejects protected injected-secret paths and dotenv files before download", async () => {
+    const runId = await createSandboxRun(owner);
+
+    await expect(
+      publish(owner, runId, "/root/.skynet/secrets/skynet-env.sh"),
+    ).rejects.toThrow("Protected secret paths and dotenv files");
+    await expect(
+      publish(owner, runId, "/root/work/output/.env.local"),
+    ).rejects.toThrow("Protected secret paths and dotenv files");
+  });
+
+  test("rejects artifact bytes containing a secret injected into the run sandbox", async () => {
+    const runId = await createSandboxRun(owner);
+    const secretName = "ARTIFACT_PUBLICATION_TEST_SECRET";
+    const secretValue = `synthetic-secret-${crypto.randomUUID()}`;
+    const previousBytes = sandboxBytes;
+    await upsertSecret(owner.orgId, secretName, secretValue);
+    sandboxBytes = new TextEncoder().encode(`safe prefix\n${secretValue}\nsafe suffix\n`);
+
+    try {
+      await expect(
+        publish(owner, runId, "/root/work/output/report.txt"),
+      ).rejects.toThrow("artifact content contains protected secret material");
+    } finally {
+      sandboxBytes = previousBytes;
+      await deleteSecret(owner.orgId, secretName);
+    }
+  });
+
   test("serializes concurrent publication so a failed creator cannot erase the winner", async () => {
     class FirstPutFailsStorage extends InMemoryArtifactStorage {
       attempts = 0;

@@ -32,6 +32,10 @@ import {
   MAX_WORKPIECE_STATE_BYTES,
   parseWorkpieceState,
 } from "./workpiece";
+import {
+  isProtectedInjectedSecretPath,
+  loadInjectedSecretRedactionValues,
+} from "../secrets/inject";
 
 export const MAX_ARTIFACT_BYTES = 50 * 1024 * 1024;
 
@@ -45,7 +49,19 @@ function checkedSourcePath(value: string): string {
   if (!path || path.length > 4_096 || path.includes("\0")) {
     throw new Error("artifact path must be a non-empty sandbox path under 4096 characters");
   }
+  if (isProtectedInjectedSecretPath(path)) {
+    throw new Error("protected secret paths and dotenv files cannot be published as artifacts");
+  }
   return path;
+}
+
+function assertNoInjectedSecretBytes(bytes: Uint8Array, redactionValues: readonly string[]): void {
+  const content = Buffer.from(bytes);
+  for (const value of redactionValues) {
+    if (value && content.includes(Buffer.from(value))) {
+      throw new Error("artifact content contains protected secret material and cannot be published");
+    }
+  }
 }
 
 /** Best-effort Office->PDF preview attachment. For an Office binary, convert the
@@ -214,7 +230,9 @@ export async function publishSandboxArtifact(input: {
   }
   if (!run.sandboxId) throw new Error("no sandbox is attached to this run");
 
+  const redactionValues = await loadInjectedSecretRedactionValues(input.orgId);
   const file = await downloadSandboxFile(run.sandboxId, sourcePath, MAX_ARTIFACT_BYTES);
+  assertNoInjectedSecretBytes(file.bytes, redactionValues);
   const digest = createHash("sha256").update(file.bytes).digest("hex");
   const name = safeName(sourcePath, input.name);
   const contentType = contentTypeForName(name);
@@ -226,6 +244,7 @@ export async function publishSandboxArtifact(input: {
   const editable = editablePath
     ? await downloadSandboxFile(run.sandboxId, editablePath, MAX_WORKPIECE_STATE_BYTES)
     : null;
+  if (editable) assertNoInjectedSecretBytes(editable.bytes, redactionValues);
   let workpieceState = workpieceKind
     ? buildInitialWorkpieceState({
         kind: workpieceKind,

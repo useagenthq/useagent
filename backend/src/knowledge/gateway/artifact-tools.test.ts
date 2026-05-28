@@ -254,6 +254,31 @@ describe("artifact gateway contract", () => {
     expect(daytonaRejected.isError).toBe(true);
   });
 
+  test("rejects protected secret paths before invoking the artifact publisher", async () => {
+    let called = false;
+    setSandboxArtifactPublisherForTest(async () => {
+      called = true;
+      throw new Error("publisher must not be called");
+    });
+
+    const rejected = await executeArtifactTool(
+      {
+        orgId: "org-1",
+        userId: "user-1",
+        threadId: "thread-1",
+        runId: "run-1",
+        scope: "run",
+        exp: Date.now() + 60_000,
+      },
+      "artifact_publish",
+      { path: "/root/work/../.skynet/secrets/credential.json" },
+    );
+
+    expect(rejected.isError).toBe(true);
+    expect(rejected.content[0]?.text).toContain("Protected secret paths");
+    expect(called).toBe(false);
+  });
+
   test("reports absolute FRONTEND_ORIGIN artifact URLs the model must use verbatim", async () => {
     const artifact: ArtifactDescriptor = {
       id: "artifact-1",
