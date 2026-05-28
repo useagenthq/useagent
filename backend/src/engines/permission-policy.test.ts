@@ -3,7 +3,8 @@
 // and proves the dev-mode gate holds in production.
 
 import { afterEach, describe, expect, test } from "bun:test";
-import { allowPermissionBypass, decideAcpPermission } from "./permission-policy";
+import { allowPermissionBypass } from "./permission-bypass";
+import { decideAcpPermission } from "./permission-policy";
 import { claudeSpec } from "./sandbox";
 
 const ALLOW_ONCE = { optionId: "opt-once", kind: "allow_once" };
@@ -108,7 +109,7 @@ describe("decideAcpPermission - actual response payloads (pure logic)", () => {
     ).toEqual({ outcome: { outcome: "selected", optionId: "opt-once" } });
     expect(
       decideAcpPermission([ALLOW_ONCE], false, "mcp.skynet-knowledge.automation_delete"),
-    ).toEqual({ outcome: { outcome: "cancelled" } });
+    ).toEqual({ outcome: { outcome: "selected", optionId: "opt-once" } });
     expect(
       decideAcpPermission(
         [ALLOW_ALWAYS],
@@ -155,6 +156,39 @@ describe("decideAcpPermission - actual response payloads (pure logic)", () => {
     expect(decideAcpPermission([ALLOW_ONCE], false, "shell")).toEqual({
       outcome: { outcome: "cancelled" },
     });
+  });
+
+  test("accepts Claude ACP names for registered gateway and sandbox-native tools", () => {
+    expect(
+      decideAcpPermission(
+        [ALLOW_ONCE],
+        false,
+        "mcp__skynet-knowledge__gcs_list_buckets",
+      ),
+    ).toEqual({ outcome: { outcome: "selected", optionId: "opt-once" } });
+    expect(
+      decideAcpPermission([ALLOW_ONCE], false, "mcp__skynet-knowledge__memory_remember"),
+    ).toEqual({ outcome: { outcome: "selected", optionId: "opt-once" } });
+    for (const title of ["Read", "Write", "Edit", "Bash", "Glob", "Grep", "Agent", "Task"]) {
+      expect(decideAcpPermission([ALLOW_ONCE], false, title)).toEqual({
+        outcome: { outcome: "selected", optionId: "opt-once" },
+      });
+    }
+  });
+
+  test("rejects unregistered gateway lookalikes and unsafe native tools", () => {
+    for (const title of [
+      "mcp__skynet-knowledge__gcs_delete_bucket",
+      "mcp__attacker-skynet-knowledge__gcs_list_buckets",
+      "mcp__skynet-knowledge__computer_future",
+      "WebFetch",
+      "WebSearch",
+      "shell",
+    ]) {
+      expect(decideAcpPermission([ALLOW_ONCE], false, title)).toEqual({
+        outcome: { outcome: "cancelled" },
+      });
+    }
   });
 });
 

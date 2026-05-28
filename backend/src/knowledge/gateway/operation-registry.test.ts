@@ -11,6 +11,7 @@ import {
   gatewayMetaToolDescriptors,
   gatewayToolListDescriptors,
   gatewayToolRequiresApproval,
+  isRegisteredGatewayToolName,
   isGatewayMetaToolName,
 } from "./operation-registry";
 import { SLACK_TOOLS } from "./slack-tools";
@@ -70,6 +71,13 @@ describe("gateway operation registry", () => {
     const names = advertisedGatewayToolDescriptors(ALL_OPTIONS).map((tool) => tool.name);
 
     expect(new Set(names).size).toBe(names.length);
+  });
+
+  test("exposes exact registered names without granting prefix lookalikes", () => {
+    expect(isRegisteredGatewayToolName("gcs_list_buckets")).toBe(true);
+    expect(isRegisteredGatewayToolName("gateway_tools_search")).toBe(true);
+    expect(isRegisteredGatewayToolName("gcs_delete_bucket")).toBe(false);
+    expect(isRegisteredGatewayToolName("computer_future")).toBe(false);
   });
 
   test("advertises conditional capabilities only when their trusted context is present", () => {

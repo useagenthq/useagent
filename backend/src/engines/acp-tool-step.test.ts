@@ -1,5 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { buildAcpToolCompletion, buildAcpToolStep } from "./acp-tool-step";
+import {
+  acpToolResultFailed,
+  buildAcpToolCompletion,
+  buildAcpToolStep,
+} from "./acp-tool-step";
 
 const native = {
   sessionID: "ses_1",
@@ -7,6 +11,21 @@ const native = {
   partID: "part_tool_1",
   callID: "call_1",
 } as const;
+
+describe("acpToolResultFailed", () => {
+  test("detects gateway application errors inside completed ACP results", () => {
+    expect(acpToolResultFailed({
+      result: {
+        content: [{ type: "text", text: "Approval required" }],
+        structuredContent: { error: "approval_required" },
+        isError: true,
+      },
+    })).toBe(true);
+    expect(acpToolResultFailed({
+      result: { content: [{ type: "text", text: "ok" }], isError: false },
+    })).toBe(false);
+  });
+});
 
 describe("buildAcpToolStep", () => {
   test("stamps stable native ids so the canonical timeline can order the tool", () => {

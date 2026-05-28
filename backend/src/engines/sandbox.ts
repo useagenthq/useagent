@@ -12,7 +12,7 @@ import {
 } from "./daytona-resources";
 import { composeTurnPrompt } from "./types";
 import { basename, parseJsonLine, truncate } from "./util";
-import { allowPermissionBypass } from "./permission-policy";
+import { allowPermissionBypass } from "./permission-bypass";
 import {
   composeSecretEnv,
   materializeSecretFiles,

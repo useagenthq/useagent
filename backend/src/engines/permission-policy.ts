@@ -4,12 +4,14 @@
  * and the CLI runner (sandbox.ts) route through - so there is no second place that
  * can silently re-open yolo.
  *
- * Default is DENY. Auto-approval (and the corresponding permission-skipping CLI
- * flag / bypass mode) is only ever enabled by {@link acpAutoApprove}, which itself
- * requires verified development mode. A real approval-policy engine evaluated in
- * the trusted backend outside the sandbox is Phase 3 (#77); this is the safe interim.
+ * Default is DENY. Production selects allow-once only for exact sandbox-native
+ * tools or exact operations implemented by the signed run gateway. The gateway
+ * remains the authority boundary for tenant scope and destructive-operation
+ * approvals; this policy only permits the isolated harness to make the RPC call.
+ * Permission-skipping CLI flags remain restricted to verified development mode.
  */
 import { acpAutoApprove } from "../env";
+import { isRegisteredGatewayToolName } from "../knowledge/gateway/operation-registry";
 
 /** A permission option as advertised by an ACP `session/request_permission`. */
 export interface AcpPermissionOption {
@@ -23,9 +25,9 @@ export type AcpPermissionOutcome =
   | { outcome: { outcome: "cancelled" } };
 
 /**
- * Decide one ACP permission request. Fail CLOSED: DENY (`cancelled`) unless
- * dev-yolo auto-approve is on, in which case pick a one-shot allow (then
- * allow-always, then the first option). `autoApprove` is injectable for tests;
+ * Decide one ACP permission request. Fail CLOSED: DENY (`cancelled`) unless the
+ * title resolves to a trusted active-run tool or dev-yolo auto-approve is on.
+ * Production accepts allow-once only. `autoApprove` is injectable for tests;
  * it defaults to the env-derived, dev-gated {@link acpAutoApprove}.
  */
 export function decideAcpPermission(
@@ -33,12 +35,11 @@ export function decideAcpPermission(
   autoApprove: boolean = acpAutoApprove(),
   toolTitle?: string,
 ): AcpPermissionOutcome {
-  const trustedActiveRunMcp =
-    typeof toolTitle === "string" && TRUSTED_ACTIVE_RUN_MCP_TOOLS.has(toolTitle);
-  if (!autoApprove && !trustedActiveRunMcp) {
+  const trustedActiveRunTool = isTrustedActiveRunTool(toolTitle);
+  if (!autoApprove && !trustedActiveRunTool) {
     return { outcome: { outcome: "cancelled" } };
   }
-  if (trustedActiveRunMcp && !autoApprove) {
+  if (trustedActiveRunTool && !autoApprove) {
     const allowOnce = options.find((option) => option.kind === "allow_once");
     return allowOnce?.optionId
       ? { outcome: { outcome: "selected", optionId: allowOnce.optionId } }
@@ -53,41 +54,33 @@ export function decideAcpPermission(
     : { outcome: { outcome: "cancelled" } };
 }
 
-const TRUSTED_ACTIVE_RUN_MCP_TOOLS: ReadonlySet<string> = new Set([
-  "mcp.skynet-knowledge.computer_screenshot",
-  "mcp.skynet-knowledge.computer_sequence",
-  "mcp.skynet-knowledge.computer_click",
-  "mcp.skynet-knowledge.computer_move",
-  "mcp.skynet-knowledge.computer_drag",
-  "mcp.skynet-knowledge.computer_type",
-  "mcp.skynet-knowledge.computer_key",
-  "mcp.skynet-knowledge.computer_hotkey",
-  "mcp.skynet-knowledge.computer_scroll",
-  "mcp.skynet-knowledge.desktop_recording_start",
-  "mcp.skynet-knowledge.desktop_recording_stop",
-  "mcp.skynet-knowledge.artifact_publish",
-  "mcp.skynet-knowledge.web_search",
-  "mcp.skynet-knowledge.gcs_list_buckets",
-  "mcp.skynet-knowledge.github_repositories",
-  "mcp.skynet-knowledge.github_clone_repository",
-  "mcp.skynet-knowledge.loop_login_open",
-  "mcp.skynet-knowledge.loop_login_destroy",
-  "mcp.skynet-knowledge.skills_list",
-  "mcp.skynet-knowledge.skill_activate",
-  "mcp.skynet-knowledge.automation_list",
-  "mcp.skynet-knowledge.automation_create",
-  "mcp.skynet-knowledge.automation_update",
-  "mcp.skynet-knowledge.automation_run_now",
-  "mcp.skynet-knowledge.automation_history",
+const TRUSTED_SANDBOX_NATIVE_TOOLS: ReadonlySet<string> = new Set([
+  "Agent",
+  "Bash",
+  "Edit",
+  "Glob",
+  "Grep",
+  "Read",
+  "Task",
+  "Write",
 ]);
 
-/**
- * Whether to pass a permission-SKIPPING CLI flag (claude's
- * `--dangerously-skip-permissions`) or seed a bypass-permissions settings file.
- * Fail CLOSED: never, unless dev-yolo. A non-interactive CLI without the flag
- * simply cannot approve tools - which is the intended fail-closed behavior for a
- * team/SaaS deployment.
- */
-export function allowPermissionBypass(autoApprove: boolean = acpAutoApprove()): boolean {
-  return autoApprove;
+const GATEWAY_TOOL_PREFIXES = [
+  "mcp.skynet-knowledge.",
+  "mcp__skynet-knowledge__",
+] as const;
+
+function registeredGatewayToolFromTitle(title: string): string | null {
+  for (const prefix of GATEWAY_TOOL_PREFIXES) {
+    if (!title.startsWith(prefix)) continue;
+    const name = title.slice(prefix.length);
+    return name && isRegisteredGatewayToolName(name) ? name : null;
+  }
+  return null;
+}
+
+function isTrustedActiveRunTool(toolTitle: string | undefined): boolean {
+  if (!toolTitle) return false;
+  return TRUSTED_SANDBOX_NATIVE_TOOLS.has(toolTitle) ||
+    registeredGatewayToolFromTitle(toolTitle) !== null;
 }
