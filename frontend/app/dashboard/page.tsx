@@ -68,7 +68,7 @@ export default async function DashboardPage() {
   // grouping refreshes with the rest of the dashboard on DashboardLiveRefresh.
   const fleetRuns = extractFleetRuns(runsData);
   const lanes = groupIntoLanes(fleetRuns);
-  const fleetStats = computeFleetStats(fleetRuns);
+  const fleetStats = computeFleetStats(lanes.flatMap((lane) => lane.runs));
 
   const stats = computeStats(runs);
   const week = runsPerDay(runs, 7);

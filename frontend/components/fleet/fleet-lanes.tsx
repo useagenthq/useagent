@@ -3,13 +3,13 @@
 import { RiArrowRightSLine, RiFolderLine } from "@remixicon/react";
 import Link from "next/link";
 import { useState } from "react";
-import * as Badge from "@/components/ui/badge";
 import { StatusDot } from "@/components/shared/status-dot";
-import { cnExt } from "@/utils/cn";
-import { Panel } from "./panel";
-import { formatDuration } from "@/utils/format";
+import * as Badge from "@/components/ui/badge";
 import type { RunStatus } from "@/lib/runs";
+import { cnExt } from "@/utils/cn";
+import { formatDuration } from "@/utils/format";
 import type { FleetStats, LaneGroup, WorkspaceRun } from "./fleet-lanes-data";
+import { Panel } from "./panel";
 
 /** 12×12 status disc keyed to a run's status. */
 function RunStatusDot({ status }: { status: RunStatus }) {
@@ -71,8 +71,15 @@ function LaneCard({ lane, defaultOpen }: { lane: LaneGroup; defaultOpen: boolean
           )}
         />
         <RiFolderLine className="size-4 shrink-0 text-text-sub-600" aria-hidden />
-        <span className="text-label-sm text-text-strong-950">{lane.name}</span>
-        <span className={cnExt("text-mono-label", lane.working > 0 ? "text-warning-base" : "text-text-soft-400")}>
+        <span className="text-label-sm text-text-strong-950" title={lane.name}>
+          {lane.label}
+        </span>
+        <span
+          className={cnExt(
+            "text-mono-label",
+            lane.working > 0 ? "text-warning-base" : "text-text-soft-400",
+          )}
+        >
           {caption}
         </span>
         <span className="ml-auto flex flex-wrap items-center justify-end gap-1">
@@ -87,7 +94,9 @@ function LaneCard({ lane, defaultOpen }: { lane: LaneGroup; defaultOpen: boolean
           {count > 0 ? (
             lane.runs.map((run) => <RunRow key={run.id} run={run} />)
           ) : (
-            <p className="px-2 py-2 text-paragraph-xs text-text-soft-400">No runs in this lane yet.</p>
+            <p className="px-2 py-2 text-paragraph-xs text-text-soft-400">
+              No runs in this project yet.
+            </p>
           )}
         </div>
       )}
@@ -102,18 +111,27 @@ export function Fleet({ lanes, stats }: { lanes: LaneGroup[]; stats: FleetStats 
   return (
     <Panel>
       <div className="mb-2 flex flex-wrap items-baseline gap-x-2 gap-y-1">
-        <span className="text-mono-label text-text-soft-400">Lanes</span>
+        <span className="text-mono-label text-text-soft-400">Projects</span>
         <span className="text-paragraph-xs text-text-sub-600">
-          {stats.total} run{stats.total === 1 ? "" : "s"} across {activeLanes} active workstream
+          {stats.total} repository-backed run{stats.total === 1 ? "" : "s"} across {activeLanes}{" "}
+          project
           {activeLanes === 1 ? "" : "s"} ·{" "}
-          <span className={stats.failed > 0 ? "text-warning-base" : "text-success-base"}>{summary}</span>
+          <span className={stats.failed > 0 ? "text-warning-base" : "text-success-base"}>
+            {summary}
+          </span>
         </span>
       </div>
-      <div>
-        {lanes.map((lane, i) => (
-          <LaneCard key={lane.name} lane={lane} defaultOpen={i === 0 || lane.working > 0} />
-        ))}
-      </div>
+      {lanes.length > 0 ? (
+        <div>
+          {lanes.map((lane, i) => (
+            <LaneCard key={lane.name} lane={lane} defaultOpen={i === 0 || lane.working > 0} />
+          ))}
+        </div>
+      ) : (
+        <p className="py-8 text-center text-paragraph-sm text-text-soft-400">
+          No repository-backed runs yet.
+        </p>
+      )}
     </Panel>
   );
 }
