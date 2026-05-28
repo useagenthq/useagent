@@ -1,10 +1,16 @@
 "use client";
 
-import { RiBookMarkedLine, RiCpuLine, RiFlashlightLine } from "@remixicon/react";
+import {
+  RiAddLine,
+  RiAttachment2,
+  RiBookMarkedLine,
+  RiCpuLine,
+  RiFlashlightLine,
+  RiGithubLine,
+} from "@remixicon/react";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { resolveEnabledEngine, useEnabledEngineConfig } from "@/components/chat/engine-picker";
-import { MemoryScopePicker } from "@/components/chat/memory-scope-picker";
 import { RunUploadChips, useRunUploads } from "@/components/chat/run-uploads";
 import {
   type CommandPickerStatus,
@@ -16,13 +22,12 @@ import {
 import {
   ENGINES,
   type EngineId,
-  type MemoryScope,
   modelOptionsForEngine,
   selectableModelsForEngine,
 } from "@/components/chat/types";
 import { PromptInput, PromptInputTextarea } from "@/components/prompt-kit/prompt-input";
 import { backendFetch } from "@/lib/backend-fetch";
-import { NewTaskContextMenu } from "./new-task-context-menu";
+import { cnExt } from "@/utils/cn";
 import { RepoBranchBar } from "./repo-branch-bar";
 import { type RepoItem, RepoMultiPicker } from "./repo-multi-picker";
 import { type PickerGroup, SearchablePicker } from "./searchable-picker";
@@ -37,6 +42,10 @@ const ENGINE_CAPTIONS: Partial<Record<EngineId, string>> = {
   claude: "cloud sandbox",
   codex: "cloud sandbox",
 };
+
+/** Full-width row styling for the controls inside the "+" action shelf. */
+const ADD_MENU_ROW =
+  "flex w-full items-center gap-3 rounded-[10px] px-2.5 py-2 text-left text-label-sm text-text-strong-950 transition-colors hover:bg-bg-weak-50";
 
 /**
  * The New Task composer: a prompt textarea over a control row of searchable
@@ -66,7 +75,9 @@ export function NewTaskComposer({
   const [playbook, setPlaybook] = useState(""); // selected skill/playbook id, "" = none
   const [model, setModel] = useState(selectableModelsForEngine("opencode")[0]?.value ?? "");
   const [engine, setEngine] = useState<string>(ENGINES[0].id);
-  const [memoryScope, setMemoryScope] = useState<MemoryScope>("org");
+  // The "+" action shelf under the composer holds the add-context controls
+  // (upload, repos, skills, GitHub, branches) so the toolbar row never overflows.
+  const [addMenuOpen, setAddMenuOpen] = useState(false);
   // Only offer engines the SERVER enabled (GET /api/config, gated by
   // ENABLED_ENGINES): claude/codex surface here only on a backend that turned them
   // on, so the picker never lets a user start a run the backend would 403. This is
@@ -266,8 +277,8 @@ export function NewTaskComposer({
     [enabledEngines],
   );
 
-  // One combined picker over the shared substrate: an explicit empty option, then Skills
-  // and Playbooks as separate groups (the run pins exactly one, either kind).
+  // One combined picker over the shared substrate: an explicit "none" option, then
+  // Skills and Playbooks as separate groups (a run pins exactly one, either kind).
   const skillGroups: PickerGroup[] = useMemo(() => {
     const toOption = (s: Skill) => ({
       value: s.id,
@@ -277,7 +288,7 @@ export function NewTaskComposer({
     });
     const skillOptions = skills.filter((s) => s.kind === "skill").map(toOption);
     const playbookOptions = skills.filter((s) => s.kind === "playbook").map(toOption);
-    const groups: PickerGroup[] = [{ options: [{ value: "", label: "No skill or playbook" }] }];
+    const groups: PickerGroup[] = [{ options: [{ value: "", label: "Playbook or skills" }] }];
     if (skillOptions.length > 0) groups.push({ label: "Skills", options: skillOptions });
     if (playbookOptions.length > 0) groups.push({ label: "Playbooks", options: playbookOptions });
     return groups;
@@ -320,7 +331,7 @@ export function NewTaskComposer({
         body: JSON.stringify({
           prompt: text,
           engine,
-          memory_scope: memoryScope,
+          memory_scope: "org",
           ...(selectableModels.length > 0 ? { model } : {}),
           ...(selectedRepos.length ? { repos: selectedRepos } : {}),
           ...(Object.keys(branchPayload).length ? { branches: branchPayload } : {}),
@@ -343,6 +354,10 @@ export function NewTaskComposer({
 
   return (
     <div>
+      {/* Composer card modeled on the ai-kit KnowledgeComposerCard: an outer card
+          wrapping a darker inset that holds the prompt textarea and a clean pill
+          toolbar. Every control is real - attach, repos, engine, model, skill -
+          and rides POST /api/runs on submit. */}
       <PromptInput
         value={prompt}
         onValueChange={(value) => {
@@ -353,7 +368,7 @@ export function NewTaskComposer({
         onSubmit={() => void submit()}
         maxHeight={260}
         disabled={submitting}
-        className="flex flex-col gap-3 rounded-[22px] p-4 shadow-regular-sm transition-colors focus-within:border-stroke-sub-300"
+        className="rounded-[20px] p-2 shadow-regular-md transition-colors"
       >
         <input
           ref={fileInput}
@@ -365,11 +380,7 @@ export function NewTaskComposer({
             event.target.value = "";
           }}
         />
-        <RunUploadChips
-          uploads={runUploads.uploads}
-          onRemove={(upload) => void runUploads.remove(upload)}
-        />
-        <div className="relative min-w-0">
+        <div className="relative">
           {cmdActive && (
             <div className="absolute left-0 top-full z-30 mt-2 w-full">
               <SlashCommandPopover
@@ -381,60 +392,145 @@ export function NewTaskComposer({
               />
             </div>
           )}
+          {runUploads.uploads.length > 0 ? (
+            <div className="px-3 pt-3">
+              <RunUploadChips
+                uploads={runUploads.uploads}
+                onRemove={(upload) => void runUploads.remove(upload)}
+              />
+            </div>
+          ) : null}
           <PromptInputTextarea
             placeholder="Describe what you need - task, question, repo, constraints..."
             aria-label="Describe what you need"
             onKeyDown={(event) => {
               handleCmdKeys(event);
             }}
-            className="min-h-32 px-1 text-paragraph-sm leading-relaxed"
+            className="min-h-[84px] px-3.5 pt-3.5 text-paragraph-sm leading-relaxed"
           />
-        </div>
 
-        {/* Pickers */}
-        <div className="flex items-center gap-2">
-          <div className="flex min-w-0 flex-1 flex-nowrap items-center gap-0.5 overflow-x-auto">
-            <NewTaskContextMenu
-              skillGroups={skillGroups}
-              selectedSkill={playbook}
-              onAddFiles={() => fileInput.current?.click()}
-              onSelectSkill={setPlaybook}
-            />
-            <RepoMultiPicker repos={repos} value={selectedRepos} onChange={setSelectedRepos} />
-            <SearchablePicker
-              ariaLabel="Select engine"
-              triggerLabel="Engine"
-              searchPlaceholder="Search engines..."
-              groups={engineGroups}
-              value={engine}
-              onChange={setEngine}
-            />
-            {/* Model is shown only for engines whose backend policy accepts an
-                  explicit user choice (OpenCode and Codex). */}
-            {selectableModels.length > 0 ? (
-              <SearchablePicker
-                ariaLabel="Select model"
-                triggerLabel="Model"
-                searchPlaceholder="Search models..."
-                groups={modelGroups}
-                value={model}
-                onChange={setModel}
+          {/* Toolbar: the "+" opens the add-context shelf below; engine + model +
+              Start stay inline. The context controls (repos, skills, GitHub,
+              branches) live in the shelf, so this row never overflows. */}
+          <div className="flex items-center gap-1 px-2 pb-2">
+            <button
+              type="button"
+              aria-label="Add context"
+              aria-haspopup="menu"
+              aria-expanded={addMenuOpen}
+              onClick={() => setAddMenuOpen((o) => !o)}
+              className={cnExt(
+                "grid size-8 shrink-0 place-items-center rounded-[10px] outline-none transition-colors focus-visible:ring-2 focus-visible:ring-stroke-strong-950",
+                addMenuOpen
+                  ? "bg-bg-weak-50 text-text-strong-950"
+                  : "text-text-sub-600 hover:bg-bg-weak-50",
+              )}
+            >
+              <RiAddLine
+                className={cnExt(
+                  "size-5 transition-transform duration-200",
+                  addMenuOpen && "rotate-45",
+                )}
+                aria-hidden
               />
-            ) : null}
-            {/* Team-memory pool this task reads/writes (org vs personal). */}
-            <MemoryScopePicker scope={memoryScope} onChange={setMemoryScope} />
-            <RepoBranchBar repos={selectedRepoItems} value={branches} onChange={setBranches} />
+            </button>
+            <div className="flex min-w-0 flex-1 flex-nowrap items-center gap-0.5 overflow-x-auto">
+              <SearchablePicker
+                ariaLabel="Select engine"
+                triggerLabel="Engine"
+                searchPlaceholder="Search engines..."
+                groups={engineGroups}
+                value={engine}
+                onChange={setEngine}
+              />
+              {/* Model is shown only for engines whose backend policy accepts an
+                  explicit user choice (OpenCode and Codex). */}
+              {selectableModels.length > 0 ? (
+                <SearchablePicker
+                  ariaLabel="Select model"
+                  triggerLabel="Model"
+                  searchPlaceholder="Search models..."
+                  groups={modelGroups}
+                  value={model}
+                  onChange={setModel}
+                />
+              ) : null}
+              {/* Skill/playbook sits beside the model; the trigger truncates a long
+                  name so it never widens the row. */}
+              <SearchablePicker
+                ariaLabel="Select playbook or skill"
+                triggerLabel="Playbook or skills"
+                searchPlaceholder="Search playbooks & skills..."
+                groups={skillGroups}
+                value={playbook}
+                onChange={setPlaybook}
+                triggerClassName="max-w-[11rem]"
+              />
+            </div>
+            <button
+              type="button"
+              onClick={() => void submit()}
+              disabled={!canSubmit}
+              className="inline-flex h-9 shrink-0 items-center justify-center rounded-full bg-bg-strong-950 px-5 text-label-sm text-text-white-0 outline-none transition-opacity hover:opacity-90 focus-visible:ring-2 focus-visible:ring-stroke-strong-950 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              {submitting ? "Starting..." : "Start thread"}
+            </button>
           </div>
-          <button
-            type="button"
-            onClick={() => void submit()}
-            disabled={!canSubmit}
-            className="inline-flex h-10 min-w-36 shrink-0 items-center justify-center rounded-full bg-bg-strong-950 px-6 text-label-sm text-text-white-0 outline-none transition-opacity hover:opacity-90 focus-visible:ring-2 focus-visible:ring-stroke-strong-950 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            {submitting ? "Starting..." : "Start thread"}
-          </button>
         </div>
       </PromptInput>
+
+      {/* The "+" action shelf (ai-kit ACTION MENU VARIANT): the add-context
+          controls live here as full-width rows so the toolbar never overflows.
+          Every row is real - upload, the repo multi-select, the skill picker,
+          per-repo branches, and GitHub (already connected server-side). */}
+      {addMenuOpen ? (
+        <div className="mt-1.5 rounded-2xl border border-stroke-soft-200 bg-bg-white-0 p-1.5 shadow-regular-md">
+          <button
+            type="button"
+            onClick={() => {
+              setAddMenuOpen(false);
+              fileInput.current?.click();
+            }}
+            className={ADD_MENU_ROW}
+          >
+            <RiAttachment2 className="size-[18px] shrink-0 text-text-sub-600" aria-hidden />
+            <span className="flex min-w-0 flex-1 flex-col">
+              <span className="text-label-sm text-text-strong-950">Add photos &amp; files</span>
+              <span className="text-paragraph-xs text-text-soft-400">Upload from computer</span>
+            </span>
+          </button>
+
+          <RepoMultiPicker
+            repos={repos}
+            value={selectedRepos}
+            onChange={setSelectedRepos}
+            triggerClassName={ADD_MENU_ROW}
+          />
+
+          {selectedRepoItems.length > 0 ? (
+            <div className="px-2.5 py-1.5">
+              <RepoBranchBar repos={selectedRepoItems} value={branches} onChange={setBranches} />
+            </div>
+          ) : null}
+
+          <div className="my-1 border-t border-stroke-soft-200" />
+
+          {/* GitHub is connected server-side via the GitHub App (that is why the
+              repo list loads) - so this is a status row, not a "Connect" action. */}
+          <div className={cnExt(ADD_MENU_ROW, "cursor-default hover:bg-transparent")}>
+            <RiGithubLine className="size-[18px] shrink-0 text-text-sub-600" aria-hidden />
+            <span className="flex min-w-0 flex-1 flex-col">
+              <span className="text-label-sm text-text-strong-950">GitHub</span>
+              <span className="text-paragraph-xs text-text-soft-400">
+                Read pull requests &amp; issues
+              </span>
+            </span>
+            <span className="rounded-full bg-bg-weak-50 px-2 py-0.5 text-label-xs text-text-sub-600">
+              Connected
+            </span>
+          </div>
+        </div>
+      ) : null}
 
       {error ? (
         <p role="alert" className="mt-2 text-paragraph-xs text-error-base">
