@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { createSecretRedactor } from "./redact";
+import { containsSignedCapability, createSecretRedactor } from "./redact";
 
 describe("sandbox output secret redaction", () => {
   test("redacts exact injected values recursively before persistence", () => {
@@ -37,6 +37,11 @@ describe("sandbox output secret redaction", () => {
     expect(redact.text(`Authorization: Bearer ${jwt} apiKey=${capability}`)).toBe(
       "Authorization: Bearer <redacted> apiKey=<redacted>",
     );
+  });
+
+  test("detects signed capabilities without classifying ordinary version text", () => {
+    expect(containsSignedCapability("v1.header.payload")).toBe(true);
+    expect(containsSignedCapability("release v1.2.3")).toBe(false);
   });
 
   test("scrubs inline credentials that are not registered org secrets", () => {

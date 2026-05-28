@@ -26,6 +26,15 @@ export interface SecretRedactor {
   unknown<T>(value: T): T;
 }
 
+/** Signed provider/tool capabilities are bearer credentials even when no org
+ * secret is present. Artifact egress uses this shape check before persistence. */
+export function containsSignedCapability(value: string): boolean {
+  SIGNED_CAPABILITY_RE.lastIndex = 0;
+  const found = SIGNED_CAPABILITY_RE.test(value);
+  SIGNED_CAPABILITY_RE.lastIndex = 0;
+  return found;
+}
+
 /** Build a per-run redactor from the values injected into that sandbox. Values
  * are held only in memory and never included in a durable marker. Longer values
  * run first so an overlapping short value cannot expose a secret suffix. */
