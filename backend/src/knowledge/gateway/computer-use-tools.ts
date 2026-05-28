@@ -185,16 +185,30 @@ export function x11KeyCommand(key: string, modifiers: readonly string[] = []): s
   if (modifiers.length === 0) {
     return `xdotool keydown --clearmodifiers ${normalizedKey}; sleep 0.1; xdotool keyup ${normalizedKey}; sleep 0.2`;
   }
-  const chord = [...modifiers.map(x11KeyName), normalizedKey].join("+");
-  return `xdotool key --clearmodifiers --delay 100 ${chord}; sleep 0.2`;
+  return x11ChordCommand(normalizedKey, modifiers.map(x11KeyName));
 }
 
-function x11Hotkey(keys: string): string {
-  return keys
+function x11ChordCommand(key: string, modifiers: readonly string[]): string {
+  const press = [
+    "xdotool keyup ctrl alt shift Super_L",
+    "sleep 0.05",
+    ...modifiers.map((modifier) => `xdotool keydown ${modifier}`),
+    `xdotool key ${key}`,
+  ].join(" && ");
+  const up = [...modifiers].reverse().map((modifier) => `xdotool keyup ${modifier}`).join("; ");
+  return `${press}; status=$?; ${up}; sleep 0.2; test $status -eq 0`;
+}
+
+export function x11HotkeyCommand(keys: string): string {
+  const parts = keys
     .replaceAll(" ", "")
     .split("+")
-    .map(x11KeyName)
-    .join("+");
+    .map(x11KeyName);
+  const key = parts.at(-1);
+  if (!key) throw new Error("hotkey must contain a key");
+  return parts.length === 1
+    ? x11KeyCommand(key)
+    : x11ChordCommand(key, parts.slice(0, -1));
 }
 
 function buttonName(value: unknown): Button {
@@ -366,7 +380,7 @@ function cubeSequenceCommand(action: ComputerSequenceAction): string {
     case "key":
       return x11KeyCommand(action.key, action.modifiers);
     case "hotkey":
-      return `xdotool key --clearmodifiers ${x11Hotkey(action.keys)}`;
+      return x11HotkeyCommand(action.keys);
     case "scroll":
       return `xdotool mousemove ${action.x} ${action.y} click --repeat ${action.amount} ` +
         `--delay 40 ${action.direction === "up" ? 4 : 5}`;
@@ -516,7 +530,7 @@ const productionService: ComputerUseService = {
   async hotkey(claims, keys) {
     const sandbox = await readySandbox(claims);
     if (sandbox.computerUse) await sandbox.computerUse.keyboard.hotkey(keys);
-    else await cubeCommand(sandbox, `xdotool key --clearmodifiers ${x11Hotkey(keys)}`);
+    else await cubeCommand(sandbox, x11HotkeyCommand(keys));
   },
   async scroll(claims, x, y, direction, amount) {
     const sandbox = await readySandbox(claims);
