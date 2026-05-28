@@ -120,7 +120,18 @@ const folderPalette: ChipColor[] = [
 const knownFolderColor: Record<string, ChipColor> = {
   Global: "purple",
   "skynet-app": "blue",
+  useAgent: "blue",
 };
+
+/** User-facing label for a persisted knowledge folder key. */
+export function knowledgeFolderLabel(folder: string): string {
+  return folder === "skynet-app" ? "useAgent" : folder;
+}
+
+/** Card-safe display copy that leaves the stored item and folder key unchanged. */
+export function knowledgeItemForDisplay(item: KnowledgeItem): KnowledgeItem {
+  return { ...item, folder: knowledgeFolderLabel(item.folder) };
+}
 
 /** Deterministic Badge color for an arbitrary folder / domain name. */
 export function folderChipColor(folder: string): ChipColor {

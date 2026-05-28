@@ -21,6 +21,8 @@ import {
 } from "./knowledge-api";
 import {
   folderChipColor,
+  knowledgeFolderLabel,
+  knowledgeItemForDisplay,
   seedFolders,
   type KnowledgeItem,
   type SearchResult,
@@ -137,7 +139,14 @@ export function KnowledgeGallery({
     const q = query.trim().toLowerCase();
     if (!q) return items;
     return items.filter((item) =>
-      [item.title, item.trigger ?? "", item.body, item.folder, item.kind ?? ""]
+      [
+        item.title,
+        item.trigger ?? "",
+        item.body,
+        item.folder,
+        knowledgeFolderLabel(item.folder),
+        item.kind ?? "",
+      ]
         .join(" ")
         .toLowerCase()
         .includes(q),
@@ -239,9 +248,9 @@ export function KnowledgeGallery({
                 {pinned.map((item) => (
                   <PinnedCard
                     key={item.id}
-                    item={item}
-                    onTogglePin={togglePin}
-                    onDelete={removeItem}
+                    item={knowledgeItemForDisplay(item)}
+                    onTogglePin={() => togglePin(item)}
+                    onDelete={() => removeItem(item)}
                   />
                 ))}
               </div>
@@ -260,7 +269,7 @@ export function KnowledgeGallery({
                       size="medium"
                       color={folderChipColor(folder)}
                     >
-                      {folder}
+                      {knowledgeFolderLabel(folder)}
                     </Badge.Root>
                     <span className="text-paragraph-xs text-text-soft-400">
                       {entries.length}{" "}
@@ -271,9 +280,9 @@ export function KnowledgeGallery({
                     {entries.map((item) => (
                       <EntryCard
                         key={item.id}
-                        item={item}
-                        onTogglePin={togglePin}
-                        onDelete={removeItem}
+                        item={knowledgeItemForDisplay(item)}
+                        onTogglePin={() => togglePin(item)}
+                        onDelete={() => removeItem(item)}
                       />
                     ))}
                   </div>
