@@ -382,13 +382,21 @@ describe("T3 orchestration projection", () => {
       summary: "Mcp tool call",
       payload: { itemType: "mcp_tool_call", callId: "opaque-1" },
     })).toBe(false);
-    expect(shouldProjectRuntimeActivity({
+    const summaryOnlyMcp = {
       ...collabActivity,
       id: "summary-only-mcp-complete",
       kind: "tool.completed",
       summary: "skynet-knowledge · computer_screenshot started",
       payload: { itemType: "mcp_tool_call", callId: "summary-only-1" },
-    })).toBe(false);
+    } as const;
+    expect(shouldProjectRuntimeActivity(summaryOnlyMcp)).toBe(true);
+    expect(activityStep(summaryOnlyMcp)).toMatchObject({
+      label: "skynet-knowledge · computer_screenshot",
+      code_json: {
+        server: "skynet-knowledge",
+        tool: "computer_screenshot",
+      },
+    });
     expect(activityStep({
       ...collabActivity,
       id: "dynamic-complete",

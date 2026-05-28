@@ -1,5 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { firstSemanticT3ToolName, isT3TransportToolName } from "../src/t3-tool";
+import {
+  firstSemanticT3ToolName,
+  isT3TransportToolName,
+  t3SummaryToolIdentity,
+} from "../src/t3-tool";
 
 describe("T3 semantic tool names", () => {
   test("rejects every known transport placeholder", () => {
@@ -20,5 +24,17 @@ describe("T3 semantic tool names", () => {
       "github_clone_repository",
     );
     expect(firstSemanticT3ToolName("task", "  ", undefined)).toBeNull();
+  });
+
+  test("recovers a semantic server and tool from T3 summary-only wrappers", () => {
+    expect(t3SummaryToolIdentity("skynet-knowledge_github_clone_repository")).toEqual({
+      server: "skynet-knowledge",
+      tool: "github_clone_repository",
+    });
+    expect(t3SummaryToolIdentity("skynet-knowledge · computer_screenshot started")).toEqual({
+      server: "skynet-knowledge",
+      tool: "computer_screenshot",
+    });
+    expect(t3SummaryToolIdentity("Mcp tool call")).toBeNull();
   });
 });

@@ -311,7 +311,7 @@ export function translateOpenCode(
         terminal: boolean,
         errored: boolean,
       ): void {
-        const server = t3ToolServer(payload);
+        const server = t3ToolServer(payload, activity?.summary);
         const nativeStatus = t3ToolStatus(payload);
         const durationMs = t3ToolDuration(payload);
         const start = (): void => {
@@ -394,7 +394,7 @@ export function translateOpenCode(
             canonicalChildState(payload),
           );
         } else {
-          const name = t3ToolName(payload);
+          const name = t3ToolName(payload, activity?.summary);
           const title = firstString(activity?.summary, payload?.summary) ?? undefined;
           const errored = t3Errored(activityKind, activity, payload);
           const terminal = activityKind.endsWith(".completed") || activityKind.endsWith(".error") || activityKind.endsWith(".failed") || activityKind.endsWith(".denied");
