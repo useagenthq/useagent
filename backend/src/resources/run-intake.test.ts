@@ -37,7 +37,7 @@ describe("run resource intake", () => {
     expect(expected).toHaveLength(2);
     for (const result of results) {
       expect(semanticResources(result.resources)).toEqual(expected);
-      expect(result.repos).toEqual(["upstream-org/backend"]);
+      expect(result.repos).toEqual([]);
     }
   });
 
@@ -79,6 +79,7 @@ describe("run resource intake", () => {
       "change.checks.read",
       "deployment.read",
     ]);
+    expect(result.repos).toEqual([]);
   });
 
   test("keeps an ordinary web URL as prompt text while resolving the GitHub PR", async () => {
@@ -92,7 +93,7 @@ describe("run resource intake", () => {
       expect.objectContaining({ kind: "code.repository", provider: "github" }),
       expect.objectContaining({ kind: "code.change", provider: "github" }),
     ]);
-    expect(result.repos).toEqual(["upstream-org/backend"]);
+    expect(result.repos).toEqual([]);
   });
 
   test("rejects an unauthorized linked repository identically at every ingress", async () => {
@@ -181,6 +182,30 @@ describe("run resource intake", () => {
     expect(result.resources[0]?.capabilities).toEqual(["content.read", "code.checkout"]);
   });
 
+  test("a PR link binds GitHub tools without implicitly selecting a sandbox checkout", async () => {
+    const result = await resolveRunIntake(
+      { source: "web", text: `Review ${PR_URL} with the GitHub PR detail tool.` },
+      { authorize: authorizeLoopRepositories },
+    );
+
+    expect(result.repos).toEqual([]);
+    expect(result.resources).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: "code.repository",
+          locator: expect.objectContaining({ repository: "upstream-org/backend" }),
+        }),
+        expect.objectContaining({
+          kind: "code.change",
+          locator: expect.objectContaining({
+            repository: "upstream-org/backend",
+            number: 19625,
+          }),
+        }),
+      ]),
+    );
+  });
+
   test("does not discover resources from non-user context", async () => {
     const result = await resolveRunIntake(
       {
@@ -211,6 +236,7 @@ describe("run resource intake", () => {
         },
       },
     );
+    expect(root.repos).toEqual([]);
 
     authorizationCalls.length = 0;
     const followUp = await resolveRunIntake(
@@ -228,7 +254,7 @@ describe("run resource intake", () => {
     );
 
     expect(semanticResources(followUp.resources)).toEqual(semanticResources(root.resources));
-    expect(followUp.repos).toEqual(["upstream-org/backend"]);
+    expect(followUp.repos).toEqual([]);
     expect(authorizationCalls).toHaveLength(2);
     expect(followUp.resources[1]).toMatchObject({
       locator: {

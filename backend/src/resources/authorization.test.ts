@@ -105,7 +105,7 @@ describe("run resource authorization", () => {
       "unknown:org-1:upstream-org/backend",
       "pull:upstream-org/backend:19625",
     ]);
-    expect(intake.repos).toEqual(["upstream-org/backend"]);
+    expect(intake.repos).toEqual([]);
     expect(intake.resources[1]).toMatchObject({
       locator: { type: "github.pull_request", revision: SHA },
     });
@@ -155,7 +155,7 @@ describe("run resource authorization", () => {
     expect(followUp.resources[1]).toMatchObject({
       locator: { type: "github.pull_request", revision: SHA },
     });
-    expect(followUp.repos).toEqual(["upstream-org/backend"]);
+    expect(followUp.repos).toEqual([]);
   });
 
   test("leaves ordinary web pages as prompt context without touching GitHub", async () => {

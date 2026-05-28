@@ -89,7 +89,7 @@ export default async function NewTaskPage({
   return (
     <AppShell sidebar={<ThreadSidebar active="new" />}>
       <div className="flex min-h-full flex-col items-center px-4 sm:px-6">
-        <div className="w-full max-w-2xl py-10 sm:py-14">
+        <div className="w-full max-w-3xl py-10 sm:py-14">
           <div className="flex flex-col items-center gap-3 text-center">
             <OrbitKnotMark className="size-7" />
             <p className="text-mono-label text-text-soft-400">New thread</p>

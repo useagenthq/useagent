@@ -233,7 +233,7 @@ describe("repo-prep: shared engine-neutral repository preparation", () => {
     const { sandbox, calls } = fakeSandbox({
       pullOut: `pr:ok sha=${expectedHead}`,
     });
-    const { ctx, emits } = fakeCtx();
+    const { ctx, emits } = fakeCtx(["acme/widget"]);
 
     await checkoutPullRequestResources(
       sandbox,
@@ -269,7 +269,7 @@ describe("repo-prep: shared engine-neutral repository preparation", () => {
       pullExit: 1,
       pullOut: `pr:sha-mismatch actual=${actualHead}`,
     });
-    const { ctx } = fakeCtx();
+    const { ctx } = fakeCtx(["acme/widget"]);
 
     await expect(
       checkoutPullRequestResources(
@@ -299,6 +299,21 @@ describe("repo-prep: shared engine-neutral repository preparation", () => {
     };
 
     await checkoutPullRequestResources(sandbox, "/w", [repository], ctx);
+
+    expect(calls).toHaveLength(0);
+    expect(emits).toHaveLength(0);
+  });
+
+  test("a PR resource without an explicitly selected repo stays API-only", async () => {
+    const { sandbox, calls } = fakeSandbox();
+    const { ctx, emits } = fakeCtx([]);
+
+    await checkoutPullRequestResources(
+      sandbox,
+      "/w",
+      [pullRequestResource("0123456789abcdef0123456789abcdef01234567")],
+      ctx,
+    );
 
     expect(calls).toHaveLength(0);
     expect(emits).toHaveLength(0);

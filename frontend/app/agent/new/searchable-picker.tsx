@@ -107,8 +107,9 @@ export function SearchablePicker({
         <button
           type="button"
           aria-label={ariaLabel}
+          title={selected?.label ?? triggerLabel}
           className={cnExt(
-            "inline-flex max-w-full items-center gap-1.5 rounded-lg px-2 py-1.5 text-label-sm text-text-strong-950 outline-none transition-colors hover:bg-bg-weak-50 focus-visible:ring-2 focus-visible:ring-stroke-strong-950",
+            "inline-flex min-w-0 max-w-full items-center gap-1.5 rounded-lg px-2 py-1.5 text-label-sm text-text-strong-950 outline-none transition-colors hover:bg-bg-weak-50 focus-visible:ring-2 focus-visible:ring-stroke-strong-950",
             triggerClassName,
           )}
         >

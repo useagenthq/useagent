@@ -171,6 +171,7 @@ describe("unified shell contract", () => {
 
   test("keeps context actions expandable and the primary action inline", () => {
     const composer = readFromFrontend("app/agent/new/new-task-composer.tsx");
+    const newThreadPage = readFromFrontend("app/agent/new/page.tsx");
 
     expect(composer).toContain('aria-label="Add context"');
     expect(composer).toContain("Add photos &amp; files");
@@ -181,6 +182,9 @@ describe("unified shell contract", () => {
     expect(composer).not.toContain("<textarea");
     expect(composer).toContain("Start thread");
     expect(composer).toContain("flex-nowrap");
+    expect(composer).toContain("overflow-hidden");
+    expect(composer).toContain('triggerClassName="min-w-0 max-w-[22rem] flex-[1_1_16rem]"');
+    expect(newThreadPage).toContain("max-w-3xl");
     expect(composer).toContain('e.id !== "chat"');
     expect(composer).not.toContain("<AsteriskMark");
   });

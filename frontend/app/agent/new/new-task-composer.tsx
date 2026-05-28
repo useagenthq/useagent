@@ -419,7 +419,7 @@ export function NewTaskComposer({
           {/* Toolbar: the "+" opens the add-context shelf below; engine + model +
               Start stay inline. The context controls (repos, skills, GitHub,
               branches) live in the shelf, so this row never overflows. */}
-          <div className="flex items-center gap-1 px-2 pb-2">
+          <div className="flex min-w-0 items-center gap-1 overflow-hidden px-2 pb-2">
             <button
               type="button"
               aria-label="Add context"
@@ -441,7 +441,7 @@ export function NewTaskComposer({
                 aria-hidden
               />
             </button>
-            <div className="flex min-w-0 flex-1 flex-nowrap items-center gap-0.5 overflow-x-auto">
+            <div className="flex min-w-0 flex-1 flex-nowrap items-center gap-0.5 overflow-hidden">
               <SearchablePicker
                 ariaLabel="Select engine"
                 triggerLabel="Engine"
@@ -449,6 +449,7 @@ export function NewTaskComposer({
                 groups={engineGroups}
                 value={engine}
                 onChange={setEngine}
+                triggerClassName="max-w-[9rem] shrink-0"
               />
               {/* Model is shown only for engines whose backend policy accepts an
                   explicit user choice (OpenCode and Codex). */}
@@ -460,6 +461,7 @@ export function NewTaskComposer({
                   groups={modelGroups}
                   value={model}
                   onChange={setModel}
+                  triggerClassName="min-w-0 max-w-[22rem] flex-[1_1_16rem]"
                 />
               ) : null}
               {/* Skill/playbook sits beside the model; the trigger truncates a long
@@ -471,14 +473,14 @@ export function NewTaskComposer({
                 groups={skillGroups}
                 value={playbook}
                 onChange={setPlaybook}
-                triggerClassName="max-w-[11rem]"
+                triggerClassName="hidden min-w-0 max-w-[10rem] sm:inline-flex sm:flex-[0_2_10rem]"
               />
             </div>
             <button
               type="button"
               onClick={() => void submit()}
               disabled={!canSubmit}
-              className="inline-flex h-9 shrink-0 items-center justify-center rounded-full bg-bg-strong-950 px-5 text-label-sm text-text-white-0 outline-none transition-opacity hover:opacity-90 focus-visible:ring-2 focus-visible:ring-stroke-strong-950 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-40"
+              className="inline-flex h-9 min-w-[7.5rem] shrink-0 items-center justify-center rounded-full bg-bg-strong-950 px-4 text-label-sm text-text-white-0 outline-none transition-opacity hover:opacity-90 focus-visible:ring-2 focus-visible:ring-stroke-strong-950 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-40"
             >
               {submitting ? "Starting..." : "Start thread"}
             </button>
