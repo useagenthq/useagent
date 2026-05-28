@@ -18,7 +18,7 @@ test("renders one synthetic session through the real timeline + chrome renderers
 
   // The conversation runs through the REAL leaf renderers, not a fork.
   expect(html).toContain('data-testid="session-timeline"');
-  expect(html).toContain(">useAgent<");
+  expect(html).toContain(">Agent<");
   // Leading context receipts (skill + memory + knowledge) minify into ONE quiet
   // fold; its collapsed summary states the counts.
   expect(html).toContain('data-session-ui="context-recall-fold"');
