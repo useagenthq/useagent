@@ -74,7 +74,11 @@ function PromptInput({
   };
 
   const handlePointerDown: React.PointerEventHandler<HTMLFieldSetElement> = (event) => {
-    if (!disabled) textareaRef.current?.focus();
+    const target = event.target;
+    const interactive = target instanceof Element
+      ? target.closest("button, input, select, textarea, a, [role='button'], [role='menuitem']")
+      : null;
+    if (!disabled && !interactive) textareaRef.current?.focus();
     onPointerDown?.(event);
   };
 

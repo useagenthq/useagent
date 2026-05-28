@@ -58,14 +58,14 @@ export function MemoryScopePicker({
   const ActiveIcon = active.icon;
 
   return (
-    <div className={cn("relative", className)}>
+    <div className={cn("relative shrink-0", className)}>
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
         aria-haspopup="menu"
         aria-expanded={open}
         aria-label={`Memory scope: ${active.label}`}
-        className="text-text-strong-950 hover:bg-bg-weak-50 flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-label-sm transition-colors"
+        className="text-text-strong-950 hover:bg-bg-weak-50 flex items-center gap-1.5 whitespace-nowrap rounded-lg px-2 py-1.5 text-label-sm transition-colors"
       >
         <ActiveIcon className="text-text-sub-600 size-4" aria-hidden />
         <span>{TRIGGER_LABEL[active.value]}</span>
