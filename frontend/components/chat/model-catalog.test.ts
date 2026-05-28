@@ -39,6 +39,9 @@ describe("engine model catalog", () => {
     expect(selectableModelsForEngine("opencode").map((m) => m.value)).toContain(
       "openai/gpt-5.6-luna",
     );
+    expect(selectableModelsForEngine("opencode").map((m) => m.value)).toContain(
+      "deepseek/deepseek-v4-flash-0731",
+    );
   });
 
   test("direct Chat picker exposes only the backend OpenRouter catalog", () => {
