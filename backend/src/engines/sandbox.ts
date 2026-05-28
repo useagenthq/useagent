@@ -34,6 +34,7 @@ import {
   getLiveThreadSandbox,
   rememberLiveThreadSandbox,
 } from "./sandbox-runtime";
+import { createSecretRedactor, type SecretRedactor } from "../secrets/redact";
 
 // ---------------------------------------------------------------------------
 // Sandbox engine substrate — ALL user-facing engines (opencode / claude / codex)
@@ -139,6 +140,44 @@ interface SandboxEngineSpec {
   /** Extra sandbox preparation (e.g. codex auth seeding). Runs after create AND
    *  after reuse — must be idempotent and cheap. */
   prepare?(sandbox: SandboxHandle, ctx: EngineRunContext): Promise<void>;
+}
+
+/** Apply one per-run redactor at the engine/output boundary so every value the
+ * CLI fallback can persist or stream follows the same contract as resident
+ * transports. Native session ids and control-only inputs remain untouched. */
+export function withSandboxOutputRedaction(
+  ctx: EngineRunContext,
+  redact: SecretRedactor,
+): EngineRunContext {
+  return {
+    ...ctx,
+    emit: (step) => ctx.emit(redact.unknown(step)),
+    updateStep: ctx.updateStep
+      ? (stepId, code) => ctx.updateStep!(stepId, redact.unknown(code))
+      : undefined,
+    publishDelta: ctx.publishDelta
+      ? (delta, kind) => ctx.publishDelta!(redact.text(delta), kind)
+      : undefined,
+    setSummary: (summary, durationMs) => ctx.setSummary(redact.text(summary), durationMs),
+  };
+}
+
+/** Format a CLI exit failure without allowing its raw output tail to escape. */
+export function sandboxExitError(
+  engine: SandboxEngineSpec["id"],
+  exitCode: number,
+  rawTail: string,
+  redact: SecretRedactor,
+): Error {
+  return new Error(
+    redact.text(`${engine} (in sandbox) exited ${exitCode}: ${rawTail || "no output"}`),
+  );
+}
+
+function redactThrownError(error: unknown, redact: SecretRedactor): Error {
+  const safe = new Error(redact.text(error instanceof Error ? error.message : String(error)));
+  if (error instanceof Error) safe.name = error.name;
+  return safe;
 }
 
 /** Track the last MEANINGFUL non-JSON line for error surfacing. npm's install
@@ -437,6 +476,8 @@ function makeSandboxAdapter(spec: SandboxEngineSpec): EngineAdapter {
       const secretInjection = await composeSecretEnv(ctx, {
         excludeNames: PROVIDER_SECRET_NAMES,
       });
+      const redact = createSecretRedactor(secretInjection.redactionValues);
+      ctx = withSandboxOutputRedaction(ctx, redact);
       // Provider authentication is brokered by the trusted gateway. No raw host
       // or tenant provider credential is ever injected into this sandbox.
       const envVars: Record<string, string> = {
@@ -723,16 +764,12 @@ function makeSandboxAdapter(spec: SandboxEngineSpec): EngineAdapter {
           // A stale resume id (e.g. sandbox filesystem replaced) fails fast with
           // no parsed output — retry ONCE as a fresh session with the preamble.
           if (!(resumeId && !turn.produced)) {
-            throw new Error(
-              `${spec.id} (in sandbox) exited ${turn.exitCode}: ${turn.state.rawTail || "no output"}`,
-            );
+            throw sandboxExitError(spec.id, turn.exitCode, turn.state.rawTail, redact);
           }
           await stagePrompt(composeTurnPrompt(ctx, false));
           turn = await execTurn(undefined);
           if (turn.exitCode !== 0 && !(turn.exitCode === 137 && turn.produced)) {
-            throw new Error(
-              `${spec.id} (in sandbox) exited ${turn.exitCode}: ${turn.state.rawTail || "no output"}`,
-            );
+            throw sandboxExitError(spec.id, turn.exitCode, turn.state.rawTail, redact);
           }
         }
 
@@ -741,6 +778,8 @@ function makeSandboxAdapter(spec: SandboxEngineSpec): EngineAdapter {
           turn.state.lastText.trim() || turn.state.rawTail || `${spec.id} sandbox run completed`,
           Date.now() - startedAt,
         );
+      } catch (error) {
+        throw redactThrownError(error, redact);
       } finally {
         // A thread's sandbox is the conversation's world — a failed TURN must
         // not destroy it (auto-stop/auto-delete contain cost). Only runs
