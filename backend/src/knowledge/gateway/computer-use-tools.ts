@@ -70,6 +70,12 @@ function sequenceReceipt(actionNames: readonly string[]): string {
   return `Computer sequence completed. Executed actions: ${actionNames.join(", ")}.`;
 }
 
+export function screenshotArtifactHandoff(path: string): string {
+  return `Desktop screenshot captured at ${path}. This screenshot is private model inspection by default. ` +
+    "If the user explicitly requested durable proof, call artifact_publish before responding with " +
+    `path=${path} and purpose=user_requested_proof.`;
+}
+
 function withSequenceReceipt(
   captured: ComputerToolResult,
   actions: readonly ComputerSequenceAction[],
@@ -403,7 +409,7 @@ async function captureSandboxScreenshot(sandbox: SandboxHandle): Promise<Compute
       { type: "image", data, mimeType: "image/png" },
       {
         type: "text",
-        text: `Desktop screenshot captured at ${path}. Call artifact_publish only when the user needs this file.`,
+        text: screenshotArtifactHandoff(path),
       },
     ],
     structuredContent: { path },

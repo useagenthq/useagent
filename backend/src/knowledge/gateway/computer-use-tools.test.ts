@@ -4,6 +4,7 @@ import {
   COMPUTER_USE_TOOL_NAMES,
   COMPUTER_USE_TOOLS,
   executeComputerUseTool,
+  screenshotArtifactHandoff,
   setComputerUseServiceForTest,
   x11KeyCommand,
   x11KeyName,
@@ -83,6 +84,15 @@ function testService(calls: string[]) {
 afterEach(() => setComputerUseServiceForTest(null));
 
 describe("computer-use gateway tools", () => {
+  test("gives every harness the exact secure handoff for requested screenshot proof", () => {
+    const path = "/root/work/screenshots/proof.png";
+    const message = screenshotArtifactHandoff(path);
+
+    expect(message).toContain(`path=${path}`);
+    expect(message).toContain("purpose=user_requested_proof");
+    expect(message).toContain("private model inspection by default");
+  });
+
   test("maps provider-neutral key names to X11 keysyms", () => {
     expect(x11KeyName("ENTER")).toBe("Return");
     expect(x11KeyName("ArrowUp")).toBe("Up");
