@@ -21,6 +21,8 @@ describe("memorySkillText", () => {
     expect(t).toBe(MEMORY_SKILL_TEXT);
     expect(t).toContain("memory_remember");
     expect(t).toContain("memory_search");
+    expect(t).toContain("useAgent team-memory service");
+    expect(t).not.toContain("Skynet memory");
   });
 
   test("hasTools=false -> honest no-tools text: no fake save, no local file", () => {
