@@ -221,6 +221,19 @@ export async function emitOpenCodeFinalReply(
   );
 }
 
+/** Redact provider-authored lifecycle metadata while retaining the native
+ * identifiers required to correlate a child session with its parent. */
+export function redactOpenCodeSessionLifecycleInfo<T extends Record<string, unknown>>(
+  info: T,
+  redact: ReturnType<typeof createSecretRedactor>,
+): T {
+  const safe = redact.unknown(info) as Record<string, unknown>;
+  for (const key of ["id", "parentID"] as const) {
+    if (typeof info[key] === "string") safe[key] = info[key];
+  }
+  return safe as T;
+}
+
 /** Boot (or confirm) `opencode serve` inside the sandbox and resolve its
  *  preview endpoint + the sandbox user's workdir. Idempotent per sandbox.
  *
@@ -1760,7 +1773,7 @@ export function makeOpenCodeServerAdapter(driver: ProviderDriver): EngineAdapter
                 eventType: ev.type,
                 nativeSessionId: props.info.id,
                 nativeParentSessionId: props.info.parentID ?? null,
-                payload: props.info,
+                payload: redactOpenCodeSessionLifecycleInfo(props.info, redact),
               });
             }
             if (ev.type === "question.asked") {

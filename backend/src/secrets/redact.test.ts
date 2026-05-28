@@ -19,6 +19,16 @@ describe("sandbox output secret redaction", () => {
     });
   });
 
+  test("redacts exact injected values used as dynamic object keys", () => {
+    const secret = "SYNTHETIC_DYNAMIC_KEY_SECRET_123456";
+    const redact = createSecretRedactor([secret]);
+    const payload: unknown = { nested: { [secret]: "safe value" } };
+
+    expect(redact.unknown(payload)).toEqual({
+      nested: { "<redacted>": "safe value" },
+    });
+  });
+
   test("redacts signed capability tokens even when no org secret is present", () => {
     const redact = createSecretRedactor([]);
     const jwt = "eyJhbGciOiJIUzI1NiJ9.eyJydW5JZCI6InIxIn0.signaturebytes";
