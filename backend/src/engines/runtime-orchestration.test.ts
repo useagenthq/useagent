@@ -761,6 +761,32 @@ describe("T3 orchestration projection", () => {
       },
     });
   });
+
+  test("redacts T3 question lifecycle answer keys and values while preserving request ids", () => {
+    const secret = "SYNTHETIC_T3_QUESTION_LIFECYCLE_SECRET_123456";
+    const event = runtimeActivityProviderEvent(
+      { runId: "run-question", threadId: "thread-question" },
+      "skynet-thread-thread-question",
+      {
+        id: "activity-question-resolved",
+        tone: "info",
+        kind: "user-input.resolved",
+        summary: "User input submitted",
+        payload: {
+          requestId: "request-stable",
+          answers: { [secret]: secret },
+        },
+        turnId: "turn-question",
+      },
+      createSecretRedactor([secret, "request-stable"]),
+    );
+
+    expect(event.payload).toEqual({
+      requestID: "request-stable",
+      requestId: "request-stable",
+      answers: { "<redacted>": "<redacted>" },
+    });
+  });
 });
 
 describe("hasOpenRuntimeToolCall", () => {

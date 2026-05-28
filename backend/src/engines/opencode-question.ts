@@ -2,9 +2,11 @@ import { getOpenCodeThreadServer } from "./opencode-runtime";
 import { resolvePreviewSandbox } from "../runs/preview-proxy";
 import { providerEventExists, recordProviderEvent } from "../runs/provider-events";
 import { sandboxPreviewHeaders } from "../sandboxes/provider";
+import type { SecretRedactor } from "../secrets/redact";
 import {
   ProviderQuestionError,
   questionEventId,
+  redactProviderQuestionPayload,
   validateProviderQuestionAnswers,
   type ProviderQuestionInfo,
   type ProviderQuestionRequest,
@@ -15,6 +17,7 @@ const MAX_QUESTIONS = 8;
 export {
   ProviderQuestionError as OpenCodeQuestionError,
   questionEventId,
+  redactProviderQuestionPayload,
   validateProviderQuestionAnswers as validateOpenCodeQuestionAnswers,
 };
 export type {
@@ -107,6 +110,7 @@ export async function replyToOpenCodeQuestion(input: {
   readonly questionId: string;
   readonly answers: unknown;
   readonly signal: AbortSignal;
+  readonly redact: Pick<SecretRedactor, "text" | "unknown">;
 }): Promise<{ alreadyAnswered: boolean }> {
   const resolvedEventId = questionEventId(input.runId, input.questionId, "replied");
   if (await providerEventExists(resolvedEventId)) return { alreadyAnswered: true };
@@ -175,7 +179,10 @@ export async function replyToOpenCodeQuestion(input: {
       eventType: "question.replied",
       nativeSessionId: input.sessionId,
       nativeCallId: request.tool?.callID ?? null,
-      payload: { sessionID: input.sessionId, requestID: request.id, answers },
+      payload: redactProviderQuestionPayload(
+        { sessionID: input.sessionId, requestID: request.id, answers },
+        input.redact,
+      ),
     },
     { critical: true },
   );

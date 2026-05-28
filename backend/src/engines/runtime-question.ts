@@ -1,8 +1,14 @@
 import { resolvePreviewSandbox } from "../runs/preview-proxy";
-import { providerEventExists, recordProviderEvent } from "../runs/provider-events";
+import {
+  providerEventExists,
+  recordProviderEvent,
+  type ProviderEventInput,
+} from "../runs/provider-events";
+import type { SecretRedactor } from "../secrets/redact";
 import {
   ProviderQuestionError,
   questionEventId,
+  redactProviderQuestionPayload,
   validateProviderQuestionAnswers,
 } from "./provider-question";
 import { requestRuntimeEnvironment } from "./runtime-environment-client";
@@ -66,6 +72,30 @@ export function runtimeQuestionAnswers(
   }));
 }
 
+export function runtimeQuestionReplyProviderEvent(
+  input: {
+    readonly runId: string;
+    readonly threadId: string;
+    readonly sessionId: string;
+    readonly questionId: string;
+  },
+  answers: Readonly<Record<string, unknown>>,
+  redact: Pick<SecretRedactor, "text" | "unknown">,
+): ProviderEventInput {
+  return {
+    id: questionEventId(input.runId, input.questionId, "replied"),
+    runId: input.runId,
+    threadId: input.threadId,
+    provider: "t3",
+    eventType: "question.replied",
+    nativeSessionId: input.sessionId,
+    payload: redactProviderQuestionPayload(
+      { requestID: input.questionId, answers },
+      redact,
+    ),
+  };
+}
+
 export async function replyToRuntimeQuestion(input: {
   readonly runId: string;
   readonly threadId: string;
@@ -73,6 +103,7 @@ export async function replyToRuntimeQuestion(input: {
   readonly questionId: string;
   readonly answers: unknown;
   readonly signal: AbortSignal;
+  readonly redact: Pick<SecretRedactor, "text" | "unknown">;
 }): Promise<{ alreadyAnswered: boolean }> {
   const resolvedEventId = questionEventId(input.runId, input.questionId, "replied");
   if (await providerEventExists(resolvedEventId)) return { alreadyAnswered: true };
@@ -107,15 +138,10 @@ export async function replyToRuntimeQuestion(input: {
     },
     signal,
   );
-  await recordProviderEvent({
-    id: resolvedEventId,
-    runId: input.runId,
-    threadId: input.threadId,
-    provider: "t3",
-    eventType: "question.replied",
-    nativeSessionId: input.sessionId,
-    payload: { requestID: input.questionId, answers },
-  }, { critical: true });
+  await recordProviderEvent(
+    runtimeQuestionReplyProviderEvent(input, answers, input.redact),
+    { critical: true },
+  );
   if (!(await providerEventExists(resolvedEventId))) {
     throw new ProviderQuestionError(
       "reply_persist_failed",
