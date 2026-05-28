@@ -1,4 +1,4 @@
-import { createCipheriv, createDecipheriv, hkdfSync, randomBytes } from "node:crypto";
+import { createCipheriv, createDecipheriv, createHash, hkdfSync, randomBytes } from "node:crypto";
 import { authSecretMaterial, runtimeDevModeEnabled } from "../security/runtime-secrets";
 
 // ---------------------------------------------------------------------------
@@ -17,6 +17,7 @@ import { authSecretMaterial, runtimeDevModeEnabled } from "../security/runtime-s
 const KEY_LEN = 32; // AES-256
 const IV_LEN = 12; // GCM standard nonce length
 const HKDF_INFO = "skynet-org-secrets-v1";
+const CIPHERTEXT_VERSION = "v2";
 
 /** An accepted secret NAME: an environment-variable identifier - an uppercase
  *  letter followed by uppercase letters, digits, or underscores. Enforced at the
@@ -82,6 +83,40 @@ function encryptionMaterial(): string {
   return authSecretMaterial();
 }
 
+function previousEncryptionMaterials(): string[] {
+  const raw = process.env.SECRETS_ENCRYPTION_PREVIOUS_KEYS?.trim();
+  if (!raw) return [];
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    throw new Error("SECRETS_ENCRYPTION_PREVIOUS_KEYS must be a JSON string array");
+  }
+  if (!Array.isArray(parsed) || parsed.some((value) => typeof value !== "string" || value.length < 32)) {
+    throw new Error("SECRETS_ENCRYPTION_PREVIOUS_KEYS must contain keys of at least 32 characters");
+  }
+  return [...new Set(parsed)];
+}
+
+function keyVersion(material: string): string {
+  return createHash("sha256").update(material).digest("hex").slice(0, 16);
+}
+
+function ciphertextEnvelope(ciphertext: string): { keyVersion: string | null; payload: string } {
+  const match = /^v2:([0-9a-f]{16}):(.*)$/.exec(ciphertext);
+  return match
+    ? { keyVersion: match[1] ?? null, payload: match[2] ?? "" }
+    : { keyVersion: null, payload: ciphertext };
+}
+
+function decryptionMaterials(): string[] {
+  const current = encryptionMaterial();
+  const materials = [current, ...previousEncryptionMaterials()];
+  const legacy = process.env.BETTER_AUTH_SECRET?.trim();
+  if (legacy && legacy !== current) materials.push(legacy);
+  return [...new Set(materials)];
+}
+
 function encryptionKey(material = encryptionMaterial()): Buffer {
   // Empty salt is fine: the input is already secret,
   // high-entropy key material, and the info string domain-separates this key.
@@ -92,41 +127,59 @@ function encryptionKey(material = encryptionMaterial()): Buffer {
 
 /** Encrypt a plaintext secret value. Each call uses a fresh random iv. */
 export function sealSecret(plaintext: string): SealedSecret {
+  const material = encryptionMaterial();
   const iv = randomBytes(IV_LEN);
-  const cipher = createCipheriv("aes-256-gcm", encryptionKey(), iv);
+  const cipher = createCipheriv("aes-256-gcm", encryptionKey(material), iv);
   const ciphertext = Buffer.concat([cipher.update(plaintext, "utf8"), cipher.final()]);
   return {
-    ciphertext: ciphertext.toString("base64"),
+    ciphertext: `${CIPHERTEXT_VERSION}:${keyVersion(material)}:${ciphertext.toString("base64")}`,
     iv: iv.toString("base64"),
     tag: cipher.getAuthTag().toString("base64"),
   };
+}
+
+/** True when a row was sealed without version metadata or under a configured
+ * previous key. Operators can use this to rewrap rows before retiring a key. */
+export function secretNeedsRewrap(sealed: SealedSecret): boolean {
+  const envelope = ciphertextEnvelope(sealed.ciphertext);
+  return envelope.keyVersion !== keyVersion(encryptionMaterial());
+}
+
+/** Re-encrypt a readable row with the current root and fresh nonce. */
+export function rewrapSecret(sealed: SealedSecret): SealedSecret {
+  return sealSecret(openSecret(sealed));
 }
 
 /** Decrypt a sealed secret. THROWS if the tag does not verify (tamper, wrong key,
  *  or corruption) - callers treat a throw as "skip this secret", never as
  *  plaintext. */
 export function openSecret(sealed: SealedSecret): string {
-  const decrypt = (key: Buffer): string => {
+  const envelope = ciphertextEnvelope(sealed.ciphertext);
+  const decrypt = (material: string): string => {
     const decipher = createDecipheriv(
       "aes-256-gcm",
-      key,
+      encryptionKey(material),
       Buffer.from(sealed.iv, "base64"),
     );
     decipher.setAuthTag(Buffer.from(sealed.tag, "base64"));
     return Buffer.concat([
-      decipher.update(Buffer.from(sealed.ciphertext, "base64")),
+      decipher.update(Buffer.from(envelope.payload, "base64")),
       decipher.final(),
     ]).toString("utf8");
   };
-  try {
-    return decrypt(encryptionKey());
-  } catch (primaryError) {
-    // Migration compatibility: a newly configured dedicated root can still
-    // read legacy rows sealed under BETTER_AUTH_SECRET until an admin re-saves
-    // them. A gateway without that legacy root remains narrow and fails closed.
-    const dedicated = process.env.SECRETS_ENCRYPTION_KEY?.trim();
-    const legacy = process.env.BETTER_AUTH_SECRET?.trim();
-    if (!dedicated || !legacy || dedicated === legacy) throw primaryError;
-    return decrypt(encryptionKey(legacy));
+  const materials = decryptionMaterials().filter(
+    (material) => envelope.keyVersion === null || keyVersion(material) === envelope.keyVersion,
+  );
+  if (materials.length === 0) {
+    throw new Error(`no configured secret encryption key matches version ${envelope.keyVersion}`);
   }
+  let lastError: unknown;
+  for (const material of materials) {
+    try {
+      return decrypt(material);
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  throw lastError;
 }
