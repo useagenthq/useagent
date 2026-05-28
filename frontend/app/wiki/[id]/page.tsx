@@ -7,6 +7,7 @@ import { AppShell } from "@/components/shell/app-shell";
 import { LibrarySidebar } from "@/components/shell/library-sidebar";
 import { AskRepoBar } from "../ask-repo-bar";
 import { PagesRail } from "../pages-rail";
+import { WikiContent } from "../wiki-content";
 import { fetchPublishedWikiDocuments, relativeTime, type WikiDoc } from "../wiki-data";
 
 export const metadata: Metadata = {
@@ -53,9 +54,7 @@ export default async function WikiDocPage({ params }: { params: Promise<{ id: st
                     updated {relativeTime(doc.updatedAt)}
                   </span>
                 </div>
-                <div className="text-paragraph-md text-text-sub-600 mt-4 whitespace-pre-wrap leading-7">
-                  {doc.content}
-                </div>
+                <WikiContent content={doc.content} />
               </>
             ) : null}
 

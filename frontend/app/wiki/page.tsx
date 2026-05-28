@@ -7,6 +7,7 @@ import { LibrarySidebar } from "@/components/shell/library-sidebar";
 import * as Badge from "@/components/ui/badge";
 import { AskRepoBar } from "./ask-repo-bar";
 import { PagesRail } from "./pages-rail";
+import { wikiContentPreview } from "./wiki-content-data";
 import { fetchPublishedWikiDocuments, relativeTime, type WikiDoc } from "./wiki-data";
 
 export const metadata: Metadata = {
@@ -28,13 +29,6 @@ export default async function WikiPage() {
     // empty state; an outage must never look like "no pages yet")
     failed = true;
   }
-
-  // First non-empty line as the card snippet (bodies are markdown-ish text).
-  const snippet = (d: WikiDoc): string =>
-    d.content
-      .split("\n")
-      .map((l) => l.replace(/^#+\s*/, "").trim())
-      .filter((l) => l.length > 0 && l !== d.title)[0] ?? "";
 
   return (
     <AppShell sidebar={<LibrarySidebar active="wiki" />}>
@@ -80,28 +74,32 @@ export default async function WikiPage() {
               </div>
             ) : (
               <ul className="space-y-2">
-                {docs.map((doc) => (
-                  <li key={doc.id}>
-                    <Link
-                      href={`/wiki/${doc.id}`}
-                      className="border-stroke-soft-200 bg-bg-white-0 hover:bg-bg-weak-50 block rounded-xl border px-4 py-3 transition-colors"
-                    >
-                      <div className="flex items-baseline justify-between gap-3">
-                        <span className="text-label-md text-text-strong-950 truncate">
-                          {doc.title}
-                        </span>
-                        <span className="text-paragraph-xs text-text-soft-400 shrink-0">
-                          updated {relativeTime(doc.updatedAt)}
-                        </span>
-                      </div>
-                      {snippet(doc) && (
-                        <p className="text-paragraph-sm text-text-sub-600 mt-1 line-clamp-2">
-                          {snippet(doc)}
-                        </p>
-                      )}
-                    </Link>
-                  </li>
-                ))}
+                {docs.map((doc) => {
+                  const preview = wikiContentPreview(doc.content, doc.title);
+
+                  return (
+                    <li key={doc.id}>
+                      <Link
+                        href={`/wiki/${doc.id}`}
+                        className="border-stroke-soft-200 bg-bg-white-0 hover:bg-bg-weak-50 block rounded-xl border px-4 py-3 transition-colors"
+                      >
+                        <div className="flex items-baseline justify-between gap-3">
+                          <span className="text-label-md text-text-strong-950 truncate">
+                            {doc.title}
+                          </span>
+                          <span className="text-paragraph-xs text-text-soft-400 shrink-0">
+                            updated {relativeTime(doc.updatedAt)}
+                          </span>
+                        </div>
+                        {preview && (
+                          <p className="text-paragraph-sm text-text-sub-600 mt-1 line-clamp-2">
+                            {preview}
+                          </p>
+                        )}
+                      </Link>
+                    </li>
+                  );
+                })}
               </ul>
             )}
 
