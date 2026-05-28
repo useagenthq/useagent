@@ -553,6 +553,74 @@ describe("T3 orchestration projection", () => {
     });
   });
 
+  test("projects a successful structured MCP result without an error", () => {
+    expect(activityStep({
+      id: "mcp-success-result",
+      tone: "tool",
+      kind: "tool.completed",
+      summary: "skynet-knowledge · computer_sequence",
+      payload: {
+        itemType: "mcp_tool_call",
+        data: {
+          item: {
+            id: "call-success",
+            server: "skynet-knowledge",
+            toolName: "computer_sequence",
+            result: {
+              content: [{ type: "text", text: "completed" }],
+              isError: false,
+            },
+          },
+        },
+      },
+      turnId: "turn",
+    })).toMatchObject({ code_json: { error: false } });
+  });
+
+  test("projects structured MCP isError and error results as errors", () => {
+    const baseActivity = {
+      id: "mcp-error-result",
+      tone: "tool" as const,
+      kind: "tool.completed",
+      summary: "skynet-knowledge · computer_sequence",
+      payload: {
+        itemType: "mcp_tool_call",
+        data: {
+          item: {
+            id: "call-error",
+            server: "skynet-knowledge",
+            toolName: "computer_sequence",
+          },
+        },
+      },
+      turnId: "turn",
+    };
+    expect(activityStep({
+      ...baseActivity,
+      payload: {
+        ...baseActivity.payload,
+        data: {
+          item: {
+            ...baseActivity.payload.data.item,
+            result: { content: [{ type: "text", text: "invalid arguments" }], isError: true },
+          },
+        },
+      },
+    })).toMatchObject({ code_json: { error: true } });
+    expect(activityStep({
+      ...baseActivity,
+      payload: {
+        ...baseActivity.payload,
+        data: {
+          item: {
+            ...baseActivity.payload.data.item,
+            result: { error: { code: "invalid_arguments" } },
+          },
+        },
+      },
+    })).toMatchObject({ code_json: { error: true } });
+  });
+
   test("projects only the latest turn's exact assistant output", () => {
     const exactOutput = `EXACT_${crypto.randomUUID()}`;
     const snapshot: RuntimeThreadSnapshot = {

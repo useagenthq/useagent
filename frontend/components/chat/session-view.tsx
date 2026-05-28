@@ -93,6 +93,7 @@ import { shouldRetireOptimistic, useThreadStream } from "@/components/chat/use-t
 import { runGitRefs, GitChips } from "@/components/session-ui/git-chip";
 import * as SegmentedControl from "@/components/ui/segmented-control";
 import { backendFetch } from "@/lib/backend-fetch";
+import { createRun } from "@/lib/create-run";
 import { cnExt as cn } from "@/utils/cn";
 
 /** True when DOM focus sits inside a live workspace editing surface - the signal
@@ -406,15 +407,8 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
       }
       setPending({ text, runId: null });
       try {
-        const res = await backendFetch("/api/runs", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            // A lost-response retry with the same key observes the original run
-            // instead of starting a duplicate turn (backend durable command).
-            "Idempotency-Key": idempotencyKey,
-          },
-          body: JSON.stringify({
+        const res = await createRun(
+          {
             prompt: text,
             engine,
             // Unsupported controls must not leak stale values into the API.
@@ -440,8 +434,9 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
                   },
                 }
               : {}),
-          }),
-        });
+          },
+          idempotencyKey,
+        );
         if (!res.ok) throw new Error(`backend ${res.status}`);
         // Key the optimistic bubble to the ACCEPTED run id and keep it until that
         // durable run is observed in the store (retired by the effect below). The
