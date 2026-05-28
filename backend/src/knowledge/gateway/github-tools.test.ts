@@ -357,6 +357,7 @@ describe("github_pr_detail", () => {
     expect(summary.changed_files).toBe(80);
     expect(summary.files_truncated).toBe(true);
     expect(response.content[0]?.text).toContain("PR #7 Harden retries");
+    expect(response.content[0]?.text).toContain("fix/retries @ abc123 -> main");
     expect(response.content[0]?.text).toContain("80 files changed (+120 -40), first 50 listed");
   });
 
