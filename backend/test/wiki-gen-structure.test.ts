@@ -115,6 +115,14 @@ describe("parseWikiStructure", () => {
     expect(s.pages[0]!.id).toBe("page-1");
   });
 
+  test("recovers complete pages when the provider truncates only the root close", () => {
+    const truncated = CONCISE.replace("</wiki_structure>", "");
+    const s = parseWikiStructure(truncated, false);
+
+    expect(s.title).toBe("Demo Wiki");
+    expect(s.pages.map((page) => page.id)).toEqual(["page-1", "page-2"]);
+  });
+
   test("throws when there is no <wiki_structure> block", () => {
     expect(() => parseWikiStructure("Sorry, I cannot help with that.", false)).toThrow(
       WikiStructureError,
