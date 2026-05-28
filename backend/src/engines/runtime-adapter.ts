@@ -245,7 +245,12 @@ async function waitForRuntimeTurn(
       const revision = runtimeActivityRevision(activity);
       if (activityRevisions.get(activity.id) === revision) continue;
       activityRevisions.set(activity.id, revision);
-      await recordProviderEvent(runtimeActivityProviderEvent(ctx, runtimeThreadId(ctx), activity), {
+      await recordProviderEvent(runtimeActivityProviderEvent(
+        ctx,
+        runtimeThreadId(ctx),
+        activity,
+        redact,
+      ), {
         critical:
           activity.kind === "user-input.requested" || activity.kind === "approval.requested",
       });

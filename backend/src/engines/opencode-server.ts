@@ -203,6 +203,23 @@ function toolStep(
   };
 }
 
+export async function emitOpenCodeFinalReply(
+  ctx: Pick<EngineRunContext, "emit" | "setSummary">,
+  texts: readonly string[],
+  redact: ReturnType<typeof createSecretRedactor>,
+  durationMs: number,
+): Promise<void> {
+  const safeTexts = texts.map((text) => redact.text(text));
+  for (const text of safeTexts) {
+    await ctx.emit({ kind: "task", label: truncate(text, 60), chip: "task" });
+  }
+  await ctx.emit({ kind: "done", label: "Done", chip: null });
+  ctx.setSummary(
+    safeTexts[safeTexts.length - 1]?.trim() || "opencode run completed",
+    durationMs,
+  );
+}
+
 /** Boot (or confirm) `opencode serve` inside the sandbox and resolve its
  *  preview endpoint + the sandbox user's workdir. Idempotent per sandbox.
  *
@@ -2028,14 +2045,7 @@ export function makeOpenCodeServerAdapter(driver: ProviderDriver): EngineAdapter
         .filter((p) => p.type === "text" && p.text?.trim())
         .map((p) => p.text as string);
       const finalTexts = replyTexts.length > 0 ? replyTexts : [...textParts.values()].filter((t) => t.trim());
-      for (const t of finalTexts) {
-        await ctx.emit({ kind: "task", label: truncate(t, 60), chip: "task" });
-      }
-      await ctx.emit({ kind: "done", label: "Done", chip: null });
-      ctx.setSummary(
-        finalTexts[finalTexts.length - 1]?.trim() || "opencode run completed",
-        Date.now() - startedAt,
-      );
+      await emitOpenCodeFinalReply(ctx, finalTexts, redact, Date.now() - startedAt);
     } finally {
       // A thread's sandbox is the conversation's world (workspace + resident
       // server + sessions) — a failed TURN must not destroy it. Only runs

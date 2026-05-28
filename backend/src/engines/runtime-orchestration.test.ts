@@ -18,8 +18,10 @@ import {
   runtimeTurnSettled,
   type RuntimeThreadSnapshot,
 } from "./runtime-orchestration";
+import { createSecretRedactor } from "../secrets/redact";
 
 const context = { runId: "run/unsafe", threadId: "thread unsafe", model: "gpt-5.6-luna" };
+const baselineRedactor = createSecretRedactor([]);
 
 describe("T3 orchestration projection", () => {
   test("derives stable transport-safe project and thread ids", () => {
@@ -131,6 +133,7 @@ describe("T3 orchestration projection", () => {
       { runId: "run-1", threadId: "thread-1" },
       "skynet-thread-thread-1",
       activity,
+      baselineRedactor,
     )).toMatchObject({
       provider: "t3",
       eventType: "approval.requested",
@@ -151,6 +154,7 @@ describe("T3 orchestration projection", () => {
         summary: "Approval resolved",
         payload: { requestId: "approval-1", decision: "accept" },
       },
+      baselineRedactor,
     )).toMatchObject({
       eventType: "approval.resolved",
       payload: { requestId: "approval-1", decision: "accept" },
@@ -596,6 +600,7 @@ describe("T3 orchestration projection", () => {
         payload: { callId: "call-2" },
         turnId: "provider-turn-2",
       },
+      baselineRedactor,
     )).toMatchObject({
       runId: "run-2",
       threadId: "thread-1",
@@ -720,10 +725,40 @@ describe("T3 orchestration projection", () => {
       { runId: "run-1", threadId: "thread-1" },
       "skynet-thread-thread-1",
       activity,
+      baselineRedactor,
     )).toMatchObject({
       provider: "t3",
       eventType: "question.asked",
       nativeSessionId: "skynet-thread-thread-1",
+    });
+  });
+
+  test("redacts T3 activity before the provider-event persistence and SSE lane", () => {
+    const secret = "SYNTHETIC_T3_ACTIVITY_SECRET_123456";
+    const event = runtimeActivityProviderEvent(
+      { runId: "run-secret", threadId: "thread-secret" },
+      "skynet-thread-thread-secret",
+      {
+        id: "activity-secret",
+        tone: "tool",
+        kind: "tool.completed",
+        summary: `Used ${secret}`,
+        payload: {
+          input: { token: secret },
+          output: `provider returned ${secret}`,
+        },
+        turnId: "turn-secret",
+      },
+      createSecretRedactor([secret]),
+    );
+
+    expect(JSON.stringify(event.payload)).not.toContain(secret);
+    expect(event.payload).toMatchObject({
+      summary: "Used <redacted>",
+      payload: {
+        input: { token: "<redacted>" },
+        output: "provider returned <redacted>",
+      },
     });
   });
 });
