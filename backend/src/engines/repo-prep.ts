@@ -9,6 +9,7 @@ import type { SandboxHandle } from "../sandboxes/provider";
 import { resolveGithubSandboxToken } from "../github/auth";
 import { parseRepoRef } from "../github/repo-ref";
 import { RUN_TIMING_OUTCOMES, RUN_TIMING_STAGES } from "../runs/run-timing";
+import { hasExactGitHubRepositoryUrlProvenance } from "../resources/public-github";
 import type { RunResource } from "../resources/types";
 import type { EngineRunContext } from "./types";
 import { truncate } from "./util";
@@ -36,6 +37,19 @@ async function githubAuthEnv(
         GIT_CONFIG_VALUE_0: `Authorization: Basic ${Buffer.from(`x-access-token:${token}`).toString("base64")}`,
       }
     : {};
+}
+
+function shouldUseGithubCredential(
+  entry: string,
+  resources: readonly RunResource[],
+): boolean {
+  const { repo } = parseRepoRef(entry);
+  const resource = resources.find(
+    (candidate) =>
+      candidate.locator.type === "github.repository" &&
+      candidate.locator.repository === repo,
+  );
+  return resource ? !hasExactGitHubRepositoryUrlProvenance(resource) : true;
 }
 
 /**
@@ -264,7 +278,9 @@ export async function prepareRepos(
   try {
     for (const r of repos) {
       if (ctx.signal.aborted) throw new Error("run aborted (timeout)");
-      await ensureRepoClone(sandbox, workdir, r, ctx);
+      await ensureRepoClone(sandbox, workdir, r, ctx, {
+        useGithubCredential: shouldUseGithubCredential(r, ctx.resolvedResources ?? []),
+      });
     }
     end?.(RUN_TIMING_OUTCOMES.success);
   } catch (error) {

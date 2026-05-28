@@ -168,6 +168,32 @@ describe("repo-prep: shared engine-neutral repository preparation", () => {
     expect(cloneCmd(calls)?.env).toEqual({});
   });
 
+  test("prepared public URL resources never inject the organization GitHub credential", async () => {
+    const { sandbox, calls } = fakeSandbox({ state: "absent" });
+    const { ctx } = fakeCtx(["octocat/Hello-World"]);
+    ctx.resolvedResources = [{
+      kind: "code.repository",
+      provider: "github",
+      locator: {
+        type: "github.repository",
+        repository: "octocat/Hello-World",
+        revision: null,
+      },
+      capabilities: ["content.read", "code.checkout"],
+      provenance: [{
+        source: "user_text",
+        channel: "api",
+        raw: "https://github.com/octocat/Hello-World.git",
+        start: 0,
+        end: 41,
+      }],
+    }];
+
+    await withProductionMode(() => prepareRepos(sandbox, "/root/work", ctx));
+
+    expect(cloneCmd(calls)?.env).toEqual({});
+  });
+
   test("a retained production sandbox rejects PAT-only private repository preparation", async () => {
     const { sandbox, calls } = fakeSandbox({ state: "absent" });
     const { ctx } = fakeCtx();
