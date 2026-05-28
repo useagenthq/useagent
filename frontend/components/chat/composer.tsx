@@ -525,10 +525,10 @@ export function Composer({
           }}
           onSubmit={submit}
           isLoading={pending}
-          maxHeight={220}
+          maxHeight={180}
           className={cn(
             "cursor-text rounded-none border-0 bg-transparent shadow-none",
-            hero ? "p-3 md:p-4" : "p-2.5",
+            hero ? "p-3 md:p-4" : "p-2",
           )}
         >
           <div className="flex items-start gap-1.5 px-1">
@@ -561,19 +561,19 @@ export function Composer({
                 "flex-1",
                 // The reply composer is a drafting surface, not a search box:
                 // ~3 lines of standing room (T3-style) with comfortable type.
-                hero ? "pt-1 text-paragraph-lg" : "min-h-20 text-paragraph-sm leading-relaxed",
+                hero ? "pt-1 text-paragraph-lg" : "min-h-12 text-paragraph-sm leading-relaxed",
               )}
             />
           </div>
 
           {/* px-1 matches the text row above so the +/send controls left/right-align
               with the placeholder (was px-0.5 → a 2px asymmetry). */}
-          <div className="mt-1.5 flex items-center gap-1.5 px-1">
+          <div className="mt-1 flex items-center gap-1.5 px-1">
             {/* Left cluster */}
             {enableUploads ? (
               <button
                 type="button"
-                aria-label="Add context"
+                aria-label="Add files"
                 onClick={() => fileInput.current?.click()}
                 className="border-stroke-soft-200 text-text-sub-600 hover:bg-bg-weak-50 flex size-9 items-center justify-center rounded-xl border transition-colors"
               >

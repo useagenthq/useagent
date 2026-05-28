@@ -376,20 +376,18 @@ export function NewTaskComposer({
             onKeyDown={(event) => {
               handleCmdKeys(event);
             }}
-            className="min-h-[132px] px-1 text-paragraph-sm leading-relaxed"
+            className="min-h-24 px-1 text-paragraph-sm leading-relaxed"
           />
         </div>
 
         {/* Pickers */}
         <div className="grid grid-cols-[minmax(0,1fr)_auto] items-end gap-3">
-          <div className="flex min-w-0 flex-wrap items-center gap-0.5">
+          <div className="flex min-w-0 flex-nowrap items-center gap-0.5 overflow-x-auto">
             <NewTaskContextMenu
               skillGroups={skillGroups}
               selectedSkill={playbook}
-              memoryScope={memoryScope}
               onAddFiles={() => fileInput.current?.click()}
               onSelectSkill={setPlaybook}
-              onSelectMemoryScope={setMemoryScope}
             />
             <RepoMultiPicker repos={repos} value={selectedRepos} onChange={setSelectedRepos} />
             <SearchablePicker
@@ -420,7 +418,7 @@ export function NewTaskComposer({
             type="button"
             onClick={() => void submit()}
             disabled={!canSubmit}
-            className="inline-flex min-w-40 shrink-0 items-center justify-center rounded-full bg-bg-strong-950 px-6 py-2.5 text-label-sm text-text-white-0 outline-none transition-opacity hover:opacity-90 focus-visible:ring-2 focus-visible:ring-stroke-strong-950 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-40"
+            className="inline-flex min-w-32 shrink-0 items-center justify-center rounded-full bg-bg-strong-950 px-5 py-2.5 text-label-sm text-text-white-0 outline-none transition-opacity hover:opacity-90 focus-visible:ring-2 focus-visible:ring-stroke-strong-950 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-40"
           >
             {submitting ? "Starting..." : "Start thread"}
           </button>

@@ -4,23 +4,18 @@ import {
   RiAddLine,
   RiAttachment2,
   RiBookMarkedLine,
-  RiBuilding4Line,
   RiCheckLine,
   RiSearchLine,
-  RiUserLine,
 } from "@remixicon/react";
 import { useMemo, useState } from "react";
-import type { MemoryScope } from "@/components/chat/types";
 import * as Popover from "@/components/ui/popover";
 import type { PickerGroup, PickerOption } from "./searchable-picker";
 
 interface NewTaskContextMenuProps {
   readonly skillGroups: PickerGroup[];
   readonly selectedSkill: string;
-  readonly memoryScope: MemoryScope;
   readonly onAddFiles: () => void;
   readonly onSelectSkill: (skillId: string) => void;
-  readonly onSelectMemoryScope: (scope: MemoryScope) => void;
 }
 
 const rowClassName =
@@ -30,10 +25,8 @@ const rowClassName =
 export function NewTaskContextMenu({
   skillGroups,
   selectedSkill,
-  memoryScope,
   onAddFiles,
   onSelectSkill,
-  onSelectMemoryScope,
 }: NewTaskContextMenuProps) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -67,7 +60,7 @@ export function NewTaskContextMenu({
       <Popover.Trigger asChild>
         <button
           type="button"
-          aria-label="Add context"
+          aria-label="Add files and context"
           className="inline-flex size-9 shrink-0 items-center justify-center rounded-xl text-text-sub-600 outline-none transition-colors hover:bg-bg-weak-50 focus-visible:ring-2 focus-visible:ring-stroke-strong-950"
         >
           <RiAddLine className="size-5" aria-hidden />
@@ -94,40 +87,6 @@ export function NewTaskContextMenu({
             Upload from computer
           </span>
         </button>
-
-        <button
-          type="button"
-          className={rowClassName}
-          aria-pressed={memoryScope === "org"}
-          onClick={() => {
-            onSelectMemoryScope("org");
-            setOpen(false);
-          }}
-        >
-          <RiBuilding4Line className="size-[18px] shrink-0 text-text-sub-600" aria-hidden />
-          <span className="text-label-sm text-text-strong-950">Company knowledge</span>
-          <span className="truncate text-paragraph-sm text-text-soft-400">
-            Use your organization memory
-          </span>
-        </button>
-
-        <button
-          type="button"
-          className={rowClassName}
-          aria-pressed={memoryScope === "personal"}
-          onClick={() => {
-            onSelectMemoryScope("personal");
-            setOpen(false);
-          }}
-        >
-          <RiUserLine className="size-[18px] shrink-0 text-text-sub-600" aria-hidden />
-          <span className="text-label-sm text-text-strong-950">Personal memory</span>
-          <span className="truncate text-paragraph-sm text-text-soft-400">
-            Use only your saved context
-          </span>
-        </button>
-
-        <div className="my-1 h-px bg-stroke-soft-200" />
 
         <div className="max-h-[280px] overflow-y-auto">
           {visibleSkills.length > 0 ? (
