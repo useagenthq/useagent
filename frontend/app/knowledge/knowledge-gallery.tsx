@@ -171,7 +171,7 @@ export function KnowledgeGallery({
           <div className="flex flex-col gap-0.5">
             <h1 className="text-display-sm text-text-strong-950">Knowledge</h1>
             <p className="text-paragraph-sm text-text-sub-600">
-              Facts and conventions Skynet remembers across runs
+              Facts and conventions useAgent remembers across runs
             </p>
           </div>
         </div>
@@ -223,7 +223,7 @@ export function KnowledgeGallery({
           <BackendUnreachable className="mt-10" onRetry={refetch} />
         ) : (
           <p className="mt-10 text-paragraph-sm text-text-sub-600">
-            No knowledge yet. Add your first fact to teach Skynet.
+            No knowledge yet. Add your first fact to teach useAgent.
           </p>
         )
       ) : (

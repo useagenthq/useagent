@@ -99,7 +99,7 @@ export function SkillsView({
             <h1 className="text-display-sm text-text-strong-950">Skills</h1>
           </div>
           <p className="mt-1.5 text-paragraph-sm text-text-sub-600">
-            Reusable skills Skynet follows for repeatable work
+            Reusable skills useAgent follows for repeatable work
           </p>
         </div>
         <NewSkillModal onCreated={refetch} />

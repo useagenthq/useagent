@@ -133,7 +133,7 @@ export function UserBubble({ children }: { children: string }) {
   );
 }
 
-/** The assistant turn's identity row: brand glyph + "Skynet" + the engine label.
+/** The assistant turn's identity row: brand glyph + "useAgent" + the engine label.
  *  Shared by TurnBlock and the /lab/session sample so both read identically. */
 export function AssistantTurnHeader({ engine }: { engine: EngineId }) {
   return (
@@ -141,7 +141,7 @@ export function AssistantTurnHeader({ engine }: { engine: EngineId }) {
       <span className="ring-stroke-soft-200 bg-bg-weak-50 flex size-5 shrink-0 items-center justify-center rounded-full ring-1 ring-inset">
         <OrbitKnotMark className="size-3.5" stroke={2.2} />
       </span>
-      <span className="text-label-sm text-text-strong-950">Skynet</span>
+      <span className="text-label-sm text-text-strong-950">useAgent</span>
       <span className="text-mono-label text-text-soft-400">{engineLabel(engine)}</span>
     </div>
   );
@@ -689,7 +689,7 @@ function ReplyComposer({
       <div className="mx-auto w-full max-w-5xl">
         <Composer
           variant="compact"
-          placeholder={placeholder ?? "Reply to Skynet…"}
+          placeholder={placeholder ?? "Reply to useAgent…"}
           defaultEngine={engine}
           defaultModel={model}
           defaultMemoryScope={memoryScope}
@@ -926,7 +926,7 @@ export function Conversation({
             ? "Respond to the approval above to continue…"
             : pendingQuestion
               ? composerCanAnswerQuestion
-                ? "Answer Skynet’s question…"
+                ? "Answer useAgent’s question…"
                 : "Answer the question above to continue…"
               : undefined
         }

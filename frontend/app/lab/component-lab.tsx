@@ -82,7 +82,7 @@ export function ComponentLab() {
           <AsteriskMark className="size-8 text-text-strong-950" />
           <div className="flex flex-col">
             <span className="text-label-lg text-text-strong-950">Component lab</span>
-            <span className="text-mono-label text-text-soft-400">skynet-a · AlignUI parts bin</span>
+            <span className="text-mono-label text-text-soft-400">useAgent · AlignUI parts bin</span>
           </div>
         </div>
       </header>
@@ -91,7 +91,7 @@ export function ComponentLab() {
         <div className="animate-ai-fade-up flex flex-col gap-3 py-10">
           <h1 className="text-title-h4 text-text-strong-950">The parts bin</h1>
           <p className="text-paragraph-md text-text-sub-600">
-            Every vendored AlignUI primitive this app composes, wired to the Skynet brand layer.
+            Every vendored AlignUI primitive this app composes, wired to the useAgent brand layer.
             Toggle the theme from any page to confirm both render.
           </p>
           <Link
@@ -357,7 +357,7 @@ export function ComponentLab() {
         <Section label="Thinking orb - engine-driven agent loader">
           <p className="text-paragraph-sm text-text-sub-600">
             A canvas-rendered dotted thought-orb (vendored from chartden). Six states drive the
-            “agent is thinking” moment; skynet-a uses the <code>searching</code> preset for the
+            “agent is thinking” moment; useAgent uses the <code>searching</code> preset for the
             session boot phase. Grayscale- by-depth, so it tracks the theme with no token mapping.
           </p>
           <div className="flex flex-wrap items-end gap-8">

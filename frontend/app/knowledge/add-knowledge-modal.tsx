@@ -98,7 +98,7 @@ export function AddKnowledgeModal({
               Add knowledge
             </Modal.Title>
             <Modal.Description className="text-paragraph-sm text-text-sub-600">
-              Teach Skynet a fact or convention it should remember across every
+              Teach useAgent a fact or convention it should remember across every
               run.
             </Modal.Description>
           </div>
@@ -132,7 +132,7 @@ export function AddKnowledgeModal({
                   />
                 </Input.Wrapper>
               </Input.Root>
-              <Hint.Root>A phrase that tells Skynet when to recall this.</Hint.Root>
+              <Hint.Root>A phrase that tells useAgent when to recall this.</Hint.Root>
             </div>
 
             <div className="flex flex-col gap-1">
@@ -141,7 +141,7 @@ export function AddKnowledgeModal({
                 id="knowledge-content"
                 simple
                 rows={4}
-                placeholder="What should Skynet know?"
+                placeholder="What should useAgent know?"
                 value={body}
                 disabled={busy}
                 onChange={(event) => setBody(event.target.value)}
@@ -172,7 +172,7 @@ export function AddKnowledgeModal({
           {/* Worth-saving gate + error surfacing */}
           {status === "dropped" && (
             <p className="rounded-xl bg-bg-weak-50 px-3 py-2 text-paragraph-xs text-text-sub-600">
-              Skynet judged this not worth saving. Try adding more specific
+              useAgent judged this not worth saving. Try adding more specific
               detail, or close to discard.
             </p>
           )}
@@ -185,7 +185,7 @@ export function AddKnowledgeModal({
           )}
           {status === "error" && (
             <p className="rounded-xl bg-error-lighter px-3 py-2 text-paragraph-xs text-error-base">
-              Couldn&rsquo;t reach Skynet. Check the backend and try again.
+              Couldn&rsquo;t reach useAgent. Check the backend and try again.
             </p>
           )}
 

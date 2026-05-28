@@ -148,7 +148,7 @@ export function PlaybookDetail({
             </div>
 
             <p className="text-paragraph-xs text-text-soft-400">
-              Skynet follows this procedure as guidance when the playbook is
+              useAgent follows this procedure as guidance when the playbook is
               attached to a run. It is not a fixed, step-by-step workflow - the
               agent applies judgement and the steps shape how it works.
             </p>
