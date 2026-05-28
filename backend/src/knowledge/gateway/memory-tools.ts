@@ -7,6 +7,8 @@ import {
   deleteExplicitL0,
   deleteScopedMemory,
   recallScopedMemory,
+  readOrgCoreMemory,
+  readOrgScenarioMemory,
   searchExplicitL0,
   updateScopedMemory,
 } from "../../memory/team-memory";
@@ -82,9 +84,10 @@ export const MEMORY_TOOLS = [
   {
     name: "memory_search",
     description:
-      "Search this user/organization's team memory (Tencent L0 ground evidence + L1 " +
-      "distilled facts, merged) for relevant facts. Returns bounded, provider-cited " +
-      "results with stable refs (tencent:l0:<id> / tencent:l1:<id>). Use whenever a " +
+      "Search this user/organization's team memory (Tencent L0 ground evidence, L1 " +
+      "distilled facts, org L2 scenes, and org L3 persona) for relevant facts. Returns " +
+      "bounded, provider-cited results with stable refs (tencent:l0:<id> / " +
+      "tencent:l1:<id> / tencent:l2:<id> / tencent:l3:<id>). Use whenever a " +
       "task references something you should already know about the user.",
     inputSchema: {
       type: "object",
@@ -105,8 +108,8 @@ export const MEMORY_TOOLS = [
     name: "memory_read",
     description:
       "Read one memory by its stable ref from a memory_search result " +
-      "(tencent:l1:<id>). Returns the full bounded content. L0 results are already " +
-      "returned in full by memory_search.",
+      "(tencent:l1:<id> / tencent:l2:<id> / tencent:l3:<id>). Returns the full " +
+      "bounded content. L0 results are already returned in full by memory_search.",
     inputSchema: {
       type: "object",
       properties: {
@@ -317,9 +320,9 @@ async function doSearch(claims: ToolTokenClaims, args: Record<string, unknown>):
 
 async function doRead(claims: ToolTokenClaims, args: Record<string, unknown>): Promise<ToolCallResult> {
   const ref = (typeof args.memoryRef === "string" ? args.memoryRef : "").trim();
-  const m = /^tencent:(l0|l1):(.+)$/.exec(ref);
+  const m = /^tencent:(l0|l1|l2|l3):(.+)$/.exec(ref);
   if (!m) return textResult("memory_read needs a ref like tencent:l1:<id> from memory_search.", undefined, true);
-  const [, layer, id] = m as unknown as [string, "l0" | "l1", string];
+  const [, layer, id] = m as unknown as [string, "l0" | "l1" | "l2" | "l3", string];
 
   const run = await resolveAuthorizedToolRun(claims);
   if (!run) return textResult("Memory unavailable: no active run to scope this read.", undefined, true);
@@ -334,6 +337,41 @@ async function doRead(claims: ToolTokenClaims, args: Record<string, unknown>): P
       "L0 memories are returned in full by memory_search; there is nothing extra to read for an L0 ref.",
       { ref, layer },
     );
+  }
+  const orgPool = plan.readPools.find((p) => p.sourceScope === "org");
+  if (layer === "l2") {
+    if (!orgPool) return textResult("No organization memory is available to this run.", undefined, true);
+    const read = await readOrgScenarioMemory(orgPool.identity, id);
+    if (!read.hit) {
+      return textResult(
+        `No memory ${ref} is available to this run; the ref may be stale or outside this run's scope. Use memory_search to find accessible memories.`,
+        undefined,
+        true,
+      );
+    }
+    return textResult(read.hit.content, {
+      ref,
+      layer,
+      scope: "org",
+      content: read.hit.content,
+    });
+  }
+  if (layer === "l3") {
+    if (!orgPool) return textResult("No organization memory is available to this run.", undefined, true);
+    const read = await readOrgCoreMemory(orgPool.identity);
+    if (!read.hit || read.hit.id !== id) {
+      return textResult(
+        `No memory ${ref} is available to this run; the ref may be stale or outside this run's scope. Use memory_search to find accessible memories.`,
+        undefined,
+        true,
+      );
+    }
+    return textResult(read.hit.content, {
+      ref,
+      layer,
+      scope: "org",
+      content: read.hit.content,
+    });
   }
   // /v3/atomic/query rejects limit > 50 (400), so page-bound the browse lookup.
   const { browseScopedMemory } = await import("../../memory/team-memory");

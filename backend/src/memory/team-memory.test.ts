@@ -10,6 +10,7 @@ import {
   BLOCK_HEADER,
   deliverTeamMemory,
   recallScopedMemory,
+  readOrgScenarioMemory,
   searchTeamMemory,
   type MemoryIdentity,
   type ScopedPool,
@@ -234,8 +235,126 @@ describe("deliverTeamMemory", () => {
   });
 });
 
-describe("recallScopedMemory (layered L0+L1) degrades honestly (12.5)", () => {
+describe("recallScopedMemory (layered L0-L3) degrades honestly", () => {
   const pool: ScopedPool = { sourceScope: "org", identity: IDENT };
+
+  test("reproducible Tencent layer matrix: L0/L1/L2/L3 calls, citations, org isolation, dedupe, budget, degradation", async () => {
+    enableMemory();
+    const personal: ScopedPool = {
+      sourceScope: "personal",
+      identity: { ...IDENT, userId: "alice", actorUserId: "alice" },
+    };
+    const org: ScopedPool = {
+      sourceScope: "org",
+      identity: { ...IDENT, teamId: "org-1", userId: "org:org-1", actorUserId: "alice" },
+    };
+    const calls: { path: string; body: Record<string, unknown> }[] = [];
+    globalThis.fetch = mock(async (url: string, init?: RequestInit) => {
+      const path = new URL(url).pathname;
+      const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      calls.push({ path, body });
+      if (path === "/v3/conversation/search" && body.user_id === "alice") {
+        return new Response(JSON.stringify({ code: 0, data: { messages: [{ id: "l0p", content: "same memory", score: 0.99 }] } }));
+      }
+      if (path === "/v3/atomic/search" && body.user_id === "alice") {
+        return new Response(JSON.stringify({ code: 0, data: { items: [{ id: "l1p", type: "fact", content: "same memory", score: 0.5 }] } }));
+      }
+      if (path === "/v3/conversation/search" && body.user_id === "org:org-1") {
+        return new Response(JSON.stringify({ code: 0, data: { messages: [{ id: "l0o", content: "org immediate fact", score: 0.7 }] } }));
+      }
+      if (path === "/v3/atomic/search" && body.user_id === "org:org-1") {
+        return new Response(JSON.stringify({ code: 0, data: { items: [{ id: "l1o", type: "fact", content: "org distilled fact", score: 0.6 }] } }));
+      }
+      if (path === "/v3/scenario/ls") {
+        expect(body).toMatchObject({ agent_id: "skynet-backend", user_id: `org:${body.team_id}`, path_prefix: "" });
+        expect(body).not.toHaveProperty("query");
+        expect(body).not.toHaveProperty("limit");
+        expect(body).not.toHaveProperty("session_id");
+        const prefix = body.team_id === "org-2" ? "other" : "org";
+        return new Response(JSON.stringify({
+          code: 0,
+          data: {
+            entries: [
+              { path: `${prefix}/low`, summary: "unrelated archive", version: 1 },
+              { path: `${prefix}/deploy`, summary: "deployment episode", version: 2 },
+              { path: `${prefix}/matrix`, summary: "matrix validation notes", version: 3 },
+            ],
+            total: 3,
+          },
+        }));
+      }
+      if (path === "/v3/scenario/read") {
+        expect(body).toMatchObject({ agent_id: "skynet-backend", user_id: `org:${body.team_id}` });
+        expect(body).toHaveProperty("path");
+        expect(body).not.toHaveProperty("id");
+        const scene = body.team_id === "org-2" ? "second org scene summary" : `org scene ${body.path}`;
+        return new Response(JSON.stringify({ code: 0, data: { path: body.path, content: scene } }));
+      }
+      if (path === "/v3/core/read") {
+        expect(body).toMatchObject({ agent_id: "skynet-backend", user_id: `org:${body.team_id}` });
+        return new Response(JSON.stringify({ code: 0, data: { content: `${body.team_id} bounded org persona` } }));
+      }
+      return new Response(JSON.stringify({ code: 0, data: {} }));
+    }) as unknown as typeof fetch;
+
+    const recall = await recallScopedMemory("deploy matrix", [personal, org], { limit: 6 });
+
+    expect(calls.map((c) => c.path).sort()).toEqual([
+      "/v3/atomic/search",
+      "/v3/atomic/search",
+      "/v3/conversation/search",
+      "/v3/conversation/search",
+      "/v3/core/read",
+      "/v3/scenario/ls",
+    ]);
+    expect(calls.filter((c) => c.path === "/v3/core/read")).toHaveLength(1);
+    expect(calls.filter((c) => c.path === "/v3/scenario/ls")).toHaveLength(1);
+    expect(recall.items.map((i) => i.citation.ref)).toEqual([
+      "tencent:l0:l0p",
+      "tencent:l0:l0o",
+      "tencent:l1:l1o",
+      "tencent:l2:org/deploy",
+      "tencent:l2:org/matrix",
+      "tencent:l3:core",
+    ]);
+    expect(recall.items.map((i) => i.citation.layer)).toEqual(["l0", "l0", "l1", "l2", "l2", "l3"]);
+    expect(recall.items.map((i) => i.sourceScope)).toEqual(["personal", "org", "org", "org", "org", "org"]);
+    expect(recall.rendered).toContain("[personal] same memory");
+    expect(recall.rendered).toContain("[org] deployment episode");
+    expect(recall.rendered).toContain("[org] matrix validation notes");
+    expect(recall.rendered).not.toContain("org/low");
+    expect(recall.rendered).toContain("[org] org-1 bounded org persona");
+    expect(recall.rendered.match(/same memory/g)).toHaveLength(1);
+    expect(recall.truncated).toBe(false);
+    expect(recall.degraded).toBe(false);
+
+    const fullScene = await readOrgScenarioMemory(org.identity, "org/deploy");
+    expect(fullScene.hit?.content).toBe("org scene org/deploy");
+    expect(calls.at(-1)?.path).toBe("/v3/scenario/read");
+
+    calls.length = 0;
+    const org2: ScopedPool = {
+      sourceScope: "org",
+      identity: { ...IDENT, teamId: "org-2", userId: "org:org-2", actorUserId: "carol" },
+    };
+    const org2Recall = await recallScopedMemory("deploy matrix", [org2], { limit: 6 });
+    expect(org2Recall.rendered).toContain("org-2 bounded org persona");
+    expect(calls.filter((c) => ["/v3/scenario/ls", "/v3/scenario/read", "/v3/core/read"].includes(c.path)).map((c) => c.body.team_id)).toEqual([
+      "org-2",
+      "org-2",
+    ]);
+    expect(calls.filter((c) => ["/v3/scenario/ls", "/v3/scenario/read", "/v3/core/read"].includes(c.path)).map((c) => c.body.user_id)).toEqual([
+      "org:org-2",
+      "org:org-2",
+    ]);
+
+    globalThis.fetch = (async () => {
+      throw new Error("provider down");
+    }) as unknown as typeof fetch;
+    const down = await recallScopedMemory("q", [personal, org]);
+    expect(down.items).toEqual([]);
+    expect(down.degraded).toBe(true);
+  });
 
   test("a provider outage yields an EMPTY, DEGRADED recall and never throws", async () => {
     enableMemory();

@@ -10,8 +10,9 @@
  *
  * Wire contract (verified against the repo's TS SDK — see
  * sdk/memory-core/typescript/src/v3/{client,http,types}.ts):
- *   - Read  : POST /v3/atomic/search  — L1 distilled facts, hybrid BM25 + vector
- *             + RRF; the canonical "relevant team memory for this prompt".
+ *   - Read  : POST /v3/atomic/search  — L1 distilled facts, hybrid BM25 + vector.
+ *             POST /v3/scenario/{ls,read} — L2 org-scoped scene summaries.
+ *             POST /v3/core/read — bounded L3 org-scoped persona/profile.
  *   - Write : POST /v3/conversation/add — L0 raw turns; the server distills them
  *             into L1/L2/L3 offline. Requires a session_id.
  *   - Headers: `Authorization: Bearer <apiKey>`, `x-tdai-service-id: <serviceId>`.
@@ -45,7 +46,9 @@ export const BLOCK_FOOTER = "--- end team memory ---";
 /** One recalled fact. From /v3/atomic/search it is an L1 distilled fact; the
  *  layered recall (recallScopedMemory) also feeds L0 explicit/ground hits through
  *  the same shape, tagged with `layer` so the citation can qualify the provider
- *  layer (L0 immediate ground evidence vs L1 distilled). */
+ *  layer (L0 immediate ground evidence, L1 distilled, L2 scenes, L3 persona). */
+type TencentLayer = "l0" | "l1" | "l2" | "l3";
+
 interface AtomicHit {
   id: string;
   type: string;
@@ -53,11 +56,33 @@ interface AtomicHit {
   background?: string;
   score?: number;
   /** Tencent layer this hit came from; absent on the legacy L1-only search path. */
-  layer?: "l0" | "l1";
+  layer?: TencentLayer;
 }
 
 interface AtomicSearchData {
   items: AtomicHit[];
+}
+
+interface ScenarioListData {
+  entries?: unknown[];
+  total?: number;
+}
+
+interface ScenarioReadData {
+  path?: string;
+  content?: string;
+  summary?: string;
+  text?: string;
+}
+
+interface CoreReadData {
+  id?: string;
+  content?: string;
+  summary?: string;
+  text?: string;
+  persona?: string;
+  profile?: string;
+  score?: number;
 }
 
 // ── Memory identity (one POOL of the Tencent memory service) ─────────────────
@@ -103,8 +128,9 @@ export interface MemoryCitation {
   readonly assetId: string;
   readonly score?: number;
   /** Tencent layer, present on layered recalls: `l0` = immediate ground evidence,
-   *  `l1` = distilled atomic memory. Absent on the legacy L1-only recall. */
-  readonly layer?: "l0" | "l1";
+   *  `l1` = distilled atomic memory, `l2` = scene, `l3` = persona/profile.
+   *  Absent on the legacy L1-only recall. */
+  readonly layer?: TencentLayer;
   /** Provider-qualified reference (`tencent:l0:<id>` / `tencent:l1:<id>`) the
    *  memory tools echo so an agent can read/correct/forget the exact record. */
   readonly ref?: string;
@@ -322,11 +348,10 @@ export async function searchScopedMemory(
 
   const started = Date.now();
   const perPool = await Promise.all(
-    pools.map((p) =>
-      fetchAtomicHits(query, p.identity, opts).then((hits) =>
-        hits.map((hit) => ({ sourceScope: p.sourceScope, hit }) satisfies ScopedHit),
-      ),
-    ),
+    pools.map(async (p) => {
+      const hits = await fetchAtomicHits(query, p.identity, opts);
+      return hits.map((hit) => ({ sourceScope: p.sourceScope, hit }) satisfies ScopedHit);
+    }),
   );
   // Label only when the recall genuinely spans more than one scope; a single-pool
   // org recall stays byte-identical to the pre-scope block.
@@ -481,9 +506,7 @@ export async function browseScopedMemory(
   if (!cfg || pools.length === 0) return EMPTY_BROWSE;
   const started = Date.now();
   const perPool = await Promise.all(
-    pools.map((p) =>
-      queryAtomic(p.identity, opts).then((data) => ({ pool: p, data })),
-    ),
+    pools.map(async (p) => ({ pool: p, data: await queryAtomic(p.identity, opts) })),
   );
   const items: BrowsedMemoryItem[] = [];
   let total = 0;
@@ -674,9 +697,206 @@ export async function deleteExplicitL0(
   return data?.deleted_count ?? 0;
 }
 
+// ── L2 scene + L3 persona reads ──────────────────────────────────────────────
+// Tencent's installed MemoryCore stores these as team+agent scoped layers, but
+// the v3 dispatcher still requires user_id on every request. We pass the shared
+// org pool's user_id only to satisfy transport validation; personal runs still
+// receive the org L2/L3 once from their org pool, never another user's personal
+// partition.
+
+const DEFAULT_SCENARIO_LIMIT = 2;
+const MAX_L3_CHARS = 700;
+
+function stringField(value: unknown, keys: readonly string[]): string | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const record = value as Record<string, unknown>;
+  for (const key of keys) {
+    const v = record[key];
+    if (typeof v === "string" && v.trim()) return v.trim();
+  }
+  return undefined;
+}
+
+function boundedL3(content: string): string {
+  const normalized = content.trim().replace(/\s+/g, " ");
+  return normalized.length > MAX_L3_CHARS ? `${normalized.slice(0, MAX_L3_CHARS)}...` : normalized;
+}
+
+function scenarioPath(value: unknown): string | undefined {
+  if (typeof value === "string" && value.trim()) return value.trim();
+  return stringField(value, ["path"]);
+}
+
+function scenarioContent(value: unknown): string | undefined {
+  return stringField(value, ["content", "summary", "text"]);
+}
+
+function coreContent(value: unknown): string | undefined {
+  return stringField(value, ["persona", "profile", "summary", "content", "text", "description"]);
+}
+
+function queryTokens(query: string): string[] {
+  return query
+    .toLowerCase()
+    .split(/[^a-z0-9_:-]+/)
+    .map((token) => token.trim())
+    .filter((token) => token.length > 1);
+}
+
+function rankScenarioEntries(query: string, entries: readonly unknown[], limit: number): unknown[] {
+  const tokens = queryTokens(query);
+  return entries
+    .map((entry, index) => {
+      const haystack = [
+        scenarioPath(entry),
+        stringField(entry, ["summary", "content", "text"]),
+      ]
+        .filter((value): value is string => value !== undefined)
+        .join(" ")
+        .toLowerCase();
+      const score = tokens.reduce((sum, token) => sum + (haystack.includes(token) ? 1 : 0), 0);
+      return { entry, index, score };
+    })
+    .toSorted((a, b) => b.score - a.score || a.index - b.index)
+    .slice(0, limit)
+    .map(({ entry }) => entry);
+}
+
+async function listOrgScenarios(
+  identity: MemoryIdentity,
+  query: string,
+  opts: { limit?: number; timeoutMs?: number } = {},
+): Promise<{ data: unknown[]; unreachable: boolean }> {
+  const cfg = memoryConfig();
+  if (!cfg || !query.trim()) return { data: [], unreachable: false };
+  const limit = Math.max(1, Math.min(opts.limit ?? DEFAULT_SCENARIO_LIMIT, DEFAULT_SCENARIO_LIMIT));
+  const result = await postEx<ScenarioListData>(
+    "/v3/scenario/ls",
+    {
+      team_id: identity.teamId,
+      agent_id: identity.agentId,
+      user_id: identity.userId,
+      path_prefix: "",
+    },
+    cfg,
+    opts.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+  );
+  const data = result.data?.entries ?? [];
+  return {
+    data: Array.isArray(data) ? rankScenarioEntries(query, data, limit) : [],
+    unreachable: result.unreachable,
+  };
+}
+
+export async function readOrgScenarioMemory(
+  identity: MemoryIdentity,
+  path: string,
+  opts: { timeoutMs?: number } = {},
+): Promise<{ hit: AtomicHit | null; unreachable: boolean }> {
+  const cfg = memoryConfig();
+  if (!cfg || !path.trim()) return { hit: null, unreachable: false };
+  const result = await postEx<ScenarioReadData>(
+    "/v3/scenario/read",
+    {
+      team_id: identity.teamId,
+      agent_id: identity.agentId,
+      user_id: identity.userId,
+      path,
+    },
+    cfg,
+    opts.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+  );
+  const content = scenarioContent(result.data);
+  if (!result.data || !content) return { hit: null, unreachable: result.unreachable };
+  return {
+    hit: {
+      id: result.data.path ?? path,
+      type: "scenario",
+      content,
+      layer: "l2",
+    },
+    unreachable: result.unreachable,
+  };
+}
+
+export async function readOrgCoreMemory(
+  identity: MemoryIdentity,
+  opts: { timeoutMs?: number } = {},
+): Promise<{ hit: AtomicHit | null; unreachable: boolean }> {
+  const cfg = memoryConfig();
+  if (!cfg) return { hit: null, unreachable: false };
+  const result = await postEx<CoreReadData>(
+    "/v3/core/read",
+    {
+      team_id: identity.teamId,
+      agent_id: identity.agentId,
+      user_id: identity.userId,
+    },
+    cfg,
+    opts.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+  );
+  const content = coreContent(result.data);
+  if (!result.data || !content) return { hit: null, unreachable: result.unreachable };
+  return {
+    hit: {
+      id: result.data.id ?? "core",
+      type: "core",
+      content: boundedL3(content),
+      score: result.data.score,
+      layer: "l3",
+    },
+    unreachable: result.unreachable,
+  };
+}
+
+async function fetchOrgL2L3Hits(
+  query: string,
+  pools: readonly ScopedPool[],
+  opts: { limit?: number; timeoutMs?: number } = {},
+): Promise<{ scoped: ScopedHit[]; unreachable: boolean }> {
+  const orgPool = pools.find((p) => p.sourceScope === "org");
+  if (!orgPool) return { scoped: [], unreachable: false };
+  const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  const [listed, core] = await Promise.all([
+    listOrgScenarios(orgPool.identity, query, { limit: opts.limit, timeoutMs }),
+    readOrgCoreMemory(orgPool.identity, { timeoutMs }),
+  ]);
+  const scenarioRefs = listed.data.flatMap((item) => {
+    const path = scenarioPath(item);
+    return path ? [{ path, item }] : [];
+  });
+  const reads = await Promise.all(
+    scenarioRefs.map(async ({ path, item }) => {
+      const inlineContent = scenarioContent(item);
+      if (inlineContent) {
+        return {
+          hit: {
+            id: path,
+            type: "scenario",
+            content: inlineContent,
+            layer: "l2" as const,
+          },
+          unreachable: false,
+        };
+      }
+      return readOrgScenarioMemory(orgPool.identity, path, { timeoutMs });
+    }),
+  );
+  const hits = [
+    ...reads.flatMap((read) => (read.hit ? [read.hit] : [])),
+    ...(core.hit ? [core.hit] : []),
+  ];
+  const readUnreachable = reads.length === 0 ? listed.unreachable : reads.every((read) => read.unreachable);
+  return {
+    scoped: hits.map((hit) => ({ sourceScope: "org", hit })),
+    unreachable: listed.unreachable && readUnreachable && core.unreachable,
+  };
+}
+
 /**
- * Layered scope-aware recall (section 6.2): for each pool, search Tencent L0
- * (explicit ground evidence) AND L1 (distilled atomic) IN PARALLEL, then merge
+ * Layered scope-aware recall: for each pool, search Tencent L0 (explicit ground
+ * evidence) and L1 (distilled atomic) in parallel, read the shared org's bounded
+ * L2 scene summaries and L3 persona in parallel, then merge
  * into ONE budget-bounded, deduped, scope-labeled block. L0 is placed first so it
  * WINS dedupe within a pool — a freshly-taught fact recalls immediately, and once
  * L1 catches up with the same content it still shows once (as L0, richer
@@ -694,8 +914,8 @@ export async function recallScopedMemory(
   const started = Date.now();
   const limit = opts.limit ?? DEFAULT_LIMIT;
   const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
-  const perPool = await Promise.all(
-    pools.map(async (p) => {
+  const [perPool, orgDeep] = await Promise.all([
+    Promise.all(pools.map(async (p) => {
       const isoBody = {
         team_id: p.identity.teamId,
         agent_id: p.identity.agentId,
@@ -731,11 +951,17 @@ export async function recallScopedMemory(
       }
       // A pool is unreachable only when BOTH its layer searches failed transport.
       return { scoped, unreachable: l1r.unreachable && l0r.unreachable };
-    }),
-  );
-  // Degraded = the provider was unreachable for EVERY pool (not merely empty).
-  const degraded = perPool.length > 0 && perPool.every((p) => p.unreachable);
+    })),
+    fetchOrgL2L3Hits(query, pools, { limit, timeoutMs }),
+  ]);
+  // Degraded = the provider was unreachable for EVERY scoped layer path (not
+  // merely empty). A 404/non-zero unsupported deep layer degrades to empty but
+  // does not turn a reachable L0/L1 search into an outage.
+  const degraded = perPool.length > 0 && perPool.every((p) => p.unreachable) && orgDeep.unreachable;
   const label = new Set(pools.map((p) => p.sourceScope)).size > 1;
-  const { rendered, items, truncated } = renderMemoryBlock(perPool.flatMap((p) => p.scoped), label);
+  const { rendered, items, truncated } = renderMemoryBlock([
+    ...perPool.flatMap((p) => p.scoped),
+    ...orgDeep.scoped,
+  ], label);
   return { rendered, items, truncated, latencyMs: Date.now() - started, degraded };
 }
