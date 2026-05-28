@@ -42,6 +42,9 @@ describe("engine model catalog", () => {
     expect(selectableModelsForEngine("opencode").map((m) => m.value)).toContain(
       "deepseek/deepseek-v4-flash-0731",
     );
+    expect(selectableModelsForEngine("opencode").map((m) => m.value)).toContain(
+      "google/gemini-3.7-flash",
+    );
   });
 
   test("direct Chat picker exposes only the backend OpenRouter catalog", () => {

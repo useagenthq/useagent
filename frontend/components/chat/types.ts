@@ -131,6 +131,11 @@ export const MODELS: { value: string; label: string; tint: string }[] = [
     label: "DeepSeek V4 Flash 0731 · Wafer Fast",
     tint: "text-cyan-500",
   },
+  {
+    value: "google/gemini-3.7-flash",
+    label: "Gemini 3.7 Flash · Fast",
+    tint: "text-blue-500",
+  },
   { value: "claude-opus-5", label: "Opus 5", tint: "text-orange-500" },
   { value: "claude-sonnet-5", label: "Sonnet 5", tint: "text-blue-500" },
   { value: "claude-fable-5", label: "Fable 5", tint: "text-purple-500" },

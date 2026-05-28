@@ -1,5 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { DEEPSEEK_V4_FLASH_MODEL, KIMI_K3_MODEL } from "../runs/model-policy";
+import {
+  DEEPSEEK_V4_FLASH_MODEL,
+  GEMINI_3_7_FLASH_MODEL,
+  KIMI_K3_MODEL,
+} from "../runs/model-policy";
 import { applyOpenRouterProviderRouting } from "./provider-routing";
 
 describe("OpenRouter provider routing", () => {
@@ -48,6 +52,25 @@ describe("OpenRouter provider routing", () => {
 
     expect(routed.provider).toEqual({
       order: ["wafer/fast"],
+      sort: "throughput",
+      require_parameters: true,
+      allow_fallbacks: true,
+    });
+  });
+
+  test("selects the fastest compatible Gemini 3.7 Flash endpoint", () => {
+    const routed = JSON.parse(
+      applyOpenRouterProviderRouting(
+        GEMINI_3_7_FLASH_MODEL,
+        JSON.stringify({
+          model: GEMINI_3_7_FLASH_MODEL,
+          messages: [],
+          tools: [{ type: "function", function: { name: "bash" } }],
+        }),
+      ),
+    ) as Record<string, unknown>;
+
+    expect(routed.provider).toEqual({
       sort: "throughput",
       require_parameters: true,
       allow_fallbacks: true,
