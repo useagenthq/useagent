@@ -23,11 +23,11 @@ export interface OpenCodeProviderOptions {
   readonly apiKey: string;
 }
 
-// v12 invalidates resident Codex processes started before the trusted
-// skynet-knowledge MCP was written into config.toml. ACP's session-level MCP
-// descriptor is retained as a compatibility path, but native Codex must also
-// receive the gateway through its supported host configuration.
-export const SANDBOX_GENERATION = "provider-gateway-v12-native-computer-use";
+// v13 replaces resident Claude processes that cached a run-scoped provider
+// token. Warm Claude turns now use the same user-bound thread capability model
+// as OpenCode; an old child must restart once so its key helper starts from the
+// thread token rather than reusing an already-completed run token.
+export const SANDBOX_GENERATION = "provider-gateway-v13-claude-thread-token";
 export const SANDBOX_GENERATION_LABEL = "skynet-provider-generation";
 const SANDBOX_MARKER = "$HOME/.skynet/provider-gateway-generation";
 const ANTHROPIC_TOKEN_FILE = "$HOME/.skynet/provider-anthropic.token";
@@ -61,11 +61,12 @@ function mint(ctx: EngineRunContext, engine: EngineId, provider: ProviderId): st
 // request, so outside a running turn the token is inert - the exact-run
 // enforcement moved server-side, it did not weaken. The configured TTL is the
 // signed lifetime ceiling; a bounded reuse window is reserved inside it.
-const opencodeThreadTokens = new ThreadTokenMemo();
+const residentThreadTokens = new ThreadTokenMemo();
 const toolThreadTokens = new ThreadTokenMemo();
 
-function mintOpencodeThreadToken(
+function mintResidentThreadToken(
   ctx: EngineRunContext,
+  engine: "claude" | "opencode",
   provider: ProviderId,
 ): string | null {
   const config = providerGatewayConfig();
@@ -74,10 +75,10 @@ function mintOpencodeThreadToken(
   const userId = ctx.userId ?? "";
   // No thread → single-shot run: a memoized thread token buys nothing, keep the
   // strict exact-run binding.
-  if (!ctx.threadId) return mint(ctx, "opencode", provider);
+  if (!ctx.threadId) return mint(ctx, engine, provider);
   const threadId = ctx.threadId;
-  return opencodeThreadTokens.get(
-    `${orgId}:${userId}:${threadId}:opencode:${provider}`,
+  return residentThreadTokens.get(
+    `${orgId}:${userId}:${threadId}:${engine}:${provider}`,
     threadTokenMemoOptions(config.tokenTtlMs, THREAD_TOKEN_REUSE_WINDOW_MS),
     () =>
       mintProviderToken(
@@ -86,7 +87,7 @@ function mintOpencodeThreadToken(
           userId,
           threadId,
           issuedRunId: ctx.runId,
-          engine: "opencode",
+          engine,
           provider,
           scope: "thread",
         },
@@ -209,9 +210,9 @@ export function claudeProviderGatewayEnvironment(model?: string): Record<string,
 export function opencodeProviderGatewayOptions(
   ctx: EngineRunContext,
 ): Partial<Record<ProviderId, OpenCodeProviderOptions>> {
-  const anthropicToken = mintOpencodeThreadToken(ctx, "anthropic");
-  const openaiToken = mintOpencodeThreadToken(ctx, "openai");
-  const openrouterToken = mintOpencodeThreadToken(ctx, "openrouter");
+  const anthropicToken = mintResidentThreadToken(ctx, "opencode", "anthropic");
+  const openaiToken = mintResidentThreadToken(ctx, "opencode", "openai");
+  const openrouterToken = mintResidentThreadToken(ctx, "opencode", "openrouter");
   // OpenCode passes provider options directly to the AI SDK; provider baseURLs
   // include `/v1` for the SDK-specific endpoint suffixes. Claude Code's
   // ANTHROPIC_BASE_URL seam differs and appends `/v1/messages` itself.
@@ -331,7 +332,7 @@ export async function prepareProviderGatewaySandbox(
 ): Promise<void> {
   if (!providerGatewayWired()) return;
   if (engine === "claude") {
-    const token = mint(ctx, "claude", "anthropic");
+    const token = mintResidentThreadToken(ctx, "claude", "anthropic");
     if (!token) throw new Error("provider gateway could not mint Claude capability");
     const settings = await readJsonFile(sandbox, `${CLAUDE_CONFIG_DIR}/settings.json`);
     settings.apiKeyHelper = `cat \"${ANTHROPIC_TOKEN_FILE}\"`;

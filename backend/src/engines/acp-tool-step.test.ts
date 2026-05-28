@@ -28,6 +28,19 @@ describe("acpToolResultFailed", () => {
 });
 
 describe("buildAcpToolStep", () => {
+  test("recognizes Claude Task as a real subagent with a stable call identity", () => {
+    const step = buildAcpToolStep(
+      { kind: "think", title: "Task", rawInput: {} },
+      "323",
+      native,
+    );
+
+    expect(step.code_json).toMatchObject({
+      tool: "subagent",
+      subagent: { activity: "spawn" },
+      native: { childSessionID: "call_1" },
+    });
+  });
   test("stamps stable native ids so the canonical timeline can order the tool", () => {
     const step = buildAcpToolStep(
       { kind: "execute", title: "Run", rawInput: { command: "pwd" } },
