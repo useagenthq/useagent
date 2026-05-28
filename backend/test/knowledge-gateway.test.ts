@@ -486,6 +486,7 @@ describe("knowledge MCP gateway", () => {
       "web_search",
       "workpiece_create",
       "workpiece_propose_edit",
+      "workpiece_update",
     ]);
     // No tool declares a tenant/org input — identity is token-only.
     for (const t of r.body.result.tools as { inputSchema: any }[]) {
