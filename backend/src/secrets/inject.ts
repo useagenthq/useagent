@@ -2,17 +2,15 @@ import { createHash } from "node:crypto";
 import { posix } from "node:path";
 import type { EngineRunContext } from "../engines/types";
 import { recordProviderEvent } from "../runs/provider-events";
+import { runtimeDevModeEnabled } from "../security/runtime-secrets";
 import { isReservedSecretName } from "./crypto";
 import { decryptOrgSecrets, type DecryptedSecrets } from "./store";
 
 // ---------------------------------------------------------------------------
-// Sandbox secret injection (task #100). At run boot each engine adapter composes
-// the org's decrypted secrets and records a durable `secrets.injected` marker on
-// the shared native lane (provider "skynet", like skill.loaded / context.retrieved).
-// The marker carries NAMES ONLY - never a value. Decryption failures remain
-// availability-safe (a bad row is skipped), but materialization fails the turn:
-// running an agent after promising credentials that do not exist is both
-// misleading and operationally unsafe.
+// Sandbox secret delivery (task #100). Production defaults to gateway-only:
+// decrypted values stay in backend memory for redaction and trusted gateway
+// consumers, while the sandbox receives no env, names, or files. Development
+// retains the historical compatibility delivery path described below.
 //
 // DELIVERY (why a dotenv, not N env vars): passing hundreds of env vars to
 // daytona.create is rejected by Daytona (confirmed A/B: 2 vars create OK, 485
@@ -25,9 +23,10 @@ import { decryptOrgSecrets, type DecryptedSecrets } from "./store";
 // Bonus: org secrets never appear in the container-create request at all, which
 // advances the "don't leak into untrusted sandboxes" posture (BUG-002 / #116).
 //
-// SPLIT (deliberate): non-provider org secrets go in this dotenv. Provider
-// credentials are always withheld by the engine adapters and resolved tenant-
-// side by the trusted provider gateway. There is no raw host-key escape hatch.
+// SPLIT (deliberate): in compatibility mode, non-provider org secrets go in this
+// dotenv. Provider credentials are always withheld by the engine adapters and
+// resolved tenant-side by the trusted provider gateway. There is no raw host-key
+// escape hatch.
 //
 // BASH_ENV remains a compatibility path for non-interactive Bash commands, but
 // correctness does not depend on it. OpenCode, ACP, and CLI adapters explicitly
@@ -95,8 +94,8 @@ export function isProtectedInjectedSecretPath(value: string): boolean {
   return normalized === secretDir || normalized.startsWith(`${secretDir}/`);
 }
 
-/** Bounded secrets.injected payload - the injected NAMES and their count, never
- *  any value. `source` mirrors skill.loaded's discriminator for the timeline. */
+/** Compatibility-only secrets.injected payload - the injected NAMES and their
+ * count, never any value. Gateway-only mode emits no marker. */
 export interface SecretsInjectedPayload {
   readonly names: string[];
   readonly count: number;
@@ -109,8 +108,10 @@ export interface SecretFile {
   content: string;
 }
 
-/** The result of composing an org's secrets for one run's sandbox. */
+/** The result of composing an org's secrets for one run. */
 export interface SecretInjection {
+  /** Whether the sandbox compatibility delivery path is enabled for this run. */
+  mode: SandboxSecretMode;
   /** Env vars to pass to daytona.create - TINY: just `BASH_ENV` when any secret
    *  exists (never the secrets themselves). Engine boot also sources the file. */
   createEnv: Record<string, string>;
@@ -124,7 +125,23 @@ export interface SecretInjection {
   redactionValues: string[];
 }
 
-const EMPTY: SecretInjection = { createEnv: {}, files: [], names: [], redactionValues: [] };
+export type SandboxSecretMode = "gateway_only" | "compatibility";
+
+/** Production defaults to gateway-only. Local development keeps the historical
+ * sandbox delivery path unless an operator explicitly selects a valid mode. */
+export function sandboxSecretMode(
+  env: Readonly<Record<string, string | undefined>> = process.env,
+): SandboxSecretMode {
+  const configured = env.SANDBOX_SECRET_MODE?.trim().toLowerCase();
+  if (configured === "gateway_only" || configured === "compatibility") {
+    return configured;
+  }
+  return runtimeDevModeEnabled(env) ? "compatibility" : "gateway_only";
+}
+
+function emptyInjection(mode: SandboxSecretMode): SecretInjection {
+  return { mode, createEnv: {}, files: [], names: [], redactionValues: [] };
+}
 
 const LEGACY_GCP_CREDENTIAL = "GCP_SERVICE_ACCOUNT_KEY";
 const GOOGLE_APPLICATION_CREDENTIALS = "GOOGLE_APPLICATION_CREDENTIALS";
@@ -181,6 +198,14 @@ export const SECRET_DOTENV_SHELL_PATH = shellPath(SECRET_DOTENV_PATH);
  *  honoring BASH_ENV: current snapshots invoke both zsh and bash. */
 export const SECRET_SOURCE_COMMAND = `. ${SECRET_DOTENV_SHELL_PATH}`;
 
+/** Engine launch prefix for the selected delivery mode. `:` is a shell no-op,
+ * so gateway-only launches do not require or source a sandbox dotenv. */
+export function sandboxSecretSourceCommand(
+  mode: SandboxSecretMode = sandboxSecretMode(),
+): string {
+  return mode === "compatibility" ? SECRET_SOURCE_COMMAND : ":";
+}
+
 /** Export an opaque value without permitting shell evaluation. */
 function shellExport(name: string, value: string): string {
   return `export ${name}=${shellQuote(value)}`;
@@ -207,22 +232,30 @@ function googleProjectId(value: string): string | null {
 }
 
 /**
- * Map decrypted secrets to an injection: a 0600 dotenv of `export NAME='value'`
- * lines (file-kind exports point at the materialized file's path) plus the
- * file-kind content files, and a create-env of just `BASH_ENV`. Pure (no marker,
- * no I/O) so it is unit-testable.
+ * Map decrypted secrets to one run's delivery/redaction state. Compatibility
+ * mode produces the historical dotenv/files/BASH_ENV payload; gateway-only mode
+ * returns only in-memory redaction values. Pure (no marker, no I/O) so it is
+ * unit-testable.
  */
 export function buildInjection(
   decrypted: DecryptedSecrets,
-  options: { readonly excludeNames?: ReadonlySet<string> } = {},
+  options: {
+    readonly excludeNames?: ReadonlySet<string>;
+    readonly mode?: SandboxSecretMode;
+  } = {},
 ): SecretInjection {
+  const mode = options.mode ?? sandboxSecretMode();
   const included = decrypted.secrets.filter(
     (secret) =>
       !isReservedSecretName(secret.name) &&
       !options.excludeNames?.has(secret.name),
   );
   if (included.length === 0) {
-    return { createEnv: {}, files: [], names: [], redactionValues: [] };
+    return emptyInjection(mode);
+  }
+  const redactionValues = included.map((secret) => secret.value);
+  if (mode === "gateway_only") {
+    return { mode, createEnv: {}, files: [], names: [], redactionValues };
   }
   const files: SecretFile[] = [];
   const lines: string[] = [];
@@ -272,10 +305,11 @@ export function buildInjection(
   // the last export well-formed.
   files.unshift({ path: SECRET_DOTENV_PATH, content: `${lines.join("\n")}\n` });
   return {
+    mode,
     createEnv: { BASH_ENV: SECRET_DOTENV_PATH },
     files,
     names: included.map((secret) => secret.name),
-    redactionValues: included.map((secret) => secret.value),
+    redactionValues,
   };
 }
 
@@ -297,8 +331,9 @@ export async function composeSecretEnv(
   ctx: EngineRunContext,
   options: { readonly excludeNames?: ReadonlySet<string> } = {},
 ): Promise<SecretInjection> {
+  const mode = sandboxSecretMode();
   // Null org → no tenancy → inject nothing (fail closed, like gateway wiring).
-  if (!ctx.orgId) return EMPTY;
+  if (!ctx.orgId) return emptyInjection(mode);
 
   let decrypted;
   try {
@@ -308,14 +343,14 @@ export async function composeSecretEnv(
       `[secrets] decrypt failed for org ${ctx.orgId}; injecting no secrets:`,
       err instanceof Error ? err.message : err,
     );
-    return EMPTY;
+    return emptyInjection(mode);
   }
 
-  if (decrypted.names.length === 0) return EMPTY; // no marker for a non-event
+  if (decrypted.names.length === 0) return emptyInjection(mode); // no marker for a non-event
 
-  const out = buildInjection(decrypted, options);
+  const out = buildInjection(decrypted, { ...options, mode });
 
-  return out.names.length === 0 ? EMPTY : out;
+  return out.redactionValues.length === 0 ? emptyInjection(mode) : out;
 }
 
 /** Record successful injection only after the sandbox files exist. Keeping this
@@ -426,4 +461,17 @@ export async function materializeSecretFiles(
     );
   }
   return { changed: result.result?.trim().split(/\s+/).at(-1) !== "unchanged" };
+}
+
+/** Apply compatibility delivery only when explicitly selected. Gateway-only
+ * runs never touch sandbox env, rc files, or the protected secret directory. */
+export async function materializeSecretInjection(
+  runCmd: (cmd: string) => Promise<{
+    readonly exitCode?: number;
+    readonly result?: string;
+  }>,
+  injection: SecretInjection,
+): Promise<{ readonly changed: boolean }> {
+  if (injection.mode === "gateway_only") return { changed: false };
+  return materializeSecretFiles(runCmd, injection.files);
 }

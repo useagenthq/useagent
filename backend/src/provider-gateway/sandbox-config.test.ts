@@ -215,7 +215,7 @@ describe("sandbox provider gateway config", () => {
     expect(verifyProviderToken(options.anthropic?.apiKey)).toMatchObject({ provider: "anthropic" });
     expect(verifyProviderToken(options.openai?.apiKey)).toMatchObject({ provider: "openai" });
     expect(verifyProviderToken(options.openrouter?.apiKey)).toMatchObject({ provider: "openrouter" });
-    expect(SANDBOX_GENERATION).toBe("provider-gateway-v13-claude-thread-token");
+    expect(SANDBOX_GENERATION).toBe("provider-gateway-v14-gateway-only-secrets");
     expect(providerGatewaySandboxLabels("run-a")).toEqual({
       "skynet-run": "run-a",
       "skynet-provider-generation": SANDBOX_GENERATION,

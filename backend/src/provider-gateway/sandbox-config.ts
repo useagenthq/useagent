@@ -23,11 +23,10 @@ export interface OpenCodeProviderOptions {
   readonly apiKey: string;
 }
 
-// v13 replaces resident Claude processes that cached a run-scoped provider
-// token. Warm Claude turns now use the same user-bound thread capability model
-// as OpenCode; an old child must restart once so its key helper starts from the
-// thread token rather than reusing an already-completed run token.
-export const SANDBOX_GENERATION = "provider-gateway-v13-claude-thread-token";
+// v14 replaces every retained sandbox that may still contain org-secret files
+// or rc hooks from the compatibility delivery path. The new production default
+// keeps those values on the trusted backend/gateway side only.
+export const SANDBOX_GENERATION = "provider-gateway-v14-gateway-only-secrets";
 export const SANDBOX_GENERATION_LABEL = "skynet-provider-generation";
 const SANDBOX_MARKER = "$HOME/.skynet/provider-gateway-generation";
 const ANTHROPIC_TOKEN_FILE = "$HOME/.skynet/provider-anthropic.token";

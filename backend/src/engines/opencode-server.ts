@@ -63,11 +63,12 @@ import { createHash } from "node:crypto";
 import { MEMORY_SKILL_PATH, memorySkillText } from "../memory/memory-skill-text";
 import {
   composeSecretEnv,
-  materializeSecretFiles,
+  materializeSecretInjection,
   PROVIDER_SECRET_NAMES,
   recordSecretsInjected,
+  sandboxSecretMode,
+  sandboxSecretSourceCommand,
   SECRET_DOTENV_PATH,
-  SECRET_SOURCE_COMMAND,
 } from "../secrets/inject";
 import { materializeRunInputs } from "../uploads/materialize";
 import { revalidateCommandBeforeDispatch } from "../runs/command-intent";
@@ -246,6 +247,7 @@ async function ensureServer(
   sandbox: SandboxHandle,
   npx: boolean,
   signal: AbortSignal,
+  secretSourceCommand = sandboxSecretSourceCommand(),
 ): Promise<OpenCodeRuntimeServer> {
   const bin = npx ? `npx -y opencode-ai@${OPENCODE_VERSION}` : "opencode";
   const homeResult = await sandbox.process.executeCommand(
@@ -277,7 +279,7 @@ async function ensureServer(
   await sandbox.process.executeSessionCommand(
     SERVER_PROCESS_SESSION,
     {
-      command: `${SECRET_SOURCE_COMMAND} && cd ${shq(`${home}/work`)} && exec ${bin} serve --hostname 0.0.0.0 --port ${SERVE_PORT}`,
+      command: `${secretSourceCommand} && cd ${shq(`${home}/work`)} && exec ${bin} serve --hostname 0.0.0.0 --port ${SERVE_PORT}`,
       runAsync: true,
       suppressInputEcho: true,
     },
@@ -326,13 +328,18 @@ export async function prewarmOpenCodeRuntime(
   sandbox: SandboxHandle,
   signal: AbortSignal,
 ): Promise<void> {
-  const secretFile = SECRET_DOTENV_PATH.startsWith("$HOME/")
-    ? `"$HOME/${SECRET_DOTENV_PATH.slice("$HOME/".length)}"`
-    : shq(SECRET_DOTENV_PATH);
+  const mode = sandboxSecretMode();
+  const secretFile = mode === "compatibility"
+    ? SECRET_DOTENV_PATH.startsWith("$HOME/")
+      ? `"$HOME/${SECRET_DOTENV_PATH.slice("$HOME/".length)}"`
+      : shq(SECRET_DOTENV_PATH)
+    : null;
   const prepared = await sandbox.process.executeCommand(
-    `mkdir -p "$(dirname ${secretFile})" "$HOME/work" && ` +
-      `chmod 700 "$(dirname ${secretFile})" && ` +
-      `touch ${secretFile} && chmod 600 ${secretFile}`,
+    secretFile
+      ? `mkdir -p "$(dirname ${secretFile})" "$HOME/work" && ` +
+        `chmod 700 "$(dirname ${secretFile})" && ` +
+        `touch ${secretFile} && chmod 600 ${secretFile}`
+      : `mkdir -p "$HOME/work"`,
     undefined,
     undefined,
     15,
@@ -341,7 +348,7 @@ export async function prewarmOpenCodeRuntime(
     throw new Error("OpenCode prewarm workspace preparation failed");
   }
   try {
-    await ensureServer(sandbox, false, signal);
+    await ensureServer(sandbox, false, signal, sandboxSecretSourceCommand(mode));
   } finally {
     await sandbox.process.deleteSession(SERVER_PROCESS_SESSION).catch(() => {});
   }
@@ -1077,10 +1084,9 @@ export function makeOpenCodeServerAdapter(driver: ProviderDriver): EngineAdapter
     const provider = sandboxProvider(apiKey);
     const budgetMs = Number(process.env.ENGINE_TIMEOUT_MS ?? 600_000);
 
-    // Org secrets live in a protected dotenv materialized as FILES after the
-    // sandbox exists (materializeSecretFiles below), and OpenCode sources it
-    // explicitly at boot (SECRET_SOURCE_COMMAND) - correctness never depends on
-    // create-time env. So the create passes NO custom env: that is exactly what
+    // Gateway-only mode keeps org secrets out of the sandbox. Compatibility mode
+    // materializes the historical protected dotenv after the sandbox exists and
+    // explicitly sources it at boot. The create passes NO custom env, which
     // makes an OpenCode create eligible for a Daytona warm pool (a pool serves
     // only creates that use the snapshot's default user with no custom env,
     // volumes, or secrets). The BASH_ENV compatibility path is baked into the
@@ -1091,6 +1097,7 @@ export function makeOpenCodeServerAdapter(driver: ProviderDriver): EngineAdapter
     const secretInjection = await composeSecretEnv(ctx, {
       excludeNames: PROVIDER_SECRET_NAMES,
     });
+    const secretSourceCommand = sandboxSecretSourceCommand(secretInjection.mode);
     const redact = createSecretRedactor(secretInjection.redactionValues);
 
     const snapshot = sandboxTemplate("DAYTONA_SNAPSHOT", "skynet-agent-v17");
@@ -1256,9 +1263,9 @@ export function makeOpenCodeServerAdapter(driver: ProviderDriver): EngineAdapter
           ),
         () =>
           prepareStage("secrets", () =>
-            materializeSecretFiles(
+            materializeSecretInjection(
               (cmd) => box.process.executeCommand(cmd, undefined, undefined, 30),
-              secretInjection.files,
+              secretInjection,
             ),
           ),
         () => prepareStage("base_config", () => readOpencodeSandboxConfig(box)),
@@ -1310,7 +1317,8 @@ export function makeOpenCodeServerAdapter(driver: ProviderDriver): EngineAdapter
 
       // ── persistent server + preview endpoint ────────────────────────────────
       let runtimeServer =
-        cachedRuntimeServer ?? await ensureServer(box, npxFallback, ctx.signal);
+        cachedRuntimeServer ??
+        await ensureServer(box, npxFallback, ctx.signal, secretSourceCommand);
       const activateRuntime = async (): Promise<void> => {
         try {
           if (preparedConfig?.required) {
@@ -1352,7 +1360,12 @@ export function makeOpenCodeServerAdapter(driver: ProviderDriver): EngineAdapter
                 );
                 await writeOpencodeSandboxConfig(box, preparedConfig.config);
                 await stopServerForConfigReload(box, runtimeServer, ctx.signal);
-                runtimeServer = await ensureServer(box, npxFallback, ctx.signal);
+                runtimeServer = await ensureServer(
+                  box,
+                  npxFallback,
+                  ctx.signal,
+                  secretSourceCommand,
+                );
                 await verifyOpenCodeRuntimeConfig({
                   server: runtimeServer,
                   config: preparedConfig.config,
