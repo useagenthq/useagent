@@ -1,6 +1,6 @@
 # @skynet/artifact-formats
 
-Native artifact conversion helpers for Skynet's document workspace.
+Native artifact conversion helpers for useAgent's document workspace.
 
 This package owns format-specific byte rendering and bounded text extraction for
 browser-authored workpieces. It is deliberately separate from the backend

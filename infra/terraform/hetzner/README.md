@@ -1,7 +1,7 @@
-# Reproducible Skynet host on Hetzner Cloud
+# Reproducible useAgent host on Hetzner Cloud
 
 One `terraform apply` provisions a server and its dependencies; one `deploy-app.sh`
-brings up the Skynet **core stack** (backend + frontend + Caddy) on it. This turns
+brings up the useAgent **core stack** (backend + frontend + Caddy) on it. This turns
 "bring your own host" into reproducible infrastructure-as-code.
 
 This was verified end to end: provision -> boot -> a live model turn -> destroy
@@ -17,7 +17,7 @@ This was verified end to end: provision -> boot -> a live model turn -> destroy
 | cloud-init | Installs bun (pinned 1.3.14), Node 24, Docker, Caddy, PostgreSQL 16 + pgvector, 4 GB swap, and a **throwaway `skynet` database** with the `vector` extension pre-created. |
 
 The database is local and isolated, so this host never shares a database with any
-other Skynet backend (the platform supports exactly one backend per database).
+other useAgent backend (the platform supports exactly one backend per database).
 
 ## Prerequisites
 
