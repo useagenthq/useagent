@@ -17,16 +17,21 @@ import {
   toCodexToolGatewayConfig,
   type ToolGatewayCapabilityDescriptor,
 } from "../knowledge/gateway/descriptor";
+import { sandboxSecretMode, type SandboxSecretMode } from "../secrets/inject";
 
 export interface OpenCodeProviderOptions {
   readonly baseURL: string;
   readonly apiKey: string;
 }
 
-// v14 replaces every retained sandbox that may still contain org-secret files
-// or rc hooks from the compatibility delivery path. The new production default
-// keeps those values on the trusted backend/gateway side only.
-export const SANDBOX_GENERATION = "provider-gateway-v14-gateway-only-secrets";
+// v15 replaces every retained sandbox created before secret delivery mode was
+// part of the trusted control-plane generation. In particular, an older v14
+// sandbox may have been created in compatibility mode while carrying the same
+// label as gateway-only. Separate generations also prevent a resident process
+// with inherited raw secrets from surviving a compatibility -> gateway-only
+// transition; replacing only files and rc hooks would not clear process env.
+export const SANDBOX_GENERATION = "provider-gateway-v15-gateway-only-secrets";
+const COMPATIBILITY_SANDBOX_GENERATION = "provider-gateway-v15-compatibility-secrets";
 export const SANDBOX_GENERATION_LABEL = "skynet-provider-generation";
 const SANDBOX_MARKER = "$HOME/.skynet/provider-gateway-generation";
 const ANTHROPIC_TOKEN_FILE = "$HOME/.skynet/provider-anthropic.token";
@@ -37,6 +42,10 @@ const CLAUDE_ONE_MILLION_CONTEXT_MODELS = new Set([
   "claude-opus-5",
   "claude-sonnet-5",
 ]);
+
+function sandboxGeneration(mode: SandboxSecretMode = sandboxSecretMode()): string {
+  return mode === "gateway_only" ? SANDBOX_GENERATION : COMPATIBILITY_SANDBOX_GENERATION;
+}
 
 function mint(ctx: EngineRunContext, engine: EngineId, provider: ProviderId): string | null {
   const config = providerGatewayConfig();
@@ -241,7 +250,9 @@ export function providerGatewayWired(): boolean {
 export function providerGatewaySandboxLabels(runId: string): Record<string, string> {
   return {
     "skynet-run": runId,
-    ...(providerGatewayWired() ? { [SANDBOX_GENERATION_LABEL]: SANDBOX_GENERATION } : {}),
+    ...(providerGatewayWired()
+      ? { [SANDBOX_GENERATION_LABEL]: sandboxGeneration() }
+      : {}),
   };
 }
 
@@ -330,6 +341,7 @@ export async function prepareProviderGatewaySandbox(
   engine: "claude" | "codex",
 ): Promise<void> {
   if (!providerGatewayWired()) return;
+  const generation = sandboxGeneration();
   if (engine === "claude") {
     const token = mintResidentThreadToken(ctx, "claude", "anthropic");
     if (!token) throw new Error("provider gateway could not mint Claude capability");
@@ -340,7 +352,7 @@ export async function prepareProviderGatewaySandbox(
       { path: ANTHROPIC_TOKEN_FILE, content: token },
       { path: `${CLAUDE_CONFIG_DIR}/settings.json`, content: JSON.stringify(settings) },
       { path: CLAUDE_MCP_CONFIG_FILE, content: claudeMcpConfig(toolDescriptor) },
-      { path: SANDBOX_MARKER, content: SANDBOX_GENERATION },
+      { path: SANDBOX_MARKER, content: generation },
     ]);
     return;
   }
@@ -355,7 +367,7 @@ export async function prepareProviderGatewaySandbox(
   await writePrivateFiles(sandbox, [
     { path: OPENAI_TOKEN_FILE, content: token },
     { path: "$HOME/.codex/config.toml", content: config },
-    { path: SANDBOX_MARKER, content: SANDBOX_GENERATION },
+    { path: SANDBOX_MARKER, content: generation },
   ]);
   // Never let a snapshot or prior dev turn's host login override command-backed auth.
   const removal = await sandbox.process.executeCommand(
@@ -372,10 +384,11 @@ export async function prepareProviderGatewaySandbox(
 /** Old warm sandboxes may still contain raw provider env; never reuse them. */
 export async function providerGatewaySandboxIsCurrent(sandbox: SandboxHandle): Promise<boolean> {
   if (!providerGatewayWired()) return true;
+  const generation = sandboxGeneration();
   const labels = (sandbox as { labels?: Record<string, string> }).labels;
-  if (labels?.[SANDBOX_GENERATION_LABEL] !== SANDBOX_GENERATION) return false;
+  if (labels?.[SANDBOX_GENERATION_LABEL] !== generation) return false;
   const result = await sandbox.process
-    .executeCommand(`test \"$(cat ${SANDBOX_MARKER} 2>/dev/null)\" = \"${SANDBOX_GENERATION}\"`, undefined, undefined, 10)
+    .executeCommand(`test \"$(cat ${SANDBOX_MARKER} 2>/dev/null)\" = \"${generation}\"`, undefined, undefined, 10)
     .catch(() => null);
   return result?.exitCode === 0;
 }
@@ -384,6 +397,6 @@ export async function providerGatewaySandboxIsCurrent(sandbox: SandboxHandle): P
 export async function markProviderGatewaySandboxCurrent(sandbox: SandboxHandle): Promise<void> {
   if (!providerGatewayWired()) return;
   await writePrivateFiles(sandbox, [
-    { path: SANDBOX_MARKER, content: SANDBOX_GENERATION },
+    { path: SANDBOX_MARKER, content: sandboxGeneration() },
   ]);
 }

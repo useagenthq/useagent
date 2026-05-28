@@ -59,6 +59,21 @@ describe("provider credential trust boundary", () => {
     }
   });
 
+  test("every retained engine substrate rejects an obsolete secret delivery generation", () => {
+    for (const path of [
+      "src/engines/acp-server.ts",
+      "src/engines/opencode-server.ts",
+      "src/engines/sandbox.ts",
+    ] as const) {
+      expect(sourceFor(path)).toContain("providerGatewaySandboxIsCurrent(prior)");
+    }
+
+    const runtimeAdapter = sourceFor("src/engines/runtime-adapter.ts");
+    const sharedLease = sourceFor("src/engines/thread-sandbox.ts");
+    expect(runtimeAdapter).toContain("acquireThreadSandbox(ctx");
+    expect(sharedLease).toContain("providerGatewaySandboxIsCurrent(sandbox)");
+  });
+
   test("Codex app-server stays auth-only and inherits only its child allowlist", () => {
     const source = sourceFor("src/provider-connections/codex-app-server.ts");
     const accountMethods = stringLiteralsIn(
