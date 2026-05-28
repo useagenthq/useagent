@@ -63,12 +63,25 @@ describe("artifact gateway contract", () => {
     expect(create?.description).toContain("no file");
   });
 
+  test("exposes direct requested edits without adding an approval capability", () => {
+    const update = ARTIFACT_TOOLS.find((tool) => tool.name === "workpiece_update");
+
+    expect(update?.inputSchema.required).toEqual(["artifact_id", "state"]);
+    expect(update?.inputSchema.additionalProperties).toBe(false);
+    expect(update?.inputSchema.properties).not.toHaveProperty("approvalCapability");
+    expect(update?.description).toContain("without a second approval prompt");
+    expect(update?.description).toContain("Revision conflicts fail closed");
+  });
+
   test("describes canonical presentation deck state precisely for MCP callers", () => {
     const create = ARTIFACT_TOOLS.find((tool) => tool.name === "workpiece_create");
     const propose = ARTIFACT_TOOLS.find((tool) => tool.name === "workpiece_propose_edit");
+    const update = ARTIFACT_TOOLS.find((tool) => tool.name === "workpiece_update");
     const createState = create?.inputSchema.properties.state as JsonSchemaLike | undefined;
     const proposeState = propose?.inputSchema.properties.state as JsonSchemaLike | undefined;
+    const updateState = update?.inputSchema.properties.state as JsonSchemaLike | undefined;
     expect(proposeState).toEqual(createState);
+    expect(updateState).toEqual(createState);
 
     const stateBranches = createState?.anyOf ?? [];
     const presentationState = stateBranches.find((branch) => hasSchemaProperty(branch, "deck"));
