@@ -132,6 +132,8 @@ describe("T3 run adapter gate", () => {
     const source = readFileSync(new URL("./runtime-adapter.ts", import.meta.url), "utf8");
     expect(source).toContain("composeTurnPrompt(ctx, established.resumed)");
     expect(source).toContain("await establishProviderSession({");
+    expect(source).toContain("const priorSnapshot = await readThreadSnapshot(ctx, sandbox);");
+    expect(source).not.toContain("established.resumed\n          ? await readThreadSnapshot");
     expect(source).toContain("const steerResult = await driver.steer({");
     expect(source).toContain("metadata: { runtimeMode, createdAt }");
     expect(source).toContain("activityStep(activity)");

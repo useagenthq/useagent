@@ -115,6 +115,40 @@ describe("T3 provider drivers", () => {
     });
   });
 
+  test("a fresh provider lifecycle can adopt an already-projected runtime thread", async () => {
+    const requests: RuntimeEnvironmentRequest[] = [];
+    const requestEnvironment: typeof requestRuntimeEnvironment = async <T>(
+      _sandbox: SandboxHandle,
+      request: RuntimeEnvironmentRequest,
+    ): Promise<T> => {
+      requests.push(request);
+      return {
+        projects: [{ id: "skynet-project-thread-1" }],
+        threads: [{ id: "skynet-thread-thread-1" }],
+      } as T;
+    };
+    const driver = makeT3ProviderDriver("opencode", {
+      resolveRuntime: async () => ({ id: "cube-t3-resume" }) as SandboxHandle,
+      requestEnvironment,
+    });
+
+    await expect(driver.start({
+      runId: "run-1",
+      threadId: "thread-1",
+      runtime: { kind: "sandbox", id: "cube-t3-resume" },
+      model: "openai/gpt-5.6-luna",
+      metadata: {
+        workspaceRoot: "/root/work",
+        runtimeMode: "full-access",
+        createdAt: "2026-08-22T00:00:00.000Z",
+      },
+    })).resolves.toMatchObject({
+      status: "ok",
+      value: { nativeSessionId: "skynet-thread-thread-1" },
+    });
+    expect(requests).toEqual([{ method: "GET", path: "/api/orchestration/shell" }]);
+  });
+
   test("owns native cancel and recovery through the same driver session", async () => {
     const snapshot: RuntimeThreadSnapshot = {
       snapshotSequence: 8,

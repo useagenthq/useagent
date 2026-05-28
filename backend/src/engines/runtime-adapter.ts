@@ -439,9 +439,11 @@ export function makeRuntimeAdapter(engine: RuntimeEngineId, driver: ProviderDriv
           },
         });
         const session = established.session;
-        const priorSnapshot = established.resumed
-          ? await readThreadSnapshot(ctx, sandbox)
-          : null;
+        // `start()` may adopt a thread the runtime already projected even when
+        // the durable provider lifecycle is fresh. Always capture its current
+        // turn before steering so an initialization greeting cannot be mistaken
+        // for the response to this run.
+        const priorSnapshot = await readThreadSnapshot(ctx, sandbox);
         const preExistingActivities = new Map(
           priorSnapshot?.thread.activities.map((activity) => [
             activity.id,
