@@ -19,14 +19,10 @@ const KIMI_K3_AGENT_ROUTING = {
 const DEEPSEEK_V4_FLASH_ROUTING = {
   order: ["wafer/fast"],
   sort: "throughput",
-  require_parameters: true,
-  allow_fallbacks: true,
 } as const;
 
 const GEMINI_3_7_FLASH_ROUTING = {
   sort: "throughput",
-  require_parameters: true,
-  allow_fallbacks: true,
 } as const;
 
 /** Apply trusted server-owned provider routing after the sandbox request passes

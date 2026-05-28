@@ -53,8 +53,6 @@ describe("OpenRouter provider routing", () => {
     expect(routed.provider).toEqual({
       order: ["wafer/fast"],
       sort: "throughput",
-      require_parameters: true,
-      allow_fallbacks: true,
     });
   });
 
@@ -72,8 +70,6 @@ describe("OpenRouter provider routing", () => {
 
     expect(routed.provider).toEqual({
       sort: "throughput",
-      require_parameters: true,
-      allow_fallbacks: true,
     });
   });
 });

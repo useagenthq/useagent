@@ -81,6 +81,14 @@ describe("unified shell contract", () => {
     }
   });
 
+  test("lets Settings use the full application canvas", () => {
+    const settings = readFromFrontend("app/settings/page.tsx");
+
+    expect(settings).toContain('className="w-full min-w-0 px-6 py-8 lg:px-10"');
+    expect(settings).not.toContain("max-w-4xl");
+    expect(settings).not.toContain("mx-auto w-full");
+  });
+
   test("preserves explicit right-panel surface choices", () => {
     const sessionView = readFromFrontend("components/chat/session-view.tsx");
 
