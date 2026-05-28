@@ -12,9 +12,10 @@ import {
   rememberOpenCodeThreadServer,
 } from "../src/engines/opencode-runtime";
 import { db } from "../src/db/client";
-import { providerEvents } from "../src/db/schema";
+import { providerEvents, runs, secrets } from "../src/db/schema";
 import { createRun } from "../src/runs/repo";
 import { createSecretRedactor } from "../src/secrets/redact";
+import { json } from "./helpers";
 
 const servers: Bun.Server<unknown>[] = [];
 const cachedThreads: string[] = [];
@@ -164,5 +165,66 @@ describe("OpenCode native questions", () => {
         redact: createSecretRedactor([secret]),
       }),
     ).toEqual({ alreadyAnswered: true });
+  });
+
+  test("does not dispatch or persist a question reply when org-secret decryption fails", async () => {
+    const runId = crypto.randomUUID();
+    const threadId = runId;
+    const secretName = `QUESTION_FAIL_CLOSED_${runId.replaceAll("-", "_").toUpperCase()}`;
+    await createRun({
+      id: runId,
+      prompt: "deploy this",
+      model: "test-model",
+      engine: "opencode",
+      orgId: "org-skynet-dev",
+      userId: null,
+      parentRunId: null,
+      threadId,
+      repos: [],
+      memoryScope: "org",
+    });
+    await db
+      .update(runs)
+      .set({ status: "running", engineSessionId: "ses_test" })
+      .where(eq(runs.id, runId));
+    expect((await json(`/api/secrets/${secretName}`, {
+      method: "PUT",
+      body: { value: "must-be-loaded-before-reply" },
+    })).status).toBe(200);
+    await db
+      .update(secrets)
+      .set({ tag: Buffer.from("corrupt-question-secret-tag").toString("base64") })
+      .where(eq(secrets.name, secretName));
+
+    let providerRequests = 0;
+    const server = Bun.serve({
+      port: 0,
+      fetch: () => {
+        providerRequests += 1;
+        return Response.json([request]);
+      },
+    });
+    servers.push(server);
+    cachedThreads.push(threadId);
+    rememberOpenCodeThreadServer(threadId, {
+      sandboxId: "sandbox-test",
+      baseUrl: server.url.toString().replace(/\/$/, ""),
+      token: "preview-token",
+      workdir: "/workspace",
+    });
+
+    const response = await json<{ error: string }>(
+      `/api/runs/${runId}/questions/que_test/reply`,
+      { method: "POST", body: { answers: [["Staging"]] } },
+    );
+    const receipts = await db
+      .select({ id: providerEvents.id })
+      .from(providerEvents)
+      .where(eq(providerEvents.id, `pe_${runId}_que_test_replied`));
+    await db.delete(secrets).where(eq(secrets.name, secretName));
+
+    expect(response).toEqual({ status: 502, body: { error: "question_reply_failed" } });
+    expect(providerRequests).toBe(0);
+    expect(receipts).toHaveLength(0);
   });
 });

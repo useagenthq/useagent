@@ -162,6 +162,18 @@ export async function orgSecretRedactor(orgId: string | null): Promise<SecretRed
   }
 }
 
+/** Build a complete org-secret redactor for credential-bearing durable writes.
+ * Unlike orgSecretRedactor, lookup and per-secret decryption failures propagate
+ * so callers can fail closed before dispatching or persisting unredacted input. */
+export async function strictOrgSecretRedactor(orgId: string | null): Promise<SecretRedactor> {
+  if (!orgId) return createSecretRedactor([]);
+  const decrypted = await decryptOrgSecrets(orgId);
+  if (decrypted.skipped.length > 0) {
+    throw new Error("org secret redactor unavailable");
+  }
+  return createSecretRedactor(decrypted.secrets.map((s) => s.value));
+}
+
 /** Decrypt exactly one named secret for a trusted control-plane consumer. This
  * keeps provider-gateway plaintext exposure to the credential it needs instead
  * of materializing the org's full secret catalog. */

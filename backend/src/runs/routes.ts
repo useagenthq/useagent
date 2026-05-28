@@ -71,7 +71,7 @@ import {
 import { releaseRunSandbox } from "./sandbox-release";
 import { isRuntimeThreadSessionId } from "../engines/runtime-orchestration";
 import { replyToRuntimeQuestion } from "../engines/runtime-question";
-import { orgSecretRedactor } from "../secrets/store";
+import { strictOrgSecretRedactor } from "../secrets/store";
 import { replyToRuntimeApproval, RuntimeApprovalError } from "../engines/runtime-approval";
 import { listUploadsForRuns, UploadClaimError } from "../uploads/repo";
 
@@ -574,7 +574,7 @@ runsRoutes.post("/:id/questions/:questionId/reply", async (c) => {
   }
   try {
     const reply = runtimeSession ? replyToRuntimeQuestion : replyToOpenCodeQuestion;
-    const redact = await orgSecretRedactor(run.orgId);
+    const redact = await strictOrgSecretRedactor(run.orgId);
     const result = await reply({
       runId: run.id,
       threadId: run.threadId,
