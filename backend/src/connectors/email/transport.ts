@@ -101,7 +101,7 @@ export class EmailTransport implements Transport {
     // content the body. Rich callers use deliver() with an explicit subject.
     const nl = content.indexOf("\n");
     const subject =
-      (nl === -1 ? content : content.slice(0, nl)).trim() || "skynet notification";
+      (nl === -1 ? content : content.slice(0, nl)).trim() || "useAgent notification";
     return this.deliver({ to: [conversationId], subject, text: content });
   }
 

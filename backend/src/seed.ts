@@ -10,7 +10,7 @@ import { member, organization, user } from "./db/schema";
 
 export const DEV_ORG_ID = "org-skynet-dev";
 export const DEV_ORG_SLUG = "skynet-dev";
-export const DEV_ORG_NAME = "Skynet Dev";
+export const DEV_ORG_NAME = "useAgent Dev";
 export const DEV_USER_ID = "user-useagent-dev";
 export const DEV_USER_EMAIL = "dev@useagent.local";
 export const DEV_USER_NAME = "Dev User";

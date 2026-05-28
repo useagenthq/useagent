@@ -366,7 +366,7 @@ describe("repo-prep: shared engine-neutral repository preparation", () => {
     let msg = "";
     await ensureRepoClone(sandbox, "/w", "acme/widget:main", ctx).catch((e) => { msg = e instanceof Error ? e.message : String(e); });
     expect(msg).toContain("refusing to prepare acme/widget");
-    expect(msg).toContain("different git repository not created by Skynet");
+    expect(msg).toContain("different git repository not created by useAgent");
     expect(cloneCmd(calls)).toBeUndefined();
     expect(switchCmd(calls)).toBeUndefined();
   });
@@ -377,7 +377,7 @@ describe("repo-prep: shared engine-neutral repository preparation", () => {
     let msg = "";
     await ensureRepoClone(sandbox, "/w", "acme/widget", ctx).catch((e) => { msg = e instanceof Error ? e.message : String(e); });
     expect(msg).toContain("refusing to prepare acme/widget");
-    expect(msg).toContain("content not created by Skynet");
+    expect(msg).toContain("content not created by useAgent");
     expect(cloneCmd(calls)).toBeUndefined();
   });
 
