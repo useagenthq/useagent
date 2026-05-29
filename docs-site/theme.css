@@ -1,0 +1,183 @@
+/*
+ * BoardUI-style docs theme (reference: boardui.com).
+ *
+ * Light-first, clean white surfaces, neutral grays (#f7f7f7 / #ebebeb),
+ * blue-500 accent, ~10px radius, soft 0 1px 2px shadows. Loaded last in
+ * Blume's cascade, so these rules win over the built-in component styles.
+ * Structural selectors target Blume's stable hooks (data-blume-* attributes
+ * and custom elements), never its hashed or utility-only internals.
+ */
+
+:root {
+  --blume-radius: 0.625rem; /* ~10px, the BoardUI card radius */
+  --blume-muted: #f7f7f7;
+  --blume-border: #ebebeb;
+  --blume-code-background: #ffffff;
+  --docs-shadow-soft: 0 1px 2px rgba(0, 0, 0, 0.06);
+}
+
+/* Dark mode: neutral #121212 canvas (set in config) with matching gray ramp. */
+:root[data-theme="dark"] {
+  --blume-muted: #1c1c1c;
+  --blume-border: #2a2a2a;
+  --blume-code-background: #171717;
+  --blume-accent-foreground: #ffffff;
+  --docs-shadow-soft: 0 1px 2px rgba(0, 0, 0, 0.45);
+}
+
+/* ---------------------------------------------------------------- header */
+
+/* A hairline under the sticky header separates it from the canvas. */
+header.sticky.top-0 {
+  border-bottom: 1px solid var(--blume-border);
+}
+
+/* On desktop the sidebar's Quick Search pill owns search (BoardUI layout);
+   the header trigger stays for mobile, where the pill lives in the drawer. */
+@media (min-width: 64rem) {
+  header [data-blume-search-open] {
+    display: none;
+  }
+}
+
+/* --------------------------------------------------------------- sidebar */
+
+/* Floating rounded panel on desktop. Below lg the slide-in drawer keeps the
+   built-in full-height styling. */
+@media (min-width: 64rem) {
+  [data-blume-doc-grid] > aside[data-blume-nav-drawer] {
+    top: 4.75rem;
+    height: calc(100dvh - 5.75rem);
+    margin-inline-start: 1rem;
+    padding: 0.875rem 0.75rem 1.25rem;
+    background: var(--blume-background);
+    border: 1px solid var(--blume-border);
+    border-radius: 0.875rem;
+    box-shadow: var(--docs-shadow-soft);
+  }
+}
+
+/* Compact 13px rows. */
+[data-blume-nav-tree] a,
+[data-blume-nav-tree] summary,
+[data-blume-nav-tree] button {
+  font-size: 0.8125rem;
+}
+
+[data-blume-nav-tree] ul a {
+  padding-block: 0.3125rem;
+}
+
+/* Group labels as small-caps mono eyebrows (GETTING STARTED / CONCEPTS...). */
+[data-blume-nav-tree] li > p {
+  margin-bottom: 0.375rem;
+  color: var(--blume-muted-foreground);
+  font-family: var(--blume-font-mono);
+  font-size: 0.6875rem;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+/* Breathing room between nav groups. */
+[data-blume-nav-tree] li:has(> p) {
+  margin-top: 1.375rem;
+}
+
+[data-blume-nav-tree] > ul > li:has(> p):first-child,
+[data-blume-nav-tree] blume-nav ul > li:has(> p):first-child {
+  margin-top: 0.25rem;
+}
+
+/* Tree-line connectors on a group's children (collapsible sections already
+   carry a built-in border-s; this adds the same line to flat groups). */
+[data-blume-nav-tree] li > p + div {
+  margin-inline-start: 0.625rem;
+  padding-inline-start: 0.625rem;
+  border-inline-start: 1px solid var(--blume-border);
+}
+
+/* Active row: accent text over a faint accent wash instead of plain gray. */
+[data-blume-nav-tree] a[aria-current="page"] {
+  background: color-mix(in srgb, var(--blume-accent) 9%, transparent);
+  color: var(--blume-accent);
+}
+
+/* ------------------------------------------------------- on-this-page rail */
+
+aside[data-blume-toc] p:has(+ blume-toc) {
+  color: var(--blume-muted-foreground);
+  font-family: var(--blume-font-mono);
+  font-size: 0.6875rem;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+/* A thin track the active indicator rides on. */
+aside[data-blume-toc] blume-toc ul {
+  border-inline-start: 1px solid var(--blume-border);
+  padding-inline-start: 0.875rem;
+}
+
+aside[data-blume-toc] blume-toc li {
+  position: relative;
+}
+
+aside[data-blume-toc] blume-toc a {
+  font-size: 0.8125rem;
+  padding-block: 0.3125rem;
+}
+
+aside[data-blume-toc] blume-toc a[aria-current="location"] {
+  color: var(--blume-accent);
+}
+
+aside[data-blume-toc] blume-toc a[aria-current="location"]::before {
+  content: "";
+  position: absolute;
+  inset-inline-start: calc(-0.875rem - 1px);
+  top: 0.4375rem;
+  bottom: 0.4375rem;
+  width: 2px;
+  border-radius: 999px;
+  background: var(--blume-accent);
+}
+
+/* ------------------------------------------------------------ code blocks */
+
+/* Rounded bordered cards with a soft shadow and a muted header bar. */
+.prose pre {
+  background: var(--blume-code-background);
+  box-shadow: var(--docs-shadow-soft);
+}
+
+.prose pre[data-language]::before {
+  background: var(--blume-muted);
+  border-start-start-radius: calc(var(--blume-radius) - 1px);
+  border-start-end-radius: calc(var(--blume-radius) - 1px);
+}
+
+/* Active tab (Tabs / CodeGroup / package-install) picks up the accent. */
+blume-tabs [data-blume-tablist] button[role="tab"][aria-selected="true"] {
+  color: var(--blume-accent);
+}
+
+/* ------------------------------------------------------------------ steps */
+
+/* Numbered step markers as small accent-gradient squares, BoardUI style. */
+.prose [class*="counter-increment:blume-step"] > span:first-child {
+  border-radius: 0.4375rem;
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--blume-accent) 82%, #ffffff),
+    var(--blume-accent)
+  );
+  box-shadow: var(--docs-shadow-soft);
+}
+
+/* ------------------------------------------------------------------ cards */
+
+.prose [data-blume-card] {
+  box-shadow: var(--docs-shadow-soft);
+}

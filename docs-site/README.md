@@ -21,6 +21,9 @@ bun run doctor   # diagnose configuration and content problems
 ## Structure
 
 - `blume.config.ts` sets the title, theme, GitHub links, and navigation.
+- `theme.css` carries the BoardUI-style look (surfaces, shadows, sidebar and
+  rail styling); `components.ts` registers the Sidebar and Breadcrumbs slot
+  overrides in `components/`.
 - `docs/` holds the content. Folders become sidebar groups; each group's
   `meta.ts` sets its title, icon, order, and page order.
 - Navigation, search, breadcrumbs, and the on-page outline are inferred from the
