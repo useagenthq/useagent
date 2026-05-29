@@ -11,6 +11,7 @@ import {
   computeStats,
   extractCount,
   extractRuns,
+  recentRuns,
   runsPerDay,
 } from "@/components/dashboard/dashboard-data";
 import { DashboardLiveRefresh } from "@/components/dashboard/dashboard-live-refresh";
@@ -72,6 +73,7 @@ export default async function DashboardPage() {
 
   const weekTotal = week.reduce((n, d) => n + d.total, 0);
   const fortnightTotal = fortnight.reduce((n, d) => n + d.total, 0);
+  const recent = recentRuns(runs);
 
   const statItems: StatItem[] = [
     {
@@ -119,7 +121,7 @@ export default async function DashboardPage() {
 
         <ContributionsCard cells={heat.cells} total={heat.total} />
 
-        <RecentRunsTable runs={runs} />
+        <RecentRunsTable runs={recent} />
 
         {/* Tallest section last so the day-to-day cards stay above the fold. */}
         <section className="flex flex-col gap-3">

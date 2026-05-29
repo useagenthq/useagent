@@ -89,6 +89,11 @@ export function timestamp(value: string | number): number {
   return Number.isFinite(n) ? n : 0;
 }
 
+/** Newest runs sent to the interactive table; bounds the RSC client payload. */
+export function recentRuns(runs: readonly DashRun[], limit = 80): DashRun[] {
+  return runs.toSorted((a, b) => timestamp(b.created_at) - timestamp(a.created_at)).slice(0, limit);
+}
+
 /** Local YYYY-MM-DD key for a timestamp (0 => empty, sorts before all days). */
 function dayKey(ms: number): string {
   if (!ms) return '';
