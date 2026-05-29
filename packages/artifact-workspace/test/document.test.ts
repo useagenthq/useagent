@@ -78,6 +78,10 @@ describe("themed-document validation (fails closed)", () => {
 
   test("normalizeDocumentTheme validates hex colors and the background union", () => {
     expect(normalizeDocumentTheme(CUSTOM_THEME)).toEqual(CUSTOM_THEME);
+    expect(normalizeDocumentTheme({ ...CUSTOM_THEME, background: "#101828" })).toEqual({
+      ...CUSTOM_THEME,
+      background: { type: "color", color: "#101828" },
+    });
     expect(normalizeDocumentTheme({ ...CUSTOM_THEME, background: { type: "color", color: "nope" } }))
       .toBeNull();
     const gradient: DocumentTheme = {

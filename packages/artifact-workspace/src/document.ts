@@ -75,6 +75,7 @@ export const DEFAULT_DOCUMENT_THEME: DocumentTheme = DEFAULT_DECK_THEME;
 // --- Validation / normalization (fails closed) -----------------------------
 
 function normalizeBackground(value: unknown): DeckBackground | null {
+  if (isHexColor(value)) return { type: "color", color: value };
   const item = record(value);
   if (!item) return null;
   if (item.type === "color") {
