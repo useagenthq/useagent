@@ -13,7 +13,7 @@ import {
   AUTOMATION_TOOLS as AUTOMATION_TOOL_CATALOG,
 } from "./automation-tool-catalog";
 import { getRunForOrg } from "../../runs/repo";
-import { getScheduleForOrg, listFirings, listSchedules, type ApiSchedule, type ScheduleRecord } from "../../schedules/repo";
+import { getScheduleForOrg, listFirings, listSchedules, type ApiFiring, type ApiSchedule, type ScheduleRecord } from "../../schedules/repo";
 import {
   createScheduleForOrg,
   deleteScheduleForOrg,
@@ -61,6 +61,9 @@ const APPROVAL_AUTOMATION_CONTRACT = {
     "automation_update requires a server-minted, short-lived, one-shot approval capability bound to the exact run, tool, and normalized arguments",
 } as const;
 
+const MAX_TEXT_FIRINGS = 20;
+const MAX_TEXT_SUMMARY_CHARS = 240;
+
 export interface AutomationToolExecutionOptions {
   readonly approvalStore?: ApprovalCapabilityStore;
   readonly nowMs?: number;
@@ -83,6 +86,49 @@ function automationNotFound(): ToolCallResult {
 
 function promptPreview(prompt: string): string {
   return prompt.length <= 160 ? prompt : `${prompt.slice(0, 157)}...`;
+}
+
+function firingSummaryPreview(summary: string | null): {
+  readonly text: string;
+  readonly truncated: boolean;
+} {
+  if (summary === null) return { text: "null", truncated: false };
+  const normalized = summary.replace(/\s+/g, " ").trim();
+  const serialized = JSON.stringify(normalized);
+  if (serialized.length <= MAX_TEXT_SUMMARY_CHARS) {
+    return { text: serialized, truncated: false };
+  }
+  let low = 0;
+  let high = normalized.length;
+  let text = JSON.stringify("");
+  while (low <= high) {
+    const middle = Math.floor((low + high) / 2);
+    const candidate = JSON.stringify(normalized.slice(0, middle));
+    if (candidate.length <= MAX_TEXT_SUMMARY_CHARS) {
+      text = candidate;
+      low = middle + 1;
+    } else {
+      high = middle - 1;
+    }
+  }
+  return { text, truncated: true };
+}
+
+export function formatAutomationHistoryText(
+  schedule: Pick<ScheduleRecord, "id" | "name">,
+  firings: readonly ApiFiring[],
+): string {
+  const shownFirings = firings.slice(0, MAX_TEXT_FIRINGS);
+  const truncated = firings.length > shownFirings.length;
+  const lines = shownFirings.map((firing) => {
+    const summary = firingSummaryPreview(firing.run_summary);
+    return `fired_at=${firing.fired_at} trigger=${firing.trigger} run_id=${firing.run_id} run_status=${firing.run_status ?? "null"} summary=${summary.text} summary_truncated=${summary.truncated}`;
+  });
+  return [
+    `Automation: ${schedule.id} name=${JSON.stringify(schedule.name)}`,
+    `Total: ${firings.length}; shown: ${shownFirings.length}; truncated: ${truncated}`,
+    ...lines,
+  ].join("\n");
 }
 
 function automationSummary(schedule: ApiSchedule | ScheduleRecord): Record<string, unknown> {
@@ -216,9 +262,7 @@ async function automationHistory(
   if (!schedule) return automationNotFound();
   const firings = await listFirings(schedule.id);
   return textResult(
-    firings.length === 0
-      ? `Automation ${schedule.name} has no firing history.`
-      : `Automation ${schedule.name} has ${firings.length} firing(s).`,
+    formatAutomationHistoryText(schedule, firings),
     { automation_id: schedule.id, firings },
   );
 }
