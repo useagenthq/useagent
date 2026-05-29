@@ -4,7 +4,7 @@
  * client view alike, so the lane math stays identical on both sides.
  */
 
-import { envelope, type RunStatus, toRunStatus } from "@/lib/runs";
+import { envelope, primaryRepo, type RunStatus, toRunStatus } from "@/lib/runs";
 
 /** The slim run shape the fleet lanes need — steps/trace are irrelevant here. */
 export interface WorkspaceRun {
@@ -39,23 +39,6 @@ function toWorkspaceRun(value: unknown): WorkspaceRun | null {
     duration_ms: typeof r.duration_ms === "number" ? r.duration_ms : null,
     created_at: (r.created_at as string | number) ?? 0,
   };
-}
-
-/** `repo_specs` is authoritative, followed by the legacy plural and singular fields. */
-function primaryRepo(run: Record<string, unknown>): string | null {
-  if (Array.isArray(run.repo_specs)) {
-    for (const spec of run.repo_specs) {
-      if (!spec || typeof spec !== "object") continue;
-      const repo = (spec as { repo?: unknown }).repo;
-      if (typeof repo === "string" && repo.length > 0) return repo;
-    }
-  }
-  if (Array.isArray(run.repos)) {
-    for (const repo of run.repos) {
-      if (typeof repo === "string" && repo.length > 0) return repo;
-    }
-  }
-  return typeof run.repo === "string" && run.repo.length > 0 ? run.repo : null;
 }
 
 export interface FleetStats {
