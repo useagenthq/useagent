@@ -18,6 +18,7 @@ import type { EmitStep, EngineRunContext, RunInputFile } from "./engines/types";
 import { classifyTurnFailure } from "./engines/turn-failure-classification";
 import { recallScopedMemory } from "./memory/team-memory";
 import { resolveScopedMemory } from "./memory/scope";
+import { isInternalRunOrigin } from "./runs/origin";
 import { recordContextRetrieval } from "./memory/retrieval-ledger";
 import { listSkillCatalogForOrg } from "./skills/repo";
 import { resolveExecutableSkillPin } from "./skills/pins";
@@ -636,6 +637,7 @@ async function runChat(
         query: run.prompt,
         memoryScope: run.memoryScope,
         threadId: run.threadId,
+        origin: isInternalRunOrigin(run.origin) ? run.origin : null,
       }),
       run.parentRunId ? buildThreadPreamble(run.threadId, run.id) : Promise.resolve(""),
     ]);

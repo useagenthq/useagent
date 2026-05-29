@@ -96,7 +96,7 @@ export interface RunCommandInput {
 
 /** Why a keyed replay could not be honored as-is. Extend as new ambiguity modes
  *  appear; every consumer switches exhaustively. */
-export type IdempotencyConflictReason = "payload_mismatch";
+export type IdempotencyConflictReason = "payload_mismatch" | "origin_mismatch";
 
 /** Outcome of accepting a `run.create` command — a discriminated union so every
  *  caller handles create / replay / conflict explicitly. */

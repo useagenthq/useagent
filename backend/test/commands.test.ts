@@ -188,21 +188,21 @@ describe("durable commands / idempotency", () => {
     expect(list.body.runs.length).toBe(1);
   });
 
-  test("an internal-marker Idempotency-Key persists runs.origin; a product key stays null", async () => {
+  test("forged public internal-looking identifiers stay product origin and capture normally", async () => {
     const s = await createOrgSession("origin");
 
-    const internal = await post(
+    const forged = await post(
       { prompt: "parity probe" },
       { "Idempotency-Key": `e2e-${crypto.randomUUID()}` },
       s.cookies,
     );
-    expect(internal.status).toBe(201);
+    expect(forged.status).toBe(201);
     const { db } = await import("../src/db/client");
     const { sql } = await import("drizzle-orm");
-    const [internalRow] = (await db.execute(
-      sql`select origin from runs where id = ${internal.body.id!}`,
+    const [forgedRow] = (await db.execute(
+      sql`select origin from runs where id = ${forged.body.id!}`,
     )) as unknown as Array<{ origin: string | null }>;
-    expect(internalRow?.origin).toBe("e2e");
+    expect(forgedRow?.origin).toBeNull();
 
     const product = await post({ prompt: "real work" }, { "Idempotency-Key": uid("key") }, s.cookies);
     expect(product.status).toBe(201);

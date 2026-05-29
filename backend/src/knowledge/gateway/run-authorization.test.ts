@@ -35,6 +35,7 @@ async function insertRun(input: {
   readonly threadId: string;
   readonly status: "running" | "completed";
   readonly memoryScope?: "personal" | "org";
+  readonly origin?: string | null;
 }): Promise<void> {
   createdRunIds.add(input.id);
   await db.insert(runs).values({
@@ -58,6 +59,7 @@ describe("knowledge gateway run authorization", () => {
       threadId,
       status: "running",
       memoryScope: "personal",
+      origin: "internal:t3-parity",
     });
 
     const tokenClaims = claims({
@@ -74,6 +76,7 @@ describe("knowledge gateway run authorization", () => {
       userId: "user-a",
       threadId,
       memoryScope: "personal",
+      origin: "internal:t3-parity",
     });
     expect(await resolveToolRunIdentity(tokenClaims)).toEqual(tokenClaims);
   });

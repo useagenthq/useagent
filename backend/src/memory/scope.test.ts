@@ -146,6 +146,107 @@ describe("resolveScopedMemory", () => {
     expect(plan.orgId).toBe("skynet");
     expect(plan.readPools[0]!.identity.userId).toBe("org:skynet");
   });
+
+  test("product identity remains byte-for-byte unchanged when origin is null", () => {
+    enableMemory();
+    process.env.MEMORY_AGENT_ID = "agent-main";
+    const plan = resolveScopedMemory({
+      orgId: "org-1",
+      userId: "alice",
+      threadId: "thread-1",
+      id: "run-1",
+      memoryScope: "personal",
+      origin: null,
+    })!;
+    expect(plan.agentId).toBe("agent-main");
+    expect(plan.readPools.map((pool) => pool.identity)).toEqual([
+      {
+        teamId: "org-1",
+        agentId: "agent-main",
+        userId: "alice",
+        actorUserId: "alice",
+        sessionId: "thread-1",
+        runId: "run-1",
+      },
+      {
+        teamId: "org-1",
+        agentId: "agent-main",
+        userId: "org:org-1",
+        actorUserId: "alice",
+        sessionId: "thread-1",
+        runId: "run-1",
+      },
+    ]);
+  });
+
+  test("the same internal origin shares one namespace across threads", () => {
+    enableMemory();
+    const first = resolveScopedMemory({
+      orgId: "org-1",
+      userId: "alice",
+      threadId: "thread-a",
+      id: "run-a",
+      memoryScope: "org",
+      origin: "internal:t3-parity",
+    })!;
+    const second = resolveScopedMemory({
+      orgId: "org-1",
+      userId: "alice",
+      threadId: "thread-b",
+      id: "run-b",
+      memoryScope: "org",
+      origin: "internal:t3-parity",
+    })!;
+    expect(first.agentId).toBe(second.agentId);
+    expect(first.writePool?.identity.userId).toBe(second.writePool?.identity.userId);
+    expect(first.writePool?.identity.sessionId).not.toBe(second.writePool?.identity.sessionId);
+  });
+
+  test("internal and product runs cannot address the same org or personal pools", () => {
+    enableMemory();
+    const product = resolveScopedMemory({
+      orgId: "org-1",
+      userId: "alice",
+      threadId: "thread-product",
+      id: "run-product",
+      memoryScope: "personal",
+      origin: null,
+    })!;
+    const internal = resolveScopedMemory({
+      orgId: "org-1",
+      userId: "alice",
+      threadId: "thread-internal",
+      id: "run-internal",
+      memoryScope: "personal",
+      origin: "internal:e2e",
+    })!;
+    expect(internal.agentId).not.toBe(product.agentId);
+    expect(internal.readPools.map((pool) => pool.identity.userId)).not.toContain("alice");
+    expect(internal.readPools.map((pool) => pool.identity.userId)).not.toContain("org:org-1");
+  });
+
+  test("internal namespaces preserve organization isolation", () => {
+    enableMemory();
+    const first = resolveScopedMemory({
+      orgId: "org-1",
+      userId: "alice",
+      threadId: "thread-a",
+      id: "run-a",
+      memoryScope: "org",
+      origin: "internal:canary",
+    })!;
+    const second = resolveScopedMemory({
+      orgId: "org-2",
+      userId: "alice",
+      threadId: "thread-b",
+      id: "run-b",
+      memoryScope: "org",
+      origin: "internal:canary",
+    })!;
+    expect(first.writePool?.identity.teamId).toBe("org-1");
+    expect(second.writePool?.identity.teamId).toBe("org-2");
+    expect(first.writePool?.identity.userId).not.toBe(second.writePool?.identity.userId);
+  });
 });
 
 describe("isMemoryScope (validation guard for test 9)", () => {

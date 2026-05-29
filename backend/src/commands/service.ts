@@ -4,7 +4,10 @@ import { findCommandByKey, insertCommandWithRun } from "./repo";
 import type { CommandRecord } from "./repo";
 import type { RunCommandInput, RunCommandIntent, RunCommandOutcome } from "./types";
 import { publishRunLifecycleChange } from "../runs/org-signals";
-import { deriveRunOrigin } from "../runs/origin";
+import {
+  assertInternalRunOrigin,
+  type InternalRunOrigin,
+} from "../runs/origin";
 import { isModelAllowedForEngine } from "../runs/model-policy";
 import { engineModelReadyForDispatch } from "../runs/engine-readiness";
 import { withThreadLifecycleLock } from "../runs/thread-lifecycle-lock";
@@ -22,7 +25,14 @@ const PAYLOAD_CAP = 8_192;
 
 /** Classify a keyed submission against an existing command: same fingerprint →
  *  idempotent replay of its run; different fingerprint → ambiguous reuse. */
-function classifyReplay(existing: CommandRecord, fingerprint: string): RunCommandOutcome {
+function classifyReplay(
+  existing: CommandRecord,
+  fingerprint: string,
+  origin: InternalRunOrigin | null,
+): RunCommandOutcome {
+  if (existing.runOrigin !== origin) {
+    return { status: "conflict", reason: "origin_mismatch" };
+  }
   if (existing.payloadFingerprint === fingerprint && existing.runId) {
     return { status: "replayed", runId: existing.runId };
   }
@@ -34,17 +44,38 @@ function classifyReplay(existing: CommandRecord, fingerprint: string): RunComman
  * Missing/unkeyed submissions return null and must continue through normal
  * authorization. This helper never reserves a key or accepts new work.
  */
-export async function preflightRunCommandReplay(input: {
+async function preflightRunCommandReplayWithOrigin(input: {
+  readonly orgId: string;
+  readonly idempotencyKey: string | null;
+  readonly intent: RunCommandIntent;
+  readonly origin: InternalRunOrigin | null;
+}): Promise<RunCommandOutcome | null> {
+  if (input.idempotencyKey) {
+    const existing = await findCommandByKey(input.orgId, input.idempotencyKey);
+    if (existing) {
+      return classifyReplay(existing, runIntentFingerprint(input.intent), input.origin);
+    }
+  }
+  await assertRunAdmissionOpen();
+  return null;
+}
+
+export function preflightRunCommandReplay(input: {
   readonly orgId: string;
   readonly idempotencyKey: string | null;
   readonly intent: RunCommandIntent;
 }): Promise<RunCommandOutcome | null> {
-  if (input.idempotencyKey) {
-    const existing = await findCommandByKey(input.orgId, input.idempotencyKey);
-    if (existing) return classifyReplay(existing, runIntentFingerprint(input.intent));
-  }
-  await assertRunAdmissionOpen();
-  return null;
+  return preflightRunCommandReplayWithOrigin({ ...input, origin: null });
+}
+
+export function preflightInternalRunCommandReplay(input: {
+  readonly orgId: string;
+  readonly idempotencyKey: string | null;
+  readonly intent: RunCommandIntent;
+  readonly origin: InternalRunOrigin;
+}): Promise<RunCommandOutcome | null> {
+  assertInternalRunOrigin(input.origin);
+  return preflightRunCommandReplayWithOrigin(input);
 }
 
 /**
@@ -57,7 +88,10 @@ export async function preflightRunCommandReplay(input: {
  * transaction rolls back with a unique violation, which we re-read into the
  * winner's outcome rather than surfacing a raw DB error.
  */
-export async function acceptRunCommand(input: RunCommandInput): Promise<RunCommandOutcome> {
+async function acceptRunCommandWithOrigin(
+  input: RunCommandInput,
+  origin: InternalRunOrigin | null,
+): Promise<RunCommandOutcome> {
   const intent = input.intent ?? runIntentFromAcceptedRun(input.run);
   const fingerprint = runIntentFingerprint(intent);
   const payload = JSON.stringify({
@@ -89,7 +123,7 @@ export async function acceptRunCommand(input: RunCommandInput): Promise<RunComma
         // Fast path: a keyed replay short-circuits before a doomed insert.
         if (input.idempotencyKey) {
           const existing = await findCommandByKey(input.orgId, input.idempotencyKey, tx);
-          if (existing) return classifyReplay(existing, fingerprint);
+          if (existing) return classifyReplay(existing, fingerprint, origin);
         }
 
         // Shared transaction lock closes the preflight-vs-insert race: a deploy
@@ -121,10 +155,7 @@ export async function acceptRunCommand(input: RunCommandInput): Promise<RunComma
             payloadFingerprint: fingerprint,
             payload,
             run: input.run,
-            // Internal-run marker (parity canaries / e2e harnesses), derived from
-            // the explicit identifiers those tools stamp — never the prompt. Null
-            // for every product run; internal runs skip org-memory capture.
-            origin: deriveRunOrigin(input.idempotencyKey, input.run.id),
+            origin,
           },
           tx,
         );
@@ -137,7 +168,7 @@ export async function acceptRunCommand(input: RunCommandInput): Promise<RunComma
     // winner only AFTER withThreadLifecycleLock rolls it back.
     if (input.idempotencyKey && isUniqueViolation(err)) {
       const existing = await findCommandByKey(input.orgId, input.idempotencyKey);
-      if (existing) return classifyReplay(existing, fingerprint);
+      if (existing) return classifyReplay(existing, fingerprint, origin);
     }
     throw err;
   }
@@ -157,4 +188,17 @@ export async function acceptRunCommand(input: RunCommandInput): Promise<RunComma
   });
 
   return { status: "created", runId: input.run.id, commandId };
+}
+
+/** Public product acceptance. Origin is always null and is not caller-settable. */
+export function acceptRunCommand(input: RunCommandInput): Promise<RunCommandOutcome> {
+  return acceptRunCommandWithOrigin(input, null);
+}
+
+/** Server-only acceptance for trusted canaries and inherited internal children. */
+export function acceptInternalRunCommand(
+  input: RunCommandInput & { readonly origin: InternalRunOrigin },
+): Promise<RunCommandOutcome> {
+  assertInternalRunOrigin(input.origin);
+  return acceptRunCommandWithOrigin(input, input.origin);
 }

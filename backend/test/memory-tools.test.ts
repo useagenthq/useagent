@@ -76,6 +76,7 @@ async function insertRun(input: {
   orgId: string | null;
   userId: string | null;
   scope: "org" | "personal";
+  origin?: string | null;
 }): Promise<{ id: string; threadId: string }> {
   const id = uid("run");
   await db.insert(runs).values({
@@ -88,6 +89,7 @@ async function insertRun(input: {
     orgId: input.orgId,
     userId: input.userId,
     memoryScope: input.scope,
+    origin: input.origin ?? null,
   });
   return { id, threadId: id };
 }
@@ -271,6 +273,24 @@ describe("memory_read", () => {
 });
 
 describe("memory_correct / memory_forget", () => {
+  test("correcting an internal ORG L1 ref still uses replace-then-delete", async () => {
+    const mock = tencentMock();
+    globalThis.fetch = mock.fetchImpl;
+    const run = await insertRun({
+      orgId: "org-internal",
+      userId: "u-1",
+      scope: "org",
+      origin: "internal:t3-parity",
+    });
+    const res = await executeMemoryTool(claimsFor(run, "org-internal"), "memory_correct", {
+      memoryRef: "tencent:l1:fact-internal",
+      content: "The corrected internal fact.",
+    });
+    expect(res.isError).toBeUndefined();
+    expect(mock.msgs.some((m) => m.content.includes("The corrected internal fact."))).toBe(true);
+    expect(String(res.structuredContent?.ref)).toContain("tencent:l0:");
+  });
+
   test("correcting an ORG L1 ref replaces-then-deletes (avoids the atomic/update 403)", async () => {
     const mock = tencentMock();
     globalThis.fetch = mock.fetchImpl;

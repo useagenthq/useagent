@@ -1,6 +1,6 @@
 import { and, eq } from "drizzle-orm";
 import { db, type Executor } from "../db/client";
-import { commands, type CommandState } from "../db/schema";
+import { commands, runs, type CommandState } from "../db/schema";
 import { createRun } from "../runs/repo";
 import type { RunCommandInput } from "./types";
 import { claimUploadsForRun, UploadClaimError } from "../uploads/repo";
@@ -16,7 +16,9 @@ import { claimUploadsForRun, UploadClaimError } from "../uploads/repo";
 export const RUN_CREATE = "run.create" as const;
 export const RUN_CANCEL = "run.cancel" as const;
 
-export type CommandRecord = typeof commands.$inferSelect;
+export type CommandRecord = typeof commands.$inferSelect & {
+  readonly runOrigin: string | null;
+};
 
 /** Values needed to persist one accepted `run.create` command + its run. */
 export interface NewRunCommand {
@@ -27,9 +29,9 @@ export interface NewRunCommand {
   readonly payloadFingerprint: string;
   readonly payload: string;
   readonly run: RunCommandInput["run"];
-  /** Internal-run marker derived at acceptance (src/runs/origin.ts); null for a
-   *  real product run. Persisted on the run row so downstream policy (memory
-   *  capture exclusion) reads the row, never re-derives. */
+  /** Exact server-owned internal origin (src/runs/origin.ts); null for a product
+   *  run. Persisted so downstream policy reads the accepted authority and never
+   *  derives trust from identifiers. */
   readonly origin: string | null;
 }
 
@@ -40,11 +42,12 @@ export async function findCommandByKey(
   exec: Executor = db,
 ): Promise<CommandRecord | null> {
   const [row] = await exec
-    .select()
+    .select({ command: commands, runOrigin: runs.origin })
     .from(commands)
+    .innerJoin(runs, eq(commands.runId, runs.id))
     .where(and(eq(commands.orgId, orgId), eq(commands.idempotencyKey, key)))
     .limit(1);
-  return row ?? null;
+  return row ? { ...row.command, runOrigin: row.runOrigin } : null;
 }
 
 /**

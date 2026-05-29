@@ -172,10 +172,9 @@ export const runs = pgTable(
     commandProvider: text("command_provider"),
     commandSessionId: text("command_session_id"),
     commandCatalogRevision: bigint("command_catalog_revision", { mode: "number" }),
-    // First-class INTERNAL-run marker (memory self-improvement item 2). Set at
-    // command acceptance to the matched internal marker ("t3-parity", "canary",
-    // "e2e", ...) derived from the idempotency key / run id prefix — never the
-    // prompt (see src/runs/origin.ts). Null for every real product run. Internal
+    // First-class INTERNAL-run marker (memory self-improvement item 2). Set only
+    // by server-owned acceptance to an exact trusted `internal:*` origin (see
+    // src/runs/origin.ts). Public identifiers never influence it. Internal
     // runs (parity canaries, e2e/soak harnesses, QC probes) are excluded from
     // org-memory capture so evaluation traffic never pollutes team memory.
     origin: text("origin"),

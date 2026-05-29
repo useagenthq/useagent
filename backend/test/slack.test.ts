@@ -318,6 +318,12 @@ describe("slack event → run", () => {
     expect(run.org_id).toBe("org-skynet-dev");
     expect(run.parent_run_id).toBeNull();
     expect(run.thread_id).toBe(run.id); // a root run threads under itself
+    const [persisted] = await db
+      .select({ origin: runs.origin })
+      .from(runs)
+      .where(eq(runs.id, run.id))
+      .limit(1);
+    expect(persisted?.origin).toBeNull();
 
     // 👀 ack targeted the triggering message (now delivered via the durable
     // outbox relay, so wait for it rather than asserting synchronously).

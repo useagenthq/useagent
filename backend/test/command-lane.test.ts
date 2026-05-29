@@ -6,6 +6,10 @@ import {
   acceptRunCommand,
   preflightRunCommandReplay,
 } from "../src/commands";
+import {
+  acceptInternalRunCommand,
+  preflightInternalRunCommandReplay,
+} from "../src/commands/service";
 import { firingKey } from "../src/schedules/fire";
 import type { RunCommandInput, RunCommandIntent } from "../src/commands/types";
 import { claimNextRun, settleCommandForRun } from "../src/commands/dispatch";
@@ -38,6 +42,46 @@ async function retire(threadId: string): Promise<void> {
 }
 
 describe("durable command lane", () => {
+  test("trusted internal acceptance persists and replays only within the same origin", async () => {
+    const runId = crypto.randomUUID();
+    const key = `shared:${crypto.randomUUID()}`;
+    const intent = runIntentForTest("internal probe");
+    const input = commandForTest(runId, key, intent);
+    expect(await acceptInternalRunCommand({
+      ...input,
+      origin: "internal:e2e",
+    })).toMatchObject({ status: "created", runId });
+    expect(await preflightInternalRunCommandReplay({
+      orgId: ORG,
+      idempotencyKey: key,
+      intent,
+      origin: "internal:e2e",
+    })).toEqual({ status: "replayed", runId });
+    expect(await preflightRunCommandReplay({
+      orgId: ORG,
+      idempotencyKey: key,
+      intent,
+    })).toEqual({ status: "conflict", reason: "origin_mismatch" });
+    expect(await preflightInternalRunCommandReplay({
+      orgId: ORG,
+      idempotencyKey: key,
+      intent,
+      origin: "internal:canary",
+    })).toEqual({ status: "conflict", reason: "origin_mismatch" });
+    await retire(runId);
+
+    const productRunId = crypto.randomUUID();
+    const productKey = `shared:${crypto.randomUUID()}`;
+    await acceptRunCommand(commandForTest(productRunId, productKey, intent));
+    expect(await preflightInternalRunCommandReplay({
+      orgId: ORG,
+      idempotencyKey: productKey,
+      intent,
+      origin: "internal:e2e",
+    })).toEqual({ status: "conflict", reason: "origin_mismatch" });
+    await retire(productRunId);
+  });
+
   test("a moving PR head replays before resource resolution", async () => {
     const runId = crypto.randomUUID();
     const key = `moving-pr:${crypto.randomUUID()}`;
@@ -190,6 +234,40 @@ describe("durable command lane", () => {
     expect(replay.child.id).toBe(first.child.id);
     await retire(parentId);
     await retire(first.child.id);
+  });
+
+  test("a child session inherits its parent's exact trusted internal origin", async () => {
+    const parentId = crypto.randomUUID();
+    await acceptInternalRunCommand({
+      ...commandForTest(
+        parentId,
+        `internal-parent:${crypto.randomUUID()}`,
+        runIntentForTest("internal parent"),
+      ),
+      origin: "internal:t3-parity",
+    });
+    const child = await createChildSession({
+      orgId: ORG,
+      actorId: null,
+      parentRunId: parentId,
+      threadId: parentId,
+      prompt: "internal child",
+      engine: "mock",
+      model: "claude-opus-5",
+      repos: [],
+      memoryScope: "org",
+      idempotencyKey: crypto.randomUUID(),
+    });
+    expect(child.status).toBe("created");
+    if (child.status === "conflict") throw new Error("unexpected conflict");
+    const [row] = await db
+      .select({ origin: runs.origin })
+      .from(runs)
+      .where(eq(runs.id, child.child.id))
+      .limit(1);
+    expect(row?.origin).toBe("internal:t3-parity");
+    await retire(parentId);
+    await retire(child.child.id);
   });
 
   test("replays an accepted key even after provider readiness changes", async () => {

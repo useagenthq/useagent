@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { and, eq } from "drizzle-orm";
 import { db } from "../src/db/client";
-import { providerEvents, skillRevisions } from "../src/db/schema";
+import { providerEvents, runs, skillRevisions } from "../src/db/schema";
 import { acceptRunCommand, type RunCommandIntent } from "../src/commands";
 import { getRunWithSteps } from "../src/runs/repo";
 import { formatSkillMarkdown, hashSkillContent } from "../src/skills/format";
@@ -412,6 +412,12 @@ describe("skill revisions + versioning", () => {
     expect(got.body.skill_id).toBe(skill.id);
     expect(got.body.skill_version).toBe(1);
     expect(got.body.prompt).toBe("run via skill endpoint");
+    const [persisted] = await db
+      .select({ origin: runs.origin })
+      .from(runs)
+      .where(eq(runs.id, ran.body.id))
+      .limit(1);
+    expect(persisted?.origin).toBeNull();
 
     // Usage bumped.
     const list = await json<{ skills: any[] }>("/api/skills", { cookies: s.cookies });
