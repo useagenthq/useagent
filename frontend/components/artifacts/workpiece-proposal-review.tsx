@@ -388,15 +388,15 @@ export function WorkpieceProposalBanner({
     <section
       data-testid="workpiece-proposal-review"
       aria-label="Agent proposed changes"
-      className="shrink-0 overflow-hidden rounded-2lg border border-purple-500/40 bg-purple-500/10"
+      className="shrink-0 overflow-hidden rounded-2lg border border-border-button-default bg-background-secondary-default"
     >
       <button
         type="button"
         onClick={() => setOpen((value) => !value)}
         aria-expanded={open}
-        className="flex w-full items-center gap-2 px-3 py-2 text-left outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-purple-500"
+        className="flex w-full items-center gap-2 px-3 py-2 text-left outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-border-focus-ring"
       >
-        <RiSparkling2Line aria-hidden className="size-4 shrink-0 text-purple-600" />
+        <RiSparkling2Line aria-hidden className="size-4 shrink-0 text-foreground-icon-secondary" />
         <span className="text-body-2-medium text-text-primary">
           Agent proposed {pending.length === 1 ? "a change" : `${pending.length} changes`}
         </span>
@@ -411,7 +411,7 @@ export function WorkpieceProposalBanner({
       </button>
 
       {open && (
-        <div className="space-y-3 border-t border-purple-500/30 p-3">
+        <div className="space-y-3 border-t border-border-button-default p-3">
           {error && (
             <p
               role="alert"
@@ -459,7 +459,7 @@ function RequestedEditToast({
 
   return (
     <div className="animate-ai-fade-up flex items-center gap-2 rounded-2lg border border-border-button-default bg-background-primary-default px-3 py-2 shadow-sm">
-      <RiSparkling2Line aria-hidden className="size-4 shrink-0 text-purple-600" />
+      <RiSparkling2Line aria-hidden className="size-4 shrink-0 text-foreground-icon-secondary" />
       <div className="min-w-0 flex-1">
         <p className="truncate text-body-2-medium text-text-primary">Agent edit applied</p>
         {toast.summary && (
