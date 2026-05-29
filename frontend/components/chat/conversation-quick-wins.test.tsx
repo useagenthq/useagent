@@ -114,6 +114,17 @@ test("running thread threads runStartedAt into the composer status pill", () => 
   expect(html).toContain("1m 5s");
 });
 
+test("failure banner follows the projected turn status and summary after durable reconciliation", () => {
+  const turn = makeTurn("run-failed", "running", []);
+  turn.status = "failed";
+  turn.summary = "Repository authorization failed before sandbox startup.";
+
+  const html = render([turn]);
+
+  expect(html).toContain('data-session-ui="thread-error-banner"');
+  expect(html).toContain("Repository authorization failed before sandbox startup.");
+});
+
 test("settled answers carry the hover copy affordance; live turns do not", () => {
   const settled = render([makeTurn("run-settled", "completed", [])]);
   expect(settled).toContain('data-session-ui="message-copy-button"');

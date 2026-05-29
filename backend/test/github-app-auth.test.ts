@@ -5,7 +5,10 @@ import {
   getInstallationToken,
   getRepositoryInstallationToken,
 } from "../src/github/app-auth";
-import { resolveGithubSandboxToken } from "../src/github/auth";
+import {
+  resolveGithubCatalogAuth,
+  resolveGithubSandboxToken,
+} from "../src/github/auth";
 import { githubAppConfig, githubAuthSource, githubConfigured } from "../src/env";
 
 // A throwaway RSA key so we can both feed the App path a real private key AND
@@ -135,6 +138,17 @@ describe("github app config + precedence", () => {
     process.env.GITHUB_TOKEN = "ghp_pat";
     expect(githubAuthSource()).toBe("pat"); // PAT wins over the App
     delete process.env.GITHUB_TOKEN;
+  });
+
+  test("repository catalog prefers the App when a broader PAT is also configured", async () => {
+    process.env.GITHUB_TOKEN = "ghp_broad_deployment_token";
+    installFetchMock({ token: "ghs_installation_catalog" });
+
+    await expect(resolveGithubCatalogAuth()).resolves.toMatchObject({
+      source: "app",
+      token: "ghs_installation_catalog",
+      owner: "upstream-org",
+    });
   });
 
   test("partial app config (id without key) → disabled", () => {

@@ -62,7 +62,11 @@ function expectSource(sources: readonly FakeES[], index: number): FakeES {
   return source;
 }
 
-function harness(opts: { failCreates?: number } = {}) {
+function harness(opts: {
+  failCreates?: number;
+  reconcileSettlement?: (runId: string) => Promise<boolean>;
+  settlementAttempts?: number;
+} = {}) {
   const clock = new Clock();
   const sources: FakeES[] = [];
   const frames: { event: string; data: string }[] = [];
@@ -81,6 +85,8 @@ function harness(opts: { failCreates?: number } = {}) {
     },
     onFrame: (event, data) => frames.push({ event, data }),
     poll: () => { polls += 1; },
+    reconcileSettlement: opts.reconcileSettlement,
+    settlementAttempts: opts.settlementAttempts,
     timers: clock.host,
     maxAttempts: 5,
     healthyMs: 3000,
@@ -174,6 +180,74 @@ describe("thread-connection", () => {
       { event: "run", data: '{"run":{"id":"r1"}}' },
       { event: "native", data: '{"runId":"r1"}' },
     ]);
+  });
+
+  test("healthy SSE performs no durable settlement requests without terminal evidence", async () => {
+    let reconciliations = 0;
+    const h = harness({
+      reconcileSettlement: async () => {
+        reconciliations += 1;
+        return true;
+      },
+    });
+    h.conn.start();
+    h.last().onopen?.();
+    h.last().emit("snapshot", '{"runs":[{"id":"r1","status":"running"}]}');
+    h.clock.advance(60_000);
+    await Promise.resolve();
+
+    expect(reconciliations).toBe(0);
+  });
+
+  test("terminal evidence recovers a missed settled projection with bounded verification", async () => {
+    let reconciliations = 0;
+    const reconciledRuns: string[] = [];
+    const h = harness({
+      reconcileSettlement: async (runId) => {
+        reconciliations += 1;
+        reconciledRuns.push(runId);
+        return reconciliations === 2;
+      },
+    });
+    h.conn.start();
+    h.conn.requestSettlementReconcile("run-1");
+    await Promise.resolve();
+    expect(reconciliations).toBe(1);
+    expect(h.clock.timeoutCount()).toBe(1);
+
+    h.clock.advance(1_000);
+    await Promise.resolve();
+    expect(reconciliations).toBe(2);
+    expect(reconciledRuns).toEqual(["run-1", "run-1"]);
+    expect(h.clock.timeoutCount()).toBe(0);
+  });
+
+  test("backend-down settlement verification exhausts its budget and stop cancels retries", async () => {
+    let reconciliations = 0;
+    const h = harness({
+      reconcileSettlement: async () => {
+        reconciliations += 1;
+        return false;
+      },
+      settlementAttempts: 2,
+    });
+    h.conn.start();
+    h.conn.requestSettlementReconcile("run-1");
+    await Promise.resolve();
+    expect(reconciliations).toBe(1);
+
+    h.clock.advance(1_000);
+    await Promise.resolve();
+    expect(reconciliations).toBe(2);
+    expect(h.clock.timeoutCount()).toBe(0);
+
+    h.conn.requestSettlementReconcile("run-1");
+    await Promise.resolve();
+    expect(reconciliations).toBe(3);
+    expect(h.clock.timeoutCount()).toBe(1);
+    h.conn.stop();
+    h.clock.advance(60_000);
+    expect(reconciliations).toBe(3);
   });
 
   test("re-evaluates URL callbacks for each reconnect", () => {

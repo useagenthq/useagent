@@ -843,20 +843,20 @@ export function Conversation({
   // No banner while a turn is running - the live pill owns that state.
   const newestFailed = running
     ? undefined
-    : [...turns].reverse().find((t) => t.run.status === "failed" && t.run.summary);
+    : [...turns].reverse().find((t) => t.status === "failed" && t.summary);
   const threadErrorKey = getThreadErrorBannerKey(
     newestFailed?.run.id ?? "",
-    newestFailed?.run.summary ?? null,
+    newestFailed?.summary ?? null,
   );
   const [, bumpDismissTick] = useState(0);
   const threadError =
     newestFailed &&
     shouldShowThreadErrorBanner(
       newestFailed.run.id,
-      newestFailed.run.summary,
+      newestFailed.summary,
       isThreadErrorBannerDismissedForSession(threadErrorKey),
     )
-      ? newestFailed.run.summary
+      ? newestFailed.summary
       : null;
   const handleDismissThreadError = () => {
     dismissThreadErrorBannerForSession(threadErrorKey);

@@ -1,19 +1,19 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
-import { backendFetch } from "@/lib/backend-fetch";
-import { toThread, type ApiRun, type ApiStep, type RunStatus } from "./types";
-import { parseNativeFrame } from "./native-events";
-import type { StoredCanonicalEvent } from "./canonical-timeline";
-import { createThreadStore, type ThreadSnapshot, type ThreadStore } from "./thread-store";
 import {
   createThreadConnection,
-  decodeFrame,
-  THREAD_FRAME_TYPES,
   type DecodedFrame,
+  decodeFrame,
   type EventSourceLike,
+  THREAD_FRAME_TYPES,
   type ThreadConnection,
 } from "@skynet/agent-client";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { backendFetch } from "@/lib/backend-fetch";
+import type { StoredCanonicalEvent } from "./canonical-timeline";
+import { parseNativeFrame } from "./native-events";
+import { createThreadStore, type ThreadSnapshot, type ThreadStore } from "./thread-store";
+import { type ApiRun, type ApiStep, type RunStatus, toThread } from "./types";
 
 // useThreadStream — the session page's realtime unit (final_fix.md §4.7). ONE
 // EventSource to the thread endpoint for the page lifetime, keyed by the ROOT thread
@@ -59,7 +59,7 @@ export function shouldRetireOptimistic(
 /** Fetch the whole durable thread (oldest→newest), or null on any failure. */
 async function fetchThread(rootRunId: string): Promise<ApiRun[] | null> {
   try {
-    const res = await backendFetch(`/api/runs/${rootRunId}?thread=1`);
+    const res = await backendFetch(`/api/runs/${rootRunId}?thread=1`, { cache: "no-store" });
     if (!res.ok) return null;
     const runs = toThread(await res.json());
     return runs.length ? runs : null;
@@ -183,6 +183,7 @@ export function useThreadStream(rootRunId: string, initialThread: ApiRun[]): Thr
     // frame -> a single render for the burst (opencode-style "apply burst, paint once").
     let buffer: { event: string; data: string }[] = [];
     let scheduled: ReturnType<typeof setTimeout> | number | null = null;
+    let conn: ThreadConnection | null = null;
     const raf = typeof requestAnimationFrame === "function" ? requestAnimationFrame : null;
     const caf = typeof cancelAnimationFrame === "function" ? cancelAnimationFrame : null;
     const flushFrames = (): void => {
@@ -191,7 +192,18 @@ export function useThreadStream(rootRunId: string, initialThread: ApiRun[]): Thr
       const burst = buffer;
       buffer = [];
       active.batch(() => {
-        for (const f of burst) applyDecodedFrame(active, decodeFrame(f.event, f.data));
+        for (const f of burst) {
+          const frame = decodeFrame(f.event, f.data);
+          applyDecodedFrame(active, frame);
+          if (
+            frame.kind === "canonical-complete"
+          ) {
+            conn?.requestSettlementReconcile(frame.complete.runId);
+          } else if (frame.kind === "raw" && frame.type === "done") {
+            const runId = frame.payload.runId;
+            if (typeof runId === "string") conn?.requestSettlementReconcile(runId);
+          }
+        }
       });
     };
     const onFrame = (event: string, data: string): void => {
@@ -199,7 +211,14 @@ export function useThreadStream(rootRunId: string, initialThread: ApiRun[]): Thr
       if (scheduled != null) return;
       scheduled = raf ? raf(flushFrames) : setTimeout(flushFrames, 0);
     };
-    const conn: ThreadConnection = createThreadConnection({
+    const reconcileSettlement = async (runId: string): Promise<boolean> => {
+      const runs = await fetchThread(rootRunId);
+      if (!runs) return false;
+      active.applySnapshot(runs);
+      const run = runs.find((candidate) => candidate.id === runId);
+      return !!run && run.status !== "queued" && run.status !== "running";
+    };
+    conn = createThreadConnection({
       url: `/api/runs/${rootRunId}/thread-events`,
       frameTypes: THREAD_FRAME_TYPES,
       healthFrame: "snapshot",
@@ -210,6 +229,7 @@ export function useThreadStream(rootRunId: string, initialThread: ApiRun[]): Thr
           if (runs) active.applySnapshot(runs);
         });
       },
+      reconcileSettlement,
       timers: {
         setTimeout: (fn, ms) => setTimeout(fn, ms),
         clearTimeout: (t) => clearTimeout(t as ReturnType<typeof setTimeout>),

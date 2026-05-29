@@ -5,7 +5,7 @@ import {
   githubConfigured,
   githubTenantOrgId,
 } from "../env";
-import { resolveGithubAuth, type GithubAuth } from "./auth";
+import { resolveGithubCatalogAuth, type GithubAuth } from "./auth";
 
 // ---------------------------------------------------------------------------
 // Real GitHub repository listing — the source for the New Task composer's repo
@@ -60,7 +60,7 @@ const cache = new Map<string, { at: number; listing: RepoListing }>();
  *  App path's rotating installation token does not change the scope, so it is
  *  intentionally absent from the key. */
 function scopeKey(orgId: string): string {
-  const source = githubAuthSource();
+  const source = githubAppConfig() ? "app" : githubAuthSource();
   const owner =
     githubConfig().owner ??
     (source === "app" ? githubAppConfig()?.org ?? null : null);
@@ -212,7 +212,7 @@ export async function listRepos(orgId: string): Promise<RepoListing> {
   }
 
   try {
-    const auth = await resolveGithubAuth();
+    const auth = await resolveGithubCatalogAuth();
     const repos = await fetchRepos(auth);
     const listing: RepoListing = { configured: true, repos };
     cache.set(key, { at: now, listing });
@@ -315,7 +315,7 @@ export async function listBranches(
   if (hit && now - hit.at < CACHE_TTL_MS) return hit.listing;
 
   try {
-    const auth = await resolveGithubAuth();
+    const auth = await resolveGithubCatalogAuth();
     const branches = await fetchBranches(fullName, auth.token);
     const result: BranchListing = {
       configured: true,

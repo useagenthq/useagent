@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { eq } from "drizzle-orm";
 import { db } from "../src/db/client";
 import { runs } from "../src/db/schema";
 import { buildThreadPreamble } from "../src/runs/repo";
@@ -119,6 +120,50 @@ describe("runs", () => {
     expect(list.body.runs[0]).not.toHaveProperty("steps");
     expect(list.body.runs[0]).not.toHaveProperty("resolved_resources");
     expect(list.body.runs[0]).not.toHaveProperty("engine_session_id");
+  });
+
+  test("user-facing run lists hide internal parity traffic without deleting it", async () => {
+    const session = await createOrgSession("summary-internal-hidden");
+    const publicId = crypto.randomUUID();
+    const internalId = crypto.randomUUID();
+    await db.insert(runs).values([
+      {
+        id: publicId,
+        orgId: session.orgId,
+        userId: null,
+        prompt: "product run",
+        model: "test-model",
+        engine: "mock",
+        status: "completed",
+        threadId: publicId,
+      },
+      {
+        id: internalId,
+        orgId: session.orgId,
+        userId: null,
+        prompt: "internal parity run",
+        model: "test-model",
+        engine: "mock",
+        status: "completed",
+        threadId: internalId,
+        origin: "internal:t3-parity",
+      },
+    ]);
+
+    const detailed = await json<{ runs: any[] }>("/api/runs", {
+      cookies: session.cookies,
+    });
+    const summary = await json<{ runs: any[] }>("/api/runs?view=summary&limit=100", {
+      cookies: session.cookies,
+    });
+
+    expect(detailed.body.runs.some((run) => run.id === publicId)).toBe(true);
+    expect(summary.body.runs.some((run) => run.id === publicId)).toBe(true);
+    expect(detailed.body.runs.some((run) => run.id === internalId)).toBe(false);
+    expect(summary.body.runs.some((run) => run.id === internalId)).toBe(false);
+
+    const stored = await db.select().from(runs).where(eq(runs.id, internalId));
+    expect(stored).toHaveLength(1);
   });
 
   test("summary view can retain active roots older than its completed-run limit", async () => {
