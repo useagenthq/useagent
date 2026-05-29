@@ -8,6 +8,7 @@ FFMPEG_BIN="${SKYNET_FFMPEG_BIN:-ffmpeg}"
 FFPROBE_BIN="${SKYNET_FFPROBE_BIN:-ffprobe}"
 SCREENSHOT_BIN="${SKYNET_SCREENSHOT_BIN:-screencapture}"
 OSASCRIPT_BIN="${SKYNET_OSASCRIPT_BIN:-osascript}"
+PYTHON_BIN="${SKYNET_PYTHON_BIN:-/usr/bin/python3}"
 
 dry_run=0
 
@@ -195,22 +196,60 @@ start_recording() {
   write_session_json "$session_dir" "$session_id" "$scenario_slug" "$engine_slug" "$label_slug" "$created_at" \
     "recording" "false" "$video_path" "$pid_file" "$log_file" 0 "$created_at" "" "" 0 0 0 0
 
-  nohup "$FFMPEG_BIN" \
-    -y \
-    -hide_banner \
-    -loglevel error \
-    -f avfoundation \
-    -capture_cursor 1 \
-    -capture_mouse_clicks 1 \
-    -pixel_format bgr0 \
-    -i "$SCREEN_DEVICE:none" \
-    -c:v libx264 \
-    -pix_fmt yuv420p \
-    -movflags +faststart \
-    "$video_path" \
-    >"$log_file" 2>&1 &
+  local pid
+  pid="$(
+    "$PYTHON_BIN" - "$log_file" \
+      "$FFMPEG_BIN" \
+      -y \
+      -hide_banner \
+      -loglevel error \
+      -f avfoundation \
+      -capture_cursor 1 \
+      -capture_mouse_clicks 1 \
+      -pixel_format bgr0 \
+      -i "$SCREEN_DEVICE:none" \
+      -c:v libx264 \
+      -pix_fmt yuv420p \
+      -movflags +faststart \
+      "$video_path" <<'PY'
+import os
+import sys
 
-  local pid=$!
+log_path = sys.argv[1]
+command = sys.argv[2:]
+read_fd, write_fd = os.pipe()
+
+first_pid = os.fork()
+if first_pid:
+    os.close(write_fd)
+    detached_pid = os.read(read_fd, 64).decode("ascii")
+    os.close(read_fd)
+    _, status = os.waitpid(first_pid, 0)
+    if status != 0 or not detached_pid:
+        raise SystemExit(1)
+    print(detached_pid, end="")
+    raise SystemExit(0)
+
+os.close(read_fd)
+os.setsid()
+detached_pid = os.fork()
+if detached_pid:
+    os.write(write_fd, str(detached_pid).encode("ascii"))
+    os.close(write_fd)
+    os._exit(0)
+
+os.close(write_fd)
+stdin_fd = os.open(os.devnull, os.O_RDONLY)
+log_fd = os.open(log_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o644)
+os.dup2(stdin_fd, 0)
+os.dup2(log_fd, 1)
+os.dup2(log_fd, 2)
+os.close(stdin_fd)
+os.close(log_fd)
+os.chdir("/")
+os.execvp(command[0], command)
+PY
+  )"
   printf '%s\n' "$pid" >"$pid_file"
   ln -sfn "$session_dir" "$(session_link)"
   write_session_json "$session_dir" "$session_id" "$scenario_slug" "$engine_slug" "$label_slug" "$created_at" \

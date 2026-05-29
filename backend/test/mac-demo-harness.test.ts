@@ -134,6 +134,7 @@ describe("mac demo harness", () => {
     const fakeProbe = join(baseDir, "fake-ffprobe.sh");
     const signalFile = join(baseDir, "signal.txt");
     const readyFile = join(baseDir, "ready.txt");
+    const boundedExec = join(baseDir, "bounded-exec.py");
     const sessionId = "sigint-session--finalize--codex--demo";
     const sessionDir = join(baseDir, sessionId);
 
@@ -167,8 +168,29 @@ while True:
 printf 'codec_name=h264\\nwidth=1280\\nheight=720\\nduration=1.25\\nsize=42\\n'
 `,
       );
+      writeFileSync(
+        boundedExec,
+        `#!/usr/bin/env python3
+import os
+import signal
+import sys
+import time
+
+os.setsid()
+signal.signal(signal.SIGTERM, signal.SIG_IGN)
+child_pid = os.fork()
+if child_pid == 0:
+    os.execvp(sys.argv[1], sys.argv[1:])
+
+_, status = os.waitpid(child_pid, 0)
+os.killpg(os.getpgrp(), signal.SIGTERM)
+time.sleep(0.1)
+raise SystemExit(os.waitstatus_to_exitcode(status))
+`,
+      );
       chmodSync(fakeRecorder, 0o755);
       chmodSync(fakeProbe, 0o755);
+      chmodSync(boundedExec, 0o755);
 
       const env = {
         SKYNET_DEMO_SESSION_ID: "sigint-session",
@@ -178,16 +200,42 @@ printf 'codec_name=h264\\nwidth=1280\\nheight=720\\nduration=1.25\\nsize=42\\n'
         SKYNET_TEST_SIGNAL_FILE: signalFile,
         SKYNET_TEST_READY_FILE: readyFile,
       };
-      const started = run(
-        ["--base-dir", baseDir, "start", "--scenario", "Finalize", "--engine", "Codex", "--label", "Demo"],
-        env,
+      const startedProc = Bun.spawnSync(
+        [
+          "/usr/bin/python3",
+          boundedExec,
+          "bash",
+          script,
+          "--base-dir",
+          baseDir,
+          "start",
+          "--scenario",
+          "Finalize",
+          "--engine",
+          "Codex",
+          "--label",
+          "Demo",
+        ],
+        {
+          env: { ...process.env, ...env },
+          stdout: "pipe",
+          stderr: "pipe",
+        },
       );
+      const started = {
+        exitCode: startedProc.exitCode,
+        stdout: new TextDecoder().decode(startedProc.stdout),
+        stderr: new TextDecoder().decode(startedProc.stderr),
+      };
       expect(started.exitCode).toBe(0);
 
       for (let attempt = 0; attempt < 100 && !existsSync(readyFile); attempt += 1) {
         await Bun.sleep(10);
       }
       expect(existsSync(readyFile)).toBe(true);
+
+      const recorderPid = Number(readFileSync(join(sessionDir, `${sessionId}.pid`), "utf8").trim());
+      expect(() => process.kill(recorderPid, 0)).not.toThrow();
 
       const stopped = run(["--base-dir", baseDir, "stop", "--session-dir", sessionDir], env);
       expect(stopped.exitCode).toBe(0);
