@@ -58,12 +58,14 @@ export function ThreadSidebar({ active }: { active?: ThreadSidebarActive }) {
       <SidebarNavItem
         href="/agent/new"
         icon={RiAddLine}
+        tone="primary"
         label="New thread"
         active={active === "new"}
       />
       <SidebarNavItem
         href="/dashboard"
         icon={RiFolderLine}
+        tone="blue"
         label="All projects"
         active={active === "projects"}
         trailing={<WorkingProjectStatus />}
@@ -71,12 +73,14 @@ export function ThreadSidebar({ active }: { active?: ThreadSidebarActive }) {
       <SidebarNavItem
         href="/dashboard"
         icon={RiDashboardLine}
+        tone="purple"
         label="Dashboard"
         active={active === "dashboard"}
       />
       <SidebarNavItem
         href="/skills"
         icon={RiBookShelfLine}
+        tone="green"
         label="Library"
         active={active === "library"}
       />
