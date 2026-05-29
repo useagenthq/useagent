@@ -12,6 +12,7 @@ import { artifactAuthoringProfile, inferWorkpieceKind } from "@skynet/artifact-w
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { LoadingState } from "@/components/ai/loading-state";
 import { Thinking } from "@/components/ai/thinking";
+import { PlanChecklist } from "@/components/agent-ui/plan-checklist";
 import { formatArtifactSize } from "@/components/artifacts/model";
 import { useOpenWorkpiece } from "@/components/chat/workspace-open-context";
 import type { ApprovalDecision, PendingApproval } from "@/components/chat/approval-state";
@@ -42,7 +43,6 @@ import { Markdown } from "@/components/prompt-kit/markdown";
 import {
   segmentTimeline,
   type TimelineSegment,
-  workEntriesFromTimeline,
 } from "@/components/session-ui/adapter";
 import {
   ContextRecallFold,
@@ -426,8 +426,8 @@ export function Timeline({
   );
   // Artifacts are deliverables, not narration: they render AFTER the prose and
   // tool activity so an answer never appears below its own attachment.
-  const artifactSegs = segments.filter((s) => s.kind !== "tools" && s.node.kind === "artifact");
-  const flowSegs = segments.filter((s) => s.kind === "tools" || s.node.kind !== "artifact");
+  const artifactSegs = segments.filter((s) => s.kind === "node" && s.node.kind === "artifact");
+  const flowSegs = segments.filter((s) => s.kind !== "node" || s.node.kind !== "artifact");
   const flowUnits = groupContextRecall(flowSegs);
   return (
     <div className="space-y-3" data-testid="session-timeline">
@@ -436,6 +436,14 @@ export function Timeline({
           <ContextRecallFold key={unit.key} markers={unit.markers} />
         ) : unit.seg.kind === "tools" ? (
           <WorkGroup key={unit.seg.key} entries={unit.seg.entries} turnSettled={!live} />
+        ) : unit.seg.kind === "plan" ? (
+          <PlanChecklist
+            key={unit.seg.key}
+            title="Todos"
+            entries={unit.seg.entries}
+            testId="todo-list"
+            className="animate-ai-fade-up"
+          />
         ) : unit.seg.node.kind === "marker" ? (
           <MarkerRow key={unit.seg.key} marker={unit.seg.node.marker} />
         ) : unit.seg.node.kind === "artifact" ? (
@@ -449,7 +457,7 @@ export function Timeline({
         ),
       )}
       {artifactSegs.map((seg) =>
-        seg.kind !== "tools" && seg.node.kind === "artifact" ? (
+        seg.kind === "node" && seg.node.kind === "artifact" ? (
           <ArtifactRow key={seg.key} node={seg.node} />
         ) : null,
       )}
@@ -522,7 +530,6 @@ function TurnBlock({
     : "native";
 
   const activity = steps.filter((s) => s.kind !== "done" && isRenderableTimelineStep(s));
-  const latestLabel = activity.at(-1)?.label ?? "Starting up";
   const failed = status === "failed";
   // Settled history drops sandbox plumbing rows ("Sandbox — Thinking…" etc.):
   // they're live indicators, not work worth re-reading. Live rendering keeps
@@ -593,17 +600,16 @@ function TurnBlock({
               ? null
               : live
                 ? activity.length > 0 && (
-                    <>
-                      <WorkGroup
-                        entries={workEntriesFromTimeline(toolNodesFromSteps(activity), true)}
-                        turnSettled={false}
-                      />
-                      <WorkingIndicator createdAt={run.created_at} stepLabel={latestLabel} />
-                    </>
+                    <Timeline
+                      nodes={toolNodesFromSteps(activity)}
+                      live
+                      workingSince={run.created_at}
+                    />
                   )
                 : settled.length > 0 && (
-                    <WorkGroup
-                      entries={workEntriesFromTimeline(toolNodesFromSteps(settled), false)}
+                    <Timeline
+                      nodes={toolNodesFromSteps(settled)}
+                      live={false}
                     />
                   )}
 

@@ -27,7 +27,12 @@ function ev(kind: string, body: Record<string, unknown> = {}): StoredCanonicalEv
   } as StoredCanonicalEvent;
 }
 
-function makeTurn(id: string, status: RunStatus, canonical: StoredCanonicalEvent[]): Turn {
+function makeTurn(
+  id: string,
+  status: RunStatus,
+  canonical?: StoredCanonicalEvent[],
+  steps: Turn["steps"] = [],
+): Turn {
   const run: ApiRun = {
     id,
     org_id: null,
@@ -40,18 +45,17 @@ function makeTurn(id: string, status: RunStatus, canonical: StoredCanonicalEvent
     duration_ms: null,
     created_at: "2026-08-17T09:00:00Z",
     updated_at: "2026-08-17T09:01:00Z",
-    steps: [],
+    steps,
   };
   return {
     run,
-    steps: [],
+    steps,
     status,
     summary: run.summary,
     live: status === "running",
     liveText: "",
     liveReasoning: "",
-    canonical,
-    canonicalComplete: true,
+    ...(canonical ? { canonical, canonicalComplete: true } : {}),
   };
 }
 
@@ -214,7 +218,8 @@ test("live turn tails with the T3 working indicator and hides the in-flight row"
   // Working indicator with the self-ticking timer and the in-flight step suffix.
   expect(html).toContain('data-session-ui="working-indicator"');
   expect(html).toContain("Working for");
-  expect(html).toContain("bun run typecheck");
+  expect(html).toContain("· Run");
+  expect(html).not.toContain("· Run - bun run typecheck");
   // The old LoadingState "Working" shimmer tail is gone from the timeline (no
   // narration is streaming here, so nothing else may render it either).
   expect(html).not.toContain("agent-progress-loading-text");
@@ -222,4 +227,54 @@ test("live turn tails with the T3 working indicator and hides the in-flight row"
   // Completed work folds T3-style even while live (newest visible, older hidden).
   expect(html).toContain('data-session-ui="work-group"');
   expect(html).toContain("+1 previous tool call");
+});
+
+test("canonical OpenCode plan renders the latest checklist instead of a generic tool row", () => {
+  const html = render([
+    makeTurn("run-plan", "completed", [
+      ev("plan.updated", {
+        entries: [{ id: "plan-1", text: "Inspect the app", status: "in_progress" }],
+      }),
+      ev("plan.updated", {
+        entries: [
+          { id: "plan-1", text: "Inspect the app", status: "completed" },
+          { id: "plan-2", text: "Build the todo list", status: "in_progress" },
+        ],
+      }),
+    ]),
+  ]);
+
+  expect(html).toContain('data-testid="todo-list"');
+  expect(html).toContain("Inspect the app");
+  expect(html).toContain("Build the todo list");
+  expect(html).not.toContain('data-session-ui="work-entry-row"');
+});
+
+test("durable OpenCode todowrite fallback renders the checklist instead of a generic tool row", () => {
+  const planStep: Turn["steps"][number] = {
+    id: "step-plan",
+    run_id: "run-plan-fallback",
+    idx: 1,
+    kind: "command",
+    label: "Plan",
+    chip: "todowrite",
+    code_json: JSON.stringify({
+      tool: "todowrite",
+      input: {
+        todos: [
+          { id: "todo-1", content: "Create components", status: "completed" },
+          { id: "todo-2", content: "Verify rendering", status: "in_progress" },
+        ],
+      },
+    }),
+    created_at: "2026-08-17T09:00:00Z",
+  };
+  const html = render([
+    makeTurn("run-plan-fallback", "completed", undefined, [planStep]),
+  ]);
+
+  expect(html).toContain('data-testid="todo-list"');
+  expect(html).toContain("Create components");
+  expect(html).toContain("Verify rendering");
+  expect(html).not.toContain('data-session-ui="work-entry-row"');
 });

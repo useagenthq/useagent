@@ -808,6 +808,7 @@ export type TodoStatus = "pending" | "in_progress" | "completed" | "cancelled";
 
 /** One plan item from a `todowrite` tool call. */
 export interface TodoItem {
+  id: string;
   content: string;
   status: TodoStatus;
 }
@@ -831,11 +832,15 @@ export function parseTodos(step: ApiStep): TodoItem[] | null {
   const raw = asRecord(code?.input)?.todos;
   if (!Array.isArray(raw)) return null;
   const items: TodoItem[] = [];
-  for (const entry of raw) {
+  for (const [index, entry] of raw.entries()) {
     const rec = asRecord(entry);
     const content = pickString(rec, ["content", "title", "text"]);
     if (!content) continue;
-    items.push({ content, status: normalizeTodoStatus(rec?.status) });
+    items.push({
+      id: pickString(rec, ["id"]) ?? `${index}-${content}`,
+      content,
+      status: normalizeTodoStatus(rec?.status),
+    });
   }
   return items.length > 0 ? items : null;
 }

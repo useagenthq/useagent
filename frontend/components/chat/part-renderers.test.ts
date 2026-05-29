@@ -79,6 +79,7 @@ describe("parseTodos", () => {
     );
     expect(todos).not.toBeNull();
     expect(todos!.map((t) => t.status)).toEqual(["completed", "in_progress", "pending", "cancelled"]);
+    expect(todos![0].id).toBe("0-Scaffold");
     expect(todos![0].content).toBe("Scaffold");
   });
 

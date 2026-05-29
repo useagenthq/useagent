@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { buildTimelineFromCanonical, type CanonicalEventLike } from "./canonical-timeline";
-import { type ApiStep, deriveTrace, isRenderableTimelineStep, parseTodos } from "./types";
+import { type ApiStep, deriveTrace, isRenderableTimelineStep } from "./types";
 
 function event(kind: string, seq: number, body: Record<string, unknown> = {}): CanonicalEventLike {
   return {
@@ -183,7 +183,7 @@ describe("canonical activity projection", () => {
   });
 
   test("renders only the latest plan snapshot through the shared todo grammar", () => {
-    const projected = onlyTool([
+    const nodes = buildTimelineFromCanonical([
       event("plan.updated", 1, {
         entries: [{ id: "inspect", text: "Inspect flow", status: "in_progress" }],
       }),
@@ -193,12 +193,16 @@ describe("canonical activity projection", () => {
           { id: "verify", text: "Run checks", status: "in_progress" },
         ],
       }),
-    ]);
+    ], new Map(), false);
 
-    expect(parseTodos(projected)).toEqual([
-      { content: "Inspect flow", status: "completed" },
-      { content: "Run checks", status: "in_progress" },
-    ]);
+    expect(nodes).toEqual([{
+      kind: "plan",
+      key: "event-2",
+      entries: [
+        { id: "inspect", text: "Inspect flow", status: "completed" },
+        { id: "verify", text: "Run checks", status: "in_progress" },
+      ],
+    }]);
   });
 
   test("projects a file receipt with its durable diff reference and no invented patch", () => {
