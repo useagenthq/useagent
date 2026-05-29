@@ -94,11 +94,11 @@ export function SkillsView({
           <div className="flex items-center gap-2.5">
             <RiFlashlightLine
               aria-hidden
-              className="size-5 text-text-strong-950"
+              className="size-5 text-foreground-icon-primary"
             />
-            <h1 className="text-display-sm text-text-strong-950">Skills</h1>
+            <h1 className="text-title-2-medium text-text-primary">Skills</h1>
           </div>
-          <p className="mt-1.5 text-paragraph-sm text-text-sub-600">
+          <p className="mt-1.5 text-body-2-regular text-text-secondary">
             Reusable skills useAgent follows for repeatable work
           </p>
         </div>
@@ -109,7 +109,7 @@ export function SkillsView({
         error ? (
           <BackendUnreachable className="mt-10" onRetry={refetch} />
         ) : (
-          <p className="mt-10 text-paragraph-sm text-text-sub-600">
+          <p className="mt-10 text-body-2-regular text-text-secondary">
             No skills yet. Capture your first skill to get started.
           </p>
         )

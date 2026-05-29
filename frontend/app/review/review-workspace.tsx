@@ -42,12 +42,12 @@ function initials(login: string): string {
  *  #num, title, author, state badge, relative time). */
 function PrRow({ pr }: { pr: PullRequestItem }) {
   return (
-    <div className='flex flex-col gap-2 rounded-2xl border border-stroke-soft-200 bg-bg-white-0 px-4 py-3.5 transition-colors hover:bg-bg-weak-50'>
+    <div className='flex flex-col gap-2 rounded-2xl border border-border-button-default bg-background-primary-default px-4 py-3.5 transition-colors hover:bg-background-secondary-default'>
       <div className='flex items-center justify-between gap-2'>
-        <span className='[font-family:var(--font-mono)] text-label-xs text-text-soft-400'>
+        <span className='[font-family:var(--font-mono)] text-label-xs text-text-tertiary'>
           {pr.repo} #{pr.number}
         </span>
-        <span className='shrink-0 text-paragraph-xs text-text-soft-400'>
+        <span className='shrink-0 text-caption-1-regular text-text-tertiary'>
           {relativeTime(pr.updated_at)}
         </span>
       </div>
@@ -56,9 +56,9 @@ function PrRow({ pr }: { pr: PullRequestItem }) {
         href={pr.url}
         target='_blank'
         rel='noopener noreferrer'
-        className='group/title rounded outline-none focus-visible:ring-2 focus-visible:ring-stroke-strong-950'
+        className='group/title rounded outline-none focus-visible:ring-2 focus-visible:ring-border-focus-ring'
       >
-        <h3 className='line-clamp-2 text-label-sm text-text-strong-950 group-hover/title:underline'>
+        <h3 className='line-clamp-2 text-body-2-medium text-text-primary group-hover/title:underline'>
           {pr.title}
         </h3>
       </a>
@@ -72,7 +72,7 @@ function PrRow({ pr }: { pr: PullRequestItem }) {
               initials(pr.author)
             )}
           </Avatar.Root>
-          <span className='text-label-xs text-text-sub-600'>{pr.author}</span>
+          <span className='text-label-xs text-text-secondary'>{pr.author}</span>
           {pr.draft ? (
             <Badge.Root variant='lighter' color='gray'>
               Draft
@@ -87,7 +87,7 @@ function PrRow({ pr }: { pr: PullRequestItem }) {
         <div className='flex shrink-0 items-center gap-1'>
           <Link
             href={discussHref(pr)}
-            className='inline-flex items-center gap-1 rounded-lg px-2 py-1 text-label-xs text-text-sub-600 outline-none transition-colors hover:bg-bg-weak-50 hover:text-text-strong-950 focus-visible:ring-2 focus-visible:ring-stroke-strong-950'
+            className='inline-flex items-center gap-1 rounded-lg px-2 py-1 text-label-xs text-text-secondary outline-none transition-colors hover:bg-background-secondary-default hover:text-text-primary focus-visible:ring-2 focus-visible:ring-border-focus-ring'
           >
             <RiChat3Line className='size-3.5' aria-hidden />
             Discuss
@@ -96,7 +96,7 @@ function PrRow({ pr }: { pr: PullRequestItem }) {
             href={pr.url}
             target='_blank'
             rel='noopener noreferrer'
-            className='inline-flex items-center gap-1 rounded-lg px-2 py-1 text-label-xs text-text-soft-400 outline-none transition-colors hover:bg-bg-weak-50 hover:text-text-strong-950 focus-visible:ring-2 focus-visible:ring-stroke-strong-950'
+            className='inline-flex items-center gap-1 rounded-lg px-2 py-1 text-label-xs text-text-tertiary outline-none transition-colors hover:bg-background-secondary-default hover:text-text-primary focus-visible:ring-2 focus-visible:ring-border-focus-ring'
           >
             <RiExternalLinkLine className='size-3.5' aria-hidden />
             GitHub
@@ -120,21 +120,21 @@ function StateCard({
   body: string;
 }) {
   return (
-    <div className='flex flex-col items-center gap-2 rounded-2xl border border-stroke-soft-200 bg-bg-weak-50 px-6 py-12 text-center'>
+    <div className='flex flex-col items-center gap-2 rounded-2xl border border-border-button-default bg-background-secondary-default px-6 py-12 text-center'>
       <span
         className={
           tone === 'warning'
-            ? 'flex size-10 items-center justify-center rounded-full bg-warning-lighter'
-            : 'flex size-10 items-center justify-center rounded-full bg-bg-soft-200'
+            ? 'flex size-10 items-center justify-center rounded-full bg-status-yellow-background'
+            : 'flex size-10 items-center justify-center rounded-full bg-background-tertiary-default'
         }
       >
         <Icon
-          className={tone === 'warning' ? 'size-5 text-warning-base' : 'size-5 text-text-sub-600'}
+          className={tone === 'warning' ? 'size-5 text-yellow-600' : 'size-5 text-text-secondary'}
           aria-hidden
         />
       </span>
-      <p className='text-label-md text-text-strong-950'>{title}</p>
-      <p className='max-w-sm text-paragraph-sm text-text-sub-600'>{body}</p>
+      <p className='text-label-md text-text-primary'>{title}</p>
+      <p className='max-w-sm text-body-2-regular text-text-secondary'>{body}</p>
     </div>
   );
 }
@@ -145,7 +145,7 @@ function LoadingRows() {
       {[0, 1, 2, 3].map((i) => (
         <div
           key={i}
-          className='h-[92px] animate-pulse rounded-2xl border border-stroke-soft-200 bg-bg-weak-50'
+          className='h-[92px] animate-pulse rounded-2xl border border-border-button-default bg-background-secondary-default'
         />
       ))}
     </div>
@@ -184,14 +184,14 @@ export function ReviewWorkspace() {
       <div className='mx-auto flex w-full max-w-[760px] flex-col gap-5 px-6 py-8 sm:px-8'>
         <header className='flex flex-col gap-1'>
           <div className='flex items-center gap-2'>
-            <h1 className='text-title-h5 text-text-strong-950'>Pull requests</h1>
+            <h1 className='text-title-h5 text-text-primary'>Pull requests</h1>
             {count !== null ? (
               <Badge.Root variant='lighter' color='gray'>
                 {count}
               </Badge.Root>
             ) : null}
           </div>
-          <p className='text-paragraph-sm text-text-sub-600'>
+          <p className='text-body-2-regular text-text-secondary'>
             Open pull requests across your connected GitHub repositories.
           </p>
         </header>
@@ -239,7 +239,7 @@ export function ReviewWorkspace() {
               <PrRow key={pr.id} pr={pr} />
             ))}
             {state.result.truncated ? (
-              <p className='flex items-center gap-1.5 px-1 pt-1 text-paragraph-xs text-text-soft-400'>
+              <p className='flex items-center gap-1.5 px-1 pt-1 text-caption-1-regular text-text-tertiary'>
                 <RiGitPullRequestLine className='size-3.5 shrink-0' aria-hidden />
                 Showing the most recently updated pull requests; some repositories were not scanned.
               </p>

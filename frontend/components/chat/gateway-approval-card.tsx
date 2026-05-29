@@ -9,7 +9,7 @@
 import { RiShieldCheckLine } from "@remixicon/react";
 import { useState } from "react";
 import { ApprovalCard } from "@/components/ai/approval-card";
-import * as Badge from "@/components/ui/badge";
+import { Chip } from "@/components/base/badges/chip";
 import {
   type GatewayApproval,
   type GatewayApprovalDecision,
@@ -29,12 +29,12 @@ import {
 
 const STATUS_BADGE: Record<
   GatewayApprovalStatus,
-  { readonly color: "orange" | "green" | "red" | "gray"; readonly label: string }
+  { readonly color: "yellow" | "lime" | "rose" | "neutral"; readonly label: string }
 > = {
-  pending: { color: "orange", label: "Pending" },
-  approved: { color: "green", label: "Approved" },
-  denied: { color: "red", label: "Denied" },
-  expired: { color: "gray", label: "Expired" },
+  pending: { color: "yellow", label: "Pending" },
+  approved: { color: "lime", label: "Approved" },
+  denied: { color: "rose", label: "Denied" },
+  expired: { color: "neutral", label: "Expired" },
 };
 
 function formatTimestamp(iso: string): string | null {
@@ -89,42 +89,42 @@ export function GatewayApprovalCard({
 
   return (
     <section data-testid="gateway-approval-card" className="space-y-2">
-      <div className="border-stroke-soft-200 bg-bg-weak-50 space-y-3 rounded-2xl border p-4">
+      <div className="border-border-button-default bg-background-secondary-default space-y-3 rounded-2xl border p-4">
         <div className="flex items-start justify-between gap-3">
           <div className="flex min-w-0 items-center gap-2">
-            <span className="bg-warning-alpha-10 text-warning-base flex size-7 shrink-0 items-center justify-center rounded-full">
+            <span className="bg-yellow-500/10 text-yellow-600 flex size-7 shrink-0 items-center justify-center rounded-full">
               <RiShieldCheckLine className="size-4" aria-hidden />
             </span>
             <div className="min-w-0">
-              <p className="text-label-sm text-text-strong-950">
+              <p className="text-body-2-medium text-text-primary">
                 Tool approval:{" "}
-                <span className="font-mono text-label-sm">{approval.toolName}</span>
+                <span className="font-mono text-body-2-medium">{approval.toolName}</span>
               </p>
               {requestedAt && (
-                <p className="text-paragraph-xs text-text-soft-400">
+                <p className="text-caption-1-regular text-text-tertiary">
                   Requested {requestedAt}
                 </p>
               )}
             </div>
           </div>
-          <Badge.Root variant="light" color={badge.color}>
+          <Chip variant="caption" color={badge.color}>
             {badge.label}
-          </Badge.Root>
+          </Chip>
         </div>
 
         {entries.length > 0 && (
-          <dl className="border-stroke-soft-200 bg-bg-white-0 space-y-1 overflow-hidden rounded-xl border px-3 py-2 font-mono text-paragraph-xs">
+          <dl className="border-border-button-default bg-background-primary-default space-y-1 overflow-hidden rounded-xl border px-3 py-2 font-mono text-caption-1-regular">
             {entries.map((entry) => (
               <div key={entry.key} className="flex min-w-0 gap-2">
-                <dt className="text-text-sub-600 shrink-0">{entry.key}:</dt>
-                <dd className="text-text-strong-950 truncate">{entry.value}</dd>
+                <dt className="text-text-secondary shrink-0">{entry.key}:</dt>
+                <dd className="text-text-primary truncate">{entry.value}</dd>
               </div>
             ))}
           </dl>
         )}
 
         {status !== "pending" && (
-          <p className="text-paragraph-xs text-text-sub-600">
+          <p className="text-caption-1-regular text-text-secondary">
             {resolution.phase === "submitting"
               ? decisionInFlightLine(resolution.decision)
               : resolvedLine(status, approval)}
@@ -134,7 +134,7 @@ export function GatewayApprovalCard({
             the record resolves (e.g. the 409 refetch landed) the resolved line
             is the whole truth. */}
         {status === "pending" && error && (
-          <p className="text-paragraph-xs text-error-base">{error}</p>
+          <p className="text-caption-1-regular text-red-500">{error}</p>
         )}
       </div>
 

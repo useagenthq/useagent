@@ -3,7 +3,7 @@
 import { RiArrowDownSLine, RiSparkling2Line } from "@remixicon/react";
 import { type ReactNode, useState } from "react";
 import { useReportWorking } from "@/components/shell/working-signal";
-import { cnExt as cn } from "@/utils/cn";
+import { cx } from "@/utils/cx";
 
 export interface ThinkingProps {
   /** Disclosure label; shimmers while `active`. */
@@ -38,27 +38,27 @@ export function Thinking({
   useReportWorking(active);
 
   return (
-    <div className={cn("flex w-full flex-col", className)}>
+    <div className={cx("flex w-full flex-col", className)}>
       <button
         type="button"
         aria-expanded={hasSteps ? expanded : undefined}
         onClick={() => hasSteps && setExpanded((e) => !e)}
         disabled={!hasSteps}
-        className={cn(
+        className={cx(
           "-mx-1.5 flex w-fit items-center gap-1.5 rounded-md px-1.5 py-0.5 transition-colors duration-100",
-          hasSteps ? "hover:bg-bg-soft-200" : "cursor-default",
+          hasSteps ? "hover:bg-background-secondary-hover" : "cursor-default",
         )}
       >
-        <RiSparkling2Line className="size-3.5 shrink-0 text-text-sub-600" aria-hidden />
+        <RiSparkling2Line className="size-3.5 shrink-0 text-text-secondary" aria-hidden />
         {active ? (
-          <span className="agent-progress-loading-text text-label-xs">{label}</span>
+          <span className="agent-progress-loading-text text-caption-1-medium">{label}</span>
         ) : (
-          <span className="text-label-xs text-text-sub-600">{label}</span>
+          <span className="text-caption-1-medium text-text-secondary">{label}</span>
         )}
         {hasSteps && (
           <RiArrowDownSLine
-            className={cn(
-              "size-3.5 shrink-0 text-text-soft-400 transition-transform duration-300",
+            className={cx(
+              "size-3.5 shrink-0 text-text-tertiary transition-transform duration-300",
               expanded && "rotate-180",
             )}
             aria-hidden
@@ -75,7 +75,7 @@ export function Thinking({
           }}
         >
           <div className="overflow-hidden">
-            <div className="mt-1 ml-1.5 border-l border-stroke-soft-200/60 pl-3">
+            <div className="mt-1 ml-1.5 border-l border-border-button-default/60 pl-3">
               <div className="flex flex-col gap-1 py-0.5">{children}</div>
             </div>
           </div>

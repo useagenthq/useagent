@@ -93,12 +93,12 @@ export function RunUploadChips({
       {uploads.map((upload) => (
         <li
           key={upload.localId}
-          className="border-stroke-soft-200 bg-bg-weak-50 text-text-sub-600 inline-flex max-w-full items-center gap-1.5 rounded-lg border px-2 py-1 text-label-xs"
+          className="border-border-button-default bg-background-secondary-default text-text-secondary inline-flex max-w-full items-center gap-1.5 rounded-lg border px-2 py-1 text-caption-1-medium"
         >
           {upload.status === "uploading" ? (
             <RiLoader4Line className="size-3.5 animate-spin" aria-label="Uploading" />
           ) : upload.status === "error" ? (
-            <RiErrorWarningLine className="text-error-base size-3.5" aria-label="Upload failed" />
+            <RiErrorWarningLine className="text-red-500 size-3.5" aria-label="Upload failed" />
           ) : (
             <RiFileLine className="size-3.5" aria-hidden />
           )}
@@ -107,7 +107,7 @@ export function RunUploadChips({
             type="button"
             aria-label={`Remove ${upload.name}`}
             onClick={() => onRemove(upload)}
-            className="hover:text-text-strong-950 rounded"
+            className="hover:text-text-primary rounded"
           >
             <RiCloseLine className="size-3.5" aria-hidden />
           </button>

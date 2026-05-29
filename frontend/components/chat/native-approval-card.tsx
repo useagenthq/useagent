@@ -1,7 +1,7 @@
 "use client";
 
 import { RiShieldCheckLine } from "@remixicon/react";
-import * as Button from "@/components/ui/button";
+import { Button } from "@/components/base/buttons/button";
 import type { ApprovalDecision, PendingApproval } from "./approval-state";
 
 export function NativeApprovalCard({
@@ -25,60 +25,56 @@ export function NativeApprovalCard({
           : "use a tool";
   return (
     <section
-      className="border-stroke-soft-200 bg-bg-weak-50 space-y-3 rounded-2xl border p-4"
+      className="border-border-button-default bg-background-secondary-default space-y-3 rounded-2xl border p-4"
       data-testid="native-approval-card"
     >
       <div className="flex items-start gap-2">
-        <span className="bg-warning-alpha-10 text-warning-base flex size-7 shrink-0 items-center justify-center rounded-full">
+        <span className="bg-yellow-500/10 text-yellow-600 flex size-7 shrink-0 items-center justify-center rounded-full">
           <RiShieldCheckLine className="size-4" aria-hidden />
         </span>
         <div className="min-w-0">
-          <p className="text-label-sm text-text-strong-950">Approval required to {action}</p>
+          <p className="text-body-2-medium text-text-primary">Approval required to {action}</p>
           {request.detail && (
-            <pre className="text-paragraph-xs text-text-sub-600 mt-1 max-h-32 overflow-auto whitespace-pre-wrap break-words">
+            <pre className="text-caption-1-regular text-text-secondary mt-1 max-h-32 overflow-auto whitespace-pre-wrap break-words">
               {request.detail}
             </pre>
           )}
         </div>
       </div>
-      {error && <p className="text-paragraph-xs text-error-base">{error}</p>}
+      {error && <p className="text-caption-1-regular text-red-500">{error}</p>}
       <div className="flex flex-wrap justify-end gap-2">
-        <Button.Root
-          variant="neutral"
-          mode="ghost"
+        <Button
+          variant="ghost"
           size="small"
           disabled={submitting}
           onClick={() => void onRespond("cancel")}
         >
           Cancel turn
-        </Button.Root>
-        <Button.Root
-          variant="error"
-          mode="stroke"
+        </Button>
+        <Button
+          variant="danger"
           size="small"
           disabled={submitting}
           onClick={() => void onRespond("decline")}
         >
           Decline
-        </Button.Root>
-        <Button.Root
-          variant="neutral"
-          mode="stroke"
+        </Button>
+        <Button
+          variant="secondary"
           size="small"
           disabled={submitting}
           onClick={() => void onRespond("acceptForSession")}
         >
           Always allow this session
-        </Button.Root>
-        <Button.Root
+        </Button>
+        <Button
           variant="primary"
-          mode="filled"
           size="small"
           disabled={submitting}
           onClick={() => void onRespond("accept")}
         >
           {submitting ? "Responding…" : "Approve once"}
-        </Button.Root>
+        </Button>
       </div>
     </section>
   );

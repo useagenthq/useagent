@@ -4,7 +4,7 @@ import { RiSidebarFoldLine, RiSidebarUnfoldLine } from "@remixicon/react";
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { cn } from "@/utils/cn";
+import { cx } from "@/utils/cx";
 import { CompactSidebarRail } from "./compact-sidebar-rail";
 import { useWorkingSignal } from "./working-signal";
 
@@ -16,8 +16,9 @@ export interface AppShellProps {
 /**
  * Full-bleed application frame shared by threads and Library pages. The global
  * header and selected sidebar stay fixed while the page owns the scrollable
- * workspace. Content may use cards, but the product itself is never wrapped in
- * a decorative floating card.
+ * workspace. The sidebar renders as a BoardUI floating panel inset from the
+ * viewport edge (see sidebar-nav.tsx); the frame itself is never wrapped in a
+ * decorative floating card.
  *
  * `<main>` is a bounded scroll container (`flex-1 min-h-0 overflow-y-auto`), so
  * page content flows and scrolls, while a full-height child (e.g. the session
@@ -53,12 +54,12 @@ export function AppShell({ sidebar, children }: AppShellProps) {
   }, [mobileOpen]);
 
   return (
-    <div className="relative flex h-dvh w-full overflow-hidden bg-bg-white-0">
+    <div className="relative flex h-dvh w-full overflow-hidden bg-background-full">
       <div
         ref={sidebarContainerRef}
         aria-hidden={sidebarCollapsed}
         inert={sidebarCollapsed}
-        className={cn(
+        className={cx(
           "hidden h-full shrink-0 overflow-hidden transition-[width] duration-200 md:block",
           sidebarCollapsed ? "w-0" : "w-64",
         )}
@@ -76,7 +77,7 @@ export function AppShell({ sidebar, children }: AppShellProps) {
           type="button"
           onClick={collapseSidebar}
           aria-label="Collapse navigation"
-          className="absolute left-[13.5rem] top-3 z-40 hidden size-8 items-center justify-center rounded-lg text-text-soft-400 outline-none transition-colors hover:bg-bg-weak-50 hover:text-text-strong-950 focus-visible:ring-2 focus-visible:ring-stroke-strong-950 md:flex"
+          className="absolute left-[12.5rem] top-6 z-40 hidden size-8 items-center justify-center rounded-2lg text-foreground-icon-secondary outline-none transition-colors hover:bg-background-secondary-hover hover:text-foreground-icon-primary focus-visible:ring-2 focus-visible:ring-border-focus-ring md:flex"
         >
           <RiSidebarFoldLine className="size-4" aria-hidden />
         </button>
@@ -85,7 +86,7 @@ export function AppShell({ sidebar, children }: AppShellProps) {
         type="button"
         onClick={() => setMobileOpen(true)}
         aria-label="Open navigation"
-        className="absolute left-3 top-3 z-40 flex size-8 items-center justify-center rounded-lg text-text-soft-400 outline-none hover:bg-bg-weak-50 hover:text-text-strong-950 focus-visible:ring-2 focus-visible:ring-stroke-strong-950 md:hidden"
+        className="absolute left-3 top-3 z-40 flex size-8 items-center justify-center rounded-2lg text-foreground-icon-secondary outline-none hover:bg-background-primary-hover hover:text-foreground-icon-primary focus-visible:ring-2 focus-visible:ring-border-focus-ring md:hidden"
       >
         <RiSidebarUnfoldLine className="size-4" aria-hidden />
       </button>
@@ -95,12 +96,12 @@ export function AppShell({ sidebar, children }: AppShellProps) {
             type="button"
             aria-label="Close navigation"
             onClick={() => setMobileOpen(false)}
-            className="absolute inset-0 bg-overlay backdrop-blur-sm"
+            className="absolute inset-0 bg-black/50 backdrop-blur-sm"
           />
           <div className="relative h-full w-64">{sidebar}</div>
         </div>
       ) : null}
-      <main className="relative isolate min-h-0 min-w-0 flex-1 overflow-y-auto bg-bg-weak-50">
+      <main className="relative isolate min-h-0 min-w-0 flex-1 overflow-y-auto bg-background-full">
         <div
           aria-hidden
           className="bg-halftone pointer-events-none absolute inset-x-0 top-0 -z-10 h-40"

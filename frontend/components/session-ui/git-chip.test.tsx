@@ -95,7 +95,7 @@ describe("GitChips rendering", () => {
     expect(html).toContain('title="acme/docs"');
     expect(html).toContain(">docs<");
     expect(html).toContain("font-mono");
-    expect(html).toContain("border-stroke-soft-200");
+    expect(html).toContain("border-border-button-default");
     expect(html).toContain("truncate");
   });
 
@@ -107,7 +107,7 @@ describe("GitChips rendering", () => {
     const html = renderToStaticMarkup(
       <GitChips refs={[{ repo: "acme/skynet", branch: null }]} />,
     );
-    expect(html).toContain("text-text-soft-400");
+    expect(html).toContain("text-text-tertiary");
     for (const loud of ["text-primary", "bg-blue", "text-blue", "text-success", "text-error"]) {
       expect(html).not.toContain(loud);
     }

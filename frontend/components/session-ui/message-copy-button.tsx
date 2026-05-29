@@ -13,13 +13,15 @@
 //   local copied flag on navigator.clipboard.writeText with the same 1s reset;
 //   a copy failure simply leaves the idle icon (no toast system here).
 // - Their shadcn Button + base-ui Tooltip -> a plain tokened button + the
-//   AlignUI tooltip (provider already mounted in app/providers.tsx). The
-//   size/variant props are dropped - one fixed size serves this surface.
+//   BoardUI tooltip (react-aria; the plain button is wrapped in Focusable so
+//   TooltipTrigger can attach hover/focus behavior). The size/variant props
+//   are dropped - one fixed size serves this surface.
 // - Upstream's aria-label "Copy link" is a misnomer; ours says "Copy message".
 
 import { RiCheckLine, RiFileCopyLine } from "@remixicon/react";
 import { memo, useEffect, useRef, useState } from "react";
-import * as Tooltip from "@/components/ui/tooltip";
+import { Focusable } from "react-aria-components";
+import { Tooltip, TooltipTrigger } from "@/components/base/tooltip/tooltip";
 
 const COPIED_RESET_MS = 1000;
 
@@ -51,24 +53,24 @@ export const MessageCopyButton = memo(function MessageCopyButton({
   };
 
   return (
-    <Tooltip.Root>
-      <Tooltip.Trigger asChild>
+    <TooltipTrigger delay={200}>
+      <Focusable>
         <button
           type="button"
           data-session-ui="message-copy-button"
           aria-label="Copy message"
           disabled={copied}
           onClick={() => void copy()}
-          className="flex size-6 items-center justify-center rounded-md border border-stroke-soft-200 text-text-sub-600 outline-none transition-colors hover:bg-bg-weak-50 hover:text-text-strong-950 focus-visible:ring-2 focus-visible:ring-stroke-strong-950"
+          className="flex size-6 items-center justify-center rounded-md border border-border-button-default text-text-secondary outline-none transition-colors hover:bg-background-primary-hover hover:text-text-primary focus-visible:ring-2 focus-visible:ring-border-focus-ring"
         >
           {copied ? (
-            <RiCheckLine className="size-3 text-success-base" />
+            <RiCheckLine className="size-3 text-lime-600" />
           ) : (
             <RiFileCopyLine className="size-3" />
           )}
         </button>
-      </Tooltip.Trigger>
-      <Tooltip.Content size="xsmall">Copy to clipboard</Tooltip.Content>
-    </Tooltip.Root>
+      </Focusable>
+      <Tooltip size="sm">Copy to clipboard</Tooltip>
+    </TooltipTrigger>
   );
 });

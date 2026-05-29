@@ -12,7 +12,7 @@ export function Panel({
   return (
     <section
       className={cnExt(
-        "rounded-2xl border border-stroke-soft-200 bg-bg-white-0 p-5 shadow-regular-xs",
+        "rounded-2xl border border-border-button-default bg-background-primary-default p-5 shadow-card",
         className,
       )}
     >
@@ -31,7 +31,7 @@ export function PanelHeading({
 }) {
   return (
     <div className="mb-4 flex items-center justify-between gap-2">
-      <span className="text-mono-label text-text-soft-400">{children}</span>
+      <span className="text-mono-label text-text-tertiary">{children}</span>
       {right}
     </div>
   );

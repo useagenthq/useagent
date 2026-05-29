@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import { Inter, Inter_Tight, JetBrains_Mono } from 'next/font/google';
 
-import { cn } from '@/utils/cn';
+import { cx } from '@/utils/cx';
 import { Providers } from '@/app/providers';
 
 import './globals.css';
@@ -38,7 +38,7 @@ export default function RootLayout({
     <html
       lang='en'
       suppressHydrationWarning
-      className={cn(
+      className={cx(
         fontSans.className,
         fontSans.variable,
         fontMono.variable,
@@ -46,7 +46,7 @@ export default function RootLayout({
         'antialiased'
       )}
     >
-      <body className='bg-bg-white-0 text-text-strong-950'>
+      <body className='bg-background-primary-default text-text-primary'>
         <Providers>{children}</Providers>
       </body>
     </html>

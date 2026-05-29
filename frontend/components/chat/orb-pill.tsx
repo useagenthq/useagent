@@ -2,7 +2,7 @@
 
 import { ThinkingOrb, type OrbState } from "@/components/base/thinking-orb";
 import { useReportWorking } from "@/components/shell/working-signal";
-import { cnExt as cn } from "@/utils/cn";
+import { cx as cn } from "@/utils/cx";
 
 /**
  * The shared "orb pill" — a 20px ThinkingOrb + a status word inside a rounded-full
@@ -35,12 +35,12 @@ export function OrbPill({
       role="status"
       aria-label={ariaLabel ?? label}
       className={cn(
-        "border-stroke-soft-200 bg-bg-white-0 shadow-regular-md inline-flex items-center gap-1.5 rounded-full border py-1 pl-1 pr-3",
+        "border-border-button-default bg-background-primary-default shadow-md inline-flex items-center gap-1.5 rounded-full border py-1 pl-1 pr-3",
         className,
       )}
     >
       <ThinkingOrb state={state} size={20} aria-hidden />
-      <span className="text-text-sub-600 text-[13px] leading-none">{label}</span>
+      <span className="text-text-secondary text-[13px] leading-none">{label}</span>
     </div>
   );
 }

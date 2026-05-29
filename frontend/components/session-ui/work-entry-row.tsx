@@ -10,10 +10,10 @@
 //
 // Port notes:
 // - lucide-react icons -> @remixicon/react (this repo's only icon set).
-// - T3 shadcn tokens -> AlignUI semantic tokens (secondary-label -> text-sub-600,
-//   icon-muted -> text-soft-400, foreground -> text-strong-950, destructive -> error-base,
-//   accent hover -> bg-weak-50, border -> stroke-soft-200). No hardcoded palette.
-// - Their Tooltip -> AlignUI tooltip (provider already mounted in app/providers.tsx).
+// - T3 shadcn tokens -> BoardUI semantic tokens (secondary-label -> text-text-secondary,
+//   icon-muted -> text-text-tertiary, foreground -> text-text-primary, destructive -> error red,
+//   accent hover -> background-primary-hover, border -> border-button-default). No hardcoded palette.
+// - Their Tooltip -> BoardUI tooltip (react-aria; plain triggers wrapped in Focusable).
 // - runtime.warning chrome dropped (no sourceActivityKind in our canonical lane yet).
 
 import {
@@ -34,8 +34,9 @@ import {
   RiToolsLine,
 } from "@remixicon/react";
 import { type KeyboardEvent, memo, useState } from "react";
-import * as Tooltip from "@/components/ui/tooltip";
-import { cn } from "@/utils/cn";
+import { Focusable } from "react-aria-components";
+import { Tooltip, TooltipTrigger } from "@/components/base/tooltip/tooltip";
+import { cx as cn } from "@/utils/cx";
 import {
   buildToolCallExpandedBody,
   normalizeCompactToolLabel,
@@ -65,9 +66,9 @@ const ENTRY_ICON: Record<WorkEntryIconName, RemixiconComponentType> = {
   zap: RiFlashlightLine,
 };
 
-/** Upstream workToneIcon: tone -> icon color class (AlignUI tokens). */
+/** Upstream workToneIcon: tone -> icon color class (BoardUI tokens). */
 function workToneClass(tone: WorkEntry["tone"]): string {
-  return tone === "info" ? "text-text-soft-400" : "text-text-strong-950";
+  return tone === "info" ? "text-text-tertiary" : "text-text-primary";
 }
 
 function StatusIndicator({ entry, turnSettled }: { entry: WorkEntry; turnSettled: boolean }) {
@@ -78,20 +79,20 @@ function StatusIndicator({ entry, turnSettled }: { entry: WorkEntry; turnSettled
 
   if (!failed && !showSuccess && !showNeutral) return null;
   const [Icon, iconClass, label] = failed
-    ? ([RiCloseLine, "text-error-base", "Failed"] as const)
+    ? ([RiCloseLine, "text-text-error-primary", "Failed"] as const)
     : showSuccess
-      ? ([RiCheckLine, "text-success-base", "Completed"] as const)
+      ? ([RiCheckLine, "text-lime-600", "Completed"] as const)
       : ([RiSubtractLine, "opacity-70", "Empty"] as const);
 
   return (
-    <Tooltip.Root>
-      <Tooltip.Trigger asChild>
+    <TooltipTrigger delay={200}>
+      <Focusable>
         <span className="flex size-4 items-center justify-center" aria-label={label}>
           <Icon className={cn("block size-3 shrink-0", iconClass)} aria-hidden />
         </span>
-      </Tooltip.Trigger>
-      <Tooltip.Content size="xsmall">{label}</Tooltip.Content>
-    </Tooltip.Root>
+      </Focusable>
+      <Tooltip size="sm">{label}</Tooltip>
+    </TooltipTrigger>
   );
 }
 
@@ -128,14 +129,14 @@ export const WorkEntryRow = memo(function WorkEntryRow({
   const iconWrapperClass = cn(
     "flex size-5 shrink-0 items-center justify-center",
     showDestructiveRowStyle
-      ? "text-error-base"
+      ? "text-text-error-primary"
       : entry.tone === "tool" || showFailedIndicator
-        ? "text-text-soft-400"
+        ? "text-text-tertiary"
         : workToneClass(entry.tone),
   );
   const headingClass = showDestructiveRowStyle
-    ? "font-medium text-error-base"
-    : "font-medium text-text-strong-950";
+    ? "font-medium text-text-error-primary"
+    : "font-medium text-text-primary";
   const rowToggleProps = canExpand
     ? {
         role: "button" as const,
@@ -157,7 +158,7 @@ export const WorkEntryRow = memo(function WorkEntryRow({
       className={cn(
         "flex flex-col rounded-md px-0.5 py-0.5 transition-colors",
         canExpand &&
-          "cursor-pointer hover:bg-bg-weak-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary-base",
+          "cursor-pointer hover:bg-background-primary-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-border-focus-ring",
       )}
       {...rowToggleProps}
     >
@@ -170,11 +171,11 @@ export const WorkEntryRow = memo(function WorkEntryRow({
             <p className="flex w-full min-w-0 items-baseline gap-1.5 text-[12px] leading-5">
               <span className={cn("min-w-0 shrink truncate", headingClass)}>{heading}</span>
               {preview && (
-                <span className="min-w-0 flex-1 truncate text-text-sub-600">{preview}</span>
+                <span className="min-w-0 flex-1 truncate text-text-secondary">{preview}</span>
               )}
             </p>
           </div>
-          <div className="flex shrink-0 items-center gap-px text-text-soft-400">
+          <div className="flex shrink-0 items-center gap-px text-text-tertiary">
             <span
               className="flex size-4 shrink-0 items-center justify-center"
               aria-hidden={!canExpand}
@@ -197,11 +198,11 @@ export const WorkEntryRow = memo(function WorkEntryRow({
       </div>
       {expanded && canExpand && expandedBody ? (
         <div
-          className="mt-1 ms-7 cursor-default border-s border-stroke-soft-200 ps-3 pt-0.5"
+          className="mt-1 ms-7 cursor-default border-s border-border-button-default ps-3 pt-0.5"
           onClick={(e) => e.stopPropagation()}
           onPointerDown={(e) => e.stopPropagation()}
         >
-          <pre className="max-h-64 cursor-text select-text overflow-auto whitespace-pre-wrap break-words font-mono text-[11px] leading-relaxed text-text-sub-600">
+          <pre className="max-h-64 cursor-text select-text overflow-auto whitespace-pre-wrap break-words font-mono text-[11px] leading-relaxed text-text-secondary">
             {expandedBody}
           </pre>
         </div>

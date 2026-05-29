@@ -36,12 +36,12 @@ export default async function WikiPage() {
         {/* Header */}
         <header className="flex flex-wrap items-start justify-between gap-4">
           <div className="flex items-start gap-3">
-            <span className="flex size-11 shrink-0 items-center justify-center rounded-xl border border-stroke-soft-200 bg-bg-weak-50">
-              <RiBookOpenLine className="size-5 text-text-sub-600" aria-hidden />
+            <span className="flex size-11 shrink-0 items-center justify-center rounded-xl border border-border-button-default bg-background-secondary-default">
+              <RiBookOpenLine className="size-5 text-text-secondary" aria-hidden />
             </span>
             <div>
-              <h1 className="text-display-md text-text-strong-950">Wiki</h1>
-              <p className="mt-0.5 text-paragraph-sm text-text-soft-400">
+              <h1 className="text-display-md text-text-primary">Wiki</h1>
+              <p className="mt-0.5 text-body-2-regular text-text-tertiary">
                 Published knowledge documents · your organization
               </p>
               <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
@@ -64,10 +64,10 @@ export default async function WikiPage() {
             {failed ? (
               <BackendUnreachable />
             ) : docs.length === 0 ? (
-              <div className="rounded-2xl border border-stroke-soft-200 bg-bg-weak-50 p-10 text-center">
-                <RiFileList3Line className="mx-auto size-7 text-text-soft-400" aria-hidden />
-                <p className="mt-3 text-label-md text-text-strong-950">No published pages yet</p>
-                <p className="mx-auto mt-1 max-w-md text-paragraph-sm leading-6 text-text-sub-600">
+              <div className="rounded-2xl border border-border-button-default bg-background-secondary-default p-10 text-center">
+                <RiFileList3Line className="mx-auto size-7 text-text-tertiary" aria-hidden />
+                <p className="mt-3 text-label-md text-text-primary">No published pages yet</p>
+                <p className="mx-auto mt-1 max-w-md text-body-2-regular leading-6 text-text-secondary">
                   Publish a knowledge document and it appears here — the same content the agent can
                   search. Create one from Knowledge, then publish its revision.
                 </p>
@@ -81,18 +81,18 @@ export default async function WikiPage() {
                     <li key={doc.id}>
                       <Link
                         href={`/wiki/${doc.id}`}
-                        className="border-stroke-soft-200 bg-bg-white-0 hover:bg-bg-weak-50 block rounded-xl border px-4 py-3 transition-colors"
+                        className="border-border-button-default bg-background-primary-default hover:bg-background-secondary-default block rounded-xl border px-4 py-3 transition-colors"
                       >
                         <div className="flex items-baseline justify-between gap-3">
-                          <span className="text-label-md text-text-strong-950 truncate">
+                          <span className="text-label-md text-text-primary truncate">
                             {doc.title}
                           </span>
-                          <span className="text-paragraph-xs text-text-soft-400 shrink-0">
+                          <span className="text-caption-1-regular text-text-tertiary shrink-0">
                             updated {relativeTime(doc.updatedAt)}
                           </span>
                         </div>
                         {preview && (
-                          <p className="text-paragraph-sm text-text-sub-600 mt-1 line-clamp-2">
+                          <p className="text-body-2-regular text-text-secondary mt-1 line-clamp-2">
                             {preview}
                           </p>
                         )}

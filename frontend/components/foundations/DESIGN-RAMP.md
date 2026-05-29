@@ -42,12 +42,12 @@ Each class sets Inter Tight + size + tuned tracking.
 
 Sweep migration: `text-title-h4` hero → `text-display-md`/`lg`; `text-title-h5` hero → `text-display-sm`.
 
-### Sans hierarchy (unchanged AlignUI scale)
+### Sans hierarchy (BoardUI scale — styles/typography.css)
 
-- **Headings / emphasis:** `text-title-h4…h6`, `text-label-lg…sm` + `text-text-strong-950`
-- **Body / secondary:** `text-paragraph-md…sm` + `text-text-sub-600`
-- **Captions / tertiary:** `text-paragraph-xs`, `text-label-xs` + `text-text-soft-400`
-- **Overlines:** `text-mono-label` + `text-text-soft-400`
+- **Headings / emphasis:** `text-title-1…3-medium`, `text-body-medium`, `text-body-2-medium` + `text-text-primary`
+- **Body / secondary:** `text-body-regular`, `text-body-2-regular` + `text-text-secondary`
+- **Captions / tertiary:** `text-caption-1-regular`, `text-caption-1-medium` + `text-text-tertiary`
+- **Overlines:** `text-mono-label` + `text-text-tertiary`
 
 Large title tokens (`title-h1…h4`) were tightened (~-0.02em) in `tailwind.config.ts`.
 
@@ -72,13 +72,13 @@ refinement lands as three token-level rules:
 
 The blueprint's light-mode ink ladder (#292929 strong / #5D5D5D mid / #9E9E9E muted) is a
 **relationship**, not a set of hexes to paste into a dark theme. That relationship already
-lives in the AlignUI semantic text tokens — map onto them, never hard-code the hexes:
+lives in the BoardUI semantic text tokens — map onto them, never hard-code the hexes:
 
 | Blueprint role        | Token                   | Light ≈ ratio       | Dark (inverted)      |
 | --------------------- | ----------------------- | ------------------- | -------------------- |
-| **Strong** (#292929)  | `text-text-strong-950`  | near-black ~13–16:1 | white                |
-| **Mid** (#5D5D5D)     | `text-text-sub-600`     | ~6.5:1              | warm mid-gray (58%L) |
-| **Muted** (#9E9E9E)   | `text-text-soft-400`    | ~3:1                | dim gray (44%L)      |
+| **Strong** (#292929)  | `text-text-primary`     | near-black ~13–16:1 | white                |
+| **Mid** (#5D5D5D)     | `text-text-secondary`   | ~6.5:1              | warm mid-gray (58%L) |
+| **Muted** (#9E9E9E)   | `text-text-tertiary`    | ~3:1                | dim gray (44%L)      |
 
 The light-mode neutrals already sit almost exactly on the blueprint ratios, and `.dark`
 re-anchors them so the same three-step ladder reads on the dark canvas — so **no color token
@@ -118,17 +118,17 @@ Notes:
 
 Elevation comes from **background step + shadow**, not from stroke weight.
 
-- Static chrome uses a **single hairline**: `border border-stroke-soft-200` (or `ring-1 ring-inset ring-stroke-soft-200`).
+- Static chrome uses a **single hairline**: `border border-border-button-default` (or `ring-1 ring-inset ring-border-button-default`).
 - **Never** `border-2` / `ring-2` for static chrome. (`focus-visible:ring-2` for keyboard focus is fine — it's not static.)
 - Do **not** re-brighten the dark border tokens. The global dark ramp already dims them
   (`--neutral-700` ≈ 13% L, `--neutral-600` ≈ 19% L) so borders read as faint hairlines on
-  the #17181a canvas. Lean on `bg-*` elevation + `shadow-regular-*` for separation instead.
+  the #17181a canvas. Lean on `bg-*` elevation + `shadow-card`/`shadow-sm`/`shadow-md` for separation instead.
 
 ---
 
 ## Rhythm
 
-- Muted secondary text = `text-text-sub-600`; tertiary = `text-text-soft-400`. Don't flatten.
+- Muted secondary text = `text-text-secondary`; tertiary = `text-text-tertiary`. Don't flatten.
 - **Icon sizes (blueprint):** navigation-row icons at **14px** (`size-3.5`); card leading icons
   at **20px** (`size-5`). Header/toolbar icon-buttons stay 20px (`size-5`).
 - Verify every surface on both the dark #17181a canvas AND light mode.

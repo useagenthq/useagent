@@ -49,7 +49,7 @@ function PromptSuggestion({
         size={size || "sm"}
         className={cn(
           "w-full cursor-pointer justify-start rounded-xl py-2",
-          "hover:bg-bg-weak-50",
+          "hover:bg-background-secondary-default",
           className,
         )}
         {...props}
@@ -70,7 +70,7 @@ function PromptSuggestion({
       size={size || "sm"}
       className={cn(
         "w-full cursor-pointer justify-start gap-0 rounded-xl py-2",
-        "hover:bg-bg-weak-50",
+        "hover:bg-background-secondary-default",
         className,
       )}
       {...props}
@@ -80,7 +80,7 @@ function PromptSuggestion({
           const index = contentLower.indexOf(highlightLower);
           if (index === -1)
             return (
-              <span className="text-text-soft-400 whitespace-pre-wrap">
+              <span className="text-text-tertiary whitespace-pre-wrap">
                 {content}
               </span>
             );
@@ -95,15 +95,15 @@ function PromptSuggestion({
           return (
             <>
               {before && (
-                <span className="text-text-soft-400 whitespace-pre-wrap">
+                <span className="text-text-tertiary whitespace-pre-wrap">
                   {before}
                 </span>
               )}
-              <span className="text-text-strong-950 font-medium whitespace-pre-wrap">
+              <span className="text-text-primary font-medium whitespace-pre-wrap">
                 {actualHighlightedText}
               </span>
               {after && (
-                <span className="text-text-soft-400 whitespace-pre-wrap">
+                <span className="text-text-tertiary whitespace-pre-wrap">
                   {after}
                 </span>
               )}
@@ -111,7 +111,7 @@ function PromptSuggestion({
           );
         })()
       ) : (
-        <span className="text-text-soft-400 whitespace-pre-wrap">{content}</span>
+        <span className="text-text-tertiary whitespace-pre-wrap">{content}</span>
       )}
     </Button>
   );

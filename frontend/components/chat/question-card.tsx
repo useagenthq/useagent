@@ -3,7 +3,7 @@
 import { RiCheckLine, RiQuestionLine } from "@remixicon/react";
 import { useState } from "react";
 import { composeQuestionAnswers, type PendingQuestion } from "@/components/chat/question-state";
-import { cnExt as cn } from "@/utils/cn";
+import { cx as cn } from "@/utils/cx";
 
 export function QuestionCard({
   request,
@@ -22,7 +22,7 @@ export function QuestionCard({
 
   return (
     <form
-      className="border-stroke-soft-200 bg-bg-weak-50 space-y-4 rounded-2xl border p-4"
+      className="border-border-button-default bg-background-secondary-default space-y-4 rounded-2xl border p-4"
       data-testid="native-question-card"
       onSubmit={(event) => {
         event.preventDefault();
@@ -30,12 +30,12 @@ export function QuestionCard({
       }}
     >
       <div className="flex items-center gap-2">
-        <span className="bg-primary-alpha-10 text-primary-base flex size-7 items-center justify-center rounded-full">
+        <span className="bg-accent-500/10 text-accent-500 flex size-7 items-center justify-center rounded-full">
           <RiQuestionLine className="size-4" aria-hidden />
         </span>
         <div>
-          <p className="text-label-sm text-text-strong-950">Agent needs your input</p>
-          <p className="text-paragraph-xs text-text-soft-400">
+          <p className="text-body-2-medium text-text-primary">Agent needs your input</p>
+          <p className="text-caption-1-regular text-text-tertiary">
             Your answer continues this turn immediately.
           </p>
         </div>
@@ -44,8 +44,8 @@ export function QuestionCard({
       {request.questions.map((item, questionIndex) => (
         <fieldset key={`${request.id}:${questionIndex}`} className="space-y-2.5">
           <legend className="space-y-0.5">
-            <span className="text-label-xs text-text-sub-600 block">{item.header}</span>
-            <span className="text-paragraph-sm text-text-strong-950 block">{item.question}</span>
+            <span className="text-caption-1-medium text-text-secondary block">{item.header}</span>
+            <span className="text-body-2-regular text-text-primary block">{item.question}</span>
           </legend>
           {item.options.length > 0 && (
             <div className="grid gap-2 sm:grid-cols-2">
@@ -73,25 +73,25 @@ export function QuestionCard({
                     className={cn(
                       "flex min-h-12 items-start gap-2 rounded-xl border px-3 py-2 text-left transition-colors",
                       active
-                        ? "border-primary-base bg-primary-alpha-10"
-                        : "border-stroke-soft-200 bg-bg-white-0 hover:bg-bg-soft-200",
+                        ? "border-accent-500 bg-accent-500/10"
+                        : "border-border-button-default bg-background-primary-default hover:bg-background-secondary-hover",
                     )}
                   >
                     <span
                       className={cn(
                         "mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-full border",
                         active
-                          ? "border-primary-base bg-primary-base text-white"
-                          : "border-stroke-strong-400",
+                          ? "border-accent-500 bg-accent-500 text-white"
+                          : "border-border-button-active",
                       )}
                     >
                       {active && <RiCheckLine className="size-3" aria-hidden />}
                     </span>
                     <span>
-                      <span className="text-label-xs text-text-strong-950 block">
+                      <span className="text-caption-1-medium text-text-primary block">
                         {option.label}
                       </span>
-                      <span className="text-paragraph-xs text-text-soft-400 block">
+                      <span className="text-caption-1-regular text-text-tertiary block">
                         {option.description}
                       </span>
                     </span>
@@ -111,18 +111,18 @@ export function QuestionCard({
               }}
               placeholder="Type a custom answer…"
               aria-label={`Custom answer for ${item.header}`}
-              className="border-stroke-soft-200 bg-bg-white-0 text-text-strong-950 placeholder:text-text-soft-400 focus:border-primary-base h-10 w-full rounded-xl border px-3 text-paragraph-sm outline-none"
+              className="border-border-button-default bg-background-primary-default text-text-primary placeholder:text-text-tertiary focus:border-accent-500 h-10 w-full rounded-xl border px-3 text-body-2-regular outline-none"
             />
           )}
         </fieldset>
       ))}
 
-      {error && <p className="text-paragraph-xs text-error-base">{error}</p>}
+      {error && <p className="text-caption-1-regular text-red-500">{error}</p>}
       <div className="flex justify-end">
         <button
           type="submit"
           disabled={!answers || submitting}
-          className="bg-primary-base hover:bg-primary-darker disabled:bg-bg-soft-200 disabled:text-text-soft-400 rounded-xl px-3.5 py-2 text-label-sm text-white transition-colors disabled:cursor-not-allowed"
+          className="bg-accent-500 hover:bg-accent-600 disabled:bg-background-tertiary-default disabled:text-text-tertiary rounded-xl px-3.5 py-2 text-body-2-medium text-white transition-colors disabled:cursor-not-allowed"
         >
           {submitting ? "Sending…" : "Continue"}
         </button>

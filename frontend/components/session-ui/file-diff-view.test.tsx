@@ -172,8 +172,8 @@ describe("FileDiffView", () => {
     expect(html).toContain('aria-expanded="true"');
     // Diff lines: mono font, add/del tones at low alpha.
     expect(html).toContain("font-mono");
-    expect(html).toContain("bg-success-base/10");
-    expect(html).toContain("bg-error-base/10");
+    expect(html).toContain("bg-lime-500/10");
+    expect(html).toContain("bg-red-500/10");
     expect(html).toContain("const a = 10;");
     expect(html).toContain("const a = 1;");
   });
@@ -197,7 +197,7 @@ describe("DiffPane", () => {
     expect(html).toContain('data-testid="diff-pane"');
     expect(html).toContain('data-diff-file="src/app.ts"');
     expect(html).toContain('data-diff-file="src/opaque.ts"');
-    expect(html).toContain("bg-success-base/10");
+    expect(html).toContain("bg-lime-500/10");
   });
 
   test("shows an honest empty state before any file change exists", () => {

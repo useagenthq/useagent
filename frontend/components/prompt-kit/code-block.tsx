@@ -19,7 +19,7 @@ function CodeBlock({ children, className, ...props }: CodeBlockProps) {
     <div
       className={cn(
         "not-prose flex w-full flex-col overflow-clip border",
-        "border-stroke-soft-200 bg-bg-weak-50 text-text-strong-950 rounded-xl",
+        "border-border-button-default bg-background-secondary-default text-text-primary rounded-xl",
         className,
       )}
       {...props}

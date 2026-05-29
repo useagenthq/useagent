@@ -117,7 +117,7 @@ describe("AgentPanelRow", () => {
     expect(html).toContain("7 tools");
     expect(html).toContain("sonnet-5");
     expect(html).toContain("reviewer");
-    expect(html).toContain("text-success-base");
+    expect(html).toContain("text-lime-600");
     expect(html).not.toContain("animate-pulse");
   });
 
@@ -136,7 +136,7 @@ describe("AgentPanelRow", () => {
       />,
     );
     expect(html).toContain("Sandbox timed out");
-    expect(html).toContain("text-error-base");
+    expect(html).toContain("text-text-error-primary");
     expect(html.split("eviewer").length).toBe(3); // title + aria label only, no role chip
   });
 

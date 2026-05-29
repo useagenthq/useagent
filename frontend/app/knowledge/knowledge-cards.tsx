@@ -32,8 +32,8 @@ function CardAction({
       onClick={onClick}
       className={cnExt(
         "flex size-7 items-center justify-center rounded-lg transition-colors",
-        "hover:bg-bg-soft-200 hover:text-text-sub-600",
-        active ? "text-yellow-500" : "text-text-soft-400",
+        "hover:bg-background-tertiary-default hover:text-text-secondary",
+        active ? "text-yellow-500" : "text-text-tertiary",
       )}
     >
       <Icon className="size-4" aria-hidden />
@@ -57,7 +57,7 @@ function CardMeta({ item }: { item: KnowledgeItem }) {
       >
         {item.folder}
       </Badge.Root>
-      <span className="text-paragraph-xs text-text-soft-400">
+      <span className="text-caption-1-regular text-text-tertiary">
         Updated {item.updated}
       </span>
     </>
@@ -75,22 +75,22 @@ export function PinnedCard({
   onDelete: (item: KnowledgeItem) => void;
 }) {
   return (
-    <article className="flex flex-col gap-3 rounded-2xl border border-stroke-soft-200 bg-bg-weak-50 p-5">
+    <article className="flex flex-col gap-3 rounded-2xl border border-border-button-default bg-background-secondary-default p-5">
       <div className="flex items-start gap-2.5">
         <RiStarFill
           className="mt-0.5 size-5 shrink-0 text-yellow-500"
           aria-hidden
         />
         <div className="flex min-w-0 flex-col gap-1">
-          <h3 className="text-label-md text-text-strong-950">{item.title}</h3>
+          <h3 className="text-label-md text-text-primary">{item.title}</h3>
           {item.trigger && (
-            <p className="text-paragraph-xs italic text-text-soft-400">
+            <p className="text-caption-1-regular italic text-text-tertiary">
               {item.trigger}
             </p>
           )}
         </div>
       </div>
-      <p className="line-clamp-2 text-paragraph-sm text-text-sub-600">
+      <p className="line-clamp-2 text-body-2-regular text-text-secondary">
         {item.body}
       </p>
       <div className="mt-auto flex items-center gap-2 pt-1">
@@ -124,16 +124,16 @@ export function EntryCard({
   onDelete: (item: KnowledgeItem) => void;
 }) {
   return (
-    <article className="flex flex-col gap-2.5 rounded-2xl bg-bg-white-0 p-4 shadow-regular-xs ring-1 ring-inset ring-stroke-soft-200 transition-colors hover:ring-stroke-sub-300">
+    <article className="flex flex-col gap-2.5 rounded-2xl bg-background-primary-default p-4 shadow-card ring-1 ring-inset ring-border-button-default transition-colors hover:ring-border-button-hover">
       <div className="flex flex-col gap-1">
-        <h3 className="text-label-md text-text-strong-950">{item.title}</h3>
+        <h3 className="text-label-md text-text-primary">{item.title}</h3>
         {item.trigger && (
-          <p className="text-paragraph-xs italic text-text-soft-400">
+          <p className="text-caption-1-regular italic text-text-tertiary">
             {item.trigger}
           </p>
         )}
       </div>
-      <p className="line-clamp-2 text-paragraph-sm text-text-sub-600">
+      <p className="line-clamp-2 text-body-2-regular text-text-secondary">
         {item.body}
       </p>
       <div className="mt-1 flex items-center gap-2">

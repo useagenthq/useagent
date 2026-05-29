@@ -97,7 +97,7 @@ export const ExpandedImageDialog = memo(function ExpandedImageDialog({
               type="button"
               aria-label="Previous image"
               onClick={() => navigateImage(-1)}
-              className="absolute left-2 top-1/2 z-20 flex size-9 -translate-y-1/2 items-center justify-center rounded-lg bg-bg-strong-950/60 text-text-white-0 outline-none transition-colors hover:bg-bg-strong-950/80 focus-visible:ring-2 focus-visible:ring-stroke-strong-950"
+              className="absolute left-2 top-1/2 z-20 flex size-9 -translate-y-1/2 items-center justify-center rounded-lg bg-foreground-icon-primary/60 text-background-full outline-none transition-colors hover:bg-foreground-icon-primary/80 focus-visible:ring-2 focus-visible:ring-border-focus-ring"
             >
               <RiArrowLeftSLine aria-hidden className="size-5" />
             </button>
@@ -108,7 +108,7 @@ export const ExpandedImageDialog = memo(function ExpandedImageDialog({
           <img
             src={item.src}
             alt={item.name}
-            className="max-h-[86vh] max-w-[92vw] select-none rounded-lg border border-stroke-soft-200 bg-bg-white-0 object-contain shadow-regular-md"
+            className="max-h-[86vh] max-w-[92vw] select-none rounded-lg border border-border-button-default bg-background-primary-default object-contain shadow-md"
             draggable={false}
           />
           {preview.images.length > 1 && (
@@ -116,13 +116,13 @@ export const ExpandedImageDialog = memo(function ExpandedImageDialog({
               type="button"
               aria-label="Next image"
               onClick={() => navigateImage(1)}
-              className="absolute right-2 top-1/2 z-20 flex size-9 -translate-y-1/2 items-center justify-center rounded-lg bg-bg-strong-950/60 text-text-white-0 outline-none transition-colors hover:bg-bg-strong-950/80 focus-visible:ring-2 focus-visible:ring-stroke-strong-950"
+              className="absolute right-2 top-1/2 z-20 flex size-9 -translate-y-1/2 items-center justify-center rounded-lg bg-foreground-icon-primary/60 text-background-full outline-none transition-colors hover:bg-foreground-icon-primary/80 focus-visible:ring-2 focus-visible:ring-border-focus-ring"
             >
               <RiArrowRightSLine aria-hidden className="size-5" />
             </button>
           )}
         </div>
-        <p className="mt-2 max-w-[92vw] truncate text-center text-paragraph-xs text-text-soft-400">
+        <p className="mt-2 max-w-[92vw] truncate text-center text-caption-1-regular text-text-tertiary">
           {expandedImageCaption(item.name, index, preview.images.length)}
         </p>
       </Modal.Content>

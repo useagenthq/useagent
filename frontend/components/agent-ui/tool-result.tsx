@@ -37,7 +37,7 @@ import {
   useState,
 } from "react";
 
-import { cn } from "@/utils/cn";
+import { cx } from "@/utils/cx";
 
 // -- motion tokens ---------------------------------------------------------
 const EASE_OUT = [0.16, 1, 0.3, 1] as const;
@@ -79,7 +79,7 @@ function AgentDisclosure({
             }
       }
       transition={transition ?? { duration: reduce ? 0 : open ? 0.22 : 0.14, ease: EASE_OUT }}
-      className={cn("overflow-hidden", className)}
+      className={cx("overflow-hidden", className)}
       style={{
         ...style,
         height: open ? openHeight : 0,
@@ -119,7 +119,7 @@ function ActionSwapRollText({
 
   return (
     <span
-      className={cn("relative inline-block overflow-hidden whitespace-nowrap align-bottom", className)}
+      className={cx("relative inline-block overflow-hidden whitespace-nowrap align-bottom", className)}
       style={{ width, transition: reduce ? undefined : `width 220ms ${EASE_OUT_CSS}` }}
     >
       <span ref={measureRef} aria-hidden className="invisible inline-block whitespace-nowrap">
@@ -154,10 +154,10 @@ function getSwapKey(value: ReactNode, fallback: string) {
 }
 
 function getStatusClass(status: ToolResultStatus) {
-  if (status === "running") return "text-primary-base";
-  if (status === "success") return "text-success-base";
-  if (status === "error") return "text-error-base";
-  return "text-text-soft-400";
+  if (status === "running") return "text-accent-500";
+  if (status === "success") return "text-lime-600";
+  if (status === "error") return "text-text-error-primary";
+  return "text-text-tertiary";
 }
 
 function KindIcon({ kind }: { kind: ToolResultKind }) {
@@ -167,7 +167,7 @@ function KindIcon({ kind }: { kind: ToolResultKind }) {
 }
 
 function StatusIcon({ status, reduce }: { status: ToolResultStatus; reduce: boolean }) {
-  if (status === "running") return <RiLoader4Line className={cn("size-3", !reduce && "animate-spin")} />;
+  if (status === "running") return <RiLoader4Line className={cx("size-3", !reduce && "animate-spin")} />;
   if (status === "success") return <RiCheckboxCircleFill className="size-3" />;
   if (status === "error") return <RiCloseCircleFill className="size-3" />;
   return <RiProhibitedLine className="size-3" />;
@@ -178,8 +178,8 @@ function StatusIcon({ status, reduce }: { status: ToolResultStatus; reduce: bool
 export function ToolResultOutput({ children, className }: { children: string; className?: string }) {
   return (
     <pre
-      className={cn(
-        "m-0 overflow-x-auto whitespace-pre-wrap break-words font-mono text-paragraph-xs leading-5 text-text-sub-600",
+      className={cx(
+        "m-0 overflow-x-auto whitespace-pre-wrap break-words font-mono text-caption-1-regular leading-5 text-text-secondary",
         className,
       )}
     >
@@ -206,7 +206,7 @@ function ToolResultAction({
       onClick={onClick}
       whileTap={reduce ? undefined : { scale: 0.9 }}
       transition={SPRING_PRESS}
-      className="grid size-7 place-items-center rounded-md text-text-sub-600 outline-none transition-colors hover:bg-bg-weak-50 hover:text-text-strong-950 focus-visible:ring-2 focus-visible:ring-stroke-strong-950"
+      className="grid size-7 place-items-center rounded-md text-text-secondary outline-none transition-colors hover:bg-background-primary-hover hover:text-text-primary focus-visible:ring-2 focus-visible:ring-border-focus-ring"
     >
       {children}
     </motion.button>
@@ -317,32 +317,32 @@ export function ToolResultPanel({
   }, [copyText, onCopy]);
 
   return (
-    <div data-state={status} aria-busy={running} className={cn("w-full text-paragraph-sm", className)}>
+    <div data-state={status} aria-busy={running} className={cx("w-full text-body-2-regular", className)}>
       <button
         id={triggerId}
         type="button"
         aria-expanded={currentOpen}
         aria-controls={contentId}
         onClick={() => setOpen(!currentOpen)}
-        className="group flex min-h-9 w-full items-center gap-2 rounded-md py-1 text-left outline-none focus-visible:ring-2 focus-visible:ring-stroke-strong-950 focus-visible:ring-offset-2 focus-visible:ring-offset-bg-white-0"
+        className="group flex min-h-9 w-full items-center gap-2 rounded-md py-1 text-left outline-none focus-visible:ring-2 focus-visible:ring-border-focus-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background-primary-default"
       >
-        <span aria-hidden="true" className="grid size-4 shrink-0 place-items-center text-text-soft-400">
+        <span aria-hidden="true" className="grid size-4 shrink-0 place-items-center text-text-tertiary">
           {icon ?? <KindIcon kind={kind} />}
         </span>
         <span className="flex min-w-0 flex-1 items-baseline gap-2">
-          <span className="min-w-0 truncate font-medium text-text-strong-950">
+          <span className="min-w-0 truncate font-medium text-text-primary">
             <ActionSwapRollText value={titleKey}>{title}</ActionSwapRollText>
           </span>
           {meta ? (
-            <span className="shrink-0 text-paragraph-xs text-text-soft-400">
+            <span className="shrink-0 text-caption-1-regular text-text-tertiary">
               <ActionSwapRollText value={metaKey}>{meta}</ActionSwapRollText>
             </span>
           ) : null}
-          <span className="min-w-0 truncate font-mono text-[11px] text-text-soft-400">
+          <span className="min-w-0 truncate font-mono text-[11px] text-text-tertiary">
             <ActionSwapRollText value={toolKey}>{tool}</ActionSwapRollText>
           </span>
         </span>
-        <span className={cn("inline-flex shrink-0 items-center gap-1 text-[11px] font-medium", getStatusClass(status))}>
+        <span className={cx("inline-flex shrink-0 items-center gap-1 text-[11px] font-medium", getStatusClass(status))}>
           <StatusIcon status={status} reduce={reduce} />
           <ActionSwapRollText value={status}>{statusLabel}</ActionSwapRollText>
         </span>
@@ -350,7 +350,7 @@ export function ToolResultPanel({
           aria-hidden="true"
           animate={{ rotate: currentOpen ? 180 : 0 }}
           transition={reduce ? { duration: 0 } : SPRING_SWAP}
-          className="shrink-0 text-text-soft-400 transition-colors group-hover:text-text-sub-600"
+          className="shrink-0 text-text-tertiary transition-colors group-hover:text-text-secondary"
         >
           <RiArrowDownSLine className="size-3.5" />
         </motion.span>
@@ -358,7 +358,7 @@ export function ToolResultPanel({
 
       <AgentDisclosure id={contentId} role="region" aria-labelledby={triggerId} open={currentOpen}>
         <div className="pl-6 pt-1.5">
-          <div className="overflow-hidden rounded-xl bg-bg-weak-50">
+          <div className="overflow-hidden rounded-xl bg-background-secondary-default">
             <div
               ref={viewportRef}
               role="log"
@@ -366,7 +366,7 @@ export function ToolResultPanel({
               className="overflow-y-auto"
               style={{ maxHeight, scrollbarWidth: "none" }}
             >
-              <div className={cn("p-3", contentClassName)}>{children}</div>
+              <div className={cx("p-3", contentClassName)}>{children}</div>
             </div>
 
             {canCopy || onRetry ? (
@@ -381,7 +381,7 @@ export function ToolResultPanel({
                     <RiRestartLine className="size-3.5" />
                   </ToolResultAction>
                 ) : null}
-                <span className="ml-auto text-[11px] text-text-soft-400">
+                <span className="ml-auto text-[11px] text-text-tertiary">
                   <ActionSwapRollText value={status}>{statusLabel}</ActionSwapRollText>
                 </span>
               </div>
@@ -415,9 +415,9 @@ export function ToolResultDemo() {
   }, [status]);
 
   return (
-    <div className="flex items-center justify-center rounded-xl bg-bg-weak-50 p-3">
+    <div className="flex items-center justify-center rounded-xl bg-background-secondary-default p-3">
       <div className="w-full max-w-md">
-        <div className="rounded-2xl border border-stroke-soft-200 bg-bg-white-0 p-3 shadow-regular-sm">
+        <div className="rounded-2xl border border-border-button-default bg-background-primary-default p-3 shadow-sm">
           <ToolResultPanel
             kind="terminal"
             tool="bun add motion @remixicon/react"

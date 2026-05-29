@@ -39,7 +39,7 @@ import {
   type TodoItem,
   type TraceGlyph,
 } from "@/components/chat/types";
-import { cnExt as cn } from "@/utils/cn";
+import { cx as cn } from "@/utils/cx";
 
 type RowState = "running" | "done";
 
@@ -175,7 +175,7 @@ export const MarkerRow = memo(function MarkerRow({ marker }: { marker: TimelineM
       <span
         className={cn(
           "flex size-5 shrink-0 items-center justify-center rounded-md",
-          error ? "bg-error-lighter text-error-base" : "bg-feature-lighter text-feature-base",
+          error ? "bg-red-50 text-red-500" : "bg-purple-50 text-purple-500",
         )}
       >
         <Icon className="size-3.5" aria-hidden />
@@ -183,16 +183,16 @@ export const MarkerRow = memo(function MarkerRow({ marker }: { marker: TimelineM
       <span className="min-w-0 flex-1 truncate">
         <span
           className={cn(
-            "text-label-sm font-medium",
-            error ? "text-error-base" : "text-feature-base",
+            "text-body-2-medium font-medium",
+            error ? "text-red-500" : "text-purple-500",
           )}
         >
           {verb}
         </span>
-        {target && <span className="text-text-sub-600 ml-1.5 text-label-sm">{target}</span>}
+        {target && <span className="text-text-secondary ml-1.5 text-body-2-medium">{target}</span>}
       </span>
       {badge && (
-        <span className="text-text-soft-400 shrink-0 font-mono text-label-xs tabular-nums">
+        <span className="text-text-tertiary shrink-0 font-mono text-caption-1-medium tabular-nums">
           {badge}
         </span>
       )}
@@ -232,8 +232,8 @@ function ExitBadge({ code }: { code: number }) {
   return (
     <span
       className={cn(
-        "inline-flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 font-mono text-label-xs tabular-nums",
-        ok ? "bg-success-lighter text-success-base" : "bg-error-lighter text-error-base",
+        "inline-flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 font-mono text-caption-1-medium tabular-nums",
+        ok ? "bg-lime-100 text-lime-600" : "bg-red-50 text-red-500",
       )}
     >
       <Icon className="size-3" aria-hidden />
@@ -246,7 +246,7 @@ function ExitBadge({ code }: { code: number }) {
  *  command exit already shows its code in an error-toned ExitBadge). */
 function ErrorBadge() {
   return (
-    <span className="bg-error-lighter text-error-base inline-flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-label-xs">
+    <span className="bg-red-50 text-red-500 inline-flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-caption-1-medium">
       <RiErrorWarningLine className="size-3" aria-hidden />
       error
     </span>
@@ -255,10 +255,10 @@ function ErrorBadge() {
 
 function DiffStat({ adds, dels }: { adds: number; dels: number }) {
   return (
-    <span className="shrink-0 font-mono text-label-xs tabular-nums">
+    <span className="shrink-0 font-mono text-caption-1-medium tabular-nums">
       <span aria-hidden="true">
-        <span className="text-success-base">+{adds}</span>{" "}
-        <span className="text-error-base">−{dels}</span>
+        <span className="text-lime-600">+{adds}</span>{" "}
+        <span className="text-red-500">−{dels}</span>
       </span>
       <span className="sr-only">{`${adds} additions, ${dels} deletions`}</span>
     </span>
@@ -276,7 +276,7 @@ function TraceRow({ trace, state }: { trace: StepTrace; state: RowState }) {
   const head = (
     <>
       {subagent ? (
-        <span className="bg-feature-lighter text-feature-base flex size-4.5 shrink-0 items-center justify-center rounded-md">
+        <span className="bg-purple-50 text-purple-500 flex size-4.5 shrink-0 items-center justify-center rounded-md">
           <Icon className="size-3" aria-hidden />
         </span>
       ) : (
@@ -284,12 +284,12 @@ function TraceRow({ trace, state }: { trace: StepTrace; state: RowState }) {
           className={cn(
             "size-3.5 shrink-0",
             trace.isError
-              ? "text-error-base"
+              ? "text-red-500"
               : trace.accent === "boot"
-                ? "text-text-soft-400"
+                ? "text-text-tertiary"
                 : running
                   ? "text-blue-500"
-                  : "text-text-soft-400",
+                  : "text-text-tertiary",
           )}
           aria-hidden
         />
@@ -298,8 +298,8 @@ function TraceRow({ trace, state }: { trace: StepTrace; state: RowState }) {
       <span className="min-w-0 flex-1 truncate">
         <span
           className={cn(
-            "text-label-xs font-medium",
-            subagent ? "text-feature-base" : "text-text-strong-950",
+            "text-caption-1-medium font-medium",
+            subagent ? "text-purple-500" : "text-text-primary",
           )}
         >
           {trace.verb}
@@ -309,8 +309,8 @@ function TraceRow({ trace, state }: { trace: StepTrace; state: RowState }) {
             className={cn(
               "ml-1.5",
               trace.monoTarget
-                ? "text-text-sub-600 font-mono text-[11px]"
-                : "text-text-sub-600 text-paragraph-xs",
+                ? "text-text-secondary font-mono text-[11px]"
+                : "text-text-secondary text-caption-1-regular",
             )}
           >
             {trace.target}
@@ -322,7 +322,7 @@ function TraceRow({ trace, state }: { trace: StepTrace; state: RowState }) {
         <DiffStat adds={trace.adds} dels={trace.dels} />
       )}
       {typeof trace.durationMs === "number" && (
-        <span className="text-text-soft-400 shrink-0 font-mono text-label-xs tabular-nums">
+        <span className="text-text-tertiary shrink-0 font-mono text-caption-1-medium tabular-nums">
           {formatDuration(trace.durationMs)}
         </span>
       )}
@@ -338,7 +338,7 @@ function TraceRow({ trace, state }: { trace: StepTrace; state: RowState }) {
       {expandable && (
         <RiArrowDownSLine
           className={cn(
-            "text-text-soft-400 size-4 shrink-0 transition-transform duration-200",
+            "text-text-tertiary size-4 shrink-0 transition-transform duration-200",
             open && "rotate-180",
           )}
           aria-hidden
@@ -353,7 +353,7 @@ function TraceRow({ trace, state }: { trace: StepTrace; state: RowState }) {
       data-glyph={trace.glyph}
       className={cn(
         "animate-ai-fade-up",
-        trace.nested && "border-stroke-soft-200 ml-2 border-l pl-3",
+        trace.nested && "border-border-button-default ml-2 border-l pl-3",
       )}
     >
       {expandable ? (
@@ -361,7 +361,7 @@ function TraceRow({ trace, state }: { trace: StepTrace; state: RowState }) {
           type="button"
           aria-expanded={open}
           onClick={() => setOpen((o) => !o)}
-          className="hover:bg-bg-weak-50 flex w-full items-center gap-1.5 rounded-md px-1.5 py-0.5 text-left transition-colors"
+          className="hover:bg-background-primary-hover flex w-full items-center gap-1.5 rounded-md px-1.5 py-0.5 text-left transition-colors"
         >
           {head}
         </button>
@@ -373,7 +373,7 @@ function TraceRow({ trace, state }: { trace: StepTrace; state: RowState }) {
         <div
           className={cn(
             "mt-1 ml-1.5 max-h-64 overflow-auto rounded-lg bg-neutral-950 px-3 py-2",
-            trace.isError && "ring-error-base/40 ring-1",
+            trace.isError && "ring-border-error-default/40 ring-1",
           )}
         >
           <pre className="whitespace-pre-wrap break-words [font-family:var(--font-mono)] text-[12px] leading-5 text-neutral-300">
@@ -440,9 +440,9 @@ export function fileTypeIcon(base: string): RemixiconComponentType {
 }
 
 const KIND_TONE: Record<FileChangeKind, string> = {
-  add: "bg-success-lighter text-success-base",
-  edit: "bg-information-lighter text-information-base",
-  delete: "bg-error-lighter text-error-base",
+  add: "bg-lime-100 text-lime-600",
+  edit: "bg-blue-50 text-blue-500",
+  delete: "bg-red-50 text-red-500",
 };
 const KIND_LABEL: Record<FileChangeKind, string> = {
   add: "add",
@@ -453,7 +453,7 @@ const KIND_LABEL: Record<FileChangeKind, string> = {
 /** Colored add/edit/del pill. Shared by the file card and the editor pane. */
 export function FileKindBadge({ kind }: { kind: FileChangeKind }) {
   return (
-    <span className={cn("shrink-0 rounded-md px-1.5 py-0.5 text-label-xs", KIND_TONE[kind])}>
+    <span className={cn("shrink-0 rounded-md px-1.5 py-0.5 text-caption-1-medium", KIND_TONE[kind])}>
       {KIND_LABEL[kind]}
     </span>
   );

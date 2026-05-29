@@ -9,7 +9,7 @@ import {
 } from "@remixicon/react";
 import { useState } from "react";
 
-import * as Badge from "@/components/ui/badge";
+import { Chip } from "@/components/base/badges/chip";
 import { relativeTime } from "@/utils/format";
 import { SCOPE_META, type MemoryScope, type StoredMemory } from "./memory-data";
 
@@ -75,7 +75,7 @@ export function StoredMemoryCard({
   }
 
   return (
-    <article className="flex flex-col gap-2.5 rounded-2xl bg-bg-white-0 p-4 shadow-regular-xs ring-1 ring-inset ring-stroke-soft-200 transition-colors hover:ring-stroke-sub-300">
+    <article className="flex flex-col gap-2.5 rounded-2xl bg-background-primary-default p-4 shadow-card ring-1 ring-inset ring-border-button-default transition-colors hover:ring-border-button-hover">
       {mode === "edit" ? (
         <textarea
           aria-label="Correct memory content"
@@ -83,24 +83,24 @@ export function StoredMemoryCard({
           disabled={busy}
           onChange={(e) => setDraft(e.target.value)}
           rows={3}
-          className="w-full resize-y rounded-xl border border-stroke-soft-200 bg-bg-white-0 p-2.5 text-paragraph-sm text-text-strong-950 outline-none focus-visible:ring-2 focus-visible:ring-stroke-strong-950"
+          className="w-full resize-y rounded-xl border border-border-button-default bg-background-primary-default p-2.5 text-body-2-regular text-text-primary outline-none focus-visible:ring-2 focus-visible:ring-border-focus-ring"
         />
       ) : (
-        <p className="text-paragraph-sm text-text-strong-950">{item.content}</p>
+        <p className="text-body-2-regular text-text-primary">{item.content}</p>
       )}
 
       {item.background && mode !== "edit" && (
-        <p className="text-paragraph-xs italic text-text-soft-400">{item.background}</p>
+        <p className="text-caption-1-regular italic text-text-tertiary">{item.background}</p>
       )}
 
       <div className="mt-1 flex flex-wrap items-center gap-2">
-        <Badge.Root variant="light" size="medium" color={item.sourceScope === "org" ? "blue" : "purple"}>
+        <Chip variant="caption" color={item.sourceScope === "org" ? "blue" : "purple"}>
           {meta.tag}
-        </Badge.Root>
-        <Badge.Root variant="light" size="medium" color="gray">
+        </Chip>
+        <Chip variant="caption" color="gray">
           {item.type}
-        </Badge.Root>
-        <span className="text-paragraph-xs text-text-soft-400">
+        </Chip>
+        <span className="text-caption-1-regular text-text-tertiary">
           Updated {relativeTime(item.updatedAt)}
         </span>
 
@@ -129,7 +129,7 @@ export function StoredMemoryCard({
                 type="button"
                 disabled={busy}
                 onClick={save}
-                className="inline-flex items-center gap-1 rounded-full bg-primary-base px-3 py-1 text-label-xs text-text-white-0 disabled:opacity-60"
+                className="inline-flex items-center gap-1 rounded-full bg-accent-500 px-3 py-1 text-caption-1-medium text-white disabled:opacity-60"
               >
                 <RiCheckLine className="size-3.5" aria-hidden />
                 Save
@@ -138,7 +138,7 @@ export function StoredMemoryCard({
                 type="button"
                 disabled={busy}
                 onClick={() => setMode("view")}
-                className="inline-flex items-center gap-1 rounded-full border border-stroke-soft-200 px-3 py-1 text-label-xs text-text-sub-600 hover:text-text-strong-950"
+                className="inline-flex items-center gap-1 rounded-full border border-border-button-default px-3 py-1 text-caption-1-medium text-text-secondary hover:text-text-primary"
               >
                 Cancel
               </button>
@@ -147,12 +147,12 @@ export function StoredMemoryCard({
 
           {mode === "confirm" && (
             <>
-              <span className="text-paragraph-xs text-text-sub-600">Delete permanently?</span>
+              <span className="text-caption-1-regular text-text-secondary">Delete permanently?</span>
               <button
                 type="button"
                 disabled={busy}
                 onClick={remove}
-                className="inline-flex items-center gap-1 rounded-full bg-error-base px-3 py-1 text-label-xs text-text-white-0 disabled:opacity-60"
+                className="inline-flex items-center gap-1 rounded-full bg-red-500 px-3 py-1 text-caption-1-medium text-white disabled:opacity-60"
               >
                 <RiCheckLine className="size-3.5" aria-hidden />
                 Delete
@@ -161,7 +161,7 @@ export function StoredMemoryCard({
                 type="button"
                 disabled={busy}
                 onClick={() => setMode("view")}
-                className="inline-flex items-center rounded-full border border-stroke-soft-200 p-1 text-text-sub-600 hover:text-text-strong-950"
+                className="inline-flex items-center rounded-full border border-border-button-default p-1 text-text-secondary hover:text-text-primary"
                 aria-label="Cancel delete"
               >
                 <RiCloseLine className="size-3.5" aria-hidden />
@@ -171,7 +171,7 @@ export function StoredMemoryCard({
         </div>
       </div>
 
-      {error && <p className="text-paragraph-xs text-error-base">{error}</p>}
+      {error && <p className="text-caption-1-regular text-text-error-primary">{error}</p>}
     </article>
   );
 }
@@ -190,7 +190,7 @@ function IconButton({
       type="button"
       aria-label={label}
       onClick={onClick}
-      className="flex size-7 items-center justify-center rounded-lg text-text-soft-400 transition-colors hover:bg-bg-soft-200 hover:text-text-sub-600"
+      className="flex size-7 items-center justify-center rounded-lg text-foreground-icon-tertiary transition-colors hover:bg-background-tertiary-default hover:text-foreground-icon-secondary"
     >
       <Icon className="size-4" aria-hidden />
     </button>

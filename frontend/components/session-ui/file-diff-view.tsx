@@ -20,7 +20,7 @@ import {
   parseFileEntries,
   parseStepCode,
 } from "@/components/chat/types";
-import { cn } from "@/utils/cn";
+import { cx as cn } from "@/utils/cx";
 import { CHANGED_FILES_AUTO_EXPAND_FILE_LIMIT, type ChangedFile } from "./changed-files";
 import { ChangedFilesCard } from "./changed-files-tree";
 import { hasNonZeroStat, DiffStatLabel } from "./diff-stat-label";
@@ -124,19 +124,19 @@ export function filePatchesFromSteps(steps: readonly ApiStep[]): Map<string, Dif
 // ── Presentation ────────────────────────────────────────────────────────────
 
 const LINE_TONE: Record<DiffLineTone, string> = {
-  add: "bg-success-base/10",
-  del: "bg-error-base/10",
+  add: "bg-lime-500/10",
+  del: "bg-red-500/10",
   context: "",
-  meta: "bg-bg-weak-50 text-text-soft-400",
+  meta: "bg-background-secondary-default text-text-tertiary",
 };
 
 const MARKER: Record<DiffLineTone, string> = { add: "+", del: "-", context: " ", meta: " " };
 
 const MARKER_TONE: Record<DiffLineTone, string> = {
-  add: "text-success-base",
-  del: "text-error-base",
-  context: "text-text-soft-400",
-  meta: "text-text-soft-400",
+  add: "text-lime-600",
+  del: "text-text-error-primary",
+  context: "text-text-tertiary",
+  meta: "text-text-tertiary",
 };
 
 function DiffLineRow({ line }: { line: DiffLine }) {
@@ -145,7 +145,7 @@ function DiffLineRow({ line }: { line: DiffLine }) {
       <span aria-hidden className={cn("w-2.5 shrink-0 select-none", MARKER_TONE[line.tone])}>
         {MARKER[line.tone]}
       </span>
-      <span className="min-w-0 flex-1 whitespace-pre-wrap break-all text-text-sub-600">
+      <span className="min-w-0 flex-1 whitespace-pre-wrap break-all text-text-secondary">
         {line.text || " "}
       </span>
     </div>
@@ -185,24 +185,24 @@ const FileDiffSection = memo(function FileDiffSection(props: {
     <section
       ref={(element) => sectionRef(file.path, element)}
       data-diff-file={file.path}
-      className="overflow-hidden rounded-10 border border-stroke-soft-200"
+      className="overflow-hidden rounded-10 border border-border-button-default"
     >
       <button
         type="button"
         aria-expanded={expanded}
         onClick={() => onToggle(file.path)}
-        className="flex w-full cursor-pointer items-center gap-2 bg-bg-weak-50 px-2.5 py-2 text-left transition-colors hover:bg-bg-soft-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary-base"
+        className="flex w-full cursor-pointer items-center gap-2 bg-background-secondary-default px-2.5 py-2 text-left transition-colors hover:bg-background-tertiary-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-border-focus-ring"
       >
         <RiArrowRightSLine
           aria-hidden
           className={cn(
-            "size-3.5 shrink-0 text-text-soft-400 transition-transform",
+            "size-3.5 shrink-0 text-text-tertiary transition-transform",
             expanded && "rotate-90",
           )}
         />
         <FileKindBadge kind={badgeKind(file.kind)} />
         <span
-          className="min-w-0 flex-1 truncate font-mono text-[11px] text-text-sub-600"
+          className="min-w-0 flex-1 truncate font-mono text-[11px] text-text-secondary"
           title={file.path}
         >
           {file.path}
@@ -216,7 +216,7 @@ const FileDiffSection = memo(function FileDiffSection(props: {
       {/* Collapsed sections keep their (potentially huge) bodies out of the DOM. */}
       {expanded &&
         (hunks.length > 0 ? (
-          <div className="divide-y divide-stroke-soft-200/60 border-t border-stroke-soft-200">
+          <div className="divide-y divide-border-button-default/60 border-t border-border-button-default">
             {hunks.map((hunk, hunkIndex) => (
               <div key={hunkIndex} className="py-1">
                 {hunk.map((line, lineIndex) => (
@@ -228,7 +228,7 @@ const FileDiffSection = memo(function FileDiffSection(props: {
         ) : (
           <p
             data-testid="diff-no-patch"
-            className="border-t border-stroke-soft-200 px-3 py-2 text-paragraph-xs text-text-soft-400"
+            className="border-t border-border-button-default px-3 py-2 text-caption-1-regular text-text-tertiary"
           >
             Patch content not recorded for this change; only the file receipt and line stats are
             available.

@@ -7,7 +7,7 @@
 import { AnimatePresence, motion, useReducedMotion, type Variants } from "motion/react";
 import { useEffect, useState } from "react";
 
-import { cn } from "@/utils/cn";
+import { cx } from "@/utils/cx";
 
 // -- motion tokens ---------------------------------------------------------
 const EASE_IN_OUT = [0.77, 0, 0.175, 1] as const;
@@ -75,9 +75,9 @@ export function AgentProgress({
     <span
       role="status"
       aria-label={`${label}, in progress`}
-      className={cn("inline-flex items-center gap-3 font-mono text-paragraph-sm text-text-sub-600", className)}
+      className={cx("inline-flex items-center gap-3 font-mono text-body-2-regular text-text-secondary", className)}
     >
-      <span aria-hidden="true" className="grid size-5 shrink-0 grid-cols-3 gap-[2px] text-primary-base">
+      <span aria-hidden="true" className="grid size-5 shrink-0 grid-cols-3 gap-[2px] text-accent-500">
         {GRID_CELLS.map(({ id, delay }) => (
           <motion.span
             key={id}
@@ -91,7 +91,7 @@ export function AgentProgress({
           />
         ))}
       </span>
-      <span className="relative inline-flex overflow-hidden font-sans text-label-sm text-text-strong-950">
+      <span className="relative inline-flex overflow-hidden font-sans text-body-2-medium text-text-primary">
         <AnimatePresence initial={false} mode="popLayout">
           <motion.span
             key={label}
@@ -105,7 +105,7 @@ export function AgentProgress({
           </motion.span>
         </AnimatePresence>
       </span>
-      <span aria-hidden="true" className="tabular-nums text-text-soft-400">
+      <span aria-hidden="true" className="tabular-nums text-text-tertiary">
         {formatElapsed(elapsed)}
       </span>
     </span>
@@ -125,8 +125,8 @@ export function AgentProgressDemo() {
   }, []);
 
   return (
-    <div className="flex items-center justify-center rounded-xl bg-bg-weak-50 p-3">
-      <div className="flex w-full max-w-md items-center justify-center rounded-2xl border border-stroke-soft-200 bg-bg-white-0 py-6 shadow-regular-sm">
+    <div className="flex items-center justify-center rounded-xl bg-background-secondary-default p-3">
+      <div className="flex w-full max-w-md items-center justify-center rounded-2xl border border-border-button-default bg-background-primary-default py-6 shadow-sm">
         <AgentProgress label={VERBS[verb]} running />
       </div>
     </div>

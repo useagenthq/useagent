@@ -135,10 +135,10 @@ export function PlaybookEditor({
       <Modal.Content className="max-h-[90vh] max-w-[520px] overflow-y-auto">
         <div className="flex flex-col gap-5 p-6">
           <div className="flex flex-col gap-1.5">
-            <Modal.Title className="text-title-h6 text-text-strong-950">
+            <Modal.Title className="text-title-h6 text-text-primary">
               {isEdit ? "Edit playbook" : "New playbook"}
             </Modal.Title>
-            <Modal.Description className="text-paragraph-sm text-text-sub-600">
+            <Modal.Description className="text-body-2-regular text-text-secondary">
               {isEdit
                 ? "Saving a content change mints a new version. Past runs stay pinned to the version they used."
                 : "A structured procedure useAgent follows as guidance - an Overview, numbered Procedure steps, and a Verify checklist."}
@@ -220,14 +220,14 @@ export function PlaybookEditor({
           </div>
 
           {status === "error" && (
-            <p className="rounded-xl bg-error-lighter px-3 py-2 text-paragraph-xs text-error-base">
+            <p className="rounded-xl bg-background-tertiary-error px-3 py-2 text-caption-1-regular text-text-error-primary">
               Couldn&rsquo;t save. Check the backend and try again.
             </p>
           )}
 
           <div className="flex items-center justify-end gap-2">
             {busy && (
-              <span className="agent-progress-loading-text mr-auto text-paragraph-sm">
+              <span className="agent-progress-loading-text mr-auto text-body-2-regular">
                 Saving…
               </span>
             )}

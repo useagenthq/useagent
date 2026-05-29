@@ -12,9 +12,9 @@
 //   ChevronsUpDown/DownUp -> RiExpandUpDownLine/RiContractUpDownLine, Folder ->
 //   RiFolderOpenLine/RiFolderLine, FileDiff -> RiFileList2Line). PierreEntryIcon
 //   (ext-aware file glyphs) -> a plain RiFile3Line; no theme prop needed.
-// - T3 shadcn tokens -> AlignUI semantic (secondary/bg-secondary -> bg-bg-weak-50,
-//   muted-foreground -> text-text-sub-600/soft-400, accent hover -> bg-bg-soft-200,
-//   border -> stroke-soft-200). The dark: color-mix sticky header is dropped;
+// - T3 shadcn tokens -> BoardUI semantic (secondary/bg-secondary -> bg-background-secondary-default,
+//   muted-foreground -> text-text-secondary/tertiary, accent hover -> bg-background-tertiary-hover,
+//   border -> border-button-default). The dark: color-mix sticky header is dropped;
 //   the sticky header reuses the card surface.
 // - Upstream is store-controlled (expanded/allDirectoriesExpanded from
 //   uiStateStore, turnId-keyed onOpenTurnDiff). This port owns both flags
@@ -32,8 +32,9 @@ import {
   RiFolderOpenLine,
 } from "@remixicon/react";
 import { memo, useCallback, useMemo, useState } from "react";
-import * as Tooltip from "@/components/ui/tooltip";
-import { cn } from "@/utils/cn";
+import { Focusable } from "react-aria-components";
+import { Tooltip, TooltipTrigger } from "@/components/base/tooltip/tooltip";
+import { cx as cn } from "@/utils/cx";
 import {
   buildTurnDiffTree,
   changedFileName,
@@ -72,7 +73,7 @@ export const ChangedFilesCard = memo(function ChangedFilesCard(props: {
   return (
     <div
       data-session-ui="changed-files-card"
-      className="mt-4 rounded-10 border border-stroke-soft-200 bg-bg-weak-50 p-2"
+      className="mt-4 rounded-10 border border-border-button-default bg-background-secondary-default p-2"
       data-changed-files-state={
         expanded ? "expanded" : compactPreviewVisible ? "preview" : "collapsed"
       }
@@ -80,23 +81,23 @@ export const ChangedFilesCard = memo(function ChangedFilesCard(props: {
       <div
         className={cn(
           "flex items-center justify-between gap-2 rounded-lg px-1",
-          expanded && "sticky top-2 z-10 mb-2 bg-bg-weak-50",
+          expanded && "sticky top-2 z-10 mb-2 bg-background-secondary-default",
         )}
       >
         <button
           type="button"
           aria-expanded={expanded}
-          className="group flex min-w-0 flex-1 cursor-pointer items-center gap-1.5 rounded-lg px-1 py-1.5 text-left transition-colors hover:bg-bg-soft-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary-base"
+          className="group flex min-w-0 flex-1 cursor-pointer items-center gap-1.5 rounded-lg px-1 py-1.5 text-left transition-colors hover:bg-background-tertiary-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-border-focus-ring"
           onClick={() => setExpanded((v) => !v)}
         >
           <RiArrowRightSLine
             aria-hidden="true"
             className={cn(
-              "size-3.5 shrink-0 text-text-soft-400 transition-transform",
+              "size-3.5 shrink-0 text-text-tertiary transition-transform",
               expanded && "rotate-90",
             )}
           />
-          <span className="flex min-w-0 items-center gap-1 whitespace-nowrap text-[12px] font-medium leading-4 text-text-strong-950">
+          <span className="flex min-w-0 items-center gap-1 whitespace-nowrap text-[12px] font-medium leading-4 text-text-primary">
             <span>
               {files.length} changed file{files.length === 1 ? "" : "s"}
             </span>
@@ -109,17 +110,17 @@ export const ChangedFilesCard = memo(function ChangedFilesCard(props: {
               />
             )}
           </span>
-          <span className="ml-1 hidden truncate text-[11px] text-text-soft-400 group-hover:text-text-sub-600 sm:inline">
+          <span className="ml-1 hidden truncate text-[11px] text-text-tertiary group-hover:text-text-secondary sm:inline">
             {expanded ? "Hide files" : "Show files"}
           </span>
         </button>
         <div className="flex items-center gap-1.5">
           {expanded ? (
-            <Tooltip.Root>
-              <Tooltip.Trigger asChild>
+            <TooltipTrigger delay={200}>
+              <Focusable>
                 <button
                   type="button"
-                  className="flex size-[22px] cursor-pointer items-center justify-center rounded-md border border-stroke-soft-200 text-text-sub-600 transition-colors hover:bg-bg-soft-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-base"
+                  className="flex size-[22px] cursor-pointer items-center justify-center rounded-md border border-border-button-default text-text-secondary transition-colors hover:bg-background-tertiary-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-focus-ring"
                   aria-label={
                     allDirectoriesExpanded ? "Collapse all folders" : "Expand all folders"
                   }
@@ -131,27 +132,27 @@ export const ChangedFilesCard = memo(function ChangedFilesCard(props: {
                     <RiExpandUpDownLine className="size-3" aria-hidden />
                   )}
                 </button>
-              </Tooltip.Trigger>
-              <Tooltip.Content size="xsmall">
+              </Focusable>
+              <Tooltip size="sm">
                 {allDirectoriesExpanded ? "Collapse all folders" : "Expand all folders"}
-              </Tooltip.Content>
-            </Tooltip.Root>
+              </Tooltip>
+            </TooltipTrigger>
           ) : null}
           {onOpenFile ? (
-            <Tooltip.Root>
-              <Tooltip.Trigger asChild>
+            <TooltipTrigger delay={200}>
+              <Focusable>
                 <button
                   type="button"
-                  className="flex h-[22px] cursor-pointer items-center gap-1 rounded-md border border-stroke-soft-200 px-1.5 text-[11px] font-medium text-text-sub-600 transition-colors hover:bg-bg-soft-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-base"
+                  className="flex h-[22px] cursor-pointer items-center gap-1 rounded-md border border-border-button-default px-1.5 text-[11px] font-medium text-text-secondary transition-colors hover:bg-background-tertiary-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-focus-ring"
                   aria-label="Open diff"
                   onClick={() => onOpenFile(files[0]?.path)}
                 >
                   <RiFileList2Line className="size-3" aria-hidden />
                   <span className="hidden sm:inline">Open diff</span>
                 </button>
-              </Tooltip.Trigger>
-              <Tooltip.Content size="xsmall">Open the full diff</Tooltip.Content>
-            </Tooltip.Root>
+              </Focusable>
+              <Tooltip size="sm">Open the full diff</Tooltip>
+            </TooltipTrigger>
           ) : null}
         </div>
       </div>
@@ -163,11 +164,11 @@ export const ChangedFilesCard = memo(function ChangedFilesCard(props: {
         />
       ) : compactPreviewVisible ? (
         <div className="px-2 pb-1.5 pt-1">
-          <p className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[11px] text-text-sub-600">
+          <p className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[11px] text-text-secondary">
             {scopeSummary.map((scope, index) => (
               <span key={scope.label} className="inline-flex items-center gap-1">
                 {index > 0 ? <span aria-hidden="true">·</span> : null}
-                <span className="font-mono text-text-strong-950/75">{scope.label}</span>
+                <span className="font-mono text-text-primary/75">{scope.label}</span>
                 <span>
                   {scope.fileCount} file{scope.fileCount === 1 ? "" : "s"}
                 </span>
@@ -180,16 +181,16 @@ export const ChangedFilesCard = memo(function ChangedFilesCard(props: {
                 key={file.path}
                 type="button"
                 title={file.path}
-                className="inline-flex max-w-48 cursor-pointer items-center gap-1 rounded-md border border-stroke-soft-200 bg-bg-white-0/45 px-1.5 py-1 font-mono text-[10px] text-text-sub-600 transition-colors hover:bg-bg-soft-200 hover:text-text-strong-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-base"
+                className="inline-flex max-w-48 cursor-pointer items-center gap-1 rounded-md border border-border-button-default bg-background-primary-default/45 px-1.5 py-1 font-mono text-[10px] text-text-secondary transition-colors hover:bg-background-tertiary-hover hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-focus-ring"
                 onClick={() => onOpenFile?.(file.path)}
               >
-                <RiFile3Line className="size-3 shrink-0 text-text-soft-400" aria-hidden />
+                <RiFile3Line className="size-3 shrink-0 text-text-tertiary" aria-hidden />
                 <span className="truncate">{changedFileName(file.path)}</span>
               </button>
             ))}
             <button
               type="button"
-              className="cursor-pointer rounded-md px-1.5 py-1 text-[11px] font-medium text-text-sub-600 transition-colors hover:bg-bg-soft-200 hover:text-text-strong-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-base"
+              className="cursor-pointer rounded-md px-1.5 py-1 text-[11px] font-medium text-text-secondary transition-colors hover:bg-background-tertiary-hover hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-focus-ring"
               onClick={() => setExpanded(true)}
             >
               Show all {files.length} files
@@ -250,23 +251,23 @@ export const ChangedFilesTree = memo(function ChangedFilesTree(props: {
         <div key={`dir:${node.path}`}>
           <button
             type="button"
-            className="group flex w-full cursor-pointer items-center gap-1.5 rounded-lg py-1 pr-3 text-left transition-colors hover:bg-bg-soft-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary-base"
+            className="group flex w-full cursor-pointer items-center gap-1.5 rounded-lg py-1 pr-3 text-left transition-colors hover:bg-background-tertiary-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-border-focus-ring"
             style={{ paddingLeft: `${leftPadding}px` }}
             onClick={() => toggleDirectory(node.path)}
           >
             <RiArrowRightSLine
               aria-hidden="true"
               className={cn(
-                "size-3.5 shrink-0 text-text-soft-400 transition-transform group-hover:text-text-sub-600",
+                "size-3.5 shrink-0 text-text-tertiary transition-transform group-hover:text-text-secondary",
                 isExpanded && "rotate-90",
               )}
             />
             {isExpanded ? (
-              <RiFolderOpenLine className="size-3.5 shrink-0 text-text-soft-400" aria-hidden />
+              <RiFolderOpenLine className="size-3.5 shrink-0 text-text-tertiary" aria-hidden />
             ) : (
-              <RiFolderLine className="size-3.5 shrink-0 text-text-soft-400" aria-hidden />
+              <RiFolderLine className="size-3.5 shrink-0 text-text-tertiary" aria-hidden />
             )}
-            <span className="truncate font-mono text-[11px] text-text-sub-600 group-hover:text-text-strong-950">
+            <span className="truncate font-mono text-[11px] text-text-secondary group-hover:text-text-primary">
               {node.name}
             </span>
             {hasNonZeroStat(node.stat) && (
@@ -290,8 +291,8 @@ export const ChangedFilesTree = memo(function ChangedFilesTree(props: {
         type="button"
         disabled={!onOpenFile}
         className={cn(
-          "group flex w-full items-center gap-1.5 rounded-lg py-1 pr-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary-base",
-          onOpenFile && "cursor-pointer hover:bg-bg-soft-200",
+          "group flex w-full items-center gap-1.5 rounded-lg py-1 pr-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-border-focus-ring",
+          onOpenFile && "cursor-pointer hover:bg-background-tertiary-hover",
         )}
         style={{ paddingLeft: `${leftPadding}px` }}
         onClick={() => onOpenFile?.(node.path)}
@@ -299,8 +300,8 @@ export const ChangedFilesTree = memo(function ChangedFilesTree(props: {
         {hasDirectoryNodes || depth > 0 ? (
           <span aria-hidden="true" className="size-3.5 shrink-0" />
         ) : null}
-        <RiFile3Line className="size-3.5 shrink-0 text-text-soft-400" aria-hidden />
-        <span className="truncate font-mono text-[11px] text-text-sub-600 group-hover:text-text-strong-950">
+        <RiFile3Line className="size-3.5 shrink-0 text-text-tertiary" aria-hidden />
+        <span className="truncate font-mono text-[11px] text-text-secondary group-hover:text-text-primary">
           {node.name}
         </span>
         {node.stat && (

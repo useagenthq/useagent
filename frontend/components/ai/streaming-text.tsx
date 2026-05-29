@@ -9,7 +9,7 @@ import {
   RiThumbUpLine,
 } from "@remixicon/react";
 import Image from "next/image";
-import { cnExt as cn } from "@/utils/cn";
+import { cx } from "@/utils/cx";
 
 export interface StreamingSource {
   name: string;
@@ -66,14 +66,14 @@ function SourceAvatar({
         width={16}
         height={16}
         unoptimized
-        className={cn("object-cover", className)}
+        className={cx("object-cover", className)}
       />
     );
   }
   return (
     <span
-      className={cn(
-        "flex items-center justify-center bg-bg-soft-200 text-[9px] font-semibold text-text-sub-600",
+      className={cx(
+        "flex items-center justify-center bg-background-tertiary-default text-[9px] font-semibold text-text-secondary",
         className,
       )}
       aria-hidden
@@ -100,10 +100,10 @@ function ActionButton({
       aria-label={label}
       aria-pressed={active}
       onClick={onClick}
-      className={cn(
+      className={cx(
         "flex size-7 items-center justify-center rounded-lg transition-colors duration-100",
-        "hover:bg-bg-soft-200 hover:text-text-sub-600",
-        active ? "text-text-strong-950" : "text-text-soft-400",
+        "hover:bg-background-secondary-hover hover:text-text-secondary",
+        active ? "text-text-primary" : "text-text-tertiary",
       )}
     >
       {children}
@@ -173,16 +173,16 @@ export function StreamingText({
   const settled = !active;
 
   return (
-    <div className={cn("w-full", className)}>
-      <p className="text-paragraph-md leading-relaxed whitespace-pre-wrap text-text-strong-950">
+    <div className={cx("w-full", className)}>
+      <p className="text-body-regular leading-relaxed whitespace-pre-wrap text-text-primary">
         {visible}
         {active && (
-          <span className="ai-caret ml-0.5 inline-block h-4 w-0.5 translate-y-0.5 rounded-full bg-text-strong-950 align-text-bottom" />
+          <span className="ai-caret ml-0.5 inline-block h-4 w-0.5 translate-y-0.5 rounded-full bg-foreground-icon-primary align-text-bottom" />
         )}
       </p>
 
       <div
-        className={cn(
+        className={cx(
           "mt-2 flex items-center gap-0.5 transition-opacity duration-300",
           settled ? "opacity-100" : "pointer-events-none opacity-0",
         )}
@@ -220,18 +220,18 @@ export function StreamingText({
             type="button"
             aria-expanded={sourcesOpen}
             onClick={() => setSourcesOpen((o) => !o)}
-            className="ml-1.5 flex items-center gap-1.5 rounded-lg px-1.5 py-1 text-left transition-colors duration-150 hover:bg-bg-soft-200"
+            className="ml-1.5 flex items-center gap-1.5 rounded-lg px-1.5 py-1 text-left transition-colors duration-150 hover:bg-background-secondary-hover"
           >
             <span className="flex -space-x-1.5">
               {sources.slice(0, 3).map((source) => (
                 <SourceAvatar
                   key={source.url}
                   source={source}
-                  className="size-4 rounded-full ring-2 ring-bg-weak-50"
+                  className="size-4 rounded-full ring-2 ring-background-secondary-default"
                 />
               ))}
             </span>
-            <span className="text-paragraph-xs text-text-sub-600">
+            <span className="text-caption-1-regular text-text-secondary">
               {sources.length} {sources.length === 1 ? "source" : "sources"}
             </span>
           </button>
@@ -247,18 +247,18 @@ export function StreamingText({
           }}
         >
           <div className="overflow-hidden">
-            <div className="mt-1.5 flex flex-col rounded-xl border border-stroke-soft-200 bg-bg-white-0 p-1 shadow-regular-xs">
+            <div className="mt-1.5 flex flex-col rounded-xl border border-border-button-default bg-background-primary-default p-1 shadow-card">
               {sources.map((source) => (
                 <a
                   key={source.url}
                   href={source.url}
                   target="_blank"
                   rel="noreferrer"
-                  className="flex items-center gap-2 rounded-lg px-1.5 py-1 text-paragraph-xs text-text-sub-600 transition-colors duration-150 hover:bg-bg-weak-50 hover:text-text-strong-950"
+                  className="flex items-center gap-2 rounded-lg px-1.5 py-1 text-caption-1-regular text-text-secondary transition-colors duration-150 hover:bg-background-primary-hover hover:text-text-primary"
                 >
                   <SourceAvatar source={source} className="size-4 shrink-0 rounded" />
                   <span className="truncate">{source.name}</span>
-                  <span className="ml-auto shrink-0 font-mono text-paragraph-xs text-text-soft-400">
+                  <span className="ml-auto shrink-0 font-mono text-caption-1-regular text-text-tertiary">
                     {hostOf(source.url)}
                   </span>
                 </a>

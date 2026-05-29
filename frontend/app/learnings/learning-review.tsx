@@ -57,10 +57,10 @@ export function LearningReview({
   return (
     <div className="mx-auto w-full max-w-[880px] px-6 py-8 sm:px-10 sm:py-10">
       <div className="flex items-start gap-2.5">
-        <RiLightbulbLine aria-hidden className="mt-0.5 size-5 text-text-strong-950" />
+        <RiLightbulbLine aria-hidden className="mt-0.5 size-5 text-text-primary" />
         <div className="flex flex-col gap-0.5">
-          <h1 className="text-display-sm text-text-strong-950">Learnings</h1>
-          <p className="text-paragraph-sm text-text-sub-600">
+          <h1 className="text-display-sm text-text-primary">Learnings</h1>
+          <p className="text-body-2-regular text-text-secondary">
             Review what useAgent proposes to learn. Nothing goes live without an accept.
           </p>
         </div>
@@ -72,13 +72,13 @@ export function LearningReview({
         <>
           <section className="mt-8 flex flex-col gap-4">
             <SectionHeader
-              icon={<RiLightbulbLine className="size-4 text-text-sub-600" aria-hidden />}
+              icon={<RiLightbulbLine className="size-4 text-text-secondary" aria-hidden />}
               title="Knowledge drafts"
               count={drafts.length}
               hint="High-value completed runs propose these. Accepting publishes the draft into org knowledge; dismissing records the decision."
             />
             {drafts.length === 0 ? (
-              <p className="text-paragraph-sm text-text-sub-600">
+              <p className="text-body-2-regular text-text-secondary">
                 No drafts yet. Completed runs that publish artifacts or use many
                 tools propose learnings here.
               </p>
@@ -91,17 +91,17 @@ export function LearningReview({
             )}
           </section>
 
-          <div className="mt-10 border-t border-stroke-soft-200" />
+          <div className="mt-10 border-t border-border-button-default" />
 
           <section className="mt-8 flex flex-col gap-4">
             <SectionHeader
-              icon={<RiBookMarkedLine className="size-4 text-text-sub-600" aria-hidden />}
+              icon={<RiBookMarkedLine className="size-4 text-text-secondary" aria-hidden />}
               title="Skill proposals"
               count={proposals.length}
               hint="Repeated accepted learnings assemble into these. Accepting mints a real skill revision; dismissing records the decision."
             />
             {proposals.length === 0 ? (
-              <p className="text-paragraph-sm text-text-sub-600">
+              <p className="text-body-2-regular text-text-secondary">
                 No proposals yet. They appear when several accepted learnings
                 describe the same procedure.
               </p>
@@ -134,10 +134,10 @@ function SectionHeader({
     <div className="flex flex-col gap-1">
       <div className="flex items-center gap-2">
         {icon}
-        <h2 className="text-label-sm text-text-sub-600">{title}</h2>
-        {count > 0 && <span className="text-paragraph-xs text-text-soft-400">{count}</span>}
+        <h2 className="text-body-2-medium text-text-secondary">{title}</h2>
+        {count > 0 && <span className="text-caption-1-regular text-text-tertiary">{count}</span>}
       </div>
-      <p className="text-paragraph-xs text-text-soft-400">{hint}</p>
+      <p className="text-caption-1-regular text-text-tertiary">{hint}</p>
     </div>
   );
 }
@@ -178,7 +178,7 @@ function ResolveActions({
         type="button"
         disabled={busy}
         onClick={() => run(onAccept)}
-        className="inline-flex items-center gap-1 rounded-full border border-stroke-soft-200 px-3 py-1 text-label-xs text-success-base transition-colors hover:bg-bg-weak-50 disabled:opacity-60"
+        className="inline-flex items-center gap-1 rounded-full border border-border-button-default px-3 py-1 text-label-xs text-status-lime-text transition-colors hover:bg-background-secondary-default disabled:opacity-60"
       >
         Accept
       </button>
@@ -186,11 +186,11 @@ function ResolveActions({
         type="button"
         disabled={busy}
         onClick={() => run(onDismiss)}
-        className="inline-flex items-center gap-1 rounded-full border border-stroke-soft-200 px-3 py-1 text-label-xs text-error-base transition-colors hover:bg-bg-weak-50 disabled:opacity-60"
+        className="inline-flex items-center gap-1 rounded-full border border-border-button-default px-3 py-1 text-label-xs text-text-error-primary transition-colors hover:bg-background-secondary-default disabled:opacity-60"
       >
         Dismiss
       </button>
-      {failure && <span className="text-paragraph-xs text-error-base">{failure}</span>}
+      {failure && <span className="text-caption-1-regular text-text-error-primary">{failure}</span>}
     </div>
   );
 }
@@ -204,7 +204,7 @@ function Disclosure({ label, children }: { label: string; children: React.ReactN
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="inline-flex w-fit items-center gap-1 text-label-xs text-text-sub-600 transition-colors hover:text-text-strong-950"
+        className="inline-flex w-fit items-center gap-1 text-label-xs text-text-secondary transition-colors hover:text-text-primary"
       >
         <Chevron className="size-3.5" aria-hidden />
         {label}
@@ -225,22 +225,22 @@ function ProcedureTraceList({
 }) {
   return (
     <div className="flex flex-col gap-1">
-      <p className="text-mono-label text-text-soft-400">Procedure trace</p>
+      <p className="text-mono-label text-text-tertiary">Procedure trace</p>
       <ol className="flex max-h-48 flex-col gap-0.5 overflow-auto">
         {steps.map((step, i) => (
-          <li key={i} className="flex items-baseline gap-2 text-paragraph-xs">
-            <span className="w-5 shrink-0 text-right [font-family:var(--font-mono)] text-text-soft-400">
+          <li key={i} className="flex items-baseline gap-2 text-caption-1-regular">
+            <span className="w-5 shrink-0 text-right [font-family:var(--font-mono)] text-text-tertiary">
               {i + 1}
             </span>
-            <span className="shrink-0 [font-family:var(--font-mono)] text-text-strong-950">
+            <span className="shrink-0 [font-family:var(--font-mono)] text-text-primary">
               {step.tool}
             </span>
-            <span className="min-w-0 truncate text-text-sub-600">{step.gist}</span>
-            {!step.ok && <span className="shrink-0 text-label-xs text-error-base">failed</span>}
+            <span className="min-w-0 truncate text-text-secondary">{step.gist}</span>
+            {!step.ok && <span className="shrink-0 text-label-xs text-text-error-primary">failed</span>}
           </li>
         ))}
         {elided > 0 && (
-          <li className="pl-7 text-paragraph-xs text-text-soft-400">
+          <li className="pl-7 text-caption-1-regular text-text-tertiary">
             ... {elided} more step{elided === 1 ? "" : "s"}
           </li>
         )}
@@ -259,25 +259,25 @@ function DraftCard({
   const meta = STATUS_META[draft.status] ?? STATUS_META.dismissed!;
   const e = draft.evidence;
   return (
-    <article className="flex flex-col gap-2 rounded-2xl bg-bg-white-0 p-4 shadow-regular-xs ring-1 ring-inset ring-stroke-soft-200">
+    <article className="flex flex-col gap-2 rounded-2xl bg-background-primary-default p-4 shadow-card ring-1 ring-inset ring-border-button-default">
       <div className="flex items-center gap-2">
         <Badge.Root variant="light" size="medium" color={meta.color}>
           {meta.label}
         </Badge.Root>
         <Link
           href={`/session/${draft.run_id}`}
-          className="truncate text-paragraph-xs text-text-soft-400 hover:text-text-sub-600"
+          className="truncate text-caption-1-regular text-text-tertiary hover:text-text-secondary"
         >
           run {draft.run_id.slice(0, 8)}
         </Link>
-        <span className="ml-auto text-paragraph-xs text-text-soft-400">
+        <span className="ml-auto text-caption-1-regular text-text-tertiary">
           {relativeTime(draft.created_at)}
         </span>
       </div>
-      <p className="text-paragraph-sm text-text-strong-950">{draft.title}</p>
+      <p className="text-body-2-regular text-text-primary">{draft.title}</p>
       <Disclosure label="Evidence and proposed content">
-        <div className="flex flex-col gap-2 rounded-xl bg-bg-weak-50 p-3">
-          <p className="text-paragraph-xs text-text-sub-600">
+        <div className="flex flex-col gap-2 rounded-xl bg-background-secondary-default p-3">
+          <p className="text-caption-1-regular text-text-secondary">
             {e.reason === "published_artifacts"
               ? `Published ${e.artifactCount} artifact${e.artifactCount === 1 ? "" : "s"}`
               : "Long multi-tool run"}
@@ -288,7 +288,7 @@ function DraftCard({
           {e.procedure && e.procedure.length > 0 && (
             <ProcedureTraceList steps={e.procedure} elided={e.procedureElided ?? 0} />
           )}
-          <pre className="max-h-64 overflow-auto whitespace-pre-wrap [font-family:var(--font-mono)] text-paragraph-xs text-text-sub-600">
+          <pre className="max-h-64 overflow-auto whitespace-pre-wrap [font-family:var(--font-mono)] text-caption-1-regular text-text-secondary">
             {draft.content}
           </pre>
         </div>
@@ -318,7 +318,7 @@ function ProposalCard({
 }) {
   const meta = STATUS_META[proposal.status] ?? STATUS_META.dismissed!;
   return (
-    <article className="flex flex-col gap-2 rounded-2xl bg-bg-white-0 p-4 shadow-regular-xs ring-1 ring-inset ring-stroke-soft-200">
+    <article className="flex flex-col gap-2 rounded-2xl bg-background-primary-default p-4 shadow-card ring-1 ring-inset ring-border-button-default">
       <div className="flex items-center gap-2">
         <Badge.Root variant="light" size="medium" color={meta.color}>
           {meta.label}
@@ -326,17 +326,17 @@ function ProposalCard({
         <Badge.Root variant="light" size="medium" color="blue">
           {proposal.skill_id ? "Revision" : "New playbook"}
         </Badge.Root>
-        <span className="ml-auto text-paragraph-xs text-text-soft-400">
+        <span className="ml-auto text-caption-1-regular text-text-tertiary">
           {relativeTime(proposal.created_at)}
         </span>
       </div>
-      <p className="text-paragraph-sm text-text-strong-950">{proposal.name}</p>
-      <p className="text-paragraph-xs text-text-soft-400">
+      <p className="text-body-2-regular text-text-primary">{proposal.name}</p>
+      <p className="text-caption-1-regular text-text-tertiary">
         {proposal.description} Assembled from {proposal.source_draft_ids.length} accepted
         learnings.
       </p>
       <Disclosure label="Proposed SKILL.md">
-        <pre className="max-h-64 overflow-auto whitespace-pre-wrap rounded-xl bg-bg-weak-50 p-3 [font-family:var(--font-mono)] text-paragraph-xs text-text-sub-600">
+        <pre className="max-h-64 overflow-auto whitespace-pre-wrap rounded-xl bg-background-secondary-default p-3 [font-family:var(--font-mono)] text-caption-1-regular text-text-secondary">
           {proposal.proposed_content}
         </pre>
       </Disclosure>

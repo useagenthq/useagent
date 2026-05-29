@@ -62,7 +62,7 @@ export function DiffPane({ turns }: { turns: readonly DiffTurn[] }) {
   if (files.length === 0) {
     return (
       <div className="flex h-full items-center justify-center" data-testid="diff-pane">
-        <p className="text-paragraph-sm text-text-soft-400">
+        <p className="text-body-2-regular text-text-tertiary">
           {live ? "Waiting for the first file change…" : "No file changes were recorded."}
         </p>
       </div>

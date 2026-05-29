@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 // clsx-only (not cnExt): tailwind-merge misgroups the custom `text-mono-label`
 // utility with the `text-neutral-*` color in the same call and drops it, blowing
 // the tab labels up to the inherited 16px instead of the 11px mono-label rhythm.
-import { cn } from "@/utils/cn";
+import { cx as cn } from "@/utils/cx";
 import { InteractiveTerminal } from "@/components/chat/interactive-terminal";
 import {
   engineLabel,
@@ -67,9 +67,9 @@ export function TerminalPane({
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden bg-neutral-950" data-testid="terminal-pane">
-      <div className="flex shrink-0 items-center gap-2.5 border-b border-white-alpha-10 px-3.5 py-2">
+      <div className="flex shrink-0 items-center gap-2.5 border-b border-white/10 px-3.5 py-2">
         <span className="text-mono-label text-neutral-400">Terminal</span>
-        <span className="text-mono-label rounded border border-white-alpha-10 px-1.5 py-px text-neutral-500">
+        <span className="text-mono-label rounded border border-white/10 px-1.5 py-px text-neutral-500">
           {engineLabel(engine)}
         </span>
         {runId && (
@@ -83,7 +83,7 @@ export function TerminalPane({
                 className={cn(
                   "text-mono-label rounded px-1.5 py-0.5 transition-colors",
                   tab === t
-                    ? "bg-white-alpha-10 text-neutral-200"
+                    ? "bg-white/10 text-neutral-200"
                     : "text-neutral-600 hover:text-neutral-400",
                 )}
               >

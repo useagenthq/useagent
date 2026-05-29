@@ -25,20 +25,20 @@ export function PromptBar() {
   return (
     <div className="relative w-full max-w-2xl">
       {options.length ? (
-        <div className="absolute inset-x-0 bottom-full z-10 mb-2 rounded-xl border border-stroke-soft-200 bg-bg-white-0 p-1.5 shadow-regular-lg">
+        <div className="absolute inset-x-0 bottom-full z-10 mb-2 rounded-xl border border-border-button-default bg-background-primary-default p-1.5 shadow-lg">
           {options.map((option) => (
             <button
               type="button"
               key={option}
               onClick={() => choose(option)}
-              className="flex w-full rounded-lg px-3 py-2 text-left text-paragraph-sm text-text-sub-600 hover:bg-bg-weak-50"
+              className="flex w-full rounded-lg px-3 py-2 text-left text-body-2-regular text-text-secondary hover:bg-background-primary-hover"
             >
               {option}
             </button>
           ))}
         </div>
       ) : null}
-      <div className="rounded-2xl border border-stroke-soft-200 bg-bg-white-0 p-2 shadow-regular-md focus-within:border-stroke-sub-300">
+      <div className="rounded-2xl border border-border-button-default bg-background-primary-default p-2 shadow-md focus-within:border-border-button-hover">
         {attachments.length ? (
           <div className="mb-2 flex flex-wrap gap-1">
             {attachments.map((file) => (
@@ -46,7 +46,7 @@ export function PromptBar() {
                 type="button"
                 key={file}
                 onClick={() => setAttachments((current) => current.filter((item) => item !== file))}
-                className="rounded-md bg-bg-weak-50 px-2 py-1 text-paragraph-xs text-text-sub-600"
+                className="rounded-md bg-background-secondary-default px-2 py-1 text-caption-1-regular text-text-secondary"
               >
                 {file} ×
               </button>
@@ -59,9 +59,9 @@ export function PromptBar() {
           aria-label="Prompt"
           placeholder="Ask anything, use @ for sources or / for commands"
           rows={2}
-          className="w-full resize-none bg-transparent px-1 text-paragraph-sm text-text-strong-950 outline-none placeholder:text-text-soft-400"
+          className="w-full resize-none bg-transparent px-1 text-body-2-regular text-text-primary outline-none placeholder:text-text-placeholder"
         />
-        <div className="flex items-center gap-1 text-text-soft-400">
+        <div className="flex items-center gap-1 text-text-tertiary">
           <button
             type="button"
             aria-label="Add attachment"
@@ -70,7 +70,7 @@ export function PromptBar() {
                 current.includes("flavor-chart.png") ? current : [...current, "flavor-chart.png"],
               )
             }
-            className="rounded-lg p-1.5 hover:bg-bg-weak-50"
+            className="rounded-lg p-1.5 hover:bg-background-primary-hover"
           >
             <RiAddLine className="size-4" />
           </button>
@@ -78,7 +78,7 @@ export function PromptBar() {
             type="button"
             aria-label="Add source"
             onClick={() => setDraft((current) => `${current}@`)}
-            className="rounded-lg p-1.5 hover:bg-bg-weak-50"
+            className="rounded-lg p-1.5 hover:bg-background-primary-hover"
           >
             <RiAtLine className="size-4" />
           </button>
@@ -86,7 +86,7 @@ export function PromptBar() {
             type="button"
             aria-label="Add command"
             onClick={() => setDraft((current) => `${current}/`)}
-            className="rounded-lg p-1.5 hover:bg-bg-weak-50"
+            className="rounded-lg p-1.5 hover:bg-background-primary-hover"
           >
             <RiCommandLine className="size-4" />
           </button>
@@ -94,7 +94,7 @@ export function PromptBar() {
             value={model}
             onChange={(event) => setModel(event.target.value)}
             aria-label="Choose model"
-            className="ml-auto rounded-lg bg-bg-weak-50 px-2 py-1.5 text-paragraph-xs text-text-sub-600 outline-none"
+            className="ml-auto rounded-lg bg-background-secondary-default px-2 py-1.5 text-caption-1-regular text-text-secondary outline-none"
           >
             {models.map((item) => (
               <option key={item}>{item}</option>
@@ -105,7 +105,7 @@ export function PromptBar() {
             aria-label={listening ? "Stop dictation" : "Start dictation"}
             aria-pressed={listening}
             onClick={() => setListening((current) => !current)}
-            className={`rounded-lg p-1.5 ${listening ? "bg-error-lighter text-error-base" : "hover:bg-bg-weak-50"}`}
+            className={`rounded-lg p-1.5 ${listening ? "bg-status-rose-background text-status-rose-text" : "hover:bg-background-primary-hover"}`}
           >
             <RiMicLine className="size-4" />
           </button>
@@ -113,7 +113,7 @@ export function PromptBar() {
             type="button"
             aria-label="Send"
             disabled={!draft.trim()}
-            className="rounded-lg bg-primary-base p-1.5 text-static-white disabled:opacity-30"
+            className="rounded-lg bg-button-primary p-1.5 text-text-white disabled:opacity-30"
           >
             <RiArrowUpLine className="size-4" />
           </button>

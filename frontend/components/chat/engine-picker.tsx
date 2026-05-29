@@ -9,7 +9,7 @@ import {
   modelOptionsForEngine,
   selectableModelsForEngine,
 } from "@/components/chat/types";
-import { cnExt as cn } from "@/utils/cn";
+import { cx as cn } from "@/utils/cx";
 
 export type EngineModelCatalog = Partial<Record<EngineId, readonly string[]>>;
 
@@ -113,20 +113,20 @@ export function ModelPicker({
         onClick={() => setOpen((o) => !o)}
         aria-haspopup="menu"
         aria-expanded={open}
-        className="text-text-strong-950 hover:bg-bg-weak-50 flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-label-sm transition-colors"
+        className="text-text-primary hover:bg-background-primary-hover flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-body-2-medium transition-colors"
       >
         {/* Engine chip glyph — the AsteriskMark is useAgent's brand, not an
             engine's; match the composer's neutral cpu icon instead. */}
-        <RiCpuLine className="text-text-sub-600 size-4" aria-hidden />
+        <RiCpuLine className="text-text-secondary size-4" aria-hidden />
         <span>{modelLabel(model, engine)}</span>
-        <RiArrowDownSLine className="text-text-soft-400 size-4" aria-hidden />
+        <RiArrowDownSLine className="text-text-tertiary size-4" aria-hidden />
       </button>
 
       {open && (
         <>
           <div className="fixed inset-0 z-10" aria-hidden onClick={() => setOpen(false)} />
-          <div className="border-stroke-soft-200 bg-bg-white-0 shadow-regular-md absolute bottom-11 right-0 z-20 w-56 rounded-2xl border p-1.5">
-            <p className="text-mono-label text-text-soft-400 px-2 pb-1 pt-1.5">Model</p>
+          <div className="border-border-button-default bg-background-primary-default shadow-dropdown absolute bottom-11 right-0 z-20 w-56 rounded-2xl border p-1.5">
+            <p className="text-mono-label text-text-tertiary px-2 pb-1 pt-1.5">Model</p>
             {models.map((e) => {
               const selected = e.value === model;
               return (
@@ -137,7 +137,7 @@ export function ModelPicker({
                     onChange(e.value);
                     setOpen(false);
                   }}
-                  className="hover:bg-bg-weak-50 flex w-full items-center gap-2 rounded-xl px-2 py-1.5 text-left transition-colors"
+                  className="hover:bg-background-primary-hover flex w-full items-center gap-2 rounded-xl px-2 py-1.5 text-left transition-colors"
                 >
                   <span
                     className={cn(
@@ -148,7 +148,7 @@ export function ModelPicker({
                     <RiCheckLine className="size-4" aria-hidden />
                   </span>
                   <span className="min-w-0 flex-1">
-                    <span className="text-label-sm text-text-strong-950 block">{e.label}</span>
+                    <span className="text-body-2-medium text-text-primary block">{e.label}</span>
                   </span>
                 </button>
               );

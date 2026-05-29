@@ -52,7 +52,7 @@ export function ScrollToEndPill({ scrollRef }: { scrollRef: RefObject<HTMLElemen
       data-session-ui="scroll-to-end"
       aria-label="Scroll to end"
       onClick={scrollToEnd}
-      className="pointer-events-auto absolute bottom-4 left-1/2 z-20 inline-flex -translate-x-1/2 items-center gap-1.5 rounded-full border border-stroke-soft-200 bg-bg-white-0 px-3 py-1.5 text-label-xs text-text-sub-600 shadow-regular-md transition-colors hover:bg-bg-weak-50 hover:text-text-strong-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-stroke-strong-950"
+      className="pointer-events-auto absolute bottom-4 left-1/2 z-20 inline-flex -translate-x-1/2 items-center gap-1.5 rounded-full border border-border-button-default bg-background-primary-default px-3 py-1.5 text-caption-1-medium text-text-secondary shadow-md transition-colors hover:bg-background-primary-hover hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-focus-ring"
     >
       <RiArrowDownLine className="size-3.5" aria-hidden />
       Scroll to end

@@ -34,7 +34,7 @@ export default async function WikiDocPage({ params }: { params: Promise<{ id: st
       <div className="mx-auto w-full max-w-6xl p-6 pb-24 lg:p-8 lg:pb-24">
         <Link
           href="/wiki"
-          className="text-label-sm text-text-sub-600 hover:text-text-strong-950 inline-flex items-center gap-1.5 transition-colors"
+          className="text-body-2-medium text-text-secondary hover:text-text-primary inline-flex items-center gap-1.5 transition-colors"
         >
           <RiArrowLeftLine className="size-4" aria-hidden />
           All pages
@@ -49,8 +49,8 @@ export default async function WikiDocPage({ params }: { params: Promise<{ id: st
             ) : doc ? (
               <>
                 <div className="flex items-baseline justify-between gap-3">
-                  <h1 className="text-title-h5 text-text-strong-950">{doc.title}</h1>
-                  <span className="text-paragraph-xs text-text-soft-400 shrink-0">
+                  <h1 className="text-title-h5 text-text-primary">{doc.title}</h1>
+                  <span className="text-caption-1-regular text-text-tertiary shrink-0">
                     updated {relativeTime(doc.updatedAt)}
                   </span>
                 </div>
