@@ -11,6 +11,7 @@
  * Subpath entry points (see package.json exports):
  *   - `@skynet/agent-client/api`        - typed AgentClient over injected fetch
  *   - `@skynet/agent-client/org-changes` - canonical org invalidation wire contract
+ *   - `@skynet/agent-client/integrations` - browser-safe integration wire contracts
  *   - `@skynet/agent-client/provider-connections` - provider API + realtime wire contract
  *   - `@skynet/agent-client/connection` - the pure SSE reconnect/health/fallback machine
  *   - `@skynet/agent-client/store`      - the pure canonical thread store
@@ -18,6 +19,7 @@
 export * from "./api";
 export * from "./artifacts";
 export * from "./connection";
+export * from "./integrations";
 export * from "./org-changes";
 export * from "./provider-connections";
 export * from "./thread-events";

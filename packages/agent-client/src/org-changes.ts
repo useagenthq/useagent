@@ -2,6 +2,10 @@ import {
   decodeProviderConnectionChange,
   type ProviderConnectionChange,
 } from "./provider-connections";
+import {
+  decodeIntegrationConnectionChange,
+  type IntegrationConnectionChange,
+} from "./integrations";
 
 export const RUN_CHANGE_ACTIONS = ["created", "running", "settled", "cancelled"] as const;
 export type RunChangeAction = (typeof RUN_CHANGE_ACTIONS)[number];
@@ -47,6 +51,7 @@ export type OrgChange =
   | RunOrgChange
   | ArtifactOrgChange
   | AutomationOrgChange
+  | IntegrationConnectionChange
   | ProviderConnectionChange;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -123,5 +128,5 @@ export function decodeOrgChange(value: unknown): OrgChange | null {
     };
   }
 
-  return decodeProviderConnectionChange(value);
+  return decodeIntegrationConnectionChange(value) ?? decodeProviderConnectionChange(value);
 }

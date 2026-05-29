@@ -65,6 +65,20 @@ describe("org change protocol", () => {
 
     expect(
       parseOrgChange({
+        type: "integration_connection",
+        action: "health_changed",
+        connectionId: "connection-1",
+        provider: "linear",
+      }),
+    ).toEqual({
+      type: "integration_connection",
+      action: "health_changed",
+      connectionId: "connection-1",
+      provider: "linear",
+    });
+
+    expect(
+      parseOrgChange({
         type: "automation",
         action: "fired",
         automationId: "automation-1",
@@ -139,6 +153,27 @@ describe("org change protocol", () => {
 
       expect(first).toEqual([change]);
       expect(second).toEqual([change]);
+
+      const providerChange = {
+        type: "provider_connection",
+        action: "updated",
+        provider: "openai",
+        authMethod: "api_key",
+      } satisfies OrgChange;
+      const integrationChange = {
+        type: "integration_connection",
+        action: "updated",
+        connectionId: "connection-live",
+        provider: "linear",
+      } satisfies OrgChange;
+      source.emitChange(providerChange);
+      source.emitChange(providerChange);
+      source.emitChange(integrationChange);
+      source.emitChange(integrationChange);
+      await Promise.resolve();
+
+      expect(first).toEqual([change, providerChange, integrationChange]);
+      expect(second).toEqual([change, providerChange, integrationChange]);
       unsubscribeFirst();
       expect(source.closed).toBeFalse();
       unsubscribeSecond();

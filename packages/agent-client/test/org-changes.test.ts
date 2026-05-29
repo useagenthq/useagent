@@ -50,6 +50,19 @@ describe("org-change wire contract", () => {
         provider: "openai",
         authMethod: "chatgpt_oauth",
       },
+      {
+        type: "integration_connection",
+        action: "created",
+        connectionId: "connection-1",
+        provider: "linear",
+      },
+      {
+        type: "integration_connection",
+        action: "health_changed",
+        connectionId: "connection-1",
+        provider: "linear",
+        targetUserId: "user-1",
+      },
     ] satisfies OrgChange[];
 
     for (const change of changes) expect(decodeOrgChange(change)).toEqual(change);
@@ -77,6 +90,13 @@ describe("org-change wire contract", () => {
         action: "created",
         provider: "openai",
         authMethod: "chatgpt_oauth",
+      }),
+    ).toBeNull();
+    expect(
+      decodeOrgChange({
+        type: "integration_connection",
+        action: "updated",
+        provider: "linear",
       }),
     ).toBeNull();
   });

@@ -6,11 +6,17 @@ import type {
   ProviderConnectionProvider,
   ProviderConnectionStatus,
 } from "@skynet/agent-client/provider-connections";
+import type {
+  IntegrationConnectionChangeAction,
+} from "@skynet/agent-client/integrations";
 import { publishThreadChange, type ThreadChangeKind } from "./thread-signals";
 
 /** Internal invalidation events for ambient product surfaces. */
 export type OrgChange =
-  | Exclude<ClientOrgChange, { readonly type: "provider_connection" }>
+  | Exclude<
+      ClientOrgChange,
+      { readonly type: "provider_connection" | "integration_connection" }
+    >
   | {
       readonly type: "provider_connection";
       readonly action: ProviderConnectionChangeAction;
@@ -19,6 +25,13 @@ export type OrgChange =
       readonly provider: ProviderConnectionProvider;
       readonly authMethod: ProviderConnectionAuthMethod;
       readonly status: ProviderConnectionStatus;
+    }
+  | {
+      readonly type: "integration_connection";
+      readonly action: IntegrationConnectionChangeAction;
+      readonly connectionId: string;
+      readonly provider: string;
+      readonly targetUserId?: string;
     };
 
 export type { ClientOrgChange };
@@ -56,14 +69,25 @@ export function clientOrgChangeForUser(
   change: OrgChange,
   userId: string | null,
 ): ClientOrgChange | null {
-  if (change.type !== "provider_connection") return change;
-  if (!userId || change.targetUserId !== userId) return null;
-  return {
-    type: "provider_connection",
-    action: change.action,
-    provider: change.provider,
-    authMethod: change.authMethod,
-  };
+  if (change.type === "provider_connection") {
+    if (!userId || change.targetUserId !== userId) return null;
+    return {
+      type: "provider_connection",
+      action: change.action,
+      provider: change.provider,
+      authMethod: change.authMethod,
+    };
+  }
+  if (change.type === "integration_connection") {
+    if (change.targetUserId && change.targetUserId !== userId) return null;
+    return {
+      type: "integration_connection",
+      action: change.action,
+      connectionId: change.connectionId,
+      provider: change.provider,
+    };
+  }
+  return change;
 }
 
 /** One production seam keeps the active-thread and ambient-org projections in sync. */

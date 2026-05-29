@@ -33,7 +33,9 @@ function enqueue(change: OrgChange): void {
         ? `artifact:${change.artifactId}`
         : change.type === "automation"
           ? `automation:${change.automationId}`
-          : `provider_connection:${change.provider}:${change.authMethod}`;
+          : change.type === "integration_connection"
+            ? `integration_connection:${change.connectionId}`
+            : `provider_connection:${change.provider}:${change.authMethod}`;
   pending.set(key, change);
   if (flushScheduled) return;
   flushScheduled = true;
