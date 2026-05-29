@@ -23,6 +23,29 @@ const extractBlock = (selector: string): string => {
   throw new Error(`missing closing brace for ${selector}`);
 };
 
+const extractBlocks = (selector: string): string[] => {
+  const blocks: string[] = [];
+  let cursor = 0;
+  while (cursor < globals.length) {
+    const start = globals.indexOf(selector, cursor);
+    if (start === -1) break;
+    const open = globals.indexOf("{", start);
+    if (open === -1) break;
+    let depth = 0;
+    for (let index = open; index < globals.length; index++) {
+      const char = globals[index];
+      if (char === "{") depth += 1;
+      if (char === "}") depth -= 1;
+      if (depth === 0) {
+        blocks.push(globals.slice(open + 1, index));
+        cursor = index + 1;
+        break;
+      }
+    }
+  }
+  return blocks;
+};
+
 const parseTokens = (block: string): TokenMap => {
   const tokens: TokenMap = {};
   for (const line of block.split("\n")) {
@@ -86,6 +109,13 @@ describe("shared theme tokens", () => {
     expect(contrast("#737373", "#121212")).toBeGreaterThanOrEqual(3);
     // White label on the primary CTA gradient's darker stop (blue-600 #155dfc).
     expect(contrast("#ffffff", "#155dfc")).toBeGreaterThanOrEqual(4.5);
+  });
+
+  test("Light Green uses AA-readable tertiary text on its mint canvas", () => {
+    const blocks = extractBlocks(".phosphor-light {").map(parseTokens);
+    const semantic = blocks.find((tokens) => tokens["--color-text-tertiary"]);
+    expect(semantic?.["--color-text-tertiary"]).toBe("hsl(var(--neutral-500))");
+    expect(contrast("#4e7358", "#f2f8f3")).toBeGreaterThanOrEqual(4.5);
   });
 });
 

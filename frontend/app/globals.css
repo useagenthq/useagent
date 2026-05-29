@@ -2863,7 +2863,7 @@
   /* Text */
   --color-text-primary:   hsl(var(--neutral-950));
   --color-text-secondary: hsl(var(--neutral-500));
-  --color-text-tertiary:  hsl(var(--neutral-400));
+  --color-text-tertiary:  hsl(var(--neutral-500));
   --color-text-disabled:  hsl(var(--neutral-300));
   --color-text-error-primary: hsl(var(--red-500));
   --color-input-disabled-text: hsl(var(--neutral-300));
