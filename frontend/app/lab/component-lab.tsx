@@ -40,6 +40,7 @@ import * as Switch from "@/components/ui/switch";
 import * as TabMenuHorizontal from "@/components/ui/tab-menu-horizontal";
 import * as Table from "@/components/ui/table";
 import { ARTIFACT_CAPABILITY_ROWS } from "./artifact-capability-matrix";
+import { BeautifulUiExtras } from "./beautiful-ui-extras";
 import { BeuiAgentShowcase } from "./beui-agent-showcase";
 import { TimelineShowcase } from "./session-ui-showcase";
 
@@ -674,6 +675,8 @@ export function ComponentLab() {
             ]}
           />
         </Section>
+
+        <BeautifulUiExtras />
 
         <div className="h-16" />
       </div>

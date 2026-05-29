@@ -8,8 +8,6 @@ import { SearchList } from "@/components/ai/search-list";
 import { SelectionActions } from "@/components/ai/selection-actions";
 import { SidebarNav } from "@/components/ai/sidebar-nav";
 
-import { BEAUTIFUL_UI_COMPONENTS } from "./beautiful-ui-inventory";
-
 function Demo({
   component,
   children,
@@ -63,31 +61,6 @@ function Demo({
 export function BeautifulUiExtras() {
   return (
     <>
-      <section className="border-t border-stroke-soft-200 py-8">
-        <div className="flex flex-wrap items-end justify-between gap-3">
-          <div>
-            <p className="text-title-h6 text-text-strong-950">Beautiful UI inventory</p>
-            <p className="mt-1 text-paragraph-sm text-text-sub-600">
-              All 19 MIT-licensed source snapshots have a local production port and a live lab
-              surface.
-            </p>
-          </div>
-          <span className="rounded-full bg-success-lighter px-3 py-1 text-label-sm text-success-base">
-            19 / 19
-          </span>
-        </div>
-        <div className="mt-4 flex flex-wrap gap-1.5">
-          {BEAUTIFUL_UI_COMPONENTS.map((component) => (
-            <span
-              key={component}
-              className="rounded-lg border border-stroke-soft-200 bg-bg-white-0 px-2 py-1 text-mono-label text-text-sub-600"
-            >
-              {component}
-            </span>
-          ))}
-        </div>
-      </section>
-
       <Demo component="chat-composer">
         <ChatComposer />
       </Demo>
