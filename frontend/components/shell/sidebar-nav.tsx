@@ -45,8 +45,21 @@ export function SidebarSectionLabel({ children }: { children: ReactNode }) {
   return <p className="text-mono-label px-2.5 pb-1 pt-5 text-text-soft-400">{children}</p>;
 }
 
+export type NavIconTone = "blue" | "purple" | "green" | "orange" | "primary";
+
+/** A brand tint for a nav icon - a touch of color in an otherwise mono rail. */
+const NAV_ICON_TONE: Record<NavIconTone, string> = {
+  blue: "text-blue-500",
+  purple: "text-purple-500",
+  green: "text-green-600",
+  orange: "text-orange-500",
+  primary: "text-primary-base",
+};
+
 export interface SidebarNavItemProps {
   href?: string;
+  /** Optional brand tint for the leading icon (adds subtle color). */
+  tone?: NavIconTone;
   /** Leading remixicon component. Omit for icon-less "Recents" rows. */
   icon?: IconComponent;
   /** Custom leading node (e.g. a status dot) — wins over `icon`. */
@@ -59,6 +72,7 @@ export interface SidebarNavItemProps {
 
 export function SidebarNavItem({
   href = "#",
+  tone,
   icon: Icon,
   leading,
   label,
@@ -81,7 +95,11 @@ export function SidebarNavItem({
           <Icon
             className={cnExt(
               "size-3.5 shrink-0",
-              active ? "text-text-strong-950" : "text-text-soft-400",
+              tone
+                ? NAV_ICON_TONE[tone]
+                : active
+                  ? "text-text-strong-950"
+                  : "text-text-soft-400",
             )}
             aria-hidden
           />

@@ -1,5 +1,6 @@
 "use client";
 
+import { RiArrowDownSLine, RiArrowUpSLine } from "@remixicon/react";
 import { usePathname } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
@@ -11,6 +12,9 @@ import { SidebarSectionLabel } from "./sidebar-nav";
 const POLL_MS = 30_000;
 // Generous cap: the sidebar column scrolls; this only bounds DOM cost.
 const MAX = 100;
+// The recent few stay visible; the rest sit behind a disclosure so a long
+// thread history never floods the rail.
+const VISIBLE_THREADS = 6;
 
 /**
  * The sidebar thread list, rendered with the vendored T3 thread-row treatment
@@ -24,6 +28,7 @@ export function SidebarThreads() {
   const pathname = usePathname();
   const [runs, setRuns] = useState<Run[]>([]);
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
+  const [expanded, setExpanded] = useState(false);
 
   const load = useCallback(async (revalidate = false) => {
     try {
@@ -46,6 +51,15 @@ export function SidebarThreads() {
     };
   }, [load]);
 
+  const capped = runs.slice(0, MAX);
+  const visible = capped.slice(0, VISIBLE_THREADS);
+  const overflow = capped.slice(VISIBLE_THREADS);
+
+  const threadRow = (run: Run) => {
+    const href = `/session/${run.id}`;
+    return <ThreadRow key={run.id} run={run} href={href} active={pathname === href} />;
+  };
+
   return (
     <>
       <SidebarSectionLabel>Threads</SidebarSectionLabel>
@@ -58,10 +72,24 @@ export function SidebarThreads() {
               : "No threads yet"}
         </p>
       ) : null}
-      {runs.slice(0, MAX).map((run) => {
-        const href = `/session/${run.id}`;
-        return <ThreadRow key={run.id} run={run} href={href} active={pathname === href} />;
-      })}
+      {visible.map(threadRow)}
+      {overflow.length > 0 ? (
+        <>
+          {expanded ? <div className="max-h-56 overflow-y-auto">{overflow.map(threadRow)}</div> : null}
+          <button
+            type="button"
+            onClick={() => setExpanded((v) => !v)}
+            className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-paragraph-xs text-text-soft-400 transition-colors hover:bg-bg-weak-50 hover:text-text-sub-600"
+          >
+            {expanded ? (
+              <RiArrowUpSLine className="size-4" aria-hidden />
+            ) : (
+              <RiArrowDownSLine className="size-4" aria-hidden />
+            )}
+            {expanded ? "Show fewer" : `Show ${overflow.length} more`}
+          </button>
+        </>
+      ) : null}
     </>
   );
 }
