@@ -172,19 +172,18 @@ export const MarkerRow = memo(function MarkerRow({ marker }: { marker: TimelineM
       data-marker-kind={marker.kind}
       className="animate-ai-fade-up flex items-center gap-2 px-1.5 py-1"
     >
-      <span
+      <Icon
         className={cn(
-          "flex size-5 shrink-0 items-center justify-center rounded-md",
-          error ? "bg-red-50 text-red-500" : "bg-purple-50 text-purple-500",
+          "size-4 shrink-0",
+          error ? "text-red-500" : "text-foreground-icon-secondary",
         )}
-      >
-        <Icon className="size-3.5" aria-hidden />
-      </span>
+        aria-hidden
+      />
       <span className="min-w-0 flex-1 truncate">
         <span
           className={cn(
             "text-body-2-medium font-medium",
-            error ? "text-red-500" : "text-purple-500",
+            error ? "text-red-500" : "text-text-secondary",
           )}
         >
           {verb}
@@ -276,9 +275,7 @@ function TraceRow({ trace, state }: { trace: StepTrace; state: RowState }) {
   const head = (
     <>
       {subagent ? (
-        <span className="bg-purple-50 text-purple-500 flex size-4.5 shrink-0 items-center justify-center rounded-md">
-          <Icon className="size-3" aria-hidden />
-        </span>
+        <Icon className="size-3.5 shrink-0 text-foreground-icon-secondary" aria-hidden />
       ) : (
         <Icon
           className={cn(

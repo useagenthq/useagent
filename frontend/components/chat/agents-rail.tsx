@@ -219,7 +219,7 @@ function AgentDetail({
         >
           <RiArrowLeftLine className="size-4" aria-hidden />
         </button>
-        <span className="bg-purple-50 text-purple-500 mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-lg">
+        <span className="bg-background-secondary-default text-foreground-icon-secondary mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-lg">
           <RiRobot2Line className="size-3.5" aria-hidden />
         </span>
         <div className="min-w-0 flex-1">
