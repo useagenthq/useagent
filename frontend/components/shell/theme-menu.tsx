@@ -17,19 +17,24 @@ import { cx } from '@/utils/cx';
 /**
  * Theme options shown in the picker. UI copy is intentional: our default
  * Tokyo Night dark ramp reads as "Midnight", the violet dark ramp as "Aura",
- * the deep blue-slate dark ramp as "Harbor", the CRT-green dark ramp as
- * "Phosphor", the cherry-blossom light ramp as "Sakura", and the blue-gray
- * dark ramp as "Slate" - the token classes on <html> stay `dark` / `aura` /
- * `harbor` / `phosphor` / `sakura` / `slate` (see globals.css). `swatch` is a
- * fixed per-theme preview class defined in globals.css.
+ * the deep blue-slate dark ramp as "Harbor", and the blue-gray dark ramp as
+ * "Slate". The green pair (CRT-green dark + its mint light counterpart) reads
+ * as "Dark Green" / "Light Green" and the red pair (blush light + plum-night
+ * dark) as "Light Red" / "Dark Red" - the token classes on <html> stay
+ * `dark` / `aura` / `harbor` / `phosphor` / `phosphor-light` / `sakura` /
+ * `sakura-night` / `slate` (see globals.css). Index 1 must stay Midnight
+ * (the settings picker falls back to THEME_OPTIONS[1]). `swatch` is a fixed
+ * per-theme preview class defined in globals.css.
  */
 export const THEME_OPTIONS = [
   { value: 'light', label: 'Light', swatch: 'theme-swatch-light' },
   { value: 'dark', label: 'Midnight', swatch: 'theme-swatch-dark' },
   { value: 'aura', label: 'Aura', swatch: 'theme-swatch-aura' },
   { value: 'harbor', label: 'Harbor', swatch: 'theme-swatch-harbor' },
-  { value: 'phosphor', label: 'Phosphor', swatch: 'theme-swatch-phosphor' },
-  { value: 'sakura', label: 'Sakura', swatch: 'theme-swatch-sakura' },
+  { value: 'phosphor', label: 'Dark Green', swatch: 'theme-swatch-phosphor' },
+  { value: 'phosphor-light', label: 'Light Green', swatch: 'theme-swatch-phosphor-light' },
+  { value: 'sakura', label: 'Light Red', swatch: 'theme-swatch-sakura' },
+  { value: 'sakura-night', label: 'Dark Red', swatch: 'theme-swatch-sakura-night' },
   { value: 'slate', label: 'Slate', swatch: 'theme-swatch-slate' },
 ] as const;
 
@@ -50,8 +55,8 @@ export function ThemeSwatch({ swatch, className }: { swatch: string; className?:
 }
 
 /**
- * Theme picker menu (Light / Midnight / Aura / Harbor / Phosphor / Sakura /
- * Slate) on the BoardUI base Dropdown. The caller supplies the trigger CONTENT via `children` plus
+ * Theme picker menu (Light / Midnight / Aura / Harbor / Dark Green / Light
+ * Green / Light Red / Dark Red / Slate) on the BoardUI base Dropdown. The caller supplies the trigger CONTENT via `children` plus
  * `triggerClassName`/`triggerAriaLabel` (the trigger button itself is the
  * React Aria pressable, so callers must not nest their own <button>).
  * Selection persists through next-themes (localStorage); the active row is
