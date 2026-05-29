@@ -3,7 +3,7 @@
 import { RiArrowDownSLine, RiArrowUpSLine, RiFolderLine } from "@remixicon/react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-import { fetchRuns } from "@/app/agent/runs/runs-data";
+import { fetchSidebarRuns } from "@/app/agent/runs/runs-data";
 import { useOrgChanges } from "@/hooks/use-org-changes";
 import { backendFetch } from "@/lib/backend-fetch";
 import { SidebarNavItem, SidebarSectionLabel } from "./sidebar-nav";
@@ -57,9 +57,9 @@ export function SidebarProjects() {
     }
   }, []);
 
-  const loadRuns = useCallback(async (signal?: AbortSignal) => {
+  const loadRuns = useCallback(async (revalidate = false) => {
     try {
-      setRuns((await fetchRuns(signal)) as SidebarRun[]);
+      setRuns((await fetchSidebarRuns({ revalidate })) as SidebarRun[]);
     } catch {
       // Status chips are additive; project shortcuts still render from /api/repos.
     }
@@ -67,7 +67,7 @@ export function SidebarProjects() {
 
   useOrgChanges((change) => {
     if (change.type === "run" || (change.type === "automation" && change.action === "fired")) {
-      void loadRuns();
+      void loadRuns(true);
     }
     if (change.type === "provider_connection") void loadProjects();
   });
@@ -75,10 +75,10 @@ export function SidebarProjects() {
   useEffect(() => {
     const controller = new AbortController();
     void loadProjects(controller.signal);
-    void loadRuns(controller.signal);
+    void loadRuns();
     const id = setInterval(() => {
       void loadProjects(controller.signal);
-      void loadRuns(controller.signal);
+      void loadRuns(true);
     }, POLL_MS);
     return () => {
       controller.abort();

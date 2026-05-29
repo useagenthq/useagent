@@ -39,6 +39,53 @@ export async function fetchRuns(signal?: AbortSignal): Promise<Run[]> {
   return data.runs ?? [];
 }
 
+let sidebarRequest: Promise<Run[]> | null = null;
+let sidebarDirty = false;
+
+async function fetchSidebarSnapshot(): Promise<Run[]> {
+  const res = await backendFetch('/api/runs?view=summary&limit=100&include_active=1', {
+    cache: 'no-store',
+  });
+  if (!res.ok) throw new Error(`runs request failed: ${res.status}`);
+  const data = (await res.json()) as { runs?: Run[] };
+  return data.runs ?? [];
+}
+
+async function fetchFreshSidebarRuns(): Promise<Run[]> {
+  let result: Run[] = [];
+  let failure: unknown = null;
+  do {
+    sidebarDirty = false;
+    try {
+      result = await fetchSidebarSnapshot();
+      failure = null;
+    } catch (error) {
+      failure = error;
+    }
+  } while (sidebarDirty);
+  if (failure) throw failure;
+  return result;
+}
+
+function startSidebarRequest(): Promise<Run[]> {
+  const request = fetchFreshSidebarRuns().finally(() => {
+    if (sidebarRequest === request) sidebarRequest = null;
+  });
+  sidebarRequest = request;
+  return request;
+}
+
+/** Shared compact request for the two sidebar consumers. It only deduplicates
+ * concurrent calls; completed responses are never cached, so SSE invalidation
+ * and recovery polling always observe fresh state. */
+export function fetchSidebarRuns(options: { revalidate?: boolean } = {}): Promise<Run[]> {
+  if (sidebarRequest) {
+    if (options.revalidate) sidebarDirty = true;
+    return sidebarRequest;
+  }
+  return startSidebarRequest();
+}
+
 export type RunTone = 'live' | 'success' | 'error' | 'idle';
 
 /** Map a run tone onto the shared StatusDot primitive props (Run cell + sidebar

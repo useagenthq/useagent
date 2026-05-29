@@ -3,7 +3,7 @@
 import { usePathname } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
-import { fetchRuns, type Run } from "@/app/agent/runs/runs-data";
+import { fetchSidebarRuns, type Run } from "@/app/agent/runs/runs-data";
 import { ThreadRow } from "@/components/session-ui/thread-row";
 import { useOrgChanges } from "@/hooks/use-org-changes";
 import { SidebarSectionLabel } from "./sidebar-nav";
@@ -25,9 +25,9 @@ export function SidebarThreads() {
   const [runs, setRuns] = useState<Run[]>([]);
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
 
-  const load = useCallback(async (signal?: AbortSignal) => {
+  const load = useCallback(async (revalidate = false) => {
     try {
-      setRuns(await fetchRuns(signal));
+      setRuns(await fetchSidebarRuns({ revalidate }));
       setStatus("ready");
     } catch {
       setStatus("error");
@@ -35,15 +35,13 @@ export function SidebarThreads() {
   }, []);
 
   useOrgChanges((change) => {
-    if (change.type === "run") void load();
+    if (change.type === "run") void load(true);
   });
 
   useEffect(() => {
-    const controller = new AbortController();
-    void load(controller.signal);
-    const id = setInterval(() => void load(controller.signal), POLL_MS);
+    void load();
+    const id = setInterval(() => void load(true), POLL_MS);
     return () => {
-      controller.abort();
       clearInterval(id);
     };
   }, [load]);

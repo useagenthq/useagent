@@ -115,6 +115,33 @@ describe("skills CRUD + run", () => {
 });
 
 describe("skill kind (skills vs playbooks over one substrate)", () => {
+  test("picker view returns only composer fields", async () => {
+    const name = `Picker ${uid()}`;
+    const created = await json<any>("/api/skills", {
+      method: "POST",
+      body: {
+        name,
+        description: "large instructions are not needed by the composer",
+        tags: ["picker"],
+        sections: { overview: ["o"], procedure: ["p"], verify: ["v"] },
+      },
+    });
+    expect(created.status).toBe(201);
+
+    const list = await json<{ skills: any[] }>("/api/skills?view=picker&limit=2000");
+    const picked = list.body.skills.find((skill) => skill.id === created.body.id);
+    expect(picked).toEqual({
+      id: created.body.id,
+      name,
+      kind: "skill",
+      tags: ["picker"],
+      current_version: 1,
+    });
+
+    const bounded = await json<{ skills: any[] }>("/api/skills?view=picker&limit=1");
+    expect(bounded.body.skills).toHaveLength(1);
+  });
+
   test("defaults to skill; kind:playbook persists; ?kind splits the list", async () => {
     const tag = `kind-${uid()}`;
     // A plain skill (no kind) defaults to "skill".

@@ -25,7 +25,7 @@ interface RecentRun {
  * failure so the section simply doesn't render (never a broken card). */
 async function fetchRecentRuns(): Promise<RecentRun[]> {
   try {
-    const res = await backendFetch("/api/runs", { cache: "no-store" });
+    const res = await backendFetch("/api/runs?view=summary&limit=3", { cache: "no-store" });
     if (!res.ok) return [];
     const data: unknown = await res.json();
     const runs = Array.isArray(data)
@@ -33,9 +33,7 @@ async function fetchRecentRuns(): Promise<RecentRun[]> {
       : Array.isArray((data as { runs?: RecentRun[] })?.runs)
         ? (data as { runs: RecentRun[] }).runs
         : [];
-    return runs
-      .toSorted((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
-      .slice(0, 3);
+    return runs;
   } catch {
     return [];
   }
