@@ -9,7 +9,7 @@ import {
 import Link from "next/link";
 import type { ReactNode, Ref } from "react";
 
-import { PulseMark } from "@/components/foundations/brand/pulse-mark";
+import { OrbitKnotMark } from "@/components/foundations/brand/orbit-knot-mark";
 import { SearchCommand } from "./search-command";
 import { ThemeToggle } from "./theme-toggle";
 import { UserMenu } from "./user-menu";
@@ -45,7 +45,7 @@ export function CompactSidebarRail({
       className="hidden h-full w-14 shrink-0 flex-col items-center bg-bg-white-0 py-2 md:flex"
     >
       <RailLink href="/agent/new" label="New thread">
-        <PulseMark className="size-7 text-brand-orbit" active={working} />
+        <OrbitKnotMark className="size-7" active={working} />
       </RailLink>
 
       <nav

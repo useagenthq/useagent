@@ -52,6 +52,16 @@ const ENGINE_CAPTIONS: Partial<Record<EngineId, string>> = {
 const ADD_MENU_ROW =
   "flex w-full items-center gap-3 rounded-[10px] px-2.5 py-2 text-left text-label-sm text-text-strong-950 transition-colors hover:bg-bg-weak-50";
 
+/** "Create" actions in the + shelf: the colored BoardUI plugin icons
+ *  (public/plugin-icons) that seed the prompt with a real artifact-creation task
+ *  the agent can execute (it genuinely makes documents, spreadsheets, decks, code). */
+const CREATE_ROWS = [
+  { icon: "/plugin-icons/plugin-documents.svg", label: "Document", desc: "Write and edit a document", seed: "Create a document that " },
+  { icon: "/plugin-icons/plugin-spreadsheets.svg", label: "Spreadsheet", desc: "Generate a spreadsheet", seed: "Create a spreadsheet that " },
+  { icon: "/plugin-icons/plugin-presentations.svg", label: "Presentation", desc: "Build a slide deck", seed: "Create a presentation that " },
+  { icon: "/plugin-icons/plugin-codeblocks.svg", label: "Code", desc: "Write and edit code", seed: "Write code that " },
+] as const;
+
 /**
  * The New Task composer: a prompt textarea over a control row of searchable
  * pickers (repo / playbook / engine / model), a secondary row of per-repo branch
@@ -521,6 +531,28 @@ export function NewTaskComposer({
               <RepoBranchBar repos={selectedRepoItems} value={branches} onChange={setBranches} />
             </div>
           ) : null}
+
+          <div className="my-1 border-t border-stroke-soft-200" />
+
+          {/* Create: colored BoardUI plugin icons that seed a real artifact task. */}
+          <p className="px-2.5 pb-0.5 pt-0.5 text-mono-label text-text-soft-400">Create</p>
+          {CREATE_ROWS.map((row) => (
+            <button
+              key={row.label}
+              type="button"
+              onClick={() => {
+                setAddMenuOpen(false);
+                setPrompt((prev) => (prev.trim() ? prev : row.seed));
+              }}
+              className={ADD_MENU_ROW}
+            >
+              <img src={row.icon} alt="" width={20} height={20} className="size-5 shrink-0" aria-hidden />
+              <span className="flex min-w-0 flex-1 flex-col">
+                <span className="text-label-sm text-text-strong-950">{row.label}</span>
+                <span className="text-paragraph-xs text-text-soft-400">{row.desc}</span>
+              </span>
+            </button>
+          ))}
 
           <div className="my-1 border-t border-stroke-soft-200" />
 
