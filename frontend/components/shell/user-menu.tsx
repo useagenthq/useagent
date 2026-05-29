@@ -12,6 +12,7 @@ import {
 import { useRouter } from 'next/navigation';
 import type { ComponentType } from 'react';
 
+import { ThemeToggle } from '@/components/motion-ui/theme-toggle';
 import * as Avatar from '@/components/ui/avatar';
 import * as Badge from '@/components/ui/badge';
 import * as Dropdown from '@/components/ui/dropdown';
@@ -120,6 +121,17 @@ export function UserMenu() {
             </p>
           </div>
         </div>
+
+        {/* Dark mode: a beUI-derived animated toggle (page-wide View Transition
+            circle reveal) embedded in the AlignUI dropdown. It is a plain button,
+            not a Dropdown.Item, so the menu stays open while you flip modes. The
+            Aura/Harbor palettes still live in the shell ThemeMenu. */}
+        <ThemeToggle
+          className='w-full rounded-lg px-2 py-1.5 text-label-sm text-text-strong-950 outline-none transition-colors hover:bg-bg-weak-50 focus-visible:ring-2 focus-visible:ring-stroke-strong-950'
+          iconClassName='size-[18px] text-text-sub-600'
+        >
+          <span className='flex-1 text-left'>Dark mode</span>
+        </ThemeToggle>
 
         <Dropdown.Separator className='-mx-2 my-1 h-px bg-stroke-soft-200' />
 
