@@ -15,7 +15,9 @@ describe("Desktop product surface", () => {
   test("every sandbox-backed thread exposes Browser but mounts noVNC only after selection", () => {
     const sessionView = read("./session-view.tsx");
 
-    expect(sessionView).toContain('value="desktop" data-testid="rail-tab-desktop"');
+    expect(sessionView).toContain('data-testid="rail-tab-desktop"');
+    expect(sessionView).toContain('isSelected={railTab === "desktop"}');
+    expect(sessionView).toContain('onSelect={() => setRailTabOverride("desktop")}');
     expect(sessionView).not.toContain("{hasDesktop && (");
     expect(sessionView).toContain("<DesktopPane threadId={rootId} />");
     expect(sessionView).toContain("desktopEverOpened ? (");

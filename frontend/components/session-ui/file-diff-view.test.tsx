@@ -220,7 +220,9 @@ describe("Diff surface wiring contract", () => {
 
   test("the session rail gates the Diff tab on hasFiles and renders DiffPane", () => {
     const sessionView = read("../chat/session-view.tsx");
-    expect(sessionView).toContain('value="diff" data-testid="rail-tab-diff"');
+    expect(sessionView).toContain('data-testid="rail-tab-diff"');
+    expect(sessionView).toContain('isSelected={railTab === "diff"}');
+    expect(sessionView).toContain('onSelect={() => setRailTabOverride("diff")}');
     expect(sessionView).toContain("{hasFiles && (");
     expect(sessionView).toContain("diffAvailable={hasFiles}");
     expect(sessionView).toContain("<DiffPane turns={turns} />");

@@ -96,9 +96,10 @@ describe("unified shell contract", () => {
 
     expect(sessionView).toContain("const [railTabOverride, setRailTabOverride] = useState<");
     expect(sessionView).toContain('SurfaceChoice | "editor" | "workspace" | null');
-    expect(sessionView).toContain('value={railTab ?? ""}');
     for (const tab of ["agents", "artifacts", "editor", "terminal", "desktop"]) {
-      expect(sessionView).toContain(`value="${tab}" data-testid="rail-tab-${tab}"`);
+      expect(sessionView).toContain(`data-testid="rail-tab-${tab}"`);
+      expect(sessionView).toContain(`isSelected={railTab === "${tab}"}`);
+      expect(sessionView).toContain(`onSelect={() => setRailTabOverride("${tab}")}`);
     }
   });
 
@@ -257,7 +258,7 @@ describe("unified shell contract", () => {
 
     expect(composer).toContain("maxHeight={180}");
     expect(composer).toContain(
-      'hero ? "pt-1 text-paragraph-lg" : "min-h-6 text-paragraph-sm leading-6"',
+      'hero ? "pt-1 text-headline-regular" : "min-h-6 text-body-2-regular leading-6"',
     );
     expect(conversation).toContain("mx-auto w-full max-w-5xl");
     expect(conversation).not.toContain("shrink-0 border-t p-3");

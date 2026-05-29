@@ -3,7 +3,6 @@
 import {
   RiBookMarkedLine,
   RiDashboardLine,
-  RiFolderLine,
   RiSettings3Line,
   RiSidebarUnfoldLine,
 } from "@remixicon/react";
@@ -62,8 +61,8 @@ export function CompactSidebarRail({
             <RiSidebarUnfoldLine className="size-4" aria-hidden />
           </button>
           <SearchCommand compact />
-          <RailLink href="/dashboard" label="All projects">
-            <RiFolderLine className="size-4" aria-hidden />
+          <RailLink href="/dashboard" label="Dashboard">
+            <RiDashboardLine className="size-4" aria-hidden />
           </RailLink>
           <RailLink href="/skills" label="Library">
             <RiBookMarkedLine className="size-4" aria-hidden />
