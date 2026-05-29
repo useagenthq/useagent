@@ -1,0 +1,112 @@
+<svg viewBox="0 0 900 424" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="rl-title">
+  <title id="rl-title">Run lifecycle: from acceptRunCommand to finalizeRun and the next thread turn</title>
+  <defs>
+    <marker id="ah" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0L10 5L0 10z" fill="#3392ff"/>
+    </marker>
+    <marker id="ahn" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0L10 5L0 10z" fill="#a3a3a3"/>
+    </marker>
+  </defs>
+
+  <rect x="0" y="0" width="900" height="424" rx="10" fill="#f7f7f7"/>
+
+  <!-- Row 1: accept -> queued -> claim -> sandbox -->
+  <g font-family="Inter, system-ui, sans-serif">
+    <!-- 01 single door -->
+    <rect x="30" y="44" width="180" height="96" rx="10" fill="#ffffff" stroke="#ebebeb"/>
+    <text x="120" y="68" text-anchor="middle" font-size="10" font-weight="600" letter-spacing="0.8">
+      <tspan fill="#3392ff">01</tspan><tspan fill="#737373"> SINGLE DOOR</tspan>
+    </text>
+    <text x="120" y="91" text-anchor="middle" font-size="13" font-weight="600" fill="#171717">acceptRunCommand</text>
+    <text x="120" y="110" text-anchor="middle" font-size="11" fill="#737373">commands/service.ts</text>
+    <text x="120" y="126" text-anchor="middle" font-size="11" fill="#737373">web, Slack, schedules</text>
+
+    <!-- 02 queued -->
+    <rect x="250" y="44" width="180" height="96" rx="10" fill="#ffffff" stroke="#ebebeb"/>
+    <text x="340" y="68" text-anchor="middle" font-size="10" font-weight="600" letter-spacing="0.8">
+      <tspan fill="#3392ff">02</tspan><tspan fill="#737373"> QUEUED</tspan>
+    </text>
+    <text x="340" y="91" text-anchor="middle" font-size="13" font-weight="600" fill="#171717">commands + runs rows</text>
+    <text x="340" y="110" text-anchor="middle" font-size="11" fill="#737373">status: queued, one txn</text>
+    <text x="340" y="126" text-anchor="middle" font-size="11" fill="#737373">idempotency key dedupes</text>
+
+    <!-- 03 dispatch -->
+    <rect x="470" y="44" width="180" height="96" rx="10" fill="#ffffff" stroke="#ebebeb"/>
+    <text x="560" y="68" text-anchor="middle" font-size="10" font-weight="600" letter-spacing="0.8">
+      <tspan fill="#3392ff">03</tspan><tspan fill="#737373"> DISPATCH</tspan>
+    </text>
+    <text x="560" y="91" text-anchor="middle" font-size="13" font-weight="600" fill="#171717">claimNextRun</text>
+    <text x="560" y="110" text-anchor="middle" font-size="11" fill="#737373">commands/dispatch.ts</text>
+    <text x="560" y="126" text-anchor="middle" font-size="11" fill="#737373">one live run per thread</text>
+
+    <!-- 04 sandbox -->
+    <rect x="690" y="44" width="180" height="96" rx="10" fill="#ffffff" stroke="#ebebeb"/>
+    <text x="780" y="68" text-anchor="middle" font-size="10" font-weight="600" letter-spacing="0.8">
+      <tspan fill="#3392ff">04</tspan><tspan fill="#737373"> SANDBOX</tspan>
+    </text>
+    <text x="780" y="91" text-anchor="middle" font-size="13" font-weight="600" fill="#171717">acquireThreadSandbox</text>
+    <text x="780" y="110" text-anchor="middle" font-size="11" fill="#737373">engines/thread-sandbox.ts</text>
+    <text x="780" y="126" text-anchor="middle" font-size="11" fill="#737373">reuse retained or create</text>
+
+    <!-- Row 2: engine turn -> event log -> finalize -> continuation -->
+    <!-- 05 engine one-shot -->
+    <rect x="690" y="272" width="180" height="96" rx="10" fill="#ffffff" stroke="#ebebeb"/>
+    <text x="780" y="296" text-anchor="middle" font-size="10" font-weight="600" letter-spacing="0.8">
+      <tspan fill="#3392ff">05</tspan><tspan fill="#737373"> ENGINE ONE-SHOT</tspan>
+    </text>
+    <text x="780" y="319" text-anchor="middle" font-size="13" font-weight="600" fill="#171717">runProviderTurn</text>
+    <text x="780" y="338" text-anchor="middle" font-size="11" fill="#737373">engines/index.ts</text>
+    <text x="780" y="354" text-anchor="middle" font-size="11" fill="#737373">one adapter turn per run</text>
+
+    <!-- 06 event log (source of truth, accent tint) -->
+    <rect x="470" y="272" width="180" height="96" rx="10" fill="#eef6ff" stroke="#a8cfff"/>
+    <text x="560" y="296" text-anchor="middle" font-size="10" font-weight="600" letter-spacing="0.8">
+      <tspan fill="#3392ff">06</tspan><tspan fill="#737373"> EVENT LOG</tspan>
+    </text>
+    <text x="560" y="319" text-anchor="middle" font-size="13" font-weight="600" fill="#171717">steps, provider_events</text>
+    <text x="560" y="338" text-anchor="middle" font-size="11" fill="#737373">insertStep, runs/repo.ts</text>
+    <text x="560" y="354" text-anchor="middle" font-size="11" fill="#737373">Postgres source of truth</text>
+
+    <!-- 07 finalize -->
+    <rect x="250" y="272" width="180" height="96" rx="10" fill="#ffffff" stroke="#ebebeb"/>
+    <text x="340" y="296" text-anchor="middle" font-size="10" font-weight="600" letter-spacing="0.8">
+      <tspan fill="#3392ff">07</tspan><tspan fill="#737373"> FINALIZE</tspan>
+    </text>
+    <text x="340" y="319" text-anchor="middle" font-size="13" font-weight="600" fill="#171717">finalizeRun</text>
+    <text x="340" y="338" text-anchor="middle" font-size="11" fill="#737373">runs/finalize.ts</text>
+    <text x="340" y="354" text-anchor="middle" font-size="11" fill="#737373">never-publish-provisional</text>
+
+    <!-- 08 continuation -->
+    <rect x="30" y="272" width="180" height="96" rx="10" fill="#ffffff" stroke="#ebebeb"/>
+    <text x="120" y="296" text-anchor="middle" font-size="10" font-weight="600" letter-spacing="0.8">
+      <tspan fill="#3392ff">08</tspan><tspan fill="#737373"> CONTINUATION</tspan>
+    </text>
+    <text x="120" y="319" text-anchor="middle" font-size="13" font-weight="600" fill="#171717">reply turn</text>
+    <text x="120" y="338" text-anchor="middle" font-size="11" fill="#737373">runs.parent_run_id</text>
+    <text x="120" y="354" text-anchor="middle" font-size="11" fill="#737373">resumes sandbox + session</text>
+
+    <!-- Primary flow arrows -->
+    <line x1="214" y1="92" x2="244" y2="92" stroke="#3392ff" stroke-width="1.5" marker-end="url(#ah)"/>
+    <line x1="434" y1="92" x2="464" y2="92" stroke="#3392ff" stroke-width="1.5" marker-end="url(#ah)"/>
+    <line x1="654" y1="92" x2="684" y2="92" stroke="#3392ff" stroke-width="1.5" marker-end="url(#ah)"/>
+    <line x1="780" y1="144" x2="780" y2="266" stroke="#3392ff" stroke-width="1.5" marker-end="url(#ah)"/>
+    <line x1="686" y1="320" x2="656" y2="320" stroke="#3392ff" stroke-width="1.5" marker-end="url(#ah)"/>
+    <line x1="466" y1="320" x2="436" y2="320" stroke="#3392ff" stroke-width="1.5" marker-end="url(#ah)"/>
+    <line x1="246" y1="320" x2="216" y2="320" stroke="#3392ff" stroke-width="1.5" marker-end="url(#ah)"/>
+    <line x1="120" y1="268" x2="120" y2="146" stroke="#3392ff" stroke-width="1.5" marker-end="url(#ah)"/>
+
+    <!-- Band notes -->
+    <text x="766" y="192" text-anchor="end" font-size="11" fill="#737373">worker.ts drives the turn</text>
+    <text x="766" y="208" text-anchor="end" font-size="11" fill="#737373">harness stays outside</text>
+    <text x="766" y="224" text-anchor="end" font-size="11" fill="#737373">the sandbox</text>
+
+    <text x="134" y="192" font-size="11" fill="#737373">thread continuation:</text>
+    <text x="134" y="208" font-size="11" fill="#737373">the reply re-enters the door</text>
+    <text x="134" y="224" font-size="11" fill="#737373">with parent_run_id set</text>
+
+    <!-- SSE side stream -->
+    <line x1="560" y1="371" x2="560" y2="387" stroke="#a3a3a3" stroke-width="1.2" stroke-dasharray="3 3" marker-end="url(#ahn)"/>
+    <text x="560" y="404" text-anchor="middle" font-size="11" fill="#737373">streams live: GET /api/runs/:rootRunId/thread-events</text>
+  </g>
+</svg>

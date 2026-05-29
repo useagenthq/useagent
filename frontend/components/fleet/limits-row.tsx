@@ -47,7 +47,7 @@ function ModelRow({ model, totalTokens }: { model: ModelBurn; totalTokens: numbe
           {model.tokens > 0 ? compactNumber(model.tokens) : "-"}
         </span>
         {model.cost > 0 && (
-          <span className="font-mono text-label-xs tabular-nums text-text-tertiary">
+          <span className="font-mono text-caption-1-medium tabular-nums text-text-tertiary">
             ${model.cost.toFixed(2)}
           </span>
         )}
@@ -86,13 +86,13 @@ function ModelsPanel({ fleet }: { fleet: FleetData | null }) {
 
       <div className="mt-4 flex items-end justify-between border-t border-border-button-default pt-4">
         <div>
-          <p className="font-mono text-label-lg font-semibold tabular-nums text-text-primary">
+          <p className="font-mono text-headline-medium font-semibold tabular-nums text-text-primary">
             <NumberTicker value={fleet?.totalTokens ?? 0} format={compactNumber} />
           </p>
           <p className="mt-1 text-mono-label text-text-tertiary">tokens today</p>
         </div>
         <div className="text-right">
-          <p className="font-mono text-title-h6 tabular-nums text-text-primary">
+          <p className="font-mono text-headline-medium tabular-nums text-text-primary">
             ${(fleet?.totalCost ?? 0).toFixed(2)}
           </p>
           <p className="mt-1 text-mono-label text-text-tertiary">cost today</p>
@@ -122,7 +122,7 @@ function MachinePanel({ machine }: { machine: MachineStats | null }) {
       ) : (
         <>
           <div className="mb-4">
-            <p className="font-mono text-label-lg font-semibold tabular-nums text-text-primary">
+            <p className="font-mono text-headline-medium font-semibold tabular-nums text-text-primary">
               <NumberTicker value={sandboxes.active} />
             </p>
             <p className="mt-1 text-mono-label text-text-tertiary">active sandboxes</p>

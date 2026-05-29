@@ -6,7 +6,7 @@ sidebar:
   order: 1
 ---
 
-Everything in useAgent reduces to a small set of ideas. Hold these four and the
+Everything in UseAgent reduces to a small set of ideas. Hold these four and the
 rest of the system reads cleanly.
 
 <Steps>
@@ -15,8 +15,9 @@ rest of the system reads cleanly.
     truth. The sandbox runs the engine and the work; the UI renders the log.
   </Step>
   <Step title="The inner loop is rented">
-    Engine adapters spawn Codex, Claude, or OpenCode one-shot per run and
-    translate each engine's stream into steps. No engine servers, no engine UI.
+    Engine adapters drive each turn one-shot against a resident engine process
+    inside the thread's sandbox and translate each engine's stream into steps.
+    No engine web UI, and no engine process outside the sandbox.
   </Step>
   <Step title="Output is canonicalized">
     Every engine's native output is mapped to provider-neutral canonical events,

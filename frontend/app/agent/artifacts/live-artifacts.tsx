@@ -116,7 +116,7 @@ function ArtifactCreatePanel({
   return (
     <section className="mt-6 border-y border-border-button-default py-4">
       <div className="flex flex-wrap items-end gap-3">
-        <label className="flex min-w-44 flex-col gap-1 text-label-xs text-text-secondary">
+        <label className="flex min-w-44 flex-col gap-1 text-caption-1-medium text-text-secondary">
           Type
           <select
             value={kind}
@@ -130,7 +130,7 @@ function ArtifactCreatePanel({
             ))}
           </select>
         </label>
-        <label className="flex min-w-64 flex-1 flex-col gap-1 text-label-xs text-text-secondary">
+        <label className="flex min-w-64 flex-1 flex-col gap-1 text-caption-1-medium text-text-secondary">
           Name
           <input
             value={name}
@@ -138,7 +138,7 @@ function ArtifactCreatePanel({
             className="h-9 rounded-lg border border-border-button-default bg-background-primary-default px-3 text-body-2-medium text-text-primary outline-none focus-visible:ring-2 focus-visible:ring-border-focus-ring"
           />
         </label>
-        <label className="flex min-w-48 flex-col gap-1 text-label-xs text-text-secondary">
+        <label className="flex min-w-48 flex-col gap-1 text-caption-1-medium text-text-secondary">
           Run
           <select
             value={runId}
@@ -193,7 +193,7 @@ function EmptyState() {
       <div className="flex size-11 items-center justify-center rounded-full border border-border-button-default bg-background-primary-default">
         <RiBroadcastLine aria-hidden className="size-5 text-text-tertiary" />
       </div>
-      <h2 className="mt-4 text-title-h6 text-text-primary">No artifacts yet</h2>
+      <h2 className="mt-4 text-title-2-medium text-text-primary">No artifacts yet</h2>
       <p className="mt-1 max-w-sm text-body-2-regular text-text-secondary">
         Screenshots, reports, documents, and other files published by your agents will appear here.
       </p>
@@ -211,7 +211,7 @@ function UnavailableState({ onRetry }: { onRetry: () => void }) {
   return (
     <div className="mt-10 flex flex-col items-center justify-center rounded-xl border border-dashed border-border-button-default bg-background-secondary-default px-6 py-16 text-center">
       <RiBroadcastLine aria-hidden className="size-6 text-text-tertiary" />
-      <h2 className="mt-4 text-title-h6 text-text-primary">Artifacts are unavailable</h2>
+      <h2 className="mt-4 text-title-2-medium text-text-primary">Artifacts are unavailable</h2>
       <p className="mt-1 max-w-sm text-body-2-regular text-text-secondary">
         The artifact service could not be reached. Your existing files are not deleted.
       </p>

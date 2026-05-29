@@ -17,15 +17,20 @@ import { cx } from '@/utils/cx';
 /**
  * Theme options shown in the picker. UI copy is intentional: our default
  * Tokyo Night dark ramp reads as "Midnight", the violet dark ramp as "Aura",
- * and the deep blue-slate dark ramp as "Harbor" - the token classes on <html>
- * stay `dark` / `aura` / `harbor` (see globals.css). `swatch` is a fixed
- * per-theme preview class defined in globals.css.
+ * the deep blue-slate dark ramp as "Harbor", the CRT-green dark ramp as
+ * "Phosphor", the cherry-blossom light ramp as "Sakura", and the blue-gray
+ * dark ramp as "Slate" - the token classes on <html> stay `dark` / `aura` /
+ * `harbor` / `phosphor` / `sakura` / `slate` (see globals.css). `swatch` is a
+ * fixed per-theme preview class defined in globals.css.
  */
 export const THEME_OPTIONS = [
   { value: 'light', label: 'Light', swatch: 'theme-swatch-light' },
   { value: 'dark', label: 'Midnight', swatch: 'theme-swatch-dark' },
   { value: 'aura', label: 'Aura', swatch: 'theme-swatch-aura' },
   { value: 'harbor', label: 'Harbor', swatch: 'theme-swatch-harbor' },
+  { value: 'phosphor', label: 'Phosphor', swatch: 'theme-swatch-phosphor' },
+  { value: 'sakura', label: 'Sakura', swatch: 'theme-swatch-sakura' },
+  { value: 'slate', label: 'Slate', swatch: 'theme-swatch-slate' },
 ] as const;
 
 export type ThemeValue = (typeof THEME_OPTIONS)[number]['value'];
@@ -45,8 +50,8 @@ export function ThemeSwatch({ swatch, className }: { swatch: string; className?:
 }
 
 /**
- * Theme picker menu (Light / Midnight / Aura / Harbor) on the BoardUI base
- * Dropdown. The caller supplies the trigger CONTENT via `children` plus
+ * Theme picker menu (Light / Midnight / Aura / Harbor / Phosphor / Sakura /
+ * Slate) on the BoardUI base Dropdown. The caller supplies the trigger CONTENT via `children` plus
  * `triggerClassName`/`triggerAriaLabel` (the trigger button itself is the
  * React Aria pressable, so callers must not nest their own <button>).
  * Selection persists through next-themes (localStorage); the active row is

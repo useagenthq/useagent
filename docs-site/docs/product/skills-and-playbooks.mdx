@@ -26,13 +26,16 @@ full procedure. Both are versioned and both are activated the same way.
 ## Imported from GitHub
 
 GitHub is the source of an organization's procedures. From `/skills` you can
-import `SKILL.md` files from a repository with one click, and an optional hourly
-resync keeps the catalog current.
+import `SKILL.md` files from a repository with one click. A periodic resync can
+also sweep the organization's repositories and re-import new or changed skills
+through the same path; it is off by default, enabled by an operator-set
+interval.
 
 - Discovery runs over a server-side shallow clone, resolving the head with
   `git ls-remote`.
 - Imports are pinned to a commit and idempotent by source, so re-importing never
-  duplicates.
+  duplicates. The resync skips any repository whose head is unchanged since its
+  last sync on a single `git ls-remote`.
 
 See [Knowledge and learning](/concepts/knowledge-and-learning#skill-import) for
 the mechanism.

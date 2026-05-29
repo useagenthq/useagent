@@ -263,10 +263,10 @@ export function SheetGridSurface({
       {/* Value bar: active cell ref + its RAW value/formula (the cell shows the
           computed value). */}
       <div className="flex items-center gap-2">
-        <span className="inline-flex h-8 min-w-14 items-center justify-center rounded-lg border border-border-button-default bg-background-secondary-default px-2 font-mono text-label-xs text-text-secondary">
+        <span className="inline-flex h-8 min-w-14 items-center justify-center rounded-lg border border-border-button-default bg-background-secondary-default px-2 font-mono text-caption-1-medium text-text-secondary">
           {selectedRef}
         </span>
-        <span className="font-mono text-label-xs text-text-tertiary" aria-hidden>
+        <span className="font-mono text-caption-1-medium text-text-tertiary" aria-hidden>
           fx
         </span>
         <input
@@ -311,7 +311,7 @@ export function SheetGridSurface({
               aria-pressed={(fmt?.numFmt ?? "auto") === value}
               disabled={loading}
               onClick={() => patchFmt({ numFmt: value === "auto" ? undefined : value })}
-              className="grid h-7 min-w-8 place-items-center rounded-md px-1.5 font-mono text-label-xs text-text-secondary hover:bg-background-secondary-default aria-pressed:bg-foreground-icon-primary aria-pressed:text-background-full disabled:opacity-40"
+              className="grid h-7 min-w-8 place-items-center rounded-md px-1.5 font-mono text-caption-1-medium text-text-secondary hover:bg-background-secondary-default aria-pressed:bg-foreground-icon-primary aria-pressed:text-background-full disabled:opacity-40"
             >
               {glyph}
             </button>
@@ -350,13 +350,13 @@ export function SheetGridSurface({
               aria-pressed={fmt?.align === align}
               disabled={loading}
               onClick={() => patchFmt({ align: fmt?.align === align ? undefined : align })}
-              className="grid h-7 min-w-7 place-items-center rounded-md text-label-xs text-text-secondary hover:bg-background-secondary-default aria-pressed:bg-foreground-icon-primary aria-pressed:text-background-full disabled:opacity-40"
+              className="grid h-7 min-w-7 place-items-center rounded-md text-caption-1-medium text-text-secondary hover:bg-background-secondary-default aria-pressed:bg-foreground-icon-primary aria-pressed:text-background-full disabled:opacity-40"
             >
               {align === "left" ? "L" : align === "center" ? "C" : "R"}
             </button>
           ))}
         </div>
-        <label className="inline-flex items-center gap-1 text-label-xs text-text-secondary">
+        <label className="inline-flex items-center gap-1 text-caption-1-medium text-text-secondary">
           Fill
           <input
             type="color"
@@ -367,7 +367,7 @@ export function SheetGridSurface({
             className="h-7 w-8 cursor-pointer rounded border border-border-button-default bg-background-primary-default"
           />
         </label>
-        <label className="inline-flex items-center gap-1 text-label-xs text-text-secondary">
+        <label className="inline-flex items-center gap-1 text-caption-1-medium text-text-secondary">
           Text
           <input
             type="color"
@@ -389,7 +389,7 @@ export function SheetGridSurface({
               {Array.from({ length: visibleCols }, (_, col) => (
                 <th
                   key={col}
-                  className="relative h-8 border-b border-r border-border-button-default bg-background-secondary-default text-center font-mono text-label-xs text-text-tertiary"
+                  className="relative h-8 border-b border-r border-border-button-default bg-background-secondary-default text-center font-mono text-caption-1-medium text-text-tertiary"
                   style={{ width: columnWidth(sheet, col), minWidth: columnWidth(sheet, col) }}
                 >
                   {columnLabel(col)}
@@ -407,7 +407,7 @@ export function SheetGridSurface({
           <tbody>
             {Array.from({ length: visibleRows }, (_, row) => (
               <tr key={row}>
-                <td className="sticky left-0 z-10 h-8 w-12 min-w-12 border-b border-r border-border-button-default bg-background-secondary-default text-center align-middle font-mono text-label-xs text-text-tertiary">
+                <td className="sticky left-0 z-10 h-8 w-12 min-w-12 border-b border-r border-border-button-default bg-background-secondary-default text-center align-middle font-mono text-caption-1-medium text-text-tertiary">
                   {row + 1}
                 </td>
                 {Array.from({ length: visibleCols }, (_, col) => {
@@ -504,7 +504,7 @@ export function SheetGridSurface({
                     }
                     if (event.key === "Escape") setRenaming(null);
                   }}
-                  className="h-7 w-28 rounded-lg border border-foreground-icon-primary bg-background-primary-default px-2 text-label-xs text-text-primary outline-none"
+                  className="h-7 w-28 rounded-lg border border-foreground-icon-primary bg-background-primary-default px-2 text-caption-1-medium text-text-primary outline-none"
                 />
               ) : (
                 <button
@@ -515,8 +515,8 @@ export function SheetGridSurface({
                   title={`${item.name} (double-click to rename)`}
                   className={
                     active
-                      ? "inline-flex h-7 items-center rounded-lg border border-border-button-default bg-foreground-icon-primary px-3 text-label-xs text-background-full"
-                      : "inline-flex h-7 items-center rounded-lg border border-border-button-default bg-background-secondary-default px-3 text-label-xs text-text-secondary hover:text-text-primary"
+                      ? "inline-flex h-7 items-center rounded-lg border border-border-button-default bg-foreground-icon-primary px-3 text-caption-1-medium text-background-full"
+                      : "inline-flex h-7 items-center rounded-lg border border-border-button-default bg-background-secondary-default px-3 text-caption-1-medium text-text-secondary hover:text-text-primary"
                   }
                 >
                   {item.name}

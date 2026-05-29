@@ -15,7 +15,7 @@ export function WikiContent({
   if (segments.length === 0) return null;
 
   return (
-    <div className={cn("text-paragraph-md text-text-secondary mt-4 leading-7", className)}>
+    <div className={cn("text-body-regular text-text-secondary mt-4 leading-7", className)}>
       {segments.map((segment, index) =>
         segment.kind === "source-files" ? (
           <details

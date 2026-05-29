@@ -1,18 +1,18 @@
 ---
 title: Operations
-description: How useAgent ships, how it proves a release, and the invariants production runs on.
+description: How UseAgent ships, how it proves a release, and the invariants production runs on.
 sidebar:
   label: Overview
   order: 1
 ---
 
-Operations in useAgent are built around one principle: a release must prove itself
+Operations in UseAgent are built around one principle: a release must prove itself
 before it ships, and roll back cleanly if it cannot.
 
-<CardGroup cols={3}>
+<CardGroup cols={2}>
   <Card title="Deployment lanes" href="/operations/deployment" icon="rocket">
-    The guarded release, the provider-connection bootstrap, and the atomic
-    frontend release.
+    The guarded release and the provider-connection bootstrap, both ending in
+    the atomic frontend swap.
   </Card>
   <Card title="Verification" href="/operations/verification" icon="check-check">
     The test and parity arsenal, from isolated-database unit suites to real
@@ -20,7 +20,11 @@ before it ships, and roll back cleanly if it cannot.
   </Card>
   <Card title="Invariants" href="/operations/invariants" icon="lock">
     Single backend per database, write-only secrets, a restricted gateway role,
-    and clean-worktree releases.
+    and immutable-source releases.
+  </Card>
+  <Card title="Backups and restore" href="/operations/backups" icon="archive">
+    A daily encrypted snapshot with verify and restore lanes, and the off-host
+    requirement.
   </Card>
 </CardGroup>
 

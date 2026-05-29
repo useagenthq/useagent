@@ -139,7 +139,7 @@ export function MessageScrollerRail({
               className={cn(
                 "h-0.5 rounded-full transition-all duration-200",
                 active
-                  ? "w-2.5 bg-text-sub-600"
+                  ? "w-2.5 bg-foreground-icon-secondary"
                   : "w-1.5 bg-border-button-hover group-hover:w-2.5 group-hover:bg-foreground-icon-tertiary",
               )}
             />

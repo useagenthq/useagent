@@ -49,7 +49,7 @@ export default async function WikiDocPage({ params }: { params: Promise<{ id: st
             ) : doc ? (
               <>
                 <div className="flex items-baseline justify-between gap-3">
-                  <h1 className="text-title-h5 text-text-primary">{doc.title}</h1>
+                  <h1 className="text-title-2-medium text-text-primary">{doc.title}</h1>
                   <span className="text-caption-1-regular text-text-tertiary shrink-0">
                     updated {relativeTime(doc.updatedAt)}
                   </span>

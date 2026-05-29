@@ -230,7 +230,7 @@ export function RichDocumentSurface({
           Rich document
         </p>
         <details className="group">
-          <summary className="cursor-pointer list-none rounded-lg border border-border-button-default px-2.5 py-1 text-label-xs text-text-secondary outline-none hover:bg-background-secondary-default hover:text-text-primary">
+          <summary className="cursor-pointer list-none rounded-lg border border-border-button-default px-2.5 py-1 text-caption-1-medium text-text-secondary outline-none hover:bg-background-secondary-default hover:text-text-primary">
             Theme
           </summary>
           <div className="absolute right-3 z-10 mt-1 w-72 max-w-[calc(100%-1.5rem)] rounded-xl border border-border-button-default bg-background-primary-default p-1 shadow-md">
@@ -287,13 +287,13 @@ export function RichDocumentSurface({
               placeholder="https://"
               // biome-ignore lint/a11y/noAutofocus: focus the URL field the moment the link tool opens.
               autoFocus
-              className="h-8 w-56 rounded-lg border border-border-button-default bg-background-primary-default px-2.5 text-label-xs text-text-primary outline-none focus:border-foreground-icon-primary"
+              className="h-8 w-56 rounded-lg border border-border-button-default bg-background-primary-default px-2.5 text-caption-1-medium text-text-primary outline-none focus:border-foreground-icon-primary"
             />
             <button
               type="button"
               onClick={applyLink}
               disabled={!isSafeLinkHref(linkValue)}
-              className="h-8 rounded-lg bg-foreground-icon-primary px-2.5 text-label-xs text-background-full disabled:opacity-40"
+              className="h-8 rounded-lg bg-foreground-icon-primary px-2.5 text-caption-1-medium text-background-full disabled:opacity-40"
             >
               Add
             </button>
@@ -350,7 +350,7 @@ function NumberField({
   readonly max?: number;
 }) {
   return (
-    <label className="flex flex-col gap-1 text-label-xs text-text-secondary">
+    <label className="flex flex-col gap-1 text-caption-1-medium text-text-secondary">
       {label}
       <input
         type="number"
@@ -377,7 +377,7 @@ function ColorField({
   readonly onChange: (value: string) => void;
 }) {
   return (
-    <label className="flex items-center justify-between gap-2 text-label-xs text-text-secondary">
+    <label className="flex items-center justify-between gap-2 text-caption-1-medium text-text-secondary">
       <span>{label}</span>
       <input
         type="color"
@@ -470,7 +470,7 @@ function BlockInspector({
               onChange={(fontSize) => setStyle({ fontSize })}
               min={4}
             />
-            <label className="flex flex-col gap-1 text-label-xs text-text-secondary">
+            <label className="flex flex-col gap-1 text-caption-1-medium text-text-secondary">
               Align
               <select
                 value={block.style?.align ?? "left"}
@@ -829,14 +829,14 @@ export function DeckSurface({
 
           {/* Add block. */}
           <div className="flex flex-wrap items-center gap-2">
-            <span className="text-label-xs text-text-secondary">Add block:</span>
+            <span className="text-caption-1-medium text-text-secondary">Add block:</span>
             {BLOCK_ADD.map(([type, label, Icon]) => (
               <button
                 key={type}
                 type="button"
                 onClick={() => addBlock(type)}
                 disabled={loading}
-                className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-border-button-default px-2.5 text-label-xs hover:bg-background-secondary-default disabled:opacity-50"
+                className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-border-button-default px-2.5 text-caption-1-medium hover:bg-background-secondary-default disabled:opacity-50"
               >
                 <Icon aria-hidden className="size-4" /> {label}
               </button>
@@ -846,7 +846,7 @@ export function DeckSurface({
           <div className="grid gap-4 md:grid-cols-2">
             {/* Quick edit + slide-level controls. */}
             <div className="flex flex-col gap-3">
-              <label className="block text-label-xs text-text-secondary">
+              <label className="block text-caption-1-medium text-text-secondary">
                 Title
                 <input
                   value={headingText}
@@ -855,7 +855,7 @@ export function DeckSurface({
                   className="mt-1 h-9 w-full rounded-lg border border-border-button-default bg-background-primary-default px-3 text-body-2-medium text-text-primary outline-none focus:border-foreground-icon-primary"
                 />
               </label>
-              <label className="block text-label-xs text-text-secondary">
+              <label className="block text-caption-1-medium text-text-secondary">
                 Body
                 <textarea
                   value={bodyText}
@@ -864,7 +864,7 @@ export function DeckSurface({
                   className="mt-1 min-h-20 w-full resize-y rounded-lg border border-border-button-default bg-background-primary-default p-3 text-body-2-regular text-text-primary outline-none focus:border-foreground-icon-primary"
                 />
               </label>
-              <label className="block text-label-xs text-text-secondary">
+              <label className="block text-caption-1-medium text-text-secondary">
                 Speaker notes
                 <textarea
                   value={slide.notes ?? ""}
@@ -873,7 +873,7 @@ export function DeckSurface({
                   className="mt-1 min-h-16 w-full resize-y rounded-lg border border-border-button-default bg-background-primary-default p-3 text-body-2-regular text-text-primary outline-none focus:border-foreground-icon-primary"
                 />
               </label>
-              <div className="flex items-center justify-between rounded-xl border border-border-button-default p-3 text-label-xs text-text-secondary">
+              <div className="flex items-center justify-between rounded-xl border border-border-button-default p-3 text-caption-1-medium text-text-secondary">
                 <span>Slide background</span>
                 {slide.background ? (
                   <div className="flex items-center gap-2">
@@ -885,7 +885,7 @@ export function DeckSurface({
                     <button
                       type="button"
                       onClick={() => setSlideBackground(null)}
-                      className="rounded-lg border border-border-button-default px-2 py-1 text-label-xs hover:bg-background-secondary-default"
+                      className="rounded-lg border border-border-button-default px-2 py-1 text-caption-1-medium hover:bg-background-secondary-default"
                     >
                       Use theme
                     </button>
@@ -894,7 +894,7 @@ export function DeckSurface({
                   <button
                     type="button"
                     onClick={() => setSlideBackground({ type: "color", color: "#111827" })}
-                    className="rounded-lg border border-border-button-default px-2 py-1 text-label-xs hover:bg-background-secondary-default"
+                    className="rounded-lg border border-border-button-default px-2 py-1 text-caption-1-medium hover:bg-background-secondary-default"
                   >
                     Override
                   </button>

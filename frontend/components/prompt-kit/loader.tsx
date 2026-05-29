@@ -2,9 +2,10 @@
 
 // Vendored in full from prompt-kit (prompt-kit.com/c/loader.json) — every
 // variant. Adaptations: `cn` → `cnExt`; the shadcn `primary`/`muted-foreground`
-// /`foreground` tokens → AlignUI (`primary-base`, `--text-soft-400`,
-// `--text-strong-950`); keyframes are provided by the co-located loader.css
-// (prompt-kit keeps them in its global Tailwind config).
+// /`foreground` tokens → BoardUI theme tokens (`accent-500`,
+// `--color-text-tertiary`, `--color-text-primary`); keyframes are provided by
+// the co-located loader.css (prompt-kit keeps them in its global Tailwind
+// config).
 
 import "./loader.css";
 import { cnExt as cn } from "@/utils/cn";
@@ -295,7 +296,7 @@ export function TextShimmerLoader({
   return (
     <div
       className={cn(
-        "bg-[linear-gradient(to_right,hsl(var(--text-soft-400))_40%,hsl(var(--text-strong-950))_60%,hsl(var(--text-soft-400))_80%)]",
+        "bg-[linear-gradient(to_right,var(--color-text-tertiary)_40%,var(--color-text-primary)_60%,var(--color-text-tertiary)_80%)]",
         "bg-size-[200%_auto] bg-clip-text font-medium text-transparent",
         "animate-[shimmer_4s_infinite_linear]",
         textSizes[size],

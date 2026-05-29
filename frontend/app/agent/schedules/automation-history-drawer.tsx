@@ -100,7 +100,7 @@ export function AutomationHistoryDrawer({
           <div className="mt-6 flex items-center justify-between">
             <h2 className="text-body-2-medium text-text-primary">Executions</h2>
             {firings && firings.length > 0 && (
-              <span className="text-label-xs text-text-tertiary">{firings.length} recorded</span>
+              <span className="text-caption-1-medium text-text-tertiary">{firings.length} recorded</span>
             )}
           </div>
 
@@ -131,7 +131,7 @@ export function AutomationHistoryDrawer({
                 return (
                   <li key={firing.id} className="relative pl-8">
                     <span
-                      className="absolute left-1 top-4 z-10 size-4 rounded-full border-4 border-bg-white-0 bg-text-soft-400"
+                      className="absolute left-1 top-4 z-10 size-4 rounded-full border-4 border-background-primary-default bg-foreground-icon-tertiary"
                       aria-hidden
                     />
                     <div className="rounded-xl border border-border-button-default bg-background-primary-default p-3.5 shadow-card">

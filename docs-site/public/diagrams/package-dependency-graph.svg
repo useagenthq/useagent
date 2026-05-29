@@ -1,0 +1,86 @@
+<svg viewBox="0 0 940 520" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Package dependency graph: frontend and backend depend on the shared packages; conformance guards agent-client and agent-harness">
+  <title>Package dependency graph</title>
+  <defs>
+    <marker id="ah-accent" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#3392ff" />
+    </marker>
+    <marker id="ah-gray" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#a3a3a3" />
+    </marker>
+  </defs>
+
+  <!-- canvas -->
+  <rect x="0" y="0" width="940" height="520" rx="12" fill="#f7f7f7" />
+
+  <!-- app dependency arrows (accent) -->
+  <g fill="none" stroke="#3392ff" stroke-width="1.5">
+    <path d="M 300 96 C 308 140, 322 168, 333 200" marker-end="url(#ah-accent)" />
+    <path d="M 214 96 C 196 190, 200 300, 296 383" marker-end="url(#ah-accent)" />
+    <path d="M 348 96 C 425 180, 470 280, 578 383" marker-end="url(#ah-accent)" />
+    <path d="M 560 78 C 486 96, 432 140, 404 200" marker-end="url(#ah-accent)" />
+    <path d="M 630 96 C 626 136, 620 168, 616 200" marker-end="url(#ah-accent)" />
+    <path d="M 588 96 C 496 150, 466 280, 408 383" marker-end="url(#ah-accent)" />
+    <path d="M 690 96 C 740 180, 745 290, 668 383" marker-end="url(#ah-accent)" />
+  </g>
+
+  <!-- package-to-package dependency arrows (neutral) -->
+  <g fill="none" stroke="#a3a3a3" stroke-width="1.5">
+    <path d="M 337 260 L 337 382" marker-end="url(#ah-gray)" />
+    <path d="M 396 260 C 436 300, 478 336, 540 383" marker-end="url(#ah-gray)" />
+    <path d="M 616 260 L 620 382" marker-end="url(#ah-gray)" />
+  </g>
+
+  <!-- conformance guard arrows (dashed) -->
+  <g fill="none" stroke="#a3a3a3" stroke-width="1.5" stroke-dasharray="5 4">
+    <path d="M 186 414 L 244 414" marker-end="url(#ah-gray)" />
+    <path d="M 111 386 C 111 310, 160 260, 244 236" marker-end="url(#ah-gray)" />
+  </g>
+  <text x="215" y="406" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-size="11" fill="#737373">guards</text>
+
+  <!-- apps row -->
+  <g font-family="Inter, system-ui, sans-serif" text-anchor="middle">
+    <rect x="200" y="40" width="164" height="56" rx="10" fill="#ffffff" stroke="#ebebeb" />
+    <text x="282" y="65" font-size="13" font-weight="600" fill="#171717">frontend</text>
+    <text x="282" y="82" font-size="11" fill="#737373">Next.js UI</text>
+
+    <rect x="560" y="40" width="164" height="56" rx="10" fill="#ffffff" stroke="#ebebeb" />
+    <text x="642" y="65" font-size="13" font-weight="600" fill="#171717">backend</text>
+    <text x="642" y="82" font-size="11" fill="#737373">Hono control plane</text>
+  </g>
+
+  <!-- shared packages row -->
+  <g font-family="Inter, system-ui, sans-serif" text-anchor="middle">
+    <rect x="250" y="204" width="174" height="56" rx="10" fill="#ffffff" stroke="#ebebeb" />
+    <text x="337" y="229" font-size="13" font-weight="600" fill="#171717">agent-client</text>
+    <text x="337" y="246" font-size="11" fill="#737373">thread events + SSE</text>
+
+    <rect x="520" y="204" width="186" height="56" rx="10" fill="#ffffff" stroke="#ebebeb" />
+    <text x="613" y="229" font-size="13" font-weight="600" fill="#171717">artifact-formats</text>
+    <text x="613" y="246" font-size="11" fill="#737373">Office + PDF renderers</text>
+  </g>
+
+  <!-- contract layer row -->
+  <g font-family="Inter, system-ui, sans-serif" text-anchor="middle">
+    <rect x="36" y="386" width="150" height="56" rx="10" fill="#ffffff" stroke="#d4d4d4" stroke-dasharray="5 4" />
+    <text x="111" y="411" font-size="13" font-weight="600" fill="#171717">conformance</text>
+    <text x="111" y="428" font-size="11" fill="#737373">contract tests</text>
+
+    <rect x="250" y="386" width="174" height="56" rx="10" fill="#eaf3ff" stroke="#bcdaff" />
+    <text x="337" y="411" font-size="13" font-weight="600" fill="#171717">agent-harness</text>
+    <text x="337" y="428" font-size="11" fill="#2f7bd0">canonical event contract</text>
+
+    <rect x="520" y="386" width="204" height="56" rx="10" fill="#ffffff" stroke="#ebebeb" />
+    <text x="622" y="411" font-size="13" font-weight="600" fill="#171717">artifact-workspace</text>
+    <text x="622" y="428" font-size="11" fill="#737373">workpiece kinds + exports</text>
+  </g>
+
+  <!-- legend -->
+  <g font-family="Inter, system-ui, sans-serif" font-size="11" fill="#737373">
+    <line x1="240" y1="497" x2="268" y2="497" stroke="#3392ff" stroke-width="1.5" />
+    <text x="276" y="501">app dependency</text>
+    <line x1="390" y1="497" x2="418" y2="497" stroke="#a3a3a3" stroke-width="1.5" />
+    <text x="426" y="501">package dependency</text>
+    <line x1="560" y1="497" x2="588" y2="497" stroke="#a3a3a3" stroke-width="1.5" stroke-dasharray="5 4" />
+    <text x="596" y="501">conformance guards</text>
+  </g>
+</svg>

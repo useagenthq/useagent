@@ -165,10 +165,10 @@ export function AutomationsView() {
     <div className="mx-auto w-full max-w-[1040px] px-5 py-8 sm:px-8 sm:py-10">
       <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <div className="flex items-center gap-2 text-label-xs text-text-tertiary">
+          <div className="flex items-center gap-2 text-caption-1-medium text-text-tertiary">
             <RiFlashlightLine className="size-4" aria-hidden /> Agent operations
           </div>
-          <h1 className="mt-2 text-title-h4 text-text-primary">Automations</h1>
+          <h1 className="mt-2 text-display-4-medium text-text-primary">Automations</h1>
           <p className="mt-1 max-w-xl text-body-2-regular text-text-secondary">
             Schedule repeatable work, inspect every execution, and intervene when needed.
           </p>

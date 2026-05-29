@@ -30,8 +30,8 @@ function ViewModeToggle({
           aria-pressed={value === mode}
           className={
             value === mode
-              ? "inline-flex h-7 items-center gap-1.5 rounded-md bg-foreground-icon-primary px-2.5 text-label-xs text-background-full"
-              : "inline-flex h-7 items-center gap-1.5 rounded-md px-2.5 text-label-xs text-text-secondary hover:text-text-primary"
+              ? "inline-flex h-7 items-center gap-1.5 rounded-md bg-foreground-icon-primary px-2.5 text-caption-1-medium text-background-full"
+              : "inline-flex h-7 items-center gap-1.5 rounded-md px-2.5 text-caption-1-medium text-text-secondary hover:text-text-primary"
           }
         >
           <Icon aria-hidden className="size-3.5" />

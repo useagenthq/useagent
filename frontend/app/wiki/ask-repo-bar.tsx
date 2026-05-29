@@ -76,7 +76,7 @@ export function AskRepoBar() {
           className="min-w-0 flex-1 bg-transparent text-body-2-regular text-text-primary outline-none placeholder:text-text-tertiary disabled:opacity-60"
         />
         {failed && (
-          <span className="text-label-xs text-text-error-primary shrink-0">Could not start, retry</span>
+          <span className="text-caption-1-medium text-text-error-primary shrink-0">Could not start, retry</span>
         )}
         <button
           type="submit"

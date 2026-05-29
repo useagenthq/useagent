@@ -25,7 +25,7 @@ export function RecentRunsTable({ runs }: { runs: DashRun[] }) {
     <Card className='gap-0 p-0'>
       <div className='flex items-center justify-between p-4'>
         <div className='flex flex-col gap-0.5'>
-          <p className='text-label-md text-text-primary'>Recent runs</p>
+          <p className='text-body-medium text-text-primary'>Recent runs</p>
           <p className='text-caption-1-regular text-text-secondary'>
             Latest agent activity across the fleet.
           </p>

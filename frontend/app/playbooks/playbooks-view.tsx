@@ -38,7 +38,7 @@ function PlaybookCard({
         <div className="flex size-9 items-center justify-center rounded-lg border border-border-button-default bg-background-secondary-default">
           <RiBookMarkedLine aria-hidden className="size-5 text-text-secondary" />
         </div>
-        <span className="font-mono text-label-xs tabular-nums text-text-tertiary">
+        <span className="font-mono text-caption-1-medium tabular-nums text-text-tertiary">
           v{playbook.version}
         </span>
       </div>
