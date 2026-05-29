@@ -6,7 +6,7 @@ sidebar:
   order: 1
 ---
 
-useAgent's architecture has a name and a short set of settled decisions behind it.
+UseAgent's architecture has a name and a short set of settled decisions behind it.
 VERA stands for **Verify-gated, Event-sourced, Replaceable-engine Actors**. Each
 word is a commitment the rest of the system leans on.
 
@@ -14,9 +14,11 @@ word is a commitment the rest of the system leans on.
 
 <CardGroup cols={2}>
   <Card title="Verify-gated" icon="shield-check">
-    Outcomes are gated on verification, and the verify authority is designed not
-    to be self-graded by the engine that did the work. Provider completion alone
-    is not success.
+    Verification is an evidence discipline, not self-grading: a conformance
+    suite, environment-gated live proofs, and evidence recorded in the event
+    log. Destructive gateway operations gate on a durable human approval lane
+    with one-shot capabilities. A runtime verify stage on run completion is a
+    design goal, not current behavior.
   </Card>
   <Card title="Event-sourced" icon="git-commit-horizontal">
     The run and step log in Postgres is the source of truth. State is the reduction
@@ -27,8 +29,9 @@ word is a commitment the rest of the system leans on.
     are interchangeable at the contract boundary.
   </Card>
   <Card title="Actors" icon="box">
-    Each run is an isolated actor with its own sandbox and working directory,
-    driven from outside by the harness.
+    Each thread is an isolated actor with its own sandbox and working directory,
+    held on a per-thread lease. Each run is one turn inside it, driven from
+    outside by the harness.
   </Card>
 </CardGroup>
 
@@ -39,14 +42,31 @@ the event log, the workers, the SSE fan-out, org scoping, and knowledge all live
 on the trusted side. The sandbox runs the engine and the work. The UI renders the
 log, never a live process.
 
+<div style={{ background: "#ffffff", border: "1px solid #ebebeb", borderRadius: "12px", padding: "12px" }}>
+  <img
+    src="/diagrams/system-architecture.svg"
+    alt="System architecture: the Next 16 browser UI reaches the Bun + Hono backend through the /api rewrite; runs/routes.ts accepts the run, worker.ts appends runs and steps to Postgres (the source of truth) and dispatches the turn to the thread's engine session in a Daytona sandbox; engine output flows back as provider events and SSE streams the event log to the browser."
+    style={{ width: "100%", display: "block" }}
+  />
+</div>
+
+*One turn end to end: the harness (routes, worker, SSE fan-out, Postgres) stays on
+the trusted side of the dashed line; only the engine and its work run inside the
+Daytona sandbox.*
+
 The consequences are concrete:
 
 - A run **survives a backend restart**, because its truth is the log, not a
   process' memory.
-- Three different engines render through **one UI contract**, because their output
-  is canonicalized before it is stored.
-- A sandbox never holds long-lived credentials, because privileged work goes
-  through the [gateway](/concepts/gateway-tools-and-approvals).
+- Three different engines render through **one UI contract**, because their
+  native output is durably stored first, then translated into one
+  provider-neutral canonical schema by a post-finalize outbox worker, and
+  canonical events are persisted before they are published to subscribers.
+- A sandbox holds no **platform credentials**: privileged work goes through the
+  [gateway](/concepts/gateway-tools-and-approvals), reached only with a
+  short-lived signed run token. Org-configured secrets are intentionally
+  injected for the engine's own tooling and surfaced in the timeline as a
+  names-only `secrets.injected` marker.
 
 :::note
 Several tempting alternatives were evaluated and set aside: running the harness

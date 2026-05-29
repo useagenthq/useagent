@@ -5,7 +5,7 @@ sidebar:
   order: 2
 ---
 
-An engine needs credentials to run. useAgent stores them on the trusted backend and
+An engine needs credentials to run. UseAgent stores them on the trusted backend and
 resolves them at turn time, so a sandbox never holds a reusable secret.
 
 ## Two authentication methods
@@ -21,13 +21,23 @@ resolves them at turn time, so a sandbox never holds a reusable secret.
   </Card>
 </CardGroup>
 
+Connections belong to the signed-in user within the organization, not to the
+organization as a whole. Every provider-connections route requires an
+authenticated user and returns `403 user_required` otherwise; the org-level dev
+fallback alone is not enough. Reads return metadata for the current user's
+connections only.
+
 The connection lifecycle is driven from [Settings](/product/settings):
 
 | Operation | Endpoint |
 | --- | --- |
-| List, create, update | `GET`, `POST`, `PUT /api/provider-connections` |
-| Managed account OAuth | `.../openai/chatgpt-oauth/start`, `/status`, `/cancel`, `/revoke` |
-| Per-provider key | `.../:provider/api-key`, `.../:provider/revoke` |
+| List the current user's connections | `GET /api/provider-connections` |
+| Managed account OAuth | `POST .../openai/chatgpt-oauth/start`, `GET .../status`, `POST .../cancel`, `POST .../revoke` |
+| Store or update a provider key | `PUT .../:provider/api-key` |
+| Revoke a provider credential | `POST .../:provider/revoke` |
+
+There is no `POST` or `PUT` on the collection root: creation and update happen
+only through the per-provider key route and the OAuth subroutes.
 
 ## Gateway providers and models
 
@@ -41,7 +51,10 @@ upstreams:
 | OpenRouter | `openrouter.ai/api` | Aggregated across providers |
 
 OpenCode runs against its own native models. Which engines and models are
-selectable in the UI is gated by the enabled-engines set for the organization.
+selectable in the UI is deployment configuration plus proven readiness, not a
+per-organization setting: the `ENABLED_ENGINES` env only adds optional engines
+on top of the base set, and `GET /api/config` filters further to engines whose
+readiness is proven (auth mode established, provider health ready).
 
 ## The Codex subscription relay
 

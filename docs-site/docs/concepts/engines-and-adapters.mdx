@@ -1,26 +1,31 @@
 ---
 title: Engines and adapters
-description: How Codex, Claude, and OpenCode are driven one-shot behind a neutral adapter, the runtime path versus ACP, and the Codex subscription relay.
+description: How Codex, Claude, and OpenCode are driven behind a neutral adapter, the runtime path versus ACP, and the Codex subscription relay.
 sidebar:
   order: 4
 ---
 
-An engine is the rented inner loop. useAgent does not build the agent that decides
+An engine is the rented inner loop. UseAgent does not build the agent that decides
 what to do; it drives an existing one and owns everything around it.
 
 ## Engine
 
 The coding agent runtime, such as Codex, Claude, or OpenCode. It decides what to
-do and emits native events. An engine is spawned one-shot per run in an isolated
-working directory, streams its output, and exits. There are no long-lived engine
-servers.
+do and emits native events. The harness drives each turn one-shot from outside
+the sandbox, but the engine process itself is resident inside the thread's
+sandbox and reused across turns: OpenCode runs a persistent `opencode serve`
+(`backend/src/engines/opencode-server.ts`), and the ACP Claude and Codex route
+keeps a resident relay whose session is reloaded turn to turn
+(`backend/src/engines/acp-server.ts`). The settled invariants are narrower than
+"exits per run": no engine UI servers or iframes, and no engine process
+outliving its thread's sandbox.
 
 ## Engine adapter
 
-The translator between an engine's protocol and useAgent's thread, command, and
+The translator between an engine's protocol and UseAgent's thread, command, and
 event contracts. Adapters live in `backend/src/engines/`. The adapter's job is to
 turn an engine's native stream into canonical steps and to accept control (start,
-steer, cancel, resume) from the command lane.
+cancel, and reply turns) from the command lane.
 
 ## Runtime path versus ACP
 
@@ -40,6 +45,14 @@ support:
   </Card>
 </CardGroup>
 
+Selection of the runtime path is operator-gated: `RUNTIME_RUN_ADAPTER_ENABLED`
+turns it on (off unless `1` or `true`), and `RUNTIME_RUN_ADAPTER_MODE` chooses
+`canary`, which uses a thread and run allowlist, or `all`
+(`backend/src/engines/runtime-adapter.ts`). With no
+`RUNTIME_RUN_ADAPTER_ENGINES` list configured, the runtime lane covers codex and
+opencode while claude stays on the ACP compatibility path. The shipped
+deployment enables the lane in `mode=all` (`deploy/hetzner/configure-host.sh`).
+
 The production worker resolves an engine registry before each turn. Native
 OpenCode and selected runtime-path routes receive a concrete `ProviderDriver`;
 legacy ACP Claude and Codex execution is declared as an `EngineAdapter`
@@ -58,6 +71,19 @@ A one-use, run-bound WebSocket capability. It lets a managed ChatGPT
 subscription drive a run without ever copying OAuth state into the sandbox: the
 Codex app-server and the ChatGPT OAuth stay on the trusted backend, while only
 the Codex exec-server runs inside Cube or Daytona.
+
+<figure style={{ margin: "1.5rem 0" }}>
+  <div style={{ background: "#ffffff", border: "1px solid #ebebeb", borderRadius: "12px", padding: "16px" }}>
+    <img
+      src="/diagrams/codex-subscription-relay.svg"
+      alt="Codex subscription relay: the backend writes a one-use, run-bound relay URL into the sandbox settings; the sandbox Codex provider instance dials the wss capability URL; Caddy routes only /api/internal/codex-relay/* straight to the backend on port 3201; the relay consumes the grant, spawns a codex app-server with the operator codexHome, and bridges exec and file calls back to the codex exec-server in the sandbox; ChatGPT OAuth never enters the sandbox"
+      style={{ display: "block", width: "100%", height: "auto" }}
+    />
+  </div>
+  <figcaption style={{ marginTop: "0.5rem", fontSize: "0.8125rem", color: "#737373", textAlign: "center" }}>
+    One grant per run: the backend issues a one-use relay URL, the sandbox dials it through the Caddy public origin, and the relay bridges to a backend codex app-server so OAuth never enters the sandbox.
+  </figcaption>
+</figure>
 
 It is proven end to end in production: first turns, multi-turn replies (the relay
 continues a bound thread when the driver restarts), and the run-bound tool

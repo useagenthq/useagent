@@ -11,8 +11,11 @@ drives the sandbox from outside and records everything it observes.
 ## Sandbox
 
 The isolated Linux workstation where agent commands, repositories, browser
-automation, desktop apps, and recordings run. One run gets one sandbox and one
-working directory.
+automation, desktop apps, and recordings run. A thread gets one sandbox and one
+working directory, retained and reused across its runs: the lease checks
+liveness and required labels before reuse and re-provisions when the retained
+sandbox is stale (`backend/src/engines/thread-sandbox.ts`). A run executes
+inside its thread's sandbox.
 
 ## Sandbox provider
 
@@ -54,6 +57,20 @@ kill a live run:
     deadline, rather than discarding work that actually completed.
   </Step>
 </Steps>
+
+<div style={{ background: "#ffffff", border: "1px solid #ebebeb", borderRadius: "12px", padding: "16px", margin: "1.5rem 0" }}>
+  <img
+    src="/diagrams/run-survives-backend-restart.svg"
+    alt="Two lanes over time: the sandbox keeps executing through a backend crash while boot recovery and the adaptive reconcile loop adopt the finished result"
+    style={{ width: "100%", height: "auto", display: "block" }}
+  />
+  <p style={{ margin: "12px 4px 0", fontSize: "13px", color: "#737373" }}>
+    The sandbox lane never stops: the one-shot boot pass (runs/recovery.ts:41-58)
+    settles the commands mailbox, then the adaptive loop (recovery.ts:288,
+    index.ts:348) re-probes every 15s with run.reconciling heartbeats until it
+    adopts the real result or fails honestly at the bounded deadline.
+  </p>
+</div>
 
 :::warning
 The sandbox provider interface does not expose explicit pause, checkpoint, or

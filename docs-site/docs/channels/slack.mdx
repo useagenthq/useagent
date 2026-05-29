@@ -33,23 +33,23 @@ weaker security posture than the web app; it shares the allowlist.
 
 ## Results back in the thread
 
-Answers, artifacts, and approval cards all flow back to the Slack thread:
+Answers and artifacts flow back to the Slack thread:
 
 - A Slack-started run posts a **Block Kit run card** with title and status, model,
-  and owner or repository, plus an "Open in useAgent" button.
+  and owner or repository, plus an "Open in UseAgent" button.
 - The card **updates in place** as the run moves from queued to running to
   completed, throttled, with a plain-text chunked fallback so the answer is never
   lost.
-- Approval cards appear in Slack, so a destructive gated operation can be
-  authorized from the thread.
+- Approvals are resolved in the web app today; in-thread Block Kit approvals
+  are deliberately deferred.
 
 ## Scoped bring-up
 
 A per-channel ingress allowlist scopes where Slack can start runs, so a workspace
-can enable useAgent in one channel before opening it more widely.
+can enable UseAgent in one channel before opening it more widely.
 
 :::tip
 Everything Slack does here rides shared machinery: the command lane, the thread
-stream, the outbox, and the approval lane. That is why Slack behaves consistently
-with the web app rather than being a parallel implementation.
+stream, and the outbox. That is why Slack behaves consistently with the web app
+rather than being a parallel implementation.
 :::

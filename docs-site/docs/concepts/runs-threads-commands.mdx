@@ -8,11 +8,27 @@ sidebar:
 These four terms describe how work is scoped and made durable. They are backend
 truth: the frontend renders them but never invents them.
 
+<figure style={{ margin: "1.5rem 0" }}>
+  <div style={{ background: "#ffffff", border: "1px solid #ebebeb", borderRadius: "12px", padding: "16px" }}>
+    <img
+      src="/diagrams/run-lifecycle.svg"
+      alt="Run lifecycle: acceptRunCommand accepts a durable command, the worker claims it, a sandbox is acquired, the engine runs one turn, steps and provider events land in Postgres, finalizeRun commits the terminal state, and a reply re-enters the same door with parent_run_id"
+      style={{ display: "block", width: "100%", height: "auto" }}
+    />
+  </div>
+  <figcaption style={{ marginTop: "0.5rem", fontSize: "0.8125rem", color: "#737373", textAlign: "center" }}>
+    The run lifecycle: every channel enters through one durable command door, the Postgres event log is the source of truth, and a reply re-enters with parent_run_id.
+  </figcaption>
+</figure>
+
 ## Organization
 
-The tenant boundary. Users, secrets, skills, knowledge, runs, and integrations
-all belong to exactly one organization. Org scoping is enforced by the backend
-auth layer and the database, not by the client.
+The tenant boundary. Resources such as secrets, skills, knowledge, runs, and
+integrations belong to exactly one organization. A user is different: membership
+is many-to-many, so one user can belong to several organizations and acts under
+one active organization per session (`backend/src/db/auth-schema.ts`). Org
+scoping is enforced by the backend auth layer and the database, not by the
+client.
 
 ## Thread
 
@@ -27,29 +43,62 @@ One agent turn inside a thread, from an accepted command to a terminal result.
 The runs list returns thread roots; a single thread is fetched whole when you
 open it.
 
+### Child sessions
+
+An agent can spawn child work in-run through the `child_session_create`,
+`child_session_list`, `child_session_events`, and `child_session_gather`
+gateway tools (`backend/src/knowledge/gateway/child-session-tools.ts`). Each
+child is a queued serial turn on the same thread: at most one command per
+thread is in flight at a time (`backend/src/commands/dispatch.ts`), so children
+run one after another, never as a parallel process tree. The timeline renders
+their progress through the `child.started`, `child.updated`, and
+`child.completed` canonical events.
+
 ## Command
 
-The durable instruction that starts, steers, cancels, or resumes a run. Every
-command carries an **idempotency key**, so a retried submission never creates
-duplicate work. Commands are the single door: the web app, Slack, and scheduled
-automations all enter through the same durable command lane.
+The durable record of a product mutation. There are exactly two durable command
+kinds (`backend/src/commands/repo.ts`): `run.create` enqueues a turn, and a
+reply or resume is simply a new `run.create` turn on the same thread carrying
+`parent_run_id`; `run.cancel` is the durable record of a user stop request.
+Commands are the single door: the web app (`runs/routes.ts`), Slack
+(`slack/events.ts`), and scheduled automations (`schedules/fire.ts`) all enter
+through the same `acceptRunCommand` lane.
+
+A command **may** carry a per-organization idempotency key. When a key is
+present, a retried submission observes the original command instead of starting
+duplicate work, and a reused key with a different payload fingerprint is
+rejected with a 409 rather than silently rerun (`backend/src/db/schema.ts`).
+Without a key the submission is still a durable command row, just not
+deduplicated.
 
 ## Step
 
-A durable timeline item. A step is one of a fixed set of kinds:
+A run's timeline is written in two lanes.
 
-| Step kind | What it is |
+**Durable steps** are coarse timeline items in the `steps` table. A step's kind
+is one of `command`, `file`, `task`, or `done`, with a label, an optional chip,
+and optional structured `code_json` (`backend/src/db/schema.ts`).
+
+**Canonical events** carry everything else a timeline reader sees. They are
+provider-neutral (one discriminated union covers every engine,
+`packages/agent-harness/src/canonical.ts`) and are persisted in
+`canonical_events` before they are published, with an immutable `deliverySeq`
+cursor, so a reconnect replays exactly the rows a live subscriber saw
+(`backend/src/runs/canonical-events.ts`). The kinds a timeline reader sees
+include:
+
+| Canonical event group | Examples |
 | --- | --- |
-| Text | Assistant or user message content. |
-| Reasoning | A disclosed thinking segment. |
-| Tool call | An invocation of a gateway tool, with its result. |
-| Question | A prompt back to the human for input. |
-| Approval | A human authorization request for a gated operation. |
-| Artifact | A published file or result with a preview or download link. |
+| Messages and reasoning | `message.started/delta/completed`, `reasoning.delta/completed` |
+| Tools and plans | `tool.started/progress/completed`, `plan.updated` |
+| Files and artifacts | `file.changed`, `artifact.created`, `artifact.delivered` |
+| Questions and approvals | `question.requested/resolved`, `approval.requested/resolved` |
+| Child sessions | `child.started/updated/completed` |
+| Usage | `usage.updated` |
 
-Because the event log is the source of truth, the sequence of steps fully
-describes a run and can be replayed. The UI reduces the step stream into the
-session timeline.
+Because the event log is the source of truth, the two lanes together fully
+describe a run and can be replayed. The UI reduces them into the session
+timeline.
 
 :::note
 A run **survives a backend restart**. The sandbox keeps executing; on restart a

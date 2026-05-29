@@ -1,0 +1,116 @@
+<svg viewBox="0 0 960 520" xmlns="http://www.w3.org/2000/svg" font-family="Inter, system-ui, sans-serif" role="img" aria-label="The trust boundary: an untrusted sandbox calls the gateway process on port 3202 with a tool token; the gateway reaches Postgres, provider APIs, GitHub, GCS, and Slack; a human approval loop mints one-shot capabilities.">
+  <defs>
+    <marker id="ah-accent" viewBox="0 0 8 8" refX="8" refY="4" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto">
+      <path d="M0 0 L8 4 L0 8 Z" fill="#3392ff"/>
+    </marker>
+    <marker id="ah-neutral" viewBox="0 0 8 8" refX="8" refY="4" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto">
+      <path d="M0 0 L8 4 L0 8 Z" fill="#a3a3a3"/>
+    </marker>
+  </defs>
+
+  <!-- canvas -->
+  <rect x="0" y="0" width="960" height="520" rx="10" fill="#f7f7f7"/>
+
+  <!-- header -->
+  <text x="36" y="34" font-size="13" font-weight="600" fill="#171717">The trust boundary</text>
+  <text x="924" y="34" text-anchor="end" font-size="10.5" fill="#737373">privileged work happens gateway-side</text>
+
+  <!-- trust boundary -->
+  <line x1="311" y1="48" x2="311" y2="380" stroke="#cfcfcf" stroke-width="1.5" stroke-dasharray="4 4"/>
+  <text x="311" y="62" text-anchor="middle" font-size="12" font-weight="600" fill="#171717" paint-order="stroke" stroke="#f7f7f7" stroke-width="5">trust boundary</text>
+  <text x="311" y="78" text-anchor="middle" font-size="11" fill="#737373" paint-order="stroke" stroke="#f7f7f7" stroke-width="5">credentials never cross</text>
+
+  <!-- sandbox (untrusted) -->
+  <rect x="36" y="112" width="220" height="144" rx="10" fill="#ffffff" stroke="#ebebeb"/>
+  <text x="56" y="140" font-size="13" font-weight="600" fill="#171717">Sandbox</text>
+  <text x="118" y="140" font-size="11" fill="#737373">untrusted</text>
+  <text x="56" y="166" font-size="11" fill="#737373">engine + cloned repos</text>
+  <text x="56" y="184" font-size="11" fill="#737373">holds only short-lived</text>
+  <text x="56" y="202" font-size="11" fill="#737373">capability tokens</text>
+  <text x="56" y="220" font-size="11" fill="#737373">no DB or provider keys</text>
+
+  <!-- primary flow: sandbox -> gateway -->
+  <line x1="256" y1="185" x2="368" y2="185" stroke="#3392ff" stroke-width="1.5" marker-end="url(#ah-accent)"/>
+  <text x="311" y="170" text-anchor="middle" font-size="12" font-weight="600" fill="#3392ff" paint-order="stroke" stroke="#f7f7f7" stroke-width="5">MCP tools/call</text>
+  <text x="311" y="203" text-anchor="middle" font-size="10.5" fill="#737373" paint-order="stroke" stroke="#f7f7f7" stroke-width="5">+ Bearer tool token</text>
+
+  <!-- gateway process -->
+  <rect x="372" y="88" width="248" height="196" rx="10" fill="#ffffff" stroke="#ebebeb"/>
+  <text x="392" y="116" font-size="13" font-weight="600" fill="#171717">Gateway process :3202</text>
+  <text x="392" y="134" font-size="10.5" fill="#737373">src/gateway.ts, no session auth</text>
+  <rect x="388" y="148" width="216" height="50" rx="8" fill="#f7f7f7" stroke="#ebebeb"/>
+  <text x="402" y="168" font-size="12" font-weight="600" fill="#171717">knowledge MCP</text>
+  <text x="402" y="186" font-size="10.5" fill="#737373" font-family="ui-monospace, SFMono-Regular, Menlo, monospace">/api/mcp/knowledge</text>
+  <rect x="388" y="210" width="216" height="50" rx="8" fill="#f7f7f7" stroke="#ebebeb"/>
+  <text x="402" y="230" font-size="12" font-weight="600" fill="#171717">provider gateway</text>
+  <text x="402" y="248" font-size="10.5" fill="#737373" font-family="ui-monospace, SFMono-Regular, Menlo, monospace">/api/provider/*</text>
+
+  <!-- gateway fan-out -->
+  <line x1="620" y1="116" x2="672" y2="90" stroke="#a3a3a3" stroke-width="1.25" marker-end="url(#ah-neutral)"/>
+  <line x1="620" y1="168" x2="672" y2="168" stroke="#a3a3a3" stroke-width="1.25" marker-end="url(#ah-neutral)"/>
+  <line x1="620" y1="220" x2="672" y2="236" stroke="#a3a3a3" stroke-width="1.25" marker-end="url(#ah-neutral)"/>
+  <line x1="620" y1="248" x2="672" y2="296" stroke="#a3a3a3" stroke-width="1.25" marker-end="url(#ah-neutral)"/>
+  <line x1="620" y1="270" x2="672" y2="356" stroke="#a3a3a3" stroke-width="1.25" marker-end="url(#ah-neutral)"/>
+
+  <!-- postgres: source of truth (accent tint) -->
+  <rect x="676" y="56" width="248" height="68" rx="10" fill="#eaf3ff" stroke="#b9d9ff"/>
+  <text x="692" y="80" font-size="12" font-weight="600" fill="#171717">Postgres</text>
+  <text x="756" y="80" font-size="10.5" fill="#3392ff">source of truth</text>
+  <text x="692" y="98" font-size="10.5" fill="#737373">restricted DB role</text>
+  <text x="692" y="114" font-size="10" fill="#737373" font-family="ui-monospace, SFMono-Regular, Menlo, monospace">GATEWAY_DATABASE_URL</text>
+
+  <!-- provider APIs -->
+  <rect x="676" y="136" width="248" height="64" rx="10" fill="#ffffff" stroke="#ebebeb"/>
+  <text x="692" y="158" font-size="12" font-weight="600" fill="#171717">Provider APIs</text>
+  <text x="692" y="176" font-size="10.5" fill="#737373">Anthropic, OpenAI, OpenRouter</text>
+  <text x="692" y="190" font-size="10.5" fill="#737373">keys resolved server-side</text>
+
+  <!-- github -->
+  <rect x="676" y="212" width="248" height="48" rx="10" fill="#ffffff" stroke="#ebebeb"/>
+  <text x="692" y="232" font-size="12" font-weight="600" fill="#171717">GitHub</text>
+  <text x="692" y="248" font-size="10.5" fill="#737373">PR and issue reads, App token</text>
+
+  <!-- gcs -->
+  <rect x="676" y="272" width="248" height="48" rx="10" fill="#ffffff" stroke="#ebebeb"/>
+  <text x="692" y="292" font-size="12" font-weight="600" fill="#171717">GCS</text>
+  <text x="692" y="308" font-size="10.5" fill="#737373">read-only object listing</text>
+
+  <!-- slack -->
+  <rect x="676" y="332" width="248" height="48" rx="10" fill="#ffffff" stroke="#ebebeb"/>
+  <text x="692" y="352" font-size="12" font-weight="600" fill="#171717">Slack</text>
+  <text x="692" y="368" font-size="10.5" fill="#737373">bot token stays server-side</text>
+
+  <!-- approval loop lane -->
+  <rect x="36" y="400" width="888" height="104" rx="10" fill="#ffffff" stroke="#ebebeb"/>
+  <text x="52" y="424" font-size="12" font-weight="600" fill="#171717">Approval loop</text>
+  <text x="150" y="424" font-size="10.5" fill="#737373">approval_request and approval_poll run over the same MCP surface; the capability is minted trusted-side and delivered once</text>
+
+  <rect x="48" y="438" width="108" height="50" rx="8" fill="#f7f7f7" stroke="#ebebeb"/>
+  <text x="58" y="459" font-size="10" font-weight="600" fill="#171717">approval_request</text>
+  <text x="58" y="476" font-size="9.5" fill="#737373">from the sandbox</text>
+  <line x1="158" y1="463" x2="170" y2="463" stroke="#a3a3a3" stroke-width="1.25" marker-end="url(#ah-neutral)"/>
+
+  <rect x="172" y="438" width="149" height="50" rx="8" fill="#f7f7f7" stroke="#ebebeb"/>
+  <text x="182" y="459" font-size="10" font-weight="600" fill="#171717">pending row</text>
+  <text x="182" y="476" font-size="8.5" fill="#737373" font-family="ui-monospace, SFMono-Regular, Menlo, monospace">gateway_approval_requests</text>
+  <line x1="323" y1="463" x2="335" y2="463" stroke="#a3a3a3" stroke-width="1.25" marker-end="url(#ah-neutral)"/>
+
+  <rect x="337" y="438" width="149" height="50" rx="8" fill="#f7f7f7" stroke="#ebebeb"/>
+  <text x="347" y="459" font-size="10" font-weight="600" fill="#171717">session-view card</text>
+  <text x="347" y="476" font-size="8.5" fill="#737373" font-family="ui-monospace, SFMono-Regular, Menlo, monospace">gateway-approval-card.tsx</text>
+  <line x1="488" y1="463" x2="500" y2="463" stroke="#a3a3a3" stroke-width="1.25" marker-end="url(#ah-neutral)"/>
+
+  <rect x="502" y="438" width="134" height="50" rx="8" fill="#f7f7f7" stroke="#ebebeb"/>
+  <text x="512" y="459" font-size="10" font-weight="600" fill="#171717">human approves</text>
+  <text x="512" y="476" font-size="8.5" fill="#737373" font-family="ui-monospace, SFMono-Regular, Menlo, monospace">/api/gateway/approvals</text>
+  <line x1="638" y1="463" x2="650" y2="463" stroke="#a3a3a3" stroke-width="1.25" marker-end="url(#ah-neutral)"/>
+
+  <rect x="652" y="438" width="126" height="50" rx="8" fill="#f7f7f7" stroke="#ebebeb"/>
+  <text x="662" y="459" font-size="10" font-weight="600" fill="#171717">one-shot capability</text>
+  <text x="662" y="476" font-size="9.5" fill="#737373">argument-bound</text>
+  <line x1="780" y1="463" x2="792" y2="463" stroke="#3392ff" stroke-width="1.25" marker-end="url(#ah-accent)"/>
+
+  <rect x="794" y="438" width="118" height="50" rx="8" fill="#f7f7f7" stroke="#ebebeb"/>
+  <text x="804" y="459" font-size="10" font-weight="600" fill="#171717">approval_poll</text>
+  <text x="804" y="476" font-size="9.5" fill="#737373">delivered once</text>
+</svg>

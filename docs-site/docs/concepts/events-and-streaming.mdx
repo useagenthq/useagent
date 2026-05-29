@@ -8,9 +8,23 @@ sidebar:
 The event log is the product. This page covers what an event is, why there are
 two shapes of it, and how events reach the UI.
 
+<div style={{ background: "#ffffff", border: "1px solid #ebebeb", borderRadius: "12px", padding: "12px" }}>
+  <img
+    src="/diagrams/canonical-event-flow.svg"
+    alt="Provider events flow through the canonical lane worker (claim, seal, canonicalize) into the canonical_events table, then out over the thread-scoped SSE stream to the UI reducer."
+    style={{ display: "block", width: "100%", height: "auto" }}
+  />
+</div>
+
+<p style={{ color: "#737373", fontSize: "13px", marginTop: "8px" }}>
+  From engine output to the browser: raw provider events are claimed, sealed, and
+  translated by the canonical lane, persisted to canonical_events, then streamed
+  per thread and merged by the UI reducer.
+</p>
+
 ## Canonical event
 
-useAgent's provider-neutral representation of engine output. Canonicalization is
+UseAgent's provider-neutral representation of engine output. Canonicalization is
 what lets Codex, Claude, and OpenCode render through one UI contract: each
 engine's native stream is translated into the same canonical shape, so the
 timeline components never need to know which engine produced a run.
@@ -24,7 +38,7 @@ native runtime state; the shared packages define the public schema on top.
 
 ## The two streams
 
-useAgent uses two distinct server-sent event streams, and it is important not to
+UseAgent uses two distinct server-sent event streams, and it is important not to
 conflate them:
 
 <CardGroup cols={2}>

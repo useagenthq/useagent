@@ -22,8 +22,9 @@ channel inherits the same reliability, threading, and rendering.
     is no per-channel run engine.
   </Step>
   <Step title="Results flow back to the channel">
-    Answers, artifacts, and approval cards are delivered back to wherever the run
-    started, through the outbox.
+    Answers and artifacts return to the originating channel: Slack through the
+    durable outbox, the web app over the thread event stream. Approvals are
+    resolved in the web app today.
   </Step>
 </Steps>
 
@@ -31,8 +32,8 @@ channel inherits the same reliability, threading, and rendering.
 
 Because ingress is a single door, adding a new channel is mostly a matter of
 translating that channel's messages into commands and delivering results back. A
-new channel gets durable commands, threaded replies, restart survival, and the
-approval lane for free, with no bespoke run UI.
+new channel gets durable commands, threaded replies, and restart survival for
+free, with no bespoke run UI.
 
 <CardGroup cols={2}>
   <Card title="Reliable by construction" icon="shield-check">
@@ -44,6 +45,17 @@ approval lane for free, with no bespoke run UI.
     inbound attachments, and results back in the thread.
   </Card>
 </CardGroup>
+
+## Email digests
+
+An env-gated email connector delivers run results outbound. When enabled, it
+attaches to every spawned run and, on completion, sends a single digest email
+with the run's steps and the assistant's output. `CONNECTOR_EMAIL_NOTIFY=all`
+mails every completion and `failed` mails only failures; recipients come from a
+fixed comma-separated allowlist, and a dry-run mode logs the fully rendered
+payload instead of sending. Any partial or inconsistent configuration disables
+the connector with a warning rather than half-sending. Email is delivery-only
+today: it does not start runs.
 
 :::note
 Automations are themselves a channel in this sense: a durable scheduled trigger
