@@ -72,11 +72,11 @@ type FileKind = "document" | "spreadsheet" | "video";
 
 const FILE_ICONS: Record<FileKind, { light: string; dark?: string }> = {
   document: {
-    light: "/ai-chat/plugin-documents.svg",
-    dark: "/ai-chat/plugin-documents-dark.svg",
+    light: "/plugin-icons/plugin-documents.svg",
+    dark: "/plugin-icons/plugin-documents-dark.svg",
   },
-  spreadsheet: { light: "/ai-chat/plugin-spreadsheets.svg" },
-  video: { light: "/ai-chat/plugin-videos.svg" },
+  spreadsheet: { light: "/plugin-icons/plugin-spreadsheets.svg" },
+  video: { light: "/plugin-icons/plugin-videos.svg" },
 };
 
 const KIND_LABELS: Record<FileKind, string> = {
