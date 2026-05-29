@@ -33,13 +33,13 @@ test("meter ring reports percent used and turns error-red past 90%", () => {
   );
   expect(steady).toContain('data-session-ui="context-window-meter"');
   expect(steady).toContain('aria-label="Context window 31% used"');
-  expect(steady).not.toContain("text-error-base");
+  expect(steady).not.toContain("text-text-error-primary");
 
   const overloaded = render(
     <ContextWindowMeter usage={{ usedTokens: 191_000, maxTokens: 200_000 }} />,
   );
   expect(overloaded).toContain('aria-label="Context window 96% used"');
-  expect(overloaded).toContain("text-error-base");
+  expect(overloaded).toContain("text-text-error-primary");
 });
 
 test("meter without a known limit reports raw tokens instead of a percent", () => {

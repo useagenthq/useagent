@@ -29,7 +29,7 @@ import {
   useState,
 } from "react";
 
-import { cn } from "@/utils/cn";
+import { cx } from "@/utils/cx";
 
 // -- motion tokens ---------------------------------------------------------
 const EASE_OUT = [0.16, 1, 0.3, 1] as const;
@@ -82,18 +82,18 @@ function RailButton({
       title={collapsed ? label : undefined}
       whileTap={reduce ? undefined : { scale: 0.98 }}
       transition={SPRING_PRESS}
-      className={cn(
-        "relative flex min-h-9 w-full min-w-0 items-center gap-2.5 overflow-hidden rounded-xl px-3 text-left text-label-sm outline-none",
-        "text-text-sub-600 transition-colors hover:text-text-strong-950",
-        "focus-visible:bg-bg-weak-50 focus-visible:ring-2 focus-visible:ring-stroke-strong-950",
-        isActive && "text-text-strong-950",
+      className={cx(
+        "relative flex min-h-9 w-full min-w-0 items-center gap-2.5 overflow-hidden rounded-xl px-3 text-left text-body-2-medium outline-none",
+        "text-text-secondary transition-colors hover:text-text-primary",
+        "focus-visible:bg-background-primary-hover focus-visible:ring-2 focus-visible:ring-border-focus-ring",
+        isActive && "text-text-primary",
       )}
     >
       {isActive && activeLayoutId ? (
         <motion.span
           layoutId={activeLayoutId}
           transition={reduce ? { duration: 0 } : SPRING_LAYOUT}
-          className="absolute inset-0 rounded-xl bg-bg-weak-50"
+          className="absolute inset-0 rounded-xl bg-background-secondary-default"
         />
       ) : null}
       <span aria-hidden="true" className="relative z-10 grid size-5 shrink-0 place-items-center">
@@ -104,12 +104,12 @@ function RailButton({
         animate={{ opacity: collapsed ? 0 : 1, x: collapsed ? -4 : 0 }}
         transition={reduce ? { duration: 0 } : collapsed ? LABEL_EXIT : LABEL_ENTER}
         aria-hidden={collapsed}
-        className={cn("relative z-10 min-w-0 flex-1 truncate", collapsed && "pointer-events-none")}
+        className={cx("relative z-10 min-w-0 flex-1 truncate", collapsed && "pointer-events-none")}
       >
         {children}
       </motion.span>
       {badge && !collapsed ? (
-        <span className="relative z-10 shrink-0 text-paragraph-xs text-text-soft-400">{badge}</span>
+        <span className="relative z-10 shrink-0 text-caption-1-regular text-text-tertiary">{badge}</span>
       ) : null}
     </motion.button>
   );
@@ -145,8 +145,8 @@ export function ChatApp({
 
   return (
     <div
-      className={cn(
-        "flex h-[440px] w-full overflow-hidden rounded-2xl border border-stroke-soft-200 bg-bg-white-0 shadow-regular-sm",
+      className={cx(
+        "flex h-[440px] w-full overflow-hidden rounded-2xl border border-border-button-default bg-background-primary-default shadow-sm",
         className,
       )}
     >
@@ -155,19 +155,19 @@ export function ChatApp({
         initial={false}
         animate={{ width: collapsed ? 60 : 208 }}
         transition={reduce ? { duration: 0 } : SPRING_MORPH}
-        className="flex shrink-0 flex-col overflow-hidden border-r border-stroke-soft-200 bg-bg-weak-50"
+        className="flex shrink-0 flex-col overflow-hidden border-r border-border-button-default bg-background-secondary-default"
         aria-label="Conversations"
       >
         <div className="flex shrink-0 flex-col gap-2 p-3">
           <div className="flex min-w-0 items-center gap-2 px-1">
-            <span className="grid size-7 shrink-0 place-items-center rounded-lg bg-primary-base text-static-white">
+            <span className="grid size-7 shrink-0 place-items-center rounded-lg bg-accent-500 text-text-white">
               <RiSparkling2Line className="size-4" />
             </span>
             <motion.span
               initial={false}
               animate={{ opacity: collapsed ? 0 : 1 }}
               transition={reduce ? { duration: 0 } : collapsed ? LABEL_EXIT : LABEL_ENTER}
-              className="min-w-0 flex-1 truncate text-label-sm font-semibold text-text-strong-950"
+              className="min-w-0 flex-1 truncate text-body-2-medium font-semibold text-text-primary"
             >
               Agent UI
             </motion.span>
@@ -180,8 +180,8 @@ export function ChatApp({
         <div className="flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden px-2 py-1">
           <div
             aria-hidden={collapsed}
-            className={cn(
-              "mb-1 h-5 overflow-hidden px-2 text-[10px] font-medium uppercase tracking-[0.14em] text-text-soft-400 transition-opacity",
+            className={cx(
+              "mb-1 h-5 overflow-hidden px-2 text-[10px] font-medium uppercase tracking-[0.14em] text-text-tertiary transition-opacity",
               collapsed ? "opacity-0" : "opacity-100",
             )}
           >
@@ -203,10 +203,10 @@ export function ChatApp({
           </div>
         </div>
 
-        <div className="shrink-0 border-t border-stroke-soft-200 p-3">
+        <div className="shrink-0 border-t border-border-button-default p-3">
           <RailButton
             icon={
-              <span className="grid size-5 place-items-center rounded-full bg-bg-white-0 text-[9px] font-semibold text-text-sub-600">
+              <span className="grid size-5 place-items-center rounded-full bg-background-primary-default text-[9px] font-semibold text-text-secondary">
                 PR
               </span>
             }
@@ -219,21 +219,21 @@ export function ChatApp({
       </motion.aside>
 
       {/* main pane */}
-      <div className="relative flex min-h-0 min-w-0 flex-1 flex-col bg-bg-white-0">
-        <header className="flex h-12 shrink-0 items-center gap-2 border-b border-stroke-soft-200 px-3">
+      <div className="relative flex min-h-0 min-w-0 flex-1 flex-col bg-background-primary-default">
+        <header className="flex h-12 shrink-0 items-center gap-2 border-b border-border-button-default px-3">
           <button
             type="button"
             aria-label="Toggle sidebar"
             aria-expanded={!collapsed}
             onClick={() => setCollapsed((value) => !value)}
-            className="inline-flex size-9 shrink-0 items-center justify-center rounded-xl text-text-sub-600 outline-none transition-colors hover:bg-bg-weak-50 hover:text-text-strong-950 focus-visible:ring-2 focus-visible:ring-stroke-strong-950"
+            className="inline-flex size-9 shrink-0 items-center justify-center rounded-xl text-text-secondary outline-none transition-colors hover:bg-background-primary-hover hover:text-text-primary focus-visible:ring-2 focus-visible:ring-border-focus-ring"
           >
             <RiLayoutLeftLine className="size-[18px]" />
           </button>
-          <span className="min-w-0 flex-1 truncate text-label-sm text-text-strong-950">
+          <span className="min-w-0 flex-1 truncate text-body-2-medium text-text-primary">
             {active?.title}
           </span>
-          <span className="hidden shrink-0 items-center gap-1.5 rounded-full bg-bg-weak-50 px-2 py-1 text-[11px] font-medium text-text-sub-600 sm:inline-flex">
+          <span className="hidden shrink-0 items-center gap-1.5 rounded-full bg-background-secondary-default px-2 py-1 text-[11px] font-medium text-text-secondary sm:inline-flex">
             <RiSparkling2Line className="size-3" />
             Opus 4.8
           </span>
@@ -254,11 +254,11 @@ export function ChatApp({
                     ? { duration: 0 }
                     : { opacity: { duration: 0.2, ease: EASE_OUT, delay: index * 0.04 }, y: SPRING_LAYOUT, layout: SPRING_LAYOUT }
                 }
-                className={cn(
-                  "max-w-[80%] rounded-2xl px-3.5 py-2 text-paragraph-sm leading-relaxed",
+                className={cx(
+                  "max-w-[80%] rounded-2xl px-3.5 py-2 text-body-2-regular leading-relaxed",
                   message.role === "user"
-                    ? "self-end rounded-br-md bg-primary-base text-static-white"
-                    : "self-start rounded-tl-md bg-bg-weak-50 text-text-strong-950",
+                    ? "self-end rounded-br-md bg-accent-500 text-text-white"
+                    : "self-start rounded-tl-md bg-background-secondary-default text-text-primary",
                 )}
               >
                 {message.content}
@@ -270,12 +270,12 @@ export function ChatApp({
         <div className="shrink-0 p-3">
           <form
             onSubmit={send}
-            className="flex items-end gap-2 rounded-2xl bg-bg-weak-50 p-2 focus-within:ring-2 focus-within:ring-stroke-strong-950"
+            className="flex items-end gap-2 rounded-2xl bg-background-secondary-default p-2 focus-within:ring-2 focus-within:ring-border-focus-ring"
           >
             <button
               type="button"
               aria-label="Add attachment"
-              className="grid size-8 shrink-0 place-items-center rounded-xl text-text-sub-600 outline-none transition-colors hover:bg-bg-white-0 hover:text-text-strong-950 focus-visible:ring-2 focus-visible:ring-stroke-strong-950"
+              className="grid size-8 shrink-0 place-items-center rounded-xl text-text-secondary outline-none transition-colors hover:bg-background-primary-default hover:text-text-primary focus-visible:ring-2 focus-visible:ring-border-focus-ring"
             >
               <RiAddLine className="size-4" />
             </button>
@@ -285,7 +285,7 @@ export function ChatApp({
               rows={1}
               aria-label="Message"
               placeholder={`Message ${active?.title ?? "the agent"}`}
-              className="min-h-6 flex-1 resize-none bg-transparent px-1 py-1.5 text-paragraph-sm text-text-strong-950 outline-none placeholder:text-text-soft-400"
+              className="min-h-6 flex-1 resize-none bg-transparent px-1 py-1.5 text-body-2-regular text-text-primary outline-none placeholder:text-text-placeholder"
             />
             <motion.button
               type="submit"
@@ -293,7 +293,7 @@ export function ChatApp({
               disabled={!draft.trim()}
               whileTap={reduce || !draft.trim() ? undefined : { scale: 0.94 }}
               transition={SPRING_PRESS}
-              className="grid size-8 shrink-0 place-items-center rounded-xl bg-primary-base text-static-white outline-none transition-opacity hover:opacity-90 focus-visible:ring-2 focus-visible:ring-stroke-strong-950 disabled:opacity-40"
+              className="grid size-8 shrink-0 place-items-center rounded-xl bg-button-primary text-text-white outline-none transition-opacity hover:opacity-90 focus-visible:ring-2 focus-visible:ring-border-focus-ring disabled:opacity-40"
             >
               <RiArrowUpLine className="size-4" />
             </motion.button>
@@ -360,7 +360,7 @@ export function ChatAppDemo() {
   ];
 
   return (
-    <div className="flex items-center justify-center rounded-xl bg-bg-weak-50 p-3">
+    <div className="flex items-center justify-center rounded-xl bg-background-secondary-default p-3">
       <div className="w-full max-w-3xl">
         <ChatApp key={index} conversations={ordered} />
       </div>

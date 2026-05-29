@@ -26,7 +26,7 @@ import {
   useState,
 } from "react";
 
-import { cn } from "@/utils/cn";
+import { cx } from "@/utils/cx";
 
 // -- motion tokens ---------------------------------------------------------
 const EASE_OUT = [0.16, 1, 0.3, 1] as const;
@@ -165,11 +165,11 @@ function ResourceRow({
       onClick={() => (acceptsChildren ? onToggle() : onSelect())}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
-      className={cn(
-        "group/resource relative flex min-h-9 min-w-0 cursor-pointer items-center gap-2.5 rounded-xl pr-2.5 text-paragraph-sm outline-none",
-        "text-text-sub-600 transition-colors hover:bg-bg-weak-50 hover:text-text-strong-950",
-        "focus-visible:bg-bg-weak-50 focus-visible:ring-2 focus-visible:ring-stroke-strong-950 focus-visible:ring-inset",
-        !acceptsChildren && active && "bg-bg-weak-50 text-text-strong-950",
+      className={cx(
+        "group/resource relative flex min-h-9 min-w-0 cursor-pointer items-center gap-2.5 rounded-xl pr-2.5 text-body-2-regular outline-none",
+        "text-text-secondary transition-colors hover:bg-background-primary-hover hover:text-text-primary",
+        "focus-visible:bg-background-primary-hover focus-visible:ring-2 focus-visible:ring-border-focus-ring focus-visible:ring-inset",
+        !acceptsChildren && active && "bg-background-secondary-default text-text-primary",
       )}
       style={{ paddingLeft: `${12 + row.depth * 16}px` }}
     >
@@ -178,7 +178,7 @@ function ResourceRow({
           aria-hidden="true"
           animate={{ rotate: expanded ? 90 : 0 }}
           transition={reduce ? { duration: 0 } : SPRING_LAYOUT}
-          className="grid size-4 shrink-0 place-items-center text-text-soft-400"
+          className="grid size-4 shrink-0 place-items-center text-text-tertiary"
         >
           <RiArrowRightSLine className="size-4" />
         </motion.span>
@@ -186,7 +186,7 @@ function ResourceRow({
         <span aria-hidden="true" className="size-4 shrink-0" />
       )}
 
-      <span aria-hidden="true" className="grid size-5 shrink-0 place-items-center text-text-soft-400">
+      <span aria-hidden="true" className="grid size-5 shrink-0 place-items-center text-text-tertiary">
         {renderIcon?.(row.item) ?? defaultIcon(row.item, expanded)}
       </span>
 
@@ -279,7 +279,7 @@ export function AISidebarTree({
       role="tree"
       aria-label={ariaLabel}
       aria-multiselectable="false"
-      className={cn("relative flex min-w-0 flex-col gap-0.5 [overflow-anchor:none]", className)}
+      className={cx("relative flex min-w-0 flex-col gap-0.5 [overflow-anchor:none]", className)}
     >
       <AnimatePresence initial={false}>
         {flat.map((row) => (
@@ -329,22 +329,22 @@ export function AISidebar({
   return (
     <aside
       aria-label="Assistant panel"
-      className={cn(
-        "flex h-full w-full max-w-[280px] flex-col overflow-hidden rounded-2xl border border-stroke-soft-200 bg-bg-white-0 shadow-regular-sm",
+      className={cx(
+        "flex h-full w-full max-w-[280px] flex-col overflow-hidden rounded-2xl border border-border-button-default bg-background-primary-default shadow-sm",
         className,
       )}
     >
-      <header className="flex items-center gap-2 border-b border-stroke-soft-200 px-3 py-2.5">
-        <span className="grid size-6 shrink-0 place-items-center rounded-lg bg-bg-weak-50 text-primary-base">
+      <header className="flex items-center gap-2 border-b border-border-button-default px-3 py-2.5">
+        <span className="grid size-6 shrink-0 place-items-center rounded-lg bg-background-secondary-default text-accent-500">
           <RiSparkling2Line className="size-4" />
         </span>
-        <span className="min-w-0 flex-1 truncate text-[11px] font-semibold uppercase tracking-[0.06em] text-text-soft-400">
+        <span className="min-w-0 flex-1 truncate text-[11px] font-semibold uppercase tracking-[0.06em] text-text-tertiary">
           {title}
         </span>
         <button
           type="button"
           aria-label="New resource"
-          className="grid size-6 shrink-0 place-items-center rounded-lg text-text-soft-400 outline-none transition-colors hover:bg-bg-weak-50 hover:text-text-strong-950 focus-visible:ring-2 focus-visible:ring-stroke-strong-950"
+          className="grid size-6 shrink-0 place-items-center rounded-lg text-text-tertiary outline-none transition-colors hover:bg-background-primary-hover hover:text-text-primary focus-visible:ring-2 focus-visible:ring-border-focus-ring"
         >
           <RiAddLine className="size-4" />
         </button>
@@ -361,24 +361,24 @@ export function AISidebar({
         />
       </div>
 
-      <footer className="border-t border-stroke-soft-200 p-2">
-        <div className="flex items-center gap-1.5 rounded-xl border border-stroke-soft-200 bg-bg-weak-50 px-2 py-1.5 transition-colors focus-within:border-stroke-strong-950">
+      <footer className="border-t border-border-button-default p-2">
+        <div className="flex items-center gap-1.5 rounded-xl border border-border-button-default bg-background-secondary-default px-2 py-1.5 transition-colors focus-within:border-border-focus-ring">
           <button
             type="button"
             aria-label="Attach file"
-            className="grid size-6 shrink-0 place-items-center rounded-lg text-text-soft-400 outline-none transition-colors hover:text-text-strong-950 focus-visible:ring-2 focus-visible:ring-stroke-strong-950"
+            className="grid size-6 shrink-0 place-items-center rounded-lg text-text-tertiary outline-none transition-colors hover:text-text-primary focus-visible:ring-2 focus-visible:ring-border-focus-ring"
           >
             <RiAttachmentLine className="size-4" />
           </button>
           <input
             aria-label={placeholder}
             placeholder={placeholder}
-            className="min-w-0 flex-1 bg-transparent text-paragraph-sm text-text-strong-950 outline-none placeholder:text-text-soft-400"
+            className="min-w-0 flex-1 bg-transparent text-body-2-regular text-text-primary outline-none placeholder:text-text-placeholder"
           />
           <button
             type="button"
             aria-label="Send message"
-            className="grid size-6 shrink-0 place-items-center rounded-lg bg-primary-base text-static-white outline-none transition-opacity hover:opacity-90 focus-visible:ring-2 focus-visible:ring-stroke-strong-950"
+            className="grid size-6 shrink-0 place-items-center rounded-lg bg-button-primary text-text-white outline-none transition-opacity hover:opacity-90 focus-visible:ring-2 focus-visible:ring-border-focus-ring"
           >
             <RiArrowUpLine className="size-4" />
           </button>
@@ -439,7 +439,7 @@ export function AISidebarDemo() {
   }, []);
 
   return (
-    <div className="flex items-center justify-center rounded-xl bg-bg-weak-50 p-3">
+    <div className="flex items-center justify-center rounded-xl bg-background-secondary-default p-3">
       <div className="h-[420px] w-full max-w-[280px]">
         <AISidebar
           items={DEMO_ITEMS}

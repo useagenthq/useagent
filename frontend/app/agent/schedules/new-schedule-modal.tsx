@@ -112,7 +112,7 @@ export function AutomationEditorModal({
 
         <Modal.Body className="flex max-h-[70vh] flex-col gap-5 overflow-y-auto">
           <div className="flex flex-col gap-1.5">
-            <label htmlFor="automation-name" className="text-label-sm text-text-strong-950">
+            <label htmlFor="automation-name" className="text-body-2-medium text-text-primary">
               What should run?
             </label>
             <Input.Root>
@@ -128,7 +128,7 @@ export function AutomationEditorModal({
           </div>
 
           <div className="flex flex-col gap-1.5">
-            <label htmlFor="automation-instructions" className="text-label-sm text-text-strong-950">
+            <label htmlFor="automation-instructions" className="text-body-2-medium text-text-primary">
               Instructions
             </label>
             <Textarea.Root
@@ -143,7 +143,7 @@ export function AutomationEditorModal({
           </div>
 
           <fieldset className="flex flex-col gap-2">
-            <legend className="text-label-sm text-text-strong-950">Cadence</legend>
+            <legend className="text-body-2-medium text-text-primary">Cadence</legend>
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
               {CADENCE_PRESETS.map((preset) => (
                 <button
@@ -151,13 +151,13 @@ export function AutomationEditorModal({
                   type="button"
                   onClick={() => setCron(preset.cron)}
                   className={cnExt(
-                    "rounded-xl border px-3 py-2.5 text-left outline-none transition-colors focus-visible:ring-2 focus-visible:ring-stroke-strong-950",
+                    "rounded-xl border px-3 py-2.5 text-left outline-none transition-colors focus-visible:ring-2 focus-visible:ring-border-focus-ring",
                     cron === preset.cron
-                      ? "border-stroke-strong-950 bg-bg-strong-950 text-text-white-0"
-                      : "border-stroke-soft-200 bg-bg-white-0 text-text-sub-600 hover:bg-bg-weak-50",
+                      ? "border-foreground-icon-primary bg-foreground-icon-primary text-background-full"
+                      : "border-border-button-default bg-background-primary-default text-text-secondary hover:bg-background-secondary-default",
                   )}
                 >
-                  <span className="block text-label-sm">{preset.label}</span>
+                  <span className="block text-body-2-medium">{preset.label}</span>
                   <span className="mt-0.5 block font-mono text-label-xs opacity-70">{preset.cron}</span>
                 </button>
               ))}
@@ -166,7 +166,7 @@ export function AutomationEditorModal({
 
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="flex flex-col gap-1.5">
-              <label htmlFor="automation-cron" className="text-label-sm text-text-strong-950">
+              <label htmlFor="automation-cron" className="text-body-2-medium text-text-primary">
                 Cron expression
               </label>
               <Input.Root hasError={!cronValid && cron.trim().length > 0}>
@@ -186,7 +186,7 @@ export function AutomationEditorModal({
             </div>
 
             <div className="flex flex-col gap-1.5">
-              <label htmlFor="automation-timezone" className="text-label-sm text-text-strong-950">
+              <label htmlFor="automation-timezone" className="text-body-2-medium text-text-primary">
                 Timezone
               </label>
               <Input.Root>
@@ -206,7 +206,7 @@ export function AutomationEditorModal({
           </div>
 
           <div className="flex flex-col gap-1.5">
-            <label htmlFor="automation-engine" className="text-label-sm text-text-strong-950">
+            <label htmlFor="automation-engine" className="text-body-2-medium text-text-primary">
               Agent
             </label>
             <Select.Root value={engine} onValueChange={setEngine}>
@@ -232,7 +232,7 @@ export function AutomationEditorModal({
         </Modal.Body>
 
         <Modal.Footer>
-          <p className="hidden text-paragraph-xs text-text-soft-400 sm:block">
+          <p className="hidden text-caption-1-regular text-text-tertiary sm:block">
             {schedule ? "Changes apply to the next run." : "Created in paused state."}
           </p>
           <div className="ml-auto flex gap-2">

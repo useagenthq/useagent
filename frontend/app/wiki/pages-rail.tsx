@@ -22,17 +22,17 @@ export function PagesRail({
       aria-label="Wiki pages"
       className="lg:sticky lg:top-24 lg:max-h-[calc(100vh-8rem)] lg:w-64 lg:shrink-0 lg:overflow-y-auto"
     >
-      <p className="text-mono-label text-text-soft-400">Pages</p>
+      <p className="text-mono-label text-text-tertiary">Pages</p>
       <ul className="mt-2 space-y-0.5">
         {docs.map((doc) => (
           <li key={doc.id}>
             <Link
               href={`/wiki/${doc.id}`}
               className={cnExt(
-                "block truncate rounded-lg px-2.5 py-1.5 text-label-sm transition-colors",
+                "block truncate rounded-lg px-2.5 py-1.5 text-body-2-medium transition-colors",
                 doc.id === activeId
-                  ? "bg-bg-weak-50 text-text-strong-950"
-                  : "text-text-sub-600 hover:bg-bg-weak-50 hover:text-text-strong-950",
+                  ? "bg-background-secondary-default text-text-primary"
+                  : "text-text-secondary hover:bg-background-secondary-default hover:text-text-primary",
               )}
               title={doc.title}
             >

@@ -44,44 +44,48 @@ const lightTokens = parseTokens(extractBlock(":root,"));
 const darkTokens = parseTokens(extractBlock(".dark {"));
 
 describe("shared theme tokens", () => {
-  test("light theme keeps the existing semantic mappings unchanged", () => {
-    expect(lightTokens["--neutral-950"]).toBe("221.54 31.71% 8.04%");
+  test("light theme anchors the legacy semantic vars on the BoardUI gray/accent ramp", () => {
+    expect(lightTokens["--neutral-950"]).toBe("0 0% 3.92%");
     expect(lightTokens["--neutral-0"]).toBe("0 0% 100%");
-    expect(lightTokens["--blue-500"]).toBe("197 92% 51%");
+    expect(lightTokens["--blue-500"]).toBe("216.23 100% 58.43%");
 
     expect(lightTokens["--primary-base"]).toBe("var(--blue-500)");
     expect(lightTokens["--bg-white-0"]).toBe("var(--neutral-0)");
-    expect(lightTokens["--bg-weak-50"]).toBe("var(--neutral-50)");
+    expect(lightTokens["--bg-weak-50"]).toBe("var(--neutral-100)");
     expect(lightTokens["--text-strong-950"]).toBe("var(--neutral-950)");
-    expect(lightTokens["--text-sub-600"]).toBe("var(--neutral-600)");
+    expect(lightTokens["--text-sub-600"]).toBe("var(--neutral-500)");
     expect(lightTokens["--stroke-soft-200"]).toBe("var(--neutral-200)");
     expect(lightTokens["--success-dark"]).toBe("var(--green-950)");
     expect(lightTokens["--feature-base"]).toBe("var(--purple-500)");
   });
 
-  test("dark theme maps Tokyo Night upstream colors through semantic tokens", () => {
-    expect(resolveToken(darkTokens, "--bg-white-0")).toBe("235 18.75% 12.55%");
-    expect(resolveToken(darkTokens, "--bg-weak-50")).toBe("240 15.38% 8.82%");
-    expect(resolveToken(darkTokens, "--bg-soft-200")).toBe("240 15.38% 10.2%");
-    expect(resolveToken(darkTokens, "--bg-sub-300")).toBe("234 18.52% 15.88%");
+  test("dark theme maps the BoardUI dark ramp through the legacy semantic tokens", () => {
+    expect(resolveToken(darkTokens, "--bg-white-0")).toBe("0 0% 7.06%");
+    expect(resolveToken(darkTokens, "--bg-weak-50")).toBe("0 0% 9.02%");
+    expect(resolveToken(darkTokens, "--bg-soft-200")).toBe("0 0% 9.02%");
+    expect(resolveToken(darkTokens, "--bg-sub-300")).toBe("0 0% 14.9%");
 
-    expect(resolveToken(darkTokens, "--text-strong-950")).toBe("228.68 72.6% 85.69%");
-    expect(resolveToken(darkTokens, "--text-sub-600")).toBe("229.33 35.43% 75.1%");
-    expect(resolveToken(darkTokens, "--text-soft-400")).toBe("232.73 13.92% 53.53%");
-    expect(resolveToken(darkTokens, "--text-disabled-300")).toBe("230.32 16.06% 37.84%");
+    expect(resolveToken(darkTokens, "--text-strong-950")).toBe("0 0% 98.04%");
+    expect(resolveToken(darkTokens, "--text-sub-600")).toBe("0 0% 45.1%");
+    expect(resolveToken(darkTokens, "--text-soft-400")).toBe("0 0% 32.16%");
+    expect(resolveToken(darkTokens, "--text-disabled-300")).toBe("0 0% 25.1%");
 
-    expect(resolveToken(darkTokens, "--stroke-soft-200")).toBe("229.09 23.4% 21.37%");
-    expect(resolveToken(darkTokens, "--stroke-sub-300")).toBe("232.17 16.31% 27.65%");
-    expect(resolveToken(darkTokens, "--primary-base")).toBe("223.2 45.05% 43.53%");
+    expect(resolveToken(darkTokens, "--stroke-soft-200")).toBe("0 0% 14.9%");
+    expect(resolveToken(darkTokens, "--stroke-sub-300")).toBe("0 0% 25.1%");
+    expect(resolveToken(darkTokens, "--primary-base")).toBe("216.23 100% 58.43%");
     expect(resolveToken(darkTokens, "--verified-dark")).toBe("202.15 100% 74.51%");
     expect(resolveToken(darkTokens, "--success-dark")).toBe("88.8 50.51% 61.18%");
     expect(resolveToken(darkTokens, "--error-dark")).toBe("348.84 88.97% 71.57%");
   });
 
-  test("dark theme preserves readable foreground contrast on Tokyo Night surfaces", () => {
-    expect(contrast("#c0caf5", "#1a1b26")).toBeGreaterThanOrEqual(7);
-    expect(contrast("#a9b1d6", "#1a1b26")).toBeGreaterThanOrEqual(7);
-    expect(contrast("#ffffff", "#3d59a1")).toBeGreaterThanOrEqual(4.5);
+  test("dark theme preserves readable foreground contrast on BoardUI surfaces", () => {
+    // Primary text (#fafafa) on the dark canvas (#121212).
+    expect(contrast("#fafafa", "#121212")).toBeGreaterThanOrEqual(7);
+    // Secondary text (#737373) on the dark canvas: BoardUI's dark text/secondary
+    // sits at ~3.9:1, above the large-text floor but below AA body text.
+    expect(contrast("#737373", "#121212")).toBeGreaterThanOrEqual(3);
+    // White label on the primary CTA gradient's darker stop (blue-600 #155dfc).
+    expect(contrast("#ffffff", "#155dfc")).toBeGreaterThanOrEqual(4.5);
   });
 });
 

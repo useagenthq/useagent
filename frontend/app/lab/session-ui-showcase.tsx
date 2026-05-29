@@ -183,8 +183,8 @@ const MOCK_SHORT_PLAN_MARKDOWN = [
 
 function Panel({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div className="rounded-10 border border-stroke-soft-200 bg-bg-white-0 p-3">
-      <p className="text-mono-label mb-2 text-text-soft-400">{title}</p>
+    <div className="rounded-2lg border border-border-button-default bg-background-primary-default p-3">
+      <p className="text-mono-label mb-2 text-text-tertiary">{title}</p>
       {children}
     </div>
   );
@@ -270,7 +270,7 @@ export function TimelineShowcase() {
           <ContextWindowMeter usage={USAGE_OVERLOADED} providerDisplayName="OpenCode" />
           <ContextWindowMeter usage={USAGE_NO_LIMIT} />
         </div>
-        <div className="mt-3 rounded-10 border border-stroke-soft-200 p-3">
+        <div className="mt-3 rounded-2lg border border-border-button-default p-3">
           <ContextWindowDetails
             usage={{
               usedTokens: 132_000,

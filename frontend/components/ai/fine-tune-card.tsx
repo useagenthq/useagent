@@ -20,17 +20,17 @@ function NumberField({
   onChange: (value: number) => void;
 }) {
   return (
-    <label className="flex items-center gap-1 rounded-lg bg-bg-weak-50 px-2 py-1.5">
-      <span className="text-paragraph-xs text-text-soft-400">{label}</span>
+    <label className="flex items-center gap-1 rounded-lg bg-background-secondary-default px-2 py-1.5">
+      <span className="text-caption-1-regular text-text-tertiary">{label}</span>
       <input
         type="number"
         value={value}
         min={min}
         max={max}
         onChange={(event) => onChange(Math.min(max, Math.max(min, Number(event.target.value))))}
-        className="min-w-0 flex-1 bg-transparent text-right text-paragraph-xs text-text-strong-950 outline-none"
+        className="min-w-0 flex-1 bg-transparent text-right text-caption-1-regular text-text-primary outline-none"
       />
-      {suffix ? <span className="text-paragraph-xs text-text-soft-400">{suffix}</span> : null}
+      {suffix ? <span className="text-caption-1-regular text-text-tertiary">{suffix}</span> : null}
     </label>
   );
 }
@@ -45,22 +45,22 @@ export function FineTuneCard() {
     layout !== "Row" || width !== 324 || height !== 96 || radius !== 28 || opacity !== 100;
 
   return (
-    <div className="w-full max-w-xs rounded-2xl border border-stroke-soft-200 bg-bg-white-0 shadow-regular-md">
-      <div className="flex items-center justify-between border-b border-stroke-soft-200 px-3 py-2.5">
-        <span className="text-label-sm text-text-strong-950">Flavor card</span>
-        <span className={`text-paragraph-xs ${edited ? "text-success-base" : "text-primary-base"}`}>
+    <div className="w-full max-w-xs rounded-2xl border border-border-button-default bg-background-primary-default shadow-md">
+      <div className="flex items-center justify-between border-b border-border-button-default px-3 py-2.5">
+        <span className="text-body-2-medium text-text-primary">Flavor card</span>
+        <span className={`text-caption-1-regular ${edited ? "text-lime-600" : "text-accent-500"}`}>
           {edited ? "Edited" : "Adjust"}
         </span>
       </div>
       <div className="space-y-3 p-3">
-        <div className="grid grid-cols-3 rounded-lg bg-bg-weak-50 p-0.5">
+        <div className="grid grid-cols-3 rounded-lg bg-background-secondary-default p-0.5">
           {layouts.map((item) => (
             <button
               type="button"
               key={item}
               aria-pressed={layout === item}
               onClick={() => setLayout(item)}
-              className={`rounded-md py-1.5 text-paragraph-xs ${layout === item ? "bg-bg-white-0 text-primary-base shadow-regular-xs" : "text-text-soft-400"}`}
+              className={`rounded-md py-1.5 text-caption-1-regular ${layout === item ? "bg-background-primary-default text-accent-500 shadow-card" : "text-text-tertiary"}`}
             >
               {item}
             </button>
@@ -79,9 +79,9 @@ export function FineTuneCard() {
             onChange={setOpacity}
           />
         </div>
-        <label className="flex items-center justify-between text-paragraph-xs text-text-soft-400">
+        <label className="flex items-center justify-between text-caption-1-regular text-text-tertiary">
           Type
-          <select className="rounded-lg bg-bg-weak-50 px-2 py-1.5 text-text-sub-600 outline-none">
+          <select className="rounded-lg bg-background-secondary-default px-2 py-1.5 text-text-secondary outline-none">
             <option>Select type</option>
             <option>Card</option>
             <option>Panel</option>

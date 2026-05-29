@@ -3,7 +3,7 @@
 // Ported and adapted from beUI (https://beui.dev/components/motion/theme-toggle;
 // registry https://beui.dev/r/theme-toggle.json), MIT. The View Transition API
 // circle reveal is beUI's; adapted for our stack: @remixicon/react instead of
-// lucide, @/utils/cn, next-themes over our four-theme ramp (light + three dark
+// lucide, @/utils/cx, next-themes over our four-theme ramp (light + three dark
 // palettes: dark/aura/harbor), and a self-contained Motion icon swap instead of
 // beUI's ActionSwapIcon dependency chain. Neutral name per the vendoring rule.
 
@@ -19,7 +19,7 @@ import {
   useState,
 } from 'react';
 
-import { cn } from '@/utils/cn';
+import { cx } from '@/utils/cx';
 
 const VT_STYLE_ID = 'motion-theme-toggle-vt';
 
@@ -115,7 +115,7 @@ export function ThemeToggle({ className, iconClassName, children, ...rest }: The
         const rect = ref.current?.getBoundingClientRect();
         toggle(rect ? { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 } : undefined);
       }}
-      className={cn('flex items-center gap-3', className)}
+      className={cx('flex items-center gap-3', className)}
       {...rest}
     >
       <span className='relative flex size-5 shrink-0 items-center justify-center'>
@@ -129,9 +129,9 @@ export function ThemeToggle({ className, iconClassName, children, ...rest }: The
             className='absolute inset-0 flex items-center justify-center'
           >
             {mounted && isDark ? (
-              <RiSunLine className={cn('size-5', iconClassName)} aria-hidden />
+              <RiSunLine className={cx('size-5', iconClassName)} aria-hidden />
             ) : (
-              <RiMoonLine className={cn('size-5', iconClassName)} aria-hidden />
+              <RiMoonLine className={cx('size-5', iconClassName)} aria-hidden />
             )}
           </motion.span>
         </AnimatePresence>

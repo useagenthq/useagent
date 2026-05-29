@@ -20,16 +20,13 @@ export function ThemeToggle() {
   const active = THEME_OPTIONS.find((o) => o.value === theme) ?? THEME_OPTIONS[1];
 
   return (
-    <ThemeMenu align="end">
-      <button
-        type="button"
-        aria-label="Theme"
-        className="flex w-[152px] items-center gap-2 rounded-lg bg-bg-white-0 px-3 py-2 text-left text-label-sm text-text-strong-950 outline-none ring-1 ring-inset ring-stroke-soft-200 transition-colors hover:bg-bg-weak-50 focus-visible:ring-2 focus-visible:ring-stroke-strong-950"
-      >
-        <ThemeSwatch swatch={active.swatch} />
-        <span className="flex-1 truncate">{mounted ? active.label : "Theme"}</span>
-        <RiArrowDownSLine className="size-4 shrink-0 text-text-soft-400" aria-hidden />
-      </button>
+    <ThemeMenu
+      triggerAriaLabel="Theme"
+      triggerClassName="flex w-[152px] items-center gap-2 rounded-2lg bg-background-primary-default px-3 py-2 text-left text-body-2-medium text-text-primary ring-1 ring-inset ring-border-button-default transition-colors hover:bg-background-primary-hover"
+    >
+      <ThemeSwatch swatch={active.swatch} />
+      <span className="flex-1 truncate">{mounted ? active.label : "Theme"}</span>
+      <RiArrowDownSLine className="size-4 shrink-0 text-foreground-icon-tertiary" aria-hidden />
     </ThemeMenu>
   );
 }

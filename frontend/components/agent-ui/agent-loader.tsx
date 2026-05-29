@@ -13,7 +13,7 @@ import {
 } from "motion/react";
 import { type ReactNode, useEffect, useId, useState } from "react";
 
-import { cn } from "@/utils/cn";
+import { cx } from "@/utils/cx";
 
 // -- motion tokens ---------------------------------------------------------
 const EASE_IN_OUT = [0.77, 0, 0.175, 1] as const;
@@ -65,7 +65,7 @@ export function Loader({
     <span
       role="status"
       aria-label={label}
-      className={cn("inline-flex items-center justify-center text-text-strong-950", className)}
+      className={cx("inline-flex items-center justify-center text-text-primary", className)}
     >
       {variant === "spinner" && <Spinner {...part} />}
       {variant === "dots" && <Dots {...part} />}
@@ -360,16 +360,16 @@ export function AgentStatusIndicator({
     <div
       data-state={settled ? "done" : "working"}
       aria-busy={!settled}
-      className={cn(
-        "inline-flex w-full items-center gap-3 rounded-2xl border border-stroke-soft-200 bg-bg-white-0 px-3.5 py-2.5 text-paragraph-sm shadow-regular-sm",
+      className={cx(
+        "inline-flex w-full items-center gap-3 rounded-2xl border border-border-button-default bg-background-primary-default px-3.5 py-2.5 text-body-2-regular shadow-sm",
         className,
       )}
     >
       <span
         aria-hidden="true"
-        className={cn(
-          "grid size-8 shrink-0 place-items-center rounded-xl bg-bg-weak-50 transition-colors",
-          settled ? "text-success-base" : "text-primary-base",
+        className={cx(
+          "grid size-8 shrink-0 place-items-center rounded-xl bg-background-secondary-default transition-colors",
+          settled ? "text-lime-600" : "text-accent-500",
         )}
       >
         <AnimatePresence initial={false} mode="popLayout">
@@ -407,9 +407,9 @@ export function AgentStatusIndicator({
             initial={reduce ? false : "initial"}
             animate={reduce ? { opacity: 1 } : "animate"}
             exit={reduce ? { opacity: 0 } : "exit"}
-            className={cn(
-              "block truncate text-label-sm will-change-[opacity,filter,transform]",
-              settled ? "text-text-strong-950" : "text-text-sub-600",
+            className={cx(
+              "block truncate text-body-2-medium will-change-[opacity,filter,transform]",
+              settled ? "text-text-primary" : "text-text-secondary",
             )}
           >
             {phase.label}
@@ -417,7 +417,7 @@ export function AgentStatusIndicator({
         </AnimatePresence>
       </span>
 
-      <span className="shrink-0 font-mono text-[11px] text-text-soft-400">
+      <span className="shrink-0 font-mono text-[11px] text-text-tertiary">
         {settled ? "done" : phase.kind}
       </span>
     </div>
@@ -447,19 +447,19 @@ export function AgentLoaderDemo() {
   const gallery: LoaderVariant[] = ["spinner", "dots", "bars", "dot-matrix", "comet", "helix"];
 
   return (
-    <div className="flex items-center justify-center rounded-xl bg-bg-weak-50 p-3">
+    <div className="flex items-center justify-center rounded-xl bg-background-secondary-default p-3">
       <div className="flex w-full max-w-md flex-col gap-3">
         <AgentStatusIndicator phase={phase} done={phase.kind === "done"} />
         <div className="grid grid-cols-3 gap-2">
           {gallery.map((variant) => (
             <div
               key={`${uid}-${variant}`}
-              className="flex flex-col items-center gap-2 rounded-xl border border-stroke-soft-200 bg-bg-white-0 p-3 text-text-strong-950"
+              className="flex flex-col items-center gap-2 rounded-xl border border-border-button-default bg-background-primary-default p-3 text-text-primary"
             >
               <div className="flex h-7 items-center justify-center">
                 <Loader variant={variant} size={22} />
               </div>
-              <span className="font-mono text-[10px] text-text-soft-400">{variant}</span>
+              <span className="font-mono text-[10px] text-text-tertiary">{variant}</span>
             </div>
           ))}
         </div>

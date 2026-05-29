@@ -30,8 +30,8 @@ export function ChatComposer() {
   }
 
   return (
-    <div className="flex h-80 w-full max-w-md flex-col overflow-hidden rounded-2xl border border-stroke-soft-200 bg-bg-white-0 shadow-regular-md">
-      <div className="flex items-center justify-between border-b border-stroke-soft-200 p-2">
+    <div className="flex h-80 w-full max-w-md flex-col overflow-hidden rounded-2xl border border-border-button-default bg-background-primary-default shadow-md">
+      <div className="flex items-center justify-between border-b border-border-button-default p-2">
         <div className="flex gap-1">
           {tabs.map((item) => (
             <button
@@ -39,19 +39,19 @@ export function ChatComposer() {
               type="button"
               aria-pressed={tab === item}
               onClick={() => setTab(item)}
-              className={`rounded-md px-2 py-1 text-label-sm transition-colors ${tab === item ? "bg-bg-weak-50 text-text-strong-950" : "text-text-soft-400 hover:text-text-sub-600"}`}
+              className={`rounded-md px-2 py-1 text-body-2-medium transition-colors ${tab === item ? "bg-background-secondary-default text-text-primary" : "text-text-tertiary hover:text-text-secondary"}`}
             >
               {item}
             </button>
           ))}
         </div>
-        <div className="flex text-text-soft-400">
+        <div className="flex text-text-tertiary">
           {chatActions.map(({ id, label, Icon }) => (
             <button
               key={id}
               type="button"
               aria-label={label}
-              className="rounded-md p-1 hover:bg-bg-weak-50"
+              className="rounded-md p-1 hover:bg-background-primary-hover"
             >
               <Icon className="size-4" />
             </button>
@@ -63,39 +63,39 @@ export function ChatComposer() {
         {messages.map((message) => (
           <div
             key={message.id}
-            className="ml-auto max-w-[82%] rounded-xl bg-bg-weak-50 px-3 py-2 text-paragraph-sm text-text-strong-950"
+            className="ml-auto max-w-[82%] rounded-xl bg-background-secondary-default px-3 py-2 text-body-2-regular text-text-primary"
           >
             {message.text}
           </div>
         ))}
-        <div className="space-y-1 text-paragraph-sm text-text-sub-600">
+        <div className="space-y-1 text-body-2-regular text-text-secondary">
           <p>
-            <strong className="text-text-strong-950">Sales History</strong> pulled three summers of
+            <strong className="text-text-primary">Sales History</strong> pulled three summers of
             flavor data.
           </p>
           <p>
-            <strong className="text-text-strong-950">Comparison</strong> found stronger weekend
+            <strong className="text-text-primary">Comparison</strong> found stronger weekend
             peaks.
           </p>
         </div>
       </div>
 
       <div className="p-2">
-        <div className="flex items-center gap-2 rounded-xl border border-stroke-soft-200 bg-bg-weak-50 p-2 focus-within:border-stroke-sub-300">
+        <div className="flex items-center gap-2 rounded-xl border border-border-button-default bg-background-secondary-default p-2 focus-within:border-border-button-hover">
           <input
             value={draft}
             onChange={(event) => setDraft(event.target.value)}
             onKeyDown={(event) => event.key === "Enter" && send()}
             aria-label="Chat prompt"
             placeholder="Prompt or tag a flavor with @"
-            className="min-w-0 flex-1 bg-transparent text-paragraph-sm text-text-strong-950 outline-none placeholder:text-text-soft-400"
+            className="min-w-0 flex-1 bg-transparent text-body-2-regular text-text-primary outline-none placeholder:text-text-placeholder"
           />
           <button
             type="button"
             aria-label="Send"
             disabled={!draft.trim()}
             onClick={send}
-            className="rounded-lg bg-text-strong-950 p-1.5 text-bg-white-0 disabled:opacity-30"
+            className="rounded-lg bg-button-primary p-1.5 text-text-white disabled:opacity-30"
           >
             <RiArrowUpLine className="size-4" />
           </button>

@@ -27,18 +27,32 @@ import { StreamingText } from "@/components/ai/streaming-text";
 import { TaskRows } from "@/components/ai/task-rows";
 import { Thinking } from "@/components/ai/thinking";
 import { ToolChip } from "@/components/ai/tool-chips";
+import { Badge as CounterBadge } from "@/components/base/badges/badge";
+import { Chip } from "@/components/base/badges/chip";
+import { StatusDot } from "@/components/base/badges/status-dot";
+import { Button } from "@/components/base/buttons/button";
+import { IconButton } from "@/components/base/buttons/icon-button";
+import { Input } from "@/components/base/input/input";
+import {
+  SegmentedControl,
+  SegmentedControlItem,
+} from "@/components/base/segmented-control/segmented-control";
+import { Select, SelectItem } from "@/components/base/select/select";
+import { Switch } from "@/components/base/switch/switch";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableColumn,
+  TableHeader,
+  TableRow,
+} from "@/components/base/table/table";
+import { Tab, TabList, TabPanel, Tabs } from "@/components/base/tabs/tabs";
 import { type OrbState, ThinkingOrb } from "@/components/base/thinking-orb";
 import { AsteriskMark } from "@/components/foundations/brand/asterisk-mark";
 import * as Badge from "@/components/ui/badge";
-import * as Button from "@/components/ui/button";
-import * as Input from "@/components/ui/input";
 import * as Modal from "@/components/ui/modal";
-import * as SegmentedControl from "@/components/ui/segmented-control";
-import * as Select from "@/components/ui/select";
-import * as StatusBadge from "@/components/ui/status-badge";
-import * as Switch from "@/components/ui/switch";
-import * as TabMenuHorizontal from "@/components/ui/tab-menu-horizontal";
-import * as Table from "@/components/ui/table";
+import * as LegacyTable from "@/components/ui/table";
 import { ARTIFACT_CAPABILITY_ROWS } from "./artifact-capability-matrix";
 import { BeautifulUiExtras } from "./beautiful-ui-extras";
 import { BeuiAgentShowcase } from "./beui-agent-showcase";
@@ -46,8 +60,8 @@ import { TimelineShowcase } from "./session-ui-showcase";
 
 function Section({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <section className="flex flex-col gap-4 border-t border-stroke-soft-200 py-8">
-      <p className="text-mono-label text-text-soft-400">{label}</p>
+    <section className="flex flex-col gap-4 border-t border-border-button-default py-8">
+      <p className="text-mono-label text-text-tertiary">{label}</p>
       {children}
     </section>
   );
@@ -61,11 +75,11 @@ const runs = [
 
 const statusColor: Record<
   (typeof runs)[number]["status"],
-  { badge: "green" | "orange" | "red"; label: string }
+  { chip: "lime" | "yellow" | "rose"; label: string }
 > = {
-  completed: { badge: "green", label: "Completed" },
-  pending: { badge: "orange", label: "Running" },
-  failed: { badge: "red", label: "Failed" },
+  completed: { chip: "lime", label: "Completed" },
+  pending: { chip: "yellow", label: "Running" },
+  failed: { chip: "rose", label: "Failed" },
 };
 
 export function ComponentLab() {
@@ -73,29 +87,29 @@ export function ComponentLab() {
   const [streamKey, setStreamKey] = React.useState(0);
 
   return (
-    <main className="min-h-full bg-bg-white-0">
+    <main className="min-h-full bg-background-primary-default">
       {/* Halftone brand header */}
-      <header className="relative overflow-hidden border-b border-stroke-soft-200">
+      <header className="relative overflow-hidden border-b border-border-button-default">
         <div className="bg-halftone pointer-events-none absolute inset-0" aria-hidden />
         <div className="relative mx-auto flex max-w-4xl items-center gap-3 px-6 py-10">
-          <AsteriskMark className="size-8 text-text-strong-950" />
+          <AsteriskMark className="size-8 text-text-primary" />
           <div className="flex flex-col">
-            <span className="text-label-lg text-text-strong-950">Component lab</span>
-            <span className="text-mono-label text-text-soft-400">useAgent · AlignUI parts bin</span>
+            <span className="text-headline-medium text-text-primary">Component lab</span>
+            <span className="text-mono-label text-text-tertiary">useAgent · BoardUI parts bin</span>
           </div>
         </div>
       </header>
 
       <div className="mx-auto max-w-4xl px-6">
         <div className="animate-ai-fade-up flex flex-col gap-3 py-10">
-          <h1 className="text-title-h4 text-text-strong-950">The parts bin</h1>
-          <p className="text-paragraph-md text-text-sub-600">
-            Every vendored AlignUI primitive this app composes, wired to the useAgent brand layer.
+          <h1 className="text-title-1-semibold text-text-primary">BoardUI parts bin</h1>
+          <p className="text-body-regular text-text-secondary">
+            Every native BoardUI primitive this app composes, wired to the useAgent brand layer.
             Toggle the theme from any page to confirm both render.
           </p>
           <Link
             href="/lab/session"
-            className="inline-flex w-fit items-center gap-1.5 rounded-lg border border-stroke-soft-200 px-3 py-1.5 text-label-sm text-text-sub-600 transition-colors hover:bg-bg-weak-50 hover:text-text-strong-950"
+            className="inline-flex w-fit items-center gap-1.5 rounded-lg border border-border-button-default px-3 py-1.5 text-body-2-medium text-text-secondary transition-colors hover:bg-background-primary-hover hover:text-text-primary"
           >
             <RiChatHistoryLine className="size-4" aria-hidden />
             Session sample - every timeline + chrome type in one conversation
@@ -109,220 +123,202 @@ export function ComponentLab() {
         </Section>
 
         {/* Buttons */}
-        <Section label="Button - variants, modes & sizes">
+        <Section label="Button - variants & sizes">
           <div className="flex flex-wrap items-center gap-3">
-            <Button.Root variant="primary" mode="filled">
-              <Button.Icon as={RiSparkling2Line} />
+            <Button variant="primary" leadingIcon={RiSparkling2Line}>
               Primary
-            </Button.Root>
-            <Button.Root variant="neutral" mode="filled">
-              Neutral
-            </Button.Root>
-            <Button.Root variant="neutral" mode="stroke">
-              Stroke
-            </Button.Root>
-            <Button.Root variant="primary" mode="lighter">
-              Lighter
-            </Button.Root>
-            <Button.Root variant="error" mode="ghost">
-              Ghost
-            </Button.Root>
-            <Button.Root variant="primary" mode="filled" size="xsmall">
-              <Button.Icon as={RiAddLine} />
+            </Button>
+            <Button variant="secondary">Secondary</Button>
+            <Button variant="ghost">Ghost</Button>
+            <Button variant="danger">Danger</Button>
+            <Button variant="secondary" size="small">
+              Small
+            </Button>
+            <Button variant="primary" size="xs" leadingIcon={RiAddLine}>
               New run
-            </Button.Root>
+            </Button>
+            <IconButton icon={RiAddLine} size="small" aria-label="New run" />
           </div>
         </Section>
 
-        {/* Badges */}
-        <Section label="Badge - colors & variants">
+        {/* Chips + counter badges */}
+        <Section label="Chip & Badge - status colors, emphasis levels, counters">
           <div className="flex flex-wrap items-center gap-2">
-            <Badge.Root variant="filled" color="green">
-              Running
-            </Badge.Root>
-            <Badge.Root variant="light" color="blue">
-              Queued
-            </Badge.Root>
-            <Badge.Root variant="lighter" color="orange">
-              Review
-            </Badge.Root>
-            <Badge.Root variant="stroke" color="red">
-              Failed
-            </Badge.Root>
-            <Badge.Root variant="light" color="purple">
-              <Badge.Dot />
+            <Chip color="lime">Running</Chip>
+            <Chip color="cyan">Queued</Chip>
+            <Chip color="yellow">Review</Chip>
+            <Chip color="rose">Failed</Chip>
+            <Chip variant="subtle" color="purple">
               Model
-            </Badge.Root>
+            </Chip>
+            <Chip variant="caption" color="gray">
+              Role tag
+            </Chip>
+            <Chip variant="caption" color="soft">
+              Soft
+            </Chip>
+            <CounterBadge color="primary">12</CounterBadge>
+            <CounterBadge color="neutral">4</CounterBadge>
           </div>
         </Section>
 
-        {/* Status badges */}
-        <Section label="StatusBadge - run lifecycle">
-          <div className="flex flex-wrap items-center gap-2">
-            <StatusBadge.Root variant="light" status="completed">
-              <StatusBadge.Dot />
+        {/* Status dots */}
+        <Section label="StatusDot - run lifecycle">
+          <div className="flex flex-wrap items-center gap-5">
+            <span className="inline-flex items-center gap-1.5 text-body-2-medium text-text-primary">
+              <StatusDot color="green" />
               Completed
-            </StatusBadge.Root>
-            <StatusBadge.Root variant="light" status="pending">
-              <StatusBadge.Dot />
+            </span>
+            <span className="inline-flex items-center gap-1.5 text-body-2-medium text-text-primary">
+              <StatusDot color="yellow" />
               Pending
-            </StatusBadge.Root>
-            <StatusBadge.Root variant="light" status="failed">
-              <StatusBadge.Dot />
+            </span>
+            <span className="inline-flex items-center gap-1.5 text-body-2-medium text-text-primary">
+              <StatusDot color="indigo" />
+              Queued
+            </span>
+            <Chip variant="caption" color="rose">
               Failed
-            </StatusBadge.Root>
-            <StatusBadge.Root variant="stroke" status="disabled">
-              <StatusBadge.Dot />
-              Idle
-            </StatusBadge.Root>
+            </Chip>
           </div>
         </Section>
 
         {/* Input */}
         <Section label="Input - leading icon & error state">
           <div className="flex max-w-xl flex-col gap-3 sm:flex-row">
-            <Input.Root className="flex-1">
-              <Input.Wrapper>
-                <Input.Icon as={RiSearch2Line} />
-                <Input.Input placeholder="Search agents, runs, skills…" />
-              </Input.Wrapper>
-            </Input.Root>
-            <Input.Root hasError className="flex-1">
-              <Input.Wrapper>
-                <Input.Input placeholder="Invalid input" defaultValue="oops" />
-              </Input.Wrapper>
-            </Input.Root>
+            <Input
+              className="flex-1"
+              leadingIcon={RiSearch2Line}
+              placeholder="Search agents, runs, skills…"
+            />
+            <Input
+              className="flex-1"
+              isInvalid
+              placeholder="Invalid input"
+              defaultValue="oops"
+            />
           </div>
         </Section>
 
         {/* Select */}
         <Section label="Select - model picker">
           <div className="max-w-xs">
-            <Select.Root value={model} onValueChange={setModel}>
-              <Select.Trigger>
-                <Select.Value placeholder="Choose a model" />
-              </Select.Trigger>
-              <Select.Content>
-                <Select.Item value="sonnet">Claude Sonnet</Select.Item>
-                <Select.Item value="opus">Claude Opus</Select.Item>
-                <Select.Item value="haiku">Claude Haiku</Select.Item>
-              </Select.Content>
-            </Select.Root>
+            <Select
+              aria-label="Choose a model"
+              placeholder="Choose a model"
+              selectedKey={model}
+              onSelectionChange={(key) => {
+                if (key != null) setModel(String(key));
+              }}
+            >
+              <SelectItem id="sonnet">Claude Sonnet</SelectItem>
+              <SelectItem id="opus">Claude Opus</SelectItem>
+              <SelectItem id="haiku">Claude Haiku</SelectItem>
+            </Select>
           </div>
         </Section>
 
         {/* Segmented control */}
         <Section label="SegmentedControl">
           <div className="max-w-sm">
-            <SegmentedControl.Root defaultValue="all">
-              <SegmentedControl.List>
-                <SegmentedControl.Trigger value="all">All</SegmentedControl.Trigger>
-                <SegmentedControl.Trigger value="active">Active</SegmentedControl.Trigger>
-                <SegmentedControl.Trigger value="archived">Archived</SegmentedControl.Trigger>
-              </SegmentedControl.List>
-            </SegmentedControl.Root>
+            <SegmentedControl aria-label="Run filter" defaultSelectedKeys={["all"]}>
+              <SegmentedControlItem id="all">All</SegmentedControlItem>
+              <SegmentedControlItem id="active">Active</SegmentedControlItem>
+              <SegmentedControlItem id="archived">Archived</SegmentedControlItem>
+            </SegmentedControl>
           </div>
         </Section>
 
         {/* Tabs */}
-        <Section label="TabMenuHorizontal">
-          <TabMenuHorizontal.Root defaultValue="overview">
-            <TabMenuHorizontal.List>
-              <TabMenuHorizontal.Trigger value="overview">
-                <TabMenuHorizontal.Icon as={RiFlashlightLine} />
+        <Section label="Tabs - underline">
+          <Tabs defaultSelectedKey="overview">
+            <TabList aria-label="Lab sections">
+              <Tab id="overview" icon={RiFlashlightLine}>
                 Overview
-              </TabMenuHorizontal.Trigger>
-              <TabMenuHorizontal.Trigger value="runs">Runs</TabMenuHorizontal.Trigger>
-              <TabMenuHorizontal.Trigger value="skills">Skills</TabMenuHorizontal.Trigger>
-            </TabMenuHorizontal.List>
-            <TabMenuHorizontal.Content value="overview" className="pt-4">
-              <p className="text-paragraph-sm text-text-sub-600">
-                Overview panel - the active-tab indicator animates underneath.
+              </Tab>
+              <Tab id="runs">Runs</Tab>
+              <Tab id="skills">Skills</Tab>
+            </TabList>
+            <TabPanel id="overview">
+              <p className="text-body-2-regular text-text-secondary">
+                Overview panel - the active-tab underline animates between tabs.
               </p>
-            </TabMenuHorizontal.Content>
-            <TabMenuHorizontal.Content value="runs" className="pt-4">
-              <p className="text-paragraph-sm text-text-sub-600">Runs panel.</p>
-            </TabMenuHorizontal.Content>
-            <TabMenuHorizontal.Content value="skills" className="pt-4">
-              <p className="text-paragraph-sm text-text-sub-600">Skills panel.</p>
-            </TabMenuHorizontal.Content>
-          </TabMenuHorizontal.Root>
+            </TabPanel>
+            <TabPanel id="runs">
+              <p className="text-body-2-regular text-text-secondary">Runs panel.</p>
+            </TabPanel>
+            <TabPanel id="skills">
+              <p className="text-body-2-regular text-text-secondary">Skills panel.</p>
+            </TabPanel>
+          </Tabs>
         </Section>
 
         {/* Switch */}
         <Section label="Switch">
-          <div className="flex items-center gap-3">
-            <Switch.Root defaultChecked id="autopilot" />
-            <label htmlFor="autopilot" className="text-label-sm text-text-strong-950">
-              Autopilot mode
-            </label>
-          </div>
+          <Switch defaultSelected>Autopilot mode</Switch>
         </Section>
 
         {/* Table */}
         <Section label="Table - recent runs">
-          <Table.Root>
-            <Table.Header>
-              <Table.Row>
-                <Table.Head>Run</Table.Head>
-                <Table.Head>Model</Table.Head>
-                <Table.Head>Status</Table.Head>
-              </Table.Row>
-            </Table.Header>
-            <Table.Body>
+          <Table aria-label="Recent runs">
+            <TableHeader>
+              <TableColumn isRowHeader>Run</TableColumn>
+              <TableColumn>Model</TableColumn>
+              <TableColumn>Status</TableColumn>
+            </TableHeader>
+            <TableBody>
               {runs.map((row) => {
                 const s = statusColor[row.status];
                 return (
-                  <Table.Row key={row.run}>
-                    <Table.Cell className="text-label-sm text-text-strong-950">
+                  <TableRow key={row.run}>
+                    <TableCell className="text-body-2-medium text-text-primary">
                       {row.run}
-                    </Table.Cell>
-                    <Table.Cell className="[font-family:var(--font-mono)] text-paragraph-sm text-text-sub-600">
+                    </TableCell>
+                    <TableCell className="font-mono text-body-2-regular text-text-secondary">
                       {row.model}
-                    </Table.Cell>
-                    <Table.Cell>
-                      <Badge.Root variant="light" color={s.badge}>
+                    </TableCell>
+                    <TableCell>
+                      <Chip variant="caption" color={s.chip}>
                         {s.label}
-                      </Badge.Root>
-                    </Table.Cell>
-                  </Table.Row>
+                      </Chip>
+                    </TableCell>
+                  </TableRow>
                 );
               })}
-            </Table.Body>
-          </Table.Root>
+            </TableBody>
+          </Table>
         </Section>
 
-        {/* Modal */}
+        {/* Modal - AlignUI behavior kept, surfaces reskinned with BoardUI tokens */}
         <Section label="Modal">
           <Modal.Root>
             <Modal.Trigger asChild>
-              <Button.Root variant="neutral" mode="stroke">
-                <Button.Icon as={RiPlayLine} />
+              <Button variant="secondary" leadingIcon={RiPlayLine}>
                 Open modal
-              </Button.Root>
+              </Button>
             </Modal.Trigger>
-            <Modal.Content className="max-w-[440px]">
+            <Modal.Content className="max-w-[440px] rounded-2xl border border-border-button-default bg-background-primary-default shadow-dropdown">
               <Modal.Header
                 icon={RiSparkling2Line}
                 title="Start a new run"
                 description="Kick off an autonomous task on the selected repo."
+                className="before:border-border-button-default"
               />
               <Modal.Body>
-                <p className="text-paragraph-sm text-text-sub-600">
-                  This is a live AlignUI modal - Escape, the backdrop, and the close button all
-                  dismiss it.
+                <p className="text-body-2-regular text-text-secondary">
+                  This modal keeps AlignUI behavior under a BoardUI skin - Escape, the backdrop,
+                  and the close button all dismiss it.
                 </p>
               </Modal.Body>
-              <Modal.Footer>
+              <Modal.Footer className="border-border-button-default">
                 <Modal.Close asChild>
-                  <Button.Root variant="neutral" mode="stroke" size="small">
+                  <Button variant="secondary" size="small">
                     Cancel
-                  </Button.Root>
+                  </Button>
                 </Modal.Close>
-                <Button.Root variant="primary" mode="filled" size="small">
-                  <Button.Icon as={RiCheckLine} />
+                <Button variant="primary" size="small" leadingIcon={RiCheckLine}>
                   Start run
-                </Button.Root>
+                </Button>
               </Modal.Footer>
             </Modal.Content>
           </Modal.Root>
@@ -331,8 +327,8 @@ export function ComponentLab() {
         {/* Motion primitives */}
         <Section label="Brand motion primitives">
           <div className="flex flex-col gap-4">
-            <p className="agent-progress-loading-text text-label-md">Thinking through the plan…</p>
-            <p className="text-label-sm text-text-strong-950">
+            <p className="agent-progress-loading-text text-body-medium">Thinking through the plan…</p>
+            <p className="text-body-2-medium text-text-primary">
               Streaming output
               <span
                 className="ai-caret ml-0.5 inline-block w-px bg-current align-middle"
@@ -343,7 +339,7 @@ export function ComponentLab() {
               {[0, 1, 2, 3, 4].map((i) => (
                 <span
                   key={i}
-                  className="ai-loading-pixel size-1.5 rounded-full bg-primary-base"
+                  className="ai-loading-pixel size-1.5 rounded-full bg-accent-500"
                   style={{ animationDelay: `${i * 120}ms` }}
                 />
               ))}
@@ -353,7 +349,7 @@ export function ComponentLab() {
 
         {/* Thinking orb */}
         <Section label="Thinking orb - engine-driven agent loader">
-          <p className="text-paragraph-sm text-text-sub-600">
+          <p className="text-body-2-regular text-text-secondary">
             A canvas-rendered dotted thought-orb (vendored from chartden). Six states drive the
             “agent is thinking” moment; useAgent uses the <code>searching</code> preset for the
             session boot phase. Grayscale- by-depth, so it tracks the theme with no token mapping.
@@ -362,48 +358,48 @@ export function ComponentLab() {
             {(["working", "searching", "shaping"] as OrbState[]).map((state) => (
               <div key={state} className="flex flex-col items-center gap-2">
                 <ThinkingOrb state={state} size={64} />
-                <span className="text-mono-label text-text-soft-400 capitalize">{state}</span>
+                <span className="text-mono-label text-text-tertiary capitalize">{state}</span>
               </div>
             ))}
             <div className="flex items-center gap-2 self-center">
               <ThinkingOrb state="working" size={20} />
-              <span className="text-paragraph-sm text-text-sub-600">Inline size (20px)</span>
+              <span className="text-body-2-regular text-text-secondary">Inline size (20px)</span>
             </div>
           </div>
         </Section>
 
         <Section label="Artifact workspace - shared capability contract">
-          <p className="text-paragraph-sm text-text-sub-600">
+          <p className="text-body-2-regular text-text-secondary">
             These rows come from the same browser-safe contract used by active session files, Live
             Artifacts, and the editor. Office and PDF edits use canonical companion state; this does
             not claim rich binary round-trip.
           </p>
-          <div className="overflow-hidden rounded-xl border border-stroke-soft-200">
-            <Table.Root>
-              <Table.Header>
-                <Table.Row>
-                  <Table.Head>Workpiece</Table.Head>
-                  <Table.Head>Edit state</Table.Head>
-                  <Table.Head>Preview</Table.Head>
-                  <Table.Head>Actions</Table.Head>
-                </Table.Row>
-              </Table.Header>
-              <Table.Body>
+          <div className="overflow-hidden rounded-xl border border-border-button-default">
+            <LegacyTable.Root>
+              <LegacyTable.Header>
+                <LegacyTable.Row>
+                  <LegacyTable.Head>Workpiece</LegacyTable.Head>
+                  <LegacyTable.Head>Edit state</LegacyTable.Head>
+                  <LegacyTable.Head>Preview</LegacyTable.Head>
+                  <LegacyTable.Head>Actions</LegacyTable.Head>
+                </LegacyTable.Row>
+              </LegacyTable.Header>
+              <LegacyTable.Body>
                 {ARTIFACT_CAPABILITY_ROWS.map((row) => (
-                  <Table.Row key={row.kind}>
-                    <Table.Cell>
-                      <p className="text-label-sm text-text-strong-950">{row.label}</p>
-                      <p className="font-mono text-paragraph-xs text-text-soft-400">
+                  <LegacyTable.Row key={row.kind}>
+                    <LegacyTable.Cell>
+                      <p className="text-body-2-medium text-text-primary">{row.label}</p>
+                      <p className="font-mono text-caption-1-regular text-text-tertiary">
                         {row.defaultName}
                       </p>
-                    </Table.Cell>
-                    <Table.Cell className="font-mono text-paragraph-xs text-text-sub-600">
+                    </LegacyTable.Cell>
+                    <LegacyTable.Cell className="font-mono text-caption-1-regular text-text-secondary">
                       {row.edit ? `${row.edit.mode}:${row.edit.state}` : "unavailable"}
-                    </Table.Cell>
-                    <Table.Cell className="text-paragraph-xs text-text-sub-600">
+                    </LegacyTable.Cell>
+                    <LegacyTable.Cell className="text-caption-1-regular text-text-secondary">
                       {row.preview.inline ? row.preview.renderer : "attachment only"}
-                    </Table.Cell>
-                    <Table.Cell>
+                    </LegacyTable.Cell>
+                    <LegacyTable.Cell>
                       <div className="flex flex-wrap gap-1">
                         {row.actions.map((action) => (
                           <Badge.Root key={action} variant="lighter" color="gray">
@@ -411,32 +407,32 @@ export function ComponentLab() {
                           </Badge.Root>
                         ))}
                       </div>
-                    </Table.Cell>
-                  </Table.Row>
+                    </LegacyTable.Cell>
+                  </LegacyTable.Row>
                 ))}
-              </Table.Body>
-            </Table.Root>
+              </LegacyTable.Body>
+            </LegacyTable.Root>
           </div>
         </Section>
 
         {/* ── AI component kit (components/ai) ─────────────────────────── */}
-        <div className="animate-ai-fade-up flex flex-col gap-1 border-t border-stroke-soft-200 pt-10">
-          <h2 className="text-title-h5 text-text-strong-950">AI kit</h2>
-          <p className="text-paragraph-md text-text-sub-600">
-            The <code>components/ai</code> primitives ported from beautiful-ui onto AlignUI tokens -
-            streaming, agent activity, approvals, and tables.
+        <div className="animate-ai-fade-up flex flex-col gap-1 border-t border-border-button-default pt-10">
+          <h2 className="text-title-2-semibold text-text-primary">AI kit</h2>
+          <p className="text-body-regular text-text-secondary">
+            The <code>components/ai</code> primitives ported from beautiful-ui onto the semantic
+            token layer - streaming, agent activity, approvals, and tables.
           </p>
         </div>
 
         <Section label="AI kit · Streaming text">
           <StreamingText
             key={streamKey}
-            text="Ported the AI component kit onto AlignUI tokens - streaming text, thinking disclosures, tool chips, approval cards and tables all read from the semantic scale, so they flip cleanly between light and the warm #20201f dark ladder."
+            text="Ported the AI component kit onto BoardUI tokens - streaming text, thinking disclosures, tool chips, approval cards and tables all read from the semantic scale, so they flip cleanly between light and the warm #20201f dark ladder."
             active
             sources={[
               { name: "AGENTS.md", url: "https://skynet-a.local/AGENTS.md" },
               { name: "beautiful-ui", url: "the component catalog" },
-              { name: "AlignUI tokens", url: "https://alignui.com" },
+              { name: "BoardUI tokens", url: "https://skynet-a.local/styles/theme.css" },
             ]}
             onRegenerate={() => setStreamKey((k) => k + 1)}
           />
@@ -444,10 +440,10 @@ export function ComponentLab() {
 
         <Section label="AI kit · Thinking disclosure">
           <Thinking label="Working - analysing repository" active open>
-            <p className="text-paragraph-sm text-text-sub-600">
+            <p className="text-body-2-regular text-text-secondary">
               Reading AGENTS.md and the tailwind token scale…
             </p>
-            <p className="text-paragraph-sm text-text-sub-600">
+            <p className="text-body-2-regular text-text-secondary">
               Mapping BoardUI status colors onto success / error / away.
             </p>
           </Thinking>
@@ -491,7 +487,7 @@ export function ComponentLab() {
                 title: "tailwind.config.ts",
                 meta: "512 chars",
                 icon: RiFileList2Line,
-                body: "The AlignUI token scale bridged into Tailwind v4 - semantic bg / text / stroke families plus the state color ramps.",
+                body: "The BoardUI token scale bridged into Tailwind v4 - semantic background / text / border families plus the state color ramps.",
               },
               {
                 title: "app/globals.css",

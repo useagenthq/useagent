@@ -63,7 +63,7 @@ import {
 import { WorkGroup } from "@/components/session-ui/work-group";
 import { WorkingIndicator } from "@/components/session-ui/working-indicator";
 import type { GatewayApproval } from "@/lib/gateway-approvals";
-import { cnExt as cn } from "@/utils/cn";
+import { cx as cn } from "@/utils/cx";
 
 // Canonical-timeline cutover flag (final_harness Phase 1, slice 4). OFF by default:
 // the legacy native/steps derivation renders unless a backend + build opt in via
@@ -114,19 +114,19 @@ export type Turn = {
 // links, paragraph rhythm) lives in the shared Markdown primitive
 // (`prompt-kit/markdown.tsx` FLOW_CLASS) so EVERY consumer renders
 // identically; this class adds the conversation turn's size and color.
-const MD_CLASS = "text-paragraph-sm text-text-strong-950";
+const MD_CLASS = "text-body-2-regular text-text-primary";
 
 /** Terminal note for a run that failed before writing a summary. */
 function FailedNote() {
   return (
-    <p className="text-paragraph-sm text-error-base">This run failed before producing a summary.</p>
+    <p className="text-body-2-regular text-red-500">This run failed before producing a summary.</p>
   );
 }
 
 export function UserBubble({ children }: { children: string }) {
   return (
     <div className="flex justify-end" data-testid="user-message">
-      <div className="bg-bg-weak-50 text-text-strong-950 text-paragraph-sm max-w-[85%] rounded-2xl rounded-br-md px-3.5 py-2.5">
+      <div className="bg-background-secondary-default text-text-primary text-body-2-regular max-w-[85%] rounded-2xl rounded-br-md px-3.5 py-2.5">
         {children}
       </div>
     </div>
@@ -138,11 +138,11 @@ export function UserBubble({ children }: { children: string }) {
 export function AssistantTurnHeader({ engine }: { engine: EngineId }) {
   return (
     <div className="flex items-center gap-2">
-      <span className="ring-stroke-soft-200 bg-bg-weak-50 flex size-5 shrink-0 items-center justify-center rounded-full ring-1 ring-inset">
+      <span className="ring-border-button-default bg-background-secondary-default flex size-5 shrink-0 items-center justify-center rounded-full ring-1 ring-inset">
         <OrbitKnotMark className="size-3.5" stroke={2.2} />
       </span>
-      <span className="text-label-sm text-text-strong-950">Agent</span>
-      <span className="text-mono-label text-text-soft-400">{engineLabel(engine)}</span>
+      <span className="text-body-2-medium text-text-primary">Agent</span>
+      <span className="text-mono-label text-text-tertiary">{engineLabel(engine)}</span>
     </div>
   );
 }
@@ -180,7 +180,7 @@ function LiveNarration({ text }: { text: string }) {
 
 // Subdued variant of MD_CLASS for streamed reasoning (tailwind-merge lets the
 // muted text color win over MD_CLASS's strong default).
-const MD_CLASS_REASONING = cn(MD_CLASS, "text-text-sub-600");
+const MD_CLASS_REASONING = cn(MD_CLASS, "text-text-secondary");
 
 /** Live provider "thinking" surfaced AHEAD of the answer: a subdued, truthful
  *  Thinking disclosure streaming the real reasoning tokens. It fills the
@@ -241,7 +241,7 @@ function ArtifactActions({
         rel="noreferrer"
         aria-label={previewLabel}
         title={previewLabel}
-        className="flex size-8 items-center justify-center rounded-lg text-text-sub-600 outline-none hover:bg-bg-white-0 hover:text-text-strong-950 focus-visible:ring-2 focus-visible:ring-stroke-strong-950"
+        className="flex size-8 items-center justify-center rounded-lg text-text-secondary outline-none hover:bg-background-primary-default hover:text-text-primary focus-visible:ring-2 focus-visible:ring-border-focus-ring"
       >
         <RiExternalLinkLine aria-hidden className="size-4" />
       </a>
@@ -250,7 +250,7 @@ function ArtifactActions({
         download={name}
         aria-label={`Download ${name}`}
         title={`Download ${name}`}
-        className="flex size-8 items-center justify-center rounded-lg text-text-sub-600 outline-none hover:bg-bg-white-0 hover:text-text-strong-950 focus-visible:ring-2 focus-visible:ring-stroke-strong-950"
+        className="flex size-8 items-center justify-center rounded-lg text-text-secondary outline-none hover:bg-background-primary-default hover:text-text-primary focus-visible:ring-2 focus-visible:ring-border-focus-ring"
       >
         <RiDownloadLine aria-hidden className="size-4" />
       </a>
@@ -284,18 +284,18 @@ function ArtifactRow({ node }: { node: Extract<TimelineNode, { kind: "artifact" 
       : `${media ? "Generated media" : "Artifact"} · ${formatArtifactSize(artifact.bytes)}`;
   const body = (
     <>
-      <Icon aria-hidden className="size-5 shrink-0 text-text-sub-600" />
+      <Icon aria-hidden className="size-5 shrink-0 text-text-secondary" />
       <div className="min-w-0 flex-1">
-        <p className="truncate text-label-sm text-text-strong-950">{artifact.name}</p>
-        <p className="text-paragraph-xs text-text-soft-400">{subtitle}</p>
+        <p className="truncate text-body-2-medium text-text-primary">{artifact.name}</p>
+        <p className="text-caption-1-regular text-text-tertiary">{subtitle}</p>
       </div>
     </>
   );
   return (
     <div
       className={cn(
-        "flex min-w-0 items-center gap-3 rounded-xl border border-stroke-soft-200 bg-bg-weak-50 px-3 py-2.5",
-        canOpen && "transition-colors hover:border-stroke-sub-300",
+        "flex min-w-0 items-center gap-3 rounded-xl border border-border-button-default bg-background-secondary-default px-3 py-2.5",
+        canOpen && "transition-colors hover:border-border-button-hover",
       )}
     >
       {canOpen ? (
@@ -303,7 +303,7 @@ function ArtifactRow({ node }: { node: Extract<TimelineNode, { kind: "artifact" 
           type="button"
           onClick={() => openWorkpiece?.(artifact)}
           aria-label={`Open ${artifact.name} in workspace`}
-          className="flex min-w-0 flex-1 cursor-pointer items-center gap-3 rounded-lg text-left outline-none focus-visible:ring-2 focus-visible:ring-stroke-strong-950"
+          className="flex min-w-0 flex-1 cursor-pointer items-center gap-3 rounded-lg text-left outline-none focus-visible:ring-2 focus-visible:ring-border-focus-ring"
         >
           {body}
         </button>
@@ -312,7 +312,7 @@ function ArtifactRow({ node }: { node: Extract<TimelineNode, { kind: "artifact" 
           type="button"
           onClick={() => setExpanded(true)}
           aria-label={`Expand ${artifact.name}`}
-          className="flex min-w-0 flex-1 cursor-zoom-in items-center gap-3 rounded-lg text-left outline-none focus-visible:ring-2 focus-visible:ring-stroke-strong-950"
+          className="flex min-w-0 flex-1 cursor-zoom-in items-center gap-3 rounded-lg text-left outline-none focus-visible:ring-2 focus-visible:ring-border-focus-ring"
         >
           {body}
         </button>
@@ -322,7 +322,7 @@ function ArtifactRow({ node }: { node: Extract<TimelineNode, { kind: "artifact" 
       {artifact.destination === "slack" && (
         <RiSlackLine
           aria-label="Delivered to Slack"
-          className="size-4 shrink-0 text-text-soft-400"
+          className="size-4 shrink-0 text-text-tertiary"
         />
       )}
       {!artifact.destination && <ArtifactActions id={artifact.id} name={artifact.name} />}
@@ -345,11 +345,11 @@ function FileChangeRow({ node }: { node: Extract<TimelineNode, { kind: "file" }>
   const action =
     file.changeType === "create" ? "Created" : file.changeType === "delete" ? "Deleted" : "Edited";
   return (
-    <div className="flex min-w-0 items-center gap-3 rounded-xl border border-stroke-soft-200 bg-bg-weak-50 px-3 py-2.5">
-      <RiFileEditLine aria-hidden className="size-5 shrink-0 text-text-sub-600" />
+    <div className="flex min-w-0 items-center gap-3 rounded-xl border border-border-button-default bg-background-secondary-default px-3 py-2.5">
+      <RiFileEditLine aria-hidden className="size-5 shrink-0 text-text-secondary" />
       <div className="min-w-0 flex-1">
-        <p className="truncate font-mono text-label-sm text-text-strong-950">{name}</p>
-        <p className="truncate text-paragraph-xs text-text-soft-400">
+        <p className="truncate font-mono text-body-2-medium text-text-primary">{name}</p>
+        <p className="truncate text-caption-1-regular text-text-tertiary">
           {action}
           {file.diff ? ` · diff ${formatArtifactSize(file.diff.bytes)}` : ""}
         </p>
@@ -625,7 +625,7 @@ function TurnBlock({
                 turns never reach here - they early-return as a bare user
                 bubble above, per the opencode steering-queue standard). */}
             {!summary && !narrating && !failed && activity.length === 0 && status === "running" && (
-              <span className="text-label-sm text-text-soft-400">Working...</span>
+              <span className="text-body-2-medium text-text-tertiary">Working...</span>
             )}
           </>
         )}

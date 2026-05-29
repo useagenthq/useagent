@@ -114,14 +114,14 @@ function ArtifactCreatePanel({
   };
 
   return (
-    <section className="mt-6 border-y border-stroke-soft-200 py-4">
+    <section className="mt-6 border-y border-border-button-default py-4">
       <div className="flex flex-wrap items-end gap-3">
-        <label className="flex min-w-44 flex-col gap-1 text-label-xs text-text-sub-600">
+        <label className="flex min-w-44 flex-col gap-1 text-label-xs text-text-secondary">
           Type
           <select
             value={kind}
             onChange={(event) => chooseKind(event.currentTarget.value as ArtifactWorkpieceKind)}
-            className="h-9 rounded-lg border border-stroke-soft-200 bg-bg-white-0 px-3 text-label-sm text-text-strong-950 outline-none focus-visible:ring-2 focus-visible:ring-stroke-strong-950"
+            className="h-9 rounded-lg border border-border-button-default bg-background-primary-default px-3 text-body-2-medium text-text-primary outline-none focus-visible:ring-2 focus-visible:ring-border-focus-ring"
           >
             {ARTIFACT_AUTHORING_PROFILES.map((profile) => (
               <option key={profile.kind} value={profile.kind}>
@@ -130,21 +130,21 @@ function ArtifactCreatePanel({
             ))}
           </select>
         </label>
-        <label className="flex min-w-64 flex-1 flex-col gap-1 text-label-xs text-text-sub-600">
+        <label className="flex min-w-64 flex-1 flex-col gap-1 text-label-xs text-text-secondary">
           Name
           <input
             value={name}
             onChange={(event) => setName(event.currentTarget.value)}
-            className="h-9 rounded-lg border border-stroke-soft-200 bg-bg-white-0 px-3 text-label-sm text-text-strong-950 outline-none focus-visible:ring-2 focus-visible:ring-stroke-strong-950"
+            className="h-9 rounded-lg border border-border-button-default bg-background-primary-default px-3 text-body-2-medium text-text-primary outline-none focus-visible:ring-2 focus-visible:ring-border-focus-ring"
           />
         </label>
-        <label className="flex min-w-48 flex-col gap-1 text-label-xs text-text-sub-600">
+        <label className="flex min-w-48 flex-col gap-1 text-label-xs text-text-secondary">
           Run
           <select
             value={runId}
             onChange={(event) => setRunId(event.currentTarget.value)}
             disabled={runs.length === 0}
-            className="h-9 rounded-lg border border-stroke-soft-200 bg-bg-white-0 px-3 text-label-sm text-text-strong-950 outline-none focus-visible:ring-2 focus-visible:ring-stroke-strong-950 disabled:opacity-50"
+            className="h-9 rounded-lg border border-border-button-default bg-background-primary-default px-3 text-body-2-medium text-text-primary outline-none focus-visible:ring-2 focus-visible:ring-border-focus-ring disabled:opacity-50"
           >
             {runs.map((artifact) => (
               <option key={artifact.runId} value={artifact.runId}>
@@ -153,7 +153,7 @@ function ArtifactCreatePanel({
             ))}
           </select>
         </label>
-        <label className="inline-flex h-9 cursor-pointer items-center gap-2 rounded-lg border border-stroke-soft-200 bg-bg-white-0 px-3 text-label-sm text-text-sub-600 outline-none hover:bg-bg-weak-50 hover:text-text-strong-950">
+        <label className="inline-flex h-9 cursor-pointer items-center gap-2 rounded-lg border border-border-button-default bg-background-primary-default px-3 text-body-2-medium text-text-secondary outline-none hover:bg-background-secondary-default hover:text-text-primary">
           <RiUpload2Line aria-hidden className="size-4" />
           {file ? "Replace upload" : "Upload"}
           <input
@@ -166,40 +166,40 @@ function ArtifactCreatePanel({
           type="button"
           onClick={() => void create()}
           disabled={!runId || submitting}
-          className="inline-flex h-9 items-center gap-2 rounded-lg bg-bg-strong-950 px-4 text-label-sm text-text-white-0 outline-none hover:opacity-90 focus-visible:ring-2 focus-visible:ring-stroke-strong-950 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-40"
+          className="inline-flex h-9 items-center gap-2 rounded-lg bg-foreground-icon-primary px-4 text-body-2-medium text-background-full outline-none hover:opacity-90 focus-visible:ring-2 focus-visible:ring-border-focus-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-40"
         >
           <RiAddLine aria-hidden className="size-4" />
           {submitting ? "Creating..." : "Create"}
         </button>
       </div>
       {file && (
-        <p className="mt-2 truncate text-paragraph-xs text-text-soft-400">
+        <p className="mt-2 truncate text-caption-1-regular text-text-tertiary">
           Immutable original: {file.name}
         </p>
       )}
       {runs.length === 0 && (
-        <p className="mt-2 text-paragraph-xs text-text-soft-400">
+        <p className="mt-2 text-caption-1-regular text-text-tertiary">
           Create is available after at least one run exists, or from a link with a run_id parameter.
         </p>
       )}
-      {error && <p className="mt-2 text-paragraph-xs text-error-base">{error}</p>}
+      {error && <p className="mt-2 text-caption-1-regular text-text-error-primary">{error}</p>}
     </section>
   );
 }
 
 function EmptyState() {
   return (
-    <div className="mt-10 flex flex-col items-center justify-center rounded-xl border border-dashed border-stroke-soft-200 bg-bg-weak-50 px-6 py-16 text-center">
-      <div className="flex size-11 items-center justify-center rounded-full border border-stroke-soft-200 bg-bg-white-0">
-        <RiBroadcastLine aria-hidden className="size-5 text-text-soft-400" />
+    <div className="mt-10 flex flex-col items-center justify-center rounded-xl border border-dashed border-border-button-default bg-background-secondary-default px-6 py-16 text-center">
+      <div className="flex size-11 items-center justify-center rounded-full border border-border-button-default bg-background-primary-default">
+        <RiBroadcastLine aria-hidden className="size-5 text-text-tertiary" />
       </div>
-      <h2 className="mt-4 text-title-h6 text-text-strong-950">No artifacts yet</h2>
-      <p className="mt-1 max-w-sm text-paragraph-sm text-text-sub-600">
+      <h2 className="mt-4 text-title-h6 text-text-primary">No artifacts yet</h2>
+      <p className="mt-1 max-w-sm text-body-2-regular text-text-secondary">
         Screenshots, reports, documents, and other files published by your agents will appear here.
       </p>
       <Link
         href="/agent/new"
-        className="mt-5 inline-flex h-9 items-center rounded-full bg-bg-strong-950 px-4 text-label-sm text-text-white-0 shadow-regular-xs outline-none transition-opacity hover:opacity-90 focus-visible:ring-2 focus-visible:ring-stroke-strong-950 focus-visible:ring-offset-2"
+        className="mt-5 inline-flex h-9 items-center rounded-full bg-foreground-icon-primary px-4 text-body-2-medium text-background-full shadow-card outline-none transition-opacity hover:opacity-90 focus-visible:ring-2 focus-visible:ring-border-focus-ring focus-visible:ring-offset-2"
       >
         Start a run
       </Link>
@@ -209,16 +209,16 @@ function EmptyState() {
 
 function UnavailableState({ onRetry }: { onRetry: () => void }) {
   return (
-    <div className="mt-10 flex flex-col items-center justify-center rounded-xl border border-dashed border-stroke-soft-200 bg-bg-weak-50 px-6 py-16 text-center">
-      <RiBroadcastLine aria-hidden className="size-6 text-text-soft-400" />
-      <h2 className="mt-4 text-title-h6 text-text-strong-950">Artifacts are unavailable</h2>
-      <p className="mt-1 max-w-sm text-paragraph-sm text-text-sub-600">
+    <div className="mt-10 flex flex-col items-center justify-center rounded-xl border border-dashed border-border-button-default bg-background-secondary-default px-6 py-16 text-center">
+      <RiBroadcastLine aria-hidden className="size-6 text-text-tertiary" />
+      <h2 className="mt-4 text-title-h6 text-text-primary">Artifacts are unavailable</h2>
+      <p className="mt-1 max-w-sm text-body-2-regular text-text-secondary">
         The artifact service could not be reached. Your existing files are not deleted.
       </p>
       <button
         type="button"
         onClick={onRetry}
-        className="mt-5 inline-flex h-9 items-center rounded-full bg-bg-strong-950 px-4 text-label-sm text-text-white-0 shadow-regular-xs outline-none hover:opacity-90 focus-visible:ring-2 focus-visible:ring-stroke-strong-950 focus-visible:ring-offset-2"
+        className="mt-5 inline-flex h-9 items-center rounded-full bg-foreground-icon-primary px-4 text-body-2-medium text-background-full shadow-card outline-none hover:opacity-90 focus-visible:ring-2 focus-visible:ring-border-focus-ring focus-visible:ring-offset-2"
       >
         Try again
       </button>
@@ -297,10 +297,10 @@ export function LiveArtifacts({
     <div className="mx-auto w-full max-w-[1120px] px-6 py-8 sm:px-10 sm:py-10">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="flex items-start gap-2.5">
-          <RiBroadcastLine aria-hidden className="mt-0.5 size-5 text-text-strong-950" />
+          <RiBroadcastLine aria-hidden className="mt-0.5 size-5 text-text-primary" />
           <div className="flex flex-col gap-0.5">
-            <h1 className="text-display-sm text-text-strong-950">Artifacts</h1>
-            <p className="text-paragraph-sm text-text-sub-600">
+            <h1 className="text-display-sm text-text-primary">Artifacts</h1>
+            <p className="text-body-2-regular text-text-secondary">
               Durable files published by agent runs
             </p>
           </div>
@@ -312,7 +312,7 @@ export function LiveArtifacts({
               download
               aria-label="Download all artifacts as a ZIP"
               title="Download all"
-              className="inline-flex h-9 items-center gap-2 rounded-lg border border-stroke-soft-200 bg-bg-white-0 px-3 text-label-sm text-text-sub-600 outline-none hover:text-text-strong-950 focus-visible:ring-2 focus-visible:ring-stroke-strong-950"
+              className="inline-flex h-9 items-center gap-2 rounded-lg border border-border-button-default bg-background-primary-default px-3 text-body-2-medium text-text-secondary outline-none hover:text-text-primary focus-visible:ring-2 focus-visible:ring-border-focus-ring"
             >
               <RiDownloadLine aria-hidden className="size-4" />
               Download all
@@ -324,7 +324,7 @@ export function LiveArtifacts({
             aria-label="Refresh artifacts"
             title="Refresh"
             disabled={refreshing}
-            className="flex size-9 items-center justify-center rounded-lg border border-stroke-soft-200 bg-bg-white-0 text-text-sub-600 outline-none hover:text-text-strong-950 focus-visible:ring-2 focus-visible:ring-stroke-strong-950 disabled:opacity-50"
+            className="flex size-9 items-center justify-center rounded-lg border border-border-button-default bg-background-primary-default text-text-secondary outline-none hover:text-text-primary focus-visible:ring-2 focus-visible:ring-border-focus-ring disabled:opacity-50"
           >
             <RiRefreshLine
               aria-hidden
@@ -356,7 +356,7 @@ export function LiveArtifacts({
       />
 
       {!available && artifacts.length > 0 && (
-        <p role="status" className="mt-4 text-paragraph-xs text-text-soft-400">
+        <p role="status" className="mt-4 text-caption-1-regular text-text-tertiary">
           Reconnecting to the artifact service. Showing the last loaded files.
         </p>
       )}
@@ -372,7 +372,7 @@ export function LiveArtifacts({
           ))}
         </div>
       ) : (
-        <p className="mt-10 text-paragraph-sm text-text-sub-600">
+        <p className="mt-10 text-body-2-regular text-text-secondary">
           No {FILTERS.find((item) => item.id === filter)?.label.toLowerCase()} artifacts yet.
         </p>
       )}

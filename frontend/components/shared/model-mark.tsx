@@ -18,10 +18,10 @@ export interface ModelStyle {
 export function modelStyle(model: string): ModelStyle {
   const m = model.toLowerCase();
   if (m.includes("gpt") || m.includes("openai")) {
-    return { Mark: RiOpenaiFill, markClass: "text-text-strong-950", fill: "bg-text-strong-950" };
+    return { Mark: RiOpenaiFill, markClass: "text-text-primary", fill: "bg-text-primary" };
   }
   if (m.includes("opus")) return { Mark: AsteriskMark, markClass: "text-orange-500", fill: "bg-orange-400" };
   if (m.includes("sonnet")) return { Mark: AsteriskMark, markClass: "text-blue-500", fill: "bg-blue-400" };
   if (m.includes("haiku")) return { Mark: AsteriskMark, markClass: "text-green-500", fill: "bg-green-400" };
-  return { Mark: AsteriskMark, markClass: "text-primary-base", fill: "bg-primary-base" };
+  return { Mark: AsteriskMark, markClass: "text-accent-500", fill: "bg-accent-500" };
 }

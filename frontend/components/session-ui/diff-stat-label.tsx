@@ -8,13 +8,13 @@
 // hasNonZeroStat guard).
 //
 // Port notes:
-// - T3 shadcn tokens -> AlignUI semantic tokens (text-success -> text-success-base,
-//   text-destructive -> text-error-base, text-muted-foreground/70 -> text-text-soft-400).
+// - T3 shadcn tokens -> AlignUI semantic tokens (text-success -> text-lime-600,
+//   text-destructive -> text-text-error-primary, text-muted-foreground/70 -> text-text-tertiary).
 // - formatCompactDiffCount is exported here (upstream keeps it private) so the
 //   count grammar is directly testable.
 
 import { memo } from "react";
-import { cn } from "@/utils/cn";
+import { cx as cn } from "@/utils/cx";
 
 export function hasNonZeroStat(stat: { additions: number; deletions: number }): boolean {
   return stat.additions > 0 || stat.deletions > 0;
@@ -44,7 +44,7 @@ export const DiffStatLabel = memo(function DiffStatLabel(props: {
   const { additions, deletions, className, showParentheses = false, layout = "aligned" } = props;
   return (
     <>
-      {showParentheses && <span className="text-text-soft-400">(</span>}
+      {showParentheses && <span className="text-text-tertiary">(</span>}
       <span
         role="group"
         aria-label={`${additions} additions, ${deletions} deletions`}
@@ -55,14 +55,14 @@ export const DiffStatLabel = memo(function DiffStatLabel(props: {
           className,
         )}
       >
-        <span aria-hidden="true" className="font-mono text-success-base">
+        <span aria-hidden="true" className="font-mono text-lime-600">
           +{formatCompactDiffCount(additions)}
         </span>
-        <span aria-hidden="true" className="font-mono text-error-base">
+        <span aria-hidden="true" className="font-mono text-text-error-primary">
           -{formatCompactDiffCount(deletions)}
         </span>
       </span>
-      {showParentheses && <span className="text-text-soft-400">)</span>}
+      {showParentheses && <span className="text-text-tertiary">)</span>}
     </>
   );
 });

@@ -2,9 +2,14 @@
 
 import { useMemo, useState, type ComponentType } from "react";
 import { RiArrowDownSLine, RiCheckLine, RiSearchLine } from "@remixicon/react";
-import * as Popover from "@/components/ui/popover";
+import {
+  Dropdown,
+  DropdownItem,
+  DropdownPopover,
+  DropdownTrigger,
+} from "@/components/base/dropdown/dropdown";
 import { AsteriskMark } from "@/components/foundations/brand/asterisk-mark";
-import { cnExt } from "@/utils/cn";
+import { cx } from "@/utils/cx";
 
 type IconComponent = ComponentType<{ className?: string; "aria-hidden"?: boolean | "true" | "false" }>;
 
@@ -40,20 +45,21 @@ export interface SearchablePickerProps {
 
 function OptionMark({ option }: { option: PickerOption }) {
   if (option.markTint) {
-    return <AsteriskMark className={cnExt("size-4 shrink-0", option.markTint)} />;
+    return <AsteriskMark className={cx("size-4 shrink-0", option.markTint)} />;
   }
   if (option.icon) {
     const Icon = option.icon;
-    return <Icon className="size-[18px] shrink-0 text-text-sub-600" aria-hidden />;
+    return <Icon className="size-[18px] shrink-0 text-foreground-icon-secondary" aria-hidden />;
   }
   return null;
 }
 
 /**
- * Cursor-style picker: an AlignUI Popover whose panel opens with a search input
- * at the top, then sectioned groups (a "Recents" group first) of selectable
- * rows with a checkmark on the active one. The trigger reflects the current
- * selection (its mark/icon + label), matching the composer's other controls.
+ * Cursor-style picker on the BoardUI Dropdown recipe: the panel opens with a
+ * search input at the top, then sectioned groups (a "Recents" group first) of
+ * selectable rows with a checkmark on the active one. The trigger reflects the
+ * current selection (its mark/icon + label), matching the composer's other
+ * controls.
  */
 export function SearchablePicker({
   ariaLabel,
@@ -96,89 +102,86 @@ export function SearchablePicker({
   }
 
   return (
-    <Popover.Root
-      open={open}
+    <Dropdown
+      isOpen={open}
       onOpenChange={(next) => {
         setOpen(next);
         if (!next) setQuery("");
       }}
     >
-      <Popover.Trigger asChild>
-        <button
-          type="button"
-          aria-label={ariaLabel}
-          title={selected?.label ?? triggerLabel}
-          className={cnExt(
-            "inline-flex min-w-0 max-w-full items-center gap-1.5 rounded-lg px-2 py-1.5 text-label-sm text-text-strong-950 outline-none transition-colors hover:bg-bg-weak-50 focus-visible:ring-2 focus-visible:ring-stroke-strong-950",
-            triggerClassName,
-          )}
-        >
-          {selected ? <OptionMark option={selected} /> : null}
-          <span className={cnExt("truncate", selected?.mono && "font-mono text-paragraph-xs")}>
-            {selected?.label ?? triggerLabel}
-          </span>
-          <RiArrowDownSLine className="size-4 shrink-0 text-text-sub-600" aria-hidden />
-        </button>
-      </Popover.Trigger>
-      <Popover.Content
-        unstyled
-        showArrow={false}
-        align="start"
-        sideOffset={6}
-        className="w-[264px] overflow-hidden rounded-2xl bg-bg-white-0 p-2.5 shadow-regular-md ring-1 ring-inset ring-stroke-soft-200"
+      <DropdownTrigger
+        aria-label={ariaLabel}
+        className={cx(
+          "inline-flex min-w-0 max-w-full items-center gap-1.5 rounded-lg px-2 py-1.5 text-body-2-medium text-text-primary outline-none transition-colors hover:bg-background-primary-hover focus-visible:ring-2 focus-visible:ring-border-focus-ring",
+          triggerClassName,
+        )}
       >
-        <div className="-mx-2.5 -mt-1 mb-1 flex items-center gap-2 border-b border-stroke-soft-200 px-3 pb-2.5 pt-1">
-          <RiSearchLine className="size-4 shrink-0 text-text-soft-400" aria-hidden />
+        {selected ? <OptionMark option={selected} /> : null}
+        <span
+          title={selected?.label ?? triggerLabel}
+          className={cx("truncate", selected?.mono && "font-mono text-caption-1-regular")}
+        >
+          {selected?.label ?? triggerLabel}
+        </span>
+        <RiArrowDownSLine className="size-4 shrink-0 text-foreground-icon-secondary" aria-hidden />
+      </DropdownTrigger>
+      <DropdownPopover
+        aria-label={ariaLabel}
+        placement="bottom start"
+        offset={6}
+        className="w-[264px]"
+      >
+        <div className="-mx-2.5 -mt-1 mb-1 flex items-center gap-2 border-b border-border-button-default px-3 pb-2.5 pt-1">
+          <RiSearchLine className="size-4 shrink-0 text-foreground-icon-tertiary" aria-hidden />
           <input
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             placeholder={searchPlaceholder}
             aria-label={searchPlaceholder}
-            className="min-w-0 flex-1 bg-transparent text-label-sm text-text-strong-950 outline-none placeholder:text-text-soft-400"
+            className="min-w-0 flex-1 bg-transparent text-body-2-medium text-text-primary outline-none placeholder:text-text-tertiary"
           />
         </div>
         <div className="flex max-h-[264px] flex-col gap-1.5 overflow-y-auto">
           {filtered.length === 0 ? (
-            <p className="px-2 py-2 text-label-sm text-text-soft-400">No results</p>
+            <p className="px-2 py-2 text-body-2-medium text-text-tertiary">No results</p>
           ) : (
             filtered.map((group, groupIndex) => (
               <div key={group.label ?? groupIndex} className="flex flex-col gap-1">
                 {group.label ? (
-                  <span className="text-mono-label px-2 pt-1 text-text-soft-400">{group.label}</span>
+                  <span className="text-mono-label px-2 pt-1 text-text-tertiary">{group.label}</span>
                 ) : null}
                 {group.options.map((option) => (
-                  <button
+                  <DropdownItem
                     key={option.value}
-                    type="button"
-                    onClick={() => pick(option.value)}
-                    className="flex items-center gap-2 rounded-lg p-2 text-left outline-none transition-colors hover:bg-bg-weak-50 focus-visible:bg-bg-weak-50"
+                    selected={option.value === value}
+                    onSelect={() => pick(option.value)}
                   >
                     <OptionMark option={option} />
                     <span className="flex min-w-0 flex-1 flex-col">
                       <span
-                        className={cnExt(
-                          "truncate text-label-sm text-text-strong-950",
-                          option.mono && "font-mono text-paragraph-xs",
+                        className={cx(
+                          "truncate text-body-2-medium text-text-primary",
+                          option.mono && "font-mono text-caption-1-regular",
                         )}
                       >
                         {option.label}
                       </span>
                       {option.caption ? (
-                        <span className="truncate text-paragraph-xs text-text-soft-400">
+                        <span className="truncate text-caption-1-regular text-text-tertiary">
                           {option.caption}
                         </span>
                       ) : null}
                     </span>
                     {option.value === value ? (
-                      <RiCheckLine className="size-4 shrink-0 text-text-sub-600" aria-hidden />
+                      <RiCheckLine className="size-4 shrink-0 text-foreground-icon-secondary" aria-hidden />
                     ) : null}
-                  </button>
+                  </DropdownItem>
                 ))}
               </div>
             ))
           )}
         </div>
-      </Popover.Content>
-    </Popover.Root>
+      </DropdownPopover>
+    </Dropdown>
   );
 }

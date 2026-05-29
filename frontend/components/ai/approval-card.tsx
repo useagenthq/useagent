@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { RiCloseLine } from "@remixicon/react";
-import { cnExt as cn } from "@/utils/cn";
+import { cx } from "@/utils/cx";
 import * as Button from "@/components/ui/button";
 
 export interface ApprovalOption {
@@ -50,19 +50,19 @@ export function ApprovalCard({
 
   return (
     <div
-      className={cn(
-        "animate-ai-fade-up w-full overflow-hidden rounded-2xl border border-stroke-soft-200 bg-bg-white-0 shadow-regular-md",
+      className={cx(
+        "animate-ai-fade-up w-full overflow-hidden rounded-2xl border border-border-button-default bg-background-primary-default shadow-md",
         className,
       )}
     >
       <div className="p-4">
         <div className="flex items-start justify-between gap-3">
-          <span className="text-label-md text-text-strong-950">{question}</span>
+          <span className="text-body-medium text-text-primary">{question}</span>
           <button
             type="button"
             aria-label="Dismiss"
             onClick={onDeny}
-            className="flex size-6 shrink-0 items-center justify-center rounded-lg text-text-soft-400 transition-colors duration-100 hover:bg-bg-soft-200 hover:text-text-sub-600"
+            className="flex size-6 shrink-0 items-center justify-center rounded-lg text-text-tertiary transition-colors duration-100 hover:bg-background-secondary-hover hover:text-text-secondary"
           >
             <RiCloseLine className="size-4" aria-hidden />
           </button>
@@ -80,34 +80,34 @@ export function ApprovalCard({
                   setSelected(index);
                   setCustom("");
                 }}
-                className="-mx-1.5 flex items-center gap-2.5 rounded-lg px-1.5 py-1.5 text-left transition-colors duration-100 hover:bg-bg-weak-50"
+                className="-mx-1.5 flex items-center gap-2.5 rounded-lg px-1.5 py-1.5 text-left transition-colors duration-100 hover:bg-background-primary-hover"
               >
                 <span
-                  className={cn(
+                  className={cx(
                     "flex size-4 shrink-0 items-center justify-center rounded-full transition-colors duration-200",
                     active
-                      ? "bg-primary-base"
-                      : "ring-1 ring-inset ring-stroke-sub-300",
+                      ? "bg-accent-500"
+                      : "ring-1 ring-inset ring-border-button-hover",
                   )}
                 >
                   <span
-                    className={cn(
-                      "size-1.5 rounded-full bg-static-white transition-transform duration-200",
+                    className={cx(
+                      "size-1.5 rounded-full bg-white transition-transform duration-200",
                       active ? "scale-100" : "scale-0",
                     )}
                   />
                 </span>
                 <span className="min-w-0">
                   <span
-                    className={cn(
-                      "block text-label-sm transition-colors duration-200",
-                      active ? "text-text-strong-950" : "text-text-sub-600",
+                    className={cx(
+                      "block text-body-2-medium transition-colors duration-200",
+                      active ? "text-text-primary" : "text-text-secondary",
                     )}
                   >
                     {option.label}
                   </span>
                   {option.detail && (
-                    <span className="block text-paragraph-xs text-text-soft-400">
+                    <span className="block text-caption-1-regular text-text-tertiary">
                       {option.detail}
                     </span>
                   )}
@@ -117,7 +117,7 @@ export function ApprovalCard({
           })}
 
           {allowCustom && (
-            <label className="-mx-1.5 flex items-center gap-2.5 rounded-lg px-1.5 py-1.5 transition-colors duration-100 focus-within:bg-bg-weak-50 hover:bg-bg-weak-50">
+            <label className="-mx-1.5 flex items-center gap-2.5 rounded-lg px-1.5 py-1.5 transition-colors duration-100 focus-within:bg-background-primary-hover hover:bg-background-primary-hover">
               <span aria-hidden className="size-4 shrink-0" />
               <input
                 value={custom}
@@ -127,14 +127,14 @@ export function ApprovalCard({
                 }}
                 placeholder="Type something…"
                 aria-label="Custom answer"
-                className="min-w-0 flex-1 bg-transparent text-paragraph-sm text-text-strong-950 outline-none placeholder:text-text-soft-400"
+                className="min-w-0 flex-1 bg-transparent text-body-2-regular text-text-primary outline-none placeholder:text-text-placeholder"
               />
             </label>
           )}
         </div>
       </div>
 
-      <div className="flex items-center justify-end gap-2 border-t border-stroke-soft-200 bg-bg-weak-50 px-4 py-3">
+      <div className="flex items-center justify-end gap-2 border-t border-border-button-default bg-background-secondary-default px-4 py-3">
         <Button.Root className="rounded-full" variant="neutral" mode="stroke" size="small" onClick={onDeny}>
           Deny
         </Button.Root>

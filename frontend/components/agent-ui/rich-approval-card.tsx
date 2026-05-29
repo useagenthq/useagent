@@ -27,7 +27,7 @@ import {
   useState,
 } from "react";
 
-import { cn } from "@/utils/cn";
+import { cx } from "@/utils/cx";
 
 // -- motion tokens ---------------------------------------------------------
 const EASE_OUT = [0.16, 1, 0.3, 1] as const;
@@ -120,12 +120,12 @@ type ButtonVariant = "primary" | "secondary" | "ghost";
 type ButtonSize = "sm" | "icon";
 
 const BUTTON_VARIANT: Record<ButtonVariant, string> = {
-  primary: "bg-primary-base text-static-white hover:bg-primary-base/90",
-  secondary: "border border-stroke-soft-200 bg-bg-white-0 text-text-strong-950 hover:bg-bg-weak-50",
-  ghost: "text-text-sub-600 hover:text-text-strong-950 hover:bg-bg-weak-50",
+  primary: "bg-button-primary text-text-white",
+  secondary: "border border-border-button-default bg-background-primary-default text-text-primary hover:bg-background-primary-hover",
+  ghost: "text-text-secondary hover:text-text-primary hover:bg-background-primary-hover",
 };
 const BUTTON_SIZE: Record<ButtonSize, string> = {
-  sm: "h-8 px-3 text-paragraph-xs gap-1.5 rounded-full",
+  sm: "h-8 px-3 text-caption-1-regular gap-1.5 rounded-full",
   icon: "h-8 w-8 rounded-lg",
 };
 
@@ -152,8 +152,8 @@ function Button({
       whileTap={reduce ? undefined : { scale: 0.93 }}
       whileHover={reduce || !canHover ? undefined : { scale: 1.02 }}
       transition={SPRING_PRESS}
-      className={cn(
-        "inline-flex select-none items-center justify-center font-medium outline-none transition-colors focus-visible:ring-2 focus-visible:ring-stroke-strong-950 disabled:pointer-events-none disabled:opacity-50",
+      className={cx(
+        "inline-flex select-none items-center justify-center font-medium outline-none transition-colors focus-visible:ring-2 focus-visible:ring-border-focus-ring disabled:pointer-events-none disabled:opacity-50",
         BUTTON_VARIANT[variant],
         BUTTON_SIZE[size],
         className,
@@ -186,7 +186,7 @@ function Checkbox({
   return (
     <label
       htmlFor={id}
-      className={cn("inline-flex items-center gap-3", disabled ? "cursor-not-allowed" : "cursor-pointer", className)}
+      className={cx("inline-flex items-center gap-3", disabled ? "cursor-not-allowed" : "cursor-pointer", className)}
     >
       <motion.button
         id={id}
@@ -198,13 +198,13 @@ function Checkbox({
         whileTap={reduce || disabled ? undefined : { scale: 0.92 }}
         transition={SPRING_PRESS}
         data-state={checked ? "checked" : "unchecked"}
-        className={cn(
+        className={cx(
           "inline-flex size-5 shrink-0 items-center justify-center rounded-md border-2 outline-none transition-colors duration-200",
-          "focus-visible:ring-2 focus-visible:ring-stroke-strong-950 focus-visible:ring-offset-2 focus-visible:ring-offset-bg-white-0",
+          "focus-visible:ring-2 focus-visible:ring-border-focus-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background-primary-default",
           "disabled:cursor-not-allowed disabled:opacity-60",
           checked
-            ? "border-primary-base bg-primary-base text-static-white"
-            : "border-stroke-soft-200 bg-bg-white-0 hover:border-text-soft-400",
+            ? "border-accent-500 bg-accent-500 text-text-white"
+            : "border-border-button-default bg-background-primary-default hover:border-text-tertiary",
         )}
       >
         <AnimatePresence initial={false}>
@@ -236,7 +236,7 @@ function Checkbox({
         </AnimatePresence>
       </motion.button>
       {label ? (
-        <span className={cn("select-none text-paragraph-sm text-text-strong-950", disabled && "opacity-60")}>
+        <span className={cx("select-none text-body-2-regular text-text-primary", disabled && "opacity-60")}>
           {label}
         </span>
       ) : null}
@@ -275,7 +275,7 @@ function RadioGroup({
   return (
     <MotionConfig transition={reduce ? { duration: 0 } : SPRING_LAYOUT}>
       <RadioContext.Provider value={contextValue}>
-        <div role="radiogroup" className={cn("flex flex-col gap-3", className)}>
+        <div role="radiogroup" className={cx("flex flex-col gap-3", className)}>
           {children}
         </div>
       </RadioContext.Provider>
@@ -303,7 +303,7 @@ function RadioGroupItem({
   return (
     <label
       htmlFor={id}
-      className={cn("inline-flex items-center gap-3", disabled ? "cursor-not-allowed" : "cursor-pointer", className)}
+      className={cx("inline-flex items-center gap-3", disabled ? "cursor-not-allowed" : "cursor-pointer", className)}
     >
       <motion.button
         id={id}
@@ -315,23 +315,23 @@ function RadioGroupItem({
         whileTap={reduce || disabled ? undefined : { scale: 0.92 }}
         transition={SPRING_PRESS}
         data-state={selected ? "checked" : "unchecked"}
-        className={cn(
+        className={cx(
           "relative inline-flex size-5 shrink-0 items-center justify-center rounded-full border-2 outline-none transition-colors duration-200",
-          "focus-visible:ring-2 focus-visible:ring-stroke-strong-950 focus-visible:ring-offset-2 focus-visible:ring-offset-bg-white-0",
+          "focus-visible:ring-2 focus-visible:ring-border-focus-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background-primary-default",
           "disabled:cursor-not-allowed disabled:opacity-60",
-          selected ? "border-primary-base" : "border-stroke-soft-200 hover:border-text-soft-400",
+          selected ? "border-accent-500" : "border-border-button-default hover:border-text-tertiary",
         )}
       >
         {selected ? (
           <motion.span
             layoutId={layoutId}
-            className="absolute inset-1 rounded-full bg-primary-base"
+            className="absolute inset-1 rounded-full bg-accent-500"
             transition={reduce ? { duration: 0 } : SPRING_LAYOUT}
           />
         ) : null}
       </motion.button>
       {label ? (
-        <span className={cn("select-none text-paragraph-sm text-text-strong-950", disabled && "opacity-60")}>
+        <span className={cx("select-none text-body-2-regular text-text-primary", disabled && "opacity-60")}>
           {label}
         </span>
       ) : null}
@@ -359,12 +359,12 @@ function Input({
 }) {
   const [focused, setFocused] = useState(false);
   return (
-    <div className={cn("flex flex-col gap-1.5", className)}>
+    <div className={cx("flex flex-col gap-1.5", className)}>
       <div
         data-state={focused ? "focused" : "idle"}
-        className={cn(
-          "relative h-11 overflow-hidden rounded-full border border-stroke-soft-200 transition-colors duration-200",
-          focused && "border-text-soft-400 ring-2 ring-stroke-strong-950/20",
+        className={cx(
+          "relative h-11 overflow-hidden rounded-full border border-border-button-default transition-colors duration-200",
+          focused && "border-text-tertiary ring-2 ring-border-focus-ring/20",
           disabled && "opacity-60",
           fieldClassName,
         )}
@@ -376,8 +376,8 @@ function Input({
           onChange={(e) => onChange(e.target.value)}
           onFocus={() => setFocused(true)}
           onBlur={() => setFocused(false)}
-          className={cn(
-            "peer h-full w-full bg-transparent px-3.5 text-paragraph-sm leading-6 text-text-strong-950 caret-text-strong-950 outline-none placeholder:text-text-soft-400",
+          className={cx(
+            "peer h-full w-full bg-transparent px-3.5 text-body-2-regular leading-6 text-text-primary caret-text-primary outline-none placeholder:text-text-placeholder",
             disabled && "cursor-not-allowed",
             inputClassName,
           )}
@@ -455,22 +455,22 @@ function getStatusLabel(status: RichApprovalStatus) {
 }
 
 function getStatusClass(status: RichApprovalStatus) {
-  if (status === "approved" || status === "answered") return "text-success-base";
-  if (status === "rejected") return "text-error-base";
-  if (status === "changes-requested") return "text-warning-base";
-  return "text-text-sub-600";
+  if (status === "approved" || status === "answered") return "text-lime-600";
+  if (status === "rejected") return "text-text-error-primary";
+  if (status === "changes-requested") return "text-yellow-600";
+  return "text-text-secondary";
 }
 
 // pending/changes-requested=warning, submitting=information, approved/answered=success, rejected=error.
 function getStatusBadgeClass(status: RichApprovalStatus) {
   if (status === "pending" || status === "changes-requested") {
-    return "border-warning-base/30 bg-warning-base/10 text-warning-base";
+    return "border-yellow-500/30 bg-yellow-500/10 text-yellow-600";
   }
-  if (status === "submitting") return "border-information-base/30 bg-information-base/10 text-information-base";
+  if (status === "submitting") return "border-blue-500/30 bg-blue-500/10 text-blue-600";
   if (status === "approved" || status === "answered") {
-    return "border-success-base/30 bg-success-base/10 text-success-base";
+    return "border-lime-500/30 bg-lime-500/10 text-lime-600";
   }
-  return "border-error-base/30 bg-error-base/10 text-error-base";
+  return "border-red-500/30 bg-red-500/10 text-text-error-primary";
 }
 
 function isAnswered(answer: RichApprovalAnswer) {
@@ -542,9 +542,9 @@ function QuestionOptions({
           disabled={disabled}
           placeholder={question.customPlaceholder ?? "Add another response..."}
           onChange={(next) => onChange({ selected: question.multiple ? answer.selected : [], custom: next })}
-          className={cn("p-0.5", question.options?.length && "mt-1.5")}
-          fieldClassName="h-10 rounded-xl border-0 bg-bg-weak-50 focus-within:bg-bg-white-0"
-          inputClassName="px-3 text-paragraph-sm"
+          className={cx("p-0.5", question.options?.length && "mt-1.5")}
+          fieldClassName="h-10 rounded-xl border-0 bg-background-secondary-default focus-within:bg-background-primary-default"
+          inputClassName="px-3 text-body-2-regular"
         />
       ) : null}
     </div>
@@ -564,7 +564,7 @@ function ProgressDots({ current, ids }: { current: number; ids: string[] }) {
           initial={{ scale: index === current ? 1 : 0.75, opacity: index <= current ? 1 : 0.35 }}
           animate={{ scale: index === current ? 1 : 0.75, opacity: index <= current ? 1 : 0.35 }}
           transition={SPRING_SWAP}
-          className="size-1.5 rounded-full bg-text-strong-950"
+          className="size-1.5 rounded-full bg-foreground-icon-primary"
         />
       ))}
     </span>
@@ -658,15 +658,15 @@ export function RichApprovalCard({
     <div
       data-state={status}
       aria-busy={busy}
-      className={cn(
-        "w-full overflow-hidden rounded-2xl border border-stroke-soft-200 bg-bg-white-0 p-4 text-paragraph-sm shadow-regular-sm",
+      className={cx(
+        "w-full overflow-hidden rounded-2xl border border-border-button-default bg-background-primary-default p-4 text-body-2-regular shadow-sm",
         className,
       )}
     >
       <div className="flex items-start gap-3">
-        <span aria-hidden="true" className={cn("grid size-5 shrink-0 place-items-center", getStatusClass(status))}>
+        <span aria-hidden="true" className={cx("grid size-5 shrink-0 place-items-center", getStatusClass(status))}>
           {busy ? (
-            <RiLoader4Line className={cn("size-4", !reduce && "animate-spin")} />
+            <RiLoader4Line className={cx("size-4", !reduce && "animate-spin")} />
           ) : interactive ? (
             questionMode ? (
               <RiQuestionLine className="size-4" />
@@ -682,16 +682,16 @@ export function RichApprovalCard({
 
         <div className="min-w-0 flex-1">
           <div className="flex min-w-0 items-start gap-3">
-            <h3 className="min-w-0 flex-1 text-label-sm leading-5 text-text-strong-950">
+            <h3 className="min-w-0 flex-1 text-body-2-medium leading-5 text-text-primary">
               <SwapRollText value={titleKey}>{displayTitle}</SwapRollText>
             </h3>
             {questionMode && interactive ? (
-              <span className="shrink-0 text-paragraph-xs tabular-nums text-text-soft-400">
+              <span className="shrink-0 text-caption-1-regular tabular-nums text-text-tertiary">
                 {currentStep + 1}/{questions.length}
               </span>
             ) : (
               <span
-                className={cn(
+                className={cx(
                   "shrink-0 rounded-full border px-2 py-0.5 text-[11px] font-medium transition-colors",
                   getStatusBadgeClass(status),
                 )}
@@ -704,7 +704,7 @@ export function RichApprovalCard({
                 type="button"
                 aria-label="Dismiss"
                 onClick={onDismiss}
-                className="grid size-5 shrink-0 place-items-center rounded-full text-text-sub-600 outline-none transition-colors hover:text-text-strong-950 focus-visible:ring-2 focus-visible:ring-stroke-strong-950"
+                className="grid size-5 shrink-0 place-items-center rounded-full text-text-secondary outline-none transition-colors hover:text-text-primary focus-visible:ring-2 focus-visible:ring-border-focus-ring"
               >
                 <RiCloseLine className="size-4" />
               </button>
@@ -722,7 +722,7 @@ export function RichApprovalCard({
                   transition={{ duration: reduce ? 0 : 0.2, ease: EASE_OUT }}
                 >
                   {question.description ? (
-                    <p className="mt-1 leading-5 text-text-sub-600">{question.description}</p>
+                    <p className="mt-1 leading-5 text-text-secondary">{question.description}</p>
                   ) : null}
                   <QuestionOptions
                     question={question}
@@ -735,7 +735,7 @@ export function RichApprovalCard({
               </AnimatePresence>
             ) : (
               <div>
-                {description ? <p className="mt-1 leading-5 text-text-sub-600">{description}</p> : null}
+                {description ? <p className="mt-1 leading-5 text-text-secondary">{description}</p> : null}
                 {children ? <div className="mt-3">{children}</div> : null}
               </div>
             )}
@@ -761,7 +761,7 @@ export function RichApprovalCard({
                   className="ml-auto rounded-full"
                 >
                   {busy ? (
-                    <RiLoader4Line className={cn("size-4", !reduce && "animate-spin")} />
+                    <RiLoader4Line className={cx("size-4", !reduce && "animate-spin")} />
                   ) : currentStep === questions.length - 1 ? (
                     <>
                       {submitLabel}
@@ -794,7 +794,7 @@ export function RichApprovalCard({
                     size="sm"
                     disabled={busy}
                     onClick={onReject}
-                    className="rounded-full text-text-sub-600 hover:text-error-base"
+                    className="rounded-full text-text-secondary hover:text-text-error-primary"
                   >
                     Reject
                   </Button>
@@ -803,7 +803,7 @@ export function RichApprovalCard({
             )}
           </AgentDisclosure>
 
-          {!interactive ? <p className="mt-1 text-paragraph-sm text-text-sub-600">{result ?? statusLabel}</p> : null}
+          {!interactive ? <p className="mt-1 text-body-2-regular text-text-secondary">{result ?? statusLabel}</p> : null}
         </div>
       </div>
     </div>
@@ -862,7 +862,7 @@ export function RichApprovalCardDemo() {
   }, [status]);
 
   return (
-    <div className="flex items-center justify-center rounded-xl bg-bg-weak-50 p-3">
+    <div className="flex items-center justify-center rounded-xl bg-background-secondary-default p-3">
       <div className="w-full max-w-md">
         <RichApprovalCard
           key={runId}

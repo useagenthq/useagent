@@ -8,7 +8,7 @@ import {
   RiTimeLine,
 } from "@remixicon/react";
 import * as Checkbox from "@/components/ui/checkbox";
-import { cnExt as cn } from "@/utils/cn";
+import { cx } from "@/utils/cx";
 
 /**
  * Tag-heavy records table — a horizontally scrollable companies grid with a
@@ -40,16 +40,16 @@ const tagDot: Record<RecordTagColor, string> = {
   sky: "bg-sky-500",
   yellow: "bg-yellow-500",
   red: "bg-red-500",
-  neutral: "bg-text-soft-400",
+  neutral: "bg-foreground-icon-tertiary",
 };
 
 export type StrengthTone = "critical" | "weak" | "neutral" | "strong";
 
 const strengthDot: Record<StrengthTone, string> = {
-  critical: "bg-error-base",
-  weak: "bg-warning-base",
-  neutral: "bg-text-soft-400",
-  strong: "bg-success-base",
+  critical: "bg-red-500",
+  weak: "bg-yellow-500",
+  neutral: "bg-foreground-icon-tertiary",
+  strong: "bg-lime-500",
 };
 
 export interface RecordTag {
@@ -70,10 +70,10 @@ export interface RecordsTableProps {
   className?: string;
 }
 
-const STICKY = "sticky left-0 z-10 bg-bg-white-0 group-hover/row:bg-bg-weak-50";
+const STICKY = "sticky left-0 z-10 bg-background-primary-default group-hover/row:bg-background-primary-hover";
 
 function HeaderIcon({ as: Icon }: { as: typeof RiTimeLine }) {
-  return <Icon className="text-text-soft-400 size-3.5 shrink-0" aria-hidden />;
+  return <Icon className="text-text-tertiary size-3.5 shrink-0" aria-hidden />;
 }
 
 export function RecordsTable({ rows, className }: RecordsTableProps) {
@@ -95,18 +95,18 @@ export function RecordsTable({ rows, className }: RecordsTableProps) {
 
   return (
     <div
-      className={cn(
-        "border-stroke-soft-200 bg-bg-white-0 shadow-regular-sm overflow-x-auto rounded-xl border",
+      className={cx(
+        "border-border-button-default bg-background-primary-default shadow-sm overflow-x-auto rounded-xl border",
         className,
       )}
     >
       <table className="w-full border-collapse text-left">
         <thead>
-          <tr className="border-stroke-soft-200 border-b">
+          <tr className="border-border-button-default border-b">
             <th
-              className={cn(
+              className={cx(
                 STICKY,
-                "bg-bg-white-0 text-label-xs text-text-soft-400 px-3 py-2 font-medium",
+                "bg-background-primary-default text-caption-1-medium text-text-tertiary px-3 py-2 font-medium",
               )}
             >
               <div className="flex items-center gap-2.5">
@@ -117,25 +117,25 @@ export function RecordsTable({ rows, className }: RecordsTableProps) {
                 <span>Company</span>
               </div>
             </th>
-            <th className="text-label-xs text-text-soft-400 px-3 py-2 font-medium">
+            <th className="text-caption-1-medium text-text-tertiary px-3 py-2 font-medium">
               <span className="flex items-center gap-1.5">
                 <HeaderIcon as={RiPriceTag3Line} />
                 Categories
               </span>
             </th>
-            <th className="text-label-xs text-text-soft-400 px-3 py-2 font-medium">
+            <th className="text-caption-1-medium text-text-tertiary px-3 py-2 font-medium">
               <span className="flex items-center gap-1.5">
                 <HeaderIcon as={RiTimeLine} />
                 Last interaction
               </span>
             </th>
-            <th className="text-label-xs text-text-soft-400 px-3 py-2 font-medium">
+            <th className="text-caption-1-medium text-text-tertiary px-3 py-2 font-medium">
               <span className="flex items-center gap-1.5">
                 <HeaderIcon as={RiPulseLine} />
                 Connection strength
               </span>
             </th>
-            <th className="text-label-xs text-text-soft-400 px-3 py-2 font-medium">
+            <th className="text-caption-1-medium text-text-tertiary px-3 py-2 font-medium">
               <span className="flex items-center gap-1.5">
                 <HeaderIcon as={RiLinksLine} />
                 Links
@@ -147,9 +147,9 @@ export function RecordsTable({ rows, className }: RecordsTableProps) {
           {rows.map((row, ri) => (
             <tr
               key={`${row.company}-${ri}`}
-              className="group/row border-stroke-soft-200 hover:bg-bg-weak-50 border-b transition-colors duration-100 last:border-0"
+              className="group/row border-border-button-default hover:bg-background-primary-hover border-b transition-colors duration-100 last:border-0"
             >
-              <td className={cn(STICKY, "px-3 py-2.5")}>
+              <td className={cx(STICKY, "px-3 py-2.5")}>
                 <div className="flex items-center gap-2.5">
                   <Checkbox.Root
                     checked={selected.has(ri)}
@@ -157,11 +157,11 @@ export function RecordsTable({ rows, className }: RecordsTableProps) {
                   />
                   <span
                     aria-hidden
-                    className="bg-bg-soft-200 text-text-sub-600 flex size-5 shrink-0 items-center justify-center rounded-md text-[11px] font-semibold"
+                    className="bg-background-tertiary-default text-text-secondary flex size-5 shrink-0 items-center justify-center rounded-md text-[11px] font-semibold"
                   >
                     {row.company.charAt(0).toUpperCase()}
                   </span>
-                  <span className="text-label-sm text-text-strong-950 whitespace-nowrap">
+                  <span className="text-body-2-medium text-text-primary whitespace-nowrap">
                     {row.company}
                   </span>
                 </div>
@@ -171,10 +171,10 @@ export function RecordsTable({ rows, className }: RecordsTableProps) {
                   {(row.categories ?? []).map((tag) => (
                     <span
                       key={tag.label}
-                      className="bg-bg-weak-50 text-text-sub-600 inline-flex items-center gap-1.5 whitespace-nowrap rounded-md px-1.5 py-0.5 text-[11.5px] font-medium"
+                      className="bg-background-secondary-default text-text-secondary inline-flex items-center gap-1.5 whitespace-nowrap rounded-md px-1.5 py-0.5 text-[11.5px] font-medium"
                     >
                       <span
-                        className={cn(
+                        className={cx(
                           "size-1.5 rounded-full",
                           tagDot[tag.color ?? "neutral"],
                         )}
@@ -185,14 +185,14 @@ export function RecordsTable({ rows, className }: RecordsTableProps) {
                   ))}
                 </div>
               </td>
-              <td className="text-text-sub-600 whitespace-nowrap px-3 py-2.5 text-paragraph-xs">
+              <td className="text-text-secondary whitespace-nowrap px-3 py-2.5 text-caption-1-regular">
                 {row.lastInteraction ?? "-"}
               </td>
               <td className="px-3 py-2.5">
                 {row.strength ? (
-                  <span className="text-text-sub-600 inline-flex items-center gap-1.5 whitespace-nowrap text-paragraph-xs">
+                  <span className="text-text-secondary inline-flex items-center gap-1.5 whitespace-nowrap text-caption-1-regular">
                     <span
-                      className={cn(
+                      className={cx(
                         "size-1.5 rounded-full",
                         strengthDot[row.strength.tone],
                       )}
@@ -201,7 +201,7 @@ export function RecordsTable({ rows, className }: RecordsTableProps) {
                     {row.strength.label}
                   </span>
                 ) : (
-                  <span className="text-text-soft-400">-</span>
+                  <span className="text-text-tertiary">-</span>
                 )}
               </td>
               <td className="px-3 py-2.5">
@@ -214,14 +214,14 @@ export function RecordsTable({ rows, className }: RecordsTableProps) {
                           href={link.href}
                           target="_blank"
                           rel="noreferrer"
-                          className="text-text-sub-600 hover:text-text-strong-950 whitespace-nowrap text-paragraph-xs underline underline-offset-2 transition-colors"
+                          className="text-text-secondary hover:text-text-primary whitespace-nowrap text-caption-1-regular underline underline-offset-2 transition-colors"
                         >
                           {link.label}
                         </a>
                       ) : (
                         <span
                           key={link.label}
-                          className="text-text-sub-600 whitespace-nowrap text-paragraph-xs"
+                          className="text-text-secondary whitespace-nowrap text-caption-1-regular"
                         >
                           {link.label}
                         </span>
@@ -229,7 +229,7 @@ export function RecordsTable({ rows, className }: RecordsTableProps) {
                     )}
                   </div>
                 ) : (
-                  <span className="text-text-soft-400">-</span>
+                  <span className="text-text-tertiary">-</span>
                 )}
               </td>
             </tr>

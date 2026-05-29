@@ -1,9 +1,10 @@
 "use client";
 
 import { RiMailLine, RiPencilLine } from "@remixicon/react";
-import * as Avatar from "@/components/ui/avatar";
-import * as Button from "@/components/ui/button";
-import * as Input from "@/components/ui/input";
+import { Avatar } from "@/components/base/avatar/avatar";
+import { Button } from "@/components/base/buttons/button";
+import { InputBase } from "@/components/base/input/input";
+import { cx } from "@/utils/cx";
 import { ThemeToggle } from "./theme-toggle";
 import { SettingsCard, SettingsRow } from "./settings-rows";
 
@@ -13,7 +14,7 @@ import { SettingsCard, SettingsRow } from "./settings-rows";
  * ThemeToggle and the icon-prop Input can't cross the server boundary.
  */
 
-export const AVATAR_GRADIENT = "bg-gradient-to-br from-purple-400 to-blue-500 text-static-white";
+export const AVATAR_GRADIENT = "bg-gradient-to-br from-purple-400 to-blue-500 text-white";
 
 const INPUT_WIDTH = "w-[220px] shrink-0";
 
@@ -21,41 +22,37 @@ export function GeneralCard() {
   return (
     <>
       <div className="mb-4 flex items-center gap-3">
-        <Avatar.Root size="48" className={AVATAR_GRADIENT}>
-          A
-        </Avatar.Root>
+        <Avatar size="lg" className={cx("size-12 text-[18px]", AVATAR_GRADIENT)} initials="A" />
         <div className="min-w-0 flex-1">
-          <p className="truncate text-label-sm text-text-strong-950">Dev User</p>
-          <p className="truncate text-paragraph-xs text-text-sub-600">you@example.com</p>
+          <p className="truncate text-body-2-medium text-text-primary">Dev User</p>
+          <p className="truncate text-caption-1-regular text-text-secondary">you@example.com</p>
         </div>
-        <Button.Root className="rounded-full" variant="neutral" mode="stroke" size="xsmall">
-          <Button.Icon as={RiPencilLine} />
+        <Button className="rounded-full" variant="secondary" size="xs" leadingIcon={RiPencilLine}>
           Change
-        </Button.Root>
+        </Button>
       </div>
 
       <SettingsCard>
         <SettingsRow label="Name">
-          <Input.Root size="small" className={INPUT_WIDTH}>
-            <Input.Wrapper>
-              <Input.Input aria-label="Name" defaultValue="Dev User" />
-            </Input.Wrapper>
-          </Input.Root>
+          <InputBase size="small" aria-label="Name" defaultValue="Dev User" fieldClassName={INPUT_WIDTH} />
         </SettingsRow>
         <SettingsRow label="Email">
-          <Input.Root size="small" className={INPUT_WIDTH}>
-            <Input.Wrapper>
-              <Input.Icon as={RiMailLine} />
-              <Input.Input aria-label="Email" type="email" defaultValue="you@example.com" />
-            </Input.Wrapper>
-          </Input.Root>
+          <InputBase
+            size="small"
+            aria-label="Email"
+            type="email"
+            defaultValue="you@example.com"
+            leadingIcon={RiMailLine}
+            fieldClassName={INPUT_WIDTH}
+          />
         </SettingsRow>
         <SettingsRow label="Workspace name">
-          <Input.Root size="small" className={INPUT_WIDTH}>
-            <Input.Wrapper>
-              <Input.Input aria-label="Workspace name" defaultValue="useAgent" />
-            </Input.Wrapper>
-          </Input.Root>
+          <InputBase
+            size="small"
+            aria-label="Workspace name"
+            defaultValue="useAgent"
+            fieldClassName={INPUT_WIDTH}
+          />
         </SettingsRow>
         <SettingsRow label="Theme" description="Choose your interface theme.">
           <ThemeToggle />

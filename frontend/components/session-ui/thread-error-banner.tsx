@@ -11,7 +11,7 @@
 //
 // Port notes:
 // - Their shadcn Alert/Button/Tooltip -> hand-rolled with AlignUI error tokens
-//   (bg-error-lighter / border-error-light / text-error-base), matching the
+//   (bg-red-50 / border-red-200 / text-text-error-primary), matching the
 //   other session-ui ports; lucide CircleAlertIcon/XIcon -> Remixicon.
 // - Their line-clamp + Tooltip full-text affordance -> line-clamp + `title`
 //   (this banner sits in the composer's banner stack, not a portal).
@@ -78,13 +78,13 @@ export function ThreadErrorBanner({
     <div
       data-session-ui="thread-error-banner"
       role="alert"
-      className="border-error-base/60 bg-bg-weak-50 flex items-start gap-2 rounded-lg border-l-2 py-2 pl-3 pr-2"
+      className="border-border-error-default/60 bg-background-secondary-default flex items-start gap-2 rounded-lg border-l-2 py-2 pl-3 pr-2"
     >
       <RiErrorWarningLine className="mt-0.5 size-4 shrink-0" aria-hidden />
       <div className="min-w-0 flex-1">
-        <p className="text-paragraph-xs text-text-sub-600 line-clamp-2 break-words" title={error}>
-          <span className="text-error-base">Run failed</span>
-          <span className="text-text-soft-400"> - </span>
+        <p className="text-caption-1-regular text-text-secondary line-clamp-2 break-words" title={error}>
+          <span className="text-text-error-primary">Run failed</span>
+          <span className="text-text-tertiary"> - </span>
           {error}
         </p>
       </div>
@@ -92,7 +92,7 @@ export function ThreadErrorBanner({
         <button
           type="button"
           onClick={onRetry}
-          className="border-error-light text-error-base hover:bg-error-light/40 shrink-0 rounded-lg border px-2 py-0.5 text-label-xs transition-colors"
+          className="border-red-200 text-text-error-primary hover:bg-red-200/40 shrink-0 rounded-lg border px-2 py-0.5 text-caption-1-medium transition-colors"
         >
           Retry
         </button>
@@ -102,7 +102,7 @@ export function ThreadErrorBanner({
           type="button"
           aria-label="Dismiss error"
           onClick={onDismiss}
-          className="text-text-soft-400 hover:text-text-strong-950 hover:bg-bg-soft-200 flex size-6 shrink-0 items-center justify-center rounded-md transition-colors"
+          className="text-text-tertiary hover:text-text-primary hover:bg-background-tertiary-hover flex size-6 shrink-0 items-center justify-center rounded-md transition-colors"
         >
           <RiCloseLine className="size-4" aria-hidden />
         </button>

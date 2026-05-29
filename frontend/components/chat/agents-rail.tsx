@@ -24,7 +24,7 @@ import { deriveSubagents, type SubagentCard } from "@/components/chat/subagents"
 import { ToolStepRow } from "@/components/chat/tool-step-row";
 import { type ApiStep, deriveTrace, formatDuration } from "@/components/chat/types";
 import { formatSubagentTokenCount, AgentPanelRow } from "@/components/session-ui/agent-panel-row";
-import { cnExt as cn } from "@/utils/cn";
+import { cx as cn } from "@/utils/cx";
 
 /**
  * The right-rail "Agents" tab: one card per fanned-out subagent, mirroring
@@ -136,9 +136,9 @@ function ChildStateDot({ status }: { status: ChildStatus }) {
     );
   }
   if (status === "failed" || status === "cancelled" || status === "interrupted") {
-    return <RiErrorWarningLine className="text-error-base size-4 shrink-0" aria-label="failed" />;
+    return <RiErrorWarningLine className="text-red-500 size-4 shrink-0" aria-label="failed" />;
   }
-  return <RiCheckLine className="text-success-base size-4 shrink-0" aria-label="completed" />;
+  return <RiCheckLine className="text-lime-600 size-4 shrink-0" aria-label="completed" />;
 }
 
 function AgentCardRow({
@@ -210,32 +210,32 @@ function AgentDetail({
 
   return (
     <div className="flex h-full flex-col">
-      <header className="border-stroke-soft-200 flex shrink-0 items-start gap-2 border-b px-3 py-2.5">
+      <header className="border-border-button-default flex shrink-0 items-start gap-2 border-b px-3 py-2.5">
         <button
           type="button"
           onClick={onBack}
           aria-label="Back to agents list"
-          className="text-text-sub-600 hover:bg-bg-soft-200 mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-lg transition-colors"
+          className="text-text-secondary hover:bg-background-secondary-hover mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-lg transition-colors"
         >
           <RiArrowLeftLine className="size-4" aria-hidden />
         </button>
-        <span className="bg-feature-lighter text-feature-base mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-lg">
+        <span className="bg-purple-50 text-purple-500 mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-lg">
           <RiRobot2Line className="size-3.5" aria-hidden />
         </span>
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
-            <span className="text-label-sm text-text-strong-950 min-w-0 flex-1 truncate">
+            <span className="text-body-2-medium text-text-primary min-w-0 flex-1 truncate">
               {card.title}
             </span>
             <ChildStateDot status={status} />
           </div>
           <div className="mt-0.5 flex items-center gap-2">
-            <span className="text-mono-label text-text-soft-400 flex-1">
+            <span className="text-mono-label text-text-tertiary flex-1">
               {fidelity?.role ?? "Subagent"}
               {status === "failed" ? " · failed" : ""}
             </span>
             {elapsed !== null && (
-              <span className="text-text-soft-400 shrink-0 font-mono text-label-xs tabular-nums">
+              <span className="text-text-tertiary shrink-0 font-mono text-caption-1-medium tabular-nums">
                 {formatDuration(elapsed)}
               </span>
             )}
@@ -245,7 +245,7 @@ function AgentDetail({
 
       <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3">
         {objective && objective !== card.title && (
-          <p className="text-paragraph-sm text-text-sub-600 border-stroke-soft-200 border-b pb-3">
+          <p className="text-body-2-regular text-text-secondary border-border-button-default border-b pb-3">
             {objective}
           </p>
         )}
@@ -255,17 +255,17 @@ function AgentDetail({
             className={cn(
               "rounded-xl border p-3",
               status === "failed"
-                ? "border-error-base/30 bg-error-lighter"
-                : "border-stroke-soft-200 bg-bg-weak-50",
+                ? "border-border-error-default/30 bg-red-50"
+                : "border-border-button-default bg-background-secondary-default",
             )}
           >
-            <p className="text-mono-label text-text-soft-400 mb-1">
+            <p className="text-mono-label text-text-tertiary mb-1">
               {status === "failed" ? "Error" : "Answer"}
             </p>
             <p
               className={cn(
-                "text-paragraph-sm whitespace-pre-wrap break-words",
-                status === "failed" ? "text-error-base" : "text-text-strong-950",
+                "text-body-2-regular whitespace-pre-wrap break-words",
+                status === "failed" ? "text-red-500" : "text-text-primary",
               )}
             >
               {fidelity.resultText}
@@ -278,7 +278,7 @@ function AgentDetail({
           fidelity?.model ||
           fidelity?.role ||
           fidelity?.resumable != null) && (
-          <div className="text-mono-label text-text-soft-400 flex flex-wrap gap-x-3 gap-y-1">
+          <div className="text-mono-label text-text-tertiary flex flex-wrap gap-x-3 gap-y-1">
             {fidelity.lastToolName && <span>Last tool: {fidelity.lastToolName}</span>}
             {fidelity.usage && (
               <span>{formatSubagentTokenCount(fidelity.usage.totalTokens)} tokens</span>
@@ -295,7 +295,7 @@ function AgentDetail({
         )}
 
         {activity.length === 0 && (fidelity?.recentActivity.length ?? 0) === 0 ? (
-          <p className="text-paragraph-sm text-text-soft-400 py-6 text-center">
+          <p className="text-body-2-regular text-text-tertiary py-6 text-center">
             {live
               ? "Waiting for the first native activity…"
               : childStatusLabel(status, fidelity?.resumable ?? null)}
@@ -305,9 +305,9 @@ function AgentDetail({
             {fidelity?.recentActivity.map((entry, index) => (
               <div
                 key={`${entry.at}:${index}:${entry.summary}`}
-                className="border-stroke-soft-200 bg-bg-weak-50 rounded-lg border px-3 py-2"
+                className="border-border-button-default bg-background-secondary-default rounded-lg border px-3 py-2"
               >
-                <p className="text-paragraph-xs text-text-sub-600 break-words">{entry.summary}</p>
+                <p className="text-caption-1-regular text-text-secondary break-words">{entry.summary}</p>
               </div>
             ))}
             {activity.map((step, i) => (
@@ -352,7 +352,7 @@ export function AgentsRail({
   if (cards.length === 0) {
     return (
       <div className="flex h-full items-center justify-center p-6">
-        <p className="text-paragraph-sm text-text-soft-400 text-center">
+        <p className="text-body-2-regular text-text-tertiary text-center">
           No subagents in this conversation yet.
         </p>
       </div>

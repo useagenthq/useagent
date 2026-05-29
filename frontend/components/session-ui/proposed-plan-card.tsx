@@ -18,14 +18,14 @@
 // it. Our canonical vocabulary has NO propose-plan event yet (plan.updated is a
 // checklist snapshot; approval.requested is a tool-operation approval), so nothing
 // feeds this card today - it renders from props and waits for backend plumbing.
-// Markdown renders through the prompt-kit Markdown primitive; tokens are AlignUI
+// Markdown renders through the prompt-kit Markdown primitive; tokens are BoardUI
 // semantic.
 
 import { memo, useState } from "react";
-import * as Badge from "@/components/ui/badge";
-import * as Button from "@/components/ui/button";
+import { Chip } from "@/components/base/badges/chip";
+import { Button } from "@/components/base/buttons/button";
 import { Markdown } from "@/components/prompt-kit/markdown";
-import { cn } from "@/utils/cn";
+import { cx as cn } from "@/utils/cx";
 
 /** First markdown heading of the plan, upstream's card title. */
 export function proposedPlanTitle(planMarkdown: string): string | null {
@@ -127,47 +127,45 @@ export const ProposedPlanCard = memo(function ProposedPlanCard({
     <section
       data-session-ui="proposed-plan-card"
       aria-label={title}
-      className="rounded-20 border border-stroke-soft-200 bg-bg-white-0 p-4 shadow-regular-xs"
+      className="rounded-20 border border-border-button-default bg-background-primary-default p-4 shadow-card"
     >
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-2">
-          <Badge.Root variant="light" color="blue">
+          <Chip variant="caption" color="blue">
             Plan
-          </Badge.Root>
-          <p className="truncate text-label-sm text-text-strong-950">{title}</p>
+          </Chip>
+          <p className="truncate text-body-2-medium text-text-primary">{title}</p>
         </div>
         {onImplement && (
-          <Button.Root
+          <Button
             variant="primary"
-            mode="filled"
-            size="xxsmall"
+            size="xs"
             onClick={() => onImplement(buildPlanImplementationPrompt(planMarkdown))}
           >
             Implement plan
-          </Button.Root>
+          </Button>
         )}
       </div>
       <div className="mt-3">
         <div className={cn("relative", collapsed && "max-h-[26rem] overflow-hidden")}>
-          <Markdown className="text-paragraph-sm text-text-sub-600">{body}</Markdown>
+          <Markdown className="text-body-2-regular text-text-secondary">{body}</Markdown>
           {collapsed && (
             <div
               aria-hidden
-              className="pointer-events-none absolute inset-x-0 bottom-0 h-24 bg-linear-to-t from-bg-white-0 via-bg-white-0/80 to-transparent"
+              className="pointer-events-none absolute inset-x-0 bottom-0 h-24 bg-linear-to-t from-background-primary-default via-background-primary-default/80 to-transparent"
             />
           )}
         </div>
         {canCollapse && (
           <div className="mt-3 flex justify-center">
-            <Button.Root
-              variant="neutral"
-              mode="stroke"
-              size="xxsmall"
+            <Button
+              variant="secondary"
+              size="xs"
               aria-expanded={expanded}
               onClick={() => setExpanded((value) => !value)}
             >
               {expanded ? "Collapse plan" : "Expand plan"}
-            </Button.Root>
+            </Button>
           </div>
         )}
       </div>

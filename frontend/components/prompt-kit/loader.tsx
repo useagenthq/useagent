@@ -41,7 +41,7 @@ export function CircularLoader({
   return (
     <div
       className={cn(
-        "border-primary-base animate-spin rounded-full border-2 border-t-transparent",
+        "border-accent-500 animate-spin rounded-full border-2 border-t-transparent",
         SIZE[size],
         className,
       )}
@@ -69,7 +69,7 @@ export function ClassicLoader({
         {[...Array(12)].map((_, i) => (
           <div
             key={i}
-            className="bg-primary-base absolute animate-[spinner-fade_1.2s_linear_infinite] rounded-full"
+            className="bg-accent-500 absolute animate-[spinner-fade_1.2s_linear_infinite] rounded-full"
             style={{
               top: "0",
               left: "50%",
@@ -99,7 +99,7 @@ export function PulseLoader({
 }) {
   return (
     <div className={cn("relative", SIZE[size], className)}>
-      <div className="border-primary-base absolute inset-0 animate-[thin-pulse_1.5s_ease-in-out_infinite] rounded-full border-2" />
+      <div className="border-accent-500 absolute inset-0 animate-[thin-pulse_1.5s_ease-in-out_infinite] rounded-full border-2" />
       <span className="sr-only">Loading</span>
     </div>
   );
@@ -116,7 +116,7 @@ export function PulseDotLoader({
   return (
     <div
       className={cn(
-        "bg-primary-base animate-[pulse-dot_1.2s_ease-in-out_infinite] rounded-full",
+        "bg-accent-500 animate-[pulse-dot_1.2s_ease-in-out_infinite] rounded-full",
         dot[size],
         className,
       )}
@@ -141,7 +141,7 @@ export function DotsLoader({
         <div
           key={i}
           className={cn(
-            "bg-primary-base animate-[bounce-dots_1.4s_ease-in-out_infinite] rounded-full",
+            "bg-accent-500 animate-[bounce-dots_1.4s_ease-in-out_infinite] rounded-full",
             dotSizes[size],
           )}
           style={{ animationDelay: `${i * 160}ms` }}
@@ -167,7 +167,7 @@ export function TypingLoader({
         <div
           key={i}
           className={cn(
-            "bg-primary-base animate-[typing_1s_infinite] rounded-full",
+            "bg-accent-500 animate-[typing_1s_infinite] rounded-full",
             dotSizes[size],
           )}
           style={{ animationDelay: `${i * 250}ms` }}
@@ -198,7 +198,7 @@ export function WaveLoader({
         <div
           key={i}
           className={cn(
-            "bg-primary-base animate-[wave_1s_ease-in-out_infinite] rounded-full",
+            "bg-accent-500 animate-[wave_1s_ease-in-out_infinite] rounded-full",
             barWidths[size],
           )}
           style={{ animationDelay: `${i * 100}ms`, height: heights[size][i] }}
@@ -224,7 +224,7 @@ export function BarsLoader({
         <div
           key={i}
           className={cn(
-            "bg-primary-base h-full animate-[wave-bars_1.2s_ease-in-out_infinite]",
+            "bg-accent-500 h-full animate-[wave-bars_1.2s_ease-in-out_infinite]",
             barWidths[size],
           )}
           style={{ animationDelay: `${i * 0.2}s` }}
@@ -247,10 +247,10 @@ export function TerminalLoader({
   const containerSizes = { sm: "h-4", md: "h-5", lg: "h-6" };
   return (
     <div className={cn("flex items-center space-x-1", containerSizes[size], className)}>
-      <span className={cn("text-primary-base font-mono", textSizes[size])}>{">"}</span>
+      <span className={cn("text-accent-500 font-mono", textSizes[size])}>{">"}</span>
       <div
         className={cn(
-          "bg-primary-base animate-[blink_1s_step-end_infinite]",
+          "bg-accent-500 animate-[blink_1s_step-end_infinite]",
           cursorSizes[size],
         )}
       />
@@ -319,13 +319,13 @@ export function TextDotsLoader({
   const textSizes = { sm: "text-xs", md: "text-sm", lg: "text-base" };
   return (
     <div className={cn("inline-flex items-center", className)}>
-      <span className={cn("text-text-strong-950 font-medium", textSizes[size])}>
+      <span className={cn("text-text-primary font-medium", textSizes[size])}>
         {text}
       </span>
       <span className="inline-flex">
-        <span className="text-text-strong-950 animate-[loading-dots_1.4s_infinite_0.2s]">.</span>
-        <span className="text-text-strong-950 animate-[loading-dots_1.4s_infinite_0.4s]">.</span>
-        <span className="text-text-strong-950 animate-[loading-dots_1.4s_infinite_0.6s]">.</span>
+        <span className="text-text-primary animate-[loading-dots_1.4s_infinite_0.2s]">.</span>
+        <span className="text-text-primary animate-[loading-dots_1.4s_infinite_0.4s]">.</span>
+        <span className="text-text-primary animate-[loading-dots_1.4s_infinite_0.6s]">.</span>
       </span>
     </div>
   );

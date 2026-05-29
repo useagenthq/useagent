@@ -7,7 +7,7 @@
 import { useReducedMotion } from "motion/react";
 import { type CSSProperties, type ElementType, type ReactNode, useEffect, useState } from "react";
 
-import { cn } from "@/utils/cn";
+import { cx } from "@/utils/cx";
 
 // The keyframe sweeps the gradient across the clipped text. Scoped name so it never
 // collides with the global `.agent-progress-loading-text` shimmer.
@@ -16,7 +16,7 @@ const SHIMMER_KEYFRAMES =
 
 // Soft -> strong -> soft, so the bright band reads as light passing over the label.
 const SHIMMER_CLASS_NAME =
-  "bg-[length:200%_100%] bg-clip-text text-transparent bg-[linear-gradient(110deg,hsl(var(--text-soft-400))_30%,hsl(var(--text-strong-950))_50%,hsl(var(--text-soft-400))_70%)]";
+  "bg-[length:200%_100%] bg-clip-text text-transparent bg-[linear-gradient(110deg,var(--color-text-tertiary)_30%,var(--color-text-primary)_50%,var(--color-text-tertiary)_70%)]";
 
 interface TextShimmerProps {
   children: ReactNode;
@@ -38,9 +38,9 @@ export function TextShimmer({ children, as: Comp = "span", duration = 2.5, class
       <style>{SHIMMER_KEYFRAMES}</style>
       <Comp
         style={style}
-        className={cn(
+        className={cx(
           "inline-block",
-          reduce ? "text-text-sub-600" : SHIMMER_CLASS_NAME,
+          reduce ? "text-text-secondary" : SHIMMER_CLASS_NAME,
           className,
         )}
       >
@@ -61,7 +61,7 @@ export function ShimmerLabel({
   className?: string;
 }) {
   return (
-    <TextShimmer as="span" duration={duration} className={cn("text-label-sm font-medium", className)}>
+    <TextShimmer as="span" duration={duration} className={cx("text-body-2-medium font-medium", className)}>
       {children}
     </TextShimmer>
   );
@@ -88,12 +88,12 @@ export function ThinkingShimmerDemo() {
   const current = DEMO_STEPS[step];
 
   return (
-    <div className="flex items-center justify-center rounded-xl bg-bg-weak-50 p-3">
-      <div className="flex w-full max-w-md items-center gap-2 rounded-2xl border border-stroke-soft-200 bg-bg-white-0 px-3.5 py-3 shadow-regular-sm">
+    <div className="flex items-center justify-center rounded-xl bg-background-secondary-default p-3">
+      <div className="flex w-full max-w-md items-center gap-2 rounded-2xl border border-border-button-default bg-background-primary-default px-3.5 py-3 shadow-sm">
         <span aria-hidden="true" className="flex shrink-0 items-center gap-1">
-          <span className="size-1.5 animate-pulse rounded-full bg-text-soft-400 [animation-delay:0ms]" />
-          <span className="size-1.5 animate-pulse rounded-full bg-text-soft-400 [animation-delay:200ms]" />
-          <span className="size-1.5 animate-pulse rounded-full bg-text-soft-400 [animation-delay:400ms]" />
+          <span className="size-1.5 animate-pulse rounded-full bg-foreground-icon-tertiary [animation-delay:0ms]" />
+          <span className="size-1.5 animate-pulse rounded-full bg-foreground-icon-tertiary [animation-delay:200ms]" />
+          <span className="size-1.5 animate-pulse rounded-full bg-foreground-icon-tertiary [animation-delay:400ms]" />
         </span>
         <ShimmerLabel key={step} duration={current.duration}>
           {current.label}

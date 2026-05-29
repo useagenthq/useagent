@@ -39,7 +39,7 @@ import { statusTone, TONE_TO_DOT } from "@/app/agent/runs/runs-data";
 import { type DotTone, StatusDot } from "@/components/shared/status-dot";
 import type { SidebarRun } from "@/components/shell/working-project-status";
 import { runGitRefs, GitChips } from "@/components/session-ui/git-chip";
-import { cn } from "@/utils/cn";
+import { cx as cn } from "@/utils/cx";
 import { relativeTime } from "@/utils/format";
 
 export interface ThreadRowPill {
@@ -59,13 +59,13 @@ export function resolveThreadRowPill(input: {
 }): ThreadRowPill | null {
   const tone = statusTone(input.status);
   if (tone === "live") {
-    return { label: "Working", dot: TONE_TO_DOT.live, textClass: "text-away-base" };
+    return { label: "Working", dot: TONE_TO_DOT.live, textClass: "text-orange-500" };
   }
   if (tone === "error") {
-    return { label: "Failed", dot: TONE_TO_DOT.error, textClass: "text-error-base" };
+    return { label: "Failed", dot: TONE_TO_DOT.error, textClass: "text-text-error-primary" };
   }
   if (tone === "success" && input.unread) {
-    return { label: "Completed", dot: TONE_TO_DOT.success, textClass: "text-success-base" };
+    return { label: "Completed", dot: TONE_TO_DOT.success, textClass: "text-lime-600" };
   }
   return null;
 }
@@ -76,15 +76,15 @@ export function resolveThreadRowPill(input: {
  * two-line column so the git identity chips fit under the title. */
 export function resolveThreadRowClassName(input: { active: boolean; gitLine?: boolean }): string {
   const base = cn(
-    "w-full cursor-pointer select-none rounded-lg px-2.5 text-label-sm transition-colors",
+    "w-full cursor-pointer select-none rounded-lg px-2.5 text-body-2-medium transition-colors",
     input.gitLine
       ? "flex flex-col justify-center gap-0.5 py-1.5"
       : "flex h-8 items-center gap-1.5",
   );
   if (input.active) {
-    return cn(base, "bg-bg-weak-50 font-medium text-text-strong-950");
+    return cn(base, "bg-background-secondary-default font-medium text-text-primary");
   }
-  return cn(base, "text-text-sub-600 hover:bg-bg-weak-50 hover:text-text-strong-950");
+  return cn(base, "text-text-secondary hover:bg-background-primary-hover hover:text-text-primary");
 }
 
 /** Upstream trailing-meta timestamp pick (latest-activity first), on our wire
@@ -146,7 +146,7 @@ export const ThreadRow = memo(function ThreadRow({
           <span
             className={cn(
               "shrink-0 text-[10px] tabular-nums",
-              active ? "text-text-strong-950" : "text-text-soft-400",
+              active ? "text-text-primary" : "text-text-tertiary",
             )}
           >
             {relativeTime(timestampMs)}

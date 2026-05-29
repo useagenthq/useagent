@@ -78,7 +78,7 @@ describe("engine model catalog", () => {
   test("backend-configured catalogs filter and preserve exact submitted ids", () => {
     expect(modelOptionsForEngine("codex", ["gpt-5.6-luna", "gpt-5.4"])).toEqual([
       { value: "gpt-5.6-luna", label: "GPT-5.6 Luna · Fast", tint: "text-sky-500" },
-      { value: "gpt-5.4", label: "gpt-5.4", tint: "text-text-sub-600" },
+      { value: "gpt-5.4", label: "gpt-5.4", tint: "text-text-secondary" },
     ]);
     expect(modelOptionsForEngine("opencode", ["openai/gpt-5.6-sol"])[0]?.value).toBe(
       "openai/gpt-5.6-sol",

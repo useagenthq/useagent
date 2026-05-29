@@ -3,9 +3,12 @@
 import { RiDatabase2Line, RiLockLine, RiSearchLine } from "@remixicon/react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-import * as Badge from "@/components/ui/badge";
-import * as Input from "@/components/ui/input";
-import * as SegmentedControl from "@/components/ui/segmented-control";
+import { Chip } from "@/components/base/badges/chip";
+import { Input } from "@/components/base/input/input";
+import {
+  SegmentedControl,
+  SegmentedControlItem,
+} from "@/components/base/segmented-control/segmented-control";
 import { BackendUnreachable } from "@/components/shared/backend-unreachable";
 import { CaptureInbox } from "./capture-inbox";
 import { RecallLedger } from "./recall-ledger";
@@ -205,10 +208,10 @@ export function MemoryHub({
     <div className="mx-auto w-full max-w-[880px] px-6 py-8 sm:px-10 sm:py-10">
       {/* Header */}
       <div className="flex items-start gap-2.5">
-        <RiDatabase2Line aria-hidden className="mt-0.5 size-5 text-text-strong-950" />
+        <RiDatabase2Line aria-hidden className="mt-0.5 size-5 text-foreground-icon-primary" />
         <div className="flex flex-col gap-0.5">
-          <h1 className="text-display-sm text-text-strong-950">Memory</h1>
-          <p className="text-paragraph-sm text-text-sub-600">
+          <h1 className="text-title-2-medium text-text-primary">Memory</h1>
+          <p className="text-body-2-regular text-text-secondary">
             The team memory useAgent recalls, captures, and can correct
           </p>
         </div>
@@ -216,42 +219,41 @@ export function MemoryHub({
 
       {/* Scope tabs */}
       <div className="mt-6">
-        <SegmentedControl.Root
-          value={scope}
-          onValueChange={(v) => setScope(v as MemoryScope)}
+        <SegmentedControl
+          aria-label="Memory scope"
+          className="w-[320px]"
+          selectedKeys={[scope]}
+          onSelectionChange={(keys) => {
+            const next = [...(keys as Set<string>)][0];
+            if (next) setScope(next as MemoryScope);
+          }}
         >
-          <SegmentedControl.List aria-label="Memory scope" className="w-[320px]">
-            {SCOPES.map((s) => (
-              <SegmentedControl.Trigger key={s} value={s}>
-                {SCOPE_META[s].short}
-              </SegmentedControl.Trigger>
-            ))}
-          </SegmentedControl.List>
-        </SegmentedControl.Root>
-        <p className="mt-2 text-paragraph-xs text-text-soft-400">{meta.hint}</p>
+          {SCOPES.map((s) => (
+            <SegmentedControlItem key={s} id={s} className="flex-1">
+              {SCOPE_META[s].short}
+            </SegmentedControlItem>
+          ))}
+        </SegmentedControl>
+        <p className="mt-2 text-caption-1-regular text-text-tertiary">{meta.hint}</p>
       </div>
 
       {failedClosed ? (
         <PersonalSignInNeeded />
       ) : memoryDisabled ? (
-        <p className="mt-8 text-paragraph-sm text-text-sub-600">
+        <p className="mt-8 text-body-2-regular text-text-secondary">
           Team memory is not configured on this deployment.
         </p>
       ) : (
         <>
           {/* Recall search */}
           <div className="mt-6">
-            <Input.Root>
-              <Input.Wrapper>
-                <Input.Icon as={RiSearchLine} />
-                <Input.Input
-                  aria-label={`Search ${meta.label}`}
-                  placeholder={`Recall from ${meta.label.toLowerCase()}...`}
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                />
-              </Input.Wrapper>
-            </Input.Root>
+            <Input
+              aria-label={`Search ${meta.label}`}
+              placeholder={`Recall from ${meta.label.toLowerCase()}...`}
+              leadingIcon={RiSearchLine}
+              value={query}
+              onChange={setQuery}
+            />
           </div>
 
           {isSearchMode ? (
@@ -264,19 +266,19 @@ export function MemoryHub({
           ) : browseError ? (
             <BackendUnreachable className="mt-8" onRetry={() => loadBrowse(scope)} />
           ) : storedList.length === 0 ? (
-            <p className="mt-10 text-paragraph-sm text-text-sub-600">
+            <p className="mt-10 text-body-2-regular text-text-secondary">
               No {meta.short.toLowerCase()} memory stored yet. It fills as runs
               capture outcomes into this pool.
             </p>
           ) : (
             <section className="mt-8 flex flex-col gap-4">
               <div className="flex items-center gap-2">
-                <h2 className="text-label-sm text-text-sub-600">Stored memory</h2>
-                <span className="text-paragraph-xs text-text-soft-400">
+                <h2 className="text-body-2-medium text-text-secondary">Stored memory</h2>
+                <span className="text-caption-1-regular text-text-tertiary">
                   showing {storedList.length} of {browse?.total ?? storedList.length}
                 </span>
               </div>
-              <p className="-mt-2 text-paragraph-xs text-text-soft-400">
+              <p className="-mt-2 text-caption-1-regular text-text-tertiary">
                 Delete removes a fact from the upstream pool. Correcting a fact is
                 wired to MemoryCore /v3/atomic/update, which currently rejects edits
                 to org-pool memory (&ldquo;belongs to a different user&rdquo;) - a
@@ -301,7 +303,7 @@ export function MemoryHub({
       {/* Organization activity (outbox + ledger) - org scope only. */}
       {scope === "org" && (
         <>
-          <div className="mt-12 border-t border-stroke-soft-200" />
+          <div className="mt-12 border-t border-separator-border" />
           <CaptureInbox
             captures={captures}
             error={capturesError}
@@ -329,43 +331,42 @@ function RecallResults({
   failed: boolean;
 }) {
   if (searching) {
-    return <p className="mt-8 text-label-sm text-text-sub-600">Searching...</p>;
+    return <p className="mt-8 text-body-2-medium text-text-secondary">Searching...</p>;
   }
   if (failed) {
     return <BackendUnreachable className="mt-8" />;
   }
   if (!results || results.length === 0) {
     return (
-      <p className="mt-8 text-paragraph-sm text-text-sub-600">
+      <p className="mt-8 text-body-2-regular text-text-secondary">
         No memory matches &ldquo;{query}&rdquo;.
       </p>
     );
   }
   return (
     <section className="mt-8 flex flex-col gap-3">
-      <h2 className="text-label-sm text-text-sub-600">
+      <h2 className="text-body-2-medium text-text-secondary">
         Recalled for &ldquo;{query}&rdquo;
       </h2>
       {results.map((it, i) => (
         <article
           key={`${it.citation.assetId}-${i}`}
-          className="flex flex-col gap-2 rounded-2xl bg-bg-white-0 p-4 shadow-regular-xs ring-1 ring-inset ring-stroke-soft-200"
+          className="flex flex-col gap-2 rounded-2xl bg-background-primary-default p-4 shadow-card ring-1 ring-inset ring-border-button-default"
         >
-          <p className="text-paragraph-sm text-text-strong-950">{it.content}</p>
+          <p className="text-body-2-regular text-text-primary">{it.content}</p>
           <div className="flex items-center gap-2">
-            <Badge.Root
-              variant="light"
-              size="medium"
+            <Chip
+              variant="caption"
               color={it.sourceScope === "org" ? "blue" : "purple"}
             >
               {SCOPE_META[it.sourceScope].tag}
-            </Badge.Root>
+            </Chip>
             {typeof it.citation.score === "number" && (
-              <span className="text-paragraph-xs text-text-soft-400">
+              <span className="text-caption-1-regular text-text-tertiary">
                 score {it.citation.score.toFixed(2)}
               </span>
             )}
-            <span className="truncate text-paragraph-xs text-text-soft-400">
+            <span className="truncate text-caption-1-regular text-text-tertiary">
               {it.citation.provider}:{it.citation.assetId.slice(0, 14)}
             </span>
           </div>
@@ -378,11 +379,11 @@ function RecallResults({
 /** Fail-closed panel for personal scope with no authenticated user. */
 function PersonalSignInNeeded() {
   return (
-    <div className="mt-8 flex items-start gap-3 rounded-2xl border border-stroke-soft-200 bg-bg-weak-50 px-4 py-4">
-      <RiLockLine aria-hidden className="mt-0.5 size-5 shrink-0 text-text-sub-600" />
+    <div className="mt-8 flex items-start gap-3 rounded-2xl border border-border-button-default bg-background-secondary-default px-4 py-4">
+      <RiLockLine aria-hidden className="mt-0.5 size-5 shrink-0 text-foreground-icon-secondary" />
       <div className="flex min-w-0 flex-col gap-0.5">
-        <p className="text-label-sm text-text-strong-950">Personal memory needs sign-in</p>
-        <p className="text-paragraph-sm text-text-sub-600">
+        <p className="text-body-2-medium text-text-primary">Personal memory needs sign-in</p>
+        <p className="text-body-2-regular text-text-secondary">
           Personal memory is private to your account. Sign in to browse, search,
           and correct it. Organization memory is available on the other tab.
         </p>

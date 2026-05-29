@@ -37,16 +37,16 @@ export function ArtifactPreview({ artifact, textPreview, className }: ArtifactPr
   return (
     <article
       aria-label={`Artifact preview: ${artifact.name}`}
-      className={`overflow-hidden rounded-2xl border border-stroke-soft-200 bg-bg-white-0 shadow-regular-xs ${className ?? ""}`}
+      className={`overflow-hidden rounded-2xl border border-border-button-default bg-background-primary-default shadow-card ${className ?? ""}`}
     >
-      <div className="flex items-center justify-between gap-3 border-b border-stroke-soft-200 bg-bg-weak-50 px-3 py-2.5">
+      <div className="flex items-center justify-between gap-3 border-b border-border-button-default bg-background-secondary-default px-3 py-2.5">
         <div className="flex min-w-0 items-center gap-2">
-          <span className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-bg-white-0 text-text-sub-600 shadow-regular-xs">
+          <span className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-background-primary-default text-text-secondary shadow-card">
             <Icon className="size-4" aria-hidden />
           </span>
           <div className="min-w-0">
-            <h3 className="truncate text-label-sm text-text-strong-950">{artifact.name}</h3>
-            <p className="truncate font-mono text-paragraph-xs text-text-soft-400">
+            <h3 className="truncate text-body-2-medium text-text-primary">{artifact.name}</h3>
+            <p className="truncate font-mono text-caption-1-regular text-text-tertiary">
               {artifact.source_path} · {formatArtifactSize(artifact.size_bytes)}
             </p>
           </div>
@@ -58,7 +58,7 @@ export function ArtifactPreview({ artifact, textPreview, className }: ArtifactPr
               target="_blank"
               rel="noreferrer"
               aria-label={`Open preview of ${artifact.name}`}
-              className="flex size-8 items-center justify-center rounded-lg text-text-soft-400 outline-none hover:bg-bg-soft-200 hover:text-text-strong-950 focus-visible:ring-2 focus-visible:ring-primary-base"
+              className="flex size-8 items-center justify-center rounded-lg text-text-tertiary outline-none hover:bg-background-secondary-hover hover:text-text-primary focus-visible:ring-2 focus-visible:ring-border-focus-ring"
             >
               <RiExternalLinkLine className="size-4" aria-hidden />
             </a>
@@ -68,7 +68,7 @@ export function ArtifactPreview({ artifact, textPreview, className }: ArtifactPr
               href={artifact.download_url}
               download={artifact.name}
               aria-label={`Download ${artifact.name}`}
-              className="flex size-8 items-center justify-center rounded-lg text-text-soft-400 outline-none hover:bg-bg-soft-200 hover:text-text-strong-950 focus-visible:ring-2 focus-visible:ring-primary-base"
+              className="flex size-8 items-center justify-center rounded-lg text-text-tertiary outline-none hover:bg-background-secondary-hover hover:text-text-primary focus-visible:ring-2 focus-visible:ring-border-focus-ring"
             >
               <RiDownloadLine className="size-4" aria-hidden />
             </a>
@@ -76,7 +76,7 @@ export function ArtifactPreview({ artifact, textPreview, className }: ArtifactPr
         </div>
       </div>
       {view.preview.renderer === "image" ? (
-        <div className="relative h-52 bg-bg-weak-50 bg-halftone">
+        <div className="relative h-52 bg-background-secondary-default bg-halftone">
           <Image
             src={artifact.preview_url}
             alt={`Preview of ${artifact.name}`}
@@ -94,9 +94,9 @@ export function ArtifactPreview({ artifact, textPreview, className }: ArtifactPr
           className="rounded-none border-0 shadow-none"
         />
       ) : (
-        <div className="flex min-h-40 flex-col items-center justify-center gap-2 bg-bg-weak-50 p-4 text-center">
-          <Icon className="size-8 text-text-soft-400" aria-hidden />
-          <p className="text-paragraph-sm text-text-sub-600">
+        <div className="flex min-h-40 flex-col items-center justify-center gap-2 bg-background-secondary-default p-4 text-center">
+          <Icon className="size-8 text-text-tertiary" aria-hidden />
+          <p className="text-body-2-regular text-text-secondary">
             Open the authenticated preview to inspect this artifact.
           </p>
         </div>

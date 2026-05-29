@@ -109,13 +109,11 @@ export function SidebarProjects() {
       {visible.map(projectRow)}
       {overflow.length > 0 ? (
         <>
-          {expanded ? (
-            <div className="max-h-56 overflow-y-auto">{overflow.map(projectRow)}</div>
-          ) : null}
+          {expanded ? overflow.map(projectRow) : null}
           <button
             type="button"
             onClick={() => setExpanded((v) => !v)}
-            className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-paragraph-xs text-text-soft-400 transition-colors hover:bg-bg-weak-50 hover:text-text-sub-600"
+            className="flex w-full items-center gap-2 rounded-2lg px-2.5 py-1.5 text-caption-1-regular text-text-tertiary transition-colors hover:bg-background-secondary-hover hover:text-text-secondary"
           >
             {expanded ? (
               <RiArrowUpSLine className="size-4" aria-hidden />

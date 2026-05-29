@@ -2,19 +2,18 @@
 
 import { useState } from "react";
 
-import * as Button from "@/components/ui/button";
-import * as Hint from "@/components/ui/hint";
-import * as Input from "@/components/ui/input";
-import * as Label from "@/components/ui/label";
+import { Button } from "@/components/base/buttons/button";
+import { Input } from "@/components/base/input/input";
+import { Label } from "@/components/base/input/label";
 import * as Modal from "@/components/ui/modal";
-import * as Textarea from "@/components/ui/textarea";
 import { createSkill } from "./skills-api";
 
 /**
- * "New skill" — the header dark pill plus the AlignUI modal it opens, mirroring
- * the knowledge add-modal. Collects a name, description, comma-separated tags,
- * and three step-sections (one step per line) → POSTs to `/api/skills`, then
- * refetches via `onCreated`.
+ * "New skill" — the header CTA plus the modal it opens, mirroring the knowledge
+ * add-modal. Collects a name, description, comma-separated tags, and three
+ * step-sections (one step per line) → POSTs to `/api/skills`, then refetches
+ * via `onCreated`. The Modal shell stays AlignUI (no BoardUI equivalent); its
+ * visible surfaces are restyled with BoardUI tokens.
  */
 
 type SaveStatus = "idle" | "saving" | "error";
@@ -25,6 +24,10 @@ function toLines(value: string): string[] {
     .map((line) => line.trim())
     .filter(Boolean);
 }
+
+/** Plain textarea styled to match the BoardUI input field shell. */
+const TEXTAREA_FIELD =
+  "w-full resize-y rounded-2lg bg-background-tertiary-default p-2 pl-3 font-sans text-body-regular text-text-primary outline-none ring-2 ring-inset ring-transparent transition-[box-shadow] placeholder:text-text-tertiary hover:ring-border-button-hover focus:ring-border-button-active disabled:cursor-not-allowed disabled:opacity-60";
 
 function SectionTextarea({
   id,
@@ -43,15 +46,15 @@ function SectionTextarea({
 }) {
   return (
     <div className="flex w-full flex-col gap-1">
-      <Label.Root htmlFor={id}>{label}</Label.Root>
-      <Textarea.Root
+      <Label htmlFor={id}>{label}</Label>
+      <textarea
         id={id}
-        simple
         rows={3}
         placeholder={placeholder}
         value={value}
         disabled={disabled}
         onChange={(event) => onChange(event.target.value)}
+        className={TEXTAREA_FIELD}
       />
     </div>
   );
@@ -117,69 +120,46 @@ export function NewSkillModal({
       }}
     >
       <Modal.Trigger asChild>
-        <Button.Root variant="neutral" mode="filled" className="rounded-full">
-          New skill
-        </Button.Root>
+        <Button variant="primary">New skill</Button>
       </Modal.Trigger>
 
-      <Modal.Content className="max-h-[90vh] max-w-[520px] overflow-y-auto">
+      <Modal.Content className="max-h-[90vh] max-w-[520px] overflow-y-auto rounded-3xl border border-border-button-default bg-background-primary-default shadow-dropdown">
         <div className="flex flex-col gap-5 p-6">
           <div className="flex flex-col gap-1.5">
-            <Modal.Title className="text-title-h6 text-text-strong-950">
+            <Modal.Title className="text-title-3-medium text-text-primary">
               New skill
             </Modal.Title>
-            <Modal.Description className="text-paragraph-sm text-text-sub-600">
+            <Modal.Description className="text-body-2-regular text-text-secondary">
               Capture a reusable skill useAgent can follow for repeatable work.
             </Modal.Description>
           </div>
 
           <div className="flex flex-col gap-4">
-            <div className="flex flex-col gap-1">
-              <Label.Root htmlFor="skill-name">Name</Label.Root>
-              <Input.Root>
-                <Input.Wrapper>
-                  <Input.Input
-                    id="skill-name"
-                    placeholder="e.g. Ship a new page"
-                    value={name}
-                    disabled={busy}
-                    onChange={(event) => setName(event.target.value)}
-                  />
-                </Input.Wrapper>
-              </Input.Root>
-            </div>
+            <Input
+              label="Name"
+              placeholder="e.g. Ship a new page"
+              value={name}
+              isDisabled={busy}
+              onChange={setName}
+            />
 
-            <div className="flex flex-col gap-1">
-              <Label.Root htmlFor="skill-description">Description</Label.Root>
-              <Input.Root>
-                <Input.Wrapper>
-                  <Input.Input
-                    id="skill-description"
-                    placeholder="When we need a new route that matches the shell…"
-                    value={description}
-                    disabled={busy}
-                    onChange={(event) => setDescription(event.target.value)}
-                  />
-                </Input.Wrapper>
-              </Input.Root>
-              <Hint.Root>A one-line summary of when to use this skill.</Hint.Root>
-            </div>
+            <Input
+              label="Description"
+              placeholder="When we need a new route that matches the shell…"
+              hint="A one-line summary of when to use this skill."
+              value={description}
+              isDisabled={busy}
+              onChange={setDescription}
+            />
 
-            <div className="flex flex-col gap-1">
-              <Label.Root htmlFor="skill-tags">Tags</Label.Root>
-              <Input.Root>
-                <Input.Wrapper>
-                  <Input.Input
-                    id="skill-tags"
-                    placeholder="frontend, alignui"
-                    value={tags}
-                    disabled={busy}
-                    onChange={(event) => setTags(event.target.value)}
-                  />
-                </Input.Wrapper>
-              </Input.Root>
-              <Hint.Root>Comma-separated, e.g. frontend, review</Hint.Root>
-            </div>
+            <Input
+              label="Tags"
+              placeholder="frontend, alignui"
+              hint="Comma-separated, e.g. frontend, review"
+              value={tags}
+              isDisabled={busy}
+              onChange={setTags}
+            />
 
             <SectionTextarea
               id="skill-overview"
@@ -208,20 +188,19 @@ export function NewSkillModal({
           </div>
 
           {status === "error" && (
-            <p className="rounded-xl bg-error-lighter px-3 py-2 text-paragraph-xs text-error-base">
+            <p className="rounded-xl bg-background-tertiary-error px-3 py-2 text-caption-1-regular text-text-error-primary">
               Couldn&rsquo;t reach useAgent. Check the backend and try again.
             </p>
           )}
 
           <div className="flex items-center justify-end gap-2">
             {busy && (
-              <span className="agent-progress-loading-text mr-auto text-paragraph-sm">
+              <span className="agent-progress-loading-text mr-auto text-body-2-regular">
                 Saving…
               </span>
             )}
-            <Button.Root className="rounded-full"
-              variant="neutral"
-              mode="stroke"
+            <Button
+              variant="secondary"
               onClick={() => {
                 setOpen(false);
                 reset();
@@ -229,13 +208,14 @@ export function NewSkillModal({
               disabled={busy}
             >
               Cancel
-            </Button.Root>
-            <Button.Root className="rounded-full"
+            </Button>
+            <Button
+              variant="primary"
               onClick={onSave}
               disabled={busy || !name.trim() || !description.trim()}
             >
               Create skill
-            </Button.Root>
+            </Button>
           </div>
         </div>
       </Modal.Content>

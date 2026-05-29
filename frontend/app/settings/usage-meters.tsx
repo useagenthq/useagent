@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { backendFetch } from "@/lib/backend-fetch";
 import { BackendUnreachable } from "@/components/shared/backend-unreachable";
 import { modelStyle } from "@/components/shared/model-mark";
-import { cnExt } from "@/utils/cn";
+import { cx } from "@/utils/cx";
 import { compactNumber } from "@/utils/format";
 import { extractFleet, type FleetData, type ModelBurn } from "@/components/fleet/fleet-data";
 
@@ -24,7 +24,10 @@ function ShareMeter({ value, fill }: { value: number; fill: string }) {
       {Array.from({ length: METER_BARS }, (_, index) => (
         <span
           key={index}
-          className={cnExt("h-3 w-[3px] rounded-full", index < filled ? fill : "bg-bg-soft-200")}
+          className={cx(
+            "h-3 w-[3px] rounded-full",
+            index < filled ? fill : "bg-background-tertiary-default",
+          )}
         />
       ))}
     </span>
@@ -36,14 +39,14 @@ function ModelRow({ model, totalTokens }: { model: ModelBurn; totalTokens: numbe
   const share = totalTokens > 0 ? model.tokens / totalTokens : 0;
   return (
     <div className="flex items-center gap-2 py-1.5">
-      <Mark className={cnExt("size-[18px] shrink-0", markClass)} aria-hidden />
-      <span className="min-w-0 flex-1 truncate text-label-sm text-text-strong-950">
+      <Mark className={cx("size-[18px] shrink-0", markClass)} aria-hidden />
+      <span className="min-w-0 flex-1 truncate text-body-2-medium text-text-primary">
         {model.model}
       </span>
-      <span className="font-mono text-label-xs tabular-nums text-text-soft-400">
+      <span className="font-mono text-caption-1-regular tabular-nums text-text-tertiary">
         {model.tokens > 0 ? compactNumber(model.tokens) : "-"}
       </span>
-      <span className="w-9 text-right text-label-xs tabular-nums text-text-sub-600">
+      <span className="w-9 text-right text-caption-1-regular tabular-nums text-text-secondary">
         {Math.round(share * 100)}%
       </span>
       <ShareMeter value={share} fill={fill} />
@@ -75,8 +78,8 @@ export function UsageMeters() {
 
   if (state === "loading") {
     return (
-      <div className="rounded-xl border border-stroke-soft-200 bg-bg-weak-50 px-4 py-6 text-center">
-        <p className="text-paragraph-xs text-text-soft-400">Loading usage...</p>
+      <div className="rounded-xl border border-border-button-default bg-background-secondary-default px-4 py-6 text-center">
+        <p className="text-caption-1-regular text-text-tertiary">Loading usage...</p>
       </div>
     );
   }
@@ -92,9 +95,9 @@ export function UsageMeters() {
 
   if (models.length === 0) {
     return (
-      <div className="rounded-xl border border-stroke-soft-200 bg-bg-weak-50 px-4 py-6 text-center">
-        <p className="text-label-sm text-text-strong-950">No model usage yet</p>
-        <p className="mt-0.5 text-paragraph-xs text-text-sub-600">
+      <div className="rounded-xl border border-border-button-default bg-background-secondary-default px-4 py-6 text-center">
+        <p className="text-body-2-medium text-text-primary">No model usage yet</p>
+        <p className="mt-0.5 text-caption-1-regular text-text-secondary">
           Model consumption appears here once you run a task this cycle.
         </p>
       </div>
@@ -102,16 +105,16 @@ export function UsageMeters() {
   }
 
   return (
-    <div className="rounded-xl border border-stroke-soft-200 bg-bg-weak-50 px-4 py-3">
+    <div className="rounded-xl border border-border-button-default bg-background-secondary-default px-4 py-3">
       {models.map((model) => (
         <ModelRow key={model.model} model={model} totalTokens={fleet.totalTokens} />
       ))}
-      <div className="mt-2 flex items-center justify-between border-t border-stroke-soft-200 pt-2.5">
-        <span className="text-mono-label text-text-soft-400">tokens today</span>
-        <span className="font-mono text-label-sm tabular-nums text-text-strong-950">
+      <div className="mt-2 flex items-center justify-between border-t border-separator-border pt-2.5">
+        <span className="text-mono-label text-text-tertiary">tokens today</span>
+        <span className="font-mono text-body-2-medium tabular-nums text-text-primary">
           {compactNumber(fleet.totalTokens)}
           {fleet.totalCost > 0 ? (
-            <span className="ml-2 text-text-soft-400">${fleet.totalCost.toFixed(2)}</span>
+            <span className="ml-2 text-text-tertiary">${fleet.totalCost.toFixed(2)}</span>
           ) : null}
         </span>
       </div>

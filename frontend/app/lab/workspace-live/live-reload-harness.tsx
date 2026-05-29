@@ -154,11 +154,11 @@ function LivePane({
   readonly label: string;
 }) {
   return (
-    <section className="flex w-[460px] shrink-0 flex-col overflow-hidden rounded-2xl border border-stroke-soft-200 bg-bg-white-0">
-      <div className="flex items-center justify-between gap-2 border-b border-stroke-soft-200 px-3 py-2">
+    <section className="flex w-[460px] shrink-0 flex-col overflow-hidden rounded-2xl border border-border-button-default bg-background-primary-default">
+      <div className="flex items-center justify-between gap-2 border-b border-border-button-default px-3 py-2">
         <div className="flex items-center gap-2">
-          <span className="text-mono-label text-text-soft-400">Rail</span>
-          <span className="inline-flex h-6 items-center rounded-md bg-bg-strong-950 px-2 text-label-xs text-text-white-0">
+          <span className="text-mono-label text-text-tertiary">Rail</span>
+          <span className="inline-flex h-6 items-center rounded-md bg-foreground-icon-primary px-2 text-label-xs text-background-full">
             Workspace
           </span>
         </div>
@@ -166,7 +166,7 @@ function LivePane({
           type="button"
           data-testid={`revise-${id}`}
           onClick={onRevise}
-          className="inline-flex h-7 items-center rounded-lg border border-stroke-soft-200 px-2.5 text-label-xs text-text-sub-600 hover:bg-bg-weak-50 hover:text-text-strong-950"
+          className="inline-flex h-7 items-center rounded-lg border border-border-button-default px-2.5 text-label-xs text-text-secondary hover:bg-background-secondary-default hover:text-text-primary"
         >
           Simulate agent revision ({label})
         </button>
@@ -187,10 +187,10 @@ export function WorkspaceLiveHarness() {
   // Force a fresh mount when needed; not required for the proof but handy.
   const [key] = useState(0);
   return (
-    <main data-testid="workspace-live" className="min-h-full bg-bg-white-0 p-6">
+    <main data-testid="workspace-live" className="min-h-full bg-background-primary-default p-6">
       <div className="mx-auto max-w-6xl">
-        <h1 className="text-title-h5 text-text-strong-950">Workspace live-reload</h1>
-        <p className="mt-1 max-w-3xl text-paragraph-sm text-text-sub-600">
+        <h1 className="text-title-h5 text-text-primary">Workspace live-reload</h1>
+        <p className="mt-1 max-w-3xl text-body-2-regular text-text-secondary">
           The real Workspace pane + editor hook + org-change stream. "Simulate agent revision"
           mutates the backing state and emits an artifact change; a clean (not-dirty) editor
           reloads and the rendered surface updates in place. Slides and sheet shown.

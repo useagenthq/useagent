@@ -3,9 +3,13 @@
 import { useMemo, useState } from "react";
 import { RiCheckLine, RiPlayMiniLine } from "@remixicon/react";
 
-import * as Badge from "@/components/ui/badge";
-import * as Button from "@/components/ui/button";
-import * as SegmentedControl from "@/components/ui/segmented-control";
+import { Chip, type ChipProps } from "@/components/base/badges/chip";
+import { Button } from "@/components/base/buttons/button";
+import {
+  SegmentedControl,
+  SegmentedControlItem,
+} from "@/components/base/segmented-control/segmented-control";
+import type { ChipColor } from "../knowledge/knowledge-data";
 import {
   skillIconIndex,
   skillIconPool,
@@ -20,6 +24,20 @@ import {
  * same object at two densities. Tag filters are derived from the real data.
  */
 
+/** AlignUI badge hue (from the shared tag palette) → BoardUI Chip color. */
+const CHIP_COLOR: Record<ChipColor, NonNullable<ChipProps["color"]>> = {
+  gray: "gray",
+  blue: "blue",
+  orange: "yellow",
+  red: "rose",
+  green: "lime",
+  yellow: "yellow",
+  purple: "purple",
+  sky: "cyan",
+  pink: "rose",
+  teal: "cyan",
+};
+
 function SkillCard({
   skill,
   onRun,
@@ -31,41 +49,36 @@ function SkillCard({
 }) {
   const Icon = skillIconPool[skillIconIndex(skill)];
   return (
-    <article className="flex flex-col rounded-2xl bg-bg-white-0 p-4 shadow-regular-sm ring-1 ring-inset ring-stroke-soft-200">
-      <div className="flex size-9 items-center justify-center rounded-lg border border-stroke-soft-200 bg-bg-weak-50">
-        <Icon aria-hidden className="size-5 text-text-sub-600" />
+    <article className="flex flex-col rounded-2xl bg-background-primary-default p-4 shadow-sm ring-1 ring-inset ring-border-button-default">
+      <div className="flex size-9 items-center justify-center rounded-lg border border-border-button-default bg-background-secondary-default">
+        <Icon aria-hidden className="size-5 text-foreground-icon-secondary" />
       </div>
-      <h3 className="mt-3 text-label-sm text-text-strong-950">{skill.name}</h3>
-      <p className="mt-1 text-paragraph-xs text-text-sub-600">
+      <h3 className="mt-3 text-body-2-medium text-text-primary">{skill.name}</h3>
+      <p className="mt-1 text-caption-1-regular text-text-secondary">
         {skill.description}
       </p>
       {skill.tags.length > 0 && (
         <div className="mt-3 flex flex-wrap gap-1.5">
           {skill.tags.map((tag) => (
-            <Badge.Root
-              key={tag}
-              variant="light"
-              size="medium"
-              color={tagChipColor(tag)}
-            >
+            <Chip key={tag} variant="caption" color={CHIP_COLOR[tagChipColor(tag)]}>
               {tag}
-            </Badge.Root>
+            </Chip>
           ))}
         </div>
       )}
-      <div className="mt-4 flex items-center justify-between gap-2 border-t border-stroke-soft-200 pt-3">
-        <p className="text-paragraph-xs text-text-soft-400">
+      <div className="mt-4 flex items-center justify-between gap-2 border-t border-separator-border pt-3">
+        <p className="text-caption-1-regular text-text-tertiary">
           Used {skill.usageCount} {skill.usageCount === 1 ? "time" : "times"}
         </p>
-        <Button.Root className="rounded-full"
-          variant="neutral"
-          mode="ghost"
-          size="xsmall"
+        <Button
+          variant="ghost"
+          size="xs"
+          className="rounded-full"
+          leadingIcon={ran ? RiCheckLine : RiPlayMiniLine}
           onClick={() => onRun(skill)}
         >
-          <Button.Icon as={ran ? RiCheckLine : RiPlayMiniLine} />
           {ran ? "Ran" : "Run"}
-        </Button.Root>
+        </Button>
       </div>
     </article>
   );
@@ -100,15 +113,20 @@ export function SkillsLibrary({
 
   return (
     <section className="mt-8">
-      <SegmentedControl.Root value={active} onValueChange={setActive}>
-        <SegmentedControl.List aria-label="Filter skills by tag">
-          {filters.map(({ id, label }) => (
-            <SegmentedControl.Trigger key={id} value={id}>
-              {label}
-            </SegmentedControl.Trigger>
-          ))}
-        </SegmentedControl.List>
-      </SegmentedControl.Root>
+      <SegmentedControl
+        aria-label="Filter skills by tag"
+        selectedKeys={[active]}
+        onSelectionChange={(keys) => {
+          const next = [...(keys as Set<string>)][0];
+          if (next) setActive(next);
+        }}
+      >
+        {filters.map(({ id, label }) => (
+          <SegmentedControlItem key={id} id={id}>
+            {label}
+          </SegmentedControlItem>
+        ))}
+      </SegmentedControl>
 
       <div className="mt-5 grid grid-cols-1 gap-x-5 gap-y-5 sm:grid-cols-2 lg:grid-cols-3">
         {visible.map((skill) => (

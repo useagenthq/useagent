@@ -63,15 +63,15 @@ export function BackgroundStatusPill({
     <div
       data-session-ui="background-status-pill"
       role="status"
-      className="flex items-center gap-2 rounded-full border border-stroke-soft-200 bg-bg-weak-50 px-3 py-1.5 text-[12px] leading-5 text-text-strong-950 shadow-regular-xs"
+      className="flex items-center gap-2 rounded-full border border-border-button-default bg-background-secondary-default px-3 py-1.5 text-[12px] leading-5 text-text-primary shadow-card"
     >
       <span
-        className="ai-loading-pixel size-1.5 shrink-0 rounded-full bg-success-base"
+        className="ai-loading-pixel size-1.5 shrink-0 rounded-full bg-lime-500"
         aria-hidden
       />
       <span className="min-w-0 truncate font-medium">{label}</span>
       {startedAt && (
-        <span className="shrink-0 text-text-soft-400">
+        <span className="shrink-0 text-text-tertiary">
           for <ElapsedTimer startedAt={startedAt} />
         </span>
       )}
@@ -79,7 +79,7 @@ export function BackgroundStatusPill({
         type="button"
         disabled={stopping}
         onClick={onStop}
-        className="ml-auto shrink-0 rounded-lg border border-stroke-soft-200 px-2 py-0.5 text-label-xs text-text-sub-600 transition-colors hover:bg-bg-soft-200 disabled:cursor-not-allowed disabled:opacity-60"
+        className="ml-auto shrink-0 rounded-lg border border-border-button-default px-2 py-0.5 text-caption-1-medium text-text-secondary transition-colors hover:bg-background-tertiary-hover disabled:cursor-not-allowed disabled:opacity-60"
       >
         {stopping ? "Stopping..." : "Stop"}
       </button>

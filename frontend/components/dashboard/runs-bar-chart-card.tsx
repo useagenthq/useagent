@@ -18,13 +18,13 @@ function BarTooltip({ active, payload }: TooltipProps<number, string>) {
   const bucket = payload[0]?.payload as DayBucket | undefined;
   if (!bucket) return null;
   return (
-    <div className='rounded-lg bg-bg-white-0 px-3 py-2 text-paragraph-xs shadow-tooltip ring-1 ring-inset ring-stroke-soft-200'>
-      <p className='mb-1 text-label-xs text-text-strong-950'>{bucket.label}</p>
-      <p className='text-text-sub-600'>
+    <div className='rounded-lg bg-background-primary-default px-3 py-2 text-caption-1-regular shadow-tooltip ring-1 ring-inset ring-border-button-default'>
+      <p className='mb-1 text-label-xs text-text-primary'>{bucket.label}</p>
+      <p className='text-text-secondary'>
         {bucket.total} {bucket.total === 1 ? 'run' : 'runs'}
       </p>
-      <p className='text-success-base'>{bucket.completed} completed</p>
-      {bucket.failed > 0 && <p className='text-error-base'>{bucket.failed} failed</p>}
+      <p className='text-status-lime-text'>{bucket.completed} completed</p>
+      {bucket.failed > 0 && <p className='text-text-error-primary'>{bucket.failed} failed</p>}
     </div>
   );
 }
@@ -38,10 +38,10 @@ export function RunsBarChartCard({ data, total }: { data: DayBucket[]; total: nu
     <Card className='h-[329px] gap-4'>
       <div className='flex items-start justify-between'>
         <div className='flex flex-col gap-0.5'>
-          <p className='text-paragraph-sm text-text-sub-600'>Runs this week</p>
-          <p className='text-label-lg font-semibold tracking-[-0.1px] tabular-nums text-text-strong-950'>{total}</p>
+          <p className='text-body-2-regular text-text-secondary'>Runs this week</p>
+          <p className='text-label-lg font-semibold tracking-[-0.1px] tabular-nums text-text-primary'>{total}</p>
         </div>
-        <span className='text-paragraph-xs text-text-soft-400'>Last 7 days</span>
+        <span className='text-caption-1-regular text-text-tertiary'>Last 7 days</span>
       </div>
 
       <div className='h-[220px] w-full [&_.recharts-cartesian-axis-tick_text]:fill-text-soft-400 [&_.recharts-surface]:outline-none'>
@@ -49,7 +49,7 @@ export function RunsBarChartCard({ data, total }: { data: DayBucket[]; total: nu
           <BarChart data={data} barCategoryGap='22%' margin={{ top: 8, right: 0, bottom: 0, left: 0 }}>
             <CartesianGrid
               vertical={false}
-              stroke='hsl(var(--stroke-soft-200))'
+              stroke='var(--color-chart-track)'
               strokeDasharray='3 3'
             />
             <XAxis

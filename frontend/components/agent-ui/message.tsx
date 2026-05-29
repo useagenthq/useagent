@@ -24,7 +24,7 @@ import {
   useState,
 } from "react";
 
-import { cn } from "@/utils/cn";
+import { cx } from "@/utils/cx";
 
 // -- motion tokens ---------------------------------------------------------
 const EASE_OUT = [0.16, 1, 0.3, 1] as const;
@@ -66,7 +66,7 @@ export function Message({
         exit={reduce ? { opacity: 0 } : { opacity: 0, y: -3, scale: 0.99 }}
         transition={reduce ? { duration: 0.12 } : MESSAGE_POP_UP}
         style={{ transformOrigin: from === "user" ? "100% 100%" : "0% 100%", ...style }}
-        className={cn(
+        className={cx(
           "group/message flex w-full items-start gap-2",
           from === "user" ? "flex-row-reverse" : "flex-row",
           className,
@@ -88,7 +88,7 @@ export function MessageGroup({ spacing = "default", className, ...props }: Messa
   return (
     <div
       data-slot="message-group"
-      className={cn("flex w-full flex-col", spacing === "compact" ? "gap-1.5" : "gap-4", className)}
+      className={cx("flex w-full flex-col", spacing === "compact" ? "gap-1.5" : "gap-4", className)}
       {...props}
     />
   );
@@ -108,9 +108,9 @@ export function MessageAvatar({ placeholder = false, children, className, ...pro
     <div
       data-slot="message-avatar"
       aria-hidden={placeholder || undefined}
-      className={cn(
-        "grid size-7 shrink-0 place-items-center overflow-hidden rounded-full bg-bg-weak-50 text-[11px] font-medium text-text-sub-600 [&_img]:size-full [&_img]:object-cover [&_svg]:size-3.5",
-        from === "assistant" && "text-primary-base",
+      className={cx(
+        "grid size-7 shrink-0 place-items-center overflow-hidden rounded-full bg-background-secondary-default text-[11px] font-medium text-text-secondary [&_img]:size-full [&_img]:object-cover [&_svg]:size-3.5",
+        from === "assistant" && "text-accent-500",
         placeholder && "invisible",
         className,
       )}
@@ -128,7 +128,7 @@ export function MessageContent({ className, ...props }: ComponentPropsWithRef<"d
   return (
     <div
       data-slot="message-content"
-      className={cn(
+      className={cx(
         "flex min-w-0 flex-1 flex-col gap-1.5",
         from === "user" ? "items-end" : "items-start",
         className,
@@ -145,8 +145,8 @@ export function MessageHeader({ className, ...props }: ComponentPropsWithRef<"di
   return (
     <div
       data-slot="message-header"
-      className={cn(
-        "flex items-center gap-1.5 px-1 text-[11px] leading-none text-text-sub-600",
+      className={cx(
+        "flex items-center gap-1.5 px-1 text-[11px] leading-none text-text-secondary",
         from === "user" ? "justify-end" : "justify-start",
         className,
       )}
@@ -162,8 +162,8 @@ export function MessageFooter({ className, ...props }: ComponentPropsWithRef<"di
   return (
     <div
       data-slot="message-footer"
-      className={cn(
-        "flex min-h-5 items-center gap-1 px-1 text-[11px] text-text-soft-400",
+      className={cx(
+        "flex min-h-5 items-center gap-1 px-1 text-[11px] text-text-tertiary",
         from === "user" ? "justify-end" : "justify-start",
         className,
       )}
@@ -177,8 +177,8 @@ export function MessageMarker({ className, ...props }: ComponentPropsWithRef<"di
   return (
     <div
       data-slot="message-marker"
-      className={cn(
-        "mx-auto flex w-fit max-w-[88%] items-center gap-1.5 rounded-full bg-bg-weak-50 px-2.5 py-1 text-center text-paragraph-xs text-text-sub-600",
+      className={cx(
+        "mx-auto flex w-fit max-w-[88%] items-center gap-1.5 rounded-full bg-background-secondary-default px-2.5 py-1 text-center text-caption-1-regular text-text-secondary",
         className,
       )}
       {...props}
@@ -195,7 +195,7 @@ export function MessageTyping({ label = "Responding", className, ...props }: Mes
   const reduce = useReducedMotion() ?? false;
 
   return (
-    <span data-slot="message-typing" className={cn("inline-flex h-5 items-center gap-1", className)} {...props}>
+    <span data-slot="message-typing" className={cx("inline-flex h-5 items-center gap-1", className)} {...props}>
       <span className="sr-only">{label}</span>
       {[0, 1, 2].map((index) => (
         <motion.span
@@ -257,7 +257,7 @@ function InlineMarkdown({ text }: { text: string }) {
           return (
             <code
               key={index}
-              className="rounded bg-bg-weak-50 px-1 py-0.5 font-mono text-[0.9em] text-text-strong-950"
+              className="rounded bg-background-secondary-default px-1 py-0.5 font-mono text-[0.9em] text-text-primary"
             >
               {token.value}
             </code>
@@ -270,7 +270,7 @@ function InlineMarkdown({ text }: { text: string }) {
               href={token.href}
               target="_blank"
               rel="noreferrer noopener"
-              className="font-medium text-primary-base underline underline-offset-2 outline-none hover:opacity-80 focus-visible:ring-2 focus-visible:ring-stroke-strong-950"
+              className="font-medium text-accent-500 underline underline-offset-2 outline-none hover:opacity-80 focus-visible:ring-2 focus-visible:ring-border-focus-ring"
             >
               {token.value}
             </a>
@@ -307,12 +307,12 @@ export function MessageMarkdown({ content, className }: { content: string; class
   const blocks = useMemo(() => parseBlocks(content), [content]);
 
   return (
-    <div className={cn("flex flex-col gap-2", className)}>
+    <div className={cx("flex flex-col gap-2", className)}>
       {blocks.map((block, index) =>
         block.kind === "code" ? (
           <pre
             key={index}
-            className="overflow-x-auto rounded-xl border border-stroke-soft-200 bg-bg-weak-50 p-3 font-mono text-[13px] leading-relaxed text-text-strong-950"
+            className="overflow-x-auto rounded-xl border border-border-button-default bg-background-secondary-default p-3 font-mono text-[13px] leading-relaxed text-text-primary"
           >
             <code>{block.value}</code>
           </pre>
@@ -343,11 +343,11 @@ export function MessageBubble({ content, className }: MessageBubbleProps) {
   return (
     <div
       data-slot="message-bubble"
-      className={cn(
-        "max-w-[82%] text-paragraph-sm",
+      className={cx(
+        "max-w-[82%] text-body-2-regular",
         from === "user"
-          ? "rounded-2xl bg-primary-base px-3.5 py-2.5 text-static-white"
-          : "rounded-2xl bg-bg-weak-50 px-3.5 py-2.5 text-text-strong-950",
+          ? "rounded-2xl bg-accent-500 px-3.5 py-2.5 text-text-white"
+          : "rounded-2xl bg-background-secondary-default px-3.5 py-2.5 text-text-primary",
         className,
       )}
     >
@@ -381,8 +381,8 @@ export function MessageCopyButton({ value, className }: { value: string; classNa
       type="button"
       onClick={copy}
       aria-label={copied ? "Copied" : "Copy message"}
-      className={cn(
-        "inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-medium text-text-soft-400 outline-none transition-colors hover:bg-bg-weak-50 hover:text-text-sub-600 focus-visible:ring-2 focus-visible:ring-stroke-strong-950",
+      className={cx(
+        "inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-medium text-text-tertiary outline-none transition-colors hover:bg-background-primary-hover hover:text-text-secondary focus-visible:ring-2 focus-visible:ring-border-focus-ring",
         className,
       )}
     >
@@ -395,7 +395,7 @@ export function MessageCopyButton({ value, className }: { value: string; classNa
               animate={{ opacity: 1, scale: 1 }}
               exit={reduce ? { opacity: 0 } : { opacity: 0, scale: 0.7 }}
               transition={reduce ? { duration: 0 } : SPRING_SWAP}
-              className="absolute text-success-base"
+              className="absolute text-lime-600"
             >
               <RiCheckLine className="size-3.5" />
             </motion.span>
@@ -464,7 +464,7 @@ export function MessageDemo() {
   const assistantThinking = step === 1;
 
   return (
-    <div className="flex items-center justify-center rounded-xl bg-bg-weak-50 p-3">
+    <div className="flex items-center justify-center rounded-xl bg-background-secondary-default p-3">
       <div className="w-full max-w-md">
         <MessageGroup>
           <AnimatePresence mode="popLayout">
@@ -472,7 +472,7 @@ export function MessageDemo() {
               <MessageAvatar>AB</MessageAvatar>
               <MessageContent>
                 <MessageHeader>
-                  <span className="font-medium text-text-strong-950">{DEMO_TURNS[0].name}</span>
+                  <span className="font-medium text-text-primary">{DEMO_TURNS[0].name}</span>
                   <span>·</span>
                   <span>{DEMO_TURNS[0].time}</span>
                 </MessageHeader>
@@ -489,10 +489,10 @@ export function MessageDemo() {
                 <MessageAvatar />
                 <MessageContent>
                   <MessageHeader>
-                    <span className="font-medium text-text-strong-950">{DEMO_TURNS[1].name}</span>
+                    <span className="font-medium text-text-primary">{DEMO_TURNS[1].name}</span>
                   </MessageHeader>
                   {assistantThinking ? (
-                    <div className="rounded-2xl bg-bg-weak-50 px-3.5 py-2.5 text-text-sub-600">
+                    <div className="rounded-2xl bg-background-secondary-default px-3.5 py-2.5 text-text-secondary">
                       <MessageTyping />
                     </div>
                   ) : (

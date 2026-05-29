@@ -1,6 +1,6 @@
 // Vendored from prompt-kit (prompt-kit.com/c/markdown.json), adapted to the
 // AlignUI foundation: `cn` → `cnExt` and the inline-code token
-// (`bg-primary-foreground`) → AlignUI `bg-bg-weak-50`. Block-splitting +
+// (`bg-primary-foreground`) → AlignUI `bg-background-secondary-default`. Block-splitting +
 // per-block memoization keep re-renders cheap while text streams in.
 
 import { cnExt as cn } from "@/utils/cn";
@@ -41,7 +41,7 @@ const INITIAL_COMPONENTS: Partial<Components> = {
       return (
         <span
           className={cn(
-            "bg-bg-weak-50 text-text-strong-950 ring-stroke-soft-200 rounded-md px-1.5 py-0.5 font-mono text-[0.85em] ring-1 ring-inset",
+            "bg-background-secondary-default text-text-primary ring-border-button-default rounded-md px-1.5 py-0.5 font-mono text-[0.85em] ring-1 ring-inset",
             className,
           )}
           {...props}
@@ -70,42 +70,42 @@ const INITIAL_COMPONENTS: Partial<Components> = {
   // cram the column; header on the weak surface, rows split by soft hairlines.
   table: function TableComponent({ children }) {
     return (
-      <div className="border-stroke-soft-200 my-3 w-full overflow-x-auto rounded-lg border">
-        <table className="w-full border-collapse text-paragraph-sm [&_tbody_tr:last-child]:border-b-0">
+      <div className="border-border-button-default my-3 w-full overflow-x-auto rounded-lg border">
+        <table className="w-full border-collapse text-body-2-regular [&_tbody_tr:last-child]:border-b-0">
           {children}
         </table>
       </div>
     );
   },
   thead: function TheadComponent({ children }) {
-    return <thead className="bg-bg-weak-50">{children}</thead>;
+    return <thead className="bg-background-secondary-default">{children}</thead>;
   },
   tr: function TrComponent({ children }) {
     return (
-      <tr className="border-stroke-soft-200 border-b">{children}</tr>
+      <tr className="border-border-button-default border-b">{children}</tr>
     );
   },
   th: function ThComponent({ children }) {
     return (
-      <th className="text-text-sub-600 text-label-xs px-3 py-2 text-left align-top font-medium">
+      <th className="text-text-secondary text-caption-1-medium px-3 py-2 text-left align-top">
         {children}
       </th>
     );
   },
   td: function TdComponent({ children }) {
     return (
-      <td className="text-text-strong-950 px-3 py-2 align-top">{children}</td>
+      <td className="text-text-primary px-3 py-2 align-top">{children}</td>
     );
   },
   blockquote: function BlockquoteComponent({ children }) {
     return (
-      <blockquote className="border-stroke-soft-200 text-text-sub-600 my-3 border-l-2 pl-3">
+      <blockquote className="border-border-button-default text-text-secondary my-3 border-l-2 pl-3">
         {children}
       </blockquote>
     );
   },
   hr: function HrComponent() {
-    return <hr className="border-stroke-soft-200 my-4" />;
+    return <hr className="border-border-button-default my-4" />;
   },
 };
 
@@ -119,10 +119,15 @@ const FLOW_CLASS = cn(
   // First/last block flush to the container's edges; even rhythm elsewhere.
   "[&>*:first-child]:mt-0 [&>*:last-child]:mb-0",
   "[&_p]:my-2",
-  "[&_h1]:text-label-md [&_h1]:font-medium [&_h1]:mt-4 [&_h1]:mb-1.5",
-  "[&_h2]:text-label-sm [&_h2]:font-medium [&_h2]:mt-4 [&_h2]:mb-1.5",
-  "[&_h3]:text-label-sm [&_h3]:font-medium [&_h3]:mt-3 [&_h3]:mb-1",
-  "[&_h4]:text-label-xs [&_h4]:font-medium [&_h4]:mt-3 [&_h4]:mb-1",
+  // BoardUI scale: paragraphs/lists carry no size of their own - they inherit
+  // the consumer's scale (the chat timeline passes text-body-2-regular), so
+  // prose children never fall back to the 16px browser default. Headings sit
+  // ONE step above the surrounding body copy (13px body -> 14px h1/h2),
+  // differentiated by weight below that, not by size jumps.
+  "[&_h1]:text-body-semibold [&_h1]:mt-4 [&_h1]:mb-1.5",
+  "[&_h2]:text-body-medium [&_h2]:mt-4 [&_h2]:mb-1.5",
+  "[&_h3]:text-body-2-semibold [&_h3]:mt-3 [&_h3]:mb-1",
+  "[&_h4]:text-caption-1-medium [&_h4]:mt-3 [&_h4]:mb-1",
   "[&_ul]:my-2 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:my-2 [&_ol]:list-decimal [&_ol]:pl-5 [&_li]:my-1",
   "[&_a]:text-blue-500 [&_a]:underline [&_a]:underline-offset-2 [&_strong]:font-medium",
 );

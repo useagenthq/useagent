@@ -204,7 +204,7 @@ export function DesktopPane({ threadId }: { threadId: string }) {
 
   if (!ready) {
     return (
-      <div className="text-text-soft-400 flex size-full items-center justify-center px-6 text-center text-paragraph-sm">
+      <div className="text-text-tertiary flex size-full items-center justify-center px-6 text-center text-body-2-regular">
         {status}
       </div>
     );
@@ -227,7 +227,7 @@ export function DesktopPane({ threadId }: { threadId: string }) {
         allow="clipboard-read; clipboard-write"
       />
       {!loaded && (
-        <div className="bg-bg-white-0 text-text-soft-400 absolute inset-0 flex items-center justify-center text-paragraph-sm">
+        <div className="bg-background-primary-default text-text-tertiary absolute inset-0 flex items-center justify-center text-body-2-regular">
           Connecting to desktop…
         </div>
       )}
@@ -242,7 +242,7 @@ export function DesktopPane({ threadId }: { threadId: string }) {
           }}
           className="absolute inset-0 flex items-end justify-center bg-transparent p-3 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white/70"
         >
-          <span className="rounded-full bg-neutral-950/80 px-3 py-1.5 text-label-xs text-white shadow-lg backdrop-blur-sm">
+          <span className="rounded-full bg-neutral-950/80 px-3 py-1.5 text-caption-1-medium text-white shadow-lg backdrop-blur-sm">
             Click to control desktop
           </span>
         </button>

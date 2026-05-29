@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { RiCheckLine, RiFileCopyLine } from "@remixicon/react";
 import { codeToHtml } from "shiki";
-import { cnExt as cn } from "@/utils/cn";
+import { cx } from "@/utils/cx";
 
 /**
  * Code surface, beautiful-ui `CodeBlock` chrome mapped to AlignUI tokens: a card
@@ -71,10 +71,10 @@ function CopyButton({ code }: { code: string }) {
           window.setTimeout(() => setCopied(false), 1400);
         });
       }}
-      className="text-text-soft-400 hover:bg-bg-soft-200 hover:text-text-strong-950 flex h-6 items-center gap-1 rounded-md px-1.5 text-label-xs transition-colors"
+      className="text-text-tertiary hover:bg-background-secondary-hover hover:text-text-primary flex h-6 items-center gap-1 rounded-md px-1.5 text-caption-1-medium transition-colors"
     >
       {copied ? (
-        <RiCheckLine className="text-success-base size-3.5" aria-hidden />
+        <RiCheckLine className="text-lime-600 size-3.5" aria-hidden />
       ) : (
         <RiFileCopyLine className="size-3.5" aria-hidden />
       )}
@@ -127,20 +127,20 @@ export function CodeBlock({
 
   return (
     <div
-      className={cn(
-        "not-prose border-stroke-soft-200 bg-bg-weak-50 shadow-regular-xs group flex w-full flex-col overflow-hidden rounded-2xl border",
+      className={cx(
+        "not-prose border-border-button-default bg-background-secondary-default shadow-card group flex w-full flex-col overflow-hidden rounded-2xl border",
         className,
       )}
     >
       {/* Header bar */}
-      <div className="border-stroke-soft-200 bg-bg-white-0 flex items-center justify-between border-b px-3 py-1.5">
+      <div className="border-border-button-default bg-background-primary-default flex items-center justify-between border-b px-3 py-1.5">
         <span className="flex items-baseline gap-2 truncate">
           {filename && (
-            <span className="text-text-strong-950 truncate font-mono text-[12px] font-medium">
+            <span className="text-text-primary truncate font-mono text-[12px] font-medium">
               {filename}
             </span>
           )}
-          <span className="text-text-soft-400 shrink-0 text-label-xs">
+          <span className="text-text-tertiary shrink-0 text-caption-1-medium">
             {languageLabel(language)}
           </span>
         </span>
@@ -167,13 +167,13 @@ export function CodeBlock({
           )}
           {streaming && (
             <span
-              className="ai-caret ml-3 mb-2 inline-block h-3.5 w-1.5 translate-y-0.5 bg-text-strong-950"
+              className="ai-caret ml-3 mb-2 inline-block h-3.5 w-1.5 translate-y-0.5 bg-foreground-icon-primary"
               aria-hidden
             />
           )}
         </div>
       ) : (
-        <div className="text-text-soft-400 flex min-h-[72px] items-center px-3 py-3 [font-family:var(--font-mono)] text-[12.5px]">
+        <div className="text-text-tertiary flex min-h-[72px] items-center px-3 py-3 [font-family:var(--font-mono)] text-[12.5px]">
           {emptyLabel ?? "No content."}
         </div>
       )}

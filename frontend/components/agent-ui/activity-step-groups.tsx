@@ -26,12 +26,12 @@ const STATUS_LABEL: Record<ActivityGroupStatus, string> = {
 
 function StatusIcon({ status }: { readonly status: ActivityGroupStatus }) {
   if (status === "completed") {
-    return <RiCheckboxCircleFill className="size-4 text-success-base" aria-hidden />;
+    return <RiCheckboxCircleFill className="size-4 text-lime-600" aria-hidden />;
   }
   if (status === "running") {
-    return <RiLoader4Line className="size-4 animate-spin text-information-base" aria-hidden />;
+    return <RiLoader4Line className="size-4 animate-spin text-blue-600" aria-hidden />;
   }
-  return <RiTimeLine className="size-4 text-text-soft-400" aria-hidden />;
+  return <RiTimeLine className="size-4 text-text-tertiary" aria-hidden />;
 }
 
 /**
@@ -52,19 +52,19 @@ export function ActivityStepGroups({
             <li key={group.id}>
               <section
                 aria-label={group.label}
-                className="overflow-hidden rounded-2xl border border-stroke-soft-200 bg-bg-white-0 shadow-regular-xs"
+                className="overflow-hidden rounded-2xl border border-border-button-default bg-background-primary-default shadow-card"
               >
-                <div className="flex items-start gap-2.5 border-b border-stroke-soft-200 bg-bg-weak-50 px-3 py-2.5">
+                <div className="flex items-start gap-2.5 border-b border-border-button-default bg-background-secondary-default px-3 py-2.5">
                   <StatusIcon status={group.status} />
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center justify-between gap-2">
-                      <h3 className="text-label-sm text-text-strong-950">{group.label}</h3>
-                      <span className="font-mono text-label-xs text-text-soft-400">
+                      <h3 className="text-body-2-medium text-text-primary">{group.label}</h3>
+                      <span className="font-mono text-caption-1-medium text-text-tertiary">
                         {STATUS_LABEL[group.status]}
                       </span>
                     </div>
                     {group.description && (
-                      <p className="mt-0.5 text-paragraph-xs text-text-sub-600">
+                      <p className="mt-0.5 text-caption-1-regular text-text-secondary">
                         {group.description}
                       </p>
                     )}
@@ -81,7 +81,7 @@ export function ActivityStepGroups({
                     ))}
                   </div>
                 ) : (
-                  <p className="px-3 py-3 text-paragraph-xs text-text-soft-400">
+                  <p className="px-3 py-3 text-caption-1-regular text-text-tertiary">
                     No activity reported yet.
                   </p>
                 )}

@@ -69,13 +69,13 @@ export function AutomationHistoryDrawer({
     <Drawer.Root open={schedule !== null} onOpenChange={(next) => !next && onClose()}>
       <Drawer.Content className="max-w-[480px]">
         <Drawer.Header className="border-b">
-          <div className="flex size-9 items-center justify-center rounded-xl bg-bg-weak-50">
-            <RiHistoryLine className="size-5 text-text-sub-600" aria-hidden />
+          <div className="flex size-9 items-center justify-center rounded-xl bg-background-secondary-default">
+            <RiHistoryLine className="size-5 text-text-secondary" aria-hidden />
           </div>
           <div className="min-w-0 flex-1">
             <Drawer.Title className="truncate">{schedule?.name ?? "Run history"}</Drawer.Title>
             {schedule && (
-              <p className="mt-0.5 truncate text-paragraph-xs text-text-soft-400">
+              <p className="mt-0.5 truncate text-caption-1-regular text-text-tertiary">
                 {cadenceLabel(schedule.cron)} · {engineLabel(schedule.engine)}
               </p>
             )}
@@ -98,34 +98,34 @@ export function AutomationHistoryDrawer({
           )}
 
           <div className="mt-6 flex items-center justify-between">
-            <h2 className="text-label-sm text-text-strong-950">Executions</h2>
+            <h2 className="text-body-2-medium text-text-primary">Executions</h2>
             {firings && firings.length > 0 && (
-              <span className="text-label-xs text-text-soft-400">{firings.length} recorded</span>
+              <span className="text-label-xs text-text-tertiary">{firings.length} recorded</span>
             )}
           </div>
 
           {error && firings === null ? (
-            <div className="mt-4 rounded-xl border border-error-base/30 bg-error-lighter p-4">
-              <p className="text-paragraph-sm text-text-sub-600">Couldn’t load execution history.</p>
-              <button type="button" onClick={() => void load()} className="mt-2 text-label-sm text-error-base">
+            <div className="mt-4 rounded-xl border border-border-error-default/30 bg-background-tertiary-error p-4">
+              <p className="text-body-2-regular text-text-secondary">Couldn’t load execution history.</p>
+              <button type="button" onClick={() => void load()} className="mt-2 text-body-2-medium text-text-error-primary">
                 Try again
               </button>
             </div>
           ) : firings === null ? (
             <div role="status" className="mt-4 space-y-3" aria-label="Loading execution history">
               {[0, 1, 2].map((item) => (
-                <div key={item} className="h-24 animate-pulse rounded-xl bg-bg-weak-50" />
+                <div key={item} className="h-24 animate-pulse rounded-xl bg-background-secondary-default" />
               ))}
             </div>
           ) : firings.length === 0 ? (
-            <div className="mt-4 rounded-2xl border border-dashed border-stroke-soft-200 px-5 py-8 text-center">
-              <p className="text-label-sm text-text-strong-950">No executions yet</p>
-              <p className="mt-1 text-paragraph-xs text-text-soft-400">
+            <div className="mt-4 rounded-2xl border border-dashed border-border-button-default px-5 py-8 text-center">
+              <p className="text-body-2-medium text-text-primary">No executions yet</p>
+              <p className="mt-1 text-caption-1-regular text-text-tertiary">
                 Start one manually or activate the cadence.
               </p>
             </div>
           ) : (
-            <ol className="relative mt-4 space-y-3 before:absolute before:bottom-5 before:left-[11px] before:top-5 before:w-px before:bg-stroke-soft-200">
+            <ol className="relative mt-4 space-y-3 before:absolute before:bottom-5 before:left-[11px] before:top-5 before:w-px before:bg-border-button-default">
               {firings.map((firing) => {
                 const status = firing.run_status ?? firing.status;
                 return (
@@ -134,27 +134,27 @@ export function AutomationHistoryDrawer({
                       className="absolute left-1 top-4 z-10 size-4 rounded-full border-4 border-bg-white-0 bg-text-soft-400"
                       aria-hidden
                     />
-                    <div className="rounded-xl border border-stroke-soft-200 bg-bg-white-0 p-3.5 shadow-regular-xs">
+                    <div className="rounded-xl border border-border-button-default bg-background-primary-default p-3.5 shadow-card">
                       <div className="flex items-start justify-between gap-3">
                         <div>
                           <StatusBadge.Root variant="light" status={badgeStatus(status)}>
                             <StatusBadge.Dot />
                             {status}
                           </StatusBadge.Root>
-                          <p className="mt-2 text-paragraph-xs text-text-soft-400">
+                          <p className="mt-2 text-caption-1-regular text-text-tertiary">
                             {relativeTime(firing.fired_at)} · {firing.trigger === "cron" ? "Scheduled" : "Manual"}
                           </p>
                         </div>
                         <Link
                           href={`/session/${firing.run_id}`}
-                          className="flex size-8 items-center justify-center rounded-lg text-text-soft-400 transition-colors hover:bg-bg-weak-50 hover:text-text-strong-950"
+                          className="flex size-8 items-center justify-center rounded-lg text-text-tertiary transition-colors hover:bg-background-secondary-default hover:text-text-primary"
                           aria-label="Open run"
                         >
                           <RiArrowRightUpLine className="size-4" aria-hidden />
                         </Link>
                       </div>
                       {firing.run_summary && (
-                        <p className="mt-3 line-clamp-3 text-paragraph-sm text-text-sub-600">
+                        <p className="mt-3 line-clamp-3 text-body-2-regular text-text-secondary">
                           {firing.run_summary}
                         </p>
                       )}

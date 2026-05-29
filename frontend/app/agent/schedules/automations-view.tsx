@@ -165,11 +165,11 @@ export function AutomationsView() {
     <div className="mx-auto w-full max-w-[1040px] px-5 py-8 sm:px-8 sm:py-10">
       <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <div className="flex items-center gap-2 text-label-xs text-text-soft-400">
+          <div className="flex items-center gap-2 text-label-xs text-text-tertiary">
             <RiFlashlightLine className="size-4" aria-hidden /> Agent operations
           </div>
-          <h1 className="mt-2 text-title-h4 text-text-strong-950">Automations</h1>
-          <p className="mt-1 max-w-xl text-paragraph-sm text-text-sub-600">
+          <h1 className="mt-2 text-title-h4 text-text-primary">Automations</h1>
+          <p className="mt-1 max-w-xl text-body-2-regular text-text-secondary">
             Schedule repeatable work, inspect every execution, and intervene when needed.
           </p>
         </div>
@@ -190,8 +190,8 @@ export function AutomationsView() {
         latestActivity={latestActivity ? relativeTime(latestActivity) : "No runs yet"}
       />
 
-      <section className="mt-6 overflow-hidden rounded-2xl border border-stroke-soft-200 bg-bg-white-0 shadow-regular-xs">
-        <div className="flex flex-col gap-3 border-b border-stroke-soft-200 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-5">
+      <section className="mt-6 overflow-hidden rounded-2xl border border-border-button-default bg-background-primary-default shadow-card">
+        <div className="flex flex-col gap-3 border-b border-border-button-default px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-5">
           <SegmentedControl.Root
             value={filter}
             onValueChange={(value) => setFilter(value as Filter)}
@@ -216,16 +216,16 @@ export function AutomationsView() {
         </div>
 
         {error && (
-          <div className="flex items-start gap-2 border-b border-error-base/20 bg-error-lighter px-4 py-3 text-paragraph-sm text-text-sub-600 sm:px-5">
+          <div className="flex items-start gap-2 border-b border-border-error-default/20 bg-background-tertiary-error px-4 py-3 text-body-2-regular text-text-secondary sm:px-5">
             <RiErrorWarningLine
-              className="mt-0.5 size-4 shrink-0 text-error-base"
+              className="mt-0.5 size-4 shrink-0 text-text-error-primary"
               aria-hidden
             />
             <p className="flex-1">{error}</p>
             <button
               type="button"
               onClick={() => void load()}
-              className="text-label-sm text-error-base"
+              className="text-body-2-medium text-text-error-primary"
             >
               Retry
             </button>
@@ -236,12 +236,12 @@ export function AutomationsView() {
           <div
             role="status"
             aria-label="Loading automations"
-            className="space-y-px bg-stroke-soft-200"
+            className="space-y-px bg-border-button-default"
           >
             {[0, 1, 2].map((item) => (
-              <div key={item} className="h-36 animate-pulse bg-bg-white-0 p-5">
-                <div className="h-4 w-48 rounded bg-bg-soft-200" />
-                <div className="mt-3 h-3 w-2/3 rounded bg-bg-weak-50" />
+              <div key={item} className="h-36 animate-pulse bg-background-primary-default p-5">
+                <div className="h-4 w-48 rounded bg-background-tertiary-default" />
+                <div className="mt-3 h-3 w-2/3 rounded bg-background-secondary-default" />
               </div>
             ))}
           </div>

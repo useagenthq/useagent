@@ -80,9 +80,9 @@ export function RepoBranchBar({
         return (
           <div
             key={repo.full_name}
-            className="inline-flex items-center gap-1 rounded-xl border border-stroke-soft-200 py-1 pl-2 pr-1"
+            className="inline-flex items-center gap-1 rounded-xl border border-border-button-default py-1 pl-2 pr-1"
           >
-            <span className="max-w-[120px] truncate text-paragraph-xs text-text-soft-400">
+            <span className="max-w-[120px] truncate text-caption-1-regular text-text-tertiary">
               {repo.name}
             </span>
             <SearchablePicker

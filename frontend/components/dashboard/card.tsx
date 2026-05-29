@@ -11,7 +11,7 @@ export function Card({ className, ...rest }: React.HTMLAttributes<HTMLDivElement
   return (
     <div
       className={cnExt(
-        'flex min-w-0 flex-col rounded-2xl bg-bg-white-0 p-4 shadow-regular-xs ring-1 ring-inset ring-stroke-soft-200',
+        'flex min-w-0 flex-col rounded-2xl bg-background-primary-default p-4 shadow-card ring-1 ring-inset ring-border-button-default',
         className,
       )}
       {...rest}

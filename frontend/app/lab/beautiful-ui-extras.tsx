@@ -28,22 +28,22 @@ function Demo({
       data-beautiful-ui-component={component}
       className={
         wide
-          ? "flex flex-col gap-7 border-t border-stroke-soft-200 py-14"
-          : "flex flex-col gap-6 border-t border-stroke-soft-200 py-8"
+          ? "flex flex-col gap-7 border-t border-border-button-default py-14"
+          : "flex flex-col gap-6 border-t border-border-button-default py-8"
       }
     >
       {title ? (
         <div className="flex items-baseline gap-4">
           {typeof index === "number" && (
-            <span className="text-paragraph-sm text-text-soft-400 tabular-nums">{index}</span>
+            <span className="text-body-2-regular text-text-tertiary tabular-nums">{index}</span>
           )}
           <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
-            <h2 className="text-title-h6 text-text-strong-950">{title}</h2>
-            {description && <p className="text-paragraph-md text-text-soft-400">{description}</p>}
+            <h2 className="text-title-3-medium text-text-primary">{title}</h2>
+            {description && <p className="text-body-regular text-text-tertiary">{description}</p>}
           </div>
         </div>
       ) : (
-        <p className="text-mono-label text-text-soft-400">AI kit · {component}</p>
+        <p className="text-mono-label text-text-tertiary">AI kit · {component}</p>
       )}
       <div
         className={

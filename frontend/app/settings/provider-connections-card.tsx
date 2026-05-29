@@ -8,8 +8,8 @@ import {
 } from "@remixicon/react";
 import { useMemo } from "react";
 import { BackendUnreachable } from "@/components/shared/backend-unreachable";
-import * as Button from "@/components/ui/button";
-import { cnExt } from "@/utils/cn";
+import { Button } from "@/components/base/buttons/button";
+import { cx } from "@/utils/cx";
 import { ProviderConnectionPanel } from "./provider-connection-panel";
 import {
   isActiveConnection,
@@ -40,35 +40,35 @@ export function ProviderConnectionsCard() {
   return (
     <div className="flex flex-col gap-5">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-center gap-2 text-paragraph-sm text-text-sub-600">
+        <div className="flex items-center gap-2 text-body-2-regular text-text-secondary">
           {connectedCount > 0 ? (
-            <RiCheckboxCircleLine aria-hidden className="size-4 text-success-base" />
+            <RiCheckboxCircleLine aria-hidden className="size-4 text-status-lime-text" />
           ) : (
-            <RiCloseCircleLine aria-hidden className="size-4 text-text-soft-400" />
+            <RiCloseCircleLine aria-hidden className="size-4 text-foreground-icon-tertiary" />
           )}
           <span>
             {connectedCount} of {PROVIDER_CONNECTION_PROVIDERS.length} providers connected
           </span>
         </div>
-        <Button.Root
-          type="button"
-          variant="neutral"
-          mode="stroke"
-          size="xsmall"
+        <Button
+          variant="secondary"
+          size="xs"
           className="rounded-full"
           disabled={refreshing}
           onClick={() => void load()}
+          leadingIcon={(props) => (
+            <RiRefreshLine
+              {...props}
+              className={cx(props.className, refreshing && "animate-spin")}
+            />
+          )}
         >
-          <Button.Icon
-            as={RiRefreshLine}
-            className={cnExt(refreshing ? "animate-spin" : undefined)}
-          />
           Refresh
-        </Button.Root>
+        </Button>
       </div>
 
       {loading ? (
-        <div className="flex items-center gap-2 py-6 text-paragraph-sm text-text-sub-600">
+        <div className="flex items-center gap-2 py-6 text-body-2-regular text-text-secondary">
           <RiLoader4Line aria-hidden className="size-4 animate-spin" />
           Loading provider connections...
         </div>
@@ -86,12 +86,12 @@ export function ProviderConnectionsCard() {
       )}
 
       {error && connections.length > 0 ? (
-        <p className="text-paragraph-xs text-warning-base">
+        <p className="text-caption-1-regular text-status-yellow-text">
           Refresh failed. Showing the last provider-connection snapshot.
         </p>
       ) : null}
       {mounted ? (
-        <p className="text-paragraph-xs text-text-soft-400">
+        <p className="text-caption-1-regular text-text-tertiary">
           Updates refresh from the org event stream when provider-connection invalidations are
           present; save and revoke actions also reload this panel immediately.
         </p>

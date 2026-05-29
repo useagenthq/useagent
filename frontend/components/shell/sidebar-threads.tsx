@@ -64,7 +64,7 @@ export function SidebarThreads() {
     <>
       <SidebarSectionLabel>Threads</SidebarSectionLabel>
       {runs.length === 0 ? (
-        <p className="px-2.5 py-2 text-paragraph-xs text-text-soft-400">
+        <p className="px-2.5 py-2 text-caption-1-regular text-text-tertiary">
           {status === "loading"
             ? "Loading threads..."
             : status === "error"
@@ -75,11 +75,11 @@ export function SidebarThreads() {
       {visible.map(threadRow)}
       {overflow.length > 0 ? (
         <>
-          {expanded ? <div className="max-h-56 overflow-y-auto">{overflow.map(threadRow)}</div> : null}
+          {expanded ? overflow.map(threadRow) : null}
           <button
             type="button"
             onClick={() => setExpanded((v) => !v)}
-            className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-paragraph-xs text-text-soft-400 transition-colors hover:bg-bg-weak-50 hover:text-text-sub-600"
+            className="flex w-full items-center gap-2 rounded-2lg px-2.5 py-1.5 text-caption-1-regular text-text-tertiary transition-colors hover:bg-background-secondary-hover hover:text-text-secondary"
           >
             {expanded ? (
               <RiArrowUpSLine className="size-4" aria-hidden />

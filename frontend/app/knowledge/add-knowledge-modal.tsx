@@ -95,10 +95,10 @@ export function AddKnowledgeModal({
       <Modal.Content className="max-w-[480px]">
         <div className="flex flex-col gap-5 p-6">
           <div className="flex flex-col gap-1.5">
-            <Modal.Title className="text-title-h6 text-text-strong-950">
+            <Modal.Title className="text-title-h6 text-text-primary">
               Add knowledge
             </Modal.Title>
-            <Modal.Description className="text-paragraph-sm text-text-sub-600">
+            <Modal.Description className="text-body-2-regular text-text-secondary">
               Teach useAgent a fact or convention it should remember across every
               run.
             </Modal.Description>
@@ -172,27 +172,27 @@ export function AddKnowledgeModal({
 
           {/* Worth-saving gate + error surfacing */}
           {status === "dropped" && (
-            <p className="rounded-xl bg-bg-weak-50 px-3 py-2 text-paragraph-xs text-text-sub-600">
+            <p className="rounded-xl bg-background-secondary-default px-3 py-2 text-caption-1-regular text-text-secondary">
               useAgent judged this not worth saving. Try adding more specific
               detail, or close to discard.
             </p>
           )}
           {status === "deferred" && (
-            <p className="rounded-xl bg-warning-lighter px-3 py-2 text-paragraph-xs text-warning-dark">
+            <p className="rounded-xl bg-status-yellow-background px-3 py-2 text-caption-1-regular text-status-yellow-text">
               Distillation is unavailable right now, so this wasn&rsquo;t saved
               yet. Your text is still here; press Save to retry once the model
               is reachable.
             </p>
           )}
           {status === "error" && (
-            <p className="rounded-xl bg-error-lighter px-3 py-2 text-paragraph-xs text-error-base">
+            <p className="rounded-xl bg-background-tertiary-error px-3 py-2 text-caption-1-regular text-text-error-primary">
               Couldn&rsquo;t reach useAgent. Check the backend and try again.
             </p>
           )}
 
           <div className="flex items-center justify-end gap-2">
             {busy && (
-              <span className="agent-progress-loading-text mr-auto text-paragraph-sm">
+              <span className="agent-progress-loading-text mr-auto text-body-2-regular">
                 Distilling…
               </span>
             )}

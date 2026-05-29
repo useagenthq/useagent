@@ -52,10 +52,10 @@ export function ProviderStatusBanner({
     <div
       data-session-ui="provider-status-banner"
       role="alert"
-      className="border-warning-light bg-warning-lighter text-warning-base flex items-center gap-2 rounded-xl border px-3 py-2"
+      className="border-yellow-200 bg-yellow-100 text-yellow-600 flex items-center gap-2 rounded-xl border px-3 py-2"
     >
       <RiInformationLine className="size-4 shrink-0" aria-hidden />
-      <p className="text-paragraph-xs min-w-0 flex-1">
+      <p className="text-caption-1-regular min-w-0 flex-1">
         {engineLabel} is currently unavailable on this server. Replies that use this engine may
         fail until it returns.
       </p>
@@ -64,7 +64,7 @@ export function ProviderStatusBanner({
           type="button"
           aria-label={`Dismiss ${engineLabel} status`}
           onClick={onDismiss}
-          className="text-warning-base hover:bg-warning-light/40 flex size-6 shrink-0 items-center justify-center rounded-md transition-colors"
+          className="text-yellow-600 hover:bg-yellow-200/40 flex size-6 shrink-0 items-center justify-center rounded-md transition-colors"
         >
           <RiCloseLine className="size-4" aria-hidden />
         </button>

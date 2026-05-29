@@ -175,11 +175,11 @@ export function KnowledgeGallery({
         <div className="flex items-start gap-2.5">
           <RiBrainLine
             aria-hidden
-            className="mt-0.5 size-5 text-text-strong-950"
+            className="mt-0.5 size-5 text-text-primary"
           />
           <div className="flex flex-col gap-0.5">
-            <h1 className="text-display-sm text-text-strong-950">Knowledge</h1>
-            <p className="text-paragraph-sm text-text-sub-600">
+            <h1 className="text-display-sm text-text-primary">Knowledge</h1>
+            <p className="text-body-2-regular text-text-secondary">
               Facts and conventions useAgent remembers across runs
             </p>
           </div>
@@ -206,9 +206,9 @@ export function KnowledgeGallery({
         /* Ranked search results — the retrieved-context stack */
         <section className="mt-8 flex flex-col gap-4">
           {searching ? (
-            <h2 className="text-label-sm text-text-sub-600">Searching…</h2>
+            <h2 className="text-body-2-medium text-text-secondary">Searching…</h2>
           ) : searchResults.length === 0 ? (
-            <p className="text-paragraph-sm text-text-sub-600">
+            <p className="text-body-2-regular text-text-secondary">
               No knowledge matches “{query.trim()}”.
             </p>
           ) : (
@@ -225,13 +225,13 @@ export function KnowledgeGallery({
         </section>
       ) : pinned.length === 0 && grouped.length === 0 ? (
         isSearchMode ? (
-          <p className="mt-10 text-paragraph-sm text-text-sub-600">
+          <p className="mt-10 text-body-2-regular text-text-secondary">
             No knowledge matches “{query.trim()}”.
           </p>
         ) : error ? (
           <BackendUnreachable className="mt-10" onRetry={refetch} />
         ) : (
-          <p className="mt-10 text-paragraph-sm text-text-sub-600">
+          <p className="mt-10 text-body-2-regular text-text-secondary">
             No knowledge yet. Add your first fact to teach useAgent.
           </p>
         )
@@ -242,7 +242,7 @@ export function KnowledgeGallery({
             <section className="mt-8 flex flex-col gap-4">
               <div className="flex items-center gap-1.5">
                 <RiStarFill className="size-4 text-yellow-500" aria-hidden />
-                <h2 className="text-label-sm text-text-sub-600">Pinned</h2>
+                <h2 className="text-body-2-medium text-text-secondary">Pinned</h2>
               </div>
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 {pinned.map((item) => (
@@ -260,7 +260,7 @@ export function KnowledgeGallery({
           {/* All knowledge, grouped by folder */}
           {grouped.length > 0 && (
             <section className="mt-10 flex flex-col gap-8">
-              <h2 className="text-label-sm text-text-sub-600">All knowledge</h2>
+              <h2 className="text-body-2-medium text-text-secondary">All knowledge</h2>
               {grouped.map(({ folder, entries }) => (
                 <div key={folder} className="flex flex-col gap-4">
                   <div className="flex items-center gap-2">
@@ -271,7 +271,7 @@ export function KnowledgeGallery({
                     >
                       {knowledgeFolderLabel(folder)}
                     </Badge.Root>
-                    <span className="text-paragraph-xs text-text-soft-400">
+                    <span className="text-caption-1-regular text-text-tertiary">
                       {entries.length}{" "}
                       {entries.length === 1 ? "entry" : "entries"}
                     </span>
