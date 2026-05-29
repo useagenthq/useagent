@@ -23,8 +23,8 @@ function Metric({
         <Icon className="size-4" aria-hidden />
       </span>
       <div className="min-w-0">
-        <p className="text-label-xs text-text-tertiary">{label}</p>
-        <p className="mt-0.5 truncate text-label-lg text-text-primary">{value}</p>
+        <p className="text-caption-1-medium text-text-tertiary">{label}</p>
+        <p className="mt-0.5 truncate text-title-3-medium text-text-primary">{value}</p>
         <p className="mt-0.5 truncate text-caption-1-regular text-text-tertiary">{detail}</p>
       </div>
     </div>
@@ -63,7 +63,7 @@ export function EmptyAutomations({ filtered, onCreate }: { filtered: boolean; on
       <span className="flex size-11 items-center justify-center rounded-2xl border border-border-button-default bg-background-secondary-default text-text-secondary shadow-card">
         <RiCalendarScheduleLine className="size-5" aria-hidden />
       </span>
-      <h2 className="mt-4 text-label-md text-text-primary">
+      <h2 className="mt-4 text-body-medium text-text-primary">
         {filtered ? "No matching automations" : "Automate recurring work"}
       </h2>
       <p className="mt-1 max-w-sm text-body-2-regular text-text-secondary">

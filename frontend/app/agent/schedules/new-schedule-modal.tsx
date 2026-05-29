@@ -158,7 +158,7 @@ export function AutomationEditorModal({
                   )}
                 >
                   <span className="block text-body-2-medium">{preset.label}</span>
-                  <span className="mt-0.5 block font-mono text-label-xs opacity-70">{preset.cron}</span>
+                  <span className="mt-0.5 block font-mono text-caption-1-medium opacity-70">{preset.cron}</span>
                 </button>
               ))}
             </div>

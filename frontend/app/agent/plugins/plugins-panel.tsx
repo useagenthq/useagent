@@ -145,7 +145,7 @@ export function PluginsPanel() {
       <div className="flex items-center justify-between">
         <h2 className="text-body-2-medium text-text-secondary">Credentials</h2>
         {secrets !== null && (
-          <span className="text-text-tertiary text-label-xs tabular-nums">
+          <span className="text-text-tertiary text-caption-1-medium tabular-nums">
             {secrets.length} in this org
           </span>
         )}
@@ -162,7 +162,7 @@ export function PluginsPanel() {
           secrets.map((s) => (
             <div key={s.name} className="flex items-center gap-3 py-1.5">
               <RiKey2Line className="text-text-secondary size-4 shrink-0" aria-hidden />
-              <span className="text-label-xs text-text-primary flex-1 truncate font-mono">
+              <span className="text-caption-1-medium text-text-primary flex-1 truncate font-mono">
                 {s.name}
               </span>
               <StatusBadge.Root status="completed" variant="light">

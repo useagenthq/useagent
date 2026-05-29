@@ -351,6 +351,24 @@
     --social-amazon: 210 14.52% 24.31%;
     --social-zendesk: 46.67 25.71% 6.86%;
 
+    /* --------------------------------------------------------------------
+     * AlignUI COMPAT BRIDGE: the legacy AlignUI semantic variables
+     * (--primary-*, --bg-*, --text-*, --stroke-*, --faded-*, state colors)
+     * retargeted at the BoardUI ramps above. The .dark / .theme-aura /
+     * .theme-harbor blocks below re-flip the SAME slot list. Remaining
+     * consumers (2026-08-22 sweep; app/ + product components/ are clean):
+     *   - components/ui/* (42 files): the kept legacy AlignUI primitive
+     *     library, sanctioned as the dialog/overlay layer (Modal, Drawer,
+     *     CommandMenu + their deps); badge/button/tooltip/input etc. are
+     *     still imported by dashboard/foundation/review surfaces. See
+     *     components/ui/README.md.
+     *   - components/application/* (36 files): dormant vendored AlignUI
+     *     reference layer; no live imports, but it resolves through this
+     *     bridge if ever rendered (e.g. app/lab inventories).
+     *   - This file: scrollbar, grid-pattern and shimmer rules further
+     *     down reference the --text- and --stroke- vars directly.
+     * The bridge can only be removed when those consumers are gone or
+     * converted to BoardUI tokens (styles/theme.css). Do not grow it. */
     --primary-dark: var(--blue-800);
     --primary-darker: var(--blue-700);
     --primary-base: var(--blue-500);

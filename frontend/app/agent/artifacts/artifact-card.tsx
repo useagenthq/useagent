@@ -51,7 +51,7 @@ function ArtifactPreview({
   return (
     <div className="absolute inset-0 flex flex-col items-center justify-center gap-2.5">
       <Icon aria-hidden className="size-9 text-text-secondary" />
-      <span className="font-mono text-label-xs text-text-tertiary">
+      <span className="font-mono text-caption-1-medium text-text-tertiary">
         {view.extension}
       </span>
     </div>
