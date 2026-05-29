@@ -261,32 +261,25 @@ interface ScopedHit {
  * recall spans more than one scope; a single-pool org recall stays unlabeled,
  * identical to the pre-scope block). `rendered` is "" when nothing was kept.
  */
-function renderMemoryBlock(
-  hits: readonly ScopedHit[],
+interface RenderedMemoryLines {
+  readonly lines: string[];
+  readonly items: ScopedMemoryItem[];
+  readonly truncated: boolean;
+}
+
+function renderScopedHit(
+  { sourceScope, hit }: ScopedHit,
   label: boolean,
-): { rendered: string; items: ScopedMemoryItem[]; truncated: boolean } {
-  const lines: string[] = [];
-  const items: ScopedMemoryItem[] = [];
-  const seen = new Set<string>();
-  let used = 0;
-  let truncated = false;
-  for (const { sourceScope, hit } of hits) {
-    const content = hit.content?.trim();
-    if (!content) continue;
-    const dedupeKey = content.toLowerCase();
-    if (seen.has(dedupeKey)) continue; // same fact in two pools → keep the first
-    const background = hit.background?.trim();
-    const tag = label ? `[${sourceScope}] ` : "";
-    const body = background ? `${content} (${background})` : content;
-    const line = `- ${tag}${body}`;
-    if (used + line.length + 1 > MAX_BLOCK_CHARS) {
-      truncated = true;
-      break;
-    }
-    lines.push(line);
-    used += line.length + 1;
-    seen.add(dedupeKey);
-    items.push({
+): { dedupeKey: string; line: string; item: ScopedMemoryItem } | null {
+  const content = hit.content?.trim();
+  if (!content) return null;
+  const background = hit.background?.trim();
+  const tag = label ? `[${sourceScope}] ` : "";
+  const body = background ? `${content} (${background})` : content;
+  return {
+    dedupeKey: content.toLowerCase(),
+    line: `- ${tag}${body}`,
+    item: {
       kind: "memory",
       content,
       sourceScope,
@@ -298,11 +291,79 @@ function renderMemoryBlock(
         ...(hit.layer ? { layer: hit.layer, ref: `tencent:${hit.layer}:${hit.id}` } : {}),
       },
       trust: "reference",
-    });
+    },
+  };
+}
+
+function renderMemoryLines(
+  hits: readonly ScopedHit[],
+  label: boolean,
+  maxChars: number = MAX_BLOCK_CHARS,
+): RenderedMemoryLines {
+  const lines: string[] = [];
+  const items: ScopedMemoryItem[] = [];
+  const seen = new Set<string>();
+  let used = 0;
+  let truncated = false;
+  for (const hit of hits) {
+    const rendered = renderScopedHit(hit, label);
+    if (!rendered) continue;
+    const { dedupeKey, line, item } = rendered;
+    if (seen.has(dedupeKey)) continue; // same fact in two pools → keep the first
+    if (used + line.length + 1 > maxChars) {
+      truncated = true;
+      break;
+    }
+    lines.push(line);
+    used += line.length + 1;
+    seen.add(dedupeKey);
+    items.push(item);
   }
-  const rendered =
-    lines.length === 0 ? "" : `${BLOCK_HEADER}\n${lines.join("\n")}\n${BLOCK_FOOTER}\n\n`;
+  return { lines, items, truncated };
+}
+
+function frameMemoryLines(lines: readonly string[]): string {
+  return lines.length === 0 ? "" : `${BLOCK_HEADER}\n${lines.join("\n")}\n${BLOCK_FOOTER}\n\n`;
+}
+
+function renderMemoryBlock(
+  hits: readonly ScopedHit[],
+  label: boolean,
+): { rendered: string; items: ScopedMemoryItem[]; truncated: boolean } {
+  const { lines, items, truncated } = renderMemoryLines(hits, label);
+  const rendered = frameMemoryLines(lines);
   return { rendered, items, truncated };
+}
+
+/** Keep a unique L3 persona available under a saturated prefix without changing
+ * the public 2k budget or the legacy path when L3 is absent/empty/duplicate. */
+function renderLayeredMemoryBlock(
+  hits: readonly ScopedHit[],
+  label: boolean,
+): { rendered: string; items: ScopedMemoryItem[]; truncated: boolean } {
+  const seen = new Set<string>();
+  let l3Index = -1;
+  for (let index = 0; index < hits.length; index += 1) {
+    const rendered = renderScopedHit(hits[index]!, label);
+    if (!rendered || seen.has(rendered.dedupeKey)) continue;
+    seen.add(rendered.dedupeKey);
+    if (hits[index]?.hit.layer === "l3") l3Index = index;
+  }
+  if (l3Index < 0) return renderMemoryBlock(hits, label);
+
+  const l3 = hits[l3Index]!;
+  const renderedL3 = renderScopedHit(l3, label)!;
+  const l3Cost = renderedL3.line.length + 1;
+  const prefixHits = hits.filter((hit, index) =>
+    index !== l3Index && renderScopedHit(hit, label)?.dedupeKey !== renderedL3.dedupeKey
+  );
+  const prefix = renderMemoryLines(prefixHits, label, MAX_BLOCK_CHARS - l3Cost);
+  const lines = [...prefix.lines, renderedL3.line];
+  return {
+    rendered: frameMemoryLines(lines),
+    items: [...prefix.items, renderedL3.item],
+    truncated: prefix.truncated,
+  };
 }
 
 /** Fetch L1 hits for one pool. Returns [] when memory is disabled, the query is
@@ -959,7 +1020,7 @@ export async function recallScopedMemory(
   // does not turn a reachable L0/L1 search into an outage.
   const degraded = perPool.length > 0 && perPool.every((p) => p.unreachable) && orgDeep.unreachable;
   const label = new Set(pools.map((p) => p.sourceScope)).size > 1;
-  const { rendered, items, truncated } = renderMemoryBlock([
+  const { rendered, items, truncated } = renderLayeredMemoryBlock([
     ...perPool.flatMap((p) => p.scoped),
     ...orgDeep.scoped,
   ], label);
