@@ -11,6 +11,7 @@ import {
   computeStats,
   extractCount,
   extractRuns,
+  recentRuns,
   runsPerDay,
 } from "@/components/dashboard/dashboard-data";
 import { DashboardLiveRefresh } from "@/components/dashboard/dashboard-live-refresh";
@@ -48,11 +49,6 @@ async function getJson(path: string): Promise<unknown> {
   }
 }
 
-function toMillis(value: string | number): number {
-  const n = typeof value === "number" ? value : Date.parse(value);
-  return Number.isFinite(n) ? n : 0;
-}
-
 export default async function DashboardPage() {
   const [runsData, skillsData, knowledgeData] = await Promise.all([
     getJson("/api/runs"),
@@ -77,9 +73,7 @@ export default async function DashboardPage() {
 
   const weekTotal = week.reduce((n, d) => n + d.total, 0);
   const fortnightTotal = fortnight.reduce((n, d) => n + d.total, 0);
-  const recent = runs
-    .toSorted((a, b) => toMillis(b.created_at) - toMillis(a.created_at))
-    .slice(0, 8);
+  const recent = recentRuns(runs);
 
   const statItems: StatItem[] = [
     {
@@ -121,11 +115,6 @@ export default async function DashboardPage() {
         </div>
 
         <section className="flex flex-col gap-3">
-          <h2 className="text-headline-medium text-text-primary">Fleet by project</h2>
-          <Fleet lanes={lanes} stats={fleetStats} />
-        </section>
-
-        <section className="flex flex-col gap-3">
           <h2 className="text-headline-medium text-text-primary">Limits</h2>
           <FleetLimits />
         </section>
@@ -133,6 +122,12 @@ export default async function DashboardPage() {
         <ContributionsCard cells={heat.cells} total={heat.total} />
 
         <RecentRunsTable runs={recent} />
+
+        {/* Tallest section last so the day-to-day cards stay above the fold. */}
+        <section className="flex flex-col gap-3">
+          <h2 className="text-headline-medium text-text-primary">Fleet by project</h2>
+          <Fleet lanes={lanes} stats={fleetStats} />
+        </section>
       </div>
     </AppShell>
   );
