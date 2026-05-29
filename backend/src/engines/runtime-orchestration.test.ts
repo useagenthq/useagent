@@ -19,6 +19,7 @@ import {
   type RuntimeThreadSnapshot,
 } from "./runtime-orchestration";
 import { createSecretRedactor } from "../secrets/redact";
+import { DEEPSEEK_V4_FLASH_MODEL } from "../runs/model-policy";
 
 const context = { runId: "run/unsafe", threadId: "thread unsafe", model: "gpt-5.6-luna" };
 const baselineRedactor = createSecretRedactor([]);
@@ -72,6 +73,9 @@ describe("T3 orchestration projection", () => {
     );
     expect(runtimeModelId("opencode", "moonshotai/kimi-k3")).toBe(
       "openrouter/moonshotai/kimi-k3",
+    );
+    expect(runtimeModelId("opencode", DEEPSEEK_V4_FLASH_MODEL)).toBe(
+      "openrouter/deepseek/deepseek-v4-flash",
     );
     expect(runtimeModelId("opencode", "claude-opus-5")).toBe(
       "anthropic/claude-opus-5",

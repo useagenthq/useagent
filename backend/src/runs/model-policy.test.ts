@@ -29,6 +29,7 @@ describe("paid model policy", () => {
   });
 
   test("allows only the curated OpenCode and Claude catalogs", () => {
+    expect(DEEPSEEK_V4_FLASH_MODEL).toBe("deepseek/deepseek-v4-flash");
     for (const model of Object.values(OPENCODE_ALLOWED_MODELS).flat()) {
       expect(isModelAllowedForEngine("opencode", model)).toBe(true);
     }

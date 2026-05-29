@@ -127,8 +127,8 @@ export const MODELS: { value: string; label: string; tint: string }[] = [
     tint: "text-fuchsia-500",
   },
   {
-    value: "deepseek/deepseek-v4-flash-0731",
-    label: "DeepSeek V4 Flash 0731 · Wafer Fast",
+    value: "deepseek/deepseek-v4-flash",
+    label: "DeepSeek V4 Flash · Wafer Fast",
     tint: "text-cyan-500",
   },
   {
