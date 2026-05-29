@@ -39,6 +39,9 @@ describe("engine model catalog", () => {
     expect(selectableModelsForEngine("opencode").map((m) => m.value)).toContain(
       "openai/gpt-5.6-luna",
     );
+    expect(selectableModelsForEngine("opencode").map((m) => m.value)).not.toContain(
+      "openai/gpt-5.6-sol-pro",
+    );
     expect(selectableModelsForEngine("opencode").map((m) => m.value)).toContain(
       "deepseek/deepseek-v4-flash",
     );
