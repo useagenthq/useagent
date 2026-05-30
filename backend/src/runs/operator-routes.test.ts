@@ -22,6 +22,8 @@ function makeApp() {
       calls.approve.push(requestId);
       return { approved: true };
     },
+    admitReleaseParity: async (c, body) =>
+      c.json({ orgId: c.get("orgId"), userId: c.get("userId"), prompt: body.prompt }, 201),
   });
   return { app, calls };
 }
@@ -65,6 +67,19 @@ describe("operator dispatch bridge", () => {
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ signalled: true });
     expect(calls.cancel).toEqual([["run-9", "gate teardown"]]);
+  });
+
+  test("admits parity only through the authenticated operator lane with server identity", async () => {
+    const { app } = makeApp();
+    const response = await app.fetch(
+      post(
+        "/admit-release-eval",
+        { orgId: "org-1", userId: "user-1", run: { prompt: "probe" } },
+        { authorization: `Bearer ${SECRET}`, "idempotency-key": "parity-1" },
+      ),
+    );
+    expect(response.status).toBe(201);
+    expect(await response.json()).toEqual({ orgId: "org-1", userId: "user-1", prompt: "probe" });
   });
 
   test("approves a gateway approval request through the canary hook", async () => {
@@ -123,6 +138,11 @@ describe("operator dispatch bridge", () => {
     expect(
       (await app.fetch(
         post("/approve-gateway-request", {}, { authorization: `Bearer ${SECRET}` }),
+      )).status,
+    ).toBe(400);
+    expect(
+      (await app.fetch(
+        post("/admit-release-eval", { run: {} }, { authorization: `Bearer ${SECRET}` }),
       )).status,
     ).toBe(400);
   });

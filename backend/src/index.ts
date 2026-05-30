@@ -33,7 +33,7 @@ import { fleetRoutes } from "./runs/fleet-routes";
 import { liveProxyRoutes } from "./runs/live-proxy";
 import { recoverStaleRuns, startReconcileLoop } from "./runs/recovery";
 import { pumpThread, signalCancel } from "./worker";
-import { runsRoutes } from "./runs/routes";
+import { handleRunCreate, runsRoutes } from "./runs/routes";
 import { terminalRoutes } from "./runs/terminal";
 import { schedulesRoutes } from "./schedules/routes";
 import { startScheduler } from "./schedules/scheduler";
@@ -196,6 +196,8 @@ app.route(
     pump: pumpThread,
     cancel: signalCancel,
     approveGatewayRequest: approveApprovalRequestAsRunOwner,
+    admitReleaseParity: (c, body) =>
+      handleRunCreate(c, { body, origin: "internal:eval" }),
   }),
 );
 

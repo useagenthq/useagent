@@ -1,4 +1,4 @@
-import { Hono } from "hono";
+import { Hono, type Context } from "hono";
 import type { AppEnv } from "../http";
 import {
   ENGINE_IDS,
@@ -24,6 +24,11 @@ import {
   RunAdmissionClosedError,
   type RunCommandIntent,
 } from "../commands";
+import {
+  acceptInternalRunCommand,
+  preflightInternalRunCommandReplay,
+} from "../commands/service";
+import type { InternalRunOrigin } from "./origin";
 import { acceptRunCancel, CANCEL_SUMMARY } from "../commands/cancel";
 import { finalizeRun } from "./finalize";
 import { deleteReconcile } from "./reconcile-queue";
@@ -138,24 +143,40 @@ runsRoutes.get("/changes", (c) => {
   });
 });
 
-runsRoutes.post("/", async (c) => {
-  let body: {
-    prompt?: unknown;
-    model?: unknown;
-    engine?: unknown;
-    parent_run_id?: unknown;
-    repo?: unknown;
-    repos?: unknown;
-    branches?: unknown;
-    memory_scope?: unknown;
-    skill?: unknown;
-    command?: unknown;
-    attachments?: unknown;
-  };
-  try {
-    body = await c.req.json();
-  } catch {
-    return c.json({ error: "invalid JSON body" }, 400);
+export interface RunCreateBody {
+  prompt?: unknown;
+  model?: unknown;
+  engine?: unknown;
+  parent_run_id?: unknown;
+  repo?: unknown;
+  repos?: unknown;
+  branches?: unknown;
+  memory_scope?: unknown;
+  skill?: unknown;
+  command?: unknown;
+  attachments?: unknown;
+  origin?: unknown;
+}
+
+export async function handleRunCreate(
+  c: Context<AppEnv>,
+  options: {
+    readonly body?: RunCreateBody;
+    readonly origin?: InternalRunOrigin;
+  } = {},
+): Promise<Response> {
+  let body: RunCreateBody;
+  if (options.body) {
+    body = options.body;
+  } else {
+    try {
+      body = await c.req.json();
+    } catch {
+      return c.json({ error: "invalid JSON body" }, 400);
+    }
+  }
+  if (body.origin !== undefined) {
+    return c.json({ error: "origin is server-owned" }, 400);
   }
 
   const prompt = typeof body.prompt === "string" ? body.prompt.trim() : "";
@@ -356,11 +377,18 @@ runsRoutes.post("/", async (c) => {
   };
   let replay;
   try {
-    replay = await preflightRunCommandReplay({
-      orgId: c.get("orgId"),
-      idempotencyKey,
-      intent,
-    });
+    replay = options.origin
+      ? await preflightInternalRunCommandReplay({
+          orgId: c.get("orgId"),
+          idempotencyKey,
+          intent,
+          origin: options.origin,
+        })
+      : await preflightRunCommandReplay({
+          orgId: c.get("orgId"),
+          idempotencyKey,
+          intent,
+        });
   } catch (error) {
     if (error instanceof RunAdmissionClosedError) {
       return c.json({ error: error.code, retryable: true }, 503);
@@ -467,13 +495,16 @@ runsRoutes.post("/", async (c) => {
   // whitespace-only keys are treated as absent.
   let accepted;
   try {
-    accepted = await acceptRunCommand({
+    const commandInput = {
       idempotencyKey,
       orgId: c.get("orgId"),
       actorId: c.get("userId"),
       intent,
       run: { id, prompt: finalPrompt, model, engine, parentRunId, threadId, repos, resolvedResources, attachmentIds, memoryScope, skillId, skillVersion, skillContentHash, commandName, commandProvider, commandSessionId, commandCatalogRevision },
-    });
+    };
+    accepted = options.origin
+      ? await acceptInternalRunCommand({ ...commandInput, origin: options.origin })
+      : await acceptRunCommand(commandInput);
   } catch (error) {
     if (error instanceof UploadClaimError) {
       return c.json({ error: "upload_unavailable" }, 409);
@@ -504,7 +535,9 @@ runsRoutes.post("/", async (c) => {
     default:
       return assertNever(accepted);
   }
-});
+}
+
+runsRoutes.post("/", (c) => handleRunCreate(c));
 
 // POST /:id/cancel — durable user Stop. Records a `run.cancel` command
 // (idempotent), fails a not-yet-started (queued) run atomically, signals a live
