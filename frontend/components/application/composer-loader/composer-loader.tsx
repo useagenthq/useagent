@@ -136,6 +136,12 @@ export function ComposerLoader({
       style={{
         opacity,
         animation: `bui-composer-loader-dash ${speed}s linear ${(dashPhase(dashLen, backPx) * speed) / 100}s infinite ${direction}`,
+        // Idle must cost nothing: stroke-dashoffset is a non-compositable SVG
+        // paint property animated through Gaussian-blur filters, so while the
+        // light is hidden (active=false, wrapper opacity 0) the animation is
+        // PAUSED instead of ticking style/paint every frame forever. The 450ms
+        // wrapper opacity fade still plays on both edges.
+        animationPlayState: active ? "running" : "paused",
       }}
     />
   );

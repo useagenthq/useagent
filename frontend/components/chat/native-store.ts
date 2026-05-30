@@ -52,12 +52,15 @@ export interface NativeStore {
    *  Silent by design — reset is always render-driven, and React re-reads
    *  getSnapshot after the render that triggered it. */
   reset(steps: readonly ApiStep[], generation: number): void;
-  /** Ingest/enrich one step; a stale `generation` is ignored (the guard). Returns
-   *  whether it applied (false = dropped) so callers avoid a getSnapshot rebuild
-   *  just to detect change - critical under burst replay (avoids O(n^2)). */
+  /** Ingest/enrich one step; a stale `generation` or an identical re-emit is
+   *  ignored (the guard). Returns whether it changed anything (false = dropped)
+   *  so callers avoid a getSnapshot rebuild just to detect change - critical
+   *  under burst replay (avoids O(n^2)). */
   ingest(step: ApiStep, generation: number): boolean;
-  /** Ingest many steps at the given generation (poll/finalize reconcile). */
-  ingestAll(steps: readonly ApiStep[], generation: number): void;
+  /** Ingest many steps at the given generation (poll/finalize reconcile).
+   *  Returns whether any step actually changed, so an identical reconcile
+   *  snapshot never invalidates the cached projection. */
+  ingestAll(steps: readonly ApiStep[], generation: number): boolean;
   /** Ingest a native frame; deduped by eventId keeping the highest seq, so a
    *  live↔replay overlap and part revisions collapse. Stale generation / stale seq
    *  ignored. Returns whether it applied (false = deduped/dropped). */
@@ -82,6 +85,22 @@ const EMPTY_SNAPSHOT: NativeSnapshot = {
  */
 function dedupeKey(step: ApiStep, ids: NativeIds | null): string {
   return ids?.partID ?? ids?.callID ?? `idx:${step.idx}`;
+}
+
+/** Every ApiStep field is a primitive, so a shallow field compare IS content
+ *  equality - cheap enough to run per step on every reconcile replay. */
+function stepEquals(a: ApiStep, b: ApiStep): boolean {
+  return (
+    a === b ||
+    (a.id === b.id &&
+      a.run_id === b.run_id &&
+      a.idx === b.idx &&
+      a.kind === b.kind &&
+      a.label === b.label &&
+      a.chip === b.chip &&
+      a.code_json === b.code_json &&
+      a.created_at === b.created_at)
+  );
 }
 
 /** Build the immutable snapshot from the canonical record + frame maps (pure). */
@@ -153,14 +172,25 @@ export function createNativeStore(): NativeStore {
     },
     ingest(step, gen) {
       if (gen !== generation) return false; // generation guard — drop stale writes
-      records.set(dedupeKey(step, nativeOf(step)), step);
+      const key = dedupeKey(step, nativeOf(step));
+      const prev = records.get(key);
+      if (prev && stepEquals(prev, step)) return false; // identical re-emit — no change
+      records.set(key, step);
       notify();
       return true;
     },
     ingestAll(steps, gen) {
-      if (gen !== generation) return;
-      for (const step of steps) records.set(dedupeKey(step, nativeOf(step)), step);
-      notify();
+      if (gen !== generation) return false;
+      let changed = false;
+      for (const step of steps) {
+        const key = dedupeKey(step, nativeOf(step));
+        const prev = records.get(key);
+        if (prev && stepEquals(prev, step)) continue; // unchanged (reconcile replay)
+        records.set(key, step);
+        changed = true;
+      }
+      if (changed) notify();
+      return changed;
     },
     ingestNative(frame, gen) {
       if (gen !== generation) return false;

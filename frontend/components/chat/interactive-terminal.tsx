@@ -222,11 +222,15 @@ export function InteractiveTerminal({ runId }: { runId: string }) {
           }
         }, RESIZE_NOTIFY_DELAY_MS);
       });
-      // Fit immediately for responsiveness, then once more after the burst:
-      // FitAddon.fit() ignores re-entry for 50ms after a resize, so the LAST
-      // observer fire of a drag can be swallowed, leaving the grid stale.
+      // Refit ONLY on a trailing debounce - never per observer fire. During a
+      // rail drag the pane resizes every frame; fitting each fire made every
+      // frame pay a full grid reflow + canvas bitmap realloc (and FitAddon
+      // drops re-entry within 50ms of the last resize anyway, so mid-drag fits
+      // landed in ragged 50-150ms steps while pty bytes formatted for the old
+      // cols painted into the new grid). One fit after the burst settles gives
+      // a single clean reflow; the 150ms PTY notify above then reprints once
+      // against the settled grid. Visual stretch DURING the drag is fine.
       observer = new ResizeObserver(() => {
-        fit.fit();
         if (refitTimer !== null) clearTimeout(refitTimer);
         refitTimer = setTimeout(() => {
           refitTimer = null;

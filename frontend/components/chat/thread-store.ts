@@ -75,6 +75,10 @@ export interface ThreadStore {
 
 const EMPTY_SNAPSHOT: ThreadSnapshot = { runs: [], byId: new Map() };
 
+/** Shared frozen canonical lane for runs with no canonical events yet — one
+ *  identity, so an empty lane never invalidates a memoized timeline. */
+const EMPTY_CANONICAL: readonly StoredCanonicalEvent[] = Object.freeze([]);
+
 export function createThreadStore(): ThreadStore {
   // Ordered run ids (oldest→newest) + per-run slices.
   const order: string[] = [];
@@ -91,6 +95,17 @@ export function createThreadStore(): ThreadStore {
 
   const listeners = new Set<() => void>();
   let snapshot: ThreadSnapshot | null = null;
+  // Per-run view identity is STABLE across snapshot rebuilds unless that run was
+  // actually mutated: every mutator marks its runId dirty, and getSnapshot()
+  // rebuilds only dirty runs' ThreadRunView objects, reusing the rest. With
+  // stable identities, memoized turn renders bail for every settled run while a
+  // sibling streams (previously every notify rebuilt EVERY run's view + timeline,
+  // O(thread) per SSE animation frame).
+  const viewCache = new Map<string, ThreadRunView>();
+  const dirty = new Set<string>();
+  // Sorted canonical projection per run, re-sorted only when applyCanonical
+  // lands a new revision for that run (not on every unrelated rebuild).
+  const canonicalSorted = new Map<string, readonly StoredCanonicalEvent[]>();
 
   // Batch depth: while > 0, mutations invalidate the snapshot but defer the single
   // listener flush to batch-end (so an SSE replay burst renders once, not per frame).
@@ -106,6 +121,11 @@ export function createThreadStore(): ThreadStore {
       return;
     }
     flush();
+  };
+  /** Mark one run's view stale, then notify. Every mutation is run-addressed. */
+  const touch = (runId: string): void => {
+    dirty.add(runId);
+    notify();
   };
 
   /** Ensure a run has a native store + an order slot (idempotent). */
@@ -126,22 +146,53 @@ export function createThreadStore(): ThreadStore {
     if (status.get(runId) === "queued") status.set(runId, "running");
   };
 
-  /** Merge one run's durable projection into its slice (add if new). */
-  const mergeRun = (run: ApiRun): void => {
-    if (!runs.has(run.id)) order.push(run.id);
+  /** Scalar run-row compare (steps are compared by ingestAll): true when the
+   *  fresh read differs from the stored row. `updated_at` covers every DB write
+   *  to the row; status/summary are compared explicitly as the authoritative
+   *  fields the views project. */
+  const runRowChanged = (prev: ApiRun, next: ApiRun): boolean =>
+    prev.status !== next.status ||
+    prev.summary !== next.summary ||
+    prev.updated_at !== next.updated_at ||
+    (prev.engine_session_id ?? null) !== (next.engine_session_id ?? null) ||
+    prev.memory_scope !== next.memory_scope ||
+    prev.duration_ms !== next.duration_ms ||
+    (prev.uploads?.length ?? 0) !== (next.uploads?.length ?? 0);
+
+  /** Merge one run's durable projection into its slice (add if new). Returns
+   *  whether anything observable changed - an identical reconcile snapshot
+   *  keeps the stored run object (and so the run's view identity) untouched. */
+  const mergeRun = (run: ApiRun): boolean => {
+    const prev = runs.get(run.id);
+    if (!prev) order.push(run.id);
+    // A fresh DB read is authoritative for durable steps; ingestAll merges (dedupe
+    // by native id / idx) and reports whether any step actually changed, so a
+    // live-enriched step is never regressed and an identical replay never
+    // invalidates this run's native projection.
+    const stepsChanged = ensureStore(run.id).ingestAll(run.steps, 0);
+    const changed =
+      !prev ||
+      stepsChanged ||
+      runRowChanged(prev, run) ||
+      // The maps can diverge from the stored row (live promotion, applyDone);
+      // the fresh read is authoritative, so divergence must merge.
+      status.get(run.id) !== run.status ||
+      summary.get(run.id) !== run.summary ||
+      // A settled run carrying leftover transient narration must clear it.
+      (!isLiveStatus(run.status) &&
+        ((liveText.get(run.id) ?? "") !== "" || (liveReasoning.get(run.id) ?? "") !== ""));
+    if (!changed) return false;
     runs.set(run.id, run);
     status.set(run.id, run.status);
     summary.set(run.id, run.summary);
     if (!liveText.has(run.id)) liveText.set(run.id, "");
     if (!liveReasoning.has(run.id)) liveReasoning.set(run.id, "");
-    // A fresh DB read is authoritative for durable steps; ingestAll merges (dedupe
-    // by native id / idx), so a live-enriched step is never regressed.
-    ensureStore(run.id).ingestAll(run.steps, 0);
     // A settled run carries no live narration; its summary/steps are the truth.
     if (!isLiveStatus(run.status)) {
       liveText.set(run.id, "");
       liveReasoning.set(run.id, "");
     }
+    return true;
   };
 
   return {
@@ -170,37 +221,55 @@ export function createThreadStore(): ThreadStore {
         return snapshot;
       }
       const runsList: ApiRun[] = [];
+      // The top-level containers are fresh per rebuild (subscribers key effects
+      // off snapshot/byId identity); only the per-run VIEWS are reused.
       const byId = new Map<string, ThreadRunView>();
       for (const id of order) {
         const run = runs.get(id);
         if (!run) continue; // step/native arrived before its run frame — skip until it does
         runsList.push(run);
-        const canonMap = canonicalByRun.get(id);
-        byId.set(id, {
-          run,
-          status: status.get(id) ?? run.status,
-          summary: summary.get(id) ?? run.summary,
-          liveText: liveText.get(id) ?? "",
-          liveReasoning: liveReasoning.get(id) ?? "",
-          native: ensureStore(id).getSnapshot(),
-          canonical: canonMap
-            ? [...canonMap.values()].sort((a, b) => a.deliverySeq - b.deliverySeq)
-            : [],
-          canonicalComplete: canonicalCompleteRuns.has(id),
-        });
+        let view = viewCache.get(id);
+        if (!view || dirty.has(id)) {
+          let canonical = canonicalSorted.get(id);
+          if (!canonical) {
+            const canonMap = canonicalByRun.get(id);
+            canonical = canonMap
+              ? [...canonMap.values()].sort((a, b) => a.deliverySeq - b.deliverySeq)
+              : EMPTY_CANONICAL;
+            canonicalSorted.set(id, canonical);
+          }
+          view = {
+            run,
+            status: status.get(id) ?? run.status,
+            summary: summary.get(id) ?? run.summary,
+            liveText: liveText.get(id) ?? "",
+            liveReasoning: liveReasoning.get(id) ?? "",
+            native: ensureStore(id).getSnapshot(),
+            canonical,
+            canonicalComplete: canonicalCompleteRuns.has(id),
+          };
+          viewCache.set(id, view);
+        }
+        byId.set(id, view);
       }
+      dirty.clear();
       snapshot = { runs: runsList, byId };
       return snapshot;
     },
 
     applySnapshot(runsIn) {
-      for (const run of runsIn) mergeRun(run);
-      notify();
+      let changed = false;
+      for (const run of runsIn) {
+        if (mergeRun(run)) {
+          dirty.add(run.id);
+          changed = true;
+        }
+      }
+      if (changed) notify();
     },
 
     upsertRun(run) {
-      mergeRun(run);
-      notify();
+      if (mergeRun(run)) touch(run.id);
     },
 
     applyStep(runId, step) {
@@ -210,7 +279,7 @@ export function createThreadStore(): ThreadStore {
       const wasQueued = status.get(runId) === "queued";
       const changed = ensureStore(runId).ingest(step, 0);
       if (step.kind !== "done") markRunActive(runId);
-      if (changed || (wasQueued && step.kind !== "done")) notify();
+      if (changed || (wasQueued && step.kind !== "done")) touch(runId);
     },
 
     applyDelta(runId, delta, kind) {
@@ -221,7 +290,7 @@ export function createThreadStore(): ThreadStore {
       } else {
         liveText.set(runId, (liveText.get(runId) ?? "") + delta);
       }
-      notify();
+      touch(runId);
     },
 
     applyNative(runId, frame) {
@@ -231,7 +300,7 @@ export function createThreadStore(): ThreadStore {
       const wasQueued = status.get(runId) === "queued";
       const changed = ensureStore(runId).ingestNative(frame, 0);
       markRunActive(runId);
-      if (changed || wasQueued) notify();
+      if (changed || wasQueued) touch(runId);
     },
 
     applyCanonical(event) {
@@ -245,20 +314,21 @@ export function createThreadStore(): ThreadStore {
       const prev = m.get(event.eventId);
       if (prev && prev.revision >= event.revision) return;
       m.set(event.eventId, event);
-      notify();
+      canonicalSorted.delete(event.runId); // re-sort this run's lane on next read
+      touch(event.runId);
     },
 
     markCanonicalComplete(runId) {
       if (canonicalCompleteRuns.has(runId)) return; // idempotent - no rebuild on a repeat
       canonicalCompleteRuns.add(runId);
-      notify();
+      touch(runId);
     },
 
     applyDone(runId, nextStatus) {
       status.set(runId, nextStatus);
       liveText.set(runId, ""); // transient text is not reconnect truth
       liveReasoning.set(runId, ""); // thinking is live-only, cleared on settle
-      notify();
+      touch(runId);
     },
   };
 }
