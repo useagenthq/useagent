@@ -1,6 +1,6 @@
 import {
   DEEPSEEK_V4_FLASH_MODEL,
-  GEMINI_3_7_FLASH_MODEL,
+  GEMINI_FLASH_MODEL,
   KIMI_K3_MODEL,
 } from "../runs/model-policy";
 
@@ -21,7 +21,7 @@ const DEEPSEEK_V4_FLASH_ROUTING = {
   sort: "throughput",
 } as const;
 
-const GEMINI_3_7_FLASH_ROUTING = {
+const GEMINI_FLASH_ROUTING = {
   sort: "throughput",
 } as const;
 
@@ -34,9 +34,9 @@ export function applyOpenRouterProviderRouting(model: string, body: string): str
     ? KIMI_K3_AGENT_ROUTING
     : model === DEEPSEEK_V4_FLASH_MODEL
       ? DEEPSEEK_V4_FLASH_ROUTING
-      : model === GEMINI_3_7_FLASH_MODEL
-        ? GEMINI_3_7_FLASH_ROUTING
-      : null;
+      : model === GEMINI_FLASH_MODEL
+        ? GEMINI_FLASH_ROUTING
+        : null;
   if (!routing) return body;
 
   const parsed = JSON.parse(body) as Record<string, unknown>;
