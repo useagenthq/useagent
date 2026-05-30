@@ -42,6 +42,14 @@ export default function nextConfig(phase: string): NextConfig {
       },
     },
     distDir: resolveDistDir(phase),
+    // Barrel-import tree shaking: the lag diagnosis measured the FULL remixicon
+    // index riding the shared dev chunks (3227 icons for the handful we use per
+    // route). These packages re-export huge surfaces from one entry; rewriting
+    // their imports to direct paths keeps route chunks to the icons/components
+    // actually referenced.
+    experimental: {
+      optimizePackageImports: ["@remixicon/react", "react-aria-components"],
+    },
     generateBuildId: async () => process.env.NEXT_PUBLIC_SKYNET_RELEASE_COMMIT || null,
     // We maintain AGENTS.md by hand — stop Next 16 from regenerating it.
     agentRules: false,
