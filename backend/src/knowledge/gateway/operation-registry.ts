@@ -29,6 +29,11 @@ import {
   KNOWLEDGE_MANAGEMENT_TOOLS,
 } from "./knowledge-management-tools";
 import {
+  executeIntegrationTool,
+  INTEGRATION_APPROVAL_REQUIRED_TOOL_NAMES,
+  INTEGRATION_TOOLS,
+} from "./integration-tools";
+import {
   argumentsWithoutApproval,
   consumeGatewayOperationApproval,
 } from "./approval-capability";
@@ -60,6 +65,7 @@ interface GatewayToolFamily {
 }
 
 const ADDITIONAL_APPROVAL_REQUIRED_TOOL_NAMES: ReadonlySet<string> = new Set([
+  ...INTEGRATION_APPROVAL_REQUIRED_TOOL_NAMES,
   "knowledge_draft_publish",
   "knowledge_draft_archive",
 ]);
@@ -103,12 +109,14 @@ function withApprovalRequirement(tool: GatewayToolDescriptor): GatewayToolDescri
 const APPROVED_KNOWLEDGE_MANAGEMENT_TOOLS = KNOWLEDGE_MANAGEMENT_TOOLS.map(
   withApprovalRequirement,
 );
+const APPROVED_INTEGRATION_TOOLS = INTEGRATION_TOOLS.map(withApprovalRequirement);
 
 const BASE_TOOL_FAMILIES = [
   { tools: KNOWLEDGE_TOOLS, execute: executeKnowledgeTool },
   { tools: CONTEXT_TOOLS, execute: executeContextTool },
   { tools: APPROVED_KNOWLEDGE_MANAGEMENT_TOOLS, execute: executeKnowledgeManagementTool },
   { tools: MEMORY_TOOLS, execute: executeMemoryTool },
+  { tools: APPROVED_INTEGRATION_TOOLS, execute: executeIntegrationTool },
   { tools: WEB_SEARCH_TOOLS, execute: executeWebSearchTool },
   { tools: ARTIFACT_TOOLS, execute: executeArtifactTool },
   { tools: RECORDING_TOOLS, execute: executeRecordingTool },

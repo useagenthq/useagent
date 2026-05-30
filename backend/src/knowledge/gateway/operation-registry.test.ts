@@ -151,7 +151,12 @@ describe("gateway operation registry", () => {
     const update = descriptors.find((tool) => tool.name === "automation_update");
     const list = descriptors.find((tool) => tool.name === "automation_list");
     const publish = descriptors.find((tool) => tool.name === "knowledge_draft_publish");
-    if (!update || !list || !publish) throw new Error("expected sensitive descriptors");
+    const integrationExecute = descriptors.find(
+      (tool) => tool.name === "integration_action_execute",
+    );
+    if (!update || !list || !publish || !integrationExecute) {
+      throw new Error("expected sensitive descriptors");
+    }
     const updateSchema = update.inputSchema as {
       readonly properties?: Readonly<Record<string, unknown>>;
       readonly required?: readonly string[];
@@ -161,6 +166,10 @@ describe("gateway operation registry", () => {
       readonly required?: readonly string[];
     };
     const publishSchema = publish.inputSchema as {
+      readonly properties?: Readonly<Record<string, unknown>>;
+      readonly required?: readonly string[];
+    };
+    const integrationSchema = integrationExecute.inputSchema as {
       readonly properties?: Readonly<Record<string, unknown>>;
       readonly required?: readonly string[];
     };
@@ -179,6 +188,8 @@ describe("gateway operation registry", () => {
     expect(publishSchema.required).toContain("approvalCapability");
     expect(publishSchema.properties).not.toHaveProperty("confirmPublish");
     expect(publishSchema.properties).not.toHaveProperty("confirmationToken");
+    expect(integrationSchema.required).toContain("approvalCapability");
+    expect(integrationSchema.properties).toHaveProperty("approvalCapability");
   });
 
   test("pins the approval-gated operation set and the mid-run approval lane", () => {
@@ -189,6 +200,7 @@ describe("gateway operation registry", () => {
       "automation_delete",
       "automation_run_now",
       "automation_update",
+      "integration_action_execute",
       "knowledge_draft_archive",
       "knowledge_draft_publish",
     ]);

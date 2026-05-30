@@ -8,6 +8,7 @@ import {
 import {
   consumeIntegrationConnectSession,
   createIntegrationConnectSession,
+  findActiveIntegrationConnectSession,
   hashIntegrationConnectState,
   normalizeIntegrationReturnTo,
 } from "../src/integrations/connect-sessions";
@@ -18,6 +19,8 @@ import {
   updateOwnedIntegrationConnection,
 } from "../src/integrations/connection-repo";
 import { uid } from "./helpers";
+import { createIntegrationService } from "../src/integrations/service";
+import type { DelegatedConnectionBackend } from "../src/integrations/backend";
 
 describe("integration persistence", () => {
   test("stores only safe projections and enforces org/user visibility", async () => {
@@ -79,6 +82,26 @@ describe("integration persistence", () => {
         scopes: [],
       }),
     ).toBeNull();
+
+    let disconnected = false;
+    const service = createIntegrationService({
+      managedBackends: [],
+      delegatedBackends: [{
+        kind: "delegated",
+        runtimeBindingId: "runtime-1",
+        supports: (provider) => provider === "linear",
+        async listConnectableProviders() { return ["linear"]; },
+        async startConnect() { throw new Error("not used"); },
+        async completeConnect() { throw new Error("not used"); },
+        async disconnect() { disconnected = true; },
+        async listActions() { return []; },
+        async executeAction() { return {}; },
+      }],
+    });
+    await expect(
+      service.disconnect({ orgId, userId: otherUserId, connectionId: orgConnection.id }),
+    ).rejects.toThrow("organization admin route required");
+    expect(disconnected).toBe(false);
 
     const [stored] = await db
       .select()
@@ -189,6 +212,25 @@ describe("integration persistence", () => {
     ).toBeNull();
   });
 
+  test("reads pending state without consuming it so transient backend checks can retry", async () => {
+    const orgId = uid("integration-peek-org");
+    const actorUserId = uid("integration-peek-user");
+    const created = await createIntegrationConnectSession({
+      orgId,
+      actorUserId,
+      owner: { type: "user", userId: actorUserId },
+      provider: "linear",
+      runtimeBindingId: "runtime-peek",
+      backendSessionRef: "pending-connection",
+      returnTo: "/settings/integrations",
+      expiresAt: new Date(Date.now() + 60_000),
+    });
+    expect(await findActiveIntegrationConnectSession({ orgId, actorUserId, state: created.state }))
+      .toMatchObject({ id: created.id, consumedAt: null });
+    expect(await findActiveIntegrationConnectSession({ orgId, actorUserId, state: created.state }))
+      .toMatchObject({ id: created.id, consumedAt: null });
+  });
+
   test("accepts only same-origin relative return paths", () => {
     expect(normalizeIntegrationReturnTo("/settings/integrations?provider=linear")).toBe(
       "/settings/integrations?provider=linear",
@@ -203,5 +245,67 @@ describe("integration persistence", () => {
     ]) {
       expect(normalizeIntegrationReturnTo(unsafe)).toBeNull();
     }
+  });
+
+  test("keeps connect state retryable until the delegated backend confirms completion", async () => {
+    const orgId = uid("integration-service-org");
+    const userId = uid("integration-service-user");
+    let ready = false;
+    const backend: DelegatedConnectionBackend = {
+      kind: "delegated",
+      runtimeBindingId: "fake:runtime",
+      supports: (provider) => provider === "linear",
+      async listConnectableProviders() { return ["linear"]; },
+      async startConnect() {
+        return {
+          backendSessionRef: "remote-pending",
+          runtimeBindingId: "fake:runtime",
+          redirectUrl: "https://linear.app/oauth/authorize",
+          expiresAt: new Date(Date.now() + 60_000),
+        };
+      },
+      async completeConnect() {
+        if (!ready) throw new Error("integration authorization is not complete");
+        return {
+          runtimeBindingId: "fake:runtime",
+          externalConnectionId: "linear-account-1",
+          externalConnectionName: "work",
+          authMethod: "oauth2",
+          account: { displayName: "Acme Linear" },
+          scopes: ["read"],
+        };
+      },
+      async disconnect() {},
+      async listActions() { return []; },
+      async executeAction() { return {}; },
+    };
+    const service = createIntegrationService({ managedBackends: [], delegatedBackends: [backend] });
+    await expect(service.listIntegrations({ orgId, userId })).resolves.toContainEqual(
+      expect.objectContaining({
+        provider: "linear",
+        connectAvailable: true,
+        connection: null,
+      }),
+    );
+    const started = await service.startConnect({
+      orgId,
+      userId,
+      owner: { type: "user", userId },
+      provider: "linear",
+      returnTo: "/settings/integrations",
+    });
+    await expect(service.completeConnect({ orgId, userId, state: started.state })).rejects.toThrow(
+      "not complete",
+    );
+    ready = true;
+    const connection = await service.completeConnect({ orgId, userId, state: started.state });
+    expect(connection).toMatchObject({
+      provider: "linear",
+      status: "connected",
+      account: { displayName: "Acme Linear" },
+    });
+    await expect(service.completeConnect({ orgId, userId, state: started.state })).rejects.toThrow(
+      "invalid or expired",
+    );
   });
 });

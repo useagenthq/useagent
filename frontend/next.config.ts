@@ -1,6 +1,6 @@
+import { fileURLToPath } from "node:url";
 import type { NextConfig } from "next";
 import { PHASE_PRODUCTION_BUILD, PHASE_PRODUCTION_SERVER } from "next/constants";
-import { fileURLToPath } from "node:url";
 
 // Turbopack infers the project root as `frontend/`, but our shared libraries are
 // file:-linked from `../packages` (OUTSIDE that inferred root), so Turbopack rejected the
@@ -32,6 +32,7 @@ export default function nextConfig(phase: string): NextConfig {
       // resolveAlias paths are relative to the PROJECT dir (frontend/), not the root.
       resolveAlias: {
         "@skynet/agent-client": "../packages/agent-client/src/index.ts",
+        "@skynet/agent-client/integrations": "../packages/agent-client/src/integrations.ts",
         "@skynet/agent-client/org-changes": "../packages/agent-client/src/org-changes.ts",
         "@skynet/agent-client/provider-connections":
           "../packages/agent-client/src/provider-connections.ts",

@@ -13,8 +13,9 @@ export const SETTINGS_SECTIONS = [
   { id: "general", label: "General" },
   { id: "usage", label: "Usage" },
   { id: "machine", label: "Machine" },
-  { id: "secrets", label: "Secrets" },
+  { id: "integrations", label: "Integrations" },
   { id: "providers", label: "Providers" },
+  { id: "secrets", label: "Secrets" },
   { id: "team", label: "Team" },
 ] as const;
 

@@ -66,7 +66,9 @@ function visiblePredicate(orgId: string, userId: string) {
   );
 }
 
-function toProjection(row: IntegrationConnectionRecord): ConnectionProjection {
+export function projectIntegrationConnection(
+  row: IntegrationConnectionRecord,
+): ConnectionProjection {
   return {
     id: row.id,
     provider: row.provider,
@@ -116,7 +118,7 @@ export async function createIntegrationConnection(
     })
     .returning();
   if (!row) throw new Error("integration connection insert returned no row");
-  return toProjection(row);
+  return projectIntegrationConnection(row);
 }
 
 export async function listVisibleIntegrationConnections(scope: {
@@ -128,7 +130,7 @@ export async function listVisibleIntegrationConnections(scope: {
     .from(integrationConnections)
     .where(visiblePredicate(scope.orgId, scope.userId))
     .orderBy(asc(integrationConnections.provider), asc(integrationConnections.createdAt));
-  return rows.map(toProjection);
+  return rows.map(projectIntegrationConnection);
 }
 
 export async function findVisibleIntegrationConnection(scope: {
@@ -146,7 +148,26 @@ export async function findVisibleIntegrationConnection(scope: {
       ),
     )
     .limit(1);
-  return row ? toProjection(row) : null;
+  return row ? projectIntegrationConnection(row) : null;
+}
+
+/** Trusted backend lookup. Raw backend references never cross HTTP projections. */
+export async function findVisibleIntegrationConnectionRecord(scope: {
+  readonly orgId: string;
+  readonly userId: string;
+  readonly id: string;
+}): Promise<IntegrationConnectionRecord | null> {
+  const [row] = await db
+    .select()
+    .from(integrationConnections)
+    .where(
+      and(
+        visiblePredicate(scope.orgId, scope.userId),
+        eq(integrationConnections.id, scope.id),
+      ),
+    )
+    .limit(1);
+  return row ?? null;
 }
 
 export async function updateOwnedIntegrationConnection(
@@ -171,5 +192,5 @@ export async function updateOwnedIntegrationConnection(
       ),
     )
     .returning();
-  return row ? toProjection(row) : null;
+  return row ? projectIntegrationConnection(row) : null;
 }

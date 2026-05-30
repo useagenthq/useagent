@@ -1,19 +1,16 @@
 "use client";
 
-import { useMemo, useState } from "react";
 import {
-  RiAddLine,
-  RiCheckLine,
+  type RemixiconComponentType,
   RiGithubFill,
   RiMailFill,
   RiSearchLine,
   RiSlackFill,
-  type RemixiconComponentType,
 } from "@remixicon/react";
-
+import { useState } from "react";
+import { IntegrationConnections } from "@/app/settings/integration-connections";
 import * as Input from "@/components/ui/input";
 import { cnExt } from "@/utils/cn";
-import { integrations, type Integration } from "./integrations";
 
 /* -------------------------------------------------------------------------- */
 /*  Promo banner — a fixed-appearance gradient art element (same in both       */
@@ -75,64 +72,11 @@ function PromoBanner() {
               <Icon className={cnExt("size-4 shrink-0", labelClass)} aria-hidden />
               <span className={cnExt("text-body-2-medium", labelClass)}>{label}</span>
             </span>
-            <span className="truncate text-body-2-regular text-neutral-800">
-              {task}
-            </span>
+            <span className="truncate text-body-2-regular text-neutral-800">{task}</span>
           </div>
         ))}
       </div>
     </div>
-  );
-}
-
-/* -------------------------------------------------------------------------- */
-/*  Featured grid                                                             */
-/* -------------------------------------------------------------------------- */
-
-interface IntegrationRowProps {
-  integration: Integration;
-  connected: boolean;
-  onToggle: (name: string) => void;
-}
-
-function IntegrationRow({
-  integration,
-  connected,
-  onToggle,
-}: IntegrationRowProps) {
-  const { name, description, icon: Icon, iconClass } = integration;
-
-  return (
-    <li className="flex items-center gap-3">
-      <span className="flex size-11 shrink-0 items-center justify-center rounded-xl border border-border-button-default bg-background-primary-default shadow-card">
-        <Icon className={cnExt("size-6", iconClass)} aria-hidden />
-      </span>
-
-      <div className="min-w-0 flex-1">
-        <p className="text-body-2-medium text-text-primary">{name}</p>
-        <p className="truncate text-body-2-regular text-text-secondary">
-          {description}
-        </p>
-      </div>
-
-      <button
-        type="button"
-        onClick={() => onToggle(name)}
-        aria-label={connected ? `Disconnect ${name}` : `Connect ${name}`}
-        className={cnExt(
-          "flex size-7 shrink-0 items-center justify-center rounded-lg text-text-secondary transition-colors",
-          connected
-            ? "hover:bg-background-tertiary-default"
-            : "bg-background-tertiary-default hover:bg-background-tertiary-hover",
-        )}
-      >
-        {connected ? (
-          <RiCheckLine className="size-4" aria-hidden />
-        ) : (
-          <RiAddLine className="size-4" aria-hidden />
-        )}
-      </button>
-    </li>
   );
 }
 
@@ -142,27 +86,6 @@ function IntegrationRow({
 
 export function AppsMarketplace() {
   const [query, setQuery] = useState("");
-  const [connected, setConnected] = useState<Set<string>>(
-    () => new Set(integrations.filter((i) => i.connected).map((i) => i.name)),
-  );
-
-  const toggle = (name: string) =>
-    setConnected((prev) => {
-      const next = new Set(prev);
-      if (next.has(name)) next.delete(name);
-      else next.add(name);
-      return next;
-    });
-
-  const results = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return integrations;
-    return integrations.filter(
-      (i) =>
-        i.name.toLowerCase().includes(q) ||
-        i.description.toLowerCase().includes(q),
-    );
-  }, [query]);
 
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-8 px-6 py-10 sm:px-8">
@@ -187,22 +110,7 @@ export function AppsMarketplace() {
 
       <section className="flex flex-col gap-5">
         <h2 className="text-body-2-medium text-text-primary">Featured</h2>
-        {results.length > 0 ? (
-          <ul className="grid grid-cols-1 gap-x-10 gap-y-6 sm:grid-cols-2">
-            {results.map((integration) => (
-              <IntegrationRow
-                key={integration.name}
-                integration={integration}
-                connected={connected.has(integration.name)}
-                onToggle={toggle}
-              />
-            ))}
-          </ul>
-        ) : (
-          <p className="text-body-2-regular text-text-secondary">
-            No integrations match “{query}”.
-          </p>
-        )}
+        <IntegrationConnections query={query} />
       </section>
     </div>
   );
