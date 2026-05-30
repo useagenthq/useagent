@@ -79,6 +79,38 @@ describe("skills CRUD + run", () => {
     expect(body.error).toBeDefined();
   });
 
+  test("library view omits sections; GET /:id returns the full record", async () => {
+    const created = await json<any>("/api/skills", {
+      method: "POST",
+      body: {
+        name: `Library Skill ${uid()}`,
+        description: "slim list, full detail",
+        sections: { overview: ["a step"], procedure: [], verify: [] },
+      },
+    });
+    expect(created.status).toBe(201);
+    const id = created.body.id as string;
+
+    // The list carries import provenance (null for hand-authored skills).
+    expect(created.body.source_repo).toBeNull();
+    expect(created.body.source_path).toBeNull();
+
+    const library = await json<{ skills: any[] }>("/api/skills?view=library");
+    const slim = library.body.skills.find((s) => s.id === id);
+    expect(slim).toBeTruthy();
+    expect("sections" in slim).toBe(false);
+    expect(slim.current_version).toBe(1);
+
+    const full = await json<any>(`/api/skills/${id}`);
+    expect(full.status).toBe(200);
+    expect(full.body.sections.overview).toEqual(["a step"]);
+
+    const missing = await json<any>(`/api/skills/${crypto.randomUUID()}`);
+    expect(missing.status).toBe(404);
+
+    expect((await json(`/api/skills/${id}`, { method: "DELETE" })).status).toBe(200);
+  });
+
   test("a keyed skill run replays after the selected skill is deleted", async () => {
     const created = await json<any>("/api/skills", {
       method: "POST",
