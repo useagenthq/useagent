@@ -3,19 +3,22 @@
  *
  * The page is wired to the backend at `/api/knowledge`, whose records carry a
  * distillation `kind` (qa / reference / policy / definition / decision /
- * outcome), a `title`/`body`, and a `meta` blob. Real records map into the
- * normalized {@link KnowledgeItem} the gallery renders. When the backend is
- * unreachable the page falls back to {@link mockKnowledgeItems} — deliberately
- * empty, so the fallback is an honest empty state, never fabricated content.
+ * outcome), a `title`/`body`, and flattened distilled meta (summary, question,
+ * source, confidence, entities, refs). Real records map into the normalized
+ * {@link KnowledgeItem} the gallery renders. When the backend is unreachable
+ * the page falls back to {@link mockKnowledgeItems} — deliberately empty, so
+ * the fallback is an honest empty state, never fabricated content.
  */
 
+import type { ChipProps } from "@/components/base/badges/chip";
 import { relativeTime } from "@/utils/format";
 
 /* -------------------------------------------------------------------------- */
-/*  Chip color union (a semantic hue mapped onto an AlignUI Badge color)        */
+/*  Chip color union (legacy AlignUI Badge hues — the skills page still maps    */
+/*  its tag palette through this union, so the type stays exported here)        */
 /* -------------------------------------------------------------------------- */
 
-/** The subset of AlignUI Badge colors we drive chips with. */
+/** The subset of AlignUI Badge colors shared tag palettes are keyed on. */
 export type ChipColor =
   | "gray"
   | "blue"
@@ -41,10 +44,11 @@ export type RecordKind =
   | "outcome";
 
 /**
- * Shape of a single record from `GET /api/knowledge`. The store returns the
- * source fields flat (top-level `domain` / `connector_instance_id` /
- * `created_at`); the original ingest contract nested them under `meta`, so the
- * mapper tolerates both.
+ * Shape of a single record from `GET /api/knowledge` (backend `toApi` in
+ * backend/src/knowledge/routes.ts flattens the useful distilled meta to the
+ * top level). The original ingest contract nested `domain` /
+ * `connector_instance_id` / `source_type` under `meta`, so the mapper
+ * tolerates both.
  */
 export interface KnowledgeRecord {
   id: string;
@@ -52,9 +56,14 @@ export interface KnowledgeRecord {
   title: string;
   body: string;
   refs?: string[];
-  domain?: string;
-  connector_instance_id?: string;
-  source_type?: string;
+  domain?: string | null;
+  connector_instance_id?: string | null;
+  source_type?: string | null;
+  source_url?: string | null;
+  summary?: string | null;
+  question?: string | null;
+  confidence?: number | null;
+  entities?: string[];
   meta?: {
     source_type?: string;
     connector_instance_id?: string;
@@ -79,48 +88,45 @@ export interface SearchResult {
 /*  View model                                                                  */
 /* -------------------------------------------------------------------------- */
 
-/** Normalized card model — both real records and the mock seed map into this. */
+/** Normalized row model — both real records and the mock seed map into this. */
 export interface KnowledgeItem {
   id: string;
   title: string;
   /** Optional "when to recall" line — present on mock seeds, omitted on records. */
   trigger?: string;
   body: string;
-  /** Folder chip label: `meta.domain ?? connector_instance_id` for records. */
+  /** Folder label source: `domain ?? connector_instance_id` for records. */
   folder: string;
   kind?: RecordKind;
   updated: string;
   pinned: boolean;
+  /** Distilled one-line summary, when the distiller produced one. */
+  summary?: string;
+  /** The distilled question (qa records). */
+  question?: string;
+  sourceType?: string;
+  sourceUrl?: string;
+  connectorId?: string;
+  confidence?: number;
+  refs?: string[];
+  entities?: string[];
 }
 
 /* -------------------------------------------------------------------------- */
 /*  Colors                                                                      */
 /* -------------------------------------------------------------------------- */
 
-/** Kind → Badge color, one distinct hue per RecordKind. */
-export const kindChipColor: Record<RecordKind, ChipColor> = {
+/** Kind → BoardUI Chip color, one distinct hue per RecordKind. */
+export const kindChipColor: Record<
+  RecordKind,
+  NonNullable<ChipProps["color"]>
+> = {
   qa: "blue",
-  reference: "sky",
+  reference: "cyan",
   policy: "purple",
-  definition: "green",
+  definition: "lime",
   decision: "yellow",
-  outcome: "red",
-};
-
-const folderPalette: ChipColor[] = [
-  "purple",
-  "blue",
-  "sky",
-  "green",
-  "yellow",
-  "red",
-];
-
-/** Stable colors for the seed folders so the fallback reads as before. */
-const knownFolderColor: Record<string, ChipColor> = {
-  Global: "purple",
-  "skynet-app": "blue",
-  useAgent: "blue",
+  outcome: "rose",
 };
 
 /** User-facing label for a persisted knowledge folder key. */
@@ -128,26 +134,16 @@ export function knowledgeFolderLabel(folder: string): string {
   return folder === "skynet-app" ? "useAgent" : folder;
 }
 
-/** Card-safe display copy that leaves the stored item and folder key unchanged. */
+/** Row-safe display copy that leaves the stored item and folder key unchanged. */
 export function knowledgeItemForDisplay(item: KnowledgeItem): KnowledgeItem {
   return { ...item, folder: knowledgeFolderLabel(item.folder) };
-}
-
-/** Deterministic Badge color for an arbitrary folder / domain name. */
-export function folderChipColor(folder: string): ChipColor {
-  if (folder in knownFolderColor) return knownFolderColor[folder];
-  let hash = 0;
-  for (let i = 0; i < folder.length; i++) {
-    hash = (hash * 31 + folder.charCodeAt(i)) >>> 0;
-  }
-  return folderPalette[hash % folderPalette.length];
 }
 
 /* -------------------------------------------------------------------------- */
 /*  Mappers                                                                     */
 /* -------------------------------------------------------------------------- */
 
-/** Map a backend record into the normalized card model. */
+/** Map a backend record into the normalized row model. */
 export function recordToItem(record: KnowledgeRecord): KnowledgeItem {
   const folder =
     record.domain ??
@@ -163,6 +159,17 @@ export function recordToItem(record: KnowledgeRecord): KnowledgeItem {
     kind: record.kind,
     updated: relativeTime(record.created_at),
     pinned: Boolean(record.pinned),
+    summary: record.summary ?? undefined,
+    question: record.question ?? undefined,
+    sourceType: record.source_type ?? record.meta?.source_type ?? undefined,
+    sourceUrl: record.source_url ?? undefined,
+    connectorId:
+      record.connector_instance_id ??
+      record.meta?.connector_instance_id ??
+      undefined,
+    confidence: record.confidence ?? undefined,
+    refs: record.refs?.length ? record.refs : undefined,
+    entities: record.entities?.length ? record.entities : undefined,
   };
 }
 

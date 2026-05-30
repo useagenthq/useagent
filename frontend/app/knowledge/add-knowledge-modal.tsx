@@ -2,20 +2,20 @@
 
 import { useState } from "react";
 
-import * as Button from "@/components/ui/button";
-import * as Hint from "@/components/ui/hint";
-import * as Input from "@/components/ui/input";
-import * as Label from "@/components/ui/label";
+import { Button } from "@/components/base/buttons/button";
+import { Input } from "@/components/base/input/input";
+import { Label } from "@/components/base/input/label";
+import { Select, SelectItem } from "@/components/base/select/select";
 import * as Modal from "@/components/ui/modal";
-import * as Select from "@/components/ui/select";
-import * as Textarea from "@/components/ui/textarea";
 import { ingestKnowledge } from "./knowledge-api";
 import { knowledgeFolderLabel } from "./knowledge-data";
+import { TEXTAREA_FIELD } from "@/components/foundations/form-recipes";
 
 /**
- * "Add knowledge" — the header dark pill plus the AlignUI modal it opens. The
- * modal collects the four Knowledge fields: name, a trigger sentence, the body
- * content, and the folder scope.
+ * "Add knowledge" — the header CTA plus the modal it opens. The modal collects
+ * the four Knowledge fields: name, a trigger sentence, the body content, and
+ * the folder scope. The Modal shell stays AlignUI (no BoardUI equivalent); its
+ * visible surfaces are BoardUI base primitives, mirroring the skills modal.
  *
  * On Save it composes the fields into distillation text and POSTs to
  * `/api/knowledge/ingest`, showing a "Distilling…" state until the backend
@@ -86,13 +86,10 @@ export function AddKnowledgeModal({
       }}
     >
       <Modal.Trigger asChild>
-        {/* Header pill — AlignUI neutral filled button, rounded to a pill. */}
-        <Button.Root variant="neutral" mode="filled" className="rounded-full">
-          Add knowledge
-        </Button.Root>
+        <Button variant="primary">Add knowledge</Button>
       </Modal.Trigger>
 
-      <Modal.Content className="max-w-[480px]">
+      <Modal.Content className="max-h-[90vh] max-w-[480px] overflow-y-auto rounded-3xl border border-border-button-default bg-background-primary-default shadow-dropdown">
         <div className="flex flex-col gap-5 p-6">
           <div className="flex flex-col gap-1.5">
             <Modal.Title className="text-title-3-medium text-text-primary">
@@ -105,68 +102,52 @@ export function AddKnowledgeModal({
           </div>
 
           <div className="flex flex-col gap-4">
-            <div className="flex flex-col gap-1">
-              <Label.Root htmlFor="knowledge-name">Name</Label.Root>
-              <Input.Root>
-                <Input.Wrapper>
-                  <Input.Input
-                    id="knowledge-name"
-                    placeholder="e.g. Prefer semantic tokens"
-                    value={name}
-                    disabled={busy}
-                    onChange={(event) => setName(event.target.value)}
-                  />
-                </Input.Wrapper>
-              </Input.Root>
-            </div>
+            <Input
+              label="Name"
+              placeholder="e.g. Prefer semantic tokens"
+              value={name}
+              isDisabled={busy}
+              onChange={setName}
+            />
 
-            <div className="flex flex-col gap-1">
-              <Label.Root htmlFor="knowledge-trigger">Trigger</Label.Root>
-              <Input.Root>
-                <Input.Wrapper>
-                  <Input.Input
-                    id="knowledge-trigger"
-                    placeholder="When working with AlignUI components…"
-                    value={trigger}
-                    disabled={busy}
-                    onChange={(event) => setTrigger(event.target.value)}
-                  />
-                </Input.Wrapper>
-              </Input.Root>
-              <Hint.Root>A phrase that tells useAgent when to recall this.</Hint.Root>
-            </div>
+            <Input
+              label="Trigger"
+              placeholder="When working with AlignUI components…"
+              hint="A phrase that tells useAgent when to recall this."
+              value={trigger}
+              isDisabled={busy}
+              onChange={setTrigger}
+            />
 
-            <div className="flex flex-col gap-1">
-              <Label.Root htmlFor="knowledge-content">Content</Label.Root>
-              <Textarea.Root
+            <div className="flex w-full flex-col gap-1">
+              <Label htmlFor="knowledge-content">Content</Label>
+              <textarea
                 id="knowledge-content"
-                simple
                 rows={4}
                 placeholder="What should useAgent know?"
                 value={body}
                 disabled={busy}
                 onChange={(event) => setBody(event.target.value)}
+                className={TEXTAREA_FIELD}
               />
             </div>
 
-            <div className="flex flex-col gap-1">
-              <Label.Root>Folder</Label.Root>
-              <Select.Root
-                value={folder}
-                onValueChange={setFolder}
-                disabled={busy}
+            <div className="flex w-full flex-col gap-1">
+              <Label>Folder</Label>
+              <Select
+                aria-label="Folder"
+                selectedKey={folder}
+                onSelectionChange={(key) => {
+                  if (typeof key === "string") setFolder(key);
+                }}
+                isDisabled={busy}
               >
-                <Select.Trigger>
-                  <Select.Value />
-                </Select.Trigger>
-                <Select.Content>
-                  {folders.map((option) => (
-                    <Select.Item key={option} value={option}>
-                      {knowledgeFolderLabel(option)}
-                    </Select.Item>
-                  ))}
-                </Select.Content>
-              </Select.Root>
+                {folders.map((option) => (
+                  <SelectItem key={option} id={option}>
+                    {knowledgeFolderLabel(option)}
+                  </SelectItem>
+                ))}
+              </Select>
             </div>
           </div>
 
@@ -196,9 +177,8 @@ export function AddKnowledgeModal({
                 Distilling…
               </span>
             )}
-            <Button.Root className="rounded-full"
-              variant="neutral"
-              mode="stroke"
+            <Button
+              variant="secondary"
               onClick={() => {
                 setOpen(false);
                 reset();
@@ -206,13 +186,14 @@ export function AddKnowledgeModal({
               disabled={busy}
             >
               Cancel
-            </Button.Root>
-            <Button.Root className="rounded-full"
+            </Button>
+            <Button
+              variant="primary"
               onClick={onSave}
               disabled={busy || !name.trim() || !body.trim()}
             >
               Save
-            </Button.Root>
+            </Button>
           </div>
         </div>
       </Modal.Content>
