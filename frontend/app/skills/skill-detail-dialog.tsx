@@ -15,6 +15,7 @@ import {
   type SkillGroup,
 } from "./skills-data";
 import type { ChipColor } from "../knowledge/knowledge-data";
+import { CHIP_COLOR } from "@/components/foundations/form-recipes";
 
 /**
  * Detail view for one library row: the full (unclamped) description, the
@@ -30,20 +31,6 @@ import type { ChipColor } from "../knowledge/knowledge-data";
  * loads its full record once via GET /api/skills/:id, cached per (id, version)
  * - a resync that mints a new version invalidates naturally.
  */
-
-/** Shared tag palette (knowledge ChipColor) → base Chip color. */
-const CHIP_COLOR: Record<ChipColor, NonNullable<ChipProps["color"]>> = {
-  gray: "gray",
-  blue: "blue",
-  orange: "yellow",
-  red: "rose",
-  green: "lime",
-  yellow: "yellow",
-  purple: "purple",
-  sky: "cyan",
-  pink: "rose",
-  teal: "cyan",
-};
 
 const SECTION_LABELS = ["Overview", "Procedure", "Verify"] as const;
 

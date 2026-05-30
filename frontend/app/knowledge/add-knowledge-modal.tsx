@@ -9,6 +9,7 @@ import { Select, SelectItem } from "@/components/base/select/select";
 import * as Modal from "@/components/ui/modal";
 import { ingestKnowledge } from "./knowledge-api";
 import { knowledgeFolderLabel } from "./knowledge-data";
+import { TEXTAREA_FIELD } from "@/components/foundations/form-recipes";
 
 /**
  * "Add knowledge" — the header CTA plus the modal it opens. The modal collects
@@ -26,10 +27,6 @@ import { knowledgeFolderLabel } from "./knowledge-data";
  */
 
 type SaveStatus = "idle" | "distilling" | "dropped" | "deferred" | "error";
-
-/** Plain textarea styled to match the BoardUI input field shell. */
-const TEXTAREA_FIELD =
-  "w-full resize-y rounded-2lg bg-background-tertiary-default p-2 pl-3 font-sans text-body-regular text-text-primary outline-none ring-2 ring-inset ring-transparent transition-[box-shadow] placeholder:text-text-tertiary hover:ring-border-button-hover focus:ring-border-button-active disabled:cursor-not-allowed disabled:opacity-60";
 
 export function AddKnowledgeModal({
   folders,

@@ -12,6 +12,7 @@ import { Button } from "@/components/base/buttons/button";
 import * as Modal from "@/components/ui/modal";
 import { tagChipColor, usageCaption, type Skill } from "@/app/skills/skills-data";
 import type { ChipColor } from "@/app/knowledge/knowledge-data";
+import { CHIP_COLOR } from "@/components/foundations/form-recipes";
 
 /**
  * The detail view of one playbook: its Overview / Procedure / Verify content
@@ -22,20 +23,6 @@ import type { ChipColor } from "@/app/knowledge/knowledge-data";
  * deterministic, step-by-step workflow engine. The Modal shell stays AlignUI
  * (no BoardUI equivalent); its visible surfaces are BoardUI tokens.
  */
-
-/** Shared tag palette hue -> BoardUI Chip color (mirrors skills-library). */
-const CHIP_COLOR: Record<ChipColor, NonNullable<ChipProps["color"]>> = {
-  gray: "gray",
-  blue: "blue",
-  orange: "yellow",
-  red: "rose",
-  green: "lime",
-  yellow: "yellow",
-  purple: "purple",
-  sky: "cyan",
-  pink: "rose",
-  teal: "cyan",
-};
 
 function OverviewList({ steps }: { steps: string[] }) {
   return (
