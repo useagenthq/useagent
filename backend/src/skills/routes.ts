@@ -28,6 +28,7 @@ import { resolveRunIntake, RunIntakeError } from "../resources/run-intake";
 import {
   bumpSkillUsage,
   createSkillWithRevision,
+  getSkillForOrg,
   resolveSkillSelection,
   updateSkillWithRevision,
   type SkillRecord,
@@ -49,6 +50,11 @@ function toSkill(s: SkillRecord) {
     sections: s.sections,
     // The skill's current immutable revision — the version a new run pins.
     current_version: s.currentVersion,
+    // GitHub import provenance (null for hand-authored skills) — lets the UI
+    // show where an imported skill came from and offer a per-skill resync.
+    source_repo: s.sourceRepo,
+    source_path: s.sourcePath,
+    source_sha: s.sourceSha,
     usage_count: s.usageCount,
     last_run_at: s.lastRunAt ? s.lastRunAt.toISOString() : null,
     created_at: s.createdAt.toISOString(),
@@ -74,6 +80,9 @@ function coerceSections(v: unknown): SkillSections {
 // List skills for the active org (newest first). An optional `?kind=` filter
 // splits the shared substrate into its two product surfaces (Skills vs
 // Playbooks pages); omitted → every kind. An unknown kind yields an empty list.
+// `?view=library` drops the instruction `sections` from each row: an org with
+// hundreds of imported skills carries megabytes of section content the library
+// list never renders (the detail view fetches one skill by id instead).
 skillsRoutes.get("/", async (c) => {
   const kindParam = c.req.query("kind");
   const kindFilter =
@@ -118,7 +127,23 @@ skillsRoutes.get("/", async (c) => {
     .from(skills)
     .where(where)
     .orderBy(desc(skills.createdAt), desc(skills.id));
+  if (c.req.query("view") === "library") {
+    return c.json({
+      skills: rows.map((row) => {
+        const { sections: _sections, ...slim } = toSkill(row);
+        return slim;
+      }),
+    });
+  }
   return c.json({ skills: rows.map(toSkill) });
+});
+
+// Fetch one skill (org-scoped) with its full instruction sections — the detail
+// counterpart to the slim `view=library` list.
+skillsRoutes.get("/:id", async (c) => {
+  const row = await getSkillForOrg(c.get("orgId"), c.req.param("id"));
+  if (!row) return c.json({ error: "skill not found" }, 404);
+  return c.json(toSkill(row));
 });
 
 // Create a skill AND its version-1 revision (one transaction).
