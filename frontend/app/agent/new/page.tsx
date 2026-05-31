@@ -1,4 +1,3 @@
-import { OrbitKnotMark } from "@/components/foundations/brand/orbit-knot-mark";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { type DotTone, StatusDot } from "@/components/shared/status-dot";
@@ -89,7 +88,6 @@ export default async function NewTaskPage({
       <div className="flex min-h-full flex-col items-center px-4 sm:px-6">
         <div className="w-full max-w-3xl py-10 sm:py-14">
           <div className="flex flex-col items-center gap-3 text-center">
-            <OrbitKnotMark className="size-7" />
             <p className="text-mono-label text-text-tertiary">New thread</p>
             <h1 className="text-display-md text-text-primary">What do you want done?</h1>
           </div>
