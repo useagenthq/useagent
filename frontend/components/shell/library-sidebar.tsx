@@ -58,10 +58,10 @@ const LIBRARY_ITEMS = [
 export function LibrarySidebar({ active }: { active?: LibrarySidebarActive }) {
   return (
     <Sidebar
-      ariaLabel="Library navigation"
-      header={<SidebarBrand label="Library" />}
+      ariaLabel="Customize navigation"
+      header={<SidebarBrand label="Customize" />}
       footer={
-        <nav aria-label="Library utilities" className="p-3">
+        <nav aria-label="Customize utilities" className="p-3">
           <SidebarNavItem
             href="/settings"
             icon={RiSettings3Line}
@@ -77,7 +77,7 @@ export function LibrarySidebar({ active }: { active?: LibrarySidebarActive }) {
     >
       <SearchCommand />
       <SidebarNavItem href="/agent/runs" icon={RiStackLine} label="Workspace" />
-      <SidebarSectionLabel>Library</SidebarSectionLabel>
+      <SidebarSectionLabel>Customize</SidebarSectionLabel>
       {LIBRARY_ITEMS.map((item) => (
         <SidebarNavItem
           key={item.key}
