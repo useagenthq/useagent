@@ -54,6 +54,7 @@ const TEAM = "T0TESTTEAM";
 const SLACK_ENV_OVERRIDES: Record<string, string | undefined> = {
   SLACK_SIGNING_SECRET: SECRET,
   SLACK_BOT_TOKEN: "xoxb-test-token",
+  SLACK_LEGACY_TEAM_ID: TEAM,
   SLACK_APP_TOKEN: undefined, // keep a real app token out of the suite entirely
   // Operator scoping must not leak in from a machine's .env: an allowlist
   // would silently drop this suite's random channels, org/user pinning would

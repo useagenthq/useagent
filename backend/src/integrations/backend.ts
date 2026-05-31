@@ -32,7 +32,18 @@ export interface DelegatedConnectionResult {
   readonly authMethod: IntegrationConnectionAuthMethod;
   readonly account: IntegrationConnectionAccount;
   readonly scopes: readonly string[];
+  /** Trusted server-only material persisted atomically with the safe projection. */
+  readonly credential?: {
+    readonly format: string;
+    readonly serialized: string;
+  };
+  readonly workspaceBinding?: {
+    readonly externalWorkspaceId: string;
+    readonly externalActorId?: string;
+  };
 }
+
+export type IntegrationConnectCallback = Readonly<Record<string, string>>;
 
 export type ConnectionBackend = ManagedConnectionBackend | DelegatedConnectionBackend;
 
@@ -45,14 +56,19 @@ export interface ManagedConnectionBackend {
 export interface DelegatedConnectionBackend {
   readonly kind: "delegated";
   readonly runtimeBindingId: string;
+  readonly disconnectSupported: boolean;
   supports(provider: string): boolean;
   listConnectableProviders(): Promise<readonly string[]>;
   startConnect(
-    input: IntegrationActorScope & { readonly provider: string },
+    input: IntegrationActorScope & {
+      readonly provider: string;
+      readonly state: string;
+    },
   ): Promise<DelegatedConnectionStart>;
   completeConnect(input: IntegrationActorScope & {
     readonly provider: string;
     readonly backendSessionRef: string;
+    readonly callback?: IntegrationConnectCallback;
   }): Promise<DelegatedConnectionResult>;
   disconnect(input: IntegrationActorScope & {
     readonly connection: IntegrationConnectionRecord;

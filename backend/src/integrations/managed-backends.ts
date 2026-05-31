@@ -6,7 +6,7 @@ import {
   githubConfigured,
   githubConfig,
   githubTenantOrgId,
-  slackEnabled,
+  legacySlackEnabled,
 } from "../env";
 import type { ManagedConnectionBackend } from "./backend";
 
@@ -36,7 +36,7 @@ export const slackManagedBackend: ManagedConnectionBackend = {
   kind: "managed",
   provider: "slack",
   async readStatus(scope) {
-    const [workspace] = slackEnabled()
+    const [workspace] = legacySlackEnabled()
       ? await db
           .select({ teamId: slackWorkspaces.teamId })
           .from(slackWorkspaces)
@@ -46,7 +46,7 @@ export const slackManagedBackend: ManagedConnectionBackend = {
     return {
       provider: "slack",
       label: "Slack",
-      description: "Native events, threads, files, streaming cards, and Automations.",
+      description: "Native events, threads, files, and streaming cards.",
       status: workspace ? "connected" : "unavailable",
       ...(workspace ? { account: { externalAccountId: workspace.teamId } } : {}),
     };

@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { env } from "../env";
 import type { AppEnv } from "../http";
 import { orgAdminScope, orgScope } from "../middleware/org";
 import { createIntegrationService, type IntegrationServiceDependencies } from "./service";
@@ -14,6 +15,28 @@ function errorStatus(message: string): 400 | 403 | 404 | 409 | 503 {
 export function createIntegrationRoutes(deps?: IntegrationServiceDependencies): Hono<AppEnv> {
   const routes = new Hono<AppEnv>();
   const service = createIntegrationService(deps);
+
+  routes.get("/callback/:provider", async (c) => {
+    const provider = c.req.param("provider").trim();
+    const state = c.req.query("state")?.trim();
+    const fallback = new URL("/settings?integration=error#integrations", env.FRONTEND_ORIGIN);
+    if (!provider || !state || state.length > 256) return c.redirect(fallback.toString(), 303);
+    const callback = Object.fromEntries(
+      Object.entries(c.req.query()).flatMap(([key, value]) =>
+        key !== "state" && key.length <= 64 && value.length <= 4_096 ? [[key, value]] : [],
+      ),
+    );
+    try {
+      const completed = await service.completePublicCallback({ provider, state, callback });
+      const destination = new URL(completed.returnTo, env.FRONTEND_ORIGIN);
+      destination.searchParams.set("integration", "connected");
+      destination.searchParams.set("integration_provider", provider);
+      return c.redirect(destination.toString(), 303);
+    } catch {
+      return c.redirect(fallback.toString(), 303);
+    }
+  });
+
   routes.use("*", orgScope);
 
   routes.get("/", async (c) => {
@@ -38,7 +61,7 @@ export function createIntegrationRoutes(deps?: IntegrationServiceDependencies): 
         orgId: c.get("orgId"),
         userId,
         provider: c.req.param("provider"),
-        returnTo: typeof body.returnTo === "string" ? body.returnTo : "/settings/integrations",
+        returnTo: typeof body.returnTo === "string" ? body.returnTo : "/settings#integrations",
         owner: { type: "user", userId },
       });
       return c.json(result);
@@ -62,7 +85,7 @@ export function createIntegrationRoutes(deps?: IntegrationServiceDependencies): 
         orgId: c.get("orgId"),
         userId,
         provider: c.req.param("provider"),
-        returnTo: typeof body.returnTo === "string" ? body.returnTo : "/settings/integrations",
+        returnTo: typeof body.returnTo === "string" ? body.returnTo : "/settings#integrations",
         owner: { type: "org" },
       });
       return c.json(result);
@@ -84,11 +107,21 @@ export function createIntegrationRoutes(deps?: IntegrationServiceDependencies): 
     if (typeof body.state !== "string" || !body.state) {
       return c.json({ error: "state is required" }, 400);
     }
+    const callback = body.callback && typeof body.callback === "object" && !Array.isArray(body.callback)
+      ? Object.fromEntries(
+          Object.entries(body.callback as Record<string, unknown>).flatMap(([key, value]) =>
+            key.length <= 64 && typeof value === "string" && value.length <= 4_096
+              ? [[key, value]]
+              : [],
+          ),
+        )
+      : undefined;
     try {
       const connection = await service.completeConnect({
         orgId: c.get("orgId"),
         userId,
         state: body.state,
+        callback,
       });
       return c.json({ connection });
     } catch (error) {
