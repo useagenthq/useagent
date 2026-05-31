@@ -1948,7 +1948,7 @@
   --color-input-disabled-text: color-mix(in srgb, hsl(var(--neutral-200)) 40%, transparent);
 
   /* Background */
-  --color-background-full:              hsl(var(--neutral-800)); /* #1a1b26 canvas */
+  --color-background-full:              hsl(237 23% 10%); /* #14141f derived deep backdrop - page canvas sits BELOW the floating sidebar panel (user elevation decision 2026-08-23) */
   --color-background-primary-default:   hsl(var(--neutral-700)); /* #1e202e raised */
   --color-background-inner-default:     color-mix(in srgb, hsl(var(--neutral-700)) 60%, transparent);
   --color-background-primary-hover:     color-mix(in srgb, hsl(var(--neutral-400)) 60%, transparent);
@@ -1957,9 +1957,9 @@
   --color-input-disabled-background:    color-mix(in srgb, hsl(var(--neutral-700)) 30%, transparent);
   --color-switch-off-chip-start:        var(--color-background-tertiary-default);
   --color-switch-off-chip-end:          var(--color-background-tertiary-default);
-  --color-background-secondary-default: hsl(var(--neutral-900)); /* #16161e chrome */
+  --color-background-secondary-default: hsl(var(--neutral-800)); /* #1a1b26 - floating panel/chrome, LIGHTER than the backdrop */
   --color-background-secondary-hover:   hsl(var(--neutral-700));
-  --color-background-tertiary-default:  hsl(var(--neutral-700));
+  --color-background-tertiary-default:  hsl(var(--neutral-900)); /* #16161e inset fills, between backdrop and panel */
   --color-background-tertiary-hover:    hsl(var(--neutral-400));
   --color-background-quaternary-default: hsl(var(--neutral-400));
   --color-background-quaternary-hover:   hsl(var(--neutral-300));
@@ -2070,7 +2070,7 @@
   --color-switch-off-chip-end:          var(--color-background-tertiary-default);
   --color-background-secondary-default: hsl(var(--neutral-900));
   --color-background-secondary-hover:   hsl(var(--neutral-700));
-  --color-background-tertiary-default:  hsl(var(--neutral-700));
+  --color-background-tertiary-default:  hsl(var(--neutral-900)); /* #16161e inset fills, between backdrop and panel */
   --color-background-tertiary-hover:    hsl(var(--neutral-400));
   --color-background-tertiary-error:    hsl(var(--red-alpha-16));
   --color-background-quaternary-default: hsl(var(--neutral-400));
@@ -2261,7 +2261,7 @@
   --color-switch-off-chip-end:          var(--color-background-tertiary-default);
   --color-background-secondary-default: hsl(var(--neutral-900));
   --color-background-secondary-hover:   hsl(var(--neutral-700));
-  --color-background-tertiary-default:  hsl(var(--neutral-700));
+  --color-background-tertiary-default:  hsl(var(--neutral-900)); /* #16161e inset fills, between backdrop and panel */
   --color-background-tertiary-hover:    hsl(var(--neutral-400));
   --color-background-tertiary-error:    hsl(var(--red-alpha-16));
   --color-background-quaternary-default: hsl(var(--neutral-400));
@@ -2459,7 +2459,7 @@
   --color-switch-off-chip-end:          var(--color-background-tertiary-default);
   --color-background-secondary-default: hsl(var(--neutral-900));
   --color-background-secondary-hover:   hsl(var(--neutral-700));
-  --color-background-tertiary-default:  hsl(var(--neutral-700));
+  --color-background-tertiary-default:  hsl(var(--neutral-900)); /* #16161e inset fills, between backdrop and panel */
   --color-background-tertiary-hover:    hsl(var(--neutral-400));
   --color-background-tertiary-error:    hsl(var(--red-alpha-16));
   --color-background-quaternary-default: hsl(var(--neutral-400));
@@ -2657,7 +2657,7 @@
   --color-switch-off-chip-end:          var(--color-background-tertiary-default);
   --color-background-secondary-default: hsl(var(--neutral-900));
   --color-background-secondary-hover:   hsl(var(--neutral-700));
-  --color-background-tertiary-default:  hsl(var(--neutral-700));
+  --color-background-tertiary-default:  hsl(var(--neutral-900)); /* #16161e inset fills, between backdrop and panel */
   --color-background-tertiary-hover:    hsl(var(--neutral-400));
   --color-background-tertiary-error:    hsl(var(--red-alpha-16));
   --color-background-quaternary-default: hsl(var(--neutral-400));
@@ -3099,7 +3099,7 @@
   --color-switch-off-chip-end:          var(--color-background-tertiary-default);
   --color-background-secondary-default: hsl(var(--neutral-900));
   --color-background-secondary-hover:   hsl(var(--neutral-700));
-  --color-background-tertiary-default:  hsl(var(--neutral-700));
+  --color-background-tertiary-default:  hsl(var(--neutral-900)); /* #16161e inset fills, between backdrop and panel */
   --color-background-tertiary-hover:    hsl(var(--neutral-400));
   --color-background-tertiary-error:    hsl(var(--red-alpha-16));
   --color-background-quaternary-default: hsl(var(--neutral-400));
