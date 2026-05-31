@@ -82,8 +82,11 @@ export function NewTaskComposer({
   const [selectedRepos, setSelectedRepos] = useState<string[]>([]);
   const [repos, setRepos] = useState<RepoItem[]>([]);
   const [playbook, setPlaybook] = useState(""); // selected skill/playbook id, "" = none
-  const [model, setModel] = useState(selectableModelsForEngine("opencode")[0]?.value ?? "");
-  const [engine, setEngine] = useState<string>(ENGINES[0].id);
+  // Codex is the preferred default engine (user decision 2026-08-23); the
+  // manifest effect below demotes it only AFTER the server manifest loads
+  // without codex, so the default survives the pre-fetch fallback window.
+  const [model, setModel] = useState(selectableModelsForEngine("codex")[0]?.value ?? "");
+  const [engine, setEngine] = useState<string>("codex");
   // The "+" action shelf under the composer holds the add-context controls
   // (upload, repos, skills, GitHub, branches) so the toolbar row never overflows.
   const [addMenuOpen, setAddMenuOpen] = useState(false);
@@ -118,9 +121,10 @@ export function NewTaskComposer({
   const runUploads = useRunUploads();
 
   useEffect(() => {
+    if (!engineConfig.loaded) return;
     const resolved = resolveEnabledEngine(engineId, enabledEngines);
     if (resolved && resolved !== engineId) setEngine(resolved);
-  }, [enabledEngines, engineId]);
+  }, [enabledEngines, engineConfig.loaded, engineId]);
 
   // Slash-command autocomplete for the "/" first token. ENGINE-AWARE: the catalog is the
   // SELECTED engine's real command list, cached server-side (GET /api/commands?engine=) so it

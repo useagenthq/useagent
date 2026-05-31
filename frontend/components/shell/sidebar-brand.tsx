@@ -13,7 +13,7 @@ export function SidebarBrand({ label = "UseAgent" }: { label?: string }) {
       <Link
         href="/agent/new"
         aria-label="UseAgent new thread"
-        className="flex min-w-0 items-center gap-2.5 rounded-2lg px-2 py-1.5 text-body-2-medium text-text-secondary outline-none transition-colors hover:bg-background-secondary-hover hover:text-text-primary focus-visible:ring-2 focus-visible:ring-border-focus-ring"
+        className="flex min-w-0 items-center gap-2.5 rounded-2lg px-2 py-1.5 text-body-2-medium text-text-primary outline-none transition-colors hover:bg-background-secondary-hover focus-visible:ring-2 focus-visible:ring-border-focus-ring"
       >
         <OrbitKnotMark className="size-8" active={working} />
         <span className="truncate">{label}</span>

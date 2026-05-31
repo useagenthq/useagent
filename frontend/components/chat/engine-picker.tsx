@@ -38,13 +38,18 @@ function parseEngineModelCatalog(raw: unknown): EngineModelCatalog {
 export function useEnabledEngineConfig(): {
   engines: EngineId[];
   models: EngineModelCatalog;
+  /** True once GET /api/config resolved (or failed): before that the engines
+   * list is the conservative fallback and must not demote a richer default. */
+  loaded: boolean;
 } {
   const [config, setConfig] = useState<{
     engines: EngineId[];
     models: EngineModelCatalog;
+    loaded: boolean;
   }>({
     engines: ["opencode"],
     models: { opencode: selectableModelsForEngine("opencode").map((m) => m.value) },
+    loaded: false,
   });
   useEffect(() => {
     let cancelled = false;
@@ -59,9 +64,15 @@ export function useEnabledEngineConfig(): {
               (e): e is EngineId => typeof e === "string" && ENGINES.some((x) => x.id === e),
             )
           : [];
-        if (engines.length) setConfig({ engines, models: parseEngineModelCatalog(j.models) });
+        if (engines.length) {
+          setConfig({ engines, models: parseEngineModelCatalog(j.models), loaded: true });
+        } else {
+          setConfig((c) => ({ ...c, loaded: true }));
+        }
       } catch {
-        // network/backend down: keep the safe OpenCode-only default.
+        // network/backend down: keep the safe OpenCode-only default, but mark
+        // the manifest resolved so the composer can settle its engine choice.
+        setConfig((c) => ({ ...c, loaded: true }));
       }
     })();
     return () => {
