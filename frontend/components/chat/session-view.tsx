@@ -17,6 +17,7 @@ import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AgentsRail } from "@/components/chat/agents-rail";
+import { deriveThreadGatewayChildren } from "@/components/chat/gateway-children";
 import {
   type ApprovalDecision,
   type PendingApproval,
@@ -253,6 +254,10 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
   const allCanonicalEvents = useMemo(() => turns.flatMap((t) => t.canonical ?? []), [turns]);
   // Subagent fidelity is derived from native frames across the WHOLE thread.
   const allFrames = useMemo(() => turns.flatMap((t) => t.native?.nativeFrames ?? []), [turns]);
+  // Gateway child sessions across the whole thread (child_session_create fan-out)
+  // - deferred serial thread turns the agent spawned. The rail lists them all
+  // (the inline fold groups the same rows per parent turn).
+  const gatewayChildren = useMemo(() => deriveThreadGatewayChildren(turns), [turns]);
   const live = turns.some((t) => isLiveStatus(t.status));
   const terminalRunId = terminalRunIdForThread(turns);
   // The turn currently producing events (running preferred; else the newest live
@@ -580,6 +585,7 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
   const hasFiles = allSteps.some((s) => s.kind === "file" && parseFileEntries(s).length > 0);
   const hasCommands = allSteps.some((s) => s.kind === "command");
   const hasSubagents =
+    gatewayChildren.length > 0 ||
     allCanonicalEvents.some((event) => event.kind === "child.started") ||
     allSteps.some((s) => s.chip === "subagent");
   const hasRuntimeSurfaces = normalizeEngine(newest.engine) !== "chat";
@@ -1215,6 +1221,7 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
                       live={live}
                       frames={allFrames}
                       canonicalEvents={allCanonicalEvents}
+                      childSessions={gatewayChildren}
                     />
                   ) : railTab === "artifacts" ? (
                     <ArtifactsRail threadId={rootId} live={live} />

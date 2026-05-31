@@ -251,6 +251,75 @@ describe("deriveSubagents — legacy fallback (pre-stamp, no native ids)", () =>
   });
 });
 
+describe("deriveSubagents — anonymous tool calls are not agents", () => {
+  // The prod regression: a runtime `collab_agent_tool_call` row that the adapter
+  // chips `subagent` with tool "subagent" but that resolves NO child session and
+  // names NO real objective - its label falls back to "Tool". Carding it produced
+  // the NINE identical "Tool" cards. It must be excluded from the rail entirely.
+  const anonymousToolRow = (id: string): ApiStep =>
+    step({
+      id,
+      kind: "task",
+      chip: "subagent",
+      label: "Tool",
+      code_json: JSON.stringify({
+        source: "t3",
+        activityKind: "tool.completed",
+        tool: "subagent",
+        input: {},
+        native: { callID: `${id}-call` },
+      }),
+    });
+
+  test("excludes subagent-chipped rows with no child session and no objective", () => {
+    seq = 0;
+    const model = deriveSubagents([
+      anonymousToolRow("a1"),
+      anonymousToolRow("a2"),
+      anonymousToolRow("a3"),
+    ]);
+    expect(model.cards).toEqual([]);
+  });
+
+  test("keeps a real spawn that resolves a child session, even with a bare label", () => {
+    seq = 0;
+    const withChild = step({
+      id: "real-child",
+      kind: "task",
+      chip: "subagent",
+      label: "Tool",
+      code_json: JSON.stringify({
+        tool: "subagent",
+        input: {},
+        native: { callID: "c", childSessionID: "ses_real" },
+      }),
+    });
+    const model = deriveSubagents([withChild]);
+    expect(model.cards.map((c) => c.id)).toEqual(["real-child"]);
+    expect(model.cards[0]?.childSessionId).toBe("ses_real");
+    // A real child that only had a placeholder label reads "Subagent", never "Tool".
+    expect(model.cards[0]?.title).toBe("Subagent");
+  });
+
+  test("keeps a real spawn that names a real objective without a child id yet", () => {
+    seq = 0;
+    const withObjective = step({
+      id: "objective-only",
+      kind: "task",
+      chip: "subagent",
+      label: "Subagent — Get Google stock price",
+      code_json: JSON.stringify({
+        tool: "subagent",
+        input: { description: "Get Google stock price" },
+        native: { callID: "c" },
+      }),
+    });
+    const model = deriveSubagents([withObjective]);
+    expect(model.cards.map((c) => c.id)).toEqual(["objective-only"]);
+    expect(model.cards[0]?.title).toBe("Get Google stock price");
+  });
+});
+
 describe("deriveSubagents — T3 lifecycle binding", () => {
   test("attributes T3 task lifecycle rows to the real spawn card by child task id alias", () => {
     const spawn = step({
