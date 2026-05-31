@@ -24,6 +24,9 @@ export interface AppShellProps {
  * page content flows and scrolls, while a full-height child (e.g. the session
  * split view `editor | terminal`) can fill it with `h-full`. The halftone sits
  * on its own `-z-10` layer (main is `isolate`) so it never masks page content.
+ *
+ * Below md the open-nav trigger lives in an IN-FLOW header row above `<main>`
+ * (never a floating overlay), so no page header can render underneath it.
  */
 export function AppShell({ sidebar, children }: AppShellProps) {
   const working = useWorkingSignal();
@@ -82,14 +85,6 @@ export function AppShell({ sidebar, children }: AppShellProps) {
           <RiSidebarFoldLine className="size-4" aria-hidden />
         </button>
       )}
-      <button
-        type="button"
-        onClick={() => setMobileOpen(true)}
-        aria-label="Open navigation"
-        className="absolute left-3 top-3 z-40 flex size-8 items-center justify-center rounded-2lg text-foreground-icon-secondary outline-none hover:bg-background-primary-hover hover:text-foreground-icon-primary focus-visible:ring-2 focus-visible:ring-border-focus-ring md:hidden"
-      >
-        <RiSidebarUnfoldLine className="size-4" aria-hidden />
-      </button>
       {mobileOpen ? (
         <div className="fixed inset-0 z-50 flex md:hidden">
           <button
@@ -101,13 +96,25 @@ export function AppShell({ sidebar, children }: AppShellProps) {
           <div className="relative h-full w-64">{sidebar}</div>
         </div>
       ) : null}
-      <main className="relative isolate min-h-0 min-w-0 flex-1 overflow-y-auto bg-background-full">
-        <div
-          aria-hidden
-          className="bg-halftone pointer-events-none absolute inset-x-0 top-0 -z-10 h-40"
-        />
-        {children}
-      </main>
+      <div className="flex min-w-0 flex-1 flex-col">
+        <div className="flex h-12 shrink-0 items-center px-2 md:hidden">
+          <button
+            type="button"
+            onClick={() => setMobileOpen(true)}
+            aria-label="Open navigation"
+            className="flex size-8 items-center justify-center rounded-2lg text-foreground-icon-secondary outline-none hover:bg-background-primary-hover hover:text-foreground-icon-primary focus-visible:ring-2 focus-visible:ring-border-focus-ring"
+          >
+            <RiSidebarUnfoldLine className="size-4" aria-hidden />
+          </button>
+        </div>
+        <main className="relative isolate min-h-0 min-w-0 flex-1 overflow-y-auto bg-background-full">
+          <div
+            aria-hidden
+            className="bg-halftone pointer-events-none absolute inset-x-0 top-0 -z-10 h-40"
+          />
+          {children}
+        </main>
+      </div>
     </div>
   );
 }
