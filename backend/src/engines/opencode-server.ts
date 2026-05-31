@@ -235,6 +235,28 @@ export function redactOpenCodeSessionLifecycleInfo<T extends Record<string, unkn
   return safe as T;
 }
 
+const TASK_OUTPUT_CHILD_ID = /<task\s+id="(ses_[^"]+)"/;
+
+/** The REAL child session id a `task` ToolPart names: the pin-era
+ *  `state.metadata.sessionId`, else the `<task id="ses_…">` marker the task tool
+ *  writes into its output. The SubtaskPart carries NO child-session field (its
+ *  `sessionID` is the PARENT session), so this ToolPart correlation - plus the
+ *  session.created parentID frames - is the only native source of child identity.
+ *  (The canonical translator resolves the same fields; see opencode-canonical.) */
+export function taskChildSessionId(state: {
+  output?: unknown;
+  metadata?: unknown;
+}): string | null {
+  const metadata =
+    state.metadata && typeof state.metadata === "object"
+      ? (state.metadata as Record<string, unknown>)
+      : null;
+  const fromMetadata = metadata?.sessionId ?? metadata?.sessionID;
+  if (typeof fromMetadata === "string" && fromMetadata) return fromMetadata;
+  const output = typeof state.output === "string" ? state.output : "";
+  return TASK_OUTPUT_CHILD_ID.exec(output)?.[1] ?? null;
+}
+
 /** Boot (or confirm) `opencode serve` inside the sandbox and resolve its
  *  preview endpoint + the sandbox user's workdir. Idempotent per sandbox.
  *
@@ -1510,6 +1532,63 @@ export function makeOpenCodeServerAdapter(driver: ProviderDriver): EngineAdapter
       // Subagents run in CHILD sessions (parentID chains to ours) — track them so
       // their tool activity renders (↳-tagged) instead of being filtered out.
       const childSessions = new Set<string>();
+
+      // Durable child registration, shared by the SSE fast path and the REST
+      // reconciliation lane: track the session so its parts pass the live gate
+      // below, AND persist the lifecycle frame (upsert-idempotent id) that
+      // canonicalization derives child.started + per-child usage from. SSE alone
+      // is not enough — the Daytona preview proxy can buffer /event away.
+      const registerChildSession = (
+        info: Record<string, unknown> & { id: string },
+        eventType: string,
+      ): void => {
+        childSessions.add(info.id);
+        void recordProviderEvent({
+          id: `pe_${info.id}_lifecycle`,
+          runId: ctx.runId,
+          threadId: ctx.threadId ?? ctx.runId,
+          provider: "opencode",
+          eventType,
+          nativeSessionId: info.id,
+          nativeParentSessionId:
+            typeof info.parentID === "string" ? info.parentID : null,
+          payload: redactOpenCodeSessionLifecycleInfo(info, redact),
+        });
+      };
+
+      // The pinned opencode (1.18.x) DOES serve GET /session/:id/children (verified
+      // against the SDK types and a live 1.18 server) — it stays the REST discovery
+      // lane for child sessions the SSE stream missed. A failure degrades child
+      // capture to SSE-only: log that ONCE per turn, never swallow it silently.
+      let childrenFetchWarned = false;
+      const fetchChildSessions = async (
+        signal: AbortSignal,
+      ): Promise<Array<Record<string, unknown> & { id: string }> | null> => {
+        try {
+          const res = await fetch(`${baseUrl}/session/${sessionId}/children${dirQ}`, {
+            headers,
+            signal,
+          });
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          const list = (await res.json()) as unknown;
+          return Array.isArray(list)
+            ? list.filter(
+                (c): c is Record<string, unknown> & { id: string } =>
+                  typeof (c as { id?: unknown })?.id === "string",
+              )
+            : [];
+        } catch (e) {
+          if (!childrenFetchWarned && !signal.aborted) {
+            childrenFetchWarned = true;
+            console.warn(
+              `[opencode] GET /session/${sessionId}/children failed - child discovery degraded to SSE frames: ${
+                e instanceof Error ? e.message : String(e)
+              }`,
+            );
+          }
+          return null;
+        }
+      };
       const textLen = new Map<string, number>();
       // Reasoning ("thinking") deltas by part id - streamed live as a subdued
       // Thinking affordance ahead of the answer. Tracked separately from textLen
@@ -1523,6 +1602,7 @@ export function makeOpenCodeServerAdapter(driver: ProviderDriver): EngineAdapter
       const toolSteps = new Map<string, string>(); // part id → persisted step id
       const toolDone = new Set<string>();
       const emittedSubagents = new Set<string>(); // subagent descriptions shown (dedupe subtask ↔ task tool)
+      const subagentSteps = new Map<string, string>(); // description → spawn step id (the task ToolPart pairs to it)
 
       // Translate one opencode Part (the v1 contract: message.part.updated
       // carries `properties.part`, token deltas ride inline on `properties.delta`)
@@ -1609,11 +1689,20 @@ export function makeOpenCodeServerAdapter(driver: ProviderDriver): EngineAdapter
               native: {
                 sessionID: sid,
                 partID: partId,
-                childSessionID: providerPart.sessionID ?? null,
+                // The SubtaskPart names NO child session (its sessionID is the
+                // PARENT the part lives on) — never stamp the parent id here or
+                // the subagent pane attributes the parent's own steps to this
+                // card. The real child id arrives on the matching task ToolPart
+                // (state.metadata.sessionId / <task id> output) and is stamped
+                // by its completion update onto this same step.
+                childSessionID: null,
               },
             },
           });
-          if (id) toolSteps.set(partId, id);
+          if (id) {
+            toolSteps.set(partId, id);
+            subagentSteps.set(desc, id);
+          }
           return;
         }
 
@@ -1627,6 +1716,7 @@ export function makeOpenCodeServerAdapter(driver: ProviderDriver): EngineAdapter
             output?: string;
             error?: string;
             title?: string;
+            metadata?: Record<string, unknown>;
           };
           if (toolDone.has(partId)) return;
           const status = st.status;
@@ -1640,10 +1730,15 @@ export function makeOpenCodeServerAdapter(driver: ProviderDriver): EngineAdapter
             : "";
           const active = status === "running" || status === "completed" || status === "error";
           if (!toolSteps.has(partId) && active) {
-            // Skip if a subtask part already rendered this subagent (no lifecycle
-            // row to update, so a second row would just duplicate).
+            // A subtask part already rendered this subagent: PAIR this task
+            // ToolPart to that spawn step instead of dropping it, so the
+            // completion below persists the subagent's result output and the
+            // resolved child session id onto the card (dropping it here was
+            // silently losing the task result).
             if (isTask && emittedSubagents.has(taskDesc)) {
-              toolDone.add(partId);
+              const spawnStep = subagentSteps.get(taskDesc);
+              if (spawnStep) toolSteps.set(partId, spawnStep);
+              else toolDone.add(partId); // spawn emit failed: nothing to update
             } else {
               const step = toolStep(part.tool, st.input ?? {}, st.title, undefined);
               const native = {
@@ -1659,12 +1754,19 @@ export function makeOpenCodeServerAdapter(driver: ProviderDriver): EngineAdapter
               if (isChild) step.label = `↳ ${step.label}`;
               if (isTask) emittedSubagents.add(taskDesc);
               const id = await ctx.emit(step);
-              if (id) toolSteps.set(partId, id);
+              if (id) {
+                toolSteps.set(partId, id);
+                if (isTask) subagentSteps.set(taskDesc, id);
+              }
             }
           }
           if ((status === "completed" || status === "error") && toolSteps.has(partId)) {
             toolDone.add(partId);
             const output = status === "error" ? String(st.error ?? "") : String(st.output ?? "");
+            // The REAL child session this task launched (metadata.sessionId or
+            // the <task id> output marker) — the subagent pane attributes the
+            // child's nested steps by it.
+            const childSessionID = isTask ? taskChildSessionId(st) : null;
             // The update REPLACES code_json wholesale — re-stamp the native ids
             // or the completion overwrite erases the running-state stamp.
             await ctx.updateStep?.(toolSteps.get(partId)!, {
@@ -1681,6 +1783,7 @@ export function makeOpenCodeServerAdapter(driver: ProviderDriver): EngineAdapter
                 messageID: typeof part.messageID === "string" ? part.messageID : null,
                 partID: partId,
                 callID: typeof part.callID === "string" ? part.callID : null,
+                ...(childSessionID ? { childSessionID } : {}),
               },
             });
           }
@@ -1777,17 +1880,10 @@ export function makeOpenCodeServerAdapter(driver: ProviderDriver): EngineAdapter
               props.info.parentID &&
               (props.info.parentID === sessionId || childSessions.has(props.info.parentID))
             ) {
-              childSessions.add(props.info.id);
-              void recordProviderEvent({
-                id: `pe_${props.info.id}_lifecycle`,
-                runId: ctx.runId,
-                threadId: ctx.threadId ?? ctx.runId,
-                provider: "opencode",
-                eventType: ev.type,
-                nativeSessionId: props.info.id,
-                nativeParentSessionId: props.info.parentID ?? null,
-                payload: redactOpenCodeSessionLifecycleInfo(props.info, redact),
-              });
+              registerChildSession(
+                props.info as Record<string, unknown> & { id: string },
+                ev.type,
+              );
             }
             if (ev.type === "question.asked") {
               const question = parseOpenCodeQuestionRequest(rawProps);
@@ -1857,20 +1953,16 @@ export function makeOpenCodeServerAdapter(driver: ProviderDriver): EngineAdapter
       const preTurnChildren = new Set<string>();
       if (resumed) {
         try {
-          const [hres, cres] = await Promise.all([
+          const [hres, kids] = await Promise.all([
             fetch(`${baseUrl}/session/${sessionId}/message${dirQ}`, { headers, signal: ctx.signal }),
-            fetch(`${baseUrl}/session/${sessionId}/children${dirQ}`, { headers, signal: ctx.signal }),
+            fetchChildSessions(ctx.signal),
           ]);
           if (hres.ok) {
             for (const m of (await hres.json()) as { info?: { id?: string } }[]) {
               if (m.info?.id) preTurnMessages.add(m.info.id);
             }
           }
-          if (cres.ok) {
-            for (const c of (await cres.json()) as { id?: string }[]) {
-              if (c.id) preTurnChildren.add(c.id);
-            }
-          }
+          for (const c of kids ?? []) preTurnChildren.add(c.id);
         } catch {
           /* snapshot is best-effort; worst case we over-reconcile like before */
         }
@@ -1894,13 +1986,12 @@ export function makeOpenCodeServerAdapter(driver: ProviderDriver): EngineAdapter
           await new Promise((r) => setTimeout(r, 2500));
           if (pollAbort.signal.aborted) break;
           try {
-            const cres = await fetch(`${baseUrl}/session/${sessionId}/children${dirQ}`, {
-              headers,
-              signal: pollAbort.signal,
-            });
-            if (cres.ok) {
-              for (const c of (await cres.json()) as { id?: string }[]) {
-                if (c.id && !preTurnChildren.has(c.id)) childSessions.add(c.id);
+            // REST discovery is registration-grade: a child first seen here (SSE
+            // buffered away) still gets its durable lifecycle frame.
+            const kids = await fetchChildSessions(pollAbort.signal);
+            for (const c of kids ?? []) {
+              if (!preTurnChildren.has(c.id) && !childSessions.has(c.id)) {
+                registerChildSession(c, "session.updated");
               }
             }
             for (const id of [sessionId, ...childSessions]) {
@@ -2055,15 +2146,11 @@ export function makeOpenCodeServerAdapter(driver: ProviderDriver): EngineAdapter
       };
       // Enumerate subagent sessions the pump may have missed, then reconcile the
       // parent first (its `task`/tool steps) followed by each child (↳ tools).
-      try {
-        const cres = await fetch(`${baseUrl}/session/${sessionId}/children${dirQ}`, { headers, signal: ctx.signal });
-        if (cres.ok) {
-          for (const c of (await cres.json()) as { id?: string }[]) {
-            if (c.id && !preTurnChildren.has(c.id)) childSessions.add(c.id);
-          }
-        }
-      } catch {
-        /* best-effort child discovery */
+      // The settled children response also refreshes each child's durable
+      // lifecycle frame (final title + token/cost counters) via the upsert.
+      const settledKids = await fetchChildSessions(ctx.signal);
+      for (const c of settledKids ?? []) {
+        if (!preTurnChildren.has(c.id)) registerChildSession(c, "session.updated");
       }
       await reconcileSession(sessionId, false);
       for (const cid of [...childSessions]) if (cid !== sessionId) await reconcileSession(cid, true);

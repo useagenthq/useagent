@@ -273,7 +273,8 @@ describe("conformance: libraries are independently consumable (documented export
     store.batch(() => {
       store.ingest(ev({ eventId: "session", kind: "session.started", capabilities: {
         streamingText: true, reasoning: true, plans: true, toolProgress: true, fileDiffs: true,
-        childSessions: true, approvals: false, questions: true, usage: true, modelSelection: true,
+        nativeChildProjection: true, gatewayChildSessions: true, approvals: false, questions: true,
+        usage: true, modelSelection: true,
         commands: true, directTerminal: true, resume: true, load: true, close: false, stop: true,
         reconcile: true, desktop: false, nativeEmbed: true, knowledgeTools: true,
       } }));

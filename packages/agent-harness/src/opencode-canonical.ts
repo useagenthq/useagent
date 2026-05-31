@@ -50,6 +50,7 @@ import {
   canonicalChildState,
   firstString,
   recordValue as rec,
+  stepFinishUsage,
   stringValue as str,
 } from "./opencode-values";
 import { markerFromSkynet } from "./skynet-context-marker";
@@ -64,6 +65,21 @@ export type {
 
 const TASK_CHILD_ID = /<task\s+id="(ses_[^"]+)"/;
 const TASK_RESULT = /<task_result>\s*([\s\S]*?)\s*<\/task_result>/;
+
+/** The provider identity of a task-launched child: the task tool's own
+ *  `state.metadata.sessionId`, else the `<task id="ses_*">` output marker, else
+ *  the launching callId. Provider identifiers only - never display text. */
+function taskChildId(
+  state: Record<string, unknown> | null,
+  callId: string | null,
+): string | null {
+  const metadata = rec(state?.metadata);
+  return (
+    firstString(metadata?.sessionId, metadata?.sessionID) ??
+    TASK_CHILD_ID.exec(str(state?.output) ?? "")?.[1] ??
+    callId
+  );
+}
 const PLAN_STATUSES = new Set<CanonicalPlanEntry["status"]>([
   "pending",
   "in_progress",
@@ -110,9 +126,84 @@ export function translateOpenCode(
   // Child sessions: any session linked to a parent (task fan-out). Established
   // LOSSLESSLY via child.started so reducers - not the translator - decide hiding.
   const childSessions = new Set<string>();
+  const childParent = new Map<string, string>();
   for (const f of orderedFrames) {
-    if (f.native.parentSessionId && f.native.sessionId) childSessions.add(f.native.sessionId);
+    if (f.native.parentSessionId && f.native.sessionId) {
+      childSessions.add(f.native.sessionId);
+      childParent.set(f.native.sessionId, f.native.parentSessionId);
+    }
   }
+
+  // Pre-scanned REAL child metadata, keyed by provider child id: the child's own
+  // session-lifecycle frame carries its title; the parent task-tool frames carry
+  // the child's session id, agent role (`input.subagent_type`) and model
+  // (`state.metadata.model.modelID`). Pre-scanning (like childSessions above)
+  // lets establishment events carry this regardless of frame arrival order.
+  // Fields the frames do not carry stay absent - nothing is fabricated.
+  interface ChildSeed { title?: string; role?: string; model?: string }
+  const childSeed = new Map<string, ChildSeed>();
+  const seedOf = (id: string): ChildSeed => {
+    const existing = childSeed.get(id);
+    if (existing) return existing;
+    const created: ChildSeed = {};
+    childSeed.set(id, created);
+    return created;
+  };
+  for (const f of orderedFrames) {
+    const p = rec(f.payload);
+    const sid = f.native.sessionId;
+    if (sid && childSessions.has(sid) && f.eventType.startsWith("session")) {
+      const title = firstString(p?.title);
+      if (title) seedOf(sid).title = title;
+    }
+    if (f.eventType.startsWith("part.tool") && p?.tool === "task") {
+      const state = rec(p.state);
+      const childId = taskChildId(state, f.native.callId);
+      if (!childId) continue;
+      const seed = seedOf(childId);
+      const title = firstString(p.title, state?.title);
+      if (title && !seed.title) seed.title = title;
+      const role = firstString(rec(state?.input)?.subagent_type);
+      if (role) seed.role = role;
+      const model = firstString(rec(rec(state?.metadata)?.model)?.modelID);
+      if (model) seed.model = model;
+    }
+  }
+
+  // Accumulated REAL child activity, updated as the stream is walked: latest
+  // tool summary/name from the child's own tool parts, cumulative typed usage
+  // summed from its part.step-finish frames (mirrors how the fleet ledger sums
+  // the same counters).
+  interface ChildActivity { summary?: string; lastToolName?: string; usage?: Record<string, number> }
+  const childActivity = new Map<string, ChildActivity>();
+  const activityOf = (id: string): ChildActivity => {
+    const existing = childActivity.get(id);
+    if (existing) return existing;
+    const created: ChildActivity = {};
+    childActivity.set(id, created);
+    return created;
+  };
+
+  // Merged snapshot of everything REAL known about one child right now. `over`
+  // carries frame-authoritative fields (e.g. the task tool's lifecycle status)
+  // that win over accumulated values; usage is copied so later accumulation
+  // never mutates an already-emitted event.
+  const childStateOf = (
+    childId: string,
+    over: CanonicalChildState = {},
+  ): CanonicalChildState | undefined => {
+    const seed = childSeed.get(childId);
+    const live = childActivity.get(childId);
+    const merged: CanonicalChildState = {
+      ...(live?.summary ? { summary: live.summary } : {}),
+      ...(live?.lastToolName ? { lastToolName: live.lastToolName } : {}),
+      ...(live?.usage ? { usage: { ...live.usage } } : {}),
+      ...(seed?.role ? { role: seed.role } : {}),
+      ...(seed?.model ? { model: seed.model } : {}),
+      ...over,
+    };
+    return Object.keys(merged).length > 0 ? merged : undefined;
+  };
 
   // Message-anchored ordering (mirrors buildTimeline): min seq per messageId (the
   // stable step-start anchor) + partId->messageId, so step tool events can be
@@ -173,13 +264,20 @@ export function translateOpenCode(
   };
 
   // Announce a child session once (lossless: names the session a child so reducers
-  // can route its parts; does not itself hide anything).
+  // can route its parts; does not itself hide anything). Carries the pre-scanned
+  // real metadata (title, agent role, model) when the frames provided it.
   const ensureChild = (produced: CanonicalEventKind[], f: OpenCodeFrame) => {
     const sid = f.native.sessionId;
     if (sid && childSessions.has(sid) && !emittedChild.has(sid)) {
       emittedChild.add(sid);
+      const title = childSeed.get(sid)?.title;
+      const state = childStateOf(sid);
       produced.push(push(`childsess:${sid}`, f.provider, {
-        kind: "child.started", childId: sid, parentChildId: f.native.parentSessionId ?? undefined,
+        kind: "child.started",
+        childId: sid,
+        parentChildId: f.native.parentSessionId ?? childParent.get(sid),
+        ...(title ? { title } : {}),
+        ...(state ? { state } : {}),
       }, { nativeSessionId: sid }));
     }
   };
@@ -469,7 +567,29 @@ export function translateOpenCode(
       else suppressed = "step-start without messageId";
     } else if (et === "part.step-finish") {
       const mid = f.native.messageId;
-      if (mid) produced.push(push(f.eventId, f.provider, { kind: "message.completed", messageId: mid }, ident));
+      if (mid) {
+        produced.push(push(f.eventId, f.provider, { kind: "message.completed", messageId: mid }, ident));
+        // A CHILD step-finish carries the step's real token/cost counters; sum
+        // them into the child's cumulative usage and surface the new total via
+        // child.updated (the message.completed above stays - reducers anchor
+        // message lifecycle on it). An empty payload contributes nothing.
+        const sid = f.native.sessionId;
+        const usage = sid && childSessions.has(sid) ? stepFinishUsage(p) : undefined;
+        if (sid && usage) {
+          const live = activityOf(sid);
+          live.usage = live.usage ?? {};
+          for (const [key, value] of Object.entries(usage)) {
+            live.usage[key] = (live.usage[key] ?? 0) + value;
+          }
+          const state = childStateOf(sid);
+          produced.push(push(f.eventId, f.provider, {
+            kind: "child.updated",
+            childId: sid,
+            status: live.summary ?? "running",
+            ...(state ? { state } : {}),
+          }, ident, "#child-upd"));
+        }
+      }
       else suppressed = "step-finish without messageId";
     } else if (et.startsWith("part.text")) {
       const mid = f.native.messageId;
@@ -495,15 +615,18 @@ export function translateOpenCode(
       } else if (isTask && callId) {
         const state = rec(p?.state);
         const output = str(state?.output) ?? "";
-        const childId = TASK_CHILD_ID.exec(output)?.[1] ?? callId;
-        const childState = canonicalChildState(state);
+        const childId = taskChildId(state, callId) ?? callId;
+        // Frame-authoritative lifecycle status (the task tool's own state) wins;
+        // the merged snapshot adds the accumulated child-session activity plus
+        // the pre-scanned role/model, so the lifecycle events carry REAL state.
+        const childState = childStateOf(childId, canonicalChildState(state) ?? {});
         if (!seenTaskCall.has(callId)) {
           seenTaskCall.add(callId);
           produced.push(push(f.eventId, f.provider, {
             kind: "child.started",
             childId,
             launchToolCallId: callId,
-            title: str(p?.title) ?? undefined,
+            title: firstString(p?.title, state?.title, childSeed.get(childId)?.title) ?? undefined,
             ...(childState ? { state: childState } : {}),
           }, ident, "#child-start"));
         }
@@ -531,6 +654,26 @@ export function translateOpenCode(
         produced.push(push(f.eventId, f.provider, { kind: "tool.completed", toolCallId: callId ?? f.eventId, status: errored ? "error" : "ok" }, ident, "#tool-done"));
       } else {
         produced.push(push(f.eventId, f.provider, { kind: "tool.progress", toolCallId: callId ?? f.eventId }, ident, "#tool-prog"));
+      }
+      // Child ACTIVITY beat: a tool part owned by a child session updates that
+      // child's accumulated summary/lastToolName (REAL payload fields only) and
+      // emits child.updated so live cards move with the child's actual work.
+      // Task parts are excluded above - their own child lifecycle is authoritative.
+      const ownerSid = f.native.sessionId;
+      if (ownerSid && childSessions.has(ownerSid) && !(isTask && callId)) {
+        const live = activityOf(ownerSid);
+        const st = rec(p?.state);
+        const toolName = str(p?.tool);
+        const preview = boundedPreview(st?.error, st?.title, st?.output);
+        if (toolName) live.lastToolName = toolName;
+        if (preview) live.summary = preview;
+        const state = childStateOf(ownerSid);
+        produced.push(push(f.eventId, f.provider, {
+          kind: "child.updated",
+          childId: ownerSid,
+          status: live.summary ?? "running",
+          ...(state ? { state } : {}),
+        }, ident, "#child-upd"));
       }
     } else if (et === ACP_COMMANDS_EVENT_TYPE) {
       // An ACP session's native command-catalog REPLACEMENT, captured durably into the

@@ -5,12 +5,14 @@ import {
   inArray,
   isNotNull,
   isNull,
+  like,
   ne,
   notInArray,
   or,
 } from "drizzle-orm";
 import { db, type Executor } from "../db/client";
 import {
+  commands,
   runs,
   steps,
   type EngineId,
@@ -54,6 +56,12 @@ export interface ApiRun {
   summary: string | null;
   duration_ms: number | null;
   parent_run_id: string | null;
+  /** True when this run is a GATEWAY CHILD SESSION - a deferred serial thread
+   *  turn the parent agent spawned via child_session_create (detected by its
+   *  durable command's idempotency-key namespace). The conversation folds these
+   *  under the parent turn's subagent group instead of rendering a top-level
+   *  user turn. `parent_run_id` alone cannot tell them apart - replies set it too. */
+  child_session: boolean;
   thread_id: string;
   engine_session_id: string | null;
   /** Legacy single-repo mirror (= repos[0] ?? null), kept for back-compat.
@@ -118,6 +126,7 @@ function toRun(
   r: RunRecord,
   stepRows: StepRecord[],
   uploads: RunUploadDescriptor[] = [],
+  childSession = false,
 ): ApiRun {
   // Stored refs may carry a branch ("owner/name:branch"); decode so the wire
   // stays clean "owner/name" and the branch surfaces in `repo_specs` instead.
@@ -133,6 +142,7 @@ function toRun(
     summary: r.summary,
     duration_ms: r.durationMs,
     parent_run_id: r.parentRunId,
+    child_session: childSession,
     thread_id: r.threadId,
     engine_session_id: r.engineSessionId,
     repo: r.repo ? parseRepoRef(r.repo).repo : null,
@@ -150,14 +160,36 @@ function toRun(
   };
 }
 
+/** Idempotency-key namespace `createChildSession` accepts its runs under - the
+ * durable mark that a run is a gateway child session. Owned here (the lowest
+ * layer that reads it) so `child-sessions.ts` can import without a module cycle. */
+export const CHILD_SESSION_IDEMPOTENCY_PREFIX = "child-session";
+
+/** Which of these runs are gateway child sessions: their accepted command rides
+ * the `child-session:` idempotency namespace (idx_commands_run + prefix match). */
+async function gatewayChildRunIds(runIds: readonly string[]): Promise<ReadonlySet<string>> {
+  if (runIds.length === 0) return new Set();
+  const rows = await db
+    .select({ runId: commands.runId })
+    .from(commands)
+    .where(
+      and(
+        inArray(commands.runId, [...runIds]),
+        like(commands.idempotencyKey, `${CHILD_SESSION_IDEMPOTENCY_PREFIX}:%`),
+      ),
+    );
+  return new Set(rows.map((r) => r.runId).filter((id): id is string => id !== null));
+}
+
 /** Attach steps to a set of run rows in a single batched query, preserving the
  * given run order. Shared by the list + thread readers. */
 async function withSteps(runRows: RunRecord[]): Promise<ApiRun[]> {
   if (runRows.length === 0) return [];
   const runIds = runRows.map((r) => r.id);
-  const [stepRows, uploadsByRun] = await Promise.all([
+  const [stepRows, uploadsByRun, childRuns] = await Promise.all([
     db.select().from(steps).where(inArray(steps.runId, runIds)).orderBy(steps.idx),
     listUploadsForRuns(runIds),
+    gatewayChildRunIds(runIds),
   ]);
 
   const byRun = new Map<string, StepRecord[]>();
@@ -166,7 +198,9 @@ async function withSteps(runRows: RunRecord[]): Promise<ApiRun[]> {
     list.push(s);
     byRun.set(s.runId, list);
   }
-  return runRows.map((r) => toRun(r, byRun.get(r.id) ?? [], uploadsByRun.get(r.id) ?? []));
+  return runRows.map((r) =>
+    toRun(r, byRun.get(r.id) ?? [], uploadsByRun.get(r.id) ?? [], childRuns.has(r.id)),
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -412,11 +446,12 @@ export async function getRunWithSteps(
 ): Promise<ApiRun | null> {
   const run = await getRunForOrg(orgId, id);
   if (!run) return null;
-  const [stepRows, uploadsByRun] = await Promise.all([
+  const [stepRows, uploadsByRun, childRuns] = await Promise.all([
     db.select().from(steps).where(eq(steps.runId, id)).orderBy(steps.idx),
     listUploadsForRuns([id]),
+    gatewayChildRunIds([id]),
   ]);
-  return toRun(run, stepRows, uploadsByRun.get(id) ?? []);
+  return toRun(run, stepRows, uploadsByRun.get(id) ?? [], childRuns.has(id));
 }
 
 /** List runs for an org, newest first. By default only THREAD ROOTS (runs with

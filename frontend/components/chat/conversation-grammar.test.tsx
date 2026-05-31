@@ -168,6 +168,42 @@ test("fan-out turn rows always render a visible heading", () => {
   expect(html).toContain("Child session create");
 });
 
+test("a gateway child-session turn folds under its parent, never a second turn block", () => {
+  const parent = makeTurn("run-parent", "completed");
+  const child = makeTurn("run-child", "queued");
+  child.run = {
+    ...child.run,
+    prompt: "Delegated: audit the docs",
+    parent_run_id: "run-parent",
+    child_session: true,
+  };
+  const html = render([parent, child]);
+
+  // Exactly ONE rendered turn block (the parent) - the child never renders as a
+  // top-level user turn or a queued bubble of its own.
+  expect(html.split('data-testid="turn-block"')).toHaveLength(2);
+  expect(html.split('data-testid="user-message"')).toHaveLength(2);
+  expect(html).not.toContain('data-run-id="run-child"');
+
+  // Its truth lives in the parent's subagent fold: honest serial Queued state
+  // plus the open-as-own-session affordance.
+  expect(html).toContain('data-testid="subagents-fold"');
+  expect(html).toContain("1 subagent");
+  expect(html).toContain("Delegated: audit the docs");
+  expect(html).toContain("Queued");
+  expect(html).toContain('href="/session/run-child"');
+});
+
+test("a reply turn without the child-session mark still renders as its own block", () => {
+  const parent = makeTurn("run-parent", "completed");
+  const reply = makeTurn("run-reply", "completed");
+  reply.run = { ...reply.run, prompt: "Follow up on this", parent_run_id: "run-parent" };
+  const html = render([parent, reply]);
+
+  expect(html.split('data-testid="turn-block"')).toHaveLength(3);
+  expect(html).not.toContain('data-testid="subagents-fold"');
+});
+
 test("settled turn renders tool bursts through the T3 work grammar", () => {
   const html = render([makeTurn("run-settled", "completed", settledEvents())]);
 

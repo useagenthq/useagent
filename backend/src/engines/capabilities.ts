@@ -37,7 +37,12 @@ export function sessionCapabilities(engine: string, res: CapabilityResources): N
     fileDiffs: isOpencode || isRuntime,
     commands: true,
     directTerminal: true, // the thread sandbox has a terminal for every engine
-    childSessions: isOpencode || isRuntime,
+    // Engine-NATIVE task-subagent projection only exists on the OpenCode protocol and the
+    // canonical runtime adapter.
+    nativeChildProjection: isOpencode || isRuntime,
+    // The gateway child_session_* tools spawn DEFERRED serial thread turns through the product
+    // command lane - engine-independent, so ACP claude/codex sessions get them too.
+    gatewayChildSessions: true,
     reasoning: isOpencode || isRuntime,
     resume: true, // opencode continuation / ACP session/load
     load: true,

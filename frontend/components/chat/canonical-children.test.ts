@@ -2,11 +2,15 @@ import { describe, expect, test } from "bun:test";
 import {
   type CanonicalChildEventLike,
   deriveCanonicalChildren,
+  deriveChildrenView,
+  deriveChildTimeline,
   legacySpawnStepIdForCanonical,
   remapCanonicalOwnerByStep,
 } from "./canonical-children";
 import type { CanonicalEventLike } from "./canonical-timeline";
+import type { NativeFrame } from "./native-events";
 import type { SubagentModel } from "./subagents";
+import type { ApiStep } from "./types";
 
 const event = (
   kind: CanonicalEventLike["kind"],
@@ -230,5 +234,137 @@ describe("canonical child projection", () => {
     const [canonicalCard] = canonical.cards;
     if (!canonicalCard) throw new Error("expected canonical child card");
     expect(legacySpawnStepIdForCanonical(canonicalCard, legacy)).toBe("legacy-spawn-step");
+  });
+});
+
+const step = (id: string, code: Record<string, unknown>): ApiStep => ({
+  id,
+  run_id: "run-1",
+  idx: 1,
+  kind: "command",
+  label: "↳ bash",
+  chip: null,
+  code_json: JSON.stringify(code),
+  created_at: "2026-08-20T09:00:00Z",
+});
+
+const taskFrame = (over: Partial<NativeFrame> = {}): NativeFrame => ({
+  schemaVersion: 1,
+  eventId: "fr-1",
+  seq: 1,
+  provider: "opencode",
+  eventType: "part.tool.completed",
+  native: {
+    sessionId: "ses_parent",
+    parentSessionId: null,
+    messageId: null,
+    partId: "p1",
+    callId: "call-1",
+  },
+  payload: {
+    type: "tool",
+    tool: "task",
+    state: {
+      output: '<task id="ses_child">done</task>\n<task_result>\nAll tests green.\n</task_result>',
+    },
+  },
+  ...over,
+});
+
+describe("deriveChildrenView (the ONE merged rail + fold projection)", () => {
+  test("canonical cards keep canonical metadata while the native lane fills the result", () => {
+    const view = deriveChildrenView(
+      [],
+      [taskFrame()],
+      [
+        event("child.started", 1, {
+          childId: "ses_child",
+          launchToolCallId: "call-1",
+          title: "Verify the suite",
+          state: { status: "running", role: "verifier", model: "gpt-5.6-luna" },
+        }),
+      ],
+    );
+
+    expect(view.cards).toHaveLength(1);
+    const fidelity = view.fidelity.get("ses_child");
+    if (!fidelity) throw new Error("expected merged fidelity for ses_child");
+    expect(fidelity).toMatchObject({
+      role: "verifier",
+      model: "gpt-5.6-luna",
+      resultText: "All tests green.",
+    });
+    // The native lane saw the task COMPLETE; a canonical child that never saw
+    // its completion frame adopts the terminal truth instead of running forever.
+    expect(fidelity.status).toBe("completed");
+    // Same record under every alias (call id + child session id).
+    expect(view.fidelity.get("call-1")).toBe(fidelity);
+  });
+
+  test("attributes durable steps to canonical cards by native child session when legacy has no card", () => {
+    const view = deriveChildrenView(
+      [step("s-child-1", { tool: "bash", native: { sessionID: "ses_child" } })],
+      [],
+      [event("child.started", 1, { childId: "ses_child", title: "Child" })],
+    );
+
+    expect(view.ownerByStep.get("s-child-1")).toBe("canonical-child-ses_child");
+  });
+
+  test("falls back to the pure legacy projection when no canonical children exist", () => {
+    const view = deriveChildrenView([], [taskFrame()], []);
+    expect(view.cards).toEqual([]);
+    expect(view.fidelity.get("call-1")).toMatchObject({
+      status: "completed",
+      resultText: "All tests green.",
+    });
+  });
+});
+
+describe("deriveChildTimeline (the subagent pane's real activity)", () => {
+  const childEvents = (): CanonicalChildEventLike[] => [
+    event("tool.started", 1, {
+      toolCallId: "c1",
+      name: "bash",
+      title: "bun test checkout",
+      identity: { nativeEventId: "step-a", nativeSessionId: "ses_child", nativeSeq: 1 },
+    }),
+    event("tool.completed", 2, {
+      toolCallId: "c1",
+      status: "ok",
+      preview: "12 pass",
+      identity: { nativeEventId: "step-a", nativeSessionId: "ses_child", nativeSeq: 2 },
+    }),
+    event("message.delta", 3, {
+      messageId: "m1",
+      text: "Checkout validation holds.",
+      identity: { nativeSessionId: "ses_child", nativePartId: "pt1", nativeSeq: 3 },
+    }),
+    event("tool.started", 4, {
+      toolCallId: "root-tool",
+      name: "read",
+      identity: { nativeEventId: "step-r", nativeSessionId: "ses_root", nativeSeq: 4 },
+    }),
+  ];
+
+  test("folds the child's own tool lifecycles and text, excluding other sessions", () => {
+    const timeline = deriveChildTimeline(childEvents(), new Map(), "ses_child");
+    expect(timeline).toHaveLength(2);
+    expect(timeline[0]).toMatchObject({ kind: "tool", key: "canonical-tool-c1" });
+    expect(timeline[1]).toMatchObject({ kind: "text", text: "Checkout validation holds." });
+  });
+
+  test("prefers the durable sidecar step over the projected lifecycle", () => {
+    const durable = step("step-a", { tool: "bash", output: "12 pass, 0 fail" });
+    const timeline = deriveChildTimeline(
+      childEvents(),
+      new Map([["step-a", durable]]),
+      "ses_child",
+    );
+    expect(timeline[0]).toMatchObject({ kind: "tool", key: "step-a", step: durable });
+  });
+
+  test("yields nothing without a child session identity", () => {
+    expect(deriveChildTimeline(childEvents(), new Map(), null)).toEqual([]);
   });
 });

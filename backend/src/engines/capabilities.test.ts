@@ -26,7 +26,8 @@ describe("sessionCapabilities (truthful per-engine + resource-driven)", () => {
     expect(oc.reconcile).toBe(true);
     expect(oc.modelSelection).toBe(true); // opencode is an any-model sandbox
     expect(oc.close).toBe(false); // opencode stays resident
-    expect(oc.childSessions).toBe(true);
+    expect(oc.nativeChildProjection).toBe(true);
+    expect(oc.gatewayChildSessions).toBe(true);
     expect(oc.reasoning).toBe(true);
     expect(oc.fileDiffs).toBe(true);
 
@@ -40,7 +41,8 @@ describe("sessionCapabilities (truthful per-engine + resource-driven)", () => {
       expect(c.usage).toBe(false);
       expect(c.reconcile).toBe(false); // ACP control adapter is unsupported
       expect(c.close).toBe(true);
-      expect(c.childSessions).toBe(false);
+      expect(c.nativeChildProjection).toBe(false); // no native child-session emitter
+      expect(c.gatewayChildSessions).toBe(true); // gateway tools are engine-independent
       expect(c.reasoning).toBe(false);
       expect(c.fileDiffs).toBe(false);
     }
@@ -75,7 +77,8 @@ describe("sessionCapabilities (truthful per-engine + resource-driven)", () => {
     expect(capabilities).toMatchObject({
       approvals: true,
       questions: true,
-      childSessions: true,
+      nativeChildProjection: true,
+      gatewayChildSessions: true,
       reasoning: true,
       plans: true,
       usage: true,

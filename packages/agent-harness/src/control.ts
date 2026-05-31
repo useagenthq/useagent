@@ -234,7 +234,9 @@ export interface ProviderDriver {
 
 /** Compatibility projection onto the legacy control facade. The canonical driver
  * descriptor remains authoritative; `todos` and `patches` retain their legacy
- * names while mapping to the canonical plan and file-diff surfaces. */
+ * names while mapping to the canonical plan and file-diff surfaces, and legacy
+ * `childSessions` means the provider-NATIVE child projection (the gateway
+ * child_session tools are engine-independent and not a harness capability). */
 export function providerDriverHarnessCapabilities(
   driver: Pick<ProviderDriver, "descriptor">,
 ): HarnessCapabilities {
@@ -249,7 +251,7 @@ export function providerDriverHarnessCapabilities(
     cancel: capabilities.stop,
     streaming,
     authoritativeHistory: capabilities.reconcile,
-    childSessions: capabilities.childSessions,
+    childSessions: capabilities.nativeChildProjection,
     approvals: capabilities.approvals,
     questions: capabilities.questions,
     reasoning: capabilities.reasoning,

@@ -32,6 +32,10 @@ import { QuestionCard } from "@/components/chat/question-card";
 import type { PendingQuestion } from "@/components/chat/question-state";
 import type { SlashCommand } from "@/components/chat/slash-command";
 import {
+  type GatewayChildSession,
+  SubagentsFold,
+} from "@/components/chat/subagents-fold";
+import {
   buildTimeline,
   hasNarration,
   type TimelineMarker,
@@ -486,11 +490,16 @@ const TurnBlock = memo(function TurnBlock({
   turn,
   queuePosition,
   onSendNow,
+  childSessions,
 }: {
   turn: Turn;
   /** 1-based place among this thread's queued turns (queued rendering only). */
   queuePosition?: number;
   onSendNow?: () => void;
+  /** Gateway child sessions THIS turn spawned (deferred serial thread turns) -
+   *  they fold under this turn's subagent group instead of rendering as their
+   *  own top-level turns. */
+  childSessions?: readonly GatewayChildSession[];
 }) {
   const { run, steps, status, summary, live, liveText, liveReasoning } = turn;
   // Capture whether this turn was streaming when it first mounted, so its
@@ -632,6 +641,18 @@ const TurnBlock = memo(function TurnBlock({
             )}
           </>
         )}
+
+        {/* This turn's subagents: native task fan-out (same projection as the
+            Agents rail) plus gateway child sessions it spawned - one fold, real
+            per-child status/model/tokens. Renders nothing when none exist. */}
+        <SubagentsFold
+          steps={steps}
+          frames={turn.native?.nativeFrames}
+          canonicalEvents={turn.canonical}
+          live={live}
+          childSessions={childSessions}
+        />
+
 
         {/* Hover copy on the settled answer (T3 grammar). The durable summary IS
             the answer markdown even when the timeline's final narration burst
@@ -839,8 +860,59 @@ export const Conversation = memo(function Conversation({
   const controlLocksComposer =
     !!pendingApproval || (!!pendingQuestion && !composerCanAnswerQuestion);
 
+  // Gateway child sessions fold under their PARENT turn's subagent group - they
+  // are deferred serial thread turns the agent spawned, not user messages, so
+  // they never render as top-level turn blocks. Row arrays are identity-cached
+  // per parent so an unchanged fold never breaks a settled TurnBlock's memo.
+  const childRowsCacheRef = useRef(
+    new Map<string, { source: readonly Turn[]; rows: readonly GatewayChildSession[] }>(),
+  );
+  const { renderedTurns, childSessionsByParent } = useMemo(() => {
+    const turnIds = new Set(turns.map((t) => t.run.id));
+    const grouped = new Map<string, Turn[]>();
+    for (const t of turns) {
+      const parentId = t.run.parent_run_id ?? null;
+      if (t.run.child_session === true && parentId && turnIds.has(parentId)) {
+        const list = grouped.get(parentId);
+        if (list) list.push(t);
+        else grouped.set(parentId, [t]);
+      }
+    }
+    const folded = new Set([...grouped.values()].flat().map((t) => t.run.id));
+    const cache = childRowsCacheRef.current;
+    const next = new Map<string, { source: readonly Turn[]; rows: readonly GatewayChildSession[] }>();
+    const byParent = new Map<string, readonly GatewayChildSession[]>();
+    for (const [parentId, children] of grouped) {
+      const cached = cache.get(parentId);
+      const entry =
+        cached &&
+        cached.source.length === children.length &&
+        cached.source.every((t, i) => t === children[i])
+          ? cached
+          : {
+              source: children,
+              rows: children.map((t) => ({
+                id: t.run.id,
+                prompt: cleanPrompt(t.run.prompt),
+                engine: t.run.engine,
+                model: t.run.model,
+                status: t.status,
+                summary: t.summary,
+              })),
+            };
+      next.set(parentId, entry);
+      byParent.set(parentId, entry.rows);
+    }
+    childRowsCacheRef.current = next;
+    return {
+      renderedTurns: turns.filter((t) => !folded.has(t.run.id)),
+      childSessionsByParent: byParent,
+    };
+  }, [turns]);
+
   // 1-based FIFO position per queued turn: the queued pill states the honest
-  // place in line (position 1 waits only on the running turn).
+  // place in line (position 1 waits only on the running turn). Counted over the
+  // WHOLE serial queue - a queued gateway child ahead of a reply is real wait.
   const queuedPositions = new Map(
     turns.filter((t) => t.status === "queued").map((t, i) => [t.run.id, i + 1] as const),
   );
@@ -886,12 +958,13 @@ export const Conversation = memo(function Conversation({
           }}
           className="scrollbar-slim h-full space-y-8 overflow-y-auto px-5 py-6"
         >
-          {turns.map((turn) => (
+          {renderedTurns.map((turn) => (
             <TurnBlock
               key={turn.run.id}
               turn={turn}
               queuePosition={queuedPositions.get(turn.run.id)}
               onSendNow={turn.run.id === sendNowFor ? onSendNow : undefined}
+              childSessions={childSessionsByParent.get(turn.run.id)}
             />
           ))}
           {pendingQuestion && onAnswerQuestion && (
@@ -921,7 +994,7 @@ export const Conversation = memo(function Conversation({
           ))}
           {pendingReply && <UserBubble>{pendingReply}</UserBubble>}
         </div>
-        <MessageScrollerRail turns={turns} scrollRef={scrollRef} />
+        <MessageScrollerRail turns={renderedTurns} scrollRef={scrollRef} />
         <ScrollToEndPill scrollRef={scrollRef} />
       </div>
 

@@ -199,7 +199,7 @@ function toTimelineMarker(e: CanonicalEventLike): TimelineMarker {
 type Ranked = { node: TimelineNode; k0: number; k1: number; k2: number };
 const MAX = Number.MAX_SAFE_INTEGER;
 
-interface ToolLifecycle {
+export interface ToolLifecycle {
   readonly toolCallId: string;
   readonly firstSeq: number;
   readonly lastSeq: number;
@@ -232,7 +232,7 @@ function projectedStep(
   };
 }
 
-function collectToolLifecycles(
+export function collectToolLifecycles(
   events: readonly CanonicalEventLike[],
 ): ReadonlyMap<string, ToolLifecycle> {
   const mutable = new Map<string, ToolLifecycle>();
@@ -268,7 +268,7 @@ function collectToolLifecycles(
   return mutable;
 }
 
-function projectToolLifecycle(lifecycle: ToolLifecycle, event: CanonicalEventLike): ApiStep {
+export function projectToolLifecycle(lifecycle: ToolLifecycle, event: CanonicalEventLike): ApiStep {
   const detail = lifecycle.error ?? lifecycle.preview;
   return projectedStep(
     event,
