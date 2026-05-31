@@ -3,9 +3,26 @@
 import * as React from 'react';
 import { useRouter } from 'next/navigation';
 import { RiPulseLine, RiSearch2Line, RiWifiOffLine } from '@remixicon/react';
+import type { SortDescriptor } from 'react-aria-components';
+import {
+  flexRender,
+  getCoreRowModel,
+  getPaginationRowModel,
+  getSortedRowModel,
+  useReactTable,
+} from '@tanstack/react-table';
+import type { ColumnDef, PaginationState, SortingState } from '@tanstack/react-table';
 
+import { LoadingState } from '@/components/ai/loading-state';
+import {
+  Muted,
+  SortChevron,
+  StatusChip,
+  type StatusChipColor,
+} from '@/components/application/data-table/cells';
 import { Chip } from '@/components/base/badges/chip';
 import { InputBase } from '@/components/base/input/input';
+import { Pagination } from '@/components/base/pagination/pagination';
 import {
   SegmentedControl,
   SegmentedControlItem,
@@ -18,20 +35,18 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/base/table/table';
-import { LoadingState } from '@/components/ai/loading-state';
 import { SubagentPeekButton } from '@/components/chat/subagent-pane';
 import { StatusDot } from '@/components/shared/status-dot';
 import { useOrgChanges } from '@/hooks/use-org-changes';
-import { cx } from '@/utils/cx';
-import { formatDuration } from '@/utils/format';
+import { formatDuration, relativeTime } from '@/utils/format';
 import { type Run, type RunTone, TONE_TO_DOT, fetchRuns, statusTone } from './runs-data';
 
 const POLL_MS = 15_000;
+const PER_PAGE = 10;
 
-/** Map a run tone onto the BoardUI status Chip (the labeled Status column). */
-type ChipColor = 'yellow' | 'lime' | 'rose' | 'soft';
-const TONE_TO_CHIP: Record<RunTone, { color: ChipColor; label: string }> = {
-  live: { color: 'yellow', label: 'Live' },
+/** Map a run tone onto the shared StatusChip (the labeled Status column). */
+const TONE_TO_CHIP: Record<RunTone, { color: StatusChipColor; label: string; pulse?: boolean }> = {
+  live: { color: 'yellow', label: 'Live', pulse: true },
   success: { color: 'lime', label: 'Completed' },
   error: { color: 'rose', label: 'Failed' },
   idle: { color: 'soft', label: 'Queued' },
@@ -45,6 +60,121 @@ const FILTERS = [
   { value: 'error', label: 'Failed' },
 ] as const;
 type FilterValue = (typeof FILTERS)[number]['value'];
+
+/**
+ * Active runs on the BoardUI data-table recipe: the react-aria `Table` primitive
+ * driven by a @tanstack/react-table instance (shared cells live in
+ * components/application/data-table/cells). TanStack owns started-at sorting +
+ * pagination; the toolbar filters the FULL run set before it reaches the table,
+ * so pagination always spans the filtered result. Rows navigate to the session.
+ */
+const COLUMNS: ColumnDef<Run>[] = [
+  {
+    id: 'run',
+    enableSorting: false,
+    header: 'Run',
+    cell: ({ row }) => {
+      const run = row.original;
+      return (
+        <div className='flex max-w-[440px] items-center gap-3'>
+          <StatusDot {...TONE_TO_DOT[statusTone(run.status)]} />
+          <div className='min-w-0'>
+            <p className='truncate text-body-2-medium text-text-primary'>
+              {run.prompt || 'Untitled run'}
+            </p>
+            {run.summary && (
+              <p className='mt-0.5 truncate text-caption-1-regular text-text-secondary'>
+                {run.summary}
+              </p>
+            )}
+          </div>
+        </div>
+      );
+    },
+  },
+  {
+    id: 'engine',
+    enableSorting: false,
+    header: 'Engine',
+    cell: ({ row }) =>
+      row.original.engine ? (
+        <Chip variant='caption' color='soft'>
+          {row.original.engine}
+        </Chip>
+      ) : (
+        <Muted />
+      ),
+  },
+  {
+    id: 'repo',
+    enableSorting: false,
+    header: 'Repository',
+    cell: ({ row }) =>
+      row.original.repo ? (
+        <span className='block max-w-[200px] truncate text-body-2-regular text-text-secondary'>
+          {row.original.repo}
+        </span>
+      ) : (
+        <Muted />
+      ),
+  },
+  {
+    id: 'status',
+    enableSorting: false,
+    header: 'Status',
+    cell: ({ row }) => {
+      const chip = TONE_TO_CHIP[statusTone(row.original.status)];
+      return <StatusChip color={chip.color} label={chip.label} pulse={chip.pulse} />;
+    },
+  },
+  {
+    id: 'started',
+    // ISO 8601 strings sort lexically in chronological order, so the raw
+    // created_at doubles as the numeric-equivalent sort key.
+    accessorFn: (run) => run.created_at,
+    header: 'Started',
+    cell: ({ row }) => (
+      <span className='block whitespace-nowrap text-right text-body-2-regular text-text-tertiary'>
+        {relativeTime(row.original.created_at)}
+      </span>
+    ),
+  },
+  {
+    id: 'duration',
+    enableSorting: false,
+    header: 'Duration',
+    cell: ({ row }) => (
+      <span className='block text-right text-body-2-regular tabular-nums text-text-secondary'>
+        {formatDuration(row.original.duration_ms)}
+      </span>
+    ),
+  },
+  {
+    id: 'actions',
+    enableSorting: false,
+    header: () => <span className='sr-only'>Actions</span>,
+    cell: ({ row }) => (
+      // Swallow presses so the peek button never triggers row navigation.
+      <div
+        className='flex justify-end'
+        onClick={(e) => e.stopPropagation()}
+        onPointerDown={(e) => e.stopPropagation()}
+        onMouseDown={(e) => e.stopPropagation()}
+      >
+        <SubagentPeekButton runId={row.original.id} />
+      </div>
+    ),
+  },
+];
+
+const COL_WIDTHS: Record<string, string> = {
+  engine: 'w-[120px]',
+  repo: 'w-[200px]',
+  status: 'w-[132px]',
+  started: 'w-[112px]',
+  duration: 'w-[104px]',
+  actions: 'w-[76px]',
+};
 
 function EmptyState() {
   return (
@@ -89,6 +219,11 @@ export function RunsList({
   const [loading, setLoading] = React.useState(
     initialRuns.length === 0 && !initialError,
   );
+  const [sorting, setSorting] = React.useState<SortingState>([{ id: 'started', desc: true }]);
+  const [pagination, setPagination] = React.useState<PaginationState>({
+    pageIndex: 0,
+    pageSize: PER_PAGE,
+  });
 
   const load = React.useCallback(async (signal?: AbortSignal) => {
       try {
@@ -124,14 +259,42 @@ export function RunsList({
   const showEmpty = !showError && !showLoading && runs.length === 0;
 
   const q = query.trim().toLowerCase();
-  const filtered = runs.filter((run) => {
-    if (filter !== 'all' && statusTone(run.status) !== filter) return false;
-    if (!q) return true;
-    return (
-      (run.prompt || '').toLowerCase().includes(q) ||
-      (run.summary || '').toLowerCase().includes(q)
-    );
+  const filtered = React.useMemo(
+    () =>
+      runs.filter((run) => {
+        if (filter !== 'all' && statusTone(run.status) !== filter) return false;
+        if (!q) return true;
+        return (
+          (run.prompt || '').toLowerCase().includes(q) ||
+          (run.summary || '').toLowerCase().includes(q)
+        );
+      }),
+    [runs, filter, q],
+  );
+
+  const table = useReactTable({
+    data: filtered,
+    columns: COLUMNS,
+    getRowId: (run) => run.id,
+    state: { sorting, pagination },
+    onSortingChange: setSorting,
+    onPaginationChange: setPagination,
+    getCoreRowModel: getCoreRowModel(),
+    getSortedRowModel: getSortedRowModel(),
+    getPaginationRowModel: getPaginationRowModel(),
   });
+
+  const headers = table.getHeaderGroups()[0].headers;
+  const rows = table.getRowModel().rows;
+  const totalPages = table.getPageCount();
+  const activeSort = sorting[0] ?? { id: 'started', desc: true };
+  const sortDescriptor: SortDescriptor = {
+    column: activeSort.id,
+    direction: activeSort.desc ? 'descending' : 'ascending',
+  };
+
+  // Filtering / searching changes the row set, so jump back to the first page.
+  const resetPage = () => table.setPageIndex(0);
 
   return (
     <div className='animate-ai-fade-up p-6 lg:p-8'>
@@ -165,7 +328,10 @@ export function RunsList({
               selectedKeys={[filter]}
               onSelectionChange={(keys) => {
                 const next = [...(keys as Set<string>)][0];
-                if (next) setFilter(next as FilterValue);
+                if (next) {
+                  setFilter(next as FilterValue);
+                  resetPage();
+                }
               }}
               className='w-full sm:w-auto'
             >
@@ -182,91 +348,84 @@ export function RunsList({
               placeholder='Search runs…'
               leadingIcon={RiSearch2Line}
               value={query}
-              onChange={(e) => setQuery(e.target.value)}
+              onChange={(e) => {
+                setQuery(e.target.value);
+                resetPage();
+              }}
               fieldClassName='sm:w-64'
             />
           </div>
 
           {filtered.length > 0 ? (
-            <Table
-              aria-label='Active runs'
-              containerClassName='mt-3'
-              className='min-w-[720px]'
-              onRowAction={(key) => router.push(`/session/${String(key)}`)}
-            >
-              <TableHeader>
-                <TableColumn isRowHeader>Run</TableColumn>
-                <TableColumn>Engine</TableColumn>
-                <TableColumn>
-                  <span className='block text-right'>Duration</span>
-                </TableColumn>
-                <TableColumn>Status</TableColumn>
-                <TableColumn>
-                  <span className='sr-only'>Actions</span>
-                </TableColumn>
-              </TableHeader>
-              <TableBody>
-                {filtered.map((run) => {
-                  const tone = statusTone(run.status);
-                  const title = run.prompt || 'Untitled run';
-                  const chip = TONE_TO_CHIP[tone];
-                  return (
+            <>
+              <Table
+                aria-label='Active runs'
+                containerClassName='mt-3'
+                className='min-w-[900px]'
+                sortDescriptor={sortDescriptor}
+                onSortChange={(descriptor) => {
+                  setSorting([
+                    {
+                      id: String(descriptor.column),
+                      desc: descriptor.direction === 'descending',
+                    },
+                  ]);
+                }}
+                onRowAction={(key) => router.push(`/session/${String(key)}`)}
+              >
+                <TableHeader>
+                  {headers.map((header) => {
+                    const id = header.column.id;
+                    const label = flexRender(header.column.columnDef.header, header.getContext());
+                    return (
+                      <TableColumn
+                        key={header.id}
+                        id={header.id}
+                        isRowHeader={id === 'run'}
+                        allowsSorting={header.column.getCanSort()}
+                        className={COL_WIDTHS[id]}
+                      >
+                        {header.column.getCanSort() ? (
+                          <span className='flex w-full items-center justify-end gap-0.5'>
+                            {label}
+                            <SortChevron dir={header.column.getIsSorted()} />
+                          </span>
+                        ) : id === 'duration' ? (
+                          <span className='block text-right'>{label}</span>
+                        ) : (
+                          label
+                        )}
+                      </TableColumn>
+                    );
+                  })}
+                </TableHeader>
+                <TableBody>
+                  {rows.map((row) => (
                     <TableRow
-                      key={run.id}
-                      id={run.id}
+                      key={row.id}
+                      id={row.id}
                       className='cursor-pointer hover:bg-background-primary-hover'
                     >
-                      <TableCell className='max-w-[440px]'>
-                        <div className='flex items-center gap-3'>
-                          <StatusDot {...TONE_TO_DOT[tone]} />
-                          <div className='min-w-0'>
-                            <p className='truncate text-body-2-medium text-text-primary'>{title}</p>
-                            {run.summary && (
-                              <p className='mt-0.5 truncate text-caption-1-regular text-text-secondary'>
-                                {run.summary}
-                              </p>
-                            )}
-                          </div>
-                        </div>
-                      </TableCell>
-                      <TableCell className='w-0'>
-                        {run.engine && (
-                          <Chip variant='caption' color='soft'>
-                            {run.engine}
-                          </Chip>
-                        )}
-                      </TableCell>
-                      <TableCell className='w-0 whitespace-nowrap text-right text-caption-1-regular tabular-nums text-text-tertiary'>
-                        {formatDuration(run.duration_ms)}
-                      </TableCell>
-                      <TableCell className='w-0'>
-                        <Chip variant='caption' color={chip.color} className='gap-1'>
-                          <span
-                            aria-hidden
-                            className={cx(
-                              'size-1.5 rounded-full bg-current',
-                              tone === 'live' && 'animate-pulse',
-                            )}
-                          />
-                          {chip.label}
-                        </Chip>
-                      </TableCell>
-                      <TableCell className='w-0 pr-4'>
-                        {/* Actions cell swallows presses so the peek button never
-                            triggers row navigation. */}
-                        <div
-                          onClick={(e) => e.stopPropagation()}
-                          onPointerDown={(e) => e.stopPropagation()}
-                          onMouseDown={(e) => e.stopPropagation()}
-                        >
-                          <SubagentPeekButton runId={run.id} />
-                        </div>
-                      </TableCell>
+                      {row.getVisibleCells().map((cell) => (
+                        <TableCell key={cell.id} className={COL_WIDTHS[cell.column.id]}>
+                          {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                        </TableCell>
+                      ))}
                     </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
+                  ))}
+                </TableBody>
+              </Table>
+
+              {totalPages > 1 && (
+                <div className='mt-3'>
+                  <Pagination
+                    page={pagination.pageIndex + 1}
+                    totalPages={totalPages}
+                    onChange={(p) => table.setPageIndex(p - 1)}
+                  />
+                </div>
+              )}
+            </>
           ) : (
             <p className='mt-10 text-center text-body-2-regular text-text-tertiary'>
               No runs match this filter.
