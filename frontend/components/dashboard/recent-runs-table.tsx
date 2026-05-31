@@ -11,6 +11,12 @@ import {
   useReactTable,
 } from '@tanstack/react-table';
 import type { ColumnDef, PaginationState, SortingState } from '@tanstack/react-table';
+import {
+  Muted,
+  SortChevron,
+  StatusChip,
+  type StatusChipColor,
+} from '@/components/application/data-table/cells';
 import { Chip } from '@/components/base/badges/chip';
 import { Pagination } from '@/components/base/pagination/pagination';
 import {
@@ -21,7 +27,6 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/base/table/table';
-import { ChevronSortDown } from '@/components/foundations/icons/chevrons';
 import { cx } from '@/utils/cx';
 import { formatDuration, relativeTime } from '@/utils/format';
 import { Card } from './card';
@@ -35,8 +40,7 @@ import { type DashRun, type RunStatus, timestamp } from './dashboard-data';
  * from the page's /api/runs snapshot and refreshes via DashboardLiveRefresh.
  */
 
-type ChipColor = 'yellow' | 'lime' | 'rose' | 'soft';
-const STATUS_CHIP: Record<RunStatus, { color: ChipColor; label: string; pulse?: boolean }> = {
+const STATUS_CHIP: Record<RunStatus, { color: StatusChipColor; label: string; pulse?: boolean }> = {
   running: { color: 'yellow', label: 'Running', pulse: true },
   completed: { color: 'lime', label: 'Completed' },
   failed: { color: 'rose', label: 'Failed' },
@@ -44,22 +48,6 @@ const STATUS_CHIP: Record<RunStatus, { color: ChipColor; label: string; pulse?: 
 };
 
 const PER_PAGE = 8;
-
-function SortChevron({ dir }: { dir: false | 'asc' | 'desc' }) {
-  return (
-    <ChevronSortDown
-      className={cx(
-        'size-6 shrink-0 transition-[transform,color] duration-150',
-        dir === 'asc' && 'rotate-180',
-        dir ? 'text-text-secondary' : 'text-text-tertiary',
-      )}
-    />
-  );
-}
-
-function Muted() {
-  return <span className='text-body-2-regular text-text-tertiary'>-</span>;
-}
 
 const COLUMNS: ColumnDef<DashRun>[] = [
   {
@@ -104,15 +92,7 @@ const COLUMNS: ColumnDef<DashRun>[] = [
     header: 'Status',
     cell: ({ row }) => {
       const chip = STATUS_CHIP[row.original.status];
-      return (
-        <Chip variant='caption' color={chip.color} className='gap-1'>
-          <span
-            aria-hidden
-            className={cx('size-1.5 rounded-full bg-current', chip.pulse && 'animate-pulse')}
-          />
-          {chip.label}
-        </Chip>
-      );
+      return <StatusChip color={chip.color} label={chip.label} pulse={chip.pulse} />;
     },
   },
   {

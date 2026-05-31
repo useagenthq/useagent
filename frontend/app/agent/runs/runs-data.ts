@@ -29,6 +29,10 @@ export interface Run {
   summary: string | null;
   duration_ms: number | null;
   engine: string;
+  /** Primary repository (backend mirror of repos[0]); null for bare workdirs. */
+  repo: string | null;
+  /** ISO 8601 creation time — the started-at sort key + relative-time display. */
+  created_at: string;
   steps?: RunStep[];
 }
 

@@ -20,6 +20,7 @@ import {
   useReactTable,
 } from "@tanstack/react-table";
 import type { ColumnDef, PaginationState, SortingState } from "@tanstack/react-table";
+import { SortChevron } from "@/components/application/data-table/cells";
 import { Avatar } from "@/components/base/avatar/avatar";
 import { Chip } from "@/components/base/badges/chip";
 import { StatusDot } from "@/components/base/badges/status-dot";
@@ -50,7 +51,6 @@ import {
 } from "@/components/base/table/table";
 import type { TableSize } from "@/components/base/table/table";
 import { Tooltip, TooltipTrigger } from "@/components/base/tooltip/tooltip";
-import { ChevronSortDown } from "@/components/foundations/icons/chevrons";
 import { cx } from "@/utils/cx";
 
 /**
@@ -199,18 +199,6 @@ function PurchaseSelect({
         Processing
       </SelectItem>
     </Select>
-  );
-}
-
-function SortChevron({ dir }: { dir: false | "asc" | "desc" }) {
-  return (
-    <ChevronSortDown
-      className={cx(
-        "size-6 shrink-0 transition-[transform,color] duration-150",
-        dir === "asc" && "rotate-180",
-        dir ? "text-text-secondary" : "text-text-tertiary",
-      )}
-    />
   );
 }
 
