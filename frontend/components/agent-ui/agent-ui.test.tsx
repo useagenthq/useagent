@@ -173,6 +173,7 @@ describe("agent UI accessibility contracts", () => {
                 progress: "Audit complete",
                 lastToolName: "browser",
                 recentActivity: [],
+                prompt: null,
                 usage: { totalTokens: 1250 },
                 model: "model-1",
                 role: "reviewer",

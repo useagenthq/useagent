@@ -19,7 +19,11 @@ import type { ChildStatus, NativeFrame } from "@/components/chat/native-events";
 import type { SubagentCard } from "@/components/chat/subagents";
 import { ToolStepRow } from "@/components/chat/tool-step-row";
 import { type ApiStep, deriveTrace, formatDuration } from "@/components/chat/types";
-import { formatSubagentTokenCount, AgentPanelRow } from "@/components/session-ui/agent-panel-row";
+import {
+  formatSubagentCostUsd,
+  formatSubagentTokenCount,
+  AgentPanelRow,
+} from "@/components/session-ui/agent-panel-row";
 import { cx as cn } from "@/utils/cx";
 
 /**
@@ -202,7 +206,7 @@ function AgentDetail({
   const elapsed = childElapsedMs(card, now, live, fidelity?.usage?.durationMs ?? null);
 
   const spawn = steps.find((s) => s.id === spawnStepId);
-  const objective = spawn ? deriveTrace(spawn).detail : null;
+  const objective = fidelity?.prompt ?? (spawn ? deriveTrace(spawn).detail : null);
   const activity = steps.filter((s) => ownerByStep.get(s.id) === card.id);
   // The child's REAL canonical activity (its own tool lifecycles + text). When
   // present it IS the pane's timeline - durable-attributed steps already resolve
@@ -257,9 +261,12 @@ function AgentDetail({
 
       <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3">
         {objective && objective !== card.title && (
-          <p className="text-body-2-regular text-text-secondary border-border-button-default border-b pb-3">
-            {objective}
-          </p>
+          <section className="border-border-button-default border-b pb-3">
+            <p className="text-mono-label text-text-tertiary mb-1">Prompt</p>
+            <p className="text-body-2-regular text-text-secondary whitespace-pre-wrap break-words">
+              {objective}
+            </p>
+          </section>
         )}
 
         {fidelity?.resultText && (
@@ -294,6 +301,9 @@ function AgentDetail({
             {fidelity.lastToolName && <span>Last tool: {fidelity.lastToolName}</span>}
             {fidelity.usage && (
               <span>{formatSubagentTokenCount(fidelity.usage.totalTokens)} tokens</span>
+            )}
+            {fidelity.usage?.costUsd !== undefined && (
+              <span>{formatSubagentCostUsd(fidelity.usage.costUsd)}</span>
             )}
             {fidelity?.usage?.toolUses !== undefined && (
               <span>{fidelity.usage.toolUses} tool uses</span>

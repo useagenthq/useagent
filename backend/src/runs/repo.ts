@@ -6,6 +6,7 @@ import {
   isNotNull,
   isNull,
   like,
+  lt,
   ne,
   notInArray,
   or,
@@ -593,16 +594,34 @@ export async function buildThreadPreamble(
   threadId: string,
   currentRunId: string,
 ): Promise<string> {
+  const [currentRun] = await db
+    .select({ createdAt: runs.createdAt })
+    .from(runs)
+    .where(and(eq(runs.threadId, threadId), eq(runs.id, currentRunId)))
+    .limit(1);
+  const priorRun = currentRun
+    ? or(
+        lt(runs.createdAt, currentRun.createdAt),
+        and(eq(runs.createdAt, currentRun.createdAt), lt(runs.id, currentRunId)),
+      )
+    : ne(runs.id, currentRunId);
   const rows = await db
     .select({ prompt: runs.prompt, summary: runs.summary })
     .from(runs)
-    .where(and(eq(runs.threadId, threadId), ne(runs.id, currentRunId)))
-    .orderBy(runs.createdAt, runs.id);
+    .where(
+      and(
+        eq(runs.threadId, threadId),
+        priorRun,
+        inArray(runs.status, ["completed", "failed"]),
+      ),
+    )
+    .orderBy(desc(runs.createdAt), desc(runs.id))
+    .limit(THREAD_MAX_TURNS);
   if (rows.length === 0) return "";
 
   // Keep the most recent turns, then trim oldest-first to the char budget.
   let blocks = rows
-    .slice(-THREAD_MAX_TURNS)
+    .toReversed()
     .map((r) => `User: ${r.prompt}\nYou replied: ${r.summary ?? "no summary"}`);
   while (blocks.length > 1 && blocks.join("\n\n").length > THREAD_MAX_CHARS) {
     blocks = blocks.slice(1);
