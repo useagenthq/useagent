@@ -1,0 +1,69 @@
+---
+title: Features
+description: Why UseAgent. The agent contract, the trust lane, the reliability story, replaceable engines, the workspace, the self-improvement loop, and the product experience, each as a deep dive.
+sidebar:
+  label: Why UseAgent
+  order: 1
+---
+
+UseAgent's pitch fits in one sentence: **a prompt becomes a durable, replayable
+run**, executed by the coding engine of your choice inside an isolated Linux
+workstation, rendered live from one canonical event log, and finished with
+everything worth keeping captured for review.
+
+This section unpacks that sentence one commitment at a time. Each page is a deep
+dive into a property the platform actually enforces, written from the shipped
+code rather than from aspiration.
+
+## The deep dives
+
+<CardGroup cols={2}>
+  <Card title="The agent contract" href="/features/agent-contract" icon="file-check">
+    The flagship spec. One provider-neutral event grammar with a versioned
+    envelope, a negotiated capability map, and delivery guarantees every engine
+    must satisfy. This is what makes engines swappable.
+  </Card>
+  <Card title="Trust and control" href="/features/trust-and-control" icon="shield-check">
+    The sandbox is untrusted by design. Capability tokens, a separate gateway
+    process on a restricted database role, one-shot human approvals, and
+    write-only encrypted secrets.
+  </Card>
+  <Card title="Reliability" href="/features/reliability" icon="rotate-ccw">
+    Runs survive backend restarts, reconnects replay exactly what live viewers
+    saw, retries are idempotent, and releases must pass real engine journeys
+    before they ship.
+  </Card>
+  <Card title="Engines" href="/features/engines" icon="plug">
+    Codex, Claude, and OpenCode behind a neutral adapter. The inner loop is
+    rented; orchestration, history, approvals, and rendering stay yours.
+  </Card>
+  <Card title="The workspace" href="/features/workspace" icon="monitor">
+    A real Linux workstation per thread: repositories, terminal, a visible
+    desktop with browser automation and recording, artifacts, and editable
+    workpieces.
+  </Card>
+  <Card title="Self-improvement" href="/features/self-improvement" icon="brain">
+    Runs recall what the organization knows and propose what they learned.
+    Every publish passes a human gate, and every recall is auditable.
+  </Card>
+  <Card title="Product experience" href="/features/product-experience" icon="layout-grid">
+    A native React surface owned end to end: one timeline grammar for every
+    engine, a side rail of live panes, a command palette, themes, and Slack as
+    a first-class channel.
+  </Card>
+</CardGroup>
+
+## How these pages are written
+
+:::note
+**Grounding discipline.** Every claim in this section is verified against the
+code it describes, and file paths are cited where the mechanism lives. There
+are no invented benchmarks and no aspirational numbers: where a count appears
+(30 canonical event kinds, 20 capability flags, a 22-case release parity
+matrix), it is counted from the source. Where a capability is narrower than
+the ambition, the page says so.
+:::
+
+If you want the neutral reference instead of the argument, the same ground is
+covered dryly in [Concepts](/concepts), [Architecture](/architecture), and
+[Product](/product).

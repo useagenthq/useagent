@@ -1,0 +1,97 @@
+---
+title: Engines
+description: The inner loop is rented, not built. Codex, Claude, and OpenCode behind one neutral adapter boundary, capability-gated surfaces, and a subscription relay that keeps OAuth out of the sandbox.
+sidebar:
+  order: 5
+---
+
+The fastest-moving part of the agent stack is the inner loop: the model-driven
+process that decides what to do next. UseAgent deliberately does not compete
+with it. **Engines are rented**: Codex, Claude, and OpenCode each run behind a
+neutral adapter, while UseAgent owns what compounds: orchestration, history,
+approvals, knowledge, and rendering.
+
+## One boundary, three engines
+
+An adapter (`backend/src/engines/`) translates between an engine's native
+protocol and UseAgent's thread, command, and event contracts. Above the
+adapter, nothing branches on a vendor:
+
+- The timeline renders [canonical events](/features/agent-contract), never a
+  provider's private schema.
+- Surfaces are gated on the session's **negotiated capability map**, never on
+  `engine === "..."` checks. An engine without plans or reasoning simply
+  never lights those surfaces up.
+- Provenance stays honest: every event retains the engine's native ids in its
+  identity, and the raw native frames are kept as a bounded sidecar for
+  debugging.
+
+The base engine set ships enabled, and the `ENABLED_ENGINES` environment list
+can only **add** engines on top of it, never disable the base
+(`backend/src/env.ts`). The composer's engine picker reflects exactly the
+enabled set.
+
+## Two adapter routes
+
+<CardGroup cols={2}>
+  <Card title="Runtime path" icon="git-branch">
+    The primary orchestration route (`backend/src/engines/runtime-*`),
+    carrying authoritative history, approvals, questions, child agents,
+    patches, todos, reasoning, and usage. Operator-gated by
+    `RUNTIME_RUN_ADAPTER_ENABLED` with a canary or all mode.
+  </Card>
+  <Card title="ACP compatibility" icon="cable">
+    The Agent Client Protocol route for the resident Claude and Codex lane
+    when the runtime path is not selected, with fewer authoritative lifecycle
+    surfaces.
+  </Card>
+</CardGroup>
+
+Engine processes are resident per thread sandbox and reused across turns: a
+persistent `opencode serve` for OpenCode, and a resident ACP relay whose
+session is reloaded turn to turn, with a **generation counter** that stops a
+stale pre-restart session from being replayed against a newer process. The
+settled invariants are narrow and firm: no engine UI servers or iframes, and
+no engine process outliving its thread's sandbox.
+
+## The subscription relay
+
+Driving a managed ChatGPT subscription normally means putting OAuth state
+where the code runs. UseAgent refuses:
+
+<div style={{ background: "#ffffff", border: "1px solid #ebebeb", borderRadius: "12px", padding: "16px" }}>
+  <img
+    src="/diagrams/codex-subscription-relay.svg"
+    alt="Codex subscription relay: the backend writes a one-use, run-bound relay URL into the sandbox settings; the sandbox dials the wss capability URL; the relay consumes the grant, spawns a codex app-server with the operator credentials on the backend, and bridges exec and file calls back into the sandbox; ChatGPT OAuth never enters the sandbox"
+    style={{ display: "block", width: "100%", height: "auto" }}
+  />
+</div>
+
+<p style={{ color: "#737373", fontSize: "13px", marginTop: "8px" }}>
+  One grant per run: a one-use, run-bound WebSocket capability lets the
+  sandbox reach a backend-hosted app-server, so the subscription drives the
+  run while OAuth never crosses the boundary.
+</p>
+
+The relay is proven end to end in production: first turns, multi-turn replies
+that continue a bound thread across driver restarts, and the run-bound tool
+surface.
+
+## Readiness is credential-mode aware
+
+A release proves the path that matches how an engine actually authenticates:
+a subscription-only Codex release proves the connected account and the native
+turn path, while an API-key engine proves its mapped gateway provider
+(`backend/src/runs/engine-readiness.ts`). Model choice follows the same
+honesty: the per-turn model picker appears only for engines whose capability
+map advertises `modelSelection`.
+
+## Why renting wins
+
+Engine quality improves monthly, and adapter code is small compared to a
+harness. Because every engine lands in the same contract with the same
+delivery guarantees, adopting a better engine is an adapter task, not a
+product rewrite. A thread stays on the engine it started with (a reply with a
+different engine is rejected explicitly rather than silently rebound), while
+the model can change turn to turn where the engine allows it. The full
+mechanics live in [Engines and adapters](/concepts/engines-and-adapters).

@@ -1,0 +1,94 @@
+---
+title: Product experience
+description: A native surface owned end to end. One timeline grammar for every engine, a side rail of live panes, a command palette, four themes, a mobile shell, and Slack as a first-class channel.
+sidebar:
+  order: 8
+---
+
+UseAgent renders agents with its **own native React surface**, not an embedded
+vendor UI. That decision is what lets the product feel like one product: three
+different engines, one timeline grammar, one design system, and extension
+surfaces (viewers, editors, panes) that belong to the platform rather than to
+whichever engine happens to be running.
+
+## One grammar for every run
+
+The session view at `/session/:id` reduces the canonical event log into a
+consistent visual grammar: work-entry tool groups with folds, reasoning
+disclosures, recall receipts, live todo and plan cards, per-file diffs, and
+artifact cards after the answer text. Because the input is the
+[contract](/features/agent-contract) rather than an engine's private schema,
+polish lands once and every engine inherits it. Alongside the timeline, a side
+rail hosts the run's environment: browser, terminal, files, diff, agents,
+editor, and workspace panes. See [Session view](/product/session-view).
+
+Live means durable here: the view is fed by a thread-scoped stream that hands
+back a durable snapshot on reconnect, so what you see after a network blip is
+a replay of the truth, not a best-effort patch.
+
+## Starting work is one screen
+
+The composer at `/agent/new` starts either a full sandboxed run or a direct
+conversation. You pick the engine (from the enabled set) and, where the engine
+allows it, the model; bind repositories; and attach files. Typing `/` as the
+first token opens the selected engine's **real command catalog**, fetched per
+engine so no stale commands from another engine mix in, and the chosen command
+executes engine-side verbatim. See [Task composer](/product/task-composer).
+
+## A shell that stays out of the way
+
+<CardGroup cols={2}>
+  <Card title="Floating sidebar, no top bar" icon="panel-left">
+    One app shell around every page: a floating sidebar panel that adapts to
+    the page, collapses to a compact icon rail, and auto-collapses when a run
+    starts working so the timeline gets the width.
+  </Card>
+  <Card title="Command palette" icon="command">
+    A search pill in the sidebar opens a command menu with live results and
+    shortcuts; Cmd K opens it from anywhere.
+  </Card>
+  <Card title="Four themes" icon="palette">
+    A theme picker at the sidebar bottom switches four palettes, applied
+    across the product's design system. See
+    [Themes and design](/product/themes-and-design).
+  </Card>
+  <Card title="A mobile shell" icon="smartphone">
+    The session view and rail adapt to narrow viewports with a slide-over
+    grammar, so watching and steering a run from a phone is a supported path,
+    not an accident.
+  </Card>
+</CardGroup>
+
+Ambient freshness is engineered, not polled everywhere: one authenticated
+org-change stream carries live invalidations, and subscribed views refetch
+their authoritative APIs when something changes.
+
+## Beyond the timeline
+
+The product is the whole working loop, not just the chat:
+
+- **Dashboard** with recent runs, activity, fleet lanes, and usage limits.
+- **Hubs** for skills, playbooks, knowledge, wiki, memory, learnings,
+  artifacts, automations, secrets, and settings, each a real management
+  surface backed by its API.
+- **A review workspace** for GitHub pull requests at `/review`.
+- **Workpiece editors** (deck, sheet, document, PDF) that open the documents
+  runs produce.
+
+The full route map lives in [Product](/product).
+
+## Slack is a peer, not a notifier
+
+A run can begin, continue, and finish entirely from Slack: mention to run,
+threaded replies that continue the same thread, inbound attachments, repo
+binding from links, and results delivered back in the thread. Slack enters
+the **same durable command lane** as the web app, which is why there is no
+separate Slack-shaped bot logic to drift out of sync. Scheduled
+[automations](/product/automations) enter through the same door. See
+[Slack](/channels/slack).
+
+:::tip
+The deeper reason the experience holds together: every surface renders backend
+truth. The frontend invents nothing, so what you see in the timeline is what
+the log can replay, on any device, after any reconnect.
+:::

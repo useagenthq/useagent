@@ -1,0 +1,183 @@
+---
+title: The agent contract
+description: The canonical spec. One provider-neutral event grammar, a versioned envelope, a negotiated capability map, and the delivery guarantees every engine must satisfy.
+sidebar:
+  order: 2
+---
+
+Most agent products are married to one engine's private event schema. UseAgent
+is built the other way around: there is **one canonical wire grammar**, and
+every engine is translated into it. The UI, the replay path, and the API all
+consume this contract and nothing else. Swap the engine and nothing above the
+adapter changes.
+
+This page is the spec. The source of truth is a single pure-types module,
+`packages/agent-harness/src/canonical.ts`, deliberately free of provider SDKs,
+sandbox code, and behavior.
+
+<div style={{ background: "#ffffff", border: "1px solid #ebebeb", borderRadius: "12px", padding: "12px" }}>
+  <img
+    src="/diagrams/canonical-event-flow.svg"
+    alt="Provider events flow through the canonical lane worker (claim, seal, canonicalize) into the canonical_events table, then out over the thread-scoped SSE stream to the UI reducer."
+    style={{ display: "block", width: "100%", height: "auto" }}
+  />
+</div>
+
+<p style={{ color: "#737373", fontSize: "13px", marginTop: "8px" }}>
+  The contract in motion: native engine output is durably stored, sealed, and
+  translated into canonical events, which are persisted before any subscriber
+  sees them.
+</p>
+
+## The envelope
+
+Every canonical event carries the same base envelope (`CanonicalEventBase`):
+
+| Field | Meaning |
+| --- | --- |
+| `schemaVersion` | The contract version. Currently `1`; bumped only with a migration, and readers must tolerate older rows. |
+| `eventId` | Stable per (run, native event), so a re-emitted event is an idempotent revision, not a duplicate. |
+| `seq` | UseAgent's own monotonic cursor within the run's source order. |
+| `runId`, `threadId`, `turnId` | Where the event belongs in the run, thread, turn hierarchy. |
+| `ts` | Assigned or validated by the backend. A provider's clock is never trusted. |
+| `identity` | Provenance: the provider tag plus the native session, event, message, and part ids. |
+
+Provenance is first-class. `CanonicalIdentity` keeps the engine's native ids
+(an OpenCode `ses_*`/`msg_*`/`prt_*`, an ACP session id) alongside the neutral
+shape, so a raw trace can always be correlated without the UI understanding any
+provider's private schema. The `ProviderId` is an open string, not an enum: a
+future harness adds a string, and no code here changes.
+
+## The event vocabulary
+
+The contract is a discriminated union of **30 event kinds**, grouped by the
+surface they drive:
+
+| Group | Kinds |
+| --- | --- |
+| Session and turns | `session.started`, `session.metadata`, `turn.started`, `turn.completed` |
+| Messages | `message.started`, `message.delta`, `message.completed` |
+| Reasoning | `reasoning.delta`, `reasoning.completed` |
+| Plans | `plan.updated` |
+| Tools | `tool.started`, `tool.progress`, `tool.completed` |
+| Files and artifacts | `file.changed`, `artifact.created`, `artifact.delivered` |
+| Terminal | `terminal.output` |
+| Child sessions | `child.started`, `child.updated`, `child.completed` |
+| Approvals | `approval.requested`, `approval.resolved` |
+| Questions | `question.requested`, `question.resolved` |
+| Commands and mode | `commands.updated`, `mode.updated` |
+| Usage | `usage.updated` |
+| Context markers | `context.marker` (memory, knowledge, skill, playbook, rule, reconciling) |
+| Harness diagnostics | `harness.warning`, `harness.error` (with a `fatal` flag) |
+
+Three design rules keep the union honest:
+
+- **Exhaustiveness is compile-checked.** Switches over `kind` end in
+  `assertNeverEvent`, so an unhandled kind is a build error, not a silent drop.
+- **Optional surfaces never fake it.** A harness without reasoning or plans
+  simply never emits those kinds, and the UI shows the surface only when real
+  events arrive.
+- **Large payloads stay out of band.** Tool output, diffs, and files travel as
+  an `ArtifactRef` (id, bytes, sha256, content type); the timeline keeps a
+  bounded preview and fetches the full artifact lazily.
+
+## Negotiated capabilities
+
+Engines differ, and the contract refuses to paper over that with provider
+checks. At session start, a capability map (`NegotiatedCapabilities`) of **20
+boolean flags** is negotiated (ACP negotiates; other harnesses report a static
+manifest) and persisted with the session:
+
+| Area | Flags |
+| --- | --- |
+| Streaming and structure | `streamingText`, `reasoning`, `plans`, `toolProgress`, `fileDiffs` |
+| Delegation | `childSessions` |
+| Interaction | `approvals`, `questions`, `commands` |
+| Accounting and choice | `usage`, `modelSelection` |
+| Session lifecycle | `resume`, `load`, `close`, `stop`, `reconcile` |
+| Runtime surfaces | `directTerminal`, `desktop`, `nativeEmbed`, `knowledgeTools` |
+
+The UI gates every surface on this map and never on an engine name. A missing
+or non-boolean flag normalizes to `false`
+(`normalizeNegotiatedCapabilities`), so an absent capability reads as an
+honestly omitted surface rather than a broken one. The model picker, for
+example, appears only when `modelSelection` is true, which is why it shows for
+OpenCode sessions and hides for fixed-model ACP engines.
+
+## Delivery guarantees
+
+A grammar is only as good as its delivery. The canonical lane
+(`backend/src/runs/canonical-events.ts`) enforces four invariants:
+
+<CardGroup cols={2}>
+  <Card title="Persist before publish" icon="database">
+    An event is written to the canonical_events table and only then emitted to
+    live subscribers, so a reconnect replays exactly the rows a live viewer
+    saw.
+  </Card>
+  <Card title="Immutable delivery cursor" icon="arrow-right">
+    deliverySeq only increases, thread-wide, and is never mutated or
+    reordered. The browser resumes with "everything after N".
+  </Card>
+  <Card title="Append-only revisions" icon="git-commit-horizontal">
+    A re-emitted eventId inserts a new row with a higher revision; consumers
+    keep the latest revision per eventId. History is never rewritten in place.
+  </Card>
+  <Card title="Thread-scoped channel" icon="messages-square">
+    Publish and subscribe are per thread, not per run, so one subscription
+    covers every run in a conversation, including runs created later.
+  </Card>
+</CardGroup>
+
+## The completion discipline
+
+Translation is driven by a durable outbox
+(`backend/src/runs/canonicalization-outbox.ts`) with a strict
+never-trust-provisional rule:
+
+1. **The intent commits with the run.** Finalizing a run enqueues its
+   canonicalization inside the same transaction, so a crash can never leave a
+   settled run with no canonical history.
+2. **The source is sealed first.** `drainProviderEvents` closes the native
+   frame lane before translation, so a late write cannot slip under the
+   translator.
+3. **Completion is watermark-proven.** The worker re-reads the source
+   watermark after translating: the max native frame sequence plus a content
+   signature over every step. It marks the run `complete` only if both held
+   steady, which catches even an in-place step rewrite that a row count would
+   miss.
+4. **Clients trust only the completion signal.** Until the durable
+   canonicalization-complete record exists, provisional rows are replaceable
+   working state, and no reader treats them as truth.
+
+## Durable sessions and commands
+
+The contract extends past events to the state around them:
+
+- **Sessions are rows, not process memory.** `HarnessSession` persists the
+  provider, native session id, runtime binding, protocol version, capability
+  map, and a `generation` counter that stops a stale pre-restart session id
+  from being replayed against a newer engine process.
+- **Commands are part of the grammar.** A provider's slash-command catalog is
+  captured as a durable provider event (`acp.commands`) and replayed as
+  `commands.updated`, sealed by the same drain barrier as every other frame.
+- **The run lifecycle is small on purpose.** A run is `queued`, `running`,
+  `completed`, or `failed`, and exactly two durable command kinds exist:
+  `run.create` (a reply is a `run.create` carrying `parent_run_id`) and
+  `run.cancel`. See [Runs, threads, and
+  commands](/concepts/runs-threads-commands).
+
+## Why this is the flagship
+
+Every other feature stands on this contract. Replaceable
+[engines](/features/engines) are possible because adapters target one grammar.
+[Reliability](/features/reliability) is possible because the grammar is
+persisted before it is shown. The [product experience](/features/product-experience)
+can be polished once and inherited by every engine because the timeline reads
+kinds and capabilities, never vendors. The native frames are still retained as
+a bounded raw sidecar for fidelity and debugging, but nothing in the product
+branches on them.
+
+For the transport details, continue to [Events and
+streaming](/concepts/events-and-streaming) and [Realtime and
+canonicalization](/architecture/realtime).

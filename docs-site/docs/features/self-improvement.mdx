@@ -1,0 +1,100 @@
+---
+title: Self-improvement
+description: Runs that compound. Agents recall the organization's know-how at the start, propose what they learned at the end, and nothing publishes without a human accepting it.
+sidebar:
+  order: 7
+---
+
+Most agent platforms are amnesiac: every run starts from zero and whatever it
+figured out evaporates at the end. UseAgent closes the loop. A run **starts
+with what the organization already knows** and **finishes by proposing what it
+learned**, with a human gate between proposal and publication.
+
+## The substrate agents draw from
+
+| Store | What it is |
+| --- | --- |
+| **Skills** | Versioned, reusable procedures, selected semantically and activated by exact id. |
+| **Playbooks** | Skills whose content is a repeatable end-to-end operating procedure. |
+| **Knowledge** | Organization-scoped source material an agent can search and read. |
+| **Wiki** | Published documents generated from repository or organization knowledge, retrievable by agents later. |
+| **Memory** | Optional scoped facts retained across sessions, independently disablable. |
+
+Skills and playbooks share one immutable substrate, and the turn-prefill
+catalog is **re-ranked by prompt relevance on every unpinned turn**, so the
+procedures that match the current ask surface into the page the model sees
+rather than a fixed top-N by usage.
+
+Recall is visible, not ambient: what was recalled renders in the timeline as
+context markers (memory, knowledge, skill, playbook, rule), so a reviewer can
+see exactly what shaped a turn.
+
+## The loop, end to end
+
+<Steps>
+  <Step title="Recall at start">
+    A run recalls organization memory when it begins, through the same
+    gateway tool surface everything else uses.
+  </Step>
+  <Step title="Capture at finish">
+    Capture is salience-gated and enriched with structured evidence,
+    including the ordered tool trace of what actually worked, redacted before
+    it goes anywhere.
+  </Step>
+  <Step title="Propose, do not publish">
+    High-value runs propose knowledge drafts; accepted drafts that cluster
+    propose skill revisions whose procedure is assembled from the real
+    traces.
+  </Step>
+  <Step title="A human accepts or dismisses">
+    An org admin reviews each proposal at /learnings. Accepting publishes to
+    the stores and re-projects into retrieval, so the learning becomes
+    findable in future runs. Nothing auto-publishes.
+  </Step>
+</Steps>
+
+That last property is the point: **there is no unattended write path into the
+knowledge stores.** The machinery is complete, and throughput is deliberately
+gated on human review. See [Learnings review](/product/learnings) and
+[Knowledge and learning](/concepts/knowledge-and-learning).
+
+## Import what you already wrote
+
+Organizations rarely start empty. UseAgent scans a GitHub repository for
+`SKILL.md` files and imports selected paths as versioned skills:
+
+- Discovery runs over a server-side shallow clone.
+- Imports are **pinned to a commit** and **idempotent by source**, so
+  re-running an import never duplicates.
+- Periodic resync is opt-in and operator-timed, disabled unless an interval
+  is configured (`backend/src/skills/resync.ts`).
+
+## Memory you can audit
+
+Memory is the store most platforms make invisible. UseAgent gives it a full
+surface at `/memory`:
+
+<CardGroup cols={3}>
+  <Card title="Browse" icon="list">
+    What is stored in a pool, with correction and deletion.
+  </Card>
+  <Card title="Captures" icon="inbox">
+    What each run wrote, and its delivery state through the durable outbox.
+  </Card>
+  <Card title="Recalls" icon="rotate-ccw">
+    The recall ledger: which memory was used in which runs.
+  </Card>
+</CardGroup>
+
+The safety properties are structural: the organization pool is shared while
+the personal pool is private and **fails closed** without an authenticated
+user; a run's memory scope is server-persisted, never taken from the sandbox
+at recall time; and memory is config-gated, so a memory outage degrades to
+no-op rather than failing runs. See [Memory hub](/product/memory-hub).
+
+:::note
+**Compounding is earned, not claimed.** The loop improves an organization only
+as fast as its reviewers accept drafts. That is a deliberate trade: slower
+compounding, zero unreviewed contamination of the stores every future run
+reads from.
+:::

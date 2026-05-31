@@ -1,0 +1,115 @@
+---
+title: Reliability
+description: Work that survives. Runs outlive backend restarts, reconnects replay exactly what live viewers saw, retries are idempotent, and releases pass real engine journeys before they ship.
+sidebar:
+  order: 4
+---
+
+An agent run is minutes of real work: clones, edits, builds, browser sessions.
+Losing it to a crashed process, a dropped connection, or a double-clicked
+submit is not acceptable. UseAgent treats reliability as an architectural
+property, not an ops aspiration: **the truth of a run is a durable event log,
+and everything else can die and come back.**
+
+## One durable door in
+
+Every channel (the web app, Slack, scheduled automations) enters through the
+same `acceptRunCommand` lane, which records a durable command before any work
+starts (`backend/src/commands/`). That single door carries the retry
+semantics:
+
+- A command **may carry a per-organization idempotency key**. A retried
+  submission observes the original command instead of starting duplicate
+  work, and a reused key with a different payload fingerprint is rejected
+  with a 409 rather than silently rerun.
+- Dispatch is **serial per thread**: at most one command per thread is in
+  flight at a time, so replies and child sessions queue instead of racing one
+  sandbox (`backend/src/commands/dispatch.ts`).
+
+## Runs survive backend restarts
+
+The sandbox executes independently of the backend, so a backend bounce does
+not kill a live run.
+
+<div style={{ background: "#ffffff", border: "1px solid #ebebeb", borderRadius: "12px", padding: "16px", margin: "1.5rem 0" }}>
+  <img
+    src="/diagrams/run-survives-backend-restart.svg"
+    alt="Two lanes over time: the sandbox keeps executing through a backend crash while boot recovery and the adaptive reconcile loop adopt the finished result"
+    style={{ width: "100%", height: "auto", display: "block" }}
+  />
+  <p style={{ margin: "12px 4px 0", fontSize: "13px", color: "#737373" }}>
+    The sandbox lane never stops: a one-shot boot pass settles the commands
+    mailbox, then an adaptive loop re-probes the live session with visible
+    reconciling heartbeats until it adopts the real result or fails honestly
+    at a bounded deadline (backend/src/runs/recovery.ts).
+  </p>
+</div>
+
+The recovered run **adopts the finished result** rather than discarding work
+that actually completed, and failure at the deadline is an explicit, classified
+outcome, not a hang.
+
+## Reconnects are replays, not guesses
+
+Because the canonical lane persists every event before publishing it and
+stamps it with an immutable thread-wide delivery cursor, a browser reconnect
+resumes with "everything after N" and receives **exactly the rows a live
+subscriber saw** (`backend/src/runs/canonical-events.ts`). The thread-scoped
+stream hands back a durable snapshot first, then live events, so a flaky
+network produces a clean resync instead of a flash of empty or duplicated
+timeline. Details in [Events and streaming](/concepts/events-and-streaming).
+
+Finalization carries the same discipline: a run's canonicalization intent is
+enqueued **inside the finalization transaction**, and the outbox worker marks
+it complete only when a re-read source watermark proves nothing arrived
+mid-translate (`backend/src/runs/canonicalization-outbox.ts`). A crash can
+interrupt the worker at any point and the retry converges on the same result.
+
+## Boot order is load-bearing
+
+The backend boots in a fixed order: **advisory lock, migrations, gateway
+grants, seed, stale-run recovery** (see [Operational
+invariants](/operations/invariants)):
+
+- A per-database Postgres advisory lock guarantees one backend per database,
+  and production sets `REQUIRE_SINGLE_BACKEND=true` so a duplicate refuses to
+  boot. This is honest engineering: the provider-source seal and the SSE
+  fan-out are process-local today, so multi-replica realtime is explicitly
+  unsupported until a durable seal lands.
+- Migrations apply at every boot, stamped strictly above the journal tail, so
+  ordering mistakes fail loudly instead of skipping silently.
+- Only after locks, migrations, and grants does the backend recover stale
+  runs left by an unclean shutdown.
+
+## Proof before ship
+
+Reliability claims are tested at two altitudes
+([Verification](/operations/verification)):
+
+<CardGroup cols={2}>
+  <Card title="Deterministic suites" icon="flask-conical">
+    Backend tests against an isolated throwaway database, frontend and shared
+    package suites, and a root typecheck. Fast and safe anywhere.
+  </Card>
+  <Card title="Storm and journey suites" icon="cloud-lightning">
+    A mock full-stack pass including crash-survival stages, real-sandbox end
+    to end journeys, storm coverage over the durable lanes, and a browser
+    sweep of rendered surfaces.
+  </Card>
+</CardGroup>
+
+Before a release candidate ships, the guarded lane runs a **22-case parity
+matrix of real engine journeys** (repository clone, desktop and recording,
+artifact publish, thread resume, model switch, subagent fanout, workpieces,
+memory, and more) against the candidate, then re-runs the hard journeys
+through the authenticated public APIs after atomic activation. A candidate
+that fails does not ship, and the lane rolls back. Releases are built from an
+**immutable checkout** of the committed HEAD, verified by tree hash; a dirty
+working tree refuses to deploy.
+
+:::note
+**What is not claimed.** There is no sandbox pause, checkpoint, or snapshot
+resume; recovery re-probes and adopts. Multi-replica backends against one
+database are unsupported by design until the seal and fan-out are durable.
+The reliability story is strong precisely because its edges are stated.
+:::
