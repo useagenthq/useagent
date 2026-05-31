@@ -119,15 +119,33 @@ describe("child derivation equivalence (synthetic task frames)", () => {
   const taskFrames: OpenCodeFrame[] = [
     { eventId: "e1", seq: 1, provider: "opencode", eventType: "part.tool.completed",
       native: { sessionId: "ses_p", parentSessionId: null, messageId: "m1", partId: "p1", callId: "call_1" },
-      payload: { type: "tool", tool: "task", state: { status: "completed", output: '<task id="ses_child1"><task_result>the answer</task_result></task>' } } },
+      payload: { type: "tool", tool: "task", state: {
+        status: "completed",
+        title: "Research prices",
+        input: { description: "Research prices", prompt: "Find Google price" },
+        output: '<task id="ses_child1"><task_result>the answer</task_result></task>',
+      } } },
     { eventId: "e2", seq: 2, provider: "opencode", eventType: "part.tool.error",
       native: { sessionId: "ses_p", parentSessionId: null, messageId: "m1", partId: "p2", callId: "call_2" },
-      payload: { type: "tool", tool: "task", state: { status: "error", output: "" } } },
+      payload: { type: "tool", tool: "task", state: {
+        status: "error",
+        title: "Research prices",
+        input: { description: "Research prices", prompt: "Find NVIDIA price" },
+        output: '<task id="ses_child2"></task>',
+      } } },
   ];
   test("task tool -> child.started + child.completed with derived id/result/status", () => {
     const { events: ev } = translateOpenCode(taskFrames, CTX);
     const done = ev.filter((e) => e.kind === "child.completed") as { childId: string; status: string; result?: string }[];
     expect(ev.filter((e) => e.kind === "child.started").length).toBe(2);
+    expect(
+      ev
+        .filter((e) => e.kind === "child.started")
+        .map((e) => e.kind === "child.started" ? [e.childId, e.title, e.state?.prompt] : null),
+    ).toEqual([
+      ["ses_child1", "Research prices", "Find Google price"],
+      ["ses_child2", "Research prices", "Find NVIDIA price"],
+    ]);
     const c1 = done.find((e) => e.childId === "ses_child1");
     expect(c1?.status).toBe("ok");
     expect(c1?.result).toBe("the answer");
@@ -188,7 +206,12 @@ describe("opencode child state fidelity (real frame fields only)", () => {
     expect(launch).toMatchObject({
       childId: "ses_child",
       title: "Research pricing",
-      state: { status: "running", role: "researcher", model: "claude-sonnet-5" },
+      state: {
+        status: "running",
+        prompt: "compare pages",
+        role: "researcher",
+        model: "claude-sonnet-5",
+      },
     });
   });
 

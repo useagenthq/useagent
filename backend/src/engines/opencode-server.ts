@@ -1601,8 +1601,6 @@ export function makeOpenCodeServerAdapter(driver: ProviderDriver): EngineAdapter
       const textParts = new Map<string, string>(); // ordered final text parts
       const toolSteps = new Map<string, string>(); // part id → persisted step id
       const toolDone = new Set<string>();
-      const emittedSubagents = new Set<string>(); // subagent descriptions shown (dedupe subtask ↔ task tool)
-      const subagentSteps = new Map<string, string>(); // description → spawn step id (the task ToolPart pairs to it)
 
       // Translate one opencode Part (the v1 contract: message.part.updated
       // carries `properties.part`, token deltas ride inline on `properties.delta`)
@@ -1613,10 +1611,6 @@ export function makeOpenCodeServerAdapter(driver: ProviderDriver): EngineAdapter
         if (sid !== sessionId && !isChild) return;
         const partId = String(part.id ?? "");
         const providerPart = part as {
-          agent?: unknown;
-          description?: unknown;
-          prompt?: unknown;
-          sessionID?: unknown;
           state?: unknown;
         };
 
@@ -1670,39 +1664,11 @@ export function makeOpenCodeServerAdapter(driver: ProviderDriver): EngineAdapter
           return;
         }
 
-        // SUBTASK — opencode's first-class "assistant spawned a subagent" part on
-        // the parent session. Renders the subagent header; the matching `task`
-        // ToolPart (deduped by description) carries the running→completed
-        // lifecycle if it arrives.
+        // SUBTASK carries display text but no native identity linking it to the
+        // authoritative task ToolPart. It is already captured in provider_events;
+        // do not create a second durable child row or guess by description. The
+        // task ToolPart below owns live state, child id, and final output.
         if (part.type === "subtask") {
-          const desc = String(providerPart.description ?? providerPart.agent ?? "subagent");
-          if (emittedSubagents.has(desc)) return;
-          emittedSubagents.add(desc);
-          const id = await ctx.emit({
-            kind: "task",
-            label: `Subagent — ${truncate(desc, 50)}`,
-            chip: "subagent",
-            code_json: {
-              agent: providerPart.agent,
-              description: providerPart.description,
-              prompt: providerPart.prompt,
-              native: {
-                sessionID: sid,
-                partID: partId,
-                // The SubtaskPart names NO child session (its sessionID is the
-                // PARENT the part lives on) — never stamp the parent id here or
-                // the subagent pane attributes the parent's own steps to this
-                // card. The real child id arrives on the matching task ToolPart
-                // (state.metadata.sessionId / <task id> output) and is stamped
-                // by its completion update onto this same step.
-                childSessionID: null,
-              },
-            },
-          });
-          if (id) {
-            toolSteps.set(partId, id);
-            subagentSteps.set(desc, id);
-          }
           return;
         }
 
@@ -1721,43 +1687,27 @@ export function makeOpenCodeServerAdapter(driver: ProviderDriver): EngineAdapter
           if (toolDone.has(partId)) return;
           const status = st.status;
           const isTask = part.tool === "task";
-          const taskDesc = isTask
-            ? String(
-                typeof st.input?.description === "string"
-                  ? st.input.description
-                  : (st.title ?? "subagent"),
-              )
-            : "";
           const active = status === "running" || status === "completed" || status === "error";
           if (!toolSteps.has(partId) && active) {
-            // A subtask part already rendered this subagent: PAIR this task
-            // ToolPart to that spawn step instead of dropping it, so the
-            // completion below persists the subagent's result output and the
-            // resolved child session id onto the card (dropping it here was
-            // silently losing the task result).
-            if (isTask && emittedSubagents.has(taskDesc)) {
-              const spawnStep = subagentSteps.get(taskDesc);
-              if (spawnStep) toolSteps.set(partId, spawnStep);
-              else toolDone.add(partId); // spawn emit failed: nothing to update
-            } else {
-              const step = toolStep(part.tool, st.input ?? {}, st.title, undefined);
-              const native = {
-                sessionID: sid,
-                messageID: typeof part.messageID === "string" ? part.messageID : null,
-                partID: partId,
-                callID: typeof part.callID === "string" ? part.callID : null,
-              };
-              step.code_json =
-                step.code_json && typeof step.code_json === "object"
-                  ? { ...(step.code_json as Record<string, unknown>), native }
-                  : { native };
-              if (isChild) step.label = `↳ ${step.label}`;
-              if (isTask) emittedSubagents.add(taskDesc);
-              const id = await ctx.emit(step);
-              if (id) {
-                toolSteps.set(partId, id);
-                if (isTask) subagentSteps.set(taskDesc, id);
-              }
+            // Subtask and task parts expose no stable cross-part identity at
+            // launch time. Keep independent native rows rather than guessing by
+            // display text; canonical child/session identity reconciles them once
+            // the provider reports it.
+            const step = toolStep(part.tool, st.input ?? {}, st.title, undefined);
+            const native = {
+              sessionID: sid,
+              messageID: typeof part.messageID === "string" ? part.messageID : null,
+              partID: partId,
+              callID: typeof part.callID === "string" ? part.callID : null,
+            };
+            step.code_json =
+              step.code_json && typeof step.code_json === "object"
+                ? { ...(step.code_json as Record<string, unknown>), native }
+                : { native };
+            if (isChild) step.label = `↳ ${step.label}`;
+            const id = await ctx.emit(step);
+            if (id) {
+              toolSteps.set(partId, id);
             }
           }
           if ((status === "completed" || status === "error") && toolSteps.has(partId)) {
@@ -2123,7 +2073,7 @@ export function makeOpenCodeServerAdapter(driver: ProviderDriver): EngineAdapter
       // only the FINAL message). So reconcile the durable log from the server's
       // own message history — the parent session plus every subagent (child)
       // session — through the SAME translator. handlePart's toolSteps / toolDone /
-      // emittedSubagents maps dedupe anything the pump already streamed live.
+      // toolSteps/toolDone dedupe task ToolParts already streamed live.
       const reconcileSession = async (id: string, child: boolean): Promise<void> => {
         if (child) childSessions.add(id);
         try {

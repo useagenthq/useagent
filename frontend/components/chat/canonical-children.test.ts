@@ -148,12 +148,14 @@ describe("canonical child projection", () => {
       state: {
         status: "running",
         summary: "Provider assigned the child",
+        prompt: "Verify checkout end to end",
         lastToolName: "web_search",
         usage: {
           inputTokens: 12,
           outputTokens: 3,
           reasoningOutputTokens: 2,
           providerCacheReads: 4,
+          costUsd: 0.013,
         },
         model: "gpt-5.6-luna",
         role: "researcher",
@@ -165,6 +167,7 @@ describe("canonical child projection", () => {
       inputTokens: 12,
       outputTokens: 3,
       reasoningOutputTokens: 2,
+      costUsd: 0.013,
     });
 
     const model = deriveCanonicalChildren([
@@ -186,8 +189,9 @@ describe("canonical child projection", () => {
     expect(model.fidelity.get("child-structured")).toMatchObject({
       status: "idle",
       progress: "Awaiting another turn",
+      prompt: "Verify checkout end to end",
       lastToolName: "browser",
-      usage: { totalTokens: 21, inputTokens: 16, outputTokens: 5 },
+      usage: { totalTokens: 21, inputTokens: 16, outputTokens: 5, costUsd: 0.013 },
       model: "gpt-5.6-luna",
       role: "researcher",
       resumable: true,
@@ -281,7 +285,12 @@ describe("deriveChildrenView (the ONE merged rail + fold projection)", () => {
           childId: "ses_child",
           launchToolCallId: "call-1",
           title: "Verify the suite",
-          state: { status: "running", role: "verifier", model: "gpt-5.6-luna" },
+          state: {
+            status: "running",
+            prompt: "Verify the focused suite",
+            role: "verifier",
+            model: "gpt-5.6-luna",
+          },
         }),
       ],
     );
@@ -292,6 +301,7 @@ describe("deriveChildrenView (the ONE merged rail + fold projection)", () => {
     expect(fidelity).toMatchObject({
       role: "verifier",
       model: "gpt-5.6-luna",
+      prompt: "Verify the focused suite",
       resultText: "All tests green.",
     });
     // The native lane saw the task COMPLETE; a canonical child that never saw
@@ -309,6 +319,20 @@ describe("deriveChildrenView (the ONE merged rail + fold projection)", () => {
     );
 
     expect(view.ownerByStep.get("s-child-1")).toBe("canonical-child-ses_child");
+  });
+
+  test("attributes gateway-child durable steps by product run id", () => {
+    const childStep = {
+      ...step("s-gateway-child", { tool: "bash" }),
+      run_id: "child-run-1",
+    };
+    const view = deriveChildrenView(
+      [childStep],
+      [],
+      [event("child.started", 1, { childId: "child-run-1", title: "Research price" })],
+    );
+
+    expect(view.ownerByStep.get("s-gateway-child")).toBe("canonical-child-child-run-1");
   });
 
   test("falls back to the pure legacy projection when no canonical children exist", () => {
@@ -364,7 +388,85 @@ describe("deriveChildTimeline (the subagent pane's real activity)", () => {
     expect(timeline[0]).toMatchObject({ kind: "tool", key: "step-a", step: durable });
   });
 
+  test("folds gateway-child events by product run id even when native session differs", () => {
+    const timeline = deriveChildTimeline(
+      [
+        event("tool.started", 1, {
+          runId: "child-run-1",
+          toolCallId: "c1",
+          name: "webfetch",
+          title: "Fetch market quote",
+          identity: { nativeSessionId: "provider-session-9", nativeSeq: 1 },
+        }),
+        event("tool.completed", 2, {
+          runId: "child-run-1",
+          toolCallId: "c1",
+          status: "ok",
+          preview: "Quote fetched",
+          identity: { nativeSessionId: "provider-session-9", nativeSeq: 2 },
+        }),
+        event("message.delta", 3, {
+          runId: "child-run-1",
+          messageId: "m1",
+          text: "GOOGL is $344.82.",
+          identity: { nativeSessionId: "provider-session-9", nativePartId: "p1" },
+        }),
+      ],
+      new Map(),
+      "child-run-1",
+    );
+
+    expect(timeline).toHaveLength(2);
+    expect(timeline[0]).toMatchObject({ kind: "tool" });
+    expect(timeline[1]).toMatchObject({ kind: "text", text: "GOOGL is $344.82." });
+  });
+
   test("yields nothing without a child session identity", () => {
     expect(deriveChildTimeline(childEvents(), new Map(), null)).toEqual([]);
+  });
+
+  test("drops empty generic collaboration wrappers from child detail", () => {
+    const timeline = deriveChildTimeline(
+      [
+        event("tool.started", 1, {
+          toolCallId: "wrapper",
+          name: "collab_agent_tool_call",
+          title: "Tool started",
+          identity: { nativeSessionId: "ses_child", nativeSeq: 1 },
+        }),
+        event("tool.completed", 2, {
+          toolCallId: "wrapper",
+          status: "ok",
+          preview: "Tool",
+          identity: { nativeSessionId: "ses_child", nativeSeq: 2 },
+        }),
+      ],
+      new Map(),
+      "ses_child",
+    );
+
+    expect(timeline).toEqual([]);
+  });
+
+  test("does not surface transport-only child progress as activity", () => {
+    const model = deriveCanonicalChildren([
+      event("child.started", 1, {
+        childId: "child-1",
+        title: "calc_a",
+        state: { role: "calc_a" },
+      }),
+      event("child.updated", 2, {
+        childId: "child-1",
+        status: "Task usage updated",
+        state: { usage: { totalTokens: 42 } },
+      }),
+    ]);
+
+    expect(model.cards[0]?.status).toBeNull();
+    expect(model.fidelity.get("child-1")).toMatchObject({
+      progress: null,
+      recentActivity: [],
+      usage: { totalTokens: 42 },
+    });
   });
 });

@@ -73,18 +73,21 @@ export function canonicalChildState(
   fallback: { summary?: string; lastToolName?: string } = {},
 ): CanonicalChildState | undefined {
   if (!payload) return undefined;
+  const input = recordValue(payload.input);
   const status = firstString(payload.status) ?? undefined;
+  const prompt = firstString(payload.prompt, input?.prompt) ?? undefined;
   const summary = firstString(payload.summary, payload.detail, fallback.summary) ?? undefined;
   const lastToolName = firstString(payload.lastToolName, fallback.lastToolName) ?? undefined;
   const usage = childUsage(payload.typedUsage ?? payload.usage);
   const model = firstString(payload.model) ?? undefined;
   const role = firstString(payload.role) ?? undefined;
   const resumable = typeof payload.resumable === "boolean" ? payload.resumable : undefined;
-  if (!status && !summary && !lastToolName && !usage && !model && !role && resumable === undefined) {
+  if (!status && !prompt && !summary && !lastToolName && !usage && !model && !role && resumable === undefined) {
     return undefined;
   }
   return {
     ...(status ? { status } : {}),
+    ...(prompt ? { prompt } : {}),
     ...(summary ? { summary } : {}),
     ...(lastToolName ? { lastToolName } : {}),
     ...(usage ? { usage } : {}),

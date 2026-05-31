@@ -67,4 +67,17 @@ describe("agents rail rows", () => {
     expect(html).toContain("Reading checkout files");
     expect(html).toContain("41.2k tok");
   });
+
+  test("keeps same-role siblings as distinct canonical rows", () => {
+    const events: readonly CanonicalChildEventLike[] = [
+      { kind: "child.started", seq: 1, childId: "child-a", title: "Research price" },
+      { kind: "child.started", seq: 2, childId: "child-b", title: "Research price" },
+    ];
+
+    const html = renderToStaticMarkup(
+      createElement(AgentsRail, { steps: [], live: true, canonicalEvents: events }),
+    );
+    expect(html.match(/Open subagent: Research price/g)).toHaveLength(2);
+    expect(html.match(/data-testid="subagent-card"/g)).toHaveLength(2);
+  });
 });

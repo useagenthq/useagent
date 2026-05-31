@@ -140,7 +140,7 @@ export function translateOpenCode(
   // (`state.metadata.model.modelID`). Pre-scanning (like childSessions above)
   // lets establishment events carry this regardless of frame arrival order.
   // Fields the frames do not carry stay absent - nothing is fabricated.
-  interface ChildSeed { title?: string; role?: string; model?: string }
+  interface ChildSeed { title?: string; prompt?: string; role?: string; model?: string }
   const childSeed = new Map<string, ChildSeed>();
   const seedOf = (id: string): ChildSeed => {
     const existing = childSeed.get(id);
@@ -165,6 +165,8 @@ export function translateOpenCode(
       if (title && !seed.title) seed.title = title;
       const role = firstString(rec(state?.input)?.subagent_type);
       if (role) seed.role = role;
+      const prompt = firstString(rec(state?.input)?.prompt);
+      if (prompt) seed.prompt = prompt;
       const model = firstString(rec(rec(state?.metadata)?.model)?.modelID);
       if (model) seed.model = model;
     }
@@ -198,6 +200,7 @@ export function translateOpenCode(
       ...(live?.summary ? { summary: live.summary } : {}),
       ...(live?.lastToolName ? { lastToolName: live.lastToolName } : {}),
       ...(live?.usage ? { usage: { ...live.usage } } : {}),
+      ...(seed?.prompt ? { prompt: seed.prompt } : {}),
       ...(seed?.role ? { role: seed.role } : {}),
       ...(seed?.model ? { model: seed.model } : {}),
       ...over,
