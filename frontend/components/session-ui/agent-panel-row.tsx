@@ -26,9 +26,11 @@
 // - Dot = the shared StatusDot primitive (components/shared/status-dot), pulsing
 //   while active, instead of a parallel dot implementation.
 
-import { RiArrowRightSLine, RiCheckLine } from "@remixicon/react";
+import { RiArrowRightSLine, RiCheckLine, RiErrorWarningLine } from "@remixicon/react";
+import Link from "next/link";
 import type { ChildUsage } from "@/components/chat/child-usage";
 import type { ChildStatus } from "@/components/chat/native-events";
+import { type EngineId, engineLabel } from "@/components/chat/types";
 import { type DotTone, StatusDot } from "@/components/shared/status-dot";
 import { cx as cn } from "@/utils/cx";
 
@@ -36,6 +38,9 @@ import { cx as cn } from "@/utils/cx";
 export interface AgentPanelRowModel {
   readonly title: string;
   readonly role: string | null;
+  /** Engine that runs this child (gateway children); null for native children
+   *  whose engine is the parent's. Rendered in the meta caption. */
+  readonly engine: EngineId | null;
   readonly model: string | null;
   readonly status: ChildStatus;
   /** Human status word for `status` (sr-only text + activity fallback). */
@@ -119,75 +124,118 @@ export function formatSubagentCostUsd(costUsd: number): string {
   return `$${costUsd < 0.01 ? costUsd.toFixed(4) : costUsd.toFixed(2)}`;
 }
 
+/** Settled/terminal glyph for the right meta cluster: a check when completed, a
+ *  warning when it ended badly, nothing while live (the pulsing dot carries it). */
+function AgentStateGlyph({ status }: { status: ChildStatus }) {
+  if (status === "completed") {
+    return <RiCheckLine aria-hidden className="text-lime-600 size-3.5 shrink-0" />;
+  }
+  if (status === "failed" || status === "cancelled" || status === "interrupted") {
+    return <RiErrorWarningLine aria-hidden className="text-red-500 size-3.5 shrink-0" />;
+  }
+  return null;
+}
+
 /**
- * The T3 fleet row bound to our child model: three fixed grid lines (identity,
- * activity, metrics) whose height never changes as data streams in, wrapped in
- * our rail's openable card chrome.
+ * One subagent row in the compact rail grammar: a single baseline line - status
+ * dot + title (truncated) left, a right-aligned meta cluster (engine/model +
+ * token caption, terminal glyph, elapsed, chevron) all vertically centered - plus
+ * an OPTIONAL second caption line that appears only when real activity/result
+ * text exists. No fixed multi-row grid, so a card with nothing to say stays a
+ * single tidy line instead of a tall block of dead space.
+ *
+ * Renders as a `<Link>` when `href` is given (gateway children open their own
+ * session) or a `<button>` when `onOpen` is given (native children open the
+ * in-rail detail). BoardUI tokens, plain glyphs, no motion wrappers.
  */
 export function AgentPanelRow({
   agent,
   onOpen,
+  href,
 }: {
   agent: AgentPanelRowModel;
-  onOpen: () => void;
+  onOpen?: () => void;
+  href?: string;
 }) {
   const live = isActiveStatus(agent.status);
-  const activity = agentPanelActivityText(agent);
+  // Second line only when there is real content: the activity/result text, else
+  // the status word - EXCEPT a completed row, whose check glyph already says it
+  // (so a settled card with nothing to add stays a single tidy line).
+  const caption =
+    agentPanelActivityText(agent) ?? (agent.status === "completed" ? null : agent.statusLabel);
   const role =
     agent.role?.trim().toLocaleLowerCase() === agent.title.trim().toLocaleLowerCase()
       ? null
       : agent.role;
-  const metadata = [
+  const meta = [
+    agent.engine ? engineLabel(agent.engine) : null,
     formatSubagentModelLabel(agent.model, null),
     agent.usage ? `${formatSubagentTokenCount(agent.usage.totalTokens)} tok` : null,
     agent.usage?.costUsd !== undefined ? formatSubagentCostUsd(agent.usage.costUsd) : null,
-    agent.usage?.toolUses !== undefined ? `${agent.usage.toolUses} tools` : null,
   ].filter((value): value is string => value !== null);
 
-  return (
+  const className =
+    "bg-background-secondary-default border-border-button-default hover:bg-background-tertiary-hover block w-full rounded-xl border px-3 py-2 text-left transition-colors";
+  const body = (
+    <>
+      <div className="flex items-center gap-2">
+        <StatusDot tone={STATUS_TONE[agent.status]} pulse={live} />
+        <span className="text-body-2-medium text-text-primary min-w-0 flex-1 truncate">
+          {agent.title}
+        </span>
+        {role ? (
+          <span className="border-border-button-default text-text-tertiary max-w-24 shrink-0 truncate rounded-sm border px-1 font-mono text-[.65rem]">
+            {role}
+          </span>
+        ) : null}
+        {meta.length > 0 ? (
+          <span className="text-text-tertiary shrink-0 truncate font-mono text-caption-1-medium tabular-nums">
+            {meta.join(" · ")}
+          </span>
+        ) : null}
+        {agent.elapsed ? (
+          <span className="text-text-tertiary shrink-0 font-mono text-caption-1-medium tabular-nums">
+            {agent.elapsed}
+          </span>
+        ) : null}
+        <AgentStateGlyph status={agent.status} />
+        <RiArrowRightSLine className="text-text-tertiary size-4 shrink-0" aria-hidden />
+      </div>
+      {caption ? (
+        <p
+          className={cn(
+            "mt-0.5 truncate pl-[1.25rem] text-caption-1-regular",
+            agent.status === "failed" ? "text-text-error-primary" : "text-text-secondary",
+            live && "agent-progress-loading-text",
+          )}
+        >
+          {caption}
+        </p>
+      ) : null}
+      <span className="sr-only">{agent.statusLabel}</span>
+    </>
+  );
+
+  return href ? (
+    <Link
+      href={href}
+      data-testid="subagent-card"
+      data-session-ui="agent-panel-row"
+      aria-label={`Open subagent: ${agent.title}`}
+      className={className}
+    >
+      {body}
+    </Link>
+  ) : (
     <button
       type="button"
       onClick={onOpen}
       data-testid="subagent-card"
       data-session-ui="agent-panel-row"
       aria-label={`Open subagent: ${agent.title}`}
-      className="bg-background-secondary-default border-border-button-default hover:bg-background-tertiary-hover animate-ai-fade-up flex w-full items-center gap-2 rounded-xl border px-3 py-2 text-left transition-colors"
+      className={className}
     >
-      <div className="grid min-w-0 flex-1 grid-cols-[0.75rem_minmax(0,1fr)_auto] grid-rows-[1.25rem_1.125rem_1rem] items-center gap-x-1.5">
-        <span className="col-start-1 row-start-1 flex items-center">
-          <StatusDot tone={STATUS_TONE[agent.status]} pulse={live} />
-        </span>
-        <span className="col-start-2 row-start-1 flex min-w-0 items-baseline gap-2">
-          <span className="text-body-2-medium text-text-primary min-w-0 truncate">{agent.title}</span>
-          {role ? (
-            <span className="border-border-button-default text-text-tertiary max-w-28 shrink-0 truncate rounded-sm border px-1 font-mono text-[.65rem]">
-              {role}
-            </span>
-          ) : null}
-        </span>
-        <span className="text-text-tertiary col-start-3 row-start-1 min-w-14 text-right font-mono text-caption-1-medium">
-          <span className="inline-flex items-center gap-1">
-            {agent.elapsed ? <span className="tabular-nums">{agent.elapsed}</span> : null}
-            {agent.status === "completed" ? (
-              <RiCheckLine aria-hidden className="text-lime-600 size-3 shrink-0" />
-            ) : null}
-          </span>
-        </span>
-        <span
-          className={cn(
-            "text-caption-1-regular col-start-2 col-end-4 row-start-2 block truncate",
-            agent.status === "failed" ? "text-text-error-primary" : "text-text-secondary",
-            live && activity && "agent-progress-loading-text",
-          )}
-        >
-          {activity ?? agent.statusLabel}
-        </span>
-        <span className="text-text-tertiary col-start-2 col-end-4 row-start-3 truncate font-mono text-[.7rem] tabular-nums">
-          {metadata.join(" · ")}
-        </span>
-        <span className="sr-only">{agent.statusLabel}</span>
-      </div>
-      <RiArrowRightSLine className="text-text-tertiary size-4 shrink-0" aria-hidden />
+      {body}
     </button>
   );
 }

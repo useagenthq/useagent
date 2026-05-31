@@ -30,6 +30,7 @@ import { NativeApprovalCard } from "@/components/chat/native-approval-card";
 import type { NativeSnapshot } from "@/components/chat/native-store";
 import { QuestionCard } from "@/components/chat/question-card";
 import type { PendingQuestion } from "@/components/chat/question-state";
+import { toGatewayChildSession } from "@/components/chat/gateway-children";
 import type { SlashCommand } from "@/components/chat/slash-command";
 import {
   type GatewayChildSession,
@@ -891,14 +892,7 @@ export const Conversation = memo(function Conversation({
           ? cached
           : {
               source: children,
-              rows: children.map((t) => ({
-                id: t.run.id,
-                prompt: cleanPrompt(t.run.prompt),
-                engine: t.run.engine,
-                model: t.run.model,
-                status: t.status,
-                summary: t.summary,
-              })),
+              rows: children.map(toGatewayChildSession),
             };
       next.set(parentId, entry);
       byParent.set(parentId, entry.rows);
