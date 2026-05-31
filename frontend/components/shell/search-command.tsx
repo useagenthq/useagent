@@ -38,7 +38,7 @@ type Cmd = {
   href: string;
   label: string;
   icon: IconComponent;
-  group: "Threads" | "Library" | "Developer";
+  group: "Threads" | "Customize" | "Developer";
 };
 
 // Every supported skynet-a route surfaced by the ⌘K palette.
@@ -46,29 +46,29 @@ const COMMANDS: Cmd[] = [
   { href: "/agent/new", label: "New thread", icon: RiAddLine, group: "Threads" },
   { href: "/agent/runs", label: "Threads", icon: RiPulseLine, group: "Threads" },
 
-  { href: "/skills", label: "Skills", icon: RiFlashlightLine, group: "Library" },
-  { href: "/playbooks", label: "Playbooks", icon: RiBookMarkedLine, group: "Library" },
+  { href: "/skills", label: "Skills", icon: RiFlashlightLine, group: "Customize" },
+  { href: "/playbooks", label: "Playbooks", icon: RiBookMarkedLine, group: "Customize" },
   {
     href: "/agent/automations",
     label: "Automations",
     icon: RiCalendarScheduleLine,
-    group: "Library",
+    group: "Customize",
   },
-  { href: "/knowledge", label: "Knowledge", icon: RiBrainLine, group: "Library" },
-  { href: "/memory", label: "Memory", icon: RiDatabase2Line, group: "Library" },
-  { href: "/wiki", label: "Wiki", icon: RiBook2Line, group: "Library" },
-  { href: "/apps", label: "Apps", icon: RiAppsLine, group: "Library" },
-  { href: "/agent/artifacts", label: "Artifacts", icon: RiApps2Line, group: "Library" },
-  { href: "/agent/plugins", label: "Plugins", icon: RiPlugLine, group: "Library" },
-  { href: "/secrets", label: "Secrets", icon: RiKey2Line, group: "Library" },
-  { href: "/settings", label: "Settings", icon: RiSettings3Line, group: "Library" },
+  { href: "/knowledge", label: "Knowledge", icon: RiBrainLine, group: "Customize" },
+  { href: "/memory", label: "Memory", icon: RiDatabase2Line, group: "Customize" },
+  { href: "/wiki", label: "Wiki", icon: RiBook2Line, group: "Customize" },
+  { href: "/apps", label: "Apps", icon: RiAppsLine, group: "Customize" },
+  { href: "/agent/artifacts", label: "Artifacts", icon: RiApps2Line, group: "Customize" },
+  { href: "/agent/plugins", label: "Plugins", icon: RiPlugLine, group: "Customize" },
+  { href: "/secrets", label: "Secrets", icon: RiKey2Line, group: "Customize" },
+  { href: "/settings", label: "Settings", icon: RiSettings3Line, group: "Customize" },
 
   { href: "/dashboard", label: "Dashboard", icon: RiDashboardLine, group: "Developer" },
   { href: "/review", label: "Review", icon: RiGitPullRequestLine, group: "Developer" },
   { href: "/lab", label: "Component lab", icon: RiFlaskLine, group: "Developer" },
 ];
 
-const GROUP_ORDER: Cmd["group"][] = ["Threads", "Library", "Developer"];
+const GROUP_ORDER: Cmd["group"][] = ["Threads", "Customize", "Developer"];
 
 /**
  * The sidebar quick-search pill (BoardUI dashboard-sidebar treatment) + the ⌘K
