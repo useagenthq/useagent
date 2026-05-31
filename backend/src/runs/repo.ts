@@ -460,7 +460,7 @@ export async function getRunWithSteps(
  * run in every thread. */
 export async function listRunsWithSteps(
   orgId: string,
-  opts: { all?: boolean } = {},
+  opts: { all?: boolean; limit?: number } = {},
 ): Promise<ApiRun[]> {
   const publicRun = or(
     isNull(runs.origin),
@@ -473,7 +473,8 @@ export async function listRunsWithSteps(
     .select()
     .from(runs)
     .where(where)
-    .orderBy(desc(runs.createdAt), desc(runs.id));
+    .orderBy(desc(runs.createdAt), desc(runs.id))
+    .limit(opts.limit ?? 100);
   return withSteps(runRows);
 }
 
@@ -531,7 +532,8 @@ export async function listRunSummaries(
           inArray(runs.status, ["queued", "running"]),
         ),
       )
-      .orderBy(desc(runs.createdAt), desc(runs.id));
+      .orderBy(desc(runs.createdAt), desc(runs.id))
+      .limit(opts.limit ?? 100);
     const seen = new Set(rows.map((row) => row.id));
     for (const row of activeRows) {
       if (!seen.has(row.id)) rows.push(row);

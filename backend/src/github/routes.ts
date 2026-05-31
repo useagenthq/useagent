@@ -1,12 +1,7 @@
 import { Hono } from "hono";
-import { githubConfigured } from "../env";
 import type { AppEnv } from "../http";
 import { orgScope } from "../middleware/org";
-import {
-  githubOrgAccessError,
-  listBranches,
-  listRepos,
-} from "./repos";
+import { githubOrgAccessErrorForOrg, listBranches, listRepos } from "./repos";
 
 // GET /api/repos — the real repository list powering the New Task composer's
 // repo picker. Org-scoped (auth required, like the other domain routes); the
@@ -17,7 +12,7 @@ reposRoutes.use("*", orgScope);
 
 reposRoutes.get("/", async (c) => {
   const orgId = c.get("orgId");
-  const accessError = githubConfigured() ? githubOrgAccessError(orgId) : null;
+  const accessError = await githubOrgAccessErrorForOrg(orgId);
   if (accessError) {
     return c.json({ configured: true, repos: [], error: accessError }, 403);
   }
@@ -29,10 +24,6 @@ reposRoutes.get("/", async (c) => {
 // (an unknown repo returns an honest error, not arbitrary-repo proxying).
 reposRoutes.get("/:owner/:name/branches", async (c) => {
   const orgId = c.get("orgId");
-  const accessError = githubConfigured() ? githubOrgAccessError(orgId) : null;
-  if (accessError) {
-    return c.json({ configured: true, branches: [], error: accessError }, 403);
-  }
   return c.json(
     await listBranches(`${c.req.param("owner")}/${c.req.param("name")}`, orgId),
   );

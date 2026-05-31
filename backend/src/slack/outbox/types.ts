@@ -7,6 +7,7 @@ import type { SlackSessionStatus, SlackStreamChunk, SlackStreamTaskDisplayMode }
 // ---------------------------------------------------------------------------
 
 export type PostMessagePayload = {
+  readonly teamId?: string;
   readonly channel: string;
   /** Ordered message texts, posted sequentially into the same thread (a long
    *  reply is CHUNKED, not truncated - see ../chunk.ts). New rows always carry
@@ -17,6 +18,7 @@ export type PostMessagePayload = {
 };
 
 export type AddReactionPayload = {
+  readonly teamId?: string;
   readonly channel: string;
   readonly timestamp: string;
   readonly name: string;
@@ -25,6 +27,7 @@ export type AddReactionPayload = {
 /** Deliver a run-produced artifact into a thread. New rows reference immutable
  * shared artifact storage; stagedPath remains readable for pre-migration rows. */
 export type UploadFilePayload = {
+  readonly teamId?: string;
   readonly channel: string;
   readonly threadTs?: string;
   readonly filename: string;

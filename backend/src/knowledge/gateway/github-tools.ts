@@ -1,7 +1,6 @@
-import { githubConfigured } from "../../env";
-import { resolveGithubToken } from "../../github/auth";
+import { resolveGithubCatalogAuth } from "../../github/auth";
 import { parseRepoRef } from "../../github/repo-ref";
-import { githubOrgAccessError } from "../../github/repos";
+import { githubOrgAccessErrorForOrg } from "../../github/repos";
 import { getRunForOrg } from "../../runs/repo";
 import { hasGitHubRepositoryCheckoutIntent } from "../../resources/public-github";
 import type { ResourceCapability, RunResource } from "../../resources/types";
@@ -131,7 +130,7 @@ function ghHeaders(token: string | null): Record<string, string> {
   return h;
 }
 
-const productionService: GithubReadService = {
+const productionServiceBase = {
   async boundRepos(claims) {
     const run = await getRunForOrg(claims.orgId, claims.runId);
     if (!run || run.threadId !== claims.threadId) throw new Error("run not found in this thread");
@@ -153,13 +152,18 @@ const productionService: GithubReadService = {
     );
   },
 
-  async fetchJson(path) {
-    if (!githubConfigured()) {
-      throw new Error(
-        "GitHub is not configured; ask the workspace operator to connect GitHub (GitHub App installation or access token), then retry",
-      );
-    }
-    const token = await resolveGithubToken();
+} satisfies Omit<GithubReadService, "fetchJson">;
+
+function productionServiceForOrg(orgId: string): GithubReadService {
+  return {
+    ...productionServiceBase,
+    async fetchJson(path) {
+      const { token } = await resolveGithubCatalogAuth(orgId);
+      if (!token) {
+        throw new Error(
+          "GitHub is not connected for this organization; connect the GitHub App, then retry",
+        );
+      }
     const ac = new AbortController();
     const timer = setTimeout(() => ac.abort(), FETCH_TIMEOUT_MS);
     try {
@@ -172,8 +176,9 @@ const productionService: GithubReadService = {
     } finally {
       clearTimeout(timer);
     }
-  },
-};
+    },
+  };
+}
 
 let serviceOverride: GithubReadService | null = null;
 
@@ -182,11 +187,11 @@ export function setGithubReadServiceForTest(service: GithubReadService | null): 
   serviceOverride = service;
 }
 
-function serviceForCall(claims: ToolTokenClaims): GithubReadService {
+async function serviceForCall(claims: ToolTokenClaims): Promise<GithubReadService> {
   if (serviceOverride) return serviceOverride;
-  const accessError = githubOrgAccessError(claims.orgId);
+  const accessError = await githubOrgAccessErrorForOrg(claims.orgId);
   if (accessError) throw new Error(accessError);
-  return productionService;
+  return productionServiceForOrg(claims.orgId);
 }
 
 function checkedRepo(value: unknown): string {
@@ -447,7 +452,7 @@ export async function executeGithubTool(
     ) {
       return errorResult(`Unknown GitHub tool: ${name}`);
     }
-    const service = serviceForCall(claims);
+    const service = await serviceForCall(claims);
     if (name === "github_list_prs") return await listPullRequests(service, claims, args);
     if (name === "github_pr_detail") return await pullRequestDetail(service, claims, args);
     return await listIssues(service, claims, args);

@@ -19,13 +19,24 @@ export type { SlackOutboxRow } from "./repo";
  *  (the row isn't visible to the relay until then). */
 export async function enqueuePostMessageTx(
   exec: Executor,
-  entry: { idempotencyKey: string; channel: string; text: string; threadTs?: string },
+  entry: {
+    idempotencyKey: string;
+    teamId?: string;
+    channel: string;
+    text: string;
+    threadTs?: string;
+  },
 ): Promise<boolean> {
   return enqueue(
     {
       kind: "post_message",
       idempotencyKey: entry.idempotencyKey,
-      payload: { channel: entry.channel, chunks: chunkSlackText(entry.text), threadTs: entry.threadTs },
+      payload: {
+        teamId: entry.teamId,
+        channel: entry.channel,
+        chunks: chunkSlackText(entry.text),
+        threadTs: entry.threadTs,
+      },
     },
     exec,
   );
@@ -158,6 +169,7 @@ export async function enqueueAddReactionTx(
   exec: Executor,
   entry: {
     idempotencyKey: string;
+    teamId?: string;
     channel: string;
     timestamp: string;
     name: string;
@@ -167,7 +179,12 @@ export async function enqueueAddReactionTx(
     {
       kind: "add_reaction",
       idempotencyKey: entry.idempotencyKey,
-      payload: { channel: entry.channel, timestamp: entry.timestamp, name: entry.name },
+      payload: {
+        teamId: entry.teamId,
+        channel: entry.channel,
+        timestamp: entry.timestamp,
+        name: entry.name,
+      },
     },
     exec,
   );
@@ -180,6 +197,7 @@ export async function enqueueUploadFileTx(
   exec: Executor,
   entry: {
     idempotencyKey: string;
+    teamId?: string;
     channel: string;
     threadTs?: string;
     filename: string;
@@ -193,6 +211,7 @@ export async function enqueueUploadFileTx(
       kind: "upload_file",
       idempotencyKey: entry.idempotencyKey,
       payload: {
+        teamId: entry.teamId,
         channel: entry.channel,
         threadTs: entry.threadTs,
         filename: entry.filename,
@@ -210,6 +229,7 @@ export async function enqueueUploadFileTx(
  *  `idempotencyKey`. */
 export async function enqueuePostMessage(entry: {
   idempotencyKey: string;
+  teamId?: string;
   channel: string;
   text: string;
   threadTs?: string;
@@ -217,7 +237,12 @@ export async function enqueuePostMessage(entry: {
   const created = await enqueue({
     kind: "post_message",
     idempotencyKey: entry.idempotencyKey,
-    payload: { channel: entry.channel, chunks: chunkSlackText(entry.text), threadTs: entry.threadTs },
+    payload: {
+      teamId: entry.teamId,
+      channel: entry.channel,
+      chunks: chunkSlackText(entry.text),
+      threadTs: entry.threadTs,
+    },
   });
   if (created) kickSlackOutbox();
 }
@@ -321,6 +346,7 @@ export async function enqueueSessionStatus(entry: {
 /** Durably enqueue a receipt reaction. Idempotent by `idempotencyKey`. */
 export async function enqueueAddReaction(entry: {
   idempotencyKey: string;
+  teamId?: string;
   channel: string;
   timestamp: string;
   name: string;
@@ -328,7 +354,12 @@ export async function enqueueAddReaction(entry: {
   const created = await enqueue({
     kind: "add_reaction",
     idempotencyKey: entry.idempotencyKey,
-    payload: { channel: entry.channel, timestamp: entry.timestamp, name: entry.name },
+    payload: {
+      teamId: entry.teamId,
+      channel: entry.channel,
+      timestamp: entry.timestamp,
+      name: entry.name,
+    },
   });
   if (created) kickSlackOutbox();
 }
@@ -337,6 +368,7 @@ export async function enqueueAddReaction(entry: {
  * immutable artifact bytes served to the browser. Idempotent by key. */
 export async function enqueueUploadFile(entry: {
   idempotencyKey: string;
+  teamId?: string;
   channel: string;
   threadTs?: string;
   filename: string;
@@ -348,6 +380,7 @@ export async function enqueueUploadFile(entry: {
     kind: "upload_file",
     idempotencyKey: entry.idempotencyKey,
     payload: {
+      teamId: entry.teamId,
       channel: entry.channel,
       threadTs: entry.threadTs,
       filename: entry.filename,

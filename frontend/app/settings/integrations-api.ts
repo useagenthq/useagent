@@ -22,7 +22,8 @@ export interface IntegrationConnectStart {
 }
 
 export async function startIntegrationConnect(provider: string): Promise<IntegrationConnectStart> {
-  const response = await backendFetch(`/api/integrations/${encodeURIComponent(provider)}/connect`, {
+  const ownerPath = provider === "github" || provider === "slack" ? "/org" : "";
+  const response = await backendFetch(`/api/integrations/${encodeURIComponent(provider)}/connect${ownerPath}`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ returnTo: "/settings#integrations" }),
@@ -50,11 +51,12 @@ export async function startIntegrationConnect(provider: string): Promise<Integra
 
 export async function completeIntegrationConnect(
   state: string,
+  callback?: Readonly<Record<string, string>>,
 ): Promise<ConnectionProjection | null> {
   const response = await backendFetch("/api/integrations/callback", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ state }),
+    body: JSON.stringify({ state, ...(callback ? { callback } : {}) }),
   });
   // The backend reports a still-pending upstream authorization as a client
   // conflict/bad request. Polling may continue because the state is not consumed.
@@ -67,8 +69,9 @@ export async function completeIntegrationConnect(
 }
 
 export async function disconnectIntegration(provider: string, connectionId: string): Promise<void> {
+  const ownerPath = provider === "github" || provider === "slack" ? "/org" : "";
   const response = await backendFetch(
-    `/api/integrations/${encodeURIComponent(provider)}?connectionId=${encodeURIComponent(connectionId)}`,
+    `/api/integrations/${encodeURIComponent(provider)}${ownerPath}?connectionId=${encodeURIComponent(connectionId)}`,
     { method: "DELETE" },
   );
   if (!response.ok) throw new Error(`integration-disconnect ${response.status}`);

@@ -139,19 +139,39 @@ async function mintInstallationToken(
   const installations = (await insRes.json()) as GhInstallation[];
   const chosen = pickInstallation(installations, cfg.org);
 
+  return mintInstallationAccessToken(cfg, chosen.id);
+}
+
+async function mintInstallationAccessToken(
+  cfg: GithubAppConfig,
+  installationId: number,
+  requestBody?: Readonly<Record<string, unknown>>,
+): Promise<InstallationToken> {
+  if (!Number.isSafeInteger(installationId) || installationId <= 0) {
+    throw new Error("GitHub installation id must be a positive integer");
+  }
+  const jwt = signAppJwt(cfg, Math.floor(Date.now() / 1000));
+  const headers = appJwtHeaders(jwt);
+
   const tokRes = await ghFetch(
-    `${GITHUB_API}/app/installations/${chosen.id}/access_tokens`,
-    { method: "POST", headers },
+    `${GITHUB_API}/app/installations/${installationId}/access_tokens`,
+    {
+      method: "POST",
+      headers: requestBody ? { ...headers, "Content-Type": "application/json" } : headers,
+      ...(requestBody ? { body: JSON.stringify(requestBody) } : {}),
+    },
   );
   if (!tokRes.ok) {
     throw new Error(
-      `GitHub App token mint failed for installation ${chosen.id}: HTTP ${tokRes.status}`,
+      `GitHub App token mint failed for installation ${installationId}: HTTP ${tokRes.status}`,
     );
   }
-  const body = (await tokRes.json()) as { token?: string; expires_at?: string };
-  if (!body.token) throw new Error("GitHub App token mint returned no token");
-  const expiresAt = body.expires_at ? Date.parse(body.expires_at) : Date.now() + 55 * 60_000;
-  return { token: body.token, expiresAt };
+  const payload = (await tokRes.json()) as { token?: string; expires_at?: string };
+  if (!payload.token) throw new Error("GitHub App token mint returned no token");
+  const expiresAt = payload.expires_at
+    ? Date.parse(payload.expires_at)
+    : Date.now() + 55 * 60_000;
+  return { token: payload.token, expiresAt };
 }
 
 function parseRepository(repository: string): { owner: string; name: string } {
@@ -211,30 +231,17 @@ async function mintRepositoryInstallationToken(
     return { key, token: cached };
   }
 
-  const response = await ghFetch(
-    `${GITHUB_API}/app/installations/${installationId}/access_tokens`,
-    {
-      method: "POST",
-      headers: { ...headers, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        repositories: [name],
-        permissions: { contents: "read", metadata: "read" },
-      }),
-    },
-  );
-  if (!response.ok) {
+  try {
+    const token = await mintInstallationAccessToken(cfg, installationId, {
+      repositories: [name],
+      permissions: { contents: "read", metadata: "read" },
+    });
+    return { key, token };
+  } catch (error) {
     throw new Error(
-      `GitHub App repository token mint failed for ${repository}: HTTP ${response.status}`,
+      `GitHub App repository token mint failed for ${repository}: ${(error as Error).message}`,
     );
   }
-  const body = (await response.json()) as { token?: string; expires_at?: string };
-  if (!body.token) {
-    throw new Error(`GitHub App repository token mint returned no token for ${repository}`);
-  }
-  const expiresAt = body.expires_at
-    ? Date.parse(body.expires_at)
-    : Date.now() + 55 * 60_000;
-  return { key, token: { token: body.token, expiresAt } };
 }
 
 /**
@@ -261,6 +268,28 @@ export async function getInstallationToken(
   const mint = (async (): Promise<InstallationToken> => {
     try {
       const token = await mintInstallationToken(cfg);
+      installationTokenCache.set(key, token);
+      return token;
+    } finally {
+      installationTokenInflight.delete(key);
+    }
+  })();
+  installationTokenInflight.set(key, mint);
+  return mint;
+}
+
+export async function getInstallationTokenForId(
+  installationId: number,
+  cfg: GithubAppConfig,
+): Promise<InstallationToken> {
+  const key = `${cfg.appId}|installation:${installationId}`;
+  const cached = installationTokenCache.get(key);
+  if (cached && cached.expiresAt - Date.now() > REFRESH_MARGIN_MS) return cached;
+  const active = installationTokenInflight.get(key);
+  if (active) return active;
+  const mint = (async () => {
+    try {
+      const token = await mintInstallationAccessToken(cfg, installationId);
       installationTokenCache.set(key, token);
       return token;
     } finally {
@@ -305,6 +334,33 @@ export async function getRepositoryInstallationToken(
     }
   })();
   repositoryTokenInflight.set(provisionalKey, mint);
+  return mint;
+}
+
+export async function getRepositoryInstallationTokenForId(
+  repository: string,
+  installationId: number,
+  cfg: GithubAppConfig,
+): Promise<InstallationToken> {
+  const { name } = parseRepository(repository);
+  const tokenKey = `${cfg.appId}|${installationId}|${repository.toLowerCase()}`;
+  const cached = repositoryTokenCache.get(tokenKey);
+  if (cached && cached.expiresAt - Date.now() > REFRESH_MARGIN_MS) return cached;
+  const active = repositoryTokenInflight.get(tokenKey);
+  if (active) return active;
+  const mint = (async () => {
+    try {
+      const token = await mintInstallationAccessToken(cfg, installationId, {
+        repositories: [name],
+        permissions: { contents: "read", metadata: "read" },
+      });
+      repositoryTokenCache.set(tokenKey, token);
+      return token;
+    } finally {
+      repositoryTokenInflight.delete(tokenKey);
+    }
+  })();
+  repositoryTokenInflight.set(tokenKey, mint);
   return mint;
 }
 

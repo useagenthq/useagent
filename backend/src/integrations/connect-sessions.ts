@@ -1,7 +1,12 @@
-import { createHash, randomBytes } from "node:crypto";
-import { and, eq, gt, isNull } from "drizzle-orm";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
+import { and, eq, gt, isNull, lte, or } from "drizzle-orm";
 import { db } from "../db/client";
-import { integrationConnections, integrationConnectSessions } from "../db/schema";
+import {
+  integrationConnections,
+  integrationConnectSessions,
+  slackUsers,
+  slackWorkspaces,
+} from "../db/schema";
 import { projectIntegrationConnection } from "./connection-repo";
 import {
   ownerColumns,
@@ -12,6 +17,7 @@ import {
   type ConnectionProjection,
 } from "./types";
 import type { DelegatedConnectionResult } from "./backend";
+import { upsertIntegrationCredential } from "./credential-repo";
 
 export type IntegrationConnectSessionRecord = typeof integrationConnectSessions.$inferSelect;
 
@@ -24,6 +30,7 @@ export interface CreateIntegrationConnectSessionInput {
   readonly backendSessionRef: string;
   readonly returnTo: string;
   readonly expiresAt: Date;
+  readonly state?: string;
 }
 
 export interface CreatedIntegrationConnectSession {
@@ -33,8 +40,19 @@ export interface CreatedIntegrationConnectSession {
   readonly expiresAt: Date;
 }
 
+export interface ClaimedIntegrationConnectSession {
+  readonly claimToken: string;
+  readonly session: IntegrationConnectSessionRecord;
+}
+
+const CONNECT_PROCESSING_LEASE_MS = 60_000;
+
 export function hashIntegrationConnectState(state: string): string {
   return createHash("sha256").update(state).digest("hex");
+}
+
+export function createIntegrationConnectState(): string {
+  return randomBytes(32).toString("base64url");
 }
 
 export function normalizeIntegrationReturnTo(value: unknown): string | null {
@@ -72,7 +90,7 @@ export async function createIntegrationConnectSession(
   if (input.expiresAt.getTime() <= Date.now()) {
     throw new Error("expiresAt must be in the future");
   }
-  const state = randomBytes(32).toString("base64url");
+  const state = input.state?.trim() || createIntegrationConnectState();
   const owner = ownerColumns(input.owner);
   const [row] = await db
     .insert(integrationConnectSessions)
@@ -150,11 +168,63 @@ export async function findActiveIntegrationConnectSession(input: {
   return row ?? null;
 }
 
+export async function claimIntegrationConnectSession(input: {
+  readonly state: string;
+  readonly orgId?: string;
+  readonly actorUserId?: string;
+  readonly now?: Date;
+}): Promise<ClaimedIntegrationConnectSession | null> {
+  if (!input.state) throw new Error("state is required");
+  const now = input.now ?? new Date();
+  const claimToken = randomUUID();
+  const [session] = await db
+    .update(integrationConnectSessions)
+    .set({
+      processingToken: claimToken,
+      processingExpiresAt: new Date(now.getTime() + CONNECT_PROCESSING_LEASE_MS),
+    })
+    .where(
+      and(
+        eq(integrationConnectSessions.stateHash, hashIntegrationConnectState(input.state)),
+        input.orgId ? eq(integrationConnectSessions.orgId, input.orgId) : undefined,
+        input.actorUserId
+          ? eq(integrationConnectSessions.actorUserId, input.actorUserId)
+          : undefined,
+        isNull(integrationConnectSessions.consumedAt),
+        gt(integrationConnectSessions.expiresAt, now),
+        or(
+          isNull(integrationConnectSessions.processingToken),
+          isNull(integrationConnectSessions.processingExpiresAt),
+          lte(integrationConnectSessions.processingExpiresAt, now),
+        ),
+      ),
+    )
+    .returning();
+  return session ? { claimToken, session } : null;
+}
+
+export async function releaseIntegrationConnectSessionClaim(input: {
+  readonly sessionId: string;
+  readonly claimToken: string;
+}): Promise<void> {
+  await db
+    .update(integrationConnectSessions)
+    .set({ processingToken: null, processingExpiresAt: null })
+    .where(
+      and(
+        eq(integrationConnectSessions.id, input.sessionId),
+        eq(integrationConnectSessions.processingToken, input.claimToken),
+        isNull(integrationConnectSessions.consumedAt),
+      ),
+    );
+}
+
 /** Atomically claims one OAuth state and persists its safe connection projection. */
 export async function finalizeIntegrationConnectSession(input: {
   readonly orgId: string;
   readonly actorUserId: string;
   readonly state: string;
+  readonly claimToken?: string;
   readonly result: DelegatedConnectionResult;
   readonly now?: Date;
 }): Promise<ConnectionProjection | null> {
@@ -162,12 +232,15 @@ export async function finalizeIntegrationConnectSession(input: {
   return db.transaction(async (tx) => {
     const [session] = await tx
       .update(integrationConnectSessions)
-      .set({ consumedAt: now })
+      .set({ consumedAt: now, processingToken: null, processingExpiresAt: null })
       .where(
         and(
           eq(integrationConnectSessions.orgId, input.orgId),
           eq(integrationConnectSessions.actorUserId, input.actorUserId),
           eq(integrationConnectSessions.stateHash, hashIntegrationConnectState(input.state)),
+          input.claimToken
+            ? eq(integrationConnectSessions.processingToken, input.claimToken)
+            : undefined,
           isNull(integrationConnectSessions.consumedAt),
           gt(integrationConnectSessions.expiresAt, now),
         ),
@@ -179,24 +252,99 @@ export async function finalizeIntegrationConnectSession(input: {
         ? { type: "org" }
         : { type: "user", userId: session.ownerUserId! },
     );
-    const [connection] = await tx
-      .insert(integrationConnections)
-      .values({
+    const values = {
         orgId: session.orgId,
         ...owner,
         provider: session.provider,
         runtimeBindingId: input.result.runtimeBindingId,
         externalConnectionId: input.result.externalConnectionId,
         externalConnectionName: input.result.externalConnectionName?.trim() || null,
-        status: "connected",
+        status: "connected" as const,
         authMethod: input.result.authMethod,
         accountMetadata: readSafeIntegrationAccount(input.result.account),
         scopes: readSafeIntegrationScopes(input.result.scopes),
         createdByUserId: session.actorUserId,
         lastVerifiedAt: now,
-      })
-      .returning();
+      };
+    const [existing] = await tx
+      .select()
+      .from(integrationConnections)
+      .where(
+        and(
+          eq(integrationConnections.runtimeBindingId, input.result.runtimeBindingId),
+          eq(integrationConnections.provider, session.provider),
+          eq(integrationConnections.externalConnectionId, input.result.externalConnectionId),
+        ),
+      )
+      .limit(1);
+    if (
+      existing &&
+      (existing.orgId !== session.orgId ||
+        existing.ownerType !== owner.ownerType ||
+        existing.ownerUserId !== owner.ownerUserId)
+    ) {
+      throw new Error("integration connection belongs to a different owner");
+    }
+    const [connection] = existing
+      ? await tx
+          .update(integrationConnections)
+          .set({
+            externalConnectionName: values.externalConnectionName,
+            status: "connected",
+            authMethod: values.authMethod,
+            accountMetadata: values.accountMetadata,
+            scopes: values.scopes,
+            lastVerifiedAt: now,
+            revokedAt: null,
+            updatedAt: now,
+          })
+          .where(eq(integrationConnections.id, existing.id))
+          .returning()
+      : await tx.insert(integrationConnections).values(values).returning();
     if (!connection) throw new Error("integration connection insert returned no row");
+    if (input.result.credential) {
+      await upsertIntegrationCredential(
+        {
+          connectionId: connection.id,
+          orgId: connection.orgId,
+          provider: connection.provider,
+          externalConnectionId: connection.externalConnectionId,
+        },
+        input.result.credential,
+        tx,
+      );
+    }
+    if (session.provider === "slack" && input.result.workspaceBinding) {
+      const binding = input.result.workspaceBinding;
+      if (binding.externalWorkspaceId !== connection.externalConnectionId) {
+        throw new Error("Slack workspace binding does not match the connection");
+      }
+      await tx
+        .insert(slackWorkspaces)
+        .values({
+          teamId: binding.externalWorkspaceId,
+          orgId: session.orgId,
+          userId: session.actorUserId,
+        })
+        .onConflictDoUpdate({
+          target: slackWorkspaces.teamId,
+          set: { orgId: session.orgId, userId: session.actorUserId },
+        });
+      if (binding.externalActorId) {
+        await tx
+          .insert(slackUsers)
+          .values({
+            teamId: binding.externalWorkspaceId,
+            slackUserId: binding.externalActorId,
+            orgId: session.orgId,
+            userId: session.actorUserId,
+          })
+          .onConflictDoUpdate({
+            target: [slackUsers.teamId, slackUsers.slackUserId],
+            set: { orgId: session.orgId, userId: session.actorUserId },
+          });
+      }
+    }
     return projectIntegrationConnection(connection);
   });
 }

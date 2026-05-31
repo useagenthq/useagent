@@ -101,13 +101,19 @@ describe("integration browser-safe wire contract", () => {
     expect(decodeIntegrationConnectionChange({ ...change, targetUserId: "" })).toBeNull();
   });
 
-  test("accepts only the pinned, policy-classified safe action catalog shape", () => {
+  test("accepts backend-neutral, policy-classified safe action catalog entries", () => {
     expect(
       decodeIntegrationActionCatalogEntry({ ...catalogEntry, adminToken: "must-drop" }),
     ).toEqual(catalogEntry);
     expect(
       decodeIntegrationActionCatalogEntry({ ...catalogEntry, runtimeVersion: "latest" }),
+    ).toMatchObject({ runtimeVersion: "latest" });
+    expect(
+      decodeIntegrationActionCatalogEntry({ ...catalogEntry, runtimeVersion: "" }),
     ).toBeNull();
+    expect(
+      decodeIntegrationActionCatalogEntry({ ...catalogEntry, runtimeCommit: null }),
+    ).toMatchObject({ runtimeCommit: null });
     expect(
       decodeIntegrationActionCatalogEntry({ ...catalogEntry, effect: "unknown" }),
     ).toBeNull();

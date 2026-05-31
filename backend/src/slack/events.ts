@@ -55,6 +55,7 @@ import {
   RunIntakeError,
   type RunResource,
 } from "../resources/run-intake";
+import { resolveSlackBotTokenForWorkspace } from "../integrations/slack-token-resolver";
 
 // Bounded FIFO deduper — collapses Slack retries AND the app_mention/message
 // pair for a channel mention (both carry the same `channel:ts`). No LRU dep;
@@ -145,6 +146,7 @@ async function healSlackRunDelivery(input: {
 
     const reactionCreated = await enqueueAddReactionTx(tx, {
       idempotencyKey: `slack-ack:${input.teamId}:${input.channel}:${input.messageTs}`,
+      teamId: input.teamId,
       channel: input.channel,
       timestamp: input.messageTs,
       name: "eyes",
@@ -243,6 +245,12 @@ export async function handleSlackEvent(body: SlackEnvelope): Promise<void> {
   // adds the mapping still lands).
   const workspace = await resolveSlackWorkspace(teamId);
   if (!workspace) return;
+  const botToken = await resolveSlackBotTokenForWorkspace({
+    orgId: workspace.orgId,
+    teamId,
+    config,
+  });
+  if (!botToken) return;
 
   // A message threads under its thread root (replies) or under itself (top-level).
   const slackThreadTs = threadTs ?? ts;
@@ -262,6 +270,7 @@ export async function handleSlackEvent(body: SlackEnvelope): Promise<void> {
   if (!sender) {
     await enqueuePostMessage({
       idempotencyKey: `slack-sender-guidance:${teamId}:${channel}:${ts}`,
+      teamId,
       channel,
       threadTs: slackThreadTs,
       text: "Your Slack user is not linked to a product account. Ask an operator to add a SLACK_USER_BINDINGS mapping and retry.",
@@ -328,6 +337,7 @@ export async function handleSlackEvent(body: SlackEnvelope): Promise<void> {
       ) {
         await enqueuePostMessage({
           idempotencyKey: `slack-sender-guidance:${teamId}:${channel}:${ts}`,
+          teamId,
           channel,
           threadTs: slackThreadTs,
           text: "This thread uses personal resources and your Slack user is not linked to its owner. Link the sender identity or start a new org-scoped thread.",
@@ -345,6 +355,7 @@ export async function handleSlackEvent(body: SlackEnvelope): Promise<void> {
   const guide = (text: string) =>
     enqueuePostMessage({
       idempotencyKey: `slack-directive:${teamId}:${channel}:${ts}`,
+      teamId,
       channel,
       text,
       threadTs: slackThreadTs,
@@ -418,6 +429,7 @@ export async function handleSlackEvent(body: SlackEnvelope): Promise<void> {
     deduper.forget(key);
     await enqueuePostMessage({
       idempotencyKey: `slack-admission-guidance:${teamId}:${channel}:${ts}`,
+      teamId,
       channel,
       threadTs: slackThreadTs,
       text: "New runs are temporarily paused for a deployment. Retry this message shortly.",
@@ -444,12 +456,7 @@ export async function handleSlackEvent(body: SlackEnvelope): Promise<void> {
   // Only a first acceptance downloads and stages Slack files. A lost-response
   // retry above uses Slack's stable file identity and never touches the CDN.
   const attachmentIds = files.length > 0
-    ? await stageInboundSlackFiles({
-        files,
-        botToken: config.botToken,
-        orgId,
-        userId,
-      })
+    ? await stageInboundSlackFiles({ files, botToken, orgId, userId })
     : [];
 
   let resources: readonly RunResource[];
@@ -482,6 +489,7 @@ export async function handleSlackEvent(body: SlackEnvelope): Promise<void> {
     if (!(error instanceof RunIntakeError)) throw error;
     await enqueuePostMessage({
       idempotencyKey: `slack-resource-guidance:${teamId}:${channel}:${ts}`,
+      teamId,
       channel,
       threadTs: slackThreadTs,
       text: `${error.diagnostic.message} ${error.diagnostic.action}`,
@@ -532,6 +540,7 @@ export async function handleSlackEvent(body: SlackEnvelope): Promise<void> {
     deduper.forget(key);
     await enqueuePostMessage({
       idempotencyKey: `slack-admission-guidance:${teamId}:${channel}:${ts}`,
+      teamId,
       channel,
       threadTs: slackThreadTs,
       text: "New runs are temporarily paused for a deployment. Retry this message shortly.",

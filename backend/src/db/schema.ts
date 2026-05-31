@@ -209,6 +209,9 @@ export const runs = pgTable(
     index("idx_runs_created").on(t.createdAt),
     index("idx_runs_org").on(t.orgId),
     index("idx_runs_thread").on(t.threadId),
+    index("idx_runs_org_created").on(t.orgId, t.createdAt, t.id),
+    index("idx_runs_org_parent_created").on(t.orgId, t.parentRunId, t.createdAt, t.id),
+    index("idx_runs_org_thread_created").on(t.orgId, t.threadId, t.createdAt, t.id),
   ],
 );
 
@@ -317,6 +320,7 @@ export const providerEvents = pgTable(
   (t) => [
     index("idx_provider_events_run").on(t.runId, t.seq),
     index("idx_provider_events_part").on(t.nativePartId),
+    index("idx_provider_events_type_run").on(t.eventType, t.runId),
   ],
 );
 
@@ -825,9 +829,45 @@ export const integrationConnections = pgTable(
     ),
     check("integration_connections_scopes_array_check", sql`jsonb_typeof(${t.scopes}) = 'array'`),
     index("idx_integration_connections_org_owner").on(t.orgId, t.ownerType, t.ownerUserId),
+    index("idx_integration_connections_connected_org")
+      .on(t.orgId, t.runtimeBindingId, t.provider)
+      .where(sql`${t.ownerType} = 'org' AND ${t.status} = 'connected'`),
     uniqueIndex("uq_integration_connections_external_scope").on(
       t.orgId,
       t.runtimeBindingId,
+      t.provider,
+      t.externalConnectionId,
+    ),
+    uniqueIndex("uq_integration_connections_external_identity").on(
+      t.runtimeBindingId,
+      t.provider,
+      t.externalConnectionId,
+    ),
+  ],
+);
+
+// Server-only credential material for native integration backends. The parent
+// connection remains browser-safe; this row is decrypted only by trusted
+// provider adapters and is deleted when the connection is revoked.
+export const integrationConnectionCredentials = pgTable(
+  "integration_connection_credentials",
+  {
+    connectionId: uuid("connection_id")
+      .primaryKey()
+      .references(() => integrationConnections.id, { onDelete: "cascade" }),
+    orgId: text("org_id").notNull(),
+    provider: text("provider").notNull(),
+    externalConnectionId: text("external_connection_id").notNull(),
+    format: text("format").notNull(),
+    credentialCiphertext: text("credential_ciphertext").notNull(),
+    iv: text("iv").notNull(),
+    tag: text("tag").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("idx_integration_connection_credentials_identity").on(
+      t.orgId,
       t.provider,
       t.externalConnectionId,
     ),
@@ -850,6 +890,8 @@ export const integrationConnectSessions = pgTable(
     stateHash: text("state_hash").notNull(),
     returnTo: text("return_to").notNull(),
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    processingToken: text("processing_token"),
+    processingExpiresAt: timestamp("processing_expires_at", { withTimezone: true }),
     consumedAt: timestamp("consumed_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
@@ -872,6 +914,9 @@ export const integrationConnectSessions = pgTable(
     ),
     uniqueIndex("uq_integration_connect_sessions_state_hash").on(t.stateHash),
     index("idx_integration_connect_sessions_actor").on(t.orgId, t.actorUserId, t.expiresAt),
+    index("idx_integration_connect_sessions_processing")
+      .on(t.processingExpiresAt)
+      .where(sql`${t.processingToken} is not null`),
   ],
 );
 
@@ -1347,6 +1392,7 @@ export const schedules = pgTable(
   (t) => [
     index("idx_schedules_org").on(t.orgId),
     index("idx_schedules_enabled").on(t.enabled),
+    index("idx_schedules_org_created").on(t.orgId, t.createdAt, t.id),
   ],
 );
 

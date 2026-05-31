@@ -1,6 +1,5 @@
-import { githubConfigured } from "../env";
-import { resolveGithubAuth } from "./auth";
-import { githubOrgAccessError, listRepos } from "./repos";
+import { resolveGithubCatalogAuth } from "./auth";
+import { githubOrgAccessErrorForOrg, listRepos } from "./repos";
 
 // ---------------------------------------------------------------------------
 // Real open pull requests across the org's App/PAT-accessible repositories — the
@@ -130,10 +129,8 @@ async function mapPool<T, R>(
  * repos exist than we scan, `truncated:true` says so.
  */
 export async function listPulls(orgId: string): Promise<PullListing> {
-  if (!githubConfigured()) return { configured: false, pulls: [] };
-  const accessError = githubOrgAccessError(orgId);
+  const accessError = await githubOrgAccessErrorForOrg(orgId);
   if (accessError) return { configured: true, pulls: [], error: accessError };
-
   const now = Date.now();
   const hit = cache.get(orgId);
   if (hit && now - hit.at < CACHE_TTL_MS) return hit.listing;
@@ -164,7 +161,7 @@ export async function listPulls(orgId: string): Promise<PullListing> {
     const timer = setTimeout(() => ac.abort(), FETCH_TIMEOUT_MS);
     let pulls: PullInfo[];
     try {
-      const auth = await resolveGithubAuth();
+      const auth = await resolveGithubCatalogAuth(orgId);
       const all = await mapPool(scan, CONCURRENCY, (repo) =>
         fetchRepoPulls(repo, auth.token, ac.signal),
       );

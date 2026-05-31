@@ -59,8 +59,13 @@ for (const provider of ["ANTHROPIC", "OPENAI", "OPENROUTER"] as const) {
 }
 
 process.env.SLACK_BOT_TOKEN = process.env.SLACK_BOT_TOKEN ?? "xoxb-test-token";
+process.env.SLACK_LEGACY_TEAM_ID = process.env.SLACK_LEGACY_TEAM_ID ?? "T0TESTTEAM";
 process.env.SLACK_SIGNING_SECRET =
   process.env.SLACK_SIGNING_SECRET ?? "test-signing-secret";
+delete process.env.SLACK_APP_ID;
+delete process.env.SLACK_CLIENT_ID;
+delete process.env.SLACK_CLIENT_SECRET;
+delete process.env.SLACK_OAUTH_REDIRECT_URI;
 process.env.SLACK_DEFAULT_ENGINE = process.env.SLACK_DEFAULT_ENGINE ?? "mock";
 // Slack outbox: kicks still deliver promptly, but push the background relay tick
 // far out so it never races a test's explicit processDue(); tiny backoff base so

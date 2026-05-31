@@ -41,7 +41,12 @@ describe("OpenConnector backend", () => {
       fetchImpl,
     );
 
-    const started = await backend.startConnect({ orgId: "org-1", userId: "user-1", provider: "linear" });
+    const started = await backend.startConnect({
+      orgId: "org-1",
+      userId: "user-1",
+      provider: "linear",
+      state: "state-1",
+    });
     expect(started.redirectUrl).toBe("https://linear.app/oauth/authorize");
     expect(JSON.stringify(started)).not.toContain("secret");
 
