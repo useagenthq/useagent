@@ -14,6 +14,7 @@ import { useEffect, useRef, useState } from "react";
 import { type Agent, AgentChip, ChooseAgentPopover } from "@/components/chat/agent-command";
 import type { CommandCatalogState } from "@/components/chat/canonical-timeline";
 import { ChatModelMenu, type ChatModelOption } from "@/components/chat/chat-model-menu";
+import { AddFilesRow, AddMenuDivider, CreateRows } from "@/components/chat/composer-add-menu";
 import { ModelPicker } from "@/components/chat/engine-picker";
 import { RunUploadChips, useRunUploads } from "@/components/chat/run-uploads";
 import {
@@ -249,6 +250,10 @@ export function Composer({
   const [command, setCommand] = useState<Agent | null>(null);
   const [toolsOpen, setToolsOpen] = useState(false);
   const [modelMenuOpen, setModelMenuOpen] = useState(false);
+  // The "+" add-context menu (compact reply composer): a popover above the input
+  // holding the real upload row + the Create prompt-seeds, shared with the
+  // new-thread shelf. Only mounted when uploads are enabled (the reply composer).
+  const [addMenuOpen, setAddMenuOpen] = useState(false);
   const [cmdHighlight, setCmdHighlight] = useState(0);
   const [cmdDismissed, setCmdDismissed] = useState(false);
   // Prompt-submission transaction: `submitting` guards the in-flight await (no
@@ -445,6 +450,52 @@ export function Composer({
         </div>
       )}
 
+      {/* The "+" add-context menu: a BoardUI-style popover ABOVE the input (the
+          reply composer sits at the viewport bottom). Same rows as the new-thread
+          shelf via the shared module - a real upload + Create prompt-seeds. Repos
+          and GitHub are omitted here: a reply reuses the thread's provisioned
+          sandbox, so they are not real reply capabilities. */}
+      {enableUploads && (
+        <AnimatePresence>
+          {addMenuOpen && (
+            <>
+              <button
+                type="button"
+                aria-hidden
+                tabIndex={-1}
+                className="fixed inset-0 z-20 cursor-default"
+                onClick={() => setAddMenuOpen(false)}
+              />
+              <div className="absolute bottom-full left-0 z-30 mb-2 w-full">
+                <motion.div
+                  role="menu"
+                  aria-label="Add context"
+                  initial={{ opacity: 0, scale: 0.96, y: 4 }}
+                  animate={{ opacity: 1, scale: 1, y: 0 }}
+                  exit={{ opacity: 0, scale: 0.96, y: 4 }}
+                  transition={{ duration: 0.15, ease: [0.22, 1, 0.36, 1] }}
+                  className="w-[300px] max-w-full origin-bottom-left rounded-2xl border border-border-button-default bg-background-primary-default p-1.5 shadow-dropdown"
+                >
+                  <AddFilesRow
+                    onPick={() => {
+                      setAddMenuOpen(false);
+                      fileInput.current?.click();
+                    }}
+                  />
+                  <AddMenuDivider />
+                  <CreateRows
+                    onSeed={(seed) => {
+                      setAddMenuOpen(false);
+                      setValue((prev) => (prev.trim() ? prev : seed));
+                    }}
+                  />
+                </motion.div>
+              </div>
+            </>
+          )}
+        </AnimatePresence>
+      )}
+
       {failed && (
         <div
           role="alert"
@@ -583,11 +634,24 @@ export function Composer({
             {enableUploads ? (
               <button
                 type="button"
-                aria-label="Add files"
-                onClick={() => fileInput.current?.click()}
-                className="border-border-button-default text-text-secondary hover:bg-background-primary-hover col-start-1 row-start-1 flex size-9 items-center justify-center rounded-full border transition-colors"
+                aria-label="Add context"
+                aria-haspopup="menu"
+                aria-expanded={addMenuOpen}
+                onClick={() => setAddMenuOpen((o) => !o)}
+                className={cn(
+                  "col-start-1 row-start-1 flex size-9 items-center justify-center rounded-full border transition-colors",
+                  addMenuOpen
+                    ? "border-border-button-default bg-background-secondary-default text-text-primary"
+                    : "border-border-button-default text-text-secondary hover:bg-background-primary-hover",
+                )}
               >
-                <RiAddLine className="size-5" aria-hidden />
+                <RiAddLine
+                  className={cn(
+                    "size-5 transition-transform duration-200",
+                    addMenuOpen && "rotate-45",
+                  )}
+                  aria-hidden
+                />
               </button>
             ) : null}
 
