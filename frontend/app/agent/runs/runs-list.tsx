@@ -63,6 +63,10 @@ const FILTERS = [
 ] as const;
 type FilterValue = (typeof FILTERS)[number]['value'];
 
+export function validEngineFilter(selected: string, engines: readonly string[]): string {
+  return selected === 'all' || engines.includes(selected) ? selected : 'all';
+}
+
 /**
  * Active runs on the BoardUI data-table recipe: the react-aria `Table` primitive
  * driven by a @tanstack/react-table instance (shared cells live in
@@ -268,6 +272,13 @@ export function RunsList({
     [runs],
   );
 
+  React.useEffect(() => {
+    const next = validEngineFilter(engineFilter, engines);
+    if (next === engineFilter) return;
+    setEngineFilter(next);
+    setPagination((current) => ({ ...current, pageIndex: 0 }));
+  }, [engineFilter, engines]);
+
   const q = query.trim().toLowerCase();
   const filtered = React.useMemo(
     () =>
@@ -341,9 +352,9 @@ export function RunsList({
               the left; status tabs, engine select, and the pill search right. */}
           <div className='flex w-full flex-col items-start gap-3 px-3 py-1 lg:flex-row lg:items-center lg:justify-between'>
             <div className='flex flex-col justify-center'>
-              <p className='whitespace-nowrap text-body-2-regular text-text-tertiary'>Total results</p>
+              <p className='whitespace-nowrap text-body-2-regular text-text-tertiary'>Loaded results</p>
               <p className='whitespace-nowrap text-body-2-medium text-text-primary'>
-                {filtered.length.toLocaleString()} {filtered.length === 1 ? 'run' : 'runs'}
+                {filtered.length.toLocaleString()} of {runs.length.toLocaleString()} runs
               </p>
             </div>
             <div className='-mx-3 flex w-[calc(100%+1.5rem)] items-center gap-2.5 overflow-x-auto px-3 lg:mx-0 lg:w-auto lg:flex-wrap lg:justify-end lg:overflow-visible lg:px-0'>
