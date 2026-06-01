@@ -30,7 +30,7 @@ import {
   type SheetNumberFormat,
   type Workbook,
   type Worksheet,
-} from "@skynet/artifact-workspace";
+} from "@useagent/artifact-workspace";
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
 
 /** Visible grid caps so a large sheet windows honestly instead of rendering raw. */

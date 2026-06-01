@@ -5,7 +5,7 @@
 //   - another module inside this package (a relative "./..." specifier), or
 //   - a Node built-in type-only module from a strict allowlist (none today).
 // Anything else fails this test - which is the point: a leak into product code
-// would let the browser-facing @skynet/agent-client transitively pull server code.
+// would let the browser-facing @useagent/agent-client transitively pull server code.
 
 import { describe, expect, test } from "bun:test";
 import { readdirSync, readFileSync } from "node:fs";

@@ -2,7 +2,7 @@ import {
   ARTIFACT_AUTHORING_PROFILES,
   artifactCapabilitiesFor,
   contentTypeForName,
-} from "@skynet/artifact-workspace";
+} from "@useagent/artifact-workspace";
 
 export const ARTIFACT_CAPABILITY_ROWS = ARTIFACT_AUTHORING_PROFILES.map((profile) => ({
   ...profile,

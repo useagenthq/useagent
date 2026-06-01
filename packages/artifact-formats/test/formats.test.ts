@@ -9,7 +9,7 @@ import {
   type DeckBlock,
   type PresentationDeck,
   type Workbook,
-} from "@skynet/artifact-workspace";
+} from "@useagent/artifact-workspace";
 import {
   applyPdfPageOperation,
   ARTIFACT_BUNDLE_CONTENT_TYPE,

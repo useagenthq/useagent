@@ -20,7 +20,7 @@ import {
   RiText,
   RiUnderline,
 } from "@remixicon/react";
-import type { ArtifactWorkpieceKind } from "@skynet/agent-client";
+import type { ArtifactWorkpieceKind } from "@useagent/agent-client";
 import {
   artifactFidelityFor,
   DECK_THEME_PRESETS,
@@ -35,7 +35,7 @@ import {
   type DeckTheme,
   type DocumentTheme,
   type PresentationDeck,
-} from "@skynet/artifact-workspace";
+} from "@useagent/artifact-workspace";
 import { type CSSProperties, type RefObject, useId, useState } from "react";
 import type { WorkpieceEditorController } from "./artifact-editor-state";
 import { sanitizeRichHtml } from "./artifact-editor-model";

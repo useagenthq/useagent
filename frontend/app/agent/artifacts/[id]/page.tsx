@@ -1,4 +1,4 @@
-import { decodeArtifactResult } from "@skynet/agent-client";
+import { decodeArtifactResult } from "@useagent/agent-client";
 import { notFound } from "next/navigation";
 import { AppShell } from "@/components/shell/app-shell";
 import { LibrarySidebar } from "@/components/shell/library-sidebar";

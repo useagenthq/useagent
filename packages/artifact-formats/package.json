@@ -1,5 +1,5 @@
 {
-  "name": "@skynet/artifact-formats",
+  "name": "@useagent/artifact-formats",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -11,7 +11,7 @@
     "test": "bun test"
   },
   "dependencies": {
-    "@skynet/artifact-workspace": "file:../artifact-workspace",
+    "@useagent/artifact-workspace": "file:../artifact-workspace",
     "docx": "^9.5.1",
     "exceljs": "^4.4.0",
     "jszip": "^3.10.1",

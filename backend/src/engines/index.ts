@@ -16,14 +16,14 @@ import { T3_SESSION_GENERATION, t3ProviderDrivers } from "./t3-provider-driver";
 import {
   normalizeNegotiatedCapabilities,
   type HarnessSession,
-} from "@skynet/agent-harness/canonical";
+} from "@useagent/agent-harness/canonical";
 import {
   providerDriverHarnessCapabilities,
   providerDriverUnsupported,
   type HarnessSessionHandle,
   type ProviderDriver,
   type ProviderDriverCapability,
-} from "@skynet/agent-harness/control";
+} from "@useagent/agent-harness/control";
 import type { EngineAdapter, EngineRunContext, HarnessAdapter } from "./types";
 import { isRuntimeThreadSessionId, type RuntimeEngineId } from "./runtime-orchestration";
 import { sessionCapabilities } from "./capabilities";

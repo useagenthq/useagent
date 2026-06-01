@@ -1,4 +1,4 @@
-import type { NegotiatedCapabilities } from "@skynet/agent-harness/canonical";
+import type { NegotiatedCapabilities } from "@useagent/agent-harness/canonical";
 import { canonicalEngine } from "./engine-alias";
 
 // ---------------------------------------------------------------------------

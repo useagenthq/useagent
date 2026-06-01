@@ -6,7 +6,7 @@ import {
   type ArtifactWorkpieceState,
   decodeWorkpieceProposalList,
   decodeWorkpieceResult,
-} from "@skynet/agent-client";
+} from "@useagent/agent-client";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useOrgChanges } from "@/hooks/use-org-changes";
 import { backendFetch } from "@/lib/backend-fetch";

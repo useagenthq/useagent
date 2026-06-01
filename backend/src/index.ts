@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import { websocket } from "hono/bun";
 import { cors } from "hono/cors";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
-import { ARTIFACT_FIDELITY } from "@skynet/artifact-workspace";
+import { ARTIFACT_FIDELITY } from "@useagent/artifact-workspace";
 import { auth } from "./auth";
 import { artifactRoutes } from "./artifacts/routes";
 import { internalArtifactChangeRoutes } from "./artifacts/internal-change-routes";

@@ -1,4 +1,4 @@
-import type { ArtifactWorkpieceKind } from "@skynet/artifact-workspace";
+import type { ArtifactWorkpieceKind } from "@useagent/artifact-workspace";
 import { ArtifactAuthoringError, createAuthoredArtifact } from "../../artifacts/authoring";
 import { publishArtifactChangeFromTool } from "../../artifacts/change-bridge";
 import { publishSandboxArtifact } from "../../artifacts/publish";

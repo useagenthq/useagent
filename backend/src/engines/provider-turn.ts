@@ -3,11 +3,11 @@ import {
   type HarnessRuntime,
   type HarnessSession,
   type NegotiatedCapabilities,
-} from "@skynet/agent-harness/canonical";
+} from "@useagent/agent-harness/canonical";
 import type {
   HarnessResult,
   ProviderDriver,
-} from "@skynet/agent-harness/control";
+} from "@useagent/agent-harness/control";
 import type { ProviderEventInput } from "../runs/provider-events";
 import {
   RUN_TIMING_OUTCOMES,

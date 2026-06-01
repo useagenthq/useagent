@@ -6,7 +6,7 @@ import {
   extractXlsxWorkbook,
   renderArtifactExport,
   type ArtifactExportFormat,
-} from "@skynet/artifact-formats";
+} from "@useagent/artifact-formats";
 import {
   artifactAuthoringProfile,
   artifactWorkpieceExports,
@@ -22,7 +22,7 @@ import {
   XLSX_CONTENT_TYPE,
   type ArtifactWorkpieceKind,
   type ArtifactWorkpieceState,
-} from "@skynet/artifact-workspace";
+} from "@useagent/artifact-workspace";
 import { db } from "../db/client";
 import { getRunForOrg } from "../runs/repo";
 import { recordProviderEvent } from "../runs/provider-events";

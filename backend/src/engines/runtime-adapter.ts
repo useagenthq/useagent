@@ -39,7 +39,7 @@ import {
   sandboxProviderKind,
 } from "../sandboxes/provider";
 import { recordProviderEvent } from "../runs/provider-events";
-import type { ProviderDriver } from "@skynet/agent-harness/control";
+import type { ProviderDriver } from "@useagent/agent-harness/control";
 import { sessionCapabilities } from "./capabilities";
 import {
   establishProviderSession,

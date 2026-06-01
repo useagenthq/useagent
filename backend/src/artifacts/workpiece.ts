@@ -12,13 +12,13 @@ import {
   XLSX_CONTENT_TYPE,
   type ArtifactWorkpieceKind,
   type ArtifactWorkpieceState,
-} from "@skynet/artifact-workspace";
+} from "@useagent/artifact-workspace";
 
 export {
   inferWorkpieceKind,
   MAX_RICH_WORKPIECE_SOURCE_BYTES,
   MAX_WORKPIECE_STATE_BYTES,
-} from "@skynet/artifact-workspace";
+} from "@useagent/artifact-workspace";
 
 function decodeUtf8(bytes: Uint8Array): string | null {
   try {
