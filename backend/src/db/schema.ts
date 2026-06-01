@@ -404,7 +404,7 @@ export const gatewayApprovalRequests = pgTable(
 );
 
 /**
- * Canonical agent-event lane (final_harness Phase 1). Provider-neutral events the
+ * Canonical agent-event lane. Provider-neutral events the
  * backend translates every harness INTO (see src/engines/canonical.ts). Persisted
  * BEFORE publishing to the browser SSE so replay + live use the SAME rows. Runs
  * ALONGSIDE provider_events (the bounded raw sidecar) - additive, not a replacement.
@@ -447,7 +447,7 @@ export const canonicalEvents = pgTable(
 export type CanonicalizationState = "pending" | "translating" | "complete" | "dead";
 
 /**
- * Durable canonicalization outbox (final_harness Phase 1 hardening). One row per run,
+ * Durable canonicalization outbox. One row per run,
  * enqueued INSIDE the run-finalization transaction so the intent to canonicalize
  * commits ATOMICALLY with the run reaching a terminal state - a crash never leaves a
  * settled run with no canonical history. A worker claims due rows (FOR UPDATE SKIP

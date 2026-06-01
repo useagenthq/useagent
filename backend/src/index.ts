@@ -339,7 +339,7 @@ startCodeIndex();
 // `delivering` rows await manual inspection, never auto-retried).
 startCaptureDelivery();
 
-// Canonical-lane outbox delivery loop (1s tick, final_harness Phase 1). Drains
+// Canonical-lane outbox delivery loop (1s tick). Drains
 // each settled run's enqueued canonicalization: translates the native source to
 // canonical events with a source-watermark stability check, replaces provisional
 // rows, and marks `complete` only when the whole source was translated. Harmless

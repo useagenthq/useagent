@@ -1,4 +1,4 @@
-// H1 hardening (final_harness Phase 1): the durable canonicalization outbox. Proves the
+// H1 hardening: the durable canonicalization outbox. Proves the
 // three fire-and-forget holes are closed — no permanent loss (enqueue-in-tx + retry),
 // no incomplete snapshot marked done (source-watermark stability), no partial-permanent
 // output (explicit `complete` is the only terminal state, retries full-replace until then)
