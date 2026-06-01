@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { readFile } from "node:fs/promises";
-import { GATEWAY_GRANTS } from "./gateway-grants";
+import type { Sql } from "postgres";
+import { applyGatewayGrants, GATEWAY_GRANTS } from "./gateway-grants";
 
 /** Normalize a GRANT statement for comparison: collapse whitespace, drop the
  *  trailing semicolon, uppercase keywords are already literal in both sources. */
@@ -48,6 +49,22 @@ describe("gateway grants single source of truth", () => {
     }
     expect(GATEWAY_GRANTS).toContain(
       "GRANT UPDATE (status, resolved_at, resolved_by, resolved_revision) ON artifact_workpiece_proposals TO skynet_gateway",
+    );
+  });
+
+  test("strict hosted reconciliation rejects missing role and credentials view", async () => {
+    const missingRole = Object.assign(async () => [], { unsafe: async () => [] }) as unknown as Sql;
+    await expect(applyGatewayGrants(missingRole, { strict: true })).rejects.toThrow(
+      "required hosted role",
+    );
+
+    let query = 0;
+    const missingView = Object.assign(
+      async () => (query++ === 0 ? [{ present: 1 }] : []),
+      { unsafe: async () => [] },
+    ) as unknown as Sql;
+    await expect(applyGatewayGrants(missingView, { strict: true })).rejects.toThrow(
+      "required hosted credentials view",
     );
   });
 });
