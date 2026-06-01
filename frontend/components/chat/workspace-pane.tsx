@@ -15,12 +15,12 @@ import {
   RiTableLine,
   type RemixiconComponentType,
 } from "@remixicon/react";
-import { type ArtifactDescriptor, decodeArtifactResult } from "@skynet/agent-client";
+import { type ArtifactDescriptor, decodeArtifactResult } from "@useagent/agent-client";
 import {
   type ArtifactWorkpieceKind,
   contentTypeForName,
   inferWorkpieceKind,
-} from "@skynet/artifact-workspace";
+} from "@useagent/artifact-workspace";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useWorkpieceEditor } from "@/app/agent/artifacts/[id]/artifact-editor-state";
 import {

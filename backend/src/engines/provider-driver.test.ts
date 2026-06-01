@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
-import { validateProviderDriver } from "@skynet/agent-harness/control";
-import type { HarnessSession } from "@skynet/agent-harness/canonical";
+import { validateProviderDriver } from "@useagent/agent-harness/control";
+import type { HarnessSession } from "@useagent/agent-harness/canonical";
 import {
   resolveHarness,
   resolveProviderDriver,

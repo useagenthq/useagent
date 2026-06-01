@@ -1,4 +1,4 @@
-import { decodeOrgChange, type OrgChange } from "@skynet/agent-client/org-changes";
+import { decodeOrgChange, type OrgChange } from "@useagent/agent-client/org-changes";
 
 export type { OrgChange };
 

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { DEFAULT_DOCUMENT_THEME } from "@skynet/artifact-workspace";
+import { DEFAULT_DOCUMENT_THEME } from "@useagent/artifact-workspace";
 import {
   artifactWorkpieceExports,
   createAgentClient,

@@ -2,7 +2,7 @@
 // A sample UI derives its view entirely from these - it never parses provider frames
 // or branches on engine name. All selectors are total + side-effect free.
 
-import type { CanonicalCommand } from "@skynet/agent-harness/canonical";
+import type { CanonicalCommand } from "@useagent/agent-harness/canonical";
 import type { AgentTranscript } from "./thread-store";
 import type { CanonicalThreadEvent } from "./thread-events";
 

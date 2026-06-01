@@ -1,4 +1,4 @@
-import type { ArtifactWorkpieceKind } from "@skynet/agent-client";
+import type { ArtifactWorkpieceKind } from "@useagent/agent-client";
 
 /** A typed reference to the exact canonical workpiece a follow-up is about, so the
  * agent knows which document to edit (it proposes against this artifact id). */

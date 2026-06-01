@@ -3,14 +3,14 @@ import {
   artifactExtensionLabel,
   artifactSurfaceCategoryFor,
   type ArtifactSurfaceCategory,
-} from "@skynet/artifact-workspace";
+} from "@useagent/artifact-workspace";
 import {
   decodeArtifactResult,
   decodeArtifactList,
   type ArtifactDescriptor,
-} from "@skynet/agent-client";
+} from "@useagent/agent-client";
 
-export type { ArtifactDescriptor } from "@skynet/agent-client";
+export type { ArtifactDescriptor } from "@useagent/agent-client";
 export type ArtifactCategory = ArtifactSurfaceCategory;
 
 export function extractArtifacts(value: unknown): ArtifactDescriptor[] | null {

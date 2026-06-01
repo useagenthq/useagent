@@ -13,7 +13,7 @@ import {
   type ProviderConnectionMetadata,
   type ProviderConnectionProvider,
   type ProviderConnectionStatus,
-} from "@skynet/agent-client/provider-connections";
+} from "@useagent/agent-client/provider-connections";
 
 export {
   PROVIDER_CONNECTION_AUTH_METHODS,

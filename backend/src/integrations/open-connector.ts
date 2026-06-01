@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { IntegrationActionCatalogEntry } from "@skynet/agent-client/integrations";
+import type { IntegrationActionCatalogEntry } from "@useagent/agent-client/integrations";
 import type { DelegatedConnectionBackend } from "./backend";
 
 const PROVIDER_PATTERN = /^[a-z0-9][a-z0-9_/-]{0,127}$/u;

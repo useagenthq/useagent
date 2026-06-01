@@ -1,7 +1,7 @@
 import type {
   IntegrationActionCatalogEntry,
   IntegrationConnectionAccount,
-} from "@skynet/agent-client/integrations";
+} from "@useagent/agent-client/integrations";
 import type { IntegrationConnectionRecord } from "./connection-repo";
 import type { IntegrationConnectionAuthMethod } from "./types";
 

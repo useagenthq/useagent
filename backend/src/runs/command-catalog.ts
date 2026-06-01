@@ -1,4 +1,4 @@
-import type { CanonicalCommand } from "@skynet/agent-harness/canonical";
+import type { CanonicalCommand } from "@useagent/agent-harness/canonical";
 import { eq, sql } from "drizzle-orm";
 import { Hono } from "hono";
 import { db } from "../db/client";

@@ -13,7 +13,7 @@ agent calls artifact_publish(path)
   -> ArtifactStorage writes immutable content-addressed bytes
   -> artifacts table records metadata + ownership + SHA-256
   -> durable artifact.created event enters the existing provider/canonical lane
-  -> @skynet/agent-client validates typed artifact API responses
+  -> @useagent/agent-client validates typed artifact API responses
   -> React renders a gallery card and an inline conversation receipt
   -> browser preview/download reads the authenticated content endpoint
 
@@ -44,7 +44,7 @@ SSE frames, prompts, canonical events, or the database.
 
 ## Reusable client contract
 
-`@skynet/agent-client/artifacts` owns `ArtifactDescriptor` and strict wire
+`@useagent/agent-client/artifacts` owns `ArtifactDescriptor` and strict wire
 decoders. `createAgentClient` exposes the read-only product operations:
 
 - `listArtifacts({ runId?, threadId? })`

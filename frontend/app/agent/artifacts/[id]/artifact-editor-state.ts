@@ -9,7 +9,7 @@ import {
   type DocumentTheme,
   type PresentationDeck,
   type Workbook,
-} from "@skynet/agent-client";
+} from "@useagent/agent-client";
 import {
   artifactActionContractFor,
   coercePresentationState,
@@ -18,7 +18,7 @@ import {
   DOCUMENT_SCHEMA_VERSION,
   emptyWorkbook,
   migrateSlidesToDeck,
-} from "@skynet/artifact-workspace";
+} from "@useagent/artifact-workspace";
 import { type RefObject, useCallback, useEffect, useRef, useState } from "react";
 import { useOrgChanges } from "@/hooks/use-org-changes";
 import { backendFetch } from "@/lib/backend-fetch";

@@ -7,7 +7,7 @@
 // backendFetch) and window.EventSource (the org-change SSE) - exactly how
 // org-changes.test.ts fakes the stream. Nothing here reimplements a renderer.
 
-import { contentTypeForName } from "@skynet/artifact-workspace";
+import { contentTypeForName } from "@useagent/artifact-workspace";
 import { useState } from "react";
 import { WorkspacePane } from "@/components/chat/workspace-pane";
 

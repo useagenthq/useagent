@@ -7,12 +7,12 @@ import {
   type ArtifactWorkpieceDescriptor,
   type ArtifactWorkpieceKind,
   type ArtifactWorkpieceState,
-} from "@skynet/artifact-workspace";
+} from "@useagent/artifact-workspace";
 import { artifacts } from "../db/schema";
 import { inferWorkpieceKind } from "./workpiece";
 
 export type ArtifactRecord = typeof artifacts.$inferSelect;
-export type { ArtifactDescriptor, ArtifactWorkpieceDescriptor } from "@skynet/artifact-workspace";
+export type { ArtifactDescriptor, ArtifactWorkpieceDescriptor } from "@useagent/artifact-workspace";
 
 export function toArtifactDescriptor(row: ArtifactRecord): ArtifactDescriptor {
   const content = `/api/artifacts/${row.id}/content`;

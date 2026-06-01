@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { buildNativeCommandPrompt, revalidateCommandBeforeDispatch, validateCommandIntent } from "./command-intent";
-import type { CanonicalCommand } from "@skynet/agent-harness/canonical";
+import type { CanonicalCommand } from "@useagent/agent-harness/canonical";
 
 const catalog: CanonicalCommand[] = [{ name: "review" }, { name: "status" }, { name: "compact" }];
 

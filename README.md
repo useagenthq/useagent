@@ -131,10 +131,10 @@ The token is read from `HCLOUD_TOKEN` only; state and tfvars are gitignored.
 
 | Package | Docs |
 |---|---|
-| `@skynet/agent-client` | [`packages/agent-client/README.md`](packages/agent-client/README.md) |
-| `@skynet/agent-harness` | [`packages/agent-harness/README.md`](packages/agent-harness/README.md) |
-| `@skynet/artifact-formats` | [`packages/artifact-formats/README.md`](packages/artifact-formats/README.md) |
-| `@skynet/artifact-workspace` | Workpiece capability matrix shared by backend and frontend. |
+| `@useagent/agent-client` | [`packages/agent-client/README.md`](packages/agent-client/README.md) |
+| `@useagent/agent-harness` | [`packages/agent-harness/README.md`](packages/agent-harness/README.md) |
+| `@useagent/artifact-formats` | [`packages/artifact-formats/README.md`](packages/artifact-formats/README.md) |
+| `@useagent/artifact-workspace` | Workpiece capability matrix shared by backend and frontend. |
 | Artifact wire contract | [`packages/agent-client/ARTIFACTS.md`](packages/agent-client/ARTIFACTS.md) |
 
 ## Operational Docs

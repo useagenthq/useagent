@@ -8,14 +8,14 @@ import {
   PDF_CONTENT_TYPE,
   type ArtifactWorkpieceKind,
   type ArtifactWorkpieceState,
-} from "@skynet/artifact-workspace";
+} from "@useagent/artifact-workspace";
 import {
   applyPdfPageOperation,
   buildArtifactBundle,
   PdfPageOperationError,
   type ArtifactBundleEntry,
   type PdfPageOperation,
-} from "@skynet/artifact-formats";
+} from "@useagent/artifact-formats";
 import type { AppEnv } from "../http";
 import { orgScope } from "../middleware/org";
 import { ArtifactAuthoringError, createAuthoredArtifact, exportWorkpieceState } from "./authoring";

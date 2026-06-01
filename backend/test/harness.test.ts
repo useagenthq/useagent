@@ -1,11 +1,11 @@
 import { describe, expect, test } from "bun:test";
-import { validateProviderDriver } from "@skynet/agent-harness/control";
+import { validateProviderDriver } from "@useagent/agent-harness/control";
 import {
   makeOpenCodeProviderDriver,
   opencodeHarness,
   opencodeProviderDriver,
 } from "../src/engines/opencode-server";
-import type { HarnessSession } from "@skynet/agent-harness/canonical";
+import type { HarnessSession } from "@useagent/agent-harness/canonical";
 import type { HarnessSessionHandle } from "../src/engines/types";
 
 // Contract test for the Stage-1 typed harness seam. The control ops resolve to

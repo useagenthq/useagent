@@ -1,4 +1,4 @@
-# @skynet/artifact-formats
+# @useagent/artifact-formats
 
 Native artifact conversion helpers for useAgent's document workspace.
 
@@ -8,7 +8,7 @@ control plane and frontend editor state so every runtime uses the same
 DOCX/XLSX/PPTX/PDF behavior.
 
 Artifact MIME constants and workpiece state types are imported from and
-re-exported through the internal `@skynet/artifact-workspace` dependency. That
+re-exported through the internal `@useagent/artifact-workspace` dependency. That
 browser-safe package is the canonical owner; this package only owns native
 format conversion.
 

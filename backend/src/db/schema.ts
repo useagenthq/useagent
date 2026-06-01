@@ -6,17 +6,17 @@ import {
   type ProviderConnectionMetadata,
   type ProviderConnectionProvider,
   type ProviderConnectionStatus,
-} from "@skynet/agent-client/provider-connections";
+} from "@useagent/agent-client/provider-connections";
 import {
   INTEGRATION_CONNECTION_STATUSES,
   type IntegrationConnectionAccount,
   type IntegrationConnectionStatus,
-} from "@skynet/agent-client/integrations";
+} from "@useagent/agent-client/integrations";
 import type {
   ArtifactProposalStatus,
   ArtifactWorkpieceKind,
   ArtifactWorkpieceState,
-} from "@skynet/artifact-workspace";
+} from "@useagent/artifact-workspace";
 import type { RunResource } from "../resources/types";
 import { sql } from "drizzle-orm";
 import {

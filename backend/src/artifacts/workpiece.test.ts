@@ -4,7 +4,7 @@ import {
   deckToSlides,
   migrateHtmlToDocument,
   migrateSlidesToDeck,
-} from "@skynet/artifact-workspace";
+} from "@useagent/artifact-workspace";
 import {
   exportWorkpieceState,
 } from "./authoring";

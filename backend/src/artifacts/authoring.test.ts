@@ -1,11 +1,11 @@
 import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { createHash } from "node:crypto";
 import { and, eq } from "drizzle-orm";
-import * as artifactFormats from "@skynet/artifact-formats";
+import * as artifactFormats from "@useagent/artifact-formats";
 import {
   ARTIFACT_LEGACY_WORKPIECE_ACTIONS,
   artifactWorkpieceExports,
-} from "@skynet/artifact-workspace";
+} from "@useagent/artifact-workspace";
 import { db } from "../db/client";
 import { artifacts, providerEvents, runs, userUploads } from "../db/schema";
 import { createRun } from "../runs/repo";

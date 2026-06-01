@@ -9,7 +9,7 @@ import {
   type ProviderQuestionRequest,
 } from "./provider-question";
 import { approvalEventId, runtimeApprovalRequest } from "./runtime-approval";
-import { firstSemanticT3ToolName, t3SummaryToolIdentity } from "@skynet/agent-harness";
+import { firstSemanticT3ToolName, t3SummaryToolIdentity } from "@useagent/agent-harness";
 
 export type RuntimeEngineId = Extract<EngineId, "codex" | "claude" | "opencode">;
 export type RuntimeMode = "approval-required" | "auto-accept-edits" | "auto" | "full-access";

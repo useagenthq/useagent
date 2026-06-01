@@ -1,7 +1,7 @@
 import {
   type ConnectionProjection,
   decodeConnectionProjection,
-} from "@skynet/agent-client/integrations";
+} from "@useagent/agent-client/integrations";
 import { backendFetch } from "@/lib/backend-fetch";
 import {
   decodeIntegrationSummaries,

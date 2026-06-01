@@ -2,7 +2,7 @@ import {
   DOCUMENT_SCHEMA_VERSION,
   PRESENTATION_SCHEMA_VERSION,
   SPREADSHEET_SCHEMA_VERSION,
-} from "@skynet/artifact-workspace";
+} from "@useagent/artifact-workspace";
 
 const HEX_COLOR_PATTERN = "^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$";
 
