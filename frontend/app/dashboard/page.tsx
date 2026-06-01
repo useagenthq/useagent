@@ -62,8 +62,12 @@ async function DashboardSummary() {
   const summary = extractDashboardSummary(await getJson("/api/dashboard/summary"));
   if (!summary) {
     return (
-      <StatCards stats={[]}>
-        {Array.from({ length: 4 }, (_, index) => <StatCardSkeleton key={index} />)}
+      <StatCards stats={[
+        { icon: RiPlayCircleLine, label: "Total runs", value: "—" },
+        { icon: RiCheckboxCircleLine, label: "Completed today", value: "—" },
+      ]}>
+        <StatCard stat={{ icon: RiBookOpenLine, label: "Knowledge records", value: "—" }} />
+        <StatCard stat={{ icon: RiSparkling2Line, label: "Skills", value: "—" }} />
       </StatCards>
     );
   }
