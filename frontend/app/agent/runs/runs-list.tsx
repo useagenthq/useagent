@@ -27,6 +27,7 @@ import {
   SegmentedControl,
   SegmentedControlItem,
 } from '@/components/base/segmented-control/segmented-control';
+import { Select, SelectItem } from '@/components/base/select/select';
 import {
   Table,
   TableBody,
@@ -38,6 +39,7 @@ import {
 import { SubagentPeekButton } from '@/components/chat/subagent-pane';
 import { StatusDot } from '@/components/shared/status-dot';
 import { useOrgChanges } from '@/hooks/use-org-changes';
+import { cx } from '@/utils/cx';
 import { formatDuration, relativeTime } from '@/utils/format';
 import { type Run, type RunTone, TONE_TO_DOT, fetchRuns, statusTone } from './runs-data';
 
@@ -213,6 +215,7 @@ export function RunsList({
   const [runs, setRuns] = React.useState<Run[]>(initialRuns);
   const [errored, setErrored] = React.useState(initialError);
   const [filter, setFilter] = React.useState<FilterValue>('all');
+  const [engineFilter, setEngineFilter] = React.useState('all');
   const [query, setQuery] = React.useState('');
   // Show the pixel-matrix loader only when SSR handed us nothing to render and
   // the first client poll is still in flight.
@@ -258,18 +261,26 @@ export function RunsList({
   const showLoading = !showError && loading && runs.length === 0;
   const showEmpty = !showError && !showLoading && runs.length === 0;
 
+  // Engine filter options come from the data itself, so the select never
+  // advertises an engine the org has no runs for.
+  const engines = React.useMemo(
+    () => [...new Set(runs.map((run) => run.engine).filter((e): e is string => !!e))].toSorted(),
+    [runs],
+  );
+
   const q = query.trim().toLowerCase();
   const filtered = React.useMemo(
     () =>
       runs.filter((run) => {
         if (filter !== 'all' && statusTone(run.status) !== filter) return false;
+        if (engineFilter !== 'all' && run.engine !== engineFilter) return false;
         if (!q) return true;
         return (
           (run.prompt || '').toLowerCase().includes(q) ||
           (run.summary || '').toLowerCase().includes(q)
         );
       }),
-    [runs, filter, q],
+    [runs, filter, engineFilter, q],
   );
 
   const table = useReactTable({
@@ -320,118 +331,153 @@ export function RunsList({
       {showEmpty && <EmptyState />}
 
       {!showError && !showLoading && !showEmpty && (
-        <>
-          {/* Toolbar: status tabs (left) + prompt/summary search (right). */}
-          <div className='mt-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between'>
-            <SegmentedControl
-              aria-label='Filter runs by status'
-              selectedKeys={[filter]}
-              onSelectionChange={(keys) => {
-                const next = [...(keys as Set<string>)][0];
-                if (next) {
-                  setFilter(next as FilterValue);
-                  resetPage();
-                }
-              }}
-              className='w-full sm:w-auto'
-            >
-              {FILTERS.map((f) => (
-                <SegmentedControlItem key={f.value} id={f.value} className='flex-1 sm:flex-none'>
-                  {f.label}
-                </SegmentedControlItem>
-              ))}
-            </SegmentedControl>
+        <section
+          className={cx(
+            'mt-6 flex w-full flex-col rounded-2xl border border-border-table pt-2',
+            totalPages > 1 ? 'pb-3' : 'pb-0',
+          )}
+        >
+          {/* Toolbar inside the card (data-table block recipe): result count on
+              the left; status tabs, engine select, and the pill search right. */}
+          <div className='flex w-full flex-col items-start gap-3 px-3 py-1 lg:flex-row lg:items-center lg:justify-between'>
+            <div className='flex flex-col justify-center'>
+              <p className='whitespace-nowrap text-body-2-regular text-text-tertiary'>Total results</p>
+              <p className='whitespace-nowrap text-body-2-medium text-text-primary'>
+                {filtered.length.toLocaleString()} {filtered.length === 1 ? 'run' : 'runs'}
+              </p>
+            </div>
+            <div className='-mx-3 flex w-[calc(100%+1.5rem)] items-center gap-2.5 overflow-x-auto px-3 lg:mx-0 lg:w-auto lg:flex-wrap lg:justify-end lg:overflow-visible lg:px-0'>
+              <SegmentedControl
+                aria-label='Filter runs by status'
+                selectedKeys={[filter]}
+                onSelectionChange={(keys) => {
+                  const next = [...(keys as Set<string>)][0];
+                  if (next) {
+                    setFilter(next as FilterValue);
+                    resetPage();
+                  }
+                }}
+                className='shrink-0'
+              >
+                {FILTERS.map((f) => (
+                  <SegmentedControlItem key={f.value} id={f.value}>
+                    {f.label}
+                  </SegmentedControlItem>
+                ))}
+              </SegmentedControl>
 
-            <InputBase
-              size='small'
-              aria-label='Search runs'
-              placeholder='Search runs…'
-              leadingIcon={RiSearch2Line}
-              value={query}
-              onChange={(e) => {
-                setQuery(e.target.value);
-                resetPage();
-              }}
-              fieldClassName='sm:w-64'
-            />
+              {engines.length > 1 && (
+                <Select
+                  aria-label='Filter by engine'
+                  className='shrink-0'
+                  popoverClassName='min-w-40'
+                  selectedKey={engineFilter}
+                  onSelectionChange={(k) => {
+                    setEngineFilter(String(k));
+                    resetPage();
+                  }}
+                >
+                  <SelectItem id='all' textValue='All engines'>
+                    All engines
+                  </SelectItem>
+                  {engines.map((engine) => (
+                    <SelectItem key={engine} id={engine} textValue={engine}>
+                      {engine}
+                    </SelectItem>
+                  ))}
+                </Select>
+              )}
+
+              <InputBase
+                aria-label='Search runs'
+                placeholder='Search'
+                leadingIcon={RiSearch2Line}
+                value={query}
+                onChange={(e) => {
+                  setQuery(e.target.value);
+                  resetPage();
+                }}
+                fieldClassName='min-w-[153px] flex-1 rounded-full bg-background-secondary-default lg:w-[200px] lg:min-w-0 lg:flex-none'
+                className='text-body-2-regular'
+              />
+            </div>
           </div>
 
-          {filtered.length > 0 ? (
-            <>
-              <Table
-                aria-label='Active runs'
-                containerClassName='mt-3'
-                className='min-w-[900px]'
-                sortDescriptor={sortDescriptor}
-                onSortChange={(descriptor) => {
-                  setSorting([
-                    {
-                      id: String(descriptor.column),
-                      desc: descriptor.direction === 'descending',
-                    },
-                  ]);
-                }}
-                onRowAction={(key) => router.push(`/session/${String(key)}`)}
-              >
-                <TableHeader>
-                  {headers.map((header) => {
-                    const id = header.column.id;
-                    const label = flexRender(header.column.columnDef.header, header.getContext());
-                    return (
-                      <TableColumn
-                        key={header.id}
-                        id={header.id}
-                        isRowHeader={id === 'run'}
-                        allowsSorting={header.column.getCanSort()}
-                        className={COL_WIDTHS[id]}
-                      >
-                        {header.column.getCanSort() ? (
-                          <span className='flex w-full items-center justify-end gap-0.5'>
-                            {label}
-                            <SortChevron dir={header.column.getIsSorted()} />
-                          </span>
-                        ) : id === 'duration' ? (
-                          <span className='block text-right'>{label}</span>
-                        ) : (
-                          label
-                        )}
-                      </TableColumn>
-                    );
-                  })}
-                </TableHeader>
-                <TableBody>
-                  {rows.map((row) => (
-                    <TableRow
-                      key={row.id}
-                      id={row.id}
-                      className='cursor-pointer hover:bg-background-primary-hover'
+          <div className='mt-2'>
+            <Table
+              aria-label='Active runs'
+              className='min-w-[900px]'
+              sortDescriptor={sortDescriptor}
+              onSortChange={(descriptor) => {
+                setSorting([
+                  {
+                    id: String(descriptor.column),
+                    desc: descriptor.direction === 'descending',
+                  },
+                ]);
+              }}
+              onRowAction={(key) => router.push(`/session/${String(key)}`)}
+            >
+              <TableHeader>
+                {headers.map((header) => {
+                  const id = header.column.id;
+                  const label = flexRender(header.column.columnDef.header, header.getContext());
+                  return (
+                    <TableColumn
+                      key={header.id}
+                      id={header.id}
+                      isRowHeader={id === 'run'}
+                      allowsSorting={header.column.getCanSort()}
+                      className={COL_WIDTHS[id]}
                     >
-                      {row.getVisibleCells().map((cell) => (
-                        <TableCell key={cell.id} className={COL_WIDTHS[cell.column.id]}>
-                          {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                        </TableCell>
-                      ))}
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+                      {header.column.getCanSort() ? (
+                        <span className='flex w-full items-center justify-end gap-0.5'>
+                          {label}
+                          <SortChevron dir={header.column.getIsSorted()} />
+                        </span>
+                      ) : id === 'duration' ? (
+                        <span className='block text-right'>{label}</span>
+                      ) : (
+                        label
+                      )}
+                    </TableColumn>
+                  );
+                })}
+              </TableHeader>
+              <TableBody
+                renderEmptyState={() => (
+                  <div className='flex h-40 items-center justify-center text-body-2-regular text-text-tertiary'>
+                    No runs match this filter.
+                  </div>
+                )}
+              >
+                {rows.map((row) => (
+                  <TableRow
+                    key={row.id}
+                    id={row.id}
+                    className='cursor-pointer hover:bg-background-primary-hover'
+                  >
+                    {row.getVisibleCells().map((cell) => (
+                      <TableCell key={cell.id} className={COL_WIDTHS[cell.column.id]}>
+                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                      </TableCell>
+                    ))}
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
 
-              {totalPages > 1 && (
-                <div className='mt-3'>
-                  <Pagination
-                    page={pagination.pageIndex + 1}
-                    totalPages={totalPages}
-                    onChange={(p) => table.setPageIndex(p - 1)}
-                  />
-                </div>
-              )}
-            </>
-          ) : (
-            <p className='mt-10 text-center text-body-2-regular text-text-tertiary'>
-              No runs match this filter.
-            </p>
+          {totalPages > 1 && (
+            <div className='px-3 pt-3'>
+              <Pagination
+                page={pagination.pageIndex + 1}
+                totalPages={totalPages}
+                onChange={(p) => table.setPageIndex(p - 1)}
+              />
+            </div>
           )}
-        </>
+        </section>
       )}
     </div>
   );
