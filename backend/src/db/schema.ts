@@ -210,6 +210,7 @@ export const runs = pgTable(
     index("idx_runs_org").on(t.orgId),
     index("idx_runs_thread").on(t.threadId),
     index("idx_runs_org_created").on(t.orgId, t.createdAt, t.id),
+    index("idx_runs_org_updated").on(t.orgId, t.updatedAt, t.id),
     index("idx_runs_org_parent_created").on(t.orgId, t.parentRunId, t.createdAt, t.id),
     index("idx_runs_org_thread_created").on(t.orgId, t.threadId, t.createdAt, t.id),
   ],

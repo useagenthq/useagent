@@ -170,6 +170,45 @@ export interface WeekComboPoint {
   runs: number;
 }
 
+export interface DashboardSummary {
+  stats: RunStats;
+  counts: { skills: number; knowledge: number };
+  daily: DayBucket[];
+  weekly: WeekComboPoint[];
+  timezone: "UTC";
+}
+
+/** Decode the authoritative dashboard aggregate response. Invalid data stays
+ * unavailable instead of becoming a plausible-looking zero. */
+export function extractDashboardSummary(data: unknown): DashboardSummary | null {
+  if (!data || typeof data !== "object") return null;
+  const value = data as Record<string, unknown>;
+  const stats = value.stats as Record<string, unknown> | undefined;
+  const counts = value.counts as Record<string, unknown> | undefined;
+  if (!stats || !counts || !Array.isArray(value.daily) || !Array.isArray(value.weekly)) return null;
+  const number = (input: unknown): number | null =>
+    typeof input === "number" && Number.isFinite(input) ? input : null;
+  const total = number(stats.total);
+  const running = number(stats.running);
+  const queued = number(stats.queued);
+  const completed = number(stats.completed);
+  const failed = number(stats.failed);
+  const completedToday = number(stats.completed_today);
+  const skills = number(counts.skills);
+  const knowledge = number(counts.knowledge);
+  if (
+    total === null || running === null || queued === null || completed === null ||
+    failed === null || completedToday === null || skills === null || knowledge === null
+  ) return null;
+  return {
+    stats: { total, running, queued, completed, failed, completedToday },
+    counts: { skills, knowledge },
+    daily: value.daily as DayBucket[],
+    weekly: value.weekly as WeekComboPoint[],
+    timezone: "UTC",
+  };
+}
+
 /** Monday-anchored week buckets, oldest → newest, for the weekly bar card. */
 export function weeklyCombo(
   runs: readonly DashRun[],

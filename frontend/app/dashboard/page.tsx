@@ -9,11 +9,9 @@ import { Suspense } from "react";
 import { AnalyticsBand } from "@/components/dashboard/analytics-band";
 import {
   computeStats,
-  extractCount,
+  extractDashboardSummary,
   extractRuns,
   recentRuns,
-  runsPerDay,
-  weeklyCombo,
 } from "@/components/dashboard/dashboard-data";
 import { DashboardLiveRefresh } from "@/components/dashboard/dashboard-live-refresh";
 import { RecentRunsTable } from "@/components/dashboard/recent-runs-table";
@@ -60,27 +58,38 @@ async function getJson(path: string): Promise<unknown> {
  * sections (~18 MB for 1.7K skills) while this card only prints a count.
  * The 2000-row picker cap is fine for a compactNumber display.
  */
-async function CountStats() {
-  const [skillsData, knowledgeData] = await Promise.all([
-    getJson("/api/skills?view=picker&limit=2000"),
-    getJson("/api/knowledge"),
-  ]);
+async function DashboardSummary() {
+  const summary = extractDashboardSummary(await getJson("/api/dashboard/summary"));
+  if (!summary) {
+    return (
+      <StatCards stats={[]}>
+        {Array.from({ length: 4 }, (_, index) => <StatCardSkeleton key={index} />)}
+      </StatCards>
+    );
+  }
+  const statItems: StatItem[] = [
+    {
+      icon: RiPlayCircleLine,
+      label: "Total runs",
+      value: compactNumber(summary.stats.total),
+      delta: summary.stats.running > 0 ? `${summary.stats.running} live` : undefined,
+      deltaColor: "blue",
+    },
+    {
+      icon: RiCheckboxCircleLine,
+      label: "Completed today",
+      value: compactNumber(summary.stats.completedToday),
+      delta: summary.stats.failed > 0 ? `${summary.stats.failed} failed` : undefined,
+      deltaColor: "red",
+    },
+  ];
   return (
     <>
-      <StatCard
-        stat={{
-          icon: RiBookOpenLine,
-          label: "Knowledge records",
-          value: compactNumber(extractCount(knowledgeData, "records")),
-        }}
-      />
-      <StatCard
-        stat={{
-          icon: RiSparkling2Line,
-          label: "Skills",
-          value: compactNumber(extractCount(skillsData, "skills")),
-        }}
-      />
+      <StatCards stats={statItems}>
+        <StatCard stat={{ icon: RiBookOpenLine, label: "Knowledge records", value: compactNumber(summary.counts.knowledge) }} />
+        <StatCard stat={{ icon: RiSparkling2Line, label: "Skills", value: compactNumber(summary.counts.skills) }} />
+      </StatCards>
+      {summary.stats.total > 0 && <AnalyticsBand daily={summary.daily} combo={summary.weekly} />}
     </>
   );
 }
@@ -97,46 +106,22 @@ export default async function DashboardPage() {
   const fleetStats = computeFleetStats(lanes.flatMap((lane) => lane.runs));
 
   const stats = computeStats(runs);
-  const fortnight = runsPerDay(runs, 14);
   const recent = recentRuns(runs);
-  const combo = weeklyCombo(runs);
-
-  const statItems: StatItem[] = [
-    {
-      icon: RiPlayCircleLine,
-      label: "Total runs",
-      value: compactNumber(stats.total),
-      delta: stats.running > 0 ? `${stats.running} live` : undefined,
-      deltaColor: "blue",
-    },
-    {
-      icon: RiCheckboxCircleLine,
-      label: "Completed today",
-      value: compactNumber(stats.completedToday),
-      delta: stats.failed > 0 ? `${stats.failed} failed` : undefined,
-      deltaColor: "red",
-    },
-  ];
 
   return (
     <AppShell sidebar={<ThreadSidebar active="dashboard" />}>
       <DashboardLiveRefresh />
       <div className="mx-auto flex max-w-[1200px] flex-col gap-6 p-6 lg:p-8">
         <WelcomeHeader liveCount={stats.running} />
-        <StatCards stats={statItems}>
-          <Suspense
-            fallback={
-              <>
-                <StatCardSkeleton />
-                <StatCardSkeleton />
-              </>
-            }
-          >
-            <CountStats />
-          </Suspense>
-        </StatCards>
-
-        {stats.total > 0 && <AnalyticsBand daily={fortnight} combo={combo} />}
+        <Suspense
+          fallback={
+            <StatCards stats={[]}>
+              {Array.from({ length: 4 }, (_, index) => <StatCardSkeleton key={index} />)}
+            </StatCards>
+          }
+        >
+          <DashboardSummary />
+        </Suspense>
 
         <section className="flex flex-col gap-3">
           <h2 className="text-headline-medium text-text-primary">Limits</h2>
