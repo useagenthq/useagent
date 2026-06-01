@@ -1,5 +1,5 @@
 /**
- * Canonical Skynet agent-event vocabulary (final_harness.md, Phase 1 keystone).
+ * Canonical Skynet agent-event vocabulary.
  *
  * ONE provider-neutral wire grammar that every harness (OpenCode, Claude ACP,
  * Codex ACP, Anthropic Managed Agents, future) is translated INTO by a backend
@@ -286,7 +286,7 @@ export interface NegotiatedCapabilities {
 
 /** The execution runtime a session is bound to. Managed Agents and future remote
  *  runtimes are NOT sandboxes, so this is a union - `sandboxId` is no longer a
- *  mandatory provider-domain field (final_harness.md "Required interfaces"). */
+ *  mandatory provider-domain field required by the canonical interface. */
 export type HarnessRuntime =
   | { kind: "sandbox"; id: string }
   | { kind: "managed"; id: string };

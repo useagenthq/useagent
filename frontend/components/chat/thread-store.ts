@@ -26,7 +26,7 @@ export interface ThreadRunView {
   liveReasoning: string;
   /** The run's native-id projection (reused per-run native store snapshot). */
   native: NativeSnapshot;
-  /** The run's canonical events (final_harness Phase 1), latest revision per eventId,
+  /** The run's canonical events, latest revision per eventId,
    *  ordered by deliverySeq. Empty until the canonical lane populates; the render path
    *  uses it only behind the canonical-timeline flag (legacy native lane is default). */
   canonical: readonly StoredCanonicalEvent[];
@@ -88,7 +88,7 @@ export function createThreadStore(): ThreadStore {
   const liveText = new Map<string, string>();
   const liveReasoning = new Map<string, string>();
   const stores = new Map<string, NativeStore>();
-  // Canonical lane (final_harness Phase 1): per-run eventId -> latest-revision event.
+  // Canonical lane: per-run eventId -> latest-revision event.
   const canonicalByRun = new Map<string, Map<string, StoredCanonicalEvent>>();
   // H2: runs whose canonicalization reached the durable `complete` record (trustworthy).
   const canonicalCompleteRuns = new Set<string>();

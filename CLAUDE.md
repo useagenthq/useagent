@@ -7,12 +7,14 @@ Skynet, rebuilt. Two standalone apps (no workspace/turbo):
   before touching UI. `/api/*` is a Next rewrite to the backend (:3201).
 - `backend/` — Bun + Hono + Postgres/Drizzle **VERA** backend: event-sourced runs/steps
   (Postgres is the source of truth), replaceable engine adapters (`src/engines/`) spawned
-  one-shot per run, worker + SSE, better-auth org scoping. The harness lives OUTSIDE the
-  sandbox; the UI renders the event log, never a live process.
+  one-shot per run, worker + SSE, better-auth org scoping. The trusted product adapter lives
+  outside the sandbox; provider-native resident loops may run inside it. The UI renders the
+  event log, never a live process.
 
-**Read `codex-author/HANDOFF.md` first** — it records the settled decisions (do not re-litigate: no
-engine-UI iframes, no harness-in-sandbox, threading is backend truth) and the working
-protocol. Architecture source of truth: `~/Documents/skynet-saas/ARCHITECTURE.md`.
+**Settled decisions (do not re-litigate):** no engine-UI iframes; the trusted product
+control plane and adapter boundary stay outside the sandbox; provider-native resident loops
+such as OpenCode may run inside it; threading is backend truth. Current architecture is
+documented in `README.md`, `backend/README.md`, and `docs/architecture/`.
 
 ## Branches (2026-08-05 decisions)
 - `rebuild/skynet-a` (main line): NATIVE React chat is the primary surface — we

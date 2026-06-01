@@ -1077,7 +1077,7 @@ runsRoutes.get("/:rootRunId/thread-events", async (c) => {
         sendFrame("native", { threadId, runId, frame });
       };
 
-      // Canonical lane (final_harness Phase 1): the provider-neutral events, deduped
+      // Canonical lane: the provider-neutral events, deduped
       // by the IMMUTABLE thread delivery cursor - replay + live never re-send a cursor.
       // Thread-scoped (threadId was authorized at route entry), so no per-run attach.
       let canonicalCursor = 0;

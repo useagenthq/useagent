@@ -70,7 +70,7 @@ import { WorkingIndicator } from "@/components/session-ui/working-indicator";
 import type { GatewayApproval } from "@/lib/gateway-approvals";
 import { cx as cn } from "@/utils/cx";
 
-// Canonical-timeline cutover flag (final_harness Phase 1, slice 4). OFF by default:
+// Canonical-timeline cutover flag. OFF by default:
 // the legacy native/steps derivation renders unless a backend + build opt in via
 // NEXT_PUBLIC_CANONICAL_TIMELINE=1. The canonical path is proven byte-for-byte
 // equivalent (canonical-timeline.equiv/.nodes tests); this flag lets us flip it on
@@ -106,7 +106,7 @@ export type Turn = {
    *  run — the source for the interleaved timeline. Absent on settled history runs
    *  (no frame stream), which fall back to the narration-blob + worklog rendering. */
   native?: NativeSnapshot;
-  /** Canonical events for this run (final_harness Phase 1). Consumed only behind the
+  /** Canonical events for this run. Consumed only behind the
    *  canonical-timeline flag; empty/absent falls back to the native lane. */
   canonical?: readonly StoredCanonicalEvent[];
   /** H2: whether this run's canonicalization reached the durable `complete` record. The

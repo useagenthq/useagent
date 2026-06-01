@@ -94,7 +94,7 @@ export function NewTaskComposer({
   // Only offer engines the SERVER enabled (GET /api/config, gated by
   // ENABLED_ENGINES): claude/codex surface here only on a backend that turned them
   // on, so the picker never lets a user start a run the backend would 403. This is
-  // the capability-driven engine manifest (final_harness Phase 2).
+  // the capability-driven engine manifest.
   const engineConfig = useEnabledEngineConfig();
   const enabledEngines = engineConfig.engines;
   const engineId = engine as EngineId;

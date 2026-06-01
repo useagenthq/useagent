@@ -1,4 +1,4 @@
-// Regression lock for the P0 engine-enablement gate (final_harness.md): the
+// Regression lock for the P0 engine-enablement gate: the
 // registered-but-unsafe Claude/Codex/ACP adapters must NOT be activatable by
 // default; only an explicit ENABLED_ENGINES opt-in turns them on, and the proven
 // base (opencode/mock/daytona) can never be disabled. Written before the route/

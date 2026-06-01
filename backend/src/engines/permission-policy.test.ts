@@ -1,4 +1,4 @@
-// P0 fail-closed permission policy (final_harness.md). Tests the ACTUAL decision
+// P0 fail-closed permission policy. Tests the ACTUAL decision
 // payloads and the ACTUAL claude CLI argument string - not just the env helper -
 // and proves the dev-mode gate holds in production.
 

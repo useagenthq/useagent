@@ -117,7 +117,7 @@ export const acpAdapter: EngineAdapter = {
     const startedAt = Date.now();
     // NO bypass-permissions seeding: the bridge runs in default (ask) mode, so it
     // SENDS session/request_permission, which decideAcpPermission answers fail-
-    // closed (deny unless dev-yolo). See permission-policy.ts (final_harness.md P0).
+    // closed (deny unless dev-yolo). See permission-policy.ts.
 
     const env = childEnv(ctx.workdir);
     env.CLAUDE_CODE_EXECUTABLE = resolveClaudeBin();

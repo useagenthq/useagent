@@ -1,4 +1,4 @@
-// Phase 0 golden regression gate (final_harness.md): protect the OpenCode timeline
+// Phase 0 golden regression gate: protect the OpenCode timeline
 // + child derivation BEFORE the canonical translator / React rewiring. Feeds a
 // sanitized, deterministic heavy-run fixture (1188 frames, zero customer data - see
 // backend/scripts/extract-golden-fixture.ts) through the REAL native store and

@@ -1,5 +1,5 @@
 /**
- * Phase 0 DOM render gate (final_harness.md): protect the OpenCode /session render
+ * Phase 0 DOM render gate: protect the OpenCode /session render
  * before any canonical/React rewiring. Opens a REAL settled OpenCode session in a
  * headless browser and asserts it renders - no uncaught crash, non-blank timeline,
  * within a time budget (guards the 3-4min freeze / blank / crash regressions we hit).

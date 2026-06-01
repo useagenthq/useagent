@@ -1,5 +1,5 @@
 /**
- * Durable canonicalization outbox (final_harness Phase 1 hardening).
+ * Durable canonicalization outbox.
  *
  * Fixes the fire-and-forget holes:
  *  - #1 permanent loss: finalizeRun enqueues the intent INSIDE the finalization
