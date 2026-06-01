@@ -201,6 +201,9 @@ export const runs = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
+    // Immutable terminal timestamp. Unlike updated_at, sandbox cleanup and
+    // metadata maintenance must never rewrite historical settlement metrics.
+    settledAt: timestamp("settled_at", { withTimezone: true }),
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -210,6 +213,7 @@ export const runs = pgTable(
     index("idx_runs_org").on(t.orgId),
     index("idx_runs_thread").on(t.threadId),
     index("idx_runs_org_created").on(t.orgId, t.createdAt, t.id),
+    index("idx_runs_org_settled").on(t.orgId, t.settledAt, t.id),
     index("idx_runs_org_parent_created").on(t.orgId, t.parentRunId, t.createdAt, t.id),
     index("idx_runs_org_thread_created").on(t.orgId, t.threadId, t.createdAt, t.id),
   ],

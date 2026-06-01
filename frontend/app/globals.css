@@ -3341,6 +3341,48 @@
 }
 
 /* ---------------------------------------------------------------------------
+ * aurora-blob - the dashboard mesh-aurora (aurora-backdrop.tsx): heavily
+ * blurred radial blobs drifting on decade-long-feeling loops. Opacity carries
+ * the whole subtlety budget; the drift distances are small so the glow
+ * breathes rather than travels. Reduced motion freezes the blobs in place.
+ */
+.aurora-blob {
+  border-radius: 100%;
+  filter: blur(80px);
+  opacity: 0.3;
+  will-change: transform;
+}
+.aurora-blob-a {
+  animation: aurora-drift-a 52s ease-in-out infinite;
+}
+.aurora-blob-b {
+  animation: aurora-drift-b 64s ease-in-out infinite;
+  opacity: 0.24;
+}
+.aurora-blob-c {
+  animation: aurora-drift-c 76s ease-in-out infinite;
+  opacity: 0.2;
+}
+@keyframes aurora-drift-a {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
+  50% { transform: translate3d(9%, 7%, 0) scale(1.12); }
+}
+@keyframes aurora-drift-b {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(1.08); }
+  50% { transform: translate3d(-8%, 9%, 0) scale(0.94); }
+}
+@keyframes aurora-drift-c {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
+  50% { transform: translate3d(6%, 12%, 0) scale(1.18); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .aurora-blob {
+    animation: none;
+    will-change: auto;
+  }
+}
+
+/* ---------------------------------------------------------------------------
  * scrollbar-slim - a thin, themed scroll affordance for a SCOPED scroll
  * container (the session conversation), replacing the platform's fat native
  * scrollbar. Semantic tokens only, so it flips with the theme. Applied ONLY to

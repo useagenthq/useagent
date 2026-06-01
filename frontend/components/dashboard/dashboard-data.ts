@@ -150,57 +150,87 @@ export function runsPerDay(
   return order.map((key) => buckets.get(key)!);
 }
 
-export interface HeatCell {
-  key: string;
-  count: number;
-  /** 0–4 intensity level for the contributions grid. */
-  level: 0 | 1 | 2 | 3 | 4;
-}
-
-/**
- * GitHub-style contributions grid: `weeks` columns × 7 rows (Sun→Sat),
- * newest week last. Intensity is bucketed against the busiest day so a light
- * dataset still shows contrast.
+/* ---------------------------------------------------------------------------
+ * Analytics band aggregates — plain JSON derived server-side and handed to the
+ * client AnalyticsBand (format functions cannot cross the RSC boundary, data
+ * can). Every number is a real count off the runs snapshot; no demo values.
  */
-export function buildHeatmap(
-  runs: readonly DashRun[],
-  weeks: number,
-  now: number = Date.now(),
-): { cells: HeatCell[][]; total: number } {
-  const counts = new Map<string, number>();
-  let total = 0;
-  for (const run of runs) {
-    const key = dayKey(timestamp(run.created_at));
-    if (!key) continue;
-    counts.set(key, (counts.get(key) ?? 0) + 1);
-    total += 1;
-  }
 
-  const end = new Date(now);
-  end.setHours(0, 0, 0, 0);
-  // Walk back to the Sunday that starts the grid.
-  const gridEnd = end.getTime() - end.getDay() * DAY_MS + 6 * DAY_MS;
-  const max = Math.max(1, ...counts.values());
-
-  const columns: HeatCell[][] = [];
-  for (let w = weeks - 1; w >= 0; w -= 1) {
-    const column: HeatCell[] = [];
-    for (let d = 0; d < 7; d += 1) {
-      const ms = gridEnd - (w * 7 + (6 - d)) * DAY_MS;
-      const key = dayKey(ms);
-      const count = ms > now ? 0 : counts.get(key) ?? 0;
-      column.push({ key, count, level: level(count, max) });
-    }
-    columns.push(column);
-  }
-  return { cells: columns, total };
+/** Monday 00:00 local of the week containing `ms`. */
+function mondayOf(ms: number): number {
+  const d = new Date(ms);
+  d.setHours(0, 0, 0, 0);
+  return d.getTime() - ((d.getDay() + 6) % 7) * DAY_MS;
 }
 
-function level(count: number, max: number): HeatCell['level'] {
-  if (count <= 0) return 0;
-  const ratio = count / max;
-  if (ratio > 0.75) return 4;
-  if (ratio > 0.5) return 3;
-  if (ratio > 0.25) return 2;
-  return 1;
+/** Index signature matches the chart cards' `{label} & Record<string, ...>` rows. */
+export interface WeekComboPoint {
+  [key: string]: number | string;
+  label: string;
+  runs: number;
+}
+
+export interface DashboardSummary {
+  stats: RunStats;
+  counts: { skills: number; knowledge: number };
+  daily: DayBucket[];
+  weekly: WeekComboPoint[];
+  settlementHistoryFrom: string | null;
+  timezone: "UTC";
+}
+
+/** Decode the authoritative dashboard aggregate response. Invalid data stays
+ * unavailable instead of becoming a plausible-looking zero. */
+export function extractDashboardSummary(data: unknown): DashboardSummary | null {
+  if (!data || typeof data !== "object") return null;
+  const value = data as Record<string, unknown>;
+  const stats = value.stats as Record<string, unknown> | undefined;
+  const counts = value.counts as Record<string, unknown> | undefined;
+  if (!stats || !counts || !Array.isArray(value.daily) || !Array.isArray(value.weekly)) return null;
+  const number = (input: unknown): number | null =>
+    typeof input === "number" && Number.isFinite(input) ? input : null;
+  const total = number(stats.total);
+  const running = number(stats.running);
+  const queued = number(stats.queued);
+  const completed = number(stats.completed);
+  const failed = number(stats.failed);
+  const completedToday = number(stats.completed_today);
+  const skills = number(counts.skills);
+  const knowledge = number(counts.knowledge);
+  if (
+    total === null || running === null || queued === null || completed === null ||
+    failed === null || completedToday === null || skills === null || knowledge === null
+  ) return null;
+  return {
+    stats: { total, running, queued, completed, failed, completedToday },
+    counts: { skills, knowledge },
+    daily: value.daily as DayBucket[],
+    weekly: value.weekly as WeekComboPoint[],
+    settlementHistoryFrom:
+      typeof value.settlement_history_from === "string" ? value.settlement_history_from : null,
+    timezone: "UTC",
+  };
+}
+
+/** Monday-anchored week buckets, oldest → newest, for the weekly bar card. */
+export function weeklyCombo(
+  runs: readonly DashRun[],
+  weeks = 8,
+  now: number = Date.now(),
+): WeekComboPoint[] {
+  const fmt = new Intl.DateTimeFormat('en', { month: 'short', day: 'numeric' });
+  const thisMonday = mondayOf(now);
+  const buckets = Array.from({ length: weeks }, (_, i) => ({
+    label: fmt.format(thisMonday - (weeks - 1 - i) * 7 * DAY_MS),
+    runs: 0,
+  }));
+  for (const run of runs) {
+    const ts = timestamp(run.created_at);
+    if (!ts) continue;
+    const idx = weeks - 1 - Math.round((thisMonday - mondayOf(ts)) / (7 * DAY_MS));
+    const bucket = buckets[idx];
+    if (!bucket) continue;
+    bucket.runs += 1;
+  }
+  return buckets;
 }

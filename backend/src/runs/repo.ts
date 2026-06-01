@@ -8,7 +8,6 @@ import {
   like,
   lt,
   ne,
-  notInArray,
   or,
 } from "drizzle-orm";
 import { db, type Executor } from "../db/client";
@@ -24,7 +23,7 @@ import {
 import { parseRepoRef, type RepoRef } from "../github/repo-ref";
 import type { RunResource } from "../resources/types";
 import { listUploadsForRuns, type RunUploadDescriptor } from "../uploads/repo";
-import { INTERNAL_RUN_ORIGINS } from "./origin";
+import { publicRunCondition } from "./visibility";
 
 // ---------------------------------------------------------------------------
 // API serialization — preserve the exact snake_case shapes the frontend reads
@@ -462,10 +461,7 @@ export async function listRunsWithSteps(
   orgId: string,
   opts: { all?: boolean; limit?: number } = {},
 ): Promise<ApiRun[]> {
-  const publicRun = or(
-    isNull(runs.origin),
-    notInArray(runs.origin, [...INTERNAL_RUN_ORIGINS]),
-  );
+  const publicRun = publicRunCondition();
   const where = opts.all
     ? and(eq(runs.orgId, orgId), publicRun)
     : and(eq(runs.orgId, orgId), isNull(runs.parentRunId), publicRun);
@@ -484,10 +480,7 @@ export async function listRunSummaries(
   orgId: string,
   opts: { all?: boolean; limit?: number; includeActive?: boolean } = {},
 ): Promise<ApiRunSummary[]> {
-  const publicRun = or(
-    isNull(runs.origin),
-    notInArray(runs.origin, [...INTERNAL_RUN_ORIGINS]),
-  );
+  const publicRun = publicRunCondition();
   const where = opts.all
     ? and(eq(runs.orgId, orgId), publicRun)
     : and(eq(runs.orgId, orgId), isNull(runs.parentRunId), publicRun);
@@ -710,9 +703,10 @@ export async function completeRun(
   // failed AND its transaction independently enqueues a memory capture, so a
   // user-stopped run could still capture. Returning false on a no-op update
   // lets finalizeRun skip all side-effects for the loser.
+  const terminalAt = new Date();
   const [row] = await exec
     .update(runs)
-    .set({ status, summary, durationMs, updatedAt: new Date() })
+    .set({ status, summary, durationMs, settledAt: terminalAt, updatedAt: terminalAt })
     .where(
       and(
         eq(runs.id, id),

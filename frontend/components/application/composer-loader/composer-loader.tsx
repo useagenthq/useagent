@@ -135,7 +135,15 @@ export function ComposerLoader({
       filter={blur > 0 ? `url(#${gradientId}-b${String(blur).replace(".", "_")})` : undefined}
       style={{
         opacity,
-        animation: `bui-composer-loader-dash ${speed}s linear ${(dashPhase(dashLen, backPx) * speed) / 100}s infinite ${direction}`,
+        // Longhands, not the `animation` shorthand: React 19 warns when a
+        // shorthand and a longhand (animationPlayState below) target the same
+        // value across rerenders, since the update order is ambiguous.
+        animationName: "bui-composer-loader-dash",
+        animationDuration: `${speed}s`,
+        animationTimingFunction: "linear",
+        animationDelay: `${(dashPhase(dashLen, backPx) * speed) / 100}s`,
+        animationIterationCount: "infinite",
+        animationDirection: direction,
         // Idle must cost nothing: stroke-dashoffset is a non-compositable SVG
         // paint property animated through Gaussian-blur filters, so while the
         // light is hidden (active=false, wrapper opacity 0) the animation is

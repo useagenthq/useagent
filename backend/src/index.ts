@@ -83,6 +83,7 @@ import {
 import { internalApprovalRequestRoutes } from "./knowledge/gateway/approval-request-tools";
 import { approveApprovalRequestAsRunOwner } from "./knowledge/gateway/approval-requests";
 import { currentReleaseFingerprint, isClientReleaseCompatible } from "./release";
+import { dashboardRoutes } from "./dashboard/routes";
 
 // Acquire the per-database singleton before ANY shared-state mutation. In strict
 // production mode an unavailable/contended lock fails boot closed, so a duplicate
@@ -273,6 +274,7 @@ app.route("/api/pulls", pullsRoutes);
 // Real "Limits" numbers for the workspace: per-model token/cost burn today +
 // the org's live Daytona sandbox footprint. Org-scoped; no keys to the client.
 app.route("/api/fleet", fleetRoutes);
+app.route("/api/dashboard", dashboardRoutes);
 // multi-repo skill import from the org's GitHub repos (scan + import). Mounted
 // before /api/skills so the /import subtree resolves to its own routes.
 app.route("/api/skills/import", skillImportRoutes);

@@ -5,6 +5,7 @@ import type { ReactNode } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { cx } from "@/utils/cx";
+import { AuroraBackdrop } from "./aurora-backdrop";
 import { CompactSidebarRail } from "./compact-sidebar-rail";
 import { useWorkingSignal } from "./working-signal";
 
@@ -58,12 +59,13 @@ export function AppShell({ sidebar, children }: AppShellProps) {
 
   return (
     <div className="relative flex h-dvh w-full overflow-hidden bg-background-full">
+      <AuroraBackdrop />
       <div
         ref={sidebarContainerRef}
         aria-hidden={sidebarCollapsed}
         inert={sidebarCollapsed}
         className={cx(
-          "hidden h-full shrink-0 overflow-hidden transition-[width] duration-200 md:block",
+          "relative hidden h-full shrink-0 overflow-hidden transition-[width] duration-200 md:block",
           sidebarCollapsed ? "w-0" : "w-64",
         )}
         data-testid="primary-sidebar-shell"
@@ -96,7 +98,7 @@ export function AppShell({ sidebar, children }: AppShellProps) {
           <div className="relative h-full w-64">{sidebar}</div>
         </div>
       ) : null}
-      <div className="flex min-w-0 flex-1 flex-col">
+      <div className="relative flex min-w-0 flex-1 flex-col">
         <div className="flex h-12 shrink-0 items-center px-2 md:hidden">
           <button
             type="button"
@@ -107,11 +109,7 @@ export function AppShell({ sidebar, children }: AppShellProps) {
             <RiSidebarUnfoldLine className="size-4" aria-hidden />
           </button>
         </div>
-        <main className="relative isolate min-h-0 min-w-0 flex-1 overflow-y-auto bg-background-full">
-          <div
-            aria-hidden
-            className="bg-halftone pointer-events-none absolute inset-x-0 top-0 -z-10 h-40"
-          />
+        <main className="relative isolate min-h-0 min-w-0 flex-1 overflow-y-auto">
           {children}
         </main>
       </div>
