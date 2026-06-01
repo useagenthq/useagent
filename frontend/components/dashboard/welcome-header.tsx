@@ -1,17 +1,7 @@
 import Link from 'next/link';
 import { RiAddLine } from '@remixicon/react';
 
-import * as Avatar from '@/components/ui/avatar';
-import * as AvatarGroup from '@/components/ui/avatar-group';
 import * as Button from '@/components/ui/button';
-
-/** The people whose fleet this dashboard rolls up — initials-only, no assets. */
-const TEAM = [
-  { initials: 'AG', color: 'blue' },
-  { initials: 'MK', color: 'purple' },
-  { initials: 'SR', color: 'sky' },
-  { initials: 'JD', color: 'yellow' },
-] as const;
 
 export function WelcomeHeader({ liveCount = 0 }: { liveCount?: number }) {
   return (
@@ -27,18 +17,6 @@ export function WelcomeHeader({ liveCount = 0 }: { liveCount?: number }) {
       </div>
 
       <div className='flex items-center gap-4'>
-        <div className='hidden items-center gap-3 sm:flex'>
-          <AvatarGroup.Root size='32'>
-            {TEAM.map((member) => (
-              <Avatar.Root key={member.initials} color={member.color}>
-                {member.initials}
-              </Avatar.Root>
-            ))}
-            <AvatarGroup.Overflow>+3</AvatarGroup.Overflow>
-          </AvatarGroup.Root>
-          <span className='text-caption-1-regular text-text-tertiary'>Board team</span>
-        </div>
-
         <Button.Root className="rounded-full" asChild variant='primary' mode='filled' size='small'>
           <Link href='/agent/new'>
             <Button.Icon as={RiAddLine} />
