@@ -5,7 +5,6 @@ import { ComboChartCard } from '@/components/application/charts/combo-chart-card
 import type { DayBucket, WeekComboPoint } from './dashboard-data';
 
 const count = (n: number) => String(Math.round(n));
-const percent = (n: number) => `${Math.round(n)}%`;
 
 /**
  * The dashboard charts row: two friendly BoardUI cards on real run aggregates
@@ -43,16 +42,10 @@ export function AnalyticsBand({ daily, combo }: { daily: DayBucket[]; combo: Wee
         tiles
       />
       <ComboChartCard
-        title='Runs and success rate'
+        title='Runs per week'
         data={combo}
         bar={{ key: 'runs', label: 'Runs', format: count }}
-        line={{
-          key: 'success',
-          label: 'Success',
-          format: percent,
-          color: 'var(--color-chart-7)',
-          activeColor: 'var(--color-chart-7-active)',
-        }}
+        line={null}
         range='Last 8 weeks'
       />
     </div>

@@ -16,6 +16,7 @@ export function AuroraBackdrop() {
       <div className='aurora-blob aurora-blob-a absolute left-[-10%] top-[-30%] size-[46rem] bg-[radial-gradient(closest-side,var(--color-chart-6),transparent_72%)]' />
       <div className='aurora-blob aurora-blob-b absolute right-[-8%] top-[-38%] size-[42rem] bg-[radial-gradient(closest-side,var(--color-chart-4),transparent_72%)]' />
       <div className='aurora-blob aurora-blob-c absolute left-[32%] top-[-45%] size-[48rem] bg-[radial-gradient(closest-side,var(--color-chart-5),transparent_72%)]' />
+      <div className='bg-halftone absolute inset-0' />
     </div>
   );
 }

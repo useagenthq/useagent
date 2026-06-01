@@ -150,61 +150,6 @@ export function runsPerDay(
   return order.map((key) => buckets.get(key)!);
 }
 
-export interface HeatCell {
-  key: string;
-  count: number;
-  /** 0–4 intensity level for the contributions grid. */
-  level: 0 | 1 | 2 | 3 | 4;
-}
-
-/**
- * GitHub-style contributions grid: `weeks` columns × 7 rows (Sun→Sat),
- * newest week last. Intensity is bucketed against the busiest day so a light
- * dataset still shows contrast.
- */
-export function buildHeatmap(
-  runs: readonly DashRun[],
-  weeks: number,
-  now: number = Date.now(),
-): { cells: HeatCell[][]; total: number } {
-  const counts = new Map<string, number>();
-  let total = 0;
-  for (const run of runs) {
-    const key = dayKey(timestamp(run.created_at));
-    if (!key) continue;
-    counts.set(key, (counts.get(key) ?? 0) + 1);
-    total += 1;
-  }
-
-  const end = new Date(now);
-  end.setHours(0, 0, 0, 0);
-  // Walk back to the Sunday that starts the grid.
-  const gridEnd = end.getTime() - end.getDay() * DAY_MS + 6 * DAY_MS;
-  const max = Math.max(1, ...counts.values());
-
-  const columns: HeatCell[][] = [];
-  for (let w = weeks - 1; w >= 0; w -= 1) {
-    const column: HeatCell[] = [];
-    for (let d = 0; d < 7; d += 1) {
-      const ms = gridEnd - (w * 7 + (6 - d)) * DAY_MS;
-      const key = dayKey(ms);
-      const count = ms > now ? 0 : counts.get(key) ?? 0;
-      column.push({ key, count, level: level(count, max) });
-    }
-    columns.push(column);
-  }
-  return { cells: columns, total };
-}
-
-function level(count: number, max: number): HeatCell['level'] {
-  if (count <= 0) return 0;
-  const ratio = count / max;
-  if (ratio > 0.75) return 4;
-  if (ratio > 0.5) return 3;
-  if (ratio > 0.25) return 2;
-  return 1;
-}
-
 /* ---------------------------------------------------------------------------
  * Analytics band aggregates — plain JSON derived server-side and handed to the
  * client AnalyticsBand (format functions cannot cross the RSC boundary, data
@@ -223,11 +168,9 @@ export interface WeekComboPoint {
   [key: string]: number | string;
   label: string;
   runs: number;
-  /** % of settled runs (completed+failed) that completed; 0 on idle weeks. */
-  success: number;
 }
 
-/** Monday-anchored week buckets, oldest → newest, for the combo card. */
+/** Monday-anchored week buckets, oldest → newest, for the weekly bar card. */
 export function weeklyCombo(
   runs: readonly DashRun[],
   weeks = 8,
@@ -238,8 +181,6 @@ export function weeklyCombo(
   const buckets = Array.from({ length: weeks }, (_, i) => ({
     label: fmt.format(thisMonday - (weeks - 1 - i) * 7 * DAY_MS),
     runs: 0,
-    completed: 0,
-    failed: 0,
   }));
   for (const run of runs) {
     const ts = timestamp(run.created_at);
@@ -248,12 +189,6 @@ export function weeklyCombo(
     const bucket = buckets[idx];
     if (!bucket) continue;
     bucket.runs += 1;
-    if (run.status === 'completed') bucket.completed += 1;
-    else if (run.status === 'failed') bucket.failed += 1;
   }
-  return buckets.map(({ label, runs: total, completed, failed }) => ({
-    label,
-    runs: total,
-    success: completed + failed > 0 ? Math.round((100 * completed) / (completed + failed)) : 0,
-  }));
+  return buckets;
 }

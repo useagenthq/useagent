@@ -61,8 +61,9 @@ export interface ComboChartCardProps {
   data?: ComboPoint[];
   /** Bar series, read against the left axis. */
   bar?: ComboSeries;
-  /** Line series, read against the right axis. */
-  line?: ComboSeries;
+  /** Line series, read against the right axis. `null` renders bars only —
+   *  no line, no right axis, no line tile. */
+  line?: ComboSeries | null;
   /** Headline number at rest; defaults to the bar series' total. */
   headline?: number;
   /** Delta ratio for the chip, e.g. `0.052` → "+5.2%". */
@@ -180,32 +181,33 @@ export function ComboChartCard({
 
   const data = selected?.data ?? dataProp ?? DEFAULT_DATA;
   const bar = barProp ?? DEFAULT_BAR;
-  const line = lineProp ?? DEFAULT_LINE;
+  const line = lineProp === null ? null : (lineProp ?? DEFAULT_LINE);
   const headline = selected?.headline ?? headlineProp;
   const delta = selected?.delta ?? deltaProp;
 
   const barTone = resolveTone(0, bar.color, bar.activeColor);
-  const lineTone = resolveTone(1, line.color, line.activeColor);
+  const lineTone = line ? resolveTone(1, line.color, line.activeColor) : null;
   const barFormat = bar.format ?? formatNumber;
-  const lineFormat = line.format ?? percent;
+  const lineFormat = line?.format ?? percent;
 
   const valueAt = (key: string, index: number) => Number(data[index]?.[key] ?? 0);
   const barTotal = data.reduce((sum, row) => sum + Number(row[bar.key] ?? 0), 0);
-  const lineAverage = data.length
-    ? data.reduce((sum, row) => sum + Number(row[line.key] ?? 0), 0) / data.length
-    : 0;
+  const lineAverage =
+    line && data.length
+      ? data.reduce((sum, row) => sum + Number(row[line.key] ?? 0), 0) / data.length
+      : 0;
 
   const hovering = activeIndex !== null && activeIndex < data.length;
   const headerLabel = hovering ? String(data[activeIndex].label) : title;
   const headlineValue = hovering ? valueAt(bar.key, activeIndex) : (headline ?? barTotal);
   // While hovering, the line's own value for that category rides along as the
   // caption - the two axes only make sense read together.
-  const captionValue = hovering ? valueAt(line.key, activeIndex) : lineAverage;
+  const captionValue = line ? (hovering ? valueAt(line.key, activeIndex) : lineAverage) : 0;
 
   return (
     <ChartCard className={cx(tiles && "h-auto", className)}>
       <ChartHeader
-        label={`${headerLabel} · ${line.label} ${lineFormat(captionValue)}`}
+        label={line ? `${headerLabel} · ${line.label} ${lineFormat(captionValue)}` : headerLabel}
         value={headlineValue}
         format={barFormat}
         delta={delta !== undefined ? describeDelta(delta) : undefined}
@@ -240,16 +242,18 @@ export function ComboChartCard({
               axisLine={false}
               tick={{ fontSize: 12, fill: "var(--color-text-tertiary)" }}
             />
-            <YAxis
-              yAxisId="line"
-              orientation="right"
-              width={40}
-              tickCount={4}
-              tickFormatter={lineFormat}
-              tickLine={false}
-              axisLine={false}
-              tick={{ fontSize: 12, fill: "var(--color-text-tertiary)" }}
-            />
+            {line && (
+              <YAxis
+                yAxisId="line"
+                orientation="right"
+                width={40}
+                tickCount={4}
+                tickFormatter={lineFormat}
+                tickLine={false}
+                axisLine={false}
+                tick={{ fontSize: 12, fill: "var(--color-text-tertiary)" }}
+              />
+            )}
             <XAxis
               dataKey="label"
               tickLine={false}
@@ -282,42 +286,46 @@ export function ComboChartCard({
                 colour, then the real stroke on top. The casing cuts a clean
                 gap wherever the line crosses a bar, so it reads as sitting in
                 front of the bars rather than scribbled across them. */}
-            <Line
-              yAxisId="line"
-              type="monotone"
-              dataKey={line.key}
-              stroke="var(--color-background-secondary-default)"
-              strokeWidth={7}
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              dot={false}
-              activeDot={false}
-              legendType="none"
-              isAnimationActive
-              animationDuration={450}
-            />
-            <Line
-              yAxisId="line"
-              type="monotone"
-              dataKey={line.key}
-              name={line.label}
-              stroke={lineTone.activeColor}
-              strokeWidth={2}
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              // Small anchored dots so each category's reading is unambiguous
-              // against the bar behind it; the card-coloured ring keeps them
-              // crisp on top of a bar.
-              dot={{
-                r: 3,
-                fill: lineTone.activeColor,
-                stroke: "var(--color-background-secondary-default)",
-                strokeWidth: 2,
-              }}
-              activeDot={<PulsingDot color={lineTone.activeColor} />}
-              isAnimationActive
-              animationDuration={450}
-            />
+            {line && lineTone && (
+              <Line
+                yAxisId="line"
+                type="monotone"
+                dataKey={line.key}
+                stroke="var(--color-background-secondary-default)"
+                strokeWidth={7}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                dot={false}
+                activeDot={false}
+                legendType="none"
+                isAnimationActive
+                animationDuration={450}
+              />
+            )}
+            {line && lineTone && (
+              <Line
+                yAxisId="line"
+                type="monotone"
+                dataKey={line.key}
+                name={line.label}
+                stroke={lineTone.activeColor}
+                strokeWidth={2}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                // Small anchored dots so each category's reading is unambiguous
+                // against the bar behind it; the card-coloured ring keeps them
+                // crisp on top of a bar.
+                dot={{
+                  r: 3,
+                  fill: lineTone.activeColor,
+                  stroke: "var(--color-background-secondary-default)",
+                  strokeWidth: 2,
+                }}
+                activeDot={<PulsingDot color={lineTone.activeColor} />}
+                isAnimationActive
+                animationDuration={450}
+              />
+            )}
           </ComposedChart>
         </ResponsiveContainer>
       </div>
@@ -331,12 +339,16 @@ export function ComboChartCard({
               color: barTone.color,
               activeColor: barTone.activeColor,
             },
-            {
-              label: `${line.label} · ${hovering ? "this month" : "average"}`,
-              value: lineFormat(captionValue),
-              color: lineTone.color,
-              activeColor: lineTone.activeColor,
-            },
+            ...(line && lineTone
+              ? [
+                  {
+                    label: `${line.label} · ${hovering ? "this month" : "average"}`,
+                    value: lineFormat(captionValue),
+                    color: lineTone.color,
+                    activeColor: lineTone.activeColor,
+                  },
+                ]
+              : []),
           ]}
         />
       )}

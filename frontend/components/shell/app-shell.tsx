@@ -110,10 +110,6 @@ export function AppShell({ sidebar, children }: AppShellProps) {
           </button>
         </div>
         <main className="relative isolate min-h-0 min-w-0 flex-1 overflow-y-auto">
-          <div
-            aria-hidden
-            className="bg-halftone pointer-events-none absolute inset-x-0 top-0 -z-10 h-40"
-          />
           {children}
         </main>
       </div>
