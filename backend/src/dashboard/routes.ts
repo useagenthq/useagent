@@ -40,6 +40,7 @@ dashboardRoutes.get("/summary", async (c) => {
           where ${runs.status} = 'completed'
           and ${runs.settledAt} >= (date_trunc('day', now() at time zone 'UTC') at time zone 'UTC')
         )::int`,
+        settlementHistoryFrom: sql<string | null>`min(${runs.settledAt})`,
       })
       .from(runs)
       .where(and(eq(runs.orgId, orgId), publicRun)),
@@ -119,6 +120,7 @@ dashboardRoutes.get("/summary", async (c) => {
     },
     daily: dailyRows,
     weekly: weeklyRows,
+    settlement_history_from: totals?.settlementHistoryFrom ?? null,
     timezone: "UTC",
   });
 });

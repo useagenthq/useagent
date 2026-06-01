@@ -11,7 +11,15 @@ const count = (n: number) => String(Math.round(n));
  * derived server-side in dashboard-data.ts. Client component because the
  * cards are interactive and format functions cannot cross the RSC boundary.
  */
-export function AnalyticsBand({ daily, combo }: { daily: DayBucket[]; combo: WeekComboPoint[] }) {
+export function AnalyticsBand({
+  daily,
+  combo,
+  settlementHistoryFrom,
+}: {
+  daily: DayBucket[];
+  combo: WeekComboPoint[];
+  settlementHistoryFrom: string | null;
+}) {
   const points = daily.map((d) => ({
     label: d.label,
     completed: d.completed,
@@ -36,7 +44,13 @@ export function AnalyticsBand({ daily, combo }: { daily: DayBucket[]; combo: Wee
             activeColor: 'var(--color-red-600)',
           },
         ]}
-        range='Last 14 days'
+        range={settlementHistoryFrom
+          ? `Recorded since ${new Intl.DateTimeFormat('en', {
+              month: 'short',
+              day: 'numeric',
+              timeZone: 'UTC',
+            }).format(new Date(settlementHistoryFrom))}`
+          : 'No exact settlement history yet'}
         format={count}
         tiles
       />

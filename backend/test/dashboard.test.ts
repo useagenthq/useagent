@@ -52,6 +52,7 @@ test("dashboard summary returns uncapped, UTC-stable organization aggregates", a
     counts: { skills: number; knowledge: number };
     daily: Array<{ key: string; label: string; completed: number }>;
     weekly: Array<{ key: string; label: string; runs: number }>;
+    settlement_history_from: string | null;
     timezone: string;
   }>("/api/dashboard/summary", { cookies: session.cookies });
 
@@ -64,6 +65,7 @@ test("dashboard summary returns uncapped, UTC-stable organization aggregates", a
   expect(result.body.daily.at(-1)?.completed).toBe(RUNS);
   expect(result.body.weekly).toHaveLength(8);
   expect(result.body.weekly.at(-1)?.runs).toBe(RUNS);
+  expect(Date.parse(result.body.settlement_history_from ?? "")).toBeFinite();
   expect(result.body.timezone).toBe("UTC");
 
   await db
