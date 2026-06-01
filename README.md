@@ -94,10 +94,11 @@ The common root scripts are:
 
 ```bash
 bun run typecheck
+bun run deploy:hosted
 bun run release:hosted
 ```
 
-`bun run typecheck` covers the frontend, backend, and shared packages. `bun run release:hosted` runs the hosted release gate in `deploy/hetzner/`.
+`bun run typecheck` covers the frontend, backend, and shared packages. `bun run deploy:hosted` is the normal rollback-safe deployment lane; `bun run release:hosted` runs the exhaustive hosted certification gate.
 When promoting a newly built Cube runtime, set
 `RELEASE_T3_CUBE_TEMPLATE_ID=tpl-...`; the gate validates the id, activates it
 only inside the rollback-bound candidate environment, and restores the exact
@@ -152,7 +153,12 @@ The token is read from `HCLOUD_TOKEN` only; state and tfvars are gitignored.
 
 | Lane | What it does |
 |---|---|
-| Guarded release (`bun run release:hosted`) | The full certification: eight fail-closed gates covering identity, source sync, service restart, readiness (credential-mode aware), wiki generation, and per-engine parity canaries, with automatic rollback of source, env, Caddy, and services on any failure. Releases run from a clean worktree of the pushed commit, never from a working tree. |
+| Normal deploy (`bun run deploy:hosted`) | Exact clean commit, host mutex, admission drain, source snapshot, one dependency/build/restart pass, public health smoke, and automatic source rollback. Designed for ordinary product releases. |
+| Guarded release (`bun run release:hosted`) | Exhaustive certification: identity, source sync, readiness, workpieces, provider parity, and hard journeys with automatic rollback. Run for release candidates and scheduled certification, not every UI patch. |
+
+The normal lane accepts only backward-compatible migrations explicitly marked
+`-- fast-deploy: expansion-safe`; destructive schema changes require the guarded
+release lane. Both lanes require an authenticated release identity.
 | Provider-connection bootstrap | Deploys the full source tree and proves the account lifecycle surface without claiming runtime parity. Used to converge production onto a verified commit between certifications. |
 | Atomic frontend release | Builds into an isolated dist dir, verifies BUILD_ID, swaps under a brief stop and start, checks public health and that backend and gateway PIDs never moved, and parks the previous dist as a rollback dir. |
 
