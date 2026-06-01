@@ -1,4 +1,4 @@
-// Locks the canonical event vocabulary (final_harness.md Phase 1). The exhaustive
+// Locks the canonical event vocabulary. The exhaustive
 // switch is a COMPILE-TIME guard: add a variant to CanonicalEventBody without a
 // case here and `assertNeverEvent` fails to typecheck. That is the point - every
 // harness translator and every React consumer can rely on the union being total.

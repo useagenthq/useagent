@@ -255,7 +255,7 @@ export const claudeSpec: SandboxEngineSpec = {
   command: ({ model, resumeId }) => {
     // Model is engine-managed (Anthropic only); the picker applies to opencode.
     const resume = resumeId ? `--resume ${resumeId} ` : "";
-    // SECURITY (final_harness.md P0): only pass --dangerously-skip-permissions in
+    // SECURITY: only pass --dangerously-skip-permissions in
     // verified-dev yolo mode (permission-policy.ts). Without it a non-interactive
     // CLI cannot approve tools - fail-closed, the intended SaaS default.
     const skip = allowPermissionBypass() ? " --dangerously-skip-permissions" : "";
@@ -446,7 +446,7 @@ const codexSpec: SandboxEngineSpec = {
     }
     return [];
   },
-  // SaaS-SAFE credentials (final_harness.md P0): Codex authenticates ONLY from
+  // SaaS-SAFE credentials: Codex authenticates ONLY from
   // per-tenant credentials injected via org secrets (e.g. OPENAI_API_KEY) - see
   // src/secrets/inject.ts. We NEVER copy the host operator's ~/.codex/auth.json
   // (a developer's ChatGPT login) into an untrusted customer sandbox. There is no
