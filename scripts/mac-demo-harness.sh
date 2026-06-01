@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-BASE_DIR="${SKYNET_DEMO_DIR:-$HOME/Desktop/skynet-demo}"
-SCREEN_DEVICE="${SKYNET_SCREEN_DEVICE:-Capture screen 0}"
-CLICK_BIN="${SKYNET_CLICLICK_BIN:-cliclick}"
-FFMPEG_BIN="${SKYNET_FFMPEG_BIN:-ffmpeg}"
-FFPROBE_BIN="${SKYNET_FFPROBE_BIN:-ffprobe}"
-SCREENSHOT_BIN="${SKYNET_SCREENSHOT_BIN:-screencapture}"
-OSASCRIPT_BIN="${SKYNET_OSASCRIPT_BIN:-osascript}"
-PYTHON_BIN="${SKYNET_PYTHON_BIN:-/usr/bin/python3}"
+BASE_DIR="${USEAGENT_DEMO_DIR:-$HOME/Desktop/skynet-demo}"
+SCREEN_DEVICE="${USEAGENT_SCREEN_DEVICE:-Capture screen 0}"
+CLICK_BIN="${USEAGENT_CLICLICK_BIN:-cliclick}"
+FFMPEG_BIN="${USEAGENT_FFMPEG_BIN:-ffmpeg}"
+FFPROBE_BIN="${USEAGENT_FFPROBE_BIN:-ffprobe}"
+SCREENSHOT_BIN="${USEAGENT_SCREENSHOT_BIN:-screencapture}"
+OSASCRIPT_BIN="${USEAGENT_OSASCRIPT_BIN:-osascript}"
+PYTHON_BIN="${USEAGENT_PYTHON_BIN:-/usr/bin/python3}"
 
 dry_run=0
 
@@ -59,16 +59,16 @@ sanitize_slug() {
 }
 
 now_utc() {
-  if [[ -n "${SKYNET_DEMO_CREATED_AT:-}" ]]; then
-    printf '%s' "$SKYNET_DEMO_CREATED_AT"
+  if [[ -n "${USEAGENT_DEMO_CREATED_AT:-}" ]]; then
+    printf '%s' "$USEAGENT_DEMO_CREATED_AT"
     return 0
   fi
   date -u +"%Y-%m-%dT%H:%M:%SZ"
 }
 
 compact_utc() {
-  if [[ -n "${SKYNET_DEMO_SESSION_ID:-}" ]]; then
-    printf '%s' "$(sanitize_slug "$SKYNET_DEMO_SESSION_ID")"
+  if [[ -n "${USEAGENT_DEMO_SESSION_ID:-}" ]]; then
+    printf '%s' "$(sanitize_slug "$USEAGENT_DEMO_SESSION_ID")"
     return 0
   fi
   date -u +"%Y%m%dT%H%M%SZ"

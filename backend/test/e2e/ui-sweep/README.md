@@ -74,7 +74,7 @@ Requires an **isolated stack** (never touch shared dev servers):
 cd backend && PORT=3513 MEMORY_API_URL="" FRONTEND_ORIGIN="http://localhost:3200" bun src/index.ts
 
 # frontend on :3413 proxying /api to :3513:
-cd frontend && SKYNET_API_ORIGIN="http://localhost:3513" ./node_modules/.bin/next dev -p 3413
+cd frontend && USEAGENT_API_ORIGIN="http://localhost:3513" ./node_modules/.bin/next dev -p 3413
 
 # playwright-core (system Chrome) is a declared backend devDependency, so
 # `cd backend && bun install` restores it (bun resolves node_modules upward from

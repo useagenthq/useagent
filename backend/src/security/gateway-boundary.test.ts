@@ -6,7 +6,7 @@ import {
 } from "./gateway-boundary";
 
 const secureEnv = {
-  SKYNET_DEV_MODE: "false",
+  USEAGENT_DEV_MODE: "false",
   PROVIDER_GATEWAY_SECRET: "provider-0123456789abcdef0123456789abcdef",
   TOOL_GATEWAY_SECRET: "tool-0123456789abcdef0123456789abcdef0123",
   SECRETS_ENCRYPTION_KEY: "encryption-0123456789abcdef0123456789abcdef",
@@ -19,10 +19,10 @@ describe("gateway trust-boundary configuration", () => {
       "https://gateway.example.test",
     );
     expect(
-      validateGatewayPublicUrl("http://127.0.0.1:3202", { SKYNET_DEV_MODE: "true" }),
+      validateGatewayPublicUrl("http://127.0.0.1:3202", { USEAGENT_DEV_MODE: "true" }),
     ).toBe("http://127.0.0.1:3202");
     expect(() =>
-      validateGatewayPublicUrl("http://gateway.example.test", { SKYNET_DEV_MODE: "true" }),
+      validateGatewayPublicUrl("http://gateway.example.test", { USEAGENT_DEV_MODE: "true" }),
     ).toThrow("requires HTTPS");
     expect(() => validateGatewayPublicUrl("https://u:p@gateway.example.test")).toThrow(
       "credential-free origin",

@@ -82,14 +82,14 @@ async function main() {
   const beFd = openSync(beLog, "a");
   const backend = Bun.spawn(["bun", "src/index.ts"], {
     cwd: backendDir,
-    env: { ...process.env, PORT: String(BE), DATABASE_URL: DB_URL, SKYNET_DEV_MODE: "true", MEMORY_API_URL: "", FRONTEND_ORIGIN: `http://localhost:${FE}` },
+    env: { ...process.env, PORT: String(BE), DATABASE_URL: DB_URL, USEAGENT_DEV_MODE: "true", MEMORY_API_URL: "", FRONTEND_ORIGIN: `http://localhost:${FE}` },
     stdout: beFd,
     stderr: beFd,
   });
   const feFd = openSync(feLog, "a");
   const frontend = Bun.spawn(["bunx", "next", "dev", "-p", String(FE)], {
     cwd: frontendDir,
-    env: { ...process.env, SKYNET_API_ORIGIN: `http://localhost:${BE}`, PORT: String(FE) },
+    env: { ...process.env, USEAGENT_API_ORIGIN: `http://localhost:${BE}`, PORT: String(FE) },
     stdout: feFd,
     stderr: feFd,
   });

@@ -90,7 +90,7 @@ describe("T3 Codex subscription lease", () => {
     expect(providerPatch).toContain("CODEX_INSTANCE_B64");
     expect(providerPatch).not.toContain("/host/codex-home");
     expect(providerPatch).not.toContain("preview-secret");
-    expect(providerPatch).not.toContain("SKYNET_TOOL_GATEWAY_BEARER_TOKEN");
+    expect(providerPatch).not.toContain("USEAGENT_TOOL_GATEWAY_BEARER_TOKEN");
     expect(
       harness.commands.some(({ command }) => command.includes("provider-gateway-generation")),
     ).toBe(true);

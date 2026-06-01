@@ -6,7 +6,7 @@ import { CookieJar, fetchApi, json, uid } from "./helpers";
 
 /**
  * Production-mode fail-closed behavior. The org middleware evaluates
- * SKYNET_DEV_MODE per request, so this suite flips it off for its lifetime
+ * USEAGENT_DEV_MODE per request, so this suite flips it off for its lifetime
  * (restored in afterAll) instead of needing a separate process.
  *
  *  - anonymous (no session) → 401 on every domain route (no dev-org fallback);
@@ -15,10 +15,10 @@ import { CookieJar, fetchApi, json, uid } from "./helpers";
  */
 describe("production mode: fail closed", () => {
   beforeAll(() => {
-    process.env.SKYNET_DEV_MODE = "false";
+    process.env.USEAGENT_DEV_MODE = "false";
   });
   afterAll(() => {
-    delete process.env.SKYNET_DEV_MODE;
+    delete process.env.USEAGENT_DEV_MODE;
   });
 
   test("anonymous requests are 401 on all domain routes", async () => {

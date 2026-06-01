@@ -18,11 +18,11 @@ export function nextPollDelayMs(
  *  concurrency 1, not a divergent legacy code path. One env flip de-races
  *  production while every test still exercises the same stages. */
 export function serialStartup(): boolean {
-  return process.env.SKYNET_SERIAL_STARTUP === "1";
+  return process.env.USEAGENT_SERIAL_STARTUP === "1";
 }
 
 /** Run independent startup stages together (Promise.all) or, under
- *  SKYNET_SERIAL_STARTUP=1, one after another in declared order. */
+ *  USEAGENT_SERIAL_STARTUP=1, one after another in declared order. */
 export async function stagesTogether<T extends readonly unknown[]>(
   thunks: { [K in keyof T]: () => Promise<T[K]> },
 ): Promise<T> {

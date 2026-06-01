@@ -17,7 +17,7 @@ describe("T3 environment client", () => {
   test("decodes the bounded HTTP status marker for runtime and canary callers", () => {
     expect(decodeRuntimeEnvironmentCommandOutput([
       '{"projects":[],"threads":[]}',
-      "__SKYNET_T3_HTTP_STATUS__:200",
+      "__USEAGENT_T3_HTTP_STATUS__:200",
     ].join("\n"))).toEqual({
       body: '{"projects":[],"threads":[]}',
       status: 200,
@@ -255,7 +255,7 @@ describe("T3 environment client", () => {
                 reason: "thread_not_found",
                 traceId: "trace-missing-thread",
               }),
-              "__SKYNET_T3_HTTP_STATUS__:404",
+              "__USEAGENT_T3_HTTP_STATUS__:404",
             ].join("\n"),
           };
         },

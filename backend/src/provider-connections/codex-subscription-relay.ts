@@ -80,14 +80,14 @@ const defaultDependencies: RelayDependencies = {
             "-c",
             `mcp_servers.${toolGateway.serverName}.url=${JSON.stringify(toolGateway.url)}`,
             "-c",
-            `mcp_servers.${toolGateway.serverName}.bearer_token_env_var=\"SKYNET_TOOL_GATEWAY_BEARER_TOKEN\"`,
+            `mcp_servers.${toolGateway.serverName}.bearer_token_env_var=\"USEAGENT_TOOL_GATEWAY_BEARER_TOKEN\"`,
           ]
         : []),
     ], {
       env: {
         ...codexAppServerChildEnvironment(codexHome),
         ...(toolGateway
-          ? { SKYNET_TOOL_GATEWAY_BEARER_TOKEN: toolGateway.bearerToken }
+          ? { USEAGENT_TOOL_GATEWAY_BEARER_TOKEN: toolGateway.bearerToken }
           : {}),
       },
       stdio: ["pipe", "pipe", "pipe"],

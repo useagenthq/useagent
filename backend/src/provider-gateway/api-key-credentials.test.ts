@@ -12,16 +12,16 @@ let previousDevMode: string | undefined;
 
 beforeEach(() => {
   previousEncryptionKey = process.env.SECRETS_ENCRYPTION_KEY;
-  previousDevMode = process.env.SKYNET_DEV_MODE;
+  previousDevMode = process.env.USEAGENT_DEV_MODE;
   process.env.SECRETS_ENCRYPTION_KEY = encryptionKey;
-  process.env.SKYNET_DEV_MODE = "false";
+  process.env.USEAGENT_DEV_MODE = "false";
 });
 
 afterEach(() => {
   if (previousEncryptionKey === undefined) delete process.env.SECRETS_ENCRYPTION_KEY;
   else process.env.SECRETS_ENCRYPTION_KEY = previousEncryptionKey;
-  if (previousDevMode === undefined) delete process.env.SKYNET_DEV_MODE;
-  else process.env.SKYNET_DEV_MODE = previousDevMode;
+  if (previousDevMode === undefined) delete process.env.USEAGENT_DEV_MODE;
+  else process.env.USEAGENT_DEV_MODE = previousDevMode;
 });
 
 function rowFor(value: unknown, overrides: Partial<GatewayProviderApiKeyCredentialRow> = {}) {

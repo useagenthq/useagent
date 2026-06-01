@@ -49,7 +49,7 @@ describe("mac demo harness", () => {
           "PR Demo",
         ],
         {
-          SKYNET_DEMO_SESSION_ID: "fixed-session",
+          USEAGENT_DEMO_SESSION_ID: "fixed-session",
         },
       );
 
@@ -114,7 +114,7 @@ describe("mac demo harness", () => {
       const result = run(
         ["--dry-run", "pause", "--session-dir", sessionDir],
         {
-          SKYNET_DEMO_SESSION_ID: "fixed-session",
+          USEAGENT_DEMO_SESSION_ID: "fixed-session",
         },
       );
 
@@ -150,13 +150,13 @@ import time
 video_path = sys.argv[-1]
 
 def finalize(_signum, _frame):
-    with open(os.environ["SKYNET_TEST_SIGNAL_FILE"], "w", encoding="utf-8") as marker:
+    with open(os.environ["USEAGENT_TEST_SIGNAL_FILE"], "w", encoding="utf-8") as marker:
         marker.write("INT")
     open(video_path, "a", encoding="utf-8").close()
     raise SystemExit(0)
 
 signal.signal(signal.SIGINT, finalize)
-with open(os.environ["SKYNET_TEST_READY_FILE"], "w", encoding="utf-8") as marker:
+with open(os.environ["USEAGENT_TEST_READY_FILE"], "w", encoding="utf-8") as marker:
     marker.write("ready")
 while True:
     time.sleep(0.05)
@@ -193,12 +193,12 @@ raise SystemExit(os.waitstatus_to_exitcode(status))
       chmodSync(boundedExec, 0o755);
 
       const env = {
-        SKYNET_DEMO_SESSION_ID: "sigint-session",
-        SKYNET_DEMO_CREATED_AT: "2026-08-22T00:00:00Z",
-        SKYNET_FFMPEG_BIN: fakeRecorder,
-        SKYNET_FFPROBE_BIN: fakeProbe,
-        SKYNET_TEST_SIGNAL_FILE: signalFile,
-        SKYNET_TEST_READY_FILE: readyFile,
+        USEAGENT_DEMO_SESSION_ID: "sigint-session",
+        USEAGENT_DEMO_CREATED_AT: "2026-08-22T00:00:00Z",
+        USEAGENT_FFMPEG_BIN: fakeRecorder,
+        USEAGENT_FFPROBE_BIN: fakeProbe,
+        USEAGENT_TEST_SIGNAL_FILE: signalFile,
+        USEAGENT_TEST_READY_FILE: readyFile,
       };
       const startedProc = Bun.spawnSync(
         [

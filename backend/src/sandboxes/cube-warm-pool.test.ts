@@ -7,7 +7,7 @@ import {
   resetCubeWarmPoolForTest,
   startCubeWarmPool,
 } from "./cube-warm-pool";
-import { SKYNET_WARM_POOL_TEMPLATE_LABEL } from "./cube-warm-pool-reconcile";
+import { USEAGENT_WARM_POOL_TEMPLATE_LABEL } from "./cube-warm-pool-reconcile";
 import type {
   SandboxCreateOptions,
   SandboxFileSystem,
@@ -166,7 +166,7 @@ describe("CubeWarmPool", () => {
       snapshot: "tpl-1",
       labels: {
         "skynet-run": "warm-pool",
-        [SKYNET_WARM_POOL_TEMPLATE_LABEL]: "tpl-1",
+        [USEAGENT_WARM_POOL_TEMPLATE_LABEL]: "tpl-1",
       },
     });
   });
@@ -642,12 +642,12 @@ describe("CubeWarmPool", () => {
     const currentTemplate = sandbox("cube-current-template");
     conflictingTemplate.labels = {
       "skynet-run": "warm-pool:t3-v3",
-      [SKYNET_WARM_POOL_TEMPLATE_LABEL]: "tpl-old",
+      [USEAGENT_WARM_POOL_TEMPLATE_LABEL]: "tpl-old",
       "cube.master.appsnapshot.template.id": "tpl-new",
     };
     currentTemplate.labels = {
       "skynet-run": "warm-pool:t3-v3",
-      [SKYNET_WARM_POOL_TEMPLATE_LABEL]: "tpl-new",
+      [USEAGENT_WARM_POOL_TEMPLATE_LABEL]: "tpl-new",
     };
 
     const pool = new CubeWarmPool({

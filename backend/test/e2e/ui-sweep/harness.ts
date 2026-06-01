@@ -1,6 +1,6 @@
 /**
  * Shared harness for the aggressive browser-level UI E2E sweep.
- * Drives the isolated stack: frontend http://localhost:3413 (SKYNET_API_ORIGIN
+ * Drives the isolated stack: frontend http://localhost:3413 (USEAGENT_API_ORIGIN
  * → backend http://localhost:3513, real `skynet` DB, committed HEAD).
  * Playwright headless via system Chrome (channel: "chrome"). No src edits.
  */

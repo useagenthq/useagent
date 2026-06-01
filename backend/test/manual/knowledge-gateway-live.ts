@@ -88,7 +88,7 @@ async function startBackend(publicUrl: string): Promise<Proc> {
         ...process.env, // carries .env (DAYTONA/ANTHROPIC/OPENROUTER)
         PORT: String(PORT),
         DATABASE_URL: DB_URL,
-        SKYNET_DEV_MODE: "true",
+        USEAGENT_DEV_MODE: "true",
         FRONTEND_ORIGIN: "http://localhost:3400",
         MEMORY_API_URL: "", // disable memory recall — keep the proof about knowledge
         GATEWAY_PUBLIC_URL: publicUrl,

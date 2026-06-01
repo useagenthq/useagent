@@ -66,19 +66,19 @@ describe("provider gateway routes", () => {
   test("upstream overrides reject insecure or unallowlisted production origins", () => {
     expect(() =>
       providerUpstreamOrigin("openai", {
-        SKYNET_DEV_MODE: "false",
+        USEAGENT_DEV_MODE: "false",
         OPENAI_UPSTREAM_BASE_URL: "http://169.254.169.254",
       }),
     ).toThrow("requires HTTPS");
     expect(() =>
       providerUpstreamOrigin("openai", {
-        SKYNET_DEV_MODE: "false",
+        USEAGENT_DEV_MODE: "false",
         OPENAI_UPSTREAM_BASE_URL: "https://proxy.example.test",
       }),
     ).toThrow("not in PROVIDER_GATEWAY_UPSTREAM_HOSTS");
     expect(
       providerUpstreamOrigin("openai", {
-        SKYNET_DEV_MODE: "false",
+        USEAGENT_DEV_MODE: "false",
         OPENAI_UPSTREAM_BASE_URL: "https://proxy.example.test",
         PROVIDER_GATEWAY_UPSTREAM_HOSTS: "proxy.example.test",
       }),

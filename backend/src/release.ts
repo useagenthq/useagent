@@ -1,11 +1,11 @@
 import { readFileSync } from "node:fs";
 
-export const SKYNET_API_COMPAT = "run-events-v1";
+export const USEAGENT_API_COMPAT = "run-events-v1";
 
 const RELEASE_COMMIT_FILE = "/opt/skynet/.release-commit";
 
 export interface ReleaseFingerprint {
-  readonly apiCompat: typeof SKYNET_API_COMPAT;
+  readonly apiCompat: typeof USEAGENT_API_COMPAT;
   readonly commit: string;
   readonly fingerprint: string;
 }
@@ -27,13 +27,13 @@ export function currentReleaseFingerprint(
   env: Record<string, string | undefined> = process.env,
 ): ReleaseFingerprint {
   const commit =
-    normalizeCommit(env.SKYNET_RELEASE_COMMIT) ??
-    fileCommit(env.SKYNET_RELEASE_COMMIT_FILE ?? RELEASE_COMMIT_FILE) ??
+    normalizeCommit(env.USEAGENT_RELEASE_COMMIT) ??
+    fileCommit(env.USEAGENT_RELEASE_COMMIT_FILE ?? RELEASE_COMMIT_FILE) ??
     "dev";
   return {
-    apiCompat: SKYNET_API_COMPAT,
+    apiCompat: USEAGENT_API_COMPAT,
     commit,
-    fingerprint: `${SKYNET_API_COMPAT}:${commit}`,
+    fingerprint: `${USEAGENT_API_COMPAT}:${commit}`,
   };
 }
 

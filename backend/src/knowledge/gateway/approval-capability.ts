@@ -215,7 +215,7 @@ export async function consumeApprovalCapability(
 
 function primaryApiOrigin(): string | null {
   if (!process.env.GATEWAY_DATABASE_URL) return null;
-  const raw = process.env.SKYNET_API_ORIGIN?.trim();
+  const raw = process.env.USEAGENT_API_ORIGIN?.trim();
   if (!raw) return null;
   try {
     const url = new URL(raw);

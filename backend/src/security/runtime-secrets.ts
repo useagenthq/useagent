@@ -3,7 +3,7 @@ export const DEFAULT_DEV_AUTH_SECRET = "dev-skynet-secret-change-me";
 export function runtimeDevModeEnabled(
   source: Record<string, string | undefined> = process.env,
 ): boolean {
-  const explicit = source.SKYNET_DEV_MODE;
+  const explicit = source.USEAGENT_DEV_MODE;
   if (explicit !== undefined) return explicit === "true";
   return (source.NODE_ENV ?? "development") !== "production";
 }
@@ -17,5 +17,5 @@ export function authSecretMaterial(
   const configured = source.BETTER_AUTH_SECRET?.trim();
   if (configured) return configured;
   if (runtimeDevModeEnabled(source)) return DEFAULT_DEV_AUTH_SECRET;
-  throw new Error("BETTER_AUTH_SECRET is required when SKYNET_DEV_MODE is off");
+  throw new Error("BETTER_AUTH_SECRET is required when USEAGENT_DEV_MODE is off");
 }
