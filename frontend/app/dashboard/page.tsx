@@ -54,13 +54,15 @@ async function getJson(path: string): Promise<unknown> {
 }
 
 /**
- * The skills / knowledge counts stream in AFTER first paint: /api/skills has
- * been observed at 6+ seconds, and the page must never block its runs-derived
- * content on it. Rendered inside a Suspense boundary in the stat grid.
+ * The skills / knowledge counts stream in AFTER first paint inside a Suspense
+ * boundary - the page must never block its runs-derived content on them.
+ * Skills uses `view=picker`: the bare list ships every skill's full SKILL.md
+ * sections (~18 MB for 1.7K skills) while this card only prints a count.
+ * The 2000-row picker cap is fine for a compactNumber display.
  */
 async function CountStats() {
   const [skillsData, knowledgeData] = await Promise.all([
-    getJson("/api/skills"),
+    getJson("/api/skills?view=picker&limit=2000"),
     getJson("/api/knowledge"),
   ]);
   return (
