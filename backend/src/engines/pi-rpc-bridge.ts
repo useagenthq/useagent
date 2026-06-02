@@ -103,7 +103,7 @@ class LivePiBridgeSession implements PiBridgeSession {
       `--no-extensions --no-skills --no-rules --auto-approve ` +
       `--tools read,write,bash,task${resume}`;
     const command =
-      `stty -echo -onlcr; exec su -s /bin/sh ${shellQuote(input.runtime.runAsUser)} ` +
+      `stty -echo -onlcr -icanon min 1 time 0; exec su -s /bin/sh ${shellQuote(input.runtime.runAsUser)} ` +
       `-c ${shellQuote(piCommand)}`;
     await pty.sendInput(`${command}\n`);
     try {
