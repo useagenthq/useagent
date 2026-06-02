@@ -73,6 +73,7 @@ export const ENGINES: { id: EngineId; label: string; hint: string }[] = [
   { id: "chat", label: "Chat", hint: "direct model · no sandbox" },
   { id: "claude", label: "Claude Code", hint: "Anthropic agent · ACP" },
   { id: "codex", label: "Codex", hint: "OpenAI agent · ACP" },
+  { id: "pi", label: "Pi", hint: "native Pi harness · cloud sandbox" },
 ];
 
 export function engineLabel(id: EngineId): string {
@@ -137,6 +138,7 @@ export type ModelOption = { value: string; label: string; tint: string };
 export function selectableModelsForEngine(engine: EngineId): ModelOption[] {
   const normalized = normalizeEngine(engine);
   if (normalized === "opencode") return MODELS;
+  if (normalized === "pi") return MODELS;
   if (normalized === "codex") return CODEX_MODELS;
   if (normalized === "chat") return CHAT_MODELS;
   return [];

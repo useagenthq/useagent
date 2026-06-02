@@ -9,7 +9,7 @@ import { engineAuthMode, engineUsesProviderGateway } from "./engine-auth-mode";
 import { chatLlmEnabled } from "../chat/stream";
 import { enabledEnginesForEnv } from "../env";
 
-export const USER_FACING_ENGINES = ["chat", "opencode", "claude", "codex"] as const;
+export const USER_FACING_ENGINES = ["chat", "opencode", "claude", "codex", "pi"] as const;
 export type UserFacingEngineId = (typeof USER_FACING_ENGINES)[number];
 
 const POSITIVE_HEALTH = new Set(["ready", "healthy", "ok", "pass", "passed", "verified"]);

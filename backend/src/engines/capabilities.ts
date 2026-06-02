@@ -26,6 +26,7 @@ export function sessionCapabilities(engine: string, res: CapabilityResources): N
   const e = canonicalEngine(engine); // normalize legacy aliases (daytona->opencode, claude-sdk->claude)
   const isOpencode = e === "opencode";
   const isCodex = e === "codex";
+  const isPi = e === "pi";
   const isRuntime = res.runtimeOrchestration === true;
   return {
     // Streaming, tool progress, commands and the sandbox terminal are real for
@@ -39,19 +40,21 @@ export function sessionCapabilities(engine: string, res: CapabilityResources): N
     directTerminal: true, // the thread sandbox has a terminal for every engine
     // Engine-NATIVE task-subagent projection only exists on the OpenCode protocol and the
     // canonical runtime adapter.
-    nativeChildProjection: isOpencode || isRuntime,
+    nativeChildProjection: isOpencode || isPi || isRuntime,
     // The gateway child_session_* tools spawn DEFERRED serial thread turns through the product
     // command lane - engine-independent, so ACP claude/codex sessions get them too.
     gatewayChildSessions: res.knowledgeTools,
-    reasoning: isOpencode || isRuntime,
+    reasoning: isOpencode || isPi || isRuntime,
     resume: true, // opencode continuation / ACP session/load
     load: true,
     stop: true, // opencode POST /abort · ACP session/cancel (both wired)
     // Honest per-engine differences:
-    plans: isOpencode || isRuntime,
-    usage: isOpencode || isRuntime,
-    modelSelection: isOpencode || isCodex, // OpenCode uses provider ids; Codex accepts explicit backend-policy ids
+    plans: isOpencode || isPi || isRuntime,
+    usage: isOpencode || isPi || isRuntime,
+    modelSelection: isOpencode || isCodex || isPi,
 
+    // Pi can resume a persisted JSONL session on the next turn, but it cannot
+    // yet reconstruct an in-flight reconciliation stream after backend restart.
     reconcile: isOpencode || isRuntime,
     close: !isOpencode && !isRuntime,
     nativeEmbed: isOpencode && !isRuntime,

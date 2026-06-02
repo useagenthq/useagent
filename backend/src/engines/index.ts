@@ -27,6 +27,8 @@ import {
 import type { EngineAdapter, EngineRunContext, HarnessAdapter } from "./types";
 import { isRuntimeThreadSessionId, type RuntimeEngineId } from "./runtime-orchestration";
 import { sessionCapabilities } from "./capabilities";
+import { piAdapter } from "./pi-adapter";
+import { piHarness, piProviderDriver } from "./pi-provider-driver";
 
 // Build the ACP compatibility adapters before registering them beside native
 // ProviderDriver execution. `mock` is NOT registered here — it
@@ -141,6 +143,15 @@ const opencodeRegistration: ProviderRegistration = {
   harnessAdapterCompatibility: opencodeHarness,
   unsupportedDriverCapabilities: [],
 };
+const piRegistration: ProviderRegistration = {
+  driver: piProviderDriver,
+  execution: {
+    kind: "provider",
+    run: async (ctx) => piAdapter.run(ctx),
+  },
+  harnessAdapterCompatibility: piHarness,
+  unsupportedDriverCapabilities: [],
+};
 
 /** The production provider registry. Legacy ids point to the same registration,
  * so selection always resolves a ProviderDriver before exposing compatibility views. */
@@ -151,6 +162,7 @@ const providerRegistry: Readonly<Record<string, ProviderRegistration>> = {
   codex: codexRegistration,
   daytona: opencodeRegistration,
   opencode: opencodeRegistration,
+  pi: piRegistration,
 };
 
 function isRuntimeEngineId(provider: string): provider is RuntimeEngineId {

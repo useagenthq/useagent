@@ -142,7 +142,7 @@ describe("T3 run adapter gate", () => {
     expect(source).toContain("requiredLabels:");
     expect(source).toContain("await driver.cancel(session, \"turn aborted\")");
     expect(source).toContain("providerGatewayWired()");
-    expect(source).toContain("acquireThreadSandbox(ctx");
+    expect(source).toContain("prepareSandboxTurn(ctx");
     expect(source).toContain("prepareRuntimeProviderBridge(sandbox, ctx, engine, workdir)");
     expect(source).toContain("await providerBridgeLease?.close()");
     expect(source).not.toContain("runManagedCodexSubscriptionTurn");

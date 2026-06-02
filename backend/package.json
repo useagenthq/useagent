@@ -19,6 +19,7 @@
     "@anthropic-ai/sdk": "^0.115.0",
     "@daytona/sdk": "^0.203.0",
     "@modelcontextprotocol/sdk": "^1.30.0",
+    "@oh-my-pi/pi-coding-agent": "18.0.3",
     "@oomol-lab/connector": "1.1.0",
     "@useagent/agent-client": "file:../packages/agent-client",
     "@useagent/agent-harness": "file:../packages/agent-harness",

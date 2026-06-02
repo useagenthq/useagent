@@ -45,6 +45,26 @@ describe("provider request body policy", () => {
     ).toEqual({ ok: false, error: "model_not_allowed" });
   });
 
+  test("accepts the exact bare OpenAI model emitted by Pi", () => {
+    const piRun = {
+      ...run,
+      engine: "pi",
+      model: "openai/gpt-5.6-luna",
+    } satisfies GatewayRun;
+    expect(applyProviderBodyPolicy(
+      piRun,
+      '{"model":"gpt-5.6-luna"}',
+      "max_output_tokens",
+      100,
+    ).ok).toBe(true);
+    expect(applyProviderBodyPolicy(
+      piRun,
+      '{"model":"gpt-5.6-sol"}',
+      "max_output_tokens",
+      100,
+    )).toEqual({ ok: false, error: "model_not_allowed" });
+  });
+
   test("adds a missing output ceiling and preserves a smaller one", () => {
     const added = applyProviderBodyPolicy(run, '{"model":"gpt-5"}', "max_output_tokens", 100);
     expect(added.ok && JSON.parse(added.body).max_output_tokens).toBe(100);

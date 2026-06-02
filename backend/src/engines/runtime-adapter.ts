@@ -1,7 +1,6 @@
 import type { EngineAdapter, EngineRunContext } from "./types";
 import { composeTurnPrompt } from "./types";
 import { acquireThreadSandbox } from "./thread-sandbox";
-import { checkoutPullRequestResources, prepareRepos } from "./repo-prep";
 import {
   prepareRuntimeProviderBridge,
   type RuntimeProviderBridgeLease,
@@ -27,14 +26,8 @@ import {
   type RuntimeMode,
   type RuntimeThreadSnapshot,
 } from "./runtime-orchestration";
-import {
-  composeSecretEnv,
-  materializeSecretInjection,
-  PROVIDER_SECRET_NAMES,
-  recordSecretsInjected,
-} from "../secrets/inject";
-import { createSecretRedactor } from "../secrets/redact";
 import { providerGatewayWired } from "../provider-gateway/sandbox-config";
+import { createSecretRedactor } from "../secrets/redact";
 import {
   sandboxProviderKind,
 } from "../sandboxes/provider";
@@ -45,7 +38,6 @@ import {
   establishProviderSession,
   providerSessionStartedEvent,
 } from "./provider-turn";
-import { materializeRunInputs } from "../uploads/materialize";
 import {
   restartRuntimeEnvironment,
   RUNTIME_CUBE_WARM_POOL_NAME,
@@ -57,6 +49,7 @@ import {
 import { createNoProgressWatchdog, NoProgressError } from "./turn-no-progress";
 import { T3_SESSION_GENERATION, t3ProviderDrivers } from "./t3-provider-driver";
 import { operatorEnv } from "./runtime-env";
+import { prepareSandboxTurn } from "./sandbox-turn-preparation";
 
 const RUNTIME_POLL_INTERVAL_MS = 125;
 // Codex subscription writes its per-run relay config into the sandbox's T3
@@ -157,23 +150,6 @@ export function configuredRuntimeMode(
     );
   }
   return mode;
-}
-
-async function resolveWorkspaceRoot(
-  ctx: EngineRunContext,
-  sandbox: Awaited<ReturnType<typeof acquireThreadSandbox>>["sandbox"],
-): Promise<string> {
-  const result = await sandbox.process.executeCommand(
-    'mkdir -p "$HOME/work" && cd "$HOME/work" && pwd -P',
-    undefined,
-    undefined,
-    10,
-  );
-  const workdir = result.result?.trim();
-  if ((result.exitCode ?? 1) !== 0 || !workdir?.startsWith("/")) {
-    throw new Error(`Run ${ctx.runId} could not resolve its sandbox workspace`);
-  }
-  return workdir;
 }
 
 async function readThreadSnapshot(
@@ -315,65 +291,27 @@ export function makeRuntimeAdapter(engine: RuntimeEngineId, driver: ProviderDriv
         throw new Error("Engine requires a configured provider gateway");
       }
       const startedAt = Date.now();
-      const secretInjection = await composeSecretEnv(ctx, { excludeNames: PROVIDER_SECRET_NAMES });
-      const redact = createSecretRedactor(secretInjection.redactionValues);
-      // The "t3.*" timing stage names are frozen VALUES: they are stored in the
-      // run-timing ledger and pinned by the hosted-cutover canary.
-      const endSandbox = ctx.timing?.begin("t3.sandbox_acquire");
-      const lease = await acquireThreadSandbox(ctx, {
+      await ctx.emit({
+        kind: "task",
+        label: "Preparing runtime and integrations…",
+        chip: `runtime:${engine}`,
+      });
+      const prepared = await prepareSandboxTurn(ctx, {
         snapshot: runtimeRunSnapshot(),
         chip: `runtime:${engine}`,
         warmPool: RUNTIME_CUBE_WARM_POOL_NAME,
         labels: { [RUNTIME_GENERATION_LABEL]: RUNTIME_GENERATION },
         requiredLabels: { [RUNTIME_GENERATION_LABEL]: RUNTIME_GENERATION },
+        // Frozen timing prefix: hosted cutover canaries read these values.
+        timingPrefix: "t3",
+        async prepareProvider(sandbox, workdir) {
+          return await prepareRuntimeProviderBridge(sandbox, ctx, engine, workdir);
+        },
       });
-      endSandbox?.();
-      const { sandbox } = lease;
-      let providerBridgeLease: RuntimeProviderBridgeLease | undefined;
+      const { sandbox, workdir, redact } = prepared;
+      const providerBridgeLease: RuntimeProviderBridgeLease = prepared.providerState;
 
       try {
-        await ctx.emit({
-          kind: "task",
-          label: "Preparing runtime and integrations…",
-          chip: `runtime:${engine}`,
-        });
-        const endPrepare = ctx.timing?.begin("t3.prepare");
-        const prepareStage = async <T>(stage: string, operation: () => Promise<T>): Promise<T> => {
-          const end = ctx.timing?.begin(`t3.prepare.${stage}`);
-          try {
-            return await operation();
-          } finally {
-            end?.();
-          }
-        };
-        const workdir = await prepareStage("workspace_root", () =>
-          resolveWorkspaceRoot(ctx, sandbox),
-        );
-        // Compatibility-mode secrets land BEFORE the parallel stages:
-        // provider_bridge may launch (or restart) the T3 environment, whose tool
-        // shells source the dotenv. Gateway-only mode is a no-op here.
-        await prepareStage("secrets", () =>
-          materializeSecretInjection(
-            (command) => sandbox.process.executeCommand(command, undefined, undefined, 30),
-            secretInjection,
-          ),
-        );
-        await Promise.all([
-          prepareStage("provider_bridge", async () => {
-            providerBridgeLease = await prepareRuntimeProviderBridge(sandbox, ctx, engine, workdir);
-          }),
-          prepareStage("repos", async () => {
-            await prepareRepos(sandbox, workdir, ctx);
-            await checkoutPullRequestResources(
-              sandbox,
-              workdir,
-              ctx.resolvedResources ?? [],
-              ctx,
-            );
-          }),
-          prepareStage("inputs", () => materializeRunInputs(sandbox, ctx.inputFiles)),
-        ]);
-        await prepareStage("secrets_marker", () => recordSecretsInjected(ctx, secretInjection));
         // Codex subscription patches its per-run relay config into the sandbox's
         // T3 settings.json above (provider_bridge). T3 only applies settings via
         // an asynchronous settings-watch reconcile, so a turn dispatched before
@@ -382,7 +320,8 @@ export function makeRuntimeAdapter(engine: RuntimeEngineId, driver: ProviderDriv
         // Scoped to codex; opencode/claude do not patch settings and their paths
         // stay unchanged. The no-first-activity watchdog below remains the net.
         if (providerBridgeLease?.authPath === "subscription") {
-          await prepareStage("runtime_barrier", async () => {
+          const endBarrier = ctx.timing?.begin("t3.prepare.runtime_barrier");
+          try {
             // (B) Barrier: wait for the reconcile to publish the subscription
             // (relay-backed) codex instance into its status cache. Content, not
             // mtime: health refreshes rewrite the cache for the legacy instance
@@ -403,9 +342,10 @@ export function makeRuntimeAdapter(engine: RuntimeEngineId, driver: ProviderDriv
             ) {
               throw new Error("Codex runtime did not become ready after restart");
             }
-          });
+          } finally {
+            endBarrier?.();
+          }
         }
-        endPrepare?.();
 
         const endShell = ctx.timing?.begin("t3.shell");
         const shell = await requestRuntimeEnvironment<RuntimeShellSnapshot>(
@@ -514,7 +454,7 @@ export function makeRuntimeAdapter(engine: RuntimeEngineId, driver: ProviderDriv
         }
       } finally {
         await providerBridgeLease?.close().catch(() => {});
-        if (lease.releaseAfterRun) await sandbox.delete().catch(() => {});
+        await prepared.close();
       }
     },
   };

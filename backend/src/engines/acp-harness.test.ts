@@ -66,8 +66,19 @@ describe("harness registry resolves control adapters by provider", () => {
     expect(resolveHarness("claude")?.provider).toBe(claudeHarness.provider);
     expect(resolveHarness("claude-sdk")?.provider).toBe(claudeHarness.provider);
     expect(resolveHarness("codex")?.provider).toBe(codexHarness.provider);
+    expect(resolveHarness("pi")?.provider).toBe("pi");
     expect(resolveHarness("claude")?.capabilities()).toEqual(claudeHarness.capabilities());
     expect(resolveHarness("codex")?.capabilities()).toEqual(codexHarness.capabilities());
+  });
+
+  test("Pi recovery route is registered but does not claim restart reconcile", async () => {
+    const harness = resolveHarness("pi");
+    expect(harness?.capabilities().authoritativeHistory).toBe(false);
+    await expect(harness?.reconcile({
+      provider: "pi",
+      sessionId: "/sessions/pi.jsonl",
+      sandboxId: "box",
+    })).resolves.toMatchObject({ status: "unsupported_capability", capability: "reconcile" });
   });
   test("an unregistered provider resolves to undefined (e.g. mock/legacy acp)", () => {
     expect(resolveHarness("mock")).toBeUndefined();

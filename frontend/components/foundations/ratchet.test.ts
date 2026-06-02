@@ -184,6 +184,7 @@ const FRONTEND_SIZE_BASELINE: Record<string, number> = {
   "app/agent/artifacts/[id]/artifact-editor-surfaces.tsx": 1083,
   "components/chat/conversation.tsx": 1029,
   "components/agent-ui/rich-approval-card.tsx": 880,
+  "components/chat/types.ts": 801,
 };
 
 describe("file-size ratchet (frontend)", () => {

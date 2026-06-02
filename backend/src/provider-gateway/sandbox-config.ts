@@ -74,7 +74,7 @@ const toolThreadTokens = new ThreadTokenMemo();
 
 function mintResidentThreadToken(
   ctx: EngineRunContext,
-  engine: "claude" | "opencode",
+  engine: "claude" | "opencode" | "pi",
   provider: ProviderId,
 ): string | null {
   const config = providerGatewayConfig();
@@ -104,7 +104,7 @@ function mintResidentThreadToken(
   );
 }
 
-function endpoint(provider: ProviderId, versioned: boolean): string | null {
+export function providerGatewayEndpoint(provider: ProviderId, versioned: boolean): string | null {
   const config = providerGatewayConfig();
   if (!config) return null;
   return `${config.publicUrl}${PROVIDER_GATEWAY_PATH}/${provider}${versioned ? "/v1" : ""}`;
@@ -112,7 +112,7 @@ function endpoint(provider: ProviderId, versioned: boolean): string | null {
 
 function toolGatewayDescriptor(
   ctx: EngineRunContext,
-  engine: "claude" | "codex",
+  engine: "claude" | "codex" | "pi",
 ): ToolGatewayCapabilityDescriptor | null {
   const config = toolGatewayConfig();
   const orgId = ctx.orgId?.trim();
@@ -160,6 +160,30 @@ export function codexToolGatewayDescriptor(
   return toolGatewayDescriptor(ctx, "codex");
 }
 
+/** Backend-owned native MCP configuration for the Pi RPC process. The bearer
+ * is passed only through Pi's MCP config file, never through model-visible text. */
+export function piToolGatewayDescriptor(
+  ctx: EngineRunContext,
+): ToolGatewayCapabilityDescriptor | null {
+  return toolGatewayDescriptor(ctx, "pi");
+}
+
+export interface PiProviderGatewayCapability {
+  readonly provider: ProviderId;
+  readonly baseUrl: string;
+  readonly bearerToken: string;
+}
+
+/** Thread-scoped provider capability for a resident Pi process. */
+export function piProviderGatewayCapability(
+  ctx: EngineRunContext,
+  provider: ProviderId,
+): PiProviderGatewayCapability | null {
+  const baseUrl = providerGatewayEndpoint(provider, provider !== "anthropic");
+  const bearerToken = mintResidentThreadToken(ctx, "pi", provider);
+  return baseUrl && bearerToken ? { provider, baseUrl, bearerToken } : null;
+}
+
 function claudeMcpConfig(descriptor: ToolGatewayCapabilityDescriptor | null): string {
   return JSON.stringify({
     mcpServers: descriptor
@@ -189,7 +213,7 @@ export function providerGatewayEnv(
 /** Stable, non-secret Claude process configuration. Provider capabilities stay
  * in the private helper file and are refreshed per run. */
 export function claudeProviderGatewayEnvironment(model?: string): Record<string, string> {
-  const baseUrl = endpoint("anthropic", false);
+  const baseUrl = providerGatewayEndpoint("anthropic", false);
   if (!baseUrl) return {};
   const selectedModel = model?.trim() || "claude-opus-5";
   // Claude Code's documented `[1m]` selector is local model metadata only; it
@@ -224,9 +248,9 @@ export function opencodeProviderGatewayOptions(
   // OpenCode passes provider options directly to the AI SDK; provider baseURLs
   // include `/v1` for the SDK-specific endpoint suffixes. Claude Code's
   // ANTHROPIC_BASE_URL seam differs and appends `/v1/messages` itself.
-  const anthropicBase = endpoint("anthropic", true);
-  const openaiBase = endpoint("openai", true);
-  const openrouterBase = endpoint("openrouter", true);
+  const anthropicBase = providerGatewayEndpoint("anthropic", true);
+  const openaiBase = providerGatewayEndpoint("openai", true);
+  const openrouterBase = providerGatewayEndpoint("openrouter", true);
   return {
     ...(anthropicToken && anthropicBase
       ? { anthropic: { baseURL: anthropicBase, apiKey: anthropicToken } }
@@ -261,7 +285,7 @@ export function codexProviderConfigToml(
   model: string,
   toolGateway?: { readonly url: string; readonly bearerToken: string },
 ): string | null {
-  const baseUrl = endpoint("openai", true);
+  const baseUrl = providerGatewayEndpoint("openai", true);
   if (!baseUrl) return null;
   return [
     `model = ${JSON.stringify(model)}`,
