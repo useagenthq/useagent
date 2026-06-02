@@ -72,7 +72,10 @@ jobs:
     timeout-minutes: 10
     services:
       postgres:
-        image: postgres:16
+        # Migrations create the vector extension, so plain postgres:16 cannot
+        # represent the production schema. Pin the upstream pgvector image to
+        # the same Postgres major instead of letting CI fail during bootstrap.
+        image: pgvector/pgvector:0.8.6-pg16-bookworm
         # Passwordless `postgres` superuser so the test defaults connect verbatim
         # (test/prepare-db.ts → postgres://postgres@localhost:5432/postgres,
         #  test/preload.ts → .../skynet_test). No env override needed.
