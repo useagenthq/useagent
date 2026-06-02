@@ -30,12 +30,14 @@ function toWorkspaceRun(value: unknown): WorkspaceRun | null {
   if (!value || typeof value !== "object") return null;
   const r = value as Record<string, unknown>;
   if (typeof r.id !== "string") return null;
+  const status = toRunStatus(r.status);
+  if (!status) return null;
   return {
     id: r.id,
     prompt: typeof r.prompt === "string" ? r.prompt : "",
     model: typeof r.model === "string" ? r.model : null,
     repo: primaryRepo(r),
-    status: toRunStatus(r.status),
+    status,
     duration_ms: typeof r.duration_ms === "number" ? r.duration_ms : null,
     created_at: (r.created_at as string | number) ?? 0,
   };

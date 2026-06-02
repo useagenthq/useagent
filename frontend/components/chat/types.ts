@@ -5,7 +5,18 @@
 // backend serializer and this UI cannot drift. The view types + parsers below are
 // frontend-only and stay local.
 
-import type {
+import {
+  decodeApiRun,
+  type ApiRun,
+  type ApiStep,
+  type EngineId,
+  type MemoryScope,
+  type RunStatus,
+  type RunUpload,
+  type StepKind,
+} from "@useagent/agent-client/wire";
+
+export type {
   ApiRun,
   ApiStep,
   EngineId,
@@ -13,9 +24,7 @@ import type {
   RunStatus,
   RunUpload,
   StepKind,
-} from "@useagent/agent-client/wire";
-
-export type { ApiRun, ApiStep, EngineId, MemoryScope, RunStatus, RunUpload, StepKind };
+};
 
 /** `GET /api/runs/:id?thread=1` → the whole conversation, oldest → newest. */
 export interface ThreadResponse {
@@ -30,8 +39,11 @@ export interface ThreadResponse {
 export function toThread(data: unknown): ApiRun[] {
   if (data && typeof data === "object") {
     const thread = (data as { thread?: unknown }).thread;
-    if (Array.isArray(thread)) return thread as ApiRun[];
-    if (typeof (data as ApiRun).id === "string") return [data as ApiRun];
+    if (Array.isArray(thread)) {
+      return thread.map(decodeApiRun).filter((run): run is ApiRun => run !== null);
+    }
+    const run = decodeApiRun(data);
+    if (run) return [run];
   }
   return [];
 }

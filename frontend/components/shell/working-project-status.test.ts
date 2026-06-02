@@ -12,10 +12,16 @@ import {
 const run = (overrides: Partial<SidebarRun>): SidebarRun => ({
   id: "run-1",
   prompt: "",
+  model: "openai/gpt-5.6-luna",
   status: "running",
   summary: null,
   duration_ms: null,
   engine: "codex",
+  repo: null,
+  repos: [],
+  repo_specs: [],
+  created_at: "2026-08-17T00:00:00.000Z",
+  updated_at: "2026-08-17T00:00:00.000Z",
   ...overrides,
 });
 
@@ -31,7 +37,7 @@ describe("sidebar live status helpers", () => {
       ),
     ).toEqual([]);
     expect(explicitRunRepos(run({ repo: "acme/new-skynet" }))).toEqual(["acme/new-skynet"]);
-    expect(explicitRunRepos(run({ repos: ["acme/a", 123, "", "acme/b"] }))).toEqual([
+    expect(explicitRunRepos(run({ repos: ["acme/a", 123, "", "acme/b"] as string[] }))).toEqual([
       "acme/a",
       "acme/b",
     ]);

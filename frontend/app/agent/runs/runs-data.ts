@@ -14,26 +14,19 @@
 
 import type { DotTone } from '@/components/shared/status-dot';
 import { backendFetch } from '@/lib/backend-fetch';
+import {
+  decodeApiRunSummary,
+  type ApiRunSummary,
+  type RunStatus,
+} from '@useagent/agent-client/wire';
 
-export interface RunStep {
-  kind: string;
-  label: string;
-  chip: string | null;
-  code_json: string | null;
-}
+export type Run = ApiRunSummary;
 
-export interface Run {
-  id: string;
-  prompt: string;
-  status: string;
-  summary: string | null;
-  duration_ms: number | null;
-  engine: string;
-  /** Primary repository (backend mirror of repos[0]); null for bare workdirs. */
-  repo: string | null;
-  /** ISO 8601 creation time — the started-at sort key + relative-time display. */
-  created_at: string;
-  steps?: RunStep[];
+function decodeRunsEnvelope(value: unknown): Run[] {
+  if (!value || typeof value !== 'object') return [];
+  const rows = (value as { runs?: unknown }).runs;
+  if (!Array.isArray(rows)) return [];
+  return rows.map(decodeApiRunSummary).filter((run): run is Run => run !== null);
 }
 
 export async function fetchRuns(signal?: AbortSignal): Promise<Run[]> {
@@ -42,8 +35,7 @@ export async function fetchRuns(signal?: AbortSignal): Promise<Run[]> {
     signal,
   });
   if (!res.ok) throw new Error(`runs request failed: ${res.status}`);
-  const data = (await res.json()) as { runs?: Run[] };
-  return data.runs ?? [];
+  return decodeRunsEnvelope(await res.json());
 }
 
 let sidebarRequest: Promise<Run[]> | null = null;
@@ -54,8 +46,7 @@ async function fetchSidebarSnapshot(): Promise<Run[]> {
     cache: 'no-store',
   });
   if (!res.ok) throw new Error(`runs request failed: ${res.status}`);
-  const data = (await res.json()) as { runs?: Run[] };
-  return data.runs ?? [];
+  return decodeRunsEnvelope(await res.json());
 }
 
 async function fetchFreshSidebarRuns(): Promise<Run[]> {
@@ -107,16 +98,9 @@ export const TONE_TO_DOT: Record<
   idle: { tone: 'neutral', hollow: true },
 };
 
-export function statusTone(status: string): RunTone {
-  const s = status.toLowerCase();
-  if (['running', 'active', 'in_progress', 'live', 'streaming'].includes(s)) {
-    return 'live';
-  }
-  if (['completed', 'succeeded', 'success', 'done'].includes(s)) {
-    return 'success';
-  }
-  if (['failed', 'error', 'errored', 'cancelled', 'canceled'].includes(s)) {
-    return 'error';
-  }
+export function statusTone(status: RunStatus): RunTone {
+  if (status === 'running') return 'live';
+  if (status === 'completed') return 'success';
+  if (status === 'failed') return 'error';
   return 'idle';
 }
