@@ -211,6 +211,9 @@ describe("T3 run adapter gate", () => {
     expect(restartIdx).toBeGreaterThan(barrierIdx);
     expect(establishIdx).toBeGreaterThan(restartIdx);
     expect(steerIdx).toBeGreaterThan(establishIdx);
+    // A ready fast path leaves the barrier and continues to session start; it
+    // must not return from the whole engine turn before dispatch.
+    expect(source.slice(barrierIdx, restartIdx)).not.toContain("return;");
   });
 
   test("requires durable session persistence before T3 steering", () => {
