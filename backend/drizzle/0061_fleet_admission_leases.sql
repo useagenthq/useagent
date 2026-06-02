@@ -31,6 +31,9 @@ CREATE TABLE "sandbox_leases" (
 	"reserved_memory_mib" integer NOT NULL,
 	"tier" text DEFAULT 'standard' NOT NULL,
 	"state" text DEFAULT 'active' NOT NULL,
+	"gc_attempt_count" integer DEFAULT 0 NOT NULL,
+	"next_gc_attempt_at" timestamp with time zone,
+	"gc_last_error" text,
 	"heartbeat_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"lease_expiry" timestamp with time zone NOT NULL,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
@@ -47,8 +50,10 @@ CREATE INDEX "idx_run_admissions_org_state" ON "run_admissions" USING btree ("or
 --> statement-breakpoint
 CREATE INDEX "idx_sandbox_leases_state_expiry" ON "sandbox_leases" USING btree ("state","lease_expiry");
 --> statement-breakpoint
+CREATE INDEX "idx_sandbox_leases_state_gc_retry" ON "sandbox_leases" USING btree ("state","next_gc_attempt_at");
+--> statement-breakpoint
 CREATE INDEX "idx_sandbox_leases_org_state" ON "sandbox_leases" USING btree ("org_id","state");
 --> statement-breakpoint
 CREATE INDEX "idx_sandbox_leases_run" ON "sandbox_leases" USING btree ("run_id");
 --> statement-breakpoint
-CREATE UNIQUE INDEX "uq_sandbox_leases_active_run" ON "sandbox_leases" USING btree ("run_id") WHERE "state" = 'active';
+CREATE UNIQUE INDEX "uq_sandbox_leases_active_run" ON "sandbox_leases" USING btree ("run_id") WHERE "state" in ('active', 'reclaiming');

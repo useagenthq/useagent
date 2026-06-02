@@ -14,6 +14,7 @@ import type {
   SandboxPtyHandle,
   SandboxSession,
 } from "./provider";
+import type { SandboxInventory } from "@useagent/sandbox-contract";
 
 interface CubeConnectionOptions {
   apiKey?: string;
@@ -418,6 +419,46 @@ class CubeProvider implements SandboxProvider {
       const items = await paginator.nextItems();
       for (const info of items) yield new CubeSandboxHandle(info, this.connection, null);
     }
+  }
+
+  async inventory(): Promise<SandboxInventory> {
+    let activeSandboxes = 0;
+    let pausedSandboxes = 0;
+    for await (const sandbox of this.list()) {
+      if (sandbox.state === "running" || sandbox.state === "started") activeSandboxes += 1;
+      else if (sandbox.state === "paused") pausedSandboxes += 1;
+    }
+
+    const token = process.env.CUBE_OPS_ACCESS_TOKEN?.trim();
+    if (!token) return { activeSandboxes, pausedSandboxes };
+    const base = (process.env.CUBE_OPS_URL?.trim() || "http://127.0.0.1:12088/opsapi/v1")
+      .replace(/\/+$/, "");
+    const response = await fetch(`${base}/nodes`, {
+      headers: { Authorization: `Bearer ${token}` },
+      signal: AbortSignal.timeout(5_000),
+    });
+    if (!response.ok) throw new Error(`Cube node inventory failed: HTTP ${response.status}`);
+    const raw = await response.json();
+    if (!Array.isArray(raw)) throw new Error("Cube node inventory returned a non-array payload");
+    const nodes = raw.map((value) => {
+      const node = value as Record<string, unknown>;
+      const allocatable = node.allocatable as Record<string, unknown> | undefined;
+      return {
+        id: String(node.nodeID ?? ""),
+        ready: node.healthy === true,
+        schedulingDisabled: node.schedulingDisabled === true,
+        allocatableCpuMillicores: Number(allocatable?.cpuMilli ?? 0),
+        allocatableMemoryMib: Number(allocatable?.memoryMB ?? 0),
+      };
+    }).filter((node) => node.id.length > 0);
+    return {
+      nodes,
+      readyNodes: nodes.filter((node) => node.ready && !node.schedulingDisabled).length,
+      allocatableCpuMillicores: nodes.reduce((sum, node) => sum + node.allocatableCpuMillicores, 0),
+      allocatableMemoryMib: nodes.reduce((sum, node) => sum + node.allocatableMemoryMib, 0),
+      activeSandboxes,
+      pausedSandboxes,
+    };
   }
 }
 

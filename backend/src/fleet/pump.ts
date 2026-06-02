@@ -1,4 +1,8 @@
-import { claimNextRun, requeueClaimedCommand } from "../commands/dispatch";
+import {
+  claimNextRun,
+  requeueClaimedCommand,
+  settleCommandForRun,
+} from "../commands/dispatch";
 import { admitClaimedRun } from "./admission";
 
 // ---------------------------------------------------------------------------
@@ -17,6 +21,10 @@ export async function pumpThreadWithGate(
   if (!next) return null;
   const decision = await admitClaimedRun(next);
   if (!decision.admit) {
+    if (decision.decision === "reject_invalid_request") {
+      await settleCommandForRun(next);
+      return null;
+    }
     // No capacity yet — undo the claim so a later pump can retry this run.
     await requeueClaimedCommand(next).catch((err) =>
       console.error(`[fleet] requeue after capacity defer for ${next} failed:`, err),

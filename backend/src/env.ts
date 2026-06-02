@@ -481,8 +481,7 @@ export function connectorEmailConfig(): ConnectorEmailConfig | null {
  *
  * so the box never oversubscribes its declared CPU. `orgMaxActiveSandboxes` (3)
  * leaves headroom for other tenants; `orgMaxQueueDepth` (40) is the durable
- * per-org queue ceiling that returns 429; `maxFanoutTasks` (20) caps one HTTP /
- * CLI / MCP fan-out. Reservation math uses DECLARED sandbox cpu/memory, never
+ * per-org queue ceiling that returns 429. Reservation math uses DECLARED sandbox cpu/memory, never
  * currently-resident RAM.
  */
 export interface WorkloadTierConfig {
@@ -494,7 +493,6 @@ export interface FleetCapacityConfig {
   readonly globalMaxActiveSandboxes: number;
   readonly orgMaxActiveSandboxes: number;
   readonly orgMaxQueueDepth: number;
-  readonly maxFanoutTasks: number;
   readonly maxDispatchConcurrency: number;
   readonly safetyMarginPct: number;
   readonly hostCpuMillicores: number;
@@ -515,7 +513,6 @@ export function fleetCapacityConfig(): FleetCapacityConfig {
     globalMaxActiveSandboxes: fleetInt("FLEET_GLOBAL_MAX_ACTIVE_SANDBOXES", 5),
     orgMaxActiveSandboxes: fleetInt("FLEET_ORG_MAX_ACTIVE_SANDBOXES", 3),
     orgMaxQueueDepth: fleetInt("FLEET_ORG_MAX_QUEUE_DEPTH", 40),
-    maxFanoutTasks: fleetInt("FLEET_MAX_FANOUT_TASKS", 20),
     maxDispatchConcurrency: fleetInt("FLEET_MAX_DISPATCH_CONCURRENCY", 4),
     safetyMarginPct: Math.min(fleetInt("FLEET_SAFETY_MARGIN_PCT", 15), 90),
     hostCpuMillicores: fleetInt("FLEET_HOST_CPU_MILLICORES", 12_000),

@@ -4,8 +4,12 @@ import { db } from "../src/db/client";
 import { acceptRunCommand } from "../src/commands";
 import { acceptRunCancel } from "../src/commands/cancel";
 import { admitClaimedRun } from "../src/fleet/admission";
-import { setProviderInventoryForTest } from "../src/fleet/inventory";
 import {
+  buildCapacityInventory,
+  setProviderInventoryForTest,
+} from "../src/fleet/inventory";
+import {
+  claimExpiredLeases,
   createLease,
   heartbeatLeases,
   reservationSnapshot,
@@ -13,10 +17,12 @@ import {
 import {
   countOrgOpenAdmissions,
   getAdmission,
+  listQueuedAdmissions,
   markAdmissionLeased,
   syncTerminalAdmissions,
 } from "../src/fleet/admission-repo";
 import {
+  reconcileExpiredLease,
   reconcileFleetOnBoot,
   reconcileFleetOnce,
   startFleetReconciler,
@@ -37,7 +43,6 @@ const PRELOAD_FLEET: Record<string, string | undefined> = {
   FLEET_GLOBAL_MAX_ACTIVE_SANDBOXES: process.env.FLEET_GLOBAL_MAX_ACTIVE_SANDBOXES,
   FLEET_ORG_MAX_ACTIVE_SANDBOXES: process.env.FLEET_ORG_MAX_ACTIVE_SANDBOXES,
   FLEET_ORG_MAX_QUEUE_DEPTH: process.env.FLEET_ORG_MAX_QUEUE_DEPTH,
-  FLEET_MAX_FANOUT_TASKS: process.env.FLEET_MAX_FANOUT_TASKS,
 };
 
 const testOrgs = new Set<string>();
@@ -66,12 +71,16 @@ function mockRun(id: string, threadId = id) {
   };
 }
 
-async function accept(orgId: string, id = crypto.randomUUID()): Promise<string> {
+async function accept(
+  orgId: string,
+  id = crypto.randomUUID(),
+  threadId = id,
+): Promise<string> {
   await acceptRunCommand({
     idempotencyKey: uid("k"),
     orgId,
     actorId: null,
-    run: mockRun(id),
+    run: mockRun(id, threadId),
   });
   return id;
 }
@@ -108,6 +117,8 @@ afterEach(async () => {
       update commands set state = 'completed', updated_at = now()
       where org_id = ${org} and kind = 'run.create' and state in ('queued', 'dispatched')`);
     await db.execute(sql`delete from sandbox_leases where org_id = ${org}`);
+    await db.execute(sql`delete from run_admissions where org_id = ${org}`);
+    await db.execute(sql`update runs set sandbox_id = null where org_id = ${org}`);
   }
   // Never leave the background loop running into the next test/file — the drain
   // test starts it explicitly for its own body.
@@ -237,6 +248,70 @@ describe("durable admission — restart + crash recovery", () => {
     expect(await readExpiry()).toBeGreaterThan(before);
   });
 
+  test("expiry claim excludes live actors inside the durable claim", async () => {
+    const orgId = track(`org-${uid("fence")}`);
+    const runId = await accept(orgId);
+    await createLease({
+      runId,
+      threadId: runId,
+      orgId,
+      provider: "mock",
+      tier: "standard",
+      cpuMillicores: 2_000,
+      memoryMib: 8_192,
+      leaseTtlMs: -1,
+    });
+    expect(await claimExpiredLeases(10, [runId])).toEqual([]);
+    expect((await reservationSnapshot(orgId)).globalActiveSandboxes).toBe(1);
+  });
+
+  test("retained and warm sandboxes remain part of capacity", async () => {
+    const orgId = track(`org-${uid("resident")}`);
+    const runId = await accept(orgId);
+    const leaseId = await createLease({
+      runId,
+      threadId: runId,
+      orgId,
+      provider: "mock",
+      tier: "standard",
+      cpuMillicores: 2_000,
+      memoryMib: 8_192,
+      leaseTtlMs: 10_000,
+    });
+    await db.execute(sql`update runs set sandbox_id = 'retained-box' where id = ${runId}`);
+    await db.execute(sql`update sandbox_leases set sandbox_id = 'retained-box', state = 'released' where id = ${leaseId}`);
+    setProviderInventoryForTest({ activeSandboxes: 1, warmPoolReady: 3 });
+    const inventory = await buildCapacityInventory(orgId);
+    expect(inventory.orgActiveSandboxes).toBe(1);
+    expect(inventory.globalActiveSandboxes).toBe(3);
+  });
+
+  test("a follow-up reusing its thread sandbox does not double-count capacity", async () => {
+    process.env.FLEET_GLOBAL_MAX_ACTIVE_SANDBOXES = "1";
+    process.env.FLEET_ORG_MAX_ACTIVE_SANDBOXES = "1";
+    const orgId = track(`org-${uid("reuse")}`);
+    const threadId = crypto.randomUUID();
+    const firstRun = await accept(orgId, crypto.randomUUID(), threadId);
+    const leaseId = await createLease({
+      runId: firstRun,
+      threadId,
+      orgId,
+      provider: "mock",
+      tier: "standard",
+      cpuMillicores: 2_000,
+      memoryMib: 8_192,
+      leaseTtlMs: 10_000,
+      sandboxId: "shared-box",
+    });
+    await db.execute(sql`update runs set sandbox_id = 'shared-box', status = 'completed' where id = ${firstRun}`);
+    await db.execute(sql`update sandbox_leases set state = 'released' where id = ${leaseId}`);
+    setProviderInventoryForTest({ activeSandboxes: 1 });
+
+    const followUp = await accept(orgId, crypto.randomUUID(), threadId);
+    expect((await admitClaimedRun(followUp)).admit).toBe(true);
+    expect((await reservationSnapshot(orgId)).globalActiveSandboxes).toBe(1);
+  });
+
   test("a dead worker's lease expires and reconciles; capacity is reclaimed and the run settles", async () => {
     stopFleetReconciler();
     const orgId = track(`org-${uid("lease")}`);
@@ -310,6 +385,86 @@ describe("durable admission — cancellation + fan-out ceiling", () => {
     });
     expect(over.status).toBe(429);
     expect(over.body.error).toBe("fleet_queue_full");
+  });
+
+  test("concurrent accepts cannot race past the per-org queue ceiling", async () => {
+    process.env.FLEET_GLOBAL_MAX_ACTIVE_SANDBOXES = "0";
+    process.env.FLEET_ORG_MAX_QUEUE_DEPTH = "3";
+    const orgId = track(`org-${uid("atomic-ceiling")}`);
+    const results = await Promise.allSettled(
+      Array.from({ length: 12 }, () => accept(orgId)),
+    );
+    expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(3);
+    expect(await countOrgOpenAdmissions(orgId)).toBe(3);
+  });
+
+  test("queued scans round-robin across orgs before taking a tenant's second item", async () => {
+    const orgA = track(`org-${uid("fair-a")}`);
+    const orgB = track(`org-${uid("fair-b")}`);
+    await accept(orgA);
+    await accept(orgA);
+    await accept(orgB);
+    const firstTwo = await listQueuedAdmissions(2);
+    expect(new Set(firstTwo.map((item) => item.orgId))).toEqual(new Set([orgA, orgB]));
+  });
+
+  test("invalid resource requests fail terminally instead of queueing forever", async () => {
+    const previous = process.env.FLEET_SANDBOX_CPU_MILLICORES;
+    process.env.FLEET_SANDBOX_CPU_MILLICORES = "999999";
+    const orgId = track(`org-${uid("invalid-resource")}`);
+    const runId = await accept(orgId);
+    await pumpThread(runId);
+    expect((await getRun(runId))?.status).toBe("failed");
+    expect((await getAdmission(runId))?.state).toBe("failed");
+    if (previous === undefined) delete process.env.FLEET_SANDBOX_CPU_MILLICORES;
+    else process.env.FLEET_SANDBOX_CPU_MILLICORES = previous;
+  });
+
+  test("provider GC failure keeps reclaiming capacity reserved and schedules retry", async () => {
+    const orgId = track(`org-${uid("gc-retry")}`);
+    const runId = await accept(orgId);
+    const leaseId = await createLease({
+      runId,
+      threadId: runId,
+      orgId,
+      provider: "mock",
+      tier: "standard",
+      cpuMillicores: 2_000,
+      memoryMib: 8_192,
+      leaseTtlMs: -1,
+    });
+    await db.execute(sql`update sandbox_leases set sandbox_id = 'box-1' where id = ${leaseId}`);
+    const [lease] = await claimExpiredLeases(1);
+    await reconcileExpiredLease(lease!, async () => { throw new Error("provider down"); });
+    expect((await reservationSnapshot(orgId)).globalActiveSandboxes).toBe(1);
+    const [row] = await db.execute(sql`
+      select state, next_gc_attempt_at, gc_last_error from sandbox_leases where id = ${leaseId}`);
+    expect(row?.state).toBe("reclaiming");
+    expect(row?.next_gc_attempt_at).not.toBeNull();
+    expect(row?.gc_last_error).toBe("provider down");
+  });
+
+  test("confirmed provider GC clears the retained thread mapping before reclaiming capacity", async () => {
+    const orgId = track(`org-${uid("gc-success")}`);
+    const threadId = crypto.randomUUID();
+    const runId = await accept(orgId, crypto.randomUUID(), threadId);
+    const leaseId = await createLease({
+      runId,
+      threadId,
+      orgId,
+      provider: "mock",
+      tier: "standard",
+      cpuMillicores: 2_000,
+      memoryMib: 8_192,
+      leaseTtlMs: -1,
+      sandboxId: "box-success",
+    });
+    await db.execute(sql`update runs set sandbox_id = 'box-success', status = 'running' where id = ${runId}`);
+    await markAdmissionLeased(runId, leaseId);
+    const [lease] = await claimExpiredLeases(1);
+    await reconcileExpiredLease(lease!, async () => {});
+    expect((await reservationSnapshot(orgId)).globalActiveSandboxes).toBe(0);
+    expect((await getRun(runId))?.sandboxId).toBeNull();
   });
 });
 

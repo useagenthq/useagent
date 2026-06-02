@@ -1,14 +1,10 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import { evaluateAdmission } from "../src/fleet/capacity-policy";
 import {
   queueReasonForDecision,
   type AdmissionRequest,
   type CapacityInventory,
 } from "../src/fleet/types";
-import {
-  assertFanoutWithinLimit,
-  FleetFanoutLimitError,
-} from "../src/fleet/intake";
 import { FakeInventoryProvider } from "../src/fleet/fake-provider.test-support";
 import type { FleetCapacityConfig } from "../src/env";
 
@@ -22,7 +18,6 @@ function makeConfig(over: Partial<FleetCapacityConfig> = {}): FleetCapacityConfi
     globalMaxActiveSandboxes: 5,
     orgMaxActiveSandboxes: 3,
     orgMaxQueueDepth: 40,
-    maxFanoutTasks: 20,
     maxDispatchConcurrency: 4,
     safetyMarginPct: 15,
     hostCpuMillicores: 12_000,
@@ -151,6 +146,21 @@ describe("capacity policy — optional provider allocatable ceiling", () => {
     };
     expect(evaluateAdmission(REQUEST, inv, cfg).decision).toBe("admit");
   });
+
+  test("requires one Cube node to fit the whole request, not aggregate headroom", () => {
+    const inv: CapacityInventory = {
+      ...EMPTY,
+      providerAllocatableCpuMillicores: 4_000,
+      providerAllocatableMemoryMib: 16_384,
+      providerNodes: [
+        { id: "a", ready: true, allocatableCpuMillicores: 1_000, allocatableMemoryMib: 16_384 },
+        { id: "b", ready: true, allocatableCpuMillicores: 3_000, allocatableMemoryMib: 4_096 },
+      ],
+    };
+    expect(evaluateAdmission(REQUEST, inv, cfg).decision).toBe(
+      "queue_provider_capacity",
+    );
+  });
 });
 
 describe("queueReasonForDecision mapping", () => {
@@ -178,19 +188,5 @@ describe("provider test double implements the inventory contract", () => {
     await (await provider.get("fake-1")).delete();
     expect(provider.deleted).toEqual(["fake-1"]);
     expect(await provider.inventory()).toMatchObject({ readyNodes: 3, warmPoolReady: 1 });
-  });
-});
-
-describe("server-side fan-out guard", () => {
-  const original = process.env.FLEET_MAX_FANOUT_TASKS;
-  afterEach(() => {
-    if (original === undefined) delete process.env.FLEET_MAX_FANOUT_TASKS;
-    else process.env.FLEET_MAX_FANOUT_TASKS = original;
-  });
-
-  test("throws past the configured task count", () => {
-    process.env.FLEET_MAX_FANOUT_TASKS = "20";
-    expect(() => assertFanoutWithinLimit(20)).not.toThrow();
-    expect(() => assertFanoutWithinLimit(21)).toThrow(FleetFanoutLimitError);
   });
 });

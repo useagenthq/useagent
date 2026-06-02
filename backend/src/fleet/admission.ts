@@ -15,7 +15,7 @@ import {
   queueReasonForDecision,
   type AdmissionDecisionKind,
 } from "./types";
-import { getRun } from "../runs/repo";
+import { completeRun, getRun, getThreadSandboxForOrg } from "../runs/repo";
 
 // ---------------------------------------------------------------------------
 // The capacity GATE — the single seam the worker consults before spawning a
@@ -56,7 +56,8 @@ export async function admitClaimedRun(runId: string): Promise<AdmitResult> {
       return { admit: false, leaseId: null, decision: "reject_invalid_request" };
     }
 
-    const inventory = await buildCapacityInventory(adm.orgId, tx);
+    const reusableSandboxId = await getThreadSandboxForOrg(adm.orgId, adm.threadId, tx);
+    const inventory = await buildCapacityInventory(adm.orgId, tx, reusableSandboxId);
     const decision = evaluateAdmission(
       {
         orgId: adm.orgId,
@@ -81,6 +82,7 @@ export async function admitClaimedRun(runId: string): Promise<AdmitResult> {
           cpuMillicores: adm.cpuMillicores,
           memoryMib: adm.memoryMib,
           leaseTtlMs: config.leaseTtlMs,
+          sandboxId: reusableSandboxId,
         },
         tx,
       );
@@ -88,6 +90,11 @@ export async function admitClaimedRun(runId: string): Promise<AdmitResult> {
       return { admit: true, leaseId, decision: "admit" };
     }
 
+    if (decision.decision === "reject_invalid_request") {
+      await completeRun(runId, "failed", `Invalid resource request: ${decision.reason}`, 0, tx);
+      await setAdmissionState(runId, "failed", tx);
+      return { admit: false, leaseId: null, decision: decision.decision };
+    }
     const reason = queueReasonForDecision(decision.decision);
     if (reason) await markAdmissionQueued(runId, reason, {}, tx);
     return { admit: false, leaseId: null, decision: decision.decision };

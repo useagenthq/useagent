@@ -3,7 +3,8 @@ import {
   sandboxProvider,
   sandboxProviderApiKey,
 } from "../sandboxes/provider";
-import { completeRun, getRun } from "../runs/repo";
+import { clearThreadSandbox, getRun } from "../runs/repo";
+import { finalizeRun } from "../runs/finalize";
 import { settleCommandForRun } from "../commands/dispatch";
 import { liveActorRunIds, pumpThread } from "../worker";
 import { selectAdmittableThreads } from "./admission";
@@ -16,8 +17,11 @@ import {
 import {
   claimExpiredLeases,
   heartbeatLeases,
-  releaseAllActiveLeasesOnBoot,
-  type ExpiredLease,
+  releaseEmptyActiveLeasesOnBoot,
+  releaseReclaimedLease,
+  restoreLiveLease,
+  scheduleLeaseGcRetry,
+  type ReclaimingLease,
 } from "./lease-repo";
 import { ensureProviderInventory } from "./inventory";
 
@@ -30,7 +34,7 @@ import { ensureProviderInventory } from "./inventory";
 //   2. Heartbeat leases of live actors (extend expiry) — the crash detector.
 //   3. Claim expired leases (dead workers), reconcile each against the provider
 //      (delete the orphaned sandbox), and terminally fail the orphaned run so it
-//      never lingers. Capacity is reclaimed the moment the lease flips.
+//      never lingers. Capacity is reclaimed only after provider deletion succeeds.
 //   4. Admit queued work up to freed capacity by pumping the head-of-thread runs;
 //      the capacity gate (pumpThread -> admitClaimedRun) is the authority, so an
 //      over-broad pump list is harmless.
@@ -58,25 +62,37 @@ export interface FleetReconcileSummary {
   readonly pumped: number;
 }
 
-async function deleteSandboxBestEffort(sandboxId: string): Promise<void> {
+async function deleteSandbox(sandboxId: string): Promise<void> {
   const apiKey = sandboxProviderApiKey();
-  if (apiKey === undefined) return;
-  try {
-    const provider = sandboxProvider(apiKey);
-    const sandbox = await provider.get(sandboxId);
-    await sandbox.delete();
-  } catch (err) {
-    console.warn(
-      `[fleet] orphan sandbox ${sandboxId} delete failed:`,
-      err instanceof Error ? err.message : err,
-    );
-  }
+  if (apiKey === undefined) throw new Error("sandbox provider is not configured");
+  const provider = sandboxProvider(apiKey);
+  const sandbox = await provider.get(sandboxId);
+  await sandbox.delete();
 }
 
-/** Reconcile ONE expired lease: GC its sandbox, then terminally fail the run if
- *  it is still non-terminal (its actor is gone). A terminal run just syncs. */
-async function reconcileExpiredLease(lease: ExpiredLease): Promise<void> {
-  if (lease.sandboxId) await deleteSandboxBestEffort(lease.sandboxId);
+function gcRetryDelayMs(attempt: number): number {
+  return Math.min(300_000, 1_000 * 2 ** Math.min(Math.max(attempt - 1, 0), 8));
+}
+
+/** Reconcile one dead-worker reservation. Capacity remains reserved while
+ * provider GC is failing; only a confirmed delete (or no sandbox ever created)
+ * releases it and allows the orphaned run to settle. */
+export async function reconcileExpiredLease(
+  lease: ReclaimingLease,
+  removeSandbox: (sandboxId: string) => Promise<void> = deleteSandbox,
+): Promise<void> {
+  try {
+    if (lease.sandboxId) await removeSandbox(lease.sandboxId);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    await scheduleLeaseGcRetry(lease.id, message, gcRetryDelayMs(lease.attemptCount));
+    console.warn(`[fleet] orphan sandbox ${lease.sandboxId} GC deferred:`, message);
+    return;
+  }
+  await releaseReclaimedLease(lease.id);
+  if (lease.sandboxId) {
+    await clearThreadSandbox(lease.orgId, lease.threadId, lease.sandboxId);
+  }
   const run = await getRun(lease.runId);
   if (!run) return;
   if (run.status === "completed" || run.status === "failed") {
@@ -84,8 +100,8 @@ async function reconcileExpiredLease(lease: ExpiredLease): Promise<void> {
     return;
   }
   const durationMs = Math.max(0, Date.now() - run.createdAt.getTime());
-  const failed = await completeRun(lease.runId, "failed", LEASE_LOST_SUMMARY, durationMs);
-  if (failed) await settleCommandForRun(lease.runId).catch(() => {});
+  await finalizeRun(lease.runId, "failed", LEASE_LOST_SUMMARY, durationMs);
+  await settleCommandForRun(lease.runId).catch(() => {});
   await setAdmissionState(lease.runId, "failed");
 }
 
@@ -100,11 +116,16 @@ export async function reconcileFleetOnce(): Promise<FleetReconcileSummary> {
   await syncRunningAdmissions();
   const heartbeated = await heartbeatLeases(liveActorRunIds(), config.leaseTtlMs);
 
-  const expired = await claimExpiredLeases(RECONCILE_BATCH);
+  const liveAtClaim = liveActorRunIds();
+  const expired = await claimExpiredLeases(RECONCILE_BATCH, liveAtClaim);
   const live = new Set(liveActorRunIds());
   for (const lease of expired) {
-    // Guard the tiny heartbeat/claim race: if the actor came alive, skip.
-    if (live.has(lease.runId)) continue;
+    // If an actor appeared after the claim snapshot, restore its reservation;
+    // never leave a live actor in the reclaiming state.
+    if (live.has(lease.runId)) {
+      await restoreLiveLease(lease.id, config.leaseTtlMs);
+      continue;
+    }
     await reconcileExpiredLease(lease).catch((err) =>
       console.error(`[fleet] reconcile expired lease ${lease.id} failed:`, err),
     );
@@ -112,29 +133,34 @@ export async function reconcileFleetOnce(): Promise<FleetReconcileSummary> {
 
   let pumped = 0;
   const threads = await selectAdmittableThreads(RECONCILE_BATCH);
-  for (const threadId of threads) {
-    const dispatched = await pumpThread(threadId).catch((err) => {
-      console.error(`[fleet] pump thread ${threadId} failed:`, err);
-      return null;
-    });
-    if (dispatched) pumped += 1;
+  for (let offset = 0; offset < threads.length; offset += config.maxDispatchConcurrency) {
+    const batch = threads.slice(offset, offset + config.maxDispatchConcurrency);
+    const dispatched = await Promise.all(batch.map((threadId) =>
+      pumpThread(threadId).catch((err) => {
+        console.error(`[fleet] pump thread ${threadId} failed:`, err);
+        return null;
+      }),
+    ));
+    pumped += dispatched.filter(Boolean).length;
   }
 
   return { syncedTerminal, heartbeated, expired: expired.length, pumped };
 }
 
 /**
- * Boot reconciliation: the process that owned every active lease is gone, so
- * release them all (capacity zeroed) and unbind non-terminal admissions so boot
- * recovery's re-pump mints fresh leases. Terminal runs are synced. Call BEFORE
- * the periodic loop starts, alongside recoverStaleRuns.
+ * Boot reconciliation releases only reservations that never created a sandbox.
+ * Real provider boxes stay reserved through recovery/GC. Call before boot run
+ * recovery and before the periodic loop starts.
  */
 export async function reconcileFleetOnBoot(): Promise<{
   releasedLeases: number;
   resetAdmissions: number;
   syncedTerminal: number;
 }> {
-  const releasedLeases = await releaseAllActiveLeasesOnBoot();
+  // Reservations that never reached sandbox creation can be retried directly.
+  // Real retained sandboxes remain reserved through restart until recovery
+  // adopts/finalizes them or expiry GC confirms deletion.
+  const releasedLeases = await releaseEmptyActiveLeasesOnBoot();
   const resetAdmissions = await resetLeasedAdmissionsForBoot();
   const syncedTerminal = await syncTerminalAdmissions();
   return { releasedLeases, resetAdmissions, syncedTerminal };
