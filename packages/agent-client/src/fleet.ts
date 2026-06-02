@@ -22,8 +22,8 @@ export type Verdict = "pass" | "fail" | "unknown";
 export type SettledStatus = RunStatus | "timeout";
 
 export interface FleetClientConfig {
-  /** Origin of the hosted org, e.g. "https://skynet.meow.gs". */
-  baseUrl: string;
+  /** Origin of the hosted org. Defaults to {@link DEFAULT_BASE_URL}. */
+  baseUrl?: string;
   /** Org API key. Sent verbatim as `Authorization: Bearer <apiKey>` on every request. */
   apiKey: string;
   /** Injected fetch (tests / non-standard runtimes). Defaults to the ambient global. */
@@ -121,6 +121,10 @@ export interface FleetClient {
   urlFor(runId: string): string;
 }
 
+/** The hosted org origin used when no baseUrl / USEAGENT_BASE_URL is given. The ONE
+ *  place this domain is written - the CLI, the MCP server, and the README all resolve
+ *  through here, so moving the product domain is a single-line change. */
+export const DEFAULT_BASE_URL = "https://skynet.meow.gs";
 export const DEFAULT_CONCURRENCY = 4;
 export const DEFAULT_SETTLE_TIMEOUT_MS = 15 * 60 * 1000;
 export const DEFAULT_POLL_MS = 3 * 1000;
@@ -179,7 +183,7 @@ function errorMessage(e: unknown): string {
  * sibling org-api-keys work serves server-side); nothing else about auth is assumed.
  */
 export function createFleetClient(config: FleetClientConfig): FleetClient {
-  const baseUrl = config.baseUrl.replace(/\/+$/, "");
+  const baseUrl = (config.baseUrl ?? DEFAULT_BASE_URL).replace(/\/+$/, "");
   const agent = createAgentClient({
     fetch: config.fetch ?? defaultFetch,
     baseUrl,
