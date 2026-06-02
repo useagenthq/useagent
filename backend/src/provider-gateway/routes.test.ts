@@ -149,6 +149,26 @@ describe("provider gateway routes", () => {
     expect(codex.status).toBe(403);
   });
 
+  test("Pi's default OpenAI route admits and forwards the exact stripped model", async () => {
+    const piClaims = { ...claims, engine: "pi" as const, provider: "openai" as const };
+    const piRun = { ...run, engine: "pi" as const, model: "openai/gpt-5.6-luna" };
+    let forwardedBody = "";
+    const response = await app({
+      token: piClaims,
+      activeRun: piRun,
+      fetchUpstream: async (_input, init) => {
+        forwardedBody = String(init?.body);
+        return Response.json({ ok: true });
+      },
+    }).request("/api/provider/openai/v1/responses", {
+      method: "POST",
+      headers: { authorization: "Bearer sandbox-capability" },
+      body: JSON.stringify({ model: "gpt-5.6-luna", max_output_tokens: 10 }),
+    });
+    expect(response.status).toBe(200);
+    expect(JSON.parse(forwardedBody).model).toBe("gpt-5.6-luna");
+  });
+
   test("replaces sandbox auth with the server-side key and preserves an SSE body", async () => {
     let captured: { url: string; init?: RequestInit } | null = null;
     let auditCompletions = 0;

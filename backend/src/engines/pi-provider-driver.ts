@@ -100,7 +100,10 @@ export function makePiProviderDriver(
       protocol: { name: "oh-my-pi-rpc", version: PI_CODING_AGENT_VERSION },
       capabilities,
       model: { selection: "per_turn", supportsArbitraryModel: false },
-      tools: { mode: "skynet_brokered", approval: "skynet" },
+      // Pi executes only the explicitly allowlisted read/write/bash/task tools
+      // as the dedicated unprivileged sandbox user. There is no product approval
+      // mediation in this bridge, so auto-approval is advertised honestly.
+      tools: { mode: "provider_native", approval: "none" },
     },
 
     async start(request: ProviderStartRequest) {

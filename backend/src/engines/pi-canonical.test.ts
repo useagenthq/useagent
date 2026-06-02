@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { NativeBridgeSequencer } from "@useagent/agent-harness/bridge";
 import { piRpcFrameBodies } from "./pi-canonical";
 import { piBridgeProviderEvent } from "./pi-provider-events";
+import { translateOpenCode, type OpenCodeFrame } from "@useagent/agent-harness/opencode";
 
 describe("Pi RPC canonical bridge mapping", () => {
   test("maps a bounded MCP tool lifecycle without losing call identity", () => {
@@ -101,5 +102,37 @@ describe("Pi RPC canonical bridge mapping", () => {
       error: "provider rejected request",
       stopReason: "error",
     });
+  });
+
+  test("terminal Pi frames survive canonicalization", () => {
+    const sequencer = new NativeBridgeSequencer("session", () => 1);
+    const providerEvent = piBridgeProviderEvent(
+      { runId: "run", threadId: "thread" },
+      sequencer.frame({ kind: "turn.completed", stopReason: "stop" }),
+    );
+    const frame: OpenCodeFrame = {
+      eventId: providerEvent.id,
+      seq: 1,
+      provider: "pi",
+      eventType: providerEvent.eventType,
+      payload: providerEvent.payload,
+      native: {
+        sessionId: "session",
+        parentSessionId: null,
+        messageId: null,
+        partId: null,
+        callId: null,
+      },
+    };
+    const translated = translateOpenCode([frame], {
+      runId: "run",
+      threadId: "thread",
+      engine: "pi",
+    });
+    expect(translated.events).toContainEqual(expect.objectContaining({
+      kind: "turn.completed",
+      stopReason: "stop",
+    }));
+    expect(translated.accounting[0]?.suppressed).toBeUndefined();
   });
 });

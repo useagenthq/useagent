@@ -8,7 +8,7 @@ export type ProviderBodyPolicyResult =
 
 function requestModelMatchesRun(run: GatewayRun, requested: unknown): boolean {
   if (requested === run.model) return true;
-  return run.engine === "opencode" &&
+  return (run.engine === "opencode" || run.engine === "pi") &&
     run.model.startsWith("openai/") &&
     requested === run.model.slice("openai/".length);
 }
