@@ -11,6 +11,7 @@
  * Subpath entry points (see package.json exports):
  *   - `@useagent/agent-client/wire`       - the run/step/native wire contract (ground truth)
  *   - `@useagent/agent-client/api`        - typed AgentClient over injected fetch
+ *   - `@useagent/agent-client/fleet`      - authenticated parallel cloud dispatch + QC
  *   - `@useagent/agent-client/org-changes` - canonical org invalidation wire contract
  *   - `@useagent/agent-client/integrations` - browser-safe integration wire contracts
  *   - `@useagent/agent-client/provider-connections` - provider API + realtime wire contract
@@ -19,6 +20,7 @@
  */
 export * from "./wire";
 export * from "./api";
+export * from "./fleet";
 export * from "./artifacts";
 export * from "./connection";
 export * from "./integrations";
