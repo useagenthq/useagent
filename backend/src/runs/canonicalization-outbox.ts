@@ -16,6 +16,16 @@
  */
 import { eq, sql } from "drizzle-orm";
 import { db, type Executor } from "../db/client";
+import {
+  backoffAt as computeBackoff,
+  claimDue as claimDueRows,
+  isDeadLetter,
+  markDead,
+  markForRetry,
+  resetStuck,
+  type BackoffPolicy,
+  type OutboxTable,
+} from "../db/outbox";
 import { canonicalizationOutbox } from "../db/schema";
 import { getNativeFramesSince } from "./native-events";
 import { getRun, getStepsApi } from "./repo";
@@ -39,10 +49,20 @@ import { errorMessage } from "../util/error-message";
 // events is what makes "canonicalization cannot complete before the command snapshot is durable"
 // true for free.
 
-const BASE_BACKOFF_MS = 500;
-const MAX_BACKOFF_MS = 30_000;
+/** Backoff window + column mapping for the shared outbox primitive (db/outbox).
+ *  500ms doubling, capped at 30s. */
+const CANON_POLICY: BackoffPolicy = { baseMs: 500, maxMs: 30_000 };
+const CANONICALIZATION_OUTBOX: OutboxTable = {
+  table: "canonicalization_outbox",
+  key: "run_id",
+  stateColumn: "state",
+  attemptColumn: "attempt_count",
+  pending: "pending",
+  claimed: "translating",
+  dead: "dead",
+};
 export const backoffAt = (now: number, attempt: number): Date =>
-  new Date(now + Math.min(BASE_BACKOFF_MS * 2 ** attempt, MAX_BACKOFF_MS));
+  computeBackoff(CANON_POLICY, now, attempt);
 
 export interface Watermark { frameMax: number; stepCount: number; stepSig: string }
 /** The source is STABLE across a translate iff the max native-frame seq AND the step
@@ -94,19 +114,13 @@ export async function sourceWatermark(runId: string): Promise<Watermark> {
 export interface Claimed { runId: string; threadId: string; attemptCount: number; maxAttempts: number }
 
 async function claimDue(limit: number): Promise<Claimed[]> {
-  const rows = (await db.execute(sql`
-    with due as (
-      select run_id from canonicalization_outbox
-      where state = 'pending' and next_attempt_at <= now()
-      order by next_attempt_at asc limit ${limit}
-      for update skip locked
-    )
-    update canonicalization_outbox o set state = 'translating', updated_at = now()
-    from due where o.run_id = due.run_id
-    returning o.run_id, o.thread_id, o.attempt_count, o.max_attempts`)) as unknown as Array<{
-    run_id: string; thread_id: string; attempt_count: number; max_attempts: number;
-  }>;
-  return rows.map((r) => ({ runId: r.run_id, threadId: r.thread_id, attemptCount: Number(r.attempt_count), maxAttempts: Number(r.max_attempts) }));
+  const rows = await claimDueRows(CANONICALIZATION_OUTBOX, limit, ["thread_id"]);
+  return rows.map((r) => ({
+    runId: r.run_id as string,
+    threadId: r.thread_id as string,
+    attemptCount: Number(r.attempt_count),
+    maxAttempts: Number(r.max_attempts),
+  }));
 }
 
 /** ATOMIC finalize: write the run's FINAL canonical rows AND flip its outbox record to
@@ -129,17 +143,14 @@ async function finalizeCanonicalForRun(
 }
 
 export async function markRetryOrDead(c: Claimed, err: string): Promise<void> {
-  const dead = c.attemptCount + 1 >= c.maxAttempts;
-  await db
-    .update(canonicalizationOutbox)
-    .set({
-      state: dead ? "dead" : "pending",
-      attemptCount: sql`${canonicalizationOutbox.attemptCount} + 1`,
-      nextAttemptAt: backoffAt(Date.now(), c.attemptCount + 1),
-      lastError: err.slice(0, 500),
-      updatedAt: new Date(),
-    })
-    .where(eq(canonicalizationOutbox.runId, c.runId));
+  // Both paths (re)schedule next_attempt_at, preserving the original single UPDATE
+  // (unlike capture/learning, whose dead path leaves next_attempt_at untouched).
+  const nextAttemptAt = backoffAt(Date.now(), c.attemptCount + 1);
+  if (isDeadLetter(c.attemptCount, c.maxAttempts)) {
+    await markDead(CANONICALIZATION_OUTBOX, c.runId, err, nextAttemptAt);
+  } else {
+    await markForRetry(CANONICALIZATION_OUTBOX, c.runId, nextAttemptAt, err);
+  }
 }
 
 /** Translate ONE run's source and, only if the source held STABLE across the translate,
@@ -210,9 +221,7 @@ export async function completeCanonicalRuns(threadId: string): Promise<Array<{ r
  *  to `pending` - SAFE because canonicalization is an idempotent full replace while
  *  provisional (unlike memory delivery, which could double-send). */
 export async function resetStuckCanonicalization(): Promise<number> {
-  const rows = (await db.execute(sql`update canonicalization_outbox set state='pending', updated_at=now()
-    where state='translating' returning run_id`)) as unknown as unknown[];
-  return rows.length;
+  return resetStuck(CANONICALIZATION_OUTBOX);
 }
 
 /** Background loop (mounted at boot). Config-free; a no-op when nothing is due. */
