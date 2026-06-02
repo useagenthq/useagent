@@ -113,12 +113,15 @@ describe("sidebar wiring contract", () => {
     expect(threadSidebar).not.toContain("SidebarRecents");
   });
 
-  test("the project rail binds the t3 row to the existing runs + repos lanes", () => {
-    const groupRow = read("../shell/sidebar-threads.tsx");
+  test("the project rail renders the native tree bound to the existing runs + repos lanes", () => {
+    const tree = read("./project-thread-tree.tsx");
     const projects = read("../shell/sidebar-projects.tsx");
-    // Threads render through the shared t3 row, nested under their project.
-    expect(groupRow).toContain("<ThreadRow");
-    expect(groupRow).toContain("usePathname");
+    // Threads nest under their project through the native tree treatment
+    // (curved connector + relative-time chips), not a flat recents list.
+    expect(tree).toContain("ProjectThreadTree");
+    expect(tree).toContain("TreeConnector");
+    expect(projects).toContain("<ProjectThreadTree");
+    expect(projects).toContain("usePathname");
     // The data owner reuses the existing runs + repos lanes - no new endpoint.
     expect(projects).toContain("fetchSidebarRuns");
     expect(projects).toContain("useOrgChanges");
