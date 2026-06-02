@@ -20,6 +20,8 @@ import {
 
 /** The minimal repo identity the picker + run validation need. */
 export interface RepoInfo {
+  /** Stable provider repository id; survives rename and transfer. */
+  external_id?: string;
   /** "owner/name" — the value persisted on the run and used to clone. */
   full_name: string;
   name: string;
@@ -37,8 +39,18 @@ export interface RepoListing {
   error?: string;
 }
 
+export interface GithubCatalogListing extends RepoListing {
+  /** Internal connection identity. Never returned by the public repos route. */
+  connectionId: string | null;
+  /** True only when GitHub reported that no further repository page exists. */
+  complete: boolean;
+  /** Opaque provider continuation used only by the internal resource catalog. */
+  nextCursor: string | null;
+}
+
 /** GitHub's repo shape (only the fields we read). */
 interface GhRepo {
+  id?: number;
   full_name: string;
   name: string;
   private: boolean;
@@ -56,13 +68,13 @@ const CACHE_TTL_MS = 5 * 60_000;
  *  credential. There is currently one configured tenant, but keeping separate
  *  entries prevents an unauthorized request from ever reading or poisoning an
  *  authorized tenant's cached result. */
-const cache = new Map<string, { at: number; listing: RepoListing }>();
+const cache = new Map<string, { at: number; listing: GithubCatalogListing }>();
 
 /** Cache key from product tenant + sync config only — never mints a token. The
  *  App path's rotating installation token does not change the scope, so it is
  *  intentionally absent from the key. */
 function scopeKey(orgId: string, auth: GithubAuth): string {
-  return `${orgId}|${auth.owner ?? ""}|${auth.source}`;
+  return `${orgId}|${auth.connectionId ?? "legacy"}|${auth.owner ?? ""}|${auth.source}`;
 }
 
 /** Legacy deployment-wide credential ownership check. Tenant GitHub App
@@ -119,6 +131,9 @@ function ghHeaders(token: string | null): Record<string, string> {
 
 function toRepoInfo(r: GhRepo): RepoInfo {
   return {
+    external_id: Number.isSafeInteger(r.id) && (r.id ?? 0) > 0
+      ? String(r.id)
+      : undefined,
     full_name: r.full_name,
     name: r.name,
     private: Boolean(r.private),
@@ -126,14 +141,44 @@ function toRepoInfo(r: GhRepo): RepoInfo {
   };
 }
 
-/** Fetch every page (bounded) of a repos endpoint, following the `page` param. */
+interface GithubPage<T> {
+  readonly items: T[];
+  readonly nextCursor: string | null;
+  readonly complete: boolean;
+}
+
+function nextPageCursor(link: string | null): string | null {
+  if (!link) return null;
+  for (const part of link.split(",")) {
+    const match = part.match(/^\s*<([^>]+)>;\s*rel="([^"]+)"\s*$/);
+    if (!match || match[2] !== "next") continue;
+    const page = new URL(match[1] as string).searchParams.get("page");
+    if (page && /^[1-9]\d*$/.test(page)) return page;
+  }
+  return null;
+}
+
+function githubPageNumber(cursor: string | null): number {
+  if (!cursor) return 1;
+  const page = Number(cursor);
+  if (!Number.isSafeInteger(page) || page < 1) throw new Error("GitHub cursor is invalid");
+  return page;
+}
+
+/** Fetch a bounded window from a repos endpoint while preserving GitHub's
+ * continuation cursor for the next request. */
 async function fetchAllPages(
   base: string,
   token: string | null,
   signal: AbortSignal,
-): Promise<GhRepo[]> {
+  cursor: string | null,
+  maxPages: number,
+): Promise<GithubPage<GhRepo>> {
   const out: GhRepo[] = [];
-  for (let page = 1; page <= MAX_PAGES; page++) {
+  let pageCursor = cursor;
+  let nextCursor: string | null = cursor;
+  for (let fetched = 0; fetched < maxPages; fetched++) {
+    const page = githubPageNumber(pageCursor);
     const sep = base.includes("?") ? "&" : "?";
     const res = await fetch(`${base}${sep}per_page=${PER_PAGE}&page=${page}`, {
       headers: ghHeaders(token),
@@ -141,11 +186,15 @@ async function fetchAllPages(
     });
     if (!res.ok) throw new Error(`GitHub API ${res.status}`);
     const batch = (await res.json()) as GhRepo[];
-    if (!Array.isArray(batch) || batch.length === 0) break;
+    if (!Array.isArray(batch) || batch.length === 0) {
+      return { items: out, nextCursor: null, complete: true };
+    }
     out.push(...batch);
-    if (batch.length < PER_PAGE) break; // last page
+    nextCursor = nextPageCursor(res.headers.get("link"));
+    if (!nextCursor) return { items: out, nextCursor: null, complete: true };
+    pageCursor = nextCursor;
   }
-  return out;
+  return { items: out, nextCursor, complete: false };
 }
 
 /**
@@ -156,9 +205,14 @@ async function fetchAllPages(
 async function fetchInstallationRepos(
   token: string,
   signal: AbortSignal,
-): Promise<GhRepo[]> {
+  cursor: string | null,
+  maxPages: number,
+): Promise<GithubPage<GhRepo>> {
   const out: GhRepo[] = [];
-  for (let page = 1; page <= MAX_PAGES; page++) {
+  let pageCursor = cursor;
+  let nextCursor: string | null = cursor;
+  for (let fetched = 0; fetched < maxPages; fetched++) {
+    const page = githubPageNumber(pageCursor);
     const res = await fetch(
       `${GITHUB_API}/installation/repositories?per_page=${PER_PAGE}&page=${page}`,
       { headers: ghHeaders(token), signal },
@@ -166,11 +220,13 @@ async function fetchInstallationRepos(
     if (!res.ok) throw new Error(`GitHub API ${res.status}`);
     const body = (await res.json()) as { repositories?: GhRepo[] };
     const batch = body.repositories ?? [];
-    if (batch.length === 0) break;
+    if (batch.length === 0) return { items: out, nextCursor: null, complete: true };
     out.push(...batch);
-    if (batch.length < PER_PAGE) break; // last page
+    nextCursor = nextPageCursor(res.headers.get("link"));
+    if (!nextCursor) return { items: out, nextCursor: null, complete: true };
+    pageCursor = nextCursor;
   }
-  return out;
+  return { items: out, nextCursor, complete: false };
 }
 
 /**
@@ -182,70 +238,120 @@ async function fetchInstallationRepos(
  *  - no owner but a token → GET /user/repos (the token user's own + org repos).
  * Sorted newest-activity first (GitHub's `sort=updated`), archived repos dropped.
  */
-async function fetchRepos(auth: GithubAuth): Promise<RepoInfo[]> {
+async function fetchRepos(
+  auth: GithubAuth,
+  cursor: string | null,
+  maxPages: number,
+): Promise<GithubPage<RepoInfo>> {
   const ac = new AbortController();
   const timer = setTimeout(() => ac.abort(), FETCH_TIMEOUT_MS);
   try {
-    let raw: GhRepo[];
+    let page: GithubPage<GhRepo>;
     if (auth.source === "app") {
       // The installation token already scopes the result to the org's repos.
-      raw = await fetchInstallationRepos(auth.token as string, ac.signal);
+      page = await fetchInstallationRepos(auth.token as string, ac.signal, cursor, maxPages);
     } else if (auth.owner) {
       const orgUrl = `${GITHUB_API}/orgs/${encodeURIComponent(auth.owner)}/repos?sort=updated&type=all`;
       try {
-        raw = await fetchAllPages(orgUrl, auth.token, ac.signal);
+        page = await fetchAllPages(orgUrl, auth.token, ac.signal, cursor, maxPages);
       } catch {
         // Not an org (404) or org path unavailable — treat the owner as a user.
         const userUrl = `${GITHUB_API}/users/${encodeURIComponent(auth.owner)}/repos?sort=updated&type=owner`;
-        raw = await fetchAllPages(userUrl, auth.token, ac.signal);
+        page = await fetchAllPages(userUrl, auth.token, ac.signal, cursor, maxPages);
       }
     } else {
       // Token only: the authenticated user's repos across their orgs.
-      raw = await fetchAllPages(
+      page = await fetchAllPages(
         `${GITHUB_API}/user/repos?sort=updated&affiliation=owner,organization_member`,
         auth.token,
         ac.signal,
+        cursor,
+        maxPages,
       );
     }
-    return raw
-      .filter((r) => !r.archived)
-      .map(toRepoInfo)
-      .toSorted((a, b) => a.full_name.localeCompare(b.full_name));
+    return {
+      items: page.items
+        .filter((r) => !r.archived)
+        .map(toRepoInfo)
+        .toSorted((a, b) => a.full_name.localeCompare(b.full_name)),
+      nextCursor: page.nextCursor,
+      complete: page.complete,
+    };
   } finally {
     clearTimeout(timer);
   }
 }
 
 /**
- * List repositories for the composer, cached ~5 min. Never throws: an
- * unconfigured backend returns `{configured:false, repos:[]}` and a failed fetch
- * returns `{configured:true, repos:[], error}` so the picker degrades to empty
- * rather than breaking the page.
+ * List a bounded repository window, cached ~5 min. The resource catalog follows
+ * `nextCursor` until GitHub reports completion; the public picker intentionally
+ * requests only its existing first three pages. Never throws: failures remain
+ * explicit in the listing so callers can degrade without leaking credentials.
  */
-export async function listRepos(orgId: string): Promise<RepoListing> {
+export async function listGithubCatalog(
+  orgId: string,
+  options: { readonly cursor?: string | null; readonly maxPages?: number } = {},
+): Promise<GithubCatalogListing> {
   const now = Date.now();
+  const cursor = options.cursor ?? null;
+  const maxPages = options.maxPages ?? MAX_PAGES;
+  if (!Number.isSafeInteger(maxPages) || maxPages < 1 || maxPages > MAX_PAGES) {
+    throw new Error(`maxPages must be between 1 and ${MAX_PAGES}`);
+  }
   let key: string | null = null;
   try {
     const auth = await resolveGithubCatalogAuth(orgId);
-    if (!auth.token && !auth.owner) return { configured: false, repos: [] };
-    key = scopeKey(orgId, auth);
+    if (!auth.token && !auth.owner) {
+      return {
+        configured: false,
+        repos: [],
+        connectionId: auth.connectionId ?? null,
+        complete: true,
+        nextCursor: null,
+      };
+    }
+    key = `${scopeKey(orgId, auth)}|${cursor ?? "start"}|${maxPages}`;
     const hit = cache.get(key);
-    if (hit && now - hit.at < CACHE_TTL_MS) return hit.listing;
-    const repos = await fetchRepos(auth);
-    const listing: RepoListing = { configured: true, repos };
+    if (hit && now - hit.at < CACHE_TTL_MS) {
+      return { ...hit.listing, connectionId: auth.connectionId ?? null };
+    }
+    const page = await fetchRepos(auth, cursor, maxPages);
+    const listing: GithubCatalogListing = {
+      configured: true,
+      repos: page.items,
+      connectionId: auth.connectionId ?? null,
+      complete: page.complete,
+      nextCursor: page.nextCursor,
+    };
     if (key) cache.set(key, { at: now, listing });
     return listing;
   } catch (err) {
-    const listing: RepoListing = {
+    const listing: GithubCatalogListing = {
       configured: true,
       repos: [],
       error: err instanceof Error ? err.message : "github fetch failed",
+      connectionId: null,
+      complete: false,
+      nextCursor: cursor,
     };
     // Cache the failure briefly too, so a hard-down GitHub doesn't get hammered
     // on every keystroke; the short TTL means it recovers within minutes.
     if (key) cache.set(key, { at: now, listing });
     return listing;
   }
+}
+
+export async function listRepos(orgId: string): Promise<RepoListing> {
+  const {
+    connectionId: _connectionId,
+    complete: _complete,
+    nextCursor: _nextCursor,
+    ...listing
+  } = await listGithubCatalog(orgId);
+  return {
+    ...listing,
+    repos: listing.repos.map(({ external_id: _externalId, ...repo }) => repo),
+  };
 }
 
 // ---------------------------------------------------------------------------

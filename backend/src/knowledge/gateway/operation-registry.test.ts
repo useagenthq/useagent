@@ -76,6 +76,9 @@ describe("gateway operation registry", () => {
   test("exposes exact registered names without granting prefix lookalikes", () => {
     expect(isRegisteredGatewayToolName("gcs_list_buckets")).toBe(true);
     expect(isRegisteredGatewayToolName("gateway_tools_search")).toBe(true);
+    expect(isRegisteredGatewayToolName("resource_catalog_search")).toBe(true);
+    expect(isRegisteredGatewayToolName("run_resource_bindings")).toBe(true);
+    expect(isRegisteredGatewayToolName("resource_catalog_search_all")).toBe(false);
     expect(isRegisteredGatewayToolName("gcs_delete_bucket")).toBe(false);
     expect(isRegisteredGatewayToolName("computer_future")).toBe(false);
   });
@@ -129,6 +132,8 @@ describe("gateway operation registry", () => {
     expect(defaultNames).toContain("context_read");
     expect(defaultNames).toContain("automation_create");
     expect(defaultNames).toContain("workpiece_create");
+    expect(defaultNames).toContain("resource_catalog_search");
+    expect(defaultNames).toContain("run_resource_bindings");
     expect(defaultNames).not.toContain("gateway_tools_search");
     expect(compactNames).toEqual(metaNames);
     expect(compactNames.every(isGatewayMetaToolName)).toBe(true);
@@ -253,5 +258,31 @@ describe("gateway operation registry", () => {
     expect(descriptor.name).toBe("automation_create");
     expect(descriptor.inputSchema?.type).toBe("object");
     expect(descriptor.inputSchema?.required).toEqual(["name", "cron", "prompt"]);
+  });
+
+  test("compact discovery finds the provider-neutral resource contracts", async () => {
+    const search = await executeRegisteredGatewayTool(
+      CLAIMS,
+      "gateway_tools_search",
+      { query: "connected inventory repository" },
+      ALL_OPTIONS,
+    );
+    expect(search.matched).toBe(true);
+    if (!search.matched) throw new Error("gateway_tools_search was not registered");
+    expect(resultTools(search.result)).toContainEqual(
+      expect.objectContaining({ name: "resource_catalog_search" }),
+    );
+
+    const describe = await executeRegisteredGatewayTool(
+      CLAIMS,
+      "gateway_tool_describe",
+      { name: "run_resource_bindings" },
+      ALL_OPTIONS,
+    );
+    expect(describe.matched).toBe(true);
+    if (!describe.matched) throw new Error("gateway_tool_describe was not registered");
+    expect(structuredContent(describe.result).tool).toEqual(
+      expect.objectContaining({ name: "run_resource_bindings" }),
+    );
   });
 });
