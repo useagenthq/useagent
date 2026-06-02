@@ -11,6 +11,7 @@ import {
   type PreviewEndpoint,
 } from "./preview-proxy";
 import { OPENCODE_ALLOWED_MODELS } from "./model-policy";
+import { errorMessage } from "../util/error-message";
 
 // ---------------------------------------------------------------------------
 // LIVE PROXY — same-origin path bridge to a thread's opencode server, so the
@@ -150,7 +151,7 @@ liveProxyRoutes.all("/:threadId/*", async (c) => {
     return filterCatalogResponse(subpath, upstream);
   } catch (err) {
     invalidatePreviewEndpoint(threadId, SERVE_PORT);
-    const msg = err instanceof Error ? err.message : String(err);
+    const msg = errorMessage(err);
     if (msg === "no-sandbox") {
       return c.json(
         { error: "no live sandbox for this conversation yet - send a message first" },

@@ -19,6 +19,7 @@ import {
   startCodexSubscriptionAppServer,
   suppressCodexSubscriptionStartupRejection,
 } from "./codex-subscription-app-server";
+import { errorMessage } from "../util/error-message";
 
 const DEFAULT_CAPABILITY_TTL_MS = 2 * 60_000;
 const RELAY_PATH_PREFIX = "/api/internal/codex-relay/";
@@ -214,7 +215,7 @@ codexSubscriptionRelayRoutes.get(
       // reads as "no first activity" at the run layer and hides the real cause
       // (binding mismatch, oversized frame, disconnected subscription). Frame
       // CONTENT is never logged - only the protocol error message.
-      const reason = error instanceof Error ? error.message : String(error);
+      const reason = errorMessage(error);
       console.log(`[codex-relay] frame rejected run=${relayRunId}: ${reason}`);
       relaySocket?.close(1008, "relay frame rejected");
       relaySocket = null;

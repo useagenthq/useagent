@@ -1,7 +1,7 @@
 /**
  * Canonical agent-event lane persistence.
  *
- * The durable home of the provider-neutral canonical events (src/engines/canonical.ts).
+ * The durable home of the provider-neutral canonical events (@useagent/agent-harness/canonical).
  * Invariants:
  *  - PERSIST BEFORE PUBLISH: an event is written to `canonical_events` and only THEN
  *    emitted to live subscribers, so a reconnect replays the SAME rows live showed.
@@ -19,7 +19,7 @@ import { EventEmitter } from "node:events";
 import { and, asc, eq, gt, inArray, max } from "drizzle-orm";
 import { db, type Executor } from "../db/client";
 import { canonicalEvents } from "../db/schema";
-import { CANONICAL_SCHEMA_VERSION, type CanonicalAgentEvent } from "../engines/canonical";
+import { CANONICAL_SCHEMA_VERSION, type CanonicalAgentEvent } from "@useagent/agent-harness/canonical";
 
 /** A persisted canonical event: the canonical event + its immutable thread delivery
  *  cursor and revision. This is what SSE delivers and replay returns. */

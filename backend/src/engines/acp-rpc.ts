@@ -10,6 +10,8 @@
 //   2. stale session after restart - when the resident agent child restarts, the
 //      in-memory native session id is dead and must never receive the next prompt.
 
+import { errorMessage } from "../util/error-message";
+
 export type JsonRpcMessage = Record<string, unknown>;
 
 /** Stable, classified relay error (Section 13 failure codes). `code` is one of the
@@ -68,7 +70,7 @@ export function createAcpRpcClient(
         waiter.reject(
           e instanceof AcpRelayError
             ? e
-            : new AcpRelayError("relay_disconnected", `relay send failed: ${e instanceof Error ? e.message : String(e)}`),
+            : new AcpRelayError("relay_disconnected", `relay send failed: ${errorMessage(e)}`),
         );
       });
       return p;
@@ -178,5 +180,5 @@ export function relayRegenerated(priorGeneration: number | null, currentGenerati
  *  that survived a backend restart, where our in-memory `initialized` flag was lost).
  *  Treated as success by the caller. */
 export function isAlreadyInitialized(err: unknown): boolean {
-  return /already initialized/i.test(err instanceof Error ? err.message : String(err));
+  return /already initialized/i.test(errorMessage(err));
 }

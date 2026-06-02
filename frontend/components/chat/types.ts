@@ -331,14 +331,6 @@ export function parseCommandStep(step: ApiStep): CommandStep {
   return { command, exitCode, output, durationMs };
 }
 
-export function formatDuration(ms: number): string {
-  if (ms < 1000) return `${Math.round(ms)}ms`;
-  const s = ms / 1000;
-  if (s < 60) return `${s.toFixed(s < 10 ? 1 : 0)}s`;
-  const m = Math.floor(s / 60);
-  return `${m}m ${Math.round(s % 60)}s`;
-}
-
 /** A lifecycle stage should advance within ~2s during genuine startup. */
 export const STALLED_STAGE_THRESHOLD_MS = 2_000;
 

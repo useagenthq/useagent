@@ -13,7 +13,7 @@ import { cx } from "@/utils/cx";
  *                    "used / max (pct)" readout. Expanding it grows the whole
  *                    card to reveal the breakdown: a legend row per bucket
  *                    (swatch · label · tokens · share), free space, deferred
- *                    buckets that don't count against the window ("—"), and
+ *                    buckets that don't count against the window ("-"), and
  *                    collapsible groups (MCP tools, memory files…) listing
  *                    their members.
  *   Plan limits      one row per rolling limit: label, reset time, percent,
@@ -233,7 +233,7 @@ export function AgentLimitsCard({
                   <span className="min-w-0 flex-1 truncate text-body-regular text-text-primary">{s.label}</span>
                   <span className="text-body-regular text-text-tertiary tabular-nums">{formatTokens(s.tokens)}</span>
                   <span className="w-14 text-right text-body-medium text-text-primary tabular-nums">
-                    {s.deferred ? "—" : `${share(s.tokens).toFixed(1)}%`}
+                    {s.deferred ? "-" : `${share(s.tokens).toFixed(1)}%`}
                   </span>
                 </div>
               ))}

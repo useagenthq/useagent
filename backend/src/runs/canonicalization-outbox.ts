@@ -21,7 +21,7 @@ import { getNativeFramesSince } from "./native-events";
 import { getRun, getStepsApi } from "./repo";
 import { drainProviderEvents } from "./provider-events";
 import { translateOpenCode, type OpenCodeFrame, type OpenCodeStep } from "../engines/opencode-canonical";
-import type { CanonicalAgentEvent } from "../engines/canonical";
+import type { CanonicalAgentEvent } from "@useagent/agent-harness/canonical";
 import { canonicalEngine } from "../engines/engine-alias";
 import {
   publishDelivered,
@@ -29,6 +29,7 @@ import {
   replaceCanonicalRowsTx,
   type DeliveredCanonicalEvent,
 } from "./canonical-events";
+import { errorMessage } from "../util/error-message";
 
 // The run's provider command catalog is captured durably in the ORDERED provider-events lane
 // (acp-server records each `available_commands_update` as an `acp.commands` provider event) and
@@ -187,7 +188,7 @@ export async function runCanonicalizationOutboxOnce(limit = 20): Promise<number>
         done++;
       } else await markRetryOrDead(c, "source watermark moved during translate");
     } catch (e) {
-      await markRetryOrDead(c, e instanceof Error ? e.message : String(e));
+      await markRetryOrDead(c, errorMessage(e));
     }
   }
   return done;

@@ -6,6 +6,7 @@ import { providerForEngine, type ProviderId } from "../../provider-gateway/provi
 import type { GatewayRun } from "../../provider-gateway/run-authorization";
 import { mintProviderToken } from "../../provider-gateway/token";
 import type { ToolTokenClaims } from "./token";
+import { errorMessage } from "../../util/error-message";
 
 // ---------------------------------------------------------------------------
 // Agent-callable WEB SEARCH tool. Paid provider traffic must cross the provider
@@ -387,7 +388,7 @@ export async function executeWebSearchTool(
     }
     return { content: [{ type: "text", text: render(query, p) }] };
   } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
+    const msg = errorMessage(e);
     return fail(`web_search failed: ${msg}`);
   }
 }

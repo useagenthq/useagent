@@ -11,6 +11,7 @@ import { cloneRepoToTemp } from "./clone";
 import { generateWiki, type GenerateResult } from "./generate";
 import { openRouterLlm } from "./llm";
 import { readRepoFiles } from "./repo";
+import { errorMessage } from "../util/error-message";
 
 export type JobStatus =
   | "pending"
@@ -91,7 +92,7 @@ async function runJob(job: WikiJob, userId: string | null): Promise<void> {
     job.status = "completed";
   } catch (e) {
     job.status = "failed";
-    job.error = e instanceof Error ? e.message : String(e);
+    job.error = errorMessage(e);
   } finally {
     if (cleanup) await cleanup();
     scheduleEviction(job.id);

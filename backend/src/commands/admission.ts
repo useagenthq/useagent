@@ -150,7 +150,11 @@ export async function recordForcedDrain(input: {
   });
 }
 
-/** Bounded deployment-only view of work that must settle before restart. */
+/**
+ * Bounded deployment-only view of work that must settle before restart.
+ * Consumed via a dynamic `await import()` in deploy/hetzner/drain-inflight-runs.ts,
+ * so a static dead-code sweep cannot see this export - do not remove it.
+ */
 export async function deploymentInflightSnapshot(
   limit = 25,
 ): Promise<{ readonly count: number; readonly runIds: readonly string[] }> {

@@ -10,15 +10,13 @@ import {
   toUserUploadDescriptor,
 } from "./repo";
 import { UploadScanError } from "./scan";
+import { validateUploadName } from "./validate";
 
 export const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
 const MAX_UPLOADS_OVERHEAD = 1024 * 1024;
 
-export function validateUploadName(raw: string): string | null {
-  const name = raw.normalize("NFKC").trim();
-  if (!name || name.length > 180 || /[\\/\0\r\n]/.test(name)) return null;
-  return name;
-}
+// Implementation moved to ./validate; re-exported here for backwards compatibility.
+export { validateUploadName };
 
 function disposition(name: string): string {
   const fallback = name.replace(/[^\x20-\x7e]/g, "_").replace(/["\\]/g, "_");

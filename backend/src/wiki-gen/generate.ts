@@ -22,6 +22,7 @@ import { buildPagePrompt, buildStructurePrompt, PROMPT_VERSION } from "./prompts
 import { buildFileTree, findReadme } from "./repo";
 import { parseWikiStructure, type WikiPage, type WikiStructure } from "./structure";
 import { type ChatMessage, isRetryableWikiLlmError, wikiModel, type WikiLlm } from "./llm";
+import { errorMessage } from "../util/error-message";
 
 /** Auto-generated repo wikis live in their own collection tag so they are
  *  distinguishable from hand-authored wiki docs (still published + searchable). */
@@ -117,7 +118,7 @@ function stripFences(content: string): string {
 export class WikiGenError extends Error {}
 
 function structureRepairPrompt(error: unknown): string {
-  const reason = error instanceof Error ? error.message : String(error);
+  const reason = errorMessage(error);
   return `The previous response failed validation: ${reason}
 Return a corrected XML document only. It must start with <wiki_structure> and end with </wiki_structure>.`;
 }
@@ -260,7 +261,7 @@ export async function generateWiki(input: GenerateInput): Promise<GenerateResult
       content = await generatePageContent(input, page, pageFiles, ctx);
     } catch (e) {
       ok = false;
-      error = e instanceof Error ? e.message : String(e);
+      error = errorMessage(e);
       content = `# ${title}\n\n> Wiki generation failed for this page: ${error}\n`;
     }
     const source = ok ? `wiki-gen ${PROMPT_VERSION} fp:${inputFp}` : `wiki-gen ${PROMPT_VERSION} error`;
