@@ -1,6 +1,6 @@
 import type {
-  ConnectionProjection,
   IntegrationActionCatalogEntry,
+  IntegrationSummary,
 } from "@useagent/agent-client/integrations";
 import {
   claimIntegrationConnectSession,
@@ -38,19 +38,6 @@ import {
   slackNativeConnectionConfigFromEnv,
 } from "./slack-native-backend";
 import { publishOrgChange } from "../runs/org-signals";
-
-export interface IntegrationSummary {
-  readonly provider: string;
-  readonly displayName: string;
-  readonly description: string;
-  readonly backend: "native" | "openconnector" | "mcp";
-  readonly managed: boolean;
-  readonly connectAvailable: boolean;
-  readonly disconnectAvailable: boolean;
-  readonly status: "connected" | "unavailable" | ConnectionProjection["status"];
-  readonly account?: ConnectionProjection["account"];
-  readonly connection: ConnectionProjection | null;
-}
 
 export interface ExecutableIntegrationAction {
   readonly connectionId: string;

@@ -5,18 +5,17 @@
  * is safe to import from both server pages and client views.
  */
 
-export type RunStatus = "queued" | "running" | "completed" | "failed";
+// The run lifecycle status is the agent-client wire contract; re-exported here so
+// the dashboard/fleet/runs-list/session surfaces keep one import path alongside
+// the list-envelope + primary-repo helpers below.
+import { RUN_STATUSES, type RunStatus } from "@useagent/agent-client/wire";
+export type { RunStatus };
 
-const RUN_STATUSES: ReadonlySet<string> = new Set([
-  "queued",
-  "running",
-  "completed",
-  "failed",
-]);
+const RUN_STATUS_SET: ReadonlySet<string> = new Set(RUN_STATUSES);
 
-/** Narrow an arbitrary value to a RunStatus, defaulting to "queued". */
-export function toRunStatus(value: unknown): RunStatus {
-  return RUN_STATUSES.has(value as string) ? (value as RunStatus) : "queued";
+/** Narrow an arbitrary value to a RunStatus. Malformed rows are dropped by callers. */
+export function toRunStatus(value: unknown): RunStatus | null {
+  return typeof value === "string" && RUN_STATUS_SET.has(value) ? (value as RunStatus) : null;
 }
 
 /**

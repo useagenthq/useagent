@@ -59,7 +59,7 @@ export function SidebarProjects() {
 
   const loadRuns = useCallback(async (revalidate = false) => {
     try {
-      setRuns((await fetchSidebarRuns({ revalidate })) as SidebarRun[]);
+      setRuns(await fetchSidebarRuns({ revalidate }));
     } catch {
       // Status chips are additive; project shortcuts still render from /api/repos.
     }

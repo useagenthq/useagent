@@ -12,67 +12,16 @@ import { asRecord } from "./types";
 
 export type { ChildUsage } from "./child-usage";
 
-/** Wire schema version this client understands. Bumped on the backend when the
- *  {@link NativeFrame} shape changes; older frames upcast, newer parse best-effort
- *  (the envelope is additive). */
-export const NATIVE_SCHEMA_VERSION = 1;
+// The native-event frame wire shape + schema version + defensive parser are the
+// agent-client wire contract (shared verbatim with the backend capture lane);
+// re-exported here so this module's consumers keep one import path alongside the
+// child-fidelity derivation below, which is frontend-only view logic.
+export { NATIVE_SCHEMA_VERSION, parseNativeFrame } from "@useagent/agent-client/wire";
+export type { NativeFrame, NativeFrameIds } from "@useagent/agent-client/wire";
 
-export interface NativeFrameIds {
-  readonly sessionId: string | null;
-  readonly parentSessionId: string | null;
-  readonly messageId: string | null;
-  readonly partId: string | null;
-  readonly callId: string | null;
-}
-
-/** A versioned native-event frame (mirrors the backend envelope). `payload` is
- *  bounded and may be an `{ _unparseable, _bytes }` marker for over-cap capture,
- *  so consumers must treat it as unknown. */
-export interface NativeFrame {
-  readonly schemaVersion: number;
-  readonly eventId: string;
-  readonly seq: number;
-  readonly provider: string;
-  readonly eventType: string;
-  readonly native: NativeFrameIds;
-  readonly payload: unknown;
-}
+import type { NativeFrame } from "@useagent/agent-client/wire";
 
 const readString = (v: unknown): string | null => (typeof v === "string" ? v : null);
-
-/**
- * Parse an SSE `native` frame payload into a {@link NativeFrame}, or null if it is
- * malformed. Schema-version handling: a missing/invalid `schemaVersion` is treated
- * as v1; a newer version is accepted best-effort (fields are additive) so a forward
- * deploy never blanks the rail. `eventId`/`seq`/`eventType` are required.
- */
-export function parseNativeFrame(raw: unknown): NativeFrame | null {
-  const o = asRecord(raw);
-  if (!o) return null;
-  const eventId = readString(o.eventId);
-  const eventType = readString(o.eventType);
-  const seq = typeof o.seq === "number" ? o.seq : null;
-  if (eventId === null || eventType === null || seq === null) return null;
-
-  const native = asRecord(o.native);
-  const schemaVersion =
-    typeof o.schemaVersion === "number" ? o.schemaVersion : NATIVE_SCHEMA_VERSION;
-  return {
-    schemaVersion,
-    eventId,
-    seq,
-    provider: readString(o.provider) ?? "opencode",
-    eventType,
-    native: {
-      sessionId: native ? readString(native.sessionId) : null,
-      parentSessionId: native ? readString(native.parentSessionId) : null,
-      messageId: native ? readString(native.messageId) : null,
-      partId: native ? readString(native.partId) : null,
-      callId: native ? readString(native.callId) : null,
-    },
-    payload: o.payload,
-  };
-}
 
 // ── Child fidelity ──────────────────────────────────────────────────────────
 

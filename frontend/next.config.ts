@@ -32,6 +32,7 @@ export default function nextConfig(phase: string): NextConfig {
       // resolveAlias paths are relative to the PROJECT dir (frontend/), not the root.
       resolveAlias: {
         "@useagent/agent-client": "../packages/agent-client/src/index.ts",
+        "@useagent/agent-client/wire": "../packages/agent-client/src/wire.ts",
         "@useagent/agent-client/integrations": "../packages/agent-client/src/integrations.ts",
         "@useagent/agent-client/org-changes": "../packages/agent-client/src/org-changes.ts",
         "@useagent/agent-client/provider-connections":

@@ -19,9 +19,13 @@ import {
   selectContextMarkers,
   selectCommands,
   selectLatestUsage,
+  ENGINE_IDS,
+  parseNativeFrame,
+  type ApiRun,
   type CanonicalThreadEvent,
   type CanonicalThreadStore,
   type DecodedFrame,
+  type EngineId,
   type EventSourceLike,
   type FetchLike,
   type ResponseLike,
@@ -327,5 +331,75 @@ describe("conformance: libraries are independently consumable (documented export
     // opencode / claude / codex all reduce identically - no provider branch anywhere.
     expect(build("opencode")).toBe(build("claude"));
     expect(build("claude")).toBe(build("codex"));
+  });
+});
+
+describe("conformance: the run/step wire contract is a documented, consumable export", () => {
+  test("EngineId derives from ONE exported ENGINE_IDS const (backend + UI share it)", () => {
+    expect([...ENGINE_IDS]).toEqual([
+      "mock",
+      "opencode",
+      "claude",
+      "codex",
+      "chat",
+      "daytona",
+      "claude-sdk",
+      "acp",
+    ]);
+    const engine: EngineId = "opencode"; // compiles ONLY because it is in the union
+    expect(ENGINE_IDS.includes(engine)).toBe(true);
+  });
+
+  test("parseNativeFrame decodes a valid native frame and rejects a malformed one", () => {
+    const frame = parseNativeFrame({
+      schemaVersion: 1,
+      eventId: "e1",
+      seq: 3,
+      provider: "opencode",
+      eventType: "message.part.updated",
+      native: { sessionId: "ses_1", partId: "p1" },
+      payload: { text: "hi" },
+    });
+    expect(frame).toMatchObject({
+      eventId: "e1",
+      seq: 3,
+      provider: "opencode",
+      native: { sessionId: "ses_1", partId: "p1", callId: null, messageId: null, parentSessionId: null },
+    });
+    expect(parseNativeFrame({ eventType: "x" })).toBeNull(); // missing eventId + seq
+    expect(parseNativeFrame(null)).toBeNull();
+  });
+
+  test("an ApiRun value is fully typed - every serializer field present, no unknown index escape", () => {
+    const run: ApiRun = {
+      id: "run_1",
+      org_id: "org_1",
+      user_id: null,
+      prompt: "hi",
+      model: "claude-sonnet-5",
+      engine: "opencode",
+      status: "completed",
+      summary: null,
+      duration_ms: 1200,
+      parent_run_id: null,
+      child_session: false,
+      thread_id: "run_1",
+      engine_session_id: null,
+      repo: "acme/app",
+      repos: ["acme/app"],
+      repo_specs: [{ repo: "acme/app", branch: null }],
+      resolved_resources: [],
+      memory_scope: "org",
+      skill_id: null,
+      skill_version: null,
+      skill_content_hash: null,
+      uploads: [],
+      created_at: "t",
+      updated_at: "t",
+      steps: [],
+    };
+    // Fields are concretely typed (not `unknown`): repo_specs is RepoRef[], memory_scope a MemoryScope.
+    expect(run.repo_specs[0]?.repo).toBe("acme/app");
+    expect(run.memory_scope).toBe("org");
   });
 });

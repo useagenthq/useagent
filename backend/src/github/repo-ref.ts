@@ -16,12 +16,12 @@
 // explicit branch field, so nothing leaks the ":" encoding to clients.
 // ---------------------------------------------------------------------------
 
-export interface RepoRef {
-  /** "owner/name". */
-  repo: string;
-  /** Explicit branch to clone, or null for the repo's default branch. */
-  branch: string | null;
-}
+// The RepoRef wire shape (serialized as `repo_specs`) lives in the agent-client
+// wire contract; re-exported here alongside the encode/decode helpers that own the
+// stored ":branch" representation the wire never exposes.
+export type { RepoRef } from "@useagent/agent-client/wire";
+
+import type { RepoRef } from "@useagent/agent-client/wire";
 
 /** Decode a stored repo entry into its repo + optional branch. */
 export function parseRepoRef(entry: string): RepoRef {

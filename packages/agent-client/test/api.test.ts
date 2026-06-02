@@ -10,6 +10,34 @@ function jsonResponse(status: number, body: unknown): ResponseLike {
   return { ok: status >= 200 && status < 300, status, json: async () => body, text: async () => JSON.stringify(body) };
 }
 
+const run = {
+  id: "a",
+  org_id: "org-1",
+  user_id: "user-1",
+  prompt: "hello",
+  model: "openai/gpt-5.6-luna",
+  engine: "opencode",
+  status: "running",
+  summary: null,
+  duration_ms: null,
+  parent_run_id: null,
+  child_session: false,
+  thread_id: "a",
+  engine_session_id: null,
+  repo: null,
+  repos: [],
+  repo_specs: [],
+  resolved_resources: [],
+  memory_scope: "org",
+  skill_id: null,
+  skill_version: null,
+  skill_content_hash: null,
+  uploads: [],
+  created_at: "2026-08-24T00:00:00.000Z",
+  updated_at: "2026-08-24T00:00:00.000Z",
+  steps: [],
+};
+
 describe("AgentClient HTTP", () => {
   test("createRun POSTs prompt + optional fields and returns a RunHandle", async () => {
     const calls: { url: string; init?: Parameters<FetchLike>[1] }[] = [];
@@ -54,7 +82,9 @@ describe("AgentClient HTTP", () => {
   });
 
   test("getThread reads {thread:[...]} and drops malformed rows", async () => {
-    const client = createAgentClient({ fetch: async () => jsonResponse(200, { thread: [{ id: "a", status: "done" }, { nope: 1 }] }) });
+    const client = createAgentClient({
+      fetch: async () => jsonResponse(200, { thread: [run, { ...run, id: "bad", status: "done" }, { nope: 1 }] }),
+    });
     const snap = await client.getThread("a");
     expect(snap.runs).toHaveLength(1);
     expect(snap.runs[0]!.id).toBe("a");
