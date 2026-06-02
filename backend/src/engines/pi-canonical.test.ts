@@ -86,4 +86,20 @@ describe("Pi RPC canonical bridge mapping", () => {
     expect(started.eventType).toBe("part.tool");
     expect(completed.eventType).toBe("part.tool.completed");
   });
+
+  test("classifies a terminal provider error as a failed turn", () => {
+    expect(piRpcFrameBodies({
+      type: "message_end",
+      message: {
+        role: "assistant",
+        stopReason: "error",
+        errorMessage: "provider rejected request",
+        usage: { input: 1, output: 0 },
+      },
+    })).toContainEqual({
+      kind: "turn.failed",
+      error: "provider rejected request",
+      stopReason: "error",
+    });
+  });
 });

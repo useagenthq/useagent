@@ -20,6 +20,14 @@ export interface NativeBridgeTurnOptions {
   readonly redact: (value: string) => string;
 }
 
+export function nativeBridgeSettlement(
+  body: NativeBridgeFrameBody,
+): { readonly status: "completed" } | { readonly status: "failed"; readonly error: string } | null {
+  if (body.kind === "turn.completed") return { status: "completed" };
+  if (body.kind === "turn.failed") return { status: "failed", error: body.error };
+  return null;
+}
+
 /** Shared turn runner for versioned native bridges. It owns ordering, durable
  * provider-frame persistence, streaming deltas, cancellation, and final settle;
  * provider adapters own only native-frame translation. */
@@ -44,8 +52,12 @@ export async function runNativeBridgeTurn(options: NativeBridgeTurnOptions): Pro
       } else if (body.kind === "reasoning.delta") {
         ctx.publishDelta?.(options.redact(body.text), "reasoning");
         ctx.reportActivity?.();
-      } else if (body.kind === "turn.completed") {
-        resolveSettled();
+      } else {
+        const settlement = nativeBridgeSettlement(body);
+        if (settlement?.status === "completed") resolveSettled();
+        else if (settlement?.status === "failed") {
+          rejectSettled(new Error(options.redact(settlement.error)));
+        }
       }
     }
   });
@@ -54,6 +66,7 @@ export async function runNativeBridgeTurn(options: NativeBridgeTurnOptions): Pro
   };
   ctx.signal.addEventListener("abort", onAbort, { once: true });
   try {
+    ctx.signal.throwIfAborted();
     const result = await driver.steer({
       runId: ctx.runId,
       threadId: ctx.threadId ?? ctx.runId,

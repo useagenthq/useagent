@@ -83,13 +83,17 @@ class LivePiBridgeSession implements PiBridgeSession {
     const resume = input.resumeSessionFile
       ? ` --resume ${shellQuote(input.resumeSessionFile)}`
       : "";
-    const command =
-      `stty -echo -onlcr; PI_HOST_HOME="$HOME"; export PATH="$PI_HOST_HOME/.local/bin:$PATH"; ` +
-      `export HOME="$PI_HOST_HOME/.useagent/pi-home"; export PI_CODING_AGENT_DIR="$HOME/agent"; ` +
-      `exec omp --mode rpc --cwd ${shellQuote(input.workdir)} ` +
+    const piCommand =
+      `exec env -i HOME=${shellQuote(input.runtime.home)} PATH=/usr/local/bin:/usr/bin:/bin ` +
+      `PI_CODING_AGENT_DIR=${shellQuote(`${input.runtime.home}/agent`)} ` +
+      `${shellQuote(input.runtime.bunExecutable)} ${shellQuote(input.runtime.executable)} ` +
+      `--mode rpc --cwd ${shellQuote(input.workdir)} ` +
       `--model ${shellQuote(input.runtime.model.selector)} --no-title --no-lsp ` +
       `--no-extensions --no-skills --no-rules --auto-approve ` +
       `--tools read,write,bash,task${resume}`;
+    const command =
+      `stty -echo -onlcr; exec su -s /bin/sh ${shellQuote(input.runtime.runAsUser)} ` +
+      `-c ${shellQuote(piCommand)}`;
     await pty.sendInput(`${command}\n`);
     try {
       await Promise.race([

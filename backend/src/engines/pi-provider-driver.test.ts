@@ -44,6 +44,10 @@ describe("Pi provider driver", () => {
           fingerprint: "fingerprint",
           knowledgeTools: true,
           model: { provider: "openai", modelId: "gpt", selector: "openai/gpt" },
+          executable: "/opt/useagent/pi-runtime/current/node_modules/@oh-my-pi/pi-coding-agent/dist/cli.js",
+          bunExecutable: "/opt/useagent/pi-runtime/bin/bun",
+          runAsUser: "useagent-pi",
+          home: "/home/useagent-pi",
         },
       },
     });

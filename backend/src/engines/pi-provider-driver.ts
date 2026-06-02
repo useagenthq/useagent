@@ -1,8 +1,14 @@
 import type { HarnessRuntime, HarnessSession } from "@useagent/agent-harness/canonical";
 import type {
+  HarnessAdapter,
   HarnessOperationResult,
+  HarnessSessionHandle,
   ProviderDriver,
   ProviderStartRequest,
+} from "@useagent/agent-harness/control";
+import {
+  providerDriverHarnessCapabilities,
+  providerDriverUnsupported,
 } from "@useagent/agent-harness/control";
 import { sandboxProvider, sandboxProviderApiKey, type SandboxHandle } from "../sandboxes/provider";
 import { sessionCapabilities } from "./capabilities";
@@ -28,7 +34,11 @@ function metadata(value: Record<string, unknown> | undefined): PiStartMetadata |
   return typeof workdir === "string" && workdir.startsWith("/") &&
     typeof runtime?.fingerprint === "string" &&
     typeof runtime?.knowledgeTools === "boolean" &&
-    typeof runtime?.model?.selector === "string"
+    typeof runtime?.model?.selector === "string" &&
+    typeof runtime?.executable === "string" && runtime.executable.startsWith("/") &&
+    typeof runtime?.bunExecutable === "string" && runtime.bunExecutable.startsWith("/") &&
+    typeof runtime?.runAsUser === "string" && runtime.runAsUser.length > 0 &&
+    typeof runtime?.home === "string" && runtime.home.startsWith("/")
     ? { workdir, runtime }
     : null;
 }
@@ -131,12 +141,6 @@ export function makePiProviderDriver(
       }
     },
 
-    async reconcile(request) {
-      return dependencies.bridges.get(request.session.nativeSessionId)
-        ? { status: "in_progress" }
-        : { status: "unreachable" };
-    },
-
     async steer(request): Promise<HarnessOperationResult> {
       const bridge = dependencies.bridges.get(request.session.nativeSessionId);
       if (!bridge) return error("session_unreachable", "Pi RPC session is not live");
@@ -184,3 +188,32 @@ export function makePiProviderDriver(
 }
 
 export const piProviderDriver = makePiProviderDriver();
+
+function sessionFromHandle(handle: HarnessSessionHandle): HarnessSession {
+  return {
+    provider: "pi",
+    nativeSessionId: handle.sessionId,
+    runtime: { kind: "sandbox", id: handle.sandboxId },
+    protocolVersion: `oh-my-pi-rpc/${PI_CODING_AGENT_VERSION}`,
+    capabilities: piProviderDriver.descriptor.capabilities,
+    generation: PI_BRIDGE_GENERATION,
+  };
+}
+
+/** Compatibility control route used by restart recovery and stop callers that
+ * still consume HarnessAdapter. Resume remains a ProviderDriver operation;
+ * in-flight reconcile after a backend restart is explicitly unsupported. */
+export const piHarness: HarnessAdapter = {
+  provider: "pi",
+  capabilities: () => providerDriverHarnessCapabilities(piProviderDriver),
+  cancel(handle, reason) {
+    return piProviderDriver.cancel(sessionFromHandle(handle), reason);
+  },
+  reconcile() {
+    return Promise.resolve(providerDriverUnsupported(
+      "pi",
+      "reconcile",
+      "Pi resumes persisted JSONL sessions on the next turn but cannot reconstruct an in-flight stream after restart",
+    ));
+  },
+};

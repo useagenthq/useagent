@@ -26,7 +26,7 @@ describe("sessionCapabilities (truthful per-engine + resource-driven)", () => {
       plans: true,
       usage: true,
       modelSelection: true,
-      reconcile: true,
+      reconcile: false,
       approvals: false,
       questions: false,
       nativeEmbed: false,

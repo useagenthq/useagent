@@ -110,6 +110,7 @@ export function piBridgeProviderEvent(
       };
     case "turn.started":
     case "turn.completed":
+    case "turn.failed":
       return {
         ...base,
         id: `pi:${frame.sessionId}:${body.kind}`,

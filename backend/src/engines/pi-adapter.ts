@@ -32,9 +32,13 @@ export const piAdapter: EngineAdapter = {
       labels: { [RUNTIME_GENERATION_LABEL]: RUNTIME_GENERATION },
       requiredLabels: { [RUNTIME_GENERATION_LABEL]: RUNTIME_GENERATION },
       timingPrefix: "pi",
+      providerAfterResources: true,
       prepareProvider: (sandbox, workdir) => preparePiRuntime(sandbox, ctx, workdir),
     });
     try {
+      // Preparation can outlive a client cancellation. Never create/resume a
+      // native session or dispatch a provider request for an already-dead run.
+      ctx.signal.throwIfAborted();
       const capabilities = sessionCapabilities("pi", {
         desktop: false,
         knowledgeTools: prepared.providerState.knowledgeTools,
