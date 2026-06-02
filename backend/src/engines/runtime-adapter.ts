@@ -327,20 +327,19 @@ export function makeRuntimeAdapter(engine: RuntimeEngineId, driver: ProviderDriv
             // mtime: health refreshes rewrite the cache for the legacy instance
             // too. Fast path, no restart cost.
             if (
-              await awaitCodexProviderReady(sandbox, ctx.signal, CODEX_BARRIER_DEADLINE_MS)
+              !(await awaitCodexProviderReady(sandbox, ctx.signal, CODEX_BARRIER_DEADLINE_MS))
             ) {
-              return;
-            }
-            // (A) Fallback: the reconcile did not land in time. Bounce T3 so boot
-            // reads the relay config synchronously and builds the remote instance
-            // from the start, then verify once before steering. Honest error if
-            // the runtime never reports ready.
-            await restartRuntimeEnvironment(sandbox, ctx.signal);
-            invalidateRuntimeEnvironmentAccess(sandbox);
-            if (
-              !(await awaitCodexProviderReady(sandbox, ctx.signal, CODEX_VERIFY_DEADLINE_MS))
-            ) {
-              throw new Error("Codex runtime did not become ready after restart");
+              // (A) Fallback: the reconcile did not land in time. Bounce T3 so boot
+              // reads the relay config synchronously and builds the remote instance
+              // from the start, then verify once before steering. Honest error if
+              // the runtime never reports ready.
+              await restartRuntimeEnvironment(sandbox, ctx.signal);
+              invalidateRuntimeEnvironmentAccess(sandbox);
+              if (
+                !(await awaitCodexProviderReady(sandbox, ctx.signal, CODEX_VERIFY_DEADLINE_MS))
+              ) {
+                throw new Error("Codex runtime did not become ready after restart");
+              }
             }
           } finally {
             endBarrier?.();
