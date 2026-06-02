@@ -78,9 +78,9 @@ describe("skill catalog formatter", () => {
     const page = formatSkillCatalogPage([
       entry({
         id: "skill-1",
-        name: "login-as",
-        description: "Open an authenticated workspace.",
-        tags: ["login", "workspace"],
+        name: "deploy-preview",
+        description: "Deploy a preview environment.",
+        tags: ["deploy", "preview"],
       }),
     ]);
 
@@ -89,14 +89,14 @@ describe("skill catalog formatter", () => {
       {
         id: "skill-1",
         kind: "skill",
-        name: "login-as",
-        description: "Open an authenticated workspace.",
-        tags: ["login", "workspace"],
+        name: "deploy-preview",
+        description: "Deploy a preview environment.",
+        tags: ["deploy", "preview"],
         currentVersion: 1,
       },
     ]);
-    expect(page.text).toContain("[skill-1] skill: login-as (v1)");
-    expect(page.text).toContain("Tags: login, workspace");
+    expect(page.text).toContain("[skill-1] skill: deploy-preview (v1)");
+    expect(page.text).toContain("Tags: deploy, preview");
   });
 
   test("truncates descriptions and exposes nextCursor for fallback pagination", () => {
@@ -165,13 +165,13 @@ describe("skill catalog formatter", () => {
     );
     const relevant = entry({
       id: "pr-demo",
-      name: "loop-pr-demo",
+      name: "pr-demo",
       description: "Test a GitHub pull request and record a product demo video",
       tags: ["github", "demo"],
     });
     const page = formatSkillCatalogPrefill(
       [...filler, relevant],
-      "test this pr github.com/upstream-org/backend/pull/19625 and record a demo",
+      "test this pr github.com/acme/backend/pull/19625 and record a demo",
     );
 
     expect(page.skills[0]?.id).toBe("pr-demo");
