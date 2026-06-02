@@ -8,6 +8,7 @@ import type { SandboxHandle, SandboxPtyHandle } from "../sandboxes/provider";
 import { PI_CODING_AGENT_VERSION, type PreparedPiRuntime } from "./pi-runtime-config";
 
 const RPC_REQUEST_TIMEOUT_MS = 30_000;
+const ANSI_CSI_SEQUENCE = /\u001b\[[0-?]*[ -/]*[@-~]/g;
 
 function shellQuote(value: string): string {
   return `'${value.replaceAll("'", "'\\''")}'`;
@@ -34,6 +35,16 @@ export interface PiBridgeSession {
   subscribe(listener: PiRpcFrameListener): () => void;
   command(command: NativeBridgeCommand): Promise<void>;
   dispose(): Promise<void>;
+}
+
+function parsePiRpcFrameLine(line: string): Record<string, unknown> | null {
+  const normalized = line.replace(ANSI_CSI_SEQUENCE, "").trim();
+  if (!normalized.startsWith("{")) return null;
+  try {
+    return JSON.parse(normalized) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
 }
 
 class LivePiBridgeSession implements PiBridgeSession {
@@ -184,15 +195,10 @@ class LivePiBridgeSession implements PiBridgeSession {
     while (true) {
       const newline = this.#buffer.indexOf("\n");
       if (newline < 0) return;
-      const line = this.#buffer.slice(0, newline).trim();
+      const line = this.#buffer.slice(0, newline);
       this.#buffer = this.#buffer.slice(newline + 1);
-      if (!line.startsWith("{")) continue;
-      let frame: Record<string, unknown>;
-      try {
-        frame = JSON.parse(line) as Record<string, unknown>;
-      } catch {
-        continue;
-      }
+      const frame = parsePiRpcFrameLine(line);
+      if (!frame) continue;
       if (frame.type === "ready") {
         this.#readyResolve();
         continue;
