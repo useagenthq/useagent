@@ -9,6 +9,7 @@
  * the reconnect / replay connection, the canonical reducer, and selectors.
  *
  * Subpath entry points (see package.json exports):
+ *   - `@useagent/agent-client/wire`       - the run/step/native wire contract (ground truth)
  *   - `@useagent/agent-client/api`        - typed AgentClient over injected fetch
  *   - `@useagent/agent-client/org-changes` - canonical org invalidation wire contract
  *   - `@useagent/agent-client/integrations` - browser-safe integration wire contracts
@@ -16,6 +17,7 @@
  *   - `@useagent/agent-client/connection` - the pure SSE reconnect/health/fallback machine
  *   - `@useagent/agent-client/store`      - the pure canonical thread store
  */
+export * from "./wire";
 export * from "./api";
 export * from "./artifacts";
 export * from "./connection";

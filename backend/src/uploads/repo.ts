@@ -1,4 +1,5 @@
 import { and, asc, eq, gt, inArray, isNotNull, isNull, lte } from "drizzle-orm";
+import type { RunUpload } from "@useagent/agent-client/wire";
 import { db, type Executor } from "../db/client";
 import { userUploads } from "../db/schema";
 
@@ -14,16 +15,10 @@ export interface UserUploadDescriptor {
   readonly download_url: string;
 }
 
-/** Compact inbound-attachment descriptor rendered on a run's user turn. No
- * storage key / sha / expiry - only what the timeline needs to show the
- * attachment and fetch its bytes from the content route. */
-export interface RunUploadDescriptor {
-  readonly id: string;
-  readonly name: string;
-  readonly content_type: string;
-  readonly size_bytes: number;
-  readonly created_at: string;
-}
+/** Compact inbound-attachment descriptor rendered on a run's user turn - the wire
+ * `RunUpload`: no storage key / sha / expiry, only what the timeline needs to show
+ * the attachment and fetch its bytes from the content route. */
+export type RunUploadDescriptor = RunUpload;
 
 export function toRunUploadDescriptor(row: UserUploadRecord): RunUploadDescriptor {
   return {

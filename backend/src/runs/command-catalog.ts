@@ -1,4 +1,5 @@
 import type { CanonicalCommand } from "@useagent/agent-harness/canonical";
+import type { SessionCommandCatalog } from "@useagent/agent-client/wire";
 import { eq, sql } from "drizzle-orm";
 import { Hono } from "hono";
 import { db } from "../db/client";
@@ -71,11 +72,6 @@ export async function cacheCommandCatalog(snapshot: string, rawBody: string): Pr
  *  `commands` is [] when the session advertised none; the whole result is null when the session
  *  has not advertised a catalog yet (the caller then FAILS CLOSED - a command cannot be
  *  authorized against a cache). */
-export interface SessionCommandCatalog {
-  readonly commands: CatalogCommand[];
-  /** The latest `commands.updated` deliverySeq for this session (the catalog snapshot id). */
-  readonly revision: number;
-}
 export async function readSessionCommandCatalog(
   threadId: string,
   provider: string,

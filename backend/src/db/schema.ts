@@ -12,6 +12,14 @@ import {
   type IntegrationConnectionAccount,
   type IntegrationConnectionStatus,
 } from "@useagent/agent-client/integrations";
+import {
+  ENGINE_IDS,
+  MEMORY_SCOPES,
+  type EngineId,
+  type MemoryScope,
+  type RunStatus,
+  type StepKind,
+} from "@useagent/agent-client/wire";
 import type {
   ArtifactProposalStatus,
   ArtifactWorkpieceKind,
@@ -63,39 +71,14 @@ export type IntegrationConnectionAuthMethod =
   (typeof INTEGRATION_CONNECTION_AUTH_METHODS)[number];
 
 // ---------------------------------------------------------------------------
-// Shared domain types
+// Shared domain types — the run/step wire enums live in the agent-client wire
+// contract (packages never import apps, so the ground truth is the package). The
+// column `.$type<>()` annotations below consume them; re-exported here so the
+// many backend modules that read them from `../db/schema` keep one import path.
 // ---------------------------------------------------------------------------
 
-export type RunStatus = "queued" | "running" | "completed" | "failed";
-export type StepKind = "command" | "file" | "task" | "done";
-
-/** Which team-memory pool a run reads and writes (see src/memory/scope.ts).
- *  - "org": read + capture ORGANIZATION memory only (every org member shares it).
- *  - "personal": read the actor's PERSONAL memory AND org memory (merged); capture
- *    into personal ONLY. A personal run with no authenticated user fails closed.
- *  This is the ACCEPTED set at the API boundary; a run's scope is server-persisted,
- *  never taken from the sandbox/prompt/tool at recall time. */
-export const MEMORY_SCOPES = ["org", "personal"] as const;
-export type MemoryScope = (typeof MEMORY_SCOPES)[number];
-
-/** Which harness executes a run. `mock` is the scripted trace; `chat` is the
- *  no-sandbox conversational OpenRouter path; the agent engines (opencode /
- *  claude / codex) execute inside the selected per-thread Cube or Daytona
- *  sandbox. `daytona` and `claude-sdk` are legacy ids kept so
- *  pre-consolidation rows still resolve (aliased in the registry); `acp` is the
- *  ACP bridge (registered, hidden from the UI). This list is THE accepted set at
- *  every API boundary (runs, schedules, Slack default). */
-export const ENGINE_IDS = [
-  "mock",
-  "opencode",
-  "claude",
-  "codex",
-  "chat",
-  "daytona",
-  "claude-sdk",
-  "acp",
-] as const;
-export type EngineId = (typeof ENGINE_IDS)[number];
+export { ENGINE_IDS, MEMORY_SCOPES };
+export type { EngineId, MemoryScope, RunStatus, StepKind };
 
 export interface SkillSections {
   overview: string[];

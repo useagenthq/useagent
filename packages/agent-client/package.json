@@ -5,6 +5,7 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./wire": "./src/wire.ts",
     "./api": "./src/api.ts",
     "./artifacts": "./src/artifacts.ts",
     "./connection": "./src/connection.ts",
