@@ -162,6 +162,7 @@ describe("AlignUI allowlist ratchet", () => {
       );
     }
     expect(newDebt).toEqual([]);
+    expect(stale).toEqual([]);
   });
 });
 
@@ -183,7 +184,7 @@ const FRONTEND_SIZE_BASELINE: Record<string, number> = {
   "app/agent/artifacts/[id]/artifact-editor-surfaces.tsx": 1083,
   "components/chat/conversation.tsx": 1029,
   "components/agent-ui/rich-approval-card.tsx": 880,
-  "components/chat/types.ts": 850,
+  "components/chat/types.ts": 842,
 };
 
 describe("file-size ratchet (frontend)", () => {
@@ -212,9 +213,8 @@ describe("file-size ratchet (frontend)", () => {
       if (n <= MAX_LINES) loosen.push(`${rel}: ${n} <= ${MAX_LINES} (drop the baseline)`);
       else if (n < base) loosen.push(`${rel}: ${n} < ${base} (lower the baseline)`);
     }
-    // Non-failing signal: keeps baselines honest without punishing cleanup.
-    if (loosen.length) console.log("[size-ratchet] baselines can be tightened:\n" + loosen.join("\n"));
-    expect(true).toBe(true);
+    if (loosen.length) console.log("[size-ratchet] baselines must be tightened:\n" + loosen.join("\n"));
+    expect(loosen).toEqual([]);
   });
 });
 
@@ -289,8 +289,6 @@ function emDashOffenders(): string[] {
 // too. Remove an entry once the file is clean.
 const EM_DASH_ALLOWLIST = [
   "app/dashboard/page.tsx",
-  "components/application/agent-limits/agent-limits-card.tsx",
-  "utils/format.ts",
 ];
 
 describe("em-dash ratchet (frontend)", () => {
@@ -307,5 +305,6 @@ describe("em-dash ratchet (frontend)", () => {
     const stale = EM_DASH_ALLOWLIST.filter((f) => !offenders.includes(f));
     if (stale.length) console.log("[em-dash-ratchet] now-clean, remove from allowlist:\n" + stale.join("\n"));
     expect(newDebt).toEqual([]);
+    expect(stale).toEqual([]);
   });
 });
