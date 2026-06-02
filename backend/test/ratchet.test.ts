@@ -68,7 +68,7 @@ function lineCount(text: string): number {
 const BACKEND_SIZE_BASELINE: Record<string, number> = {
   "engines/opencode-server.ts": 2124,
   "engines/acp-server.ts": 1544,
-  "db/schema.ts": 1470,
+  "db/schema.ts": 1453,
   "runs/routes.ts": 1252,
   "memory/team-memory.ts": 1028,
   "worker.ts": 944,
