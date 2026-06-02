@@ -12,9 +12,10 @@ import { PI_BROKER_PORT, startPiCredentialBroker } from "./pi-credential-broker"
 
 /** npm 18.0.3 corresponds to upstream main 160ed439 at integration time. */
 export const PI_CODING_AGENT_VERSION = "18.0.3";
+export const PI_BUN_VERSION = "1.3.14";
 export const PI_CODING_AGENT_UPSTREAM_SHA = "160ed439ac0df594347e7d7018b813a7ffdb5e81";
 export const PI_BRIDGE_GENERATION = 1;
-export const PI_RUNTIME_LOCK_SHA256 = "ffbc377dc64aa52adbfd5a8c15087e63feb59ef427d80d9e16007cd1c7ff738c";
+export const PI_RUNTIME_LOCK_SHA256 = "a2f93ead170bc02603de81e80fbd3c678990d8204ce115932875f90e64c26847";
 export const PI_RUNTIME_USER = "useagent-pi";
 export const PI_RUNTIME_HOME = "/home/useagent-pi";
 export const PI_RUNTIME_ROOT = "/opt/useagent/pi-runtime";
@@ -155,20 +156,14 @@ export async function preparePiRuntime(
     uploadPrivateFile(sandbox, `${runtimeManifestDir}/package.json`, runtimePackageJson),
     uploadPrivateFile(sandbox, `${runtimeManifestDir}/package-lock.json`, runtimeLockJson),
   ]);
-  const bunProbe = await sandbox.process.executeCommand("command -v bun", undefined, undefined, 15);
-  const sourceBunExecutable = bunProbe.result?.trim();
-  if ((bunProbe.exitCode ?? 1) !== 0 || !sourceBunExecutable?.startsWith("/")) {
-    throw new Error("Pi runtime requires an absolute Bun executable");
-  }
-  const bunExecutable = `${PI_RUNTIME_ROOT}/bin/bun`;
+  const bunExecutable = `${PI_RUNTIME_ROOT}/current/node_modules/.bin/bun`;
   const executable = `${PI_RUNTIME_ROOT}/current/node_modules/@oh-my-pi/pi-coding-agent/dist/cli.js`;
   const install = await sandbox.process.executeCommand(
-    `install -D -m 755 '${sourceBunExecutable.replaceAll("'", "'\\''")}' '${bunExecutable}' && ` +
-      `if ! test -f '${PI_RUNTIME_ROOT}/.lock-sha256' || ` +
+    `if ! test -f '${PI_RUNTIME_ROOT}/.lock-sha256' || ` +
       `! grep -Fxq '${PI_RUNTIME_LOCK_SHA256}' '${PI_RUNTIME_ROOT}/.lock-sha256'; then ` +
       `install -d -m 755 '${PI_RUNTIME_ROOT}/current' && ` +
       `cp '${runtimeManifestDir}/package.json' '${runtimeManifestDir}/package-lock.json' '${PI_RUNTIME_ROOT}/current/' && ` +
-      `cd '${PI_RUNTIME_ROOT}/current' && npm ci --omit=dev --ignore-scripts --silent >/dev/null && ` +
+      `cd '${PI_RUNTIME_ROOT}/current' && npm ci --omit=dev --silent >/dev/null && ` +
       `printf '%s\\n' '${PI_RUNTIME_LOCK_SHA256}' > '${PI_RUNTIME_ROOT}/.lock-sha256'; fi; ` +
       `'${bunExecutable}' '${executable}' --version | grep -Fq '${PI_CODING_AGENT_VERSION}'`,
     undefined,
