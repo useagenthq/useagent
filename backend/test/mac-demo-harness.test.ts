@@ -229,7 +229,10 @@ raise SystemExit(os.waitstatus_to_exitcode(status))
       };
       expect(started.exitCode).toBe(0);
 
-      for (let attempt = 0; attempt < 100 && !existsSync(readyFile); attempt += 1) {
+      // Generous budget: the fake recorder is a python3 script whose interpreter
+      // cold-start under full-suite load intermittently exceeded the old 1s cap
+      // (a ~50% local flake). 5s bounds the wait without weakening the assertion.
+      for (let attempt = 0; attempt < 500 && !existsSync(readyFile); attempt += 1) {
         await Bun.sleep(10);
       }
       expect(existsSync(readyFile)).toBe(true);

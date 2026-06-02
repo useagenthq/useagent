@@ -1401,7 +1401,13 @@ describe("slack inbound attachments", () => {
         files: [slackFile(fileName)],
       }),
     );
-    const upload = await waitFor(async () => (await uploadsByName(fileName))[0] ?? null);
+    // Wait for the CLAIMED upload, not merely the row: the files-only path
+    // stages the upload before the synthesized run claims it, so a slow runner
+    // can observe the legitimate runId=NULL window between the two.
+    const upload = await waitFor(async () => {
+      const row = (await uploadsByName(fileName))[0];
+      return row?.runId ? row : null;
+    });
     expect(upload.runId).toBeTruthy();
     const { body: run } = await json<any>(`/api/runs/${upload.runId}`);
     expect(run.prompt).toBe("Review the attached files.");
