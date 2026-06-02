@@ -26,6 +26,7 @@ export interface ToolCallResult<Content extends ToolCallContent = ToolCallTextCo
 
 export interface GatewayToolDescriptor {
   readonly name: string;
+  readonly aliases?: readonly string[];
   readonly description: string;
   readonly inputSchema: Readonly<Record<string, unknown>>;
 }

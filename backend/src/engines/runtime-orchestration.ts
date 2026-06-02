@@ -10,6 +10,7 @@ import {
 } from "./provider-question";
 import { approvalEventId, runtimeApprovalRequest } from "./runtime-approval";
 import { firstSemanticT3ToolName, t3SummaryToolIdentity } from "@useagent/agent-harness";
+import { toolServerDisplayName } from "@useagent/agent-harness/canonical";
 
 export type RuntimeEngineId = Extract<EngineId, "codex" | "claude" | "opencode">;
 export type RuntimeMode = "approval-required" | "auto-accept-edits" | "auto" | "full-access";
@@ -485,7 +486,9 @@ function toolActivityLabel(
   projection: ReturnType<typeof runtimeToolProjection>,
   tool: string,
 ): string {
-  if (projection.server && projection.tool) return `${projection.server} · ${projection.tool}`;
+  if (projection.server && projection.tool) {
+    return `${toolServerDisplayName(projection.server)} · ${projection.tool}`;
+  }
   return descriptiveActivityLabel(projection.tool) ??
     descriptiveActivityLabel(activity.summary) ??
     descriptiveActivityLabel(tool) ??
