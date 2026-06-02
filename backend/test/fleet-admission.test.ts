@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { sql } from "drizzle-orm";
 import { db } from "../src/db/client";
 import { acceptRunCommand } from "../src/commands";
@@ -97,6 +97,20 @@ function percentile(values: number[], p: number): number {
   const idx = Math.min(sorted.length - 1, Math.ceil((p / 100) * sorted.length) - 1);
   return sorted[Math.max(0, idx)];
 }
+
+beforeEach(async () => {
+  stopFleetReconciler();
+  setProviderInventoryForTest(null);
+  // This file asserts host-global capacity and queue ordering. Earlier backend
+  // tests intentionally retain thread sandboxes and queued admissions, so its
+  // fixture must own the complete fleet projection rather than inherit those
+  // unrelated rows from the shared integration-test database.
+  await db.transaction(async (tx) => {
+    await tx.execute(sql`delete from run_admissions`);
+    await tx.execute(sql`delete from sandbox_leases`);
+    await tx.execute(sql`update runs set sandbox_id = null where sandbox_id is not null`);
+  });
+});
 
 afterEach(async () => {
   // Restore the wide suite limits + clear any injected provider inventory.
