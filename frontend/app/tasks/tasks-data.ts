@@ -6,6 +6,20 @@
 export const TASK_STATUSES = ["todo", "in_progress", "done", "archived"] as const;
 export type TaskStatus = (typeof TASK_STATUSES)[number];
 
+/** Sentinel filter value for "no project scope" (show every project's tasks). */
+export const ALL_PROJECTS = "__all__";
+
+/**
+ * Map a `?project=` query value to the board's initial filter, so
+ * `/tasks?project=owner/name` deep-links straight to that project's board and a
+ * blank/missing param falls back to "All projects". Pure, so deep-link
+ * preselection is unit-testable without rendering.
+ */
+export function initialProjectFilter(param: string | null | undefined): string {
+  const trimmed = param?.trim();
+  return trimmed ? trimmed : ALL_PROJECTS;
+}
+
 export interface Task {
   id: string;
   project_key: string | null;

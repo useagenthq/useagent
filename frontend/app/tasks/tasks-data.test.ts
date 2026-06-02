@@ -1,7 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import {
+  ALL_PROJECTS,
   BOARD_COLUMNS,
   groupTasksByColumn,
+  initialProjectFilter,
   projectOptions,
   type Task,
   type TaskStatus,
@@ -57,5 +59,18 @@ describe("projectOptions", () => {
       ["acme/web", "acme/web"],
     );
     expect(opts).toEqual(["acme/web", "zeta/app"]);
+  });
+});
+
+describe("initialProjectFilter", () => {
+  test("a `?project=` value preselects that project (deep-link)", () => {
+    expect(initialProjectFilter("acme/api")).toBe("acme/api");
+  });
+
+  test("a missing or blank param falls back to All projects", () => {
+    expect(initialProjectFilter(undefined)).toBe(ALL_PROJECTS);
+    expect(initialProjectFilter(null)).toBe(ALL_PROJECTS);
+    expect(initialProjectFilter("")).toBe(ALL_PROJECTS);
+    expect(initialProjectFilter("   ")).toBe(ALL_PROJECTS);
   });
 });

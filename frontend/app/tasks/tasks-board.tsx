@@ -1,7 +1,8 @@
 "use client";
 
 import { RiAddLine, RiDeleteBinLine } from "@remixicon/react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/base/buttons/button";
 import { Chip } from "@/components/base/badges/chip";
 import { InputBase, TextField } from "@/components/base/input/input";
@@ -12,15 +13,14 @@ import {
   updateTask,
 } from "./tasks-api";
 import {
-  BOARD_COLUMNS,
+  ALL_PROJECTS,
   TASK_STATUSES,
   groupTasksByColumn,
+  initialProjectFilter,
   projectOptions,
   type Task,
   type TaskStatus,
 } from "./tasks-data";
-
-const ALL_PROJECTS = "__all__";
 
 const STATUS_LABEL: Record<TaskStatus, string> = {
   todo: "Todo",
@@ -44,20 +44,52 @@ export function TasksBoard({
   initial = [],
   initialRepos = [],
   initialError = false,
+  initialProject,
 }: {
   initial?: Task[];
   initialRepos?: string[];
   initialError?: boolean;
+  /** The `?project=` deep-link, read server-side and used to preselect the
+   *  filter so the SSR board already shows that project (no filter flash). */
+  initialProject?: string;
 }) {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+
   const [tasks, setTasks] = useState<Task[]>(initial);
   const [repos] = useState<string[]>(initialRepos);
-  const [project, setProject] = useState<string>(ALL_PROJECTS);
+  const [project, setProject] = useState<string>(() => initialProjectFilter(initialProject));
   const [error, setError] = useState(initialError);
   const [loading, setLoading] = useState(false);
   const [newTitle, setNewTitle] = useState("");
   const [busyId, setBusyId] = useState<string | null>(null);
 
   const scoped = project === ALL_PROJECTS ? undefined : project;
+
+  // The project filter is mirrored into the URL so a board view is shareable and
+  // back/forward correct. Selecting a project writes `?project=` (replace, no
+  // history spam); browser navigation writes it back into state.
+  const selectProject = useCallback(
+    (next: string) => {
+      setProject(next);
+      const query = next === ALL_PROJECTS ? "" : `?project=${encodeURIComponent(next)}`;
+      router.replace(`${pathname}${query}`, { scroll: false });
+    },
+    [pathname, router],
+  );
+
+  const projectParam = searchParams?.get("project") ?? null;
+  const firstParamSync = useRef(true);
+  useEffect(() => {
+    // Follow back/forward navigation. The first run matches the SSR seed, so
+    // skip it - otherwise it would clobber `initialProject` on mount.
+    if (firstParamSync.current) {
+      firstParamSync.current = false;
+      return;
+    }
+    setProject(initialProjectFilter(projectParam));
+  }, [projectParam]);
 
   const refetch = useCallback(async (forProject?: string) => {
     setLoading(true);
@@ -84,7 +116,13 @@ export function TasksBoard({
   }, [project]);
 
   const columns = useMemo(() => groupTasksByColumn(tasks), [tasks]);
-  const options = useMemo(() => projectOptions(tasks, repos), [tasks, repos]);
+  // Keep the active scope selectable even when it is deep-linked to a project
+  // that has no tasks yet and is absent from the repo list - otherwise the
+  // controlled select would render with no matching option.
+  const options = useMemo(
+    () => projectOptions(tasks, scoped ? [...repos, scoped] : repos),
+    [tasks, repos, scoped],
+  );
 
   const onCreate = useCallback(async () => {
     const title = newTitle.trim();
@@ -145,7 +183,7 @@ export function TasksBoard({
             aria-label="Filter by project"
             className={selectClass}
             value={project}
-            onChange={(e) => setProject(e.target.value)}
+            onChange={(e) => selectProject(e.target.value)}
           >
             <option value={ALL_PROJECTS}>All projects</option>
             {options.map((p) => (
