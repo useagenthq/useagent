@@ -47,7 +47,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.bun/install/cache
-          key: bun-store-${{ runner.os }}-${{ hashFiles('frontend/bun.lock', 'backend/bun.lock') }}
+          key: bun-store-${{ runner.os }}-${{ hashFiles('frontend/bun.lock', 'backend/bun.lock', 'packages/*/bun.lock') }}
           restore-keys: bun-store-${{ runner.os }}-
       # Root `typecheck` runs the frontend tsc AND the backend tsc, so both apps
       # need their deps installed first.
@@ -55,6 +55,15 @@ jobs:
         working-directory: frontend
       - run: bun install --frozen-lockfile
         working-directory: backend
+      # file:-linked packages do not install their own deps transitively - a
+      # package's imports (@useagent/artifact-workspace etc.) only resolve after
+      # an install INSIDE that package dir. Root typecheck spans every package,
+      # so install them all. This was the chronic CI red.
+      - name: Install shared package deps
+        run: |
+          for p in packages/*/; do
+            if [ -f "$p/package.json" ]; then (cd "$p" && bun install --frozen-lockfile); fi
+          done
       - run: bun run typecheck
 
   # ── Backend unit/integration tests against an isolated Postgres ──────────────
@@ -116,10 +125,13 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.bun/install/cache
-          key: bun-store-${{ runner.os }}-${{ matrix.package }}-${{ hashFiles(format('packages/{0}/bun.lock', matrix.package)) }}
+          key: bun-store-${{ runner.os }}-${{ matrix.package }}-${{ hashFiles('packages/*/bun.lock') }}
           restore-keys: bun-store-${{ runner.os }}-${{ matrix.package }}-
-      - run: bun install --frozen-lockfile
-        working-directory: packages/${{ matrix.package }}
+      - name: Install this package and its file:-linked siblings
+        run: |
+          for p in packages/*/; do
+            if [ -f "$p/package.json" ]; then (cd "$p" && bun install --frozen-lockfile); fi
+          done
       - run: bun run typecheck
         working-directory: packages/${{ matrix.package }}
       - run: bun run test
@@ -138,10 +150,19 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.bun/install/cache
-          key: bun-store-${{ runner.os }}-${{ hashFiles('frontend/bun.lock') }}
+          key: bun-store-${{ runner.os }}-${{ hashFiles('frontend/bun.lock', 'packages/*/bun.lock') }}
           restore-keys: bun-store-${{ runner.os }}-
       - run: bun install --frozen-lockfile
         working-directory: frontend
+      # file:-linked packages do not install their own deps transitively - a
+      # package's imports (@useagent/artifact-workspace etc.) only resolve after
+      # an install INSIDE that package dir. Root typecheck spans every package,
+      # so install them all. This was the chronic CI red.
+      - name: Install shared package deps
+        run: |
+          for p in packages/*/; do
+            if [ -f "$p/package.json" ]; then (cd "$p" && bun install --frozen-lockfile); fi
+          done
       # Chat is the surface we own end-to-end; its store/timeline/part-renderer
       # logic is pure and deterministic.
       - name: bun run test
