@@ -15,6 +15,7 @@ import {
   type RunUpload,
   type StepKind,
 } from "@useagent/agent-client/wire";
+import { providerDisplayName } from "./provider-display";
 
 export type {
   ApiRun,
@@ -695,9 +696,8 @@ export function deriveTrace(step: ApiStep): StepTrace {
     if (tool && !map) {
       const fileBase = filePath ? basename(filePath) : null;
       const displayTool = semanticToolName(tool, code, input);
-      const server = semanticServerName(code, input);
-      // Name-bearing inputs give the generic row a real target — a bare "Skill"
-      // row (user-reported) becomes "Skill fast-installs".
+      const server = providerDisplayName(semanticServerName(code, input));
+      // Name-bearing inputs give the generic row a real target (user-reported): a bare "Skill" becomes "Skill fast-installs".
       const named = pickString(input, [
         "name",
         "skill",
