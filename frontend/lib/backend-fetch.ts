@@ -14,7 +14,7 @@
  */
 import { handleReleaseMismatch, withClientReleaseHeader } from "./release-compat";
 
-const API_ORIGIN = process.env.SKYNET_API_ORIGIN ?? "http://localhost:3201";
+const API_ORIGIN = process.env.USEAGENT_API_ORIGIN ?? "http://localhost:3201";
 
 export async function backendFetch(
   path: string,

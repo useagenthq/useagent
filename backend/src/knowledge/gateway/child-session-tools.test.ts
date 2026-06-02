@@ -16,7 +16,7 @@ import { mintToolToken, type ToolTokenClaims } from "./token";
 const touchedOrgs = new Set<string>();
 
 const ENV_KEYS = [
-  "SKYNET_DEV_MODE",
+  "USEAGENT_DEV_MODE",
   "ENABLED_ENGINES",
   "ENGINE_READINESS_CODEX",
   "ENGINE_READINESS_OPENCODE",
@@ -29,7 +29,7 @@ let savedEnv: Partial<Record<(typeof ENV_KEYS)[number], string | undefined>> =
 
 beforeEach(() => {
   savedEnv = Object.fromEntries(ENV_KEYS.map((key) => [key, process.env[key]]));
-  process.env.SKYNET_DEV_MODE = "true";
+  process.env.USEAGENT_DEV_MODE = "true";
   process.env.ENABLED_ENGINES = "opencode,codex";
   process.env.ENGINE_READINESS_CODEX = "ready";
   process.env.ENGINE_READINESS_OPENCODE = "ready";

@@ -78,7 +78,7 @@ function encryptionMaterial(): string {
     return dedicated;
   }
   if (!runtimeDevModeEnabled()) {
-    throw new Error("SECRETS_ENCRYPTION_KEY is required when SKYNET_DEV_MODE is off");
+    throw new Error("SECRETS_ENCRYPTION_KEY is required when USEAGENT_DEV_MODE is off");
   }
   return authSecretMaterial();
 }

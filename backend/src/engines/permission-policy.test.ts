@@ -11,7 +11,7 @@ const ALLOW_ONCE = { optionId: "opt-once", kind: "allow_once" };
 const ALLOW_ALWAYS = { optionId: "opt-always", kind: "allow_always" };
 
 const origNode = process.env.NODE_ENV;
-const origDev = process.env.SKYNET_DEV_MODE;
+const origDev = process.env.USEAGENT_DEV_MODE;
 const origYolo = process.env.ACP_YOLO_APPROVE;
 const restore = (k: string, v: string | undefined) => {
   if (v === undefined) delete process.env[k];
@@ -19,7 +19,7 @@ const restore = (k: string, v: string | undefined) => {
 };
 afterEach(() => {
   restore("NODE_ENV", origNode);
-  restore("SKYNET_DEV_MODE", origDev);
+  restore("USEAGENT_DEV_MODE", origDev);
   restore("ACP_YOLO_APPROVE", origYolo);
 });
 
@@ -195,7 +195,7 @@ describe("decideAcpPermission - actual response payloads (pure logic)", () => {
 describe("dev-mode gate holds (env-derived default)", () => {
   test("production DENIES even with ACP_YOLO_APPROVE=1", () => {
     process.env.NODE_ENV = "production";
-    delete process.env.SKYNET_DEV_MODE;
+    delete process.env.USEAGENT_DEV_MODE;
     process.env.ACP_YOLO_APPROVE = "1";
     // decideAcpPermission()/allowPermissionBypass() read the env-gated acpAutoApprove
     expect(decideAcpPermission([ALLOW_ONCE])).toEqual({ outcome: { outcome: "cancelled" } });
@@ -228,7 +228,7 @@ describe("actual claude CLI arguments", () => {
 
   test("production NEVER carries the skip flag, even with the yolo env set", () => {
     process.env.NODE_ENV = "production";
-    delete process.env.SKYNET_DEV_MODE;
+    delete process.env.USEAGENT_DEV_MODE;
     process.env.ACP_YOLO_APPROVE = "1";
     expect(claudeSpec.command({ model: "claude-opus-5", resumeId: undefined })).not.toContain("--dangerously-skip-permissions");
   });

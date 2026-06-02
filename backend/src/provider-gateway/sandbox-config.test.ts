@@ -26,7 +26,7 @@ afterEach(() => {
     "PROVIDER_GATEWAY_SECRET",
     "TOOL_GATEWAY_SECRET",
     "NODE_ENV",
-    "SKYNET_DEV_MODE",
+    "USEAGENT_DEV_MODE",
     "SANDBOX_SECRET_MODE",
   ]) {
     const value = original[name];

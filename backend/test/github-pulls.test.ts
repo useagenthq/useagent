@@ -11,9 +11,9 @@ const githubEnvKeys = [
   "GITHUB_APP_ID",
   "GITHUB_APP_PRIVATE_KEY",
   "GITHUB_TENANT_ORG_ID",
-  "SKYNET_PRIMARY_ORG_ID",
+  "USEAGENT_PRIMARY_ORG_ID",
   "SLACK_DEFAULT_ORG_ID",
-  "SKYNET_DEV_MODE",
+  "USEAGENT_DEV_MODE",
   "ALLOW_DEV_ORG",
 ] as const;
 const originalGithubEnv = new Map(

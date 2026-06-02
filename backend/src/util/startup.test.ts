@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { nextPollDelayMs, serialStartup, stagesTogether } from "./startup";
 
-const FLAG = "SKYNET_SERIAL_STARTUP";
+const FLAG = "USEAGENT_SERIAL_STARTUP";
 const savedFlag = process.env[FLAG];
 
 afterEach(() => {
@@ -47,7 +47,7 @@ describe("stagesTogether", () => {
     expect(order.indexOf("b:start")).toBeLessThan(order.indexOf("a:end"));
   });
 
-  test("SKYNET_SERIAL_STARTUP=1: same stages, same order, concurrency 1", async () => {
+  test("USEAGENT_SERIAL_STARTUP=1: same stages, same order, concurrency 1", async () => {
     process.env[FLAG] = "1";
     expect(serialStartup()).toBe(true);
     const order: string[] = [];

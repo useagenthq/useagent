@@ -60,7 +60,7 @@ try {
   const devLog = openSync(`${scratch}/cacheiso-dev.log`, "a");
   dev = Bun.spawn(["bun", "run", "dev", "--port", String(PORT)], {
     cwd: frontendDir,
-    env: { ...process.env, SKYNET_BUILD_DIST: DEV_DIST },
+    env: { ...process.env, USEAGENT_BUILD_DIST: DEV_DIST },
     stdout: devLog,
     stderr: devLog,
   });
@@ -76,10 +76,10 @@ try {
 
   ok("BEFORE build: 5x /agent/new all 200", up && (await poll("/agent/new", 5, "before")));
 
-  // production build to the PHASE-DEFAULT dir (no SKYNET_BUILD_DIST -> .next-build)
+  // production build to the PHASE-DEFAULT dir (no USEAGENT_BUILD_DIST -> .next-build)
   const buildLog = openSync(`${scratch}/cacheiso-build.log`, "a");
   const buildEnv = { ...process.env };
-  delete buildEnv.SKYNET_BUILD_DIST; // prove the DEFAULT isolation, not an override
+  delete buildEnv.USEAGENT_BUILD_DIST; // prove the DEFAULT isolation, not an override
   build = Bun.spawn(["bun", "run", "build"], { cwd: frontendDir, env: buildEnv, stdout: buildLog, stderr: buildLog });
   const buildExit = await build.exited;
   ok("isolated production build succeeded (distDir .next-build)", buildExit === 0, `exit ${buildExit}`);

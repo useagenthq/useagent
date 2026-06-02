@@ -15,7 +15,7 @@
  *     bun run test/manual/knowledge-mcp-client.ts
  */
 process.env.DATABASE_URL ??= "postgres://postgres@localhost:5432/skynet_test";
-process.env.SKYNET_DEV_MODE = "true";
+process.env.USEAGENT_DEV_MODE = "true";
 
 import server from "../../src/index";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";

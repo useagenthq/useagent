@@ -329,7 +329,7 @@ export async function executeAutomationToolLocal(
 
 function primaryApiOrigin(): string | null {
   if (!process.env.GATEWAY_DATABASE_URL) return null;
-  const raw = process.env.SKYNET_API_ORIGIN?.trim();
+  const raw = process.env.USEAGENT_API_ORIGIN?.trim();
   if (!raw) return null;
   try {
     const url = new URL(raw);
@@ -393,7 +393,7 @@ export async function executeAutomationTool(
   const origin = primaryApiOrigin();
   if (process.env.GATEWAY_DATABASE_URL && !origin) {
     return errorResult(
-      "automation control plane is not configured; ask the workspace operator to set SKYNET_API_ORIGIN for the gateway, then retry",
+      "automation control plane is not configured; ask the workspace operator to set USEAGENT_API_ORIGIN for the gateway, then retry",
     );
   }
   return origin
