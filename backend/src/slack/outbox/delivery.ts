@@ -420,10 +420,15 @@ export async function processDue(
 let relayConfig: SlackConfig | null = null;
 let relayTimer: ReturnType<typeof setInterval> | null = null;
 let inFlight = false;
+let rerunRequested = false;
 
 /** A single guarded pass (no overlapping passes). */
 async function pass(): Promise<void> {
-  if (inFlight || !relayConfig) return;
+  if (!relayConfig) return;
+  if (inFlight) {
+    rerunRequested = true;
+    return;
+  }
   const config = relayConfig;
   inFlight = true;
   try {
@@ -446,6 +451,10 @@ async function pass(): Promise<void> {
     console.error("[slack-outbox] delivery pass failed:", (err as Error).message);
   } finally {
     inFlight = false;
+    if (rerunRequested && relayConfig) {
+      rerunRequested = false;
+      queueMicrotask(() => void pass());
+    }
   }
 }
 
@@ -474,6 +483,7 @@ export function kickSlackOutbox(): void {
  *  drive processDue() explicitly; the app never stops it. */
 export function stopSlackOutboxRelay(): void {
   relayConfig = null;
+  rerunRequested = false;
   if (relayTimer) {
     clearInterval(relayTimer);
     relayTimer = null;
