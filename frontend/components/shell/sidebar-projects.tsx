@@ -6,7 +6,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { fetchSidebarRuns } from "@/app/agent/runs/runs-data";
 import { useOrgChanges } from "@/hooks/use-org-changes";
 import { backendFetch } from "@/lib/backend-fetch";
-import { threadRowTimestamp } from "@/components/session-ui/thread-row";
+import { threadRowTimestamp, ThreadRow } from "@/components/session-ui/thread-row";
 import {
   ProjectThreadTree,
   type ProjectGroup as TreeProjectGroup,
@@ -17,6 +17,7 @@ import {
   groupThreadsByProject,
   runPrimaryRepo,
   UNATTACHED_KEY,
+  type ProjectGroup,
   type ProjectRepo,
 } from "./sidebar-project-groups";
 import { SidebarProjectMenu } from "./sidebar-project-menu";
@@ -25,6 +26,9 @@ import type { SidebarRun } from "./working-project-status";
 
 const POLL_MS = 30_000;
 const MAX_PROJECTS = 48;
+// Recent threads stay visible; the rest sit behind a "Show N more" disclosure so
+// a long history never floods the rail (same cap as the previous rail).
+const VISIBLE_THREADS = 6;
 const STORAGE_KEY = "useagent.sidebar.project-expanded";
 
 /** Per-project expand overrides, best-effort (private mode / SSR safe). */
@@ -70,6 +74,8 @@ export function SidebarProjects() {
   const [projects, setProjects] = useState<ProjectRepo[]>([]);
   const [runs, setRuns] = useState<SidebarRun[]>([]);
   const [overrides, setOverrides] = useState<Record<string, boolean>>({});
+  const [showEmptyProjects, setShowEmptyProjects] = useState(false);
+  const [showAllThreads, setShowAllThreads] = useState(false);
 
   useEffect(() => {
     setOverrides(readExpanded());
@@ -152,12 +158,12 @@ export function SidebarProjects() {
     });
   };
 
-  // Fold the data groups into the tree view model: a title, the clean repo name
-  // for the actions menu, and each thread's label + real relative-time chip +
-  // active-state from the current route.
-  const treeGroups = useMemo<TreeProjectGroup[]>(
-    () =>
-      groups.map((group) => ({
+  // Fold a data group into the native tree view model: a title, the clean repo
+  // name for the actions menu, and each thread's label + real relative-time chip
+  // + active-state from the current route.
+  const toTree = useCallback(
+    (list: readonly ProjectGroup[]): TreeProjectGroup[] =>
+      list.map((group) => ({
         key: group.key,
         label: group.name,
         fullName: group.fullName,
@@ -168,7 +174,23 @@ export function SidebarProjects() {
           isSelected: pathname === `/session/${run.id}`,
         })),
       })),
-    [groups, pathname],
+    [pathname],
+  );
+
+  // Projects with active threads stay in view; the long tail of empty repos sits
+  // behind "Show N more" (they were flooding the rail); loose threads with no
+  // project get their own bottom section with its own "Show N more".
+  const activeProjects = useMemo(
+    () => groups.filter((group) => group.fullName !== null && group.threads.length > 0),
+    [groups],
+  );
+  const emptyProjects = useMemo(
+    () => groups.filter((group) => group.fullName !== null && group.threads.length === 0),
+    [groups],
+  );
+  const independentThreads = useMemo(
+    () => groups.find((group) => group.key === UNATTACHED_KEY)?.threads ?? [],
+    [groups],
   );
 
   const renderMenu = useCallback(
@@ -181,16 +203,73 @@ export function SidebarProjects() {
 
   if (groups.length === 0) return null;
 
+  const visibleThreads = showAllThreads
+    ? independentThreads
+    : independentThreads.slice(0, VISIBLE_THREADS);
+  const threadOverflow = independentThreads.length - visibleThreads.length;
+
   return (
     <>
-      <SidebarSectionLabel>Projects</SidebarSectionLabel>
-      <ProjectThreadTree
-        groups={treeGroups}
-        isExpanded={isExpanded}
-        onToggle={toggle}
-        threadHref={(thread) => `/session/${thread.id}`}
-        renderMenu={renderMenu}
-      />
+      {activeProjects.length > 0 && (
+        <>
+          <SidebarSectionLabel>Projects</SidebarSectionLabel>
+          <ProjectThreadTree
+            groups={toTree(activeProjects)}
+            isExpanded={isExpanded}
+            onToggle={toggle}
+            threadHref={(thread) => `/session/${thread.id}`}
+            renderMenu={renderMenu}
+          />
+        </>
+      )}
+
+      {emptyProjects.length > 0 && (
+        <>
+          {showEmptyProjects && (
+            <ProjectThreadTree
+              groups={toTree(emptyProjects)}
+              isExpanded={isExpanded}
+              onToggle={toggle}
+              threadHref={(thread) => `/session/${thread.id}`}
+              renderMenu={renderMenu}
+            />
+          )}
+          <button
+            type="button"
+            onClick={() => setShowEmptyProjects((value) => !value)}
+            className="flex w-full items-center gap-1 rounded-lg px-2.5 py-1 text-caption-1-regular text-text-tertiary transition-colors hover:bg-background-secondary-hover hover:text-text-secondary"
+          >
+            {showEmptyProjects ? "Show fewer" : `Show ${emptyProjects.length} more`}
+          </button>
+        </>
+      )}
+
+      {independentThreads.length > 0 && (
+        <>
+          <SidebarSectionLabel>Threads</SidebarSectionLabel>
+          <ul aria-label="Threads without a project" className="flex flex-col">
+            {visibleThreads.map((run) => {
+              const href = `/session/${run.id}`;
+              return (
+                <li key={run.id}>
+                  <ThreadRow run={run} href={href} active={pathname === href} />
+                </li>
+              );
+            })}
+            {threadOverflow > 0 || showAllThreads ? (
+              <li>
+                <button
+                  type="button"
+                  onClick={() => setShowAllThreads((value) => !value)}
+                  className="flex w-full items-center gap-1 rounded-lg px-2.5 py-1 text-caption-1-regular text-text-tertiary transition-colors hover:bg-background-secondary-hover hover:text-text-secondary"
+                >
+                  {showAllThreads ? "Show fewer" : `Show ${threadOverflow} more`}
+                </button>
+              </li>
+            ) : null}
+          </ul>
+        </>
+      )}
     </>
   );
 }

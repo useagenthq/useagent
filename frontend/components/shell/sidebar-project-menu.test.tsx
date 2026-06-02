@@ -17,13 +17,11 @@ test("taskBoardHref deep-links to the project board with an encoded key", () => 
 
 test("the menu offers Open task board first, then New thread, with real routes", () => {
   const items = projectMenuItems(group());
-  expect(items.map((i) => i.label)).toEqual([
-    "Open task board",
-    "New thread in this project",
-  ]);
+  expect(items.map((i) => i.label)).toEqual(["Open task board", "New thread"]);
   // "Open task board" targets the project's Kanban deep-link.
   expect(items[0].href).toBe("/tasks?project=acme%2Fapi");
-  // "New thread in this project" reuses the existing per-repo composer route.
+  // "New thread" reuses the existing per-repo composer route (the folder it was
+  // opened from already names the project).
   expect(items[1].href).toBe("/agent/new?repo=acme%2Fapi");
 });
 

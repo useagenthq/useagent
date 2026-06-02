@@ -38,7 +38,7 @@ export function projectMenuItems(group: ProjectGroup): ProjectMenuItem[] {
     { key: "open-tasks", label: "Open task board", href: taskBoardHref(group.fullName) },
     {
       key: "new-thread",
-      label: "New thread in this project",
+      label: "New thread",
       href: `/agent/new?repo=${encodeURIComponent(group.fullName)}`,
     },
   ];
@@ -89,12 +89,16 @@ export function SidebarProjectMenu({
       >
         <RiMore2Line className="size-4" aria-hidden />
       </DropdownTrigger>
-      <DropdownPopover aria-label={`Project actions for ${group.label}`} placement="bottom end">
+      <DropdownPopover
+        aria-label={`Project actions for ${group.label}`}
+        placement="bottom end"
+        className="w-max"
+      >
         <DropdownGroup>
           {items.map((item) => {
             const Icon = ITEM_ICON[item.key];
             return (
-              <DropdownItem key={item.key} onSelect={() => go(item.href)}>
+              <DropdownItem key={item.key} className="px-2 py-1.5" onSelect={() => go(item.href)}>
                 <Icon
                   className="size-5 shrink-0 text-foreground-icon-secondary"
                   aria-hidden
