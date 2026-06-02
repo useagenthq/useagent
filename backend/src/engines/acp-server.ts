@@ -333,18 +333,24 @@ function authHeaders(token: string): Record<string, string> {
  *  we drop the SSE. Own short-lived controller (NOT the run's sseAbort, which we are
  *  about to fire) and swallowed errors: if the relay is already gone, closing the SSE
  *  still ends the turn. Fire-and-forget. */
-async function sendSessionCancel(baseUrl: string, token: string, sessionId: string): Promise<void> {
+export async function sendSessionCancel(
+  baseUrl: string,
+  token: string,
+  sessionId: string,
+  fetcher: typeof fetch = fetch,
+): Promise<boolean> {
   const ac = new AbortController();
   const budget = setTimeout(() => ac.abort(), 5_000);
   try {
-    await fetch(`${baseUrl}/send`, {
+    const response = await fetcher(`${baseUrl}/send`, {
       method: "POST",
       headers: { ...authHeaders(token), "content-type": "application/json" },
       body: JSON.stringify(buildSessionCancel(sessionId)),
       signal: ac.signal,
     });
+    return response.ok;
   } catch {
-    /* best-effort - the SSE close below still ends the turn */
+    return false;
   } finally {
     clearTimeout(budget);
   }
@@ -358,8 +364,7 @@ async function sendSessionCancel(baseUrl: string, token: string, sessionId: stri
 export async function cancelAcpSession(sandboxId: string, sessionId: string): Promise<boolean> {
   for (const relay of threadRelays.values()) {
     if (relay.sandboxId === sandboxId && relay.sessionId === sessionId) {
-      await sendSessionCancel(relay.baseUrl, relay.token, sessionId);
-      return true;
+      return sendSessionCancel(relay.baseUrl, relay.token, sessionId);
     }
   }
   return false;
@@ -480,6 +485,8 @@ export async function refreshAcpRelayConfigurationIfNeeded(input: {
 export async function establishAcpSession(input: {
   liveSessionId: string | null;
   persistedSessionId?: string | null;
+  /** Automation-only ACP servers may require a new session for every turn. */
+  freshSessionOnly?: boolean;
   cwd: string;
   mcpServers: readonly Record<string, unknown>[];
   request: (
@@ -491,14 +498,14 @@ export async function establishAcpSession(input: {
   resumed: boolean;
   configuredGatewayDescriptor: boolean;
 }> {
-  if (input.liveSessionId) {
+  if (input.liveSessionId && !input.freshSessionOnly) {
     return {
       sessionId: input.liveSessionId,
       resumed: true,
       configuredGatewayDescriptor: false,
     };
   }
-  if (input.persistedSessionId) {
+  if (input.persistedSessionId && !input.freshSessionOnly) {
     try {
       await input.request(
         "session/load",
