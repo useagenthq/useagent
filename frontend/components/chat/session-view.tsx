@@ -863,14 +863,9 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
           open workpiece can tell a requested edit (from the user's own last
           message's run) from an unsolicited one. */}
       <SessionLatestRunProvider value={newest.id}>
-      {/* Body: the conversation is the dominant surface (~68% when the rail is
-          open, everything when it's collapsed); the right rail is ONE tabbed
-          Editor|Terminal panel spanning the FULL main height (the session
-          header lives inside the conversation column so the rail reaches the
-          top edge, per the sidebar-matching chrome). ONE live indicator at a
-          time: the boot gap is the orb below, and once steps stream the
-          conversation's Thinking block takes over — the old floating
-          WorkingPill duplicate is gone. */}
+      {/* The conversation dominates; the full-height rail stays alongside it.
+          Its header stays inside the conversation column.
+          The boot orb yields to the conversation's Thinking block once steps stream. */}
       <div ref={bodyRef} className="flex h-full min-h-0 flex-col md:flex-row">
         {/* Conversation */}
         <section
