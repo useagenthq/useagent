@@ -24,6 +24,7 @@ function sandboxInfo(overrides: Partial<SandboxInfo> = {}): SandboxInfo {
 }
 
 function fakeSandbox(options: {
+  kill?: (pid: number) => Promise<boolean>;
   list?: () => Promise<Array<{ pid: number; envs: Record<string, string> }>>;
   ptySendInput?: (pid: number, data: Uint8Array) => Promise<void>;
   run?: (command: string, options?: unknown) => Promise<unknown>;
@@ -31,7 +32,7 @@ function fakeSandbox(options: {
 } = {}): E2BSandbox {
   return {
     commands: {
-      kill: async () => true,
+      kill: options.kill ?? (async () => true),
       list: options.list ?? (async () => []),
       run: options.run ?? (async () => ({ exitCode: 0, stderr: "", stdout: "" })),
     },
@@ -282,6 +283,46 @@ describe("Cube sandbox provider", () => {
     expect(await handle.process.getSession("resident")).toEqual({
       commands: [{ id: "command-1" }],
     });
+
+    create.mockRestore();
+    getInfo.mockRestore();
+  });
+
+  test("gets and deletes sessions stamped with exact legacy process markers", async () => {
+    process.env.CUBE_PROXY_SCHEME = "https";
+    const killed: number[] = [];
+    const commands: string[] = [];
+    const sandbox = fakeSandbox({
+      kill: async (pid) => {
+        killed.push(pid);
+        return true;
+      },
+      list: async () => [
+        {
+          envs: { SKYNET_COMMAND_ID: "legacy-command", SKYNET_SESSION_ID: "legacy-session" },
+          pid: 71,
+        },
+        {
+          envs: { SKYNET_COMMAND_ID: "other-command", SKYNET_SESSION_ID: "other-session" },
+          pid: 72,
+        },
+      ],
+      run: async (command) => {
+        commands.push(command);
+        return { exitCode: 0, stderr: "", stdout: "" };
+      },
+    });
+    const create = spyOn(E2BSandbox, "create").mockResolvedValue(sandbox);
+    const getInfo = spyOn(E2BSandbox, "getInfo").mockResolvedValue(sandboxInfo());
+    const handle = await cubeSandboxProvider("").create({ snapshot: "agent-template" });
+
+    expect(await handle.process.getSession("legacy-session")).toEqual({
+      commands: [{ id: "legacy-command" }],
+    });
+    await handle.process.deleteSession("legacy-session");
+
+    expect(killed).toEqual([71]);
+    expect(commands.at(-1)).toBe("rm -rf /tmp/skynet-cube-sessions/6c65676163792d73657373696f6e");
 
     create.mockRestore();
     getInfo.mockRestore();
