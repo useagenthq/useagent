@@ -83,7 +83,7 @@ export async function sendSmtp(cfg: SmtpConfig, msg: SmtpMessage): Promise<void>
 
   try {
     await expect(220); // server greeting
-    write("EHLO skynet");
+    write("EHLO useagent");
     await expect(250);
 
     if (cfg.user && cfg.pass) {

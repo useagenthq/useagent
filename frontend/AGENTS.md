@@ -1,15 +1,20 @@
-# skynet-a frontend — agent guide
+# useAgent frontend - agent guide
 
-**skynet-a** is an internal agent platform (same product family as
-`skynet-saas`, a multi-repo autonomous engineer). This frontend is built on the
-**AlignUI** design system + **prompt-kit** chat primitives — *not* BoardUI.
+**useAgent** is an open-source agent platform: autonomous
+engineer. The canonical UI kit is `components/base/**` (BoardUI-derived,
+licensed and vendored) plus its semantic tokens; every product surface builds on
+it. The legacy **AlignUI** layer (`components/ui/**` and the `cnExt` utility) is
+do-not-extend, surviving only as the sanctioned dialog/overlay primitives. Chat
+surfaces compose **prompt-kit** primitives (`components/prompt-kit/**`).
 
 Canonical guide for ALL coding agents working in this repo. `CLAUDE.md` imports
-this file (`@AGENTS.md`) — edit here, never fork the content.
+this file (`@AGENTS.md`); edit here, never fork the content.
 
 Layer map (canonical paths):
-- **foundation** — `components/ui/**` (vendored AlignUI), `components/foundations/**`
-  (brand), tokens + motion utilities in `app/globals.css`.
+- **foundation**: `components/base/**` (canonical BoardUI-derived kit) plus its
+  semantic tokens, and `components/foundations/**` (brand). `components/ui/**` is
+  the legacy AlignUI dialog/overlay layer only (see below). Tokens + motion
+  utilities live in `app/globals.css`.
 - **app shell** - `components/shell/**` (AppShell, ThreadSidebar,
   LibrarySidebar, search-command ⌘K, user-menu, theme-toggle).
 - **chat surface** — `components/chat/**` (vendored prompt-kit + composer +
@@ -48,21 +53,26 @@ Layer map (canonical paths):
 ```
 app/                      # App Router routes + globals.css + layout/providers
 components/
-  ui/                     # ← vendored AlignUI base kit (DO NOT MODIFY; compose it)
+  base/                   # ← canonical BoardUI-derived kit (compose it; new UI here)
+  ui/                     # ← legacy AlignUI dialog/overlay layer (do not extend)
   foundations/brand/      # AsteriskMark brand glyph (single source)
   application/**          # app shell + page-specific components  (shell agent)
   chat/**                 # prompt-kit chat surface                (chat agent)
 utils/                    # cn / cnExt / tv / polymorphic helpers
 hooks/                    # use-tab-observer, use-breakpoint
-tailwind.config.ts        # AlignUI token scale (bridged into v4 via @config)
+tailwind.config.ts        # semantic token scale (bridged into v4 via @config)
 app/globals.css           # Tailwind entry + tokens + brand/motion utilities
 ```
 
-## AlignUI components (`components/ui/**`)
+## Legacy AlignUI primitives (`components/ui/**`) - dialog/overlay layer
 
-Vendored verbatim from the AlignUI Pro finance template. **Do not modify or
-fork** — compose them. Every component uses **namespace exports** (`Root`,
-plus `Icon` / `List` / `Trigger` / `Content` / `Item` / `Dot` / `Wrapper` …).
+These are the legacy AlignUI primitives, vendored from the AlignUI Pro finance
+template and kept ONLY as the sanctioned dialog/overlay layer (Modal, Drawer,
+CommandMenu and their internal deps). New product UI builds on `components/base`
+instead; do not add new `components/ui` usages outside overlays. **Do not modify
+or fork** these files - compose them. Every component uses **namespace exports**
+(`Root`, plus `Icon` / `List` / `Trigger` / `Content` / `Item` / `Dot` /
+`Wrapper` ...).
 
 **Import convention — always `import * as X`:**
 
@@ -186,7 +196,7 @@ animation use **`motion/react`** (the `motion` package is installed):
 ## Brand mark
 
 `import { AsteriskMark } from '@/components/foundations/brand/asterisk-mark'`
-— the single source for Skynet's ✳ glyph. Size/color come from `className`.
+is the single source for useAgent's ✳ glyph. Size/color come from `className`.
 Never inline a copy.
 
 ## Utilities (`utils/`)
@@ -205,7 +215,7 @@ Never inline a copy.
   boundary — keep the boundary at the component that owns them.
 - Icons: `@remixicon/react` only.
 - Reuse the vendored kit and brand utilities before writing new primitives.
-- User-visible strings say **"skynet-a"** (or "Skynet"), never the template name.
+- User-visible strings say **"useAgent"**, never the template name.
 - Do not remove the `@config '../tailwind.config.ts';` line from
   `app/globals.css` — it is what makes every AlignUI token resolve.
 - `AGENTS.md` is hand-maintained; `agentRules: false` in `next.config.ts` stops
