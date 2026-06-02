@@ -1,4 +1,8 @@
-import { NativeBridgeSequencer, type NativeBridgeFrameBody } from "@useagent/agent-harness/bridge";
+import {
+  NativeBridgeDeltaAccumulator,
+  NativeBridgeSequencer,
+  type NativeBridgeFrameBody,
+} from "@useagent/agent-harness/bridge";
 import type { HarnessSession } from "@useagent/agent-harness/canonical";
 import type { ProviderDriver } from "@useagent/agent-harness/control";
 import { recordProviderEvent } from "../runs/provider-events";
@@ -34,21 +38,27 @@ export function nativeBridgeSettlement(
 export async function runNativeBridgeTurn(options: NativeBridgeTurnOptions): Promise<string> {
   const { ctx, driver, session, bridge } = options;
   const sequence = new NativeBridgeSequencer(session.nativeSessionId);
+  const durableDeltas = new NativeBridgeDeltaAccumulator();
   let summary = "";
+  let authoritativeSummary: string | null = null;
   let eventWrites = Promise.resolve();
   const { promise: settled, resolve: resolveSettled, reject: rejectSettled } = Promise.withResolvers<void>();
   const unsubscribe = bridge.subscribe((raw) => {
     for (const body of options.mapFrame(raw)) {
-      const frame = sequence.frame(body);
-      eventWrites = eventWrites.then(() => recordProviderEvent(
-        piBridgeProviderEvent(ctx, frame),
-        { critical: body.kind === "commands.updated" },
-      ));
+      for (const durableBody of durableDeltas.durable(body)) {
+        const frame = sequence.frame(durableBody);
+        eventWrites = eventWrites.then(() => recordProviderEvent(
+          piBridgeProviderEvent(ctx, frame),
+          { critical: body.kind === "commands.updated" },
+        ));
+      }
       if (body.kind === "message.delta") {
         const delta = options.redact(body.text);
         summary += delta;
         ctx.publishDelta?.(delta);
         ctx.reportActivity?.();
+      } else if (body.kind === "message.authoritative") {
+        authoritativeSummary = options.redact(body.text);
       } else if (body.kind === "reasoning.delta") {
         ctx.publishDelta?.(options.redact(body.text), "reasoning");
         ctx.reportActivity?.();
@@ -79,7 +89,7 @@ export async function runNativeBridgeTurn(options: NativeBridgeTurnOptions): Pro
     }
     await settled;
     await eventWrites;
-    return summary;
+    return authoritativeSummary ?? summary;
   } finally {
     ctx.signal.removeEventListener("abort", onAbort);
     unsubscribe();
