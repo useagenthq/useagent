@@ -126,8 +126,17 @@ export interface FleetClient {
  *  through here, so moving the product domain is a single-line change. */
 export const DEFAULT_BASE_URL = "https://skynet.meow.gs";
 export const DEFAULT_CONCURRENCY = 4;
+export const MAX_FLEET_CONCURRENCY = 20;
+export const MAX_FLEET_TASKS = 100;
 export const DEFAULT_SETTLE_TIMEOUT_MS = 15 * 60 * 1000;
 export const DEFAULT_POLL_MS = 3 * 1000;
+
+export function validateFleetConcurrency(value: number): number {
+  if (!Number.isInteger(value) || value < 1 || value > MAX_FLEET_CONCURRENCY) {
+    throw new RangeError(`concurrency must be an integer between 1 and ${MAX_FLEET_CONCURRENCY}`);
+  }
+  return value;
+}
 
 /** The run's web session URL: `<baseUrl>/session/<runId>` (a root run threads under its
  *  own id, so runId == threadId). Pure; mirrors the backend `sessionUrl` shape. */
@@ -213,7 +222,10 @@ export function createFleetClient(config: FleetClientConfig): FleetClient {
     tasks: readonly FleetTask[],
     options: DispatchManyOptions = {},
   ): Promise<DispatchOutcome[]> {
-    const concurrency = options.concurrency ?? DEFAULT_CONCURRENCY;
+    if (tasks.length > MAX_FLEET_TASKS) {
+      throw new RangeError(`a fleet batch may contain at most ${MAX_FLEET_TASKS} tasks`);
+    }
+    const concurrency = validateFleetConcurrency(options.concurrency ?? DEFAULT_CONCURRENCY);
     const prefix = options.idempotencyPrefix;
     return mapWithConcurrency(tasks, concurrency, async (task, index) => {
       const keyed: FleetTask =

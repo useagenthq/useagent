@@ -8,6 +8,8 @@ import type { FetchLike, ResponseLike } from "../src/api";
 import {
   createFleetClient,
   fleetRunUrl,
+  MAX_FLEET_CONCURRENCY,
+  MAX_FLEET_TASKS,
   parseVerdict,
   type DispatchOutcome,
 } from "../src/fleet";
@@ -157,6 +159,19 @@ describe("createFleetClient.dispatchMany", () => {
       { concurrency: 1, idempotencyPrefix: "batch" },
     );
     expect(keys).toEqual(["batch-0", "explicit", "batch-2"]);
+  });
+
+  test("rejects oversized batches and invalid concurrency before dispatch", async () => {
+    const client = createFleetClient({ ...CONFIG, fetch: async () => jsonResponse(201, {}) });
+    const tooMany = Array.from({ length: MAX_FLEET_TASKS + 1 }, (_, index) => ({
+      prompt: `task-${index}`,
+    }));
+    await expect(client.dispatchMany(tooMany)).rejects.toThrow(
+      `at most ${MAX_FLEET_TASKS} tasks`,
+    );
+    await expect(
+      client.dispatchMany([{ prompt: "one" }], { concurrency: MAX_FLEET_CONCURRENCY + 1 }),
+    ).rejects.toThrow(`between 1 and ${MAX_FLEET_CONCURRENCY}`);
   });
 });
 

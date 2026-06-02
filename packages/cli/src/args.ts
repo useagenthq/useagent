@@ -2,7 +2,7 @@
 // takes the raw argv tail and returns a typed options object or throws a CliError with
 // a terse usage hint. Extracted so the whole surface is unit-testable without spawning.
 
-import { DEFAULT_BASE_URL } from "@useagent/agent-client/fleet";
+import { DEFAULT_BASE_URL, MAX_FLEET_CONCURRENCY } from "@useagent/agent-client/fleet";
 import { CliError } from "./errors";
 
 export const USAGE = `useagent - fan cloud agent tasks out to your hosted org
@@ -129,8 +129,11 @@ export function parseFanArgs(argv: readonly string[]): FanArgs {
   const rawParallel = single(tokens, "--parallel");
   if (rawParallel !== undefined) {
     const n = Number(rawParallel);
-    if (!Number.isInteger(n) || n < 1) {
-      throw new CliError("--parallel must be a positive integer", 2);
+    if (!Number.isInteger(n) || n < 1 || n > MAX_FLEET_CONCURRENCY) {
+      throw new CliError(
+        `--parallel must be an integer between 1 and ${MAX_FLEET_CONCURRENCY}`,
+        2,
+      );
     }
     parallel = n;
   }

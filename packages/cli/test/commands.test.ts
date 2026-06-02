@@ -99,4 +99,45 @@ describe("fanCommand", () => {
     const printed = io.stdout.join("\n").trimEnd().split("\n");
     expect(JSON.parse(printed[1]!)).toMatchObject({ status: "dispatch_error", error: "GET /api/runs -> HTTP 500" });
   });
+
+  test("preserves every result when one settle call fails", async () => {
+    const io = captureIO(tasksFile);
+    const client = fakeClient({
+      awaitSettled: async (runId) => {
+        if (runId === "run_1") throw new Error("poll failed");
+        return {
+          runId,
+          status: "completed",
+          run: null,
+          answer: "done",
+          url: `https://fleet.test/session/${runId}`,
+        };
+      },
+    });
+    const code = await fanCommand(client, { file: "tasks.jsonl", parallel: 2 }, io);
+    expect(code).toBe(1);
+    const rows = io.stdout.join("\n").trimEnd().split("\n").map((line) => JSON.parse(line));
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toMatchObject({ status: "completed", answer: "done" });
+    expect(rows[1]).toMatchObject({ status: "settle_error", error: "poll failed" });
+  });
+
+  test("preserves completed work when verification fails", async () => {
+    const io = captureIO(tasksFile);
+    const client = fakeClient({ verify: async () => { throw new Error("verifier unavailable"); } });
+    const code = await fanCommand(
+      client,
+      { file: "tasks.jsonl", parallel: 2, qc: "verify" },
+      io,
+    );
+    expect(code).toBe(1);
+    const rows = io.stdout.join("\n").trimEnd().split("\n").map((line) => JSON.parse(line));
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toMatchObject({
+      status: "verification_error",
+      answer: "done",
+      verdict: "unknown",
+      error: "verifier unavailable",
+    });
+  });
 });

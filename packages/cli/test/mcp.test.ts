@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { MAX_FLEET_CONCURRENCY, MAX_FLEET_TASKS } from "@useagent/agent-client/fleet";
 import { FLEET_TOOLS, handleToolCall } from "../src/mcp";
 import { fakeClient, makeSummary } from "./fake-client";
 
@@ -43,6 +44,31 @@ describe("handleToolCall", () => {
   test("dispatch_parallel errors on a non-array or a bad task", async () => {
     expect((await handleToolCall(fakeClient(), "dispatch_parallel", {})).isError).toBe(true);
     expect((await handleToolCall(fakeClient(), "dispatch_parallel", { tasks: [{ nope: 1 }] })).isError).toBe(true);
+  });
+
+  test("dispatch_parallel rejects oversized batches and invalid concurrency", async () => {
+    const tasks = Array.from({ length: MAX_FLEET_TASKS + 1 }, (_, index) => ({
+      prompt: `task-${index}`,
+    }));
+    expect(
+      (await handleToolCall(fakeClient(), "dispatch_parallel", { tasks })).isError,
+    ).toBe(true);
+    expect(
+      (
+        await handleToolCall(fakeClient(), "dispatch_parallel", {
+          tasks: [{ prompt: "one" }],
+          concurrency: MAX_FLEET_CONCURRENCY + 1,
+        })
+      ).isError,
+    ).toBe(true);
+    expect(
+      (
+        await handleToolCall(fakeClient(), "dispatch_parallel", {
+          tasks: [{ prompt: "one" }],
+          concurrency: 1.5,
+        })
+      ).isError,
+    ).toBe(true);
   });
 
   test("get_run_result settles and, with qc, adds a verdict", async () => {

@@ -12,7 +12,11 @@ import {
   type CallToolResult,
   type Tool,
 } from "@modelcontextprotocol/sdk/types.js";
-import type { FleetClient } from "@useagent/agent-client/fleet";
+import {
+  MAX_FLEET_CONCURRENCY,
+  MAX_FLEET_TASKS,
+  type FleetClient,
+} from "@useagent/agent-client/fleet";
 import { coerceTask } from "./task";
 
 const TASK_SHAPE: Tool["inputSchema"] = {
@@ -40,8 +44,18 @@ export const FLEET_TOOLS: Tool[] = [
     inputSchema: {
       type: "object",
       properties: {
-        tasks: { type: "array", items: TASK_SHAPE, description: "Tasks to dispatch." },
-        concurrency: { type: "number", description: "Max in-flight dispatches (default 4)." },
+        tasks: {
+          type: "array",
+          items: TASK_SHAPE,
+          maxItems: MAX_FLEET_TASKS,
+          description: "Tasks to dispatch.",
+        },
+        concurrency: {
+          type: "integer",
+          minimum: 1,
+          maximum: MAX_FLEET_CONCURRENCY,
+          description: "Max in-flight dispatches (default 4).",
+        },
         qc: { type: "string", description: "Optional verifier prompt to reuse with get_run_result." },
       },
       required: ["tasks"],
@@ -89,6 +103,11 @@ function num(args: Record<string, unknown>, key: string): number | undefined {
   return typeof v === "number" && Number.isFinite(v) ? v : undefined;
 }
 
+function integer(args: Record<string, unknown>, key: string): number | undefined {
+  const value = num(args, key);
+  return value !== undefined && Number.isInteger(value) ? value : undefined;
+}
+
 export async function handleToolCall(
   client: FleetClient,
   name: string,
@@ -103,13 +122,28 @@ export async function handleToolCall(
     case "dispatch_parallel": {
       const rawTasks = Array.isArray(args.tasks) ? args.tasks : null;
       if (!rawTasks) return errorResult("dispatch_parallel needs a `tasks` array");
+      if (rawTasks.length > MAX_FLEET_TASKS) {
+        return errorResult(`dispatch_parallel accepts at most ${MAX_FLEET_TASKS} tasks`);
+      }
       const tasks = rawTasks.map(coerceTask);
       if (tasks.some((t) => t === null)) {
         return errorResult('every task needs a non-empty "prompt"');
       }
+      const rawConcurrency = args.concurrency;
+      const concurrency = integer(args, "concurrency") ?? 4;
+      if (
+        rawConcurrency !== undefined &&
+        (integer(args, "concurrency") === undefined ||
+          concurrency < 1 ||
+          concurrency > MAX_FLEET_CONCURRENCY)
+      ) {
+        return errorResult(
+          `concurrency must be an integer between 1 and ${MAX_FLEET_CONCURRENCY}`,
+        );
+      }
       const outcomes = await client.dispatchMany(
         tasks.filter((t): t is NonNullable<typeof t> => t !== null),
-        { concurrency: num(args, "concurrency") ?? 4 },
+        { concurrency },
       );
       const runs = outcomes.map((o) =>
         o.ok

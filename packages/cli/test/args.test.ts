@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { MAX_FLEET_CONCURRENCY } from "@useagent/agent-client/fleet";
 import { CliError } from "../src/errors";
 import { parseFanArgs, parseRunArgs, parseStatusArgs } from "../src/args";
 
@@ -52,10 +53,16 @@ describe("parseFanArgs", () => {
     expect(args).toEqual({ file: "tasks.jsonl", parallel: 6, qc: "check it", out: "results.jsonl" });
   });
 
+  test("rejects parallelism above the fleet safety bound", () => {
+    expect(() =>
+      parseFanArgs(["tasks.jsonl", "--parallel", String(MAX_FLEET_CONCURRENCY + 1)]),
+    ).toThrow(`between 1 and ${MAX_FLEET_CONCURRENCY}`);
+  });
+
   test("parses a positive --parallel and rejects non-positive/non-integer", () => {
     expect(parseFanArgs(["t.jsonl", "--parallel", "3"]).parallel).toBe(3);
-    expect(() => parseFanArgs(["t.jsonl", "--parallel", "0"])).toThrow(/positive integer/);
-    expect(() => parseFanArgs(["t.jsonl", "--parallel", "x"])).toThrow(/positive integer/);
+    expect(() => parseFanArgs(["t.jsonl", "--parallel", "0"])).toThrow(/integer between/);
+    expect(() => parseFanArgs(["t.jsonl", "--parallel", "x"])).toThrow(/integer between/);
   });
 
   test("requires exactly one tasks file", () => {
