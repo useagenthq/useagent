@@ -414,6 +414,13 @@
 			"when": 1789800000000,
 			"tag": "0060_api_keys",
 			"breakpoints": true
+		},
+		{
+			"idx": 59,
+			"version": "7",
+			"when": 1789900000000,
+			"tag": "0061_fleet_admission_leases",
+			"breakpoints": true
 		}
 	]
 }

@@ -106,6 +106,16 @@ export async function settleCommandForRun(runId: string): Promise<CommandSettle>
   return { status: "running" };
 }
 
+/** Return a claimed (`dispatched`) run.create command to `queued` so the thread
+ *  can re-pump it later. Used when the capacity gate DEFERS a run it just claimed
+ *  (no capacity yet) — the run never started, so this simply undoes the claim.
+ *  Idempotent: no-ops if the command already moved on. */
+export async function requeueClaimedCommand(runId: string): Promise<void> {
+  await db.execute(sql`
+    update commands set state = 'queued', updated_at = now()
+    where run_id = ${runId} and kind = ${RUN_CREATE} and state = 'dispatched'`);
+}
+
 /** Every command still in the mailbox (queued or dispatched), joined to its run
  *  — the boot reconciler's work list. */
 export async function listActiveCommands(): Promise<ActiveCommand[]> {

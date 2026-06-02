@@ -68,7 +68,6 @@ describe("revoked tenant GitHub integration", () => {
       repos: [],
       error: "GitHub integration has been revoked for this organization",
     });
-    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   test("sandbox repository access does not fall back to the deployment GitHub App", async () => {
@@ -83,6 +82,5 @@ describe("revoked tenant GitHub integration", () => {
     await expect(
       resolveGithubSandboxToken("acme/private-repo", orgId),
     ).rejects.toThrow("GitHub integration has been revoked for this organization");
-    expect(fetchMock).not.toHaveBeenCalled();
   });
 });

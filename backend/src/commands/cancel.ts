@@ -5,6 +5,8 @@ import { isUniqueViolation } from "../db/pg-errors";
 import { completeRun } from "../runs/repo";
 import { publishRunLifecycleChange } from "../runs/org-signals";
 import { RUN_CANCEL, RUN_CREATE } from "./repo";
+import { releaseLeaseForRun } from "../fleet/lease-repo";
+import { setAdmissionState } from "../fleet/admission-repo";
 
 // ---------------------------------------------------------------------------
 // Durable run cancellation (north star "Durable Commands"). A user Stop enters
@@ -91,12 +93,16 @@ export async function acceptRunCancel(input: {
       });
 
       // A queued run has no live actor to signal: fail it and settle its
-      // run.create command here so recovery/pump can't resurrect it.
+      // run.create command here so recovery/pump can't resurrect it. Release any
+      // capacity lease and mark the admission canceled in the SAME transaction so
+      // a cancel-while-queued never leaks a reservation.
       if (run.status === "queued") {
         await completeRun(input.runId, "failed", CANCEL_SUMMARY, 0, tx);
         await tx.execute(sql`
           update commands set state = 'completed', updated_at = now()
           where run_id = ${input.runId} and kind = ${RUN_CREATE} and state <> 'completed'`);
+        await releaseLeaseForRun(input.runId, tx);
+        await setAdmissionState(input.runId, "canceled", tx);
         queuedCancelledThreadId = run.threadId;
       }
 

@@ -136,8 +136,50 @@ export interface SandboxCreateOptions {
   autoDeleteInterval?: number;
 }
 
+/**
+ * Point-in-time capacity + inventory telemetry for a provider, used by the fleet
+ * capacity policy to reason about multi-node headroom without a second scheduler.
+ * All fields are optional: a provider reports what it can observe and omits the
+ * rest. cpu is millicores (2000 = 2 vCPU); memory is MiB. Aggregate across all
+ * compute nodes the provider manages.
+ */
+export interface SandboxInventory {
+  /** Per-node placement headroom. When present, admission requires one ready,
+   * schedulable node to fit the whole request; aggregate totals are not enough. */
+  nodes?: readonly {
+    id: string;
+    ready: boolean;
+    schedulingDisabled?: boolean;
+    allocatableCpuMillicores: number;
+    allocatableMemoryMib: number;
+  }[];
+  /** Compute nodes/hosts that are ready to place sandboxes on. */
+  readyNodes?: number;
+  /** Sum of allocatable cpu (millicores) across ready nodes. */
+  allocatableCpuMillicores?: number;
+  /** Sum of allocatable memory (MiB) across ready nodes. */
+  allocatableMemoryMib?: number;
+  /** Sandboxes currently running. */
+  activeSandboxes?: number;
+  /** Sandboxes paused/stopped but still resident. */
+  pausedSandboxes?: number;
+  /** Observed sandbox-create latency (ms), e.g. a recent p50. */
+  createLatencyMs?: number;
+  /** Warm-pool sandboxes ready to claim instantly. */
+  warmPoolReady?: number;
+  /** Sandboxes that failed to create or were OOM-killed recently. */
+  failedOrOom?: number;
+}
+
 export interface SandboxProvider {
   create(options?: SandboxCreateOptions): Promise<SandboxHandle>;
   get(sandboxId: string): Promise<SandboxHandle>;
   list(): AsyncIterable<SandboxHandle>;
+  /**
+   * OPTIONAL capacity/inventory telemetry. Providers that can observe node-level
+   * headroom (multi-node Cube) implement this; single-node or telemetry-less
+   * providers omit it and the fleet policy falls back to the declared-host
+   * budget. Never called on the hot request path.
+   */
+  inventory?(): Promise<SandboxInventory>;
 }

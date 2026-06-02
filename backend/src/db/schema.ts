@@ -19,6 +19,7 @@ export * from "./schema/memory";
 export * from "./schema/reconcile";
 export * from "./schema/schedules";
 export * from "./schema/commands-catalog";
+export * from "./schema/fleet";
 
 // Re-export the better-auth tables so drizzle-kit sees the whole schema and
 // the drizzle adapter can resolve every model.
