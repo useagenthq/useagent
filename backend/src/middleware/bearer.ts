@@ -51,10 +51,23 @@ export function isBearerAllowedPath(method: string, path: string): boolean {
   // Dispatch a run. EXACT match - cancel/reply/sandbox-release sub-routes are
   // POST/DELETE under /api/runs/:id and are intentionally NOT reachable.
   if (m === "POST" && path === "/api/runs") return true;
-  // Read-only run surface. GET-only, so no mutating run sub-route is exposed.
-  if (m === "GET" && (path === "/api/runs" || path.startsWith("/api/runs/"))) return true;
-  // Read-only durable artifacts. GET-only excludes create/patch.
-  if (m === "GET" && (path === "/api/artifacts" || path.startsWith("/api/artifacts/"))) {
+  if (m !== "GET") return false;
+
+  // Exact read-only run routes. Do not broaden this to `/api/runs/*`: the
+  // interactive terminal is a GET WebSocket mounted at `/api/runs/:id/terminal`.
+  if (path === "/api/runs" || path === "/api/runs/changes") return true;
+  if (/^\/api\/runs\/[^/]+(?:\/(?:uploads|timings|events|thread-events))?$/.test(path)) {
+    return true;
+  }
+
+  // Exact read-only artifact routes. Keep control/write routes out by default.
+  if (path === "/api/artifacts") return true;
+  if (/^\/api\/artifacts\/runs\/[^/]+\/archive$/.test(path)) return true;
+  if (
+    /^\/api\/artifacts\/[^/]+(?:\/(?:workpiece|preview|content|proposals|workpiece\/export))?$/.test(
+      path,
+    )
+  ) {
     return true;
   }
   return false;

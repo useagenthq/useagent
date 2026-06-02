@@ -1,10 +1,10 @@
 import { createHash } from "node:crypto";
 import { describe, expect, test } from "bun:test";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { db } from "../src/db/client";
-import { apiKeys } from "../src/db/schema";
+import { apiKeys, member, user } from "../src/db/schema";
 import { extractBearerToken, isBearerAllowedPath } from "../src/middleware/bearer";
-import { createOrgSession, json, waitFor, type OrgSession } from "./helpers";
+import { createOrgSession, fetchApi, json, uid, waitFor, type OrgSession } from "./helpers";
 
 // Org API keys + the fail-closed bearer lane. A key is minted through the
 // SESSION-authenticated management API, stored as a SHA-256 hash (never the
@@ -100,6 +100,22 @@ describe("api keys - bearer lane authenticates allowlisted routes", () => {
     expect(Array.isArray(list.body.runs)).toBe(true);
   });
 
+  test("a bearer key cannot open the interactive terminal WebSocket", async () => {
+    const org = await createOrgSession("ak-terminal-deny");
+    const { key } = await mintKey(org);
+    const created = await json<any>("/api/runs", {
+      method: "POST",
+      headers: bearer(key),
+      body: { prompt: "terminal denial fixture" },
+    });
+    expect(created.status).toBe(201);
+
+    const denied = await json(`/api/runs/${created.body.id}/terminal`, {
+      headers: bearer(key),
+    });
+    expect(denied.status).toBe(401);
+  });
+
   test("a key is confined to its own org's runs (cross-org read is 404)", async () => {
     const orgA = await createOrgSession("ak-iso-a");
     const orgB = await createOrgSession("ak-iso-b");
@@ -173,6 +189,61 @@ describe("api keys - fail closed", () => {
     });
     expect(malformed.status).toBe(401);
   });
+
+  test("removing the key owner from the org immediately invalidates the key", async () => {
+    const org = await createOrgSession("ak-removed-member");
+    const { key } = await mintKey(org);
+    const [owner] = await db.select({ id: user.id }).from(user).where(eq(user.email, org.email));
+    expect(owner).toBeTruthy();
+
+    await db
+      .delete(member)
+      .where(and(eq(member.organizationId, org.orgId), eq(member.userId, owner!.id)));
+
+    expect((await json("/api/runs", { headers: bearer(key) })).status).toBe(401);
+  });
+});
+
+describe("api keys - personal ownership", () => {
+  test("one org member cannot list or revoke another member's key", async () => {
+    const owner = await createOrgSession("ak-owner");
+    const other = await createOrgSession("ak-other");
+    const [otherUser] = await db
+      .select({ id: user.id })
+      .from(user)
+      .where(eq(user.email, other.email));
+    expect(otherUser).toBeTruthy();
+
+    await db.insert(member).values({
+      id: uid("member"),
+      organizationId: owner.orgId,
+      userId: otherUser!.id,
+      role: "member",
+      createdAt: new Date(),
+    });
+    const setActive = await fetchApi("/api/auth/organization/set-active", {
+      method: "POST",
+      cookies: other.cookies,
+      body: { organizationId: owner.orgId },
+    });
+    expect(setActive.status).toBe(200);
+    other.jar.absorb(setActive);
+    other.cookies = other.jar.header();
+
+    const created = await mintKey(owner, "owner-only");
+    const list = await json<{ keys: Array<{ id: string }> }>("/api/api-keys", {
+      cookies: other.cookies,
+    });
+    expect(list.status).toBe(200);
+    expect(list.body.keys.some((key) => key.id === created.id)).toBe(false);
+
+    const revoke = await json(`/api/api-keys/${created.id}`, {
+      method: "DELETE",
+      cookies: other.cookies,
+    });
+    expect(revoke.status).toBe(404);
+    expect((await json("/api/runs", { headers: bearer(created.key) })).status).toBe(200);
+  });
 });
 
 describe("api keys - bearer is denied outside the allowlist", () => {
@@ -220,6 +291,9 @@ describe("bearer allowlist - deny by default (pure)", () => {
       ["GET", "/api/memory"],
       ["GET", "/api/runsomething"],
       ["GET", "/api/artifactsX"],
+      ["GET", "/api/runs/abc/terminal"],
+      ["GET", "/api/runs/abc/anything-new"],
+      ["GET", "/api/artifacts/abc/anything-new"],
       ["GET", "/api/anything-new"],
     ];
     for (const [method, path] of denied) {

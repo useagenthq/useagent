@@ -1,7 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import { and, desc, eq, isNull } from "drizzle-orm";
 import { db } from "../db/client";
-import { apiKeys } from "../db/schema";
+import { apiKeys, member } from "../db/schema";
 
 // ---------------------------------------------------------------------------
 // Org API-key data access. The plaintext secret exists ONLY in the create
@@ -73,25 +73,36 @@ export async function createApiKey(
   return { ...toMeta(row), key };
 }
 
-/** List an org's keys (newest first), metadata only - never the secret or hash.
- *  Includes revoked keys so the owner keeps an audit trail. */
-export async function listApiKeys(orgId: string): Promise<ApiKeyMeta[]> {
+/** List this member's keys in an org (newest first), metadata only - never the
+ *  secret or hash. Includes revoked keys so the owner keeps an audit trail. */
+export async function listApiKeys(orgId: string, userId: string): Promise<ApiKeyMeta[]> {
   const rows = await db
     .select()
     .from(apiKeys)
-    .where(eq(apiKeys.orgId, orgId))
+    .where(and(eq(apiKeys.orgId, orgId), eq(apiKeys.userId, userId)))
     .orderBy(desc(apiKeys.createdAt));
   return rows.map(toMeta);
 }
 
-/** Soft-delete (revoke) a key by id, org-scoped. Idempotent: stamps revoked_at
- *  only on a still-active row. Returns true when a row was newly revoked; a
- *  cross-org id, an unknown id, or an already-revoked key returns false. */
-export async function revokeApiKey(orgId: string, id: string): Promise<boolean> {
+/** Soft-delete (revoke) one of this member's keys. Idempotent: stamps revoked_at
+ *  only on a still-active row. Cross-org/cross-user/unknown/already-revoked ids
+ *  return false. */
+export async function revokeApiKey(
+  orgId: string,
+  userId: string,
+  id: string,
+): Promise<boolean> {
   const rows = await db
     .update(apiKeys)
     .set({ revokedAt: new Date() })
-    .where(and(eq(apiKeys.id, id), eq(apiKeys.orgId, orgId), isNull(apiKeys.revokedAt)))
+    .where(
+      and(
+        eq(apiKeys.id, id),
+        eq(apiKeys.orgId, orgId),
+        eq(apiKeys.userId, userId),
+        isNull(apiKeys.revokedAt),
+      ),
+    )
     .returning({ id: apiKeys.id });
   return rows.length > 0;
 }
@@ -105,8 +116,9 @@ export interface ActiveApiKey {
   lastUsedAt: Date | null;
 }
 
-/** Resolve a NON-REVOKED key by the hash of its presented secret. Returns null
- *  on any miss (unknown or revoked) so the bearer lane fails closed. */
+/** Resolve a NON-REVOKED key whose owner is still a member of its organization.
+ *  Returns null on any miss, revocation, or removed membership so bearer access
+ *  fails closed at the same instant the member loses org access. */
 export async function findActiveApiKeyByHash(hash: string): Promise<ActiveApiKey | null> {
   const [row] = await db
     .select({
@@ -117,6 +129,10 @@ export async function findActiveApiKeyByHash(hash: string): Promise<ActiveApiKey
       revokedAt: apiKeys.revokedAt,
     })
     .from(apiKeys)
+    .innerJoin(
+      member,
+      and(eq(member.organizationId, apiKeys.orgId), eq(member.userId, apiKeys.userId)),
+    )
     .where(eq(apiKeys.keyHash, hash))
     .limit(1);
   if (!row || row.revokedAt) return null;

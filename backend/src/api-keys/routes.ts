@@ -47,17 +47,21 @@ apiKeysRoutes.post("/", async (c) => {
   return c.json(created, 201);
 });
 
-// List the active org's keys (metadata only - never the secret or hash).
+// List the signed-in member's keys in the active org (metadata only).
 apiKeysRoutes.get("/", async (c) => {
-  const keys = await listApiKeys(c.get("orgId"));
+  const userId = c.get("userId");
+  if (!userId) return c.json({ error: "unauthorized" }, 401);
+  const keys = await listApiKeys(c.get("orgId"), userId);
   return c.json({ keys });
 });
 
-// Revoke a key by id (soft delete: stamps revoked_at, keeps the row). 404 when
-// the org has no such active key.
+// Revoke one of the signed-in member's keys (soft delete: stamps revoked_at,
+// keeps the row). A different member's id is indistinguishable from a miss.
 apiKeysRoutes.delete("/:id", async (c) => {
+  const userId = c.get("userId");
+  if (!userId) return c.json({ error: "unauthorized" }, 401);
   const id = c.req.param("id");
-  const revoked = await revokeApiKey(c.get("orgId"), id);
+  const revoked = await revokeApiKey(c.get("orgId"), userId, id);
   if (!revoked) return c.json({ error: "api key not found" }, 404);
   return c.json({ revoked: true, id });
 });
