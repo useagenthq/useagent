@@ -9,7 +9,14 @@
  * reply → parent_run_id, thread-follow via the durable mapping, DM handling,
  * non-mention channel chatter ignored, the 👀 ack, and the completion post-back.
  */
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import {
+  afterAll,
+  beforeAll,
+  describe,
+  expect,
+  setDefaultTimeout,
+  test,
+} from "bun:test";
 import { createHmac } from "node:crypto";
 import { eq, sql } from "drizzle-orm";
 import { db } from "../src/db/client";
@@ -38,6 +45,11 @@ import {
   upsertSlackWorkspace,
 } from "../src/slack/workspaces";
 import { fetchApi, json, uid, waitFor } from "./helpers";
+
+// This DB-backed integration suite shares the CI Postgres service with the
+// full backend matrix. Keep its bounded async waits above Bun's 5s unit-test
+// default so normal runner contention is not misclassified as a product hang.
+setDefaultTimeout(15_000);
 
 const SECRET = "test-signing-secret"; // this suite signs every inbound event with it
 const BOT = "U0BOTBOT";
@@ -564,13 +576,15 @@ describe("slack event → run", () => {
 
     await new Promise((resolve) => setTimeout(resolve, 150));
     expect(await findRunByPrompt(`verify both deployments ${marker}`)).toBeNull();
-    await waitFor(async () =>
-      rec.messages.find(
-        (message) =>
-          message.channel === channel &&
-          message.threadTs === rootTs &&
-          message.text.includes("GitHub is not connected"),
-      ) ?? null,
+    await waitFor(
+      async () =>
+        rec.messages.find(
+          (message) =>
+            message.channel === channel &&
+            message.threadTs === rootTs &&
+            message.text.includes("GitHub is not connected"),
+        ) ?? null,
+      { timeoutMs: 14_000 },
     );
   });
 
@@ -674,8 +688,10 @@ describe("slack event → run", () => {
     const run = await waitFor(async () => findRunByPrompt(`go ${marker}`));
 
     // The official Agents session status clears back to "active" when the run settles.
-    await waitFor(async () =>
-      rec.sessionStatuses.some((s) => s.channel === channel && s.threadTs === ts && s.status === "active") || null,
+    await waitFor(
+      async () =>
+        rec.sessionStatuses.some((s) => s.channel === channel && s.threadTs === ts && s.status === "active") || null,
+      { timeoutMs: 14_000 },
     );
 
     const mine = rec.sessionStatuses.filter((s) => s.channel === channel && s.threadTs === ts);
@@ -696,7 +712,7 @@ describe("slack event → run", () => {
       );
       await waitFor(async () => findRunByPrompt(`run ${marker}`));
       // setStatus rejects every call, yet the completion surface still lands.
-      const answer = await waitFor(async () => finalAnswerFor(channel, ts));
+      const answer = await waitFor(async () => finalAnswerFor(channel, ts), { timeoutMs: 14_000 });
       expect(answer!.length).toBeGreaterThan(0);
     } finally {
       statusFails = false;
