@@ -58,4 +58,48 @@ describe("native bridge contract", () => {
       expect(new TextEncoder().encode(JSON.stringify(body)).byteLength).toBeLessThan(32_768);
     }
   });
+
+  test("authoritative empty text replaces a multi-segment draft without stale replay", () => {
+    const accumulator = new NativeBridgeDeltaAccumulator();
+    accumulator.durable({
+      kind: "message.delta",
+      messageId: "message",
+      text: "x".repeat(NATIVE_BRIDGE_DURABLE_TEXT_BYTES * 2 + 1),
+    });
+
+    expect(accumulator.durable({
+      kind: "message.authoritative",
+      messageId: "message",
+      text: "",
+    })).toEqual([
+      { kind: "message.delta", messageId: "message", text: "", segment: 0, authoritative: true },
+      { kind: "message.delta", messageId: "message", text: "", segment: 1, authoritative: true },
+      { kind: "message.delta", messageId: "message", text: "", segment: 2, authoritative: true },
+    ]);
+  });
+
+  test("authoritative shrink tombstones only segments beyond the replacement", () => {
+    const accumulator = new NativeBridgeDeltaAccumulator();
+    accumulator.durable({
+      kind: "message.delta",
+      messageId: "message",
+      text: "x".repeat(NATIVE_BRIDGE_DURABLE_TEXT_BYTES * 2 + 1),
+    });
+
+    expect(accumulator.durable({
+      kind: "message.authoritative",
+      messageId: "message",
+      text: "replacement",
+    })).toEqual([
+      {
+        kind: "message.delta",
+        messageId: "message",
+        text: "replacement",
+        segment: 0,
+        authoritative: true,
+      },
+      { kind: "message.delta", messageId: "message", text: "", segment: 1, authoritative: true },
+      { kind: "message.delta", messageId: "message", text: "", segment: 2, authoritative: true },
+    ]);
+  });
 });
