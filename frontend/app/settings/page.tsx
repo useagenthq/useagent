@@ -5,6 +5,7 @@ import { Chip } from "@/components/base/badges/chip";
 import { Button } from "@/components/base/buttons/button";
 import { AppShell } from "@/components/shell/app-shell";
 import { ThreadSidebar } from "@/components/shell/thread-sidebar";
+import { ApiKeysCard } from "./api-keys-card";
 import { GeneralCard } from "./general-card";
 import { IntegrationConnections } from "./integration-connections";
 import { ProviderConnectionsCard } from "./provider-connections-card";
@@ -156,6 +157,15 @@ export default function SettingsPage() {
               description="Persisted for every future session on this workspace."
             >
               <SecretsCard />
+            </Section>
+
+            {/* API keys */}
+            <Section
+              id="apikeys"
+              title="API keys"
+              description="Bearer keys that let a local script dispatch and read runs for this workspace."
+            >
+              <ApiKeysCard />
             </Section>
 
             {/* Team */}

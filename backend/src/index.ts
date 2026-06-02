@@ -19,6 +19,7 @@ import {
   slackConfig,
 } from "./env";
 import { isPublicApiPath, orgScope } from "./middleware/org";
+import { bearerAuth } from "./middleware/bearer";
 import { chatRoutes } from "./chat/routes";
 import { toolGatewayConfig } from "./knowledge/gateway/config";
 import { knowledgeRoutes } from "./knowledge/routes";
@@ -46,6 +47,7 @@ import {
 } from "./runs/canonicalization-outbox";
 import { startCodeIndex } from "./context/code/index-sweep";
 import { secretsRoutes } from "./secrets/routes";
+import { apiKeysRoutes } from "./api-keys/routes";
 import { seedDev } from "./seed";
 import { skillImportRoutes } from "./skills/import-routes";
 import { startSkillsResync } from "./skills/resync";
@@ -171,12 +173,22 @@ app.use("/api/*", async (c, next) => {
   return next();
 });
 
+// API-key bearer lane (fail CLOSED), BEFORE session/public resolution. A request
+// carrying `Authorization: Bearer uak_...` is authenticated against a stored hash
+// and gated by a deny-by-default route allowlist (middleware/bearer.ts): a valid
+// key reaches only run dispatch + read paths, an unknown/revoked key or an
+// off-allowlist route is 401. A request WITHOUT such a header passes straight
+// through untouched, so cookie sessions and the self-authenticating internal
+// bearer routes below are unaffected.
+app.use("/api/*", bearerAuth);
+
 // Universal auth adapter (fail CLOSED by default). Every /api/* request is
 // org-session scoped UNLESS its prefix self-authenticates or is public
 // (isPublicApiPath). A NEW router therefore needs no auth wiring to be
 // protected - forgetting `.use(orgScope)` no longer leaves it open, it just
-// runs behind the adapter. orgScope is idempotent, so the per-router guards that
-// remain are free defense-in-depth. This runs before every mounted route below.
+// runs behind the adapter. orgScope is idempotent (a bearer-resolved org is a
+// no-op here), so the per-router guards that remain are free defense-in-depth.
+// This runs before every mounted route below.
 app.use("/api/*", async (c, next) => {
   if (isPublicApiPath(c.req.path)) return next();
   return orgScope(c, next);
@@ -290,6 +302,11 @@ app.route("/api/schedules", schedulesRoutes);
 // sandbox at boot. Org-scoped; values are write-only at this boundary (set/delete
 // only, never returned). See src/secrets/*.
 app.route("/api/secrets", secretsRoutes);
+// Org API keys - long-lived bearer credentials for local-to-cloud run dispatch.
+// SESSION AUTH ONLY (a bearer key cannot mint or revoke keys); the plaintext
+// secret is shown once at creation and only its hash is stored. See
+// src/api-keys/* and the bearer lane in src/middleware/bearer.ts.
+app.route("/api/api-keys", apiKeysRoutes);
 // User-scoped provider credentials. Values are encrypted at rest and write-only
 // over HTTP; trusted backend consumers use src/provider-connections/service.ts.
 app.route("/api/provider-connections", providerConnectionsRoutes);
