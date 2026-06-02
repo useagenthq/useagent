@@ -33,10 +33,10 @@ describe("unified shell contract", () => {
     expect(appShell).not.toContain("shadow-regular");
   });
 
-  test("limits primary sidebar navigation to projects, threads, usage, library, and settings", () => {
+  test("limits primary sidebar navigation to projects, threads, usage, customize, and settings", () => {
     const { threadSidebar } = shellSources();
     const sidebarThreads = read("./sidebar-threads.tsx");
-    const primaryDestinations = ["Dashboard", "Threads", "Usage", "Library", "Settings"];
+    const primaryDestinations = ["Dashboard", "Threads", "Usage", "Customize", "Settings"];
     const displacedDestinations = [
       "New chat",
       "New task",
@@ -64,7 +64,7 @@ describe("unified shell contract", () => {
     expect(threadSidebar.match(/href="\/dashboard"/g)).toHaveLength(1);
   });
 
-  test("groups all library surfaces under Library", () => {
+  test("groups all library surfaces under Customize", () => {
     const { librarySidebar, threadSidebar } = shellSources();
     const librarySurfaces = [
       "Skills",
@@ -77,7 +77,7 @@ describe("unified shell contract", () => {
       "Secrets",
     ];
 
-    expect(threadSidebar).toContain('label="Library"');
+    expect(threadSidebar).toContain('label="Customize"');
     for (const label of librarySurfaces) {
       expect(librarySidebar).toContain(`label: "${label}"`);
     }
