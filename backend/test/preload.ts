@@ -47,6 +47,22 @@ delete process.env.CODE_INDEX_INTERVAL_MIN;
 
 process.env.WORKER_STEP_DELAY_MS = process.env.WORKER_STEP_DELAY_MS ?? "5";
 
+// Fleet capacity defaults are conservative for the single prod host; the general
+// unit suite predates capacity gating and submits freely, so open the limits wide
+// here (a deploy keeps the real defaults). The dedicated fleet tests set small
+// limits at runtime to exercise queueing deterministically.
+process.env.FLEET_GLOBAL_MAX_ACTIVE_SANDBOXES =
+  process.env.FLEET_GLOBAL_MAX_ACTIVE_SANDBOXES ?? "100000";
+process.env.FLEET_ORG_MAX_ACTIVE_SANDBOXES =
+  process.env.FLEET_ORG_MAX_ACTIVE_SANDBOXES ?? "100000";
+process.env.FLEET_ORG_MAX_QUEUE_DEPTH =
+  process.env.FLEET_ORG_MAX_QUEUE_DEPTH ?? "1000000";
+// Fast reconciler tick when a test starts the loop explicitly.
+process.env.FLEET_TICK_MS = process.env.FLEET_TICK_MS ?? "200";
+// The general suite drives admission explicitly (no background loop pumping
+// queued work behind tests' backs); the dedicated fleet tests start it themselves.
+process.env.FLEET_RECONCILER_AUTOSTART = process.env.FLEET_RECONCILER_AUTOSTART ?? "0";
+
 // Unit fixtures intentionally exercise every provider lane without making paid
 // calls. Mark those synthetic lanes as proven so the same centralized
 // acceptance gate used in production remains active during tests.

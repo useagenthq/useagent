@@ -7,7 +7,7 @@ import { NumberTicker } from "@/components/shared/number-ticker";
 import { modelStyle } from "@/components/shared/model-mark";
 import { cx } from "@/utils/cx";
 import { compactNumber, formatDuration } from "@/utils/format";
-import type { FleetData, MachineStats, ModelBurn } from "./fleet-data";
+import type { CapacityData, FleetData, MachineStats, ModelBurn } from "./fleet-data";
 import { Panel } from "./panel";
 
 /**
@@ -171,17 +171,59 @@ function MachineSection({ machine }: { machine: MachineStats | null }) {
   );
 }
 
+/** Capacity · fleet: org active sandboxes vs limit, durable queued backlog, and
+ *  host saturation (HA Stage A, from GET /api/fleet/capacity). Omitted when the
+ *  snapshot has not loaded yet. */
+function CapacitySection({ capacity }: { capacity: CapacityData | null }) {
+  if (capacity == null) return null;
+  return (
+    <div className="flex flex-col">
+      <div className="flex items-center justify-between gap-3 py-1">
+        <span className="text-body-medium text-text-secondary">Capacity · fleet</span>
+        {capacity.globalSaturated ? (
+          <span className="text-body-2-medium text-text-tertiary">host at capacity</span>
+        ) : null}
+      </div>
+      <div className="flex flex-col pt-1">
+        <MachineRow label="Org sandboxes · in use">
+          {capacity.orgActive} / {capacity.orgLimit}
+        </MachineRow>
+        <MachineRow label="Queued · waiting">
+          {capacity.queued}
+          <span className="text-text-tertiary"> / {capacity.queueLimit}</span>
+        </MachineRow>
+        <MachineRow label="Host sandboxes · in use">
+          {capacity.globalActive} / {capacity.globalLimit}
+        </MachineRow>
+      </div>
+    </div>
+  );
+}
+
 /**
  * The "Limits" row: real per-model token/cost burn for today (from the runs +
- * opencode usage log) and the org's real Daytona sandbox footprint. Every figure
- * is derived from live data via GET /api/fleet — nothing is fabricated.
+ * opencode usage log), the org's real Daytona sandbox footprint, and fleet
+ * capacity + durable queue. Every figure is derived from live data via
+ * GET /api/fleet(/capacity) — nothing is fabricated.
  */
-export function LimitsRow({ fleet }: { fleet: FleetData | null }) {
+export function LimitsRow({
+  fleet,
+  capacity,
+}: {
+  fleet: FleetData | null;
+  capacity?: CapacityData | null;
+}) {
   return (
     <Panel>
       <BurnSection fleet={fleet} />
       <div className="my-4 h-px w-full bg-separator-border-strong" />
       <MachineSection machine={fleet?.machine ?? null} />
+      {capacity ? (
+        <>
+          <div className="my-4 h-px w-full bg-separator-border-strong" />
+          <CapacitySection capacity={capacity} />
+        </>
+      ) : null}
     </Panel>
   );
 }

@@ -469,3 +469,67 @@ export function connectorEmailConfig(): ConnectorEmailConfig | null {
     dryRun,
   };
 }
+
+/**
+ * Fleet capacity + admission config (HA Stage A). Read per call so a deploy can
+ * retune limits without a rebuild and tests can override at runtime. Defaults are
+ * CONSERVATIVE for the current single host (12 vCPU / 62 GiB) running a 2 vCPU /
+ * 8 GiB standard sandbox target with a warm pool of 1:
+ *
+ *   global cap = floor(host_cpu * (1 - margin) / sandbox_cpu)
+ *              = floor(12000 * 0.85 / 2000) = 5   (cpu-bound; memory allows 6)
+ *
+ * so the box never oversubscribes its declared CPU. `orgMaxActiveSandboxes` (3)
+ * leaves headroom for other tenants; `orgMaxQueueDepth` (40) is the durable
+ * per-org queue ceiling that returns 429; `maxFanoutTasks` (20) caps one HTTP /
+ * CLI / MCP fan-out. Reservation math uses DECLARED sandbox cpu/memory, never
+ * currently-resident RAM.
+ */
+export interface WorkloadTierConfig {
+  readonly cpuMillicores: number;
+  readonly memoryMib: number;
+}
+
+export interface FleetCapacityConfig {
+  readonly globalMaxActiveSandboxes: number;
+  readonly orgMaxActiveSandboxes: number;
+  readonly orgMaxQueueDepth: number;
+  readonly maxFanoutTasks: number;
+  readonly maxDispatchConcurrency: number;
+  readonly safetyMarginPct: number;
+  readonly hostCpuMillicores: number;
+  readonly hostMemoryMib: number;
+  readonly leaseTtlMs: number;
+  readonly tiers: Readonly<Record<"standard" | "desktop", WorkloadTierConfig>>;
+}
+
+function fleetInt(name: string, fallback: number): number {
+  const raw = process.env[name]?.trim();
+  if (!raw) return fallback;
+  const n = Number(raw);
+  return Number.isFinite(n) && n >= 0 ? Math.floor(n) : fallback;
+}
+
+export function fleetCapacityConfig(): FleetCapacityConfig {
+  return {
+    globalMaxActiveSandboxes: fleetInt("FLEET_GLOBAL_MAX_ACTIVE_SANDBOXES", 5),
+    orgMaxActiveSandboxes: fleetInt("FLEET_ORG_MAX_ACTIVE_SANDBOXES", 3),
+    orgMaxQueueDepth: fleetInt("FLEET_ORG_MAX_QUEUE_DEPTH", 40),
+    maxFanoutTasks: fleetInt("FLEET_MAX_FANOUT_TASKS", 20),
+    maxDispatchConcurrency: fleetInt("FLEET_MAX_DISPATCH_CONCURRENCY", 4),
+    safetyMarginPct: Math.min(fleetInt("FLEET_SAFETY_MARGIN_PCT", 15), 90),
+    hostCpuMillicores: fleetInt("FLEET_HOST_CPU_MILLICORES", 12_000),
+    hostMemoryMib: fleetInt("FLEET_HOST_MEMORY_MIB", 63_488),
+    leaseTtlMs: fleetInt("FLEET_LEASE_TTL_MS", 1_200_000),
+    tiers: {
+      standard: {
+        cpuMillicores: fleetInt("FLEET_SANDBOX_CPU_MILLICORES", 2_000),
+        memoryMib: fleetInt("FLEET_SANDBOX_MEMORY_MIB", 8_192),
+      },
+      desktop: {
+        cpuMillicores: fleetInt("FLEET_DESKTOP_CPU_MILLICORES", 4_000),
+        memoryMib: fleetInt("FLEET_DESKTOP_MEMORY_MIB", 16_384),
+      },
+    },
+  };
+}

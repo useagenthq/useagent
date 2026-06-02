@@ -68,9 +68,11 @@ function lineCount(text: string): number {
 const BACKEND_SIZE_BASELINE: Record<string, number> = {
   "engines/opencode-server.ts": 2124,
   "engines/acp-server.ts": 1551,
-  "runs/routes.ts": 1252,
+  // +9: durable-admission 429 + additive queue metadata on the accept response.
+  "runs/routes.ts": 1261,
   "memory/team-memory.ts": 1028,
-  "worker.ts": 944,
+  // +4: fleet capacity gate seam (pumpThread delegate + lease-liveness accessor).
+  "worker.ts": 948,
 };
 
 describe("file-size ratchet (backend/src)", () => {

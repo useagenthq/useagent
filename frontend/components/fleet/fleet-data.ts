@@ -31,8 +31,38 @@ export interface FleetData {
   machine: MachineStats | null;
 }
 
+/** Org capacity + durable-queue snapshot, from GET /api/fleet/capacity (HA Stage
+ *  A). `queued` is durably-accepted work waiting for a free sandbox slot. */
+export interface CapacityData {
+  orgActive: number;
+  orgLimit: number;
+  queued: number;
+  queueLimit: number;
+  globalActive: number;
+  globalLimit: number;
+  globalSaturated: boolean;
+}
+
 function num(value: unknown): number {
   return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
+/** Normalize GET /api/fleet/capacity; null on an unusable shape (keep last good). */
+export function extractCapacity(data: unknown): CapacityData | null {
+  if (!data || typeof data !== "object") return null;
+  const d = data as Record<string, unknown>;
+  const org = d.org as Record<string, unknown> | undefined;
+  const global = d.global as Record<string, unknown> | undefined;
+  if (!org || !global) return null;
+  return {
+    orgActive: num(org.activeSandboxes),
+    orgLimit: num(org.maxActiveSandboxes),
+    queued: num(org.queued),
+    queueLimit: num(org.queueDepthLimit),
+    globalActive: num(global.activeSandboxes),
+    globalLimit: num(global.maxActiveSandboxes),
+    globalSaturated: global.saturated === true,
+  };
 }
 
 function toModelBurn(value: unknown): ModelBurn | null {
