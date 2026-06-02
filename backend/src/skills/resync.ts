@@ -92,7 +92,7 @@ export interface SkillsResyncDeps {
     repo: string,
     paths: string[],
   ) => Promise<{
-    results: readonly { path: string; action: "created" | "updated" | "unchanged" | "skipped" | "protected" }[];
+    results: readonly { path: string; action: "created" | "updated" | "unchanged" | "skipped" }[];
   }>;
   sleep: (ms: number) => Promise<void>;
   maxReposPerSweep: number;

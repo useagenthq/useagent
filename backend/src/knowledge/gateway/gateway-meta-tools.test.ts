@@ -64,7 +64,7 @@ describe("gateway compact discovery", () => {
       CLAIMS,
       "gateway_tool_call",
       { name: "automation_schema" },
-      { childSessions: false, loopLogin: false, slack: false },
+      { childSessions: false, slack: false },
     );
 
     expect(execution.matched).toBe(true);
@@ -95,7 +95,7 @@ describe("gateway compact discovery", () => {
       CLAIMS,
       "gateway_tool_call",
       { name: "record_start", arguments: { name: "compact-proof" } },
-      { childSessions: false, loopLogin: false, slack: false },
+      { childSessions: false, slack: false },
     );
 
     expect(execution.matched).toBe(true);

@@ -6,7 +6,6 @@ import {
 import { Hono } from "hono";
 import { findSlackThreadByRoot } from "../../slack/repo";
 import { childSessionToolsEnabled } from "./child-session-tools";
-import { loopLoginConfigured } from "./loop-login-tools";
 import {
   executeRegisteredGatewayTool,
   gatewayToolListDescriptors,
@@ -84,7 +83,6 @@ export async function handleMcpMessage(
   const params = msg.params as Record<string, unknown> | undefined;
   const listOptions = async () => ({
     childSessions: await childSessionToolsEnabled(claims),
-    loopLogin: loopLoginConfigured(),
     slack: Boolean(await findSlackThreadByRoot(claims.threadId)),
   });
   switch (msg.method) {
