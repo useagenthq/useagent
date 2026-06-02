@@ -15,7 +15,7 @@ import {
   type ArtifactWorkpieceState,
 } from "./artifacts";
 import { decodeFrame, THREAD_FRAME_TYPES, type DecodedFrame } from "./thread-events";
-import { decodeApiRun, type ApiRun } from "./wire";
+import { decodeApiRun, decodeApiRunSummary, type ApiRun, type ApiRunSummary } from "./wire";
 
 /** Minimal injected fetch/response surface (works with the browser fetch, a Node/Bun
  *  fetch, or a test stub). Kept structural so the package needs no DOM lib. */
@@ -82,6 +82,14 @@ export interface ThreadSnapshot {
   readonly runs: readonly RunSummary[];
 }
 
+/** Options for the compact run listing (`GET /api/runs?view=summary`). */
+export interface ListRunsInput {
+  /** Cap the number of rows returned (backend clamps its own maximum). */
+  readonly limit?: number;
+  /** Include every run in every thread, not just thread roots. */
+  readonly all?: boolean;
+}
+
 export interface OperationResult {
   readonly ok: boolean;
   readonly status: string;
@@ -108,6 +116,8 @@ export interface AgentClient {
   reply(parentRunId: string, input: Omit<CreateRunInput, "parentRunId">): Promise<RunHandle>;
   cancel(runId: string): Promise<OperationResult>;
   getThread(rootRunId: string): Promise<ThreadSnapshot>;
+  /** Recent run summaries (newest first), scoped to the authenticated org. */
+  listRuns(input?: ListRunsInput): Promise<readonly ApiRunSummary[]>;
   listArtifacts(input?: ArtifactListInput): Promise<readonly ArtifactDescriptor[]>;
   getArtifact(artifactId: string): Promise<ArtifactDescriptor>;
   getArtifactWorkpiece(artifactId: string): Promise<ArtifactWorkpieceResult>;
@@ -176,6 +186,17 @@ export function createAgentClient(config: AgentClientConfig): AgentClient {
       const rawRuns = Array.isArray(json.thread) ? json.thread : Array.isArray(json.runs) ? json.runs : [];
       const runs = rawRuns.map(decodeApiRun).filter((run): run is ApiRun => run !== null);
       return { runs };
+    },
+
+    async listRuns(input = {}) {
+      const query = ["view=summary"];
+      if (input.all) query.push("all=1");
+      if (input.limit !== undefined) query.push(`limit=${encodeURIComponent(String(input.limit))}`);
+      const json = (await send(`/api/runs?${query.join("&")}`, {})) as Record<string, unknown>;
+      const rawRuns = Array.isArray(json.runs) ? json.runs : [];
+      return rawRuns
+        .map(decodeApiRunSummary)
+        .filter((run): run is ApiRunSummary => run !== null);
     },
 
     async listArtifacts(input = {}) {
