@@ -101,6 +101,33 @@ test("GitHub catalog refs remain stable across repository renames", async () => 
   expect(after.items[0]?.name).toBe("acme/new-name");
 });
 
+test("GitHub catalog surfaces a listing failure as a clear error, not confirmed absence of access", async () => {
+  const provider = createGithubResourceCatalogProvider({
+    async list() {
+      // A connected org whose inventory fetch failed transiently: configured,
+      // but no repos and an error. This must not degrade to an empty page.
+      return {
+        configured: true,
+        connectionId: "connection-a",
+        repos: [],
+        error: "GitHub API 403",
+        complete: false,
+        nextCursor: null,
+      };
+    },
+  });
+
+  const search = provider.search(
+    { orgId: "org-a", userId: "user-a" },
+    { query: null, cursor: null, limit: 10 },
+  );
+
+  await expect(search).rejects.toThrow("connected GitHub inventory listing failed: GitHub API 403");
+  await expect(search).rejects.toThrow(
+    "not confirmation the organization has no accessible repositories",
+  );
+});
+
 test("GitHub catalog excludes repositories without a valid stable numeric id", async () => {
   const provider = createGithubResourceCatalogProvider({
     async list() {

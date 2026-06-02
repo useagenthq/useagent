@@ -53,6 +53,17 @@ describe("provider-neutral resource gateway tools", () => {
     }
   });
 
+  test("resource_catalog_search description is the authoritative answer to org repository access, above the sandbox filesystem", () => {
+    const tool = RESOURCE_TOOLS.find((t) => t.name === "resource_catalog_search");
+    expect(tool).toBeDefined();
+    const description = tool!.description;
+    // The truthfulness fix: the agent must learn that repository/resource access
+    // is answered here, not by inspecting an (often empty) sandbox filesystem.
+    expect(description).toContain("this organization can access");
+    expect(description).toContain("authoritative");
+    expect(description).toContain("sandbox filesystem is not");
+  });
+
   test("catalog search derives actor scope from signed claims and returns safe inventory metadata", async () => {
     const calls: unknown[] = [];
     setResourceToolServiceForTest({
