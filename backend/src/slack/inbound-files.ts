@@ -14,7 +14,7 @@
  * mirroring sandbox-file.ts, so no test touches Slack's CDN.
  */
 import { ingestUserUpload } from "../uploads/ingest";
-import { validateUploadName } from "../uploads/routes";
+import { validateUploadName } from "../uploads/validate";
 import { UploadScanError } from "../uploads/scan";
 
 export const MAX_INBOUND_SLACK_FILE_BYTES = 20 * 1024 * 1024;

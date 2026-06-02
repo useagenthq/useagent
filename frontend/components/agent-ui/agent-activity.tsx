@@ -299,7 +299,7 @@ function ActivityRow({ item }: { item: AgentActivityItem }) {
 }
 
 // -- helpers ---------------------------------------------------------------
-function formatDuration(duration: number) {
+function formatSeconds(duration: number) {
   const seconds = Math.max(0, Math.round(duration));
   if (seconds < 60) return `${seconds}s`;
   const minutes = Math.floor(seconds / 60);
@@ -346,7 +346,7 @@ function getSummary(type: AgentActivityContentType, items: AgentActivityItem[], 
   if (type === "step" || type === "text") {
     return (
       <>
-        Thought for <span className="tabular-nums">{formatDuration(duration)}</span>
+        Thought for <span className="tabular-nums">{formatSeconds(duration)}</span>
       </>
     );
   }

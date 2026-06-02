@@ -8,6 +8,8 @@
  * fake and never touch the network.
  */
 
+import { errorMessage } from "../util/error-message";
+
 export interface ChatMessage {
   role: "system" | "user" | "assistant";
   content: string;
@@ -82,7 +84,7 @@ export const openRouterLlm: WikiLlm = async (messages, opts) => {
       signal: AbortSignal.timeout(TIMEOUT_MS),
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = errorMessage(error);
     throw new WikiLlmError(`openrouter request failed: ${message}`, {
       retryable: true,
       cause: error,

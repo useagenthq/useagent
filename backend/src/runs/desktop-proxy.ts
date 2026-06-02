@@ -13,6 +13,7 @@ import {
 } from "./preview-proxy";
 import { ensureSandboxDesktopView } from "../engines/desktop";
 import { sandboxPreviewHeaders } from "../sandboxes/provider";
+import { errorMessage } from "../util/error-message";
 
 // ---------------------------------------------------------------------------
 // DESKTOP PROXY — same-origin bridge to the noVNC GUI running INSIDE a thread's
@@ -174,7 +175,7 @@ desktopProxyRoutes.get("/:threadId/ready", async (c) => {
     await ensureDesktopPreview(threadId);
     return c.body(null, 204);
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = errorMessage(error);
     if (message === "no-sandbox") {
       return c.json(
         { error: "no live sandbox for this conversation yet - send a message first" },
@@ -205,7 +206,7 @@ desktopProxyRoutes.all("/:threadId/*", async (c) => {
     try {
       await ensureDesktopPreview(threadId);
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
+      const message = errorMessage(err);
       if (message === "no-sandbox") {
         return c.json({ error: "no live sandbox for this conversation yet - send a message first" }, 409);
       }
@@ -247,7 +248,7 @@ desktopProxyRoutes.all("/:threadId/*", async (c) => {
   } catch (err) {
     invalidateDesktopPreview(threadId);
     invalidatePreviewEndpoint(threadId, DESKTOP_PORT);
-    const msg = err instanceof Error ? err.message : String(err);
+    const msg = errorMessage(err);
     if (msg === "no-sandbox") {
       return c.json(
         { error: "no live sandbox for this conversation yet - send a message first" },

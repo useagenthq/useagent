@@ -5,7 +5,7 @@
 // The translator emits the run's canonical `commands.updated` from those frames. DB-backed
 // (skynet_test), through the REAL canonicalizeRun path (no mutable side-cache).
 import { describe, expect, test, beforeAll } from "bun:test";
-import { ACP_COMMANDS_EVENT_TYPE, type CanonicalCommand } from "../src/engines/canonical";
+import { ACP_COMMANDS_EVENT_TYPE, type CanonicalCommand } from "@useagent/agent-harness/canonical";
 import { db } from "../src/db/client";
 import { runs } from "../src/db/schema";
 import { recordProviderEvent } from "../src/runs/provider-events";

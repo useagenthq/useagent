@@ -35,6 +35,7 @@ import {
   rememberLiveThreadSandbox,
 } from "./sandbox-runtime";
 import { createSecretRedactor, type SecretRedactor } from "../secrets/redact";
+import { errorMessage } from "../util/error-message";
 
 // ---------------------------------------------------------------------------
 // Sandbox engine substrate — ALL user-facing engines (opencode / claude / codex)
@@ -175,7 +176,7 @@ export function sandboxExitError(
 }
 
 function redactThrownError(error: unknown, redact: SecretRedactor): Error {
-  const safe = new Error(redact.text(error instanceof Error ? error.message : String(error)));
+  const safe = new Error(redact.text(errorMessage(error)));
   if (error instanceof Error) safe.name = error.name;
   return safe;
 }
