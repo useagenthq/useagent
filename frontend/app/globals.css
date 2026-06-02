@@ -3348,8 +3348,8 @@
  */
 .aurora-blob {
   border-radius: 100%;
-  filter: blur(80px);
-  opacity: 0.3;
+  filter: blur(92px);
+  opacity: 0.15;
   will-change: transform;
 }
 .aurora-blob-a {
@@ -3357,11 +3357,11 @@
 }
 .aurora-blob-b {
   animation: aurora-drift-b 64s ease-in-out infinite;
-  opacity: 0.24;
+  opacity: 0.12;
 }
 .aurora-blob-c {
   animation: aurora-drift-c 76s ease-in-out infinite;
-  opacity: 0.2;
+  opacity: 0.1;
 }
 @keyframes aurora-drift-a {
   0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
