@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   bridgeChildUsage,
+  NativeBridgeDeltaAccumulator,
   NativeBridgeSequencer,
   NATIVE_BRIDGE_PROTOCOL_VERSION,
 } from "../src/bridge";
@@ -24,5 +25,19 @@ describe("native bridge contract", () => {
       input: 12,
       output: 3,
     });
+  });
+
+  test("stores incremental native deltas as one cumulative durable revision", () => {
+    const accumulator = new NativeBridgeDeltaAccumulator();
+    expect(accumulator.durable({
+      kind: "reasoning.delta",
+      messageId: "message",
+      text: "Let ",
+    })).toMatchObject({ text: "Let " });
+    expect(accumulator.durable({
+      kind: "reasoning.delta",
+      messageId: "message",
+      text: "me think",
+    })).toMatchObject({ text: "Let me think" });
   });
 });

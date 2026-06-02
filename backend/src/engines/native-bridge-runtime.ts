@@ -1,4 +1,8 @@
-import { NativeBridgeSequencer, type NativeBridgeFrameBody } from "@useagent/agent-harness/bridge";
+import {
+  NativeBridgeDeltaAccumulator,
+  NativeBridgeSequencer,
+  type NativeBridgeFrameBody,
+} from "@useagent/agent-harness/bridge";
 import type { HarnessSession } from "@useagent/agent-harness/canonical";
 import type { ProviderDriver } from "@useagent/agent-harness/control";
 import { recordProviderEvent } from "../runs/provider-events";
@@ -34,12 +38,13 @@ export function nativeBridgeSettlement(
 export async function runNativeBridgeTurn(options: NativeBridgeTurnOptions): Promise<string> {
   const { ctx, driver, session, bridge } = options;
   const sequence = new NativeBridgeSequencer(session.nativeSessionId);
+  const durableDeltas = new NativeBridgeDeltaAccumulator();
   let summary = "";
   let eventWrites = Promise.resolve();
   const { promise: settled, resolve: resolveSettled, reject: rejectSettled } = Promise.withResolvers<void>();
   const unsubscribe = bridge.subscribe((raw) => {
     for (const body of options.mapFrame(raw)) {
-      const frame = sequence.frame(body);
+      const frame = sequence.frame(durableDeltas.durable(body));
       eventWrites = eventWrites.then(() => recordProviderEvent(
         piBridgeProviderEvent(ctx, frame),
         { critical: body.kind === "commands.updated" },

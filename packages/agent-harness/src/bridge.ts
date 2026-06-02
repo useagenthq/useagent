@@ -6,7 +6,7 @@ import type {
 } from "./canonical";
 
 /** Bump only when a native bridge changes its command/frame wire shape. */
-export const NATIVE_BRIDGE_PROTOCOL_VERSION = 1 as const;
+export const NATIVE_BRIDGE_PROTOCOL_VERSION = 2 as const;
 
 export type NativeBridgeCommand =
   | { readonly kind: "prompt"; readonly text: string; readonly model?: string }
@@ -18,7 +18,9 @@ export type NativeBridgeFrameBody =
   | { readonly kind: "turn.started" }
   | { readonly kind: "turn.completed"; readonly stopReason?: string }
   | { readonly kind: "turn.failed"; readonly error: string; readonly stopReason?: string }
+  | { readonly kind: "message.started"; readonly messageId: string }
   | { readonly kind: "message.delta"; readonly messageId: string; readonly text: string }
+  | { readonly kind: "message.completed"; readonly messageId: string }
   | { readonly kind: "reasoning.delta"; readonly messageId: string; readonly text: string }
   | { readonly kind: "plan.updated"; readonly entries: readonly CanonicalPlanEntry[] }
   | { readonly kind: "commands.updated"; readonly commands: readonly CanonicalCommand[] }
@@ -94,6 +96,22 @@ export class NativeBridgeSequencer {
       ts: this.now(),
       body,
     };
+  }
+}
+
+/** Converts provider-native incremental deltas into cumulative durable
+ * revisions. Live streaming still publishes the original delta; persistence
+ * upserts one coherent message/reasoning row per message id. */
+export class NativeBridgeDeltaAccumulator {
+  #messageText = new Map<string, string>();
+  #reasoningText = new Map<string, string>();
+
+  durable(body: NativeBridgeFrameBody): NativeBridgeFrameBody {
+    if (body.kind !== "message.delta" && body.kind !== "reasoning.delta") return body;
+    const target = body.kind === "message.delta" ? this.#messageText : this.#reasoningText;
+    const cumulative = `${target.get(body.messageId) ?? ""}${body.text}`;
+    target.set(body.messageId, cumulative);
+    return { ...body, text: cumulative };
   }
 }
 

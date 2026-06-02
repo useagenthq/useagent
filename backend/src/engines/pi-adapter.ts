@@ -16,7 +16,7 @@ import {
 import { piProviderDriver } from "./pi-provider-driver";
 import { piBridgeManager } from "./pi-rpc-bridge";
 import { preparePiRuntime, PI_BRIDGE_GENERATION } from "./pi-runtime-config";
-import { piRpcFrameBodies } from "./pi-canonical";
+import { createPiRpcFrameMapper } from "./pi-canonical";
 import { runNativeBridgeTurn } from "./native-bridge-runtime";
 
 export const piAdapter: EngineAdapter = {
@@ -68,7 +68,7 @@ export const piAdapter: EngineAdapter = {
         session: established.session,
         bridge,
         prompt: composeTurnPrompt(ctx, established.resumed),
-        mapFrame: piRpcFrameBodies,
+        mapFrame: createPiRpcFrameMapper(`pi-message-${ctx.runId}`),
         redact: prepared.redact.text,
       });
       await ctx.emit({ kind: "done", label: "Done", chip: null });

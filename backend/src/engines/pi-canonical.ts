@@ -20,9 +20,11 @@ function preview(value: unknown): string | undefined {
   return raw && raw !== "{}" ? raw.slice(0, 4_000) : undefined;
 }
 
-function messageId(frame: Record<string, unknown>): string {
+function messageId(frame: Record<string, unknown>, fallback: string): string {
   const message = record(frame.message);
-  return text(message?.id) ?? `pi-message-${number(message?.timestamp) ?? Date.now()}`;
+  return text(message?.id) ?? (number(message?.timestamp) !== undefined
+    ? `pi-message-${number(message?.timestamp)}`
+    : fallback);
 }
 
 function usageFrame(message: Record<string, unknown> | null): NativeBridgeFrameBody | null {
@@ -51,11 +53,19 @@ function assistantFailure(message: Record<string, unknown> | null): NativeBridge
 /** Lossless-enough Pi RPC -> provider-neutral bridge mapping. Unknown upstream
  * frames remain available in the native provider lane; they are not fabricated
  * into product events here. */
-export function piRpcFrameBodies(frame: unknown): readonly NativeBridgeFrameBody[] {
+interface PiFrameState {
+  readonly fallbackMessageId: string;
+  activeMessageId: string;
+  messageStarted: boolean;
+}
+
+function mapPiRpcFrame(frame: unknown, state: PiFrameState): readonly NativeBridgeFrameBody[] {
   const value = record(frame);
   if (!value) return [];
   switch (value.type) {
     case "agent_start":
+      state.activeMessageId = state.fallbackMessageId;
+      state.messageStarted = false;
       return [{ kind: "turn.started" }];
     case "agent_end": {
       if (value.isTerminal === false) return [];
@@ -73,18 +83,35 @@ export function piRpcFrameBodies(frame: unknown): readonly NativeBridgeFrameBody
       const update = record(value.assistantMessageEvent);
       const delta = text(update?.delta);
       if (!update || !delta) return [];
+      const id = messageId(value, state.activeMessageId);
+      state.activeMessageId = id;
+      const started: NativeBridgeFrameBody[] = state.messageStarted
+        ? []
+        : [{ kind: "message.started", messageId: id }];
+      state.messageStarted = true;
       if (update.type === "text_delta") {
-        return [{ kind: "message.delta", messageId: messageId(value), text: delta }];
+        return [...started, { kind: "message.delta", messageId: id, text: delta }];
       }
       if (update.type === "thinking_delta") {
-        return [{ kind: "reasoning.delta", messageId: messageId(value), text: delta }];
+        return [...started, { kind: "reasoning.delta", messageId: id, text: delta }];
       }
       return [];
     }
     case "message_end": {
       const message = record(value.message);
       if (message?.role !== "assistant") return [];
-      return [usageFrame(message), assistantFailure(message)].filter(Boolean) as NativeBridgeFrameBody[];
+      const id = messageId(value, state.activeMessageId);
+      state.activeMessageId = id;
+      const started: NativeBridgeFrameBody[] = state.messageStarted
+        ? []
+        : [{ kind: "message.started", messageId: id }];
+      state.messageStarted = true;
+      return [
+        ...started,
+        usageFrame(message),
+        assistantFailure(message),
+        { kind: "message.completed", messageId: id },
+      ].filter(Boolean) as NativeBridgeFrameBody[];
     }
     case "rpc_frame_error":
       return [{ kind: "turn.failed", error: text(value.error) ?? "Pi RPC frame failed" }];
@@ -201,4 +228,17 @@ export function piRpcFrameBodies(frame: unknown): readonly NativeBridgeFrameBody
     default:
       return [];
   }
+}
+
+export function createPiRpcFrameMapper(fallbackMessageId: string) {
+  const state: PiFrameState = {
+    fallbackMessageId,
+    activeMessageId: fallbackMessageId,
+    messageStarted: false,
+  };
+  return (frame: unknown): readonly NativeBridgeFrameBody[] => mapPiRpcFrame(frame, state);
+}
+
+export function piRpcFrameBodies(frame: unknown): readonly NativeBridgeFrameBody[] {
+  return createPiRpcFrameMapper("pi-message-standalone")(frame);
 }

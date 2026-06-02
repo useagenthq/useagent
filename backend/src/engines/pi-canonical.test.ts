@@ -1,6 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { NativeBridgeSequencer } from "@useagent/agent-harness/bridge";
-import { piRpcFrameBodies } from "./pi-canonical";
+import {
+  NativeBridgeDeltaAccumulator,
+  NativeBridgeSequencer,
+} from "@useagent/agent-harness/bridge";
+import { createPiRpcFrameMapper, piRpcFrameBodies } from "./pi-canonical";
 import { piBridgeProviderEvent } from "./pi-provider-events";
 import { translateOpenCode, type OpenCodeFrame } from "@useagent/agent-harness/opencode";
 
@@ -86,6 +89,53 @@ describe("Pi RPC canonical bridge mapping", () => {
     expect(started.id).toBe(completed.id);
     expect(started.eventType).toBe("part.tool");
     expect(completed.eventType).toBe("part.tool.completed");
+  });
+
+  test("coalesces token-sized Pi reasoning deltas into one durable Thought row", () => {
+    const map = createPiRpcFrameMapper("pi-message-run");
+    const first = map({
+      type: "message_update",
+      assistantMessageEvent: { type: "thinking_delta", delta: "Let " },
+    });
+    const second = map({
+      type: "message_update",
+      assistantMessageEvent: { type: "thinking_delta", delta: "me think" },
+    });
+    expect(first.filter((body) => body.kind === "message.started")).toHaveLength(1);
+    expect(second.filter((body) => body.kind === "message.started")).toHaveLength(0);
+
+    const accumulator = new NativeBridgeDeltaAccumulator();
+    const sequencer = new NativeBridgeSequencer("session", () => 1);
+    const deltas = [...first, ...second].filter(
+      (body) => body.kind === "reasoning.delta",
+    );
+    const events = deltas.map((body) => piBridgeProviderEvent(
+      { runId: "run", threadId: "thread" },
+      sequencer.frame(accumulator.durable(body)),
+    ));
+    expect(events[0]?.id).toBe(events[1]?.id);
+    expect(events[1]?.payload).toMatchObject({ text: "Let me think" });
+
+    const finalEvent = events[1]!;
+    const translated = translateOpenCode([{
+      eventId: finalEvent.id,
+      seq: 1,
+      provider: "pi",
+      eventType: finalEvent.eventType,
+      payload: finalEvent.payload,
+      native: {
+        sessionId: "session",
+        parentSessionId: null,
+        messageId: "pi-message-run",
+        partId: null,
+        callId: null,
+      },
+    }], { runId: "run", threadId: "thread", engine: "pi" });
+    expect(translated.events).toContainEqual(expect.objectContaining({
+      kind: "reasoning.delta",
+      messageId: "pi-message-run",
+      text: "Let me think",
+    }));
   });
 
   test("classifies a terminal provider error as a failed turn", () => {
