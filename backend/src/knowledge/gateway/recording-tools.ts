@@ -233,6 +233,7 @@ export function setRecordingServiceForTest(service: RecordingService | null): vo
 export const RECORDING_TOOLS = [
   {
     name: "desktop_recording_start",
+    aliases: ["record_start"],
     description:
       "Start recording the sandbox desktop. Daytona uses its native Computer Use recorder; Cube " +
       "uses its preinstalled FFmpeg/X11 recorder. Use it before computer actions " +
@@ -250,6 +251,7 @@ export const RECORDING_TOOLS = [
   },
   {
     name: "desktop_recording_stop",
+    aliases: ["record_stop"],
     description:
       "Stop the active provider-native desktop recording, validate the MP4, and publish it as " +
       "a durable authenticated useAgent artifact. Returns working preview and download URLs.",

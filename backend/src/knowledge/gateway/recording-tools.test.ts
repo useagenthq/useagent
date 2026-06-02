@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { env } from "../../env";
 import type { SandboxHandle } from "../../sandboxes/provider";
+import { executeRegisteredGatewayTool } from "./operation-registry";
 import {
   executeRecordingTool,
   RECORDING_TOOLS,
@@ -60,6 +61,32 @@ describe("recording gateway tools", () => {
       "desktop_recording_start",
       "desktop_recording_stop",
     ]);
+  });
+
+  test("executes legacy skill names through descriptor-owned aliases", async () => {
+    const calls: string[] = [];
+    setRecordingServiceForTest({
+      start: async (_claims, name) => {
+        calls.push(`start:${name}`);
+        return { path: `/root/work/recordings/${name}.mp4` };
+      },
+      stop: async () => {
+        calls.push("stop");
+        throw new Error("stop proof");
+      },
+    });
+
+    const started = await executeRegisteredGatewayTool(claims, "record_start", {
+      name: "proof",
+    });
+    const stopped = await executeRegisteredGatewayTool(claims, "record_stop", {});
+
+    expect(started.matched).toBe(true);
+    expect(stopped.matched).toBe(true);
+    expect(calls).toEqual(["start:proof", "stop"]);
+    if (!started.matched || !stopped.matched) throw new Error("recording alias not matched");
+    expect(JSON.stringify(started.result)).toContain("Recording started");
+    expect(JSON.stringify(stopped.result)).toContain("Could not stop recording: stop proof");
   });
 
   test("starts only after the desktop is ready and returns the sandbox path", async () => {

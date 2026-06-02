@@ -1,6 +1,4 @@
-// Display-name mapping for a tool's provider/server id, applied where the session
-// timeline renders a tool group's attribution. Pure + isomorphic; the WIRE value
-// it maps FROM is never changed (see providerDisplayName).
+import { toolServerDisplayName } from "@useagent/agent-harness/canonical";
 
 /**
  * Human display label for a tool's provider/server id. "skynet-knowledge" is the
@@ -12,5 +10,5 @@
  * null provider - pass through unchanged.
  */
 export function providerDisplayName(provider: string | null): string | null {
-  return provider === "skynet-knowledge" ? "useAgent" : provider;
+  return provider === null ? null : toolServerDisplayName(provider);
 }
