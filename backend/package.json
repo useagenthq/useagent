@@ -8,7 +8,7 @@
     "start": "bun run src/index.ts",
     "gateway": "bun run src/gateway.ts",
     "typecheck:release": "bunx tsc -p tsconfig.release.json",
-    "test": "bun run test/prepare-db.ts && bun test --path-ignore-patterns='test/slack.test.ts' && bun test ./test/slack.test.ts",
+    "test": "bun run test/prepare-db.ts && bun test --path-ignore-patterns='**/test/slack.test.ts' && bun test ./test/slack.test.ts",
     "test:memory-matrix": "bun test src/memory/team-memory.test.ts src/memory/scope.test.ts test/finalize.test.ts test/capture-outbox.test.ts test/memory-tools.test.ts test/memory-two-sandbox.live.test.ts test/learning-outbox.test.ts test/knowledge-drafts.test.ts test/skill-proposals.test.ts",
     "e2e": "bun run test/e2e/full-stack.ts",
     "e2e:real": "bun run test/e2e/real-full-stack.ts",
