@@ -50,6 +50,24 @@ function assistantFailure(message: Record<string, unknown> | null): NativeBridge
   };
 }
 
+function assistantContent(
+  message: Record<string, unknown>,
+  kind: "text" | "thinking",
+): string | undefined {
+  if (!Array.isArray(message.content)) return undefined;
+  const blocks = message.content.flatMap((item) => {
+    const block = record(item);
+    if (block?.type !== kind) return [];
+    const value = kind === "text"
+      ? (typeof block.text === "string" ? block.text : undefined)
+      : (typeof block.thinking === "string"
+        ? block.thinking
+        : typeof block.text === "string" ? block.text : undefined);
+    return value === undefined ? [] : [value];
+  });
+  return blocks.length > 0 ? blocks.join("") : undefined;
+}
+
 /** Lossless-enough Pi RPC -> provider-neutral bridge mapping. Unknown upstream
  * frames remain available in the native provider lane; they are not fabricated
  * into product events here. */
@@ -57,6 +75,13 @@ interface PiFrameState {
   readonly fallbackMessageId: string;
   activeMessageId: string;
   messageStarted: boolean;
+  messageIndex: number;
+}
+
+function nextFallbackMessageId(state: PiFrameState): string {
+  return state.messageIndex === 0
+    ? state.fallbackMessageId
+    : `${state.fallbackMessageId}-${state.messageIndex}`;
 }
 
 function mapPiRpcFrame(frame: unknown, state: PiFrameState): readonly NativeBridgeFrameBody[] {
@@ -64,7 +89,8 @@ function mapPiRpcFrame(frame: unknown, state: PiFrameState): readonly NativeBrid
   if (!value) return [];
   switch (value.type) {
     case "agent_start":
-      state.activeMessageId = state.fallbackMessageId;
+      state.messageIndex = 0;
+      state.activeMessageId = nextFallbackMessageId(state);
       state.messageStarted = false;
       return [{ kind: "turn.started" }];
     case "agent_end": {
@@ -79,6 +105,15 @@ function mapPiRpcFrame(frame: unknown, state: PiFrameState): readonly NativeBrid
     }
     case "prompt_result":
       return value.agentInvoked === false ? [{ kind: "turn.completed", stopReason: "command" }] : [];
+    case "message_start": {
+      const message = record(value.message);
+      if (message?.role !== "assistant") return [];
+      const id = messageId(value, state.activeMessageId);
+      state.activeMessageId = id;
+      if (state.messageStarted) return [];
+      state.messageStarted = true;
+      return [{ kind: "message.started", messageId: id }];
+    }
     case "message_update": {
       const update = record(value.assistantMessageEvent);
       const delta = text(update?.delta);
@@ -100,14 +135,22 @@ function mapPiRpcFrame(frame: unknown, state: PiFrameState): readonly NativeBrid
     case "message_end": {
       const message = record(value.message);
       if (message?.role !== "assistant") return [];
-      const id = messageId(value, state.activeMessageId);
+      const id = state.messageStarted ? state.activeMessageId : messageId(value, state.activeMessageId);
       state.activeMessageId = id;
       const started: NativeBridgeFrameBody[] = state.messageStarted
         ? []
         : [{ kind: "message.started", messageId: id }];
       state.messageStarted = true;
+      const finalReasoning = assistantContent(message, "thinking");
+      const finalText = assistantContent(message, "text");
       return [
         ...started,
+        ...(finalReasoning === undefined
+          ? []
+          : [{ kind: "reasoning.authoritative", messageId: id, text: finalReasoning } as const]),
+        ...(finalText === undefined
+          ? []
+          : [{ kind: "message.authoritative", messageId: id, text: finalText } as const]),
         usageFrame(message),
         assistantFailure(message),
         { kind: "message.completed", messageId: id },
@@ -235,8 +278,18 @@ export function createPiRpcFrameMapper(fallbackMessageId: string) {
     fallbackMessageId,
     activeMessageId: fallbackMessageId,
     messageStarted: false,
+    messageIndex: 0,
   };
-  return (frame: unknown): readonly NativeBridgeFrameBody[] => mapPiRpcFrame(frame, state);
+  return (frame: unknown): readonly NativeBridgeFrameBody[] => {
+    const bodies = mapPiRpcFrame(frame, state);
+    const value = record(frame);
+    if (value?.type === "message_end" && record(value.message)?.role === "assistant") {
+      state.messageIndex += 1;
+      state.activeMessageId = nextFallbackMessageId(state);
+      state.messageStarted = false;
+    }
+    return bodies;
+  };
 }
 
 export function piRpcFrameBodies(frame: unknown): readonly NativeBridgeFrameBody[] {

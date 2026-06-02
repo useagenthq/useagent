@@ -325,6 +325,8 @@ export function buildTimelineFromCanonical(
   const ranked: Ranked[] = [];
   const seenTextPart = new Set<string>();
   const seenReasoningPart = new Set<string>();
+  const unpartedText = new Map<string, { text: string; firstSeq: number; order: number }>();
+  const unpartedReasoning = new Map<string, { text: string; firstSeq: number }>();
 
   for (const e of ordered) {
     // ── context markers (skynet lane): lead the turn ──────────────────────────
@@ -374,6 +376,15 @@ export function buildTimelineFromCanonical(
       if (sid && childSessions.has(sid)) continue; // subagent chatter
       if (!mid || !stepMessages.has(mid)) continue; // injected context / user prompt
       if (!e.text?.trim()) continue;
+      if (!e.identity?.nativePartId) {
+        const previous = unpartedText.get(mid);
+        unpartedText.set(mid, {
+          text: `${previous?.text ?? ""}${e.text}`,
+          firstSeq: previous?.firstSeq ?? e.identity?.nativeSeq ?? e.seq,
+          order: previous?.order ?? e.identity?.nativeSeq ?? e.seq,
+        });
+        continue;
+      }
       const key = e.identity?.nativePartId ?? e.identity?.nativeEventId ?? String(e.seq);
       if (seenTextPart.has(key)) continue; // one burst per part (latest wins by seq order)
       seenTextPart.add(key);
@@ -392,6 +403,15 @@ export function buildTimelineFromCanonical(
       const sid = e.identity?.nativeSessionId;
       if (sid && childSessions.has(sid)) continue; // subagent thinking -> its pane
       if (!e.text?.trim()) continue;
+      const mid = e.messageId;
+      if (!e.identity?.nativePartId && mid) {
+        const previous = unpartedReasoning.get(mid);
+        unpartedReasoning.set(mid, {
+          text: `${previous?.text ?? ""}${e.text}`,
+          firstSeq: previous?.firstSeq ?? e.identity?.nativeSeq ?? e.seq,
+        });
+        continue;
+      }
       const key = e.identity?.nativePartId ?? e.identity?.nativeEventId ?? String(e.seq);
       if (seenReasoningPart.has(key)) continue;
       seenReasoningPart.add(key);
@@ -520,6 +540,23 @@ export function buildTimelineFromCanonical(
         k2: step.idx,
       });
     }
+  }
+
+  for (const [messageId, grouped] of unpartedText) {
+    ranked.push({
+      node: { kind: "text", key: `message:${messageId}`, text: grouped.text },
+      k0: grouped.order,
+      k1: 0,
+      k2: grouped.firstSeq,
+    });
+  }
+  for (const [messageId, grouped] of unpartedReasoning) {
+    ranked.push({
+      node: { kind: "reasoning", key: `reasoning:${messageId}`, text: grouped.text },
+      k0: grouped.firstSeq,
+      k1: 0,
+      k2: grouped.firstSeq,
+    });
   }
 
   return ranked.toSorted((a, b) => a.k0 - b.k0 || a.k1 - b.k1 || a.k2 - b.k2).map((r) => r.node);

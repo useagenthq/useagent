@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
   bridgeChildUsage,
   NativeBridgeDeltaAccumulator,
+  NATIVE_BRIDGE_DURABLE_TEXT_BYTES,
   NativeBridgeSequencer,
   NATIVE_BRIDGE_PROTOCOL_VERSION,
 } from "../src/bridge";
@@ -33,11 +34,28 @@ describe("native bridge contract", () => {
       kind: "reasoning.delta",
       messageId: "message",
       text: "Let ",
-    })).toMatchObject({ text: "Let " });
+    })[0]).toMatchObject({ text: "Let " });
     expect(accumulator.durable({
       kind: "reasoning.delta",
       messageId: "message",
       text: "me think",
-    })).toMatchObject({ text: "Let me think" });
+    })[0]).toMatchObject({ text: "Let me think" });
+  });
+
+  test("segments long streams without exceeding durable JSON capacity or losing text", () => {
+    const accumulator = new NativeBridgeDeltaAccumulator();
+    accumulator.durable({ kind: "message.delta", messageId: "long-message", text: "discarded draft" });
+    const text = "\u0000".repeat(NATIVE_BRIDGE_DURABLE_TEXT_BYTES * 10);
+    const segments = accumulator.durable({
+      kind: "message.authoritative",
+      messageId: "long-message",
+      text,
+    });
+    expect(segments.length).toBeGreaterThan(1);
+    expect(segments.map((body) => body.kind === "message.delta" ? body.text : "").join(""))
+      .toBe(text);
+    for (const body of segments) {
+      expect(new TextEncoder().encode(JSON.stringify(body)).byteLength).toBeLessThan(32_768);
+    }
   });
 });
