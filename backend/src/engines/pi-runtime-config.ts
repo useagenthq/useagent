@@ -19,7 +19,7 @@ export const PI_RUNTIME_USER = "useagent-pi";
 export const PI_RUNTIME_HOME = "/home/useagent-pi";
 export const PI_RUNTIME_ROOT = "/opt/useagent/pi-runtime";
 
-interface PiModelSelection {
+export interface PiModelSelection {
   readonly provider: ProviderId;
   readonly modelId: string;
   readonly selector: string;
@@ -35,7 +35,7 @@ export interface PreparedPiRuntime {
   readonly home: string;
 }
 
-function modelSelection(model: string): PiModelSelection {
+export function piModelSelection(model: string): PiModelSelection {
   const provider = providerForEngine("pi", model);
   if (!provider) throw new Error(`Pi cannot route model '${model}'`);
   const modelId = provider === "openai" ? model.replace(/^openai\//, "") : model;
@@ -117,7 +117,7 @@ export async function preparePiRuntime(
   ctx: EngineRunContext,
   workdir: string,
 ): Promise<PreparedPiRuntime> {
-  const selection = modelSelection(ctx.model?.trim() || "openai/gpt-5.6-luna");
+  const selection = piModelSelection(ctx.model?.trim() || "openai/gpt-5.6-luna");
   const providerCapability = piProviderGatewayCapability(ctx, selection.provider);
   if (!providerCapability) throw new Error("Pi provider gateway capability is unavailable");
   const toolCapability = piToolGatewayDescriptor(ctx);
