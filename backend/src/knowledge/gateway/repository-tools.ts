@@ -1,6 +1,5 @@
 import { ensureRepoClone, shq } from "../../engines/repo-prep";
 import { formatRepoRef, parseRepoRef } from "../../github/repo-ref";
-import { listRepos, type RepoInfo } from "../../github/repos";
 import {
   hasExactGitHubRepositoryUrlProvenance,
   parseExactGitHubRepositoryUrl,
@@ -27,7 +26,10 @@ export interface RepositoryCloneResult {
 }
 
 interface RepositoryService {
-  list(claims: ToolTokenClaims, query: string | null): Promise<RepoInfo[]>;
+  list(
+    claims: ToolTokenClaims,
+    query: string | null,
+  ): Promise<RunBoundRepository[]>;
   clone(
     claims: ToolTokenClaims,
     query: string,
@@ -35,80 +37,84 @@ interface RepositoryService {
   ): Promise<RepositoryCloneResult>;
 }
 
-const QUERY_NOISE = new Set([
-  "clone",
-  "github",
-  "loop",
-  "acme",
-  "repo",
-  "repository",
-  "the",
-]);
+const canonicalRepositoryIdentity = (value: string): string =>
+  value.trim().toLowerCase();
 
-const normalize = (value: string): string =>
-  value.toLowerCase().replace(/[^a-z0-9]+/g, "");
-
-const queryTerms = (value: string): string[] =>
-  value
-    .toLowerCase()
-    .split(/[^a-z0-9]+/)
-    .filter((term) => term && !QUERY_NOISE.has(term));
+export interface RunBoundRepository {
+  readonly full_name: string;
+  readonly name: string;
+  /** Exact revision selected on the run, or null when the run did not pin one. */
+  readonly revision: string | null;
+}
 
 /** Resolve only when one accessible repository is the unambiguous match. */
 export function resolveRepositoryQuery(
-  repos: readonly RepoInfo[],
+  repos: readonly RunBoundRepository[],
   query: string,
-): RepoInfo | null {
-  const requested = query.trim();
+): RunBoundRepository | null {
+  const requested = canonicalRepositoryIdentity(query);
   if (!requested) return null;
   const exactFullName = repos.filter(
-    (repo) => normalize(repo.full_name) === normalize(requested),
+    (repo) => canonicalRepositoryIdentity(repo.full_name) === requested,
   );
   if (exactFullName.length === 1) return exactFullName[0] ?? null;
 
-  const terms = queryTerms(requested);
-  if (terms.length === 0) return null;
   const exactName = repos.filter(
-    (repo) => terms.length === 1 && normalize(repo.name) === normalize(terms[0] ?? ""),
+    (repo) => canonicalRepositoryIdentity(repo.name) === requested,
   );
-  if (exactName.length === 1) return exactName[0] ?? null;
-
-  const candidates = repos.filter((repo) => {
-    const haystack = normalize(repo.full_name);
-    return terms.every((term) => haystack.includes(normalize(term)));
-  });
-  return candidates.length === 1 ? (candidates[0] ?? null) : null;
+  return exactName.length === 1 ? (exactName[0] ?? null) : null;
 }
 
-/** Restrict the deployment-wide GitHub listing to repository identities that
- *  were persisted on this exact run. Stored refs may include a branch suffix;
- *  authorization is against their decoded owner/name identity. */
+/** Project the exact durable repository bindings authorized on this run.
+ *  Connected-account catalog metadata is deliberately not consulted: catalog
+ *  visibility and run authorization are separate concerns. */
 export function repositoriesForRun(
-  accessibleRepos: readonly RepoInfo[],
   runRepos: readonly string[],
-): RepoInfo[] {
-  const bound = new Set(runRepos.map((entry) => parseRepoRef(entry).repo));
-  return accessibleRepos.filter((repo) => bound.has(repo.full_name));
+  resolvedResources: readonly RunResource[] = [],
+): RunBoundRepository[] {
+  const repositories = new Map<string, RunBoundRepository>();
+  const add = (fullName: string, revision: string | null) => {
+    const name = fullName.split("/").at(-1) ?? fullName;
+    const key = `${canonicalRepositoryIdentity(fullName)}\0${revision ?? ""}`;
+    if (!repositories.has(key)) {
+      repositories.set(key, { full_name: fullName, name, revision });
+    }
+  };
+
+  for (const entry of runRepos) {
+    const { repo, branch } = parseRepoRef(entry);
+    add(repo, branch);
+  }
+  for (const resource of resolvedResources) {
+    if (
+      resource.provider !== "github" ||
+      resource.locator.type !== "github.repository" ||
+      !resource.capabilities.includes("code.checkout")
+    ) {
+      continue;
+    }
+    add(resource.locator.repository, resource.locator.revision);
+  }
+  return [...repositories.values()];
 }
 
 export interface RepositoryCloneTarget {
   readonly fullName: string;
-  readonly defaultBranch: string | null;
+  readonly revision: string | null;
   readonly useGithubCredential: boolean;
 }
 
 /** Resolve the exact clone trust path. Canonical public URLs deliberately skip
- *  organization credentials; every credentialed target must resolve from the
- *  intersection of the GitHub connection and the current run's persisted repos. */
+ *  organization credentials; every credentialed target must resolve directly
+ *  from the current run's persisted repository bindings. */
 export function resolveRepositoryCloneTarget(
-  accessibleRepos: readonly RepoInfo[],
   runRepos: readonly string[],
   query: string,
   authorizedResources: readonly RunResource[] = [],
 ): RepositoryCloneTarget | null {
   const publicRepository = parsePublicGitHubUrl(query);
   if (publicRepository) {
-    const authorized = authorizedResources.some(
+    const authorized = authorizedResources.find(
       (resource) =>
         resource.locator.type === "github.repository" &&
         resource.locator.repository === publicRepository &&
@@ -117,18 +123,20 @@ export function resolveRepositoryCloneTarget(
     if (!authorized) return null;
     return {
       fullName: publicRepository,
-      defaultBranch: null,
+      revision: authorized.locator.type === "github.repository"
+        ? authorized.locator.revision
+        : null,
       useGithubCredential: false,
     };
   }
   const repository = resolveRepositoryQuery(
-    repositoriesForRun(accessibleRepos, runRepos),
+    repositoriesForRun(runRepos, authorizedResources),
     query,
   );
   return repository
     ? {
         fullName: repository.full_name,
-        defaultBranch: repository.default_branch,
+        revision: repository.revision,
         useGithubCredential: true,
       }
     : null;
@@ -171,17 +179,6 @@ function checkedBranch(value: unknown): string | null {
   return branch;
 }
 
-async function availableRepos(orgId: string): Promise<RepoInfo[]> {
-  const listing = await listRepos(orgId);
-  if (!listing.configured) {
-    throw new Error(
-      "GitHub is not configured; ask the workspace operator to connect GitHub (GitHub App installation or access token), then retry",
-    );
-  }
-  if (listing.error && listing.repos.length === 0) throw new Error(listing.error);
-  return listing.repos;
-}
-
 async function currentRun(claims: ToolTokenClaims) {
   const run = await getRunForOrg(claims.orgId, claims.runId);
   if (!run || run.threadId !== claims.threadId) {
@@ -193,27 +190,15 @@ async function currentRun(claims: ToolTokenClaims) {
 const productionService: RepositoryService = {
   async list(claims, query) {
     const run = await currentRun(claims);
-    if (run.repos.length === 0) return [];
-    const repos = repositoriesForRun(
-      await availableRepos(claims.orgId),
-      run.repos,
-    );
+    const repos = repositoriesForRun(run.repos, run.resolvedResources ?? []);
     if (!query) return repos.slice(0, 50);
-    const terms = queryTerms(query);
-    if (terms.length === 0) return [];
-    return repos
-      .filter((repo) => {
-        const haystack = normalize(repo.full_name);
-        return terms.every((term) => haystack.includes(normalize(term)));
-      })
-      .slice(0, 50);
+    const repository = resolveRepositoryQuery(repos, query);
+    return repository ? [repository] : [];
   },
 
   async clone(claims, query, branch) {
     const run = await currentRun(claims);
-    const publicRepository = parsePublicGitHubUrl(query);
     const target = resolveRepositoryCloneTarget(
-      publicRepository ? [] : await availableRepos(claims.orgId),
       run.repos,
       query,
       run.resolvedResources ?? [],
@@ -228,7 +213,13 @@ const productionService: RepositoryService = {
     if (apiKey === undefined) throw new Error("sandbox provider credentials are not set");
     const sandbox = await sandboxProvider(apiKey).get(run.sandboxId);
     const fullName = target.fullName;
-    const entry = formatRepoRef(fullName, branch);
+    if (target.revision && branch && target.revision !== branch) {
+      throw new Error(
+        `repository ${fullName} is attached to this run at revision ${target.revision}, not ${branch}`,
+      );
+    }
+    const requestedRevision = branch ?? target.revision;
+    const entry = formatRepoRef(fullName, requestedRevision);
     await ensureRepoClone(
       sandbox,
       "/root/work",
@@ -253,7 +244,7 @@ const productionService: RepositoryService = {
     }
     return {
       repository: fullName,
-      branch: actualBranch || branch || target.defaultBranch || "HEAD",
+      branch: actualBranch || requestedRevision || "HEAD",
       commit,
       path,
     };
@@ -281,14 +272,15 @@ export const REPOSITORY_TOOLS = [
   {
     name: "github_repositories",
     description:
-      "List repositories attached to the current run and available through the organization's connected GitHub App. " +
-      "Use this to resolve natural names such as 'Acme backend' within the run's authorized repository set.",
+      "List GitHub repositories explicitly bound to the current run. This is run authorization, not the connected account inventory; use resource_catalog_search to discover visible connected repositories. " +
+      "Use this only to resolve names within the run's authorized repository set.",
     inputSchema: {
       type: "object",
       properties: {
         query: {
           type: "string",
-          description: "Optional repository name or natural-language alias to filter by.",
+          description:
+            "Optional exact owner/name or unique exact repository name within this run.",
         },
       },
       additionalProperties: false,
@@ -305,11 +297,13 @@ export const REPOSITORY_TOOLS = [
       properties: {
         query: {
           type: "string",
-          description: "Full run-attached repository name, natural alias, or exact public GitHub HTTPS URL.",
+          description:
+            "Exact run-attached owner/name, unique exact repository name, or exact public GitHub HTTPS URL.",
         },
         branch: {
           type: "string",
-          description: "Optional branch. Omit to use the repository default branch.",
+          description:
+            "Optional branch. Omit to use the revision selected on the run, or the remote default when the run did not pin one.",
         },
       },
       required: ["query"],
@@ -336,10 +330,10 @@ export async function executeRepositoryTool(
       const repos = await service.list(claims, query);
       const lines = repos.map(
         (repo) =>
-          `- ${repo.full_name} (default: ${repo.default_branch}${repo.private ? ", private" : ""})`,
+          `- ${repo.full_name}${repo.revision ? ` (revision: ${repo.revision})` : ""}`,
       );
       return result(
-        lines.length > 0 ? lines.join("\n") : "No matching accessible repositories.",
+        lines.length > 0 ? lines.join("\n") : "No matching run-bound repositories.",
         { repositories: repos },
       );
     }
