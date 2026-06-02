@@ -66,6 +66,70 @@ export function guardDesktopFocusSteal({
   return () => innerDoc.removeEventListener("focusin", bounce, true);
 }
 
+/** Poll cadence for the cross-origin focus-steal watchdog (ms). */
+export const DESKTOP_FOCUS_WATCHDOG_INTERVAL = 250;
+
+/**
+ * Cross-origin fallback for {@link guardDesktopFocusSteal}. noVNC calls
+ * rfb.focus() asynchronously after the RFB connection settles, moving keyboard
+ * focus onto the iframe ELEMENT without a user gesture. When the browser treats
+ * the `/api/desktop-proxy` iframe as cross-origin the guard's inner document is
+ * unreachable, but `document.activeElement === frame` (the iframe element itself)
+ * stays observable from the outer page. A steal should be released only while the
+ * pane is being watched (input not captured) - once the user clicks to control,
+ * the keyboard SHOULD go to the desktop.
+ */
+export function shouldReleaseStolenFocus({
+  activeElement,
+  frame,
+  captured,
+}: {
+  activeElement: Element | null;
+  frame: Element | null;
+  captured: boolean;
+}): boolean {
+  if (captured) return false;
+  return frame !== null && activeElement === frame;
+}
+
+/**
+ * Thin, timer-free wrapper that drives {@link shouldReleaseStolenFocus} from a
+ * poll (async focus emits no outer event we can rely on) and from window focus
+ * changes, calling `release` when the iframe holds stolen focus. `schedule` and
+ * `listen` each return their own teardown; the returned cleanup runs both.
+ */
+export function watchDesktopFocusSteal({
+  check,
+  release,
+  schedule,
+  listen,
+}: {
+  check: () => boolean;
+  release: () => void;
+  schedule: (tick: () => void) => () => void;
+  listen: (tick: () => void) => () => void;
+}): () => void {
+  const tick = () => {
+    if (check()) release();
+  };
+  const stopPoll = schedule(tick);
+  const stopListening = listen(tick);
+  return () => {
+    stopPoll();
+    stopListening();
+  };
+}
+
+/** Return keyboard focus to the last legitimate element outside the pane (the
+ *  composer), or blur the frame when that element is gone. */
+function restoreOuterFocus(previous: HTMLElement | null, frame: HTMLIFrameElement | null): void {
+  if (previous?.isConnected) {
+    previous.focus();
+    return;
+  }
+  frame?.blur();
+}
+
 /**
  * The "Desktop" tab: a live view of the conversation's sandbox GUI (multi-repo),
  * via noVNC. The sandbox runtime keeps Xvfb + XFCE + x11vnc + noVNC alive on
@@ -186,14 +250,7 @@ export function DesktopPane({ threadId }: { threadId: string }) {
     const releaseGuard = guardDesktopFocusSteal({
       innerDoc,
       isCaptured: () => inputCapturedRef.current,
-      restoreFocus: () => {
-        const previous = lastOuterFocusRef.current;
-        if (previous?.isConnected) {
-          previous.focus();
-          return;
-        }
-        frameRef.current?.blur();
-      },
+      restoreFocus: () => restoreOuterFocus(lastOuterFocusRef.current, frameRef.current),
     });
 
     return () => {
@@ -201,6 +258,38 @@ export function DesktopPane({ threadId }: { threadId: string }) {
       releaseGuard();
     };
   }, [loaded]);
+
+  // Cross-origin fallback for the same-origin guard above. When the proxy iframe
+  // is treated as cross-origin its inner document is unreachable, so the guard's
+  // focusin listener never sees noVNC's async rfb.focus() steal. The steal still
+  // lands the iframe ELEMENT as document.activeElement (observable cross-origin),
+  // so while the pane is only being watched, poll for it - and re-check on window
+  // focus changes - then bounce it back to the composer. Stops at the explicit
+  // capture click, which SHOULD route the keyboard to the desktop.
+  useEffect(() => {
+    if (!loaded || inputCaptured) return;
+    return watchDesktopFocusSteal({
+      check: () =>
+        shouldReleaseStolenFocus({
+          activeElement: document.activeElement,
+          frame: frameRef.current,
+          captured: inputCapturedRef.current,
+        }),
+      release: () => restoreOuterFocus(lastOuterFocusRef.current, frameRef.current),
+      schedule: (tick) => {
+        const id = window.setInterval(tick, DESKTOP_FOCUS_WATCHDOG_INTERVAL);
+        return () => window.clearInterval(id);
+      },
+      listen: (tick) => {
+        window.addEventListener("focusin", tick, true);
+        window.addEventListener("blur", tick, true);
+        return () => {
+          window.removeEventListener("focusin", tick, true);
+          window.removeEventListener("blur", tick, true);
+        };
+      },
+    });
+  }, [loaded, inputCaptured]);
 
   if (!ready) {
     return (
