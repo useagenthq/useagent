@@ -56,6 +56,7 @@ import { seedDev } from "./seed";
 import { skillImportRoutes } from "./skills/import-routes";
 import { startSkillsResync } from "./skills/resync";
 import { skillsRoutes } from "./skills/routes";
+import { tasksRoutes } from "./tasks/routes";
 import { slackEnabled, slackRoutes, startSlackOutbox, syncSlackWorkspaceBindings } from "./slack";
 import { enforceSingleBackend } from "./db/single-backend";
 import { ensureWarmPool, warmPoolSize } from "./sandboxes/warm-pool";
@@ -315,6 +316,10 @@ app.route("/api/skills/import", skillImportRoutes);
 // /api/skills so the /proposals subtree resolves to its own routes.
 app.route("/api/skills/proposals", skillProposalRoutes);
 app.route("/api/skills", skillsRoutes);
+// Native task manager - durable, org-scoped tasks grouped per project (repo
+// full_name or free label) and rendered as a Kanban board. Agents create/update
+// tasks mid-run through the knowledge gateway; they outlive the run.
+app.route("/api/tasks", tasksRoutes);
 app.route("/api/automations", schedulesRoutes);
 // Backward-compatible alias for sessions and frontend bundles created before
 // the product surface was renamed to Automations.
