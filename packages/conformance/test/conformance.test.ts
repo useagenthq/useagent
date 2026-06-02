@@ -341,6 +341,7 @@ describe("conformance: the run/step wire contract is a documented, consumable ex
       "opencode",
       "claude",
       "codex",
+      "pi",
       "chat",
       "daytona",
       "claude-sdk",
