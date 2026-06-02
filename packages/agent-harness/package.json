@@ -6,6 +6,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./canonical": "./src/canonical.ts",
+    "./bridge": "./src/bridge.ts",
     "./control": "./src/control.ts",
     "./opencode": "./src/opencode-canonical.ts",
     "./t3-tool": "./src/t3-tool.ts"

@@ -56,6 +56,7 @@ export function allowedModelsForEngine(
   switch (engine) {
     case "opencode":
     case "daytona":
+    case "pi":
       return Object.values(OPENCODE_ALLOWED_MODELS).flat();
     case "claude":
     case "claude-sdk":
@@ -78,6 +79,7 @@ export function defaultModelForEngine(
   switch (engine) {
     case "opencode":
     case "daytona":
+    case "pi":
       return DEFAULT_OPENCODE_MODEL;
     case "codex":
       return codexModels(env).values().next().value ?? DEFAULT_CODEX_MODEL;
@@ -103,6 +105,7 @@ export function isModelAllowedForEngine(
       return true;
     case "opencode":
     case "daytona":
+    case "pi":
       return OPENCODE_MODELS.has(model);
     case "claude":
     case "claude-sdk":

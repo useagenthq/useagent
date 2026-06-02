@@ -144,7 +144,7 @@ describe("OpenCode provider driver", () => {
 
 describe("production provider registry", () => {
   test("production selection resolves ProviderDrivers and declares only ACP compatibility fallbacks", () => {
-    for (const engineId of ["acp", "claude", "claude-sdk", "codex", "daytona", "opencode"]) {
+    for (const engineId of ["acp", "claude", "claude-sdk", "codex", "daytona", "opencode", "pi"]) {
       const registration = resolveProviderRegistration(engineId);
       expect(registration).toBeDefined();
       if (!registration) continue;
@@ -153,6 +153,7 @@ describe("production provider registry", () => {
     }
 
     expect(resolveProviderRegistration("opencode")?.execution.kind).toBe("provider");
+    expect(resolveProviderRegistration("pi")?.execution.kind).toBe("provider");
     expect(resolveProviderRegistration("codex")?.execution.kind).toBe("acp_compatibility");
     expect(resolveProviderRegistration("claude")?.execution.kind).toBe("acp_compatibility");
 

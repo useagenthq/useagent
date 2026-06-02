@@ -192,6 +192,9 @@ export interface ProviderStartRequest {
 export interface ProviderResumeRequest {
   session: HarnessSession;
   checkpoint?: HarnessCheckpoint;
+  /** Backend-only runtime metadata required to reconstruct a resident native
+   * process after control-plane restart. Never provider/model-visible text. */
+  metadata?: Record<string, unknown>;
   signal?: AbortSignal;
 }
 
