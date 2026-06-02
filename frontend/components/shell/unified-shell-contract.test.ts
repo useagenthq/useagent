@@ -136,10 +136,12 @@ describe("unified shell contract", () => {
 
   test("uses authenticated repository data for project shortcuts", () => {
     const projects = read("./sidebar-projects.tsx");
+    // The project group header owns the "start a thread in this repo" link.
+    const groupRow = read("./sidebar-threads.tsx");
     const composer = readFromFrontend("app/agent/new/new-task-composer.tsx");
 
     expect(projects).toContain('backendFetch("/api/repos"');
-    expect(projects).toContain("encodeURIComponent(project.fullName)");
+    expect(groupRow).toContain("encodeURIComponent(group.fullName");
     expect(composer).toContain("initialRepository");
     expect(projects).not.toContain("Growth Campaign");
     expect(projects).not.toContain("Content Engine");

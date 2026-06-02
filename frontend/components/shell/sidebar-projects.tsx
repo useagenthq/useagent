@@ -1,40 +1,74 @@
 "use client";
 
-import { RiArrowDownSLine, RiArrowUpSLine, RiFolderLine } from "@remixicon/react";
+import { usePathname } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { fetchSidebarRuns } from "@/app/agent/runs/runs-data";
 import { useOrgChanges } from "@/hooks/use-org-changes";
 import { backendFetch } from "@/lib/backend-fetch";
-import { SidebarNavItem, SidebarSectionLabel } from "./sidebar-nav";
 import {
-  activeRunByRepo,
-  WorkingProjectStatus,
-  type SidebarRun,
-} from "./working-project-status";
+  groupThreadsByProject,
+  runPrimaryRepo,
+  UNATTACHED_KEY,
+  type ProjectRepo,
+} from "./sidebar-project-groups";
+import { SidebarSectionLabel } from "./sidebar-nav";
+import { ProjectThreadGroup } from "./sidebar-threads";
+import type { SidebarRun } from "./working-project-status";
 
-interface ProjectRepo {
-  readonly fullName: string;
-  readonly name: string;
+const POLL_MS = 30_000;
+const MAX_PROJECTS = 48;
+const STORAGE_KEY = "useagent.sidebar.project-expanded";
+
+/** Per-project expand overrides, best-effort (private mode / SSR safe). */
+function readExpanded(): Record<string, boolean> {
+  if (typeof window === "undefined") return {};
+  try {
+    const raw = window.localStorage.getItem(STORAGE_KEY);
+    const parsed = raw ? (JSON.parse(raw) as unknown) : {};
+    if (!parsed || typeof parsed !== "object") return {};
+    const out: Record<string, boolean> = {};
+    for (const [key, value] of Object.entries(parsed)) {
+      if (typeof value === "boolean") out[key] = value;
+    }
+    return out;
+  } catch {
+    return {};
+  }
 }
 
-/** Always-visible shortcut rows; the rest sit behind a disclosure so the
- *  Threads section below never gets pushed out of view. */
-const VISIBLE_PROJECTS = 5;
-const MAX_PROJECTS = 48;
-const POLL_MS = 30_000;
+function writeExpanded(value: Record<string, boolean>): void {
+  try {
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(value));
+  } catch {
+    /* private mode / storage full - expand state is best-effort */
+  }
+}
 
+/**
+ * The project-nested thread rail. Combines the two existing data lanes - GET
+ * /api/repos (the full project list) and the runs summary (threads + their
+ * repo) - into collapsible project groups with their threads nested beneath
+ * (see `groupThreadsByProject` + `ProjectThreadGroup`). No new endpoints.
+ *
+ * Same refresh contract as before: an org-change subscription plus a
+ * low-frequency recovery poll. Expanded/collapsed state is remembered per
+ * project in localStorage; by default the active thread's project and the most
+ * recent project open. Client leaf so the server `ThreadSidebar` stays static.
+ */
 export function SidebarProjects() {
+  const pathname = usePathname();
   const [projects, setProjects] = useState<ProjectRepo[]>([]);
   const [runs, setRuns] = useState<SidebarRun[]>([]);
-  const [expanded, setExpanded] = useState(false);
+  const [overrides, setOverrides] = useState<Record<string, boolean>>({});
+
+  useEffect(() => {
+    setOverrides(readExpanded());
+  }, []);
 
   const loadProjects = useCallback(async (signal?: AbortSignal) => {
     try {
-      const response = await backendFetch("/api/repos", {
-        cache: "no-store",
-        signal,
-      });
+      const response = await backendFetch("/api/repos", { cache: "no-store", signal });
       if (!response.ok) return;
       const data = (await response.json()) as {
         repos?: Array<{ full_name?: unknown; name?: unknown }>;
@@ -61,7 +95,7 @@ export function SidebarProjects() {
     try {
       setRuns(await fetchSidebarRuns({ revalidate }));
     } catch {
-      // Status chips are additive; project shortcuts still render from /api/repos.
+      // Threads are additive; project shortcuts still render from /api/repos.
     }
   }, []);
 
@@ -86,44 +120,42 @@ export function SidebarProjects() {
     };
   }, [loadProjects, loadRuns]);
 
-  const activeByRepo = useMemo(() => activeRunByRepo(runs), [runs]);
+  const groups = useMemo(() => groupThreadsByProject(runs, projects), [runs, projects]);
 
-  if (projects.length === 0) return null;
+  // Default-open the active thread's project plus the most recent one; explicit
+  // user toggles (stored) win over the default.
+  const defaultExpanded = useMemo(() => {
+    const set = new Set<string>();
+    if (groups[0]) set.add(groups[0].key);
+    const activeRun = runs.find((run) => pathname === `/session/${run.id}`);
+    if (activeRun) set.add(runPrimaryRepo(activeRun) ?? UNATTACHED_KEY);
+    return set;
+  }, [groups, runs, pathname]);
 
-  const visible = projects.slice(0, VISIBLE_PROJECTS);
-  const overflow = projects.slice(VISIBLE_PROJECTS);
+  const isExpanded = (key: string) =>
+    key in overrides ? overrides[key] : defaultExpanded.has(key);
 
-  const projectRow = (project: ProjectRepo) => (
-    <SidebarNavItem
-      key={project.fullName}
-      href={`/agent/new?repo=${encodeURIComponent(project.fullName)}`}
-      icon={RiFolderLine}
-      label={project.name}
-      trailing={<WorkingProjectStatus run={activeByRepo.get(project.fullName)} />}
-    />
-  );
+  const toggle = (key: string) => {
+    setOverrides((prev) => {
+      const next = { ...prev, [key]: !isExpanded(key) };
+      writeExpanded(next);
+      return next;
+    });
+  };
+
+  if (groups.length === 0) return null;
 
   return (
     <>
       <SidebarSectionLabel>Projects</SidebarSectionLabel>
-      {visible.map(projectRow)}
-      {overflow.length > 0 ? (
-        <>
-          {expanded ? overflow.map(projectRow) : null}
-          <button
-            type="button"
-            onClick={() => setExpanded((v) => !v)}
-            className="flex w-full items-center gap-2 rounded-2lg px-2.5 py-1.5 text-caption-1-regular text-text-tertiary transition-colors hover:bg-background-secondary-hover hover:text-text-secondary"
-          >
-            {expanded ? (
-              <RiArrowUpSLine className="size-4" aria-hidden />
-            ) : (
-              <RiArrowDownSLine className="size-4" aria-hidden />
-            )}
-            {expanded ? "Show fewer" : `Show ${overflow.length} more`}
-          </button>
-        </>
-      ) : null}
+      {groups.map((group) => (
+        <ProjectThreadGroup
+          key={group.key}
+          group={group}
+          expanded={isExpanded(group.key)}
+          onToggle={() => toggle(group.key)}
+        />
+      ))}
     </>
   );
 }

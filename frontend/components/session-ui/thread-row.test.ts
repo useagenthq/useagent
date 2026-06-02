@@ -107,19 +107,24 @@ describe("trailing timestamp pick", () => {
 });
 
 describe("sidebar wiring contract", () => {
-  test("the thread sidebar renders the t3 thread list, not the old recents rows", () => {
+  test("the thread sidebar nests threads under project groups, not the old recents rows", () => {
     const threadSidebar = read("../shell/thread-sidebar.tsx");
-    expect(threadSidebar).toContain("<SidebarThreads");
+    expect(threadSidebar).toContain("<SidebarProjects");
     expect(threadSidebar).not.toContain("SidebarRecents");
   });
 
-  test("the thread list binds the t3 row to the existing runs lane", () => {
-    const list = read("../shell/sidebar-threads.tsx");
-    expect(list).toContain("<ThreadRow");
-    expect(list).toContain("fetchRuns");
-    expect(list).toContain("useOrgChanges");
-    expect(list).toContain("usePathname");
-    expect(list).toContain(">Threads<");
+  test("the project rail binds the t3 row to the existing runs + repos lanes", () => {
+    const groupRow = read("../shell/sidebar-threads.tsx");
+    const projects = read("../shell/sidebar-projects.tsx");
+    // Threads render through the shared t3 row, nested under their project.
+    expect(groupRow).toContain("<ThreadRow");
+    expect(groupRow).toContain("usePathname");
+    // The data owner reuses the existing runs + repos lanes - no new endpoint.
+    expect(projects).toContain("fetchSidebarRuns");
+    expect(projects).toContain("useOrgChanges");
+    expect(projects).toContain('backendFetch("/api/repos"');
+    expect(projects).toContain("groupThreadsByProject");
+    expect(projects).toContain(">Projects<");
   });
 
   test("the row keeps the ported presentation surface", () => {
