@@ -2,13 +2,13 @@
 
 import { RiCalendarScheduleLine, RiErrorWarningLine, RiTimeZoneLine } from "@remixicon/react";
 import { useEffect, useMemo, useState } from "react";
-import { useEnabledEngines } from "@/components/chat/engine-picker";
 import { Button } from "@/components/base/buttons/button";
 import { HintText } from "@/components/base/input/hint-text";
 import { Input } from "@/components/base/input/input";
 import * as Modal from "@/components/base/modal/modal";
 import { Select, SelectItem } from "@/components/base/select/select";
 import * as Textarea from "@/components/base/textarea/textarea";
+import { useEnabledEngines } from "@/components/chat/engine-picker";
 import { cx } from "@/utils/cx";
 import type { CreateScheduleInput } from "./schedules-api";
 import {
@@ -74,9 +74,7 @@ export function AutomationEditorModal({
   }, [engineOptions, open, schedule]);
 
   const cronValid = looksLikeCron(cron);
-  const canSubmit = Boolean(
-    name.trim() && prompt.trim() && engine && cronValid && !busy,
-  );
+  const canSubmit = Boolean(name.trim() && prompt.trim() && engine && cronValid && !busy);
 
   const submit = async () => {
     if (!canSubmit) return;
@@ -119,7 +117,10 @@ export function AutomationEditorModal({
           />
 
           <div className="flex flex-col gap-1.5">
-            <label htmlFor="automation-instructions" className="text-body-2-medium text-text-primary">
+            <label
+              htmlFor="automation-instructions"
+              className="text-body-2-medium text-text-primary"
+            >
               Instructions
             </label>
             <Textarea.Root
@@ -149,7 +150,9 @@ export function AutomationEditorModal({
                   )}
                 >
                   <span className="block text-body-2-medium">{preset.label}</span>
-                  <span className="mt-0.5 block font-mono text-caption-1-medium opacity-70">{preset.cron}</span>
+                  <span className="mt-0.5 block font-mono text-caption-1-medium opacity-70">
+                    {preset.cron}
+                  </span>
                 </button>
               ))}
             </div>
@@ -176,9 +179,11 @@ export function AutomationEditorModal({
           </div>
 
           <div className="flex flex-col gap-1.5">
-            <label className="text-body-2-medium text-text-primary">Agent</label>
+            <span id="automation-agent-label" className="text-body-2-medium text-text-primary">
+              Agent
+            </span>
             <Select
-              aria-label="Agent"
+              aria-labelledby="automation-agent-label"
               selectedKey={engine || null}
               onSelectionChange={(key) => setEngine(String(key))}
             >
