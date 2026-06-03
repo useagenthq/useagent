@@ -511,6 +511,193 @@ export async function listBranches(
   }
 }
 
+// ---------------------------------------------------------------------------
+// Repository tree browse — ONE directory level for the composer's @-mention file
+// picker. Same auth + degrade-honestly contract as the branch listing: scoped to
+// the repos we actually offer (an unknown repo is refused, so it can't proxy
+// arbitrary repositories), work is bounded (one page, capped entries, truncation
+// reported), and every failure is an honest {error} rather than a 500.
+// ---------------------------------------------------------------------------
+
+/** One directory entry: a file or subdirectory the picker can insert or open. */
+export interface TreeEntry {
+  /** Repo-root-relative path ("src", "src/index.ts"). */
+  path: string;
+  type: "file" | "dir";
+}
+
+/** What GET /api/repos/:owner/:name/tree returns. Same honesty contract as the
+ *  branch/repo listings: unconfigured → {configured:false}; a failed fetch →
+ *  {configured:true, error}. `truncated` = the directory held more than the cap. */
+export interface TreeListing {
+  configured: boolean;
+  /** The directory whose one level this lists ("" = repo root). */
+  path: string;
+  entries: TreeEntry[];
+  error?: string;
+  truncated?: boolean;
+}
+
+/** GitHub's directory-content shape (only the fields we read). */
+interface GhContentEntry {
+  path?: string;
+  name?: string;
+  type?: string;
+}
+
+const MAX_TREE_ENTRIES = 200; // one level, bounded; the picker is searchable, not a mirror
+
+/** Tree cache keyed by `scope|full_name|ref|path` (one identity per process). */
+const treeCache = new Map<string, { at: number; listing: TreeListing }>();
+
+/**
+ * Normalize a caller-supplied directory path: trim slashes/space, reject
+ * absolute paths and any `..` traversal segment, and cap the depth so a crafted
+ * path can't walk outside the repo or build an absurd URL. Returns null when the
+ * path is unsafe; "" is the repo root.
+ */
+export function sanitizeTreePath(raw: string | null | undefined): string | null {
+  if (raw == null) return "";
+  const trimmed = raw.trim().replace(/^\/+|\/+$/g, "");
+  if (trimmed === "") return "";
+  if (trimmed.length > 1024) return null;
+  const segments = trimmed.split("/");
+  if (segments.length > 40) return null;
+  for (const seg of segments) {
+    if (seg === "" || seg === "." || seg === "..") return null;
+  }
+  return segments.join("/");
+}
+
+/** A ref (branch/tag) is a single path-free token here; anything with a slash,
+ *  space, or control char is refused rather than smuggled into the URL. */
+function sanitizeTreeRef(raw: string | null | undefined): string | null {
+  if (raw == null) return null;
+  const trimmed = raw.trim();
+  if (trimmed === "") return null;
+  if (trimmed.length > 255 || !/^[A-Za-z0-9._\-/]+$/.test(trimmed)) return null;
+  // A leading slash or `..` in a ref is never legitimate.
+  if (trimmed.startsWith("/") || trimmed.split("/").some((s) => s === "..")) return null;
+  return trimmed;
+}
+
+/** Fetch one directory level via GitHub's contents API. A directory yields an
+ *  array; a file path yields an object (rejected here — the picker browses
+ *  directories). Dirs first, then files, each name-sorted for a stable order. */
+async function fetchRepoTree(
+  fullName: string,
+  ref: string | null,
+  path: string,
+  token: string | null,
+): Promise<{ entries: TreeEntry[]; truncated: boolean }> {
+  const ac = new AbortController();
+  const timer = setTimeout(() => ac.abort(), FETCH_TIMEOUT_MS);
+  try {
+    const encodedPath = path
+      ? path.split("/").map(encodeURIComponent).join("/")
+      : "";
+    const refQuery = ref ? `?ref=${encodeURIComponent(ref)}` : "";
+    const res = await fetch(
+      `${GITHUB_API}/repos/${fullName}/contents/${encodedPath}${refQuery}`,
+      { headers: ghHeaders(token), signal: ac.signal },
+    );
+    if (!res.ok) throw new Error(`GitHub API ${res.status}`);
+    const body = (await res.json()) as GhContentEntry[] | GhContentEntry;
+    if (!Array.isArray(body)) {
+      // A path that resolves to a file (or the API's submodule object): no level
+      // to browse. An empty directory listing is the honest answer.
+      return { entries: [], truncated: false };
+    }
+    const mapped: TreeEntry[] = body
+      .filter((e): e is GhContentEntry & { path: string } => typeof e.path === "string")
+      .map((e) => ({ path: e.path, type: e.type === "dir" ? "dir" : "file" }));
+    const truncated = mapped.length > MAX_TREE_ENTRIES;
+    const entries = mapped
+      .toSorted((a, b) => {
+        if (a.type !== b.type) return a.type === "dir" ? -1 : 1;
+        return a.path.localeCompare(b.path);
+      })
+      .slice(0, MAX_TREE_ENTRIES);
+    return { entries, truncated };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
+ * List one directory level for one of the org's repos, cached ~5 min. Never
+ * throws: an unconfigured backend → {configured:false}; an unknown repo (not in
+ * the offered set) → {configured, error}; a bad path/ref → {configured, error};
+ * a failed fetch → {configured:true, error}. The UI degrades to "no entries".
+ */
+export async function listRepoTree(
+  fullName: string,
+  orgId: string,
+  options: { readonly ref?: string | null; readonly path?: string | null } = {},
+): Promise<TreeListing> {
+  const path = sanitizeTreePath(options.path);
+  if (path === null) {
+    return { configured: true, path: "", entries: [], error: "invalid path" };
+  }
+  const ref = sanitizeTreeRef(options.ref);
+  if (options.ref != null && options.ref.trim() !== "" && ref === null) {
+    return { configured: true, path, entries: [], error: "invalid ref" };
+  }
+
+  const listing = await listRepos(orgId);
+  if (!listing.configured) return { configured: false, path, entries: [] };
+  if (!isValidRepoRef(fullName)) {
+    return { configured: true, path, entries: [], error: "invalid repo reference" };
+  }
+  // Only a repo we actually offer — this scopes the proxy (no arbitrary-repo reads).
+  const known = listing.repos.find((r) => r.full_name === fullName);
+  if (!known) {
+    return {
+      configured: listing.configured,
+      path,
+      entries: [],
+      error: listing.error ?? "repository not available",
+    };
+  }
+
+  let auth: GithubAuth;
+  try {
+    auth = await resolveGithubCatalogAuth(orgId);
+  } catch (error) {
+    return {
+      configured: true,
+      path,
+      entries: [],
+      error: error instanceof Error ? error.message : "github auth failed",
+    };
+  }
+  const key = `${scopeKey(orgId, auth)}|${fullName}|${ref ?? ""}|${path}`;
+  const now = Date.now();
+  const hit = treeCache.get(key);
+  if (hit && now - hit.at < CACHE_TTL_MS) return hit.listing;
+
+  try {
+    const { entries, truncated } = await fetchRepoTree(fullName, ref, path, auth.token);
+    const result: TreeListing = {
+      configured: true,
+      path,
+      entries,
+      ...(truncated ? { truncated } : {}),
+    };
+    treeCache.set(key, { at: now, listing: result });
+    return result;
+  } catch (err) {
+    const result: TreeListing = {
+      configured: true,
+      path,
+      entries: [],
+      error: err instanceof Error ? err.message : "github fetch failed",
+    };
+    treeCache.set(key, { at: now, listing: result });
+    return result;
+  }
+}
+
 /** `owner/name` shape check — cheap gate before the membership lookup. */
 export function isValidRepoRef(ref: string): boolean {
   return /^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/.test(ref);
@@ -547,8 +734,9 @@ export async function unknownRepos(
   return refs.filter((r) => !isValidRepoRef(r) || !known.has(r));
 }
 
-/** Test/ops hook: drop the repo + branch caches so the next list re-fetches. */
+/** Test/ops hook: drop the repo + branch + tree caches so the next list re-fetches. */
 export function clearRepoCache(): void {
   cache.clear();
   branchCache.clear();
+  treeCache.clear();
 }

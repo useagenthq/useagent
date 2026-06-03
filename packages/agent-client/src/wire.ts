@@ -57,7 +57,7 @@ export interface RepoRef {
 /** Where a resource came from and how it was authorized. */
 export type RunIntakeSource = "web" | "api" | "slack" | "automation";
 
-export type ResourceKind = "code.repository" | "code.change" | "file" | "web.page";
+export type ResourceKind = "code.repository" | "code.change" | "thread" | "file" | "web.page";
 
 export type ResourceCapability =
   | "content.read"
@@ -65,6 +65,7 @@ export type ResourceCapability =
   | "change.read"
   | "change.checks.read"
   | "deployment.read"
+  | "thread.read"
   | "file.read"
   | "page.read";
 
@@ -95,6 +96,11 @@ export interface FileLocator {
   readonly name: string | null;
 }
 
+export interface ThreadLocator {
+  readonly type: "thread";
+  readonly id: string;
+}
+
 export interface WebPageLocator {
   readonly type: "web.page";
   readonly url: string;
@@ -123,6 +129,12 @@ export interface FileResource extends RunResourceBase {
   readonly locator: FileLocator;
 }
 
+export interface ThreadResource extends RunResourceBase {
+  readonly kind: "thread";
+  readonly provider: "useagent";
+  readonly locator: ThreadLocator;
+}
+
 export interface WebPageResource extends RunResourceBase {
   readonly kind: "web.page";
   readonly locator: WebPageLocator;
@@ -132,8 +144,18 @@ export interface WebPageResource extends RunResourceBase {
 export type RunResource =
   | GitHubRepositoryResource
   | GitHubPullRequestResource
+  | ThreadResource
   | FileResource
   | WebPageResource;
+
+/** Client-selected resource identity. Capabilities, provenance, and mutable
+ * provider revisions are always resolved by the server at run intake. */
+export type RunResourceSelection =
+  | Omit<GitHubRepositoryResource, "capabilities" | "provenance">
+  | Omit<GitHubPullRequestResource, "capabilities" | "provenance">
+  | Omit<ThreadResource, "capabilities" | "provenance">
+  | Omit<FileResource, "capabilities" | "provenance">
+  | Omit<WebPageResource, "capabilities" | "provenance">;
 
 /** One inbound attachment on a run's user turn (Slack files or a browser upload),
  *  serialized as `uploads`. Bytes come from `/api/uploads/:id/content`. */
@@ -236,6 +258,7 @@ const RESOURCE_CAPABILITY_SET: ReadonlySet<string> = new Set([
   "change.read",
   "change.checks.read",
   "deployment.read",
+  "thread.read",
   "file.read",
   "page.read",
 ]);
@@ -322,6 +345,9 @@ function isRunResource(value: unknown): value is RunResource {
       typeof locator.number === "number" &&
       isNullableString(locator.revision)
     );
+  }
+  if (record.kind === "thread") {
+    return record.provider === "useagent" && locator.type === "thread" && typeof locator.id === "string";
   }
   if (record.kind === "file") {
     return locator.type === "file" && typeof locator.id === "string" && isNullableString(locator.name);

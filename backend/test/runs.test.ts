@@ -93,6 +93,57 @@ describe("runs", () => {
     expect(listed.body.runs.some((run) => run.prompt.includes(marker))).toBe(false);
   });
 
+  test("fresh and reply runs authorize typed thread resources without cross-org leakage", async () => {
+    const mine = await createOrgSession("typed-resources-mine");
+    const other = await createOrgSession("typed-resources-other");
+    const firstThread = await runToCompletion({ prompt: "first referenced thread" }, mine.cookies);
+    const secondThread = await runToCompletion({ prompt: "second referenced thread" }, mine.cookies);
+    const selection = (id: string) => ({
+      kind: "thread",
+      provider: "useagent",
+      locator: { type: "thread", id },
+    });
+
+    const root = await json<{ id: string }>("/api/runs", {
+      method: "POST",
+      cookies: mine.cookies,
+      body: { prompt: "use the first thread", resources: [selection(firstThread.id)] },
+    });
+    expect(root.status).toBe(201);
+    const rootRun = await json<any>(`/api/runs/${root.body.id}`, { cookies: mine.cookies });
+    expect(rootRun.body.resolved_resources).toEqual([
+      expect.objectContaining({
+        kind: "thread",
+        provider: "useagent",
+        locator: { type: "thread", id: firstThread.id },
+        capabilities: ["thread.read"],
+      }),
+    ]);
+
+    const reply = await json<{ id: string }>("/api/runs", {
+      method: "POST",
+      cookies: mine.cookies,
+      body: {
+        prompt: "also use the second thread",
+        parent_run_id: root.body.id,
+        resources: [selection(secondThread.id)],
+      },
+    });
+    expect(reply.status).toBe(201);
+    const replyRun = await json<any>(`/api/runs/${reply.body.id}`, { cookies: mine.cookies });
+    expect(new Set(replyRun.body.resolved_resources.map((resource: any) => resource.locator.id))).toEqual(
+      new Set([firstThread.id, secondThread.id]),
+    );
+
+    const refused = await json<{ error: string }>("/api/runs", {
+      method: "POST",
+      cookies: other.cookies,
+      body: { prompt: "cross tenant", resources: [selection(firstThread.id)] },
+    });
+    expect(refused.status).toBe(403);
+    expect(refused.body.error).toBe("resource_unauthorized");
+  });
+
   test("create → worker completes → steps persisted → list/get shapes", async () => {
     // Create a run.
     const created = await json<{ id: string }>("/api/runs", {

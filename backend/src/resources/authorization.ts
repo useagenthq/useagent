@@ -1,6 +1,7 @@
 import { resolveGithubAuth } from "../github/auth";
 import { listRepos, unknownRepos, type RepoListing } from "../github/repos";
 import { hasExactGitHubRepositoryUrlProvenance } from "./public-github";
+import { getRunForOrg } from "../runs/repo";
 import type {
   ResourceAuthorization,
   ResourceAuthorizationDecision,
@@ -31,6 +32,7 @@ export interface RunResourceAuthorizationDependencies {
     number: number,
   ) => Promise<{ readonly headSha: string }>;
   readonly verifyPublicRepository?: (repository: string) => Promise<void>;
+  readonly findThread?: (orgId: string, runId: string) => Promise<unknown | null>;
 }
 
 /** Server-side GitHub PR verification shared by every run ingress. */
@@ -115,8 +117,14 @@ export function createRunResourceAuthorization(
   const unknown = dependencies.unknownRepos ?? unknownRepos;
   const verifyPull = dependencies.verifyPullRequest ?? verifyGithubPullRequest;
   const verifyPublic = dependencies.verifyPublicRepository ?? verifyPublicGithubRepository;
+  const findThread = dependencies.findThread ?? getRunForOrg;
 
   return async (resource) => {
+    if (resource.locator.type === "thread") {
+      return (await findThread(orgId, resource.locator.id))
+        ? { available: true, capabilities: ["thread.read"] }
+        : unavailable("Referenced thread is not available to this organization.");
+    }
     if (resource.locator.type === "web.page") {
       return unavailable(
         "Web pages are prompt context, not an authority-bearing run resource.",

@@ -94,6 +94,20 @@ describe("runIntentFingerprint", () => {
     expect(withFile).not.toBe(withoutFiles);
   });
 
+  test("typed resource selections are part of the durable intent", () => {
+    const intent = runIntentFromAcceptedRun(base);
+    const withoutResources = runIntentFingerprint({ ...intent, requestedResources: [] });
+    const withThread = runIntentFingerprint({
+      ...intent,
+      requestedResources: [{
+        kind: "thread",
+        provider: "useagent",
+        locator: { type: "thread", id: "run-reference" },
+      }],
+    });
+    expect(withThread).not.toBe(withoutResources);
+  });
+
   test("derived resources, provider revisions, and provenance never affect intent", () => {
     const acceptedAtHeadA = runIntentFromAcceptedRun({
       ...base,

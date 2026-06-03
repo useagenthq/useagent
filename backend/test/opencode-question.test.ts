@@ -44,6 +44,45 @@ const request = {
 } as const;
 
 describe("OpenCode native questions", () => {
+  test("question control traffic rejects resource selections before provider dispatch", async () => {
+    const runId = crypto.randomUUID();
+    await createRun({
+      id: runId,
+      prompt: "deploy this",
+      model: "test-model",
+      engine: "opencode",
+      orgId: "org-skynet-dev",
+      userId: null,
+      parentRunId: null,
+      threadId: runId,
+      repos: [],
+      memoryScope: "org",
+    });
+    await db
+      .update(runs)
+      .set({ status: "running", engineSessionId: "ses_test" })
+      .where(eq(runs.id, runId));
+
+    const response = await json<{ error: string }>(
+      `/api/runs/${runId}/questions/que_test/reply`,
+      {
+        method: "POST",
+        body: {
+          answers: [["Staging"]],
+          resources: [{
+            kind: "thread",
+            provider: "useagent",
+            locator: { type: "thread", id: crypto.randomUUID() },
+          }],
+        },
+      },
+    );
+
+    expect(response).toEqual({
+      status: 400,
+      body: { error: "question replies cannot add run resources" },
+    });
+  });
   test("redacts question content while preserving native routing identifiers", () => {
     const secret = "SYNTHETIC_QUESTION_SECRET_123456";
     const payload = redactProviderQuestionPayload(
