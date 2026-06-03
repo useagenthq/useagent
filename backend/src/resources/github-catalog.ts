@@ -62,7 +62,9 @@ export function createGithubResourceCatalogProvider(
           cursor: cursor.providerCursor,
           maxPages: 1,
         });
-        if (!listing.configured) return { items: [], nextCursor: null };
+        if (!listing.configured) {
+          return { status: "not_connected", items: [], nextCursor: null, complete: true };
+        }
         if (listing.error && listing.repos.length === 0) {
           // Surface a listing failure honestly instead of degrading to an empty
           // page: an empty page would read as "no repositories", the misleading
@@ -107,14 +109,21 @@ export function createGithubResourceCatalogProvider(
         }
         if (listing.complete || !listing.nextCursor) {
           cursor = { providerCursor: null, offset: 0 };
-          return { items, nextCursor: null };
+          return {
+            status: items.length > 0 ? "available" : "empty",
+            items,
+            nextCursor: null,
+            complete: true,
+          };
         }
         cursor = { providerCursor: listing.nextCursor, offset: 0 };
       }
 
       return {
+        status: items.length > 0 ? "available" : "empty",
         items,
         nextCursor: encodeCursor(cursor),
+        complete: false,
       };
     },
   };

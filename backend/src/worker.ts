@@ -50,6 +50,10 @@ import { streamChat, type ChatMessage } from "./chat/stream";
 import { resolveChatProviderCredential } from "./provider-gateway/credentials";
 import { subscribeNative } from "./runs/native-events";
 import { createSlidingInactivityWatchdog } from "./runs/inactivity-watchdog";
+import {
+  buildResourceAccessSnapshot,
+  formatResourceAccessContext,
+} from "./resources/access-snapshot";
 
 // ---------------------------------------------------------------------------
 // Event bus — the worker pushes trace events here; SSE clients subscribe.
@@ -395,7 +399,7 @@ async function runWorker(runId: string): Promise<void> {
         end?.();
       }
     };
-    const [engineSessionId, recall, bootstrapContext, skillCatalogPage] = await Promise.all([
+    const [engineSessionId, recall, bootstrapContext, skillCatalogPage, resourceSnapshot] = await Promise.all([
       engineSessionPromise,
       // Layered recall (new_mem_prompt.md 6.2): Tencent L0 (immediate ground
       // evidence, incl. explicit "remember X") + L1 (distilled) searched in
@@ -432,19 +436,34 @@ async function runWorker(runId: string): Promise<void> {
           return null;
         }
       }),
+      timedContextOperation("worker.resource_access", () =>
+        run.orgId && run.userId
+          ? buildResourceAccessSnapshot({
+              orgId: run.orgId,
+              userId: run.userId,
+              runId: run.id,
+              resources: run.resolvedResources ?? [],
+              repos: run.repos ?? [],
+            })
+          : Promise.resolve(null),
+      ),
     ]);
     const turnContext = recall?.rendered ?? "";
     const skillCatalogContext = skillCatalogPage
       ? frameSkillCatalogContext(skillCatalogPage)
       : "";
+    const resourceContext = resourceSnapshot
+      ? formatResourceAccessContext(resourceSnapshot)
+      : "";
 
-    if (turnContext || bootstrapContext || skillContext || skillCatalogContext) {
+    if (turnContext || bootstrapContext || skillContext || skillCatalogContext || resourceContext) {
       console.log(
         `[worker] run ${runId} thread ${run.threadId} scope=${plan?.scope ?? "off"}: ` +
           `turnContext ${turnContext.length} (${recall?.items.length ?? 0} memory items, ` +
           `${recall?.latencyMs ?? 0}ms) + bootstrapContext ${bootstrapContext.length}` +
           ` + skillContext ${skillContext.length} chars` +
-          ` + skillCatalogContext ${skillCatalogContext.length} chars`,
+          ` + skillCatalogContext ${skillCatalogContext.length} chars` +
+          ` + resourceContext ${resourceContext.length} chars`,
       );
     }
     // Retrieval ledger (Phase 3a): durably record + stream what was recalled as a
@@ -500,6 +519,7 @@ async function runWorker(runId: string): Promise<void> {
         run.prompt,
         bootstrapContext,
         turnContext,
+        resourceContext,
         skillContext,
         skillCatalogContext,
         run.threadId,
@@ -740,6 +760,7 @@ async function runEngine(
   prompt: string,
   bootstrapContext: string,
   turnContext: string,
+  resourceContext: string,
   skillContext: string,
   skillCatalogContext: string,
   threadId: string,
@@ -835,6 +856,7 @@ async function runEngine(
     prompt,
     bootstrapContext,
     turnContext,
+    resourceContext,
     skillContext,
     skillCatalogContext,
     workdir,
