@@ -3368,11 +3368,11 @@ html {
 }
 .aurora-blob-b {
   animation: aurora-drift-b 64s ease-in-out infinite;
-  opacity: 0.12;
+  opacity: 0.04;
 }
 .aurora-blob-c {
   animation: aurora-drift-c 76s ease-in-out infinite;
-  opacity: 0.1;
+  opacity: 0.033;
 }
 @keyframes aurora-drift-a {
   0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
