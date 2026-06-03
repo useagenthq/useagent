@@ -10,6 +10,7 @@ import {
   RiGitPullRequestLine,
   RiKey2Line,
   RiLightbulbLine,
+  RiListCheck2,
   RiPlugLine,
   RiSettings3Line,
   RiStackLine,
@@ -32,6 +33,7 @@ export type LibrarySidebarActive =
   | "apps"
   | "artifacts"
   | "plugins"
+  | "tasks"
   | "secrets"
   | "settings";
 
@@ -52,6 +54,7 @@ const LIBRARY_ITEMS = [
   { key: "apps", href: "/apps", icon: RiAppsLine, label: "Apps" },
   { key: "artifacts", href: "/agent/artifacts", icon: RiBroadcastLine, label: "Artifacts" },
   { key: "plugins", href: "/agent/plugins", icon: RiPlugLine, label: "Plugins" },
+  { key: "tasks", href: "/tasks", icon: RiListCheck2, label: "Tasks" },
   { key: "secrets", href: "/secrets", icon: RiKey2Line, label: "Secrets" },
 ] as const;
 

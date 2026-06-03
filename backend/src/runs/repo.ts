@@ -23,6 +23,7 @@ import {
 } from "../db/schema";
 import { parseRepoRef } from "../github/repo-ref";
 import type { RunResource } from "../resources/types";
+import { ensureProject } from "../projects/repo";
 import { listUploadsForRuns, type RunUploadDescriptor } from "../uploads/repo";
 import { publicRunCondition } from "./visibility";
 
@@ -67,6 +68,7 @@ function toRun(
     id: r.id,
     org_id: r.orgId,
     user_id: r.userId,
+    project_id: r.projectId,
     prompt: r.prompt,
     model: r.model,
     engine: r.engine,
@@ -193,6 +195,16 @@ export async function createRun(
    *  commits the command + run atomically). Defaults to the shared pool. */
   exec: Executor = db,
 ): Promise<void> {
+  const primaryRepo = input.repos?.[0] ? parseRepoRef(input.repos[0]).repo : null;
+  const project =
+    input.orgId && primaryRepo
+      ? await ensureProject(
+          input.orgId,
+          primaryRepo,
+          { repoFullName: primaryRepo },
+          exec,
+        )
+      : null;
   await exec.insert(runs).values({
     id: input.id,
     prompt: input.prompt,
@@ -201,12 +213,13 @@ export async function createRun(
     status: "queued",
     orgId: input.orgId,
     userId: input.userId,
+    projectId: project?.id ?? null,
     parentRunId: input.parentRunId,
     threadId: input.threadId,
     repos: input.repos ?? [],
     resolvedResources: [...(input.resolvedResources ?? [])],
     // Legacy single-value mirror: clean "owner/name" (drop any branch suffix).
-    repo: input.repos?.[0] ? parseRepoRef(input.repos[0]).repo : null,
+    repo: primaryRepo,
     memoryScope: input.memoryScope,
     skillId: input.skillId ?? null,
     skillVersion: input.skillVersion ?? null,
@@ -425,6 +438,7 @@ export async function listRunSummaries(
       status: runs.status,
       summary: runs.summary,
       durationMs: runs.durationMs,
+      projectId: runs.projectId,
       repo: runs.repo,
       repos: runs.repos,
       createdAt: runs.createdAt,
@@ -445,6 +459,7 @@ export async function listRunSummaries(
         status: runs.status,
         summary: runs.summary,
         durationMs: runs.durationMs,
+        projectId: runs.projectId,
         repo: runs.repo,
         repos: runs.repos,
         createdAt: runs.createdAt,
@@ -477,6 +492,7 @@ export async function listRunSummaries(
       status: row.status,
       summary: row.summary,
       duration_ms: row.durationMs,
+      project_id: row.projectId,
       repo: row.repo ? parseRepoRef(row.repo).repo : null,
       repos: specs.map((spec) => spec.repo),
       repo_specs: specs,

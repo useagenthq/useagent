@@ -30,6 +30,7 @@ const summary = {
   status: "running",
   summary: null,
   duration_ms: null,
+  project_id: null,
   repo: null,
   repos: [],
   repo_specs: [],
