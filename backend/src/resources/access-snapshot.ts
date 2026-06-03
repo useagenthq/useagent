@@ -6,12 +6,13 @@ import {
 import type { RunResource } from "./types";
 
 const SNAPSHOT_SAMPLE_LIMIT = 10;
+const MAX_INLINE_INVENTORY = 500;
 const MAX_NAME_CHARS = 160;
 
 export interface ResourceAccessSnapshot {
   readonly version: 1;
   readonly sandboxFilesystemAuthoritative: false;
-  readonly exactInventoryTool: "resource_catalog_search";
+  readonly exactInventoryTool: "resource_catalog_search" | null;
   readonly inventory: readonly {
     readonly provider: string;
     readonly status: "available" | "empty" | "not_connected" | "unavailable";
@@ -49,15 +50,23 @@ export async function buildResourceAccessSnapshot(
     readonly repos: readonly string[];
   },
   catalog: ResourceCatalogService = productionResourceCatalogService,
+  options: {
+    readonly inlineLimit?: number;
+    readonly exactInventoryTool?: "resource_catalog_search" | null;
+  } = {},
 ): Promise<ResourceAccessSnapshot> {
   const scope = { orgId: input.orgId, userId: input.userId };
+  const inlineLimit = Math.min(
+    Math.max(options.inlineLimit ?? SNAPSHOT_SAMPLE_LIMIT, 1),
+    MAX_INLINE_INVENTORY,
+  );
   const inventory = await Promise.all(
     catalog.providerIds().map(async (provider) => {
       try {
         const page = await catalog.search(scope, provider, {
           query: null,
           cursor: null,
-          limit: SNAPSHOT_SAMPLE_LIMIT,
+          limit: inlineLimit,
         });
         const sampleNames = page.items.map((item) => item.name.slice(0, MAX_NAME_CHARS));
         return {
@@ -82,7 +91,9 @@ export async function buildResourceAccessSnapshot(
   return {
     version: 1,
     sandboxFilesystemAuthoritative: false,
-    exactInventoryTool: "resource_catalog_search",
+    exactInventoryTool: options.exactInventoryTool === undefined
+      ? "resource_catalog_search"
+      : options.exactInventoryTool,
     inventory,
     runBindings: projectRunResourceBindings(input),
   };
