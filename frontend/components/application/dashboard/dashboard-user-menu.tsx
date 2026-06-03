@@ -14,8 +14,6 @@ import { ChevronUpDownSmall } from "@/components/foundations/icons/chevrons";
 import { cx } from "@/utils/cx";
 
 /**
- * Figma source: Board UI → sidebar account menu (node 3828:3895).
- *
  * Dropdown opened from the sidebar's workspace switcher (avatar + name +
  * chevron) at the top. Floats to the right of the sidebar with the same panel
  * surface and appear animation as the team menu: white, 1px border, radius 16,
@@ -147,7 +145,7 @@ export function DashboardUserMenu({
         className={cx(
           "relative flex min-w-0 cursor-pointer items-center gap-2 rounded-full outline-none",
           "focus-visible:ring-2 focus-visible:ring-border-focus-ring focus-visible:ring-offset-2",
-          // Hover pill (Figma node 3829:4063): a fully-rounded 2px border/button/hover
+          // Hover pill: a fully-rounded 2px border/button/hover
           // outline drawn via a pseudo-element so it never shifts the layout.
           "before:pointer-events-none before:absolute before:-inset-x-1.5 before:-inset-y-[5px] before:rounded-full before:border-2 before:border-transparent before:transition-colors before:duration-150",
           !suppressHover && "hover:before:border-border-sidebar-profile-hover",

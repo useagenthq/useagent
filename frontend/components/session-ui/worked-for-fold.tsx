@@ -14,7 +14,7 @@
 // canonical TimelineNode[] (the consecutive tool/step nodes between a user turn
 // and its answer), owns the expanded flag locally, computes the duration from
 // the nodes' own ApiStep timestamps, and renders the expanded body with the
-// already-ported WorkEntryRow. Tokens are AlignUI semantic.
+// already-ported WorkEntryRow. Tokens are our semantic tokens.
 
 import { RiArrowDownSLine, RiArrowRightSLine } from "@remixicon/react";
 import { memo, useMemo, useState } from "react";

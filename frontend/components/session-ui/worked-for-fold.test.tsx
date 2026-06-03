@@ -2,7 +2,6 @@ import { expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import { type TimelineNode } from "@/components/chat/timeline";
 import { type ApiStep } from "@/components/chat/types";
-import * as Tooltip from "@/components/ui/tooltip";
 import { WorkedForFold, workedForDuration, workedForLabel } from "./worked-for-fold";
 
 function toolNode(id: string, command: string, createdAt: string): TimelineNode {
@@ -42,9 +41,9 @@ test("workedForLabel falls back to the bare upstream label", () => {
 
 test("collapsed fold shows only the duration header", () => {
   const html = renderToStaticMarkup(
-    <Tooltip.Provider>
+    <>
       <WorkedForFold nodes={BURST} />
-    </Tooltip.Provider>,
+    </>,
   );
   expect(html).toContain('data-session-ui="worked-for-fold"');
   expect(html).toContain('aria-expanded="false"');
@@ -54,9 +53,9 @@ test("collapsed fold shows only the duration header", () => {
 
 test("expanded fold renders the burst as T3 work rows", () => {
   const html = renderToStaticMarkup(
-    <Tooltip.Provider>
+    <>
       <WorkedForFold nodes={BURST} defaultExpanded />
-    </Tooltip.Provider>,
+    </>,
   );
   expect(html).toContain('aria-expanded="true"');
   const rows = html.match(/data-session-ui="work-entry-row"/g) ?? [];

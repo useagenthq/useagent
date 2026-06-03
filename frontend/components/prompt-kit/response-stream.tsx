@@ -1,11 +1,11 @@
 "use client";
 
 // Vendored verbatim from prompt-kit (prompt-kit.com/c/response-stream.json).
-// Only adaptation: `cn` import points at the AlignUI util. Drives the
+// Only adaptation: `cn` import points at the util. Drives the
 // "summary streams in on arrival" effect — the backend does not token-stream
 // the summary, so we feed the settled string through this typewriter/fade.
 
-import { cnExt as cn } from "@/utils/cn";
+import { cx } from "@/utils/cx";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 
 export type Mode = "typewriter" | "fade";
@@ -364,7 +364,7 @@ function ResponseStream({
                 return (
                   <span
                     key={`${segment.text}-${idx}`}
-                    className={cn(
+                    className={cx(
                       "fade-segment",
                       isWhitespace && "fade-segment-space",
                     )}

@@ -1,11 +1,11 @@
 import type { ComponentType, ReactNode } from "react";
 import { RiFileList2Line } from "@remixicon/react";
-import * as Badge from "@/components/ui/badge";
+import { Chip } from "@/components/base/badges/chip";
 import { cx } from "@/utils/cx";
 
 /**
  * Retrieved-context primitive — the "All chunks · 32" pattern from the AI
- * component library, ported onto AlignUI semantic tokens.
+ * component library, ported onto our semantic tokens.
  *
  * `ContextCard` is one retrieved chunk: a title bar (glyph + name + a
  * right-aligned caption for char-count / citation) over a two-line body
@@ -82,9 +82,9 @@ export function ContextCardStack({
     <div className={cx("flex flex-col gap-2", className)}>
       <div className="flex items-center gap-2 px-0.5">
         <span className="text-body-2-medium text-text-primary">{label}</span>
-        <Badge.Root variant="light" color="gray" size="medium">
+        <Chip color="gray">
           {count}
-        </Badge.Root>
+        </Chip>
       </div>
       {cards.map((card, i) => (
         <ContextCard key={`${card.title}-${i}`} {...card} />

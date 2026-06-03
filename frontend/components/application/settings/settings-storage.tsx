@@ -35,9 +35,9 @@ import { ChevronSortDown } from "@/components/foundations/icons/chevrons";
 import { cx } from "@/utils/cx";
 
 /**
- * Figma sources: Board UI → "Upload file" (node 4105:25269, default),
- * "Upload in progress" (node 4107:27192) and the 100% complete frame
- * (node 4107:30456) — the settings modal's Storage page.
+ * Figma sources: Board UI → "Upload file" (default),
+ * "Upload in progress" and the 100% complete frame
+ * — the settings modal's Storage page.
  *
  * Dropzone (533×164, radius/2xl):
  *   default    bg background/secondary, 2px DASHED border/checkbox/default,

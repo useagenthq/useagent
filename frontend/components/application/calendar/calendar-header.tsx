@@ -10,12 +10,10 @@ import { TemplateNotificationCenterMenu } from "@/components/application/notific
 import { cx } from "@/utils/cx";
 
 /**
- * Figma source: Board UI → "calendar_view" → Frame 60 (node 3905:9200).
- *
  * Breadcrumb (Board team → Mertcan → Calendar) + a title/actions row: month
  * label, notification bell (unread badge, same recipe as `DashboardHeader`),
  * inbox, the month switcher (`CalendarMonthSwitcher` — enlarges in place
- * rather than opening node 3906:9797's own popover), and the primary
+ * rather than opening its own popover), and the primary
  * "New event" button.
  */
 

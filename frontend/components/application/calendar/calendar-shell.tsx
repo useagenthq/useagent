@@ -11,8 +11,6 @@ import { DashboardSidebar } from "@/components/application/dashboard/dashboard-s
 import { cx } from "@/utils/cx";
 
 /**
- * Figma source: Board UI → "calendar_view" (node 3905:9119, 1440×900).
- *
  * Same responsive shell as `DashboardShell` (floating sidebar in-flow at
  * `lg`+, slide-in drawer with backdrop below it) — mirrored here rather than
  * shared, since the two templates' main content differs entirely. The month

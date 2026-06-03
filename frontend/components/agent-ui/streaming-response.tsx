@@ -1,5 +1,5 @@
 // Ported from beui.dev registry "streaming-response" (components/agents/streaming-response.tsx +
-// agent-disclosure, citations, lib/favicon, lib/ease inlined). Re-expressed with our AlignUI
+// agent-disclosure, citations, lib/favicon, lib/ease inlined). Re-expressed with our
 // tokens + Remixicon. A token-by-token assistant response with a live caret, copy / retry /
 // feedback actions, and a collapsible sources footer.
 "use client";

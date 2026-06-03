@@ -7,7 +7,7 @@ import { cx } from "@/utils/cx";
  * Status-filtered task table — a row of filter chips (each with a live count)
  * over a compact table whose status cell renders a tone-colored pill. Selecting
  * a chip filters the rows. Ported from the beautiful-ui FilterTable demo
- * (hardcoded → parameterized) onto AlignUI tokens.
+ * (hardcoded → parameterized) onto our tokens.
  */
 
 export type FilterTone =

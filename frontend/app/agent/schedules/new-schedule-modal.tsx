@@ -3,13 +3,13 @@
 import { RiCalendarScheduleLine, RiErrorWarningLine, RiTimeZoneLine } from "@remixicon/react";
 import { useEffect, useMemo, useState } from "react";
 import { useEnabledEngines } from "@/components/chat/engine-picker";
-import * as Button from "@/components/ui/button";
-import * as Hint from "@/components/ui/hint";
-import * as Input from "@/components/ui/input";
-import * as Modal from "@/components/ui/modal";
-import * as Select from "@/components/ui/select";
-import * as Textarea from "@/components/ui/textarea";
-import { cnExt } from "@/utils/cn";
+import { Button } from "@/components/base/buttons/button";
+import { HintText } from "@/components/base/input/hint-text";
+import { Input } from "@/components/base/input/input";
+import * as Modal from "@/components/base/modal/modal";
+import { Select, SelectItem } from "@/components/base/select/select";
+import * as Textarea from "@/components/base/textarea/textarea";
+import { cx } from "@/utils/cx";
 import type { CreateScheduleInput } from "./schedules-api";
 import {
   automationEditorEngineOptions,
@@ -111,21 +111,12 @@ export function AutomationEditorModal({
         />
 
         <Modal.Body className="flex max-h-[70vh] flex-col gap-5 overflow-y-auto">
-          <div className="flex flex-col gap-1.5">
-            <label htmlFor="automation-name" className="text-body-2-medium text-text-primary">
-              What should run?
-            </label>
-            <Input.Root>
-              <Input.Wrapper>
-                <Input.Input
-                  id="automation-name"
-                  placeholder="Weekly dependency review"
-                  value={name}
-                  onChange={(event) => setName(event.target.value)}
-                />
-              </Input.Wrapper>
-            </Input.Root>
-          </div>
+          <Input
+            label="What should run?"
+            placeholder="Weekly dependency review"
+            value={name}
+            onChange={setName}
+          />
 
           <div className="flex flex-col gap-1.5">
             <label htmlFor="automation-instructions" className="text-body-2-medium text-text-primary">
@@ -139,7 +130,7 @@ export function AutomationEditorModal({
               value={prompt}
               onChange={(event) => setPrompt(event.target.value)}
             />
-            <Hint.Root>Include the repository, expected output, and success criteria.</Hint.Root>
+            <HintText>Include the repository, expected output, and success criteria.</HintText>
           </div>
 
           <fieldset className="flex flex-col gap-2">
@@ -150,7 +141,7 @@ export function AutomationEditorModal({
                   key={preset.cron}
                   type="button"
                   onClick={() => setCron(preset.cron)}
-                  className={cnExt(
+                  className={cx(
                     "rounded-xl border px-3 py-2.5 text-left outline-none transition-colors focus-visible:ring-2 focus-visible:ring-border-focus-ring",
                     cron === preset.cron
                       ? "border-foreground-icon-primary bg-foreground-icon-primary text-background-full"
@@ -165,69 +156,45 @@ export function AutomationEditorModal({
           </fieldset>
 
           <div className="grid gap-4 sm:grid-cols-2">
-            <div className="flex flex-col gap-1.5">
-              <label htmlFor="automation-cron" className="text-body-2-medium text-text-primary">
-                Cron expression
-              </label>
-              <Input.Root hasError={!cronValid && cron.trim().length > 0}>
-                <Input.Wrapper>
-                  <Input.Input
-                    id="automation-cron"
-                    className="font-mono"
-                    value={cron}
-                    onChange={(event) => setCron(event.target.value)}
-                    spellCheck={false}
-                  />
-                </Input.Wrapper>
-              </Input.Root>
-              <Hint.Root hasError={!cronValid && cron.trim().length > 0}>
-                {cronValid ? cadenceLabel(cron) : "Use five cron fields."}
-              </Hint.Root>
-            </div>
+            <Input
+              label="Cron expression"
+              inputClassName="font-mono"
+              isInvalid={!cronValid && cron.trim().length > 0}
+              value={cron}
+              onChange={setCron}
+              hint={cronValid ? cadenceLabel(cron) : "Use five cron fields."}
+            />
 
-            <div className="flex flex-col gap-1.5">
-              <label htmlFor="automation-timezone" className="text-body-2-medium text-text-primary">
-                Timezone
-              </label>
-              <Input.Root>
-                <Input.Wrapper>
-                  <Input.Icon as={RiTimeZoneLine} />
-                  <Input.Input
-                    id="automation-timezone"
-                    placeholder={schedule ? "Server timezone" : "Asia/Kolkata"}
-                    value={timezone}
-                    onChange={(event) => setTimezone(event.target.value)}
-                    spellCheck={false}
-                  />
-                </Input.Wrapper>
-              </Input.Root>
-              <Hint.Root>Use an IANA timezone such as Europe/London.</Hint.Root>
-            </div>
+            <Input
+              label="Timezone"
+              leadingIcon={RiTimeZoneLine}
+              placeholder={schedule ? "Server timezone" : "Asia/Kolkata"}
+              value={timezone}
+              onChange={setTimezone}
+              hint="Use an IANA timezone such as Europe/London."
+            />
           </div>
 
           <div className="flex flex-col gap-1.5">
-            <label htmlFor="automation-engine" className="text-body-2-medium text-text-primary">
-              Agent
-            </label>
-            <Select.Root value={engine} onValueChange={setEngine}>
-              <Select.Trigger id="automation-engine">
-                <Select.Value />
-              </Select.Trigger>
-              <Select.Content>
-                {engineOptions.map(({ id, label }) => (
-                  <Select.Item key={id} value={id}>
-                    {label}
-                  </Select.Item>
-                ))}
-              </Select.Content>
-            </Select.Root>
+            <label className="text-body-2-medium text-text-primary">Agent</label>
+            <Select
+              aria-label="Agent"
+              selectedKey={engine || null}
+              onSelectionChange={(key) => setEngine(String(key))}
+            >
+              {engineOptions.map(({ id, label }) => (
+                <SelectItem key={id} id={id}>
+                  {label}
+                </SelectItem>
+              ))}
+            </Select>
           </div>
 
           {error && (
-            <Hint.Root hasError>
-              <Hint.Icon as={RiErrorWarningLine} />
+            <HintText isInvalid className="flex items-center gap-1">
+              <RiErrorWarningLine className="size-4 shrink-0" aria-hidden />
               {error}
-            </Hint.Root>
+            </HintText>
           )}
         </Modal.Body>
 
@@ -236,18 +203,17 @@ export function AutomationEditorModal({
             {schedule ? "Changes apply to the next run." : "Created in paused state."}
           </p>
           <div className="ml-auto flex gap-2">
-            <Button.Root variant="neutral" mode="stroke" size="small" onClick={onClose}>
+            <Button variant="secondary" size="small" onClick={onClose}>
               Cancel
-            </Button.Root>
-            <Button.Root
-              variant="neutral"
-              mode="filled"
+            </Button>
+            <Button
+              variant="primary"
               size="small"
               onClick={() => void submit()}
               disabled={!canSubmit}
             >
               {busy ? "Saving…" : schedule ? "Save changes" : "Create automation"}
-            </Button.Root>
+            </Button>
           </div>
         </Modal.Footer>
       </Modal.Content>

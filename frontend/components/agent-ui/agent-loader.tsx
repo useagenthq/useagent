@@ -1,5 +1,5 @@
 // Ported from beui.dev registry "motion/loader" (components/motion/loader.tsx + lib/ease
-// inlined). Re-expressed with our AlignUI tokens + Remixicon. A reusable multi-variant
+// inlined). Re-expressed with our tokens + Remixicon. A reusable multi-variant
 // working indicator plus an agent status card that walks through thinking / searching /
 // running / done phases with a rolling label and a reduced-motion fallback.
 "use client";

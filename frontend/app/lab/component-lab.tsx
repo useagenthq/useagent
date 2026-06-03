@@ -50,9 +50,7 @@ import {
 import { Tab, TabList, TabPanel, Tabs } from "@/components/base/tabs/tabs";
 import { type OrbState, ThinkingOrb } from "@/components/base/thinking-orb";
 import { AsteriskMark } from "@/components/foundations/brand/asterisk-mark";
-import * as Badge from "@/components/ui/badge";
-import * as Modal from "@/components/ui/modal";
-import * as LegacyTable from "@/components/ui/table";
+import * as Modal from "@/components/base/modal/modal";
 import { ARTIFACT_CAPABILITY_ROWS } from "./artifact-capability-matrix";
 import { BeautifulUiExtras } from "./beautiful-ui-extras";
 import { BeuiAgentShowcase } from "./beui-agent-showcase";
@@ -289,7 +287,7 @@ export function ComponentLab() {
           </Table>
         </Section>
 
-        {/* Modal - AlignUI behavior kept, surfaces reskinned with base-kit tokens */}
+        {/* Modal */}
         <Section label="Modal">
           <Modal.Root>
             <Modal.Trigger asChild>
@@ -375,43 +373,41 @@ export function ComponentLab() {
             not claim rich binary round-trip.
           </p>
           <div className="overflow-hidden rounded-xl border border-border-button-default">
-            <LegacyTable.Root>
-              <LegacyTable.Header>
-                <LegacyTable.Row>
-                  <LegacyTable.Head>Workpiece</LegacyTable.Head>
-                  <LegacyTable.Head>Edit state</LegacyTable.Head>
-                  <LegacyTable.Head>Preview</LegacyTable.Head>
-                  <LegacyTable.Head>Actions</LegacyTable.Head>
-                </LegacyTable.Row>
-              </LegacyTable.Header>
-              <LegacyTable.Body>
+            <Table aria-label="Artifact capability matrix">
+              <TableHeader>
+                <TableColumn isRowHeader>Workpiece</TableColumn>
+                <TableColumn>Edit state</TableColumn>
+                <TableColumn>Preview</TableColumn>
+                <TableColumn>Actions</TableColumn>
+              </TableHeader>
+              <TableBody>
                 {ARTIFACT_CAPABILITY_ROWS.map((row) => (
-                  <LegacyTable.Row key={row.kind}>
-                    <LegacyTable.Cell>
+                  <TableRow key={row.kind}>
+                    <TableCell>
                       <p className="text-body-2-medium text-text-primary">{row.label}</p>
                       <p className="font-mono text-caption-1-regular text-text-tertiary">
                         {row.defaultName}
                       </p>
-                    </LegacyTable.Cell>
-                    <LegacyTable.Cell className="font-mono text-caption-1-regular text-text-secondary">
+                    </TableCell>
+                    <TableCell className="font-mono text-caption-1-regular text-text-secondary">
                       {row.edit ? `${row.edit.mode}:${row.edit.state}` : "unavailable"}
-                    </LegacyTable.Cell>
-                    <LegacyTable.Cell className="text-caption-1-regular text-text-secondary">
+                    </TableCell>
+                    <TableCell className="text-caption-1-regular text-text-secondary">
                       {row.preview.inline ? row.preview.renderer : "attachment only"}
-                    </LegacyTable.Cell>
-                    <LegacyTable.Cell>
+                    </TableCell>
+                    <TableCell>
                       <div className="flex flex-wrap gap-1">
                         {row.actions.map((action) => (
-                          <Badge.Root key={action} variant="lighter" color="gray">
+                          <Chip key={action} color="gray">
                             {action}
-                          </Badge.Root>
+                          </Chip>
                         ))}
                       </div>
-                    </LegacyTable.Cell>
-                  </LegacyTable.Row>
+                    </TableCell>
+                  </TableRow>
                 ))}
-              </LegacyTable.Body>
-            </LegacyTable.Root>
+              </TableBody>
+            </Table>
           </div>
         </Section>
 

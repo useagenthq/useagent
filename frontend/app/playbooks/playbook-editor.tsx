@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 
 import { Button } from "@/components/base/buttons/button";
 import { Input } from "@/components/base/input/input";
-import * as Modal from "@/components/ui/modal";
+import * as Modal from "@/components/base/modal/modal";
 import { createSkill, updateSkill } from "@/app/skills/skills-api";
 import type { Skill } from "@/app/skills/skills-data";
 import { SectionTextarea } from "@/components/foundations/form-recipes";
@@ -16,7 +16,7 @@ import { SectionTextarea } from "@/components/foundations/form-recipes";
  * immutable version server-side, so a past run stays pinned to the version it
  * ran. A controlled modal (open/onOpenChange owned by the parent) so both the
  * page's "New playbook" button and the detail view's "Edit" reuse it. The Modal
- * shell stays AlignUI (no BoardUI equivalent); fields are BoardUI primitives.
+ * shell stays vendored (no BoardUI equivalent); fields are BoardUI primitives.
  */
 
 type SaveStatus = "idle" | "saving" | "error";

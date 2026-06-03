@@ -10,7 +10,7 @@ import {
   type RunCreateAttempt,
   selectRunCreateAttempt,
 } from "@/lib/create-run";
-import { cnExt } from "@/utils/cn";
+import { cx } from "@/utils/cx";
 
 /**
  * The "Ask the wiki" bar pinned to the bottom of the wiki. Submitting starts a
@@ -82,7 +82,7 @@ export function AskRepoBar() {
           type="submit"
           aria-label="Ask the wiki"
           disabled={busy || !value.trim()}
-          className={cnExt(
+          className={cx(
             "flex size-8 shrink-0 items-center justify-center rounded-full text-white outline-none transition-opacity",
             "focus-visible:ring-2 focus-visible:ring-border-focus-ring focus-visible:ring-offset-2",
             "bg-accent-500",

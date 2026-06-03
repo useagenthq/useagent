@@ -84,7 +84,7 @@ async function DashboardSummary() {
       label: "Completed today",
       value: compactNumber(summary.stats.completedToday),
       delta: summary.stats.failed > 0 ? `${summary.stats.failed} failed` : undefined,
-      deltaColor: "red",
+      deltaColor: "rose",
     },
   ];
   return (

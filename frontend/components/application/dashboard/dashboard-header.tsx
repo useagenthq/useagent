@@ -6,8 +6,6 @@ import { Button } from "@/components/base/buttons/button";
 import { IconButton } from "@/components/base/buttons/icon-button";
 
 /**
- * Figma source: Board UI → dashboard 1 → Frame 60 (node 3731:3011).
- *
  * Breadcrumb trail + page title row with header actions (notifications with
  * unread count, Filters, Create ticket).
  */

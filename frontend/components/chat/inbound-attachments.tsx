@@ -48,7 +48,7 @@ function ImageAttachment({ upload }: { upload: RunUpload }) {
 }
 
 /** A non-image attachment: a compact file card (name + size + download),
- *  matching the artifact card's AlignUI styling. */
+ *  matching the artifact card's styling. */
 function FileAttachment({ upload }: { upload: RunUpload }) {
   return (
     <div className="flex min-w-0 items-center gap-3 rounded-xl border border-border-button-default bg-background-secondary-default px-3 py-2.5">

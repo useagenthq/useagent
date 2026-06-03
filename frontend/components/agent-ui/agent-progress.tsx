@@ -1,6 +1,6 @@
 // Ported from beui.dev registry "agent-progress"
 // (components/agents/loading-states/agent-progress.tsx + lib/ease inlined).
-// Re-expressed with our AlignUI tokens + Remixicon. A compact activity glyph, a swapping
+// Re-expressed with our tokens + Remixicon. A compact activity glyph, a swapping
 // action verb, and a live tabular timer for longer-running work.
 "use client";
 

@@ -9,8 +9,6 @@ import { Chip } from "@/components/base/badges/chip";
 import { cx } from "@/utils/cx";
 
 /**
- * Figma source: Board UI → dashboard 1 → Frame 20 (node 3731:3160).
- *
  * Four KPI cards: semantic icon tile, label, value, delta chip.
  */
 

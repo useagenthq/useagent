@@ -1,6 +1,6 @@
 // Ported from beui.dev registry "reasoning-text" (components/agents/loading-states.tsx +
 // agent-disclosure, lib/ease, and the inlined text-shimmer lib). Re-expressed with our
-// AlignUI tokens + Remixicon. A collapsible chain-of-thought block: a shimmering "thinking"
+// tokens + Remixicon. A collapsible chain-of-thought block: a shimmering "thinking"
 // header that resolves to a "Thought for Ns" summary, revealing the reasoning trace below.
 "use client";
 

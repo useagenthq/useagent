@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { cnExt } from "@/utils/cn";
+import { cx } from "@/utils/cx";
 
 /** A bordered surface panel — the fleet's repeated card frame. */
 export function Panel({
@@ -11,7 +11,7 @@ export function Panel({
 }) {
   return (
     <section
-      className={cnExt(
+      className={cx(
         "rounded-2xl border border-border-button-default bg-background-primary-default p-5 shadow-card",
         className,
       )}

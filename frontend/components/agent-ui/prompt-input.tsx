@@ -1,6 +1,6 @@
 // Ported from beui.dev registry "prompt-input" (components/agents/prompt-input.tsx +
 // the inlined Button, morph popover and select motion primitives). Re-expressed with our
-// AlignUI tokens + Remixicon. A chat prompt composer: auto-growing textarea, an action
+// tokens + Remixicon. A chat prompt composer: auto-growing textarea, an action
 // popover, a model picker, and a send / stop button that morphs on submit.
 "use client";
 

@@ -8,7 +8,7 @@
 // hasNonZeroStat guard).
 //
 // Port notes:
-// - T3 shadcn tokens -> AlignUI semantic tokens (text-success -> text-lime-600,
+// - T3 shadcn tokens -> our semantic tokens (text-success -> text-lime-600,
 //   text-destructive -> text-text-error-primary, text-muted-foreground/70 -> text-text-tertiary).
 // - formatCompactDiffCount is exported here (upstream keeps it private) so the
 //   count grammar is directly testable.

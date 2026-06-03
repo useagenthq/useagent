@@ -10,7 +10,7 @@ import {
   RiSlackFill,
 } from "@remixicon/react";
 import type { ComponentType } from "react";
-import * as StatusBadge from "@/components/ui/status-badge";
+import { Chip } from "@/components/base/badges/chip";
 import { BackendUnreachable } from "@/components/shared/backend-unreachable";
 
 type IconComponent = ComponentType<{ className?: string; "aria-hidden"?: boolean | "true" | "false" }>;
@@ -53,9 +53,9 @@ function CapabilityRow({
         <span className="text-body-2-medium text-text-primary block">{name}</span>
         <span className="text-caption-1-regular text-text-tertiary block truncate">{detail}</span>
       </span>
-      <StatusBadge.Root status={enabled ? "completed" : "disabled"} variant="light">
+      <Chip color={enabled ? "lime" : "gray"}>
         {enabled ? "Enabled" : "Not configured"}
-      </StatusBadge.Root>
+      </Chip>
     </div>
   );
 }
@@ -165,9 +165,9 @@ export function PluginsPanel() {
               <span className="text-caption-1-medium text-text-primary flex-1 truncate font-mono">
                 {s.name}
               </span>
-              <StatusBadge.Root status="completed" variant="light">
+              <Chip color="lime">
                 {s.kind === "file" ? "file" : "env"}
-              </StatusBadge.Root>
+              </Chip>
             </div>
           ))
         )}

@@ -1,4 +1,4 @@
-// AlignUI useTabObserver v0.0.0
+// useTabObserver v0.0.0
 
 import * as React from 'react';
 

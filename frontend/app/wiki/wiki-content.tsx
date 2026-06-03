@@ -1,7 +1,7 @@
 "use client";
 
 import { Markdown } from "@/components/prompt-kit/markdown";
-import { cnExt as cn } from "@/utils/cn";
+import { cx } from "@/utils/cx";
 import { wikiContentSegments } from "./wiki-content-data";
 
 export function WikiContent({
@@ -15,7 +15,7 @@ export function WikiContent({
   if (segments.length === 0) return null;
 
   return (
-    <div className={cn("text-body-regular text-text-secondary mt-4 leading-7", className)}>
+    <div className={cx("text-body-regular text-text-secondary mt-4 leading-7", className)}>
       {segments.map((segment, index) =>
         segment.kind === "source-files" ? (
           <details

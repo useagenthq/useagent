@@ -10,7 +10,7 @@
 //
 // Port notes:
 // - Their hand-rolled fixed overlay, Escape handler, backdrop close button and
-//   shadcn X button -> our AlignUI Modal primitive (Radix dialog): Escape and
+//   shadcn X button -> our Modal primitive (Radix dialog): Escape and
 //   outside-click close via onOpenChange, the X is the modal's stock close,
 //   the scrim is the bg-overlay token instead of bg-black/75.
 // - lucide chevrons -> @remixicon/react; shadcn ghost Buttons -> plain tokened
@@ -21,7 +21,7 @@
 
 import { RiArrowLeftSLine, RiArrowRightSLine } from "@remixicon/react";
 import { memo, useCallback, useEffect, useState } from "react";
-import * as Modal from "@/components/ui/modal";
+import * as Modal from "@/components/base/modal/modal";
 
 export interface ExpandedImageItem {
   src: string;

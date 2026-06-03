@@ -3,7 +3,7 @@
 import { RiGoogleFill } from "@remixicon/react";
 import { useState } from "react";
 import { signInWithGoogle } from "@/lib/auth";
-import { cnExt } from "@/utils/cn";
+import { cx } from "@/utils/cx";
 
 /**
  * "Continue with Google" — the primary sign-in affordance. Hands off to
@@ -41,7 +41,7 @@ export function GoogleSignInButton({
         onClick={handleClick}
         disabled={!enabled || pending}
         aria-label="Continue with Google"
-        className={cnExt(
+        className={cx(
           "inline-flex h-11 w-full items-center justify-center gap-2.5 rounded-full border border-border-button-default bg-background-primary-default text-body-2-medium text-text-primary shadow-card outline-none transition-colors",
           "hover:bg-background-secondary-default focus-visible:ring-2 focus-visible:ring-border-focus-ring focus-visible:ring-offset-2",
           "disabled:cursor-not-allowed disabled:opacity-60",

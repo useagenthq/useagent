@@ -18,8 +18,6 @@ import { cx } from "@/utils/cx";
 import { useDismissOnOutsidePress } from "@/utils/use-dismiss-on-outside-press";
 
 /**
- * Figma source: Board UI → "Calendar_single" (node 3879:6708).
- *
  * A single-date picker: trigger button opens a popover with one month
  * (react-aria's plain `Calendar`, so both nav chevrons are fully functional —
  * unlike `DateRangePicker`'s dual view, there's only one month to navigate)

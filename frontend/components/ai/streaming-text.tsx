@@ -114,7 +114,7 @@ function ActionButton({
 /**
  * Agent response text that types in while `active`, then settles into an action
  * row (copy / regenerate / feedback) and an optional expandable sources pill.
- * Ported from the beautiful-ui StreamingText demo onto AlignUI semantic tokens.
+ * Ported from the beautiful-ui StreamingText demo onto our semantic tokens.
  */
 export function StreamingText({
   text,

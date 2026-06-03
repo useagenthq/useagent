@@ -13,7 +13,7 @@ const DOT_DELAYS = [90, 180, 270, 0, 90, 180, 90, 180, 270];
 /**
  * Compact loading treatment: a pulsing pixel-dot matrix beside a shimmering
  * label. Ported from the beautiful-ui LoadingState demo ("Drive" variant) onto
- * AlignUI tokens + the foundation's `.ai-loading-pixel` /
+ * our tokens + the foundation's `.ai-loading-pixel` /
  * `.agent-progress-loading-text` motion utilities.
  */
 export function LoadingState({ label = "Working", className }: LoadingStateProps) {

@@ -1,8 +1,6 @@
 import { CalendarDate, endOfMonth, getLocalTimeZone, startOfMonth } from "@internationalized/date";
 
 /**
- * Figma source: Board UI → "calendar_view" (node 3905:9119).
- *
  * Event data for the calendar template. August 2026's four originally
  * populated cells (2, 11, 20, 24) reproduce the Figma frame exactly —
  * "Birthday party" and "Dinner with friends" are written out in full here
@@ -244,7 +242,7 @@ export const CALENDAR_EVENTS: Record<string, CalendarEvent[]> = {
     { id: "holidays", title: "Holidays", color: "emerald" },
     {
       id: "birthday",
-      // Figma's own event-details modal example (node 3920:10954) is this
+      // Figma's own event-details modal example is this
       // exact event — title, times, meeting code, and reminder all
       // reproduced verbatim so opening it from the day cell matches 1:1.
       title: "Birthday night at Bacalar’s",
@@ -253,10 +251,10 @@ export const CALENDAR_EVENTS: Record<string, CalendarEvent[]> = {
       color: "purple",
       meetingCode: "igc-mfrq-sse",
       reminder: "2h before",
-      // "image_area" (node 3920:11026) — the venue photo Figma's example
+      // "image_area" — the venue photo Figma's example
       // shows above the Google Meet row.
       image: "/calendar/birthday-event.png",
-      // Figma's own event-details modal example (node 3920:10954) pins this
+      // Figma's own event-details modal example pins this
       // exact 4-person roster — kept explicit so it doesn't drift when
       // `generatedParticipants` changes.
       participants: [
