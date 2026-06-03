@@ -1,14 +1,12 @@
 import { expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
-import * as Tooltip from "@/components/ui/tooltip";
 import { TimelineShowcase } from "./session-ui-showcase";
 
 test("renders every ported session-ui piece from mock canonical nodes", () => {
-  // The app mounts TooltipProvider in app/providers.tsx; mirror it here.
   const html = renderToStaticMarkup(
-    <Tooltip.Provider>
+    <>
       <TimelineShowcase />
-    </Tooltip.Provider>,
+    </>,
   );
 
   // All five mock tool nodes + thinking + running render as compact work rows.

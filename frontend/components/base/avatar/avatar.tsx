@@ -4,7 +4,7 @@ import { cx, sortCx } from "@/utils/cx";
 
 /**
  * Figma source: Board UI → Avatar (styles Avatar/1…Avatar/26; used throughout
- * dashboard 1, node 3731:2932).
+ * dashboard 1).
  *
  * Sizes used in the designs (px):
  *   xs = 20   breadcrumb workspace marks     (initials 10/15 semibold)

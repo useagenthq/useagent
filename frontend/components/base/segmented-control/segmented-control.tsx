@@ -15,9 +15,6 @@ import { cx } from "@/utils/cx";
 const useIsomorphicLayoutEffect = typeof window !== "undefined" ? useLayoutEffect : useEffect;
 
 /**
- * Figma source: Board UI → dashboard 1 Weekly/Monthly/Yearly switch
- * (node 3731:3096).
- *
  * Single-select segmented control.
  *   track    bg background/tertiary/default, p 4, radius 10 (radius/2lg), gap 2
  *   segment  px 10, py 4, radius/md (6px)

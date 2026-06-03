@@ -17,14 +17,14 @@ import { cx } from "@/utils/cx";
 
 /**
  * Shared building blocks for the base/date-picker family — `DateRangePicker`
- * (dual-month, node 3871:5738) and `DatePicker` (single-month, node
- * 3879:6708) are the same visual system (month panel, day cell, editable
+ * (dual-month) and `DatePicker` (single-month) are the same visual system
+ * (month panel, day cell, editable
  * date chip) around two different react-aria-components roots
  * (`RangeCalendar` vs `Calendar`). Keeping the pieces here means a Figma
  * fidelity fix only has to happen once.
  */
 
-/** Exact paths from Figma's month-nav chevrons (node 3869:5461 / 3869:5528) — a
+/** Exact paths from Figma's month-nav chevrons — a
  *  16×16 glyph, 2px round-capped stroke, mirrored around x=8. */
 export function ChevronLeft16({ className }: { className?: string }) {
   return (

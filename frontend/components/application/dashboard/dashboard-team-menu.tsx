@@ -25,8 +25,6 @@ import { ChevronDownSmall } from "@/components/foundations/icons/chevrons";
 import { cx } from "@/utils/cx";
 
 /**
- * Figma source: Board UI → sidebar profile menu (node 3823:3699).
- *
  * Dropdown opened from the sidebar's "Board team" card. Floats to the right of
  * the sidebar: white panel, 1px border/button/default, radius 16, p 10,
  * shadow/dropdown. Header (team avatar + name/email), three grouped sections of

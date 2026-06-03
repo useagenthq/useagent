@@ -1,5 +1,5 @@
 // Ported from beui.dev registry "citations" (components/agents/citations.tsx +
-// agent-disclosure, lib/ease, lib/favicon inlined). Re-expressed with our AlignUI tokens +
+// agent-disclosure, lib/ease, lib/favicon inlined). Re-expressed with our tokens +
 // Remixicon. Inline citation markers paired with a collapsible, progressively rendered
 // reference collection.
 "use client";

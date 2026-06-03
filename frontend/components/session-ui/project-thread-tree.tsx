@@ -1,7 +1,7 @@
 "use client";
 
-// Tree treatment adapted from the Board UI Figma "ai_chat" sidebar
-// (node 4030:5910): the Repositories tree whose folders expand into recent
+// Tree treatment adapted from the Board UI Figma "ai_chat" sidebar:
+// the Repositories tree whose folders expand into recent
 // chats behind a curved connector, with folder->folder-open icons, a
 // grid-rows 0fr->1fr height animation, and right-aligned relative-time chips.
 // Only the tree section is vendored - our shell keeps its own nav, brand,

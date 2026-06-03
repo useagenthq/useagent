@@ -2,12 +2,12 @@
 
 // Vendored from prompt-kit (prompt-kit.com/c/prompt-suggestion.json). Adapted:
 // `cn` → `cnExt`; shadcn tokens (`hover:bg-accent`, `text-muted-foreground`,
-// `text-primary`) → AlignUI; Button/buttonVariants sourced from the co-located
+// `text-primary`) → ours; Button/buttonVariants sourced from the co-located
 // vendored ./button. Two modes: a rounded-full chip (no highlight) and a
 // left-aligned list row with substring highlighting (for command/mention menus).
 
 import { type VariantProps } from "class-variance-authority";
-import { cnExt as cn } from "@/utils/cn";
+import { cx } from "@/utils/cx";
 import { Button, buttonVariants } from "./button";
 
 export type PromptSuggestionProps = {
@@ -34,7 +34,7 @@ function PromptSuggestion({
       <Button
         variant={variant || "outline"}
         size={size || "lg"}
-        className={cn("rounded-full", className)}
+        className={cx("rounded-full", className)}
         {...props}
       >
         {children}
@@ -47,7 +47,7 @@ function PromptSuggestion({
       <Button
         variant={variant || "ghost"}
         size={size || "sm"}
-        className={cn(
+        className={cx(
           "w-full cursor-pointer justify-start rounded-xl py-2",
           "hover:bg-background-secondary-default",
           className,
@@ -68,7 +68,7 @@ function PromptSuggestion({
     <Button
       variant={variant || "ghost"}
       size={size || "sm"}
-      className={cn(
+      className={cx(
         "w-full cursor-pointer justify-start gap-0 rounded-xl py-2",
         "hover:bg-background-secondary-default",
         className,

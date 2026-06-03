@@ -14,7 +14,7 @@
 // node, no React commits - that component is private to working-indicator.tsx),
 // and Stop accepts the EXISTING cancel handler as a prop (session-view
 // handleStop posts the durable /cancel; no new API call here). Their
-// animate-status-pulse -> our ai-loading-pixel; tokens are AlignUI semantic.
+// animate-status-pulse -> our ai-loading-pixel; tokens are our semantic tokens.
 
 import { useEffect, useRef } from "react";
 import { formatWorkingTimerNow } from "./work-entry";

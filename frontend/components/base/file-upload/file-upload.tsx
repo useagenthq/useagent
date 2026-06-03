@@ -10,10 +10,6 @@ import {
 import { cx } from "@/utils/cx";
 
 /**
- * Figma sources: Board UI → "Upload file" (node 4105:25269),
- * "Upload in progress" (node 4107:27192), and the complete state
- * (node 4107:30456).
- *
  * Interactive drag-and-drop file upload with validation, a perimeter progress
  * indicator, animated content transitions, and a completion callback. The
  * upload is simulated so the component is backend-agnostic; connect

@@ -20,7 +20,10 @@ import {
   type ArtifactCategory,
   type ArtifactDescriptor,
 } from "@/components/artifacts/model";
-import * as SegmentedControl from "@/components/ui/segmented-control";
+import {
+  SegmentedControl,
+  SegmentedControlItem,
+} from "@/components/base/segmented-control/segmented-control";
 import { useOrgChanges } from "@/hooks/use-org-changes";
 import { backendFetch } from "@/lib/backend-fetch";
 import { ArtifactCard } from "./artifact-card";
@@ -331,18 +334,21 @@ export function LiveArtifacts({
               className={`size-4 ${refreshing ? "animate-spin" : ""}`}
             />
           </button>
-          <SegmentedControl.Root
-            value={filter}
-            onValueChange={(value) => setFilter(value as Filter)}
+          <SegmentedControl
+            aria-label="Filter artifacts"
+            className="w-auto"
+            selectedKeys={[filter]}
+            onSelectionChange={(keys) => {
+              const next = [...(keys as Set<string>)][0];
+              if (next) setFilter(next as Filter);
+            }}
           >
-            <SegmentedControl.List aria-label="Filter artifacts" className="w-auto">
-              {FILTERS.map(({ id, label }) => (
-                <SegmentedControl.Trigger key={id} value={id} className="px-3">
-                  {label}
-                </SegmentedControl.Trigger>
-              ))}
-            </SegmentedControl.List>
-          </SegmentedControl.Root>
+            {FILTERS.map(({ id, label }) => (
+              <SegmentedControlItem key={id} id={id} className="px-3">
+                {label}
+              </SegmentedControlItem>
+            ))}
+          </SegmentedControl>
         </div>
       </div>
 

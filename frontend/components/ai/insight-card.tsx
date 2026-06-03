@@ -9,7 +9,7 @@ import { cx } from "@/utils/cx";
 /**
  * Metric insight — a labelled micro-stat with a tone-colored delta, a one-line
  * body, and an optional inline sparkline. Ported from the AI library's
- * InsightCards onto AlignUI tokens.
+ * InsightCards onto our tokens.
  *
  * The sparkline is pure divs: bar heights are normalized from the `chart`
  * array (no chart lib), with the trailing bar at full opacity so the latest

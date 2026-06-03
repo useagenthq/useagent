@@ -8,7 +8,7 @@ import { cx, sortCx } from "@/utils/cx";
 
 /**
  * Figma source: Board UI → dashboard 1 icon-only buttons (notification button
- * node 3731:3035, table row actions nodes 3731:3284/3287/3290).
+ * and table row actions).
  *
  * Square icon-only button. Unlike `Button` (whose small size is radius/lg with
  * an 18px icon), the icon button keeps radius/2lg (10px) at both sizes:

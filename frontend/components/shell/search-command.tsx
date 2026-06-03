@@ -26,7 +26,7 @@ import type { ComponentType } from "react";
 import * as React from "react";
 
 import { Kbd } from "@/components/base/kbd/kbd";
-import * as CommandMenu from "@/components/ui/command-menu";
+import * as CommandMenu from "@/components/session-ui/command-palette";
 import { cx } from "@/utils/cx";
 
 type IconComponent = ComponentType<{
@@ -74,7 +74,7 @@ const GROUP_ORDER: Cmd["group"][] = ["Threads", "Customize", "Developer"];
  * The sidebar quick-search pill (BoardUI dashboard-sidebar treatment) + the ⌘K
  * command palette it opens. Client-side so it can own the open state, the
  * global ⌘K / Ctrl+K shortcut, and router navigation. Built on the vendored
- * AlignUI CommandMenu (cmdk + Modal) for behavior — portal, backdrop, focus
+ * CommandMenu (cmdk + Modal) for behavior — portal, backdrop, focus
  * trap, Esc-to-close — with its visible surfaces restyled on BoardUI tokens.
  */
 export function SearchCommand({ compact = false }: { compact?: boolean }) {

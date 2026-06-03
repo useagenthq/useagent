@@ -6,7 +6,7 @@ import { Button } from "@/components/base/buttons/button";
 import { Input } from "@/components/base/input/input";
 import { Label } from "@/components/base/input/label";
 import { Select, SelectItem } from "@/components/base/select/select";
-import * as Modal from "@/components/ui/modal";
+import * as Modal from "@/components/base/modal/modal";
 import { ingestKnowledge } from "./knowledge-api";
 import { knowledgeFolderLabel } from "./knowledge-data";
 import { TEXTAREA_FIELD } from "@/components/foundations/form-recipes";
@@ -14,7 +14,7 @@ import { TEXTAREA_FIELD } from "@/components/foundations/form-recipes";
 /**
  * "Add knowledge" — the header CTA plus the modal it opens. The modal collects
  * the four Knowledge fields: name, a trigger sentence, the body content, and
- * the folder scope. The Modal shell stays AlignUI (no BoardUI equivalent); its
+ * the folder scope. The Modal shell stays vendored (no BoardUI equivalent); its
  * visible surfaces are BoardUI base primitives, mirroring the skills modal.
  *
  * On Save it composes the fields into distillation text and POSTs to
@@ -112,7 +112,7 @@ export function AddKnowledgeModal({
 
             <Input
               label="Trigger"
-              placeholder="When working with AlignUI components…"
+              placeholder="When working with the design system…"
               hint="A phrase that tells useAgent when to recall this."
               value={trigger}
               isDisabled={busy}

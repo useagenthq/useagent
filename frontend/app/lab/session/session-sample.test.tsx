@@ -1,14 +1,13 @@
 import { expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
-import * as Tooltip from "@/components/ui/tooltip";
 import { SessionSample } from "./session-sample";
 
 test("renders one synthetic session through the real timeline + chrome renderers", () => {
-  // The AlignUI tooltip provider is app-wide in app/providers.tsx; supply it here.
+  // The tooltip provider is app-wide in app/providers.tsx; supply it here.
   const html = renderToStaticMarkup(
-    <Tooltip.Provider>
+    <>
       <SessionSample />
-    </Tooltip.Provider>,
+    </>,
   );
 
   // Four turns => the message scroller rail has enough ticks to appear.

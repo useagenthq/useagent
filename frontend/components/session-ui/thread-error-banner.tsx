@@ -10,7 +10,7 @@
 // the same thread still appears).
 //
 // Port notes:
-// - Their shadcn Alert/Button/Tooltip -> hand-rolled with AlignUI error tokens
+// - Their shadcn Alert/Button/Tooltip -> hand-rolled with our error tokens
 //   (bg-red-50 / border-red-200 / text-text-error-primary), matching the
 //   other session-ui ports; lucide CircleAlertIcon/XIcon -> Remixicon.
 // - Their line-clamp + Tooltip full-text affordance -> line-clamp + `title`

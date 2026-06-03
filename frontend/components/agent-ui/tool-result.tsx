@@ -1,6 +1,6 @@
 // Ported from beui.dev registry "tool-result" (components/agents/tool-result.tsx +
 // agent-disclosure, lib/ease, and the roll-text swap from motion/action-swap inlined).
-// Re-expressed with our AlignUI tokens + Remixicon. The upstream shiki highlighter is
+// Re-expressed with our tokens + Remixicon. The upstream shiki highlighter is
 // dropped for a plain monospace terminal viewport (no new deps). A collapsible tool-call
 // result card with a morphing status mark, a rolling status label, copy + retry actions,
 // and a smooth clip-path reveal.

@@ -1,6 +1,6 @@
 // Ported from beui.dev registry "todo-list" (components/agents/todo-list.tsx +
 // agent-disclosure, lib/ease, and the roll-text swap from motion/action-swap inlined).
-// Re-expressed with our AlignUI tokens + Remixicon. A collapsible agent task plan with
+// Re-expressed with our tokens + Remixicon. A collapsible agent task plan with
 // morphing status marks, a rolling completion count, and smooth list updates.
 "use client";
 

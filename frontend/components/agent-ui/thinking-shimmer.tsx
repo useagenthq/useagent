@@ -1,5 +1,5 @@
 // Ported from beui.dev registry "loading-states" (components/agents/ThinkingShimmer.tsx +
-// the TextShimmer primitive and lib/text-shimmer inlined). Re-expressed with our AlignUI
+// the TextShimmer primitive and lib/text-shimmer inlined). Re-expressed with our
 // tokens. A shimmering "thinking" text placeholder: a soft-to-strong gradient sweeps across
 // the label while the agent works.
 "use client";

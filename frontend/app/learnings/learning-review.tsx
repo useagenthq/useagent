@@ -9,7 +9,7 @@ import {
 import Link from "next/link";
 import { useCallback, useState } from "react";
 
-import * as Badge from "@/components/ui/badge";
+import { Chip } from "@/components/base/badges/chip";
 import { BackendUnreachable } from "@/components/shared/backend-unreachable";
 import { relativeTime } from "@/utils/format";
 import {
@@ -142,10 +142,10 @@ function SectionHeader({
   );
 }
 
-const STATUS_META: Record<string, { label: string; color: "orange" | "green" | "gray" }> = {
+const STATUS_META: Record<string, { label: string; color: "orange" | "lime" | "gray" }> = {
   draft: { label: "Awaiting review", color: "orange" },
   proposed: { label: "Awaiting review", color: "orange" },
-  accepted: { label: "Accepted", color: "green" },
+  accepted: { label: "Accepted", color: "lime" },
   dismissed: { label: "Dismissed", color: "gray" },
 };
 
@@ -261,9 +261,9 @@ function DraftCard({
   return (
     <article className="flex flex-col gap-2 rounded-2xl bg-background-primary-default p-4 shadow-card ring-1 ring-inset ring-border-button-default">
       <div className="flex items-center gap-2">
-        <Badge.Root variant="light" size="medium" color={meta.color}>
+        <Chip color={meta.color}>
           {meta.label}
-        </Badge.Root>
+        </Chip>
         <Link
           href={`/session/${draft.run_id}`}
           className="truncate text-caption-1-regular text-text-tertiary hover:text-text-secondary"
@@ -320,12 +320,12 @@ function ProposalCard({
   return (
     <article className="flex flex-col gap-2 rounded-2xl bg-background-primary-default p-4 shadow-card ring-1 ring-inset ring-border-button-default">
       <div className="flex items-center gap-2">
-        <Badge.Root variant="light" size="medium" color={meta.color}>
+        <Chip color={meta.color}>
           {meta.label}
-        </Badge.Root>
-        <Badge.Root variant="light" size="medium" color="blue">
+        </Chip>
+        <Chip color="blue">
           {proposal.skill_id ? "Revision" : "New playbook"}
-        </Badge.Root>
+        </Chip>
         <span className="ml-auto text-caption-1-regular text-text-tertiary">
           {relativeTime(proposal.created_at)}
         </span>

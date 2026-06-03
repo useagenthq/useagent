@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { RiCloseLine } from "@remixicon/react";
 import { cx } from "@/utils/cx";
-import * as Button from "@/components/ui/button";
+import { Button } from "@/components/base/buttons/button";
 
 export interface ApprovalOption {
   label: string;
@@ -23,8 +23,8 @@ export interface ApprovalCardProps {
 /**
  * Richer approval prompt: radio-select option rows, an optional custom-answer
  * field, and a deny / approve footer. Approve stays disabled until a choice is
- * made. Ported from the beautiful-ui ApprovalCard demo onto AlignUI tokens +
- * the AlignUI Button.
+ * made. Ported from the beautiful-ui ApprovalCard demo onto our tokens +
+ * the Button.
  */
 export function ApprovalCard({
   question,
@@ -135,18 +135,18 @@ export function ApprovalCard({
       </div>
 
       <div className="flex items-center justify-end gap-2 border-t border-border-button-default bg-background-secondary-default px-4 py-3">
-        <Button.Root className="rounded-full" variant="neutral" mode="stroke" size="small" onClick={onDeny}>
+        <Button className="rounded-full" variant="secondary" size="small" onClick={onDeny}>
           Deny
-        </Button.Root>
-        <Button.Root className="rounded-full"
+        </Button>
+        <Button
+          className="rounded-full"
           variant="primary"
-          mode="filled"
           size="small"
           disabled={!canApprove}
           onClick={approve}
         >
           Approve
-        </Button.Root>
+        </Button>
       </div>
     </div>
   );

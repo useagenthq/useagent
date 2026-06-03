@@ -1,6 +1,6 @@
 import * as React from 'react';
 
-import * as Badge from '@/components/ui/badge';
+import { Chip } from '@/components/base/badges/chip';
 import { Card } from './card';
 
 export interface StatItem {
@@ -9,7 +9,7 @@ export interface StatItem {
   value: string;
   /** Optional trailing chip, e.g. "3 live" or "+12%". */
   delta?: string;
-  deltaColor?: 'green' | 'red' | 'gray' | 'blue';
+  deltaColor?: 'lime' | 'rose' | 'gray' | 'blue';
 }
 
 /** One KPI cell — exported so the page can stream late-arriving cards. */
@@ -26,9 +26,9 @@ export function StatCard({ stat }: { stat: StatItem }) {
             {stat.value}
           </p>
           {stat.delta && (
-            <Badge.Root variant='light' color={stat.deltaColor ?? 'gray'}>
+            <Chip color={stat.deltaColor ?? 'gray'}>
               {stat.delta}
-            </Badge.Root>
+            </Chip>
           )}
         </div>
       </div>
@@ -43,7 +43,7 @@ export function StatCardSkeleton() {
 
 /**
  * Four KPI cards: semantic icon tile, label, value, optional delta chip.
- * Structure ported from the Board UI dashboard, rebuilt on AlignUI tokens.
+ * Structure ported from the Board UI dashboard, rebuilt on our tokens.
  * `children` lets the page append streamed cards into the same grid.
  */
 export function StatCards({ stats, children }: { stats: StatItem[]; children?: React.ReactNode }) {

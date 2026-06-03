@@ -11,7 +11,7 @@
 // Port notes: upstream models the toggle as LegendList virtualizer rows keyed by a
 // uiStateStore expandedWorkGroupIds set; this port owns the expanded flag locally
 // (no store, no virtualizer) - the policy itself is the shared pure function
-// groupWorkEntryOverflow in ./work-entry.ts. Tokens are AlignUI semantic.
+// groupWorkEntryOverflow in ./work-entry.ts. Tokens are our semantic tokens.
 
 import { RiArrowDownSLine } from "@remixicon/react";
 import { memo, useState } from "react";

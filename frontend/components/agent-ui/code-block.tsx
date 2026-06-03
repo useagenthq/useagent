@@ -1,5 +1,5 @@
 // Ported from beui.dev registry "code-block" (components/agents/code-block.tsx +
-// lib/ease inlined). Re-expressed with our AlignUI tokens + Remixicon. The upstream
+// lib/ease inlined). Re-expressed with our tokens + Remixicon. The upstream
 // shiki highlighter is dropped in favor of a lightweight token-tinted monospace render
 // (our color tokens, no async highlighter dependency). A streaming code panel with a
 // filename header, language tag, status pill, line numbers, highlighted lines, and copy.

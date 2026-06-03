@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { Chip, type ChipProps } from "@/components/base/badges/chip";
 import { Button } from "@/components/base/buttons/button";
-import * as Drawer from "@/components/ui/drawer";
+import * as Drawer from "@/components/base/drawer/drawer";
 import { useOrgChanges } from "@/hooks/use-org-changes";
 import { relativeTime } from "@/utils/format";
 import { fetchHistory } from "./schedules-api";

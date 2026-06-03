@@ -1,6 +1,6 @@
 // Ported from beui.dev registry "approval-card" (components/agents/approval-card.tsx +
 // agent-disclosure, roll text-swap, and the focused Button / Checkbox / Radio / Input
-// motion primitives inlined). Re-expressed with our AlignUI tokens + Remixicon. A detailed,
+// motion primitives inlined). Re-expressed with our tokens + Remixicon. A detailed,
 // multi-step approval card: a stepped question flow (single-select, multi-select, custom
 // input) with a rolling title swap, progress dots, and auto-advance, plus a simple
 // approve / request-changes / reject mode.

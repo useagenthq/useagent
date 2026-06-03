@@ -2,15 +2,12 @@
 
 // The shadcn-style Button that prompt-kit's PromptSuggestion depends on
 // (registryDependencies: ["button"]). Vendored here so the prompt-kit set is
-// self-contained; `buttonVariants` are mapped from shadcn tokens onto AlignUI
-// semantic tokens. The AlignUI foundation ships its own richer Button
-// (components/ui/button) for app chrome — this one exists only to satisfy the
-// vendored prompt-kit primitives.
+// self-contained; `buttonVariants` map shadcn tokens onto our semantic tokens.
 
 import * as React from "react";
 import { Slot } from "@radix-ui/react-slot";
 import { cva, type VariantProps } from "class-variance-authority";
-import { cnExt as cn } from "@/utils/cn";
+import { cx } from "@/utils/cx";
 
 export const buttonVariants = cva(
   "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-lg text-body-2-medium transition-colors outline-none focus-visible:ring-2 focus-visible:ring-accent-500/10 disabled:pointer-events-none disabled:opacity-50",
@@ -52,6 +49,6 @@ export function Button({
 }: ButtonProps) {
   const Comp = asChild ? Slot : "button";
   return (
-    <Comp className={cn(buttonVariants({ variant, size, className }))} {...props} />
+    <Comp className={cx(buttonVariants({ variant, size, className }))} {...props} />
   );
 }

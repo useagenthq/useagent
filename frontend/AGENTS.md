@@ -3,17 +3,16 @@
 **useAgent** is an open-source agent platform: autonomous
 engineer. The canonical UI kit is `components/base/**` (BoardUI-derived,
 licensed and vendored) plus its semantic tokens; every product surface builds on
-it. The legacy **AlignUI** layer (`components/ui/**` and the `cnExt` utility) is
-do-not-extend, surviving only as the sanctioned dialog/overlay primitives. Chat
-surfaces compose **prompt-kit** primitives (`components/prompt-kit/**`).
+it. Dialog/overlay primitives (Modal, Drawer, command palette) live in
+`components/base` and `components/session-ui`. Chat surfaces compose
+**prompt-kit** primitives (`components/prompt-kit/**`).
 
 Canonical guide for ALL coding agents working in this repo. `CLAUDE.md` imports
 this file (`@AGENTS.md`); edit here, never fork the content.
 
 Layer map (canonical paths):
 - **foundation**: `components/base/**` (canonical BoardUI-derived kit) plus its
-  semantic tokens, and `components/foundations/**` (brand). `components/ui/**` is
-  the legacy AlignUI dialog/overlay layer only (see below). Tokens + motion
+  semantic tokens, and `components/foundations/**` (brand). Tokens + motion
   utilities live in `app/globals.css`.
 - **app shell** - `components/shell/**` (AppShell, ThreadSidebar,
   LibrarySidebar, search-command ⌘K, user-menu, theme-toggle).
@@ -54,66 +53,36 @@ Layer map (canonical paths):
 app/                      # App Router routes + globals.css + layout/providers
 components/
   base/                   # ← canonical BoardUI-derived kit (compose it; new UI here)
-  ui/                     # ← legacy AlignUI dialog/overlay layer (do not extend)
   foundations/brand/      # AsteriskMark brand glyph (single source)
   application/**          # app shell + page-specific components  (shell agent)
   chat/**                 # prompt-kit chat surface                (chat agent)
-utils/                    # cn / cnExt / tv / polymorphic helpers
+utils/                    # cn / cx / tv / polymorphic helpers
 hooks/                    # use-tab-observer, use-breakpoint
 tailwind.config.ts        # semantic token scale (bridged into v4 via @config)
 app/globals.css           # Tailwind entry + tokens + brand/motion utilities
 ```
 
-## Legacy AlignUI primitives (`components/ui/**`) - dialog/overlay layer
+## Dialog / overlay primitives
 
-These are the legacy AlignUI primitives, vendored from the AlignUI Pro finance
-template and kept ONLY as the sanctioned dialog/overlay layer (Modal, Drawer,
-CommandMenu and their internal deps). New product UI builds on `components/base`
-instead; do not add new `components/ui` usages outside overlays. **Do not modify
-or fork** these files - compose them. Every component uses **namespace exports**
-(`Root`, plus `Icon` / `List` / `Trigger` / `Content` / `Item` / `Dot` /
-`Wrapper` ...).
+Modal, Drawer, and the ⌘K command palette are the app's overlay primitives.
+They are built on `@radix-ui/react-dialog` (portal, focus-trap, Esc-to-close,
+scroll-lock, backdrop dismiss) and styled with base-kit semantic tokens:
 
-**Import convention — always `import * as X`:**
+- `components/base/modal/modal.tsx` — compound `Modal.Root / Trigger / Content /
+  Header / Title / Description / Body / Footer / Close`. Controlled via
+  `Root open onOpenChange`, or opened from a `Trigger`; callers restyle the
+  panel via `Content`'s `className`.
+- `components/base/drawer/drawer.tsx` — right-side sheet, same compound shape.
+- `components/base/textarea/textarea.tsx` — `Textarea.Root` form control (no
+  base-kit textarea twin exists).
+- `components/session-ui/command-palette.tsx` — cmdk-based palette backing the
+  ⌘K search command.
 
-```tsx
-import * as Button from '@/components/ui/button';
-import * as Input from '@/components/ui/input';
-import * as Badge from '@/components/ui/badge';
-import * as Switch from '@/components/ui/switch';
-import * as TabMenuHorizontal from '@/components/ui/tab-menu-horizontal';
-
-<Button.Root variant="primary" mode="filled">
-  <Button.Icon as={RiSparkling2Line} />
-  New run
-</Button.Root>
-
-<Input.Root>
-  <Input.Wrapper>
-    <Input.Icon as={RiSearch2Line} />
-    <Input.Input placeholder="Search…" />
-  </Input.Wrapper>
-</Input.Root>
-
-<Badge.Root variant="light" color="blue">Queued</Badge.Root>
-<Switch.Root defaultChecked />
-```
-
-`Button.Icon`, `Input.Icon`, `Badge.Icon`, `Tab*.Icon` take an `as={Icon}` prop
-(a `@remixicon/react` component) rather than children.
-
-**Available (all under `@/components/ui/<name>`):**
-`alert`, `avatar`, `avatar-group`, `avatar-group-compact`, `avatar-empty-icons`,
-`badge`, `button`, `button-group`, `checkbox`, `command-menu`, `compact-button`,
-`digit-input`, `divider`, `dot-stepper`, `drawer`, `dropdown`, `fancy-button`,
-`file-format-icon`, `hint`, `horizontal-stepper`, `input`, `kbd`, `label`,
-`link-button`, `modal`, `pagination`, `popover`, `progress-bar`,
-`progress-circle`, `radio`, `segmented-control`, `select`, `social-button`,
-`status-badge`, `switch`, `tab-menu-horizontal`, `tab-menu-vertical`, `table`,
-`tag`, `textarea`, `tooltip`, `vertical-stepper`.
-
-Radix `TooltipProvider` is already mounted in `app/providers.tsx`, so tooltips
-work anywhere without extra wiring.
+Everything else composes `components/base/**` directly: `Button`, `Chip`,
+`Input`, `Select`, `Switch`, `Checkbox`, `Tabs`, `SegmentedControl`, `Avatar`,
+`Table`, `Tooltip`, and friends. These are react-aria based (props, not
+namespace exports) — e.g. `<Button variant="primary" leadingIcon={RiAddLine}>`,
+`<Chip color="blue">Queued</Chip>`, `<Input leadingIcon={RiSearch2Line} />`.
 
 ## Token rules (semantic, never raw hex, never `dark:`)
 
@@ -202,11 +171,11 @@ Never inline a copy.
 ## Utilities (`utils/`)
 
 - `cn(...)` — `clsx` only (no conflict resolution). Use for static class lists.
-- `cnExt(...)` — `clsx` + `tailwind-merge` (AlignUI-aware). Use when classes may
-  conflict / be overridden by a `className` prop.
+- `cx(...)` — `tailwind-merge` conflict resolution. Use when a later class (e.g.
+  a `className` prop) must override an earlier one.
 - `tv(...)` — preconfigured `tailwind-variants` for component variant maps.
 - `polymorphic` + `recursive-clone-children` — internal helpers for the `as`
-  prop + shared-prop propagation the AlignUI components rely on.
+  prop + shared-prop propagation.
 
 ## Conventions
 
@@ -217,7 +186,7 @@ Never inline a copy.
 - Reuse the vendored kit and brand utilities before writing new primitives.
 - User-visible strings say **"useAgent"**, never the template name.
 - Do not remove the `@config '../tailwind.config.ts';` line from
-  `app/globals.css` — it is what makes every AlignUI token resolve.
+  `app/globals.css` — it is what makes every semantic token resolve.
 - `AGENTS.md` is hand-maintained; `agentRules: false` in `next.config.ts` stops
   Next from regenerating it.
 

@@ -1,6 +1,5 @@
 import { expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
-import * as Tooltip from "@/components/ui/tooltip";
 import {
   contextWindowUsedPercentage,
   formatContextWindowTokens,
@@ -24,7 +23,7 @@ test("used percentage clamps to the window and is null without a limit", () => {
 });
 
 function render(ui: React.ReactElement): string {
-  return renderToStaticMarkup(<Tooltip.Provider>{ui}</Tooltip.Provider>);
+  return renderToStaticMarkup(<>{ui}</>);
 }
 
 test("meter ring reports percent used and turns error-red past 90%", () => {
