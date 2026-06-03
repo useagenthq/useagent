@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  type RemixiconComponentType,
   RiCloseLine,
   RiCodeSSlashLine,
   RiDownloadLine,
@@ -13,7 +14,6 @@ import {
   RiSlideshowLine,
   RiSparkling2Line,
   RiTableLine,
-  type RemixiconComponentType,
 } from "@remixicon/react";
 import { type ArtifactDescriptor, decodeArtifactResult } from "@useagent/agent-client";
 import {
@@ -29,13 +29,13 @@ import {
   WorkpieceSurfaces,
 } from "@/app/agent/artifacts/[id]/artifact-editor-surfaces";
 import { EDIT_ACTIVITY_WINDOW_MS } from "@/components/artifacts/requested-edit-auto-accept";
-import { WorkpieceProposalReview } from "@/components/artifacts/workpiece-proposal-review";
 import { workpieceFollowUpMessage } from "@/components/artifacts/workpiece-follow-up";
-import { useComposerPrefill } from "@/components/chat/composer-prefill-context";
+import { WorkpieceProposalReview } from "@/components/artifacts/workpiece-proposal-review";
 import { StatusDot } from "@/components/base/badges/status-dot";
 import { Button, ButtonLink } from "@/components/base/buttons/button";
 import { IconLinkButton } from "@/components/base/buttons/icon-button";
 import { PillTab, PillTabList } from "@/components/base/tabs/pill-tab";
+import { useComposerPrefill } from "@/components/chat/composer-prefill-context";
 import { backendFetch } from "@/lib/backend-fetch";
 import { cx } from "@/utils/cx";
 
@@ -99,10 +99,10 @@ export function WorkpieceTabStrip({
               className="flex h-7 min-w-0 items-center gap-1.5 outline-none"
             >
               {unseen ? (
-                <span
-                  aria-label="New"
-                  className="size-1.5 shrink-0 rounded-full bg-accent-500"
-                />
+                <>
+                  <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-accent-500" />
+                  <span className="sr-only">New</span>
+                </>
               ) : (
                 <Icon aria-hidden className="size-3.5 shrink-0 text-foreground-icon-tertiary" />
               )}
@@ -208,7 +208,13 @@ export function WorkpieceHeader({
           />
         )}
         {exportUrl && (
-          <ButtonLink variant="secondary" size="xs" leadingIcon={RiDownloadLine} href={exportUrl} download>
+          <ButtonLink
+            variant="secondary"
+            size="xs"
+            leadingIcon={RiDownloadLine}
+            href={exportUrl}
+            download
+          >
             Export
           </ButtonLink>
         )}
@@ -338,7 +344,7 @@ function WorkpieceEditorView({
     <div className="flex h-full min-h-0 flex-col">
       <WorkpieceHeader
         name={artifact.name}
-        kindLabel={KIND_META[workpiece.kind].label}
+        kindLabel={KIND_META[workpiece.kind as ArtifactWorkpieceKind].label}
         revision={editor.revision}
         viewMode={viewMode}
         onViewMode={setViewMode}
@@ -351,7 +357,11 @@ function WorkpieceEditorView({
           editor.actionContract.actions.includes("export") ? workpiece.export_url : undefined
         }
       />
-      <WorkpieceFollowUpComposer artifact={artifact} kind={workpiece.kind} revision={editor.revision} />
+      <WorkpieceFollowUpComposer
+        artifact={artifact}
+        kind={workpiece.kind}
+        revision={editor.revision}
+      />
       {editor.actionContract.edit && (
         <details className="shrink-0 border-t border-border-button-default px-3 py-1.5">
           <summary className="cursor-pointer text-caption-1-medium text-text-secondary outline-none marker:text-text-tertiary hover:text-text-primary">
@@ -454,7 +464,10 @@ function WorkpieceEditorPane({
       return (
         <div className="flex h-full min-h-0 flex-col">
           <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 px-3 py-2">
-            <p className="truncate text-body-2-medium text-text-primary" title={state.artifact.name}>
+            <p
+              className="truncate text-body-2-medium text-text-primary"
+              title={state.artifact.name}
+            >
               {state.artifact.name}
             </p>
             <ButtonLink
@@ -555,9 +568,7 @@ export function WorkspacePane({
           >
             <WorkpieceEditorPane
               artifactId={tab.id}
-              onDirtyChange={
-                onDirtyChange ? (dirty) => onDirtyChange(tab.id, dirty) : undefined
-              }
+              onDirtyChange={onDirtyChange ? (dirty) => onDirtyChange(tab.id, dirty) : undefined}
             />
           </div>
         ))}

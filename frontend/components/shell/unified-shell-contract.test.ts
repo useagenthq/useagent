@@ -35,7 +35,7 @@ describe("unified shell contract", () => {
 
   test("limits primary sidebar navigation to projects, threads, usage, customize, and settings", () => {
     const { threadSidebar } = shellSources();
-    const sidebarThreads = read("./sidebar-threads.tsx");
+    const projectTree = read("../session-ui/project-thread-tree.tsx");
     const primaryDestinations = ["Dashboard", "Threads", "Usage", "Customize", "Settings"];
     const displacedDestinations = [
       "New chat",
@@ -55,7 +55,7 @@ describe("unified shell contract", () => {
     ];
 
     for (const label of primaryDestinations) {
-      expect(`${threadSidebar}\n${sidebarThreads}`).toContain(label);
+      expect(`${threadSidebar}\n${projectTree}`).toContain(label);
     }
     for (const label of displacedDestinations) {
       expect(threadSidebar).not.toContain(`label='${label}'`);
@@ -136,10 +136,12 @@ describe("unified shell contract", () => {
 
   test("uses authenticated repository data for project shortcuts", () => {
     const projects = read("./sidebar-projects.tsx");
+    // The per-project actions menu owns the "start a thread in this repo" route.
+    const projectMenu = read("./sidebar-project-menu.tsx");
     const composer = readFromFrontend("app/agent/new/new-task-composer.tsx");
 
     expect(projects).toContain('backendFetch("/api/repos"');
-    expect(projects).toContain("encodeURIComponent(project.fullName)");
+    expect(projectMenu).toContain("encodeURIComponent(group.fullName");
     expect(composer).toContain("initialRepository");
     expect(projects).not.toContain("Growth Campaign");
     expect(projects).not.toContain("Content Engine");

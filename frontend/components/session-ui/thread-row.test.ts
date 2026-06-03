@@ -1,11 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 
-import {
-  resolveThreadRowClassName,
-  resolveThreadRowPill,
-  threadRowTimestamp,
-} from "./thread-row";
+import { resolveThreadRowClassName, resolveThreadRowPill, threadRowTimestamp } from "./thread-row";
 
 const read = (path: string) => readFileSync(new URL(path, import.meta.url), "utf8");
 
@@ -107,19 +103,27 @@ describe("trailing timestamp pick", () => {
 });
 
 describe("sidebar wiring contract", () => {
-  test("the thread sidebar renders the t3 thread list, not the old recents rows", () => {
+  test("the thread sidebar nests threads under project groups, not the old recents rows", () => {
     const threadSidebar = read("../shell/thread-sidebar.tsx");
-    expect(threadSidebar).toContain("<SidebarThreads");
+    expect(threadSidebar).toContain("<SidebarProjects");
     expect(threadSidebar).not.toContain("SidebarRecents");
   });
 
-  test("the thread list binds the t3 row to the existing runs lane", () => {
-    const list = read("../shell/sidebar-threads.tsx");
-    expect(list).toContain("<ThreadRow");
-    expect(list).toContain("fetchRuns");
-    expect(list).toContain("useOrgChanges");
-    expect(list).toContain("usePathname");
-    expect(list).toContain(">Threads<");
+  test("the project rail renders the native tree bound to the existing runs + repos lanes", () => {
+    const tree = read("./project-thread-tree.tsx");
+    const projects = read("../shell/sidebar-projects.tsx");
+    // Threads nest under their project through the native tree treatment
+    // (curved connector + relative-time chips), not a flat recents list.
+    expect(tree).toContain("ProjectThreadTree");
+    expect(tree).toContain("TreeConnector");
+    expect(projects).toContain("<ProjectThreadTree");
+    expect(projects).toContain("usePathname");
+    // The data owner reuses the existing runs + repos lanes - no new endpoint.
+    expect(projects).toContain("fetchSidebarRuns");
+    expect(projects).toContain("useOrgChanges");
+    expect(projects).toContain('backendFetch("/api/repos"');
+    expect(projects).toContain("groupThreadsByProject");
+    expect(projects).toContain(">Projects<");
   });
 
   test("the row keeps the ported presentation surface", () => {
