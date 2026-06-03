@@ -142,9 +142,9 @@ function SectionHeader({
   );
 }
 
-const STATUS_META: Record<string, { label: string; color: "yellow" | "lime" | "gray" }> = {
-  draft: { label: "Awaiting review", color: "yellow" },
-  proposed: { label: "Awaiting review", color: "yellow" },
+const STATUS_META: Record<string, { label: string; color: "orange" | "lime" | "gray" }> = {
+  draft: { label: "Awaiting review", color: "orange" },
+  proposed: { label: "Awaiting review", color: "orange" },
   accepted: { label: "Accepted", color: "lime" },
   dismissed: { label: "Dismissed", color: "gray" },
 };

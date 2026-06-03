@@ -76,7 +76,7 @@ export function RecommendationCard({
           {onAlternatives && (
             <Button
               className="rounded-full"
-              variant="secondary"
+              variant="ghost"
               size="small"
               onClick={onAlternatives}
             >

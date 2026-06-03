@@ -41,7 +41,7 @@ import { cx, sortCx } from "@/utils/cx";
  * `variant` to avoid the clash.
  */
 
-type ButtonVariant = "primary" | "secondary" | "ghost" | "danger";
+type ButtonVariant = "primary" | "neutral" | "secondary" | "ghost" | "danger";
 type ButtonSize = "medium" | "small" | "xs";
 
 type IconComponent = ComponentType<{
@@ -135,6 +135,14 @@ const styles = sortCx({
       "hover:bg-button-ghost-hover active:bg-button-ghost-active",
       "disabled:bg-button-ghost-disabled disabled:text-button-ghost-disabled-foreground disabled:shadow-none",
       "aria-disabled:bg-button-ghost-disabled aria-disabled:text-button-ghost-disabled-foreground aria-disabled:shadow-none",
+    ].join(" "),
+    // Solid dark/neutral emphasis (the primary-action look carried over from
+    // the retired neutral+filled button); distinct from the accent `primary`.
+    neutral: [
+      "bg-foreground-icon-primary text-background-full shadow-xs",
+      "hover:opacity-90 active:opacity-95",
+      "disabled:opacity-50 disabled:shadow-none",
+      "aria-disabled:opacity-50 aria-disabled:shadow-none",
     ].join(" "),
   },
 });

@@ -304,7 +304,7 @@ export function ComponentLab() {
               />
               <Modal.Body>
                 <p className="text-body-2-regular text-text-secondary">
-                  This modal keeps AlignUI behavior under a base-kit skin - Escape, the backdrop,
+                  This modal keeps its dialog behavior under a base-kit skin - Escape, the backdrop,
                   and the close button all dismiss it.
                 </p>
               </Modal.Body>
