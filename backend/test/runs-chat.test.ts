@@ -59,6 +59,8 @@ describe("durable chat runs", () => {
       expect(body.stream).toBe(true);
       expect(body.messages.at(-1)).toEqual({ role: "user", content: "hello durable chat" });
       expect(body.messages[0]?.content).toContain("NO sandbox");
+      expect(body.messages[0]?.content).toContain("<resource_access_snapshot>");
+      expect(body.messages[0]?.content).toContain('"exactInventoryTool":null');
       return openRouterStream("Hello ", "durable chat");
     }) as typeof fetch;
 
