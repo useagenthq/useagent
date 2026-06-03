@@ -16,6 +16,7 @@ import {
   CreateRows,
   GithubConnectedRow,
 } from "@/components/chat/composer-add-menu";
+import { mentionsToRunResources, useComposerMentions } from "@/components/chat/composer-mentions-ui";
 import { resolveEnabledEngine, useEnabledEngineConfig } from "@/components/chat/engine-picker";
 import { RunUploadChips, useRunUploads } from "@/components/chat/run-uploads";
 import {
@@ -118,8 +119,28 @@ export function NewTaskComposer({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
+  const composerRef = useRef<HTMLDivElement>(null);
   const runCreateAttempt = useRef<RunCreateAttempt | null>(null);
   const runUploads = useRunUploads();
+
+  // The "@" mention popover: this composer already knows the org's repos + the
+  // skill catalog, so it seeds the file picker (selected repos first) and the
+  // skill list rather than refetching. It opens BELOW the composer (top of page).
+  const mentionSkills = useMemo(
+    () => skills.map((s) => ({ id: s.id, name: s.name, tag: s.tags[0] })),
+    [skills],
+  );
+  const mentions = useComposerMentions({
+    value: prompt,
+    onValueChange: setPrompt,
+    containerRef: composerRef,
+    skills: mentionSkills,
+    selectedRepos,
+    repoRevisions: Object.fromEntries(
+      repos.map((repo) => [repo.full_name, branches[repo.full_name] ?? repo.default_branch]),
+    ),
+    placement: "bottom",
+  });
 
   useEffect(() => {
     if (!engineConfig.loaded) return;
@@ -315,8 +336,6 @@ export function NewTaskComposer({
     [repos, selectedRepos],
   );
 
-  const canSubmit = prompt.trim().length > 0 && !submitting && !runUploads.blocked;
-
   async function submit() {
     const text = prompt.trim();
     if (!text) return;
@@ -329,7 +348,12 @@ export function NewTaskComposer({
     // Skill/playbook selection is a REAL run contract now — send { id, version }
     // so the backend pins the immutable revision and injects its SKILL.md as
     // engine instructions. The user's prompt stays CLEAN (no name decoration).
-    const selectedSkill = skills.find((s) => s.id === playbook);
+    // A skill "@" mention binds here too: the explicit picker wins, else the first
+    // skill mention pins the run (reusing the same wire field, no new one).
+    const firstSkillMention = mentions.mentions.find((m) => m.kind === "skill");
+    const selectedSkill =
+      skills.find((s) => s.id === playbook) ??
+      (firstSkillMention ? skills.find((s) => s.id === firstSkillMention.id) : undefined);
 
     // Per-repo branch overrides: only send entries for SELECTED repos whose
     // chosen branch differs from the repo's default (a bare repo = default
@@ -339,6 +363,7 @@ export function NewTaskComposer({
       const chosen = branches[item.full_name];
       if (chosen && chosen !== item.default_branch) branchPayload[item.full_name] = chosen;
     }
+    const mentionResources = mentionsToRunResources(mentions.mentions);
 
     const body = {
       // Send a model only for engines with an explicit picker/catalog. Codex
@@ -349,6 +374,7 @@ export function NewTaskComposer({
       ...(selectableModels.length > 0 ? { model } : {}),
       ...(selectedRepos.length ? { repos: selectedRepos } : {}),
       ...(Object.keys(branchPayload).length ? { branches: branchPayload } : {}),
+      ...(mentionResources.length ? { resources: mentionResources } : {}),
       ...(runUploads.readyIds.length > 0 ? { attachments: runUploads.readyIds } : {}),
       ...(selectedSkill
         ? { skill: { id: selectedSkill.id, version: selectedSkill.version } }
@@ -409,7 +435,7 @@ export function NewTaskComposer({
               event.target.value = "";
             }}
           />
-          <div className="relative">
+          <div className="relative" ref={composerRef}>
             {cmdActive && (
               <div className="absolute left-0 top-full z-30 mt-2 w-full">
                 <SlashCommandPopover
@@ -421,6 +447,8 @@ export function NewTaskComposer({
                 />
               </div>
             )}
+            {/* The "@" mention popover carries its own placement (below the composer). */}
+            {mentions.popover}
             {runUploads.uploads.length > 0 ? (
               <div className="px-3 pt-3">
                 <RunUploadChips
@@ -429,10 +457,15 @@ export function NewTaskComposer({
                 />
               </div>
             ) : null}
+            {/* Structured "@" mentions render as removable chips above the input. */}
+            {mentions.mentions.length > 0 ? <div className="px-3 pt-3">{mentions.chips}</div> : null}
             <PromptInputTextarea
               placeholder="Describe what you need - task, question, repo, constraints..."
               aria-label="Describe what you need"
+              onSelect={mentions.onTextareaSelect}
               onKeyDown={(event) => {
+                mentions.onTextareaKeyDown(event); // "@" popover claims arrows/Enter/Esc first
+                if (event.defaultPrevented) return;
                 handleCmdKeys(event);
               }}
               className="min-h-[84px] px-3.5 pt-3.5 text-body-2-regular leading-relaxed"

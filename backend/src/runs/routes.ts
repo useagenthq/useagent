@@ -41,6 +41,7 @@ import { formatRepoRef } from "../github/repo-ref";
 import { createRunResourceAuthorization } from "../resources/authorization";
 import {
   explicitRepositoryResources,
+  decodeRunResourceSelections,
   legacyParentResources,
   resolveRunIntake,
   RunIntakeError,
@@ -157,6 +158,7 @@ export interface RunCreateBody {
   skill?: unknown;
   command?: unknown;
   attachments?: unknown;
+  resources?: unknown;
   origin?: unknown;
 }
 
@@ -200,6 +202,11 @@ export async function handleRunCreate(
   }
   if (attachmentIds.length > 0 && !c.get("userId")) {
     return c.json({ error: "authenticated user required for attachments" }, 401);
+  }
+
+  const requestedResources = decodeRunResourceSelections(body.resources ?? []);
+  if (!requestedResources) {
+    return c.json({ error: "resources must be an array of valid resource selections" }, 400);
   }
 
   const requestedModel =
@@ -360,6 +367,12 @@ export async function handleRunCreate(
       requestedCommand.args,
     );
   }
+  if (requestedCommand && (requestedResources.length > 0 || attachmentIds.length > 0)) {
+    return c.json(
+      { error: "invalid_command", reason: "native commands cannot add run resources" },
+      400,
+    );
+  }
 
   const idempotencyKey = c.req.header("Idempotency-Key")?.trim() || null;
   const intent: RunCommandIntent = {
@@ -368,6 +381,7 @@ export async function handleRunCreate(
     engine: requestedEngine,
     parentRunId,
     requestedRepos,
+    requestedResources,
     attachmentIds,
     memoryScope: requestedMemoryScope,
     skillId: requestedSkillId,
@@ -472,9 +486,10 @@ export async function handleRunCreate(
         // Native provider commands are control traffic. Their argument bytes
         // are delivered verbatim and never widen the run's resource scope.
         text: commandName ? "" : prompt,
-        explicitResources: parentRunId
-          ? []
-          : explicitRepositoryResources(repos),
+        explicitResources: [
+          ...(parentRunId ? [] : explicitRepositoryResources(repos)),
+          ...requestedResources,
+        ],
         inheritedResources,
       },
       { authorize: createRunResourceAuthorization(c.get("orgId")) },
@@ -609,11 +624,14 @@ runsRoutes.post("/:id/questions/:questionId/reply", async (c) => {
   if (run.status !== "running" || !run.engineSessionId) {
     return c.json({ error: "question_session_not_active" }, 409);
   }
-  let body: { answers?: unknown };
+  let body: { answers?: unknown; resources?: unknown; attachments?: unknown };
   try {
     body = await c.req.json();
   } catch {
     return c.json({ error: "invalid JSON body" }, 400);
+  }
+  if (body.resources !== undefined || body.attachments !== undefined) {
+    return c.json({ error: "question replies cannot add run resources" }, 400);
   }
   try {
     const reply = runtimeSession ? replyToRuntimeQuestion : replyToOpenCodeQuestion;

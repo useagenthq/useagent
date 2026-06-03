@@ -13,33 +13,24 @@ export type {
   GitHubRepositoryLocator,
   GitHubPullRequestLocator,
   FileLocator,
+  ThreadLocator,
   WebPageLocator,
   GitHubRepositoryResource,
   GitHubPullRequestResource,
   FileResource,
+  ThreadResource,
   WebPageResource,
   RunResource,
+  RunResourceSelection,
 } from "@useagent/agent-client/wire";
 
 import type {
   RunResource,
-  GitHubRepositoryResource,
-  GitHubPullRequestResource,
-  FileResource,
-  WebPageResource,
   ResourceCapability,
   RunIntakeSource,
 } from "@useagent/agent-client/wire";
 
-type ExplicitResource<T extends RunResource> = Omit<T, "capabilities" | "provenance"> & {
-  readonly capabilities?: readonly ResourceCapability[];
-};
-
-export type ExplicitRunResource =
-  | ExplicitResource<GitHubRepositoryResource>
-  | ExplicitResource<GitHubPullRequestResource>
-  | ExplicitResource<FileResource>
-  | ExplicitResource<WebPageResource>;
+export type ExplicitRunResource = import("@useagent/agent-client/wire").RunResourceSelection;
 
 type WithoutProvenance<T> = T extends RunResource ? Omit<T, "provenance"> : never;
 

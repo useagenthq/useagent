@@ -30,6 +30,65 @@ export { extractResourceReferences, ResourceResolverRegistry } from "./resolver-
 export const MAX_RUN_RESOURCE_REFERENCES = 24;
 export const MAX_RUN_RESOURCES = 12;
 
+/** Decode the narrow client-selectable resource identity. Authority-bearing
+ * capabilities, provenance, and provider revisions are never accepted here. */
+export function decodeRunResourceSelections(value: unknown): ExplicitRunResource[] | null {
+  if (!Array.isArray(value) || value.length > MAX_RUN_RESOURCES) return null;
+  const selections: ExplicitRunResource[] = [];
+  for (const item of value) {
+    if (!item || typeof item !== "object" || Array.isArray(item)) return null;
+    const record = item as Record<string, unknown>;
+    const locator = record.locator;
+    if (!locator || typeof locator !== "object" || Array.isArray(locator)) return null;
+    const loc = locator as Record<string, unknown>;
+    if (
+      record.kind === "code.repository" &&
+      record.provider === "github" &&
+      loc.type === "github.repository" &&
+      typeof loc.repository === "string" &&
+      (loc.revision === null || typeof loc.revision === "string")
+    ) {
+      selections.push({
+        kind: "code.repository",
+        provider: "github",
+        locator: { type: "github.repository", repository: loc.repository, revision: loc.revision },
+      });
+    } else if (
+      record.kind === "code.change" &&
+      record.provider === "github" &&
+      loc.type === "github.pull_request" &&
+      typeof loc.repository === "string" &&
+      typeof loc.number === "number" &&
+      (loc.revision === null || typeof loc.revision === "string")
+    ) {
+      selections.push({
+        kind: "code.change",
+        provider: "github",
+        locator: {
+          type: "github.pull_request",
+          repository: loc.repository,
+          number: loc.number,
+          revision: loc.revision,
+        },
+      });
+    } else if (
+      record.kind === "thread" &&
+      record.provider === "useagent" &&
+      loc.type === "thread" &&
+      typeof loc.id === "string"
+    ) {
+      selections.push({
+        kind: "thread",
+        provider: "useagent",
+        locator: { type: "thread", id: loc.id },
+      });
+    } else {
+      return null;
+    }
+  }
+  return selections;
+}
+
 export const defaultResourceResolverRegistry = new ResourceResolverRegistry([
   githubResourceResolver,
 ]);
@@ -45,6 +104,8 @@ function resourceKey(resource: ResourceDescriptor | RunResource): string {
       return `github:repository:${resource.locator.repository.toLowerCase()}`;
     case "github.pull_request":
       return `github:pull:${resource.locator.repository.toLowerCase()}:${resource.locator.number}`;
+    case "thread":
+      return `useagent:thread:${resource.locator.id}`;
     case "file":
       return `${resource.provider}:file:${resource.locator.id}`;
     case "web.page":
@@ -98,6 +159,16 @@ function explicitDescriptor(resource: ExplicitRunResource): ResourceDescriptor {
       };
       break;
     }
+    case "thread":
+      if (
+        resource.kind !== "thread" ||
+        resource.provider !== "useagent" ||
+        !resource.locator.id.trim() ||
+        resource.locator.id.length > 128
+      ) {
+        invalidExplicit(resource, "Invalid explicit thread resource.");
+      }
+      break;
     case "file":
       if (
         resource.kind !== "file" ||
@@ -129,7 +200,6 @@ function explicitDescriptor(resource: ExplicitRunResource): ResourceDescriptor {
     }
   }
   const capabilities = (() => {
-    if (resource.capabilities) return resource.capabilities;
     switch (resource.locator.type) {
       case "github.repository":
         return ["content.read", "code.checkout"] as const;
@@ -137,6 +207,8 @@ function explicitDescriptor(resource: ExplicitRunResource): ResourceDescriptor {
         return ["change.read", "change.checks.read", "deployment.read"] as const;
       case "file":
         return ["file.read"] as const;
+      case "thread":
+        return ["thread.read"] as const;
       case "web.page":
         return ["page.read"] as const;
     }

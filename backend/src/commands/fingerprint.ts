@@ -11,6 +11,9 @@ export function runIntentFromAcceptedRun(
     engine: run.engine,
     parentRunId: run.parentRunId,
     requestedRepos: run.repos,
+    // Accepted resources contain server-derived capabilities/revisions. Internal
+    // compatibility callers have no distinct raw selection, so none is invented.
+    requestedResources: [],
     attachmentIds: run.attachmentIds ?? [],
     memoryScope: run.memoryScope ?? "org",
     skillId: run.skillId ?? null,
@@ -41,6 +44,7 @@ export function runIntentFingerprint(intent: RunCommandIntent): string {
     // is (correctly) a payload mismatch, not a silent reuse of the other branch's
     // run. This falls out of the encoding for free; the test asserts it stays true.
     intent.requestedRepos,
+    intent.requestedResources,
     intent.attachmentIds,
     // A skill'd turn is a distinct intent from the same prompt without one; the
     // (id, version) reference is canonical (its content hash derives from it).

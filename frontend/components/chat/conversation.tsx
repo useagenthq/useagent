@@ -29,7 +29,10 @@ import { InboundAttachments } from "@/components/chat/inbound-attachments";
 import { NativeApprovalCard } from "@/components/chat/native-approval-card";
 import type { NativeSnapshot } from "@/components/chat/native-store";
 import { QuestionCard } from "@/components/chat/question-card";
-import type { PendingQuestion } from "@/components/chat/question-state";
+import {
+  composerAcceptsRunResources,
+  type PendingQuestion,
+} from "@/components/chat/question-state";
 import { toGatewayChildSession } from "@/components/chat/gateway-children";
 import type { SlashCommand } from "@/components/chat/slash-command";
 import {
@@ -689,6 +692,9 @@ function ReplyComposer({
   engineUnavailable,
   draftKey,
   prefill,
+  enableMentions,
+  enableUploads,
+  repoRevisions,
 }: {
   engine: EngineId;
   model: string;
@@ -714,6 +720,9 @@ function ReplyComposer({
   draftKey?: string | null;
   /** Externally seed the composer (conflicted-proposal "Ask agent to redo"). */
   prefill?: { readonly text: string; readonly nonce: number } | null;
+  enableMentions?: boolean;
+  enableUploads?: boolean;
+  repoRevisions?: Readonly<Record<string, string | null>>;
 }) {
   return (
     <div className="shrink-0 px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-2">
@@ -726,9 +735,10 @@ function ReplyComposer({
           defaultMemoryScope={memoryScope}
           pending={pending}
           locked={locked}
-          commands={commands}
-          commandState={commandState}
-          enableUploads
+          commands={commands} commandState={commandState}
+          enableUploads={enableUploads}
+          enableMentions={enableMentions}
+          repoRevisions={repoRevisions}
           enableModelPicker={modelSelection === true}
           onSubmit={onReply}
           running={running}
@@ -785,6 +795,7 @@ export const Conversation = memo(function Conversation({
   onStop,
   runStartedAt,
   prefill,
+  repoRevisions,
 }: {
   turns: Turn[];
   defaultEngine: EngineId;
@@ -832,6 +843,7 @@ export const Conversation = memo(function Conversation({
   /** Externally seed the reply composer (e.g. "Ask agent to redo" on a conflicted
    *  proposal); each request carries a fresh nonce so repeats re-apply. */
   prefill?: { readonly text: string; readonly nonce: number } | null;
+  repoRevisions?: Readonly<Record<string, string | null>>;
 }) {
   // Stick-to-bottom autoscroll: follow new turns/steps/narration as they
   // stream, but ONLY while the user is already near the bottom — scrolling up
@@ -1023,6 +1035,9 @@ export const Conversation = memo(function Conversation({
         engineUnavailable={engineUnavailable}
         draftKey={turns[0]?.run.id ?? null}
         prefill={prefill}
+        enableMentions={composerAcceptsRunResources(pendingQuestion ?? null)}
+        enableUploads={composerAcceptsRunResources(pendingQuestion ?? null)}
+        repoRevisions={repoRevisions}
       />
     </div>
   );

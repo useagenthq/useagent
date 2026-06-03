@@ -8,6 +8,8 @@ function bindingKey(resource: RunResource): string {
       return `github:repository:${resource.locator.repository.toLowerCase()}:${resource.locator.revision ?? ""}`;
     case "github.pull_request":
       return `github:pull:${resource.locator.repository.toLowerCase()}:${resource.locator.number}:${resource.locator.revision ?? ""}`;
+    case "thread":
+      return `useagent:thread:${resource.locator.id}`;
     case "file":
       return `${resource.provider}:file:${resource.locator.id}`;
     case "web.page":

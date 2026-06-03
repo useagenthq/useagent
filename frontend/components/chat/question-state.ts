@@ -20,6 +20,12 @@ export interface PendingQuestion {
   readonly questions: readonly QuestionItem[];
 }
 
+/** Native-question replies resume an existing provider turn and therefore have
+ * no run-intake boundary where new resources could be authorized. */
+export function composerAcceptsRunResources(question: PendingQuestion | null): boolean {
+  return question === null;
+}
+
 function parseQuestion(frame: NativeFrame): PendingQuestion | null {
   const payload = asRecord(frame.payload);
   if (

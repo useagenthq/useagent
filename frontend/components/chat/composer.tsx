@@ -10,11 +10,13 @@ import {
   RiToolsLine,
 } from "@remixicon/react";
 import { AnimatePresence, MotionConfig, motion } from "motion/react";
+import type { RunResourceSelection } from "@useagent/agent-client/wire";
 import { useEffect, useRef, useState } from "react";
 import { type Agent, AgentChip, ChooseAgentPopover } from "@/components/chat/agent-command";
 import type { CommandCatalogState } from "@/components/chat/canonical-timeline";
 import { ChatModelMenu, type ChatModelOption } from "@/components/chat/chat-model-menu";
 import { AddFilesRow, AddMenuDivider, CreateRows } from "@/components/chat/composer-add-menu";
+import { mentionsToRunResources, useComposerMentions } from "@/components/chat/composer-mentions-ui";
 import { ModelPicker } from "@/components/chat/engine-picker";
 import { RunUploadChips, useRunUploads } from "@/components/chat/run-uploads";
 import {
@@ -95,6 +97,7 @@ export type ComposerSubmit = (
    *  delivers the command verbatim. Absent for an ordinary prompt. */
   command?: { name: string; args: string } | null,
   attachmentIds?: readonly string[],
+  resources?: readonly RunResourceSelection[],
 ) => void | Promise<void>;
 
 export type ComposerProps = {
@@ -140,6 +143,11 @@ export type ComposerProps = {
   commandState?: CommandCatalogState;
   /** Allow tenant-scoped files to be uploaded and attached to this sandbox turn. */
   enableUploads?: boolean;
+  /** Enable the "@" mention popover (files / pull requests / threads / skills).
+   *  Off by default; the in-session reply composer turns it on. */
+  enableMentions?: boolean;
+  /** Exact repository revisions already bound to this thread. */
+  repoRevisions?: Readonly<Record<string, string | null>>;
   onSubmit: ComposerSubmit;
   /** A turn is running in this thread - an empty input exposes Stop, while a
    *  non-empty draft exposes a labelled Steer action for the queued reply. */
@@ -202,6 +210,8 @@ export function Composer({
   commands,
   commandState,
   enableUploads = false,
+  enableMentions = false,
+  repoRevisions,
   onSubmit,
   running = false,
   stopping = false,
@@ -264,6 +274,15 @@ export function Composer({
   const retry = useRef<{ text: string; key: string } | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const runUploads = useRunUploads();
+  // The "@" mention popover + chips (files / pull requests / threads / skills).
+  const mentions = useComposerMentions({
+    value,
+    onValueChange: setValue,
+    containerRef: rootRef,
+    enabled: enableMentions,
+    selectedRepos: repoRevisions ? Object.keys(repoRevisions) : undefined,
+    repoRevisions,
+  });
 
   const engine = engineProp ?? engineState;
   const hero = variant === "hero";
@@ -384,9 +403,11 @@ export function Composer({
         defaultMemoryScope,
         intent,
         runUploads.readyIds,
+        mentionsToRunResources(mentions.mentions),
       );
       retry.current = null; // accepted — drop the retry key
       runUploads.clearAccepted();
+      mentions.clear(); // accepted — drop the chips (their text tokens already sent)
     } catch {
       // Never silently swallow: restore the draft and show an explicit failed
       // state; keep the key so the next send retries idempotently.
@@ -449,6 +470,10 @@ export function Composer({
           />
         </div>
       )}
+
+      {/* The "@" mention popover (files / pull requests / threads / skills). It
+          carries its own absolute placement (above this reply composer). */}
+      {mentions.popover}
 
       {/* The "+" add-context menu: a BoardUI-style popover ABOVE the input (the
           reply composer sits at the viewport bottom). Same rows as the new-thread
@@ -566,6 +591,8 @@ export function Composer({
             />
           </>
         ) : null}
+        {/* Structured "@" mentions render as removable chips above the input. */}
+        {mentions.chips}
         <PromptInput
           value={value}
           onValueChange={(v) => {
@@ -609,7 +636,10 @@ export function Composer({
               aria-activedescendant={
                 cmdActive && cmdHighlightedName ? commandOptionId(cmdHighlightedName) : undefined
               }
+              onSelect={mentions.onTextareaSelect}
               onKeyDown={(e) => {
+                mentions.onTextareaKeyDown(e); // "@" popover claims arrows/Enter/Esc first
+                if (e.defaultPrevented) return;
                 handleCmdKeys(e);
                 if (e.key === "Backspace" && value === "" && command) {
                   setCommand(null);
