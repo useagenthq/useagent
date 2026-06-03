@@ -4,6 +4,7 @@ import {
   fetchSkillFileAtCommit,
   resolveRepoHeadSha,
 } from "../github/discovery";
+import type { GithubRepositoryAccess } from "../github/auth";
 import type { SkillContent } from "./format";
 import { importSkillFromSource, listImportedPaths } from "./import-repo";
 
@@ -200,9 +201,10 @@ export function deriveFallbackName(path: string, repo: string): string {
 export async function scanSkillCandidates(
   orgId: string,
   repo: string,
+  access: GithubRepositoryAccess,
 ): Promise<ScanResult> {
   const [discovered, importedPaths] = await Promise.all([
-    discoverSkillFiles(repo),
+    discoverSkillFiles(repo, access),
     listImportedPaths(orgId, repo),
   ]);
 
@@ -237,11 +239,12 @@ export async function importSkills(
   orgId: string,
   repo: string,
   paths: string[],
+  access: GithubRepositoryAccess,
 ): Promise<ImportResult> {
-  const sha = await resolveRepoHeadSha(repo);
+  const sha = await resolveRepoHeadSha(repo, access);
   const results: ImportOutcome[] = [];
   for (const path of [...new Set(paths)]) {
-    const file = await fetchSkillFileAtCommit(repo, path, sha);
+    const file = await fetchSkillFileAtCommit(repo, path, sha, access);
     if (file === null) {
       results.push({ path, action: "skipped", reason: "not_found" });
       continue;

@@ -1,7 +1,11 @@
 import { readdir, readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { resolveRepoHeadSha } from "../../github/discovery";
-import { listRepos } from "../../github/repos";
+import {
+  resolveGithubRepositoryAccess,
+  type GithubRepositoryAccess,
+} from "../../github/auth";
+import { listReposWithAccess } from "../../github/repos";
 import { DEV_ORG_ID } from "../../seed";
 import { cloneRepoAtHead } from "../../wiki-gen/clone";
 import { upsertContextRow } from "../store";
@@ -26,9 +30,9 @@ import { projectCode } from "./projector";
 //   CODE_INDEX_INTERVAL_MIN  minutes between sweeps. Default 0 = DISABLED -
 //                            background GitHub traffic + clone I/O is an explicit
 //                            operator choice, never implicit.
-//   CODE_INDEX_ORG_ID        org the records are projected under (the GitHub
-//                            credential is process-global, so the target org is
-//                            deployment config). Defaults to the seeded dev org.
+//   CODE_INDEX_ORG_ID        org the records are projected under and whose
+//                            active GitHub connection authorizes every repo
+//                            read. Defaults to the seeded dev org.
 // ---------------------------------------------------------------------------
 
 /** Repos processed per sweep, hard cap (above the org's ~120 repos w/ headroom). */
@@ -76,14 +80,15 @@ export interface RepoSnapshot {
 /** The sweep's collaborators, injectable so tests drive orchestration (pacing,
  *  bounds, error isolation, unchanged-sha skip) with fakes and zero GitHub/DB. */
 export interface CodeIndexDeps {
-  listRepos: (orgId: string) => Promise<{
+  openAccess: (orgId: string) => Promise<GithubRepositoryAccess>;
+  listRepos: (access: GithubRepositoryAccess) => Promise<{
     configured: boolean;
     repos: readonly { full_name: string }[];
     error?: string;
   }>;
-  resolveHeadSha: (repo: string) => Promise<string>;
+  resolveHeadSha: (repo: string, access: GithubRepositoryAccess) => Promise<string>;
   /** Clone the repo at HEAD and read its bounded indexable file set. */
-  snapshot: (repo: string) => Promise<RepoSnapshot>;
+  snapshot: (repo: string, access: GithubRepositoryAccess) => Promise<RepoSnapshot>;
   /** Project + upsert one extracted record's context row (org-scoped). */
   projectRecords: (orgId: string, repo: string, snap: RepoSnapshot) => Promise<number>;
   sleep: (ms: number) => Promise<void>;
@@ -131,8 +136,11 @@ export async function readIndexableFiles(dir: string): Promise<RepoFile[]> {
 
 /** Real snapshot: shallow-clone at HEAD, read the bounded indexable file set,
  *  clean up the clone. */
-async function realSnapshot(repo: string): Promise<RepoSnapshot> {
-  const cloned = await cloneRepoAtHead(repo);
+async function realSnapshot(
+  repo: string,
+  access: GithubRepositoryAccess,
+): Promise<RepoSnapshot> {
+  const cloned = await cloneRepoAtHead(repo, access);
   try {
     const files = await readIndexableFiles(cloned.dir);
     return { commitSha: cloned.commitSha, files };
@@ -160,7 +168,8 @@ async function realProjectRecords(
 
 function defaultDeps(): CodeIndexDeps {
   return {
-    listRepos,
+    openAccess: resolveGithubRepositoryAccess,
+    listRepos: listReposWithAccess,
     resolveHeadSha: resolveRepoHeadSha,
     snapshot: realSnapshot,
     projectRecords: realProjectRecords,
@@ -208,9 +217,21 @@ export async function runCodeIndexSweep(
     recordsProjected: 0,
   };
 
+  let access: GithubRepositoryAccess;
+  try {
+    access = await deps.openAccess(orgId);
+  } catch (err) {
+    console.warn(
+      `[code-index] tenant GitHub access unavailable; sweep skipped: ${
+        err instanceof Error ? err.message : err
+      }`,
+    );
+    return summary;
+  }
+
   let listing: Awaited<ReturnType<CodeIndexDeps["listRepos"]>>;
   try {
-    listing = await deps.listRepos(orgId);
+    listing = await deps.listRepos(access);
   } catch (err) {
     console.error("[code-index] repo listing failed:", err);
     return summary;
@@ -232,12 +253,12 @@ export async function runCodeIndexSweep(
     const repo = repos[i]!.full_name;
     const shaKey = `${orgId}|${repo}`;
     try {
-      const head = await deps.resolveHeadSha(repo);
+      const head = await deps.resolveHeadSha(repo, access);
       if (lastIndexedSha.get(shaKey) === head) {
         summary.reposUnchangedHead++;
         continue;
       }
-      const snap = await deps.snapshot(repo);
+      const snap = await deps.snapshot(repo, access);
       summary.reposIndexed++;
       summary.recordsProjected += await deps.projectRecords(orgId, repo, snap);
       // Record the SNAPSHOT sha (the commit we actually read), not the ls-remote

@@ -38,6 +38,17 @@ export interface GithubAuth {
   connectionId?: string | null;
 }
 
+/** One org-scoped GitHub credential resolved once and passed through every
+ * repository operation in a job. Boot jobs and background work must use this
+ * instead of re-resolving deployment credentials between list/clone/read calls. */
+export interface GithubRepositoryAccess {
+  readonly orgId: string;
+  readonly token: string;
+  readonly owner: string | null;
+  readonly source: GithubAuthSource;
+  readonly connectionId: string | null;
+}
+
 async function resolveTenantGithubAuth(orgId: string): Promise<{
   readonly auth: GithubAuth;
   readonly installationId: number;
@@ -76,6 +87,29 @@ async function resolveTenantGithubAuth(orgId: string): Promise<{
     },
     installationId,
     app,
+  };
+}
+
+/**
+ * Resolve one org-authorized GitHub credential for repository work. A revoked
+ * tenant connection never falls back to a process-global PAT/App; legacy auth
+ * is accepted only when it is explicitly assigned to this exact product org.
+ */
+export async function resolveGithubRepositoryAccess(
+  orgId: string,
+): Promise<GithubRepositoryAccess> {
+  // `resolveGithubCatalogAuth` is the canonical org boundary: it prefers the
+  // tenant connection, rejects a revoked connection before considering legacy
+  // credentials, and only permits legacy auth when explicitly assigned to this
+  // exact product org.
+  const auth = await resolveGithubCatalogAuth(orgId);
+  if (!auth.token) throw new Error("GitHub is not connected for this organization");
+  return {
+    orgId,
+    token: auth.token,
+    owner: auth.owner,
+    source: auth.source,
+    connectionId: auth.connectionId ?? null,
   };
 }
 

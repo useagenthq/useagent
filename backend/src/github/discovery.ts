@@ -1,8 +1,7 @@
 import { readdir, readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
-import { githubConfigured } from "../env";
 import { cloneRepoAtHead, resolveRemoteHeadSha } from "../wiki-gen/clone";
-import { resolveGithubAuth } from "./auth";
+import type { GithubRepositoryAccess } from "./auth";
 import { errorMessage } from "../util/error-message";
 
 // ---------------------------------------------------------------------------
@@ -17,8 +16,8 @@ import { errorMessage } from "../util/error-message";
 // (`/commits/{ref}`, `/git/trees`, `/git/blobs`): those 404 under the
 // backend's credentials against this org while the git protocol and the
 // `/contents` API work. The pinned-commit import read stays on `/contents`.
-// Auth is resolved through src/github/auth.ts (PAT > App > anon precedence);
-// the credential never leaves the backend.
+// Auth is an explicit org-scoped access object resolved by src/github/auth.ts;
+// the credential never leaves the backend and cannot change mid-operation.
 // ---------------------------------------------------------------------------
 
 const GITHUB_API = "https://api.github.com";
@@ -107,18 +106,6 @@ async function ghGet(url: string, token: string | null): Promise<Response> {
   }
 }
 
-/** Resolve the configured GitHub bearer token, or throw a not_configured error
- *  (the feature is dormant, not broken, when no creds are set). */
-async function resolveToken(): Promise<string | null> {
-  if (!githubConfigured()) {
-    throw new DiscoveryError(
-      "GitHub is not configured; set a PAT or install the GitHub App.",
-      "not_configured",
-    );
-  }
-  return (await resolveGithubAuth()).token;
-}
-
 /** Recursively list SKILL.md paths (repo-relative) inside a clone, `.git` excluded. */
 export async function listSkillPathsInDir(dir: string): Promise<string[]> {
   const all = (await readdir(dir, { recursive: true })) as string[];
@@ -133,14 +120,16 @@ export async function listSkillPathsInDir(dir: string): Promise<string[]> {
  * caller can skip + report them). Throws a {@link DiscoveryError} on a bad ref,
  * an unconfigured backend, or a GitHub failure.
  */
-export async function discoverSkillFiles(repo: string): Promise<DiscoverResult> {
+export async function discoverSkillFiles(
+  repo: string,
+  access: GithubRepositoryAccess,
+): Promise<DiscoverResult> {
   const ref = parseRepoRef(repo);
   if (!ref) throw new DiscoveryError(`invalid repo ref "${repo}"`, "bad_request");
-  await resolveToken();
 
   let cloned: Awaited<ReturnType<typeof cloneRepoAtHead>>;
   try {
-    cloned = await cloneRepoAtHead(repo);
+    cloned = await cloneRepoAtHead(repo, access);
   } catch (e) {
     throw new DiscoveryError(errorMessage(e), "upstream");
   }
@@ -164,12 +153,14 @@ export async function discoverSkillFiles(repo: string): Promise<DiscoverResult> 
 }
 
 /** Resolve just the HEAD commit sha of a repo's default branch (import pins to it). */
-export async function resolveRepoHeadSha(repo: string): Promise<string> {
+export async function resolveRepoHeadSha(
+  repo: string,
+  access: GithubRepositoryAccess,
+): Promise<string> {
   const ref = parseRepoRef(repo);
   if (!ref) throw new DiscoveryError(`invalid repo ref "${repo}"`, "bad_request");
-  await resolveToken();
   try {
-    return await resolveRemoteHeadSha(repo);
+    return await resolveRemoteHeadSha(repo, access);
   } catch (e) {
     throw new DiscoveryError(errorMessage(e), "upstream");
   }
@@ -185,16 +176,16 @@ export async function fetchSkillFileAtCommit(
   repo: string,
   path: string,
   commitSha: string,
+  access: GithubRepositoryAccess,
 ): Promise<FetchedSkillFile | null> {
   const ref = parseRepoRef(repo);
   if (!ref) throw new DiscoveryError(`invalid repo ref "${repo}"`, "bad_request");
   if (!isSkillPath(path)) return null;
-  const token = await resolveToken();
 
   const encodedPath = path.split("/").map(encodeURIComponent).join("/");
   const res = await ghGet(
     `${GITHUB_API}/repos/${ref.owner}/${ref.name}/contents/${encodedPath}?ref=${commitSha}`,
-    token,
+    access.token,
   );
   if (res.status === 404) return null;
   if (!res.ok) {
