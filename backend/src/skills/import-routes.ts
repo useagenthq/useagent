@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import { DiscoveryError, parseRepoRef } from "../github/discovery";
+import { resolveGithubRepositoryAccess } from "../github/auth";
 import { isKnownRepo } from "../github/repos";
 import type { AppEnv } from "../http";
 import { orgScope } from "../middleware/org";
@@ -34,7 +35,8 @@ skillImportRoutes.get("/scan", async (c) => {
     return c.json({ error: "repository is not available to this organization" }, 403);
   }
   try {
-    return c.json(await scanSkillCandidates(c.get("orgId"), repo));
+    const access = await resolveGithubRepositoryAccess(c.get("orgId"));
+    return c.json(await scanSkillCandidates(c.get("orgId"), repo, access));
   } catch (e) {
     if (e instanceof DiscoveryError) return c.json({ error: e.message }, discoveryErrorStatus(e));
     throw e;
@@ -67,7 +69,8 @@ skillImportRoutes.post("/", async (c) => {
   }
 
   try {
-    return c.json(await importSkills(c.get("orgId"), repo, paths));
+    const access = await resolveGithubRepositoryAccess(c.get("orgId"));
+    return c.json(await importSkills(c.get("orgId"), repo, paths, access));
   } catch (e) {
     if (e instanceof DiscoveryError) return c.json({ error: e.message }, discoveryErrorStatus(e));
     throw e;

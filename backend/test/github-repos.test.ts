@@ -5,6 +5,7 @@ import {
   isKnownRepo,
   isValidRepoRef,
   listRepos,
+  listReposWithAccess,
   unknownRepos,
 } from "../src/github/repos";
 
@@ -83,6 +84,28 @@ describe("github listing — unconfigured is a graceful no-op", () => {
       "a/b",
     ]);
     expect(await unknownRepos([], "org-test")).toEqual([]);
+  });
+});
+
+describe("github listing — resolved tenant access", () => {
+  test("uses the supplied tenant token instead of resolving deployment auth", async () => {
+    clearGithubEnv();
+    let authorization = "";
+    globalThis.fetch = async (_input, init) => {
+      authorization = new Headers(init?.headers).get("authorization") ?? "";
+      return new Response(JSON.stringify({ repositories: [] }), { status: 200 });
+    };
+
+    const listing = await listReposWithAccess({
+      orgId: "org-tenant-access",
+      token: "tenant-installation-token",
+      owner: "acme",
+      source: "app",
+      connectionId: "connection-tenant",
+    });
+
+    expect(listing).toEqual({ configured: true, repos: [] });
+    expect(authorization).toBe("Bearer tenant-installation-token");
   });
 });
 

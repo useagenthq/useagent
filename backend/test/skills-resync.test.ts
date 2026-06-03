@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, test } from "bun:test";
 import { DEV_ORG_ID } from "../src/seed";
+import type { GithubRepositoryAccess } from "../src/github/auth";
 import {
   clearResyncStateForTest,
   runSkillsResyncSweep,
@@ -17,6 +18,13 @@ import {
 // ---------------------------------------------------------------------------
 
 const ORG = "org-resync-test";
+const ACCESS: GithubRepositoryAccess = {
+  orgId: ORG,
+  token: "tenant-token",
+  owner: "acme",
+  source: "app",
+  connectionId: "connection-1",
+};
 
 interface FakeRepo {
   name: string;
@@ -31,6 +39,7 @@ interface FakeRepo {
 }
 
 interface Calls {
+  openedOrgs: string[];
   listedOrgs: string[];
   sleeps: number[];
   headChecks: string[];
@@ -43,6 +52,7 @@ function fakeDeps(
   overrides: Partial<SkillsResyncDeps> = {},
 ): { deps: SkillsResyncDeps; calls: Calls } {
   const calls: Calls = {
+    openedOrgs: [],
     listedOrgs: [],
     sleeps: [],
     headChecks: [],
@@ -51,26 +61,33 @@ function fakeDeps(
   };
   const byName = new Map(repos.map((r) => [r.name, r]));
   const deps: SkillsResyncDeps = {
-    listRepos: async (orgId) => {
-      calls.listedOrgs.push(orgId);
+    openAccess: async (orgId) => {
+      calls.openedOrgs.push(orgId);
+      return { ...ACCESS, orgId };
+    },
+    listRepos: async (access) => {
+      calls.listedOrgs.push(access.orgId);
       return {
         configured: true,
         repos: repos.map((r) => ({ full_name: r.name })),
       };
     },
-    resolveHeadSha: async (repo) => {
+    resolveHeadSha: async (repo, access) => {
+      expect(access.token).toBe(ACCESS.token);
       calls.headChecks.push(repo);
       const r = byName.get(repo)!;
       if (r.failHead) throw new Error(`ls-remote failed for ${repo}`);
       return r.head;
     },
-    scan: async (_orgId, repo) => {
+    scan: async (_orgId, repo, access) => {
+      expect(access.token).toBe(ACCESS.token);
       calls.scans.push(repo);
       const r = byName.get(repo)!;
       if (r.failScan) throw new Error(`clone failed for ${repo}`);
       return { sha: r.head, candidates: (r.candidates ?? []).map((path) => ({ path })) };
     },
-    importPaths: async (_orgId, repo, paths) => {
+    importPaths: async (_orgId, repo, paths, access) => {
+      expect(access.token).toBe(ACCESS.token);
       calls.imports.push({ repo, paths });
       const r = byName.get(repo)!;
       return {
@@ -116,6 +133,19 @@ describe("skillsResyncConfig", () => {
 });
 
 describe("runSkillsResyncSweep", () => {
+  test("fails closed before listing or per-repo work when tenant access is unavailable", async () => {
+    const { deps, calls } = fakeDeps([{ name: "o/private", head: "sha-1" }], {
+      openAccess: async () => {
+        throw new Error("GitHub integration has been revoked for this organization");
+      },
+    });
+    const summary = await runSkillsResyncSweep(ORG, deps);
+    expect(summary.reposListed).toBe(0);
+    expect(calls.listedOrgs).toEqual([]);
+    expect(calls.headChecks).toEqual([]);
+    expect(calls.scans).toEqual([]);
+  });
+
   test("imports every candidate serially and tallies per-action counts", async () => {
     const { deps, calls } = fakeDeps([
       {
@@ -144,6 +174,7 @@ describe("runSkillsResyncSweep", () => {
     });
     expect(calls.scans).toEqual(["acme/tools", "acme/infra"]);
     expect(calls.listedOrgs).toEqual([ORG]);
+    expect(calls.openedOrgs).toEqual([ORG]);
     expect(calls.imports).toEqual([
       { repo: "acme/tools", paths: ["a/SKILL.md", "b/SKILL.md"] },
       { repo: "acme/infra", paths: ["c/SKILL.md", "d/SKILL.md"] },

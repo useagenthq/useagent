@@ -1,7 +1,7 @@
 /**
  * Server-side shallow clone of a repo into a temp dir, using the backend-held
- * GitHub credential (PAT or a freshly-minted App installation token, resolved
- * through src/github/auth.ts). First-party harness code, so this runs OUTSIDE
+ * org-scoped GitHub access object (resolved once through src/github/auth.ts and
+ * passed through list/head/clone/read). First-party harness code, so this runs OUTSIDE
  * any sandbox — no Daytona spend. The clone is deleted after the wiki is built.
  *
  * The credential is applied one-shot as an http.extraHeader for THIS clone only
@@ -15,7 +15,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
-import { resolveGithubToken } from "../github/auth";
+import type { GithubRepositoryAccess } from "../github/auth";
 
 const exec = promisify(execFile);
 const CLONE_TIMEOUT_MS = 120_000;
@@ -50,13 +50,15 @@ function gitAuthEnv(token: string | null): NodeJS.ProcessEnv {
  * REST git-data surface (`/commits/{ref}`, `/git/trees`) 404s under the
  * backend's credentials against this org while the git protocol works.
  */
-export async function resolveRemoteHeadSha(repo: string): Promise<string> {
+export async function resolveRemoteHeadSha(
+  repo: string,
+  access: GithubRepositoryAccess,
+): Promise<string> {
   if (!isValidRepoRef(repo)) throw new Error(`invalid repo ref: ${repo}`);
-  const token = await resolveGithubToken();
   const url = `https://github.com/${repo}.git`;
   try {
     const { stdout } = await exec("git", ["ls-remote", url, "HEAD"], {
-      env: gitAuthEnv(token),
+      env: gitAuthEnv(access.token),
       timeout: 30_000,
       maxBuffer: 1024 * 1024,
     });
@@ -79,9 +81,11 @@ export async function resolveRemoteHeadSha(repo: string): Promise<string> {
  * out default branch, and a cleanup fn. Throws (honestly, credential-free) on
  * failure; the caller turns that into a failed job.
  */
-export async function cloneRepoToTemp(repo: string): Promise<ClonedRepo> {
+export async function cloneRepoToTemp(
+  repo: string,
+  access: GithubRepositoryAccess,
+): Promise<ClonedRepo> {
   if (!isValidRepoRef(repo)) throw new Error(`invalid repo ref: ${repo}`);
-  const token = await resolveGithubToken();
   const url = `https://github.com/${repo}.git`;
   const dir = await mkdtemp(join(tmpdir(), "skynet-wiki-"));
   const cleanup = async () => {
@@ -89,7 +93,7 @@ export async function cloneRepoToTemp(repo: string): Promise<ClonedRepo> {
   };
 
   // Token via env only. Absent token -> public clone.
-  const env = gitAuthEnv(token);
+  const env = gitAuthEnv(access.token);
 
   try {
     await exec("git", ["clone", "--depth", "1", url, dir], {
@@ -123,8 +127,11 @@ export interface ClonedRepoAtHead extends ClonedRepo {
 
 /** Shallow-clone and pin the checked-out HEAD commit sha (skill discovery reads
  *  files from disk and reports the commit those reads were pinned to). */
-export async function cloneRepoAtHead(repo: string): Promise<ClonedRepoAtHead> {
-  const cloned = await cloneRepoToTemp(repo);
+export async function cloneRepoAtHead(
+  repo: string,
+  access: GithubRepositoryAccess,
+): Promise<ClonedRepoAtHead> {
+  const cloned = await cloneRepoToTemp(repo, access);
   try {
     const { stdout } = await exec("git", ["-C", cloned.dir, "rev-parse", "HEAD"], {
       timeout: 15_000,
@@ -152,13 +159,13 @@ export async function readFileAtCommit(
   repo: string,
   commitSha: string,
   path: string,
+  access: GithubRepositoryAccess,
 ): Promise<string | null> {
   if (!isValidRepoRef(repo)) throw new Error(`invalid repo ref: ${repo}`);
   if (!/^[0-9a-f]{7,40}$/.test(commitSha)) throw new Error(`invalid commit sha`);
   if (path.includes("..") || path.startsWith("/")) throw new Error(`invalid file path`);
-  const token = await resolveGithubToken();
   const url = `https://github.com/${repo}.git`;
-  const env = gitAuthEnv(token);
+  const env = gitAuthEnv(access.token);
   const dir = await mkdtemp(join(tmpdir(), "skynet-read-"));
   const cleanup = async () => {
     await rm(dir, { recursive: true, force: true }).catch(() => {});

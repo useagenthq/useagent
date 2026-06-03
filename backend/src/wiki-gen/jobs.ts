@@ -8,6 +8,7 @@
  */
 import { randomUUID } from "node:crypto";
 import { cloneRepoToTemp } from "./clone";
+import { resolveGithubRepositoryAccess } from "../github/auth";
 import { generateWiki, type GenerateResult } from "./generate";
 import { openRouterLlm } from "./llm";
 import { readRepoFiles } from "./repo";
@@ -67,7 +68,8 @@ async function runJob(job: WikiJob, userId: string | null): Promise<void> {
   let cleanup: (() => Promise<void>) | null = null;
   try {
     job.status = "cloning";
-    const cloned = await cloneRepoToTemp(job.repo);
+    const access = await resolveGithubRepositoryAccess(job.orgId);
+    const cloned = await cloneRepoToTemp(job.repo, access);
     cleanup = cloned.cleanup;
 
     const files = await readRepoFiles(cloned.dir);
