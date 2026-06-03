@@ -48,7 +48,6 @@ export default function RootLayout({
       lang='en'
       suppressHydrationWarning
       className={cx(
-        fontSans.className,
         fontSans.variable,
         fontMono.variable,
         fontDisplay.variable,

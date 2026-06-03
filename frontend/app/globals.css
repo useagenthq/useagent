@@ -28,6 +28,17 @@
   --font-mono-source: var(--font-mono);
 }
 
+/* Native-first base type. On Apple platforms this renders in SF Pro, on Windows
+ * in Segoe UI, and everywhere else it falls through to the loaded Inter web font
+ * (--font-sans, whose first entry is next/font's Inter) before the generic
+ * sans-serif floor. system-ui/Roboto are deliberately omitted so Android/Linux
+ * land on Inter rather than Roboto/Cantarell. This un-layered `html` rule wins
+ * over Tailwind's preflight and the `@layer base` html block (un-layered beats
+ * layered), so it sets the applied font-family without needing !important. */
+html {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", var(--font-sans), sans-serif;
+}
+
 /* Default-palette bridge for styles/theme.css.
  *
  * The @config JS theme defines AlignUI `colors` families (neutral, blue, red,
@@ -3349,7 +3360,7 @@
 .aurora-blob {
   border-radius: 100%;
   filter: blur(92px);
-  opacity: 0.15;
+  opacity: 0.05;
   will-change: transform;
 }
 .aurora-blob-a {
@@ -3422,12 +3433,12 @@
  *   text-display-sm  ~24px, in-header page titles (runs, settings, knowledge)
  * ========================================================================= */
 @utility font-display {
-  font-family: var(--font-display), var(--font-sans), ui-sans-serif, system-ui, sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", var(--font-display), var(--font-sans), sans-serif;
   font-feature-settings: 'cv11', 'ss01', 'liga', 'calt';
 }
 
 @utility text-display-lg {
-  font-family: var(--font-display), var(--font-sans), ui-sans-serif, system-ui, sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", var(--font-display), var(--font-sans), sans-serif;
   font-feature-settings: 'cv11', 'ss01', 'liga', 'calt';
   font-size: 2.5rem; /* 40px */
   line-height: 1.05;
@@ -3436,7 +3447,7 @@
 }
 
 @utility text-display-md {
-  font-family: var(--font-display), var(--font-sans), ui-sans-serif, system-ui, sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", var(--font-display), var(--font-sans), sans-serif;
   font-feature-settings: 'cv11', 'ss01', 'liga', 'calt';
   font-size: 2rem; /* 32px */
   line-height: 1.1;
@@ -3445,7 +3456,7 @@
 }
 
 @utility text-display-sm {
-  font-family: var(--font-display), var(--font-sans), ui-sans-serif, system-ui, sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", var(--font-display), var(--font-sans), sans-serif;
   font-feature-settings: 'cv11', 'ss01', 'liga', 'calt';
   font-size: 1.5rem; /* 24px */
   line-height: 1.15;
