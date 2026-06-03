@@ -85,6 +85,15 @@ test("threads show a relative-time chip and mark the active thread", () => {
   expect(html).toContain('aria-current="page"'); // the selected thread only
 });
 
+test("each project shows at most six threads until its own disclosure is expanded", () => {
+  const threads = Array.from({ length: 8 }, (_, i) => thread(`r${i}`, `Thread ${i}`));
+  const html = renderTree([group({ threads })]);
+
+  expect(html.match(/data-session-ui="thread-row"/g) ?? []).toHaveLength(6);
+  expect(html).toContain("Show 2 more");
+  expect(html).not.toContain("Thread 6");
+});
+
 test("each real project gets one shared actions-menu slot; the no-project bucket gets none", () => {
   const groups = [
     group({ key: "acme/api", label: "api", fullName: "acme/api" }),

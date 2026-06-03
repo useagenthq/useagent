@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { fetchSidebarRuns } from "@/app/agent/runs/runs-data";
 import { useOrgChanges } from "@/hooks/use-org-changes";
 import { backendFetch } from "@/lib/backend-fetch";
+import { useSession } from "@/lib/auth";
 import { threadRowTimestamp, ThreadRow } from "@/components/session-ui/thread-row";
 import {
   ProjectThreadTree,
@@ -31,11 +32,16 @@ const MAX_PROJECTS = 48;
 const VISIBLE_THREADS = 6;
 const STORAGE_KEY = "useagent.sidebar.project-expanded";
 
+function storageKey(userId: string | null): string {
+  return `${STORAGE_KEY}:${userId ?? "anonymous"}`;
+}
+
 /** Per-project expand overrides, best-effort (private mode / SSR safe). */
-function readExpanded(): Record<string, boolean> {
+function readExpanded(userId: string | null): Record<string, boolean> {
   if (typeof window === "undefined") return {};
   try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
+    window.localStorage.removeItem(STORAGE_KEY);
+    const raw = window.localStorage.getItem(storageKey(userId));
     const parsed = raw ? (JSON.parse(raw) as unknown) : {};
     if (!parsed || typeof parsed !== "object") return {};
     const out: Record<string, boolean> = {};
@@ -48,9 +54,9 @@ function readExpanded(): Record<string, boolean> {
   }
 }
 
-function writeExpanded(value: Record<string, boolean>): void {
+function writeExpanded(userId: string | null, value: Record<string, boolean>): void {
   try {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(value));
+    window.localStorage.setItem(storageKey(userId), JSON.stringify(value));
   } catch {
     /* private mode / storage full - expand state is best-effort */
   }
@@ -71,15 +77,19 @@ function writeExpanded(value: Record<string, boolean>): void {
  */
 export function SidebarProjects() {
   const pathname = usePathname();
+  const { session, loading: sessionLoading } = useSession();
   const [projects, setProjects] = useState<ProjectRepo[]>([]);
   const [runs, setRuns] = useState<SidebarRun[]>([]);
   const [overrides, setOverrides] = useState<Record<string, boolean>>({});
   const [showEmptyProjects, setShowEmptyProjects] = useState(false);
   const [showAllThreads, setShowAllThreads] = useState(false);
 
+  const userId = session?.user.id ?? null;
+
   useEffect(() => {
-    setOverrides(readExpanded());
-  }, []);
+    if (sessionLoading) return;
+    setOverrides(readExpanded(userId));
+  }, [sessionLoading, userId]);
 
   const loadProjects = useCallback(async (signal?: AbortSignal) => {
     try {
@@ -153,7 +163,7 @@ export function SidebarProjects() {
   const toggle = (key: string) => {
     setOverrides((prev) => {
       const next = { ...prev, [key]: !isExpanded(key) };
-      writeExpanded(next);
+      writeExpanded(userId, next);
       return next;
     });
   };

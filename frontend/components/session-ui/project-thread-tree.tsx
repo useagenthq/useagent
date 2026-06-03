@@ -14,6 +14,8 @@ import { RiFolderLine, RiFolderOpenLine } from "@remixicon/react";
 
 import { cx } from "@/utils/cx";
 
+const VISIBLE_THREADS_PER_PROJECT = 6;
+
 /** A single thread row under a project folder. `time` is the pre-formatted
  *  relative-time chip (e.g. "34m ago"); `id` addresses the thread. */
 export interface ProjectThread {
@@ -136,8 +138,13 @@ function ProjectFolder({
   renderMenu?: (group: ProjectGroup, control: ProjectMenuControl) => ReactNode;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
+  const [showAllThreads, setShowAllThreads] = useState(false);
   const Icon = expanded ? RiFolderOpenLine : RiFolderLine;
   const menu = renderMenu?.(group, { isOpen: menuOpen, setOpen: setMenuOpen });
+  const visibleThreads = showAllThreads
+    ? group.threads
+    : group.threads.slice(0, VISIBLE_THREADS_PER_PROJECT);
+  const hiddenThreadCount = group.threads.length - visibleThreads.length;
 
   return (
     <div className="group/proj relative flex w-full flex-col">
@@ -164,22 +171,34 @@ function ProjectFolder({
       >
         <div className="overflow-hidden">
           {group.threads.length > 0 ? (
-            <ul
-              aria-label={`Threads in ${group.label}`}
-              className="relative flex w-full flex-col gap-0.5 pt-0.5"
-            >
-              <TreeConnector count={group.threads.length} />
-              {group.threads.map((thread) => (
-                <li key={thread.id}>
-                  <ThreadItem
-                    thread={thread}
-                    href={threadHref(thread)}
-                    active={Boolean(thread.isSelected)}
-                    tabIndex={expanded ? undefined : -1}
-                  />
-                </li>
-              ))}
-            </ul>
+            <>
+              <ul
+                aria-label={`Threads in ${group.label}`}
+                className="relative flex w-full flex-col gap-0.5 pt-0.5"
+              >
+                <TreeConnector count={visibleThreads.length} />
+                {visibleThreads.map((thread) => (
+                  <li key={thread.id}>
+                    <ThreadItem
+                      thread={thread}
+                      href={threadHref(thread)}
+                      active={Boolean(thread.isSelected)}
+                      tabIndex={expanded ? undefined : -1}
+                    />
+                  </li>
+                ))}
+              </ul>
+              {hiddenThreadCount > 0 || showAllThreads ? (
+                <button
+                  type="button"
+                  tabIndex={expanded ? undefined : -1}
+                  onClick={() => setShowAllThreads((value) => !value)}
+                  className="ml-7 rounded-lg px-2 py-1 text-caption-1-regular text-text-tertiary transition-colors hover:bg-background-secondary-hover hover:text-text-secondary"
+                >
+                  {showAllThreads ? "Show fewer" : `Show ${hiddenThreadCount} more`}
+                </button>
+              ) : null}
+            </>
           ) : null}
         </div>
       </div>
