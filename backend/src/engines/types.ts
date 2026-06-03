@@ -56,6 +56,10 @@ export interface EngineRunContext {
    *  recalled memory. Never echoed as the user's text; the stored `prompt` stays
    *  the user's raw words. Compose via {@link composeTurnPrompt}. */
   turnContext: string;
+  /** Server-authored connected inventory status and run-bound resource facts.
+   *  Injected for every ordinary turn across every engine. It is reference data,
+   *  not authorization: only resolvedResources grants capabilities. */
+  resourceContext?: string;
   /** Pinned-skill instructions for THIS run — the run's selected SKILL.md,
    *  already frame-wrapped as authoritative instructions ("" when no skill). A
    *  skill is per-RUN, so like {@link turnContext} it is injected on EVERY turn

@@ -272,8 +272,8 @@ export const REPOSITORY_TOOLS = [
   {
     name: "github_repositories",
     description:
-      "List GitHub repositories explicitly bound to the current run. This is run authorization, not the connected account inventory; use resource_catalog_search to discover visible connected repositories. " +
-      "Use this only to resolve names within the run's authorized repository set.",
+      "List GitHub repositories explicitly bound to the current run. This is run authorization, not the connected account inventory; an empty result means no repository was selected for this run, not that the organization lacks GitHub access. " +
+      "To discover every repository the organization can access, use resource_catalog_search. Use this tool only to resolve names within the run's authorized repository set.",
     inputSchema: {
       type: "object",
       properties: {

@@ -72,6 +72,16 @@ describe("repository gateway tools", () => {
     }
   });
 
+  test("github_repositories description says an empty run set is not proof of no org access and routes discovery to resource_catalog_search", () => {
+    const tool = REPOSITORY_TOOLS.find((t) => t.name === "github_repositories");
+    expect(tool).toBeDefined();
+    const description = tool!.description;
+    // The truthfulness fix: an empty run-bound set must not read as "no GitHub
+    // access", and the agent is told where the authoritative inventory lives.
+    expect(description).toContain("not that the organization lacks GitHub access");
+    expect(description).toContain("resource_catalog_search");
+  });
+
   test("resolves only exact owner/name or a unique exact repository name", () => {
     expect(resolveRepositoryQuery(repos, "backend")?.full_name).toBe(
       "upstream-org/backend",

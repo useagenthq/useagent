@@ -62,8 +62,19 @@ export function createGithubResourceCatalogProvider(
           cursor: cursor.providerCursor,
           maxPages: 1,
         });
-        if (!listing.configured) return { items: [], nextCursor: null };
-        if (listing.error && listing.repos.length === 0) throw new Error(listing.error);
+        if (!listing.configured) {
+          return { status: "not_connected", items: [], nextCursor: null, complete: true };
+        }
+        if (listing.error && listing.repos.length === 0) {
+          // Surface a listing failure honestly instead of degrading to an empty
+          // page: an empty page would read as "no repositories", the misleading
+          // outcome we want to avoid. Frame the message so a caller never mistakes
+          // a transient/auth listing failure for confirmed absence of access.
+          throw new Error(
+            `connected GitHub inventory listing failed: ${listing.error} ` +
+              "(a listing error, not confirmation the organization has no accessible repositories)",
+          );
+        }
         const matches = listing.repos.filter((repo) => {
           if (!stablePositiveNumericId(repo.external_id)) return false;
           return !query ||
@@ -98,14 +109,21 @@ export function createGithubResourceCatalogProvider(
         }
         if (listing.complete || !listing.nextCursor) {
           cursor = { providerCursor: null, offset: 0 };
-          return { items, nextCursor: null };
+          return {
+            status: items.length > 0 ? "available" : "empty",
+            items,
+            nextCursor: null,
+            complete: true,
+          };
         }
         cursor = { providerCursor: listing.nextCursor, offset: 0 };
       }
 
       return {
+        status: items.length > 0 ? "available" : "empty",
         items,
         nextCursor: encodeCursor(cursor),
+        complete: false,
       };
     },
   };

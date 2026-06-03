@@ -21,8 +21,10 @@ export interface ResourceCatalogItem {
 }
 
 export interface ResourceCatalogPage {
+  readonly status: "available" | "empty" | "not_connected";
   readonly items: readonly ResourceCatalogItem[];
   readonly nextCursor: string | null;
+  readonly complete: boolean;
 }
 
 export function stablePositiveNumericId(value: string | null | undefined): string | null {
