@@ -2,9 +2,9 @@ import { describe, expect, test } from "bun:test";
 
 import {
   groupThreadsByProject,
+  type ProjectRepo,
   runPrimaryRepo,
   UNATTACHED_KEY,
-  type ProjectRepo,
 } from "./sidebar-project-groups";
 import type { SidebarRun } from "./working-project-status";
 
@@ -33,9 +33,18 @@ const repo = (fullName: string, name = fullName.split("/").at(-1) ?? fullName): 
 describe("runPrimaryRepo", () => {
   test("prefers repo_specs, then repos, then the legacy repo", () => {
     expect(
-      runPrimaryRepo(run({ id: "a", repo_specs: [{ repo: "acme/api", branch: null }], repos: ["acme/web"], repo: "acme/legacy" })),
+      runPrimaryRepo(
+        run({
+          id: "a",
+          repo_specs: [{ repo: "acme/api", branch: null }],
+          repos: ["acme/web"],
+          repo: "acme/legacy",
+        }),
+      ),
     ).toBe("acme/api");
-    expect(runPrimaryRepo(run({ id: "b", repos: ["acme/web"], repo: "acme/legacy" }))).toBe("acme/web");
+    expect(runPrimaryRepo(run({ id: "b", repos: ["acme/web"], repo: "acme/legacy" }))).toBe(
+      "acme/web",
+    );
     expect(runPrimaryRepo(run({ id: "c", repo: "acme/legacy" }))).toBe("acme/legacy");
     expect(runPrimaryRepo(run({ id: "d" }))).toBeNull();
   });

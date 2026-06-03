@@ -4,25 +4,25 @@ import { usePathname } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { fetchSidebarRuns } from "@/app/agent/runs/runs-data";
-import { useOrgChanges } from "@/hooks/use-org-changes";
-import { backendFetch } from "@/lib/backend-fetch";
-import { useSession } from "@/lib/auth";
-import { threadRowTimestamp, ThreadRow } from "@/components/session-ui/thread-row";
 import {
+  type ProjectMenuControl,
   ProjectThreadTree,
   type ProjectGroup as TreeProjectGroup,
-  type ProjectMenuControl,
 } from "@/components/session-ui/project-thread-tree";
+import { ThreadRow, threadRowTimestamp } from "@/components/session-ui/thread-row";
+import { useOrgChanges } from "@/hooks/use-org-changes";
+import { useSession } from "@/lib/auth";
+import { backendFetch } from "@/lib/backend-fetch";
 import { relativeTime } from "@/utils/format";
+import { SidebarSectionLabel } from "./sidebar-nav";
 import {
   groupThreadsByProject,
-  runPrimaryRepo,
-  UNATTACHED_KEY,
   type ProjectGroup,
   type ProjectRepo,
+  runPrimaryRepo,
+  UNATTACHED_KEY,
 } from "./sidebar-project-groups";
 import { SidebarProjectMenu } from "./sidebar-project-menu";
-import { SidebarSectionLabel } from "./sidebar-nav";
 import type { SidebarRun } from "./working-project-status";
 
 const POLL_MS = 30_000;

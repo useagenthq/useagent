@@ -1,11 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 
-import {
-  resolveThreadRowClassName,
-  resolveThreadRowPill,
-  threadRowTimestamp,
-} from "./thread-row";
+import { resolveThreadRowClassName, resolveThreadRowPill, threadRowTimestamp } from "./thread-row";
 
 const read = (path: string) => readFileSync(new URL(path, import.meta.url), "utf8");
 
