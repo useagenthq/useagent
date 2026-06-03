@@ -51,12 +51,16 @@ export const TASK_TOOLS = [
   {
     name: "task_list",
     description:
-      "List this organization's durable tasks. By default lists this run's repository (project); pass " +
-      "`project` to list another, or omit the default by passing an empty `project`. Optionally filter " +
-      "by `status`.",
+      "List this organization's durable tasks. By default lists this run's project; pass `project` " +
+      "to list another, pass an empty `project` for unfiled tasks, or set `all_projects` true for an " +
+      "explicit bounded cross-project list. Optionally filter by `status`.",
     inputSchema: {
       type: "object",
       properties: {
+        all_projects: {
+          type: "boolean",
+          description: "Set true to list across every project. Defaults to this run's project.",
+        },
         project: {
           type: "string",
           description:
@@ -67,6 +71,12 @@ export const TASK_TOOLS = [
           type: "string",
           enum: [...TASK_STATUSES],
           description: "Optional status filter.",
+        },
+        limit: {
+          type: "integer",
+          minimum: 1,
+          maximum: 100,
+          description: "Maximum tasks to return. Defaults to 50.",
         },
       },
       additionalProperties: false,
@@ -105,6 +115,7 @@ function error(text: string): ToolCallResult {
 function summarizeTask(t: TaskRecord): Record<string, unknown> {
   return {
     id: t.id,
+    projectId: t.projectId,
     project: t.projectKey,
     title: t.title,
     body: t.body,
@@ -115,9 +126,11 @@ function summarizeTask(t: TaskRecord): Record<string, unknown> {
 
 /** The run's primary repository ("owner/name"), or null - the default project a
  *  mid-run task is filed under when the agent passes no explicit `project`. */
-async function runPrimaryProject(claims: ToolTokenClaims): Promise<string | null> {
+async function runPrimaryProject(
+  claims: ToolTokenClaims,
+): Promise<{ id: string | null; key: string | null }> {
   const run = await getRunForOrg(claims.orgId, claims.runId);
-  return run?.repo ?? null;
+  return { id: run?.projectId ?? null, key: run?.repo ?? null };
 }
 
 /** Resolve the effective project: an explicit non-empty arg wins; an explicit
@@ -152,9 +165,11 @@ async function createTaskTool(
     return error(`task_create: status must be one of: ${TASK_STATUSES.join(", ")}.`);
   }
 
-  const { value: project } = resolveProject(args.project, await runPrimaryProject(claims));
+  const runProject = await runPrimaryProject(claims);
+  const { value: project, explicit } = resolveProject(args.project, runProject.key);
   const created = await createTask({
     orgId: claims.orgId,
+    projectId: explicit ? null : runProject.id,
     projectKey: project,
     title,
     body: typeof args.body === "string" ? args.body : null,
@@ -184,22 +199,30 @@ async function listTasksTool(
   if (statusFilter === null) {
     return error(`task_list: status must be one of: ${TASK_STATUSES.join(", ")}.`);
   }
-  const { value: project, explicit } = resolveProject(
-    args.project,
-    await runPrimaryProject(claims),
-  );
-  const rows = await listTasksForOrg(
-    claims.orgId,
-    explicit ? project : (project ?? undefined),
-  );
+  if (args.all_projects !== undefined && typeof args.all_projects !== "boolean") {
+    return error("task_list: `all_projects` must be a boolean.");
+  }
+  const rawLimit = typeof args.limit === "number" ? Math.trunc(args.limit) : 50;
+  if (rawLimit < 1 || rawLimit > 100) {
+    return error("task_list: `limit` must be between 1 and 100.");
+  }
+  const runProject = await runPrimaryProject(claims);
+  const { value: project, explicit } = resolveProject(args.project, runProject.key);
+  const selection =
+    args.all_projects === true
+      ? ({ scope: "all" } as const)
+      : explicit
+        ? ({ projectKey: project } as const)
+        : runProject.id
+          ? ({ projectId: runProject.id } as const)
+          : ({ projectKey: null } as const);
+  const rows = await listTasksForOrg(claims.orgId, selection, rawLimit);
   const filtered = statusFilter ? rows.filter((t) => t.status === statusFilter) : rows;
 
   const tasks = filtered.map(summarizeTask);
-  const header = project
-    ? `Tasks for project ${project}`
-    : args.project !== undefined
-      ? "Unfiled tasks"
-      : "Tasks (all projects)";
+  let header = "Unfiled tasks";
+  if (args.all_projects === true) header = "Tasks (all projects)";
+  else if (project) header = `Tasks for project ${project}`;
   const lines = filtered.length
     ? filtered.map((t) => `- [${t.status}] ${t.title} (id ${t.id})`).join("\n")
     : "(no tasks)";

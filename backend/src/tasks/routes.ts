@@ -18,6 +18,7 @@ function toTask(t: TaskRecord) {
   return {
     id: t.id,
     org_id: t.orgId,
+    project_id: t.projectId,
     // The repo full_name ("owner/name") or free label this task is filed under.
     project_key: t.projectKey,
     title: t.title,
@@ -37,11 +38,21 @@ function isTaskStatus(v: unknown): v is TaskStatus {
   return typeof v === "string" && (TASK_STATUSES as readonly string[]).includes(v);
 }
 
-// List tasks for the active org. `?project=<key>` scopes to one project (an
-// empty value means the unfiled column); omit it to list every task in the org.
+// List tasks for the active org. `?project=<key>` or `?project_id=<uuid>` scopes
+// to one project; the default is unfiled, and `?scope=all` is the explicit
+// bounded cross-project read.
 tasksRoutes.get("/", async (c) => {
   const project = c.req.query("project");
-  const rows = await listTasksForOrg(c.get("orgId"), project);
+  const projectId = c.req.query("project_id");
+  const rawLimit = Number(c.req.query("limit") ?? 100);
+  const limit = Number.isFinite(rawLimit) ? Math.trunc(rawLimit) : 100;
+  const selection =
+    c.req.query("scope") === "all"
+      ? ({ scope: "all" } as const)
+      : projectId
+        ? ({ projectId } as const)
+        : ({ projectKey: project ?? null } as const);
+  const rows = await listTasksForOrg(c.get("orgId"), selection, limit);
   return c.json({ tasks: rows.map(toTask) });
 });
 
@@ -65,15 +76,24 @@ tasksRoutes.post("/", async (c) => {
     status = body.status;
   }
 
-  const row = await createTask({
-    orgId: c.get("orgId"),
-    projectKey: typeof body.project_key === "string" ? body.project_key : null,
-    title,
-    body: typeof body.body === "string" ? body.body : null,
-    status,
-    priority: typeof body.priority === "number" ? body.priority : undefined,
-    createdByUserId: c.get("userId") ?? null,
-  });
+  let row: TaskRecord;
+  try {
+    row = await createTask({
+      orgId: c.get("orgId"),
+      projectId: typeof body.project_id === "string" ? body.project_id : null,
+      projectKey: typeof body.project_key === "string" ? body.project_key : null,
+      title,
+      body: typeof body.body === "string" ? body.body : null,
+      status,
+      priority: typeof body.priority === "number" ? body.priority : undefined,
+      createdByUserId: c.get("userId") ?? null,
+    });
+  } catch (cause) {
+    if (cause instanceof Error && cause.message === "project not found") {
+      return c.json({ error: cause.message }, 404);
+    }
+    throw cause;
+  }
   return c.json(toTask(row), 201);
 });
 

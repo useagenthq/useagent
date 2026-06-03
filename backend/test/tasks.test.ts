@@ -29,13 +29,23 @@ describe("tasks CRUD (org-scoped) + project filter", () => {
     expect(api.status).toBe(201);
     expect(api.body.status).toBe("in_progress");
 
-    // Org A sees both; org B sees neither (org-scoped).
-    const listA = await json<{ tasks: any[] }>("/api/tasks", { cookies: a.cookies });
+    // Cross-project listing is explicit; the default scope is unfiled only.
+    const defaultScope = await json<{ tasks: any[] }>("/api/tasks", {
+      cookies: a.cookies,
+    });
+    expect(defaultScope.body.tasks).toHaveLength(0);
+
+    // Org A sees both when explicitly requesting all; org B sees neither.
+    const listA = await json<{ tasks: any[] }>("/api/tasks?scope=all", { cookies: a.cookies });
     const idsA = listA.body.tasks.map((t) => t.id);
     expect(idsA).toContain(web.body.id);
     expect(idsA).toContain(api.body.id);
+    const bounded = await json<{ tasks: any[] }>("/api/tasks?scope=all&limit=1", {
+      cookies: a.cookies,
+    });
+    expect(bounded.body.tasks).toHaveLength(1);
 
-    const listB = await json<{ tasks: any[] }>("/api/tasks", { cookies: b.cookies });
+    const listB = await json<{ tasks: any[] }>("/api/tasks?scope=all", { cookies: b.cookies });
     const idsB = listB.body.tasks.map((t) => t.id);
     expect(idsB).not.toContain(web.body.id);
     expect(idsB).not.toContain(api.body.id);

@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { eq } from "drizzle-orm";
 import "../../index"; // run committed migrations before DB-backed gateway assertions
 import { db } from "../../db/client";
-import { providerEvents, runs, tasks } from "../../db/schema";
+import { projects, providerEvents, runs, tasks } from "../../db/schema";
 import { createRun, setRunStatus } from "../../runs/repo";
 import { createTask, listTasksForOrg } from "../../tasks/repo";
 import { executeTaskTool, TASK_TOOLS } from "./task-tools";
@@ -17,6 +17,7 @@ afterEach(async () => {
     await db.delete(providerEvents).where(eq(providerEvents.runId, runId));
     await db.delete(runs).where(eq(runs.id, runId));
   }
+  for (const orgId of createdOrgs) await db.delete(projects).where(eq(projects.orgId, orgId));
   createdRuns.clear();
   createdOrgs.clear();
 });
@@ -80,10 +81,13 @@ describe("durable task gateway", () => {
     expect(task.status).toBe("todo");
 
     // Persisted under this org, not visible to another org.
-    const mine = await listTasksForOrg(claims.orgId);
+    const mine = await listTasksForOrg(claims.orgId, { scope: "all" });
     expect(mine.map((t) => t.id)).toContain(task.id);
     expect(mine[0]?.sourceRunId).toBe(claims.runId);
-    const others = await listTasksForOrg(otherOrgId);
+    expect(mine[0]?.projectId).toBeTruthy();
+    const [run] = await db.select().from(runs).where(eq(runs.id, claims.runId));
+    expect(run?.projectId).toBe(mine[0]?.projectId);
+    const others = await listTasksForOrg(otherOrgId, { scope: "all" });
     expect(others).toHaveLength(0);
   });
 
@@ -98,6 +102,20 @@ describe("durable task gateway", () => {
     const titles = rows.map((t) => t.title);
     expect(titles).toContain("Mine");
     expect(titles).not.toContain("Theirs");
+  });
+
+  test("task_list requires an explicit all_projects scope for a cross-project list", async () => {
+    const { claims, repo } = await fixture();
+    await createTask({ orgId: claims.orgId, projectKey: repo, title: "Run project" });
+    await createTask({ orgId: claims.orgId, projectKey: "other/repo", title: "Other" });
+
+    const scoped = await executeTaskTool(claims, "task_list", {});
+    expect((scoped.structuredContent?.tasks as Array<{ title: string }>).map((t) => t.title))
+      .toEqual(["Run project"]);
+
+    const all = await executeTaskTool(claims, "task_list", { all_projects: true });
+    expect((all.structuredContent?.tasks as Array<{ title: string }>).map((t) => t.title))
+      .toEqual(expect.arrayContaining(["Run project", "Other"]));
   });
 
   test("task_list with an explicit empty project returns only unfiled tasks", async () => {

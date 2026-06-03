@@ -7,6 +7,7 @@ import {
   timestamp,
   uuid,
 } from "drizzle-orm/pg-core";
+import { projects } from "./projects";
 
 // ---------------------------------------------------------------------------
 // Tasks - a durable, org-scoped native task manager (Tier-2). A task outlives
@@ -25,6 +26,7 @@ export const tasks = pgTable(
   {
     id: uuid("id").primaryKey().defaultRandom(),
     orgId: text("org_id").notNull(),
+    projectId: uuid("project_id").references(() => projects.id, { onDelete: "set null" }),
     // The project this task belongs to - a repo full_name ("owner/name") or a
     // free label. Nullable: an unfiled task has no project. Indexed with org_id
     // so the board query for one project is a single covered lookup.
@@ -46,6 +48,7 @@ export const tasks = pgTable(
   },
   (t) => [
     index("idx_tasks_org").on(t.orgId),
+    index("idx_tasks_org_project_id").on(t.orgId, t.projectId),
     index("idx_tasks_org_project").on(t.orgId, t.projectKey),
   ],
 );

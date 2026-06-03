@@ -57,6 +57,7 @@ import { skillImportRoutes } from "./skills/import-routes";
 import { startSkillsResync } from "./skills/resync";
 import { skillsRoutes } from "./skills/routes";
 import { tasksRoutes } from "./tasks/routes";
+import { projectsRoutes } from "./projects/routes";
 import { slackEnabled, slackRoutes, startSlackOutbox, syncSlackWorkspaceBindings } from "./slack";
 import { enforceSingleBackend } from "./db/single-backend";
 import { ensureWarmPool, warmPoolSize } from "./sandboxes/warm-pool";
@@ -320,6 +321,7 @@ app.route("/api/skills", skillsRoutes);
 // full_name or free label) and rendered as a Kanban board. Agents create/update
 // tasks mid-run through the knowledge gateway; they outlive the run.
 app.route("/api/tasks", tasksRoutes);
+app.route("/api/projects", projectsRoutes);
 app.route("/api/automations", schedulesRoutes);
 // Backward-compatible alias for sessions and frontend bundles created before
 // the product surface was renamed to Automations.

@@ -17,7 +17,9 @@ import {
   pgTable,
   text,
   timestamp,
+  uuid,
 } from "drizzle-orm/pg-core";
+import { projects } from "./projects";
 
 // ---------------------------------------------------------------------------
 // Shared domain types — the run/step wire enums live in the agent-client wire
@@ -39,6 +41,9 @@ export const runs = pgTable(
   {
     id: text("id").primaryKey(),
     orgId: text("org_id"),
+    // Authoritative project identity. Null is a supported independent thread.
+    // Repo strings below remain compatibility and clone metadata.
+    projectId: uuid("project_id").references(() => projects.id, { onDelete: "set null" }),
     userId: text("user_id"),
     prompt: text("prompt").notNull(),
     model: text("model").notNull(),
@@ -129,6 +134,7 @@ export const runs = pgTable(
   (t) => [
     index("idx_runs_created").on(t.createdAt),
     index("idx_runs_org").on(t.orgId),
+    index("idx_runs_org_project_created").on(t.orgId, t.projectId, t.createdAt, t.id),
     index("idx_runs_thread").on(t.threadId),
     index("idx_runs_org_created").on(t.orgId, t.createdAt, t.id),
     index("idx_runs_org_settled").on(t.orgId, t.settledAt, t.id),
