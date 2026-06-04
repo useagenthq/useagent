@@ -32,6 +32,9 @@ const PUBLIC_API_EXACT = new Set([
   "/api/config",
   "/api/internal/artifact-changes",
   "/api/internal/automation",
+  // Child-session lane bridge - authenticates its own short-lived run
+  // capability exactly like /api/internal/automation.
+  "/api/internal/child-sessions",
   "/api/internal/gateway-approval/consume",
   // Approval-request lane bridge - authenticates its own short-lived run
   // capability exactly like /api/internal/automation.
