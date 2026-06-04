@@ -14,15 +14,15 @@ import { cx, sortCx } from "@/utils/cx";
  *   State    = Default | Hover | Active | Disabled        (CSS pseudo)
  *   OnlyIcon = false   | true
  *
- * Sizing (1:1 with Figma):
+ * Current sizing:
  *
  *                       Medium                    Small                     Xs
- *   container          h=36, p=8,   r=10         h=32, px=8 py=6, r=8      h=24, px=8, r=4
+ *   container          h=32, px=10 py=6, r=10    h=28, px=8 py=4, r=8      h=24, px=8, r=4
  *   gap                 2px                       2px                      1.33px→1
  *   icon                20×20                     18×18                    14×14
  *   label wrapper       px=4                      px=2                     px=2
- *   text style          Body 1/Medium             Body 1/Medium            Caption 1/Semibold
- *   icon-only square    36×36 (content-derived)   32×32 (forced size)      24×24 (forced size)
+ *   text style          Body 2/Medium             Body 2/Medium            Caption 1/Semibold
+ *   icon-only square    32×32 (forced size)       32×32 (forced size)      24×24 (forced size)
  *
  * `xs` is the smallest tier — first needed for the calendar template's
  * event-details modal ("Join" / edit-icon buttons), which
@@ -80,21 +80,21 @@ const styles = sortCx({
     "disabled:cursor-not-allowed aria-disabled:cursor-not-allowed",
   ].join(" "),
 
-  // Base shape per size (used when label is present OR medium icon-only).
+  // Base shape per size when a label is present.
   size: {
-    medium: "h-9 rounded-2lg p-2 text-body-medium",
-    small:  "h-8 rounded-lg px-2 py-1.5 text-body-medium",
+    medium: "h-8 rounded-2lg px-2.5 py-1.5 text-body-2-medium",
+    small:  "h-7 rounded-lg px-2 py-1 text-body-2-medium",
     xs:     "h-6 rounded-sm px-2 text-caption-1-semibold",
   },
 
   // Icon-only override:
-  //   Medium → keep p-2; w expands from content (8+20+8 = 36) → square.
+  //   Medium → force 32×32 after the density pass reduced its base height.
   //   Small  → Figma forces 32×32 even though 8+18+8=34, so we hard-set size-8
   //            and zero the padding; the inner flex centers the 18px icon.
   //   Xs     → forces 24×24, content-centered — used for the calendar
   //            template's edit-icon buttons (timezone/participants/reminder).
   iconOnlySize: {
-    medium: "",                // base size already produces 36×36 with a 20px icon
+    medium: "size-8 p-0",      // hard 32×32, content-centered
     small:  "size-8 p-0",      // hard 32×32, content-centered
     xs:     "size-6 p-0",      // hard 24×24, content-centered
   },
