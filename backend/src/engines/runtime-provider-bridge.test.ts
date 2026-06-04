@@ -95,9 +95,11 @@ describe("T3 provider bridge", () => {
 
       expect(result.exitCode).toBe(0);
       const settings = JSON.parse(await readFile(settingsPath, "utf8")) as {
+        enableAgentBrowserAccess: boolean;
         enableProviderUpdateChecks: boolean;
         providers: { claudeAgent: { binaryPath: string } };
       };
+      expect(settings.enableAgentBrowserAccess).toBe(false);
       expect(settings.enableProviderUpdateChecks).toBe(false);
       expect(settings.providers.claudeAgent.binaryPath).toBe(
         join(home, ".skynet/t3/skynet-bin/claude"),
