@@ -11,6 +11,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/base/buttons/button";
 import { InputBase } from "@/components/base/input/input";
 import { BackendUnreachable } from "@/components/shared/backend-unreachable";
+import { visibleDescription } from "@/components/customize/list-row";
 import { cx } from "@/utils/cx";
 import { fetchSkills } from "@/app/skills/skills-api";
 import { usageCaption, type Skill } from "@/app/skills/skills-data";
@@ -50,31 +51,35 @@ function PlaybookRow({
   onOpen: (playbook: Skill) => void;
   onRun: (playbook: Skill) => void;
 }) {
+  // Single-line row: title (+ a non-redundant description inline), the real meta
+  // right-aligned and muted, one action. The common "Playbook: <title>"
+  // description restates the title, so it is suppressed.
+  const description = visibleDescription(playbook.name, playbook.description);
   return (
-    <li className="flex items-center gap-3 px-4 py-3 transition-colors hover:bg-background-primary-hover">
+    <li className="flex items-center gap-3 px-4 py-2.5 transition-colors hover:bg-background-primary-hover">
       <button
         type="button"
         onClick={() => onOpen(playbook)}
-        className="flex min-w-0 flex-1 items-start gap-3 rounded-lg text-left outline-none focus-visible:ring-2 focus-visible:ring-border-focus-ring"
+        className="flex min-w-0 flex-1 items-center gap-3 rounded-lg text-left outline-none focus-visible:ring-2 focus-visible:ring-border-focus-ring"
       >
         <RiBookMarkedLine
           aria-hidden
-          className="mt-0.5 size-5 shrink-0 text-foreground-icon-secondary"
+          className="size-4 shrink-0 text-foreground-icon-secondary"
         />
-        <span className="min-w-0 flex-1">
-          <span className="block truncate text-body-medium text-text-primary">
+        <span className="flex min-w-0 items-baseline gap-2">
+          <span className="truncate text-body-medium text-text-primary">
             {playbook.name}
           </span>
-          {playbook.description && (
-            <span className="mt-0.5 block truncate text-caption-1-regular text-text-secondary">
-              {playbook.description}
+          {description && (
+            <span className="truncate text-caption-1-regular text-text-secondary">
+              {description}
             </span>
           )}
-          <span className="mt-0.5 block truncate text-caption-1-regular tabular-nums text-text-tertiary">
-            {playbookMeta(playbook)}
-          </span>
         </span>
       </button>
+      <span className="hidden shrink-0 text-caption-1-regular tabular-nums text-text-tertiary sm:block">
+        {playbookMeta(playbook)}
+      </span>
       <Button
         variant="ghost"
         size="xs"

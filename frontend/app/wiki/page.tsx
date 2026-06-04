@@ -41,7 +41,7 @@ export default async function WikiPage() {
               <RiBookOpenLine className="size-5 text-text-secondary" aria-hidden />
             </span>
             <div>
-              <h1 className="text-display-md text-text-primary">Wiki</h1>
+              <h1 className="text-display-sm text-text-primary">Wiki</h1>
               <p className="mt-0.5 text-body-2-regular text-text-tertiary">
                 Published knowledge documents · your organization
               </p>

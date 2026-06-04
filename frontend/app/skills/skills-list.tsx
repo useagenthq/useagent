@@ -5,6 +5,7 @@ import { RiCheckLine, RiPlayMiniLine } from "@remixicon/react";
 
 import { Chip } from "@/components/base/badges/chip";
 import { Button } from "@/components/base/buttons/button";
+import { visibleDescription } from "@/components/customize/list-row";
 import { cx } from "@/utils/cx";
 import { sourceRepoLabel, type Skill, type SkillGroup } from "./skills-data";
 
@@ -46,7 +47,9 @@ const SkillRow = memo(function SkillRow({
   const primary = group.variants[0];
   const multi = group.variants.length > 1;
   const uses = groupUsageCount(group);
-  const description = primary.description.trim();
+  // Drop a description that only restates the skill name (common in imported
+  // SKILL.md frontmatter) so the caption carries source/real detail, not an echo.
+  const description = visibleDescription(group.name, primary.description) ?? "";
   // One caption line, always present, truncated - stable two-line rows. For a
   // grouped row the source chips carry the repos, so the caption is just the
   // description; a single imported skill leads with its "owner/repo".
@@ -83,7 +86,7 @@ const SkillRow = memo(function SkillRow({
         </p>
       </div>
       <span className="hidden shrink-0 text-caption-1-regular text-text-tertiary sm:block">
-        {uses > 0 ? `Used ${uses} ${uses === 1 ? "time" : "times"}` : "Not used yet"}
+        {uses > 0 ? `Used ${uses} ${uses === 1 ? "time" : "times"}` : "Unused"}
       </span>
       {multi ? (
         <Button

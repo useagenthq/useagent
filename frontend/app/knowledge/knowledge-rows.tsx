@@ -13,6 +13,7 @@ import {
 
 import { Chip } from "@/components/base/badges/chip";
 import { Button } from "@/components/base/buttons/button";
+import { REVEAL_ON_HOVER } from "@/components/customize/list-row";
 import { cx } from "@/utils/cx";
 import { kindChipColor, type KnowledgeItem } from "./knowledge-data";
 
@@ -49,7 +50,7 @@ export function KnowledgeRow({
 
   return (
     <li>
-      <div className="flex items-start gap-2 px-4 py-3 transition-colors hover:bg-background-secondary-default">
+      <div className="group/customize flex items-start gap-2 px-4 py-3 transition-colors hover:bg-background-secondary-default">
         <button
           type="button"
           aria-expanded={open}
@@ -105,7 +106,7 @@ export function KnowledgeRow({
             </span>
           )}
         </button>
-        <div className="flex shrink-0 items-center gap-0.5">
+        <div className={cx("flex shrink-0 items-center gap-0.5", REVEAL_ON_HOVER)}>
           <Button
             iconOnly
             variant="ghost"

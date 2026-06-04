@@ -14,6 +14,7 @@ import {
   SegmentedControlItem,
 } from "@/components/base/segmented-control/segmented-control";
 import { BackendUnreachable } from "@/components/shared/backend-unreachable";
+import { REVEAL_ON_HOVER } from "@/components/customize/list-row";
 import { cx } from "@/utils/cx";
 import { relTime } from "@/app/settings/relative-time";
 import { deleteSecret, fetchSecrets, putSecret } from "./secrets-api";
@@ -221,7 +222,7 @@ export function SecretsManager({
           {secrets.map((s) => (
             <div
               key={s.name}
-              className="flex items-center gap-3 border-b border-separator-border py-2.5 last:border-b-0"
+              className="group/customize flex items-center gap-3 border-b border-separator-border py-2.5 last:border-b-0"
             >
               <RiKey2Line aria-hidden className="size-4 shrink-0 text-foreground-icon-tertiary" />
               <span className="min-w-0 flex-1 truncate font-mono text-body-2-medium text-text-primary">
@@ -263,13 +264,15 @@ export function SecretsManager({
                   </Button>
                 </div>
               ) : (
-                <IconButton
-                  type="button"
-                  icon={RiDeleteBinLine}
-                  size="small"
-                  aria-label={`Delete ${s.name}`}
-                  onClick={() => setConfirming(s.name)}
-                />
+                <span className={cx("inline-flex shrink-0", REVEAL_ON_HOVER)}>
+                  <IconButton
+                    type="button"
+                    icon={RiDeleteBinLine}
+                    size="small"
+                    aria-label={`Delete ${s.name}`}
+                    onClick={() => setConfirming(s.name)}
+                  />
+                </span>
               )}
             </div>
           ))}

@@ -13,6 +13,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Avatar } from '@/components/base/avatar/avatar';
 import { Chip } from '@/components/base/badges/chip';
 import { BackendUnreachable } from '@/components/shared/backend-unreachable';
+import { REVEAL_ON_HOVER } from '@/components/customize/list-row';
 import { relativeTime } from '@/utils/format';
 import { fetchPulls, type PullRequestItem, type PullsResult } from './review-api';
 
@@ -42,7 +43,7 @@ function initials(login: string): string {
  *  #num, title, author, state badge, relative time). */
 function PrRow({ pr }: { pr: PullRequestItem }) {
   return (
-    <div className='flex flex-col gap-2 rounded-2xl border border-border-button-default bg-background-primary-default px-4 py-3.5 transition-colors hover:bg-background-secondary-default'>
+    <div className='group/customize flex flex-col gap-2 rounded-2xl border border-border-button-default bg-background-primary-default px-4 py-3.5 transition-colors hover:bg-background-secondary-default'>
       <div className='flex items-center justify-between gap-2'>
         <span className='[font-family:var(--font-mono)] text-caption-1-medium text-text-tertiary'>
           {pr.repo} #{pr.number}
@@ -84,7 +85,7 @@ function PrRow({ pr }: { pr: PullRequestItem }) {
           )}
         </div>
 
-        <div className='flex shrink-0 items-center gap-1'>
+        <div className={`flex shrink-0 items-center gap-1 ${REVEAL_ON_HOVER}`}>
           <Link
             href={discussHref(pr)}
             className='inline-flex items-center gap-1 rounded-lg px-2 py-1 text-caption-1-medium text-text-secondary outline-none transition-colors hover:bg-background-secondary-default hover:text-text-primary focus-visible:ring-2 focus-visible:ring-border-focus-ring'
