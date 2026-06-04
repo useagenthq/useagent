@@ -1,6 +1,6 @@
 #cloud-config
-# Provisions a fresh Ubuntu 24.04 host with everything the Skynet core stack
-# needs: bun, node, docker, postgres, caddy, plus a throwaway 'skynet' database.
+# Provisions a fresh Ubuntu 24.04 host with everything the useAgent core stack
+# needs: bun, node, docker, postgres, caddy, plus a throwaway 'useagent' database.
 # App bring-up (source + services) is a separate step - see deploy-app.sh.
 package_update: true
 packages:
@@ -51,13 +51,20 @@ write_files:
 
       systemctl enable --now docker postgresql
 
-      # Throwaway database, isolated from any other Skynet (single-backend rule).
-      sudo -u postgres psql -c "CREATE ROLE skynet LOGIN PASSWORD '${postgres_password}';" || true
-      sudo -u postgres psql -c "CREATE DATABASE skynet OWNER skynet;" || true
+      # Throwaway database, isolated from every other useAgent backend.
+      sudo -u postgres psql -tAc "select 1 from pg_roles where rolname='useagent'" | grep -qx 1 ||
+        sudo -u postgres createuser --login --no-createdb --no-createrole --no-superuser useagent
+      sudo -u postgres psql -v ON_ERROR_STOP=1 -c "ALTER ROLE useagent PASSWORD '${postgres_password}'"
+      sudo -u postgres psql -tAc "select 1 from pg_roles where rolname='useagent_gateway'" | grep -qx 1 ||
+        sudo -u postgres createuser --login --no-createdb --no-createrole --no-superuser useagent_gateway
+      sudo -u postgres psql -v ON_ERROR_STOP=1 -c "ALTER ROLE useagent_gateway PASSWORD '${gateway_postgres_password}'"
+      sudo -u postgres psql -tAc "select 1 from pg_database where datname='useagent'" | grep -qx 1 ||
+        sudo -u postgres createdb --owner=useagent useagent
+      sudo -u postgres psql -v ON_ERROR_STOP=1 -d useagent -c "GRANT CONNECT ON DATABASE useagent TO useagent_gateway; GRANT USAGE ON SCHEMA public TO useagent_gateway; REVOKE CREATE ON SCHEMA public FROM useagent_gateway;"
       # pgvector's 'vector' extension is not "trusted", so a non-superuser role
       # cannot CREATE EXTENSION. Pre-create it as superuser; the app's migration
       # then no-ops on "IF NOT EXISTS".
-      sudo -u postgres psql -d skynet -c "CREATE EXTENSION IF NOT EXISTS vector;" || true
+      sudo -u postgres psql -v ON_ERROR_STOP=1 -d useagent -c "CREATE EXTENSION IF NOT EXISTS vector;"
 
       # App service account + install root.
       id skynet >/dev/null 2>&1 || useradd --system --create-home --home-dir /opt/skynet --shell /bin/bash skynet

@@ -16,7 +16,7 @@ const BE = process.env.BE_ORIGIN ?? "http://localhost:3501";
 const ORIGIN = "http://localhost:3200"; // dev org (anonymous)
 const ENGINE = process.env.E2E_ENGINE ?? "claude";
 const MODEL = process.env.E2E_MODEL ?? (ENGINE === "codex" ? DEFAULT_CODEX_MODEL : DEFAULT_CLAUDE_MODEL);
-const DB = process.env.DATABASE_URL ?? "postgres://postgres@localhost:5432/skynet";
+const DB = process.env.DATABASE_URL ?? "postgres://postgres@localhost:5432/useagent";
 // CLIENT-side poll budget, NOT the backend timeout. The cold-ACP fix is the committed
 // backend default (acp-server resolveAcpTurnTimeoutMs: ACP_TURN_TIMEOUT_MS -> ENGINE_TIMEOUT_MS
 // -> 360s); this just polls at least that long so the test doesn't give up early.

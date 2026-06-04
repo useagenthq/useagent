@@ -8,7 +8,7 @@
  *
  *   bun run test/e2e/thread-stream-proof.ts
  *
- * Isolation + safety (never the shared `skynet` DB or the shared :3401/:3501 servers):
+ * Isolation + safety (never the shared `useagent` DB or the shared :3401/:3501 servers):
  *   - PREFLIGHT: both ports must be FREE before any DB mutation or spawn; if either
  *     is occupied the run aborts WITHOUT killing anything (it never assumes the PID
  *     is ours - Codex E2E hardening).

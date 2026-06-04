@@ -179,7 +179,7 @@ Notes:
 - `bun run dev` runs the backend in watch mode on `:3201`.
 - `bun run start` runs the backend once, without watch mode.
 - `bun run gateway` starts the sandbox gateway on `:3202`.
-- `bun run test` prepares `skynet_test` and then runs the backend test suite; it requires a reachable PostgreSQL test database.
+- `bun run test` prepares `useagent_test` and then runs the backend test suite; it requires a reachable PostgreSQL test database.
 - `bun run e2e:real` and `bun run soak` are the manual runtime checks.
 
 ### Local Environment

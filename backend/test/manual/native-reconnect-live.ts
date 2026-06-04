@@ -14,7 +14,7 @@
  */
 import postgres from "postgres";
 
-const DB = "skynet_nativekill";
+const DB = "useagent_nativekill";
 const PORT = 3507;
 const ADMIN_URL = process.env.TEST_ADMIN_URL ?? "postgres://postgres@localhost:5432/postgres";
 

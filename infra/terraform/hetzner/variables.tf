@@ -49,5 +49,11 @@ variable "allowed_ssh_cidrs" {
 variable "postgres_password" {
   type        = string
   sensitive   = true
-  description = "Password for the local 'skynet' Postgres role the stack connects with."
+  description = "Password for the local 'useagent' Postgres owner role."
+}
+
+variable "gateway_postgres_password" {
+  type        = string
+  sensitive   = true
+  description = "Password for the local restricted 'useagent_gateway' Postgres role."
 }

@@ -86,7 +86,7 @@ export async function deleteById(
  * Orphan sweep (lead-authorized). Deletes skynet-run sandboxes that are safe to
  * reap, VERIFYING each deletion, and NEVER touching a box that belongs to live
  * work. A sandbox is deleted iff:
- *   (1) ORPHAN — its `skynet-run` label runId is NOT a row in the shared `skynet`
+ *   (1) ORPHAN — its `skynet-run` label runId is NOT a row in the shared `useagent`
  *       runs table (a run whose sandbox outlived its (throwaway) DB), OR
  *   (2) STOPPED — its state is stopped/archived/paused (idle leftover).
  * `keepIds` (e.g. ids an agent reports active) are always spared. `dryRun` reports
@@ -101,7 +101,7 @@ export async function sweepOrphans(opts: { dryRun?: boolean; keepIds?: Set<strin
   failed: { id: string; error: string }[];
 }> {
   const dbUrl = process.env.DATABASE_URL;
-  if (!dbUrl) throw new Error("DATABASE_URL (shared skynet) not set — cannot classify orphans");
+  if (!dbUrl) throw new Error("DATABASE_URL (shared useagent) not set — cannot classify orphans");
   const sql = postgres(dbUrl, { max: 1 });
   let existing: Set<string>;
   try {

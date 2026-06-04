@@ -4,11 +4,11 @@
  * + documents), child tables first where there's no FK cascade. Never psql.
  * Idempotent.
  *
- * Run:  DATABASE_URL=postgres://postgres@localhost:5432/skynet bun uisweep/cleanup.ts
+ * Run:  DATABASE_URL=postgres://postgres@localhost:5432/useagent bun uisweep/cleanup.ts
  */
 import postgres from "postgres";
 
-const DB_URL = process.env.DATABASE_URL ?? "postgres://postgres@localhost:5432/skynet";
+const DB_URL = process.env.DATABASE_URL ?? "postgres://postgres@localhost:5432/useagent";
 const sql = postgres(DB_URL, { max: 2 });
 
 try {

@@ -22,7 +22,7 @@ import postgres from "postgres";
 const runPrefix = process.argv[2] ?? "33fbc260";
 const outPath = process.argv[3] ?? "../frontend/components/chat/__fixtures__/opencode-heavy.json";
 
-const sql = postgres(process.env.DATABASE_URL ?? "postgres://postgres@localhost:5432/skynet", { max: 1 });
+const sql = postgres(process.env.DATABASE_URL ?? "postgres://postgres@localhost:5432/useagent", { max: 1 });
 
 interface Row {
   seq: number;
