@@ -151,10 +151,16 @@ function MachineSection({ machine }: { machine: MachineStats | null }) {
   const sandboxes = machine?.sandboxes ?? null;
   return (
     <div className="flex flex-col">
-      <div className="flex items-center justify-between gap-3 py-1">
-        <span className="min-w-0 truncate text-body-medium text-text-secondary">
-          Machine{machine ? ` · ${machine.snapshot}` : ""}
-        </span>
+      <div className="flex min-w-0 items-center gap-2 py-1">
+        <span className="shrink-0 text-body-medium text-text-secondary">Machine</span>
+        {machine && (
+          <span
+            title={machine.snapshot}
+            className="inline-flex h-5 min-w-0 shrink items-center truncate rounded-full border border-border-button-default px-1.5 font-mono text-[10px] font-medium tracking-tight text-text-tertiary"
+          >
+            {machine.snapshot}
+          </span>
+        )}
       </div>
       {sandboxes == null ? (
         <p className="mt-1 text-body-2-regular text-text-tertiary">Live sandbox count updating…</p>

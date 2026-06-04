@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useState } from "react";
 import { StatusDot } from "@/components/shared/status-dot";
 import { Chip } from "@/components/base/badges/chip";
+import { EntityShareRow } from "@/components/dashboard/entity-share-row";
 import type { RunStatus } from "@/lib/runs";
 import { cx } from "@/utils/cx";
 import { formatDuration } from "@/utils/format";
@@ -50,43 +51,41 @@ function RunRow({ run }: { run: WorkspaceRun }) {
   );
 }
 
-function LaneCard({ lane, defaultOpen }: { lane: LaneGroup; defaultOpen: boolean }) {
+function LaneCard({ lane, max, defaultOpen }: { lane: LaneGroup; max: number; defaultOpen: boolean }) {
   const [open, setOpen] = useState(defaultOpen);
   const count = lane.runs.length;
-  const caption = lane.working > 0 ? `${lane.working} working` : count > 0 ? "idle" : "empty";
 
   return (
-    <div className="border-t border-border-button-default first:border-t-0">
+    <div>
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
-        className="flex w-full items-center gap-3 py-3 text-left outline-none focus-visible:ring-2 focus-visible:ring-border-focus-ring"
+        className="w-full rounded-2lg px-1 py-1 text-left outline-none transition-colors hover:bg-background-primary-hover focus-visible:ring-2 focus-visible:ring-border-focus-ring"
       >
-        <RiArrowRightSLine
-          aria-hidden
-          className={cx(
-            "size-4 shrink-0 text-text-tertiary transition-transform",
-            open && "rotate-90",
-          )}
+        <EntityShareRow
+          label={lane.label}
+          title={lane.name}
+          value={count}
+          max={max}
+          icon={RiFolderLine}
+          leading={
+            <RiArrowRightSLine
+              aria-hidden
+              className={cx(
+                "size-4 shrink-0 text-text-tertiary transition-transform",
+                open && "rotate-90",
+              )}
+            />
+          }
+          caption={
+            lane.working > 0 ? (
+              <span className="shrink-0 text-mono-label text-yellow-600">
+                {lane.working} working
+              </span>
+            ) : undefined
+          }
         />
-        <RiFolderLine className="size-4 shrink-0 text-text-secondary" aria-hidden />
-        <span className="text-body-2-medium text-text-primary" title={lane.name}>
-          {lane.label}
-        </span>
-        <span
-          className={cx(
-            "text-mono-label",
-            lane.working > 0 ? "text-yellow-600" : "text-text-tertiary",
-          )}
-        >
-          {caption}
-        </span>
-        <span className="ml-auto flex flex-wrap items-center justify-end gap-1">
-          {lane.runs.map((run) => (
-            <RunStatusDot key={run.id} status={run.status} />
-          ))}
-        </span>
       </button>
 
       {open && (
@@ -107,10 +106,11 @@ function LaneCard({ lane, defaultOpen }: { lane: LaneGroup; defaultOpen: boolean
 export function Fleet({ lanes, stats }: { lanes: LaneGroup[]; stats: FleetStats }) {
   const activeLanes = lanes.filter((lane) => lane.runs.length > 0).length;
   const summary = stats.failed > 0 ? "needs attention" : "all clear";
+  const maxCount = Math.max(1, ...lanes.map((lane) => lane.runs.length));
 
   return (
     <Panel>
-      <div className="mb-2 flex flex-wrap items-baseline gap-x-2 gap-y-1">
+      <div className="mb-3 flex flex-wrap items-baseline gap-x-2 gap-y-1">
         <span className="text-mono-label text-text-tertiary">Projects</span>
         <span className="text-caption-1-regular text-text-secondary">
           {stats.total} repository-backed run{stats.total === 1 ? "" : "s"} across {activeLanes}{" "}
@@ -122,9 +122,14 @@ export function Fleet({ lanes, stats }: { lanes: LaneGroup[]; stats: FleetStats 
         </span>
       </div>
       {lanes.length > 0 ? (
-        <div>
+        <div className="flex flex-col gap-1">
           {lanes.map((lane, i) => (
-            <LaneCard key={lane.name} lane={lane} defaultOpen={i === 0 || lane.working > 0} />
+            <LaneCard
+              key={lane.name}
+              lane={lane}
+              max={maxCount}
+              defaultOpen={i === 0 || lane.working > 0}
+            />
           ))}
         </div>
       ) : (

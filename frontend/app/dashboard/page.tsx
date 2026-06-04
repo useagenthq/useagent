@@ -1,9 +1,3 @@
-import {
-  RiBookOpenLine,
-  RiCheckboxCircleLine,
-  RiPlayCircleLine,
-  RiSparkling2Line,
-} from "@remixicon/react";
 import type { Metadata } from "next";
 import { Suspense } from "react";
 import { AnalyticsBand } from "@/components/dashboard/analytics-band";
@@ -63,24 +57,22 @@ async function DashboardSummary() {
   if (!summary) {
     return (
       <StatCards stats={[
-        { icon: RiPlayCircleLine, label: "Total runs", value: "—" },
-        { icon: RiCheckboxCircleLine, label: "Completed today", value: "—" },
+        { label: "Total runs", value: "-" },
+        { label: "Completed today", value: "-" },
       ]}>
-        <StatCard stat={{ icon: RiBookOpenLine, label: "Knowledge records", value: "—" }} />
-        <StatCard stat={{ icon: RiSparkling2Line, label: "Skills", value: "—" }} />
+        <StatCard stat={{ label: "Knowledge records", value: "-" }} />
+        <StatCard stat={{ label: "Skills", value: "-" }} />
       </StatCards>
     );
   }
   const statItems: StatItem[] = [
     {
-      icon: RiPlayCircleLine,
       label: "Total runs",
       value: compactNumber(summary.stats.total),
       delta: summary.stats.running > 0 ? `${summary.stats.running} live` : undefined,
       deltaColor: "blue",
     },
     {
-      icon: RiCheckboxCircleLine,
       label: "Completed today",
       value: compactNumber(summary.stats.completedToday),
       delta: summary.stats.failed > 0 ? `${summary.stats.failed} failed` : undefined,
@@ -90,8 +82,8 @@ async function DashboardSummary() {
   return (
     <>
       <StatCards stats={statItems}>
-        <StatCard stat={{ icon: RiBookOpenLine, label: "Knowledge records", value: compactNumber(summary.counts.knowledge) }} />
-        <StatCard stat={{ icon: RiSparkling2Line, label: "Skills", value: compactNumber(summary.counts.skills) }} />
+        <StatCard stat={{ label: "Knowledge records", value: compactNumber(summary.counts.knowledge) }} />
+        <StatCard stat={{ label: "Skills", value: compactNumber(summary.counts.skills) }} />
       </StatCards>
       {summary.stats.total > 0 && (
         <AnalyticsBand
