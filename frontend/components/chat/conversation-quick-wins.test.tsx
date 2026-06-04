@@ -27,7 +27,7 @@ function ev(kind: string, body: Record<string, unknown> = {}): StoredCanonicalEv
   } as StoredCanonicalEvent;
 }
 
-function makeTurn(id: string, status: RunStatus, canonical: StoredCanonicalEvent[]): Turn {
+function makeTurn(id: string, status: RunStatus, canonical: StoredCanonicalEvent[], parentRunId: string | null = null): Turn {
   const run: ApiRun = {
     id,
     org_id: null,
@@ -38,7 +38,7 @@ function makeTurn(id: string, status: RunStatus, canonical: StoredCanonicalEvent
     status,
     summary: status === "completed" ? "Scoped the retry budget per attempt chain." : null,
     duration_ms: null,
-    parent_run_id: null,
+    parent_run_id: parentRunId,
     child_session: false,
     thread_id: id,
     engine_session_id: null,
@@ -98,8 +98,8 @@ test("queued turns render the T3 queued pill with honest FIFO positions", () => 
   const html = render(
     [
       makeTurn("run-live", "running", liveEvents()),
-      makeTurn("run-q1", "queued", []),
-      makeTurn("run-q2", "queued", []),
+      makeTurn("run-q1", "queued", [], "run-live"),
+      makeTurn("run-q2", "queued", [], "run-live"),
     ],
     { sendNowFor: "run-q1", onSendNow: () => {} },
   );
