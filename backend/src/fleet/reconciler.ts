@@ -11,8 +11,9 @@ import { settleCommandForRun } from "../commands/dispatch";
 import { liveActorRunIds, pumpThread } from "../worker";
 import { selectAdmittableThreads } from "./admission";
 import {
+  type CapacityAdmissionCursor,
   resetLeasedAdmissionsForBoot,
-  oldestQueuedCapacityAdmission,
+  listQueuedCapacityAdmissions,
   setAdmissionState,
   syncRunningAdmissions,
   syncTerminalAdmissions,
@@ -21,14 +22,14 @@ import {
   clearMissingRetainedSandboxMappings,
   claimExpiredLeases,
   heartbeatLeases,
-  oldestReclaimableRetainedSandbox,
   releaseEmptyActiveLeasesOnBoot,
   releaseReclaimedLease,
   restoreLiveLease,
   scheduleLeaseGcRetry,
   type ReclaimingLease,
 } from "./lease-repo";
-import { buildCapacityInventory, ensureProviderInventory } from "./inventory";
+import { cachedProviderInventory, ensureProviderInventory } from "./inventory";
+import type { CapacityInventory } from "./types";
 
 // ---------------------------------------------------------------------------
 // Fleet reconciliation worker (HA Stage A). One periodic tick, wired into the
@@ -55,6 +56,7 @@ const LEASE_LOST_SUMMARY =
 /** Bound the work per tick so a large backlog drains over several ticks rather
  *  than one long transaction storm. */
 const RECONCILE_BATCH = 64;
+const CAPACITY_RECLAIM_PAGE_SIZE = 64;
 
 let loopTimer: ReturnType<typeof setInterval> | null = null;
 let ticking = false;
@@ -88,6 +90,8 @@ type ReleaseRetainedSandbox = (
   runId: string,
 ) => Promise<{ readonly ok: boolean; readonly released?: boolean }>;
 
+type LoadCapacityReclaimPage = typeof listQueuedCapacityAdmissions;
+
 /**
  * Retained sandboxes make follow-ups fast, but they must yield to queued new
  * work when the host resource budget is full. Evict one oldest idle thread per
@@ -95,35 +99,61 @@ type ReleaseRetainedSandbox = (
  */
 export async function reclaimRetainedCapacityIfNeeded(
   release: ReleaseRetainedSandbox = releaseRunSandbox,
+  loadPage: LoadCapacityReclaimPage = listQueuedCapacityAdmissions,
 ): Promise<number> {
-  const queued = await oldestQueuedCapacityAdmission();
-  if (!queued) return 0;
   const config = fleetCapacityConfig();
-  const inventory = await buildCapacityInventory(queued.orgId);
-  // capacity-policy returns the FIRST failing gate (global count -> org count ->
-  // resources), so the queue head's reason tells us WHICH pressure to verify -
-  // a count-bound host never queues on provider_capacity, and keying eviction on
-  // that single reason starved it for the retained TTL.
-  let pressure = false;
-  let evictWithinOrg: string | undefined;
-  if (queued.queueReason === "global_limit") {
-    pressure = inventory.globalActiveSandboxes >= config.globalMaxActiveSandboxes;
-  } else if (queued.queueReason === "org_limit") {
-    pressure = inventory.orgActiveSandboxes >= config.orgMaxActiveSandboxes;
-    evictWithinOrg = queued.orgId;
-  } else {
-    const marginFactor = 1 - config.safetyMarginPct / 100;
-    const cpuBudget = Math.floor(config.hostCpuMillicores * marginFactor);
-    const memoryBudget = Math.floor(config.hostMemoryMib * marginFactor);
-    pressure =
-      inventory.globalReservedCpuMillicores + queued.cpuMillicores > cpuBudget ||
-      inventory.globalReservedMemoryMib + queued.memoryMib > memoryBudget;
+  if (
+    config.globalMaxActiveSandboxes === 0 ||
+    config.orgMaxActiveSandboxes === 0
+  ) return 0;
+  const provider = cachedProviderInventory();
+  let cursor: CapacityAdmissionCursor | undefined;
+
+  while (true) {
+    const queuedAdmissions = await loadPage(
+      CAPACITY_RECLAIM_PAGE_SIZE,
+      cursor,
+    );
+    if (queuedAdmissions.length === 0) return 0;
+    for (const queued of queuedAdmissions) {
+      const inventory: CapacityInventory = {
+        globalActiveSandboxes: queued.globalActiveSandboxes,
+        globalReservedCpuMillicores: queued.globalReservedCpuMillicores,
+        globalReservedMemoryMib: queued.globalReservedMemoryMib,
+        orgActiveSandboxes: queued.orgActiveSandboxes,
+        providerAllocatableCpuMillicores: provider?.allocatableCpuMillicores,
+        providerAllocatableMemoryMib: provider?.allocatableMemoryMib,
+        providerReadyNodes: provider?.readyNodes,
+        providerNodes: provider?.nodes,
+      };
+
+      // capacity-policy returns the FIRST failing gate (global count -> org count ->
+      // resources), so each row's reason tells us WHICH pressure to verify. A zero
+      // count cap cannot be relieved by eviction and must remain non-actionable.
+      let pressure = false;
+      if (queued.queueReason === "global_limit") {
+        pressure = config.globalMaxActiveSandboxes > 0 &&
+          inventory.globalActiveSandboxes >= config.globalMaxActiveSandboxes;
+      } else if (queued.queueReason === "org_limit") {
+        pressure = config.orgMaxActiveSandboxes > 0 &&
+          inventory.orgActiveSandboxes >= config.orgMaxActiveSandboxes;
+      } else {
+        const marginFactor = 1 - config.safetyMarginPct / 100;
+        const cpuBudget = Math.floor(config.hostCpuMillicores * marginFactor);
+        const memoryBudget = Math.floor(config.hostMemoryMib * marginFactor);
+        pressure =
+          inventory.globalReservedCpuMillicores + queued.cpuMillicores > cpuBudget ||
+          inventory.globalReservedMemoryMib + queued.memoryMib > memoryBudget;
+      }
+      if (!pressure) continue;
+      const candidate = queued.reclaimCandidate;
+      if (!candidate) continue;
+      const result = await release(candidate.orgId, candidate.runId);
+      return result.ok && result.released === true ? 1 : 0;
+    }
+    const last = queuedAdmissions.at(-1)!;
+    cursor = { priority: last.priority, queuedAt: last.queuedAt, runId: last.runId };
   }
-  if (!pressure) return 0;
-  const candidate = await oldestReclaimableRetainedSandbox(undefined, evictWithinOrg);
-  if (!candidate) return 0;
-  const result = await release(candidate.orgId, candidate.runId);
-  return result.ok && result.released === true ? 1 : 0;
 }
 
 async function reconcileRetainedMappingsIfDue(force = false): Promise<number> {
