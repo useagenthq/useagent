@@ -26,6 +26,8 @@ export interface RepoMultiPickerProps {
   onChange: (next: string[]) => void;
   /** Override the trigger styling (e.g. render as a full-width menu row). */
   triggerClassName?: string;
+  /** Trigger label when nothing is selected (defaults to "Repositories"). */
+  emptyLabel?: string;
 }
 
 const RECENTS_KEY = "skynet:recent-repos";
@@ -54,6 +56,7 @@ export function RepoMultiPicker({
   value,
   onChange,
   triggerClassName,
+  emptyLabel,
 }: RepoMultiPickerProps) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -108,7 +111,7 @@ export function RepoMultiPicker({
     return [...groups.entries()];
   }, [filtered]);
 
-  const triggerLabel = value.length === 0 ? "Repositories" : `${value.length} selected`;
+  const triggerLabel = value.length === 0 ? (emptyLabel ?? "Repositories") : `${value.length} selected`;
 
   const Row = ({ repo }: { repo: RepoItem }) => {
     const checked = selectedSet.has(repo.full_name);

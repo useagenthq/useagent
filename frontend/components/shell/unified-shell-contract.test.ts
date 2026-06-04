@@ -186,14 +186,17 @@ describe("unified shell contract", () => {
     expect(addMenu).toContain("GitHub");
     expect(composer).toContain("<AddFilesRow");
     expect(composer).toContain("<GithubConnectedRow");
-    expect(composer).toContain("triggerClassName={ADD_MENU_ROW}");
+    // Repository selection is the single "Choose project" entry in the notch
+    // below the card (not a row in the "+" menu).
+    expect(composer).toContain('emptyLabel="Choose project"');
     expect(composer).toContain("<PromptInput");
     expect(composer).toContain("<PromptInputTextarea");
     expect(composer).not.toContain("<textarea");
     expect(composer).toContain("Start thread");
     expect(composer).toContain("flex-nowrap");
     expect(composer).toContain("overflow-hidden");
-    expect(composer).toContain('triggerClassName="min-w-0 max-w-[22rem] flex-[1_1_16rem]"');
+    // Model rides the compact engine + model chip.
+    expect(composer).toContain('ariaLabel="Select model"');
     expect(newThreadPage).toContain("max-w-3xl");
     expect(composer).toContain('e.id !== "chat"');
     expect(composer).not.toContain("<AsteriskMark");
