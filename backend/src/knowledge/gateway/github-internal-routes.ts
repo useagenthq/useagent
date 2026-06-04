@@ -1,7 +1,6 @@
 import { Hono } from "hono";
 import { executeContextToolLocal } from "./context-tools";
-import { executeGithubToolLocal } from "./github-tools";
-import { GITHUB_TOOL_NAMES } from "./github-tool-catalog";
+import { executeGithubToolLocal, GITHUB_TOOL_NAMES } from "./github-tools";
 import type { GithubOperationFamily } from "./github-operation-bridge";
 import {
   executeRepositoryToolLocal,
