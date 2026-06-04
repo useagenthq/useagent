@@ -1,20 +1,8 @@
 "use client";
 
-import {
-  RiDownloadLine,
-  RiExternalLinkLine,
-  RiFileEditLine,
-  RiFileLine,
-  RiImageLine,
-  RiSlackLine,
-} from "@remixicon/react";
-import { artifactAuthoringProfile, inferWorkpieceKind } from "@useagent/artifact-workspace";
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { LoadingState } from "@/components/ai/loading-state";
 import { Thinking } from "@/components/ai/thinking";
-import { PlanChecklist } from "@/components/agent-ui/plan-checklist";
-import { formatArtifactSize } from "@/components/artifacts/model";
-import { useOpenWorkpiece } from "@/components/chat/workspace-open-context";
 import type { ApprovalDecision, PendingApproval } from "@/components/chat/approval-state";
 import {
   buildTimelineFromCanonical,
@@ -42,21 +30,13 @@ import {
 import {
   buildTimeline,
   hasNarration,
-  type TimelineMarker,
   type TimelineNode,
 } from "@/components/chat/timeline";
-import { MarkerRow } from "@/components/chat/tool-step-row";
+import { MD_CLASS, MD_CLASS_REASONING, Timeline } from "@/components/chat/timeline-view";
+// Re-exported so existing importers (lab samples, workspace sample) keep working.
+export { Timeline } from "@/components/chat/timeline-view";
 import { OrbitKnotMark } from "@/components/foundations/brand/orbit-knot-mark";
 import { Markdown } from "@/components/prompt-kit/markdown";
-import {
-  segmentTimeline,
-  type TimelineSegment,
-} from "@/components/session-ui/adapter";
-import {
-  ContextRecallFold,
-  isContextRecallMarker,
-} from "@/components/session-ui/context-recall-fold";
-import { ExpandedImageDialog } from "@/components/session-ui/expanded-image-dialog";
 import { MessageCopyButton } from "@/components/session-ui/message-copy-button";
 import { MessageScrollerRail } from "@/components/session-ui/message-scroller-rail";
 import { ScrollToEndPill } from "@/components/session-ui/scroll-to-end-pill";
@@ -68,10 +48,7 @@ import {
   isThreadErrorBannerDismissedForSession,
   shouldShowThreadErrorBanner,
 } from "@/components/session-ui/thread-error-banner";
-import { WorkGroup } from "@/components/session-ui/work-group";
-import { WorkingIndicator } from "@/components/session-ui/working-indicator";
 import type { GatewayApproval } from "@/lib/gateway-approvals";
-import { cx as cn } from "@/utils/cx";
 
 // Canonical-timeline cutover flag. OFF by default:
 // the legacy native/steps derivation renders unless a backend + build opt in via
@@ -83,7 +60,6 @@ const CANONICAL_TIMELINE = process.env.NEXT_PUBLIC_CANONICAL_TIMELINE === "1";
 import {
   type ApiRun,
   type ApiStep,
-  basename,
   cleanPrompt,
   deriveTrace,
   type EngineId,
@@ -118,11 +94,6 @@ export type Turn = {
   canonicalComplete?: boolean;
 };
 
-// Surface context only - the flow-element prose styling (headings, lists,
-// links, paragraph rhythm) lives in the shared Markdown primitive
-// (`prompt-kit/markdown.tsx` FLOW_CLASS) so EVERY consumer renders
-// identically; this class adds the conversation turn's size and color.
-const MD_CLASS = "text-body-2-regular text-text-primary";
 
 /** Terminal note for a run that failed before writing a summary. */
 function FailedNote() {
@@ -186,9 +157,6 @@ function LiveNarration({ text }: { text: string }) {
   );
 }
 
-// Subdued variant of MD_CLASS for streamed reasoning (tailwind-merge lets the
-// muted text color win over MD_CLASS's strong default).
-const MD_CLASS_REASONING = cn(MD_CLASS, "text-text-secondary");
 
 /** Live provider "thinking" surfaced AHEAD of the answer: a subdued, truthful
  *  Thinking disclosure streaming the real reasoning tokens. It fills the
@@ -204,275 +172,6 @@ const LiveThinking = memo(function LiveThinking({ text }: { text: string }) {
     </Thinking>
   );
 });
-
-/** A SETTLED reasoning burst in the interleaved timeline: a collapsed, subdued
- *  "Thought" disclosure (reuses the Thinking primitive, inactive - no shimmer),
- *  expandable to read the real thoughts. Duration is intentionally omitted -
- *  native frames carry no timestamps, so deriving one would break the canonical
- *  vs native timeline equivalence the reducers are held to. */
-const SettledThought = memo(function SettledThought({ text }: { text: string }) {
-  return (
-    <Thinking label="Thought" active={false}>
-      <div data-testid="settled-thought">
-        <Markdown className={MD_CLASS_REASONING}>{text}</Markdown>
-      </div>
-    </Thinking>
-  );
-});
-
-/** One narration burst of the interleaved timeline — the same progressive-markdown
- *  treatment LiveNarration uses, memoized by its text so a streaming sibling burst
- *  or a completing tool never re-renders the settled ones (no fanout churn). */
-const TextBurst = memo(function TextBurst({ text }: { text: string }) {
-  return (
-    <div className="animate-ai-fade-up" data-testid="agent-answer">
-      <Markdown className={MD_CLASS}>{text}</Markdown>
-    </div>
-  );
-});
-
-function ArtifactActions({
-  id,
-  name,
-  previewLabel = `Preview ${name}`,
-}: {
-  id: string;
-  name: string;
-  previewLabel?: string;
-}) {
-  const content = `/api/artifacts/${id}/content`;
-  return (
-    <div className="flex shrink-0 items-center gap-1">
-      <a
-        href={content}
-        target="_blank"
-        rel="noreferrer"
-        aria-label={previewLabel}
-        title={previewLabel}
-        className="flex size-8 items-center justify-center rounded-lg text-text-secondary outline-none hover:bg-background-primary-default hover:text-text-primary focus-visible:ring-2 focus-visible:ring-border-focus-ring"
-      >
-        <RiExternalLinkLine aria-hidden className="size-4" />
-      </a>
-      <a
-        href={`${content}?download=1`}
-        download={name}
-        aria-label={`Download ${name}`}
-        title={`Download ${name}`}
-        className="flex size-8 items-center justify-center rounded-lg text-text-secondary outline-none hover:bg-background-primary-default hover:text-text-primary focus-visible:ring-2 focus-visible:ring-border-focus-ring"
-      >
-        <RiDownloadLine aria-hidden className="size-4" />
-      </a>
-    </div>
-  );
-}
-
-function ArtifactRow({ node }: { node: Extract<TimelineNode, { kind: "artifact" }> }) {
-  const { artifact } = node;
-  const image = artifact.contentType.startsWith("image/");
-  const media = image || artifact.contentType.startsWith("video/");
-  const Icon = media ? RiImageLine : RiFileLine;
-  // Click-to-expand lightbox for image artifacts with local content (delivered
-  // artifacts have no content endpoint here). Leaf-local state only - no store.
-  const [expanded, setExpanded] = useState(false);
-  const expandable = image && !artifact.destination;
-  // A canonical workpiece (document/spreadsheet/deck/pdf, not a delivered copy)
-  // opens IN the session side pane; raw binaries keep card/download. The provider
-  // is null outside a session (the standalone artifacts page), so the card keeps
-  // its plain behavior there.
-  const openWorkpiece = useOpenWorkpiece();
-  const workpieceKind =
-    openWorkpiece && !artifact.destination
-      ? inferWorkpieceKind(artifact.name, artifact.contentType, artifact.bytes)
-      : null;
-  const canOpen = !!openWorkpiece && workpieceKind !== null;
-  const subtitle = artifact.destination
-    ? `Delivered to ${artifact.destination}`
-    : workpieceKind
-      ? `${artifactAuthoringProfile(workpieceKind).label} · ${formatArtifactSize(artifact.bytes)} · Click to open`
-      : `${media ? "Generated media" : "Artifact"} · ${formatArtifactSize(artifact.bytes)}`;
-  const body = (
-    <>
-      <Icon aria-hidden className="size-5 shrink-0 text-text-secondary" />
-      <div className="min-w-0 flex-1">
-        <p className="truncate text-body-2-medium text-text-primary">{artifact.name}</p>
-        <p className="text-caption-1-regular text-text-tertiary">{subtitle}</p>
-      </div>
-    </>
-  );
-  return (
-    <div
-      className={cn(
-        "flex min-w-0 items-center gap-3 rounded-xl border border-border-button-default bg-background-secondary-default px-3 py-2.5",
-        canOpen && "transition-colors hover:border-border-button-hover",
-      )}
-    >
-      {canOpen ? (
-        <button
-          type="button"
-          onClick={() => openWorkpiece?.(artifact)}
-          aria-label={`Open ${artifact.name} in workspace`}
-          className="flex min-w-0 flex-1 cursor-pointer items-center gap-3 rounded-lg text-left outline-none focus-visible:ring-2 focus-visible:ring-border-focus-ring"
-        >
-          {body}
-        </button>
-      ) : expandable ? (
-        <button
-          type="button"
-          onClick={() => setExpanded(true)}
-          aria-label={`Expand ${artifact.name}`}
-          className="flex min-w-0 flex-1 cursor-zoom-in items-center gap-3 rounded-lg text-left outline-none focus-visible:ring-2 focus-visible:ring-border-focus-ring"
-        >
-          {body}
-        </button>
-      ) : (
-        body
-      )}
-      {artifact.destination === "slack" && (
-        <RiSlackLine
-          aria-label="Delivered to Slack"
-          className="size-4 shrink-0 text-text-tertiary"
-        />
-      )}
-      {!artifact.destination && <ArtifactActions id={artifact.id} name={artifact.name} />}
-      {expanded && (
-        <ExpandedImageDialog
-          preview={{
-            images: [{ src: `/api/artifacts/${artifact.id}/content`, name: artifact.name }],
-            index: 0,
-          }}
-          onClose={() => setExpanded(false)}
-        />
-      )}
-    </div>
-  );
-}
-
-function FileChangeRow({ node }: { node: Extract<TimelineNode, { kind: "file" }> }) {
-  const { file } = node;
-  const name = basename(file.path);
-  const action =
-    file.changeType === "create" ? "Created" : file.changeType === "delete" ? "Deleted" : "Edited";
-  return (
-    <div className="flex min-w-0 items-center gap-3 rounded-xl border border-border-button-default bg-background-secondary-default px-3 py-2.5">
-      <RiFileEditLine aria-hidden className="size-5 shrink-0 text-text-secondary" />
-      <div className="min-w-0 flex-1">
-        <p className="truncate font-mono text-body-2-medium text-text-primary">{name}</p>
-        <p className="truncate text-caption-1-regular text-text-tertiary">
-          {action}
-          {file.diff ? ` · diff ${formatArtifactSize(file.diff.bytes)}` : ""}
-        </p>
-      </div>
-      {file.diff && (
-        <ArtifactActions
-          id={file.diff.artifactId}
-          name={`${name}.diff`}
-          previewLabel={`View diff for ${name}`}
-        />
-      )}
-    </div>
-  );
-}
-
-/**
- * The interleaved turn timeline: narration bursts and the tool work that followed
- * them, in TRUE ORDER (opencode-style). Non-tool nodes (markers, text, reasoning,
- * artifacts, files) keep their own renderers; consecutive tool nodes fold into the
- * vendored T3 work grammar (compact rows, expand disclosure, failed/success
- * affordances, "+N previous tool calls" overflow). While live, the in-flight tool
- * is represented by the T3 working indicator's step suffix (upstream filters
- * in-progress rows from the group), which also replaces the old LoadingState tail.
- */
-/** One render unit of the flow: either a fold of consecutive context-recall
- *  markers, or a single passthrough segment. */
-type FlowUnit =
-  | { kind: "recall"; key: string; markers: { key: string; marker: TimelineMarker }[] }
-  | { kind: "seg"; seg: TimelineSegment };
-
-/**
- * Fold a turn's consecutive context-recall markers (skill/playbook loads +
- * memory/knowledge retrievals) into ONE quiet disclosure, like the "+N previous
- * tool calls" fold. A lone receipt renders as its own MarkerRow (a fold of one
- * hides nothing); memory writes and the reconcile marker never fold - they are
- * turn events, not context the run pulled in.
- */
-function groupContextRecall(segs: readonly TimelineSegment[]): FlowUnit[] {
-  const units: FlowUnit[] = [];
-  let run: { key: string; marker: TimelineMarker }[] = [];
-  const flush = () => {
-    if (run.length >= 2) {
-      units.push({ kind: "recall", key: `recall-${run[0].key}`, markers: run });
-    } else if (run.length === 1) {
-      const { key, marker } = run[0];
-      units.push({ kind: "seg", seg: { kind: "node", key, node: { kind: "marker", key, marker } } });
-    }
-    run = [];
-  };
-  for (const seg of segs) {
-    if (seg.kind === "node" && seg.node.kind === "marker" && isContextRecallMarker(seg.node.marker)) {
-      run.push({ key: seg.key, marker: seg.node.marker });
-    } else {
-      flush();
-      units.push({ kind: "seg", seg });
-    }
-  }
-  flush();
-  return units;
-}
-
-export function Timeline({
-  nodes,
-  live,
-  workingSince,
-}: {
-  nodes: TimelineNode[];
-  live: boolean;
-  workingSince?: string;
-}) {
-  const { segments, workingLabel } = useMemo(
-    () => segmentTimeline(nodes, live),
-    [nodes, live],
-  );
-  // Artifacts are deliverables, not narration: they render AFTER the prose and
-  // tool activity so an answer never appears below its own attachment.
-  const artifactSegs = segments.filter((s) => s.kind === "node" && s.node.kind === "artifact");
-  const flowSegs = segments.filter((s) => s.kind !== "node" || s.node.kind !== "artifact");
-  const flowUnits = groupContextRecall(flowSegs);
-  return (
-    <div className="space-y-3" data-testid="session-timeline">
-      {flowUnits.map((unit) =>
-        unit.kind === "recall" ? (
-          <ContextRecallFold key={unit.key} markers={unit.markers} />
-        ) : unit.seg.kind === "tools" ? (
-          <WorkGroup key={unit.seg.key} entries={unit.seg.entries} turnSettled={!live} />
-        ) : unit.seg.kind === "plan" ? (
-          <PlanChecklist
-            key={unit.seg.key}
-            title="Todos"
-            entries={unit.seg.entries}
-            testId="todo-list"
-            className="animate-ai-fade-up"
-          />
-        ) : unit.seg.node.kind === "marker" ? (
-          <MarkerRow key={unit.seg.key} marker={unit.seg.node.marker} />
-        ) : unit.seg.node.kind === "artifact" ? (
-          <ArtifactRow key={unit.seg.key} node={unit.seg.node} />
-        ) : unit.seg.node.kind === "file" ? (
-          <FileChangeRow key={unit.seg.key} node={unit.seg.node} />
-        ) : unit.seg.node.kind === "reasoning" ? (
-          <SettledThought key={unit.seg.key} text={unit.seg.node.text} />
-        ) : (
-          <TextBurst key={unit.seg.key} text={unit.seg.node.text} />
-        ),
-      )}
-      {artifactSegs.map((seg) =>
-        seg.kind === "node" && seg.node.kind === "artifact" ? (
-          <ArtifactRow key={seg.key} node={seg.node} />
-        ) : null,
-      )}
-      {live && <WorkingIndicator createdAt={workingSince ?? null} stepLabel={workingLabel} />}
-    </div>
-  );
-}
 
 // NOTE: the mock NetworkApprovalRequest demo card was removed — engines run
 // one-shot in yolo mode, so nothing can actually pause a run for approval; a
@@ -495,6 +194,7 @@ const TurnBlock = memo(function TurnBlock({
   queuePosition,
   onSendNow,
   childSessions,
+  isLatestTurn = false,
 }: {
   turn: Turn;
   /** 1-based place among this thread's queued turns (queued rendering only). */
@@ -504,6 +204,9 @@ const TurnBlock = memo(function TurnBlock({
    *  they fold under this turn's subagent group instead of rendering as their
    *  own top-level turns. */
   childSessions?: readonly GatewayChildSession[];
+  /** True for the thread's final turn - the only one whose follow-up
+   *  suggestions render (stale suggestions under history are noise). */
+  isLatestTurn?: boolean;
 }) {
   const { run, steps, status, summary, live, liveText, liveReasoning } = turn;
   // Capture whether this turn was streaming when it first mounted, so its
@@ -604,7 +307,12 @@ const TurnBlock = memo(function TurnBlock({
              burst is the answer, so the durable summary is re-rendered only when
              the timeline carried no narration (a tool-only turn). */
           <div data-timeline-source={timelineSource} className="space-y-3">
-            <Timeline nodes={timeline} live={live} workingSince={run.created_at} />
+            <Timeline
+              nodes={timeline}
+              live={live}
+              workingSince={run.created_at}
+              showFollowups={isLatestTurn}
+            />
             {summary && !hasNarration(timeline) && <AgentAnswer summary={summary} />}
             {failed && !summary && !hasNarration(timeline) && <FailedNote />}
           </div>
@@ -970,13 +678,14 @@ export const Conversation = memo(function Conversation({
           }}
           className="scrollbar-slim h-full space-y-8 overflow-y-auto px-5 py-6"
         >
-          {renderedTurns.map((turn) => (
+          {renderedTurns.map((turn, index) => (
             <TurnBlock
               key={turn.run.id}
               turn={turn}
               queuePosition={queuedPositions.get(turn.run.id)}
               onSendNow={turn.run.id === sendNowFor ? onSendNow : undefined}
               childSessions={childSessionsByParent.get(turn.run.id)}
+              isLatestTurn={index === renderedTurns.length - 1}
             />
           ))}
           {pendingQuestion && onAnswerQuestion && (

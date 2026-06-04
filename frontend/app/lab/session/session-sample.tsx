@@ -15,12 +15,14 @@ import { RiAttachment2, RiExternalLinkLine } from "@remixicon/react";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { PlanChecklist } from "@/components/agent-ui/plan-checklist";
+import { ComposerPrefillProvider } from "@/components/chat/composer-prefill-context";
 import {
   AgentAnswer,
   AssistantTurnHeader,
   Timeline,
   UserBubble,
 } from "@/components/chat/conversation";
+import { FollowUpRows } from "@/components/chat/follow-up-rows";
 import { RunUploadChips, type RunUpload } from "@/components/chat/run-uploads";
 import { ToolStepRow } from "@/components/chat/tool-step-row";
 import { AgentPanelRow } from "@/components/session-ui/agent-panel-row";
@@ -83,6 +85,7 @@ const INDEX: readonly { label: string; href: string }[] = [
   { label: "File-diff view (hunks)", href: "#file-diff" },
   { label: "Child-agent panel rows", href: "#agents" },
   { label: "Composer upload tray", href: "#uploads" },
+  { label: "Follow-ups + sources (closing turn grammar)", href: "#conversation" },
 ];
 
 function AttachmentChip({ name }: { name: string }) {
@@ -102,11 +105,14 @@ function TurnView({
   live,
   workingSince,
   sendNow,
+  showFollowups,
 }: {
   turn: SampleTurn;
   live: boolean;
   workingSince?: string;
   sendNow?: () => void;
+  /** Sample stand-in for the product's latest-turn gating. */
+  showFollowups?: boolean;
 }) {
   return (
     <div
@@ -123,7 +129,12 @@ function TurnView({
       ) : (
         <div className="group/turn space-y-3">
           <AssistantTurnHeader engine={turn.engine} />
-          <Timeline nodes={turn.nodes} live={live} workingSince={workingSince} />
+          <Timeline
+            nodes={turn.nodes}
+            live={live}
+            workingSince={workingSince}
+            showFollowups={showFollowups}
+          />
           {turn.answer && !live && (
             <div className="flex items-center gap-2">
               <MessageCopyButton text={turn.answer} />
@@ -166,6 +177,9 @@ export function SessionSample() {
   const [mounted, setMounted] = useState(false);
   const [liveStartedAt, setLiveStartedAt] = useState<string | null>(null);
   const [uploads, setUploads] = useState<readonly RunUpload[]>(sampleUploads);
+  // What the composer WOULD receive from a follow-up pick in the conversation;
+  // the lab has no live composer, so the handoff renders as a preview box.
+  const [proposedPrefill, setProposedPrefill] = useState<string | null>(null);
   useEffect(() => {
     setMounted(true);
     setLiveStartedAt(new Date(Date.now() - 48_000).toISOString());
@@ -260,6 +274,9 @@ export function SessionSample() {
 
           {/* The believable conversation */}
           <section id="conversation" className="scroll-mt-6">
+            {/* The lab has no live composer: follow-up picks land in the
+                "composer would receive" preview box below the conversation. */}
+            <ComposerPrefillProvider value={setProposedPrefill}>
             <div className="relative">
               <div
                 ref={scrollRef}
@@ -274,6 +291,8 @@ export function SessionSample() {
                       live={live}
                       workingSince={live ? (liveStartedAt ?? undefined) : undefined}
                       sendNow={turn.status === "queued" ? () => {} : undefined}
+                      // turn-2 stands in for the product's latest settled turn.
+                      showFollowups={turn.id === "turn-2"}
                     />
                   );
                 })}
@@ -281,6 +300,15 @@ export function SessionSample() {
               <MessageScrollerRail turns={scrollerTurns} scrollRef={scrollRef} />
               <ScrollToEndPill scrollRef={scrollRef} />
             </div>
+            </ComposerPrefillProvider>
+            {proposedPrefill !== null && (
+              <div className="mt-3 rounded-lg border border-border-button-default bg-background-secondary-default px-3 py-2">
+                <span className="text-mono-label text-text-tertiary">composer would receive</span>
+                <pre className="mt-1 whitespace-pre-wrap font-mono text-caption-1-regular text-text-secondary">
+                  {proposedPrefill}
+                </pre>
+              </div>
+            )}
           </section>
 
           <div className="space-y-8">
@@ -405,6 +433,7 @@ export function SessionSample() {
           >
             <AgentAnswer summary={conversation[0].answer ?? ""} />
           </Surface>
+
         </div>
       </div>
     </main>

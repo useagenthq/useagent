@@ -54,6 +54,9 @@ function tool(spec: StepSpec): TimelineNode {
   const step = sampleStep(spec);
   return { kind: "tool", key: step.id, step };
 }
+function followups(key: string, suggestions: string[]): TimelineNode {
+  return { kind: "followups", key, suggestions };
+}
 
 // ── Real diff payloads (feed file-diff-view hunks + deriveTrace +adds/-dels) ──
 
@@ -451,6 +454,12 @@ export const conversation: SampleTurn[] = [
           destination: "slack",
         },
       },
+      // The `followups.suggested` frame the backend appends post-settle - the
+      // REAL Timeline renders these rows (latest-turn only in product).
+      followups("f-2", [
+        "Should burst capacity scale per plan tier?",
+        "Add an integration test for the Retry-After contract",
+      ]),
     ],
   },
   {

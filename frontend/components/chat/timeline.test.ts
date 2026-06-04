@@ -2,7 +2,7 @@
 // Run: `bun test components/chat/timeline.test.ts` (from frontend/).
 
 import { describe, expect, test } from "bun:test";
-import { buildTimeline, hasNarration } from "./timeline";
+import { buildTimeline, deriveTurnSources, hasNarration, parseFollowups } from "./timeline";
 import { createNativeStore } from "./native-store";
 import type { NativeFrame } from "./native-events";
 import type { ApiStep, StepKind } from "./types";
@@ -349,5 +349,67 @@ describe("run.reconciling marker (adaptive re-probe park)", () => {
     expect(buildTimeline(s.getSnapshot(), false)![0]).toMatchObject({
       marker: { kind: "reconciling", deadlineMs: null },
     });
+  });
+});
+
+describe("follow-ups + turn sources (beautiful-ui answer grammar)", () => {
+  test("a followups.suggested frame becomes the turn's CLOSING node (after artifacts)", () => {
+    const s = turnStore();
+    s.ingestNative(
+      skynetFrame("art_1", 70, "artifact.created", {
+        id: "a1",
+        name: "report.pdf",
+        size_bytes: 10,
+        sha256: "x".repeat(64),
+        content_type: "application/pdf",
+      }),
+      0,
+    );
+    s.ingestNative(
+      skynetFrame("folup_run-1", 71, "followups.suggested", {
+        suggestions: ["Scale per plan tier?", "Add a Retry-After test"],
+      }),
+      0,
+    );
+    const nodes = buildTimeline(s.getSnapshot(), false)!;
+    const last = nodes.at(-1)!;
+    expect(last).toMatchObject({
+      kind: "followups",
+      suggestions: ["Scale per plan tier?", "Add a Retry-After test"],
+    });
+    expect(nodes.at(-2)!.kind).toBe("artifact");
+  });
+
+  test("parseFollowups rejects other event types and malformed payloads", () => {
+    expect(parseFollowups("context.retrieved", { suggestions: ["x"] })).toBeNull();
+    expect(parseFollowups("followups.suggested", { suggestions: [] })).toBeNull();
+    expect(parseFollowups("followups.suggested", { suggestions: [1, "  "] })).toBeNull();
+    expect(parseFollowups("followups.suggested", null)).toBeNull();
+    expect(parseFollowups("followups.suggested", { suggestions: ["ok?"] })).toEqual(["ok?"]);
+  });
+
+  test("deriveTurnSources reads fetch-tool URLs, one entry per domain, www stripped", () => {
+    const fetchNode = (idx: number, url: string, error = false) => ({
+      kind: "tool" as const,
+      key: `f${idx}`,
+      step: step(idx, "command", "fetch", { tool: "webfetch", input: { url }, error }),
+    });
+    const searchNode = {
+      kind: "tool" as const,
+      key: "srch",
+      step: step(9, "command", "search", { tool: "websearch", input: { query: "rate limits" } }),
+    };
+    const sources = deriveTurnSources([
+      fetchNode(0, "https://www.hono.dev/docs/middleware"),
+      fetchNode(1, "https://hono.dev/docs/other"),
+      fetchNode(2, "https://redis.io/commands/incr"),
+      fetchNode(3, "https://failed.example/internal", true),
+      fetchNode(4, "ftp://files.example/archive"),
+      searchNode,
+    ]);
+    expect(sources).toEqual([
+      { domain: "hono.dev", href: "https://www.hono.dev/docs/middleware" },
+      { domain: "redis.io", href: "https://redis.io/commands/incr" },
+    ]);
   });
 });
