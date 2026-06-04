@@ -9,6 +9,7 @@ import {
   setProviderInventoryForTest,
 } from "../src/fleet/inventory";
 import {
+  clearMissingRetainedSandboxMappings,
   claimExpiredLeases,
   createLease,
   heartbeatLeases,
@@ -25,6 +26,7 @@ import {
   reconcileExpiredLease,
   reconcileFleetOnBoot,
   reconcileFleetOnce,
+  reconcileRetainedSandboxMappings,
   startFleetReconciler,
   stopFleetReconciler,
 } from "../src/fleet/reconciler";
@@ -279,12 +281,14 @@ describe("durable admission — restart + crash recovery", () => {
     expect((await reservationSnapshot(orgId)).globalActiveSandboxes).toBe(1);
   });
 
-  test("retained and warm sandboxes remain part of capacity", async () => {
+  test("retained mappings remain capacity authority while provider telemetry stays advisory", async () => {
     const orgId = track(`org-${uid("resident")}`);
-    const runId = await accept(orgId);
+    const threadId = crypto.randomUUID();
+    const previousRunId = await accept(orgId, crypto.randomUUID(), threadId);
+    const runId = await accept(orgId, crypto.randomUUID(), threadId);
     const leaseId = await createLease({
       runId,
-      threadId: runId,
+      threadId,
       orgId,
       provider: "mock",
       tier: "standard",
@@ -292,12 +296,46 @@ describe("durable admission — restart + crash recovery", () => {
       memoryMib: 8_192,
       leaseTtlMs: 10_000,
     });
+    await db.execute(sql`update runs set sandbox_id = 'old-box' where id = ${previousRunId}`);
     await db.execute(sql`update runs set sandbox_id = 'retained-box' where id = ${runId}`);
     await db.execute(sql`update sandbox_leases set sandbox_id = 'retained-box', state = 'released' where id = ${leaseId}`);
     setProviderInventoryForTest({ activeSandboxes: 1, warmPoolReady: 3 });
     const inventory = await buildCapacityInventory(orgId);
     expect(inventory.orgActiveSandboxes).toBe(1);
-    expect(inventory.globalActiveSandboxes).toBe(3);
+    expect(inventory.globalActiveSandboxes).toBe(1);
+  });
+
+  test("a successful provider listing clears missing retained mappings", async () => {
+    const orgId = track(`org-${uid("stale-retained")}`);
+    const runId = await accept(orgId);
+    await db.execute(sql`update runs set sandbox_id = 'missing-box' where id = ${runId}`);
+
+    const cleared = await reconcileRetainedSandboxMappings({
+      create: async () => { throw new Error("unused"); },
+      get: async () => { throw new Error("unused"); },
+      async *list() {},
+    });
+
+    expect(cleared).toBe(1);
+    expect((await getRun(runId))?.sandboxId).toBeNull();
+  });
+
+  test("a partial provider listing preserves retained mappings", async () => {
+    const orgId = track(`org-${uid("failed-list")}`);
+    const runId = await accept(orgId);
+    await db.execute(sql`update runs set sandbox_id = 'preserved-box' where id = ${runId}`);
+
+    await expect(reconcileRetainedSandboxMappings({
+      create: async () => { throw new Error("unused"); },
+      get: async () => { throw new Error("unused"); },
+      async *list() {
+        yield { id: "partial-box" } as never;
+        throw new Error("provider unavailable");
+      },
+    })).rejects.toThrow("provider unavailable");
+
+    expect(await clearMissingRetainedSandboxMappings(new Set(["preserved-box"]))).toBe(0);
+    expect((await getRun(runId))?.sandboxId).toBe("preserved-box");
   });
 
   test("a follow-up reusing its thread sandbox does not double-count capacity", async () => {

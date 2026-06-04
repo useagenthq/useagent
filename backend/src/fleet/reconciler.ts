@@ -1,4 +1,5 @@
 import { fleetCapacityConfig } from "../env";
+import type { SandboxProvider } from "../sandboxes/provider";
 import {
   sandboxProvider,
   sandboxProviderApiKey,
@@ -15,6 +16,7 @@ import {
   syncTerminalAdmissions,
 } from "./admission-repo";
 import {
+  clearMissingRetainedSandboxMappings,
   claimExpiredLeases,
   heartbeatLeases,
   releaseEmptyActiveLeasesOnBoot,
@@ -54,12 +56,45 @@ const RECONCILE_BATCH = 64;
 let loopTimer: ReturnType<typeof setInterval> | null = null;
 let ticking = false;
 let tickStartedAt = 0;
+let lastRetainedReconcileAt = 0;
+
+const RETAINED_RECONCILE_INTERVAL_MS = 60_000;
 
 export interface FleetReconcileSummary {
   readonly syncedTerminal: number;
   readonly heartbeated: number;
   readonly expired: number;
   readonly pumped: number;
+}
+
+/**
+ * Reconcile retained run mappings against a complete provider listing. The
+ * listing is collected before any database write, so provider failures preserve
+ * every mapping (fail closed).
+ */
+export async function reconcileRetainedSandboxMappings(
+  provider: SandboxProvider,
+): Promise<number> {
+  const liveSandboxIds = new Set<string>();
+  for await (const sandbox of provider.list()) liveSandboxIds.add(sandbox.id);
+  return clearMissingRetainedSandboxMappings(liveSandboxIds);
+}
+
+async function reconcileRetainedMappingsIfDue(force = false): Promise<number> {
+  const now = Date.now();
+  if (!force && now - lastRetainedReconcileAt < RETAINED_RECONCILE_INTERVAL_MS) return 0;
+  lastRetainedReconcileAt = now;
+  try {
+    const apiKey = sandboxProviderApiKey();
+    if (apiKey === undefined) return 0;
+    return await reconcileRetainedSandboxMappings(sandboxProvider(apiKey));
+  } catch (error) {
+    console.warn(
+      "[fleet] retained sandbox reconciliation skipped:",
+      error instanceof Error ? error.message : error,
+    );
+    return 0;
+  }
 }
 
 async function deleteSandbox(sandboxId: string): Promise<void> {
@@ -111,6 +146,7 @@ export async function reconcileFleetOnce(): Promise<FleetReconcileSummary> {
 
   // Refresh provider inventory in the background (never blocks this tick).
   ensureProviderInventory();
+  void reconcileRetainedMappingsIfDue();
 
   const syncedTerminal = await syncTerminalAdmissions();
   await syncRunningAdmissions();
@@ -157,6 +193,7 @@ export async function reconcileFleetOnBoot(): Promise<{
   resetAdmissions: number;
   syncedTerminal: number;
 }> {
+  await reconcileRetainedMappingsIfDue(true);
   // Reservations that never reached sandbox creation can be retried directly.
   // Real retained sandboxes remain reserved through restart until recovery
   // adopts/finalizes them or expiry GC confirms deletion.
@@ -197,4 +234,5 @@ export function stopFleetReconciler(): void {
     loopTimer = null;
   }
   ticking = false;
+  lastRetainedReconcileAt = 0;
 }
