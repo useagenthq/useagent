@@ -10,12 +10,13 @@ import {
   sandboxProvider,
   sandboxProviderApiKey,
 } from "../../sandboxes/provider";
+import { executeGithubBackedOperation } from "./github-operation-bridge";
 import type { ToolTokenClaims } from "./token";
 
 interface ToolResult {
-  content: Array<{ type: "text"; text: string }>;
-  structuredContent?: Record<string, unknown>;
-  isError?: boolean;
+  readonly content: readonly { type: "text"; text: string }[];
+  readonly structuredContent?: Readonly<Record<string, unknown>>;
+  readonly isError?: boolean;
 }
 
 export interface RepositoryCloneResult {
@@ -316,7 +317,7 @@ export const REPOSITORY_TOOL_NAMES: ReadonlySet<string> = new Set(
   REPOSITORY_TOOLS.map((tool) => tool.name),
 );
 
-export async function executeRepositoryTool(
+export async function executeRepositoryToolLocal(
   claims: ToolTokenClaims,
   name: string,
   args: Record<string, unknown>,
@@ -352,4 +353,18 @@ export async function executeRepositoryTool(
   } catch (error) {
     return failure(error instanceof Error ? error.message : "repository operation failed");
   }
+}
+
+export async function executeRepositoryTool(
+  claims: ToolTokenClaims,
+  name: string,
+  args: Record<string, unknown>,
+): Promise<ToolResult> {
+  return executeGithubBackedOperation(
+    claims,
+    "repository",
+    name,
+    args,
+    () => executeRepositoryToolLocal(claims, name, args),
+  );
 }
