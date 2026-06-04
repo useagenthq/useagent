@@ -41,6 +41,9 @@ export interface SearchablePickerProps {
   onChange: (value: string) => void;
   /** Override the trigger styling (e.g. render as a full-width menu row). */
   triggerClassName?: string;
+  /** Drop the trailing chevron (e.g. when this picker is the left half of a
+   *  combined engine + model chip and a single chevron reads cleaner). */
+  hideChevron?: boolean;
 }
 
 function OptionMark({ option }: { option: PickerOption }) {
@@ -69,6 +72,7 @@ export function SearchablePicker({
   value,
   onChange,
   triggerClassName,
+  hideChevron = false,
 }: SearchablePickerProps) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -123,7 +127,15 @@ export function SearchablePicker({
         >
           {selected?.label ?? triggerLabel}
         </span>
-        <RiArrowDownSLine className="size-4 shrink-0 text-foreground-icon-secondary" aria-hidden />
+        {hideChevron ? null : (
+          <RiArrowDownSLine
+            className={cx(
+              "size-4 shrink-0 text-foreground-icon-secondary transition-transform duration-200",
+              open && "rotate-180",
+            )}
+            aria-hidden
+          />
+        )}
       </DropdownTrigger>
       <DropdownPopover
         aria-label={ariaLabel}

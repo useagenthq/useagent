@@ -4,13 +4,13 @@ import {
   RiAddLine,
   RiArrowUpLine,
   RiBookMarkedLine,
+  RiCloseLine,
   RiCpuLine,
   RiFlashlightLine,
 } from "@remixicon/react";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  ADD_MENU_ROW,
   AddFilesRow,
   AddMenuDivider,
   CreateRows,
@@ -408,7 +408,7 @@ export function NewTaskComposer({
           rim light carries the working state: it paints the card surface itself,
           so the PromptInput goes transparent (bg/border/shadow) for that window
           and hands the surface back when idle. Geometry is untouched. */}
-      <ComposerLoader active={submitting} radius={20} className="relative z-10">
+      <ComposerLoader active={submitting} radius={16} className="relative z-10">
         <PromptInput
           value={prompt}
           onValueChange={(value) => {
@@ -420,8 +420,7 @@ export function NewTaskComposer({
           maxHeight={260}
           disabled={submitting}
           className={cx(
-            "p-2 shadow-md transition-colors",
-            addMenuOpen ? "rounded-[20px] rounded-b-none" : "rounded-[20px]",
+            "rounded-[16px] p-2 shadow-card transition-colors",
             submitting && "border-transparent bg-transparent opacity-100 shadow-none",
           )}
         >
@@ -460,42 +459,78 @@ export function NewTaskComposer({
             {/* Structured "@" mentions render as removable chips above the input. */}
             {mentions.mentions.length > 0 ? <div className="px-3 pt-3">{mentions.chips}</div> : null}
             <PromptInputTextarea
-              placeholder="Describe what you need - task, question, repo, constraints..."
-              aria-label="Describe what you need"
+              placeholder="Work on anything"
+              aria-label="Work on anything"
               onSelect={mentions.onTextareaSelect}
               onKeyDown={(event) => {
                 mentions.onTextareaKeyDown(event); // "@" popover claims arrows/Enter/Esc first
                 if (event.defaultPrevented) return;
                 handleCmdKeys(event);
               }}
-              className="min-h-[84px] px-3.5 pt-3.5 text-body-2-regular leading-relaxed"
+              className="min-h-[96px] px-4 pt-4 text-body-2-regular leading-relaxed"
             />
 
-            {/* Toolbar: the "+" opens the add-context shelf below; engine + model +
-                Start stay inline. The context controls (repos, skills, GitHub,
-                branches) live in the shelf, so this row never overflows. */}
-            <div className="flex min-w-0 items-center gap-1 overflow-hidden px-2 pb-2">
-              <button
-                type="button"
-                aria-label="Add context"
-                aria-haspopup="menu"
-                aria-expanded={addMenuOpen}
-                onClick={() => setAddMenuOpen((o) => !o)}
-                className={cx(
-                  "grid size-8 shrink-0 place-items-center rounded-2lg outline-none transition-colors focus-visible:ring-2 focus-visible:ring-border-focus-ring",
-                  addMenuOpen
-                    ? "bg-background-secondary-default text-foreground-icon-primary"
-                    : "text-foreground-icon-secondary hover:bg-background-primary-hover",
-                )}
-              >
-                <RiAddLine
+            {/* Bottom row: the "+" opens a floating add-context popover; the
+                engine and model read as one quiet chip and the send affordance is
+                a compact circular button. The skill/playbook chip and selected
+                repo chips live in the sub-bar below the card. */}
+            <div className="flex items-center gap-2 px-3 pb-3 pt-1">
+              <div className="relative shrink-0">
+                <button
+                  type="button"
+                  aria-label="Add context"
+                  aria-haspopup="menu"
+                  aria-expanded={addMenuOpen}
+                  onClick={() => setAddMenuOpen((o) => !o)}
                   className={cx(
-                    "size-5 transition-transform duration-200",
-                    addMenuOpen && "rotate-45",
+                    "grid size-9 cursor-pointer place-items-center rounded-full bg-background-secondary-default outline-none transition-colors hover:bg-background-secondary-hover hover:text-text-primary focus-visible:ring-2 focus-visible:ring-border-focus-ring",
+                    addMenuOpen ? "text-text-primary" : "text-text-secondary",
                   )}
-                  aria-hidden
-                />
-              </button>
+                >
+                  {addMenuOpen ? (
+                    <RiCloseLine className="size-[18px]" aria-hidden />
+                  ) : (
+                    <RiAddLine className="size-[18px]" aria-hidden />
+                  )}
+                </button>
+
+                {/* Floating add-context popover (upload, Create seeds, GitHub
+                    status). It floats above the "+" instead of an attached shelf;
+                    the toggle and every row handler are unchanged. Repository
+                    selection lives in the notch below, not here (single entry). */}
+                {addMenuOpen ? (
+                  <div
+                    role="menu"
+                    aria-label="Add context"
+                    className="absolute top-full left-0 z-30 mt-2 w-72 max-w-[calc(100vw-2rem)] origin-top-left rounded-[14px] border border-border-button-default bg-background-primary-default p-2 shadow-card"
+                  >
+                    <AddFilesRow
+                      inline
+                      onPick={() => {
+                        setAddMenuOpen(false);
+                        fileInput.current?.click();
+                      }}
+                    />
+
+                    <AddMenuDivider />
+
+                    {/* Create: colored BoardUI plugin icons that seed a real artifact task. */}
+                    <CreateRows
+                      inline
+                      onSeed={(seed) => {
+                        setAddMenuOpen(false);
+                        setPrompt((prev) => (prev.trim() ? prev : seed));
+                      }}
+                    />
+
+                    <AddMenuDivider />
+
+                    {/* GitHub is connected server-side via the GitHub App - a status row. */}
+                    <GithubConnectedRow inline />
+                  </div>
+                ) : null}
+              </div>
+
               {submitting ? (
                 /* Status swap while the run is being created: the pickers are
                    inert (the fieldset is disabled), so the row's middle becomes
@@ -504,7 +539,9 @@ export function NewTaskComposer({
                   <AgentThinking variant="wave" label="Starting the run" showTimer={false} />
                 </div>
               ) : (
-                <div className="flex min-w-0 flex-1 flex-nowrap items-center gap-0.5 overflow-hidden">
+                /* Engine and model read as one compact quiet chip on the right:
+                   the engine name, a dot, then the model, with a single chevron. */
+                <div className="ml-auto flex min-w-0 flex-nowrap items-center gap-0.5 overflow-hidden">
                   <SearchablePicker
                     ariaLabel="Select engine"
                     triggerLabel="Engine"
@@ -512,94 +549,80 @@ export function NewTaskComposer({
                     groups={engineGroups}
                     value={engine}
                     onChange={setEngine}
-                    triggerClassName="max-w-[9rem] shrink-0"
+                    hideChevron={selectableModels.length > 0}
+                    triggerClassName="h-8 shrink-0 rounded-full px-2 text-caption-1-medium text-text-secondary"
                   />
                   {/* Model is shown only for engines whose backend policy accepts an
                       explicit user choice (OpenCode and Codex). */}
                   {selectableModels.length > 0 ? (
-                    <SearchablePicker
-                      ariaLabel="Select model"
-                      triggerLabel="Model"
-                      searchPlaceholder="Search models..."
-                      groups={modelGroups}
-                      value={model}
-                      onChange={setModel}
-                      triggerClassName="min-w-0 max-w-[22rem] flex-[1_1_16rem]"
-                    />
+                    <>
+                      <span aria-hidden className="shrink-0 select-none text-text-tertiary">
+                        ·
+                      </span>
+                      <SearchablePicker
+                        ariaLabel="Select model"
+                        triggerLabel="Model"
+                        searchPlaceholder="Search models..."
+                        groups={modelGroups}
+                        value={model}
+                        onChange={setModel}
+                        triggerClassName="h-8 min-w-0 max-w-[16rem] rounded-full px-2.5 text-caption-1-medium text-text-secondary"
+                      />
+                    </>
                   ) : null}
-                  {/* Skill/playbook sits beside the model; the trigger truncates a long
-                      name so it never widens the row. */}
-                  <SearchablePicker
-                    ariaLabel="Select playbook or skill"
-                    triggerLabel="Playbook or skills"
-                    searchPlaceholder="Search playbooks & skills..."
-                    groups={skillGroups}
-                    value={playbook}
-                    onChange={setPlaybook}
-                    triggerClassName="hidden min-w-0 max-w-[10rem] sm:inline-flex sm:flex-[0_2_10rem]"
-                  />
                 </div>
               )}
-              {/* Stays primary-blue at rest (user decision 2026-08-23): disabled
-                  only while actually submitting or uploads are blocked; an
-                  empty-prompt click is a no-op (submit guards on empty). */}
+              {/* Compact dark circular send (ai-kit reference): disabled only while
+                  actually submitting or uploads are blocked; an empty-prompt click
+                  is a no-op (submit guards on empty). The label rides aria-label
+                  for "Start thread". */}
               <Button
-                variant="primary"
-                trailingIcon={RiArrowUpLine}
+                variant="neutral"
+                iconOnly
+                leadingIcon={RiArrowUpLine}
+                aria-label="Start thread"
                 onClick={() => void submit()}
                 disabled={submitting || runUploads.blocked}
-                className="min-w-[7.5rem] shrink-0 rounded-full px-3"
-              >
-                {submitting ? "Starting..." : "Start thread"}
-              </Button>
+                className="size-9 shrink-0 rounded-full p-0"
+              />
             </div>
           </div>
         </PromptInput>
       </ComposerLoader>
 
-      {/* The "+" action shelf (ai-kit ACTION MENU VARIANT): the add-context
-          controls live here as full-width rows so the toolbar never overflows.
-          Every row is real - upload, the repo multi-select, the skill picker,
-          per-repo branches, and GitHub (already connected server-side). */}
-      {addMenuOpen ? (
-        <div className="relative z-0 rounded-b-[20px] rounded-t-none border-x border-b border-border-button-default bg-background-primary-default p-1.5 shadow-md">
-          <AddFilesRow
-            onPick={() => {
-              setAddMenuOpen(false);
-              fileInput.current?.click();
-            }}
-          />
-
+      {/* Notch (second tier): tucked UNDER the card - inset margins, negative
+          top margin (the z-10 card covers the seam), rounded only at the bottom.
+          Carries the project chooser, the playbook/skills chip and, once repos
+          are chosen, their branch pickers. Wrapped in a disabled fieldset so it
+          goes inert during submit, exactly like the in-card controls. */}
+      <fieldset disabled={submitting} className="contents">
+        <div className="relative z-0 mx-2.5 -mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-b-[12px] border-x border-b border-border-button-default bg-background-tertiary-default px-3 pt-3.5 pb-1.5">
+          {/* Project chooser: the same repositories selector as the "+" menu,
+              rendered as the notch's quiet "Choose project" chip. */}
           <RepoMultiPicker
             repos={repos}
             value={selectedRepos}
             onChange={setSelectedRepos}
-            triggerClassName={ADD_MENU_ROW}
+            emptyLabel="Choose project"
+            triggerClassName="rounded-full px-2 py-1 text-body-2-medium text-text-secondary"
+          />
+
+          {/* Skill/playbook, demoted to a quiet chip in the notch. */}
+          <SearchablePicker
+            ariaLabel="Select playbook or skill"
+            triggerLabel="Playbook or skills"
+            searchPlaceholder="Search playbooks & skills..."
+            groups={skillGroups}
+            value={playbook}
+            onChange={setPlaybook}
+            triggerClassName="max-w-[16rem] rounded-full text-text-secondary"
           />
 
           {selectedRepoItems.length > 0 ? (
-            <div className="px-2.5 py-1.5">
-              <RepoBranchBar repos={selectedRepoItems} value={branches} onChange={setBranches} />
-            </div>
+            <RepoBranchBar repos={selectedRepoItems} value={branches} onChange={setBranches} />
           ) : null}
-
-          <AddMenuDivider />
-
-          {/* Create: colored BoardUI plugin icons that seed a real artifact task. */}
-          <CreateRows
-            onSeed={(seed) => {
-              setAddMenuOpen(false);
-              setPrompt((prev) => (prev.trim() ? prev : seed));
-            }}
-          />
-
-          <AddMenuDivider />
-
-          {/* GitHub is connected server-side via the GitHub App (that is why the
-              repo list loads) - so this is a status row, not a "Connect" action. */}
-          <GithubConnectedRow />
         </div>
-      ) : null}
+      </fieldset>
 
       {error ? (
         <p role="alert" className="mt-2 text-caption-1-regular text-text-error-primary">
