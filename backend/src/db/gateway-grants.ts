@@ -1,5 +1,8 @@
 import type { Sql } from "postgres";
 
+export const GATEWAY_DATABASE_ROLE = "useagent_gateway";
+const LEGACY_GATEWAY_DATABASE_ROLE = "skynet_gateway";
+
 /**
  * Declarative grants for the RESTRICTED sandbox-gateway role, applied
  * idempotently at every backend boot (right after migrations).
@@ -19,41 +22,46 @@ import type { Sql } from "postgres";
  * process writes, add it HERE in the same change.
  */
 export const GATEWAY_GRANTS: readonly string[] = [
-  "GRANT SELECT ON runs, skills, skill_revisions, secrets, artifacts, provider_gateway_audit, slack_threads TO skynet_gateway",
-  "GRANT UPDATE (skill_id, skill_version, skill_content_hash, updated_at) ON runs TO skynet_gateway",
-  "GRANT UPDATE (usage_count, last_run_at, updated_at) ON skills TO skynet_gateway",
-  "GRANT SELECT (id, run_id, seq, event_type, payload) ON provider_events TO skynet_gateway",
-  "GRANT INSERT (id, run_id, thread_id, seq, provider, event_type, native_session_id, native_parent_session_id, native_message_id, native_part_id, native_call_id, payload, created_at) ON provider_events TO skynet_gateway",
-  "GRANT UPDATE (seq, event_type, payload, created_at) ON provider_events TO skynet_gateway",
-  "GRANT SELECT, INSERT ON artifacts TO skynet_gateway",
+  "GRANT SELECT ON runs, skills, skill_revisions, secrets, artifacts, provider_gateway_audit, slack_threads TO useagent_gateway",
+  "GRANT UPDATE (skill_id, skill_version, skill_content_hash, updated_at) ON runs TO useagent_gateway",
+  "GRANT UPDATE (usage_count, last_run_at, updated_at) ON skills TO useagent_gateway",
+  "GRANT SELECT (id, run_id, seq, event_type, payload) ON provider_events TO useagent_gateway",
+  "GRANT INSERT (id, run_id, thread_id, seq, provider, event_type, native_session_id, native_parent_session_id, native_message_id, native_part_id, native_call_id, payload, created_at) ON provider_events TO useagent_gateway",
+  "GRANT UPDATE (seq, event_type, payload, created_at) ON provider_events TO useagent_gateway",
+  "GRANT SELECT, INSERT ON artifacts TO useagent_gateway",
   // Republish-as-revision (and companion seeding) update an existing artifact row
   // in place under the restricted role; column-scoped so it can never touch org
   // scope or identity columns.
-  "GRANT UPDATE (name, content_type, size_bytes, sha256, storage_key, workpiece_kind, workpiece_state, workpiece_revision, preview_storage_key) ON artifacts TO skynet_gateway",
-  "GRANT SELECT, INSERT, UPDATE ON provider_gateway_audit TO skynet_gateway",
-  "GRANT INSERT ON slack_outbox TO skynet_gateway",
-  "GRANT SELECT, INSERT, UPDATE ON knowledge_records, knowledge_documents, knowledge_revisions TO skynet_gateway",
-  "GRANT SELECT, INSERT ON artifact_workpiece_proposals TO skynet_gateway",
-  "GRANT UPDATE (status, resolved_at, resolved_by, resolved_revision) ON artifact_workpiece_proposals TO skynet_gateway",
+  "GRANT UPDATE (name, content_type, size_bytes, sha256, storage_key, workpiece_kind, workpiece_state, workpiece_revision, preview_storage_key) ON artifacts TO useagent_gateway",
+  "GRANT SELECT, INSERT, UPDATE ON provider_gateway_audit TO useagent_gateway",
+  "GRANT INSERT ON slack_outbox TO useagent_gateway",
+  "GRANT SELECT, INSERT, UPDATE ON knowledge_records, knowledge_documents, knowledge_revisions TO useagent_gateway",
+  "GRANT SELECT, INSERT ON artifact_workpiece_proposals TO useagent_gateway",
+  "GRANT UPDATE (status, resolved_at, resolved_by, resolved_revision) ON artifact_workpiece_proposals TO useagent_gateway",
   // Durable task tools resolve or create a project, then create/list/update
   // org-scoped tasks. Keep updates column-scoped to the exact gateway patches.
-  "GRANT SELECT, INSERT ON projects TO skynet_gateway",
-  "GRANT UPDATE (repo_full_name, updated_at) ON projects TO skynet_gateway",
-  "GRANT SELECT, INSERT ON tasks TO skynet_gateway",
-  "GRANT UPDATE (title, body, status, priority, order_key, updated_at) ON tasks TO skynet_gateway",
+  "GRANT SELECT, INSERT ON projects TO useagent_gateway",
+  "GRANT UPDATE (repo_full_name, updated_at) ON projects TO useagent_gateway",
+  "GRANT SELECT, INSERT ON tasks TO useagent_gateway",
+  "GRANT UPDATE (title, body, status, priority, order_key, updated_at) ON tasks TO useagent_gateway",
   // Integration action discovery/execution reads tenant-safe connection metadata
   // and the encrypted server-side credential. OAuth lifecycle writes stay in
   // the privileged control plane.
-  "GRANT SELECT ON integration_connections, integration_connection_credentials TO skynet_gateway",
+  "GRANT SELECT ON integration_connections, integration_connection_credentials TO useagent_gateway",
   // Unified context index (Phase 1): the gateway context_search/context_read
   // tools READ the projection; the privileged BACKEND writes it (projector on
   // skill/knowledge/automation writes). SELECT only - no gateway write path.
-  "GRANT SELECT ON context_index TO skynet_gateway",
+  "GRANT SELECT ON context_index TO useagent_gateway",
 ];
 
 /** The BYOK credentials view is created by provisioning; grant only if present. */
 const VIEW_GRANT =
-  "GRANT SELECT ON gateway_provider_api_key_credentials TO skynet_gateway";
+  "GRANT SELECT ON gateway_provider_api_key_credentials TO useagent_gateway";
+
+function grantsForRole(role: string): readonly string[] {
+  if (role === GATEWAY_DATABASE_ROLE) return GATEWAY_GRANTS;
+  return GATEWAY_GRANTS.map((grant) => grant.replaceAll(GATEWAY_DATABASE_ROLE, role));
+}
 
 /**
  * Apply the manifest with the privileged boot connection. A database without
@@ -65,12 +73,21 @@ export async function applyGatewayGrants(
   sql: Sql,
   options: { strict?: boolean } = {},
 ): Promise<void> {
-  const [role] = await sql`SELECT 1 FROM pg_roles WHERE rolname = 'skynet_gateway'`;
+  const [currentRole] = await sql`SELECT 1 FROM pg_roles WHERE rolname = ${GATEWAY_DATABASE_ROLE}`;
+  const [legacyRole] = currentRole
+    ? []
+    : await sql`SELECT 1 FROM pg_roles WHERE rolname = ${LEGACY_GATEWAY_DATABASE_ROLE}`;
+  const role = currentRole
+    ? GATEWAY_DATABASE_ROLE
+    : legacyRole
+      ? LEGACY_GATEWAY_DATABASE_ROLE
+      : null;
   if (!role) {
-    if (options.strict) throw new Error("required hosted role skynet_gateway is missing");
+    if (options.strict) throw new Error(`required hosted role ${GATEWAY_DATABASE_ROLE} is missing`);
     return;
   }
-  for (const grant of GATEWAY_GRANTS) {
+  const grants = grantsForRole(role);
+  for (const grant of grants) {
     try {
       await sql.unsafe(grant);
     } catch (error) {
@@ -80,12 +97,13 @@ export async function applyGatewayGrants(
   }
   const [view] = await sql`SELECT 1 FROM pg_views WHERE viewname = 'gateway_provider_api_key_credentials'`;
   if (view) {
-    await sql.unsafe(VIEW_GRANT).catch((error) => {
-      console.error(`[gateway-grants] failed: ${VIEW_GRANT}:`, error);
+    const viewGrant = VIEW_GRANT.replaceAll(GATEWAY_DATABASE_ROLE, role);
+    await sql.unsafe(viewGrant).catch((error) => {
+      console.error(`[gateway-grants] failed: ${viewGrant}:`, error);
       if (options.strict) throw error;
     });
   } else if (options.strict) {
     throw new Error("required hosted credentials view gateway_provider_api_key_credentials is missing");
   }
-  console.log(`[gateway-grants] reconciled ${GATEWAY_GRANTS.length} grants for skynet_gateway`);
+  console.log(`[gateway-grants] reconciled ${grants.length} grants for ${role}`);
 }

@@ -4,6 +4,7 @@
 
 ssh_public_key_path = "~/.ssh/id_ed25519.pub"
 postgres_password   = "change-me-to-a-strong-secret"
+gateway_postgres_password = "change-me-to-a-different-strong-secret"
 
 # Optional overrides:
 # server_type       = "cpx41"

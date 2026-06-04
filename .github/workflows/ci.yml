@@ -78,7 +78,7 @@ jobs:
         image: pgvector/pgvector:0.8.6-pg16-bookworm
         # Passwordless `postgres` superuser so the test defaults connect verbatim
         # (test/prepare-db.ts → postgres://postgres@localhost:5432/postgres,
-        #  test/preload.ts → .../skynet_test). No env override needed.
+        #  test/preload.ts → .../useagent_test). No env override needed.
         env:
           POSTGRES_HOST_AUTH_METHOD: trust
         ports:
@@ -108,7 +108,16 @@ jobs:
           for p in packages/*/; do
             if [ -f "$p/package.json" ]; then (cd "$p" && bun install --frozen-lockfile); fi
           done
-      # `bun run test` = prepare-db (DROP+CREATE skynet_test) then `bun test`.
+      - name: PostgreSQL identity deploy contracts
+        run: >-
+          bun test
+          ./deploy/hetzner/migrate-postgres-identity.test.ts
+          ./deploy/hetzner/postgres-identity-contract.test.ts
+          ./deploy/hetzner/skynet-backup.test.ts
+          ./deploy/hetzner/gateway-db-grants.test.ts
+          ./backend/src/db/gateway-grants.test.ts
+          ./backend/src/commands/admission-ownership.test.ts
+      # `bun run test` = prepare-db (DROP+CREATE useagent_test) then `bun test`.
       # The boot migrator builds the schema from committed Drizzle migrations, so
       # a schema drift fails here. preload.ts strips LLM keys → fully deterministic.
       - name: bun run test

@@ -2,7 +2,7 @@
  * Prepare the isolated test database. Run once before `bun test` (see the
  * "test" script in package.json). Idempotent — safe to run repeatedly.
  *
- * DROP + CREATE `skynet_test` (via the postgres client — psql is unusable on
+ * DROP + CREATE `useagent_test` (via the postgres client — psql is unusable on
  * this machine, it hangs on a macOS permission dialog), then leave it EMPTY.
  * The schema is built by the same committed Drizzle migrations the server runs
  * at boot: importing `src/index` (which every test does, via helpers) runs
@@ -16,7 +16,7 @@ import postgres from "postgres";
 
 const ADMIN_URL =
   process.env.TEST_ADMIN_URL ?? "postgres://postgres@localhost:5432/postgres";
-const TEST_DB = "skynet_test";
+const TEST_DB = "useagent_test";
 
 async function recreateDatabase(): Promise<void> {
   const admin = postgres(ADMIN_URL, { max: 1 });

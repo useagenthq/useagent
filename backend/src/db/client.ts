@@ -4,7 +4,7 @@ import * as schema from "./schema";
 
 // Single shared connection pool for the whole process.
 export const client = postgres(
-  process.env.DATABASE_URL ?? "postgres://postgres@localhost:5432/skynet",
+  process.env.DATABASE_URL ?? "postgres://postgres@localhost:5432/useagent",
   { max: 10 },
 );
 export const db = drizzle(client, { schema });

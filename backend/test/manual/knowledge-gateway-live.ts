@@ -8,7 +8,7 @@
  *   bun run test/manual/knowledge-gateway-live.ts
  *
  * Needs backend/.env with DAYTONA_API_KEY + ANTHROPIC_API_KEY, and `cloudflared`
- * on PATH. Isolated: throwaway DB skynet_kbgw_live, own backend on :3415.
+ * on PATH. Isolated: throwaway DB useagent_kbgw_live, own backend on :3415.
  */
 import { closeSync, openSync, readFileSync } from "node:fs";
 import { Daytona } from "@daytona/sdk";
@@ -21,7 +21,7 @@ import {
 } from "../e2e/lib/public-tunnel";
 
 const ADMIN_URL = process.env.TEST_ADMIN_URL ?? "postgres://postgres@localhost:5432/postgres";
-const DB = "skynet_kbgw_live";
+const DB = "useagent_kbgw_live";
 const DB_URL = `postgres://postgres@localhost:5432/${DB}`;
 const PORT = 3415;
 const BASE = `http://localhost:${PORT}`;

@@ -1,6 +1,7 @@
 import { asc, count, eq, inArray, sql } from "drizzle-orm";
 import { db, type Executor } from "../db/client";
 import { commands, runs, type CommandState } from "../db/schema";
+import { resolveAdmissionChange } from "./admission-ownership";
 
 const ADMISSION_STATE_ID = "system:run-admission";
 const ADMISSION_LOCK_CLASS = 1_397_445_230;
@@ -18,7 +19,7 @@ export interface RunAdmissionState {
   readonly changedAt: string;
 }
 
-interface AdmissionChange {
+export interface AdmissionChange {
   readonly open: boolean;
   readonly operationId: string;
   readonly actor: string;
@@ -35,6 +36,11 @@ export class RunAdmissionClosedError extends Error {
     this.state = state;
   }
 }
+
+export {
+  resolveAdmissionChange,
+  RunAdmissionOwnershipError,
+} from "./admission-ownership";
 
 function parseState(kind: string, payload: string | null): RunAdmissionState {
   let audit: Partial<RunAdmissionState> = {};
@@ -107,6 +113,8 @@ export async function assertRunAdmissionOpen(exec?: Executor): Promise<void> {
 export async function setRunAdmission(change: AdmissionChange): Promise<RunAdmissionState> {
   return db.transaction(async (tx) => {
     await lockAdmission(tx, "exclusive");
+    const current = await readState(tx);
+    if (resolveAdmissionChange(current, change) === "unchanged") return current;
     const changedAt = new Date().toISOString();
     const state: RunAdmissionState = { ...change, changedAt };
     const payload = JSON.stringify(state);

@@ -9,12 +9,12 @@
  *   `headers` config becomes).
  *
  * Run against the isolated test DB:
- *   DATABASE_URL=postgres://postgres@localhost:5432/skynet_test \
+ *   DATABASE_URL=postgres://postgres@localhost:5432/useagent_test \
  *     bun run test/prepare-db.ts && \
- *   DATABASE_URL=postgres://postgres@localhost:5432/skynet_test \
+ *   DATABASE_URL=postgres://postgres@localhost:5432/useagent_test \
  *     bun run test/manual/knowledge-mcp-client.ts
  */
-process.env.DATABASE_URL ??= "postgres://postgres@localhost:5432/skynet_test";
+process.env.DATABASE_URL ??= "postgres://postgres@localhost:5432/useagent_test";
 process.env.USEAGENT_DEV_MODE = "true";
 
 import server from "../../src/index";

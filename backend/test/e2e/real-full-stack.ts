@@ -12,7 +12,7 @@
  * so those ride through to the subprocess backend; this runner OVERRIDES only the
  * isolation knobs (throwaway DB, PORT=3512, mock Slack).
  *
- * Isolation + cost: throwaway DB `skynet_e2e_real`, own backend on :3512, own
+ * Isolation + cost: throwaway DB `useagent_e2e_real`, own backend on :3512, own
  * mock Slack receiver on :3519. NEVER touches :3401/:3501 or the dev DB (a safety
  * probe aborts if the backend is not on the throwaway DB). At most THREE real
  * sandboxes are provisioned (T1 multi-turn+fanout, T3 memory-recall, T4 crash);
@@ -53,7 +53,7 @@ import postgres from "postgres";
 
 // ── configuration ─────────────────────────────────────────────────────────────
 const ADMIN_URL = process.env.TEST_ADMIN_URL ?? "postgres://postgres@localhost:5432/postgres";
-const DB = "skynet_e2e_real";
+const DB = "useagent_e2e_real";
 const DB_URL = `postgres://postgres@localhost:5432/${DB}`;
 const PORT = 3512;
 const SLACK_PORT = 3519;

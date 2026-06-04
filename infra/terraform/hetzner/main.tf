@@ -45,7 +45,8 @@ resource "hcloud_server" "this" {
   firewall_ids = [hcloud_firewall.this.id]
 
   user_data = templatefile("${path.module}/cloud-init.yaml", {
-    postgres_password = var.postgres_password
+    postgres_password         = var.postgres_password
+    gateway_postgres_password = var.gateway_postgres_password
   })
 
   labels = {
