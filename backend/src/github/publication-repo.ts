@@ -17,7 +17,7 @@ const MAX_LABEL_LENGTH = 255;
 const MAX_STORAGE_KEY_LENGTH = 1_024;
 const MAX_IDEMPOTENCY_KEY_LENGTH = 512;
 const MAX_ERROR_LENGTH = 500;
-const PUBLICATION_CLAIM_MS = 60_000;
+const PUBLICATION_CLAIM_MS = 30_000;
 export const GITHUB_CHANGE_SET_MAX_TTL_MS = 24 * 60 * 60 * 1_000;
 
 export type GitHubChangeSetRecord = typeof githubChangeSets.$inferSelect;
@@ -324,6 +324,24 @@ export async function getGitHubChangeSetForOrg(
   return row ?? null;
 }
 
+export async function getGitHubPublicationReceiptForChangeSet(
+  orgId: string,
+  changeSetId: string,
+  exec: Executor = db,
+): Promise<GitHubPublicationReceiptRecord | null> {
+  const [row] = await exec
+    .select()
+    .from(githubPublicationReceipts)
+    .where(
+      and(
+        eq(githubPublicationReceipts.orgId, orgId),
+        eq(githubPublicationReceipts.changeSetId, changeSetId),
+      ),
+    )
+    .limit(1);
+  return row ?? null;
+}
+
 export async function ensureGitHubPublicationReceipt(
   input: {
     readonly orgId: string;
@@ -491,6 +509,61 @@ export async function claimGitHubPublicationReconciliation(
   });
 }
 
+/** Renew a fenced publication/reconciliation lease. The token changes whenever
+ * an expired lease is reclaimed, so a stale worker cannot renew or perform the
+ * next external operation after another worker has taken ownership. */
+export async function renewGitHubPublicationClaim(input: {
+  readonly orgId: string;
+  readonly receiptId: string;
+  readonly claimToken: string;
+}): Promise<boolean> {
+  const now = new Date();
+  const [row] = await db
+    .update(githubPublicationReceipts)
+    .set({
+      claimExpiresAt: new Date(now.getTime() + PUBLICATION_CLAIM_MS),
+      updatedAt: now,
+    })
+    .where(
+      and(
+        eq(githubPublicationReceipts.orgId, input.orgId),
+        eq(githubPublicationReceipts.id, input.receiptId),
+        inArray(githubPublicationReceipts.state, ["publishing", "reconcile_required"]),
+        eq(githubPublicationReceipts.claimToken, input.claimToken),
+      ),
+    )
+    .returning({ id: githubPublicationReceipts.id });
+  return row !== undefined;
+}
+
+/** Persist the deterministic commit we intend to expose before attempting to
+ * create its branch. Reconciliation must never infer intent from a live ref. */
+export async function recordGitHubPublicationIntent(input: {
+  readonly orgId: string;
+  readonly receiptId: string;
+  readonly claimToken: string;
+  readonly commitSha: string;
+}): Promise<boolean> {
+  const commitSha = sha(input.commitSha, "commitSha", [40, 64]);
+  const [row] = await db
+    .update(githubPublicationReceipts)
+    .set({ commitSha, updatedAt: new Date() })
+    .where(
+      and(
+        eq(githubPublicationReceipts.orgId, input.orgId),
+        eq(githubPublicationReceipts.id, input.receiptId),
+        eq(githubPublicationReceipts.state, "publishing"),
+        eq(githubPublicationReceipts.claimToken, input.claimToken),
+        or(
+          isNull(githubPublicationReceipts.commitSha),
+          eq(githubPublicationReceipts.commitSha, commitSha),
+        ),
+      ),
+    )
+    .returning({ id: githubPublicationReceipts.id });
+  return row !== undefined;
+}
+
 export async function recordGitHubPublicationSuccess(input: {
   readonly orgId: string;
   readonly receiptId: string;
@@ -537,6 +610,7 @@ export async function recordGitHubPublicationSuccess(input: {
           eq(githubPublicationReceipts.id, input.receiptId),
           inArray(githubPublicationReceipts.state, ["publishing", "reconcile_required"]),
           eq(githubPublicationReceipts.claimToken, input.claimToken),
+          eq(githubPublicationReceipts.commitSha, commitSha),
         ),
       )
       .returning();
@@ -596,20 +670,71 @@ export async function recordGitHubPublicationFailure(input: {
   });
 }
 
+/** Abort an attempt that is provably before head-ref creation. The claim token
+ * fences stale workers; clearing commitSha is required because a later GitHub
+ * commit object may receive a different server-generated identity on retry. */
+export async function recordGitHubPublicationPreRefAbort(input: {
+  readonly orgId: string;
+  readonly receiptId: string;
+  readonly claimToken: string;
+  readonly error?: string | null;
+}): Promise<GitHubPublicationReceiptRecord | null> {
+  const error = input.error?.trim().slice(0, MAX_ERROR_LENGTH) || null;
+  return db.transaction(async (tx) => {
+    const now = new Date();
+    const [receipt] = await tx
+      .update(githubPublicationReceipts)
+      .set({
+        state: "pending",
+        commitSha: null,
+        pullRequestNumber: null,
+        pullRequestUrl: null,
+        lastError: error,
+        claimToken: null,
+        claimExpiresAt: null,
+        completedAt: null,
+        updatedAt: now,
+      })
+      .where(
+        and(
+          eq(githubPublicationReceipts.orgId, input.orgId),
+          eq(githubPublicationReceipts.id, input.receiptId),
+          inArray(githubPublicationReceipts.state, ["publishing", "reconcile_required"]),
+          eq(githubPublicationReceipts.claimToken, input.claimToken),
+        ),
+      )
+      .returning();
+    if (!receipt) return null;
+    await tx
+      .update(githubChangeSets)
+      .set({ state: "frozen", updatedAt: now })
+      .where(
+        and(
+          eq(githubChangeSets.orgId, input.orgId),
+          eq(githubChangeSets.id, receipt.changeSetId),
+        ),
+      );
+    return receipt;
+  });
+}
+
 export async function recordGitHubPublicationAmbiguous(input: {
   readonly orgId: string;
   readonly receiptId: string;
   readonly claimToken: string;
   readonly error: string;
+  readonly commitSha?: string | null;
 }): Promise<GitHubPublicationReceiptRecord | null> {
   const error =
     input.error.trim().slice(0, MAX_ERROR_LENGTH) || "github publication outcome is unknown";
+  const commitSha = input.commitSha ? sha(input.commitSha, "commitSha", [40, 64]) : null;
   return db.transaction(async (tx) => {
     const now = new Date();
     const [receipt] = await tx
       .update(githubPublicationReceipts)
       .set({
         state: "reconcile_required",
+        ...(commitSha ? { commitSha } : {}),
         lastError: error,
         claimToken: null,
         claimExpiresAt: null,
@@ -620,8 +745,14 @@ export async function recordGitHubPublicationAmbiguous(input: {
         and(
           eq(githubPublicationReceipts.orgId, input.orgId),
           eq(githubPublicationReceipts.id, input.receiptId),
-          eq(githubPublicationReceipts.state, "publishing"),
+          inArray(githubPublicationReceipts.state, ["publishing", "reconcile_required"]),
           eq(githubPublicationReceipts.claimToken, input.claimToken),
+          commitSha
+            ? or(
+                isNull(githubPublicationReceipts.commitSha),
+                eq(githubPublicationReceipts.commitSha, commitSha),
+              )
+            : undefined,
         ),
       )
       .returning();

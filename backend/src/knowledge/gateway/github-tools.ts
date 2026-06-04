@@ -10,13 +10,29 @@ import {
   readGithubHeadEvidence,
   type GithubEvidenceService,
 } from "./github-pr-evidence";
-import { GITHUB_TOOL_NAMES, GITHUB_TOOLS } from "./github-tool-catalog";
+import {
+  GITHUB_TOOL_NAMES as GITHUB_READ_TOOL_NAMES,
+  GITHUB_TOOLS as GITHUB_READ_TOOLS,
+} from "./github-tool-catalog";
+import {
+  executeGithubPublicationToolLocal,
+  GITHUB_PUBLICATION_TOOL_NAMES,
+  GITHUB_PUBLICATION_TOOLS,
+} from "./github-publication-tools";
+import {
+  argumentsWithoutApproval,
+  consumeGatewayOperationApproval,
+} from "./approval-capability";
 import { executeGithubBackedOperation } from "./github-operation-bridge";
 import { errorResult, textResult } from "./tool-results";
 import type { ToolCallResult } from "./tools";
 import type { ToolTokenClaims } from "./token";
 
-export { GITHUB_TOOL_NAMES, GITHUB_TOOLS };
+export const GITHUB_TOOLS = [...GITHUB_READ_TOOLS, ...GITHUB_PUBLICATION_TOOLS];
+export const GITHUB_TOOL_NAMES: ReadonlySet<string> = new Set([
+  ...GITHUB_READ_TOOL_NAMES,
+  ...GITHUB_PUBLICATION_TOOL_NAMES,
+]);
 
 // ---------------------------------------------------------------------------
 // Execution for the read-only GitHub tool family (see github-tool-catalog.ts).
@@ -446,6 +462,18 @@ export async function executeGithubToolLocal(
   args: Record<string, unknown>,
 ): Promise<ToolCallResult> {
   try {
+    if (GITHUB_PUBLICATION_TOOL_NAMES.has(name)) {
+      if (
+        name === "github_pull_request_publish" &&
+        !(await consumeGatewayOperationApproval(claims, name, args))
+      ) {
+        return errorResult(
+          "A valid server-minted one-shot approval capability is required for github_pull_request_publish.",
+          { error: "approval_required" },
+        );
+      }
+      return executeGithubPublicationToolLocal(claims, name, argumentsWithoutApproval(args));
+    }
     if (
       name !== "github_list_prs" &&
       name !== "github_pr_detail" &&

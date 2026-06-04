@@ -105,6 +105,10 @@ export interface GitHubPublisherDependencies {
 	readonly resolveToken: (repository: string) => Promise<string>;
 	readonly fetch?: GithubFetch;
 	readonly apiBaseUrl?: string;
+	/** Fenced lease check/renewal. Called immediately before every GitHub write. */
+	readonly assertLease?: () => Promise<void>;
+	/** Persist the deterministic commit intent before a branch can expose it. */
+	readonly recordIntent?: (commitSha: string) => Promise<void>;
 }
 
 interface GithubRefResponse {
@@ -418,6 +422,16 @@ export async function publishFrozenGitHubChange(
 		pathName: string,
 		init: RequestInit = {},
 	): Promise<Response> {
+		if (init.method && init.method !== "GET") {
+			try {
+				await dependencies.assertLease?.();
+			} catch {
+				throw stagedError(
+					stage,
+					`GitHub publication lease was lost during ${stage}`,
+				);
+			}
+		}
 		const controller = new AbortController();
 		const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
 		try {
@@ -599,6 +613,7 @@ export async function publishFrozenGitHubChange(
 			"target branch moved while the publication was being prepared",
 		);
 	}
+	await dependencies.recordIntent?.(commitSha);
 
 	const createRefResponse = await requestRaw("create_head_ref", "/git/refs", {
 		method: "POST",

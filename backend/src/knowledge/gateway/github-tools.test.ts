@@ -74,17 +74,22 @@ afterEach(() => {
 
 describe("github gateway tool catalog", () => {
   test("advertises the read-only PR and issue tools without tenant or credential inputs", () => {
-    expect(GITHUB_TOOLS.map((tool) => tool.name)).toEqual([
+    const readTools = GITHUB_TOOLS.slice(0, 3);
+    expect(readTools.map((tool) => tool.name)).toEqual([
       "github_list_prs",
       "github_pr_detail",
       "github_list_issues",
     ]);
-    for (const tool of GITHUB_TOOLS) {
+    for (const tool of readTools) {
       expect(tool.description.length).toBeGreaterThan(0);
-      const properties = Object.keys(tool.inputSchema.properties);
+      const schema = tool.inputSchema as {
+        readonly properties: Readonly<Record<string, unknown>>;
+        readonly required: readonly string[];
+      };
+      const properties = Object.keys(schema.properties);
       expect(properties).not.toContain("token");
       expect(properties).not.toContain("orgId");
-      expect(tool.inputSchema.required).toContain("repo");
+      expect(schema.required).toContain("repo");
     }
   });
 

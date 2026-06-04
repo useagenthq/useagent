@@ -44,7 +44,7 @@ async function executeThroughPrimaryApi(
       "content-type": "application/json",
     },
     body: JSON.stringify({ family, name, arguments: args }),
-    signal: AbortSignal.timeout(30_000),
+    signal: AbortSignal.timeout(name === "github_pull_request_publish" ? 120_000 : 30_000),
   });
   const body = (await response.json().catch(() => null)) as
     | { result?: ToolCallResult; error?: string }

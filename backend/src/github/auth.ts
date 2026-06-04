@@ -11,6 +11,8 @@ import {
   getInstallationTokenForId,
   getRepositoryInstallationToken,
   getRepositoryInstallationTokenForId,
+  getRepositoryPublicationToken,
+  getRepositoryPublicationTokenForId,
 } from "./app-auth";
 import {
   findConnectedOrgIntegrationRecord,
@@ -221,4 +223,34 @@ export async function resolveGithubSandboxToken(
       "configure GITHUB_APP_ID and GITHUB_APP_PRIVATE_KEY, install the App on this repository, " +
       "and grant Contents: read",
   );
+}
+
+/** Resolve the exact-repository write credential used only by the primary
+ * backend publication worker. This function is intentionally not reachable
+ * from sandbox configuration or the restricted gateway process. */
+export async function resolveGithubPublicationToken(
+  repository: string,
+  orgId: string,
+): Promise<string> {
+  const tenant = await resolveTenantGithubAuth(orgId);
+  if (tenant) {
+    return (
+      await getRepositoryPublicationTokenForId(
+        repository,
+        tenant.installationId,
+        tenant.app,
+      )
+    ).token;
+  }
+  const app = githubAppConfig();
+  if (app) {
+    const tenantOrgId = githubTenantOrgId();
+    if (!tenantOrgId || tenantOrgId !== orgId) {
+      throw new Error("GitHub publication access is not available to this organization");
+    }
+    return (await getRepositoryPublicationToken(repository, app)).token;
+  }
+  const { token: pat } = githubConfig();
+  if (pat && process.env.NODE_ENV !== "production" && devModeEnabled()) return pat;
+  throw new Error("GitHub publication requires an organization-scoped GitHub App connection");
 }
