@@ -52,6 +52,18 @@ describe("gateway grants single source of truth", () => {
     );
   });
 
+  test("restricted gateway can persist tasks and read connected integration credentials", () => {
+    expect(GATEWAY_GRANTS).toEqual(
+      expect.arrayContaining([
+        "GRANT SELECT, INSERT ON projects TO skynet_gateway",
+        "GRANT UPDATE (repo_full_name, updated_at) ON projects TO skynet_gateway",
+        "GRANT SELECT, INSERT ON tasks TO skynet_gateway",
+        "GRANT UPDATE (title, body, status, priority, order_key, updated_at) ON tasks TO skynet_gateway",
+        "GRANT SELECT ON integration_connections, integration_connection_credentials TO skynet_gateway",
+      ]),
+    );
+  });
+
   test("strict hosted reconciliation rejects missing role and credentials view", async () => {
     const missingRole = Object.assign(async () => [], { unsafe: async () => [] }) as unknown as Sql;
     await expect(applyGatewayGrants(missingRole, { strict: true })).rejects.toThrow(
