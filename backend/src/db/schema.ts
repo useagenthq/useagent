@@ -22,6 +22,7 @@ export * from "./schema/commands-catalog";
 export * from "./schema/fleet";
 export * from "./schema/projects";
 export * from "./schema/tasks";
+export * from "./schema/github-publication";
 
 // Re-export the better-auth tables so drizzle-kit sees the whole schema and
 // the drizzle adapter can resolve every model.
