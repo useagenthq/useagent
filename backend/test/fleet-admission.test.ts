@@ -405,6 +405,104 @@ describe("durable admission — restart + crash recovery", () => {
     expect((await getRun(retainedRunId))?.sandboxId).toBeNull();
   });
 
+  test("global count pressure evicts an idle retained sandbox (count-bound config)", async () => {
+    process.env.FLEET_GLOBAL_MAX_ACTIVE_SANDBOXES = "1";
+    const orgId = track(`org-${uid("countg")}`);
+    const retainedRunId = await accept(orgId);
+    const leaseId = await createLease({
+      runId: retainedRunId,
+      threadId: retainedRunId,
+      orgId,
+      provider: "mock",
+      tier: "standard",
+      cpuMillicores: 2_000,
+      memoryMib: 8_192,
+      leaseTtlMs: 10_000,
+      sandboxId: "count-box",
+    });
+    await db.execute(sql`
+      update runs set status = 'completed', sandbox_id = 'count-box', settled_at = now()
+      where id = ${retainedRunId}`);
+    await db.execute(sql`
+      update sandbox_leases set state = 'released' where id = ${leaseId}`);
+    const queuedRunId = await accept(orgId);
+    await db.execute(sql`
+      update run_admissions set queue_reason = 'global_limit'
+      where run_id = ${queuedRunId}`);
+
+    const released: string[] = [];
+    expect(await reclaimRetainedCapacityIfNeeded(async (releaseOrgId, runId) => {
+      released.push(runId);
+      const run = await getRun(runId);
+      await db.execute(sql`
+        update runs set sandbox_id = null
+        where org_id = ${releaseOrgId} and thread_id = ${run!.threadId}`);
+      return { ok: true, released: true };
+    })).toBe(1);
+    expect(released).toEqual([retainedRunId]);
+    expect((await getRun(retainedRunId))?.sandboxId).toBeNull();
+  });
+
+  test("org count pressure evicts only the pressured org's idle retained sandbox", async () => {
+    process.env.FLEET_ORG_MAX_ACTIVE_SANDBOXES = "1";
+    // An OLDER idle retained box in another org - must be untouched.
+    const otherOrg = track(`org-${uid("cross")}`);
+    const otherRetained = await accept(otherOrg);
+    const otherLease = await createLease({
+      runId: otherRetained,
+      threadId: otherRetained,
+      orgId: otherOrg,
+      provider: "mock",
+      tier: "standard",
+      cpuMillicores: 2_000,
+      memoryMib: 8_192,
+      leaseTtlMs: 10_000,
+      sandboxId: "other-box",
+    });
+    await db.execute(sql`
+      update runs set status = 'completed', sandbox_id = 'other-box',
+        settled_at = now() - interval '1 hour'
+      where id = ${otherRetained}`);
+    await db.execute(sql`
+      update sandbox_leases set state = 'released' where id = ${otherLease}`);
+
+    const orgId = track(`org-${uid("counto")}`);
+    const retainedRunId = await accept(orgId);
+    const leaseId = await createLease({
+      runId: retainedRunId,
+      threadId: retainedRunId,
+      orgId,
+      provider: "mock",
+      tier: "standard",
+      cpuMillicores: 2_000,
+      memoryMib: 8_192,
+      leaseTtlMs: 10_000,
+      sandboxId: "org-box",
+    });
+    await db.execute(sql`
+      update runs set status = 'completed', sandbox_id = 'org-box', settled_at = now()
+      where id = ${retainedRunId}`);
+    await db.execute(sql`
+      update sandbox_leases set state = 'released' where id = ${leaseId}`);
+    const queuedRunId = await accept(orgId);
+    await db.execute(sql`
+      update run_admissions set queue_reason = 'org_limit'
+      where run_id = ${queuedRunId}`);
+
+    const released: string[] = [];
+    expect(await reclaimRetainedCapacityIfNeeded(async (releaseOrgId, runId) => {
+      released.push(runId);
+      const run = await getRun(runId);
+      await db.execute(sql`
+        update runs set sandbox_id = null
+        where org_id = ${releaseOrgId} and thread_id = ${run!.threadId}`);
+      return { ok: true, released: true };
+    })).toBe(1);
+    // Only the pressured org's box was evicted; the older cross-org box stays.
+    expect(released).toEqual([retainedRunId]);
+    expect((await getRun(otherRetained))?.sandboxId).toBe("other-box");
+  });
+
   test("a dead worker's lease expires and reconciles; capacity is reclaimed and the run settles", async () => {
     stopFleetReconciler();
     const orgId = track(`org-${uid("lease")}`);

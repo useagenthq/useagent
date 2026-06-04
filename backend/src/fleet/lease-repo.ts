@@ -111,7 +111,10 @@ export async function listCurrentRetainedSandboxMappings(
 /** Oldest settled retained thread that can be evicted under capacity pressure. */
 export async function oldestReclaimableRetainedSandbox(
   exec: Executor = db,
+  orgId?: string,
 ): Promise<ReclaimableRetainedSandbox | null> {
+  // Org-limit pressure may only be relieved by that org's own idle boxes.
+  const orgFilter = orgId === undefined ? sql`` : sql`and c.org_id = ${orgId}`;
   const [row] = await exec.execute(sql`
     with current as (
       select distinct on (r.org_id, r.thread_id)
@@ -124,6 +127,7 @@ export async function oldestReclaimableRetainedSandbox(
     select c.id, c.org_id, c.thread_id, c.sandbox_id
     from current c
     where c.status in ('completed', 'failed')
+      ${orgFilter}
       and not exists (
         select 1 from runs active
         where active.org_id = c.org_id

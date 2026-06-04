@@ -12,7 +12,7 @@ import { liveActorRunIds, pumpThread } from "../worker";
 import { selectAdmittableThreads } from "./admission";
 import {
   resetLeasedAdmissionsForBoot,
-  oldestQueuedAdmissionForReason,
+  oldestQueuedCapacityAdmission,
   setAdmissionState,
   syncRunningAdmissions,
   syncTerminalAdmissions,
@@ -96,18 +96,31 @@ type ReleaseRetainedSandbox = (
 export async function reclaimRetainedCapacityIfNeeded(
   release: ReleaseRetainedSandbox = releaseRunSandbox,
 ): Promise<number> {
-  const queued = await oldestQueuedAdmissionForReason("provider_capacity");
+  const queued = await oldestQueuedCapacityAdmission();
   if (!queued) return 0;
   const config = fleetCapacityConfig();
   const inventory = await buildCapacityInventory(queued.orgId);
-  const marginFactor = 1 - config.safetyMarginPct / 100;
-  const cpuBudget = Math.floor(config.hostCpuMillicores * marginFactor);
-  const memoryBudget = Math.floor(config.hostMemoryMib * marginFactor);
-  const retainedResourcePressure =
-    inventory.globalReservedCpuMillicores + queued.cpuMillicores > cpuBudget ||
-    inventory.globalReservedMemoryMib + queued.memoryMib > memoryBudget;
-  if (!retainedResourcePressure) return 0;
-  const candidate = await oldestReclaimableRetainedSandbox();
+  // capacity-policy returns the FIRST failing gate (global count -> org count ->
+  // resources), so the queue head's reason tells us WHICH pressure to verify -
+  // a count-bound host never queues on provider_capacity, and keying eviction on
+  // that single reason starved it for the retained TTL.
+  let pressure = false;
+  let evictWithinOrg: string | undefined;
+  if (queued.queueReason === "global_limit") {
+    pressure = inventory.globalActiveSandboxes >= config.globalMaxActiveSandboxes;
+  } else if (queued.queueReason === "org_limit") {
+    pressure = inventory.orgActiveSandboxes >= config.orgMaxActiveSandboxes;
+    evictWithinOrg = queued.orgId;
+  } else {
+    const marginFactor = 1 - config.safetyMarginPct / 100;
+    const cpuBudget = Math.floor(config.hostCpuMillicores * marginFactor);
+    const memoryBudget = Math.floor(config.hostMemoryMib * marginFactor);
+    pressure =
+      inventory.globalReservedCpuMillicores + queued.cpuMillicores > cpuBudget ||
+      inventory.globalReservedMemoryMib + queued.memoryMib > memoryBudget;
+  }
+  if (!pressure) return 0;
+  const candidate = await oldestReclaimableRetainedSandbox(undefined, evictWithinOrg);
   if (!candidate) return 0;
   const result = await release(candidate.orgId, candidate.runId);
   return result.ok && result.released === true ? 1 : 0;
