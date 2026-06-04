@@ -70,12 +70,12 @@ export async function buildCapacityInventory(
 ): Promise<CapacityInventory> {
   const res = await reservationSnapshot(orgId, exec, excludeRetainedSandboxId);
   const prov = providerCache?.inv ?? null;
-  const resident = Math.max(0, Math.max(
-    (prov?.activeSandboxes ?? 0) + (prov?.pausedSandboxes ?? 0),
-    prov?.warmPoolReady ?? 0,
-  ) - (excludeRetainedSandboxId ? 1 : 0));
   return {
-    globalActiveSandboxes: Math.max(res.globalActiveSandboxes, resident),
+    // Durable leases plus bounded retained-thread mappings are the capacity
+    // authority. Provider counts include warm-pool and historical boxes that
+    // are not owned by this admission domain, so promoting them into the
+    // global count can permanently queue every run after provider drift.
+    globalActiveSandboxes: res.globalActiveSandboxes,
     globalReservedCpuMillicores: res.globalReservedCpuMillicores,
     globalReservedMemoryMib: res.globalReservedMemoryMib,
     orgActiveSandboxes: res.orgActiveSandboxes,
