@@ -67,7 +67,7 @@ describe("gating", () => {
     const fetchImpl = (async () => {
       fetchCalls += 1;
       return new Response();
-    }) as typeof fetch;
+    }) as unknown as typeof fetch;
 
     await recordRunFollowups(run, "A sufficiently long completed answer for suggestions.", {
       env: { FOLLOWUPS_ENABLED: "1", OPENROUTER_API_KEY: "house-key" },
