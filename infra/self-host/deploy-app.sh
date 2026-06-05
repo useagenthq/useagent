@@ -1,13 +1,15 @@
 #!/usr/bin/env bash
-# Bring up the Skynet core stack (backend + frontend + Caddy) on a host that
-# cloud-init has already prepared (bun, node, docker, postgres installed).
+# Bring up the useAgent core stack (backend + frontend + Caddy) on any
+# Ubuntu 24.04 host prepared with the base dependencies (bun, node, docker,
+# postgres) - a cloud-init-provisioned Hetzner reference host, an AWS/GCP VM,
+# or bare metal all work; only root SSH access is assumed.
 #
 # Usage:
 #   SERVER_IP=1.2.3.4 \
 #   PG_PASSWORD=... \
 #   OPENROUTER_API_KEY=... \
 #   SSH_KEY=~/.ssh/id_ed25519 \
-#   ./deploy-app.sh /path/to/skynet/repo
+#   ./deploy-app.sh /path/to/useagent/repo
 #
 # Idempotent: re-run to redeploy. Memory-core and the sandbox providers are
 # intentionally left out of this "core" bring-up (they need extra secrets and a
@@ -18,7 +20,7 @@ SERVER_IP=${SERVER_IP:?set SERVER_IP}
 PG_PASSWORD=${PG_PASSWORD:?set PG_PASSWORD}
 PG_GATEWAY_PASSWORD=${PG_GATEWAY_PASSWORD:?set PG_GATEWAY_PASSWORD}
 SSH_KEY=${SSH_KEY:-$HOME/.ssh/id_ed25519}
-REPO=${1:?pass the path to the skynet repo root}
+REPO=${1:?pass the path to the useagent repo root}
 SSH=(ssh -i "$SSH_KEY" -o StrictHostKeyChecking=accept-new root@"$SERVER_IP")
 
 echo "== wait for cloud-init to finish =="

@@ -53,8 +53,8 @@ Every arrow is a real `file:` dependency in a `package.json`; the dashed arrows 
 | `packages/artifact-formats/` | Native DOCX, XLSX, PPTX, and PDF renderers plus bounded Office text extraction. |
 | `packages/artifact-workspace/` | Provider-neutral workpiece kinds, actions, and the native export capability matrix shared by backend and frontend. |
 | `packages/conformance/` | Deterministic, framework-free contract tests for the shared client and harness packages. It does not run live providers. |
-| `infra/terraform/hetzner/` | Self-host IaC: provisions a Hetzner host (Postgres 16 + pgvector, bun, Caddy) with one apply, and `deploy-app.sh` brings up the core stack. |
-| `infra/terraform/prod/` | Terraform for Cloudflare DNS only. |
+| `infra/self-host/hetzner/` | Self-host IaC: provisions a Hetzner host (Postgres 16 + pgvector, bun, Caddy) with one apply, and `deploy-app.sh` brings up the core stack. |
+| `infra/prod/` | Terraform for Cloudflare DNS only. |
 | `deploy/` | Hosted release gates and canaries invoked by the root `release:*` scripts. |
 | `memory/` | Optional team-memory service docs and bring-up notes. |
 
