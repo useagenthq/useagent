@@ -177,10 +177,10 @@ export function memoryConfig(): MemoryConfig | null {
   return {
     url: url.replace(/\/+$/, ""),
     apiKey: process.env.MEMORY_API_KEY ?? "",
-    serviceId: process.env.MEMORY_SERVICE_ID ?? "skynet",
-    teamId: process.env.MEMORY_TEAM_ID ?? "skynet",
-    agentId: process.env.MEMORY_AGENT_ID ?? "skynet-backend",
-    userId: process.env.MEMORY_USER_ID ?? "skynet",
+    serviceId: process.env.MEMORY_SERVICE_ID ?? "useagent",
+    teamId: process.env.MEMORY_TEAM_ID ?? "useagent",
+    agentId: process.env.MEMORY_AGENT_ID ?? "useagent-backend",
+    userId: process.env.MEMORY_USER_ID ?? "useagent",
   };
 }
 

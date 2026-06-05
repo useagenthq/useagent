@@ -30,7 +30,7 @@ function installWindow() {
 
 function responseWithFingerprint(fingerprint: string): Response {
   return new Response("{}", {
-    headers: { "x-skynet-release-fingerprint": fingerprint },
+    headers: { "x-useagent-release-fingerprint": fingerprint },
   });
 }
 
@@ -44,10 +44,10 @@ describe("release compatibility boundary", () => {
     const api = withClientReleaseHeader("/api/runs", { headers: { accept: "application/json" } });
     const nonApi = withClientReleaseHeader("/agent/new", { headers: { accept: "text/html" } });
 
-    expect(new Headers(api?.headers).get("x-skynet-client-release")).toBe(
+    expect(new Headers(api?.headers).get("x-useagent-client-release")).toBe(
       CLIENT_RELEASE_FINGERPRINT,
     );
-    expect(new Headers(nonApi?.headers).get("x-skynet-client-release")).toBeNull();
+    expect(new Headers(nonApi?.headers).get("x-useagent-client-release")).toBeNull();
   });
 
   test("reloads a stale tab on safe requests", () => {
@@ -67,4 +67,15 @@ describe("release compatibility boundary", () => {
     ).toThrow(FrontendReleaseMismatchError);
     expect(win.reloaded()).toBe(true);
   });
+});
+
+test("legacy release-fingerprint header still satisfies the handshake", () => {
+  const fingerprint = "run-events-v1:abc";
+  const response = new Response(null, {
+    headers: { "x-skynet-release-fingerprint": fingerprint },
+  });
+  expect(
+    (response.headers.get("x-useagent-release-fingerprint") ??
+      response.headers.get("x-skynet-release-fingerprint")),
+  ).toBe(fingerprint);
 });

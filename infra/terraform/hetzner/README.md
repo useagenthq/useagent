@@ -88,7 +88,7 @@ the desktop need more that an operator supplies:
 | Managed Codex / provider keys | Provider connections configured in the app. |
 | Everything | The env in `deploy/hetzner/configure-host.sh` (service accounts, secrets). |
 
-Point the extra env at `/etc/skynet/backend.env` and restart `skynet-backend`.
+Point the extra env at `/etc/useagent/backend.env` and restart `useagent-backend`.
 
 ## Verified
 

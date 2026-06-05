@@ -194,7 +194,7 @@ Tests pass (\`bun test\`). Next I can add the load-test evidence and open a PR.`
 
 const TURN2_ANSWER = `## PR opened with load-test evidence
 
-Opened **skynet/gateway#128** and attached the k6 run. Under a 5x burst the
+Opened **useagent/gateway#128** and attached the k6 run. Under a 5x burst the
 limiter held the org to its budget and the p99 stayed flat.
 
 | Metric | Baseline | Under limiter |
@@ -414,7 +414,7 @@ export const conversation: SampleTurn[] = [
           server: "github",
           input: {
             title: "gateway: token-bucket rate limiting (100/min per org)",
-            description: "skynet/gateway#128",
+            description: "useagent/gateway#128",
           },
           output: "Opened PR #128 - gateway: token-bucket rate limiting.",
         },

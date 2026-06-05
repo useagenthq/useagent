@@ -173,19 +173,23 @@ app.use(
   cors({
     origin: env.FRONTEND_ORIGIN,
     credentials: true,
-    allowHeaders: ["Content-Type", "Authorization", "x-skynet-client-release"],
-    exposeHeaders: ["x-skynet-release-fingerprint", "x-skynet-api-compat"],
+    allowHeaders: ["Content-Type", "Authorization", "x-useagent-client-release", "x-skynet-client-release"],
+    exposeHeaders: ["x-useagent-release-fingerprint", "x-useagent-api-compat", "x-skynet-release-fingerprint", "x-skynet-api-compat"],
     allowMethods: ["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
   }),
 );
 
 app.use("/api/*", async (c, next) => {
   const release = currentReleaseFingerprint();
+  // New header names, with the legacy pair dual-emitted for one transition
+  // window so pre-rename frontends keep their release-compat handshake.
+  c.header("x-useagent-release-fingerprint", release.fingerprint);
+  c.header("x-useagent-api-compat", release.apiCompat);
   c.header("x-skynet-release-fingerprint", release.fingerprint);
   c.header("x-skynet-api-compat", release.apiCompat);
   if (
     ["POST", "PUT", "PATCH", "DELETE"].includes(c.req.method) &&
-    !isClientReleaseCompatible(c.req.header("x-skynet-client-release"), release.fingerprint)
+    !isClientReleaseCompatible(c.req.header("x-useagent-client-release") ?? c.req.header("x-skynet-client-release"), release.fingerprint)
   ) {
     return c.json(
       {

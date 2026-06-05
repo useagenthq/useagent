@@ -8,7 +8,7 @@ import type { CodeRecord } from "./extractor";
 // source_ref is the stable typed pointer, carrying full provenance so context_read
 // can re-fetch the exact cited excerpt from the repo at that commit:
 //   code:<owner/name>@<sha>:<file>#L<line>
-// e.g. "code:upstream-org/loop-dns@<sha>:workers/functions-proxy/src/index.ts#L17"
+// e.g. "code:acme/dns@<sha>:workers/functions-proxy/src/index.ts#L17"
 // ---------------------------------------------------------------------------
 
 export interface CodeProvenance {
