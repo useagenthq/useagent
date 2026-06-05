@@ -1,7 +1,7 @@
 # useAgent frontend - agent guide
 
-**useAgent** is an open-source agent platform: autonomous
-engineer. The canonical UI kit is `components/base/**` (BoardUI-derived,
+**useAgent** is an open-source agent platform: autonomous engineers running
+in isolated cloud sandboxes. The canonical UI kit is `components/base/**` (BoardUI-derived,
 licensed and vendored) plus its semantic tokens; every product surface builds on
 it. Dialog/overlay primitives (Modal, Drawer, command palette) live in
 `components/base` and `components/session-ui`. Chat surfaces compose
