@@ -1,0 +1,57 @@
+---
+title: Automations, secrets and keys API
+description: Scheduled automations, write-only org secrets, and session-only API keys.
+sidebar:
+  label: Automations and keys
+  order: 7
+---
+
+Scheduling and the credential surfaces. All routes are org-session scoped; secret
+writes require an org admin, and API-key routes are session-only. See
+[Automations](/product/automations) and [Secrets](/product/secrets).
+
+## Automations
+
+The router is mounted at both `/api/automations` (primary) and `/api/schedules`
+(a backward-compatible alias); the paths are identical under either prefix. A new
+automation is always created disabled, so nothing auto-fires until it is
+explicitly enabled.
+
+| Method | Path | Description | Notes |
+| --- | --- | --- | --- |
+| GET | `/api/automations` | List the org's automations, newest first. | Returns `{automations, schedules}` (the same array under both keys for resumed clients). |
+| POST | `/api/automations` | Create an automation (created disabled). | JSON body validated by the service. `201` created object; `400` on invalid JSON. |
+| PATCH | `/api/automations/:id` | Update an automation (enable/disable or edit). | Partial JSON body. `200` updated object. |
+| POST | `/api/automations/:id/run-now` | Fire immediately: create a real run and record a manual firing. | `201 {run_id}`. `404 schedule not found`. |
+| GET | `/api/automations/:id/history` | Firing history, newest first. | `{firings}`. `404 schedule not found`. |
+| DELETE | `/api/automations/:id` | Delete an automation and its firing rows. | `204`. Runs from past firings remain in the durable run log. |
+
+## Secrets
+
+Encrypted named secrets injected as env vars into the per-thread sandbox at boot.
+Values are **write-only**: they can be set and removed but are never returned.
+Writes require an org admin.
+
+| Method | Path | Description | Notes |
+| --- | --- | --- | --- |
+| GET | `/api/secrets` | List secret names and timestamps (never values). | `{secrets}`, metadata only. |
+| PUT | `/api/secrets/:name` | Upsert a secret value (encrypted at rest). | Org-admin. Body: `value` (required), `kind` (default `env`). Name must match `^[A-Z][A-Z0-9_]*$` and not be reserved (`400` otherwise). Response echoes metadata only. |
+| DELETE | `/api/secrets/:name` | Delete a secret. | Org-admin. `{deleted: true, name}`. `404 secret not found`. |
+
+:::note
+There is no endpoint that returns a stored secret value; the value is write-only
+at this boundary by design.
+:::
+
+## API keys
+
+Long-lived bearer credentials for local-to-cloud run dispatch. **Session auth
+only**: a bearer key can never mint, list, or revoke keys (`403
+session_required`). The plaintext secret is shown once at creation; only its hash
+is stored. Keys are scoped to the signing-in member.
+
+| Method | Path | Description | Notes |
+| --- | --- | --- | --- |
+| POST | `/api/api-keys` | Mint a key for the org, owned by the signed-in user. | Session-only. Body: `name` (required, at most 100 chars). `201` including the plaintext secret **one time only**. |
+| GET | `/api/api-keys` | List the member's keys (metadata only). | Session-only. `{keys}`, no plaintext secrets. |
+| DELETE | `/api/api-keys/:id` | Revoke one of the member's keys (soft delete). | Session-only. `{revoked: true, id}`. Another member's id returns `404`, not `403`. |

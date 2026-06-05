@@ -20,7 +20,7 @@
  */
 import { readFile } from "node:fs/promises";
 
-const baseUrl = new URL(process.env.USEAGENT_BASE_URL ?? "https://skynet.meow.gs");
+const baseUrl = new URL(process.env.USEAGENT_BASE_URL ?? "https://app.useagent.org");
 const tasks = Number(process.env.FLEET_CANARY_TASKS ?? 20);
 const engine = process.env.FLEET_CANARY_ENGINE ?? "mock";
 const timeoutMs = Number(process.env.FLEET_CANARY_TIMEOUT_MS ?? 600_000);

@@ -1,0 +1,48 @@
+---
+title: Knowledge and wiki API
+description: Knowledge records and hybrid search, wiki documents and revisions, learning-lane knowledge drafts, and repo-wiki generation.
+sidebar:
+  label: Knowledge and wiki
+  order: 4
+---
+
+The retrieval and documentation surfaces. All routes are org-session scoped;
+draft accept/dismiss additionally require an org admin. See [Knowledge and
+wiki](/product/knowledge-and-wiki).
+
+## Knowledge
+
+| Method | Path | Description | Notes |
+| --- | --- | --- | --- |
+| GET | `/api/knowledge` | List org records, pinned first, newest first. | Query `q` (optional keyword filter). Returns `{records, embeddings}` (`embeddings` reflects whether embeddings are enabled). |
+| POST | `/api/knowledge/search` | Hybrid (tsvector + pgvector) retrieval. | Body: `query` (required), `k` (default 8). Returns `{results, mode}` where `mode` is `"hybrid"` or `"keyword"` (falls back to keyword when no embedding is produced). |
+| POST | `/api/knowledge/ingest` | The ingestion contract. | Body: `meta`, `text`. `org_id`/`user_id` injected server-side. `400` on validation error. |
+| PATCH | `/api/knowledge/:id` | Pin or unpin a record. | Body: `pinned` (boolean, required). `404 record not found`. |
+| DELETE | `/api/knowledge/:id` | Delete a record. | `{deleted: true}`. `404 record not found`. |
+| GET | `/api/knowledge/documents` | List wiki documents by status. | Query `status` (`draft`/`published`/`archived`/`all`; default `published`). Returns `{documents}`. |
+| POST | `/api/knowledge/documents` | Create a draft document plus its first revision. | Body: `title` (required), `content` (required), `collection`, `slug`, `source`. Returns `{document}`. |
+| GET | `/api/knowledge/documents/:id` | Fetch one document and its revisions. | `{document, revisions}`. `404 document not found`. |
+| POST | `/api/knowledge/documents/:id/revisions` | Append an immutable revision. | Body: `content` (required), `source`. Returns `{revisionId}`. `404 document not found`. |
+| POST | `/api/knowledge/documents/:id/publish` | Publish a revision so it becomes searchable. | Body (optional): `revisionId`. `404 document or revision not found`. |
+| POST | `/api/knowledge/documents/:id/archive` | Unpublish and drop from retrieval. | `{document}`. `404 document not found`. |
+
+## Knowledge drafts
+
+Learning-lane reviewable drafts from high-value runs. Listing is org-visible;
+accept and dismiss are org-admin.
+
+| Method | Path | Description | Notes |
+| --- | --- | --- | --- |
+| GET | `/api/knowledge/drafts` | List reviewable drafts, newest first. | Query `status` (`draft`/`accepted`/`dismissed`). Returns `{drafts}`. |
+| POST | `/api/knowledge/drafts/:id/accept` | Accept a draft: create the real record (may raise a skill proposal). | Org-admin. `{draft, record_id, proposal_id}`. `404 draft not found`, `409 draft already resolved`. |
+| POST | `/api/knowledge/drafts/:id/dismiss` | Dismiss a draft (recorded, never deleted). | Org-admin. `{draft}`. `404`/`409` as above. |
+
+## Wiki
+
+Repo-wiki generation clones an offered repo and publishes a per-page architecture
+wiki as org-scoped documents. Inert without an OpenRouter credential (`503`).
+
+| Method | Path | Description | Notes |
+| --- | --- | --- | --- |
+| POST | `/api/wiki/generate` | Start (or join) a wiki-generation job for a repository. | Body: `repo` (`"owner/name"`, must be a repo the backend offers). Returns `{jobId, repo, status, pagesTotal, pagesDone, error, result, submittedAt}`. `503` unconfigured, `400` invalid or unavailable repo. |
+| GET | `/api/wiki/generate/:jobId` | Poll a generation job. | Same job shape. `404 job not found`. |

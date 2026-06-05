@@ -1,0 +1,27 @@
+---
+title: Memory API
+description: The Memory Hub - pool search and browse, item correction and deletion, the capture outbox, and the recall ledger.
+sidebar:
+  label: Memory
+  order: 5
+---
+
+The human control surface over the team-memory pools plus the capture outbox and
+retrieval ledger. All routes are org-session scoped. Personal-scope operations
+resolve a real authenticated user and **fail closed** - the dev-org fallback user
+is never borrowed for a personal pool. See [Memory hub](/product/memory-hub).
+
+Every route accepts a `scope` of `org` (default) or `personal`; an invalid value
+falls back to `org`. When memory is not configured, reads return `{enabled:
+false, items: []}` rather than an error.
+
+| Method | Path | Description | Notes |
+| --- | --- | --- | --- |
+| GET | `/api/memory/search` | Search-driven recall across the resolved pool. | Query `scope`, `q`. Returns `{enabled, scope, authed, truncated, latencyMs, items}` with each item `{content, sourceScope, citation}`. Personal + unauthenticated returns `failedClosed: true`. |
+| GET | `/api/memory/browse` | List stored memory for the viewed pool, newest first. | Query `scope`. Returns `{enabled, scope, authed, total, latencyMs, items}`. |
+| PATCH | `/api/memory/item/:id` | Correct a stored fact in its pool. | Body: `scope`, `content` (required), `background`. `{ok: true}`. `403 sign-in required` (personal) or `403 memory disabled` (org) when no pool identity; `502 update failed` on upstream not-ok. |
+| DELETE | `/api/memory/item/:id` | Delete a stored fact from its pool. | Query `scope`. `{ok: true, deletedCount}`. `404 not found in this pool` when nothing matched; `403` as above. |
+| GET | `/api/memory/captures` | This org's capture-outbox rows and their delivery state. | `{captures}`. `delivering` orphans surface here for manual recovery. |
+| POST | `/api/memory/captures/:runId/retry` | Re-enqueue a dead capture (fresh attempt budget). | `{ok: true}`. `404 no dead capture for this run in your org`. |
+| POST | `/api/memory/captures/:runId/resolve` | Resolve a crash-orphaned `delivering` capture, at most once. | Body: `resolution` (`"delivered"` or `"discard"`, required). `{ok: true}`. `404 no delivering orphan for this run in your org`. |
+| GET | `/api/memory/recalls` | Per-run recall frames from the retrieval ledger. | `{recalls}`, each linking back to its session. |

@@ -19,18 +19,18 @@ describe("Better Auth trusted origins", () => {
   test("keeps both legacy and app hosts during the domain transition", () => {
     expect(
       betterAuthTrustedOrigins({
-        FRONTEND_ORIGIN: "https://skynet.meow.gs",
-        BETTER_AUTH_URL: "https://skynet.meow.gs",
-        BETTER_AUTH_TRUSTED_ORIGINS: "https://app.useagent.org, https://skynet.meow.gs/",
+        FRONTEND_ORIGIN: "https://app.useagent.org",
+        BETTER_AUTH_URL: "https://app.useagent.org",
+        BETTER_AUTH_TRUSTED_ORIGINS: "https://skynet.meow.gs, https://app.useagent.org/",
       }),
-    ).toEqual(["https://skynet.meow.gs", "https://app.useagent.org"]);
+    ).toEqual(["https://app.useagent.org", "https://skynet.meow.gs"]);
   });
 
   test("rejects non-HTTP origins", () => {
     expect(() =>
       betterAuthTrustedOrigins({
-        FRONTEND_ORIGIN: "https://skynet.meow.gs",
-        BETTER_AUTH_URL: "https://skynet.meow.gs",
+        FRONTEND_ORIGIN: "https://app.useagent.org",
+        BETTER_AUTH_URL: "https://app.useagent.org",
         BETTER_AUTH_TRUSTED_ORIGINS: "javascript:alert(1)",
       }),
     ).toThrow("accepts only HTTP(S) origins");

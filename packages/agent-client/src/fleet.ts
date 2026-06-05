@@ -124,7 +124,7 @@ export interface FleetClient {
 /** The hosted org origin used when no baseUrl / USEAGENT_BASE_URL is given. The ONE
  *  place this domain is written - the CLI, the MCP server, and the README all resolve
  *  through here, so moving the product domain is a single-line change. */
-export const DEFAULT_BASE_URL = "https://skynet.meow.gs";
+export const DEFAULT_BASE_URL = "https://app.useagent.org";
 export const DEFAULT_CONCURRENCY = 4;
 export const MAX_FLEET_CONCURRENCY = 20;
 export const MAX_FLEET_TASKS = 100;

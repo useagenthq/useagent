@@ -1,67 +1,130 @@
 ---
 title: API reference
-description: The HTTP surface the frontend and integrations call. Conventions first, then runs, chat, approvals, and health.
+description: The HTTP surface the frontend and integrations call - the auth model, release-compatibility headers, streaming endpoints, and how the reference is organized.
 sidebar:
-  label: Conventions and runs
+  label: Overview
   order: 1
 ---
 
-Every product API lives under `/api`. The browser reaches it through the frontend
-proxy; integrations call it directly. This reference groups the surface by area.
+Every product API lives under `/api`. The browser reaches it through the Next
+rewrite (`/api/*` proxies to the backend); integrations call the backend
+directly. This reference is generated from the mounted route files and documents
+only behavior that exists in the code today.
+
+Paths below use `:param` for path parameters.
+
+## Auth model
+
+Authentication is a [better-auth](https://better-auth.com) session, mounted at
+`/api/auth/*` (email/password plus the organization plugin). The browser carries
+the session as a cookie; CORS runs with `credentials: true` so a direct
+cross-origin call from the frontend origin still sends it.
+
+Tenancy is **server-resolved, never client-supplied**. A request is scoped to the
+session's active organization (falling back to the user's first membership). The
+universal adapter runs this for every `/api/*` path that is not explicitly public,
+so a new router is protected by default.
+
+| Scope | Meaning | Failure |
+| --- | --- | --- |
+| **org-session** | The default. Scoped to the session's org + user. | `401 unauthorized` when anonymous and dev-org access is off; `403 no_organization` when the user belongs to no org. |
+| **user-scoped** | org-session plus a real authenticated user (no dev-org fallback user). | `403 user_required` |
+| **org-admin** | org-session plus an `owner`/`admin` member role. | `403 organization_admin_required` |
+| **public** | Bypasses org scoping; self-authenticates (e.g. Slack signature) or is secret-free. | per route |
+
+In local development, `ALLOW_DEV_ORG` lets an unauthenticated request resolve to
+the seeded dev org so every API stays usable without login. Turning it off
+(production) makes every domain route `401` until a session is present. See [Auth
+and organizations](/platform/auth-and-orgs).
+
+### API-key bearer lane
+
+A request carrying `Authorization: Bearer uak_...` is authenticated against a
+stored key hash and gated by a **deny-by-default allowlist**: a valid key reaches
+only run dispatch and read paths, and an unknown, revoked, or off-allowlist call
+is `401`. A request without that header passes straight through to the session
+lane untouched. A bearer key can never mint or revoke keys - those routes are
+session-only (`403 session_required`). See [API keys](/api/automations#api-keys).
+
+### Public paths
+
+These prefixes carry their own auth boundary and are not org-scoped:
+
+- `GET /api/health`, `GET /api/config` - secret-free liveness and client config.
+- `/api/auth/*` - better-auth's own login and session endpoints.
+- `/api/slack/*` - Slack request-signature verified (see [Slack](/api/platform#slack)).
+
+Internal loopback bridges under `/api/internal/*` (the sandbox gateway, operator
+dispatch, and canonicalization lanes) authenticate themselves with short-lived
+run capabilities or a loopback secret and are intentionally omitted from this
+product reference.
 
 ## Conventions
 
-- **Org-scoped.** Scope is derived from the authenticated session, never from a
-  client-supplied organization id. See [Auth and
-  organizations](/platform/auth-and-orgs).
-- **Idempotent commands.** `POST /api/runs` accepts an `Idempotency-Key` header,
-  so a retried command never duplicates work.
-- **Release compatibility.** Every response carries `x-skynet-release-fingerprint`
-  and `x-skynet-api-compat`. A client may send `x-skynet-client-release`; a
-  mutating request (`POST`, `PUT`, `PATCH`, `DELETE`) with an incompatible value
-  is rejected with `409 { "error": "frontend_release_mismatch" }`.
-- **Streaming over SSE.** Live updates use server-sent events: a thread-scoped
-  stream per run, and one org-change stream for ambient invalidations. See
-  [Events and streaming](/concepts/events-and-streaming).
-- **Paths use `:param`** for path parameters below.
+- **Idempotent commands.** `POST /api/runs` and `POST /api/skills/:id/run` accept
+  an `Idempotency-Key` header, so a retried command replays instead of
+  duplicating work (a reused key against a different payload is `409
+  idempotency_key_reused`).
+- **Release compatibility.** Every `/api/*` response carries
+  `x-skynet-release-fingerprint` (`run-events-v1:<commit>`) and
+  `x-skynet-api-compat` (`run-events-v1`). A client may send
+  `x-skynet-client-release`; a mutating request (`POST`, `PUT`, `PATCH`,
+  `DELETE`) with an incompatible value is rejected `409 {
+  "error": "frontend_release_mismatch", "release" }`. A request is compatible
+  when it sends no client header, its value matches exactly, or the server is a
+  `:dev` build.
+- **Server-owned fields.** Tenant identity and provenance (`org_id`, `user_id`,
+  `origin`) are set server-side. `POST /api/runs` rejects a client-supplied
+  `origin` with `400`.
+
+## Streaming
+
+Live updates use server-sent events and WebSockets. See [Events and
+streaming](/concepts/events-and-streaming).
+
+| Method | Path | Stream |
+| --- | --- | --- |
+| GET | `/api/runs/changes` | Org-change invalidations (IDs only, no payloads). |
+| GET | `/api/runs/:rootRunId/thread-events` | Thread-scoped aggregate of every run in a conversation. |
+| GET | `/api/runs/:id/events` | Per-run trace (legacy rollback path). |
+| POST | `/api/chat` | Chat completion tokens. |
+| WS | `/api/runs/:id/terminal` | Sandbox PTY (xterm bridge). |
+| WS | `/api/desktop-proxy/:threadId/websockify` | noVNC desktop RFB stream. |
 
 ## Health and config
 
-| Method | Path | Purpose |
-| --- | --- | --- |
-| GET | `/api/health` | Liveness. |
-| GET | `/api/config` | The client capability contract: `auth` (`google`, `emailPassword`), `allowDevOrg`, `release`, readiness-filtered `engines` and `models`, `sandbox.provider`, `capabilities` (`github`, `slack`, `memory`, `toolGateway`), and `artifacts.fidelity`. |
+| Method | Path | Description | Notes |
+| --- | --- | --- | --- |
+| GET | `/api/health` | Liveness. | `{ status: "ok" }`. Public. |
+| GET | `/api/config` | Client capability contract. | `auth` (`google`, `emailPassword`), `allowDevOrg`, `release`, readiness-filtered `engines` and `models`, `sandbox.provider`, `capabilities` (`github`, `slack`, `memory`, `toolGateway`), `artifacts.fidelity`. Public. |
 
-## Runs and threads
+## The rest of the surface
 
-| Method | Path | Purpose |
-| --- | --- | --- |
-| GET | `/api/runs` | List runs (thread roots by default; `?all=1` for every run, `view=summary` with `limit` and `include_active` for a compact list). |
-| POST | `/api/runs` | Start a run, or a reply when a parent is referenced. |
-| GET | `/api/runs/changes` | Org-change SSE stream (invalidations only). |
-| GET | `/api/runs/:id` | Fetch a run; the whole thread with `?thread=1`. |
-| POST | `/api/runs/:id/cancel` | Cancel a run. |
-| POST | `/api/runs/:id/questions/:questionId/reply` | Answer a question a run asked. |
-| POST | `/api/runs/:id/approvals/:requestId/reply` | Respond to an approval request. |
-| DELETE | `/api/runs/:id/sandbox` | Release the thread's sandbox (explicit eval/test cleanup; 404 unknown run, 409 thread is active, 502 release failed). |
-| GET | `/api/runs/:id/uploads` | List the run's inbound attachments (Slack files, browser uploads). Attachment happens by creating uploads via `POST /api/uploads` and referencing them when the run starts; they are claimed at command acceptance. |
-| GET | `/api/runs/:id/timings` | Turn timings. |
-| GET | `/api/runs/:id/events` | Per-run event stream (legacy). |
-| GET | `/api/runs/:rootRunId/thread-events` | Thread-scoped SSE stream. |
-
-## Chat
-
-| Method | Path | Purpose |
-| --- | --- | --- |
-| GET | `/api/chat/models` | Models available to the lightweight chat surface. |
-| POST | `/api/chat` | Stream a direct chat answer with cited retrieval. |
-
-## Gateway approvals
-
-| Method | Path | Purpose |
-| --- | --- | --- |
-| POST | `/api/gateway/approvals` | The approval decision surface for gated operations. |
-
-The rest of the surface is grouped into [Knowledge and
-memory](/api/knowledge-and-memory), [Artifacts and
-work](/api/artifacts-and-work), and [Platform](/api/platform).
+<CardGroup cols={2}>
+  <Card title="Runs, threads and realtime" href="/api/runs" icon="play">
+    Create and cancel runs, the SSE streams, chat, commands, gateway approvals,
+    and the terminal/live/desktop transports.
+  </Card>
+  <Card title="Artifacts and uploads" href="/api/artifacts" icon="file">
+    Durable run artifacts, workpiece editing and proposals, and user uploads.
+  </Card>
+  <Card title="Knowledge and wiki" href="/api/knowledge" icon="book">
+    Knowledge records and search, documents, learning-lane drafts, and repo-wiki
+    generation.
+  </Card>
+  <Card title="Memory" href="/api/memory" icon="brain">
+    The Memory Hub: pool search and browse, item correction, the capture outbox,
+    and the recall ledger.
+  </Card>
+  <Card title="Skills, tasks and projects" href="/api/skills" icon="wand">
+    Skills and playbooks, GitHub skill import, learning-lane proposals, and the
+    task board.
+  </Card>
+  <Card title="Automations, secrets and keys" href="/api/automations" icon="clock">
+    Scheduled automations, org secrets, and API keys.
+  </Card>
+  <Card title="Platform and integrations" href="/api/platform" icon="plug">
+    GitHub repos and pulls, provider connections, tenant integrations, Slack
+    ingress, the dashboard, and fleet usage.
+  </Card>
+</CardGroup>

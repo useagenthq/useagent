@@ -1,0 +1,91 @@
+---
+title: Runs, threads and realtime API
+description: Create and cancel runs, stream a thread over SSE, answer questions and approvals, and reach the sandbox through the terminal, live, and desktop transports.
+sidebar:
+  label: Runs and realtime
+  order: 2
+---
+
+The core operational surface. A run is a durable command; a thread is a
+conversation of runs keyed by the root run id. See [Runs, threads and
+commands](/concepts/runs-threads-commands). All routes here are org-session
+scoped unless noted.
+
+## Runs and threads
+
+| Method | Path | Description | Notes |
+| --- | --- | --- | --- |
+| POST | `/api/runs` | Create a run (root or reply). | Body: `prompt` (required), `model`, `engine` (one of the engine ids), `parent_run_id`, `repo`, `repos[]`, `branches` (`{"owner/name": branch}`), `memory_scope`, `skill` (`{id, version}`), `command` (`{name, args, provider, sessionId, catalogRevision}`), `attachments[]` (at most 10 upload ids), `resources[]`. Header `Idempotency-Key`. `origin` is server-owned and rejected. `201 {id, status, queue}` on create, `200 {id}` on idempotent replay. |
+| GET | `/api/runs` | List runs, newest first, roots-only by default. | Query `all=1` (every run), `limit` (1-100; 1-1000 in summary), `view=summary`, `include_active=1`. Returns `{runs}`. |
+| GET | `/api/runs/:id` | Fetch a run with its steps, or the whole thread. | Query `thread=1` returns `{thread}` (oldest to newest); otherwise `{...run, steps}`. `404 run not found`. |
+| POST | `/api/runs/:id/cancel` | Durable Stop: record `run.cancel`, fail queued work, signal the live actor. | No body. `202 {status:"cancelling"}` accepted, `200` when already settled or replayed. `404 run not found`. |
+| POST | `/api/runs/:id/questions/:questionId/reply` | Answer a native provider question inside the running turn. | Body: `answers`. Rejects `resources`/`attachments` (`400`). `409 question_session_not_active`, `409 questions_not_supported`, `502 question_reply_failed`. |
+| POST | `/api/runs/:id/approvals/:requestId/reply` | Resolve a native provider approval in the active turn. | Body: `decision`. `409 approval_session_not_active`, `502 approval_reply_failed`. |
+| GET | `/api/runs/:id/uploads` | The run's inbound attachments (Slack files, browser uploads). | `{uploads}`. `404 run not found`. |
+| GET | `/api/runs/:id/timings` | Per-run turn timing table (diagnostics). | `404 run not found`. |
+| DELETE | `/api/runs/:id/sandbox` | Release the thread's sandbox (explicit eval/test cleanup). | `404 run not found`, `409 thread is active`, `502 sandbox release failed`. |
+
+`POST /api/runs` failure codes worth knowing: `400` for invalid body, missing
+`prompt`, a client-supplied `origin`, a bad `engine`/`memory_scope`,
+`reply_engine_mismatch`, `model_not_allowed`, or `invalid_command`; `404 parent
+run not found`; `401 authenticated user required for attachments`; `403
+model_provider_not_ready` / `resource_unauthorized`; `409 idempotency_key_reused`
+/ `upload_unavailable`; `429` on the durable per-org queue ceiling; `503
+RunAdmissionClosedError` (`retryable: true`).
+
+## Realtime streams
+
+Server-sent events. All are org-authorized before the stream opens; the thread id
+is the root run id and is resolved server-side. Streams set `Cache-Control:
+no-cache, no-transform` and `X-Accel-Buffering: no`, with a 25s heartbeat.
+
+| Method | Path | Description | Notes |
+| --- | --- | --- | --- |
+| GET | `/api/runs/changes` | Tenant-scoped invalidation stream for ambient surfaces. | Carries ids only ("refresh this snapshot"), no payloads. |
+| GET | `/api/runs/:rootRunId/thread-events` | One stream aggregating every run in a conversation. | Frames: `snapshot`, `run`, `step`, `delta`, `native`, `canonical`, `canonical-complete`, `done` (settles one run, does not close). Overflow past the live-frame bound closes the socket so the client reconnects to a fresh snapshot. |
+| GET | `/api/runs/:id/events` | Per-run trace: replay existing steps, then live-push. | Query `cursor` (native seq; replays frames strictly greater). Frames: `step`, `delta`, `native`, `done` (closes). The rollback path, kept beside thread-events. `404 run not found`. |
+
+## Chat
+
+A lightweight, no-sandbox conversational surface (#122) with read-only retrieval.
+Org-session scoped; personal-scope retrieval only applies when a real user
+resolves. Inert without an OpenRouter credential (`503`).
+
+| Method | Path | Description | Notes |
+| --- | --- | --- | --- |
+| GET | `/api/chat/models` | The served model catalog and current default. | `{models: [{value, ...}], ...}`. |
+| POST | `/api/chat` | SSE chat completion with cited retrieval, no sandbox. | Body: `messages` (non-empty `[{role, content}]`, must contain a user turn), `model` (optional, must be in catalog), `memoryScope` (default `"org"`). Emits `event: context` (`{citations}`) once, then `event: delta` tokens, then `event: done`. `400 model_not_allowed`, `503` when no OpenRouter credential resolves (customer key beats house key). |
+
+## Commands
+
+| Method | Path | Description | Notes |
+| --- | --- | --- | --- |
+| GET | `/api/commands` | The cached slash-command catalog for "/" autocomplete before a sandbox exists. | Query `engine` (`claude`/`codex`/... read an ACP engine's org-scoped catalog; default/`opencode` reads the default snapshot catalog). Returns `{engine, commands, fetched_at}`; `commands` is `[]` when uncached. |
+
+## Gateway approvals
+
+The session-authenticated surface for approving gateway tool operations. Minting
+and per-request approve/deny are user-scoped; the run must be active and belong to
+the member. See [Gateway tools and approvals](/concepts/gateway-tools-and-approvals).
+
+| Method | Path | Description | Notes |
+| --- | --- | --- | --- |
+| POST | `/api/gateway/approvals` | Mint an approval capability for a gateway tool operation on an active run. | Body: `runId`, `toolName` (must be an approval-requiring tool), `arguments` (must omit `approvalCapability`). `201 {capability, expires_at, tool_name, arguments_hash}`. `404 run_not_found`, `409 run_not_active`, `403 run_user_mismatch`. |
+| GET | `/api/gateway/approvals/requests` | List pending mid-run approval requests. | Query: `runId` and/or `threadId` (at least one required). `{requests}` - the parked capability is never returned here. |
+| POST | `/api/gateway/approvals/requests/:id/approve` | Approve a pending request. | `{id, status}`. `404 request_not_found`/`run_not_found`, `403 run_user_mismatch`. |
+| POST | `/api/gateway/approvals/requests/:id/deny` | Deny a pending request. | `{id, status}`. Same error mapping as approve. |
+
+## Sandbox transports
+
+Same-origin bridges into the live sandbox. These are transports, not enumerable
+REST APIs: the WebSocket bridges carry their own message protocol, and the two
+`.all()` proxies forward arbitrary opencode/noVNC paths verbatim (injecting the
+Daytona preview token the browser cannot set).
+
+| Method | Path | Description | Notes |
+| --- | --- | --- | --- |
+| WS | `/api/runs/:id/terminal` | Browser xterm to the sandbox PTY. | Open query `cols`/`rows`. Messages `{type:"input", data}` and `{type:"resize", cols, rows}`. One PTY per connection, killed on disconnect. Does not touch the event log. |
+| ANY | `/api/live-proxy/:threadId/*` | Same-origin bridge to the thread's opencode server (`:4096`). | `404 thread not found` (cross-org/unknown), `409` no live sandbox yet, `502` on upstream failure (retries once after re-resolving). `/api/model` and `/api/provider` catalog responses are trimmed to the allowlist. |
+| WS | `/api/desktop-proxy/:threadId/websockify` | Browser noVNC canvas to sandbox `websockify` (`:6080`). | Binary RFB frames both ways; provisions the desktop and injects the preview token. |
+| GET | `/api/desktop-proxy/:threadId/ready` | Desktop readiness probe. | `204` ready, `409` no live sandbox, `502` on failure. |
+| ANY | `/api/desktop-proxy/:threadId/*` | HTTP proxy for the noVNC static app. | `/vnc.html` triggers a one-shot desktop provision; other assets pass through. |
