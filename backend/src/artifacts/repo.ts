@@ -150,6 +150,31 @@ export async function updateArtifactWorkpiece(input: {
   return updated ?? null;
 }
 
+/** Repair an older native Office artifact that was published before the control
+ * plane imported binary bytes into canonical editor state. Initial hydration is
+ * a null-to-state transition, so it keeps revision 0 and cannot overwrite a
+ * user-authored or concurrently repaired state. */
+export async function seedArtifactWorkpieceStateIfMissing(input: {
+  readonly orgId: string;
+  readonly id: string;
+  readonly kind: ArtifactWorkpieceKind;
+  readonly state: ArtifactWorkpieceState;
+}): Promise<ArtifactRecord | null> {
+  const [updated] = await db
+    .update(artifacts)
+    .set({ workpieceState: input.state })
+    .where(
+      and(
+        eq(artifacts.orgId, input.orgId),
+        eq(artifacts.id, input.id),
+        eq(artifacts.workpieceKind, input.kind),
+        isNull(artifacts.workpieceState),
+      ),
+    )
+    .returning();
+  return updated ?? null;
+}
+
 /** Persist a structural PDF page operation as a new revision of the same
  * artifact. Page ops replace the immutable source bytes (new digest + storage
  * key + size) and bump the revision under optimistic concurrency, keeping the

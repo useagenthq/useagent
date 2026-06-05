@@ -93,6 +93,7 @@ export function InteractiveTerminal({ runId }: { runId: string }) {
     // reconnect cycle (the loop otherwise spams "no live sandbox" / "disconnected"
     // back-to-back). Reset when real PTY output resumes so a later drop re-notifies.
     let waitingShown = false;
+    let idleNoticeSeen = false;
 
     void (async () => {
       const { init, Terminal, FitAddon } = await import("ghostty-web");
@@ -182,7 +183,11 @@ export function InteractiveTerminal({ runId }: { runId: string }) {
           // waiting line (below) instead of letting them spam each reconnect.
           // Covers the "no live sandbox" notice and the older red
           // "[skynet] Sandbox <id> not found" variant from the provider.
-          if (isIdleTerminalNotice(text)) return;
+          if (isIdleTerminalNotice(text)) {
+            idleNoticeSeen = true;
+            return;
+          }
+          idleNoticeSeen = false;
           waitingShown = false; // real output flowing again
           term?.write(text);
         };
@@ -192,7 +197,9 @@ export function InteractiveTerminal({ runId }: { runId: string }) {
           if (!waitingShown) {
             waitingShown = true;
             term?.write(
-              "\r\n\x1b[2m• waiting for the sandbox - it comes online when a run starts…\x1b[0m\r\n",
+              idleNoticeSeen
+                ? "\r\n\x1b[2m• no active sandbox - send a message to start one…\x1b[0m\r\n"
+                : "\r\n\x1b[2m• reconnecting to sandbox…\x1b[0m\r\n",
             );
           }
           reconnectTimer = setTimeout(connect, reconnectDelay);

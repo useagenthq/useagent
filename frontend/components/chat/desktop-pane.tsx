@@ -148,7 +148,7 @@ export function DesktopPane({ threadId }: { threadId: string }) {
   const [ready, setReady] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [inputCaptured, setInputCaptured] = useState(false);
-  const [status, setStatus] = useState("Waiting for sandbox…");
+  const [status, setStatus] = useState("No active sandbox. Send a message to start one.");
   const surfaceRef = useRef<HTMLDivElement>(null);
   const frameRef = useRef<HTMLIFrameElement>(null);
   // Mirrors inputCaptured synchronously so the focus-steal guard cannot race
@@ -171,7 +171,7 @@ export function DesktopPane({ threadId }: { threadId: string }) {
     setLoaded(false);
     inputCapturedRef.current = false;
     setInputCaptured(false);
-    setStatus("Waiting for sandbox…");
+    setStatus("No active sandbox. Send a message to start one.");
 
     const probe = async (): Promise<void> => {
       try {
@@ -182,7 +182,11 @@ export function DesktopPane({ threadId }: { threadId: string }) {
           setReady(true);
           return;
         }
-        setStatus(response.status === 409 ? "Waiting for sandbox…" : "Starting sandbox desktop…");
+        setStatus(
+          response.status === 409
+            ? "No active sandbox. Send a message to start one."
+            : "Starting sandbox desktop…",
+        );
       } catch {
         if (cancelled) return;
         setStatus("Reconnecting to sandbox desktop…");

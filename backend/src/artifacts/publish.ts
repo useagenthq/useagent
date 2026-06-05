@@ -26,6 +26,7 @@ import { recordProviderEvent } from "../runs/provider-events";
 import { downloadSandboxFile, resolveSandboxFilePath } from "../slack/sandbox-file";
 import { extractPptxDeck, type PptxImportResult } from "@useagent/artifact-formats";
 import type { DeckBackground, DeckBlock, DeckSlide, PresentationDeck } from "@useagent/artifact-workspace";
+import { stateFromNativeArtifact } from "./authoring";
 import {
   buildInitialWorkpieceState,
   inferWorkpieceKind,
@@ -185,7 +186,7 @@ async function storeImportedImage(
  * addressed image artifact and wire it into the deck: a full-slide picture becomes
  * the slide's background image (the generated-background-art case), every other
  * picture becomes a positioned image block. Returns the deck with images wired in. */
-async function materializePptxImages(
+export async function materializePptxImages(
   imported: PptxImportResult,
   ctx: {
     readonly orgId: string;
@@ -287,6 +288,25 @@ export async function publishSandboxArtifact(input: {
     : null;
   if (editable && !workpieceState) {
     throw new Error("editable_path must be valid UTF-8 HTML for documents or CSV for spreadsheets");
+  }
+
+  // Companion-less native Office files must open from their real bytes, not a
+  // blank editor fallback. PPTX keeps its richer image-aware import below; DOCX
+  // and XLSX share the same validated native importer as uploaded workpieces.
+  if (
+    !workpieceState &&
+    (workpieceKind === "document" || workpieceKind === "spreadsheet")
+  ) {
+    try {
+      workpieceState = await stateFromNativeArtifact({
+        kind: workpieceKind,
+        name,
+        contentType,
+        bytes: file.bytes,
+      });
+    } catch (error) {
+      console.log(`[office-import] native import unavailable for ${name}: ${error}`);
+    }
   }
 
   // A companion-less PPTX: attempt a structured native import so a script-generated
