@@ -137,7 +137,7 @@ export function deriveTurnSources(nodes: readonly TimelineNode[]): TurnSource[] 
   return [...seen.entries()].map(([domain, href]) => ({ domain, href }));
 }
 
-/** Parse a `followups.suggested` skynet frame into its suggestion list, or null
+/** Parse a `followups.suggested` useAgent frame into its suggestion list, or null
  *  for any other/malformed frame (renders as nothing on clients that predate it). */
 export function parseFollowups(eventType: string, payload: unknown): readonly string[] | null {
   if (eventType !== "followups.suggested") return null;
@@ -175,7 +175,7 @@ function parseArtifact(eventType: string, payload: unknown): TimelineArtifact | 
 }
 
 /**
- * Parse a skynet-lane native frame (skill.loaded / context.retrieved) into a
+ * Parse a useAgent lane native frame (skill.loaded / context.retrieved) into a
  * typed timeline marker. Returns null for any other frame — an UNKNOWN skynet
  * eventType renders safely as nothing (never a crash), per the canonical-marker
  * contract.
@@ -353,12 +353,12 @@ export function buildTimeline(native: NativeSnapshot, live: boolean): TimelineNo
     });
   }
 
-  // Canonical context markers (skynet lane): skill.loaded + context.retrieved.
+  // Canonical context markers (useAgent lane): skill.loaded + context.retrieved.
   // Emitted at run START (lowest seqs), so they LEAD the turn (k0 below the boot
   // sentinel of -1) — "Loaded skill X · Recalled N memories" as the turn's header.
   // Rendered as typed rows in this shared grammar (MarkerRow), never a parallel
   // context pane. Reconnect replays them from the durable native lane like any
-  // other frame. An unknown skynet eventType parses to null → rendered as nothing.
+  // other frame. An unknown useAgent eventType parses to null → rendered as nothing.
   for (const f of nativeFrames) {
     if (
       f.provider !== "skynet" &&

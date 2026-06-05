@@ -31,7 +31,7 @@ const databaseUrl = new URL(adminUrl);
 databaseUrl.pathname = `/${databaseName}`;
 const storageRoot = await mkdtemp(join(tmpdir(), "skynet-artifact-live-"));
 const runId = randomUUID();
-const expected = Buffer.from(`Skynet real Daytona artifact proof\nrun=${runId}\n`, "utf8");
+const expected = Buffer.from(`useAgent real Daytona artifact proof\nrun=${runId}\n`, "utf8");
 const expectedSha = createHash("sha256").update(expected).digest("hex");
 
 const admin = postgres(adminUrl, { max: 1 });

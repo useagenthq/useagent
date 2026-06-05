@@ -46,7 +46,7 @@ describe("single-backend guard (release enforcement)", () => {
 
   test("strict mode rejects a duplicate backend", async () => {
     await expect(enforceSingleBackend({ required: true })).rejects.toThrow(
-      "another skynet backend already holds",
+      "another useAgent backend already holds",
     );
   });
 

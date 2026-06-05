@@ -50,7 +50,7 @@ const CDP_PORT_CLOSED_COMMAND =
  * the user's tabs. Chrome remains loopback-only. The provider-facing relay admits
  * only bounded page CDP routes and requires a per-sandbox bearer token in addition
  * to the provider preview credential. x11vnc also remains loopback-only and reaches
- * the browser through Skynet's authenticated same-origin desktop proxy. */
+ * the browser through useAgent's authenticated same-origin desktop proxy. */
 export function buildDesktopLaunchCommand(): string {
   return [
     "set -eu",

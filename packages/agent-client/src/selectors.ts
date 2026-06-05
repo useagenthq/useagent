@@ -81,8 +81,8 @@ export interface ContextMarkerView {
   readonly detail?: string;
 }
 
-/** Skynet context markers (memory / knowledge / skill / playbook / rule / reconciling),
- *  in delivery order. These originate in Skynet's lane and render for every engine. */
+/** useAgent context markers (memory / knowledge / skill / playbook / rule / reconciling),
+ *  in delivery order. These originate in useAgent's lane and render for every engine. */
 export function selectContextMarkers(t: AgentTranscript): ContextMarkerView[] {
   const out: ContextMarkerView[] = [];
   for (const e of t.events) {

@@ -220,7 +220,7 @@ const PRESEEDED_PROVIDER_BIN_DIR = "/usr/local/share/skynet-provider-bin";
  *  install path (~/.local/bin/<bin>), NOT `command -v <bin>` - a <bin> that resolves
  *  elsewhere on PATH (the base image ships `claude`) would skip the install, and the
  *  exact path CLAUDE_CODE_EXECUTABLE points at (~/.local/bin/claude) would never get
- *  created (#127). Cube images expose version-pinned binaries through a Skynet-owned
+ *  created (#127). Cube images expose version-pinned binaries through a useAgent-owned
  *  seed directory because secure sandboxes run with a fresh uid/home; other providers
  *  retain the network-install fallback. */
 export function buildAcpInstallClause(packages: { pkg: string; bin: string }[]): string {
@@ -371,7 +371,7 @@ export async function cancelAcpSession(sandboxId: string, sessionId: string): Pr
 }
 
 /**
- * Build the ACP `mcpServers` array carrying the Skynet knowledge gateway — the
+ * Build the ACP `mcpServers` array carrying the useAgent knowledge gateway — the
  * ACP-native equivalent of OpenCode's knowledge portion of
  * ensureOpencodeSandboxConfig. Passed into
  * BOTH session/new and session/load so a fresh AND a resumed ACP session can call

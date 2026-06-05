@@ -6,7 +6,7 @@
  *
  * Boots an ISOLATED backend (throwaway DB `useagent_memtun_e2e`, PORT 3502 - NEVER
  * the shared `useagent` DB) with the REAL Daytona/opencode/:8420 keys, and exposes it
- * via `cloudflared` so the sandbox agent can reach the Skynet memory MCP gateway
+ * via `cloudflared` so the sandbox agent can reach the useAgent memory MCP gateway
  * (GATEWAY_PUBLIC_URL = the dedicated-gateway tunnel origin). Then proves cross-sandbox memory:
  *
  *   A. Sandbox A: "remember my favourite color is teal-XXXX" -> the opencode agent

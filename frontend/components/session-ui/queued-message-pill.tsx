@@ -1,6 +1,6 @@
 "use client";
 
-// skynet-a component (NOT vendored - T3 Code has no queued-message pill; the
+// useAgent component (NOT vendored - T3 Code has no queued-message pill; the
 // desktop screenshot's affordance is rebuilt here on OUR queue semantics).
 // The backend runs ONE live turn per thread and queues replies as serial FIFO
 // turns - there is no timed "send after Ns" countdown, so the pill states the

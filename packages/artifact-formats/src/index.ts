@@ -803,7 +803,7 @@ export async function renderArtifactExport(
 /** A structural, content-agnostic page operation over an existing PDF. Reorder
  * takes a full permutation of the current page indices; delete removes a set of
  * pages. Neither reads or rewrites the text or drawing inside a page, so page
- * structure is preserved even on PDFs Skynet did not author. */
+ * structure is preserved even on PDFs useAgent did not author. */
 export type PdfPageOperation =
   | Readonly<{ type: "reorder"; order: readonly number[] }>
   | Readonly<{ type: "delete"; pages: readonly number[] }>;

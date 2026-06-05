@@ -189,7 +189,7 @@ async function main() {
       // textarea would otherwise be matched by a bare `textarea` selector). `:visible`
       // scopes to the mounted composer: on RELOAD the tree double-renders and settles, so a
       // stale hidden copy can briefly coexist - we always drive the visible one.
-      const composer = () => page.locator('textarea[placeholder*="Reply to Skynet"]:visible');
+      const composer = () => page.locator('textarea[placeholder*="Reply to useAgent"]:visible');
       await composer().waitFor({ state: "visible", timeout: 60_000 });
 
       // type "/" -> the native-command popover appears with the seeded commands. The picker

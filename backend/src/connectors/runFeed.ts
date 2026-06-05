@@ -2,7 +2,7 @@
 //
 // The generic "attach a Renderer to a live turn" path. In reference bot a TurnDriver
 // consumes a provider event stream and drives a Renderer's on_* callbacks; here
-// the source is Skynet's run bus + turn-stream instead of a provider stream, so
+// the source is useAgent's run bus + turn-stream instead of a provider stream, so
 // ANY connector surface renders a run without bespoke per-surface wiring (the
 // generic replacement for what slack/watcher.ts does by hand).
 

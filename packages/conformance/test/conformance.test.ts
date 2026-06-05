@@ -1,5 +1,5 @@
 // Slice 7: framework-free conformance harness. It proves the two libraries are
-// INDEPENDENTLY consumable by importing ONLY their documented package exports - no Skynet
+// INDEPENDENTLY consumable by importing ONLY their documented package exports - no useAgent
 // backend or frontend source, no React, no provider parser. It plays the role of a sample
 // UI: typed API over injected fetch, one reconnecting thread connection, the pure
 // canonical reducer, and capability-driven visibility.
@@ -157,7 +157,7 @@ describe("conformance: libraries are independently consumable (documented export
     const { fetch, requests } = recordingFetch();
     const client = createAgentClient({
       fetch,
-      baseUrl: "https://skynet.example.test/",
+      baseUrl: "https://useagent.example.test/",
       headers: () => ({ authorization: "Bearer session" }),
     });
 
@@ -178,9 +178,9 @@ describe("conformance: libraries are independently consumable (documented export
     await expect(client.cancel("run_root")).resolves.toEqual({ ok: true, status: "cancelling" });
 
     expect(requests.map((r) => r.url)).toEqual([
-      "https://skynet.example.test/api/runs",
-      "https://skynet.example.test/api/runs",
-      "https://skynet.example.test/api/runs/run_root/cancel",
+      "https://useagent.example.test/api/runs",
+      "https://useagent.example.test/api/runs",
+      "https://useagent.example.test/api/runs/run_root/cancel",
     ]);
     expect(requests[0]!.init?.headers).toMatchObject({
       authorization: "Bearer session",

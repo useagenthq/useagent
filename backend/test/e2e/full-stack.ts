@@ -1,5 +1,5 @@
 /**
- * OWNED end-to-end suite — the whole Skynet stability story on ONE isolated stack.
+ * OWNED end-to-end suite — the whole useAgent stability story on ONE isolated stack.
  * MANUAL-gated (not in `bun test`): it spawns real backend processes, a throwaway
  * DB, and mock Memory/Slack receivers. Run it with:  bun run e2e
  *

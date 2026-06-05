@@ -46,7 +46,7 @@ export interface SlackClient {
   /**
    * Upload a file into a thread. Ported from the QM bot (files.uploadV2,
    * reference-eval src/slack/attachments.ts:189) and reference-bot (files_upload_v2,
-   * client.py:354) - both use the Slack SDK's uploadV2 helper. skynet has NO
+   * client.py:354) - both use the Slack SDK's uploadV2 helper. useAgent has NO
    * Slack SDK by design (thin fetch client), so we perform the identical
    * sequence uploadV2 wraps: files.getUploadURLExternal -> POST the bytes to the
    * returned URL -> files.completeUploadExternal (which shares it into

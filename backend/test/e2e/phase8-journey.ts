@@ -5,7 +5,7 @@
  * model. It fills the cells the existing live suites (acp-live-e2e, canonical-flagon,
  * browser-stop) do not: repo prepared securely + a KNOWN repo file read, a real provider
  * command catalog captured FROM the live session (or a truthful empty catalog), a safe native
- * command invoked, a versioned Skynet skill applied (skill.loaded), retained sandbox + provider
+ * command invoked, a versioned useAgent skill applied (skill.loaded), retained sandbox + provider
  * session across turn 2 with NO reclone, reload/replay integrity, native stop, and a
  * credential-leak audit over the persisted product surfaces.
  *
@@ -188,7 +188,7 @@ try {
   pass("isolated backend booted (throwaway DB, no shared-skynet hazard)", booted, `${BE} db=${DB}`);
   if (!booted) throw new Error("backend did not boot");
 
-  // ── 1. author a real versioned Skynet skill (the user selects a skill they wrote) ──
+  // ── 1. author a real versioned useAgent skill (the user selects a skill they wrote) ──
   const skillMarker = `PHASE8-SKILL-${ENGINE}`;
   const skillRes = await http("POST", "/api/skills", {
     name: `phase8 ${ENGINE} verify skill`,
@@ -368,7 +368,7 @@ try {
     let skPayload: Row = {};
     try { skPayload = (typeof skPe?.payload === "string" ? JSON.parse(skPe.payload) : skPe?.payload) as Row ?? {}; } catch { /* ignore */ }
     pass(
-      "versioned Skynet skill applied (pinned on run + skill.loaded marker)",
+      "versioned useAgent skill applied (pinned on run + skill.loaded marker)",
       pinnedOk && !!skPe && skPayload.skillId === skillId,
       `pinned=${pinnedOk} marker=${!!skPe} skillId=${short(skPayload.skillId)} v=${skPayload.version}`,
     );

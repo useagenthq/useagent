@@ -10,7 +10,7 @@
  *
  * Extracted from `backend/src/engines/types.ts` into `@useagent/agent-harness` so
  * both the backend and a future independent consumer can depend on the control
- * contract without importing Skynet product code. `types.ts` keeps the Skynet-
+ * contract without importing useAgent product code. `types.ts` keeps the useAgent-
  * specific engine surface (EmitStep, EngineRunContext, EngineAdapter, prompt
  * composition) and re-exports these types for backward compatibility.
  */
@@ -23,7 +23,7 @@ import type {
 } from "./canonical";
 
 /** Provider-native capability detection (a subset is meaningful in Stage 1;
- *  fields describe what the HARNESS supports natively, not what Skynet already
+ *  fields describe what the HARNESS supports natively, not what useAgent already
  *  projects). */
 export interface HarnessCapabilities {
   resume: boolean;
@@ -162,7 +162,7 @@ export interface ProviderToolDescriptor {
 }
 
 export interface ProviderToolCapabilityDescriptor {
-  /** No gateway, provider-native tools, or Skynet-brokered tools. */
+  /** No gateway, provider-native tools, or useAgent-brokered tools. */
   mode: "none" | "provider_native" | "skynet_brokered";
   approval: "none" | "provider" | "skynet";
   tools?: readonly ProviderToolDescriptor[];

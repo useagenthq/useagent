@@ -3,7 +3,7 @@
  *
  * Translates native harnesses (OpenCode, Claude ACP, Codex ACP, future) into ONE
  * provider-neutral canonical event vocabulary and exposes a typed control seam.
- * It knows provider protocols but nothing about the Skynet backend, database,
+ * It knows provider protocols but nothing about the useAgent backend, database,
  * Daytona, or the React UI. The browser-facing `@useagent/agent-client` may import
  * only the zero-dependency `./canonical` subpath from here, never a translator.
  *

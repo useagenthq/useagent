@@ -302,7 +302,7 @@ export async function handleSlackEvent(body: SlackEnvelope): Promise<void> {
   }
 
   // Threading: an existing Slack thread → reply under its root run (inherits the
-  // skynet thread); a new thread → a root run under its own id.
+  // useAgent thread); a new thread → a root run under its own id.
   let parentRunId: string | null = null;
   const runId = crypto.randomUUID();
   let threadId: string = runId;

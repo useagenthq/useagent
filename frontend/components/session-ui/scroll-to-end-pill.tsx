@@ -1,6 +1,6 @@
 "use client";
 
-// skynet-a component (NOT vendored): a quiet floating "Scroll to end" pill for a
+// useAgent component (NOT vendored): a quiet floating "Scroll to end" pill for a
 // scoped scroll container. Self-contained - it tracks its own near-bottom state
 // off the container's scroll (and viewport resizes), renders nothing while the
 // reader is already at the bottom, and reuses the rail's reduced-motion check so

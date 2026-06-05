@@ -1,7 +1,7 @@
 # Durable output and artifact architecture
 
 This is the implemented baseline for moving completed files from an untrusted
-agent sandbox into Skynet, the browser, and outbound connectors without exposing
+agent sandbox into useAgent, the browser, and outbound connectors without exposing
 sandbox credentials or duplicating file-transfer logic.
 
 ## Implemented flow
@@ -138,5 +138,5 @@ suite. Future work can attach behind these stable seams:
 5. connector delivery adapters beyond Slack.
 
 These additions must preserve the existing rule: storage, authorization, and
-connector policy stay in the trusted Skynet backend; the harness and client
+connector policy stay in the trusted useAgent backend; the harness and client
 packages carry provider-neutral references and typed operations only.

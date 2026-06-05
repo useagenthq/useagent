@@ -120,7 +120,7 @@ describe("Codex subscription run relay", () => {
       execServerUrl: "ws://127.0.0.1:43111/opaque-exec-grant",
       toolGateway: {
         serverName: "skynet-knowledge",
-        url: "https://skynet.example.test/api/internal/tool-gateway",
+        url: "https://useagent.example.test/api/internal/tool-gateway",
         bearerToken: "mcp-bearer-secret",
         authorizationHeader: "Bearer mcp-bearer-secret",
         expiresAt: 999_999,
@@ -155,7 +155,7 @@ describe("Codex subscription run relay", () => {
       execServerUrl: "ws://127.0.0.1:43111/opaque-exec-grant",
       toolGateway: {
         serverName: "skynet-knowledge",
-        url: "https://skynet.example.test/api/internal/tool-gateway",
+        url: "https://useagent.example.test/api/internal/tool-gateway",
         bearerToken: "mcp-bearer-secret",
         authorizationHeader: "Bearer mcp-bearer-secret",
         expiresAt: 999_999,

@@ -64,7 +64,7 @@ export async function* streamChat(
     headers: {
       "content-type": "application/json",
       authorization: `Bearer ${apiKey}`,
-      "HTTP-Referer": "https://github.com/skynet-saas/chat",
+      "HTTP-Referer": "https://github.com/useagenthq/useagent",
       "X-Title": "useAgent Chat",
     },
     body: JSON.stringify({ model, messages, stream: true }),

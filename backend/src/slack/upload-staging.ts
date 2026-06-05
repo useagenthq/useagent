@@ -8,7 +8,7 @@
  * carries only the staged path. The relay reads the staged bytes at delivery
  * time and removes them once the row reaches a terminal state.
  *
- * Single-replica scope (matches the rest of skynet today): staging is local disk.
+ * Single-replica scope (matches the rest of useAgent today): staging is local disk.
  */
 import { mkdir, writeFile, readFile, unlink } from "node:fs/promises";
 import { join } from "node:path";

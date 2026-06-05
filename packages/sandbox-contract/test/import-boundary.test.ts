@@ -1,6 +1,6 @@
 // Enforces the contract's independence: the provider-neutral sandbox contract is
 // a pure leaf. Every `src/**` module may import only another module inside this
-// package (a relative "./..." specifier). It must NOT reach into the Skynet
+// package (a relative "./..." specifier). It must NOT reach into the useAgent
 // backend/frontend, a concrete provider (Daytona/Cube), React/Next, Hono/Drizzle,
 // a Node-only runtime, or a product path alias - any such leak would let a
 // contract consumer transitively pull server code. The contract is types-only,

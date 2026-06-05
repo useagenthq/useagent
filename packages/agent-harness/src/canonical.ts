@@ -1,5 +1,5 @@
 /**
- * Canonical Skynet agent-event vocabulary.
+ * Canonical useAgent agent-event vocabulary.
  *
  * ONE provider-neutral wire grammar that every harness (OpenCode, Claude ACP,
  * Codex ACP, Anthropic Managed Agents, future) is translated INTO by a backend
@@ -46,10 +46,10 @@ export interface CanonicalIdentity {
   nativePartId?: string;
 }
 
-/** Envelope carried by EVERY canonical event. `seq` is Skynet's own monotonic
+/** Envelope carried by EVERY canonical event. `seq` is useAgent's own monotonic
  *  cursor for the thread (the browser resumes from it); `eventId` is stable per
  *  (run, native event) so revisions are idempotent. `ts` is assigned/validated
- *  by Skynet, never trusted from the provider. */
+ *  by useAgent, never trusted from the provider. */
 export interface CanonicalEventBase {
   schemaVersion: typeof CANONICAL_SCHEMA_VERSION;
   eventId: string;
@@ -117,8 +117,8 @@ export interface CanonicalQuestion {
   custom: boolean;
 }
 
-/** Skynet-generated context markers (memory/knowledge/skill/playbook/rule) that
- *  render identically for every engine because they originate in Skynet's lane,
+/** useAgent-generated context markers (memory/knowledge/skill/playbook/rule) that
+ *  render identically for every engine because they originate in useAgent's lane,
  *  not the provider's. */
 export type ContextMarkerKind = "memory" | "knowledge" | "skill" | "playbook" | "rule" | "reconciling";
 
@@ -231,10 +231,10 @@ export type CanonicalEventBody =
       markerType: ContextMarkerKind;
       title: string;
       detail?: string;
-      /** The originating skynet-lane frame (eventType + payload), carried verbatim so the
+      /** The originating useAgent lane frame (eventType + payload), carried verbatim so the
        *  frontend reconstructs the FULL typed TimelineMarker with the SAME parser the
        *  legacy native lane uses - no fabrication, no drift, deep-equal markers (H3). The
-       *  skynet lane is non-provider metadata the browser already receives natively. */
+       *  useAgent lane is non-provider metadata the browser already receives natively. */
       sourceEventType: string;
       sourcePayload?: Record<string, unknown>;
     }
@@ -262,7 +262,7 @@ export interface NegotiatedCapabilities {
    *  child.started/updated/completed). Real only where the provider actually emits child
    *  sessions (OpenCode protocol, canonical runtime adapter). */
   nativeChildProjection: boolean;
-  /** The Skynet gateway `child_session_*` tools. These spawn DEFERRED serial thread turns
+  /** The useAgent gateway `child_session_*` tools. These spawn DEFERRED serial thread turns
    *  through the product command lane - engine-independent, so ACP claude/codex sessions are
    *  granted them too (they never require a native child-session emitter). */
   gatewayChildSessions: boolean;
@@ -289,7 +289,7 @@ export interface NegotiatedCapabilities {
   desktop: boolean;
   /** An engine-native web/embed panel exists (e.g. OpenCode Live). */
   nativeEmbed: boolean;
-  /** The provider actually loaded the Skynet knowledge MCP for this session. */
+  /** The provider actually loaded the useAgent knowledge MCP for this session. */
   knowledgeTools: boolean;
 }
 

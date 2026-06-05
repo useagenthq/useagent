@@ -1,7 +1,7 @@
 // Framework-free thread SSE frame vocabulary + decoder. This is the wire contract
-// the Skynet backend publishes on the thread-scoped SSE (`/api/runs/:root/thread-events`)
+// the useAgent backend publishes on the thread-scoped SSE (`/api/runs/:root/thread-events`)
 // and the pure decoder that turns a raw `(event, data)` frame into a typed union - with
-// NO React, product store, or product parser dependency. The Skynet React hook keeps its
+// NO React, product store, or product parser dependency. The useAgent React hook keeps its
 // own native-lane projection; the client library owns only the transport decode + the
 // canonical lane (the provider-neutral render source).
 
@@ -21,9 +21,9 @@ export const THREAD_FRAME_TYPES = [
 export type ThreadFrameType = (typeof THREAD_FRAME_TYPES)[number];
 
 /** A canonical event as delivered on the SSE: the provider-neutral event PLUS the two
- *  Skynet delivery fields the reducer needs - `deliverySeq` (a bigserial >= 1 that
+ *  useAgent delivery fields the reducer needs - `deliverySeq` (a bigserial >= 1 that
  *  totally orders the run's canonical lane) and `revision` (>= 0; a higher revision of
- *  the same `eventId` supersedes). These are Skynet delivery metadata, not part of the
+ *  the same `eventId` supersedes). These are useAgent delivery metadata, not part of the
  *  provider-neutral vocabulary, so they live here rather than in @useagent/agent-harness. */
 export type CanonicalThreadEvent = CanonicalAgentEvent & {
   readonly deliverySeq: number;
@@ -36,7 +36,7 @@ export interface CanonicalCompleteFrame {
 }
 
 /** A decoded thread frame. `native`/`run`/`step`/`delta`/`snapshot` carry raw product
- *  payloads the Skynet hook still projects natively; the client library validates +
+ *  payloads the useAgent hook still projects natively; the client library validates +
  *  owns only the canonical lane. `unknown` is a forward-compatible catch-all: an
  *  unrecognized future frame is surfaced, never coerced into a known kind or fatal. */
 export type DecodedFrame =

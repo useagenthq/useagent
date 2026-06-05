@@ -2,7 +2,7 @@
  * Block Kit RUN CARD for a Slack-started run. A Slack-originated run posts ONE
  * structured card (not a bare ack + plain text) that is UPDATED in place as the
  * run progresses: header + status, a context row (model + repos), an "Open in
- * Skynet" url button, and the final answer appended when the run settles.
+ * useAgent" url button, and the final answer appended when the run settles.
  *
  * PURE by design (no I/O, no Slack calls) so the card shape is unit-testable with
  * fixtures; the outbox (post_card/update_card) and the watcher own delivery. The
@@ -132,7 +132,7 @@ export function buildRunCard(input: RunCardInput): { blocks: unknown[]; text: st
     });
   }
 
-  // The "Open in Skynet" url button (no interactivity handler needed).
+  // The "Open in useAgent" url button (no interactivity handler needed).
   blocks.push({
     type: "actions",
     elements: [
@@ -140,7 +140,7 @@ export function buildRunCard(input: RunCardInput): { blocks: unknown[]; text: st
         type: "button",
         text: { type: "plain_text", text: "Open in useAgent", emoji: true },
         url: input.webUrl,
-        action_id: "open_in_skynet",
+        action_id: "open_in_useagent",
       },
     ],
   });

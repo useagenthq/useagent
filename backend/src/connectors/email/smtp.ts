@@ -1,6 +1,6 @@
 // Minimal SMTP client over Bun's raw TCP (`Bun.connect`). NOT a reference bot port —
 // reference bot's email path uses provider SDKs; this is original, written for
-// Skynet's "no new heavyweight deps" constraint (nodemailer et al. pull a large
+// useAgent's "no new heavyweight deps" constraint (nodemailer et al. pull a large
 // tree). It speaks just enough SMTP to deliver a plain-text message:
 //
 //   greeting → EHLO → [AUTH LOGIN] → MAIL FROM → RCPT TO(×n) → DATA → body → QUIT

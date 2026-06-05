@@ -17,7 +17,7 @@ if (!Number.isInteger(port) || port < 1 || port > 65_535) {
   throw new Error("GATEWAY_PORT must be an integer between 1 and 65535");
 }
 
-console.log(`[skynet] sandbox gateway listening on http://localhost:${port}`);
+console.log(`[useagent] sandbox gateway listening on http://localhost:${port}`);
 
 export const GATEWAY_MAX_REQUEST_BODY_BYTES = 8 * 1024 * 1024;
 

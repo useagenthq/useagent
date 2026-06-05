@@ -1,4 +1,4 @@
-// Typed Skynet thread API client - runtime-neutral (inject fetch / EventSource /
+// Typed useAgent thread API client - runtime-neutral (inject fetch / EventSource /
 // timers / base URL / auth headers; no globals, React, Next, or product aliases). It
 // mirrors the EXISTING routes (POST /api/runs, POST /api/runs/:id/cancel,
 // GET /api/runs/:id?thread=1, SSE /api/runs/:id/thread-events) - it does NOT define a

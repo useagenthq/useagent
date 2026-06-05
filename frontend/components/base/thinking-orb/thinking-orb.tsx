@@ -10,7 +10,7 @@
 // app router by marking the module a client component — the canvas paint
 // loop and theme observers all touch the DOM, so it can only run on the
 // client. The upstream theme resolver already keys off an ancestor
-// `.dark` class, which is exactly skynet-a's `next-themes` dark-mode
+// `.dark` class, which is exactly useAgent's `next-themes` dark-mode
 // convention (attribute="class" on <html>; see app/providers.tsx).
 
 import { useEffect, useRef } from "react";

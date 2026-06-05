@@ -105,10 +105,10 @@ export interface MemoryIdentity {
   /** Tencent `user_id` — the POOL partition (`org:${orgId}` or a real userId),
    *  NOT necessarily who ran the turn. */
   readonly userId: string;
-  /** Who actually triggered the run (authenticated Skynet user / Slack actor) —
+  /** Who actually triggered the run (authenticated useAgent user / Slack actor) —
    *  PROVENANCE for the retrieval ledger + audit, never the memory partition. */
   readonly actorUserId: string;
-  /** MemoryCore `session_id` — the canonical Skynet threadId. */
+  /** MemoryCore `session_id` — the canonical useAgent threadId. */
   readonly sessionId: string;
   /** Provenance metadata (not an isolation key). */
   readonly runId?: string;
@@ -648,7 +648,7 @@ export async function deleteScopedMemory(
 // new_mem_prompt.md section 6: Tencent v3 has NO L1-create endpoint (verified
 // live: POST /v3/atomic/add -> 404), so an explicit "remember X" is written as a
 // STRUCTURED L0 conversation message (/v3/conversation/add) into a dedicated
-// Skynet session namespace and read back IMMEDIATELY from L0 (/v3/conversation/
+// useAgent session namespace and read back IMMEDIATELY from L0 (/v3/conversation/
 // search) BEFORE async L1 extraction. accepted_ids is the provider receipt; the
 // two-sandbox test passes from L0 alone. All endpoints verified live @ :8420.
 

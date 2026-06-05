@@ -1,7 +1,7 @@
 /**
  * Follow-up suggestions (beautiful-ui answer grammar): after a run COMPLETES,
  * one cheap OpenRouter call turns the prompt + settled answer into 2-3 short
- * next questions, recorded as a durable `followups.suggested` skynet frame on
+ * next questions, recorded as a durable `followups.suggested` useAgent frame on
  * the native lane (the same mechanism as the retrieval ledger, so it replays on
  * reload and streams live over the thread SSE). Strictly best-effort: no key, a
  * slow call, bad JSON, or a persist failure only logs - it never fails, delays,
@@ -79,7 +79,7 @@ async function generateSuggestions(
     headers: {
       "content-type": "application/json",
       authorization: `Bearer ${apiKey}`,
-      "HTTP-Referer": "https://github.com/skynet-saas/followups",
+      "HTTP-Referer": "https://github.com/useagenthq/useagent",
       "X-Title": "useAgent Follow-ups",
     },
     body: JSON.stringify({

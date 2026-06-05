@@ -34,7 +34,7 @@ describe("T3 control harness", () => {
     expect(command.createdAt).toBe("2026-08-12T00:00:00.000Z");
   });
 
-  test("recognizes only Skynet-owned native T3 sessions", () => {
+  test("recognizes only useAgent-owned native T3 sessions", () => {
     expect(isRuntimeThreadSessionId("skynet-thread-thread-1")).toBe(true);
     expect(isRuntimeThreadSessionId("ses_opencode")).toBe(false);
   });

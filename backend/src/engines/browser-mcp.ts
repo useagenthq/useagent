@@ -345,7 +345,7 @@ function browserMcpGuardCommand(): string {
     params: {
       protocolVersion: "2025-06-18",
       capabilities: {},
-      clientInfo: { name: "skynet-browser-guard", version: "1.0.0" },
+      clientInfo: { name: "useagent-browser-guard", version: "1.0.0" },
     },
   });
   const initialized = JSON.stringify({

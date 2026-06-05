@@ -1,6 +1,6 @@
 // Enforces the package's independence (Section 1.1 / Slice 1 step 7): the
 // server-side harness library must translate provider protocols WITHOUT importing
-// Skynet backend/frontend source, React/Next, Hono/Drizzle, Daytona, Node-only
+// useAgent backend/frontend source, React/Next, Hono/Drizzle, Daytona, Node-only
 // runtimes, or product path aliases. Every `src/**` module may import only:
 //   - another module inside this package (a relative "./..." specifier), or
 //   - a Node built-in type-only module from a strict allowlist (none today).

@@ -1,6 +1,6 @@
 "use client";
 
-// skynet-a Diff surface body (NOT vendored; composes the vendored T3 grammar:
+// useAgent Diff surface body (NOT vendored; composes the vendored T3 grammar:
 // ChangedFilesCard as the file index, DiffStatLabel for honest line stats).
 //
 // The per-file unified diff is recovered ONLY from what the run's own file/edit

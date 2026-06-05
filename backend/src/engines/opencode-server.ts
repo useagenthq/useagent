@@ -644,7 +644,7 @@ function sseData(frame: string): Record<string, unknown> | null {
 
 // ---------------------------------------------------------------------------
 // Boot reconciliation (north star "Crash Recovery Matrix" #8: provider completed
-// but Skynet still says running). A bounded, side-effect-free probe of a stale
+// but useAgent still says running). A bounded, side-effect-free probe of a stale
 // run's native session — used by src/runs/recovery.ts on restart. It NEVER wakes
 // a stopped sandbox (that would be slow and violates "don't wake a sandbox to
 // read history") and NEVER throws: every failure resolves to `unreachable` so
@@ -800,7 +800,7 @@ export async function reconcileOpencodeRun(input: {
 // ---------------------------------------------------------------------------
 
 /** opencode v1.18.7 native capabilities (what the harness provides, not what
- *  Skynet already projects). */
+ *  useAgent already projects). */
 const OPENCODE_CAPABILITIES: HarnessCapabilities = {
   resume: true, // resumes a native session by id
   cancel: true, // POST /session/:id/abort

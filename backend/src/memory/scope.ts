@@ -3,7 +3,7 @@
  * may read and the single pool it may write, per the memory-scope spec:
  *
  *   team_id      = the authenticated run's orgId
- *   agent_id     = the configured Skynet agent id
+ *   agent_id     = the configured useAgent agent id
  *   org  pool    → user_id = `org:${orgId}`   (every org member shares it)
  *   personal pool → user_id = the run's authenticated userId (private)
  *

@@ -2,7 +2,7 @@ import postgres from "postgres";
 import { env } from "../env";
 import { errorMessage } from "../util/error-message";
 
-// A fixed advisory-lock key identifying "THE skynet backend singleton for this database".
+// A fixed advisory-lock key identifying "THE useAgent backend singleton for this database".
 // Arbitrary 32-bit constant ("SkNt"); only its uniqueness within this app matters.
 const SINGLETON_LOCK_KEY = 0x536b_4e74;
 
@@ -79,7 +79,7 @@ export async function enforceSingleBackend(
 
   await holder.end().catch(() => {});
   const msg =
-    "[boot] SINGLE-BACKEND: another skynet backend already holds the singleton lock on this database. " +
+    "[boot] SINGLE-BACKEND: another useAgent backend already holds the singleton lock on this database. " +
     "Canonicalization sealing + realtime SSE fan-out are process-local (single-replica); running two backends on one DB splits them.";
   if (required) {
     throw new Error(`${msg} Refusing to boot. Run exactly one backend per database.`);

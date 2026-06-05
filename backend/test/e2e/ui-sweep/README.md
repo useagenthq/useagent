@@ -1,6 +1,6 @@
 # UI E2E browser sweep
 
-Aggressive browser-level end-to-end sweep of the skynet-a product UI. Playwright
+Aggressive browser-level end-to-end sweep of the useAgent product UI. Playwright
 headless (system Chrome, `channel: "chrome"`) drives the **real** frontend against
 a **real** backend + `skynet` DB — no mocking of app code. Only two failure
 injections use `page.route` (aborting a `/api/runs` POST) to exercise the

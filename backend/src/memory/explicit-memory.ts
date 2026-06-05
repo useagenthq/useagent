@@ -17,7 +17,7 @@
  *   state: active
  *   content: The user's favourite color is blue.
  *
- * Identity fields (logical_id/operation_id/version/state) are Skynet-owned and
+ * Identity fields (logical_id/operation_id/version/state) are useAgent-owned and
  * must never be taken from arbitrary prompt text; only `kind`, `key` and
  * `content` originate from the caller.
  */
@@ -78,14 +78,14 @@ export function formatEnvelope(env: ExplicitMemoryEnvelope): string {
   return lines.join("\n");
 }
 
-/** True when a block of text is a Skynet explicit-memory envelope. */
+/** True when a block of text is a useAgent explicit-memory envelope. */
 export function isExplicitMemory(text: string): boolean {
   return text.trimStart().startsWith(EXPLICIT_MEMORY_TAG);
 }
 
 /**
  * Parse an L0 message content back into an envelope, or null when it is not a
- * well-formed Skynet explicit memory (a plain distilled turn, or malformed).
+ * well-formed useAgent explicit memory (a plain distilled turn, or malformed).
  * `content` is everything after the `content:` marker, so it may be multi-line.
  */
 export function parseEnvelope(text: string): ExplicitMemoryEnvelope | null {

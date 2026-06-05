@@ -25,7 +25,7 @@ The canvas draws matte grayscale ink — dark ink on light substrates, mirrored 
 light ink on dark ones. With `theme="auto"` (default) the substrate is resolved
 from the nearest ancestor carrying a `.dark` / `.light` class or
 `data-theme="dark|light"` attribute, falling back to
-`prefers-color-scheme`. In skynet-a that ancestor-`.dark` convention is exactly
+`prefers-color-scheme`. In useAgent that ancestor-`.dark` convention is exactly
 what `next-themes` writes (`attribute="class"`, `defaultTheme="dark"` on
 `<html>`; see `app/providers.tsx`), so the orb tracks the app theme with no extra
 wiring. Because the art is grayscale-by-depth rather than brand-colored, there
@@ -34,7 +34,7 @@ only theming surface is this light/dark substrate.
 
 ## Source & license
 
-- Vendored into skynet-a from **chartden** (`frontend/components/base/thinking-orb/`),
+- Vendored into useAgent from **chartden** (`frontend/components/base/thinking-orb/`),
   which itself ports the upstream indicator below.
 - Upstream: [`Jakubantalik/thinking-orbs`](https://github.com/Jakubantalik/thinking-orbs)
 - License: MIT © 2026 Jakub Antalik
@@ -52,9 +52,9 @@ upstream `src/`). Changes carried over from that port:
 - `engine/`, `presets.ts`, `theme.ts`, `types.ts` are copied verbatim — pure
   TypeScript with no external dependencies and no hardcoded brand colors.
 
-skynet-a adaptations (this port):
+useAgent adaptations (this port):
 
-- Comment references to BoardUI's dark-mode convention retargeted to skynet-a's
+- Comment references to BoardUI's dark-mode convention retargeted to useAgent's
   `next-themes` `.dark`-class setup — no code change (the resolver already keys
   off an ancestor `.dark` class / `data-theme`).
 - No import rewrites were needed: the component and engine reference no design-

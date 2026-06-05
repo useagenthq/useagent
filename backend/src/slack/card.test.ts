@@ -116,7 +116,7 @@ describe("buildRunCard shape", () => {
     const button = actions.elements[0];
     expect(button.type).toBe("button");
     expect(button.text.text).toBe("Open in useAgent");
-    expect(button.action_id).toBe("open_in_skynet");
+    expect(button.action_id).toBe("open_in_useagent");
     expect(button.url).toBe("https://app.example.com/session/thread-1");
   });
 

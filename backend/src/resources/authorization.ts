@@ -47,7 +47,7 @@ export async function verifyGithubPullRequest(
     const headers: Record<string, string> = {
       Accept: "application/vnd.github+json",
       "X-GitHub-Api-Version": "2022-11-28",
-      "User-Agent": "skynet-a",
+      "User-Agent": "useagent",
     };
     if (auth.token) headers.Authorization = `Bearer ${auth.token}`;
     const response = await fetch(
@@ -85,7 +85,7 @@ export async function verifyPublicGithubRepository(repository: string): Promise<
         headers: {
           Accept: "application/vnd.github+json",
           "X-GitHub-Api-Version": "2022-11-28",
-          "User-Agent": "skynet-a",
+          "User-Agent": "useagent",
         },
         signal: controller.signal,
       },

@@ -1,16 +1,16 @@
 import type { ContextMarkerKind } from "./canonical";
 import { stringValue } from "./opencode-values";
 
-export interface SkynetContextMarker {
+export interface UseAgentContextMarker {
   markerType: ContextMarkerKind;
   title: string;
   detail?: string;
 }
 
-export function markerFromSkynet(
+export function markerFromUseAgent(
   eventType: string,
   payload: Record<string, unknown> | null,
-): SkynetContextMarker | null {
+): UseAgentContextMarker | null {
   if (eventType === "skill.loaded") {
     const playbook = payload?.kind === "playbook";
     return {

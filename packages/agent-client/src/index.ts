@@ -1,7 +1,7 @@
 /**
- * @useagent/agent-client - the browser/runtime-neutral Skynet thread client.
+ * @useagent/agent-client - the browser/runtime-neutral useAgent thread client.
  *
- * Understands ONLY the Skynet product API + canonical/thread events. It knows nothing
+ * Understands ONLY the useAgent product API + canonical/thread events. It knows nothing
  * about OpenCode, ACP, Claude, Codex, Daytona, secrets, or databases, and imports no
  * React, Next, Node-only, backend, or provider module. Its only bare imports are the
  * zero-dependency canonical protocol and artifact-workspace contracts. A UI supplies

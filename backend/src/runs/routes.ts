@@ -952,7 +952,7 @@ runsRoutes.get("/:id/events", async (c) => {
 });
 
 // ADDITIVE thread SSE stream (final_fix.md): ONE realtime subscription for a whole
-// Skynet conversation, keyed by the ROOT run id in the URL — not whichever run
+// useAgent conversation, keyed by the ROOT run id in the URL — not whichever run
 // happens to be selected. It is a READ/AGGREGATION boundary over the EXISTING
 // durable sources (runs/steps via getThreadForRun, provider_events via the native
 // lane) and the EXISTING live buses (worker bus, turn-stream deltas, native bus),

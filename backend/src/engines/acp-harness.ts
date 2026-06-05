@@ -15,7 +15,7 @@ import { errorMessage } from "../util/error-message";
 // changing EngineAdapter.run — turns still run through acp-server.ts.
 //
 // HONESTY over aspiration (Slice 2 exit gate + Section 5 robustness verdict): the
-// capability map describes what the Skynet ACP path ACTUALLY implements today, not
+// capability map describes what the useAgent ACP path ACTUALLY implements today, not
 // what the ACP wire protocol could support upstream. Control operations that are
 // not wired return a typed `unsupported_capability` result - never a silent no-op
 // and never an OpenCode-shaped fabrication. Native `session/cancel` is wired;

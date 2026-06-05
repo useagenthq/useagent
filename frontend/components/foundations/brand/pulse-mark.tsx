@@ -6,7 +6,7 @@ export function PulseMark({ className, active = false }: { className?: string; a
   return (
     // biome-ignore lint/a11y/noSvgWithoutTitle: presentational brand glyph is hidden from assistive technology
     <svg viewBox="0 0 24 24" fill="none" aria-hidden className={cn("size-6", className)}>
-      <g className={cn(active && "skynet-orbit-active")}>
+      <g className={cn(active && "useagent-orbit-active")}>
         <ellipse
           cx="12"
           cy="12"

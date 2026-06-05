@@ -144,9 +144,9 @@ describe("artifact client contract", () => {
       calls.push(url);
       return jsonResponse({ artifacts: [descriptor] });
     };
-    const client = createAgentClient({ fetch, baseUrl: "https://skynet.test" });
+    const client = createAgentClient({ fetch, baseUrl: "https://useagent.test" });
     expect(await client.listArtifacts({ threadId: "thread/1" })).toEqual([descriptor]);
-    expect(calls).toEqual(["https://skynet.test/api/artifacts?thread_id=thread%2F1"]);
+    expect(calls).toEqual(["https://useagent.test/api/artifacts?thread_id=thread%2F1"]);
   });
 
   test("classifies malformed artifact responses as decode errors", async () => {

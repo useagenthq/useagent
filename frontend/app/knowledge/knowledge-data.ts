@@ -131,7 +131,7 @@ export const kindChipColor: Record<
 
 /** User-facing label for a persisted knowledge folder key. */
 export function knowledgeFolderLabel(folder: string): string {
-  return folder === "skynet-app" ? "useAgent" : folder;
+  return folder === "skynet-app" || folder === "useagent-app" ? "useAgent" : folder;
 }
 
 /** Row-safe display copy that leaves the stored item and folder key unchanged. */
@@ -179,7 +179,7 @@ export function recordToItem(record: KnowledgeRecord): KnowledgeItem {
 
 /** Default folder options offered by the add-knowledge modal, unioned with the
  *  folders present in real records. */
-export const seedFolders = ["Global", "skynet-app"];
+export const seedFolders = ["Global", "useagent-app"];
 
 /**
  * SSR fallback used only while the backend is unreachable. Intentionally empty:

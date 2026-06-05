@@ -141,7 +141,7 @@ export async function ensureRepoClone(
     return;
   }
 
-  // ABSENT or a Skynet-OWNED stale checkout: clone into a UNIQUE TEMP sibling first, validate its
+  // ABSENT or a useAgent-OWNED stale checkout: clone into a UNIQUE TEMP sibling first, validate its
   // origin, stamp the ownership marker, then ATOMICALLY rename into place - so a failed/interrupted
   // clone only ever leaves the temp dir (which we clean), never a partial at the destination, and
   // we replace the destination ONLY when it is absent or one WE own. A destination that turns

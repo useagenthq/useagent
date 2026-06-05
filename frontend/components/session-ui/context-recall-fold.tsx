@@ -1,6 +1,6 @@
 "use client";
 
-// skynet-a component (NOT vendored): a turn's leading context-recall receipts
+// useAgent component (NOT vendored): a turn's leading context-recall receipts
 // (skill/playbook loads + memory/knowledge retrievals) minified into ONE quiet
 // disclosure, matching the "+N previous tool calls" fold grammar - a compact
 // summary row with a chevron that expands to the individual MarkerRow rows. Only

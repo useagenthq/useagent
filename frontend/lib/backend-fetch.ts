@@ -1,5 +1,5 @@
 /**
- * Isomorphic fetch to the Skynet backend (live on :3201).
+ * Isomorphic fetch to the useAgent backend (live on :3201).
  *
  * - Server: hit the backend origin directly (the Next `/api/*` rewrite only
  *   applies to browser requests) and forward the incoming request's `Cookie`

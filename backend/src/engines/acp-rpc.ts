@@ -101,7 +101,7 @@ export function createAcpRpcClient(
 
 /** The ACP `session/cancel` message (ACP v1 prompt-lifecycle). It is a NOTIFICATION
  *  (no `id`), so it never enters the pending map; the agent stops the ongoing turn and
- *  replies to the in-flight `session/prompt` with stopReason "cancelled". Skynet sends
+ *  replies to the in-flight `session/prompt` with stopReason "cancelled". useAgent sends
  *  this on the product abort BEFORE dropping the SSE, so the agent stops NATIVELY
  *  instead of continuing server-side after we disconnect. */
 export function buildSessionCancel(sessionId: string): JsonRpcMessage {
