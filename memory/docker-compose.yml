@@ -1,5 +1,5 @@
 # One-command bring-up of the TencentDB-Agent-Memory data plane (memory-core
-# gateway) that the Skynet backend consumes as its shared team-memory layer.
+# gateway) that the useAgent backend consumes as its shared team-memory layer.
 #
 #   docker compose -f memory/docker-compose.yml up -d
 #

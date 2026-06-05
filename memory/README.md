@@ -1,6 +1,6 @@
 # Team memory (TencentDB-Agent-Memory)
 
-Optional shared, team-level memory for the Skynet backend, backed by
+Optional shared, team-level memory for the useAgent backend, backed by
 [TencentDB-Agent-Memory](https://github.com/TencentCloud/TencentDB-Agent-Memory)
 (MIT). It layers conversations (L0) → distilled facts (L1) → scenario knowledge
 (L2) → personas (L3), with hybrid retrieval (BM25 + vector + RRF). No Tencent
@@ -50,6 +50,10 @@ MEMORY_TEAM_ID=skynet           # your team = the shared-memory boundary
 #                             MEMORY_USER_ID=skynet
 #                             MEMORY_SESSION_ID=skynet-runs
 ```
+
+The `skynet` values above are existing provider partition identifiers and must
+continue to match the deployed `tdai-gateway.yaml` until that data is migrated;
+they are not customer-facing product names.
 
 Restart the backend. Done. (Leave `MEMORY_API_URL` unset to keep memory off.)
 
@@ -121,6 +125,25 @@ curl -sS -X POST "${H[@]}" http://localhost:8420/v3/atomic/search -d "{$ISO,\"qu
 docker compose -f memory/docker-compose.yml down          # stop, keep memory
 docker compose -f memory/docker-compose.yml down -v       # also delete the volume
 ```
+
+Production backups use `deploy/hetzner/useagent-backup.sh`. The encrypted
+archive includes a checksum-verified, quiesced snapshot of the Docker volume
+mounted at `/data/tdai-memory`; restore replaces that volume only after all
+useAgent runtime services have stopped. Configure
+`USEAGENT_BACKUP_REMOTE_SYNC_COMMAND` (and preferably
+`USEAGENT_BACKUP_REQUIRE_REMOTE=1`) because an archive left on the application
+host is not disaster recovery. The scheduled unit reads an optional root-owned
+`/etc/useagent/backup.env`; operators can enable the fail-closed policy there,
+for example:
+
+```bash
+USEAGENT_BACKUP_REQUIRE_REMOTE=1
+USEAGENT_BACKUP_REMOTE_SYNC_COMMAND=/usr/local/sbin/useagent-sync-backup {}
+```
+
+Keep provider credentials out of the unit and repository. The referenced
+operator-installed helper should obtain them from its own root-only credential
+file or workload identity and return non-zero unless the remote copy is durable.
 
 ## API contract (pinned against the repo's TS SDK)
 
