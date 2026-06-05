@@ -3,6 +3,7 @@ import {
   firstSemanticT3ToolName,
   isT3TransportToolName,
   t3SummaryToolIdentity,
+  t3TaskDisplayTitle,
 } from "../src/t3-tool";
 
 describe("T3 semantic tool names", () => {
@@ -36,5 +37,18 @@ describe("T3 semantic tool names", () => {
       tool: "computer_screenshot",
     });
     expect(t3SummaryToolIdentity("Mcp tool call")).toBeNull();
+  });
+
+  test("names child tasks from provider metadata instead of transport placeholders", () => {
+    expect(t3TaskDisplayTitle({
+      title: "Tool",
+      summary: "Tool started",
+      taskId: "google_price",
+    })).toBe("google price");
+    expect(t3TaskDisplayTitle({
+      title: "Price researcher",
+      role: "researcher",
+      taskId: "task_1",
+    })).toBe("Price researcher");
   });
 });
