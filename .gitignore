@@ -47,3 +47,14 @@ infra/terraform/**/*.tfvars
 # local memory-core config (holds an API key)
 memory/tdai-gateway.local.yaml
 memory/docker-compose.local.yml
+
+# Local working ledgers - personal/operator notes, never tracked
+TASKS.md
+tasks.md
+qa.md
+ux_bugs.md
+ux_bugs.mx
+self_improving.md
+docs/internal/
+CLAUDE.local.md
+progress/
