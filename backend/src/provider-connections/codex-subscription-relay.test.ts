@@ -7,11 +7,32 @@ import { websocket } from "hono/bun";
 import type { AppEnv } from "../http";
 import type { CodexSubscriptionRuntimeSelection } from "./service";
 import {
+  codexSubscriptionRelayPublicOrigin,
   codexSubscriptionRelayRoutes,
   issueCodexSubscriptionRelayCapability,
   setCodexSubscriptionRelayDependenciesForTest,
   type CodexSubscriptionRelayBinding,
 } from "./codex-subscription-relay";
+
+describe("Codex subscription relay public origin", () => {
+  test("uses an explicit relay host without changing the Better Auth origin", () => {
+    expect(
+      codexSubscriptionRelayPublicOrigin({
+        BETTER_AUTH_URL: "https://skynet.meow.gs",
+        CODEX_SUBSCRIPTION_RELAY_PUBLIC_ORIGIN: "https://app.useagent.org/path",
+      }),
+    ).toBe("https://app.useagent.org");
+  });
+
+  test("rejects non-HTTP relay origins", () => {
+    expect(() =>
+      codexSubscriptionRelayPublicOrigin({
+        BETTER_AUTH_URL: "https://skynet.meow.gs",
+        CODEX_SUBSCRIPTION_RELAY_PUBLIC_ORIGIN: "file:///tmp/socket",
+      }),
+    ).toThrow("must be an HTTP(S) origin");
+  });
+});
 
 const servers: Array<{ stop(force?: boolean): void }> = [];
 const sockets: WebSocket[] = [];
