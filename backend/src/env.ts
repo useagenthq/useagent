@@ -43,6 +43,30 @@ export function selfSignupEnabled(
   return runtimeDevModeEnabled(source);
 }
 
+/** Browser origins allowed to submit Better Auth requests. The two primary
+ * origins remain implicit; additional rollout/alias hosts are explicit and
+ * validated instead of being hard-coded into auth policy. */
+export function betterAuthTrustedOrigins(
+  source: Record<string, string | undefined> = process.env,
+): string[] {
+  const candidates = [
+    source.FRONTEND_ORIGIN ?? "http://localhost:3200",
+    source.BETTER_AUTH_URL ?? "http://localhost:3201",
+    ...(source.BETTER_AUTH_TRUSTED_ORIGINS ?? "").split(","),
+  ];
+  const origins = new Set<string>();
+  for (const candidate of candidates) {
+    const value = candidate.trim();
+    if (!value) continue;
+    const url = new URL(value);
+    if (url.protocol !== "http:" && url.protocol !== "https:") {
+      throw new Error("BETTER_AUTH_TRUSTED_ORIGINS accepts only HTTP(S) origins");
+    }
+    origins.add(url.origin);
+  }
+  return [...origins];
+}
+
 /**
  * Which engines may actually run. SECURITY GATE: the
  * Claude/Codex ACP adapters are registered but still require an operator-provisioned

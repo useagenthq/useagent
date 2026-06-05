@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { selfSignupEnabled } from "../src/env";
+import { betterAuthTrustedOrigins, selfSignupEnabled } from "../src/env";
 
 describe("self-service signup policy", () => {
   test("is disabled in production even when no signup-specific flag exists", () => {
@@ -12,5 +12,27 @@ describe("self-service signup policy", () => {
     expect(selfSignupEnabled({ NODE_ENV: "development", USEAGENT_DEV_MODE: "true" })).toBe(true);
     expect(selfSignupEnabled({ NODE_ENV: "development", USEAGENT_DEV_MODE: "false" })).toBe(false);
     expect(selfSignupEnabled({ NODE_ENV: "development" })).toBe(true);
+  });
+});
+
+describe("Better Auth trusted origins", () => {
+  test("keeps both legacy and app hosts during the domain transition", () => {
+    expect(
+      betterAuthTrustedOrigins({
+        FRONTEND_ORIGIN: "https://skynet.meow.gs",
+        BETTER_AUTH_URL: "https://skynet.meow.gs",
+        BETTER_AUTH_TRUSTED_ORIGINS: "https://app.useagent.org, https://skynet.meow.gs/",
+      }),
+    ).toEqual(["https://skynet.meow.gs", "https://app.useagent.org"]);
+  });
+
+  test("rejects non-HTTP origins", () => {
+    expect(() =>
+      betterAuthTrustedOrigins({
+        FRONTEND_ORIGIN: "https://skynet.meow.gs",
+        BETTER_AUTH_URL: "https://skynet.meow.gs",
+        BETTER_AUTH_TRUSTED_ORIGINS: "javascript:alert(1)",
+      }),
+    ).toThrow("accepts only HTTP(S) origins");
   });
 });

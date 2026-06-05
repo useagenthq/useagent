@@ -4,7 +4,12 @@ import { organization } from "better-auth/plugins";
 import { createPersonalOrgForUser } from "./auth-hooks";
 import { db } from "./db/client";
 import * as schema from "./db/auth-schema";
-import { env, googleAuthConfig, selfSignupEnabled } from "./env";
+import {
+  betterAuthTrustedOrigins,
+  env,
+  googleAuthConfig,
+  selfSignupEnabled,
+} from "./env";
 
 // Google social sign-in — only when both GOOGLE_CLIENT_ID and _SECRET are set
 // (env-gated, like every other optional integration). Unconfigured → the object
@@ -36,7 +41,7 @@ export const auth = betterAuth({
   emailAndPassword: { enabled: true, disableSignUp: !selfSignupEnabled() },
   socialProviders,
   plugins: [organization()],
-  trustedOrigins: [env.FRONTEND_ORIGIN, env.BETTER_AUTH_URL],
+  trustedOrigins: betterAuthTrustedOrigins(),
   databaseHooks: {
     user: {
       create: {
