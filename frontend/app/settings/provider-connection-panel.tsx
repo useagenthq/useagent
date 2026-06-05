@@ -34,59 +34,11 @@ function StatusPill({ connection }: { connection: ProviderConnectionMeta | null 
   );
 }
 
-function AuthPathRow({
-  label,
-  detail,
-  connection,
-  onRevoke,
-  disabled,
-}: {
-  label: string;
-  detail: string;
-  connection: ProviderConnectionMeta | null;
-  onRevoke: () => void;
-  disabled: boolean;
-}) {
-  const active = isActiveConnection(connection);
-  return (
-    <div className="flex flex-col gap-3 rounded-xl border border-border-button-default bg-background-primary-default p-3 sm:flex-row sm:items-center sm:justify-between">
-      <div className="min-w-0">
-        <div className="flex flex-wrap items-center gap-2">
-          <p className="text-body-2-medium text-text-primary">{label}</p>
-          <StatusPill connection={connection} />
-        </div>
-        <p className="mt-1 text-caption-1-regular text-text-tertiary">{detail}</p>
-        <div className="mt-2 flex flex-wrap items-center gap-2 text-caption-1-regular text-text-secondary">
-          <span className="truncate">{accountLabel(connection)}</span>
-          {connection ? (
-            <>
-              <span className="text-text-tertiary">·</span>
-              <span>Updated {relTime(connection.updatedAt)}</span>
-            </>
-          ) : null}
-        </div>
-      </div>
-      <div className="flex shrink-0 items-center gap-2">
-        {active ? (
-          <span className="select-none font-mono text-caption-1-regular text-text-tertiary">
-            {MASK}
-            <span className="sr-only"> stored write-only credential</span>
-          </span>
-        ) : null}
-        <Button
-          variant={active ? "danger" : "secondary"}
-          size="xs"
-          className="rounded-full"
-          disabled={!active || disabled}
-          onClick={onRevoke}
-        >
-          Revoke
-        </Button>
-      </div>
-    </div>
-  );
-}
-
+/**
+ * One provider section: a single bordered container whose contents are FLAT
+ * rows divided by hairlines - header, auth-path rows, and the save form. The
+ * previous card-in-card-in-card nesting collapsed into this one level.
+ */
 export function ProviderConnectionPanel({
   provider,
   connection,
@@ -149,38 +101,72 @@ export function ProviderConnectionPanel({
     [labels.name, onSaved, provider],
   );
 
+  const keyActive = isActiveConnection(connection);
+
   return (
-    <section className="flex flex-col gap-4 rounded-xl border border-border-button-default bg-background-secondary-default p-4">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div className="min-w-0">
-          <div className="flex items-center gap-2">
-            <RiPlugLine aria-hidden className="size-4 text-foreground-icon-tertiary" />
-            <h3 className="text-headline-medium text-text-primary">{labels.name}</h3>
-          </div>
-          <p className="mt-1 text-caption-1-regular text-text-secondary">{labels.scope}</p>
+    <section className="rounded-xl border border-border-button-default bg-background-secondary-default px-4">
+      {/* Header row */}
+      <div className="flex items-center justify-between gap-3 border-b border-separator-border py-3">
+        <div className="flex min-w-0 items-center gap-2">
+          <RiPlugLine aria-hidden className="size-4 shrink-0 text-foreground-icon-tertiary" />
+          <h3 className="truncate text-body-medium text-text-primary">{labels.name}</h3>
+          <span className="truncate text-caption-1-regular text-text-tertiary">
+            {labels.scope}
+          </span>
         </div>
         <StatusPill connection={connection ?? oauthConnection} />
       </div>
 
-      <div className="grid gap-3">
-        {provider === "openai" ? (
-          <CodexChatGptPath
-            connection={oauthConnection}
-            sandboxExecutionEnabled={codexSandboxExecutionEnabled}
-            onChanged={onSaved}
-          />
-        ) : null}
-        <AuthPathRow
-          label="API key"
-          detail={`${labels.keyHint}. Write-only: the saved value is never read back into the browser.`}
-          connection={connection}
-          disabled={revoking === "api_key"}
-          onRevoke={() => void revoke("api_key")}
+      {provider === "openai" ? (
+        <CodexChatGptPath
+          connection={oauthConnection}
+          sandboxExecutionEnabled={codexSandboxExecutionEnabled}
+          onChanged={onSaved}
         />
+      ) : null}
+
+      {/* API-key row */}
+      <div className="flex flex-col gap-3 border-b border-separator-border py-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="text-body-2-medium text-text-primary">API key</p>
+            <StatusPill connection={connection} />
+          </div>
+          <p className="mt-1 text-caption-1-regular text-text-tertiary">
+            {labels.keyHint}. Write-only - never shown again.
+          </p>
+          <div className="mt-1 flex flex-wrap items-center gap-2 text-caption-1-regular text-text-secondary">
+            <span className="truncate">{accountLabel(connection)}</span>
+            {connection ? (
+              <>
+                <span className="text-text-tertiary">·</span>
+                <span>Updated {relTime(connection.updatedAt)}</span>
+              </>
+            ) : null}
+          </div>
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
+          {keyActive ? (
+            <span className="select-none font-mono text-caption-1-regular text-text-tertiary">
+              {MASK}
+              <span className="sr-only"> stored write-only credential</span>
+            </span>
+          ) : null}
+          <Button
+            variant={keyActive ? "danger" : "secondary"}
+            size="xs"
+            className="rounded-full"
+            disabled={!keyActive || revoking === "api_key"}
+            onClick={() => void revoke("api_key")}
+          >
+            Revoke
+          </Button>
+        </div>
       </div>
 
+      {/* Save-key row */}
       <form
-        className="flex flex-col gap-2"
+        className="flex flex-col gap-2 py-3"
         onSubmit={(event) => {
           event.preventDefault();
           void save();
@@ -199,7 +185,7 @@ export function ProviderConnectionPanel({
           />
           <InputBase
             aria-label={`${labels.name} account email`}
-            placeholder="Account email"
+            placeholder="Account email (optional)"
             type="email"
             autoComplete="off"
             value={email}
@@ -207,7 +193,7 @@ export function ProviderConnectionPanel({
           />
           <InputBase
             aria-label={`${labels.name} plan or label`}
-            placeholder="Plan or label"
+            placeholder="Label (optional)"
             value={planType}
             onChange={(event) => setPlanType(event.target.value)}
           />
@@ -222,9 +208,6 @@ export function ProviderConnectionPanel({
             Save key
           </Button>
         </div>
-        <p className="text-caption-1-regular text-text-tertiary">
-          Account fields are labels only; they help identify the credential without exposing it.
-        </p>
         {formError ? (
           <p className="text-caption-1-regular text-text-error-primary">{formError}</p>
         ) : null}
