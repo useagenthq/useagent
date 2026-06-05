@@ -103,6 +103,55 @@ describe("artifact native formats", () => {
     expect(reloaded.creator).toBe("useAgent");
   });
 
+  test("imports worksheet cells when an unsupported chart drawing is present", async () => {
+    const output = await renderArtifactExport(
+      { workbook: {
+        schemaVersion: 2,
+        activeSheetId: "sheet-1",
+        sheets: [{
+          id: "sheet-1",
+          name: "Budget",
+          rowCount: 2,
+          colCount: 2,
+          cells: { A1: { v: "Quarter" }, B1: { v: "Revenue" }, A2: { v: "Q1" }, B2: { v: 4200 } },
+        }],
+      } },
+      "xlsx",
+    );
+    const zip = await JSZip.loadAsync(output.bytes);
+    const sheetPath = "xl/worksheets/sheet1.xml";
+    const sheet = await zip.file(sheetPath)!.async("string");
+    zip.file(
+      sheetPath,
+      sheet.replace(
+        "</worksheet>",
+        '<drawing xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" r:id="rId1"/></worksheet>',
+      ),
+    );
+    zip.file(
+      "xl/worksheets/_rels/sheet1.xml.rels",
+      '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing" Target="/xl/drawings/drawing1.xml" Id="rId1"/></Relationships>',
+    );
+    zip.file(
+      "xl/drawings/drawing1.xml",
+      '<wsDr xmlns="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing"><oneCellAnchor><from><col>0</col><colOff>0</colOff><row>4</row><rowOff>0</rowOff></from><ext cx="4680000" cy="2520000"/><graphicFrame><nvGraphicFramePr><cNvPr id="1" name="Chart 1"/><cNvGraphicFramePr/></nvGraphicFramePr><xfrm/><a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/chart"><c:chart xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" r:id="rId1"/></a:graphicData></a:graphic></graphicFrame><clientData/></oneCellAnchor></wsDr>',
+    );
+    zip.file(
+      "xl/drawings/_rels/drawing1.xml.rels",
+      '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/chart" Target="/xl/charts/chart1.xml" Id="rId1"/></Relationships>',
+    );
+    const chartWorkbook = await zip.generateAsync({ type: "uint8array" });
+    const direct = new ExcelJS.Workbook();
+    const buffer = Buffer.from(chartWorkbook);
+    await expect(
+      direct.xlsx.load(buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength)),
+    ).rejects.toThrow(/anchors/);
+
+    const imported = await extractXlsxWorkbook(chartWorkbook);
+    expect(imported.sheets[0]?.cells.A1?.v).toBe("Quarter");
+    expect(imported.sheets[0]?.cells.B2?.v).toBe(4200);
+  });
+
   test("renders a themed deck to PPTX: slide count, text runs, background fill, shape, notes", async () => {
     // Sky preset carries a gradient background (start #1d5fd0); the export maps a
     // gradient to a solid slide fill of its start color.

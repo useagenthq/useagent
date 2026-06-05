@@ -1051,12 +1051,99 @@ function importWorksheet(sheet: ExcelJS.Worksheet, index: number): Worksheet {
  * formats, bold/italic/align, text/fill colors, and column widths. Charts,
  * pivots, and conditional formatting are dropped (the documented import edge).
  * The result is still funnelled through the shared validator by the caller. */
-export async function extractXlsxWorkbook(bytes: Uint8Array): Promise<Workbook> {
-  await loadBoundedOfficeZip(bytes);
+async function loadExcelJsWorkbook(bytes: Uint8Array): Promise<ExcelJS.Workbook> {
   const workbook = new ExcelJS.Workbook();
   const buffer = Buffer.from(bytes);
   const data = buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength);
   await workbook.xlsx.load(data);
+  return workbook;
+}
+
+/** ExcelJS 4.4 can throw while reconciling chart-only drawing parts (notably
+ * oneCellAnchor charts) even though worksheet cells are valid. The web editor
+ * does not represent charts, so remove only drawing/chart relationships from a
+ * bounded copy used for import. The original artifact bytes remain immutable. */
+async function xlsxWithoutUnsupportedDrawings(
+  bytes: Uint8Array,
+): Promise<{ readonly bytes: Uint8Array; readonly removedRelationship: boolean }> {
+  const zip = await loadBoundedOfficeZip(bytes);
+  let removedRelationship = false;
+  for (const path of Object.keys(zip.files)) {
+    if (/^xl\/(drawings|charts)\//.test(path)) {
+      zip.remove(path);
+      continue;
+    }
+    if (/^xl\/worksheets\/sheet\d+\.xml$/.test(path)) {
+      const entry = zip.file(path);
+      if (!entry) continue;
+      const xml = await entry.async("string");
+      zip.file(
+        path,
+        xml
+          .replace(/<(?:legacy)?drawing\b[^>]*\/>/g, "")
+          .replace(/<legacyDrawingHF\b[^>]*\/>/g, ""),
+      );
+      continue;
+    }
+    if (/^xl\/worksheets\/_rels\/sheet\d+\.xml\.rels$/.test(path)) {
+      const entry = zip.file(path);
+      if (!entry) continue;
+      const xml = await entry.async("string");
+      const sanitized = xml.replace(
+        /<Relationship\b(?=[^>]*\bType="[^"]*\/(?:drawing|chart)")[^>]*\/>/g,
+        "",
+      );
+      if (sanitized !== xml) removedRelationship = true;
+      zip.file(
+        path,
+        sanitized,
+      );
+    }
+  }
+  const contentTypes = zip.file("[Content_Types].xml");
+  if (contentTypes) {
+    const xml = await contentTypes.async("string");
+    zip.file(
+      "[Content_Types].xml",
+      xml.replace(
+        /<Override\b(?=[^>]*\bPartName="\/xl\/(?:drawings|charts)\/)[^>]*\/>/g,
+        "",
+      ),
+    );
+  }
+  return {
+    bytes: await zip.generateAsync({ type: "uint8array", compression: "DEFLATE" }),
+    removedRelationship,
+  };
+}
+
+function isExcelJsDrawingReconcileError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  const stack = error instanceof Error ? (error.stack ?? "") : "";
+  return (
+    /drawing\.anchors|reading ['"]anchors['"]/.test(message) &&
+    stack.includes("exceljs/lib/xlsx/xlsx.js")
+  );
+}
+
+export async function extractXlsxWorkbook(bytes: Uint8Array): Promise<Workbook> {
+  await loadBoundedOfficeZip(bytes);
+  let workbook: ExcelJS.Workbook;
+  try {
+    workbook = await loadExcelJsWorkbook(bytes);
+  } catch (originalError) {
+    if (!isExcelJsDrawingReconcileError(originalError)) throw originalError;
+    const sanitized = await xlsxWithoutUnsupportedDrawings(bytes);
+    if (!sanitized.removedRelationship) throw originalError;
+    try {
+      workbook = await loadExcelJsWorkbook(sanitized.bytes);
+    } catch (fallbackError) {
+      throw new AggregateError(
+        [originalError, fallbackError],
+        "XLSX drawing fallback could not load the workbook",
+      );
+    }
+  }
   const sheets = workbook.worksheets
     .slice(0, WORKBOOK_MAX_SHEETS)
     .map((sheet, index) => importWorksheet(sheet, index));
