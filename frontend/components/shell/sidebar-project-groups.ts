@@ -116,3 +116,19 @@ export function dedupeProjectRepos(repos: readonly ProjectRepo[]): ProjectRepo[]
   const seen = new Set<string>();
   return repos.filter((repo) => (seen.has(repo.fullName) ? false : (seen.add(repo.fullName), true)));
 }
+
+export interface VisibleProjectGroups {
+  readonly groups: readonly ProjectGroup[];
+  readonly hiddenCount: number;
+}
+
+/** Keep a useful project sample visible before the user expands the long tail. */
+export function visibleProjectGroups(
+  groups: readonly ProjectGroup[],
+  limit: number,
+  expanded: boolean,
+): VisibleProjectGroups {
+  if (expanded) return { groups, hiddenCount: 0 };
+  const visible = groups.slice(0, Math.max(0, limit));
+  return { groups: visible, hiddenCount: groups.length - visible.length };
+}

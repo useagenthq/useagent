@@ -22,12 +22,14 @@ import {
   type ProjectRepo,
   runPrimaryRepo,
   UNATTACHED_KEY,
+  visibleProjectGroups,
 } from "./sidebar-project-groups";
 import { SidebarProjectMenu } from "./sidebar-project-menu";
 import type { SidebarRun } from "./working-project-status";
 
 const POLL_MS = 30_000;
 const MAX_PROJECTS = 48;
+const VISIBLE_PROJECTS = 5;
 // Recent threads stay visible; the rest sit behind a "Show N more" disclosure so
 // a long history never floods the rail (same cap as the previous rail).
 const VISIBLE_THREADS = 6;
@@ -204,6 +206,14 @@ export function SidebarProjects() {
     () => groups.find((group) => group.key === UNATTACHED_KEY)?.threads ?? [],
     [groups],
   );
+  const emptyProjectVisibility = useMemo(
+    () => visibleProjectGroups(emptyProjects, VISIBLE_PROJECTS, showEmptyProjects),
+    [emptyProjects, showEmptyProjects],
+  );
+  const displayedProjects = useMemo(
+    () => [...activeProjects, ...emptyProjectVisibility.groups],
+    [activeProjects, emptyProjectVisibility.groups],
+  );
 
   const renderMenu = useCallback(
     (group: TreeProjectGroup, control: ProjectMenuControl) =>
@@ -222,11 +232,11 @@ export function SidebarProjects() {
 
   return (
     <>
-      {activeProjects.length > 0 && (
+      {displayedProjects.length > 0 && (
         <>
           <SidebarSectionLabel>Projects</SidebarSectionLabel>
           <ProjectThreadTree
-            groups={toTree(activeProjects)}
+            groups={toTree(displayedProjects)}
             isExpanded={isExpanded}
             onToggle={toggle}
             threadHref={(thread) => `/session/${thread.id}`}
@@ -235,26 +245,19 @@ export function SidebarProjects() {
         </>
       )}
 
-      {emptyProjects.length > 0 && (
+      {emptyProjectVisibility.hiddenCount > 0 || showEmptyProjects ? (
         <>
-          {showEmptyProjects && (
-            <ProjectThreadTree
-              groups={toTree(emptyProjects)}
-              isExpanded={isExpanded}
-              onToggle={toggle}
-              threadHref={(thread) => `/session/${thread.id}`}
-              renderMenu={renderMenu}
-            />
-          )}
           <button
             type="button"
             onClick={() => setShowEmptyProjects((value) => !value)}
             className="flex w-full items-center gap-1 rounded-lg px-2.5 py-1 text-caption-1-regular text-text-tertiary transition-colors hover:bg-background-secondary-hover hover:text-text-secondary"
           >
-            {showEmptyProjects ? "Show fewer" : `Show ${emptyProjects.length} more`}
+            {showEmptyProjects
+              ? "Show fewer"
+              : `Show ${emptyProjectVisibility.hiddenCount} more`}
           </button>
         </>
-      )}
+      ) : null}
 
       {independentThreads.length > 0 && (
         <>
