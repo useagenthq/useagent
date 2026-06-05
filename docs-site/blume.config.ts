@@ -12,7 +12,7 @@ export default defineConfig({
 
   github: {
     owner: "useagenthq",
-    repo: "skynet",
+    repo: "useagent",
     branch: "main",
     dir: "docs-site",
   },

@@ -1,4 +1,4 @@
-# Deterministic CI for skynet — the fast, hermetic gate that runs on every push
+# Deterministic CI for useAgent - the fast, hermetic gate that runs on every push
 # and PR. Three jobs run in parallel (typecheck / backend tests / frontend), each
 # under ~10 min with bun's install cache warm.
 #
