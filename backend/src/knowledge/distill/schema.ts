@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 /**
- * Distillation schema — ported from the knowledge service
+ * Distillation schema — part of the knowledge service
  * (packages/distillation/src/schema.ts), adapted to zod v4 (looser string
  * validators so slightly-off model output isn't rejected outright) and to
  * Postgres storage. The domain-neutral RecordKind is the heart of the port:

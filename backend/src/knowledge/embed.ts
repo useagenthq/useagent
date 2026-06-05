@@ -1,7 +1,7 @@
 import { env } from "./env";
 
 /**
- * Embedding client — ported from the knowledge service
+ * Embedding client — part of the knowledge service
  * (packages/embedding/src/index.ts). OpenAI text-embedding-3-large @ 1024 dims,
  * called directly (we bring our own vectors to Postgres/pgvector). Adapted to
  * degrade to NULL when OPENAI_API_KEY is absent, so ingest still stores records

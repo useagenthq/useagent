@@ -15,7 +15,7 @@ import { embedOne } from "./embed";
 import { findExisting, upsertRecord } from "./store";
 
 /**
- * Ingestion — ported from the knowledge service's idempotent write path
+ * Ingestion — part of the knowledge service's idempotent write path
  * (packages/ingestion). One source item in; dedupe by distillation_key
  * (content hash + source_type + prompt/model/schema version), distill, embed,
  * upsert. Same identity + unchanged recipe → skip (no re-distill). Changed →

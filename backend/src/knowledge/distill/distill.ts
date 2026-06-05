@@ -4,7 +4,7 @@ import { DistilledRecord, type KnowledgeRecord, type SourceMeta } from "./schema
 import { buildDistillPrompt, PROMPT_VERSION, SYSTEM_PROMPT } from "./prompts";
 
 /**
- * Distillation core — ported from the knowledge service
+ * Distillation core — part of the knowledge service
  * (packages/distillation/src/distill.ts). The OpenRouter call, forced function
  * tool, grounding enforcement (refs + verbatim_signals must appear verbatim in
  * the source, ungrounded dropped + counted), and the worth_saving gate are
