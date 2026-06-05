@@ -1,5 +1,6 @@
 {
   "name": "skynet",
+  "license": "AGPL-3.0-only",
   "private": true,
   "scripts": {
     "dev:frontend": "bun run --cwd frontend dev",

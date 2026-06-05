@@ -107,3 +107,12 @@ export function groupThreadsByProject(
   ordered.push(...zeroThreads);
   return ordered;
 }
+
+/** Dedupe repos on fullName, first occurrence wins. The sidebar renders rows
+ *  keyed by fullName, so upstream duplicates collapsed in the DOM while still
+ *  counting toward the "Show N more" toggle - the count overstated the list
+ *  and rows looked missing. Dedupe BEFORE any visible/overflow split. */
+export function dedupeProjectRepos(repos: readonly ProjectRepo[]): ProjectRepo[] {
+  const seen = new Set<string>();
+  return repos.filter((repo) => (seen.has(repo.fullName) ? false : (seen.add(repo.fullName), true)));
+}
