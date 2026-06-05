@@ -160,32 +160,6 @@ Operational invariants: exactly one backend per database (a boot-time advisory l
 - `bun run e2e` is a mock full-stack pass including Slack and memory outbox delivery and crash-survival stages; `bun run e2e:real` exercises real sandboxes end to end; a soak marathon and a UI sweep exist for storm and browser coverage.
 - Release certification runs real engine journeys (repo clone, computer use, desktop recording, artifact publish, automations, subagent fan-out, thread resume, model switch, web search). Ordinary deployments use the separate fast lane described above.
 
-## Current State
-
-- Direct chat is implemented as a no-sandbox surface with read-only retrieval.
-- Agent runs are implemented as threaded sessions backed by sandboxes and streamed events; the canonical session grammar is the default rendering in the live thread view.
-- Runs survive backend restarts: recovery parks and re-probes in-flight sessions, streams recovered events live, and adopts the finished result instead of failing work that actually completed.
-- Production turn dispatch enters the provider registry first. Native OpenCode and selected runtime-path turns receive a concrete `ProviderDriver`; legacy ACP execution remains an explicit compatibility branch.
-- User API keys are resolved inside the signed provider gateway. Managed Codex subscription turns use a separate host-owned app-server relay and never copy OAuth state into the runtime environment or a sandbox. Hosted Codex subscription execution runs end-to-end in production: first turns, multi-turn replies, in-run tools, and the guarded-release parity case all pass live. Engine readiness stays credential-mode-aware: a subscription-only Codex release proves the connected account and native turn path, while API-key engines prove their mapped gateway provider.
-- Skills and playbooks share one immutable substrate. GitHub is the source of the org's procedures: manual import plus an optional hourly resync keep the catalog current, and the prefill is relevance-ranked so the right procedure is discoverable per prompt.
-- The self-improvement lane is live: salience-gated capture with structured evidence and an ordered procedure trace, human-reviewed knowledge drafts, and skill-revision proposals assembled from accepted traces. Nothing publishes without a human.
-- The approval lane is live and guarded-release certified: destructive gated tools pause for a human approval card in the session (or Slack), then resume with a one-shot capability.
-- Slack is bidirectional: mention-to-run, threaded replies with multi-turn continuity, inbound attachments, allowlist-validated repo binding, artifact and approval delivery back to the thread, and a per-channel ingress allowlist for scoped bring-up.
-- Wiki, artifacts, secrets, learnings, automations, uploads, and memory all have real UI and backend paths.
-- Ambient management updates, including Automations and Provider Connections, use one authenticated org SSE stream backed by an in-process event bus. It is a live-only invalidation channel, not event replay or distributed pub/sub; subscribed views refetch their authoritative APIs after an event arrives.
-- The shared packages define the public thread-event and canonical-engine schemas; the backend event log and each live provider remain authoritative for persisted and native runtime state.
-
-## Bounded Roadmap
-
-- The August 20, 2026 feature-lockdown checkpoint certified 16 of 19 Codex cases; the remaining three were test-harness bugs that still need fresh certification evidence after their fixes.
-- Deploy-lane hardening includes the host mutex and bounded pre-restart admission drain. Provider-stream reconnection after an unexpected host interruption remains open.
-- Internal canary and diagnostic runs carry a first-class `origin` and are excluded from memory capture, product-facing run lists, and dashboard aggregates.
-- The sandbox provider interface does not expose explicit pause, checkpoint, or snapshot operations yet.
-- Turn-start latency work continues: warm-pool-claimable creation, parallelized post-sandbox preparation, and config-refresh caching are in; regional always-on topology and the remaining perceived-latency budgets are not.
-- Multi-replica realtime requires durable org-event fanout before adding backend replicas.
-- Artifact storage is still local to the backend node.
-- Lower-severity review follow-ups are logged: down-ranking untrusted imported skill metadata in the per-turn prefill, loopback-only hardening of the operator bridge, centralizing the protected-skill name set, and caching the per-org catalog to remove the per-turn full scan.
-
 ## Documentation
 
 | Area | Docs |
@@ -198,3 +172,9 @@ Operational invariants: exactly one backend per database (a boot-time advisory l
 | Production DNS | [`infra/terraform/prod/README.md`](infra/terraform/prod/README.md) |
 
 If you need the implemented flow in detail, read [`backend/README.md`](backend/README.md) first and then [`frontend/README.md`](frontend/README.md).
+
+## License
+
+useAgent is open source under the [GNU AGPL v3.0](LICENSE) (AGPL-3.0-only).
+Third-party components and their licenses are listed in [NOTICE](NOTICE);
+vendored and ported files carry per-file attribution headers.
