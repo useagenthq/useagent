@@ -326,6 +326,50 @@ describe("provider gateway routes", () => {
     expect(JSON.parse(seen[0]!.body).max_tokens).toBe(65_536);
   });
 
+  test("a retained Claude session picks up BYOK rotation on the next live request", async () => {
+    const upstreamKeys: string[] = [];
+    const credentialInputs: unknown[] = [];
+    const keys = ["anthropic-key-before-rotation", "anthropic-key-after-rotation"];
+    const token = {
+      ...claims,
+      engine: "claude" as const,
+      provider: "anthropic" as const,
+      scope: "thread" as const,
+    };
+    const activeRun = { ...run, engine: "claude" as const, model: "claude-opus-5" };
+    const routes = app({
+      token,
+      activeThreadRun: activeRun,
+      resolveCredential: async (input) => {
+        credentialInputs.push(input);
+        const value = keys.shift();
+        if (!value) throw new Error("credential resolver called too many times");
+        return { value, source: "user_connection" };
+      },
+      fetchUpstream: async (_input, init) => {
+        upstreamKeys.push(new Headers(init?.headers).get("x-api-key") ?? "");
+        return Response.json({ ok: true });
+      },
+    });
+    const request = () => routes.request("/api/provider/anthropic/v1/messages", {
+      method: "POST",
+      headers: { authorization: "Bearer stable-thread-capability" },
+      body: JSON.stringify({ model: activeRun.model, messages: [] }),
+    });
+
+    expect((await request()).status).toBe(200);
+    expect((await request()).status).toBe(200);
+    expect(credentialInputs).toEqual([
+      { orgId: "org-a", userId: "user-a", provider: "anthropic" },
+      { orgId: "org-a", userId: "user-a", provider: "anthropic" },
+    ]);
+    expect(upstreamKeys).toEqual([
+      "anthropic-key-before-rotation",
+      "anthropic-key-after-rotation",
+    ]);
+    expect(upstreamKeys).not.toContain("stable-thread-capability");
+  });
+
   test("proxies successful OpenAI responses, compaction and model discovery", async () => {
     const seen: Array<{ body: string; headers: Headers; url: string }> = [];
     const fetchUpstream = async (input: string | URL | Request, init?: RequestInit) => {

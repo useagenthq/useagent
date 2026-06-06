@@ -197,9 +197,27 @@ describe("production provider registry", () => {
     expect(driver?.provider).toBe("codex");
     expect(driver?.descriptor.protocol).toEqual({
       name: "t3-orchestration",
-      version: "t3-v3",
+      version: "useagent-runtime-v4",
     });
     expect(validateProviderDriver(driver)).toEqual({ status: "ok" });
+  });
+
+  test("selects Claude's runtime driver while preserving ACP as the config rollback", () => {
+    const ctx = { runId: "run-claude", threadId: "thread-claude" };
+    const enabled = resolveProviderDriver("claude", ctx, {
+      T3_RUN_ADAPTER_ENABLED: "true",
+      T3_RUN_ADAPTER_MODE: "all",
+      T3_RUN_ADAPTER_ENGINES: "claude,codex,opencode",
+    });
+    const rolledBack = resolveProviderDriver("claude", ctx, {
+      T3_RUN_ADAPTER_ENABLED: "true",
+      T3_RUN_ADAPTER_MODE: "all",
+      T3_RUN_ADAPTER_ENGINES: "codex,opencode",
+    });
+
+    expect(enabled?.provider).toBe("claude");
+    expect(enabled?.descriptor.protocol.name).toBe("t3-orchestration");
+    expect(rolledBack?.descriptor.protocol.name).toBe("engine-adapter-compatibility");
   });
 
   test("projects T3 control capabilities from the selected lifecycle driver", () => {

@@ -625,6 +625,30 @@ describe("T3 orchestration projection", () => {
     })).toMatchObject({ code_json: { error: true } });
   });
 
+  test("projects slimmed stable MCP failure status as an error", () => {
+    expect(activityStep({
+      id: "mcp-slimmed-failure",
+      tone: "tool",
+      kind: "tool.completed",
+      summary: "useagent · skills_list",
+      payload: {
+        itemType: "mcp_tool_call",
+        status: "failed",
+        data: {
+          item: {
+            id: "call-slimmed-failure",
+            server: "useagent",
+            tool: "skills_list",
+            status: "failed",
+            error: "upstream rejected the request",
+            result: { content: "request failed" },
+          },
+        },
+      },
+      turnId: "turn",
+    })).toMatchObject({ code_json: { error: true } });
+  });
+
   test("projects only the latest turn's exact assistant output", () => {
     const exactOutput = `EXACT_${crypto.randomUUID()}`;
     const snapshot: RuntimeThreadSnapshot = {

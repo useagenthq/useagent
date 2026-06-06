@@ -39,8 +39,8 @@ export interface ThreadSandboxOptions {
   readonly requiredLabels?: Readonly<Record<string, string>>;
 }
 
-function hasRequiredLabels(
-  sandbox: SandboxHandle,
+export function sandboxHasRequiredLabels(
+  sandbox: Pick<SandboxHandle, "labels">,
   required: Readonly<Record<string, string>> | undefined,
 ): boolean {
   if (!required) return true;
@@ -68,7 +68,7 @@ async function resolveRetainedSandbox(
       await sandbox.delete().catch(() => {});
       throw new Error("retained sandbox uses an obsolete credential generation");
     }
-    if (!hasRequiredLabels(sandbox, options.requiredLabels)) {
+    if (!sandboxHasRequiredLabels(sandbox, options.requiredLabels)) {
       await sandbox.delete().catch(() => {});
       throw new Error("retained sandbox does not match the requested runtime generation");
     }
