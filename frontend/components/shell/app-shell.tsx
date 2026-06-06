@@ -58,7 +58,10 @@ export function AppShell({ sidebar, children }: AppShellProps) {
   }, [mobileOpen]);
 
   return (
-    <div className="relative flex h-dvh w-full overflow-hidden bg-background-full">
+    <div
+      className="group/shell relative flex h-dvh w-full overflow-hidden bg-background-full"
+      data-sidebar-collapsed={sidebarCollapsed ? "" : undefined}
+    >
       <AuroraBackdrop />
       <div
         ref={sidebarContainerRef}

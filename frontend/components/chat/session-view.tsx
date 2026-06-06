@@ -867,7 +867,9 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
         >
           {/* Compact thread bar - INSIDE the conversation column so the rail
               can run full height beside it. Brand/search stay in the sidebar. */}
-          <div className="border-border-button-default/50 flex h-12 shrink-0 items-center justify-between gap-3 border-b px-4">
+          {/* border-b drops when the sidebar is minimized (group/shell data
+              attribute): the collapsed layout reads as one full-bleed surface. */}
+          <div className="border-border-button-default/50 flex h-12 shrink-0 items-center justify-between gap-3 border-b px-4 md:group-data-[sidebar-collapsed]/shell:border-b-0">
             <div className="flex min-w-0 items-center gap-2">
               <span className="text-mono-label text-text-tertiary">Session</span>
               {/* The thread's git identity: repos (+ chosen branch) come from the
