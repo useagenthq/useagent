@@ -50,7 +50,7 @@ resource "hcloud_server" "this" {
   })
 
   labels = {
-    project = "skynet"
-    purpose = "reproducible-infra"
+    project = "useagent"
+    purpose = "self-host"
   }
 }
