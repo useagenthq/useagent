@@ -255,7 +255,7 @@ describe("memory_read", () => {
         path: "/v3/scenario/read",
         body: {
           team_id: "org-12",
-          agent_id: "skynet-backend",
+          agent_id: "useagent-backend",
           user_id: "org:org-12",
           path: "deployments.md",
         },
@@ -264,7 +264,7 @@ describe("memory_read", () => {
         path: "/v3/core/read",
         body: {
           team_id: "org-12",
-          agent_id: "skynet-backend",
+          agent_id: "useagent-backend",
           user_id: "org:org-12",
         },
       },
