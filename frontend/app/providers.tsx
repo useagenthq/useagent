@@ -22,6 +22,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
       themes={[
         'light',
         'dark',
+        'indigo',
         'aura',
         'harbor',
         'phosphor',
