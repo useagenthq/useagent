@@ -40,7 +40,7 @@ describe("thread status pill (upstream running/failed/settled treatment)", () =>
 });
 
 describe("row density (upstream resolveThreadRowClassName)", () => {
-  test("rows are compact fixed-height hover targets", () => {
+  test("rows are uniform 32px hover targets", () => {
     for (const active of [true, false]) {
       const className = resolveThreadRowClassName({ active });
       expect(className).toContain("h-8");
@@ -113,9 +113,10 @@ describe("sidebar wiring contract", () => {
     const tree = read("./project-thread-tree.tsx");
     const projects = read("../shell/sidebar-projects.tsx");
     // Threads nest under their project through the native tree treatment
-    // (curved connector + relative-time chips), not a flat recents list.
+    // (indented doc rows + relative times), not a flat recents list.
     expect(tree).toContain("ProjectThreadTree");
-    expect(tree).toContain("TreeConnector");
+    expect(tree).toContain("RiFileTextLine");
+    expect(tree).not.toContain("TreeConnector");
     expect(projects).toContain("<ProjectThreadTree");
     expect(projects).toContain("usePathname");
     // The data owner reuses the existing runs + repos lanes - no new endpoint.

@@ -67,8 +67,11 @@ const lightTokens = parseTokens(extractBlock(":root,"));
 const darkTokens = parseTokens(extractBlock(".dark {"));
 
 describe("shared theme tokens", () => {
-  test("light theme anchors the legacy semantic vars on the BoardUI gray/accent ramp", () => {
+  test("light theme maps the warm neutral ramp through the legacy semantic tokens", () => {
     expect(lightTokens["--neutral-950"]).toBe("0 0% 3.92%");
+    expect(lightTokens["--neutral-200"]).toBe("40 12.5% 90.59%");
+    expect(lightTokens["--neutral-100"]).toBe("45 16.67% 95.29%");
+    expect(lightTokens["--neutral-50"]).toBe("45 28.57% 97.25%");
     expect(lightTokens["--neutral-0"]).toBe("0 0% 100%");
     expect(lightTokens["--blue-500"]).toBe("216.23 100% 58.43%");
 
@@ -80,35 +83,43 @@ describe("shared theme tokens", () => {
     expect(lightTokens["--stroke-soft-200"]).toBe("var(--neutral-200)");
     expect(lightTokens["--success-dark"]).toBe("var(--green-950)");
     expect(lightTokens["--feature-base"]).toBe("var(--purple-500)");
+    expect(resolveToken(lightTokens, "--bg-weak-50")).toBe("45 16.67% 95.29%");
+    expect(resolveToken(lightTokens, "--stroke-soft-200")).toBe("40 12.5% 90.59%");
+
+    expect(contrast("#0a0a0a", "#faf9f6")).toBeGreaterThanOrEqual(7);
+    expect(contrast("#737373", "#faf9f6")).toBeGreaterThanOrEqual(4.5);
   });
 
-  test("dark theme maps the Midnight ramp through the legacy semantic tokens", () => {
-    // The Midnight (Tokyo-Night-derived) elevation inversion: a blue-tinted
-    // ladder (panel #1a1b26, inset #16161e), not the original neutral gray ramp.
-    expect(resolveToken(darkTokens, "--bg-white-0")).toBe("235 18.75% 12.55%");
-    expect(resolveToken(darkTokens, "--bg-weak-50")).toBe("240 15.38% 10.2%");
-    expect(resolveToken(darkTokens, "--bg-soft-200")).toBe("240 15.38% 10.2%");
-    expect(resolveToken(darkTokens, "--bg-sub-300")).toBe("232.5 21.05% 14.9%");
+  test("dark theme maps the achromatic graphite ramp through the legacy semantic tokens", () => {
+    // The measured achromatic graphite ladder (canvas #121212, panel #262626)
+    // - matches the reference neutral ramp, zero hue tint in surfaces.
+    expect(resolveToken(darkTokens, "--bg-white-0")).toBe("0 0% 14.9%");
+    expect(resolveToken(darkTokens, "--bg-weak-50")).toBe("0 0% 9.02%");
+    expect(resolveToken(darkTokens, "--bg-soft-200")).toBe("0 0% 9.02%");
+    expect(resolveToken(darkTokens, "--bg-sub-300")).toBe("0 0% 18.04%");
 
-    expect(resolveToken(darkTokens, "--text-strong-950")).toBe("228.68 72.6% 85.69%");
-    expect(resolveToken(darkTokens, "--text-sub-600")).toBe("232.73 13.92% 53.53%");
-    expect(resolveToken(darkTokens, "--text-soft-400")).toBe("229.41 22.87% 43.73%");
-    expect(resolveToken(darkTokens, "--text-disabled-300")).toBe("229.23 23.08% 33.14%");
+    expect(resolveToken(darkTokens, "--text-strong-950")).toBe("0 0% 98.04%");
+    expect(resolveToken(darkTokens, "--text-sub-600")).toBe("0 0% 63.14%");
+    expect(resolveToken(darkTokens, "--text-soft-400")).toBe("0 0% 45.1%");
+    expect(resolveToken(darkTokens, "--text-disabled-300")).toBe("0 0% 25.1%");
 
-    expect(resolveToken(darkTokens, "--stroke-soft-200")).toBe("228 23.36% 20.98%");
-    expect(resolveToken(darkTokens, "--stroke-sub-300")).toBe("229.23 23.08% 33.14%");
+    expect(resolveToken(darkTokens, "--stroke-soft-200")).toBe("0 0% 20%");
+    expect(resolveToken(darkTokens, "--stroke-sub-300")).toBe("0 0% 25.1%");
     expect(resolveToken(darkTokens, "--primary-base")).toBe("216.23 100% 58.43%");
     expect(resolveToken(darkTokens, "--verified-dark")).toBe("202.15 100% 74.51%");
     expect(resolveToken(darkTokens, "--success-dark")).toBe("88.8 50.51% 61.18%");
     expect(resolveToken(darkTokens, "--error-dark")).toBe("348.84 88.97% 71.57%");
+
+    // WCAG AA on the actual graphite surfaces: primary and muted text against
+    // the page backdrop (#121212), panel (#262626), and raised (#2e2e2e) steps.
+    expect(contrast("#fafafa", "#121212")).toBeGreaterThanOrEqual(7);
+    expect(contrast("#fafafa", "#262626")).toBeGreaterThanOrEqual(7);
+    expect(contrast("#a1a1a1", "#121212")).toBeGreaterThanOrEqual(4.5);
+    expect(contrast("#a1a1a1", "#262626")).toBeGreaterThanOrEqual(4.5);
+    expect(contrast("#a1a1a1", "#2e2e2e")).toBeGreaterThanOrEqual(4.5);
   });
 
-  test("dark theme preserves readable foreground contrast on BoardUI surfaces", () => {
-    // Primary text (#fafafa) on the dark canvas (#121212).
-    expect(contrast("#fafafa", "#121212")).toBeGreaterThanOrEqual(7);
-    // Secondary text (#737373) on the dark canvas: BoardUI's dark text/secondary
-    // sits at ~3.9:1, above the large-text floor but below AA body text.
-    expect(contrast("#737373", "#121212")).toBeGreaterThanOrEqual(3);
+  test("primary CTA label preserves readable contrast", () => {
     // White label on the primary CTA gradient's darker stop (blue-600 #155dfc).
     expect(contrast("#ffffff", "#155dfc")).toBeGreaterThanOrEqual(4.5);
   });

@@ -16,7 +16,7 @@ import { cx } from '@/utils/cx';
 
 /**
  * Theme options shown in the picker. UI copy is intentional: our default
- * Tokyo Night dark ramp reads as "Midnight", the violet dark ramp as "Aura",
+ * the default graphite dark ramp reads as "Midnight", the violet dark ramp as "Aura",
  * the deep blue-slate dark ramp as "Dark" (theme id stays harbor), and the blue-gray dark ramp as
  * "Slate". The green pair (CRT-green dark + its mint light counterpart) reads
  * as "Dark Green" / "Light Green" and the red pair (blush light + plum-night

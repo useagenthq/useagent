@@ -40,7 +40,7 @@ import { type DotTone, StatusDot } from "@/components/shared/status-dot";
 import type { SidebarRun } from "@/components/shell/working-project-status";
 import { runGitRefs, GitChips } from "@/components/session-ui/git-chip";
 import { cx as cn } from "@/utils/cx";
-import { relativeTime } from "@/utils/format";
+import { relativeTimeShort } from "@/utils/format";
 import type { RunStatus } from "@useagent/agent-client/wire";
 
 export interface ThreadRowPill {
@@ -71,7 +71,7 @@ export function resolveThreadRowPill(input: {
   return null;
 }
 
-/** Upstream resolveThreadRowClassName: compact fixed-height rows, active rows
+/** Upstream resolveThreadRowClassName: uniform 32px rows, active rows
  * hold their fill, resting rows brighten on hover. Selection branch dropped
  * (no multi-select here). `gitLine` swaps the fixed h-8 single line for a
  * two-line column so the git identity chips fit under the title. */
@@ -104,7 +104,7 @@ export function threadRowTimestamp(
 }
 
 /**
- * The T3 sidebar thread row: `[status pill] Title… [time]` in a compact h-8
+ * The T3 sidebar thread row: `[status pill] Title… [time]` in a uniform h-8
  * hover row. Purely presentational; feed it a run from the existing runs lane.
  */
 export const ThreadRow = memo(function ThreadRow({
@@ -146,11 +146,11 @@ export const ThreadRow = memo(function ThreadRow({
         {timestampMs !== null ? (
           <span
             className={cn(
-              "shrink-0 text-[10px] tabular-nums",
+              "shrink-0 text-caption-1-medium tabular-nums",
               active ? "text-text-primary" : "text-text-tertiary",
             )}
           >
-            {relativeTime(timestampMs)}
+            {relativeTimeShort(timestampMs)}
           </span>
         ) : null}
       </span>

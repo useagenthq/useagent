@@ -13,7 +13,7 @@ import { ThreadRow, threadRowTimestamp } from "@/components/session-ui/thread-ro
 import { useOrgChanges } from "@/hooks/use-org-changes";
 import { useSession } from "@/lib/auth";
 import { backendFetch } from "@/lib/backend-fetch";
-import { relativeTime } from "@/utils/format";
+import { relativeTimeShort } from "@/utils/format";
 import { SidebarSectionLabel } from "./sidebar-nav";
 import {
   dedupeProjectRepos,
@@ -184,7 +184,7 @@ export function SidebarProjects() {
         threads: group.threads.map((run) => ({
           id: run.id,
           label: run.prompt || "Untitled run",
-          time: relativeTime(threadRowTimestamp(run)),
+          time: relativeTimeShort(threadRowTimestamp(run)),
           isSelected: pathname === `/session/${run.id}`,
         })),
       })),
