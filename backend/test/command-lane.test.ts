@@ -91,6 +91,7 @@ describe("durable command lane", () => {
       engine: "mock",
       parentRunId: null,
       requestedRepos: [],
+      requestedResources: [],
       attachmentIds: [],
       memoryScope: "org",
       skillId: null,
@@ -177,6 +178,7 @@ describe("durable command lane", () => {
     const intent = {
       ...runIntentForTest("verify the scheduled PR"),
       requestedRepos: ["acme/api"],
+      requestedResources: [],
       skillId: "skill-1",
       skillVersion: 3,
     } satisfies RunCommandIntent;
@@ -417,6 +419,7 @@ function runIntentForTest(prompt: string): RunCommandIntent {
     engine: "mock",
     parentRunId: null,
     requestedRepos: [],
+    requestedResources: [],
     attachmentIds: [],
     memoryScope: "org",
     skillId: null,
