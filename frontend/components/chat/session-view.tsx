@@ -82,7 +82,7 @@ import { CloseButton } from "@/components/base/buttons/close-button";
 import { PillTab, PillTabList } from "@/components/base/tabs/pill-tab";
 import { useIsMobile } from "@/hooks/use-is-mobile";
 import { backendFetch } from "@/lib/backend-fetch";
-import { createRun } from "@/lib/create-run";
+import { createRun, runCreateFailureMessage } from "@/lib/create-run";
 import { cx } from "@/utils/cx";
 
 // The rail is a resizable sub-viewport panel (viewport breakpoints can't
@@ -411,7 +411,7 @@ export function SessionView({
           },
           idempotencyKey,
         );
-        if (!res.ok) throw new Error(`backend ${res.status}`);
+        if (!res.ok) throw new Error(await runCreateFailureMessage(res, `backend ${res.status}`));
         // Key the optimistic bubble to the ACCEPTED run id and keep it until that
         // durable run is observed in the store (retired by the effect below). The
         // child run normally arrives on the OPEN thread stream (post-commit

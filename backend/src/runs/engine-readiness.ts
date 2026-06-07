@@ -27,6 +27,9 @@ export interface EngineReadiness {
   readonly engine: UserFacingEngineId;
   readonly ready: boolean;
   readonly reason: EngineReadinessReason;
+  readonly provider?: ProviderId;
+  readonly providerHealth?: string;
+  readonly message?: string;
 }
 
 export type EngineResolution =
@@ -36,16 +39,59 @@ export type EngineResolution =
       readonly status: 400 | 403;
       readonly error: string;
       readonly engine?: EngineId;
+      readonly reason?: EngineReadinessReason;
+      readonly provider?: ProviderId;
+      readonly providerHealth?: string;
+      readonly message?: string;
     };
 
 type RejectedEngineResolution = Extract<EngineResolution, { readonly ok: false }>;
 
 export function engineResolutionErrorBody(
   resolution: RejectedEngineResolution,
-): { readonly error: string; readonly engine?: EngineId } {
-  return resolution.engine === undefined
-    ? { error: resolution.error }
-    : { error: resolution.error, engine: resolution.engine };
+): {
+  readonly error: string;
+  readonly engine?: EngineId;
+  readonly reason?: EngineReadinessReason;
+  readonly provider?: ProviderId;
+  readonly providerHealth?: string;
+  readonly message?: string;
+} {
+  return {
+    error: resolution.error,
+    ...(resolution.engine === undefined ? {} : { engine: resolution.engine }),
+    ...(resolution.reason === undefined ? {} : { reason: resolution.reason }),
+    ...(resolution.provider === undefined ? {} : { provider: resolution.provider }),
+    ...(resolution.providerHealth === undefined
+      ? {}
+      : { providerHealth: resolution.providerHealth }),
+    ...(resolution.message === undefined ? {} : { message: resolution.message }),
+  };
+}
+
+const ENGINE_DISPLAY_NAMES: Record<UserFacingEngineId, string> = {
+  chat: "Chat",
+  opencode: "OpenCode",
+  claude: "Claude Code",
+  codex: "Codex",
+  pi: "Pi",
+};
+
+function unavailableMessage(readiness: EngineReadiness): string {
+  const label = ENGINE_DISPLAY_NAMES[readiness.engine];
+  if (readiness.reason === "provider_unhealthy" && readiness.provider) {
+    const provider = readiness.provider === "anthropic"
+      ? "Anthropic"
+      : readiness.provider === "openai"
+        ? "OpenAI"
+        : "OpenRouter";
+    if (readiness.providerHealth === "insufficient_credit") {
+      return `${label} is configured, but ${provider} reports insufficient credits. Add credits or update the provider key in Settings, then retry.`;
+    }
+    return `${label} is configured, but ${provider} is unavailable${readiness.providerHealth ? ` (${readiness.providerHealth})` : ""}. Check provider credentials and billing in Settings, then retry.`;
+  }
+  if (readiness.reason === "disabled") return `${label} is disabled on this server.`;
+  return `${label} is configured but not ready. Check its provider connection in Settings, then retry.`;
 }
 
 function devModeEnabledForEnv(env: Record<string, string | undefined>): boolean {
@@ -104,6 +150,40 @@ export function engineModelReadyForDispatch(
     modelProviderReadyForEngine(engine, model, env);
 }
 
+export function modelProviderReadinessErrorBody(
+  engine: EngineId,
+  model: string,
+  env: Record<string, string | undefined> = process.env,
+): {
+  readonly error: "model_provider_not_ready";
+  readonly engine: EngineId;
+  readonly model: string;
+  readonly provider?: ProviderId;
+  readonly providerHealth?: string;
+  readonly message: string;
+} {
+  const provider = providerForEngine(engine, model);
+  const health = provider ? providerHealth(provider, env) ?? "not_proven" : undefined;
+  const providerLabel = provider === "anthropic"
+    ? "Anthropic"
+    : provider === "openai"
+      ? "OpenAI"
+      : provider === "openrouter"
+        ? "OpenRouter"
+        : "The selected model provider";
+  const action = health === "insufficient_credit"
+    ? "Add credits or update the provider key in Settings, then retry."
+    : "Check provider credentials and billing in Settings, then retry.";
+  return {
+    error: "model_provider_not_ready",
+    engine,
+    model,
+    ...(provider ? { provider } : {}),
+    ...(health ? { providerHealth: health } : {}),
+    message: `${providerLabel} cannot run ${model}${health ? ` (${health})` : ""}. ${action}`,
+  };
+}
+
 /** Readiness for a run that already crossed the acceptance transaction. */
 export function persistedEngineModelReadyForDispatch(
   engine: EngineId,
@@ -151,14 +231,37 @@ export function engineReadiness(
   if (provider) {
     const status = providerHealthStatus(provider, env);
     if (status !== "ready") {
-      return {
+      const readiness: EngineReadiness = {
         engine,
         ready: false,
         reason: status === "unhealthy" ? "provider_unhealthy" : "not_proven",
+        provider,
+        providerHealth: providerHealth(provider, env) ?? "not_proven",
       };
+      return { ...readiness, message: unavailableMessage(readiness) };
     }
   }
   return { engine, ready: true, reason: "enabled" };
+}
+
+/** Discoverability and dispatchability are separate contracts. A configured
+ * engine stays visible so a user can understand and repair its provider state;
+ * engineReadyForDispatch remains the fail-closed execution gate. */
+export function configuredUserFacingEngines(
+  env: Record<string, string | undefined> = process.env,
+): readonly UserFacingEngineId[] {
+  const enabled = enabledEnginesForEnv(env);
+  return USER_FACING_ENGINES.filter((engine) =>
+    engine === "chat" ? chatLlmEnabled(env) : enabled.has(engine)
+  );
+}
+
+export function configuredEngineReadiness(
+  env: Record<string, string | undefined> = process.env,
+): Partial<Record<UserFacingEngineId, EngineReadiness>> {
+  return Object.fromEntries(
+    configuredUserFacingEngines(env).map((engine) => [engine, engineReadiness(engine, env)]),
+  );
 }
 
 export function readyUserFacingEngines(
@@ -216,7 +319,16 @@ export function resolveAcceptedEngine(
     if (USER_FACING_ENGINE_SET.has(engine)) {
       const readiness = engineReadiness(engine as UserFacingEngineId, env);
       if (!readiness.ready) {
-        return { ok: false, status: 403, error: "engine_not_ready", engine };
+        return {
+          ok: false,
+          status: 403,
+          error: "engine_not_ready",
+          engine,
+          reason: readiness.reason,
+          provider: readiness.provider,
+          providerHealth: readiness.providerHealth,
+          message: readiness.message,
+        };
       }
     }
     return { ok: true, engine };
@@ -235,6 +347,17 @@ export function engineModelsForReadyEngines(
   const engines = readyUserFacingEngines(env);
   const models: Partial<Record<UserFacingEngineId, readonly string[]>> = {};
   for (const engine of engines) {
+    models[engine] = allowedModelsForEngine(engine, env)
+      .filter((model) => modelProviderReadyForEngine(engine, model, env));
+  }
+  return models;
+}
+
+export function engineModelsForConfiguredEngines(
+  env: Record<string, string | undefined> = process.env,
+): Partial<Record<UserFacingEngineId, readonly string[]>> {
+  const models: Partial<Record<UserFacingEngineId, readonly string[]>> = {};
+  for (const engine of configuredUserFacingEngines(env)) {
     models[engine] = allowedModelsForEngine(engine, env)
       .filter((model) => modelProviderReadyForEngine(engine, model, env));
   }

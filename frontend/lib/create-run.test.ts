@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { createRun, selectRunCreateAttempt } from "./create-run";
+import { createRun, runCreateFailureMessage, selectRunCreateAttempt } from "./create-run";
 
 interface FetchCall {
   input: RequestInfo | URL;
@@ -80,5 +80,21 @@ describe("selectRunCreateAttempt", () => {
 
     expect(changed.idempotencyKey).toBe("run-key-2");
     expect(changed).not.toBe(first);
+  });
+});
+
+describe("runCreateFailureMessage", () => {
+  test("surfaces an actionable backend provider error", async () => {
+    expect(await runCreateFailureMessage(Response.json({
+      error: "model_provider_not_ready",
+      message: "Anthropic reports insufficient credits. Add credits in Settings.",
+    }, { status: 403 }))).toBe(
+      "Anthropic reports insufficient credits. Add credits in Settings.",
+    );
+  });
+
+  test("uses the fallback for an unstructured response", async () => {
+    expect(await runCreateFailureMessage(new Response(null, { status: 503 }), "backend 503"))
+      .toBe("backend 503");
   });
 });
