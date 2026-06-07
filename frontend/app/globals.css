@@ -463,12 +463,13 @@ html {
     /* -------------------------------------------------------------------
      * Midnight - Tokyo Night dark theme (the product default dark ramp).
      *
-     * The Tokyo Night palette mapped through the inverted dark ramp, lifted
-     * off near-black to a layered graphite-indigo (2026-08-27):
-     * canvas = #1f212d (bg-white-0), chrome = #1b1c25 (bg-soft-200/bg-weak-50,
-     * the darker sidebar surface), raised = #252838 (bg-sub-300), text =
-     * #cdd5f7 lavender (text-strong-950), muted text = #8a8fb0 (text-sub-600),
-     * border = #323852 (stroke-soft-200). The interactive accent stays the
+     * The default dark ramp: pure achromatic neutrals measured from the
+     * upstream BoardUI dark system (2026-08-28; supersedes the earlier
+     * Tokyo Night indigo - surfaces carry zero hue, the interactive accent
+     * alone stays blue): page backdrop #121212, panel/card/composer #262626
+     * (bg-white-0), chrome/inset #171717 (bg-soft-200/bg-weak-50), raised/
+     * hover #2e2e2e (bg-sub-300), text #fafafa (text-strong-950), muted
+     * #a1a1a1 (text-sub-600), hairline #333333 (stroke-soft-200). The interactive accent stays the
      * STANDARD blue ramp (below) - personality lives in surfaces + text, per
      * the harbor decision (2026-08-23); the orange/red/green/purple/sky/pink/
      * teal primitives already carry Tokyo Night status/syntax hues. Components
@@ -478,21 +479,21 @@ html {
      * BoardUI-semantic override in the themes section below.
      * ------------------------------------------------------------------- */
     --neutral-0: 0 0% 100%;
-    --neutral-50: 228.57 72.41% 88.63%; /* #cdd5f7 - primary text (lifted Tokyo Night lavender) */
-    --neutral-100: 229.76 35.65% 77.45%; /* #b1b8da - secondary text (derived) */
-    --neutral-200: 232.11 19.39% 61.57%; /* #8a8fb0 - muted text */
-    --neutral-300: 229.29 22.76% 48.24%; /* #5f6997 - soft text (derived) */
-    --neutral-400: 229.33 23.81% 37.06%; /* #485075 - stronger border / disabled (derived) */
-    --neutral-500: 230 23.08% 30.59%; /* #3c4260 - surface step (derived) */
-    --neutral-600: 230.77 23.21% 21.96%; /* #2b2f45 - surface step (derived) */
-    --neutral-700: 230.53 20.43% 18.24%; /* #252838 - raised surface */
-    --neutral-800: 231.43 18.42% 14.9%; /* #1f212d - canvas (lifted graphite-indigo) */
-    --neutral-900: 234 15.63% 12.55%; /* #1b1c25 - chrome */
-    --neutral-950: 232.5 16.67% 9.41%; /* #14151c - darkest (derived) */
+    --neutral-50: 0 0% 98.04%; /* #fafafa - primary text */
+    --neutral-100: 0 0% 83.14%; /* #d4d4d4 - secondary text */
+    --neutral-200: 0 0% 63.14%; /* #a1a1a1 - muted text */
+    --neutral-300: 0 0% 45.1%; /* #737373 - soft text */
+    --neutral-400: 0 0% 25.1%; /* #404040 - stronger border / disabled */
+    --neutral-500: 0 0% 22.75%; /* #3a3a3a - popover border band */
+    --neutral-600: 0 0% 20%; /* #333333 - surface step */
+    --neutral-700: 0 0% 18.04%; /* #2e2e2e - raised / hover surface */
+    --neutral-800: 0 0% 14.9%; /* #262626 - panel/card/composer surface */
+    --neutral-900: 0 0% 9.02%; /* #171717 - chrome / inset */
+    --neutral-950: 0 0% 5.88%; /* #0f0f0f - darkest (derived) */
 
-    --neutral-alpha-24: 232.11 19.39% 61.57% / 24%; /* #8a8fb0 muted-lavender wash */
-    --neutral-alpha-16: 232.11 19.39% 61.57% / 16%;
-    --neutral-alpha-10: 232.11 19.39% 61.57% / 10%;
+    --neutral-alpha-24: 0 0% 63.14% / 24%; /* #a1a1a1 muted wash */
+    --neutral-alpha-16: 0 0% 63.14% / 16%;
+    --neutral-alpha-10: 0 0% 63.14% / 10%;
 
     /* BoardUI's accent primitives are theme-invariant; only the -100/-50 tint
        steps go translucent so light-pastel chips don't glow on the dark canvas. */
@@ -588,18 +589,18 @@ html {
     --bg-surface-800: var(--neutral-100);
     --bg-sub-300: var(--neutral-700);
     --bg-soft-200: var(--neutral-900);
-    --bg-weak-50: 234 15.63% 12.55%; /* #1b1c25 - chrome/surface (matches bg-soft-200) */
+    --bg-weak-50: 0 0% 9.02%; /* #171717 - chrome/surface (matches bg-soft-200) */
     --bg-white-0: var(--neutral-800);
 
     --text-strong-950: var(--neutral-50);
-    --text-sub-600: var(--neutral-200); /* #8a8fb0 - muted text */
-    --text-soft-400: var(--neutral-300); /* #5f6997 - soft text */
+    --text-sub-600: var(--neutral-200); /* #a1a1a1 - muted text */
+    --text-soft-400: var(--neutral-300); /* #737373 - soft text */
     --text-disabled-300: var(--neutral-400);
     --text-white-0: var(--neutral-800);
 
     --stroke-strong-950: var(--neutral-50);
     --stroke-sub-300: var(--neutral-400);
-    --stroke-soft-200: 228.75 24.24% 25.88%; /* #323852 - lifted border */
+    --stroke-soft-200: 0 0% 20%; /* #333333 - hairline border */
     --stroke-white-0: var(--neutral-800);
 
     --faded-dark: var(--neutral-100);
@@ -652,7 +653,7 @@ html {
     --stable-light: var(--teal-alpha-24);
     --stable-lighter: var(--teal-alpha-16);
 
-    --overlay: 232.5 16.67% 9.41% / 72%; /* #14151c scrim (darkest step) */
+    --overlay: 0 0% 5.88% / 72%; /* #0f0f0f scrim (darkest step) */
 
     --social-apple: 0 0% 100%;
     --social-twitter: 0 0% 100%;
@@ -1933,7 +1934,7 @@ html {
  * accent, status discs, badges, calendar chips, error/danger) fall through to
  * theme.css's `.dark`, keeping the accent the STANDARD blue ramp and status
  * colors standard - personality lives in surfaces + text only (harbor
- * decision, 2026-08-23). Hardcoded #323852 = lifted Midnight border; the neutral
+ * decision, 2026-08-23). Hardcoded #333333 = measured neutral border; the neutral
  * stop per slot mirrors the .harbor block so brightness roles stay identical.
  * ========================================================================= */
 .dark {
@@ -1943,7 +1944,7 @@ html {
   --color-foreground-icon-hover:      hsl(var(--neutral-0));
   --color-foreground-icon-tertiary:   hsl(var(--neutral-200));
   --color-foreground-icon-quaternary: hsl(var(--neutral-300));
-  --color-foreground-icon-disabled:   hsl(228.75 24.24% 25.88%); /* #323852 */
+  --color-foreground-icon-disabled:   hsl(0 0% 20%); /* #333333 */
   --color-foreground-disabled:        hsl(var(--neutral-400));
   --color-input-disabled-foreground:  hsl(var(--neutral-300));
   --color-icon-button-disabled-foreground: hsl(var(--neutral-200));
@@ -1953,12 +1954,12 @@ html {
   --color-text-primary:   hsl(var(--neutral-50));
   --color-text-secondary: hsl(var(--neutral-100));
   --color-text-tertiary:  hsl(var(--neutral-200));
-  --color-text-disabled:  hsl(228.75 24.24% 25.88%); /* #323852 */
+  --color-text-disabled:  hsl(0 0% 20%); /* #333333 */
   --color-input-disabled-text: color-mix(in srgb, hsl(var(--neutral-200)) 40%, transparent);
 
   /* Background */
-  --color-background-full:              hsl(230 20.69% 11.37%); /* #171923 derived deep backdrop - page canvas sits BELOW the floating sidebar panel (user elevation decision 2026-08-23) */
-  --color-background-primary-default:   hsl(var(--neutral-700)); /* #252838 raised */
+  --color-background-full:              hsl(0 0% 7.06%); /* #121212 page backdrop - page canvas sits BELOW the floating sidebar panel (user elevation decision 2026-08-23) */
+  --color-background-primary-default:   hsl(var(--neutral-700)); /* #2e2e2e raised */
   --color-background-inner-default:     color-mix(in srgb, hsl(var(--neutral-700)) 60%, transparent);
   --color-background-primary-hover:     color-mix(in srgb, hsl(var(--neutral-400)) 60%, transparent);
   --color-background-primary-active:    hsl(var(--neutral-700));
@@ -1966,9 +1967,9 @@ html {
   --color-input-disabled-background:    color-mix(in srgb, hsl(var(--neutral-700)) 30%, transparent);
   --color-switch-off-chip-start:        var(--color-background-tertiary-default);
   --color-switch-off-chip-end:          var(--color-background-tertiary-default);
-  --color-background-secondary-default: hsl(var(--neutral-800)); /* #1f212d - floating panel/chrome, LIGHTER than the backdrop */
+  --color-background-secondary-default: hsl(var(--neutral-800)); /* #262626 - floating panel/chrome, LIGHTER than the backdrop */
   --color-background-secondary-hover:   hsl(var(--neutral-700));
-  --color-background-tertiary-default:  hsl(var(--neutral-900)); /* #1b1c25 inset fills, between backdrop and panel */
+  --color-background-tertiary-default:  hsl(var(--neutral-900)); /* #171717 inset fills, between backdrop and panel */
   --color-background-tertiary-hover:    hsl(var(--neutral-400));
   --color-background-quaternary-default: hsl(var(--neutral-400));
   --color-background-quaternary-hover:   hsl(var(--neutral-300));
@@ -2002,16 +2003,16 @@ html {
   --color-border-button-default:   hsl(var(--neutral-400));
   --color-border-button-hover:     hsl(var(--neutral-200));
   --color-border-button-active:    hsl(var(--neutral-300));
-  --color-border-button-white:     hsl(228.75 24.24% 25.88%); /* #323852 */
+  --color-border-button-white:     hsl(0 0% 20%); /* #333333 */
   --color-border-checkbox-default: hsl(var(--neutral-400));
   --color-border-checkbox-hover:   hsl(var(--neutral-200));
   --color-border-checkbox-active:  hsl(var(--neutral-200));
-  --color-border-component-detail-container: hsl(228.75 24.24% 25.88%);
-  --color-border-ai-profile-card:  hsl(228.75 24.24% 25.88%);
-  --color-border-table:            hsl(228.75 24.24% 25.88%);
+  --color-border-component-detail-container: hsl(0 0% 20%);
+  --color-border-ai-profile-card:  hsl(0 0% 20%);
+  --color-border-table:            hsl(0 0% 20%);
   --color-border-button-group:     color-mix(in srgb, hsl(var(--neutral-300)) 60%, transparent);
   --color-border-sidebar-profile-hover: hsl(var(--neutral-300));
-  --color-separator-border:        hsl(228.75 24.24% 25.88%); /* #323852 lifted border */
+  --color-separator-border:        hsl(0 0% 20%); /* #333333 hairline border */
   --color-separator-border-strong: color-mix(in srgb, hsl(var(--neutral-400)) 60%, transparent);
 
   /* Charts: neutral structure only (categorical/status bars keep theme.css) */
@@ -3291,7 +3292,7 @@ html {
   --swatch-accent: #3392ff;
 }
 .theme-swatch-dark {
-  --swatch-canvas: #1f212d;
+  --swatch-canvas: #262626;
   --swatch-accent: #2b7fff;
 }
 .theme-swatch-aura {
@@ -3347,6 +3348,16 @@ html {
   );
   background-size: 14px 14px;
   mask-image: linear-gradient(to bottom, black, transparent);
+}
+
+/* Dark canvases stay CLEAN (reference grammar): the dot field reads as noise
+ * on graphite, so dark/harbor mute it to near-invisible. Light keeps texture. */
+.dark .bg-halftone,
+.harbor .bg-halftone {
+  background-image: radial-gradient(
+    color-mix(in oklab, hsl(var(--text-strong-950)) 3%, transparent) 1px,
+    transparent 1px
+  );
 }
 
 
@@ -3674,8 +3685,8 @@ html {
 }
 
 /* The AlignUI legacy dark ladder lives in the layered `.dark` block inside
- * @layer base above (lifted Tokyo Night: #1f212d canvas, #1b1c25 chrome,
- * #252838 raised). Midnight's BoardUI-semantic surface/text/border override is the
+ * @layer base above (measured achromatic neutrals: #262626 panel, #171717
+ * chrome, #2e2e2e raised). Midnight's BoardUI-semantic surface/text/border override is the
  * un-layered `.dark` block up in the "BoardUI semantic tokens" section (beside
  * .aura/.harbor); it deliberately wins over theme.css's un-layered `.dark`
  * (which maps surfaces to the flat BoardUI neutral ramp). Keep both, plus the
