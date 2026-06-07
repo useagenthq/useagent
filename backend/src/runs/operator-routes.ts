@@ -67,6 +67,14 @@ export function createOperatorRoutes(ops: OperatorOps): Hono<AppEnv> {
     return c.json({ dispatched: await ops.pump(threadId) });
   });
 
+  // legacy alias: pre-rename ops tooling posts to /admit-release-eval
+  routes.post("/admit-release-eval", async (c) => {
+    const payload = (await c.req.json().catch(() => null)) as { run?: unknown } | null;
+    if (!payload || typeof payload.run !== "object" || payload.run === null) {
+      return c.json({ error: "run object is required" }, 400);
+    }
+    return ops.admitReleaseParity(c, payload.run as RunCreateBody);
+  });
   routes.post("/admit-release-eval", async (c) => {
     const payload = (await c.req.json().catch(() => null)) as {
       orgId?: unknown;
