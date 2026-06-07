@@ -22,7 +22,7 @@ function catalogResponse(payload: unknown): Response {
   });
 }
 
-const FRESH_MODEL = "nvidia/nemotron-3-ultra-550b-a55b:free";
+const FRESH_MODEL = "dots-studio/dots-3-note-preview:free";
 
 /** Counting fixture fetcher. */
 function fetcherOf(respond: () => Response | Promise<Response>): {
@@ -45,7 +45,6 @@ describe("deriveFreeModelLane (catalog filter)", () => {
       data: [
         entry("minimax/minimax-m3:free", 1_048_576),
         entry("nvidia/nemotron-3-ultra-550b-a55b:free", 1_000_000),
-        entry("nvidia/nemotron-3.5-lightning:free", 1_000_000),
         entry("dots-studio/dots-3-note-preview:free", 512_000),
         entry("nvidia/nemotron-3-super-120b-a12b:free", 262_144),
         entry("inclusionai/ling-3.0-flash-fin:free", 262_144),
@@ -62,7 +61,6 @@ describe("deriveFreeModelLane (catalog filter)", () => {
     expect(lane).toEqual([
       "minimax/minimax-m3:free",
       "nvidia/nemotron-3-ultra-550b-a55b:free",
-      "nvidia/nemotron-3.5-lightning:free",
       "dots-studio/dots-3-note-preview:free",
       "nvidia/nemotron-3-super-120b-a12b:free",
       "inclusionai/ling-3.0-flash-fin:free",
