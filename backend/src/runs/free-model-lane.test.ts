@@ -71,7 +71,10 @@ describe("deriveFreeModelLane (catalog filter)", () => {
 
   test("excludes catalog-visible models rejected by the hosted OpenCode harness", () => {
     expect(deriveFreeModelLane({
-      data: [entry("thinkingmachines/inkling-small:free", 1_048_576)],
+      data: [
+        entry("thinkingmachines/inkling:free", 1_048_576),
+        entry("thinkingmachines/inkling-small:free", 1_048_576),
+      ],
     })).toEqual([]);
   });
 });
