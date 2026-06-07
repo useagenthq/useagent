@@ -67,6 +67,7 @@ import type { ApiStep } from "./repo";
 import { defaultModelForEngine, isReplyModelAllowedForEngine } from "./model-policy";
 import {
   engineResolutionErrorBody,
+  modelProviderReadinessErrorBody,
   modelProviderReadyForEngine,
   resolveAcceptedEngine,
 } from "./engine-readiness";
@@ -435,7 +436,7 @@ export async function handleRunCreate(
     return c.json({ error: "model_not_allowed", engine, model }, 400);
   }
   if (!modelProviderReadyForEngine(engine, model)) {
-    return c.json({ error: "model_provider_not_ready", engine, model }, 403);
+    return c.json(modelProviderReadinessErrorBody(engine, model), 403);
   }
 
   if (requestedSkillId) {

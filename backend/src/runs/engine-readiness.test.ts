@@ -1,11 +1,15 @@
 import { describe, expect, test } from "bun:test";
 import {
+  configuredEngineReadiness,
+  configuredUserFacingEngines,
   configuredDefaultRunEngine,
   engineModelReadyForDispatch,
+  engineModelsForConfiguredEngines,
   engineModelsForReadyEngines,
   engineReadyForDispatch,
   engineReadiness,
   modelProviderReadyForEngine,
+  modelProviderReadinessErrorBody,
   persistedEngineModelReadyForDispatch,
   readyUserFacingEngines,
   resolveAcceptedEngine,
@@ -143,6 +147,25 @@ describe("engine readiness advertisement", () => {
       reason: "provider_unhealthy",
     });
     expect(readyUserFacingEngines(env)).toEqual([]);
+    expect(configuredUserFacingEngines(env)).toContain("claude");
+    expect(configuredEngineReadiness(env).claude).toMatchObject({
+      ready: false,
+      reason: "provider_unhealthy",
+      provider: "anthropic",
+      providerHealth: "401",
+    });
+
+    const creditFailure = resolveAcceptedEngine("claude", {
+      ...env,
+      PROVIDER_HEALTH_ANTHROPIC: "insufficient_credit",
+    });
+    expect(creditFailure).toMatchObject({
+      ok: false,
+      error: "engine_not_ready",
+      provider: "anthropic",
+      providerHealth: "insufficient_credit",
+    });
+    expect(creditFailure.ok ? "" : creditFailure.message).toContain("Add credits");
   });
 
   test("provider models require explicit positive health", () => {
@@ -162,10 +185,9 @@ describe("engine readiness advertisement", () => {
       "moonshotai/kimi-k3",
       "deepseek/deepseek-v4-flash",
       "google/gemini-3.7-flash",
-      "nvidia/nemotron-3.5-lightning:free",
-      "thinkingmachines/inkling:free",
-      "poolside/laguna-s-2.1:free",
-      "inclusionai/ling-3.0-flash-fin:free",
+      "minimax/minimax-m3:free",
+      "nvidia/nemotron-3-super-120b-a12b:free",
+      "dots-studio/dots-3-note-preview:free",
     ]);
   });
 
@@ -184,6 +206,12 @@ describe("engine readiness advertisement", () => {
     expect(engineModelReadyForDispatch("opencode", "claude-opus-5", env)).toBe(false);
     expect(engineModelReadyForDispatch("opencode", "openai/gpt-5.6-sol", env)).toBe(true);
     expect(engineModelReadyForDispatch("opencode", "made-up/provider-model", env)).toBe(false);
+    expect(engineModelsForConfiguredEngines(env).opencode).not.toContain("claude-opus-5");
+    expect(modelProviderReadinessErrorBody("opencode", "claude-opus-5", env)).toMatchObject({
+      error: "model_provider_not_ready",
+      provider: "anthropic",
+      providerHealth: "401",
+    });
     expect(
       persistedEngineModelReadyForDispatch("opencode", "rotated/model:free", {
         ...env,
@@ -229,11 +257,12 @@ describe("engine acceptance", () => {
       error: "engine_not_enabled",
       engine: "mock",
     });
-    expect(resolveAcceptedEngine("claude", { ...PROD, ENABLED_ENGINES: "claude" })).toEqual({
+    expect(resolveAcceptedEngine("claude", { ...PROD, ENABLED_ENGINES: "claude" })).toMatchObject({
       ok: false,
       status: 403,
       error: "engine_not_ready",
       engine: "claude",
+      reason: "not_proven",
     });
   });
 });

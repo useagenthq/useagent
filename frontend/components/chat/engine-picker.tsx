@@ -14,6 +14,14 @@ import {
 import { cx as cn } from "@/utils/cx";
 
 export type EngineModelCatalog = Partial<Record<EngineId, readonly string[]>>;
+export interface EngineReadinessStatus {
+  readonly ready: boolean;
+  readonly reason: "enabled" | "disabled" | "provider_unhealthy" | "not_proven";
+  readonly provider?: "anthropic" | "openai" | "openrouter";
+  readonly providerHealth?: string;
+  readonly message?: string;
+}
+export type EngineReadinessCatalog = Partial<Record<EngineId, EngineReadinessStatus>>;
 
 export function resolveEnabledEngine(
   current: EngineId,
@@ -33,6 +41,29 @@ function parseEngineModelCatalog(raw: unknown): EngineModelCatalog {
       (model): model is string => typeof model === "string" && model.trim().length > 0,
     );
     if (ids.length > 0) out[engine.id] = ids;
+  }
+  return out;
+}
+
+export function parseEngineReadinessCatalog(raw: unknown): EngineReadinessCatalog {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+  const out: EngineReadinessCatalog = {};
+  for (const engine of ENGINES) {
+    const status = (raw as Record<string, unknown>)[engine.id];
+    if (!status || typeof status !== "object" || Array.isArray(status)) continue;
+    const value = status as Record<string, unknown>;
+    if (typeof value.ready !== "boolean" || typeof value.reason !== "string") continue;
+    out[engine.id] = {
+      ready: value.ready,
+      reason: value.reason as EngineReadinessStatus["reason"],
+      ...(typeof value.provider === "string"
+        ? { provider: value.provider as EngineReadinessStatus["provider"] }
+        : {}),
+      ...(typeof value.providerHealth === "string"
+        ? { providerHealth: value.providerHealth }
+        : {}),
+      ...(typeof value.message === "string" ? { message: value.message } : {}),
+    };
   }
   return out;
 }
@@ -68,8 +99,8 @@ export async function requestModelCatalogRefresh(
   try {
     const res = await fetcher("/api/config/models/refresh", { method: "POST" });
     if (!res.ok) return null;
-    const j = (await res.json()) as { models?: unknown };
-    return parseEngineModelCatalog(j.models);
+    const j = (await res.json()) as { models?: unknown; configuredModels?: unknown };
+    return parseEngineModelCatalog(j.configuredModels ?? j.models);
   } catch {
     return null;
   }
@@ -78,6 +109,7 @@ export async function requestModelCatalogRefresh(
 export function useEnabledEngineConfig(): {
   engines: EngineId[];
   models: EngineModelCatalog;
+  readiness: EngineReadinessCatalog;
   /** True once GET /api/config resolved (or failed): before that the engines
    * list is the conservative fallback and must not demote a richer default. */
   loaded: boolean;
@@ -90,11 +122,13 @@ export function useEnabledEngineConfig(): {
   const [config, setConfig] = useState<{
     engines: EngineId[];
     models: EngineModelCatalog;
+    readiness: EngineReadinessCatalog;
     loaded: boolean;
     readinessKnown: boolean;
   }>({
     engines: ["opencode"],
     models: { opencode: selectableModelsForEngine("opencode").map((m) => m.value) },
+    readiness: {},
     loaded: false,
     readinessKnown: false,
   });
@@ -104,17 +138,27 @@ export function useEnabledEngineConfig(): {
       try {
         const res = await fetch("/api/config");
         if (!res.ok) return;
-        const j = (await res.json()) as { engines?: unknown; models?: unknown };
+        const j = (await res.json()) as {
+          engines?: unknown;
+          models?: unknown;
+          configuredEngines?: unknown;
+          configuredModels?: unknown;
+          engineReadiness?: unknown;
+        };
         if (cancelled) return;
-        const engines = Array.isArray(j.engines)
-          ? j.engines.filter(
+        const advertisedEngines = Array.isArray(j.configuredEngines)
+          ? j.configuredEngines
+          : j.engines;
+        const engines = Array.isArray(advertisedEngines)
+          ? advertisedEngines.filter(
               (e): e is EngineId => typeof e === "string" && ENGINES.some((x) => x.id === e),
             )
           : [];
         if (engines.length) {
           setConfig({
             engines,
-            models: parseEngineModelCatalog(j.models),
+            models: parseEngineModelCatalog(j.configuredModels ?? j.models),
+            readiness: parseEngineReadinessCatalog(j.engineReadiness),
             loaded: true,
             readinessKnown: true,
           });
@@ -146,12 +190,9 @@ export function useEnabledEngineConfig(): {
   return { ...config, refreshModels };
 }
 
-/**
- * Which agent engines the SERVER actually allows, from GET /api/config -> `engines`
- * (gated by ENABLED_ENGINES). Defaults to just OpenCode until the fetch resolves, so
- * the composer never offers claude/codex on a backend that would 403 them. This is
- * the capability-driven source of truth for the engine picker.
- */
+/** Configured user-facing engines from GET /api/config. Dispatch readiness is
+ * carried separately in `readiness`, so a provider problem stays discoverable
+ * and actionable instead of making its engine disappear. */
 export function useEnabledEngines(): EngineId[] {
   return useEnabledEngineConfig().engines;
 }
