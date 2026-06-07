@@ -862,16 +862,14 @@ export function SessionView({
           </div>
 
           {/* Fan-out subagents in this thread that aren't on the main reply line —
-              each opens in the temporary viewing pane. Empty until threading lands.
-              Outline-known turns are main-line too - a not-yet-loaded windowed
-              turn must not surface as a chip. */}
+              each opens in the temporary viewing pane. The thread stream already
+              owns these rows; the chip surface performs no fetch or polling. */}
           <SubagentChips
             rootId={rootId}
-            excludeIds={
-              initialOutline
-                ? [...new Set([...initialOutline.map((e) => e.id), ...thread.map((r) => r.id)])]
-                : thread.map((r) => r.id)
-            }
+            thread={thread}
+            excludeIds={turns
+              .filter((turn) => !turn.run.child_session)
+              .map((turn) => turn.run.id)}
           />
           {/* PRIMARY CHAT = our native React conversation (user decision
               2026-08-05, second pass): owning the rendering layer keeps the
