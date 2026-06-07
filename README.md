@@ -116,6 +116,16 @@ Deeper reading: the [documentation site](https://useagent.org/docs/) and the int
 
 ## License
 
-useAgent is open source under the [GNU AGPL v3.0](LICENSE) (AGPL-3.0-only).
-Third-party components are listed in [NOTICE](NOTICE); vendored and ported
-files carry per-file attribution headers.
+useAgent is free and open-source software under the
+[GNU AGPL v3.0](LICENSE) (AGPL-3.0-only). You may use, modify, and
+self-host useAgent under the AGPL.
+
+If you want to embed useAgent into proprietary software, distribute it
+without AGPL obligations, build an OEM or white-label product, or obtain
+different terms, a [commercial license](COMMERCIAL-LICENSE.md) is
+available.
+
+Contributions are accepted under the [CLA](CLA.md). The useAgent name and
+logo are covered by the [trademark policy](TRADEMARKS.md), not the code
+license. Third-party components are listed in [NOTICE](NOTICE); vendored
+and ported files carry per-file attribution headers.
