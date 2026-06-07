@@ -278,11 +278,18 @@ describe("unified shell contract", () => {
   test("gives the reply composer drafting room without a second boxed wrapper", () => {
     const composer = readFromFrontend("components/chat/composer.tsx");
     const conversation = readFromFrontend("components/chat/conversation.tsx");
+    const promptInput = readFromFrontend("components/prompt-kit/prompt-input.tsx");
 
     expect(composer).toContain("maxHeight={180}");
     expect(composer).toContain(
+      '"grid h-fit grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-1 p-2"',
+    );
+    expect(composer).toContain(
       'hero ? "pt-1 text-headline-regular" : "min-h-6 text-body-2-regular leading-6"',
     );
+    expect(promptInput).toContain('el.style.height = "0px"');
+    expect(promptInput).not.toContain('el.style.height = "auto"');
+    expect(conversation).toContain("flex min-h-0 flex-1 flex-col overflow-hidden");
     expect(conversation).toContain("mx-auto w-full max-w-5xl");
     expect(conversation).not.toContain("shrink-0 border-t p-3");
   });

@@ -691,7 +691,7 @@ export const Conversation = memo(function Conversation({
     null;
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
       <div className="relative min-h-0 flex-1">
         <div
           ref={scrollRef}

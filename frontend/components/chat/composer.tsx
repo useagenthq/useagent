@@ -608,7 +608,7 @@ export function Composer({
             "cursor-text rounded-none border-0 bg-transparent shadow-none",
             hero
               ? "p-3 md:p-4"
-              : "grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-1 p-2",
+              : "grid h-fit grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-1 p-2",
           )}
         >
           <div
