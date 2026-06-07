@@ -38,9 +38,11 @@ echo "== write env + build + start (remote) =="
 set -euxo pipefail
 install -d -o root -g root -m 755 /etc/useagent
 AUTH_SECRET=$(openssl rand -hex 32)
+OPERATOR_SECRET=$(openssl rand -hex 32)
 cat > /etc/useagent/backend.env <<ENV
 DATABASE_URL=postgres://useagent:${PG_PASSWORD}@localhost:5432/useagent
 BETTER_AUTH_SECRET=${AUTH_SECRET}
+USEAGENT_OPERATOR_SECRET=${OPERATOR_SECRET}
 BETTER_AUTH_URL=http://localhost:3400
 PORT=3201
 USEAGENT_DEV_MODE=1

@@ -37,9 +37,12 @@ export function fetchApi(path: string, init: ApiInit = {}): Promise<Response> {
     }
   }
   if (init.cookies) headers["cookie"] = init.cookies;
-  return Promise.resolve(server.fetch(
-    new Request(BASE + path, { method: init.method ?? "GET", headers, body }),
-  ));
+  return Promise.resolve(
+    server.fetch(
+      new Request(BASE + path, { method: init.method ?? "GET", headers, body }),
+      { requestIP: () => ({ address: "127.0.0.1" }) },
+    ),
+  );
 }
 
 /** GET/POST/etc. helper that returns { status, json }. */
