@@ -45,7 +45,7 @@ export function Sidebar({
 }
 
 export function SidebarSectionLabel({ children }: { children: ReactNode }) {
-  return <p className="text-mono-label px-2.5 pb-1 pt-4 text-text-tertiary">{children}</p>;
+  return <p className="text-mono-label px-2.5 pb-1 pt-3 text-text-tertiary">{children}</p>;
 }
 
 export type NavIconTone = "blue" | "purple" | "green" | "orange" | "primary";
@@ -87,7 +87,7 @@ export function SidebarNavItem({
       href={href}
       aria-current={active ? "page" : undefined}
       className={cx(
-        "flex items-center gap-2 rounded-2lg px-2.5 py-2 text-body-medium transition-colors",
+        "flex items-center gap-2 rounded-2lg px-2.5 py-1.5 text-body-medium transition-colors",
         active
           ? "bg-linear-to-b from-accent-500 to-accent-600 text-white shadow-nav-selected"
           : "text-text-secondary hover:bg-background-secondary-hover hover:text-text-primary",

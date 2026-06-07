@@ -118,7 +118,7 @@ export function SearchCommand({ compact = false }: { compact?: boolean }) {
         title={compact ? "Search" : undefined}
         className={cx(
           "flex cursor-pointer items-center rounded-full bg-background-tertiary-default text-text-secondary outline-none transition-colors hover:bg-background-tertiary-hover/55 focus-visible:ring-2 focus-visible:ring-border-focus-ring",
-          compact ? "size-9 justify-center" : "mb-1.5 w-full gap-2 px-2.5 py-2",
+          compact ? "size-9 justify-center" : "mb-1 w-full gap-2 px-2.5 py-1.5",
         )}
       >
         <span className={cx("flex shrink-0 items-center justify-center", !compact && "w-4")}>

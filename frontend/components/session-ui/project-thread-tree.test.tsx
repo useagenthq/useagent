@@ -50,7 +50,7 @@ test("children render as indented doc rows without connector lines", () => {
     // shared uniform height with the one-step indent.
     expect(html).not.toContain("Project thread connector");
     expect(html.match(/data-session-ui="thread-row"/g) ?? []).toHaveLength(count);
-    expect(html.match(/h-9 w-full/g) ?? []).toHaveLength(count);
+    expect(html.match(/h-8 w-full/g) ?? []).toHaveLength(count);
     expect(html.match(/pl-6/g) ?? []).toHaveLength(count);
   }
 });

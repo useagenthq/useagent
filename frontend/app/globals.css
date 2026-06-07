@@ -3463,6 +3463,15 @@ html {
   font-weight: 500;
 }
 
+@utility text-display-xs {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", var(--font-display), var(--font-sans), sans-serif;
+  font-feature-settings: 'cv11', 'ss01', 'liga', 'calt';
+  font-size: 1.25rem; /* 20px */
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+  font-weight: 500;
+}
+
 /* ---------------------------------------------------------------------------
  * AI-native motion primitives (ported from useagenthq)
  *

@@ -507,7 +507,7 @@ export function NewTaskComposer({
                   <div
                     role="menu"
                     aria-label="Add context"
-                    className="absolute top-full left-0 z-30 mt-2 w-72 max-w-[calc(100vw-2rem)] origin-top-left rounded-[14px] border border-border-button-default bg-background-primary-default p-2 shadow-card"
+                    className="absolute top-full left-0 z-30 mt-2 w-72 max-w-[calc(100vw-2rem)] origin-top-left rounded-[14px] border border-border-button-default bg-background-primary-default p-1.5 shadow-card"
                   >
                     <AddFilesRow
                       inline

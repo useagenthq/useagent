@@ -4,7 +4,7 @@ import { type DotTone, StatusDot } from "@/components/shared/status-dot";
 import { AppShell } from "@/components/shell/app-shell";
 import { ThreadSidebar } from "@/components/shell/thread-sidebar";
 import { backendFetch } from "@/lib/backend-fetch";
-import { relativeTime } from "@/utils/format";
+import { relativeTimeShort } from "@/utils/format";
 import { NewTaskComposer } from "./new-task-composer";
 import { fetchSkills } from "./skills-data";
 
@@ -47,21 +47,21 @@ const STATUS_DOT: Record<string, DotTone> = {
 
 function RecentTasks({ runs }: { runs: RecentRun[] }) {
   return (
-    <section className="mt-10">
+    <section className="mt-8">
       <h2 className="text-mono-label px-1 text-text-tertiary">Recent tasks</h2>
-      <div className="mt-3 flex flex-col gap-1.5">
+      <div className="mt-2 flex flex-col gap-1">
         {runs.map((run) => (
           <Link
             key={run.id}
             href={`/session/${run.id}`}
-            className="flex items-center gap-3 rounded-2xl border border-border-button-default bg-background-primary-default px-3.5 py-3 outline-none transition-colors hover:bg-background-primary-hover focus-visible:ring-2 focus-visible:ring-border-focus-ring"
+            className="flex items-center gap-2.5 rounded-xl border border-border-button-default bg-background-primary-default px-3 py-2 outline-none transition-colors hover:bg-background-primary-hover focus-visible:ring-2 focus-visible:ring-border-focus-ring"
           >
             <StatusDot tone={STATUS_DOT[run.status] ?? "info"} />
             <span className="min-w-0 flex-1 truncate text-body-2-medium text-text-primary">
               {run.prompt}
             </span>
-            <span className="shrink-0 text-caption-1-regular text-text-tertiary">
-              {relativeTime(run.created_at)}
+            <span className="shrink-0 text-caption-1-regular tabular-nums text-text-tertiary">
+              {relativeTimeShort(run.created_at)}
             </span>
           </Link>
         ))}
@@ -89,7 +89,7 @@ export default async function NewTaskPage({
         <div className="w-full max-w-3xl py-10 sm:py-14">
           <div className="flex flex-col items-center gap-3 text-center">
             <p className="text-mono-label text-text-tertiary">New thread</p>
-            <h1 className="text-display-sm text-text-primary">What do you want done?</h1>
+            <h1 className="text-display-xs text-text-primary">What do you want done?</h1>
           </div>
 
           <div className="mt-8">

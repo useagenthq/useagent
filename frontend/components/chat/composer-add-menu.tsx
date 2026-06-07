@@ -22,7 +22,7 @@ import { cx } from "@/utils/cx";
 
 /** Full-width row styling for a control inside the "+" add-context menu. */
 export const ADD_MENU_ROW =
-  "flex w-full cursor-pointer items-center gap-3 rounded-2lg px-2.5 py-2 text-left text-body-2-medium text-text-primary transition-colors hover:bg-background-primary-hover";
+  "flex w-full cursor-pointer items-center gap-2.5 rounded-2lg px-2.5 py-1.5 text-left text-body-2-medium text-text-primary transition-colors hover:bg-background-primary-hover";
 
 /** "Create" actions: the colored BoardUI plugin icons (public/plugin-icons) that
  *  seed the prompt with a real artifact-creation task the agent can execute (it
@@ -51,7 +51,7 @@ function RowText({
       <span
         className={cx(
           "truncate text-text-tertiary",
-          inline ? "text-body-2-regular" : "text-caption-1-regular",
+          "text-caption-1-regular",
         )}
       >
         {description}
@@ -65,7 +65,7 @@ function RowText({
 export function AddFilesRow({ onPick, inline = false }: { onPick: () => void; inline?: boolean }) {
   return (
     <button type="button" onClick={onPick} className={ADD_MENU_ROW}>
-      <RiAttachment2 className="size-[18px] shrink-0 text-foreground-icon-secondary" aria-hidden />
+      <RiAttachment2 className="size-4 shrink-0 text-foreground-icon-secondary" aria-hidden />
       <RowText inline={inline} title={<>Add photos &amp; files</>} description="Upload from computer" />
     </button>
   );
@@ -79,7 +79,7 @@ export function CreateRows({ onSeed, inline = false }: { onSeed: (seed: string) 
       <p className="px-2.5 pb-0.5 pt-0.5 text-mono-label text-text-tertiary">Create</p>
       {CREATE_ROWS.map((row) => (
         <button key={row.label} type="button" onClick={() => onSeed(row.seed)} className={ADD_MENU_ROW}>
-          <img src={row.icon} alt="" width={20} height={20} className="size-5 shrink-0" aria-hidden />
+          <img src={row.icon} alt="" width={16} height={16} className="size-4 shrink-0" aria-hidden />
           <RowText inline={inline} title={row.label} description={row.desc} />
         </button>
       ))}
@@ -92,7 +92,7 @@ export function CreateRows({ onSeed, inline = false }: { onSeed: (seed: string) 
 export function GithubConnectedRow({ inline = false }: { inline?: boolean }) {
   return (
     <div className={cx(ADD_MENU_ROW, "cursor-default hover:bg-transparent")}>
-      <RiGithubLine className="size-[18px] shrink-0 text-foreground-icon-secondary" aria-hidden />
+      <RiGithubLine className="size-4 shrink-0 text-foreground-icon-secondary" aria-hidden />
       <RowText inline={inline} title="GitHub" description={<>Read pull requests &amp; issues</>} />
       <span className="shrink-0 rounded-full bg-background-secondary-default px-2 py-0.5 text-caption-1-medium text-text-secondary">
         Connected
