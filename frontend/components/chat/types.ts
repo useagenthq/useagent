@@ -93,6 +93,7 @@ export {
   modelLabel,
   modelOptionsForEngine,
   normalizeEngine,
+  partitionModelOptions,
   selectableModelsForEngine,
   supportsPreSessionModelSelection,
 } from "./model-catalog";

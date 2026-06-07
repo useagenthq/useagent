@@ -81,6 +81,11 @@ import { integrationRoutes } from "./integrations/routes";
 import { codexSubscriptionRelayRoutes } from "./provider-connections/codex-subscription-relay";
 import { wikiGenRoutes } from "./wiki-gen/routes";
 import { engineModelsForReadyEngines, readyUserFacingEngines } from "./runs/engine-readiness";
+import {
+  forceRefreshFreeModelLane,
+  freeModelLane,
+  refreshFreeModelLane,
+} from "./runs/free-model-lane";
 import { uploadRoutes } from "./uploads/routes";
 import { startUploadCleanup } from "./uploads/cleanup";
 import { internalAutomationRoutes } from "./schedules/internal-routes";
@@ -251,6 +256,11 @@ app.route(
 // `capabilities` are honest config-gated booleans (a name is NOT a secret) so
 // surfaces like /agent/plugins can show what is actually wired vs not.
 app.get("/api/config", (c) => {
+  // Kick the TTL-gated single-flight Free-lane catalog refresh
+  // (stale-while-revalidate): this manifest request serves the current lane
+  // instantly; a fresh catalog result lands for subsequent requests. The
+  // refresh never rejects, so it can never fail /api/config.
+  void refreshFreeModelLane();
   // Which agent engines are ACTUALLY selectable. This is stricter than the raw
   // ENABLED_ENGINES flag: optional engines must also be readiness-proven, and an
   // explicit provider health failure removes the engine from the public picker.
@@ -274,6 +284,25 @@ app.get("/api/config", (c) => {
     // source of truth so the API and the UI never disagree about what a
     // canonical companion actually preserves (or that uploaded PDF import is off).
     artifacts: { fidelity: ARTIFACT_FIDELITY },
+  });
+});
+
+// Manual Free-lane refresh (the picker's "Refresh free models" affordance).
+// Org-session authed by the universal adapter (NOT in the public allowlist).
+// Busts the catalog TTL while keeping single-flight plus a process-global
+// cool-down that is at least as strict as a per-org bound (the catalog is
+// org-independent, so one refresh serves every org). Returns the refreshed
+// manifest so the picker can swap its list in place.
+app.post("/api/config/models/refresh", async (c) => {
+  const attempt = forceRefreshFreeModelLane();
+  if (!attempt.admitted) {
+    return c.json({ error: "rate_limited", retry_after_ms: attempt.retryAfterMs }, 429);
+  }
+  await attempt.done;
+  return c.json({
+    refreshed: true,
+    free: freeModelLane(),
+    models: engineModelsForReadyEngines(),
   });
 });
 
