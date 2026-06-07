@@ -44,6 +44,7 @@ import {
 } from "@/components/session-ui/thread-error-banner";
 import { WorkedForFold } from "@/components/session-ui/worked-for-fold";
 import { cx } from "@/utils/cx";
+import { LongThreadSample } from "./long-thread-sample";
 import {
   agentRows,
   changedFiles,
@@ -86,6 +87,7 @@ const INDEX: readonly { label: string; href: string }[] = [
   { label: "Child-agent panel rows", href: "#agents" },
   { label: "Composer upload tray", href: "#uploads" },
   { label: "Follow-ups + sources (closing turn grammar)", href: "#conversation" },
+  { label: "Long thread (windowed rendering)", href: "#long-thread" },
 ];
 
 function AttachmentChip({ name }: { name: string }) {
@@ -432,6 +434,22 @@ export function SessionSample() {
             owner="conversation AgentAnswer"
           >
             <AgentAnswer summary={conversation[0].answer ?? ""} />
+          </Surface>
+
+          {/* The real Conversation fed 80 settled turns - past the short-thread
+              bypass, so off-viewport turns hold their height as placeholders and
+              scrolling stays anchor-stable while rows materialize. */}
+          <Surface
+            id="long-thread"
+            title="Long thread (windowed rendering)"
+            owner="conversation TurnWindow"
+          >
+            <p className="text-caption-1-regular text-text-tertiary">
+              80 synthetic settled turns through the production Conversation. Only
+              turns near the viewport mount real DOM; scroll to watch placeholders
+              materialize without the visible line moving.
+            </p>
+            <LongThreadSample />
           </Surface>
 
         </div>

@@ -13,6 +13,7 @@ import {
 import { Composer, type ComposerSubmit } from "@/components/chat/composer";
 import { useEnabledEngineConfig } from "@/components/chat/engine-picker";
 import { GatewayApprovalCard } from "@/components/chat/gateway-approval-card";
+import { toGatewayChildSession } from "@/components/chat/gateway-children";
 import { InboundAttachments } from "@/components/chat/inbound-attachments";
 import { NativeApprovalCard } from "@/components/chat/native-approval-card";
 import type { NativeSnapshot } from "@/components/chat/native-store";
@@ -21,7 +22,6 @@ import {
   composerAcceptsRunResources,
   type PendingQuestion,
 } from "@/components/chat/question-state";
-import { toGatewayChildSession } from "@/components/chat/gateway-children";
 import type { SlashCommand } from "@/components/chat/slash-command";
 import {
   type GatewayChildSession,
@@ -33,15 +33,17 @@ import {
   type TimelineNode,
 } from "@/components/chat/timeline";
 import { MD_CLASS, MD_CLASS_REASONING, Timeline } from "@/components/chat/timeline-view";
+import { TurnWindow } from "@/components/chat/turn-window";
+
 // Re-exported so existing importers (lab samples, workspace sample) keep working.
 export { Timeline } from "@/components/chat/timeline-view";
 import { OrbitKnotMark } from "@/components/foundations/brand/orbit-knot-mark";
 import { Markdown } from "@/components/prompt-kit/markdown";
 import { MessageCopyButton } from "@/components/session-ui/message-copy-button";
 import { MessageScrollerRail } from "@/components/session-ui/message-scroller-rail";
-import { ScrollToEndPill } from "@/components/session-ui/scroll-to-end-pill";
 import { unavailableEngineLabel } from "@/components/session-ui/provider-status-banner";
 import { QueuedMessagePill } from "@/components/session-ui/queued-message-pill";
+import { ScrollToEndPill } from "@/components/session-ui/scroll-to-end-pill";
 import {
   dismissThreadErrorBannerForSession,
   getThreadErrorBannerKey,
@@ -195,6 +197,7 @@ const TurnBlock = memo(function TurnBlock({
   onSendNow,
   childSessions,
   isLatestTurn = false,
+  windowOwnsRunMarker = false,
 }: {
   turn: Turn;
   /** 1-based place among this thread's queued turns (queued rendering only). */
@@ -207,6 +210,8 @@ const TurnBlock = memo(function TurnBlock({
   /** True for the thread's final turn - the only one whose follow-up
    *  suggestions render (stale suggestions under history are noise). */
   isLatestTurn?: boolean;
+  /** The turn-window wrapper owns the rail marker for virtualized rows. */
+  windowOwnsRunMarker?: boolean;
 }) {
   const { run, steps, status, summary, live, liveText, liveReasoning } = turn;
   // Capture whether this turn was streaming when it first mounted, so its
@@ -272,7 +277,11 @@ const TurnBlock = memo(function TurnBlock({
   // future control on top of the same queue.
   if (status === "queued" && activity.length === 0 && !summary && !liveText) {
     return (
-      <div className="space-y-1" data-testid="turn-block" data-run-id={run.id}>
+      <div
+        className="space-y-1"
+        data-testid="turn-block"
+        data-run-id={windowOwnsRunMarker ? undefined : run.id}
+      >
         <UserBubble>{cleanPrompt(run.prompt)}</UserBubble>
         <InboundAttachments uploads={run.uploads} />
         <QueuedMessagePill
@@ -285,7 +294,11 @@ const TurnBlock = memo(function TurnBlock({
   }
 
   return (
-    <div className="space-y-4" data-testid="turn-block" data-run-id={run.id}>
+    <div
+      className="space-y-4"
+      data-testid="turn-block"
+      data-run-id={windowOwnsRunMarker ? undefined : run.id}
+    >
       <div className="space-y-2">
         <UserBubble>{cleanPrompt(run.prompt)}</UserBubble>
         <InboundAttachments uploads={run.uploads} />
@@ -676,18 +689,26 @@ export const Conversation = memo(function Conversation({
             const el = e.currentTarget;
             stickRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
           }}
-          className="scrollbar-slim h-full space-y-8 overflow-y-auto px-5 py-6"
+          className="scrollbar-slim h-full space-y-8 overflow-y-auto px-5 py-6 [overflow-anchor:none]"
         >
-          {renderedTurns.map((turn, index) => (
-            <TurnBlock
-              key={turn.run.id}
-              turn={turn}
-              queuePosition={queuedPositions.get(turn.run.id)}
-              onSendNow={turn.run.id === sendNowFor ? onSendNow : undefined}
-              childSessions={childSessionsByParent.get(turn.run.id)}
-              isLatestTurn={index === renderedTurns.length - 1}
-            />
-          ))}
+          {/* Long threads render through the turn window: only turns near the
+              viewport mount real DOM, the rest hold their measured height as
+              placeholders, and scroll stays anchor-stabilized while rows swap.
+              Short threads bypass it entirely (identical DOM to before). */}
+          <TurnWindow
+            turns={renderedTurns}
+            scrollRef={scrollRef}
+            renderTurn={(turn, index, windowOwnsRunMarker) => (
+              <TurnBlock
+                turn={turn}
+                queuePosition={queuedPositions.get(turn.run.id)}
+                onSendNow={turn.run.id === sendNowFor ? onSendNow : undefined}
+                childSessions={childSessionsByParent.get(turn.run.id)}
+                isLatestTurn={index === renderedTurns.length - 1}
+                windowOwnsRunMarker={windowOwnsRunMarker}
+              />
+            )}
+          />
           {pendingQuestion && onAnswerQuestion && (
             <QuestionCard
               key={pendingQuestion.id}
