@@ -8,7 +8,7 @@ const LEGACY_GATEWAY_DATABASE_ROLE = "skynet_gateway";
  * idempotently at every backend boot (right after migrations).
  *
  * ROOT CAUSE this exists to kill: grants used to live only in
- * deploy/hetzner/configure-host.sh, which runs once at host provisioning -
+ * the host provisioning script, which runs once at setup -
  * while tables arrive via migrations on every deploy. Twice a migration
  * shipped a gateway-written table whose INSERTs then died in production with
  * 42501 (knowledge_*, artifact_workpiece_proposals). With the manifest in

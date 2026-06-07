@@ -1,4 +1,4 @@
-// Ported from reference bot (Apache-2.0): src/kiro_crew/messaging/transport.py (TransportCapabilities)
+// Ported from a peer tool (Apache-2.0): src/kiro_crew/messaging/transport.py (TransportCapabilities)
 import { defaultCapabilities, type TransportCapabilities } from "../types";
 
 /** Email surface capabilities. v1 is a single plain-text, outbound message: no

@@ -126,7 +126,7 @@ docker compose -f memory/docker-compose.yml down          # stop, keep memory
 docker compose -f memory/docker-compose.yml down -v       # also delete the volume
 ```
 
-Production backups use `deploy/hetzner/useagent-backup.sh`. The encrypted
+Production backups use the provisioning scripts. The encrypted
 archive includes a checksum-verified, quiesced snapshot of the Docker volume
 mounted at `/data/tdai-memory`; restore replaces that volume only after all
 useAgent runtime services have stopped. Configure

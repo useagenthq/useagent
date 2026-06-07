@@ -3,7 +3,7 @@
 // same drain barrier and counted by the same canonicalization WATERMARK as every other native
 // frame - canonicalization cannot reach `complete` until the run's command snapshot is durable.
 // The translator emits the run's canonical `commands.updated` from those frames. DB-backed
-// (skynet_test), through the REAL canonicalizeRun path (no mutable side-cache).
+// (useAgent_test), through the REAL canonicalizeRun path (no mutable side-cache).
 import { describe, expect, test, beforeAll } from "bun:test";
 import { ACP_COMMANDS_EVENT_TYPE, type CanonicalCommand } from "@useagent/agent-harness/canonical";
 import { db } from "../src/db/client";

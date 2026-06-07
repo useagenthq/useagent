@@ -1,7 +1,7 @@
 /**
  * Shared harness for the aggressive browser-level UI E2E sweep.
  * Drives the isolated stack: frontend http://localhost:3413 (USEAGENT_API_ORIGIN
- * → backend http://localhost:3513, real `skynet` DB, committed HEAD).
+ * → backend http://localhost:3513, real `useAgent` DB, committed HEAD).
  * Playwright headless via system Chrome (channel: "chrome"). No src edits.
  */
 import { chromium, type Browser, type Page } from "playwright-core";

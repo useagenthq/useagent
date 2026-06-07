@@ -7,7 +7,7 @@ import { orgScope } from "../middleware/org";
 import { importSkills, scanSkillCandidates } from "./import";
 
 // ---------------------------------------------------------------------------
-// GitHub skill import routes (multi-repo "import Skills from a repo"). Mounted
+// GitHub skill import routes ("import Skills from a repo"). Mounted
 // at /api/skills/import, org-scoped like the rest of the skills surface. The
 // GitHub credential stays server-side; a bad ref / unconfigured backend is a 400
 // (client's problem) and a GitHub failure is a 502 (upstream), so the caller can

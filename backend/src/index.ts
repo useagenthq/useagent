@@ -318,7 +318,7 @@ app.route("/api/pulls", pullsRoutes);
 // the org's live Daytona sandbox footprint. Org-scoped; no keys to the client.
 app.route("/api/fleet", fleetRoutes);
 app.route("/api/dashboard", dashboardRoutes);
-// multi-repo skill import from the org's GitHub repos (scan + import). Mounted
+// skill import from the org's GitHub repos (scan + import). Mounted
 // before /api/skills so the /import subtree resolves to its own routes.
 app.route("/api/skills/import", skillImportRoutes);
 // Learning lane (item 6): human-gated skill revision proposals. Mounted before

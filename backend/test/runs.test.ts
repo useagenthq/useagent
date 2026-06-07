@@ -239,7 +239,7 @@ describe("runs", () => {
         engine: "mock",
         status: "completed",
         threadId: internalId,
-        origin: "internal:t3-parity",
+        origin: "internal:release-parity",
       },
     ]);
 

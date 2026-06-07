@@ -1,4 +1,4 @@
-// Ported from reference bot (Apache-2.0): src/kiro_crew/acp/client.py
+// Ported from a peer tool (Apache-2.0): src/kiro_crew/acp/client.py
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -14,7 +14,7 @@ import { acpToolResultFailed } from "./acp-tool-step";
 // JSON-RPC 2.0 over stdio to any ACP agent. We drive Claude Code through the
 // public bridge `@agentclientprotocol/claude-agent-acp` → `@anthropic-ai/
 // claude-agent-sdk` → the user's `claude` CLI, with no kiro/AWS login. This is
-// the reference bot `REFERENCE_BOT_FORCE_CLAUDE_ACP` blueprint, ported to our engine
+// the a peer tool reference ACP blueprint, ported to our engine
 // contract; the agent behind ACP is swappable purely via env.
 //
 // Wire protocol (verified against the installed bridge + @agentclientprotocol/sdk):
@@ -45,7 +45,7 @@ import { acpToolResultFailed } from "./acp-tool-step";
 
 /** Public npm bridge, installed locally (npm -g is broken on this machine). */
 const LOCAL_BRIDGE_PKG =
-  "/tmp/reference-bot-patch/npm/node_modules/@agentclientprotocol/claude-agent-acp";
+  "/tmp/acp-bridge-local/npm/node_modules/@agentclientprotocol/claude-agent-acp";
 
 /** Resolve the argv that launches the ACP bridge child process. */
 function resolveBridgeArgv(): string[] {

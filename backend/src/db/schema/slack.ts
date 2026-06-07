@@ -2,7 +2,7 @@ import { index, integer, pgTable, primaryKey, text, timestamp } from "drizzle-or
 import { runs } from "./runs";
 
 // ---------------------------------------------------------------------------
-// Slack adapter — maps a Slack thread to the skynet run that ROOTED it, so a
+// Slack adapter — maps a Slack thread to the useAgent run that ROOTED it, so a
 // later reply in that Slack thread becomes a `parent_run_id` follow-up (shared
 // thread, clean prompts). One row per Slack thread the bot has engaged; the
 // composite key is the Slack thread's identity `(channel, thread root ts)`.

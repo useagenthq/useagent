@@ -8,7 +8,7 @@
 // the source of truth for replay — this buffer self-evicts a grace period after
 // end(), and its contents are never authoritative.
 //
-// Ported/adapted from reference-eval's src/runs/turn-stream.ts: same capped-buffer +
+// Ported/adapted from a reference implementation's src/runs/turn-stream.ts: same capped-buffer +
 // grace-timer + subscribe/unsubscribe shape, trimmed to our step model (the
 // Slack-only first-block / surface-posted machinery has no consumer here, so it
 // is intentionally dropped). Listeners here receive EACH delta (the live-typing
@@ -136,5 +136,5 @@ export function createTurnStream(opts: TurnStreamOptions = {}): TurnStream {
 
 // Process-wide singleton: the worker publishes deltas here, SSE routes subscribe.
 // (Single-instance today — a Postgres-backed fan-out for multi-instance is noted
-// as future work, matching reference-eval's postgres-session-state-bus, not built here.)
+// as future work, matching a reference implementation's postgres-session-state-bus, not built here.)
 export const turnStream = createTurnStream();

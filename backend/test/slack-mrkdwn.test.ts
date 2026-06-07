@@ -1,6 +1,6 @@
 /**
  * Markdown -> Slack mrkdwn conversion (src/slack/mrkdwn.ts, ported from the
- * user's QM bot: reference-eval/src/slack/mrkdwn.ts). Covers the required cases plus the
+ * user's QM bot: a reference implementation/src/slack/mrkdwn.ts). Covers the required cases plus the
  * ported converter's other faithful behaviors (italic, strikethrough, tables,
  * dividers, mass-mention safety, plain text left alone).
  */

@@ -66,7 +66,7 @@ describe("finalizeRun — transactional memory capture (GAP 2)", () => {
 
   test("an INTERNAL run (canary/e2e origin) does NOT enqueue a capture", async () => {
     await withMemory(async () => {
-      const id = await freshRun("t3 parity probe: list the repo files", "internal:t3-parity");
+      const id = await freshRun("t3 parity probe: list the repo files", "internal:release-parity");
       await finalizeRun(id, "completed", "Listed 14 files across src and test directories", 500);
       expect((await getRun(id))?.status).toBe("completed");
       expect(await getCapture(id)).toBeNull();

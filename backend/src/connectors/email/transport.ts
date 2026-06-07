@@ -1,5 +1,5 @@
-// Implements the ported reference bot Transport contract (see connectors/types.ts).
-// reference bot ships Slack/Telegram surfaces; email is a NEW useAgent surface that
+// Implements the ported a peer tool Transport contract (see connectors/types.ts).
+// a peer tool ships Slack/Telegram surfaces; email is a NEW useAgent surface that
 // subclasses the same ABCs — the subclassing pattern is modeled on
 // src/kiro_crew/slack/transport.py + telegram/transport.py (deny-by-default
 // allow-list, held-and-exposed client, Tier-1 core + inbound adapter).

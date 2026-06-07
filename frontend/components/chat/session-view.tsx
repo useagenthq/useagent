@@ -904,7 +904,7 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
           {/* PRIMARY CHAT = our native React conversation (user decision
               2026-08-05, second pass): owning the rendering layer keeps the
               extension surface ours — artifact/PPT/PDF viewers, custom panes —
-              per the reference bot/Cloudflare-OS model. The opencode inline-embed
+              per the a reference model model. The opencode inline-embed
               implementation lives complete on branch feat/opencode-live-embed;
               the React-native port of their part renderers grows on
               feat/react-session-port. */}

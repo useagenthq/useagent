@@ -17,12 +17,12 @@ describe("isInternalRunOrigin", () => {
   test("rejects null, legacy values, prefixes, suffixes, and unknown internal values", () => {
     for (const origin of [
       null,
-      "t3-parity",
+      "release-eval",
       "canary",
       "e2e",
       "parity-canary",
-      "internal:t3-parity:forged",
-      "INTERNAL:T3-PARITY",
+      "internal:release-parity:forged",
+      "INTERNAL:RELEASE-PARITY",
       "internal:unknown",
       "slack",
     ]) {

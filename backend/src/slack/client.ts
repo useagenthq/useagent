@@ -45,7 +45,7 @@ export interface SlackClient {
   addReaction(args: { channel: string; timestamp: string; name: string }): Promise<DeliveryResult>;
   /**
    * Upload a file into a thread. Ported from the QM bot (files.uploadV2,
-   * reference-eval src/slack/attachments.ts:189) and reference-bot (files_upload_v2,
+   * a reference implementation src/slack/attachments.ts:189) and a reference bot (files_upload_v2,
    * client.py:354) - both use the Slack SDK's uploadV2 helper. useAgent has NO
    * Slack SDK by design (thin fetch client), so we perform the identical
    * sequence uploadV2 wraps: files.getUploadURLExternal -> POST the bytes to the

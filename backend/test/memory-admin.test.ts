@@ -16,7 +16,7 @@ import { uid } from "./helpers";
 // enforced by a JOIN to `runs`. These lock: (1) list is org-scoped, (2) manual
 // retry only fires on `dead` rows in your org and resets the attempt budget while
 // preserving the committed payload, (3) a `delivering` orphan resolves only on an
-// explicit operator decision, org-scoped. DB-backed against skynet_test.
+// explicit operator decision, org-scoped. DB-backed against useAgent_test.
 
 const ORG_A = "org-skynet-dev"; // the seeded dev org
 const ORG_B = "org-other-test";

@@ -2,8 +2,8 @@
 title: Skills, tasks and projects API
 description: Skills and playbooks CRUD, running a skill, GitHub skill import, learning-lane skill proposals, and the durable task board.
 sidebar:
-  label: Skills and tasks
-  order: 6
+ label: Skills and tasks
+ order: 6
 ---
 
 Skills are the reusable procedure substrate; tasks and projects are the durable
@@ -27,7 +27,7 @@ appends an immutable revision; runs pinned to an older version are never mutated
 
 ## Skill import
 
-multi-repo import of `SKILL.md` files from the org's GitHub repos. The GitHub
+import of `SKILL.md` files from the org's GitHub repos. The GitHub
 credential stays server-side. A bad ref or unconfigured backend is `400`; a GitHub
 upstream failure is `502`; a repo not available to the org is `403`.
 

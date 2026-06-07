@@ -55,7 +55,7 @@ describe("retrieveChatContext", () => {
   test("passes the persisted trusted origin to memory retrieval", async () => {
     let observedOrigin: string | null | undefined;
     await retrieveChatContext(
-      { ...INPUT, origin: "internal:t3-parity" },
+      { ...INPUT, origin: "internal:release-parity" },
       deps({
         recallMemory: async (input) => {
           observedOrigin = input.origin;
@@ -63,7 +63,7 @@ describe("retrieveChatContext", () => {
         },
       }),
     );
-    expect(observedOrigin).toBe("internal:t3-parity");
+    expect(observedOrigin).toBe("internal:release-parity");
   });
 
   test("blank query short-circuits to empty (no dep calls)", async () => {

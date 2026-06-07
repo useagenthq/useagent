@@ -5,7 +5,7 @@ import type { GithubRepositoryAccess } from "./auth";
 import { errorMessage } from "../util/error-message";
 
 // ---------------------------------------------------------------------------
-// GitHub skill discovery (multi-repo "import Skills from a repo"). Given an
+// GitHub skill discovery ("import Skills from a repo"). Given an
 // `owner/name` repo, find every `**/SKILL.md` on the default branch and read
 // the ones within the size cap. This is pure GitHub I/O: it returns the raw
 // file text + the HEAD commit the read was pinned to; turning that text into a

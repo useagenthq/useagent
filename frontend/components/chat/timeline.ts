@@ -42,14 +42,14 @@ export type TimelineMarker =
       readonly query: string | null;
     }
   | {
-      /** Boot recovery parked this run for adaptive re-probing (provider skynet,
+      /** Boot recovery parked this run for adaptive re-probing (provider useAgent,
        *  run.reconciling, frozen contract {reason, sinceMs, deadlineMs}). The
        *  run stays status running for the whole window. */
       readonly kind: "reconciling";
       readonly deadlineMs: number | null;
     }
   | {
-      /** A memory WRITE-path chip (provider skynet-memory): remember / correct /
+      /** A memory WRITE-path chip (provider useAgent-memory): remember / correct /
        *  forget, or the honest failure of one. Reads (memory.searched) render as
        *  a plain context marker instead. */
       readonly kind: "memory";
@@ -176,7 +176,7 @@ function parseArtifact(eventType: string, payload: unknown): TimelineArtifact | 
 
 /**
  * Parse a useAgent lane native frame (skill.loaded / context.retrieved) into a
- * typed timeline marker. Returns null for any other frame — an UNKNOWN skynet
+ * typed timeline marker. Returns null for any other frame — an UNKNOWN useAgent
  * eventType renders safely as nothing (never a crash), per the canonical-marker
  * contract.
  */
@@ -195,10 +195,10 @@ export function parseMarker(eventType: string, payload: unknown): TimelineMarker
     };
   }
   // The knowledge gateway emits `knowledge.retrieved` (provider
-  // skynet-knowledge); memory emits `context.retrieved` (provider skynet).
+  // useAgent-knowledge); memory emits `context.retrieved` (provider useAgent).
   // Both are context markers — the vocabulary split was an integration bug
   // (recorded but never rendered) caught by external audit. The memory-tool
-  // read path (`memory.searched`, provider skynet-memory) joins the same
+  // read path (`memory.searched`, provider useAgent-memory) joins the same
   // context grammar: "Recalled N items from memory".
   if (
     eventType === "context.retrieved" ||

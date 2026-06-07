@@ -13,7 +13,7 @@
  *   SECRETS_SEED_FILE=/path/a.env,/path/b.json bun run scripts/seed-secrets.ts
  *
  * Env:
- *   SEED_ORG_ID              target org (default: the dev org, org-skynet-dev)
+ *   SEED_ORG_ID              target org (default: the dev org, org-useAgent-dev)
  *   SECRETS_SEED_FILE        comma-separated file list (if no CLI args)
  *   SECRETS_SEED_DRYRUN=1    parse + classify + report, but write NOTHING
  *   SECRETS_EXPECTED_NAMES   a file of expected names (one per line or comma-sep);
