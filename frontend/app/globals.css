@@ -664,9 +664,9 @@ html {
     --social-zendesk: 0 0% 100%;
   }
 
-  /* Indigo - the previous Midnight: cool Tokyo-Night-derived indigo dark,
+  /* Dusk - the previous Midnight: cool Tokyo-Night-derived indigo dark,
    * kept as its own theme for those who prefer it. */
-  .indigo {
+  .dusk {
       --brand-orbit: 212.06 100% 60%; /* #3392ff BoardUI accent (blue-400) */
       /* -------------------------------------------------------------------
        * Midnight - Tokyo Night dark theme (the product default dark ramp).
@@ -2234,8 +2234,8 @@ html {
   );
 }
 
-/* Indigo (legacy token layer) - previous Midnight ramp. */
-.indigo {
+/* Dusk (legacy token layer) - previous Midnight ramp. */
+.dusk {
   /* Foreground (neutral-driven; icon-error / disabled-danger keep theme.css red) */
   --color-foreground-full:            hsl(var(--neutral-400));
   --color-foreground-icon-primary:    hsl(var(--neutral-50));
@@ -3594,7 +3594,7 @@ html {
   --swatch-accent: #2b7fff;
 }
 
-.theme-swatch-indigo {
+.theme-swatch-dusk {
   --swatch-canvas: #1f212d;
   --swatch-accent: #7aa2f7;
 }
