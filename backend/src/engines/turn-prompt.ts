@@ -56,11 +56,16 @@ export const AGENT_SKILL_DISCOVERY_RULES =
  * current per-turn workflow, skill, upload, and memory context before the user's
  * prompt. Validated native commands are delivered byte-verbatim.
  */
-export function composeTurnPrompt(ctx: TurnPromptContext, resumed: boolean): string {
+export function composeTurnPrompt(
+  ctx: TurnPromptContext,
+  resumed: boolean,
+  executionCapabilities: ExecutionCapabilitySnapshot,
+): string {
   if (ctx.commandName) return ctx.prompt;
   const skillReference = ctx.skillContext ||
     AGENT_SKILL_DISCOVERY_RULES + (ctx.skillCatalogContext ?? "");
   const perTurn =
+    executionCapabilityPrompt(executionCapabilities) +
     AGENT_WORKFLOW_ROUTING_RULES +
     skillReference +
     (ctx.resourceContext ?? "") +
@@ -69,3 +74,5 @@ export function composeTurnPrompt(ctx: TurnPromptContext, resumed: boolean): str
   const prefix = resumed ? perTurn : AGENT_OPERATING_RULES + ctx.bootstrapContext + perTurn;
   return prefix + ctx.prompt;
 }
+import type { ExecutionCapabilitySnapshot } from "@useagent/agent-harness/canonical";
+import { executionCapabilityPrompt } from "./execution-capabilities";

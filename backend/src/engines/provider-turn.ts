@@ -2,13 +2,14 @@ import {
   SESSION_STARTED_EVENT_TYPE,
   type HarnessRuntime,
   type HarnessSession,
+  type ExecutionCapabilitySnapshot,
   type NegotiatedCapabilities,
 } from "@useagent/agent-harness/canonical";
 import type {
   HarnessResult,
   ProviderDriver,
 } from "@useagent/agent-harness/control";
-import type { ProviderEventInput } from "../runs/provider-events";
+import { recordProviderEvent, type ProviderEventInput } from "../runs/provider-events";
 import {
   RUN_TIMING_OUTCOMES,
   RUN_TIMING_STAGES,
@@ -28,6 +29,7 @@ export interface EstablishProviderSessionInput {
   >;
   readonly runtime: HarnessRuntime;
   readonly capabilities: NegotiatedCapabilities;
+  readonly executionCapabilities: ExecutionCapabilitySnapshot;
   readonly generation?: number;
   readonly startMetadata?: Record<string, unknown>;
   readonly priorSessionId?: string;
@@ -58,6 +60,7 @@ function resumableSession(
     runtime: input.runtime,
     protocolVersion: input.driver.descriptor.protocol.name,
     capabilities: input.capabilities,
+    executionCapabilities: input.executionCapabilities,
     generation: input.generation ?? 1,
   };
 }
@@ -112,7 +115,11 @@ export async function establishProviderSession(
     if (resumed.status === "ok") {
       endResume?.(RUN_TIMING_OUTCOMES.success);
       const established = {
-        session: { ...resumed.value, capabilities: input.capabilities },
+        session: {
+          ...resumed.value,
+          capabilities: input.capabilities,
+          executionCapabilities: input.executionCapabilities,
+        },
         resumed: true,
       } satisfies EstablishedProviderSession;
       await persistProviderSession(input, established.session.nativeSessionId);
@@ -150,7 +157,11 @@ export async function establishProviderSession(
   }
   endStart?.(RUN_TIMING_OUTCOMES.success);
   const established = {
-    session: { ...started.value, capabilities: input.capabilities },
+    session: {
+      ...started.value,
+      capabilities: input.capabilities,
+      executionCapabilities: input.executionCapabilities,
+    },
     resumed: false,
   } satisfies EstablishedProviderSession;
   await persistProviderSession(input, established.session.nativeSessionId);
@@ -173,6 +184,24 @@ export function providerSessionStartedEvent(
     payload: {
       source: identity.source,
       capabilities: session.capabilities,
+      ...(session.executionCapabilities
+        ? { executionCapabilities: session.executionCapabilities }
+        : {}),
     },
   };
+}
+
+/** Session capability truth is an execution prerequisite, not best-effort
+ * telemetry. The sequencer remains recoverable, but this caller observes and
+ * propagates a persistence failure before any provider prompt is dispatched. */
+export async function recordProviderSessionStarted(
+  ctx: Pick<EngineRunContext, "runId" | "threadId">,
+  session: HarnessSession,
+  identity: ProviderSessionEventIdentity,
+  persist: typeof recordProviderEvent = recordProviderEvent,
+): Promise<void> {
+  await persist(providerSessionStartedEvent(ctx, session, identity), {
+    critical: true,
+    required: true,
+  });
 }

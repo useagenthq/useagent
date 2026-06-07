@@ -36,7 +36,7 @@ import type { ProviderDriver } from "@useagent/agent-harness/control";
 import { sessionCapabilities } from "./capabilities";
 import {
   establishProviderSession,
-  providerSessionStartedEvent,
+  recordProviderSessionStarted,
 } from "./provider-turn";
 import {
   restartRuntimeEnvironment,
@@ -50,6 +50,7 @@ import { createNoProgressWatchdog, NoProgressError } from "./turn-no-progress";
 import { T3_SESSION_GENERATION, t3ProviderDrivers } from "./t3-provider-driver";
 import { operatorEnv } from "./runtime-env";
 import { prepareSandboxTurn } from "./sandbox-turn-preparation";
+import { buildExecutionCapabilitySnapshot } from "./execution-capabilities";
 
 const RUNTIME_POLL_INTERVAL_MS = 125;
 // Codex subscription writes its per-run relay config into the sandbox's T3
@@ -362,11 +363,18 @@ export function makeRuntimeAdapter(engine: RuntimeEngineId, driver: ProviderDriv
           knowledgeTools: true,
           runtimeOrchestration: true,
         });
+        const executionCapabilities = buildExecutionCapabilitySnapshot({
+          runtime: "sandbox",
+          workspaceRoot: workdir,
+          gatewayAvailable: true,
+          desktopAvailability: "on_demand",
+        });
         const established = await establishProviderSession({
           driver,
           ctx,
           runtime: { kind: "sandbox", id: sandbox.id },
           capabilities: negotiatedCapabilities,
+          executionCapabilities,
           generation: T3_SESSION_GENERATION,
           priorSessionId: threadExists ? threadId : undefined,
           startMetadata: { workspaceRoot: workdir, runtimeMode, createdAt },
@@ -394,11 +402,8 @@ export function makeRuntimeAdapter(engine: RuntimeEngineId, driver: ProviderDriv
         // HTTP orchestration dispatch validates thread.turn.start against an
         // already-projected thread. ProviderDriver.start creates it explicitly instead of
         // relying on the websocket-only bootstrap normalization path.
-        const prompt = composeTurnPrompt(ctx, established.resumed);
-        await recordProviderEvent(
-          providerSessionStartedEvent(ctx, session, { provider: "t3", source: engine }),
-          { critical: true },
-        );
+        const prompt = composeTurnPrompt(ctx, established.resumed, executionCapabilities);
+        await recordProviderSessionStarted(ctx, session, { provider: "t3", source: engine });
         ctx.timing?.mark("dispatch");
         const endDispatch = ctx.timing?.begin("t3.dispatch_request");
         const steerResult = await driver.steer({

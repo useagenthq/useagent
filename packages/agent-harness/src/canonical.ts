@@ -117,6 +117,50 @@ export interface CanonicalQuestion {
   custom: boolean;
 }
 
+/** Versioned, provider-neutral truth about the execution facilities attached
+ * to one session. This is separate from feature booleans: availability can
+ * degrade independently while the negotiated protocol surface stays stable. */
+export const EXECUTION_CAPABILITY_VERSION = 1 as const;
+
+export type ExecutionAvailability = "ready" | "on_demand" | "degraded" | "unsupported";
+export type ExecutionFacilityAccess =
+  | { kind: "native" }
+  | { kind: "useagent_gateway"; discovery: "direct"; operations: readonly string[] }
+  | {
+      kind: "useagent_gateway";
+      discovery: "compact";
+      search: "gateway_tools_search";
+      describe: "gateway_tool_describe";
+      call: "gateway_tool_call";
+      operations: readonly string[];
+    }
+  | { kind: "user_surface_only" }
+  | { kind: "none" };
+
+export interface ExecutionFacility {
+  availability: ExecutionAvailability;
+  access: ExecutionFacilityAccess;
+  reasonCode?: string;
+}
+
+export interface ExecutionFacilities {
+  files: ExecutionFacility;
+  shell: ExecutionFacility;
+  terminal: ExecutionFacility;
+  desktop: ExecutionFacility;
+  browser: ExecutionFacility;
+  /** Registered gateway providers surface here without a schema change. An
+   * empty operations list means the runtime discovers the current catalog. */
+  tools: ExecutionFacility;
+}
+
+export interface ExecutionCapabilitySnapshot {
+  version: typeof EXECUTION_CAPABILITY_VERSION;
+  runtime: "sandbox" | "managed";
+  workspaceRoot?: string;
+  facilities: ExecutionFacilities;
+}
+
 /** useAgent-generated context markers (memory/knowledge/skill/playbook/rule) that
  *  render identically for every engine because they originate in useAgent's lane,
  *  not the provider's. */
@@ -129,7 +173,13 @@ export type ContextMarkerKind = "memory" | "knowledge" | "skill" | "playbook" | 
  * that lacks the capability - React shows them only when real events arrive.
  */
 export type CanonicalEventBody =
-  | { kind: "session.started"; capabilities: NegotiatedCapabilities; source?: string }
+  | {
+      kind: "session.started";
+      capabilities: NegotiatedCapabilities;
+      /** Optional for backward compatibility with persisted pre-v1 frames. */
+      executionCapabilities?: ExecutionCapabilitySnapshot;
+      source?: string;
+    }
   | { kind: "session.metadata"; metadata: Record<string, unknown> }
   | { kind: "turn.started" }
   | { kind: "turn.completed"; stopReason?: string }
@@ -309,6 +359,9 @@ export interface HarnessSession {
   runtime: HarnessRuntime;
   protocolVersion: string;
   capabilities: NegotiatedCapabilities;
+  /** Model-facing runtime truth for this session. Optional only so persisted
+   * pre-v1 sessions remain readable; current adapters must supply it. */
+  executionCapabilities?: ExecutionCapabilitySnapshot;
   generation: number;
 }
 
@@ -422,13 +475,146 @@ export function normalizeNegotiatedCapabilities(raw: unknown): NegotiatedCapabil
   return out as NegotiatedCapabilities;
 }
 
+const EXECUTION_AVAILABILITY = new Set<ExecutionAvailability>([
+  "ready",
+  "on_demand",
+  "degraded",
+  "unsupported",
+]);
+const EXECUTION_FACILITIES: readonly (keyof ExecutionFacilities)[] = [
+  "files", "shell", "terminal", "desktop", "browser", "tools",
+];
+const MAX_EXECUTION_OPERATIONS = 64;
+const MAX_EXECUTION_TOKEN_LENGTH = 128;
+const MAX_WORKSPACE_ROOT_LENGTH = 4_096;
+
+function executionAvailability(raw: unknown): ExecutionAvailability {
+  return typeof raw === "string" && EXECUTION_AVAILABILITY.has(raw as ExecutionAvailability)
+    ? (raw as ExecutionAvailability)
+    : "unsupported";
+}
+
+function boundedString(raw: unknown, maxLength: number): string | undefined {
+  if (typeof raw !== "string") return undefined;
+  const value = raw.trim();
+  return value && value.length <= maxLength ? value : undefined;
+}
+
+function boundedToken(raw: unknown): string | undefined {
+  const value = boundedString(raw, MAX_EXECUTION_TOKEN_LENGTH);
+  return value && /^[A-Za-z0-9._:/-]+$/.test(value) ? value : undefined;
+}
+
+function executionOperations(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return [];
+  const seen = new Set<string>();
+  const operations: string[] = [];
+  for (const item of raw) {
+    const operation = boundedToken(item);
+    if (!operation || seen.has(operation)) continue;
+    seen.add(operation);
+    operations.push(operation);
+    if (operations.length === MAX_EXECUTION_OPERATIONS) break;
+  }
+  return operations;
+}
+
+function executionAccess(raw: unknown): ExecutionFacilityAccess {
+  if (!raw || typeof raw !== "object") return { kind: "none" };
+  const rec = raw as Record<string, unknown>;
+  if (rec.kind === "native") return { kind: "native" };
+  if (rec.kind === "user_surface_only") return { kind: "user_surface_only" };
+  if (rec.kind === "none") return { kind: "none" };
+  if (rec.kind !== "useagent_gateway") return { kind: "none" };
+  const operations = executionOperations(rec.operations);
+  if (rec.discovery === "direct") {
+    return { kind: "useagent_gateway", discovery: "direct", operations };
+  }
+  if (
+    rec.discovery === "compact" &&
+    rec.search === "gateway_tools_search" &&
+    rec.describe === "gateway_tool_describe" &&
+    rec.call === "gateway_tool_call"
+  ) {
+    return {
+      kind: "useagent_gateway",
+      discovery: "compact",
+      search: "gateway_tools_search",
+      describe: "gateway_tool_describe",
+      call: "gateway_tool_call",
+      operations,
+    };
+  }
+  return { kind: "none" };
+}
+
+function executionFacility(raw: unknown): ExecutionFacility {
+  const rec = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
+  const reasonCode = boundedToken(rec.reasonCode);
+  const access = executionAccess(rec.access);
+  let availability = executionAvailability(rec.availability);
+  if (
+    (availability === "ready" || availability === "on_demand") &&
+    (access.kind === "none" ||
+      (availability === "on_demand" && access.kind === "user_surface_only"))
+  ) {
+    availability = "unsupported";
+  }
+  if (availability === "unsupported") {
+    return {
+      availability,
+      access: { kind: "none" },
+      ...(reasonCode ? { reasonCode } : {}),
+    };
+  }
+  return {
+    availability,
+    access,
+    ...(reasonCode ? { reasonCode } : {}),
+  };
+}
+
+/** Normalize a v1 execution snapshot through bounded enums. Unknown versions
+ * are not guessed; malformed v1 fields fail closed to unsupported/no access. */
+export function normalizeExecutionCapabilitySnapshot(
+  raw: unknown,
+): ExecutionCapabilitySnapshot | null {
+  if (!raw || typeof raw !== "object") return null;
+  const rec = raw as Record<string, unknown>;
+  if (rec.version !== EXECUTION_CAPABILITY_VERSION) return null;
+  if (rec.runtime !== "sandbox" && rec.runtime !== "managed") return null;
+  const rawFacilities =
+    rec.facilities && typeof rec.facilities === "object"
+      ? (rec.facilities as Record<string, unknown>)
+      : {};
+  const facilities = {} as Record<keyof ExecutionFacilities, ExecutionFacility>;
+  for (const name of EXECUTION_FACILITIES) facilities[name] = executionFacility(rawFacilities[name]);
+  const workspaceRoot = boundedString(rec.workspaceRoot, MAX_WORKSPACE_ROOT_LENGTH);
+  return {
+    version: EXECUTION_CAPABILITY_VERSION,
+    runtime: rec.runtime,
+    ...(workspaceRoot ? { workspaceRoot } : {}),
+    facilities,
+  };
+}
+
 /** Parse a {@link SESSION_STARTED_EVENT_TYPE} provider-event payload into the negotiated
  *  capability map + source, or null when it carries no capabilities object. */
-export function parseSessionStartedFrame(payload: unknown): { capabilities: NegotiatedCapabilities; source?: string } | null {
-  const rec = payload as { capabilities?: unknown; source?: unknown } | null;
+export function parseSessionStartedFrame(payload: unknown): {
+  capabilities: NegotiatedCapabilities;
+  executionCapabilities?: ExecutionCapabilitySnapshot;
+  source?: string;
+} | null {
+  const rec = payload as {
+    capabilities?: unknown;
+    executionCapabilities?: unknown;
+    source?: unknown;
+  } | null;
   if (!rec || typeof rec !== "object" || rec.capabilities == null) return null;
+  const executionCapabilities = normalizeExecutionCapabilitySnapshot(rec.executionCapabilities);
   return {
     capabilities: normalizeNegotiatedCapabilities(rec.capabilities),
+    ...(executionCapabilities ? { executionCapabilities } : {}),
     ...(typeof rec.source === "string" && rec.source ? { source: rec.source } : {}),
   };
 }

@@ -2,8 +2,7 @@ import type { EngineAdapter } from "./types";
 import { composeTurnPrompt } from "./types";
 import { providerGatewayWired } from "../provider-gateway/sandbox-config";
 import { sessionCapabilities } from "./capabilities";
-import { establishProviderSession, providerSessionStartedEvent } from "./provider-turn";
-import { recordProviderEvent } from "../runs/provider-events";
+import { establishProviderSession, recordProviderSessionStarted } from "./provider-turn";
 import { prepareSandboxTurn } from "./sandbox-turn-preparation";
 import {
   runtimeRunSnapshot,
@@ -18,6 +17,7 @@ import { piBridgeManager } from "./pi-rpc-bridge";
 import { preparePiRuntime, PI_BRIDGE_GENERATION } from "./pi-runtime-config";
 import { createPiRpcFrameMapper } from "./pi-canonical";
 import { runNativeBridgeTurn } from "./native-bridge-runtime";
+import { buildExecutionCapabilitySnapshot } from "./execution-capabilities";
 
 export const piAdapter: EngineAdapter = {
   id: "pi",
@@ -43,11 +43,18 @@ export const piAdapter: EngineAdapter = {
         desktop: false,
         knowledgeTools: prepared.providerState.knowledgeTools,
       });
+      const executionCapabilities = buildExecutionCapabilitySnapshot({
+        runtime: "sandbox",
+        workspaceRoot: prepared.workdir,
+        gatewayAvailable: prepared.providerState.knowledgeTools,
+        desktopAvailability: prepared.providerState.knowledgeTools ? "on_demand" : "unsupported",
+      });
       const established = await establishProviderSession({
         driver: piProviderDriver,
         ctx,
         runtime: { kind: "sandbox", id: prepared.sandbox.id },
         capabilities,
+        executionCapabilities,
         generation: PI_BRIDGE_GENERATION,
         startMetadata: { workdir: prepared.workdir, runtime: prepared.providerState },
         persistSession: async (nativeSessionId) => {
@@ -57,17 +64,17 @@ export const piAdapter: EngineAdapter = {
       });
       const bridge = piBridgeManager.get(established.session.nativeSessionId);
       if (!bridge) throw new Error("Pi RPC bridge session is unavailable");
-      await recordProviderEvent(
-        providerSessionStartedEvent(ctx, established.session, { provider: "pi", source: "pi" }),
-        { critical: true },
-      );
+      await recordProviderSessionStarted(ctx, established.session, {
+        provider: "pi",
+        source: "pi",
+      });
       ctx.timing?.mark("dispatch");
       const summary = await runNativeBridgeTurn({
         ctx,
         driver: piProviderDriver,
         session: established.session,
         bridge,
-        prompt: composeTurnPrompt(ctx, established.resumed),
+        prompt: composeTurnPrompt(ctx, established.resumed, executionCapabilities),
         mapFrame: createPiRpcFrameMapper(`pi-message-${ctx.runId}`),
         redact: prepared.redact.text,
       });

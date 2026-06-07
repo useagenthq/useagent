@@ -5,6 +5,7 @@ import { join } from "node:path";
 import type { EmitStep, EngineAdapter, EngineRunContext } from "./types";
 import { decideAcpPermission } from "./permission-policy";
 import { composeTurnPrompt } from "./types";
+import { unsupportedExecutionCapabilitySnapshot } from "./execution-capabilities";
 import { basename, childEnv, parseJsonLine, readLines, truncate } from "./util";
 import { extractAcpToolOutput } from "./acp-content";
 import { acpToolResultFailed } from "./acp-tool-step";
@@ -350,7 +351,14 @@ export const acpAdapter: EngineAdapter = {
       await sendRequest("session/prompt", {
         sessionId,
         // Always a fresh session/new here (no resume path) — full bootstrap + turn.
-        prompt: [{ type: "text", text: composeTurnPrompt(ctx, false) }],
+        prompt: [{
+          type: "text",
+          text: composeTurnPrompt(
+            ctx,
+            false,
+            unsupportedExecutionCapabilitySnapshot("managed", ctx.workdir),
+          ),
+        }],
       });
       if (ctx.signal.aborted) throw new Error("acp run aborted (timeout)");
 
