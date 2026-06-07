@@ -159,12 +159,33 @@ export function createThreadStore(): ThreadStore {
     prev.duration_ms !== next.duration_ms ||
     (prev.uploads?.length ?? 0) !== (next.uploads?.length ?? 0);
 
+  /** Insert a NEW run id keeping `order` in canonical thread order (created_at,
+   *  then id - the backend's ordering; ISO timestamps compare lexicographically).
+   *  Arrival order is no longer chronological: windowed initial loading seeds the
+   *  root + tail first and merges older islands later, and `snapshot.runs` order
+   *  is load-bearing (the newest run anchors replies). Appends stay O(1). */
+  const insertOrdered = (run: ApiRun): void => {
+    let at = order.length;
+    while (at > 0) {
+      const prior = runs.get(order[at - 1]);
+      if (
+        !prior ||
+        prior.created_at < run.created_at ||
+        (prior.created_at === run.created_at && prior.id <= run.id)
+      ) {
+        break;
+      }
+      at--;
+    }
+    order.splice(at, 0, run.id);
+  };
+
   /** Merge one run's durable projection into its slice (add if new). Returns
    *  whether anything observable changed - an identical reconcile snapshot
    *  keeps the stored run object (and so the run's view identity) untouched. */
   const mergeRun = (run: ApiRun): boolean => {
     const prev = runs.get(run.id);
-    if (!prev) order.push(run.id);
+    if (!prev) insertOrdered(run);
     // A fresh DB read is authoritative for durable steps; ingestAll merges (dedupe
     // by native id / idx) and reports whether any step actually changed, so a
     // live-enriched step is never regressed and an identical replay never

@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
   computeRealRows,
   computeWindowRange,
+  estimateOutlineHeight,
   estimateTurnHeight,
   mergeIslets,
   rowOffsets,
@@ -185,5 +186,34 @@ describe("estimateTurnHeight", () => {
     const huge = estimateTurnHeight(turn(0, "x".repeat(50_000)));
     expect(short).toBeLessThan(long);
     expect(estimateTurnHeight(turn(0, "x".repeat(5000)))).toBe(huge);
+  });
+});
+
+describe("estimateOutlineHeight", () => {
+  test("feeds the outline's step count through the shape estimator", () => {
+    // Same work contribution as a real turn with that many steps (and the same
+    // fold cap): the outline sizes exactly like the estimator it feeds.
+    const noSummary = { hasSummary: false } as const;
+    expect(estimateOutlineHeight("completed", { stepCount: 3, ...noSummary })).toBe(
+      estimateTurnHeight({ status: "completed", summary: null, steps: [{}, {}, {}] }),
+    );
+    expect(estimateOutlineHeight("completed", { stepCount: 60, ...noSummary })).toBe(
+      estimateOutlineHeight("completed", { stepCount: 6, ...noSummary }),
+    );
+  });
+
+  test("a has-summary turn is taller than a summaryless one, via the nominal answer", () => {
+    const bare = estimateOutlineHeight("completed", { stepCount: 0, hasSummary: false });
+    const answered = estimateOutlineHeight("completed", { stepCount: 0, hasSummary: true });
+    expect(answered).toBeGreaterThan(bare);
+    expect(answered).toBe(
+      estimateTurnHeight({ status: "completed", summary: "x".repeat(250), steps: [] }),
+    );
+  });
+
+  test("queued outline turns collapse to the bare bubble height", () => {
+    expect(estimateOutlineHeight("queued", { stepCount: 5, hasSummary: false })).toBe(
+      estimateTurnHeight({ status: "queued", summary: null, steps: [] }),
+    );
   });
 });

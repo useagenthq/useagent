@@ -38,6 +38,10 @@ export interface ThreadStreamState {
    *  Returns a typed result (never swallowed to void) so callers can react to a
    *  failed fetch instead of assuming success. */
   reconcile: () => Promise<ReconcileResult>;
+  /** Merge already-decoded runs into the thread store (a windowed island fetch)
+   *  - the same applySnapshot merge the reconcile path uses, without refetching
+   *  the whole thread. */
+  mergeRuns: (runs: readonly ApiRun[]) => void;
 }
 
 /** Create + seed a store for a thread. Seeds from `initialThread` ONLY when it
@@ -180,6 +184,10 @@ export function useThreadStream(rootRunId: string, initialThread: ApiRun[]): Thr
     return { ok: true, runs };
   }, [rootRunId]);
 
+  const mergeRuns = useCallback((runs: readonly ApiRun[]) => {
+    if (runs.length > 0) storeRef.current.applySnapshot(runs);
+  }, []);
+
   useEffect(() => {
     const active = storeRef.current;
     // Coalesce SSE frames: opening a long SETTLED run replays hundreds of native
@@ -257,5 +265,5 @@ export function useThreadStream(rootRunId: string, initialThread: ApiRun[]): Thr
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rootRunId]);
 
-  return { snapshot, reconcile };
+  return { snapshot, reconcile, mergeRuns };
 }

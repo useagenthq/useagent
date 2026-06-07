@@ -438,6 +438,83 @@ describe("run threading", () => {
     expect(res.status).toBe(404);
   });
 
+  test("thread outline returns per-turn skeletons without step bodies", async () => {
+    const mine = await createOrgSession("outline-mine");
+    const other = await createOrgSession("outline-other");
+    const root = await runToCompletion({ prompt: "outline root" }, mine.cookies);
+    const reply = await runToCompletion(
+      { prompt: "outline reply", parent_run_id: root.id },
+      mine.cookies,
+    );
+
+    // From either member of the thread, the outline covers the WHOLE thread
+    // oldest→newest (mirrors `?thread=1`).
+    const fromReply = await json<{ turns: any[] }>(`/api/runs/${reply.id}/thread-outline`, {
+      cookies: mine.cookies,
+    });
+    expect(fromReply.status).toBe(200);
+    expect(fromReply.body.turns.map((t) => t.id)).toEqual([root.id, reply.id]);
+
+    // Skeleton shape only: id/status/step_count/has_summary/created_at - no
+    // steps, no prompt, no summary text, no JSON payloads.
+    const turn = fromReply.body.turns[0];
+    expect(turn.status).toBe("completed");
+    expect(turn.step_count).toBe(8); // the scripted worker persists 8 steps
+    expect(turn.has_summary).toBe(true);
+    expect(typeof turn.created_at).toBe("string");
+    expect(turn).not.toHaveProperty("steps");
+    expect(turn).not.toHaveProperty("prompt");
+    expect(turn).not.toHaveProperty("summary");
+    expect(turn).not.toHaveProperty("code_json");
+
+    // Org isolation: another org's session sees a 404, same as `?thread=1`.
+    const crossOrg = await json(`/api/runs/${root.id}/thread-outline`, {
+      cookies: other.cookies,
+    });
+    expect(crossOrg.status).toBe(404);
+  });
+
+  test("windowed turns fetch returns full turns for requested ids only", async () => {
+    const mine = await createOrgSession("turns-mine");
+    const other = await createOrgSession("turns-other");
+    const root = await runToCompletion({ prompt: "turns root" }, mine.cookies);
+    const reply = await runToCompletion(
+      { prompt: "turns reply", parent_run_id: root.id },
+      mine.cookies,
+    );
+    const otherThread = await runToCompletion({ prompt: "another thread" }, mine.cookies);
+    const foreign = await runToCompletion({ prompt: "foreign org run" }, other.cookies);
+
+    // The requested subset comes back oldest→newest in the SAME ApiRun shape as
+    // `?thread=1` (full steps - one wire shape); ids from a different thread or
+    // another org are dropped, never leaked.
+    const windowed = await json<{ turns: any[] }>(
+      `/api/runs/${root.id}/turns?ids=${[reply.id, root.id, otherThread.id, foreign.id].join(",")}`,
+      { cookies: mine.cookies },
+    );
+    expect(windowed.status).toBe(200);
+    expect(windowed.body.turns.map((t) => t.id)).toEqual([root.id, reply.id]);
+    expect(windowed.body.turns[0].prompt).toBe("turns root");
+    expect(windowed.body.turns[0].thread_id).toBe(root.id);
+    expect(windowed.body.turns[0].steps.length).toBe(8);
+    expect(windowed.body.turns[0].steps[0]).toHaveProperty("run_id", root.id);
+
+    // Bounds: ids are required and capped.
+    const missing = await json(`/api/runs/${root.id}/turns`, { cookies: mine.cookies });
+    expect(missing.status).toBe(400);
+    const tooMany = await json(
+      `/api/runs/${root.id}/turns?ids=${Array.from({ length: 31 }, () => crypto.randomUUID()).join(",")}`,
+      { cookies: mine.cookies },
+    );
+    expect(tooMany.status).toBe(400);
+
+    // Org isolation: another org's session sees a 404 for the thread anchor.
+    const crossOrg = await json(`/api/runs/${root.id}/turns?ids=${root.id}`, {
+      cookies: other.cookies,
+    });
+    expect(crossOrg.status).toBe(404);
+  });
+
   test("engine context preamble walks the thread without nesting", async () => {
     const root = await runToCompletion({ prompt: "first ask" });
     const queuedId = crypto.randomUUID();

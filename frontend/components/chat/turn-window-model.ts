@@ -180,3 +180,22 @@ export function estimateTurnHeight(turn: {
   const answer = turn.summary ? Math.min(120 + Math.round(turn.summary.length * 0.4), 480) : 40;
   return 150 + work + answer;
 }
+
+/** Nominal answer length for a not-yet-loaded turn that HAS a summary: the
+ *  outline carries only a flag, so the placeholder assumes a typical answer and
+ *  the measured height replaces the estimate once the turn's island loads. */
+const OUTLINE_NOMINAL_SUMMARY = "x".repeat(250);
+
+/** Placeholder height for a turn known only by its OUTLINE skeleton (windowed
+ *  initial loading): the same shape estimate as estimateTurnHeight, fed the
+ *  outline's step count and has-summary flag instead of real steps/summary. */
+export function estimateOutlineHeight(
+  status: string,
+  outline: { readonly stepCount: number; readonly hasSummary: boolean },
+): number {
+  return estimateTurnHeight({
+    status,
+    summary: outline.hasSummary ? OUTLINE_NOMINAL_SUMMARY : null,
+    steps: new Array<unknown>(Math.max(0, outline.stepCount)),
+  });
+}

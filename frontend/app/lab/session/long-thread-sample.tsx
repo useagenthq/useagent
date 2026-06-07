@@ -1,17 +1,18 @@
 "use client";
 
-// /lab/session "long thread" harness: the REAL Conversation fed 80 synthetic
+// /lab/session "long thread" harness: the REAL Conversation fed up to 1,000 synthetic
 // settled turns, so the turn-window rendering (placeholder rows sized from the
 // measured-height cache, anchor-stabilized scroll, the short-thread bypass
 // threshold being exceeded) can be reviewed and profiled visually. Nothing here
 // reimplements a renderer - it only feeds the production component.
 
-import { useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Conversation, type Turn } from "@/components/chat/conversation";
 import type { ApiRun, ApiStep } from "@/components/chat/types";
 import { sampleStep } from "./session-sample-data";
 
-const LONG_THREAD_TURNS = 80;
+const LONG_THREAD_TURNS = 1_000;
+const DEFAULT_THREAD_TURNS = 30;
 
 // Deterministic content (never Date.now/random): SSR and client must agree.
 const T0 = Date.parse("2026-08-18T10:00:00.000Z");
@@ -117,11 +118,82 @@ function makeTurn(index: number): Turn {
 const longThreadTurns: Turn[] = Array.from({ length: LONG_THREAD_TURNS }, (_, i) => makeTurn(i));
 
 export function LongThreadSample() {
-  const [turnCount, setTurnCount] = useState(LONG_THREAD_TURNS);
+  const [turnCount, setTurnCount] = useState(DEFAULT_THREAD_TURNS);
+  const [metrics, setMetrics] = useState<Record<string, number> | null>(null);
+  const surfaceRef = useRef<HTMLDivElement>(null);
+  const renderStartedRef = useRef<number | null>(null);
+  const longTasksRef = useRef({ count: 0, duration: 0 });
+
+  // Opt-in browser perf probe: `/lab/session?turns=1000` uses the exact same
+  // deterministic fixture and production Conversation, then publishes measured
+  // render/scroll/DOM evidence into the DOM for a headless-browser capture.
+  useEffect(() => {
+    const observer = new PerformanceObserver((list) => {
+      for (const entry of list.getEntries()) {
+        longTasksRef.current.count += 1;
+        longTasksRef.current.duration += entry.duration;
+      }
+    });
+    if (PerformanceObserver.supportedEntryTypes.includes("longtask")) {
+      observer.observe({ entryTypes: ["longtask"] });
+    }
+    const requested = Number(new URLSearchParams(window.location.search).get("turns"));
+    if ([100, 1_000].includes(requested)) {
+      requestAnimationFrame(() => {
+        const measureTarget = () => {
+          renderStartedRef.current = performance.now();
+          setTurnCount(requested);
+        };
+        if (requested === turnCount) {
+          setTurnCount(31);
+          setTimeout(measureTarget, 50);
+        } else {
+          measureTarget();
+        }
+      });
+    }
+    return () => observer.disconnect();
+  }, []);
+
+  useLayoutEffect(() => {
+    const surface = surfaceRef.current;
+    if (!surface) return;
+    let firstFrame = 0;
+    let secondFrame = 0;
+    firstFrame = requestAnimationFrame(() => {
+      secondFrame = requestAnimationFrame(() => {
+        const renderMs = performance.now() - (renderStartedRef.current ?? performance.now());
+        const viewport = surface.querySelector<HTMLElement>(".scrollbar-slim");
+        const scrollStarted = performance.now();
+        if (viewport) viewport.scrollTop = Math.max(0, viewport.scrollHeight / 2);
+        requestAnimationFrame(() =>
+          requestAnimationFrame(() => {
+            setMetrics({
+              turns: turnCount,
+              render_ms: Number(renderMs.toFixed(2)),
+              scroll_ms: Number((performance.now() - scrollStarted).toFixed(2)),
+              dom_nodes: surface.querySelectorAll("*").length,
+              turn_rows: surface.querySelectorAll("[data-turn-row]").length,
+              placeholders: surface.querySelectorAll('[data-testid="turn-placeholder"]').length,
+              long_tasks: longTasksRef.current.count,
+              long_task_ms: Number(longTasksRef.current.duration.toFixed(2)),
+              scroll_height: viewport?.scrollHeight ?? 0,
+              viewport_height: viewport?.clientHeight ?? 0,
+            });
+          }),
+        );
+      });
+    });
+    return () => {
+      cancelAnimationFrame(firstFrame);
+      cancelAnimationFrame(secondFrame);
+    };
+  }, [turnCount]);
+
   return (
     <div className="space-y-2">
       <fieldset className="flex items-center gap-2" aria-label="Long-thread turn count">
-        {[30, 31, LONG_THREAD_TURNS].map((count) => (
+        {[DEFAULT_THREAD_TURNS, 31, 100, LONG_THREAD_TURNS].map((count) => (
           <button
             key={count}
             type="button"
@@ -134,7 +206,12 @@ export function LongThreadSample() {
           </button>
         ))}
       </fieldset>
-      <div className="h-[76vh] overflow-hidden rounded-2xl border border-border-button-default bg-background-primary-default">
+      {metrics && <output data-testid="long-thread-perf">{JSON.stringify(metrics)}</output>}
+      <div
+        ref={surfaceRef}
+        data-testid="long-thread-surface"
+        className="h-[76vh] overflow-hidden rounded-2xl border border-border-button-default bg-background-primary-default"
+      >
         <Conversation
           turns={longThreadTurns.slice(0, turnCount)}
           defaultEngine="opencode"
