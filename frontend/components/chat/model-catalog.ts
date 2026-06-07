@@ -45,7 +45,7 @@ export const FREE_MODELS: { value: string; label: string; tint: string }[] = [
     label: "Nemotron 3.5 Lightning",
     tint: "text-lime-500",
   },
-  { value: "thinkingmachines/inkling:free", label: "Inkling", tint: "text-emerald-500" },
+  { value: "minimax/minimax-m3:free", label: "MiniMax M3", tint: "text-emerald-500" },
   { value: "poolside/laguna-s-2.1:free", label: "Laguna S 2.1", tint: "text-rose-500" },
   {
     value: "inclusionai/ling-3.0-flash-fin:free",
