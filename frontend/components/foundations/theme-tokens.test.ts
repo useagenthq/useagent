@@ -83,24 +83,31 @@ describe("shared theme tokens", () => {
   });
 
   test("dark theme maps the Midnight ramp through the legacy semantic tokens", () => {
-    // The Midnight (Tokyo-Night-derived) elevation inversion: a blue-tinted
-    // ladder (panel #1a1b26, inset #16161e), not the original neutral gray ramp.
-    expect(resolveToken(darkTokens, "--bg-white-0")).toBe("235 18.75% 12.55%");
-    expect(resolveToken(darkTokens, "--bg-weak-50")).toBe("240 15.38% 10.2%");
-    expect(resolveToken(darkTokens, "--bg-soft-200")).toBe("240 15.38% 10.2%");
-    expect(resolveToken(darkTokens, "--bg-sub-300")).toBe("232.5 21.05% 14.9%");
+    // The Midnight (Tokyo-Night-derived) elevation inversion, lifted off
+    // near-black to a layered graphite-indigo ladder (panel #1f212d, inset
+    // #1b1c25), not the original neutral gray ramp.
+    expect(resolveToken(darkTokens, "--bg-white-0")).toBe("231.43 18.42% 14.9%");
+    expect(resolveToken(darkTokens, "--bg-weak-50")).toBe("234 15.63% 12.55%");
+    expect(resolveToken(darkTokens, "--bg-soft-200")).toBe("234 15.63% 12.55%");
+    expect(resolveToken(darkTokens, "--bg-sub-300")).toBe("230.53 20.43% 18.24%");
 
-    expect(resolveToken(darkTokens, "--text-strong-950")).toBe("228.68 72.6% 85.69%");
-    expect(resolveToken(darkTokens, "--text-sub-600")).toBe("232.73 13.92% 53.53%");
-    expect(resolveToken(darkTokens, "--text-soft-400")).toBe("229.41 22.87% 43.73%");
-    expect(resolveToken(darkTokens, "--text-disabled-300")).toBe("229.23 23.08% 33.14%");
+    expect(resolveToken(darkTokens, "--text-strong-950")).toBe("228.57 72.41% 88.63%");
+    expect(resolveToken(darkTokens, "--text-sub-600")).toBe("232.11 19.39% 61.57%");
+    expect(resolveToken(darkTokens, "--text-soft-400")).toBe("229.29 22.76% 48.24%");
+    expect(resolveToken(darkTokens, "--text-disabled-300")).toBe("229.33 23.81% 37.06%");
 
-    expect(resolveToken(darkTokens, "--stroke-soft-200")).toBe("228 23.36% 20.98%");
-    expect(resolveToken(darkTokens, "--stroke-sub-300")).toBe("229.23 23.08% 33.14%");
+    expect(resolveToken(darkTokens, "--stroke-soft-200")).toBe("228.75 24.24% 25.88%");
+    expect(resolveToken(darkTokens, "--stroke-sub-300")).toBe("229.33 23.81% 37.06%");
     expect(resolveToken(darkTokens, "--primary-base")).toBe("216.23 100% 58.43%");
     expect(resolveToken(darkTokens, "--verified-dark")).toBe("202.15 100% 74.51%");
     expect(resolveToken(darkTokens, "--success-dark")).toBe("88.8 50.51% 61.18%");
     expect(resolveToken(darkTokens, "--error-dark")).toBe("348.84 88.97% 71.57%");
+
+    // WCAG AA on the lifted surfaces: primary and muted text against the
+    // canvas (#1f212d) and raised (#252838) steps.
+    expect(contrast("#cdd5f7", "#1f212d")).toBeGreaterThanOrEqual(7);
+    expect(contrast("#8a8fb0", "#1f212d")).toBeGreaterThanOrEqual(4.5);
+    expect(contrast("#8a8fb0", "#252838")).toBeGreaterThanOrEqual(4.5);
   });
 
   test("dark theme preserves readable foreground contrast on BoardUI surfaces", () => {
