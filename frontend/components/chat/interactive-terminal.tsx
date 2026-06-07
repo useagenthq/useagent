@@ -182,7 +182,7 @@ export function InteractiveTerminal({ runId }: { runId: string }) {
           // Swallow the backend's repeated idle notices - we show a single calm
           // waiting line (below) instead of letting them spam each reconnect.
           // Covers the "no live sandbox" notice and the older red
-          // "[skynet] Sandbox <id> not found" variant from the provider.
+          // "[useAgent] Sandbox <id> not found" variant from the provider.
           if (isIdleTerminalNotice(text)) {
             idleNoticeSeen = true;
             return;

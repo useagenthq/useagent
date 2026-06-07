@@ -22,9 +22,9 @@ export function GeneralCard() {
   return (
     <>
       <div className="mb-4 flex items-center gap-3">
-        <Avatar size="lg" className={cx("size-12 text-[18px]", AVATAR_GRADIENT)} initials="A" />
+        <Avatar size="lg" className={cx("size-12 text-[18px]", AVATAR_GRADIENT)} initials="U" />
         <div className="min-w-0 flex-1">
-          <p className="truncate text-body-2-medium text-text-primary">Dev User</p>
+          <p className="truncate text-body-2-medium text-text-primary">Your Name</p>
           <p className="truncate text-caption-1-regular text-text-secondary">you@example.com</p>
         </div>
         <Button className="rounded-full" variant="secondary" size="xs" leadingIcon={RiPencilLine}>
@@ -34,7 +34,7 @@ export function GeneralCard() {
 
       <SettingsCard>
         <SettingsRow label="Name">
-          <InputBase size="small" aria-label="Name" defaultValue="Dev User" fieldClassName={INPUT_WIDTH} />
+          <InputBase size="small" aria-label="Name" defaultValue="Your Name" fieldClassName={INPUT_WIDTH} />
         </SettingsRow>
         <SettingsRow label="Email">
           <InputBase

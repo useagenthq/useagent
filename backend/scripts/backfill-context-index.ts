@@ -9,7 +9,7 @@
  *
  * Usage:
  *   # one org (the admin/target org):
- *   ORG_ID=org-skynet-dev bun run backend/scripts/backfill-context-index.ts
+ *   ORG_ID=org-useAgent-dev bun run backend/scripts/backfill-context-index.ts
  *   # every org present across the stores:
  *   bun run backend/scripts/backfill-context-index.ts --all
  *

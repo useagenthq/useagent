@@ -25,7 +25,7 @@ schedulesRoutes.get("/", async (c) => {
   return c.json({ automations, schedules: automations });
 });
 
-// Create a schedule. `enabled` is always FALSE on create (reference bot's safety
+// Create a schedule. `enabled` is always FALSE on create (a peer tool's safety
 // default) so a new schedule never auto-fires until explicitly enabled.
 schedulesRoutes.post("/", async (c) => {
   let body: Record<string, unknown>;

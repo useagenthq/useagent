@@ -1,7 +1,7 @@
 // Phase 1 slice-3b gate: a settled OpenCode run populates the canonical lane. Proves
 // finalizeRun (the one terminal seam) translates the run's native frames + durable
 // steps into canonical events and persists them ALONGSIDE the native lane - post-commit,
-// best-effort, idempotent. DB-backed (skynet_test).
+// best-effort, idempotent. DB-backed (useAgent_test).
 
 import { describe, expect, test, beforeAll } from "bun:test";
 import { sql } from "drizzle-orm";

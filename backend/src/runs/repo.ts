@@ -237,7 +237,7 @@ export async function getRun(id: string): Promise<RunRecord | null> {
   return row ?? null;
 }
 
-/** Persist the engine's own session id for a run (reference bot's
+/** Persist the engine's own session id for a run (a peer tool's
  * set_resume_session_id model, durably) so the thread's next turn can resume the
  * engine's native conversation explicitly by id. */
 export async function setRunEngineSession(

@@ -2,7 +2,7 @@
 
 Aggressive browser-level end-to-end sweep of the useAgent product UI. Playwright
 headless (system Chrome, `channel: "chrome"`) drives the **real** frontend against
-a **real** backend + `skynet` DB — no mocking of app code. Only two failure
+a **real** backend + `useAgent` DB — no mocking of app code. Only two failure
 injections use `page.route` (aborting a `/api/runs` POST) to exercise the
 composers' failed-send handling; everything else is genuine.
 
@@ -41,7 +41,7 @@ empty/error — with zero fabricated strings. `cleanup.ts` deletes every fixture
    Sign in), `/api/config` honesty, `ALLOW_DEV_ORG` keeps the API working
    unauthenticated, anonymous user-menu shows "Sign in" not "Log out".
 10. **Rail dragger** — drag the separator resizes the rail + persists to
-    `localStorage["skynet.rail-width"]`, restored on reload.
+    `localStorage["useAgent.rail-width"]`, restored on reload.
 11. **Session a11y smoke** — no uncaught JS / console errors and no 404 resource
     requests on load + stream.
 12. **Skills** — seeds a real skill (`POST /api/skills`), asserts the library
@@ -69,7 +69,7 @@ empty/error — with zero fabricated strings. `cleanup.ts` deletes every fixture
 Requires an **isolated stack** (never touch shared dev servers):
 
 ```bash
-# backend on :3513 against the real `skynet` DB, memory disabled to avoid
+# backend on :3513 against the real `useAgent` DB, memory disabled to avoid
 # polluting shared team memory:
 cd backend && PORT=3513 MEMORY_API_URL="" FRONTEND_ORIGIN="http://localhost:3200" bun src/index.ts
 
@@ -89,7 +89,7 @@ WF_RID=<warm-opencode-run-id> bun backend/test/e2e/ui-sweep/sweep.ts   # reuse a
 
 # clean up EVERY throwaway fixture it created (only rows tagged 'uisweep' —
 # runs, skills, schedules, knowledge records + wiki documents):
-DATABASE_URL=postgres://postgres@localhost:5432/skynet bun backend/test/e2e/ui-sweep/cleanup.ts
+DATABASE_URL=postgres://postgres@localhost:5432/useAgent bun backend/test/e2e/ui-sweep/cleanup.ts
 ```
 
 Real opencode fixtures use `model: claude-haiku-4-5` (cheap/fast). Every fixture

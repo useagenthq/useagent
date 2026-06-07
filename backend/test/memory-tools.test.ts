@@ -280,7 +280,7 @@ describe("memory_correct / memory_forget", () => {
       orgId: "org-internal",
       userId: "u-1",
       scope: "org",
-      origin: "internal:t3-parity",
+      origin: "internal:release-parity",
     });
     const res = await executeMemoryTool(claimsFor(run, "org-internal"), "memory_correct", {
       memoryRef: "tencent:l1:fact-internal",

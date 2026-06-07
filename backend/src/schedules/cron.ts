@@ -1,5 +1,5 @@
-// Ported from reference bot (Apache-2.0): src/kiro_crew/cron.py
-// reference bot's `cron_expr_matches` / `validate_cron_expr` delegate to the croniter
+// Ported from a peer tool (Apache-2.0): src/kiro_crew/cron.py
+// a peer tool's `cron_expr_matches` / `validate_cron_expr` delegate to the croniter
 // dependency; here they are reimplemented as a dependency-free 5-field matcher
 // with the same semantics (standard Vixie cron, including the dom/dow OR rule).
 

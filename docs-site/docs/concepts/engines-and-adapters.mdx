@@ -51,7 +51,7 @@ turns it on (off unless `1` or `true`), and `RUNTIME_RUN_ADAPTER_MODE` chooses
 (`backend/src/engines/runtime-adapter.ts`). With no
 `RUNTIME_RUN_ADAPTER_ENGINES` list configured, the runtime lane covers codex and
 opencode while claude stays on the ACP compatibility path. The shipped
-deployment enables the lane in `mode=all` (`deploy/hetzner/configure-host.sh`).
+deployment enables the lane in `mode=all` (the provisioning scripts).
 
 The production worker resolves an engine registry before each turn. Native
 OpenCode and selected runtime-path routes receive a concrete `ProviderDriver`;

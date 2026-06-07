@@ -244,7 +244,7 @@ describe("durable command lane", () => {
         `internal-parent:${crypto.randomUUID()}`,
         runIntentForTest("internal parent"),
       ),
-      origin: "internal:t3-parity",
+      origin: "internal:release-parity",
     });
     const child = await createChildSession({
       orgId: ORG,
@@ -265,7 +265,7 @@ describe("durable command lane", () => {
       .from(runs)
       .where(eq(runs.id, child.child.id))
       .limit(1);
-    expect(row?.origin).toBe("internal:t3-parity");
+    expect(row?.origin).toBe("internal:release-parity");
     await retire(parentId);
     await retire(child.child.id);
   });

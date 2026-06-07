@@ -1,8 +1,8 @@
 /**
  * Corrected text for the sandbox `/memory` skill (new_mem_prompt.md section 7).
  *
- * The v17 snapshot ships `/opt/skynet/skills/memory/SKILL.md` claiming
- * `/root/.skynet/memory.md` "is synced back to the user's account (in Postgres)
+ * The v17 snapshot ships `/opt/useAgent/skills/memory/SKILL.md` claiming
+ * `/root/.useAgent/memory.md` "is synced back to the user's account (in Postgres)
  * and reloaded into your next session ... synced automatically when the task
  * ends". That is FALSE: the sandbox file is ephemeral working state, never the
  * memory authority. Real persistence lives behind useAgent's memory TOOLS, backed
@@ -16,7 +16,7 @@ export const MEMORY_SKILL_PATH = "/opt/skynet/skills/memory/SKILL.md";
  * Pick the skill text for a run by whether the useAgent memory TOOLS are actually
  * wired into this sandbox. When the trusted gateway is NOT injected (e.g.
  * GATEWAY_PUBLIC_URL unset), an agent with no tools was observed improvising
- * a local `/root/.skynet/memory.md` write and FALSELY telling the user "saved to
+ * a local `/root/.useAgent/memory.md` write and FALSELY telling the user "saved to
  * memory" - so the no-tools variant explicitly forbids that and tells the truth:
  * memory is captured automatically at session end, nothing is saved on demand.
  */

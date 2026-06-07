@@ -123,7 +123,7 @@ export async function distill(meta: SourceMeta, canonicalSource: string): Promis
     headers: {
       "content-type": "application/json",
       authorization: `Bearer ${apiKey}`,
-      "HTTP-Referer": "https://github.com/skynet-saas/knowledge", // OpenRouter attribution
+      "HTTP-Referer": "https://github.com/useagenthq/useagent", // OpenRouter attribution
       "X-Title": "useAgent Knowledge",
     },
     body: JSON.stringify({

@@ -13,8 +13,8 @@ import type { ToolTokenClaims } from "./token";
 // resolve the same immutable bytes; the bot token never leaves the backend, and
 // identity (org/thread/run) comes only from the verified gateway token.
 //
-// Ported from the QM bot (files.uploadV2, reference-eval src/slack/attachments.ts) and
-// reference-bot (files_upload_v2, client.py:354). Deviations forced by useAgent's
+// Ported from the QM bot (files.uploadV2, a reference implementation src/slack/attachments.ts) and
+// a reference bot (files_upload_v2, client.py:354). Deviations forced by useAgent's
 // architecture: sources upload from a local path; our file is in a remote
 // sandbox, so the trusted backend performs one bounded pull into shared artifact
 // storage, then the crash-durable outbox references that artifact id.

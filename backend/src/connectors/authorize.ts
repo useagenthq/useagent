@@ -1,12 +1,12 @@
-// Ported from reference bot (Apache-2.0): src/kiro_crew/slack/transport.py (authorize)
-// Ported from reference bot (Apache-2.0): src/kiro_crew/telegram/transport.py (authorize)
+// Ported from a peer tool (Apache-2.0): src/kiro_crew/slack/transport.py (authorize)
+// Ported from a peer tool (Apache-2.0): src/kiro_crew/telegram/transport.py (authorize)
 //
 // The deny-by-default allow-list model, extracted into one reusable primitive.
 
 /**
  * A deny-by-default owner allow-list, frozen at construction.
  *
- * Ports reference bot's transport `authorize` model: every concrete transport copies
+ * Ports a peer tool's transport `authorize` model: every concrete transport copies
  * its allow-list into an immutable set at construction (`frozenset(...)`) so the
  * list can never mutate under an in-flight authorization decision, and an
  * UNCONFIGURED transport (empty allow-list) authorizes NOBODY — never everybody

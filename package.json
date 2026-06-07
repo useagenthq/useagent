@@ -5,11 +5,6 @@
   "scripts": {
     "dev:frontend": "bun run --cwd frontend dev",
     "dev:backend": "bun run --cwd backend dev",
-    "stage:t3-dist": "bash deploy/hetzner/stage-t3-dist.sh",
-    "canary:hosted-release": "bun run deploy/hetzner/hosted-release-canary.ts",
-    "release:provider-connection-bootstrap": "bash deploy/hetzner/deploy-provider-connection-bootstrap.sh",
-    "release:hosted": "bash deploy/hetzner/deploy-release.sh",
-    "deploy:hosted": "bash deploy/hetzner/deploy-fast.sh",
     "typecheck": "bun run --cwd frontend typecheck && (cd backend && bunx tsc --noEmit) && bun run --cwd backend typecheck:release && (cd packages/sandbox-contract && bunx tsc --noEmit) && (cd packages/artifact-workspace && bunx tsc --noEmit) && (cd packages/artifact-formats && bunx tsc --noEmit) && (cd packages/agent-harness && bunx tsc --noEmit) && (cd packages/agent-client && bunx tsc --noEmit) && (cd packages/conformance && bunx tsc --noEmit) && (cd packages/cli && bunx tsc --noEmit)"
   }
 }

@@ -194,7 +194,7 @@ async function provisionSandboxDesktopView(
 
 /** The engine and the Desktop iframe can discover the same cold sandbox at the
  * same time. Serialize only the view lifecycle repair per sandbox: without this,
- * two callers can both delete/recreate `skynet-desktop`, and the second repair
+ * two callers can both delete/recreate `useAgent-desktop`, and the second repair
  * kills Chrome underneath the first caller's already-running MCP tool. Browser
  * MCP installation stays outside this lock so opening Desktop never waits for
  * an unrelated npm install on genuinely old snapshots. */

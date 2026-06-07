@@ -226,7 +226,7 @@ describe("canonical context markers", () => {
   });
 });
 
-// Memory tool chips (provider "skynet-memory", frozen contract in
+// Memory tool chips (provider "useAgent-memory", frozen contract in
 // backend/src/knowledge/gateway/memory-tools.ts MEMORY_EVENTS).
 function memoryFrame(eventId: string, seq: number, eventType: string, payload: unknown): NativeFrame {
   return { ...frame(eventId, seq, eventType, {}, payload), provider: "skynet-memory" };

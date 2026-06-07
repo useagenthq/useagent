@@ -35,7 +35,7 @@ import { cx as cn } from "@/utils/cx";
 
 /**
  * The right-rail "Agents" tab: one card per fanned-out subagent, mirroring
- * the reference tool's session view. Each card renders through the vendored T3 fleet row
+ * a live session view. Each card renders through the vendored T3 fleet row
  * (`session-ui/agent-panel-row`): status dot, current/last activity line, elapsed,
  * token usage when known, result preview once settled — and, crucially, its OWN
  * run-state.

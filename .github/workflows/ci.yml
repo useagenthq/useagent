@@ -111,10 +111,6 @@ jobs:
       - name: PostgreSQL identity deploy contracts
         run: >-
           bun test
-          ./deploy/hetzner/migrate-postgres-identity.test.ts
-          ./deploy/hetzner/postgres-identity-contract.test.ts
-          ./deploy/hetzner/useagent-backup.test.ts
-          ./deploy/hetzner/gateway-db-grants.test.ts
           ./backend/src/db/gateway-grants.test.ts
           ./backend/src/commands/admission-ownership.test.ts
       # `bun run test` = prepare-db (DROP+CREATE useagent_test) then `bun test`.

@@ -28,7 +28,7 @@ equivalent), bun, Node, Docker, PostgreSQL 16 with pgvector, and Caddy.
 
 Either path yields a signed-in web UI with model-backed chat. Full production
 operation (release gates, backups, systemd units) is documented in
-[`deploy/hetzner/`](../../deploy/hetzner/) - despite the directory name,
+The provisioning scripts (host setup, systemd units, sandbox image) -
 those scripts address the host by SSH and are provider-agnostic.
 
 ## Choosing a sandbox provider
@@ -39,7 +39,7 @@ one contract (`SANDBOX_PROVIDER`):
 | Provider | What it is | Host requirements |
 |---|---|---|
 | **Daytona** (`SANDBOX_PROVIDER=daytona`) | Managed sandboxes as a service - the sandbox fleet runs on Daytona's infrastructure. | None beyond an API key. Pairs with a control-plane host on **any** cloud (AWS, GCP, a small VM anywhere). The easiest start. |
-| **CubeSandbox** (`SANDBOX_PROVIDER=cube`) | Self-hosted sandbox runtime (Docker-based, E2B-compatible protocol) - the sandbox fleet runs on your own hardware. | A beefy host or separate machine (the reference deployment uses a dedicated Hetzner server), a baked sandbox template, and the cube-* services from `deploy/hetzner/`. Full data locality, no per-sandbox SaaS costs. |
+| **CubeSandbox** (`SANDBOX_PROVIDER=cube`) | Self-hosted sandbox runtime (Docker-based, E2B-compatible protocol) - the sandbox fleet runs on your own hardware. | A beefy host or separate machine (the reference deployment uses a dedicated Hetzner server), a baked sandbox template, and the cube-* sandbox services. Full data locality, no per-sandbox SaaS costs. |
 
 Start with Daytona to get running quickly; move to CubeSandbox when you want
 the fleet on your own metal.

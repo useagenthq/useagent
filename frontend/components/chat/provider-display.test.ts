@@ -3,7 +3,7 @@ import { providerDisplayName } from "./provider-display";
 
 describe("providerDisplayName", () => {
   test("maps the gateway wire id to the product name", () => {
-    // The gateway registers under the coupled wire name "skynet-knowledge"
+    // The gateway registers under the coupled wire name "useAgent-knowledge"
     // (SERVER_INFO, mcp registration, permission prefixes, retained sandboxes);
     // only the DISPLAYED label changes, never the wire value.
     expect(providerDisplayName("skynet-knowledge")).toBe("useAgent");

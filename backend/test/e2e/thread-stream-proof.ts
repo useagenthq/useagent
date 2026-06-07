@@ -12,7 +12,7 @@
  *   - PREFLIGHT: both ports must be FREE before any DB mutation or spawn; if either
  *     is occupied the run aborts WITHOUT killing anything (it never assumes the PID
  *     is ours - Codex E2E hardening).
- *   - per-run UNIQUE throwaway DB `skynet_thread_e2e_<hex>`, dropped only after the
+ *   - per-run UNIQUE throwaway DB `useAgent_thread_e2e_<hex>`, dropped only after the
  *     admin host is validated local (or an explicit remote opt-in is set).
  *   - backend on :3577 (mock engine, WORKER_STEP_DELAY_MS=1000 so turns are slow
  *     enough to reply mid-stream), SLACK/MEMORY/DAYTONA/OPENROUTER stripped.

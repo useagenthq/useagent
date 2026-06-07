@@ -1,7 +1,7 @@
 // Gate 1 (Phase 1 closure): the single-backend guard. Canonicalization sealing + the
 // realtime SSE fan-out are process-local, so exactly one backend per database is supported
 // for this release. The guard is a per-database Postgres advisory lock held for the process
-// lifetime. Importing helpers boots src/index, which already acquired the skynet_test
+// lifetime. Importing helpers boots src/index, which already acquired the useAgent_test
 // singleton lock - so a SECOND enforceSingleBackend() here must observe the lock as HELD.
 
 import { describe, expect, test } from "bun:test";
