@@ -1,7 +1,7 @@
 /**
  * The Free model lane: zero-cost OpenRouter ":free" variants, derived from the
- * PUBLIC model catalog (no API key required) at runtime so newly published free
- * models appear without a deploy. Policy reads stay synchronous - they serve
+ * PUBLIC model catalog (no API key required) at runtime so hosted-proven free
+ * models track current availability. Policy reads stay synchronous - they serve
  * the last-good lane (or the curated seed) from process memory - while a
  * TTL-gated, single-flight refresh updates it in the background. A failed,
  * empty, or malformed catalog fetch NEVER shrinks the lane and never throws to
@@ -21,16 +21,25 @@ const FAILED_FETCH_RETRY_MS = 60 * 1000;
 const FORCE_REFRESH_COOLDOWN_MS = 30 * 1000;
 const LANE_CAP = 8;
 const MIN_CONTEXT_LENGTH = 65_536;
-// Catalog-visible but rejected by OpenRouter for this hosted application even
-// when invoked through the full OpenCode harness (release canary 2026-08-27).
-const INCOMPATIBLE_HOSTED_MODEL_PREFIXES = ["thinkingmachines/"];
+// Admission requires both public-catalog eligibility and a successful hosted
+// agent-path probe. OpenRouter metadata alone does not expose app restrictions
+// or immediate free-tier throttling, so unproven new entries never auto-ship.
+export const HOSTED_VERIFIED_FREE_MODELS = [
+  "minimax/minimax-m3:free",
+  "nvidia/nemotron-3-ultra-550b-a55b:free",
+  "nvidia/nemotron-3.5-lightning:free",
+  "dots-studio/dots-3-note-preview:free",
+  "nvidia/nemotron-3-super-120b-a12b:free",
+  "inclusionai/ling-3.0-flash-fin:free",
+] as const;
+const HOSTED_VERIFIED_FREE_MODEL_SET = new Set<string>(HOSTED_VERIFIED_FREE_MODELS);
 
 /** Curated fallback lane (verified tool-capable free models): the boot state
  * and the safety net whenever the live catalog is unreachable or garbage. */
 export const FREE_MODEL_LANE_SEED = [
   "nvidia/nemotron-3.5-lightning:free",
   "minimax/minimax-m3:free",
-  "poolside/laguna-s-2.1:free",
+  "nvidia/nemotron-3-super-120b-a12b:free",
   "inclusionai/ling-3.0-flash-fin:free",
 ] as const;
 
@@ -79,7 +88,7 @@ export function deriveFreeModelLane(catalog: unknown): string[] {
       supported_parameters?: unknown;
     };
     if (typeof entry.id !== "string" || !entry.id.endsWith(":free")) continue;
-    if (INCOMPATIBLE_HOSTED_MODEL_PREFIXES.some((prefix) => entry.id.startsWith(prefix))) continue;
+    if (!HOSTED_VERIFIED_FREE_MODEL_SET.has(entry.id)) continue;
     if (
       typeof entry.context_length !== "number" ||
       entry.context_length < MIN_CONTEXT_LENGTH
