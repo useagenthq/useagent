@@ -29,7 +29,6 @@ export const HOSTED_VERIFIED_FREE_MODELS = [
   "nvidia/nemotron-3-ultra-550b-a55b:free",
   "dots-studio/dots-3-note-preview:free",
   "nvidia/nemotron-3-super-120b-a12b:free",
-  "inclusionai/ling-3.0-flash-fin:free",
 ] as const;
 const HOSTED_VERIFIED_FREE_MODEL_SET = new Set<string>(HOSTED_VERIFIED_FREE_MODELS);
 
@@ -39,7 +38,7 @@ export const FREE_MODEL_LANE_SEED = [
   "nvidia/nemotron-3-ultra-550b-a55b:free",
   "minimax/minimax-m3:free",
   "nvidia/nemotron-3-super-120b-a12b:free",
-  "inclusionai/ling-3.0-flash-fin:free",
+  "dots-studio/dots-3-note-preview:free",
 ] as const;
 
 /** Minimal fetch seam so tests inject a fixture catalog (never live network). */
