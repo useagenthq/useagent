@@ -12,13 +12,15 @@
 
 @theme {
   /* ----- Color primitives ----------------------------------------------------
-   * Almost the entire palette matches Tailwind v4's OKLCH defaults. The four
+   * Almost the entire palette matches Tailwind v4's OKLCH defaults. The five
    * overrides below are the only intentional deviations (see Figma → variables
-   * → color/...).
+   * → color/...); the neutral-50/100/200 tier is warmed slightly so light
+   * surfaces read soft off-white instead of flat cool white (2026-08-27).
    * --------------------------------------------------------------------------*/
   --color-slate-200:   #ebeff5;
-  --color-neutral-100: #f7f7f7;
-  --color-neutral-200: #ebebeb;
+  --color-neutral-50:  #faf9f6;
+  --color-neutral-100: #f5f4f1;
+  --color-neutral-200: #eae8e4;
   --color-neutral-925: #121212;
   --color-blue-400:    #3392ff;
 
@@ -184,7 +186,9 @@
   --color-text-white:           var(--color-white);
 
   /* Background */
-  --color-background-full:              var(--color-white);
+  /* Page canvas sits one warm step BELOW the white panels/cards so light
+   * elevation reads page < panel < raised (2026-08-27). */
+  --color-background-full:              var(--color-neutral-50);
   --color-background-primary-default:   var(--color-white);
   --color-background-inner-default:     var(--color-white);
   --color-background-primary-hover:     var(--color-neutral-100);
