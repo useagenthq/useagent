@@ -11,6 +11,8 @@
 #   PG_GATEWAY_PASSWORD=... \
 #   BETTER_AUTH_SECRET=... \
 #   SECRETS_ENCRYPTION_KEY=... \
+#   BOOTSTRAP_ADMIN_EMAIL=owner@example.com \
+#   BOOTSTRAP_ADMIN_PASSWORD=... \
 #   OPENROUTER_API_KEY=... \
 #   SSH_KEY=~/.ssh/id_ed25519 \
 #   ./deploy-app.sh /path/to/useagent/repo
@@ -27,6 +29,9 @@ PG_GATEWAY_PASSWORD=${PG_GATEWAY_PASSWORD:?set PG_GATEWAY_PASSWORD}
 BETTER_AUTH_SECRET=${BETTER_AUTH_SECRET:?set a stable BETTER_AUTH_SECRET (at least 32 characters)}
 SECRETS_ENCRYPTION_KEY=${SECRETS_ENCRYPTION_KEY:?set a stable SECRETS_ENCRYPTION_KEY (at least 32 characters)}
 USEAGENT_DEV_MODE=${USEAGENT_DEV_MODE:-false}
+BOOTSTRAP_ADMIN_EMAIL=${BOOTSTRAP_ADMIN_EMAIL:-}
+BOOTSTRAP_ADMIN_PASSWORD=${BOOTSTRAP_ADMIN_PASSWORD:-}
+BOOTSTRAP_ADMIN_NAME=${BOOTSTRAP_ADMIN_NAME:-}
 SSH_KEY=${SSH_KEY:-$HOME/.ssh/id_ed25519}
 REPO=${1:?pass the path to the useagent repo root}
 SSH=(ssh -i "$SSH_KEY" -o StrictHostKeyChecking=accept-new root@"$SERVER_IP")
@@ -70,19 +75,39 @@ if [[ "$USEAGENT_DEV_MODE" != "true" && "$USEAGENT_DEV_MODE" != "false" ]]; then
   echo "USEAGENT_DEV_MODE must be exactly true or false" >&2
   exit 2
 fi
-for value in "$PG_PASSWORD" "$PG_GATEWAY_PASSWORD" "$BETTER_AUTH_SECRET" "$SECRETS_ENCRYPTION_KEY" "${OPENROUTER_API_KEY:-}"; do
+for value in "$PG_PASSWORD" "$PG_GATEWAY_PASSWORD" "$BETTER_AUTH_SECRET" "$SECRETS_ENCRYPTION_KEY" "${OPENROUTER_API_KEY:-}" "$BOOTSTRAP_ADMIN_EMAIL" "$BOOTSTRAP_ADMIN_PASSWORD" "$BOOTSTRAP_ADMIN_NAME"; do
   if [[ "$value" == *$'\n'* || "$value" == *$'\r'* ]]; then
     echo "deployment secrets must not contain newline characters" >&2
     exit 2
   fi
 done
+if [[ -n "$BOOTSTRAP_ADMIN_EMAIL" || -n "$BOOTSTRAP_ADMIN_PASSWORD" ]]; then
+  if [[ -z "$BOOTSTRAP_ADMIN_EMAIL" || -z "$BOOTSTRAP_ADMIN_PASSWORD" ]]; then
+    echo "set both BOOTSTRAP_ADMIN_EMAIL and BOOTSTRAP_ADMIN_PASSWORD" >&2
+    exit 2
+  fi
+  if [[ "$BOOTSTRAP_ADMIN_EMAIL" != *@* || ${#BOOTSTRAP_ADMIN_PASSWORD} -lt 12 ]]; then
+    echo "bootstrap admin requires a valid email and a password of at least 12 characters" >&2
+    exit 2
+  fi
+  BOOTSTRAP_ENABLED=true
+else
+  BOOTSTRAP_ENABLED=false
+fi
 
 secret_dir=$(mktemp -d "${TMPDIR:-/tmp}/useagent-self-host.XXXXXX")
 cleanup_secrets() {
-  rm -f "$secret_dir/backend.env" "$secret_dir/gateway.env"
+  rm -f "$secret_dir/backend.env" "$secret_dir/gateway.env" "$secret_dir/bootstrap-admin.env"
   rmdir "$secret_dir"
 }
 trap cleanup_secrets EXIT
+
+systemd_quote() {
+  local value=$1
+  value=${value//\\/\\\\}
+  value=${value//\"/\\\"}
+  printf '"%s"' "$value"
+}
 
 cat > "$secret_dir/backend.env" <<ENV
 DATABASE_URL=postgres://useagent:${PG_PASSWORD}@localhost:5432/useagent
@@ -98,7 +123,15 @@ ENV
 cat > "$secret_dir/gateway.env" <<ENV
 GATEWAY_DATABASE_URL=postgres://useagent_gateway:${PG_GATEWAY_PASSWORD}@localhost:5432/useagent
 ENV
+if [[ "$BOOTSTRAP_ENABLED" == true ]]; then
+  {
+    printf 'BOOTSTRAP_ADMIN_EMAIL=%s\n' "$(systemd_quote "$BOOTSTRAP_ADMIN_EMAIL")"
+    printf 'BOOTSTRAP_ADMIN_PASSWORD=%s\n' "$(systemd_quote "$BOOTSTRAP_ADMIN_PASSWORD")"
+    printf 'BOOTSTRAP_ADMIN_NAME=%s\n' "$(systemd_quote "$BOOTSTRAP_ADMIN_NAME")"
+  } > "$secret_dir/bootstrap-admin.env"
+fi
 chmod 0600 "$secret_dir/backend.env" "$secret_dir/gateway.env"
+[[ "$BOOTSTRAP_ENABLED" == false ]] || chmod 0600 "$secret_dir/bootstrap-admin.env"
 
 echo "== wait for cloud-init to finish =="
 "${SSH[@]}" 'cloud-init status --wait >/dev/null 2>&1 || true; test -f /opt/useagent-provision/READY && echo provisioned'
@@ -113,13 +146,20 @@ rsync -az --delete -e "ssh -i $SSH_KEY -o StrictHostKeyChecking=accept-new" \
 echo "== install private environment files =="
 "${SSH[@]}" 'install -d -o root -g root -m 755 /etc/useagent'
 rsync -az --chmod=F600 -e "ssh -i $SSH_KEY -o StrictHostKeyChecking=accept-new" \
-  "$secret_dir/backend.env" "$secret_dir/gateway.env" \
+  "$secret_dir/" \
   root@"$SERVER_IP":/etc/useagent/
 
 echo "== write env + build + start (remote) =="
-"${SSH[@]}" PUBLIC_DOMAIN="$PUBLIC_DOMAIN" 'bash -s' <<'REMOTE'
+"${SSH[@]}" PUBLIC_DOMAIN="$PUBLIC_DOMAIN" BOOTSTRAP_ENABLED="$BOOTSTRAP_ENABLED" 'bash -s' <<'REMOTE'
 set -euo pipefail
 umask 077
+cleanup_bootstrap() {
+  if [[ -e /etc/useagent/bootstrap-admin.env || -e /etc/systemd/system/useagent-bootstrap-admin.service ]]; then
+    rm -f /etc/useagent/bootstrap-admin.env /etc/systemd/system/useagent-bootstrap-admin.service
+    systemctl daemon-reload >/dev/null
+  fi
+}
+trap cleanup_bootstrap EXIT
 chmod 0600 /etc/useagent/backend.env /etc/useagent/gateway.env
 chown -R useagent:useagent /opt/useagent
 
@@ -174,8 +214,52 @@ systemctl reload caddy || systemctl restart caddy
 
 systemctl daemon-reload
 systemctl enable --now useagent-backend useagent-frontend
-sleep 3
-systemctl --no-pager --lines=0 status useagent-backend useagent-frontend || true
+
+health_check() {
+  local url=$1
+  local label=$2
+  local attempt
+  for attempt in $(seq 1 30); do
+    if curl --fail --silent --show-error --max-time 5 "$url" >/dev/null; then
+      return 0
+    fi
+    sleep 2
+  done
+  echo "$label health check failed after 60 seconds: $url" >&2
+  return 1
+}
+
+health_check http://localhost:3201/api/health backend
+
+if [[ "$BOOTSTRAP_ENABLED" == true ]]; then
+  cat > /etc/systemd/system/useagent-bootstrap-admin.service <<UNIT
+[Unit]
+Description=UseAgent one-time first-user bootstrap
+After=postgresql.service useagent-backend.service
+[Service]
+Type=oneshot
+User=useagent
+WorkingDirectory=/opt/useagent/backend
+EnvironmentFile=/etc/useagent/backend.env
+EnvironmentFile=/etc/useagent/bootstrap-admin.env
+ExecStart=/usr/local/bin/bun run /opt/useagent/backend/scripts/bootstrap-admin.ts
+UNIT
+  chmod 0600 /etc/systemd/system/useagent-bootstrap-admin.service
+  systemctl daemon-reload
+  if ! systemctl start useagent-bootstrap-admin.service; then
+    journalctl -u useagent-bootstrap-admin.service --no-pager -n 100 >&2
+    exit 1
+  fi
+  cleanup_bootstrap
+fi
+
+for service in useagent-backend useagent-frontend caddy; do
+  if ! systemctl is-active --quiet "$service"; then
+    echo "$service is not active after deployment" >&2
+    exit 1
+  fi
+done
+health_check "https://${PUBLIC_DOMAIN}/api/health" public-https
 REMOTE
 
 echo "== done. app: $PUBLIC_ORIGIN/  backend health: $PUBLIC_ORIGIN/api/health =="

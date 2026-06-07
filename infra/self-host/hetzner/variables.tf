@@ -48,7 +48,7 @@ variable "allowed_ssh_cidrs" {
   validation {
     condition = length(var.allowed_ssh_cidrs) > 0 && alltrue([
       for cidr in var.allowed_ssh_cidrs :
-      can(cidrnetmask(cidr)) && cidr != "0.0.0.0/0" && cidr != "::/0"
+      can(cidrhost(cidr, 0)) && try(tonumber(regex("/([0-9]+)$", cidr)[0]), 0) > 0
     ])
     error_message = "allowed_ssh_cidrs must contain valid restricted CIDRs; world-open /0 SSH access is forbidden."
   }

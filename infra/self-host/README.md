@@ -18,6 +18,7 @@ equivalent), bun, Node, Docker, PostgreSQL 16 with pgvector, and Caddy.
    SERVER_IP=<host-ip> PUBLIC_ORIGIN=https://useagent.example.com \
      PG_PASSWORD=... PG_GATEWAY_PASSWORD=... \
      BETTER_AUTH_SECRET=... SECRETS_ENCRYPTION_KEY=... OPENROUTER_API_KEY=... \
+     BOOTSTRAP_ADMIN_EMAIL=owner@example.com BOOTSTRAP_ADMIN_PASSWORD=... \
      ./deploy-app.sh /path/to/useagent/repo
    ```
 
@@ -70,3 +71,10 @@ in PostgreSQL connection URLs.
 Production is the default (`USEAGENT_DEV_MODE=false`). A disposable development
 deployment may opt in explicitly with `USEAGENT_DEV_MODE=true`; never expose that
 mode to untrusted users.
+
+On the first deployment of a fresh database, set `BOOTSTRAP_ADMIN_EMAIL` and
+`BOOTSTRAP_ADMIN_PASSWORD` (minimum 12 characters). The deploy runs a one-time
+Better Auth signup process after the production backend is healthy, creates the
+user and personal organization through the application auth hooks, then deletes
+the transient credential file. Reusing the same email is idempotent. Omit both
+variables on later deploys. The long-running backend never enables public signup.

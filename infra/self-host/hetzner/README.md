@@ -64,6 +64,8 @@ PG_PASSWORD='the-postgres-password' \
 PG_GATEWAY_PASSWORD='the-gateway-postgres-password' \
 BETTER_AUTH_SECRET='stable-random-value-at-least-32-characters' \
 SECRETS_ENCRYPTION_KEY='different-stable-value-at-least-32-characters' \
+BOOTSTRAP_ADMIN_EMAIL='owner@example.com' \
+BOOTSTRAP_ADMIN_PASSWORD='a-strong-initial-password' \
 OPENROUTER_API_KEY=sk-or-...        \
 SSH_KEY=~/.ssh/id_ed25519           \
 ../deploy-app.sh /path/to/useagent/repo
@@ -77,6 +79,12 @@ Point the `PUBLIC_ORIGIN` DNS name at the server before deploying. Caddy obtains
 and renews the TLS certificate automatically. Keep both application secrets
 stable across redeploys; changing them without an intentional rotation logs out
 users or makes encrypted org secrets unreadable.
+
+For a fresh database, the bootstrap variables create the first user and personal
+organization through Better Auth after the production backend becomes healthy.
+The process is one-time and idempotent, and its transient password file is
+deleted immediately. Omit both variables after the first successful deployment;
+the running production service keeps public signup disabled.
 
 Then:
 
