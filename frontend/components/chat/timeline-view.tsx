@@ -16,8 +16,8 @@ import {
 } from "@remixicon/react";
 import { artifactAuthoringProfile, inferWorkpieceKind } from "@useagent/artifact-workspace";
 import { memo, useMemo, useState } from "react";
-import { Thinking } from "@/components/ai/thinking";
 import { PlanChecklist } from "@/components/agent-ui/plan-checklist";
+import { Thinking } from "@/components/ai/thinking";
 import { formatArtifactSize } from "@/components/artifacts/model";
 import { useComposerPrefill } from "@/components/chat/composer-prefill-context";
 import { FollowUpRows } from "@/components/chat/follow-up-rows";
@@ -325,7 +325,12 @@ export function Timeline({
         unit.kind === "recall" ? (
           <ContextRecallFold key={unit.key} markers={unit.markers} />
         ) : unit.seg.kind === "tools" ? (
-          <WorkGroup key={unit.seg.key} entries={unit.seg.entries} turnSettled={!live} />
+          <WorkGroup
+            key={unit.seg.key}
+            stateKey={`work:${unit.seg.key}`}
+            entries={unit.seg.entries}
+            turnSettled={!live}
+          />
         ) : unit.seg.kind === "plan" ? (
           <PlanChecklist
             key={unit.seg.key}

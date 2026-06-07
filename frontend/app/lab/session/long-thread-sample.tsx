@@ -6,6 +6,7 @@
 // threshold being exceeded) can be reviewed and profiled visually. Nothing here
 // reimplements a renderer - it only feeds the production component.
 
+import { useState } from "react";
 import { Conversation, type Turn } from "@/components/chat/conversation";
 import type { ApiRun, ApiStep } from "@/components/chat/types";
 import { sampleStep } from "./session-sample-data";
@@ -60,6 +61,18 @@ function makeTurn(index: number): Turn {
           "12 pass, 0 fail",
         ),
         commandStep("Check the worker logs", "tail -n 50 logs/worker.log", "no errors"),
+        commandStep("Inspect queue depth", "queuectl depth", "depth=0"),
+        sampleStep({
+          kind: "task",
+          label: "Subagent - verify the fix",
+          chip: "subagent",
+          code: {
+            tool: "task",
+            input: { description: "Verify the focused change" },
+            output: "Verification passed.",
+          },
+        }),
+        commandStep("Confirm the diff", "git diff --check", "clean"),
       ]
     : [];
   const run: ApiRun = {
@@ -104,16 +117,33 @@ function makeTurn(index: number): Turn {
 const longThreadTurns: Turn[] = Array.from({ length: LONG_THREAD_TURNS }, (_, i) => makeTurn(i));
 
 export function LongThreadSample() {
+  const [turnCount, setTurnCount] = useState(LONG_THREAD_TURNS);
   return (
-    <div className="h-[76vh] overflow-hidden rounded-2xl border border-border-button-default bg-background-primary-default">
-      <Conversation
-        turns={longThreadTurns}
-        defaultEngine="opencode"
-        defaultModel="claude-sonnet-5"
-        defaultMemoryScope="org"
-        pendingReply={null}
-        onReply={() => {}}
-      />
+    <div className="space-y-2">
+      <fieldset className="flex items-center gap-2" aria-label="Long-thread turn count">
+        {[30, 31, LONG_THREAD_TURNS].map((count) => (
+          <button
+            key={count}
+            type="button"
+            data-testid={`long-thread-size-${count}`}
+            aria-pressed={turnCount === count}
+            onClick={() => setTurnCount(count)}
+            className="rounded-md border border-border-button-default px-2 py-1 text-caption-1-medium text-text-secondary"
+          >
+            {count} turns
+          </button>
+        ))}
+      </fieldset>
+      <div className="h-[76vh] overflow-hidden rounded-2xl border border-border-button-default bg-background-primary-default">
+        <Conversation
+          turns={longThreadTurns.slice(0, turnCount)}
+          defaultEngine="opencode"
+          defaultModel="claude-sonnet-5"
+          defaultMemoryScope="org"
+          pendingReply={null}
+          onReply={() => {}}
+        />
+      </div>
     </div>
   );
 }
