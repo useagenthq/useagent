@@ -40,11 +40,6 @@ export const MODELS: { value: string; label: string; tint: string }[] = [
  * policy); free turns run on a user's own connected OpenRouter key when one is
  * connected. */
 export const FREE_MODELS: { value: string; label: string; tint: string }[] = [
-  {
-    value: "nvidia/nemotron-3-ultra-550b-a55b:free",
-    label: "Nemotron 3 Ultra",
-    tint: "text-lime-500",
-  },
   { value: "minimax/minimax-m3:free", label: "MiniMax M3", tint: "text-emerald-500" },
   { value: "nvidia/nemotron-3-super-120b-a12b:free", label: "Nemotron 3 Super", tint: "text-rose-500" },
   {
