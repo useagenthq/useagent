@@ -421,15 +421,12 @@ export function NewTaskComposer({
           maxHeight={260}
           disabled={submitting}
           className={cx(
-            // The composer is THE focal element: a luminous gradient ring
-            // (composer-halo) reads one step brighter than the surrounding
-            // hairlines and deepens while typing. While submitting, the
-            // ComposerLoader rim light takes over the surface, so the halo
-            // (a background-image) must come off with the border/fill.
-            "rounded-20 p-2 shadow-card transition-colors",
-            submitting
-              ? "border-transparent bg-transparent opacity-100 shadow-none"
-              : "composer-halo",
+            // Idle and focused, the composer matches the rest of the UI
+            // chrome; focus lifts the border one step (never a boxed focus
+            // ring). While submitting, the ComposerLoader rim light is the
+            // animated gradient ring, so the card surface goes transparent.
+            "rounded-20 p-2 shadow-card transition-colors focus-within:border-border-button-hover",
+            submitting && "border-transparent bg-transparent opacity-100 shadow-none",
           )}
         >
           <input

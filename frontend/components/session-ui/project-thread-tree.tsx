@@ -1,13 +1,13 @@
 "use client";
 
 // Tree treatment adapted from the Board UI Figma "ai_chat" sidebar:
-// the Repositories tree whose folders expand into recent
-// chats behind a curved connector, with folder->folder-open icons, a
-// grid-rows 0fr->1fr height animation, and right-aligned relative-time chips.
-// Only the tree section is vendored - our shell keeps its own nav, brand,
-// search and account chrome.
+// the Repositories tree whose folders expand into recent chats as plainly
+// indented rows (folder->folder-open parents, doc-icon children, no connector
+// lines), with a grid-rows 0fr->1fr height animation and right-aligned muted
+// relative times. Only the tree section is vendored - our shell keeps its own
+// nav, brand, search and account chrome.
 
-import { RiFolderLine, RiFolderOpenLine } from "@remixicon/react";
+import { RiFileTextLine, RiFolderLine, RiFolderOpenLine } from "@remixicon/react";
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { useState } from "react";
@@ -42,45 +42,10 @@ export interface ProjectMenuControl {
   setOpen: (open: boolean) => void;
 }
 
-/**
- * Curved tree connector (Figma "Vector 132"): a vertical guide dropping from
- * the folder icon with a rounded elbow into each thread row. Rows are a compact
- * 24px (h-6) with 2px gaps; the trunk sits at the icon's center (x 17.5 within
- * the list) and each elbow lands 8px to the right at the row's center - the
- * pitch tracks the row height so the elbows stay aligned.
- */
-function TreeConnector({ count }: { count: number }) {
-  const rowPitch = 26; // 24px row (h-6) + 2px gap
-  const firstCenter = 12;
-  const height = firstCenter + rowPitch * (count - 1) + 1;
-  return (
-    <svg
-      aria-hidden
-      width="12"
-      height={height}
-      viewBox={`0 0 12 ${height}`}
-      fill="none"
-      className="pointer-events-none absolute top-0 left-[16.5px] text-foreground-icon-quaternary"
-    >
-      <title>Project thread connector</title>
-      {Array.from({ length: count }, (_, i) => {
-        const y = firstCenter + rowPitch * i;
-        return (
-          <path
-            key={y}
-            d={`M0.5 0 V${y - 5} Q0.5 ${y} 5.5 ${y} H11.5`}
-            stroke="currentColor"
-            strokeWidth="1"
-          />
-        );
-      })}
-    </svg>
-  );
-}
-
-/** Thread row under an open folder - indented 36px (pl aligns past the folder
- *  icon), a compact fixed 24px height (h-6), with a relative-time chip on the
- *  right. Navigates to the thread; the active thread holds its fill. */
+/** Thread row under an open folder - one indent step past the folder icon, a
+ *  doc icon in the shared 16px icon column, the same uniform 36px row height
+ *  as every other rail row, and a plain right-aligned muted relative time.
+ *  Navigates to the thread; the active thread holds a rounded pill fill. */
 function ThreadItem({
   thread,
   href,
@@ -100,14 +65,24 @@ function ThreadItem({
       aria-current={active ? "page" : undefined}
       title={thread.label}
       className={cx(
-        "flex h-6 w-full items-center gap-2 rounded-2lg pr-2 pl-9 transition-colors duration-150 ease",
-        active ? "bg-background-secondary-hover" : "hover:bg-background-secondary-hover",
+        "flex h-9 w-full items-center gap-2 rounded-2lg pr-2 pl-6 transition-colors duration-150 ease",
+        active
+          ? "bg-background-secondary-hover text-text-primary"
+          : "hover:bg-background-secondary-hover",
       )}
     >
-      <span className="min-w-0 flex-1 truncate text-body-2-medium text-text-secondary">
+      <span className="flex w-4 shrink-0 items-center justify-center">
+        <RiFileTextLine className="size-4 text-foreground-icon-tertiary" aria-hidden />
+      </span>
+      <span
+        className={cx(
+          "min-w-0 flex-1 truncate text-body-medium",
+          active ? "text-text-primary" : "text-text-secondary",
+        )}
+      >
         {thread.label}
       </span>
-      <span className="inline-flex shrink-0 items-center justify-center rounded-sm bg-background-tertiary-default px-1 py-px text-caption-1-medium whitespace-nowrap tabular-nums text-text-secondary">
+      <span className="shrink-0 text-caption-1-medium whitespace-nowrap tabular-nums text-text-tertiary">
         {thread.time}
       </span>
     </Link>
@@ -154,9 +129,11 @@ function ProjectFolder({
           type="button"
           aria-expanded={expanded}
           onClick={() => onToggle(group.key)}
-          className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 rounded-2lg p-2 transition-colors duration-150 ease hover:bg-background-secondary-hover"
+          className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 rounded-2lg px-2.5 py-2 transition-colors duration-150 ease hover:bg-background-secondary-hover"
         >
-          <Icon className="size-5 shrink-0 text-foreground-icon-secondary" aria-hidden />
+          <span className="flex w-4 shrink-0 items-center justify-center">
+            <Icon className="size-4 shrink-0 text-foreground-icon-secondary" aria-hidden />
+          </span>
           <span className="min-w-0 flex-1 truncate text-left text-body-medium whitespace-nowrap text-text-secondary">
             {group.label}
           </span>
@@ -175,9 +152,8 @@ function ProjectFolder({
             <>
               <ul
                 aria-label={`Threads in ${group.label}`}
-                className="relative flex w-full flex-col gap-0.5 pt-0.5"
+                className="flex w-full flex-col gap-0.5 pt-0.5"
               >
-                <TreeConnector count={visibleThreads.length} />
                 {visibleThreads.map((thread) => (
                   <li key={thread.id}>
                     <ThreadItem
@@ -194,7 +170,7 @@ function ProjectFolder({
                   type="button"
                   tabIndex={expanded ? undefined : -1}
                   onClick={() => setShowAllThreads((value) => !value)}
-                  className="ml-7 rounded-lg px-2 py-1 text-caption-1-regular text-text-tertiary transition-colors hover:bg-background-secondary-hover hover:text-text-secondary"
+                  className="ml-6 rounded-lg px-2 py-1 text-caption-1-regular text-text-tertiary transition-colors hover:bg-background-secondary-hover hover:text-text-secondary"
                 >
                   {showAllThreads ? "Show fewer" : `Show ${hiddenThreadCount} more`}
                 </button>
@@ -209,7 +185,7 @@ function ProjectFolder({
 
 /**
  * The project -> thread tree: a folder per project, its threads nested beneath
- * the curved connector when expanded. Expansion is controlled (so the shell can
+ * as indented doc rows when expanded. Expansion is controlled (so the shell can
  * persist it), threads navigate via `threadHref`, and each folder can carry a
  * per-project menu via `renderMenu`.
  */

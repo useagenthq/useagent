@@ -118,11 +118,13 @@ export function SearchCommand({ compact = false }: { compact?: boolean }) {
         title={compact ? "Search" : undefined}
         className={cx(
           "flex cursor-pointer items-center rounded-full bg-background-tertiary-default text-text-secondary outline-none transition-colors hover:bg-background-tertiary-hover/55 focus-visible:ring-2 focus-visible:ring-border-focus-ring",
-          compact ? "size-9 justify-center" : "mb-2 w-full gap-2 px-2.5 py-2",
+          compact ? "size-9 justify-center" : "mb-1.5 w-full gap-2 px-2.5 py-2",
         )}
       >
-        <RiSearch2Line className="size-3.5 shrink-0 text-foreground-icon-secondary" aria-hidden />
-        {!compact && <span className="flex-1 text-left text-body-2-medium">Search</span>}
+        <span className={cx("flex shrink-0 items-center justify-center", !compact && "w-4")}>
+          <RiSearch2Line className="size-3.5 shrink-0 text-foreground-icon-secondary" aria-hidden />
+        </span>
+        {!compact && <span className="flex-1 text-left text-body-medium">Search</span>}
         {!compact && <Kbd className="ml-auto">⌘K</Kbd>}
       </button>
 
