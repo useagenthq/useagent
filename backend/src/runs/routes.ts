@@ -15,10 +15,6 @@ import {
   getRunWithSteps,
   getStepsApi,
   getThreadForRun,
-  getThreadOutlineForRun,
-  getThreadRunsByIds,
-  listRunSummaries,
-  listRunsWithSteps,
 } from "./repo";
 import {
   acceptRunCommand,
@@ -67,14 +63,13 @@ import {
 import { completeCanonicalRuns } from "./canonicalization-outbox";
 import { subscribeThread } from "./thread-signals";
 import { clientOrgChangeForUser, subscribeOrg } from "./org-signals";
-import type { ApiRun, ApiStep } from "./repo";
+import type { ApiStep } from "./repo";
 import { defaultModelForEngine, isModelAllowedForEngine } from "./model-policy";
 import {
   engineResolutionErrorBody,
   modelProviderReadyForEngine,
   resolveAcceptedEngine,
 } from "./engine-readiness";
-import { getRunTimingTable } from "./run-timing";
 import {
   OpenCodeQuestionError,
   replyToOpenCodeQuestion,
@@ -84,7 +79,8 @@ import { isRuntimeThreadSessionId } from "../engines/runtime-orchestration";
 import { replyToRuntimeQuestion } from "../engines/runtime-question";
 import { strictOrgSecretRedactor } from "../secrets/store";
 import { replyToRuntimeApproval, RuntimeApprovalError } from "../engines/runtime-approval";
-import { listUploadsForRuns, UploadClaimError } from "../uploads/repo";
+import { UploadClaimError } from "../uploads/repo";
+import { registerRunReadRoutes } from "./read-routes.js";
 
 export const runsRoutes = new Hono<AppEnv>();
 
@@ -708,97 +704,7 @@ runsRoutes.delete("/:id/sandbox", async (c) => {
   return c.json(result);
 });
 
-// List runs (newest first) with their steps, scoped to the active org. By
-// default only thread roots (one entry per conversation); `?all=1` returns every
-// run in every thread.
-runsRoutes.get("/", async (c) => {
-  const all = c.req.query("all") === "1";
-  const requestedLimit = Number.parseInt(c.req.query("limit") ?? "100", 10);
-  const limit = Number.isFinite(requestedLimit)
-    ? Math.min(c.req.query("view") === "summary" ? 1_000 : 100, Math.max(1, requestedLimit))
-    : 100;
-  if (c.req.query("view") === "summary") {
-    return c.json({
-      runs: await listRunSummaries(c.get("orgId"), {
-        all,
-        limit,
-        includeActive: c.req.query("include_active") === "1",
-      }),
-    });
-  }
-  return c.json({ runs: await listRunsWithSteps(c.get("orgId"), { all, limit }) });
-});
-
-// Single run + steps (scoped to the active org — cross-org id → 404).
-// `?thread=1` returns the whole thread the run belongs to, oldest→newest.
-runsRoutes.get("/:id", async (c) => {
-  const orgId = c.get("orgId");
-  const id = c.req.param("id");
-  if (c.req.query("thread") === "1") {
-    const thread = await getThreadForRun(orgId, id);
-    if (!thread) return c.json({ error: "run not found" }, 404);
-    return c.json({ thread });
-  }
-  const run = await getRunWithSteps(orgId, id);
-  if (!run) return c.json({ error: "run not found" }, 404);
-  return c.json(run);
-});
-
-// Thread OUTLINE (windowed initial loading): the per-turn skeleton of the whole
-// thread `:id` belongs to, oldest→newest - run id, status, step count,
-// has-summary flag, created_at. No step bodies, no JSON payloads: long threads
-// first paint from this plus a fully-loaded tail, and fetch older turns via
-// GET /:id/turns as the user scrolls. Org-scoped exactly like `?thread=1`
-// (a cross-org or missing id is a 404).
-runsRoutes.get("/:id/thread-outline", async (c) => {
-  const turns = await getThreadOutlineForRun(c.get("orgId"), c.req.param("id"));
-  if (!turns) return c.json({ error: "run not found" }, 404);
-  return c.json({ turns });
-});
-
-/** Bound on ids per windowed turns fetch: keeps one island's payload and query
- *  plan small. The frontend chunks larger windows into multiple requests. */
-const MAX_TURN_FETCH_IDS = 30;
-
-// WINDOWED turns fetch (windowed initial loading): the requested runs of
-// `:id`'s thread with FULL steps - the island the client materializes when the
-// user scrolls into not-yet-loaded turns. Same ApiRun serialization as
-// `?thread=1` (one wire shape, no parallel turn schema). Ids outside the
-// thread or org are silently dropped, never leaked.
-runsRoutes.get("/:id/turns", async (c) => {
-  const raw = c.req.query("ids") ?? "";
-  const ids = [...new Set(raw.split(",").map((s) => s.trim()).filter((s) => s.length > 0))];
-  if (ids.length === 0) return c.json({ error: "ids is required" }, 400);
-  if (ids.length > MAX_TURN_FETCH_IDS) {
-    return c.json({ error: `ids must contain at most ${MAX_TURN_FETCH_IDS} run ids` }, 400);
-  }
-  const turns = await getThreadRunsByIds(c.get("orgId"), c.req.param("id"), ids);
-  if (!turns) return c.json({ error: "run not found" }, 404);
-  return c.json({ turns });
-});
-
-// A run's INBOUND attachments (Slack files / browser uploads the user sent with
-// the turn). Org-scoped: a cross-org (or missing) run id is a 404. The compact
-// list also rides the run/thread payload (repo.ts), so the timeline needs no
-// extra round trip; this route exists for callers that want it standalone.
-runsRoutes.get("/:id/uploads", async (c) => {
-  const orgId = c.get("orgId");
-  const id = c.req.param("id");
-  if (!(await getRunForOrg(orgId, id))) return c.json({ error: "run not found" }, 404);
-  const uploads = (await listUploadsForRuns([id])).get(id) ?? [];
-  return c.json({ uploads });
-});
-
-// Per-run developer timing table (perf plan Phase 0): the run's recorded stage
-// spans/marks plus dispatch-to-first-provider-event, derived from the durable
-// timing rows. Diagnostics only - numbers and stage names, nothing sensitive.
-runsRoutes.get("/:id/timings", async (c) => {
-  const orgId = c.get("orgId");
-  const id = c.req.param("id");
-  if (!(await getRunForOrg(orgId, id))) return c.json({ error: "run not found" }, 404);
-  const table = await getRunTimingTable(id);
-  return c.json(table);
-});
+registerRunReadRoutes(runsRoutes);
 
 // SSE trace stream: replay existing steps, then live-push new ones.
 //
