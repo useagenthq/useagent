@@ -16,9 +16,15 @@ terraform -chdir="$here" init -backend=false -input=false >/dev/null
 
 expect_rejected() {
   local cidr=$1
-  if HCLOUD_TOKEN="$token" terraform -chdir="$here" plan "${common[@]}" \
-    -var="allowed_ssh_cidrs=[\"$cidr\"]" >/dev/null 2>&1; then
+  local output
+  if output=$(HCLOUD_TOKEN="$token" terraform -chdir="$here" plan "${common[@]}" \
+    -var="allowed_ssh_cidrs=[\"$cidr\"]" 2>&1); then
     echo "expected Terraform to reject world-open SSH CIDR: $cidr" >&2
+    exit 1
+  fi
+  if [[ "$output" != *"world-open /0 SSH"* || "$output" != *"access is forbidden"* ]]; then
+    echo "Terraform rejected $cidr for an unexpected reason" >&2
+    printf '%s\n' "$output" >&2
     exit 1
   fi
 }

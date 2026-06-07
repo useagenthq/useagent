@@ -22,8 +22,10 @@ describe("public self-host security contract", () => {
     expect(deploy).toContain("PUBLIC_ORIGIN=${PUBLIC_ORIGIN:?");
     expect(deploy).toContain("BETTER_AUTH_SECRET=${BETTER_AUTH_SECRET:?");
     expect(deploy).toContain("SECRETS_ENCRYPTION_KEY=${SECRETS_ENCRYPTION_KEY:?");
+    expect(deploy).toContain("USEAGENT_OPERATOR_SECRET=${USEAGENT_OPERATOR_SECRET:?");
     expect(deploy).toContain("BETTER_AUTH_URL=${PUBLIC_ORIGIN}");
     expect(deploy).toContain("SECRETS_ENCRYPTION_KEY=${SECRETS_ENCRYPTION_KEY}");
+    expect(deploy).toContain("USEAGENT_OPERATOR_SECRET=${USEAGENT_OPERATOR_SECRET}");
     expect(deploy).not.toContain("openssl rand");
   });
 
@@ -37,6 +39,7 @@ describe("public self-host security contract", () => {
         PG_GATEWAY_PASSWORD: "gateway-database-password",
         BETTER_AUTH_SECRET: "a".repeat(32),
         SECRETS_ENCRYPTION_KEY: "b".repeat(32),
+        USEAGENT_OPERATOR_SECRET: "c".repeat(32),
       },
       encoding: "utf8",
     });
@@ -55,6 +58,7 @@ describe("public self-host security contract", () => {
     expect(deploy).not.toContain("set -eux");
     expect(remoteInvocation).not.toContain("BETTER_AUTH_SECRET");
     expect(remoteInvocation).not.toContain("SECRETS_ENCRYPTION_KEY");
+    expect(remoteInvocation).not.toContain("USEAGENT_OPERATOR_SECRET");
     expect(remoteInvocation).not.toContain("OPENROUTER_API_KEY");
   });
 
@@ -86,12 +90,13 @@ describe("public self-host security contract", () => {
     expect(bootstrap).toContain('process.env.USEAGENT_DEV_MODE = "true"');
     expect(bootstrap).toContain("auth.api.signUpEmail");
     expect(bootstrap).toContain("where(eq(user.email, email))");
+    expect(bootstrap).toContain('membership?.role !== "owner"');
     expect(deploy).toContain("useagent-bootstrap-admin.service");
     expect(deploy).toContain("rm -f /etc/useagent/bootstrap-admin.env");
   });
 
   test("requires active services and bounded local plus public health checks", () => {
-    expect(deploy).toContain("for attempt in $(seq 1 30)");
+    expect(deploy).toContain("for attempt in $(seq 1 10)");
     expect(deploy).toContain("systemctl is-active --quiet");
     expect(deploy).toContain("health_check http://localhost:3201/api/health backend");
     expect(deploy).toContain('health_check "https://${PUBLIC_DOMAIN}/api/health" public-https');

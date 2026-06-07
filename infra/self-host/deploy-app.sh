@@ -11,6 +11,7 @@
 #   PG_GATEWAY_PASSWORD=... \
 #   BETTER_AUTH_SECRET=... \
 #   SECRETS_ENCRYPTION_KEY=... \
+#   USEAGENT_OPERATOR_SECRET=... \
 #   BOOTSTRAP_ADMIN_EMAIL=owner@example.com \
 #   BOOTSTRAP_ADMIN_PASSWORD=... \
 #   OPENROUTER_API_KEY=... \
@@ -28,6 +29,7 @@ PG_PASSWORD=${PG_PASSWORD:?set PG_PASSWORD}
 PG_GATEWAY_PASSWORD=${PG_GATEWAY_PASSWORD:?set PG_GATEWAY_PASSWORD}
 BETTER_AUTH_SECRET=${BETTER_AUTH_SECRET:?set a stable BETTER_AUTH_SECRET (at least 32 characters)}
 SECRETS_ENCRYPTION_KEY=${SECRETS_ENCRYPTION_KEY:?set a stable SECRETS_ENCRYPTION_KEY (at least 32 characters)}
+USEAGENT_OPERATOR_SECRET=${USEAGENT_OPERATOR_SECRET:?set a stable USEAGENT_OPERATOR_SECRET (at least 32 characters)}
 USEAGENT_DEV_MODE=${USEAGENT_DEV_MODE:-false}
 BOOTSTRAP_ADMIN_EMAIL=${BOOTSTRAP_ADMIN_EMAIL:-}
 BOOTSTRAP_ADMIN_PASSWORD=${BOOTSTRAP_ADMIN_PASSWORD:-}
@@ -67,15 +69,19 @@ if (( ${#SECRETS_ENCRYPTION_KEY} < 32 )); then
   echo "SECRETS_ENCRYPTION_KEY must be at least 32 characters" >&2
   exit 2
 fi
-if [[ "$BETTER_AUTH_SECRET" == "$SECRETS_ENCRYPTION_KEY" ]]; then
-  echo "BETTER_AUTH_SECRET and SECRETS_ENCRYPTION_KEY must be independent" >&2
+if (( ${#USEAGENT_OPERATOR_SECRET} < 32 )); then
+  echo "USEAGENT_OPERATOR_SECRET must be at least 32 characters" >&2
+  exit 2
+fi
+if [[ "$BETTER_AUTH_SECRET" == "$SECRETS_ENCRYPTION_KEY" || "$BETTER_AUTH_SECRET" == "$USEAGENT_OPERATOR_SECRET" || "$SECRETS_ENCRYPTION_KEY" == "$USEAGENT_OPERATOR_SECRET" ]]; then
+  echo "BETTER_AUTH_SECRET, SECRETS_ENCRYPTION_KEY, and USEAGENT_OPERATOR_SECRET must be independent" >&2
   exit 2
 fi
 if [[ "$USEAGENT_DEV_MODE" != "true" && "$USEAGENT_DEV_MODE" != "false" ]]; then
   echo "USEAGENT_DEV_MODE must be exactly true or false" >&2
   exit 2
 fi
-for value in "$PG_PASSWORD" "$PG_GATEWAY_PASSWORD" "$BETTER_AUTH_SECRET" "$SECRETS_ENCRYPTION_KEY" "${OPENROUTER_API_KEY:-}" "$BOOTSTRAP_ADMIN_EMAIL" "$BOOTSTRAP_ADMIN_PASSWORD" "$BOOTSTRAP_ADMIN_NAME"; do
+for value in "$PG_PASSWORD" "$PG_GATEWAY_PASSWORD" "$BETTER_AUTH_SECRET" "$SECRETS_ENCRYPTION_KEY" "$USEAGENT_OPERATOR_SECRET" "${OPENROUTER_API_KEY:-}" "$BOOTSTRAP_ADMIN_EMAIL" "$BOOTSTRAP_ADMIN_PASSWORD" "$BOOTSTRAP_ADMIN_NAME"; do
   if [[ "$value" == *$'\n'* || "$value" == *$'\r'* ]]; then
     echo "deployment secrets must not contain newline characters" >&2
     exit 2
@@ -113,6 +119,7 @@ cat > "$secret_dir/backend.env" <<ENV
 DATABASE_URL=postgres://useagent:${PG_PASSWORD}@localhost:5432/useagent
 BETTER_AUTH_SECRET=${BETTER_AUTH_SECRET}
 SECRETS_ENCRYPTION_KEY=${SECRETS_ENCRYPTION_KEY}
+USEAGENT_OPERATOR_SECRET=${USEAGENT_OPERATOR_SECRET}
 BETTER_AUTH_URL=${PUBLIC_ORIGIN}
 FRONTEND_ORIGIN=${PUBLIC_ORIGIN}
 PORT=3201
@@ -219,8 +226,8 @@ health_check() {
   local url=$1
   local label=$2
   local attempt
-  for attempt in $(seq 1 30); do
-    if curl --fail --silent --show-error --max-time 5 "$url" >/dev/null; then
+  for attempt in $(seq 1 10); do
+    if curl --fail --silent --show-error --connect-timeout 2 --max-time 4 "$url" >/dev/null; then
       return 0
     fi
     sleep 2

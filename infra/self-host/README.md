@@ -17,7 +17,8 @@ equivalent), bun, Node, Docker, PostgreSQL 16 with pgvector, and Caddy.
    ```bash
    SERVER_IP=<host-ip> PUBLIC_ORIGIN=https://useagent.example.com \
      PG_PASSWORD=... PG_GATEWAY_PASSWORD=... \
-     BETTER_AUTH_SECRET=... SECRETS_ENCRYPTION_KEY=... OPENROUTER_API_KEY=... \
+     BETTER_AUTH_SECRET=... SECRETS_ENCRYPTION_KEY=... USEAGENT_OPERATOR_SECRET=... \
+     OPENROUTER_API_KEY=... \
      BOOTSTRAP_ADMIN_EMAIL=owner@example.com BOOTSTRAP_ADMIN_PASSWORD=... \
      ./deploy-app.sh /path/to/useagent/repo
    ```
@@ -58,11 +59,11 @@ backend environment.
 
 `deploy-app.sh` requires a public HTTPS origin and configures Caddy to obtain
 and renew its TLS certificate. Point the domain at the server before deploying
-and allow inbound ports 80 and 443. Generate `BETTER_AUTH_SECRET` and
-`SECRETS_ENCRYPTION_KEY` once (at least 32 characters each), store them safely,
-and reuse the same values for every redeploy. Rotating either key is a separate
-operator procedure; silently regenerating them invalidates sessions or makes
-stored org secrets unreadable.
+and allow inbound ports 80 and 443. Generate `BETTER_AUTH_SECRET`,
+`SECRETS_ENCRYPTION_KEY`, and `USEAGENT_OPERATOR_SECRET` once (at least 32
+characters each), store them safely, and reuse the same values for every
+redeploy. Rotating a key is a separate operator procedure; silently regenerating
+them invalidates sessions, operator access, or stored org secrets.
 
 For example, generate each application secret separately with
 `openssl rand -hex 32`. Use URL-safe database passwords because they are placed
