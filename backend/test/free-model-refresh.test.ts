@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { isPublicApiPath } from "../src/middleware/org";
 import {
+  FREE_MODEL_LANE_SEED,
   freeModelLaneCache,
   setFreeModelCatalogFetcherForTest,
 } from "../src/runs/free-model-lane";
@@ -65,5 +66,24 @@ describe("manual free-model refresh endpoint", () => {
     expect(second.status).toBe(429);
     expect(second.body.error).toBe("rate_limited");
     expect(second.body.retry_after_ms).toBeGreaterThan(0);
+  });
+
+  test("keeps the stale lane but reports a failed manual refresh honestly", async () => {
+    const org = await createOrgSession("free-refresh-failure");
+    freeModelLaneCache.reset();
+    setFreeModelCatalogFetcherForTest(async () => new Response(null, { status: 503 }));
+
+    const response = await json<{
+      refreshed: boolean;
+      stale: boolean;
+      reason: string;
+      free: string[];
+    }>("/api/config/models/refresh", { method: "POST", cookies: org.cookies });
+
+    expect(response.status).toBe(502);
+    expect(response.body.refreshed).toBe(false);
+    expect(response.body.stale).toBe(true);
+    expect(response.body.reason).toBe("http_error");
+    expect(response.body.free).toEqual([...FREE_MODEL_LANE_SEED]);
   });
 });

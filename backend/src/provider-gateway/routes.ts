@@ -280,6 +280,7 @@ export function createProviderGatewayRoutes(deps: ProviderRouteDeps = {}): Hono 
       orgId: claims.orgId,
       userId: run.userId,
       provider: target.provider,
+      model: run.model,
     });
     if (!resolved) {
       return c.json({ error: "provider_not_configured" }, 503);

@@ -298,9 +298,19 @@ app.post("/api/config/models/refresh", async (c) => {
   if (!attempt.admitted) {
     return c.json({ error: "rate_limited", retry_after_ms: attempt.retryAfterMs }, 429);
   }
-  await attempt.done;
+  const outcome = await attempt.done;
+  if (!outcome.updated) {
+    return c.json({
+      refreshed: false,
+      stale: true,
+      reason: outcome.reason,
+      free: freeModelLane(),
+      models: engineModelsForReadyEngines(),
+    }, 502);
+  }
   return c.json({
     refreshed: true,
+    stale: false,
     free: freeModelLane(),
     models: engineModelsForReadyEngines(),
   });

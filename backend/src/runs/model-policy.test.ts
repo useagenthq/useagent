@@ -11,6 +11,8 @@ import {
   allowedModelsForEngine,
   defaultModelForEngine,
   isModelAllowedForEngine,
+  isPersistedModelAllowedForEngine,
+  isReplyModelAllowedForEngine,
   OPENCODE_ALLOWED_MODELS,
 } from "./model-policy";
 import { FREE_MODEL_LANE_SEED } from "./free-model-lane";
@@ -65,6 +67,28 @@ describe("paid model policy", () => {
     expect(allowedModelsForEngine("pi", {})).not.toContain(FREE_MODEL_LANE_SEED[0]);
     // The lane never changes the engine default.
     expect(defaultModelForEngine("opencode", {})).toBe(FAST_OPENCODE_MODEL);
+  });
+
+  test("durable OpenCode replay accepts only provider-qualified free variants beyond the live lane", () => {
+    expect(isModelAllowedForEngine("opencode", "rotated/model:free")).toBe(false);
+    expect(isPersistedModelAllowedForEngine("opencode", "rotated/model:free")).toBe(true);
+    expect(isPersistedModelAllowedForEngine("opencode", "not-qualified:free")).toBe(false);
+    expect(isPersistedModelAllowedForEngine("pi", "rotated/model:free")).toBe(false);
+    expect(isPersistedModelAllowedForEngine("opencode", "rotated/model:paid")).toBe(false);
+    expect(
+      isReplyModelAllowedForEngine(
+        "opencode",
+        "rotated/model:free",
+        "rotated/model:free",
+      ),
+    ).toBe(true);
+    expect(
+      isReplyModelAllowedForEngine(
+        "opencode",
+        "rotated/switched:free",
+        "rotated/model:free",
+      ),
+    ).toBe(false);
   });
 
   test("Codex allowlist is explicit and deployment-configurable", () => {
