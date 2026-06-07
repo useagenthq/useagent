@@ -1,6 +1,7 @@
 import type { EngineId } from "../db/schema";
 import { chatModelCatalog } from "../chat/models";
 import { chatModel } from "../chat/stream";
+import { freeModelLane, isAllowedFreeModel } from "./free-model-lane";
 
 export const KIMI_K3_MODEL = "moonshotai/kimi-k3";
 export const DEEPSEEK_V4_FLASH_MODEL = "deepseek/deepseek-v4-flash";
@@ -33,6 +34,12 @@ export const OPENCODE_ALLOWED_MODELS = {
   ],
 } as const;
 
+// The Free lane (OpenRouter ":free" variants, OpenCode only) is DYNAMIC: it is
+// derived from OpenRouter's public catalog with a TTL cache and a curated seed
+// fallback - see ./free-model-lane. Free slugs ride the same OpenRouter gateway
+// path as the paid ones, so a user's own connected OpenRouter key is spent when
+// present and the shared house key serves only where that fallback is allowed.
+
 const OPENCODE_MODELS = new Set<string>(Object.values(OPENCODE_ALLOWED_MODELS).flat());
 const CLAUDE_MODELS = new Set<string>(OPENCODE_ALLOWED_MODELS.anthropic);
 export const DEFAULT_OPENCODE_MODEL = FAST_OPENCODE_MODEL;
@@ -55,6 +62,7 @@ export function allowedModelsForEngine(
 ): readonly string[] {
   switch (engine) {
     case "opencode":
+      return [...Object.values(OPENCODE_ALLOWED_MODELS).flat(), ...freeModelLane()];
     case "daytona":
     case "pi":
       return Object.values(OPENCODE_ALLOWED_MODELS).flat();
@@ -104,6 +112,7 @@ export function isModelAllowedForEngine(
     case "mock":
       return true;
     case "opencode":
+      return OPENCODE_MODELS.has(model) || isAllowedFreeModel(model);
     case "daytona":
     case "pi":
       return OPENCODE_MODELS.has(model);
@@ -117,4 +126,33 @@ export function isModelAllowedForEngine(
     case "acp":
       return false;
   }
+}
+
+/**
+ * Revalidate an already-accepted durable run without making a catalog rotation
+ * turn it into a policy failure. New work still goes through
+ * `isModelAllowedForEngine`; this narrower replay seam accepts only
+ * provider-qualified OpenRouter free variants in addition to the current lane.
+ */
+export function isPersistedModelAllowedForEngine(
+  engine: EngineId,
+  model: string,
+  env: Record<string, string | undefined> = process.env,
+): boolean {
+  if (engine === "opencode" && model.includes("/") && model.endsWith(":free")) {
+    return true;
+  }
+  return isModelAllowedForEngine(engine, model, env);
+}
+
+/** A reply may inherit its durable parent's accepted model after a restart;
+ * explicit switches must still be present in the current catalog. */
+export function isReplyModelAllowedForEngine(
+  engine: EngineId,
+  model: string,
+  parentModel: string | null,
+  env: Record<string, string | undefined> = process.env,
+): boolean {
+  return isModelAllowedForEngine(engine, model, env) ||
+    (model === parentModel && isPersistedModelAllowedForEngine(engine, model, env));
 }

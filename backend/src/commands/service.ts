@@ -8,8 +8,8 @@ import {
   assertInternalRunOrigin,
   type InternalRunOrigin,
 } from "../runs/origin";
-import { isModelAllowedForEngine } from "../runs/model-policy";
-import { engineModelReadyForDispatch } from "../runs/engine-readiness";
+import { isModelAllowedForEngine, isPersistedModelAllowedForEngine } from "../runs/model-policy";
+import { engineModelReadyForDispatch, persistedEngineModelReadyForDispatch } from "../runs/engine-readiness";
 import { withThreadLifecycleLock } from "../runs/thread-lifecycle-lock";
 import { assertRunAdmissionOpen } from "./admission";
 
@@ -135,12 +135,19 @@ async function acceptRunCommandWithOrigin(
         // replay is a read of an already-durable decision and must keep
         // returning the original run even if policy or provider health later
         // changes.
-        if (!isModelAllowedForEngine(input.run.engine, input.run.model)) {
+        const persistedPolicy = input.acceptedModelPolicy === "persisted";
+        const modelAllowed = persistedPolicy
+          ? isPersistedModelAllowedForEngine(input.run.engine, input.run.model)
+          : isModelAllowedForEngine(input.run.engine, input.run.model);
+        if (!modelAllowed) {
           throw new Error(
             `model ${input.run.model} is not allowed for engine ${input.run.engine}`,
           );
         }
-        if (!engineModelReadyForDispatch(input.run.engine, input.run.model)) {
+        const dispatchReady = persistedPolicy
+          ? persistedEngineModelReadyForDispatch(input.run.engine, input.run.model)
+          : engineModelReadyForDispatch(input.run.engine, input.run.model);
+        if (!dispatchReady) {
           throw new Error(
             `engine/model not ready: ${input.run.engine}/${input.run.model}`,
           );

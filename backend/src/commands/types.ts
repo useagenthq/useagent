@@ -44,6 +44,10 @@ export interface RunCommandInput {
   readonly idempotencyKey: string | null;
   readonly orgId: string;
   readonly actorId: string | null;
+  /** Trusted durable sources (currently enabled schedules) may replay the model
+   * policy that was validated when they were stored. Interactive/new input must
+   * leave this unset and pass the current live catalog. */
+  readonly acceptedModelPolicy?: "current" | "persisted";
   /** Supplied by product ingresses so a keyed retry can be classified before
    * external resource resolution. Legacy/internal callers may omit it and use
    * the accepted run fields as their intent. */

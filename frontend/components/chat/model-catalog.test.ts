@@ -3,9 +3,12 @@ import { resolveEnabledEngine } from "@/components/chat/engine-picker";
 import {
   CHAT_MODELS,
   CODEX_MODELS,
+  FREE_MODELS,
+  isFreeModel,
   MODELS,
   modelLabel,
   modelOptionsForEngine,
+  partitionModelOptions,
   selectableModelsForEngine,
   supportsPreSessionModelSelection,
 } from "@/components/chat/types";
@@ -34,7 +37,7 @@ describe("engine model catalog", () => {
   });
 
   test("OpenCode picker keeps provider-qualified model ids", () => {
-    expect(selectableModelsForEngine("opencode")).toEqual(MODELS);
+    expect(selectableModelsForEngine("opencode")).toEqual([...MODELS, ...FREE_MODELS]);
     expect(selectableModelsForEngine("opencode")[0]?.value).toBe("openai/gpt-5.6-luna");
     expect(selectableModelsForEngine("opencode").map((m) => m.value)).toContain(
       "openai/gpt-5.6-luna",
@@ -53,6 +56,38 @@ describe("engine model catalog", () => {
     expect(selectableModelsForEngine("opencode").map((m) => m.value)).toContain(
       "google/gemini-3.7-flash",
     );
+  });
+
+  test("Free lane is OpenCode-only and grouped after the paid catalog", () => {
+    expect(FREE_MODELS.length).toBeGreaterThan(0);
+    for (const model of FREE_MODELS) {
+      expect(isFreeModel(model.value)).toBe(true);
+    }
+    expect(MODELS.some((model) => isFreeModel(model.value))).toBe(false);
+    const opencode = selectableModelsForEngine("opencode").map((m) => m.value);
+    expect(opencode).toContain("nvidia/nemotron-3.5-lightning:free");
+    // Appended after the paid catalog so the default (first entry) stays paid.
+    expect(opencode.slice(MODELS.length)).toEqual(FREE_MODELS.map((m) => m.value));
+    for (const engine of ["pi", "codex", "chat"] as const) {
+      expect(selectableModelsForEngine(engine).some((m) => isFreeModel(m.value))).toBe(false);
+    }
+    expect(modelLabel("thinkingmachines/inkling:free", "opencode")).toBe("Inkling");
+  });
+
+  test("Free section membership is manifest-driven via the id suffix, not the seed list", () => {
+    // A backend manifest can advertise a free model the frontend has never
+    // heard of: it must land in the Free partition with its id as the label.
+    const options = modelOptionsForEngine("opencode", [
+      "openai/gpt-5.6-luna",
+      "newvendor/brand-new-model:free",
+    ]);
+    const { paid, free } = partitionModelOptions(options);
+    expect(paid.map((m) => m.value)).toEqual(["openai/gpt-5.6-luna"]);
+    expect(free.map((m) => m.value)).toEqual(["newvendor/brand-new-model:free"]);
+    expect(free[0]?.label).toBe("newvendor/brand-new-model:free");
+    // And a manifest that rotates a seed model OUT drops it from the picker.
+    const rotated = modelOptionsForEngine("opencode", ["openai/gpt-5.6-luna"]);
+    expect(partitionModelOptions(rotated).free).toEqual([]);
   });
 
   test("direct Chat picker exposes only the backend OpenRouter catalog", () => {

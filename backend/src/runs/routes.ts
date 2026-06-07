@@ -64,7 +64,7 @@ import { completeCanonicalRuns } from "./canonicalization-outbox";
 import { subscribeThread } from "./thread-signals";
 import { clientOrgChangeForUser, subscribeOrg } from "./org-signals";
 import type { ApiStep } from "./repo";
-import { defaultModelForEngine, isModelAllowedForEngine } from "./model-policy";
+import { defaultModelForEngine, isReplyModelAllowedForEngine } from "./model-policy";
 import {
   engineResolutionErrorBody,
   modelProviderReadyForEngine,
@@ -427,11 +427,11 @@ export async function handleRunCreate(
   }
   const engine = resolvedEngine.engine;
   const inheritedModel =
-    parentModel && isModelAllowedForEngine(engine, parentModel)
+    parentModel && isReplyModelAllowedForEngine(engine, parentModel, parentModel)
       ? parentModel
       : defaultModelForEngine(engine);
   const model = requestedModel ?? inheritedModel;
-  if (!isModelAllowedForEngine(engine, model)) {
+  if (!isReplyModelAllowedForEngine(engine, model, parentModel)) {
     return c.json({ error: "model_not_allowed", engine, model }, 400);
   }
   if (!modelProviderReadyForEngine(engine, model)) {
