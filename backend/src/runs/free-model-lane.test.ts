@@ -68,6 +68,12 @@ describe("deriveFreeModelLane (catalog filter)", () => {
     expect(deriveFreeModelLane(null)).toEqual([]);
     expect(deriveFreeModelLane("html error page")).toEqual([]);
   });
+
+  test("excludes catalog-visible models rejected by the hosted OpenCode harness", () => {
+    expect(deriveFreeModelLane({
+      data: [entry("thinkingmachines/inkling-small:free", 1_048_576)],
+    })).toEqual([]);
+  });
 });
 
 describe("FreeModelLaneCache", () => {

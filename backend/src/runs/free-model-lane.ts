@@ -21,6 +21,11 @@ const FAILED_FETCH_RETRY_MS = 60 * 1000;
 const FORCE_REFRESH_COOLDOWN_MS = 30 * 1000;
 const LANE_CAP = 8;
 const MIN_CONTEXT_LENGTH = 65_536;
+// Catalog-visible but rejected by OpenRouter for this hosted application even
+// when invoked through the full OpenCode harness (release canary 2026-08-27).
+const INCOMPATIBLE_HOSTED_MODELS = new Set([
+  "thinkingmachines/inkling-small:free",
+]);
 
 /** Curated fallback lane (verified tool-capable free models): the boot state
  * and the safety net whenever the live catalog is unreachable or garbage. */
@@ -76,6 +81,7 @@ export function deriveFreeModelLane(catalog: unknown): string[] {
       supported_parameters?: unknown;
     };
     if (typeof entry.id !== "string" || !entry.id.endsWith(":free")) continue;
+    if (INCOMPATIBLE_HOSTED_MODELS.has(entry.id)) continue;
     if (
       typeof entry.context_length !== "number" ||
       entry.context_length < MIN_CONTEXT_LENGTH
