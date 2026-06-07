@@ -113,26 +113,31 @@ async function highestSeq(runId: string): Promise<number> {
  * failure is caught + logged rather than propagated. Callers that AWAIT the returned
  * promise get persist-before-continue; pass `{ critical: true }` for an authoritative
  * frame (e.g. a command catalog) so a failure logs at ERROR level (visible), not just
- * a warning. The returned promise resolves once THIS event (and every earlier one in
- * the run's chain) has persisted (or been logged-and-swallowed).
+ * a warning. The returned promise normally resolves once THIS event (and every
+ * earlier one in the run's chain) has persisted or been logged-and-swallowed.
+ * `{ required: true }` returns the unswallowed attempt to its authoritative
+ * caller while the stored sequencer chain still catches the failure and remains
+ * usable for later events.
  */
-export function recordProviderEvent(input: ProviderEventInput, opts: { critical?: boolean } = {}): Promise<void> {
+export function recordProviderEvent(
+  input: ProviderEventInput,
+  opts: { critical?: boolean; required?: boolean } = {},
+): Promise<void> {
   let seq = runSequencers.get(input.runId);
   if (!seq) {
     seq = { chain: Promise.resolve(), nextSeq: null };
     runSequencers.set(input.runId, seq);
   }
   const entry = seq;
-  const done = entry.chain
-    .then(() => persistAndPublish(input, entry))
-    .catch((err) => {
+  const attempt = entry.chain.then(() => persistAndPublish(input, entry));
+  const done = attempt.catch((err) => {
       const msg = errorMessage(err);
       // The chain must stay resolved (a rejected link stalls the run's later captures), so
       // failures are logged, not thrown. `critical` raises the level so an authoritative frame
       // (a command catalog) fails VISIBLY instead of being silently dropped.
       if (opts.critical) console.error(`[provider-events] CRITICAL capture failed (${input.eventType}):`, msg);
       else console.warn("[provider-events] capture failed:", msg);
-    });
+  });
   entry.chain = done;
   // Idle-evict when this link is the tail and has settled, so the map only holds
   // runs with in-flight captures. A later event re-creates + re-seeds the entry.
@@ -141,7 +146,7 @@ export function recordProviderEvent(input: ProviderEventInput, opts: { critical?
       runSequencers.delete(input.runId);
     }
   });
-  return done;
+  return opts.required ? attempt : done;
 }
 
 async function persistAndPublish(input: ProviderEventInput, seq: RunSequencer): Promise<void> {
