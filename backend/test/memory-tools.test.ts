@@ -3,6 +3,7 @@ import { and, eq } from "drizzle-orm";
 import { db } from "../src/db/client";
 import { providerEvents, runs } from "../src/db/schema";
 import { executeMemoryTool, MEMORY_EVENTS } from "../src/knowledge/gateway/memory-tools";
+import { enqueueCapture } from "../src/memory/capture-outbox";
 import { parseEnvelope } from "../src/memory/explicit-memory";
 import type { ToolTokenClaims } from "../src/knowledge/gateway/token";
 import { uid } from "./helpers";
@@ -220,6 +221,55 @@ describe("memory_search", () => {
     expect(failed.length).toBe(1);
     expect(JSON.parse(failed[0].payload).op).toBe("search");
     expect((await eventsFor(run.id, MEMORY_EVENTS.searched)).length).toBe(0);
+  });
+
+  test("returns provisional refs that correct and forget reject until delivery", async () => {
+    const mock = tencentMock();
+    globalThis.fetch = mock.fetchImpl;
+    const run = await insertRun({ orgId: "org-provisional", userId: "u-1", scope: "org" });
+    await enqueueCapture(
+      run.id,
+      {
+        teamId: "org-provisional",
+        agentId: "useagent-backend",
+        userId: "org:org-provisional",
+        actorUserId: "u-1",
+        sessionId: run.threadId,
+        runId: run.id,
+      },
+      { prompt: "i like mango", summary: "The user likes mango." },
+      "org",
+    );
+
+    const search = await executeMemoryTool(claimsFor(run, "org-provisional"), "memory_search", {
+      query: "what fruit do i like?",
+    });
+    const items = (search.structuredContent?.items ?? []) as Array<{
+      provider: string;
+      layer: string;
+      ref: string;
+    }>;
+    expect(items[0]).toMatchObject({
+      provider: "useagent-outbox",
+      layer: "provisional",
+      ref: `useagent:provisional:${run.id}`,
+    });
+
+    const correct = await executeMemoryTool(claimsFor(run, "org-provisional"), "memory_correct", {
+      memoryRef: items[0]!.ref,
+      content: "I prefer papaya.",
+    });
+    const forget = await executeMemoryTool(claimsFor(run, "org-provisional"), "memory_forget", {
+      memoryRef: items[0]!.ref,
+    });
+
+    expect(correct.isError).toBe(true);
+    expect(forget.isError).toBe(true);
+    expect(correct.structuredContent).toMatchObject({ provisional: true, retry: "memory_search" });
+    expect(forget.structuredContent).toMatchObject({ provisional: true, retry: "memory_search" });
+    expect(String(correct.content[0]?.text)).toContain("Wait for delivery");
+    expect(String(forget.content[0]?.text)).toContain("Wait for delivery");
+    expect(mock.msgs).toHaveLength(0);
   });
 });
 

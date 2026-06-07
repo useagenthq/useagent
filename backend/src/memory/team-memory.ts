@@ -22,6 +22,7 @@
 import { memoryConfig, type MemoryConfig } from "../env";
 import type { MemoryScope } from "../db/schema";
 import { parseEnvelope } from "./explicit-memory";
+import { readCaptureOverlay } from "./capture-overlay";
 
 /** Hard cap on a single memory HTTP call. Memory is best-effort; better to skip
  *  recall than to add latency to a run. */
@@ -47,7 +48,8 @@ export const BLOCK_FOOTER = "--- end team memory ---";
  *  layered recall (recallScopedMemory) also feeds L0 explicit/ground hits through
  *  the same shape, tagged with `layer` so the citation can qualify the provider
  *  layer (L0 immediate ground evidence, L1 distilled, L2 scenes, L3 persona). */
-type TencentLayer = "l0" | "l1" | "l2" | "l3";
+type MemoryLayer = "l0" | "l1" | "l2" | "l3" | "provisional";
+type MemoryCitationProvider = "tencent-memorycore" | "useagent-outbox";
 
 interface AtomicHit {
   id: string;
@@ -55,8 +57,13 @@ interface AtomicHit {
   content: string;
   background?: string;
   score?: number;
-  /** Tencent layer this hit came from; absent on the legacy L1-only search path. */
-  layer?: TencentLayer;
+  /** Durable provider layer, or provisional while the local outbox is unconfirmed. */
+  layer?: MemoryLayer;
+  /** Optional non-provider citation for committed local overlay rows. */
+  provider?: MemoryCitationProvider;
+  ref?: string;
+  /** Full normalized identity when display content is intentionally bounded. */
+  dedupeKey?: string;
 }
 
 interface AtomicSearchData {
@@ -123,16 +130,16 @@ export interface ScopedPool {
 
 /** A source pointer kept on every recalled item so the UI can cite/correct it. */
 export interface MemoryCitation {
-  readonly provider: "tencent-memorycore";
-  /** The provider asset id (L1 `data.items[].id`, or an L0 message id). */
+  readonly provider: MemoryCitationProvider;
+  /** Provider asset id, or the durable local outbox id for a provisional hit. */
   readonly assetId: string;
   readonly score?: number;
-  /** Tencent layer, present on layered recalls: `l0` = immediate ground evidence,
-   *  `l1` = distilled atomic memory, `l2` = scene, `l3` = persona/profile.
-   *  Absent on the legacy L1-only recall. */
-  readonly layer?: TencentLayer;
-  /** Provider-qualified reference (`tencent:l0:<id>` / `tencent:l1:<id>`) the
-   *  memory tools echo so an agent can read/correct/forget the exact record. */
+  /** Recall layer: `provisional` = committed locally but not provider-confirmed;
+   *  `l0` = immediate ground evidence, `l1` = distilled atomic memory,
+   *  `l2` = scene, `l3` = persona/profile. */
+  readonly layer?: MemoryLayer;
+  /** Qualified reference. Provisional refs are readable search evidence but
+   * cannot be corrected/forgotten until delivery produces a stable provider ref. */
   readonly ref?: string;
 }
 
@@ -277,18 +284,20 @@ function renderScopedHit(
   const tag = label ? `[${sourceScope}] ` : "";
   const body = background ? `${content} (${background})` : content;
   return {
-    dedupeKey: content.toLowerCase(),
+    dedupeKey: hit.dedupeKey ?? content.toLowerCase(),
     line: `- ${tag}${body}`,
     item: {
       kind: "memory",
       content,
       sourceScope,
       citation: {
-        provider: "tencent-memorycore",
+        provider: hit.provider ?? "tencent-memorycore",
         assetId: hit.id,
         score: hit.score,
         // Only present on layered recalls, so the L1-only path stays byte-identical.
-        ...(hit.layer ? { layer: hit.layer, ref: `tencent:${hit.layer}:${hit.id}` } : {}),
+        ...(hit.layer
+          ? { layer: hit.layer, ref: hit.ref ?? `tencent:${hit.layer}:${hit.id}` }
+          : {}),
       },
       trust: "reference",
     },
@@ -958,10 +967,10 @@ async function fetchOrgL2L3Hits(
  * Layered scope-aware recall: for each pool, search Tencent L0 (explicit ground
  * evidence) and L1 (distilled atomic) in parallel, read the shared org's bounded
  * L2 scene summaries and L3 persona in parallel, then merge
- * into ONE budget-bounded, deduped, scope-labeled block. L0 is placed first so it
- * WINS dedupe within a pool — a freshly-taught fact recalls immediately, and once
- * L1 catches up with the same content it still shows once (as L0, richer
- * provenance), satisfying "no duplicate row after L1 derivation". An explicit
+ * into ONE budget-bounded, deduped, scope-labeled block. The committed local
+ * capture overlay leads, then upstream L0, so read-your-writes wins until the
+ * delivery receipt removes the overlay; L0 then wins over L1 while extraction
+ * catches up. Identical content still renders once. An explicit
  * memory whose envelope state is not `active` (superseded/tombstoned) is
  * suppressed. Every item carries `citation.layer` + `citation.ref`. Never throws.
  */
@@ -975,7 +984,8 @@ export async function recallScopedMemory(
   const started = Date.now();
   const limit = opts.limit ?? DEFAULT_LIMIT;
   const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
-  const [perPool, orgDeep] = await Promise.all([
+  const [overlay, perPool, orgDeep] = await Promise.all([
+    readCaptureOverlay(query, pools),
     Promise.all(pools.map(async (p) => {
       const isoBody = {
         team_id: p.identity.teamId,
@@ -1018,9 +1028,25 @@ export async function recallScopedMemory(
   // Degraded = the provider was unreachable for EVERY scoped layer path (not
   // merely empty). A 404/non-zero unsupported deep layer degrades to empty but
   // does not turn a reachable L0/L1 search into an outage.
-  const degraded = perPool.length > 0 && perPool.every((p) => p.unreachable) && orgDeep.unreachable;
+  const degraded =
+    overlay.length === 0 &&
+    perPool.length > 0 &&
+    perPool.every((p) => p.unreachable) &&
+    orgDeep.unreachable;
   const label = new Set(pools.map((p) => p.sourceScope)).size > 1;
   const { rendered, items, truncated } = renderLayeredMemoryBlock([
+    ...overlay.map(({ sourceScope, id, content, dedupeKey }) => ({
+      sourceScope,
+      hit: {
+        id,
+        type: "pending_capture",
+        content,
+        layer: "provisional" as const,
+        provider: "useagent-outbox" as const,
+        ref: `useagent:provisional:${id}`,
+        dedupeKey,
+      },
+    })),
     ...perPool.flatMap((p) => p.scoped),
     ...orgDeep.scoped,
   ], label);
