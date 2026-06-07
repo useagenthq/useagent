@@ -49,8 +49,8 @@ const PUBLIC_API_PREFIXES = [
   // One-use, short-lived run capabilities authenticate this WebSocket. The
   // relay re-resolves the exact org/user connection before start and every turn.
   "/api/internal/codex-relay/",
-  // Operator dispatch bridge: bearer-secret authenticated, and rejects any
-  // request carrying X-Forwarded-For (only direct loopback callers pass).
+  // Operator dispatch bridge: dedicated-secret authenticated, verifies Bun's
+  // socket peer is loopback, and rejects proxy-origin headers.
   "/api/internal/operator/",
 ];
 

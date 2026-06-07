@@ -49,6 +49,9 @@ Local dev is designed to boot with almost no configuration:
 - `DATABASE_URL` defaults to `postgres://postgres@localhost:5432/useagent`.
 - `BETTER_AUTH_SECRET` falls back to an insecure dev default while dev mode is
   on; the backend warns at boot. Production requires a real secret.
+- The loopback-only operator bridge stays disabled unless
+  `USEAGENT_OPERATOR_SECRET` is set to an independent random value of at least
+  32 characters. Never reuse `BETTER_AUTH_SECRET`.
 - Requests without a session fall back to a seeded dev org and user, so every
   API works unauthenticated in local dev.
 

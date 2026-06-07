@@ -14,5 +14,8 @@ describe("internal automation auth boundary", () => {
     expect(isPublicApiPath("/api/internal/codex-relay/one-use-capability")).toBe(true);
     expect(isPublicApiPath("/api/internal/codex-relay")).toBe(false);
     expect(isPublicApiPath("/api/internal/codex-relay-evil/token")).toBe(false);
+    expect(isPublicApiPath("/api/internal/operator/pump-thread")).toBe(true);
+    expect(isPublicApiPath("/api/internal/operator")).toBe(false);
+    expect(isPublicApiPath("/api/internal/operator-evil/pump-thread")).toBe(false);
   });
 });
