@@ -15,6 +15,8 @@ import {
   getRunWithSteps,
   getStepsApi,
   getThreadForRun,
+  getThreadOutlineForRun,
+  getThreadRunsByIds,
   listRunSummaries,
   listRunsWithSteps,
 } from "./repo";
@@ -740,6 +742,39 @@ runsRoutes.get("/:id", async (c) => {
   const run = await getRunWithSteps(orgId, id);
   if (!run) return c.json({ error: "run not found" }, 404);
   return c.json(run);
+});
+
+// Thread OUTLINE (windowed initial loading): the per-turn skeleton of the whole
+// thread `:id` belongs to, oldest→newest - run id, status, step count,
+// has-summary flag, created_at. No step bodies, no JSON payloads: long threads
+// first paint from this plus a fully-loaded tail, and fetch older turns via
+// GET /:id/turns as the user scrolls. Org-scoped exactly like `?thread=1`
+// (a cross-org or missing id is a 404).
+runsRoutes.get("/:id/thread-outline", async (c) => {
+  const turns = await getThreadOutlineForRun(c.get("orgId"), c.req.param("id"));
+  if (!turns) return c.json({ error: "run not found" }, 404);
+  return c.json({ turns });
+});
+
+/** Bound on ids per windowed turns fetch: keeps one island's payload and query
+ *  plan small. The frontend chunks larger windows into multiple requests. */
+const MAX_TURN_FETCH_IDS = 30;
+
+// WINDOWED turns fetch (windowed initial loading): the requested runs of
+// `:id`'s thread with FULL steps - the island the client materializes when the
+// user scrolls into not-yet-loaded turns. Same ApiRun serialization as
+// `?thread=1` (one wire shape, no parallel turn schema). Ids outside the
+// thread or org are silently dropped, never leaked.
+runsRoutes.get("/:id/turns", async (c) => {
+  const raw = c.req.query("ids") ?? "";
+  const ids = [...new Set(raw.split(",").map((s) => s.trim()).filter((s) => s.length > 0))];
+  if (ids.length === 0) return c.json({ error: "ids is required" }, 400);
+  if (ids.length > MAX_TURN_FETCH_IDS) {
+    return c.json({ error: `ids must contain at most ${MAX_TURN_FETCH_IDS} run ids` }, 400);
+  }
+  const turns = await getThreadRunsByIds(c.get("orgId"), c.req.param("id"), ids);
+  if (!turns) return c.json({ error: "run not found" }, 404);
+  return c.json({ turns });
 });
 
 // A run's INBOUND attachments (Slack files / browser uploads the user sent with
