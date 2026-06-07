@@ -5,8 +5,8 @@
 ssh_public_key_path = "~/.ssh/id_ed25519.pub"
 postgres_password   = "change-me-to-a-strong-secret"
 gateway_postgres_password = "change-me-to-a-different-strong-secret"
+allowed_ssh_cidrs = ["203.0.113.4/32"] # replace with your public IP
 
 # Optional overrides:
 # server_type       = "cpx41"
 # location          = "nbg1"
-# allowed_ssh_cidrs = ["203.0.113.4/32"]

@@ -18,10 +18,10 @@ packages:
 
 write_files:
   - path: /opt/useagent-provision/provision.sh
-    permissions: "0755"
+    permissions: "0700"
     content: |
       #!/usr/bin/env bash
-      set -euxo pipefail
+      set -euo pipefail
       export DEBIAN_FRONTEND=noninteractive
 
       # Swap gives the Next.js build headroom on an 8 GB box.
@@ -54,10 +54,22 @@ write_files:
       # Throwaway database, isolated from every other useAgent backend.
       sudo -u postgres psql -tAc "select 1 from pg_roles where rolname='useagent'" | grep -qx 1 ||
         sudo -u postgres createuser --login --no-createdb --no-createrole --no-superuser useagent
-      sudo -u postgres psql -v ON_ERROR_STOP=1 -c "ALTER ROLE useagent PASSWORD '${postgres_password}'"
       sudo -u postgres psql -tAc "select 1 from pg_roles where rolname='useagent_gateway'" | grep -qx 1 ||
         sudo -u postgres createuser --login --no-createdb --no-createrole --no-superuser useagent_gateway
-      sudo -u postgres psql -v ON_ERROR_STOP=1 -c "ALTER ROLE useagent_gateway PASSWORD '${gateway_postgres_password}'"
+
+      # Passwords belong in a protected transient SQL payload, never in psql's
+      # process argv or xtrace/cloud-init output.
+      password_sql=/run/useagent-provision-passwords.sql
+      install -o postgres -g postgres -m 0600 /dev/null "$password_sql"
+      trap 'rm -f "$password_sql"' EXIT
+      cat > "$password_sql" <<'SQL'
+      ALTER ROLE useagent PASSWORD '${postgres_password}';
+      ALTER ROLE useagent_gateway PASSWORD '${gateway_postgres_password}';
+      SQL
+      sudo -u postgres psql -v ON_ERROR_STOP=1 -f "$password_sql"
+      rm -f "$password_sql"
+      trap - EXIT
+
       sudo -u postgres psql -tAc "select 1 from pg_database where datname='useagent'" | grep -qx 1 ||
         sudo -u postgres createdb --owner=useagent useagent
       sudo -u postgres psql -v ON_ERROR_STOP=1 -d useagent -c "GRANT CONNECT ON DATABASE useagent TO useagent_gateway; GRANT USAGE ON SCHEMA public TO useagent_gateway; REVOKE CREATE ON SCHEMA public FROM useagent_gateway;"
@@ -71,6 +83,7 @@ write_files:
       install -d -o useagent -g useagent /opt/useagent
 
       touch /opt/useagent-provision/READY
+      rm -f /opt/useagent-provision/provision.sh
 
 runcmd:
-  - bash /opt/useagent-provision/provision.sh 2>&1 | tee /var/log/skynet-provision.log
+  - bash /opt/useagent-provision/provision.sh
