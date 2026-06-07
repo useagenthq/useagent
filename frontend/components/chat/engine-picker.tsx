@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import {
   ENGINES,
   type EngineId,
+  isFreeModel,
   modelLabel,
   modelOptionsForEngine,
   selectableModelsForEngine,
@@ -128,6 +129,11 @@ export function ModelPicker({
   const [open, setOpen] = useState(false);
   const modelCatalog = useEngineModelCatalog();
   const models = modelOptionsForEngine(engine, modelCatalog[engine]);
+  // The zero-cost OpenRouter ":free" variants render under their own section.
+  const sections = [
+    { label: "Model", options: models.filter((m) => !isFreeModel(m.value)) },
+    { label: "Free", options: models.filter((m) => isFreeModel(m.value)) },
+  ].filter((section) => section.options.length > 0);
 
   return (
     <div className={cn("relative", className)}>
@@ -150,33 +156,41 @@ export function ModelPicker({
         <>
           <div className="fixed inset-0 z-10" aria-hidden onClick={() => setOpen(false)} />
           <div className="border-border-button-default bg-background-primary-default shadow-dropdown absolute bottom-11 right-0 z-20 w-56 rounded-2xl border p-1.5">
-            <p className="text-mono-label text-text-tertiary px-2 pb-1 pt-1.5">Model</p>
-            {models.map((e) => {
-              const selected = e.value === model;
-              return (
-                <button
-                  key={e.value}
-                  type="button"
-                  onClick={() => {
-                    onChange(e.value);
-                    setOpen(false);
-                  }}
-                  className="hover:bg-background-primary-hover flex w-full items-center gap-2 rounded-xl px-2 py-1.5 text-left transition-colors"
-                >
-                  <span
-                    className={cn(
-                      "flex size-4 shrink-0 items-center justify-center",
-                      selected ? "text-orange-500" : "text-transparent",
-                    )}
-                  >
-                    <RiCheckLine className="size-4" aria-hidden />
-                  </span>
-                  <span className="min-w-0 flex-1">
-                    <span className="text-body-2-medium text-text-primary block">{e.label}</span>
-                  </span>
-                </button>
-              );
-            })}
+            {sections.map((section) => (
+              <div key={section.label}>
+                <p className="text-mono-label text-text-tertiary px-2 pb-1 pt-1.5">
+                  {section.label}
+                </p>
+                {section.options.map((e) => {
+                  const selected = e.value === model;
+                  return (
+                    <button
+                      key={e.value}
+                      type="button"
+                      onClick={() => {
+                        onChange(e.value);
+                        setOpen(false);
+                      }}
+                      className="hover:bg-background-primary-hover flex w-full items-center gap-2 rounded-xl px-2 py-1.5 text-left transition-colors"
+                    >
+                      <span
+                        className={cn(
+                          "flex size-4 shrink-0 items-center justify-center",
+                          selected ? "text-orange-500" : "text-transparent",
+                        )}
+                      >
+                        <RiCheckLine className="size-4" aria-hidden />
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="text-body-2-medium text-text-primary block">
+                          {e.label}
+                        </span>
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            ))}
           </div>
         </>
       )}

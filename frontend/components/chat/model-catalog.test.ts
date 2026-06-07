@@ -3,6 +3,8 @@ import { resolveEnabledEngine } from "@/components/chat/engine-picker";
 import {
   CHAT_MODELS,
   CODEX_MODELS,
+  FREE_MODELS,
+  isFreeModel,
   MODELS,
   modelLabel,
   modelOptionsForEngine,
@@ -34,7 +36,7 @@ describe("engine model catalog", () => {
   });
 
   test("OpenCode picker keeps provider-qualified model ids", () => {
-    expect(selectableModelsForEngine("opencode")).toEqual(MODELS);
+    expect(selectableModelsForEngine("opencode")).toEqual([...MODELS, ...FREE_MODELS]);
     expect(selectableModelsForEngine("opencode")[0]?.value).toBe("openai/gpt-5.6-luna");
     expect(selectableModelsForEngine("opencode").map((m) => m.value)).toContain(
       "openai/gpt-5.6-luna",
@@ -53,6 +55,22 @@ describe("engine model catalog", () => {
     expect(selectableModelsForEngine("opencode").map((m) => m.value)).toContain(
       "google/gemini-3.7-flash",
     );
+  });
+
+  test("Free lane is OpenCode-only and grouped after the paid catalog", () => {
+    expect(FREE_MODELS.length).toBeGreaterThan(0);
+    for (const model of FREE_MODELS) {
+      expect(isFreeModel(model.value)).toBe(true);
+    }
+    expect(MODELS.some((model) => isFreeModel(model.value))).toBe(false);
+    const opencode = selectableModelsForEngine("opencode").map((m) => m.value);
+    expect(opencode).toContain("nvidia/nemotron-3.5-lightning:free");
+    // Appended after the paid catalog so the default (first entry) stays paid.
+    expect(opencode.slice(MODELS.length)).toEqual(FREE_MODELS.map((m) => m.value));
+    for (const engine of ["pi", "codex", "chat"] as const) {
+      expect(selectableModelsForEngine(engine).some((m) => isFreeModel(m.value))).toBe(false);
+    }
+    expect(modelLabel("thinkingmachines/inkling:free", "opencode")).toBe("Inkling");
   });
 
   test("direct Chat picker exposes only the backend OpenRouter catalog", () => {

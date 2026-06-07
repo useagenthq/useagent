@@ -7,6 +7,7 @@ import {
   GEMINI_FLASH_MODEL,
   FAST_CODEX_MODEL,
   FAST_OPENCODE_MODEL,
+  FREE_OPENCODE_MODELS,
   KIMI_K3_MODEL,
   allowedModelsForEngine,
   defaultModelForEngine,
@@ -43,6 +44,27 @@ describe("paid model policy", () => {
     expect(isModelAllowedForEngine("claude", KIMI_K3_MODEL)).toBe(false);
   });
 
+  test("free OpenRouter slugs are an OpenCode-only lane", () => {
+    expect(FREE_OPENCODE_MODELS.length).toBeGreaterThan(0);
+    for (const model of FREE_OPENCODE_MODELS) {
+      expect(model.endsWith(":free")).toBe(true);
+      expect(isModelAllowedForEngine("opencode", model)).toBe(true);
+      expect(isModelAllowedForEngine("pi", model)).toBe(false);
+      expect(isModelAllowedForEngine("daytona", model)).toBe(false);
+      expect(isModelAllowedForEngine("claude", model)).toBe(false);
+      expect(isModelAllowedForEngine("codex", model, {})).toBe(false);
+      expect(isModelAllowedForEngine("chat", model, {})).toBe(false);
+    }
+    // Grouped after the paid catalog, and only in the OpenCode manifest.
+    expect(allowedModelsForEngine("opencode", {})).toEqual([
+      ...Object.values(OPENCODE_ALLOWED_MODELS).flat(),
+      ...FREE_OPENCODE_MODELS,
+    ]);
+    expect(allowedModelsForEngine("pi", {})).not.toContain(FREE_OPENCODE_MODELS[0]);
+    // The lane never changes the engine default.
+    expect(defaultModelForEngine("opencode", {})).toBe(FAST_OPENCODE_MODEL);
+  });
+
   test("Codex allowlist is explicit and deployment-configurable", () => {
     expect(isModelAllowedForEngine("codex", "gpt-5.6-sol", {})).toBe(true);
     expect(isModelAllowedForEngine("codex", "gpt-5.6-terra", {})).toBe(true);
@@ -72,9 +94,10 @@ describe("paid model policy", () => {
     expect(allowedModelsForEngine("chat", {})).toContain("anthropic/claude-sonnet-5");
     expect(isModelAllowedForEngine("chat", "anthropic/claude-sonnet-5", {})).toBe(true);
     expect(isModelAllowedForEngine("chat", "openai/unbounded", {})).toBe(false);
-    expect(allowedModelsForEngine("opencode", {})).toEqual(
-      Object.values(OPENCODE_ALLOWED_MODELS).flat(),
-    );
+    expect(allowedModelsForEngine("opencode", {})).toEqual([
+      ...Object.values(OPENCODE_ALLOWED_MODELS).flat(),
+      ...FREE_OPENCODE_MODELS,
+    ]);
     expect(allowedModelsForEngine("pi", {})).toEqual(
       Object.values(OPENCODE_ALLOWED_MODELS).flat(),
     );
