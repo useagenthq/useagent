@@ -378,6 +378,29 @@ describe("deriveChildTimeline (the subagent pane's real activity)", () => {
     expect(timeline[1]).toMatchObject({ kind: "text", text: "Checkout validation holds." });
   });
 
+  test("prefers authoritative completed text over deltas from the same child message", () => {
+    const timeline = deriveChildTimeline(
+      [
+        event("message.delta", 1, {
+          messageId: "m-final",
+          text: "partial",
+          identity: { nativeSessionId: "ses_child", nativePartId: "p-final" },
+        }),
+        event("message.completed", 2, {
+          messageId: "m-final",
+          text: "complete answer",
+          identity: { nativeSessionId: "ses_child", nativePartId: "p-final" },
+        }),
+      ],
+      new Map(),
+      "ses_child",
+    );
+
+    expect(timeline).toEqual([
+      { kind: "text", key: "child-text-m-final", text: "complete answer" },
+    ]);
+  });
+
   test("prefers the durable sidecar step over the projected lifecycle", () => {
     const durable = step("step-a", { tool: "bash", output: "12 pass, 0 fail" });
     const timeline = deriveChildTimeline(
