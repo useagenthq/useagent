@@ -52,6 +52,8 @@ describe("execution graph rollout", () => {
       graph_cursor: number;
       executions: unknown[];
       delegation_edges: unknown[];
+      has_more: boolean;
+      next_cursor: string | null;
     }>(path, { cookies: owner.cookies });
     expect(own).toEqual({
       status: 200,
@@ -61,6 +63,8 @@ describe("execution graph rollout", () => {
         graph_cursor: 0,
         executions: [],
         delegation_edges: [],
+        has_more: false,
+        next_cursor: null,
       },
     });
     expect((await json(path, { cookies: outsider.cookies })).status).toBe(404);
@@ -170,5 +174,134 @@ describe("execution graph rollout", () => {
     expect(
       (await json(`/api/runs/${internalRunId}/executions`, { cookies: owner.cookies })).status,
     ).toBe(404);
+  });
+
+  test("validates bounded graph paging and traverses independent collections without duplicates", async () => {
+    process.env.EXECUTION_GRAPH_ROLLOUT = "read";
+    const owner = await createOrgSession(uid("graph-page-owner"));
+    const outsider = await createOrgSession(uid("graph-page-outsider"));
+    const accepted = await json<{ id: string }>("/api/runs", {
+      method: "POST",
+      cookies: owner.cookies,
+      body: { prompt: "paged execution graph", engine: "mock" },
+    });
+    expect(accepted.status).toBe(201);
+    const path = `/api/runs/${accepted.body.id}/executions`;
+
+    for (const query of ["limit=0", "limit=101", "limit=1.5", "limit=1e2", "limit=nope"]) {
+      expect((await json(`${path}?${query}`, { cookies: owner.cookies })).status).toBe(400);
+    }
+    expect((await json(`${path}?cursor=%%%`, { cookies: owner.cookies })).status).toBe(400);
+    expect(
+      (await json(`${path}?cursor=${"a".repeat(1_025)}`, { cookies: owner.cookies })).status,
+    ).toBe(400);
+    const invalidCursor = Buffer.from(JSON.stringify({
+      v: 1,
+      graph_cursor: 0,
+      execution: { created_at: new Date().toISOString(), id: "not-a-uuid" },
+      delegation_edge: null,
+    })).toString("base64url");
+    expect(
+      (await json(`${path}?cursor=${invalidCursor}`, { cookies: owner.cookies })).status,
+    ).toBe(400);
+    expect(
+      (await json(`${path}?limit=0&cursor=%%%`, { cookies: outsider.cookies })).status,
+    ).toBe(404);
+
+    const rootExecution = await createRootExecution({
+      orgId: owner.orgId,
+      runId: accepted.body.id,
+      sourceKey: "root:codex:paged-root",
+      provider: "codex",
+      nativeSessionId: "paged-root",
+      status: "running",
+    });
+    const expectedExecutionIds = [rootExecution.id];
+    const expectedEdgeIds: string[] = [];
+    for (let index = 1; index <= 5; index += 1) {
+      const child = await recordNativeChildSpawn({
+        orgId: owner.orgId,
+        runId: accepted.body.id,
+        parentExecutionId: rootExecution.id,
+        provider: "codex",
+        childSourceKey: `child:codex:paged-${index}`,
+        edgeSourceKey: `edge:codex:spawn:paged-${index}`,
+        nativeSessionId: `paged-${index}`,
+        nativeParentSessionId: "paged-root",
+        providerCallId: `spawn-paged-${index}`,
+        observedDeliverySeq: index,
+      });
+      expectedExecutionIds.push(child.execution.id);
+      expectedEdgeIds.push(child.edge.id);
+    }
+
+    interface GraphPageBody {
+      readonly graph_cursor: number;
+      readonly executions: Array<{ readonly id: string }>;
+      readonly delegation_edges: Array<{ readonly id: string }>;
+      readonly has_more: boolean;
+      readonly next_cursor: string | null;
+    }
+    const seenExecutionIds: string[] = [];
+    const seenEdgeIds: string[] = [];
+    let cursor: string | null = null;
+    let terminalCursor: string | null = null;
+    let previousGraphCursor = 0;
+    for (let pageNumber = 0; pageNumber < 10; pageNumber += 1) {
+      const page = await json<GraphPageBody>(
+        `${path}?limit=2${cursor ? `&cursor=${cursor}` : ""}`,
+        { cookies: owner.cookies },
+      );
+      expect(page.status).toBe(200);
+      expect(page.body.executions.length).toBeLessThanOrEqual(2);
+      expect(page.body.delegation_edges.length).toBeLessThanOrEqual(2);
+      expect(page.body.graph_cursor).toBeGreaterThanOrEqual(previousGraphCursor);
+      previousGraphCursor = page.body.graph_cursor;
+      seenExecutionIds.push(...page.body.executions.map((row) => row.id));
+      seenEdgeIds.push(...page.body.delegation_edges.map((row) => row.id));
+      expect(page.body.next_cursor).not.toBeNull();
+      cursor = page.body.next_cursor;
+      if (!page.body.has_more) {
+        terminalCursor = cursor;
+        break;
+      }
+    }
+
+    expect(terminalCursor).not.toBeNull();
+    expect(previousGraphCursor).toBe(5);
+    expect(new Set(seenExecutionIds).size).toBe(seenExecutionIds.length);
+    expect(new Set(seenEdgeIds).size).toBe(seenEdgeIds.length);
+    expect(new Set(seenExecutionIds)).toEqual(new Set(expectedExecutionIds));
+    expect(new Set(seenEdgeIds)).toEqual(new Set(expectedEdgeIds));
+
+    const appended = await recordNativeChildSpawn({
+      orgId: owner.orgId,
+      runId: accepted.body.id,
+      parentExecutionId: rootExecution.id,
+      provider: "codex",
+      childSourceKey: "child:codex:paged-appended",
+      edgeSourceKey: "edge:codex:spawn:paged-appended",
+      nativeSessionId: "paged-appended",
+      nativeParentSessionId: "paged-root",
+      providerCallId: "spawn-paged-appended",
+      // Same provider delivery sequence as an already-paged edge: the database
+      // insertion cursor must still surface this later commit exactly once.
+      observedDeliverySeq: 5,
+    });
+    const incremental = await json<GraphPageBody>(
+      `${path}?limit=2&cursor=${terminalCursor}`,
+      { cookies: owner.cookies },
+    );
+    expect(incremental).toMatchObject({
+      status: 200,
+      body: {
+        graph_cursor: 5,
+        executions: [{ id: appended.execution.id }],
+        delegation_edges: [{ id: appended.edge.id }],
+        has_more: false,
+      },
+    });
+    expect(incremental.body.next_cursor).not.toBeNull();
+    expect(incremental.body.next_cursor).not.toBe(terminalCursor);
   });
 });
