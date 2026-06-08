@@ -83,6 +83,7 @@ import { strictOrgSecretRedactor } from "../secrets/store";
 import { replyToRuntimeApproval, RuntimeApprovalError } from "../engines/runtime-approval";
 import { UploadClaimError } from "../uploads/repo";
 import { registerRunReadRoutes } from "./read-routes.js";
+import { registerExecutionGraphRoutes } from "./execution-graph-routes.js";
 
 export const runsRoutes = new Hono<AppEnv>();
 
@@ -707,6 +708,7 @@ runsRoutes.delete("/:id/sandbox", async (c) => {
 });
 
 registerRunReadRoutes(runsRoutes);
+registerExecutionGraphRoutes(runsRoutes);
 
 // SSE trace stream: replay existing steps, then live-push new ones.
 //
