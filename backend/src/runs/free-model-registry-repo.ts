@@ -19,8 +19,48 @@ export const FREE_MODEL_DISQUALIFICATION_STREAK = 2;
 export interface ClaimedFreeModelCandidate {
   readonly modelId: string;
   readonly provider: string;
+  readonly state: FreeModelCandidateRow["state"];
+  readonly successStreak: number;
+  readonly failureStreak: number;
+  readonly everQualified: boolean;
   readonly claimToken: string;
   readonly claimExpiresAt: Date;
+}
+
+export interface DiscoveredFreeModelCandidate {
+  readonly modelId: string;
+  readonly provider: string;
+  readonly source: string;
+}
+
+/** Persist catalog discovery without resetting qualification or retry state. */
+export async function upsertDiscoveredFreeModelCandidates(
+  candidates: readonly DiscoveredFreeModelCandidate[],
+  exec: Executor = db,
+): Promise<number> {
+  const unique = [...new Map(
+    candidates
+      .filter((candidate) => candidate.modelId.trim())
+      .map((candidate) => [candidate.modelId, candidate]),
+  ).values()];
+  if (unique.length === 0) return 0;
+  const now = new Date();
+  const rows = await exec
+    .insert(freeModelCandidates)
+    .values(unique.map((candidate) => ({
+      modelId: candidate.modelId,
+      provider: candidate.provider,
+      source: candidate.source,
+      nextProbeAt: now,
+    })))
+    .onConflictDoUpdate({
+      target: freeModelCandidates.modelId,
+      // Preserve probe scheduling, claims, streaks, and first-source provenance.
+      // updated_at is only a bounded freshness heartbeat for the catalog row.
+      set: { updatedAt: now },
+    })
+    .returning({ modelId: freeModelCandidates.modelId });
+  return rows.length;
 }
 
 export interface ClaimDueFreeModelCandidatesInput {
@@ -93,7 +133,8 @@ export async function claimDueFreeModelCandidates(
         limit ${claimLimit}
         for update skip locked
       )
-      returning candidate.model_id, candidate.provider,
+      returning candidate.model_id, candidate.provider, candidate.state,
+        candidate.success_streak, candidate.failure_streak, candidate.ever_qualified,
         candidate.claim_token, candidate.claim_expires_at`);
 
     if (rows.length > 0) {
@@ -106,6 +147,10 @@ export async function claimDueFreeModelCandidates(
     return rows.map((row) => ({
       modelId: String(row.model_id),
       provider: String(row.provider),
+      state: row.state as FreeModelCandidateRow["state"],
+      successStreak: Number(row.success_streak),
+      failureStreak: Number(row.failure_streak),
+      everQualified: Boolean(row.ever_qualified),
       claimToken: String(row.claim_token),
       claimExpiresAt: new Date(String(row.claim_expires_at)),
     }));

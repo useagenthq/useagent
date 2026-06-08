@@ -8,8 +8,8 @@
  * a caller.
  */
 
-const CATALOG_URL = "https://openrouter.ai/api/v1/models";
-const CATALOG_TIMEOUT_MS = 10_000;
+export const OPENROUTER_CATALOG_URL = "https://openrouter.ai/api/v1/models";
+export const OPENROUTER_CATALOG_TIMEOUT_MS = 10_000;
 /** Serve a fetched lane for an hour before consulting the catalog again. */
 const LANE_TTL_MS = 60 * 60 * 1000;
 /** After a failed fetch, wait before retrying so a catalog outage is not
@@ -21,6 +21,7 @@ const FAILED_FETCH_RETRY_MS = 60 * 1000;
 const FORCE_REFRESH_COOLDOWN_MS = 30 * 1000;
 const LANE_CAP = 8;
 const MIN_CONTEXT_LENGTH = 65_536;
+const DISCOVERY_CAP = 100;
 // Admission requires both public-catalog eligibility and a successful hosted
 // agent-path probe. OpenRouter metadata alone does not expose app restrictions
 // or immediate free-tier throttling, so unproven new entries never auto-ship.
@@ -62,20 +63,21 @@ export interface FreeModelLaneRefreshOutcome {
   readonly lane: readonly string[];
 }
 
-/**
- * Pure catalog filter: OpenRouter's `/models` payload -> the advertised lane.
- * Keeps ":free" ids that support tool calls (OpenCode always submits agent
- * tools) with a usable context window, prefers larger context, and caps the
- * lane. Returns [] for empty or malformed payloads - the cache treats that as
- * a failed fetch and keeps its last-good lane.
- */
-export function deriveFreeModelLane(catalog: unknown): string[] {
+export interface OpenRouterFreeModelCandidate {
+  readonly id: string;
+  readonly contextLength: number;
+}
+
+/** Public-catalog discovery only. Qualification is a separate full-agent run. */
+export function discoverOpenRouterFreeModels(
+  catalog: unknown,
+): OpenRouterFreeModelCandidate[] {
   const data =
     catalog && typeof catalog === "object" && !Array.isArray(catalog)
       ? (catalog as { data?: unknown }).data
       : null;
   if (!Array.isArray(data)) return [];
-  const candidates: { id: string; contextLength: number }[] = [];
+  const candidates: OpenRouterFreeModelCandidate[] = [];
   for (const raw of data) {
     if (!raw || typeof raw !== "object" || Array.isArray(raw)) continue;
     const entry = raw as {
@@ -84,7 +86,6 @@ export function deriveFreeModelLane(catalog: unknown): string[] {
       supported_parameters?: unknown;
     };
     if (typeof entry.id !== "string" || !entry.id.endsWith(":free")) continue;
-    if (!HOSTED_VERIFIED_FREE_MODEL_SET.has(entry.id)) continue;
     if (
       typeof entry.context_length !== "number" ||
       entry.context_length < MIN_CONTEXT_LENGTH
@@ -101,8 +102,27 @@ export function deriveFreeModelLane(catalog: unknown): string[] {
   }
   return candidates
     .toSorted((a, b) => b.contextLength - a.contextLength)
+    .slice(0, DISCOVERY_CAP);
+}
+
+/**
+ * Pure catalog filter: OpenRouter's `/models` payload -> the advertised lane.
+ * Keeps ":free" ids that support tool calls (OpenCode always submits agent
+ * tools) with a usable context window, prefers larger context, and caps the
+ * lane. Returns [] for empty or malformed payloads - the cache treats that as
+ * a failed fetch and keeps its last-good lane.
+ */
+export function deriveFreeModelLane(catalog: unknown): string[] {
+  return discoverOpenRouterFreeModels(catalog)
+    .filter((candidate) => HOSTED_VERIFIED_FREE_MODEL_SET.has(candidate.id))
     .slice(0, LANE_CAP)
     .map((candidate) => candidate.id);
+}
+
+export function freeModelRegistryReadEnabled(
+  env: Readonly<Record<string, string | undefined>> = process.env,
+): boolean {
+  return env.FREE_MODEL_REGISTRY_READ_ENABLED === "1";
 }
 
 export class FreeModelLaneCache {
@@ -112,6 +132,8 @@ export class FreeModelLaneCache {
   #failedAt = 0;
   #forcedAt = 0;
   #inflight: Promise<FreeModelLaneRefreshOutcome> | null = null;
+  #registryLane: readonly string[] | null = null;
+  #registryAllowed = new Set<string>();
   #fetcher: CatalogFetcher | null;
   readonly #ttlMs: number;
   readonly #retryMs: number;
@@ -132,14 +154,25 @@ export class FreeModelLaneCache {
   }
 
   /** The advertised lane: last-good catalog result, or the seed. */
-  lane(): readonly string[] {
-    return this.#lane;
+  lane(useRegistry = false): readonly string[] {
+    return useRegistry && this.#registryLane ? this.#registryLane : this.#lane;
   }
 
   /** Acceptance = seed UNION current lane: a run keeps its selected free model
    * across a lane rotation, and the curated seed never regresses. */
-  isAllowed(model: string): boolean {
-    return this.#allowed.has(model);
+  isAllowed(model: string, useRegistry = false): boolean {
+    return useRegistry && this.#registryLane
+      ? this.#registryAllowed.has(model)
+      : this.#allowed.has(model);
+  }
+
+  /** Adopt one non-empty DB-published generation without touching fetch state. */
+  adoptRegistryLane(lane: readonly string[]): boolean {
+    const normalized = [...new Set(lane.map((model) => model.trim()).filter(Boolean))];
+    if (normalized.length === 0) return false;
+    this.#registryLane = normalized;
+    this.#registryAllowed = new Set(normalized);
+    return true;
   }
 
   /** TTL-gated background refresh (stale-while-revalidate): single-flight,
@@ -188,9 +221,9 @@ export class FreeModelLaneCache {
       let lane: string[] = [];
       let reason: FreeModelLaneRefreshOutcome["reason"] = "request_failed";
       try {
-        const response = await fetcher(CATALOG_URL, {
+        const response = await fetcher(OPENROUTER_CATALOG_URL, {
           headers: { accept: "application/json" },
-          signal: AbortSignal.timeout(CATALOG_TIMEOUT_MS),
+          signal: AbortSignal.timeout(OPENROUTER_CATALOG_TIMEOUT_MS),
         });
         if (response.ok) {
           lane = deriveFreeModelLane(await response.json());
@@ -235,6 +268,8 @@ export class FreeModelLaneCache {
     this.#failedAt = 0;
     this.#forcedAt = 0;
     this.#inflight = null;
+    this.#registryLane = null;
+    this.#registryAllowed.clear();
   }
 }
 
@@ -242,11 +277,11 @@ export class FreeModelLaneCache {
 export const freeModelLaneCache = new FreeModelLaneCache();
 
 export function freeModelLane(): readonly string[] {
-  return freeModelLaneCache.lane();
+  return freeModelLaneCache.lane(freeModelRegistryReadEnabled());
 }
 
 export function isAllowedFreeModel(model: string): boolean {
-  return freeModelLaneCache.isAllowed(model);
+  return freeModelLaneCache.isAllowed(model, freeModelRegistryReadEnabled());
 }
 
 export function refreshFreeModelLane(
