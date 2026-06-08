@@ -147,6 +147,12 @@ describe("internal OpenCode free-model qualification driver", () => {
         output: FREE_MODEL_QUALIFICATION_MARKER,
         error: true,
       },
+      {
+        tool: "bash",
+        input: { command: `printf ${FREE_MODEL_QUALIFICATION_MARKER}` },
+        output: FREE_MODEL_QUALIFICATION_MARKER,
+        exit_code: 1,
+      },
     ]) {
       const fixture = servicesFor(async () =>
         run("completed", FREE_MODEL_QUALIFICATION_MARKER, [step("command", code)])
@@ -321,6 +327,31 @@ describe("internal OpenCode free-model qualification driver", () => {
       classification: "system_failure",
       errorCode: "policy_rejected",
     });
+    expect(fixture.cancelled).toHaveLength(1);
+  });
+
+  test("a late acceptance after deadline is cancelled when it eventually commits", async () => {
+    let lateAcceptCommitted = false;
+    const fixture = servicesFor(async () => run("queued", null), {
+      accept: async (input) => {
+        await Bun.sleep(20);
+        lateAcceptCommitted = true;
+        return { status: "created", runId: input.run.id, commandId: crypto.randomUUID() };
+      },
+    });
+    const driver = createInternalOpenCodeQualificationDriver(
+      { orgId: "org", timeoutMs: 5, pollMs: 1 },
+      fixture.services,
+    );
+    await expect(driver.qualify({
+      modelId: "vendor/model:free",
+      claimToken: crypto.randomUUID(),
+    })).resolves.toMatchObject({
+      classification: "system_failure",
+      errorCode: "timeout",
+    });
+    await Bun.sleep(25);
+    expect(lateAcceptCommitted).toBe(true);
     expect(fixture.cancelled).toHaveLength(1);
   });
 });
