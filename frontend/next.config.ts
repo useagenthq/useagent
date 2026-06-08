@@ -25,6 +25,7 @@ function resolveDistDir(phase: string): string {
 
 export default function nextConfig(phase: string): NextConfig {
   return {
+    output: "standalone",
     turbopack: {
       root: repositoryRoot,
       // root fixes symlink-following into ../packages, but shifts the node_modules base

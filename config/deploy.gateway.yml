@@ -1,0 +1,21 @@
+service: useagent-gateway
+image: useagenthq/useagent-gateway
+
+builder:
+  dockerfile: Dockerfile.gateway
+  args:
+    RELEASE_COMMIT: <%= `git rev-parse HEAD`.strip %>
+
+servers:
+  web:
+    options:
+      env-file:
+        - /etc/useagent/backend.env
+        - /etc/useagent/gateway.env
+
+env:
+  clear:
+    NODE_ENV: production
+    GATEWAY_PORT: 3202
+    USEAGENT_BIND_HOST: 127.0.0.1
+    USEAGENT_RELEASE_COMMIT: <%= `git rev-parse HEAD`.strip %>
