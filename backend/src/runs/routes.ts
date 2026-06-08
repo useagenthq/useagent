@@ -11,6 +11,7 @@ import { isMemoryScope } from "../memory/scope";
 import { orgScope } from "../middleware/org";
 import {
   getRun,
+  getCustomerRunForOrg,
   getRunForOrg,
   getRunWithSteps,
   getStepsApi,
@@ -719,7 +720,7 @@ registerRunReadRoutes(runsRoutes);
 runsRoutes.get("/:id/events", async (c) => {
   const id = c.req.param("id");
   // Authorize by org first — a cross-org (or missing) id is a 404, never a stream.
-  if (!(await getRunForOrg(c.get("orgId"), id))) {
+  if (!(await getCustomerRunForOrg(c.get("orgId"), id))) {
     return c.json({ error: "run not found" }, 404);
   }
 
@@ -925,7 +926,7 @@ runsRoutes.get("/:rootRunId/thread-events", async (c) => {
   // Resolve + authorize the root run and derive the canonical threadId SERVER-SIDE
   // BEFORE opening any stream. A cross-org or missing id is a 404, indistinguishable
   // from non-existence — never trust a browser-supplied threadId/orgId.
-  const rootRun = await getRunForOrg(orgId, rootRunId);
+  const rootRun = await getCustomerRunForOrg(orgId, rootRunId);
   if (!rootRun) return c.json({ error: "run not found" }, 404);
   const threadId = rootRun.threadId;
 

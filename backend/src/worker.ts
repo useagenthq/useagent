@@ -54,6 +54,8 @@ import {
 } from "./resources/access-snapshot";
 import { runMock } from "./worker-mock.js";
 import { bus, channel, RUN_SPAWNED, type BusEvent } from "./worker-events.js";
+import { strictOrgSecretRedactor } from "./secrets/store";
+import { errorMessage } from "./util/error-message";
 
 export { bus, channel, RUN_SPAWNED, type BusEvent } from "./worker-events.js";
 
@@ -189,9 +191,12 @@ export async function beginEngineRun(
   runId: string,
   threadId: string,
   orgId: string | null,
+  origin: string | null = null,
 ): Promise<number> {
   await setRunStatus(runId, "running");
-  publishRunLifecycleChange({ orgId, threadId, runId, kind: "running" });
+  if (!isInternalRunOrigin(origin)) {
+    publishRunLifecycleChange({ orgId, threadId, runId, kind: "running" });
+  }
   const step = await insertStep({
     runId,
     idx: 0,
@@ -234,7 +239,7 @@ async function runWorker(runId: string): Promise<void> {
     const firstEngineStep =
       run.engine === "mock" || run.engine === "chat"
         ? 0
-        : await beginEngineRun(run.id, run.threadId, run.orgId);
+        : await beginEngineRun(run.id, run.threadId, run.orgId, run.origin);
     endAccept?.();
 
     // Skill context (Phase 0 slice 0.1): resolve + record the run's pinned skill
@@ -284,7 +289,7 @@ async function runWorker(runId: string): Promise<void> {
     // `mock` is the scripted trace and ignores context entirely. It IS
     // cancellable — the abortable sleep + signal make a live mock turn stop.
     if (run.engine === "mock") {
-      await runMock(runId, run.threadId, run.orgId, ac.signal, wasCancelled);
+      await runMock(runId, run.threadId, run.orgId, run.origin, ac.signal, wasCancelled);
       return;
     }
     if (run.engine === "chat") {
@@ -505,12 +510,14 @@ async function runChat(
   }
 
   await setRunStatus(run.id, "running");
-  publishRunLifecycleChange({
-    orgId: run.orgId,
-    threadId: run.threadId,
-    runId: run.id,
-    kind: "running",
-  });
+  if (!isInternalRunOrigin(run.origin)) {
+    publishRunLifecycleChange({
+      orgId: run.orgId,
+      threadId: run.threadId,
+      runId: run.id,
+      kind: "running",
+    });
+  }
 
   const contextStep = await insertStep({
     runId: run.id,
@@ -819,13 +826,25 @@ async function runEngine(
     const cancelledReason = wasCancelled();
     const cancelled = cancelledReason !== null;
     const timedOut = signal.aborted && !cancelled;
+    let redactFailureText = (_text: string): string => "provider request failed";
+    try {
+      const redactor = await strictOrgSecretRedactor(orgId);
+      redactFailureText = redactor.text;
+    } catch {
+      // Fail closed: never persist or log raw provider errors if secret loading fails.
+    }
     // Honest classification: a dropped provider stream (backend restarted under
     // a live turn / stream dropped) is TRANSIENT and resumable, not a provider
     // error. Cancellation + timeout dominate; only the remaining engine errors
     // are classified. See src/engines/turn-failure-classification.ts.
     const failure =
-      !cancelled && !timedOut ? classifyTurnFailure(err) : null;
-    if (!cancelled) console.error(`[worker] engine ${engineId} run ${runId} failed:`, err);
+      !cancelled && !timedOut ? classifyTurnFailure(err, redactFailureText) : null;
+    if (!cancelled) {
+      console.error(
+        `[worker] engine ${engineId} run ${runId} failed:`,
+        redactFailureText(errorMessage(err)),
+      );
+    }
     // Terminal done step so the trace shows why it stopped.
     await emit({
       kind: "done",
@@ -845,7 +864,7 @@ async function runEngine(
       ? cancelledReason
       : timedOut
         ? `timed out after ${ADAPTER_TIMEOUT_MS / 1000}s`
-        : classifyTurnFailure(err).summary;
+        : failure?.summary ?? "engine error";
     await finalizeRun(runId, "failed", reason, Date.now() - startedAt);
     bus.emit(channel(runId), { type: "end", status: "failed" } satisfies BusEvent);
   } finally {

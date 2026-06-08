@@ -69,6 +69,8 @@ describe("runs", () => {
 
       const listed = await json<{ runs: Array<{ id: string }> }>("/api/runs?all=1");
       expect(listed.body.runs.some((run) => run.id === created.body.id)).toBe(false);
+      const diagnostic = await json(`/api/runs/${created.body.id}`);
+      expect(diagnostic.status).toBe(200);
     } finally {
       if (previousSecret === undefined) delete process.env.USEAGENT_OPERATOR_SECRET;
       else process.env.USEAGENT_OPERATOR_SECRET = previousSecret;
@@ -240,7 +242,7 @@ describe("runs", () => {
         engine: "mock",
         status: "completed",
         threadId: internalId,
-        origin: "internal:historical-probe",
+        origin: "internal:model-qualification",
       },
     ]);
 
@@ -255,6 +257,8 @@ describe("runs", () => {
     expect(summary.body.runs.some((run) => run.id === publicId)).toBe(true);
     expect(detailed.body.runs.some((run) => run.id === internalId)).toBe(false);
     expect(summary.body.runs.some((run) => run.id === internalId)).toBe(false);
+    const direct = await json(`/api/runs/${internalId}`, { cookies: session.cookies });
+    expect(direct.status).toBe(404);
 
     const stored = await db.select().from(runs).where(eq(runs.id, internalId));
     expect(stored).toHaveLength(1);

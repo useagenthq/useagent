@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import { upgradeWebSocket } from "hono/bun";
 import type { AppEnv } from "../http";
 import { orgScope } from "../middleware/org";
-import { getRunForOrg } from "./repo";
+import { getCustomerRunForOrg } from "./repo";
 import { resolvePreviewSandbox } from "./preview-proxy";
 import { errorMessage } from "../util/error-message";
 import { createTerminalChunkDecoder } from "./terminal-decode";
@@ -49,7 +49,7 @@ terminalRoutes.get(
             }
           };
           try {
-            const run = await getRunForOrg(orgId, runId);
+            const run = await getCustomerRunForOrg(orgId, runId);
             if (!run) {
               throw new Error(
                 `run not found (${runId.slice(0, 8) || "no id"} org=${orgId ?? "none"})`,

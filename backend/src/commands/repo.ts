@@ -34,6 +34,8 @@ export interface NewRunCommand {
    *  run. Persisted so downstream policy reads the accepted authority and never
    *  derives trust from identifiers. */
   readonly origin: string | null;
+  /** Server-owned fleet priority. Public run acceptance always supplies 0. */
+  readonly priority: number;
 }
 
 /** Look up a prior command by its per-tenant idempotency key. */
@@ -124,6 +126,7 @@ export async function insertCommandWithRun(
         threadId: cmd.run.threadId,
         engine: cmd.run.engine,
         model: cmd.run.model,
+        priority: cmd.priority,
       },
       tx,
     );

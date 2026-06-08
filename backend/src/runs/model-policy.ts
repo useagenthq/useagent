@@ -34,9 +34,10 @@ export const OPENCODE_ALLOWED_MODELS = {
   ],
 } as const;
 
-// The Free lane (OpenRouter ":free" variants, OpenCode only) is DYNAMIC: it is
-// derived from OpenRouter's public catalog with a TTL cache and a curated seed
-// fallback - see ./free-model-lane. Free slugs ride the same OpenRouter gateway
+// The Free lane (OpenRouter ":free" variants, OpenCode only) is DYNAMIC. The
+// default path derives it from OpenRouter's public catalog with a TTL cache and
+// curated seed; the independent default-off registry-read flag consumes only a
+// durable qualified generation - see ./free-model-lane. Free slugs ride the same OpenRouter gateway
 // path as the paid ones, so a user's own connected OpenRouter key is spent when
 // present and the shared house key serves only where that fallback is allowed.
 

@@ -22,6 +22,7 @@ describe("isInternalRunOrigin", () => {
       "e2e",
       "parity-canary",
       "internal:release-parity:forged",
+      "internal:model-qualification:forged",
       "INTERNAL:RELEASE-PARITY",
       "internal:unknown",
       "slack",

@@ -63,7 +63,10 @@ export function isTransientStreamDrop(error: unknown): boolean {
  *  stream drop (resumable) or a real provider error, and compose its resumable
  *  failure summary. The provider-error branch mirrors the worker's existing
  *  `error: <message>` shape so no honest failure loses its detail. */
-export function classifyTurnFailure(error: unknown): TurnFailureClassification {
+export function classifyTurnFailure(
+  error: unknown,
+  redactText: (text: string) => string = (text) => text,
+): TurnFailureClassification {
   if (isTransientStreamDrop(error)) {
     return {
       kind: "transient",
@@ -74,7 +77,7 @@ export function classifyTurnFailure(error: unknown): TurnFailureClassification {
         "resend the message to resume.",
     };
   }
-  const message = errorMessage(error);
+  const message = redactText(errorMessage(error));
   return {
     kind: "provider",
     resumable: false,

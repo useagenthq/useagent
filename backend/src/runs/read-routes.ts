@@ -2,8 +2,8 @@ import type { Hono } from "hono";
 import type { AppEnv } from "../http.js";
 import { listUploadsForRuns } from "../uploads/repo.js";
 import {
-  getRunForOrg,
-  getRunWithSteps,
+  getCustomerRunForOrg,
+  getCustomerRunWithSteps,
   getThreadForRun,
   getThreadOutlineForRun,
   getThreadRunsByIds,
@@ -48,7 +48,7 @@ export function registerRunReadRoutes(routes: Hono<AppEnv>): void {
       if (!thread) return c.json({ error: "run not found" }, 404);
       return c.json({ thread });
     }
-    const run = await getRunWithSteps(orgId, id);
+    const run = await getCustomerRunWithSteps(orgId, id);
     if (!run) return c.json({ error: "run not found" }, 404);
     return c.json(run);
   });
@@ -82,7 +82,7 @@ export function registerRunReadRoutes(routes: Hono<AppEnv>): void {
   routes.get("/:id/uploads", async (c) => {
     const orgId = c.get("orgId");
     const id = c.req.param("id");
-    if (!(await getRunForOrg(orgId, id))) return c.json({ error: "run not found" }, 404);
+    if (!(await getCustomerRunForOrg(orgId, id))) return c.json({ error: "run not found" }, 404);
     const uploads = (await listUploadsForRuns([id])).get(id) ?? [];
     return c.json({ uploads });
   });
@@ -91,7 +91,7 @@ export function registerRunReadRoutes(routes: Hono<AppEnv>): void {
   routes.get("/:id/timings", async (c) => {
     const orgId = c.get("orgId");
     const id = c.req.param("id");
-    if (!(await getRunForOrg(orgId, id))) return c.json({ error: "run not found" }, 404);
+    if (!(await getCustomerRunForOrg(orgId, id))) return c.json({ error: "run not found" }, 404);
     return c.json(await getRunTimingTable(id));
   });
 }
