@@ -449,6 +449,13 @@
 			"when": 1790300000000,
 			"tag": "0065_fleet_capacity_queue_index",
 			"breakpoints": true
+		},
+		{
+			"idx": 64,
+			"version": "7",
+			"when": 1790400000000,
+			"tag": "0066_free_model_qualifier_foundation",
+			"breakpoints": true
 		}
 	]
 }
