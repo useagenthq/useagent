@@ -16,7 +16,7 @@
  * Runs ALONGSIDE the native lane; additive.
  */
 import { EventEmitter } from "node:events";
-import { and, asc, eq, gt, inArray, max } from "drizzle-orm";
+import { and, asc, eq, gt, inArray, max, sql } from "drizzle-orm";
 import { db, type Executor } from "../db/client";
 import { canonicalEvents } from "../db/schema";
 import { CANONICAL_SCHEMA_VERSION, type CanonicalAgentEvent } from "@useagent/agent-harness/canonical";
@@ -172,5 +172,26 @@ export async function loadCanonicalThread(
     .from(canonicalEvents)
     .where(and(eq(canonicalEvents.threadId, threadId), gt(canonicalEvents.deliverySeq, afterDeliverySeq)))
     .orderBy(asc(canonicalEvents.deliverySeq));
+  return rows.map(rowToDelivered);
+}
+
+export async function loadCanonicalExecutionEvents(input: {
+  readonly runId: string;
+  readonly provider: string;
+  readonly nativeSessionId: string;
+  readonly afterDeliverySeq: number;
+  readonly limit: number;
+}): Promise<DeliveredCanonicalEvent[]> {
+  const rows = await db
+    .select()
+    .from(canonicalEvents)
+    .where(and(
+      eq(canonicalEvents.runId, input.runId),
+      gt(canonicalEvents.deliverySeq, input.afterDeliverySeq),
+      sql`${canonicalEvents.identity}->>'provider' = ${input.provider}`,
+      sql`${canonicalEvents.identity}->>'nativeSessionId' = ${input.nativeSessionId}`,
+    ))
+    .orderBy(asc(canonicalEvents.deliverySeq))
+    .limit(input.limit);
   return rows.map(rowToDelivered);
 }
