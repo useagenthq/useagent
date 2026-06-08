@@ -95,6 +95,7 @@ export function useWindowedThread({
             native: nativeFor(view),
             canonical: view.canonical,
             canonicalComplete: view.canonicalComplete,
+            executionSummary: view.executionSummary,
           }
         : {
             run,

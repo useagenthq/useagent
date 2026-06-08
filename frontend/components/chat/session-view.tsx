@@ -1170,6 +1170,7 @@ export function SessionView({
                       live={live}
                       frames={allFrames}
                       canonicalEvents={allCanonicalEvents}
+                      executionSummary={snapshot.executionSummary}
                       childSessions={gatewayChildren}
                     />
                   ) : railTab === "artifacts" ? (
