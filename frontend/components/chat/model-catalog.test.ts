@@ -101,15 +101,20 @@ describe("engine model catalog", () => {
     expect(supportsPreSessionModelSelection("chat")).toBe(true);
   });
 
-  test("non-selectable engines expose no model choices", () => {
-    expect(selectableModelsForEngine("claude")).toEqual([]);
+  test("Claude uses its backend-policy model ids while generic ACP stays fixed", () => {
+    expect(selectableModelsForEngine("claude").map((model) => model.value)).toEqual([
+      "claude-opus-5",
+      "claude-sonnet-5",
+      "claude-fable-5",
+      "claude-haiku-4-5",
+    ]);
     expect(selectableModelsForEngine("acp")).toEqual([]);
   });
 
   test("keeps model selection available while supported sessions are booting", () => {
     expect(supportsPreSessionModelSelection("codex")).toBe(true);
     expect(supportsPreSessionModelSelection("opencode")).toBe(true);
-    expect(supportsPreSessionModelSelection("claude")).toBe(false);
+    expect(supportsPreSessionModelSelection("claude")).toBe(true);
   });
 
   test("labels resolve against the engine-specific catalog", () => {
@@ -126,6 +131,8 @@ describe("engine model catalog", () => {
     expect(modelOptionsForEngine("opencode", ["openai/gpt-5.6-sol"])[0]?.value).toBe(
       "openai/gpt-5.6-sol",
     );
-    expect(modelOptionsForEngine("claude", ["claude-opus-5"])).toEqual([]);
+    expect(modelOptionsForEngine("claude", ["claude-opus-5"])).toEqual([
+      { value: "claude-opus-5", label: "Opus 5", tint: "text-orange-500" },
+    ]);
   });
 });
