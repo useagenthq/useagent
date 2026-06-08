@@ -13,3 +13,9 @@ export function executionGraphReadEnabled(
 ): boolean {
   return executionGraphRolloutMode(env) === "read";
 }
+
+export function executionGraphWriteEnabled(
+  env: Record<string, string | undefined> = process.env,
+): boolean {
+  return executionGraphRolloutMode(env) !== "off";
+}
