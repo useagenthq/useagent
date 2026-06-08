@@ -8,6 +8,7 @@ import type { FetchLike, ResponseLike } from "../src/api";
 import {
   createFleetClient,
   fleetRunUrl,
+  MAX_DURABLE_BATCH_TASKS,
   MAX_FLEET_CONCURRENCY,
   MAX_FLEET_TASKS,
   parseVerdict,
@@ -172,6 +173,159 @@ describe("createFleetClient.dispatchMany", () => {
     await expect(
       client.dispatchMany([{ prompt: "one" }], { concurrency: MAX_FLEET_CONCURRENCY + 1 }),
     ).rejects.toThrow(`between 1 and ${MAX_FLEET_CONCURRENCY}`);
+  });
+});
+
+describe("createFleetClient durable batches", () => {
+  test("dispatchBatch accepts the ordered task set in one authenticated request", async () => {
+    const calls: { url: string; init?: Parameters<FetchLike>[1] }[] = [];
+    const client = createFleetClient({
+      ...CONFIG,
+      fetch: async (url, init) => {
+        calls.push({ url, init });
+        return jsonResponse(201, {
+          batch_id: "batch_1",
+          replayed: false,
+          status: "running",
+          created_at: "2026-08-28T00:00:00.000Z",
+          runs: [
+            {
+              ordinal: 1,
+              run_id: "run_b",
+              status: "queued",
+              queue: { state: "queued", reason: "org_limit" },
+            },
+            {
+              ordinal: 0,
+              run_id: "run_a",
+              status: "running",
+              queue: { state: "running", reason: null },
+            },
+          ],
+        });
+      },
+    });
+
+    const batch = await client.dispatchBatch(
+      [
+        { prompt: "a", engine: "codex", repos: ["acme/web"] },
+        { prompt: "b", model: "openai/gpt-5.6" },
+      ],
+      { idempotencyKey: "fleet-demo-1" },
+    );
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.url).toBe("https://fleet.test/api/fleet/batches");
+    expect(calls[0]!.init?.method).toBe("POST");
+    expect(calls[0]!.init?.headers?.Authorization).toBe("Bearer uak_secret");
+    expect(calls[0]!.init?.headers?.["Idempotency-Key"]).toBe("fleet-demo-1");
+    expect(JSON.parse(calls[0]!.init!.body!)).toEqual({
+      tasks: [
+        { prompt: "a", engine: "codex", repos: ["acme/web"] },
+        { prompt: "b", model: "openai/gpt-5.6" },
+      ],
+    });
+    expect(batch).toEqual({
+      batchId: "batch_1",
+      status: "running",
+      createdAt: "2026-08-28T00:00:00.000Z",
+      replayed: false,
+      runs: [
+        {
+          ordinal: 0,
+          runId: "run_a",
+          status: "running",
+          queue: { state: "running", reason: null },
+          url: "https://fleet.test/session/run_a",
+        },
+        {
+          ordinal: 1,
+          runId: "run_b",
+          status: "queued",
+          queue: { state: "queued", reason: "org_limit" },
+          url: "https://fleet.test/session/run_b",
+        },
+      ],
+    });
+  });
+
+  test("getBatch reads current ordered queue metadata", async () => {
+    let called = "";
+    const client = createFleetClient({
+      ...CONFIG,
+      fetch: async (url) => {
+        called = url;
+        return jsonResponse(200, {
+          batch_id: "batch/1",
+          replayed: false,
+          status: "completed",
+          created_at: "2026-08-28T00:00:00.000Z",
+          runs: [
+            {
+              ordinal: 0,
+              run_id: "run_a",
+              status: "completed",
+              queue: { state: "terminal", reason: null },
+            },
+          ],
+        });
+      },
+    });
+
+    const batch = await client.getBatch("batch/1");
+    expect(called).toBe("https://fleet.test/api/fleet/batches/batch%2F1");
+    expect(batch.replayed).toBe(false);
+    expect(batch.runs[0]).toMatchObject({
+      ordinal: 0,
+      runId: "run_a",
+      status: "completed",
+      queue: { state: "terminal", reason: null },
+    });
+  });
+
+  test("marks an idempotent POST replay from the backend's 200 response", async () => {
+    const client = createFleetClient({
+      ...CONFIG,
+      fetch: async () => jsonResponse(200, {
+        batch_id: "batch_1",
+        replayed: true,
+        status: "queued",
+        created_at: "2026-08-28T00:00:00.000Z",
+        runs: [
+          {
+            ordinal: 0,
+            run_id: "run_a",
+            status: "queued",
+            queue: null,
+          },
+        ],
+      }),
+    });
+
+    const batch = await client.dispatchBatch([{ prompt: "a" }], { idempotencyKey: "same" });
+    expect(batch.replayed).toBe(true);
+    expect(batch.runs[0]!.queue).toEqual({ state: null, reason: null });
+  });
+
+  test("rejects empty, oversized, unkeyed, and malformed batches before use", async () => {
+    let calls = 0;
+    const client = createFleetClient({
+      ...CONFIG,
+      fetch: async () => {
+        calls++;
+        return jsonResponse(201, {});
+      },
+    });
+    await expect(client.dispatchBatch([], { idempotencyKey: "k" })).rejects.toThrow("between 1 and 20");
+    await expect(
+      client.dispatchBatch(
+        Array.from({ length: MAX_DURABLE_BATCH_TASKS + 1 }, (_, index) => ({ prompt: `t${index}` })),
+        { idempotencyKey: "k" },
+      ),
+    ).rejects.toThrow("between 1 and 20");
+    await expect(client.dispatchBatch([{ prompt: "a" }], { idempotencyKey: "" })).rejects.toThrow("idempotency key");
+    await expect(client.getBatch("bad")).rejects.toThrow("invalid fleet batch");
+    expect(calls).toBe(1);
   });
 });
 

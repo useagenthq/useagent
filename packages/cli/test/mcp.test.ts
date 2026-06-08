@@ -1,5 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { MAX_FLEET_CONCURRENCY, MAX_FLEET_TASKS } from "@useagent/agent-client/fleet";
+import {
+  MAX_DURABLE_BATCH_TASKS,
+  MAX_FLEET_CONCURRENCY,
+  MAX_FLEET_TASKS,
+} from "@useagent/agent-client/fleet";
 import { FLEET_TOOLS, handleToolCall } from "../src/mcp";
 import { fakeClient, makeSummary } from "./fake-client";
 
@@ -9,10 +13,11 @@ function payload(result: { content: Array<{ type: string; text?: string }> }): u
 }
 
 describe("FLEET_TOOLS", () => {
-  test("advertises the four fleet tools with object input schemas", () => {
+  test("advertises the legacy tools plus the opt-in durable batch tool", () => {
     expect(FLEET_TOOLS.map((t) => t.name)).toEqual([
       "dispatch_task",
       "dispatch_parallel",
+      "dispatch_batch",
       "get_run_result",
       "list_recent_runs",
     ]);
@@ -66,6 +71,74 @@ describe("handleToolCall", () => {
         await handleToolCall(fakeClient(), "dispatch_parallel", {
           tasks: [{ prompt: "one" }],
           concurrency: 1.5,
+        })
+      ).isError,
+    ).toBe(true);
+  });
+
+  test("dispatch_batch uses one durable acceptance call and returns ordered queue metadata", async () => {
+    let received: unknown = null;
+    const client = fakeClient({
+      dispatchBatch: async (tasks, options) => {
+        received = { tasks, options };
+        return {
+          batchId: "batch_1",
+          status: "queued",
+          createdAt: "2026-08-28T00:00:00.000Z",
+          replayed: true,
+          runs: tasks.map((_task, ordinal) => ({
+            ordinal,
+            runId: `run_${ordinal}`,
+            status: "queued",
+            queue: { state: "queued", reason: "org_limit" },
+            url: `https://fleet.test/session/run_${ordinal}`,
+          })),
+        };
+      },
+    });
+    const result = await handleToolCall(client, "dispatch_batch", {
+      tasks: [{ prompt: "a" }, { prompt: "b", engine: "codex" }],
+      idempotencyKey: "batch-key",
+    });
+
+    expect(received).toEqual({
+      tasks: [{ prompt: "a" }, { prompt: "b", engine: "codex" }],
+      options: { idempotencyKey: "batch-key" },
+    });
+    expect(payload(result)).toMatchObject({
+      batchId: "batch_1",
+      replayed: true,
+      runs: [
+        { ordinal: 0, runId: "run_0", queue: { state: "queued", reason: "org_limit" } },
+        { ordinal: 1, runId: "run_1", queue: { state: "queued", reason: "org_limit" } },
+      ],
+    });
+  });
+
+  test("dispatch_batch validates the durable 20-task bound and key", async () => {
+    expect((await handleToolCall(fakeClient(), "dispatch_batch", {})).isError).toBe(true);
+    expect(
+      (
+        await handleToolCall(fakeClient(), "dispatch_batch", {
+          tasks: [],
+          idempotencyKey: "k",
+        })
+      ).isError,
+    ).toBe(true);
+    expect(
+      (
+        await handleToolCall(fakeClient(), "dispatch_batch", {
+          tasks: Array.from({ length: MAX_DURABLE_BATCH_TASKS + 1 }, (_, index) => ({
+            prompt: `t${index}`,
+          })),
+          idempotencyKey: "k",
+        })
+      ).isError,
+    ).toBe(true);
+    expect(
+      (
+        await handleToolCall(fakeClient(), "dispatch_batch", {
+          tasks: [{ prompt: "a" }],
         })
       ).isError,
     ).toBe(true);
