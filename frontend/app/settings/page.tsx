@@ -75,6 +75,24 @@ export default function SettingsPage() {
               <GeneralCard />
             </Section>
 
+            {/* Provider connections */}
+            <Section
+              id="providers"
+              title="Provider connections"
+              description="Your model provider accounts and write-only API keys."
+            >
+              <ProviderConnectionsCard />
+            </Section>
+
+            {/* Integrations */}
+            <Section
+              id="integrations"
+              title="Integrations"
+              description="Connected tools agents can use for this workspace."
+            >
+              <IntegrationConnections />
+            </Section>
+
             {/* Usage */}
             <Section
               id="usage"
@@ -132,23 +150,7 @@ export default function SettingsPage() {
               </div>
             </Section>
 
-            {/* Integrations */}
-            <Section
-              id="integrations"
-              title="Integrations"
-              description="Connected tools agents can use for this workspace."
-            >
-              <IntegrationConnections />
-            </Section>
 
-            {/* Provider connections */}
-            <Section
-              id="providers"
-              title="Provider connections"
-              description="Your model provider accounts and write-only API keys."
-            >
-              <ProviderConnectionsCard />
-            </Section>
 
             {/* Secrets */}
             <Section
