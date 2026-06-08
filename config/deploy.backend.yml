@@ -1,0 +1,25 @@
+service: useagent-backend
+image: useagenthq/useagent-backend
+
+builder:
+  dockerfile: Dockerfile.backend
+  args:
+    RELEASE_COMMIT: <%= `git rev-parse HEAD`.strip %>
+
+servers:
+  web:
+    options:
+      env-file: /etc/useagent/backend.env
+
+env:
+  clear:
+    NODE_ENV: production
+    PORT: 3201
+    USEAGENT_BIND_HOST: 127.0.0.1
+    USEAGENT_RELEASE_COMMIT: <%= `git rev-parse HEAD`.strip %>
+
+volumes:
+  - /opt/useagent/backend/.artifacts:/app/backend/.artifacts
+  - /opt/useagent/backend/.runs:/app/backend/.runs
+  - /opt/useagent/backend/.slack-uploads:/app/backend/.slack-uploads
+  - /opt/useagent/pi-runtime:/opt/useagent/pi-runtime

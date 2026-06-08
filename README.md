@@ -113,6 +113,9 @@ frontend (Next.js)  ->  backend (Bun + Hono + Postgres)  ->  sandboxes (Daytona/
 Deeper reading: the [documentation site](https://useagent.org/docs/) and the interactive
 [request-flow diagram](docs/architecture/request-flow.html).
 
+The additive immutable-container release lane is documented in
+[`docs/operations/immutable-releases.md`](docs/operations/immutable-releases.md).
+
 ## License
 
 useAgent is free and open-source software under the

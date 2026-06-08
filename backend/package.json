@@ -8,6 +8,7 @@
     "dev": "bun run --watch src/index.ts",
     "start": "bun run src/index.ts",
     "gateway": "bun run src/gateway.ts",
+    "migrate:release": "bun run scripts/migrate-release.ts",
     "test": "bun run test/prepare-db.ts && bun test --max-concurrency=1 --path-ignore-patterns='**/test/slack.test.ts' && bun run test/prepare-db.ts && bun test --max-concurrency=1 ./test/slack.test.ts",
     "test:memory-matrix": "bun test src/memory/team-memory.test.ts src/memory/scope.test.ts test/finalize.test.ts test/capture-outbox.test.ts test/memory-tools.test.ts test/memory-two-sandbox.live.test.ts test/learning-outbox.test.ts test/knowledge-drafts.test.ts test/skill-proposals.test.ts",
     "e2e": "bun run test/e2e/full-stack.ts",
