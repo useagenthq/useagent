@@ -9,6 +9,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   buildAcpInstallClause,
+  acpRunningLabel,
   codexModelSelectionRequest,
   buildAcpRuntimeEnvExports,
   claudeAcpConfig,
@@ -73,6 +74,12 @@ describe("ACP executable provisioning (#127)", () => {
       },
     });
     expect(codexModelSelectionRequest("claude", "session-1", "claude-opus-5")).toBeNull();
+  });
+
+  test("uses product engine names without leaking process residency", () => {
+    expect(acpRunningLabel("claude")).toBe("Running Claude Code…");
+    expect(acpRunningLabel("codex")).toBe("Running Codex…");
+    expect(acpRunningLabel("claude")).not.toContain("resident");
   });
 
   test("runtime env exports refresh gateway endpoints while preserving $HOME expansion", () => {

@@ -48,6 +48,7 @@ describe("sessionCapabilities (truthful per-engine + resource-driven)", () => {
 
     const codex = sessionCapabilities("codex", res);
     expect(codex.modelSelection).toBe(true); // Codex accepts an explicit backend-policy model id
+    expect(sessionCapabilities("claude", res).modelSelection).toBe(true);
 
     for (const e of ["claude", "codex"]) {
       const c = sessionCapabilities(e, res);
@@ -61,7 +62,6 @@ describe("sessionCapabilities (truthful per-engine + resource-driven)", () => {
       expect(c.reasoning).toBe(false);
       expect(c.fileDiffs).toBe(false);
     }
-    expect(sessionCapabilities("claude", res).modelSelection).toBe(false);
   });
 
   test("legacy aliases normalize (daytona->opencode, claude-sdk->claude)", () => {
