@@ -168,9 +168,8 @@ export function desiredPublishedLane(
       .map((candidate) => candidate.modelId),
   );
   const catalogIds = catalog.map((candidate) => candidate.id);
-  const catalogSet = new Set(catalogIds);
   const desired = (registry.state?.currentModelIds ?? [])
-    .filter((modelId) => qualified.has(modelId) && catalogSet.has(modelId));
+    .filter((modelId) => qualified.has(modelId));
   const seen = new Set(desired);
   for (const modelId of catalogIds) {
     if (qualified.has(modelId) && !seen.has(modelId)) {
@@ -323,6 +322,36 @@ export async function hydrateFreeModelLaneFromRegistry(): Promise<boolean> {
   if (!freeModelRegistryReadEnabled()) return false;
   const state = await loadCurrentFreeModelLane();
   return state ? freeModelLaneCache.adoptRegistryLane(state.currentModelIds) : false;
+}
+
+export interface FreeModelRegistryHydratorDeps {
+  readonly hydrate?: () => Promise<boolean>;
+  readonly schedule?: (
+    run: () => void,
+    intervalMs: number,
+  ) => { unref?: () => void };
+}
+
+/** Every backend replica refreshes the DB-published generation independently;
+ * the qualifying worker may run elsewhere. Postgres remains catalog truth. */
+export function startFreeModelRegistryHydrator(
+  deps: FreeModelRegistryHydratorDeps = {},
+  env: Readonly<Record<string, string | undefined>> = process.env,
+): boolean {
+  if (!freeModelRegistryReadEnabled(env)) return false;
+  const hydrate = deps.hydrate ?? hydrateFreeModelLaneFromRegistry;
+  const schedule = deps.schedule ?? ((run, intervalMs) => setInterval(run, intervalMs));
+  const run = (): void => {
+    void hydrate().catch((error) => {
+      console.warn(
+        "[free-model-registry] refresh failed:",
+        error instanceof Error ? error.message : "unknown",
+      );
+    });
+  };
+  const timer = schedule(run, 60_000);
+  timer.unref?.();
+  return true;
 }
 
 export function startFreeModelQualifierWorker(

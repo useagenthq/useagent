@@ -98,6 +98,7 @@ import {
   freeModelQualifierEnabled,
   hydrateFreeModelLaneFromRegistry,
   startFreeModelQualifierWorker,
+  startFreeModelRegistryHydrator,
 } from "./runs/free-model-qualifier-worker";
 import {
   createInternalOpenCodeQualificationDriver,
@@ -133,6 +134,7 @@ await migrate(db, { migrationsFolder: `${import.meta.dir}/../drizzle` });
 // Default OFF. When explicitly enabled, hydrate the synchronous model-policy
 // cache from the last atomically published DB generation before serving config.
 await hydrateFreeModelLaneFromRegistry();
+startFreeModelRegistryHydrator();
 
 // Reconcile the restricted gateway role's grants on EVERY boot: a migration
 // that adds a gateway-written table ships its grant in the same commit (see
