@@ -6,7 +6,10 @@ import postgres from "postgres";
 import * as schema from "../src/db/schema";
 import { agentExecutions, delegationEdges, runs } from "../src/db/schema";
 import { executionGraphWriteEnabled } from "../src/runs/execution-graph-rollout";
-import { shadowWriteExecutionGraph } from "../src/runs/execution-graph-shadow-writer";
+import {
+  executionGraphObservationKind,
+  shadowWriteExecutionGraph,
+} from "../src/runs/execution-graph-shadow-writer";
 
 const ADMIN_URL = process.env.TEST_ADMIN_URL ?? "postgres://postgres@localhost:5432/postgres";
 const databaseName = `useagent_graph_shadow_${crypto.randomUUID().replaceAll("-", "")}`;
@@ -46,6 +49,36 @@ describe("execution graph shadow writer", () => {
     expect(executionGraphWriteEnabled({ EXECUTION_GRAPH_ROLLOUT: "off" })).toBe(false);
     expect(executionGraphWriteEnabled({ EXECUTION_GRAPH_ROLLOUT: "shadow" })).toBe(true);
     expect(executionGraphWriteEnabled({ EXECUTION_GRAPH_ROLLOUT: "read" })).toBe(true);
+  });
+
+  test("classifies only graph-semantic events before any database lookup", () => {
+    const base = {
+      id: "event",
+      runId: "run",
+      threadId: "run",
+      provider: "t3",
+      nativeSessionId: "root",
+    } as const;
+    expect(executionGraphObservationKind({
+      ...base,
+      eventType: "t3.activity.message.delta",
+      payload: { kind: "message.delta", payload: { text: "hello" } },
+    })).toBeNull();
+    expect(executionGraphObservationKind({
+      ...base,
+      eventType: "t3.activity.tool.completed",
+      payload: { kind: "tool.completed", payload: { toolName: "bash" } },
+    })).toBeNull();
+    expect(executionGraphObservationKind({
+      ...base,
+      eventType: "t3.activity.task.completed",
+      nativeSessionId: "child",
+      nativeParentSessionId: "root",
+      payload: {
+        kind: "task.completed",
+        payload: { taskId: "child", parentAgentId: "root", agentKind: "agent" },
+      },
+    })).toBe("lifecycle");
   });
 
   test("writes only explicit OpenCode root and parent-linked child identities", async () => {
@@ -176,6 +209,16 @@ describe("execution graph shadow writer", () => {
         },
       },
     }, 2, testDb);
+    await shadowWriteExecutionGraph({
+      id: `${runId}:child-tool-complete`,
+      runId,
+      threadId: runId,
+      provider: "t3",
+      eventType: "t3.activity.tool.completed",
+      nativeSessionId: "child",
+      nativeParentSessionId: "parent",
+      payload: { kind: "tool.completed", payload: { toolName: "bash" } },
+    }, 3, testDb);
 
     const [child] = await testDb.select().from(agentExecutions).where(and(
       eq(agentExecutions.runId, runId),
