@@ -277,7 +277,10 @@ describe("free-model qualifier worker", () => {
     });
     expect(agent.requests).toEqual([fresh.modelId]);
     expect(fake.records[0]).toMatchObject({ outcome: "success", errorCode: null });
-    expect(fake.publishes).toEqual([{ modelIds: [seed.modelId, fresh.modelId] }]);
+    expect(fake.publishes).toEqual([{
+      modelIds: [seed.modelId, fresh.modelId],
+      expectedGeneration: 1,
+    }]);
     expect(adopted).toEqual([[seed.modelId, fresh.modelId]]);
   });
 
@@ -358,7 +361,7 @@ describe("free-model qualifier worker", () => {
     });
     expect(failing.state).toBe("disqualified");
     expect(fake.records[0]?.nextProbeAt.getTime()).toBe(NOW + 60 * 60_000);
-    expect(fake.publishes).toEqual([{ modelIds: [] }]);
+    expect(fake.publishes).toEqual([{ modelIds: [], expectedGeneration: 1 }]);
     expect(result.publishOutcome).toBe("preserved_empty");
     await expect(fake.repository.loadRegistry()).resolves.toMatchObject({
       state: { currentModelIds: [failing.modelId] },

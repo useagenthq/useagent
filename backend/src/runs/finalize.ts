@@ -276,7 +276,7 @@ export async function finalizeRun(
   // per-run `end` bus already settles the run's transient text on the stream;
   // this carries the durable summary the `done` frame does not. Skipped when the
   // run was deleted mid-flight (settledThreadId stays null).
-  if (settledThreadId && settledOrgId) {
+  if (settledThreadId && settledOrgId && !settledInternal) {
     publishRunLifecycleChange({
       orgId: settledOrgId,
       threadId: settledThreadId,

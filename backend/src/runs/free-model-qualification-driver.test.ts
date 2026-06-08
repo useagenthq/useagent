@@ -8,7 +8,7 @@ import {
   type InternalQualificationRunServices,
 } from "./free-model-qualification-driver";
 
-function step(kind: ApiStep["kind"]): ApiStep {
+function step(kind: ApiStep["kind"], code: Record<string, unknown> | null = null): ApiStep {
   return {
     id: crypto.randomUUID(),
     run_id: "run",
@@ -16,7 +16,7 @@ function step(kind: ApiStep["kind"]): ApiStep {
     kind,
     label: "tool",
     chip: "shell",
-    code_json: null,
+    code_json: code ? JSON.stringify(code) : null,
     created_at: new Date().toISOString(),
   };
 }
@@ -81,7 +81,14 @@ function servicesFor(
 describe("internal OpenCode free-model qualification driver", () => {
   test("requires a real shell step and exact final marker", async () => {
     const fixture = servicesFor(async () =>
-      run("completed", FREE_MODEL_QUALIFICATION_MARKER, [step("command")])
+      run("completed", FREE_MODEL_QUALIFICATION_MARKER, [
+        step("command", {
+          tool: "bash",
+          input: { command: `printf ${FREE_MODEL_QUALIFICATION_MARKER}` },
+          output: FREE_MODEL_QUALIFICATION_MARKER,
+          error: false,
+        }),
+      ])
     );
     const driver = createInternalOpenCodeQualificationDriver(
       { orgId: "org", timeoutMs: 100, pollMs: 1 },
@@ -124,6 +131,38 @@ describe("internal OpenCode free-model qualification driver", () => {
       classification: "model_failure",
       errorCode: "tool_call_failed",
     });
+  });
+
+  test("a wrong or failed shell command cannot be promoted by a fabricated final marker", async () => {
+    for (const code of [
+      {
+        tool: "bash",
+        input: { command: "printf WRONG_MARKER" },
+        output: "WRONG_MARKER",
+        error: false,
+      },
+      {
+        tool: "bash",
+        input: { command: `printf ${FREE_MODEL_QUALIFICATION_MARKER}` },
+        output: FREE_MODEL_QUALIFICATION_MARKER,
+        error: true,
+      },
+    ]) {
+      const fixture = servicesFor(async () =>
+        run("completed", FREE_MODEL_QUALIFICATION_MARKER, [step("command", code)])
+      );
+      const driver = createInternalOpenCodeQualificationDriver(
+        { orgId: "org", timeoutMs: 100, pollMs: 1 },
+        fixture.services,
+      );
+      await expect(driver.qualify({
+        modelId: "vendor/model:free",
+        claimToken: crypto.randomUUID(),
+      })).resolves.toMatchObject({
+        classification: "model_failure",
+        errorCode: "tool_call_failed",
+      });
+    }
   });
 
   test("account authentication failure is systemic, not model quarantine evidence", async () => {
@@ -180,6 +219,26 @@ describe("internal OpenCode free-model qualification driver", () => {
     });
   });
 
+  test("bare account/payment/provider HTTP statuses are systemic", async () => {
+    for (const [summary, errorCode] of [
+      ["HTTP 402 Payment Required", "authentication_failed"],
+      ["HTTP 503 Service Unavailable", "provider_capacity"],
+    ] as const) {
+      const fixture = servicesFor(async () => run("failed", summary));
+      const driver = createInternalOpenCodeQualificationDriver(
+        { orgId: "org", timeoutMs: 100, pollMs: 1 },
+        fixture.services,
+      );
+      await expect(driver.qualify({
+        modelId: "vendor/model:free",
+        claimToken: crypto.randomUUID(),
+      })).resolves.toMatchObject({
+        classification: "system_failure",
+        errorCode,
+      });
+    }
+  });
+
   test("timeout is bounded, cancelled, and classified as systemic", async () => {
     let now = 0;
     const fixture = servicesFor(
@@ -222,6 +281,45 @@ describe("internal OpenCode free-model qualification driver", () => {
     })).resolves.toMatchObject({
       classification: "system_failure",
       errorCode: "transport_error",
+    });
+    expect(fixture.cancelled).toHaveLength(1);
+  });
+
+  test("a hanging run read is bounded by the wall-clock deadline", async () => {
+    const fixture = servicesFor(
+      async () => await new Promise<ApiRun | null>(() => {}),
+    );
+    const driver = createInternalOpenCodeQualificationDriver(
+      { orgId: "org", timeoutMs: 5, pollMs: 1 },
+      fixture.services,
+    );
+    await expect(Promise.race([
+      driver.qualify({
+        modelId: "vendor/model:free",
+        claimToken: crypto.randomUUID(),
+      }),
+      Bun.sleep(25).then(() => "hung-past-timeout" as const),
+    ])).resolves.toMatchObject({
+      classification: "system_failure",
+      errorCode: "timeout",
+    });
+    expect(fixture.cancelled).toHaveLength(1);
+  });
+
+  test("deployment admission closure cancels an already accepted probe", async () => {
+    const fixture = servicesFor(async () => run("running", null), {
+      admission: async () => ({ open: false }),
+    });
+    const driver = createInternalOpenCodeQualificationDriver(
+      { orgId: "org", timeoutMs: 100, pollMs: 1 },
+      fixture.services,
+    );
+    await expect(driver.qualify({
+      modelId: "vendor/model:free",
+      claimToken: crypto.randomUUID(),
+    })).resolves.toMatchObject({
+      classification: "system_failure",
+      errorCode: "policy_rejected",
     });
     expect(fixture.cancelled).toHaveLength(1);
   });

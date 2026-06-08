@@ -3,13 +3,15 @@
 // use one of these exact values. Identifier and idempotency-key prefixes are
 // deliberately irrelevant.
 
+export const MODEL_QUALIFICATION_RUN_ORIGIN = "internal:model-qualification" as const;
+
 export const INTERNAL_RUN_ORIGINS = [
   "internal:release-parity",
   "internal:eval",
   "internal:canary",
   "internal:hosted-release-canary",
   "internal:e2e",
-  "internal:model-qualification",
+  MODEL_QUALIFICATION_RUN_ORIGIN,
 ] as const;
 
 export type InternalRunOrigin = (typeof INTERNAL_RUN_ORIGINS)[number];
