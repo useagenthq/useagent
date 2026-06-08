@@ -97,6 +97,42 @@ const INITIAL_COMPONENTS: Partial<Components> = {
       <td className="text-text-primary px-3 py-2 align-top">{children}</td>
     );
   },
+  a: function AnchorComponent({ href, children }) {
+    const url = typeof href === "string" ? href : "";
+    // Artifact/media links render as dense source chips (type badge + label +
+    // arrow), matching the retrieval-chip grammar; ordinary links stay links.
+    const isArtifact = /\/api\/artifacts\//.test(url);
+    const ext = (url.match(/\.(mp4|webm|pdf|docx|xlsx|pptx|csv|png|jpg|zip)(?:\?|$)/i)?.[1] ?? "").toUpperCase();
+    if (isArtifact || ext) {
+      const label = typeof children === "string" ? children : Array.isArray(children) ? children.join("") : "Open";
+      const tone =
+        ext === "PDF" ? "bg-red-500" :
+        ext === "CSV" || ext === "XLSX" ? "bg-green-600" :
+        ext === "MP4" || ext === "WEBM" ? "bg-purple-500" :
+        ext === "PPTX" ? "bg-orange-500" : "bg-blue-500";
+      return (
+        <a
+          href={url}
+          target="_blank"
+          rel="noreferrer"
+          className="mx-0.5 inline-flex translate-y-[-1px] items-center gap-1 rounded-full border border-border-button-default bg-background-primary-default py-px pl-1 pr-1.5 align-middle text-caption-1-medium text-text-secondary no-underline transition-colors hover:border-border-button-hover hover:text-text-primary"
+        >
+          {ext ? (
+            <span aria-hidden className={`flex h-3.5 items-center justify-center rounded-[4px] px-1 text-[8px] font-semibold leading-none text-white ${tone}`}>
+              {ext}
+            </span>
+          ) : null}
+          <span className="max-w-56 truncate">{label}</span>
+          <span aria-hidden className="text-text-tertiary">↗</span>
+        </a>
+      );
+    }
+    return (
+      <a href={url} target="_blank" rel="noreferrer">
+        {children}
+      </a>
+    );
+  },
   blockquote: function BlockquoteComponent({ children }) {
     return (
       <blockquote className="border-border-button-default text-text-secondary my-3 border-l-2 pl-3">
