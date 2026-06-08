@@ -55,6 +55,20 @@ export function t3DelegationKind(
   }
 }
 
+export function t3DelegationTargetIds(
+  payload: Record<string, unknown> | null,
+): string[] {
+  const data = recordValue(payload?.data);
+  const item = recordValue(data?.item);
+  const ids = [
+    firstString(payload?.childSessionId, payload?.taskId),
+    ...[payload?.receiverThreadIds, data?.receiverThreadIds, item?.receiverThreadIds]
+      .filter(Array.isArray)
+      .flatMap((values) => values.filter((value): value is string => typeof value === "string")),
+  ];
+  return [...new Set(ids.flatMap((value) => value?.trim() ? [value.trim()] : []))];
+}
+
 export function t3ToolName(payload: Record<string, unknown> | null, summary?: unknown): string {
   const data = recordValue(payload?.data);
   const item = recordValue(data?.item);
