@@ -705,6 +705,83 @@ describe("T3 orchestration projection", () => {
     });
   });
 
+  test("owns child activity by native child identity while controls stay parent-owned", () => {
+    const child = runtimeActivityProviderEvent(
+      { runId: "run-child", threadId: "thread-1" },
+      "root-native-session",
+      {
+        id: "child-status",
+        tone: "info",
+        kind: "task.updated",
+        summary: "Researcher running",
+        payload: {
+          taskId: "child-native-session",
+          agentKind: "agent",
+          parentAgentId: "root-native-session",
+          status: "running",
+        },
+        turnId: "turn-1",
+      },
+      baselineRedactor,
+    );
+    expect(child).toMatchObject({
+      nativeSessionId: "child-native-session",
+      nativeParentSessionId: "root-native-session",
+      nativeCallId: "child-native-session",
+    });
+
+    const control = runtimeActivityProviderEvent(
+      { runId: "run-child", threadId: "thread-1" },
+      "root-native-session",
+      {
+        id: "wait-control",
+        tone: "tool",
+        kind: "tool.completed",
+        summary: "Wait for agents",
+        payload: {
+          itemType: "collab_agent_tool_call",
+          childSessionId: "child-native-session",
+          delegationKind: "wait",
+        },
+        turnId: "turn-1",
+      },
+      baselineRedactor,
+    );
+    expect(control).toMatchObject({
+      nativeSessionId: "root-native-session",
+      nativeParentSessionId: null,
+      payload: {
+        payload: {
+          childSessionId: "child-native-session",
+          delegationKind: "wait",
+        },
+      },
+    });
+  });
+
+  test("persists child parent identity in the task step compatibility projection", () => {
+    expect(activityStep({
+      id: "child-task",
+      tone: "info",
+      kind: "task.started",
+      summary: "Researcher",
+      payload: {
+        taskId: "child-native-session",
+        agentKind: "agent",
+        parentAgentId: "root-native-session",
+      },
+      turnId: "turn-1",
+    })).toMatchObject({
+      code_json: {
+        native: {
+          sessionID: "child-native-session",
+          parentSessionID: "root-native-session",
+          childSessionID: "child-native-session",
+        },
+      },
+    });
+  });
+
   test("uses canonical tool-call identity precedence without losing the native payload", () => {
     const identityCases = [
       {

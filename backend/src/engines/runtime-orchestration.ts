@@ -562,6 +562,9 @@ export function activityStep(activity: RuntimeActivity): EmitStep {
   if (activity.kind.startsWith("task.")) {
     const isAgent = payload?.agentKind === "agent";
     const taskId = typeof payload?.taskId === "string" ? payload.taskId : undefined;
+    const parentAgentId = typeof payload?.parentAgentId === "string"
+      ? payload.parentAgentId
+      : undefined;
     const title = taskActivityLabel(activity, payload ?? {}, isAgent);
     return {
       kind: "task",
@@ -582,6 +585,7 @@ export function activityStep(activity: RuntimeActivity): EmitStep {
         error: activity.tone === "error",
         native: {
           sessionID: isAgent ? taskId : undefined,
+          parentSessionID: isAgent ? parentAgentId ?? undefined : undefined,
           callID: taskId,
           childSessionID: isAgent ? taskId : undefined,
           activity: activity.payload,
@@ -693,9 +697,16 @@ export function runtimeActivityProviderEvent(
   const payload = record(activity.payload);
   const requestId = typeof payload?.requestId === "string" ? payload.requestId : null;
   const taskId = typeof payload?.taskId === "string" ? payload.taskId : null;
+  const childOwned = activity.kind.startsWith("task.") &&
+    payload?.agentKind === "agent" &&
+    taskId !== null;
   const parentAgentId = typeof payload?.parentAgentId === "string"
     ? payload.parentAgentId
     : null;
+  const nativeSessionId = childOwned ? taskId : sessionId;
+  const nativeParentSessionId = childOwned
+    ? parentAgentId ?? sessionId
+    : parentAgentId;
   const eventType = approval
     ? "approval.requested"
     : activity.kind === "approval.resolved" && requestId
@@ -719,8 +730,8 @@ export function runtimeActivityProviderEvent(
     threadId: ctx.threadId ?? ctx.runId,
     provider: "t3",
     eventType,
-    nativeSessionId: sessionId,
-    nativeParentSessionId: parentAgentId,
+    nativeSessionId,
+    nativeParentSessionId,
     nativePartId: activity.id,
     nativeCallId: activity.kind.startsWith("task.") ? taskId : null,
     payload: question
