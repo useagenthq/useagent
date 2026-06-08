@@ -1,7 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import {
+  RiArrowDownSLine,
+  RiArrowUpSLine,
   RiLinksLine,
   RiPriceTag3Line,
   RiPulseLine,
@@ -14,8 +16,9 @@ import { cx } from "@/utils/cx";
  * Tag-heavy records table — a horizontally scrollable companies grid with a
  * sticky first column (select checkbox + letter mark + name), colored category
  * tags, a relative last-interaction, a tone-colored connection-strength dot, and
- * a links cell. Ported from the beautiful-ui RecordsTable demo (hardcoded →
- * parameterized) onto our tokens.
+ * a links cell. Company, last-interaction, and strength headers sort on click
+ * (toggle asc/desc), following the upstream refresh. Ported from the
+ * beautiful-ui RecordsTable demo (hardcoded → parameterized) onto our tokens.
  */
 
 export type RecordTagColor =
@@ -52,6 +55,15 @@ const strengthDot: Record<StrengthTone, string> = {
   strong: "bg-lime-500",
 };
 
+const strengthRank: Record<StrengthTone, number> = {
+  critical: 0,
+  weak: 1,
+  neutral: 2,
+  strong: 3,
+};
+
+type SortKey = "company" | "last" | "strength";
+
 export interface RecordTag {
   label: string;
   color?: RecordTagColor;
@@ -78,6 +90,7 @@ function HeaderIcon({ as: Icon }: { as: typeof RiTimeLine }) {
 
 export function RecordsTable({ rows, className }: RecordsTableProps) {
   const [selected, setSelected] = useState<ReadonlySet<number>>(new Set());
+  const [sort, setSort] = useState<{ key: SortKey; dir: 1 | -1 } | null>(null);
   const allSelected = rows.length > 0 && selected.size === rows.length;
 
   function toggle(index: number, on: boolean) {
@@ -93,6 +106,31 @@ export function RecordsTable({ rows, className }: RecordsTableProps) {
     setSelected(on ? new Set(rows.map((_, i) => i)) : new Set());
   }
 
+  function toggleSort(key: SortKey) {
+    setSort((prev) => (prev?.key === key ? { key, dir: prev.dir === 1 ? -1 : 1 } : { key, dir: 1 }));
+  }
+
+  // Selection stays keyed on the original row index so sorting never scrambles it.
+  const orderedRows = useMemo(() => {
+    const indexed = rows.map((row, index) => ({ row, index }));
+    if (!sort) return indexed;
+    return indexed.toSorted(
+      (a, b) =>
+        (sort.key === "company"
+          ? a.row.company.localeCompare(b.row.company)
+          : sort.key === "last"
+            ? (a.row.lastInteraction ?? "").localeCompare(b.row.lastInteraction ?? "")
+            : (a.row.strength ? strengthRank[a.row.strength.tone] : -1) -
+              (b.row.strength ? strengthRank[b.row.strength.tone] : -1)) * sort.dir,
+    );
+  }, [rows, sort]);
+
+  function SortMark({ column }: { column: SortKey }) {
+    if (sort?.key !== column) return null;
+    const Arrow = sort.dir === 1 ? RiArrowUpSLine : RiArrowDownSLine;
+    return <Arrow className="size-3.5 shrink-0 text-text-secondary" aria-hidden />;
+  }
+
   return (
     <div
       className={cx(
@@ -104,6 +142,9 @@ export function RecordsTable({ rows, className }: RecordsTableProps) {
         <thead>
           <tr className="border-border-button-default border-b">
             <th
+              aria-sort={
+                sort?.key === "company" ? (sort.dir === 1 ? "ascending" : "descending") : undefined
+              }
               className={cx(
                 STICKY,
                 "bg-background-primary-default text-caption-1-medium text-text-tertiary px-3 py-2 font-medium",
@@ -114,7 +155,14 @@ export function RecordsTable({ rows, className }: RecordsTableProps) {
                   isSelected={allSelected}
                   onChange={(v) => toggleAll(v)}
                 />
-                <span>Company</span>
+                <button
+                  type="button"
+                  onClick={() => toggleSort("company")}
+                  className="flex items-center gap-1 transition-colors hover:text-text-secondary"
+                >
+                  Company
+                  <SortMark column="company" />
+                </button>
               </div>
             </th>
             <th className="text-caption-1-medium text-text-tertiary px-3 py-2 font-medium">
@@ -123,17 +171,37 @@ export function RecordsTable({ rows, className }: RecordsTableProps) {
                 Categories
               </span>
             </th>
-            <th className="text-caption-1-medium text-text-tertiary px-3 py-2 font-medium">
-              <span className="flex items-center gap-1.5">
+            <th
+              aria-sort={
+                sort?.key === "last" ? (sort.dir === 1 ? "ascending" : "descending") : undefined
+              }
+              className="text-caption-1-medium text-text-tertiary px-3 py-2 font-medium"
+            >
+              <button
+                type="button"
+                onClick={() => toggleSort("last")}
+                className="flex items-center gap-1.5 transition-colors hover:text-text-secondary"
+              >
                 <HeaderIcon as={RiTimeLine} />
                 Last interaction
-              </span>
+                <SortMark column="last" />
+              </button>
             </th>
-            <th className="text-caption-1-medium text-text-tertiary px-3 py-2 font-medium">
-              <span className="flex items-center gap-1.5">
+            <th
+              aria-sort={
+                sort?.key === "strength" ? (sort.dir === 1 ? "ascending" : "descending") : undefined
+              }
+              className="text-caption-1-medium text-text-tertiary px-3 py-2 font-medium"
+            >
+              <button
+                type="button"
+                onClick={() => toggleSort("strength")}
+                className="flex items-center gap-1.5 transition-colors hover:text-text-secondary"
+              >
                 <HeaderIcon as={RiPulseLine} />
                 Connection strength
-              </span>
+                <SortMark column="strength" />
+              </button>
             </th>
             <th className="text-caption-1-medium text-text-tertiary px-3 py-2 font-medium">
               <span className="flex items-center gap-1.5">
@@ -144,7 +212,7 @@ export function RecordsTable({ rows, className }: RecordsTableProps) {
           </tr>
         </thead>
         <tbody>
-          {rows.map((row, ri) => (
+          {orderedRows.map(({ row, index: ri }) => (
             <tr
               key={`${row.company}-${ri}`}
               className="group/row border-border-button-default hover:bg-background-primary-hover border-b transition-colors duration-100 last:border-0"
