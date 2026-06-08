@@ -54,6 +54,7 @@ import * as Modal from "@/components/base/modal/modal";
 import { ARTIFACT_CAPABILITY_ROWS } from "./artifact-capability-matrix";
 import { BeautifulUiExtras } from "./beautiful-ui-extras";
 import { BeuiAgentShowcase } from "./beui-agent-showcase";
+import { ComposerRetrievalShowcase } from "./composer-retrieval-showcase";
 import { TimelineShowcase } from "./session-ui-showcase";
 
 function Section({ label, children }: { label: string; children: React.ReactNode }) {
@@ -669,6 +670,8 @@ export function ComponentLab() {
         </Section>
 
         <BeautifulUiExtras />
+
+        <ComposerRetrievalShowcase />
 
         <div className="h-16" />
       </div>

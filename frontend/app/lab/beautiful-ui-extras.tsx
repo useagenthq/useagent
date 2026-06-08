@@ -3,7 +3,6 @@
 import { ChatComposer } from "@/components/ai/chat-composer";
 import { CodeBlock } from "@/components/ai/code-block";
 import { FineTuneCard } from "@/components/ai/fine-tune-card";
-import { PromptBar } from "@/components/ai/prompt-bar";
 import { SearchList } from "@/components/ai/search-list";
 import { SelectionActions } from "@/components/ai/selection-actions";
 import { SidebarNav } from "@/components/ai/sidebar-nav";
@@ -65,9 +64,7 @@ export function BeautifulUiExtras() {
         <ChatComposer />
       </Demo>
 
-      <Demo component="prompt-bar">
-        <PromptBar />
-      </Demo>
+      {/* prompt-bar renders in the Composer + retrieval showcase - both variants live there. */}
 
       <Demo component="sidebar-nav">
         <SidebarNav />
