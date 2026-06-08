@@ -15,6 +15,7 @@ import {
   type ProviderConnectionAuthMethod,
   type ProviderConnectionMeta,
   type ProviderConnectionProvider,
+  providerStatusConnection,
   safeProviderMetadata,
   statusLabel,
 } from "./provider-connections-data";
@@ -114,7 +115,7 @@ export function ProviderConnectionPanel({
             {labels.scope}
           </span>
         </div>
-        <StatusPill connection={connection ?? oauthConnection} />
+        <StatusPill connection={providerStatusConnection(connection, oauthConnection)} />
       </div>
 
       {provider === "openai" ? (
