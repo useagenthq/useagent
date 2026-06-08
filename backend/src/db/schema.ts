@@ -20,6 +20,7 @@ export * from "./schema/reconcile";
 export * from "./schema/schedules";
 export * from "./schema/commands-catalog";
 export * from "./schema/fleet";
+export * from "./schema/fleet-batches";
 export * from "./schema/projects";
 export * from "./schema/tasks";
 export * from "./schema/github-publication";

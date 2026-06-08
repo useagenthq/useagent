@@ -463,6 +463,13 @@
 			"when": 1790500000000,
 			"tag": "0067_execution_graph",
 			"breakpoints": true
+		},
+		{
+			"idx": 66,
+			"version": "7",
+			"when": 1790600000000,
+			"tag": "0068_fleet_batches",
+			"breakpoints": true
 		}
 	]
 }
