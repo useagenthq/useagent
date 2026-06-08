@@ -14,6 +14,7 @@ import {
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { backendFetch } from "@/lib/backend-fetch";
 import type { StoredCanonicalEvent } from "./canonical-timeline";
+import { EXECUTION_SUMMARY_ROLLOUT_MODE } from "./execution-summary-rollout";
 import { parseNativeFrame } from "./native-events";
 import { createThreadStore, type ThreadSnapshot, type ThreadStore } from "./thread-store";
 import { type ApiRun, toThread } from "./types";
@@ -48,7 +49,10 @@ export interface ThreadStreamState {
  *  actually belongs to this root, so a stale SSR payload from a previously-viewed
  *  thread never bleeds into a new one (Codex finding 2). Pure + testable. */
 export function seedThreadStore(rootRunId: string, initialThread: readonly ApiRun[]): ThreadStore {
-  const store = createThreadStore();
+  const store = createThreadStore({
+    rootThreadId: rootRunId,
+    executionSummaryEnabled: EXECUTION_SUMMARY_ROLLOUT_MODE !== "off",
+  });
   if (initialThread.length && initialThread[0]?.id === rootRunId) {
     store.applySnapshot([...initialThread]);
   }

@@ -10,14 +10,13 @@
 // wrappers on the list (matches the context-recall fold shell).
 
 import { RiArrowDownSLine, RiExternalLinkLine, RiRobot2Line } from "@remixicon/react";
+import type { ExecutionSummarySnapshot } from "@useagent/agent-client";
 import Link from "next/link";
 import { useMemo } from "react";
 import { childStatusLabel, isChildActive } from "@/components/chat/agents-rail";
-import {
-  deriveChildrenView,
-  type MergedChildFidelity,
-} from "@/components/chat/canonical-children";
+import type { MergedChildFidelity } from "@/components/chat/canonical-children";
 import type { CanonicalEventLike } from "@/components/chat/canonical-timeline";
+import { deriveChildrenViewFromExecutionSummary } from "@/components/chat/execution-summary-rollout";
 import {
   firstLine,
   type GatewayChildSession,
@@ -142,20 +141,22 @@ export function SubagentsFold({
   steps,
   frames = [],
   canonicalEvents = [],
+  executionSummary = null,
   live,
   childSessions = [],
 }: {
   steps: readonly ApiStep[];
   frames?: readonly NativeFrame[];
   canonicalEvents?: readonly CanonicalEventLike[];
+  executionSummary?: ExecutionSummarySnapshot | null;
   /** The parent turn's liveness - the status fallback for children without a
    *  native/canonical status frame (same rule as the Agents rail). */
   live: boolean;
   childSessions?: readonly GatewayChildSession[];
 }) {
   const view = useMemo(
-    () => deriveChildrenView(steps, frames, canonicalEvents),
-    [steps, frames, canonicalEvents],
+    () => deriveChildrenViewFromExecutionSummary(steps, frames, canonicalEvents, executionSummary),
+    [steps, frames, canonicalEvents, executionSummary],
   );
   const [toggled, setToggled] = useTurnUiState<boolean | null>("subagents", null);
 

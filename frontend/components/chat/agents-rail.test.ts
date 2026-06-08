@@ -1,11 +1,13 @@
 import { describe, expect, test } from "bun:test";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
+import { createCanonicalThreadStore, type CanonicalThreadEvent } from "@useagent/agent-client";
 import { AgentsRail, childElapsedMs, childStatusLabel } from "./agents-rail";
 import type { CanonicalChildEventLike } from "./canonical-children";
 import type { GatewayChildSession } from "./gateway-children";
 import type { SubagentCard } from "./subagents";
 import type { ApiStep } from "./types";
+import { EXECUTION_SUMMARY_ROLLOUT_MODE } from "./execution-summary-rollout";
 
 describe("agents rail child state labels", () => {
   test("uses the explicit resumable flag for idle children", () => {
@@ -35,6 +37,44 @@ describe("agents rail child state labels", () => {
 });
 
 describe("agents rail rows", () => {
+  test("production consumer reads the supplied store snapshot behind the rollout mode", () => {
+    const started = (
+      childId: string,
+      revision: number,
+      deliverySeq: number,
+    ): CanonicalThreadEvent => ({
+      schemaVersion: 1,
+      eventId: "corrected-child",
+      seq: deliverySeq,
+      runId: "run-1",
+      threadId: "thread-1",
+      ts: 1_000 + deliverySeq,
+      identity: { provider: "codex", nativeSessionId: "parent" },
+      deliverySeq,
+      revision,
+      kind: "child.started",
+      childId,
+      title: childId,
+    });
+    const events = [started("child-a", 0, 1), started("child-b", 1, 2)];
+    const store = createCanonicalThreadStore({ threadId: "thread-1" });
+    for (const event of events) store.ingest(event);
+    const html = renderToStaticMarkup(
+      createElement(AgentsRail, {
+        steps: [],
+        live: true,
+        canonicalEvents: events as unknown as readonly CanonicalChildEventLike[],
+        executionSummary: store.getExecutionSummary(),
+      }),
+    );
+    const expectedRows = EXECUTION_SUMMARY_ROLLOUT_MODE === "read" ? 1 : 2;
+    expect(html.match(/data-testid="subagent-card"/g)).toHaveLength(expectedRows);
+    if (EXECUTION_SUMMARY_ROLLOUT_MODE === "read") {
+      expect(html).toContain("Open subagent: child-b");
+      expect(html).not.toContain("Open subagent: child-a");
+    }
+  });
+
   test("renders canonical children through the T3 fleet row with activity and usage", () => {
     const events: readonly CanonicalChildEventLike[] = [
       {

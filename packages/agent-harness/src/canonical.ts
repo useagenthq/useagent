@@ -35,6 +35,8 @@ export interface CanonicalIdentity {
   provider: ProviderId;
   /** Native session id (opencode `ses_*`, ACP session id, managed session id). */
   nativeSessionId?: string;
+  /** Native parent session id for child-owned events; absent on parent-owned control. */
+  nativeParentSessionId?: string;
   /** Native event id, when the provider assigns one (for dedup/correlation). */
   nativeEventId?: string;
   /** Native monotonic sequence, when the provider assigns one. */

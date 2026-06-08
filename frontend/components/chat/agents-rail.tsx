@@ -7,14 +7,15 @@ import {
   RiRobot2Line,
 } from "@remixicon/react";
 import { useEffect, useState } from "react";
+import type { ExecutionSummarySnapshot } from "@useagent/agent-client";
 import {
   type ChildTimelineEntry,
-  deriveChildrenView,
   deriveChildTimeline,
   legacySpawnStepIdForCanonical,
   type MergedChildFidelity,
 } from "@/components/chat/canonical-children";
 import type { CanonicalEventLike } from "@/components/chat/canonical-timeline";
+import { deriveChildrenViewFromExecutionSummary } from "@/components/chat/execution-summary-rollout";
 import {
   firstLine,
   type GatewayChildSession,
@@ -421,22 +422,25 @@ export function AgentsRail({
   live,
   frames = [],
   canonicalEvents = [],
+  executionSummary = null,
   childSessions = [],
 }: {
   steps: ApiStep[];
   live: boolean;
   frames?: readonly NativeFrame[];
   canonicalEvents?: readonly CanonicalEventLike[];
+  executionSummary?: ExecutionSummarySnapshot | null;
   /** Gateway child sessions across the thread (child_session_create fan-out).
    *  Their own runs, so they render as link cards to their session. */
   childSessions?: readonly GatewayChildSession[];
 }) {
   // ONE merged projection (canonical + legacy steps + native frames) - the same
   // view the inline conversation fold reads, so the two surfaces never disagree.
-  const { cards, ownerByStep, fidelity, legacy } = deriveChildrenView(
+  const { cards, ownerByStep, fidelity, legacy } = deriveChildrenViewFromExecutionSummary(
     steps,
     frames,
     canonicalEvents,
+    executionSummary,
   );
   // Gateway children are product runs with richer identity than the parent
   // lifecycle receipt. Prefer their row when both lanes name the same child.
