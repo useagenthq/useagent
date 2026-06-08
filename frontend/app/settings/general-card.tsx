@@ -31,6 +31,7 @@ export function GeneralCard() {
           aria-label="Name"
           defaultValue={name}
           placeholder="Add your name"
+          readOnly
           fieldClassName={INPUT_WIDTH}
         />
       </SettingsRow>
@@ -43,6 +44,7 @@ export function GeneralCard() {
           defaultValue={email}
           placeholder="you@company.com"
           leadingIcon={RiMailLine}
+          readOnly
           fieldClassName={INPUT_WIDTH}
         />
       </SettingsRow>
@@ -51,6 +53,7 @@ export function GeneralCard() {
           size="small"
           aria-label="Workspace name"
           defaultValue="useAgent"
+          readOnly
           fieldClassName={INPUT_WIDTH}
         />
       </SettingsRow>

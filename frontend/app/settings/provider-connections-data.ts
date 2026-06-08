@@ -150,6 +150,17 @@ export function isActiveConnection(connection: ProviderConnectionMeta | null): b
   return connection?.status === "connected";
 }
 
+export function providerStatusConnection(
+  ...connections: (ProviderConnectionMeta | null)[]
+): ProviderConnectionMeta | null {
+  return (
+    connections.find(isActiveConnection) ??
+    connections.find((connection) => connection?.status === "reauth_required") ??
+    connections.find((connection) => connection !== null) ??
+    null
+  );
+}
+
 export function accountLabel(connection: ProviderConnectionMeta | null): string {
   if (!connection) return "No account metadata";
   return connection.metadata.email ?? connection.metadata.planType ?? "Account metadata saved";
