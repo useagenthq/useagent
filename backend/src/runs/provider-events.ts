@@ -181,7 +181,13 @@ async function persistAndPublish(input: ProviderEventInput, seq: RunSequencer): 
       target: providerEvents.id,
       set: {
         seq: assignedSeq,
+        provider: input.provider,
         eventType: input.eventType,
+        nativeSessionId: input.nativeSessionId ?? null,
+        nativeParentSessionId: input.nativeParentSessionId ?? null,
+        nativeMessageId: input.nativeMessageId ?? null,
+        nativePartId: input.nativePartId ?? null,
+        nativeCallId: input.nativeCallId ?? null,
         payload,
         createdAt: sql`now()`,
       },

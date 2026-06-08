@@ -704,9 +704,7 @@ export function runtimeActivityProviderEvent(
     ? payload.parentAgentId
     : null;
   const nativeSessionId = childOwned ? taskId : sessionId;
-  const nativeParentSessionId = childOwned
-    ? parentAgentId ?? sessionId
-    : parentAgentId;
+  const nativeParentSessionId = parentAgentId;
   const eventType = approval
     ? "approval.requested"
     : activity.kind === "approval.resolved" && requestId

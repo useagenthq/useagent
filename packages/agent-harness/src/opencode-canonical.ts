@@ -29,6 +29,7 @@ import {
 } from "./canonical";
 import {
   t3ActivityKind,
+  t3DelegationKind,
   t3Errored,
   t3Payload,
   t3Preview,
@@ -351,7 +352,12 @@ export function translateOpenCode(
       continue;
     }
 
-    ensureChild(produced, f); // lossless child-session establishment
+    const structuredT3AgentTask = et.startsWith("t3.activity.") &&
+      t3ActivityKind(et, p).startsWith("task.") &&
+      t3Payload(p)?.agentKind === "agent";
+    if (!structuredT3AgentTask) {
+      ensureChild(produced, f); // lossless child-session establishment
+    }
 
     if (f.provider.startsWith("skynet")) {
       const marker = markerFromUseAgent(et, p);
@@ -557,9 +563,14 @@ export function translateOpenCode(
         const callId = t3ToolCallId(f, activity, payload);
         const itemType = str(payload?.itemType);
         const explicitChildId = firstString(payload?.childSessionId, payload?.taskId);
+        const delegationKind = t3DelegationKind(payload);
         if (itemType === "collab_agent_tool_call" && t3TaskToolUseIds.has(callId)) {
           suppressed = "duplicate t3 collaboration wrapper (task lifecycle is authoritative)";
-        } else if (itemType === "collab_agent_tool_call" && explicitChildId) {
+        } else if (
+          itemType === "collab_agent_tool_call" &&
+          delegationKind === "spawn" &&
+          explicitChildId
+        ) {
           // A collaboration wrapper is a child only when the transport provides
           // a real child session/task identity. Tool/activity ids identify the
           // wrapper call, not a child, and must never be promoted to child ids.
@@ -577,6 +588,17 @@ export function translateOpenCode(
             errored,
             canonicalChildState(payload),
           );
+        } else if (itemType === "collab_agent_tool_call" && delegationKind !== null) {
+          const name = t3ToolName(payload, activity?.summary);
+          const title = firstString(activity?.summary, payload?.summary) ?? undefined;
+          const errored = t3Errored(activityKind, activity, payload);
+          const terminal = activityKind.endsWith(".completed") ||
+            activityKind.endsWith(".error") ||
+            activityKind.endsWith(".failed") ||
+            activityKind.endsWith(".denied");
+          emitToolActivity(callId, name, title, terminal, errored);
+        } else if (itemType === "collab_agent_tool_call" && explicitChildId) {
+          suppressed = "ambiguous t3 collaboration wrapper without delegation kind";
         } else {
           const name = t3ToolName(payload, activity?.summary);
           const title = firstString(activity?.summary, payload?.summary) ?? undefined;
