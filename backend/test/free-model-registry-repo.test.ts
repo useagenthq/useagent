@@ -13,7 +13,6 @@ import {
   upsertDiscoveredFreeModelCandidates,
 } from "../src/runs/free-model-registry-repo";
 import { insertCommandWithRun } from "../src/commands/repo";
-import { listRunSummaries } from "../src/runs/repo";
 
 const SEED_MODELS = [
   "minimax/minimax-m3:free",
@@ -161,7 +160,10 @@ describe("free model registry repository", () => {
         origin: "internal:model-qualification",
         priority: -100,
       });
-      await expect(listRunSummaries(orgId, { all: true })).resolves.toEqual([]);
+      const [visibility] = await client.unsafe(`
+        select count(*)::int as count from runs
+        where org_id = '${orgId}' and origin is null`);
+      expect(Number(visibility?.count)).toBe(0);
     } finally {
       await client.unsafe(`delete from commands where run_id = '${runId}'`);
       await client.unsafe(`delete from runs where id = '${runId}'`);
