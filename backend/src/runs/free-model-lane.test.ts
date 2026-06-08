@@ -137,6 +137,8 @@ describe("FreeModelLaneCache", () => {
     expect(cache.isAllowed("vendor/qualified:free", true)).toBe(true);
     expect(cache.adoptRegistryLane([])).toBe(false);
     expect(cache.lane(true)).toEqual(["vendor/qualified:free"]);
+    expect(cache.adoptRegistryLane([], { allowEmpty: true })).toBe(true);
+    expect(cache.lane(true)).toEqual([]);
   });
 
   test("failed, non-ok, or empty catalog responses keep the last-good lane", async () => {

@@ -298,6 +298,7 @@ export async function recordFreeModelProbeResult(
 export interface PublishFreeModelLaneInput {
   readonly modelIds: readonly string[];
   readonly systemFailure?: boolean;
+  readonly allowEmpty?: boolean;
   readonly lane?: string;
   readonly expectedGeneration?: number;
 }
@@ -338,7 +339,7 @@ export async function publishFreeModelLane(
 
     const preservedOutcome = input.systemFailure
       ? "preserved_system_failure"
-      : modelIds.length === 0
+      : modelIds.length === 0 && !input.allowEmpty
         ? "preserved_empty"
         : null;
     if (preservedOutcome) {
@@ -355,23 +356,32 @@ export async function publishFreeModelLane(
       return { outcome: preservedOutcome, state };
     }
 
-    const qualified = await tx.execute(sql`
-      select model_id from free_model_candidates
-      where model_id in (${sql.join(modelIds.map((id) => sql`${id}`), sql`, `)})
-        and state = 'qualified'
-        and ever_qualified = true`);
-    if (qualified.length !== modelIds.length) {
-      throw new Error("free_model_publish_contains_unqualified_candidate");
+    if (modelIds.length > 0) {
+      const qualified = await tx.execute(sql`
+        select model_id from free_model_candidates
+        where model_id in (${sql.join(modelIds.map((id) => sql`${id}`), sql`, `)})
+          and state = 'qualified'
+          and ever_qualified = true`);
+      if (qualified.length !== modelIds.length) {
+        throw new Error("free_model_publish_contains_unqualified_candidate");
+      }
     }
 
-    await tx.execute(sql`
-      update free_model_candidates
-      set advertised = model_id in (
-          ${sql.join(modelIds.map((id) => sql`${id}`), sql`, `)}
-        ),
-        updated_at = now()
-      where advertised = true
-        or model_id in (${sql.join(modelIds.map((id) => sql`${id}`), sql`, `)})`);
+    if (modelIds.length === 0) {
+      await tx.execute(sql`
+        update free_model_candidates
+        set advertised = false, updated_at = now()
+        where advertised = true`);
+    } else {
+      await tx.execute(sql`
+        update free_model_candidates
+        set advertised = model_id in (
+            ${sql.join(modelIds.map((id) => sql`${id}`), sql`, `)}
+          ),
+          updated_at = now()
+        where advertised = true
+          or model_id in (${sql.join(modelIds.map((id) => sql`${id}`), sql`, `)})`);
+    }
 
     const encodedModelIds = JSON.stringify(modelIds);
     const [state] = await tx
@@ -379,7 +389,9 @@ export async function publishFreeModelLane(
       .set({
         generation: sql`${freeModelRegistryState.generation} + 1`,
         currentModelIds: sql`${encodedModelIds}::jsonb`,
-        lastGoodModelIds: sql`${encodedModelIds}::jsonb`,
+        ...(modelIds.length > 0
+          ? { lastGoodModelIds: sql`${encodedModelIds}::jsonb` }
+          : {}),
         lastPublishOutcome: "published",
         lastPublishAt: sql`now()`,
         updatedAt: sql`now()`,

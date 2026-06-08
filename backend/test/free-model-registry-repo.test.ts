@@ -489,6 +489,28 @@ describe("free model registry repository", () => {
     expect(advertised.map((row) => row.model_id)).toEqual([modelId]);
   });
 
+  test("evidence-based quarantine may publish an honest empty current lane", async () => {
+    const before = await loadCurrentFreeModelLane(FREE_MODEL_LANE, testDb);
+    if (!before) throw new Error("expected seeded lane");
+    const published = await publishFreeModelLane({
+      modelIds: [],
+      allowEmpty: true,
+      expectedGeneration: before.generation,
+    }, testDb);
+    expect(published).toMatchObject({
+      outcome: "published",
+      state: {
+        generation: before.generation + 1,
+        currentModelIds: [],
+        lastGoodModelIds: before.lastGoodModelIds,
+      },
+    });
+    const advertised = await client.unsafe(`
+      select count(*)::int as count from free_model_candidates
+      where advertised = true`);
+    expect(Number(advertised[0]?.count)).toBe(0);
+  });
+
   test("an unqualified publish fails without changing the current generation", async () => {
     const modelId = `test/unqualified-${crypto.randomUUID()}:free`;
     await insertCandidate(modelId);
