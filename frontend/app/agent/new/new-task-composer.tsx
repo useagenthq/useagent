@@ -122,12 +122,9 @@ export function NewTaskComposer({
     if (free.length > 0) {
       groups.push({
         label: "Free",
-        // tabIndex -1: the heading row is presentation-only inside the list,
-        // so the refresh stays a pointer affordance (never a tab stop).
         action: (
           <button
             type="button"
-            tabIndex={-1}
             aria-label="Refresh free models"
             title="Refresh"
             disabled={refreshingModels}

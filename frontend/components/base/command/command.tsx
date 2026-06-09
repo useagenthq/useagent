@@ -58,12 +58,17 @@ export function Command({ className, ...props }: ComponentProps<typeof CommandPr
   );
 }
 
+export function isNativeCommandButtonKey(key: string): boolean {
+  return key === "Enter" || key === " ";
+}
+
 /** The 32px search row: full-bleed under the panel's top edge, bottom-ruled,
  *  with the search glyph in the same 16px leading column as item glyphs. */
 export function CommandInput({
   className,
+  trailing,
   ...props
-}: ComponentProps<typeof CommandPrimitive.Input>) {
+}: ComponentProps<typeof CommandPrimitive.Input> & { trailing?: ReactNode }) {
   return (
     <div className="-mx-1.5 -mt-1.5 mb-1 flex h-8 shrink-0 items-center gap-2 border-b border-border-button-default px-3.5">
       <span className="flex w-4 shrink-0 items-center justify-center">
@@ -80,6 +85,17 @@ export function CommandInput({
         )}
         {...props}
       />
+      {trailing ? (
+        <fieldset
+          aria-label="Search actions"
+          className="m-0 flex min-w-0 shrink-0 items-center border-0 p-0"
+          onKeyDown={(event) => {
+            if (isNativeCommandButtonKey(event.key)) event.stopPropagation();
+          }}
+        >
+          {trailing}
+        </fieldset>
+      ) : null}
     </div>
   );
 }
@@ -100,21 +116,12 @@ export function CommandList({ className, ...props }: ComponentProps<typeof Comma
 export interface CommandGroupProps
   extends Omit<ComponentProps<typeof CommandPrimitive.Group>, "heading"> {
   heading?: ReactNode;
-  /** Trailing affordance on the heading row (e.g. the Free-lane refresh). */
-  action?: ReactNode;
 }
 
-export function CommandGroup({ heading, action, className, ...props }: CommandGroupProps) {
+export function CommandGroup({ heading, className, ...props }: CommandGroupProps) {
   return (
     <CommandPrimitive.Group
-      heading={
-        heading ? (
-          <>
-            <span className="truncate">{heading}</span>
-            {action}
-          </>
-        ) : undefined
-      }
+      heading={heading ? <span className="truncate">{heading}</span> : undefined}
       className={cx(
         // Heading: 24px row on the rows' left inset, mono micro-label.
         "[&_[cmdk-group-heading]]:flex [&_[cmdk-group-heading]]:h-6 [&_[cmdk-group-heading]]:items-center [&_[cmdk-group-heading]]:justify-between [&_[cmdk-group-heading]]:gap-2 [&_[cmdk-group-heading]]:px-2",
@@ -134,6 +141,37 @@ export function CommandItem({ className, ...props }: ComponentProps<typeof Comma
         "flex min-h-8 cursor-pointer select-none items-center gap-2 rounded-2lg px-2 py-1 text-body-2-medium text-text-primary outline-none",
         "data-[selected=true]:bg-dropdown-item-hover-background",
         "data-[disabled=true]:pointer-events-none data-[disabled=true]:opacity-50",
+        className,
+      )}
+      {...props}
+    />
+  );
+}
+
+/** Multi-select row semantics cannot use cmdk's Item: cmdk reserves
+ * `aria-selected` for its active navigation row. This plain option binds
+ * `aria-selected` to committed domain state while sharing the visual grammar.
+ * Callers own filtering and arrow focus. */
+export function CommandCheckboxItem({
+  className,
+  checked,
+  onKeyDown,
+  ...props
+}: ComponentProps<"button"> & { checked: boolean }) {
+  return (
+    <button
+      type="button"
+      role="option"
+      aria-selected={checked}
+      data-multiselect-item=""
+      onKeyDown={(event) => {
+        if (isNativeCommandButtonKey(event.key)) event.stopPropagation();
+        onKeyDown?.(event);
+      }}
+      className={cx(
+        "flex min-h-8 w-full cursor-pointer select-none items-center gap-2 rounded-2lg px-2 py-1 text-left text-body-2-medium text-text-primary outline-none",
+        "hover:bg-dropdown-item-hover-background focus-visible:bg-dropdown-item-hover-background",
+        "disabled:pointer-events-none disabled:opacity-50",
         className,
       )}
       {...props}
