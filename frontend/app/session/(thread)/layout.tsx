@@ -9,5 +9,9 @@ import { ThreadSidebar } from "@/components/shell/thread-sidebar";
  * it) instead of unmounting the sidebar and flashing a full-viewport loader.
  */
 export default function ThreadLayout({ children }: { children: ReactNode }) {
-  return <AppShell sidebar={<ThreadSidebar />}>{children}</AppShell>;
+  return (
+    <AppShell sidebar={<ThreadSidebar />} collapseSidebarAtTablet>
+      {children}
+    </AppShell>
+  );
 }

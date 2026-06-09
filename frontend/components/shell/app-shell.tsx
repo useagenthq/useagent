@@ -13,6 +13,9 @@ import { useWorkingSignal } from "./working-signal";
 export interface AppShellProps {
   sidebar: ReactNode;
   children: ReactNode;
+  /** Session workspaces can opt into the compact tablet rail. Library and
+   * settings pages keep their normal navigation unless they opt in too. */
+  collapseSidebarAtTablet?: boolean;
 }
 
 /**
@@ -30,7 +33,7 @@ export interface AppShellProps {
  * Below md the open-nav trigger lives in an IN-FLOW header row above `<main>`
  * (never a floating overlay), so no page header can render underneath it.
  */
-export function AppShell({ sidebar, children }: AppShellProps) {
+export function AppShell({ sidebar, children, collapseSidebarAtTablet = false }: AppShellProps) {
   const working = useWorkingSignal();
   const previousWorking = useRef(working);
   const sidebarContainerRef = useRef<HTMLDivElement>(null);
@@ -49,16 +52,14 @@ export function AppShell({ sidebar, children }: AppShellProps) {
     previousWorking.current = working;
   }, [collapseSidebar, working]);
 
-  // Tablet band (md..<xl): not enough width for the full sidebar beside the
-  // session split, so ENTERING the band folds the sidebar to the compact rail -
-  // the same one-way fold the working signal performs; the user can still
-  // expand it explicitly.
+  // Session workspaces may opt into the tablet fold because they own a second
+  // resizable rail. Ordinary AppShell consumers remain route-neutral.
   const tabletBand = useIsTabletBand();
   const previousBand = useRef(false);
   useEffect(() => {
-    if (tabletBand && !previousBand.current) collapseSidebar();
+    if (collapseSidebarAtTablet && tabletBand && !previousBand.current) collapseSidebar();
     previousBand.current = tabletBand;
-  }, [collapseSidebar, tabletBand]);
+  }, [collapseSidebar, collapseSidebarAtTablet, tabletBand]);
 
   useEffect(() => {
     if (!mobileOpen) return;
