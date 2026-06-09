@@ -12,7 +12,7 @@ export const metadata: Metadata = {
 
 export default function SessionSamplePage() {
   return (
-    <AppShell sidebar={<ThreadSidebar />}>
+    <AppShell sidebar={<ThreadSidebar />} collapseSidebarAtTablet>
       <SessionSample />
     </AppShell>
   );
