@@ -4,6 +4,7 @@ import { RiSidebarFoldLine, RiSidebarUnfoldLine } from "@remixicon/react";
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { useIsTabletBand } from "@/hooks/use-is-mobile";
 import { cx } from "@/utils/cx";
 import { AuroraBackdrop } from "./aurora-backdrop";
 import { CompactSidebarRail } from "./compact-sidebar-rail";
@@ -12,6 +13,9 @@ import { useWorkingSignal } from "./working-signal";
 export interface AppShellProps {
   sidebar: ReactNode;
   children: ReactNode;
+  /** Session workspaces can opt into the compact tablet rail. Library and
+   * settings pages keep their normal navigation unless they opt in too. */
+  collapseSidebarAtTablet?: boolean;
 }
 
 /**
@@ -29,7 +33,7 @@ export interface AppShellProps {
  * Below md the open-nav trigger lives in an IN-FLOW header row above `<main>`
  * (never a floating overlay), so no page header can render underneath it.
  */
-export function AppShell({ sidebar, children }: AppShellProps) {
+export function AppShell({ sidebar, children, collapseSidebarAtTablet = false }: AppShellProps) {
   const working = useWorkingSignal();
   const previousWorking = useRef(working);
   const sidebarContainerRef = useRef<HTMLDivElement>(null);
@@ -47,6 +51,15 @@ export function AppShell({ sidebar, children }: AppShellProps) {
     if (working && !previousWorking.current) collapseSidebar();
     previousWorking.current = working;
   }, [collapseSidebar, working]);
+
+  // Session workspaces may opt into the tablet fold because they own a second
+  // resizable rail. Ordinary AppShell consumers remain route-neutral.
+  const tabletBand = useIsTabletBand();
+  const previousBand = useRef(false);
+  useEffect(() => {
+    if (collapseSidebarAtTablet && tabletBand && !previousBand.current) collapseSidebar();
+    previousBand.current = tabletBand;
+  }, [collapseSidebar, collapseSidebarAtTablet, tabletBand]);
 
   useEffect(() => {
     if (!mobileOpen) return;
