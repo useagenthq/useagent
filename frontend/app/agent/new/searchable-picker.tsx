@@ -1,10 +1,18 @@
 "use client";
 
-import { useMemo, useState, type ComponentType } from "react";
-import { RiArrowDownSLine, RiCheckLine, RiSearchLine } from "@remixicon/react";
+import { useMemo, useState, type ComponentType, type ReactNode } from "react";
+import { RiArrowDownSLine, RiCheckLine } from "@remixicon/react";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandItemGlyph,
+  CommandList,
+} from "@/components/base/command/command";
 import {
   Dropdown,
-  DropdownItem,
   DropdownPopover,
   DropdownTrigger,
 } from "@/components/base/dropdown/dropdown";
@@ -28,6 +36,8 @@ export interface PickerOption {
 
 export interface PickerGroup {
   label?: string;
+  /** Trailing affordance on the group heading (e.g. the Free-lane refresh). */
+  action?: ReactNode;
   options: PickerOption[];
 }
 
@@ -52,17 +62,17 @@ function OptionMark({ option }: { option: PickerOption }) {
   }
   if (option.icon) {
     const Icon = option.icon;
-    return <Icon className="size-[18px] shrink-0 text-foreground-icon-secondary" aria-hidden />;
+    return <Icon className="size-4 shrink-0 text-foreground-icon-secondary" aria-hidden />;
   }
   return null;
 }
 
 /**
- * Cursor-style picker on the BoardUI Dropdown recipe: the panel opens with a
- * search input at the top, then sectioned groups (a "Recents" group first) of
- * selectable rows with a checkmark on the active one. The trigger reflects the
- * current selection (its mark/icon + label), matching the composer's other
- * controls.
+ * Searchable single-select picker: a BoardUI Dropdown trigger over the shared
+ * Command list grammar (components/base/command) - search row, sectioned
+ * groups, keyboard nav, checkmark on the active row, all on one alignment
+ * grid. The trigger reflects the current selection (its mark/icon + label),
+ * matching the composer's other controls.
  */
 export function SearchablePicker({
   ariaLabel,
@@ -75,7 +85,6 @@ export function SearchablePicker({
   hideChevron = false,
 }: SearchablePickerProps) {
   const [open, setOpen] = useState(false);
-  const [query, setQuery] = useState("");
 
   const selected = useMemo(() => {
     for (const group of groups) {
@@ -86,33 +95,17 @@ export function SearchablePicker({
     return undefined;
   }, [groups, value]);
 
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return groups;
-    return groups
-      .map((group) => ({
-        ...group,
-        options: group.options.filter(
-          (o) => o.label.toLowerCase().includes(q) || o.caption?.toLowerCase().includes(q),
-        ),
-      }))
-      .filter((group) => group.options.length > 0);
-  }, [groups, query]);
+  // One left inset for every row: when any option carries a glyph, all rows
+  // render the fixed leading column so plain labels share the same edge.
+  const hasGlyphs = groups.some((g) => g.options.some((o) => o.icon || o.markTint));
 
   function pick(next: string) {
     onChange(next);
     setOpen(false);
-    setQuery("");
   }
 
   return (
-    <Dropdown
-      isOpen={open}
-      onOpenChange={(next) => {
-        setOpen(next);
-        if (!next) setQuery("");
-      }}
-    >
+    <Dropdown isOpen={open} onOpenChange={setOpen}>
       <DropdownTrigger
         aria-label={ariaLabel}
         className={cx(
@@ -143,36 +136,32 @@ export function SearchablePicker({
         offset={6}
         className="w-[264px]"
       >
-        <div className="-mx-2.5 -mt-1 mb-1 flex items-center gap-2 border-b border-border-button-default px-3 pb-2.5 pt-1">
-          <RiSearchLine className="size-4 shrink-0 text-foreground-icon-tertiary" aria-hidden />
-          <input
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder={searchPlaceholder}
-            aria-label={searchPlaceholder}
-            className="min-w-0 flex-1 bg-transparent text-body-2-medium text-text-primary outline-none placeholder:text-text-tertiary"
-          />
-        </div>
-        <div className="flex max-h-[264px] flex-col gap-1.5 overflow-y-auto">
-          {filtered.length === 0 ? (
-            <p className="px-2 py-2 text-body-2-medium text-text-tertiary">No results</p>
-          ) : (
-            filtered.map((group, groupIndex) => (
-              <div key={group.label ?? groupIndex} className="flex flex-col gap-1">
-                {group.label ? (
-                  <span className="text-mono-label px-2 pt-1 text-text-tertiary">{group.label}</span>
-                ) : null}
+        <Command label={ariaLabel} defaultValue={selected ? selected.value || selected.label : undefined}>
+          <CommandInput placeholder={searchPlaceholder} aria-label={searchPlaceholder} />
+          <CommandList>
+            <CommandEmpty>No results</CommandEmpty>
+            {groups.map((group, groupIndex) => (
+              <CommandGroup
+                key={group.label ?? groupIndex}
+                heading={group.label}
+                action={group.action}
+              >
                 {group.options.map((option) => (
-                  <DropdownItem
-                    key={option.value}
-                    selected={option.value === value}
+                  <CommandItem
+                    key={option.value || option.label}
+                    value={option.value || option.label}
+                    keywords={[option.label, ...(option.caption ? [option.caption] : [])]}
                     onSelect={() => pick(option.value)}
                   >
-                    <OptionMark option={option} />
+                    {hasGlyphs ? (
+                      <CommandItemGlyph>
+                        <OptionMark option={option} />
+                      </CommandItemGlyph>
+                    ) : null}
                     <span className="flex min-w-0 flex-1 flex-col">
                       <span
                         className={cx(
-                          "truncate text-body-2-medium text-text-primary",
+                          "truncate",
                           option.mono && "font-mono text-caption-1-regular",
                         )}
                       >
@@ -187,12 +176,12 @@ export function SearchablePicker({
                     {option.value === value ? (
                       <RiCheckLine className="size-4 shrink-0 text-foreground-icon-secondary" aria-hidden />
                     ) : null}
-                  </DropdownItem>
+                  </CommandItem>
                 ))}
-              </div>
-            ))
-          )}
-        </div>
+              </CommandGroup>
+            ))}
+          </CommandList>
+        </Command>
       </DropdownPopover>
     </Dropdown>
   );
