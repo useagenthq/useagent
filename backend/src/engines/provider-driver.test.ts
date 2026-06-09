@@ -197,7 +197,7 @@ describe("production provider registry", () => {
     expect(driver?.provider).toBe("codex");
     expect(driver?.descriptor.protocol).toEqual({
       name: "t3-orchestration",
-      version: "useagent-runtime-v4",
+      version: "useagent-runtime-v5",
     });
     expect(validateProviderDriver(driver)).toEqual({ status: "ok" });
   });

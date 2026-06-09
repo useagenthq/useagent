@@ -1,6 +1,11 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { db, type Executor } from "../db/client";
-import { runs, type AgentExecutionRow, type ExecutionStatus } from "../db/schema";
+import {
+  agentExecutions,
+  runs,
+  type AgentExecutionRow,
+  type ExecutionStatus,
+} from "../db/schema";
 import { errorMessage } from "../util/error-message";
 import type { ProviderEventInput } from "./provider-events";
 import {
@@ -68,13 +73,40 @@ async function parentExecution(
   nativeParentSessionId: string,
   exec: Executor,
 ): Promise<AgentExecutionRow | null> {
-  return executionByNativeSession(
+  const exact = await executionByNativeSession(
     orgId,
     input.runId,
     input.provider,
     nativeParentSessionId,
     exec,
   );
+  if (exact || input.provider !== "t3") return exact;
+  const { payload } = activityPayload(input);
+  const agentPath = stringValue(payload?.agentPath);
+  if (!agentPath || !/^\/root\/[^/]+$/u.test(agentPath)) return null;
+  // The product session starts before the embedded provider publishes its real
+  // parent thread id, so the root is initially keyed by the product alias.
+  // Trusted top-level child notifications carry the real provider parent id;
+  // only an explicit top-level /root/<agent> path may bind that alias. Nested
+  // children never fall back to root when their real parent has not arrived.
+  const [root] = await exec
+    .select()
+    .from(agentExecutions)
+    .where(and(
+      eq(agentExecutions.orgId, orgId),
+      eq(agentExecutions.runId, input.runId),
+      eq(agentExecutions.provider, input.provider),
+      eq(agentExecutions.mode, "root"),
+    ))
+    .limit(1);
+  return root ?? null;
+}
+
+function taskReceiptSessionId(detail: unknown): string | null {
+  const text = stringValue(detail);
+  if (!text) return null;
+  const match = /<task\s+id="([A-Za-z0-9._:-]{1,256})"(?:\s|>)/u.exec(text);
+  return match?.[1] ?? null;
 }
 
 function lifecycleStatus(input: ProviderEventInput): ExecutionStatus | null {
@@ -139,10 +171,20 @@ function explicitSpawnIdentity(input: ProviderEventInput): {
   if (
     input.provider === "t3" &&
     payload?.itemType === "collab_agent_tool_call" &&
-    payload?.delegationKind === "spawn" &&
-    (input.eventType.endsWith(".started") || activityPayload(input).activity?.kind === "tool.started")
+    (payload?.delegationKind === "spawn" ||
+      (!stringValue(payload?.delegationKind) &&
+        input.eventType.endsWith(".completed") &&
+        taskReceiptSessionId(payload?.detail))) &&
+    (input.eventType.endsWith(".started") ||
+      input.eventType.endsWith(".completed") ||
+      activityPayload(input).activity?.kind === "tool.started" ||
+      activityPayload(input).activity?.kind === "tool.completed")
   ) {
-    const childSessionId = stringValue(payload.childSessionId, payload.taskId);
+    const childSessionId = stringValue(
+      payload.childSessionId,
+      payload.taskId,
+      taskReceiptSessionId(payload.detail),
+    );
     const parentSessionId = stringValue(input.nativeSessionId);
     return childSessionId && parentSessionId
       ? {
@@ -310,16 +352,24 @@ async function writeExecutionGraph(
       nativeEventId: input.id,
       observedDeliverySeq: deliverySeq,
     }, exec);
+    const observedStatus = lifecycleStatus(input);
+    const status = observedStatus === "completed" || observedStatus === "failed" ||
+        observedStatus === "cancelled"
+      ? observedStatus
+      : "running";
     await advanceExecutionLifecycle({
       orgId,
       runId: input.runId,
       executionId: spawned.execution.id,
-      status: "running",
+      status,
       attempt: spawned.execution.attempt,
       eventId: input.id,
       eventRevision: 1,
       deliverySeq,
       ...(spawned.execution.startedAt == null ? { startedAt: new Date() } : {}),
+      ...(status === "completed" || status === "failed" || status === "cancelled"
+        ? { settledAt: new Date() }
+        : {}),
     }, exec);
   }
 

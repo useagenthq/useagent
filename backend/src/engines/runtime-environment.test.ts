@@ -44,7 +44,7 @@ function runtimeSandbox(
 describe("T3 Cube environment", () => {
   test("uses a release-specific useAgent identity for retained and warm sandboxes", () => {
     expect(RUNTIME_GENERATION_LABEL).toBe("useagent.runtime");
-    expect(RUNTIME_GENERATION).toBe("useagent-runtime-v4");
+    expect(RUNTIME_GENERATION).toBe("useagent-runtime-v5");
     expect(RUNTIME_CUBE_WARM_POOL_NAME).toBe(RUNTIME_GENERATION);
   });
 
@@ -80,12 +80,16 @@ describe("T3 Cube environment", () => {
   });
 
   test("launches one isolated headless environment inside the Cube workstation", () => {
-    const command = buildRuntimeEnvironmentLaunchCommand();
+    const command = buildRuntimeEnvironmentLaunchCommand({
+      RUNTIME_CODEX_CHILD_EVENT_FORWARDING: "true",
+    });
 
     expect(command).toContain('export T3CODE_HOME="$HOME/.skynet/t3"');
     expect(command).toContain("export T3CODE_HOST=0.0.0.0");
     expect(command).toContain(`export T3CODE_PORT=${RUNTIME_ENVIRONMENT_PORT}`);
     expect(command).toContain("export T3_CODEX_REQUIRED_MCP_SERVERS=skynet-knowledge");
+    expect(command).toContain("export RUNTIME_CODEX_CHILD_EVENT_FORWARDING=true");
+    expect(command).toContain("export T3_CODEX_CHILD_EVENT_FORWARDING=true");
     expect(command).toContain("export T3CODE_NO_BROWSER=true");
     expect(command).toContain('exec t3 serve --host 0.0.0.0 --port 37733 --base-dir "$T3CODE_HOME"');
     expect(command).toContain('"$HOME/work"');
@@ -97,6 +101,9 @@ describe("T3 Cube environment", () => {
     expect(command).not.toContain("skynet-env.sh");
     expect(command).not.toContain("BASH_ENV");
     expect(Bun.spawnSync(["bash", "-n", "-c", command]).exitCode).toBe(0);
+    expect(buildRuntimeEnvironmentLaunchCommand({})).not.toContain(
+      "T3_CODEX_CHILD_EVENT_FORWARDING",
+    );
   });
 
   test("uses a loopback readiness probe", () => {

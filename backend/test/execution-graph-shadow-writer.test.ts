@@ -79,6 +79,18 @@ describe("execution graph shadow writer", () => {
         payload: { taskId: "child", parentAgentId: "root", agentKind: "agent" },
       },
     })).toBe("lifecycle");
+    expect(executionGraphObservationKind({
+      ...base,
+      eventType: "t3.activity.tool.completed",
+      payload: {
+        kind: "tool.completed",
+        payload: {
+          itemType: "collab_agent_tool_call",
+          delegationKind: "wait",
+          detail: '<task id="child-from-wait" state="completed"></task>',
+        },
+      },
+    })).toBe("control");
   });
 
   test("writes only explicit OpenCode root and parent-linked child identities", async () => {
@@ -158,6 +170,145 @@ describe("execution graph shadow writer", () => {
     expect(await testDb.select().from(delegationEdges).where(
       eq(delegationEdges.runId, runId),
     )).toHaveLength(1);
+  });
+
+  test("attaches live Codex children to the unique root when provider parent identity differs", async () => {
+    const orgId = `org-${crypto.randomUUID()}`;
+    const runId = await seedRun(orgId);
+    await shadowWriteExecutionGraph({
+      id: `${runId}:root`,
+      runId,
+      threadId: runId,
+      provider: "t3",
+      eventType: "session.started",
+      nativeSessionId: `product-thread-${runId}`,
+    }, 0, testDb);
+    await shadowWriteExecutionGraph({
+      id: `${runId}:child-started`,
+      runId,
+      threadId: runId,
+      provider: "t3",
+      eventType: "t3.activity.task.started",
+      nativeSessionId: "provider-child-a",
+      nativeParentSessionId: "provider-parent-thread",
+      nativeCallId: "provider-child-a",
+      payload: {
+        kind: "task.started",
+        payload: {
+          taskId: "provider-child-a",
+          parentAgentId: "provider-parent-thread",
+          agentKind: "agent",
+          title: "calc_a",
+          agentPath: "/root/calc_a",
+        },
+      },
+    }, 1, testDb);
+
+    const executions = await testDb.select().from(agentExecutions).where(
+      eq(agentExecutions.runId, runId),
+    );
+    const root = executions.find((row) => row.mode === "root");
+    const child = executions.find((row) => row.mode === "native_child");
+    expect(root?.nativeSessionId).toBe(`product-thread-${runId}`);
+    expect(child).toMatchObject({
+      nativeSessionId: "provider-child-a",
+      nativeParentSessionId: "provider-parent-thread",
+      status: "running",
+    });
+    expect(await testDb.select().from(delegationEdges).where(
+      eq(delegationEdges.runId, runId),
+    )).toEqual([
+      expect.objectContaining({
+        parentExecutionId: root?.id,
+        childExecutionId: child?.id,
+        kind: "spawn",
+      }),
+    ]);
+  });
+
+  test("never mis-parents a reversed nested child to the root", async () => {
+    const orgId = `org-${crypto.randomUUID()}`;
+    const runId = await seedRun(orgId);
+    await shadowWriteExecutionGraph({
+      id: `${runId}:root`,
+      runId,
+      threadId: runId,
+      provider: "t3",
+      eventType: "session.started",
+      nativeSessionId: `product-thread-${runId}`,
+    }, 0, testDb);
+    await shadowWriteExecutionGraph({
+      id: `${runId}:nested-before-parent`,
+      runId,
+      threadId: runId,
+      provider: "t3",
+      eventType: "t3.activity.task.started",
+      nativeSessionId: "provider-child-b",
+      nativeParentSessionId: "provider-child-a",
+      payload: {
+        kind: "task.started",
+        payload: {
+          taskId: "provider-child-b",
+          parentAgentId: "provider-child-a",
+          agentKind: "agent",
+          agentPath: "/root/calc_a/nested_b",
+        },
+      },
+    }, 1, testDb);
+    expect(await testDb.select().from(agentExecutions).where(and(
+      eq(agentExecutions.runId, runId),
+      eq(agentExecutions.mode, "native_child"),
+    ))).toEqual([]);
+    expect(await testDb.select().from(delegationEdges).where(
+      eq(delegationEdges.runId, runId),
+    )).toEqual([]);
+  });
+
+  test("recovers an OpenCode child identity from a completed task receipt", async () => {
+    const orgId = `org-${crypto.randomUUID()}`;
+    const runId = await seedRun(orgId);
+    await shadowWriteExecutionGraph({
+      id: `${runId}:root`,
+      runId,
+      threadId: runId,
+      provider: "t3",
+      eventType: "session.started",
+      nativeSessionId: `product-thread-${runId}`,
+    }, 0, testDb);
+    await shadowWriteExecutionGraph({
+      id: `${runId}:delegate-complete`,
+      runId,
+      threadId: runId,
+      provider: "t3",
+      eventType: "t3.activity.tool.completed",
+      nativeSessionId: `product-thread-${runId}`,
+      payload: {
+        kind: "tool.completed",
+        payload: {
+          itemType: "collab_agent_tool_call",
+          toolCallId: "call-child-b",
+          status: "completed",
+          detail: '<task id="ses_child_b" state="completed"><task_result>667</task_result></task>',
+          data: { toolCallId: "call-child-b" },
+        },
+      },
+    }, 1, testDb);
+
+    const [child] = await testDb.select().from(agentExecutions).where(and(
+      eq(agentExecutions.runId, runId),
+      eq(agentExecutions.mode, "native_child"),
+    ));
+    expect(child).toMatchObject({ nativeSessionId: "ses_child_b", status: "completed" });
+    expect(child?.settledAt).toBeInstanceOf(Date);
+    expect(await testDb.select().from(delegationEdges).where(
+      eq(delegationEdges.runId, runId),
+    )).toEqual([
+      expect.objectContaining({
+        childExecutionId: child?.id,
+        kind: "spawn",
+        providerCallId: "call-child-b",
+      }),
+    ]);
   });
 
   test("keeps T3 resume observations edge-only and does not mutate attempts", async () => {
