@@ -20,6 +20,8 @@ describe("rail resizing", () => {
     ).toBe(720);
     expect(RAIL_MAX).toBe(960);
     expect(RAIL_DEFAULT).toBe(360);
+    // The floor that keeps the terminal pane at ~40+ columns.
+    expect(RAIL_MIN).toBe(360);
   });
 
   test("supports accessible keyboard resizing without interpreting other keys", () => {

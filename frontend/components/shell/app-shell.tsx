@@ -4,6 +4,7 @@ import { RiSidebarFoldLine, RiSidebarUnfoldLine } from "@remixicon/react";
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { useIsTabletBand } from "@/hooks/use-is-mobile";
 import { cx } from "@/utils/cx";
 import { AuroraBackdrop } from "./aurora-backdrop";
 import { CompactSidebarRail } from "./compact-sidebar-rail";
@@ -47,6 +48,17 @@ export function AppShell({ sidebar, children }: AppShellProps) {
     if (working && !previousWorking.current) collapseSidebar();
     previousWorking.current = working;
   }, [collapseSidebar, working]);
+
+  // Tablet band (md..<xl): not enough width for the full sidebar beside the
+  // session split, so ENTERING the band folds the sidebar to the compact rail -
+  // the same one-way fold the working signal performs; the user can still
+  // expand it explicitly.
+  const tabletBand = useIsTabletBand();
+  const previousBand = useRef(false);
+  useEffect(() => {
+    if (tabletBand && !previousBand.current) collapseSidebar();
+    previousBand.current = tabletBand;
+  }, [collapseSidebar, tabletBand]);
 
   useEffect(() => {
     if (!mobileOpen) return;

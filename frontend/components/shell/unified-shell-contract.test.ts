@@ -220,6 +220,9 @@ describe("unified shell contract", () => {
 
     expect(appShell).toContain("useWorkingSignal()");
     expect(appShell).toContain("previousWorking.current");
+    // The tablet band (md..<xl) folds the sidebar the same one-way way.
+    expect(appShell).toContain("useIsTabletBand()");
+    expect(appShell).toContain("previousBand.current");
     expect(appShell).toContain("setSidebarCollapsed(true)");
     expect(appShell).toContain("inert={sidebarCollapsed}");
     expect(appShell).toContain("aria-hidden={sidebarCollapsed}");
