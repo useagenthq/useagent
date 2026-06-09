@@ -4,9 +4,10 @@ import type { ComponentType, ReactNode } from "react";
 import { cx } from "@/utils/cx";
 
 /**
- * Shared building blocks for the app-shell sidebars (chat + agent). Both rails
- * use one recipe — a BoardUI floating panel (rounded, shadow-sidebar, inset
- * from the viewport edge) holding a scrollable nav column with icon rows,
+ * Shared building blocks for the app-shell sidebars (chat + agent). The
+ * expanded rail is a flat, edge-to-edge column (single hairline border-r, no
+ * inset or shadow); only the collapsed compact rail keeps the floating-dock
+ * treatment. Each holds a scrollable nav column with icon rows,
  * `text-mono-label` section headers, and left-aligned "Recents" rows — so the
  * row + section primitives live here instead of being duplicated per sidebar.
  *
@@ -31,10 +32,10 @@ export function Sidebar({
   footer?: ReactNode;
 }) {
   return (
-    <div className="h-full w-full p-2">
+    <div className="h-full w-full">
       <aside
         aria-label={ariaLabel}
-        className="flex h-full w-full flex-col overflow-hidden rounded-3xl border border-border-button-white bg-background-secondary-default shadow-sidebar"
+        className="flex h-full w-full flex-col overflow-hidden border-r border-border-button-white bg-background-secondary-default"
       >
         {header}
         <nav className="min-h-0 flex-1 overflow-y-auto px-2 pb-3 pt-1.5">{children}</nav>
