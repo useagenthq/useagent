@@ -17,5 +17,11 @@ describe("internal automation auth boundary", () => {
     expect(isPublicApiPath("/api/internal/operator/pump-thread")).toBe(true);
     expect(isPublicApiPath("/api/internal/operator")).toBe(false);
     expect(isPublicApiPath("/api/internal/operator-evil/pump-thread")).toBe(false);
+    expect(isPublicApiPath("/api/integrations/slack/callback")).toBe(true);
+    expect(isPublicApiPath("/api/integrations/callback/slack")).toBe(true);
+    expect(isPublicApiPath("/api/integrations/slack/callback/extra")).toBe(false);
+    expect(isPublicApiPath("/api/integrations/callback/slack-evil")).toBe(false);
+    expect(isPublicApiPath("/api/integrations/slack/connect")).toBe(false);
+    expect(isPublicApiPath("/api/integrations/github/callback")).toBe(false);
   });
 });
