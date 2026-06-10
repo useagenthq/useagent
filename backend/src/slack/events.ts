@@ -34,11 +34,12 @@ import {
   enqueuePostMessage,
   enqueueSessionStatusTx,
   enqueueStartStreamTx,
+  enqueueThreadStatusTx,
   kickSlackOutbox,
 } from "./outbox";
 import { buildRunCard, deriveTitle, sessionUrl } from "./card";
 import { parseRepoRef } from "../github/repo-ref";
-import { openingStreamChunks } from "./streaming";
+import { directMessageChannel, openingStreamChunks } from "./streaming";
 import { enqueueSlackTerminalDeliveryForRunTx } from "../runs/finalize";
 import { eq } from "drizzle-orm";
 import { defaultModelForEngine, isModelAllowedForEngine } from "../runs/model-policy";
@@ -94,6 +95,9 @@ async function healSlackRunDelivery(input: {
   channel: string;
   threadTs: string;
   messageTs: string;
+  /** The Slack user who asked - chat.startStream requires the recipient
+   *  identity when streaming into a channel. */
+  slackUserId?: string;
 }): Promise<void> {
   let kickSlack = false;
   await db.transaction(async (tx) => {
@@ -136,12 +140,26 @@ async function healSlackRunDelivery(input: {
         channel: input.channel,
         threadTs: input.threadTs,
         runId: input.runId,
-        taskDisplayMode: "task_update",
-        chunks: openingStreamChunks({ title, mode: "task_update" }),
+        taskDisplayMode: "timeline",
+        chunks: openingStreamChunks(title),
+        recipientTeamId: input.teamId,
+        recipientUserId: input.slackUserId,
         fallbackBlocks: card.blocks,
         fallbackText: card.text,
       });
       kickSlack = kickSlack || statusCreated || streamCreated;
+      // Free-text shimmer while the run works - documented for DM assistant
+      // threads only, so channel threads keep the enum session status above.
+      if (directMessageChannel(input.channel)) {
+        const shimmerCreated = await enqueueThreadStatusTx(tx, {
+          idempotencyKey: `slack-thread-status:start:${input.teamId}:${input.runId}`,
+          teamId: input.teamId,
+          channel: input.channel,
+          threadTs: input.threadTs,
+          status: "is thinking...",
+        });
+        kickSlack = kickSlack || shimmerCreated;
+      }
     }
 
     const reactionCreated = await enqueueAddReactionTx(tx, {
@@ -446,9 +464,9 @@ export async function handleSlackEvent(body: SlackEnvelope): Promise<void> {
         rootRunId: replay.runId,
         orgId,
       });
-      await healSlackRunDelivery({ runId: replay.runId, teamId, channel, threadTs: slackThreadTs, messageTs: ts });
+      await healSlackRunDelivery({ runId: replay.runId, teamId, channel, threadTs: slackThreadTs, messageTs: ts, slackUserId: event.user });
     } else if (replay.status === "replayed") {
-      await healSlackRunDelivery({ runId: replay.runId, teamId, channel, threadTs: slackThreadTs, messageTs: ts });
+      await healSlackRunDelivery({ runId: replay.runId, teamId, channel, threadTs: slackThreadTs, messageTs: ts, slackUserId: event.user });
     }
     console.log(`[slack] duplicate event ignored (${replay.status}): ${durableKey}`);
     return;
@@ -558,9 +576,9 @@ export async function handleSlackEvent(body: SlackEnvelope): Promise<void> {
   if (outcome.status !== "created") {
     if (outcome.status === "replayed" && !link) {
       await linkSlackThread({ teamId, channel, threadTs: slackThreadTs, rootRunId: outcome.runId, orgId });
-      await healSlackRunDelivery({ runId: outcome.runId, teamId, channel, threadTs: slackThreadTs, messageTs: ts });
+      await healSlackRunDelivery({ runId: outcome.runId, teamId, channel, threadTs: slackThreadTs, messageTs: ts, slackUserId: event.user });
     } else if (outcome.status === "replayed") {
-      await healSlackRunDelivery({ runId: outcome.runId, teamId, channel, threadTs: slackThreadTs, messageTs: ts });
+      await healSlackRunDelivery({ runId: outcome.runId, teamId, channel, threadTs: slackThreadTs, messageTs: ts, slackUserId: event.user });
     }
     console.log(`[slack] duplicate event ignored (${outcome.status}): ${durableKey}`);
     return;
@@ -572,7 +590,7 @@ export async function handleSlackEvent(body: SlackEnvelope): Promise<void> {
   if (!link) {
     await linkSlackThread({ teamId, channel, threadTs: slackThreadTs, rootRunId: runId, orgId });
   }
-  await healSlackRunDelivery({ runId, teamId, channel, threadTs: slackThreadTs, messageTs: ts });
+  await healSlackRunDelivery({ runId, teamId, channel, threadTs: slackThreadTs, messageTs: ts, slackUserId: event.user });
 
   await pumpThread(threadId);
 

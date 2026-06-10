@@ -1,482 +1,489 @@
 {
-	"version": "7",
-	"dialect": "postgresql",
-	"entries": [
-		{
-			"idx": 0,
-			"version": "7",
-			"when": 1785287424048,
-			"tag": "0000_natural_vulcan",
-			"breakpoints": true
-		},
-		{
-			"idx": 1,
-			"version": "7",
-			"when": 1785403055097,
-			"tag": "0001_add_runs_engine",
-			"breakpoints": true
-		},
-		{
-			"idx": 2,
-			"version": "7",
-			"when": 1785500000000,
-			"tag": "0002_add_run_threading",
-			"breakpoints": true
-		},
-		{
-			"idx": 3,
-			"version": "7",
-			"when": 1785922059588,
-			"tag": "0003_add_slack_threads",
-			"breakpoints": true
-		},
-		{
-			"idx": 4,
-			"version": "7",
-			"when": 1785926397150,
-			"tag": "0004_chunky_dreadnoughts",
-			"breakpoints": true
-		},
-		{
-			"idx": 5,
-			"version": "7",
-			"when": 1785928092752,
-			"tag": "0005_add_engine_session_id",
-			"breakpoints": true
-		},
-		{
-			"idx": 6,
-			"version": "7",
-			"when": 1785928731677,
-			"tag": "0006_schedules_model_default",
-			"breakpoints": true
-		},
-		{
-			"idx": 7,
-			"version": "7",
-			"when": 1785934915274,
-			"tag": "0007_run_sandbox_id",
-			"breakpoints": true
-		},
-		{
-			"idx": 8,
-			"version": "7",
-			"when": 1786060000000,
-			"tag": "0008_provider_events",
-			"breakpoints": true
-		},
-		{
-			"idx": 9,
-			"version": "7",
-			"when": 1786060100000,
-			"tag": "0009_add_commands",
-			"breakpoints": true
-		},
-		{
-			"idx": 10,
-			"version": "7",
-			"when": 1786060200000,
-			"tag": "0010_commands_thread_state_idx",
-			"breakpoints": true
-		},
-		{
-			"idx": 11,
-			"version": "7",
-			"when": 1786060300000,
-			"tag": "0011_slack_outbox",
-			"breakpoints": true
-		},
-		{
-			"idx": 12,
-			"version": "7",
-			"when": 1786060400000,
-			"tag": "0012_memory_outbox",
-			"breakpoints": true
-		},
-		{
-			"idx": 13,
-			"version": "7",
-			"when": 1786060700000,
-			"tag": "0015_run_repo",
-			"breakpoints": true
-		},
-		{
-			"idx": 14,
-			"version": "7",
-			"when": 1786060800000,
-			"tag": "0016_commands_catalog",
-			"breakpoints": true
-		},
-		{
-			"idx": 15,
-			"version": "7",
-			"when": 1786060900000,
-			"tag": "0017_runs_memory_scope",
-			"breakpoints": true
-		},
-		{
-			"idx": 16,
-			"version": "7",
-			"when": 1786061000000,
-			"tag": "0018_run_repos",
-			"breakpoints": true
-		},
-		{
-			"idx": 17,
-			"version": "7",
-			"when": 1786100000000,
-			"tag": "0019_schedule_idempotency",
-			"breakpoints": true
-		},
-		{
-			"idx": 18,
-			"version": "7",
-			"when": 1786100100000,
-			"tag": "0020_skill_revisions",
-			"breakpoints": true
-		},
-		{
-			"idx": 19,
-			"version": "7",
-			"when": 1786200000000,
-			"tag": "0021_memory_files",
-			"breakpoints": true
-		},
-		{
-			"idx": 20,
-			"version": "7",
-			"when": 1786300000000,
-			"tag": "0022_skill_kind",
-			"breakpoints": true
-		},
-		{
-			"idx": 21,
-			"version": "7",
-			"when": 1786400000000,
-			"tag": "0023_drop_memory_files",
-			"breakpoints": true
-		},
-		{
-			"idx": 22,
-			"version": "7",
-			"when": 1786400000001,
-			"tag": "0024_skill_source",
-			"breakpoints": true
-		},
-		{
-			"idx": 23,
-			"version": "7",
-			"when": 1786500000000,
-			"tag": "0025_reconcile_queue",
-			"breakpoints": true
-		},
-		{
-			"idx": 24,
-			"version": "7",
-			"when": 1786500000001,
-			"tag": "0026_org_secrets",
-			"breakpoints": true
-		},
-		{
-			"idx": 25,
-			"version": "7",
-			"when": 1786600000000,
-			"tag": "0027_canonical_events",
-			"breakpoints": true
-		},
-		{
-			"idx": 26,
-			"version": "7",
-			"when": 1786700000000,
-			"tag": "0028_canonicalization_outbox",
-			"breakpoints": true
-		},
-		{
-			"idx": 27,
-			"version": "7",
-			"when": 1786800000001,
-			"tag": "0029_run_command_name",
-			"breakpoints": true
-		},
-		{
-			"idx": 28,
-			"version": "7",
-			"when": 1786900000001,
-			"tag": "0030_run_command_identity",
-			"breakpoints": true
-		},
-		{
-			"idx": 29,
-			"version": "7",
-			"when": 1787000000000,
-			"tag": "0031_provider_gateway_audit",
-			"breakpoints": true
-		},
-		{
-			"idx": 30,
-			"version": "7",
-			"when": 1787100000000,
-			"tag": "0032_provider_gateway_output_budget",
-			"breakpoints": true
-		},
-		{
-			"idx": 31,
-			"version": "7",
-			"when": 1787200000000,
-			"tag": "0033_artifacts",
-			"breakpoints": true
-		},
-		{
-			"idx": 32,
-			"version": "7",
-			"when": 1787300000000,
-			"tag": "0034_user_uploads",
-			"breakpoints": true
-		},
-		{
-			"idx": 33,
-			"version": "7",
-			"when": 1787300000001,
-			"tag": "0035_artifact_workpieces",
-			"breakpoints": true
-		},
-		{
-			"idx": 34,
-			"version": "7",
-			"when": 1787400000000,
-			"tag": "0036_schedule_automation_contract",
-			"breakpoints": true
-		},
-		{
-			"idx": 35,
-			"version": "7",
-			"when": 1787500000000,
-			"tag": "0037_provider_connections",
-			"breakpoints": true
-		},
-		{
-			"idx": 36,
-			"version": "7",
-			"when": 1787600000000,
-			"tag": "0038_gateway_operation_approvals",
-			"breakpoints": true
-		},
-		{
-			"idx": 37,
-			"version": "7",
-			"when": 1787700000000,
-			"tag": "0039_gateway_provider_api_key_credentials",
-			"breakpoints": true
-		},
-		{
-			"idx": 38,
-			"version": "7",
-			"when": 1787800000000,
-			"tag": "0040_provider_connection_threads",
-			"breakpoints": true
-		},
-		{
-			"idx": 39,
-			"version": "7",
-			"when": 1787900000000,
-			"tag": "0041_artifact_workpiece_proposals",
-			"breakpoints": true
-		},
-		{
-			"idx": 40,
-			"version": "7",
-			"when": 1788000000000,
-			"tag": "0042_artifact_preview",
-			"breakpoints": true
-		},
-		{
-			"idx": 41,
-			"version": "7",
-			"when": 1788100000000,
-			"tag": "0043_learning_review_lane",
-			"breakpoints": true
-		},
-		{
-			"idx": 42,
-			"version": "7",
-			"when": 1788200000000,
-			"tag": "0044_runs_origin",
-			"breakpoints": true
-		},
-		{
-			"idx": 43,
-			"version": "7",
-			"when": 1788300000000,
-			"tag": "0045_slack_workspaces",
-			"breakpoints": true
-		},
-		{
-			"idx": 44,
-			"version": "7",
-			"when": 1788400000000,
-			"tag": "0046_schedule_firings_run_index",
-			"breakpoints": true
-		},
-		{
-			"idx": 45,
-			"version": "7",
-			"when": 1788500000000,
-			"tag": "0047_gateway_approval_requests",
-			"breakpoints": true
-		},
-		{
-			"idx": 46,
-			"version": "7",
-			"when": 1788600000000,
-			"tag": "0048_context_index",
-			"breakpoints": true
-		},
-		{
-			"idx": 47,
-			"version": "7",
-			"when": 1788700000000,
-			"tag": "0049_slack_card_ts",
-			"breakpoints": true
-		},
-		{
-			"idx": 48,
-			"version": "7",
-			"when": 1788800000000,
-			"tag": "0050_learning_outbox",
-			"breakpoints": true
-		},
-		{
-			"idx": 49,
-			"version": "7",
-			"when": 1788900000000,
-			"tag": "0051_run_resolved_resources",
-			"breakpoints": true
-		},
-		{
-			"idx": 50,
-			"version": "7",
-			"when": 1789000000000,
-			"tag": "0052_slack_users",
-			"breakpoints": true
-		},
-		{
-			"idx": 51,
-			"version": "7",
-			"when": 1789100000000,
-			"tag": "0053_slack_team_responses",
-			"breakpoints": true
-		},
-		{
-			"idx": 52,
-			"version": "7",
-			"when": 1789200000000,
-			"tag": "0054_integration_connections",
-			"breakpoints": true
-		},
-		{
-			"idx": 53,
-			"version": "7",
-			"when": 1789300000000,
-			"tag": "0055_integration_connect_leases",
-			"breakpoints": true
-		},
-		{
-			"idx": 54,
-			"version": "7",
-			"when": 1789400000000,
-			"tag": "0056_integration_connection_identity",
-			"breakpoints": true
-		},
-		{
-			"idx": 55,
-			"version": "7",
-			"when": 1789500000000,
-			"tag": "0057_saas_query_indexes",
-			"breakpoints": true
-		},
-		{
-			"idx": 56,
-			"version": "7",
-			"when": 1789600000000,
-			"tag": "0058_integration_connection_credentials",
-			"breakpoints": true
-		},
-		{
-			"idx": 57,
-			"version": "7",
-			"when": 1789700000000,
-			"tag": "0059_runs_settled_at",
-			"breakpoints": true
-		},
-		{
-			"idx": 58,
-			"version": "7",
-			"when": 1789800000000,
-			"tag": "0060_api_keys",
-			"breakpoints": true
-		},
-		{
-			"idx": 59,
-			"version": "7",
-			"when": 1789900000000,
-			"tag": "0061_fleet_admission_leases",
-			"breakpoints": true
-		},
-		{
-			"idx": 60,
-			"version": "7",
-			"when": 1790000000000,
-			"tag": "0062_tasks",
-			"breakpoints": true
-		},
-		{
-			"idx": 61,
-			"version": "7",
-			"when": 1790100000000,
-			"tag": "0063_projects",
-			"breakpoints": true
-		},
-		{
-			"idx": 62,
-			"version": "7",
-			"when": 1790200000000,
-			"tag": "0064_github_publication",
-			"breakpoints": true
-		},
-		{
-			"idx": 63,
-			"version": "7",
-			"when": 1790300000000,
-			"tag": "0065_fleet_capacity_queue_index",
-			"breakpoints": true
-		},
-		{
-			"idx": 64,
-			"version": "7",
-			"when": 1790400000000,
-			"tag": "0066_free_model_qualifier_foundation",
-			"breakpoints": true
-		},
-		{
-			"idx": 65,
-			"version": "7",
-			"when": 1790500000000,
-			"tag": "0067_execution_graph",
-			"breakpoints": true
-		},
-		{
-			"idx": 66,
-			"version": "7",
-			"when": 1790600000000,
-			"tag": "0068_fleet_batches",
-			"breakpoints": true
-		},
-		{
-			"idx": 67,
-			"version": "7",
-			"when": 1790700000000,
-			"tag": "0069_execution_graph_cursor",
-			"breakpoints": true
-		}
-	]
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1785287424048,
+      "tag": "0000_natural_vulcan",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1785403055097,
+      "tag": "0001_add_runs_engine",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1785500000000,
+      "tag": "0002_add_run_threading",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1785922059588,
+      "tag": "0003_add_slack_threads",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1785926397150,
+      "tag": "0004_chunky_dreadnoughts",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1785928092752,
+      "tag": "0005_add_engine_session_id",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1785928731677,
+      "tag": "0006_schedules_model_default",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1785934915274,
+      "tag": "0007_run_sandbox_id",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1786060000000,
+      "tag": "0008_provider_events",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1786060100000,
+      "tag": "0009_add_commands",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1786060200000,
+      "tag": "0010_commands_thread_state_idx",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1786060300000,
+      "tag": "0011_slack_outbox",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1786060400000,
+      "tag": "0012_memory_outbox",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1786060700000,
+      "tag": "0015_run_repo",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1786060800000,
+      "tag": "0016_commands_catalog",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1786060900000,
+      "tag": "0017_runs_memory_scope",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1786061000000,
+      "tag": "0018_run_repos",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1786100000000,
+      "tag": "0019_schedule_idempotency",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1786100100000,
+      "tag": "0020_skill_revisions",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1786200000000,
+      "tag": "0021_memory_files",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1786300000000,
+      "tag": "0022_skill_kind",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1786400000000,
+      "tag": "0023_drop_memory_files",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1786400000001,
+      "tag": "0024_skill_source",
+      "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1786500000000,
+      "tag": "0025_reconcile_queue",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1786500000001,
+      "tag": "0026_org_secrets",
+      "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1786600000000,
+      "tag": "0027_canonical_events",
+      "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1786700000000,
+      "tag": "0028_canonicalization_outbox",
+      "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1786800000001,
+      "tag": "0029_run_command_name",
+      "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1786900000001,
+      "tag": "0030_run_command_identity",
+      "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1787000000000,
+      "tag": "0031_provider_gateway_audit",
+      "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1787100000000,
+      "tag": "0032_provider_gateway_output_budget",
+      "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1787200000000,
+      "tag": "0033_artifacts",
+      "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1787300000000,
+      "tag": "0034_user_uploads",
+      "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1787300000001,
+      "tag": "0035_artifact_workpieces",
+      "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1787400000000,
+      "tag": "0036_schedule_automation_contract",
+      "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1787500000000,
+      "tag": "0037_provider_connections",
+      "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1787600000000,
+      "tag": "0038_gateway_operation_approvals",
+      "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1787700000000,
+      "tag": "0039_gateway_provider_api_key_credentials",
+      "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1787800000000,
+      "tag": "0040_provider_connection_threads",
+      "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1787900000000,
+      "tag": "0041_artifact_workpiece_proposals",
+      "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1788000000000,
+      "tag": "0042_artifact_preview",
+      "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1788100000000,
+      "tag": "0043_learning_review_lane",
+      "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1788200000000,
+      "tag": "0044_runs_origin",
+      "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1788300000000,
+      "tag": "0045_slack_workspaces",
+      "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1788400000000,
+      "tag": "0046_schedule_firings_run_index",
+      "breakpoints": true
+    },
+    {
+      "idx": 45,
+      "version": "7",
+      "when": 1788500000000,
+      "tag": "0047_gateway_approval_requests",
+      "breakpoints": true
+    },
+    {
+      "idx": 46,
+      "version": "7",
+      "when": 1788600000000,
+      "tag": "0048_context_index",
+      "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1788700000000,
+      "tag": "0049_slack_card_ts",
+      "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "7",
+      "when": 1788800000000,
+      "tag": "0050_learning_outbox",
+      "breakpoints": true
+    },
+    {
+      "idx": 49,
+      "version": "7",
+      "when": 1788900000000,
+      "tag": "0051_run_resolved_resources",
+      "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1789000000000,
+      "tag": "0052_slack_users",
+      "breakpoints": true
+    },
+    {
+      "idx": 51,
+      "version": "7",
+      "when": 1789100000000,
+      "tag": "0053_slack_team_responses",
+      "breakpoints": true
+    },
+    {
+      "idx": 52,
+      "version": "7",
+      "when": 1789200000000,
+      "tag": "0054_integration_connections",
+      "breakpoints": true
+    },
+    {
+      "idx": 53,
+      "version": "7",
+      "when": 1789300000000,
+      "tag": "0055_integration_connect_leases",
+      "breakpoints": true
+    },
+    {
+      "idx": 54,
+      "version": "7",
+      "when": 1789400000000,
+      "tag": "0056_integration_connection_identity",
+      "breakpoints": true
+    },
+    {
+      "idx": 55,
+      "version": "7",
+      "when": 1789500000000,
+      "tag": "0057_saas_query_indexes",
+      "breakpoints": true
+    },
+    {
+      "idx": 56,
+      "version": "7",
+      "when": 1789600000000,
+      "tag": "0058_integration_connection_credentials",
+      "breakpoints": true
+    },
+    {
+      "idx": 57,
+      "version": "7",
+      "when": 1789700000000,
+      "tag": "0059_runs_settled_at",
+      "breakpoints": true
+    },
+    {
+      "idx": 58,
+      "version": "7",
+      "when": 1789800000000,
+      "tag": "0060_api_keys",
+      "breakpoints": true
+    },
+    {
+      "idx": 59,
+      "version": "7",
+      "when": 1789900000000,
+      "tag": "0061_fleet_admission_leases",
+      "breakpoints": true
+    },
+    {
+      "idx": 60,
+      "version": "7",
+      "when": 1790000000000,
+      "tag": "0062_tasks",
+      "breakpoints": true
+    },
+    {
+      "idx": 61,
+      "version": "7",
+      "when": 1790100000000,
+      "tag": "0063_projects",
+      "breakpoints": true
+    },
+    {
+      "idx": 62,
+      "version": "7",
+      "when": 1790200000000,
+      "tag": "0064_github_publication",
+      "breakpoints": true
+    },
+    {
+      "idx": 63,
+      "version": "7",
+      "when": 1790300000000,
+      "tag": "0065_fleet_capacity_queue_index",
+      "breakpoints": true
+    },
+    {
+      "idx": 64,
+      "version": "7",
+      "when": 1790400000000,
+      "tag": "0066_free_model_qualifier_foundation",
+      "breakpoints": true
+    },
+    {
+      "idx": 65,
+      "version": "7",
+      "when": 1790500000000,
+      "tag": "0067_execution_graph",
+      "breakpoints": true
+    },
+    {
+      "idx": 66,
+      "version": "7",
+      "when": 1790600000000,
+      "tag": "0068_fleet_batches",
+      "breakpoints": true
+    },
+    {
+      "idx": 67,
+      "version": "7",
+      "when": 1790700000000,
+      "tag": "0069_execution_graph_cursor",
+      "breakpoints": true
+    },
+    {
+      "idx": 68,
+      "version": "7",
+      "when": 1790900000000,
+      "tag": "0071_slack_stream_progress",
+      "breakpoints": true
+    }
+  ]
 }

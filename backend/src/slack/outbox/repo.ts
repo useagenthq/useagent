@@ -45,13 +45,17 @@ export async function enqueue(
   // is still oversized after that is a programming error and refuses loudly
   // instead of corrupting.
   const bounded: Record<string, unknown> = { ...(entry.payload as Record<string, unknown>) };
-  // Shed WHOLE trailing chunks (never a byte-slice) from whichever chunk field
-  // this kind carries: `chunks` (post_message) or `fallbackChunks` (update_card's
-  // plain-text fallback). The Block Kit `blocks` are already length-capped by the
-  // pure card builder, so only the free-text answer can overflow.
-  const chunkField = Array.isArray(bounded.chunks)
+  // Shed WHOLE trailing chunks (never a byte-slice) from whichever TEXT chunk
+  // field this kind carries: `chunks` (post_message) or `fallbackChunks` (the
+  // plain-text fallback on card/stream rows). Stream rows carry OBJECT chunk
+  // arrays under `chunks` - those are size-capped at build time and must never
+  // enter the string shedder. The Block Kit `blocks` are already length-capped
+  // by the pure card builder, so only the free-text answer can overflow.
+  const textChunks = (value: unknown): value is string[] =>
+    Array.isArray(value) && value.every((c) => typeof c === "string");
+  const chunkField = textChunks(bounded.chunks)
     ? "chunks"
-    : Array.isArray(bounded.fallbackChunks)
+    : textChunks(bounded.fallbackChunks)
       ? "fallbackChunks"
       : null;
   if (chunkField) {
