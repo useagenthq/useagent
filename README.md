@@ -59,7 +59,14 @@ inspectable after the fact.
 
 ## Quick Start
 
-Requires [bun](https://bun.sh) and Postgres.
+Requires [bun](https://bun.sh) and Postgres 16+ with the
+[pgvector](https://github.com/pgvector/pgvector) extension (stock Postgres
+images do not include it). No Postgres handy? One container does it:
+
+```bash
+docker run -d --name useagent-pg -p 5432:5432   -e POSTGRES_HOST_AUTH_METHOD=trust pgvector/pgvector:pg16
+export DATABASE_URL=postgres://postgres@localhost:5432/postgres
+```
 
 ```bash
 for workspace in \
