@@ -17,7 +17,7 @@ import {
   type ControlDelegationKind,
 } from "./execution-graph-repo";
 
-const SUPPORTED_PROVIDERS = new Set(["opencode", "t3"]);
+const SUPPORTED_PROVIDERS = new Set(["opencode", "pi", "t3"]);
 const CONTROL_KINDS = new Set<ControlDelegationKind>([
   "wait",
   "send",
@@ -55,7 +55,10 @@ function activityPayload(input: ProviderEventInput): {
   readonly payload: RecordValue | null;
 } {
   const activity = recordValue(input.payload);
-  return { activity, payload: recordValue(activity?.payload) };
+  return {
+    activity,
+    payload: input.provider === "pi" ? activity : recordValue(activity?.payload),
+  };
 }
 
 async function owningOrgId(runId: string, exec: Executor): Promise<string | null> {
@@ -156,6 +159,18 @@ function explicitSpawnIdentity(input: ProviderEventInput): {
       : null;
   }
 
+  if (
+    input.provider === "pi" &&
+    input.eventType === "part.subtask" &&
+    stringValue(payload?.childEventKind) === "child.started"
+  ) {
+    const childSessionId = stringValue(payload?.childSessionId);
+    const parentSessionId = stringValue(input.nativeParentSessionId, input.nativeSessionId);
+    return childSessionId && parentSessionId
+      ? { childSessionId, parentSessionId, providerCallId: stringValue(input.nativeCallId) }
+      : null;
+  }
+
   if (input.provider === "t3" && input.eventType === "t3.activity.task.started") {
     const childSessionId = stringValue(input.nativeSessionId, payload?.taskId);
     const parentSessionId = stringValue(input.nativeParentSessionId, payload?.parentAgentId);
@@ -251,6 +266,12 @@ function graphObservation(input: ProviderEventInput): GraphObservation | null {
   if (spawn) return { kind: "spawn", spawn };
   const control = explicitControl(input);
   if (control) return { kind: "control", control };
+  if (input.provider === "pi" && input.eventType.startsWith("part.subtask")) {
+    const { payload } = activityPayload(input);
+    return stringValue(payload?.childSessionId) && lifecycleStatus(input)
+      ? { kind: "lifecycle" }
+      : null;
+  }
   if (input.provider !== "t3" || !input.eventType.startsWith("t3.activity.task.")) {
     return null;
   }
@@ -273,7 +294,10 @@ async function advanceChild(
   deliverySeq: number,
   exec: Executor,
 ): Promise<void> {
-  const nativeSessionId = stringValue(input.nativeSessionId);
+  const { payload } = activityPayload(input);
+  const nativeSessionId = input.provider === "pi"
+    ? stringValue(payload?.childSessionId)
+    : stringValue(input.nativeSessionId);
   const status = lifecycleStatus(input);
   if (!nativeSessionId || !status) return;
   const execution = await executionByNativeSession(

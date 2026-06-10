@@ -118,6 +118,25 @@ describe("canonical child projection", () => {
     expect(model.fidelity.get("b")?.resultText).toBe("quota");
   });
 
+  test("never lets a shared launch alias overwrite sibling status or result", () => {
+    const events = [
+      event("child.started", 1, { childId: "a", launchToolCallId: "shared-launch" }),
+      event("child.started", 2, { childId: "b", launchToolCallId: "shared-launch" }),
+      event("child.completed", 3, { childId: "a", status: "ok", result: "A" }),
+      event("child.completed", 4, { childId: "b", status: "error", result: "B" }),
+    ];
+
+    const canonical = deriveCanonicalChildren(events);
+    expect(canonical.fidelity.has("shared-launch")).toBe(false);
+    expect(canonical.fidelity.get("a")).toMatchObject({ status: "completed", resultText: "A" });
+    expect(canonical.fidelity.get("b")).toMatchObject({ status: "failed", resultText: "B" });
+
+    const view = deriveChildrenView([], [], events);
+    expect(view.fidelity.has("shared-launch")).toBe(false);
+    expect(view.fidelity.get("a")).toMatchObject({ status: "completed", resultText: "A" });
+    expect(view.fidelity.get("b")).toMatchObject({ status: "failed", resultText: "B" });
+  });
+
   test("records completion result as real child activity instead of an empty zero-activity card", () => {
     const model = deriveCanonicalChildren([
       event("child.started", 1, {

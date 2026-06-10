@@ -154,6 +154,35 @@ function fidelityOf(child: MutableChild): CanonicalChildFidelity {
   };
 }
 
+function aliasMultiplicity(cards: readonly SubagentCard[]): ReadonlyMap<string, number> {
+  const counts = new Map<string, number>();
+  for (const card of cards) {
+    for (const alias of card.aliases) counts.set(alias, (counts.get(alias) ?? 0) + 1);
+  }
+  return counts;
+}
+
+function unambiguousAliases(
+  card: SubagentCard,
+  counts: ReadonlyMap<string, number>,
+): readonly string[] {
+  return card.aliases.filter(
+    (alias) => alias === card.childSessionId || counts.get(alias) === 1,
+  );
+}
+
+function fidelityForCard<T>(card: SubagentCard, fidelity: ReadonlyMap<string, T>): T | undefined {
+  if (card.childSessionId) {
+    const exact = fidelity.get(card.childSessionId);
+    if (exact) return exact;
+  }
+  for (const alias of card.aliases) {
+    const value = fidelity.get(alias);
+    if (value) return value;
+  }
+  return undefined;
+}
+
 /**
  * Fold provider-neutral child lifecycle events into the existing Agents-rail
  * card and fidelity shapes. A card normally starts at child.started; a terminal
@@ -220,10 +249,11 @@ export function deriveCanonicalChildren(
   }
 
   const cards = [...children.values()].map(({ card }) => card);
+  const aliasCounts = aliasMultiplicity(cards);
   const fidelity = new Map<string, CanonicalChildFidelity>();
   for (const child of children.values()) {
     const value = fidelityOf(child);
-    for (const alias of child.card.aliases) fidelity.set(alias, value);
+    for (const alias of unambiguousAliases(child.card, aliasCounts)) fidelity.set(alias, value);
   }
 
   return { cards, ownerByStep: new Map(), fidelity };
@@ -236,8 +266,11 @@ export function remapCanonicalOwnerByStep(
   legacy: SubagentModel,
 ): ReadonlyMap<string, string> {
   const canonicalByAlias = new Map<string, string>();
+  const aliasCounts = aliasMultiplicity(canonicalCards);
   for (const card of canonicalCards) {
-    for (const alias of card.aliases) canonicalByAlias.set(alias, card.id);
+    for (const alias of unambiguousAliases(card, aliasCounts)) {
+      canonicalByAlias.set(alias, card.id);
+    }
   }
 
   const canonicalIdByLegacyId = new Map<string, string>();
@@ -347,15 +380,14 @@ export function deriveChildrenView(
   }
 
   const fidelity = new Map<string, MergedChildFidelity>();
+  const aliasCounts = aliasMultiplicity(canonical.cards);
   for (const card of canonical.cards) {
-    const canonicalFidelity = card.aliases
-      .map((alias) => canonical.fidelity.get(alias))
-      .find((value): value is CanonicalChildFidelity => value !== undefined);
-    const nativeFidelity = card.aliases
-      .map((alias) => native.get(alias))
-      .find((value): value is ChildFidelity => value !== undefined);
+    const canonicalFidelity = fidelityForCard(card, canonical.fidelity);
+    const nativeFidelity = fidelityForCard(card, native);
     const merged = mergeFidelity(canonicalFidelity, nativeFidelity);
-    if (merged) for (const alias of card.aliases) fidelity.set(alias, merged);
+    if (merged) {
+      for (const alias of unambiguousAliases(card, aliasCounts)) fidelity.set(alias, merged);
+    }
   }
 
   return { cards: canonical.cards, ownerByStep, fidelity, legacy };
