@@ -71,6 +71,15 @@ export type SetSessionStatusPayload = {
   readonly status: SlackSessionStatus;
 };
 
+/** Free-text working status on a DM assistant thread (native shimmer). An
+ *  empty `status` clears it. */
+export type SetThreadStatusPayload = {
+  readonly teamId: string;
+  readonly channel: string;
+  readonly threadTs: string;
+  readonly status: string;
+};
+
 export type StartStreamPayload = {
   readonly teamId: string;
   readonly channel: string;
@@ -78,6 +87,9 @@ export type StartStreamPayload = {
   readonly runId: string;
   readonly taskDisplayMode: SlackStreamTaskDisplayMode;
   readonly chunks: readonly SlackStreamChunk[];
+  /** Slack requires the recipient identity when streaming into a channel. */
+  readonly recipientTeamId?: string;
+  readonly recipientUserId?: string;
   /** Fallback Block Kit card used when native streaming is unavailable. */
   readonly fallbackBlocks: readonly unknown[];
   readonly fallbackText: string;
@@ -89,6 +101,9 @@ export type AppendStreamPayload = {
   readonly threadTs: string;
   readonly runId: string;
   readonly chunks: readonly SlackStreamChunk[];
+  /** For a narration append: the exact char offset this segment starts at.
+   *  Delivery fences on it so retries can never scramble the streamed text. */
+  readonly narrationOffset?: number;
   /** Fallback card update used when a stream append is permanently unsupported. */
   readonly fallbackBlocks: readonly unknown[];
   readonly fallbackText: string;
@@ -99,9 +114,20 @@ export type StopStreamPayload = {
   readonly channel: string;
   readonly threadTs: string;
   readonly runId: string;
+  /** Terminal task/plan closures (no reply markdown - see narration fields). */
   readonly chunks: readonly SlackStreamChunk[];
+  /** The full narration the stream body should contain; delivery appends only
+   *  the tail past the accepted offset (streamed_chars). */
+  readonly narrationText?: string;
+  /** Markdown appended after the narration tail (the reply when nothing was
+   *  streamed, the failure line, or the re-stated reply when truncated). */
+  readonly closingMarkdown?: string;
+  /** Blocks closing the NATIVE stream (chrome card - the body carries the reply). */
   readonly blocks: readonly unknown[];
   readonly text: string;
+  /** Full final card (with the answer) for the chat.update card fallback path.
+   *  Legacy rows omit it; delivery falls back to `blocks`. */
+  readonly fallbackBlocks?: readonly unknown[];
   /** The full answer, chunked - plain-text fallback when no stream/card update works. */
   readonly fallbackChunks: readonly string[];
 };
@@ -115,6 +141,7 @@ export type SlackOutboxEnqueue =
   | { readonly kind: "post_card"; readonly idempotencyKey: string; readonly payload: PostCardPayload }
   | { readonly kind: "update_card"; readonly idempotencyKey: string; readonly payload: UpdateCardPayload }
   | { readonly kind: "set_session_status"; readonly idempotencyKey: string; readonly payload: SetSessionStatusPayload }
+  | { readonly kind: "set_thread_status"; readonly idempotencyKey: string; readonly payload: SetThreadStatusPayload }
   | { readonly kind: "start_stream"; readonly idempotencyKey: string; readonly payload: StartStreamPayload }
   | { readonly kind: "append_stream"; readonly idempotencyKey: string; readonly payload: AppendStreamPayload }
   | { readonly kind: "stop_stream"; readonly idempotencyKey: string; readonly payload: StopStreamPayload };

@@ -29,8 +29,17 @@ import {
   findSlackRunResponse,
   linkSlackThread,
 } from "../src/slack/repo";
-import { enqueuePostCard } from "../src/slack/outbox";
+import {
+  enqueueAppendStream,
+  enqueuePostCard,
+  enqueueStartStream,
+  enqueueThreadStatus,
+  getSlackOutbox,
+  kickSlackOutbox,
+} from "../src/slack/outbox";
 import { buildRunCard } from "../src/slack/card";
+import { markdownChunksFor, openingStreamChunks, runningTaskChunk } from "../src/slack/streaming";
+import { turnStream } from "../src/runs/turn-stream";
 import { DEV_ORG_ID, DEV_USER_ID } from "../src/seed";
 import { setSlackClientForTest } from "../src/slack";
 import { resetSlackDeduperForTest } from "../src/slack/events";
@@ -85,21 +94,37 @@ interface Recorded {
   messages: Array<{ channel: string; text: string; threadTs?: string; blocks?: unknown[] }>;
   updates: Array<{ channel: string; ts: string; text: string; blocks?: unknown[] }>;
   sessionStatuses: Array<{ channel: string; threadTs: string; status: "processing" | "active" }>;
+  threadStatuses: Array<{ channel: string; threadTs: string; status: string }>;
   streams: Array<{
     op: "start" | "append" | "stop";
     channel: string;
     threadTs: string;
     messageTs?: string;
+    mode?: string;
+    recipientTeamId?: string;
+    recipientUserId?: string;
     blocks?: readonly unknown[];
     chunks?: readonly unknown[];
   }>;
   uploads: Array<{ channel: string; filename: string; threadTs?: string; bytes: Buffer }>;
 }
-const rec: Recorded = { reactions: [], messages: [], updates: [], sessionStatuses: [], streams: [], uploads: [] };
+const rec: Recorded = {
+  reactions: [],
+  messages: [],
+  updates: [],
+  sessionStatuses: [],
+  threadStatuses: [],
+  streams: [],
+  uploads: [],
+};
 /** When true the mock rejects agents.sessions.setStatus — the non-assistant fallback case. */
 let statusFails = false;
 /** When set, chat.update returns this failure (drives the update-fallback path). */
 let updateResult: import("../src/slack/client").DeliveryResult = { ok: true };
+/** When set, chat.startStream returns this failure (drives the fallback-once path). */
+let startStreamResult: import("../src/slack/client").DeliveryResult | null = null;
+/** When set, chat.appendStream returns this failure (drives the mid-run fallback). */
+let appendStreamResult: import("../src/slack/client").DeliveryResult | null = null;
 /** When set, chat.stopStream returns this failure (drives stream fallback paths). */
 let stopStreamResult: import("../src/slack/client").DeliveryResult = { ok: true };
 /** Synthetic message ts source — the card post returns one so updates can target it. */
@@ -113,11 +138,10 @@ function finalAnswerFor(channel: string, threadTs: string): string | null {
   const stopped = [...rec.streams].reverse().find((s) => s.op === "stop" && s.channel === channel && s.threadTs === threadTs);
   if (stopped?.chunks) {
     const text = stopped.chunks
-      .map((chunk) =>
-        chunk && typeof chunk === "object" && "markdown_text" in chunk
-          ? String((chunk as { markdown_text: unknown }).markdown_text)
-          : "",
-      )
+      .map((chunk) => {
+        const c = chunk as { type?: unknown; text?: unknown };
+        return c && typeof c === "object" && c.type === "markdown_text" ? String(c.text ?? "") : "";
+      })
       .filter(Boolean)
       .join("\n");
     if (text) return text;
@@ -162,11 +186,25 @@ beforeAll(async () => {
       rec.sessionStatuses.push(s);
       return { ok: true };
     },
+    setThreadStatus: async (s) => {
+      rec.threadStatuses.push(s);
+      return { ok: true };
+    },
     startStream: async (s) => {
-      rec.streams.push({ op: "start", channel: s.channel, threadTs: s.threadTs, chunks: s.chunks });
+      if (startStreamResult) return startStreamResult;
+      rec.streams.push({
+        op: "start",
+        channel: s.channel,
+        threadTs: s.threadTs,
+        mode: s.taskDisplayMode,
+        recipientTeamId: s.recipientTeamId,
+        recipientUserId: s.recipientUserId,
+        chunks: s.chunks,
+      });
       return { ok: true, ts: `${tsSeq++}.1` };
     },
     appendStream: async (s) => {
+      if (appendStreamResult) return appendStreamResult;
       rec.streams.push({ op: "append", channel: s.channel, threadTs: s.threadTs, messageTs: s.messageTs, chunks: s.chunks });
       return { ok: true };
     },
@@ -351,9 +389,14 @@ describe("slack event → run", () => {
     );
     const answer = await waitFor(async () => finalAnswerFor(channel, ts));
     expect(answer!.length).toBeGreaterThan(0);
+    // The native stream body closes with the reply text (the summary for a
+    // completed run, the failure line for a failed one).
     const done = await json<any>(`/api/runs/${run.id}`);
-    expect(answer).toBe(composeSlackReplyText(done.body.status, done.body.summary));
+    expect(answer).toContain(done.body.summary);
     const stopped = rec.streams.find((s) => s.op === "stop" && s.channel === channel && s.threadTs === ts);
+    // The root task card settles alongside (complete or error, never spinning).
+    const runTask = (stopped?.chunks as any[]).find((c) => c.type === "task_update" && c.id === "run");
+    expect(["complete", "error"]).toContain(runTask.status);
     const actions = (stopped?.blocks as any[]).find((b) => b.type === "actions");
     expect(actions.elements[0].url).toContain(`/session/${run.thread_id}`);
   });
@@ -701,6 +744,36 @@ describe("slack event → run", () => {
     expect(run.id).toBeTruthy();
   });
 
+  test("DM shimmer: free-text status set at accept and cleared when the run settles", async () => {
+    const marker = uid("shimmertext");
+    const channel = `D${uid("dm")}`;
+    const ts = `${uid("ts")}.1`;
+    await postSlack(
+      eventCallback({ type: "message", channel, channel_type: "im", user: "U-HUMAN", text: `go ${marker}`, ts }),
+    );
+    await waitFor(async () => findRunByPrompt(`go ${marker}`));
+    // Cleared (empty status) once the run settles - durably, from finalize.
+    await waitFor(
+      async () => rec.threadStatuses.some((s) => s.channel === channel && s.status === "") || null,
+      { timeoutMs: 14_000 },
+    );
+    const mine = rec.threadStatuses.filter((s) => s.channel === channel && s.threadTs === ts);
+    expect(mine[0]?.status).toBe("is thinking...");
+    expect(mine[mine.length - 1]?.status).toBe("");
+  });
+
+  test("a channel thread never gets the DM-only free-text status", async () => {
+    const marker = uid("noshimmer");
+    const channel = `C${uid("ch")}`;
+    const ts = `${uid("ts")}.1`;
+    await postSlack(
+      eventCallback({ type: "app_mention", channel, user: "U-HUMAN", text: `<@${BOT}> run ${marker}`, ts }),
+    );
+    await waitFor(async () => findRunByPrompt(`run ${marker}`));
+    await waitFor(async () => finalAnswerFor(channel, ts), { timeoutMs: 14_000 });
+    expect(rec.threadStatuses.some((s) => s.channel === channel)).toBe(false);
+  });
+
   test("assistant status failing (non-assistant context) never blocks the summary post", async () => {
     statusFails = true;
     try {
@@ -832,6 +905,156 @@ describe("slack native stream and Block Kit fallback", () => {
     const running = buildRunCard({ title: "progress", phase: "running", model: "m", repoSpecs: [], webUrl: "https://x/session/1", workingStep: "cloning repo" });
     const contexts = (running.blocks as any[]).filter((b) => b.type === "context");
     expect(contexts.some((c) => c.elements[0].text.includes("working: cloning repo"))).toBe(true);
+  });
+
+  /** Enqueue the run's native stream start (timeline mode, wire-shape chunks). */
+  async function startNativeStream(t: { runId: string; channel: string; ts: string }, title: string): Promise<void> {
+    const card = buildRunCard({ title, phase: "queued", model: "m", repoSpecs: [], webUrl: "https://x/session/1" });
+    await enqueueStartStream({
+      idempotencyKey: `slack-stream:start:${TEAM}:${t.runId}`,
+      teamId: TEAM,
+      channel: t.channel,
+      threadTs: t.ts,
+      runId: t.runId,
+      taskDisplayMode: "timeline",
+      chunks: openingStreamChunks(title),
+      recipientTeamId: TEAM,
+      recipientUserId: "U-HUMAN",
+      fallbackBlocks: card.blocks,
+      fallbackText: card.text,
+    });
+  }
+
+  test("start_stream sends timeline mode, recipient identity, and FLAT task chunks", async () => {
+    const t = await rootThread("wire shapes");
+    await startNativeStream(t, "wire shapes");
+    const started = await waitFor(async () =>
+      rec.streams.find((s) => s.op === "start" && s.channel === t.channel) ?? null,
+    );
+    expect(started.mode).toBe("timeline");
+    expect(started.recipientTeamId).toBe(TEAM);
+    expect(started.recipientUserId).toBe("U-HUMAN");
+    expect(started.chunks?.[0]).toEqual({
+      type: "task_update",
+      id: "run",
+      title: "wire shapes",
+      status: "in_progress",
+    });
+  });
+
+  test("a start_stream API error falls back ONCE to the Block Kit card (no retry storm)", async () => {
+    const t = await rootThread("stream unavailable");
+    startStreamResult = { ok: false, class: "transient", message: "feature_not_enabled" };
+    try {
+      await startNativeStream(t, "stream unavailable");
+      // The SAME delivery attempt posts the card fallback and settles the row.
+      const posted = await waitFor(async () =>
+        rec.messages.find((m) => m.channel === t.channel && m.blocks) ?? null,
+      );
+      expect(posted.threadTs).toBe(t.ts);
+      const row = await getSlackOutbox(`slack-stream:start:${TEAM}:${t.runId}`);
+      expect(row?.state).toBe("delivered");
+      expect(row?.attemptCount).toBe(0); // never re-attempted
+      const response = await findSlackRunResponse(t.runId);
+      expect(response?.nativeStreamTs).toBeNull();
+      expect(response?.fallbackMessageTs).toBeTruthy();
+    } finally {
+      startStreamResult = null;
+    }
+  });
+
+  test("narration appends fence on their offset and the stop appends ONLY the tail", async () => {
+    const t = await rootThread("narration tail");
+    await startNativeStream(t, "narration tail");
+    await waitFor(async () => ((await findSlackRunResponse(t.runId))?.nativeStreamTs ? true : null));
+
+    const card = buildRunCard({ title: "narration tail", phase: "running", model: "m", repoSpecs: [], webUrl: "https://x/session/1" });
+    const append = (seq: number, text: string, offset: number) =>
+      enqueueAppendStream({
+        idempotencyKey: `slack-stream:text:${TEAM}:${t.runId}:${seq}`,
+        teamId: TEAM,
+        channel: t.channel,
+        threadTs: t.ts,
+        runId: t.runId,
+        chunks: markdownChunksFor(text),
+        narrationOffset: offset,
+        fallbackBlocks: card.blocks,
+        fallbackText: card.text,
+      });
+    // OUT OF ORDER on purpose: the second segment lands first and must wait on
+    // the offset fence until the first is accepted.
+    await append(2, "world", 6);
+    await append(1, "Hello ", 0);
+    await waitFor(async () => {
+      kickSlackOutbox(); // the test relay never ticks; drive retry passes
+      const response = await findSlackRunResponse(t.runId);
+      return response?.streamedChars === 11 ? true : null;
+    });
+
+    // The live narration buffer carries the full reply; the stop appends only
+    // the un-streamed tail ("!") plus no closing (the reply was streamed).
+    turnStream.publish(t.runId, "Hello world!");
+    await finalizeRun(t.runId, "completed", "Hello world!", 1);
+    const stopped = await waitFor(async () =>
+      rec.streams.find((s) => s.op === "stop" && s.channel === t.channel) ?? null,
+    );
+    expect(finalAnswerFor(t.channel, t.ts)).toBe("!");
+    // The native-stop card stays chrome-only: linked title, no answer section.
+    const sections = (stopped.blocks as any[]).filter((b) => b.type === "section");
+    expect(sections).toHaveLength(1);
+    expect(sections[0].text.text).toContain("narration tail");
+    expect(sections[0].text.text).not.toContain("Hello world!");
+  });
+
+  test("an append API error disables the native stream without stray posts", async () => {
+    const t = await rootThread("append dies");
+    await startNativeStream(t, "append dies");
+    await waitFor(async () => ((await findSlackRunResponse(t.runId))?.nativeStreamTs ? true : null));
+
+    appendStreamResult = { ok: false, class: "permanent", message: "message_not_in_streaming_state" };
+    const messagesBefore = rec.messages.length;
+    try {
+      const card = buildRunCard({ title: "append dies", phase: "running", model: "m", repoSpecs: [], webUrl: "https://x/session/1" });
+      await enqueueAppendStream({
+        idempotencyKey: `slack-stream:step:${TEAM}:${t.runId}:s1`,
+        teamId: TEAM,
+        channel: t.channel,
+        threadTs: t.ts,
+        runId: t.runId,
+        chunks: [runningTaskChunk({ id: "s1", label: "working" })],
+        fallbackBlocks: card.blocks,
+        fallbackText: card.text,
+      });
+      await waitFor(async () => {
+        const response = await findSlackRunResponse(t.runId);
+        return response && response.nativeStreamTs === null ? true : null;
+      });
+      const row = await getSlackOutbox(`slack-stream:step:${TEAM}:${t.runId}:s1`);
+      expect(row?.state).toBe("delivered"); // dropped progress, not a storm
+      expect(rec.messages.length).toBe(messagesBefore); // and no stray surfaces
+    } finally {
+      appendStreamResult = null;
+    }
+  });
+
+  test("set_thread_status delivers once per idempotency key (replay-safe)", async () => {
+    const marker = uid("shimmer");
+    const channel = `D${uid("dm")}`;
+    const ts = `${uid("ts")}.1`;
+    const entry = {
+      idempotencyKey: `slack-thread-status:step:${TEAM}:${marker}`,
+      teamId: TEAM,
+      channel,
+      threadTs: ts,
+      status: `is working: ${marker}`,
+    };
+    await enqueueThreadStatus(entry);
+    await enqueueThreadStatus(entry); // replay collapses on the key
+    await waitFor(async () =>
+      rec.threadStatuses.some((s) => s.status === `is working: ${marker}`) || null,
+    );
+    await new Promise((r) => setTimeout(r, 150));
+    expect(rec.threadStatuses.filter((s) => s.status === `is working: ${marker}`)).toHaveLength(1);
   });
 });
 

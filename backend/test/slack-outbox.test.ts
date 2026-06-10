@@ -32,9 +32,12 @@ interface Recorder {
     threadTs: string;
     messageTs?: string;
     taskDisplayMode?: string;
+    recipientTeamId?: string;
+    recipientUserId?: string;
     chunks?: readonly unknown[];
   }>;
   statuses: Array<{ channel: string; threadTs: string; status: "processing" | "active" }>;
+  threadStatuses: Array<{ channel: string; threadTs: string; status: string }>;
 }
 
 /** A recording client whose delivery result is fixed for this test. */
@@ -43,11 +46,13 @@ function recorder(result: () => DeliveryResult = () => ({ ok: true })): Recorder
   const updates: Recorder["updates"] = [];
   const streams: Recorder["streams"] = [];
   const statuses: Recorder["statuses"] = [];
+  const threadStatuses: Recorder["threadStatuses"] = [];
   return {
     posted,
     updates,
     streams,
     statuses,
+    threadStatuses,
     client: {
       postMessage: async (m) => {
         posted.push(m);
@@ -63,12 +68,18 @@ function recorder(result: () => DeliveryResult = () => ({ ok: true })): Recorder
         statuses.push(s);
         return result();
       },
+      setThreadStatus: async (s) => {
+        threadStatuses.push(s);
+        return result();
+      },
       startStream: async (s) => {
         streams.push({
           op: "start",
           channel: s.channel,
           threadTs: s.threadTs,
           taskDisplayMode: s.taskDisplayMode,
+          recipientTeamId: s.recipientTeamId,
+          recipientUserId: s.recipientUserId,
           chunks: s.chunks,
         });
         const res = result();
@@ -300,7 +311,7 @@ describe("chunked reply delivery", () => {
 });
 
 describe("native slack streaming outbox", () => {
-  test("start_stream opens a native stream and stores its message ts", async () => {
+  test("start_stream opens a native stream (timeline mode + recipients) and stores its ts", async () => {
     const { runId, teamId, channel, threadTs } = await linkedSlackRun();
     const key = uid("stream-start");
     await enqueue({
@@ -311,8 +322,10 @@ describe("native slack streaming outbox", () => {
         teamId,
         threadTs,
         runId,
-        taskDisplayMode: "task_update",
-        chunks: openingStreamChunks({ title: "Queued", mode: "task_update" }),
+        taskDisplayMode: "timeline",
+        chunks: openingStreamChunks("Queued"),
+        recipientTeamId: teamId,
+        recipientUserId: "U-ASKER",
         fallbackBlocks: [{ type: "section", text: { type: "mrkdwn", text: "Queued" } }],
         fallbackText: "Queued",
       },
@@ -322,11 +335,14 @@ describe("native slack streaming outbox", () => {
     await processDue(rec.client);
     expect((await getSlackOutbox(key))?.state).toBe("delivered");
     expect(rec.streams.map((s) => s.op)).toEqual(["start"]);
-    expect(rec.streams[0]?.taskDisplayMode).toBe("task_update");
-    expect(rec.streams[0]?.chunks).toEqual(openingStreamChunks({ title: "Queued", mode: "task_update" }));
+    expect(rec.streams[0]?.taskDisplayMode).toBe("timeline");
+    expect(rec.streams[0]?.recipientTeamId).toBe(teamId);
+    expect(rec.streams[0]?.recipientUserId).toBe("U-ASKER");
+    expect(rec.streams[0]?.chunks).toEqual(openingStreamChunks("Queued"));
+    expect((await findSlackRunResponse(runId))?.nativeStreamTs).toBe("stream.1");
   });
 
-  test("append_stream uses the stored stream message ts", async () => {
+  test("append_stream targets the stored ts and NORMALIZES pre-migration chunk shapes", async () => {
     const { runId, teamId, channel, threadTs } = await linkedSlackRun();
     await enqueue({
       kind: "start_stream",
@@ -336,13 +352,18 @@ describe("native slack streaming outbox", () => {
         teamId,
         threadTs,
         runId,
+        // Pre-migration row: retired mode + legacy markdown field. Delivery must
+        // translate both to the documented wire contract.
         taskDisplayMode: "task_update",
         chunks: [{ type: "markdown_text", markdown_text: "Queued" }],
         fallbackBlocks: [],
         fallbackText: "Queued",
       },
     });
-    await processDue(recorder(() => ({ ok: true })).client);
+    const startRec = recorder(() => ({ ok: true }));
+    await processDue(startRec.client);
+    expect(startRec.streams[0]?.taskDisplayMode).toBe("timeline");
+    expect(startRec.streams[0]?.chunks).toEqual([{ type: "markdown_text", text: "Queued" }]);
 
     const key = uid("stream-append");
     await enqueue({
@@ -353,6 +374,7 @@ describe("native slack streaming outbox", () => {
         teamId,
         threadTs,
         runId,
+        // Pre-migration nested task shape -> flat documented shape at delivery.
         chunks: [
           {
             type: "task_update",
@@ -373,11 +395,11 @@ describe("native slack streaming outbox", () => {
       channel,
       threadTs,
       messageTs: "stream.1",
-      chunks: [{ type: "task_update", task: { task_id: "step_1", title: "Ran command", status: "in_progress" } }],
+      chunks: [{ type: "task_update", id: "step_1", title: "Ran command", status: "in_progress" }],
     });
   });
 
-  test("plan display mode passes native plan task chunks through unchanged", async () => {
+  test("plan display mode passes plan_update chunks through unchanged", async () => {
     const { runId, teamId, channel, threadTs } = await linkedSlackRun();
     const key = uid("stream-plan");
     await enqueue({
@@ -389,7 +411,7 @@ describe("native slack streaming outbox", () => {
         threadTs,
         runId,
         taskDisplayMode: "plan",
-        chunks: [{ type: "task", id: "inspect", text: "Inspect request", status: "in_progress" }],
+        chunks: [{ type: "plan_update", title: "Plan 0/3: Inspect request" }],
         fallbackBlocks: [],
         fallbackText: "Planning",
       },
@@ -400,7 +422,60 @@ describe("native slack streaming outbox", () => {
     expect((await getSlackOutbox(key))?.state).toBe("delivered");
     expect(rec.streams[0]?.taskDisplayMode).toBe("plan");
     expect(rec.streams[0]?.chunks).toEqual([
-      { type: "task", id: "inspect", text: "Inspect request", status: "in_progress" },
+      { type: "plan_update", title: "Plan 0/3: Inspect request" },
+    ]);
+  });
+
+  test("a transient start_stream API error still falls back ONCE to the card", async () => {
+    const { runId, teamId, channel, threadTs } = await linkedSlackRun();
+    const key = uid("stream-transient-start");
+    await enqueue({
+      kind: "start_stream",
+      idempotencyKey: key,
+      payload: {
+        channel,
+        teamId,
+        threadTs,
+        runId,
+        taskDisplayMode: "timeline",
+        chunks: openingStreamChunks("Queued"),
+        fallbackBlocks: [{ type: "section", text: { type: "mrkdwn", text: "Queued" } }],
+        fallbackText: "Queued",
+      },
+    });
+    const rec = recorder(() => ({ ok: true }));
+    rec.client.startStream = async () => ({ ok: false, class: "transient", message: "feature_not_enabled" });
+    await processDue(rec.client);
+    const row = await getSlackOutbox(key);
+    expect(row?.state).toBe("delivered"); // one attempt, no retry storm
+    expect(row?.attemptCount).toBe(0);
+    expect(rec.posted).toHaveLength(1);
+    const response = await findSlackRunResponse(runId);
+    expect(response?.nativeStreamTs).toBeNull();
+    expect(response?.fallbackMessageTs).toBe("stream.1");
+  });
+
+  test("set_thread_status delivers free text and the empty-string clear", async () => {
+    const setKey = uid("thread-status-set");
+    const clearKey = uid("thread-status-clear");
+    await enqueue({
+      kind: "set_thread_status",
+      idempotencyKey: setKey,
+      payload: { teamId: "T1", channel: "D1", threadTs: "1.1", status: "is working: cloning repo" },
+    });
+    await enqueue({
+      kind: "set_thread_status",
+      idempotencyKey: clearKey,
+      payload: { teamId: "T1", channel: "D1", threadTs: "1.1", status: "" },
+    });
+
+    const rec = recorder(() => ({ ok: true }));
+    await processDue(rec.client);
+    expect((await getSlackOutbox(setKey))?.state).toBe("delivered");
+    expect((await getSlackOutbox(clearKey))?.state).toBe("delivered");
+    expect(rec.threadStatuses).toEqual([
+      { channel: "D1", threadTs: "1.1", status: "is working: cloning repo" },
+      { channel: "D1", threadTs: "1.1", status: "" },
     ]);
   });
 
