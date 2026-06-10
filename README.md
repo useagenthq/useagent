@@ -5,6 +5,7 @@
 </p>
 
 <p align="center">
+  <a href="https://github.com/useagenthq/useagent/releases"><img src="https://img.shields.io/badge/status-alpha-orange.svg" alt="Status: alpha"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0-purple.svg" alt="License: AGPL-3.0"></a>
   <a href="https://bun.sh"><img src="https://img.shields.io/badge/runtime-bun-black.svg" alt="Runtime: bun"></a>
   <a href="https://useagent.org/docs/"><img src="https://img.shields.io/badge/docs-useagent.org-blue.svg" alt="Documentation"></a>
@@ -26,6 +27,10 @@
 <p align="center">
   <img src="docs/media/app-session.png" alt="useAgent - an agent session with live timeline, terminal, and workspace panes" width="100%">
 </p>
+
+> **Alpha software.** useAgent is under active development: expect rough edges,
+> and APIs/schemas may change between releases. It already runs real daily
+> workloads, but pin a tag if you need stability.
 
 Run Codex, Claude Code, and OpenCode as durable, threaded sessions in isolated
 Linux sandboxes. One event contract, one UI, your infrastructure.
