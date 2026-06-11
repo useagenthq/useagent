@@ -2066,12 +2066,11 @@ html {
     font-feature-settings: 'cv11', 'ss01', 'liga', 'calt';
     text-rendering: optimizeLegibility;
     font-optical-sizing: auto;
-    /* Blueprint UI tracking: a global -0.15px optical tightening on Inter (the
-     * SF-Pro-adjacent signature). This is the DEFAULT for all UI text; the
-     * AlignUI label and paragraph type tokens bake the same -0.15px so tokenized
-     * and raw text stay consistent. The serif display ramp and the mono overline
-     * set their own tracking and correctly override this. */
-    letter-spacing: -0.15px;
+    /* Default UI tracking. Left at `normal`: a fixed px value does not scale
+     * with font size or device pixel ratio, so it over-tightens large display
+     * text and drifts on high-DPI screens. The display ramp sets its own
+     * em-based tracking (which does scale) and correctly overrides this. */
+    letter-spacing: normal;
   }
 
   /* Illustration tokens (used by AlignUI empty-state / avatar-empty icons).
