@@ -580,7 +580,7 @@ export function SessionView({
     if (railTab === null) setRailTabOverride("artifacts");
   }, [railTab]);
 
-  const openWorkpiece = useCallback((artifact: TimelineArtifact) => {
+  const openWorkpiece = useCallback((artifact: Pick<TimelineArtifact, "id" | "name">) => {
     setOpenWorkpieces((prev) =>
       prev.some((w) => w.id === artifact.id) ? prev : [...prev, { id: artifact.id, name: artifact.name }],
     );
