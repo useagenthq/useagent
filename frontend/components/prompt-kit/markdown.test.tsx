@@ -41,6 +41,13 @@ describe("Markdown links", () => {
     ).toEqual({ id: "sheet-1", name: "Budget.xlsx" });
     expect(
       artifactWorkspaceTarget(
+        "https://app.useagent.org/agent/artifacts/deck-1",
+        "Open presentation preview",
+        "https://app.useagent.org",
+      ),
+    ).toEqual({ id: "deck-1", name: "presentation" });
+    expect(
+      artifactWorkspaceTarget(
         "/api/artifacts/deck-1/content?download=1",
         "Preview deck",
         "https://app.useagent.org",
