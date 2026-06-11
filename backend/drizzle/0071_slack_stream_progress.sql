@@ -1,3 +1,4 @@
+-- fast-deploy: expansion-safe
 -- Native Slack streaming progress: how many narration chars the stream has
 -- ACCEPTED. Orders narration appends (each row carries its expected offset) and
 -- lets stopStream append exactly the un-streamed tail of the reply.
