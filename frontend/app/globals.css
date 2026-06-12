@@ -2300,6 +2300,10 @@ html {
   --color-team-menu-count-background:     hsl(var(--neutral-400));
   --color-team-menu-count-foreground:     hsl(var(--neutral-100));
   --color-notification-center-background: hsl(var(--neutral-900));
+  /* Selected pill (rail tab/toggle) is a dark-blue tint like the other dark
+   * themes; without this dusk inherited the light :root accent-50 and the active
+   * tab read as near-white. */
+  --color-pill-tab-blue-selected-background: color-mix(in srgb, hsl(var(--blue-900)) 60%, transparent);
   --color-pill-tab-blue-hover-background: hsl(var(--neutral-700));
 
   /* Borders and separators (error border keeps theme.css red) */
