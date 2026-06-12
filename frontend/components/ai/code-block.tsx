@@ -71,7 +71,7 @@ function CopyButton({ code }: { code: string }) {
           window.setTimeout(() => setCopied(false), 1400);
         });
       }}
-      className="text-text-tertiary hover:bg-background-secondary-hover hover:text-text-primary flex h-6 items-center gap-1 rounded-md px-1.5 text-caption-1-medium transition-colors"
+      className="text-text-tertiary hover:bg-background-secondary-hover hover:text-text-primary flex h-6 items-center gap-1 rounded-[6px] px-1.5 text-caption-1-medium transition-colors"
     >
       {copied ? (
         <RiCheckLine className="text-lime-600 size-3.5" aria-hidden />
@@ -133,10 +133,10 @@ export function CodeBlock({
       )}
     >
       {/* Header bar */}
-      <div className="border-border-button-default bg-background-primary-default flex items-center justify-between border-b px-3 py-1.5">
+      <div className="border-border-button-default bg-background-primary-default flex items-center justify-between border-b h-11 px-4">
         <span className="flex items-baseline gap-2 truncate">
           {filename && (
-            <span className="text-text-primary truncate font-mono text-[12px] font-medium">
+            <span className="text-text-primary truncate font-mono">
               {filename}
             </span>
           )}
@@ -149,7 +149,7 @@ export function CodeBlock({
 
       {/* Body */}
       {trimmed ? (
-        <div className="ai-code-surface overflow-x-auto text-[12.5px] leading-[1.7]">
+        <div className="ai-code-surface overflow-x-auto text-[12.5px] leading-[1.65]">
           {html ? (
             <div dangerouslySetInnerHTML={{ __html: html }} />
           ) : (

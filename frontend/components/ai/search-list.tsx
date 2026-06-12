@@ -19,8 +19,8 @@ export function SearchList() {
 
   return (
     <div className="w-full max-w-sm overflow-hidden rounded-2xl border border-border-button-default bg-background-primary-default shadow-md">
-      <label className="flex items-center gap-2 border-b border-border-button-default px-3 py-2.5">
-        <RiSearch2Line className="size-4 text-text-tertiary" />
+      <label className="flex h-10 items-center gap-2 border-b border-border-button-default px-3">
+        <RiSearch2Line className="size-3.5 text-text-tertiary" />
         <input
           value={query}
           onChange={(event) => setQuery(event.target.value)}
@@ -34,13 +34,13 @@ export function SearchList() {
           </button>
         ) : null}
       </label>
-      <div className="max-h-52 overflow-y-auto p-1.5">
+      <div className="max-h-52 overflow-y-auto p-1">
         {results.length ? (
           results.map((flavor) => (
             <button
               type="button"
               key={flavor}
-              className="flex w-full rounded-lg px-2.5 py-2 text-left text-body-2-regular text-text-secondary hover:bg-background-primary-hover hover:text-text-primary"
+              className="flex w-full h-8 rounded-md px-2 text-left text-body-2-regular text-text-primary hover:bg-background-primary-hover hover:text-text-primary"
             >
               {flavor}
             </button>

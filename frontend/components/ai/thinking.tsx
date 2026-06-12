@@ -45,15 +45,15 @@ export function Thinking({
         onClick={() => hasSteps && setExpanded((e) => !e)}
         disabled={!hasSteps}
         className={cx(
-          "-mx-1.5 flex w-fit items-center gap-1.5 rounded-md px-1.5 py-0.5 transition-colors duration-100",
+          "-mx-1.5 flex w-fit items-center gap-2 rounded-md px-1.5 py-1 transition-colors duration-100",
           hasSteps ? "hover:bg-background-secondary-hover" : "cursor-default",
         )}
       >
         <RiSparkling2Line className="size-3.5 shrink-0 text-text-secondary" aria-hidden />
         {active ? (
-          <span className="agent-progress-loading-text text-caption-1-medium">{label}</span>
+          <span className="agent-progress-loading-text text-body-2-medium">{label}</span>
         ) : (
-          <span className="text-caption-1-medium text-text-secondary">{label}</span>
+          <span className="text-body-2-medium text-text-secondary">{label}</span>
         )}
         {hasSteps && (
           <RiArrowDownSLine

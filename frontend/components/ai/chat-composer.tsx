@@ -10,6 +10,23 @@ const chatActions = [
   { id: "more", label: "More", Icon: RiMoreLine },
 ] as const;
 
+// Each agent step renders as a two-line unit: a header row (bold step label +
+// muted tool name + run duration) over a full result sentence.
+const steps = [
+  {
+    label: "Sales History",
+    tool: "Flavor Data",
+    duration: "4s",
+    result: "Pulled 3 summers of mint chip sales for comparison.",
+  },
+  {
+    label: "Comparison",
+    tool: "Trend Detection",
+    duration: "2s",
+    result: "Mint chip is up 12% with stronger weekend peaks.",
+  },
+] as const;
+
 interface ChatMessage {
   readonly id: string;
   readonly text: string;
@@ -68,15 +85,17 @@ export function ChatComposer() {
             {message.text}
           </div>
         ))}
-        <div className="space-y-1 text-body-2-regular text-text-secondary">
-          <p>
-            <strong className="text-text-primary">Sales History</strong> pulled three summers of
-            flavor data.
-          </p>
-          <p>
-            <strong className="text-text-primary">Comparison</strong> found stronger weekend
-            peaks.
-          </p>
+        <div className="flex flex-col gap-3">
+          {steps.map((step) => (
+            <div key={step.label} className="flex flex-col gap-1.5">
+              <div className="flex items-center gap-1.5">
+                <span className="text-caption-1-medium text-text-primary">{step.label}</span>
+                <span className="text-caption-1-regular text-text-secondary">{step.tool}</span>
+                <span className="text-caption-1-regular text-text-primary">for {step.duration}</span>
+              </div>
+              <p className="text-body-2-regular text-text-primary">{step.result}</p>
+            </div>
+          ))}
         </div>
       </div>
 

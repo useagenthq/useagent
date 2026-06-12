@@ -33,7 +33,7 @@ export function SidebarNav() {
   return (
     <nav
       className="w-full max-w-64 rounded-2xl border border-border-button-default bg-background-primary-default p-2 shadow-md"
-      aria-label="Beautiful UI workspace"
+      aria-label="Workspace navigation"
     >
       <label className="mb-3 flex items-center gap-2 rounded-lg bg-background-secondary-default px-2.5 py-2">
         <RiSearch2Line className="size-4 text-text-tertiary" />
@@ -46,7 +46,7 @@ export function SidebarNav() {
       </label>
       {["Workspace", "Objects"].map((section) => (
         <div key={section} className="mb-3">
-          <p className="px-2 py-1 text-mono-label text-text-tertiary">{section}</p>
+          <p className="px-2 py-1 text-body-2-medium text-text-tertiary">{section}</p>
           {visible
             .filter((item) => item.section === section)
             .map(({ key, label, icon: Icon, ...item }) => (
@@ -54,11 +54,11 @@ export function SidebarNav() {
                 key={key}
                 type="button"
                 onClick={() => setActive(key)}
-                className={`flex w-full items-center gap-2 rounded-lg px-2 py-2 text-body-2-medium transition-colors ${active === key ? "bg-linear-to-b from-accent-500 to-accent-600 text-white shadow-nav-selected" : "text-text-secondary hover:bg-background-primary-hover"}`}
+                className={`flex w-full items-center gap-2 rounded-[8px] px-2 py-1.5 text-body-medium transition-colors ${active === key ? "bg-linear-to-b from-accent-500 to-accent-600 text-white shadow-nav-selected" : "text-text-secondary hover:bg-background-primary-hover"}`}
               >
-                <Icon className="size-4" />
+                <Icon className="size-5" />
                 <span className="flex-1 text-left">{label}</span>
-                {"count" in item ? <span className="text-caption-1-regular">{item.count}</span> : null}
+                {"count" in item ? <span className="text-caption-1-medium tabular-nums opacity-70">{item.count}</span> : null}
                 {"add" in item ? <RiAddLine className="size-4" /> : null}
               </button>
             ))}

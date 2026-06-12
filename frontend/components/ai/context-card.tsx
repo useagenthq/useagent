@@ -91,7 +91,7 @@ export function ContextCard({
   return (
     <article
       className={cx(
-        "overflow-hidden rounded-xl border border-border-button-default bg-background-primary-default shadow-card transition-colors hover:border-border-button-hover",
+        "overflow-hidden rounded-2xl border border-border-button-default bg-background-primary-default shadow-card transition-colors hover:border-border-button-hover",
         className,
       )}
     >
@@ -111,7 +111,7 @@ export function ContextCard({
       </div>
       <div
         className={cx(
-          "line-clamp-2 px-3 text-body-2-regular text-text-secondary",
+          "line-clamp-2 px-3 text-body-2-regular leading-relaxed text-text-secondary",
           source ? "pt-2 pb-1" : "py-2",
         )}
       >
@@ -142,7 +142,7 @@ export function ContextCardStack({
   return (
     <div className={cx("flex flex-col gap-2", className)}>
       <div className="flex items-center gap-2 px-0.5">
-        <span className="text-body-2-medium text-text-primary">{label}</span>
+        <span className="text-body-2-semibold text-text-primary">{label}</span>
         <Chip color="gray">
           {count}
         </Chip>

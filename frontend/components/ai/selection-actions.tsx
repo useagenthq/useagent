@@ -1,6 +1,5 @@
 "use client";
 
-import { RiCodeSSlashLine, RiFileCopyLine } from "@remixicon/react";
 import { AnimatePresence, MotionConfig, motion, useReducedMotion } from "motion/react";
 import {
   type KeyboardEvent,
@@ -232,20 +231,12 @@ export function SelectionActions({
     <MotionConfig reducedMotion="user" transition={{ duration: 0.22 }}>
       <div
         className={cx(
-          "relative flex min-h-[272px] w-full items-center overflow-hidden rounded-[24px] border border-[#303237] bg-[#18191b] px-5 py-16 shadow-card sm:px-14 lg:px-[72px]",
+          "relative flex min-h-[272px] w-full items-center overflow-hidden rounded-[24px] border border-border-button-default bg-background-primary-default px-5 py-12 shadow-card sm:px-14 lg:px-[72px]",
           className,
         )}
       >
-        <div className="absolute top-6 right-6 hidden items-center gap-2 sm:flex" aria-hidden>
-          <span className="inline-flex size-11 items-center justify-center rounded-[18px] border border-[#383a3f] bg-[#202124] text-text-secondary shadow-card">
-            <RiFileCopyLine className="size-5" />
-          </span>
-          <span className="inline-flex size-11 items-center justify-center rounded-[18px] border border-[#383a3f] bg-[#202124] text-text-secondary shadow-card">
-            <RiCodeSSlashLine className="size-5" />
-          </span>
-        </div>
-        <div ref={hostRef} className="relative mx-auto w-full max-w-[770px] pb-14">
-          <p className="text-[24px] leading-[1.45] text-text-primary">
+        <div ref={hostRef} className="relative mx-auto w-full max-w-[460px] pb-14">
+          <p className="text-body-2-regular leading-relaxed text-text-primary">
             {leadingText}
             <span
               ref={selectionRef}
@@ -253,12 +244,12 @@ export function SelectionActions({
                 "box-decoration-clone rounded-[3px] transition-[color,background-color] duration-200",
                 state.phase === "accepted"
                   ? "text-text-primary"
-                  : "bg-[#2a384c] text-text-primary",
+                  : "bg-accent-500/15 text-text-primary",
               )}
             >
               {displayText}
               {state.phase === "streaming" && (
-                <span className="ai-caret ml-0.5 inline-block h-4 w-px translate-y-0.5 bg-current align-text-bottom" />
+                <span className="ai-caret ml-0.5 inline-block h-3 w-px translate-y-0.5 bg-current align-text-bottom" />
               )}
             </span>
           </p>

@@ -51,8 +51,8 @@ function StatusGlyph({
 }) {
   if (status === "done") {
     return (
-      <span className="animate-ai-fade-up bg-lime-500 text-text-white flex size-5 items-center justify-center rounded-full">
-        <RiCheckLine className="size-3" aria-hidden />
+      <span className="animate-ai-fade-up bg-lime-500 text-text-white flex size-5.5 items-center justify-center rounded-full">
+        <RiCheckLine className="size-[13px]" aria-hidden />
       </span>
     );
   }
@@ -104,7 +104,7 @@ function TaskCard({ task, delay }: { task: TaskRowItem; delay: number }) {
 
   return (
     <div
-      className="animate-ai-fade-up border-border-button-default bg-background-primary-default shadow-sm overflow-hidden rounded-2xl border"
+      className="animate-ai-fade-up bg-background-primary-default shadow-sm overflow-hidden rounded-[22px]"
       style={{ animationDelay: `${delay}ms` }}
     >
       <button
@@ -131,7 +131,7 @@ function TaskCard({ task, delay }: { task: TaskRowItem; delay: number }) {
         {task.statusLabel && (
           <span
             className={cx(
-              "inline-flex h-5 shrink-0 items-center rounded-full px-2 text-caption-1-medium",
+              "inline-flex h-5.5 shrink-0 items-center rounded-full px-2 text-caption-1-medium",
               pill[task.status],
             )}
           >
