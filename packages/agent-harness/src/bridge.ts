@@ -6,7 +6,7 @@ import type {
 } from "./canonical";
 
 /** Bump only when a native bridge changes its command/frame wire shape. */
-export const NATIVE_BRIDGE_PROTOCOL_VERSION = 3 as const;
+export const NATIVE_BRIDGE_PROTOCOL_VERSION = 4 as const;
 
 export type NativeBridgeCommand =
   | { readonly kind: "prompt"; readonly text: string; readonly model?: string }
@@ -14,7 +14,7 @@ export type NativeBridgeCommand =
   | { readonly kind: "follow_up"; readonly text: string }
   | { readonly kind: "cancel"; readonly reason: string };
 
-export type NativeBridgeFrameBody =
+type NativeBridgeFramePayload =
   | { readonly kind: "turn.started" }
   | { readonly kind: "turn.completed"; readonly stopReason?: string }
   | { readonly kind: "turn.failed"; readonly error: string; readonly stopReason?: string }
@@ -71,7 +71,17 @@ export type NativeBridgeFrameBody =
       readonly status: "ok" | "error";
       readonly result?: string;
       readonly state?: CanonicalChildState;
+      readonly transcript?: {
+        readonly status: "complete" | "failed";
+        readonly error?: string;
+      };
     };
+
+/** Optional ownership supplied only when a provider streams activity from a
+ * native child execution through the parent's bridge connection. */
+export type NativeBridgeFrameBody = NativeBridgeFramePayload & {
+  readonly ownerChildId?: string;
+};
 
 export interface NativeBridgeFrame {
   readonly protocolVersion: typeof NATIVE_BRIDGE_PROTOCOL_VERSION;
@@ -121,11 +131,16 @@ export class NativeBridgeDeltaAccumulator {
   #reasoningText = new Map<string, DurableTextSegment>();
   #encoder = new TextEncoder();
 
+  #key(body: { readonly messageId: string; readonly ownerChildId?: string }): string {
+    return `${body.ownerChildId ?? "root"}\0${body.messageId}`;
+  }
+
   #append(
     body: Extract<NativeBridgeFrameBody, { kind: "message.delta" | "reasoning.delta" }>,
     target: Map<string, DurableTextSegment>,
   ): readonly NativeBridgeFrameBody[] {
-    let segment = target.get(body.messageId) ?? { index: 0, text: "", bytes: 0 };
+    const key = this.#key(body);
+    let segment = target.get(key) ?? { index: 0, text: "", bytes: 0 };
     const output: NativeBridgeFrameBody[] = [];
     let changed = false;
     for (const character of body.text) {
@@ -140,7 +155,7 @@ export class NativeBridgeDeltaAccumulator {
       changed = true;
     }
     if (changed) output.push({ ...body, text: segment.text, segment: segment.index });
-    target.set(body.messageId, segment);
+    target.set(key, segment);
     return output;
   }
 
@@ -148,20 +163,41 @@ export class NativeBridgeDeltaAccumulator {
     body: Extract<NativeBridgeFrameBody, { kind: "message.authoritative" | "reasoning.authoritative" }>,
     target: Map<string, DurableTextSegment>,
   ): readonly NativeBridgeFrameBody[] {
-    const previousLastIndex = target.get(body.messageId)?.index ?? -1;
-    target.delete(body.messageId);
+    const key = this.#key(body);
+    const previousLastIndex = target.get(key)?.index ?? -1;
+    target.delete(key);
     const kind = body.kind === "message.authoritative" ? "message.delta" : "reasoning.delta";
     const replacement = this.#append(
-      { kind, messageId: body.messageId, text: body.text, authoritative: true },
+      {
+        kind,
+        messageId: body.messageId,
+        text: body.text,
+        authoritative: true,
+        ...(body.ownerChildId ? { ownerChildId: body.ownerChildId } : {}),
+      },
       target,
     );
     const authoritativeReplacement = replacement.length > 0
       ? replacement
-      : [{ kind, messageId: body.messageId, text: "", segment: 0, authoritative: true } as const];
-    const replacementLastIndex = target.get(body.messageId)?.index ?? -1;
+      : [{
+          kind,
+          messageId: body.messageId,
+          text: "",
+          segment: 0,
+          authoritative: true,
+          ...(body.ownerChildId ? { ownerChildId: body.ownerChildId } : {}),
+        } as const];
+    const replacementLastIndex = target.get(key)?.index ?? -1;
     const tombstones: NativeBridgeFrameBody[] = [];
     for (let index = replacementLastIndex + 1; index <= previousLastIndex; index++) {
-      tombstones.push({ kind, messageId: body.messageId, text: "", segment: index, authoritative: true });
+      tombstones.push({
+        kind,
+        messageId: body.messageId,
+        text: "",
+        segment: index,
+        authoritative: true,
+        ...(body.ownerChildId ? { ownerChildId: body.ownerChildId } : {}),
+      });
     }
     return [...authoritativeReplacement, ...tombstones];
   }

@@ -1138,6 +1138,91 @@ describe("T3 activity fidelity", () => {
     });
   });
 
+  test("maps attributed T3 child messages and tools onto the child transcript", () => {
+    const result = translateOpenCode([
+      t3Frame("child-start", 1, "t3.activity.task.started", {
+        id: "task-start",
+        kind: "task.started",
+        summary: "Researcher",
+        payload: {
+          taskId: "child-1",
+          agentKind: "agent",
+          parentAgentId: "ses_t3",
+          status: "running",
+        },
+      }, "child-1", {
+        sessionId: "child-1",
+        parentSessionId: "ses_t3",
+      }),
+      t3Frame("child-message", 2, "t3.activity.child.message.completed", {
+        id: "child-message:thread:child-1:message-1",
+        kind: "child.message.completed",
+        summary: "Child response",
+        payload: {
+          taskId: "child-1",
+          agentId: "child-1",
+          childSessionId: "child-1",
+          parentAgentId: "ses_t3",
+          messageId: "message-1",
+          itemId: "message-1",
+          streamKind: "assistant_text",
+          text: "The child answer",
+          status: "completed",
+          revision: 3,
+          timelineBypass: true,
+        },
+      }, null, {
+        sessionId: "child-1",
+        parentSessionId: "ses_t3",
+        messageId: "message-1",
+      }),
+      t3Frame("child-tool", 3, "t3.activity.tool.completed", {
+        id: "child-tool-completed",
+        kind: "tool.completed",
+        summary: "Read completed",
+        payload: {
+          itemType: "dynamic_tool_call",
+          agentId: "child-1",
+          childSessionId: "child-1",
+          parentAgentId: "ses_t3",
+          timelineBypass: true,
+          data: { item: { id: "tool-1", toolName: "read" } },
+        },
+      }, "tool-1", {
+        sessionId: "child-1",
+        parentSessionId: "ses_t3",
+      }),
+    ], CTX);
+
+    expect(result.events.map((event) => event.kind)).toEqual([
+      "child.started",
+      "message.started",
+      "message.delta",
+      "message.completed",
+      "tool.started",
+      "tool.completed",
+      "child.updated",
+    ]);
+    expect(result.events.find((event) => event.kind === "message.delta")).toMatchObject({
+      kind: "message.delta",
+      messageId: "message-1",
+      text: "The child answer",
+      identity: {
+        nativeSessionId: "child-1",
+        nativeParentSessionId: "ses_t3",
+        nativeMessageId: "message-1",
+      },
+    });
+    expect(result.events.find((event) => event.kind === "tool.completed")).toMatchObject({
+      kind: "tool.completed",
+      toolCallId: "tool-1",
+      identity: {
+        nativeSessionId: "child-1",
+        nativeParentSessionId: "ses_t3",
+      },
+    });
+  });
+
   test("wait/send/resume/close remain parent-owned control events", () => {
     for (const [index, delegationKind] of ["wait", "send", "resume", "close"].entries()) {
       const targetChildIds = delegationKind === "wait"

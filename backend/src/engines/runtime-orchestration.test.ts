@@ -707,8 +707,8 @@ describe("T3 orchestration projection", () => {
     });
   });
 
-  test("owns child activity by native child identity while controls stay parent-owned", () => {
-    const child = runtimeActivityProviderEvent(
+  test("owns runtime child activity by explicit, nested, or root parent identity", () => {
+    const codexChild = runtimeActivityProviderEvent(
       { runId: "run-child", threadId: "thread-1" },
       "root-native-session",
       {
@@ -726,12 +726,13 @@ describe("T3 orchestration projection", () => {
       },
       baselineRedactor,
     );
-    expect(child).toMatchObject({
+    expect(codexChild).toMatchObject({
       nativeSessionId: "child-native-session",
       nativeParentSessionId: "root-native-session",
       nativeCallId: "child-native-session",
     });
-    expect(runtimeActivityProviderEvent(
+
+    const claudeTopLevelChild = runtimeActivityProviderEvent(
       { runId: "run-child", threadId: "thread-1" },
       "root-native-session",
       {
@@ -740,16 +741,81 @@ describe("T3 orchestration projection", () => {
         kind: "task.updated",
         summary: "Researcher still running",
         payload: {
-          taskId: "child-native-session",
+          taskId: "claude-child-session",
           agentKind: "agent",
           status: "running",
         },
         turnId: "turn-1",
       },
       baselineRedactor,
-    )).toMatchObject({
-      nativeSessionId: "child-native-session",
-      nativeParentSessionId: null,
+    );
+    expect(claudeTopLevelChild).toMatchObject({
+      nativeSessionId: "claude-child-session",
+      nativeParentSessionId: "root-native-session",
+      nativeCallId: "claude-child-session",
+    });
+    expect(activityStep({
+      id: "top-level-child-status",
+      tone: "info",
+      kind: "task.updated",
+      summary: "Researcher still running",
+      payload: {
+        taskId: "claude-child-session",
+        agentKind: "agent",
+        status: "running",
+      },
+      turnId: "turn-1",
+    }, "root-native-session")).toMatchObject({
+      code_json: {
+        native: {
+          sessionID: "claude-child-session",
+          parentSessionID: "root-native-session",
+        },
+      },
+    });
+
+    const claudeNestedChild = runtimeActivityProviderEvent(
+      { runId: "run-child", threadId: "thread-1" },
+      "root-native-session",
+      {
+        id: "nested-child-status",
+        tone: "info",
+        kind: "task.updated",
+        summary: "Nested researcher running",
+        payload: {
+          taskId: "claude-nested-child",
+          agentId: "claude-child-session",
+          agentKind: "agent",
+          status: "running",
+        },
+        turnId: "turn-1",
+      },
+      baselineRedactor,
+    );
+    expect(claudeNestedChild).toMatchObject({
+      nativeSessionId: "claude-nested-child",
+      nativeParentSessionId: "claude-child-session",
+      nativeCallId: "claude-nested-child",
+    });
+    expect(activityStep({
+      id: "nested-child-status",
+      tone: "info",
+      kind: "task.updated",
+      summary: "Nested researcher running",
+      payload: {
+        taskId: "claude-nested-child",
+        agentId: "claude-child-session",
+        agentKind: "agent",
+        status: "running",
+      },
+      turnId: "turn-1",
+    }, "root-native-session")).toMatchObject({
+      code_json: {
+        native: {
+          sessionID: "claude-nested-child",
+          parentSessionID: "claude-child-session",
+        },
+      },
     });
 
     const control = runtimeActivityProviderEvent(
@@ -779,6 +845,30 @@ describe("T3 orchestration projection", () => {
         },
       },
     });
+
+    const parentOwnedTask = runtimeActivityProviderEvent(
+      { runId: "run-child", threadId: "thread-1" },
+      "root-native-session",
+      {
+        id: "background-task",
+        tone: "info",
+        kind: "task.updated",
+        summary: "Background shell running",
+        payload: {
+          taskId: "background-shell",
+          agentId: "claude-child-session",
+          agentKind: "background",
+          status: "running",
+        },
+        turnId: "turn-1",
+      },
+      baselineRedactor,
+    );
+    expect(parentOwnedTask).toMatchObject({
+      nativeSessionId: "root-native-session",
+      nativeParentSessionId: null,
+      nativeCallId: "background-shell",
+    });
   });
 
   test("persists child parent identity in the task step compatibility projection", () => {
@@ -799,6 +889,99 @@ describe("T3 orchestration projection", () => {
           sessionID: "child-native-session",
           parentSessionID: "root-native-session",
           childSessionID: "child-native-session",
+        },
+      },
+    });
+  });
+
+  test("attributes T3 child transcript and tool activities without polluting the root", () => {
+    const childMessageActivity = {
+      id: "child-message:thread-1:child-1:message-1",
+      tone: "info" as const,
+      kind: "child.message.completed",
+      summary: "Child response",
+      payload: {
+        agentId: "child-1",
+        childSessionId: "child-1",
+        parentAgentId: "root-native-session",
+        messageId: "message-1",
+        itemId: "message-1",
+        streamKind: "assistant_text",
+        text: "Child answer",
+        status: "completed",
+        revision: 3,
+        timelineBypass: true,
+      },
+      turnId: "turn-1",
+    };
+    const childMessage = runtimeActivityProviderEvent(
+      { runId: "run-child-message", threadId: "thread-1" },
+      "root-native-session",
+      childMessageActivity,
+      baselineRedactor,
+    );
+    expect(childMessage).toMatchObject({
+      nativeSessionId: "child-1",
+      nativeParentSessionId: "root-native-session",
+      nativeMessageId: "message-1",
+      nativeCallId: null,
+    });
+    expect(shouldProjectRuntimeActivity(childMessageActivity)).toBe(false);
+    expect(runtimeActivityProviderEvent(
+      { runId: "run-child-message", threadId: "thread-1" },
+      "root-native-session",
+      {
+        id: "child-message-without-parent",
+        tone: "info",
+        kind: "child.message.updated",
+        summary: "Child response",
+        payload: {
+          agentId: "child-1",
+          childSessionId: "child-1",
+          messageId: "message-1",
+          text: "Partial attribution",
+          timelineBypass: true,
+        },
+        turnId: "turn-1",
+      },
+      baselineRedactor,
+    )).toMatchObject({
+      nativeSessionId: "child-1",
+      nativeParentSessionId: "root-native-session",
+    });
+
+    const childToolActivity = {
+      id: "child-tool-completed",
+      tone: "tool" as const,
+      kind: "tool.completed",
+      summary: "Read completed",
+      payload: {
+        itemType: "dynamic_tool_call",
+        agentId: "child-1",
+        childSessionId: "child-1",
+        parentAgentId: "root-native-session",
+        timelineBypass: true,
+        data: { item: { id: "tool-1", toolName: "read" } },
+      },
+      turnId: "turn-1",
+    };
+    expect(runtimeActivityProviderEvent(
+      { runId: "run-child-message", threadId: "thread-1" },
+      "root-native-session",
+      childToolActivity,
+      baselineRedactor,
+    )).toMatchObject({
+      nativeSessionId: "child-1",
+      nativeParentSessionId: "root-native-session",
+      nativeCallId: "tool-1",
+    });
+    expect(shouldProjectRuntimeActivity(childToolActivity)).toBe(false);
+    expect(activityStep(childToolActivity, "root-native-session")).toMatchObject({
+      code_json: {
+        native: {
+          sessionID: "child-1",
+          parentSessionID: "root-native-session",
+          callID: "tool-1",
         },
       },
     });

@@ -10,18 +10,21 @@ export function piBridgeProviderEvent(
   ctx: Pick<EngineRunContext, "runId" | "threadId">,
   frame: NativeBridgeFrame,
 ): ProviderEventInput {
+  const ownerChildId = frame.body.ownerChildId;
+  const nativeSessionId = ownerChildId ?? frame.sessionId;
   const base = {
     runId: ctx.runId,
     threadId: ctx.threadId ?? ctx.runId,
     provider: "pi",
-    nativeSessionId: frame.sessionId,
+    nativeSessionId,
+    nativeParentSessionId: ownerChildId ? frame.sessionId : undefined,
   };
   const body = frame.body;
   switch (body.kind) {
     case "message.started":
       return {
         ...base,
-        id: `${ctx.runId}:pi:${frame.sessionId}:message:${body.messageId}:start`,
+        id: `${ctx.runId}:pi:${nativeSessionId}:message:${body.messageId}:start`,
         eventType: "part.step-start",
         nativeMessageId: body.messageId,
         payload: { bridgeSeq: frame.seq },
@@ -30,7 +33,7 @@ export function piBridgeProviderEvent(
     case "message.authoritative":
       return {
         ...base,
-        id: `${ctx.runId}:pi:${frame.sessionId}:message:${body.messageId}:text:${"segment" in body ? body.segment ?? 0 : 0}`,
+        id: `${ctx.runId}:pi:${nativeSessionId}:message:${body.messageId}:text:${"segment" in body ? body.segment ?? 0 : 0}`,
         eventType: "part.text",
         nativeMessageId: body.messageId,
         payload: { text: body.text, bridgeSeq: frame.seq },
@@ -39,7 +42,7 @@ export function piBridgeProviderEvent(
     case "reasoning.authoritative":
       return {
         ...base,
-        id: `${ctx.runId}:pi:${frame.sessionId}:reasoning:${body.messageId}:${"segment" in body ? body.segment ?? 0 : 0}`,
+        id: `${ctx.runId}:pi:${nativeSessionId}:reasoning:${body.messageId}:${"segment" in body ? body.segment ?? 0 : 0}`,
         eventType: "part.reasoning",
         nativeMessageId: body.messageId,
         payload: { text: body.text, bridgeSeq: frame.seq },
@@ -47,7 +50,7 @@ export function piBridgeProviderEvent(
     case "message.completed":
       return {
         ...base,
-        id: `${ctx.runId}:pi:${frame.sessionId}:message:${body.messageId}:finish`,
+        id: `${ctx.runId}:pi:${nativeSessionId}:message:${body.messageId}:finish`,
         eventType: "part.step-finish",
         nativeMessageId: body.messageId,
         payload: { bridgeSeq: frame.seq },
@@ -59,7 +62,7 @@ export function piBridgeProviderEvent(
       const errored = terminal && body.status === "error";
       return {
         ...base,
-        id: `${ctx.runId}:pi:${frame.sessionId}:tool:${body.toolCallId}`,
+        id: `${ctx.runId}:pi:${nativeSessionId}:tool:${body.toolCallId}`,
         eventType: terminal ? `part.tool.${errored ? "error" : "completed"}` : "part.tool",
         nativeCallId: body.toolCallId,
         payload: {
@@ -77,7 +80,7 @@ export function piBridgeProviderEvent(
     case "plan.updated":
       return {
         ...base,
-        id: `${ctx.runId}:pi:${frame.sessionId}:plan`,
+        id: `${ctx.runId}:pi:${nativeSessionId}:plan`,
         eventType: "part.tool",
         nativeCallId: "pi-plan",
         payload: { tool: "todowrite", input: { todos: body.entries }, bridgeSeq: frame.seq },
@@ -85,7 +88,7 @@ export function piBridgeProviderEvent(
     case "commands.updated":
       return {
         ...base,
-        id: `${ctx.runId}:pi:${frame.sessionId}:commands`,
+        id: `${ctx.runId}:pi:${nativeSessionId}:commands`,
         eventType: ACP_COMMANDS_EVENT_TYPE,
         payload: { source: "pi", generation: 1, commands: body.commands },
       };
@@ -95,7 +98,7 @@ export function piBridgeProviderEvent(
       const terminal = body.kind === "child.completed";
       return {
         ...base,
-        id: `${ctx.runId}:pi:${frame.sessionId}:child:${body.childId}:${terminal ? "done" : body.kind === "child.started" ? "start" : "progress"}`,
+        id: `${ctx.runId}:pi:${nativeSessionId}:child:${body.childId}:${terminal ? "done" : body.kind === "child.started" ? "start" : "progress"}`,
         eventType: terminal
           ? `part.subtask.${body.status === "error" ? "error" : "completed"}`
           : "part.subtask",
@@ -106,6 +109,7 @@ export function piBridgeProviderEvent(
         payload: {
           childSessionId: body.childId,
           childEventKind: body.kind,
+          transcript: body.kind === "child.completed" ? body.transcript : undefined,
           title: body.kind === "child.started" ? body.title : undefined,
           state: {
             ...(body.state ?? {}),
@@ -119,9 +123,9 @@ export function piBridgeProviderEvent(
     case "usage.updated":
       return {
         ...base,
-        id: `${ctx.runId}:pi:${frame.sessionId}:usage`,
+        id: `${ctx.runId}:pi:${nativeSessionId}:usage`,
         eventType: "part.step-finish",
-        nativeMessageId: `pi:${frame.sessionId}:assistant`,
+        nativeMessageId: `pi:${nativeSessionId}:assistant`,
         payload: {
           tokens: { input: body.inputTokens, output: body.outputTokens },
           cost: body.costUsd,
@@ -133,7 +137,7 @@ export function piBridgeProviderEvent(
     case "turn.failed":
       return {
         ...base,
-        id: `${ctx.runId}:pi:${frame.sessionId}:${body.kind}`,
+        id: `${ctx.runId}:pi:${nativeSessionId}:${body.kind}`,
         eventType: `pi.${body.kind}`,
         payload: { ...body, bridgeSeq: frame.seq },
       };

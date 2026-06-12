@@ -3,11 +3,17 @@ import type {
   RpcCommand,
   RpcResponse,
   RpcSessionEventFrame,
+  RpcSubagentMessagesResult,
 } from "@oh-my-pi/pi-coding-agent/modes/rpc/rpc-types";
+import {
+  MAX_RPC_FRAME_BYTES,
+  RpcFrameDecoder,
+} from "@oh-my-pi/pi-coding-agent/modes/rpc/rpc-frame";
 import type { SandboxHandle, SandboxPtyHandle } from "../sandboxes/provider";
 import { PI_CODING_AGENT_VERSION, type PreparedPiRuntime } from "./pi-runtime-config";
 
 const RPC_REQUEST_TIMEOUT_MS = 30_000;
+const RPC_CHILD_TRANSCRIPT_TIMEOUT_MS = 2_000;
 const ANSI_CSI_SEQUENCE = /\u001b\[[0-?]*[ -/]*[@-~]/g;
 
 function shellQuote(value: string): string {
@@ -34,7 +40,19 @@ export interface PiBridgeSession {
   readonly fingerprint: string;
   subscribe(listener: PiRpcFrameListener): () => void;
   command(command: NativeBridgeCommand): Promise<void>;
+  readSubagentMessages?(selector: {
+    readonly subagentId?: string;
+    readonly sessionFile?: string;
+    readonly fromByte?: number;
+  }): Promise<RpcSubagentMessagesResult>;
+  reconcileCompletedChild?(frame: unknown): (() => Promise<readonly unknown[]>) | null;
   dispose(): Promise<void>;
+}
+
+function objectValue(value: unknown): Record<string, unknown> | null {
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null;
 }
 
 function parsePiRpcFrameLine(line: string): Record<string, unknown> | null {
@@ -42,13 +60,16 @@ function parsePiRpcFrameLine(line: string): Record<string, unknown> | null {
   if (!normalized.startsWith("{")) return null;
   try {
     return JSON.parse(normalized) as Record<string, unknown>;
-  } catch {
-    return null;
+  } catch (cause) {
+    throw new Error("invalid Pi RPC JSON frame", { cause });
   }
 }
 
 class LivePiBridgeSession implements PiBridgeSession {
   #buffer = "";
+  #decoder = new RpcFrameDecoder();
+  #textDecoder = new TextDecoder();
+  #textEncoder = new TextEncoder();
   #nextId = 0;
   #readyResolve!: () => void;
   #ready = new Promise<void>((resolve) => {
@@ -57,6 +78,7 @@ class LivePiBridgeSession implements PiBridgeSession {
   #pending = new Map<string, PendingRequest>();
   #listeners = new Set<PiRpcFrameListener>();
   #initialFrames: unknown[] = [];
+  #childTranscriptCursors = new Map<string, number>();
   #disposed = false;
 
   private constructor(
@@ -114,6 +136,11 @@ class LivePiBridgeSession implements PiBridgeSession {
           RPC_REQUEST_TIMEOUT_MS,
         )),
       ]);
+      const negotiation = await instance.request({ type: "negotiate_protocol", protocolVersion: 2 });
+      const negotiationData = "data" in negotiation ? objectValue(negotiation.data) : null;
+      if (negotiationData?.protocolVersion !== 2) {
+        throw new Error("Pi RPC protocol v2 negotiation failed");
+      }
       await instance.request({ type: "set_subagent_subscription", level: "events" });
       const state = await instance.request({ type: "get_state" });
       const data = "data" in state ? state.data as Record<string, unknown> : undefined;
@@ -160,6 +187,37 @@ class LivePiBridgeSession implements PiBridgeSession {
     await this.request({ type: "abort" });
   }
 
+  async readSubagentMessages(selector: {
+    readonly subagentId?: string;
+    readonly sessionFile?: string;
+    readonly fromByte?: number;
+  }): Promise<RpcSubagentMessagesResult> {
+    const result = await this.request(
+      { type: "get_subagent_messages", ...selector },
+      RPC_CHILD_TRANSCRIPT_TIMEOUT_MS,
+    );
+    if (result.success !== true || result.command !== "get_subagent_messages") {
+      throw new Error("Pi RPC returned an invalid child transcript response");
+    }
+    return result.data;
+  }
+
+  reconcileCompletedChild(frame: unknown): (() => Promise<readonly unknown[]>) | null {
+    const value = objectValue(frame);
+    const payload = objectValue(value?.payload);
+    const childId = typeof payload?.id === "string" ? payload.id : null;
+    const status = typeof payload?.status === "string" ? payload.status : null;
+    if (
+      value?.type !== "subagent_lifecycle" ||
+      !childId ||
+      !status ||
+      !["completed", "failed", "aborted"].includes(status)
+    ) {
+      return null;
+    }
+    return () => this.reconcileChildMessages(childId);
+  }
+
   async dispose(): Promise<void> {
     if (this.#disposed) return;
     this.#disposed = true;
@@ -168,21 +226,56 @@ class LivePiBridgeSession implements PiBridgeSession {
       pending.reject(new Error("Pi RPC session disposed"));
     }
     this.#pending.clear();
+    this.#childTranscriptCursors.clear();
     await this.pty.kill().catch(() => {});
     await this.pty.disconnect().catch(() => {});
   }
 
-  private async request(command: PiRpcCommandInput): Promise<RpcResponse> {
+  private async reconcileChildMessages(childId: string): Promise<readonly unknown[]> {
+    let cursor = this.#childTranscriptCursors.get(childId) ?? 0;
+    const frames: unknown[] = [];
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const page = await this.readSubagentMessages({ subagentId: childId, fromByte: cursor });
+      if (page.reset) cursor = 0;
+      for (const message of page.messages) {
+        frames.push({
+          type: "subagent_event",
+          payload: { id: childId, event: { type: "message_end", message } },
+        });
+      }
+      const advanced = page.nextByte > cursor;
+      cursor = page.nextByte;
+      this.#childTranscriptCursors.set(childId, cursor);
+      if (advanced) continue;
+      if (attempt === 2) break;
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+    return frames;
+  }
+
+  private async request(
+    command: PiRpcCommandInput,
+    timeoutMs = RPC_REQUEST_TIMEOUT_MS,
+  ): Promise<RpcResponse> {
     if (this.#disposed) throw new Error("Pi RPC session is disposed");
     const id = `pi-${++this.#nextId}`;
     const response = new Promise<RpcResponse>((resolve, reject) => {
       const timer = setTimeout(() => {
         this.#pending.delete(id);
         reject(new Error(`Pi RPC ${String(command.type)} timed out`));
-      }, RPC_REQUEST_TIMEOUT_MS);
+      }, timeoutMs);
       this.#pending.set(id, { resolve, reject, timer });
     });
-    await this.pty.sendInput(`${JSON.stringify({ ...command, id })}\n`);
+    try {
+      await this.pty.sendInput(`${JSON.stringify({ ...command, id })}\n`);
+    } catch (cause) {
+      const pending = this.#pending.get(id);
+      if (pending) {
+        this.#pending.delete(id);
+        clearTimeout(pending.timer);
+        pending.reject(cause instanceof Error ? cause : new Error(String(cause)));
+      }
+    }
     const result = await response;
     if (result.success === false) {
       throw new Error(typeof result.error === "string" ? result.error : "Pi RPC command failed");
@@ -190,20 +283,62 @@ class LivePiBridgeSession implements PiBridgeSession {
     return result;
   }
 
+  private failProtocol(cause: unknown): void {
+    const detail = cause instanceof Error ? cause.message : "unknown decoder failure";
+    const error = new Error(`Pi RPC frame decode failed: ${detail}`);
+    for (const pending of this.#pending.values()) {
+      clearTimeout(pending.timer);
+      pending.reject(error);
+    }
+    this.#pending.clear();
+    const frame = { type: "rpc_frame_error", error: error.message };
+    if (this.#listeners.size === 0) this.#initialFrames = [frame];
+    else for (const listener of this.#listeners) listener(frame);
+    void this.dispose();
+  }
+
   private ingest(data: Uint8Array): void {
-    this.#buffer += new TextDecoder().decode(data, { stream: true }).replaceAll("\r", "");
+    this.#buffer += this.#textDecoder.decode(data, { stream: true }).replaceAll("\r", "");
     while (true) {
       const newline = this.#buffer.indexOf("\n");
-      if (newline < 0) return;
+      if (newline < 0) {
+        if (this.#textEncoder.encode(this.#buffer).byteLength > MAX_RPC_FRAME_BYTES) {
+          this.failProtocol(new Error("Pi RPC physical frame exceeds the transport limit"));
+        }
+        return;
+      }
       const line = this.#buffer.slice(0, newline);
       this.#buffer = this.#buffer.slice(newline + 1);
-      const frame = parsePiRpcFrameLine(line);
+      if (this.#textEncoder.encode(line).byteLength > MAX_RPC_FRAME_BYTES) {
+        this.failProtocol(new Error("Pi RPC physical frame exceeds the transport limit"));
+        return;
+      }
+      let parsed: Record<string, unknown> | null;
+      try {
+        parsed = parsePiRpcFrameLine(line);
+      } catch (error) {
+        this.failProtocol(error);
+        return;
+      }
+      if (!parsed) continue;
+      let frame: Record<string, unknown> | undefined;
+      try {
+        frame = this.#decoder.push(parsed) as Record<string, unknown> | undefined;
+      } catch (error) {
+        this.#decoder = new RpcFrameDecoder();
+        this.failProtocol(error);
+        return;
+      }
       if (!frame) continue;
       if (frame.type === "ready") {
         this.#readyResolve();
         continue;
       }
       const id = typeof frame.id === "string" ? frame.id : null;
+      if (frame.type === "response" && !id) {
+        this.failProtocol(new Error("Pi RPC response is missing its request id"));
+        return;
+      }
       if (frame.type === "response" && id) {
         const pending = this.#pending.get(id);
         if (!pending) continue;

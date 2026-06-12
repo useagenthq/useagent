@@ -481,6 +481,13 @@
     {
       "idx": 68,
       "version": "7",
+      "when": 1790800000000,
+      "tag": "0070_execution_graph_pending_observations",
+      "breakpoints": true
+    },
+    {
+      "idx": 69,
+      "version": "7",
       "when": 1790900000000,
       "tag": "0071_slack_stream_progress",
       "breakpoints": true

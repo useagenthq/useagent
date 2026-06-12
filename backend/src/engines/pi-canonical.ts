@@ -68,20 +68,95 @@ function assistantContent(
   return blocks.length > 0 ? blocks.join("") : undefined;
 }
 
+function assistantToolCalls(message: Record<string, unknown>): NativeBridgeFrameBody[] {
+  if (!Array.isArray(message.content)) return [];
+  return message.content.flatMap((item) => {
+    const block = record(item);
+    const toolCallId = text(block?.id);
+    const name = text(block?.name);
+    return block?.type === "toolCall" && toolCallId && name
+      ? [{ kind: "tool.started" as const, toolCallId, name, input: block.arguments }]
+      : [];
+  });
+}
+
+function toolResult(message: Record<string, unknown>): NativeBridgeFrameBody | null {
+  if (message.role !== "toolResult") return null;
+  const toolCallId = text(message.toolCallId);
+  if (!toolCallId) return null;
+  const errored = message.isError === true;
+  const output = preview(message.content);
+  return {
+    kind: "tool.completed",
+    toolCallId,
+    name: text(message.toolName),
+    status: errored ? "error" : "ok",
+    preview: output,
+    ...(errored ? { error: output } : {}),
+  };
+}
+
 /** Lossless-enough Pi RPC -> provider-neutral bridge mapping. Unknown upstream
  * frames remain available in the native provider lane; they are not fabricated
  * into product events here. */
 interface PiFrameState {
   readonly fallbackMessageId: string;
+  readonly messageIdsByTimestamp: Map<number, string>;
   activeMessageId: string;
   messageStarted: boolean;
   messageIndex: number;
+}
+
+const MAX_TRACKED_MESSAGE_IDS = 2_048;
+
+function resolvedMessageId(
+  frame: Record<string, unknown>,
+  state: PiFrameState,
+): string {
+  const timestamp = number(record(frame.message)?.timestamp);
+  return timestamp === undefined
+    ? messageId(frame, state.activeMessageId)
+    : state.messageIdsByTimestamp.get(timestamp) ?? messageId(frame, state.activeMessageId);
+}
+
+function rememberMessageId(
+  frame: Record<string, unknown>,
+  state: PiFrameState,
+  id: string,
+): void {
+  const timestamp = number(record(frame.message)?.timestamp);
+  if (timestamp === undefined) return;
+  state.messageIdsByTimestamp.delete(timestamp);
+  state.messageIdsByTimestamp.set(timestamp, id);
+  while (state.messageIdsByTimestamp.size > MAX_TRACKED_MESSAGE_IDS) {
+    const oldest = state.messageIdsByTimestamp.keys().next();
+    if (oldest.done) break;
+    state.messageIdsByTimestamp.delete(oldest.value);
+  }
 }
 
 function nextFallbackMessageId(state: PiFrameState): string {
   return state.messageIndex === 0
     ? state.fallbackMessageId
     : `${state.fallbackMessageId}-${state.messageIndex}`;
+}
+
+function completeMessageFrame(state: PiFrameState, frame: Record<string, unknown>): void {
+  if (frame.type !== "message_end" || record(frame.message)?.role !== "assistant") return;
+  state.messageIndex += 1;
+  state.activeMessageId = nextFallbackMessageId(state);
+  state.messageStarted = false;
+}
+
+function childOwnedBody(
+  childId: string,
+  body: NativeBridgeFrameBody,
+): NativeBridgeFrameBody | null {
+  if (
+    body.kind === "turn.started" ||
+    body.kind === "commands.updated"
+  ) return null;
+  return { ...body, ownerChildId: childId };
 }
 
 function mapPiRpcFrame(frame: unknown, state: PiFrameState): readonly NativeBridgeFrameBody[] {
@@ -108,8 +183,9 @@ function mapPiRpcFrame(frame: unknown, state: PiFrameState): readonly NativeBrid
     case "message_start": {
       const message = record(value.message);
       if (message?.role !== "assistant") return [];
-      const id = messageId(value, state.activeMessageId);
+      const id = resolvedMessageId(value, state);
       state.activeMessageId = id;
+      rememberMessageId(value, state, id);
       if (state.messageStarted) return [];
       state.messageStarted = true;
       return [{ kind: "message.started", messageId: id }];
@@ -118,8 +194,9 @@ function mapPiRpcFrame(frame: unknown, state: PiFrameState): readonly NativeBrid
       const update = record(value.assistantMessageEvent);
       const delta = text(update?.delta);
       if (!update || !delta) return [];
-      const id = messageId(value, state.activeMessageId);
+      const id = resolvedMessageId(value, state);
       state.activeMessageId = id;
+      rememberMessageId(value, state, id);
       const started: NativeBridgeFrameBody[] = state.messageStarted
         ? []
         : [{ kind: "message.started", messageId: id }];
@@ -134,9 +211,12 @@ function mapPiRpcFrame(frame: unknown, state: PiFrameState): readonly NativeBrid
     }
     case "message_end": {
       const message = record(value.message);
+      const completedTool = message ? toolResult(message) : null;
+      if (completedTool) return [completedTool];
       if (message?.role !== "assistant") return [];
-      const id = state.messageStarted ? state.activeMessageId : messageId(value, state.activeMessageId);
+      const id = state.messageStarted ? state.activeMessageId : resolvedMessageId(value, state);
       state.activeMessageId = id;
+      rememberMessageId(value, state, id);
       const started: NativeBridgeFrameBody[] = state.messageStarted
         ? []
         : [{ kind: "message.started", messageId: id }];
@@ -151,6 +231,7 @@ function mapPiRpcFrame(frame: unknown, state: PiFrameState): readonly NativeBrid
         ...(finalText === undefined
           ? []
           : [{ kind: "message.authoritative", messageId: id, text: finalText } as const]),
+        ...assistantToolCalls(message),
         usageFrame(message),
         assistantFailure(message),
         { kind: "message.completed", messageId: id },
@@ -276,18 +357,36 @@ function mapPiRpcFrame(frame: unknown, state: PiFrameState): readonly NativeBrid
 export function createPiRpcFrameMapper(fallbackMessageId: string) {
   const state: PiFrameState = {
     fallbackMessageId,
+    messageIdsByTimestamp: new Map(),
     activeMessageId: fallbackMessageId,
     messageStarted: false,
     messageIndex: 0,
   };
+  const childStates = new Map<string, PiFrameState>();
   return (frame: unknown): readonly NativeBridgeFrameBody[] => {
-    const bodies = mapPiRpcFrame(frame, state);
     const value = record(frame);
-    if (value?.type === "message_end" && record(value.message)?.role === "assistant") {
-      state.messageIndex += 1;
-      state.activeMessageId = nextFallbackMessageId(state);
-      state.messageStarted = false;
+    if (value?.type === "subagent_event") {
+      const payload = record(value.payload);
+      const childId = text(payload?.id);
+      const childFrame = record(payload?.event);
+      if (!childId || !childFrame) return [];
+      const childState = childStates.get(childId) ?? {
+        fallbackMessageId: `${fallbackMessageId}-child-${childId}`,
+        messageIdsByTimestamp: new Map(),
+        activeMessageId: `${fallbackMessageId}-child-${childId}`,
+        messageStarted: false,
+        messageIndex: 0,
+      };
+      childStates.set(childId, childState);
+      const bodies = mapPiRpcFrame(childFrame, childState).flatMap((body) => {
+        const owned = childOwnedBody(childId, body);
+        return owned ? [owned] : [];
+      });
+      completeMessageFrame(childState, childFrame);
+      return bodies;
     }
+    const bodies = mapPiRpcFrame(frame, state);
+    if (value) completeMessageFrame(state, value);
     return bodies;
   };
 }

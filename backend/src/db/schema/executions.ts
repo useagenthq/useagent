@@ -2,6 +2,7 @@ import { sql } from "drizzle-orm";
 import {
   bigint,
   bigserial,
+  boolean,
   check,
   foreignKey,
   index,
@@ -13,6 +14,7 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 import { runs } from "./runs";
+import { providerEvents } from "./provider-events";
 
 export const EXECUTION_MODES = ["root", "native_child"] as const;
 export type ExecutionMode = (typeof EXECUTION_MODES)[number];
@@ -36,6 +38,17 @@ export const DELEGATION_KINDS = [
   "gather",
 ] as const;
 export type DelegationKind = (typeof DELEGATION_KINDS)[number];
+
+export const EXECUTION_GRAPH_OBSERVATION_KINDS = ["spawn", "control", "lifecycle"] as const;
+export type ExecutionGraphObservationKind = (typeof EXECUTION_GRAPH_OBSERVATION_KINDS)[number];
+
+export const EXECUTION_GRAPH_RESOLUTION_REASONS = [
+  "applied",
+  "source_irrelevant",
+  "edge_only",
+  "superseded",
+] as const;
+export type ExecutionGraphResolutionReason = (typeof EXECUTION_GRAPH_RESOLUTION_REASONS)[number];
 
 /**
  * One provider-neutral harness execution. `run_id` remains the owning user turn;
@@ -154,5 +167,90 @@ export const delegationEdges = pgTable(
   ],
 );
 
+/** Pointer-only recovery state for graph observations whose required execution
+ * identity arrived out of order. Provider events remain the payload truth. */
+export const executionGraphPendingObservations = pgTable(
+  "execution_graph_pending_observations",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orgId: text("org_id").notNull(),
+    runId: text("run_id")
+      .notNull()
+      .references(() => runs.id, { onDelete: "cascade" }),
+    provider: text("provider").notNull(),
+    providerEventId: text("provider_event_id")
+      .notNull()
+      .references(() => providerEvents.id, { onDelete: "cascade" }),
+    latestObservationKind: text("latest_observation_kind").$type<ExecutionGraphObservationKind>(),
+    latestNativeParentSessionId: text("latest_native_parent_session_id"),
+    latestNativeChildSessionId: text("latest_native_child_session_id"),
+    latestRelevant: boolean("latest_relevant").notNull().default(true),
+    latestExecutionRequired: boolean("latest_execution_required").notNull().default(true),
+    latestStructureHash: text("latest_structure_hash").notNull(),
+    firstDeferredDeliverySeq: bigint("first_deferred_delivery_seq", { mode: "number" }).notNull(),
+    latestProviderEventSeq: bigint("latest_provider_event_seq", { mode: "number" }).notNull(),
+    firstSeenAt: timestamp("first_seen_at", { withTimezone: true }).notNull().defaultNow(),
+    lastAttemptAt: timestamp("last_attempt_at", { withTimezone: true }),
+    attemptCount: integer("attempt_count").notNull().default(0),
+    exhaustedAt: timestamp("exhausted_at", { withTimezone: true }),
+    exhaustionCode: text("exhaustion_code"),
+    resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+    resolutionReason: text("resolution_reason").$type<ExecutionGraphResolutionReason>(),
+    appliedStructureHash: text("applied_structure_hash"),
+    structuralMismatchAt: timestamp("structural_mismatch_at", { withTimezone: true }),
+    structuralMismatchSourceSeq: bigint("structural_mismatch_source_seq", { mode: "number" }),
+    structuralMismatchCode: text("structural_mismatch_code"),
+  },
+  (t) => [
+    check(
+      "execution_graph_pending_kind_check",
+      sql`${t.latestObservationKind} IS NULL OR ${t.latestObservationKind} IN ('spawn', 'control', 'lifecycle')`,
+    ),
+    check(
+      "execution_graph_pending_resolution_check",
+      sql`${t.resolutionReason} IS NULL OR ${t.resolutionReason} IN ('applied', 'source_irrelevant', 'edge_only', 'superseded')`,
+    ),
+    check(
+      "execution_graph_pending_sequence_check",
+      sql`${t.firstDeferredDeliverySeq} >= 0 AND ${t.latestProviderEventSeq} >= 0 AND ${t.attemptCount} >= 0`,
+    ),
+    check(
+      "execution_graph_pending_resolved_pair_check",
+      sql`(${t.resolvedAt} IS NULL) = (${t.resolutionReason} IS NULL)`,
+    ),
+    check(
+      "execution_graph_pending_mismatch_pair_check",
+      sql`(${t.structuralMismatchAt} IS NULL AND ${t.structuralMismatchSourceSeq} IS NULL AND ${t.structuralMismatchCode} IS NULL) OR (${t.structuralMismatchAt} IS NOT NULL AND ${t.structuralMismatchSourceSeq} IS NOT NULL AND ${t.structuralMismatchCode} IS NOT NULL)`,
+    ),
+    check(
+      "execution_graph_pending_exhaustion_pair_check",
+      sql`(${t.exhaustedAt} IS NULL) = (${t.exhaustionCode} IS NULL)`,
+    ),
+    uniqueIndex("uq_execution_graph_pending_source").on(
+      t.orgId,
+      t.runId,
+      t.provider,
+      t.providerEventId,
+    ),
+    index("idx_execution_graph_pending_parent").on(
+      t.orgId,
+      t.runId,
+      t.provider,
+      t.latestNativeParentSessionId,
+      t.resolvedAt,
+      t.firstDeferredDeliverySeq,
+    ),
+    index("idx_execution_graph_pending_child").on(
+      t.orgId,
+      t.runId,
+      t.provider,
+      t.latestNativeChildSessionId,
+      t.resolvedAt,
+      t.firstDeferredDeliverySeq,
+    ),
+  ],
+);
+
 export type AgentExecutionRow = typeof agentExecutions.$inferSelect;
 export type DelegationEdgeRow = typeof delegationEdges.$inferSelect;
+export type ExecutionGraphPendingObservationRow = typeof executionGraphPendingObservations.$inferSelect;

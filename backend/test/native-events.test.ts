@@ -115,7 +115,7 @@ describe("native event SSE lane", () => {
   test("payloads are bounded: oversized → marker, small → parsed object", async () => {
     const id = await completedMockRun("native bounded");
     await seed(id, "small", { hello: "world" });
-    // > 32KB stored JSON is sliced (invalid JSON) — surfaced as a bounded marker.
+    // > 32KiB ordinary payloads are replaced by a valid bounded marker.
     await seed(id, "big", { blob: "x".repeat(40_000) });
 
     const frames = nativeFrames(
@@ -127,8 +127,11 @@ describe("native event SSE lane", () => {
     const big = frames.find((f) => f.eventId === eventId(id, "big"));
 
     expect(small.payload).toEqual({ hello: "world" });
-    expect(big.payload._unparseable).toBe(true);
-    expect(big.payload._bytes).toBeLessThanOrEqual(32_768);
+    expect(big.payload).toMatchObject({
+      _truncated: true,
+      _reason: "provider payload exceeded durable byte limit",
+    });
+    expect(big.payload._original_bytes).toBeGreaterThan(32_768);
     // The whole frame stays bounded regardless of the source payload size.
     expect(JSON.stringify(big).length).toBeLessThan(33_000);
   });
