@@ -8,10 +8,12 @@
 // nav, brand, search and account chrome.
 
 import { RiFileTextLine, RiFolderLine, RiFolderOpenLine } from "@remixicon/react";
+import type { RunStatus } from "@useagent/agent-client/wire";
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { useState } from "react";
-
+import { StatusDot } from "@/components/shared/status-dot";
+import { threadStatusPresentation } from "@/components/shell/thread-discovery";
 import { cx } from "@/utils/cx";
 
 const VISIBLE_THREADS_PER_PROJECT = 6;
@@ -22,6 +24,7 @@ export interface ProjectThread {
   id: string;
   label: string;
   time: string;
+  status: RunStatus;
   isSelected?: boolean;
 }
 
@@ -57,6 +60,8 @@ function ThreadItem({
   active: boolean;
   tabIndex?: number;
 }) {
+  const status = threadStatusPresentation(thread.status);
+
   return (
     <Link
       href={href}
@@ -72,7 +77,13 @@ function ThreadItem({
       )}
     >
       <span className="flex w-4 shrink-0 items-center justify-center">
-        <RiFileTextLine className="size-4 text-foreground-icon-tertiary" aria-hidden />
+        {status.dot ? (
+          <span role="img" aria-label={status.label} title={status.label}>
+            <StatusDot {...status.dot} />
+          </span>
+        ) : (
+          <RiFileTextLine className="size-4 text-foreground-icon-tertiary" aria-hidden />
+        )}
       </span>
       <span
         className={cx(
@@ -150,10 +161,7 @@ function ProjectFolder({
         <div className="overflow-hidden">
           {group.threads.length > 0 ? (
             <>
-              <ul
-                aria-label={`Threads in ${group.label}`}
-                className="flex w-full flex-col"
-              >
+              <ul aria-label={`Threads in ${group.label}`} className="flex w-full flex-col">
                 {visibleThreads.map((thread) => (
                   <li key={thread.id}>
                     <ThreadItem

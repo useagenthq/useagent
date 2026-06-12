@@ -36,10 +36,26 @@ const summary = {
   repo_specs: [],
   created_at: "2026-08-24T00:00:00.000Z",
   updated_at: "2026-08-24T00:00:00.000Z",
+  latest_run_id: "run-2",
+  latest_status: "running",
+  latest_created_at: "2026-08-24T00:01:00.000Z",
+  latest_updated_at: "2026-08-24T00:02:00.000Z",
 } satisfies ApiRunSummary;
 
 const run = {
-  ...summary,
+  id: summary.id,
+  prompt: summary.prompt,
+  model: summary.model,
+  engine: summary.engine,
+  status: summary.status,
+  summary: summary.summary,
+  duration_ms: summary.duration_ms,
+  project_id: summary.project_id,
+  repo: summary.repo,
+  repos: summary.repos,
+  repo_specs: summary.repo_specs,
+  created_at: summary.created_at,
+  updated_at: summary.updated_at,
   org_id: "org-1",
   user_id: "user-1",
   parent_run_id: null,
@@ -67,9 +83,32 @@ describe("run/step wire boundary decoders", () => {
     expect(decodeApiStep(step)).toEqual(step);
   });
 
+  test("synthesizes latest projection fields for legacy compact run rows", () => {
+    const {
+      latest_run_id: _latestRunId,
+      latest_status: _latestStatus,
+      latest_created_at: _latestCreatedAt,
+      latest_updated_at: _latestUpdatedAt,
+      ...legacySummary
+    } = summary;
+
+    expect(decodeApiRunSummary(legacySummary)).toEqual({
+      ...legacySummary,
+      latest_run_id: legacySummary.id,
+      latest_status: legacySummary.status,
+      latest_created_at: legacySummary.created_at,
+      latest_updated_at: legacySummary.updated_at,
+    });
+  });
+
+  test("rejects partial latest projection fields", () => {
+    expect(decodeApiRunSummary({ ...summary, latest_updated_at: undefined })).toBeNull();
+  });
+
   test("rejects unknown statuses and step kinds instead of typing them", () => {
     expect(decodeApiRun({ ...run, status: "done" })).toBeNull();
     expect(decodeApiRunSummary({ ...summary, status: "done" })).toBeNull();
+    expect(decodeApiRunSummary({ ...summary, latest_status: "done" })).toBeNull();
     expect(decodeApiStep({ ...step, kind: "shell" })).toBeNull();
   });
 });

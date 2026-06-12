@@ -3,7 +3,6 @@
 import { usePathname } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-import { fetchSidebarRuns } from "@/app/agent/runs/runs-data";
 import {
   type ProjectMenuControl,
   ProjectThreadTree,
@@ -25,9 +24,10 @@ import {
   visibleProjectGroups,
 } from "./sidebar-project-groups";
 import { SidebarProjectMenu } from "./sidebar-project-menu";
-import type { SidebarRun } from "./working-project-status";
+import { useSidebarThreads } from "./sidebar-threads-provider";
+import { effectiveThreadStatus } from "./thread-discovery";
 
-const POLL_MS = 30_000;
+const PROJECT_POLL_MS = 30_000;
 const MAX_PROJECTS = 48;
 const VISIBLE_PROJECTS = 5;
 // Recent threads stay visible; the rest sit behind a "Show N more" disclosure so
@@ -73,16 +73,16 @@ function writeExpanded(userId: string | null, value: Record<string, boolean>): v
  * (the full project list) and the runs summary (threads + their repo) - folded
  * into project groups by `groupThreadsByProject`. No new endpoints.
  *
- * Same refresh contract as before: an org-change subscription plus a
- * low-frequency recovery poll. Expanded/collapsed state is remembered per
- * project in localStorage; by default the active thread's project and the most
- * recent project open. Client leaf so the server `ThreadSidebar` stays static.
+ * Thread status comes from AppShell's single SSE-refreshed snapshot; only the
+ * repository catalog keeps its low-frequency recovery poll. Expansion state is
+ * remembered per project in localStorage; by default the active thread's
+ * project and the most recent project open.
  */
 export function SidebarProjects() {
   const pathname = usePathname();
   const { session, loading: sessionLoading } = useSession();
   const [projects, setProjects] = useState<ProjectRepo[]>([]);
-  const [runs, setRuns] = useState<SidebarRun[]>([]);
+  const runs = useSidebarThreads();
   const [overrides, setOverrides] = useState<Record<string, boolean>>({});
   const [showEmptyProjects, setShowEmptyProjects] = useState(false);
   const [showAllThreads, setShowAllThreads] = useState(false);
@@ -101,17 +101,16 @@ export function SidebarProjects() {
       const data = (await response.json()) as {
         repos?: Array<{ full_name?: unknown; name?: unknown }>;
       };
-      const repos = (data.repos ?? [])
-        .flatMap((repo): ProjectRepo[] => {
-          if (typeof repo.full_name !== "string" || repo.full_name.length === 0) return [];
-          return [
-            {
-              fullName: repo.full_name,
-              name:
-                typeof repo.name === "string" && repo.name.length > 0 ? repo.name : repo.full_name,
-            },
-          ];
-        });
+      const repos = (data.repos ?? []).flatMap((repo): ProjectRepo[] => {
+        if (typeof repo.full_name !== "string" || repo.full_name.length === 0) return [];
+        return [
+          {
+            fullName: repo.full_name,
+            name:
+              typeof repo.name === "string" && repo.name.length > 0 ? repo.name : repo.full_name,
+          },
+        ];
+      });
       // Dedupe BEFORE capping: upstream duplicates collapsed in the DOM (React
       // keys) while still counting toward "Show N more" (release-audit bug).
       setProjects(dedupeProjectRepos(repos).slice(0, MAX_PROJECTS));
@@ -120,34 +119,21 @@ export function SidebarProjects() {
     }
   }, []);
 
-  const loadRuns = useCallback(async (revalidate = false) => {
-    try {
-      setRuns(await fetchSidebarRuns({ revalidate }));
-    } catch {
-      // Threads are additive; project shortcuts still render from /api/repos.
-    }
-  }, []);
-
   useOrgChanges((change) => {
-    if (change.type === "run" || (change.type === "automation" && change.action === "fired")) {
-      void loadRuns(true);
-    }
     if (change.type === "provider_connection") void loadProjects();
   });
 
   useEffect(() => {
     const controller = new AbortController();
     void loadProjects(controller.signal);
-    void loadRuns();
     const id = setInterval(() => {
       void loadProjects(controller.signal);
-      void loadRuns(true);
-    }, POLL_MS);
+    }, PROJECT_POLL_MS);
     return () => {
       controller.abort();
       clearInterval(id);
     };
-  }, [loadProjects, loadRuns]);
+  }, [loadProjects]);
 
   const groups = useMemo(() => groupThreadsByProject(runs, projects), [runs, projects]);
 
@@ -185,6 +171,7 @@ export function SidebarProjects() {
           id: run.id,
           label: run.prompt || "Untitled run",
           time: relativeTimeShort(threadRowTimestamp(run)),
+          status: effectiveThreadStatus(run),
           isSelected: pathname === `/session/${run.id}`,
         })),
       })),
@@ -246,17 +233,13 @@ export function SidebarProjects() {
       )}
 
       {emptyProjectVisibility.hiddenCount > 0 || showEmptyProjects ? (
-        <>
-          <button
-            type="button"
-            onClick={() => setShowEmptyProjects((value) => !value)}
-            className="flex w-full items-center gap-1 rounded-lg px-2.5 py-1 text-caption-1-regular text-text-tertiary transition-colors hover:bg-background-secondary-hover hover:text-text-secondary"
-          >
-            {showEmptyProjects
-              ? "Show fewer"
-              : `Show ${emptyProjectVisibility.hiddenCount} more`}
-          </button>
-        </>
+        <button
+          type="button"
+          onClick={() => setShowEmptyProjects((value) => !value)}
+          className="flex w-full items-center gap-1 rounded-lg px-2.5 py-1 text-caption-1-regular text-text-tertiary transition-colors hover:bg-background-secondary-hover hover:text-text-secondary"
+        >
+          {showEmptyProjects ? "Show fewer" : `Show ${emptyProjectVisibility.hiddenCount} more`}
+        </button>
       ) : null}
 
       {independentThreads.length > 0 && (

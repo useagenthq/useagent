@@ -22,6 +22,10 @@ const run = (overrides: Partial<SidebarRun>): SidebarRun => ({
   repo_specs: [],
   created_at: "2026-08-17T00:00:00.000Z",
   updated_at: "2026-08-17T00:00:00.000Z",
+  latest_run_id: null,
+  latest_status: null,
+  latest_created_at: null,
+  latest_updated_at: null,
   ...overrides,
 });
 
@@ -65,5 +69,11 @@ describe("sidebar live status helpers", () => {
     expect(runStatusLabel(queued)).toBe("Queued");
     expect(isSidebarActiveRun(done)).toBe(false);
     expect(runElapsedMs(done)).toBe(42_000);
+  });
+
+  test("prefers the latest turn status projected onto the thread root", () => {
+    const root = run({ status: "completed", latest_status: "running" });
+    expect(isSidebarActiveRun(root)).toBe(true);
+    expect(runStatusLabel(root)).toBe("Working");
   });
 });

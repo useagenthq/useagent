@@ -90,6 +90,51 @@ describe("groupThreadsByProject", () => {
     expect(groups[0]?.threads.map((t) => t.id)).toEqual(["newer", "older"]);
   });
 
+  test("sorts running, then queued, then settled by latest activity within each project", () => {
+    const groups = groupThreadsByProject(
+      [
+        run({ id: "done", repos: ["acme/api"], updated_at: "2026-08-24T12:00:00Z" }),
+        run({ id: "queued", status: "queued", repos: ["acme/api"] }),
+        run({ id: "running", status: "running", repos: ["acme/api"] }),
+      ],
+      [repo("acme/api")],
+    );
+    expect(groups[0]?.threads.map((thread) => thread.id)).toEqual(["running", "queued", "done"]);
+  });
+
+  test("keeps status ranking isolated to each project and the no-project bucket", () => {
+    const groups = groupThreadsByProject(
+      [
+        run({ id: "api-done", repos: ["acme/api"] }),
+        run({ id: "web-running", status: "running", repos: ["acme/web"] }),
+        run({ id: "loose-done" }),
+        run({ id: "loose-queued", status: "queued" }),
+      ],
+      [repo("acme/api"), repo("acme/web")],
+    );
+    expect(
+      groups.find((group) => group.fullName === "acme/api")?.threads.map((run) => run.id),
+    ).toEqual(["api-done"]);
+    expect(
+      groups.find((group) => group.fullName === "acme/web")?.threads.map((run) => run.id),
+    ).toEqual(["web-running"]);
+    expect(
+      groups.find((group) => group.key === UNATTACHED_KEY)?.threads.map((run) => run.id),
+    ).toEqual(["loose-queued", "loose-done"]);
+  });
+
+  test("does not render a duplicated thread id in multiple project groups", () => {
+    const groups = groupThreadsByProject(
+      [
+        run({ id: "same", repos: ["acme/api"], updated_at: "2026-08-20T12:00:00Z" }),
+        run({ id: "same", repos: ["acme/web"], updated_at: "2026-08-24T12:00:00Z" }),
+      ],
+      [repo("acme/api"), repo("acme/web")],
+    );
+    expect(groups.flatMap((group) => group.threads).map((thread) => thread.id)).toEqual(["same"]);
+    expect(groups.find((group) => group.fullName === "acme/web")?.threads).toHaveLength(1);
+  });
+
   test("collects repo-less threads into a single No project bucket, after real projects", () => {
     const groups = groupThreadsByProject(
       [run({ id: "loose" }), run({ id: "attached", repos: ["acme/api"] })],
@@ -133,10 +178,19 @@ describe("groupThreadsByProject", () => {
 });
 
 describe("dedupeProjectRepos (Show-N-more count bug)", () => {
-  const repo = (fullName: string): ProjectRepo => ({ fullName, name: fullName.split("/")[1] ?? fullName });
+  const repo = (fullName: string): ProjectRepo => ({
+    fullName,
+    name: fullName.split("/")[1] ?? fullName,
+  });
 
   test("collapses duplicate fullNames, first occurrence wins, order preserved", () => {
-    const out = dedupeProjectRepos([repo("o/a"), repo("o/b"), repo("o/a"), repo("o/c"), repo("o/b")]);
+    const out = dedupeProjectRepos([
+      repo("o/a"),
+      repo("o/b"),
+      repo("o/a"),
+      repo("o/c"),
+      repo("o/b"),
+    ]);
     expect(out.map((r) => r.fullName)).toEqual(["o/a", "o/b", "o/c"]);
   });
 

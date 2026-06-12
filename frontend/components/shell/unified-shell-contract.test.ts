@@ -33,6 +33,18 @@ describe("unified shell contract", () => {
     expect(appShell).not.toContain("shadow-regular");
   });
 
+  test("shares one AppShell thread snapshot across expanded, compact, and mobile navigation", () => {
+    const { appShell } = shellSources();
+
+    expect(appShell).toContain("<SidebarThreadsProvider>");
+    expect(appShell.indexOf("<SidebarThreadsProvider>")).toBeLessThan(
+      appShell.indexOf("{sidebar}"),
+    );
+    expect(appShell.indexOf("<SidebarThreadsProvider>")).toBeLessThan(
+      appShell.indexOf("<CompactSidebarRail"),
+    );
+  });
+
   test("limits primary sidebar navigation to projects, threads, usage, customize, and settings", () => {
     const { threadSidebar } = shellSources();
     const projectTree = read("../session-ui/project-thread-tree.tsx");

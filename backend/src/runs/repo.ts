@@ -472,79 +472,110 @@ export async function listRunSummaries(
   orgId: string,
   opts: { all?: boolean; limit?: number; includeActive?: boolean } = {},
 ): Promise<ApiRunSummary[]> {
-  const publicRun = publicRunCondition();
-  const where = opts.all
-    ? and(eq(runs.orgId, orgId), publicRun)
-    : and(eq(runs.orgId, orgId), isNull(runs.parentRunId), publicRun);
-  const rows = await db
-    .select({
-      id: runs.id,
-      prompt: runs.prompt,
-      model: runs.model,
-      engine: runs.engine,
-      status: runs.status,
-      summary: runs.summary,
-      durationMs: runs.durationMs,
-      projectId: runs.projectId,
-      repo: runs.repo,
-      repos: runs.repos,
-      createdAt: runs.createdAt,
-      updatedAt: runs.updatedAt,
-    })
-    .from(runs)
-    .where(where)
-    .orderBy(desc(runs.createdAt), desc(runs.id))
-    .limit(opts.limit ?? 100);
-
-  if (opts.includeActive) {
-    const activeRows = await db
-      .select({
-        id: runs.id,
-        prompt: runs.prompt,
-        model: runs.model,
-        engine: runs.engine,
-        status: runs.status,
-        summary: runs.summary,
-        durationMs: runs.durationMs,
-        projectId: runs.projectId,
-        repo: runs.repo,
-        repos: runs.repos,
-        createdAt: runs.createdAt,
-        updatedAt: runs.updatedAt,
-      })
-      .from(runs)
-      .where(
-        and(
-          where,
-          inArray(runs.status, ["queued", "running"]),
-        ),
-      )
-      .orderBy(desc(runs.createdAt), desc(runs.id))
-      .limit(opts.limit ?? 100);
-    const seen = new Set(rows.map((row) => row.id));
-    for (const row of activeRows) {
-      if (!seen.has(row.id)) rows.push(row);
-    }
-  }
-
-  rows.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime() || b.id.localeCompare(a.id));
+  const limit = opts.limit ?? 100;
+  const rootFilter = opts.all ? sql`` : sql`and root.parent_run_id is null`;
+  const activeFilter = !opts.includeActive
+    ? sql`false`
+    : opts.all
+      ? sql`status in ('queued', 'running')`
+      : sql`latest_status in ('queued', 'running')`;
+  const listOrder = opts.all
+    ? sql`root.created_at desc, root.id desc`
+    : sql`latest.updated_at desc, latest.created_at desc, latest.id desc,
+        root.created_at desc, root.id desc`;
+  const outputOrder = opts.all
+    ? sql`created_at desc, id desc`
+    : sql`latest_updated_at desc, latest_created_at desc, latest_run_id desc,
+        created_at desc, id desc`;
+  const rows = await db.execute(sql`
+    with latest_thread_runs as (
+      select
+        candidate.id,
+        candidate.org_id,
+        candidate.thread_id,
+        candidate.status,
+        candidate.created_at,
+        candidate.updated_at,
+        row_number() over (
+          partition by candidate.org_id, candidate.thread_id
+          order by candidate.created_at desc, candidate.id desc
+        ) as thread_rank
+      from runs candidate
+      where candidate.org_id = ${orgId}
+        and candidate.origin is null
+    ), summary_rows as (
+      select
+        root.id,
+        root.prompt,
+        root.model,
+        root.engine,
+        root.status,
+        root.summary,
+        root.duration_ms,
+        root.project_id,
+        root.repo,
+        root.repos,
+        root.created_at,
+        root.updated_at,
+        latest.id as latest_run_id,
+        latest.status as latest_status,
+        latest.created_at as latest_created_at,
+        latest.updated_at as latest_updated_at,
+        row_number() over (
+          order by ${listOrder}
+        ) as list_rank
+      from runs root
+      inner join latest_thread_runs latest
+        on latest.org_id = root.org_id
+        and latest.thread_id = root.thread_id
+        and latest.thread_rank = 1
+      where root.org_id = ${orgId}
+        and root.origin is null
+        ${rootFilter}
+    ), bounded_rows as (
+      select *
+      from summary_rows
+      where list_rank <= ${limit}
+    ), active_rows as (
+      select *
+      from summary_rows
+      where ${activeFilter}
+      order by list_rank
+      limit ${limit}
+    ), selected_rows as (
+      select * from bounded_rows
+      union
+      select * from active_rows
+    )
+    select
+      id, prompt, model, engine, status, summary, duration_ms, project_id,
+      repo, repos, created_at, updated_at,
+      latest_run_id, latest_status, latest_created_at, latest_updated_at
+    from selected_rows
+    order by ${outputOrder}
+  `);
 
   return rows.map((row) => {
-    const specs = row.repos.map(parseRepoRef);
+    const repoRefs = row.repos as string[];
+    const specs = repoRefs.map(parseRepoRef);
     return {
-      id: row.id,
-      prompt: row.prompt,
-      model: row.model,
-      engine: row.engine,
-      status: row.status,
-      summary: row.summary,
-      duration_ms: row.durationMs,
-      project_id: row.projectId,
-      repo: row.repo ? parseRepoRef(row.repo).repo : null,
+      id: row.id as string,
+      prompt: row.prompt as string,
+      model: row.model as string,
+      engine: row.engine as EngineId,
+      status: row.status as RunStatus,
+      summary: row.summary as string | null,
+      duration_ms: row.duration_ms as number | null,
+      project_id: row.project_id as string | null,
+      repo: row.repo ? parseRepoRef(row.repo as string).repo : null,
       repos: specs.map((spec) => spec.repo),
       repo_specs: specs,
-      created_at: row.createdAt.toISOString(),
-      updated_at: row.updatedAt.toISOString(),
+      created_at: new Date(row.created_at as string | Date).toISOString(),
+      updated_at: new Date(row.updated_at as string | Date).toISOString(),
+      latest_run_id: row.latest_run_id as string,
+      latest_status: row.latest_status as RunStatus,
+      latest_created_at: new Date(row.latest_created_at as string | Date).toISOString(),
+      latest_updated_at: new Date(row.latest_updated_at as string | Date).toISOString(),
     } satisfies ApiRunSummary;
   });
 }

@@ -227,9 +227,7 @@ export interface ApiRun {
   steps: ApiStep[];
 }
 
-/** Compact projection for navigation/dashboard surfaces (`listRunSummaries`).
- *  Heavy steps, uploads, resources, and provider session state stay off it. */
-export type ApiRunSummary = Pick<
+type ApiRunSummaryBase = Pick<
   ApiRun,
   | "id"
   | "prompt"
@@ -245,6 +243,16 @@ export type ApiRunSummary = Pick<
   | "created_at"
   | "updated_at"
 >;
+
+/** Compact projection for navigation/dashboard surfaces (`listRunSummaries`).
+ *  Root fields preserve thread identity and compatibility. `latest_*` projects
+ *  the newest turn so callers can render and rank the thread's current state. */
+export type ApiRunSummary = ApiRunSummaryBase & {
+  latest_run_id: string;
+  latest_status: RunStatus;
+  latest_created_at: string;
+  latest_updated_at: string;
+};
 
 /** One turn's skeleton in a thread outline (`GET /api/runs/:id/thread-outline`):
  *  just enough to order the thread and size a placeholder row - no prompt, no
@@ -399,8 +407,7 @@ export function decodeApiStep(value: unknown): ApiStep | null {
   };
 }
 
-/** Decode the compact run projection used by navigation/dashboard surfaces. */
-export function decodeApiRunSummary(value: unknown): ApiRunSummary | null {
+function decodeApiRunSummaryBase(value: unknown): ApiRunSummaryBase | null {
   const record = asRecord(value);
   if (
     !record ||
@@ -441,6 +448,45 @@ export function decodeApiRunSummary(value: unknown): ApiRunSummary | null {
   };
 }
 
+/** Decode the compact run projection used by navigation/dashboard surfaces. */
+export function decodeApiRunSummary(value: unknown): ApiRunSummary | null {
+  const record = asRecord(value);
+  const summary = decodeApiRunSummaryBase(value);
+  if (!record || !summary) return null;
+
+  const hasLatestProjection =
+    record.latest_run_id !== undefined ||
+    record.latest_status !== undefined ||
+    record.latest_created_at !== undefined ||
+    record.latest_updated_at !== undefined;
+  if (!hasLatestProjection) {
+    return {
+      ...summary,
+      latest_run_id: summary.id,
+      latest_status: summary.status,
+      latest_created_at: summary.created_at,
+      latest_updated_at: summary.updated_at,
+    };
+  }
+
+  if (
+    typeof record.latest_run_id !== "string" ||
+    typeof record.latest_status !== "string" ||
+    !RUN_STATUS_SET.has(record.latest_status) ||
+    typeof record.latest_created_at !== "string" ||
+    typeof record.latest_updated_at !== "string"
+  ) {
+    return null;
+  }
+  return {
+    ...summary,
+    latest_run_id: record.latest_run_id,
+    latest_status: record.latest_status as RunStatus,
+    latest_created_at: record.latest_created_at,
+    latest_updated_at: record.latest_updated_at,
+  };
+}
+
 /** Decode one thread-outline turn skeleton at an untrusted HTTP boundary. */
 export function decodeThreadOutlineTurn(value: unknown): ApiThreadOutlineTurn | null {
   const record = asRecord(value);
@@ -467,7 +513,7 @@ export function decodeThreadOutlineTurn(value: unknown): ApiThreadOutlineTurn | 
 /** Decode a full run row at an untrusted HTTP/SSE boundary. */
 export function decodeApiRun(value: unknown): ApiRun | null {
   const record = asRecord(value);
-  const summary = decodeApiRunSummary(value);
+  const summary = decodeApiRunSummaryBase(value);
   if (
     !record ||
     !summary ||

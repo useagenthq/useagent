@@ -1,13 +1,24 @@
 "use client";
 
 import { RiLoader4Line } from "@remixicon/react";
+import type { RunStatus } from "@useagent/agent-client/wire";
 import { useEffect, useState } from "react";
-
-import { statusTone, type Run } from "@/app/agent/runs/runs-data";
-import { formatDuration } from "@/utils/format";
+import { type Run, statusTone } from "@/app/agent/runs/runs-data";
 import { cn } from "@/utils/cn";
+import { formatDuration } from "@/utils/format";
 
-export type SidebarRun = Run;
+export type SidebarRun = Run & {
+  readonly latest_run_id?: string | null;
+  readonly latest_status?: RunStatus | null;
+  readonly latest_created_at?: string | number | null;
+  readonly latest_updated_at?: string | number | null;
+};
+
+export function effectiveSidebarRunStatus(
+  run: Pick<SidebarRun, "status" | "latest_status">,
+): RunStatus {
+  return run.latest_status ?? run.status;
+}
 
 export function explicitRunRepos(run: SidebarRun): string[] {
   const repos = run.repos.length > 0 ? run.repos : run.repo ? [run.repo] : [];
@@ -15,7 +26,8 @@ export function explicitRunRepos(run: SidebarRun): string[] {
 }
 
 export function isSidebarActiveRun(run: SidebarRun): boolean {
-  return run.status === "queued" || run.status === "running";
+  const status = effectiveSidebarRunStatus(run);
+  return status === "queued" || status === "running";
 }
 
 function timestamp(value: unknown): number | null {
@@ -44,10 +56,11 @@ export function activeRunByRepo(runs: readonly SidebarRun[]): Map<string, Sideba
 }
 
 export function runStatusLabel(run: SidebarRun): string {
-  if (run.status === "queued") return "Queued";
-  if (statusTone(run.status) === "live") return "Working";
-  if (statusTone(run.status) === "error") return "Failed";
-  if (statusTone(run.status) === "success") return "Done";
+  const status = effectiveSidebarRunStatus(run);
+  if (status === "queued") return "Queued";
+  if (statusTone(status) === "live") return "Working";
+  if (statusTone(status) === "error") return "Failed";
+  if (statusTone(status) === "success") return "Done";
   return "Idle";
 }
 
@@ -59,7 +72,7 @@ export function WorkingProjectStatus({
   readonly now?: number;
 }) {
   const active = run ? isSidebarActiveRun(run) : false;
-  const live = run ? statusTone(run.status) === "live" : false;
+  const live = run ? statusTone(effectiveSidebarRunStatus(run)) === "live" : false;
   const [clockNow, setClockNow] = useState(() => now ?? Date.now());
 
   useEffect(() => {

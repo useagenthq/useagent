@@ -12,11 +12,16 @@ function summary(id: string, status = "running") {
     status,
     summary: null,
     duration_ms: null,
+    project_id: null,
     repo: null,
     repos: [],
     repo_specs: [],
     created_at: "2026-08-24T00:00:00.000Z",
     updated_at: "2026-08-24T00:00:00.000Z",
+    latest_run_id: id,
+    latest_status: status,
+    latest_created_at: "2026-08-24T00:00:00.000Z",
+    latest_updated_at: "2026-08-24T00:00:00.000Z",
   };
 }
 
@@ -119,5 +124,28 @@ describe("fetchSidebarRuns", () => {
     );
 
     expect(await fetchSidebarRuns()).toEqual([summary("run-2")]);
+  });
+
+  test("keeps legacy summary rows that omit the latest projection", async () => {
+    const {
+      latest_run_id: _latestRunId,
+      latest_status: _latestStatus,
+      latest_created_at: _latestCreatedAt,
+      latest_updated_at: _latestUpdatedAt,
+      ...legacySummary
+    } = summary("legacy-run", "completed");
+    spyOn(backend, "backendFetch").mockResolvedValue(
+      new Response(JSON.stringify({ runs: [legacySummary] })),
+    );
+
+    expect(await fetchSidebarRuns()).toEqual([
+      {
+        ...legacySummary,
+        latest_run_id: "legacy-run",
+        latest_status: "completed",
+        latest_created_at: legacySummary.created_at,
+        latest_updated_at: legacySummary.updated_at,
+      },
+    ]);
   });
 });

@@ -212,10 +212,214 @@ describe("runs", () => {
     expect(list.body.runs[0].id).toBe(newest.id);
     expect(list.body.runs[0]).toHaveProperty("model");
     expect(list.body.runs[0]).toHaveProperty("created_at");
+    expect(list.body.runs[0]).toHaveProperty("latest_run_id", newest.id);
+    expect(list.body.runs[0]).toHaveProperty("latest_status", "completed");
+    expect(list.body.runs[0]).toHaveProperty("latest_created_at");
+    expect(list.body.runs[0]).toHaveProperty("latest_updated_at");
     expect(list.body.runs[0]).toHaveProperty("repos");
     expect(list.body.runs[0]).not.toHaveProperty("steps");
     expect(list.body.runs[0]).not.toHaveProperty("resolved_resources");
     expect(list.body.runs[0]).not.toHaveProperty("engine_session_id");
+  });
+
+  test("summary view projects the latest public turn per tenant with deterministic ordering", async () => {
+    const mine = await createOrgSession("summary-latest-turn");
+    const other = await createOrgSession("summary-latest-turn-other");
+    const base = Date.now() - 60_000;
+    const activeRootId = `active-root-${crypto.randomUUID()}`;
+    const activeReplyId = `active-reply-${crypto.randomUUID()}`;
+    const settledRootId = `settled-root-${crypto.randomUUID()}`;
+    const settledRunningId = `settled-running-${crypto.randomUUID()}`;
+    const settledLatestId = `settled-latest-${crypto.randomUUID()}`;
+    const tieRootId = `tie-root-${crypto.randomUUID()}`;
+    const tieFirstId = `tie-reply-a-${crypto.randomUUID()}`;
+    const tieLatestId = `tie-reply-b-${crypto.randomUUID()}`;
+    const deletedRootId = `deleted-root-${crypto.randomUUID()}`;
+    const deletedReplyId = `deleted-reply-${crypto.randomUUID()}`;
+    const at = (offsetMs: number) => new Date(base + offsetMs);
+
+    await db.insert(runs).values([
+      {
+        id: activeRootId,
+        orgId: mine.orgId,
+        prompt: "active root metadata",
+        model: "root-model",
+        engine: "mock",
+        status: "completed",
+        summary: "root answer",
+        threadId: activeRootId,
+        repo: "useagenthq/root-repo",
+        repos: ["useagenthq/root-repo"],
+        createdAt: at(1_000),
+        updatedAt: at(2_000),
+      },
+      {
+        id: activeReplyId,
+        orgId: mine.orgId,
+        prompt: "active follow-up",
+        model: "reply-model",
+        engine: "mock",
+        status: "running",
+        parentRunId: activeRootId,
+        threadId: activeRootId,
+        createdAt: at(10_000),
+        updatedAt: at(50_000),
+      },
+      {
+        id: settledRootId,
+        orgId: mine.orgId,
+        prompt: "settled root",
+        model: "test-model",
+        engine: "mock",
+        status: "completed",
+        threadId: settledRootId,
+        createdAt: at(3_000),
+        updatedAt: at(4_000),
+      },
+      {
+        id: settledRunningId,
+        orgId: mine.orgId,
+        prompt: "was running",
+        model: "test-model",
+        engine: "mock",
+        status: "running",
+        parentRunId: settledRootId,
+        threadId: settledRootId,
+        createdAt: at(11_000),
+        updatedAt: at(20_000),
+      },
+      {
+        id: settledLatestId,
+        orgId: mine.orgId,
+        prompt: "now complete",
+        model: "test-model",
+        engine: "mock",
+        status: "completed",
+        parentRunId: settledRunningId,
+        threadId: settledRootId,
+        createdAt: at(12_000),
+        updatedAt: at(40_000),
+      },
+      {
+        id: tieRootId,
+        orgId: mine.orgId,
+        prompt: "tie root",
+        model: "test-model",
+        engine: "mock",
+        status: "completed",
+        threadId: tieRootId,
+        createdAt: at(5_000),
+        updatedAt: at(6_000),
+      },
+      {
+        id: tieFirstId,
+        orgId: mine.orgId,
+        prompt: "tie first",
+        model: "test-model",
+        engine: "mock",
+        status: "completed",
+        parentRunId: tieRootId,
+        threadId: tieRootId,
+        createdAt: at(13_000),
+        updatedAt: at(30_000),
+      },
+      {
+        id: tieLatestId,
+        orgId: mine.orgId,
+        prompt: "tie latest by id",
+        model: "test-model",
+        engine: "mock",
+        status: "queued",
+        parentRunId: tieFirstId,
+        threadId: tieRootId,
+        createdAt: at(13_000),
+        updatedAt: at(30_000),
+      },
+      {
+        id: deletedRootId,
+        orgId: mine.orgId,
+        prompt: "deleted-child root",
+        model: "test-model",
+        engine: "mock",
+        status: "completed",
+        threadId: deletedRootId,
+        createdAt: at(7_000),
+        updatedAt: at(8_000),
+      },
+      {
+        id: deletedReplyId,
+        orgId: mine.orgId,
+        prompt: "to be deleted",
+        model: "test-model",
+        engine: "mock",
+        status: "running",
+        parentRunId: deletedRootId,
+        threadId: deletedRootId,
+        createdAt: at(14_000),
+        updatedAt: at(55_000),
+      },
+      {
+        id: `cross-org-${crypto.randomUUID()}`,
+        orgId: other.orgId,
+        prompt: "must not project across orgs",
+        model: "test-model",
+        engine: "mock",
+        status: "failed",
+        threadId: activeRootId,
+        createdAt: at(30_000),
+        updatedAt: at(59_000),
+      },
+      {
+        id: `internal-${crypto.randomUUID()}`,
+        orgId: mine.orgId,
+        prompt: "must not project internal traffic",
+        model: "test-model",
+        engine: "mock",
+        status: "failed",
+        parentRunId: activeReplyId,
+        threadId: activeRootId,
+        origin: "internal:eval",
+        createdAt: at(31_000),
+        updatedAt: at(58_000),
+      },
+    ]);
+    await db.delete(runs).where(eq(runs.id, deletedReplyId));
+
+    const response = await json<{ runs: any[] }>("/api/runs?view=summary&limit=100", {
+      cookies: mine.cookies,
+    });
+    expect(response.status).toBe(200);
+    const byId = new Map(response.body.runs.map((run) => [run.id, run]));
+    const active = byId.get(activeRootId);
+    expect(active).toMatchObject({
+      id: activeRootId,
+      prompt: "active root metadata",
+      model: "root-model",
+      status: "completed",
+      summary: "root answer",
+      repo: "useagenthq/root-repo",
+      latest_run_id: activeReplyId,
+      latest_status: "running",
+      latest_created_at: at(10_000).toISOString(),
+      latest_updated_at: at(50_000).toISOString(),
+    });
+    expect(byId.get(settledRootId)).toMatchObject({
+      status: "completed",
+      latest_run_id: settledLatestId,
+      latest_status: "completed",
+    });
+    expect(byId.get(tieRootId)).toMatchObject({
+      latest_run_id: tieLatestId,
+      latest_status: "queued",
+    });
+    expect(byId.get(deletedRootId)).toMatchObject({
+      latest_run_id: deletedRootId,
+      latest_status: "completed",
+    });
+    const projectedIds = response.body.runs
+      .filter((run) => [activeRootId, settledRootId, tieRootId].includes(run.id))
+      .map((run) => run.id);
+    expect(projectedIds).toEqual([activeRootId, settledRootId, tieRootId]);
   });
 
   test("user-facing run lists hide every internal origin without deleting it", async () => {
@@ -334,6 +538,141 @@ describe("runs", () => {
     expect(allRuns.body.runs).toHaveLength(102);
     expect(allRuns.body.runs.some((run) => run.id === activeId)).toBe(true);
     expect(allRuns.body.runs.some((run) => run.id === activeReplyId)).toBe(true);
+  });
+
+  test("all-run summary overflow retains only rows whose own status is active", async () => {
+    const session = await createOrgSession("summary-all-own-active");
+    const now = Date.now();
+    const threadId = crypto.randomUUID();
+    const queuedReplyId = crypto.randomUUID();
+    const threadRows = Array.from({ length: 6 }, (_, index) => ({
+      id: index === 0 ? threadId : index === 5 ? queuedReplyId : crypto.randomUUID(),
+      orgId: session.orgId,
+      userId: null,
+      prompt: `thread row ${index}`,
+      model: "test-model",
+      engine: "mock" as const,
+      status: index === 5 ? ("queued" as const) : ("completed" as const),
+      parentRunId: index === 0 ? null : threadId,
+      threadId,
+      createdAt: new Date(now - 10_000 + index * 1_000),
+      updatedAt: new Date(now - 10_000 + index * 1_000),
+    }));
+    const boundedId = crypto.randomUUID();
+    await db.insert(runs).values([
+      ...threadRows,
+      {
+        id: boundedId,
+        orgId: session.orgId,
+        userId: null,
+        prompt: "newer bounded row",
+        model: "test-model",
+        engine: "mock",
+        status: "completed",
+        threadId: boundedId,
+        createdAt: new Date(now),
+        updatedAt: new Date(now),
+      },
+    ]);
+
+    const response = await json<{ runs: any[] }>(
+      "/api/runs?view=summary&all=1&limit=1&include_active=1",
+      { cookies: session.cookies },
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.body.runs.map((run) => run.id)).toEqual([boundedId, queuedReplyId]);
+    expect(response.body.runs.find((run) => run.id === queuedReplyId)).toMatchObject({
+      status: "queued",
+      latest_run_id: queuedReplyId,
+      latest_status: "queued",
+    });
+  });
+
+  test("active summary overflow is capped to one additional page", async () => {
+    const session = await createOrgSession("summary-active-cap");
+    const now = Date.now();
+    const activeIds = Array.from({ length: 5 }, () => crypto.randomUUID());
+    const boundedId = crypto.randomUUID();
+    await db.insert(runs).values([
+      ...activeIds.map((id, index) => ({
+        id,
+        orgId: session.orgId,
+        userId: null,
+        prompt: `older active root ${index}`,
+        model: "test-model",
+        engine: "mock" as const,
+        status: "running" as const,
+        threadId: id,
+        createdAt: new Date(now - 10_000 - index * 1_000),
+        updatedAt: new Date(now - 10_000 - index * 1_000),
+      })),
+      {
+        id: boundedId,
+        orgId: session.orgId,
+        userId: null,
+        prompt: "newer settled page row",
+        model: "test-model",
+        engine: "mock",
+        status: "completed",
+        threadId: boundedId,
+        createdAt: new Date(now),
+        updatedAt: new Date(now),
+      },
+    ]);
+
+    for (const query of [
+      "/api/runs?view=summary&limit=1&include_active=1",
+      "/api/runs?view=summary&all=1&limit=1&include_active=1",
+    ]) {
+      const response = await json<{ runs: any[] }>(query, { cookies: session.cookies });
+      expect(response.status).toBe(200);
+      expect(response.body.runs.map((run) => run.id)).toEqual([boundedId, activeIds[0]]);
+    }
+  });
+
+  test("active summary overflow deduplicates a row already in the primary page", async () => {
+    const session = await createOrgSession("summary-active-overlap");
+    const now = Date.now();
+    const activeId = crypto.randomUUID();
+    await db.insert(runs).values([
+      ...Array.from({ length: 5 }, (_, index) => {
+        const id = crypto.randomUUID();
+        return {
+          id,
+          orgId: session.orgId,
+          userId: null,
+          prompt: `older settled root ${index}`,
+          model: "test-model",
+          engine: "mock" as const,
+          status: "completed" as const,
+          threadId: id,
+          createdAt: new Date(now - 10_000 - index * 1_000),
+          updatedAt: new Date(now - 10_000 - index * 1_000),
+        };
+      }),
+      {
+        id: activeId,
+        orgId: session.orgId,
+        userId: null,
+        prompt: "newest active root",
+        model: "test-model",
+        engine: "mock",
+        status: "queued",
+        threadId: activeId,
+        createdAt: new Date(now),
+        updatedAt: new Date(now),
+      },
+    ]);
+
+    for (const query of [
+      "/api/runs?view=summary&limit=1&include_active=1",
+      "/api/runs?view=summary&all=1&limit=1&include_active=1",
+    ]) {
+      const response = await json<{ runs: any[] }>(query, { cookies: session.cookies });
+      expect(response.status).toBe(200);
+      expect(response.body.runs.map((run) => run.id)).toEqual([activeId]);
+    }
   });
 
   test("GET /api/runs/:id → 404 for unknown id", async () => {

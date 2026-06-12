@@ -9,14 +9,9 @@
 //   + apps/web/src/components/ThreadStatusIndicators.tsx (ThreadStatusLabel).
 //
 // Port notes:
-// - Bound to OUR run summary shape (`SidebarRun`, i.e. GET /api/runs) through the
-//   existing statusTone/TONE_TO_DOT maps - no second status model. Their
-//   five-state pill collapses to what our runs carry today: Working (live,
-//   pulsing dot), Failed (error - "the user must see the failure", never gated
-//   on unread), and Completed as the unread affordance (settled after the last
-//   visit). Resting rows stay unlabeled per their inbox-zero treatment.
-// - lastVisited tracking is not in our canonical state yet, so `unread` is a
-//   plain prop (default false) for the caller to supply when that truth lands.
+// - Bound to OUR run summary shape (`SidebarRun`, i.e. GET /api/runs) through
+//   the shared thread-discovery status model. Running is green, queued amber,
+//   failed red, and completed rests without a dot.
 // - Their TanStack router link -> next/link. Their Tooltip on pill/title ->
 //   native `title` attribute (the pill label is always visible in our fixed
 //   w-64 rail, so the responsive `hidden md:inline` collapse is dropped too).
@@ -32,43 +27,42 @@
 //   px-2.5 rhythm; their h-1.5 status dot + animate-status-pulse -> the shared
 //   StatusDot primitive.
 
+import type { RunStatus } from "@useagent/agent-client/wire";
 import Link from "next/link";
 import { memo } from "react";
-
-import { statusTone, TONE_TO_DOT } from "@/app/agent/runs/runs-data";
+import { GitChips, runGitRefs } from "@/components/session-ui/git-chip";
 import { type DotTone, StatusDot } from "@/components/shared/status-dot";
+import {
+  effectiveThreadStatus,
+  threadActivityTimestamp,
+  threadStatusPresentation,
+} from "@/components/shell/thread-discovery";
 import type { SidebarRun } from "@/components/shell/working-project-status";
-import { runGitRefs, GitChips } from "@/components/session-ui/git-chip";
 import { cx as cn } from "@/utils/cx";
 import { relativeTimeShort } from "@/utils/format";
-import type { RunStatus } from "@useagent/agent-client/wire";
 
 export interface ThreadRowPill {
-  label: "Working" | "Failed" | "Completed";
+  label: "Running" | "Queued" | "Failed";
   dot: { tone: DotTone; pulse?: boolean; hollow?: boolean };
   textClass: string;
 }
 
 /**
- * Upstream resolveThreadStatusPill, collapsed onto our run tones: color is
- * reserved for "in motion" (Working), "broken" (Failed), and the unread
- * completion affordance (Completed). Everything else rests unlabeled.
+ * Upstream row treatment collapsed onto the shared discovery statuses. Active
+ * and failed states carry both a truthful dot and a non-color text label.
  */
-export function resolveThreadRowPill(input: {
-  status: RunStatus;
-  unread?: boolean;
-}): ThreadRowPill | null {
-  const tone = statusTone(input.status);
-  if (tone === "live") {
-    return { label: "Working", dot: TONE_TO_DOT.live, textClass: "text-orange-500" };
-  }
-  if (tone === "error") {
-    return { label: "Failed", dot: TONE_TO_DOT.error, textClass: "text-text-error-primary" };
-  }
-  if (tone === "success" && input.unread) {
-    return { label: "Completed", dot: TONE_TO_DOT.success, textClass: "text-lime-600" };
-  }
-  return null;
+export function resolveThreadRowPill(input: { status: RunStatus }): ThreadRowPill | null {
+  const presentation = threadStatusPresentation(input.status);
+  if (!presentation.dot) return null;
+  const textClass =
+    input.status === "running"
+      ? "text-lime-600"
+      : input.status === "queued"
+        ? "text-orange-500"
+        : "text-text-error-primary";
+  const label =
+    input.status === "running" ? "Running" : input.status === "queued" ? "Queued" : "Failed";
+  return { label, dot: presentation.dot, textClass };
 }
 
 /** Upstream resolveThreadRowClassName: uniform 32px rows, active rows
@@ -78,9 +72,7 @@ export function resolveThreadRowPill(input: {
 export function resolveThreadRowClassName(input: { active: boolean; gitLine?: boolean }): string {
   const base = cn(
     "w-full cursor-pointer select-none rounded-lg px-2.5 text-body-2-medium transition-colors",
-    input.gitLine
-      ? "flex flex-col justify-center gap-0.5 py-1.5"
-      : "flex h-8 items-center gap-1.5",
+    input.gitLine ? "flex flex-col justify-center gap-0.5 py-1.5" : "flex h-8 items-center gap-1.5",
   );
   if (input.active) {
     return cn(base, "bg-background-secondary-default font-medium text-text-primary");
@@ -93,14 +85,7 @@ export function resolveThreadRowClassName(input: { active: boolean; gitLine?: bo
 export function threadRowTimestamp(
   run: Pick<SidebarRun, "created_at" | "updated_at">,
 ): number | null {
-  for (const value of [run.updated_at, run.created_at]) {
-    if (typeof value === "number" && Number.isFinite(value)) return value;
-    if (typeof value === "string") {
-      const parsed = Date.parse(value);
-      if (Number.isFinite(parsed)) return parsed;
-    }
-  }
-  return null;
+  return threadActivityTimestamp(run);
 }
 
 /**
@@ -111,14 +96,12 @@ export const ThreadRow = memo(function ThreadRow({
   run,
   href,
   active = false,
-  unread = false,
 }: {
   run: SidebarRun;
   href: string;
   active?: boolean;
-  unread?: boolean;
 }) {
-  const pill = resolveThreadRowPill({ status: run.status, unread });
+  const pill = resolveThreadRowPill({ status: effectiveThreadStatus(run) });
   const title = run.prompt || "Untitled run";
   const timestampMs = threadRowTimestamp(run);
   const gitRefs = runGitRefs(run);
@@ -135,6 +118,8 @@ export const ThreadRow = memo(function ThreadRow({
         {pill ? (
           <span
             className={cn("inline-flex shrink-0 items-center gap-1 text-[10px]", pill.textClass)}
+            role="img"
+            aria-label={pill.label}
             title={pill.label}
           >
             <StatusDot {...pill.dot} />

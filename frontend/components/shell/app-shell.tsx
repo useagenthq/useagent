@@ -8,6 +8,7 @@ import { useIsTabletBand } from "@/hooks/use-is-mobile";
 import { cx } from "@/utils/cx";
 import { AuroraBackdrop } from "./aurora-backdrop";
 import { CompactSidebarRail } from "./compact-sidebar-rail";
+import { SidebarThreadsProvider } from "./sidebar-threads-provider";
 import { useWorkingSignal } from "./working-signal";
 
 export interface AppShellProps {
@@ -71,64 +72,66 @@ export function AppShell({ sidebar, children, collapseSidebarAtTablet = false }:
   }, [mobileOpen]);
 
   return (
-    <div
-      className="group/shell relative flex h-dvh w-full overflow-hidden bg-background-full"
-      data-sidebar-collapsed={sidebarCollapsed ? "" : undefined}
-    >
-      <AuroraBackdrop />
+    <SidebarThreadsProvider>
       <div
-        ref={sidebarContainerRef}
-        aria-hidden={sidebarCollapsed}
-        inert={sidebarCollapsed}
-        className={cx(
-          "relative hidden h-full shrink-0 overflow-hidden transition-[width] duration-200 md:block",
-          sidebarCollapsed ? "w-0" : "w-64",
-        )}
-        data-testid="primary-sidebar-shell"
+        className="group/shell relative flex h-dvh w-full overflow-hidden bg-background-full"
+        data-sidebar-collapsed={sidebarCollapsed ? "" : undefined}
       >
-        {sidebar}
-      </div>
-      {sidebarCollapsed ? (
-        <CompactSidebarRail
-          expandButtonRef={sidebarRestoreRef}
-          onExpand={() => setSidebarCollapsed(false)}
-        />
-      ) : (
-        <button
-          type="button"
-          onClick={collapseSidebar}
-          aria-label="Collapse navigation"
-          className="absolute left-[13.5rem] top-[8px] z-40 hidden size-8 items-center justify-center rounded-2lg text-foreground-icon-secondary outline-none transition-colors hover:bg-background-secondary-hover hover:text-foreground-icon-primary focus-visible:ring-2 focus-visible:ring-border-focus-ring md:flex"
+        <AuroraBackdrop />
+        <div
+          ref={sidebarContainerRef}
+          aria-hidden={sidebarCollapsed}
+          inert={sidebarCollapsed}
+          className={cx(
+            "relative hidden h-full shrink-0 overflow-hidden transition-[width] duration-200 md:block",
+            sidebarCollapsed ? "w-0" : "w-64",
+          )}
+          data-testid="primary-sidebar-shell"
         >
-          <RiSidebarFoldLine className="size-4" aria-hidden />
-        </button>
-      )}
-      {mobileOpen ? (
-        <div className="fixed inset-0 z-50 flex md:hidden">
-          <button
-            type="button"
-            aria-label="Close navigation"
-            onClick={() => setMobileOpen(false)}
-            className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+          {sidebar}
+        </div>
+        {sidebarCollapsed ? (
+          <CompactSidebarRail
+            expandButtonRef={sidebarRestoreRef}
+            onExpand={() => setSidebarCollapsed(false)}
           />
-          <div className="relative h-full w-64">{sidebar}</div>
-        </div>
-      ) : null}
-      <div className="relative flex min-w-0 flex-1 flex-col">
-        <div className="flex h-12 shrink-0 items-center px-2 md:hidden">
+        ) : (
           <button
             type="button"
-            onClick={() => setMobileOpen(true)}
-            aria-label="Open navigation"
-            className="flex size-8 items-center justify-center rounded-2lg text-foreground-icon-secondary outline-none hover:bg-background-primary-hover hover:text-foreground-icon-primary focus-visible:ring-2 focus-visible:ring-border-focus-ring"
+            onClick={collapseSidebar}
+            aria-label="Collapse navigation"
+            className="absolute left-[13.5rem] top-[8px] z-40 hidden size-8 items-center justify-center rounded-2lg text-foreground-icon-secondary outline-none transition-colors hover:bg-background-secondary-hover hover:text-foreground-icon-primary focus-visible:ring-2 focus-visible:ring-border-focus-ring md:flex"
           >
-            <RiSidebarUnfoldLine className="size-4" aria-hidden />
+            <RiSidebarFoldLine className="size-4" aria-hidden />
           </button>
+        )}
+        {mobileOpen ? (
+          <div className="fixed inset-0 z-50 flex md:hidden">
+            <button
+              type="button"
+              aria-label="Close navigation"
+              onClick={() => setMobileOpen(false)}
+              className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+            />
+            <div className="relative h-full w-64">{sidebar}</div>
+          </div>
+        ) : null}
+        <div className="relative flex min-w-0 flex-1 flex-col">
+          <div className="flex h-12 shrink-0 items-center px-2 md:hidden">
+            <button
+              type="button"
+              onClick={() => setMobileOpen(true)}
+              aria-label="Open navigation"
+              className="flex size-8 items-center justify-center rounded-2lg text-foreground-icon-secondary outline-none hover:bg-background-primary-hover hover:text-foreground-icon-primary focus-visible:ring-2 focus-visible:ring-border-focus-ring"
+            >
+              <RiSidebarUnfoldLine className="size-4" aria-hidden />
+            </button>
+          </div>
+          <main className="relative isolate min-h-0 min-w-0 flex-1 overflow-y-auto">
+            {children}
+          </main>
         </div>
-        <main className="relative isolate min-h-0 min-w-0 flex-1 overflow-y-auto">
-          {children}
-        </main>
       </div>
-    </div>
+    </SidebarThreadsProvider>
   );
 }
