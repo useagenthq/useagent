@@ -128,7 +128,7 @@ describe("Cube sandbox provider", () => {
     const sandbox = fakeSandbox({
       run: async (command, options) => {
         commandOptions = options;
-        if (command.startsWith("getent hosts ")) {
+        if (command.includes("getent hosts ")) {
           return { exitCode: 0, stderr: "", stdout: "" };
         }
         return { exitCode: 7, stderr: "err", stdout: "out" };
@@ -156,7 +156,7 @@ describe("Cube sandbox provider", () => {
     process.env.CUBE_PROXY_SCHEME = "https";
     const sandbox = fakeSandbox({
       run: async (command) => {
-        if (command.startsWith("getent hosts ")) {
+        if (command.includes("getent hosts ")) {
           return { exitCode: 0, stderr: "", stdout: "" };
         }
         throw Object.assign(new Error("exit status 7"), {
@@ -219,7 +219,7 @@ describe("Cube sandbox provider", () => {
     let probes = 0;
     const sandbox = fakeSandbox({
       run: async (command) => {
-        if (command.startsWith("getent hosts ")) {
+        if (command.includes("getent hosts ")) {
           probes += 1;
           return {
             exitCode: probes < 3 ? 2 : 0,
@@ -239,6 +239,53 @@ describe("Cube sandbox provider", () => {
     expect(probes).toBe(3);
     create.mockRestore();
     getInfo.mockRestore();
+  });
+
+  test("deletes a uid-1000 candidate before it can become ready", async () => {
+    process.env.CUBE_PROXY_SCHEME = "https";
+    process.env.CUBE_READINESS_ATTEMPTS = "1";
+    const sandbox = fakeSandbox({
+      run: async (command) => ({
+        exitCode: command.includes('test "$(id -u)" = "0"') ? 1 : 0,
+        stderr: "",
+        stdout: "",
+      }),
+    });
+    const create = spyOn(E2BSandbox, "create").mockResolvedValue(sandbox);
+    const getInfo = spyOn(E2BSandbox, "getInfo").mockResolvedValue(sandboxInfo());
+    const kill = spyOn(E2BSandbox, "kill").mockResolvedValue(true);
+
+    await expect(cubeSandboxProvider("").create({ snapshot: "agent-template" })).rejects.toThrow(
+      "did not reach root identity/workspace",
+    );
+    expect(kill).toHaveBeenCalledWith("cube-1", expect.any(Object));
+
+    create.mockRestore();
+    getInfo.mockRestore();
+    kill.mockRestore();
+  });
+
+  test("deletes a retained uid-1000 sandbox before returning its handle", async () => {
+    const sandbox = fakeSandbox({
+      run: async (command) => ({
+        exitCode: command.includes('test "$(id -u)" = "0"') ? 1 : 0,
+        stderr: "",
+        stdout: "",
+      }),
+    });
+    const getInfo = spyOn(E2BSandbox, "getInfo").mockResolvedValue(sandboxInfo());
+    const connect = spyOn(E2BSandbox, "connect").mockResolvedValue(sandbox);
+    const kill = spyOn(E2BSandbox, "kill").mockResolvedValue(true);
+
+    await expect(cubeSandboxProvider("").get("cube-1")).rejects.toThrow(
+      "did not reach root identity/workspace",
+    );
+    expect(connect).toHaveBeenCalledWith("cube-1", expect.any(Object));
+    expect(kill).toHaveBeenCalledWith("cube-1", expect.any(Object));
+
+    getInfo.mockRestore();
+    connect.mockRestore();
+    kill.mockRestore();
   });
 
   test("tags background commands so named sessions survive adapter reconstruction", async () => {

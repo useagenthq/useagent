@@ -21,7 +21,8 @@ import { parseRepoRef } from "../github/repo-ref";
 import { cacheAcpCommands } from "../runs/command-catalog";
 import { revalidateCommandBeforeDispatch } from "../runs/command-intent";
 import { providerEventExists, recordProviderEvent } from "../runs/provider-events";
-import { buildSessionCancel, createAcpRpcClient, isAlreadyInitialized, parseRelayHealth, relayRegenerated, relayStateAfterBoot } from "./acp-rpc";
+import { createAcpRpcClient, isAlreadyInitialized, parseRelayHealth, relayRegenerated, relayStateAfterBoot } from "./acp-rpc";
+import { sendSessionCancel } from "./acp-cancel";
 import { decideAcpPermission } from "./permission-policy";
 import { toolGatewayConfig, type ToolGatewayConfig } from "../knowledge/gateway/config";
 import {
@@ -324,37 +325,9 @@ export function forgetAcpThreadRelays(threadId: string): void {
   }
 }
 
+export { sendSessionCancel } from "./acp-cancel";
 function authHeaders(token: string): Record<string, string> {
   return sandboxPreviewHeaders(token);
-}
-
-/** Best-effort native ACP cancel: POST a `session/cancel` notification to the relay
- *  so the agent stops the ongoing turn (ACP v1: it replies to the in-flight
- *  session/prompt with stopReason "cancelled") instead of continuing server-side after
- *  we drop the SSE. Own short-lived controller (NOT the run's sseAbort, which we are
- *  about to fire) and swallowed errors: if the relay is already gone, closing the SSE
- *  still ends the turn. Fire-and-forget. */
-export async function sendSessionCancel(
-  baseUrl: string,
-  token: string,
-  sessionId: string,
-  fetcher: typeof fetch = fetch,
-): Promise<boolean> {
-  const ac = new AbortController();
-  const budget = setTimeout(() => ac.abort(), 5_000);
-  try {
-    const response = await fetcher(`${baseUrl}/send`, {
-      method: "POST",
-      headers: { ...authHeaders(token), "content-type": "application/json" },
-      body: JSON.stringify(buildSessionCancel(sessionId)),
-      signal: ac.signal,
-    });
-    return response.ok;
-  } catch {
-    return false;
-  } finally {
-    clearTimeout(budget);
-  }
 }
 
 /** Targeted native ACP cancel for the CONTROL adapter (HarnessAdapter.cancel): find the live
@@ -1489,7 +1462,7 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
             eventType: SESSION_STARTED_EVENT_TYPE,
             nativeSessionId: sessionId,
             payload: {
-              source: cfg.id,
+              source: cfg.id, resumed,
               capabilities: negotiatedCapabilities,
               executionCapabilities,
             },

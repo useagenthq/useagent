@@ -1,11 +1,15 @@
 import { describe, expect, test } from "bun:test";
-import { eq, sql } from "drizzle-orm";
+import { eq, like, sql } from "drizzle-orm";
 import { db } from "../src/db/client";
-import { slackOutbox } from "../src/db/schema";
+import { artifacts, slackOutbox, slackThreads } from "../src/db/schema";
 import { acceptRunCommand } from "../src/commands";
 import { finalizeRun } from "../src/runs/finalize";
 import { recoverStaleRuns, type ReconcileProbe } from "../src/runs/recovery";
-import { createSlackRunResponse, linkSlackThread } from "../src/slack/repo";
+import {
+  createSlackRunResponse,
+  findSlackThreadByRoot,
+  linkSlackThread,
+} from "../src/slack/repo";
 import { getSlackOutbox } from "../src/slack/outbox";
 import { createRun, setRunEngineSession, setRunSandbox, setRunStatus } from "../src/runs/repo";
 import "./helpers"; // side-effect: imports src/index → migrate + seed
@@ -76,7 +80,95 @@ describe("slack reply durability at finalization (GAP 3)", () => {
     const id = crypto.randomUUID();
     await createRun({ id, prompt: "api run", model: "claude-opus-5", engine: "mock", orgId: ORG, userId: null, parentRunId: null, threadId: id });
     await finalizeRun(id, "completed", "done", 10);
-    expect(await getSlackOutbox(`slack-reply:${id}`)).toBeNull();
+    const replies = await db
+      .select({ id: slackOutbox.id })
+      .from(slackOutbox)
+      .where(like(slackOutbox.idempotencyKey, `slack-reply:%:${id}`));
+    expect(replies).toHaveLength(0);
+  });
+
+  test("a Slack root cannot be rebound through a different organization", async () => {
+    const root = await slackRootRun("tenant-bound Slack thread");
+    await expect(db.insert(slackThreads).values({
+      teamId: `${TEAM}-OTHER`,
+      channel: `${root.channel}-OTHER`,
+      threadTs: `${root.ts}2`,
+      rootRunId: root.runId,
+      orgId: "org-other",
+    }).execute()).rejects.toThrow();
+    expect(await findSlackThreadByRoot(root.runId, db, "org-other")).toBeNull();
+    expect(await findSlackThreadByRoot(root.runId, db, ORG)).toMatchObject({
+      teamId: TEAM,
+      channel: root.channel,
+      threadTs: root.ts,
+    });
+  });
+
+  test("a mismatched per-run Slack response fails closed instead of crossing targets", async () => {
+    const root = await slackRootRun("valid root binding");
+    const runId = crypto.randomUUID();
+    await createRun({
+      id: runId,
+      prompt: "web follow-up with corrupt response",
+      model: "claude-opus-5",
+      engine: "mock",
+      orgId: ORG,
+      userId: null,
+      parentRunId: root.runId,
+      threadId: root.runId,
+    });
+    await createSlackRunResponse({
+      runId,
+      teamId: "T-WRONG",
+      channel: "C-WRONG",
+      threadTs: "9.9",
+    });
+    await finalizeRun(runId, "completed", "must not cross Slack targets", 10);
+    const replies = await db
+      .select({ id: slackOutbox.id })
+      .from(slackOutbox)
+      .where(like(slackOutbox.idempotencyKey, `slack-reply:%:${runId}`));
+    expect(replies).toHaveLength(0);
+  });
+
+  test("a web follow-up in a Slack-linked thread adopts delivery and uploads its artifact", async () => {
+    const root = await slackRootRun("start in Slack");
+    const runId = crypto.randomUUID();
+    await createRun({
+      id: runId,
+      prompt: "finish in the web app",
+      model: "claude-opus-5",
+      engine: "mock",
+      orgId: ORG,
+      userId: null,
+      parentRunId: root.runId,
+      threadId: root.runId,
+    });
+    const [artifact] = await db.insert(artifacts).values({
+      orgId: ORG,
+      runId,
+      threadId: root.runId,
+      sourcePath: "/sandbox/report.pdf",
+      name: "report.pdf",
+      contentType: "application/pdf",
+      sizeBytes: 64,
+      sha256: "b".repeat(64),
+      storageKey: `test/${runId}/report.pdf`,
+    }).returning({ id: artifacts.id });
+    if (!artifact) throw new Error("artifact fixture failed");
+
+    await finalizeRun(runId, "completed", "web follow-up finished", 100);
+
+    expect(await getSlackOutbox(`slack-reply:${TEAM}:${runId}`)).not.toBeNull();
+    const upload = await getSlackOutbox(`slack-artifact:${TEAM}:${runId}:${artifact.id}`);
+    expect(upload).not.toBeNull();
+    expect(upload?.kind).toBe("upload_file");
+    expect(JSON.parse(upload?.payload ?? "{}")).toMatchObject({
+      teamId: TEAM,
+      channel: root.channel,
+      threadTs: root.ts,
+      artifactId: artifact.id,
+    });
   });
 
   test("reply enqueue is idempotent across re-finalization (crash-retry safe)", async () => {

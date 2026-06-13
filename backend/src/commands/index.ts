@@ -2,6 +2,7 @@
 // `../commands`; internal repo/service/fingerprint/dispatch decomposition stays
 // private (the worker/recovery import dispatch directly).
 export { acceptRunCommand, preflightRunCommandReplay } from "./service";
+export { RunPromptTooLargeError } from "./prompt-policy";
 export {
   assertRunAdmissionOpen,
   getRunAdmission,

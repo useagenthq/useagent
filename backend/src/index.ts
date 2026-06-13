@@ -147,8 +147,13 @@ startFreeModelRegistryHydrator();
 // Reconcile the restricted gateway role's grants on EVERY boot: a migration
 // that adds a gateway-written table ships its grant in the same commit (see
 // db/gateway-grants.ts for the incident class this kills).
-const { applyGatewayGrants } = await import("./db/gateway-grants");
-await applyGatewayGrants(client);
+// Knowledge owns three lazily-created tables outside Drizzle. The privileged
+// backend must create them before a present restricted role receives grants;
+// otherwise the first boot permanently skips that capability.
+const { ready: prepareKnowledgeSchema } = await import("./knowledge/store");
+await prepareKnowledgeSchema();
+const { applyGatewayGrants, gatewayDatabaseRoleRequired } = await import("./db/gateway-grants");
+await applyGatewayGrants(client, { strict: gatewayDatabaseRoleRequired() });
 
 // Idempotent boot seeding: dev org/user/member only. No demo content — the
 // Knowledge and Skills surfaces start empty and fill with real records.
@@ -663,4 +668,7 @@ export default {
   // is Bun's maximum. Turns longer than that keep running server-side — only
   // the embed's request errors.
   idleTimeout: 255,
+  // Keep the absolute socket-level ceiling just above the 25 MB upload limit;
+  // JSON-heavy routes enforce much smaller per-route bounds before parsing.
+  maxRequestBodySize: 32 * 1024 * 1024,
 };

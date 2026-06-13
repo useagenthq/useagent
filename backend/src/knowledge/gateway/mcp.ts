@@ -109,6 +109,9 @@ export async function handleMcpMessage(
       return ok(msg.id, { tools });
     }
     case "tools/call": {
+      if (msg.id === null) {
+        return err(msg.id, ErrorCode.InvalidParams, "tools/call requires a non-null request id");
+      }
       // SDK-validate the tool call (name required; arguments is an open record).
       const parsed = CallToolRequestSchema.safeParse(msg);
       if (!parsed.success)
@@ -120,6 +123,7 @@ export async function handleMcpMessage(
         name,
         args,
         isGatewayMetaToolName(name) ? await listOptions() : undefined,
+        { requestId: msg.id },
       );
       if (execution.matched) return ok(msg.id, execution.result);
       return err(msg.id, ErrorCode.InvalidParams, `Unknown tool: ${name}`);

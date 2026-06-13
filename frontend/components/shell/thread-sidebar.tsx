@@ -1,9 +1,4 @@
-import {
-  RiAddLine,
-  RiBookShelfLine,
-  RiDashboardLine,
-  RiSettings3Line,
-} from "@remixicon/react";
+import { RiAddLine, RiBookShelfLine, RiDashboardLine, RiSettings3Line } from "@remixicon/react";
 
 import { SearchCommand } from "./search-command";
 import { SidebarBrand } from "./sidebar-brand";

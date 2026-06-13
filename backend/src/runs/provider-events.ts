@@ -188,6 +188,91 @@ export function recordProviderEvent(
   return opts.required ? attempt : done;
 }
 
+/**
+ * Immutable lifecycle capture: insert the stable event exactly once and report
+ * whether this caller won the insert. Unlike recordProviderEvent, a retry never
+ * revises or re-publishes an existing row. Persistence failures propagate to the
+ * caller while the shared per-run chain remains usable for a later repair retry.
+ */
+export function recordProviderEventIfAbsent(
+  input: ProviderEventInput,
+): Promise<boolean> {
+  let seq = runSequencers.get(input.runId);
+  if (!seq) {
+    seq = { chain: Promise.resolve(), nextSeq: null };
+    runSequencers.set(input.runId, seq);
+  }
+  const entry = seq;
+  const attempt = entry.chain.then(() => persistAndPublishIfAbsent(input, entry));
+  const done = attempt.then(() => undefined).catch((err) => {
+    console.error(
+      `[provider-events] CRITICAL immutable capture failed (${input.eventType}):`,
+      errorMessage(err),
+    );
+  });
+  entry.chain = done;
+  void done.finally(() => {
+    if (runSequencers.get(input.runId) === entry && entry.chain === done) {
+      runSequencers.delete(input.runId);
+    }
+  });
+  return attempt;
+}
+
+async function persistAndPublishIfAbsent(
+  input: ProviderEventInput,
+  seq: RunSequencer,
+): Promise<boolean> {
+  if (seq.nextSeq === null) seq.nextSeq = (await highestSeq(input.runId)) + 1;
+  const assignedSeq = seq.nextSeq++;
+
+  let payload: string | null = null;
+  if (input.payload !== undefined) {
+    payload = serializeProviderPayload(input.payload, providerPayloadCapBytes(input));
+  }
+  const inserted = await db
+    .insert(providerEvents)
+    .values({
+      id: input.id,
+      runId: input.runId,
+      threadId: input.threadId,
+      seq: assignedSeq,
+      provider: input.provider,
+      eventType: input.eventType,
+      nativeSessionId: input.nativeSessionId ?? null,
+      nativeParentSessionId: input.nativeParentSessionId ?? null,
+      nativeMessageId: input.nativeMessageId ?? null,
+      nativePartId: input.nativePartId ?? null,
+      nativeCallId: input.nativeCallId ?? null,
+      payload,
+    })
+    .onConflictDoNothing({ target: providerEvents.id })
+    .returning({ id: providerEvents.id });
+
+  if (inserted.length === 0) return false;
+
+  if (executionGraphWriteEnabled()) {
+    await shadowWriteExecutionGraph(input, assignedSeq);
+  }
+
+  publishNativeFrame(
+    input.runId,
+    makeNativeFrame({
+      eventId: input.id,
+      seq: assignedSeq,
+      provider: input.provider,
+      eventType: input.eventType,
+      sessionId: input.nativeSessionId ?? null,
+      parentSessionId: input.nativeParentSessionId ?? null,
+      messageId: input.nativeMessageId ?? null,
+      partId: input.nativePartId ?? null,
+      callId: input.nativeCallId ?? null,
+      payloadText: payload,
+    }),
+  );
+  return true;
+}
+
 async function persistAndPublish(input: ProviderEventInput, seq: RunSequencer): Promise<void> {
   if (seq.nextSeq === null) seq.nextSeq = (await highestSeq(input.runId)) + 1;
   const assignedSeq = seq.nextSeq++;

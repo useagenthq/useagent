@@ -118,17 +118,22 @@ export async function findOrAdoptSlackThread(
 export async function findSlackThreadByRoot(
   rootRunId: string,
   exec: Executor = db,
+  orgId?: string,
 ): Promise<SlackThreadTarget | null> {
-  const [row] = await exec
+  const rows = await exec
     .select({
       teamId: slackThreads.teamId,
       channel: slackThreads.channel,
       threadTs: slackThreads.threadTs,
     })
     .from(slackThreads)
-    .where(eq(slackThreads.rootRunId, rootRunId))
-    .limit(1);
-  return row ?? null;
+    .where(
+      orgId === undefined
+        ? eq(slackThreads.rootRunId, rootRunId)
+        : and(eq(slackThreads.rootRunId, rootRunId), eq(slackThreads.orgId, orgId)),
+    )
+    .limit(2);
+  return rows.length === 1 ? rows[0]! : null;
 }
 
 /** Link a Slack thread to the run that rooted it. Idempotent: a duplicate

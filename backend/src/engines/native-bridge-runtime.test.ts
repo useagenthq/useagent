@@ -413,4 +413,75 @@ describe("native bridge turn settlement", () => {
     })).rejects.toThrow();
     expect(dispatched).toBe(false);
   });
+
+  test("an in-flight abort persists the provider terminal before rejecting", async () => {
+    const controller = new AbortController();
+    const started = Promise.withResolvers<void>();
+    const captured: ProviderEventInput[] = [];
+    let listener: ((frame: unknown) => void) | undefined;
+    const cancelledSessions: string[] = [];
+    const turn = runNativeBridgeTurn({
+      ctx: { runId: "run", threadId: "thread", signal: controller.signal } as never,
+      driver: {
+        steer: async () => {
+          started.resolve();
+          return { status: "ok" };
+        },
+        cancel: async (session: { nativeSessionId: string }) => {
+          cancelledSessions.push(session.nativeSessionId);
+          setTimeout(() => {
+            listener?.({ bodies: [{ kind: "turn.failed", error: "Pi turn aborted" }] });
+          }, 10);
+          return { status: "ok" };
+        },
+      } as never,
+      session: { nativeSessionId: "/sessions/pi.jsonl" } as never,
+      bridge: {
+        sessionFile: "/sessions/pi.jsonl",
+        subscribe: (next) => {
+          listener = next;
+          return () => {};
+        },
+      },
+      prompt: "keep working",
+      mapFrame: mappedBodies,
+      redact: { text: (value) => value, unknown: (value) => value },
+    }, async (event) => {
+      captured.push(event);
+    });
+    await started.promise;
+    controller.abort();
+
+    await expect(turn).rejects.toThrow("Pi turn aborted");
+    expect(cancelledSessions).toEqual(["/sessions/pi.jsonl"]);
+    expect(captured.some((event) => event.eventType === "pi.turn.failed")).toBe(true);
+  });
+
+  test("a rejected native cancel is not reported as a successful abort", async () => {
+    const controller = new AbortController();
+    const started = Promise.withResolvers<void>();
+    const turn = runNativeBridgeTurn({
+      ctx: { runId: "run", threadId: "thread", signal: controller.signal } as never,
+      driver: {
+        steer: async () => {
+          started.resolve();
+          return { status: "ok" };
+        },
+        cancel: async () => ({
+          status: "error",
+          code: "cancel_failed",
+          message: "native abort failed",
+        }),
+      } as never,
+      session: { nativeSessionId: "/sessions/pi.jsonl" } as never,
+      bridge: { sessionFile: "/sessions/pi.jsonl", subscribe: () => () => {} },
+      prompt: "keep working",
+      mapFrame: mappedBodies,
+      redact: { text: (value) => value, unknown: (value) => value },
+    });
+    await started.promise;
+    controller.abort();
+
+    await expect(turn).rejects.toThrow("native abort failed");
+  });
 });

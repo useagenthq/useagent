@@ -49,6 +49,7 @@ import {
   RUNTIME_CUBE_WARM_POOL_NAME,
   runtimeFirstActivityTimeoutMs,
   runtimeNoProgressTimeoutMs,
+  runtimeGeneration,
   RUNTIME_GENERATION,
   RUNTIME_GENERATION_LABEL,
 } from "./runtime-environment";
@@ -183,8 +184,18 @@ export function runtimeRunSnapshot(
   env: Readonly<Record<string, string | undefined>> = process.env,
 ): string {
   if (sandboxProviderKind(env) === "cube") {
-    const template = operatorEnv(env, "RUNTIME_CUBE_TEMPLATE_ID", "T3_CUBE_TEMPLATE_ID")?.trim() ||
-      env.CUBE_TEMPLATE_ID?.trim();
+    const runtimeTemplate = operatorEnv(
+      env,
+      "RUNTIME_CUBE_TEMPLATE_ID",
+      "T3_CUBE_TEMPLATE_ID",
+    )?.trim();
+    const generation = runtimeGeneration(env);
+    if (generation !== runtimeGeneration({}) && !runtimeTemplate) {
+      throw new Error(
+        `Runtime generation ${generation} requires a dedicated RUNTIME_CUBE_TEMPLATE_ID; refusing to relabel CUBE_TEMPLATE_ID`,
+      );
+    }
+    const template = runtimeTemplate || env.CUBE_TEMPLATE_ID?.trim();
     if (!template) {
       throw new Error(
         "RUNTIME_CUBE_TEMPLATE_ID (legacy T3_CUBE_TEMPLATE_ID) is required for the Cube runtime adapter",
@@ -645,7 +656,11 @@ export function makeRuntimeAdapter(engine: RuntimeEngineId, driver: ProviderDriv
         // already-projected thread. ProviderDriver.start creates it explicitly instead of
         // relying on the websocket-only bootstrap normalization path.
         const prompt = composeTurnPrompt(ctx, established.resumed, executionCapabilities);
-        await recordProviderSessionStarted(ctx, session, { provider: "t3", source: engine });
+        await recordProviderSessionStarted(ctx, session, {
+          provider: "t3",
+          source: engine,
+          resumed: established.resumed,
+        });
         ctx.timing?.mark("dispatch");
         const endDispatch = ctx.timing?.begin("t3.dispatch_request");
         const steerResult = await driver.steer({

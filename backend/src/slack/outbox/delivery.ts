@@ -452,27 +452,36 @@ async function recordArtifactDelivered(row: ClaimedRow): Promise<void> {
 }
 
 /** Deliver one claimed row and transition its state. */
-function rowTeamId(row: ClaimedRow): string | null {
+function rowTeamScope(row: ClaimedRow): {
+  readonly teamId: string | null;
+  readonly orgId: string | null;
+} {
   try {
-    const payload = JSON.parse(row.payload) as { teamId?: unknown };
-    return typeof payload.teamId === "string" && payload.teamId ? payload.teamId : null;
+    const payload = JSON.parse(row.payload) as { teamId?: unknown; orgId?: unknown };
+    return {
+      teamId: typeof payload.teamId === "string" && payload.teamId ? payload.teamId : null,
+      orgId: typeof payload.orgId === "string" && payload.orgId ? payload.orgId : null,
+    };
   } catch {
-    return null;
+    return { teamId: null, orgId: null };
   }
 }
 
-type SlackTeamClientResolver = (teamId: string) => Promise<SlackClient | null>;
+type SlackTeamClientResolver = (
+  teamId: string,
+  expectedOrgId: string | null,
+) => Promise<SlackClient | null>;
 
 async function deliverOne(
   defaultClient: SlackClient | null,
   row: ClaimedRow,
   resolveTeamClient?: SlackTeamClientResolver,
 ): Promise<SlackDeliveryOutcome> {
-  const teamId = rowTeamId(row);
+  const { teamId, orgId } = rowTeamScope(row);
   let client = defaultClient;
   if (teamId && resolveTeamClient) {
     try {
-      client = await resolveTeamClient(teamId);
+      client = await resolveTeamClient(teamId, orgId);
     } catch {
       await markDead(row.id, {
         errorClass: "permanent",
@@ -555,9 +564,9 @@ async function pass(): Promise<void> {
     const legacyClient = config.legacyBotToken
       ? resolveSlackClient({ apiUrl: config.apiUrl, botToken: config.legacyBotToken })
       : null;
-    await processDue(legacyClient, async (teamId) => {
+    await processDue(legacyClient, async (teamId, expectedOrgId) => {
       const workspace = await findSlackWorkspace(teamId);
-      if (!workspace) return null;
+      if (!workspace || (expectedOrgId && workspace.orgId !== expectedOrgId)) return null;
       const botToken = await resolveSlackBotTokenForWorkspace({
         orgId: workspace.orgId,
         teamId,

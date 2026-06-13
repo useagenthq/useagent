@@ -25,6 +25,10 @@ import {
 import { resolveSkillSelection } from "../skills/repo";
 import { RunIntakeError } from "../resources/run-intake";
 import { RunAdmissionClosedError } from "../commands";
+import {
+  assertRunPromptLimit,
+  RunPromptTooLargeError,
+} from "../commands/prompt-policy";
 import { isValidCron, isValidTimezone } from "./cron";
 import {
   createSchedule,
@@ -42,10 +46,10 @@ function publishAutomationChange(orgId: string, change: AutomationChange): void 
 }
 
 export class ScheduleServiceError extends Error {
-  readonly status: 400 | 403 | 404 | 409 | 503;
+  readonly status: 400 | 403 | 404 | 409 | 413 | 503;
   readonly body: Record<string, unknown>;
 
-  constructor(status: 400 | 403 | 404 | 409 | 503, body: Record<string, unknown>) {
+  constructor(status: 400 | 403 | 404 | 409 | 413 | 503, body: Record<string, unknown>) {
     super(String(body.error ?? "schedule_error"));
     this.status = status;
     this.body = body;
@@ -185,13 +189,24 @@ function assertDispatchReady(engine: EngineId, model: string): void {
   }
 }
 
-function assertAutomationIntegrationsReady(schedule: {
+function assertSchedulePromptLimit(prompt: string): void {
+  try {
+    assertRunPromptLimit(prompt);
+  } catch (error) {
+    if (error instanceof RunPromptTooLargeError) {
+      throw new ScheduleServiceError(413, { error: error.code });
+    }
+    throw error;
+  }
+}
+
+async function assertAutomationIntegrationsReady(schedule: {
   delivery: AutomationJson | null;
   notifications: AutomationJson | null;
-}): void {
-  // Slack targets ({ slack: { channel } }) are executable through the durable
+}, orgId: string): Promise<void> {
+  // Tenant-qualified Slack targets are executable through the durable
   // Slack outbox; anything else present can be drafted but not enabled.
-  const error = automationSlackConfigError(schedule);
+  const error = await automationSlackConfigError(schedule, orgId);
   if (error) {
     throw new ScheduleServiceError(403, {
       error: "automation_delivery_not_ready",
@@ -229,6 +244,7 @@ export async function createScheduleForOrg(
 
   const prompt = textField(body, "prompt");
   if (!prompt) throw new ScheduleServiceError(400, { error: "prompt is required" });
+  assertSchedulePromptLimit(prompt);
 
   const timezone = parseTimezone(body.timezone) ?? null;
   // Creation is an inert draft operation. Persist valid engine/model intent
@@ -326,7 +342,10 @@ export async function updateScheduleForOrg(
   if (name) patch.name = name;
 
   const prompt = textField(body, "prompt");
-  if (prompt) patch.prompt = prompt;
+  if (prompt) {
+    assertSchedulePromptLimit(prompt);
+    patch.prompt = prompt;
+  }
 
   const model = textField(body, "model");
   if (model) patch.model = model;
@@ -390,10 +409,10 @@ export async function updateScheduleForOrg(
     const remainsEnabled = patch.enabled ?? current.enabled;
     if (remainsEnabled) {
       assertDispatchReady(engine, model);
-      assertAutomationIntegrationsReady({
+      await assertAutomationIntegrationsReady({
         delivery: patch.delivery ?? current.delivery,
         notifications: patch.notifications ?? current.notifications,
-      });
+      }, orgId);
       const skillId = patch.skillId === undefined ? current.skillId : patch.skillId;
       const skillVersion = patch.skillVersion === undefined ? current.skillVersion : patch.skillVersion;
       const skillHash = patch.skillContentHash === undefined ? current.skillContentHash : patch.skillContentHash;

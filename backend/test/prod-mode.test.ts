@@ -1,8 +1,8 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { db } from "../src/db/client";
 import { member, user } from "../src/db/schema";
-import { CookieJar, fetchApi, json, uid } from "./helpers";
+import { CookieJar, createOrgSession, fetchApi, json, uid } from "./helpers";
 
 /**
  * Production-mode fail-closed behavior. The org middleware evaluates
@@ -80,5 +80,23 @@ describe("production mode: fail closed", () => {
     expect(runs.status).toBe(403);
     const knowledge = await json<any>("/api/knowledge", { cookies: jar.header() });
     expect(knowledge.status).toBe(403);
+  });
+
+  test("removing a member invalidates its active-organization session immediately", async () => {
+    const org = await createOrgSession("removed-active-member");
+    const [account] = await db
+      .select({ id: user.id })
+      .from(user)
+      .where(eq(user.email, org.email));
+    expect(account).toBeTruthy();
+    expect((await json("/api/skills", { cookies: org.cookies })).status).toBe(200);
+
+    await db
+      .delete(member)
+      .where(and(eq(member.organizationId, org.orgId), eq(member.userId, account!.id)));
+
+    const denied = await json<any>("/api/skills", { cookies: org.cookies });
+    expect(denied.status).toBe(403);
+    expect(denied.body).toEqual({ error: "no_organization" });
   });
 });

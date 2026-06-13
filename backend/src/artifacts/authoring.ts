@@ -26,6 +26,7 @@ import {
 import { db } from "../db/client";
 import { getRunForOrg } from "../runs/repo";
 import { recordProviderEvent } from "../runs/provider-events";
+import { materializeFinishedWorkArtifactIfActive } from "../runs/finished-work-materialization-context";
 import { claimUploadForRun } from "../uploads/repo";
 import { artifactStorage } from "./storage";
 import { buildInitialWorkpieceState, parseWorkpieceState } from "./workpiece";
@@ -299,6 +300,7 @@ export async function createAuthoredArtifact(input: {
           "artifact editable companion conflicts with the existing publication",
         );
       }
+      await materializeFinishedWorkArtifactIfActive(existingAuthored, tx);
       return { row: existingAuthored, created: false };
     }
     const created = await createArtifactRecord({
@@ -316,6 +318,7 @@ export async function createAuthoredArtifact(input: {
       workpieceState: state,
     }, tx);
     await artifactStorage().put(digest, sourceBytes);
+    await materializeFinishedWorkArtifactIfActive(created.row, tx);
     return created;
   });
 

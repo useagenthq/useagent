@@ -34,6 +34,7 @@ import {
 } from "../src/fleet/reconciler";
 import { pumpThread } from "../src/worker";
 import { completeRun, getRun, setRunStatus } from "../src/runs/repo";
+import { lockFinishedWorkRun } from "../src/runs/finished-work-lock";
 import { createOrgSession, json, uid, waitFor } from "./helpers";
 
 // Fleet durable-admission integration tests (HA Stage A). Capacity-cap assertions
@@ -49,6 +50,7 @@ const PRELOAD_FLEET: Record<string, string | undefined> = {
   FLEET_ORG_MAX_QUEUE_DEPTH: process.env.FLEET_ORG_MAX_QUEUE_DEPTH,
   FLEET_HOST_CPU_MILLICORES: process.env.FLEET_HOST_CPU_MILLICORES,
 };
+const PRELOAD_FINISHED_WORK_ROLLOUT = process.env.FINISHED_WORK_ROLLOUT;
 
 const testOrgs = new Set<string>();
 const track = (orgId: string): string => {
@@ -124,6 +126,8 @@ afterEach(async () => {
     else process.env[k] = v;
   }
   setProviderInventoryForTest(null);
+  if (PRELOAD_FINISHED_WORK_ROLLOUT === undefined) delete process.env.FINISHED_WORK_ROLLOUT;
+  else process.env.FINISHED_WORK_ROLLOUT = PRELOAD_FINISHED_WORK_ROLLOUT;
   // Settle + clear this test's durable state so global capacity resets and no
   // leftover queued command is pumped into the next test.
   const orgs = [...testOrgs];
@@ -811,6 +815,44 @@ describe("durable admission — cancellation + fan-out ceiling", () => {
     await reconcileExpiredLease(lease!, async () => {});
     expect((await reservationSnapshot(orgId)).globalActiveSandboxes).toBe(0);
     expect((await getRun(runId))?.sandboxId).toBeNull();
+  });
+
+  test("a fleet finalizer loser syncs admission from the durable winner", async () => {
+    process.env.FINISHED_WORK_ROLLOUT = "shadow";
+    const orgId = track(`org-${uid("gc-finalizer-race")}`);
+    const runId = await accept(orgId);
+    const leaseId = await createLease({
+      runId,
+      threadId: runId,
+      orgId,
+      provider: "mock",
+      tier: "standard",
+      cpuMillicores: 2_000,
+      memoryMib: 8_192,
+      leaseTtlMs: -1,
+      sandboxId: "box-finalizer-race",
+    });
+    await db.execute(sql`update runs set sandbox_id = 'box-finalizer-race', status = 'running' where id = ${runId}`);
+    await markAdmissionLeased(runId, leaseId);
+    const [lease] = await claimExpiredLeases(1);
+    let releaseWinner!: () => void;
+    let reportLocked!: () => void;
+    const release = new Promise<void>((resolve) => { releaseWinner = resolve; });
+    const locked = new Promise<void>((resolve) => { reportLocked = resolve; });
+    const winner = db.transaction(async (tx) => {
+      await lockFinishedWorkRun(runId, tx);
+      reportLocked();
+      await release;
+      await completeRun(runId, "completed", "durable winner", 1, tx);
+    });
+    await locked;
+    const reconciliation = reconcileExpiredLease(lease!, async () => {});
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    releaseWinner();
+    await winner;
+    await reconciliation;
+    expect((await getRun(runId))?.status).toBe("completed");
+    expect((await getAdmission(runId))?.state).toBe("completed");
   });
 });
 

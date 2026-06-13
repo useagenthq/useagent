@@ -19,6 +19,7 @@ import type { EngineRunContext } from "./types";
 export interface ProviderSessionEventIdentity {
   readonly provider: string;
   readonly source: string;
+  readonly resumed: boolean;
 }
 
 export interface EstablishProviderSessionInput {
@@ -183,6 +184,7 @@ export function providerSessionStartedEvent(
     nativeSessionId: session.nativeSessionId,
     payload: {
       source: identity.source,
+      resumed: identity.resumed,
       capabilities: session.capabilities,
       ...(session.executionCapabilities
         ? { executionCapabilities: session.executionCapabilities }

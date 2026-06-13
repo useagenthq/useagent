@@ -1464,7 +1464,7 @@ export function makeOpenCodeServerAdapter(driver: ProviderDriver): EngineAdapter
       const resumed = established.resumed;
       await recordProviderSessionStarted(ctx, session, {
         provider: "opencode",
-        source: "opencode",
+        source: "opencode", resumed,
       });
 
       // Capture the provider's CURRENT replacement catalog concurrently with

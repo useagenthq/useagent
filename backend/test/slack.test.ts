@@ -1967,13 +1967,14 @@ describe("slack legacy team adoption", () => {
     const channel = `C${uid("legacy")}`;
     const rootTs = `${uid("ts")}.1`;
     const rootRunId = crypto.randomUUID();
+    const otherOrgId = `org-other-${uid("org")}`;
     await createRun({
       id: rootRunId,
       prompt: `legacy cross root ${marker}`,
       model: "claude-opus-5",
       engine: "mock",
-      orgId: DEV_ORG_ID,
-      userId: DEV_USER_ID,
+      orgId: otherOrgId,
+      userId: null,
       parentRunId: null,
       threadId: rootRunId,
       repos: [],
@@ -1984,7 +1985,7 @@ describe("slack legacy team adoption", () => {
       channel,
       threadTs: rootTs,
       rootRunId,
-      orgId: "org-other",
+      orgId: otherOrgId,
     });
 
     expect((await postSlack(eventCallback({

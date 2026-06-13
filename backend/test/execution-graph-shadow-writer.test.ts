@@ -547,6 +547,97 @@ describe("execution graph shadow writer", () => {
     });
   });
 
+  test("a multi-target wait converges across early completion, later spawn, and stable replay", async () => {
+    const orgId = `org-${crypto.randomUUID()}`;
+    const runId = await seedRun(orgId);
+    const base = { runId, threadId: runId, provider: "t3" } as const;
+    await shadowWriteExecutionGraph({
+      ...base,
+      id: `${runId}:root`,
+      eventType: "session.started",
+      nativeSessionId: "parent",
+    }, 0, testDb);
+    await shadowWriteExecutionGraph({
+      ...base,
+      id: `${runId}:beta-complete-early`,
+      eventType: "t3.activity.task.completed",
+      nativeSessionId: "beta",
+      nativeParentSessionId: "parent",
+      payload: {
+        kind: "task.completed",
+        payload: { taskId: "beta", parentAgentId: "parent", agentKind: "agent" },
+      },
+    }, 1, testDb);
+    await shadowWriteExecutionGraph({
+      ...base,
+      id: `${runId}:spawn-alpha`,
+      eventType: "t3.activity.task.started",
+      nativeSessionId: "alpha",
+      nativeParentSessionId: "parent",
+      payload: {
+        kind: "task.started",
+        payload: { taskId: "alpha", parentAgentId: "parent", agentKind: "agent" },
+      },
+    }, 2, testDb);
+    const wait = {
+      ...base,
+      id: `${runId}:wait-all`,
+      eventType: "t3.activity.tool.completed",
+      nativeSessionId: "parent",
+      nativeCallId: "wait-all",
+      payload: {
+        kind: "tool.completed",
+        payload: {
+          itemType: "collab_agent_tool_call",
+          delegationKind: "wait",
+          toolUseId: "wait-all",
+          receiverThreadIds: ["alpha", "beta", "ghost"],
+        },
+      },
+    } as const;
+    await shadowWriteExecutionGraph(wait, 3, testDb);
+    const spawnBeta = {
+      ...base,
+      id: `${runId}:spawn-beta`,
+      eventType: "t3.activity.task.started",
+      nativeSessionId: "beta",
+      nativeParentSessionId: "parent",
+      payload: {
+        kind: "task.started",
+        payload: { taskId: "beta", parentAgentId: "parent", agentKind: "agent" },
+      },
+    } as const;
+    await shadowWriteExecutionGraph(spawnBeta, 4, testDb);
+    await shadowWriteExecutionGraph({
+      ...spawnBeta,
+      payload: { ...spawnBeta.payload, fixtureRevision: 2 },
+    }, 5, testDb);
+    await shadowWriteExecutionGraph(wait, 6, testDb);
+
+    const executions = await testDb.select().from(agentExecutions).where(
+      eq(agentExecutions.runId, runId),
+    );
+    const executionBySession = new Map(executions.map((row) => [row.nativeSessionId, row]));
+    const waitEdges = (await testDb.select().from(delegationEdges).where(and(
+      eq(delegationEdges.runId, runId),
+      eq(delegationEdges.kind, "wait"),
+    ))).toSorted((left, right) =>
+      (left.nativeTargetSessionId ?? "").localeCompare(right.nativeTargetSessionId ?? "")
+    );
+    expect(waitEdges).toHaveLength(3);
+    expect(waitEdges.map((edge) => edge.sourceKey)).toEqual([
+      `edge:t3:wait:wait-all:alpha`,
+      `edge:t3:wait:wait-all:beta`,
+      `edge:t3:wait:wait-all:ghost`,
+    ]);
+    expect(waitEdges.map((edge) => [edge.nativeTargetSessionId, edge.childExecutionId])).toEqual([
+      ["alpha", executionBySession.get("alpha")?.id],
+      ["beta", executionBySession.get("beta")?.id],
+      ["ghost", null],
+    ]);
+    expect(executionBySession.get("beta")).toMatchObject({ status: "completed" });
+  });
+
   test("treats a post-apply control target revision as structural mismatch", async () => {
     const orgId = `org-${crypto.randomUUID()}`;
     const runId = await seedRun(orgId);
