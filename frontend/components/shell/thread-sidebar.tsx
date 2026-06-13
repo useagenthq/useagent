@@ -1,6 +1,5 @@
 import {
   RiAddLine,
-  RiBarChartBoxLine,
   RiBookShelfLine,
   RiDashboardLine,
   RiSettings3Line,
@@ -14,17 +13,11 @@ import { ThemeToggle } from "./theme-toggle";
 import { UserMenu } from "./user-menu";
 import { WorkingProjectStatus } from "./working-project-status";
 
-export type ThreadSidebarActive = "new" | "dashboard" | "usage" | "library" | "settings";
+export type ThreadSidebarActive = "new" | "dashboard" | "library" | "settings";
 
 function ThreadSidebarFooter({ active }: { active?: ThreadSidebarActive }) {
   return (
     <nav aria-label="Workspace utilities" className="p-2">
-      <SidebarNavItem
-        href="/settings#usage"
-        icon={RiBarChartBoxLine}
-        label="Usage"
-        active={active === "usage"}
-      />
       <SidebarNavItem
         href="/settings"
         icon={RiSettings3Line}
