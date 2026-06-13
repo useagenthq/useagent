@@ -8,14 +8,17 @@ import { collectRunEvidence } from "../memory/capture-evidence";
 import { assessCaptureSalience } from "../memory/capture-salience";
 import { isInternalRunOrigin } from "./origin";
 import { recordRunFollowups } from "./followups";
-import { findSlackRunResponse } from "../slack/repo";
+import {
+  createSlackRunResponse,
+  findSlackRunResponse,
+  findSlackThreadByRoot,
+} from "../slack/repo";
 import { composeSlackReplyText } from "../slack/reply";
 import { buildRunCard, deriveTitle, phaseForStatus, sessionUrl } from "../slack/card";
 import { parseRepoRef } from "../github/repo-ref";
 import {
   composeAutomationDeliveryText,
-  parseSlackAutomationTarget,
-  slackChannelAllowed,
+  resolveSlackAutomationTargetForOrg,
 } from "../slack/automation";
 import {
   enqueuePostMessageTx,
@@ -32,7 +35,7 @@ import {
   terminalTaskChunks,
 } from "../slack/streaming";
 import { turnStream } from "./turn-stream";
-import { env, slackConfig } from "../env";
+import { env } from "../env";
 import { findScheduleForRun } from "../schedules/repo";
 import { publishRunLifecycleChange } from "./org-signals";
 import { enqueueCanonicalization } from "./canonicalization-outbox";
@@ -44,6 +47,10 @@ import {
   prepareExecutionGraphSeal,
   sealExecutionGraphAfterFinalizeTx,
 } from "./execution-graph-seal";
+import { evaluateFinishedWork, finishedWorkFailureSummary } from "./finished-work";
+import { listFinishedWorkForRun } from "./finished-work-repo";
+import { finishedWorkEnforcementEnabled, finishedWorkRolloutMode } from "./finished-work-rollout";
+import { lockFinishedWorkRun } from "./finished-work-lock";
 
 /** Providers whose runs project native events and/or `steps` into the canonical lane.
  *  OpenCode, Pi, and the ACP engines (acp/claude/codex). Legacy aliases (daytona -> opencode,
@@ -64,7 +71,26 @@ export async function enqueueSlackTerminalDeliveryForRunTx(
   status: RunStatus,
   summary: string,
 ): Promise<boolean> {
-  const slack = await findSlackRunResponse(run.id, tx);
+  const thread = run.orgId
+    ? await findSlackThreadByRoot(run.threadId, tx, run.orgId)
+    : null;
+  let slack = await findSlackRunResponse(run.id, tx);
+  if (
+    slack &&
+    (!thread || slack.teamId !== thread.teamId || slack.channel !== thread.channel || slack.threadTs !== thread.threadTs)
+  ) {
+    slack = null;
+  }
+  if (!slack && thread) {
+    await createSlackRunResponse({ runId: run.id, ...thread }, tx);
+    slack = await findSlackRunResponse(run.id, tx);
+  }
+  if (
+    slack &&
+    (!thread || slack.teamId !== thread.teamId || slack.channel !== thread.channel || slack.threadTs !== thread.threadTs)
+  ) {
+    slack = null;
+  }
   if (!slack) return false;
 
   const title = deriveTitle(run.prompt);
@@ -194,14 +220,39 @@ export async function enqueueSlackTerminalDeliveryForRunTx(
  * terminal path (worker success/failure/mock, boot reconcile/fail). Safe to call
  * more than once - the run update is a plain UPDATE and every enqueue is idempotent.
  */
+export type FinalizeRunResult =
+  | { readonly applied: false }
+  | { readonly applied: true; readonly status: "completed" | "failed"; readonly summary: string };
+
+export async function resolveDurableFinalizationOutcome(
+  runId: string,
+  result: FinalizeRunResult,
+): Promise<{ readonly status: "completed" | "failed"; readonly summary: string } | null> {
+  if (result.applied) return { status: result.status, summary: result.summary };
+  const [winner] = await db
+    .select({ status: runs.status, summary: runs.summary })
+    .from(runs)
+    .where(eq(runs.id, runId))
+    .limit(1);
+  if (!winner || (winner.status !== "completed" && winner.status !== "failed")) return null;
+  return { status: winner.status, summary: winner.summary ?? "" };
+}
+
 export async function finalizeRun(
   runId: string,
   status: RunStatus,
   summary: string,
   durationMs: number,
-): Promise<void> {
+): Promise<FinalizeRunResult> {
   const executionGraphMode = executionGraphRolloutMode();
+  const finishedWorkMode = finishedWorkRolloutMode();
   await prepareExecutionGraphSeal(runId, executionGraphMode);
+  let applied = false;
+  let effectiveStatus: "completed" | "failed" = status === "completed" ? "completed" : "failed";
+  let effectiveSummary = summary;
+  const shadowAudit: {
+    value: { decision: "blocked" | "failed"; obligationCount: number } | null;
+  } = { value: null };
   let kickSlack = false;
   let settledThreadId: string | null = null;
   let settledOrgId: string | null = null;
@@ -209,6 +260,7 @@ export async function finalizeRun(
   let settledPrompt: string | null = null;
   let settledInternal = true; // stays true unless a customer run actually finalized
   await db.transaction(async (tx) => {
+    if (finishedWorkMode !== "off") await lockFinishedWorkRun(runId, tx);
     const [run] = await tx.select().from(runs).where(eq(runs.id, runId)).limit(1);
     if (!run) return; // deleted mid-flight — nothing to finalize
     settledThreadId = run.threadId;
@@ -217,11 +269,37 @@ export async function finalizeRun(
     settledPrompt = run.prompt;
     settledInternal = isInternalRunOrigin(run.origin) || run.engine === "mock";
 
+    // Finished-work enforcement is additive and trusted-boundary-only: Phase A
+    // creates no obligations, so legacy runs evaluate `not_required`. Requested
+    // failures always remain failures. Only an explicit durable obligation can
+    // turn a requested completion into an effective failure.
+    if (status === "completed" && finishedWorkMode !== "off" && run.orgId) {
+      const finishedWorkDecision = evaluateFinishedWork(
+        await listFinishedWorkForRun(run.orgId, runId, tx),
+      );
+      if (
+        finishedWorkMode === "shadow" &&
+        (finishedWorkDecision.status === "blocked" || finishedWorkDecision.status === "failed")
+      ) {
+        shadowAudit.value = {
+          decision: finishedWorkDecision.status,
+          obligationCount: finishedWorkDecision.obligations.length,
+        };
+      }
+      if (
+        (finishedWorkDecision.status === "blocked" || finishedWorkDecision.status === "failed") &&
+        finishedWorkEnforcementEnabled(run.engine, run.id)
+      ) {
+        effectiveStatus = "failed";
+        effectiveSummary = finishedWorkFailureSummary(finishedWorkDecision);
+      }
+    }
+
     // FIRST finalizer wins (completeRun guards on a non-terminal status). A
     // concurrent second finalizer - zombie-cancel racing the reconcile loop -
     // updates zero rows; skip EVERY side-effect so it can never flip the status
     // or double-enqueue a capture for an already-settled run.
-    const finalized = await completeRun(runId, status, summary, durationMs, tx);
+    const finalized = await completeRun(runId, effectiveStatus, effectiveSummary, durationMs, tx);
     if (!finalized) {
       settledThreadId = null;
       settledOrgId = null;
@@ -230,15 +308,16 @@ export async function finalizeRun(
       settledInternal = true;
       return;
     }
+    applied = true;
     await releaseLeaseForRun(runId, tx);
     if (executionGraphMode !== "off" && run.orgId) {
-      if (status !== "completed" && status !== "failed") {
+      if (effectiveStatus !== "completed" && effectiveStatus !== "failed") {
         throw new Error("execution_graph_seal_requires_terminal_run");
       }
       await sealExecutionGraphAfterFinalizeTx({
         orgId: run.orgId,
         runId,
-        status,
+        status: effectiveStatus,
         mode: executionGraphMode,
       }, tx);
     }
@@ -252,17 +331,17 @@ export async function finalizeRun(
     // not pollute org memory. Non-SALIENT summaries (trivial one-liners,
     // apologies, raw command output) are gated out by assessCaptureSalience
     // BEFORE anything durable is written.
-    if (status === "completed" && !isInternalRunOrigin(run.origin)) {
+    if (effectiveStatus === "completed" && !isInternalRunOrigin(run.origin)) {
       const plan = resolveScopedMemory(run);
-      if (plan?.writePool && assessCaptureSalience({ prompt: run.prompt, summary }).salient) {
+      if (plan?.writePool && assessCaptureSalience({ prompt: run.prompt, summary: effectiveSummary }).salient) {
         // Verified outcome (item 5): capture the structured facts alongside the
         // prose — artifacts published, tool counts, status/duration/engine/model,
         // and the user-correction signal — all readable in THIS transaction.
-        const evidence = await collectRunEvidence(run, status, durationMs, tx);
+        const evidence = await collectRunEvidence(run, effectiveStatus, durationMs, tx);
         await enqueueCapture(
           runId,
           plan.writePool.identity,
-          { prompt: run.prompt, summary, evidence },
+          { prompt: run.prompt, summary: effectiveSummary, evidence },
           plan.scope,
           tx,
         );
@@ -272,7 +351,7 @@ export async function finalizeRun(
     // Slack reply — durable for a Slack-originated run (resolved from the run's
     // thread, so replies + boot-reconciled runs both find it). Non-Slack runs
     // resolve null and enqueue nothing.
-    kickSlack = (await enqueueSlackTerminalDeliveryForRunTx(tx, run, status, summary)) || kickSlack;
+    kickSlack = (await enqueueSlackTerminalDeliveryForRunTx(tx, run, effectiveStatus, effectiveSummary)) || kickSlack;
 
     // Automation delivery (delivery.slack) — a run fired by an automation whose
     // delivery config targets Slack posts its terminal outcome to that channel,
@@ -281,13 +360,18 @@ export async function finalizeRun(
     // allowlist is re-checked at delivery-enqueue time.
     const automation = await findScheduleForRun(runId, tx);
     if (automation) {
-      const target = parseSlackAutomationTarget(automation.delivery);
-      const config = slackConfig();
-      if (target && config?.legacyBotToken && slackChannelAllowed(target.channel, config)) {
+      const target = await resolveSlackAutomationTargetForOrg(
+        automation.delivery,
+        automation.orgId,
+        tx,
+      );
+      if (target) {
         const created = await enqueuePostMessageTx(tx, {
           idempotencyKey: `automation-delivery:${runId}`,
+          orgId: automation.orgId,
+          teamId: target.teamId,
           channel: target.channel,
-          text: composeAutomationDeliveryText(automation.name, status, summary),
+          text: composeAutomationDeliveryText(automation.name, effectiveStatus, effectiveSummary),
         });
         kickSlack = kickSlack || created;
       }
@@ -313,7 +397,7 @@ export async function finalizeRun(
     // excluded so evaluation traffic never becomes org learning. The verified-
     // outcome gate (6.4) still runs at build time, so an unverified completion
     // enqueues an intent but produces no candidate (a clean skip).
-    if (status === "completed" && run.orgId && !isInternalRunOrigin(run.origin)) {
+    if (effectiveStatus === "completed" && run.orgId && !isInternalRunOrigin(run.origin)) {
       await enqueueLearning(
         {
           runId,
@@ -326,6 +410,16 @@ export async function finalizeRun(
       );
     }
   });
+
+  if (!applied) return { applied: false };
+
+  if (shadowAudit.value) {
+    console.info("[finished-work] shadow completion mismatch", {
+      runId,
+      decision: shadowAudit.value.decision,
+      obligationCount: shadowAudit.value.obligationCount,
+    });
+  }
 
   // Kick the relay AFTER commit (the row isn't visible to it until then). No-op
   // when Slack isn't configured (the relay isn't running).
@@ -350,7 +444,7 @@ export async function finalizeRun(
   // thread stream then delivers. Strictly AFTER settle so the model call can
   // never delay the answer; internal (parity/e2e) and mock runs never generate.
   if (
-    status === "completed" &&
+    effectiveStatus === "completed" &&
     settledThreadId &&
     settledOrgId &&
     settledPrompt !== null &&
@@ -364,7 +458,8 @@ export async function finalizeRun(
         userId: settledUserId,
         prompt: settledPrompt,
       },
-      summary,
+      effectiveSummary,
     );
   }
+  return { applied: true, status: effectiveStatus, summary: effectiveSummary };
 }

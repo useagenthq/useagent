@@ -4,12 +4,10 @@ import {
   type RunCommandIntent,
   type RunCommandOutcome,
 } from "../commands";
-import { slackConfig } from "../env";
 import { pumpThread } from "../worker";
 import {
   composeAutomationFireText,
-  parseSlackAutomationTarget,
-  slackChannelAllowed,
+  resolveSlackAutomationTargetForOrg,
 } from "../slack/automation";
 import { enqueuePostMessage } from "../slack/outbox";
 import { recordFiring, type ScheduleRecord } from "./repo";
@@ -171,15 +169,15 @@ export async function fireScheduleWithOutcome(
   // most once; the allowlist is re-checked at fire time (env may have changed
   // since enable). Skipped entirely when Slack is unconfigured (nothing could
   // deliver it) — the run itself is never blocked by notification config.
-  const notifyTarget = parseSlackAutomationTarget(schedule.notifications);
-  const slack = slackConfig();
-  if (
-    notifyTarget
-    && slack?.legacyBotToken
-    && slackChannelAllowed(notifyTarget.channel, slack)
-  ) {
+  const notifyTarget = await resolveSlackAutomationTargetForOrg(
+    schedule.notifications,
+    schedule.orgId,
+  );
+  if (notifyTarget) {
     await enqueuePostMessage({
       idempotencyKey: `automation-notify:${idempotencyKey}`,
+      orgId: schedule.orgId,
+      teamId: notifyTarget.teamId,
       channel: notifyTarget.channel,
       text: composeAutomationFireText(schedule.name, acceptedRunId),
     });

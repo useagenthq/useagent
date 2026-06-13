@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { db } from "../src/db/client";
-import { commands, fleetBatches, runAdmissions, runs } from "../src/db/schema";
+import { commands, fleetBatches, runAdmissions, runs, sandboxLeases } from "../src/db/schema";
 import { admitClaimedRun } from "../src/fleet/admission";
 import { reservationSnapshot } from "../src/fleet/lease-repo";
 import { isBearerAllowedPath } from "../src/middleware/bearer";
@@ -174,6 +174,13 @@ describe("fleet batch API", () => {
   });
 
   test("persists all 20 independent tasks and admits exactly eight under an eight-sandbox cap", async () => {
+    // This proof owns host-global capacity. Earlier suites intentionally retain
+    // reusable sandbox mappings, which count against that same global budget.
+    await db.transaction(async (tx) => {
+      await tx.execute(sql`delete from run_admissions`);
+      await tx.execute(sql`delete from sandbox_leases`);
+      await tx.execute(sql`update runs set sandbox_id = null where sandbox_id is not null`);
+    });
     const org = await createOrgSession("fleet-batch-twenty");
     process.env.FLEET_GLOBAL_MAX_ACTIVE_SANDBOXES = "0";
     process.env.FLEET_ORG_MAX_ACTIVE_SANDBOXES = "8";

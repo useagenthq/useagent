@@ -5,6 +5,7 @@ import {
   createArtifactRecord,
   findArtifactByOrgAndSha256,
   getArtifactForOrg,
+  getArtifactForRunSourcePath,
   reviseArtifactPublication,
   toArtifactDescriptor,
   updateArtifactPreview,
@@ -22,7 +23,11 @@ import { sql } from "drizzle-orm";
 import { artifactStorage } from "./storage";
 import { getRunForOrg } from "../runs/repo";
 import { publishOrgChange } from "../runs/org-signals";
-import { recordProviderEvent } from "../runs/provider-events";
+import {
+  recordProviderEvent,
+  recordProviderEventIfAbsent,
+} from "../runs/provider-events";
+import { materializeFinishedWorkArtifactIfActive } from "../runs/finished-work-materialization-context";
 import { downloadSandboxFile, resolveSandboxFilePath } from "../slack/sandbox-file";
 import { extractPptxDeck, type PptxImportResult } from "@useagent/artifact-formats";
 import type { DeckBackground, DeckBlock, DeckSlide, PresentationDeck } from "@useagent/artifact-workspace";
@@ -38,13 +43,50 @@ import {
   loadInjectedSecretRedactionValues,
 } from "../secrets/inject";
 import { containsSignedCapability } from "../secrets/redact";
+import {
+  validatedTrustedImageBytes,
+  type ValidatedTrustedImageOutput,
+} from "./trusted-output";
 
 export const MAX_ARTIFACT_BYTES = 50 * 1024 * 1024;
 export const ARTIFACT_WORKSPACE_ROOT = "/root/work";
+const TRUSTED_OUTPUT_SOURCE_ROOT = "/.skynet/provider-output";
 
 function safeName(sourcePath: string, requested?: string): string {
   const candidate = requested?.trim() || basename(sourcePath.replaceAll("\\", "/")) || "artifact";
   return candidate.replace(/[\u0000-\u001f\u007f/\\]/g, "_").slice(0, 180) || "artifact";
+}
+
+function trustedOutputSourcePath(
+  orgId: string,
+  runId: string,
+  provider: string,
+  sourceKey: string,
+): string {
+  const safeProvider = provider.trim().toLowerCase();
+  if (!/^[a-z0-9][a-z0-9_-]{0,63}$/.test(safeProvider)) {
+    throw new Error("trusted output provider is invalid");
+  }
+  const key = sourceKey.trim();
+  if (!/^[a-f0-9]{64}$/.test(key)) {
+    throw new Error("trusted output source key is invalid");
+  }
+  const identityDigest = createHash("sha256");
+  for (const part of [orgId, runId, safeProvider, key]) {
+    identityDigest.update(String(Buffer.byteLength(part)));
+    identityDigest.update(":");
+    identityDigest.update(part);
+  }
+  return `${TRUSTED_OUTPUT_SOURCE_ROOT}/${safeProvider}/${identityDigest.digest("hex")}`;
+}
+
+type TrustedArtifactEventRecorder = typeof recordProviderEventIfAbsent;
+let trustedArtifactEventRecorder: TrustedArtifactEventRecorder = recordProviderEventIfAbsent;
+
+export function setTrustedArtifactEventRecorderForTest(
+  recorder: TrustedArtifactEventRecorder | null,
+): void {
+  trustedArtifactEventRecorder = recorder ?? recordProviderEventIfAbsent;
 }
 
 function checkedSourcePath(value: string): string {
@@ -349,16 +391,21 @@ export async function publishSandboxArtifact(input: {
     if ((await artifactStorage().size(digest)) !== file.bytes.length) {
       throw new Error("artifact storage size verification failed");
     }
-    const revised = await reviseArtifactPublication({
-      orgId: input.orgId,
-      id: target.id,
-      name,
-      contentType,
-      sha256: digest,
-      storageKey: digest,
-      sizeBytes: file.bytes.length,
-      workpieceKind,
-      workpieceState,
+    const revised = await db.transaction(async (tx) => {
+      const updated = await reviseArtifactPublication({
+        orgId: input.orgId,
+        id: target.id,
+        name,
+        contentType,
+        sha256: digest,
+        storageKey: digest,
+        sizeBytes: file.bytes.length,
+        workpieceKind,
+        workpieceState,
+        exec: tx,
+      });
+      if (updated) await materializeFinishedWorkArtifactIfActive(updated, tx);
+      return updated;
     });
     if (!revised) throw new Error("artifact revision could not be applied");
     // The new bytes invalidate any prior preview: regenerate (or clear) it so the
@@ -422,6 +469,7 @@ export async function publishSandboxArtifact(input: {
     if (storedSize !== file.bytes.length) {
       throw new Error("artifact storage size verification failed");
     }
+    await materializeFinishedWorkArtifactIfActive(record.row, tx);
     return record;
   });
 
@@ -453,6 +501,95 @@ export async function publishSandboxArtifact(input: {
     });
   }
   return { artifact: descriptor, record, created: stored.created };
+}
+
+/** Publish an image emitted by the trusted-output reader. Host paths and
+ * provider payloads never enter artifact metadata; the bounded opaque
+ * `sourceKey` represents the full stable provider identity. */
+export async function publishTrustedArtifact(input: {
+  readonly orgId: string;
+  readonly userId: string | null;
+  readonly runId: string;
+  readonly threadId?: string;
+  readonly provider: string;
+  readonly sourceKey: string;
+  readonly output: ValidatedTrustedImageOutput;
+}): Promise<{ artifact: ArtifactDescriptor; record: ArtifactRecord; created: boolean }> {
+  const run = await getRunForOrg(input.orgId, input.runId);
+  if (!run || (input.threadId && run.threadId !== input.threadId)) {
+    throw new Error("run not found in this thread");
+  }
+  const bytes = validatedTrustedImageBytes(input.output);
+  if (bytes.byteLength === 0) throw new Error("trusted output is empty");
+  if (bytes.byteLength > MAX_ARTIFACT_BYTES) throw new Error("trusted output is too large");
+
+  const redactionValues = await loadInjectedSecretRedactionValues(input.orgId);
+  assertNoInjectedSecretBytes(bytes, redactionValues);
+  const digest = createHash("sha256").update(bytes).digest("hex");
+  const name = input.output.name;
+  const contentType = input.output.contentType;
+  const sourcePath = trustedOutputSourcePath(
+    input.orgId,
+    run.id,
+    input.provider,
+    input.sourceKey,
+  );
+
+  const stored = await db.transaction(async (tx) => {
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${[
+      "trusted-artifact-publish",
+      sourcePath,
+    ].join(":")}))`);
+    const existing = await getArtifactForRunSourcePath(run.id, sourcePath, tx);
+    if (existing) {
+      if (
+        existing.sha256 !== digest ||
+        existing.name !== name ||
+        existing.contentType !== contentType
+      ) {
+        throw new Error("trusted output identity conflict");
+      }
+      return { row: existing, created: false };
+    }
+    const record = await createArtifactRecord({
+      orgId: input.orgId,
+      userId: input.userId,
+      runId: run.id,
+      threadId: run.threadId,
+      sourcePath,
+      name,
+      contentType,
+      sizeBytes: bytes.byteLength,
+      sha256: digest,
+      storageKey: digest,
+    }, tx);
+    await artifactStorage().put(digest, bytes);
+    if ((await artifactStorage().sha256(digest)) !== digest) {
+      throw new Error("artifact storage digest verification failed");
+    }
+    return record;
+  });
+
+  const descriptor = toArtifactDescriptor(stored.row);
+  const eventId = `artifact.created:${stored.row.id}`;
+  const eventInserted = await trustedArtifactEventRecorder({
+    id: eventId,
+    runId: run.id,
+    threadId: run.threadId,
+    provider: "skynet",
+    eventType: "artifact.created",
+    payload: descriptor,
+  });
+  if (eventInserted) {
+    publishOrgChange(input.orgId, {
+      type: "artifact",
+      action: "created",
+      artifactId: stored.row.id,
+      runId: stored.row.runId,
+      threadId: stored.row.threadId,
+    });
+  }
+  return { artifact: descriptor, record: stored.row, created: stored.created };
 }
 
 export async function resolveArtifactForThread(input: {

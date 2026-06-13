@@ -33,6 +33,7 @@ import { ensureProject } from "../projects/repo";
 import { listUploadsForRuns, type RunUploadDescriptor } from "../uploads/repo";
 import { publicRunCondition } from "./visibility";
 import { MODEL_QUALIFICATION_RUN_ORIGIN } from "./origin";
+export { completeRun, pinSkillToActiveRun, setRunStatus } from "./run-state";
 
 // The run/step API shapes are the agent-client WIRE CONTRACT (single source of
 // truth; packages never import apps). Re-exported so the many backend modules that
@@ -733,79 +734,6 @@ export async function getStepsApi(runId: string): Promise<ApiStep[]> {
     .where(eq(steps.runId, runId))
     .orderBy(steps.idx);
   return rows.map(toStep);
-}
-
-export async function setRunStatus(id: string, status: RunStatus): Promise<void> {
-  await db
-    .update(runs)
-    .set({ status, updatedAt: new Date() })
-    .where(eq(runs.id, id));
-}
-
-/**
- * Pin a skill revision to the currently-running turn.
- *
- * This is the persistence boundary used by the trusted `skill_activate` gateway
- * tool. Identity is resolved from the tool capability before this function is
- * called; the update still binds run + thread + org + running state so a stale
- * capability cannot rewrite a settled turn or a turn in another tenant.
- */
-export async function pinSkillToActiveRun(input: {
-  runId: string;
-  threadId: string;
-  orgId: string;
-  skillId: string;
-  skillVersion: number;
-  skillContentHash: string;
-}): Promise<boolean> {
-  const [row] = await db
-    .update(runs)
-    .set({
-      skillId: input.skillId,
-      skillVersion: input.skillVersion,
-      skillContentHash: input.skillContentHash,
-      updatedAt: new Date(),
-    })
-    .where(
-      and(
-        eq(runs.id, input.runId),
-        eq(runs.threadId, input.threadId),
-        eq(runs.orgId, input.orgId),
-        eq(runs.status, "running"),
-      ),
-    )
-    .returning({ id: runs.id });
-  return Boolean(row);
-}
-
-export async function completeRun(
-  id: string,
-  status: RunStatus,
-  summary: string,
-  durationMs: number,
-  /** Run inside a caller's transaction so finalization commits the terminal
-   *  status and its durable side-effects (memory capture, slack reply) atomically
-   *  (see runs/finalize.ts). Defaults to the shared pool. */
-  exec: Executor = db,
-): Promise<boolean> {
-  // Non-terminal precondition: the FIRST finalizer wins. Two finalizers can now
-  // race the same run (interactive zombie-cancel vs the reconcile loop's
-  // adopt/fail) - without this guard the later writer flips a completed run to
-  // failed AND its transaction independently enqueues a memory capture, so a
-  // user-stopped run could still capture. Returning false on a no-op update
-  // lets finalizeRun skip all side-effects for the loser.
-  const terminalAt = new Date();
-  const [row] = await exec
-    .update(runs)
-    .set({ status, summary, durationMs, settledAt: terminalAt, updatedAt: terminalAt })
-    .where(
-      and(
-        eq(runs.id, id),
-        inArray(runs.status, ["queued", "running"]),
-      ),
-    )
-    .returning({ id: runs.id });
-  return Boolean(row);
 }
 
 /** Replace a step's code_json in place (same id/idx). Serves the tool_call →

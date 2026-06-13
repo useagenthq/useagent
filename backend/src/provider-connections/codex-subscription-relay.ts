@@ -20,6 +20,8 @@ import {
   suppressCodexSubscriptionStartupRejection,
 } from "./codex-subscription-app-server";
 import { errorMessage } from "../util/error-message";
+import { prepareCodexServerFrame } from "./codex-native-output";
+import { importCodexNativeOutput } from "./codex-native-output-import";
 
 const DEFAULT_CAPABILITY_TTL_MS = 2 * 60_000;
 const RELAY_PATH_PREFIX = "/api/internal/codex-relay/";
@@ -258,10 +260,28 @@ codexSubscriptionRelayRoutes.get(
             if (!protocol || !environmentBootstrap) {
               throw new Error("Codex relay protocol is unavailable");
             }
-            const forwarded = await environmentBootstrap.acceptServerFrame(line);
-            for (const frame of forwarded) {
-              await protocol.observeServerFrame(frame);
-              socket.send(frame);
+            // The protocol is the account-wide thread boundary. It may hold an
+            // out-of-order descendant until ancestry becomes provable, and it
+            // never returns foreign thread frames. Sanitize each released frame
+            // before any downstream consumer; host image locators exist only in
+            // this serial host-side task.
+            const ready = await protocol.observeServerFrame(line);
+            for (const authorizedFrame of ready) {
+              authorizedFrame.commit();
+              const prepared = prepareCodexServerFrame(authorizedFrame.raw);
+              if (prepared.image) {
+                await importCodexNativeOutput({
+                  orgId: grant.binding.orgId,
+                  userId: grant.binding.userId,
+                  productThreadId: grant.binding.threadId,
+                  runId: grant.binding.runId,
+                  codexHome: grant.codexHome,
+                  candidate: prepared.image,
+                  validateIdentity: (identity) => protocol.validateNativeOutputIdentity(identity),
+                });
+              }
+              const forwarded = await environmentBootstrap.acceptServerFrame(prepared.frame);
+              for (const frame of forwarded) socket.send(frame);
             }
           }),
           closeSocket: (code, reason) => socket.close(code, reason),

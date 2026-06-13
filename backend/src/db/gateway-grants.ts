@@ -3,6 +3,12 @@ import type { Sql } from "postgres";
 export const GATEWAY_DATABASE_ROLE = "useagent_gateway";
 const LEGACY_GATEWAY_DATABASE_ROLE = "skynet_gateway";
 
+export function gatewayDatabaseRoleRequired(
+  env: Readonly<Record<string, string | undefined>> = process.env,
+): boolean {
+  return Boolean(env.GATEWAY_PUBLIC_URL?.trim());
+}
+
 /**
  * Declarative grants for the RESTRICTED sandbox-gateway role, applied
  * idempotently at every backend boot (right after migrations).
@@ -13,9 +19,9 @@ const LEGACY_GATEWAY_DATABASE_ROLE = "skynet_gateway";
  * shipped a gateway-written table whose INSERTs then died in production with
  * 42501 (knowledge_*, artifact_workpiece_proposals). With the manifest in
  * code, the grant lands in the same commit as the feature and every deploy
- * reconciles it. configure-host.sh keeps the role/REVOKE baseline and the
- * credentials view; its grant list mirrors this manifest and a test keeps the
- * two in sync.
+ * reconciles it. configure-host.sh owns only the empty-database-safe role and
+ * REVOKE/default-privilege baseline. Migration 0039 owns the credentials view;
+ * release migration and production boot apply this manifest after schema setup.
  *
  * Rules: least privilege, no DELETE anywhere, column-scoped where the lane
  * only touches specific columns. When a migration adds a table the GATEWAY
@@ -38,6 +44,11 @@ export const GATEWAY_GRANTS: readonly string[] = [
   "GRANT SELECT, INSERT, UPDATE ON knowledge_records, knowledge_documents, knowledge_revisions TO useagent_gateway",
   "GRANT SELECT, INSERT ON artifact_workpiece_proposals TO useagent_gateway",
   "GRANT UPDATE (status, resolved_at, resolved_by, resolved_revision) ON artifact_workpiece_proposals TO useagent_gateway",
+  // Completion-producing gateway tools open/waive obligations and record the
+  // artifact-store receipt that atomically satisfies them. Database constraints
+  // keep semantic fields immutable and prohibit untrusted receipt authorities.
+  "GRANT SELECT, INSERT ON finished_work_obligations, finished_work_receipts TO useagent_gateway",
+  "GRANT UPDATE (state, materialized_artifact_id, materialized_artifact_revision, failure_code, resolved_at, updated_at) ON finished_work_obligations TO useagent_gateway",
   // Durable task tools resolve or create a project, then create/list/update
   // org-scoped tasks. Keep updates column-scoped to the exact gateway patches.
   "GRANT SELECT, INSERT ON projects TO useagent_gateway",
@@ -54,7 +65,7 @@ export const GATEWAY_GRANTS: readonly string[] = [
   "GRANT SELECT ON context_index TO useagent_gateway",
 ];
 
-/** The BYOK credentials view is created by provisioning; grant only if present. */
+/** Migration 0039 creates the BYOK credentials view; grant only if present. */
 const VIEW_GRANT =
   "GRANT SELECT ON gateway_provider_api_key_credentials TO useagent_gateway";
 
@@ -92,7 +103,7 @@ export async function applyGatewayGrants(
       await sql.unsafe(grant);
     } catch (error) {
       console.error(`[gateway-grants] failed: ${grant}:`, error);
-      if (options.strict) throw error;
+      throw error;
     }
   }
   const [view] = await sql`SELECT 1 FROM pg_views WHERE viewname = 'gateway_provider_api_key_credentials'`;
@@ -100,7 +111,7 @@ export async function applyGatewayGrants(
     const viewGrant = VIEW_GRANT.replaceAll(GATEWAY_DATABASE_ROLE, role);
     await sql.unsafe(viewGrant).catch((error) => {
       console.error(`[gateway-grants] failed: ${viewGrant}:`, error);
-      if (options.strict) throw error;
+      throw error;
     });
   } else if (options.strict) {
     throw new Error("required hosted credentials view gateway_provider_api_key_credentials is missing");

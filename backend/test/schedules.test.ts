@@ -10,7 +10,12 @@ import { getScheduleForOrg } from "../src/schedules/repo";
 import { db } from "../src/db/client";
 import { runs, skillRevisions } from "../src/db/schema";
 import { createOrgSession, json, waitFor } from "./helpers";
-import { freeModelLaneCache, refreshFreeModelLane } from "../src/runs/free-model-lane";
+import {
+  freeModelLaneCache,
+  HOSTED_VERIFIED_FREE_MODELS,
+  refreshFreeModelLane,
+} from "../src/runs/free-model-lane";
+import { RUN_PROMPT_MAX_CHARS } from "../src/commands/prompt-policy";
 
 interface AutomationListResponse {
   readonly automations: ApiSchedule[];
@@ -113,6 +118,19 @@ describe("schedules API", () => {
       cookies: s.cookies,
     });
     expect(noPrompt.status).toBe(400);
+
+    const oversized = await json<{ error: string }>("/api/schedules", {
+      method: "POST",
+      body: {
+        name: "oversized",
+        cron: "* * * * *",
+        prompt: "x".repeat(RUN_PROMPT_MAX_CHARS + 1),
+        engine: "mock",
+      },
+      cookies: s.cookies,
+    });
+    expect(oversized.status).toBe(413);
+    expect(oversized.body.error).toBe("prompt_too_large");
 
     const badEngine = await json<unknown>("/api/schedules", {
       method: "POST",
@@ -399,7 +417,7 @@ describe("schedules API", () => {
 
   test("a stored dynamic free model still fires after the catalog cache restarts", async () => {
     const s = await createOrgSession("schedule-free-model-restart");
-    const model = "vendor/scheduled-agent:free";
+    const model = HOSTED_VERIFIED_FREE_MODELS[0];
     freeModelLaneCache.reset();
     try {
       await refreshFreeModelLane({

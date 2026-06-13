@@ -39,6 +39,11 @@ function requiresUserProofPurpose(path: string): boolean {
 export const ARTIFACT_TOOLS = [
   {
     name: "artifact_publish",
+    completionEffect: {
+      kind: "artifact_publish",
+      authority: "artifact_store",
+      updateTargetArgument: "updates_artifact_id",
+    },
     description:
       "Publish a file from your sandbox as a durable useAgent artifact. The trusted " +
       "backend pulls and size-checks the bytes once, records an immutable digest, " +
@@ -104,6 +109,11 @@ export const ARTIFACT_TOOLS = [
   },
   {
     name: "workpiece_update",
+    completionEffect: {
+      kind: "artifact_update",
+      authority: "workpiece_store",
+      targetArtifactArgument: "artifact_id",
+    },
     description:
       "Apply the user's explicitly requested edit directly to an existing editable document, " +
       "spreadsheet, presentation, or PDF text workpiece. Pass the artifact id and the FULL " +
@@ -171,6 +181,10 @@ export const ARTIFACT_TOOLS = [
   },
   {
     name: "workpiece_create",
+    completionEffect: {
+      kind: "artifact_create",
+      authority: "workpiece_store",
+    },
     description:
       "Create an editable, previewable workpiece natively from its canonical state - no file, no " +
       "editable_path, no scripting an Office binary. This is the EASIEST and preferred way to " +

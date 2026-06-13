@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { createOrgSession, fetchApi, json, uid } from "./helpers";
 import { acceptRunCommand, type RunCommandIntent } from "../src/commands";
+import { RUN_PROMPT_MAX_CHARS } from "../src/commands/prompt-policy";
 
 // Durable-command idempotency on POST /api/runs. Runs use the fast scripted
 // `mock` engine (no sandbox), so these are pure in-process API assertions.
@@ -19,6 +20,33 @@ async function post(
 }
 
 describe("durable commands / idempotency", () => {
+  test("shared acceptance rejects oversized prompts from every ingress", async () => {
+    const prompt = "x".repeat(RUN_PROMPT_MAX_CHARS + 1);
+    const runId = crypto.randomUUID();
+    await expect(acceptRunCommand({
+      idempotencyKey: null,
+      orgId: `org-${crypto.randomUUID()}`,
+      actorId: null,
+      run: {
+        id: runId,
+        prompt,
+        model: "mock-model",
+        engine: "mock",
+        parentRunId: null,
+        threadId: runId,
+        repos: [],
+        memoryScope: "org",
+        skillId: null,
+        skillVersion: null,
+        skillContentHash: null,
+        commandName: null,
+        commandProvider: null,
+        commandSessionId: null,
+        commandCatalogRevision: null,
+      },
+    })).rejects.toThrow("run prompt exceeds the accepted size limit");
+  });
+
   test("an accepted PR request replays before unavailable GitHub preflight", async () => {
     const s = await createOrgSession("idem-pr-down");
     const key = uid("idem-pr-down");

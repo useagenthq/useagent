@@ -12,6 +12,7 @@ import { isModelAllowedForEngine, isPersistedModelAllowedForEngine } from "../ru
 import { engineModelReadyForDispatch, persistedEngineModelReadyForDispatch } from "../runs/engine-readiness";
 import { withThreadLifecycleLock } from "../runs/thread-lifecycle-lock";
 import { assertRunAdmissionOpen } from "./admission";
+import { assertRunPromptLimit } from "./prompt-policy";
 
 // ---------------------------------------------------------------------------
 // Command acceptance orchestration (north star "Durable Commands"). Decides,
@@ -131,6 +132,8 @@ async function acceptRunCommandWithOrigin(
         // close waits for already-accepting transactions, then every later new
         // acceptance observes the durable closed state.
         await assertRunAdmissionOpen(tx);
+        assertRunPromptLimit(intent.prompt);
+        assertRunPromptLimit(input.run.prompt);
 
         // Readiness applies only when accepting NEW work. A matching keyed
         // replay is a read of an already-durable decision and must keep

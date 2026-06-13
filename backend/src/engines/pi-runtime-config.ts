@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import type { ProviderId } from "../provider-gateway/provider";
 import { providerForEngine } from "../provider-gateway/provider";
 import {
+  markProviderGatewaySandboxCurrent,
   piProviderGatewayCapability,
   piToolGatewayDescriptor,
 } from "../provider-gateway/sandbox-config";
@@ -178,6 +179,13 @@ export async function preparePiRuntime(
     provider: providerCapability,
     tools: toolCapability,
   });
+  // Warm runtime sandboxes are intentionally created without a run-scoped
+  // provider capability. Mark the sandbox current only after Pi's root-owned
+  // broker and private capability files are ready. Otherwise the next turn
+  // rejects and deletes the retained sandbox as an obsolete credential
+  // generation, silently breaking workspace continuity while the JSONL native
+  // session still resumes.
+  await markProviderGatewaySandboxCurrent(sandbox);
   return {
     model: selection,
     fingerprint: createHash("sha256").update(modelJson).update("\0").update(mcpJson).digest("hex"),

@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import {
   approvalArgumentsHash,
+  approvalCapabilityMintMode,
   consumeApprovalCapability,
   consumeGatewayOperationApproval,
   mintApprovalCapability,
@@ -8,10 +9,13 @@ import {
   type ApprovalCapabilityStore,
 } from "./approval-capability";
 import { verifyToolToken, type ToolTokenClaims } from "./token";
+import { mintSignedCapability } from "../../security/signed-capability";
 
 const originalFetch = globalThis.fetch;
 const originalGatewayDatabaseUrl = process.env.GATEWAY_DATABASE_URL;
 const originalApiOrigin = process.env.USEAGENT_API_ORIGIN;
+const originalToolGatewaySecret = process.env.TOOL_GATEWAY_SECRET;
+const originalApprovalMintMode = process.env.GATEWAY_APPROVAL_CAPABILITY_MINT;
 
 afterEach(() => {
   globalThis.fetch = originalFetch;
@@ -19,6 +23,10 @@ afterEach(() => {
   else process.env.GATEWAY_DATABASE_URL = originalGatewayDatabaseUrl;
   if (originalApiOrigin === undefined) delete process.env.USEAGENT_API_ORIGIN;
   else process.env.USEAGENT_API_ORIGIN = originalApiOrigin;
+  if (originalToolGatewaySecret === undefined) delete process.env.TOOL_GATEWAY_SECRET;
+  else process.env.TOOL_GATEWAY_SECRET = originalToolGatewaySecret;
+  if (originalApprovalMintMode === undefined) delete process.env.GATEWAY_APPROVAL_CAPABILITY_MINT;
+  else process.env.GATEWAY_APPROVAL_CAPABILITY_MINT = originalApprovalMintMode;
 });
 
 class MemoryApprovalStore implements ApprovalCapabilityStore {
@@ -28,7 +36,7 @@ class MemoryApprovalStore implements ApprovalCapabilityStore {
     this.rows.set(binding.nonce, { ...binding, consumed: false });
   }
 
-  async consume(binding: ApprovalBinding, now: Date): Promise<boolean> {
+  async consume(binding: Omit<ApprovalBinding, "expiresAt">, now: Date): Promise<boolean> {
     const row = this.rows.get(binding.nonce);
     if (
       !row ||
@@ -59,11 +67,16 @@ const claims = {
 
 async function approvedCall(store: ApprovalCapabilityStore, ttlMs = 60_000) {
   const args = { id: "automation-1", enabled: true };
+  const previous = process.env.GATEWAY_APPROVAL_CAPABILITY_MINT;
+  process.env.GATEWAY_APPROVAL_CAPABILITY_MINT = "opaque";
   const minted = await mintApprovalCapability(
     { ...claims, toolName: "automation_update", arguments: args },
     store,
     ttlMs,
-  );
+  ).finally(() => {
+    if (previous === undefined) delete process.env.GATEWAY_APPROVAL_CAPABILITY_MINT;
+    else process.env.GATEWAY_APPROVAL_CAPABILITY_MINT = previous;
+  });
   return { ...minted, args };
 }
 
@@ -90,8 +103,101 @@ describe("gateway operation approval capability", () => {
       arguments: args,
     } as const;
 
+    expect(capability).toMatch(/^apr1\.[0-9a-f-]{36}$/);
+    expect(capability.length).toBeLessThan(64);
+
     expect(await consumeApprovalCapability(input, store)).toBe(true);
     expect(await consumeApprovalCapability(input, store)).toBe(false);
+  });
+
+  test("defaults to rollback-compatible signed minting and gates opaque minting explicitly", async () => {
+    delete process.env.GATEWAY_APPROVAL_CAPABILITY_MINT;
+    process.env.TOOL_GATEWAY_SECRET = "approval-mode-test-secret-0123456789";
+    const signedStore = new MemoryApprovalStore();
+    const args = { id: "automation-1" };
+    const signed = await mintApprovalCapability(
+      { ...claims, toolName: "automation_delete", arguments: args },
+      signedStore,
+    );
+    expect(approvalCapabilityMintMode()).toBe("signed");
+    expect(signed.capability).toMatch(/^v1\./);
+    expect(await consumeApprovalCapability({
+      capability: signed.capability,
+      claims,
+      toolName: "automation_delete",
+      arguments: args,
+    }, signedStore)).toBe(true);
+
+    process.env.GATEWAY_APPROVAL_CAPABILITY_MINT = "opaque";
+    const opaque = await mintApprovalCapability(
+      { ...claims, toolName: "automation_delete", arguments: args },
+      new MemoryApprovalStore(),
+    );
+    expect(approvalCapabilityMintMode()).toBe("opaque");
+    expect(opaque.capability).toMatch(/^apr1\.[0-9a-f-]{36}$/);
+
+    process.env.GATEWAY_APPROVAL_CAPABILITY_MINT = "invalid";
+    expect(() => approvalCapabilityMintMode()).toThrow("must be signed or opaque");
+  });
+
+  test("rejects invented and malformed opaque approval handles", async () => {
+    const store = new MemoryApprovalStore();
+    const { args } = await approvedCall(store);
+    for (const capability of ["apr1.not-a-uuid", `apr1.${crypto.randomUUID()}`, "approve"]) {
+      expect(
+        await consumeApprovalCapability({
+          capability,
+          claims,
+          toolName: "automation_update",
+          arguments: args,
+        }, store),
+      ).toBe(false);
+    }
+    expect([...store.rows.values()].every((row) => !row.consumed)).toBe(true);
+  });
+
+  test("accepts a still-live signed capability from the previous release", async () => {
+    process.env.TOOL_GATEWAY_SECRET = "test-only-placeholder-test-only-placeholder";
+    const store = new MemoryApprovalStore();
+    const args = { id: "automation-1", enabled: true };
+    const nonce = crypto.randomUUID();
+    const argumentsHash = approvalArgumentsHash(args);
+    const expiresAt = new Date(Date.now() + 60_000);
+    await store.create({
+      orgId: claims.orgId,
+      userId: claims.userId,
+      threadId: claims.threadId,
+      runId: claims.runId,
+      toolName: "automation_update",
+      argumentsHash,
+      nonce,
+      expiresAt,
+    });
+    const capability = mintSignedCapability(
+      {
+        o: claims.orgId,
+        u: claims.userId,
+        t: claims.threadId,
+        r: claims.runId,
+        n: nonce,
+        w: "automation_update",
+        h: argumentsHash,
+      },
+      60_000,
+      {
+        deriveLabel: "skynet-gateway-operation-approval-v1",
+        explicitSecret: process.env.TOOL_GATEWAY_SECRET,
+      },
+    );
+
+    expect(
+      await consumeApprovalCapability({
+        capability,
+        claims,
+        toolName: "automation_update",
+        arguments: args,
+      }, store),
+    ).toBe(true);
   });
 
   test("rejects cross-user, cross-run, cross-tool, and changed-argument use", async () => {

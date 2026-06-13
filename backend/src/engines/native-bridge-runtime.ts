@@ -31,6 +31,7 @@ export interface NativeBridgeTurnOptions {
 }
 
 const CHILD_TRANSCRIPT_DRAIN_BUDGET_MS = 15_000;
+const NATIVE_CANCEL_TERMINAL_GRACE_MS = 5_000;
 
 function transcriptOutcome(
   bodies: readonly NativeBridgeFrameBody[],
@@ -168,7 +169,26 @@ export async function runNativeBridgeTurn(
     unsubscribe();
   };
   const onAbort = () => {
-    void driver.cancel(session, "turn aborted").finally(() => rejectSettled(new Error("Run aborted")));
+    void driver.cancel(session, "turn aborted").then(
+      (result) => {
+        if (result.status !== "ok") {
+          rejectSettled(new Error(options.redact.text(
+            result.message ?? `Native cancel failed (${result.status})`,
+          )));
+          return;
+        }
+        const timer = setTimeout(
+          () => rejectSettled(new Error("Native cancel produced no terminal provider evidence")),
+          NATIVE_CANCEL_TERMINAL_GRACE_MS,
+        );
+        timer.unref?.();
+        void settled.then(
+          () => clearTimeout(timer),
+          () => clearTimeout(timer),
+        );
+      },
+      (cause) => rejectSettled(new Error(options.redact.text(errorMessage(cause)))),
+    );
   };
   ctx.signal.addEventListener("abort", onAbort, { once: true });
   try {

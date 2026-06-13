@@ -183,6 +183,16 @@ export function makePiProviderDriver(
         await bridge.command({ kind: "cancel", reason });
         return { status: "ok" };
       } catch (cause) {
+        try {
+          await dependencies.bridges.remove(session.nativeSessionId);
+        } catch (cleanupCause) {
+          return error(
+            "cancel_cleanup_failed",
+            cleanupCause instanceof Error
+              ? cleanupCause.message
+              : "Pi cancel cleanup failed",
+          );
+        }
         return error("cancel_failed", cause instanceof Error ? cause.message : "Pi cancel failed");
       }
     },

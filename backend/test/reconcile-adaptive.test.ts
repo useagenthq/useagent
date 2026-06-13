@@ -13,6 +13,7 @@ import {
   type ReconcileProbe,
 } from "../src/runs/recovery";
 import { enqueueReconcile, getReconcile } from "../src/runs/reconcile-queue";
+import { finalizeRun } from "../src/runs/finalize";
 import { getRun, insertStep, setRunEngineSession, setRunSandbox, setRunStatus, STALE_SUMMARY } from "../src/runs/repo";
 import { uid } from "./helpers";
 
@@ -110,6 +111,27 @@ describe("background re-probe loop", () => {
     });
 
     expect(providers).toEqual(["codex"]);
+  });
+
+  test("a parked reconcile loser accounts from the durable first writer", async () => {
+    const { runId, threadId } = await seedRunning();
+    await park(runId, threadId);
+    let releaseProbe!: () => void;
+    let reportProbe!: () => void;
+    const release = new Promise<void>((resolve) => { releaseProbe = resolve; });
+    const probing = new Promise<void>((resolve) => { reportProbe = resolve; });
+    const reconciliation = runDueReconciles(async () => {
+      reportProbe();
+      await release;
+      return { status: "completed", summary: "late completion" };
+    });
+    await probing;
+    await finalizeRun(runId, "failed", "first writer failed", 1);
+    releaseProbe();
+    const result = await reconciliation;
+    expect((await getRun(runId))?.status).toBe("failed");
+    expect(result.failed).toBe(1);
+    expect(result.adopted).toBe(0);
   });
 
   test("a durable cancel settles a parked run without another provider probe", async () => {

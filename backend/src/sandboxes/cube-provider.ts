@@ -15,6 +15,7 @@ import type {
   SandboxSession,
 } from "./provider";
 import type { SandboxInventory } from "@useagent/sandbox-contract";
+import { buildCubeRuntimeIdentityPreflightCommand } from "../engines/runtime-environment";
 
 interface CubeConnectionOptions {
   apiKey?: string;
@@ -90,7 +91,8 @@ async function waitForCubeReadiness(
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
     try {
       const probe = await sandbox.process.executeCommand(
-        `getent hosts ${previewHost} >/dev/null 2>&1 && getent hosts ${publicHost} >/dev/null 2>&1`,
+        `${buildCubeRuntimeIdentityPreflightCommand()} >/dev/null && ` +
+          `getent hosts ${previewHost} >/dev/null 2>&1 && getent hosts ${publicHost} >/dev/null 2>&1`,
         undefined,
         undefined,
         5,
@@ -104,7 +106,21 @@ async function waitForCubeReadiness(
       await new Promise((resolve) => setTimeout(resolve, delayMs));
     }
   }
-  throw new Error(`Cube sandbox ${sandbox.id} did not reach command/DNS readiness`);
+  throw new Error(
+    `Cube sandbox ${sandbox.id} did not reach root identity/workspace and command/DNS readiness`,
+  );
+}
+
+async function assertCubeRuntimeIdentity(sandbox: SandboxHandle): Promise<void> {
+  const probe = await sandbox.process.executeCommand(
+    buildCubeRuntimeIdentityPreflightCommand(),
+    undefined,
+    undefined,
+    5,
+  );
+  if (probe.exitCode !== 0) {
+    throw new Error("Cube sandbox did not reach root identity/workspace");
+  }
 }
 
 function positiveInteger(value: string | undefined, fallback: number): number {
@@ -410,7 +426,14 @@ class CubeProvider implements SandboxProvider {
 
   async get(sandboxId: string): Promise<SandboxHandle> {
     const info = await E2BSandbox.getInfo(sandboxId, this.connection);
-    return new CubeSandboxHandle(info, this.connection, null);
+    const handle = new CubeSandboxHandle(info, this.connection, null);
+    try {
+      await assertCubeRuntimeIdentity(handle);
+      return handle;
+    } catch (error) {
+      await handle.delete().catch(() => undefined);
+      throw error;
+    }
   }
 
   async *list(): AsyncIterable<SandboxHandle> {

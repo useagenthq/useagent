@@ -21,6 +21,7 @@ import {
   acceptRunCommand,
   preflightRunCommandReplay,
   RunAdmissionClosedError,
+  RunPromptTooLargeError,
   type RunCommandIntent,
 } from "../commands";
 import { FleetQueueLimitError } from "../fleet/intake";
@@ -31,8 +32,6 @@ import {
 } from "../commands/service";
 import type { InternalRunOrigin } from "./origin";
 import { acceptRunCancel, CANCEL_SUMMARY } from "../commands/cancel";
-import { finalizeRun } from "./finalize";
-import { deleteReconcile } from "./reconcile-queue";
 import { resolveSkillSelection } from "../skills/repo";
 import { buildNativeCommandPrompt, validateCommandIntent, type CommandIntent } from "./command-intent";
 import { readSessionCommandCatalog } from "./command-catalog";
@@ -49,6 +48,7 @@ import {
 import { bus, channel, pumpThread, signalCancel, type BusEvent } from "../worker";
 import { turnStream, type DeltaKind } from "./turn-stream";
 import { assertNever } from "../util/exhaustive";
+import { settleZombieCancel } from "./zombie-cancel";
 import {
   getNativeFramesSince,
   subscribeNative,
@@ -84,6 +84,8 @@ import { replyToRuntimeApproval, RuntimeApprovalError } from "../engines/runtime
 import { UploadClaimError } from "../uploads/repo";
 import { registerRunReadRoutes } from "./read-routes.js";
 import { registerExecutionGraphRoutes } from "./execution-graph-routes.js";
+import { boundedRunPrompt, runCreateBodyLimit, type RunCreateBody } from "./run-create-policy";
+export type { RunCreateBody } from "./run-create-policy";
 
 export const runsRoutes = new Hono<AppEnv>();
 
@@ -147,22 +149,6 @@ runsRoutes.get("/changes", (c) => {
   });
 });
 
-export interface RunCreateBody {
-  prompt?: unknown;
-  model?: unknown;
-  engine?: unknown;
-  parent_run_id?: unknown;
-  repo?: unknown;
-  repos?: unknown;
-  branches?: unknown;
-  memory_scope?: unknown;
-  skill?: unknown;
-  command?: unknown;
-  attachments?: unknown;
-  resources?: unknown;
-  origin?: unknown;
-}
-
 export async function handleRunCreate(
   c: Context<AppEnv>,
   options: {
@@ -184,8 +170,9 @@ export async function handleRunCreate(
     return c.json({ error: "origin is server-owned" }, 400);
   }
 
-  const prompt = typeof body.prompt === "string" ? body.prompt.trim() : "";
-  if (!prompt) return c.json({ error: "prompt is required" }, 400);
+  const promptResult = boundedRunPrompt(body.prompt);
+  if (!promptResult.ok) return c.json({ error: promptResult.error }, promptResult.status);
+  const prompt = promptResult.prompt;
 
   const rawAttachments = body.attachments ?? [];
   if (!Array.isArray(rawAttachments) || rawAttachments.length > 10) {
@@ -524,6 +511,9 @@ export async function handleRunCreate(
       ? await acceptInternalRunCommand({ ...commandInput, origin: options.origin })
       : await acceptRunCommand(commandInput);
   } catch (error) {
+    if (error instanceof RunPromptTooLargeError) {
+      return c.json({ error: error.code }, 413);
+    }
     if (error instanceof UploadClaimError) {
       return c.json({ error: "upload_unavailable" }, 409);
     }
@@ -562,7 +552,7 @@ export async function handleRunCreate(
   }
 }
 
-runsRoutes.post("/", (c) => handleRunCreate(c));
+runsRoutes.post("/", runCreateBodyLimit, (c) => handleRunCreate(c));
 
 // POST /:id/cancel — durable user Stop. Records a `run.cancel` command
 // (idempotent), fails a not-yet-started (queued) run atomically, signals a live
@@ -592,17 +582,13 @@ runsRoutes.post("/:id/cancel", async (c) => {
       if (outcome.runStatusWas === "running") {
         const signalled = signalCancel(id, CANCEL_SUMMARY);
         if (!signalled) {
-          // ZOMBIE: the DB says running but no actor in this process owns the
-          // run - its engine died with a restart. The user said stop; honor it
-          // NOW instead of waiting on the reconcile re-probe (a user sat on a
-          // dead "Send now" for 25 minutes this way, 2026-08-20). Finalize as
-          // stopped, drop any parked re-probe, and let the pump promote the
-          // queue. finalizeRun is idempotent against a concurrent settle.
-          console.warn(
-            `[cancel] run ${id} is 'running' with no live canceller; finalizing as stopped now.`,
-          );
-          await finalizeRun(id, "failed", CANCEL_SUMMARY, 0);
-          await deleteReconcile(id);
+          // No local actor means a crash zombie; settle and pump now rather than
+          // waiting for recovery. finalizeRun remains idempotent against a race.
+          const durableStatus = await settleZombieCancel(id);
+          if (durableStatus) {
+            await pumpThread(outcome.threadId);
+            return c.json({ id, status: durableStatus, note: "already settled" }, 200);
+          }
         }
       }
       await pumpThread(outcome.threadId);

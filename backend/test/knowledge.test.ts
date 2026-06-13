@@ -1,4 +1,4 @@
-import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, beforeAll, describe, expect, test } from "bun:test";
 import { createOrgSession, json, uid, type OrgSession } from "./helpers";
 import { ingestOne } from "../src/knowledge/ingest";
 import { findExisting, listRecords } from "../src/knowledge/store";
@@ -30,6 +30,14 @@ function ingestBody() {
 
 describe("knowledge ingest → search", () => {
   let recordId: string;
+
+  beforeEach(() => {
+    delete process.env.OPENROUTER_API_KEY;
+  });
+
+  afterEach(() => {
+    delete process.env.OPENROUTER_API_KEY;
+  });
 
   beforeAll(async () => {
     session = await createOrgSession("knowledge");
@@ -127,13 +135,10 @@ describe("knowledge ingest → search", () => {
 describe("distill grounding + salience (mocked LLM)", () => {
   const realFetch = globalThis.fetch;
 
-  beforeAll(() => {
+  beforeEach(() => {
     process.env.OPENROUTER_API_KEY = "test-key-mocked";
   });
   afterEach(() => {
-    globalThis.fetch = realFetch;
-  });
-  afterAll(() => {
     delete process.env.OPENROUTER_API_KEY;
     globalThis.fetch = realFetch;
   });

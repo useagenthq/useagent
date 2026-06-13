@@ -11,7 +11,7 @@
  * inserts work for multi-workspace setups without a redeploy.
  */
 import { and, eq } from "drizzle-orm";
-import { db } from "../db/client";
+import { db, type Executor } from "../db/client";
 import { slackUsers, slackWorkspaces } from "../db/schema";
 
 export interface SlackWorkspaceIdentity {
@@ -27,8 +27,9 @@ export interface SlackSenderIdentity {
 /** The tenant identity for a Slack team id, or null when unmapped. */
 export async function findSlackWorkspace(
   teamId: string,
+  exec: Executor = db,
 ): Promise<SlackWorkspaceIdentity | null> {
-  const [row] = await db
+  const [row] = await exec
     .select({ orgId: slackWorkspaces.orgId, userId: slackWorkspaces.userId })
     .from(slackWorkspaces)
     .where(eq(slackWorkspaces.teamId, teamId))

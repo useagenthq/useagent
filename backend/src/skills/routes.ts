@@ -11,11 +11,13 @@ import type { AppEnv } from "../http";
 import { orgScope } from "../middleware/org";
 import {
   acceptRunCommand,
+  RunPromptTooLargeError,
   RunAdmissionClosedError,
   preflightRunCommandReplay,
   assertRunAdmissionOpen,
   type RunCommandIntent,
 } from "../commands";
+import { boundedRunPrompt, runCreateBodyLimit } from "../runs/run-create-policy";
 import { defaultModelForEngine, isModelAllowedForEngine } from "../runs/model-policy";
 import {
   engineResolutionErrorBody,
@@ -226,7 +228,7 @@ skillsRoutes.delete("/:id", async (c) => {
 // Run a skill: create a REAL run through the durable command lane with the skill
 // pinned to its current version (mem_op 0.1 — no more misleading metric-only
 // "run"). Requires a `prompt` (the task the skill governs); bumps usage on accept.
-skillsRoutes.post("/:id/run", async (c) => {
+skillsRoutes.post("/:id/run", runCreateBodyLimit, async (c) => {
   const id = c.req.param("id");
   const idempotencyKey = c.req.header("Idempotency-Key")?.trim() || null;
   let body: Record<string, unknown> = {};
@@ -257,13 +259,18 @@ skillsRoutes.post("/:id/run", async (c) => {
     : await resolveSkillSelection(c.get("orgId"), { id });
   if (!idempotencyKey && !pinned) return c.json({ error: "skill not found" }, 404);
 
-  const prompt = typeof body.prompt === "string" ? body.prompt.trim() : "";
-  if (!prompt) {
+  const promptResult = boundedRunPrompt(body.prompt);
+  if (!promptResult.ok) {
     return c.json(
-      { error: "prompt is required to run a skill (a skill governs a task)" },
-      400,
+      {
+        error: promptResult.error === "prompt is required"
+          ? "prompt is required to run a skill (a skill governs a task)"
+          : promptResult.error,
+      },
+      promptResult.status,
     );
   }
+  const prompt = promptResult.prompt;
 
   const resolvedEngine = resolveAcceptedEngine(body.engine);
   if (!resolvedEngine.ok) {
@@ -304,6 +311,9 @@ skillsRoutes.post("/:id/run", async (c) => {
       intent,
     });
   } catch (error) {
+    if (error instanceof RunPromptTooLargeError) {
+      return c.json({ error: error.code }, 413);
+    }
     if (error instanceof RunAdmissionClosedError) {
       return c.json({ error: error.code, retryable: true }, 503);
     }
@@ -373,6 +383,9 @@ skillsRoutes.post("/:id/run", async (c) => {
       },
     });
   } catch (error) {
+    if (error instanceof RunPromptTooLargeError) {
+      return c.json({ error: error.code }, 413);
+    }
     if (error instanceof RunAdmissionClosedError) {
       return c.json({ error: error.code, retryable: true }, 503);
     }
