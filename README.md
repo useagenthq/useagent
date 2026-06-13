@@ -92,9 +92,10 @@ export DATABASE_URL=postgres://postgres@localhost:5432/postgres
 ```bash
 for workspace in \
   packages/agent-harness packages/artifact-workspace \
-  packages/agent-client packages/artifact-formats packages/conformance \
+  packages/agent-client packages/artifact-formats packages/sandbox-contract \
+  packages/conformance packages/cli \
   backend frontend; do
-  (cd "$workspace" && bun install)
+  (cd "$workspace" && bun install --frozen-lockfile)
 done
 
 bun run dev:backend    # API + orchestration on :3201
