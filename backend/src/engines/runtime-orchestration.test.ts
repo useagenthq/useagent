@@ -686,6 +686,50 @@ describe("T3 orchestration projection", () => {
     expect(assistantText(snapshot)).toBe(exactOutput);
   });
 
+  test("never republishes a prior assistant answer while a resumed turn is starting", () => {
+    const snapshot: RuntimeThreadSnapshot = {
+      snapshotSequence: 13,
+      thread: {
+        id: "skynet-thread-thread-1",
+        latestTurn: {
+          turnId: "turn-2",
+          state: "running",
+          assistantMessageId: null,
+        },
+        messages: [
+          {
+            id: "assistant-1",
+            role: "assistant",
+            text: "prior answer must not stream into this reply",
+            turnId: "turn-1",
+            streaming: false,
+          },
+        ],
+        activities: [],
+        session: { status: "ready", lastError: null },
+      },
+    };
+
+    expect(assistantText(snapshot)).toBe("");
+
+    expect(assistantText({
+      ...snapshot,
+      thread: {
+        ...snapshot.thread,
+        messages: [
+          ...snapshot.thread.messages,
+          {
+            id: "assistant-2",
+            role: "assistant",
+            text: "current answer",
+            turnId: "turn-2",
+            streaming: true,
+          },
+        ],
+      },
+    })).toBe("current answer");
+  });
+
   test("keeps resumed-turn provider events on the product thread and current run", () => {
     expect(runtimeActivityProviderEvent(
       { runId: "run-2", threadId: "thread-1" },

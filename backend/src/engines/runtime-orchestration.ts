@@ -467,12 +467,18 @@ export function isRuntimeThreadSessionId(sessionId: string): boolean {
 }
 
 export function assistantText(snapshot: RuntimeThreadSnapshot): string {
-  const messageId = snapshot.thread.latestTurn?.assistantMessageId;
+  const latestTurn = snapshot.thread.latestTurn;
+  if (!latestTurn) return "";
+  const messageId = latestTurn.assistantMessageId;
   const matching = messageId
     ? snapshot.thread.messages.find((message) => message.id === messageId)
     : undefined;
-  if (matching?.role === "assistant") return matching.text;
-  return snapshot.thread.messages.findLast((message) => message.role === "assistant")?.text ?? "";
+  if (matching?.role === "assistant" && matching.turnId === latestTurn.turnId) {
+    return matching.text;
+  }
+  return snapshot.thread.messages.findLast(
+    (message) => message.role === "assistant" && message.turnId === latestTurn.turnId,
+  )?.text ?? "";
 }
 
 const TRANSPORT_PLACEHOLDER_LABELS = new Set([
