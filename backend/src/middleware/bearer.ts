@@ -69,7 +69,7 @@ export function isBearerAllowedPath(method: string, path: string): boolean {
   if (path === "/api/artifacts") return true;
   if (/^\/api\/artifacts\/runs\/[^/]+\/archive$/.test(path)) return true;
   if (
-    /^\/api\/artifacts\/[^/]+(?:\/(?:workpiece|preview|content|proposals|workpiece\/export))?$/.test(
+    /^\/api\/artifacts\/[^/]+(?:\/(?:workpiece|quality|preview|content|proposals|workpiece\/export))?$/.test(
       path,
     )
   ) {
