@@ -1593,6 +1593,29 @@ describe("durable artifact translation", () => {
     });
     expect(result.accounting.every((entry) => entry.produced.length === 1)).toBe(true);
   });
+
+  test("surfaces a permanent Slack delivery failure without failing the run", () => {
+    const result = translateOpenCode([{
+      eventId: "delivery-failed",
+      seq: 1,
+      provider: "skynet",
+      eventType: "delivery.failed",
+      native: { sessionId: null, parentSessionId: null, messageId: null, partId: null, callId: null },
+      payload: {
+        destination: "slack",
+        delivery_kind: "upload_file",
+        reason: "integration_not_connected",
+      },
+    }], CTX);
+
+    expect(result.events).toHaveLength(1);
+    expect(result.events[0]).toMatchObject({
+      kind: "harness.error",
+      fatal: false,
+      message: "slack upload_file failed permanently: integration_not_connected",
+    });
+    expect(result.accounting[0]?.produced).toHaveLength(1);
+  });
 });
 
 describe("run-timing diagnostics are suppressed, never timeline nodes (perf Phase 0)", () => {

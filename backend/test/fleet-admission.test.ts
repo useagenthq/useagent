@@ -115,7 +115,7 @@ beforeEach(async () => {
   await db.transaction(async (tx) => {
     await tx.execute(sql`delete from run_admissions`);
     await tx.execute(sql`delete from sandbox_leases`);
-    await tx.execute(sql`update runs set sandbox_id = null where sandbox_id is not null`);
+    await tx.execute(sql`update runs set sandbox_id = null, provider_session = null, engine_session_id = null where sandbox_id is not null`);
   });
 });
 
@@ -141,7 +141,7 @@ afterEach(async () => {
       where org_id = ${org} and kind = 'run.create' and state in ('queued', 'dispatched')`);
     await db.execute(sql`delete from sandbox_leases where org_id = ${org}`);
     await db.execute(sql`delete from run_admissions where org_id = ${org}`);
-    await db.execute(sql`update runs set sandbox_id = null where org_id = ${org}`);
+    await db.execute(sql`update runs set sandbox_id = null, provider_session = null, engine_session_id = null where org_id = ${org}`);
   }
   // Never leave the background loop running into the next test/file — the drain
   // test starts it explicitly for its own body.
@@ -417,7 +417,7 @@ describe("durable admission — restart + crash recovery", () => {
       released.push(runId);
       const run = await getRun(runId);
       await db.execute(sql`
-        update runs set sandbox_id = null
+        update runs set sandbox_id = null, provider_session = null, engine_session_id = null
         where org_id = ${releaseOrgId} and thread_id = ${run!.threadId}`);
       return { ok: true, released: true };
     })).toBe(1);
@@ -456,7 +456,7 @@ describe("durable admission — restart + crash recovery", () => {
       released.push(runId);
       const run = await getRun(runId);
       await db.execute(sql`
-        update runs set sandbox_id = null
+        update runs set sandbox_id = null, provider_session = null, engine_session_id = null
         where org_id = ${releaseOrgId} and thread_id = ${run!.threadId}`);
       return { ok: true, released: true };
     })).toBe(1);
@@ -549,7 +549,7 @@ describe("durable admission — restart + crash recovery", () => {
       released.push(runId);
       const run = await getRun(runId);
       await db.execute(sql`
-        update runs set sandbox_id = null
+        update runs set sandbox_id = null, provider_session = null, engine_session_id = null
         where org_id = ${releaseOrgId} and thread_id = ${run!.threadId}`);
       return { ok: true, released: true };
     })).toBe(1);
@@ -651,7 +651,7 @@ describe("durable admission — restart + crash recovery", () => {
       released.push(runId);
       const run = await getRun(runId);
       await db.execute(sql`
-        update runs set sandbox_id = null
+        update runs set sandbox_id = null, provider_session = null, engine_session_id = null
         where org_id = ${orgId} and thread_id = ${run!.threadId}`);
       return { ok: true, released: true };
     }, async (limit, cursor, exec) => {

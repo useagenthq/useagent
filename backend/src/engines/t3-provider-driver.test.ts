@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { HarnessSession } from "@useagent/agent-harness/canonical";
-import { validateProviderDriver } from "@useagent/agent-harness/control";
+import { providerProtocolIdentity, validateProviderDriver } from "@useagent/agent-harness/control";
 import type { SandboxHandle } from "../sandboxes/provider";
 import {
   RuntimeEnvironmentRequestError,
@@ -15,9 +15,9 @@ function sessionFor(driver: ReturnType<typeof makeT3ProviderDriver>): HarnessSes
     provider: driver.provider,
     nativeSessionId: "skynet-thread-thread-1",
     runtime: { kind: "sandbox", id: "cube-t3-resume" },
-    protocolVersion: driver.descriptor.protocol.name,
+    protocolVersion: providerProtocolIdentity(driver.descriptor.protocol),
     capabilities: driver.descriptor.capabilities,
-    generation: 2,
+    generation: driver.descriptor.sessionGeneration as number,
   };
 }
 
@@ -102,9 +102,9 @@ describe("T3 provider drivers", () => {
         provider: driver.provider,
         nativeSessionId: "skynet-thread-thread-1",
         runtime: { kind: "managed", id: "managed-1" },
-        protocolVersion: driver.descriptor.protocol.name,
+        protocolVersion: providerProtocolIdentity(driver.descriptor.protocol),
         capabilities: driver.descriptor.capabilities,
-        generation: 2,
+        generation: driver.descriptor.sessionGeneration as number,
       },
       input: { kind: "approval", approvalId: "approval-1", decision: "accept" },
     })).resolves.toEqual({

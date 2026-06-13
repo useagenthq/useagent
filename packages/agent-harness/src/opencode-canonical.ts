@@ -379,6 +379,16 @@ export function translateOpenCode(
         // no fabrication, deep-equal marker nodes.
         produced.push(push(f.eventId, f.provider, { kind: "context.marker", ...marker, sourceEventType: et, ...(p ? { sourcePayload: p } : {}) }, ident));
       }
+      else if (et === "delivery.failed") {
+        const destination = str(p?.destination) ?? "external destination";
+        const deliveryKind = str(p?.delivery_kind) ?? "delivery";
+        const reason = str(p?.reason) ?? "permanent delivery failure";
+        produced.push(push(f.eventId, f.provider, {
+          kind: "harness.error",
+          message: `${destination} ${deliveryKind} failed permanently: ${reason}`,
+          fatal: false,
+        }, ident));
+      }
       else if (et === "artifact.created" || et === "artifact.delivered") {
         const artifactId = str(p?.id);
         const name = str(p?.name);
@@ -698,6 +708,7 @@ export function translateOpenCode(
             ? { executionCapabilities: parsed.executionCapabilities }
             : {}),
           source: parsed.source ?? f.provider,
+          ...(typeof parsed.resumed === "boolean" ? { resumed: parsed.resumed } : {}),
         }, ident));
       } else suppressed = "session.started without a capabilities map";
     } else if (et === "pi.turn.started") {

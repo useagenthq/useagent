@@ -1,6 +1,10 @@
 import type { EngineId, StepKind } from "../db/schema";
 import type { TimingSpanEnd } from "../runs/run-timing";
 import type { RunResource } from "../resources/types";
+import type {
+  HarnessSession,
+  ProviderSessionBinding,
+} from "@useagent/agent-harness/canonical";
 
 export {
   AGENT_OPERATING_RULES,
@@ -107,6 +111,9 @@ export interface EngineRunContext {
    *  turnContext accompanies the prompt); absent → fresh session (bootstrap +
    *  turnContext). See {@link composeTurnPrompt}. */
   engineSessionId?: string;
+  /** Complete durable provider/runtime authority for current rows. Legacy rows
+   * may carry only `engineSessionId`; recovery must not infer missing fields. */
+  providerSession?: ProviderSessionBinding;
   /** Set ONLY when this run is a VALIDATED native provider command (its name was checked
    *  against the active session catalog at acceptance). When present, the run's `prompt` is
    *  already the exact `/name args` bytes and {@link composeTurnPrompt} delivers it verbatim
@@ -124,10 +131,9 @@ export interface EngineRunContext {
    *  advertises is rejected rather than dispatched. */
   commandProvider?: string | null;
   commandCatalogRevision?: number | null;
-  /** Persist the engine session id this run created/used, so the next turn can
-   *  resume it. Callers requiring durable initialization await this before
-   *  dispatch so a failed write cannot report an unresumable session as ready. */
-  saveEngineSessionId?(sessionId: string): Promise<void>;
+  /** Persist the complete provider session atomically with its legacy native-id
+   * mirror before dispatch. */
+  saveProviderSession?(session: HarnessSession, authEpoch?: string | null): Promise<void>;
   /** Aborted when the run exceeds its timeout; adapters must wire this to their
    *  subprocess / SDK call so a runaway engine is actually killed. */
   signal: AbortSignal;

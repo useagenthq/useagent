@@ -24,6 +24,9 @@ import type { SlackClient } from "../src/slack/client";
 import type { ToolTokenClaims } from "../src/knowledge/gateway/token";
 import { fetchApi } from "./helpers";
 import { InMemoryArtifactStorage } from "./in-memory-artifact-storage";
+import { getArtifact, reviseArtifactPublication } from "../src/artifacts/repo";
+import { createHash } from "node:crypto";
+import { finalizeRun } from "../src/runs/finalize";
 
 const ORG = "org-skynet-dev";
 const TEAM = "T-SKYNET-DEV";
@@ -45,6 +48,17 @@ async function slackRunWithSandbox(prompt: string): Promise<{ runId: string; cha
 }
 
 const text = (r: { content: Array<{ text: string }> }): string => r.content.map((c) => c.text).join("");
+const recorderClient = (onUpload: (bytes: Uint8Array) => void): SlackClient => ({
+  postMessage: async () => ({ ok: true }),
+  updateMessage: async () => ({ ok: true }),
+  addReaction: async () => ({ ok: true }),
+  setSessionStatus: async () => ({ ok: true }),
+  setThreadStatus: async () => ({ ok: true }),
+  startStream: async () => ({ ok: true, ts: "stream.1" }),
+  appendStream: async () => ({ ok: true }),
+  stopStream: async () => ({ ok: true }),
+  uploadFile: async ({ bytes }) => { onUpload(bytes); return { ok: true }; },
+});
 
 beforeAll(() => {
   stopSlackOutboxRelay();
@@ -199,6 +213,47 @@ describe("slack_upload tool", () => {
     await processDue(recClient);
     expect(uploads).toHaveLength(1);
     expect(Buffer.from(uploads[0] ?? []).toString()).toBe("hello world");
+  });
+
+  test("a stable artifact id delivers each immutable revision exactly once", async () => {
+    const { runId } = await slackRunWithSandbox("revise once");
+    const claims = claimsFor(runId);
+    const published = await executeArtifactTool(claims, "artifact_publish", { path: "/root/work/outputs/revision.txt" });
+    const artifactId = (published.structuredContent?.artifact as { id: string }).id;
+    await executeSlackTool(claims, "slack_upload", { artifactId });
+    await finalizeRun(runId, "completed", "shared", 1);
+
+    const current = await getArtifact(artifactId);
+    if (!current) throw new Error("artifact missing");
+    const revisedBytes = Buffer.from("revision two");
+    const revisedSha = createHash("sha256").update(revisedBytes).digest("hex");
+    await storage.put(revisedSha, revisedBytes);
+    await reviseArtifactPublication({
+      orgId: ORG, id: artifactId, name: current.name, contentType: current.contentType,
+      sha256: revisedSha, storageKey: revisedSha, sizeBytes: revisedBytes.length,
+      workpieceKind: current.workpieceKind, workpieceState: current.workpieceState,
+    });
+    await executeSlackTool(claims, "slack_upload", { artifactId });
+    await executeSlackTool(claims, "slack_upload", { artifactId });
+
+    const uploads: string[] = [];
+    const client = recorderClient((bytes) => uploads.push(Buffer.from(bytes).toString()));
+    await processDue(client);
+    expect(uploads).toEqual(["hello world", "revision two"]);
+    const receipts = await db
+      .select({ payload: providerEvents.payload })
+      .from(providerEvents)
+      .where(and(
+        eq(providerEvents.runId, runId),
+        eq(providerEvents.eventType, "artifact.delivered"),
+      ));
+    expect(receipts.map(({ payload }) => {
+      const parsed = JSON.parse(payload ?? "{}") as { sha256?: string };
+      return parsed.sha256;
+    }).sort()).toEqual([
+      createHash("sha256").update("hello world").digest("hex"),
+      revisedSha,
+    ].sort());
   });
 
   test("refuses a file over the size cap (before staging)", async () => {

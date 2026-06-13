@@ -179,7 +179,7 @@ describe("fleet batch API", () => {
     await db.transaction(async (tx) => {
       await tx.execute(sql`delete from run_admissions`);
       await tx.execute(sql`delete from sandbox_leases`);
-      await tx.execute(sql`update runs set sandbox_id = null where sandbox_id is not null`);
+      await tx.execute(sql`update runs set sandbox_id = null, provider_session = null, engine_session_id = null where sandbox_id is not null`);
     });
     const org = await createOrgSession("fleet-batch-twenty");
     process.env.FLEET_GLOBAL_MAX_ACTIVE_SANDBOXES = "0";

@@ -10,10 +10,12 @@ import {
   getRun,
   insertStep,
   setRunEngineSession,
+  setRunProviderSession,
   setRunSandbox,
   setRunStatus,
   STALE_SUMMARY,
 } from "../src/runs/repo";
+import { providerSessionBinding } from "@useagent/agent-harness/canonical";
 import type { EngineId, RunStatus } from "../src/db/schema";
 import { waitFor } from "./helpers"; // side-effect: imports src/index → migrate + seed
 
@@ -48,11 +50,28 @@ async function seed(opts: {
     idempotencyKey: null,
     orgId: ORG,
     actorId: null,
-    run: { id, prompt: "x", model: "claude-opus-5", engine: opts.engine, parentRunId: opts.parentRunId, threadId: opts.threadId },
+    run: {
+      id,
+      prompt: "x",
+      model: opts.engine === "codex" ? "gpt-5.6-luna" : "claude-opus-5",
+      engine: opts.engine,
+      parentRunId: opts.parentRunId,
+      threadId: opts.threadId,
+    },
   });
   if (opts.runStatus !== "queued") await setRunStatus(id, opts.runStatus);
-  if (opts.session) await setRunEngineSession(id, opts.session);
-  if (opts.sandbox) await setRunSandbox(id, opts.sandbox);
+  if (opts.session && opts.sandbox) {
+    await setRunSandbox(id, opts.sandbox);
+    await setRunProviderSession(id, providerSessionBinding({
+      provider: opts.engine === "daytona" ? "opencode" : opts.engine,
+      nativeSessionId: opts.session,
+      protocolVersion: opts.engine === "opencode" ? "opencode-server/compat" : "t3-orchestration",
+      runtime: { kind: "sandbox", id: opts.sandbox },
+      capabilities: {} as never,
+      generation: 1,
+    }));
+  } else if (opts.session) await setRunEngineSession(id, opts.session);
+  if (opts.sandbox && !opts.session) await setRunSandbox(id, opts.sandbox);
   await db.execute(sql`update commands set state=${opts.commandState} where run_id=${id} and kind='run.create'`);
   if (opts.withStep) {
     await insertStep({ runId: id, idx: 0, kind: "task", label: "Thinking…", chip: "opencode", code: null });
@@ -173,5 +192,82 @@ describe("command-lane restart recovery", () => {
     expect((await getRun(legacy))?.summary).toBe(STALE_SUMMARY);
     expect((await getRun(legacy))?.settledAt).toBeInstanceOf(Date);
     expect(res.failed).toBeGreaterThanOrEqual(1);
+  });
+
+  test("does not infer provider authority from a legacy session-id prefix", async () => {
+    const runId = crypto.randomUUID();
+    await seed({
+      runId,
+      threadId: runId,
+      parentRunId: null,
+      engine: "codex",
+      runStatus: "running",
+      commandState: "dispatched",
+      session: "skynet-thread-looks-runtime",
+      sandbox: undefined,
+    });
+    await setRunSandbox(runId, "sb");
+    let probed = false;
+
+    await recoverStaleRuns(async () => {
+      probed = true;
+      return { status: "completed", summary: "must not adopt" };
+    });
+
+    expect(probed).toBe(false);
+    expect((await getRun(runId))?.status).toBe("failed");
+  });
+
+  test("does not relabel an ambiguous legacy OpenCode row as the current rollout driver", async () => {
+    const runId = crypto.randomUUID();
+    await acceptRunCommand({
+      idempotencyKey: null,
+      orgId: ORG,
+      actorId: null,
+      run: { id: runId, prompt: "legacy", model: "openai/gpt-5.6-luna", engine: "opencode", parentRunId: null, threadId: runId },
+    });
+    await setRunStatus(runId, "running");
+    await setRunEngineSession(runId, "legacy-ambiguous-session");
+    await setRunSandbox(runId, "legacy-sandbox");
+    await db.execute(sql`update commands set state='dispatched' where run_id=${runId} and kind='run.create'`);
+    let probed = false;
+
+    await recoverStaleRuns(async () => {
+      probed = true;
+      return { status: "completed", summary: "wrong protocol" };
+    });
+
+    expect(probed).toBe(false);
+    expect((await getRun(runId))?.status).toBe("failed");
+  });
+
+  test("does not reconcile a session whose credential epoch is no longer resolvable", async () => {
+    const runId = crypto.randomUUID();
+    await acceptRunCommand({
+      idempotencyKey: null,
+      orgId: ORG,
+      actorId: null,
+      run: { id: runId, prompt: "revoked auth", model: "gpt-5.6-luna", engine: "codex", parentRunId: null, threadId: runId },
+    });
+    await setRunStatus(runId, "running");
+    await setRunSandbox(runId, "auth-sandbox");
+    await setRunProviderSession(runId, providerSessionBinding({
+      provider: "codex",
+      nativeSessionId: "auth-session",
+      protocolVersion: "t3-orchestration/useagent-runtime-v7",
+      runtime: { kind: "sandbox", id: "auth-sandbox" },
+      capabilities: {} as never,
+      generation: 2,
+    }, "revoked-epoch"));
+    await db.execute(sql`update commands set state='dispatched' where run_id=${runId} and kind='run.create'`);
+    let probed = false;
+
+    await recoverStaleRuns(async () => {
+      probed = true;
+      return { status: "completed", summary: "must not adopt" };
+    });
+
+    expect(probed).toBe(false);
+    expect((await getRun(runId))?.status).toBe("failed");
   });
 });

@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { HarnessSession } from "@useagent/agent-harness/canonical";
 import { makePiProviderDriver } from "./pi-provider-driver";
+import { PI_BRIDGE_GENERATION } from "./pi-runtime-config";
 
 function harnessSession(nativeSessionId = "/sessions/pi.jsonl"): HarnessSession {
   return {
@@ -9,7 +10,7 @@ function harnessSession(nativeSessionId = "/sessions/pi.jsonl"): HarnessSession 
     runtime: { kind: "sandbox", id: "box" },
     protocolVersion: "oh-my-pi-rpc/18.0.3",
     capabilities: {} as never,
-    generation: 1,
+    generation: PI_BRIDGE_GENERATION,
   };
 }
 

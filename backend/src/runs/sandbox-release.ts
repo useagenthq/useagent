@@ -10,6 +10,7 @@ import {
   threadHasActiveRuns,
 } from "./repo";
 import { withThreadLifecycleLock } from "./thread-lifecycle-lock";
+import { parseProviderSessionBinding } from "@useagent/agent-harness/canonical";
 
 export type SandboxReleaseResult =
   | { ok: true; released: false; reason: "no_sandbox" }
@@ -69,6 +70,7 @@ export async function releaseRunSandbox(
       threadId: lockedRun.threadId,
       engine: lockedRun.engine,
       engineSessionId: lockedRun.engineSessionId,
+      providerSession: lockedRun.providerSession,
     };
   });
 
@@ -76,10 +78,16 @@ export async function releaseRunSandbox(
     forgetLiveThreadSandbox(released.threadId, released.sandboxId);
     forgetOpenCodeThreadServer(released.threadId);
     forgetAcpThreadRelays(released.threadId);
-    if (released.engine === "pi" && released.engineSessionId) {
+    const binding = parseProviderSessionBinding(released.providerSession);
+    const piSessionId = binding?.provider === "pi"
+      ? binding.nativeSessionId
+      : released.engine === "pi"
+        ? released.engineSessionId
+        : null;
+    if (piSessionId) {
       const removePiBridge = deps.removePiBridge ?? ((sessionFile: string) =>
         piBridgeManager.remove(sessionFile));
-      await removePiBridge(released.engineSessionId).catch((error) => {
+      await removePiBridge(piSessionId).catch((error) => {
         console.warn("[sandbox-release] failed to remove Pi bridge", {
           runId,
           error: error instanceof Error ? error.message : "unknown error",

@@ -460,10 +460,6 @@ export function buildRuntimeTurnInterruptCommand(
   };
 }
 
-export function isRuntimeThreadSessionId(sessionId: string): boolean {
-  return sessionId.startsWith("skynet-thread-");
-}
-
 export function assistantText(snapshot: RuntimeThreadSnapshot): string {
   const latestTurn = snapshot.thread.latestTurn;
   if (!latestTurn) return "";

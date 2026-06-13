@@ -4,11 +4,13 @@ import {
   type HarnessSession,
   type ExecutionCapabilitySnapshot,
   type NegotiatedCapabilities,
+  type ProviderSessionBinding,
 } from "@useagent/agent-harness/canonical";
 import type {
   HarnessResult,
   ProviderDriver,
 } from "@useagent/agent-harness/control";
+import { providerProtocolIdentity } from "@useagent/agent-harness/control";
 import { recordProviderEvent, type ProviderEventInput } from "../runs/provider-events";
 import {
   RUN_TIMING_OUTCOMES,
@@ -26,20 +28,56 @@ export interface EstablishProviderSessionInput {
   readonly driver: ProviderDriver;
   readonly ctx: Pick<
     EngineRunContext,
-    "runId" | "threadId" | "engineSessionId" | "model" | "signal" | "timing"
+    | "runId"
+    | "threadId"
+    | "engineSessionId"
+    | "providerSession"
+    | "model"
+    | "signal"
+    | "timing"
   >;
   readonly runtime: HarnessRuntime;
   readonly capabilities: NegotiatedCapabilities;
   readonly executionCapabilities: ExecutionCapabilitySnapshot;
   readonly generation?: number;
+  readonly authEpoch?: string | null;
   readonly startMetadata?: Record<string, unknown>;
   readonly priorSessionId?: string;
-  readonly persistSession: (nativeSessionId: string) => Promise<void>;
+  readonly persistSession: (session: HarnessSession) => Promise<void>;
 }
 
 export interface EstablishedProviderSession {
   readonly session: HarnessSession;
   readonly resumed: boolean;
+}
+
+export interface ProviderSessionExpectation {
+  readonly provider: string;
+  readonly protocol: string;
+  readonly generation: number;
+  readonly runtime: HarnessRuntime;
+  readonly authEpoch?: string | null;
+}
+
+/** Match all durable authority fields before a provider-native id is reused.
+ * A typed mismatch never falls back to the legacy mirror. Only a row with no
+ * typed binding may use that mirror during the migration window. */
+export function resumableProviderSessionId(input: {
+  readonly binding?: ProviderSessionBinding | null;
+  readonly legacySessionId?: string | null;
+  readonly expected: ProviderSessionExpectation;
+}): string | undefined {
+  const binding = input.binding;
+  if (!binding) return input.legacySessionId || undefined;
+  const expectedAuthEpoch = input.expected.authEpoch ?? null;
+  return binding.provider === input.expected.provider &&
+    binding.protocol === input.expected.protocol &&
+    binding.generation === input.expected.generation &&
+    binding.runtime.kind === input.expected.runtime.kind &&
+    binding.runtime.id === input.expected.runtime.id &&
+    binding.authEpoch === expectedAuthEpoch
+    ? binding.nativeSessionId
+    : undefined;
 }
 
 function operationError(
@@ -59,7 +97,7 @@ function resumableSession(
     provider: input.driver.provider,
     nativeSessionId,
     runtime: input.runtime,
-    protocolVersion: input.driver.descriptor.protocol.name,
+    protocolVersion: providerProtocolIdentity(input.driver.descriptor.protocol),
     capabilities: input.capabilities,
     executionCapabilities: input.executionCapabilities,
     generation: input.generation ?? 1,
@@ -68,11 +106,11 @@ function resumableSession(
 
 async function persistProviderSession(
   input: EstablishProviderSessionInput,
-  nativeSessionId: string,
+  session: HarnessSession,
 ): Promise<void> {
   const endPersist = input.ctx.timing?.begin(RUN_TIMING_STAGES.providerSessionPersist);
   try {
-    await input.persistSession(nativeSessionId);
+    await input.persistSession(session);
     endPersist?.(RUN_TIMING_OUTCOMES.success);
   } catch (error) {
     endPersist?.(
@@ -94,7 +132,20 @@ async function persistProviderSession(
 export async function establishProviderSession(
   input: EstablishProviderSessionInput,
 ): Promise<EstablishedProviderSession> {
-  const priorSessionId = input.priorSessionId ?? input.ctx.engineSessionId;
+  const protocol = providerProtocolIdentity(input.driver.descriptor.protocol);
+  const generation = input.generation ?? 1;
+  const authEpoch = input.authEpoch ?? null;
+  const priorSessionId = resumableProviderSessionId({
+    binding: input.ctx.providerSession,
+    legacySessionId: input.priorSessionId ?? input.ctx.engineSessionId,
+    expected: {
+      provider: input.driver.provider,
+      protocol,
+      generation,
+      runtime: input.runtime,
+      authEpoch,
+    },
+  });
   if (priorSessionId) {
     const candidate = resumableSession(input, priorSessionId);
     const endResume = input.ctx.timing?.begin(RUN_TIMING_STAGES.providerSessionResume);
@@ -123,7 +174,7 @@ export async function establishProviderSession(
         },
         resumed: true,
       } satisfies EstablishedProviderSession;
-      await persistProviderSession(input, established.session.nativeSessionId);
+      await persistProviderSession(input, established.session);
       return established;
     }
     if (resumed.status !== "error" || resumed.code !== "session_invalid") {
@@ -165,7 +216,7 @@ export async function establishProviderSession(
     },
     resumed: false,
   } satisfies EstablishedProviderSession;
-  await persistProviderSession(input, established.session.nativeSessionId);
+  await persistProviderSession(input, established.session);
   return established;
 }
 

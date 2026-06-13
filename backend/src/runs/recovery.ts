@@ -1,11 +1,11 @@
-import { resolveHarness } from "../engines";
+import { resolveHarness, resolveProviderRegistration } from "../engines";
 import type {
   HarnessCheckpoint,
   HarnessInterimEvent,
   HarnessReconciliation,
   HarnessSessionHandle,
 } from "../engines/types";
-import { getLastStepAt, getRun, STALE_SUMMARY } from "./repo";
+import { getLastStepAt, getRun, setRunProviderSession, STALE_SUMMARY } from "./repo";
 import { finalizeRun, resolveDurableFinalizationOutcome } from "./finalize";
 import {
   providerEventExists,
@@ -32,6 +32,19 @@ import {
 import { pumpThread } from "../worker";
 import { assertNever } from "../util/exhaustive";
 import { CANCEL_SUMMARY, hasRunCancelIntent } from "../commands/cancel";
+import {
+  parseProviderSessionBinding,
+  providerSessionBinding,
+  type ProviderSessionBinding,
+} from "@useagent/agent-harness/canonical";
+import {
+  providerDriverSupports,
+  providerProtocolIdentity,
+} from "@useagent/agent-harness/control";
+import { and, eq } from "drizzle-orm";
+import { db } from "../db/client";
+import { providerEvents } from "../db/schema";
+import { providerSessionAuthIsCurrent } from "../engines/provider-session-authority";
 
 /** The event type for the durable "reconciling after restart" marker. Distinct
  *  from the terminal events so the timeline can show a run is being re-probed. */
@@ -59,14 +72,6 @@ export const RUN_RECONCILING = "run.reconciling";
 
 /** Hard per-run backstop; the harness reconcile bounds its own work to ~9s. */
 const RECONCILE_BUDGET_MS = 11_000;
-
-/** OpenCode's two adapter ids run the legacy resident-server path. */
-const OPENCODE_ENGINES = new Set(["opencode", "daytona"]);
-const RUNTIME_SESSION_PREFIX = "skynet-thread-";
-
-function reconcileProvider(engine: ActiveCommand["engine"]): string {
-  return engine === "daytona" ? "opencode" : engine;
-}
 
 /** The native-session probe (HarnessAdapter.reconcile). Injectable for tests. */
 export type ReconcileProbe = (
@@ -150,22 +155,42 @@ async function recoverRunningRun(
     const durable = await resolveDurableFinalizationOutcome(cmd.runId, finalized);
     return durable?.status === "completed" ? "reconciled" : "failed";
   }
-  const runtimeSession = cmd.engineSessionId?.startsWith(RUNTIME_SESSION_PREFIX) ?? false;
-  const candidate =
-    !!cmd.engineSessionId &&
-    !!cmd.sandboxId &&
-    (runtimeSession || OPENCODE_ENGINES.has(cmd.engine));
+  const legacyBinding = !cmd.providerSession
+    ? await legacyRecoveryBinding(cmd)
+    : null;
+  const binding = cmd.providerSession ?? legacyBinding;
+  const authCurrent = binding
+    ? await providerSessionAuthIsCurrent({
+        binding,
+        orgId: cmd.orgId,
+        userId: cmd.userId,
+      })
+    : false;
+  const candidate = Boolean(
+    binding &&
+    authCurrent &&
+    binding.runtime.kind === "sandbox" &&
+    binding.runtime.id === cmd.sandboxId &&
+    binding.nativeSessionId === cmd.engineSessionId,
+  );
   if (!candidate) {
     const finalized = await finalizeRun(cmd.runId, "failed", STALE_SUMMARY, 0);
     const durable = await resolveDurableFinalizationOutcome(cmd.runId, finalized);
     return durable?.status === "completed" ? "reconciled" : "failed";
   }
+  if (legacyBinding) {
+    await setRunProviderSession(cmd.runId, legacyBinding);
+  }
 
   const lastStepAt = await getLastStepAt(cmd.runId);
   const handle: HarnessSessionHandle = {
-    provider: reconcileProvider(cmd.engine),
-    sessionId: cmd.engineSessionId!,
-    sandboxId: cmd.sandboxId!,
+    provider: binding!.provider,
+    sessionId: binding!.nativeSessionId,
+    sandboxId: binding!.runtime.id,
+    protocol: binding!.protocol,
+    generation: binding!.generation,
+    authEpoch: binding!.authEpoch,
+    currentAuthEpoch: binding!.authEpoch,
   };
 
   let result: HarnessReconciliation;
@@ -202,8 +227,8 @@ async function recoverRunningRun(
       const newlyParked = await enqueueReconcile({
         runId: cmd.runId,
         threadId: cmd.threadId,
-        sandboxId: cmd.sandboxId!,
-        sessionId: cmd.engineSessionId!,
+        sandboxId: binding!.runtime.id,
+        sessionId: binding!.nativeSessionId,
         sinceAt: lastStepAt ?? new Date(now),
         nextAttemptAt: reconcileBackoffAt(now, 0),
         deadline: new Date(now + RECONCILE_PARK_BUDGET_MS),
@@ -220,6 +245,46 @@ async function recoverRunningRun(
     default:
       return assertNever(result, "unhandled reconciliation status");
   }
+}
+
+/** Transitional resolver for rows created before provider_session existed.
+ * It derives authority only from trusted engine/runtime columns plus the
+ * currently selected driver contract. Session-id prefixes never participate;
+ * dynamic-generation and non-reconciling drivers remain fail-closed. */
+async function legacyRecoveryBinding(cmd: ActiveCommand): Promise<ProviderSessionBinding | null> {
+  if (
+    !cmd.engineSessionId ||
+    !cmd.sandboxId ||
+    (cmd.engine !== "opencode" && cmd.engine !== "daytona")
+  ) return null;
+  const [evidence] = await db
+    .select({ id: providerEvents.id })
+    .from(providerEvents)
+    .where(and(
+      eq(providerEvents.runId, cmd.runId),
+      eq(providerEvents.provider, "opencode"),
+      eq(providerEvents.eventType, "session.started"),
+      eq(providerEvents.nativeSessionId, cmd.engineSessionId),
+    ))
+    .limit(1);
+  if (!evidence) return null;
+  const driver = resolveProviderRegistration("opencode")?.driver;
+  if (
+    !driver ||
+    !providerDriverSupports(driver, "reconcile") ||
+    typeof driver.descriptor.sessionGeneration !== "number" ||
+    providerProtocolIdentity(driver.descriptor.protocol) !== "opencode-server/compat"
+  ) {
+    return null;
+  }
+  return providerSessionBinding({
+    provider: "opencode",
+    nativeSessionId: cmd.engineSessionId,
+    runtime: { kind: "sandbox", id: cmd.sandboxId },
+    protocolVersion: providerProtocolIdentity(driver.descriptor.protocol),
+    capabilities: driver.descriptor.capabilities,
+    generation: driver.descriptor.sessionGeneration,
+  });
 }
 
 /** Payload of the durable "reconciling after restart" marker. `reason` is
@@ -331,7 +396,11 @@ export async function runDueReconciles(
       else failed++;
       continue;
     }
-    const result = await probeParked(entry, run.engine, reconcile);
+    const binding = parseProviderSessionBinding(run.providerSession);
+    const authCurrent = binding
+      ? await providerSessionAuthIsCurrent({ binding, orgId: run.orgId, userId: run.userId })
+      : false;
+    const result = await probeParked(entry, authCurrent ? binding : null, reconcile);
     // CONTINUITY (#63): while the run is still parked and its session is reachable
     // and generating, ingest the interim native events so the timeline advances
     // during adoption instead of freezing. Idempotent across probes (upsert on the
@@ -393,13 +462,25 @@ export async function runDueReconciles(
 /** Bounded native-session re-probe for one parked entry. Never throws. */
 async function probeParked(
   entry: ReconcileEntry,
-  engine: ActiveCommand["engine"],
+  binding: ProviderSessionBinding | null,
   reconcile: ReconcileProbe,
 ): Promise<HarnessReconciliation> {
+  if (
+    !binding ||
+    binding.runtime.kind !== "sandbox" ||
+    binding.runtime.id !== entry.sandboxId ||
+    binding.nativeSessionId !== entry.sessionId
+  ) {
+    return { status: "unreachable" };
+  }
   const handle: HarnessSessionHandle = {
-    provider: reconcileProvider(engine),
-    sessionId: entry.sessionId,
-    sandboxId: entry.sandboxId,
+    provider: binding.provider,
+    sessionId: binding.nativeSessionId,
+    sandboxId: binding.runtime.id,
+    protocol: binding.protocol,
+    generation: binding.generation,
+    authEpoch: binding.authEpoch,
+    currentAuthEpoch: binding.authEpoch,
   };
   try {
     return await Promise.race([

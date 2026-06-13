@@ -47,6 +47,14 @@ export interface HarnessSessionHandle {
   sessionId: string;
   /** Sandbox instance holding the resident harness. */
   sandboxId: string;
+  /** Durable protocol/generation authority. Optional only for compatibility
+   * callers; current recovery/control paths must provide both. */
+  protocol?: string;
+  generation?: number;
+  /** Credential epoch recorded with the session and the independently resolved
+   * current epoch. Both are required for typed out-of-turn control. */
+  authEpoch?: string | null;
+  currentAuthEpoch?: string | null;
 }
 
 /** Optional watermark for reconcile - our last recorded activity (epoch ms), so
@@ -139,6 +147,14 @@ export interface ProviderProtocolDescriptor {
   version?: string;
 }
 
+export function providerProtocolIdentity(protocol: ProviderProtocolDescriptor): string {
+  return protocol.version ? `${protocol.name}/${protocol.version}` : protocol.name;
+}
+
+export function providerProtocolName(identity: string): string {
+  return identity.split("/", 1)[0] ?? identity;
+}
+
 export interface ProviderModelDescriptor {
   id: string;
   displayName?: string;
@@ -168,13 +184,74 @@ export interface ProviderToolCapabilityDescriptor {
   tools?: readonly ProviderToolDescriptor[];
 }
 
+export const PROVIDER_DRIVER_OPERATIONS = [
+  "start",
+  "resume",
+  "reconcile",
+  "steer",
+  "cancel",
+] as const;
+
+export type ProviderDriverOperation = typeof PROVIDER_DRIVER_OPERATIONS[number];
+
+export type ProviderSteerInputKind = ProviderSteerInput["kind"];
+
+const PROVIDER_STEER_INPUTS = [
+  "prompt",
+  "command",
+  "approval",
+  "question",
+] as const satisfies readonly ProviderSteerInputKind[];
+
+const PROVIDER_STEER_INPUT_SET = new Set<string>(PROVIDER_STEER_INPUTS);
+
+export interface ProviderLifecycleDescriptor {
+  /** Operations that this portable driver performs without returning
+   * `unsupported_capability`. Compatibility methods may still exist to return
+   * that typed result, but must not be advertised here. */
+  operations: readonly ProviderDriverOperation[];
+  /** Input variants this driver's portable `steer` method accepts. Empty when
+   * steer is unavailable. Native interaction routes may still exist, but are
+   * not falsely advertised as portable driver behavior. */
+  steerInputs: readonly ProviderSteerInputKind[];
+}
+
 export interface ProviderDriverDescriptor {
   provider: ProviderId;
   protocol: ProviderProtocolDescriptor;
+  /** Provider process/session generation expected by this driver. `runtime`
+   * means the resident process reports it dynamically before resume. */
+  sessionGeneration: number | "runtime";
   /** Reuses the canonical negotiated map; there is no second product capability model. */
   capabilities: NegotiatedCapabilities;
+  lifecycle: ProviderLifecycleDescriptor;
   model: ProviderModelCapabilityDescriptor;
   tools: ProviderToolCapabilityDescriptor;
+}
+
+export function providerDriverSupports(
+  driver: Pick<ProviderDriver, "descriptor">,
+  operation: ProviderDriverOperation,
+): boolean {
+  return driver.descriptor.lifecycle.operations.includes(operation);
+}
+
+export function unsupportedProviderDriverOperations(
+  driver: Pick<ProviderDriver, "descriptor">,
+): ProviderDriverOperation[] {
+  return PROVIDER_DRIVER_OPERATIONS.filter((operation) =>
+    !providerDriverSupports(driver, operation)
+  );
+}
+
+export function providerSessionMatchesDriver(
+  driver: Pick<ProviderDriver, "provider" | "descriptor">,
+  session: Pick<HarnessSession, "provider" | "protocolVersion" | "generation">,
+): boolean {
+  return session.provider === driver.provider &&
+    session.protocolVersion === providerProtocolIdentity(driver.descriptor.protocol) &&
+    typeof driver.descriptor.sessionGeneration === "number" &&
+    session.generation === driver.descriptor.sessionGeneration;
 }
 
 export interface ProviderStartRequest {
@@ -288,6 +365,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 const MODEL_SELECTION_MODES = new Set(["fixed", "per_turn"]);
 const TOOL_MODES = new Set(["none", "provider_native", "skynet_brokered"]);
 const TOOL_APPROVAL_MODES = new Set(["none", "provider", "skynet"]);
+const PROVIDER_OPERATION_SET = new Set<string>(PROVIDER_DRIVER_OPERATIONS);
 
 function isNonEmptyString(value: unknown): value is string {
   return typeof value === "string" && value.length > 0;
@@ -341,6 +419,47 @@ export function validateProviderDriver(driver: unknown): HarnessOperationResult 
       status: "error",
       code: "invalid_provider_capabilities",
       message: `provider driver '${provider}' must declare canonical capabilities`,
+    };
+  }
+  if (
+    !isRecord(descriptor.lifecycle) ||
+    !Array.isArray(descriptor.lifecycle.operations) ||
+    descriptor.lifecycle.operations.some((operation) =>
+      typeof operation !== "string" || !PROVIDER_OPERATION_SET.has(operation)
+    ) ||
+    new Set(descriptor.lifecycle.operations).size !== descriptor.lifecycle.operations.length
+  ) {
+    return {
+      status: "error",
+      code: "invalid_provider_lifecycle",
+      message: `provider driver '${provider}' must declare unique supported lifecycle operations`,
+    };
+  }
+  if (
+    !Array.isArray(descriptor.lifecycle.steerInputs) ||
+    descriptor.lifecycle.steerInputs.some((input) =>
+      typeof input !== "string" || !PROVIDER_STEER_INPUT_SET.has(input)
+    ) ||
+    new Set(descriptor.lifecycle.steerInputs).size !== descriptor.lifecycle.steerInputs.length
+  ) {
+    return {
+      status: "error",
+      code: "invalid_provider_lifecycle",
+      message: `provider driver '${provider}' must declare unique supported steer inputs`,
+    };
+  }
+  if (
+    descriptor.sessionGeneration !== "runtime" &&
+    (
+      typeof descriptor.sessionGeneration !== "number" ||
+      !Number.isSafeInteger(descriptor.sessionGeneration) ||
+      descriptor.sessionGeneration < 1
+    )
+  ) {
+    return {
+      status: "error",
+      code: "invalid_provider_generation",
+      message: `provider driver '${provider}' must declare a positive session generation`,
     };
   }
   if (!isRecord(descriptor.model)) {
@@ -407,6 +526,44 @@ export function validateProviderDriver(driver: unknown): HarnessOperationResult 
       status: "error",
       code: "invalid_provider_method",
       message: `provider driver '${provider}' must implement reconcile as a function`,
+    };
+  }
+
+  const operations = new Set(descriptor.lifecycle.operations);
+  const steerInputs = new Set(descriptor.lifecycle.steerInputs);
+  const capabilities = descriptor.capabilities;
+  if (
+    Boolean(capabilities.resume) !== operations.has("resume") ||
+    Boolean(capabilities.load) !== operations.has("resume") ||
+    Boolean(capabilities.stop) !== operations.has("cancel") ||
+    Boolean(capabilities.reconcile) !== operations.has("reconcile") ||
+    Boolean(capabilities.modelSelection) !== (descriptor.model.selection === "per_turn")
+  ) {
+    return {
+      status: "error",
+      code: "provider_capability_mismatch",
+      message: `provider driver '${provider}' lifecycle does not match canonical capabilities`,
+    };
+  }
+  if (operations.has("reconcile") && !isFunction(driver.reconcile)) {
+    return {
+      status: "error",
+      code: "missing_provider_method",
+      message: `provider driver '${provider}' advertises reconcile without an implementation`,
+    };
+  }
+  if (operations.has("steer") !== (steerInputs.size > 0)) {
+    return {
+      status: "error",
+      code: "provider_capability_mismatch",
+      message: `provider driver '${provider}' steer operation does not match its accepted inputs`,
+    };
+  }
+  if (descriptor.model.selection === "per_turn" && !steerInputs.has("prompt")) {
+    return {
+      status: "error",
+      code: "provider_capability_mismatch",
+      message: `provider driver '${provider}' advertises per-turn models without prompt steering`,
     };
   }
 

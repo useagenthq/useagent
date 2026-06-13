@@ -1,20 +1,26 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:test";
-import { sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { db } from "../src/db/client";
+import { artifacts, providerEvents } from "../src/db/schema";
+import { recordProviderEvent } from "../src/runs/provider-events";
 import { startSlackOutbox } from "../src/slack";
 import { setSlackClientForTest, type DeliveryResult, type SlackClient } from "../src/slack/client";
 import { enqueue } from "../src/slack/outbox/repo";
-import { createRun } from "../src/runs/repo";
+import { createRun, setRunStatus } from "../src/runs/repo";
 import { createSlackRunResponse, findSlackRunResponse, linkSlackThread } from "../src/slack/repo";
 import { openingStreamChunks } from "../src/slack/streaming";
 import {
   enqueuePostMessage,
+  backfillSlackOutboxOrgScope,
+  drainSlackDeliveryReceipts,
   getSlackOutbox,
   processDue,
   resetStuckDelivering,
   stopSlackOutboxRelay,
 } from "../src/slack/outbox";
 import { uid, waitFor } from "./helpers";
+
+const ORG = "org-skynet-dev";
 
 // Durable Slack outbox: transactional enqueue → delivery worker with idempotency,
 // bounded backoff, 429/Retry-After, and dead-letter. Each test builds its OWN
@@ -131,12 +137,12 @@ async function linkedSlackRun(): Promise<{ runId: string; teamId: string; channe
     prompt: "stream run",
     model: "m",
     engine: "mock",
-    orgId: "org-skynet-dev",
+    orgId: ORG,
     userId: null,
     parentRunId: null,
     threadId: runId,
   });
-  await linkSlackThread({ teamId, channel, threadTs, rootRunId: runId, orgId: "org-skynet-dev" });
+  await linkSlackThread({ teamId, channel, threadTs, rootRunId: runId, orgId: ORG });
   await createSlackRunResponse({ runId, teamId, channel, threadTs });
   return { runId, teamId, channel, threadTs };
 }
@@ -230,6 +236,53 @@ describe("durable slack outbox", () => {
     expect(row?.errorClass).toBe("permanent");
   });
 
+  test("a run-scoped dead letter produces a durable user-visible failure receipt", async () => {
+    const { runId, teamId, channel, threadTs } = await linkedSlackRun();
+    const key = uid("visible-dead");
+    await enqueue({
+      kind: "set_session_status",
+      idempotencyKey: key,
+      payload: { orgId: ORG, teamId, channel, threadTs, runId, status: "processing" },
+    });
+
+    await processDue(recorder(() => ({
+      ok: false,
+      class: "permanent",
+      message: "integration_not_connected",
+    })).client);
+    expect(await getSlackOutbox(key)).toMatchObject({
+      state: "dead",
+      receiptEmittedAt: expect.any(Date),
+    });
+    const receipts = await db
+      .select({ payload: providerEvents.payload })
+      .from(providerEvents)
+      .where(and(
+        eq(providerEvents.runId, runId),
+        eq(providerEvents.eventType, "delivery.failed"),
+      ));
+    expect(receipts).toHaveLength(1);
+    expect(JSON.parse(receipts[0]?.payload ?? "{}")).toMatchObject({
+      destination: "slack",
+      delivery_kind: "set_session_status",
+      error_class: "permanent",
+      reason: "integration_not_connected",
+    });
+
+    // Crash window: the event committed but the row cursor did not. Replay is
+    // idempotent by event id and repairs the cursor without a duplicate receipt.
+    await db.execute(sql`update slack_outbox set receipt_emitted_at = null where idempotency_key = ${key}`);
+    await drainSlackDeliveryReceipts();
+    expect((await getSlackOutbox(key))?.receiptEmittedAt).toBeInstanceOf(Date);
+    expect(await db
+      .select({ id: providerEvents.id })
+      .from(providerEvents)
+      .where(and(
+        eq(providerEvents.runId, runId),
+        eq(providerEvents.eventType, "delivery.failed"),
+      ))).toHaveLength(1);
+  });
+
   test("transient errors retry with backoff then dead-letter when exhausted", async () => {
     const key = uid("exhaust");
     await enqueue({ kind: "post_message", idempotencyKey: key, payload: { channel: "C", text: key } });
@@ -268,6 +321,129 @@ describe("durable slack outbox", () => {
     await processDue(rec.client);
     expect((await getSlackOutbox(key))?.state).toBe("delivered");
     expect(rec.posted.some((p) => p.text === key)).toBe(true);
+  });
+
+  test("team-scoped delivery fails closed when the workspace no longer matches its queued org", async () => {
+    const key = uid("rebound");
+    await enqueuePostMessage({ idempotencyKey: key, orgId: ORG, teamId: "T1", channel: "C1", text: key });
+    const rec = recorder(() => ({ ok: true }));
+    await processDue(null, async (_teamId, expectedOrgId) => expectedOrgId === "org-rebound" ? rec.client : null);
+    expect((await getSlackOutbox(key))?.state).toBe("dead");
+    expect(rec.posted).toHaveLength(0);
+  });
+
+  test("boot backfill preserves a pre-upgrade terminal answer from durable run ownership", async () => {
+    const { runId, teamId, channel, threadTs } = await linkedSlackRun();
+    await setRunStatus(runId, "completed");
+    const key = uid("legacy-terminal");
+    await db.execute(sql`
+      insert into slack_outbox (id, idempotency_key, kind, payload)
+      values (
+        ${crypto.randomUUID()},
+        ${key},
+        'stop_stream',
+        ${JSON.stringify({
+          teamId,
+          channel,
+          threadTs,
+          runId,
+          chunks: openingStreamChunks("done"),
+          blocks: [],
+          text: "final answer",
+          fallbackChunks: ["final answer"],
+        })}
+      )`);
+
+    expect(await backfillSlackOutboxOrgScope()).toBe(1);
+    expect(JSON.parse((await getSlackOutbox(key))?.payload ?? "{}")).toMatchObject({ orgId: ORG });
+    const rec = recorder(() => ({ ok: true }));
+    await processDue(rec.client);
+    expect(rec.posted).toEqual([{ channel, text: "final answer", threadTs }]);
+  });
+
+  test("boot backfill dead-letters malformed legacy JSON without blocking valid repair", async () => {
+    const malformedKey = uid("malformed-legacy");
+    await db.execute(sql`
+      insert into slack_outbox (id, idempotency_key, kind, payload)
+      values (${crypto.randomUUID()}, ${malformedKey}, 'post_message', '{')`);
+
+    expect(await backfillSlackOutboxOrgScope()).toBe(0);
+    expect(await getSlackOutbox(malformedKey)).toMatchObject({
+      state: "dead",
+      lastError: "invalid_payload",
+    });
+  });
+
+  test("a dead upload emits failure only, never artifact delivered", async () => {
+    const { runId, teamId, channel, threadTs } = await linkedSlackRun();
+    const key = uid("dead-upload");
+    await db.execute(sql`
+      insert into slack_outbox
+        (id, idempotency_key, kind, payload, state, error_class, last_error)
+      values (
+        ${crypto.randomUUID()}, ${key}, 'upload_file',
+        ${JSON.stringify({ orgId: ORG, teamId, channel, threadTs, deliveryRunId: runId })},
+        'dead', 'permanent', 'artifact_bytes_missing'
+      )`);
+
+    await drainSlackDeliveryReceipts();
+    const events = await db
+      .select({ eventType: providerEvents.eventType })
+      .from(providerEvents)
+      .where(eq(providerEvents.runId, runId));
+    expect(events).toEqual([{ eventType: "delivery.failed" }]);
+    expect((await getSlackOutbox(key))?.receiptEmittedAt).toBeInstanceOf(Date);
+  });
+
+  test("legacy delivered upload replay reuses the deployed receipt identity", async () => {
+    const { runId, teamId, channel, threadTs } = await linkedSlackRun();
+    const artifactId = crypto.randomUUID();
+    await db.insert(artifacts).values({
+      id: artifactId,
+      orgId: ORG,
+      runId,
+      threadId: runId,
+      sourcePath: "/legacy/report.pdf",
+      name: "report.pdf",
+      contentType: "application/pdf",
+      sizeBytes: 10,
+      sha256: "a".repeat(64),
+      storageKey: "a".repeat(64),
+    });
+    const deployedEventId = `artifact.delivered:${runId}:${artifactId}`;
+    await recordProviderEvent({
+      id: deployedEventId,
+      runId,
+      threadId: runId,
+      provider: "skynet",
+      eventType: "artifact.delivered",
+      payload: {
+        id: artifactId,
+        name: "report.pdf",
+        content_type: "application/pdf",
+        size_bytes: 10,
+        sha256: "a".repeat(64),
+        destination: "slack",
+      },
+    }, { critical: true, required: true });
+    const key = uid("legacy-upload-receipt");
+    await db.execute(sql`
+      insert into slack_outbox (id, idempotency_key, kind, payload, state)
+      values (
+        ${crypto.randomUUID()}, ${key}, 'upload_file',
+        ${JSON.stringify({ orgId: ORG, teamId, channel, threadTs, artifactId, filename: "report.pdf", size: 10 })},
+        'delivered'
+      )`);
+
+    await drainSlackDeliveryReceipts();
+    expect(await db
+      .select({ id: providerEvents.id })
+      .from(providerEvents)
+      .where(and(
+        eq(providerEvents.runId, runId),
+        eq(providerEvents.eventType, "artifact.delivered"),
+      ))).toEqual([{ id: deployedEventId }]);
+    expect((await getSlackOutbox(key))?.receiptEmittedAt).toBeInstanceOf(Date);
   });
 });
 
@@ -318,6 +494,7 @@ describe("native slack streaming outbox", () => {
       kind: "start_stream",
       idempotencyKey: key,
       payload: {
+        orgId: ORG,
         channel,
         teamId,
         threadTs,
@@ -348,6 +525,7 @@ describe("native slack streaming outbox", () => {
       kind: "start_stream",
       idempotencyKey: uid("stream-start"),
       payload: {
+        orgId: ORG,
         channel,
         teamId,
         threadTs,
@@ -370,6 +548,7 @@ describe("native slack streaming outbox", () => {
       kind: "append_stream",
       idempotencyKey: key,
       payload: {
+        orgId: ORG,
         channel,
         teamId,
         threadTs,
@@ -406,6 +585,7 @@ describe("native slack streaming outbox", () => {
       kind: "start_stream",
       idempotencyKey: key,
       payload: {
+        orgId: ORG,
         channel,
         teamId,
         threadTs,
@@ -433,6 +613,7 @@ describe("native slack streaming outbox", () => {
       kind: "start_stream",
       idempotencyKey: key,
       payload: {
+        orgId: ORG,
         channel,
         teamId,
         threadTs,
@@ -456,17 +637,18 @@ describe("native slack streaming outbox", () => {
   });
 
   test("set_thread_status delivers free text and the empty-string clear", async () => {
+    const { runId, teamId } = await linkedSlackRun();
     const setKey = uid("thread-status-set");
     const clearKey = uid("thread-status-clear");
     await enqueue({
       kind: "set_thread_status",
       idempotencyKey: setKey,
-      payload: { teamId: "T1", channel: "D1", threadTs: "1.1", status: "is working: cloning repo" },
+      payload: { orgId: ORG, teamId, channel: "D1", threadTs: "1.1", runId, status: "is working: cloning repo" },
     });
     await enqueue({
       kind: "set_thread_status",
       idempotencyKey: clearKey,
-      payload: { teamId: "T1", channel: "D1", threadTs: "1.1", status: "" },
+      payload: { orgId: ORG, teamId, channel: "D1", threadTs: "1.1", runId, status: "" },
     });
 
     const rec = recorder(() => ({ ok: true }));
@@ -485,6 +667,7 @@ describe("native slack streaming outbox", () => {
       kind: "start_stream",
       idempotencyKey: uid("stream-fallback-start"),
       payload: {
+        orgId: ORG,
         channel,
         teamId,
         threadTs,
@@ -510,6 +693,7 @@ describe("native slack streaming outbox", () => {
       kind: "append_stream",
       idempotencyKey: appendKey,
       payload: {
+        orgId: ORG,
         channel,
         teamId,
         threadTs,
@@ -532,6 +716,7 @@ describe("native slack streaming outbox", () => {
       kind: "start_stream",
       idempotencyKey: uid("stream-stop-after-fallback-start"),
       payload: {
+        orgId: ORG,
         channel,
         teamId,
         threadTs,
@@ -554,6 +739,7 @@ describe("native slack streaming outbox", () => {
       kind: "stop_stream",
       idempotencyKey: stopKey,
       payload: {
+        orgId: ORG,
         channel,
         teamId,
         threadTs,
@@ -579,6 +765,7 @@ describe("native slack streaming outbox", () => {
       kind: "stop_stream",
       idempotencyKey: key,
       payload: {
+        orgId: ORG,
         channel,
         teamId,
         threadTs,
@@ -597,17 +784,31 @@ describe("native slack streaming outbox", () => {
     expect(rec.posted).toEqual([{ channel, text: "answer", threadTs }]);
   });
 
-  test("set_session_status delivers official processing and active statuses", async () => {
+  test("terminal truth drops delayed live rows but still delivers terminal clears", async () => {
+    const { runId, teamId, channel, threadTs } = await linkedSlackRun();
+    await setRunStatus(runId, "completed");
     const key = uid("session-status");
     await enqueue({
       kind: "set_session_status",
       idempotencyKey: key,
-      payload: { teamId: "T1", channel: "C1", threadTs: "1.1", status: "processing" },
+      payload: { orgId: ORG, teamId, channel, threadTs, runId, status: "processing" },
+    });
+    await enqueue({
+      kind: "append_stream",
+      idempotencyKey: uid("late-append"),
+      payload: { orgId: ORG, teamId, channel, threadTs, runId, chunks: openingStreamChunks("late"), fallbackBlocks: [], fallbackText: "late" },
+    });
+    await enqueue({
+      kind: "set_thread_status",
+      idempotencyKey: uid("terminal-clear"),
+      payload: { orgId: ORG, teamId, channel: "D1", threadTs, runId, status: "" },
     });
 
     const rec = recorder(() => ({ ok: true }));
     await processDue(rec.client);
     expect((await getSlackOutbox(key))?.state).toBe("delivered");
-    expect(rec.statuses).toEqual([{ channel: "C1", threadTs: "1.1", status: "processing" }]);
+    expect(rec.statuses).toHaveLength(0);
+    expect(rec.streams).toHaveLength(0);
+    expect(rec.threadStatuses).toEqual([{ channel: "D1", threadTs, status: "" }]);
   });
 });

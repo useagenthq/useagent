@@ -57,9 +57,9 @@ export const piAdapter: EngineAdapter = {
         executionCapabilities,
         generation: PI_BRIDGE_GENERATION,
         startMetadata: { workdir: prepared.workdir, runtime: prepared.providerState },
-        persistSession: async (nativeSessionId) => {
-          if (!ctx.saveEngineSessionId) throw new Error("Session persistence is unavailable");
-          await ctx.saveEngineSessionId(nativeSessionId);
+        persistSession: async (providerSession) => {
+          if (!ctx.saveProviderSession) throw new Error("Session persistence is unavailable");
+          await ctx.saveProviderSession(providerSession);
         },
       });
       const bridge = piBridgeManager.get(established.session.nativeSessionId);
