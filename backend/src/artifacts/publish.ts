@@ -24,7 +24,6 @@ import { artifactStorage } from "./storage";
 import { getRunForOrg } from "../runs/repo";
 import { publishOrgChange } from "../runs/org-signals";
 import {
-  recordProviderEvent,
   recordProviderEventIfAbsent,
 } from "../runs/provider-events";
 import { materializeFinishedWorkArtifactIfActive } from "../runs/finished-work-materialization-context";
@@ -415,17 +414,14 @@ export async function publishSandboxArtifact(input: {
       { regenerate: true },
     );
     const descriptor = toArtifactDescriptor(revisedWithPreview);
-    await recordProviderEvent(
-      {
-        id: `artifact.revised:${revisedWithPreview.id}:${revisedWithPreview.workpieceRevision}`,
-        runId: run.id,
-        threadId: run.threadId,
-        provider: "skynet",
-        eventType: "artifact.revised",
-        payload: descriptor,
-      },
-      { critical: true },
-    );
+    await recordProviderEventIfAbsent({
+      id: `artifact.revised:${revisedWithPreview.id}:${revisedWithPreview.workpieceRevision}`,
+      runId: run.id,
+      threadId: run.threadId,
+      provider: "skynet",
+      eventType: "artifact.revised",
+      payload: descriptor,
+    });
     publishOrgChange(input.orgId, {
       type: "artifact",
       action: "updated",
@@ -480,17 +476,14 @@ export async function publishSandboxArtifact(input: {
     { regenerate: false },
   );
   const descriptor = toArtifactDescriptor(record);
-  await recordProviderEvent(
-    {
-      id: `artifact.created:${record.id}`,
-      runId: run.id,
-      threadId: run.threadId,
-      provider: "skynet",
-      eventType: "artifact.created",
-      payload: descriptor,
-    },
-    { critical: true },
-  );
+  await recordProviderEventIfAbsent({
+    id: `artifact.created:${record.id}`,
+    runId: run.id,
+    threadId: run.threadId,
+    provider: "skynet",
+    eventType: "artifact.created",
+    payload: descriptor,
+  });
   if (stored.created) {
     publishOrgChange(input.orgId, {
       type: "artifact",
