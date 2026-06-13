@@ -32,8 +32,8 @@ export {
 };
 
 // ---------------------------------------------------------------------------
-// Provider connections — per-user, per-organization credentials for model
-// providers. These are NOT sandbox secrets: plaintext is write-only at the HTTP
+// Provider connections — per-user, per-organization credentials for model and
+// explicitly supported infrastructure providers. These are NOT sandbox secrets: plaintext is write-only at the HTTP
 // boundary and decrypted only by trusted backend callers. Metadata is limited to
 // safe display fields; credential material is AES-256-GCM sealed with the shared
 // secrets crypto implementation.

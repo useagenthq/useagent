@@ -4,9 +4,16 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { ProviderConnectionPanel } from "./provider-connection-panel";
 import { ProviderConnectionsCard } from "./provider-connections-card";
 import type { ProviderConnectionMeta } from "./provider-connections-data";
+import { ProviderConnectionsProvider } from "./use-provider-connections";
+
+function renderProviderConnectionsCard(): string {
+  return renderToStaticMarkup(
+    createElement(ProviderConnectionsProvider, null, createElement(ProviderConnectionsCard)),
+  );
+}
 
 test("renders the provider connection summary and loading state before client effects", () => {
-  const html = renderToStaticMarkup(createElement(ProviderConnectionsCard));
+  const html = renderProviderConnectionsCard();
 
   expect(html).toContain("0 of 3 providers connected");
   expect(html).toContain("Loading provider connections...");
@@ -47,4 +54,10 @@ test("renders OpenAI connected when OAuth is active and an old API key is revoke
   expect(html.slice(0, apiKeyRow)).toContain("Connected");
   expect(html.slice(0, apiKeyRow)).not.toContain("Revoked");
   expect(html.slice(apiKeyRow)).toContain("Revoked");
+});
+
+test("keeps Daytona out of the model-provider count", () => {
+  const html = renderProviderConnectionsCard();
+  expect(html).toContain("0 of 3 providers connected");
+  expect(html).not.toContain("0 of 4 providers connected");
 });

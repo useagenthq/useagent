@@ -39,6 +39,23 @@ describe("provider connection wire contract", () => {
     expect(JSON.stringify(decoded)).not.toContain("credentialCiphertext");
   });
 
+  test("decodes Daytona snapshot metadata without accepting credential-shaped fields", () => {
+    const decoded = decodeProviderConnectionMeta({
+      ...connection,
+      id: "connection-daytona",
+      provider: "daytona",
+      authMethod: "api_key",
+      metadata: {
+        snapshotName: "useagent-runtime-v17",
+        apiKey: "must-drop",
+      },
+    });
+    expect(decoded?.metadata).toEqual({
+      snapshotName: "useagent-runtime-v17",
+    });
+    expect(JSON.stringify(decoded)).not.toContain("must-drop");
+  });
+
   test("rejects invalid records while preserving valid historical API rows", () => {
     const historical = {
       ...connection,
