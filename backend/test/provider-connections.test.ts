@@ -23,6 +23,7 @@ import {
   type ManagedCodexAppServerClient,
 } from "../src/provider-connections/codex-app-server";
 import { createProviderConnectionsRoutes, type CodexChatGptOAuthLifecycle } from "../src/provider-connections/routes";
+import { DaytonaConnectionValidationError } from "../src/provider-connections/daytona";
 import {
   getCurrentUserProviderConnection,
   getCodexSubscriptionRuntimeSelection,
@@ -85,6 +86,7 @@ describe("provider connections", () => {
         metadata: {
           email: "person@example.com",
           planType: "team",
+          snapshotName: "must-not-persist-for-model-provider",
           accessToken: "must-not-persist-as-metadata",
         },
       },
@@ -128,6 +130,129 @@ describe("provider connections", () => {
       authMethod: "api_key",
     });
     expect(trusted).toEqual({ authMethod: "api_key", value: apiKey });
+  });
+
+  test("Daytona key and snapshot are tenant-scoped and write-only", async () => {
+    const session = await createOrgSession("pc-daytona");
+    const userId = await userIdForEmail(session.email);
+    const apiKey = `dtn_${crypto.randomUUID()}`;
+    const validations: Array<{ apiKey: string; snapshotName: string }> = [];
+    const app = new Hono<AppEnv>().route(
+      "/api/provider-connections",
+      createProviderConnectionsRoutes({
+        validateDaytona: async (input) => {
+          validations.push(input);
+        },
+      }),
+    );
+
+    const connected = await customJson<{ connection: ProviderConnectionMeta }>(
+      app,
+      "/api/provider-connections/daytona/api-key",
+      {
+        method: "PUT",
+        cookies: session.cookies,
+        body: {
+          apiKey,
+          metadata: {
+            snapshotName: "useagent-runtime-v17",
+            email: "must-not-survive@example.com",
+          },
+        },
+      },
+    );
+    expect(connected.status).toBe(200);
+    expect(connected.body.connection).toMatchObject({
+      provider: "daytona",
+      authMethod: "api_key",
+      status: "connected",
+      metadata: {
+        snapshotName: "useagent-runtime-v17",
+      },
+    });
+    expect(connected.body.connection.metadata.email).toBeUndefined();
+    assertNoCredentialMaterial(connected.body, apiKey);
+
+    expect(validations).toEqual([
+      { apiKey, snapshotName: "useagent-runtime-v17" },
+    ]);
+    expect(await getTrustedProviderCredential({
+      orgId: session.orgId,
+      userId,
+      provider: "daytona",
+      authMethod: "api_key",
+    })).toEqual({ authMethod: "api_key", value: apiKey });
+
+    const invalid = await customJson(
+      app,
+      "/api/provider-connections/daytona/api-key",
+      {
+        method: "PUT",
+        cookies: session.cookies,
+        body: { apiKey: "next-key", metadata: { snapshotName: "bad snapshot" } },
+      },
+    );
+    expect(invalid).toEqual({
+      status: 400,
+      body: { error: "valid Daytona snapshotName is required" },
+    });
+  });
+
+  test("Daytona validation failure persists no connection or credential material", async () => {
+    const session = await createOrgSession("pc-daytona-invalid");
+    const userId = await userIdForEmail(session.email);
+    const apiKey = `dtn_invalid_${crypto.randomUUID()}`;
+    const app = new Hono<AppEnv>().route(
+      "/api/provider-connections",
+      createProviderConnectionsRoutes({
+        validateDaytona: async () => {
+          throw new DaytonaConnectionValidationError("snapshot_not_found");
+        },
+      }),
+    );
+    const response = await customJson(
+      app,
+      "/api/provider-connections/daytona/api-key",
+      {
+        method: "PUT",
+        cookies: session.cookies,
+        body: {
+          apiKey,
+          metadata: { snapshotName: "missing-snapshot" },
+        },
+      },
+    );
+    expect(response).toEqual({ status: 404, body: { error: "snapshot_not_found" } });
+    expect(await getTrustedProviderCredential({
+      orgId: session.orgId,
+      userId,
+      provider: "daytona",
+      authMethod: "api_key",
+    })).toBeNull();
+    assertNoCredentialMaterial(response, apiKey);
+  });
+
+  test("Daytona schema rejects OAuth rows and provider-incompatible metadata", async () => {
+    const base = {
+      orgId: `org_${crypto.randomUUID()}`,
+      userId: `user_${crypto.randomUUID()}`,
+      status: "connected" as const,
+      credentialCiphertext: "sealed",
+      iv: "iv",
+      tag: "tag",
+    };
+    await expect(db.insert(providerConnections).values({
+      ...base,
+      provider: "daytona",
+      authMethod: "chatgpt_oauth",
+      metadata: { snapshotName: "runtime-v1" },
+    }).execute()).rejects.toThrow();
+    await expect(db.insert(providerConnections).values({
+      ...base,
+      provider: "openai",
+      authMethod: "api_key",
+      metadata: { snapshotName: "runtime-v1" },
+    }).execute()).rejects.toThrow();
   });
 
   test("connections are isolated by user and organization for read, update, and revoke", async () => {

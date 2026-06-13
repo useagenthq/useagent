@@ -5,6 +5,7 @@
 import {
   decodeProviderConnectionMeta,
   decodeProviderConnections,
+  MODEL_PROVIDER_CONNECTION_PROVIDERS,
   PROVIDER_CONNECTION_AUTH_METHODS,
   PROVIDER_CONNECTION_PROVIDERS,
   PROVIDER_CONNECTION_STATUSES,
@@ -16,6 +17,7 @@ import {
 } from "@useagent/agent-client/provider-connections";
 
 export {
+  MODEL_PROVIDER_CONNECTION_PROVIDERS,
   PROVIDER_CONNECTION_AUTH_METHODS,
   PROVIDER_CONNECTION_PROVIDERS,
   PROVIDER_CONNECTION_STATUSES,
@@ -131,12 +133,18 @@ export const PROVIDER_LABELS: Record<
     keyHint: "OpenRouter API key",
     keyPlaceholder: "sk-or-v1-...",
   },
+  daytona: {
+    name: "Daytona",
+    scope: "Personal cloud sandbox runtime",
+    keyHint: "Daytona API key",
+    keyPlaceholder: "Daytona API key",
+  },
 };
 
 export function providerConnectionViews(
   connections: ProviderConnectionMeta[],
 ): ProviderConnectionView[] {
-  return PROVIDER_CONNECTION_PROVIDERS.map((provider) => {
+  return MODEL_PROVIDER_CONNECTION_PROVIDERS.map((provider) => {
     const providerConnections = connections.filter((item) => item.provider === provider);
     return {
       provider,
@@ -198,6 +206,20 @@ export function safeProviderMetadata(input: {
   if (email) metadata.email = email;
   if (planType) metadata.planType = planType;
   return metadata;
+}
+
+export function safeDaytonaMetadata(input: {
+  snapshotName: string;
+}): { snapshotName: string } | null {
+  const snapshotName = input.snapshotName.trim();
+  if (
+    snapshotName.length < 1 ||
+    snapshotName.length > 200 ||
+    !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(snapshotName)
+  ) {
+    return null;
+  }
+  return { snapshotName };
 }
 
 export function safeExternalAuthUrl(value: string): string | null {

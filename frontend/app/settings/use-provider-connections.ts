@@ -1,14 +1,19 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import { useOrgChanges } from "@/hooks/use-org-changes";
 import {
-  fetchEnabledSandboxEngines,
-  fetchProviderConnections,
-} from "./provider-connections-api";
+  createContext,
+  createElement,
+  type ReactNode,
+  useCallback,
+  useContext,
+  useEffect,
+  useState,
+} from "react";
+import { useOrgChanges } from "@/hooks/use-org-changes";
+import { fetchEnabledSandboxEngines, fetchProviderConnections } from "./provider-connections-api";
 import type { ProviderConnectionMeta } from "./provider-connections-data";
 
-export function useProviderConnections() {
+function useProviderConnectionsState() {
   const [connections, setConnections] = useState<ProviderConnectionMeta[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
@@ -52,4 +57,21 @@ export function useProviderConnections() {
     mounted,
     refreshing,
   };
+}
+
+type ProviderConnectionsState = ReturnType<typeof useProviderConnectionsState>;
+
+const ProviderConnectionsContext = createContext<ProviderConnectionsState | null>(null);
+
+export function ProviderConnectionsProvider({ children }: { readonly children: ReactNode }) {
+  const value = useProviderConnectionsState();
+  return createElement(ProviderConnectionsContext.Provider, { value }, children);
+}
+
+export function useProviderConnections(): ProviderConnectionsState {
+  const value = useContext(ProviderConnectionsContext);
+  if (!value) {
+    throw new Error("useProviderConnections requires ProviderConnectionsProvider");
+  }
+  return value;
 }
