@@ -1,7 +1,6 @@
 <h1 align="center">useAgent</h1>
 
 <p align="center">
-  <b>Hand off the work. Get back the result.</b><br>
   The open-source AI coworker for your team.
 </p>
 
