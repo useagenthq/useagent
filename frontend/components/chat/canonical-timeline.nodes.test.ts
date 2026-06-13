@@ -96,7 +96,7 @@ describe("canonical<->legacy node equivalence (synthetic text / markers / child)
     expect(canon).toEqual(legacy);
   });
 
-  test("durable artifact creation and Slack delivery render identically in both lanes", () => {
+  test("artifact creation and multiple deliveries reconcile into one identical node", () => {
     const descriptor = {
       id: "artifact-1",
       name: "demo.png",
@@ -119,6 +119,20 @@ describe("canonical<->legacy node equivalence (synthetic text / markers / child)
         native: {},
         payload: { ...descriptor, destination: "slack" },
       }),
+      frame({
+        eventType: "artifact.delivered",
+        seq: 2,
+        provider: "skynet",
+        native: {},
+        payload: { ...descriptor, destination: "email" },
+      }),
+      frame({
+        eventType: "artifact.delivered",
+        seq: 3,
+        provider: "skynet",
+        native: {},
+        payload: { ...descriptor, destination: "slack" },
+      }),
     ];
     const { legacy, canon } = bothWays(frames, []);
     expect(legacy).toEqual([
@@ -131,18 +145,67 @@ describe("canonical<->legacy node equivalence (synthetic text / markers / child)
           bytes: 2048,
           sha256: "a".repeat(64),
           contentType: "image/png",
+          destinations: ["email", "slack"],
+        },
+      },
+    ]);
+    expect(canon).toEqual(legacy);
+  });
+
+  test("delivery before creation converges on the creation key and position", () => {
+    const descriptor = {
+      id: "artifact-1",
+      name: "demo.png",
+      size_bytes: 2048,
+      sha256: "a".repeat(64),
+      content_type: "image/png",
+    };
+    const frames: F[] = [
+      frame({
+        eventType: "artifact.delivered",
+        seq: 0,
+        provider: "skynet",
+        native: {},
+        payload: { ...descriptor, destination: "slack" },
+      }),
+      frame({
+        eventType: "artifact.created",
+        seq: 1,
+        provider: "skynet",
+        native: {},
+        payload: { ...descriptor, id: "artifact-2", name: "created-between.png" },
+      }),
+      frame({
+        eventType: "artifact.created",
+        seq: 2,
+        provider: "skynet",
+        native: {},
+        payload: descriptor,
+      }),
+    ];
+    const { legacy, canon } = bothWays(frames, []);
+    expect(legacy).toEqual([
+      {
+        kind: "artifact",
+        key: "e1",
+        artifact: {
+          id: "artifact-2",
+          name: "created-between.png",
+          bytes: 2048,
+          sha256: "a".repeat(64),
+          contentType: "image/png",
         },
       },
       {
         kind: "artifact",
-        key: "e1",
+        key: "e2",
         artifact: {
           id: "artifact-1",
           name: "demo.png",
           bytes: 2048,
           sha256: "a".repeat(64),
           contentType: "image/png",
-          destination: "slack",
+          destinations: ["slack"],
         },
       },
     ]);

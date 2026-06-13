@@ -2,8 +2,8 @@
  * Slack Socket Mode transport - an OUTBOUND WebSocket ingress for the same
  * event pipeline as the HTTP receiver (routes.ts). Config-gated on
  * SLACK_APP_TOKEN (xapp-...): when present, we call apps.connections.open,
- * connect to the returned wss URL, ack every envelope by envelope_id, and feed
- * `events_api` payloads into the SAME handleSlackEvent used by the HTTP path.
+ * connect to the returned wss URL, persist `events_api` payloads into the same
+ * durable inbox as HTTP, then ack by envelope_id only after the commit.
  * No public URL or signing verification is involved - Slack authenticates the
  * connection via the app-level token, and events arrive only on sockets we
  * opened.
@@ -14,7 +14,8 @@
  * load-balances events across ALL open Socket Mode connections for the app -
  * if another service also holds a socket for this app, each receives a subset.
  */
-import { handleSlackEvent, type SlackEnvelope } from "./events";
+import { slackEventIsEarlyNoop, type SlackEnvelope } from "./events";
+import { classifySlackInboxEvent, persistSlackInboxEvent } from "./inbox";
 
 const RECONNECT_DELAY_MS = 3_000;
 
@@ -57,36 +58,47 @@ function scheduleReconnect(token: string): void {
 }
 
 /**
- * Dispatch one decoded Socket Mode frame: ack by envelope_id, then route by
- * type. `events_api` payloads go to the SAME handleSlackEvent the HTTP route
- * uses, so a Socket-Mode-ingested event creates a run and attaches the live
- * status/reply watcher (watchSlackRun) identically to the HTTP path. Extracted
- * from ws.onmessage so it is unit-testable without a live WebSocket.
+ * Dispatch one decoded Socket Mode frame. Authenticated `events_api` payloads
+ * are acked only after durable inbox persistence. A persistence failure leaves
+ * the envelope unacked so Slack retries it on this or another socket.
  */
 export function dispatchSocketFrame(
   raw: string,
   ack: (envelopeId: string) => void,
   onDisconnect: () => void,
-): void {
+): Promise<void> {
   let env: SocketEnvelope;
   try {
     env = JSON.parse(raw) as SocketEnvelope;
   } catch {
-    return;
+    return Promise.resolve();
   }
-  // Ack FIRST (3s budget), then process - mirrors the HTTP path's fast-ack.
-  if (env.envelope_id) ack(env.envelope_id);
-  if (env.type === "hello") return;
+  if (env.type === "hello") {
+    if (env.envelope_id) ack(env.envelope_id);
+    return Promise.resolve();
+  }
   if (env.type === "disconnect") {
+    if (env.envelope_id) ack(env.envelope_id);
     // Slack asks us to refresh; closing the socket triggers the reconnect.
     onDisconnect();
-    return;
+    return Promise.resolve();
   }
   if (env.type === "events_api" && env.payload) {
-    void handleSlackEvent(env.payload).catch((err) =>
-      console.error("[slack:socket] event handling failed:", err),
-    );
+    if (slackEventIsEarlyNoop(env.payload)) {
+      if (env.envelope_id) ack(env.envelope_id);
+      return Promise.resolve();
+    }
+    return classifySlackInboxEvent(env.payload)
+      .then(async (decision) => {
+        if (decision !== "drop") await persistSlackInboxEvent(env.payload!, decision);
+        if (env.envelope_id) ack(env.envelope_id);
+      })
+      .catch((error) => {
+        console.error("[slack:socket] inbox persistence failed:", (error as Error).message);
+      });
   }
+  if (env.envelope_id) ack(env.envelope_id);
+  return Promise.resolve();
 }
 
 async function connect(token: string): Promise<void> {
@@ -98,8 +110,8 @@ async function connect(token: string): Promise<void> {
   socket = ws;
 
   ws.onopen = () => console.log("[slack:socket] connected (socket mode)");
-  ws.onmessage = (msg) =>
-    dispatchSocketFrame(
+  ws.onmessage = (msg) => {
+    void dispatchSocketFrame(
       String(msg.data),
       (id) => ws.send(JSON.stringify({ envelope_id: id })),
       () => {
@@ -110,6 +122,7 @@ async function connect(token: string): Promise<void> {
         }
       },
     );
+  };
   ws.onclose = () => {
     if (socket === ws) socket = null;
     scheduleReconnect(token);
@@ -131,8 +144,8 @@ function isTestEnv(): boolean {
 }
 
 /** Start the Socket Mode ingress. No-op unless SLACK_APP_TOKEN is set (the
- *  HTTP events route stays mounted either way - both lanes share the deduper
- *  in events.ts, so double delivery collapses to one run).
+ *  HTTP events route stays mounted either way - both lanes share the durable
+ *  inbox, so double delivery collapses before processing).
  *
  *  HARD no-op under test: a test-booted server carrying the real SLACK_APP_TOKEN
  *  would otherwise open a live WebSocket to the workspace and STEAL real events
