@@ -9,6 +9,8 @@ import type {
 import {
   providerDriverHarnessCapabilities,
   providerDriverUnsupported,
+  providerProtocolIdentity,
+  providerSessionMatchesDriver,
 } from "@useagent/agent-harness/control";
 import { sandboxProvider, sandboxProviderApiKey, type SandboxHandle } from "../sandboxes/provider";
 import { sessionCapabilities } from "./capabilities";
@@ -67,7 +69,7 @@ function canonicalSession(
     // in-process session id is intentionally not durable authority.
     nativeSessionId: bridge.sessionFile,
     runtime,
-    protocolVersion: `oh-my-pi-rpc/${PI_CODING_AGENT_VERSION}`,
+    protocolVersion: providerProtocolIdentity(piProviderDriver.descriptor.protocol),
     capabilities: sessionCapabilities("pi", {
       desktop: false,
       knowledgeTools,
@@ -98,7 +100,12 @@ export function makePiProviderDriver(
     descriptor: {
       provider: "pi",
       protocol: { name: "oh-my-pi-rpc", version: PI_CODING_AGENT_VERSION },
+      sessionGeneration: PI_BRIDGE_GENERATION,
       capabilities,
+      lifecycle: {
+        operations: ["start", "resume", "steer", "cancel"],
+        steerInputs: ["prompt", "command"],
+      },
       model: { selection: "per_turn", supportsArbitraryModel: false },
       // Pi executes only the explicitly allowlisted read/write/bash/task tools
       // as the dedicated unprivileged sandbox user. There is no product approval
@@ -124,6 +131,9 @@ export function makePiProviderDriver(
     },
 
     async resume(request) {
+      if (!providerSessionMatchesDriver(driver, request.session)) {
+        return error("stale_session", "Pi session protocol or generation is stale");
+      }
       const start = metadata(request.metadata);
       if (!start) return error("invalid_start_metadata", "Pi resume metadata is incomplete");
       const sandbox = await dependencies.resolveRuntime(request.session.runtime);
@@ -145,6 +155,9 @@ export function makePiProviderDriver(
     },
 
     async steer(request): Promise<HarnessOperationResult> {
+      if (!providerSessionMatchesDriver(driver, request.session)) {
+        return error("stale_session", "Pi session protocol or generation is stale");
+      }
       const bridge = dependencies.bridges.get(request.session.nativeSessionId);
       if (!bridge) return error("session_unreachable", "Pi RPC session is not live");
       try {
@@ -177,6 +190,9 @@ export function makePiProviderDriver(
     },
 
     async cancel(session, reason): Promise<HarnessOperationResult> {
+      if (!providerSessionMatchesDriver(driver, session)) {
+        return error("stale_session", "Pi session protocol or generation is stale");
+      }
       const bridge = dependencies.bridges.get(session.nativeSessionId);
       if (!bridge) return error("session_unreachable", "Pi RPC session is not live");
       try {
@@ -207,9 +223,10 @@ function sessionFromHandle(handle: HarnessSessionHandle): HarnessSession {
     provider: "pi",
     nativeSessionId: handle.sessionId,
     runtime: { kind: "sandbox", id: handle.sandboxId },
-    protocolVersion: `oh-my-pi-rpc/${PI_CODING_AGENT_VERSION}`,
+    protocolVersion:
+      handle.protocol ?? providerProtocolIdentity(piProviderDriver.descriptor.protocol),
     capabilities: piProviderDriver.descriptor.capabilities,
-    generation: PI_BRIDGE_GENERATION,
+    generation: handle.generation ?? PI_BRIDGE_GENERATION,
   };
 }
 

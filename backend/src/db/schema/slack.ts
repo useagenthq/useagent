@@ -8,6 +8,7 @@ import {
   timestamp,
   uniqueIndex,
 } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 import { runs } from "./runs";
 
 // ---------------------------------------------------------------------------
@@ -159,6 +160,9 @@ export const slackOutbox = pgTable(
       .defaultNow(),
     lastError: text("last_error"),
     errorClass: text("error_class").$type<SlackErrorClass>(),
+    /** Durable receipt-outbox cursor. Terminal rows remain replayable until the
+     * corresponding provider event has been persisted. */
+    receiptEmittedAt: timestamp("receipt_emitted_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -169,5 +173,8 @@ export const slackOutbox = pgTable(
   (t) => [
     // The delivery worker claims due rows by (state, next_attempt_at).
     index("idx_slack_outbox_due").on(t.state, t.nextAttemptAt),
+    index("idx_slack_outbox_receipt_pending")
+      .on(t.updatedAt, t.id)
+      .where(sql`${t.receiptEmittedAt} is null and (${t.state} = 'dead' or (${t.state} = 'delivered' and ${t.kind} = 'upload_file'))`),
   ],
 );

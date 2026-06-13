@@ -59,12 +59,14 @@ export interface RuntimeProviderReadiness {
 
 const NOOP_PROVIDER_BRIDGE_LEASE: RuntimeProviderBridgeLease = {
   authPath: null,
+  authEpoch: null,
   readiness: null,
   async close() {},
 };
 
 const CODEX_GATEWAY_BRIDGE_LEASE: RuntimeProviderBridgeLease = {
   authPath: "provider_gateway",
+  authEpoch: null,
   readiness: null,
   async close() {},
 };
@@ -341,6 +343,7 @@ export async function prepareRuntimeProviderBridge(
       const lease = await prepareCodexSubscription({ sandbox, ctx, workdir, runtime: subscription });
       return {
         authPath: "subscription",
+        authEpoch: lease.authEpoch,
         readiness: null,
         close: () => lease.close(),
       };
@@ -352,6 +355,7 @@ export async function prepareRuntimeProviderBridge(
   if (engine === "claude") {
     return {
       authPath: null,
+      authEpoch: null,
       readiness: claudeProviderReadiness(claudeEnvironment),
       async close() {},
     };

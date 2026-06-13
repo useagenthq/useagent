@@ -1,6 +1,8 @@
 import type { HarnessRuntime, HarnessSession } from "@useagent/agent-harness/canonical";
 import {
+  providerProtocolIdentity,
   providerDriverUnsupported,
+  providerSessionMatchesDriver,
   type HarnessOperationResult,
   type ProviderDriver,
   type ProviderStartRequest,
@@ -124,7 +126,7 @@ function session(
     provider: driver.provider,
     nativeSessionId,
     runtime,
-    protocolVersion: driver.descriptor.protocol.name,
+    protocolVersion: providerProtocolIdentity(driver.descriptor.protocol),
     capabilities: driver.descriptor.capabilities,
     generation: T3_SESSION_GENERATION,
   };
@@ -162,7 +164,12 @@ export function makeT3ProviderDriver(
     descriptor: {
       provider: engine,
       protocol: { name: "t3-orchestration", version: RUNTIME_GENERATION },
+      sessionGeneration: T3_SESSION_GENERATION,
       capabilities,
+      lifecycle: {
+        operations: ["start", "resume", "reconcile", "steer", "cancel"],
+        steerInputs: ["prompt"],
+      },
       model: { selection: "per_turn", supportsArbitraryModel: true },
       tools: { mode: "skynet_brokered", approval: "skynet" },
     },
@@ -236,6 +243,9 @@ export function makeT3ProviderDriver(
     },
 
     async resume(request) {
+      if (!providerSessionMatchesDriver(driver, request.session)) {
+        return driverError("stale_session", "Provider runtime session protocol or generation is stale");
+      }
       try {
         const result = await readThreadSnapshot(
           dependencies,
@@ -258,6 +268,13 @@ export function makeT3ProviderDriver(
     },
 
     async reconcile(request) {
+      if (!providerSessionMatchesDriver(driver, request.session)) {
+        return providerDriverUnsupported(
+          engine,
+          "reconcile",
+          "Provider runtime session protocol or generation is stale",
+        );
+      }
       try {
         const result = await readThreadSnapshot(
           dependencies,
@@ -281,6 +298,9 @@ export function makeT3ProviderDriver(
     },
 
     async steer(request): Promise<HarnessOperationResult> {
+      if (!providerSessionMatchesDriver(driver, request.session)) {
+        return driverError("stale_session", "Provider runtime session protocol or generation is stale");
+      }
       if (request.input.kind !== "prompt") {
         return providerDriverUnsupported(
           engine,
@@ -321,6 +341,9 @@ export function makeT3ProviderDriver(
     },
 
     async cancel(currentSession): Promise<HarnessOperationResult> {
+      if (!providerSessionMatchesDriver(driver, currentSession)) {
+        return driverError("stale_session", "Provider runtime session protocol or generation is stale");
+      }
       try {
         const signal = AbortSignal.timeout(10_000);
         const result = await readThreadSnapshot(

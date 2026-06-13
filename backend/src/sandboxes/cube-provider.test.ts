@@ -288,6 +288,31 @@ describe("Cube sandbox provider", () => {
     kill.mockRestore();
   });
 
+  test("preserves a retained sandbox when its identity probe is transiently unavailable", async () => {
+    process.env.CUBE_IDENTITY_PROBE_ATTEMPTS = "2";
+    process.env.CUBE_IDENTITY_PROBE_DELAY_MS = "1";
+    let probes = 0;
+    const sandbox = fakeSandbox({
+      run: async () => {
+        probes += 1;
+        throw new Error("envd temporarily unavailable");
+      },
+    });
+    const getInfo = spyOn(E2BSandbox, "getInfo").mockResolvedValue(sandboxInfo());
+    const connect = spyOn(E2BSandbox, "connect").mockResolvedValue(sandbox);
+    const kill = spyOn(E2BSandbox, "kill").mockResolvedValue(true);
+
+    await expect(cubeSandboxProvider("").get("cube-1")).rejects.toThrow(
+      "envd temporarily unavailable",
+    );
+    expect(probes).toBe(2);
+    expect(kill).not.toHaveBeenCalled();
+
+    getInfo.mockRestore();
+    connect.mockRestore();
+    kill.mockRestore();
+  });
+
   test("tags background commands so named sessions survive adapter reconstruction", async () => {
     process.env.CUBE_PROXY_SCHEME = "https";
     const calls: Array<{ command: string; options?: unknown }> = [];

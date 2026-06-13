@@ -14,8 +14,12 @@ import {
 } from "../src/runs/recovery";
 import { enqueueReconcile, getReconcile } from "../src/runs/reconcile-queue";
 import { finalizeRun } from "../src/runs/finalize";
-import { getRun, insertStep, setRunEngineSession, setRunSandbox, setRunStatus, STALE_SUMMARY } from "../src/runs/repo";
+import { getRun, insertStep, setRunProviderSession, setRunSandbox, setRunStatus, STALE_SUMMARY } from "../src/runs/repo";
 import { uid } from "./helpers";
+import { providerSessionBinding } from "@useagent/agent-harness/canonical";
+import { providerProtocolIdentity } from "@useagent/agent-harness/control";
+import { opencodeProviderDriver } from "../src/engines/opencode-server";
+import { t3ProviderDrivers } from "../src/engines/t3-provider-driver";
 
 // The ADAPTIVE reconciler (#63): boot PARKS a transient run instead of honest-
 // failing it, and a background loop re-probes within a budget. Covers park-on-
@@ -45,8 +49,18 @@ async function seedRunning(
     },
   });
   await setRunStatus(id, "running");
-  await setRunEngineSession(id, "ses_x");
   await setRunSandbox(id, "sb_x");
+  const driver = engine === "opencode"
+    ? opencodeProviderDriver
+    : t3ProviderDrivers[engine as "codex" | "claude"];
+  await setRunProviderSession(id, providerSessionBinding({
+    provider: engine === "daytona" ? "opencode" : engine,
+    nativeSessionId: "ses_x",
+    protocolVersion: providerProtocolIdentity(driver.descriptor.protocol),
+    runtime: { kind: "sandbox", id: "sb_x" },
+    capabilities: {} as never,
+    generation: driver.descriptor.sessionGeneration as number,
+  }));
   await db.execute(sql`update commands set state='dispatched' where run_id=${id} and kind='run.create'`);
   await insertStep({ runId: id, idx: 0, kind: "task", label: "Thinking…", chip: "opencode", code: null });
   return { runId: id, threadId: id };

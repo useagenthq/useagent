@@ -83,6 +83,7 @@ describe("T3 Codex subscription lease", () => {
     });
     expect(relayRuntime).toEqual(runtime());
     expect(relayExecServerUrl).toBe("ws://127.0.0.1:43111/grant");
+    expect(lease.authEpoch).toBe("credential-generation-123");
 
     const providerPatch = harness.commands.find(({ command }) =>
       command.includes("CODEX_INSTANCE_B64"),

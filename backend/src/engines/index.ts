@@ -3,9 +3,9 @@ import { claudeHarness, codexHarness } from "./acp-harness";
 import { acpClaudeAdapter, acpCodexAdapter } from "./acp-server";
 import {
   makeOpenCodeServerAdapter,
-  opencodeHarness,
   opencodeProviderDriver,
 } from "./opencode-server";
+import { opencodeHarness } from "./opencode-harness";
 import { sandboxClaudeAdapter, sandboxCodexAdapter } from "./sandbox";
 import {
   makeRuntimeAdapter,
@@ -16,16 +16,19 @@ import { T3_SESSION_GENERATION, t3ProviderDrivers } from "./t3-provider-driver";
 import {
   normalizeNegotiatedCapabilities,
   type HarnessSession,
+  type ProviderSessionBinding,
 } from "@useagent/agent-harness/canonical";
 import {
   providerDriverHarnessCapabilities,
   providerDriverUnsupported,
+  providerProtocolIdentity,
+  unsupportedProviderDriverOperations,
   type HarnessSessionHandle,
   type ProviderDriver,
   type ProviderDriverCapability,
 } from "@useagent/agent-harness/control";
 import type { EngineAdapter, EngineRunContext, HarnessAdapter } from "./types";
-import { isRuntimeThreadSessionId, type RuntimeEngineId } from "./runtime-orchestration";
+import type { RuntimeEngineId } from "./runtime-orchestration";
 import { sessionCapabilities } from "./capabilities";
 import { piAdapter } from "./pi-adapter";
 import { piHarness, piProviderDriver } from "./pi-provider-driver";
@@ -46,11 +49,28 @@ const legacyCodex = cliFallback ? sandboxCodexAdapter : acpCodexAdapter;
 function makeEngineAdapterCompatibilityDriver(
   provider: string,
   harnessCompatibility?: HarnessAdapter,
+  protocol: { readonly name: string; readonly version?: string } = {
+    name: "engine-adapter-compatibility",
+  },
+  sessionGeneration: number | "runtime" = "runtime",
 ): ProviderDriver {
-  const capabilities =
+  const engineCapabilities =
     provider === "acp"
       ? normalizeNegotiatedCapabilities({})
       : sessionCapabilities(provider, { desktop: false, knowledgeTools: false });
+  const control = harnessCompatibility?.capabilities();
+  const lifecycle = [
+    ...(control?.authoritativeHistory ? ["reconcile" as const] : []),
+    ...(control?.cancel ? ["cancel" as const] : []),
+  ];
+  const capabilities = normalizeNegotiatedCapabilities({
+    ...engineCapabilities,
+    resume: false,
+    load: false,
+    stop: lifecycle.includes("cancel"),
+    reconcile: lifecycle.includes("reconcile"),
+    modelSelection: false,
+  });
   const unavailable = (capability: ProviderDriverCapability) =>
     providerDriverUnsupported(
       provider,
@@ -70,9 +90,11 @@ function makeEngineAdapterCompatibilityDriver(
     provider,
     descriptor: {
       provider,
-      protocol: { name: "engine-adapter-compatibility" },
+      protocol,
+      sessionGeneration,
       capabilities,
-      model: { selection: capabilities.modelSelection ? "per_turn" : "fixed" },
+      lifecycle: { operations: lifecycle, steerInputs: [] },
+      model: { selection: "fixed" },
       tools: { mode: "skynet_brokered", approval: "skynet" },
     },
     async start() {
@@ -113,26 +135,31 @@ export interface ProviderRegistration {
       };
   /** Recovery/stop view for callers that still consume HarnessAdapter. */
   readonly harnessAdapterCompatibility?: HarnessAdapter;
-  /** Driver operations that the compatibility registration cannot perform losslessly. */
-  readonly unsupportedDriverCapabilities: readonly ProviderDriverCapability[];
 }
 
 const acpRegistration: ProviderRegistration = {
   driver: makeEngineAdapterCompatibilityDriver("acp"),
   execution: { kind: "acp_compatibility", adapter: acpAdapter },
-  unsupportedDriverCapabilities: ["start", "resume", "reconcile", "steer", "cancel"],
 };
 const claudeRegistration: ProviderRegistration = {
-  driver: makeEngineAdapterCompatibilityDriver("claude", claudeHarness),
+  driver: makeEngineAdapterCompatibilityDriver(
+    "claude",
+    cliFallback ? undefined : claudeHarness,
+    cliFallback ? { name: "cli-jsonl", version: "claude" } : { name: "acp", version: "1" },
+    cliFallback ? 1 : "runtime",
+  ),
   execution: { kind: "acp_compatibility", adapter: legacyClaude },
   harnessAdapterCompatibility: claudeHarness,
-  unsupportedDriverCapabilities: ["start", "resume", "reconcile", "steer"],
 };
 const codexRegistration: ProviderRegistration = {
-  driver: makeEngineAdapterCompatibilityDriver("codex", codexHarness),
+  driver: makeEngineAdapterCompatibilityDriver(
+    "codex",
+    cliFallback ? undefined : codexHarness,
+    cliFallback ? { name: "cli-jsonl", version: "codex" } : { name: "acp", version: "1" },
+    cliFallback ? 1 : "runtime",
+  ),
   execution: { kind: "acp_compatibility", adapter: legacyCodex },
   harnessAdapterCompatibility: codexHarness,
-  unsupportedDriverCapabilities: ["start", "resume", "reconcile", "steer"],
 };
 const opencodeRegistration: ProviderRegistration = {
   driver: opencodeProviderDriver,
@@ -141,7 +168,6 @@ const opencodeRegistration: ProviderRegistration = {
     run: (ctx, driver) => makeOpenCodeServerAdapter(driver).run(ctx),
   },
   harnessAdapterCompatibility: opencodeHarness,
-  unsupportedDriverCapabilities: [],
 };
 const piRegistration: ProviderRegistration = {
   driver: piProviderDriver,
@@ -150,7 +176,6 @@ const piRegistration: ProviderRegistration = {
     run: async (ctx) => piAdapter.run(ctx),
   },
   harnessAdapterCompatibility: piHarness,
-  unsupportedDriverCapabilities: [],
 };
 
 /** The production provider registry. Legacy ids point to the same registration,
@@ -189,6 +214,33 @@ export function resolveProviderDriver(
     : registration.driver;
 }
 
+/** Resolve only when the complete persisted protocol/generation authority
+ * matches a current driver. Provider aliases are normalized by registration;
+ * a stale or cross-provider binding never reaches a control surface. */
+export function resolveProviderDriverForSession(
+  provider: string,
+  session: Pick<ProviderSessionBinding, "provider" | "protocol" | "generation" | "authEpoch">,
+  currentAuthEpoch: string | null,
+): ProviderDriver | undefined {
+  const registration = resolveProviderRegistration(provider);
+  if (
+    !registration ||
+    session.provider !== registration.driver.provider ||
+    session.authEpoch !== currentAuthEpoch
+  ) return undefined;
+  const candidates: readonly ProviderDriver[] = [
+    registration.driver,
+    ...(isRuntimeEngineId(registration.driver.provider)
+      ? [t3ProviderDrivers[registration.driver.provider]]
+      : []),
+  ];
+  return candidates.find((driver) =>
+    providerProtocolIdentity(driver.descriptor.protocol) === session.protocol &&
+    typeof driver.descriptor.sessionGeneration === "number" &&
+    driver.descriptor.sessionGeneration === session.generation
+  );
+}
+
 /** Authoritative production turn dispatch. Provider-native turns receive the
  * resolved lifecycle driver; only registrations explicitly marked ACP compatibility
  * may fall back to EngineAdapter.run. */
@@ -223,12 +275,17 @@ export function resolveHarness(provider: string): HarnessAdapter | undefined {
   const legacyHarness = registration?.harnessAdapterCompatibility;
   if (!registration || !legacyHarness) return undefined;
 
-  const controlDriver = (sessionId?: string): ProviderDriver =>
-    sessionId &&
-      isRuntimeThreadSessionId(sessionId) &&
-      isRuntimeEngineId(registration.driver.provider)
-      ? t3ProviderDrivers[registration.driver.provider]
-      : registration.driver;
+  const controlDriver = (handle?: HarnessSessionHandle): ProviderDriver | null => {
+    if (!handle?.protocol || handle.generation === undefined) return registration.driver;
+    if (handle.provider !== registration.driver.provider) return null;
+    if (handle.authEpoch === undefined || handle.currentAuthEpoch === undefined) return null;
+    return resolveProviderDriverForSession(provider, {
+      provider: handle.provider,
+      protocol: handle.protocol,
+      generation: handle.generation,
+      authEpoch: handle.authEpoch,
+    }, handle.currentAuthEpoch) ?? null;
+  };
   const controlSession = (
     driver: ProviderDriver,
     handle: HarnessSessionHandle,
@@ -236,27 +293,58 @@ export function resolveHarness(provider: string): HarnessAdapter | undefined {
     provider: driver.provider,
     nativeSessionId: handle.sessionId,
     runtime: { kind: "sandbox", id: handle.sandboxId },
-    protocolVersion: driver.descriptor.protocol.name,
+    protocolVersion: handle.protocol ?? providerProtocolIdentity(driver.descriptor.protocol),
     capabilities: driver.descriptor.capabilities,
-    generation: driver.descriptor.protocol.name === "t3-orchestration"
-      ? T3_SESSION_GENERATION
-      : 1,
+    generation: handle.generation ?? (
+      typeof driver.descriptor.sessionGeneration === "number"
+        ? driver.descriptor.sessionGeneration
+        : 1
+    ),
   });
 
   return {
     provider: registration.driver.provider,
     capabilities(handle) {
-      const driver = controlDriver(handle?.sessionId);
+      const driver = controlDriver(handle);
+      if (!driver) {
+        return {
+          resume: false,
+          cancel: false,
+          streaming: "none",
+          authoritativeHistory: false,
+          childSessions: false,
+          approvals: false,
+          questions: false,
+          reasoning: false,
+          todos: false,
+          patches: false,
+          usage: false,
+        };
+      }
       return driver.descriptor.protocol.name === "t3-orchestration"
         ? providerDriverHarnessCapabilities(driver)
         : legacyHarness.capabilities(handle);
     },
     cancel(handle, reason) {
-      const driver = controlDriver(handle.sessionId);
+      const driver = controlDriver(handle);
+      if (!driver) {
+        return Promise.resolve(providerDriverUnsupported(
+          registration.driver.provider,
+          "cancel",
+          "provider session protocol or generation is stale",
+        ));
+      }
       return driver.cancel(controlSession(driver, handle), reason);
     },
     reconcile(handle, checkpoint) {
-      const driver = controlDriver(handle.sessionId);
+      const driver = controlDriver(handle);
+      if (!driver) {
+        return Promise.resolve(providerDriverUnsupported(
+          registration.driver.provider,
+          "reconcile",
+          "provider session protocol or generation is stale",
+        ));
+      }
       return driver.reconcile
         ? driver.reconcile({ session: controlSession(driver, handle), checkpoint })
         : legacyHarness.reconcile(handle, checkpoint);

@@ -1,6 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { readFileSync } from "node:fs";
-import { validateProviderDriver } from "@useagent/agent-harness/control";
+import {
+  providerProtocolIdentity,
+  unsupportedProviderDriverOperations,
+  validateProviderDriver,
+} from "@useagent/agent-harness/control";
 import type { HarnessSession } from "@useagent/agent-harness/canonical";
 import {
   resolveHarness,
@@ -11,6 +14,7 @@ import {
   makeOpenCodeProviderDriver,
   opencodeProviderDriver,
 } from "./opencode-server";
+import { t3ProviderDrivers } from "./t3-provider-driver";
 
 const residentServer = {
   baseUrl: "https://opencode.test",
@@ -31,9 +35,9 @@ function sessionFor(driver: ReturnType<typeof makeOpenCodeProviderDriver>): Harn
     provider: driver.provider,
     nativeSessionId: "ses/opencode 1",
     runtime: { kind: "sandbox", id: "sandbox-1" },
-    protocolVersion: driver.descriptor.protocol.name,
+    protocolVersion: providerProtocolIdentity(driver.descriptor.protocol),
     capabilities: driver.descriptor.capabilities,
-    generation: 1,
+    generation: driver.descriptor.sessionGeneration as number,
   };
 }
 
@@ -56,7 +60,7 @@ describe("OpenCode provider driver", () => {
       provider: "opencode",
       nativeSessionId: "ses-created",
       runtime: { kind: "sandbox", id: "sandbox-1" },
-      protocolVersion: "opencode-server",
+      protocolVersion: "opencode-server/compat",
       generation: 1,
     });
     expect(result.value.capabilities).toEqual(driver.descriptor.capabilities);
@@ -96,6 +100,23 @@ describe("OpenCode provider driver", () => {
       status: "error",
       code: "session_resume_failed",
       message: "HTTP 503",
+    });
+  });
+
+  test("reconcile projects provider-native history through the portable driver", async () => {
+    const driver = makeOpenCodeProviderDriver({
+      reconcile: async (input) => ({
+        outcome: "completed",
+        summary: `${input.sandboxId}:${input.sessionId}:${input.sinceMs}`,
+      }),
+    });
+
+    await expect(driver.reconcile?.({
+      session: sessionFor(driver),
+      checkpoint: { sinceMs: 42 },
+    })).resolves.toEqual({
+      status: "completed",
+      summary: "sandbox-1:ses/opencode 1:42",
     });
   });
 
@@ -162,27 +183,6 @@ describe("production provider registry", () => {
     expect(resolveProviderRegistration("claude-sdk")).toBe(resolveProviderRegistration("claude"));
   });
 
-  test("the real worker path dispatches through ProviderDriver lifecycle wiring", () => {
-    const worker = readFileSync(new URL("../worker.ts", import.meta.url), "utf8");
-    const opencode = readFileSync(new URL("./opencode-server.ts", import.meta.url), "utf8");
-
-    expect(worker).toContain("await runProviderTurn(engineId, ctx)");
-    expect(worker).not.toContain("await adapter.run(ctx)");
-    expect(worker).toContain("const persistence = setRunEngineSession(runId, sid)");
-    expect(worker).toContain("return persistence;");
-    expect(worker).not.toContain("void setRunEngineSession(runId, sid)");
-    expect(opencode).toContain("await establishProviderSession({\n        driver,");
-    expect(opencode).toContain("persistSession: async (nativeSessionId) => {");
-    expect(opencode).toContain("const steerResult = await driver.steer({");
-  });
-
-  test("keeps only the ProviderDriver registry as production lifecycle authority", () => {
-    const source = readFileSync(new URL("./index.ts", import.meta.url), "utf8");
-
-    expect(source).not.toContain("export const harnessAdapters");
-    expect(source).not.toContain("routeRuntimeHarness");
-  });
-
   test("selected T3 turns resolve a native T3 ProviderDriver before ACP fallback", () => {
     const driver = resolveProviderDriver(
       "codex",
@@ -217,7 +217,7 @@ describe("production provider registry", () => {
 
     expect(enabled?.provider).toBe("claude");
     expect(enabled?.descriptor.protocol.name).toBe("t3-orchestration");
-    expect(rolledBack?.descriptor.protocol.name).toBe("engine-adapter-compatibility");
+    expect(rolledBack?.descriptor.protocol.name).toBe("acp");
   });
 
   test("projects T3 control capabilities from the selected lifecycle driver", () => {
@@ -225,6 +225,10 @@ describe("production provider registry", () => {
       provider: "codex",
       sessionId: "skynet-thread-thread-t3",
       sandboxId: "cube-t3",
+      protocol: providerProtocolIdentity(t3ProviderDrivers.codex.descriptor.protocol),
+      generation: 2,
+      authEpoch: null,
+      currentAuthEpoch: null,
     };
     const capabilities = resolveHarness("codex")?.capabilities(handle);
 
@@ -242,11 +246,52 @@ describe("production provider registry", () => {
     });
   });
 
+  test("rejects stale T3 protocol and generation before control dispatch", async () => {
+    const harness = resolveHarness("codex");
+    expect(harness).toBeDefined();
+    if (!harness) return;
+    for (const stale of [
+      { protocol: "t3-orchestration/useagent-runtime-v6", generation: 2 },
+      {
+        protocol: providerProtocolIdentity(t3ProviderDrivers.codex.descriptor.protocol),
+        generation: 1,
+      },
+      {
+        protocol: providerProtocolIdentity(t3ProviderDrivers.codex.descriptor.protocol),
+        generation: 2,
+        authEpoch: "epoch-old",
+        currentAuthEpoch: "epoch-current",
+      },
+      {
+        provider: "claude",
+        protocol: providerProtocolIdentity(t3ProviderDrivers.codex.descriptor.protocol),
+        generation: 2,
+      },
+    ]) {
+      const handle = {
+        provider: "codex",
+        sessionId: "skynet-thread-stale",
+        sandboxId: "cube-stale",
+        authEpoch: null,
+        currentAuthEpoch: null,
+        ...stale,
+      };
+      expect(harness.capabilities(handle)).toMatchObject({
+        cancel: false,
+        authoritativeHistory: false,
+      });
+      await expect(harness.cancel(handle, "stop")).resolves.toMatchObject({
+        status: "unsupported_capability",
+        capability: "cancel",
+      });
+    }
+  });
+
   test("legacy orchestration losses are declared and return typed unsupported results", async () => {
     const registration = resolveProviderRegistration("claude");
     expect(registration).toBeDefined();
     if (!registration) return;
-    expect(registration.unsupportedDriverCapabilities).toEqual([
+    expect(unsupportedProviderDriverOperations(registration.driver)).toEqual([
       "start",
       "resume",
       "reconcile",

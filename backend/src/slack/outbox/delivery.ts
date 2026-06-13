@@ -1,11 +1,11 @@
 import type { SlackConfig } from "../../env";
 import { resolveSlackClient, type DeliveryResult, type SlackClient } from "../client";
 import { assertNever } from "../../util/exhaustive";
-import { readStagedBytes, removeStaged } from "../upload-staging";
-import { getArtifact, toArtifactDescriptor } from "../../artifacts/repo";
+import { readStagedBytes } from "../upload-staging";
+import { getArtifact } from "../../artifacts/repo";
 import { artifactStorage } from "../../artifacts/storage";
 import { recordProviderEvent } from "../../runs/provider-events";
-import { claimDue, markDead, markDelivered, markRetry, resetStuckDelivering, updatePayload, type ClaimedRow } from "./repo";
+import { backfillSlackOutboxOrgScope, claimDue, listPendingSlackReceipts, markDead, markDelivered, markRetry, markSlackReceiptEmitted, resetStuckDelivering, updatePayload, type ClaimedRow } from "./repo";
 import {
   addSlackStreamedChars,
   createSlackRunResponse,
@@ -14,7 +14,7 @@ import {
   setSlackFallbackMessageTs,
   setSlackNativeStream,
 } from "../repo";
-import type { ProcessResult, SlackDeliveryOutcome } from "./types";
+import type { ProcessResult, SlackDeliveryOutcome, SlackErrorClass } from "./types";
 import {
   markdownChunksFor,
   type SlackSessionStatus,
@@ -23,6 +23,15 @@ import {
 } from "../streaming";
 import { findSlackWorkspace } from "../workspaces";
 import { resolveSlackBotTokenForWorkspace } from "../../integrations/slack-token-resolver";
+import { getRun } from "../../runs/repo";
+import { createHash } from "node:crypto";
+import { eq } from "drizzle-orm";
+import { db } from "../../db/client";
+import { slackOutbox } from "../../db/schema";
+import {
+  cleanupStagedIfUpload,
+  recordArtifactDelivered,
+} from "./artifact-delivery";
 
 // ---------------------------------------------------------------------------
 // Slack outbox delivery worker + relay. Claims due rows, calls Slack, and on
@@ -142,6 +151,22 @@ async function attempt(client: SlackClient, row: ClaimedRow): Promise<DeliveryRe
   }
   const string = (key: string): string | undefined =>
     typeof p[key] === "string" && p[key] ? p[key] : undefined;
+
+  // Terminal run truth wins over delayed/retried live-progress rows. Without
+  // this fence, a backoff or restart can re-open the spinner/stream after the
+  // terminal stop row already settled the Slack surface.
+  const staleLiveRow =
+    row.kind === "post_card" ||
+    row.kind === "start_stream" ||
+    row.kind === "append_stream" ||
+    (row.kind === "set_session_status" && p.status === "processing") ||
+    (row.kind === "set_thread_status" && typeof p.status === "string" && p.status.length > 0);
+  const runId = string("runId") ?? string("rootRunId");
+  if (staleLiveRow && runId) {
+    const run = await getRun(runId);
+    const terminal = run?.status === "completed" || run?.status === "failed";
+    if (terminal && staleLiveRow) return { ok: true };
+  }
   switch (row.kind) {
     case "post_message": {
       const channel = string("channel");
@@ -185,8 +210,25 @@ async function attempt(client: SlackClient, row: ClaimedRow): Promise<DeliveryRe
       let bytes: Buffer;
       try {
         const artifactId = string("artifactId");
+        const artifactSha256 = string("artifactSha256");
+        const artifactStorageKey = string("artifactStorageKey");
         const stagedPath = string("stagedPath");
-        if (artifactId) {
+        if (artifactId && artifactSha256 && artifactStorageKey) {
+          const artifact = await getArtifact(artifactId);
+          if (!artifact) return { ok: false, class: "permanent", message: "artifact_missing" };
+          if (artifact.orgId !== string("orgId")) {
+            return { ok: false, class: "permanent", message: "artifact_scope_mismatch" };
+          }
+          const stored = await artifactStorage().read(artifactStorageKey);
+          if (createHash("sha256").update(stored).digest("hex") !== artifactSha256) {
+            return { ok: false, class: "permanent", message: "artifact_digest_mismatch" };
+          }
+          if (typeof p.size !== "number" || stored.byteLength !== p.size) {
+            return { ok: false, class: "permanent", message: "artifact_size_mismatch" };
+          }
+          bytes = Buffer.from(stored);
+        } else if (artifactId) {
+          // Legacy rows predate immutable revision identity.
           const artifact = await getArtifact(artifactId);
           if (!artifact) return { ok: false, class: "permanent", message: "artifact_missing" };
           const stored = await artifactStorage().read(artifact.storageKey);
@@ -412,45 +454,6 @@ async function attempt(client: SlackClient, row: ClaimedRow): Promise<DeliveryRe
   }
 }
 
-/** Remove an upload row's staged bytes once the row is terminal (delivered or
- *  dead). A retry keeps them for the next attempt. No-op for other kinds. */
-async function cleanupStagedIfUpload(row: ClaimedRow): Promise<void> {
-  if (row.kind !== "upload_file") return;
-  try {
-    const p = JSON.parse(row.payload) as { stagedPath?: string };
-    if (p.stagedPath) await removeStaged(p.stagedPath);
-  } catch {
-    /* malformed payload — nothing to clean */
-  }
-}
-
-/** Emit a truthful timeline receipt only after Slack accepted the upload. The
- * outbox remains the delivery authority; enqueue alone is not delivery. */
-async function recordArtifactDelivered(row: ClaimedRow): Promise<void> {
-  if (row.kind !== "upload_file") return;
-  let artifactId: string | undefined;
-  try {
-    const payload = JSON.parse(row.payload) as { artifactId?: unknown };
-    artifactId = typeof payload.artifactId === "string" ? payload.artifactId : undefined;
-  } catch {
-    return;
-  }
-  if (!artifactId) return; // legacy staged-path row
-  const artifact = await getArtifact(artifactId);
-  if (!artifact) return;
-  await recordProviderEvent(
-    {
-      id: `artifact.delivered:${artifact.runId}:${artifact.id}`,
-      runId: artifact.runId,
-      threadId: artifact.threadId,
-      provider: "skynet",
-      eventType: "artifact.delivered",
-      payload: { ...toArtifactDescriptor(artifact), destination: "slack" },
-    },
-    { critical: true },
-  );
-}
-
 /** Deliver one claimed row and transition its state. */
 function rowTeamScope(row: ClaimedRow): {
   readonly teamId: string | null;
@@ -472,18 +475,109 @@ type SlackTeamClientResolver = (
   expectedOrgId: string | null,
 ) => Promise<SlackClient | null>;
 
+async function recordSlackDeliveryFailure(
+  row: ClaimedRow,
+  info: { readonly errorClass: string; readonly lastError: string },
+): Promise<void> {
+  let runId: string | null = null;
+  try {
+    const payload = JSON.parse(row.payload) as Record<string, unknown>;
+    for (const key of ["deliveryRunId", "runId", "rootRunId"] as const) {
+      if (typeof payload[key] === "string" && payload[key]) {
+        runId = payload[key];
+        break;
+      }
+    }
+  } catch {
+    return;
+  }
+  if (!runId) return;
+  const run = await getRun(runId);
+  if (!run) return;
+  await recordProviderEvent(
+    {
+      id: `slack.delivery.failed:${row.id}`,
+      runId: run.id,
+      threadId: run.threadId,
+      provider: "skynet",
+      eventType: "delivery.failed",
+      payload: {
+        destination: "slack",
+        delivery_kind: row.kind,
+        error_class: info.errorClass,
+        reason: info.lastError.slice(0, 200),
+      },
+    },
+    { critical: true, required: true },
+  );
+}
+
+async function deadLetter(
+  row: ClaimedRow,
+  info: { readonly errorClass: SlackErrorClass; readonly lastError: string },
+): Promise<void> {
+  await markDead(row.id, info);
+  console.error("[slack-outbox] dead-letter", JSON.stringify({
+    idempotencyKey: row.idempotencyKey,
+    kind: row.kind,
+    errorClass: info.errorClass,
+    reason: info.lastError.slice(0, 200),
+  }));
+}
+
+/** Drain the receipt half of the Slack outbox. Terminal state and all receipt
+ * source data are already durable on the same row; a failed projection leaves
+ * receipt_emitted_at NULL for the next tick/restart. Stable provider-event ids
+ * make a crash after event insert but before cursor update harmless. */
+export async function drainSlackDeliveryReceipts(): Promise<void> {
+  const rows = await listPendingSlackReceipts();
+  for (const row of rows) {
+    try {
+      if (row.state === "dead") {
+          let errorClass: SlackErrorClass = "permanent";
+          let lastError = "delivery_failed";
+          try {
+            const [stored] = await db
+              .select({ errorClass: slackOutbox.errorClass, lastError: slackOutbox.lastError })
+              .from(slackOutbox)
+              .where(eq(slackOutbox.id, row.id))
+              .limit(1);
+            errorClass = stored?.errorClass ?? "permanent";
+            lastError = stored?.lastError ?? "delivery_failed";
+          } catch {
+            // Keep the receipt pending when its terminal reason cannot be read.
+            continue;
+          }
+          await recordSlackDeliveryFailure(row, { errorClass, lastError });
+      } else if (row.kind === "upload_file") {
+        await recordArtifactDelivered(row);
+      }
+      await markSlackReceiptEmitted(row.id);
+    } catch (error) {
+      console.error("[slack-outbox] receipt projection failed:", (error as Error).message);
+    }
+  }
+}
+
 async function deliverOne(
   defaultClient: SlackClient | null,
   row: ClaimedRow,
   resolveTeamClient?: SlackTeamClientResolver,
 ): Promise<SlackDeliveryOutcome> {
   const { teamId, orgId } = rowTeamScope(row);
+  if (teamId && !orgId) {
+    await deadLetter(row, {
+      errorClass: "permanent",
+      lastError: "workspace_scope_missing",
+    });
+    return { status: "dead", errorClass: "permanent" };
+  }
   let client = defaultClient;
   if (teamId && resolveTeamClient) {
     try {
       client = await resolveTeamClient(teamId, orgId);
     } catch {
-      await markDead(row.id, {
+      await deadLetter(row, {
         errorClass: "permanent",
         lastError: "integration_credential_invalid",
       });
@@ -491,7 +585,7 @@ async function deliverOne(
     }
   }
   if (!client) {
-    await markDead(row.id, {
+    await deadLetter(row, {
       errorClass: "permanent",
       lastError: "integration_not_connected",
     });
@@ -500,14 +594,13 @@ async function deliverOne(
   const result = await attempt(client, row);
   if (result.ok) {
     await markDelivered(row.id);
-    await recordArtifactDelivered(row);
     await cleanupStagedIfUpload(row);
     return { status: "delivered" };
   }
 
   // A permanent error will never succeed → dead-letter immediately.
   if (result.class === "permanent") {
-    await markDead(row.id, { errorClass: "permanent", lastError: result.message });
+    await deadLetter(row, { errorClass: "permanent", lastError: result.message });
     await cleanupStagedIfUpload(row);
     return { status: "dead", errorClass: "permanent" };
   }
@@ -515,7 +608,7 @@ async function deliverOne(
   // Otherwise retry until attempts are exhausted, then dead-letter.
   const attemptsAfter = row.attemptCount + 1;
   if (attemptsAfter >= row.maxAttempts) {
-    await markDead(row.id, { errorClass: result.class, lastError: result.message });
+    await deadLetter(row, { errorClass: result.class, lastError: result.message });
     await cleanupStagedIfUpload(row);
     return { status: "dead", errorClass: result.class };
   }
@@ -541,6 +634,7 @@ export async function processDue(
     else if (outcome.status === "retry") retried++;
     else dead++;
   }
+  await drainSlackDeliveryReceipts();
   return { delivered, retried, dead };
 }
 
@@ -548,12 +642,15 @@ export async function processDue(
 
 let relayConfig: SlackConfig | null = null;
 let relayTimer: ReturnType<typeof setInterval> | null = null;
+let repairTimer: ReturnType<typeof setTimeout> | null = null;
+let repairInFlight = false;
+let relayReady = false;
 let inFlight = false;
 let rerunRequested = false;
 
 /** A single guarded pass (no overlapping passes). */
 async function pass(): Promise<void> {
-  if (!relayConfig) return;
+  if (!relayConfig || !relayReady) return;
   if (inFlight) {
     rerunRequested = true;
     return;
@@ -587,6 +684,29 @@ async function pass(): Promise<void> {
   }
 }
 
+async function repairAndStart(): Promise<void> {
+  if (!relayConfig || relayReady || repairInFlight) return;
+  repairInFlight = true;
+  try {
+    await backfillSlackOutboxOrgScope();
+    await resetStuckDelivering();
+    if (!relayConfig) return;
+    relayReady = true;
+    await pass();
+  } catch (err) {
+    console.error("[slack-outbox] boot repair failed:", (err as Error).message);
+    if (relayConfig && !repairTimer) {
+      repairTimer = setTimeout(() => {
+        repairTimer = null;
+        void repairAndStart();
+      }, BASE_MS);
+      repairTimer.unref?.();
+    }
+  } finally {
+    repairInFlight = false;
+  }
+}
+
 /**
  * Start the delivery relay: on boot reset orphaned `delivering` rows (a crash
  * mid-send) back to pending and deliver everything due, then poll on an
@@ -594,11 +714,13 @@ async function pass(): Promise<void> {
  */
 export function startSlackOutboxRelay(config: SlackConfig): void {
   relayConfig = config;
-  void resetStuckDelivering()
-    .catch((err) => console.error("[slack-outbox] reset stuck failed:", (err as Error).message))
-    .then(() => pass());
+  if (relayReady) void pass();
+  else void repairAndStart();
   if (!relayTimer) {
-    relayTimer = setInterval(() => void pass(), TICK_MS);
+    relayTimer = setInterval(() => {
+      if (relayReady) void pass();
+      else void repairAndStart();
+    }, TICK_MS);
     relayTimer.unref?.();
   }
 }
@@ -612,7 +734,13 @@ export function kickSlackOutbox(): void {
  *  drive processDue() explicitly; the app never stops it. */
 export function stopSlackOutboxRelay(): void {
   relayConfig = null;
+  relayReady = false;
+  repairInFlight = false;
   rerunRequested = false;
+  if (repairTimer) {
+    clearTimeout(repairTimer);
+    repairTimer = null;
+  }
   if (relayTimer) {
     clearInterval(relayTimer);
     relayTimer = null;

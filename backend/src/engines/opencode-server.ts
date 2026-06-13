@@ -42,7 +42,9 @@ import {
   type HarnessSession,
 } from "@useagent/agent-harness/canonical";
 import {
+  providerProtocolIdentity,
   providerDriverUnsupported,
+  providerSessionMatchesDriver,
   type HarnessResult,
   type ProviderDriver,
   type ProviderResumeRequest,
@@ -773,78 +775,6 @@ export async function reconcileOpencodeRun(input: {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Typed harness seam (north star Phase 2 "HarnessAdapter Contract"), Stage-1
-// minimal: capabilities / cancel / reconcile as a thin facade over the resident
-// opencode server. It does NOT re-drive turns (EngineAdapter.run still does);
-// it exposes the typed control/observability surface the product layer needs.
-// ---------------------------------------------------------------------------
-
-/** opencode v1.18.7 native capabilities (what the harness provides, not what
- *  useAgent already projects). */
-const OPENCODE_CAPABILITIES: HarnessCapabilities = {
-  resume: true, // resumes a native session by id
-  cancel: true, // POST /session/:id/abort
-  streaming: "parts", // /event message.part.updated + inline token deltas
-  authoritativeHistory: true, // REST message history reconciled as truth
-  childSessions: true, // task tool + child sessions with parentID
-  approvals: true, // native permission asked/replied events
-  questions: true, // native question asked/replied events
-  reasoning: true, // reasoning parts
-  todos: true, // GET /session/:id/todo
-  patches: true, // GET /session/:id/diff, patch/file parts
-  usage: true, // token usage on assistant messages
-};
-
-export const opencodeHarness: HarnessAdapter = {
-  provider: "opencode",
-
-  capabilities(): HarnessCapabilities {
-    return { ...OPENCODE_CAPABILITIES };
-  },
-
-  async cancel(
-    handle: HarnessSessionHandle,
-    reason: string,
-  ): Promise<HarnessOperationResult> {
-    return opencodeProviderDriver.cancel(
-      {
-        provider: opencodeProviderDriver.provider,
-        nativeSessionId: handle.sessionId,
-        runtime: { kind: "sandbox", id: handle.sandboxId },
-        protocolVersion: opencodeProviderDriver.descriptor.protocol.name,
-        capabilities: opencodeProviderDriver.descriptor.capabilities,
-        generation: 1,
-      },
-      reason,
-    );
-  },
-
-  async reconcile(
-    handle: HarnessSessionHandle,
-    checkpoint?: HarnessCheckpoint,
-  ): Promise<HarnessReconciliation> {
-    const r = await reconcileOpencodeRun({
-      sandboxId: handle.sandboxId,
-      sessionId: handle.sessionId,
-      sinceMs: checkpoint?.sinceMs ?? 0,
-    });
-    // Map the opencode-native outcome onto the provider-neutral projection.
-    switch (r.outcome) {
-      case "completed":
-        return { status: "completed", summary: r.summary };
-      case "in_progress":
-        return { status: "in_progress", events: r.events };
-      case "no_new_message":
-        return { status: "no_change" };
-      case "unreachable":
-        return { status: "unreachable" };
-      default:
-        return assertNever(r, "unhandled opencode reconcile outcome");
-    }
-  },
-};
-
 const OPENCODE_PROVIDER_DRIVER_CAPABILITIES = sessionCapabilities("opencode", {
   desktop: false,
   knowledgeTools: false,
@@ -855,6 +785,7 @@ type ResidentServerResolver = (sandboxId: string) => Promise<ResidentOpenCodeSer
 interface OpenCodeProviderDriverDeps {
   resolveResidentServer?: ResidentServerResolver;
   fetcher?: typeof fetch;
+  reconcile?: typeof reconcileOpencodeRun;
 }
 
 function operationSignal(signal: AbortSignal | undefined, timeoutMs: number): AbortSignal {
@@ -882,7 +813,7 @@ function openCodeSessionFromStart(
     provider: "opencode",
     nativeSessionId,
     runtime: request.runtime,
-    protocolVersion: "opencode-server",
+    protocolVersion: providerProtocolIdentity(opencodeProviderDriver.descriptor.protocol),
     capabilities: OPENCODE_PROVIDER_DRIVER_CAPABILITIES,
     generation: 1,
   };
@@ -893,13 +824,19 @@ export function makeOpenCodeProviderDriver(
 ): ProviderDriver {
   const resolveResidentServer = deps.resolveResidentServer ?? openResidentServer;
   const fetcher = deps.fetcher ?? fetch;
+  const reconcile = deps.reconcile ?? reconcileOpencodeRun;
 
   return {
     provider: "opencode",
     descriptor: {
       provider: "opencode",
       protocol: { name: "opencode-server", version: "compat" },
+      sessionGeneration: 1,
       capabilities: OPENCODE_PROVIDER_DRIVER_CAPABILITIES,
+      lifecycle: {
+        operations: ["start", "resume", "reconcile", "steer", "cancel"],
+        steerInputs: ["prompt"],
+      },
       model: {
         selection: "per_turn",
         defaultModel: DEFAULT_OPENCODE_MODEL,
@@ -952,6 +889,9 @@ export function makeOpenCodeProviderDriver(
     },
 
     async resume(request: ProviderResumeRequest): Promise<HarnessResult<HarnessSession>> {
+      if (!providerSessionMatchesDriver(opencodeProviderDriver, request.session)) {
+        return openCodeDriverError("stale_session", "OpenCode session protocol or generation is stale");
+      }
       const sandboxId = sandboxRuntimeId(request.session);
       if (!sandboxId) {
         return openCodeDriverError(
@@ -987,7 +927,45 @@ export function makeOpenCodeProviderDriver(
       }
     },
 
+    async reconcile(request) {
+      if (!providerSessionMatchesDriver(opencodeProviderDriver, request.session)) {
+        return providerDriverUnsupported(
+          "opencode",
+          "reconcile",
+          "OpenCode session protocol or generation is stale",
+        );
+      }
+      const sandboxId = sandboxRuntimeId(request.session);
+      if (!sandboxId) {
+        return providerDriverUnsupported(
+          "opencode",
+          "reconcile",
+          "OpenCode reconciliation requires a sandbox runtime",
+        );
+      }
+      const result = await reconcile({
+        sandboxId,
+        sessionId: request.session.nativeSessionId,
+        sinceMs: request.checkpoint?.sinceMs ?? 0,
+      });
+      switch (result.outcome) {
+        case "completed":
+          return { status: "completed", summary: result.summary };
+        case "in_progress":
+          return { status: "in_progress", events: result.events };
+        case "no_new_message":
+          return { status: "no_change" };
+        case "unreachable":
+          return { status: "unreachable" };
+        default:
+          return assertNever(result, "unhandled opencode reconcile outcome");
+      }
+    },
+
     async steer(request: ProviderSteerRequest): Promise<HarnessOperationResult> {
+      if (!providerSessionMatchesDriver(opencodeProviderDriver, request.session)) {
+        return openCodeDriverError("stale_session", "OpenCode session protocol or generation is stale");
+      }
       if (request.input.kind !== "prompt") {
         return providerDriverUnsupported(
           "opencode",
@@ -1036,6 +1014,9 @@ export function makeOpenCodeProviderDriver(
     },
 
     async cancel(session, _reason): Promise<HarnessOperationResult> {
+      if (!providerSessionMatchesDriver(opencodeProviderDriver, session)) {
+        return openCodeDriverError("stale_session", "OpenCode session protocol or generation is stale");
+      }
       const sandboxId = sandboxRuntimeId(session);
       if (!sandboxId) {
         return openCodeDriverError(
@@ -1452,11 +1433,11 @@ export function makeOpenCodeServerAdapter(driver: ProviderDriver): EngineAdapter
         runtime: { kind: "sandbox", id: box.id },
         capabilities: negotiatedCapabilities,
         executionCapabilities,
-        persistSession: async (nativeSessionId) => {
-          if (!ctx.saveEngineSessionId) {
+        persistSession: async (providerSession) => {
+          if (!ctx.saveProviderSession) {
             throw new Error("OpenCode session persistence is unavailable");
           }
-          await ctx.saveEngineSessionId(nativeSessionId);
+          await ctx.saveProviderSession(providerSession);
         },
       });
       const session = established.session;

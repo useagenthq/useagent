@@ -13,7 +13,8 @@ import {
 } from "../src/engines/opencode-runtime";
 import { db } from "../src/db/client";
 import { providerEvents, runs, secrets } from "../src/db/schema";
-import { createRun } from "../src/runs/repo";
+import { createRun, setRunProviderSession, setRunSandbox } from "../src/runs/repo";
+import { providerSessionBinding } from "@useagent/agent-harness/canonical";
 import { createSecretRedactor } from "../src/secrets/redact";
 import { json } from "./helpers";
 
@@ -265,5 +266,75 @@ describe("OpenCode native questions", () => {
     expect(response).toEqual({ status: 502, body: { error: "question_reply_failed" } });
     expect(providerRequests).toBe(0);
     expect(receipts).toHaveLength(0);
+  });
+});
+
+describe("typed provider control routing", () => {
+  test("does not infer T3 approval authority from a legacy session-id prefix", async () => {
+    const runId = crypto.randomUUID();
+    await createRun({
+      id: runId,
+      prompt: "approve this",
+      model: "gpt-5.6-luna",
+      engine: "codex",
+      orgId: "org-skynet-dev",
+      userId: null,
+      parentRunId: null,
+      threadId: runId,
+      repos: [],
+      memoryScope: "org",
+    });
+    await db
+      .update(runs)
+      .set({ status: "running", engineSessionId: "skynet-thread-spoofed" })
+      .where(eq(runs.id, runId));
+
+    expect(await json(`/api/runs/${runId}/approvals/request-1/reply`, {
+      method: "POST",
+      body: { decision: "accept" },
+    })).toEqual({
+      status: 409,
+      body: { error: "approval_session_not_active" },
+    });
+  });
+
+  test("rejects stale T3 protocol and generation bindings", async () => {
+    for (const authority of [
+      { protocolVersion: "t3-orchestration/useagent-runtime-v6", generation: 2, authEpoch: null },
+      { protocolVersion: "t3-orchestration/useagent-runtime-v7", generation: 1, authEpoch: null },
+      { protocolVersion: "t3-orchestration/useagent-runtime-v7", generation: 2, authEpoch: "revoked-epoch" },
+    ]) {
+      const runId = crypto.randomUUID();
+      await createRun({
+        id: runId,
+        prompt: "approve this",
+        model: "gpt-5.6-luna",
+        engine: "codex",
+        orgId: "org-skynet-dev",
+        userId: null,
+        parentRunId: null,
+        threadId: runId,
+        repos: [],
+        memoryScope: "org",
+      });
+      await db.update(runs).set({ status: "running" }).where(eq(runs.id, runId));
+      await setRunSandbox(runId, `sandbox-${runId}`);
+      await setRunProviderSession(runId, providerSessionBinding({
+        provider: "codex",
+        nativeSessionId: `session-${runId}`,
+        runtime: { kind: "sandbox", id: `sandbox-${runId}` },
+        capabilities: {} as never,
+        protocolVersion: authority.protocolVersion,
+        generation: authority.generation,
+      }, authority.authEpoch));
+
+      expect(await json(`/api/runs/${runId}/approvals/request-1/reply`, {
+        method: "POST",
+        body: { decision: "accept" },
+      })).toEqual({
+        status: 409,
+        body: { error: "approval_session_not_active" },
+      });
+    }
   });
 });

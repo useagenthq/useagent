@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { Executor } from "../db/client";
-import { setRunEngineSession } from "./repo";
+import { providerSessionBinding } from "@useagent/agent-harness/canonical";
+import { clearThreadSandbox, setRunEngineSession, setRunProviderSession } from "./repo";
 
 function updateExecutor(updatedIds: readonly string[]): {
   readonly exec: Executor;
@@ -37,6 +38,42 @@ describe("run native session persistence", () => {
     await expect(
       setRunEngineSession("run-1", "session-canonical", exec),
     ).resolves.toBeUndefined();
-    expect(values).toEqual([{ engineSessionId: "session-canonical" }]);
+    expect(values).toEqual([{
+      engineSessionId: "session-canonical",
+      providerSession: null,
+    }]);
+  });
+
+  test("persists the typed binding and legacy native-id mirror atomically", async () => {
+    const { exec, values } = updateExecutor(["run-1"]);
+    const binding = providerSessionBinding({
+      provider: "pi",
+      nativeSessionId: "/sessions/pi.jsonl",
+      protocolVersion: "oh-my-pi-rpc/18.0.3",
+      runtime: { kind: "sandbox", id: "sandbox-1" },
+      capabilities: {} as never,
+      generation: 4,
+    });
+
+    await expect(setRunProviderSession("run-1", binding, exec)).resolves.toBeUndefined();
+    expect(values).toEqual([{
+      engineSessionId: binding.nativeSessionId,
+      providerSession: binding,
+    }]);
+  });
+
+  test("clears sandbox and provider-session mirrors atomically after release", async () => {
+    const { exec, values } = updateExecutor(["run-1"]);
+
+    await expect(
+      clearThreadSandbox("org-1", "thread-1", "sandbox-1", exec),
+    ).resolves.toBe(1);
+    expect(values).toHaveLength(1);
+    expect(values[0]).toMatchObject({
+      sandboxId: null,
+      engineSessionId: null,
+      providerSession: null,
+    });
+    expect(values[0]?.updatedAt).toBeInstanceOf(Date);
   });
 });

@@ -7,9 +7,40 @@ import { chunkSlackText } from "../chunk";
 import type { Executor } from "../../db/client";
 import type { SlackSessionStatus, SlackStreamChunk, SlackStreamTaskDisplayMode } from "../streaming";
 
-export { startSlackOutboxRelay, stopSlackOutboxRelay, kickSlackOutbox, processDue } from "./delivery";
-export { resetStuckDelivering, getByKey as getSlackOutbox } from "./repo";
+export {
+  drainSlackDeliveryReceipts,
+  startSlackOutboxRelay,
+  stopSlackOutboxRelay,
+  kickSlackOutbox,
+  processDue,
+} from "./delivery";
+export {
+  backfillSlackOutboxOrgScope,
+  resetStuckDelivering,
+  getByKey as getSlackOutbox,
+} from "./repo";
 export type { SlackOutboxRow } from "./repo";
+
+export function slackArtifactDeliveryIdempotencyKey(input: {
+  readonly teamId: string;
+  readonly runId: string;
+  readonly artifactId: string;
+  readonly artifactRevision: number;
+  readonly artifactSha256: string;
+  readonly channel: string;
+  readonly threadTs?: string;
+}): string {
+  return [
+    "slack-artifact",
+    input.teamId,
+    input.runId,
+    input.artifactId,
+    input.artifactRevision,
+    input.artifactSha256,
+    input.channel,
+    input.threadTs ?? "root",
+  ].join(":");
+}
 
 /** Enqueue a run-completion reply INSIDE a caller's transaction (run
  *  finalization), so the reply commits atomically with the run reaching terminal.
@@ -21,8 +52,8 @@ export async function enqueuePostMessageTx(
   exec: Executor,
   entry: {
     idempotencyKey: string;
-    orgId?: string;
-    teamId?: string;
+    orgId: string;
+    teamId: string;
     channel: string;
     text: string;
     threadTs?: string;
@@ -53,6 +84,7 @@ export async function enqueueUpdateCardTx(
   exec: Executor,
   entry: {
     idempotencyKey: string;
+    orgId: string;
     teamId: string;
     channel: string;
     threadTs: string;
@@ -68,6 +100,7 @@ export async function enqueueUpdateCardTx(
       kind: "update_card",
       idempotencyKey: entry.idempotencyKey,
       payload: {
+        orgId: entry.orgId,
         channel: entry.channel,
         teamId: entry.teamId,
         threadTs: entry.threadTs,
@@ -85,6 +118,7 @@ export async function enqueueStopStreamTx(
   exec: Executor,
   entry: {
     idempotencyKey: string;
+    orgId: string;
     teamId: string;
     channel: string;
     threadTs: string;
@@ -103,6 +137,7 @@ export async function enqueueStopStreamTx(
       kind: "stop_stream",
       idempotencyKey: entry.idempotencyKey,
       payload: {
+        orgId: entry.orgId,
         channel: entry.channel,
         teamId: entry.teamId,
         threadTs: entry.threadTs,
@@ -124,9 +159,11 @@ export async function enqueueSessionStatusTx(
   exec: Executor,
   entry: {
     idempotencyKey: string;
+    orgId: string;
     teamId: string;
     channel: string;
     threadTs: string;
+    runId: string;
     status: SlackSessionStatus;
   },
 ): Promise<boolean> {
@@ -134,7 +171,7 @@ export async function enqueueSessionStatusTx(
     {
       kind: "set_session_status",
       idempotencyKey: entry.idempotencyKey,
-      payload: { teamId: entry.teamId, channel: entry.channel, threadTs: entry.threadTs, status: entry.status },
+      payload: { orgId: entry.orgId, teamId: entry.teamId, channel: entry.channel, threadTs: entry.threadTs, runId: entry.runId, status: entry.status },
     },
     exec,
   );
@@ -144,6 +181,7 @@ export async function enqueueStartStreamTx(
   exec: Executor,
   entry: {
     idempotencyKey: string;
+    orgId: string;
     teamId: string;
     channel: string;
     threadTs: string;
@@ -161,6 +199,7 @@ export async function enqueueStartStreamTx(
       kind: "start_stream",
       idempotencyKey: entry.idempotencyKey,
       payload: {
+        orgId: entry.orgId,
         channel: entry.channel,
         teamId: entry.teamId,
         threadTs: entry.threadTs,
@@ -183,9 +222,11 @@ export async function enqueueThreadStatusTx(
   exec: Executor,
   entry: {
     idempotencyKey: string;
+    orgId: string;
     teamId: string;
     channel: string;
     threadTs: string;
+    runId: string;
     status: string;
   },
 ): Promise<boolean> {
@@ -193,7 +234,7 @@ export async function enqueueThreadStatusTx(
     {
       kind: "set_thread_status",
       idempotencyKey: entry.idempotencyKey,
-      payload: { teamId: entry.teamId, channel: entry.channel, threadTs: entry.threadTs, status: entry.status },
+      payload: { orgId: entry.orgId, teamId: entry.teamId, channel: entry.channel, threadTs: entry.threadTs, runId: entry.runId, status: entry.status },
     },
     exec,
   );
@@ -203,6 +244,7 @@ export async function enqueueAddReactionTx(
   exec: Executor,
   entry: {
     idempotencyKey: string;
+    orgId: string;
     teamId?: string;
     channel: string;
     timestamp: string;
@@ -214,6 +256,7 @@ export async function enqueueAddReactionTx(
       kind: "add_reaction",
       idempotencyKey: entry.idempotencyKey,
       payload: {
+        orgId: entry.orgId,
         teamId: entry.teamId,
         channel: entry.channel,
         timestamp: entry.timestamp,
@@ -231,12 +274,20 @@ export async function enqueueUploadFileTx(
   exec: Executor,
   entry: {
     idempotencyKey: string;
-    teamId?: string;
+    orgId: string;
+    teamId: string;
     channel: string;
     threadTs?: string;
     filename: string;
     title?: string;
     artifactId: string;
+    artifactRunId: string;
+    artifactThreadId: string;
+    deliveryRunId: string;
+    artifactSha256: string;
+    artifactRevision: number;
+    artifactStorageKey: string;
+    artifactContentType: string;
     size: number;
   },
 ): Promise<boolean> {
@@ -245,12 +296,20 @@ export async function enqueueUploadFileTx(
       kind: "upload_file",
       idempotencyKey: entry.idempotencyKey,
       payload: {
+        orgId: entry.orgId,
         teamId: entry.teamId,
         channel: entry.channel,
         threadTs: entry.threadTs,
         filename: entry.filename,
         title: entry.title,
         artifactId: entry.artifactId,
+        artifactRunId: entry.artifactRunId,
+        artifactThreadId: entry.artifactThreadId,
+        deliveryRunId: entry.deliveryRunId,
+        artifactSha256: entry.artifactSha256,
+        artifactRevision: entry.artifactRevision,
+        artifactStorageKey: entry.artifactStorageKey,
+        artifactContentType: entry.artifactContentType,
         size: entry.size,
       },
     },
@@ -288,6 +347,7 @@ export async function enqueuePostMessage(entry: {
  *  by `idempotencyKey`. */
 export async function enqueuePostCard(entry: {
   idempotencyKey: string;
+  orgId: string;
   teamId: string;
   channel: string;
   threadTs: string;
@@ -299,6 +359,7 @@ export async function enqueuePostCard(entry: {
     kind: "post_card",
     idempotencyKey: entry.idempotencyKey,
     payload: {
+      orgId: entry.orgId,
       channel: entry.channel,
       teamId: entry.teamId,
       threadTs: entry.threadTs,
@@ -312,6 +373,7 @@ export async function enqueuePostCard(entry: {
 
 export async function enqueueStartStream(entry: {
   idempotencyKey: string;
+  orgId: string;
   teamId: string;
   channel: string;
   threadTs: string;
@@ -327,6 +389,7 @@ export async function enqueueStartStream(entry: {
     kind: "start_stream",
     idempotencyKey: entry.idempotencyKey,
     payload: {
+      orgId: entry.orgId,
       channel: entry.channel,
       teamId: entry.teamId,
       threadTs: entry.threadTs,
@@ -344,6 +407,7 @@ export async function enqueueStartStream(entry: {
 
 export async function enqueueAppendStream(entry: {
   idempotencyKey: string;
+  orgId: string;
   teamId: string;
   channel: string;
   threadTs: string;
@@ -357,6 +421,7 @@ export async function enqueueAppendStream(entry: {
     kind: "append_stream",
     idempotencyKey: entry.idempotencyKey,
     payload: {
+      orgId: entry.orgId,
       channel: entry.channel,
       teamId: entry.teamId,
       threadTs: entry.threadTs,
@@ -373,30 +438,34 @@ export async function enqueueAppendStream(entry: {
 /** Durable free-text working status update (DM shimmer). Idempotent by key. */
 export async function enqueueThreadStatus(entry: {
   idempotencyKey: string;
+  orgId: string;
   teamId: string;
   channel: string;
   threadTs: string;
+  runId: string;
   status: string;
 }): Promise<void> {
   const created = await enqueue({
     kind: "set_thread_status",
     idempotencyKey: entry.idempotencyKey,
-    payload: { teamId: entry.teamId, channel: entry.channel, threadTs: entry.threadTs, status: entry.status },
+    payload: { orgId: entry.orgId, teamId: entry.teamId, channel: entry.channel, threadTs: entry.threadTs, runId: entry.runId, status: entry.status },
   });
   if (created) kickSlackOutbox();
 }
 
 export async function enqueueSessionStatus(entry: {
   idempotencyKey: string;
+  orgId: string;
   teamId: string;
   channel: string;
   threadTs: string;
+  runId: string;
   status: SlackSessionStatus;
 }): Promise<void> {
   const created = await enqueue({
     kind: "set_session_status",
     idempotencyKey: entry.idempotencyKey,
-    payload: { teamId: entry.teamId, channel: entry.channel, threadTs: entry.threadTs, status: entry.status },
+    payload: { orgId: entry.orgId, teamId: entry.teamId, channel: entry.channel, threadTs: entry.threadTs, runId: entry.runId, status: entry.status },
   });
   if (created) kickSlackOutbox();
 }
@@ -404,6 +473,7 @@ export async function enqueueSessionStatus(entry: {
 /** Durably enqueue a receipt reaction. Idempotent by `idempotencyKey`. */
 export async function enqueueAddReaction(entry: {
   idempotencyKey: string;
+  orgId?: string;
   teamId?: string;
   channel: string;
   timestamp: string;
@@ -414,6 +484,7 @@ export async function enqueueAddReaction(entry: {
     idempotencyKey: entry.idempotencyKey,
     payload: {
       teamId: entry.teamId,
+      orgId: entry.orgId,
       channel: entry.channel,
       timestamp: entry.timestamp,
       name: entry.name,
@@ -426,24 +497,40 @@ export async function enqueueAddReaction(entry: {
  * immutable artifact bytes served to the browser. Idempotent by key. */
 export async function enqueueUploadFile(entry: {
   idempotencyKey: string;
-  teamId?: string;
+  orgId: string;
+  teamId: string;
   channel: string;
   threadTs?: string;
   filename: string;
   title?: string;
   artifactId: string;
+  artifactRunId: string;
+  artifactThreadId: string;
+  deliveryRunId: string;
+  artifactSha256: string;
+  artifactRevision: number;
+  artifactStorageKey: string;
+  artifactContentType: string;
   size: number;
 }): Promise<void> {
   const created = await enqueue({
     kind: "upload_file",
     idempotencyKey: entry.idempotencyKey,
     payload: {
+      orgId: entry.orgId,
       teamId: entry.teamId,
       channel: entry.channel,
       threadTs: entry.threadTs,
       filename: entry.filename,
       title: entry.title,
       artifactId: entry.artifactId,
+      artifactRunId: entry.artifactRunId,
+      artifactThreadId: entry.artifactThreadId,
+      deliveryRunId: entry.deliveryRunId,
+      artifactSha256: entry.artifactSha256,
+      artifactRevision: entry.artifactRevision,
+      artifactStorageKey: entry.artifactStorageKey,
+      artifactContentType: entry.artifactContentType,
       size: entry.size,
     },
   });

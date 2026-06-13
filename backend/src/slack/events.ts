@@ -77,7 +77,7 @@ async function healSlackRunDelivery(input: {
   let kickSlack = false;
   await db.transaction(async (tx) => {
     const [run] = await tx.select().from(runs).where(eq(runs.id, input.runId)).limit(1);
-    if (!run) return;
+    if (!run?.orgId) return;
 
     await createSlackRunResponse({
       runId: input.runId,
@@ -104,13 +104,16 @@ async function healSlackRunDelivery(input: {
       });
       const statusCreated = await enqueueSessionStatusTx(tx, {
         idempotencyKey: `slack-status:start:${input.teamId}:${input.runId}`,
+        orgId: run.orgId,
         teamId: input.teamId,
         channel: input.channel,
         threadTs: input.threadTs,
+        runId: input.runId,
         status: "processing",
       });
       const streamCreated = await enqueueStartStreamTx(tx, {
         idempotencyKey: `slack-stream:start:${input.teamId}:${input.runId}`,
+        orgId: run.orgId,
         teamId: input.teamId,
         channel: input.channel,
         threadTs: input.threadTs,
@@ -128,9 +131,11 @@ async function healSlackRunDelivery(input: {
       if (directMessageChannel(input.channel)) {
         const shimmerCreated = await enqueueThreadStatusTx(tx, {
           idempotencyKey: `slack-thread-status:start:${input.teamId}:${input.runId}`,
+          orgId: run.orgId,
           teamId: input.teamId,
           channel: input.channel,
           threadTs: input.threadTs,
+          runId: input.runId,
           status: "is thinking...",
         });
         kickSlack = kickSlack || shimmerCreated;
@@ -139,6 +144,7 @@ async function healSlackRunDelivery(input: {
 
     const reactionCreated = await enqueueAddReactionTx(tx, {
       idempotencyKey: `slack-ack:${input.teamId}:${input.channel}:${input.messageTs}`,
+      orgId: run.orgId,
       teamId: input.teamId,
       channel: input.channel,
       timestamp: input.messageTs,
@@ -227,6 +233,7 @@ export type SlackEventOutcome =
 
 async function handleAdmissionClosed(input: {
   readonly error: RunAdmissionClosedError;
+  readonly orgId: string;
   readonly teamId: string;
   readonly channel: string;
   readonly ts: string;
@@ -234,6 +241,7 @@ async function handleAdmissionClosed(input: {
 }): Promise<SlackEventOutcome> {
   await enqueuePostMessage({
     idempotencyKey: `slack-admission-queued:${input.teamId}:${input.channel}:${input.ts}`,
+    orgId: input.orgId,
     teamId: input.teamId,
     channel: input.channel,
     threadTs: input.threadTs,
@@ -329,6 +337,7 @@ export async function handleSlackEvent(
   if (!userId) {
     await enqueuePostMessage({
       idempotencyKey: `slack-sender-guidance:${teamId}:${channel}:${ts}`,
+      orgId,
       teamId,
       channel,
       threadTs: slackThreadTs,
@@ -386,6 +395,7 @@ export async function handleSlackEvent(
       ) {
         await enqueuePostMessage({
           idempotencyKey: `slack-sender-guidance:${teamId}:${channel}:${ts}`,
+          orgId,
           teamId,
           channel,
           threadTs: slackThreadTs,
@@ -404,6 +414,7 @@ export async function handleSlackEvent(
   const guide = (text: string) =>
     enqueuePostMessage({
       idempotencyKey: `slack-directive:${teamId}:${channel}:${ts}`,
+      orgId,
       teamId,
       channel,
       text,
@@ -478,6 +489,7 @@ export async function handleSlackEvent(
     if (!(error instanceof RunAdmissionClosedError)) throw error;
     return handleAdmissionClosed({
       error,
+      orgId,
       teamId,
       channel,
       ts,
@@ -551,6 +563,7 @@ export async function handleSlackEvent(
     if (!(error instanceof RunIntakeError)) throw error;
     await enqueuePostMessage({
       idempotencyKey: `slack-resource-guidance:${teamId}:${channel}:${ts}`,
+      orgId,
       teamId,
       channel,
       threadTs: slackThreadTs,
@@ -600,6 +613,7 @@ export async function handleSlackEvent(
     if (!(error instanceof RunAdmissionClosedError)) throw error;
     return handleAdmissionClosed({
       error,
+      orgId,
       teamId,
       channel,
       ts,
@@ -636,6 +650,6 @@ export async function handleSlackEvent(
 
   await pumpThread(threadId);
 
-  watchSlackRun({ runId, rootRunId: threadId, teamId, channel, threadTs: slackThreadTs });
+  watchSlackRun({ runId, rootRunId: threadId, orgId, teamId, channel, threadTs: slackThreadTs });
   return { status: "accepted", runId };
 }

@@ -21,6 +21,7 @@ export type PostMessagePayload = {
 };
 
 export type AddReactionPayload = {
+  readonly orgId?: string;
   readonly teamId?: string;
   readonly channel: string;
   readonly timestamp: string;
@@ -30,12 +31,22 @@ export type AddReactionPayload = {
 /** Deliver a run-produced artifact into a thread. New rows reference immutable
  * shared artifact storage; stagedPath remains readable for pre-migration rows. */
 export type UploadFilePayload = {
-  readonly teamId?: string;
+  readonly orgId: string;
+  readonly teamId: string;
   readonly channel: string;
   readonly threadTs?: string;
   readonly filename: string;
   readonly title?: string;
   readonly artifactId?: string;
+  readonly artifactRunId?: string;
+  readonly artifactThreadId?: string;
+  /** Run whose assistant turn requested this delivery. The artifact may have
+   * been created by an earlier run and revised in this one. */
+  readonly deliveryRunId?: string;
+  readonly artifactSha256?: string;
+  readonly artifactRevision?: number;
+  readonly artifactStorageKey?: string;
+  readonly artifactContentType?: string;
   readonly stagedPath?: string;
   readonly size: number;
 };
@@ -44,6 +55,7 @@ export type UploadFilePayload = {
  *  slack_threads so later updates target it. `rootRunId` keys the thread row the
  *  ts is stored on; `text` is the plain-text notification/fallback string. */
 export type PostCardPayload = {
+  readonly orgId: string;
   readonly teamId: string;
   readonly channel: string;
   readonly threadTs: string;
@@ -57,6 +69,7 @@ export type PostCardPayload = {
  *  no card ts is found or the update fails permanently, the delivery falls back to
  *  posting the answer as CHUNKED plain messages so the reply is NEVER lost. */
 export type UpdateCardPayload = {
+  readonly orgId: string;
   readonly teamId: string;
   readonly channel: string;
   readonly threadTs: string;
@@ -68,22 +81,27 @@ export type UpdateCardPayload = {
 };
 
 export type SetSessionStatusPayload = {
+  readonly orgId: string;
   readonly teamId: string;
   readonly channel: string;
   readonly threadTs: string;
+  readonly runId: string;
   readonly status: SlackSessionStatus;
 };
 
 /** Free-text working status on a DM assistant thread (native shimmer). An
  *  empty `status` clears it. */
 export type SetThreadStatusPayload = {
+  readonly orgId: string;
   readonly teamId: string;
   readonly channel: string;
   readonly threadTs: string;
+  readonly runId: string;
   readonly status: string;
 };
 
 export type StartStreamPayload = {
+  readonly orgId: string;
   readonly teamId: string;
   readonly channel: string;
   readonly threadTs: string;
@@ -99,6 +117,7 @@ export type StartStreamPayload = {
 };
 
 export type AppendStreamPayload = {
+  readonly orgId: string;
   readonly teamId: string;
   readonly channel: string;
   readonly threadTs: string;
@@ -113,6 +132,7 @@ export type AppendStreamPayload = {
 };
 
 export type StopStreamPayload = {
+  readonly orgId: string;
   readonly teamId: string;
   readonly channel: string;
   readonly threadTs: string;

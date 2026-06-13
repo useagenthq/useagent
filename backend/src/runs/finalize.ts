@@ -1,6 +1,6 @@
-import { and, desc, eq, ne } from "drizzle-orm";
+import { and, desc, eq, inArray, ne, or } from "drizzle-orm";
 import { db, type Executor } from "../db/client";
-import { artifacts, runs, steps, type RunStatus } from "../db/schema";
+import { artifacts, providerEvents, runs, steps, type RunStatus } from "../db/schema";
 import { completeRun } from "./repo";
 import { resolveScopedMemory } from "../memory/scope";
 import { enqueueCapture } from "../memory/capture-outbox";
@@ -27,6 +27,7 @@ import {
   enqueueThreadStatusTx,
   enqueueUploadFileTx,
   kickSlackOutbox,
+  slackArtifactDeliveryIdempotencyKey,
 } from "../slack/outbox";
 import {
   composeStreamClosing,
@@ -92,6 +93,7 @@ export async function enqueueSlackTerminalDeliveryForRunTx(
     slack = null;
   }
   if (!slack) return false;
+  if (!run.orgId) return false;
 
   const title = deriveTitle(run.prompt);
   const phase = phaseForStatus(status);
@@ -124,6 +126,7 @@ export async function enqueueSlackTerminalDeliveryForRunTx(
 
   let kickSlack = await enqueueStopStreamTx(tx, {
     idempotencyKey: `slack-reply:${slack.teamId}:${run.id}`,
+    orgId: run.orgId,
     teamId: slack.teamId,
     channel: slack.channel,
     threadTs: slack.threadTs,
@@ -138,9 +141,11 @@ export async function enqueueSlackTerminalDeliveryForRunTx(
   });
   const statusCreated = await enqueueSessionStatusTx(tx, {
     idempotencyKey: `slack-status:final:${slack.teamId}:${run.id}`,
+    orgId: run.orgId,
     teamId: slack.teamId,
     channel: slack.channel,
     threadTs: slack.threadTs,
+    runId: run.id,
     status: "active",
   });
   kickSlack = kickSlack || statusCreated;
@@ -149,9 +154,11 @@ export async function enqueueSlackTerminalDeliveryForRunTx(
   if (directMessageChannel(slack.channel)) {
     const shimmerCleared = await enqueueThreadStatusTx(tx, {
       idempotencyKey: `slack-thread-status:final:${slack.teamId}:${run.id}`,
+      orgId: run.orgId,
       teamId: slack.teamId,
       channel: slack.channel,
       threadTs: slack.threadTs,
+      runId: run.id,
       status: "",
     });
     kickSlack = kickSlack || shimmerCleared;
@@ -160,26 +167,69 @@ export async function enqueueSlackTerminalDeliveryForRunTx(
   if (status === "completed") {
     const SHARE_LIMIT = 5;
     const SHARE_MAX_BYTES = 20 * 1024 * 1024;
+    const revisedEvents = await tx
+      .select({ payload: providerEvents.payload })
+      .from(providerEvents)
+      .where(and(eq(providerEvents.runId, run.id), eq(providerEvents.eventType, "artifact.revised")));
+    const revisedArtifactIds = revisedEvents.flatMap(({ payload }) => {
+      let parsed: unknown;
+      try {
+        parsed = payload ? JSON.parse(payload) : null;
+      } catch {
+        parsed = null;
+      }
+      const id =
+        parsed && typeof parsed === "object" && !Array.isArray(parsed)
+          ? (parsed as Record<string, unknown>).id
+          : null;
+      return typeof id === "string" ? [id] : [];
+    });
+    const artifactScope =
+      revisedArtifactIds.length > 0
+        ? or(eq(artifacts.runId, run.id), inArray(artifacts.id, revisedArtifactIds))
+        : eq(artifacts.runId, run.id);
     const runArtifacts = await tx
       .select({
         id: artifacts.id,
+        runId: artifacts.runId,
+        threadId: artifacts.threadId,
         name: artifacts.name,
+        contentType: artifacts.contentType,
         sizeBytes: artifacts.sizeBytes,
+        sha256: artifacts.sha256,
+        storageKey: artifacts.storageKey,
+        workpieceRevision: artifacts.workpieceRevision,
       })
       .from(artifacts)
-      .where(eq(artifacts.runId, run.id))
-      .orderBy(desc(artifacts.createdAt))
+      .where(and(eq(artifacts.orgId, run.orgId), artifactScope))
+      .orderBy(desc(artifacts.workpieceRevision), desc(artifacts.createdAt))
       .limit(SHARE_LIMIT);
     for (const artifact of runArtifacts) {
       if (artifact.sizeBytes > SHARE_MAX_BYTES) continue;
       const created = await enqueueUploadFileTx(tx, {
-        idempotencyKey: `slack-artifact:${slack.teamId}:${run.id}:${artifact.id}`,
+        idempotencyKey: slackArtifactDeliveryIdempotencyKey({
+          teamId: slack.teamId,
+          runId: run.id,
+          artifactId: artifact.id,
+          artifactRevision: artifact.workpieceRevision,
+          artifactSha256: artifact.sha256,
+          channel: slack.channel,
+          threadTs: slack.threadTs,
+        }),
+        orgId: run.orgId,
         teamId: slack.teamId,
         channel: slack.channel,
         threadTs: slack.threadTs,
         filename: artifact.name,
         title: artifact.name,
         artifactId: artifact.id,
+        artifactRunId: artifact.runId,
+        artifactThreadId: artifact.threadId,
+        deliveryRunId: run.id,
+        artifactSha256: artifact.sha256,
+        artifactRevision: artifact.workpieceRevision,
+        artifactStorageKey: artifact.storageKey,
+        artifactContentType: artifact.contentType,
         size: artifact.sizeBytes,
       });
       kickSlack = kickSlack || created;

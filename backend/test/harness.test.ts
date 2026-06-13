@@ -1,10 +1,13 @@
 import { describe, expect, test } from "bun:test";
-import { validateProviderDriver } from "@useagent/agent-harness/control";
+import {
+  providerProtocolIdentity,
+  validateProviderDriver,
+} from "@useagent/agent-harness/control";
 import {
   makeOpenCodeProviderDriver,
-  opencodeHarness,
   opencodeProviderDriver,
 } from "../src/engines/opencode-server";
+import { opencodeHarness } from "../src/engines/opencode-harness";
 import type { HarnessSession } from "@useagent/agent-harness/canonical";
 import type { HarnessSessionHandle } from "../src/engines/types";
 
@@ -113,7 +116,7 @@ describe("opencode provider driver lifecycle seam", () => {
       provider: "opencode",
       nativeSessionId: "ses_new",
       runtime: { kind: "sandbox", id: "sbx_1" },
-      protocolVersion: "opencode-server",
+      protocolVersion: providerProtocolIdentity(opencodeProviderDriver.descriptor.protocol),
       generation: 1,
     });
 
@@ -193,7 +196,7 @@ describe("opencode provider driver lifecycle seam", () => {
       provider: "opencode",
       nativeSessionId: "ses_x",
       runtime: { kind: "sandbox", id: "sbx_1" },
-      protocolVersion: "opencode-server",
+      protocolVersion: providerProtocolIdentity(opencodeProviderDriver.descriptor.protocol),
       capabilities: opencodeProviderDriver.descriptor.capabilities,
       generation: 1,
     };
@@ -224,7 +227,7 @@ describe("opencode provider driver lifecycle seam", () => {
         provider: "opencode",
         nativeSessionId: HANDLE.sessionId,
         runtime: { kind: "sandbox", id: HANDLE.sandboxId },
-        protocolVersion: "opencode-server",
+        protocolVersion: providerProtocolIdentity(opencodeProviderDriver.descriptor.protocol),
         capabilities: opencodeProviderDriver.descriptor.capabilities,
         generation: 1,
       };

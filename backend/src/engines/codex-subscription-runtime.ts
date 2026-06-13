@@ -29,6 +29,7 @@ const CODEX_STATUS_CACHE_PATH = `${RUNTIME_ENVIRONMENT_HOME}/caches/codex.json`;
 const CODEX_READY_POLL_MS = 150;
 
 export interface CodexSubscriptionLease {
+  readonly authEpoch: string | null;
   close(): Promise<void>;
 }
 
@@ -128,6 +129,7 @@ export async function prepareCodexSubscription(input: {
 
   let closed = false;
   return {
+    authEpoch: runtime.authEpoch,
     async close() {
       if (closed) return;
       closed = true;
