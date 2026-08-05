@@ -8,13 +8,13 @@ import {
   setRunStatus,
   STALE_SUMMARY,
 } from "../src/runs/repo";
-import { recoverStaleRuns, type ReconcileFn } from "../src/runs/recovery";
-import { reconcileOpencodeRun } from "../src/engines/opencode-server";
+import { recoverStaleRuns, type ReconcileProbe } from "../src/runs/recovery";
 import type { EngineId } from "../src/db/schema";
 
-// Boot restart-recovery orchestration, driven with a DETERMINISTIC fake probe so
-// the reconcile/fail decision is exercised without touching Daytona. The real
-// native-session probe (reconcileOpencodeRun) is proven end-to-end on :3503.
+// Boot restart-recovery orchestration, driven with a DETERMINISTIC fake probe
+// (the HarnessAdapter.reconcile contract) so the reconcile/fail decision is
+// exercised without touching Daytona. The real native-session probe is proven
+// bounded in harness.test.ts and end-to-end on :3503.
 
 async function seedStaleRun(opts: {
   engine: EngineId;
@@ -43,12 +43,12 @@ async function seedStaleRun(opts: {
   return id;
 }
 
-// Fake native probe: a "done" session reports a completed answer, a "running"
+// Fake harness probe: a "done" session reports a completed answer, a "running"
 // one is still generating, anything else is unreachable.
-const fakeReconcile: ReconcileFn = async ({ sessionId }) => {
-  if (sessionId === "ses_done") return { outcome: "completed", summary: "the real answer" };
-  if (sessionId === "ses_running") return { outcome: "in_progress" };
-  return { outcome: "unreachable" };
+const fakeReconcile: ReconcileProbe = async (handle) => {
+  if (handle.sessionId === "ses_done") return { status: "completed", summary: "the real answer" };
+  if (handle.sessionId === "ses_running") return { status: "in_progress" };
+  return { status: "unreachable" };
 };
 
 describe("restart recovery", () => {
@@ -80,20 +80,5 @@ describe("restart recovery", () => {
     // At least our six were handled (other test rows may add to the totals).
     expect(res.reconciled).toBeGreaterThanOrEqual(1);
     expect(res.failed).toBeGreaterThanOrEqual(5);
-  });
-
-  test("reconcile probe returns unreachable fast when Daytona is unconfigured", async () => {
-    // The no-key guard must resolve instantly (never a hung network probe), so a
-    // dead/unconfigured sandbox can never hang boot.
-    const saved = process.env.DAYTONA_API_KEY;
-    delete process.env.DAYTONA_API_KEY;
-    try {
-      const t0 = Date.now();
-      const r = await reconcileOpencodeRun({ sandboxId: "does-not-exist", sessionId: "ses_x", sinceMs: 0 });
-      expect(r.outcome).toBe("unreachable");
-      expect(Date.now() - t0).toBeLessThan(1000);
-    } finally {
-      if (saved !== undefined) process.env.DAYTONA_API_KEY = saved;
-    }
   });
 });

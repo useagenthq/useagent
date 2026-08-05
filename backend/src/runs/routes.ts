@@ -10,9 +10,10 @@ import {
   getThreadForRun,
   listRunsWithSteps,
 } from "./repo";
-import { acceptRunCommand, markCommandDispatched } from "../commands/repo";
+import { acceptRunCommand, markCommandDispatched } from "../commands";
 import { bus, channel, spawnWorker, type BusEvent } from "../worker";
 import { turnStream } from "./turn-stream";
+import { assertNever } from "../util/exhaustive";
 
 export const runsRoutes = new Hono<AppEnv>();
 
@@ -87,25 +88,27 @@ runsRoutes.post("/", async (c) => {
     run: { id, prompt, model, engine, parentRunId, threadId },
   });
 
-  // Same key, different request — refuse to guess which turn the client meant.
-  if (accepted.kind === "conflict") {
-    return c.json(
-      { error: "idempotency_key_reused", detail: "same Idempotency-Key, different request" },
-      409,
-    );
+  // Translate the acceptance outcome to the HTTP response (exhaustive — a new
+  // outcome variant is a compile error here).
+  switch (accepted.status) {
+    case "created":
+      // Dispatch: spawn the worker, then mark the command dispatched (audit
+      // metadata; the worker owns the run regardless).
+      spawnWorker(accepted.runId);
+      await markCommandDispatched(accepted.commandId);
+      return c.json({ id: accepted.runId }, 201);
+    case "replayed":
+      // The original run's worker is already running (or finished) — return its
+      // id, do NOT re-dispatch.
+      return c.json({ id: accepted.runId }, 200);
+    case "conflict":
+      return c.json(
+        { error: "idempotency_key_reused", reason: accepted.reason },
+        409,
+      );
+    default:
+      return assertNever(accepted);
   }
-  // Replay of an already-accepted command: the original run's worker is already
-  // running (or finished) — return its id, do NOT re-dispatch.
-  if (accepted.kind === "replayed") {
-    return c.json({ id: accepted.runId }, 200);
-  }
-
-  // Freshly accepted → dispatch: spawn the worker, then mark the command
-  // dispatched (audit metadata; the worker owns the run regardless).
-  spawnWorker(accepted.runId);
-  await markCommandDispatched(accepted.commandId);
-
-  return c.json({ id: accepted.runId }, 201);
 });
 
 // List runs (newest first) with their steps, scoped to the active org. By
