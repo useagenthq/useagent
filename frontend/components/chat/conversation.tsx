@@ -6,7 +6,7 @@ import { AsteriskMark } from "@/components/foundations/brand/asterisk-mark";
 import { cnExt as cn } from "@/utils/cn";
 import * as Badge from "@/components/ui/badge";
 import { Thinking } from "@/components/ai/thinking";
-import { Composer } from "@/components/chat/composer";
+import { Composer, type ComposerSubmit } from "@/components/chat/composer";
 import { Markdown } from "@/components/prompt-kit/markdown";
 import { ToolStepRow } from "@/components/chat/tool-step-row";
 import type { SlashCommand } from "@/components/chat/slash-command";
@@ -267,7 +267,7 @@ function ReplyComposer({
   model: string;
   pending: boolean;
   commands?: SlashCommand[];
-  onReply: (text: string, engine: EngineId, model: string) => void;
+  onReply: ComposerSubmit;
 }) {
   return (
     <div className="border-stroke-soft-200 shrink-0 border-t p-3">
@@ -278,7 +278,7 @@ function ReplyComposer({
         defaultModel={model}
         pending={pending}
         commands={commands}
-        onSubmit={(text, eng, mdl) => onReply(text, eng, mdl)}
+        onSubmit={onReply}
       />
     </div>
   );
@@ -304,7 +304,7 @@ export function Conversation({
   pendingReply: string | null;
   /** Engine slash commands for the reply composer's "/" autocomplete. */
   commands?: SlashCommand[];
-  onReply: (text: string, engine: EngineId, model: string) => void;
+  onReply: ComposerSubmit;
 }) {
   // Stick-to-bottom autoscroll: follow new turns/steps/narration as they
   // stream, but ONLY while the user is already near the bottom — scrolling up
