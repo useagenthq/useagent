@@ -14,6 +14,11 @@ import { acceptRunCommand, markCommandDispatched } from "../commands";
 import { bus, channel, spawnWorker, type BusEvent } from "../worker";
 import { turnStream } from "./turn-stream";
 import { assertNever } from "../util/exhaustive";
+import {
+  getNativeFramesSince,
+  subscribeNative,
+  type NativeFrame,
+} from "./native-events";
 
 export const runsRoutes = new Hono<AppEnv>();
 
@@ -153,17 +158,32 @@ runsRoutes.get("/:id/events", async (c) => {
     return c.json({ error: "run not found" }, 404);
   }
 
-  // A live assistant-text delta multiplexed onto the SAME queue as bus events,
-  // so ALL frames are written by the single drain loop below in order.
-  type OutEvent = BusEvent | { type: "delta"; delta: string };
+  // A live assistant-text delta AND a versioned native frame are multiplexed
+  // onto the SAME queue as bus events, so ALL frames are written by the single
+  // drain loop below in order.
+  type OutEvent =
+    | BusEvent
+    | { type: "delta"; delta: string }
+    | { type: "native"; frame: NativeFrame };
   const encoder = new TextEncoder();
   const signal = c.req.raw.signal;
+
+  // Native-frame lane cursor: replay lossless native events with seq strictly
+  // greater than `?cursor=` (default -1 → from the start; seq begins at 0). A
+  // malformed cursor is ignored (treated as absent) rather than erroring.
+  const cursorRaw = c.req.query("cursor");
+  const cursorSeq = cursorRaw !== undefined && Number.isFinite(Number(cursorRaw))
+    ? Number(cursorRaw)
+    : -1;
 
   const body = new ReadableStream<Uint8Array>({
     start(controller) {
       // idx → content fingerprint of the LAST version sent. Updates (same idx,
       // enriched code_json) must pass; only true duplicates are suppressed.
       const emitted = new Map<number, string>();
+      // Native-frame dedupe: eventId → the highest seq already sent. A revision
+      // (same eventId, higher seq) passes; a replay/live overlap is suppressed.
+      const nativeSeen = new Map<string, number>();
       const queue: OutEvent[] = [];
       let wake: (() => void) | null = null;
       let closed = false;
@@ -196,6 +216,18 @@ runsRoutes.get("/:id/events", async (c) => {
       const unsubscribeDeltas = turnStream.subscribe(id, (delta) =>
         push({ type: "delta", delta }),
       );
+      // Live native frames (lossless capture projection). Old clients ignore the
+      // `event: native` type — additive, contract-compatible.
+      const unsubscribeNative = subscribeNative(id, (frame) =>
+        push({ type: "native", frame }),
+      );
+
+      // Emit a native frame if it advances its eventId's seq (dedupe overlap).
+      const sendNative = (frame: NativeFrame): void => {
+        if ((nativeSeen.get(frame.eventId) ?? -1) >= frame.seq) return;
+        nativeSeen.set(frame.eventId, frame.seq);
+        sendEvent("native", frame);
+      };
 
       // Prime the stream so headers/first bytes flush immediately.
       send(": open\n\n");
@@ -211,6 +243,7 @@ runsRoutes.get("/:id/events", async (c) => {
         clearInterval(heartbeat);
         bus.off(channel(id), push);
         unsubscribeDeltas();
+        unsubscribeNative();
         signal.removeEventListener("abort", cleanup);
         wakeUp();
         try {
@@ -232,6 +265,15 @@ runsRoutes.get("/:id/events", async (c) => {
           sendEvent("step", step);
         }
 
+        // Replay the native lane from the client's cursor (ordered by seq;
+        // already deduped by native id in the store). Subscribed before this, so
+        // a frame persisted during replay arrives on the live queue and the
+        // seq-dedupe suppresses the overlap.
+        for (const frame of await getNativeFramesSince(id, cursorSeq)) {
+          if (closed) return;
+          sendNative(frame);
+        }
+
         // If the run already finished, close immediately after replay.
         const snapshot = await getRun(id);
         if (snapshot && (snapshot.status === "completed" || snapshot.status === "failed")) {
@@ -248,18 +290,27 @@ runsRoutes.get("/:id/events", async (c) => {
           }
           while (queue.length > 0 && !closed) {
             const ev = queue.shift()!;
-            if (ev.type === "step") {
-              // Same idx may arrive again with enriched code_json (tool output
-              // attached in place) — forward it; skip only true duplicates.
-              const fp = `${ev.step.id}|${ev.step.code_json ?? ""}`;
-              if (emitted.get(ev.step.idx) === fp) continue;
-              emitted.set(ev.step.idx, fp);
-              sendEvent("step", ev.step);
-            } else if (ev.type === "delta") {
-              sendEvent("delta", { delta: ev.delta });
-            } else {
-              sendEvent("done", { id, status: ev.status });
-              return cleanup();
+            switch (ev.type) {
+              case "step": {
+                // Same idx may arrive again with enriched code_json (tool output
+                // attached in place) — forward it; skip only true duplicates.
+                const fp = `${ev.step.id}|${ev.step.code_json ?? ""}`;
+                if (emitted.get(ev.step.idx) === fp) continue;
+                emitted.set(ev.step.idx, fp);
+                sendEvent("step", ev.step);
+                continue;
+              }
+              case "delta":
+                sendEvent("delta", { delta: ev.delta });
+                continue;
+              case "native":
+                sendNative(ev.frame);
+                continue;
+              case "end":
+                sendEvent("done", { id, status: ev.status });
+                return cleanup();
+              default:
+                assertNever(ev);
             }
           }
         }

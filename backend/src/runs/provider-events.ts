@@ -1,6 +1,7 @@
 import { db } from "../db/client";
 import { providerEvents } from "../db/schema";
 import { sql } from "drizzle-orm";
+import { makeNativeFrame, publishNativeFrame } from "./native-events";
 
 const PAYLOAD_CAP = 32_768; // bounded native payload (chars of JSON)
 
@@ -58,6 +59,25 @@ export async function recordProviderEvent(input: ProviderEventInput): Promise<vo
           createdAt: sql`now()`,
         },
       });
+
+    // Live-push the versioned native frame to any SSE subscriber (north star
+    // "Canonical Events"). After the persist, so a subscriber never sees a frame
+    // that isn't durable. Same bounded payload the replay path reads back.
+    publishNativeFrame(
+      input.runId,
+      makeNativeFrame({
+        eventId: input.id,
+        seq: input.seq,
+        provider: input.provider,
+        eventType: input.eventType,
+        sessionId: input.nativeSessionId ?? null,
+        parentSessionId: input.nativeParentSessionId ?? null,
+        messageId: input.nativeMessageId ?? null,
+        partId: input.nativePartId ?? null,
+        callId: input.nativeCallId ?? null,
+        payloadText: payload,
+      }),
+    );
   } catch (err) {
     console.warn("[provider-events] capture failed:", err instanceof Error ? err.message : err);
   }
