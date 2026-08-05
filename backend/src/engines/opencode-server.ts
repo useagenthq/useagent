@@ -225,6 +225,10 @@ export const opencodeServerAdapter: EngineAdapter = {
       let sessionId = ctx.engineSessionId ?? null;
       let resumed = Boolean(sessionId);
       if (!sessionId) sessionId = await createSession();
+      // Resumed turns must ALSO stamp the id on THEIR run row — a thread whose
+      // only stamped run gets deleted (or a race) would otherwise go dark for
+      // the Live tab even though the session exists.
+      else ctx.saveEngineSessionId?.(sessionId);
 
       // ── realtime: subscribe /event BEFORE prompting ─────────────────────────
       const sseAbort = new AbortController();
@@ -232,41 +236,98 @@ export const opencodeServerAdapter: EngineAdapter = {
       ctx.signal.addEventListener("abort", onParentAbort, { once: true });
 
       // Live translation state: text deltas by part id; tool steps by part id.
+      // Subagents run in CHILD sessions (parentID chains to ours) — track them so
+      // their tool activity renders (↳-tagged) instead of being filtered out.
+      const childSessions = new Set<string>();
       const textLen = new Map<string, number>();
       const textParts = new Map<string, string>(); // ordered final text parts
       const toolSteps = new Map<string, string>(); // part id → persisted step id
       const toolDone = new Set<string>();
+      const emittedSubagents = new Set<string>(); // subagent descriptions shown (dedupe subtask ↔ task tool)
 
-      const handlePart = async (part: Record<string, unknown>): Promise<void> => {
-        if (part.sessionID !== sessionId) return;
+      // Translate one opencode Part (the v1 contract: message.part.updated
+      // carries `properties.part`, token deltas ride inline on `properties.delta`)
+      // into a durable step / delta.
+      const handlePart = async (part: Record<string, unknown>, delta?: string): Promise<void> => {
+        const sid = String(part.sessionID ?? "");
+        const isChild = childSessions.has(sid);
+        if (sid !== sessionId && !isChild) return;
         const partId = String(part.id ?? "");
-        if (part.type === "text" && typeof part.text === "string") {
-          const prev = textLen.get(partId) ?? 0;
-          if (part.text.length > prev) {
-            ctx.publishDelta?.(part.text.slice(prev));
-            textLen.set(partId, part.text.length);
+        const p = part as Record<string, any>;
+
+        // TEXT — the main turn's live narration. Child-session text is subagent
+        // chatter; keep the parent delta channel clean (their TOOLS still render).
+        if (part.type === "text") {
+          if (isChild) return;
+          const text = typeof part.text === "string" ? (part.text as string) : "";
+          if (typeof delta === "string" && delta.length > 0) {
+            ctx.publishDelta?.(delta);
+            textLen.set(partId, text.length);
+          } else {
+            const prev = textLen.get(partId) ?? 0;
+            if (text.length > prev) {
+              ctx.publishDelta?.(text.slice(prev));
+              textLen.set(partId, text.length);
+            }
           }
-          textParts.set(partId, part.text);
+          if (text) textParts.set(partId, text);
           return;
         }
+
+        // SUBTASK — opencode's first-class "assistant spawned a subagent" part on
+        // the parent session. Renders the subagent header; the matching `task`
+        // ToolPart (deduped by description) carries the running→completed
+        // lifecycle if it arrives.
+        if (part.type === "subtask") {
+          const desc = String(p.description ?? p.agent ?? "subagent");
+          if (emittedSubagents.has(desc)) return;
+          emittedSubagents.add(desc);
+          const id = await ctx.emit({
+            kind: "task",
+            label: `Subagent — ${truncate(desc, 50)}`,
+            chip: "subagent",
+            code_json: { agent: p.agent, description: p.description, prompt: p.prompt },
+          });
+          if (id) toolSteps.set(partId, id);
+          return;
+        }
+
+        // TOOL — emit at running, update-in-place at completed/error via the
+        // toolSteps pairing. `task` → "Subagent — …" (chip subagent); child-
+        // session tools get a "↳ " prefix.
         if (part.type === "tool" && typeof part.tool === "string") {
-          const st = (part.state ?? {}) as {
+          const st = (p.state ?? {}) as {
             status?: string;
             input?: Record<string, unknown>;
             output?: string;
+            error?: string;
             title?: string;
           };
           if (toolDone.has(partId)) return;
-          if (!toolSteps.has(partId) && (st.status === "running" || st.status === "completed" || st.status === "error")) {
-            const id = await ctx.emit(toolStep(part.tool, st.input ?? {}, st.title, undefined));
-            if (id) toolSteps.set(partId, id);
+          const status = st.status;
+          const isTask = part.tool === "task";
+          const taskDesc = isTask ? String((st.input?.description as string) ?? st.title ?? "subagent") : "";
+          const active = status === "running" || status === "completed" || status === "error";
+          if (!toolSteps.has(partId) && active) {
+            // Skip if a subtask part already rendered this subagent (no lifecycle
+            // row to update, so a second row would just duplicate).
+            if (isTask && emittedSubagents.has(taskDesc)) {
+              toolDone.add(partId);
+            } else {
+              const step = toolStep(part.tool, st.input ?? {}, st.title, undefined);
+              if (isChild) step.label = `↳ ${step.label}`;
+              if (isTask) emittedSubagents.add(taskDesc);
+              const id = await ctx.emit(step);
+              if (id) toolSteps.set(partId, id);
+            }
           }
-          if ((st.status === "completed" || st.status === "error") && toolSteps.has(partId)) {
+          if ((status === "completed" || status === "error") && toolSteps.has(partId)) {
             toolDone.add(partId);
+            const output = status === "error" ? String(st.error ?? "") : String(st.output ?? "");
             await ctx.updateStep?.(toolSteps.get(partId)!, {
               tool: part.tool,
               input: st.input ?? {},
-              output: (st.output ?? "").slice(0, 2000),
+              output: output.slice(0, 2000),
             });
           }
         }
@@ -281,22 +342,42 @@ export const opencodeServerAdapter: EngineAdapter = {
         const decoder = new TextDecoder();
         let buf = "";
         for await (const chunk of res.body) {
-          buf += decoder.decode(chunk as Uint8Array, { stream: true });
+          // Normalize CRLF → LF so frame splitting on "\n\n" survives a proxy
+          // that rewrites line endings (Daytona preview).
+          buf += decoder.decode(chunk as Uint8Array, { stream: true }).replace(/\r\n/g, "\n");
           let sep: number;
           while ((sep = buf.indexOf("\n\n")) !== -1) {
             const frame = buf.slice(0, sep);
             buf = buf.slice(sep + 2);
             const ev = sseData(frame);
             if (!ev) continue;
-            const props = (ev.properties ?? {}) as { part?: Record<string, unknown> };
-            if (ev.type === "message.part.updated" && props.part) await handlePart(props.part);
+            // v1 wraps payloads in `properties`; tolerate `data` in case a build
+            // uses the newer envelope. Token deltas ride inline as `delta`.
+            const props = ((ev.properties ?? ev.data) ?? {}) as {
+              part?: Record<string, unknown>;
+              delta?: string;
+              info?: { id?: string; parentID?: string };
+            };
+            // Register subagent sessions: any session whose parent chains to ours
+            // (direct child OR a child of an already-tracked child).
+            if (
+              (ev.type === "session.created" || ev.type === "session.updated") &&
+              props.info?.id &&
+              props.info.parentID &&
+              (props.info.parentID === sessionId || childSessions.has(props.info.parentID))
+            ) {
+              childSessions.add(props.info.id);
+            }
+            if (ev.type === "message.part.updated" && props.part) {
+              await handlePart(props.part, typeof props.delta === "string" ? props.delta : undefined);
+            }
           }
         }
       };
       const pump = pumpEvents().catch(() => {}); // SSE is additive; REST is truth
 
       // ── the turn: POST resolves when the assistant message completes ────────
-      await ctx.emit({ kind: "task", label: "Running opencode (server)…", chip: "opencode" });
+      await ctx.emit({ kind: "task", label: "Thinking…", chip: "opencode" });
       const model = ctx.model?.trim() || DEFAULT_MODEL;
       const turnAbort = new AbortController();
       const timer = setTimeout(() => turnAbort.abort(), Math.max(10_000, budgetMs - (Date.now() - startedAt)));
@@ -344,21 +425,40 @@ export const opencodeServerAdapter: EngineAdapter = {
         await pump;
       }
 
-      // ── finalize from the AUTHORITATIVE completed reply ─────────────────────
-      // Tool parts the SSE pump missed (rejected stream, late frames after the
-      // drain window) are reconciled here so the durable log never depends on
-      // the pump having stayed healthy.
-      for (const p of (reply.parts ?? []) as Record<string, unknown>[]) {
-        if (p.type !== "tool" || typeof p.tool !== "string") continue;
-        const partId = String(p.id ?? "");
-        if (partId && toolSteps.has(partId)) continue; // already streamed live
-        const st = (p.state ?? {}) as {
-          input?: Record<string, unknown>;
-          output?: string;
-          title?: string;
-        };
-        await ctx.emit(toolStep(p.tool, st.input ?? {}, st.title, (st.output ?? "").slice(0, 2000)));
+      // ── finalize from the AUTHORITATIVE session history ─────────────────────
+      // The SSE pump is best-effort: a buffering preview proxy can withhold every
+      // frame until the stream closes, and a multi-message turn leaves tool parts
+      // in an earlier assistant message the POST reply never returns (it returns
+      // only the FINAL message). So reconcile the durable log from the server's
+      // own message history — the parent session plus every subagent (child)
+      // session — through the SAME translator. handlePart's toolSteps / toolDone /
+      // emittedSubagents maps dedupe anything the pump already streamed live.
+      const reconcileSession = async (id: string, child: boolean): Promise<void> => {
+        if (child) childSessions.add(id);
+        try {
+          const res = await fetch(`${baseUrl}/session/${id}/message${dirQ}`, { headers, signal: ctx.signal });
+          if (!res.ok) return;
+          const msgs = (await res.json()) as { parts?: Record<string, unknown>[] }[];
+          for (const m of msgs) {
+            for (const part of m.parts ?? []) {
+              if (part.type === "tool" || part.type === "subtask") await handlePart(part);
+            }
+          }
+        } catch {
+          /* history is a safety net — a failed fetch just leaves the live log as-is */
+        }
+      };
+      // Enumerate subagent sessions the pump may have missed, then reconcile the
+      // parent first (its `task`/tool steps) followed by each child (↳ tools).
+      try {
+        const cres = await fetch(`${baseUrl}/session/${sessionId}/children${dirQ}`, { headers, signal: ctx.signal });
+        if (cres.ok) for (const c of (await cres.json()) as { id?: string }[]) if (c.id) childSessions.add(c.id);
+      } catch {
+        /* best-effort child discovery */
       }
+      await reconcileSession(sessionId, false);
+      for (const cid of [...childSessions]) if (cid !== sessionId) await reconcileSession(cid, true);
+
       const replyTexts = (reply.parts ?? [])
         .filter((p) => p.type === "text" && p.text?.trim())
         .map((p) => p.text as string);

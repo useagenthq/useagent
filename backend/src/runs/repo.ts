@@ -40,6 +40,7 @@ export interface ApiRun {
   duration_ms: number | null;
   parent_run_id: string | null;
   thread_id: string;
+  engine_session_id: string | null;
   created_at: string;
   updated_at: string;
   steps: ApiStep[];
@@ -71,6 +72,7 @@ function toRun(r: RunRecord, stepRows: StepRecord[]): ApiRun {
     duration_ms: r.durationMs,
     parent_run_id: r.parentRunId,
     thread_id: r.threadId,
+    engine_session_id: r.engineSessionId,
     created_at: r.createdAt.toISOString(),
     updated_at: r.updatedAt.toISOString(),
     steps: stepRows.map(toStep),

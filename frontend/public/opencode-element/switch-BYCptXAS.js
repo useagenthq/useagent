@@ -1,0 +1,57 @@
+import { S as r } from "./LROKH5N7-C5nv-nud.js";
+import { bI as c, at as t, bc as o, a2 as s } from "./skynet-element-dDv65e_D.js";
+function h(n) {
+  const [e, i] = c(n, ["children", "class", "hideLabel", "description"]);
+  return t(r, o(i, {
+    get class() {
+      return e.class;
+    },
+    "data-component": "switch",
+    get children() {
+      return [t(r.Input, {
+        "data-slot": "switch-input"
+      }), t(s, {
+        get when() {
+          return e.children;
+        },
+        get children() {
+          return t(r.Label, {
+            "data-slot": "switch-label",
+            get classList() {
+              return {
+                "sr-only": e.hideLabel
+              };
+            },
+            get children() {
+              return e.children;
+            }
+          });
+        }
+      }), t(s, {
+        get when() {
+          return e.description;
+        },
+        get children() {
+          return t(r.Description, {
+            "data-slot": "switch-description",
+            get children() {
+              return e.description;
+            }
+          });
+        }
+      }), t(r.ErrorMessage, {
+        "data-slot": "switch-error"
+      }), t(r.Control, {
+        "data-slot": "switch-control",
+        get children() {
+          return t(r.Thumb, {
+            "data-slot": "switch-thumb"
+          });
+        }
+      })];
+    }
+  }));
+}
+export {
+  h as S
+};

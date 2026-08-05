@@ -38,6 +38,10 @@ export interface ApiRun {
   status: RunStatus;
   summary: string | null;
   duration_ms: number | null;
+  /** The engine's own native session id (opencode `ses_*`), when one was
+   * recorded for this run. The thread's latest non-null value deep-links the
+   * "Live" tab straight into that session (see session-view.tsx / live-pane.tsx). */
+  engine_session_id?: string | null;
   created_at: string;
   updated_at: string;
   steps: ApiStep[];

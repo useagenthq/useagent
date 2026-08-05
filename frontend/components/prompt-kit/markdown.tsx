@@ -36,10 +36,12 @@ const INITIAL_COMPONENTS: Partial<Components> = {
       props.node?.position?.start.line === props.node?.position?.end.line;
 
     if (isInline) {
+      // Inline chip: a hairline-ringed pill on the weak surface, sized just under
+      // the surrounding 13px rhythm so code reads as an accent, not a jump.
       return (
         <span
           className={cn(
-            "bg-bg-weak-50 text-text-strong-950 rounded-md px-1 py-0.5 font-mono text-[0.85em]",
+            "bg-bg-weak-50 text-text-strong-950 ring-stroke-soft-200 rounded-md px-1.5 py-0.5 font-mono text-[0.85em] ring-1 ring-inset",
             className,
           )}
           {...props}
@@ -51,8 +53,11 @@ const INITIAL_COMPONENTS: Partial<Components> = {
 
     const language = extractLanguage(className);
 
+    // `my-3` gives fenced blocks the same vertical breathing room as paragraphs
+    // (the CodeBlock card carries no margin of its own).
     return (
       <CodeBlock
+        className="my-3"
         code={String(children ?? "").replace(/\n$/, "")}
         language={language}
       />
@@ -60,6 +65,47 @@ const INITIAL_COMPONENTS: Partial<Components> = {
   },
   pre: function PreComponent({ children }) {
     return <>{children}</>;
+  },
+  // Tables: wrap in a horizontally-scrollable hairline card so wide tables never
+  // cram the column; header on the weak surface, rows split by soft hairlines.
+  table: function TableComponent({ children }) {
+    return (
+      <div className="border-stroke-soft-200 my-3 w-full overflow-x-auto rounded-lg border">
+        <table className="w-full border-collapse text-paragraph-sm [&_tbody_tr:last-child]:border-b-0">
+          {children}
+        </table>
+      </div>
+    );
+  },
+  thead: function TheadComponent({ children }) {
+    return <thead className="bg-bg-weak-50">{children}</thead>;
+  },
+  tr: function TrComponent({ children }) {
+    return (
+      <tr className="border-stroke-soft-200 border-b">{children}</tr>
+    );
+  },
+  th: function ThComponent({ children }) {
+    return (
+      <th className="text-text-sub-600 text-label-xs px-3 py-2 text-left align-top font-medium">
+        {children}
+      </th>
+    );
+  },
+  td: function TdComponent({ children }) {
+    return (
+      <td className="text-text-strong-950 px-3 py-2 align-top">{children}</td>
+    );
+  },
+  blockquote: function BlockquoteComponent({ children }) {
+    return (
+      <blockquote className="border-stroke-soft-200 text-text-sub-600 my-3 border-l-2 pl-3">
+        {children}
+      </blockquote>
+    );
+  },
+  hr: function HrComponent() {
+    return <hr className="border-stroke-soft-200 my-4" />;
   },
 };
 
