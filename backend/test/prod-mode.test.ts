@@ -1,4 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { eq } from "drizzle-orm";
+import { db } from "../src/db/client";
+import { member, user } from "../src/db/schema";
 import { CookieJar, fetchApi, json, uid } from "./helpers";
 
 /**
@@ -7,7 +10,8 @@ import { CookieJar, fetchApi, json, uid } from "./helpers";
  * (restored in afterAll) instead of needing a separate process.
  *
  *  - anonymous (no session) → 401 on every domain route (no dev-org fallback);
- *  - authenticated but member of no org → 403 no_organization (never the dev org).
+ *  - a fresh signup lands in its own personal org (created on first sign-in);
+ *  - a session that ends up in NO org → 403 no_organization (never the dev org).
  */
 describe("production mode: fail closed", () => {
   beforeAll(() => {
@@ -35,8 +39,26 @@ describe("production mode: fail closed", () => {
     expect(body).toEqual({ status: "ok" });
   });
 
-  test("authenticated user with no organization → 403 no_organization", async () => {
-    // Sign up but never create/activate an org: the session has zero memberships.
+  test("a fresh signup lands in its own personal org (created on first sign-in)", async () => {
+    const email = `${uid("personal")}@example.com`;
+    const jar = new CookieJar();
+    const signUp = await fetchApi("/api/auth/sign-up/email", {
+      method: "POST",
+      body: { name: "Personal Org User", email, password: "password-1234" },
+    });
+    expect(signUp.status).toBe(200);
+    jar.absorb(signUp);
+
+    // The create-personal-org-on-first-signin hook gave them an org, so domain
+    // routes resolve their tenant even with production fail-closed on.
+    const runs = await json<any>("/api/runs", { cookies: jar.header() });
+    expect(runs.status).toBe(200);
+  });
+
+  test("a session that belongs to no org → 403 no_organization", async () => {
+    // Sign up (which auto-creates a personal org), then strip the membership to
+    // simulate a genuinely org-less session (e.g. its only org was deleted): the
+    // middleware must fail closed, never borrow the dev org.
     const email = `${uid("noorg")}@example.com`;
     const jar = new CookieJar();
     const signUp = await fetchApi("/api/auth/sign-up/email", {
@@ -45,6 +67,9 @@ describe("production mode: fail closed", () => {
     });
     expect(signUp.status).toBe(200);
     jar.absorb(signUp);
+
+    const [row] = await db.select({ id: user.id }).from(user).where(eq(user.email, email));
+    await db.delete(member).where(eq(member.userId, row.id));
 
     const skills = await json<any>("/api/skills", { cookies: jar.header() });
     expect(skills.status).toBe(403);
