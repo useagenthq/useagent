@@ -1,6 +1,6 @@
 import { createMiddleware } from "hono/factory";
 import { auth } from "../auth";
-import { devModeEnabled } from "../env";
+import { allowDevOrg } from "../env";
 import type { AppEnv } from "../http";
 import { firstOrgForUser, getDevContext } from "../seed";
 
@@ -12,9 +12,10 @@ import { firstOrgForUser, getDevContext } from "../seed";
  *    first membership. A session with ZERO memberships is rejected 403
  *    (`no_organization`) — it never silently borrows the dev org.
  *  - No (or invalid) session:
- *      · dev mode  → the seeded dev org + dev user, so every API stays usable
- *        unauthenticated in local dev;
- *      · production (SKYNET_DEV_MODE=false) → 401 on all domain routes.
+ *      · dev-org allowed → the seeded dev org + dev user, so every API stays
+ *        usable unauthenticated in local dev;
+ *      · dev-org disallowed (ALLOW_DEV_ORG=0, or production) → 401 on all
+ *        domain routes. Flipping ALLOW_DEV_ORG off is the production switch.
  */
 export const orgScope = createMiddleware<AppEnv>(async (c, next) => {
   let session: Awaited<ReturnType<typeof auth.api.getSession>> = null;
@@ -40,7 +41,7 @@ export const orgScope = createMiddleware<AppEnv>(async (c, next) => {
   }
 
   // Anonymous (or invalid session) below.
-  if (!devModeEnabled()) {
+  if (!allowDevOrg()) {
     return c.json({ error: "unauthorized" }, 401);
   }
 
