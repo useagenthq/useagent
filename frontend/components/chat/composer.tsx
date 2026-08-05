@@ -15,6 +15,7 @@ import {
 } from "@/components/prompt-kit/prompt-input";
 import { Loader } from "@/components/prompt-kit/loader";
 import { ModelPicker } from "@/components/chat/engine-picker";
+import { MemoryScopePicker } from "@/components/chat/memory-scope-picker";
 import {
   AgentChip,
   ChooseAgentPopover,
@@ -25,22 +26,24 @@ import {
   SlashCommandPopover,
   type SlashCommand,
 } from "@/components/chat/slash-command";
-import type { EngineId } from "@/components/chat/types";
+import type { EngineId, MemoryScope } from "@/components/chat/types";
 
 type Variant = "hero" | "compact";
 
 /**
  * Submit a composed prompt. `idempotencyKey` is a stable per-submission id the
  * handler forwards as the backend `Idempotency-Key`, so a lost-response retry
- * observes the original run instead of duplicating it. Reject to signal failure:
- * the composer restores the draft and shows a retry state (reusing the same
- * key). A synchronous (void) handler is treated as accepted.
+ * observes the original run instead of duplicating it. `memoryScope` is the
+ * team-memory pool the run reads/writes. Reject to signal failure: the composer
+ * restores the draft and shows a retry state (reusing the same key). A
+ * synchronous (void) handler is treated as accepted.
  */
 export type ComposerSubmit = (
   prompt: string,
   engine: EngineId,
   model: string,
   idempotencyKey: string,
+  memoryScope: MemoryScope,
 ) => void | Promise<void>;
 
 export type ComposerProps = {
@@ -55,6 +58,8 @@ export type ComposerProps = {
   enableAgentCommand?: boolean;
   /** Starting model for the picker (thread's current model on replies). */
   defaultModel?: string;
+  /** Starting memory scope (a reply inherits the thread's current scope). */
+  defaultMemoryScope?: MemoryScope;
   /** Engine slash commands for "/" autocomplete (reply composer, live thread). */
   commands?: SlashCommand[];
   onSubmit: ComposerSubmit;
@@ -82,12 +87,14 @@ export function Composer({
   className,
   enableAgentCommand,
   defaultModel = "claude-opus-5",
+  defaultMemoryScope = "org",
   commands,
   onSubmit,
 }: ComposerProps) {
   const [value, setValue] = useState("");
   const [engineState, setEngineState] = useState<EngineId>(defaultEngine);
   const [model, setModel] = useState(defaultModel);
+  const [memoryScope, setMemoryScope] = useState<MemoryScope>(defaultMemoryScope);
   const [command, setCommand] = useState<Agent | null>(null);
   const [toolsOpen, setToolsOpen] = useState(false);
   const [cmdHighlight, setCmdHighlight] = useState(0);
@@ -152,7 +159,7 @@ export function Composer({
     setFailed(false);
     setValue(""); // optimistic clear — the pending bubble shows the text meanwhile
     try {
-      await onSubmit(text, engine, model, key);
+      await onSubmit(text, engine, model, key, memoryScope);
       retry.current = null; // accepted — drop the retry key
     } catch {
       // Never silently swallow: restore the draft and show an explicit failed
@@ -269,6 +276,8 @@ export function Composer({
 
             {/* Right cluster */}
             <div className="ml-auto flex items-center gap-1.5">
+              {/* Team-memory pool for the run (org vs personal), sibling to model. */}
+              <MemoryScopePicker scope={memoryScope} onChange={setMemoryScope} />
               {/* One engine now — the meaningful per-message choice is the MODEL. */}
               <ModelPicker model={model} onChange={setModel} />
               {hero && (

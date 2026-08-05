@@ -20,6 +20,7 @@ import {
   type ApiRun,
   type ApiStep,
   type EngineId,
+  type MemoryScope,
   type RunStatus,
 } from "@/components/chat/types";
 
@@ -330,12 +331,14 @@ function TurnBlock({ turn }: { turn: Turn }) {
 function ReplyComposer({
   engine,
   model,
+  memoryScope,
   pending,
   commands,
   onReply,
 }: {
   engine: EngineId;
   model: string;
+  memoryScope: MemoryScope;
   pending: boolean;
   commands?: SlashCommand[];
   onReply: ComposerSubmit;
@@ -347,6 +350,7 @@ function ReplyComposer({
         placeholder="Reply to Skynet…"
         defaultEngine={engine}
         defaultModel={model}
+        defaultMemoryScope={memoryScope}
         pending={pending}
         commands={commands}
         onSubmit={onReply}
@@ -365,6 +369,7 @@ export function Conversation({
   turns,
   defaultEngine,
   defaultModel,
+  defaultMemoryScope,
   pendingReply,
   commands,
   onReply,
@@ -372,6 +377,8 @@ export function Conversation({
   turns: Turn[];
   defaultEngine: EngineId;
   defaultModel: string;
+  /** The thread's current memory scope — the reply composer starts here. */
+  defaultMemoryScope: MemoryScope;
   pendingReply: string | null;
   /** Engine slash commands for the reply composer's "/" autocomplete. */
   commands?: SlashCommand[];
@@ -409,6 +416,7 @@ export function Conversation({
       <ReplyComposer
         engine={defaultEngine}
         model={defaultModel}
+        memoryScope={defaultMemoryScope}
         pending={pendingReply !== null}
         commands={commands}
         onReply={onReply}

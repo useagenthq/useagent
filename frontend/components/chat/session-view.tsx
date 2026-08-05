@@ -28,6 +28,7 @@ import {
   toThread,
   type ApiRun,
   type EngineId,
+  type MemoryScope,
   type RunStatus,
 } from "@/components/chat/types";
 
@@ -130,7 +131,13 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
   }, [stream.live, refetchThread]);
 
   const handleReply = useCallback(
-    async (text: string, engine: EngineId, model: string, idempotencyKey: string) => {
+    async (
+      text: string,
+      engine: EngineId,
+      model: string,
+      idempotencyKey: string,
+      memoryScope: MemoryScope,
+    ) => {
       setPendingReply(text);
       try {
         const res = await backendFetch("/api/runs", {
@@ -146,6 +153,9 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
             engine,
             model,
             parent_run_id: newest.id,
+            // The backend inherits the parent's scope when omitted; sending the
+            // composer's choice lets the user change it for this reply.
+            memory_scope: memoryScope,
           }),
         });
         if (!res.ok) throw new Error(`backend ${res.status}`);
@@ -297,6 +307,9 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
             turns={turns}
             defaultEngine={normalizeEngine(newest.engine)}
             defaultModel={newest.model}
+            // A reply inherits the thread's current scope (its newest run); the
+            // composer lets the user change it. Legacy runs w/o a scope → "org".
+            defaultMemoryScope={newest.memory_scope ?? "org"}
             pendingReply={pendingReply}
             commands={commands}
             onReply={handleReply}
