@@ -14,6 +14,7 @@ import { backendFetch } from "@/lib/backend-fetch";
 import { cnExt as cn } from "@/utils/cn";
 import * as SegmentedControl from "@/components/ui/segmented-control";
 import { Conversation, type Turn } from "@/components/chat/conversation";
+import type { SlashCommand } from "@/components/chat/slash-command";
 import { AgentsRail } from "@/components/chat/agents-rail";
 import { EditorPane } from "@/components/chat/editor-pane";
 import { DesktopPane } from "@/components/chat/desktop-pane";
@@ -182,6 +183,33 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
   // placeholder). Only offered for opencode threads — the snapshot with noVNC.
   const hasDesktop = isOpencode;
 
+  // Slash-command list for the reply composer's "/" autocomplete — the resident
+  // opencode server's real GET /command, via the same-origin live-proxy. Best
+  // effort: a stopped sandbox or non-opencode thread just means no popover.
+  const [commands, setCommands] = useState<SlashCommand[]>([]);
+  useEffect(() => {
+    if (!isOpencode || !engineSessionId) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await backendFetch(`/api/live-proxy/${rootId}/command`);
+        if (!res.ok) return;
+        const list = (await res.json()) as { name?: string; description?: string }[];
+        if (cancelled || !Array.isArray(list)) return;
+        setCommands(
+          list
+            .filter((c): c is { name: string; description?: string } => !!c.name)
+            .map((c) => ({ name: c.name, description: c.description ?? null })),
+        );
+      } catch {
+        // no commands — the composer simply has no "/" popover
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpencode, engineSessionId, rootId]);
+
   return (
     <div className="flex h-full flex-col">
       {/* Compact session bar — the shell's TopNav + AgentSidebar (⌘K included)
@@ -224,6 +252,7 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
             defaultEngine={normalizeEngine(newest.engine)}
             defaultModel={newest.model}
             pendingReply={pendingReply}
+            commands={commands}
             onReply={handleReply}
           />
           {/* Boot phase: engine spinning up, no steps yet — orb pill; clears the

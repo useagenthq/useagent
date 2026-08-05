@@ -151,11 +151,14 @@ function PromptInputTextarea({
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    // Caller first: an autocomplete popover (slash commands) must be able to
+    // claim Enter/arrows via preventDefault before Enter submits the prompt.
+    onKeyDown?.(e);
+    if (e.defaultPrevented) return;
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       onSubmit?.();
     }
-    onKeyDown?.(e);
   };
 
   return (
