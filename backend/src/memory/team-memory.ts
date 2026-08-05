@@ -45,16 +45,25 @@ interface AtomicSearchData {
   items: AtomicHit[];
 }
 
-// ── Per-run identity (north star Phase 2) ────────────────────────────────────
-// Resolve the memory isolation ids from the RUN ROW, not static MEMORY_* env.
-// One configured team stays the default; the user is the authenticated Skynet
-// user, the session is the canonical Skynet thread, and the run id rides along
-// as provenance. Never use an OpenCode/native session id as a product identity.
+// ── Memory identity (north star Phase 2, semantics fixed) ────────────────────
+// TEAM memory is a SHARED per-team pool. /v3/atomic/search is STRICTLY user-
+// scoped (verified live: a fact recalls only under its AUTHOR user; there is no
+// team-scope flag, and omitting user_id returns nothing) — so partitioning team
+// memory by the run's user (the original Phase 2) made a team fact authored by
+// one member invisible to every other member. Instead, team memory lives under
+// ONE stable per-team pool user so every member recalls the same team facts; the
+// run's actual user rides along as PROVENANCE only. Per-user *personal* memory
+// isolation is a deliberate future layer (would query the actor's own pool too).
 
 export interface MemoryIdentity {
   readonly teamId: string;
   readonly agentId: string;
+  /** The team-shared memory pool user_id — the memory PARTITION, not who ran the
+   *  turn. Every team member recalls/writes this same pool (see the note above). */
   readonly userId: string;
+  /** Who actually triggered the run (authenticated Skynet user / Slack actor) —
+   *  PROVENANCE for the retrieval ledger + audit, never the memory partition. */
+  readonly actorUserId: string;
   /** MemoryCore `session_id` — the canonical Skynet threadId. */
   readonly sessionId: string;
   /** Provenance metadata (not an isolation key). */
@@ -97,9 +106,11 @@ const EMPTY_RECALL: MemoryRecall = {
 };
 
 /**
- * Resolve the memory identity for a run: the configured single team is the
- * default, but the user/session/provenance come from the RUN ROW. Returns null
- * when memory is disabled (`MEMORY_API_URL` unset) so callers gate cleanly.
+ * Resolve the memory identity for a run. The memory PARTITION is the shared
+ * per-team pool (`cfg.userId`) so team facts recall for every member; the run's
+ * actual user is kept as `actorUserId` provenance. Session = the canonical
+ * threadId, run id = provenance. Returns null when memory is disabled
+ * (`MEMORY_API_URL` unset) so callers gate cleanly.
  */
 export function resolveMemoryIdentity(run: {
   userId: string | null;
@@ -111,9 +122,11 @@ export function resolveMemoryIdentity(run: {
   return {
     teamId: cfg.teamId,
     agentId: cfg.agentId,
-    // Authenticated Skynet user; fall back to the team default for legacy/system
-    // runs with no user (keeps single-team recall working, never leaks across users).
-    userId: run.userId ?? cfg.userId,
+    // SHARED team memory pool — the same for every member so a team fact one
+    // member wrote surfaces for all (the resumed-recall fix). NOT run.userId.
+    userId: cfg.userId,
+    // The run's actual user rides along as provenance only.
+    actorUserId: run.userId ?? cfg.userId,
     sessionId: run.threadId,
     runId: run.id,
   };

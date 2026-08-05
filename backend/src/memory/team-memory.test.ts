@@ -33,11 +33,13 @@ function enableMemory(): void {
   process.env.MEMORY_TEAM_ID = "team-1";
 }
 
-/** A concrete per-run identity for the recall/capture tests. */
+/** A concrete identity for the recall/capture tests. `userId` is the team pool
+ *  (what atomic/search is scoped to); `actorUserId` is provenance. */
 const IDENT: MemoryIdentity = {
   teamId: "team-1",
   agentId: "skynet-backend",
   userId: "u-42",
+  actorUserId: "u-42",
   sessionId: "thread-9",
   runId: "run-1",
 };
@@ -84,22 +86,35 @@ describe("resolveMemoryIdentity", () => {
     expect(resolveMemoryIdentity({ userId: "u-42", threadId: "t-9", id: "r-1" })).toBeNull();
   });
 
-  test("resolves user/session/run from the RUN ROW, team/agent from config", () => {
-    enableMemory();
+  test("memory pool = SHARED team user (config), actor = the run's user", () => {
+    enableMemory(); // MEMORY_USER_ID unset → cfg default "skynet"
     const id = resolveMemoryIdentity({ userId: "u-42", threadId: "t-9", id: "r-1" });
     expect(id).toEqual({
       teamId: "team-1",
       agentId: "skynet-backend",
-      userId: "u-42",
+      userId: "skynet", // the SHARED team memory pool, NOT the run's user
+      actorUserId: "u-42", // provenance
       sessionId: "t-9",
       runId: "r-1",
     });
   });
 
-  test("falls back to the team-default user for a legacy/system run (null userId)", () => {
+  test("REGRESSION: different run users share ONE team pool (a team fact recalls for all)", () => {
+    // The bug: partitioning by run.userId hid a team fact authored by another user.
+    enableMemory();
+    const alice = resolveMemoryIdentity({ userId: "alice", threadId: "t", id: "r1" })!;
+    const bob = resolveMemoryIdentity({ userId: "bob", threadId: "t", id: "r2" })!;
+    expect(alice.userId).toBe(bob.userId); // same pool → shared team recall
+    expect(alice.actorUserId).toBe("alice"); // provenance stays per-actor
+    expect(bob.actorUserId).toBe("bob");
+  });
+
+  test("actorUserId falls back to the pool user for a legacy/system run (null userId)", () => {
     enableMemory();
     process.env.MEMORY_USER_ID = "svc";
-    expect(resolveMemoryIdentity({ userId: null, threadId: "t-9", id: "r-1" })?.userId).toBe("svc");
+    const id = resolveMemoryIdentity({ userId: null, threadId: "t-9", id: "r-1" });
+    expect(id?.userId).toBe("svc");
+    expect(id?.actorUserId).toBe("svc");
   });
 });
 
@@ -150,13 +165,14 @@ describe("searchTeamMemory", () => {
     expect(body.query).toBe("how do runs work?");
   });
 
-  test("CROSS-USER isolation: each identity sends its OWN user_id (no leak)", async () => {
+  test("scopes atomic/search to the identity's pool user_id (not the actor)", async () => {
     enableMemory();
     const fn = stubFetch({ code: 0, data: { items: [] } });
-    await searchTeamMemory("q", { ...IDENT, userId: "alice" });
-    await searchTeamMemory("q", { ...IDENT, userId: "bob" });
-    expect(JSON.parse(String((fn.mock.calls[0]![1] as RequestInit).body)).user_id).toBe("alice");
-    expect(JSON.parse(String((fn.mock.calls[1]![1] as RequestInit).body)).user_id).toBe("bob");
+    // Same team pool, different actors → both query the SAME pool (shared recall).
+    await searchTeamMemory("q", { ...IDENT, userId: "team-pool", actorUserId: "alice" });
+    await searchTeamMemory("q", { ...IDENT, userId: "team-pool", actorUserId: "bob" });
+    expect(JSON.parse(String((fn.mock.calls[0]![1] as RequestInit).body)).user_id).toBe("team-pool");
+    expect(JSON.parse(String((fn.mock.calls[1]![1] as RequestInit).body)).user_id).toBe("team-pool");
   });
 
   test("empty items → empty recall", async () => {

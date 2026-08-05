@@ -19,10 +19,13 @@ export const CONTEXT_RETRIEVED = "context.retrieved";
 export interface RetrievalLedgerPayload {
   readonly provider: string;
   readonly query: string;
-  /** Tenant scope the recall ran under (never the transport credentials). */
+  /** Tenant scope the recall ran under (never the transport credentials).
+   *  `userId` is the shared team-memory pool; `actorUserId` is who triggered the
+   *  run (provenance) — the two differ once real users run turns. */
   readonly scope: {
     readonly teamId: string;
     readonly userId: string;
+    readonly actorUserId: string;
     readonly agentId: string;
     readonly sessionId: string;
   };
@@ -46,6 +49,7 @@ export function buildRetrievalPayload(
     scope: {
       teamId: identity.teamId,
       userId: identity.userId,
+      actorUserId: identity.actorUserId,
       agentId: identity.agentId,
       sessionId: identity.sessionId,
     },
