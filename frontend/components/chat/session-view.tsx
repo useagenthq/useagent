@@ -382,7 +382,7 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
             </div>
             <div className="min-h-0 flex-1">
               {railTab === "agents" ? (
-                <AgentsRail steps={allSteps} live={live} />
+                <AgentsRail steps={allSteps} live={live} frames={stream.native.nativeFrames} />
               ) : railTab === "editor" ? (
                 <EditorPane steps={allSteps} live={live} />
               ) : railTab === "desktop" ? (

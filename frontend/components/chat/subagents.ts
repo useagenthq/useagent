@@ -46,6 +46,9 @@ export interface SubagentCard {
   readonly title: string;
   /** Native child session this card owns; null until known (or legacy runs). */
   readonly childSessionId: string | null;
+  /** The parent's `task`-tool call id — links this card to its native status
+   *  frame (`deriveChildFidelity`). Null on legacy/pre-native runs. */
+  readonly callId: string | null;
   /** Latest attributed nested activity label; null until the first one lands. */
   status: string | null;
   /** Spawn step `created_at`, ms. */
@@ -77,6 +80,7 @@ function spawnCard(step: ApiStep): SubagentCard {
     id: step.id,
     title: deriveTrace(step).target,
     childSessionId: childSessionOf(step),
+    callId: nativeOf(step)?.callID ?? null,
     status: null,
     startedAt: Date.parse(step.created_at),
     lastActivityAt: null,
