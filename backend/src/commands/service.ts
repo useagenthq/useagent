@@ -41,6 +41,7 @@ export async function acceptRunCommand(input: RunCommandInput): Promise<RunComma
     engine: input.run.engine,
     parentRunId: input.run.parentRunId,
     threadId: input.run.threadId,
+    repo: input.run.repo,
   }).slice(0, PAYLOAD_CAP);
   const commandId = crypto.randomUUID();
 

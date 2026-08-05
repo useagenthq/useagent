@@ -59,6 +59,7 @@ export async function insertCommandWithRun(cmd: NewRunCommand): Promise<void> {
         userId: cmd.actorId,
         parentRunId: cmd.run.parentRunId,
         threadId: cmd.run.threadId,
+        repo: cmd.run.repo,
       },
       tx,
     );

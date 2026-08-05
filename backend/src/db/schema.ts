@@ -76,6 +76,11 @@ export const runs = pgTable(
     // mapping SURVIVES backend restarts — the next turn resumes the same box
     // (workspace + resident engine server) instead of provisioning a new one.
     sandboxId: text("sandbox_id"),
+    // The GitHub repository this run works in ("owner/name"), chosen in the New
+    // Task composer and validated against GET /api/repos. Nullable — a run with
+    // no repo works in a bare sandbox workdir. Inherited across a thread (a reply
+    // keeps its root run's repo) so the adapter always knows the thread's repo.
+    repo: text("repo"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),

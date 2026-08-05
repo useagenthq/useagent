@@ -41,6 +41,7 @@ export interface ApiRun {
   parent_run_id: string | null;
   thread_id: string;
   engine_session_id: string | null;
+  repo: string | null;
   created_at: string;
   updated_at: string;
   steps: ApiStep[];
@@ -73,6 +74,7 @@ function toRun(r: RunRecord, stepRows: StepRecord[]): ApiRun {
     parent_run_id: r.parentRunId,
     thread_id: r.threadId,
     engine_session_id: r.engineSessionId,
+    repo: r.repo,
     created_at: r.createdAt.toISOString(),
     updated_at: r.updatedAt.toISOString(),
     steps: stepRows.map(toStep),
@@ -140,6 +142,7 @@ export async function createRun(
     userId: string | null;
     parentRunId: string | null;
     threadId: string;
+    repo?: string | null;
   },
   /** Run the insert inside a caller's transaction (durable-command acceptance
    *  commits the command + run atomically). Defaults to the shared pool. */
@@ -155,6 +158,7 @@ export async function createRun(
     userId: input.userId,
     parentRunId: input.parentRunId,
     threadId: input.threadId,
+    repo: input.repo ?? null,
   });
 }
 

@@ -132,6 +132,50 @@ export function googleAuthEnabled(): boolean {
 }
 
 /**
+ * GitHub config for real repository selection (src/github/*). Backend-only: the
+ * token NEVER reaches React — it authenticates the repo listing here and rides
+ * into a sandbox ONLY as a narrow, one-shot clone credential (see the adapter).
+ *
+ * Read per call (like memoryConfig/slackConfig) so a deploy can add a token
+ * without a rebuild. `token` accepts the standard aliases GITHUB_TOKEN /
+ * GH_TOKEN / GITHUB_PAT (a PAT or a pre-minted installation token). `owner` is
+ * the org/user whose repos to list (GITHUB_ORG / GITHUB_OWNER); when unset and a
+ * token is present we list the token user's own repos instead.
+ *
+ * "Configured" means we can list SOMETHING: a token (list the user's repos) or
+ * an owner (list that org/user's PUBLIC repos unauthenticated, or private too
+ * when a token is also set). Neither → the whole feature is a graceful no-op and
+ * the API reports `configured:false`.
+ *
+ * NOTE (credential model): the only GitHub creds in the pre-rebuild root `.env`
+ * are a GitHub *App* (GITHUB_APP_*), which the backend does not load and
+ * CLAUDE.md says not to resurrect. Minting short-lived installation tokens from
+ * that App is the narrowest long-term credential, but it's a separate lift; this
+ * resolver is the pluggable seam where such a source would slot in.
+ */
+export interface GithubConfig {
+  token: string | null;
+  owner: string | null;
+}
+
+export function githubConfig(): GithubConfig {
+  const token =
+    process.env.GITHUB_TOKEN?.trim() ||
+    process.env.GH_TOKEN?.trim() ||
+    process.env.GITHUB_PAT?.trim() ||
+    null;
+  const owner =
+    process.env.GITHUB_ORG?.trim() || process.env.GITHUB_OWNER?.trim() || null;
+  return { token, owner };
+}
+
+/** True when repo listing can return anything (a token or an owner is set). */
+export function githubConfigured(): boolean {
+  const { token, owner } = githubConfig();
+  return Boolean(token || owner);
+}
+
+/**
  * Slack adapter config for the optional Events-API integration (src/slack/*).
  * Gated exactly like memoryConfig(): read per call, and BOTH `SLACK_BOT_TOKEN`
  * and `SLACK_SIGNING_SECRET` must be set or the whole adapter is a no-op —

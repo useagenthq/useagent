@@ -22,6 +22,9 @@ export interface RunCommandInput {
     readonly engine: EngineId;
     readonly parentRunId: string | null;
     readonly threadId: string;
+    /** GitHub repo "owner/name" to work in (validated against GET /api/repos),
+     *  or null for a bare workdir. Part of the run's identity for idempotency. */
+    readonly repo: string | null;
   };
 }
 

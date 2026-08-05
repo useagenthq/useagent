@@ -151,7 +151,7 @@ export async function handleSlackEvent(body: SlackEnvelope): Promise<void> {
     idempotencyKey: null,
     orgId,
     actorId: userId,
-    run: { id: runId, prompt, model: config.model, engine: config.defaultEngine, parentRunId, threadId },
+    run: { id: runId, prompt, model: config.model, engine: config.defaultEngine, parentRunId, threadId, repo: null },
   });
 
   // First bot interaction in this Slack thread → remember it as the root. Linked

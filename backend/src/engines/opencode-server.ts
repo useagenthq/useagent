@@ -14,6 +14,7 @@ import type {
 import { composeTurnPrompt } from "./types";
 import { basename, parseJsonLine, truncate } from "./util";
 import { getThreadSandbox, setRunSandbox } from "../runs/repo";
+import { githubConfig } from "../env";
 import { assertNever } from "../util/exhaustive";
 
 // ---------------------------------------------------------------------------
@@ -119,6 +120,77 @@ async function ensureServer(
   const home = /HOME=(\S+)/.exec(boot.result ?? "")?.[1] ?? "/home/daytona";
   const link = await sandbox.getPreviewLink(SERVE_PORT);
   return { baseUrl: link.url.replace(/\/+$/, ""), token: link.token ?? "", workdir: `${home}/work` };
+}
+
+/** Single-quote a string for safe interpolation into a POSIX shell command. */
+function shq(s: string): string {
+  return `'${s.replace(/'/g, `'\\''`)}'`;
+}
+
+/**
+ * Clone the thread's selected repo into the sandbox workspace, idempotently —
+ * called once on a thread's first turn; a resumed thread already has the clone,
+ * so this is a fast skip. Public repos need no credential.
+ *
+ * TRUST BOUNDARY (new_prompt.md "narrowest practical credential"): a PRIVATE
+ * clone uses the backend-held GitHub token, and the sandbox is untrusted — so
+ * the token is handled as narrowly as possible:
+ *   - passed via GIT_CONFIG_* ENV, never in the command string / git argv (so it
+ *     is not in our source, our logs, or `ps` inside the box);
+ *   - applied one-shot as an http.extraHeader for THIS clone only;
+ *   - NOT written to .git/config — the stored remote stays the clean https URL,
+ *     so the token does not persist on the sandbox disk.
+ * Only this narrow read-scoped token ever enters the sandbox; broad backend
+ * credentials never do. A fresh clone that FAILS fails the run honestly rather
+ * than silently leaving an empty workdir the user did not ask for.
+ */
+async function ensureRepoClone(
+  sandbox: Sandbox,
+  workdir: string,
+  repo: string,
+  ctx: EngineRunContext,
+): Promise<void> {
+  const gitDir = `${workdir}/.git`;
+  // Cheap pre-check so a resumed thread (clone already present) shows no noisy
+  // "Cloning" step — we only emit + clone when the workspace has no repo yet.
+  const check = await sandbox.process.executeCommand(
+    `[ -d ${shq(gitDir)} ] && echo yes || echo no`,
+    undefined,
+    undefined,
+    15,
+  );
+  if ((check.result ?? "").includes("yes")) return;
+
+  const token = githubConfig().token;
+  const url = `https://github.com/${repo}.git`;
+  // Robust to a non-empty workdir: clone into a temp dir, then move ALL entries
+  // (incl. dotfiles like .git) via find — POSIX-portable, unlike bash `dotglob`.
+  const script =
+    `set -e; DIR=${shq(workdir)}; ` +
+    `if [ -d "$DIR/.git" ]; then echo clone:exists; exit 0; fi; ` +
+    `TMP="$(mktemp -d)"; ` +
+    `if git clone ${shq(url)} "$TMP/r" >"$TMP/log" 2>&1; then ` +
+    `mkdir -p "$DIR"; ` +
+    `( cd "$TMP/r" && find . -maxdepth 1 -mindepth 1 -exec mv -f {} "$DIR/" ';' ); ` +
+    `rm -rf "$TMP"; echo clone:ok; ` +
+    `else echo clone:failed; tail -c 300 "$TMP/log"; rm -rf "$TMP"; exit 1; fi`;
+  // Token via ENV only (see trust-boundary note). Absent token → public clone.
+  const cloneEnv: Record<string, string> = token
+    ? {
+        GIT_CONFIG_COUNT: "1",
+        GIT_CONFIG_KEY_0: "http.extraHeader",
+        GIT_CONFIG_VALUE_0: `Authorization: Bearer ${token}`,
+      }
+    : {};
+
+  await ctx.emit({ kind: "command", label: `Cloning ${repo}`, chip: "git" });
+  const res = await sandbox.process.executeCommand(script, undefined, cloneEnv, 300);
+  const out = (res.result ?? "").trim();
+  if ((res.exitCode ?? 1) !== 0 || /clone:(failed|mktemp)/.test(out)) {
+    // Never echo the credential — surface only the sanitized git tail.
+    const detail = out.replace(/clone:\w+/g, "").trim() || "git clone error";
+    throw new Error(`failed to clone ${repo}: ${truncate(detail, 200)}`);
+  }
 }
 
 /** Parse one SSE frame's data payload (we only care about `data:` lines). */
