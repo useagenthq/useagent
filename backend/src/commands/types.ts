@@ -1,4 +1,4 @@
-import type { EngineId } from "../db/schema";
+import type { EngineId, MemoryScope } from "../db/schema";
 
 // ---------------------------------------------------------------------------
 // Boundary types for durable command acceptance (north star "Durable
@@ -25,6 +25,9 @@ export interface RunCommandInput {
     /** GitHub repo "owner/name" to work in (validated against GET /api/repos),
      *  or null for a bare workdir. Part of the run's identity for idempotency. */
     readonly repo: string | null;
+    /** Team-memory pool for the run — resolved at the boundary (explicit choice,
+     *  parent inheritance, or the "org" default). Never taken from the sandbox. */
+    readonly memoryScope: MemoryScope;
   };
 }
 
