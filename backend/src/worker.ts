@@ -16,12 +16,12 @@ import type { RunStatus, StepKind } from "./db/schema";
 import { adapters } from "./engines";
 import type { EmitStep, EngineRunContext } from "./engines/types";
 import {
-  recordRunMemory,
   resolveMemoryIdentity,
   searchTeamMemory,
   type MemoryIdentity,
 } from "./memory/team-memory";
 import { recordContextRetrieval } from "./memory/retrieval-ledger";
+import { enqueueCapture } from "./memory/capture-outbox";
 import { turnStream } from "./runs/turn-stream";
 import { claimNextRun, settleCommandForRun } from "./commands/dispatch";
 
@@ -356,11 +356,15 @@ async function runEngine(
       summaryDuration ?? Date.now() - startedAt,
     );
     bus.emit(channel(runId), { type: "end", status: "completed" } satisfies BusEvent);
-    // Fire-and-forget: write the run's outcome back to team memory under the
-    // run's resolved identity (no-op when disabled; never throws). Not awaited —
-    // completion must not wait on memory.
+    // Durable capture: enqueue the run's outcome to the memory OUTBOX (idempotent
+    // by runId) after the user already saw completion. The delivery loop writes it
+    // to team memory with retry/backoff/dead-letter, so a slow/broken memory
+    // service no longer loses the capture (the old fire-and-forget did). Awaited so
+    // the row is durable; a failure here is logged, never fails the run.
     if (identity) {
-      void recordRunMemory({ prompt, summary: finalSummary }, identity);
+      await enqueueCapture(runId, identity, { prompt, summary: finalSummary }).catch((err) =>
+        console.error(`[worker] enqueue memory capture for ${runId} failed:`, err),
+      );
     }
   } catch (err) {
     clearTimeout(timer);

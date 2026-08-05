@@ -6,7 +6,7 @@
  */
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import {
-  recordRunMemory,
+  deliverTeamMemory,
   resolveMemoryIdentity,
   searchTeamMemory,
   type MemoryIdentity,
@@ -226,36 +226,42 @@ describe("searchTeamMemory", () => {
   });
 });
 
-describe("recordRunMemory", () => {
-  test("no-op (no fetch) when MEMORY_API_URL is unset", async () => {
+describe("deliverTeamMemory", () => {
+  test("no-op SUCCESS (no fetch) when MEMORY_API_URL is unset", async () => {
     const fn = stubFetch({ code: 0, data: { accepted_ids: [], total_count: 0 } });
-    await recordRunMemory({ prompt: "p", summary: "s" }, IDENT);
+    expect(await deliverTeamMemory({ prompt: "p", summary: "s" }, IDENT)).toBe(true);
     expect(fn).not.toHaveBeenCalled();
   });
 
-  test("posts a user/assistant pair to /v3/conversation/add scoped to the identity", async () => {
+  test("posts a user/assistant pair to /v3/conversation/add scoped to the pool; true on accept", async () => {
     enableMemory();
     const fn = stubFetch({ code: 0, data: { accepted_ids: ["a"], total_count: 2 } });
 
-    await recordRunMemory({ prompt: "build X", summary: "built X" }, IDENT);
+    expect(await deliverTeamMemory({ prompt: "build X", summary: "built X" }, IDENT)).toBe(true);
 
     const [url] = firstCall(fn);
     expect(url).toBe("http://memory.test:8420/v3/conversation/add");
     const body = lastBody(fn);
     expect(body.team_id).toBe("team-1");
-    expect(body.user_id).toBe("u-42");
-    expect(body.session_id).toBe("thread-9"); // canonical threadId, not a static env
+    expect(body.user_id).toBe("u-42"); // the team pool
+    expect(body.session_id).toBe("thread-9");
     expect(body.messages).toEqual([
       { role: "user", content: "build X" },
       { role: "assistant", content: "built X" },
     ]);
   });
 
-  test("never throws on a failing write", async () => {
+  test("returns false (retryable) on a failing write — never throws", async () => {
     enableMemory();
     globalThis.fetch = (async () => {
       throw new Error("boom");
     }) as unknown as typeof fetch;
-    expect(await recordRunMemory({ prompt: "p", summary: "s" }, IDENT)).toBeUndefined();
+    expect(await deliverTeamMemory({ prompt: "p", summary: "s" }, IDENT)).toBe(false);
+  });
+
+  test("returns false on a non-zero business code (retryable)", async () => {
+    enableMemory();
+    stubFetch({ code: 40001, message: "bad", data: null });
+    expect(await deliverTeamMemory({ prompt: "p", summary: "s" }, IDENT)).toBe(false);
   });
 });

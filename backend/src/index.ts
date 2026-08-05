@@ -14,6 +14,7 @@ import { runsRoutes } from "./runs/routes";
 import { terminalRoutes } from "./runs/terminal";
 import { schedulesRoutes } from "./schedules/routes";
 import { startScheduler } from "./schedules/scheduler";
+import { startCaptureDelivery } from "./memory/capture-outbox";
 import { seedDev } from "./seed";
 import { skillsRoutes } from "./skills/routes";
 import { slackEnabled, slackRoutes, startSlackOutbox } from "./slack";
@@ -86,6 +87,12 @@ app.route("/api/knowledge", knowledgeRoutes);
 // Always-on scheduler loop (60s tick). Harmless when no schedule is enabled —
 // schedules default disabled, so nothing auto-fires until a human turns it on.
 startScheduler();
+
+// Memory capture-outbox delivery loop (15s tick). Delivers each completed run's
+// queued outcome to team memory with retry/backoff/dead-letter; harmless when
+// memory is disabled (deliverTeamMemory no-ops). AT-MOST-once (crash-orphaned
+// `delivering` rows await manual inspection, never auto-retried).
+startCaptureDelivery();
 
 // Slack adapter: mounted only when SLACK_BOT_TOKEN + SLACK_SIGNING_SECRET are
 // set (env-gated). Handles the Events API at POST /api/slack/events, and starts

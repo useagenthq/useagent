@@ -232,20 +232,23 @@ export async function searchTeamMemory(
 }
 
 /**
- * Fire-and-forget write-back of a completed run's distilled outcome as an L0
- * conversation turn (prompt → summary). The memory service distills it into the
- * searchable L1/L2/L3 layers offline. No-op when memory is disabled. Never
- * throws; the caller should not await the result on a hot path.
+ * Deliver a completed run's outcome as an L0 conversation turn (prompt →
+ * summary) into the team pool; the memory service distills it into the searchable
+ * L1/L2/L3 layers offline. The capture outbox owns retry, so this REPORTS the
+ * outcome: `true` on accept (or nothing to deliver), `false` on a delivery
+ * failure. Never throws.
  */
-export async function recordRunMemory(
+export async function deliverTeamMemory(
   run: { prompt: string; summary: string },
   identity: MemoryIdentity,
   opts: { timeoutMs?: number } = {},
-): Promise<void> {
+): Promise<boolean> {
   const cfg = memoryConfig();
-  if (!cfg || !run.prompt.trim()) return;
+  // Nothing to deliver (memory disabled / empty prompt) → a no-op SUCCESS so the
+  // outbox marks it done instead of retrying forever.
+  if (!cfg || !run.prompt.trim()) return true;
 
-  await post(
+  const data = await post(
     "/v3/conversation/add",
     {
       team_id: identity.teamId,
@@ -260,4 +263,8 @@ export async function recordRunMemory(
     cfg,
     opts.timeoutMs ?? DEFAULT_TIMEOUT_MS,
   );
+  // Unlike recall, DO NOT swallow failure into success — the capture outbox needs
+  // the real outcome to retry. `post` returns null on any failure
+  // (timeout/network/non-2xx/business code).
+  return data !== null;
 }
