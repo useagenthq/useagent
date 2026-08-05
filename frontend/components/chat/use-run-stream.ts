@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { backendFetch } from "@/lib/backend-fetch";
 import type { ApiRun, ApiStep, RunStatus } from "./types";
 import { isLiveStatus } from "./types";
+import { createNativeStore, type NativeSnapshot, type NativeStore } from "./native-store";
 
 export type RunStreamState = {
   steps: ApiStep[];
@@ -14,6 +15,12 @@ export type RunStreamState = {
    *  (token-level typing feel). Cleared when the run reaches a terminal state —
    *  the durable summary/steps take over. */
   liveText: string;
+  /** Native-ID projection (parts by partID, tools by callID, children by
+   *  sessionID with parent linkage) of this run's step stream — the ID-backed
+   *  substrate for attribution. `steps` above is its idx-ordered, native-deduped
+   *  compatibility projection (north-star Phase 4: store coexists with the
+   *  ApiStep path). */
+  native: NativeSnapshot;
 };
 
 /**
@@ -25,65 +32,70 @@ export type RunStreamState = {
  *
  * The `done` event carries only `{id, status}`, so on completion we fetch the
  * run once more to pick up the final `summary` the worker wrote.
+ *
+ * Steps flow through a small native session store (`native-store.ts`) that
+ * dedupes by the OpenCode native part/call id the backend stamps into
+ * `code_json.native`. That collapses SSE↔poller overlap and running→completed
+ * re-emits onto one row, and exposes the native parts/tools/children maps —
+ * without changing the `ApiStep[]` shape callers already consume.
  */
 export function useRunStream(initialRun: ApiRun): RunStreamState {
-  const [steps, setSteps] = useState<ApiStep[]>(initialRun.steps);
   const [status, setStatus] = useState<RunStatus>(initialRun.status);
   const [summary, setSummary] = useState<string | null>(initialRun.summary);
   const [liveText, setLiveText] = useState("");
-  const seen = useRef<Set<number>>(
-    new Set(initialRun.steps.map((s) => s.idx)),
-  );
   const id = initialRun.id;
+
+  // The native store owns the step projection (dedupe + idx ordering). One
+  // stable instance for the hook's life (lazy init seeds it); reset() reseeds
+  // it on a run switch.
+  const genRef = useRef(0);
+  const [store] = useState<NativeStore>(() => {
+    const s = createNativeStore();
+    s.reset(initialRun.steps, 0);
+    return s;
+  });
 
   // Reset stream state when the watched run changes — a reply in the same thread
   // makes a newer run the one we stream, and its snapshot must replace the old
   // one before the effect re-subscribes. (React's "adjust state on prop change"
-  // pattern: cheaper and flicker-free vs. remounting via `key`.)
+  // pattern: cheaper and flicker-free vs. remounting via `key`.) Bumping the
+  // generation makes the store drop any in-flight async ingest from the old run.
   const [watchedId, setWatchedId] = useState(id);
   if (id !== watchedId) {
     setWatchedId(id);
-    setSteps(initialRun.steps);
+    genRef.current += 1;
+    store.reset(initialRun.steps, genRef.current);
     setStatus(initialRun.status);
     setSummary(initialRun.summary);
     setLiveText("");
-    seen.current = new Set(initialRun.steps.map((s) => s.idx));
   }
+
+  const native = useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot);
 
   useEffect(() => {
     // Already finished at SSR time — nothing to stream.
     if (!isLiveStatus(initialRun.status)) return;
 
+    // Captured at subscribe time — the generation guard. If the run switches
+    // mid-flight, the store's current generation has advanced and these stale
+    // ingests are dropped.
+    const gen = genRef.current;
     let closed = false;
     const staleGuard = new AbortController();
     let pollTimer: ReturnType<typeof setInterval> | null = null;
-
-    const appendStep = (step: ApiStep) => {
-      // Upsert by idx: a step can be re-emitted with enriched code_json (e.g. a
-      // tool call surfaced at invocation, output attached when it finishes) —
-      // replace in place instead of dropping the update.
-      if (seen.current.has(step.idx)) {
-        setSteps((prev) => prev.map((s) => (s.idx === step.idx ? step : s)));
-        return;
-      }
-      seen.current.add(step.idx);
-      setSteps((prev) =>
-        [...prev, step].sort((a, b) => a.idx - b.idx),
-      );
-    };
 
     const finalize = async (next: RunStatus) => {
       setStatus(next);
       setLiveText("");
       try {
         const res = await backendFetch(`/api/runs/${id}`);
-        // `closed` flips in cleanup when the watched run changes — a late
+        // `staleGuard` aborts in cleanup when the watched run changes — a late
         // resolution for the OLD run must not overwrite the new run's state.
         if (res.ok && !staleGuard.signal.aborted) {
           const run = (await res.json()) as ApiRun;
           if (staleGuard.signal.aborted) return;
           setSummary(run.summary);
-          run.steps.forEach(appendStep);
+          store.ingestAll(run.steps, gen);
         }
       } catch {
         // keep whatever we have
@@ -97,7 +109,7 @@ export function useRunStream(initialRun: ApiRun): RunStreamState {
           const res = await backendFetch(`/api/runs/${id}`);
           if (!res.ok) return;
           const run = (await res.json()) as ApiRun;
-          run.steps.forEach(appendStep);
+          store.ingestAll(run.steps, gen);
           setSummary(run.summary);
           if (!isLiveStatus(run.status)) {
             setStatus(run.status);
@@ -115,7 +127,7 @@ export function useRunStream(initialRun: ApiRun): RunStreamState {
       source = new EventSource(`/api/runs/${id}/events`);
       source.addEventListener("step", (e) => {
         try {
-          appendStep(JSON.parse((e as MessageEvent).data) as ApiStep);
+          store.ingest(JSON.parse((e as MessageEvent).data) as ApiStep, gen);
         } catch {
           /* ignore malformed frame */
         }
@@ -156,5 +168,12 @@ export function useRunStream(initialRun: ApiRun): RunStreamState {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
-  return { steps, status, summary, live: isLiveStatus(status), liveText };
+  return {
+    steps: native.steps,
+    status,
+    summary,
+    live: isLiveStatus(status),
+    liveText,
+    native,
+  };
 }
