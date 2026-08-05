@@ -72,6 +72,10 @@ export const runs = pgTable(
     // model — instead of relying on "most recent" heuristics. Null for engines
     // without native sessions (mock) or pre-feature runs.
     engineSessionId: text("engine_session_id"),
+    // The Daytona sandbox this run executed in. Persisted so the thread→sandbox
+    // mapping SURVIVES backend restarts — the next turn resumes the same box
+    // (workspace + resident engine server) instead of provisioning a new one.
+    sandboxId: text("sandbox_id"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),

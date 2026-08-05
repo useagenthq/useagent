@@ -1,6 +1,7 @@
 import { Daytona, type Sandbox } from "@daytona/sdk";
 import type { EmitStep, EngineAdapter, EngineRunContext } from "./types";
 import { basename, parseJsonLine, truncate } from "./util";
+import { getThreadSandbox, setRunSandbox } from "../runs/repo";
 
 // ---------------------------------------------------------------------------
 // NATIVE opencode engine — the realtime path. Instead of one-shot CLI runs, the
@@ -125,7 +126,7 @@ export const opencodeServerAdapter: EngineAdapter = {
     if (!apiKey) throw new Error("opencode engine needs DAYTONA_API_KEY in the backend env");
     const startedAt = Date.now();
     const daytona = new Daytona({ apiKey, target: process.env.DAYTONA_TARGET ?? "us" });
-    const budgetMs = Number(process.env.ENGINE_TIMEOUT_MS ?? 180_000);
+    const budgetMs = Number(process.env.ENGINE_TIMEOUT_MS ?? 600_000);
 
     const envVars: Record<string, string> = {};
     if (process.env.ANTHROPIC_API_KEY) envVars.ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
@@ -138,11 +139,13 @@ export const opencodeServerAdapter: EngineAdapter = {
     let succeeded = false;
 
     try {
-      // ── sandbox: reuse the thread's, else provision ─────────────────────────
-      const remembered = ctx.threadId ? threadServers.get(ctx.threadId) : undefined;
-      if (remembered) {
+      // ── sandbox: reuse the thread's (memory cache → durable DB mapping) ─────
+      const rememberedId =
+        (ctx.threadId ? threadServers.get(ctx.threadId)?.sandboxId : undefined) ??
+        (ctx.threadId ? await getThreadSandbox(ctx.threadId) : null);
+      if (rememberedId) {
         try {
-          const prior = await daytona.get(remembered.sandboxId);
+          const prior = await daytona.get(rememberedId);
           const state = (prior as { state?: string }).state;
           if (state === "stopped" || state === "paused" || state === "archived") {
             await ctx.emit({ kind: "task", label: `Resuming thread sandbox ${prior.id.slice(0, 8)}…`, chip: "opencode" });
@@ -188,6 +191,10 @@ export const opencodeServerAdapter: EngineAdapter = {
         });
       }
       if (ctx.signal.aborted) throw new Error("opencode run aborted (timeout)");
+
+      // Durable thread→sandbox mapping: the DB row survives restarts (the
+      // in-memory map is just a cache for the preview endpoint).
+      void setRunSandbox(ctx.runId, sandbox.id).catch(() => {});
 
       // ── persistent server + preview endpoint ────────────────────────────────
       const { baseUrl, token, workdir } = await ensureServer(sandbox, npxFallback);
@@ -366,8 +373,10 @@ export const opencodeServerAdapter: EngineAdapter = {
       );
       succeeded = true;
     } finally {
-      if (sandbox && (!retainForThread || !succeeded)) {
-        if (ctx.threadId) threadServers.delete(ctx.threadId);
+      // A thread's sandbox is the conversation's world (workspace + resident
+      // server + sessions) — a failed TURN must not destroy it. Only runs
+      // without a thread clean up their box.
+      if (sandbox && !ctx.threadId) {
         await sandbox.delete().catch(() => {});
       }
     }
