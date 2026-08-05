@@ -108,11 +108,17 @@ async function withSteps(runRows: RunRecord[]): Promise<ApiRun[]> {
 // ---------------------------------------------------------------------------
 
 /** Any run left non-terminal after an unclean shutdown lost its in-memory
- * worker and can never finish — mark it failed so the log stays truthful. */
+ * worker and can never finish — mark it failed so the log stays truthful.
+ * The summary says WHY, so the conversation shows an actionable reason
+ * instead of the generic no-summary fallback. */
 export async function failStaleRuns(): Promise<number> {
   const res = await db
     .update(runs)
-    .set({ status: "failed", updatedAt: new Date() })
+    .set({
+      status: "failed",
+      summary: "Interrupted — the backend restarted mid-run. Reply to continue in this thread.",
+      updatedAt: new Date(),
+    })
     .where(or(eq(runs.status, "queued"), eq(runs.status, "running")))
     .returning({ id: runs.id });
   return res.length;
