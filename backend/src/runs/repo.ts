@@ -107,21 +107,62 @@ async function withSteps(runRows: RunRecord[]): Promise<ApiRun[]> {
 // Boot recovery
 // ---------------------------------------------------------------------------
 
-/** Any run left non-terminal after an unclean shutdown lost its in-memory
- * worker and can never finish — mark it failed so the log stays truthful.
- * The summary says WHY, so the conversation shows an actionable reason
- * instead of the generic no-summary fallback. */
-export async function failStaleRuns(): Promise<number> {
-  const res = await db
-    .update(runs)
-    .set({
-      status: "failed",
-      summary: "Interrupted — the backend restarted mid-run. Reply to continue in this thread.",
-      updatedAt: new Date(),
+/** Honest fallback summary for a run we cannot reconcile after an unclean
+ * shutdown: it lost its in-memory worker and the native session (if any) is
+ * unreachable or unfinished, so the log stays truthful and points the user at
+ * the recovery action — replying resumes the same thread/session. */
+export const STALE_SUMMARY =
+  "Interrupted — the backend restarted mid-run. Reply to continue in this thread.";
+
+/** A non-terminal run recovered on boot, with the native identity a reconciler
+ * needs to probe whether it actually finished server-side. */
+export interface StaleRun {
+  id: string;
+  engine: EngineId;
+  status: RunStatus;
+  engineSessionId: string | null;
+  sandboxId: string | null;
+  threadId: string;
+  createdAt: Date;
+}
+
+/** Every run left queued/running after an unclean shutdown. The boot reconciler
+ * (src/runs/recovery.ts) decides per run whether to reconcile-to-completed or
+ * fail with {@link STALE_SUMMARY}. */
+export async function listStaleRuns(): Promise<StaleRun[]> {
+  return db
+    .select({
+      id: runs.id,
+      engine: runs.engine,
+      status: runs.status,
+      engineSessionId: runs.engineSessionId,
+      sandboxId: runs.sandboxId,
+      threadId: runs.threadId,
+      createdAt: runs.createdAt,
     })
-    .where(or(eq(runs.status, "queued"), eq(runs.status, "running")))
-    .returning({ id: runs.id });
-  return res.length;
+    .from(runs)
+    .where(or(eq(runs.status, "queued"), eq(runs.status, "running")));
+}
+
+/** Timestamp of a run's most recent step — the "our last activity" watermark a
+ * reconciler compares a native completed-message time against. */
+export async function getLastStepAt(runId: string): Promise<Date | null> {
+  const [row] = await db
+    .select({ at: steps.createdAt })
+    .from(steps)
+    .where(eq(steps.runId, runId))
+    .orderBy(desc(steps.createdAt))
+    .limit(1);
+  return row?.at ?? null;
+}
+
+/** Mark a single stale run failed with an explicit summary (the boot reconciler
+ * uses this for runs it cannot safely reconcile). */
+export async function markRunFailed(id: string, summary: string): Promise<void> {
+  await db
+    .update(runs)
+    .set({ status: "failed", summary, updatedAt: new Date() })
+    .where(eq(runs.id, id));
 }
 
 // ---------------------------------------------------------------------------

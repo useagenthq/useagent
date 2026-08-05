@@ -119,6 +119,92 @@ function sseData(frame: string): Record<string, unknown> | null {
   return parseJsonLine(dataLines.join(""));
 }
 
+// ---------------------------------------------------------------------------
+// Boot reconciliation (north star "Crash Recovery Matrix" #8: provider completed
+// but Skynet still says running). A bounded, side-effect-free probe of a stale
+// run's native session — used by src/runs/recovery.ts on restart. It NEVER wakes
+// a stopped sandbox (that would be slow and violates "don't wake a sandbox to
+// read history") and NEVER throws: every failure resolves to `unreachable` so
+// boot can fall back to the honest interrupted-and-resumable summary.
+// ---------------------------------------------------------------------------
+
+export type OpencodeReconcile =
+  /** Native session is idle with a completed assistant message newer than our
+   *  last step — its text is the real run summary. */
+  | { outcome: "completed"; summary: string }
+  /** Sandbox stopped/gone/unhealthy, or the probe timed out. */
+  | { outcome: "unreachable" }
+  /** Session exists but the last assistant message is still generating. */
+  | { outcome: "in_progress" }
+  /** Session reachable but nothing completed newer than our last step. */
+  | { outcome: "no_new_message" };
+
+type OcMessage = {
+  info?: { id?: string; role?: string; time?: { created?: number; completed?: number } };
+  parts?: { type?: string; text?: string }[];
+};
+
+/** Bounded (~9s internal) native-session probe for restart recovery. Reads the
+ *  session's message history from the resident opencode server (only if the
+ *  sandbox is already `started`) and decides whether the interrupted run in fact
+ *  finished server-side. */
+export async function reconcileOpencodeRun(input: {
+  sandboxId: string;
+  sessionId: string;
+  /** Our last recorded step time (epoch ms). A completed assistant message must
+   *  be strictly newer than this to count as THIS turn's result (a resumed
+   *  session also holds earlier turns' completed messages). */
+  sinceMs: number;
+}): Promise<OpencodeReconcile> {
+  const apiKey = process.env.DAYTONA_API_KEY;
+  if (!apiKey) return { outcome: "unreachable" };
+
+  const ac = new AbortController();
+  const budget = setTimeout(() => ac.abort(), 9_000);
+  try {
+    const daytona = new Daytona({ apiKey, target: process.env.DAYTONA_TARGET ?? "us" });
+    const sandbox = await daytona.get(input.sandboxId).catch(() => null);
+    if (!sandbox) return { outcome: "unreachable" };
+    // Never wake a stopped/paused/archived sandbox just to read history.
+    if ((sandbox as { state?: string }).state !== "started") return { outcome: "unreachable" };
+
+    // Resolve the session's workdir (the same `?directory=` scope the turn used).
+    const homeRes = await sandbox.process
+      .executeCommand('printf %s "$HOME"', undefined, undefined, 4)
+      .catch(() => null);
+    const home = homeRes?.result?.trim() || "/home/daytona";
+    const dirQ = `?directory=${encodeURIComponent(`${home}/work`)}`;
+
+    const link = await sandbox.getPreviewLink(SERVE_PORT);
+    const baseUrl = link.url.replace(/\/+$/, "");
+    const res = await fetch(`${baseUrl}/session/${input.sessionId}/message${dirQ}`, {
+      headers: authHeaders(link.token ?? ""),
+      signal: ac.signal,
+    });
+    if (!res.ok) return { outcome: "unreachable" };
+
+    const msgs = (await res.json()) as OcMessage[];
+    const assistants = msgs.filter((m) => m.info?.role === "assistant");
+    const last = assistants[assistants.length - 1];
+    if (!last) return { outcome: "no_new_message" };
+
+    const completed = last.info?.time?.completed;
+    if (typeof completed !== "number") return { outcome: "in_progress" };
+    if (completed <= input.sinceMs) return { outcome: "no_new_message" };
+
+    const text = (last.parts ?? [])
+      .filter((p) => p.type === "text" && typeof p.text === "string" && p.text.trim())
+      .map((p) => p.text as string)
+      .join("\n")
+      .trim();
+    return { outcome: "completed", summary: truncate(text || "opencode run completed", 2000) };
+  } catch {
+    return { outcome: "unreachable" };
+  } finally {
+    clearTimeout(budget);
+  }
+}
+
 export const opencodeServerAdapter: EngineAdapter = {
   id: "opencode",
 
