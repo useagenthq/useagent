@@ -189,8 +189,12 @@ export async function getCapture(runId: string) {
 let timer: ReturnType<typeof setInterval> | null = null;
 
 /** Start the delivery loop (idempotent). Best-effort: a tick failure is logged,
- *  never thrown; memory disabled is safe (deliverTeamMemory no-ops to success). */
-export function startCaptureDelivery(intervalMs = 15_000): void {
+ *  never thrown; memory disabled is safe (deliverTeamMemory no-ops to success).
+ *  `MEMORY_OUTBOX_TICK_MS` overrides the interval (tests/E2E go fast; mirrors
+ *  SLACK_OUTBOX_TICK_MS). */
+export function startCaptureDelivery(
+  intervalMs = Number(process.env.MEMORY_OUTBOX_TICK_MS ?? 15_000),
+): void {
   if (timer) return;
   timer = setInterval(() => {
     void deliverDueCaptures().catch((err) =>
