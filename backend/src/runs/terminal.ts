@@ -1,6 +1,6 @@
 import { Daytona } from "@daytona/sdk";
 import { Hono } from "hono";
-import { createBunWebSocket } from "hono/bun";
+import { upgradeWebSocket } from "hono/bun";
 import type { AppEnv } from "../http";
 import { orgScope } from "../middleware/org";
 import { getOpencodeThreadSandboxId } from "../engines/opencode-server";
@@ -14,9 +14,6 @@ import { getRunForOrg } from "./repo";
 // the same filesystem their agent works in; nothing here touches the run/event
 // log. One PTY per WS connection, killed on disconnect.
 // ---------------------------------------------------------------------------
-
-const { upgradeWebSocket, websocket } = createBunWebSocket();
-export { websocket };
 
 interface PtyLike {
   sendInput(data: string | Uint8Array): Promise<void>;
