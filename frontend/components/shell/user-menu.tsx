@@ -4,6 +4,7 @@ import {
   RiApps2Line,
   RiAsterisk,
   RiFileTextLine,
+  RiLoginBoxLine,
   RiLogoutBoxRLine,
   RiOpenaiFill,
   RiSettings3Line,
@@ -14,6 +15,7 @@ import type { ComponentType } from 'react';
 import * as Avatar from '@/components/ui/avatar';
 import * as Badge from '@/components/ui/badge';
 import * as Dropdown from '@/components/ui/dropdown';
+import { signOut, useSession } from '@/lib/auth';
 import { cn } from '@/utils/cn';
 
 type IconComponent = ComponentType<{
@@ -71,16 +73,26 @@ function ModelRow({
 
 /**
  * Account affordance in the top-nav right cluster: an avatar that opens a
- * dropdown — identity header, Settings / Docs / Apps / Logout, and a
- * Models section with segmented usage meters. Identity + usage are static for
- * now (skynet-a has no auth wired yet); pattern ported from skynet-saas.
+ * dropdown — identity header, Settings / Docs / Apps, sign-in/out, and a Models
+ * section with segmented usage meters. Identity is the live better-auth session
+ * (lib/auth.ts); when there is none (the open dev-org path) it invites sign-in.
  */
 export function UserMenu() {
   const router = useRouter();
+  const { session, refresh } = useSession();
 
-  const name = 'Dev User';
-  const email = 'you@example.com';
-  const initial = 'A';
+  const signedIn = session !== null;
+  const name = session?.user.name?.trim() || (signedIn ? session!.user.email : 'Guest');
+  const email = session?.user.email ?? 'Not signed in';
+  const image = session?.user.image ?? null;
+  const initial = (name.charAt(0) || '?').toUpperCase();
+
+  async function handleSignOut() {
+    await signOut();
+    refresh();
+    router.push('/login');
+    router.refresh();
+  }
 
   return (
     <Dropdown.Root>
@@ -91,7 +103,7 @@ export function UserMenu() {
           className='rounded-full outline-none focus-visible:ring-2 focus-visible:ring-stroke-strong-950 focus-visible:ring-offset-2'
         >
           <Avatar.Root size='32' color='purple'>
-            {initial}
+            {image ? <Avatar.Image src={image} alt={name} /> : initial}
           </Avatar.Root>
         </button>
       </Dropdown.Trigger>
@@ -99,7 +111,7 @@ export function UserMenu() {
       <Dropdown.Content align='end' className='w-72'>
         <div className='flex items-center gap-3 px-2 py-1.5'>
           <Avatar.Root size='40' color='purple'>
-            {initial}
+            {image ? <Avatar.Image src={image} alt={name} /> : initial}
           </Avatar.Root>
           <div className='min-w-0'>
             <p className='truncate text-label-sm text-text-strong-950'>{name}</p>
@@ -130,10 +142,17 @@ export function UserMenu() {
             New
           </Badge.Root>
         </Dropdown.Item>
-        <Dropdown.Item onSelect={() => router.push('/login')}>
-          <Dropdown.ItemIcon as={RiLogoutBoxRLine} />
-          Logout
-        </Dropdown.Item>
+        {signedIn ? (
+          <Dropdown.Item onSelect={() => void handleSignOut()}>
+            <Dropdown.ItemIcon as={RiLogoutBoxRLine} />
+            Log out
+          </Dropdown.Item>
+        ) : (
+          <Dropdown.Item onSelect={() => router.push('/login')}>
+            <Dropdown.ItemIcon as={RiLoginBoxLine} />
+            Sign in
+          </Dropdown.Item>
+        )}
 
         <Dropdown.Separator className='-mx-2 my-1 h-px bg-stroke-soft-200' />
 
