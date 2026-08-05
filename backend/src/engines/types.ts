@@ -48,8 +48,14 @@ export interface EngineRunContext {
   /** Aborted when the run exceeds its timeout; adapters must wire this to their
    *  subprocess / SDK call so a runaway engine is actually killed. */
   signal: AbortSignal;
-  /** Append a step to the durable log + push it to SSE subscribers. */
-  emit(step: EmitStep): Promise<void>;
+  /** Append a step to the durable log + push it to SSE subscribers. Resolves to
+   *  the persisted step id (undefined if the run vanished mid-flight). */
+  emit(step: EmitStep): Promise<string | undefined>;
+  /** Replace a previously emitted step's code_json and re-push it to SSE
+   *  subscribers (same idx → the UI upserts in place). Lets an adapter surface a
+   *  tool call the moment it's invoked and attach its output when it finishes —
+   *  reference bot's tool_call → tool_result contract on an append-only log. */
+  updateStep?(stepId: string, code: unknown): Promise<void>;
   /** Publish a live assistant-text delta to the run's turn-stream. In-memory and
    *  synchronous (no DB round-trip) so live-typing narration reaches the SSE
    *  before the persisted step does. Optional — adapters with no token stream

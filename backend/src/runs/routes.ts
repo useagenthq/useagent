@@ -140,7 +140,9 @@ runsRoutes.get("/:id/events", async (c) => {
 
   const body = new ReadableStream<Uint8Array>({
     start(controller) {
-      const emitted = new Set<number>();
+      // idx → content fingerprint of the LAST version sent. Updates (same idx,
+      // enriched code_json) must pass; only true duplicates are suppressed.
+      const emitted = new Map<number, string>();
       const queue: OutEvent[] = [];
       let wake: (() => void) | null = null;
       let closed = false;
@@ -205,7 +207,7 @@ runsRoutes.get("/:id/events", async (c) => {
         // Replay everything already persisted (subscribed first, so no gap).
         for (const step of await getStepsApi(id)) {
           if (closed) return;
-          emitted.add(step.idx);
+          emitted.set(step.idx, `${step.id}|${step.code_json ?? ""}`);
           sendEvent("step", step);
         }
 
@@ -226,8 +228,11 @@ runsRoutes.get("/:id/events", async (c) => {
           while (queue.length > 0 && !closed) {
             const ev = queue.shift()!;
             if (ev.type === "step") {
-              if (emitted.has(ev.step.idx)) continue;
-              emitted.add(ev.step.idx);
+              // Same idx may arrive again with enriched code_json (tool output
+              // attached in place) — forward it; skip only true duplicates.
+              const fp = `${ev.step.id}|${ev.step.code_json ?? ""}`;
+              if (emitted.get(ev.step.idx) === fp) continue;
+              emitted.set(ev.step.idx, fp);
               sendEvent("step", ev.step);
             } else if (ev.type === "delta") {
               sendEvent("delta", { delta: ev.delta });

@@ -9,6 +9,7 @@ import {
   insertStep,
   setRunEngineSession,
   setRunStatus,
+  updateStepCode,
   type ApiStep,
 } from "./runs/repo";
 import type { RunStatus, StepKind } from "./db/schema";
@@ -104,6 +105,24 @@ export function spawnWorker(runId: string): void {
   registry.set(runId, task);
 }
 
+// A conversation is SEQUENTIAL: one live engine turn per thread. A reply
+// created while the previous turn is still running WAITS here (status stays
+// "queued") until that turn reaches a terminal state — otherwise two engines
+// stream into one conversation at once and share its sandbox/session. The
+// preamble/session lookups run AFTER the wait so they see the prior turn's
+// summary and engine session id.
+const threadChains = new Map<string, Promise<void>>();
+
+function chainOnThread(threadId: string, work: () => Promise<void>): Promise<void> {
+  const prev = threadChains.get(threadId) ?? Promise.resolve();
+  const next = prev.catch(() => {}).then(work);
+  threadChains.set(threadId, next);
+  void next.finally(() => {
+    if (threadChains.get(threadId) === next) threadChains.delete(threadId);
+  });
+  return next;
+}
+
 async function runWorker(runId: string): Promise<void> {
   const run = await getRun(runId);
   if (!run) return; // deleted before the actor started
@@ -111,21 +130,27 @@ async function runWorker(runId: string): Promise<void> {
   // `mock` is the scripted trace and ignores context entirely.
   if (run.engine === "mock") return runMock(runId);
 
-  // Compose the engine's context preamble ONCE per run: relevant TEAM MEMORY
-  // (config-gated; "" when MEMORY_API_URL is unset) prepended to this thread's
-  // prior turns (empty for a root run). Prompts are stored clean; this preamble
-  // is the engine's only view of shared memory + earlier turns.
-  const threadPreamble = run.parentRunId
-    ? await buildThreadPreamble(run.threadId, run.id)
-    : "";
-  const contextPreamble = (await searchTeamMemory(run.prompt)) + threadPreamble;
-  if (contextPreamble) {
-    console.log(
-      `[worker] run ${runId} thread ${run.threadId}: context preamble ${contextPreamble.length} chars`,
-    );
-  }
+  return chainOnThread(run.threadId, async () => {
+    // Re-read: the run may have been deleted while queued behind its sibling.
+    const fresh = await getRun(runId);
+    if (!fresh) return;
 
-  return runEngine(runId, run.engine, run.prompt, contextPreamble, run.threadId, run.model);
+    // Compose the engine's context preamble ONCE per run: relevant TEAM MEMORY
+    // (config-gated; "" when MEMORY_API_URL is unset) prepended to this thread's
+    // prior turns (empty for a root run). Prompts are stored clean; this
+    // preamble is the engine's only view of shared memory + earlier turns.
+    const threadPreamble = fresh.parentRunId
+      ? await buildThreadPreamble(fresh.threadId, fresh.id)
+      : "";
+    const contextPreamble = (await searchTeamMemory(fresh.prompt)) + threadPreamble;
+    if (contextPreamble) {
+      console.log(
+        `[worker] run ${runId} thread ${fresh.threadId}: context preamble ${contextPreamble.length} chars`,
+      );
+    }
+
+    return runEngine(runId, fresh.engine, fresh.prompt, contextPreamble, fresh.threadId, fresh.model);
+  });
 }
 
 async function runMock(runId: string): Promise<void> {
@@ -218,9 +243,9 @@ async function runEngine(
   let summary: string | null = null;
   let summaryDuration: number | null = null;
 
-  const emit = async (step: EmitStep): Promise<void> => {
+  const emit = async (step: EmitStep): Promise<string | undefined> => {
     // Bail if the run vanished (e.g. deleted) — defensive, keeps FK sane.
-    if (!(await getRun(runId))) return;
+    if (!(await getRun(runId))) return undefined;
     const persisted = await insertStep({
       runId,
       idx,
@@ -231,6 +256,7 @@ async function runEngine(
     });
     idx += 1;
     bus.emit(channel(runId), { type: "step", step: persisted } satisfies BusEvent);
+    return persisted.id;
   };
 
   const ac = new AbortController();
@@ -253,6 +279,14 @@ async function runEngine(
     },
     signal: ac.signal,
     emit,
+    // In-place step enrichment (same idx → SSE clients upsert): a tool call
+    // surfaces the moment it's invoked; its output lands on the SAME step.
+    updateStep: async (stepId, code) => {
+      const updated = await updateStepCode(stepId, code);
+      if (updated) {
+        bus.emit(channel(runId), { type: "step", step: updated } satisfies BusEvent);
+      }
+    },
     // Live-typing channel: synchronous, in-memory, no DB round-trip. SSE
     // subscribers get narration text the instant an engine streams it.
     publishDelta: (delta) => turnStream.publish(runId, delta),
