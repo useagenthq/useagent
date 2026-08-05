@@ -10,6 +10,7 @@ import { ToolStepRow } from "@/components/chat/tool-step-row";
 import { LoadingState } from "@/components/ai/loading-state";
 import { useRunStream } from "@/components/chat/use-run-stream";
 import {
+  deriveSubagents,
   engineLabel,
   isLiveStatus,
   type ApiRun,
@@ -124,6 +125,10 @@ function SubagentPaneBody({ initialRun }: { initialRun: ApiRun }) {
   const { steps, status, summary, live } = useRunStream(initialRun);
   const [sending, setSending] = useState(false);
   const activity = steps.filter((s) => s.kind !== "done");
+  // Prefer native child-session grouping where available: when this run fanned
+  // out, indent each nested step under the subagent whose native child session
+  // it ran in (falls back to the "↳ " label indent for pre-native-stamp runs).
+  const { ownerByStep } = deriveSubagents(steps);
 
   const passDown = useCallback(
     async (text: string, engine: EngineId) => {
@@ -189,6 +194,7 @@ function SubagentPaneBody({ initialRun }: { initialRun: ApiRun }) {
                 key={step.id}
                 step={step}
                 state={live && i === activity.length - 1 ? "running" : "done"}
+                nested={ownerByStep.has(step.id) ? true : undefined}
               />
             ))}
           </div>

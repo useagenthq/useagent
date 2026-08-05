@@ -3,7 +3,12 @@
 import { useEffect, useState } from "react";
 import { RiCheckLine, RiRobot2Line } from "@remixicon/react";
 import { cnExt as cn } from "@/utils/cn";
-import { deriveTrace, formatDuration, type ApiStep } from "@/components/chat/types";
+import {
+  deriveSubagents,
+  formatDuration,
+  type ApiStep,
+  type SubagentCard,
+} from "@/components/chat/types";
 
 /**
  * The right-rail "Agents" tab: one card per fanned-out subagent, mirroring
@@ -11,55 +16,11 @@ import { deriveTrace, formatDuration, type ApiStep } from "@/components/chat/typ
  * line (its latest activity), an elapsed timer, and a run-state indicator.
  *
  * Everything is derived from the same ordered step stream that feeds the
- * conversation (`useRunStream`) — no extra fetch. Subagent spawns are steps with
- * `chip === "subagent"` (title = the description after "Subagent — ", reused from
- * `deriveTrace`); their nested activity arrives as later steps whose label is
- * "↳ "-prefixed.
+ * conversation (`useRunStream`) — no extra fetch — via `deriveSubagents`, which
+ * attributes each nested step to the card whose native child session it ran in
+ * (exact even with concurrent subagents), falling back to the legacy spawn-order
+ * heuristic only for pre-native-stamp runs. See `types.ts`.
  */
-
-interface AgentCard {
-  /** Spawn step id — stable React key. */
-  id: string;
-  /** Description after "Subagent — " (reuses the trace grammar's derivation). */
-  title: string;
-  /** Latest attributed "↳ " activity label; null until the first one lands. */
-  status: string | null;
-  /** Spawn step `created_at`, ms. */
-  startedAt: number;
-  /** Last attributed activity `created_at`, ms — freezes the elapsed timer once
-   *  the run settles. */
-  lastActivityAt: number | null;
-}
-
-/**
- * Derive one card per subagent spawn from the ordered step stream.
- *
- * Attribution heuristic: subagents run concurrently but their steps land in ONE
- * ordered stream, so a "↳ " activity line can't be perfectly tied to its true
- * owner. We attribute every "↳ " step to the most-recently-spawned subagent
- * before it — i.e. the last "↳ " in the window between spawn N and spawn N+1 is
- * card N's live status. When interleaving is ambiguous this collapses to "show
- * the latest ↳ activity on the most recent card", which is the intended fallback.
- */
-function deriveAgentCards(steps: ApiStep[]): AgentCard[] {
-  const cards: AgentCard[] = [];
-  for (const step of steps) {
-    if (step.chip === "subagent") {
-      cards.push({
-        id: step.id,
-        title: deriveTrace(step).target,
-        status: null,
-        startedAt: Date.parse(step.created_at),
-        lastActivityAt: null,
-      });
-    } else if (/^↳/.test(step.label ?? "") && cards.length > 0) {
-      const card = cards[cards.length - 1];
-      card.status = (step.label ?? "").replace(/^↳\s*/, "").trim() || card.status;
-      card.lastActivityAt = Date.parse(step.created_at);
-    }
-  }
-  return cards;
-}
 
 /** Ticks once a second while `live`, so elapsed timers advance; frozen otherwise. */
 function useNow(live: boolean): number {
@@ -73,7 +34,7 @@ function useNow(live: boolean): number {
   return now;
 }
 
-function AgentCardRow({ card, live }: { card: AgentCard; live: boolean }) {
+function AgentCardRow({ card, live }: { card: SubagentCard; live: boolean }) {
   const now = useNow(live);
   const endedAt = live ? now : (card.lastActivityAt ?? card.startedAt);
   const elapsed = Number.isFinite(card.startedAt)
@@ -119,7 +80,7 @@ function AgentCardRow({ card, live }: { card: AgentCard; live: boolean }) {
 }
 
 export function AgentsRail({ steps, live }: { steps: ApiStep[]; live: boolean }) {
-  const cards = deriveAgentCards(steps);
+  const cards = deriveSubagents(steps).cards;
   // Cards pulse while the run is live and hasn't emitted its terminal `done`
   // step; once it settles every card flips to the completed check.
   const running = live && !steps.some((s) => s.kind === "done");

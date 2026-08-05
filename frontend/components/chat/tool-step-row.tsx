@@ -40,9 +40,27 @@ type RowState = "running" | "done";
  * — when the step carries output or a prompt — a click-to-expand mono block.
  * Everything is re-derived from `code_json` on each render, so an in-place step
  * update (enriched with output mid-run) re-reads without memo staleness.
+ *
+ * `nested` overrides the label-derived indent when a caller knows a step's real
+ * ownership from native ids (the subagent pane groups by native child session);
+ * omit it to keep the default "↳ "-prefix indent.
  */
-export function ToolStepRow({ step, state }: { step: ApiStep; state: RowState }) {
-  return <TraceRow trace={deriveTrace(step)} state={state} />;
+export function ToolStepRow({
+  step,
+  state,
+  nested,
+}: {
+  step: ApiStep;
+  state: RowState;
+  nested?: boolean;
+}) {
+  const trace = deriveTrace(step);
+  return (
+    <TraceRow
+      trace={nested === undefined ? trace : { ...trace, nested }}
+      state={state}
+    />
+  );
 }
 
 // ── Icons ────────────────────────────────────────────────────────────────────
