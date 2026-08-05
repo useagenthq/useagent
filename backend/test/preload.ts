@@ -29,3 +29,8 @@ process.env.SLACK_BOT_TOKEN = process.env.SLACK_BOT_TOKEN ?? "xoxb-test-token";
 process.env.SLACK_SIGNING_SECRET =
   process.env.SLACK_SIGNING_SECRET ?? "test-signing-secret";
 process.env.SLACK_DEFAULT_ENGINE = process.env.SLACK_DEFAULT_ENGINE ?? "mock";
+// Slack outbox: kicks still deliver promptly, but push the background relay tick
+// far out so it never races a test's explicit processDue(); tiny backoff base so
+// any live-timed retry is fast.
+process.env.SLACK_OUTBOX_TICK_MS = process.env.SLACK_OUTBOX_TICK_MS ?? "3600000";
+process.env.SLACK_OUTBOX_BASE_MS = process.env.SLACK_OUTBOX_BASE_MS ?? "20";

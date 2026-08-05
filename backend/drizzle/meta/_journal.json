@@ -78,6 +78,13 @@
       "when": 1786060200000,
       "tag": "0010_commands_thread_state_idx",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1786060300000,
+      "tag": "0011_slack_outbox",
+      "breakpoints": true
     }
   ]
 }
