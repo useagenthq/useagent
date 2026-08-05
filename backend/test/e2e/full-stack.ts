@@ -299,6 +299,51 @@ async function stage3_slackMemory(): Promise<{ channel: string; rootTs: string }
   return { channel, rootTs };
 }
 
+async function stage3b_scopedCapture(): Promise<void> {
+  console.log("\n── Stage 3b: scope-aware capture destination (org vs personal) ──");
+  // Even for the mock engine, finalizeRun resolves the run's memory_scope from the
+  // row and enqueues the capture into the RIGHT pool — so this proves the end-to-end
+  // destination without a real engine. Identity is always from the run row.
+  const mk = async (scope: "org" | "personal"): Promise<string> => {
+    const prompt = `scope-${scope} ${crypto.randomUUID().slice(0, 6)}`;
+    const r = await fetch(`${BASE}/api/runs`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ prompt, engine: "mock", memory_scope: scope }),
+    });
+    const id = (await r.json() as { id: string }).id;
+    await waitRun(prompt, (x) => x.status === "completed");
+    return id;
+  };
+  const orgId = await mk("org");
+  const perId = await mk("personal");
+
+  const [orgRow] = await sql`select memory_scope, org_id from runs where id = ${orgId}`;
+  const [perRow] = await sql`select memory_scope, user_id from runs where id = ${perId}`;
+  check("org run persisted memory_scope=org", orgRow?.memory_scope === "org");
+  check("personal run persisted memory_scope=personal", perRow?.memory_scope === "personal");
+
+  const capture = async (id: string): Promise<any | null> => {
+    const ok = await waitFor(async () => (await sql`select 1 from memory_outbox where run_id = ${id}`).length === 1);
+    if (!ok) return null;
+    const [row] = await sql`select payload from memory_outbox where run_id = ${id}`;
+    return JSON.parse(row.payload as string);
+  };
+  const orgCap = await capture(orgId);
+  const perCap = await capture(perId);
+  const orgPool = `org:${orgRow.org_id}`;
+  check(
+    "org capture → org pool (user_id = org:<orgId>)",
+    !!orgCap && orgCap.scope === "org" && orgCap.identity.userId === orgPool,
+    orgCap ? `scope=${orgCap.scope} user=${orgCap.identity.userId}` : "no capture row",
+  );
+  check(
+    "personal capture → personal pool (user_id = actor), NEVER the org pool",
+    !!perCap && perCap.scope === "personal" && perCap.identity.userId === perRow.user_id && perCap.identity.userId !== orgPool,
+    perCap ? `scope=${perCap.scope} user=${perCap.identity.userId}` : "no capture row",
+  );
+}
+
 async function stage4_crashMatrix(proc1: Proc): Promise<Proc> {
   console.log("\n── Stage 4: mid-run SIGKILL → restart → ordered recovery (command lane) ──");
   // A long-ish run A, then a queued reply B behind it (same thread). Kill mid-A.
@@ -361,6 +406,7 @@ async function main(): Promise<void> {
     await stage1_idempotency();
     await stage2_nativeReplay();
     const root = await stage3_slackMemory();
+    await stage3b_scopedCapture();
     proc = await stage4_crashMatrix(proc);
     await stage5_durabilitySurvived(root);
   } finally {
