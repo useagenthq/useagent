@@ -15,7 +15,12 @@ import {
 import type { RunStatus, StepKind } from "./db/schema";
 import { adapters } from "./engines";
 import type { EmitStep, EngineRunContext } from "./engines/types";
-import { recordRunMemory, searchTeamMemory } from "./memory/team-memory";
+import {
+  recordRunMemory,
+  resolveMemoryIdentity,
+  searchTeamMemory,
+  type MemoryIdentity,
+} from "./memory/team-memory";
 import { turnStream } from "./runs/turn-stream";
 import { claimNextRun, settleCommandForRun } from "./commands/dispatch";
 
@@ -152,13 +157,19 @@ async function runWorker(runId: string): Promise<void> {
     //    FRESH native session (a resumed session already holds it natively).
     // Fetched in PARALLEL — independent context work must not serialize startup.
     // Prompts are stored clean; the composed prefix is the engine's only view.
-    const [turnContext, bootstrapContext] = await Promise.all([
-      searchTeamMemory(run.prompt),
+    // Identity is per-run (userId from the run row, threadId as MemoryCore
+    // session, runId provenance); null when memory is disabled.
+    const identity = resolveMemoryIdentity(run);
+    const [recall, bootstrapContext] = await Promise.all([
+      identity ? searchTeamMemory(run.prompt, identity) : Promise.resolve(null),
       run.parentRunId ? buildThreadPreamble(run.threadId, run.id) : Promise.resolve(""),
     ]);
+    const turnContext = recall?.rendered ?? "";
     if (turnContext || bootstrapContext) {
       console.log(
-        `[worker] run ${runId} thread ${run.threadId}: turnContext ${turnContext.length} + bootstrapContext ${bootstrapContext.length} chars`,
+        `[worker] run ${runId} thread ${run.threadId}: turnContext ${turnContext.length}` +
+          ` (${recall?.items.length ?? 0} memory items, ${recall?.latencyMs ?? 0}ms) +` +
+          ` bootstrapContext ${bootstrapContext.length} chars`,
       );
     }
 
@@ -170,6 +181,7 @@ async function runWorker(runId: string): Promise<void> {
       turnContext,
       run.threadId,
       run.model,
+      identity,
     );
   } finally {
     // Free the thread and dispatch its next turn — whatever the outcome.
@@ -231,6 +243,7 @@ async function runEngine(
   turnContext: string,
   threadId: string,
   model: string,
+  identity: MemoryIdentity | null,
 ): Promise<void> {
   const startedAt = Date.now();
   await setRunStatus(runId, "running");
@@ -337,13 +350,12 @@ async function runEngine(
       summaryDuration ?? Date.now() - startedAt,
     );
     bus.emit(channel(runId), { type: "end", status: "completed" } satisfies BusEvent);
-    // Fire-and-forget: write the run's outcome back to team memory (no-op when
-    // disabled; never throws). Session-scoped to the thread so a conversation's
-    // turns distill together. Not awaited — completion must not wait on memory.
-    void recordRunMemory(
-      { prompt, summary: finalSummary },
-      { sessionId: threadId },
-    );
+    // Fire-and-forget: write the run's outcome back to team memory under the
+    // run's resolved identity (no-op when disabled; never throws). Not awaited —
+    // completion must not wait on memory.
+    if (identity) {
+      void recordRunMemory({ prompt, summary: finalSummary }, identity);
+    }
   } catch (err) {
     clearTimeout(timer);
     const timedOut = ac.signal.aborted;
