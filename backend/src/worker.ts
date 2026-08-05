@@ -21,6 +21,7 @@ import {
   searchTeamMemory,
   type MemoryIdentity,
 } from "./memory/team-memory";
+import { recordContextRetrieval } from "./memory/retrieval-ledger";
 import { turnStream } from "./runs/turn-stream";
 import { claimNextRun, settleCommandForRun } from "./commands/dispatch";
 
@@ -171,6 +172,11 @@ async function runWorker(runId: string): Promise<void> {
           ` (${recall?.items.length ?? 0} memory items, ${recall?.latencyMs ?? 0}ms) +` +
           ` bootstrapContext ${bootstrapContext.length} chars`,
       );
+    }
+    // Retrieval ledger (Phase 3a): durably record + stream what was recalled as a
+    // `context.retrieved` native frame. Fire-and-forget — never blocks/fails the run.
+    if (identity && recall) {
+      void recordContextRetrieval(run.id, run.threadId, identity, run.prompt, recall);
     }
 
     await runEngine(
