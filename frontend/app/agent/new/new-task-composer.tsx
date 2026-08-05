@@ -182,7 +182,7 @@ export function NewTaskComposer({ skills }: { skills: Skill[] }) {
                 void submit();
               }
             }}
-            className="min-h-[104px] w-full resize-none bg-transparent px-1 text-paragraph-md text-text-strong-950 outline-none placeholder:text-text-soft-400"
+            className="min-h-[104px] w-full resize-none bg-transparent px-1 text-paragraph-sm text-text-strong-950 outline-none placeholder:text-text-soft-400"
           />
 
           {/* Pickers */}

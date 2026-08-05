@@ -141,7 +141,7 @@ export function Composer({
               }}
               className={cn(
                 "flex-1",
-                hero ? "pt-1 text-[1.5rem] leading-9 md:text-[1.625rem]" : "text-paragraph-md",
+                hero ? "pt-1 text-paragraph-lg" : "text-paragraph-sm",
               )}
             />
           </div>
