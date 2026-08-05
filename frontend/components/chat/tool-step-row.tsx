@@ -1,10 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { memo, useState } from "react";
 import {
   RiArrowDownSLine,
+  RiCheckboxCircleFill,
+  RiCheckboxBlankCircleLine,
   RiCheckLine,
   RiCloseLine,
+  RiErrorWarningLine,
   RiFileAddLine,
   RiFileCodeLine,
   RiFileEditLine,
@@ -12,7 +15,9 @@ import {
   RiFileTextLine,
   RiGlobalLine,
   RiImageLine,
+  RiIndeterminateCircleLine,
   RiListCheck,
+  RiLoader4Line,
   RiReactjsLine,
   RiRobot2Line,
   RiSearchLine,
@@ -25,9 +30,12 @@ import { cnExt as cn } from "@/utils/cn";
 import {
   deriveTrace,
   formatDuration,
+  parseTodos,
   type ApiStep,
   type FileChangeKind,
   type StepTrace,
+  type TodoItem,
+  type TodoStatus,
   type TraceGlyph,
 } from "@/components/chat/types";
 
@@ -44,8 +52,13 @@ type RowState = "running" | "done";
  * `nested` overrides the label-derived indent when a caller knows a step's real
  * ownership from native ids (the subagent pane groups by native child session);
  * omit it to keep the default "↳ "-prefix indent.
+ *
+ * Typed part dispatch: a `todowrite` step renders its plan as a checklist; every
+ * other step renders in the trace grammar. Memoized so a fanout's per-part rows
+ * don't re-render when unrelated steps update — the props are keyed by the step
+ * object, which the native store replaces only when that step is enriched.
  */
-export function ToolStepRow({
+export const ToolStepRow = memo(function ToolStepRow({
   step,
   state,
   nested,
@@ -54,6 +67,8 @@ export function ToolStepRow({
   state: RowState;
   nested?: boolean;
 }) {
+  const todos = parseTodos(step);
+  if (todos) return <TodoList todos={todos} nested={nested} />;
   const trace = deriveTrace(step);
   return (
     <TraceRow
@@ -61,7 +76,7 @@ export function ToolStepRow({
       state={state}
     />
   );
-}
+});
 
 // ── Icons ────────────────────────────────────────────────────────────────────
 
@@ -105,6 +120,17 @@ function ExitBadge({ code }: { code: number }) {
   );
 }
 
+/** Error pill for a native tool error that carries no exit code (a non-zero
+ *  command exit already shows its code in an error-toned ExitBadge). */
+function ErrorBadge() {
+  return (
+    <span className="bg-error-lighter text-error-base inline-flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-label-xs">
+      <RiErrorWarningLine className="size-3" aria-hidden />
+      error
+    </span>
+  );
+}
+
 function DiffStat({ adds, dels }: { adds: number; dels: number }) {
   return (
     <span className="shrink-0 font-mono text-label-xs tabular-nums" aria-label={`+${adds} -${dels}`}>
@@ -132,11 +158,13 @@ function TraceRow({ trace, state }: { trace: StepTrace; state: RowState }) {
         <Icon
           className={cn(
             "size-4 shrink-0",
-            trace.accent === "boot"
-              ? "text-text-soft-400"
-              : running
-                ? "text-blue-500"
-                : "text-text-soft-400",
+            trace.isError
+              ? "text-error-base"
+              : trace.accent === "boot"
+                ? "text-text-soft-400"
+                : running
+                  ? "text-blue-500"
+                  : "text-text-soft-400",
           )}
           aria-hidden
         />
@@ -175,6 +203,8 @@ function TraceRow({ trace, state }: { trace: StepTrace; state: RowState }) {
       )}
       {trace.exitCode !== null ? (
         <ExitBadge code={trace.exitCode} />
+      ) : trace.isError ? (
+        <ErrorBadge />
       ) : (
         showRunningDot && (
           <span className="ai-loading-pixel bg-blue-500 size-1.5 shrink-0 rounded-full" />
@@ -213,12 +243,82 @@ function TraceRow({ trace, state }: { trace: StepTrace; state: RowState }) {
       )}
 
       {expandable && open && trace.detail && (
-        <div className="mt-1 ml-1.5 max-h-64 overflow-auto rounded-lg bg-neutral-950 px-3 py-2">
+        <div
+          className={cn(
+            "mt-1 ml-1.5 max-h-64 overflow-auto rounded-lg bg-neutral-950 px-3 py-2",
+            trace.isError && "ring-error-base/40 ring-1",
+          )}
+        >
           <pre className="whitespace-pre-wrap break-words [font-family:var(--font-mono)] text-[12px] leading-5 text-neutral-300">
             {trace.detail}
           </pre>
         </div>
       )}
+    </div>
+  );
+}
+
+// ── Todos (opencode `todowrite`) ─────────────────────────────────────────────
+
+const TODO_ICON: Record<TodoStatus, RemixiconComponentType> = {
+  pending: RiCheckboxBlankCircleLine,
+  in_progress: RiLoader4Line,
+  completed: RiCheckboxCircleFill,
+  cancelled: RiIndeterminateCircleLine,
+};
+const TODO_TONE: Record<TodoStatus, string> = {
+  pending: "text-text-soft-400",
+  in_progress: "text-blue-500",
+  completed: "text-success-base",
+  cancelled: "text-text-disabled-300",
+};
+
+/** The agent's plan from a `todowrite` step, rendered as a live checklist —
+ *  mirrors opencode's todos part instead of collapsing it to a generic row. */
+function TodoList({ todos, nested }: { todos: TodoItem[]; nested?: boolean }) {
+  const done = todos.filter((t) => t.status === "completed").length;
+  return (
+    <div
+      className={cn(
+        "animate-ai-fade-up",
+        nested && "border-stroke-soft-200 ml-2 border-l pl-3",
+      )}
+    >
+      <div className="flex items-center gap-2 px-1.5 py-1">
+        <RiListCheck className="text-text-soft-400 size-4 shrink-0" aria-hidden />
+        <span className="text-label-sm text-text-strong-950 font-medium">Todos</span>
+        <span className="text-text-soft-400 text-label-xs tabular-nums">
+          {done}/{todos.length}
+        </span>
+      </div>
+      <ul className="ml-1.5 space-y-1 py-0.5">
+        {todos.map((todo) => {
+          const Icon = TODO_ICON[todo.status];
+          const struck = todo.status === "completed" || todo.status === "cancelled";
+          return (
+            <li key={todo.content} className="flex items-start gap-2 px-1.5">
+              <Icon
+                className={cn(
+                  "mt-0.5 size-3.5 shrink-0",
+                  TODO_TONE[todo.status],
+                  todo.status === "in_progress" && "animate-spin",
+                )}
+                aria-hidden
+              />
+              <span
+                className={cn(
+                  "text-paragraph-xs",
+                  struck
+                    ? "text-text-soft-400 line-through"
+                    : "text-text-sub-600",
+                )}
+              >
+                {todo.content}
+              </span>
+            </li>
+          );
+        })}
+      </ul>
     </div>
   );
 }
