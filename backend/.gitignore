@@ -1,0 +1,12 @@
+.env
+.env.*
+node_modules/
+*.db
+*.db-shm
+*.db-wal
+
+# Per-run isolated engine workdirs (real harnesses execute real shell here).
+.runs/
+
+# NOTE: drizzle/ (migrations + meta/_journal.json) IS committed — the boot
+# migrator (src/index.ts) needs the journal to apply migrations on a fresh DB.

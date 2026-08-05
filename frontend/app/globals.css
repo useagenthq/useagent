@@ -1,0 +1,675 @@
+/* ---------------------------------------------------------------------------
+ * skynet-a — global stylesheet
+ *
+ * Tailwind v4 entry. The full AlignUI design-token scale (colors, font sizes,
+ * shadows, radii, keyframes) lives in `../tailwind.config.ts` and is bridged
+ * in via the `@config` directive below — this keeps the vendored AlignUI
+ * components (which reference tokens like `bg-bg-white-0`, `text-strong-950`,
+ * `shadow-regular-md`, `rounded-10`) working verbatim.
+ *
+ * Theming is CSS-variable based: the `.dark` class (toggled by next-themes on
+ * <html>) swaps the semantic variables below. Components should NOT use `dark:`
+ * prefixes — reference the semantic tokens and they flip automatically.
+ * ------------------------------------------------------------------------- */
+@import 'tailwindcss';
+@config '../tailwind.config.ts';
+
+@layer base {
+  /*#region Colors */
+  :root {
+    --neutral-950: 221.54 31.71% 8.04%;
+    --neutral-900: 226.15 21.31% 11.96%;
+    --neutral-800: 227.14 17.07% 16.08%;
+    --neutral-700: 221.25 15.69% 20%;
+    --neutral-600: 222 10.87% 36.08%;
+    --neutral-500: 221.05 7.76% 48.04%;
+    --neutral-400: 220 11.48% 64.12%;
+    --neutral-300: 218.57 15.22% 81.96%;
+    --neutral-200: 220 17.65% 90%;
+    --neutral-100: 210 30% 96.08%;
+    --neutral-50: 216 33.33% 97.06%;
+    --neutral-0: 0 0% 100%;
+
+    --neutral-alpha-24: 220 11.48% 64.12% / 24%;
+    --neutral-alpha-16: 220 11.48% 64.12% / 16%;
+    --neutral-alpha-10: 220 11.48% 64.12% / 10%;
+
+    --blue-950: 228.14 70.49% 23.92%;
+    --blue-900: 228 70.55% 31.96%;
+    --blue-800: 228.17 69.61% 40%;
+    --blue-700: 228.07 69.8% 48.04%;
+    --blue-600: 228 80.36% 56.08%;
+    --blue-500: 227.94 100% 60%;
+    --blue-400: 222.12 100% 70.39%;
+    --blue-300: 219.81 100% 79.61%;
+    --blue-200: 220 100% 87.65%;
+    --blue-100: 221.43 100% 91.76%;
+    --blue-50: 222 100% 96.08%;
+
+    --blue-alpha-24: 227.93 100% 63.92% / 24%;
+    --blue-alpha-16: 227.93 100% 63.92% / 16%;
+    --blue-alpha-10: 227.93 100% 63.92% / 10%;
+
+    --orange-950: 23.72 70.49% 23.92%;
+    --orange-900: 24 70.55% 31.96%;
+    --orange-800: 24.08 69.61% 40%;
+    --orange-700: 23.86 69.8% 48.04%;
+    --orange-600: 24 80.36% 56.08%;
+    --orange-500: 24.13 100% 63.92%;
+    --orange-400: 23.84 100% 70.39%;
+    --orange-300: 24.23 100% 79.61%;
+    --orange-200: 23.81 100% 87.65%;
+    --orange-100: 24.29 100% 91.76%;
+    --orange-50: 24 100% 96.08%;
+
+    --orange-alpha-24: 24.13 100% 63.92% / 24%;
+    --orange-alpha-16: 24.13 100% 63.92% / 16%;
+    --orange-alpha-10: 24.13 100% 63.92% / 10%;
+
+    --red-950: 355.12 70.49% 23.92%;
+    --red-900: 354.78 70.55% 31.96%;
+    --red-800: 354.93 69.61% 40%;
+    --red-700: 355.09 69.8% 48.04%;
+    --red-600: 355 80.36% 56.08%;
+    --red-500: 354.8 96.08% 60%;
+    --red-400: 354.83 100% 70.39%;
+    --red-300: 354.81 100% 79.61%;
+    --red-200: 355.24 100% 87.65%;
+    --red-100: 355.71 100% 91.76%;
+    --red-50: 357 100% 96.08%;
+
+    --red-alpha-24: 354.8 96.08% 60% / 24%;
+    --red-alpha-16: 354.8 96.08% 60% / 16%;
+    --red-alpha-10: 354.8 96.08% 60% / 10%;
+
+    --green-950: 148.47 72.84% 15.88%;
+    --green-900: 148.46 63.93% 23.92%;
+    --green-800: 147.69 63.64% 28.04%;
+    --green-700: 148.21 71.78% 31.96%;
+    --green-600: 147.95 71.57% 40%;
+    --green-500: 148.15 72.32% 43.92%;
+    --green-400: 147.78 72.32% 56.08%;
+    --green-300: 147.96 72.03% 71.96%;
+    --green-200: 148.24 71.83% 86.08%;
+    --green-100: 154.88 84.31% 90%;
+    --green-50: 147.69 72.22% 92.94%;
+
+    --green-alpha-24: 148.15 72.32% 43.92% / 24%;
+    --green-alpha-16: 148.15 72.32% 43.92% / 16%;
+    --green-alpha-10: 148.15 72.32% 43.92% / 10%;
+
+    --yellow-950: 42.16 60.66% 23.92%;
+    --yellow-900: 41.71 64.42% 31.96%;
+    --yellow-800: 42 63.73% 40%;
+    --yellow-700: 42.04 64.08% 48.04%;
+    --yellow-600: 41.85 80.39% 50%;
+    --yellow-500: 41.94 92.31% 54.12%;
+    --yellow-400: 42.12 100% 70.39%;
+    --yellow-300: 42.12 100% 79.61%;
+    --yellow-200: 41.9 100% 87.65%;
+    --yellow-100: 41.18 100% 90%;
+    --yellow-50: 43.9 100% 91.96%;
+
+    --yellow-alpha-24: 41.93 95.65% 63.92% / 24%;
+    --yellow-alpha-16: 41.93 95.65% 63.92% / 16%;
+    --yellow-alpha-10: 41.93 95.65% 63.92% / 10%;
+
+    --purple-950: 257.8 63.64% 28.04%;
+    --purple-900: 258.29 64.42% 31.96%;
+    --purple-800: 258 63.73% 40%;
+    --purple-700: 257.96 64.08% 48.04%;
+    --purple-600: 255.93 72.32% 56.08%;
+    --purple-500: 255.93 88.04% 63.92%;
+    --purple-400: 252.18 88.08% 70.39%;
+    --purple-300: 249.81 100% 79.61%;
+    --purple-200: 249.52 100% 87.65%;
+    --purple-100: 250 100% 91.76%;
+    --purple-50: 252 100% 96.08%;
+
+    --purple-alpha-24: 255.93 83.51% 61.96% / 24%;
+    --purple-alpha-16: 255.93 83.51% 61.96% / 16%;
+    --purple-alpha-10: 255.93 83.51% 61.96% / 10%;
+
+    --sky-950: 200.23 70.49% 23.92%;
+    --sky-900: 199.83 70.55% 31.96%;
+    --sky-800: 199.86 69.61% 40%;
+    --sky-700: 200 69.8% 48.04%;
+    --sky-600: 200 80.36% 56.08%;
+    --sky-500: 199.89 100% 63.92%;
+    --sky-400: 199.87 100% 70.39%;
+    --sky-300: 200.19 100% 79.61%;
+    --sky-200: 200 100% 87.65%;
+    --sky-100: 200 100% 91.76%;
+    --sky-50: 201 100% 96.08%;
+
+    --sky-alpha-24: 199.89 100% 63.92% / 24%;
+    --sky-alpha-16: 199.89 100% 63.92% / 16%;
+    --sky-alpha-10: 199.89 100% 63.92% / 10%;
+
+    --pink-950: 330 70.49% 23.92%;
+    --pink-900: 329.74 70.55% 31.96%;
+    --pink-800: 330 69.61% 40%;
+    --pink-700: 330.18 69.8% 48.04%;
+    --pink-600: 330 80.36% 56.08%;
+    --pink-500: 330 95.65% 63.92%;
+    --pink-400: 330.2 100% 70.39%;
+    --pink-300: 330 100% 79.61%;
+    --pink-200: 330.48 100% 87.65%;
+    --pink-100: 330 100% 91.76%;
+    --pink-50: 333 100% 96.08%;
+
+    --pink-alpha-24: 330 95.65% 63.92% / 24%;
+    --pink-alpha-16: 330 95.65% 63.92% / 16%;
+    --pink-alpha-10: 330 95.65% 63.92% / 10%;
+
+    --teal-950: 171.86 72.84% 15.88%;
+    --teal-900: 172.31 63.93% 23.92%;
+    --teal-800: 172.09 63.64% 28.04%;
+    --teal-700: 172.31 71.78% 31.96%;
+    --teal-600: 172.19 71.57% 40%;
+    --teal-500: 171.86 72.24% 48.04%;
+    --teal-400: 172.08 70.67% 55.88%;
+    --teal-300: 171.84 72.03% 71.96%;
+    --teal-200: 171.76 71.83% 86.08%;
+    --teal-100: 171.63 84.31% 90%;
+    --teal-50: 172.17 74.19% 93.94%;
+
+    --teal-alpha-24: 171.86 72.24% 48.04% / 24%;
+    --teal-alpha-16: 171.86 72.24% 48.04% / 16%;
+    --teal-alpha-10: 171.86 72.24% 48.04% / 10%;
+
+    --white-alpha-24: 0 0% 100% / 24%;
+    --white-alpha-16: 0 0% 100% / 16%;
+    --white-alpha-10: 0 0% 100% / 10%;
+
+    --black-alpha-24: 0 0% 0% / 24%;
+    --black-alpha-16: 0 0% 0% / 16%;
+    --black-alpha-10: 0 0% 0% / 10%;
+
+    --overlay: 208.57 84% 4.9% / 24%;
+
+    --social-apple: 0 0% 0%;
+    --social-twitter: 0 0% 0.39%;
+    --social-github: 212.73 13.25% 16.27%;
+    --social-notion: 210 11.76% 13.33%;
+    --social-tidal: 0 0% 0%;
+    --social-amazon: 210 14.52% 24.31%;
+    --social-zendesk: 46.67 25.71% 6.86%;
+
+    --primary-dark: var(--blue-800);
+    --primary-darker: var(--blue-700);
+    --primary-base: var(--blue-500);
+    --primary-alpha-24: var(--blue-alpha-24);
+    --primary-alpha-16: var(--blue-alpha-16);
+    --primary-alpha-10: var(--blue-alpha-10);
+
+    --static-black: var(--neutral-950);
+    --static-white: var(--neutral-0);
+
+    --bg-strong-950: var(--neutral-950);
+    --bg-surface-800: var(--neutral-800);
+    --bg-sub-300: var(--neutral-300);
+    --bg-soft-200: var(--neutral-200);
+    --bg-weak-50: var(--neutral-50);
+    --bg-white-0: var(--neutral-0);
+
+    --text-strong-950: var(--neutral-950);
+    --text-sub-600: var(--neutral-600);
+    --text-soft-400: var(--neutral-400);
+    --text-disabled-300: var(--neutral-300);
+    --text-white-0: var(--neutral-0);
+
+    --stroke-strong-950: var(--neutral-950);
+    --stroke-sub-300: var(--neutral-300);
+    --stroke-soft-200: var(--neutral-200);
+    --stroke-white-0: var(--neutral-0);
+
+    --faded-dark: var(--neutral-800);
+    --faded-base: var(--neutral-500);
+    --faded-light: var(--neutral-200);
+    --faded-lighter: var(--neutral-100);
+
+    --information-dark: var(--blue-950);
+    --information-base: var(--blue-500);
+    --information-light: var(--blue-200);
+    --information-lighter: var(--blue-50);
+
+    --warning-dark: var(--orange-950);
+    --warning-base: var(--orange-500);
+    --warning-light: var(--orange-200);
+    --warning-lighter: var(--orange-50);
+
+    --error-dark: var(--red-950);
+    --error-base: var(--red-500);
+    --error-light: var(--red-200);
+    --error-lighter: var(--red-50);
+
+    --success-dark: var(--green-950);
+    --success-base: var(--green-500);
+    --success-light: var(--green-200);
+    --success-lighter: var(--green-50);
+
+    --away-dark: var(--yellow-950);
+    --away-base: var(--yellow-500);
+    --away-light: var(--yellow-200);
+    --away-lighter: var(--yellow-50);
+
+    --feature-dark: var(--purple-950);
+    --feature-base: var(--purple-500);
+    --feature-light: var(--purple-200);
+    --feature-lighter: var(--purple-50);
+
+    --verified-dark: var(--sky-950);
+    --verified-base: var(--sky-500);
+    --verified-light: var(--sky-200);
+    --verified-lighter: var(--sky-50);
+
+    --highlighted-dark: var(--pink-950);
+    --highlighted-base: var(--pink-500);
+    --highlighted-light: var(--pink-200);
+    --highlighted-lighter: var(--pink-50);
+
+    --stable-dark: var(--teal-950);
+    --stable-base: var(--teal-500);
+    --stable-light: var(--teal-200);
+    --stable-lighter: var(--teal-50);
+  }
+
+  .dark {
+    /* -------------------------------------------------------------------
+     * Cool near-black neutral ramp (skynet-a dark theme).
+     *
+     * Base page background is #17181a (beautiful-ui reference). Every
+     * surface / border / text token below resolves from THIS ramp, so the
+     * whole app sits on #17181a with NO pure-black. The elevation ladder
+     * climbs toward white with the same soft-border deltas as before.
+     * Sibling page agents get the ladder for free via the semantic tokens.
+     * ------------------------------------------------------------------- */
+    --neutral-0: 0 0% 100%;
+    --neutral-50: 220 8% 96%;
+    --neutral-100: 220 7% 92%;
+    --neutral-200: 220 6% 85%;
+    --neutral-300: 220 5% 73%;
+    --neutral-400: 220 5% 58%;
+    --neutral-500: 220 4% 44%;
+    --neutral-600: 220 4.5% 19%;
+    --neutral-700: 220 5% 13%;
+    --neutral-800: 222 5% 14.2%;
+    --neutral-900: 220 5.5% 12.5%;
+    --neutral-950: 220 6% 9.6%; /* #17181a — dark base background */
+
+    --neutral-alpha-24: 220 5% 60% / 24%;
+    --neutral-alpha-16: 220 5% 60% / 16%;
+    --neutral-alpha-10: 220 5% 60% / 10%;
+
+    --bg-strong-950: var(--neutral-0);
+    --bg-surface-800: var(--neutral-200);
+    --bg-sub-300: var(--neutral-600);
+    --bg-soft-200: var(--neutral-700);
+    --bg-weak-50: var(--neutral-900);
+    --bg-white-0: var(--neutral-950);
+
+    --text-strong-950: var(--neutral-0);
+    --text-sub-600: var(--neutral-400);
+    --text-soft-400: var(--neutral-500);
+    --text-disabled-300: var(--neutral-600);
+    --text-white-0: var(--neutral-950);
+
+    --stroke-strong-950: var(--neutral-0);
+    --stroke-sub-300: var(--neutral-600);
+    --stroke-soft-200: var(--neutral-700);
+    --stroke-white-0: var(--neutral-950);
+
+    --faded-dark: var(--neutral-300);
+    --faded-base: var(--neutral-500);
+    --faded-light: var(--neutral-alpha-24);
+    --faded-lighter: var(--neutral-alpha-16);
+
+    --information-dark: var(--blue-400);
+    --information-base: var(--blue-500);
+    --information-light: var(--blue-alpha-24);
+    --information-lighter: var(--blue-alpha-16);
+
+    --warning-dark: var(--orange-400);
+    --warning-base: var(--orange-600);
+    --warning-light: var(--orange-alpha-24);
+    --warning-lighter: var(--orange-alpha-16);
+
+    --error-dark: var(--red-400);
+    --error-base: var(--red-600);
+    --error-light: var(--red-alpha-24);
+    --error-lighter: var(--red-alpha-16);
+
+    --success-dark: var(--green-400);
+    --success-base: var(--green-600);
+    --success-light: var(--green-alpha-24);
+    --success-lighter: var(--green-alpha-16);
+
+    --away-dark: var(--yellow-400);
+    --away-base: var(--yellow-600);
+    --away-light: var(--yellow-alpha-24);
+    --away-lighter: var(--yellow-alpha-16);
+
+    --feature-dark: var(--purple-400);
+    --feature-base: var(--purple-500);
+    --feature-light: var(--purple-alpha-24);
+    --feature-lighter: var(--purple-alpha-16);
+
+    --verified-dark: var(--sky-400);
+    --verified-base: var(--sky-600);
+    --verified-light: var(--sky-alpha-24);
+    --verified-lighter: var(--sky-alpha-16);
+
+    --highlighted-dark: var(--pink-400);
+    --highlighted-base: var(--pink-600);
+    --highlighted-light: var(--pink-alpha-24);
+    --highlighted-lighter: var(--pink-alpha-16);
+
+    --stable-dark: var(--teal-400);
+    --stable-base: var(--teal-600);
+    --stable-light: var(--teal-alpha-24);
+    --stable-lighter: var(--teal-alpha-16);
+
+    --overlay: 220 8% 4% / 60%; /* cool near-black scrim (modals, ⌘K palette backdrop) */
+
+    --social-apple: 0 0% 100%;
+    --social-twitter: 0 0% 100%;
+    --social-github: 0 0% 100%;
+    --social-notion: 0 0% 100%;
+    --social-tidal: 0 0% 100%;
+    --social-amazon: 0 0% 100%;
+    --social-zendesk: 0 0% 100%;
+  }
+  /*#endregion Colors */
+
+  html {
+    @apply bg-bg-white-0 text-text-strong-950;
+    /* Inter feature tuning: cv11 = single-story a, ss01 = alt letterforms,
+     * liga/calt = ligatures & contextual alternates. Absent tags (cv11/ss01)
+     * are no-ops in the serif/mono faces, so this is safe to set globally. */
+    font-feature-settings: 'cv11', 'ss01', 'liga', 'calt';
+    text-rendering: optimizeLegibility;
+    font-optical-sizing: auto;
+    /* Blueprint UI tracking: a global -0.15px optical tightening on Inter (the
+     * SF-Pro-adjacent signature). This is the DEFAULT for all UI text; the
+     * AlignUI label and paragraph type tokens bake the same -0.15px so tokenized
+     * and raw text stay consistent. The serif display ramp and the mono overline
+     * set their own tracking and correctly override this. */
+    letter-spacing: -0.15px;
+  }
+
+  /* Illustration tokens (used by AlignUI empty-state / avatar-empty icons) */
+  :root {
+    --illustration-white-0: var(--neutral-0);
+    --illustration-weak-100: var(--neutral-100);
+    --illustration-soft-200: var(--neutral-200);
+    --illustration-sub-300: var(--neutral-300);
+    --illustration-strong-400: var(--neutral-400);
+  }
+
+  .dark {
+    --illustration-white-0: var(--neutral-950);
+    --illustration-weak-100: var(--neutral-900);
+    --illustration-soft-200: var(--neutral-800);
+    --illustration-sub-300: var(--neutral-700);
+    --illustration-strong-400: var(--neutral-600);
+  }
+}
+
+/* custom scale for Remix Icon */
+.remixicon path {
+  transform: scale(0.8996);
+  transform-origin: center;
+}
+
+@layer utilities {
+  .mask-exclude {
+    -webkit-mask:
+      linear-gradient(#fff 0 0) content-box,
+      linear-gradient(#fff 0 0);
+    mask:
+      linear-gradient(#fff 0 0) content-box,
+      linear-gradient(#fff 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
+  }
+}
+
+/* ===========================================================================
+ * Skynet brand utilities  (ported from skynet-saas — Grok/x.ai-inspired
+ * differentiation layer). Adapted to AlignUI semantic tokens.
+ *
+ *   text-mono-label  uppercase tracked monospace micro-label for section
+ *                    labels, rail captions, technical annotations.
+ *   bg-halftone      faint halftone dot field (masked to fade downward) used
+ *                    at the top of brand headers.
+ * ========================================================================= */
+@utility text-mono-label {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 0.6875rem;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+@utility bg-halftone {
+  background-image: radial-gradient(
+    color-mix(in oklab, hsl(var(--text-strong-950)) 12%, transparent) 1px,
+    transparent 1px
+  );
+  background-size: 14px 14px;
+  mask-image: linear-gradient(to bottom, black, transparent);
+}
+
+/* ===========================================================================
+ * Editorial display ramp — Newsreader serif (--font-display).
+ *
+ * The one high-contrast transitional serif that signals editorial quality
+ * against the grotesque Inter UI (Conduit/Tiempos playbook). Reserve for the
+ * SINGLE top-level page hero; keep section/card headings in the sans title-*
+ * scale so the hierarchy contrast reads. font-optical-sizing:auto drives
+ * Newsreader's opsz axis, so display sizes get delicate contrasting strokes.
+ *
+ *   font-display     apply the serif family at any size
+ *   text-display-lg  ~40px — dedicated onboarding / welcome heroes
+ *   text-display-md  ~32px — primary page heroes (dashboard, agent/new)
+ *   text-display-sm  ~24px — in-header page titles (runs, settings, knowledge)
+ * ========================================================================= */
+@utility font-display {
+  font-family: var(--font-display), ui-serif, Georgia, serif;
+  font-feature-settings: normal;
+  font-optical-sizing: auto;
+}
+
+@utility text-display-lg {
+  font-family: var(--font-display), ui-serif, Georgia, serif;
+  font-feature-settings: normal;
+  font-optical-sizing: auto;
+  font-size: 2.5rem; /* 40px */
+  line-height: 1.05;
+  letter-spacing: -0.02em;
+  font-weight: 500;
+}
+
+@utility text-display-md {
+  font-family: var(--font-display), ui-serif, Georgia, serif;
+  font-feature-settings: normal;
+  font-optical-sizing: auto;
+  font-size: 2rem; /* 32px */
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+  font-weight: 500;
+}
+
+@utility text-display-sm {
+  font-family: var(--font-display), ui-serif, Georgia, serif;
+  font-feature-settings: normal;
+  font-optical-sizing: auto;
+  font-size: 1.5rem; /* 24px */
+  line-height: 1.15;
+  letter-spacing: -0.015em;
+  font-weight: 500;
+}
+
+/* ---------------------------------------------------------------------------
+ * AI-native motion primitives (ported from skynet-saas)
+ *
+ *   ai-caret             blinking terminal-style type cursor for streaming text
+ *   ai-loading-pixel     staggered opacity pulse for dot-matrix loaders
+ *   animate-ai-fade-up   soft rise on mount (approval cards, panels)
+ *   agent-progress-loading-text  shimmer sweep for streaming status labels
+ * All degrade gracefully under prefers-reduced-motion.
+ * ------------------------------------------------------------------------- */
+@keyframes ai-caret-blink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0;
+  }
+}
+.ai-caret {
+  animation: ai-caret-blink 1.05s step-end infinite;
+}
+
+@keyframes ai-pixel-on {
+  0%,
+  100% {
+    opacity: 0.18;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+.ai-loading-pixel {
+  opacity: 0.18;
+  animation: ai-pixel-on 650ms ease-in-out infinite;
+}
+
+@keyframes ai-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.animate-ai-fade-up {
+  animation: ai-fade-up 350ms cubic-bezier(0.23, 1, 0.32, 1) both;
+}
+
+@keyframes ai-chat-text-shimmer {
+  from {
+    background-position: 200% center;
+  }
+  to {
+    background-position: -100% center;
+  }
+}
+.agent-progress-loading-text {
+  color: transparent;
+  background-image: linear-gradient(
+    100deg,
+    hsl(var(--text-sub-600)) 16%,
+    hsl(var(--text-sub-600)) 38%,
+    hsl(var(--text-strong-950)) 50%,
+    hsl(var(--text-sub-600)) 62%,
+    hsl(var(--text-sub-600)) 84%
+  );
+  background-position: 200% center;
+  background-size: 300% 100%;
+  background-clip: text;
+  -webkit-background-clip: text;
+  animation: ai-chat-text-shimmer 3.4s linear infinite;
+  will-change: background-position;
+}
+
+/* ---------------------------------------------------------------------------
+ * Shiki dual-theme activation. CodeBlockCode highlights with
+ * { light: github-light, dark: github-dark-default }, emitting inline
+ * `--shiki-dark*` custom props. Under the `.dark` class we swap every token to
+ * its dark value so code stays legible on the dark #17181a ladder (the light
+ * theme's navy strings were unreadable there). Inline styles beat class rules,
+ * hence `!important`. Backgrounds are forced transparent by the CodeBlockCode
+ * wrapper, so tokens render on the card's bg-bg-weak-50.
+ * ------------------------------------------------------------------------- */
+.dark .shiki,
+.dark .shiki span {
+  color: var(--shiki-dark) !important;
+  font-style: var(--shiki-dark-font-style) !important;
+  font-weight: var(--shiki-dark-font-weight) !important;
+  text-decoration: var(--shiki-dark-text-decoration) !important;
+}
+
+/* ---------------------------------------------------------------------------
+ * beautiful-ui CodeBlock surface (components/ai/code-block.tsx). Adds gutter
+ * line numbers via a CSS counter on shiki's `.line` spans and a staggered
+ * per-line fade-up (delay set inline by a shiki line transformer), so the
+ * chrome is beautiful-ui while the tokens stay shiki. Scoped to
+ * `.ai-code-surface` so markdown/inline `.shiki` elsewhere are untouched.
+ * ------------------------------------------------------------------------- */
+.ai-code-surface pre {
+  margin: 0;
+  padding: 0.625rem 0.75rem;
+  background: transparent !important;
+}
+.ai-code-surface code {
+  counter-reset: ai-line;
+  display: block;
+}
+.ai-code-surface .line {
+  counter-increment: ai-line;
+  display: inline-block;
+  width: 100%;
+}
+.ai-code-surface .line::before {
+  content: counter(ai-line);
+  display: inline-block;
+  width: 2rem;
+  margin-right: 1rem;
+  text-align: right;
+  color: hsl(var(--text-soft-400));
+  opacity: 0.6;
+  user-select: none;
+}
+@keyframes ai-code-line-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.ai-code-surface .ai-code-line {
+  animation: ai-code-line-in 250ms cubic-bezier(0.23, 1, 0.32, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ai-code-surface .ai-code-line {
+    animation: none;
+  }
+  .ai-caret {
+    animation: none;
+  }
+  .ai-loading-pixel {
+    animation: none;
+    opacity: 0.5;
+  }
+  .animate-ai-fade-up {
+    animation: none;
+  }
+  .agent-progress-loading-text {
+    color: hsl(var(--text-sub-600));
+    background-image: none;
+    animation: none;
+  }
+}
+
+/* Dark neutral ladder lives in the `.dark` block inside @layer base above —
+ * single source of truth (#17181a base, soft border deltas). Do not add a
+ * second `.dark` override here; un-layered rules would silently win. */

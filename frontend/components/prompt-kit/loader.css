@@ -1,0 +1,65 @@
+/* Keyframes for the vendored prompt-kit Loader. prompt-kit ships these in its
+ * global Tailwind config (only a subset lives in loader.json's `tailwind`
+ * block); defined here so every Loader variant animates when the kit is
+ * vendored standalone. Imported by loader.tsx. */
+
+@keyframes spinner-fade {
+  0% { opacity: 1; }
+  100% { opacity: 0.15; }
+}
+@keyframes thin-pulse {
+  0%, 100% { transform: scale(0.9); opacity: 0.5; }
+  50% { transform: scale(1.05); opacity: 1; }
+}
+@keyframes pulse-dot {
+  0%, 100% { transform: scale(0.8); opacity: 0.5; }
+  50% { transform: scale(1.2); opacity: 1; }
+}
+@keyframes bounce-dots {
+  0%, 100% { transform: translateY(0); opacity: 0.5; }
+  50% { transform: translateY(-4px); opacity: 1; }
+}
+@keyframes typing {
+  0%, 100% { transform: translateY(0); opacity: 0.5; }
+  50% { transform: translateY(-2px); opacity: 1; }
+}
+@keyframes wave {
+  0%, 100% { transform: scaleY(1); }
+  50% { transform: scaleY(0.6); }
+}
+@keyframes wave-bars {
+  0%, 100% { transform: scaleY(1); }
+  50% { transform: scaleY(0.4); }
+}
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+@keyframes text-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+@keyframes shimmer {
+  0% { background-position: 200% center; }
+  100% { background-position: -200% center; }
+}
+@keyframes loading-dots {
+  0%, 100% { opacity: 0; }
+  50% { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [class*="animate-[spinner-fade"],
+  [class*="animate-[thin-pulse"],
+  [class*="animate-[pulse-dot"],
+  [class*="animate-[bounce-dots"],
+  [class*="animate-[typing"],
+  [class*="animate-[wave"],
+  [class*="animate-[wave-bars"],
+  [class*="animate-[blink"],
+  [class*="animate-[text-blink"],
+  [class*="animate-[shimmer"],
+  [class*="animate-[loading-dots"] {
+    animation: none !important;
+  }
+}

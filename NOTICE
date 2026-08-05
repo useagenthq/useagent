@@ -1,0 +1,14 @@
+This product includes software developed by third parties:
+
+- reference bot (Apache License 2.0) — https://github.com/awslabs/reference-bot
+  Portions of backend/src/connectors/, backend/src/engines/acp.ts and
+  backend/src/schedules/ are ported from the reference bot source (messaging
+  transport/renderer abstractions, ACP client wiring, cron scheduling and
+  append-only run history). See per-file attribution headers.
+
+- QM (yc-software/qm) — reference for the run turn-stream/SSE hygiene and the
+  Slack adapter structure in backend/src/ (adapted, not copied verbatim).
+
+- AlignUI Pro, prompt-kit, beautiful-ui, thinking-orbs (Jakub Antalík, MIT) —
+  vendored/ported UI foundations in frontend/components/ (see the per-folder
+  READMEs for source credit and adaptation notes).
