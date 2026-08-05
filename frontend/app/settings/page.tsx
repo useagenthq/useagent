@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
-import Link from "next/link";
 import { RiCameraLine, RiOpenaiFill, RiPencilLine } from "@remixicon/react";
 import * as Badge from "@/components/ui/badge";
 import * as Button from "@/components/ui/button";
@@ -134,14 +133,9 @@ export default function SettingsPage() {
             <Section id="usage" title="Usage" description="Your plan and model consumption this cycle.">
               <SettingsCard className="mb-4">
                 <SettingsRow label="Plan" description="Free while you get started.">
-                  <div className="flex items-center gap-2">
-                    <Badge.Root variant="light" size="medium" color="gray">
-                      Starter — Free
-                    </Badge.Root>
-                    <Link href="/plans" className={DARK_PILL}>
-                      Upgrade
-                    </Link>
-                  </div>
+                  <Badge.Root variant="light" size="medium" color="gray">
+                    Starter — Free
+                  </Badge.Root>
                 </SettingsRow>
               </SettingsCard>
 

@@ -5,7 +5,6 @@ import {
   RiAddLine,
   RiArrowUpLine,
   RiMicLine,
-  RiSendPlane2Line,
   RiToolsLine,
 } from "@remixicon/react";
 import { cnExt as cn } from "@/utils/cn";
@@ -161,30 +160,20 @@ export function Composer({
             </button>
 
             {hero && (
-              <>
-                <button
-                  type="button"
-                  aria-label="Tools & agents"
-                  aria-expanded={toolsOpen}
-                  onClick={() => setToolsOpen((o) => !o)}
-                  className={cn(
-                    "flex size-9 items-center justify-center rounded-xl transition-colors",
-                    toolsOpen
-                      ? "bg-bg-weak-50 text-text-strong-950"
-                      : "border-stroke-soft-200 text-text-sub-600 hover:bg-bg-weak-50 border",
-                  )}
-                >
-                  <RiToolsLine className="size-[18px]" aria-hidden />
-                </button>
-
-                <span className="ml-1 flex items-center gap-1.5">
-                  <RiSendPlane2Line className="text-text-sub-600 size-4" aria-hidden />
-                  <span className="text-label-sm text-text-sub-600">Super Computer</span>
-                  <span className="rounded-full bg-blue-50 px-2 py-0.5 text-label-xs text-blue-500">
-                    New
-                  </span>
-                </span>
-              </>
+              <button
+                type="button"
+                aria-label="Tools & agents"
+                aria-expanded={toolsOpen}
+                onClick={() => setToolsOpen((o) => !o)}
+                className={cn(
+                  "flex size-9 items-center justify-center rounded-xl transition-colors",
+                  toolsOpen
+                    ? "bg-bg-weak-50 text-text-strong-950"
+                    : "border-stroke-soft-200 text-text-sub-600 hover:bg-bg-weak-50 border",
+                )}
+              >
+                <RiToolsLine className="size-[18px]" aria-hidden />
+              </button>
             )}
 
             {/* Right cluster */}

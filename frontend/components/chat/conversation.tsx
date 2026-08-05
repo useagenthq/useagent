@@ -8,7 +8,6 @@ import * as Badge from "@/components/ui/badge";
 import { Thinking } from "@/components/ai/thinking";
 import { Composer } from "@/components/chat/composer";
 import { Markdown } from "@/components/prompt-kit/markdown";
-import { ResponseStream } from "@/components/prompt-kit/response-stream";
 import { ToolStepRow } from "@/components/chat/tool-step-row";
 import {
   cleanPrompt,
@@ -58,31 +57,15 @@ function UserBubble({ children }: { children: string }) {
   );
 }
 
-/** The agent's answer: typewriters in on first arrival (via ResponseStream),
- * then settles into rendered Markdown. Already-complete runs loaded fresh skip
- * the typewriter and render settled immediately. */
-function AgentAnswer({ summary, stream }: { summary: string; stream: boolean }) {
-  const [done, setDone] = useState(!stream);
-  useEffect(() => {
-    if (!stream) setDone(true);
-  }, [stream]);
-
-  if (done) return <Markdown className={MD_CLASS}>{summary}</Markdown>;
+/** The agent's answer. No fake typewriter: real streaming is LiveNarration's
+ * job (progressive markdown on actual deltas); once a run completes, the
+ * summary renders as settled Markdown immediately — a plain-text re-typing
+ * animation both lied about liveness and showed raw markdown runes. */
+function AgentAnswer({ summary }: { summary: string; stream?: boolean }) {
   return (
-    <span className="text-paragraph-sm text-text-strong-950 whitespace-pre-wrap">
-      <ResponseStream
-        textStream={summary}
-        mode="typewriter"
-        speed={38}
-        as="span"
-        onComplete={() => setDone(true)}
-      />
-      {/* streaming caret (state-family #4) */}
-      <span
-        className="ai-caret ml-0.5 inline-block h-4 w-0.5 translate-y-0.5 rounded-full bg-text-strong-950 align-text-bottom"
-        aria-hidden
-      />
-    </span>
+    <div className="animate-ai-fade-up">
+      <Markdown className={MD_CLASS}>{summary}</Markdown>
+    </div>
   );
 }
 

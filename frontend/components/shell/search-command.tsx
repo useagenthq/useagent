@@ -5,7 +5,6 @@ import { useRouter } from 'next/navigation';
 import { Command } from 'cmdk';
 import {
   RiAddLine,
-  RiAppleFill,
   RiApps2Line,
   RiAppsLine,
   RiBook2Line,
@@ -49,7 +48,6 @@ type Cmd = {
 // contract so the palette is the canonical route index.
 const COMMANDS: Cmd[] = [
   { href: '/agent/runs', label: 'Active runs', icon: RiPulseLine, group: 'Agent' },
-  { href: '/agent/mobile', label: 'Pair with Mobile app', icon: RiAppleFill, group: 'Agent' },
   { href: '/agent/workspace', label: 'Workspace', icon: RiLayoutGridLine, group: 'Agent' },
   { href: '/agent/artifacts', label: 'Live Artifacts', icon: RiBroadcastLine, group: 'Agent' },
   { href: '/agent/schedules', label: 'Schedules', icon: RiCalendarScheduleLine, group: 'Agent' },
