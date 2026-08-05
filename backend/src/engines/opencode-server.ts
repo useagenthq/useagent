@@ -1,4 +1,5 @@
 import { Daytona, type Sandbox } from "@daytona/sdk";
+import { recordProviderEvent } from "../runs/provider-events";
 import type { EmitStep, EngineAdapter, EngineRunContext } from "./types";
 import { basename, parseJsonLine, truncate } from "./util";
 import { getThreadSandbox, setRunSandbox } from "../runs/repo";
@@ -286,7 +287,12 @@ export const opencodeServerAdapter: EngineAdapter = {
             kind: "task",
             label: `Subagent — ${truncate(desc, 50)}`,
             chip: "subagent",
-            code_json: { agent: p.agent, description: p.description, prompt: p.prompt },
+            code_json: {
+              agent: p.agent,
+              description: p.description,
+              prompt: p.prompt,
+              native: { sessionID: sid, partID: partId, childSessionID: p.sessionID ?? null },
+            },
           });
           if (id) toolSteps.set(partId, id);
           return;
@@ -315,6 +321,16 @@ export const opencodeServerAdapter: EngineAdapter = {
               toolDone.add(partId);
             } else {
               const step = toolStep(part.tool, st.input ?? {}, st.title, undefined);
+              const native = {
+                sessionID: sid,
+                messageID: typeof part.messageID === "string" ? part.messageID : null,
+                partID: partId,
+                callID: typeof part.callID === "string" ? part.callID : null,
+              };
+              step.code_json =
+                step.code_json && typeof step.code_json === "object"
+                  ? { ...(step.code_json as Record<string, unknown>), native }
+                  : { native };
               if (isChild) step.label = `↳ ${step.label}`;
               if (isTask) emittedSubagents.add(taskDesc);
               const id = await ctx.emit(step);
@@ -324,10 +340,18 @@ export const opencodeServerAdapter: EngineAdapter = {
           if ((status === "completed" || status === "error") && toolSteps.has(partId)) {
             toolDone.add(partId);
             const output = status === "error" ? String(st.error ?? "") : String(st.output ?? "");
+            // The update REPLACES code_json wholesale — re-stamp the native ids
+            // or the completion overwrite erases the running-state stamp.
             await ctx.updateStep?.(toolSteps.get(partId)!, {
               tool: part.tool,
               input: st.input ?? {},
               output: output.slice(0, 2000),
+              native: {
+                sessionID: sid,
+                messageID: typeof part.messageID === "string" ? part.messageID : null,
+                partID: partId,
+                callID: typeof part.callID === "string" ? part.callID : null,
+              },
             });
           }
         }
@@ -337,7 +361,30 @@ export const opencodeServerAdapter: EngineAdapter = {
       // emit-once dedupe (check, await emit, set) is only atomic if two sources
       // (SSE pump / mid-turn poller / finalize) can never interleave on it.
       let partChain: Promise<void> = Promise.resolve();
+      // Lossless native capture (north star Phase 1): persist every part — all
+      // types, including ones the step translator ignores — keyed by native
+      // part id (revisions upsert). Fire-and-forget; never blocks translation.
+      let captureSeq = 0;
+      const capturePart = (part: Record<string, unknown>): void => {
+        const partId = String(part.id ?? "");
+        if (!partId) return;
+        const st = (part as { state?: { status?: string } }).state;
+        void recordProviderEvent({
+          id: `pe_${partId}`,
+          runId: ctx.runId,
+          threadId: ctx.threadId ?? ctx.runId,
+          seq: captureSeq++,
+          provider: "opencode",
+          eventType: `part.${String(part.type ?? "unknown")}${st?.status ? `.${st.status}` : ""}`,
+          nativeSessionId: typeof part.sessionID === "string" ? part.sessionID : null,
+          nativeMessageId: typeof part.messageID === "string" ? part.messageID : null,
+          nativePartId: partId,
+          nativeCallId: typeof part.callID === "string" ? part.callID : null,
+          payload: part,
+        });
+      };
       const enqueuePart = (part: Record<string, unknown>, delta?: string): Promise<void> => {
+        capturePart(part);
         partChain = partChain.then(() => handlePart(part, delta)).catch(() => {});
         return partChain;
       };
@@ -380,6 +427,17 @@ export const opencodeServerAdapter: EngineAdapter = {
               (props.info.parentID === sessionId || childSessions.has(props.info.parentID))
             ) {
               childSessions.add(props.info.id);
+              void recordProviderEvent({
+                id: `pe_${props.info.id}_lifecycle`,
+                runId: ctx.runId,
+                threadId: ctx.threadId ?? ctx.runId,
+                seq: captureSeq++,
+                provider: "opencode",
+                eventType: ev.type,
+                nativeSessionId: props.info.id,
+                nativeParentSessionId: props.info.parentID ?? null,
+                payload: props.info,
+              });
             }
             if (ev.type === "message.part.updated" && props.part) {
               await enqueuePart(props.part, typeof props.delta === "string" ? props.delta : undefined);

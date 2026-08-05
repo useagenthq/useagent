@@ -110,6 +110,40 @@ export const steps = pgTable(
 );
 
 // ---------------------------------------------------------------------------
+// Provider events — lossless native capture (ARCHITECTURE north star, Phase 1).
+// One row per native part (upserted to its latest revision) plus session
+// lifecycle rows. Bounded payload; the `steps` table stays the compatibility
+// projection on top of this.
+// ---------------------------------------------------------------------------
+
+export const providerEvents = pgTable(
+  "provider_events",
+  {
+    id: text("id").primaryKey(),
+    runId: text("run_id")
+      .notNull()
+      .references(() => runs.id),
+    threadId: text("thread_id").notNull(),
+    seq: integer("seq").notNull(),
+    provider: text("provider").notNull(),
+    eventType: text("event_type").notNull(),
+    nativeSessionId: text("native_session_id"),
+    nativeParentSessionId: text("native_parent_session_id"),
+    nativeMessageId: text("native_message_id"),
+    nativePartId: text("native_part_id"),
+    nativeCallId: text("native_call_id"),
+    payload: text("payload"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    index("idx_provider_events_run").on(t.runId, t.seq),
+    index("idx_provider_events_part").on(t.nativePartId),
+  ],
+);
+
+// ---------------------------------------------------------------------------
 // Skills — org-scoped reusable playbooks.
 // ---------------------------------------------------------------------------
 
