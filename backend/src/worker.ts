@@ -330,12 +330,14 @@ async function runEngine(
         : "Engine error",
       chip: null,
     }).catch(() => {});
-    await completeRun(
-      runId,
-      "failed",
-      timedOut ? `timed out after ${ADAPTER_TIMEOUT_MS / 1000}s` : "engine error",
-      Date.now() - startedAt,
-    );
+    // Surface the REAL failure reason (truncated) — a bare "engine error"
+    // summary tells the user nothing actionable (battle-test T6 finding).
+    const reason = timedOut
+      ? `timed out after ${ADAPTER_TIMEOUT_MS / 1000}s`
+      : err instanceof Error && err.message
+        ? `error: ${err.message.replace(/\s+/g, " ").slice(0, 180)}`
+        : "engine error";
+    await completeRun(runId, "failed", reason, Date.now() - startedAt);
     bus.emit(channel(runId), { type: "end", status: "failed" } satisfies BusEvent);
   } finally {
     turnStream.end(runId);
