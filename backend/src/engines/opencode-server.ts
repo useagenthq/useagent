@@ -11,6 +11,7 @@ import type {
   HarnessReconciliation,
   HarnessSessionHandle,
 } from "./types";
+import { composeTurnPrompt } from "./types";
 import { basename, parseJsonLine, truncate } from "./util";
 import { getThreadSandbox, setRunSandbox } from "../runs/repo";
 import { assertNever } from "../util/exhaustive";
@@ -756,13 +757,13 @@ export const opencodeServerAdapter: EngineAdapter = {
 
       let reply: { parts?: { type?: string; text?: string }[] };
       try {
-        let res = await postPrompt(resumed ? ctx.prompt : ctx.contextPreamble + ctx.prompt);
+        let res = await postPrompt(composeTurnPrompt(ctx, resumed));
         if (res.status === 404 && resumed) {
           // Stale resume id (session from a previous sandbox/server incarnation)
-          // — start fresh WITH the composed preamble, exactly like the CLI path.
+          // — start fresh WITH the full bootstrap + per-turn context.
           sessionId = await createSession();
           resumed = false;
-          res = await postPrompt(ctx.contextPreamble + ctx.prompt);
+          res = await postPrompt(composeTurnPrompt(ctx, false));
         }
         if (!res.ok) {
           throw new Error(`opencode prompt failed: HTTP ${res.status} ${truncate(await res.text(), 200)}`);

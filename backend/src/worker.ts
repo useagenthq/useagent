@@ -144,21 +144,33 @@ async function runWorker(runId: string): Promise<void> {
       return;
     }
 
-    // Compose the engine's context preamble ONCE per run: relevant TEAM MEMORY
-    // (config-gated; "" when MEMORY_API_URL is unset) prepended to this thread's
-    // prior turns (empty for a root run). The mailbox guarantees every prior turn
-    // on this thread is already terminal, so the preamble sees their summaries.
-    const threadPreamble = run.parentRunId
-      ? await buildThreadPreamble(run.threadId, run.id)
-      : "";
-    const contextPreamble = (await searchTeamMemory(run.prompt)) + threadPreamble;
-    if (contextPreamble) {
+    // Split the run's context (north star "Fix the Current Context Bug First"):
+    //  - turnContext: fresh TEAM MEMORY (config-gated; "" when MEMORY_API_URL is
+    //    unset), already reference-framed. Injected on EVERY turn (fresh AND
+    //    resumed) so a continuing conversation still sees newly recalled memory.
+    //  - bootstrapContext: the reconstructed prior thread, injected ONLY into a
+    //    FRESH native session (a resumed session already holds it natively).
+    // Fetched in PARALLEL — independent context work must not serialize startup.
+    // Prompts are stored clean; the composed prefix is the engine's only view.
+    const [turnContext, bootstrapContext] = await Promise.all([
+      searchTeamMemory(run.prompt),
+      run.parentRunId ? buildThreadPreamble(run.threadId, run.id) : Promise.resolve(""),
+    ]);
+    if (turnContext || bootstrapContext) {
       console.log(
-        `[worker] run ${runId} thread ${run.threadId}: context preamble ${contextPreamble.length} chars`,
+        `[worker] run ${runId} thread ${run.threadId}: turnContext ${turnContext.length} + bootstrapContext ${bootstrapContext.length} chars`,
       );
     }
 
-    await runEngine(runId, run.engine, run.prompt, contextPreamble, run.threadId, run.model);
+    await runEngine(
+      runId,
+      run.engine,
+      run.prompt,
+      bootstrapContext,
+      turnContext,
+      run.threadId,
+      run.model,
+    );
   } finally {
     // Free the thread and dispatch its next turn — whatever the outcome.
     await onRunSettled(runId, run.threadId);
@@ -215,7 +227,8 @@ async function runEngine(
   runId: string,
   engineId: string,
   prompt: string,
-  contextPreamble: string,
+  bootstrapContext: string,
+  turnContext: string,
   threadId: string,
   model: string,
 ): Promise<void> {
@@ -277,7 +290,8 @@ async function runEngine(
   const ctx: EngineRunContext = {
     runId,
     prompt,
-    contextPreamble,
+    bootstrapContext,
+    turnContext,
     workdir,
     threadId,
     model,

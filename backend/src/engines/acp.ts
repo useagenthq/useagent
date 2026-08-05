@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import type { EmitStep, EngineAdapter, EngineRunContext } from "./types";
+import { composeTurnPrompt } from "./types";
 import { basename, childEnv, parseJsonLine, readLines, truncate } from "./util";
 
 // ---------------------------------------------------------------------------
@@ -372,7 +373,8 @@ export const acpAdapter: EngineAdapter = {
 
       await sendRequest("session/prompt", {
         sessionId,
-        prompt: [{ type: "text", text: ctx.contextPreamble + ctx.prompt }],
+        // Always a fresh session/new here (no resume path) — full bootstrap + turn.
+        prompt: [{ type: "text", text: composeTurnPrompt(ctx, false) }],
       });
       if (ctx.signal.aborted) throw new Error("acp run aborted (timeout)");
 

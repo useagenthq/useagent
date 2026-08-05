@@ -3,6 +3,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { Daytona, type Sandbox } from "@daytona/sdk";
 import type { EmitStep, EngineAdapter, EngineRunContext } from "./types";
+import { composeTurnPrompt } from "./types";
 import { basename, parseJsonLine, truncate } from "./util";
 
 // ---------------------------------------------------------------------------
@@ -650,7 +651,7 @@ function makeSandboxAdapter(spec: SandboxEngineSpec): EngineAdapter {
           return { exitCode: exitCode ?? 0, state, produced };
         };
 
-        await stagePrompt(resumeId ? ctx.prompt : ctx.contextPreamble + ctx.prompt);
+        await stagePrompt(composeTurnPrompt(ctx, Boolean(resumeId)));
         await ctx.emit({ kind: "task", label: `Running ${spec.id} in sandbox…`, chip: spec.id });
         let turn = await execTurn(resumeId);
         if (turn.exitCode !== 0 && !(turn.exitCode === 137 && turn.produced)) {
@@ -661,7 +662,7 @@ function makeSandboxAdapter(spec: SandboxEngineSpec): EngineAdapter {
               `${spec.id} (in sandbox) exited ${turn.exitCode}: ${turn.state.rawTail || "no output"}`,
             );
           }
-          await stagePrompt(ctx.contextPreamble + ctx.prompt);
+          await stagePrompt(composeTurnPrompt(ctx, false));
           turn = await execTurn(undefined);
           if (turn.exitCode !== 0 && !(turn.exitCode === 137 && turn.produced)) {
             throw new Error(

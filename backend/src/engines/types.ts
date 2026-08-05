@@ -22,10 +22,16 @@ export interface EngineRunContext {
   runId: string;
   /** The run's prompt, verbatim — adapters must pass ANY prompt through. */
   prompt: string;
-  /** Thread context composed from prior turns in this run's conversation (empty
-   *  for a root run). Adapters PREPEND this to their engine prompt; the stored
-   *  `prompt` stays the user's raw text. */
-  contextPreamble: string;
+  /** Reconstructed prior-thread context, injected ONLY into a FRESH native
+   *  session — a resumed session already holds this history natively. Empty for a
+   *  root run. Compose via {@link composeTurnPrompt}, never by hand. */
+  bootstrapContext: string;
+  /** Fresh per-turn reference material (team memory today, knowledge later),
+   *  already framed as reference-only (never instructions). Injected on EVERY
+   *  turn — fresh AND resumed — so a continuing conversation still sees newly
+   *  recalled memory. Never echoed as the user's text; the stored `prompt` stays
+   *  the user's raw words. Compose via {@link composeTurnPrompt}. */
+  turnContext: string;
   /** Isolated working directory (already created) — the ONLY place an engine
    *  may touch the filesystem. Never the repo itself. */
   workdir: string;
@@ -38,8 +44,9 @@ export interface EngineRunContext {
    *  default when absent/unsupported. */
   model?: string;
   /** The engine's native session id recorded by this thread's PREVIOUS turn on
-   *  the same engine (from the DB). Present → resume that session explicitly and
-   *  send only the new prompt; absent → fresh session with the preamble. */
+   *  the same engine (from the DB). Present → resume that session explicitly (only
+   *  turnContext accompanies the prompt); absent → fresh session (bootstrap +
+   *  turnContext). See {@link composeTurnPrompt}. */
   engineSessionId?: string;
   /** Persist the engine session id this run created/used, so the next turn can
    *  resume it. Fire-and-forget durable write; adapters call it as soon as the
@@ -63,6 +70,25 @@ export interface EngineRunContext {
   publishDelta?(delta: string): void;
   /** Record the run's final assistant text + wall-clock duration. */
   setSummary(summary: string, durationMs: number): void;
+}
+
+/**
+ * Compose the text an engine receives for one turn — the SINGLE source of truth
+ * for the fresh-vs-resumed context rule (north star "Fix the Current Context Bug
+ * First"). A FRESH native session gets the reconstructed prior-thread bootstrap
+ * plus fresh per-turn context; a RESUMED session already holds the thread
+ * history natively, so it gets ONLY the fresh per-turn context. The user's
+ * `prompt` is always appended verbatim last.
+ *
+ * Every adapter MUST use this instead of hand-concatenating, so a resumed turn
+ * never silently drops freshly recalled memory (the bug this replaces).
+ */
+export function composeTurnPrompt(
+  ctx: Pick<EngineRunContext, "prompt" | "bootstrapContext" | "turnContext">,
+  resumed: boolean,
+): string {
+  const prefix = resumed ? ctx.turnContext : ctx.bootstrapContext + ctx.turnContext;
+  return prefix + ctx.prompt;
 }
 
 export interface EngineAdapter {
