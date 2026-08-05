@@ -6,6 +6,7 @@ import { AsteriskMark } from "@/components/foundations/brand/asterisk-mark";
 import { cnExt as cn } from "@/utils/cn";
 import * as Badge from "@/components/ui/badge";
 import { Thinking } from "@/components/ai/thinking";
+import { LoadingState } from "@/components/ai/loading-state";
 import { Composer, type ComposerSubmit } from "@/components/chat/composer";
 import { Markdown } from "@/components/prompt-kit/markdown";
 import { ToolStepRow } from "@/components/chat/tool-step-row";
@@ -83,10 +84,9 @@ function LiveNarration({ text }: { text: string }) {
   return (
     <div className="animate-ai-fade-up">
       <Markdown className={MD_CLASS}>{text}</Markdown>
-      <span
-        className="ai-caret ml-0.5 inline-block h-4 w-0.5 translate-y-0.5 rounded-full bg-text-strong-950 align-text-bottom"
-        aria-hidden
-      />
+      {/* Pixel-grid churn indicator (beautiful-ui LoadingState) — replaced the
+          lone blinking caret line the user rejected. */}
+      <LoadingState label="Working" className="mt-2" />
     </div>
   );
 }
