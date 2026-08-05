@@ -15,13 +15,9 @@ import {
 import type { RunStatus, StepKind } from "./db/schema";
 import { adapters } from "./engines";
 import type { EmitStep, EngineRunContext } from "./engines/types";
-import {
-  resolveMemoryIdentity,
-  searchTeamMemory,
-  type MemoryIdentity,
-} from "./memory/team-memory";
+import { resolveMemoryIdentity, searchTeamMemory } from "./memory/team-memory";
 import { recordContextRetrieval } from "./memory/retrieval-ledger";
-import { enqueueCapture } from "./memory/capture-outbox";
+import { finalizeRun } from "./runs/finalize";
 import { turnStream } from "./runs/turn-stream";
 import { claimNextRun, settleCommandForRun } from "./commands/dispatch";
 
@@ -187,7 +183,6 @@ async function runWorker(runId: string): Promise<void> {
       turnContext,
       run.threadId,
       run.model,
-      identity,
     );
   } finally {
     // Free the thread and dispatch its next turn — whatever the outcome.
@@ -217,7 +212,7 @@ async function runMock(runId: string): Promise<void> {
       bus.emit(channel(runId), { type: "step", step } satisfies BusEvent);
     }
 
-    await completeRun(runId, "completed", summarize(SCRIPT), Date.now() - startedAt);
+    await finalizeRun(runId, "completed", summarize(SCRIPT), Date.now() - startedAt);
     bus.emit(channel(runId), { type: "end", status: "completed" } satisfies BusEvent);
   } catch (err) {
     console.error(`[worker] run ${runId} failed:`, err);
@@ -249,7 +244,6 @@ async function runEngine(
   turnContext: string,
   threadId: string,
   model: string,
-  identity: MemoryIdentity | null,
 ): Promise<void> {
   const startedAt = Date.now();
   await setRunStatus(runId, "running");
@@ -349,23 +343,12 @@ async function runEngine(
     await adapter.run(ctx);
     clearTimeout(timer);
     const finalSummary = summary ?? "run completed";
-    await completeRun(
-      runId,
-      "completed",
-      finalSummary,
-      summaryDuration ?? Date.now() - startedAt,
-    );
+    // Finalize transactionally: commit `completed` AND enqueue the durable memory
+    // capture (idempotent by runId) in one transaction, so a crash can never leave
+    // a completed run with no capture (the old completeRun→enqueue gap). See
+    // runs/finalize.ts.
+    await finalizeRun(runId, "completed", finalSummary, summaryDuration ?? Date.now() - startedAt);
     bus.emit(channel(runId), { type: "end", status: "completed" } satisfies BusEvent);
-    // Durable capture: enqueue the run's outcome to the memory OUTBOX (idempotent
-    // by runId) after the user already saw completion. The delivery loop writes it
-    // to team memory with retry/backoff/dead-letter, so a slow/broken memory
-    // service no longer loses the capture (the old fire-and-forget did). Awaited so
-    // the row is durable; a failure here is logged, never fails the run.
-    if (identity) {
-      await enqueueCapture(runId, identity, { prompt, summary: finalSummary }).catch((err) =>
-        console.error(`[worker] enqueue memory capture for ${runId} failed:`, err),
-      );
-    }
   } catch (err) {
     clearTimeout(timer);
     const timedOut = ac.signal.aborted;

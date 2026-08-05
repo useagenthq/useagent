@@ -350,8 +350,12 @@ export async function completeRun(
   status: RunStatus,
   summary: string,
   durationMs: number,
+  /** Run inside a caller's transaction so finalization commits the terminal
+   *  status and its durable side-effects (memory capture, slack reply) atomically
+   *  (see runs/finalize.ts). Defaults to the shared pool. */
+  exec: Executor = db,
 ): Promise<void> {
-  await db
+  await exec
     .update(runs)
     .set({ status, summary, durationMs, updatedAt: new Date() })
     .where(eq(runs.id, id));

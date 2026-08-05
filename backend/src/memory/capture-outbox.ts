@@ -1,5 +1,5 @@
 import { eq, sql } from "drizzle-orm";
-import { db } from "../db/client";
+import { db, type Executor } from "../db/client";
 import { memoryOutbox } from "../db/schema";
 import { deliverTeamMemory, type MemoryIdentity } from "./team-memory";
 
@@ -53,13 +53,18 @@ export async function enqueueCapture(
   runId: string,
   identity: MemoryIdentity,
   run: { prompt: string; summary: string },
+  /** Enqueue inside the run-finalization transaction (runs/finalize.ts) so the
+   *  capture intent commits ATOMICALLY with the run reaching `completed` — a crash
+   *  in the old completeRun→enqueue gap could otherwise lose it forever. Defaults
+   *  to the shared pool for standalone callers. */
+  exec: Executor = db,
 ): Promise<void> {
   const payload = JSON.stringify({
     identity,
     prompt: run.prompt,
     summary: run.summary,
   } satisfies CapturePayload).slice(0, PAYLOAD_CAP);
-  await db
+  await exec
     .insert(memoryOutbox)
     .values({ id: runId, runId, payload })
     .onConflictDoNothing({ target: memoryOutbox.id });

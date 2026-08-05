@@ -4,7 +4,8 @@ import type {
   HarnessReconciliation,
   HarnessSessionHandle,
 } from "../engines/types";
-import { completeRun, getLastStepAt, markRunFailed, STALE_SUMMARY } from "./repo";
+import { getLastStepAt, markRunFailed, STALE_SUMMARY } from "./repo";
+import { finalizeRun } from "./finalize";
 import {
   failCommandlessStaleRuns,
   listActiveCommands,
@@ -126,7 +127,10 @@ async function recoverRunningRun(
 
   switch (result.status) {
     case "completed":
-      await completeRun(cmd.runId, "completed", result.summary, 0);
+      // Finalize like a live completion: commits `completed` AND enqueues the
+      // durable memory capture in one transaction, so a boot-reconciled run
+      // captures to team memory exactly like a run that finished normally.
+      await finalizeRun(cmd.runId, "completed", result.summary, 0);
       return "reconciled";
     case "in_progress":
     case "no_change":
