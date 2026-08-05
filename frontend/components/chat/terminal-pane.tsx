@@ -31,9 +31,11 @@ export function TerminalPane({
 }) {
   const commandSteps = steps.filter((s) => s.kind === "command");
   const bodyRef = useRef<HTMLDivElement>(null);
-  // Log = the run's command steps (read-only); Shell = a live PTY into the
-  // conversation's sandbox (type alongside the agent).
-  const [tab, setTab] = useState<"log" | "shell">("log");
+  // Shell = a live PTY into the conversation's sandbox (type alongside the
+  // agent); Log = the run's command steps (read-only). Shell is the primary tab
+  // whenever a live sandbox exists, so default to it when we have a run to
+  // attach to and fall back to the read-only Log otherwise.
+  const [tab, setTab] = useState<"log" | "shell">(runId ? "shell" : "log");
 
   useEffect(() => {
     const el = bodyRef.current;
@@ -42,14 +44,14 @@ export function TerminalPane({
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden bg-neutral-950">
-      <div className="flex shrink-0 items-center gap-1.5 border-b border-white-alpha-10 px-4 py-2.5">
-        <span className="size-3 rounded-full bg-red-500" />
-        <span className="size-3 rounded-full bg-yellow-400" />
-        <span className="size-3 rounded-full bg-green-500" />
-        <span className="text-mono-label ml-2 text-neutral-400">Terminal</span>
+      <div className="flex shrink-0 items-center gap-2.5 border-b border-white-alpha-10 px-3.5 py-2">
+        <span className="text-mono-label text-neutral-400">Terminal</span>
+        <span className="text-mono-label rounded border border-white-alpha-10 px-1.5 py-px text-neutral-500">
+          {engineLabel(engine)}
+        </span>
         {runId && (
-          <span className="ml-3 flex items-center gap-1">
-            {(["log", "shell"] as const).map((t) => (
+          <span className="ml-auto flex items-center gap-0.5">
+            {(["shell", "log"] as const).map((t) => (
               <button
                 key={t}
                 type="button"
@@ -61,14 +63,11 @@ export function TerminalPane({
                     : "text-neutral-600 hover:text-neutral-400",
                 )}
               >
-                {t === "log" ? "Log" : "Shell"}
+                {t === "shell" ? "Shell" : "Log"}
               </button>
             ))}
           </span>
         )}
-        <span className="text-mono-label ml-auto text-neutral-600">
-          {engineLabel(engine)}
-        </span>
       </div>
 
       {tab === "shell" && runId ? (
@@ -76,7 +75,7 @@ export function TerminalPane({
       ) : (
       <div
         ref={bodyRef}
-        className="min-h-0 flex-1 overflow-y-auto px-4 py-3 [font-family:var(--font-mono)] text-[13px] leading-6"
+        className="min-h-0 flex-1 overflow-y-auto px-3.5 py-3 [font-family:var(--font-mono)] text-[13px] leading-6"
       >
         {commandSteps.length === 0 ? (
           <p className="text-neutral-600">

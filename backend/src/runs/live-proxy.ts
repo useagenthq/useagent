@@ -29,6 +29,63 @@ import {
 
 const SERVE_PORT = 4096;
 
+// ── Model allowlist ─────────────────────────────────────────────────────────
+// The embed's model picker fetches GET /api/model (and /api/provider) through
+// this proxy. opencode's own catalog offers everything it can reach — models.dev
+// + the OpenCode Zen gateway + every free OpenRouter tier (~377 models). opencode
+// v2 (the resident server) has NO server-side provider allowlist: its catalog
+// (packages/core catalog.ts) filters only by a per-model `disabled` flag, and the
+// v1→v2 config migration drops `enabled_providers`/`whitelist` — so a staged
+// opencode.json can't trim the picker (verified: /config loads it, /api/model
+// ignores it). The proxy is the one place the embed reaches the sandbox, so we
+// trim the catalog to the deployment's curated set HERE. Prompt POSTs go DIRECT to the
+// sandbox (not through this proxy) and still resolve every id, so the backend's
+// own runs are unaffected.
+const ALLOWED_MODELS: Record<string, ReadonlySet<string>> = {
+  anthropic: new Set(["claude-opus-5", "claude-sonnet-5", "claude-fable-5", "claude-haiku-4-5"]),
+  openrouter: new Set([
+    "openai/gpt-5.6-sol",
+    "openai/gpt-5.6-sol-pro",
+    "openai/gpt-5.6-luna",
+    "openai/gpt-5.6-terra",
+  ]),
+};
+const ALLOWED_PROVIDERS = new Set(Object.keys(ALLOWED_MODELS));
+
+/** Trim the picker's catalog responses to the deployment's allowed providers + models.
+ *  `/api/model` → `{ location, data:[{id, providerID, …}] }`; `/api/provider` →
+ *  `{ location, data:[{id, …}] }`. Non-catalog paths pass straight through. The
+ *  proxy already strips `accept-encoding` upstream, so the body is plain JSON. */
+async function filterCatalogResponse(subpath: string, upstream: Response): Promise<Response> {
+  const isModel = subpath === "/api/model";
+  const isProvider = subpath === "/api/provider";
+  if ((!isModel && !isProvider) || upstream.status !== 200) return buildProxyResponse(upstream);
+
+  const text = await upstream.text();
+  const rewrap = (bodyText: string) =>
+    buildProxyResponse(new Response(bodyText, { status: upstream.status, headers: upstream.headers }));
+
+  let body: unknown;
+  try {
+    body = JSON.parse(text);
+  } catch {
+    return rewrap(text); // not the JSON we expected — forward verbatim
+  }
+  const list = Array.isArray(body)
+    ? body
+    : ((body as { data?: unknown })?.data as unknown[] | undefined);
+  if (!Array.isArray(list)) return rewrap(text);
+
+  const filtered = list.filter((item) => {
+    const rec = item as { id?: unknown; providerID?: unknown };
+    return isModel
+      ? ALLOWED_MODELS[String(rec.providerID)]?.has(String(rec.id)) ?? false
+      : ALLOWED_PROVIDERS.has(String(rec.id));
+  });
+  const out = Array.isArray(body) ? filtered : { ...(body as object), data: filtered };
+  return rewrap(JSON.stringify(out));
+}
+
 export const liveProxyRoutes = new Hono<AppEnv>();
 liveProxyRoutes.use("*", orgScope);
 
@@ -74,7 +131,9 @@ liveProxyRoutes.all("/:threadId/*", async (c) => {
       ep = await resolvePreviewEndpoint(threadId, SERVE_PORT, true);
       upstream = await forward(ep);
     }
-    return buildProxyResponse(upstream);
+    // Catalog endpoints are trimmed to the deployment allowlist; everything else (incl.
+    // the /api/event SSE) streams through untouched.
+    return filterCatalogResponse(subpath, upstream);
   } catch (err) {
     invalidatePreviewEndpoint(threadId, SERVE_PORT);
     const msg = err instanceof Error ? err.message : String(err);
