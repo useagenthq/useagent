@@ -31,6 +31,9 @@ import {
   type RunStatus,
 } from "@/components/chat/types";
 
+/** Narrowest useful rail — keeps the terminal/desktop panes workable. */
+const RAIL_MIN = 280;
+
 function StatusPill({ status }: { status: RunStatus }) {
   const live = status === "queued" || status === "running";
   const map: Record<RunStatus, string> = {
@@ -170,6 +173,40 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
     thread.findLast((r) => r.engine_session_id)?.engine_session_id ?? null;
   const [railOverride, setRailOverride] = useState<boolean | null>(null);
   const railOpen = railOverride ?? hasRailContent;
+  // Rail resize: a dragger between the conversation and the rail (md+). Width
+  // in px, persisted per browser; null → the 32% default. Loaded in an effect
+  // (not the initializer) so SSR and first client render agree.
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const [railWidth, setRailWidth] = useState<number | null>(null);
+  useEffect(() => {
+    const saved = Number(localStorage.getItem("skynet.rail-width"));
+    if (Number.isFinite(saved) && saved >= RAIL_MIN) setRailWidth(saved);
+  }, []);
+  function startRailDrag(e: React.PointerEvent<HTMLDivElement>) {
+    e.preventDefault();
+    const handle = e.currentTarget;
+    // Pointer capture keeps move events on the handle even over the terminal /
+    // desktop iframes, which would otherwise swallow the drag.
+    handle.setPointerCapture(e.pointerId);
+    const onMove = (ev: PointerEvent) => {
+      const body = bodyRef.current;
+      if (!body) return;
+      const r = body.getBoundingClientRect();
+      // Rail right edge sits at the body's right padding edge (p-3 = 12px).
+      const w = Math.min(Math.max(r.right - 12 - ev.clientX, RAIL_MIN), r.width * 0.6);
+      setRailWidth(Math.round(w));
+    };
+    const onUp = () => {
+      handle.removeEventListener("pointermove", onMove);
+      handle.removeEventListener("pointerup", onUp);
+      setRailWidth((w) => {
+        if (w !== null) localStorage.setItem("skynet.rail-width", String(w));
+        return w;
+      });
+    };
+    handle.addEventListener("pointermove", onMove);
+    handle.addEventListener("pointerup", onUp);
+  }
   // Default to whichever pane actually has content; an explicit pick wins.
   // Agents leads when a run fanned out — that's the story you want to watch.
   const [railTabOverride, setRailTabOverride] = useState<
@@ -237,7 +274,7 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
           Editor|Terminal panel. ONE live indicator at a time: the boot gap is the
           orb below, and once steps stream the conversation's Thinking block takes
           over — the old floating WorkingPill duplicate is gone. */}
-      <div className="flex min-h-0 flex-1 flex-col gap-3 p-3 md:flex-row">
+      <div ref={bodyRef} className="flex min-h-0 flex-1 flex-col gap-3 p-3 md:flex-row">
         {/* Conversation */}
         <section className="border-stroke-soft-200 bg-bg-white-0 relative flex min-h-[60vh] min-w-0 flex-1 flex-col overflow-hidden rounded-2xl border md:min-h-0">
           {/* PRIMARY CHAT = our native React conversation (user decision
@@ -264,14 +301,31 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
           )}
         </section>
 
+        {railOpen && (
+          <div
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="Resize the side panel"
+            title="Drag to resize · double-click to reset"
+            onPointerDown={startRailDrag}
+            onDoubleClick={() => {
+              setRailWidth(null);
+              localStorage.removeItem("skynet.rail-width");
+            }}
+            className="hover:bg-stroke-sub-300 active:bg-stroke-sub-300 -mx-1.5 hidden w-1 shrink-0 cursor-col-resize touch-none self-stretch rounded-full transition-colors md:block"
+          />
+        )}
+
         {railOpen ? (
           // ONE bordered panel: the Editor|Terminal switcher + collapse live in
           // its header; the active pane fills the body bare (its own border/round
           // is dropped so this panel owns the single card edge).
           <section
-            className={
-              "border-stroke-soft-200 bg-bg-white-0 flex min-h-[50vh] min-w-0 flex-col overflow-hidden rounded-2xl border md:min-h-0 md:w-[32%] md:shrink-0"
-            }
+            style={railWidth !== null ? ({ "--rail-w": `${railWidth}px` } as React.CSSProperties) : undefined}
+            className={cn(
+              "border-stroke-soft-200 bg-bg-white-0 flex min-h-[50vh] min-w-0 flex-col overflow-hidden rounded-2xl border md:min-h-0 md:shrink-0",
+              railWidth !== null ? "md:w-[var(--rail-w)]" : "md:w-[32%]",
+            )}
           >
             <div className="border-stroke-soft-200 flex shrink-0 items-center gap-2 border-b p-2">
               <SegmentedControl.Root
