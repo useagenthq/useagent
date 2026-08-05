@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { RiArrowDownSLine, RiCheckLine, RiCloseLine } from "@remixicon/react";
 import { AsteriskMark } from "@/components/foundations/brand/asterisk-mark";
 import { cnExt as cn } from "@/utils/cn";
@@ -11,6 +11,8 @@ import { Composer, type ComposerSubmit } from "@/components/chat/composer";
 import { Markdown } from "@/components/prompt-kit/markdown";
 import { ToolStepRow } from "@/components/chat/tool-step-row";
 import type { SlashCommand } from "@/components/chat/slash-command";
+import { buildTimeline, hasNarration, type TimelineNode } from "@/components/chat/timeline";
+import type { NativeSnapshot } from "@/components/chat/native-store";
 import {
   cleanPrompt,
   deriveTrace,
@@ -30,6 +32,10 @@ export type Turn = {
   live: boolean;
   /** Accumulated token deltas while this turn is live; "" once settled. */
   liveText: string;
+  /** Native ordered-frame projection (text + tool parts by seq) for the watched
+   *  run — the source for the interleaved timeline. Absent on settled history runs
+   *  (no frame stream), which fall back to the narration-blob + worklog rendering. */
+  native?: NativeSnapshot;
 };
 
 // Lightweight prose styling for rendered summaries — the AlignUI foundation
@@ -49,6 +55,15 @@ const MD_CLASS = cn(
   "[&_ul]:my-2 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:my-2 [&_ol]:list-decimal [&_ol]:pl-5 [&_li]:my-1",
   "[&_a]:text-blue-500 [&_a]:underline [&_a]:underline-offset-2 [&_strong]:font-medium",
 );
+
+/** Terminal note for a run that failed before writing a summary. */
+function FailedNote() {
+  return (
+    <p className="text-paragraph-sm text-error-base">
+      This run failed before producing a summary.
+    </p>
+  );
+}
 
 function UserBubble({ children }: { children: string }) {
   return (
@@ -87,6 +102,45 @@ function LiveNarration({ text }: { text: string }) {
       {/* Pixel-grid churn indicator (beautiful-ui LoadingState) — replaced the
           lone blinking caret line the user rejected. */}
       <LoadingState label="Working" className="mt-2" />
+    </div>
+  );
+}
+
+/** One narration burst of the interleaved timeline — the same progressive-markdown
+ *  treatment LiveNarration uses, memoized by its text so a streaming sibling burst
+ *  or a completing tool never re-renders the settled ones (no fanout churn). */
+const TextBurst = memo(function TextBurst({ text }: { text: string }) {
+  return (
+    <div className="animate-ai-fade-up">
+      <Markdown className={MD_CLASS}>{text}</Markdown>
+    </div>
+  );
+});
+
+/**
+ * The interleaved turn timeline: narration bursts and the tool rows that followed
+ * them, in TRUE ORDER (opencode-style) from the native ordered frames. While live,
+ * the last tool reads as running and a LoadingState tails the block; the final
+ * narration burst is the turn's answer (so the summary is not re-rendered below).
+ * Each node is memoized (TextBurst by text, ToolStepRow by step) so a 20-way
+ * fanout doesn't restorm on every frame.
+ */
+function Timeline({ nodes, live }: { nodes: TimelineNode[]; live: boolean }) {
+  const last = nodes.length - 1;
+  return (
+    <div className="space-y-3">
+      {nodes.map((node, i) =>
+        node.kind === "text" ? (
+          <TextBurst key={node.key} text={node.text} />
+        ) : (
+          <ToolStepRow
+            key={node.key}
+            step={node.step}
+            state={live && i === last ? "running" : "done"}
+          />
+        ),
+      )}
+      {live && <LoadingState label="Working" className="mt-1" />}
     </div>
   );
 }
@@ -163,6 +217,15 @@ function TurnBlock({ turn }: { turn: Turn }) {
     if (liveText.length > 0) setSawNarration(true);
   }, [liveText]);
 
+  // The interleaved timeline (narration bursts ↔ tool rows in true order), built
+  // from the watched run's native ordered frames. Null on turns without native
+  // data (settled history, non-native engines) → the legacy rendering below takes
+  // over. Recomputed only when the native snapshot or liveness changes.
+  const timeline = useMemo(
+    () => (turn.native ? buildTimeline(turn.native, live) : null),
+    [turn.native, live],
+  );
+
   const activity = steps.filter((s) => s.kind !== "done");
   const latestLabel = activity.at(-1)?.label ?? "Starting up";
   const failed = status === "failed";
@@ -203,53 +266,61 @@ function TurnBlock({ turn }: { turn: Turn }) {
           </span>
         </div>
 
-        {/* The work reads top-down: activity first, then the answer it
-            produced. One live indicator at a time: while narration streams it
-            IS the indicator, so the Thinking block is suppressed for that turn.
-            Otherwise Thinking covers live activity (the boot gap — live, no
-            steps yet — is owned by the session's OrbBootIndicator). Settled
-            history splits by weight: subagent fanouts (and failures, which need
-            the status badge) keep the Worklog capsule; plain tool runs collapse
-            to the quiet trace. */}
-        {narrating ? null : live
-          ? activity.length > 0 && (
-              <Thinking label={`Working — ${latestLabel}`} active open>
-                {activity.map((step, i) => (
-                  <ToolStepRow
-                    key={step.id}
-                    step={step}
-                    state={i === activity.length - 1 ? "running" : "done"}
-                  />
+        {timeline ? (
+          /* Native turn: the interleaved timeline IS the turn — narration bursts
+             and their tool rows in true order (live and settled alike). Its final
+             burst is the answer, so the durable summary is re-rendered only when
+             the timeline carried no narration (a tool-only turn). */
+          <>
+            <Timeline nodes={timeline} live={live} />
+            {summary && !hasNarration(timeline) && <AgentAnswer summary={summary} />}
+            {failed && !summary && !hasNarration(timeline) && <FailedNote />}
+          </>
+        ) : (
+          /* Fallback (no native frames): activity first, then the answer. One live
+             indicator at a time — while narration streams it IS the indicator, so
+             the Thinking block is suppressed (the boot gap is owned by the
+             session's OrbBootIndicator). Settled history splits by weight: subagent
+             fanouts (and failures, which need the status badge) keep the Worklog
+             capsule; plain tool runs collapse to the quiet trace. */
+          <>
+            {narrating ? null : live
+              ? activity.length > 0 && (
+                  <Thinking label={`Working — ${latestLabel}`} active open>
+                    {activity.map((step, i) => (
+                      <ToolStepRow
+                        key={step.id}
+                        step={step}
+                        state={i === activity.length - 1 ? "running" : "done"}
+                      />
+                    ))}
+                  </Thinking>
+                )
+              : settled.length > 0 &&
+                (hasSubagents || failed ? (
+                  <WorklogCapsule count={settled.length} failed={failed}>
+                    {settled.map((step) => (
+                      <ToolStepRow key={step.id} step={step} state="done" />
+                    ))}
+                  </WorklogCapsule>
+                ) : (
+                  <Thinking label={traceLabel} active={false}>
+                    {settled.map((step) => (
+                      <ToolStepRow key={step.id} step={step} state="done" />
+                    ))}
+                  </Thinking>
                 ))}
-              </Thinking>
-            )
-          : settled.length > 0 &&
-            (hasSubagents || failed ? (
-              <WorklogCapsule count={settled.length} failed={failed}>
-                {settled.map((step) => (
-                  <ToolStepRow key={step.id} step={step} state="done" />
-                ))}
-              </WorklogCapsule>
-            ) : (
-              <Thinking label={traceLabel} active={false}>
-                {settled.map((step) => (
-                  <ToolStepRow key={step.id} step={step} state="done" />
-                ))}
-              </Thinking>
-            ))}
 
-        {summary && (
-          <AgentAnswer summary={summary} stream={wasLive && !sawNarration} />
-        )}
+            {summary && (
+              <AgentAnswer summary={summary} stream={wasLive && !sawNarration} />
+            )}
 
-        {/* Answer-in-progress: the run's live tokens stream in word-by-word
-            until the durable summary/markdown takes over on completion. */}
-        {narrating && !summary && <LiveNarration text={liveText} />}
+            {/* Answer-in-progress: the run's live tokens stream in word-by-word
+                until the durable summary/markdown takes over on completion. */}
+            {narrating && !summary && <LiveNarration text={liveText} />}
 
-        {failed && !summary && (
-          <p className="text-paragraph-sm text-error-base">
-            This run failed before producing a summary.
-          </p>
+            {failed && !summary && <FailedNote />}
+          </>
         )}
       </div>
     </div>
