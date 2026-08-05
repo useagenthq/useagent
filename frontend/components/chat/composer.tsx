@@ -45,8 +45,8 @@ export type ComposerProps = {
 /**
  * The Skynet composer — a restyled prompt-kit `PromptInput`. Default `hero`
  * arrangement matches the HeyRico reference (heyrico-clean-design-2): a large
- * rounded card with "Ask anything…", a left cluster (+ · tools · Super Computer
- * chip · New) and a right cluster (✳ engine picker · mic · blue circular send).
+ * rounded card with "Ask anything…", a left cluster (+ · tools) and a right
+ * cluster (✳ engine picker · mic · blue circular send).
  * Optional fused orchestrator header + footer tray, and a "/" Choose-Agent
  * slash command that renders the selection as a pink inline chip.
  *
