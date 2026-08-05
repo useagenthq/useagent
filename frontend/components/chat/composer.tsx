@@ -36,10 +36,6 @@ export type ComposerProps = {
   pending?: boolean;
   autoFocus?: boolean;
   className?: string;
-  /** Fused orchestrator header bar (HeyRico ref …_3). */
-  orchestratorHeader?: boolean;
-  /** Fused footer tray (e.g. the Upgrade-to-PRO strip on the hero). */
-  tray?: React.ReactNode;
   /** Enable the "/" Choose-Agent slash command (default on hero). */
   enableAgentCommand?: boolean;
   /** Starting model for the picker (thread's current model on replies). */
@@ -54,8 +50,8 @@ export type ComposerProps = {
  * arrangement matches the HeyRico reference (heyrico-clean-design-2): a large
  * rounded card with "Ask anything…", a left cluster (+ · tools) and a right
  * cluster (✳ engine picker · mic · blue circular send).
- * Optional fused orchestrator header + footer tray, and a "/" Choose-Agent
- * slash command that renders the selection as a pink inline chip.
+ * Optional "/" Choose-Agent slash command that renders the selection as a
+ * pink inline chip, and a "/" command autocomplete on reply composers.
  *
  * The card surface/border swap via the AlignUI theme ladder; the blue send and
  * blue accents use the literal blue scale (which doesn't flip), so the anatomy
@@ -69,8 +65,6 @@ export function Composer({
   pending = false,
   autoFocus = false,
   className,
-  orchestratorHeader = false,
-  tray,
   enableAgentCommand,
   defaultModel = "claude-opus-5",
   commands,
@@ -153,21 +147,9 @@ export function Composer({
         </div>
       )}
 
-      {/* No overflow-hidden here: the engine-picker popover opens upward past the
-          card edge and must not be clipped; header/tray round their own corners. */}
+      {/* No overflow-hidden here: the engine-picker popover opens upward past
+          the card edge and must not be clipped. */}
       <div className="border-stroke-soft-200 bg-bg-white-0 shadow-regular-md rounded-2xl border">
-        {orchestratorHeader && (
-          <div className="border-stroke-soft-200 bg-bg-weak-50 flex items-center gap-2 rounded-t-2xl border-b px-4 py-2.5">
-            <span className="bg-static-black flex size-4 items-center justify-center rounded-full text-[10px] text-static-white">
-              ◍
-            </span>
-            <span className="text-label-sm text-text-strong-950">Orchestrator</span>
-            <span className="text-paragraph-sm text-text-soft-400">
-              Routes each request
-            </span>
-          </div>
-        )}
-
         <PromptInput
           value={value}
           onValueChange={(v) => {
@@ -268,9 +250,6 @@ export function Composer({
           </div>
         </PromptInput>
 
-        {tray && (
-          <div className="border-stroke-soft-200 bg-bg-weak-50 rounded-b-2xl border-t">{tray}</div>
-        )}
       </div>
     </div>
   );
