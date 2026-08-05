@@ -6,12 +6,18 @@
  * so the thread stays one skynet conversation with clean, un-nested prompts.
  */
 import { and, eq } from "drizzle-orm";
-import { db } from "../db/client";
+import { db, type Executor } from "../db/client";
 import { slackThreads } from "../db/schema";
 
 export interface SlackThreadLink {
   rootRunId: string;
   orgId: string;
+}
+
+/** Where a Slack-originated run's reply must be posted (the thread it rooted). */
+export interface SlackThreadTarget {
+  channel: string;
+  threadTs: string;
 }
 
 /** The skynet root run for a Slack thread, or null if the bot hasn't engaged it. */
@@ -23,6 +29,22 @@ export async function findSlackThread(
     .select({ rootRunId: slackThreads.rootRunId, orgId: slackThreads.orgId })
     .from(slackThreads)
     .where(and(eq(slackThreads.channel, channel), eq(slackThreads.threadTs, threadTs)))
+    .limit(1);
+  return row ?? null;
+}
+
+/** The Slack channel + thread ts a run's reply belongs in, resolved from the run's
+ *  THREAD (a Slack thread's `rootRunId` equals the skynet thread id every run in
+ *  it shares). Null for a non-Slack run. Takes an Executor so run finalization can
+ *  resolve it inside the finalization transaction. */
+export async function findSlackThreadByRoot(
+  rootRunId: string,
+  exec: Executor = db,
+): Promise<SlackThreadTarget | null> {
+  const [row] = await exec
+    .select({ channel: slackThreads.channel, threadTs: slackThreads.threadTs })
+    .from(slackThreads)
+    .where(eq(slackThreads.rootRunId, rootRunId))
     .limit(1);
   return row ?? null;
 }

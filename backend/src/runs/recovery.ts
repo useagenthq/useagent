@@ -4,7 +4,7 @@ import type {
   HarnessReconciliation,
   HarnessSessionHandle,
 } from "../engines/types";
-import { getLastStepAt, markRunFailed, STALE_SUMMARY } from "./repo";
+import { getLastStepAt, STALE_SUMMARY } from "./repo";
 import { finalizeRun } from "./finalize";
 import {
   failCommandlessStaleRuns,
@@ -102,7 +102,7 @@ async function recoverRunningRun(
   const candidate =
     OPENCODE_ENGINES.has(cmd.engine) && !!cmd.engineSessionId && !!cmd.sandboxId;
   if (!candidate) {
-    await markRunFailed(cmd.runId, STALE_SUMMARY);
+    await finalizeRun(cmd.runId, "failed", STALE_SUMMARY, 0);
     return "failed";
   }
 
@@ -136,7 +136,7 @@ async function recoverRunningRun(
     case "no_change":
     case "unreachable":
     case "unsupported_capability":
-      await markRunFailed(cmd.runId, STALE_SUMMARY);
+      await finalizeRun(cmd.runId, "failed", STALE_SUMMARY, 0);
       return "failed";
     default:
       return assertNever(result, "unhandled reconciliation status");

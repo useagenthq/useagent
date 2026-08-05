@@ -1,5 +1,5 @@
 import { eq, sql } from "drizzle-orm";
-import { db } from "../../db/client";
+import { db, type Executor } from "../../db/client";
 import { slackOutbox, type SlackErrorClass } from "../../db/schema";
 import type { SlackOutboxEnqueue } from "./types";
 
@@ -29,9 +29,14 @@ export interface ClaimedRow {
  * duplicate idempotency key is a no-op, so the same logical message is enqueued
  * (and therefore delivered) at most once. Returns true if a NEW row was created.
  */
-export async function enqueue(entry: SlackOutboxEnqueue): Promise<boolean> {
+export async function enqueue(
+  entry: SlackOutboxEnqueue,
+  /** Enqueue inside a caller's transaction (run finalization commits the reply
+   *  atomically with the run reaching terminal). Defaults to the shared pool. */
+  exec: Executor = db,
+): Promise<boolean> {
   const payload = JSON.stringify(entry.payload).slice(0, PAYLOAD_CAP);
-  const res = await db
+  const res = await exec
     .insert(slackOutbox)
     .values({
       id: crypto.randomUUID(),
