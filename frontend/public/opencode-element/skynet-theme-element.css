@@ -200,16 +200,79 @@ skynet-oc-session [data-slot="basic-tool-tool-info-main"] {
   font-size: 13px !important;
 }
 
-/* 3d. Tool output / result blocks — when a tool is expanded, its output/diff
-   renders inside the collapsible content. Keep it on a slightly deeper inset so
-   it reads as OUR output block (never hidden — fidelity). Targets opencode's
-   output slots and any raw <pre>/code surface inside a tool part. */
-skynet-oc-session [data-component="tool-part-wrapper"] pre,
+/* 3d. Tool output / result blocks — when a tool is expanded, its output renders
+   inside the collapsible content. Keep it on a slightly deeper inset so it reads
+   as OUR output block (never hidden — fidelity). Bash output is a raw <pre>; the
+   code/diff editors are re-skinned in 3e. */
+skynet-oc-session [data-component="tool-part-wrapper"] > * pre[data-slot="bash-pre"],
+skynet-oc-session [data-component="tool-part-wrapper"] [data-component="bash-output"],
 skynet-oc-session [data-component="tool-part-wrapper"] [data-slot*="output"],
-skynet-oc-session [data-component="tool-part-wrapper"] [data-slot*="result"],
-skynet-oc-session [data-component="tool-part-wrapper"] [data-component="markdown"] pre {
+skynet-oc-session [data-component="tool-part-wrapper"] [data-slot*="result"] {
   background-color: #201f1e !important;
   border: 1px solid #33322e !important;
   border-radius: 8px !important;
   font-size: 12.5px !important;
+}
+
+/* 3e. Dark editor/syntax theme for code + diff blocks ───────────────────────
+   opencode's file editor, diff viewer and shiki code fences are driven by a
+   SEPARATE theme-variable namespace (--background-*, --text-*, --syntax-*, the
+   `.shiki.OpenCode` theme) that the seamless skin's --v2-* re-anchor never
+   touched — so they resolved to opencode's LIGHT theme (a white slab on our dark
+   canvas). Re-anchor that namespace to a dark editor palette, exactly like the
+   --v2-* trick above, scoped to the code/diff surfaces (tool parts + markdown
+   code fences). CSS var overrides only: shiki tokens + diff add/del recolour
+   themselves, and expand/collapse/scroll are untouched. */
+skynet-oc-session [data-component="tool-part-wrapper"],
+skynet-oc-session [data-component="markdown-code"],
+skynet-oc-session pre.shiki,
+skynet-oc-session .diffs-container {
+  /* surfaces → our warm dark ladder */
+  --background-base: #201f1e;
+  --background-strong: #201f1e;
+  --background-stronger: #201f1e; /* code <pre> canvas */
+  --background-weak: #33322e;
+  --color-background-base: #201f1e;
+  --color-background-strong: #201f1e;
+  --color-background-stronger: #201f1e;
+  --color-background-weak: #33322e;
+  /* editor text → legible on dark */
+  --text-base: #c2bfb8;
+  --color-text-base: #c2bfb8;
+  --color-text-strong: #e8e6e2;
+  --color-text-weak: #99968f;
+  --color-text-weaker: #6f6c66;
+  --color-text-interactive-base: #6cb6ff;
+  --text-interactive-base: #6cb6ff;
+  /* syntax palette → GitHub-dark-ish, readable on #201f1e */
+  --syntax-comment: #6f6c66;
+  --syntax-punctuation: #99968f;
+  --syntax-operator: #99968f;
+  --syntax-regexp: #7ee787;
+  --syntax-object: #cdcbc5;
+  --syntax-variable: #cdcbc5;
+  --syntax-property: #ffab70;
+  --syntax-keyword: #e39ac7;
+  --syntax-primitive: #e39ac7;
+  --syntax-string: #9ece6a;
+  --syntax-constant: #56d4dd;
+  --syntax-type: #b392f0;
+  --syntax-info: #d2a8ff;
+  --syntax-warning: #e3b341;
+  --syntax-success: #7ee787;
+  --syntax-critical: #ff7b72;
+  --syntax-diff-unknown: #d2a8ff;
+  /* diff add/delete → dark-legible green/red */
+  --syntax-diff-add: #7ee787;
+  --syntax-diff-delete: #ff7b72;
+  --text-diff-add-base: #7ee787;
+  --text-diff-add-strong: #b4f1b4;
+  --text-diff-delete-base: #ff7b72;
+  --text-diff-delete-strong: #ffb4ab;
+  --color-text-diff-delete-base: #ff7b72;
+}
+/* the shiki <pre> + the file-header accordion bar carry the inset card look */
+skynet-oc-session pre.shiki,
+skynet-oc-session [data-slot="accordion-header"] {
+  background-color: #201f1e !important;
 }
