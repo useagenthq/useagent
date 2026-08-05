@@ -77,12 +77,3 @@ export async function insertCommandWithRun(cmd: NewRunCommand): Promise<void> {
     });
   });
 }
-
-/** Record that the run's worker was spawned. Best-effort audit metadata — the
- *  worker already owns the run; a failure here never blocks the response. */
-export async function markCommandDispatched(commandId: string): Promise<void> {
-  await db
-    .update(commands)
-    .set({ state: "dispatched" satisfies CommandState, attemptCount: 1, updatedAt: new Date() })
-    .where(eq(commands.id, commandId));
-}

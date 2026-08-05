@@ -1,6 +1,6 @@
 import { isUniqueViolation } from "../db/pg-errors";
 import { runPayloadFingerprint } from "./fingerprint";
-import { findCommandByKey, insertCommandWithRun, markCommandDispatched } from "./repo";
+import { findCommandByKey, insertCommandWithRun } from "./repo";
 import type { CommandRecord } from "./repo";
 import type { RunCommandInput, RunCommandOutcome } from "./types";
 
@@ -72,5 +72,3 @@ export async function acceptRunCommand(input: RunCommandInput): Promise<RunComma
 
   return { status: "created", runId: input.run.id, commandId };
 }
-
-export { markCommandDispatched };

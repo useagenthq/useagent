@@ -17,6 +17,7 @@ import { adapters } from "./engines";
 import type { EmitStep, EngineRunContext } from "./engines/types";
 import { recordRunMemory, searchTeamMemory } from "./memory/team-memory";
 import { turnStream } from "./runs/turn-stream";
+import { claimNextRun, settleCommandForRun } from "./commands/dispatch";
 
 // ---------------------------------------------------------------------------
 // Event bus — the worker pushes trace events here; SSE clients subscribe.
@@ -105,52 +106,63 @@ export function spawnWorker(runId: string): void {
   registry.set(runId, task);
 }
 
-// A conversation is SEQUENTIAL: one live engine turn per thread. A reply
-// created while the previous turn is still running WAITS here (status stays
-// "queued") until that turn reaches a terminal state — otherwise two engines
-// stream into one conversation at once and share its sandbox/session. The
-// preamble/session lookups run AFTER the wait so they see the prior turn's
-// summary and engine session id.
-const threadChains = new Map<string, Promise<void>>();
+// A conversation is SEQUENTIAL: one live engine turn per thread. Turn ordering
+// is now DURABLE — enforced by the commands mailbox (src/commands/dispatch.ts),
+// not an in-memory chain. spawnWorker is only ever called for a command the
+// mailbox has already CLAIMED (state → dispatched), so at most one run per
+// thread executes at a time, and a queued reply survives a crash. When a run
+// settles, `onRunSettled` frees the thread and pumps the next queued command.
 
-function chainOnThread(threadId: string, work: () => Promise<void>): Promise<void> {
-  const prev = threadChains.get(threadId) ?? Promise.resolve();
-  const next = prev.catch(() => {}).then(work);
-  threadChains.set(threadId, next);
-  void next.finally(() => {
-    if (threadChains.get(threadId) === next) threadChains.delete(threadId);
-  });
+/** Claim the thread's next queued command (if the thread is now idle) and spawn
+ *  it. Called after a run settles, on accept, and on boot. Returns the run id
+ *  dispatched, or null if the thread is busy/empty. */
+export async function pumpThread(threadId: string): Promise<string | null> {
+  const next = await claimNextRun(threadId);
+  if (next) spawnWorker(next);
   return next;
+}
+
+/** Mark the settled run's command completed (or requeued) and pump the thread's
+ *  next turn. Runs in every terminal path (success, failure, timeout). */
+async function onRunSettled(runId: string, threadId: string): Promise<void> {
+  await settleCommandForRun(runId).catch((err) =>
+    console.error(`[worker] settle command for run ${runId} failed:`, err),
+  );
+  await pumpThread(threadId).catch((err) =>
+    console.error(`[worker] pump thread ${threadId} failed:`, err),
+  );
 }
 
 async function runWorker(runId: string): Promise<void> {
   const run = await getRun(runId);
   if (!run) return; // deleted before the actor started
 
-  // `mock` is the scripted trace and ignores context entirely.
-  if (run.engine === "mock") return runMock(runId);
-
-  return chainOnThread(run.threadId, async () => {
-    // Re-read: the run may have been deleted while queued behind its sibling.
-    const fresh = await getRun(runId);
-    if (!fresh) return;
+  try {
+    // `mock` is the scripted trace and ignores context entirely.
+    if (run.engine === "mock") {
+      await runMock(runId);
+      return;
+    }
 
     // Compose the engine's context preamble ONCE per run: relevant TEAM MEMORY
     // (config-gated; "" when MEMORY_API_URL is unset) prepended to this thread's
-    // prior turns (empty for a root run). Prompts are stored clean; this
-    // preamble is the engine's only view of shared memory + earlier turns.
-    const threadPreamble = fresh.parentRunId
-      ? await buildThreadPreamble(fresh.threadId, fresh.id)
+    // prior turns (empty for a root run). The mailbox guarantees every prior turn
+    // on this thread is already terminal, so the preamble sees their summaries.
+    const threadPreamble = run.parentRunId
+      ? await buildThreadPreamble(run.threadId, run.id)
       : "";
-    const contextPreamble = (await searchTeamMemory(fresh.prompt)) + threadPreamble;
+    const contextPreamble = (await searchTeamMemory(run.prompt)) + threadPreamble;
     if (contextPreamble) {
       console.log(
-        `[worker] run ${runId} thread ${fresh.threadId}: context preamble ${contextPreamble.length} chars`,
+        `[worker] run ${runId} thread ${run.threadId}: context preamble ${contextPreamble.length} chars`,
       );
     }
 
-    return runEngine(runId, fresh.engine, fresh.prompt, contextPreamble, fresh.threadId, fresh.model);
-  });
+    await runEngine(runId, run.engine, run.prompt, contextPreamble, run.threadId, run.model);
+  } finally {
+    // Free the thread and dispatch its next turn — whatever the outcome.
+    await onRunSettled(runId, run.threadId);
+  }
 }
 
 async function runMock(runId: string): Promise<void> {
