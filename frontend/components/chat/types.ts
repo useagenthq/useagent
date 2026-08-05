@@ -95,6 +95,23 @@ export function engineLabel(id: EngineId): string {
   return ENGINES.find((e) => e.id === id)?.label ?? id;
 }
 
+/** The curated model set (single source of truth for every picker). Bare ids →
+ * Anthropic direct; provider/model ids → OpenRouter. */
+export const MODELS: { value: string; label: string; tint: string }[] = [
+  { value: "claude-opus-5", label: "Opus 5", tint: "text-orange-500" },
+  { value: "claude-sonnet-5", label: "Sonnet 5", tint: "text-blue-500" },
+  { value: "claude-fable-5", label: "Fable 5", tint: "text-purple-500" },
+  { value: "claude-haiku-4-5", label: "Haiku 4.5", tint: "text-green-500" },
+  { value: "openai/gpt-5.6-sol", label: "GPT-5.6 Sol", tint: "text-teal-500" },
+  { value: "openai/gpt-5.6-sol-pro", label: "GPT-5.6 Sol Pro", tint: "text-teal-500" },
+  { value: "openai/gpt-5.6-luna", label: "GPT-5.6 Luna", tint: "text-sky-500" },
+  { value: "openai/gpt-5.6-terra", label: "GPT-5.6 Terra", tint: "text-amber-500" },
+];
+
+export function modelLabel(value: string): string {
+  return MODELS.find((m) => m.value === value)?.label ?? value;
+}
+
 /** Fold a legacy engine id into its current sandbox equivalent (the backend
  * aliases them the same way), so old threads pick up the modern picker entry
  * instead of surfacing a raw legacy id. */

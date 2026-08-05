@@ -248,12 +248,14 @@ function TurnBlock({ turn }: { turn: Turn }) {
 
 function ReplyComposer({
   engine,
+  model,
   pending,
   onReply,
 }: {
   engine: EngineId;
+  model: string;
   pending: boolean;
-  onReply: (text: string, engine: EngineId) => void;
+  onReply: (text: string, engine: EngineId, model: string) => void;
 }) {
   return (
     <div className="border-stroke-soft-200 shrink-0 border-t p-3">
@@ -261,8 +263,9 @@ function ReplyComposer({
         variant="compact"
         placeholder="Reply to Skynet…"
         defaultEngine={engine}
+        defaultModel={model}
         pending={pending}
-        onSubmit={(text, eng) => onReply(text, eng)}
+        onSubmit={(text, eng, mdl) => onReply(text, eng, mdl)}
       />
     </div>
   );
@@ -277,13 +280,15 @@ function ReplyComposer({
 export function Conversation({
   turns,
   defaultEngine,
+  defaultModel,
   pendingReply,
   onReply,
 }: {
   turns: Turn[];
   defaultEngine: EngineId;
+  defaultModel: string;
   pendingReply: string | null;
-  onReply: (text: string, engine: EngineId) => void;
+  onReply: (text: string, engine: EngineId, model: string) => void;
 }) {
   // Stick-to-bottom autoscroll: follow new turns/steps/narration as they
   // stream, but ONLY while the user is already near the bottom — scrolling up
@@ -316,6 +321,7 @@ export function Conversation({
 
       <ReplyComposer
         engine={defaultEngine}
+        model={defaultModel}
         pending={pendingReply !== null}
         onReply={onReply}
       />

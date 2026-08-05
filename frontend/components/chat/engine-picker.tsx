@@ -3,20 +3,20 @@
 import { useState } from "react";
 import { RiArrowDownSLine, RiCheckLine, RiCpuLine } from "@remixicon/react";
 import { cnExt as cn } from "@/utils/cn";
-import { ENGINES, engineLabel, type EngineId } from "@/components/chat/types";
+import { MODELS, modelLabel } from "@/components/chat/types";
 
 /**
  * The `✳ <engine> ⌄` model picker from the HeyRico hero — an orange asterisk +
  * the current engine label + a dropdown of the sandbox engines. This is the
  * engine selector integrated "next to the model" per spec.
  */
-export function EnginePicker({
-  engine,
+export function ModelPicker({
+  model,
   onChange,
   className,
 }: {
-  engine: EngineId;
-  onChange: (engine: EngineId) => void;
+  model: string;
+  onChange: (model: string) => void;
   className?: string;
 }) {
   const [open, setOpen] = useState(false);
@@ -33,7 +33,7 @@ export function EnginePicker({
         {/* Engine chip glyph — the AsteriskMark is Skynet's brand, not an
             engine's; match the composer's neutral cpu icon instead. */}
         <RiCpuLine className="text-text-sub-600 size-4" aria-hidden />
-        <span>{engineLabel(engine)}</span>
+        <span>{modelLabel(model)}</span>
         <RiArrowDownSLine className="text-text-soft-400 size-4" aria-hidden />
       </button>
 
@@ -41,15 +41,15 @@ export function EnginePicker({
         <>
           <div className="fixed inset-0 z-10" aria-hidden onClick={() => setOpen(false)} />
           <div className="border-stroke-soft-200 bg-bg-white-0 shadow-regular-md absolute bottom-11 right-0 z-20 w-56 rounded-2xl border p-1.5">
-            <p className="text-mono-label text-text-soft-400 px-2 pb-1 pt-1.5">Engine</p>
-            {ENGINES.map((e) => {
-              const selected = e.id === engine;
+            <p className="text-mono-label text-text-soft-400 px-2 pb-1 pt-1.5">Model</p>
+            {MODELS.map((e) => {
+              const selected = e.value === model;
               return (
                 <button
-                  key={e.id}
+                  key={e.value}
                   type="button"
                   onClick={() => {
-                    onChange(e.id);
+                    onChange(e.value);
                     setOpen(false);
                   }}
                   className="hover:bg-bg-weak-50 flex w-full items-center gap-2 rounded-xl px-2 py-1.5 text-left transition-colors"
@@ -65,9 +65,6 @@ export function EnginePicker({
                   <span className="min-w-0 flex-1">
                     <span className="text-label-sm text-text-strong-950 block">
                       {e.label}
-                    </span>
-                    <span className="text-paragraph-xs text-text-soft-400 block truncate">
-                      {e.hint}
                     </span>
                   </span>
                 </button>

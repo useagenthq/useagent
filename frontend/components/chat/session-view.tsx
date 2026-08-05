@@ -125,7 +125,7 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
   }, [stream.live, refetchThread]);
 
   const handleReply = useCallback(
-    async (text: string, engine: EngineId) => {
+    async (text: string, engine: EngineId, model: string) => {
       setPendingReply(text);
       try {
         const res = await backendFetch("/api/runs", {
@@ -134,6 +134,7 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
           body: JSON.stringify({
             prompt: text,
             engine,
+            model,
             parent_run_id: newest.id,
           }),
         });
@@ -221,6 +222,7 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
           <Conversation
             turns={turns}
             defaultEngine={normalizeEngine(newest.engine)}
+            defaultModel={newest.model}
             pendingReply={pendingReply}
             onReply={handleReply}
           />
