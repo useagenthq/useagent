@@ -75,13 +75,13 @@ export async function recordContextRetrieval(
   recall: MemoryRecall,
 ): Promise<void> {
   if (recall.items.length === 0) return;
+  // Retrieval happens at run START, before any provider part, so the shared
+  // per-run sequencer (provider-events.ts) mints this frame seq 0 and every
+  // opencode capture a strictly higher one — no two emitters collide on a seq.
   await recordProviderEvent({
     id: `ctxret_${runId}`,
     runId,
     threadId,
-    // Retrieval happens at run START, before any provider part — seq 0. Rows are
-    // deduped by id (unique), so a same-seq provider part is harmless.
-    seq: 0,
     provider: "skynet",
     eventType: CONTEXT_RETRIEVED,
     payload: buildRetrievalPayload(identity, query, recall),
