@@ -12,17 +12,8 @@
 // keeps working during the migration. It is a small emitter store (subscribe /
 // getSnapshot) consumed via `useSyncExternalStore`.
 
-import { parseStepCode, type ApiStep } from "./types";
-
-/** The native OpenCode ids a step may carry under `code_json.native`. */
-export interface NativeIds {
-  sessionID: string | null;
-  messageID: string | null;
-  partID: string | null;
-  callID: string | null;
-  /** Present on `subtask` steps: the child (subagent) session they spawned. */
-  childSessionID: string | null;
-}
+import type { ApiStep } from "./types";
+import { nativeOf, type NativeIds } from "./native-ids";
 
 /** A child (subagent) native session, discovered from a parent's subtask step. */
 export interface NativeChild {
@@ -70,37 +61,13 @@ const EMPTY_SNAPSHOT: NativeSnapshot = {
   generation: 0,
 };
 
-/** Read the native ids a step carries (all null when absent/unparseable). */
-export function readNative(step: ApiStep): NativeIds {
-  const code = parseStepCode(step);
-  const rec =
-    code && typeof code === "object" && !Array.isArray(code)
-      ? ((code as Record<string, unknown>).native as unknown)
-      : null;
-  const n =
-    rec && typeof rec === "object" && !Array.isArray(rec)
-      ? (rec as Record<string, unknown>)
-      : null;
-  const s = (k: string): string | null => {
-    const v = n?.[k];
-    return typeof v === "string" && v.length > 0 ? v : null;
-  };
-  return {
-    sessionID: s("sessionID"),
-    messageID: s("messageID"),
-    partID: s("partID"),
-    callID: s("callID"),
-    childSessionID: s("childSessionID"),
-  };
-}
-
 /**
  * The dedupe key for a step: prefer the native part id, then the call id, then
  * fall back to the run-unique idx. Enriched re-emits and poll/SSE overlap carry
  * the same native id, so they collapse onto one record instead of duplicating.
  */
-function dedupeKey(step: ApiStep, ids: NativeIds): string {
-  return ids.partID ?? ids.callID ?? `idx:${step.idx}`;
+function dedupeKey(step: ApiStep, ids: NativeIds | null): string {
+  return ids?.partID ?? ids?.callID ?? `idx:${step.idx}`;
 }
 
 /** Build the immutable snapshot from the canonical record map (pure). */
@@ -113,13 +80,13 @@ function buildSnapshot(
   const tools = new Map<string, ApiStep>();
   const children = new Map<string, NativeChild>();
   for (const step of steps) {
-    const ids = readNative(step);
-    if (ids.partID) parts.set(ids.partID, step);
-    if (ids.callID) tools.set(ids.callID, step);
-    if (ids.childSessionID) {
+    const ids = nativeOf(step);
+    if (ids?.partID) parts.set(ids.partID, step);
+    if (ids?.callID) tools.set(ids.callID, step);
+    if (ids?.childSessionID) {
       children.set(ids.childSessionID, {
         sessionID: ids.childSessionID,
-        parentSessionID: ids.sessionID,
+        parentSessionID: ids.sessionID ?? null,
         originStepId: step.id,
       });
     }
@@ -160,17 +127,17 @@ export function createNativeStore(): NativeStore {
     reset(steps, gen) {
       records.clear();
       generation = gen;
-      for (const step of steps) records.set(dedupeKey(step, readNative(step)), step);
+      for (const step of steps) records.set(dedupeKey(step, nativeOf(step)), step);
       snapshot = null; // silent: render-driven, React re-reads getSnapshot
     },
     ingest(step, gen) {
       if (gen !== generation) return; // generation guard — drop stale writes
-      records.set(dedupeKey(step, readNative(step)), step);
+      records.set(dedupeKey(step, nativeOf(step)), step);
       notify();
     },
     ingestAll(steps, gen) {
       if (gen !== generation) return;
-      for (const step of steps) records.set(dedupeKey(step, readNative(step)), step);
+      for (const step of steps) records.set(dedupeKey(step, nativeOf(step)), step);
       notify();
     },
   };
