@@ -6,9 +6,15 @@
 // future "Context used" surface. No new table: the native lane already gives us
 // tenant scope, bounded payloads, dedup-by-id, and a client cursor. Emitting a
 // panel/UI is a LATER slice — this only records + streams the event.
+//
+// Scope-aware: the payload records the run's memoryScope, the per-item
+// sourceScope (personal|org), plus orgId + actorUserId, so a future "Context
+// used" UI can label each item by pool. No credentials are ever included.
 
 import { recordProviderEvent } from "../runs/provider-events";
-import type { MemoryIdentity, MemoryRecall } from "./team-memory";
+import type { ScopedMemoryPlan } from "./scope";
+import type { ScopedRecall } from "./team-memory";
+import type { MemoryScope } from "../db/schema";
 
 /** The native `eventType` for a retrieval-ledger frame (versioned by the native
  *  lane's NATIVE_SCHEMA_VERSION). */
@@ -19,42 +25,51 @@ export const CONTEXT_RETRIEVED = "context.retrieved";
 export interface RetrievalLedgerPayload {
   readonly provider: string;
   readonly query: string;
+  /** The pool policy the run ran under. */
+  readonly memoryScope: MemoryScope;
   /** Tenant scope the recall ran under (never the transport credentials).
-   *  `userId` is the shared team-memory pool; `actorUserId` is who triggered the
-   *  run (provenance) — the two differ once real users run turns. */
+   *  `orgId` is the team; `actorUserId` is who triggered the run (null when
+   *  unauthenticated) — kept for provenance, never a memory partition key. */
   readonly scope: {
-    readonly teamId: string;
-    readonly userId: string;
-    readonly actorUserId: string;
+    readonly orgId: string;
+    readonly actorUserId: string | null;
     readonly agentId: string;
     readonly sessionId: string;
   };
   readonly itemCount: number;
-  /** The recalled facts + their source citations (assetId/score/provider). */
-  readonly items: readonly { readonly content: string; readonly citation: unknown }[];
+  /** The recalled facts, each labeled with the pool it came from + its citation. */
+  readonly items: readonly {
+    readonly content: string;
+    readonly sourceScope: MemoryScope;
+    readonly citation: unknown;
+  }[];
   readonly renderedChars: number;
   readonly truncated: boolean;
   readonly latencyMs: number;
 }
 
-/** Shape the durable ledger payload from a recall (pure — unit-tested). */
+/** Shape the durable ledger payload from a scope plan + its recall (pure). */
 export function buildRetrievalPayload(
-  identity: MemoryIdentity,
+  plan: ScopedMemoryPlan,
   query: string,
-  recall: MemoryRecall,
+  recall: ScopedRecall,
 ): RetrievalLedgerPayload {
   return {
     provider: "tencent-memorycore",
     query,
+    memoryScope: plan.scope,
     scope: {
-      teamId: identity.teamId,
-      userId: identity.userId,
-      actorUserId: identity.actorUserId,
-      agentId: identity.agentId,
-      sessionId: identity.sessionId,
+      orgId: plan.orgId,
+      actorUserId: plan.actorUserId,
+      agentId: plan.agentId,
+      sessionId: plan.sessionId,
     },
     itemCount: recall.items.length,
-    items: recall.items.map((item) => ({ content: item.content, citation: item.citation })),
+    items: recall.items.map((item) => ({
+      content: item.content,
+      sourceScope: item.sourceScope,
+      citation: item.citation,
+    })),
     renderedChars: recall.rendered.length,
     truncated: recall.truncated,
     latencyMs: recall.latencyMs,
@@ -70,9 +85,9 @@ export function buildRetrievalPayload(
 export async function recordContextRetrieval(
   runId: string,
   threadId: string,
-  identity: MemoryIdentity,
+  plan: ScopedMemoryPlan,
   query: string,
-  recall: MemoryRecall,
+  recall: ScopedRecall,
 ): Promise<void> {
   if (recall.items.length === 0) return;
   // Retrieval happens at run START, before any provider part, so the shared
@@ -84,6 +99,6 @@ export async function recordContextRetrieval(
     threadId,
     provider: "skynet",
     eventType: CONTEXT_RETRIEVED,
-    payload: buildRetrievalPayload(identity, query, recall),
+    payload: buildRetrievalPayload(plan, query, recall),
   });
 }

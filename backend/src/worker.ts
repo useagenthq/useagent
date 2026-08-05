@@ -14,7 +14,8 @@ import {
 import type { RunStatus, StepKind } from "./db/schema";
 import { adapters } from "./engines";
 import type { EmitStep, EngineRunContext } from "./engines/types";
-import { resolveMemoryIdentity, searchTeamMemory } from "./memory/team-memory";
+import { searchScopedMemory } from "./memory/team-memory";
+import { resolveScopedMemory } from "./memory/scope";
 import { recordContextRetrieval } from "./memory/retrieval-ledger";
 import { finalizeRun } from "./runs/finalize";
 import { turnStream } from "./runs/turn-stream";
@@ -153,27 +154,33 @@ async function runWorker(runId: string): Promise<void> {
     //    FRESH native session (a resumed session already holds it natively).
     // Fetched in PARALLEL — independent context work must not serialize startup.
     // Prompts are stored clean; the composed prefix is the engine's only view.
-    // Identity is per-run (userId from the run row, threadId as MemoryCore
-    // session, runId provenance); null when memory is disabled.
-    const identity = resolveMemoryIdentity(run);
+    //
+    // The scope PLAN maps the run's persisted identity + memoryScope to the pools
+    // it reads (org → org pool; personal → personal + org) and the single pool it
+    // captures into; null when memory is disabled. Identity is ALWAYS from the run
+    // row — never the sandbox/prompt.
+    const plan = resolveScopedMemory(run);
     const [recall, bootstrapContext] = await Promise.all([
-      identity ? searchTeamMemory(run.prompt, identity) : Promise.resolve(null),
+      plan ? searchScopedMemory(run.prompt, plan.readPools) : Promise.resolve(null),
       run.parentRunId ? buildThreadPreamble(run.threadId, run.id) : Promise.resolve(""),
     ]);
     const turnContext = recall?.rendered ?? "";
     if (turnContext || bootstrapContext) {
       console.log(
-        `[worker] run ${runId} thread ${run.threadId}: turnContext ${turnContext.length}` +
-          ` (${recall?.items.length ?? 0} memory items, ${recall?.latencyMs ?? 0}ms) +` +
-          ` bootstrapContext ${bootstrapContext.length} chars`,
+        `[worker] run ${runId} thread ${run.threadId} scope=${plan?.scope ?? "off"}: ` +
+          `turnContext ${turnContext.length} (${recall?.items.length ?? 0} memory items, ` +
+          `${recall?.latencyMs ?? 0}ms) + bootstrapContext ${bootstrapContext.length} chars`,
       );
     }
     // Retrieval ledger (Phase 3a): durably record + stream what was recalled as a
     // `context.retrieved` native frame. Fire-and-forget — never blocks/fails the run.
-    if (identity && recall) {
-      void recordContextRetrieval(run.id, run.threadId, identity, run.prompt, recall);
+    if (plan && recall) {
+      void recordContextRetrieval(run.id, run.threadId, plan, run.prompt, recall);
     }
 
+    // The completed-turn capture is enqueued by runs/finalize.ts (transactionally,
+    // from the run row's scope) — not here — so it survives a crash in the old
+    // completeRun→enqueue gap and covers the mock + boot-reconcile paths too.
     await runEngine(
       runId,
       run.engine,

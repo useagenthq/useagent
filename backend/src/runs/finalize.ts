@@ -2,7 +2,7 @@ import { eq } from "drizzle-orm";
 import { db } from "../db/client";
 import { runs, type RunStatus } from "../db/schema";
 import { completeRun } from "./repo";
-import { resolveMemoryIdentity } from "../memory/team-memory";
+import { resolveScopedMemory } from "../memory/scope";
 import { enqueueCapture } from "../memory/capture-outbox";
 import { findSlackThreadByRoot } from "../slack/repo";
 import { composeSlackReplyText } from "../slack/reply";
@@ -51,12 +51,21 @@ export async function finalizeRun(
 
     await completeRun(runId, status, summary, durationMs, tx);
 
-    // Memory capture — completed runs only, when team memory is configured
-    // (identity is null when MEMORY_API_URL is unset → clean no-op).
+    // Memory capture — completed runs only, into the run's WRITE pool
+    // (personal→personal, org→org), resolved from the run row's memory_scope +
+    // authenticated identity. `plan` is null when memory is disabled and
+    // `writePool` is null when a personal run failed closed (no auth user) —
+    // either way a clean no-op.
     if (status === "completed") {
-      const identity = resolveMemoryIdentity(run);
-      if (identity) {
-        await enqueueCapture(runId, identity, { prompt: run.prompt, summary }, tx);
+      const plan = resolveScopedMemory(run);
+      if (plan?.writePool) {
+        await enqueueCapture(
+          runId,
+          plan.writePool.identity,
+          { prompt: run.prompt, summary },
+          plan.scope,
+          tx,
+        );
       }
     }
 

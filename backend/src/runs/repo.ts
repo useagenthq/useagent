@@ -4,6 +4,7 @@ import {
   runs,
   steps,
   type EngineId,
+  type MemoryScope,
   type RunStatus,
   type StepKind,
 } from "../db/schema";
@@ -42,6 +43,9 @@ export interface ApiRun {
   thread_id: string;
   engine_session_id: string | null;
   repo: string | null;
+  /** Which team-memory pool this run reads/writes (default "org"). The composer
+   *  reads a thread's scope from its newest run so a reply inherits it. */
+  memory_scope: MemoryScope;
   created_at: string;
   updated_at: string;
   steps: ApiStep[];
@@ -75,6 +79,7 @@ function toRun(r: RunRecord, stepRows: StepRecord[]): ApiRun {
     thread_id: r.threadId,
     engine_session_id: r.engineSessionId,
     repo: r.repo,
+    memory_scope: r.memoryScope,
     created_at: r.createdAt.toISOString(),
     updated_at: r.updatedAt.toISOString(),
     steps: stepRows.map(toStep),
@@ -143,6 +148,9 @@ export async function createRun(
     parentRunId: string | null;
     threadId: string;
     repo?: string | null;
+    /** Team-memory pool for the run. Resolved server-side at the run-creation
+     *  boundary (explicit choice, parent inheritance, or the "org" default). */
+    memoryScope: MemoryScope;
   },
   /** Run the insert inside a caller's transaction (durable-command acceptance
    *  commits the command + run atomically). Defaults to the shared pool. */
@@ -159,6 +167,7 @@ export async function createRun(
     parentRunId: input.parentRunId,
     threadId: input.threadId,
     repo: input.repo ?? null,
+    memoryScope: input.memoryScope,
   });
 }
 

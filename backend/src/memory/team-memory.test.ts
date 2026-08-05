@@ -1,13 +1,12 @@
 /**
- * Unit tests for the team-memory adapter. Fully offline: `fetch` is mocked, so
- * no memory service is required. Covers the config gate, per-run identity
- * resolution, structured recall + citations, the char cap, and every failure
- * mode collapsing to empty (memory must never throw).
+ * Unit tests for the team-memory adapter (single-pool primitives). Fully offline:
+ * `fetch` is mocked, so no memory service is required. Covers the config gate,
+ * structured recall + citations, the char cap, and every failure mode collapsing
+ * to empty (memory must never throw). Scope/pool policy is covered in scope.test.ts.
  */
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import {
   deliverTeamMemory,
-  resolveMemoryIdentity,
   searchTeamMemory,
   type MemoryIdentity,
 } from "./team-memory";
@@ -79,43 +78,6 @@ afterEach(() => {
     if (v === undefined) delete process.env[k];
     else process.env[k] = v;
   }
-});
-
-describe("resolveMemoryIdentity", () => {
-  test("null when memory is disabled (MEMORY_API_URL unset)", () => {
-    expect(resolveMemoryIdentity({ userId: "u-42", threadId: "t-9", id: "r-1" })).toBeNull();
-  });
-
-  test("memory pool = SHARED team user (config), actor = the run's user", () => {
-    enableMemory(); // MEMORY_USER_ID unset → cfg default "skynet"
-    const id = resolveMemoryIdentity({ userId: "u-42", threadId: "t-9", id: "r-1" });
-    expect(id).toEqual({
-      teamId: "team-1",
-      agentId: "skynet-backend",
-      userId: "skynet", // the SHARED team memory pool, NOT the run's user
-      actorUserId: "u-42", // provenance
-      sessionId: "t-9",
-      runId: "r-1",
-    });
-  });
-
-  test("REGRESSION: different run users share ONE team pool (a team fact recalls for all)", () => {
-    // The bug: partitioning by run.userId hid a team fact authored by another user.
-    enableMemory();
-    const alice = resolveMemoryIdentity({ userId: "alice", threadId: "t", id: "r1" })!;
-    const bob = resolveMemoryIdentity({ userId: "bob", threadId: "t", id: "r2" })!;
-    expect(alice.userId).toBe(bob.userId); // same pool → shared team recall
-    expect(alice.actorUserId).toBe("alice"); // provenance stays per-actor
-    expect(bob.actorUserId).toBe("bob");
-  });
-
-  test("actorUserId falls back to the pool user for a legacy/system run (null userId)", () => {
-    enableMemory();
-    process.env.MEMORY_USER_ID = "svc";
-    const id = resolveMemoryIdentity({ userId: null, threadId: "t-9", id: "r-1" });
-    expect(id?.userId).toBe("svc");
-    expect(id?.actorUserId).toBe("svc");
-  });
 });
 
 describe("searchTeamMemory", () => {
