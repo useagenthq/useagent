@@ -4,7 +4,25 @@
 import { describe, expect, test } from "bun:test";
 import { createNativeStore } from "./native-store";
 import { nativeOf } from "./native-ids";
+import type { NativeFrame } from "./native-events";
 import type { ApiStep, StepKind } from "./types";
+
+function frame(
+  eventId: string,
+  seq: number,
+  eventType = "part.text",
+  payload: unknown = {},
+): NativeFrame {
+  return {
+    schemaVersion: 1,
+    eventId,
+    seq,
+    provider: "opencode",
+    eventType,
+    native: { sessionId: null, parentSessionId: null, messageId: null, partId: null, callId: null },
+    payload,
+  };
+}
 
 let seq = 0;
 function step(
@@ -154,5 +172,49 @@ describe("native-store", () => {
     expect(a).toBe(b); // cached — required for useSyncExternalStore
     s.ingest(tool(1, "read", "p2", "c2", "ses_root"), 0);
     expect(s.getSnapshot()).not.toBe(a); // invalidated on change
+  });
+});
+
+describe("native-store: native frames", () => {
+  test("dedupes by eventId keeping the highest seq (part revision wins)", () => {
+    const s = createNativeStore();
+    s.reset([], 0);
+    s.ingestNative(frame("pe_1", 3, "part.tool.running"), 0);
+    s.ingestNative(frame("pe_1", 7, "part.tool.completed"), 0); // higher seq → wins
+    s.ingestNative(frame("pe_1", 5, "part.tool.running"), 0); // lower seq → ignored
+    const snap = s.getSnapshot();
+    expect(snap.nativeFrames.length).toBe(1);
+    expect(snap.nativeFrames[0].seq).toBe(7);
+    expect(snap.nativeFrames[0].eventType).toBe("part.tool.completed");
+  });
+
+  test("nativeCursor tracks the highest seq; frames are seq-ordered", () => {
+    const s = createNativeStore();
+    s.reset([], 0);
+    s.ingestNative(frame("pe_b", 9), 0);
+    s.ingestNative(frame("pe_a", 2), 0);
+    const snap = s.getSnapshot();
+    expect(snap.nativeCursor).toBe(9);
+    expect(snap.nativeFrames.map((f) => f.seq)).toEqual([2, 9]);
+  });
+
+  test("keeps unknown frame types (renders safely; nothing is dropped)", () => {
+    const s = createNativeStore();
+    s.reset([], 0);
+    s.ingestNative(frame("pe_x", 1, "session.updated"), 0);
+    s.ingestNative(frame("pe_y", 2, "part.step-start"), 0);
+    expect(s.getSnapshot().nativeFrames.length).toBe(2);
+  });
+
+  test("generation guard drops stale frames; reset clears them", () => {
+    const s = createNativeStore();
+    s.reset([], 1);
+    s.ingestNative(frame("pe_1", 1), 0); // stale gen → dropped
+    expect(s.getSnapshot().nativeFrames.length).toBe(0);
+    s.ingestNative(frame("pe_1", 1), 1); // current gen → kept
+    expect(s.getSnapshot().nativeFrames.length).toBe(1);
+    s.reset([], 2);
+    expect(s.getSnapshot().nativeFrames.length).toBe(0);
+    expect(s.getSnapshot().nativeCursor).toBe(-1);
   });
 });
