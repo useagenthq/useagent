@@ -1,6 +1,16 @@
 import { Daytona, type Sandbox } from "@daytona/sdk";
 import { recordProviderEvent } from "../runs/provider-events";
-import type { EmitStep, EngineAdapter, EngineRunContext } from "./types";
+import type {
+  EmitStep,
+  EngineAdapter,
+  EngineRunContext,
+  HarnessAdapter,
+  HarnessCapabilities,
+  HarnessCheckpoint,
+  HarnessOperationResult,
+  HarnessReconciliation,
+  HarnessSessionHandle,
+} from "./types";
 import { basename, parseJsonLine, truncate } from "./util";
 import { getThreadSandbox, setRunSandbox } from "../runs/repo";
 
@@ -144,6 +154,34 @@ type OcMessage = {
   parts?: { type?: string; text?: string }[];
 };
 
+/** Resolve an already-running sandbox's resident opencode endpoint (base URL,
+ *  preview token, `?directory=` scope). Returns null when the sandbox is
+ *  unconfigured, gone, or NOT already `started` — we never wake a stopped
+ *  sandbox just to read/cancel (north star: don't wake to read history). Shared
+ *  by reconcile + cancel; never throws. */
+async function openResidentServer(
+  sandboxId: string,
+): Promise<{ baseUrl: string; token: string; dirQ: string } | null> {
+  const apiKey = process.env.DAYTONA_API_KEY;
+  if (!apiKey) return null;
+  try {
+    const daytona = new Daytona({ apiKey, target: process.env.DAYTONA_TARGET ?? "us" });
+    const sandbox = await daytona.get(sandboxId).catch(() => null);
+    if (!sandbox) return null;
+    if ((sandbox as { state?: string }).state !== "started") return null;
+    // Resolve the session's workdir (the same `?directory=` scope the turn used).
+    const homeRes = await sandbox.process
+      .executeCommand('printf %s "$HOME"', undefined, undefined, 4)
+      .catch(() => null);
+    const home = homeRes?.result?.trim() || "/home/daytona";
+    const dirQ = `?directory=${encodeURIComponent(`${home}/work`)}`;
+    const link = await sandbox.getPreviewLink(SERVE_PORT);
+    return { baseUrl: link.url.replace(/\/+$/, ""), token: link.token ?? "", dirQ };
+  } catch {
+    return null;
+  }
+}
+
 /** Bounded (~9s internal) native-session probe for restart recovery. Reads the
  *  session's message history from the resident opencode server (only if the
  *  sandbox is already `started`) and decides whether the interrupted run in fact
@@ -156,31 +194,15 @@ export async function reconcileOpencodeRun(input: {
    *  session also holds earlier turns' completed messages). */
   sinceMs: number;
 }): Promise<OpencodeReconcile> {
-  const apiKey = process.env.DAYTONA_API_KEY;
-  if (!apiKey) return { outcome: "unreachable" };
-
   const ac = new AbortController();
   const budget = setTimeout(() => ac.abort(), 9_000);
   try {
-    const daytona = new Daytona({ apiKey, target: process.env.DAYTONA_TARGET ?? "us" });
-    const sandbox = await daytona.get(input.sandboxId).catch(() => null);
-    if (!sandbox) return { outcome: "unreachable" };
-    // Never wake a stopped/paused/archived sandbox just to read history.
-    if ((sandbox as { state?: string }).state !== "started") return { outcome: "unreachable" };
-
-    // Resolve the session's workdir (the same `?directory=` scope the turn used).
-    const homeRes = await sandbox.process
-      .executeCommand('printf %s "$HOME"', undefined, undefined, 4)
-      .catch(() => null);
-    const home = homeRes?.result?.trim() || "/home/daytona";
-    const dirQ = `?directory=${encodeURIComponent(`${home}/work`)}`;
-
-    const link = await sandbox.getPreviewLink(SERVE_PORT);
-    const baseUrl = link.url.replace(/\/+$/, "");
-    const res = await fetch(`${baseUrl}/session/${input.sessionId}/message${dirQ}`, {
-      headers: authHeaders(link.token ?? ""),
-      signal: ac.signal,
-    });
+    const server = await openResidentServer(input.sandboxId);
+    if (!server) return { outcome: "unreachable" };
+    const res = await fetch(
+      `${server.baseUrl}/session/${input.sessionId}/message${server.dirQ}`,
+      { headers: authHeaders(server.token), signal: ac.signal },
+    );
     if (!res.ok) return { outcome: "unreachable" };
 
     const msgs = (await res.json()) as OcMessage[];
@@ -204,6 +226,93 @@ export async function reconcileOpencodeRun(input: {
     clearTimeout(budget);
   }
 }
+
+// ---------------------------------------------------------------------------
+// Typed harness seam (north star Phase 2 "HarnessAdapter Contract"), Stage-1
+// minimal: capabilities / cancel / reconcile as a thin facade over the resident
+// opencode server. It does NOT re-drive turns (EngineAdapter.run still does);
+// it exposes the typed control/observability surface the product layer needs.
+// ---------------------------------------------------------------------------
+
+/** opencode v1.18.7 native capabilities (what the harness provides, not what
+ *  Skynet already projects). */
+const OPENCODE_CAPABILITIES: HarnessCapabilities = {
+  resume: true, // resumes a native session by id
+  cancel: true, // POST /session/:id/abort
+  streaming: "parts", // /event message.part.updated + inline token deltas
+  authoritativeHistory: true, // REST message history reconciled as truth
+  childSessions: true, // task tool + child sessions with parentID
+  approvals: true, // native permission asked/replied events
+  questions: true, // native question asked/replied events
+  reasoning: true, // reasoning parts
+  todos: true, // GET /session/:id/todo
+  patches: true, // GET /session/:id/diff, patch/file parts
+  usage: true, // token usage on assistant messages
+};
+
+export const opencodeHarness: HarnessAdapter = {
+  provider: "opencode",
+
+  capabilities(): HarnessCapabilities {
+    return { ...OPENCODE_CAPABILITIES };
+  },
+
+  async cancel(
+    handle: HarnessSessionHandle,
+    _reason: string,
+  ): Promise<HarnessOperationResult> {
+    // Defensive: a provider whose capabilities().cancel is false returns a typed
+    // unsupported result rather than a silent no-op (opencode's is true).
+    if (!OPENCODE_CAPABILITIES.cancel) {
+      return { status: "unsupported_capability", provider: "opencode", capability: "cancel" };
+    }
+    const ac = new AbortController();
+    const budget = setTimeout(() => ac.abort(), 9_000);
+    try {
+      const server = await openResidentServer(handle.sandboxId);
+      if (!server) {
+        return { status: "error", code: "sandbox_unreachable", message: "resident opencode server not reachable" };
+      }
+      const res = await fetch(
+        `${server.baseUrl}/session/${handle.sessionId}/abort${server.dirQ}`,
+        { method: "POST", headers: authHeaders(server.token), signal: ac.signal },
+      );
+      return res.ok
+        ? { status: "ok" }
+        : { status: "error", code: "abort_failed", message: `HTTP ${res.status}` };
+    } catch (err) {
+      return {
+        status: "error",
+        code: "cancel_failed",
+        message: err instanceof Error ? err.message : "unknown cancel error",
+      };
+    } finally {
+      clearTimeout(budget);
+    }
+  },
+
+  async reconcile(
+    handle: HarnessSessionHandle,
+    checkpoint?: HarnessCheckpoint,
+  ): Promise<HarnessReconciliation> {
+    const r = await reconcileOpencodeRun({
+      sandboxId: handle.sandboxId,
+      sessionId: handle.sessionId,
+      sinceMs: checkpoint?.sinceMs ?? 0,
+    });
+    // Map the opencode-native outcome onto the provider-neutral projection.
+    switch (r.outcome) {
+      case "completed":
+        return { status: "completed", summary: r.summary };
+      case "in_progress":
+        return { status: "in_progress" };
+      case "no_new_message":
+        return { status: "no_change" };
+      case "unreachable":
+        return { status: "unreachable" };
+    }
+  },
+};
 
 export const opencodeServerAdapter: EngineAdapter = {
   id: "opencode",
