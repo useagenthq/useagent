@@ -34,6 +34,7 @@ import { seedDev } from "./seed";
 import { skillImportRoutes } from "./skills/import-routes";
 import { skillsRoutes } from "./skills/routes";
 import { slackEnabled, slackRoutes, startSlackOutbox } from "./slack";
+import { wikiGenRoutes } from "./wiki-gen/routes";
 
 // Apply committed Drizzle migrations BEFORE anything reads or seeds the schema,
 // so a fresh clone (or a fresh database) boots with the tables in place. The
@@ -122,6 +123,11 @@ app.route("/api/skills/import", skillImportRoutes);
 app.route("/api/skills", skillsRoutes);
 app.route("/api/schedules", schedulesRoutes);
 app.route("/api/knowledge", knowledgeRoutes);
+// Repo-wiki generator: POST /api/wiki/generate clones an offered repo and lands
+// a per-page architecture wiki as org-scoped published documents + immutable
+// revisions (searchable via knowledge_search). Org-scoped; regeneration diffs
+// against prior revisions. Inert without OPENROUTER_API_KEY (503).
+app.route("/api/wiki", wikiGenRoutes);
 // Memory Hub — human control surface over the team-memory pools (browse/search/
 // correct/delete), the capture outbox (inspect + manual recovery), and the
 // retrieval ledger. Org-scoped; memory transport credentials stay server-side.
