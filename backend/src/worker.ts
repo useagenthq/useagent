@@ -161,6 +161,7 @@ async function runWorker(runId: string): Promise<void> {
       void recordSkillLoaded(run.id, run.threadId, {
         skillId: pinnedSkill.skillId,
         version: pinnedSkill.version,
+        kind: pinnedSkill.kind,
         name: pinnedSkill.content.name,
         contentHash: pinnedSkill.contentHash,
         source: "skill",
