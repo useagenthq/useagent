@@ -4,6 +4,7 @@ import { RiFlashlightLine } from "@remixicon/react";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { BackendUnreachable } from "@/components/shared/backend-unreachable";
 import { FeaturedSkill } from "./featured-skill";
 import { NewSkillModal } from "./new-skill-modal";
 import { fetchSkills } from "./skills-api";
@@ -19,12 +20,15 @@ import { SkillsLibrary } from "./skills-library";
 export function SkillsView({
   initialSkills,
   initialLive,
+  initialError,
 }: {
   initialSkills: Skill[];
   initialLive: boolean;
+  initialError: boolean;
 }) {
   const router = useRouter();
   const [skills, setSkills] = useState<Skill[]>(initialSkills);
+  const [error, setError] = useState(initialError);
   const [flashing, setFlashing] = useState<ReadonlySet<string>>(new Set());
   const timers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
 
@@ -32,8 +36,11 @@ export function SkillsView({
     try {
       const fresh = await fetchSkills();
       setSkills(fresh);
+      setError(false);
     } catch {
-      // backend still unreachable — keep current list
+      // backend still unreachable — flag the distinct error state (an empty
+      // list here would masquerade an outage as "no skills yet")
+      setError(true);
     }
   }, []);
 
@@ -104,9 +111,13 @@ export function SkillsView({
       </div>
 
       {skills.length === 0 ? (
-        <p className="mt-10 text-paragraph-sm text-text-sub-600">
-          No skills yet — capture your first playbook to get started.
-        </p>
+        error ? (
+          <BackendUnreachable className="mt-10" onRetry={refetch} />
+        ) : (
+          <p className="mt-10 text-paragraph-sm text-text-sub-600">
+            No skills yet — capture your first playbook to get started.
+          </p>
+        )
       ) : (
         <>
           {featured && (

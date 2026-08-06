@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { backendFetch } from "@/lib/backend-fetch";
+import { BackendUnreachable } from "@/components/shared/backend-unreachable";
 import { extractFleet, type FleetData } from "./fleet-data";
 import { Fleet } from "./fleet";
 import { LimitsRow } from "./limits-row";
@@ -21,17 +22,31 @@ const POLL_MS = 15_000;
  * banner/lane math from GET /api/runs, and the Limits card (per-model token/cost
  * burn + Daytona footprint) from GET /api/fleet.
  */
-export function WorkspaceView({ initialRuns }: { initialRuns: WorkspaceRun[] }) {
+export function WorkspaceView({
+  initialRuns,
+  initialError,
+}: {
+  initialRuns: WorkspaceRun[];
+  initialError: boolean;
+}) {
   const [runs, setRuns] = useState<WorkspaceRun[]>(initialRuns);
   const [fleet, setFleet] = useState<FleetData | null>(null);
+  const [error, setError] = useState(initialError);
 
   const load = useCallback(async (signal?: AbortSignal) => {
     try {
       const res = await backendFetch("/api/runs", { signal, cache: "no-store" });
-      if (!res.ok) return;
+      if (!res.ok) {
+        setError(true);
+        return;
+      }
       setRuns(extractRuns(await res.json()));
+      setError(false);
     } catch {
-      // Transient failure — keep the last good snapshot.
+      // Backend unreachable — surface the distinct error banner. Any last good
+      // snapshot stays rendered below it (honest: stale data + a clear signal
+      // the refresh failed), rather than silently looking calm.
+      if (!signal?.aborted) setError(true);
     }
   }, []);
 
@@ -72,6 +87,8 @@ export function WorkspaceView({ initialRuns }: { initialRuns: WorkspaceRun[] }) 
             Mission control for your agent fleet.
           </p>
         </header>
+
+        {error && <BackendUnreachable onRetry={() => void load()} />}
 
         <StatusBanner stats={stats} />
 
