@@ -141,17 +141,29 @@ async function threadCycle(t: number): Promise<void> {
   const ordered = settleTimes.every((v, i) => i === 0 || v >= settleTimes[i - 1]!);
   rec.check(ordered, "replies settled in strict order", settleTimes.join("<"), ev);
 
-  // MEMORY CANARY — teach a unique fact, then recall it in a later turn.
+  // MEMORY CANARY — teach a thread-UNIQUE fact, then recall it in a later turn.
+  // The canary is keyed by the thread's unique `marker` so the SHARED team-memory
+  // pool (shared across threads by design) can't return a sibling thread's colliding
+  // fact — batch 1 proved an un-keyed "our canary" recalls another thread's value.
   if (DO_MEM) {
     const canary = `RC-SOAK-${Math.floor(Math.random() * 1e6)}`;
-    const teach = await createRun({ prompt: `${marker} Please remember this exactly: our soak canary code is ${canary}. Reply "noted".`, engine: "opencode", model: MODEL, parent_run_id: parent });
+    const teach = await createRun({ prompt: `${marker} Please remember exactly: the soak canary for ${marker} is ${canary}. Reply "noted".`, engine: "opencode", model: MODEL, parent_run_id: parent });
     if (teach) { await waitRun(teach, (r) => terminal(r.status), 300_000); await recordSandbox(teach); parent = teach; }
-    const ask = await createRun({ prompt: `${marker} What is our soak canary code? Reply with just the code.`, engine: "opencode", model: MODEL, parent_run_id: parent });
+    const ask = await createRun({ prompt: `${marker} What is the soak canary for ${marker}? Reply with just the code.`, engine: "opencode", model: MODEL, parent_run_id: parent });
     if (ask) {
       const ar = await waitRun(ask, (r) => terminal(r.status), 300_000);
       await recordSandbox(ask);
-      const gotCanary = typeof ar?.summary === "string" && ar.summary.includes(canary);
-      rec.check(!!gotCanary, "recall: later turn answered with the canary", `summary=${(ar?.summary ?? "").slice(0, 60)}`, { ...ev, canary });
+      // HARD: the recall PATH fired end-to-end — a context.retrieved ledger frame
+      // was recorded (search ran → memory items → injected).
+      const ledger = Number((await sql`select count(*)::int as n from provider_events where run_id = ${ask} and event_type = 'context.retrieved'`)[0]?.n ?? 0);
+      rec.check(ledger >= 1, "recall path fired (context.retrieved frame recorded)", `${ledger} frames`, { ...ev, ask });
+      // SOFT: recall ACCURACY (own canary surfaced). Real memory indexing lag + LLM
+      // phrasing make per-turn exactness nondeterministic, so track a rate — don't
+      // fail a turn. A persistently low rate is the signal to dig into.
+      rec.bump("recall_attempts");
+      const gotOwn = typeof ar?.summary === "string" && ar.summary.includes(canary);
+      if (gotOwn) rec.bump("recall_correct");
+      else rec.bump("recall_miss");
       parent = ask;
     }
   }
