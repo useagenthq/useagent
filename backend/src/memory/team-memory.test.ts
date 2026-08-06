@@ -7,8 +7,10 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import {
   deliverTeamMemory,
+  recallScopedMemory,
   searchTeamMemory,
   type MemoryIdentity,
+  type ScopedPool,
 } from "./team-memory";
 
 const ENV_KEYS = [
@@ -225,5 +227,32 @@ describe("deliverTeamMemory", () => {
     enableMemory();
     stubFetch({ code: 40001, message: "bad", data: null });
     expect(await deliverTeamMemory({ prompt: "p", summary: "s" }, IDENT)).toBe(false);
+  });
+});
+
+describe("recallScopedMemory (layered L0+L1) degrades honestly (12.5)", () => {
+  const pool: ScopedPool = { sourceScope: "org", identity: IDENT };
+
+  test("a provider outage yields an EMPTY recall and never throws (run continues)", async () => {
+    enableMemory();
+    globalThis.fetch = (async () => {
+      throw new Error("ECONNREFUSED");
+    }) as unknown as typeof fetch;
+    const recall = await recallScopedMemory("anything", [pool]);
+    expect(recall.rendered).toBe("");
+    expect(recall.items).toEqual([]);
+  });
+
+  test("disabled memory is a fast empty no-op with no fetch", async () => {
+    for (const k of ENV_KEYS) delete process.env[k];
+    let called = false;
+    globalThis.fetch = (async () => {
+      called = true;
+      return new Response("{}", { status: 200 });
+    }) as unknown as typeof fetch;
+    const recall = await recallScopedMemory("anything", [pool]);
+    expect(recall.rendered).toBe("");
+    expect(recall.items).toEqual([]);
+    expect(called).toBe(false);
   });
 });
