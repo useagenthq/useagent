@@ -220,8 +220,8 @@ async function main(): Promise<void> {
   const t0 = Date.now();
   if (!process.env.DAYTONA_API_KEY) { console.error("ABORT: DAYTONA_API_KEY not set"); process.exit(2); }
   await recreateDb();
-  await startBackend("boot");
   try {
+    await startBackend("boot"); // inside try so a boot failure still emits a result + runs cleanup
     for (let t = 0; t < THREADS; t++) await threadCycle(t);
   } catch (err) {
     rec.check(false, "harness error", err instanceof Error ? (err.stack ?? err.message) : String(err), {});
