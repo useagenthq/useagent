@@ -108,19 +108,29 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
     !stream.liveText &&
     !stream.steps.some((s) => s.kind !== "done");
 
-  const refetchThread = useCallback(async () => {
-    try {
-      const res = await backendFetch(`/api/runs/${rootId}?thread=1`);
-      if (res.ok) {
-        const next = toThread(await res.json());
-        if (next.length) setThread(next);
+  // Cheap change signature so the poll below can skip no-op setThread calls
+  // (toThread always builds fresh objects; unconditional set = 5s render churn).
+  const threadSig = (runs: typeof thread): string =>
+    runs.map((r) => `${r.id}:${r.status}:${r.steps.length}:${r.summary?.length ?? 0}`).join("|");
+
+  const refetchThread = useCallback(
+    async (opts?: { keepPending?: boolean }) => {
+      try {
+        const res = await backendFetch(`/api/runs/${rootId}?thread=1`);
+        if (res.ok) {
+          const next = toThread(await res.json());
+          if (next.length) {
+            setThread((cur) => (threadSig(cur) === threadSig(next) ? cur : next));
+          }
+        }
+      } catch {
+        // keep the current thread on a transient failure
+      } finally {
+        if (!opts?.keepPending) setPendingReply(null);
       }
-    } catch {
-      // keep the current thread on a transient failure
-    } finally {
-      setPendingReply(null);
-    }
-  }, [rootId]);
+    },
+    [rootId],
+  );
 
   // Refetch the thread whenever the streamed run reaches a terminal state —
   // run-level fields written during the turn (engine_session_id → the Live
@@ -131,6 +141,19 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
     if (wasLive.current && !stream.live) void refetchThread();
     wasLive.current = stream.live;
   }, [stream.live, refetchThread]);
+
+  // External turns (Slack mentions, schedules) create runs in this thread with
+  // no local action to trigger a refetch — the user had to reload the page to
+  // see them. Poll lightly while the tab is visible; keepPending so an
+  // in-flight optimistic reply bubble is never cleared by the poll. The change
+  // signature above makes a no-change poll render-free. (A thread-level push
+  // lane is #78's territory; this is the single-replica answer.)
+  useEffect(() => {
+    const id = setInterval(() => {
+      if (document.visibilityState === "visible") void refetchThread({ keepPending: true });
+    }, 5_000);
+    return () => clearInterval(id);
+  }, [refetchThread]);
 
   const handleReply = useCallback(
     async (
