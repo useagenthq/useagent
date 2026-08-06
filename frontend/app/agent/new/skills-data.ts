@@ -9,8 +9,10 @@ import { backendFetch } from "@/lib/backend-fetch";
 export interface Skill {
   id: string;
   name: string;
+  /** Which surface this belongs to - lets the picker group Skills vs Playbooks. */
+  kind: "skill" | "playbook";
   tags: string[];
-  /** The skill's current immutable revision — sent with the run so the backend
+  /** The skill's current immutable revision - sent with the run so the backend
    *  pins the exact version this composer offered. Defaults to 1. */
   version: number;
 }
@@ -22,7 +24,8 @@ function toSkill(value: unknown): Skill | null {
   const tags = Array.isArray(s.tags) ? s.tags.filter((t): t is string => typeof t === "string") : [];
   const version =
     typeof s.current_version === "number" && s.current_version > 0 ? s.current_version : 1;
-  return { id: s.id, name: s.name, tags, version };
+  const kind = s.kind === "playbook" ? "playbook" : "skill";
+  return { id: s.id, name: s.name, kind, tags, version };
 }
 
 /**
