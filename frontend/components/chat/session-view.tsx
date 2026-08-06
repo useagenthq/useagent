@@ -74,7 +74,12 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
 
   const newest = thread[thread.length - 1];
   const rootId = thread[0].id;
-  const stream = useRunStream(newest);
+  // The stream must watch the turn PRODUCING events: the running run. Watching
+  // the newest froze the running turn's progress the moment a follow-up queued
+  // (newest became the queued reply, which streams nothing - user report).
+  // Falls back to newest on fresh/idle threads (SSE attaches when it starts).
+  const activeRun = thread.find((r) => r.status === "running") ?? newest;
+  const stream = useRunStream(activeRun);
 
   // Cache each run's RICHEST projection (stream overlay) so a turn never
   // renders LESS than what was already on screen. Without this, a web reply
@@ -86,7 +91,7 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
     new Map<string, { steps: Turn["steps"]; summary: string | null; native: Turn["native"] }>(),
   );
   if (stream.steps.length > 0 || stream.summary) {
-    projectionCache.current.set(newest.id, {
+    projectionCache.current.set(activeRun.id, {
       steps: stream.steps,
       summary: stream.summary,
       native: stream.native,
@@ -97,7 +102,7 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
   // settled history - served from the projection cache whenever it is richer
   // than the (possibly lagging) DB snapshot.
   const turns: Turn[] = thread.map((run) => {
-    if (run.id === newest.id) {
+    if (run.id === activeRun.id) {
       return {
         run,
         steps: stream.steps,
