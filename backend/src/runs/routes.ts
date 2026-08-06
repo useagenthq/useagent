@@ -12,9 +12,10 @@ import {
   listRunsWithSteps,
 } from "./repo";
 import { acceptRunCommand } from "../commands";
+import { acceptRunCancel, CANCEL_SUMMARY } from "../commands/cancel";
 import { resolveSkillSelection } from "../skills/repo";
 import { unknownRepos } from "../github/repos";
-import { bus, channel, pumpThread, type BusEvent } from "../worker";
+import { bus, channel, pumpThread, signalCancel, type BusEvent } from "../worker";
 import { turnStream } from "./turn-stream";
 import { assertNever } from "../util/exhaustive";
 import {
@@ -201,6 +202,36 @@ runsRoutes.post("/", async (c) => {
       );
     default:
       return assertNever(accepted);
+  }
+});
+
+// POST /:id/cancel — durable user Stop. Records a `run.cancel` command
+// (idempotent), fails a not-yet-started (queued) run atomically, signals a live
+// actor to abort, and pumps the thread so the QUEUED lane continues. Org-scoped
+// (a cross-org/missing id is a 404). A run that already settled is a no-op.
+runsRoutes.post("/:id/cancel", async (c) => {
+  const orgId = c.get("orgId");
+  const id = c.req.param("id");
+  const outcome = await acceptRunCancel({ orgId, actorId: c.get("userId"), runId: id });
+  switch (outcome.status) {
+    case "not_found":
+      return c.json({ error: "run not found" }, 404);
+    case "terminal":
+      return c.json({ id, status: outcome.runStatus, note: "already settled" }, 200);
+    case "already":
+      // Idempotent replay — best-effort re-signal a still-live actor, then pump.
+      signalCancel(id, CANCEL_SUMMARY);
+      await pumpThread(outcome.threadId);
+      return c.json({ id, status: "cancelling" }, 200);
+    case "accepted":
+      // A RUNNING actor is aborted in-process (its teardown finalizes the run
+      // "Stopped by user" and pumps); a QUEUED run was already failed in-tx.
+      // Pump either way so the next queued turn dispatches.
+      if (outcome.runStatusWas === "running") signalCancel(id, CANCEL_SUMMARY);
+      await pumpThread(outcome.threadId);
+      return c.json({ id, status: "cancelling" }, 202);
+    default:
+      return assertNever(outcome);
   }
 });
 

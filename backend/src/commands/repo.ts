@@ -10,8 +10,10 @@ import type { RunCommandInput } from "./types";
 // only reads and writes rows.
 // ---------------------------------------------------------------------------
 
-/** The command's product kind. Stage 1 accepts only run creation. */
+/** The command's product kind. `run.create` enqueues a turn; `run.cancel` is the
+ *  durable record of a user stop request (see commands/cancel.ts). */
 export const RUN_CREATE = "run.create" as const;
+export const RUN_CANCEL = "run.cancel" as const;
 
 export type CommandRecord = typeof commands.$inferSelect;
 
