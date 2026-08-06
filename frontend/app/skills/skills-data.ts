@@ -22,7 +22,8 @@ import { relativeTime } from "@/utils/format";
  * tags, and three step-sections (overview / procedure / verify). The
  * highest-`usage_count` skill is rendered as the featured card; the rest fill
  * the library grid. When the backend is unreachable the page falls back to
- * {@link mockSkills} so it never looks broken.
+ * {@link mockSkills} — deliberately empty, so the fallback is an honest empty
+ * state, never fabricated content.
  */
 
 /* -------------------------------------------------------------------------- */
@@ -78,7 +79,6 @@ const knownTagColor: Record<string, ChipColor> = {
   backend: "purple",
   review: "sky",
   docs: "gray",
-  boardui: "sky",
   alignui: "sky",
 };
 
@@ -161,81 +161,13 @@ export function pickFeatured(skills: Skill[]): Skill | undefined {
 }
 
 /* -------------------------------------------------------------------------- */
-/*  Mock fallback                                                               */
+/*  Fallback                                                                    */
 /* -------------------------------------------------------------------------- */
 
-export const mockSkills: Skill[] = [
-  {
-    id: "ship-a-new-page",
-    name: "Ship a new page",
-    description:
-      "When we need a new route that matches the AlignUI shell and token rules end to end.",
-    tags: ["frontend", "alignui"],
-    sections: {
-      overview: [
-        "Confirm the route path and which sidebar it belongs under.",
-        "Read AGENTS.md and the nearest sibling page for patterns.",
-      ],
-      procedure: [
-        "Scaffold page.tsx inside AppShell with the matching sidebar.",
-        "Build the header, then colocate the section components.",
-        "Add a client boundary only where interactivity is needed.",
-      ],
-      verify: [
-        "curl the route for 200 and your heading text.",
-        "Run tsc --noEmit and confirm the dev log is clean.",
-      ],
-    },
-    usageCount: 34,
-    lastRunAt: undefined,
-  },
-  {
-    id: "fix-flaky-test",
-    name: "Fix flaky test",
-    description:
-      "Reproduce, isolate, and stabilize an intermittently failing test.",
-    tags: ["backend", "review"],
-    sections: { overview: [], procedure: [], verify: [] },
-    usageCount: 31,
-  },
-  {
-    id: "refactor-to-tokens",
-    name: "Refactor to tokens",
-    description: "Replace raw hex and dark: prefixes with semantic classes.",
-    tags: ["frontend", "review"],
-    sections: { overview: [], procedure: [], verify: [] },
-    usageCount: 27,
-  },
-  {
-    id: "design-review-pass",
-    name: "Design review pass",
-    description: "Audit a surface against the AlignUI kit and token rules.",
-    tags: ["review", "frontend"],
-    sections: { overview: [], procedure: [], verify: [] },
-    usageCount: 22,
-  },
-  {
-    id: "write-release-notes",
-    name: "Write release notes",
-    description: "Summarize merged PRs into a clear changelog entry.",
-    tags: ["docs"],
-    sections: { overview: [], procedure: [], verify: [] },
-    usageCount: 18,
-  },
-  {
-    id: "port-dashboard-widget",
-    name: "Port dashboard widget",
-    description: "Rebuild a chartden widget in Skynet tokens and layout.",
-    tags: ["frontend"],
-    sections: { overview: [], procedure: [], verify: [] },
-    usageCount: 12,
-  },
-  {
-    id: "add-api-route",
-    name: "Add API route",
-    description: "Scaffold a typed route handler with validation and tests.",
-    tags: ["backend"],
-    sections: { overview: [], procedure: [], verify: [] },
-    usageCount: 9,
-  },
-];
+/**
+ * SSR fallback used only while the backend is unreachable. Intentionally empty:
+ * the view renders its honest "No skills yet" empty state and self-heals via a
+ * client refetch once the backend responds. Never seed demo content here.
+ */
+export const mockSkills: Skill[] = [];
+
