@@ -1,6 +1,6 @@
 import { and, eq, sql } from "drizzle-orm";
 import { db, type Executor } from "../db/client";
-import { skillRevisions, skills, type SkillSections } from "../db/schema";
+import { skillRevisions, skills, type SkillKind, type SkillSections } from "../db/schema";
 import { formatSkillMarkdown, hashSkillContent, type SkillContent } from "./format";
 
 // ---------------------------------------------------------------------------
@@ -19,21 +19,26 @@ export type SkillRevisionRecord = typeof skillRevisions.$inferSelect;
 export interface PinnedSkill {
   skillId: string;
   version: number;
+  /** "skill" | "playbook" — carried so the worker attributes the pinned load. */
+  kind: SkillKind;
   contentHash: string;
   content: SkillContent;
 }
 
-/** Append the immutable revision row for a skill version (inside a tx). */
+/** Append the immutable revision row for a skill version (inside a tx). `kind` is
+ *  denormalized from the parent skill so a pinned read stays single-table. */
 async function insertRevision(
   exec: Executor,
   skillId: string,
   version: number,
+  kind: SkillKind,
   content: SkillContent,
 ): Promise<string> {
   const contentHash = hashSkillContent(formatSkillMarkdown(content));
   await exec.insert(skillRevisions).values({
     skillId,
     version,
+    kind,
     name: content.name,
     description: content.description,
     sections: content.sections,
@@ -50,18 +55,21 @@ async function insertRevision(
 export async function createSkillWithRevision(input: {
   orgId: string;
   name: string;
+  kind?: SkillKind;
   description: string;
   tags: string[];
   sections: SkillSections;
   usageCount?: number;
   lastRunAt?: Date | null;
 }): Promise<SkillRecord | null> {
+  const kind = input.kind ?? "skill";
   return db.transaction(async (tx) => {
     const [row] = await tx
       .insert(skills)
       .values({
         orgId: input.orgId,
         name: input.name,
+        kind,
         description: input.description,
         tags: input.tags,
         sections: input.sections,
@@ -72,7 +80,7 @@ export async function createSkillWithRevision(input: {
       .onConflictDoNothing({ target: [skills.orgId, skills.name] })
       .returning();
     if (!row) return null; // (org, name) already exists
-    await insertRevision(tx, row.id, 1, {
+    await insertRevision(tx, row.id, 1, row.kind, {
       name: row.name,
       description: row.description,
       sections: row.sections,
@@ -140,7 +148,8 @@ export async function updateSkillWithRevision(
       .where(and(eq(skills.id, id), eq(skills.orgId, orgId)))
       .returning();
     if (contentChanged && row) {
-      await insertRevision(tx, row.id, nextVersion, nextContent);
+      // `kind` is immutable, so a new revision carries the existing kind.
+      await insertRevision(tx, row.id, nextVersion, row.kind, nextContent);
     }
     return row ?? null;
   });
@@ -195,6 +204,7 @@ export async function getPinnedRevision(
   return {
     skillId,
     version: rev.version,
+    kind: rev.kind,
     contentHash: rev.contentHash,
     content: { name: rev.name, description: rev.description, sections: rev.sections },
   };
@@ -227,6 +237,7 @@ export async function ensureCurrentRevision(
     .values({
       skillId: skill.id,
       version: skill.currentVersion,
+      kind: skill.kind,
       name: skill.name,
       description: skill.description,
       sections: skill.sections,

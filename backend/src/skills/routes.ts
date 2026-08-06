@@ -1,7 +1,14 @@
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import { Hono } from "hono";
 import { db } from "../db/client";
-import { ENGINE_IDS, skills, type EngineId, type SkillSections } from "../db/schema";
+import {
+  ENGINE_IDS,
+  SKILL_KINDS,
+  skills,
+  type EngineId,
+  type SkillKind,
+  type SkillSections,
+} from "../db/schema";
 import type { AppEnv } from "../http";
 import { orgScope } from "../middleware/org";
 import { acceptRunCommand } from "../commands";
@@ -23,6 +30,8 @@ function toSkill(s: SkillRecord) {
     id: s.id,
     org_id: s.orgId,
     name: s.name,
+    // "skill" | "playbook" — same substrate, two product surfaces.
+    kind: s.kind,
     description: s.description,
     tags: s.tags,
     sections: s.sections,
@@ -50,12 +59,25 @@ function coerceSections(v: unknown): SkillSections {
   };
 }
 
-// List all skills for the active org (newest first).
+// List skills for the active org (newest first). An optional `?kind=` filter
+// splits the shared substrate into its two product surfaces (Skills vs
+// Playbooks pages); omitted → every kind. An unknown kind yields an empty list.
 skillsRoutes.get("/", async (c) => {
+  const kindParam = c.req.query("kind");
+  const kindFilter =
+    kindParam && (SKILL_KINDS as readonly string[]).includes(kindParam)
+      ? (kindParam as SkillKind)
+      : null;
+  const where = kindFilter
+    ? and(eq(skills.orgId, c.get("orgId")), eq(skills.kind, kindFilter))
+    : kindParam
+      ? // an explicit but unrecognized kind matches nothing (fail closed)
+        sql`false`
+      : eq(skills.orgId, c.get("orgId"));
   const rows = await db
     .select()
     .from(skills)
-    .where(eq(skills.orgId, c.get("orgId")))
+    .where(where)
     .orderBy(desc(skills.createdAt), desc(skills.id));
   return c.json({ skills: rows.map(toSkill) });
 });
@@ -72,9 +94,23 @@ skillsRoutes.post("/", async (c) => {
   const name = typeof body.name === "string" ? body.name.trim() : "";
   if (!name) return c.json({ error: "name is required" }, 400);
 
+  // `kind` classifies the row as a plain skill (default) or a playbook. An
+  // explicit unknown value is a client error, matching the engine check below.
+  let kind: SkillKind = "skill";
+  if (body.kind !== undefined) {
+    if (
+      typeof body.kind !== "string" ||
+      !(SKILL_KINDS as readonly string[]).includes(body.kind)
+    ) {
+      return c.json({ error: `kind must be one of: ${SKILL_KINDS.join(", ")}` }, 400);
+    }
+    kind = body.kind as SkillKind;
+  }
+
   const row = await createSkillWithRevision({
     orgId: c.get("orgId"),
     name,
+    kind,
     description: typeof body.description === "string" ? body.description : "",
     tags: coerceStringArray(body.tags),
     sections: coerceSections(body.sections),

@@ -5,6 +5,7 @@
 // skill body (bounded-payload rule: markers carry references, not oversized
 // content). Mirrors memory/retrieval-ledger.ts.
 
+import type { SkillKind } from "../db/schema";
 import { recordProviderEvent } from "../runs/provider-events";
 
 /** The native `eventType` for a skill-load marker. */
@@ -14,6 +15,8 @@ export const SKILL_LOADED = "skill.loaded";
 export interface SkillLoadedPayload {
   readonly skillId: string;
   readonly version: number;
+  /** "skill" | "playbook" - lets the timeline label the row "Playbook <name>". */
+  readonly kind: SkillKind;
   readonly name: string;
   readonly contentHash: string;
   /** Discriminator shared with context.retrieved's `source` in the timeline. */
