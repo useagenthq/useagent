@@ -10,7 +10,7 @@
 import type { Browser, Page } from "playwright-core";
 import {
   BE, FE, createRun, getRun, getThread, waitRun, newPage, launch, shot, sleep,
-  verdictOf, printResult, type Result,
+  verdictOf, printResult, beApi, TAG, type Result,
 } from "./harness";
 
 const ONLY = (process.env.SCENARIOS ?? "").split(",").map((s) => s.trim()).filter(Boolean);
@@ -569,12 +569,321 @@ async function s11_a11y(wf: string): Promise<Result> {
   }
 }
 
+// ══════════════════════════════════════════════════════════════════════════════
+// ROUTE-LEVEL SCENARIOS (12–17): each seeds REAL fixtures (tagged `uisweep`) via
+// the backend, then asserts the page renders that real data — or an honest
+// empty/error — with ZERO fabricated strings. cleanup.ts deletes the fixtures.
+// ══════════════════════════════════════════════════════════════════════════════
+
+// ── Scenario 12: Skills — list + detail sections + "Run" preselect deep-link ──
+async function s12_skills(): Promise<Result> {
+  const checks: Result["checks"] = [];
+  const { page } = await newPage(browser);
+  const marker = crypto.randomUUID().slice(0, 6);
+  const name = `${TAG}-skill ${marker}`;
+  const overview = `uisweep overview line ${marker}`;
+  try {
+    // Seed a real skill (dev-org) with all three sections so "detail" has content.
+    const created = await beApi("/api/skills", {
+      body: {
+        name,
+        description: `uisweep skill fixture ${marker}`,
+        tags: ["uisweep"],
+        sections: { overview: [overview], procedure: ["do the thing"], verify: ["check the thing"] },
+      },
+    });
+    const skillId = created.body?.id as string | undefined;
+    checks.push({ name: "skills: fixture created via POST /api/skills", ok: created.status === 201 && !!skillId, note: `http=${created.status} id=${skillId?.slice(0, 8)}` });
+
+    await page.goto(`${FE}/skills`, { waitUntil: "domcontentloaded" });
+    await page.waitForTimeout(1200);
+    checks.push({ name: "skills: page heading present", ok: (await page.getByRole("heading", { name: /^Skills$/ }).count()) > 0 });
+    // List: the seeded skill's card is on the page (real data, not a mock).
+    const card = page.locator("article", { hasText: name }).first();
+    checks.push({ name: "skills: seeded skill renders in the library (real data)", ok: (await card.count()) > 0, note: name });
+    // Detail: its section content (overview line) is rendered somewhere on the card/page.
+    checks.push({ name: "skills: detail section content visible (overview line)", ok: (await page.getByText(overview).count()) > 0, note: overview });
+
+    // Run preselect: the card's Run button deep-links to /agent/new?skill=<id>,
+    // and the New Task composer opens with that playbook chosen.
+    const runBtn = card.getByRole("button", { name: /^Run$|^Ran$/ }).first();
+    let preselected = false;
+    if ((await runBtn.count()) > 0 && skillId) {
+      await runBtn.click();
+      await page.waitForURL(/\/agent\/new\?skill=/, { timeout: 15_000 }).catch(() => {});
+      const url = page.url();
+      checks.push({ name: "skills: Run deep-links to /agent/new?skill=<id>", ok: url.includes(`skill=${skillId}`), note: url.slice(-60) });
+      await page.waitForTimeout(1200);
+      // The playbook picker trigger reflects the preselected skill name.
+      const picker = page.locator('[aria-label="Select playbook"]').first();
+      const pickerTxt = (await picker.textContent().catch(() => "")) ?? "";
+      preselected = pickerTxt.includes(name) || (await page.getByText(name).count()) > 0;
+      checks.push({ name: "skills: New Task composer opens with the skill preselected", ok: preselected, note: pickerTxt.slice(0, 50) });
+    } else {
+      checks.push({ name: "skills: Run button present on the seeded card", ok: false, note: "no Run button found" });
+    }
+    return verdictOf("12. Skills (list / detail sections / Run preselect deep-link)", checks);
+  } catch (e) {
+    await shot(page, "s12-skills-fail");
+    checks.push({ name: "scenario threw", ok: false, note: String(e).slice(0, 160) });
+    return verdictOf("12. Skills", checks);
+  } finally {
+    await page.close().catch(() => {});
+  }
+}
+
+// ── Scenario 13: Knowledge — real record renders + Add modal honest states ────
+async function s13_knowledge(): Promise<Result> {
+  const checks: Result["checks"] = [];
+  const { page } = await newPage(browser);
+  const marker = crypto.randomUUID().slice(0, 8);
+  const token = `${TAG}kb${marker}`;
+  try {
+    // Seed a real knowledge record (keyword-retrievable; distill stubs w/o keys).
+    const ing = await beApi("/api/knowledge/ingest", {
+      body: {
+        meta: { source_type: "document", external_id: token, connector_instance_id: "uisweep:web", source_url: "https://example.com/uisweep", domain: "uisweep" },
+        text: `uisweep knowledge fixture ${token}. The uisweep convention is to tag every test row with ${token} so cleanup deletes only ours.`,
+      },
+    });
+    const stored = ing.status === 200 && (ing.body?.status === "stored" || ing.body?.status === "skipped");
+    checks.push({ name: "knowledge: fixture ingested (stored/skipped, honest status)", ok: stored, note: `http=${ing.status} status=${ing.body?.status}` });
+
+    await page.goto(`${FE}/knowledge`, { waitUntil: "domcontentloaded" });
+    await page.waitForTimeout(1400);
+    checks.push({ name: "knowledge: page heading present", ok: (await page.getByRole("heading", { name: /^Knowledge$/ }).count()) > 0 });
+    // Real record appears (search for its unique token to avoid ambiguity).
+    const search = page.locator('[aria-label="Search knowledge"]').first();
+    if ((await search.count()) > 0) {
+      await search.fill(token);
+      await page.waitForTimeout(1400);
+    }
+    const tokenSeen = (await page.getByText(new RegExp(token)).count()) > 0;
+    checks.push({ name: "knowledge: the seeded record renders (real data, by unique token)", ok: tokenSeen, note: token });
+
+    // Add modal: opens with the real form fields — no fabricated success string.
+    await page.getByRole("button", { name: /Add knowledge/i }).first().click().catch(() => {});
+    await page.waitForTimeout(600);
+    const hasName = (await page.locator("#knowledge-name").count()) > 0;
+    const hasContent = (await page.locator("#knowledge-content").count()) > 0;
+    checks.push({ name: "knowledge: Add modal exposes real name + content fields", ok: hasName && hasContent, note: `name=${hasName} content=${hasContent}` });
+    // Honesty: before any submit, no premature "saved/success" claim is shown.
+    const body = await page.locator("body").innerText();
+    const falseSuccess = /\b(saved|success|added to knowledge)\b/i.test(body) && !/Save$/m.test(body);
+    checks.push({ name: "knowledge: no fabricated success before submit (deferred-honest)", ok: !falseSuccess });
+    return verdictOf("13. Knowledge (real record render / Add modal honest states)", checks);
+  } catch (e) {
+    await shot(page, "s13-knowledge-fail");
+    checks.push({ name: "scenario threw", ok: false, note: String(e).slice(0, 160) });
+    return verdictOf("13. Knowledge", checks);
+  } finally {
+    await page.close().catch(() => {});
+  }
+}
+
+// ── Scenario 14: Wiki — published document renders + honest empty branch ──────
+async function s14_wiki(): Promise<Result> {
+  const checks: Result["checks"] = [];
+  const { page } = await newPage(browser);
+  const marker = crypto.randomUUID().slice(0, 6);
+  const title = `${TAG}-wiki ${marker}`;
+  const bodyMarker = `uisweep-wiki-body-${marker}`;
+  try {
+    // Baseline: read the current published set to know the empty vs non-empty branch.
+    const before = await beApi("/api/knowledge/documents?status=published");
+    const beforeCount = (before.body?.documents ?? []).length as number;
+
+    await page.goto(`${FE}/wiki`, { waitUntil: "domcontentloaded" });
+    await page.waitForTimeout(1000);
+    checks.push({ name: "wiki: page heading present", ok: (await page.getByRole("heading", { name: /^Wiki$/ }).count()) > 0 });
+    // Honest empty vs list — never a fabricated placeholder.
+    const emptyShown = (await page.getByText(/No published pages yet/i).count()) > 0;
+    checks.push({
+      name: "wiki: honest state — empty copy iff zero published (no fabrication)",
+      ok: beforeCount === 0 ? emptyShown : !emptyShown,
+      note: `publishedBefore=${beforeCount} emptyShown=${emptyShown}`,
+    });
+
+    // Create + publish a real document, then assert it renders on the wiki.
+    const doc = await beApi("/api/knowledge/documents", { body: { title, content: `# ${title}\n\n${bodyMarker}` } });
+    const docId = doc.body?.document?.id as string | undefined;
+    checks.push({ name: "wiki: document created (draft)", ok: !!docId, note: `http=${doc.status} id=${docId?.slice(0, 8)}` });
+    if (docId) {
+      const pub = await beApi(`/api/knowledge/documents/${docId}/publish`, { body: {} });
+      checks.push({ name: "wiki: document published", ok: pub.status === 200 && pub.body?.document?.status === "published", note: `status=${pub.body?.document?.status}` });
+      await page.reload({ waitUntil: "domcontentloaded" });
+      await page.waitForTimeout(1200);
+      checks.push({ name: "wiki: published document title renders", ok: (await page.getByText(title).count()) > 0, note: title });
+      checks.push({ name: "wiki: published document body renders (real content)", ok: (await page.getByText(bodyMarker).count()) > 0, note: bodyMarker });
+    }
+    return verdictOf("14. Wiki (published render / honest empty branch)", checks);
+  } catch (e) {
+    await shot(page, "s14-wiki-fail");
+    checks.push({ name: "scenario threw", ok: false, note: String(e).slice(0, 160) });
+    return verdictOf("14. Wiki", checks);
+  } finally {
+    await page.close().catch(() => {});
+  }
+}
+
+// ── Scenario 15: Schedules — create via the modal + list row (created disabled) ─
+async function s15_schedules(): Promise<Result> {
+  const checks: Result["checks"] = [];
+  const { page } = await newPage(browser);
+  const marker = crypto.randomUUID().slice(0, 6);
+  const name = `${TAG}-sched ${marker}`;
+  try {
+    await page.goto(`${FE}/agent/schedules`, { waitUntil: "domcontentloaded" });
+    await page.waitForTimeout(1200);
+    checks.push({ name: "schedules: page heading present", ok: (await page.getByRole("heading", { name: /^Schedules$/ }).count()) > 0 });
+    checks.push({ name: "schedules: 'created disabled' automation banner present", ok: (await page.getByText(/New schedules are created disabled/i).count()) > 0 });
+
+    // Open the New schedule modal and fill it (cron validates locally — no LLM).
+    await page.getByRole("button", { name: /New schedule/i }).first().click().catch(() => {});
+    await page.waitForTimeout(500);
+    const nameInput = page.locator('[aria-label="Name"]').first();
+    const cronInput = page.locator('[aria-label="Cron expression"]').first();
+    const promptInput = page.locator('[aria-label="Prompt"]').first();
+    // Hydration-safe fills.
+    for (let i = 0; i < 20; i++) {
+      await nameInput.fill(name);
+      await cronInput.fill("0 9 * * 1");
+      await promptInput.fill(`uisweep scheduled prompt ${marker}`);
+      if ((await nameInput.inputValue()) === name) break;
+      await page.waitForTimeout(150);
+    }
+    const createBtn = page.getByRole("button", { name: /^Create$|Creating/ }).first();
+    await createBtn.click().catch(() => {});
+    // The new row lands in the list.
+    const row = page.locator("article", { hasText: name }).first();
+    await row.waitFor({ state: "visible", timeout: 15_000 }).catch(() => {});
+    checks.push({ name: "schedules: created schedule appears in the list (real row)", ok: (await row.count()) > 0, note: name });
+    checks.push({ name: "schedules: new row shows cron + disabled status (honest, created off)", ok: (await row.getByText("0 9 * * 1").count()) > 0 && (await row.getByText(/Disabled/i).count()) > 0 });
+    // Confirm it persisted server-side too.
+    const list = await beApi("/api/schedules");
+    const persisted = (list.body?.schedules ?? []).some((s: any) => s.name === name && s.enabled === false);
+    checks.push({ name: "schedules: persisted server-side, enabled=false", ok: persisted, note: `count=${(list.body?.schedules ?? []).length}` });
+    return verdictOf("15. Schedules (create via modal / list row / created-disabled)", checks);
+  } catch (e) {
+    await shot(page, "s15-schedules-fail");
+    checks.push({ name: "scenario threw", ok: false, note: String(e).slice(0, 160) });
+    return verdictOf("15. Schedules", checks);
+  } finally {
+    await page.close().catch(() => {});
+  }
+}
+
+// ── Scenario 16: Workspace — real Limits card + fleet run links → /session/ ────
+async function s16_workspace(wf: string): Promise<Result> {
+  const checks: Result["checks"] = [];
+  const { page } = await newPage(browser);
+  try {
+    // Ground truth from the same APIs the page reads.
+    const fleet = (await beApi("/api/fleet")).body ?? {};
+    const runs = (await beApi("/api/runs")).body?.runs ?? [];
+    await page.goto(`${FE}/agent/workspace`, { waitUntil: "domcontentloaded" });
+    await page.waitForTimeout(2000);
+    checks.push({ name: "workspace: page heading present", ok: (await page.getByRole("heading", { name: /^Workspace$/ }).count()) > 0 });
+
+    // Limits card: Models·burn panel shows REAL per-model burn or the honest empty.
+    checks.push({ name: "workspace: Limits section heading present", ok: (await page.getByRole("heading", { name: /^Limits$/ }).count()) > 0 });
+    const modelsHeading = (await page.getByText(/Models · burn/).count()) > 0;
+    checks.push({ name: "workspace: 'Models · burn' panel present", ok: modelsHeading });
+    const hasModelRows = (fleet.models ?? []).length > 0;
+    const emptyBurn = (await page.getByText(/No model runs yet today/i).count()) > 0;
+    const tokensToday = (await page.getByText(/tokens today/i).count()) > 0;
+    checks.push({
+      name: "workspace: Limits reflects real /api/fleet (rows+totals, or honest empty)",
+      ok: hasModelRows ? tokensToday && !emptyBurn : emptyBurn,
+      note: `apiModels=${(fleet.models ?? []).length} tokensToday=${tokensToday} emptyBurn=${emptyBurn}`,
+    });
+
+    // Fleet run links point at /session/{id} — the audit-fix contract (#79).
+    const sessionLinks = page.locator('a[href^="/session/"]');
+    const linkCount = await sessionLinks.count();
+    // Expand lanes so collapsed run rows mount, then re-count.
+    const laneButtons = page.locator('button[aria-expanded]');
+    const nLanes = await laneButtons.count();
+    for (let i = 0; i < nLanes; i++) await laneButtons.nth(i).click().catch(() => {});
+    await page.waitForTimeout(600);
+    const linksAfter = await page.locator('a[href^="/session/"]').count();
+    const noDeadRunLinks = (await page.locator('a[href^="/agent/runs/"]').count()) === 0;
+    if (runs.length > 0) {
+      checks.push({ name: "workspace: fleet run rows link to /session/{id} (not the dead /agent/runs/)", ok: linksAfter > 0 && noDeadRunLinks, note: `sessionLinks=${linksAfter} runs=${runs.length}` });
+      // The href resolves to a real run id.
+      const firstHref = await page.locator('a[href^="/session/"]').first().getAttribute("href").catch(() => null);
+      const realId = firstHref?.split("/session/")[1] ?? "";
+      const isRealRun = runs.some((r: any) => r.id === realId);
+      checks.push({ name: "workspace: a run link targets a REAL run id from /api/runs", ok: isRealRun, note: `href=${firstHref}` });
+    } else {
+      checks.push({ name: "workspace: no runs today ⇒ lanes honestly empty (no fabricated links)", ok: linkCount === 0 && noDeadRunLinks, note: `links=${linkCount}` });
+    }
+    await shot(page, "s16-workspace");
+    return verdictOf("16. Workspace (real Limits card / run links → /session/)", checks, `warm=${wf}`);
+  } catch (e) {
+    await shot(page, "s16-workspace-fail");
+    checks.push({ name: "scenario threw", ok: false, note: String(e).slice(0, 160) });
+    return verdictOf("16. Workspace", checks);
+  } finally {
+    await page.close().catch(() => {});
+  }
+}
+
+// ── Scenario 17: Live Artifacts — card link → /session/ or honest empty ───────
+async function s17_artifacts(): Promise<Result> {
+  const checks: Result["checks"] = [];
+  const { page } = await newPage(browser);
+  try {
+    const runs = (await beApi("/api/runs")).body?.runs ?? [];
+    await page.goto(`${FE}/agent/artifacts`, { waitUntil: "domcontentloaded" });
+    await page.waitForTimeout(2000);
+    checks.push({ name: "artifacts: 'Live Artifacts' heading present", ok: (await page.getByRole("heading", { name: /Live Artifacts/ }).count()) > 0 });
+
+    const cards = page.locator("article");
+    const cardCount = await cards.count();
+    const emptyShown = (await page.getByText(/No artifacts yet/i).count()) > 0;
+    if (cardCount > 0 && !emptyShown) {
+      // Each card links back to its run's session.
+      const link = page.locator('a[href^="/session/"]').first();
+      const href = (await link.getAttribute("href").catch(() => null)) ?? "";
+      const runId = href.split("/session/")[1] ?? "";
+      const isRealRun = runs.some((r: any) => r.id === runId);
+      checks.push({ name: "artifacts: card links to /session/{runId} (real run)", ok: !!href && isRealRun, note: `href=${href}` });
+    } else {
+      // Honest empty: the CTA points at /agent/new — no fabricated gallery.
+      const cta = (await page.locator('a[href="/agent/new"]').count()) > 0;
+      checks.push({ name: "artifacts: honest empty state ('No artifacts yet' + Start a run CTA)", ok: emptyShown && cta, note: `empty=${emptyShown} cta=${cta}` });
+    }
+    await shot(page, "s17-artifacts");
+    return verdictOf("17. Live Artifacts (card link → /session/ or honest empty)", checks);
+  } catch (e) {
+    await shot(page, "s17-artifacts-fail");
+    checks.push({ name: "scenario threw", ok: false, note: String(e).slice(0, 160) });
+    return verdictOf("17. Live Artifacts", checks);
+  } finally {
+    await page.close().catch(() => {});
+  }
+}
+
 // ── runner ────────────────────────────────────────────────────────────────────
+function sh(cmd: string): string {
+  try { return Bun.spawnSync(["bash", "-lc", cmd]).stdout.toString().trim(); } catch { return ""; }
+}
+
 async function main() {
   console.log(`\n████ UI E2E SWEEP — FE=${FE} BE=${BE} ████`);
+  // Provenance: bind every result to the exact commit + runtime it was produced
+  // under, so a green sweep can never be misattributed to code it didn't exercise.
+  const sha = sh("git rev-parse --short HEAD") || "unknown";
+  const dirty = sh("git status --porcelain") !== "";
+  const branch = sh("git rev-parse --abbrev-ref HEAD") || "?";
+  console.log(
+    `  provenance: commit ${sha}${dirty ? "+dirty" : ""} (${branch}) · ${new Date().toISOString()} · ` +
+      `bun ${Bun.version} · ${process.platform}/${process.arch} · scenarios=${ONLY.length ? ONLY.join(",") : "all"}`,
+  );
   browser = await launch();
   let wf = "";
-  const needWarm = [2, 3, 5, 7, 8, 10, 11].some(want);
+  const needWarm = [2, 3, 5, 7, 8, 10, 11, 16, 17].some(want);
   if (needWarm) {
     console.log("… ensuring a warm opencode fanout fixture");
     wf = await ensureWarmFanout();
@@ -589,6 +898,13 @@ async function main() {
     if (want(8)) results.push(await s8_desktop(wf));
     if (want(10)) results.push(await s10_rail(wf));
     if (want(11)) results.push(await s11_a11y(wf));
+    // Route-level scenarios (12–17) — seed real fixtures, assert real render.
+    if (want(12)) results.push(await s12_skills());
+    if (want(13)) results.push(await s13_knowledge());
+    if (want(14)) results.push(await s14_wiki());
+    if (want(15)) results.push(await s15_schedules());
+    if (want(16)) results.push(await s16_workspace(wf));
+    if (want(17)) results.push(await s17_artifacts());
     if (want(2)) results.push(await s2_reply(wf)); // mutates wf (real reply) → run last on wf
     if (want(4)) results.push(await s4_streaming());
     if (want(6)) results.push(await s6_reconnect());
