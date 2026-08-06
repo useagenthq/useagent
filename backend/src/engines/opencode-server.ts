@@ -477,6 +477,13 @@ export const opencodeServerAdapter: EngineAdapter = {
       const headers = { ...authHeaders(token), "content-type": "application/json" };
       const dirQ = `?directory=${encodeURIComponent(workdir)}`;
 
+      // Clone the thread's selected repo INTO the workspace before the turn —
+      // idempotent (a resumed thread already has it, so this is a fast skip).
+      // Public repos need no credential; a private repo uses the backend-held
+      // token as a narrow one-shot (see ensureRepoClone). A fresh clone that
+      // fails fails the run honestly, before the engine works in an empty dir.
+      if (ctx.repo) await ensureRepoClone(sandbox, workdir, ctx.repo, ctx);
+
       const createSession = async (): Promise<string> => {
         const res = await fetch(`${baseUrl}/session${dirQ}`, {
           method: "POST",
