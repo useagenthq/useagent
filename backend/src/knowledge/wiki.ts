@@ -206,34 +206,41 @@ export async function publishDocument(
       `;
   if (!rev) return null;
 
-  await sql`
-    UPDATE knowledge_documents
-    SET status = 'published', published_revision_id = ${rev.id}, updated_at = now()
-    WHERE id = ${documentId} AND org_id = ${orgId}
-  `;
-
-  // Index the published revision into the retrieval layer (agent-visible).
+  // The embedding (a network call) is computed OUTSIDE the transaction; then the
+  // doc status flip AND the knowledge_records upsert commit together in ONE tx.
+  // A partial failure can no longer leave a "published" doc missing from search
+  // (or an unindexed doc marked published) — the two steps are atomic.
   const embedding = embeddingsEnabled() ? await embedOne(rev.content).catch(() => null) : null;
-  await upsertRecord({
-    orgId,
-    userId: doc.user_id,
-    kind: "wiki",
-    title: doc.title,
-    body: rev.content,
-    refs: [],
-    meta: {
-      source_type: "wiki",
-      source_url: doc.slug ?? null,
-      document_id: documentId,
-      revision_id: rev.id,
-      status: "published",
-    },
-    externalId: `wiki:${documentId}`,
-    connectorInstanceId: "wiki",
-    contentHash: rev.content_hash,
-    distillationKey: `wiki:${rev.content_hash}`,
-    worthSaving: true,
-    embedding,
+  await sql.begin(async (tx) => {
+    await tx`
+      UPDATE knowledge_documents
+      SET status = 'published', published_revision_id = ${rev.id}, updated_at = now()
+      WHERE id = ${documentId} AND org_id = ${orgId}
+    `;
+    await upsertRecord(
+      {
+        orgId,
+        userId: doc.user_id,
+        kind: "wiki",
+        title: doc.title,
+        body: rev.content,
+        refs: [],
+        meta: {
+          source_type: "wiki",
+          source_url: doc.slug ?? null,
+          document_id: documentId,
+          revision_id: rev.id,
+          status: "published",
+        },
+        externalId: `wiki:${documentId}`,
+        connectorInstanceId: "wiki",
+        contentHash: rev.content_hash,
+        distillationKey: `wiki:${rev.content_hash}`,
+        worthSaving: true,
+        embedding,
+      },
+      tx,
+    );
   });
 
   return getDocument(orgId, documentId);
@@ -247,11 +254,15 @@ export async function archiveDocument(orgId: string, documentId: string): Promis
     SELECT id FROM knowledge_documents WHERE id = ${documentId} AND org_id = ${orgId} LIMIT 1
   `;
   if (!doc) return null;
-  await sql`
-    UPDATE knowledge_documents SET status = 'archived', published_revision_id = NULL, updated_at = now()
-    WHERE id = ${documentId} AND org_id = ${orgId}
-  `;
-  const rec = await findExisting(orgId, "wiki", `wiki:${documentId}`);
-  if (rec) await deleteRecord(orgId, rec.id);
+  // Status flip + record removal in ONE tx, so an archived doc is never left
+  // still-searchable (nor a still-published doc left without its record).
+  await sql.begin(async (tx) => {
+    await tx`
+      UPDATE knowledge_documents SET status = 'archived', published_revision_id = NULL, updated_at = now()
+      WHERE id = ${documentId} AND org_id = ${orgId}
+    `;
+    const rec = await findExisting(orgId, "wiki", `wiki:${documentId}`, tx);
+    if (rec) await deleteRecord(orgId, rec.id, tx);
+  });
   return getDocument(orgId, documentId);
 }
