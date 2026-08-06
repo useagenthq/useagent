@@ -20,6 +20,7 @@ import { knowledgeMcpRoutes } from "./knowledge/gateway/mcp";
 import { memoryRoutes } from "./memory/routes";
 import { commandsRoutes } from "./runs/command-catalog";
 import { reposRoutes } from "./github/routes";
+import { pullsRoutes } from "./github/pulls-routes";
 import { desktopProxyRoutes } from "./runs/desktop-proxy";
 import { fleetRoutes } from "./runs/fleet-routes";
 import { liveProxyRoutes } from "./runs/live-proxy";
@@ -108,6 +109,10 @@ app.route("/api/desktop-proxy", desktopProxyRoutes);
 // Real GitHub repository list for the New Task composer's repo picker. The
 // backend-held token stays server-side; unconfigured → {configured:false}.
 app.route("/api/repos", reposRoutes);
+// Real open pull requests across the org's accessible repos - powers the
+// /review page. Org-scoped; the GitHub token stays server-side. Unconfigured →
+// {configured:false}; a failed fetch → {configured:true, error}.
+app.route("/api/pulls", pullsRoutes);
 // Real "Limits" numbers for the workspace: per-model token/cost burn today +
 // the org's live Daytona sandbox footprint. Org-scoped; no keys to the client.
 app.route("/api/fleet", fleetRoutes);
