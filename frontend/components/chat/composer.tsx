@@ -4,6 +4,7 @@ import { useRef, useState } from "react";
 import {
   RiAddLine,
   RiArrowUpLine,
+  RiStopFill,
   RiErrorWarningLine,
   RiMicLine,
   RiToolsLine,
@@ -63,6 +64,12 @@ export type ComposerProps = {
   /** Engine slash commands for "/" autocomplete (reply composer, live thread). */
   commands?: SlashCommand[];
   onSubmit: ComposerSubmit;
+  /** A turn is running in this thread - the send button becomes a Stop control
+   *  while the input is empty (ChatGPT/opencode pattern); typing turns it back
+   *  into Send so a reply can still be queued. */
+  running?: boolean;
+  stopping?: boolean;
+  onStop?: () => void;
 };
 
 /**
@@ -90,6 +97,9 @@ export function Composer({
   defaultMemoryScope = "org",
   commands,
   onSubmit,
+  running = false,
+  stopping = false,
+  onStop,
 }: ComposerProps) {
   const [value, setValue] = useState("");
   const [engineState, setEngineState] = useState<EngineId>(defaultEngine);
@@ -289,25 +299,49 @@ export function Composer({
                   <RiMicLine className="size-5" aria-hidden />
                 </button>
               )}
-              <button
-                type="button"
-                aria-label="Send"
-                onClick={submit}
-                disabled={!canSend}
-                className={cn(
-                  "flex items-center justify-center rounded-full transition-all",
-                  hero ? "size-10" : "size-9",
-                  canSend
-                    ? "bg-blue-500 text-white hover:bg-blue-600"
-                    : "bg-bg-soft-200 text-text-soft-400 cursor-not-allowed",
-                )}
-              >
-                {busy ? (
-                  <Loader variant="circular" size="sm" className="border-white" />
-                ) : (
-                  <RiArrowUpLine className="size-5" aria-hidden />
-                )}
-              </button>
+              {running && onStop && !canSend ? (
+                // A turn is running and the input is empty: this IS the Stop
+                // control (ChatGPT/opencode pattern - Stop where Send lives).
+                // Type anything and it flips back to Send so a reply can queue.
+                <button
+                  type="button"
+                  aria-label="Stop this run"
+                  title="Stop this run"
+                  onClick={onStop}
+                  disabled={stopping}
+                  className={cn(
+                    "flex items-center justify-center rounded-full transition-all",
+                    hero ? "size-10" : "size-9",
+                    "bg-error-base text-white hover:opacity-90 disabled:opacity-50",
+                  )}
+                >
+                  {stopping ? (
+                    <Loader variant="circular" size="sm" className="border-white" />
+                  ) : (
+                    <RiStopFill className="size-5" aria-hidden />
+                  )}
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  aria-label="Send"
+                  onClick={submit}
+                  disabled={!canSend}
+                  className={cn(
+                    "flex items-center justify-center rounded-full transition-all",
+                    hero ? "size-10" : "size-9",
+                    canSend
+                      ? "bg-blue-500 text-white hover:bg-blue-600"
+                      : "bg-bg-soft-200 text-text-soft-400 cursor-not-allowed",
+                  )}
+                >
+                  {busy ? (
+                    <Loader variant="circular" size="sm" className="border-white" />
+                  ) : (
+                    <RiArrowUpLine className="size-5" aria-hidden />
+                  )}
+                </button>
+              )}
             </div>
           </div>
         </PromptInput>

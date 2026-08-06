@@ -426,6 +426,9 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
             onReply={handleReply}
             sendNowFor={runningTurn ? headQueuedId : null}
             onSendNow={handleSendNow}
+            running={runningTurn !== null}
+            stopping={stopping}
+            onStop={handleStop}
           />
           {/* Boot phase: engine spinning up, no steps yet — orb pill; clears the
               moment the first step streams in (Thinking block takes over).

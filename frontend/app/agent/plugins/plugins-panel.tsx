@@ -2,12 +2,10 @@
 
 import { useEffect, useState } from "react";
 import {
-  RiCloudLine,
   RiDatabase2Line,
-  RiFlashlightLine,
-  RiBookMarkedLine,
   RiGithubFill,
   RiGoogleFill,
+  RiKey2Line,
   RiPlugLine,
   RiSlackFill,
 } from "@remixicon/react";
@@ -29,11 +27,9 @@ interface ConfigResponse {
   capabilities?: Capabilities;
 }
 
-interface SkillRow {
-  id: string;
+interface SecretRow {
   name: string;
   kind?: string;
-  version?: number;
 }
 
 /** One honest capability row: real configured/not-configured state from
@@ -71,23 +67,26 @@ function CapabilityRow({
  */
 export function PluginsPanel() {
   const [config, setConfig] = useState<ConfigResponse | null>(null);
-  const [skills, setSkills] = useState<SkillRow[] | null>(null);
+  const [secrets, setSecrets] = useState<SecretRow[] | null>(null);
   const [unreachable, setUnreachable] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
-        const [cfgRes, skillsRes] = await Promise.all([
+        // /api/config = config-gated platform capabilities; /api/secrets =
+        // the org's stored credentials (NAMES + kind only, values write-only).
+        // Both are honest reads of live state - no hardcoded integration list.
+        const [cfgRes, secRes] = await Promise.all([
           fetch("/api/config"),
-          fetch("/api/skills"),
+          fetch("/api/secrets"),
         ]);
-        if (!cfgRes.ok || !skillsRes.ok) throw new Error("bad status");
+        if (!cfgRes.ok) throw new Error("bad status");
         const cfg = (await cfgRes.json()) as ConfigResponse;
-        const sk = (await skillsRes.json()) as { skills?: SkillRow[] };
+        const sec = secRes.ok ? ((await secRes.json()) as { secrets?: SecretRow[] }) : { secrets: [] };
         if (cancelled) return;
         setConfig(cfg);
-        setSkills(sk.skills ?? []);
+        setSecrets(sec.secrets ?? []);
       } catch {
         if (!cancelled) setUnreachable(true);
       }
@@ -138,29 +137,36 @@ export function PluginsPanel() {
 
       <div className="border-stroke-soft-200 my-4 border-t" />
 
-      <h2 className="text-label-sm text-text-sub-600">Skills</h2>
+      {/* Credentials = the org's stored secrets from the DB (names + kind only,
+          values are write-only). This makes the page reflect what agents can
+          actually authenticate to; managing them lives on the Secrets page.
+          Skills are NOT listed here - they have their own page. */}
+      <div className="flex items-center justify-between">
+        <h2 className="text-label-sm text-text-sub-600">Credentials</h2>
+        {secrets !== null && (
+          <span className="text-text-soft-400 text-label-xs tabular-nums">
+            {secrets.length} in this org
+          </span>
+        )}
+      </div>
       <div className="mt-1">
-        {skills === null ? (
-          <p className="text-paragraph-xs text-text-soft-400 py-2">Loading skills...</p>
-        ) : skills.length === 0 ? (
+        {secrets === null ? (
+          <p className="text-paragraph-xs text-text-soft-400 py-2">Loading credentials...</p>
+        ) : secrets.length === 0 ? (
           <p className="text-paragraph-xs text-text-soft-400 py-2">
-            No skills yet. Create one on the Skills page; versioned skills are pinned to runs
-            when loaded.
+            No credentials yet. Add secrets on the Secrets page; each becomes an env var or file
+            available inside run sandboxes.
           </p>
         ) : (
-          skills.map((s) => (
-            <div key={s.id} className="flex items-center gap-3 py-2">
-              {s.kind === "playbook" ? (
-                <RiBookMarkedLine className="text-text-sub-600 size-5 shrink-0" aria-hidden />
-              ) : (
-                <RiFlashlightLine className="text-text-sub-600 size-5 shrink-0" aria-hidden />
-              )}
-              <span className="text-label-xs text-text-strong-950 flex-1 font-mono">{s.name}</span>
-              {typeof s.version === "number" && (
-                <span className="text-text-soft-400 shrink-0 font-mono text-label-xs tabular-nums">
-                  v{s.version}
-                </span>
-              )}
+          secrets.map((s) => (
+            <div key={s.name} className="flex items-center gap-3 py-1.5">
+              <RiKey2Line className="text-text-sub-600 size-4 shrink-0" aria-hidden />
+              <span className="text-label-xs text-text-strong-950 flex-1 truncate font-mono">
+                {s.name}
+              </span>
+              <StatusBadge.Root status="completed" variant="light">
+                {s.kind === "file" ? "file" : "env"}
+              </StatusBadge.Root>
             </div>
           ))
         )}
