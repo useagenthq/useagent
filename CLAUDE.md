@@ -56,3 +56,5 @@ protocol. Architecture source of truth: `~/Documents/skynet-saas/ARCHITECTURE.md
   GREATER than the last applied — always stamp strictly above the journal tail
   (hand-set future stamps have silently skipped later migrations twice).
 - The real dev DB is `skynet` (backend/.env), NOT `skynet_rebuild` (stale docs name).
+
+- No em dashes ("—") in code-level user-visible strings (labels, placeholders, summaries, aria); use hyphens or rephrase.

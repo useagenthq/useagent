@@ -209,3 +209,6 @@ Never inline a copy.
   `app/globals.css` — it is what makes every AlignUI token resolve.
 - `AGENTS.md` is hand-maintained; `agentRules: false` in `next.config.ts` stops
   Next from regenerating it.
+
+## String style
+- No em dashes ("—") in code: user-visible strings, labels, placeholders, aria text, and HTML/JSX element text use plain hyphens or restructured sentences instead.
