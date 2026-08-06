@@ -17,9 +17,12 @@ export type ScheduleRecord = typeof schedules.$inferSelect;
 export interface ApiSchedule {
   id: string;
   org_id: string;
+  /** Creator identity — the user who created the schedule (its firing actor). */
   user_id: string | null;
   name: string;
   cron: string;
+  /** IANA timezone the cron runs in; null = server local time. */
+  timezone: string | null;
   prompt: string;
   engine: EngineId;
   model: string;
@@ -49,6 +52,7 @@ function toSchedule(s: ScheduleRecord): ApiSchedule {
     user_id: s.userId,
     name: s.name,
     cron: s.cron,
+    timezone: s.timezone,
     prompt: s.prompt,
     engine: s.engine,
     model: s.model,
@@ -90,6 +94,7 @@ export async function createSchedule(input: {
   userId: string | null;
   name: string;
   cron: string;
+  timezone: string | null;
   prompt: string;
   engine: EngineId;
   model: string;
@@ -101,6 +106,7 @@ export async function createSchedule(input: {
       userId: input.userId,
       name: input.name,
       cron: input.cron,
+      timezone: input.timezone,
       prompt: input.prompt,
       engine: input.engine,
       model: input.model,
@@ -116,7 +122,7 @@ export async function updateSchedule(
   patch: Partial<
     Pick<
       typeof schedules.$inferInsert,
-      "name" | "cron" | "prompt" | "engine" | "model" | "enabled"
+      "name" | "cron" | "timezone" | "prompt" | "engine" | "model" | "enabled"
     >
   >,
 ): Promise<ApiSchedule | null> {
@@ -150,14 +156,21 @@ export async function recordFiring(input: {
   scheduleId: string;
   runId: string;
   trigger: ScheduleTrigger;
+  /** Deterministic per-occurrence key (see fire.ts `firingKey`). Its UNIQUE
+   *  index makes a retry after a crash-before-record a no-op instead of a dup. */
+  idempotencyKey: string;
 }): Promise<void> {
-  await db.insert(scheduleFirings).values({
-    scheduleId: input.scheduleId,
-    runId: input.runId,
-    trigger: input.trigger,
-    // The run is 'queued' the instant it is created; the reader joins for live status.
-    status: "queued",
-  });
+  await db
+    .insert(scheduleFirings)
+    .values({
+      scheduleId: input.scheduleId,
+      runId: input.runId,
+      trigger: input.trigger,
+      idempotencyKey: input.idempotencyKey,
+      // The run is 'queued' the instant it is created; the reader joins for live status.
+      status: "queued",
+    })
+    .onConflictDoNothing({ target: scheduleFirings.idempotencyKey });
 }
 
 /** A schedule's firing history, newest first, enriched with the run's live status. */

@@ -379,9 +379,13 @@ export const schedules = pgTable(
     orgId: text("org_id").notNull(),
     userId: text("user_id"),
     name: text("name").notNull(),
-    // 5-field cron expression ("min hour dom month dow"), evaluated in server
-    // local time by the scheduler loop.
+    // 5-field cron expression ("min hour dom month dow"). Evaluated in
+    // `timezone` (below) when set, else in the scheduler's server-local time.
     cron: text("cron").notNull(),
+    // IANA timezone the cron is evaluated in ("America/New_York"). Null = server
+    // local time (the pre-timezone behavior). Cloudflare-Scheduler parity: a
+    // schedule's wall-clock intent is explicit, not tied to where the box runs.
+    timezone: text("timezone"),
     prompt: text("prompt").notNull(),
     engine: text("engine").$type<EngineId>().notNull().default("mock"),
     model: text("model").notNull().default("claude-opus-5"),
@@ -415,13 +419,24 @@ export const scheduleFirings = pgTable(
     runId: text("run_id")
       .notNull()
       .references(() => runs.id),
+    // Deterministic per-occurrence key ("schedule:<id>:<minute-bucket>" for cron,
+    // "schedule:<id>:manual:<ms>" for run-now). The SAME occurrence retried after
+    // a crash reuses this key, so the UNIQUE index below makes recording a firing
+    // idempotent — a retry never appends a duplicate row. Null on legacy rows
+    // predating this column (nulls are distinct in a unique index, so they never
+    // collide). The command lane carries the same key so ONE run is accepted per
+    // occurrence; the firing row is its inspectable projection.
+    idempotencyKey: text("idempotency_key"),
     firedAt: timestamp("fired_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
     trigger: text("trigger").$type<ScheduleTrigger>().notNull(),
     status: text("status").notNull(),
   },
-  (t) => [index("idx_firings_schedule").on(t.scheduleId, t.firedAt)],
+  (t) => [
+    index("idx_firings_schedule").on(t.scheduleId, t.firedAt),
+    uniqueIndex("uq_firings_idem").on(t.idempotencyKey),
+  ],
 );
 
 // ---------------------------------------------------------------------------

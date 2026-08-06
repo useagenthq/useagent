@@ -120,6 +120,13 @@
       "when": 1786061000000,
       "tag": "0018_run_repos",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1786100000000,
+      "tag": "0019_schedule_idempotency",
+      "breakpoints": true
     }
   ]
 }

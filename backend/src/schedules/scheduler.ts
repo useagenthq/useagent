@@ -33,11 +33,14 @@ export async function tick(now: Date = new Date()): Promise<void> {
   }
 
   for (const s of due) {
-    if (!cronMatches(s.cron, now)) continue;
+    if (!cronMatches(s.cron, now, s.timezone)) continue;
     if (s.lastFiredAt && sameMinute(new Date(s.lastFiredAt), now)) continue;
     try {
       await markFired(s.id, now);
-      await fireSchedule(s, "cron");
+      // Pass the tick time as the occurrence so the firing's idempotency key
+      // buckets to this minute — the durable safety net behind the sameMinute
+      // guard above (a retry for the same occurrence resolves to one run).
+      await fireSchedule(s, "cron", now);
       console.log(`[scheduler] fired schedule ${s.id} (${s.name})`);
     } catch (err) {
       console.error(`[scheduler] failed to fire schedule ${s.id}:`, err);
