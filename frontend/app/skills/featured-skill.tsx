@@ -7,8 +7,8 @@ import * as Button from "@/components/ui/button";
 import { tagChipColor, usageCaption, type Skill } from "./skills-data";
 
 /**
- * The featured playbook: one wide, fully-expanded skill card that exposes the
- * anatomy every skill shares — a title + "when to use" line, then three
+ * The featured skill: one wide, fully-expanded skill card that exposes the
+ * anatomy every skill shares - a title + "when to use" line, then three
  * mono-labelled sections (Overview / Procedure / Verify) of numbered steps,
  * closing on a usage caption and a primary run action. It's the reference the
  * compact library cards below are a collapsed view of.

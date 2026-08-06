@@ -18,24 +18,29 @@ import { relativeTime } from "@/utils/format";
 /**
  * Skills data model + view-model mappers.
  *
- * Wired to `/api/skills`. A skill is a reusable playbook: name, description,
- * tags, and three step-sections (overview / procedure / verify). The
- * highest-`usage_count` skill is rendered as the featured card; the rest fill
- * the library grid. When the backend is unreachable the page falls back to
- * {@link mockSkills} — deliberately empty, so the fallback is an honest empty
- * state, never fabricated content.
+ * Wired to `/api/skills`. A skill is a reusable instruction set: name,
+ * description, tags, and three step-sections (overview / procedure / verify).
+ * The same substrate also backs Playbooks (`kind: "playbook"`); this module is
+ * the shared client for both surfaces. The highest-`usage_count` skill is
+ * rendered as the featured card; the rest fill the library grid. When the
+ * backend is unreachable the page falls back to {@link mockSkills} - deliberately
+ * empty, so the fallback is an honest empty state, never fabricated content.
  */
 
 /* -------------------------------------------------------------------------- */
 /*  Backend contract                                                            */
 /* -------------------------------------------------------------------------- */
 
-/** A section is stored as steps — tolerate a newline-joined string too. */
+/** The two product surfaces over the one versioned-skill substrate. */
+export type SkillKind = "skill" | "playbook";
+
+/** A section is stored as steps - tolerate a newline-joined string too. */
 type RawSection = string | string[] | null | undefined;
 
 export interface SkillRecord {
   id: string;
   name: string;
+  kind?: SkillKind;
   description: string;
   tags?: string[];
   sections?: {
@@ -43,6 +48,7 @@ export interface SkillRecord {
     procedure?: RawSection;
     verify?: RawSection;
   };
+  current_version?: number;
   usage_count?: number;
   last_run_at?: string;
 }
@@ -54,9 +60,12 @@ export interface SkillRecord {
 export interface Skill {
   id: string;
   name: string;
+  kind: SkillKind;
   description: string;
   tags: string[];
   sections: { overview: string[]; procedure: string[]; verify: string[] };
+  /** Current immutable revision; sent with a run so the backend pins it. */
+  version: number;
   usageCount: number;
   lastRunAt?: string;
 }
@@ -132,6 +141,7 @@ export function recordToSkill(record: SkillRecord): Skill {
   return {
     id: record.id,
     name: record.name,
+    kind: record.kind === "playbook" ? "playbook" : "skill",
     description: record.description,
     tags: record.tags ?? [],
     sections: {
@@ -139,6 +149,7 @@ export function recordToSkill(record: SkillRecord): Skill {
       procedure: toSteps(record.sections?.procedure),
       verify: toSteps(record.sections?.verify),
     },
+    version: record.current_version && record.current_version > 0 ? record.current_version : 1,
     usageCount: record.usage_count ?? 0,
     lastRunAt: record.last_run_at,
   };

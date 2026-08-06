@@ -34,7 +34,7 @@ export function SkillsView({
 
   const refetch = useCallback(async () => {
     try {
-      const fresh = await fetchSkills();
+      const fresh = await fetchSkills("skill");
       setSkills(fresh);
       setError(false);
     } catch {
@@ -76,7 +76,7 @@ export function SkillsView({
   }, []);
 
   // Running a skill means starting a task GOVERNED by it (a skill needs a prompt
-  // — mem_op 0.1). So open the New Task composer with this playbook preselected;
+  // - mem_op 0.1). So open the New Task composer with this skill preselected;
   // the user provides the task there. The real usage bump + skill.loaded happen
   // when that run is submitted, not on this click.
   const onRun = useCallback(
@@ -104,7 +104,7 @@ export function SkillsView({
             <h1 className="text-display-sm text-text-strong-950">Skills</h1>
           </div>
           <p className="mt-1.5 text-paragraph-sm text-text-sub-600">
-            Reusable playbooks Skynet follows for repeatable work
+            Reusable skills Skynet follows for repeatable work
           </p>
         </div>
         <NewSkillModal onCreated={refetch} />
@@ -115,7 +115,7 @@ export function SkillsView({
           <BackendUnreachable className="mt-10" onRetry={refetch} />
         ) : (
           <p className="mt-10 text-paragraph-sm text-text-sub-600">
-            No skills yet. Capture your first playbook to get started.
+            No skills yet. Capture your first skill to get started.
           </p>
         )
       ) : (

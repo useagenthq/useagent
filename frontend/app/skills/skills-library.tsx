@@ -15,7 +15,7 @@ import {
 
 /**
  * The library: a client-filtered grid of compact skill cards. Each card is the
- * collapsed form of the featured playbook — icon tile, name, one-line summary,
+ * collapsed form of the featured skill - icon tile, name, one-line summary,
  * tag chips and a run action — so the whole surface reads as one library of the
  * same object at two densities. Tag filters are derived from the real data.
  */

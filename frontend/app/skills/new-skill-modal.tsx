@@ -129,7 +129,7 @@ export function NewSkillModal({
               New skill
             </Modal.Title>
             <Modal.Description className="text-paragraph-sm text-text-sub-600">
-              Capture a reusable playbook Skynet can follow for repeatable work.
+              Capture a reusable skill Skynet can follow for repeatable work.
             </Modal.Description>
           </div>
 
