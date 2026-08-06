@@ -233,7 +233,7 @@ describe("deliverTeamMemory", () => {
 describe("recallScopedMemory (layered L0+L1) degrades honestly (12.5)", () => {
   const pool: ScopedPool = { sourceScope: "org", identity: IDENT };
 
-  test("a provider outage yields an EMPTY recall and never throws (run continues)", async () => {
+  test("a provider outage yields an EMPTY, DEGRADED recall and never throws", async () => {
     enableMemory();
     globalThis.fetch = (async () => {
       throw new Error("ECONNREFUSED");
@@ -241,6 +241,19 @@ describe("recallScopedMemory (layered L0+L1) degrades honestly (12.5)", () => {
     const recall = await recallScopedMemory("anything", [pool]);
     expect(recall.rendered).toBe("");
     expect(recall.items).toEqual([]);
+    expect(recall.degraded).toBe(true); // unreachable, NOT a genuine 0-hit
+  });
+
+  test("a reachable-but-empty provider is NOT degraded (genuine 0-hit)", async () => {
+    enableMemory();
+    globalThis.fetch = (async () =>
+      new Response(JSON.stringify({ code: 0, data: { items: [], messages: [] } }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      })) as unknown as typeof fetch;
+    const recall = await recallScopedMemory("anything", [pool]);
+    expect(recall.items).toEqual([]);
+    expect(recall.degraded).toBe(false);
   });
 
   test("disabled memory is a fast empty no-op with no fetch", async () => {
@@ -253,6 +266,7 @@ describe("recallScopedMemory (layered L0+L1) degrades honestly (12.5)", () => {
     const recall = await recallScopedMemory("anything", [pool]);
     expect(recall.rendered).toBe("");
     expect(recall.items).toEqual([]);
+    expect(recall.degraded).toBe(false);
     expect(called).toBe(false);
   });
 });
