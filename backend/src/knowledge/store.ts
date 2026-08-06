@@ -113,6 +113,52 @@ async function migrate(): Promise<void> {
     `CREATE INDEX IF NOT EXISTS knowledge_org_list ON knowledge_records (org_id, pinned DESC, created_at DESC)`,
   );
 
+  // -------------------------------------------------------------------------
+  // Wiki-over-Knowledge (mem_op.md 0.3). The document lifecycle layer ON TOP of
+  // the chunk/retrieval layer (knowledge_records) — NOT a separate wiki store.
+  //   - knowledge_documents: stable identity + status (draft/published/archived)
+  //     + a pointer to the currently-published revision.
+  //   - knowledge_revisions: IMMUTABLE content (insert-only; edits are new rows).
+  // Publishing upserts the published revision INTO knowledge_records (see
+  // wiki.ts), so agent search finds published docs and drafts stay invisible;
+  // archiving removes that record. Kept here (raw SQL, like knowledge_records)
+  // so the whole knowledge substrate owns its schema in one place — and so this
+  // needs no Drizzle migration slot (avoids the contended journal queue).
+  // -------------------------------------------------------------------------
+  await sql.unsafe(`
+    CREATE TABLE IF NOT EXISTS knowledge_documents (
+      id                     uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      org_id                 text NOT NULL,
+      user_id                text,
+      collection             text NOT NULL DEFAULT 'wiki',
+      title                  text NOT NULL,
+      slug                   text,
+      parent_id              uuid,
+      status                 text NOT NULL DEFAULT 'draft',
+      published_revision_id  uuid,
+      created_at             timestamptz NOT NULL DEFAULT now(),
+      updated_at             timestamptz NOT NULL DEFAULT now()
+    )
+  `);
+  await sql.unsafe(
+    `CREATE INDEX IF NOT EXISTS knowledge_documents_org_status ON knowledge_documents (org_id, status, updated_at DESC)`,
+  );
+  await sql.unsafe(`
+    CREATE TABLE IF NOT EXISTS knowledge_revisions (
+      id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      document_id   uuid NOT NULL REFERENCES knowledge_documents(id) ON DELETE CASCADE,
+      org_id        text NOT NULL,
+      content       text NOT NULL,
+      source        text,
+      content_hash  text NOT NULL,
+      author        text,
+      created_at    timestamptz NOT NULL DEFAULT now()
+    )
+  `);
+  await sql.unsafe(
+    `CREATE INDEX IF NOT EXISTS knowledge_revisions_doc ON knowledge_revisions (document_id, created_at DESC)`,
+  );
+
   // Dense-vector index. HNSW (pgvector >= 0.5) needs no training data; fall back
   // to ivfflat, then to no ANN index (exact scan still works) — never fatal.
   try {
