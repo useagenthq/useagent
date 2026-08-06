@@ -152,15 +152,18 @@ export async function listRecallsForOrg(orgId: string, limit = 30): Promise<Reca
       payload = null;
     }
     if (!payload) continue;
+    // Legacy frames (recorded before the scope-aware ledger) carry no
+    // memoryScope / per-item sourceScope. Those runs were all org-scoped, so
+    // default the absent scope to "org" — honest, matches their real behavior.
     out.push({
       runId: r.run_id as string,
       threadId: r.thread_id as string,
-      memoryScope: payload.memoryScope,
+      memoryScope: payload.memoryScope ?? "org",
       query: payload.query,
       itemCount: payload.itemCount,
-      items: payload.items
+      items: (payload.items ?? [])
         .slice(0, RECALL_ITEM_PREVIEW)
-        .map((i) => ({ content: i.content, sourceScope: i.sourceScope })),
+        .map((i) => ({ content: i.content, sourceScope: i.sourceScope ?? "org" })),
       latencyMs: payload.latencyMs,
       truncated: payload.truncated,
       createdAt: new Date(r.created_at as string).toISOString(),
