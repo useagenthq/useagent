@@ -12,7 +12,10 @@ export type { ChatMessage };
 
 export class ChatStreamError extends Error {}
 
-const DEFAULT_CHAT_MODEL = "anthropic/claude-3.7-sonnet";
+// A served, current slug on our OpenRouter key (verified against /models). Older
+// slugs like `anthropic/claude-3.7-sonnet` 404 ("No endpoints found") on this key.
+// Override with CHAT_MODEL if a deployment wants a different model.
+const DEFAULT_CHAT_MODEL = "anthropic/claude-sonnet-5";
 
 /** True when the chat LLM is configured (an OpenRouter key is present). */
 export function chatLlmEnabled(): boolean {
