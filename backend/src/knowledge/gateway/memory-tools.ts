@@ -193,8 +193,13 @@ function textResult(text: string, structured?: Record<string, unknown>, isError 
   return { content: [{ type: "text", text }], ...(structured ? { structuredContent: structured } : {}), ...(isError ? { isError } : {}) };
 }
 
+/** The provider string on every memory native frame (timeline parser gate). */
+export const MEMORY_PROVIDER = "skynet-memory";
+
 /** Emit a truthful memory event on the run's native lane (section 8). Attributed
- *  to the resolved run; fire-and-forget so it never fails the tool. */
+ *  to the resolved run; fire-and-forget so it never fails the tool. Every payload
+ *  carries `source: "memory"` (mirrors the context.retrieved marker shape) so one
+ *  timeline parser branch handles the whole family. */
 function recordMemoryEvent(
   run: ActiveRun,
   eventType: string,
@@ -204,9 +209,9 @@ function recordMemoryEvent(
     id: `mem_${run.id}_${randomUUID().slice(0, 8)}`,
     runId: run.id,
     threadId: run.threadId,
-    provider: "skynet-memory",
+    provider: MEMORY_PROVIDER,
     eventType,
-    payload,
+    payload: { source: "memory", ...payload },
   }).catch(() => {});
 }
 
