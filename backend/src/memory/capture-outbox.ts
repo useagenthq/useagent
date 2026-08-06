@@ -1,6 +1,6 @@
 import { eq, sql } from "drizzle-orm";
 import { db, type Executor } from "../db/client";
-import { memoryOutbox, type MemoryScope } from "../db/schema";
+import { memoryOutbox, type MemoryOutboxState, type MemoryScope } from "../db/schema";
 import { deliverTeamMemory, type MemoryIdentity } from "./team-memory";
 
 // ---------------------------------------------------------------------------
@@ -194,6 +194,131 @@ export async function deliverDueCaptures(
 export async function getCapture(runId: string) {
   const [row] = await db.select().from(memoryOutbox).where(eq(memoryOutbox.id, runId)).limit(1);
   return row ?? null;
+}
+
+// ---------------------------------------------------------------------------
+// Memory Hub admin surface — inspect + operate the capture outbox from the UI.
+// The outbox has no org column (its id is a runId), so tenancy is enforced by
+// JOINing memory_outbox.run_id → runs.id and filtering runs.org_id: an operator
+// only ever sees / touches captures for runs in their own org. These power the
+// /memory page's "Recently captured" section and its two manual-recovery paths.
+// ---------------------------------------------------------------------------
+
+/** One capture row shaped for the admin UI — outbox state + the payload envelope
+ *  (destination scope + prompt/summary preview) WITHOUT the identity/credentials. */
+export interface CaptureAdminRow {
+  readonly runId: string;
+  readonly state: MemoryOutboxState;
+  readonly scope: MemoryScope | null;
+  readonly promptPreview: string;
+  readonly summaryPreview: string;
+  readonly attemptCount: number;
+  readonly maxAttempts: number;
+  readonly lastError: string | null;
+  readonly nextAttemptAt: string;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+}
+
+const PREVIEW_CAP = 160;
+
+/** Read the non-sensitive slice of a committed payload for the admin UI. Never
+ *  exposes `identity` (carries the pool ids); tolerates a truncated/bad blob. */
+function readPayloadPreview(payload: string): { scope: MemoryScope | null; prompt: string; summary: string } {
+  try {
+    const p = JSON.parse(payload) as Partial<CapturePayload>;
+    return {
+      scope: p.scope ?? null,
+      prompt: (p.prompt ?? "").slice(0, PREVIEW_CAP),
+      summary: (p.summary ?? "").slice(0, PREVIEW_CAP),
+    };
+  } catch {
+    return { scope: null, prompt: "", summary: "" };
+  }
+}
+
+/**
+ * List an org's capture rows, newest first — every state, including the
+ * crash-orphaned `delivering` rows that await manual inspection. Org-scoped by a
+ * join to `runs`. `limit` caps the page.
+ */
+export async function listCapturesForOrg(orgId: string, limit = 50): Promise<CaptureAdminRow[]> {
+  const rows = (await db.execute(sql`
+    select o.id, o.state, o.payload, o.attempt_count, o.max_attempts,
+           o.last_error, o.next_attempt_at, o.created_at, o.updated_at
+    from memory_outbox o
+    join runs r on r.id = o.run_id
+    where r.org_id = ${orgId}
+    order by o.updated_at desc
+    limit ${limit}`)) as unknown as Array<Record<string, unknown>>;
+  return rows.map((r) => {
+    const preview = readPayloadPreview(r.payload as string);
+    return {
+      runId: r.id as string,
+      state: r.state as MemoryOutboxState,
+      scope: preview.scope,
+      promptPreview: preview.prompt,
+      summaryPreview: preview.summary,
+      attemptCount: Number(r.attempt_count),
+      maxAttempts: Number(r.max_attempts),
+      lastError: (r.last_error as string | null) ?? null,
+      nextAttemptAt: new Date(r.next_attempt_at as string).toISOString(),
+      createdAt: new Date(r.created_at as string).toISOString(),
+      updatedAt: new Date(r.updated_at as string).toISOString(),
+    } satisfies CaptureAdminRow;
+  });
+}
+
+/**
+ * Manually re-enqueue a DEAD capture: reset it to `pending` with a fresh attempt
+ * budget so the delivery loop picks it up now. The committed payload is reused
+ * VERBATIM (its `scope` + `identity` unchanged), so the retry provably preserves
+ * the original destination pool — idempotency of the capture is intact. Guarded
+ * on state='dead' AND org ownership; returns false when nothing matched (wrong
+ * org, wrong state, or gone).
+ */
+export async function retryDeadCapture(runId: string, orgId: string): Promise<boolean> {
+  const rows = (await db.execute(sql`
+    update memory_outbox o
+    set state = 'pending', attempt_count = 0, next_attempt_at = now(),
+        last_error = null, updated_at = now()
+    from runs r
+    where o.run_id = r.id and o.id = ${runId} and r.org_id = ${orgId}
+      and o.state = 'dead'
+    returning o.id`)) as unknown as Array<Record<string, unknown>>;
+  return rows.length > 0;
+}
+
+/** Resolution for a crash-orphaned `delivering` row. `delivered` = the operator
+ *  confirms it DID land (accept, at-most-once holds); `discard` = it did NOT land
+ *  / abandon it (dead-letter). Both are explicit human decisions — the outbox
+ *  never auto-resolves a `delivering` orphan. */
+export type OrphanResolution = "delivered" | "discard";
+
+/**
+ * Resolve a crash-orphaned `delivering` capture per an explicit operator
+ * decision. Guarded on state='delivering' AND org ownership. Returns false when
+ * nothing matched. This is the documented manual-inspection path for the
+ * at-most-once outbox made operable.
+ */
+export async function resolveDeliveringOrphan(
+  runId: string,
+  orgId: string,
+  resolution: OrphanResolution,
+): Promise<boolean> {
+  const nextState = resolution === "delivered" ? "delivered" : "dead";
+  const note =
+    resolution === "delivered"
+      ? "manually resolved: operator confirmed delivered"
+      : "manually discarded: delivering orphan abandoned";
+  const rows = (await db.execute(sql`
+    update memory_outbox o
+    set state = ${nextState}, last_error = ${note}, updated_at = now()
+    from runs r
+    where o.run_id = r.id and o.id = ${runId} and r.org_id = ${orgId}
+      and o.state = 'delivering'
+    returning o.id`)) as unknown as Array<Record<string, unknown>>;
+  return rows.length > 0;
 }
 
 let timer: ReturnType<typeof setInterval> | null = null;

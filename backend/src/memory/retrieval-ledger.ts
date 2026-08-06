@@ -11,6 +11,8 @@
 // sourceScope (personal|org), plus orgId + actorUserId, so a future "Context
 // used" UI can label each item by pool. No credentials are ever included.
 
+import { sql } from "drizzle-orm";
+import { db } from "../db/client";
 import { recordProviderEvent } from "../runs/provider-events";
 import type { ScopedMemoryPlan } from "./scope";
 import type { ScopedRecall } from "./team-memory";
@@ -106,4 +108,63 @@ export async function recordContextRetrieval(
     eventType: CONTEXT_RETRIEVED,
     payload: buildRetrievalPayload(plan, query, recall),
   });
+}
+
+// ── Read side — "Recently recalled" for the Memory Hub ───────────────────────
+// One row per run's recall, org-scoped by a join to `runs`. Surfaces WHAT memory
+// each run pulled (query, scope, cited items) with a link back to /session/{runId}.
+
+/** One run's recall, shaped for the Memory Hub "Recently recalled" section. */
+export interface RecallLedgerRow {
+  readonly runId: string;
+  readonly threadId: string;
+  readonly memoryScope: MemoryScope;
+  readonly query: string;
+  readonly itemCount: number;
+  readonly items: readonly { readonly content: string; readonly sourceScope: MemoryScope }[];
+  readonly latencyMs: number;
+  readonly truncated: boolean;
+  readonly createdAt: string;
+}
+
+const RECALL_ITEM_PREVIEW = 6;
+
+/**
+ * List an org's recent recall frames, newest first. Reads the durable
+ * `context.retrieved` events off the native lane and org-scopes them via a join
+ * to `runs`. The stored payload already excludes credentials; we surface only its
+ * query + scope + a capped item preview. Never throws to the caller (SQL only).
+ */
+export async function listRecallsForOrg(orgId: string, limit = 30): Promise<RecallLedgerRow[]> {
+  const rows = (await db.execute(sql`
+    select e.run_id, e.thread_id, e.payload, e.created_at
+    from provider_events e
+    join runs r on r.id = e.run_id
+    where e.event_type = ${CONTEXT_RETRIEVED} and r.org_id = ${orgId}
+    order by e.created_at desc
+    limit ${limit}`)) as unknown as Array<Record<string, unknown>>;
+  const out: RecallLedgerRow[] = [];
+  for (const r of rows) {
+    let payload: RetrievalLedgerPayload | null = null;
+    try {
+      payload = JSON.parse((r.payload as string) ?? "null") as RetrievalLedgerPayload;
+    } catch {
+      payload = null;
+    }
+    if (!payload) continue;
+    out.push({
+      runId: r.run_id as string,
+      threadId: r.thread_id as string,
+      memoryScope: payload.memoryScope,
+      query: payload.query,
+      itemCount: payload.itemCount,
+      items: payload.items
+        .slice(0, RECALL_ITEM_PREVIEW)
+        .map((i) => ({ content: i.content, sourceScope: i.sourceScope })),
+      latencyMs: payload.latencyMs,
+      truncated: payload.truncated,
+      createdAt: new Date(r.created_at as string).toISOString(),
+    });
+  }
+  return out;
 }

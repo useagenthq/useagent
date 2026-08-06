@@ -348,3 +348,166 @@ export async function deliverTeamMemory(
   // (timeout/network/non-2xx/business code).
   return data !== null;
 }
+
+// ── L1 atomic browse / correct / delete (Memory Hub operations) ──────────────
+// The recall paths above are READ-for-a-run. The Memory Hub surface additionally
+// needs to LIST a pool's stored facts, CORRECT one, and DELETE one. All three are
+// real memory-core endpoints, verified live against the :8420 gateway AND the
+// repo's TS SDK (sdk/memory-core/typescript/src/v3): POST /v3/atomic/{query,update,
+// delete}. Same isolation body + envelope as search; same best-effort discipline.
+
+/** How many stored facts to list per pool for the browse surface. */
+const DEFAULT_BROWSE_LIMIT = 50;
+
+/** One stored L1 fact as /v3/atomic/query returns it (`data.items[]`). */
+interface AtomicDetail {
+  id: string;
+  type: string;
+  content: string;
+  background?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+interface AtomicQueryData {
+  items: AtomicDetail[];
+  total: number;
+}
+
+/** One stored fact tagged with the pool it lives in — a Memory Hub browse row. */
+export interface BrowsedMemoryItem {
+  readonly id: string;
+  readonly type: string;
+  readonly content: string;
+  readonly background?: string;
+  readonly sourceScope: MemoryScope;
+  readonly citation: MemoryCitation;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+}
+
+/** The result of a browse across one or more pools: labeled stored facts + the
+ *  pool totals so the UI can show "showing N of M". */
+export interface MemoryBrowse {
+  readonly items: readonly BrowsedMemoryItem[];
+  /** Sum of each pool's reported `total` (not the number returned). */
+  readonly total: number;
+  readonly latencyMs: number;
+}
+
+const EMPTY_BROWSE: MemoryBrowse = { items: [], total: 0, latencyMs: 0 };
+
+/** List one pool's stored facts (newest first) via /v3/atomic/query. Returns
+ *  `{items:[],total:0}` when memory is disabled or the service is unreachable. */
+async function queryAtomic(
+  identity: MemoryIdentity,
+  opts: { limit?: number; timeoutMs?: number } = {},
+): Promise<AtomicQueryData> {
+  const cfg = memoryConfig();
+  if (!cfg) return { items: [], total: 0 };
+  const data = await post<AtomicQueryData>(
+    "/v3/atomic/query",
+    {
+      team_id: identity.teamId,
+      agent_id: identity.agentId,
+      user_id: identity.userId,
+      limit: opts.limit ?? DEFAULT_BROWSE_LIMIT,
+    },
+    cfg,
+    opts.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+  );
+  return data ?? { items: [], total: 0 };
+}
+
+/**
+ * Browse the stored facts across one or more pools (personal-first, same pool
+ * order as recall), each labeled with its source scope so the Memory Hub can tag
+ * `[personal]`/`[org]`. Fetches pools in PARALLEL, timeout-bounded. Empty `pools`
+ * (fail-closed personal) returns an empty browse with no fetch. Never throws.
+ */
+export async function browseScopedMemory(
+  pools: readonly ScopedPool[],
+  opts: { limit?: number; timeoutMs?: number } = {},
+): Promise<MemoryBrowse> {
+  const cfg = memoryConfig();
+  if (!cfg || pools.length === 0) return EMPTY_BROWSE;
+  const started = Date.now();
+  const perPool = await Promise.all(
+    pools.map((p) =>
+      queryAtomic(p.identity, opts).then((data) => ({ pool: p, data })),
+    ),
+  );
+  const items: BrowsedMemoryItem[] = [];
+  let total = 0;
+  for (const { pool, data } of perPool) {
+    total += data.total;
+    for (const hit of data.items) {
+      items.push({
+        id: hit.id,
+        type: hit.type,
+        content: hit.content,
+        background: hit.background,
+        sourceScope: pool.sourceScope,
+        citation: { provider: "tencent-memorycore", assetId: hit.id },
+        createdAt: hit.created_at,
+        updatedAt: hit.updated_at,
+      });
+    }
+  }
+  return { items, total, latencyMs: Date.now() - started };
+}
+
+/**
+ * Correct one stored fact in a specific pool via /v3/atomic/update (bumps the
+ * fact's immutable version). The `identity` IS the pool — the gateway only
+ * mutates a fact under the matching {team_id, user_id}, so a caller can never
+ * edit another pool's memory. Returns true on accept. Never throws.
+ */
+export async function updateScopedMemory(
+  identity: MemoryIdentity,
+  id: string,
+  content: string,
+  background?: string,
+): Promise<boolean> {
+  const cfg = memoryConfig();
+  if (!cfg) return false;
+  const data = await post<{ id: string; updated_at: string }>(
+    "/v3/atomic/update",
+    {
+      team_id: identity.teamId,
+      agent_id: identity.agentId,
+      user_id: identity.userId,
+      id,
+      content,
+      ...(background !== undefined ? { background } : {}),
+    },
+    cfg,
+    DEFAULT_TIMEOUT_MS,
+  );
+  return data !== null;
+}
+
+/**
+ * Delete stored facts from a specific pool via /v3/atomic/delete. Pool-scoped by
+ * `identity` exactly like update. Returns the number the gateway actually removed
+ * (0 when the id wasn't in this pool). Never throws.
+ */
+export async function deleteScopedMemory(
+  identity: MemoryIdentity,
+  ids: readonly string[],
+): Promise<number> {
+  const cfg = memoryConfig();
+  if (!cfg || ids.length === 0) return 0;
+  const data = await post<{ deleted_count: number }>(
+    "/v3/atomic/delete",
+    {
+      team_id: identity.teamId,
+      agent_id: identity.agentId,
+      user_id: identity.userId,
+      ids,
+    },
+    cfg,
+    DEFAULT_TIMEOUT_MS,
+  );
+  return data?.deleted_count ?? 0;
+}
