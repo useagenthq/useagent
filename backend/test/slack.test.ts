@@ -59,6 +59,7 @@ beforeAll(() => {
       if (statusFails) throw new Error("invalid_thread (not an assistant container)");
       rec.statuses.push(s);
     },
+    uploadFile: async () => ({ ok: true }),
   });
 });
 

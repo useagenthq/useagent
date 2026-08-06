@@ -8,5 +8,9 @@ node_modules/
 # Per-run isolated engine workdirs (real harnesses execute real shell here).
 .runs/
 
+# Staged bytes for durable Slack file uploads (pulled from the sandbox, deleted
+# by the outbox once delivered/dead).
+.slack-uploads/
+
 # NOTE: drizzle/ (migrations + meta/_journal.json) IS committed — the boot
 # migrator (src/index.ts) needs the journal to apply migrations on a fresh DB.
