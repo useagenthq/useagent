@@ -7,11 +7,13 @@ import * as Button from "@/components/ui/button";
 import { tagChipColor, usageCaption, type Skill } from "./skills-data";
 
 /**
- * The featured skill: one wide, fully-expanded skill card that exposes the
- * anatomy every skill shares - a title + "when to use" line, then three
- * mono-labelled sections (Overview / Procedure / Verify) of numbered steps,
- * closing on a usage caption and a primary run action. It's the reference the
- * compact library cards below are a collapsed view of.
+ * The featured skill: one wide, fully-expanded skill card - title + "when to
+ * use" line, then the skill body rendered as prose. Real SKILL.md files are
+ * frontmatter + freeform markdown (Anthropic format), NOT a fixed Overview/
+ * Procedure/Verify triptych, so we render whatever sections carry content as
+ * flowing paragraphs. Empty sections simply do not appear (no dangling "—"
+ * columns), and prose is never force-numbered (it was rendering paragraphs as
+ * "steps 1..N", which read as nonsense - user report).
  */
 
 const SECTION_LABELS: { key: keyof Skill["sections"]; label: string }[] = [
@@ -20,24 +22,14 @@ const SECTION_LABELS: { key: keyof Skill["sections"]; label: string }[] = [
   { key: "verify", label: "Verify" },
 ];
 
-function SectionColumn({ label, steps }: { label: string; steps: string[] }) {
+function SectionBlock({ label, lines }: { label: string; lines: string[] }) {
+  if (lines.length === 0) return null;
   return (
-    <div className="flex flex-col gap-3">
+    <div className="flex flex-col gap-2">
       <p className="text-mono-label text-text-soft-400">{label}</p>
-      <ol className="flex flex-col gap-2.5">
-        {steps.length === 0 ? (
-          <li className="text-paragraph-sm text-text-soft-400">—</li>
-        ) : (
-          steps.map((step, index) => (
-            <li key={step} className="flex gap-2.5">
-              <span className="mt-px flex size-5 shrink-0 items-center justify-center rounded-md bg-bg-soft-200 font-mono text-subheading-2xs text-text-sub-600">
-                {index + 1}
-              </span>
-              <span className="text-paragraph-sm text-text-sub-600">{step}</span>
-            </li>
-          ))
-        )}
-      </ol>
+      <div className="text-paragraph-sm leading-6 text-text-sub-600 whitespace-pre-wrap">
+        {lines.join("\n")}
+      </div>
     </div>
   );
 }
@@ -51,6 +43,7 @@ export function FeaturedSkill({
   onRun: (skill: Skill) => void;
   ran: boolean;
 }) {
+  const populated = SECTION_LABELS.filter(({ key }) => skill.sections[key].length > 0);
   return (
     <article className="overflow-hidden rounded-2xl bg-bg-white-0 shadow-regular-sm ring-1 ring-inset ring-stroke-soft-200">
       <div className="flex flex-col gap-6 p-6 sm:p-7">
@@ -92,11 +85,13 @@ export function FeaturedSkill({
           </div>
         </div>
 
-        <div className="grid gap-6 rounded-xl border border-stroke-soft-200 bg-bg-weak-50 p-5 sm:grid-cols-3 sm:gap-8">
-          {SECTION_LABELS.map(({ key, label }) => (
-            <SectionColumn key={key} label={label} steps={skill.sections[key]} />
-          ))}
-        </div>
+        {populated.length > 0 && (
+          <div className="flex flex-col gap-5 rounded-xl border border-stroke-soft-200 bg-bg-weak-50 p-5">
+            {populated.map(({ key, label }) => (
+              <SectionBlock key={key} label={label} lines={skill.sections[key]} />
+            ))}
+          </div>
+        )}
 
         <div className="flex items-center justify-between gap-3">
           <p className="text-paragraph-xs text-text-sub-600">
