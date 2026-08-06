@@ -178,11 +178,18 @@ async function ensureRepoClone(
     `if git clone ${shq(url)} "$DIR" >"$L" 2>&1; then rm -f "$L"; echo clone:ok; ` +
     `else echo clone:failed; tail -c 300 "$L"; rm -rf "$L" "$DIR"; exit 1; fi`;
   // Token via ENV only (see trust-boundary note). Absent token → public clone.
+  // Basic auth with the "x-access-token" username is the form GitHub's git
+  // smart-HTTP endpoint accepts for BOTH a PAT and an App installation token; a
+  // Bearer header is API-only and git falls back to an interactive prompt (fails
+  // in a sandbox). The header is applied one-shot for THIS clone and never
+  // persisted to .git/config.
   const cloneEnv: Record<string, string> = token
     ? {
         GIT_CONFIG_COUNT: "1",
         GIT_CONFIG_KEY_0: "http.extraHeader",
-        GIT_CONFIG_VALUE_0: `Authorization: Bearer ${token}`,
+        GIT_CONFIG_VALUE_0: `Authorization: Basic ${Buffer.from(
+          `x-access-token:${token}`,
+        ).toString("base64")}`,
       }
     : {};
 
