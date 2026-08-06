@@ -100,6 +100,16 @@ export const runs = pgTable(
     // A reply inherits its parent's scope unless the authenticated user changes
     // it; resolution/validation lives at the run-creation boundary (routes.ts).
     memoryScope: text("memory_scope").$type<MemoryScope>().notNull().default("org"),
+    // Pinned skill/playbook selection for this run — an immutable REFERENCE to a
+    // `skill_revisions` row (skill_id + skill_version) plus its content hash. Set
+    // when a skill was selected in the composer/run-now; null otherwise. The
+    // worker materializes the revision's formatted SKILL.md into the engine's
+    // context SEPARATELY from the (clean) user prompt, and emits `skill.loaded`.
+    // A later skill edit creates a NEW version, so a historical run's pinned
+    // version — and thus its context — never changes.
+    skillId: text("skill_id"),
+    skillVersion: integer("skill_version"),
+    skillContentHash: text("skill_content_hash"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -237,7 +247,11 @@ export const skills = pgTable(
       .array()
       .notNull()
       .default(sql`'{}'::text[]`),
+    // The skill's LATEST instruction content. `skill_revisions` holds the
+    // immutable history; this is a convenience mirror of the current version's
+    // content. An edit bumps `currentVersion` and appends a new revision.
     sections: jsonb("sections").$type<SkillSections>().notNull(),
+    currentVersion: integer("current_version").notNull().default(1),
     usageCount: integer("usage_count").notNull().default(0),
     lastRunAt: timestamp("last_run_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true })
@@ -248,6 +262,30 @@ export const skills = pgTable(
       .defaultNow(),
   },
   (t) => [uniqueIndex("uq_skills_org_name").on(t.orgId, t.name)],
+);
+
+// Immutable skill revisions — every version of a skill's instruction content,
+// snapshotted at create/edit time. A run pins one revision (skill_id + version);
+// because revisions are never mutated, a later edit (which appends a NEW row)
+// cannot alter a historical run's loaded content. `content_hash` is the sha256 of
+// the formatted SKILL.md, the addressable identity emitted in `skill.loaded`.
+export const skillRevisions = pgTable(
+  "skill_revisions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    skillId: uuid("skill_id")
+      .notNull()
+      .references(() => skills.id, { onDelete: "cascade" }),
+    version: integer("version").notNull(),
+    name: text("name").notNull(),
+    description: text("description").notNull().default(""),
+    sections: jsonb("sections").$type<SkillSections>().notNull(),
+    contentHash: text("content_hash").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [uniqueIndex("uq_skill_rev").on(t.skillId, t.version)],
 );
 
 // ---------------------------------------------------------------------------

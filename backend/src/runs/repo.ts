@@ -49,6 +49,11 @@ export interface ApiRun {
   /** Which team-memory pool this run reads/writes (default "org"). The composer
    *  reads a thread's scope from its newest run so a reply inherits it. */
   memory_scope: MemoryScope;
+  /** Pinned skill revision this run loaded (null when none). Immutable: links a
+   *  historical run to the EXACT skill version/hash it used. */
+  skill_id: string | null;
+  skill_version: number | null;
+  skill_content_hash: string | null;
   created_at: string;
   updated_at: string;
   steps: ApiStep[];
@@ -84,6 +89,9 @@ function toRun(r: RunRecord, stepRows: StepRecord[]): ApiRun {
     repo: r.repo,
     repos: r.repos,
     memory_scope: r.memoryScope,
+    skill_id: r.skillId,
+    skill_version: r.skillVersion,
+    skill_content_hash: r.skillContentHash,
     created_at: r.createdAt.toISOString(),
     updated_at: r.updatedAt.toISOString(),
     steps: stepRows.map(toStep),
@@ -155,6 +163,9 @@ export async function createRun(
     /** Team-memory pool for the run. Resolved server-side at the run-creation
      *  boundary (explicit choice, parent inheritance, or the "org" default). */
     memoryScope: MemoryScope;
+    skillId?: string | null;
+    skillVersion?: number | null;
+    skillContentHash?: string | null;
   },
   /** Run the insert inside a caller's transaction (durable-command acceptance
    *  commits the command + run atomically). Defaults to the shared pool. */
@@ -173,6 +184,9 @@ export async function createRun(
     repos: input.repos ?? [],
     repo: input.repos?.[0] ?? null, // legacy single-value mirror
     memoryScope: input.memoryScope,
+    skillId: input.skillId ?? null,
+    skillVersion: input.skillVersion ?? null,
+    skillContentHash: input.skillContentHash ?? null,
   });
 }
 

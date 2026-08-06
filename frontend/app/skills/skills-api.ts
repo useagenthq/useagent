@@ -34,8 +34,3 @@ export async function createSkill(input: CreateSkillInput): Promise<Skill> {
   return recordToSkill((await res.json()) as SkillRecord);
 }
 
-export async function runSkill(id: string): Promise<Skill> {
-  const res = await backendFetch(`/api/skills/${id}/run`, { method: "POST" });
-  if (!res.ok) throw new Error(`run skill ${res.status}`);
-  return recordToSkill((await res.json()) as SkillRecord);
-}

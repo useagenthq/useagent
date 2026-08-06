@@ -32,6 +32,13 @@ export interface EngineRunContext {
    *  recalled memory. Never echoed as the user's text; the stored `prompt` stays
    *  the user's raw words. Compose via {@link composeTurnPrompt}. */
   turnContext: string;
+  /** Pinned-skill instructions for THIS run — the run's selected SKILL.md,
+   *  already frame-wrapped as authoritative instructions ("" when no skill). A
+   *  skill is per-RUN, so like {@link turnContext} it is injected on EVERY turn
+   *  (fresh AND resumed) — this turn's selected skill, never re-derived from the
+   *  resumed session's history. SEPARATE from the user's clean `prompt`. Compose
+   *  via {@link composeTurnPrompt}. */
+  skillContext?: string;
   /** Isolated working directory (already created) — the ONLY place an engine
    *  may touch the filesystem. Never the repo itself. */
   workdir: string;
@@ -86,19 +93,26 @@ export interface EngineRunContext {
 /**
  * Compose the text an engine receives for one turn — the SINGLE source of truth
  * for the fresh-vs-resumed context rule (north star "Fix the Current Context Bug
- * First"). A FRESH native session gets the reconstructed prior-thread bootstrap
- * plus fresh per-turn context; a RESUMED session already holds the thread
- * history natively, so it gets ONLY the fresh per-turn context. The user's
- * `prompt` is always appended verbatim last.
+ * First"). A FRESH native session gets the reconstructed prior-thread bootstrap;
+ * a RESUMED session already holds the thread history natively, so it is dropped.
+ * Both get the per-turn prefix — the run's pinned SKILL.md (instructions) then
+ * fresh reference material (memory) — and finally the user's `prompt` verbatim.
+ * Order: [prior-thread history] → [skill instructions] → [memory reference] →
+ * [task]. The skill/memory are injected EVERY turn (per-run/per-turn), never
+ * echoed into the stored `prompt`.
  *
  * Every adapter MUST use this instead of hand-concatenating, so a resumed turn
- * never silently drops freshly recalled memory (the bug this replaces).
+ * never silently drops freshly recalled memory or this turn's skill.
  */
 export function composeTurnPrompt(
-  ctx: Pick<EngineRunContext, "prompt" | "bootstrapContext" | "turnContext">,
+  ctx: Pick<
+    EngineRunContext,
+    "prompt" | "bootstrapContext" | "turnContext" | "skillContext"
+  >,
   resumed: boolean,
 ): string {
-  const prefix = resumed ? ctx.turnContext : ctx.bootstrapContext + ctx.turnContext;
+  const perTurn = (ctx.skillContext ?? "") + ctx.turnContext;
+  const prefix = resumed ? perTurn : ctx.bootstrapContext + perTurn;
   return prefix + ctx.prompt;
 }
 

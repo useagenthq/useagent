@@ -60,6 +60,11 @@ export async function fireSchedule(
       repos: [],
       // Scheduled runs are always fresh roots — organization memory by default.
       memoryScope: "org",
+      // Schedules don't pin a skill yet (mem_op 0.4 leaves it optional); a future
+      // slice can thread schedule.skillId/version through here.
+      skillId: null,
+      skillVersion: null,
+      skillContentHash: null,
     },
   });
 

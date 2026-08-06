@@ -1,6 +1,5 @@
-import { sql } from "drizzle-orm";
-import { db } from "../db/client";
-import { skills, type SkillSections } from "../db/schema";
+import type { SkillSections } from "../db/schema";
+import { createSkillWithRevision, ensureCurrentRevision } from "./repo";
 
 interface SkillSeed {
   name: string;
@@ -174,23 +173,29 @@ const SKILL_SEEDS: SkillSeed[] = [
   },
 ];
 
-/** Idempotently seed the mocked skills for an org (no-op once present). */
+const DAY_MS = 86_400_000;
+
+/**
+ * Idempotently seed the mocked skills for an org. Each seed becomes a skill + its
+ * immutable version-1 revision (via `createSkillWithRevision`). For a skill that
+ * already exists from an older seed (no revision yet), `ensureCurrentRevision`
+ * backfills its current-version revision — so every seeded skill is resolvable by
+ * a run. No-op once fully present.
+ */
 export async function seedSkills(orgId: string): Promise<void> {
-  await db
-    .insert(skills)
-    .values(
-      SKILL_SEEDS.map((s) => ({
-        orgId,
-        name: s.name,
-        description: s.description,
-        tags: s.tags,
-        sections: s.sections,
-        usageCount: s.usageCount,
-        lastRunAt:
-          s.lastRunDaysAgo == null
-            ? null
-            : sql`now() - (${s.lastRunDaysAgo} * interval '1 day')`,
-      })),
-    )
-    .onConflictDoNothing({ target: [skills.orgId, skills.name] });
+  for (const s of SKILL_SEEDS) {
+    await createSkillWithRevision({
+      orgId,
+      name: s.name,
+      description: s.description,
+      tags: s.tags,
+      sections: s.sections,
+      usageCount: s.usageCount,
+      lastRunAt:
+        s.lastRunDaysAgo == null
+          ? null
+          : new Date(Date.now() - s.lastRunDaysAgo * DAY_MS),
+    });
+    await ensureCurrentRevision(orgId, s.name);
+  }
 }

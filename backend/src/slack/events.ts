@@ -167,6 +167,10 @@ export async function handleSlackEvent(body: SlackEnvelope): Promise<void> {
       // Slack runs work in a bare sandbox (no repo picker) and default to org memory.
       repos: [],
       memoryScope,
+      // Slack turns don't pin a skill yet.
+      skillId: null,
+      skillVersion: null,
+      skillContentHash: null,
     },
   });
 
