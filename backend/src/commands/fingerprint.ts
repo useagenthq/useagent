@@ -18,6 +18,10 @@ export function runPayloadFingerprint(run: RunCommandInput["run"]): string {
     // (id, version) reference is canonical (its content hash derives from it).
     run.skillId ?? null,
     run.skillVersion ?? null,
+    // The destination memory pool is part of the intent: replaying the same key
+    // after switching org/personal must NOT silently reuse the other scope's
+    // run (external audit finding — scope was stored but not fingerprinted).
+    run.memoryScope ?? null,
   ]);
   return new Bun.CryptoHasher("sha256").update(canonical).digest("hex");
 }

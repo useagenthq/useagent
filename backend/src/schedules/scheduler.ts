@@ -19,9 +19,13 @@ function sameMinute(a: Date, b: Date): boolean {
 
 /**
  * One scheduler pass: fire every enabled schedule whose cron matches the
- * current minute and that hasn't already fired this minute. `markFired` claims
- * the minute BEFORE firing so a transient fire error can't cause a duplicate
- * run on a later tick within the same minute. Exported for tests.
+ * current minute and that hasn't already fired this minute. `markFired` stamps
+ * the minute AFTER the durable command is accepted — stamping first opened a
+ * loss window (accept fails after the stamp → that occurrence is skipped
+ * forever; external audit finding). Duplicates from the reverse ordering are
+ * already impossible at the durable layer: the firing's idempotency key buckets
+ * to the occurrence minute, so a re-fire after a failed stamp resolves to the
+ * same single run. Exported for tests.
  */
 export async function tick(now: Date = new Date()): Promise<void> {
   let due;
@@ -36,11 +40,11 @@ export async function tick(now: Date = new Date()): Promise<void> {
     if (!cronMatches(s.cron, now, s.timezone)) continue;
     if (s.lastFiredAt && sameMinute(new Date(s.lastFiredAt), now)) continue;
     try {
-      await markFired(s.id, now);
       // Pass the tick time as the occurrence so the firing's idempotency key
-      // buckets to this minute — the durable safety net behind the sameMinute
-      // guard above (a retry for the same occurrence resolves to one run).
+      // buckets to this minute — the durable safety net that makes fire-then-
+      // stamp safe (a re-fire for the same occurrence resolves to one run).
       await fireSchedule(s, "cron", now);
+      await markFired(s.id, now);
       console.log(`[scheduler] fired schedule ${s.id} (${s.name})`);
     } catch (err) {
       console.error(`[scheduler] failed to fire schedule ${s.id}:`, err);
