@@ -165,12 +165,6 @@ export function usageCaption(skill: Skill): string {
     : uses;
 }
 
-/** Highest-usage skill becomes the featured card. */
-export function pickFeatured(skills: Skill[]): Skill | undefined {
-  if (skills.length === 0) return undefined;
-  return skills.reduce((top, s) => (s.usageCount > top.usageCount ? s : top));
-}
-
 /* -------------------------------------------------------------------------- */
 /*  Fallback                                                                    */
 /* -------------------------------------------------------------------------- */
