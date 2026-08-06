@@ -12,6 +12,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { createHmac } from "node:crypto";
 import { setSlackClientForTest } from "../src/slack";
+import { dispatchSocketFrame } from "../src/slack/socket-mode";
 import { fetchApi, json, uid, waitFor } from "./helpers";
 
 const SECRET = "test-signing-secret"; // this suite signs every inbound event with it
@@ -336,5 +337,50 @@ describe("slack event → run", () => {
     } finally {
       statusFails = false;
     }
+  });
+});
+
+// The Socket Mode ingest lane feeds the SAME handleSlackEvent as the HTTP route,
+// so a socket-ingested event must create a run AND attach the live-status/reply
+// watcher (watchSlackRun) exactly as HTTP does. Drive the frame dispatcher
+// directly (no live WebSocket) and assert the full downstream.
+describe("slack socket-mode ingest shares the HTTP handler", () => {
+  function socketFrame(envelope: Record<string, unknown>, envelopeId = `env-${uid("e")}`): { raw: string; envelopeId: string } {
+    return { raw: JSON.stringify({ type: "events_api", envelope_id: envelopeId, payload: envelope }), envelopeId };
+  }
+
+  test("an events_api app_mention frame acks, creates a run, and attaches the watcher", async () => {
+    const marker = uid("socket");
+    const channel = `C${uid("ch")}`;
+    const ts = `${uid("ts")}.1`;
+    const acked: string[] = [];
+    const { raw, envelopeId } = socketFrame(
+      eventCallback({ type: "app_mention", channel, user: "U-HUMAN", text: `<@${BOT}> socket ${marker}`, ts }),
+    );
+
+    dispatchSocketFrame(raw, (id) => acked.push(id), () => {});
+
+    expect(acked).toEqual([envelopeId]); // acked by envelope_id, before processing
+
+    // Run created via the shared handler, scoped to the dev org.
+    const run = await waitFor(async () => findRunByPrompt(`socket ${marker}`));
+    expect(run.org_id).toBe("org-skynet-dev");
+
+    // watchSlackRun attached downstream: the 👀 ack + the completion summary land.
+    await waitFor(async () =>
+      rec.reactions.some((r) => r.channel === channel && r.timestamp === ts && r.name === "eyes") || null,
+    );
+    const msg = await waitFor(async () =>
+      rec.messages.find((m) => m.channel === channel && m.threadTs === ts) ?? null,
+    );
+    expect(msg.text.length).toBeGreaterThan(0);
+  });
+
+  test("hello is a no-op; disconnect asks us to close", () => {
+    let closed = 0;
+    dispatchSocketFrame(JSON.stringify({ type: "hello" }), () => {}, () => closed++);
+    expect(closed).toBe(0);
+    dispatchSocketFrame(JSON.stringify({ type: "disconnect" }), () => {}, () => closed++);
+    expect(closed).toBe(1);
   });
 });

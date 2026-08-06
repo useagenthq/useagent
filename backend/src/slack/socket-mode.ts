@@ -56,6 +56,39 @@ function scheduleReconnect(token: string): void {
   setTimeout(() => void connect(token), RECONNECT_DELAY_MS).unref?.();
 }
 
+/**
+ * Dispatch one decoded Socket Mode frame: ack by envelope_id, then route by
+ * type. `events_api` payloads go to the SAME handleSlackEvent the HTTP route
+ * uses, so a Socket-Mode-ingested event creates a run and attaches the live
+ * status/reply watcher (watchSlackRun) identically to the HTTP path. Extracted
+ * from ws.onmessage so it is unit-testable without a live WebSocket.
+ */
+export function dispatchSocketFrame(
+  raw: string,
+  ack: (envelopeId: string) => void,
+  onDisconnect: () => void,
+): void {
+  let env: SocketEnvelope;
+  try {
+    env = JSON.parse(raw) as SocketEnvelope;
+  } catch {
+    return;
+  }
+  // Ack FIRST (3s budget), then process - mirrors the HTTP path's fast-ack.
+  if (env.envelope_id) ack(env.envelope_id);
+  if (env.type === "hello") return;
+  if (env.type === "disconnect") {
+    // Slack asks us to refresh; closing the socket triggers the reconnect.
+    onDisconnect();
+    return;
+  }
+  if (env.type === "events_api" && env.payload) {
+    void handleSlackEvent(env.payload).catch((err) =>
+      console.error("[slack:socket] event handling failed:", err),
+    );
+  }
+}
+
 async function connect(token: string): Promise<void> {
   if (stopped) return;
   const url = await openConnectionUrl(token);
@@ -65,31 +98,18 @@ async function connect(token: string): Promise<void> {
   socket = ws;
 
   ws.onopen = () => console.log("[slack:socket] connected (socket mode)");
-  ws.onmessage = (msg) => {
-    let env: SocketEnvelope;
-    try {
-      env = JSON.parse(String(msg.data)) as SocketEnvelope;
-    } catch {
-      return;
-    }
-    // Ack FIRST (3s budget), then process - mirrors the HTTP path's fast-ack.
-    if (env.envelope_id) ws.send(JSON.stringify({ envelope_id: env.envelope_id }));
-    if (env.type === "hello") return;
-    if (env.type === "disconnect") {
-      // Slack asks us to refresh; close triggers the reconnect below.
-      try {
-        ws.close();
-      } catch {
-        /* already closing */
-      }
-      return;
-    }
-    if (env.type === "events_api" && env.payload) {
-      void handleSlackEvent(env.payload).catch((err) =>
-        console.error("[slack:socket] event handling failed:", err),
-      );
-    }
-  };
+  ws.onmessage = (msg) =>
+    dispatchSocketFrame(
+      String(msg.data),
+      (id) => ws.send(JSON.stringify({ envelope_id: id })),
+      () => {
+        try {
+          ws.close();
+        } catch {
+          /* already closing */
+        }
+      },
+    );
   ws.onclose = () => {
     if (socket === ws) socket = null;
     scheduleReconnect(token);
