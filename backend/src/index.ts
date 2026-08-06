@@ -5,6 +5,7 @@ import { migrate } from "drizzle-orm/postgres-js/migrator";
 import { auth } from "./auth";
 import { startEmailConnector } from "./connectors/email";
 import { db } from "./db/client";
+import type { AppEnv } from "./http";
 import {
   allowDevOrg,
   connectorEmailConfig,
@@ -14,6 +15,7 @@ import {
   memoryConfig,
   slackConfig,
 } from "./env";
+import { isPublicApiPath, orgScope } from "./middleware/org";
 import { toolGatewayConfig } from "./knowledge/gateway/config";
 import { knowledgeRoutes } from "./knowledge/routes";
 import { knowledgeMcpRoutes } from "./knowledge/gateway/mcp";
@@ -59,7 +61,7 @@ if (recovery.reconciled > 0 || recovery.failed > 0 || recovery.redispatched > 0 
   );
 }
 
-const app = new Hono();
+const app = new Hono<AppEnv>();
 
 // CORS for the frontend, with credentials so cookie sessions flow when the
 // browser calls the backend directly (the Next dev proxy is same-origin).
@@ -72,6 +74,17 @@ app.use(
     allowMethods: ["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
   }),
 );
+
+// Universal auth adapter (fail CLOSED by default). Every /api/* request is
+// org-session scoped UNLESS its prefix self-authenticates or is public
+// (isPublicApiPath). A NEW router therefore needs no auth wiring to be
+// protected - forgetting `.use(orgScope)` no longer leaves it open, it just
+// runs behind the adapter. orgScope is idempotent, so the per-router guards that
+// remain are free defense-in-depth. This runs before every mounted route below.
+app.use("/api/*", async (c, next) => {
+  if (isPublicApiPath(c.req.path)) return next();
+  return orgScope(c, next);
+});
 
 app.get("/api/health", (c) => c.json({ status: "ok" }));
 
