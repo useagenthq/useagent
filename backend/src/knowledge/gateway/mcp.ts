@@ -8,6 +8,7 @@ import {
 import { executeKnowledgeTool, KNOWLEDGE_TOOLS, KNOWLEDGE_TOOL_NAMES } from "./tools";
 import { executeMemoryTool, MEMORY_TOOLS, MEMORY_TOOL_NAMES } from "./memory-tools";
 import { executeSlackTool, SLACK_TOOLS, SLACK_TOOL_NAMES } from "./slack-tools";
+import { executeWebSearchTool, WEB_SEARCH_TOOLS, WEB_SEARCH_TOOL_NAMES } from "./web-search-tool";
 import { findSlackThreadByRoot } from "../../slack/repo";
 import { verifyToolToken, type ToolTokenClaims } from "./token";
 
@@ -96,7 +97,7 @@ export async function handleMcpMessage(
       // slack_upload is only useful to a Slack-originated run, so advertise it
       // ONLY when this run's thread maps to a Slack thread. Non-Slack runs see
       // exactly the knowledge + memory set (the wire stays byte-identical for them).
-      const tools: unknown[] = [...KNOWLEDGE_TOOLS, ...MEMORY_TOOLS];
+      const tools: unknown[] = [...KNOWLEDGE_TOOLS, ...MEMORY_TOOLS, ...WEB_SEARCH_TOOLS];
       if (await findSlackThreadByRoot(claims.threadId)) tools.push(...SLACK_TOOLS);
       return ok(msg.id, { tools });
     }
@@ -114,6 +115,9 @@ export async function handleMcpMessage(
       }
       if (SLACK_TOOL_NAMES.has(name)) {
         return ok(msg.id, await executeSlackTool(claims, name, args));
+      }
+      if (WEB_SEARCH_TOOL_NAMES.has(name)) {
+        return ok(msg.id, await executeWebSearchTool(claims, name, args));
       }
       return err(msg.id, ErrorCode.InvalidParams, `Unknown tool: ${name}`);
     }
