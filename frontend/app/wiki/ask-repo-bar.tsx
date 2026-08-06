@@ -1,24 +1,29 @@
 "use client";
 
 import { useState } from "react";
-import { RiArrowUpLine, RiCheckLine } from "@remixicon/react";
+import { useRouter } from "next/navigation";
+import { RiArrowUpLine } from "@remixicon/react";
 
 import { AsteriskMark } from "@/components/foundations/brand/asterisk-mark";
 import { backendFetch } from "@/lib/backend-fetch";
 import { cnExt } from "@/utils/cn";
 
 /**
- * The "Ask about this repo" bar pinned to the bottom of the wiki. Mirrors the
- * home composer's send affordance (blue circular button) but scoped to a
- * single-line question; submitting hands the query off to a fresh agent run
- * via `POST /api/runs`, then flashes a brief confirmation.
+ * The "Ask the wiki" bar pinned to the bottom of the wiki. Submitting starts a
+ * real agent run scoped to the org's published wiki (the agent holds the
+ * knowledge_search/knowledge_read gateway tools, so it answers FROM these
+ * documents with citations) and NAVIGATES to that session so the answer is
+ * actually seen - the old version fired the run, flashed a checkmark, and left
+ * the user stranded on this page with a stale hardcoded repo name.
  */
 
-type Status = "idle" | "sending" | "sent";
+type Status = "idle" | "sending";
 
 export function AskRepoBar() {
+  const router = useRouter();
   const [value, setValue] = useState("");
   const [status, setStatus] = useState<Status>("idle");
+  const [failed, setFailed] = useState(false);
 
   const busy = status === "sending";
 
@@ -26,19 +31,22 @@ export function AskRepoBar() {
     const prompt = value.trim();
     if (!prompt || busy) return;
     setStatus("sending");
+    setFailed(false);
     try {
       const res = await backendFetch("/api/runs", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          prompt: `About the skynet-app repo: ${prompt}`,
+          prompt: `Answer from the organization wiki (use knowledge_search and knowledge_read; cite the documents you used): ${prompt}`,
         }),
       });
       if (!res.ok) throw new Error(`runs ${res.status}`);
-      setValue("");
-      setStatus("sent");
-      setTimeout(() => setStatus("idle"), 1600);
+      const created = (await res.json()) as { id?: string; run?: { id?: string } };
+      const id = created.id ?? created.run?.id;
+      if (!id) throw new Error("no run id");
+      router.push(`/session/${id}`);
     } catch {
+      setFailed(true);
       setStatus("idle");
     }
   }
@@ -55,29 +63,28 @@ export function AskRepoBar() {
         <AsteriskMark className="size-5 shrink-0 text-text-strong-950" />
         <input
           type="text"
-          aria-label="Ask about this repo"
-          placeholder="Ask anything about skynet-app…"
+          aria-label="Ask the wiki"
+          placeholder={busy ? "Starting a session..." : "Ask the wiki anything; an agent answers from these documents"}
           value={value}
           disabled={busy}
           onChange={(event) => setValue(event.target.value)}
           className="min-w-0 flex-1 bg-transparent text-paragraph-sm text-text-strong-950 outline-none placeholder:text-text-soft-400 disabled:opacity-60"
         />
+        {failed && (
+          <span className="text-label-xs text-error-base shrink-0">Could not start, retry</span>
+        )}
         <button
           type="submit"
-          aria-label="Ask about this repo"
+          aria-label="Ask the wiki"
           disabled={busy || !value.trim()}
           className={cnExt(
             "flex size-8 shrink-0 items-center justify-center rounded-full text-static-white outline-none transition-opacity",
             "focus-visible:ring-2 focus-visible:ring-primary-base focus-visible:ring-offset-2",
-            status === "sent" ? "bg-success-base" : "bg-primary-base",
+            "bg-primary-base",
             "hover:opacity-90 disabled:opacity-40",
           )}
         >
-          {status === "sent" ? (
-            <RiCheckLine className="size-5" aria-hidden />
-          ) : (
-            <RiArrowUpLine className="size-5" aria-hidden />
-          )}
+          <RiArrowUpLine className="size-5" aria-hidden />
         </button>
       </form>
     </div>
