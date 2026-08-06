@@ -3,12 +3,15 @@
 import { memo, useState } from "react";
 import {
   RiArrowDownSLine,
+  RiBookOpenLine,
   RiCheckboxCircleFill,
   RiCheckboxBlankCircleLine,
   RiCheckLine,
   RiCloseLine,
+  RiDatabase2Line,
   RiErrorWarningLine,
   RiFileAddLine,
+  RiFlashlightLine,
   RiFileCodeLine,
   RiFileEditLine,
   RiFileLine,
@@ -38,6 +41,7 @@ import {
   type TodoStatus,
   type TraceGlyph,
 } from "@/components/chat/types";
+import type { TimelineMarker } from "@/components/chat/timeline";
 
 type RowState = "running" | "done";
 
@@ -75,6 +79,61 @@ export const ToolStepRow = memo(function ToolStepRow({
       trace={nested === undefined ? trace : { ...trace, nested }}
       state={state}
     />
+  );
+});
+
+// ── Canonical context markers (skill.loaded / context.retrieved) ─────────────
+
+/** Visual model for one marker row — same row anatomy as a trace row, tinted with
+ *  the `feature` accent so context markers read distinctly from tool calls. */
+function markerView(marker: TimelineMarker): {
+  Icon: RemixiconComponentType;
+  verb: string;
+  target: string;
+  badge: string | null;
+} {
+  if (marker.kind === "skill") {
+    return {
+      Icon: RiFlashlightLine,
+      verb: "Skill",
+      target: marker.name,
+      badge: `v${marker.version}`,
+    };
+  }
+  const known = marker.source === "knowledge" || marker.source === "memory";
+  const label = known ? marker.source : "context";
+  const n = marker.itemCount;
+  return {
+    Icon: marker.source === "knowledge" ? RiBookOpenLine : RiDatabase2Line,
+    verb: "Recalled",
+    target: `${n} ${n === 1 ? "item" : "items"} from ${label}`,
+    badge: null,
+  };
+}
+
+/**
+ * A canonical context marker rendered in the SHARED trace grammar (skill.loaded →
+ * "Skill <name> v<n>", context.retrieved → "Recalled N items from memory"). Not a
+ * parallel context pane — one typed row, feature-accented. Memoized by the marker
+ * object (the timeline replaces it only when the underlying frame changes).
+ */
+export const MarkerRow = memo(function MarkerRow({ marker }: { marker: TimelineMarker }) {
+  const { Icon, verb, target, badge } = markerView(marker);
+  return (
+    <div className="animate-ai-fade-up flex items-center gap-2 px-1.5 py-1">
+      <span className="bg-feature-lighter text-feature-base flex size-5 shrink-0 items-center justify-center rounded-md">
+        <Icon className="size-3.5" aria-hidden />
+      </span>
+      <span className="min-w-0 flex-1 truncate">
+        <span className="text-feature-base text-label-sm font-medium">{verb}</span>
+        {target && <span className="text-text-sub-600 ml-1.5 text-label-sm">{target}</span>}
+      </span>
+      {badge && (
+        <span className="text-text-soft-400 shrink-0 font-mono text-label-xs tabular-nums">
+          {badge}
+        </span>
+      )}
+    </div>
   );
 });
 

@@ -24,6 +24,10 @@ export const CONTEXT_RETRIEVED = "context.retrieved";
  *  needs about one run's recall. Bounded by the native capture's payload cap. */
 export interface RetrievalLedgerPayload {
   readonly provider: string;
+  /** Which context store this recall came from — the discriminator the shared
+   *  timeline renders (`context.retrieved(source)`). "memory" here; the knowledge
+   *  gateway emits the same event with `source: "knowledge"`. */
+  readonly source: "memory";
   readonly query: string;
   /** The pool policy the run ran under. */
   readonly memoryScope: MemoryScope;
@@ -56,6 +60,7 @@ export function buildRetrievalPayload(
 ): RetrievalLedgerPayload {
   return {
     provider: "tencent-memorycore",
+    source: "memory",
     query,
     memoryScope: plan.scope,
     scope: {

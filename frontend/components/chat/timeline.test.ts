@@ -139,3 +139,53 @@ describe("buildTimeline", () => {
     expect(hasNarration(buildTimeline(s.getSnapshot(), false)!)).toBe(false);
   });
 });
+
+// Skynet-lane context markers (skill.loaded / context.retrieved) share the frame()
+// helper but override provider to "skynet".
+function skynetFrame(eventId: string, seq: number, eventType: string, payload: unknown): NativeFrame {
+  return { ...frame(eventId, seq, eventType, {}, payload), provider: "skynet" };
+}
+
+describe("canonical context markers", () => {
+  test("skill.loaded + context.retrieved render as the turn's LEADING marker rows", () => {
+    const s = turnStore();
+    s.ingestNative(
+      skynetFrame("skillloaded_run-1", 0, "skill.loaded", {
+        skillId: "sk1",
+        version: 2,
+        name: "Haiku answers",
+        contentHash: "abc123",
+        source: "skill",
+        contentChars: 120,
+      }),
+      0,
+    );
+    s.ingestNative(
+      skynetFrame("ctxret_run-1", 1, "context.retrieved", { source: "memory", itemCount: 3, query: "q" }),
+      0,
+    );
+    const nodes = buildTimeline(s.getSnapshot(), false)!;
+    // Markers lead, in seq order (skill.loaded seq 0 → context.retrieved seq 1).
+    expect(nodes[0]).toMatchObject({ kind: "marker", marker: { kind: "skill", name: "Haiku answers", version: 2 } });
+    expect(nodes[1]).toMatchObject({ kind: "marker", marker: { kind: "context", source: "memory", itemCount: 3 } });
+    // Narration/tools still follow.
+    expect(nodes.slice(2).some((n) => n.kind === "text" && n.text === "First burst.")).toBe(true);
+  });
+
+  test("an UNKNOWN skynet eventType is ignored (renders safely as nothing)", () => {
+    const s = turnStore();
+    s.ingestNative(skynetFrame("weird_run-1", 0, "policy.denied.future", { foo: 1 }), 0);
+    expect(buildTimeline(s.getSnapshot(), false)!.some((n) => n.kind === "marker")).toBe(false);
+  });
+
+  test("context.retrieved defaults its source to memory; a knowledge source is preserved", () => {
+    const mem = createNativeStore();
+    mem.reset([], 0);
+    mem.ingestNative(skynetFrame("ctxret_run-1", 0, "context.retrieved", { itemCount: 1 }), 0);
+    mem.ingestNative(skynetFrame("kn_run-1", 1, "context.retrieved", { source: "knowledge", itemCount: 2 }), 0);
+    const markers = buildTimeline(mem.getSnapshot(), false)!.filter((n) => n.kind === "marker");
+    expect(markers).toHaveLength(2);
+    expect(markers[0]).toMatchObject({ marker: { source: "memory", itemCount: 1 } });
+    expect(markers[1]).toMatchObject({ marker: { source: "knowledge", itemCount: 2 } });
+  });
+});

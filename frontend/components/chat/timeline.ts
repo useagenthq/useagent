@@ -17,10 +17,51 @@ import { asRecord, deriveTrace, type ApiStep } from "./types";
 import { nativeOf } from "./native-ids";
 import type { NativeSnapshot } from "./native-store";
 
-/** One node of the interleaved timeline: a narration burst or a tool row. */
+/** A canonical context marker — a typed row (skill.loaded / context.retrieved)
+ *  rendered in the SHARED timeline grammar, not a parallel context pane. */
+export type TimelineMarker =
+  | { readonly kind: "skill"; readonly name: string; readonly version: number; readonly hash: string }
+  | {
+      readonly kind: "context";
+      readonly source: string; // "memory" | "knowledge" | …
+      readonly itemCount: number;
+      readonly query: string | null;
+    };
+
+/** One node of the interleaved timeline: a context marker, a narration burst, or
+ *  a tool row. */
 export type TimelineNode =
+  | { kind: "marker"; key: string; marker: TimelineMarker }
   | { kind: "text"; key: string; text: string }
   | { kind: "tool"; key: string; step: ApiStep };
+
+/**
+ * Parse a skynet-lane native frame (skill.loaded / context.retrieved) into a
+ * typed timeline marker. Returns null for any other frame — an UNKNOWN skynet
+ * eventType renders safely as nothing (never a crash), per the canonical-marker
+ * contract.
+ */
+function parseMarker(eventType: string, payload: unknown): TimelineMarker | null {
+  const p = asRecord(payload);
+  if (!p) return null;
+  if (eventType === "skill.loaded") {
+    return {
+      kind: "skill",
+      name: typeof p.name === "string" ? p.name : "skill",
+      version: typeof p.version === "number" ? p.version : 1,
+      hash: typeof p.contentHash === "string" ? p.contentHash : "",
+    };
+  }
+  if (eventType === "context.retrieved") {
+    return {
+      kind: "context",
+      source: typeof p.source === "string" ? p.source : "memory",
+      itemCount: typeof p.itemCount === "number" ? p.itemCount : 0,
+      query: typeof p.query === "string" ? p.query : null,
+    };
+  }
+  return null;
+}
 
 /** A text part's accumulated text, or null when the payload carries none. */
 function partText(payload: unknown): string | null {
@@ -92,6 +133,24 @@ export function buildTimeline(
 
   type Ranked = { node: TimelineNode; k0: number; k1: number; k2: number };
   const ranked: Ranked[] = [];
+
+  // Canonical context markers (skynet lane): skill.loaded + context.retrieved.
+  // Emitted at run START (lowest seqs), so they LEAD the turn (k0 below the boot
+  // sentinel of -1) — "Loaded skill X · Recalled N memories" as the turn's header.
+  // Rendered as typed rows in this shared grammar (MarkerRow), never a parallel
+  // context pane. Reconnect replays them from the durable native lane like any
+  // other frame. An unknown skynet eventType parses to null → rendered as nothing.
+  for (const f of nativeFrames) {
+    if (f.provider !== "skynet") continue;
+    const marker = parseMarker(f.eventType, f.payload);
+    if (!marker) continue;
+    ranked.push({
+      node: { kind: "marker", key: f.eventId, marker },
+      k0: -2,
+      k1: 0,
+      k2: f.seq, // skill.loaded (seq 0) before context.retrieved (seq 1)
+    });
+  }
 
   // Narration bursts — root-session, assistant-step messages only. One frame per
   // text partId (the store keeps the latest revision), each rendered as its own
