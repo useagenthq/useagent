@@ -127,23 +127,65 @@ const TextBurst = memo(function TextBurst({ text }: { text: string }) {
  * fanout doesn't restorm on every frame.
  */
 function Timeline({ nodes, live }: { nodes: TimelineNode[]; live: boolean }) {
-  const last = nodes.length - 1;
+  // LIVE: render flat so every tool row streams in view as it happens.
+  if (live) {
+    const last = nodes.length - 1;
+    return (
+      <div className="space-y-3">
+        {nodes.map((node, i) =>
+          node.kind === "marker" ? (
+            <MarkerRow key={node.key} marker={node.marker} />
+          ) : node.kind === "text" ? (
+            <TextBurst key={node.key} text={node.text} />
+          ) : (
+            <ToolStepRow key={node.key} step={node.step} state={i === last ? "running" : "done"} />
+          ),
+        )}
+        <LoadingState label="Working" className="mt-1" />
+      </div>
+    );
+  }
+
+  // SETTLED: keep narration + markers inline, but FOLD consecutive tool rows
+  // into a collapsed "Ran N tools" disclosure - a long turn (15 tool calls)
+  // otherwise dumps every row and buries the answer (user report / BUG-010).
+  // A lone tool between bursts stays inline (nothing to collapse).
+  type Group =
+    | { kind: "inline"; key: string; node: TimelineNode }
+    | { kind: "tools"; key: string; steps: TimelineNode[] };
+  const groups: Group[] = [];
+  for (const node of nodes) {
+    if (node.kind === "tool") {
+      const last = groups.at(-1);
+      if (last && last.kind === "tools") last.steps.push(node);
+      else groups.push({ kind: "tools", key: node.key, steps: [node] });
+    } else {
+      groups.push({ kind: "inline", key: node.key, node });
+    }
+  }
   return (
     <div className="space-y-3">
-      {nodes.map((node, i) =>
-        node.kind === "marker" ? (
-          <MarkerRow key={node.key} marker={node.marker} />
-        ) : node.kind === "text" ? (
-          <TextBurst key={node.key} text={node.text} />
-        ) : (
-          <ToolStepRow
-            key={node.key}
-            step={node.step}
-            state={live && i === last ? "running" : "done"}
-          />
-        ),
-      )}
-      {live && <LoadingState label="Working" className="mt-1" />}
+      {groups.map((g) => {
+        if (g.kind === "inline") {
+          return g.node.kind === "marker" ? (
+            <MarkerRow key={g.key} marker={g.node.marker} />
+          ) : (
+            <TextBurst key={g.key} text={(g.node as { text: string }).text} />
+          );
+        }
+        const stepOf = (n: TimelineNode) =>
+          (n as Extract<TimelineNode, { kind: "tool" }>).step;
+        if (g.steps.length === 1) {
+          return <ToolStepRow key={g.key} step={stepOf(g.steps[0])} state="done" />;
+        }
+        return (
+          <Thinking key={g.key} label={`Ran ${g.steps.length} tools`} active={false}>
+            {g.steps.map((n) => (
+              <ToolStepRow key={n.key} step={stepOf(n)} state="done" />
+            ))}
+          </Thinking>
+        );
+      })}
     </div>
   );
 }
