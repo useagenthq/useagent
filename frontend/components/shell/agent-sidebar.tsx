@@ -4,6 +4,7 @@ import {
   RiBrainLine,
   RiBroadcastLine,
   RiCalendarScheduleLine,
+  RiDatabase2Line,
   RiFlashlightLine,
   RiLayoutGridLine,
   RiPlugLine,
@@ -63,6 +64,12 @@ export function AgentSidebar({ active }: AgentSidebarProps) {
         icon={RiBrainLine}
         label='Knowledge'
         active={active === 'knowledge'}
+      />
+      <SidebarNavItem
+        href='/memory'
+        icon={RiDatabase2Line}
+        label='Memory'
+        active={active === 'memory'}
       />
       <SidebarNavItem
         href='/wiki'
