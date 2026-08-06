@@ -646,12 +646,18 @@ runsRoutes.get("/:rootRunId/thread-events", async (c) => {
       signal.addEventListener("abort", cleanup);
 
       // Reload one run's durable projection and emit it as a `run` frame, ensuring
-      // its live sources are attached and its native frames replayed. The org-scoped
-      // read fails closed; a run outside this thread is ignored.
+      // its live sources are attached and its native frames replayed. AUTHORIZE +
+      // verify thread membership BEFORE attaching any live listeners: a signal that
+      // ever carried a runId from a different thread/org (a future/misrouted
+      // publisher, or a bug) must never subscribe this connection to that run's
+      // channels. Attaching first left a fail-closed hole - the durable `run` frame
+      // was withheld but the live step/delta/native listeners stayed bound, leaking
+      // frames cross-thread/cross-org (Codex review finding 1). Org-scoped read fails
+      // closed; a run outside this thread is ignored without ever attaching.
       const projectRun = async (runId: string): Promise<void> => {
-        attachRun(runId);
         const run = await getRunWithSteps(orgId, runId);
         if (!run || run.thread_id !== threadId) return;
+        attachRun(runId);
         seedStepDedupe(runId, run.steps);
         sendFrame("run", { threadId, run });
         for (const frame of await getNativeFramesSince(runId, -1)) {

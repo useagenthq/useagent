@@ -5,6 +5,8 @@ import { createRun, insertStep, setRunStatus, type ApiStep } from "../src/runs/r
 import { recordProviderEvent } from "../src/runs/provider-events";
 import { makeNativeFrame, publishNativeFrame } from "../src/runs/native-events";
 import { bus, channel } from "../src/worker";
+import { turnStream } from "../src/runs/turn-stream";
+import { publishThreadChange } from "../src/runs/thread-signals";
 import { acceptRunCommand } from "../src/commands";
 
 // Deterministic tests for the ADDITIVE thread SSE stream
@@ -373,5 +375,55 @@ describe("thread-events — live multiplexing", () => {
     );
     expect(bus.listenerCount(channel(root))).toBe(baseRoot);
     expect(bus.listenerCount(channel(reply))).toBe(baseReply);
+  });
+});
+
+describe("thread-events — post-open isolation (fail-closed after the stream is open)", () => {
+  // Codex review finding 1: authorization must happen BEFORE attaching live
+  // listeners, so a thread signal carrying a runId from a DIFFERENT thread/org can
+  // never subscribe an open connection to that run's step/delta/native channels.
+  // (The cross-org 404 test only covers OPENING a stream; this covers post-open
+  // signal injection.) The pre-fix code reproduced leaked=true; these assert
+  // leaked=false: the foreign run's listeners never bind and its frames never land.
+
+  async function assertNoLeak(c: Awaited<ReturnType<typeof openStream>>, threadId: string, foreignRunId: string): Promise<void> {
+    // Inject a signal on THIS thread's channel but with the foreign run's id, then
+    // publish live frames for the foreign run through every lane.
+    const baseBus = bus.listenerCount(channel(foreignRunId));
+    publishThreadChange(threadId, { runId: foreignRunId, kind: "created" });
+    await new Promise((r) => setTimeout(r, 120)); // let the signal drain through projectRun
+    const step = await insertStep({ runId: foreignRunId, idx: 99, kind: "command", label: "leak", chip: null, code: { tool: "bash" } });
+    bus.emit(channel(foreignRunId), { type: "step", step });
+    turnStream.publish(foreignRunId, "leaked-delta");
+    publishNativeFrame(foreignRunId, makeNativeFrame({ eventId: `${foreignRunId}::leak`, seq: 0, provider: "opencode", eventType: "part.text", sessionId: null, parentSessionId: null, messageId: null, partId: "leak", callId: null, payloadText: null }));
+    await new Promise((r) => setTimeout(r, 200)); // give any (incorrect) leak time to arrive
+
+    const leaked = c.frames.filter(
+      (x) =>
+        (x.event === "run" && x.data.run?.id === foreignRunId) ||
+        (x.event !== "snapshot" && x.data?.runId === foreignRunId),
+    );
+    expect(leaked.length).toBe(0); // leaked=false
+    // The foreign run's live listeners never bound (auth ran before attach).
+    expect(bus.listenerCount(channel(foreignRunId))).toBe(baseBus);
+  }
+
+  test("same-org, different-thread run id does not leak onto an open stream", async () => {
+    const org = await createOrgSession("te-iso-samethread");
+    const rootA = await seedRun({ orgId: org.orgId, status: "running" });
+    const rootB = await seedRun({ orgId: org.orgId, status: "running" }); // separate thread, same org
+    const c = await open(`/api/runs/${rootA}/thread-events`, org.cookies);
+    await c.waitFrame((f) => f.some((x) => x.event === "snapshot"));
+    await assertNoLeak(c, rootA, rootB);
+  });
+
+  test("cross-org run id does not leak onto an open stream", async () => {
+    const orgA = await createOrgSession("te-iso-a");
+    const orgB = await createOrgSession("te-iso-b");
+    const rootA = await seedRun({ orgId: orgA.orgId, status: "running" });
+    const rootB = await seedRun({ orgId: orgB.orgId, status: "running" }); // OTHER org
+    const c = await open(`/api/runs/${rootA}/thread-events`, orgA.cookies);
+    await c.waitFrame((f) => f.some((x) => x.event === "snapshot"));
+    await assertNoLeak(c, rootA, rootB);
   });
 });
