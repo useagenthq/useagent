@@ -39,7 +39,7 @@ export function DesktopPane({
   if (!hasSandbox) {
     return (
       <div className="text-text-soft-400 flex size-full items-center justify-center px-6 text-center text-paragraph-sm">
-        No live sandbox yet — send a message to start one.
+        No live sandbox yet - send a message to start one.
       </div>
     );
   }

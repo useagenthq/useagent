@@ -173,7 +173,7 @@ export const pullRequests: PullRequest[] = [
         proposedChange: [
           {
             field: 'reset guard',
-            before: '—',
+            before: '-',
             after: 'now − windowStart ≥ WINDOW_MS',
             status: 'added',
           },
@@ -197,7 +197,7 @@ export const pullRequests: PullRequest[] = [
           },
           {
             role: 'skynet',
-            text: "Tracking the newest time is fine, but assigning it to `windowStart` is what breaks it — the window's start should only advance once the previous window fully elapses. As written, `now - windowStart` is always ~0, so the limiter treats every request as the first in a fresh window and never resets the count. Move the reset behind an `if (now - windowStart >= WINDOW_MS)` guard.",
+            text: "Tracking the newest time is fine, but assigning it to `windowStart` is what breaks it - the window's start should only advance once the previous window fully elapses. As written, `now - windowStart` is always ~0, so the limiter treats every request as the first in a fresh window and never resets the count. Move the reset behind an `if (now - windowStart >= WINDOW_MS)` guard.",
           },
         ],
       },
@@ -258,7 +258,7 @@ export const pullRequests: PullRequest[] = [
       {
         id: 'f-142-style-1',
         category: 'style',
-        title: '`LIMIT` is never reassigned — prefer const',
+        title: '`LIMIT` is never reassigned - prefer const',
         location: 'gateway/limiter.ts:4',
         explanation:
           'Declared with `let` but only assigned once. Use `const` so the ceiling cannot be mutated by accident.',

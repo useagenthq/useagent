@@ -19,7 +19,7 @@ const base: RenderEmailInput = {
 describe("renderEmail", () => {
   it("builds a subject with status + truncated prompt", () => {
     const { subject } = renderEmail(base);
-    expect(subject).toBe("[skynet] Run completed — build the thing");
+    expect(subject).toBe("[skynet] Run completed - build the thing");
   });
 
   it("marks a failed run in the subject", () => {
@@ -31,7 +31,7 @@ describe("renderEmail", () => {
     const long = "x".repeat(200);
     const { subject } = renderEmail({ ...base, prompt: long });
     // "[skynet] Run completed — " + <=60 chars
-    expect(subject.length).toBeLessThanOrEqual("[skynet] Run completed — ".length + 60);
+    expect(subject.length).toBeLessThanOrEqual("[skynet] Run completed - ".length + 60);
     expect(subject.endsWith("…")).toBe(true);
   });
 

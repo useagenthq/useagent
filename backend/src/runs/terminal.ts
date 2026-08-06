@@ -73,7 +73,7 @@ terminalRoutes.get(
             const sandboxId = await sandboxForThread(run.threadId);
             if (!sandboxId) {
               throw new Error(
-                "no live sandbox for this conversation yet — send a message first",
+                "no live sandbox for this conversation yet - send a message first",
               );
             }
 

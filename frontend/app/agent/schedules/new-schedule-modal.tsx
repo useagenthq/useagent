@@ -88,7 +88,7 @@ export function NewScheduleModal({
       <Modal.Content className="max-w-[520px]">
         <Modal.Header
           title="New schedule"
-          description="Describe the work and the cron cadence Skynet should start it on. Created off — enable it from the list."
+          description="Describe the work and the cron cadence Skynet should start it on. Created off - enable it from the list."
         />
 
         <Modal.Body className="flex flex-col gap-4">
@@ -123,7 +123,7 @@ export function NewScheduleModal({
               </Input.Wrapper>
             </Input.Root>
             <Hint.Root hasError={!cronValid && cron.trim().length > 0}>
-              5 fields: minute hour day month weekday — e.g. “0 9 * * 1” is
+              5 fields: minute hour day month weekday - e.g. “0 9 * * 1” is
               Mondays 09:00.
             </Hint.Root>
           </div>

@@ -300,7 +300,7 @@ export function NewTaskComposer({ skills }: { skills: Skill[] }) {
                 setCmdHighlight(0);
               }}
               rows={3}
-              placeholder="Describe the task — repo, goal, constraints..."
+              placeholder="Describe the task - repo, goal, constraints..."
               aria-label="Describe the task"
               onKeyDown={(event) => {
                 if (handleCmdKeys(event)) return; // consumed by the "/" popover

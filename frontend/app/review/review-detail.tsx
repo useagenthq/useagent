@@ -217,7 +217,7 @@ export function ReviewDetail({ pr }: { pr: PullRequest }) {
           <div className='flex flex-col gap-0.5'>
             <span className='text-mono-label text-text-sub-600'>Verified</span>
             <p className='text-paragraph-xs text-text-sub-600'>
-              Every finding adversarially checked before display — {pr.refuted}{' '}
+              Every finding adversarially checked before display - {pr.refuted}{' '}
               {pr.refuted === 1 ? 'candidate' : 'candidates'} refuted.
             </p>
           </div>
@@ -267,7 +267,7 @@ export function ReviewDetail({ pr }: { pr: PullRequest }) {
             </span>
             <p className='text-label-md text-text-strong-950'>All clear</p>
             <p className='text-paragraph-sm text-text-sub-600'>
-              No findings survived verification — this PR is ready to merge.
+              No findings survived verification - this PR is ready to merge.
             </p>
           </div>
         )}

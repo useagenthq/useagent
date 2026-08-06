@@ -202,7 +202,7 @@ export function Composer({
           className="text-error-base mb-1.5 flex items-center gap-1.5 px-1 text-paragraph-xs"
         >
           <RiErrorWarningLine className="size-3.5 shrink-0" aria-hidden />
-          Couldn&apos;t send — your message is restored. Press send to try again.
+          Couldn&apos;t send - your message is restored. Press send to try again.
         </div>
       )}
 

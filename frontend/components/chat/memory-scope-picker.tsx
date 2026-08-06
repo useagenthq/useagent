@@ -20,7 +20,7 @@ const SCOPES: {
   {
     value: "org",
     label: "Organization memory",
-    hint: "Shared team memory — every member recalls it",
+    hint: "Shared team memory - every member recalls it",
     icon: RiTeamLine,
   },
   {

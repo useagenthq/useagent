@@ -38,7 +38,7 @@ export function renderEmail(input: RenderEmailInput): RenderedEmail {
         ? "FAILED"
         : input.status;
   const promptLine = input.prompt.replace(/\s+/g, " ").trim();
-  const subject = `[skynet] Run ${statusLabel} — ${truncate(promptLine, 60) || input.runId}`;
+  const subject = `[skynet] Run ${statusLabel} - ${truncate(promptLine, 60) || input.runId}`;
 
   const duration =
     input.durationMs != null ? `${(input.durationMs / 1000).toFixed(1)}s` : "unknown";
@@ -71,7 +71,7 @@ export function renderEmail(input: RenderEmailInput): RenderedEmail {
     "Assistant output:",
     input.assistantText.trim() || "(none)",
     "",
-    "— skynet connectors/email",
+    "- skynet connectors/email",
   ].join("\n");
 
   return { subject, text };

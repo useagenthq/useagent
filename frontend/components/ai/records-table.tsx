@@ -186,7 +186,7 @@ export function RecordsTable({ rows, className }: RecordsTableProps) {
                 </div>
               </td>
               <td className="text-text-sub-600 whitespace-nowrap px-3 py-2.5 text-paragraph-xs">
-                {row.lastInteraction ?? "—"}
+                {row.lastInteraction ?? "-"}
               </td>
               <td className="px-3 py-2.5">
                 {row.strength ? (
@@ -201,7 +201,7 @@ export function RecordsTable({ rows, className }: RecordsTableProps) {
                     {row.strength.label}
                   </span>
                 ) : (
-                  <span className="text-text-soft-400">—</span>
+                  <span className="text-text-soft-400">-</span>
                 )}
               </td>
               <td className="px-3 py-2.5">
@@ -229,7 +229,7 @@ export function RecordsTable({ rows, className }: RecordsTableProps) {
                     )}
                   </div>
                 ) : (
-                  <span className="text-text-soft-400">—</span>
+                  <span className="text-text-soft-400">-</span>
                 )}
               </td>
             </tr>

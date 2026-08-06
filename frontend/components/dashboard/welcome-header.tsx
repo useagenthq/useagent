@@ -21,7 +21,7 @@ export function WelcomeHeader({ liveCount = 0 }: { liveCount?: number }) {
         <h1 className='text-display-md text-text-strong-950'>Welcome back</h1>
         <p className='text-paragraph-sm text-text-sub-600'>
           {liveCount > 0
-            ? `${liveCount} ${liveCount === 1 ? 'agent is' : 'agents are'} working right now — here's the fleet at a glance.`
+            ? `${liveCount} ${liveCount === 1 ? 'agent is' : 'agents are'} working right now - here's the fleet at a glance.`
             : "Here's what your agent fleet has been up to."}
         </p>
       </div>

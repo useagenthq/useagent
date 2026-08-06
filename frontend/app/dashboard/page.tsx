@@ -25,7 +25,7 @@ import { StatCards, type StatItem } from '@/components/dashboard/stat-cards';
 import { WelcomeHeader } from '@/components/dashboard/welcome-header';
 
 export const metadata: Metadata = {
-  title: 'Dashboard — skynet-a',
+  title: 'Dashboard - skynet-a',
 };
 
 // Auth cookies are forwarded per-request, so this page must render dynamically.

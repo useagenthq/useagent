@@ -392,7 +392,7 @@ const codexSpec: SandboxEngineSpec = {
       auth = readFileSync(join(homedir(), ".codex", "auth.json"), "utf8");
     } catch {
       throw new Error(
-        "codex engine needs ~/.codex/auth.json on the host (run `codex login`) — no OPENAI_API_KEY is configured",
+        "codex engine needs ~/.codex/auth.json on the host (run `codex login`) - no OPENAI_API_KEY is configured",
       );
     }
     const b64 = Buffer.from(auth, "utf8").toString("base64");

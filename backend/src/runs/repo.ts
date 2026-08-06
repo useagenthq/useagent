@@ -131,7 +131,7 @@ async function withSteps(runRows: RunRecord[]): Promise<ApiRun[]> {
  * unreachable or unfinished, so the log stays truthful and points the user at
  * the recovery action — replying resumes the same thread/session. */
 export const STALE_SUMMARY =
-  "Interrupted — the backend restarted mid-run. Reply to continue in this thread.";
+  "Interrupted - the backend restarted mid-run. Reply to continue in this thread.";
 
 /** Timestamp of a run's most recent step — the "our last activity" watermark a
  * reconciler compares a native completed-message time against. */

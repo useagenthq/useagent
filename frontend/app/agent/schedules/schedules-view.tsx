@@ -128,7 +128,7 @@ function ScheduleRow({
         ) : (
           <>
             <StatusDot tone="neutral" hollow />
-            <p className="text-paragraph-xs text-text-soft-400">Disabled — won’t run on schedule</p>
+            <p className="text-paragraph-xs text-text-soft-400">Disabled - won’t run on schedule</p>
           </>
         )}
       </div>
