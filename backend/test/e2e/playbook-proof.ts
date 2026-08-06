@@ -156,9 +156,18 @@ async function cleanupSandboxes(): Promise<void> {
       console.log(`  ⚠️  could not delete sandbox ${id.slice(0, 12)}: ${(e as Error).message}`);
     }
   }
-  // API-verify the deletions (per repo Daytona hygiene rule).
+  // API-verify the deletions (per repo Daytona hygiene rule). Daytona deletion is
+  // eventually-consistent - a get() right after delete() can still resolve for a
+  // beat (or return state "destroyed"), so poll briefly before asserting gone.
   for (const id of ids) {
-    const gone = await d.get(id).then(() => false).catch(() => true);
+    let gone = false;
+    for (let i = 0; i < 15 && !gone; i++) {
+      gone = await d
+        .get(id)
+        .then((sb) => ((sb as { state?: string })?.state ?? "") === "destroyed")
+        .catch(() => true); // get() throwing = the sandbox is gone
+      if (!gone) await sleep(1000);
+    }
     check(`sandbox ${id.slice(0, 12)} deleted (API-verified gone)`, gone);
   }
   console.log(`  cleanup: ${deleted}/${ids.size} proof sandbox(es) deleted`);
