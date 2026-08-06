@@ -327,3 +327,27 @@ describe("memory read-outage chip (memory.failed op:search)", () => {
     });
   });
 });
+
+describe("run.reconciling marker (adaptive re-probe park)", () => {
+  test("renders as a reconciling marker with the deadline", () => {
+    const s = createNativeStore();
+    s.reset([], 0);
+    s.ingestNative(
+      skynetFrame("rec_1", 0, "run.reconciling", { reason: "boot-restart", sinceMs: 1000, deadlineMs: 301000 }),
+      0,
+    );
+    expect(buildTimeline(s.getSnapshot(), false)![0]).toMatchObject({
+      kind: "marker",
+      marker: { kind: "reconciling", deadlineMs: 301000 },
+    });
+  });
+
+  test("legacy ISO-deadline payload still parses safely (deadlineMs null)", () => {
+    const s = createNativeStore();
+    s.reset([], 0);
+    s.ingestNative(skynetFrame("rec_2", 0, "run.reconciling", { reason: "boot-restart", deadline: "2026-08-06T14:00:00Z" }), 0);
+    expect(buildTimeline(s.getSnapshot(), false)![0]).toMatchObject({
+      marker: { kind: "reconciling", deadlineMs: null },
+    });
+  });
+});
