@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import type { AppEnv } from "../http";
-import { ENGINE_IDS, MEMORY_SCOPES, type EngineId, type MemoryScope } from "../db/schema";
+import { ENGINE_IDS, MEMORY_SCOPES, type EngineId, type MemoryScope, type RunStatus } from "../db/schema";
 import { isMemoryScope } from "../memory/scope";
 import { orgScope } from "../middleware/org";
 import {
@@ -24,6 +24,8 @@ import {
   subscribeNative,
   type NativeFrame,
 } from "./native-events";
+import { subscribeThread } from "./thread-signals";
+import type { ApiRun, ApiStep } from "./repo";
 
 export const runsRoutes = new Hono<AppEnv>();
 
@@ -447,6 +449,276 @@ runsRoutes.get("/:id/events", async (c) => {
           }
         }
       })();
+    },
+  });
+
+  return new Response(body, {
+    headers: {
+      "Content-Type": "text/event-stream; charset=utf-8",
+      "Cache-Control": "no-cache, no-transform",
+      Connection: "keep-alive",
+      "X-Accel-Buffering": "no",
+    },
+  });
+});
+
+// ADDITIVE thread SSE stream (final_fix.md): ONE realtime subscription for a whole
+// Skynet conversation, keyed by the ROOT run id in the URL — not whichever run
+// happens to be selected. It is a READ/AGGREGATION boundary over the EXISTING
+// durable sources (runs/steps via getThreadForRun, provider_events via the native
+// lane) and the EXISTING live buses (worker bus, turn-stream deltas, native bus),
+// multiplexing every run in the thread onto one connection. It is NOT a second
+// execution system and NOT a new source of truth.
+//
+// Frame contract (each `event:` type; every non-snapshot frame identifies its run):
+//   snapshot { threadId, runs }            authoritative full thread (durable steps)
+//   run      { threadId, run }             one run upserted (new/queued/running/settled)
+//   step     { threadId, runId, step }     durable step upsert (same idx enriches)
+//   delta    { threadId, runId, delta }    transient live narration
+//   native   { threadId, runId, frame }    versioned native frame (dedupe by eventId+seq)
+//   done     { threadId, runId, status }   settles ONE run; does NOT close the stream
+//
+// Reconnect replays a full snapshot + latest native frames per run; stable ids make
+// that idempotent (no thread-global sequence — deliberately simpler, correct at this
+// scale). The old per-run `/:id/events` route is untouched (the rollback path).
+//
+// A cap of MAX_QUEUE queued live frames bounds memory: on overflow the connection
+// closes so the browser reconnects to a fresh authoritative snapshot rather than
+// growing without limit.
+const MAX_QUEUE = 20_000;
+
+runsRoutes.get("/:rootRunId/thread-events", async (c) => {
+  const orgId = c.get("orgId");
+  const rootRunId = c.req.param("rootRunId");
+
+  // Resolve + authorize the root run and derive the canonical threadId SERVER-SIDE
+  // BEFORE opening any stream. A cross-org or missing id is a 404, indistinguishable
+  // from non-existence — never trust a browser-supplied threadId/orgId.
+  const rootRun = await getRunForOrg(orgId, rootRunId);
+  if (!rootRun) return c.json({ error: "run not found" }, 404);
+  const threadId = rootRun.threadId;
+
+  const encoder = new TextEncoder();
+  const signal = c.req.raw.signal;
+
+  type ThreadOut =
+    | { type: "signal"; runId: string }
+    | { type: "step"; runId: string; step: ApiStep }
+    | { type: "end"; runId: string; status: RunStatus }
+    | { type: "delta"; runId: string; delta: string }
+    | { type: "native"; runId: string; frame: NativeFrame };
+
+  const body = new ReadableStream<Uint8Array>({
+    start(controller) {
+      const queue: ThreadOut[] = [];
+      let wake: (() => void) | null = null;
+      let closed = false;
+      let overflowed = false;
+
+      // Per-run dedupe state (keyed by runId): step idx→content fingerprint, and
+      // native eventId→highest seq. Mirrors the per-run route's dedupe, one map
+      // per run so replay/live overlap collapses without cross-run interference.
+      const emittedByRun = new Map<string, Map<number, string>>();
+      const nativeSeenByRun = new Map<string, Map<string, number>>();
+      // Per-run live-source listeners, torn down together on disconnect.
+      const attached = new Set<string>();
+      const perRunCleanups = new Map<string, () => void>();
+
+      const send = (frame: string): void => {
+        if (closed) return;
+        try {
+          controller.enqueue(encoder.encode(frame));
+        } catch {
+          /* controller already closed (client gone) */
+        }
+      };
+      const sendFrame = (event: string, data: unknown): void =>
+        send(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+
+      const wakeUp = (): void => {
+        if (wake) {
+          wake();
+          wake = null;
+        }
+      };
+      const push = (ev: ThreadOut): void => {
+        if (closed) return;
+        if (queue.length >= MAX_QUEUE) {
+          // Bound memory: drop the connection so the browser reconnects to a fresh
+          // authoritative snapshot instead of buffering without limit.
+          overflowed = true;
+          cleanup();
+          return;
+        }
+        queue.push(ev);
+        wakeUp();
+      };
+
+      // Attach the EXISTING per-run live sources for one run (idempotent). The
+      // worker step/end bus, the transient delta stream, and the native bus are all
+      // relayed with the run's id; a settled run stays attached (late native
+      // revisions still land) until the browser disconnects.
+      const attachRun = (runId: string): void => {
+        if (attached.has(runId)) return;
+        attached.add(runId);
+        const onBus = (ev: BusEvent): void => {
+          if (ev.type === "step") push({ type: "step", runId, step: ev.step });
+          else push({ type: "end", runId, status: ev.status });
+        };
+        bus.on(channel(runId), onBus);
+        const offDelta = turnStream.subscribe(runId, (delta) =>
+          push({ type: "delta", runId, delta }),
+        );
+        const offNative = subscribeNative(runId, (frame) =>
+          push({ type: "native", runId, frame }),
+        );
+        perRunCleanups.set(runId, () => {
+          bus.off(channel(runId), onBus);
+          offDelta();
+          offNative();
+        });
+      };
+
+      // Emit a step if its (idx, fingerprint) is new or enriched (same idx with new
+      // code_json passes; a pure duplicate is suppressed).
+      const sendStep = (runId: string, step: ApiStep): void => {
+        let m = emittedByRun.get(runId);
+        if (!m) {
+          m = new Map();
+          emittedByRun.set(runId, m);
+        }
+        const fp = `${step.id}|${step.code_json ?? ""}`;
+        if (m.get(step.idx) === fp) return;
+        m.set(step.idx, fp);
+        sendFrame("step", { threadId, runId, step });
+      };
+      const seedStepDedupe = (runId: string, steps: readonly ApiStep[]): void => {
+        let m = emittedByRun.get(runId);
+        if (!m) {
+          m = new Map();
+          emittedByRun.set(runId, m);
+        }
+        for (const s of steps) m.set(s.idx, `${s.id}|${s.code_json ?? ""}`);
+      };
+
+      // Emit a native frame if it advances its eventId's seq (dedupe replay/live).
+      const sendNative = (runId: string, frame: NativeFrame): void => {
+        let m = nativeSeenByRun.get(runId);
+        if (!m) {
+          m = new Map();
+          nativeSeenByRun.set(runId, m);
+        }
+        if ((m.get(frame.eventId) ?? -1) >= frame.seq) return;
+        m.set(frame.eventId, frame.seq);
+        sendFrame("native", { threadId, runId, frame });
+      };
+
+      // Prime headers/first bytes.
+      send(": open\n\n");
+      const heartbeat = setInterval(() => send(": ping\n\n"), 25_000);
+      heartbeat.unref?.();
+
+      function cleanup(): void {
+        if (closed) return;
+        closed = true;
+        clearInterval(heartbeat);
+        unsubscribeThread();
+        for (const off of perRunCleanups.values()) off();
+        perRunCleanups.clear();
+        attached.clear();
+        signal.removeEventListener("abort", cleanup);
+        wakeUp();
+        try {
+          controller.close();
+        } catch {
+          /* already closed */
+        }
+      }
+
+      // Subscribe to the thread-change signal BEFORE loading the snapshot, so a run
+      // accepted mid-load is discovered (no window where a new run is missed). The
+      // handler only enqueues; the async drain re-reads durable state.
+      const unsubscribeThread = subscribeThread(threadId, (change) =>
+        push({ type: "signal", runId: change.runId }),
+      );
+
+      if (signal.aborted) return cleanup();
+      signal.addEventListener("abort", cleanup);
+
+      // Reload one run's durable projection and emit it as a `run` frame, ensuring
+      // its live sources are attached and its native frames replayed. The org-scoped
+      // read fails closed; a run outside this thread is ignored.
+      const projectRun = async (runId: string): Promise<void> => {
+        attachRun(runId);
+        const run = await getRunWithSteps(orgId, runId);
+        if (!run || run.thread_id !== threadId) return;
+        seedStepDedupe(runId, run.steps);
+        sendFrame("run", { threadId, run });
+        for (const frame of await getNativeFramesSince(runId, -1)) {
+          if (closed) return;
+          sendNative(runId, frame);
+        }
+      };
+
+      void (async () => {
+        // 1. Load the authoritative thread (oldest→newest), attaching every run's
+        //    live sources FIRST so frames produced during replay queue up.
+        const thread = await getThreadForRun(orgId, rootRunId);
+        if (closed) return;
+        if (!thread) return cleanup(); // resolved above; defensive
+        for (const run of thread) attachRun(run.id);
+
+        // 2. Emit the authoritative snapshot (runs carry their durable steps) BEFORE
+        //    draining queued live frames, then seed step dedupe from it.
+        sendFrame("snapshot", { threadId, runs: thread });
+        for (const run of thread) seedStepDedupe(run.id, run.steps);
+
+        // 3. Replay each run's durable native frames (deduped by eventId+seq).
+        for (const run of thread) {
+          for (const frame of await getNativeFramesSince(run.id, -1)) {
+            if (closed) return;
+            sendNative(run.id, frame);
+          }
+        }
+
+        // 4. Live loop — never closes on a single run settling; only the browser
+        //    disconnect (abort) or a queue overflow closes it.
+        while (!closed) {
+          if (queue.length === 0) {
+            await new Promise<void>((resolve) => {
+              wake = resolve;
+            });
+          }
+          while (queue.length > 0 && !closed) {
+            const ev = queue.shift()!;
+            switch (ev.type) {
+              case "signal":
+                await projectRun(ev.runId);
+                continue;
+              case "step":
+                sendStep(ev.runId, ev.step);
+                continue;
+              case "delta":
+                sendFrame("delta", { threadId, runId: ev.runId, delta: ev.delta });
+                continue;
+              case "native":
+                sendNative(ev.runId, ev.frame);
+                continue;
+              case "end":
+                // Settle ONE run; keep the thread connection open for queued/future
+                // turns. The `settled` thread signal re-emits a `run` frame with the
+                // final summary/status right after.
+                sendFrame("done", { threadId, runId: ev.runId, status: ev.status });
+                continue;
+              default:
+                assertNever(ev);
+            }
+          }
+        }
+      })().catch((err) => {
+        if (!overflowed) console.error(`[thread-events] stream ${rootRunId} failed:`, err);
+        cleanup();
+      });
     },
   });
 

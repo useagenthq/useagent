@@ -3,6 +3,7 @@ import { runPayloadFingerprint } from "./fingerprint";
 import { findCommandByKey, insertCommandWithRun } from "./repo";
 import type { CommandRecord } from "./repo";
 import type { RunCommandInput, RunCommandOutcome } from "./types";
+import { publishThreadChange } from "../runs/thread-signals";
 
 // ---------------------------------------------------------------------------
 // Command acceptance orchestration (north star "Durable Commands"). Decides,
@@ -73,6 +74,14 @@ export async function acceptRunCommand(input: RunCommandInput): Promise<RunComma
     }
     throw err;
   }
+
+  // Post-commit thread signal (final_fix.md §4.5): the run + command committed, so
+  // wake any connected thread stream to discover this newly accepted run WITHOUT
+  // the five-second poll. This is the ONE central seam — web, Slack, schedules, and
+  // Skills Run all accept here, so none grows its own UI notification code. Only
+  // fired on a fresh `created`; an idempotent replay returns above and re-signals
+  // nothing (no duplicate run signal). IDs only, never secrets/payloads.
+  publishThreadChange(input.run.threadId, { runId: input.run.id, kind: "created" });
 
   return { status: "created", runId: input.run.id, commandId };
 }

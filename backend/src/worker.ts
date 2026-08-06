@@ -22,6 +22,7 @@ import { formatSkillMarkdown, frameSkillContext } from "./skills/format";
 import { recordSkillLoaded } from "./skills/skill-loaded";
 import { finalizeRun } from "./runs/finalize";
 import { turnStream } from "./runs/turn-stream";
+import { publishThreadChange } from "./runs/thread-signals";
 import { claimNextRun, settleCommandForRun } from "./commands/dispatch";
 
 // ---------------------------------------------------------------------------
@@ -221,7 +222,7 @@ async function runWorker(runId: string): Promise<void> {
     // `mock` is the scripted trace and ignores context entirely. It IS
     // cancellable — the abortable sleep + signal make a live mock turn stop.
     if (run.engine === "mock") {
-      await runMock(runId, ac.signal, wasCancelled);
+      await runMock(runId, run.threadId, ac.signal, wasCancelled);
       return;
     }
 
@@ -317,11 +318,15 @@ async function runWorker(runId: string): Promise<void> {
 
 async function runMock(
   runId: string,
+  threadId: string,
   signal: AbortSignal,
   wasCancelled: () => string | null,
 ): Promise<void> {
   const startedAt = Date.now();
   await setRunStatus(runId, "running");
+  // Wake connected thread streams to re-project the queued→running transition
+  // (the status change carries no worker step of its own).
+  publishThreadChange(threadId, { runId, kind: "running" });
 
   let idx = 0;
   try {
@@ -406,6 +411,8 @@ async function runEngine(
 ): Promise<void> {
   const startedAt = Date.now();
   await setRunStatus(runId, "running");
+  // Wake connected thread streams to re-project the queued→running transition.
+  publishThreadChange(threadId, { runId, kind: "running" });
 
   // Explicit native-session resume (reference bot's set_resume_session_id model): the
   // thread's previous turn on the SAME engine recorded its engine session id in
