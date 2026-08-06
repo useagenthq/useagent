@@ -1,0 +1,18 @@
+{
+  "$schema": "https://biomejs.dev/schemas/2.5.7/schema.json",
+  // Ultracite = a strict, AI-ready Biome preset (https://www.ultracite.ai). Adopted
+  // as a GUARDRAIL: lint catches real defects (unused vars, floating promises,
+  // no-explicit-any, exhaustive deps) so agents don't ship slop. A whole-repo
+  // format sweep is a DELIBERATE separate step, not auto-run here.
+  "extends": ["ultracite/biome/next"],
+  "files": {
+    // The vendored AlignUI kit + generated/build output are not ours to reformat.
+    "includes": ["**", "!**/components/ui/**", "!**/.next/**", "!**/node_modules/**"]
+  },
+  // Keep OUR existing house style (2-space, double quotes, 100 cols) so Biome is a
+  // BUG LINTER, not a whole-repo reformatter to tabs (that diff would be the very
+  // "fuck up huge code" we're guarding against). A style migration is a separate,
+  // deliberate step if ever wanted.
+  "formatter": { "enabled": true, "indentStyle": "space", "indentWidth": 2, "lineWidth": 100 },
+  "javascript": { "formatter": { "quoteStyle": "double" } }
+}
