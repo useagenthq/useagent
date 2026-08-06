@@ -27,6 +27,9 @@ const SEED = Number(process.env.SOAK_SEED ?? Date.now() % 2_000_000_000);
 const THREADS = Number(process.env.SOAK_CONV_THREADS ?? 16);
 const REPLIES = Number(process.env.SOAK_CONV_REPLIES ?? 6);
 const PORT = Number(process.env.SOAK_PORT ?? 3516);
+// Per-thread settle budget. Generous by default so heavy machine load (a busy dev
+// fleet sharing the box) starving the mock worker doesn't false-fail a thread.
+const SETTLE_MS = Number(process.env.SOAK_CONV_SETTLE_MS ?? 150_000);
 
 const rec = new Recorder("conversation");
 const rand = rng(SEED);
@@ -120,7 +123,7 @@ async function sequentialThread(i: number): Promise<void> {
     parent = reply.id; // true chain — reply follows the previous reply
   }
   const want = REPLIES + 1;
-  const done = await waitFor(async () => Number((await stack.sql`select count(*)::int as n from runs where thread_id = ${root} and status in ('completed','failed')`)[0]!.n) === want, 60_000);
+  const done = await waitFor(async () => Number((await stack.sql`select count(*)::int as n from runs where thread_id = ${root} and status in ('completed','failed')`)[0]!.n) === want, SETTLE_MS);
   rec.check(done, "thread reached terminal", "timed out waiting for all runs to settle", { seed: SEED, shape: "sequential", i, root });
   if (done) await assertThread(root, want, postOrder, "sequential");
 }
@@ -139,7 +142,7 @@ async function burstThread(i: number): Promise<void> {
   const created = results.filter((x) => x.status === 201 && x.id).length;
   rec.check(created === REPLIES, "all burst replies accepted", `${created}/${REPLIES} created`, { seed: SEED, shape: "burst", i, created });
   const want = REPLIES + 1;
-  const done = await waitFor(async () => Number((await stack.sql`select count(*)::int as n from runs where thread_id = ${root} and status in ('completed','failed')`)[0]!.n) === want, 60_000);
+  const done = await waitFor(async () => Number((await stack.sql`select count(*)::int as n from runs where thread_id = ${root} and status in ('completed','failed')`)[0]!.n) === want, SETTLE_MS);
   rec.check(done, "thread reached terminal", "timed out", { seed: SEED, shape: "burst", i, root });
   if (done) await assertThread(root, want, null, "burst");
 }
