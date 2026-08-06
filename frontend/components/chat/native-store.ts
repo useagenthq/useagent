@@ -52,13 +52,16 @@ export interface NativeStore {
    *  Silent by design — reset is always render-driven, and React re-reads
    *  getSnapshot after the render that triggered it. */
   reset(steps: readonly ApiStep[], generation: number): void;
-  /** Ingest/enrich one step; a stale `generation` is ignored (the guard). */
-  ingest(step: ApiStep, generation: number): void;
+  /** Ingest/enrich one step; a stale `generation` is ignored (the guard). Returns
+   *  whether it applied (false = dropped) so callers avoid a getSnapshot rebuild
+   *  just to detect change - critical under burst replay (avoids O(n^2)). */
+  ingest(step: ApiStep, generation: number): boolean;
   /** Ingest many steps at the given generation (poll/finalize reconcile). */
   ingestAll(steps: readonly ApiStep[], generation: number): void;
   /** Ingest a native frame; deduped by eventId keeping the highest seq, so a
-   *  live↔replay overlap and part revisions collapse. Stale generation ignored. */
-  ingestNative(frame: NativeFrame, generation: number): void;
+   *  live↔replay overlap and part revisions collapse. Stale generation / stale seq
+   *  ignored. Returns whether it applied (false = deduped/dropped). */
+  ingestNative(frame: NativeFrame, generation: number): boolean;
 }
 
 const EMPTY_SNAPSHOT: NativeSnapshot = {
@@ -149,9 +152,10 @@ export function createNativeStore(): NativeStore {
       snapshot = null; // silent: render-driven, React re-reads getSnapshot
     },
     ingest(step, gen) {
-      if (gen !== generation) return; // generation guard — drop stale writes
+      if (gen !== generation) return false; // generation guard — drop stale writes
       records.set(dedupeKey(step, nativeOf(step)), step);
       notify();
+      return true;
     },
     ingestAll(steps, gen) {
       if (gen !== generation) return;
@@ -159,11 +163,12 @@ export function createNativeStore(): NativeStore {
       notify();
     },
     ingestNative(frame, gen) {
-      if (gen !== generation) return;
+      if (gen !== generation) return false;
       const seen = frames.get(frame.eventId);
-      if (seen && seen.seq >= frame.seq) return; // dedupe: keep the highest seq
+      if (seen && seen.seq >= frame.seq) return false; // dedupe: keep the highest seq → no change
       frames.set(frame.eventId, frame);
       notify();
+      return true;
     },
   };
 }

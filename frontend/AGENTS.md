@@ -212,3 +212,34 @@ Never inline a copy.
 
 ## String style
 - No em dashes ("—") in code: user-visible strings, labels, placeholders, aria text, and HTML/JSX element text use plain hyphens or restructured sentences instead.
+
+## Performance (this is a serious product — treat perf as a feature, not a nicety)
+
+Real runs get BIG: one settled session here had 131 steps + 463 native frames
+(~1MB) and, rendered naively, froze the tab for 3-4 minutes. The data volume is a
+given; the render must stay cheap. Rules learned the hard way (do NOT regress):
+
+- **Never render an unbounded list at O(n) DOM cost.** For long timelines/lists,
+  fold (collapsed disclosures) AND/OR virtualize (`@tanstack/react-virtual`). Rows
+  are `memo`'d and keyed so React reconciles only what changed.
+- **Never do O(n) work per streamed item — that is O(n²) across a burst.** A
+  settled-run SSE replay delivers hundreds of frames back-to-back. Two traps we
+  hit: (1) notifying the store per frame → a full re-render + timeline rebuild each
+  time; fixed by `ThreadStore.batch(fn)` (coalesce a burst into ONE flush) + the
+  hook buffering SSE frames and applying each burst in one batch per animation
+  frame (opencode-style "apply the burst, paint once"). (2) rebuilding a derived
+  snapshot just to detect change (`getSnapshot() !== before`) → O(n) per item;
+  fixed by ingest/reducer methods RETURNING a `changed` boolean so callers never
+  rebuild in the hot path. Prefer both patterns for any high-frequency store.
+- **Lazy-render heavy/hidden content.** Collapsed disclosures render their children
+  only when expanded (`expandable && open && ...`), so a 33KB tool payload never
+  hits the initial DOM. Do not eagerly render what is behind a fold.
+- **Derived views are cached + invalidated, never rebuilt on every read.** Stores
+  hold `snapshot: T | null`, rebuild lazily in `getSnapshot`, and null it on
+  mutation — React re-reads after a render, so no eager recompute.
+- **Measure before claiming a fix.** Reproduce on the real heavy case (a giant
+  run), profile the main-thread block, and verify in the browser (loads fast AND
+  scrolls). "Works on a 5-step run" proves nothing about the 500-step run.
+- Learn the rendering approach from opencode (fine-grained reactivity, batched
+  events) before hand-rolling — we own the React port, so we replicate their
+  behavior with memo + batching + virtualization.

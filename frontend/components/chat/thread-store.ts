@@ -163,10 +163,10 @@ export function createThreadStore(): ThreadStore {
     },
 
     applyStep(runId, step) {
-      const store = ensureStore(runId);
-      const before = store.getSnapshot();
-      store.ingest(step, 0);
-      if (store.getSnapshot() !== before) notify(); // suppress no-op (duplicate) renders
+      // ingest returns whether it changed - so we never rebuild the native snapshot
+      // just to detect a no-op (that before/after getSnapshot compare was O(n) per
+      // call, i.e. O(n^2) across a burst replay). Same suppression, no rebuild.
+      if (ensureStore(runId).ingest(step, 0)) notify();
     },
 
     applyDelta(runId, delta) {
@@ -176,10 +176,10 @@ export function createThreadStore(): ThreadStore {
     },
 
     applyNative(runId, frame) {
-      const store = ensureStore(runId);
-      const before = store.getSnapshot();
-      store.ingestNative(frame, 0);
-      if (store.getSnapshot() !== before) notify(); // stale/duplicate seq → no render
+      // Highest-seq-wins dedupe lives in ingestNative; it returns whether it applied,
+      // so a stale/duplicate frame is dropped WITHOUT a snapshot rebuild. This is the
+      // hot path on a settled-run replay (hundreds of frames) - keep it O(1)/frame.
+      if (ensureStore(runId).ingestNative(frame, 0)) notify();
     },
 
     applyDone(runId, nextStatus) {
