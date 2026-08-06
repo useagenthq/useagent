@@ -5,7 +5,16 @@ import { migrate } from "drizzle-orm/postgres-js/migrator";
 import { auth } from "./auth";
 import { startEmailConnector } from "./connectors/email";
 import { db } from "./db/client";
-import { allowDevOrg, connectorEmailConfig, env, googleAuthEnabled } from "./env";
+import {
+  allowDevOrg,
+  connectorEmailConfig,
+  env,
+  githubConfigured,
+  googleAuthEnabled,
+  memoryConfig,
+  slackConfig,
+} from "./env";
+import { toolGatewayConfig } from "./knowledge/gateway/config";
 import { knowledgeRoutes } from "./knowledge/routes";
 import { knowledgeMcpRoutes } from "./knowledge/gateway/mcp";
 import { memoryRoutes } from "./memory/routes";
@@ -64,10 +73,18 @@ app.get("/api/health", (c) => c.json({ status: "ok" }));
 // Public client config — what the frontend needs to render auth affordances
 // (which social providers are enabled) without exposing any secret. `allowDevOrg`
 // lets the UI reflect that unauthenticated dev access is currently open.
+// `capabilities` are honest config-gated booleans (a name is NOT a secret) so
+// surfaces like /agent/plugins can show what is actually wired vs not.
 app.get("/api/config", (c) =>
   c.json({
     auth: { google: googleAuthEnabled(), emailPassword: true },
     allowDevOrg: allowDevOrg(),
+    capabilities: {
+      github: githubConfigured(),
+      slack: slackConfig() !== null,
+      memory: memoryConfig() !== null,
+      toolGateway: toolGatewayConfig() !== null,
+    },
   }),
 );
 
