@@ -28,7 +28,10 @@ const DB = "skynet_memtun_e2e";
 const DB_URL = `postgres://postgres@localhost:5432/${DB}`;
 const PORT = 3502;
 const BASE = `http://localhost:${PORT}`;
-const MODEL = process.env.PROOF_MODEL ?? "claude-haiku-4-5";
+// Opus by default: reliable tool-calling is essential for a deterministic proof
+// (haiku intermittently narrated a save WITHOUT calling memory_remember). This
+// also mirrors real user sessions (the engine default is claude-opus-5).
+const MODEL = process.env.PROOF_MODEL ?? "claude-opus-5";
 const backendDir = new URL("../..", import.meta.url).pathname;
 const scratch = process.env.SCRATCH_DIR ?? "/tmp";
 const backendLog = `${scratch}/skynet-memtun-backend.log`;
@@ -89,14 +92,16 @@ async function startTunnel(): Promise<{ proc: Proc; origin: string }> {
   throw new Error(`cloudflared did not print an origin (see ${tunnelLog})`);
 }
 
-async function startBackend(publicUrl: string): Promise<Proc> {
+async function startBackend(publicUrl: string, memoryUrl?: string): Promise<Proc> {
   const fd = openSync(backendLog, "a");
   const env: Record<string, string> = { ...process.env } as Record<string, string>;
   env.PORT = String(PORT);
   env.DATABASE_URL = DB_URL; // wins over .env's shared skynet
   env.TOOL_GATEWAY_PUBLIC_URL = publicUrl; // sandbox-reachable gateway origin
   env.FRONTEND_ORIGIN = publicUrl;
-  // MEMORY_API_URL / DAYTONA_* / ANTHROPIC_API_KEY / BETTER_AUTH_SECRET ride from .env.
+  // Phase 3 points memory at a DEAD host to prove outage handling; else .env's :8420.
+  if (memoryUrl !== undefined) env.MEMORY_API_URL = memoryUrl;
+  // DAYTONA_* / ANTHROPIC_API_KEY / BETTER_AUTH_SECRET ride from .env.
   const proc = Bun.spawn(["bun", "src/index.ts"], { cwd: backendDir, env, stdout: fd, stderr: fd });
   const deadline = Date.now() + 30_000;
   while (Date.now() < deadline) {
@@ -269,8 +274,27 @@ async function main(): Promise<void> {
     check("run B recall was Tencent-sourced (context.retrieved / memory.searched)", ctx.length > 0 || searched.length > 0, `context.retrieved=${ctx.length} memory.searched=${searched.length}`);
     check("no memory_files table exists (Postgres is not the memory store)", (await sql`select to_regclass('public.memory_files') as t`)[0].t === null);
     note(`recall event marker-hit: ${recallSawMarker}`);
-
     note(`A answer: "${String(rowA?.summary ?? "").slice(0, 160).replace(/\n/g, "\\n")}"`);
+    note(`B answer: "${answerB.slice(0, 160).replace(/\n/g, "\\n")}"`);
+
+    // ── Phase 3: recall OUTAGE - the turn still completes, honestly (12.5) ────
+    note("phase 3: restarting the backend with memory pointed at a DEAD host…");
+    await killProc(backend);
+    backend = await startBackend(tunnel.origin, "http://127.0.0.1:9"); // unreachable memory
+    const cRun = await api("/api/runs", {
+      prompt: "Use your memory_search tool to look up my project passphrase, then tell me what you found.",
+      engine: "opencode",
+      model: MODEL,
+      memory_scope: "org",
+    });
+    check("run C accepted (memory down)", cRun.status === 201 && !!cRun.body.id, `status=${cRun.status}`);
+    const runC = cRun.body.id as string;
+    note(`run C ${runC} (sandbox C, memory unavailable) - waiting up to 8 min…`);
+    const rowC = await waitForRun(runC, 8 * 60 * 1000);
+    check("run C COMPLETED despite memory being unavailable (the turn is not blocked)", rowC?.status === "completed", `status=${rowC?.status}`);
+    const cFailed = await eventsOf(runC, "memory.failed");
+    const cSearchFailed = cFailed.some((e) => JSON.parse(e.payload).op === "search");
+    check("memory outage surfaced as memory.failed op:search (not a fake 0-hit)", cSearchFailed, `memory.failed events=${cFailed.length}`);
   } finally {
     await killProc(backend);
     await killProc(tunnel?.proc ?? null);
