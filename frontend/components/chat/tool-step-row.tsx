@@ -112,7 +112,9 @@ function markerView(marker: TimelineMarker): {
           ? "update failed"
           : marker.op === "forget"
             ? "delete failed"
-            : "not saved";
+            : marker.op === "search"
+              ? "recall unavailable"
+              : "not saved";
       return {
         Icon: RiErrorWarningLine,
         verb: "Memory",
