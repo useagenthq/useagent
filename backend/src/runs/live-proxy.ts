@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import type { AppEnv } from "../http";
 import { orgScope } from "../middleware/org";
+import { cacheCommandCatalog, defaultSnapshot } from "./command-catalog";
 import { getRunForOrg } from "./repo";
 import {
   buildForwardHeaders,
@@ -51,6 +52,19 @@ const ALLOWED_MODELS: Record<string, ReadonlySet<string>> = {
   ]),
 };
 const ALLOWED_PROVIDERS = new Set(Object.keys(ALLOWED_MODELS));
+
+/** Opportunistically cache the snapshot's slash-command catalog. `/command` is a
+ *  tiny JSON body identical across a snapshot's sandboxes, so tap it once (from
+ *  any thread) into the snapshot-keyed cache the New Task composer reads before a
+ *  sandbox exists. Best-effort: buffer the body, cache fire-and-forget, and
+ *  return an equivalent Response so the caller's normal proxy path is unchanged.
+ *  Any other path (or a non-200) streams through untouched. */
+async function tapCommandCatalog(subpath: string, upstream: Response): Promise<Response> {
+  if (subpath !== "/command" || upstream.status !== 200) return upstream;
+  const text = await upstream.text();
+  void cacheCommandCatalog(defaultSnapshot(), text).catch(() => {});
+  return new Response(text, { status: upstream.status, headers: upstream.headers });
+}
 
 /** Trim the picker's catalog responses to the deployment's allowed providers + models.
  *  `/api/model` → `{ location, data:[{id, providerID, …}] }`; `/api/provider` →
@@ -131,8 +145,10 @@ liveProxyRoutes.all("/:threadId/*", async (c) => {
       ep = await resolvePreviewEndpoint(threadId, SERVE_PORT, true);
       upstream = await forward(ep);
     }
-    // Catalog endpoints are trimmed to the deployment allowlist; everything else (incl.
-    // the /api/event SSE) streams through untouched.
+    // Tap /command into the snapshot-level catalog cache (best-effort), then
+    // trim the model/provider catalog endpoints to the deployment allowlist; everything
+    // else (incl. the /api/event SSE) streams through untouched.
+    upstream = await tapCommandCatalog(subpath, upstream);
     return filterCatalogResponse(subpath, upstream);
   } catch (err) {
     invalidatePreviewEndpoint(threadId, SERVE_PORT);

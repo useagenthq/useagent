@@ -7,6 +7,7 @@ import { startEmailConnector } from "./connectors/email";
 import { db } from "./db/client";
 import { allowDevOrg, connectorEmailConfig, env, googleAuthEnabled } from "./env";
 import { knowledgeRoutes } from "./knowledge/routes";
+import { commandsRoutes } from "./runs/command-catalog";
 import { reposRoutes } from "./github/routes";
 import { desktopProxyRoutes } from "./runs/desktop-proxy";
 import { liveProxyRoutes } from "./runs/live-proxy";
@@ -87,6 +88,10 @@ app.route("/api/repos", reposRoutes);
 app.route("/api/skills", skillsRoutes);
 app.route("/api/schedules", schedulesRoutes);
 app.route("/api/knowledge", knowledgeRoutes);
+// Snapshot-level slash-command catalog (cached from the live-proxy's /command
+// taps) — powers "/" autocomplete on the New Task composer before a sandbox
+// exists.
+app.route("/api/commands", commandsRoutes);
 
 // Always-on scheduler loop (60s tick). Harmless when no schedule is enabled —
 // schedules default disabled, so nothing auto-fires until a human turns it on.
