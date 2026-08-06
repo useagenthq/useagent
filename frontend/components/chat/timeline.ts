@@ -52,10 +52,19 @@ function parseMarker(eventType: string, payload: unknown): TimelineMarker | null
       hash: typeof p.contentHash === "string" ? p.contentHash : "",
     };
   }
-  if (eventType === "context.retrieved") {
+  // The knowledge gateway emits `knowledge.retrieved` (provider
+  // skynet-knowledge); memory emits `context.retrieved` (provider skynet).
+  // Both are context markers — the vocabulary split was an integration bug
+  // (recorded but never rendered) caught by external audit.
+  if (eventType === "context.retrieved" || eventType === "knowledge.retrieved") {
     return {
       kind: "context",
-      source: typeof p.source === "string" ? p.source : "memory",
+      source:
+        typeof p.source === "string"
+          ? p.source
+          : eventType === "knowledge.retrieved"
+            ? "knowledge"
+            : "memory",
       itemCount: typeof p.itemCount === "number" ? p.itemCount : 0,
       query: typeof p.query === "string" ? p.query : null,
     };
@@ -141,7 +150,7 @@ export function buildTimeline(
   // context pane. Reconnect replays them from the durable native lane like any
   // other frame. An unknown skynet eventType parses to null → rendered as nothing.
   for (const f of nativeFrames) {
-    if (f.provider !== "skynet") continue;
+    if (f.provider !== "skynet" && f.provider !== "skynet-knowledge") continue;
     const marker = parseMarker(f.eventType, f.payload);
     if (!marker) continue;
     ranked.push({
