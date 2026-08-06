@@ -109,15 +109,21 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
       };
     }
     const cached = projectionCache.current.get(run.id);
-    const richer = cached !== undefined && cached.steps.length > run.steps.length;
+    // ALWAYS prefer a cached native snapshot: opencode tool rows exist ONLY in
+    // the native frame lane (the DB steps table carries just boot/synthetic
+    // rows), so no thread refetch can ever re-render them - a step-count
+    // comparison here wrongly dropped the frames and re-blanked the turn
+    // (verified via network-trace repro: collapse at the new run's SSE
+    // subscribe, with DB steps present but unrenderable).
+    const useCached = cached !== undefined && (cached.native?.nativeFrames.length ?? 0) > 0;
     return {
       run,
-      steps: richer ? cached.steps : run.steps,
+      steps: useCached && cached.steps.length >= run.steps.length ? cached.steps : run.steps,
       status: run.status,
       summary: run.summary ?? cached?.summary ?? null,
       live: false,
       liveText: "",
-      native: richer ? cached.native : undefined,
+      native: useCached ? cached.native : undefined,
     };
   });
   const allSteps = turns.flatMap((t) => t.steps);
