@@ -23,6 +23,21 @@ process.env.PORT = "3211";
 delete process.env.OPENROUTER_API_KEY;
 delete process.env.OPENAI_API_KEY;
 
+// Strip GitHub creds so the unit suite is hermetic — no live GitHub calls (repo
+// listing / installation-token mint) leak in from backend/.env. The e2e:real
+// suite runs as a standalone script (no [test] preload), so it keeps them.
+for (const k of [
+  "GITHUB_TOKEN",
+  "GH_TOKEN",
+  "GITHUB_PAT",
+  "GITHUB_ORG",
+  "GITHUB_OWNER",
+  "GITHUB_APP_ID",
+  "GITHUB_APP_PRIVATE_KEY",
+]) {
+  delete process.env[k];
+}
+
 process.env.WORKER_STEP_DELAY_MS = process.env.WORKER_STEP_DELAY_MS ?? "5";
 
 process.env.SLACK_BOT_TOKEN = process.env.SLACK_BOT_TOKEN ?? "xoxb-test-token";

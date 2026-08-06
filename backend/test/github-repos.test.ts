@@ -8,10 +8,18 @@ import {
 } from "../src/github/repos";
 
 // Force the "unconfigured" env so these unit tests never touch the network.
-// (The backend test env has no GITHUB_* keys; clear them defensively in case
-// the ambient shell exports some.)
+// backend/.env now carries the GitHub App creds, so clear those too (not just
+// the PAT/owner keys) — otherwise `configured` would be true here.
 function clearGithubEnv(): void {
-  for (const k of ["GITHUB_TOKEN", "GH_TOKEN", "GITHUB_PAT", "GITHUB_ORG", "GITHUB_OWNER"]) {
+  for (const k of [
+    "GITHUB_TOKEN",
+    "GH_TOKEN",
+    "GITHUB_PAT",
+    "GITHUB_ORG",
+    "GITHUB_OWNER",
+    "GITHUB_APP_ID",
+    "GITHUB_APP_PRIVATE_KEY",
+  ]) {
     delete process.env[k];
   }
   clearRepoCache();
