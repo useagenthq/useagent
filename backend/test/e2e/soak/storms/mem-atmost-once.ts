@@ -58,10 +58,12 @@ async function main(): Promise<void> {
       // `delivering` and POSTs to the hanging receiver. Gate on the receiver having
       // ACTUALLY received the POST (addsFor≥1) — the row flips to 'delivering' in
       // claimDue BEFORE the POST is sent, so waiting only on state races the send.
+      // 45s (not 20s): under heavy machine load the run→finalize→enqueue→claim→POST
+      // chain is CPU-starved; a load slowdown here is not an invariant failure.
       const inFlight = await waitFor(async () => {
         const st = (await stack.sql`select state from memory_outbox where run_id = ${runId}`)[0]?.state;
         return st === "delivering" && addsFor(prompt) >= 1;
-      }, 20_000);
+      }, 45_000);
       rec.check(inFlight, "capture POST in-flight to gateway (delivering + received)", "never reached in-flight", ev);
       if (!inFlight) continue;
       const addsBeforeKill = addsFor(prompt);
