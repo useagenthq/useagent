@@ -43,11 +43,11 @@ export interface EngineRunContext {
    *  Adapters map it to their provider format and fall back to their own
    *  default when absent/unsupported. */
   model?: string;
-  /** The GitHub repository this thread works in ("owner/name"), or null/undefined
-   *  for a bare workdir. Set on EVERY run in the thread (inherited from the root
-   *  run) so an adapter can ensure the clone exists in the workspace before the
-   *  turn — idempotently, so a resumed thread keeps its existing clone. */
-  repo?: string | null;
+  /** The GitHub repos this thread works in (each "owner/name"); [] for a bare
+   *  workdir. Set on EVERY run in the thread (inherited from the root run) so an
+   *  adapter can ensure each clone exists in the workspace before the turn —
+   *  idempotently (per repo dir), so a resumed thread keeps its existing clones. */
+  repos?: string[];
   /** The engine's native session id recorded by this thread's PREVIOUS turn on
    *  the same engine (from the DB). Present → resume that session explicitly (only
    *  turnContext accompanies the prompt); absent → fresh session (bootstrap +

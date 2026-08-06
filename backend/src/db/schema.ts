@@ -90,6 +90,11 @@ export const runs = pgTable(
     // no repo works in a bare sandbox workdir. Inherited across a thread (a reply
     // keeps its root run's repo) so the adapter always knows the thread's repo.
     repo: text("repo"),
+    // Multi-repo selection (multi-repo): the GitHub repos this thread works in,
+    // each "owner/name", validated against GET /api/repos. jsonb string[]; empty
+    // = a bare workdir; inherited across a thread. `repo` above is the legacy
+    // single-value mirror (repos[0] ?? null), kept for back-compat, deprecated.
+    repos: jsonb("repos").$type<string[]>().notNull().default(sql`'[]'::jsonb`),
     // Which team-memory pool this run reads/writes. Default "org" so every
     // pre-existing (pre-migration) run behaves as an organization-scoped run.
     // A reply inherits its parent's scope unless the authenticated user changes

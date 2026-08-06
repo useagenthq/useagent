@@ -165,7 +165,7 @@ export async function handleSlackEvent(body: SlackEnvelope): Promise<void> {
       parentRunId,
       threadId,
       // Slack runs work in a bare sandbox (no repo picker) and default to org memory.
-      repo: null,
+      repos: [],
       memoryScope,
     },
   });

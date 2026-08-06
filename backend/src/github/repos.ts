@@ -180,6 +180,19 @@ export async function isKnownRepo(fullName: string): Promise<boolean> {
   return listing.repos.some((r) => r.full_name === fullName);
 }
 
+/**
+ * Return the subset of `refs` that the backend does NOT offer (malformed or not
+ * in the listed set). Empty result → every ref is valid. One cached listing
+ * lookup for the whole batch. When unconfigured, everything is "unknown" — a
+ * repo can't be accepted if the feature is off.
+ */
+export async function unknownRepos(refs: string[]): Promise<string[]> {
+  const listing = await listRepos();
+  if (!listing.configured) return [...refs];
+  const known = new Set(listing.repos.map((r) => r.full_name));
+  return refs.filter((r) => !isValidRepoRef(r) || !known.has(r));
+}
+
 /** Test/ops hook: drop the cache so the next list re-fetches. */
 export function clearRepoCache(): void {
   cache = null;

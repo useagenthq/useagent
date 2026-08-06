@@ -27,7 +27,7 @@ export async function fireSchedule(
       engine: schedule.engine,
       parentRunId: null,
       threadId: runId,
-      repo: null,
+      repos: [],
       // Scheduled runs are always fresh roots — organization memory by default.
       memoryScope: "org",
     },

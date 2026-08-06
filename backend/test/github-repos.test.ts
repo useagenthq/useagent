@@ -4,6 +4,7 @@ import {
   isKnownRepo,
   isValidRepoRef,
   listRepos,
+  unknownRepos,
 } from "../src/github/repos";
 
 // Force the "unconfigured" env so these unit tests never touch the network.
@@ -43,5 +44,13 @@ describe("github listing — unconfigured is a graceful no-op", () => {
     expect(await isKnownRepo("upstream-org/skynet")).toBe(false);
     // malformed refs are rejected before any lookup
     expect(await isKnownRepo("not-a-ref")).toBe(false);
+  });
+
+  test("unknownRepos: unconfigured → every ref is unknown; [] stays []", async () => {
+    expect(await unknownRepos(["upstream-org/oats", "a/b"])).toEqual([
+      "upstream-org/oats",
+      "a/b",
+    ]);
+    expect(await unknownRepos([])).toEqual([]);
   });
 });
