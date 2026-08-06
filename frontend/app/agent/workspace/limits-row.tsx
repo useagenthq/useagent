@@ -50,7 +50,6 @@ function ModelRow({ model, totalTokens }: { model: ModelBurn; totalTokens: numbe
     `${model.runs} run${model.runs === 1 ? "" : "s"}`,
     `${model.completed}/${model.runs} done`,
     model.avgMs != null ? formatDuration(model.avgMs) + " avg" : null,
-    model.cost > 0 ? `$${model.cost.toFixed(2)}` : null,
   ]
     .filter(Boolean)
     .join(" · ");
@@ -62,10 +61,15 @@ function ModelRow({ model, totalTokens }: { model: ModelBurn; totalTokens: numbe
         <p className="truncate text-label-sm text-text-strong-950">{model.model}</p>
         <p className="mt-0.5 truncate text-mono-label text-text-soft-400">{meta}</p>
       </div>
-      <div className="flex shrink-0 flex-col items-end gap-1.5">
+      <div className="flex shrink-0 flex-col items-end gap-1">
         <span className="font-mono text-label-sm tabular-nums text-text-strong-950">
           {model.tokens > 0 ? compactNumber(model.tokens) : "—"}
         </span>
+        {model.cost > 0 && (
+          <span className="font-mono text-label-xs tabular-nums text-text-soft-400">
+            ${model.cost.toFixed(2)}
+          </span>
+        )}
         <SegMeter value={share} fill={fill} />
       </div>
     </div>
