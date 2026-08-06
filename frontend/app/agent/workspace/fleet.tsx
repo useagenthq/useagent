@@ -37,7 +37,7 @@ function RunRow({ run }: { run: WorkspaceRun }) {
   const chip = STATUS_CHIP[run.status];
   return (
     <Link
-      href={`/agent/runs/${run.id}`}
+      href={`/session/${run.id}`}
       className="flex items-center gap-3 rounded-lg px-2 py-2 outline-none transition-colors hover:bg-bg-weak-50 focus-visible:ring-2 focus-visible:ring-stroke-strong-950"
     >
       <RunStatusDot status={run.status} />
