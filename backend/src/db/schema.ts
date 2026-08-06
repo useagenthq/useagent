@@ -401,6 +401,43 @@ export const memoryOutbox = pgTable(
 );
 
 // ---------------------------------------------------------------------------
+// Memory files — the durable, pool-scoped snapshot store behind the resident
+// agent's `~/.skynet/memory.md`. Each row is one thread's memory-file BODY at
+// task end, keyed by its team-memory pool partition (team_id + pool_user_id), so
+// a new session (fresh sandbox) in the same pool restores the latest body
+// IMMEDIATELY from Postgres, independent of the async Tencent distillation lag.
+// This is the sync machinery old skynet had and the rebuild was missing.
+// ---------------------------------------------------------------------------
+
+export const memoryFiles = pgTable(
+  "memory_files",
+  {
+    /** = `mf_${runId}` — one snapshot per finalized run, so re-finalizing a run
+     *  is naturally idempotent. */
+    id: text("id").primaryKey(),
+    /** Tencent team_id (the run's orgId, or the configured default team). */
+    teamId: text("team_id").notNull(),
+    /** The pool partition (Tencent user_id): `org:${orgId}` or a real userId.
+     *  A snapshot restores for any run whose read pools include this partition. */
+    poolUserId: text("pool_user_id").notNull(),
+    /** personal|org — the human-readable label of the pool it was captured into. */
+    scope: text("scope").$type<MemoryScope>().notNull(),
+    threadId: text("thread_id").notNull(),
+    runId: text("run_id").notNull(),
+    /** The durable memory-file BODY (below the marker), bounded. */
+    content: text("content").notNull(),
+    /** sha256 of `content` — the store skips a write when the pool's latest
+     *  snapshot already carries this hash (no duplicate / no-op capture). */
+    contentHash: text("content_hash").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    // Restore reads "the latest snapshot for this pool" by (team_id, pool_user_id).
+    index("idx_memory_files_pool").on(t.teamId, t.poolUserId, t.createdAt),
+  ],
+);
+
+// ---------------------------------------------------------------------------
 // Schedules — unattended autonomy. A schedule fires the existing run-creation
 // path on a 5-field cron expression (the always-on 60s scheduler loop) or on a
 // manual "run now". `enabled` defaults FALSE — reference bot's safety default, so an
