@@ -263,6 +263,14 @@ export const skills = pgTable(
     // content. An edit bumps `currentVersion` and appends a new revision.
     sections: jsonb("sections").$type<SkillSections>().notNull(),
     currentVersion: integer("current_version").notNull().default(1),
+    // Provenance for a skill imported from a GitHub repo (multi-repo). Null for
+    // hand-authored skills. (org_id, source_repo, source_path) is the import
+    // identity — a re-import that finds changed content appends a revision and
+    // advances `source_sha` to the commit the new content was read at; unchanged
+    // content is a no-op. See src/github/discovery.ts + src/skills/import.ts.
+    sourceRepo: text("source_repo"),
+    sourcePath: text("source_path"),
+    sourceSha: text("source_sha"),
     usageCount: integer("usage_count").notNull().default(0),
     lastRunAt: timestamp("last_run_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true })
