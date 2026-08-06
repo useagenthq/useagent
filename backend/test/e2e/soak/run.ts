@@ -27,6 +27,14 @@ const HEARTBEAT_MS = Number(process.env.SOAK_HEARTBEAT_MIN ?? 90) * 60_000;
 const STORM_TIMEOUT_MS = Number(process.env.SOAK_STORM_TIMEOUT_MIN ?? 6) * 60_000;
 const startedAt = Date.now();
 
+// Env fingerprint stamped into every report — bind the numbers to the runtime +
+// the knobs that shaped them, so a report can never be misread as a different run.
+const ENV_SUMMARY =
+  `bun ${Bun.version} · node ${process.version} · ${process.platform}/${process.arch}` +
+  ` · DAYTONA=${process.env.DAYTONA_API_KEY ? "on" : "off"}` +
+  ` · MEMORY=${process.env.MEMORY_API_URL ? "on" : "off"}` +
+  ` · THROTTLE=${process.env.SOAK_THROTTLE === "1" ? "on" : "off"}`;
+
 // One storm cycle per rotation slot. Counts sized so a slot is ~1–3 min; the
 // marathon accumulates thousands cumulatively. `port` base keeps sequential
 // storms off each other and off other agents' 3501–3515.
@@ -86,6 +94,7 @@ function writeReport(): void {
     uptimeMin: Number(uptimeMin),
     rotations,
     commit,
+    env: ENV_SUMMARY,
     storms: Object.fromEntries(agg),
     defects: [...defects.values()].sort((a, b) => b.count - a.count),
   };
@@ -94,6 +103,7 @@ function writeReport(): void {
   const lines: string[] = [];
   lines.push(`# Soak report — uptime ${uptimeMin}min, ${rotations} rotations, commit ${commit}`);
   lines.push(`started ${new Date(startedAt).toISOString()}`);
+  lines.push(`env: ${ENV_SUMMARY}`);
   lines.push("");
   lines.push("## Storms (cumulative)");
   lines.push("| storm | cycles | iterations | checks | failures | crashes | last ms |");
