@@ -4,11 +4,12 @@ import type { ComponentType } from 'react';
 import Link from 'next/link';
 import { RiChat3Line, RiRobot2Line } from '@remixicon/react';
 
-import { AsteriskMark } from '@/components/foundations/brand/asterisk-mark';
+import { PulseMark } from '@/components/foundations/brand/pulse-mark';
 import { cnExt } from '@/utils/cn';
 import { SearchCommand } from './search-command';
 import { ThemeToggle } from './theme-toggle';
 import { UserMenu } from './user-menu';
+import { useWorkingSignal } from './working-signal';
 
 type IconComponent = ComponentType<{
   className?: string;
@@ -35,6 +36,9 @@ const tabs: {
 ];
 
 export function TopNav({ activeTab }: TopNavProps) {
+  // The brand mark pulses inward while any agent is working (ref-counted signal),
+  // and sits static otherwise.
+  const working = useWorkingSignal();
   return (
     <header className='grid grid-cols-[1fr_auto] items-center gap-3 border-b border-stroke-soft-200 bg-bg-white-0 px-3 py-2.5 md:grid-cols-[1fr_auto_1fr]'>
       {/* Left: logo + tab pills */}
@@ -44,7 +48,7 @@ export function TopNav({ activeTab }: TopNavProps) {
           aria-label='skynet-a home'
           className='flex size-9 shrink-0 items-center justify-center rounded-lg text-text-strong-950 transition-colors hover:bg-bg-weak-50'
         >
-          <AsteriskMark className='size-5' />
+          <PulseMark className='size-5' active={working} />
         </Link>
         <div className='flex items-center gap-0.5'>
           {tabs.map(({ id, label, icon: Icon, href }) => {

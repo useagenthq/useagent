@@ -1,6 +1,7 @@
 "use client";
 
 import { ThinkingOrb, type OrbState } from "@/components/base/thinking-orb";
+import { useReportWorking } from "@/components/shell/working-signal";
 import { cnExt as cn } from "@/utils/cn";
 
 /**
@@ -26,6 +27,9 @@ export function OrbPill({
   className?: string;
   ariaLabel?: string;
 }) {
+  // An OrbPill is only ever on screen while the engine is booting or working, so
+  // its lifetime IS the "working" window - report it so the brand mark pulses.
+  useReportWorking();
   return (
     <div
       role="status"
