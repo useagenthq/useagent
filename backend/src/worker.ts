@@ -201,8 +201,11 @@ async function runWorker(runId: string): Promise<void> {
       const markdown = formatSkillMarkdown(pinnedSkill.content);
       skillContext = frameSkillContext(markdown);
       // Emit skill.loaded (metadata only, no body) on the durable native lane so
-      // it renders as a timeline row and survives reconnect. Fire-and-forget.
-      void recordSkillLoaded(run.id, run.threadId, {
+      // it renders as a timeline row and survives reconnect. AWAITED here (before
+      // the engine runs, well off the delta fast-path) so a crash can't lose the
+      // evidence that a skill governed this run; a persist failure is logged and
+      // never fails the run.
+      await recordSkillLoaded(run.id, run.threadId, {
         skillId: pinnedSkill.skillId,
         version: pinnedSkill.version,
         kind: pinnedSkill.kind,
@@ -210,7 +213,9 @@ async function runWorker(runId: string): Promise<void> {
         contentHash: pinnedSkill.contentHash,
         source: "skill",
         contentChars: markdown.length,
-      });
+      }).catch((err) =>
+        console.warn(`[worker] skill.loaded marker persist failed for run ${run.id}:`, err),
+      );
     }
 
     // `mock` is the scripted trace and ignores context entirely. It IS
@@ -249,9 +254,14 @@ async function runWorker(runId: string): Promise<void> {
       );
     }
     // Retrieval ledger (Phase 3a): durably record + stream what was recalled as a
-    // `context.retrieved` native frame. Fire-and-forget — never blocks/fails the run.
+    // `context.retrieved` native frame. AWAITED before the engine turn (a crash
+    // must not lose the record of what context a run used) but OFF the delta
+    // fast-path — deltas are published by the adapter during the turn, after this
+    // resolves. A persist failure is logged, never fails the run.
     if (plan && recall) {
-      void recordContextRetrieval(run.id, run.threadId, plan, run.prompt, recall);
+      await recordContextRetrieval(run.id, run.threadId, plan, run.prompt, recall).catch((err) =>
+        console.warn(`[worker] context.retrieved marker persist failed for run ${run.id}:`, err),
+      );
     }
 
     // The completed-turn capture is enqueued by runs/finalize.ts (transactionally,

@@ -27,8 +27,9 @@ export interface SkillLoadedPayload {
 
 /**
  * Record a run's skill load as a `skill.loaded` native frame (persist + stream).
- * One frame per run (id keyed by runId). Fire-and-forget via recordProviderEvent,
- * so it NEVER fails the run — the caller should `void` this on the hot path.
+ * One frame per run (id keyed by runId). The worker AWAITS this (before the
+ * engine runs) so the marker is durable before the run can settle, and .catches
+ * a persist failure so it never fails the run.
  */
 export async function recordSkillLoaded(
   runId: string,
