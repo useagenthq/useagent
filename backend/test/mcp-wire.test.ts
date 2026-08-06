@@ -7,6 +7,7 @@ import { describe, expect, test } from "bun:test";
 import { handleMcpMessage } from "../src/knowledge/gateway/mcp";
 import { KNOWLEDGE_TOOLS } from "../src/knowledge/gateway/tools";
 import { MEMORY_TOOLS } from "../src/knowledge/gateway/memory-tools";
+import { WEB_SEARCH_TOOLS } from "../src/knowledge/gateway/web-search-tool";
 import type { ToolTokenClaims } from "../src/knowledge/gateway/token";
 
 const CLAIMS: ToolTokenClaims = { orgId: "o", userId: "u", threadId: "t", runId: "r", exp: Date.now() + 60_000 };
@@ -40,9 +41,9 @@ describe("MCP wire is byte-identical after the SDK-schema adoption (#98)", () =>
     expect(r.result.serverInfo).toEqual({ name: "skynet-knowledge", version: "1.0.0" });
   });
 
-  test("tools/list returns exactly the knowledge + memory tool set", async () => {
+  test("tools/list returns the knowledge + memory + web_search tool set", async () => {
     const r = (await handleMcpMessage(CLAIMS, req(2, "tools/list"))) as any;
-    expect(r.result.tools).toEqual([...KNOWLEDGE_TOOLS, ...MEMORY_TOOLS]);
+    expect(r.result.tools).toEqual([...KNOWLEDGE_TOOLS, ...MEMORY_TOOLS, ...WEB_SEARCH_TOOLS]);
   });
 
   test("a notification-shaped method returns null (no response)", async () => {
