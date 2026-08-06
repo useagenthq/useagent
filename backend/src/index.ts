@@ -30,6 +30,7 @@ import { terminalRoutes } from "./runs/terminal";
 import { schedulesRoutes } from "./schedules/routes";
 import { startScheduler } from "./schedules/scheduler";
 import { startCaptureDelivery } from "./memory/capture-outbox";
+import { secretsRoutes } from "./secrets/routes";
 import { seedDev } from "./seed";
 import { skillImportRoutes } from "./skills/import-routes";
 import { skillsRoutes } from "./skills/routes";
@@ -122,6 +123,10 @@ app.route("/api/fleet", fleetRoutes);
 app.route("/api/skills/import", skillImportRoutes);
 app.route("/api/skills", skillsRoutes);
 app.route("/api/schedules", schedulesRoutes);
+// Org Secrets — encrypted named secrets injected as env vars into the per-thread
+// sandbox at boot. Org-scoped; values are write-only at this boundary (set/delete
+// only, never returned). See src/secrets/*.
+app.route("/api/secrets", secretsRoutes);
 app.route("/api/knowledge", knowledgeRoutes);
 // Repo-wiki generator: POST /api/wiki/generate clones an offered repo and lands
 // a per-page architecture wiki as org-scoped published documents + immutable
