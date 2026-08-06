@@ -5,6 +5,8 @@ import { Daytona, type Sandbox } from "@daytona/sdk";
 import type { EmitStep, EngineAdapter, EngineRunContext } from "./types";
 import { composeTurnPrompt } from "./types";
 import { basename, parseJsonLine, truncate } from "./util";
+import { toolGatewayConfig } from "../knowledge/gateway/config";
+import { mintToolToken } from "../knowledge/gateway/token";
 
 // ---------------------------------------------------------------------------
 // Resident claude/codex via ACP — the opencode-server equivalent for the other
@@ -102,6 +104,47 @@ const relayKey = (threadId: string, engine: string): string => `${engine}:${thre
 
 function authHeaders(token: string): Record<string, string> {
   return { "x-daytona-preview-token": token };
+}
+
+/**
+ * Build the ACP `mcpServers` array carrying the Skynet knowledge gateway — the
+ * ACP-native equivalent of opencode's ensureKnowledgeGatewayConfig. Passed into
+ * BOTH session/new and session/load so a fresh AND a resumed ACP session can call
+ * knowledge_search / knowledge_read, at parity with opencode.
+ *
+ * TRUST BOUNDARY (identical to opencode): the ONLY thing that enters the
+ * untrusted sandbox is a short-lived, run-scoped bearer TOKEN over HTTP — never
+ * DB/embedding/tenant credentials. The gateway derives org/user/thread from the
+ * token server-side. Same URL, TTL, and minted identity as the opencode path.
+ *
+ * Gated: empty unless TOOL_GATEWAY_PUBLIC_URL is set AND the run has an org
+ * identity (fail closed — no tools rather than an unscoped one). Off by default,
+ * so existing ACP runs are byte-for-byte unchanged.
+ *
+ * Shape: the ACP HTTP MCP-server descriptor `{ type:"http", name, url, headers }`.
+ * NOTE: unverified against a LIVE claude/codex ACP agent (engines are disabled);
+ * the contract test asserts the config carries the entry + a valid token.
+ */
+export function acpKnowledgeMcpServers(ctx: EngineRunContext): Record<string, unknown>[] {
+  const gw = toolGatewayConfig();
+  if (!gw || !ctx.orgId) return [];
+  const token = mintToolToken(
+    {
+      orgId: ctx.orgId,
+      userId: ctx.userId ?? "",
+      threadId: ctx.threadId ?? ctx.runId,
+      runId: ctx.runId,
+    },
+    gw.tokenTtlMs,
+  );
+  return [
+    {
+      type: "http",
+      name: "skynet-knowledge",
+      url: gw.mcpUrl,
+      headers: [{ name: "Authorization", value: `Bearer ${token}` }],
+    },
+  ];
 }
 
 // ── ACP session/update → step/delta translation ─────────────────────────────
@@ -404,6 +447,10 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
             clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false },
           });
 
+          // Knowledge MCP gateway at parity with opencode — minted ONCE per turn
+          // and passed into both session/load and session/new (run-scoped token).
+          const mcpServers = acpKnowledgeMcpServers(ctx);
+
           // Session: live in-process one wins; else try loading the persisted
           // id; else a fresh session (with the composed preamble).
           let sessionId = live.sessionId;
@@ -413,7 +460,7 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
               await request("session/load", {
                 sessionId: ctx.engineSessionId,
                 cwd: live.workdir,
-                mcpServers: [],
+                mcpServers,
               });
               sessionId = ctx.engineSessionId;
               resumed = true;
@@ -422,7 +469,7 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
             }
           }
           if (!sessionId) {
-            const res = await request("session/new", { cwd: live.workdir, mcpServers: [] });
+            const res = await request("session/new", { cwd: live.workdir, mcpServers });
             sessionId = String(res.sessionId ?? "");
             if (!sessionId) throw new Error("ACP session/new returned no sessionId");
             resumed = false;
