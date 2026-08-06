@@ -1,7 +1,6 @@
 import { Hono } from "hono";
 import type { AppEnv } from "../http";
 import { orgScope } from "../middleware/org";
-import { DEV_ORG_ID } from "../seed";
 import { embeddingsEnabled, embedOne } from "./embed";
 import { ingestOne, IngestValidationError } from "./ingest";
 import {
@@ -21,7 +20,6 @@ import {
   publishDocument,
   type DocStatus,
 } from "./wiki";
-import { seedIfEmpty } from "./seed";
 
 /**
  * Knowledge API — mounted at /api/knowledge by the backend entrypoint.
@@ -32,11 +30,6 @@ import { seedIfEmpty } from "./seed";
 export const knowledgeRoutes = new Hono<AppEnv>();
 
 knowledgeRoutes.use("*", orgScope);
-
-// Kick off first-boot seeding when this module loads (non-blocking, guarded).
-// Seed into the SAME org the dev fallback resolves to, so the unauthenticated
-// dev path (frontend :3200/knowledge) sees the seeded corpus.
-void seedIfEmpty(DEV_ORG_ID);
 
 /** Shape a stored row for the read API (flattens the useful distilled meta). */
 function toApi(row: KnowledgeRow) {
