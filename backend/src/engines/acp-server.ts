@@ -7,6 +7,7 @@ import { composeTurnPrompt } from "./types";
 import { basename, parseJsonLine, truncate } from "./util";
 import { toolGatewayConfig } from "../knowledge/gateway/config";
 import { mintToolToken } from "../knowledge/gateway/token";
+import { composeSecretEnv, materializeSecretFiles } from "../secrets/inject";
 
 // ---------------------------------------------------------------------------
 // Resident claude/codex via ACP — the opencode-server equivalent for the other
@@ -206,7 +207,12 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
       const daytona = new Daytona({ apiKey, target: process.env.DAYTONA_TARGET ?? "us" });
       const budgetMs = Number(process.env.ENGINE_TIMEOUT_MS ?? 180_000);
 
-      const envVars: Record<string, string> = {};
+      // Org secrets first, then platform engine keys — a platform key of the same
+      // name always wins. composeSecretEnv also records the `secrets.injected`
+      // marker (names only). Same seam as the opencode adapter; file-kind secrets
+      // ride in as PATHs and are written after the sandbox is up (below).
+      const secretInjection = await composeSecretEnv(ctx);
+      const envVars: Record<string, string> = { ...secretInjection.env };
       if (process.env.ANTHROPIC_API_KEY) envVars.ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
 
       const autoStopInterval = Number(process.env.SANDBOX_AUTO_STOP_MIN ?? 30);
@@ -257,6 +263,12 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
         const box = sandbox;
 
         await cfg.prepare?.(box);
+
+        // Materialize any file-kind org secrets (0600) before the agent turn.
+        await materializeSecretFiles(
+          (cmd) => box.process.executeCommand(cmd, undefined, undefined, 30),
+          secretInjection.files,
+        );
 
         // ── resident agent: install once, relay up, resolve endpoint ────────
         const probeCmd = `curl -s -m 2 -o /dev/null -w '%{http_code}' http://127.0.0.1:${cfg.port}/health`;
