@@ -159,6 +159,8 @@ describe("knowledge MCP gateway", () => {
     expect(names).toEqual([
       "knowledge_read",
       "knowledge_search",
+      "memory_correct",
+      "memory_forget",
       "memory_read",
       "memory_remember",
       "memory_search",
