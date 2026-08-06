@@ -148,12 +148,36 @@ export function useThreadStream(rootRunId: string, initialThread: ApiRun[]): Thr
 
   useEffect(() => {
     const active = storeRef.current;
+    // Coalesce SSE frames: opening a long SETTLED run replays hundreds of native
+    // frames back-to-back (this run: 463 frames / ~1MB). Applying each immediately
+    // notifies the store per frame -> a full re-render + timeline rebuild of the
+    // whole (growing) timeline each time = O(n^2) over ~1MB, which froze the tab for
+    // minutes. Buffer frames and apply the burst in ONE store.batch() per animation
+    // frame -> a single render for the burst (opencode-style "apply burst, paint once").
+    let buffer: { event: string; data: string }[] = [];
+    let scheduled: ReturnType<typeof setTimeout> | number | null = null;
+    const raf = typeof requestAnimationFrame === "function" ? requestAnimationFrame : null;
+    const caf = typeof cancelAnimationFrame === "function" ? cancelAnimationFrame : null;
+    const flushFrames = (): void => {
+      scheduled = null;
+      if (buffer.length === 0) return;
+      const burst = buffer;
+      buffer = [];
+      active.batch(() => {
+        for (const f of burst) dispatchFrame(active, f.event, f.data);
+      });
+    };
+    const onFrame = (event: string, data: string): void => {
+      buffer.push({ event, data });
+      if (scheduled != null) return;
+      scheduled = raf ? raf(flushFrames) : setTimeout(flushFrames, 0);
+    };
     const conn: ThreadConnection = createThreadConnection({
       url: `/api/runs/${rootRunId}/thread-events`,
       frameTypes: FRAME_TYPES,
       healthFrame: "snapshot",
       createEventSource: browserEventSource,
-      onFrame: (event, data) => dispatchFrame(active, event, data),
+      onFrame,
       poll: () => {
         void fetchThread(rootRunId).then((runs) => {
           if (runs) active.applySnapshot(runs);
@@ -167,7 +191,13 @@ export function useThreadStream(rootRunId: string, initialThread: ApiRun[]): Thr
       },
     });
     conn.start();
-    return () => conn.stop();
+    return () => {
+      if (scheduled != null) {
+        if (raf && caf) caf(scheduled as number);
+        else clearTimeout(scheduled as ReturnType<typeof setTimeout>);
+      }
+      conn.stop();
+    };
     // Keyed by the ROOT thread id ONLY: a new run in the same thread never tears
     // down/reopens the connection; a genuine thread navigation does.
     // eslint-disable-next-line react-hooks/exhaustive-deps
