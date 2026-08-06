@@ -883,7 +883,10 @@ async function main() {
   );
   browser = await launch();
   let wf = "";
-  const needWarm = [2, 3, 5, 7, 8, 10, 11, 16, 17].some(want);
+  // 16/17 are LIST views (workspace / artifacts) — they read /api/runs+/api/fleet
+  // and assert real data OR an honest empty branch, so they never need a warm
+  // (sandbox-alive) session of their own.
+  const needWarm = [2, 3, 5, 7, 8, 10, 11].some(want);
   if (needWarm) {
     console.log("… ensuring a warm opencode fanout fixture");
     wf = await ensureWarmFanout();
