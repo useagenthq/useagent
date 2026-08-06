@@ -18,7 +18,7 @@ import { resolveGithubToken } from "../github/auth";
 import { assertNever } from "../util/exhaustive";
 import { toolGatewayConfig } from "../knowledge/gateway/config";
 import { mintToolToken } from "../knowledge/gateway/token";
-import { MEMORY_SKILL_PATH, MEMORY_SKILL_TEXT } from "../memory/memory-skill-text";
+import { MEMORY_SKILL_PATH, memorySkillText } from "../memory/memory-skill-text";
 
 // ---------------------------------------------------------------------------
 // NATIVE opencode engine — the realtime path. Instead of one-shot CLI runs, the
@@ -225,9 +225,9 @@ async function ensureRepoClone(
  * same org/thread and within TTL, so authorization is unchanged; only rotation
  * lags. Fresh sandboxes (the common case) always get the current token.
  */
-async function ensureKnowledgeGatewayConfig(sandbox: Sandbox, ctx: EngineRunContext): Promise<void> {
+async function ensureKnowledgeGatewayConfig(sandbox: Sandbox, ctx: EngineRunContext): Promise<boolean> {
   const gw = toolGatewayConfig();
-  if (!gw || !ctx.orgId) return; // gateway not wired, or run has no org identity → fail closed (no tools)
+  if (!gw || !ctx.orgId) return false; // gateway not wired, or run has no org identity → fail closed (no tools)
   try {
     const token = mintToolToken(
       {
@@ -275,8 +275,10 @@ async function ensureKnowledgeGatewayConfig(sandbox: Sandbox, ctx: EngineRunCont
       15,
     );
     console.log(`[opencode] knowledge MCP gateway wired for run ${ctx.runId} (org ${ctx.orgId})`);
+    return true;
   } catch (e) {
     console.warn(`[opencode] knowledge gateway config write failed (continuing without tools):`, (e as Error).message);
+    return false;
   }
 }
 
@@ -289,10 +291,14 @@ async function ensureKnowledgeGatewayConfig(sandbox: Sandbox, ctx: EngineRunCont
  * Best-effort: a failure logs and continues (the corrected text is not
  * load-bearing for authorization, only guidance). A WARM resumed thread already
  * loaded the old skill; fresh sandboxes (the common case) always get the fix.
+ *
+ * `hasTools` = whether the memory TOOLS were actually wired for this run. When
+ * false the text explicitly forbids claiming a durable save or writing a local
+ * memory file (the observed no-gateway failure mode) - honesty over pretend tools.
  */
-async function correctMemorySkillText(sandbox: Sandbox): Promise<void> {
+async function correctMemorySkillText(sandbox: Sandbox, hasTools: boolean): Promise<void> {
   try {
-    const b64 = Buffer.from(MEMORY_SKILL_TEXT, "utf8").toString("base64");
+    const b64 = Buffer.from(memorySkillText(hasTools), "utf8").toString("base64");
     await sandbox.process.executeCommand(
       `mkdir -p "$(dirname ${shq(MEMORY_SKILL_PATH)})" && printf %s '${b64}' | base64 -d > ${shq(MEMORY_SKILL_PATH)}`,
       undefined,
@@ -582,11 +588,13 @@ export const opencodeServerAdapter: EngineAdapter = {
       // Inject the knowledge MCP gateway (run-scoped token only) into the global
       // opencode config BEFORE booting the server, so the resident agent picks up
       // knowledge_search/knowledge_read at `opencode serve` start. Gated + best-effort.
-      await ensureKnowledgeGatewayConfig(sandbox, ctx);
+      const toolsWired = await ensureKnowledgeGatewayConfig(sandbox, ctx);
 
-      // Replace the snapshot's false-persistence memory skill with honest,
-      // tools-based text BEFORE the server boots (new_mem_prompt.md 7). Best-effort.
-      await correctMemorySkillText(sandbox);
+      // Replace the snapshot's false-persistence memory skill BEFORE the server
+      // boots (new_mem_prompt.md 7), with text that MATCHES reality: tools-based
+      // when the gateway is wired, else an explicit "no durable memory tools; do
+      // not claim a save or write local files" (the observed no-gateway lie).
+      await correctMemorySkillText(sandbox, toolsWired);
 
       // ── persistent server + preview endpoint ────────────────────────────────
       const { baseUrl, token, workdir } = await ensureServer(sandbox, npxFallback);
