@@ -13,6 +13,6 @@ fleetRoutes.use("*", orgScope);
 
 fleetRoutes.get("/", async (c) => {
   const orgId = c.get("orgId");
-  const [models, machine] = await Promise.all([getModelBurn(orgId), getMachineStats(orgId)]);
-  return c.json({ models, machine });
+  const [burn, machine] = await Promise.all([getModelBurn(orgId), getMachineStats(orgId)]);
+  return c.json({ ...burn, machine });
 });
