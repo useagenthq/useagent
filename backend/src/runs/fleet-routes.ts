@@ -1,0 +1,18 @@
+import { Hono } from "hono";
+import type { AppEnv } from "../http";
+import { orgScope } from "../middleware/org";
+import { getMachineStats, getModelBurn } from "./fleet";
+
+// GET /api/fleet — real numbers for the /agent/workspace "Limits" card:
+// per-model token/cost/run burn for today + the org's live Daytona footprint.
+// Org-scoped like the other domain routes; the Daytona key stays server-side and
+// never appears in the response.
+export const fleetRoutes = new Hono<AppEnv>();
+
+fleetRoutes.use("*", orgScope);
+
+fleetRoutes.get("/", async (c) => {
+  const orgId = c.get("orgId");
+  const [models, machine] = await Promise.all([getModelBurn(orgId), getMachineStats(orgId)]);
+  return c.json({ models, machine });
+});
