@@ -3,6 +3,7 @@
 import { memo, useState } from "react";
 import {
   RiArrowDownSLine,
+  RiBookMarkedLine,
   RiBookOpenLine,
   RiCheckboxCircleFill,
   RiCheckboxBlankCircleLine,
@@ -94,8 +95,8 @@ function markerView(marker: TimelineMarker): {
 } {
   if (marker.kind === "skill") {
     return {
-      Icon: RiFlashlightLine,
-      verb: "Skill",
+      Icon: marker.playbook ? RiBookMarkedLine : RiFlashlightLine,
+      verb: marker.playbook ? "Playbook" : "Skill",
       target: marker.name,
       badge: `v${marker.version}`,
     };

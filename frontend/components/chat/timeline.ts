@@ -20,7 +20,14 @@ import type { NativeSnapshot } from "./native-store";
 /** A canonical context marker — a typed row (skill.loaded / context.retrieved)
  *  rendered in the SHARED timeline grammar, not a parallel context pane. */
 export type TimelineMarker =
-  | { readonly kind: "skill"; readonly name: string; readonly version: number; readonly hash: string }
+  | {
+      readonly kind: "skill";
+      /** True when the pinned instruction set was a playbook (labels the row). */
+      readonly playbook: boolean;
+      readonly name: string;
+      readonly version: number;
+      readonly hash: string;
+    }
   | {
       readonly kind: "context";
       readonly source: string; // "memory" | "knowledge" | …
@@ -47,6 +54,9 @@ function parseMarker(eventType: string, payload: unknown): TimelineMarker | null
   if (eventType === "skill.loaded") {
     return {
       kind: "skill",
+      // `kind` in the payload is the substrate kind ("skill" | "playbook"); a
+      // pre-kind or malformed frame defaults to a plain skill label.
+      playbook: p.kind === "playbook",
       name: typeof p.name === "string" ? p.name : "skill",
       version: typeof p.version === "number" ? p.version : 1,
       hash: typeof p.contentHash === "string" ? p.contentHash : "",
