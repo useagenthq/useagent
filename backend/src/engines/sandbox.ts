@@ -420,11 +420,12 @@ function makeSandboxAdapter(spec: SandboxEngineSpec): EngineAdapter {
       const daytona = new Daytona({ apiKey, target: process.env.DAYTONA_TARGET ?? "us" });
 
       // Engine/provider keys ride as sandbox env — never on the command line.
-      // Org secrets compose first; platform keys of the same name win. Same seam
-      // as the opencode/acp adapters; also records the `secrets.injected` marker.
-      // file-kind secrets ride in as PATHs and are written after boot (below).
+      // Org secrets ride in via a BASH_ENV dotenv (createEnv), not as N env vars;
+      // platform keys of the same name win. Same seam as the opencode/acp
+      // adapters; also records the `secrets.injected` marker. The dotenv +
+      // file-kind secrets are written after boot (below).
       const secretInjection = await composeSecretEnv(ctx);
-      const envVars: Record<string, string> = { ...secretInjection.env };
+      const envVars: Record<string, string> = { ...secretInjection.createEnv };
       if (process.env.ANTHROPIC_API_KEY) envVars.ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
       if (process.env.OPENROUTER_API_KEY) envVars.OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
 

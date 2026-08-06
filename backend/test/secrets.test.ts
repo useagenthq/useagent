@@ -3,7 +3,12 @@ import { and, eq } from "drizzle-orm";
 import { db } from "../src/db/client";
 import { secrets } from "../src/db/schema";
 import { decryptOrgSecrets } from "../src/secrets/store";
-import { buildInjection, materializeSecretFiles, SECRET_FILE_DIR } from "../src/secrets/inject";
+import {
+  buildInjection,
+  materializeSecretFiles,
+  SECRET_DOTENV_PATH,
+  SECRET_FILE_DIR,
+} from "../src/secrets/inject";
 import { createOrgSession, json, uid, type OrgSession } from "./helpers";
 
 // Org Secrets API + injection (task #100). Values are write-only at the boundary:
@@ -197,28 +202,42 @@ describe("secrets — file kind (materialized to a sandbox file, env var = path)
     });
     expect(bad.status).toBe(400);
 
-    // Decrypt carries the kind; buildInjection maps it to a file + a path env var.
+    // Decrypt carries the kind; buildInjection maps a file-kind secret to a file
+    // plus a path export in the dotenv (env var = path).
     const decrypted = await decryptOrgSecrets(org.orgId);
     const injection = buildInjection(decrypted);
     const path = `${SECRET_FILE_DIR}/GOOGLE_APPLICATION_CREDENTIALS`;
-    expect(injection.env.GOOGLE_APPLICATION_CREDENTIALS).toBe(path);
+    const dotenv = injection.files.find((f) => f.path === SECRET_DOTENV_PATH);
+    expect(dotenv?.content).toContain(`export GOOGLE_APPLICATION_CREDENTIALS='${path}'`);
     expect(injection.files).toContainEqual({ path, content: '{"type":"service_account"}' });
   });
 
-  test("buildInjection maps env-kind to a value and file-kind to a path + file", () => {
+  test("buildInjection: tiny createEnv (BASH_ENV) + dotenv exports; file-kind exports its path", () => {
     const injection = buildInjection({
       secrets: [
         { name: "API_TOKEN", kind: "env", value: "tok-123" },
         { name: "SA_JSON", kind: "file", value: '{"k":"v"}' },
+        { name: "WEIRD", kind: "env", value: "a'b" }, // embedded single quote
       ],
-      names: ["API_TOKEN", "SA_JSON"],
+      names: ["API_TOKEN", "SA_JSON", "WEIRD"],
       skipped: [],
     });
-    expect(injection.env.API_TOKEN).toBe("tok-123");
-    expect(injection.env.SA_JSON).toBe(`${SECRET_FILE_DIR}/SA_JSON`);
-    expect(injection.files).toEqual([
-      { path: `${SECRET_FILE_DIR}/SA_JSON`, content: '{"k":"v"}' },
-    ]);
+    // Create-env is TINY - only BASH_ENV, never the secret values (Daytona limit).
+    expect(injection.createEnv).toEqual({ BASH_ENV: SECRET_DOTENV_PATH });
+    const dotenv = injection.files.find((f) => f.path === SECRET_DOTENV_PATH);
+    expect(dotenv).toBeTruthy();
+    expect(dotenv!.content).toContain("export API_TOKEN='tok-123'");
+    expect(dotenv!.content).toContain(`export SA_JSON='${SECRET_FILE_DIR}/SA_JSON'`);
+    // POSIX single-quote escaping keeps an embedded quote intact.
+    expect(dotenv!.content).toContain(`export WEIRD='a'\\''b'`);
+    // The file-kind content is materialized as its own 0600 file.
+    expect(injection.files).toContainEqual({ path: `${SECRET_FILE_DIR}/SA_JSON`, content: '{"k":"v"}' });
+  });
+
+  test("buildInjection with no secrets → empty createEnv + no files", () => {
+    const injection = buildInjection({ secrets: [], names: [], skipped: [] });
+    expect(injection.createEnv).toEqual({});
+    expect(injection.files).toEqual([]);
   });
 
   test("materializeSecretFiles writes each file 0600 via base64, never inline", async () => {

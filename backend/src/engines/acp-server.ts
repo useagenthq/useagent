@@ -207,12 +207,13 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
       const daytona = new Daytona({ apiKey, target: process.env.DAYTONA_TARGET ?? "us" });
       const budgetMs = Number(process.env.ENGINE_TIMEOUT_MS ?? 180_000);
 
-      // Org secrets first, then platform engine keys — a platform key of the same
-      // name always wins. composeSecretEnv also records the `secrets.injected`
-      // marker (names only). Same seam as the opencode adapter; file-kind secrets
-      // ride in as PATHs and are written after the sandbox is up (below).
+      // Org secrets ride in via a BASH_ENV dotenv (createEnv), not as N env vars
+      // (Daytona rejects a create with a whole secret catalog). Platform engine
+      // keys are added after and win on name. composeSecretEnv also records the
+      // `secrets.injected` marker (names only); the dotenv + file-kind secrets are
+      // written after the sandbox is up (below).
       const secretInjection = await composeSecretEnv(ctx);
-      const envVars: Record<string, string> = { ...secretInjection.env };
+      const envVars: Record<string, string> = { ...secretInjection.createEnv };
       if (process.env.ANTHROPIC_API_KEY) envVars.ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
 
       const autoStopInterval = Number(process.env.SANDBOX_AUTO_STOP_MIN ?? 30);
