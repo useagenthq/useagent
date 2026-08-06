@@ -104,10 +104,22 @@ async function connect(token: string): Promise<void> {
   };
 }
 
+/** True under the test runner. `bun test` sets NODE_ENV=test, so the app boot
+ *  that tests trigger (importing src/index.ts) inherits it. */
+function isTestEnv(): boolean {
+  return process.env.NODE_ENV === "test";
+}
+
 /** Start the Socket Mode ingress. No-op unless SLACK_APP_TOKEN is set (the
  *  HTTP events route stays mounted either way - both lanes share the deduper
- *  in events.ts, so double delivery collapses to one run). */
+ *  in events.ts, so double delivery collapses to one run).
+ *
+ *  HARD no-op under test: a test-booted server carrying the real SLACK_APP_TOKEN
+ *  would otherwise open a live WebSocket to the workspace and STEAL real events
+ *  mid-suite (Slack load-balances events across all open sockets). The guard
+ *  runs before we ever touch the token or the network. */
 export function startSlackSocketMode(): void {
+  if (isTestEnv()) return;
   const token = appToken();
   if (!token) return;
   stopped = false;
