@@ -159,18 +159,36 @@ async function main(): Promise<void> {
   sweepPorts(); // clean slate on the soak ports
   writeReport();
 
+  // THROTTLE mode (shared box under fleet load): run ONE storm-type per rotation
+  // (round-robin) with an inter-rotation gap so the CPU breathes, instead of all
+  // storms back-to-back. Combined with low per-storm counts (env), this cuts the
+  // soak's footprint to a quiet regression-guard. Toggle with SOAK_THROTTLE=1.
+  const THROTTLE = process.env.SOAK_THROTTLE === "1";
+  const GAP_MS = Number(process.env.SOAK_THROTTLE_GAP_MS ?? 20_000);
+  if (THROTTLE) alert(`THROTTLE on — one storm/rotation, ${GAP_MS / 1000}s gap`);
+
+  const heartbeatMaybe = () => {
+    if (Date.now() - lastHeartbeat >= HEARTBEAT_MS) {
+      lastHeartbeat = Date.now();
+      const totalChecks = [...agg.values()].reduce((n, a) => n + a.checks, 0);
+      const totalFail = [...agg.values()].reduce((n, a) => n + a.failures, 0);
+      alert(`HEARTBEAT uptime=${((Date.now() - startedAt) / 60000).toFixed(0)}min rotations=${rotations} checks=${totalChecks} failures=${totalFail} defects=${defects.size} commit=${commit}`);
+    }
+  };
+
   while (!existsSync(STOP)) {
     const nextCommit = sh("git rev-parse --short HEAD");
     if (nextCommit && nextCommit !== commit) { alert(`HEAD_MOVED ${commit} → ${nextCommit}`); commit = nextCommit; }
-    for (const def of STORMS) {
-      if (existsSync(STOP)) break;
-      await runStorm(def);
-      writeReport();
-      if (Date.now() - lastHeartbeat >= HEARTBEAT_MS) {
-        lastHeartbeat = Date.now();
-        const totalChecks = [...agg.values()].reduce((n, a) => n + a.checks, 0);
-        const totalFail = [...agg.values()].reduce((n, a) => n + a.failures, 0);
-        alert(`HEARTBEAT uptime=${((Date.now() - startedAt) / 60000).toFixed(0)}min rotations=${rotations} checks=${totalChecks} failures=${totalFail} defects=${defects.size} commit=${commit}`);
+    if (THROTTLE) {
+      const def = STORMS[rotations % STORMS.length]!; // one storm-type per rotation
+      if (!existsSync(STOP)) { await runStorm(def); writeReport(); heartbeatMaybe(); }
+      if (!existsSync(STOP)) await new Promise((r) => setTimeout(r, GAP_MS));
+    } else {
+      for (const def of STORMS) {
+        if (existsSync(STOP)) break;
+        await runStorm(def);
+        writeReport();
+        heartbeatMaybe();
       }
     }
     rotations++;
