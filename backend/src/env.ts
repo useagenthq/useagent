@@ -147,11 +147,13 @@ export function googleAuthEnabled(): boolean {
  * when a token is also set). Neither → the whole feature is a graceful no-op and
  * the API reports `configured:false`.
  *
- * NOTE (credential model): the only GitHub creds in the pre-rebuild root `.env`
- * are a GitHub *App* (GITHUB_APP_*), which the backend does not load and
- * CLAUDE.md says not to resurrect. Minting short-lived installation tokens from
- * that App is the narrowest long-term credential, but it's a separate lift; this
- * resolver is the pluggable seam where such a source would slot in.
+ * NOTE (credential model): when no PAT is set, a configured GitHub *App*
+ * (GITHUB_APP_*) is the fallback — {@link githubAppConfig} exposes its creds and
+ * src/github/app-auth.ts mints short-lived installation tokens from them (the
+ * narrowest practical credential; private-repo listing + clone ride that token).
+ * Precedence is PAT > App > unconfigured; see {@link githubAuthSource}. The App
+ * creds live in backend/.env, synced from the root .env by
+ * scripts/sync-github-app-env.ts.
  */
 export interface GithubConfig {
   token: string | null;
@@ -169,10 +171,73 @@ export function githubConfig(): GithubConfig {
   return { token, owner };
 }
 
-/** True when repo listing can return anything (a token or an owner is set). */
+/**
+ * GitHub App credentials (GITHUB_APP_ID + GITHUB_APP_PRIVATE_KEY). Read per call
+ * like the other config resolvers; returns null unless BOTH the app id and a
+ * PEM-looking private key are present, so a partial/garbage config disables the
+ * App path with a warning rather than half-enabling it.
+ *
+ * `org` (GITHUB_ORG / GITHUB_OWNER) selects which installation to use when the
+ * App is installed on more than one account. The private key is normalized so a
+ * quoted single-line `.env` value with `\n` escapes and a real multi-line PEM
+ * both work. src/github/app-auth.ts turns these into a short-lived installation
+ * token; the token — never these creds — is what touches GitHub or a sandbox.
+ */
+export interface GithubAppConfig {
+  appId: string;
+  privateKey: string;
+  org: string | null;
+}
+
+/** Decode an `.env`-stored PEM: strip wrapping quotes and turn `\n` into newlines. */
+function normalizeGithubPem(raw: string): string {
+  let s = raw.trim();
+  if ((s.startsWith('"') && s.endsWith('"')) || (s.startsWith("'") && s.endsWith("'"))) {
+    s = s.slice(1, -1);
+  }
+  if (s.includes("\\n")) s = s.replace(/\\n/g, "\n");
+  return s.trim();
+}
+
+export function githubAppConfig(): GithubAppConfig | null {
+  const appId = process.env.GITHUB_APP_ID?.trim();
+  const rawKey = process.env.GITHUB_APP_PRIVATE_KEY;
+  if (!appId && !rawKey) return null; // unset → silently off
+  if (!appId || !rawKey) {
+    console.warn(
+      "[github] GITHUB_APP_ID/GITHUB_APP_PRIVATE_KEY is only partially set — " +
+        "GitHub App auth disabled. Set both or neither.",
+    );
+    return null;
+  }
+  const privateKey = normalizeGithubPem(rawKey);
+  if (!privateKey.includes("-----BEGIN")) {
+    console.warn(
+      "[github] GITHUB_APP_PRIVATE_KEY is set but is not a PEM private key — " +
+        "GitHub App auth disabled.",
+    );
+    return null;
+  }
+  const org =
+    process.env.GITHUB_ORG?.trim() || process.env.GITHUB_OWNER?.trim() || null;
+  return { appId, privateKey, org };
+}
+
+/** How repo listing + clone will authenticate. PAT wins; then a configured App;
+ *  else anonymous (public repos of an owner, if one is set). */
+export type GithubAuthSource = "pat" | "app" | "anon";
+
+export function githubAuthSource(): GithubAuthSource {
+  if (githubConfig().token) return "pat";
+  if (githubAppConfig()) return "app";
+  return "anon";
+}
+
+/** True when repo listing can return anything: a PAT, a GitHub App, or an owner
+ *  (whose public repos we can list unauthenticated). */
 export function githubConfigured(): boolean {
   const { token, owner } = githubConfig();
-  return Boolean(token || owner);
+  return Boolean(token || owner || githubAppConfig());
 }
 
 /**
