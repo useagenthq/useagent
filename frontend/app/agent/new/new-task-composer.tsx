@@ -5,7 +5,6 @@ import { useRouter } from "next/navigation";
 import {
   RiCpuLine,
   RiFlashlightLine,
-  RiFolderLine,
   RiGitBranchLine,
   RiHardDrive2Line,
 } from "@remixicon/react";
@@ -21,6 +20,7 @@ import {
 } from "@/components/chat/slash-command";
 import type { Skill } from "./skills-data";
 import { SearchablePicker, type PickerGroup } from "./searchable-picker";
+import { RepoMultiPicker, type RepoItem } from "./repo-multi-picker";
 
 // Real backend model ids (`value`, sent verbatim in the POST body) paired with a
 // friendly `label`. Only meaningful for the opencode engine — see the picker below.
@@ -98,8 +98,8 @@ export function NewTaskComposer({ skills }: { skills: Skill[] }) {
   const router = useRouter();
 
   const [prompt, setPrompt] = useState("");
-  const [repo, setRepo] = useState(""); // "" → No repo
-  const [repos, setRepos] = useState<{ full_name: string; name: string }[]>([]);
+  const [selectedRepos, setSelectedRepos] = useState<string[]>([]);
+  const [repos, setRepos] = useState<RepoItem[]>([]);
   const [playbook, setPlaybook] = useState(""); // "" → No playbook
   const [model, setModel] = useState(MODELS[0].value);
   const [machine, setMachine] = useState(MACHINES[0].value);
@@ -142,9 +142,9 @@ export function NewTaskComposer({ skills }: { skills: Skill[] }) {
     };
   }, []);
 
-  // Real repositories for the repo picker (GET /api/repos — the backend-held
-  // GitHub token stays server-side). Empty when unconfigured, so the picker
-  // simply offers "No repo".
+  // Real repositories for the multi-select repo picker (GET /api/repos — the
+  // backend-held GitHub token stays server-side). Empty when unconfigured, so the
+  // picker just shows "No repositories available".
   useEffect(() => {
     let cancelled = false;
     void (async () => {
@@ -152,16 +152,19 @@ export function NewTaskComposer({ skills }: { skills: Skill[] }) {
         const res = await backendFetch("/api/repos");
         if (!res.ok) return;
         const data = (await res.json()) as {
-          repos?: { full_name?: string; name?: string }[];
+          repos?: { full_name?: string; name?: string; private?: boolean }[];
         };
         if (cancelled || !Array.isArray(data.repos)) return;
         setRepos(
           data.repos
-            .filter((r): r is { full_name: string; name?: string } => !!r.full_name)
-            .map((r) => ({ full_name: r.full_name, name: r.name ?? r.full_name })),
+            .filter(
+              (r): r is { full_name: string; name?: string; private?: boolean } =>
+                !!r.full_name,
+            )
+            .map((r) => ({ full_name: r.full_name, name: r.name ?? r.full_name, private: r.private })),
         );
       } catch {
-        // no repos configured — the picker just offers "No repo"
+        // no repos configured — the picker shows nothing to select
       }
     })();
     return () => {
@@ -225,20 +228,6 @@ export function NewTaskComposer({ skills }: { skills: Skill[] }) {
     return groups;
   }, [skills]);
 
-  // Repo picker groups: a "No repo" default first, then the real repos. Value is
-  // the full "owner/name" (what the backend validates + persists); the label is
-  // the bare repo name for readability.
-  const repoGroups: PickerGroup[] = useMemo(() => {
-    const groups: PickerGroup[] = [{ options: [{ value: "", label: "No repo" }] }];
-    if (repos.length > 0) {
-      groups.push({
-        label: "Repos",
-        options: repos.map((r) => ({ value: r.full_name, label: r.name, icon: RiFolderLine })),
-      });
-    }
-    return groups;
-  }, [repos]);
-
   const canSubmit = prompt.trim().length > 0 && !submitting;
 
   async function submit() {
@@ -261,7 +250,7 @@ export function NewTaskComposer({ skills }: { skills: Skill[] }) {
           engine,
           memory_scope: memoryScope,
           ...(engine === "opencode" ? { model } : {}),
-          ...(repo ? { repo } : {}),
+          ...(selectedRepos.length ? { repos: selectedRepos } : {}),
         }),
       });
       if (!res.ok) throw new Error(String(res.status));
@@ -313,14 +302,7 @@ export function NewTaskComposer({ skills }: { skills: Skill[] }) {
 
           {/* Pickers */}
           <div className="flex flex-wrap items-center gap-0.5">
-            <SearchablePicker
-              ariaLabel="Select repository"
-              triggerLabel="Repo"
-              searchPlaceholder="Search folders, repos..."
-              groups={repoGroups}
-              value={repo}
-              onChange={setRepo}
-            />
+            <RepoMultiPicker repos={repos} value={selectedRepos} onChange={setSelectedRepos} />
             <SearchablePicker
               ariaLabel="Select playbook"
               triggerLabel="Playbook"
