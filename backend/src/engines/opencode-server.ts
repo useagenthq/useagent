@@ -16,6 +16,8 @@ import { basename, parseJsonLine, truncate } from "./util";
 import { getThreadSandbox, setRunSandbox } from "../runs/repo";
 import { githubConfig } from "../env";
 import { assertNever } from "../util/exhaustive";
+import { toolGatewayConfig } from "../knowledge/gateway/config";
+import { mintToolToken } from "../knowledge/gateway/token";
 
 // ---------------------------------------------------------------------------
 // NATIVE opencode engine — the realtime path. Instead of one-shot CLI runs, the
@@ -188,6 +190,78 @@ async function ensureRepoClone(
     // Never echo the credential — surface only the sanitized git tail.
     const detail = out.replace(/clone:\w+/g, "").trim() || "git clone error";
     throw new Error(`failed to clone ${repo}: ${truncate(detail, 200)}`);
+  }
+}
+
+/**
+ * Inject the Skynet knowledge MCP server into the sandbox's opencode config so
+ * the resident agent can call `knowledge_search`/`knowledge_read` (mem_op.md 0.2).
+ *
+ * TRUST BOUNDARY: the ONLY thing that enters the untrusted sandbox is a
+ * short-lived, run-scoped bearer TOKEN — never DB/embedding/tenant credentials.
+ * The gateway derives org/user/thread from that token server-side. We write the
+ * MCP entry into opencode's GLOBAL config (`~/.config/opencode/opencode.json`)
+ * — merged with any snapshot config, immune to a repo clone into the workspace,
+ * and loaded at `opencode serve` boot — so this MUST run BEFORE {@link ensureServer}.
+ *
+ * Gated: a no-op unless TOOL_GATEWAY_PUBLIC_URL is set (the sandbox-reachable
+ * backend origin) AND the run carries an org identity. Best-effort — a config
+ * write failure logs and continues; the run just runs without knowledge tools.
+ *
+ * KNOWN LIMITATION: a WARM resumed thread already has `opencode serve` running
+ * with the prior turn's token baked into its MCP client, so a freshly written
+ * token is not hot-reloaded until the sandbox restarts. The prior token is the
+ * same org/thread and within TTL, so authorization is unchanged; only rotation
+ * lags. Fresh sandboxes (the common case) always get the current token.
+ */
+async function ensureKnowledgeGatewayConfig(sandbox: Sandbox, ctx: EngineRunContext): Promise<void> {
+  const gw = toolGatewayConfig();
+  if (!gw || !ctx.orgId) return; // gateway not wired, or run has no org identity → fail closed (no tools)
+  try {
+    const token = mintToolToken(
+      {
+        orgId: ctx.orgId,
+        userId: ctx.userId ?? "",
+        threadId: ctx.threadId ?? ctx.runId,
+        runId: ctx.runId,
+      },
+      gw.tokenTtlMs,
+    );
+    // Merge into any existing global config so snapshot-provided settings (models,
+    // allowlists) survive. Read-parse-merge in TS (a shell JSON merge is brittle).
+    const read = await sandbox.process
+      .executeCommand("cat ~/.config/opencode/opencode.json 2>/dev/null || true", undefined, undefined, 10)
+      .catch(() => null);
+    let cfg: Record<string, unknown> = {};
+    const existing = (read?.result ?? "").trim();
+    if (existing) {
+      try {
+        cfg = JSON.parse(existing) as Record<string, unknown>;
+      } catch {
+        cfg = {}; // unparseable → start clean rather than fail the run
+      }
+    }
+    cfg["$schema"] = cfg["$schema"] ?? "https://opencode.ai/config.json";
+    const mcp = (typeof cfg.mcp === "object" && cfg.mcp ? (cfg.mcp as Record<string, unknown>) : {});
+    mcp["skynet-knowledge"] = {
+      type: "remote",
+      url: gw.mcpUrl,
+      enabled: true,
+      headers: { Authorization: `Bearer ${token}` },
+    };
+    cfg.mcp = mcp;
+    // base64 avoids every shell-escaping hazard (the token/URL never touch argv
+    // unencoded, so they are not in `ps` or logs inside the box).
+    const b64 = Buffer.from(JSON.stringify(cfg), "utf8").toString("base64");
+    await sandbox.process.executeCommand(
+      `mkdir -p ~/.config/opencode && printf %s '${b64}' | base64 -d > ~/.config/opencode/opencode.json`,
+      undefined,
+      undefined,
+      15,
+    );
+    console.log(`[opencode] knowledge MCP gateway wired for run ${ctx.runId} (org ${ctx.orgId})`);
+  } catch (e) {
+    console.warn(`[opencode] knowledge gateway config write failed (continuing without tools):`, (e as Error).message);
   }
 }
 
@@ -465,6 +539,11 @@ export const opencodeServerAdapter: EngineAdapter = {
       // Durable thread→sandbox mapping: the DB row survives restarts (the
       // in-memory map is just a cache for the preview endpoint).
       void setRunSandbox(ctx.runId, sandbox.id).catch(() => {});
+
+      // Inject the knowledge MCP gateway (run-scoped token only) into the global
+      // opencode config BEFORE booting the server, so the resident agent picks up
+      // knowledge_search/knowledge_read at `opencode serve` start. Gated + best-effort.
+      await ensureKnowledgeGatewayConfig(sandbox, ctx);
 
       // ── persistent server + preview endpoint ────────────────────────────────
       const { baseUrl, token, workdir } = await ensureServer(sandbox, npxFallback);
