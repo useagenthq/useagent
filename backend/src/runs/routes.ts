@@ -15,6 +15,7 @@ import { acceptRunCommand } from "../commands";
 import { acceptRunCancel, CANCEL_SUMMARY } from "../commands/cancel";
 import { resolveSkillSelection } from "../skills/repo";
 import { unknownRepos } from "../github/repos";
+import { formatRepoRef } from "../github/repo-ref";
 import { bus, channel, pumpThread, signalCancel, type BusEvent } from "../worker";
 import { turnStream } from "./turn-stream";
 import { assertNever } from "../util/exhaustive";
@@ -39,6 +40,7 @@ runsRoutes.post("/", async (c) => {
     parent_run_id?: unknown;
     repo?: unknown;
     repos?: unknown;
+    branches?: unknown;
     memory_scope?: unknown;
     skill?: unknown;
   };
@@ -97,7 +99,11 @@ runsRoutes.post("/", async (c) => {
   // GET /api/repos actually offers — an unknown/malformed value is a client
   // error, never silently dropped). A REPLY inherits its thread's repos (the
   // sandbox already holds the clones) and ignores any repos in its own body.
-  // Accepts `repos: string[]` (preferred) or a single `repo` string (back-compat).
+  // Accepts `repos: string[]` (preferred) or a single `repo` string (back-compat),
+  // plus an optional `branches: { "owner/name": branch }` map — a repo with no
+  // entry (or a bare payload) clones its default branch. The chosen branch is
+  // encoded onto the stored ref (see repo-ref.ts) so replay/reconnect clones the
+  // SAME branch; the validated set stays clean "owner/name".
   let repos: string[] = [];
   if (parentRunId) {
     repos = inheritedRepos;
@@ -120,7 +126,14 @@ runsRoutes.post("/", async (c) => {
           400,
         );
       }
-      repos = wanted;
+      const branchMap =
+        body.branches && typeof body.branches === "object" && !Array.isArray(body.branches)
+          ? (body.branches as Record<string, unknown>)
+          : {};
+      repos = wanted.map((r) => {
+        const b = branchMap[r];
+        return formatRepoRef(r, typeof b === "string" ? b : null);
+      });
     }
   }
 

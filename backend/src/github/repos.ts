@@ -207,6 +207,105 @@ export async function listRepos(): Promise<RepoListing> {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Branch listing — the source for the New Task composer's per-repo branch picker.
+// Same auth + degrade-honestly contract as the repo listing: unconfigured →
+// {configured:false}, configured-but-failed → {configured:true, error}. Scoped to
+// the repos we actually offer (a branch probe for an unknown repo is refused), so
+// it can't be used to proxy arbitrary repos.
+// ---------------------------------------------------------------------------
+
+/** GitHub's branch shape (only the fields we read). */
+interface GhBranch {
+  name: string;
+  protected?: boolean;
+}
+
+/** What GET /api/repos/:owner/:name/branches returns. `default_branch` is echoed
+ *  from the repo listing so the picker can mark/prefer it without a second call. */
+export interface BranchListing {
+  configured: boolean;
+  branches: string[];
+  default_branch?: string;
+  error?: string;
+}
+
+/** Branch cache keyed by `scope|full_name` (one identity per process). */
+const branchCache = new Map<string, { at: number; listing: BranchListing }>();
+
+/** Fetch up to one page (cap 100) of a repo's branches, name-sorted so the
+ *  picker order is stable. */
+async function fetchBranches(fullName: string, token: string | null): Promise<string[]> {
+  const ac = new AbortController();
+  const timer = setTimeout(() => ac.abort(), FETCH_TIMEOUT_MS);
+  try {
+    const res = await fetch(
+      `${GITHUB_API}/repos/${fullName}/branches?per_page=${PER_PAGE}`,
+      { headers: ghHeaders(token), signal: ac.signal },
+    );
+    if (!res.ok) throw new Error(`GitHub API ${res.status}`);
+    const batch = (await res.json()) as GhBranch[];
+    if (!Array.isArray(batch)) return [];
+    return batch
+      .map((b) => b.name)
+      .filter((n): n is string => typeof n === "string" && n.length > 0)
+      .sort((a, b) => a.localeCompare(b));
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
+ * List branches for one of the org's repos, cached ~5 min. Never throws: an
+ * unconfigured backend → {configured:false}; an unknown repo (not in the offered
+ * set) → {configured, error}; a failed fetch → {configured:true, error}. The UI
+ * degrades to the repo's default branch on anything but a clean list.
+ */
+export async function listBranches(fullName: string): Promise<BranchListing> {
+  if (!githubConfigured()) return { configured: false, branches: [] };
+  if (!isValidRepoRef(fullName)) {
+    return { configured: true, branches: [], error: "invalid repo reference" };
+  }
+
+  // Only branches for a repo we actually offer — this scopes the proxy AND gives
+  // us the default_branch to echo back.
+  const listing = await listRepos();
+  const known = listing.repos.find((r) => r.full_name === fullName);
+  if (!known) {
+    return {
+      configured: listing.configured,
+      branches: [],
+      error: listing.error ?? "repository not available",
+    };
+  }
+
+  const key = `${scopeKey()}|${fullName}`;
+  const now = Date.now();
+  const hit = branchCache.get(key);
+  if (hit && now - hit.at < CACHE_TTL_MS) return hit.listing;
+
+  try {
+    const auth = await resolveGithubAuth();
+    const branches = await fetchBranches(fullName, auth.token);
+    const result: BranchListing = {
+      configured: true,
+      branches,
+      default_branch: known.default_branch,
+    };
+    branchCache.set(key, { at: now, listing: result });
+    return result;
+  } catch (err) {
+    const result: BranchListing = {
+      configured: true,
+      branches: [],
+      default_branch: known.default_branch,
+      error: err instanceof Error ? err.message : "github fetch failed",
+    };
+    branchCache.set(key, { at: now, listing: result });
+    return result;
+  }
+}
+
 /** `owner/name` shape check — cheap gate before the membership lookup. */
 export function isValidRepoRef(ref: string): boolean {
   return /^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/.test(ref);
@@ -237,7 +336,8 @@ export async function unknownRepos(refs: string[]): Promise<string[]> {
   return refs.filter((r) => !isValidRepoRef(r) || !known.has(r));
 }
 
-/** Test/ops hook: drop the cache so the next list re-fetches. */
+/** Test/ops hook: drop the repo + branch caches so the next list re-fetches. */
 export function clearRepoCache(): void {
   cache = null;
+  branchCache.clear();
 }

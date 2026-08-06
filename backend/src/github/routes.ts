@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import type { AppEnv } from "../http";
 import { orgScope } from "../middleware/org";
-import { listRepos } from "./repos";
+import { listBranches, listRepos } from "./repos";
 
 // GET /api/repos — the real repository list powering the New Task composer's
 // repo picker. Org-scoped (auth required, like the other domain routes); the
@@ -11,3 +11,10 @@ export const reposRoutes = new Hono<AppEnv>();
 reposRoutes.use("*", orgScope);
 
 reposRoutes.get("/", async (c) => c.json(await listRepos()));
+
+// GET /api/repos/:owner/:name/branches — real branches for the composer's
+// per-repo branch picker. Same server-side auth; scoped to the offered repos
+// (an unknown repo returns an honest error, not arbitrary-repo proxying).
+reposRoutes.get("/:owner/:name/branches", async (c) =>
+  c.json(await listBranches(`${c.req.param("owner")}/${c.req.param("name")}`)),
+);
