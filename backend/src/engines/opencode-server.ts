@@ -60,6 +60,12 @@ function modelBody(model: string): { providerID: string; modelID: string } {
     : { providerID: "anthropic", modelID: model };
 }
 
+/** Bun's fetch accepts a per-request `timeout` (ms; 0 = disable) that neither the
+ *  DOM `RequestInit` nor Bun's own `BunFetchRequestInit` type declares, yet the
+ *  runtime honours (Bun PR #33647). Typed honestly here so the long-stream fetches
+ *  can disable Bun's 5-min idle cap without an `as any`/`as RequestInit` bypass. */
+type FetchInit = RequestInit & { timeout?: number };
+
 const FILE_TOOLS = new Set(["write", "edit", "patch", "multiedit"]);
 
 /** Render an opencode Part's tool call as a step (same grammar as the CLI
@@ -849,7 +855,11 @@ export const opencodeServerAdapter: EngineAdapter = {
         const res = await fetch(`${baseUrl}/event${dirQ}`, {
           headers: authHeaders(token),
           signal: sseAbort.signal,
-        });
+          // Disable Bun's 5-min fetch idle timeout (BUN_CONFIG_HTTP_IDLE_TIMEOUT,
+          // fixed to be overridable in Bun PR #33647) - this SSE is held open for
+          // the whole turn and was being cut at ~5min, freezing live text.
+          timeout: 0,
+        } as FetchInit);
         if (!res.ok || !res.body) return;
         const decoder = new TextDecoder();
         let buf = "";
@@ -989,7 +999,11 @@ export const opencodeServerAdapter: EngineAdapter = {
             parts: [{ type: "text", text }],
           }),
           signal: turnAbort.signal,
-        });
+          // The turn's reply arrives only at the END, so this socket is "idle" the
+          // whole time and Bun cut it at 5min (BUN_CONFIG_HTTP_IDLE_TIMEOUT). Disable
+          // per-request (Bun PR #33647) so a long turn completes on the connection.
+          timeout: 0,
+        } as FetchInit);
 
       let reply: { parts?: { type?: string; text?: string }[] };
       // The turn is driven by ONE long-held POST to the sandbox's opencode server
