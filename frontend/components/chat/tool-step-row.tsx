@@ -92,6 +92,7 @@ function markerView(marker: TimelineMarker): {
   verb: string;
   target: string;
   badge: string | null;
+  error: boolean;
 } {
   if (marker.kind === "skill") {
     return {
@@ -99,6 +100,41 @@ function markerView(marker: TimelineMarker): {
       verb: marker.playbook ? "Playbook" : "Skill",
       target: marker.name,
       badge: `v${marker.version}`,
+      error: false,
+    };
+  }
+  if (marker.kind === "memory") {
+    const pool = marker.scope === "personal" ? "personal memory" : "organization memory";
+    if (marker.failed) {
+      // Honest write failure - distinct from a 0-hit recall, never a fake save.
+      const what =
+        marker.op === "correct"
+          ? "update failed"
+          : marker.op === "forget"
+            ? "delete failed"
+            : "not saved";
+      return {
+        Icon: RiErrorWarningLine,
+        verb: "Memory",
+        target: `${what} (service unavailable)`,
+        badge: null,
+        error: true,
+      };
+    }
+    if (marker.op === "correct") {
+      return { Icon: RiDatabase2Line, verb: "Updated", target: pool, badge: null, error: false };
+    }
+    if (marker.op === "forget") {
+      return { Icon: RiDatabase2Line, verb: "Forgot", target: `from ${pool}`, badge: null, error: false };
+    }
+    // remember: L0 write is durable + searchable now; L1 distillation is async
+    // and unobserved during the turn, so "indexing" is the terminal badge.
+    return {
+      Icon: RiDatabase2Line,
+      verb: "Remembered",
+      target: `in ${pool}`,
+      badge: marker.reconciled ? "already saved" : "indexing",
+      error: false,
     };
   }
   const known = marker.source === "knowledge" || marker.source === "memory";
@@ -109,6 +145,7 @@ function markerView(marker: TimelineMarker): {
     verb: "Recalled",
     target: `${n} ${n === 1 ? "item" : "items"} from ${label}`,
     badge: null,
+    error: false,
   };
 }
 
@@ -119,14 +156,26 @@ function markerView(marker: TimelineMarker): {
  * object (the timeline replaces it only when the underlying frame changes).
  */
 export const MarkerRow = memo(function MarkerRow({ marker }: { marker: TimelineMarker }) {
-  const { Icon, verb, target, badge } = markerView(marker);
+  const { Icon, verb, target, badge, error } = markerView(marker);
   return (
     <div className="animate-ai-fade-up flex items-center gap-2 px-1.5 py-1">
-      <span className="bg-feature-lighter text-feature-base flex size-5 shrink-0 items-center justify-center rounded-md">
+      <span
+        className={cn(
+          "flex size-5 shrink-0 items-center justify-center rounded-md",
+          error ? "bg-error-lighter text-error-base" : "bg-feature-lighter text-feature-base",
+        )}
+      >
         <Icon className="size-3.5" aria-hidden />
       </span>
       <span className="min-w-0 flex-1 truncate">
-        <span className="text-feature-base text-label-sm font-medium">{verb}</span>
+        <span
+          className={cn(
+            "text-label-sm font-medium",
+            error ? "text-error-base" : "text-feature-base",
+          )}
+        >
+          {verb}
+        </span>
         {target && <span className="text-text-sub-600 ml-1.5 text-label-sm">{target}</span>}
       </span>
       {badge && (
