@@ -2,7 +2,7 @@ import { Daytona, type Sandbox } from "@daytona/sdk";
 import type { EmitStep, EngineAdapter, EngineRunContext } from "./types";
 import { composeTurnPrompt } from "./types";
 import { basename, parseJsonLine, truncate } from "./util";
-import { decideAcpPermission } from "./permission-policy";
+import { allowPermissionBypass, decideAcpPermission } from "./permission-policy";
 import { toolGatewayConfig } from "../knowledge/gateway/config";
 import { mintToolToken } from "../knowledge/gateway/token";
 import { composeSecretEnv, materializeSecretFiles } from "../secrets/inject";
@@ -212,12 +212,15 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
       // written after the sandbox is up (below).
       const secretInjection = await composeSecretEnv(ctx);
       const envVars: Record<string, string> = { ...secretInjection.createEnv };
-      // SaaS-SAFE credentials (final_harness.md P0): do NOT inject the platform's
-      // broad ANTHROPIC_API_KEY into the untrusted sandbox. Claude ACP authenticates
-      // ONLY from per-tenant credentials the org supplies via secrets
-      // (composeSecretEnv above) - tenant-scoped and revocable - or, later, a trusted
-      // provider gateway (#121). Fail-closed: an enabled claude run with no org-
-      // provided key fails rather than running on the shared platform key.
+      // Credentials (final_harness.md P0): per-tenant creds arrive via org secrets
+      // (composeSecretEnv above) - the SaaS-safe path that works in prod. The
+      // platform's broad ANTHROPIC_API_KEY is injected ONLY in verified-dev yolo
+      // (allowPermissionBypass) so a developer can exercise claude/codex ACP locally
+      // without provisioning a secret; production NEVER receives it. Longer term the
+      // trusted provider gateway (#121) replaces even the dev injection.
+      if (allowPermissionBypass() && process.env.ANTHROPIC_API_KEY) {
+        envVars.ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
+      }
 
       const autoStopInterval = Number(process.env.SANDBOX_AUTO_STOP_MIN ?? 30);
       const autoDeleteInterval = Number(process.env.SANDBOX_AUTO_DELETE_MIN ?? 4320);
