@@ -104,6 +104,24 @@ export interface EngineRunContext {
  * Every adapter MUST use this instead of hand-concatenating, so a resumed turn
  * never silently drops freshly recalled memory or this turn's skill.
  */
+/**
+ * Global agent operating rules, injected once per FRESH native session (a resumed
+ * session already holds them in its native history, exactly like bootstrapContext).
+ * Born from a real eval failure: on a task needing PostHog (credential absent), the
+ * agent sleep-and-retried the auth-gated API in a loop until the turn timeout, while
+ * reference hit the SAME missing credential, skipped that sub-step, and still delivered.
+ * This makes graceful degradation the default instead of retry-until-death.
+ */
+export const AGENT_OPERATING_RULES =
+  "<operating_rules>\n" +
+  "If a required tool, API, credential, or file is unavailable or repeatedly returns " +
+  "auth/permission errors (401/403), not-found, or empty results, do NOT sleep-and-retry " +
+  "it in a loop. Treat that dependency as unavailable: skip the sub-step it blocks, do " +
+  "everything else the task allows, and finish. A partial result that explicitly names " +
+  "what was skipped and why is far better than hanging until a timeout. Never block a " +
+  "whole task on one missing dependency.\n" +
+  "</operating_rules>\n\n";
+
 export function composeTurnPrompt(
   ctx: Pick<
     EngineRunContext,
@@ -112,7 +130,7 @@ export function composeTurnPrompt(
   resumed: boolean,
 ): string {
   const perTurn = (ctx.skillContext ?? "") + ctx.turnContext;
-  const prefix = resumed ? perTurn : ctx.bootstrapContext + perTurn;
+  const prefix = resumed ? perTurn : AGENT_OPERATING_RULES + ctx.bootstrapContext + perTurn;
   return prefix + ctx.prompt;
 }
 
