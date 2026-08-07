@@ -3,6 +3,7 @@ import type { AppEnv } from "../http";
 import { auth } from "../auth";
 import { orgScope } from "../middleware/org";
 import { isMemoryScope, type MemoryScope } from "../memory/scope";
+import { chatModelCatalog } from "./models";
 import { retrieveChatContext } from "./retrieve";
 import { chatLlmEnabled, chatModel, streamChat, type ChatMessage } from "./stream";
 
@@ -57,6 +58,11 @@ async function authedUserId(headers: Headers): Promise<string | null> {
     return null;
   }
 }
+
+// GET /api/chat/models - the served model catalog + current default. Powers the
+// Chat page's real model picker (honest: the UI renders exactly what the key
+// serves). Harmless when the LLM is unconfigured; the list is informational.
+chatRoutes.get("/models", (c) => c.json(chatModelCatalog()));
 
 // POST /api/chat - SSE. Body: { messages: [{role, content}], model?, memoryScope? }.
 // Emits `event: context` (citations) once, then a burst of `event: delta` text
