@@ -55,6 +55,13 @@ export interface OpenCodeStep {
 export interface TranslateCtx {
   runId: string;
   threadId: string;
+  /** The run's engine — the PROVENANCE stamped on step-derived events. OpenCode frames
+   *  carry their own real provider; steps do not, so a step tool row is attributed to the
+   *  run's engine ("opencode" | "claude" | "codex"). Defaults to "opencode" so every
+   *  existing caller + the golden fixture are unchanged. Claude/Codex ACP runs project
+   *  their tool_calls into `steps` and emit ~no frames, so this is their whole provenance
+   *  - we do NOT fabricate assistant-message frames they never durably persisted. */
+  engine?: string;
   /** ts source (Skynet-assigned, never trusted from the provider). Defaults to the
    *  source seq/idx for deterministic tests; the emit layer passes a real clock. */
   ts?: (seq: number) => number;
@@ -269,6 +276,9 @@ export function translateOpenCode(
   // legacy timeline order. `done` steps are terminal markers (not timeline nodes) and
   // are explicitly accounted, not silently dropped.
   const MAX = Number.MAX_SAFE_INTEGER;
+  // Steps carry no provider of their own; attribute them to the run's engine (honest
+  // provenance for claude/codex ACP tool rows, not a hardcoded "opencode").
+  const stepProvider = ctx.engine ?? "opencode";
   const stepKey = (s: OpenCodeStep): [number, number] => {
     let partID: string | null = null, messageID: string | null = null;
     if (s.code_json) {
@@ -287,7 +297,7 @@ export function translateOpenCode(
 
   for (const { s } of orderedSteps) {
     if (s.kind === "done") {
-      accounting.push({ sourceId: s.id, kind: `step:${s.kind}`, provider: "opencode", produced: [], suppressed: "terminal done step (not a timeline node)" });
+      accounting.push({ sourceId: s.id, kind: `step:${s.kind}`, provider: stepProvider, produced: [], suppressed: "terminal done step (not a timeline node)" });
       continue;
     }
     let callID: string | null = null, errored = false, native: Record<string, unknown> | undefined;
@@ -314,11 +324,11 @@ export function translateOpenCode(
       runId: ctx.runId,
       threadId: ctx.threadId,
       ts: tsOf(cursor),
-      identity: { provider: "opencode", ...ident },
+      identity: { provider: stepProvider, ...ident },
       ...body,
     });
     cursor++;
-    accounting.push({ sourceId: s.id, kind: `step:${s.kind}`, provider: "opencode", produced: [body.kind] });
+    accounting.push({ sourceId: s.id, kind: `step:${s.kind}`, provider: stepProvider, produced: [body.kind] });
   }
 
   return { events, accounting };
