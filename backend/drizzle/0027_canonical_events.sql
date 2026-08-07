@@ -1,5 +1,7 @@
 CREATE TABLE "canonical_events" (
-	"event_id" text PRIMARY KEY NOT NULL,
+	"delivery_seq" bigserial PRIMARY KEY NOT NULL,
+	"event_id" text NOT NULL,
+	"revision" integer DEFAULT 0 NOT NULL,
 	"run_id" text NOT NULL,
 	"thread_id" text NOT NULL,
 	"seq" integer NOT NULL,
@@ -13,6 +15,8 @@ CREATE TABLE "canonical_events" (
 --> statement-breakpoint
 ALTER TABLE "canonical_events" ADD CONSTRAINT "canonical_events_run_id_runs_id_fk" FOREIGN KEY ("run_id") REFERENCES "public"."runs"("id") ON DELETE no action ON UPDATE no action;
 --> statement-breakpoint
+CREATE INDEX "idx_canonical_events_thread_delivery" ON "canonical_events" USING btree ("thread_id","delivery_seq");
+--> statement-breakpoint
 CREATE INDEX "idx_canonical_events_run" ON "canonical_events" USING btree ("run_id","seq");
 --> statement-breakpoint
-CREATE INDEX "idx_canonical_events_thread" ON "canonical_events" USING btree ("thread_id","seq");
+CREATE INDEX "idx_canonical_events_event" ON "canonical_events" USING btree ("event_id");

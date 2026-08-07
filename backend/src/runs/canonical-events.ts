@@ -2,36 +2,53 @@
  * Canonical agent-event lane persistence (final_harness Phase 1, slice 3).
  *
  * The durable home of the provider-neutral canonical events (src/engines/canonical.ts).
- * The key invariant: PERSIST BEFORE PUBLISH - a canonical event is written to
- * `canonical_events` and only THEN emitted to live SSE subscribers, so a reconnect/
- * reload replays the SAME rows the live stream showed (no lost or divergent events).
- * Runs ALONGSIDE the native lane (provider_events); additive, not a replacement.
- * `eventId` is stable per (run, native event) so a revision UPSERTS (idempotent replay).
+ * Invariants:
+ *  - PERSIST BEFORE PUBLISH: an event is written to `canonical_events` and only THEN
+ *    emitted to live subscribers, so a reconnect replays the SAME rows live showed.
+ *  - IMMUTABLE THREAD-WIDE DELIVERY CURSOR: `deliverySeq` (bigserial) only increases;
+ *    a later run in a thread always gets higher values than every earlier turn; the
+ *    browser resumes with "everything after N". It is NEVER mutated/reordered.
+ *  - APPEND-ONLY REVISIONS: a re-emitted `eventId` inserts a NEW row (higher revision
+ *    + higher deliverySeq); downstream keeps the latest revision per eventId. The
+ *    per-run/source order lives in `seq`, kept separate from the delivery cursor.
+ *  - THREAD CHANNEL: publish/subscribe per THREAD (not only per run), so a subscriber
+ *    receives events from every run in the thread, including runs created later.
+ * Runs ALONGSIDE the native lane; additive.
  */
 import { EventEmitter } from "node:events";
-import { and, asc, eq, gt } from "drizzle-orm";
-import { sql } from "drizzle-orm";
+import { and, asc, eq, gt, inArray, max } from "drizzle-orm";
 import { db } from "../db/client";
 import { canonicalEvents } from "../db/schema";
 import { CANONICAL_SCHEMA_VERSION, type CanonicalAgentEvent } from "../engines/canonical";
 
+/** A persisted canonical event: the canonical event + its immutable thread delivery
+ *  cursor and revision. This is what SSE delivers and replay returns. */
+export type DeliveredCanonicalEvent = CanonicalAgentEvent & {
+  readonly deliverySeq: number;
+  readonly revision: number;
+};
+
 const bus = new EventEmitter();
 bus.setMaxListeners(0);
-export const canonicalChannel = (runId: string): string => `canonical:${runId}`;
+export const canonicalThreadChannel = (threadId: string): string => `canonical-thread:${threadId}`;
 
-/** Subscribe to a run's live canonical events. Returns an unsubscribe fn. */
-export function subscribeCanonical(runId: string, fn: (e: CanonicalAgentEvent) => void): () => void {
-  const ch = canonicalChannel(runId);
+/** Subscribe to a THREAD's live canonical events (all runs, incl. later ones). */
+export function subscribeCanonicalThread(
+  threadId: string,
+  fn: (e: DeliveredCanonicalEvent) => void,
+): () => void {
+  const ch = canonicalThreadChannel(threadId);
   bus.on(ch, fn);
   return () => bus.off(ch, fn);
 }
 
-type Row = typeof canonicalEvents.$inferInsert;
+type SelectRow = typeof canonicalEvents.$inferSelect;
 
-function toRow(e: CanonicalAgentEvent): Row {
+function toInsertRow(e: CanonicalAgentEvent, revision: number) {
   const { schemaVersion: _sv, eventId, seq, runId, threadId, turnId, ts, identity, ...body } = e;
   return {
     eventId,
+    revision,
     runId,
     threadId,
     seq,
@@ -43,7 +60,7 @@ function toRow(e: CanonicalAgentEvent): Row {
   };
 }
 
-function rowToEvent(r: typeof canonicalEvents.$inferSelect): CanonicalAgentEvent {
+function rowToDelivered(r: SelectRow): DeliveredCanonicalEvent {
   return {
     schemaVersion: CANONICAL_SCHEMA_VERSION,
     eventId: r.eventId,
@@ -54,53 +71,55 @@ function rowToEvent(r: typeof canonicalEvents.$inferSelect): CanonicalAgentEvent
     identity: r.identity as unknown as CanonicalAgentEvent["identity"],
     ...(r.turnId ? { turnId: r.turnId } : {}),
     ...(r.body as object),
-  } as CanonicalAgentEvent;
+    deliverySeq: r.deliverySeq,
+    revision: r.revision,
+  } as DeliveredCanonicalEvent;
 }
 
-/** Durably persist canonical events (idempotent upsert on eventId; a revision keeps
- *  the latest seq/ts/body). Does NOT publish - callers use persistAndPublish so the
- *  persist-before-publish ordering is explicit. */
-export async function persistCanonicalEvents(events: readonly CanonicalAgentEvent[]): Promise<void> {
-  if (events.length === 0) return;
-  await db
-    .insert(canonicalEvents)
-    .values(events.map(toRow))
-    .onConflictDoUpdate({
-      target: canonicalEvents.eventId,
-      set: {
-        seq: sql`excluded.seq`,
-        ts: sql`excluded.ts`,
-        kind: sql`excluded.kind`,
-        identity: sql`excluded.identity`,
-        body: sql`excluded.body`,
-      },
-    });
+/** Append canonical events durably (never mutates a delivered cursor): each event is
+ *  a NEW row with an auto-assigned deliverySeq; a re-emitted eventId gets the next
+ *  revision. Returns the delivered rows (with their assigned deliverySeq). */
+export async function persistCanonicalEvents(
+  events: readonly CanonicalAgentEvent[],
+): Promise<DeliveredCanonicalEvent[]> {
+  if (events.length === 0) return [];
+  const ids = [...new Set(events.map((e) => e.eventId))];
+  const existing = await db
+    .select({ eventId: canonicalEvents.eventId, rev: max(canonicalEvents.revision) })
+    .from(canonicalEvents)
+    .where(inArray(canonicalEvents.eventId, ids))
+    .groupBy(canonicalEvents.eventId);
+  const nextRev = new Map<string, number>(existing.map((r) => [r.eventId, (r.rev ?? -1) + 1]));
+  const rows = events.map((e) => {
+    const rev = nextRev.get(e.eventId) ?? 0;
+    nextRev.set(e.eventId, rev + 1); // within-batch duplicate eventId (rare) still advances
+    return toInsertRow(e, rev);
+  });
+  const inserted = await db.insert(canonicalEvents).values(rows).returning();
+  return inserted.map(rowToDelivered);
 }
 
-/** PERSIST-BEFORE-SSE: write the events durably, and ONLY after the write resolves,
- *  publish them to live subscribers. Replay (loadCanonicalThread) and live therefore
- *  serve the SAME rows. */
-export async function persistAndPublish(events: readonly CanonicalAgentEvent[]): Promise<void> {
-  await persistCanonicalEvents(events);
-  for (const e of events) bus.emit(canonicalChannel(e.runId), e);
+/** PERSIST-BEFORE-SSE: append durably, and ONLY after the write resolves, publish to
+ *  the THREAD channel so live subscribers and replay serve the SAME rows/cursors. */
+export async function persistAndPublish(
+  events: readonly CanonicalAgentEvent[],
+): Promise<DeliveredCanonicalEvent[]> {
+  const delivered = await persistCanonicalEvents(events);
+  for (const d of delivered) bus.emit(canonicalThreadChannel(d.threadId), d);
+  return delivered;
 }
 
-/** Replay a thread's canonical events after a cursor (for reconnect/reload). */
-export async function loadCanonicalThread(threadId: string, afterSeq = -1): Promise<CanonicalAgentEvent[]> {
+/** Replay a THREAD's canonical events after a delivery cursor (reconnect/reload).
+ *  Returns rows in delivery order across ALL runs in the thread; the client keeps the
+ *  latest revision per eventId. */
+export async function loadCanonicalThread(
+  threadId: string,
+  afterDeliverySeq = 0,
+): Promise<DeliveredCanonicalEvent[]> {
   const rows = await db
     .select()
     .from(canonicalEvents)
-    .where(and(eq(canonicalEvents.threadId, threadId), gt(canonicalEvents.seq, afterSeq)))
-    .orderBy(asc(canonicalEvents.seq));
-  return rows.map(rowToEvent);
-}
-
-/** Replay a single run's canonical events after a cursor. */
-export async function loadCanonicalRun(runId: string, afterSeq = -1): Promise<CanonicalAgentEvent[]> {
-  const rows = await db
-    .select()
-    .from(canonicalEvents)
-    .where(and(eq(canonicalEvents.runId, runId), gt(canonicalEvents.seq, afterSeq)))
-    .orderBy(asc(canonicalEvents.seq));
-  return rows.map(rowToEvent);
+    .where(and(eq(canonicalEvents.threadId, threadId), gt(canonicalEvents.deliverySeq, afterDeliverySeq)))
+    .orderBy(asc(canonicalEvents.deliverySeq));
+  return rows.map(rowToDelivered);
 }

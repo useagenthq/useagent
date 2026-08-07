@@ -2,6 +2,7 @@ import { sql } from "drizzle-orm";
 import {
   type AnyPgColumn,
   bigint,
+  bigserial,
   boolean,
   index,
   integer,
@@ -251,17 +252,28 @@ export const providerEvents = pgTable(
  * backend translates every harness INTO (see src/engines/canonical.ts). Persisted
  * BEFORE publishing to the browser SSE so replay + live use the SAME rows. Runs
  * ALONGSIDE provider_events (the bounded raw sidecar) - additive, not a replacement.
- * `eventId` is stable per (run, native event) so a revision UPSERTS (idempotent).
+ *
+ * TWO distinct cursors, deliberately separated:
+ *  - `deliverySeq` (bigserial PK) is the IMMUTABLE, append-only, THREAD-wide delivery
+ *    cursor. It only ever increases; a later run in a thread always gets higher
+ *    values than every earlier turn; a browser resumes with "everything after N".
+ *  - `seq` is the per-run/source ordering (the translator's dense intra-run cursor)
+ *    used to reconstruct a single run's order - never a delivery cursor.
+ * Revisions are APPEND-ONLY: a re-emitted `eventId` inserts a NEW row (higher
+ * `revision`, higher `deliverySeq`) - it never mutates/reorders an already-delivered
+ * cursor. Downstream keeps the latest revision per `eventId`.
  */
 export const canonicalEvents = pgTable(
   "canonical_events",
   {
-    eventId: text("event_id").primaryKey(),
+    deliverySeq: bigserial("delivery_seq", { mode: "number" }).primaryKey(),
+    eventId: text("event_id").notNull(), // stable per (run, native event); NOT unique - revisions append
+    revision: integer("revision").notNull().default(0),
     runId: text("run_id")
       .notNull()
       .references(() => runs.id),
     threadId: text("thread_id").notNull(),
-    seq: integer("seq").notNull(), // Skynet's dense monotonic thread cursor
+    seq: integer("seq").notNull(), // per-run/source ordering (NOT a delivery cursor)
     turnId: text("turn_id"),
     kind: text("kind").notNull(),
     ts: bigint("ts", { mode: "number" }).notNull(), // Skynet-assigned ms epoch
@@ -270,8 +282,9 @@ export const canonicalEvents = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
+    index("idx_canonical_events_thread_delivery").on(t.threadId, t.deliverySeq),
     index("idx_canonical_events_run").on(t.runId, t.seq),
-    index("idx_canonical_events_thread").on(t.threadId, t.seq),
+    index("idx_canonical_events_event").on(t.eventId),
   ],
 );
 
