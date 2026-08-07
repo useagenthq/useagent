@@ -298,6 +298,12 @@ function TurnBlock({ turn, onSendNow }: { turn: Turn; onSendNow?: () => void }) 
     return turn.native ? buildTimeline(turn.native, live) : null;
   }, [turn.native, turn.canonical, turn.canonicalComplete, turn.steps, live]);
 
+  // Which lane actually drove the timeline above - a test/debug hook (asserted by the
+  // flag-on browser E2E to prove the canonical path really rendered, not just that a
+  // timeline appeared). Cheap + pure.
+  const timelineSource: "canonical" | "native" =
+    shouldUseCanonicalTimeline(CANONICAL_TIMELINE, turn) ? "canonical" : "native";
+
   const activity = steps.filter((s) => s.kind !== "done");
   const latestLabel = activity.at(-1)?.label ?? "Starting up";
   const failed = status === "failed";
@@ -370,11 +376,11 @@ function TurnBlock({ turn, onSendNow }: { turn: Turn; onSendNow?: () => void }) 
              and their tool rows in true order (live and settled alike). Its final
              burst is the answer, so the durable summary is re-rendered only when
              the timeline carried no narration (a tool-only turn). */
-          <>
+          <div data-timeline-source={timelineSource}>
             <Timeline nodes={timeline} live={live} />
             {summary && !hasNarration(timeline) && <AgentAnswer summary={summary} />}
             {failed && !summary && !hasNarration(timeline) && <FailedNote />}
-          </>
+          </div>
         ) : (
           /* Fallback (no native frames): activity first, then the answer. One live
              indicator at a time — while narration streams it IS the indicator, so
