@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import type { EmitStep, EngineAdapter, EngineRunContext } from "./types";
+import { acpAutoApprove } from "../env";
 import { composeTurnPrompt } from "./types";
 import { basename, childEnv, parseJsonLine, readLines, truncate } from "./util";
 
@@ -276,15 +277,17 @@ export const acpAdapter: EngineAdapter = {
 
     const handleServerRequest = (msg: JsonRpcMsg): void => {
       if (msg.method === "session/request_permission") {
-        // Yolo: always approve. Prefer a one-shot allow, then allow-always,
-        // then whatever option exists; cancel only if none advertised.
+        // SECURITY (final_harness.md P0): fail CLOSED - DENY by default. Auto-
+        // approval is a dev-only opt-in (ACP_YOLO_APPROVE); the real approval policy
+        // is enforced in the trusted backend (Phase 3). Never yolo-approve in SaaS.
         const options =
           (msg.params as { options?: Array<{ optionId: string; kind: string }> } | undefined)
             ?.options ?? [];
-        const pick =
-          options.find((o) => o.kind === "allow_once") ??
-          options.find((o) => o.kind === "allow_always") ??
-          options[0];
+        const pick = acpAutoApprove()
+          ? (options.find((o) => o.kind === "allow_once") ??
+             options.find((o) => o.kind === "allow_always") ??
+             options[0])
+          : undefined;
         writeFrame({
           jsonrpc: "2.0",
           id: msg.id,

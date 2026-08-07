@@ -5,12 +5,15 @@
 // worker enforcement changes so the intended behavior is pinned first.
 
 import { afterEach, describe, expect, test } from "bun:test";
-import { enabledEngines, isEngineEnabled } from "./env";
+import { acpAutoApprove, enabledEngines, isEngineEnabled } from "./env";
 
 const orig = process.env.ENABLED_ENGINES;
+const origYolo = process.env.ACP_YOLO_APPROVE;
 afterEach(() => {
   if (orig === undefined) delete process.env.ENABLED_ENGINES;
   else process.env.ENABLED_ENGINES = orig;
+  if (origYolo === undefined) delete process.env.ACP_YOLO_APPROVE;
+  else process.env.ACP_YOLO_APPROVE = origYolo;
 });
 
 describe("engine enablement gate (P0 security)", () => {
@@ -44,5 +47,21 @@ describe("engine enablement gate (P0 security)", () => {
   test("fail closed on an entirely unknown engine id", () => {
     delete process.env.ENABLED_ENGINES;
     expect(isEngineEnabled("totally-unknown")).toBe(false);
+  });
+});
+
+describe("ACP permission auto-approve (P0 fail-closed)", () => {
+  test("OFF by default - ACP permissions are denied, not yolo-approved", () => {
+    delete process.env.ACP_YOLO_APPROVE;
+    expect(acpAutoApprove()).toBe(false);
+  });
+
+  test("only an explicit dev opt-in turns it on", () => {
+    process.env.ACP_YOLO_APPROVE = "1";
+    expect(acpAutoApprove()).toBe(true);
+    process.env.ACP_YOLO_APPROVE = "true";
+    expect(acpAutoApprove()).toBe(true);
+    process.env.ACP_YOLO_APPROVE = "yes"; // anything else stays closed
+    expect(acpAutoApprove()).toBe(false);
   });
 });

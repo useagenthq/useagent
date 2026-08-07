@@ -62,6 +62,17 @@ export function isEngineEnabled(engine: string): boolean {
   return enabledEngines().has(engine as EngineId);
 }
 
+/**
+ * DEV-ONLY escape hatch to auto-approve ACP permission requests (yolo). Default
+ * OFF (fail CLOSED): final_harness.md P0 forbids auto-approving tool permissions
+ * in a team/SaaS deployment. The real fix is a trusted-backend approval policy
+ * evaluated outside the sandbox (Phase 3); until then ACP permission requests are
+ * DENIED unless an operator explicitly sets ACP_YOLO_APPROVE=1 for a local run.
+ */
+export function acpAutoApprove(): boolean {
+  return process.env.ACP_YOLO_APPROVE === "1" || process.env.ACP_YOLO_APPROVE === "true";
+}
+
 const DEFAULT_AUTH_SECRET = "dev-skynet-secret-change-me";
 
 /** Resolve the auth secret. Production (dev mode off) must supply its own. */
