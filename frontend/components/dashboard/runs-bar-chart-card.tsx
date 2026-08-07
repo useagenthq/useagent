@@ -39,7 +39,7 @@ export function RunsBarChartCard({ data, total }: { data: DayBucket[]; total: nu
       <div className='flex items-start justify-between'>
         <div className='flex flex-col gap-0.5'>
           <p className='text-paragraph-sm text-text-sub-600'>Runs this week</p>
-          <p className='text-title-h5 tabular-nums text-text-strong-950'>{total}</p>
+          <p className='text-label-lg font-semibold tracking-[-0.1px] tabular-nums text-text-strong-950'>{total}</p>
         </div>
         <span className='text-paragraph-xs text-text-soft-400'>Last 7 days</span>
       </div>
@@ -62,7 +62,7 @@ export function RunsBarChartCard({ data, total }: { data: DayBucket[]; total: nu
             <Tooltip cursor={false} content={<BarTooltip />} />
             <Bar
               dataKey='total'
-              fill='hsl(var(--primary-base))'
+              fill='#0077E6'
               radius={[6, 6, 6, 6]}
               maxBarSize={28}
               background={{ fill: 'hsl(var(--bg-weak-50))', radius: 6 }}

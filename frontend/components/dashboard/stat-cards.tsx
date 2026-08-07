@@ -27,7 +27,7 @@ export function StatCards({ stats }: { stats: StatItem[] }) {
           <div className='flex flex-col gap-1'>
             <p className='text-paragraph-sm text-text-sub-600'>{stat.label}</p>
             <div className='flex flex-wrap items-center gap-2'>
-              <p className='whitespace-nowrap text-title-h5 tabular-nums text-text-strong-950'>
+              <p className='whitespace-nowrap text-label-lg font-semibold tracking-[-0.1px] tabular-nums text-text-strong-950'>
                 {stat.value}
               </p>
               {stat.delta && (

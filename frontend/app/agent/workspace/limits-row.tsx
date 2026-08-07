@@ -86,7 +86,7 @@ function ModelsPanel({ fleet }: { fleet: FleetData | null }) {
 
       <div className="mt-4 flex items-end justify-between border-t border-stroke-soft-200 pt-4">
         <div>
-          <p className="font-mono text-title-h5 font-semibold tabular-nums text-text-strong-950">
+          <p className="font-mono text-label-lg font-semibold tabular-nums text-text-strong-950">
             <NumberTicker value={fleet?.totalTokens ?? 0} format={compactNumber} />
           </p>
           <p className="mt-1 text-mono-label text-text-soft-400">tokens today</p>
@@ -122,7 +122,7 @@ function MachinePanel({ machine }: { machine: MachineStats | null }) {
       ) : (
         <>
           <div className="mb-4">
-            <p className="font-mono text-title-h5 font-semibold tabular-nums text-text-strong-950">
+            <p className="font-mono text-label-lg font-semibold tabular-nums text-text-strong-950">
               <NumberTicker value={sandboxes.active} />
             </p>
             <p className="mt-1 text-mono-label text-text-soft-400">active sandboxes</p>

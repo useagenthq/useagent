@@ -95,7 +95,7 @@ export function InsightCard({
       </div>
       <div className={cn("flex items-center gap-1", meta.text)}>
         <ToneIcon className="size-4 shrink-0" aria-hidden />
-        <span className="text-title-h5 tabular-nums">{delta}</span>
+        <span className="text-label-lg font-semibold tracking-[-0.1px] tabular-nums">{delta}</span>
       </div>
       <p className="text-paragraph-sm text-text-sub-600">{body}</p>
     </div>

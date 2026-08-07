@@ -41,7 +41,7 @@ export function ContributionsCard({
         <div className='flex flex-col gap-0.5'>
           <p className='text-paragraph-sm text-text-sub-600'>Run activity</p>
           <div className='flex items-center gap-2'>
-            <p className='text-title-h5 tabular-nums text-text-strong-950'>{total}</p>
+            <p className='text-label-lg font-semibold tracking-[-0.1px] tabular-nums text-text-strong-950'>{total}</p>
             <span className='text-paragraph-xs text-text-soft-400'>
               runs in the last {weeks} weeks
             </span>
