@@ -288,6 +288,38 @@ export const canonicalEvents = pgTable(
   ],
 );
 
+export type CanonicalizationState = "pending" | "translating" | "complete" | "dead";
+
+/**
+ * Durable canonicalization outbox (final_harness Phase 1 hardening). One row per run,
+ * enqueued INSIDE the run-finalization transaction so the intent to canonicalize
+ * commits ATOMICALLY with the run reaching a terminal state - a crash never leaves a
+ * settled run with no canonical history. A worker claims due rows (FOR UPDATE SKIP
+ * LOCKED, multi-instance-safe), translates the source (frames + steps), and marks
+ * `complete` ONLY when the SOURCE WATERMARK is stable across the translate (so a late
+ * fire-and-forget native write can't leave a partial translation marked done). The
+ * `complete` row + watermark is the authoritative "canonicalization done" record -
+ * React trusts canonical only when it exists.
+ */
+export const canonicalizationOutbox = pgTable(
+  "canonicalization_outbox",
+  {
+    runId: text("run_id").primaryKey().references(() => runs.id),
+    threadId: text("thread_id").notNull(),
+    state: text("state").$type<CanonicalizationState>().notNull().default("pending"),
+    /** Watermark of the source that was translated to reach `complete`. */
+    sourceFrameMax: integer("source_frame_max"),
+    sourceStepCount: integer("source_step_count"),
+    attemptCount: integer("attempt_count").notNull().default(0),
+    maxAttempts: integer("max_attempts").notNull().default(8),
+    nextAttemptAt: timestamp("next_attempt_at", { withTimezone: true }).notNull().defaultNow(),
+    lastError: text("last_error"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("idx_canon_outbox_due").on(t.state, t.nextAttemptAt)],
+);
+
 // ---------------------------------------------------------------------------
 // Skills — org-scoped reusable playbooks.
 // ---------------------------------------------------------------------------

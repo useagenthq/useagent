@@ -34,6 +34,10 @@ import { terminalRoutes } from "./runs/terminal";
 import { schedulesRoutes } from "./schedules/routes";
 import { startScheduler } from "./schedules/scheduler";
 import { startCaptureDelivery } from "./memory/capture-outbox";
+import {
+  resetStuckCanonicalization,
+  startCanonicalizationOutbox,
+} from "./runs/canonicalization-outbox";
 import { secretsRoutes } from "./secrets/routes";
 import { seedDev } from "./seed";
 import { skillImportRoutes } from "./skills/import-routes";
@@ -62,6 +66,12 @@ if (recovery.reconciled > 0 || recovery.failed > 0 || recovery.redispatched > 0 
       `${recovery.parked} parked for re-probe`,
   );
 }
+
+// Canonicalization-outbox boot recovery: a crash mid-translate strands a
+// `translating` row. Reset it to `pending` so the worker retries — SAFE because
+// canonicalization is an idempotent full replace while still provisional.
+const canonReset = await resetStuckCanonicalization();
+if (canonReset > 0) console.log(`[boot] canonicalization recovery — ${canonReset} stuck rows re-armed`);
 
 const app = new Hono<AppEnv>();
 
@@ -185,6 +195,13 @@ startScheduler();
 // memory is disabled (deliverTeamMemory no-ops). AT-MOST-once (crash-orphaned
 // `delivering` rows await manual inspection, never auto-retried).
 startCaptureDelivery();
+
+// Canonical-lane outbox delivery loop (1s tick, final_harness Phase 1). Drains
+// each settled run's enqueued canonicalization: translates the native source to
+// canonical events with a source-watermark stability check, replaces provisional
+// rows, and marks `complete` only when the whole source was translated. Harmless
+// when nothing is due; multi-instance safe (FOR UPDATE SKIP LOCKED claim).
+startCanonicalizationOutbox();
 
 // Adaptive post-boot reconciler (#63, 15s tick). Re-probes runs PARKED by boot
 // recovery (native session may still be finishing after a fast restart): adopts

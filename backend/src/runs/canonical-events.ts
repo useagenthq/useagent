@@ -20,9 +20,6 @@ import { and, asc, eq, gt, inArray, max } from "drizzle-orm";
 import { db } from "../db/client";
 import { canonicalEvents } from "../db/schema";
 import { CANONICAL_SCHEMA_VERSION, type CanonicalAgentEvent } from "../engines/canonical";
-import { getNativeFramesSince } from "./native-events";
-import { getStepsApi } from "./repo";
-import { translateOpenCode, type OpenCodeFrame, type OpenCodeStep } from "../engines/opencode-canonical";
 
 /** A persisted canonical event: the canonical event + its immutable thread delivery
  *  cursor and revision. This is what SSE delivers and replay returns. */
@@ -102,38 +99,37 @@ export async function persistCanonicalEvents(
   return inserted.map(rowToDelivered);
 }
 
+/** Publish already-persisted events to their thread channel (persist-before-publish
+ *  is the caller's responsibility). */
+export function publishDelivered(delivered: readonly DeliveredCanonicalEvent[]): void {
+  for (const d of delivered) bus.emit(canonicalThreadChannel(d.threadId), d);
+}
+
 /** PERSIST-BEFORE-SSE: append durably, and ONLY after the write resolves, publish to
  *  the THREAD channel so live subscribers and replay serve the SAME rows/cursors. */
 export async function persistAndPublish(
   events: readonly CanonicalAgentEvent[],
 ): Promise<DeliveredCanonicalEvent[]> {
   const delivered = await persistCanonicalEvents(events);
-  for (const d of delivered) bus.emit(canonicalThreadChannel(d.threadId), d);
+  publishDelivered(delivered);
   return delivered;
 }
 
-/** Translate a settled OpenCode run's native frames + durable steps into canonical
- *  events and persist+publish them ALONGSIDE the native lane (slice 3b). Idempotent:
- *  a no-op if the run already has canonical rows (finalizeRun may run more than once).
- *  Best-effort - the caller must never let a failure here affect the run. */
-export async function translateAndPersistRun(runId: string, threadId: string): Promise<number> {
-  const [already] = await db
-    .select({ id: canonicalEvents.deliverySeq })
-    .from(canonicalEvents)
-    .where(eq(canonicalEvents.runId, runId))
-    .limit(1);
-  if (already) return 0; // already translated - don't append duplicate revisions
-
-  const [frames, steps] = await Promise.all([getNativeFramesSince(runId, -1), getStepsApi(runId)]);
-  if (frames.length === 0 && steps.length === 0) return 0;
-  const { events } = translateOpenCode(
-    frames as unknown as OpenCodeFrame[],
-    { runId, threadId },
-    steps as unknown as OpenCodeStep[],
-  );
-  if (events.length === 0) return 0;
-  const delivered = await persistAndPublish(events);
-  return delivered.length;
+/** Atomically REPLACE a run's canonical rows (delete + fresh insert, revision 0) in
+ *  one transaction. Used by the canonicalization outbox: while a run's canonicalization
+ *  is still provisional (not yet `complete`), a retry replaces any partial output
+ *  cleanly - safe because React never trusts canonical until the completion record
+ *  exists. Once complete the outbox stops, so completed rows are never mutated. */
+export async function replaceCanonicalForRun(
+  runId: string,
+  events: readonly CanonicalAgentEvent[],
+): Promise<DeliveredCanonicalEvent[]> {
+  return db.transaction(async (tx) => {
+    await tx.delete(canonicalEvents).where(eq(canonicalEvents.runId, runId));
+    if (events.length === 0) return [];
+    const inserted = await tx.insert(canonicalEvents).values(events.map((e) => toInsertRow(e, 0))).returning();
+    return inserted.map(rowToDelivered);
+  });
 }
 
 /** Replay a THREAD's canonical events after a delivery cursor (reconnect/reload).
