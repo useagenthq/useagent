@@ -180,7 +180,12 @@ export function translateOpenCode(
     const p = rec(f.payload);
     const et = f.eventType;
     const produced: CanonicalEventKind[] = [];
-    const ident = { nativeSessionId: f.native.sessionId ?? undefined, nativeSeq: f.seq };
+    const ident = {
+      nativeSessionId: f.native.sessionId ?? undefined,
+      nativeSeq: f.seq,
+      nativeMessageId: f.native.messageId ?? undefined,
+      nativePartId: f.native.partId ?? undefined,
+    };
     let suppressed: string | undefined;
 
     ensureChild(produced, f); // lossless child-session establishment
@@ -194,7 +199,11 @@ export function translateOpenCode(
     } else if (et.startsWith("session")) {
       produced.push(push(f.eventId, f.provider, { kind: "session.metadata", metadata: p ?? {} }, ident));
     } else if (et === "part.step-start") {
-      suppressed = "assistant message boundary (tracked for text routing; no canonical event)";
+      // The message ANCHOR (lowest seq per message) - emitted losslessly so view
+      // reducers can reproduce message-anchored ordering. Skipped only if it carries
+      // no messageId (nothing to anchor).
+      if (f.native.messageId) produced.push(push(f.eventId, f.provider, { kind: "message.started", messageId: f.native.messageId }, ident));
+      else suppressed = "step-start without messageId";
     } else if (et === "part.step-finish") {
       const mid = f.native.messageId;
       if (mid) produced.push(push(f.eventId, f.provider, { kind: "message.completed", messageId: mid }, ident));

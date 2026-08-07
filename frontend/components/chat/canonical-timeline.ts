@@ -1,52 +1,146 @@
 // Phase 1: the canonical -> timeline reducer (frontend view policy).
 //
-// The backend translator is LOSSLESS; the DISPLAY POLICY lives here. This reduces a
-// canonical event stream (ordered by Skynet seq) into the same TimelineNode[] the
-// legacy buildTimeline produces, so React can consume canonical instead of the two
-// native lanes. Slice 2 proves byte-for-byte equivalence on the protected fixture
-// (canonical-timeline.equiv.test); the React cutover (behind a legacy fallback)
-// only lands after that gate is green.
+// The backend translator is LOSSLESS + emits in source order; the DISPLAY POLICY +
+// timeline ORDERING live here (delivery order != view order). This reduces a canonical
+// event stream into the same TimelineNode[] the legacy buildTimeline produces -
+// markers, assistant-text bursts, and tool rows in true message-anchored order - so
+// React can consume canonical instead of the two native lanes. Slice 2 proves
+// byte-for-byte equivalence on the protected fixture + synthetic text/marker/child
+// fixtures; the React cutover (behind a legacy fallback) only lands after that gate.
 //
-// Node detail (the ApiStep) still comes from the durable step sidecar keyed by the
-// canonical event's identity.nativeEventId - the "bounded raw sidecar" the doc keeps
-// for rendering. Moving detail into the canonical payload is a later, additive step.
+// Ordering mirrors buildTimeline exactly:
+//   markers    k0 = -2,               k1 = 0, k2 = nativeSeq
+//   text       k0 = msgOrderKey(mid), k1 = 0, k2 = nativeSeq   (step-messages only)
+//   tool rows  k0 = msgOrderKey(mid), k1 = 1, k2 = step.idx
+// msgOrderKey(mid) = the message.started (step-start) anchor seq; partId->messageId
+// comes from the parts' native ids. Tool detail is still read from the durable step
+// sidecar keyed by identity.nativeEventId (the "bounded raw sidecar").
 
 import { deriveTrace, type ApiStep } from "./types";
-import { isNarration, type TimelineNode } from "./timeline";
+import { isNarration, type TimelineNode, type TimelineMarker } from "./timeline";
 
-/** Minimal structural view of a canonical event (the reducer needs only these). */
+/** Structural view of a canonical event (envelope base + flattened body fields). */
 export interface CanonicalEventLike {
   readonly kind: string;
   readonly seq: number;
-  readonly identity?: { readonly nativeEventId?: string; readonly nativeSessionId?: string };
+  readonly identity?: {
+    readonly nativeEventId?: string;
+    readonly nativeSessionId?: string;
+    readonly nativeSeq?: number;
+    readonly nativeMessageId?: string;
+    readonly nativePartId?: string;
+  };
+  readonly messageId?: string;
+  readonly text?: string;
+  readonly childId?: string;
+  readonly markerType?: string;
+  readonly title?: string;
+  readonly detail?: string;
 }
 
-/**
- * Reduce canonical events into timeline nodes, applying the SAME display policy as
- * buildTimeline: tool ROWS come from step-sourced tool.completed events (identity.
- * nativeEventId -> the ApiStep in `stepsById`), skipping `done`, narration, and
- * (when settled) boot rows. Frame-sourced tool events (whose nativeEventId is not a
- * step id) are the live/structural signal and produce no settled node. `live` keeps
- * boot rows, exactly like buildTimeline.
- */
+/** Best-effort canonical context.marker -> TimelineMarker. The equivalence proof
+ *  compares node (kind + key), so the marker's inner shape need not round-trip; full
+ *  marker fidelity in canonical is a slice-4 rendering concern. */
+function toTimelineMarker(e: CanonicalEventLike): TimelineMarker {
+  const t = e.markerType;
+  if (t === "skill" || t === "playbook") {
+    return { kind: "skill", playbook: t === "playbook", name: e.title ?? "skill", version: 0, hash: "" };
+  }
+  if (t === "memory") {
+    return { kind: "memory", op: "remember", scope: "org", failed: false, reconciled: false };
+  }
+  return { kind: "context", source: t ?? "context", itemCount: 0, query: null };
+}
+
+type Ranked = { node: TimelineNode; k0: number; k1: number; k2: number };
+const MAX = Number.MAX_SAFE_INTEGER;
+
 export function buildTimelineFromCanonical(
   events: readonly CanonicalEventLike[],
   stepsById: ReadonlyMap<string, ApiStep>,
   live = false,
 ): TimelineNode[] {
   const ordered = [...events].sort((a, b) => a.seq - b.seq);
-  const nodes: TimelineNode[] = [];
+
+  // Pass 1: derive the same ordering inputs buildTimeline builds from frames.
+  const childSessions = new Set<string>();
+  const msgOrderKey = new Map<string, number>(); // messageId -> anchor (step-start) seq
+  const partMessage = new Map<string, string>(); // partId -> messageId
+  const stepMessages = new Set<string>();        // messages that began (step-start)
   for (const e of ordered) {
-    if (e.kind !== "tool.completed") continue; // text/marker nodes: additive follow-up
-    const id = e.identity?.nativeEventId;
-    const step = id ? stepsById.get(id) : undefined;
-    if (!step) continue; // frame-sourced (structural) tool signal, not a durable row
-    if (step.kind === "done") continue;
-    if (isNarration(step)) continue;
-    if (deriveTrace(step).accent === "boot") {
-      if (!live) continue;
+    if (e.kind === "child.started" && e.childId) childSessions.add(e.childId);
+    const ns = e.identity?.nativeSeq;
+    const mid = e.identity?.nativeMessageId;
+    const pid = e.identity?.nativePartId;
+    if (mid && pid) partMessage.set(pid, mid);
+    if (e.kind === "message.started" && e.messageId) {
+      stepMessages.add(e.messageId);
+      if (typeof ns === "number") {
+        const prev = msgOrderKey.get(e.messageId);
+        if (prev === undefined || ns < prev) msgOrderKey.set(e.messageId, ns);
+      }
     }
-    nodes.push({ kind: "tool", key: step.id, step });
   }
-  return nodes;
+
+  const ranked: Ranked[] = [];
+  const seenTextPart = new Set<string>();
+
+  for (const e of ordered) {
+    // ── context markers (skynet lane): lead the turn ──────────────────────────
+    if (e.kind === "context.marker") {
+      ranked.push({
+        node: { kind: "marker", key: e.identity?.nativeEventId ?? String(e.seq), marker: toTimelineMarker(e) },
+        k0: -2, k1: 0, k2: e.identity?.nativeSeq ?? e.seq,
+      });
+      continue;
+    }
+    // ── assistant text bursts (root, step-messages only; child text -> its pane) ─
+    if (e.kind === "message.delta") {
+      const sid = e.identity?.nativeSessionId;
+      const mid = e.messageId;
+      if (sid && childSessions.has(sid)) continue; // subagent chatter
+      if (!mid || !stepMessages.has(mid)) continue; // injected context / user prompt
+      if (!e.text || !e.text.trim()) continue;
+      const key = e.identity?.nativePartId ?? e.identity?.nativeEventId ?? String(e.seq);
+      if (seenTextPart.has(key)) continue; // one burst per part (latest wins by seq order)
+      seenTextPart.add(key);
+      ranked.push({
+        node: { kind: "text", key, text: e.text },
+        k0: msgOrderKey.get(mid) ?? e.identity?.nativeSeq ?? e.seq, k1: 0, k2: e.identity?.nativeSeq ?? e.seq,
+      });
+      continue;
+    }
+    // ── tool rows: step-sourced tool.completed, filtered like buildTimeline ────
+    if (e.kind === "tool.completed") {
+      const id = e.identity?.nativeEventId;
+      const step = id ? stepsById.get(id) : undefined;
+      if (!step) continue; // frame-sourced structural tool signal, not a durable row
+      if (step.kind === "done") continue;
+      if (isNarration(step)) continue;
+      const boot = deriveTrace(step).accent === "boot";
+      if (boot && !live) continue;
+      const ids = nativeOfStep(step);
+      const mid = (ids.partID && partMessage.get(ids.partID)) || ids.messageID || null;
+      ranked.push({
+        node: { kind: "tool", key: step.id, step },
+        k0: boot ? -1 : mid ? msgOrderKey.get(mid) ?? MAX : MAX,
+        k1: 1, k2: step.idx,
+      });
+    }
+  }
+
+  ranked.sort((a, b) => a.k0 - b.k0 || a.k1 - b.k1 || a.k2 - b.k2);
+  return ranked.map((r) => r.node);
+}
+
+/** Parse a step's native ids from code_json (mirrors native-ids.nativeOf). */
+function nativeOfStep(step: ApiStep): { partID: string | null; messageID: string | null } {
+  const cj = (step as { code_json?: string | null }).code_json;
+  if (!cj) return { partID: null, messageID: null };
+  try {
+    const n = (JSON.parse(cj) as { native?: { partID?: string; messageID?: string } }).native;
+    return { partID: n?.partID ?? null, messageID: n?.messageID ?? null };
+  } catch {
+    return { partID: null, messageID: null };
+  }
 }

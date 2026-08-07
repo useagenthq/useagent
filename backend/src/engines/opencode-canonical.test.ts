@@ -25,7 +25,7 @@ const srcTypes = countBy(frames, (f) => f.eventType);
 function assertKnownKind(e: CanonicalAgentEvent): void {
   switch (e.kind) {
     case "session.started": case "session.metadata": case "turn.started":
-    case "turn.completed": case "message.delta": case "message.completed":
+    case "turn.completed": case "message.started": case "message.delta": case "message.completed":
     case "reasoning.delta": case "reasoning.completed": case "plan.updated":
     case "tool.started": case "tool.progress": case "tool.completed":
     case "file.changed": case "terminal.output": case "child.started":
