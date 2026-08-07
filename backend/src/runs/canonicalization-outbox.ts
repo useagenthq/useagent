@@ -18,22 +18,32 @@ import { eq, sql } from "drizzle-orm";
 import { db, type Executor } from "../db/client";
 import { canonicalizationOutbox } from "../db/schema";
 import { getNativeFramesSince } from "./native-events";
-import { getStepsApi } from "./repo";
+import { getRun, getStepsApi } from "./repo";
+import { drainProviderEvents } from "./provider-events";
 import { translateOpenCode, type OpenCodeFrame, type OpenCodeStep } from "../engines/opencode-canonical";
-import { publishDelivered, publishCanonicalizationComplete, replaceCanonicalForRun } from "./canonical-events";
+import type { CanonicalAgentEvent } from "../engines/canonical";
+import {
+  publishDelivered,
+  publishCanonicalizationComplete,
+  replaceCanonicalRowsTx,
+  type DeliveredCanonicalEvent,
+} from "./canonical-events";
 
 const BASE_BACKOFF_MS = 500;
 const MAX_BACKOFF_MS = 30_000;
 export const backoffAt = (now: number, attempt: number): Date =>
   new Date(now + Math.min(BASE_BACKOFF_MS * 2 ** attempt, MAX_BACKOFF_MS));
 
-export interface Watermark { frameMax: number; stepCount: number }
-/** The source is STABLE across a translate iff neither the max native-frame seq nor the
- *  step count moved. A settled run's source is frozen, so instability only reflects the
- *  narrow write-race between finalize and the worker claiming the row - retry, don't
- *  mark a partial snapshot complete (hole #2). Pure, so the gate is unit-testable. */
+export interface Watermark { frameMax: number; stepCount: number; stepSig: string }
+/** The source is STABLE across a translate iff the max native-frame seq AND the step
+ *  CONTENT SIGNATURE both held. The signature (a hash over every step's id/idx/kind/
+ *  code_json) detects an IN-PLACE step update (tool_call -> tool_result rewrites code_json
+ *  with the SAME step count), which a bare count(*) misses - the exact hole where a run
+ *  could be marked complete showing a tool_call without its result. A settled run's source
+ *  is frozen, so instability only reflects the narrow write-race between finalize and the
+ *  worker - retry, don't freeze a partial snapshot (hole #2). Pure, so unit-testable. */
 export const watermarkStable = (a: Watermark, b: Watermark): boolean =>
-  a.frameMax === b.frameMax && a.stepCount === b.stepCount;
+  a.frameMax === b.frameMax && a.stepSig === b.stepSig;
 
 /** Enqueue a run's canonicalization. Idempotent by runId. Enqueue INSIDE the run-
  *  finalization transaction so the intent commits atomically with the terminal run;
@@ -54,13 +64,21 @@ export async function enqueueCanonicalization(runId: string, threadId: string, e
     });
 }
 
-/** The source watermark (max native-frame seq + step count) - proves what was translated. */
+/** The source watermark: max native-frame seq + step count + a step CONTENT signature.
+ *  The signature is `md5` over each step's id|idx|kind|code_json (ordered), so an in-place
+ *  code_json rewrite changes it even when the count does not. `md5`/`string_agg` are
+ *  built-in Postgres - no dependency. */
 export async function sourceWatermark(runId: string): Promise<Watermark> {
   const [w] = (await db.execute(sql`
     select coalesce((select max(seq) from provider_events where run_id = ${runId}), -1) as frame_max,
-           (select count(*) from steps where run_id = ${runId}) as step_count`)) as unknown as Array<{ frame_max: number; step_count: number }>;
+           (select count(*) from steps where run_id = ${runId}) as step_count,
+           coalesce((
+             select md5(string_agg(id || '\x1f' || idx::text || '\x1f' || kind || '\x1f' || coalesce(code_json, ''),
+                                    '\n' order by idx, id))
+             from steps where run_id = ${runId}
+           ), '') as step_sig`)) as unknown as Array<{ frame_max: number; step_count: number; step_sig: string }>;
   // the single-row aggregate always returns a row; guard only to satisfy strict null checks.
-  return { frameMax: Number(w?.frame_max ?? -1), stepCount: Number(w?.step_count ?? 0) };
+  return { frameMax: Number(w?.frame_max ?? -1), stepCount: Number(w?.step_count ?? 0), stepSig: String(w?.step_sig ?? "") };
 }
 
 export interface Claimed { runId: string; threadId: string; attemptCount: number; maxAttempts: number }
@@ -81,12 +99,25 @@ async function claimDue(limit: number): Promise<Claimed[]> {
   return rows.map((r) => ({ runId: r.run_id, threadId: r.thread_id, attemptCount: Number(r.attempt_count), maxAttempts: Number(r.max_attempts) }));
 }
 
-export async function markComplete(runId: string, w: Watermark): Promise<void> {
-  await db
-    .update(canonicalizationOutbox)
-    .set({ state: "complete", sourceFrameMax: w.frameMax, sourceStepCount: w.stepCount, lastError: null, updatedAt: new Date() })
-    .where(eq(canonicalizationOutbox.runId, runId));
+/** ATOMIC finalize: write the run's FINAL canonical rows AND flip its outbox record to
+ *  `complete` (with the watermark) in ONE transaction. Because rows are written only here
+ *  - never provisionally - canonical_events holds rows only for a COMPLETE run, so a crash
+ *  or a watermark-retry can never leave stale provisional rows a client could trust. The
+ *  publish happens AFTER this commits (see the worker), so subscribers only ever receive
+ *  finalized rows. Returns the delivered rows to publish. */
+async function finalizeCanonicalForRun(
+  runId: string, events: readonly CanonicalAgentEvent[], w: Watermark,
+): Promise<DeliveredCanonicalEvent[]> {
+  return db.transaction(async (tx) => {
+    const delivered = await replaceCanonicalRowsTx(tx, runId, events);
+    await tx
+      .update(canonicalizationOutbox)
+      .set({ state: "complete", sourceFrameMax: w.frameMax, sourceStepCount: w.stepCount, lastError: null, updatedAt: new Date() })
+      .where(eq(canonicalizationOutbox.runId, runId));
+    return delivered;
+  });
 }
+
 export async function markRetryOrDead(c: Claimed, err: string): Promise<void> {
   const dead = c.attemptCount + 1 >= c.maxAttempts;
   await db
@@ -101,24 +132,27 @@ export async function markRetryOrDead(c: Claimed, err: string): Promise<void> {
     .where(eq(canonicalizationOutbox.runId, c.runId));
 }
 
-/** Translate ONE run's source, but commit only if the source was STABLE across the
- *  translate (watermark unchanged) - so a late native write is retried, not lost.
- *  Returns whether it completed (and the watermark it locked in). */
-export async function canonicalizeRun(runId: string, threadId: string): Promise<{ complete: boolean; count: number; watermark: Watermark }> {
+/** Translate ONE run's source and, only if the source held STABLE across the translate,
+ *  ATOMICALLY write the final rows + completion record. Steps carry the run's engine as
+ *  provenance. Never publishes here (the worker publishes after the tx commits). Returns
+ *  the finalized rows + watermark, or complete:false to retry against the newer source. */
+export async function canonicalizeRun(runId: string, threadId: string): Promise<{ complete: boolean; delivered: DeliveredCanonicalEvent[]; watermark: Watermark }> {
+  // Seal in-flight provider-event writes BEFORE the first watermark read, so a queued
+  // capture can't commit after both reads and be missed (drain barrier).
+  await drainProviderEvents(runId);
   const before = await sourceWatermark(runId);
-  const [frames, steps] = await Promise.all([getNativeFramesSince(runId, -1), getStepsApi(runId)]);
+  const [run, frames, steps] = await Promise.all([getRun(runId), getNativeFramesSince(runId, -1), getStepsApi(runId)]);
   const { events } = translateOpenCode(
     frames as unknown as OpenCodeFrame[],
-    { runId, threadId },
+    { runId, threadId, engine: run?.engine ?? "opencode" }, // honest step provenance
     steps as unknown as OpenCodeStep[],
   );
   const after = await sourceWatermark(runId);
   if (!watermarkStable(before, after)) {
-    return { complete: false, count: 0, watermark: after }; // source moved - retry against the newer source
+    return { complete: false, delivered: [], watermark: after }; // source moved - retry against the newer source
   }
-  const delivered = await replaceCanonicalForRun(runId, events);
-  publishDelivered(delivered); // persist-before-publish: rows are committed above
-  return { complete: true, count: delivered.length, watermark: before };
+  const delivered = await finalizeCanonicalForRun(runId, events, before);
+  return { complete: true, delivered, watermark: before };
 }
 
 /** Process up to `limit` due canonicalizations. Returns how many completed. */
@@ -129,9 +163,11 @@ export async function runCanonicalizationOutboxOnce(limit = 20): Promise<number>
     try {
       const res = await canonicalizeRun(c.runId, c.threadId);
       if (res.complete) {
-        await markComplete(c.runId, res.watermark);
-        // Durable-first: the `complete` row is committed, so a reconnecting client and a
-        // live client converge. Signal live subscribers that this run is now trustworthy.
+        // PERSIST-BEFORE-PUBLISH: the rows + completion committed atomically above, so
+        // publishing now only ever emits FINALIZED rows (never provisional). A reconnect
+        // replays the same committed rows, so live + replay converge; the publish is
+        // idempotent (the store keeps the latest revision per eventId).
+        publishDelivered(res.delivered);
         publishCanonicalizationComplete({
           runId: c.runId, threadId: c.threadId,
           sourceFrameMax: res.watermark.frameMax, sourceStepCount: res.watermark.stepCount,
