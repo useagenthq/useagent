@@ -103,6 +103,13 @@ function markerFromSkynet(eventType: string, p: Record<string, unknown> | null):
     const op = str(p?.op) ?? (eventType === "memory.updated" ? "correct" : eventType === "memory.deleted" ? "forget" : "remember");
     return { markerType: "memory", title: failed ? `Memory ${op} failed` : `Memory ${op}` };
   }
+  // Boot-recovery park marker (recovery.ts RUN_RECONCILING). The legacy native lane
+  // renders this as a `reconciling` TimelineMarker, so the canonical lane must too - it
+  // was previously dropped to a harness.warning (invisible in the timeline), a real
+  // node-equality gap.
+  if (eventType === "run.reconciling") {
+    return { markerType: "reconciling", title: "Reconciling after a restart" };
+  }
   return null;
 }
 
@@ -192,9 +199,13 @@ export function translateOpenCode(
 
     if (f.provider.startsWith("skynet")) {
       const marker = markerFromSkynet(et, p);
-      if (marker) produced.push(push(f.eventId, f.provider, { kind: "context.marker", ...marker }, ident));
+      if (marker) {
+        // Carry the originating frame verbatim so the frontend reconstructs the FULL
+        // typed TimelineMarker with the SAME parser the legacy native lane uses (H3):
+        // no fabrication, deep-equal marker nodes.
+        produced.push(push(f.eventId, f.provider, { kind: "context.marker", ...marker, sourceEventType: et, ...(p ? { sourcePayload: p } : {}) }, ident));
+      }
       else if (et === "secrets.injected") produced.push(push(f.eventId, f.provider, { kind: "session.metadata", metadata: { secretsInjected: true } }, ident));
-      else if (et === "run.reconciling") produced.push(push(f.eventId, f.provider, { kind: "harness.warning", message: "Reconciling after a restart", rawEventType: et }, ident));
       else produced.push(push(f.eventId, f.provider, { kind: "harness.warning", message: "unmapped skynet event", rawEventType: et }, ident));
     } else if (et.startsWith("session")) {
       produced.push(push(f.eventId, f.provider, { kind: "session.metadata", metadata: p ?? {} }, ident));

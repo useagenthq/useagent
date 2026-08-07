@@ -17,7 +17,7 @@
 // sidecar keyed by identity.nativeEventId (the "bounded raw sidecar").
 
 import { deriveTrace, type ApiStep } from "./types";
-import { isNarration, type TimelineNode, type TimelineMarker } from "./timeline";
+import { isNarration, parseMarker, type TimelineNode, type TimelineMarker } from "./timeline";
 
 /** Structural view of a canonical event (envelope base + flattened body fields). */
 export interface CanonicalEventLike {
@@ -36,6 +36,10 @@ export interface CanonicalEventLike {
   readonly markerType?: string;
   readonly title?: string;
   readonly detail?: string;
+  /** The originating skynet-lane frame, carried by the translator so the marker is
+   *  reconstructed with the SAME parser the legacy native lane uses (H3, lossless). */
+  readonly sourceEventType?: string;
+  readonly sourcePayload?: Record<string, unknown>;
 }
 
 /** A canonical event as stored/streamed to the client: the reducer's structural view
@@ -48,10 +52,16 @@ export interface StoredCanonicalEvent extends CanonicalEventLike {
   readonly revision: number;
 }
 
-/** Best-effort canonical context.marker -> TimelineMarker. The equivalence proof
- *  compares node (kind + key), so the marker's inner shape need not round-trip; full
- *  marker fidelity in canonical is a slice-4 rendering concern. */
+/** Canonical context.marker -> TimelineMarker, LOSSLESS (H3): the translator carries the
+ *  originating skynet frame (sourceEventType + sourcePayload), so we reconstruct with the
+ *  SAME parseMarker the legacy native lane uses - the marker node is deep-equal, never
+ *  fabricated. The coarse markerType/title fallback covers only an event that predates the
+ *  source fields (defensive; the opencode translator always carries them). */
 function toTimelineMarker(e: CanonicalEventLike): TimelineMarker {
+  if (e.sourceEventType) {
+    const parsed = parseMarker(e.sourceEventType, e.sourcePayload ?? {});
+    if (parsed) return parsed;
+  }
   const t = e.markerType;
   if (t === "skill" || t === "playbook") {
     return { kind: "skill", playbook: t === "playbook", name: e.title ?? "skill", version: 0, hash: "" };
