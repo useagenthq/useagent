@@ -321,6 +321,7 @@ export function ChatView() {
           <div className="w-full max-w-2xl">
             <Composer
               variant="hero"
+              surface="white"
               enableAgentCommand={false}
               enableModelPicker={false}
               placeholder="Ask anything..."
@@ -348,6 +349,7 @@ export function ChatView() {
             <div className="mx-auto max-w-3xl">
               <Composer
                 variant="compact"
+                surface="white"
                 enableAgentCommand={false}
                 enableModelPicker={false}
                 placeholder="Reply..."

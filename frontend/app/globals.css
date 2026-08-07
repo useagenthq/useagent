@@ -16,7 +16,14 @@
 
 @layer base {
   /*#region Colors */
-  :root {
+  /* `:root` holds the LIGHT token set. `.theme-light` re-applies that same set to
+   * a SUBTREE, so a section can render light even while `.dark` is on <html> - a
+   * "light island" (used by the white Chat composer via <Composer surface="white">).
+   * Custom properties inherit, so the class only affects its own descendants; no
+   * existing element carries it, so this is inert until opted into. Keep it paired
+   * with the `.dark` block below (both token blocks extend it). */
+  :root,
+  .theme-light {
     --neutral-950: 221.54 31.71% 8.04%;
     --neutral-900: 226.15 21.31% 11.96%;
     --neutral-800: 227.14 17.07% 16.08%;
@@ -398,8 +405,10 @@
     letter-spacing: -0.15px;
   }
 
-  /* Illustration tokens (used by AlignUI empty-state / avatar-empty icons) */
-  :root {
+  /* Illustration tokens (used by AlignUI empty-state / avatar-empty icons).
+   * Also extended to `.theme-light` so the light island stays complete. */
+  :root,
+  .theme-light {
     --illustration-white-0: var(--neutral-0);
     --illustration-weak-100: var(--neutral-100);
     --illustration-soft-200: var(--neutral-200);
