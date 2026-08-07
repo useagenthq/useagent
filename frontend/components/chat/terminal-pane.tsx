@@ -46,7 +46,7 @@ export function TerminalPane({
   }, [commandSteps.length, live]);
 
   return (
-    <div className="flex h-full min-h-0 flex-col overflow-hidden bg-neutral-950">
+    <div className="flex h-full min-h-0 flex-col overflow-hidden bg-neutral-950" data-testid="terminal-pane">
       <div className="flex shrink-0 items-center gap-2.5 border-b border-white-alpha-10 px-3.5 py-2">
         <span className="text-mono-label text-neutral-400">Terminal</span>
         <span className="text-mono-label rounded border border-white-alpha-10 px-1.5 py-px text-neutral-500">
@@ -59,6 +59,7 @@ export function TerminalPane({
                 key={t}
                 type="button"
                 onClick={() => setTab(t)}
+                data-testid={`terminal-tab-${t}`}
                 className={cn(
                   "text-mono-label rounded px-1.5 py-0.5 transition-colors",
                   tab === t
@@ -78,6 +79,7 @@ export function TerminalPane({
       ) : (
       <div
         ref={bodyRef}
+        data-testid="terminal-log"
         className="min-h-0 flex-1 overflow-y-auto px-3.5 py-3 [font-family:var(--font-mono)] text-[13px] leading-6"
       >
         {commandSteps.length === 0 ? (

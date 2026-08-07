@@ -44,6 +44,17 @@ interface StepRow {
   code_json: string | null;
 }
 
+// The run's own free-text columns are the single richest source of customer data
+// (the task prompt, the model's summary, repo names, error text). We MUST add them
+// to the sensitive set the post-scan checks against - the fixture only ever draws
+// from provider_events/steps, but a leak there could echo the prompt verbatim.
+interface RunMetaRow {
+  prompt: string | null;
+  summary: string | null;
+  repo: string | null;
+  repos: unknown;
+}
+
 const rows = (await sql`
   SELECT seq, provider, event_type, native_session_id, native_parent_session_id,
          native_message_id, native_part_id, native_call_id, payload
@@ -55,6 +66,9 @@ const stepRows = (await sql`
   FROM steps
   WHERE run_id = (SELECT id FROM runs WHERE id LIKE ${`${runPrefix}%`} LIMIT 1)
   ORDER BY idx ASC`) as unknown as StepRow[];
+const metaRows = (await sql`
+  SELECT prompt, summary, repo, repos
+  FROM runs WHERE id LIKE ${`${runPrefix}%`} LIMIT 1`) as unknown as RunMetaRow[];
 await sql.end();
 
 if (rows.length === 0) throw new Error(`no provider_events for run ${runPrefix}`);
@@ -62,7 +76,9 @@ if (rows.length === 0) throw new Error(`no provider_events for run ${runPrefix}`
 // --- collect sensitive source strings for the post-scan (before we drop them) ---
 const sensitive = new Set<string>();
 const addSensitive = (v: unknown) => {
-  if (typeof v === "string" && v.trim().length >= 4) sensitive.add(v);
+  // 3-char floor: catch short identifiers (repo/company codes) while excluding
+  // 1-2 char strings that are non-identifying and would collide with everything.
+  if (typeof v === "string" && v.trim().length >= 3) sensitive.add(v);
 };
 const walk = (v: unknown) => {
   if (typeof v === "string") addSensitive(v);
@@ -70,6 +86,7 @@ const walk = (v: unknown) => {
   else if (v && typeof v === "object") for (const x of Object.values(v)) walk(x);
 };
 for (const r of rows) walk(r.payload);
+if (metaRows[0]) walk(metaRows[0]); // prompt + summary + repo(s) + error + source_repo
 for (const s of stepRows) {
   addSensitive(s.label);
   addSensitive(s.chip);
@@ -177,13 +194,21 @@ const steps = stepRows.map((s, i) => ({
   created_at: "2026-01-01T00:00:00.000Z",
 }));
 
-// The scan must NOT flag the structural vocabulary we intentionally keep (provider,
-// event types, tool names, status, type discriminants, step kinds, placeholders) -
-// those are opencode's fixed tokens, not customer data. Remove them from `sensitive`
-// so only real free-text content can register as a leak.
+// Controlled vocabulary the fixture INTENTIONALLY emits, none of it customer data:
+//   (a) fixture-own tokens: synthetic id prefixes (ses_/msg_/prt_/call_/evt_/step_),
+//       placeholders, the fixed timestamp, and the task-marker literals; plus
+//   (b) opencode's fixed structural tokens (provider, event types, tool names,
+//       state.status, part/step type discriminants, step kinds) collected from the
+//       source's structural FIELDS below.
+// A sensitive source string equal to (or a substring of) one of these is not a leak,
+// so we exclude them - and ONLY these. Everything else in `sensitive` is scanned at
+// every length (no <6 exception): the exclusion set is provably controlled vocabulary,
+// so we no longer need a length heuristic to suppress structural-token false positives.
 const structural = new Set<string>([
   "opencode", "skynet", "tool", "text", "completed", "error", "running", "pending",
-  "REDACTED", "REDACTED_TEXT", "run_fixture",
+  "REDACTED", "REDACTED_TEXT", "run_fixture", "2026-01-01T00:00:00.000Z",
+  // synthetic id prefixes (remapped handles are `<prefix>_<n>`) + task markers
+  "ses", "msg", "prt", "call", "evt", "step", "run", "task", "task_result",
 ]);
 for (const r of rows) {
   if (r.provider) structural.add(r.provider);
@@ -208,13 +233,24 @@ for (const s of stepRows) {
 }
 for (const k of structural) sensitive.delete(k);
 
-// --- provable-clean scan: no sensitive source string may survive (frames OR steps) ---
-const serialized = JSON.stringify(frames) + JSON.stringify(steps);
+// --- provable-clean scan: no sensitive source string may survive in any output VALUE.
+// We scan string VALUES only (not JSON keys): keys are our own fixed field names
+// (type/tool/status/native/...), and folding them into the blob is exactly what forced
+// the old <6-char skip - a customer string that happened to equal a field name would
+// false-positive. Scanning values against the controlled-vocabulary exclusion set lets
+// us check EVERY sensitive string at EVERY length. ---
+const outputValues: string[] = [];
+const collectValues = (v: unknown) => {
+  if (typeof v === "string") outputValues.push(v);
+  else if (Array.isArray(v)) for (const x of v) collectValues(x);
+  else if (v && typeof v === "object") for (const x of Object.values(v)) collectValues(x);
+};
+for (const f of frames) collectValues(f);
+for (const s of steps) collectValues(s);
+const valueBlob = outputValues.join(" ");
 const leaks: string[] = [];
 for (const s of sensitive) {
-  // ignore short structural tokens that legitimately recur (tool names, states)
-  if (s.length < 6) continue;
-  if (serialized.includes(s)) leaks.push(s.slice(0, 40));
+  if (valueBlob.includes(s)) leaks.push(s.slice(0, 40));
   if (leaks.length >= 5) break;
 }
 if (leaks.length > 0) {

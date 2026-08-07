@@ -99,6 +99,7 @@ function AgentCardRow({
     <button
       type="button"
       onClick={onOpen}
+      data-testid="subagent-card"
       aria-label={`Open subagent: ${card.title}`}
       className="bg-bg-weak-50 border-stroke-soft-200 hover:bg-bg-soft-200 animate-ai-fade-up flex w-full items-start gap-2.5 rounded-xl border p-3 text-left transition-colors"
     >
@@ -286,7 +287,7 @@ export function AgentsRail({
   }
 
   return (
-    <div className="h-full space-y-2.5 overflow-y-auto p-3">
+    <div className="h-full space-y-2.5 overflow-y-auto p-3" data-testid="agents-rail">
       {cards.map((card) => (
         <AgentCardRow
           key={card.id}

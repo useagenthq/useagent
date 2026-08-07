@@ -49,7 +49,7 @@ export function EditorPane({ steps, live }: { steps: ApiStep[]; live: boolean })
   const current = files.find((f) => f.path === active) ?? files[files.length - 1];
 
   return (
-    <div className="bg-bg-white-0 flex h-full min-h-0 flex-col overflow-hidden">
+    <div className="bg-bg-white-0 flex h-full min-h-0 flex-col overflow-hidden" data-testid="editor-pane">
       {/* File tab strip */}
       <div className="border-stroke-soft-200 flex shrink-0 items-center gap-0.5 overflow-x-auto border-b px-1.5">
         {files.length === 0 ? (
@@ -66,6 +66,7 @@ export function EditorPane({ steps, live }: { steps: ApiStep[]; live: boolean })
                 type="button"
                 onClick={() => setActive(file.path)}
                 title={file.path}
+                data-testid="editor-file"
                 className={cn(
                   "flex shrink-0 items-center gap-1.5 border-b-2 px-3 py-2 text-label-xs transition-colors",
                   isActive

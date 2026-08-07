@@ -443,23 +443,23 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
                   {/* Agents leads the switcher, but only once a run has fanned
                       out — no empty tab before then. */}
                   {hasSubagents && (
-                    <SegmentedControl.Trigger value="agents">
+                    <SegmentedControl.Trigger value="agents" data-testid="rail-tab-agents">
                       <RiRobot2Line className="size-4" aria-hidden />
                       Agents
                     </SegmentedControl.Trigger>
                   )}
-                  <SegmentedControl.Trigger value="editor">
+                  <SegmentedControl.Trigger value="editor" data-testid="rail-tab-editor">
                     <RiCodeSSlashLine className="size-4" aria-hidden />
                     Editor
                   </SegmentedControl.Trigger>
-                  <SegmentedControl.Trigger value="terminal">
+                  <SegmentedControl.Trigger value="terminal" data-testid="rail-tab-terminal">
                     <RiTerminalBoxLine className="size-4" aria-hidden />
                     Terminal
                   </SegmentedControl.Trigger>
                   {/* multi-repo desktop: watch (and click) the sandbox GUI over
                       noVNC. Only opencode threads carry the noVNC snapshot. */}
                   {hasDesktop && (
-                    <SegmentedControl.Trigger value="desktop">
+                    <SegmentedControl.Trigger value="desktop" data-testid="rail-tab-desktop">
                       <RiComputerLine className="size-4" aria-hidden />
                       Desktop
                     </SegmentedControl.Trigger>

@@ -68,7 +68,7 @@ function FailedNote() {
 
 function UserBubble({ children }: { children: string }) {
   return (
-    <div className="flex justify-end">
+    <div className="flex justify-end" data-testid="user-message">
       <div className="bg-bg-weak-50 text-text-strong-950 text-paragraph-sm max-w-[85%] rounded-2xl rounded-br-md px-3.5 py-2.5">
         {children}
       </div>
@@ -82,7 +82,7 @@ function UserBubble({ children }: { children: string }) {
  * animation both lied about liveness and showed raw markdown runes. */
 function AgentAnswer({ summary }: { summary: string; stream?: boolean }) {
   return (
-    <div className="animate-ai-fade-up">
+    <div className="animate-ai-fade-up" data-testid="agent-answer">
       <Markdown className={MD_CLASS}>{summary}</Markdown>
     </div>
   );
@@ -112,7 +112,7 @@ function LiveNarration({ text }: { text: string }) {
  *  or a completing tool never re-renders the settled ones (no fanout churn). */
 const TextBurst = memo(function TextBurst({ text }: { text: string }) {
   return (
-    <div className="animate-ai-fade-up">
+    <div className="animate-ai-fade-up" data-testid="agent-answer">
       <Markdown className={MD_CLASS}>{text}</Markdown>
     </div>
   );
@@ -301,7 +301,7 @@ function TurnBlock({ turn, onSendNow }: { turn: Turn; onSendNow?: () => void }) 
   // future control on top of the same queue.
   if (status === "queued" && activity.length === 0 && !summary && !liveText) {
     return (
-      <div className="space-y-1">
+      <div className="space-y-1" data-testid="turn-block" data-run-id={run.id}>
         <UserBubble>{cleanPrompt(run.prompt)}</UserBubble>
         <div className="flex items-center justify-end gap-2">
           <span className="text-label-xs text-text-soft-400">queued</span>
@@ -321,7 +321,7 @@ function TurnBlock({ turn, onSendNow }: { turn: Turn; onSendNow?: () => void }) 
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4" data-testid="turn-block" data-run-id={run.id}>
       <UserBubble>{cleanPrompt(run.prompt)}</UserBubble>
 
       {/* Assistant block: avatar + name on a header row, with the answer and the
