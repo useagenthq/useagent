@@ -12,7 +12,15 @@ import { Markdown } from "@/components/prompt-kit/markdown";
 import { MarkerRow, ToolStepRow } from "@/components/chat/tool-step-row";
 import type { SlashCommand } from "@/components/chat/slash-command";
 import { buildTimeline, hasNarration, type TimelineNode } from "@/components/chat/timeline";
+import { buildTimelineFromCanonical, type StoredCanonicalEvent } from "@/components/chat/canonical-timeline";
 import type { NativeSnapshot } from "@/components/chat/native-store";
+
+// Canonical-timeline cutover flag (final_harness Phase 1, slice 4). OFF by default:
+// the legacy native/steps derivation renders unless a backend + build opt in via
+// NEXT_PUBLIC_CANONICAL_TIMELINE=1. The canonical path is proven byte-for-byte
+// equivalent (canonical-timeline.equiv/.nodes tests); this flag lets us flip it on
+// deliberately and fall straight back to legacy if a run has no canonical events.
+const CANONICAL_TIMELINE = process.env.NEXT_PUBLIC_CANONICAL_TIMELINE === "1";
 import {
   cleanPrompt,
   deriveTrace,
@@ -37,6 +45,9 @@ export type Turn = {
    *  run — the source for the interleaved timeline. Absent on settled history runs
    *  (no frame stream), which fall back to the narration-blob + worklog rendering. */
   native?: NativeSnapshot;
+  /** Canonical events for this run (final_harness Phase 1). Consumed only behind the
+   *  canonical-timeline flag; empty/absent falls back to the native lane. */
+  canonical?: readonly StoredCanonicalEvent[];
 };
 
 // Lightweight prose styling for rendered summaries — the AlignUI foundation
@@ -266,10 +277,16 @@ function TurnBlock({ turn, onSendNow }: { turn: Turn; onSendNow?: () => void }) 
   // from the watched run's native ordered frames. Null on turns without native
   // data (settled history, non-native engines) → the legacy rendering below takes
   // over. Recomputed only when the native snapshot or liveness changes.
-  const timeline = useMemo(
-    () => (turn.native ? buildTimeline(turn.native, live) : null),
-    [turn.native, live],
-  );
+  const timeline = useMemo(() => {
+    // Canonical cutover (flag-gated): render from the canonical lane when it has
+    // events; fall straight back to the legacy native derivation otherwise. The two
+    // are proven byte-for-byte equivalent, so this never changes what the user sees.
+    if (CANONICAL_TIMELINE && turn.canonical && turn.canonical.length > 0) {
+      const stepsById = new Map(turn.steps.map((s) => [s.id, s]));
+      return buildTimelineFromCanonical(turn.canonical, stepsById, live);
+    }
+    return turn.native ? buildTimeline(turn.native, live) : null;
+  }, [turn.native, turn.canonical, turn.steps, live]);
 
   const activity = steps.filter((s) => s.kind !== "done");
   const latestLabel = activity.at(-1)?.label ?? "Starting up";

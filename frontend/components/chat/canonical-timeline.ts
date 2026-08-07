@@ -38,6 +38,16 @@ export interface CanonicalEventLike {
   readonly detail?: string;
 }
 
+/** A canonical event as stored/streamed to the client: the reducer's structural view
+ *  plus the identity needed to accumulate + dedupe (runId + eventId + immutable
+ *  deliverySeq + revision). This is the SSE `canonical` frame's `event`. */
+export interface StoredCanonicalEvent extends CanonicalEventLike {
+  readonly eventId: string;
+  readonly runId: string;
+  readonly deliverySeq: number;
+  readonly revision: number;
+}
+
 /** Best-effort canonical context.marker -> TimelineMarker. The equivalence proof
  *  compares node (kind + key), so the marker's inner shape need not round-trip; full
  *  marker fidelity in canonical is a slice-4 rendering concern. */
