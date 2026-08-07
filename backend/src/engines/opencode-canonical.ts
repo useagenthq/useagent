@@ -1,28 +1,30 @@
 /**
- * OpenCode -> Canonical translator (final_harness Phase 1, slice 1).
+ * OpenCode -> Canonical translator (final_harness Phase 1).
  *
- * PURE + additive: maps the OpenCode native-event stream (the same frame shape the
- * backend already emits and the frontend golden fixture pins) into the provider-
- * neutral {@link CanonicalAgentEvent} vocabulary. It changes nothing else - the
- * existing native lane keeps flowing; this runs ALONGSIDE it. Nothing branches on
- * provider names downstream once this exists; that is the whole point.
+ * PURE + additive: maps the OpenCode native event stream (frames) AND the durable
+ * step projection into the provider-neutral {@link CanonicalAgentEvent} vocabulary.
+ * It changes nothing else - the existing native lane keeps flowing; this runs
+ * ALONGSIDE it. Nothing downstream branches on provider names once this exists.
  *
- * Slice-1 scope = the FRAME lane (text, reasoning, tool lifecycle, subagent/task
- * children, skynet context markers, session metadata). Tool payload DETAIL (name,
- * diff, output) lives on the steps lane and is folded in by slice 2 together with
- * the canonical->timeline deriver + exact golden equivalence. Every source event
- * maps to a canonical event or an explicit harness.warning - nothing is silently
- * dropped (asserted by the test).
+ * TWO principles the tests enforce:
+ *  1. LOSSLESS AT THE TRANSPORT BOUNDARY - child-session text/reasoning is preserved
+ *     (emitted with its child/session identity + a child.started that names the
+ *     session as a child); the translator NEVER decides what to hide. View reducers
+ *     (buildTimelineFromCanonical) apply display policy.
+ *  2. EXPLICIT SOURCE-EVENT ACCOUNTING - every source frame/step yields a recorded
+ *     disposition (the canonical kinds it produced, or a NAMED suppression reason).
+ *     There are no silent `continue` drops; the test asserts full accounting.
  */
 import {
   CANONICAL_SCHEMA_VERSION,
   type CanonicalAgentEvent,
   type CanonicalEventBody,
+  type CanonicalEventKind,
   type ContextMarkerKind,
 } from "./canonical";
 
-/** The OpenCode native frame this translator consumes (subset of the wire frame;
- *  matches backend src/runs/native-events.ts + the frontend NativeFrame). */
+/** OpenCode native frame (subset of the wire frame; matches src/runs/native-events
+ *  + the frontend NativeFrame + the golden fixture). */
 export interface OpenCodeFrame {
   eventId: string;
   seq: number;
@@ -38,12 +40,39 @@ export interface OpenCodeFrame {
   payload: unknown;
 }
 
+/** OpenCode durable step (matches ApiStep / the golden steps fixture). Tool ROWS in
+ *  the legacy timeline come from here, so canonical tool events are sourced here too. */
+export interface OpenCodeStep {
+  id: string;
+  run_id?: string;
+  idx: number;
+  kind: string; // "command" | "file" | "task" | "done" | ...
+  label?: string | null;
+  chip?: string | null;
+  code_json?: string | null;
+}
+
 export interface TranslateCtx {
   runId: string;
   threadId: string;
   /** ts source (Skynet-assigned, never trusted from the provider). Defaults to the
-   *  frame seq for deterministic tests; the emit layer passes a real clock. */
-  ts?: (frame: OpenCodeFrame) => number;
+   *  source seq/idx for deterministic tests; the emit layer passes a real clock. */
+  ts?: (seq: number) => number;
+}
+
+/** Per source event: exactly what canonical it produced, or WHY it produced nothing.
+ *  The test asserts every source frame/step has one of these (no silent drops). */
+export interface Disposition {
+  sourceId: string;
+  kind: string; // source eventType or step kind
+  provider: string;
+  produced: CanonicalEventKind[];
+  suppressed?: string; // named reason when produced is empty
+}
+
+export interface TranslateResult {
+  events: CanonicalAgentEvent[];
+  accounting: Disposition[];
 }
 
 const rec = (v: unknown): Record<string, unknown> | null =>
@@ -78,135 +107,125 @@ function markerFromSkynet(eventType: string, p: Record<string, unknown> | null):
 }
 
 /**
- * Translate an ordered OpenCode frame stream into canonical events. Stateful over
- * the stream (tracks assistant-step messages, seen tool calls, child sessions) so
- * the canonical output is lifecycle-correct. `seq` on the output is Skynet's own
- * dense monotonic cursor (independent of the provider's seq, which is preserved in
- * `identity.nativeSeq`).
+ * Translate an OpenCode session (native frames + durable steps) into a canonical
+ * event stream + full source-event accounting. Stateful over the stream; `seq` on
+ * the output is Skynet's own dense monotonic cursor (the provider seq is preserved
+ * in `identity.nativeSeq`).
  */
-export function translateOpenCode(frames: readonly OpenCodeFrame[], ctx: TranslateCtx): CanonicalAgentEvent[] {
-  const tsOf = ctx.ts ?? ((f: OpenCodeFrame) => f.seq);
-  const ordered = [...frames].sort((a, b) => a.seq - b.seq);
+export function translateOpenCode(
+  frames: readonly OpenCodeFrame[],
+  ctx: TranslateCtx,
+  steps: readonly OpenCodeStep[] = [],
+): TranslateResult {
+  const tsOf = ctx.ts ?? ((seq: number) => seq);
+  const orderedFrames = [...frames].sort((a, b) => a.seq - b.seq);
 
-  // A session is a CHILD if any frame links it to a parent (task fan-out).
+  // Child sessions: any session linked to a parent (task fan-out). Established
+  // LOSSLESSLY via child.started so reducers - not the translator - decide hiding.
   const childSessions = new Set<string>();
-  for (const f of ordered) {
+  for (const f of orderedFrames) {
     if (f.native.parentSessionId && f.native.sessionId) childSessions.add(f.native.sessionId);
   }
 
-  const seenTool = new Set<string>();   // callIds we've opened a tool.started for
-  const seenChild = new Set<string>();  // callIds we've opened a child.started for
-  const emittedText = new Set<string>(); // messageIds we emitted a message.delta for
-
-  const out: CanonicalAgentEvent[] = [];
+  const emittedChild = new Set<string>();  // child sessionIds we've announced
+  const seenTaskCall = new Set<string>();  // task-tool callIds we've opened
+  const seenTool = new Set<string>();      // non-task tool callIds we've opened
+  const events: CanonicalAgentEvent[] = [];
+  const accounting: Disposition[] = [];
   let cursor = 0;
-  const emit = (frame: OpenCodeFrame, body: CanonicalEventBody, suffix = ""): void => {
-    out.push({
+
+  const push = (id: string, provider: string, body: CanonicalEventBody, ident: Partial<CanonicalAgentEvent["identity"]> = {}, suffix = ""): CanonicalEventKind => {
+    events.push({
       schemaVersion: CANONICAL_SCHEMA_VERSION,
-      eventId: `${ctx.runId}:${frame.eventId}${suffix}`,
-      seq: cursor++,
+      eventId: `${ctx.runId}:${id}${suffix}`,
+      seq: cursor,
       runId: ctx.runId,
       threadId: ctx.threadId,
-      ts: tsOf(frame),
-      identity: {
-        provider: frame.provider,
-        nativeSessionId: frame.native.sessionId ?? undefined,
-        nativeEventId: frame.eventId,
-        nativeSeq: frame.seq,
-      },
+      ts: tsOf(cursor),
+      identity: { provider, nativeEventId: id, ...ident },
       ...body,
     });
+    cursor++;
+    return body.kind;
   };
 
-  for (const f of ordered) {
+  // Announce a child session once (lossless: names the session a child so reducers
+  // can route its parts; does not itself hide anything).
+  const ensureChild = (produced: CanonicalEventKind[], f: OpenCodeFrame) => {
+    const sid = f.native.sessionId;
+    if (sid && childSessions.has(sid) && !emittedChild.has(sid)) {
+      emittedChild.add(sid);
+      produced.push(push(`childsess:${sid}`, f.provider, {
+        kind: "child.started", childId: sid, parentChildId: f.native.parentSessionId ?? undefined,
+      }, { nativeSessionId: sid }));
+    }
+  };
+
+  // ── frame lane ──────────────────────────────────────────────────────────────
+  for (const f of orderedFrames) {
     const p = rec(f.payload);
     const et = f.eventType;
+    const produced: CanonicalEventKind[] = [];
+    const ident = { nativeSessionId: f.native.sessionId ?? undefined, nativeSeq: f.seq };
+    let suppressed: string | undefined;
 
-    // ── skynet context lane (provider skynet*) ────────────────────────────────
+    ensureChild(produced, f); // lossless child-session establishment
+
     if (f.provider.startsWith("skynet")) {
       const marker = markerFromSkynet(et, p);
-      if (marker) { emit(f, { kind: "context.marker", ...marker }); continue; }
-      if (et === "secrets.injected") { emit(f, { kind: "session.metadata", metadata: { secretsInjected: true } }); continue; }
-      if (et === "run.reconciling") { emit(f, { kind: "harness.warning", message: "Reconciling after a restart", rawEventType: et }); continue; }
-      emit(f, { kind: "harness.warning", message: "unmapped skynet event", rawEventType: et });
-      continue;
-    }
-
-    // ── session lifecycle ─────────────────────────────────────────────────────
-    if (et.startsWith("session")) { emit(f, { kind: "session.metadata", metadata: p ?? {} }); continue; }
-
-    // ── assistant message boundaries ──────────────────────────────────────────
-    if (et === "part.step-start") {
-      // No canonical event; marks the message as an assistant step for text routing.
-      continue;
-    }
-    if (et === "part.step-finish") {
+      if (marker) produced.push(push(f.eventId, f.provider, { kind: "context.marker", ...marker }, ident));
+      else if (et === "secrets.injected") produced.push(push(f.eventId, f.provider, { kind: "session.metadata", metadata: { secretsInjected: true } }, ident));
+      else if (et === "run.reconciling") produced.push(push(f.eventId, f.provider, { kind: "harness.warning", message: "Reconciling after a restart", rawEventType: et }, ident));
+      else produced.push(push(f.eventId, f.provider, { kind: "harness.warning", message: "unmapped skynet event", rawEventType: et }, ident));
+    } else if (et.startsWith("session")) {
+      produced.push(push(f.eventId, f.provider, { kind: "session.metadata", metadata: p ?? {} }, ident));
+    } else if (et === "part.step-start") {
+      suppressed = "assistant message boundary (tracked for text routing; no canonical event)";
+    } else if (et === "part.step-finish") {
       const mid = f.native.messageId;
-      if (mid && emittedText.has(mid)) emit(f, { kind: "message.completed", messageId: mid });
-      continue;
-    }
-
-    // ── text / reasoning ──────────────────────────────────────────────────────
-    if (et.startsWith("part.text")) {
-      const sid = f.native.sessionId;
+      if (mid) produced.push(push(f.eventId, f.provider, { kind: "message.completed", messageId: mid }, ident));
+      else suppressed = "step-finish without messageId";
+    } else if (et.startsWith("part.text")) {
       const mid = f.native.messageId;
-      if (sid && childSessions.has(sid)) continue; // subagent chatter -> its own child lane
-      if (!mid) continue;
-      emittedText.add(mid);
-      emit(f, { kind: "message.delta", messageId: mid, text: str(p?.text) ?? "" });
-      continue;
-    }
-    if (et.startsWith("part.reasoning")) {
+      if (mid) produced.push(push(f.eventId, f.provider, { kind: "message.delta", messageId: mid, text: str(p?.text) ?? "" }, ident));
+      else suppressed = "text part without messageId";
+    } else if (et.startsWith("part.reasoning")) {
       const mid = f.native.messageId ?? f.native.partId ?? f.eventId;
-      if (et.endsWith(".completed")) emit(f, { kind: "reasoning.completed", messageId: mid });
-      else emit(f, { kind: "reasoning.delta", messageId: mid, text: str(p?.text) ?? "" });
-      continue;
-    }
-
-    // ── tools (incl. task-tool subagent fan-out) ─────────────────────────────
-    if (et.startsWith("part.tool") || et.startsWith("part.subtask")) {
+      if (et.endsWith(".completed")) produced.push(push(f.eventId, f.provider, { kind: "reasoning.completed", messageId: mid }, ident));
+      else produced.push(push(f.eventId, f.provider, { kind: "reasoning.delta", messageId: mid, text: str(p?.text) ?? "" }, ident));
+    } else if (et.startsWith("part.tool") || et.startsWith("part.subtask")) {
       const callId = f.native.callId;
       const isTask = p?.tool === "task" || et.startsWith("part.subtask");
       const terminal = et.endsWith(".completed") || et.endsWith(".error");
       const errored = et.endsWith(".error");
-
       if (isTask && callId) {
         const state = rec(p?.state);
         const output = str(state?.output) ?? "";
         const childId = TASK_CHILD_ID.exec(output)?.[1] ?? callId;
-        if (!seenChild.has(callId)) {
-          seenChild.add(callId);
-          emit(f, { kind: "child.started", childId, launchToolCallId: callId, title: str(p?.title) ?? undefined }, "#child-start");
+        if (!seenTaskCall.has(callId)) {
+          seenTaskCall.add(callId);
+          produced.push(push(f.eventId, f.provider, { kind: "child.started", childId, launchToolCallId: callId, title: str(p?.title) ?? undefined }, ident, "#child-start"));
         }
         if (terminal) {
           const result = TASK_RESULT.exec(output)?.[1]?.trim();
-          emit(f, { kind: "child.completed", childId, status: errored ? "error" : "ok", result: result || undefined }, "#child-done");
+          produced.push(push(f.eventId, f.provider, { kind: "child.completed", childId, status: errored ? "error" : "ok", result: result || undefined }, ident, "#child-done"));
         } else {
-          emit(f, { kind: "child.updated", childId, status: "running" }, "#child-upd");
+          produced.push(push(f.eventId, f.provider, { kind: "child.updated", childId, status: "running" }, ident, "#child-upd"));
         }
-        continue;
-      }
-
-      if (callId && !seenTool.has(callId) && !terminal) {
+      } else if (callId && !seenTool.has(callId) && !terminal) {
         seenTool.add(callId);
-        emit(f, { kind: "tool.started", toolCallId: callId, name: str(p?.tool) ?? "tool" }, "#tool-start");
-        continue;
-      }
-      if (terminal) {
-        emit(f, {
-          kind: "tool.completed",
-          toolCallId: callId ?? f.eventId,
-          status: errored ? "error" : "ok",
-        }, "#tool-done");
+        produced.push(push(f.eventId, f.provider, { kind: "tool.started", toolCallId: callId, name: str(p?.tool) ?? "tool" }, ident, "#tool-start"));
+      } else if (terminal) {
+        produced.push(push(f.eventId, f.provider, { kind: "tool.completed", toolCallId: callId ?? f.eventId, status: errored ? "error" : "ok" }, ident, "#tool-done"));
       } else {
-        emit(f, { kind: "tool.progress", toolCallId: callId ?? f.eventId }, "#tool-prog");
+        produced.push(push(f.eventId, f.provider, { kind: "tool.progress", toolCallId: callId ?? f.eventId }, ident, "#tool-prog"));
       }
-      continue;
+    } else {
+      produced.push(push(f.eventId, f.provider, { kind: "harness.warning", message: "unmapped opencode event", rawEventType: et }, ident));
     }
 
-    // ── anything else: surfaced, never silently dropped ───────────────────────
-    emit(f, { kind: "harness.warning", message: "unmapped opencode event", rawEventType: et });
+    accounting.push({ sourceId: f.eventId, kind: et, provider: f.provider, produced, ...(produced.length === 0 ? { suppressed } : {}) });
   }
 
-  return out;
+  return { events, accounting };
 }
