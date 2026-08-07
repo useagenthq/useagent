@@ -288,8 +288,12 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
             // Install the agent package(s) once per sandbox.
             cfg.packages
               .map(
+                // Idempotency keyed on the ACTUAL install path (~/.local/bin/<bin>),
+                // not `command -v` - else a <bin> resolving elsewhere on PATH skips
+                // the install and the exact path CLAUDE_CODE_EXECUTABLE points at
+                // (~/.local/bin/claude) never gets created (#127).
                 ({ pkg, bin }) =>
-                  `command -v ${bin} >/dev/null 2>&1 || npm install -g --prefix $HOME/.local --silent "${pkg}" >/dev/null 2>&1; `,
+                  `[ -x "$HOME/.local/bin/${bin}" ] || npm install -g --prefix $HOME/.local --silent "${pkg}" >/dev/null 2>&1; `,
               )
               .join("") +
             // Stage the relay + start it if not already answering.
