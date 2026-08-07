@@ -100,13 +100,16 @@ export async function finalizeRun(
   // run was deleted mid-flight (settledThreadId stays null).
   if (settledThreadId) publishThreadChange(settledThreadId, { runId, kind: "settled" });
 
-  // Canonical lane (final_harness Phase 1, slice 3b): translate this settled OpenCode
-  // run's native frames + steps into provider-neutral canonical events and persist
+  // Canonical lane (final_harness Phase 1, slice 3b): translate this settled run's
+  // native frames + durable steps into provider-neutral canonical events and persist
   // them (persist-before-publish) ALONGSIDE the native lane, so reconnect/reload can
   // replay the canonical timeline. Post-commit + best-effort: a failure here NEVER
-  // affects the run (mirrors the team-memory rule). Only OpenCode today; Claude/Codex
-  // ACP translation is the next slice.
-  if (settledThreadId && settledEngine === "opencode") {
+  // affects the run (mirrors the team-memory rule). OpenCode + the ACP engines
+  // (claude/codex) all project into `steps`, which the step lane turns into canonical
+  // tool rows; claude/codex emit few native frames, so their timeline comes almost
+  // entirely from steps - exactly why the native-only buildTimeline left them blank.
+  const CANONICAL_ENGINES = new Set(["opencode", "claude", "codex"]);
+  if (settledThreadId && settledEngine && CANONICAL_ENGINES.has(settledEngine)) {
     const threadId = settledThreadId;
     void translateAndPersistRun(runId, threadId).catch((e) =>
       console.error(`[canonical] translate/persist failed for run ${runId}:`, e),

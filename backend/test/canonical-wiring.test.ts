@@ -62,3 +62,39 @@ describe("canonical wiring: finalizeRun populates the canonical lane (skynet_tes
     expect(after).toBe(before);
   });
 });
+
+// Claude ACP runs project their tool_call activity into `steps` (kind command/file,
+// code_json { tool, title, input }) and emit almost NO native frames - that is exactly
+// why the native-only buildTimeline left them blank on reload. finalizeRun now
+// translates them too, so a claude tool step becomes a canonical tool row.
+describe("canonical wiring: a settled Claude ACP run also populates canonical", () => {
+  const CRUN = `cwc_${crypto.randomUUID()}`;
+  beforeAll(async () => {
+    await db.insert(runs).values({
+      id: CRUN, prompt: "claude", model: "claude-haiku-4-5", engine: "claude", status: "running", threadId: CRUN,
+    }).onConflictDoNothing();
+    await db.insert(steps).values([
+      // a real tool_call (execute/bash) - should become a canonical tool row
+      { id: `${CRUN}-s0`, runId: CRUN, idx: 0, kind: "command", label: "ls -la", chip: "bash",
+        codeJson: JSON.stringify({ tool: "execute", title: "Bash", input: { command: "ls -la" }, output: "..." }) },
+      // a narration task step + the terminal done
+      { id: `${CRUN}-s1`, runId: CRUN, idx: 1, kind: "task", label: "Thinking...", chip: "claude", codeJson: JSON.stringify({ tool: "task", title: "Thinking" }) },
+      { id: `${CRUN}-s2`, runId: CRUN, idx: 2, kind: "done", label: "Done", codeJson: null },
+    ]).onConflictDoNothing();
+  });
+
+  test("claude tool step -> canonical tool.completed (done step excluded)", async () => {
+    await finalizeRun(CRUN, "completed", "listed", 100);
+    let canon = (await loadCanonicalThread(CRUN, 0)).filter((e) => e.runId === CRUN);
+    for (let i = 0; i < 20 && canon.length === 0; i++) {
+      await new Promise((r) => setTimeout(r, 150));
+      canon = (await loadCanonicalThread(CRUN, 0)).filter((e) => e.runId === CRUN);
+    }
+    const tools = canon.filter((e) => e.kind === "tool.completed");
+    // the command + the task step map to tool.completed (2); the done step does not.
+    expect(tools.length).toBe(2);
+    // the bash tool row is keyed to its step id (the reducer's node key + lookup handle).
+    expect(tools.some((e) => e.identity.nativeEventId === `${CRUN}-s0`)).toBe(true);
+    expect(canon.some((e) => e.kind === "done" || e.identity.nativeEventId === `${CRUN}-s2`)).toBe(false);
+  });
+});
