@@ -324,7 +324,9 @@ export function Composer({
             />
           </div>
 
-          <div className="mt-1.5 flex items-center gap-1.5 px-0.5">
+          {/* px-1 matches the text row above so the +/send controls left/right-align
+              with the placeholder (was px-0.5 → a 2px asymmetry). */}
+          <div className="mt-1.5 flex items-center gap-1.5 px-1">
             {/* Left cluster */}
             <button
               type="button"
