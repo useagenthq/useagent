@@ -131,7 +131,7 @@ function Timeline({ nodes, live }: { nodes: TimelineNode[]; live: boolean }) {
   if (live) {
     const last = nodes.length - 1;
     return (
-      <div className="space-y-3">
+      <div className="space-y-3" data-testid="session-timeline">
         {nodes.map((node, i) =>
           node.kind === "marker" ? (
             <MarkerRow key={node.key} marker={node.marker} />
@@ -164,7 +164,7 @@ function Timeline({ nodes, live }: { nodes: TimelineNode[]; live: boolean }) {
     }
   }
   return (
-    <div className="space-y-3">
+    <div className="space-y-3" data-testid="session-timeline">
       {groups.map((g) => {
         if (g.kind === "inline") {
           return g.node.kind === "marker" ? (
