@@ -12,7 +12,11 @@ import { Markdown } from "@/components/prompt-kit/markdown";
 import { MarkerRow, ToolStepRow } from "@/components/chat/tool-step-row";
 import type { SlashCommand } from "@/components/chat/slash-command";
 import { buildTimeline, hasNarration, type TimelineNode } from "@/components/chat/timeline";
-import { buildTimelineFromCanonical, type StoredCanonicalEvent } from "@/components/chat/canonical-timeline";
+import {
+  buildTimelineFromCanonical,
+  shouldUseCanonicalTimeline,
+  type StoredCanonicalEvent,
+} from "@/components/chat/canonical-timeline";
 import type { NativeSnapshot } from "@/components/chat/native-store";
 
 // Canonical-timeline cutover flag (final_harness Phase 1, slice 4). OFF by default:
@@ -287,9 +291,9 @@ function TurnBlock({ turn, onSendNow }: { turn: Turn; onSendNow?: () => void }) 
     // projection (the outbox is retrying, the snapshot may be partial) never drives the
     // UI - the legacy native derivation does. The two are proven byte-for-byte equivalent,
     // so a completed swap never changes what the user sees.
-    if (CANONICAL_TIMELINE && turn.canonicalComplete && turn.canonical && turn.canonical.length > 0) {
+    if (shouldUseCanonicalTimeline(CANONICAL_TIMELINE, turn)) {
       const stepsById = new Map(turn.steps.map((s) => [s.id, s]));
-      return buildTimelineFromCanonical(turn.canonical, stepsById, live);
+      return buildTimelineFromCanonical(turn.canonical!, stepsById, live);
     }
     return turn.native ? buildTimeline(turn.native, live) : null;
   }, [turn.native, turn.canonical, turn.canonicalComplete, turn.steps, live]);

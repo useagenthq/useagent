@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "
 import { backendFetch } from "@/lib/backend-fetch";
 import { toThread, type ApiRun, type ApiStep, type RunStatus } from "./types";
 import { parseNativeFrame } from "./native-events";
-import type { StoredCanonicalEvent } from "./canonical-timeline";
+import { validateCanonicalComplete, validateCanonicalEvent } from "./canonical-timeline";
 import { createThreadStore, type ThreadSnapshot, type ThreadStore } from "./thread-store";
 import { createThreadConnection, type EventSourceLike, type ThreadConnection } from "./thread-connection";
 
@@ -102,17 +102,18 @@ function dispatchFrame(store: ThreadStore, event: string, data: string): void {
       return;
     }
     case "canonical": {
-      const event = (parsed as { event?: StoredCanonicalEvent }).event;
-      if (event && typeof event.runId === "string" && typeof event.eventId === "string") {
-        store.applyCanonical(event);
-      }
+      // H4: full structural envelope validation (schemaVersion/kind/ids/seq/deliverySeq/
+      // revision/thread) before it touches the store - a malformed frame is dropped, not
+      // misapplied (a missing deliverySeq/seq would corrupt ordering + dedupe).
+      const event = validateCanonicalEvent((parsed as { event?: unknown }).event, parsed.threadId);
+      if (event) store.applyCanonical(event);
       return;
     }
     case "canonical-complete": {
       // H2: mark a run's canonical projection trustworthy. Until this arrives the render
       // path stays on the legacy native lane even if provisional canonical rows exist.
-      const complete = (parsed as { complete?: { runId?: unknown } }).complete;
-      if (complete && typeof complete.runId === "string") store.markCanonicalComplete(complete.runId);
+      const complete = validateCanonicalComplete((parsed as { complete?: unknown }).complete, parsed.threadId);
+      if (complete) store.markCanonicalComplete(complete.runId);
       return;
     }
     case "done": {
