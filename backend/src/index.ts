@@ -9,6 +9,7 @@ import type { AppEnv } from "./http";
 import {
   allowDevOrg,
   connectorEmailConfig,
+  enabledEngines,
   env,
   githubConfigured,
   googleAuthEnabled,
@@ -94,18 +95,26 @@ app.get("/api/health", (c) => c.json({ status: "ok" }));
 // lets the UI reflect that unauthenticated dev access is currently open.
 // `capabilities` are honest config-gated booleans (a name is NOT a secret) so
 // surfaces like /agent/plugins can show what is actually wired vs not.
-app.get("/api/config", (c) =>
-  c.json({
+app.get("/api/config", (c) => {
+  // Which agent engines are ACTUALLY selectable, reflecting the server's
+  // ENABLED_ENGINES gate (capability-driven UI, final_harness Phase 2). Only the
+  // user-facing engines are advertised (mock/daytona/claude-sdk/acp are internal
+  // ids); claude/codex appear here ONLY when the operator enabled them, so the
+  // composer never offers an engine the backend would 403 as engine_not_enabled.
+  const enabled = enabledEngines();
+  const engines = (["opencode", "claude", "codex"] as const).filter((id) => enabled.has(id));
+  return c.json({
     auth: { google: googleAuthEnabled(), emailPassword: true },
     allowDevOrg: allowDevOrg(),
+    engines,
     capabilities: {
       github: githubConfigured(),
       slack: slackConfig() !== null,
       memory: memoryConfig() !== null,
       toolGateway: toolGatewayConfig() !== null,
     },
-  }),
-);
+  });
+});
 
 // better-auth: email/password + organization plugin, mounted at /api/auth/*.
 app.on(["GET", "POST"], "/api/auth/*", (c) => auth.handler(c.req.raw));
