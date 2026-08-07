@@ -60,3 +60,25 @@ describe("thread store canonical lane (slice 4)", () => {
     expect(nodes[0].key).toBe("s0");
   });
 });
+
+describe("thread store canonicalization-complete gate (H2)", () => {
+  test("canonicalComplete defaults false and flips true only on markCanonicalComplete", () => {
+    const store = createThreadStore();
+    store.applySnapshot([run]);
+    // Provisional canonical rows exist, but the run is NOT yet marked complete.
+    store.applyCanonical(ev({ eventId: "a", deliverySeq: 1, seq: 0 }));
+    expect(store.getSnapshot().byId.get(RUN)!.canonicalComplete).toBe(false);
+    // The durable completion signal arrives -> the lane becomes trustworthy.
+    store.markCanonicalComplete(RUN);
+    expect(store.getSnapshot().byId.get(RUN)!.canonicalComplete).toBe(true);
+  });
+
+  test("markCanonicalComplete is idempotent (no snapshot churn on a repeat)", () => {
+    const store = createThreadStore();
+    store.applySnapshot([run]);
+    store.markCanonicalComplete(RUN);
+    const first = store.getSnapshot();
+    store.markCanonicalComplete(RUN); // repeat
+    expect(store.getSnapshot()).toBe(first); // same cached snapshot object - no rebuild
+  });
+});

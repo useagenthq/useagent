@@ -28,8 +28,11 @@ import {
 import {
   loadCanonicalThread,
   subscribeCanonicalThread,
+  subscribeCanonicalizationComplete,
+  type CanonicalizationComplete,
   type DeliveredCanonicalEvent,
 } from "./canonical-events";
+import { completeCanonicalRuns } from "./canonicalization-outbox";
 import { subscribeThread } from "./thread-signals";
 import type { ApiRun, ApiStep } from "./repo";
 
@@ -519,7 +522,8 @@ runsRoutes.get("/:rootRunId/thread-events", async (c) => {
     | { type: "end"; runId: string; status: RunStatus }
     | { type: "delta"; runId: string; delta: string }
     | { type: "native"; runId: string; frame: NativeFrame }
-    | { type: "canonical"; event: DeliveredCanonicalEvent };
+    | { type: "canonical"; event: DeliveredCanonicalEvent }
+    | { type: "canonical-complete"; complete: CanonicalizationComplete };
 
   const body = new ReadableStream<Uint8Array>({
     start(controller) {
@@ -635,6 +639,14 @@ runsRoutes.get("/:rootRunId/thread-events", async (c) => {
         canonicalCursor = event.deliverySeq;
         sendFrame("canonical", { threadId, event });
       };
+      // Canonicalization-complete (H2): the per-run signal that its canonical projection
+      // is trustworthy. Deduped per run so replay + live never re-announce a run.
+      const canonicalCompleteSeen = new Set<string>();
+      const sendCanonicalComplete = (complete: CanonicalizationComplete): void => {
+        if (canonicalCompleteSeen.has(complete.runId)) return;
+        canonicalCompleteSeen.add(complete.runId);
+        sendFrame("canonical-complete", { threadId, complete });
+      };
 
       // Prime headers/first bytes.
       send(": open\n\n");
@@ -647,6 +659,7 @@ runsRoutes.get("/:rootRunId/thread-events", async (c) => {
         clearInterval(heartbeat);
         unsubscribeThread();
         unsubscribeCanonical();
+        unsubscribeCanonicalComplete();
         for (const off of perRunCleanups.values()) off();
         perRunCleanups.clear();
         attached.clear();
@@ -668,6 +681,10 @@ runsRoutes.get("/:rootRunId/thread-events", async (c) => {
       // Live canonical events for the whole thread (all runs, incl. later ones).
       const unsubscribeCanonical = subscribeCanonicalThread(threadId, (event) =>
         push({ type: "canonical", event }),
+      );
+      // Live canonicalization-complete signals (one per run as its outbox reaches complete).
+      const unsubscribeCanonicalComplete = subscribeCanonicalizationComplete(threadId, (complete) =>
+        push({ type: "canonical-complete", complete }),
       );
 
       if (signal.aborted) return cleanup();
@@ -722,6 +739,14 @@ runsRoutes.get("/:rootRunId/thread-events", async (c) => {
           sendCanonical(event);
         }
 
+        // 3c. Replay which runs are canonicalization-COMPLETE (H2). React trusts the
+        //     canonical lane for a run ONLY after this, so a reload converges on the
+        //     same gate as a live client - never on the presence of provisional rows.
+        for (const complete of await completeCanonicalRuns(threadId)) {
+          if (closed) return;
+          sendCanonicalComplete({ ...complete, threadId });
+        }
+
         // 4. Live loop — never closes on a single run settling; only the browser
         //    disconnect (abort) or a queue overflow closes it.
         while (!closed) {
@@ -747,6 +772,9 @@ runsRoutes.get("/:rootRunId/thread-events", async (c) => {
                 continue;
               case "canonical":
                 sendCanonical(ev.event);
+                continue;
+              case "canonical-complete":
+                sendCanonicalComplete(ev.complete);
                 continue;
               case "end":
                 // Settle ONE run; keep the thread connection open for queued/future

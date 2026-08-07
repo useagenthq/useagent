@@ -27,6 +27,10 @@ export interface ThreadRunView {
    *  ordered by deliverySeq. Empty until the canonical lane populates; the render path
    *  uses it only behind the canonical-timeline flag (legacy native lane is default). */
   canonical: readonly StoredCanonicalEvent[];
+  /** H2: whether this run's canonicalization reached the durable `complete` record. The
+   *  render path trusts the canonical lane ONLY when true - provisional rows (still being
+   *  retried by the outbox) never drive the UI, so a partial snapshot can't render. */
+  canonicalComplete: boolean;
 }
 
 export interface ThreadSnapshot {
@@ -58,6 +62,9 @@ export interface ThreadStore {
   applyNative(runId: string, frame: NativeFrame): void;
   /** Add a canonical event to its run's lane (latest revision per eventId wins). */
   applyCanonical(event: StoredCanonicalEvent): void;
+  /** Mark a run's canonicalization COMPLETE (H2): the render path may now trust its
+   *  canonical lane. Idempotent. */
+  markCanonicalComplete(runId: string): void;
   /** Settle the addressed run and clear only its transient text. */
   applyDone(runId: string, status: RunStatus): void;
 }
@@ -74,6 +81,8 @@ export function createThreadStore(): ThreadStore {
   const stores = new Map<string, NativeStore>();
   // Canonical lane (final_harness Phase 1): per-run eventId -> latest-revision event.
   const canonicalByRun = new Map<string, Map<string, StoredCanonicalEvent>>();
+  // H2: runs whose canonicalization reached the durable `complete` record (trustworthy).
+  const canonicalCompleteRuns = new Set<string>();
 
   const listeners = new Set<() => void>();
   let snapshot: ThreadSnapshot | null = null;
@@ -159,6 +168,7 @@ export function createThreadStore(): ThreadStore {
           canonical: canonMap
             ? [...canonMap.values()].sort((a, b) => a.deliverySeq - b.deliverySeq)
             : [],
+          canonicalComplete: canonicalCompleteRuns.has(id),
         });
       }
       snapshot = { runs: runsList, byId };
@@ -206,6 +216,12 @@ export function createThreadStore(): ThreadStore {
       const prev = m.get(event.eventId);
       if (prev && prev.revision >= event.revision) return;
       m.set(event.eventId, event);
+      notify();
+    },
+
+    markCanonicalComplete(runId) {
+      if (canonicalCompleteRuns.has(runId)) return; // idempotent - no rebuild on a repeat
+      canonicalCompleteRuns.add(runId);
       notify();
     },
 

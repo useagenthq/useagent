@@ -18,8 +18,13 @@ import {
   runCanonicalizationOutboxOnce,
   resetStuckCanonicalization,
   enqueueCanonicalization,
+  completeCanonicalRuns,
   type Claimed,
 } from "../src/runs/canonicalization-outbox";
+import {
+  subscribeCanonicalizationComplete,
+  type CanonicalizationComplete,
+} from "../src/runs/canonical-events";
 import { waitFor } from "./helpers"; // side-effect: imports src/index -> migrate
 
 beforeAll(async () => {
@@ -158,6 +163,34 @@ describe("canonicalization outbox: concurrent finalization (hole: double-transla
     expect(rows.length).toBe(n);
     // every row is revision 0 (a full-replace, never appended twice)
     expect(rows.every((r) => r.revision === 0)).toBe(true);
+  });
+});
+
+describe("canonicalization outbox: complete signal (H2 - durable + live)", () => {
+  test("reaching complete fires the live signal AND is replayable via completeCanonicalRuns", async () => {
+    const { RUN, THREAD } = await seedRun("cob_h2");
+    await enqueueCanonicalization(RUN, THREAD);
+    // Not complete yet -> not in the replay set.
+    expect((await completeCanonicalRuns(THREAD)).some((r) => r.runId === RUN)).toBe(false);
+    // Subscribe for the LIVE signal, then drain the outbox.
+    const seen: CanonicalizationComplete[] = [];
+    const off = subscribeCanonicalizationComplete(THREAD, (e) => seen.push(e));
+    try {
+      for (let i = 0; i < 30 && (await outboxRow(RUN))?.state !== "complete"; i++) {
+        await runCanonicalizationOutboxOnce();
+        await new Promise((r) => setTimeout(r, 50));
+      }
+    } finally {
+      off();
+    }
+    // Live: the complete signal fired for this run, carrying the watermark.
+    const mine = seen.find((e) => e.runId === RUN);
+    expect(mine).toBeDefined();
+    expect(mine!.sourceFrameMax).toBe(2);
+    expect(mine!.sourceStepCount).toBe(1);
+    // Replay: a reconnecting stream learns the run is complete from the durable table.
+    const replay = (await completeCanonicalRuns(THREAD)).find((r) => r.runId === RUN);
+    expect(replay).toEqual({ runId: RUN, sourceFrameMax: 2, sourceStepCount: 1 });
   });
 });
 

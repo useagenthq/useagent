@@ -48,6 +48,10 @@ export type Turn = {
   /** Canonical events for this run (final_harness Phase 1). Consumed only behind the
    *  canonical-timeline flag; empty/absent falls back to the native lane. */
   canonical?: readonly StoredCanonicalEvent[];
+  /** H2: whether this run's canonicalization reached the durable `complete` record. The
+   *  canonical lane drives the UI ONLY when true - otherwise the legacy native lane does,
+   *  so a still-provisional (partial, retrying) snapshot never renders. */
+  canonicalComplete?: boolean;
 };
 
 // Lightweight prose styling for rendered summaries — the AlignUI foundation
@@ -278,15 +282,17 @@ function TurnBlock({ turn, onSendNow }: { turn: Turn; onSendNow?: () => void }) 
   // data (settled history, non-native engines) → the legacy rendering below takes
   // over. Recomputed only when the native snapshot or liveness changes.
   const timeline = useMemo(() => {
-    // Canonical cutover (flag-gated): render from the canonical lane when it has
-    // events; fall straight back to the legacy native derivation otherwise. The two
-    // are proven byte-for-byte equivalent, so this never changes what the user sees.
-    if (CANONICAL_TIMELINE && turn.canonical && turn.canonical.length > 0) {
+    // Canonical cutover (flag-gated): render from the canonical lane ONLY once this run's
+    // canonicalization reached its durable `complete` record (H2). A still-provisional
+    // projection (the outbox is retrying, the snapshot may be partial) never drives the
+    // UI - the legacy native derivation does. The two are proven byte-for-byte equivalent,
+    // so a completed swap never changes what the user sees.
+    if (CANONICAL_TIMELINE && turn.canonicalComplete && turn.canonical && turn.canonical.length > 0) {
       const stepsById = new Map(turn.steps.map((s) => [s.id, s]));
       return buildTimelineFromCanonical(turn.canonical, stepsById, live);
     }
     return turn.native ? buildTimeline(turn.native, live) : null;
-  }, [turn.native, turn.canonical, turn.steps, live]);
+  }, [turn.native, turn.canonical, turn.canonicalComplete, turn.steps, live]);
 
   const activity = steps.filter((s) => s.kind !== "done");
   const latestLabel = activity.at(-1)?.label ?? "Starting up";

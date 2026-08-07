@@ -31,6 +31,18 @@ export type DeliveredCanonicalEvent = CanonicalAgentEvent & {
 const bus = new EventEmitter();
 bus.setMaxListeners(0);
 export const canonicalThreadChannel = (threadId: string): string => `canonical-thread:${threadId}`;
+const canonicalCompleteChannel = (threadId: string): string => `canonical-complete:${threadId}`;
+
+/** The durable "this run's canonicalization is COMPLETE" signal (H2). Carries the
+ *  source watermark it locked in. React trusts the canonical lane for a run ONLY once
+ *  this arrives (replay from the outbox on reconnect, live on markComplete) - never on
+ *  the mere presence of provisional rows. */
+export interface CanonicalizationComplete {
+  readonly runId: string;
+  readonly threadId: string;
+  readonly sourceFrameMax: number;
+  readonly sourceStepCount: number;
+}
 
 /** Subscribe to a THREAD's live canonical events (all runs, incl. later ones). */
 export function subscribeCanonicalThread(
@@ -40,6 +52,24 @@ export function subscribeCanonicalThread(
   const ch = canonicalThreadChannel(threadId);
   bus.on(ch, fn);
   return () => bus.off(ch, fn);
+}
+
+/** Subscribe to a THREAD's live canonicalization-complete signals (one per run as its
+ *  outbox row reaches `complete`). */
+export function subscribeCanonicalizationComplete(
+  threadId: string,
+  fn: (e: CanonicalizationComplete) => void,
+): () => void {
+  const ch = canonicalCompleteChannel(threadId);
+  bus.on(ch, fn);
+  return () => bus.off(ch, fn);
+}
+
+/** Publish a run's canonicalization-complete signal to its thread channel. Called by the
+ *  outbox worker AFTER the `complete` row commits (durable-first), so a live client and a
+ *  reconnecting client converge on the same truth. */
+export function publishCanonicalizationComplete(e: CanonicalizationComplete): void {
+  bus.emit(canonicalCompleteChannel(e.threadId), e);
 }
 
 type SelectRow = typeof canonicalEvents.$inferSelect;
