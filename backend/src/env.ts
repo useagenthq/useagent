@@ -32,6 +32,36 @@ export function allowDevOrg(): boolean {
   return devModeEnabled();
 }
 
+/**
+ * Which engines may actually run. SECURITY GATE (final_harness.md P0): the
+ * Claude/Codex ACP adapters are registered but NOT production-proven or SaaS-safe
+ * (auto-approve permissions, host-credential copy). They must never be activatable
+ * through a direct `engine` on POST /api/runs - or any channel - unless an operator
+ * explicitly opts in. The base set is the proven OpenCode/scripted path; the
+ * `ENABLED_ENGINES` env (comma list) only ADDS engines on top
+ * (e.g. `ENABLED_ENGINES=claude,codex`) and can never disable the base. Read per
+ * call so a deploy flips it without a rebuild; unknown ids are ignored.
+ */
+const BASE_ENABLED_ENGINES: readonly EngineId[] = ["mock", "opencode", "daytona"];
+
+export function enabledEngines(): Set<EngineId> {
+  const set = new Set<EngineId>(BASE_ENABLED_ENGINES);
+  const extra = process.env.ENABLED_ENGINES;
+  if (extra) {
+    for (const raw of extra.split(",")) {
+      const id = raw.trim();
+      if ((ENGINE_IDS as readonly string[]).includes(id)) set.add(id as EngineId);
+    }
+  }
+  return set;
+}
+
+/** True iff `engine` is permitted to run in this deployment. Fail closed: an
+ *  unknown or not-opted-in engine is not enabled. */
+export function isEngineEnabled(engine: string): boolean {
+  return enabledEngines().has(engine as EngineId);
+}
+
 const DEFAULT_AUTH_SECRET = "dev-skynet-secret-change-me";
 
 /** Resolve the auth secret. Production (dev mode off) must supply its own. */

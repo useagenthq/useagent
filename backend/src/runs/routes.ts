@@ -12,6 +12,7 @@ import {
   listRunsWithSteps,
 } from "./repo";
 import { acceptRunCommand } from "../commands";
+import { isEngineEnabled } from "../env";
 import { acceptRunCancel, CANCEL_SUMMARY } from "../commands/cancel";
 import { resolveSkillSelection } from "../skills/repo";
 import { unknownRepos } from "../github/repos";
@@ -71,6 +72,12 @@ runsRoutes.post("/", async (c) => {
       );
     }
     engine = body.engine as EngineId;
+    // SECURITY GATE (final_harness.md P0): a known engine id is not enough - the
+    // registered-but-unsafe Claude/Codex/ACP adapters must be explicitly enabled
+    // (ENABLED_ENGINES) before a direct API caller can activate them. Fail closed.
+    if (!isEngineEnabled(engine)) {
+      return c.json({ error: "engine_not_enabled", engine }, 403);
+    }
   }
 
   const id = crypto.randomUUID();
