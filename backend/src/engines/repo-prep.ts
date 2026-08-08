@@ -49,58 +49,65 @@ export async function ensureRepoClone(
   // colliding on one directory (same-basename collision).
   const dir = `${workdir}/${repo}`;
   const wantBranch = branch ?? "";
-  // IDENTITY pre-check for a warm/reused sandbox: reuse the existing checkout ONLY when it is
-  // the SAME repo (origin URL matches) AND, if a branch was requested, on that branch. A dir
-  // holding a different origin (stale/collision) or the wrong branch is NOT silently reused -
-  // it is re-cloned below. This is the cheap path that keeps a genuine reuse quiet + token-free.
+  // IDENTITY pre-check for a warm/reused sandbox. Report the EXACT state so we can act
+  // NON-DESTRUCTIVELY: reuse a matching checkout (quiet, token-free); switch branches IN PLACE
+  // (never rm) when the ORIGIN matches but the branch differs, preserving a warm checkout's
+  // work; only re-clone when the dir holds a DIFFERENT origin (a genuine collision) or nothing.
   const idScript =
     `DIR=${shq(dir)}; ` +
     `if [ -d "$DIR/.git" ]; then ` +
     `U="$(git -C "$DIR" remote get-url origin 2>/dev/null)"; ` +
     `B="$(git -C "$DIR" rev-parse --abbrev-ref HEAD 2>/dev/null)"; ` +
-    `if [ "$U" = ${shq(url)} ] && { [ -z ${shq(wantBranch)} ] || [ "$B" = ${shq(wantBranch)} ]; }; ` +
-    `then echo id:reuse; else echo id:stale; fi; ` +
+    `if [ "$U" != ${shq(url)} ]; then echo id:origin; ` +
+    `elif [ -n ${shq(wantBranch)} ] && [ "$B" != ${shq(wantBranch)} ]; then echo id:branch; ` +
+    `else echo id:reuse; fi; ` +
     `else echo id:absent; fi`;
-  const idCheck = await sandbox.process.executeCommand(idScript, undefined, undefined, 15);
-  if ((idCheck.result ?? "").includes("id:reuse")) return;
+  const idState = (await sandbox.process.executeCommand(idScript, undefined, undefined, 15)).result ?? "";
+  if (idState.includes("id:reuse")) return;
 
-  // Resolve a credential per clone: a PAT, or a FRESHLY-valid GitHub App
-  // installation token (they expire ~1h, so we mint/reuse one here rather than
-  // carry a stale token). Absent -> public clone.
+  // One-shot GitHub credential (a PAT or a FRESHLY-valid App installation token). Passed via
+  // GIT_CONFIG_* ENV ONLY (never the git argv / .git-config / logs / prompt), applied for THIS
+  // operation and never persisted. Absent -> public repo. Shared by the switch + clone paths.
   const token = await resolveGithubToken();
-  // A chosen branch clones with `-b <branch>` (a bare entry clones the repo's
-  // default branch). A branch that does not exist fails the clone, and so the
-  // run, honestly - better than silently landing on the wrong branch.
+  const authEnv: Record<string, string> = token
+    ? {
+        GIT_CONFIG_COUNT: "1",
+        GIT_CONFIG_KEY_0: "http.extraHeader",
+        GIT_CONFIG_VALUE_0: `Authorization: Basic ${Buffer.from(`x-access-token:${token}`).toString("base64")}`,
+      }
+    : {};
+
+  // SAME repo, WRONG branch: switch in place (fetch + checkout). NON-DESTRUCTIVE - we never
+  // rm -rf a checkout that IS the requested repo, so a warm checkout's local work survives.
+  if (idState.includes("id:branch") && branch) {
+    const switchScript =
+      `set -e; DIR=${shq(dir)}; L="$(mktemp)"; ` +
+      `if git -C "$DIR" fetch origin ${shq(branch)} --quiet >"$L" 2>&1 && git -C "$DIR" checkout ${shq(branch)} >"$L" 2>&1; ` +
+      `then rm -f "$L"; echo switch:ok; else echo switch:failed; tail -c 300 "$L"; rm -f "$L"; exit 1; fi`;
+    await ctx.emit({ kind: "command", label: `Checking out ${repo} (${branch})`, chip: "git" });
+    const sw = await sandbox.process.executeCommand(switchScript, undefined, authEnv, 120);
+    const sout = (sw.result ?? "").trim();
+    if ((sw.exitCode ?? 1) !== 0 || /switch:failed/.test(sout)) {
+      const detail = sout.replace(/switch:\w+/g, "").trim() || "git checkout error";
+      throw new Error(`failed to switch ${repo} to ${branch}: ${truncate(detail, 200)}`);
+    }
+    return;
+  }
+
+  // DIFFERENT origin (collision) or nothing there: (re-)clone fresh. A chosen branch clones
+  // with `-b <branch>`; a branch that does not exist fails the clone (and the run) honestly.
   const branchArg = branch ? `-b ${shq(branch)} ` : "";
-  // Create the owner parent dir, clear any stale/partial checkout (wrong-origin/wrong-branch or
-  // a failed prior clone), then clone fresh into the owner-qualified subdir.
   const script =
     `set -e; DIR=${shq(dir)}; mkdir -p "$(dirname "$DIR")"; ` +
     `rm -rf "$DIR"; L="$(mktemp)"; ` +
     `if git clone ${branchArg}${shq(url)} "$DIR" >"$L" 2>&1; then rm -f "$L"; echo clone:ok; ` +
     `else echo clone:failed; tail -c 300 "$L"; rm -rf "$L" "$DIR"; exit 1; fi`;
-  // Token via ENV only (see trust-boundary note). Absent token -> public clone.
-  // Basic auth with the "x-access-token" username is the form GitHub's git
-  // smart-HTTP endpoint accepts for BOTH a PAT and an App installation token; a
-  // Bearer header is API-only and git falls back to an interactive prompt (fails
-  // in a sandbox). The header is applied one-shot for THIS clone and never
-  // persisted to .git/config.
-  const cloneEnv: Record<string, string> = token
-    ? {
-        GIT_CONFIG_COUNT: "1",
-        GIT_CONFIG_KEY_0: "http.extraHeader",
-        GIT_CONFIG_VALUE_0: `Authorization: Basic ${Buffer.from(
-          `x-access-token:${token}`,
-        ).toString("base64")}`,
-      }
-    : {};
-
   await ctx.emit({
     kind: "command",
     label: branch ? `Cloning ${repo} (${branch})` : `Cloning ${repo}`,
     chip: "git",
   });
-  const res = await sandbox.process.executeCommand(script, undefined, cloneEnv, 300);
+  const res = await sandbox.process.executeCommand(script, undefined, authEnv, 300);
   const out = (res.result ?? "").trim();
   if ((res.exitCode ?? 1) !== 0 || /clone:failed/.test(out)) {
     // Never echo the credential - surface only the sanitized git tail.

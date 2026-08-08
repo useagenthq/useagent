@@ -24,8 +24,9 @@ interface Call {
   env: Record<string, string> | undefined;
 }
 /** `identity` is what the pre-check reports for an EXISTING dir: "reuse" (same origin+branch),
- *  "stale" (wrong origin or wrong branch), or "absent" (fresh - nothing there yet). */
-function fakeSandbox(opts: { identity?: "reuse" | "stale" | "absent"; cloneExit?: number; cloneOut?: string } = {}): {
+ *  "branch" (SAME origin, wrong branch -> switch in place, non-destructive), "origin" (DIFFERENT
+ *  origin, a genuine collision -> re-clone), or "absent" (fresh - nothing there yet). */
+function fakeSandbox(opts: { identity?: "reuse" | "branch" | "origin" | "absent"; cloneExit?: number; cloneOut?: string; switchExit?: number; switchOut?: string } = {}): {
   sandbox: Sandbox;
   calls: Call[];
 } {
@@ -34,6 +35,7 @@ function fakeSandbox(opts: { identity?: "reuse" | "stale" | "absent"; cloneExit?
     executeCommand: async (cmd: string, _cwd?: string, env?: Record<string, string>) => {
       calls.push({ cmd, env });
       if (/remote get-url origin/.test(cmd)) return { result: `id:${opts.identity ?? "absent"}`, exitCode: 0 };
+      if (/git -C .* (fetch|checkout)/.test(cmd)) return { result: opts.switchOut ?? "switch:ok", exitCode: opts.switchExit ?? 0 };
       if (/git clone/.test(cmd)) return { result: opts.cloneOut ?? "clone:ok", exitCode: opts.cloneExit ?? 0 };
       return { result: "", exitCode: 0 };
     },
@@ -51,6 +53,7 @@ function fakeCtx(repos?: string[]): { ctx: EngineRunContext; emits: { label?: st
 }
 const cloneCmd = (calls: Call[]) => calls.find((c) => /git clone/.test(c.cmd));
 const idCmd = (calls: Call[]) => calls.find((c) => /remote get-url origin/.test(c.cmd));
+const switchCmd = (calls: Call[]) => calls.find((c) => /git -C .* checkout/.test(c.cmd));
 
 describe("repo-prep: shared engine-neutral repository preparation (Slice 1)", () => {
   test("shq single-quotes and POSIX-escapes embedded quotes", () => {
@@ -108,12 +111,44 @@ describe("repo-prep: shared engine-neutral repository preparation (Slice 1)", ()
     expect(emits.some((e) => e.label?.startsWith("Cloning"))).toBe(false);
   });
 
-  test("WRONG-ORIGIN / WRONG-BRANCH: a stale checkout is RE-CLONED, not silently reused", async () => {
-    const { sandbox, calls } = fakeSandbox({ identity: "stale" });
+  test("SAME origin, WRONG branch: switch IN PLACE (fetch+checkout), NEVER rm -rf a warm checkout", async () => {
+    const { sandbox, calls } = fakeSandbox({ identity: "branch" });
+    const { ctx, emits } = fakeCtx();
+    await ensureRepoClone(sandbox, "/w", "acme/widget:main", ctx);
+    // The requested repo IS already there (same origin) - preserve its working tree: fetch +
+    // checkout the branch, no clone, no rm -rf. A warm checkout's local work survives.
+    const sw = switchCmd(calls);
+    expect(sw).toBeDefined();
+    expect(sw?.cmd).toContain("git -C \"$DIR\" fetch origin 'main'");
+    expect(sw?.cmd).toContain("git -C \"$DIR\" checkout 'main'");
+    expect(sw?.cmd).not.toContain("rm -rf");
+    expect(cloneCmd(calls)).toBeUndefined();
+    expect(emits.some((e) => e.label === "Checking out acme/widget (main)")).toBe(true);
+    // the one-shot GitHub credential rides in ENV on the fetch, never the command string
+    expect(sw?.env?.GIT_CONFIG_VALUE_0).toContain(Buffer.from(`x-access-token:${SENTINEL}`).toString("base64"));
+    expect(sw?.cmd).not.toContain(SENTINEL);
+  });
+
+  test("a branch switch that FAILS throws a SANITIZED error (no marker, no token) and does not rm", async () => {
+    const { sandbox, calls } = fakeSandbox({ identity: "branch", switchExit: 1, switchOut: "switch:failed\nerror: pathspec 'main' did not match" });
+    const { ctx } = fakeCtx();
+    let msg = "";
+    await ensureRepoClone(sandbox, "/w", "acme/widget:main", ctx).catch((e) => { msg = e instanceof Error ? e.message : String(e); });
+    expect(msg).toContain("failed to switch acme/widget to main");
+    expect(msg).toContain("error: pathspec 'main' did not match");
+    expect(msg).not.toContain("switch:failed");
+    expect(msg).not.toContain(SENTINEL);
+    expect(cloneCmd(calls)).toBeUndefined(); // a failed switch does NOT fall through to a destructive re-clone
+  });
+
+  test("DIFFERENT origin (genuine collision): the stale dir is RE-CLONED (rm -rf + git clone)", async () => {
+    const { sandbox, calls } = fakeSandbox({ identity: "origin" });
     const { ctx } = fakeCtx();
     await ensureRepoClone(sandbox, "/w", "acme/widget:main", ctx);
-    // stale identity -> the pre-check ran, then a fresh clone (rm -rf + git clone) is issued.
+    // A dir holding a DIFFERENT repo at this owner/name path is not the user's warm work for THIS
+    // repo - clear it and clone fresh.
     expect(idCmd(calls)).toBeDefined();
+    expect(switchCmd(calls)).toBeUndefined();
     const clone = cloneCmd(calls);
     expect(clone).toBeDefined();
     expect(clone?.cmd).toContain('rm -rf "$DIR"');
