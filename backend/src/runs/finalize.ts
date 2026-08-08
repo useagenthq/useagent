@@ -9,9 +9,13 @@ import { composeSlackReplyText } from "../slack/reply";
 import { enqueuePostMessageTx, kickSlackOutbox } from "../slack/outbox";
 import { publishThreadChange } from "./thread-signals";
 import { enqueueCanonicalization } from "./canonicalization-outbox";
+import { canonicalEngine } from "../engines/engine-alias";
 
-/** Engines whose runs project into `steps` and are translated to the canonical lane.
- *  OpenCode + the ACP engines (claude/codex); mock/daytona have nothing to translate. */
+/** Providers whose runs project into `steps` and are translated to the canonical lane.
+ *  OpenCode + the ACP engines (claude/codex). Legacy aliases (daytona -> opencode,
+ *  claude-sdk -> claude) run the same adapter, so they normalize into this set via
+ *  {@link canonicalEngine} and are NOT left silently outside the lane. Only `mock`
+ *  (scripted) and the generic `acp` have nothing to translate. */
 const CANONICAL_ENGINES = new Set(["opencode", "claude", "codex"]);
 
 // ---------------------------------------------------------------------------
@@ -96,7 +100,7 @@ export async function finalizeRun(
     // outbox worker translates with a source-watermark stability check + retry, and
     // marks `complete` only when the whole source was translated. OpenCode + the ACP
     // engines project into `steps`, which the step lane turns into canonical tool rows.
-    if (CANONICAL_ENGINES.has(run.engine)) {
+    if (CANONICAL_ENGINES.has(canonicalEngine(run.engine))) {
       await enqueueCanonicalization(runId, run.threadId, tx);
     }
   });
