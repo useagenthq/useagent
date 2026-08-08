@@ -48,6 +48,8 @@ export interface CanonicalEventLike {
     readonly description?: string | null;
     readonly input?: string | null;
   }[];
+  /** `session.started` body: the ONE negotiated capability map the UI gates surfaces on. */
+  readonly capabilities?: Readonly<Record<string, boolean>>;
 }
 
 /** A canonical event as stored/streamed to the client: the reducer's structural view
@@ -251,6 +253,29 @@ export function selectSessionCommands(
     description: c.description ?? null,
     input: c.input ?? null,
   }));
+}
+
+/** The negotiated capability map for the CURRENT session, from the DURABLE canonical stream's
+ *  `session.started` (session-scoped by `identity.nativeSessionId`). This is the ONE map the UI
+ *  gates every surface on - never a provider-name check. Null when the session has not started
+ *  yet (the caller may fall back to a pre-session heuristic). A missing key reads as false. */
+export function selectSessionCapabilities(
+  runs: readonly { readonly canonical: readonly StoredCanonicalEvent[] }[],
+  sessionId: string | null,
+): Readonly<Record<string, boolean>> | null {
+  if (!sessionId) return null;
+  let latest: StoredCanonicalEvent | null = null;
+  for (const run of runs) {
+    for (const e of run.canonical) {
+      if (
+        e.kind === "session.started" &&
+        e.identity?.nativeSessionId === sessionId &&
+        (latest === null || e.deliverySeq > latest.deliverySeq)
+      )
+        latest = e;
+    }
+  }
+  return latest?.capabilities ?? null;
 }
 
 /** The command-picker's honest state, so the UI can distinguish absence, loading, an empty

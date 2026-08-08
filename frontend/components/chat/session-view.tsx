@@ -35,6 +35,7 @@ import {
 } from "@/components/chat/types";
 import {
   resolveCommandCatalog,
+  selectSessionCapabilities,
   selectSessionCommands,
   type CanonicalCommandView,
 } from "@/components/chat/canonical-timeline";
@@ -265,6 +266,13 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
   // conversation's opencode session instead of the app's home screen.
   const engineSessionId =
     thread.findLast((r) => r.engine_session_id)?.engine_session_id ?? null;
+  // The ONE negotiated capability map for the current session (Phase 6): surface visibility gates
+  // on THIS, not a provider name. Null until session.started arrives, so a pre-session view falls
+  // back to the engine heuristic (`isOpencode`) rather than flashing/hiding a surface wrongly.
+  const caps = useMemo(
+    () => selectSessionCapabilities([...snapshot.byId.values()], engineSessionId),
+    [snapshot.byId, engineSessionId],
+  );
   const [railOverride, setRailOverride] = useState<boolean | null>(null);
   const railOpen = railOverride ?? hasRailContent;
   // Rail resize: a dragger between the conversation and the rail (md+). Width
@@ -312,7 +320,11 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
   // The Desktop tab watches the sandbox GUI (multi-repo); a recorded opencode
   // session implies its sandbox exists, so the pane can connect (else it shows a
   // placeholder). Only offered for opencode threads — the snapshot with noVNC.
-  const hasDesktop = isOpencode;
+  // Desktop/VNC tab: shown only when a real desktop resource is negotiated (caps.desktop). Before
+  // session.started arrives, fall back to the engine heuristic so an opencode thread still offers
+  // it immediately. A capability-false session (e.g. a cold ACP sandbox with no VNC) never shows a
+  // fake tab.
+  const hasDesktop = caps ? caps.desktop === true : isOpencode;
 
   // Slash-command catalog for the reply composer's "/" autocomplete - the SELECTED engine's
   // real native commands, capability-driven (no provider-name gate). Authoritative source is
@@ -529,7 +541,7 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
               ) : railTab === "editor" ? (
                 <EditorPane steps={allSteps} live={live} />
               ) : railTab === "desktop" ? (
-                <DesktopPane threadId={rootId} hasSandbox={isOpencode && !!engineSessionId} />
+                <DesktopPane threadId={rootId} hasSandbox={(caps ? caps.desktop === true : isOpencode) && !!engineSessionId} />
               ) : (
                 <TerminalPane steps={allSteps} live={live} engine={newest.engine} runId={newest.id} />
               )}

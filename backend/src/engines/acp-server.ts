@@ -1,7 +1,8 @@
 import { Daytona, type Sandbox } from "@daytona/sdk";
 import type { EmitStep, EngineAdapter, EngineRunContext } from "./types";
 import { composeTurnPrompt } from "./types";
-import { ACP_COMMANDS_EVENT_TYPE, parseAcpAvailableCommands } from "@skynet/agent-harness/canonical";
+import { ACP_COMMANDS_EVENT_TYPE, SESSION_STARTED_EVENT_TYPE, parseAcpAvailableCommands } from "@skynet/agent-harness/canonical";
+import { sessionCapabilities } from "./capabilities";
 import { basename, parseJsonLine, persistSandboxBeforeExecution, truncate } from "./util";
 import { prepareRepos } from "./repo-prep";
 import { parseRepoRef } from "../github/repo-ref";
@@ -227,6 +228,21 @@ async function sendSessionCancel(baseUrl: string, token: string, sessionId: stri
   } finally {
     clearTimeout(budget);
   }
+}
+
+/** Targeted native ACP cancel for the CONTROL adapter (HarnessAdapter.cancel): find the live
+ *  resident relay for (sandbox, session) and send a native `session/cancel`. Returns true when a
+ *  live relay was found and the cancel was sent. The run's own Stop already sends this via the
+ *  abort path during a turn; this lets the typed control seam report the truth (cancel IS wired)
+ *  instead of a stale `unsupported_capability`. */
+export async function cancelAcpSession(sandboxId: string, sessionId: string): Promise<boolean> {
+  for (const relay of threadRelays.values()) {
+    if (relay.sandboxId === sandboxId && relay.sessionId === sessionId) {
+      await sendSessionCancel(relay.baseUrl, relay.token, sessionId);
+      return true;
+    }
+  }
+  return false;
 }
 
 /**
@@ -808,6 +824,26 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
           }
           live.sessionId = sessionId;
           ctx.saveEngineSessionId?.(sessionId);
+
+          // Emit session.started with the ONE negotiated capability map the UI gates on (never a
+          // provider-name guess). Durable via the provider-events lane -> canonical session.started.
+          // desktop: false (a cold ACP sandbox has no VNC); knowledgeTools: only if the gateway MCP
+          // was actually injected for this run.
+          void recordProviderEvent({
+            id: `${ctx.runId}:${sessionId}:session`,
+            runId: ctx.runId,
+            threadId: ctx.threadId ?? ctx.runId,
+            provider: cfg.id,
+            eventType: SESSION_STARTED_EVENT_TYPE,
+            nativeSessionId: sessionId,
+            payload: {
+              source: cfg.id,
+              capabilities: sessionCapabilities(cfg.id, {
+                desktop: false,
+                knowledgeTools: Object.keys(mcpServers ?? {}).length > 0,
+              }),
+            },
+          });
 
           await ctx.emit({ kind: "task", label: `Running ${cfg.id} (resident)…`, chip: cfg.id });
           const promptText = composeTurnPrompt(ctx, resumed);

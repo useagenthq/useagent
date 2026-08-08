@@ -6,6 +6,7 @@ import type {
   HarnessReconciliation,
   HarnessSessionHandle,
 } from "./types";
+import { cancelAcpSession } from "./acp-server";
 
 // ---------------------------------------------------------------------------
 // Claude/Codex ACP control seam (Slice 2). Gives the ACP engines the SAME typed
@@ -30,7 +31,7 @@ import type {
  *  translation. These flip to true only when the corresponding path is real. */
 const ACP_CAPABILITIES: HarnessCapabilities = {
   resume: true,
-  cancel: false,
+  cancel: true, // native session/cancel IS wired (Slice 4 + reconcile): see cancel() below
   streaming: "parts",
   authoritativeHistory: false,
   childSessions: false,
@@ -50,15 +51,20 @@ function makeAcpHarness(provider: string): HarnessAdapter {
       return { ...ACP_CAPABILITIES };
     },
 
-    // No native session/cancel is wired yet (Slice 4). The product Stop still works
-    // via the run's AbortSignal in acp-server.ts, but that is the shared HTTP/SSE
-    // abort, NOT a provider-native targeted cancel - so this typed control surface
-    // reports the truth instead of claiming an ok it did not perform.
+    // Native session/cancel IS wired (Slice 4 + reconcile): find the live resident relay for this
+    // (sandbox, session) and send a targeted ACP `session/cancel`. Reports the truth - `ok` when
+    // the cancel was sent, a classified error when no live relay holds the session (e.g. it already
+    // settled / the sandbox is gone), never a fabricated ok or a stale unsupported_capability.
     async cancel(
-      _handle: HarnessSessionHandle,
+      handle: HarnessSessionHandle,
       _reason: string,
     ): Promise<HarnessOperationResult> {
-      return { status: "unsupported_capability", provider, capability: "cancel" };
+      try {
+        const sent = await cancelAcpSession(handle.sandboxId, handle.sessionId);
+        return sent ? { status: "ok" } : { status: "error", code: "session_invalid", message: "no live ACP relay holds this session" };
+      } catch (e) {
+        return { status: "error", code: "provider_error", message: e instanceof Error ? e.message : String(e) };
+      }
     },
 
     // ACP exposes no authoritative REST history to reconcile from after a restart,

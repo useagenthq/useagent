@@ -17,6 +17,8 @@ import { getThreadSandbox, setRunSandbox } from "../runs/repo";
 import { prepareRepos, shq } from "./repo-prep";
 import { assertNever } from "../util/exhaustive";
 import { toolGatewayConfig } from "../knowledge/gateway/config";
+import { SESSION_STARTED_EVENT_TYPE } from "@skynet/agent-harness/canonical";
+import { sessionCapabilities } from "./capabilities";
 import { mintToolToken } from "../knowledge/gateway/token";
 import { MEMORY_SKILL_PATH, memorySkillText } from "../memory/memory-skill-text";
 import { composeSecretEnv, materializeSecretFiles } from "../secrets/inject";
@@ -588,6 +590,22 @@ export const opencodeServerAdapter: EngineAdapter = {
       // only stamped run gets deleted (or a race) would otherwise go dark for
       // the Live tab even though the session exists.
       else ctx.saveEngineSessionId?.(sessionId);
+
+      // session.started with the ONE negotiated capability map (Phase 6). OpenCode has the native
+      // web embed (Live) and the v17 snapshot ships noVNC (desktop), so both are true; knowledgeTools
+      // reflects whether the tool gateway is actually configured/reachable.
+      void recordProviderEvent({
+        id: `${ctx.runId}:${sessionId}:session`,
+        runId: ctx.runId,
+        threadId: ctx.threadId ?? ctx.runId,
+        provider: "opencode",
+        eventType: SESSION_STARTED_EVENT_TYPE,
+        nativeSessionId: sessionId,
+        payload: {
+          source: "opencode",
+          capabilities: sessionCapabilities("opencode", { desktop: true, knowledgeTools: toolGatewayConfig() !== null }),
+        },
+      });
 
       // ── realtime: subscribe /event BEFORE prompting ─────────────────────────
       const sseAbort = new AbortController();
