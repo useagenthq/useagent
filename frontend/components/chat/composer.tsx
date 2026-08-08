@@ -26,6 +26,7 @@ import {
 import {
   filterCommands,
   SlashCommandPopover,
+  slashInsertText,
   type SlashCommand,
 } from "@/components/chat/slash-command";
 import { ChatModelMenu, type ChatModelOption } from "@/components/chat/chat-model-menu";
@@ -169,7 +170,7 @@ export function Composer({
   const cmdActive = cmdMatches.length > 0;
 
   function pickCommand(cmd: SlashCommand) {
-    setValue(`/${cmd.name} `);
+    setValue(slashInsertText(cmd.name)); // verbatim `/name ` - sent as-is to the resident session
     setCmdHighlight(0);
   }
 

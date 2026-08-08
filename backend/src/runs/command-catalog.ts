@@ -74,30 +74,37 @@ export async function readCommandCatalog(
   return row ? { commands: row.commands, fetchedAt: row.fetchedAt } : null;
 }
 
-/** The catalog cache key for an ACP engine's native commands. Keyed by ENGINE so a
- *  Claude session never shows Codex/OpenCode commands; a live session snapshot always
- *  overrides this pre-session cache. (The `snapshot` PK column doubles as a generic
- *  catalog key - opencode uses the snapshot name, ACP uses `acp:<engine>`.) */
-export function acpCatalogKey(engine: string): string {
-  return `acp:${engine}`;
+/** The New Task cache key for an ACP engine's native commands. Keyed by ORG **and** ENGINE:
+ *  ORG so one tenant's session-derived commands (which can include org-specific skills) never
+ *  leak into another tenant's New Task picker; ENGINE so a Claude session never shows
+ *  Codex/OpenCode commands. This is only the PRE-session cache - a live session's snapshot
+ *  (delivered through the thread stream) always wins and re-caches (self-healing on an adapter
+ *  upgrade). (The `snapshot` PK column doubles as a generic catalog key.) */
+export function acpCatalogKey(orgId: string, engine: string): string {
+  return `acp:${orgId}:${engine}`;
 }
 
 /**
- * Cache an ACP engine's native command snapshot (from available_commands_update). Upserts
- * only a NON-empty snapshot so a transient empty frame never clobbers a good cache; the live
- * session's fresh snapshot is what the session UI shows, this cache only primes New Task.
- * Never throws - callers fire-and-forget.
+ * Cache an ACP engine's native command snapshot (from available_commands_update) for the
+ * PRE-session New Task picker, scoped to the run's org. Upserts only a NON-empty snapshot so
+ * a transient empty frame never clobbers a good cache (empty REPLACEMENT is honored on the
+ * live thread stream, not in this priming cache). Never throws - callers fire-and-forget.
  */
-export async function cacheAcpCommands(engine: string, commands: readonly CanonicalCommand[]): Promise<void> {
+export async function cacheAcpCommands(
+  orgId: string,
+  engine: string,
+  commands: readonly CanonicalCommand[],
+): Promise<void> {
   if (commands.length === 0) return;
   const rows: CatalogCommand[] = commands.map((c) => ({
     name: c.name,
     description: c.description ?? null,
     input: c.input ?? null,
   }));
+  const key = acpCatalogKey(orgId, engine);
   await db
     .insert(commandsCatalog)
-    .values({ snapshot: acpCatalogKey(engine), commands: rows, fetchedAt: new Date() })
+    .values({ snapshot: key, commands: rows, fetchedAt: new Date() })
     .onConflictDoUpdate({ target: commandsCatalog.snapshot, set: { commands: rows, fetchedAt: new Date() } })
     .catch(() => {});
 }
@@ -110,10 +117,12 @@ export const commandsRoutes = new Hono<AppEnv>();
 commandsRoutes.use("*", orgScope);
 
 commandsRoutes.get("/", async (c) => {
-  // `?engine=claude|codex` reads that ACP engine's native catalog; the default (opencode)
-  // reads the snapshot catalog. Keyed so no engine ever shows another engine's commands.
+  // `?engine=claude|codex` reads that ACP engine's native catalog for THIS org; the default
+  // (opencode) reads the org-neutral snapshot catalog. Keyed so no engine (and no other org)
+  // ever shows commands it should not.
   const engine = c.req.query("engine");
-  const key = engine && engine !== "opencode" ? acpCatalogKey(engine) : defaultSnapshot();
+  const orgId = c.get("orgId") ?? "";
+  const key = engine && engine !== "opencode" ? acpCatalogKey(orgId, engine) : defaultSnapshot();
   const cached = await readCommandCatalog(key);
   return c.json({
     engine: engine ?? "opencode",
