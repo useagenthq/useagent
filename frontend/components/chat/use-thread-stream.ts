@@ -4,9 +4,16 @@ import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "
 import { backendFetch } from "@/lib/backend-fetch";
 import { toThread, type ApiRun, type ApiStep, type RunStatus } from "./types";
 import { parseNativeFrame } from "./native-events";
-import { validateCanonicalComplete, validateCanonicalEvent } from "./canonical-timeline";
+import type { StoredCanonicalEvent } from "./canonical-timeline";
 import { createThreadStore, type ThreadSnapshot, type ThreadStore } from "./thread-store";
-import { createThreadConnection, type EventSourceLike, type ThreadConnection } from "./thread-connection";
+import {
+  createThreadConnection,
+  decodeFrame,
+  THREAD_FRAME_TYPES,
+  type DecodedFrame,
+  type EventSourceLike,
+  type ThreadConnection,
+} from "@skynet/agent-client";
 
 // useThreadStream — the session page's realtime unit (final_fix.md §4.7). ONE
 // EventSource to the thread endpoint for the page lifetime, keyed by the ROOT thread
@@ -27,8 +34,6 @@ export interface ThreadStreamState {
    *  failed fetch instead of assuming success. */
   reconcile: () => Promise<ReconcileResult>;
 }
-
-const FRAME_TYPES = ["snapshot", "run", "step", "delta", "native", "canonical", "canonical-complete", "done"] as const;
 
 /** Create + seed a store for a thread. Seeds from `initialThread` ONLY when it
  *  actually belongs to this root, so a stale SSR payload from a previously-viewed
@@ -63,65 +68,68 @@ async function fetchThread(rootRunId: string): Promise<ApiRun[] | null> {
   }
 }
 
-/** Route one raw SSE frame to the addressed run's slice. Malformed frames ignored. */
-function dispatchFrame(store: ThreadStore, event: string, data: string): void {
-  let parsed: Record<string, unknown>;
-  try {
-    parsed = JSON.parse(data) as Record<string, unknown>;
-  } catch {
-    return;
-  }
-  switch (event) {
-    case "snapshot": {
-      const runs = toThread({ thread: (parsed as { runs?: unknown }).runs });
-      if (runs.length) store.applySnapshot(runs);
+/** Apply ONE decoded thread frame to the addressed run's slice. The client library
+ *  (`@skynet/agent-client`) owns the wire decode + canonical envelope validation
+ *  (H4-equivalent: schemaVersion/kind/ids/seq/deliverySeq/revision/thread); this thin
+ *  product adapter maps the typed frame onto the store's native + canonical lanes.
+ *  Unknown/malformed frames are ignored (bounded), never applied or fatal. */
+export function applyDecodedFrame(store: ThreadStore, frame: DecodedFrame): void {
+  switch (frame.kind) {
+    case "canonical":
+      // The wire event is the same shape the store's canonical lane stores; the client
+      // added deliverySeq/revision and validated the envelope. One cast at the
+      // package<->product type boundary (runtime shape is identical + already validated).
+      store.applyCanonical(frame.event as unknown as StoredCanonicalEvent);
       return;
-    }
-    case "run": {
-      const run = (parsed as { run?: ApiRun }).run;
-      if (run && typeof run.id === "string") store.upsertRun(run);
-      return;
-    }
-    case "step": {
-      const runId = parsed.runId as string | undefined;
-      const step = (parsed as { step?: ApiStep }).step;
-      if (runId && step) store.applyStep(runId, step);
-      return;
-    }
-    case "delta": {
-      const runId = parsed.runId as string | undefined;
-      const delta = parsed.delta;
-      if (runId && typeof delta === "string") store.applyDelta(runId, delta);
-      return;
-    }
-    case "native": {
-      const runId = parsed.runId as string | undefined;
-      if (!runId) return;
-      const frame = parseNativeFrame((parsed as { frame?: unknown }).frame);
-      if (frame) store.applyNative(runId, frame);
-      return;
-    }
-    case "canonical": {
-      // H4: full structural envelope validation (schemaVersion/kind/ids/seq/deliverySeq/
-      // revision/thread) before it touches the store - a malformed frame is dropped, not
-      // misapplied (a missing deliverySeq/seq would corrupt ordering + dedupe).
-      const event = validateCanonicalEvent((parsed as { event?: unknown }).event, parsed.threadId);
-      if (event) store.applyCanonical(event);
-      return;
-    }
-    case "canonical-complete": {
+    case "canonical-complete":
       // H2: mark a run's canonical projection trustworthy. Until this arrives the render
       // path stays on the legacy native lane even if provisional canonical rows exist.
-      const complete = validateCanonicalComplete((parsed as { complete?: unknown }).complete, parsed.threadId);
-      if (complete) store.markCanonicalComplete(complete.runId);
+      store.markCanonicalComplete(frame.complete.runId);
+      return;
+    case "raw": {
+      const p = frame.payload;
+      switch (frame.type) {
+        case "snapshot": {
+          const runs = toThread({ thread: (p as { runs?: unknown }).runs });
+          if (runs.length) store.applySnapshot(runs);
+          return;
+        }
+        case "run": {
+          const run = (p as { run?: ApiRun }).run;
+          if (run && typeof run.id === "string") store.upsertRun(run);
+          return;
+        }
+        case "step": {
+          const runId = p.runId as string | undefined;
+          const step = (p as { step?: ApiStep }).step;
+          if (runId && step) store.applyStep(runId, step);
+          return;
+        }
+        case "delta": {
+          const runId = p.runId as string | undefined;
+          const delta = p.delta;
+          if (runId && typeof delta === "string") store.applyDelta(runId, delta);
+          return;
+        }
+        case "native": {
+          const runId = p.runId as string | undefined;
+          if (!runId) return;
+          const nf = parseNativeFrame((p as { frame?: unknown }).frame);
+          if (nf) store.applyNative(runId, nf);
+          return;
+        }
+        case "done": {
+          const runId = p.runId as string | undefined;
+          const status = p.status as RunStatus | undefined;
+          if (runId && status) store.applyDone(runId, status);
+          return;
+        }
+      }
       return;
     }
-    case "done": {
-      const runId = parsed.runId as string | undefined;
-      const status = parsed.status as RunStatus | undefined;
-      if (runId && status) store.applyDone(runId, status);
+    case "unknown":
+    case "malformed":
       return;
-    }
   }
 }
 
@@ -180,7 +188,7 @@ export function useThreadStream(rootRunId: string, initialThread: ApiRun[]): Thr
       const burst = buffer;
       buffer = [];
       active.batch(() => {
-        for (const f of burst) dispatchFrame(active, f.event, f.data);
+        for (const f of burst) applyDecodedFrame(active, decodeFrame(f.event, f.data));
       });
     };
     const onFrame = (event: string, data: string): void => {
@@ -190,7 +198,7 @@ export function useThreadStream(rootRunId: string, initialThread: ApiRun[]): Thr
     };
     const conn: ThreadConnection = createThreadConnection({
       url: `/api/runs/${rootRunId}/thread-events`,
-      frameTypes: FRAME_TYPES,
+      frameTypes: THREAD_FRAME_TYPES,
       healthFrame: "snapshot",
       createEventSource: browserEventSource,
       onFrame,
