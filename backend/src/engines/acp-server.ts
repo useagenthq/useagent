@@ -87,6 +87,9 @@ export interface AcpEngineConfig {
   agentCmd: string[];
   /** Extra env exported before the relay starts. */
   agentEnv?: Record<string, string>;
+  /** A shell snippet run once per relay boot AFTER the package install (so the agent bin
+   *  is on PATH) and BEFORE the relay starts. Codex uses it to seed auth. Idempotent. */
+  preRelay?: string;
   /** Idempotent per-turn sandbox prep (codex auth seeding). */
   prepare?(sandbox: Sandbox): Promise<void>;
 }
@@ -318,6 +321,10 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
             // Stage the relay + start it if not already answering.
             `printf '%s' '${relayB64}' | base64 -d > ~/acp-relay.mjs; ` +
             `if [ "$(${probeCmd})" = "000" ]; then ` +
+            // Per-engine pre-relay step, AFTER install so the agent bin is on PATH. Codex
+            // uses it to seed auth (`codex login --with-api-key` -> ~/.codex/auth.json):
+            // codex-acp requires the logged-in state, not just the OPENAI_API_KEY env.
+            (cfg.preRelay ?? "") +
             `${agentEnvExports}cd ~/work && nohup node ~/acp-relay.mjs ${cfg.port} ${cfg.agentCmd.join(" ")} > /tmp/acp-relay-${cfg.id}.log 2>&1 & ` +
             `fi; ` +
             `up=0; for i in $(seq 1 30); do [ "$(${probeCmd})" != "000" ] && up=1 && break; sleep 1; done; ` +
@@ -575,6 +582,11 @@ export const codexAcpConfig: AcpEngineConfig = {
   port: 4098,
   packages: [{ pkg: CODEX_ACP_PKG, bin: "codex-acp" }],
   agentCmd: ["codex-acp"],
+  // codex-acp requires codex to be LOGGED IN (~/.codex/auth.json), not merely to have
+  // OPENAI_API_KEY in env - otherwise it fails the session with "Authentication required".
+  // Seed the login from the injected key before the relay starts (idempotent; a no-key
+  // sandbox no-ops via `|| true`). `codex login --with-api-key` reads the key from stdin.
+  preRelay: 'if [ -n "$OPENAI_API_KEY" ]; then printf %s "$OPENAI_API_KEY" | codex login --with-api-key >/dev/null 2>&1 || true; fi; ',
   // SaaS-SAFE credentials (final_harness.md P0): NO host-credential copy. Codex
   // authenticates only from per-tenant credentials injected via org secrets
   // (OPENAI_API_KEY) - we never copy the host operator's ~/.codex/auth.json (a
