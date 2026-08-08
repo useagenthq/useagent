@@ -16,7 +16,7 @@ import { isEngineEnabled } from "../env";
 import { acceptRunCancel, CANCEL_SUMMARY } from "../commands/cancel";
 import { resolveSkillSelection } from "../skills/repo";
 import { buildNativeCommandPrompt, validateCommandIntent, type CommandIntent } from "./command-intent";
-import { acpCatalogKey, defaultSnapshot, readCommandCatalog } from "./command-catalog";
+import { acpCatalogKey, defaultSnapshot, readCommandCatalog, readSessionCommandCatalog } from "./command-catalog";
 import { unknownRepos } from "../github/repos";
 import { formatRepoRef } from "../github/repo-ref";
 import { bus, channel, pumpThread, signalCancel, type BusEvent } from "../worker";
@@ -101,6 +101,10 @@ runsRoutes.post("/", async (c) => {
   let threadId: string = id;
   let inheritedRepos: string[] = [];
   let parentScope: MemoryScope | null = null;
+  // The ACTIVE native session this turn resumes, derived SERVER-SIDE from the parent run (a
+  // reply resumes the thread's live session). A native-command intent's client-supplied session
+  // id is validated against THIS, never trusted on its own.
+  let activeSessionId: string | null = null;
   if (body.parent_run_id !== undefined && body.parent_run_id !== null) {
     const rawParent =
       typeof body.parent_run_id === "string" ? body.parent_run_id.trim() : "";
@@ -113,6 +117,7 @@ runsRoutes.post("/", async (c) => {
     threadId = parent.threadId;
     inheritedRepos = parent.repos;
     parentScope = parent.memoryScope;
+    activeSessionId = parent.engineSessionId ?? null;
   }
 
   // Repo scope: a ROOT run may pick REPOSITORIES (each validated against the set
@@ -223,15 +228,26 @@ runsRoutes.post("/", async (c) => {
       sessionId: typeof raw.sessionId === "string" ? raw.sessionId : undefined,
       catalogRevision: typeof raw.catalogRevision === "number" ? raw.catalogRevision : undefined,
     };
-    // The active authoritative catalog for the engine: the ACP engines' captured catalog keyed
-    // by org+engine, or OpenCode's snapshot catalog. The provider a client claims must match the
-    // run's engine (no cross-engine command).
+    // The provider a client claims must match the run's engine (no cross-engine command).
     if (intent.provider && intent.provider !== engine) {
       return c.json({ error: "invalid_command", reason: "provider does not match engine" }, 400);
     }
-    const key = engine !== "opencode" ? acpCatalogKey(c.get("orgId") ?? "", engine) : defaultSnapshot();
-    const catalog = (await readCommandCatalog(key))?.commands ?? [];
-    const v = validateCommandIntent(intent, catalog);
+    // SESSION-AUTHORITATIVE catalog: validate against exactly what the CURRENT native session
+    // advertised (the durable commands.updated for the server-derived activeSessionId). An empty
+    // session catalog ([]) means the session advertises NONE -> reject any command. Only when the
+    // session has NOT advertised yet (null) do we fall back to the pre-session org priming cache
+    // (or OpenCode's snapshot catalog).
+    const orgKey = engine !== "opencode" ? acpCatalogKey(c.get("orgId") ?? "", engine) : defaultSnapshot();
+    let catalog: { name: string }[];
+    const sessionCatalog = activeSessionId ? await readSessionCommandCatalog(threadId, activeSessionId) : null;
+    if (sessionCatalog !== null) {
+      catalog = sessionCatalog;
+    } else {
+      catalog = (await readCommandCatalog(orgKey))?.commands ?? [];
+    }
+    // The client-supplied session id must match the server-derived active session (reject a
+    // stale/cross-session intent), and the name must be in the authoritative catalog.
+    const v = validateCommandIntent(intent, catalog, { sessionId: activeSessionId });
     if (!v.ok) return c.json({ error: "invalid_command", reason: v.reason }, 400);
     commandName = v.name;
     finalPrompt = buildNativeCommandPrompt(v.name, v.args); // built ONCE in the trusted backend

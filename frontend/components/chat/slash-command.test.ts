@@ -29,6 +29,10 @@ describe("parseCommandIntent (typed intent only for a known command)", () => {
   test("internal whitespace/unicode/multiline args are preserved", () => {
     expect(parseCommandIntent("/review a  b\nc 你好", cmds)).toEqual({ name: "review", args: "a  b\nc 你好" });
   });
+  test("byte preservation: trailing whitespace/newlines in args survive (parsed from the RAW value)", () => {
+    expect(parseCommandIntent("/review a  b  \nc  ", cmds)).toEqual({ name: "review", args: "a  b  \nc  " });
+    expect(parseCommandIntent("/review \t x\t", cmds)).toEqual({ name: "review", args: "x\t" });
+  });
   test("an UNKNOWN leading command -> null (stays an ordinary prompt, keeps context)", () => {
     expect(parseCommandIntent("/etc/passwd read this", cmds)).toBeNull();
     expect(parseCommandIntent("/notacommand", cmds)).toBeNull();
