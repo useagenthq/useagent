@@ -127,6 +127,19 @@ function summarize(steps: ScriptedStep[]): string {
   return `${work.length} tools, edited ${files} files, ran ${commands} commands`;
 }
 
+/** Resolve the terminal status/summary when an engine adapter RETURNS normally
+ *  (Blocker 2). A durably-accepted user cancellation dominates a coincident provider
+ *  completion: `cancelledReason` (non-null, e.g. "Stopped by user") wins as a FAILED
+ *  terminal; otherwise the provider's completion stands. Pure + deterministic. */
+export function terminalOnReturn(
+  cancelledReason: string | null,
+  summary: string | null,
+): { status: "completed" | "failed"; summary: string } {
+  return cancelledReason !== null
+    ? { status: "failed", summary: cancelledReason }
+    : { status: "completed", summary: summary ?? "run completed" };
+}
+
 /** Spawn (or no-op if already running) the actor for a run. Dispatches on the
  *  run's `engine`: `mock` → the scripted trace below (unchanged default), any
  *  other → its real pluggable adapter (src/engines/*). */
@@ -519,13 +532,16 @@ async function runEngine(
 
   try {
     await adapter.run(ctx);
-    const finalSummary = summary ?? "run completed";
-    // Finalize transactionally: commit `completed` AND enqueue the durable memory
-    // capture (idempotent by runId) in one transaction, so a crash can never leave
-    // a completed run with no capture (the old completeRun→enqueue gap). See
-    // runs/finalize.ts.
-    await finalizeRun(runId, "completed", finalSummary, summaryDuration ?? Date.now() - startedAt);
-    bus.emit(channel(runId), { type: "end", status: "completed" } satisfies BusEvent);
+    // Durable cancellation DOMINATES a coincident provider completion (Blocker 2): a
+    // user cancel aborts ctx.signal, but some ACP agents (codex) finish the turn and
+    // return NORMALLY instead of erroring. `terminalOnReturn` (pure, tested) resolves
+    // the terminal: a durably-accepted cancel -> "Stopped by user" (failed); else the
+    // provider's completion. Finalize transactionally (a `completed` also enqueues the
+    // durable memory capture in one tx). Exactly ONE finalize + ONE terminal end event;
+    // the adapter already emitted its terminal step, so no duplicate `done`.
+    const outcome = terminalOnReturn(wasCancelled(), summary);
+    await finalizeRun(runId, outcome.status, outcome.summary, summaryDuration ?? Date.now() - startedAt);
+    bus.emit(channel(runId), { type: "end", status: outcome.status } satisfies BusEvent);
   } catch (err) {
     // A user cancel wins over a coincident timeout: the abort was requested, so
     // report it honestly as "Stopped by user" rather than a timeout/error.

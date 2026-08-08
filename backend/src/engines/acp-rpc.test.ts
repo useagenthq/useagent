@@ -3,7 +3,15 @@
 // with no pending left, and a resident-agent restart never reuses a stale session id.
 
 import { describe, expect, test } from "bun:test";
-import { AcpRelayError, buildSessionCancel, createAcpRpcClient, liveSessionAfterBoot, type JsonRpcMessage } from "./acp-rpc";
+import {
+  AcpRelayError,
+  buildSessionCancel,
+  createAcpRpcClient,
+  isAlreadyInitialized,
+  liveSessionAfterBoot,
+  relayStateAfterBoot,
+  type JsonRpcMessage,
+} from "./acp-rpc";
 
 describe("acp-rpc: disconnect hang fix", () => {
   test("failAll rejects EVERY pending request with a stable relay_disconnected code", async () => {
@@ -105,5 +113,32 @@ describe("acp-rpc: native session/cancel (Slice 4)", () => {
     await expect(prompt).rejects.toBeInstanceOf(AcpRelayError);
     await prompt.catch((e: AcpRelayError) => expect(e.code).toBe("cancelled"));
     expect(rpc.pendingCount).toBe(0);
+  });
+});
+
+describe("acp-rpc: initialize-once-per-generation state machine (Blocker 1)", () => {
+  // acp-server initializes ONLY when the post-boot state has initialized=false, and marks
+  // it true after; relayStateAfterBoot decides that per generation.
+  test("first turn on a freshly started agent initializes", () => {
+    // fresh relay object starts {initialized:false}; boot restarted it (relayRebooted=true)
+    const s = relayStateAfterBoot({ initialized: false, sessionId: null }, true);
+    expect(s.initialized).toBe(false); // -> the run WILL send initialize
+    expect(s.sessionId).toBeNull();
+  });
+  test("second turn on the SAME live process does NOT initialize (and reuses the session)", () => {
+    const s = relayStateAfterBoot({ initialized: true, sessionId: "ses_1" }, false);
+    expect(s.initialized).toBe(true); // -> the run SKIPS initialize
+    expect(s.sessionId).toBe("ses_1"); // live session reused
+  });
+  test("a relay/agent restart initializes AGAIN and invalidates the stale session", () => {
+    const s = relayStateAfterBoot({ initialized: true, sessionId: "ses_1" }, true);
+    expect(s.initialized).toBe(false); // -> re-initialize the fresh process
+    expect(s.sessionId).toBeNull(); // never reuse a dead generation's session
+  });
+  test("isAlreadyInitialized recognizes codex-acp's -32603, ignores other errors", () => {
+    expect(isAlreadyInitialized(new Error('ACP {"code":-32603,"message":"Internal error","data":{"details":"Already initialized"}}'))).toBe(true);
+    expect(isAlreadyInitialized("already initialized")).toBe(true);
+    expect(isAlreadyInitialized(new Error("session/new returned no sessionId"))).toBe(false);
+    expect(isAlreadyInitialized(null)).toBe(false);
   });
 });
