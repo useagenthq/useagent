@@ -22,6 +22,23 @@ export function slashInsertText(name: string): string {
   return `/${name} `;
 }
 
+/** Parse composer text into a TYPED native-command intent, ONLY when the leading `/token`
+ *  is actually a command in the active catalog. This is what turns a picked/typed command
+ *  into the explicit `{name, args}` intent sent to the run API (the backend re-validates it) -
+ *  so a `/token` that is NOT an advertised command stays an ordinary prompt and keeps its
+ *  context, instead of the old "any leading slash skips context" behavior. Returns null when
+ *  the text is not a `/known-command ...`. `args` is everything after the command token. */
+export function parseCommandIntent(
+  text: string,
+  commands: SlashCommand[],
+): { name: string; args: string } | null {
+  const m = /^\/([^\s]+)(?:\s+([\s\S]*))?$/.exec(text.trimStart());
+  if (!m) return null;
+  const name = m[1]!;
+  if (!commands.some((c) => c.name === name)) return null;
+  return { name, args: m[2] ?? "" };
+}
+
 /** Prefix matches first, then substring matches; capped for the popover. */
 export function filterCommands(
   commands: SlashCommand[],

@@ -317,6 +317,7 @@ async function runWorker(runId: string): Promise<void> {
         run.userId,
         ac.signal,
         wasCancelled,
+        run.commandName ?? null,
       );
     } finally {
       bus.off(channel(runId), onActivity);
@@ -422,6 +423,8 @@ async function runEngine(
   signal: AbortSignal,
   /** Non-null once a user cancel fired — distinguishes cancel from timeout. */
   wasCancelled: () => string | null,
+  /** Validated native-command name (Phase 3); non-null => the prompt is delivered verbatim. */
+  commandName: string | null,
 ): Promise<void> {
   const startedAt = Date.now();
   await setRunStatus(runId, "running");
@@ -500,6 +503,7 @@ async function runEngine(
     model,
     repos,
     engineSessionId,
+    commandName,
     // Durable fire-and-forget: the id is saved the moment the engine reveals it,
     // so even a later-failing run leaves a resumable session for the next turn.
     saveEngineSessionId: (sid) => {

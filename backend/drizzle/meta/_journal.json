@@ -190,6 +190,13 @@
 			"when": 1786700000000,
 			"tag": "0028_canonicalization_outbox",
 			"breakpoints": true
+		},
+		{
+			"idx": 27,
+			"version": "7",
+			"when": 1786800000001,
+			"tag": "0029_run_command_name",
+			"breakpoints": true
 		}
 	]
 }

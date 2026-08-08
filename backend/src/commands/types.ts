@@ -39,6 +39,11 @@ export interface RunCommandInput {
     readonly skillId: string | null;
     readonly skillVersion: number | null;
     readonly skillContentHash: string | null;
+    /** Set ONLY for a VALIDATED native provider command turn (Phase 3): the command name,
+     *  checked against the active session catalog at acceptance. Non-null => the prompt is the
+     *  exact `/name args` bytes, delivered verbatim with no injected context. Part of the run's
+     *  identity (a command turn differs from the same text as a normal prompt). */
+    readonly commandName: string | null;
   };
 }
 

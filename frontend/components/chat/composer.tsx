@@ -25,6 +25,7 @@ import {
 } from "@/components/chat/agent-command";
 import {
   filterCommands,
+  parseCommandIntent,
   SlashCommandPopover,
   slashInsertText,
   type SlashCommand,
@@ -48,6 +49,10 @@ export type ComposerSubmit = (
   model: string,
   idempotencyKey: string,
   memoryScope: MemoryScope,
+  /** A TYPED native-command intent, set ONLY when the prompt is a `/known-command ...` from the
+   *  active catalog (see parseCommandIntent). The run API re-validates it and, only then,
+   *  delivers the command verbatim. Absent for an ordinary prompt. */
+  command?: { name: string; args: string } | null,
 ) => void | Promise<void>;
 
 export type ComposerProps = {
@@ -205,8 +210,11 @@ export function Composer({
     setFailed(false);
     setValue(""); // optimistic clear — the pending bubble shows the text meanwhile
     try {
+      // A typed native-command intent when the text is a `/known-command ...` for THIS
+      // composer's catalog; else null (an ordinary prompt). The backend re-validates.
+      const intent = commands ? parseCommandIntent(text, commands) : null;
       // The chat model picker (when present) owns the model; else the internal state.
-      await onSubmit(text, engine, modelMenu?.value ?? model, key, memoryScope);
+      await onSubmit(text, engine, modelMenu?.value ?? model, key, memoryScope, intent);
       retry.current = null; // accepted — drop the retry key
     } catch {
       // Never silently swallow: restore the draft and show an explicit failed

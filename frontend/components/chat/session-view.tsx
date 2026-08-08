@@ -33,7 +33,11 @@ import {
   type MemoryScope,
   type RunStatus,
 } from "@/components/chat/types";
-import { selectThreadCommands } from "@/components/chat/canonical-timeline";
+import {
+  resolveCommandCatalog,
+  selectSessionCommands,
+  type CanonicalCommandView,
+} from "@/components/chat/canonical-timeline";
 
 /** Narrowest useful rail — keeps the terminal/desktop panes workable. */
 const RAIL_MIN = 280;
@@ -143,6 +147,7 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
       model: string,
       idempotencyKey: string,
       memoryScope: MemoryScope,
+      command?: { name: string; args: string } | null,
     ) => {
       setPending({ text, runId: null });
       try {
@@ -162,6 +167,11 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
             // The backend inherits the parent's scope when omitted; sending the
             // composer's choice lets the user change it for this reply.
             memory_scope: memoryScope,
+            // TYPED native-command intent (Phase 3): present ONLY for a `/known-command ...`
+            // from the current session's catalog. Carries the provider + native session id so
+            // the backend rejects a stale/cross-session intent; the backend re-validates before
+            // delivering it verbatim. Absent => an ordinary prompt keeps its full context.
+            ...(command ? { command: { ...command, provider: engine, sessionId: engineSessionId ?? undefined } } : {}),
           }),
         });
         if (!res.ok) throw new Error(`backend ${res.status}`);
@@ -304,51 +314,66 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
   // placeholder). Only offered for opencode threads — the snapshot with noVNC.
   const hasDesktop = isOpencode;
 
-  // Slash-command list for the reply composer's "/" autocomplete - the SELECTED engine's
-  // real native command catalog, capability-driven (no provider-name gate). Two sources,
-  // durable-first: (1) the DURABLE canonical stream's per-session `commands.updated` - the
-  // authoritative per-thread catalog that a reconnect/replay reconstructs identically; (2)
-  // a LIVE fetch fallback for a running turn whose catalog has not been canonicalized yet -
-  // OpenCode's resident server via the live-proxy, or the ACP engines' captured catalog served
-  // keyed by engine (GET /api/commands?engine=). An engine simply either has a catalog or it
-  // does not - a stopped sandbox or a provider with no commands just means no popover.
+  // Slash-command catalog for the reply composer's "/" autocomplete - the SELECTED engine's
+  // real native commands, capability-driven (no provider-name gate). Authoritative source is
+  // the DURABLE canonical stream's per-session `commands.updated`, SESSION-SCOPED to the current
+  // native session so a historical or other-session snapshot can NEVER mask the active session
+  // (a restarted/new session that has not re-advertised falls back to the pre-session priming
+  // fetch rather than showing stale commands). The live session snapshot always wins; the fetch
+  // (OpenCode's live-proxy, or the ACP engines' org priming cache via GET /api/commands) only
+  // primes until this session advertises. `resolveCommandCatalog` folds both into one honest
+  // state (loading / unavailable / error / ready[+stale]).
   const engine = normalizeEngine(newest.engine);
-  const durableCommands = useMemo(() => selectThreadCommands([...snapshot.byId.values()]), [snapshot.byId]);
+  const durableCommands = useMemo(
+    () => selectSessionCommands([...snapshot.byId.values()], engineSessionId),
+    [snapshot.byId, engineSessionId],
+  );
   const hasDurable = durableCommands !== null;
-  const [fetchedCommands, setFetchedCommands] = useState<SlashCommand[]>([]);
+  const [fetchState, setFetchState] = useState<{ phase: "loading" | "done" | "error"; commands: CanonicalCommandView[] }>({
+    phase: "loading",
+    commands: [],
+  });
   useEffect(() => {
-    if (hasDurable) return; // the durable per-session catalog wins; no live fetch needed
+    if (hasDurable) return; // the durable session catalog wins; no live fetch needed
     let cancelled = false;
+    // Clear-on-change: reset immediately so a prior engine/session's commands never linger
+    // while the new source loads.
+    setFetchState({ phase: "loading", commands: [] });
     void (async () => {
+      const fail = () => !cancelled && setFetchState({ phase: "error", commands: [] });
       try {
-        let list: { name?: string; description?: string }[] = [];
+        let list: { name?: string; description?: string; input?: string }[] = [];
         if (engine === "opencode") {
-          if (!engineSessionId) return; // opencode's live catalog needs a resident session
+          if (!engineSessionId) { if (!cancelled) setFetchState({ phase: "done", commands: [] }); return; }
           const res = await backendFetch(`/api/live-proxy/${rootId}/command`);
-          if (!res.ok) return;
+          if (!res.ok) return fail();
           list = (await res.json()) as typeof list;
         } else {
           const res = await backendFetch(`/api/commands?engine=${encodeURIComponent(engine)}`);
-          if (!res.ok) return;
+          if (!res.ok) return fail();
           list = ((await res.json()) as { commands?: typeof list }).commands ?? [];
         }
-        if (cancelled || !Array.isArray(list)) return;
-        setFetchedCommands(
-          list
-            .filter((c): c is { name: string; description?: string } => !!c.name)
-            .map((c) => ({ name: c.name, description: c.description ?? null })),
-        );
+        if (cancelled) return;
+        if (!Array.isArray(list)) return fail();
+        setFetchState({
+          phase: "done",
+          commands: list
+            .filter((c): c is { name: string; description?: string; input?: string } => !!c.name)
+            .map((c) => ({ name: c.name, description: c.description ?? null, input: typeof c.input === "string" ? c.input : null })),
+        });
       } catch {
-        // no commands — the composer simply has no "/" popover
+        fail();
       }
     })();
     return () => {
       cancelled = true;
     };
   }, [engine, engineSessionId, rootId, hasDurable]);
-  const commands: SlashCommand[] = durableCommands
-    ? durableCommands.map((c) => ({ name: c.name, description: c.description ?? null }))
-    : fetchedCommands;
+  const catalogState = resolveCommandCatalog(durableCommands, fetchState, engine);
+  const commands: SlashCommand[] =
+    catalogState.status === "ready"
+      ? catalogState.commands.map((c) => ({ name: c.name, description: c.description ?? null }))
+      : [];
 
   return (
     <div className="flex h-full flex-col">

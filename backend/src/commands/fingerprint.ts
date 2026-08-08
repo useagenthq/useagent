@@ -27,6 +27,9 @@ export function runPayloadFingerprint(run: RunCommandInput["run"]): string {
     // after switching org/personal must NOT silently reuse the other scope's
     // run (external audit finding — scope was stored but not fingerprinted).
     run.memoryScope ?? null,
+    // A VALIDATED native-command turn is a distinct intent from the same text as a
+    // normal prompt (it skips context + is delivered verbatim), so it participates.
+    run.commandName ?? null,
   ]);
   return new Bun.CryptoHasher("sha256").update(canonical).digest("hex");
 }
