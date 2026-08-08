@@ -59,6 +59,10 @@ export function InteractiveTerminal({ runId }: { runId: string }) {
     let observer: ResizeObserver | null = null;
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
     let reconnectDelay = 3000;
+    // Show the "waiting for sandbox" notice ONCE per idle stretch, not on every
+    // reconnect cycle (the loop otherwise spams "no live sandbox" / "disconnected"
+    // back-to-back). Reset when real PTY output resumes so a later drop re-notifies.
+    let waitingShown = false;
 
     void (async () => {
       const { init, Terminal, FitAddon } = await import("ghostty-web");
@@ -118,11 +122,23 @@ export function InteractiveTerminal({ runId }: { runId: string }) {
           reconnectDelay = 3000;
         };
         sock.onmessage = (e) => {
-          if (!disposed) term?.write(String(e.data));
+          if (disposed) return;
+          const text = String(e.data);
+          // Swallow the backend's repeated "no live sandbox yet" notice - we show a
+          // single calm waiting line (below) instead of letting it spam each reconnect.
+          if (text.includes("no live sandbox")) return;
+          waitingShown = false; // real output flowing again
+          term?.write(text);
         };
         sock.onclose = () => {
           if (disposed) return;
-          term?.write("\r\n\x1b[2m[disconnected - reconnecting…]\x1b[0m\r\n");
+          // One friendly line per idle stretch, not a disconnect message every retry.
+          if (!waitingShown) {
+            waitingShown = true;
+            term?.write(
+              "\r\n\x1b[2m• waiting for the sandbox - it comes online when a run starts…\x1b[0m\r\n",
+            );
+          }
           reconnectTimer = setTimeout(connect, reconnectDelay);
           reconnectDelay = Math.min(reconnectDelay * 2, 15000);
         };
