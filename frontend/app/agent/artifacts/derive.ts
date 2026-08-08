@@ -7,6 +7,11 @@
  * filename, size, and folder lane are synthesized deterministically from the
  * run + step ids (so re-fetches never reshuffle names or sizes). Framework-free
  * (no JSX) so both the client view and card can share the types + formatters.
+ *
+ * PLACEHOLDER, not durable storage: there is no real artifact backend. The future
+ * durable-artifact architecture (ArtifactDescriptor, out-of-band bytes, renderer
+ * registry, native-file vs sandboxed-app lanes) is a documented contract in
+ * `packages/agent-client/ARTIFACTS.md` - none of it is built here.
  */
 
 export type ArtifactCategory = "code" | "docs" | "media";
