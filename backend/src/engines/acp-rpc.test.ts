@@ -3,7 +3,7 @@
 // with no pending left, and a resident-agent restart never reuses a stale session id.
 
 import { describe, expect, test } from "bun:test";
-import { AcpRelayError, createAcpRpcClient, liveSessionAfterBoot, type JsonRpcMessage } from "./acp-rpc";
+import { AcpRelayError, buildSessionCancel, createAcpRpcClient, liveSessionAfterBoot, type JsonRpcMessage } from "./acp-rpc";
 
 describe("acp-rpc: disconnect hang fix", () => {
   test("failAll rejects EVERY pending request with a stable relay_disconnected code", async () => {
@@ -85,5 +85,25 @@ describe("acp-rpc: restart-generation session guard", () => {
   test("no live session is unaffected by the reboot flag", () => {
     expect(liveSessionAfterBoot(null, true)).toBeNull();
     expect(liveSessionAfterBoot(null, false)).toBeNull();
+  });
+});
+
+describe("acp-rpc: native session/cancel (Slice 4)", () => {
+  test("buildSessionCancel is a NOTIFICATION (no id) with the ACP v1 shape", () => {
+    const msg = buildSessionCancel("ses_abc");
+    expect(msg).toEqual({ jsonrpc: "2.0", method: "session/cancel", params: { sessionId: "ses_abc" } });
+    expect("id" in msg).toBe(false); // notification -> never enters the pending map
+  });
+
+  test("on abort, the in-flight turn is rejected as `cancelled` (distinct from relay death)", async () => {
+    // Mirrors acp-server's onParentAbort: send session/cancel, then failAll("cancelled").
+    const sent: JsonRpcMessage[] = [];
+    const rpc = createAcpRpcClient(async (m) => { sent.push(m); });
+    const prompt = rpc.request("session/prompt", { sessionId: "ses_abc" });
+    // (a notification would be POSTed out-of-band; assert the classified turn rejection)
+    rpc.failAll("cancelled", "run cancelled");
+    await expect(prompt).rejects.toBeInstanceOf(AcpRelayError);
+    await prompt.catch((e: AcpRelayError) => expect(e.code).toBe("cancelled"));
+    expect(rpc.pendingCount).toBe(0);
   });
 });
