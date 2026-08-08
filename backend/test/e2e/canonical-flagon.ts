@@ -24,7 +24,12 @@ import { BE, FE, createRun, getRun, getThread, waitRun, newPage, launch, shot, s
 
 const MARKER = "CANON_E2E_MARKER_9931";
 const REPLY = "DONE9931";
-const MODEL = process.env.E2E_MODEL ?? "anthropic/claude-haiku-4.5";
+// Engine + model are overridable so the SAME 18-check flow (create, live, complete,
+// canonical-switch, reload, second turn, reconnect, tools, answer, no-dupes/blank) runs
+// for opencode AND the ACP engines (claude/codex). opencode uses an OpenRouter slug
+// (has a "/"); the ACP engines run their CLI with a direct model id.
+const ENGINE = process.env.E2E_ENGINE ?? "opencode";
+const MODEL = process.env.E2E_MODEL ?? (ENGINE === "opencode" ? "anthropic/claude-haiku-4.5" : "claude-haiku-4-5");
 const checks: { name: string; ok: boolean; note?: string }[] = [];
 const ok = (name: string, cond: boolean, note = "") => { checks.push({ name, ok: cond, note }); console.log(`  ${cond ? "OK " : "XX "} ${name}${note ? ` — ${note}` : ""}`); };
 
@@ -53,14 +58,14 @@ async function waitCanonical(page: Page, budgetMs = 60_000): Promise<boolean> {
 }
 
 async function main() {
-  console.log(`[flagon-e2e] FE=${FE} BE=${BE} model=${MODEL}`);
+  console.log(`[flagon-e2e] FE=${FE} BE=${BE} engine=${ENGINE} model=${MODEL}`);
   const browser: Browser = await launch();
   let runId = "";
   try {
     // 1. Create a REAL OpenCode task (deterministic: one bash tool + a fixed reply).
     const prompt = `Use the bash tool to run exactly: echo ${MARKER}. Then reply with exactly this and nothing else: ${REPLY}`;
-    const created = await createRun(prompt, { engine: "opencode", model: MODEL });
-    ok("POST /api/runs (opencode) accepted", created.status === 201 || created.status === 200, `status ${created.status} id ${created.id ?? created.body?.error ?? ""}`);
+    const created = await createRun(prompt, { engine: ENGINE, model: MODEL });
+    ok(`POST /api/runs (${ENGINE}) accepted`, created.status === 201 || created.status === 200, `status ${created.status} id ${created.id ?? created.body?.error ?? ""}`);
     runId = created.id ?? "";
     if (!runId) throw new Error(`no run id: ${JSON.stringify(created.body)}`);
 
