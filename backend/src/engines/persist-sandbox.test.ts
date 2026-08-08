@@ -90,6 +90,13 @@ describe("both engine adapters obey the persistence-before-execution invariant (
     expect(opencode).not.toMatch(/void\s+setRunSandbox\(/);
   });
 
+  test("ACP clears the fresh sandbox ref on a persist failure so the finally cannot double-delete", () => {
+    // fresh path: the helper tears the box down once; ACP nulls `sandbox` before rethrow so the
+    // run's finally (which also deletes on !succeeded) does not delete the SAME box a 2nd time.
+    // Guarded on `!retainForThread` so the reused-sandbox lifecycle is untouched.
+    expect(acp).toMatch(/if \(!retainForThread\) sandbox = null;/);
+  });
+
   test("persistence is awaited BEFORE the engine prepares/boots (ordering, both adapters)", () => {
     // ACP: persist precedes `cfg.prepare?.(box)`.
     expect(acp.indexOf("await persistSandboxBeforeExecution({")).toBeLessThan(acp.indexOf("cfg.prepare?.(box)"));

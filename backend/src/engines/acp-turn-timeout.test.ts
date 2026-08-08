@@ -30,6 +30,29 @@ describe("resolveAcpTurnTimeoutMs (P1-A: committed cold-ACP turn budget)", () =>
     }
   });
 
+  test("values above the setTimeout 32-bit ceiling fall back safely (no Bun 1ms clamp)", () => {
+    // These all parse to finite positive numbers but exceed 2^31-1, so a raw setTimeout would
+    // overflow and clamp the delay to 1ms - they MUST be rejected and fall back to the default.
+    for (const huge of ["2147483648", "1e300", String(Number.MAX_SAFE_INTEGER)]) {
+      const v = resolveAcpTurnTimeoutMs({ ACP_TURN_TIMEOUT_MS: huge });
+      expect(v).toBe(360_000);
+      expect(v).toBeLessThanOrEqual(2_147_483_647); // safe for setTimeout (never the 1ms clamp)
+    }
+  });
+
+  test("the setTimeout ceiling itself (2^31-1) is the largest ACCEPTED value; one above falls back", () => {
+    expect(resolveAcpTurnTimeoutMs({ ACP_TURN_TIMEOUT_MS: "2147483647" })).toBe(2_147_483_647);
+    expect(resolveAcpTurnTimeoutMs({ ACP_TURN_TIMEOUT_MS: "2147483648" })).toBe(360_000);
+  });
+
+  test("an out-of-range ACP value with a valid ENGINE fallback uses the fallback (not the 1ms clamp)", () => {
+    expect(resolveAcpTurnTimeoutMs({ ACP_TURN_TIMEOUT_MS: "1e300", ENGINE_TIMEOUT_MS: "300000" })).toBe(300_000);
+  });
+
+  test("an out-of-range ENGINE_TIMEOUT_MS also falls back to the safe default", () => {
+    expect(resolveAcpTurnTimeoutMs({ ENGINE_TIMEOUT_MS: String(Number.MAX_SAFE_INTEGER) })).toBe(360_000);
+  });
+
   test("a bad ACP value with a valid ENGINE fallback uses the fallback (never the default, never zero)", () => {
     expect(resolveAcpTurnTimeoutMs({ ACP_TURN_TIMEOUT_MS: "nope", ENGINE_TIMEOUT_MS: "300000" })).toBe(300_000);
   });
