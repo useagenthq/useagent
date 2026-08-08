@@ -9,9 +9,37 @@ import {
   createAcpRpcClient,
   isAlreadyInitialized,
   liveSessionAfterBoot,
+  parseRelayHealth,
+  relayRegenerated,
   relayStateAfterBoot,
   type JsonRpcMessage,
 } from "./acp-rpc";
+
+describe("acp-rpc: ACP child generation (Phase 4)", () => {
+  test("parseRelayHealth reads generation + childAlive from JSON, tolerating legacy 'ok'", () => {
+    expect(parseRelayHealth('{"relay":"ok","generation":3,"childAlive":true}')).toEqual({ relay: "ok", generation: 3, childAlive: true });
+    expect(parseRelayHealth('{"relay":"ok","generation":2,"childAlive":false}')).toEqual({ relay: "ok", generation: 2, childAlive: false });
+    // legacy plain-text health (no generation)
+    expect(parseRelayHealth("ok")).toEqual({ relay: "ok", generation: null, childAlive: true });
+    expect(parseRelayHealth("")).toEqual({ relay: "ok", generation: null, childAlive: true });
+  });
+
+  test("relayRegenerated: a CHANGE from a known prior generation is a regeneration", () => {
+    expect(relayRegenerated(1, 2)).toBe(true); // child died + respawned inside a live relay
+    expect(relayRegenerated(2, 2)).toBe(false); // same generation -> reuse session
+    expect(relayRegenerated(null, 1)).toBe(false); // first observation -> fresh-relay path handles it
+    expect(relayRegenerated(1, null)).toBe(false); // legacy health with no generation
+  });
+
+  test("a child regeneration invalidates the session id + initialization (fed as `regenerated`)", () => {
+    const prev = { initialized: true, sessionId: "ses_dead" };
+    // relayRebooted=false but the child regenerated -> the combined signal must reset both.
+    const regenerated = false || relayRegenerated(1, 2);
+    expect(relayStateAfterBoot(prev, regenerated)).toEqual({ initialized: false, sessionId: null });
+    // same generation, no reboot -> carry both forward.
+    expect(relayStateAfterBoot(prev, false || relayRegenerated(2, 2))).toEqual({ initialized: true, sessionId: "ses_dead" });
+  });
+});
 
 describe("acp-rpc: disconnect hang fix", () => {
   test("failAll rejects EVERY pending request with a stable relay_disconnected code", async () => {
