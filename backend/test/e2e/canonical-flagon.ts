@@ -30,6 +30,10 @@ const REPLY = "DONE9931";
 // (has a "/"); the ACP engines run their CLI with a direct model id.
 const ENGINE = process.env.E2E_ENGINE ?? "opencode";
 const MODEL = process.env.E2E_MODEL ?? (ENGINE === "opencode" ? "anthropic/claude-haiku-4.5" : "claude-haiku-4-5");
+// The client's wait for a run to settle. A cold ACP sandbox reinstalls the agent
+// (~250MB) on every fresh-thread run, so the ACP engines need a bigger budget than
+// opencode; overridable via E2E_TERMINAL_MS. Keep it >= the backend ENGINE_TIMEOUT_MS.
+const TERMINAL_MS = Number(process.env.E2E_TERMINAL_MS ?? (ENGINE === "opencode" ? 180_000 : 360_000));
 const checks: { name: string; ok: boolean; note?: string }[] = [];
 const ok = (name: string, cond: boolean, note = "") => { checks.push({ name, ok: cond, note }); console.log(`  ${cond ? "OK " : "XX "} ${name}${note ? ` — ${note}` : ""}`); };
 
