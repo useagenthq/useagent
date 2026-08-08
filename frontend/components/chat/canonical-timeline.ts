@@ -40,6 +40,14 @@ export interface CanonicalEventLike {
    *  reconstructed with the SAME parser the legacy native lane uses (H3, lossless). */
   readonly sourceEventType?: string;
   readonly sourcePayload?: Record<string, unknown>;
+  /** `commands.updated` body: the provider's native slash-command catalog for the session.
+   *  `commands` is the bare name list; `catalog` carries name + description + input hint. */
+  readonly commands?: readonly string[];
+  readonly catalog?: readonly {
+    readonly name: string;
+    readonly description?: string | null;
+    readonly input?: string | null;
+  }[];
 }
 
 /** A canonical event as stored/streamed to the client: the reducer's structural view
@@ -205,6 +213,35 @@ export function buildTimelineFromCanonical(
 
   ranked.sort((a, b) => a.k0 - b.k0 || a.k1 - b.k1 || a.k2 - b.k2);
   return ranked.map((r) => r.node);
+}
+
+/** A native slash command as surfaced to the composer's "/" popover. */
+export interface CanonicalCommandView {
+  readonly name: string;
+  readonly description?: string | null;
+  readonly input?: string | null;
+}
+
+/** The thread's native slash-command catalog read from the DURABLE canonical stream: the
+ *  LATEST `commands.updated` across all of the thread's runs, by `deliverySeq` (the per-thread
+ *  monotonic order). Because it comes from the durable stream, a reconnect/replay reconstructs
+ *  the SAME catalog. An empty replacement legitimately yields []; a thread that NEVER advertised
+ *  commands yields null, so the caller can fall back to the live catalog fetch. Pure + total. */
+export function selectThreadCommands(
+  runs: readonly { readonly canonical: readonly StoredCanonicalEvent[] }[],
+): CanonicalCommandView[] | null {
+  let latest: StoredCanonicalEvent | null = null;
+  for (const run of runs) {
+    for (const e of run.canonical) {
+      if (e.kind === "commands.updated" && (latest === null || e.deliverySeq > latest.deliverySeq)) latest = e;
+    }
+  }
+  if (!latest) return null;
+  return [...(latest.catalog ?? [])].map((c) => ({
+    name: c.name,
+    description: c.description ?? null,
+    input: c.input ?? null,
+  }));
 }
 
 /** Parse a step's native ids from code_json (mirrors native-ids.nativeOf). */

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import {
   RiAddLine,
@@ -33,6 +33,7 @@ import {
   type MemoryScope,
   type RunStatus,
 } from "@/components/chat/types";
+import { selectThreadCommands } from "@/components/chat/canonical-timeline";
 
 /** Narrowest useful rail — keeps the terminal/desktop panes workable. */
 const RAIL_MIN = 280;
@@ -304,14 +305,19 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
   const hasDesktop = isOpencode;
 
   // Slash-command list for the reply composer's "/" autocomplete - the SELECTED engine's
-  // real native command catalog, capability-driven (no provider-name gate): OpenCode exposes
-  // its resident server's live GET /command via the same-origin live-proxy; the ACP engines
-  // (claude/codex) expose the catalog captured from their session's available_commands_update,
-  // served keyed by engine (GET /api/commands?engine=). An engine simply either has a catalog
-  // or it does not - a stopped sandbox or a provider with no commands just means no popover.
+  // real native command catalog, capability-driven (no provider-name gate). Two sources,
+  // durable-first: (1) the DURABLE canonical stream's per-session `commands.updated` - the
+  // authoritative per-thread catalog that a reconnect/replay reconstructs identically; (2)
+  // a LIVE fetch fallback for a running turn whose catalog has not been canonicalized yet -
+  // OpenCode's resident server via the live-proxy, or the ACP engines' captured catalog served
+  // keyed by engine (GET /api/commands?engine=). An engine simply either has a catalog or it
+  // does not - a stopped sandbox or a provider with no commands just means no popover.
   const engine = normalizeEngine(newest.engine);
-  const [commands, setCommands] = useState<SlashCommand[]>([]);
+  const durableCommands = useMemo(() => selectThreadCommands([...snapshot.byId.values()]), [snapshot.byId]);
+  const hasDurable = durableCommands !== null;
+  const [fetchedCommands, setFetchedCommands] = useState<SlashCommand[]>([]);
   useEffect(() => {
+    if (hasDurable) return; // the durable per-session catalog wins; no live fetch needed
     let cancelled = false;
     void (async () => {
       try {
@@ -327,7 +333,7 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
           list = ((await res.json()) as { commands?: typeof list }).commands ?? [];
         }
         if (cancelled || !Array.isArray(list)) return;
-        setCommands(
+        setFetchedCommands(
           list
             .filter((c): c is { name: string; description?: string } => !!c.name)
             .map((c) => ({ name: c.name, description: c.description ?? null })),
@@ -339,7 +345,10 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
     return () => {
       cancelled = true;
     };
-  }, [engine, engineSessionId, rootId]);
+  }, [engine, engineSessionId, rootId, hasDurable]);
+  const commands: SlashCommand[] = durableCommands
+    ? durableCommands.map((c) => ({ name: c.name, description: c.description ?? null }))
+    : fetchedCommands;
 
   return (
     <div className="flex h-full flex-col">
