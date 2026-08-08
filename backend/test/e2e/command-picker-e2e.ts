@@ -166,8 +166,10 @@ async function main() {
 
       await page.goto(`${FE}/session/${runId}`, { waitUntil: "domcontentloaded", timeout: 120_000 });
       // the REPLY composer specifically (a session page also mounts Monaco, whose hidden
-      // textarea would otherwise be matched by a bare `textarea` selector).
-      const composer = () => page.locator('textarea[placeholder*="Reply to Skynet"]');
+      // textarea would otherwise be matched by a bare `textarea` selector). `:visible`
+      // scopes to the mounted composer: on RELOAD the tree double-renders and settles, so a
+      // stale hidden copy can briefly coexist - we always drive the visible one.
+      const composer = () => page.locator('textarea[placeholder*="Reply to Skynet"]:visible');
       await composer().waitFor({ state: "visible", timeout: 60_000 });
 
       // type "/" -> the native-command popover appears with the seeded commands. The picker
@@ -183,6 +185,17 @@ async function main() {
       ok(`[${engine}] popover lists native command /${cmds[1]!.name}`, await btnSecond.first().isVisible().catch(() => false));
       await shot(page, `${engine}-popover`);
 
+      // Phase 7 UX/a11y: a truthful provider SOURCE label, ARIA listbox/option semantics, and the
+      // provider's input hint rendered next to the command.
+      const sourceLabel = engine === "claude" ? "Claude commands" : "Codex commands";
+      ok(`[${engine}] popover shows the provider source label "${sourceLabel}"`, await page.getByText(sourceLabel, { exact: true }).first().isVisible().catch(() => false));
+      ok(`[${engine}] popover has ARIA role=listbox`, await page.locator('[role="listbox"]').first().isVisible().catch(() => false));
+      ok(`[${engine}] commands are ARIA role=option`, (await page.locator('[role="option"]').count()) >= 2);
+      const hint = cmds.find((c) => "input" in c && (c as { input?: string }).input) as { input?: string } | undefined;
+      if (hint?.input) {
+        ok(`[${engine}] popover shows the input hint "${hint.input}"`, await page.getByText(hint.input, { exact: false }).first().isVisible().catch(() => false));
+      }
+
       // picking inserts the command BYTE-VERBATIM: "/name " (invocation)
       await btnFirst.first().click();
       const afterPick = await composer().inputValue();
@@ -192,6 +205,9 @@ async function main() {
       await page.reload({ waitUntil: "domcontentloaded", timeout: 120_000 });
       await composer().waitFor({ state: "visible", timeout: 60_000 });
       await sleep(1500);
+      // steady state after the reload double-render settles: exactly ONE composer is visible
+      // (duplicate-visible composer would mean duplicate combobox/aria ids - a real a11y bug).
+      ok(`[${engine}] exactly one reply composer visible after reload`, (await composer().count()) === 1, String(await composer().count()));
       await composer().click();
       await composer().fill("/");
       const reBtn = page.locator("button", { hasText: `/${first}` });

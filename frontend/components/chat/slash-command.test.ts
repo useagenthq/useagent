@@ -1,5 +1,20 @@
 import { describe, expect, test } from "bun:test";
-import { filterCommands, parseCommandIntent, slashInsertText, type SlashCommand } from "./slash-command";
+import { commandOptionId, commandSourceLabel, filterCommands, parseCommandIntent, slashInsertText, type SlashCommand } from "./slash-command";
+
+// Phase 7: the picker labels its section by the ACTUAL provider source (not a guess) and wires
+// stable option ids for aria-activedescendant.
+describe("commandSourceLabel + commandOptionId (Phase 7 picker chrome)", () => {
+  test("source label reflects the provider, defaulting to a neutral 'Commands'", () => {
+    expect(commandSourceLabel("claude")).toBe("Claude commands");
+    expect(commandSourceLabel("codex")).toBe("Codex commands");
+    expect(commandSourceLabel("opencode")).toBe("OpenCode commands");
+    expect(commandSourceLabel(undefined)).toBe("Commands");
+    expect(commandSourceLabel("mystery")).toBe("Commands");
+  });
+  test("commandOptionId is stable + name-derived for aria-activedescendant", () => {
+    expect(commandOptionId("review")).toBe("slashcmd-opt-review");
+  });
+});
 
 // Slice 2/3 (+ review): a picked native command is inserted VERBATIM as `/name ` and sent to
 // the resident session unchanged (no client-side rename/translation), and the "/" autocomplete

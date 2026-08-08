@@ -15,6 +15,7 @@ import { buildTimeline, hasNarration, type TimelineNode } from "@/components/cha
 import {
   buildTimelineFromCanonical,
   shouldUseCanonicalTimeline,
+  type CommandCatalogState,
   type StoredCanonicalEvent,
 } from "@/components/chat/canonical-timeline";
 import type { NativeSnapshot } from "@/components/chat/native-store";
@@ -449,6 +450,7 @@ function ReplyComposer({
   memoryScope,
   pending,
   commands,
+  commandState,
   onReply,
   running,
   stopping,
@@ -459,6 +461,7 @@ function ReplyComposer({
   memoryScope: MemoryScope;
   pending: boolean;
   commands?: SlashCommand[];
+  commandState?: CommandCatalogState;
   onReply: ComposerSubmit;
   running?: boolean;
   stopping?: boolean;
@@ -474,6 +477,7 @@ function ReplyComposer({
         defaultMemoryScope={memoryScope}
         pending={pending}
         commands={commands}
+        commandState={commandState}
         onSubmit={onReply}
         running={running}
         stopping={stopping}
@@ -496,6 +500,7 @@ export function Conversation({
   defaultMemoryScope,
   pendingReply,
   commands,
+  commandState,
   onReply,
   sendNowFor,
   onSendNow,
@@ -511,6 +516,8 @@ export function Conversation({
   pendingReply: string | null;
   /** Engine slash commands for the reply composer's "/" autocomplete. */
   commands?: SlashCommand[];
+  /** The honest command-catalog state (source + loading/unavailable/error/ready). */
+  commandState?: CommandCatalogState;
   onReply: ComposerSubmit;
   /** Run id of the HEAD queued turn when a turn is running - that bubble gets
    *  the "Send now" steering affordance (opencode's control on our harness). */
@@ -560,6 +567,7 @@ export function Conversation({
         memoryScope={defaultMemoryScope}
         pending={pendingReply !== null}
         commands={commands}
+        commandState={commandState}
         onReply={onReply}
         running={running}
         stopping={stopping}
