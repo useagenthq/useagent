@@ -125,10 +125,18 @@ export async function ensureRepoClone(
     `RU="$(git -C "$TMP" remote get-url origin 2>/dev/null)"; ` +
     `if [ "$RU" != ${shq(url)} ]; then echo clone:badorigin; rm -rf "$TMP" "$L"; exit 1; fi; ` +
     `printf 'skynet-owned repo=%s\\n' ${shq(repo)} > "$TMP/.git/skynet-owned"; ` +
+    // RACE-SAFE placement (no rm-then-mv TOCTOU, no nesting): if the destination exists and we
+    // own it (or ALLOW=yes), move it ATOMICALLY aside to a unique backup first; then rename the
+    // temp into place with `mv -T` (atomic, and it FAILS rather than nesting if the destination
+    // reappeared during a concurrent race). Any failure restores the moved-aside dir and fails
+    // closed. Unowned content is never removed.
+    `BAK="$TMP.old"; ` +
     `if [ -e "$DIR" ]; then ` +
-    `if [ "$ALLOW" = yes ] || [ -f "$DIR/.git/skynet-owned" ]; then rm -rf "$DIR"; ` +
+    `if [ "$ALLOW" = yes ] || [ -f "$DIR/.git/skynet-owned" ]; then ` +
+    `mv "$DIR" "$BAK" 2>/dev/null || { echo clone:collision; rm -rf "$TMP" "$L"; exit 1; }; ` +
     `else echo clone:collision; rm -rf "$TMP" "$L"; exit 1; fi; fi; ` +
-    `mv "$TMP" "$DIR"; rm -f "$L"; echo clone:ok`;
+    `if mv -T "$TMP" "$DIR" 2>/dev/null; then rm -rf "$BAK" "$L"; echo clone:ok; ` +
+    `else [ -e "$BAK" ] && mv "$BAK" "$DIR" 2>/dev/null; rm -rf "$TMP" "$L"; echo clone:collision; exit 1; fi`;
   await ctx.emit({
     kind: "command",
     label: branch ? `Cloning ${repo} (${branch})` : `Cloning ${repo}`,
