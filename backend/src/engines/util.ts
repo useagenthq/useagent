@@ -48,6 +48,31 @@ export function basename(p: string): string {
   return parts[parts.length - 1] ?? p;
 }
 
+/** Durably record WHERE a run executes BEFORE the engine prepares, boots the agent, runs a
+ *  tool, exposes a terminal or serves a preview - so those routes (and cleanup + recovery)
+ *  can always resolve the sandbox. FAIL-CLOSED: if the association cannot be persisted we
+ *  abort the turn rather than run in a box the control plane cannot see. A sandbox we JUST
+ *  provisioned this turn (`reused=false`) is torn down so it is never leaked; a reused
+ *  resident thread box is left to the caller's normal lifecycle (never destroyed here). The
+ *  thrown error is generic - it never carries the raw persistence error, which can embed a
+ *  DB connection string. Shared by the ACP and OpenCode adapters so both obey one rule. */
+export async function persistSandboxBeforeExecution(args: {
+  runId: string;
+  sandboxId: string;
+  reused: boolean;
+  persist: (runId: string, sandboxId: string) => Promise<void>;
+  deleteFreshSandbox: () => Promise<void>;
+}): Promise<void> {
+  try {
+    await args.persist(args.runId, args.sandboxId);
+  } catch {
+    if (!args.reused) await args.deleteFreshSandbox().catch(() => {});
+    throw new Error(
+      `aborting run ${args.runId}: could not durably persist its sandbox association (fail-closed)`,
+    );
+  }
+}
+
 /** Environment for a spawned engine: inherit the parent env but PIN `$PWD` to
  *  the isolated workdir. `Bun.spawn({cwd})` changes the real cwd (getcwd) but
  *  does NOT update `$PWD`; a tool that trusts `$PWD` to find its project root

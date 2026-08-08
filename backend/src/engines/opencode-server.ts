@@ -12,7 +12,7 @@ import type {
   HarnessSessionHandle,
 } from "./types";
 import { composeTurnPrompt } from "./types";
-import { basename, parseJsonLine, truncate } from "./util";
+import { basename, parseJsonLine, persistSandboxBeforeExecution, truncate } from "./util";
 import { getThreadSandbox, setRunSandbox } from "../runs/repo";
 import { resolveGithubToken } from "../github/auth";
 import { parseRepoRef } from "../github/repo-ref";
@@ -607,9 +607,19 @@ export const opencodeServerAdapter: EngineAdapter = {
       }
       if (ctx.signal.aborted) throw new Error("opencode run aborted (timeout)");
 
-      // Durable thread→sandbox mapping: the DB row survives restarts (the
-      // in-memory map is just a cache for the preview endpoint).
-      void setRunSandbox(ctx.runId, sandbox.id).catch(() => {});
+      // Durable thread→sandbox mapping BEFORE we boot the server / run tools: the DB row
+      // survives restarts (the in-memory map is just a preview cache). AWAITED + FAIL-CLOSED
+      // (same invariant as ACP): if the association cannot be recorded we abort the turn
+      // rather than run in a box the terminal/preview/file/cleanup routes can't resolve, and
+      // a box we JUST provisioned is torn down (a reused resident box is kept for the thread).
+      const box = sandbox;
+      await persistSandboxBeforeExecution({
+        runId: ctx.runId,
+        sandboxId: box.id,
+        reused: retainForThread,
+        persist: setRunSandbox,
+        deleteFreshSandbox: () => box.delete(),
+      });
 
       // Inject the knowledge MCP gateway (run-scoped token only) into the global
       // opencode config BEFORE booting the server, so the resident agent picks up

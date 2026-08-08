@@ -214,9 +214,19 @@ export async function setRunEngineSession(id: string, sessionId: string): Promis
   await db.update(runs).set({ engineSessionId: sessionId }).where(eq(runs.id, id));
 }
 
-/** Persist the sandbox a run executed in (thread→sandbox mapping, durable). */
+/** Persist the sandbox a run executed in (thread→sandbox mapping, durable). Returns
+ * the updated row id; THROWS if no run row matched (a zero-row UPDATE must not read as
+ * success - the control plane would then believe the association was recorded when it
+ * was not). Callers await this BEFORE executing so a missing row fails the turn closed. */
 export async function setRunSandbox(id: string, sandboxId: string): Promise<void> {
-  await db.update(runs).set({ sandboxId }).where(eq(runs.id, id));
+  const updated = await db
+    .update(runs)
+    .set({ sandboxId })
+    .where(eq(runs.id, id))
+    .returning({ id: runs.id });
+  if (updated.length === 0) {
+    throw new Error(`setRunSandbox: run ${id} not found (no row updated)`);
+  }
 }
 
 /** The most recent sandbox id recorded in this thread — the box holding the
