@@ -1,0 +1,78 @@
+// Slice 2 gate: the Claude/Codex control seam is HONEST. capabilities() reports
+// only what the ACP path implements, and the control ops that are not wired
+// (cancel until Slice 4, reconcile) return a typed `unsupported_capability` -
+// never a silent ok and never an OpenCode-shaped fabricated completion.
+
+import { describe, expect, test } from "bun:test";
+import { claudeHarness, codexHarness } from "./acp-harness";
+import { harnessAdapters, resolveHarness } from "./index";
+import { opencodeHarness } from "./opencode-server";
+import type { HarnessAdapter, HarnessSessionHandle } from "./types";
+
+const HANDLE: HarnessSessionHandle = { provider: "x", sessionId: "ses_1", sandboxId: "sbx_1" };
+
+describe("ACP harness capabilities are honest (not aspirational)", () => {
+  for (const [name, harness] of [["claude", claudeHarness], ["codex", codexHarness]] as const) {
+    const caps = harness.capabilities();
+    test(`${name}: provider id matches`, () => {
+      expect(harness.provider).toBe(name);
+    });
+    test(`${name}: reports parts streaming + resume, but not the unwired surfaces`, () => {
+      expect(caps.streaming).toBe("parts");
+      expect(caps.resume).toBe(true);
+      // Everything not implemented today must be false - no over-claiming.
+      expect(caps.cancel).toBe(false); // no native session/cancel yet (Slice 4)
+      expect(caps.authoritativeHistory).toBe(false); // no ACP history reconcile
+      expect(caps.childSessions).toBe(false); // ACP has no child-session emitter
+      expect(caps.approvals).toBe(false);
+      expect(caps.questions).toBe(false);
+      expect(caps.reasoning).toBe(false);
+      expect(caps.todos).toBe(false);
+      expect(caps.patches).toBe(false);
+      expect(caps.usage).toBe(false);
+    });
+    test(`${name}: capabilities() returns a fresh copy (not the shared const)`, () => {
+      expect(harness.capabilities()).not.toBe(caps);
+      expect(harness.capabilities()).toEqual(caps);
+    });
+  }
+});
+
+describe("ACP harness control ops are typed-unsupported, never silent success", () => {
+  for (const [name, harness] of [["claude", claudeHarness], ["codex", codexHarness]] as const) {
+    test(`${name}: cancel() -> unsupported_capability(cancel), never ok`, async () => {
+      const r = await harness.cancel(HANDLE, "user stop");
+      expect(r).toEqual({ status: "unsupported_capability", provider: name, capability: "cancel" });
+      expect(r.status).not.toBe("ok");
+    });
+    test(`${name}: reconcile() -> unsupported_capability(reconcile), never a fabricated completion`, async () => {
+      const r = await harness.reconcile(HANDLE, { sinceMs: 0 });
+      expect(r).toEqual({ status: "unsupported_capability", provider: name, capability: "reconcile" });
+      expect(r.status).not.toBe("completed");
+    });
+  }
+});
+
+describe("harness registry resolves control adapters by provider", () => {
+  test("opencode + daytona alias resolve to the OpenCode harness (behavior unchanged)", () => {
+    expect(resolveHarness("opencode")).toBe(opencodeHarness);
+    expect(resolveHarness("daytona")).toBe(opencodeHarness);
+  });
+  test("claude/claude-sdk/codex resolve to the ACP control adapters", () => {
+    expect(resolveHarness("claude")).toBe(claudeHarness);
+    expect(resolveHarness("claude-sdk")).toBe(claudeHarness);
+    expect(resolveHarness("codex")).toBe(codexHarness);
+  });
+  test("an unregistered provider resolves to undefined (e.g. mock/legacy acp)", () => {
+    expect(resolveHarness("mock")).toBeUndefined();
+    expect(resolveHarness("acp")).toBeUndefined();
+  });
+  test("every registered harness satisfies the HarnessAdapter shape", () => {
+    for (const h of Object.values(harnessAdapters) as HarnessAdapter[]) {
+      expect(typeof h.provider).toBe("string");
+      expect(typeof h.capabilities).toBe("function");
+      expect(typeof h.cancel).toBe("function");
+      expect(typeof h.reconcile).toBe("function");
+    }
+  });
+});

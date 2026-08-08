@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { opencodeHarness } from "../engines/opencode-server";
+import { resolveHarness } from "../engines";
 import type {
   HarnessCheckpoint,
   HarnessReconciliation,
@@ -63,6 +63,18 @@ export type ReconcileProbe = (
   checkpoint: HarnessCheckpoint,
 ) => Promise<HarnessReconciliation>;
 
+/** Default probe: resolve the control adapter for the run's provider from the
+ *  engine registry (no direct concrete-harness import). A provider with no
+ *  registered harness surfaces as unreachable and is handled by the caller's
+ *  switch; a registered ACP harness honestly returns `unsupported_capability`.
+ *  For OpenCode runs this resolves to `opencodeHarness`, so behavior is unchanged. */
+const defaultReconcile: ReconcileProbe = (handle, checkpoint) => {
+  const harness = resolveHarness(handle.provider);
+  return harness
+    ? harness.reconcile(handle, checkpoint)
+    : Promise.resolve({ status: "unreachable" } as HarnessReconciliation);
+};
+
 export interface RecoveryResult {
   readonly reconciled: number;
   readonly failed: number;
@@ -73,7 +85,7 @@ export interface RecoveryResult {
 }
 
 export async function recoverStaleRuns(
-  reconcile: ReconcileProbe = (handle, checkpoint) => opencodeHarness.reconcile(handle, checkpoint),
+  reconcile: ReconcileProbe = defaultReconcile,
 ): Promise<RecoveryResult> {
   const active = await listActiveCommands();
 
@@ -209,7 +221,7 @@ function recordReconcilingMarker(runId: string, threadId: string, sinceAt: Date,
 /** One reconcile tick: process every DUE parked run. Returns counts for
  *  tests/telemetry. The probe is injectable (tests). Never throws. */
 export async function runDueReconciles(
-  reconcile: ReconcileProbe = (handle, checkpoint) => opencodeHarness.reconcile(handle, checkpoint),
+  reconcile: ReconcileProbe = defaultReconcile,
 ): Promise<{ adopted: number; failed: number; retried: number; dropped: number }> {
   const due = await claimDueReconciles();
   let adopted = 0;
