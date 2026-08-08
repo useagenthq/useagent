@@ -5,17 +5,18 @@
 // before any React cutover.
 
 import { describe, expect, test } from "bun:test";
-import heavy from "./__fixtures__/opencode-heavy.json";
-import heavySteps from "./__fixtures__/opencode-heavy-steps.json";
+import heavy from "../../../packages/agent-harness/test/fixtures/opencode-heavy.json";
+import heavySteps from "../../../packages/agent-harness/test/fixtures/opencode-heavy-steps.json";
 import { createNativeStore } from "./native-store";
 import { buildTimeline, type TimelineNode } from "./timeline";
 import { parseNativeFrame } from "./native-events";
 import { buildTimelineFromCanonical } from "./canonical-timeline";
 import type { ApiStep } from "./types";
-// The translator is authored on the backend (final_harness: backend translates each
-// harness). Imported here across the package boundary for the equivalence proof; it
-// is pure (no backend-only deps) so it resolves cleanly in the test runner.
-import { translateOpenCode, type OpenCodeFrame, type OpenCodeStep } from "../../../backend/src/engines/opencode-canonical";
+// The translator + golden fixtures live in the shared, zero-dependency
+// @skynet/agent-harness package (final_harness: backend translates each harness).
+// The frontend imports the published translator here for the equivalence proof;
+// it is pure so it resolves cleanly in the test runner.
+import { translateOpenCode, type OpenCodeFrame, type OpenCodeStep } from "@skynet/agent-harness/opencode";
 
 const frames = heavy as unknown[];
 const steps = heavySteps as unknown as ApiStep[];

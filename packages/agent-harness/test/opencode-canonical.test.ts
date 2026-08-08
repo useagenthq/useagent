@@ -1,14 +1,14 @@
 // Phase 1 gate: the OpenCode->canonical translator is LOSSLESS at the transport
-// boundary and FULLY ACCOUNTED against the protected golden fixture (frontend/
-// components/chat/__fixtures__/opencode-heavy.json). Every source frame yields a
+// boundary and FULLY ACCOUNTED against the protected golden fixture
+// (test/fixtures/opencode-heavy.json). Every source frame yields a
 // recorded disposition (canonical kinds produced, or a NAMED suppression) - no
 // silent drops. Child-session text/reasoning is preserved (with identity); the
 // translator hides nothing. Runs alongside the existing lane; no runtime change.
 
 import { describe, expect, test } from "bun:test";
-import heavy from "../../../frontend/components/chat/__fixtures__/opencode-heavy.json";
-import { translateOpenCode, type OpenCodeFrame, type OpenCodeStep } from "./opencode-canonical";
-import { assertNeverEvent, type CanonicalAgentEvent } from "./canonical";
+import heavy from "./fixtures/opencode-heavy.json";
+import { translateOpenCode, type OpenCodeFrame, type OpenCodeStep } from "../src/opencode-canonical";
+import { assertNeverEvent, type CanonicalAgentEvent } from "../src/canonical";
 
 const frames = heavy as unknown as OpenCodeFrame[];
 const CTX = { runId: "run_test", threadId: "thread_test" };

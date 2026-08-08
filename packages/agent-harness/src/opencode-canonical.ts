@@ -1,0 +1,335 @@
+/**
+ * OpenCode -> Canonical translator (final_harness Phase 1).
+ *
+ * PURE + additive: maps the OpenCode native event stream (frames) AND the durable
+ * step projection into the provider-neutral {@link CanonicalAgentEvent} vocabulary.
+ * It changes nothing else - the existing native lane keeps flowing; this runs
+ * ALONGSIDE it. Nothing downstream branches on provider names once this exists.
+ *
+ * TWO principles the tests enforce:
+ *  1. LOSSLESS AT THE TRANSPORT BOUNDARY - child-session text/reasoning is preserved
+ *     (emitted with its child/session identity + a child.started that names the
+ *     session as a child); the translator NEVER decides what to hide. View reducers
+ *     (buildTimelineFromCanonical) apply display policy.
+ *  2. EXPLICIT SOURCE-EVENT ACCOUNTING - every source frame/step yields a recorded
+ *     disposition (the canonical kinds it produced, or a NAMED suppression reason).
+ *     There are no silent `continue` drops; the test asserts full accounting.
+ */
+import {
+  CANONICAL_SCHEMA_VERSION,
+  type CanonicalAgentEvent,
+  type CanonicalEventBody,
+  type CanonicalEventKind,
+  type ContextMarkerKind,
+} from "./canonical";
+
+/** OpenCode native frame (subset of the wire frame; matches src/runs/native-events
+ *  + the frontend NativeFrame + the golden fixture). */
+export interface OpenCodeFrame {
+  eventId: string;
+  seq: number;
+  provider: string;
+  eventType: string;
+  native: {
+    sessionId: string | null;
+    parentSessionId: string | null;
+    messageId: string | null;
+    partId: string | null;
+    callId: string | null;
+  };
+  payload: unknown;
+}
+
+/** OpenCode durable step (matches ApiStep / the golden steps fixture). Tool ROWS in
+ *  the legacy timeline come from here, so canonical tool events are sourced here too. */
+export interface OpenCodeStep {
+  id: string;
+  run_id?: string;
+  idx: number;
+  kind: string; // "command" | "file" | "task" | "done" | ...
+  label?: string | null;
+  chip?: string | null;
+  code_json?: string | null;
+}
+
+export interface TranslateCtx {
+  runId: string;
+  threadId: string;
+  /** The run's engine — the PROVENANCE stamped on step-derived events. OpenCode frames
+   *  carry their own real provider; steps do not, so a step tool row is attributed to the
+   *  run's engine ("opencode" | "claude" | "codex"). Defaults to "opencode" so every
+   *  existing caller + the golden fixture are unchanged. Claude/Codex ACP runs project
+   *  their tool_calls into `steps` and emit ~no frames, so this is their whole provenance
+   *  - we do NOT fabricate assistant-message frames they never durably persisted. */
+  engine?: string;
+  /** ts source (Skynet-assigned, never trusted from the provider). Defaults to the
+   *  source seq/idx for deterministic tests; the emit layer passes a real clock. */
+  ts?: (seq: number) => number;
+}
+
+/** Per source event: exactly what canonical it produced, or WHY it produced nothing.
+ *  The test asserts every source frame/step has one of these (no silent drops). */
+export interface Disposition {
+  sourceId: string;
+  kind: string; // source eventType or step kind
+  provider: string;
+  produced: CanonicalEventKind[];
+  suppressed?: string; // named reason when produced is empty
+}
+
+export interface TranslateResult {
+  events: CanonicalAgentEvent[];
+  accounting: Disposition[];
+}
+
+const rec = (v: unknown): Record<string, unknown> | null =>
+  v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : null;
+const str = (v: unknown): string | null => (typeof v === "string" ? v : null);
+
+const TASK_CHILD_ID = /<task\s+id="(ses_[^"]+)"/;
+const TASK_RESULT = /<task_result>\s*([\s\S]*?)\s*<\/task_result>/;
+
+function markerFromSkynet(eventType: string, p: Record<string, unknown> | null):
+  | { markerType: ContextMarkerKind; title: string; detail?: string }
+  | null {
+  if (eventType === "skill.loaded") {
+    const playbook = p?.kind === "playbook";
+    return {
+      markerType: playbook ? "playbook" : "skill",
+      title: str(p?.name) ?? (playbook ? "playbook" : "skill"),
+      detail: typeof p?.version === "number" ? `v${p.version}` : undefined,
+    };
+  }
+  if (eventType === "context.retrieved" || eventType === "knowledge.retrieved" || eventType === "memory.searched") {
+    const src = str(p?.source) ?? (eventType === "knowledge.retrieved" ? "knowledge" : "memory");
+    const n = typeof p?.itemCount === "number" ? p.itemCount : 0;
+    return { markerType: src === "knowledge" ? "knowledge" : "memory", title: `Recalled ${n} item${n === 1 ? "" : "s"} from ${src}` };
+  }
+  if (eventType === "memory.l0_accepted" || eventType === "memory.updated" || eventType === "memory.deleted" || eventType === "memory.failed") {
+    const failed = eventType === "memory.failed";
+    const op = str(p?.op) ?? (eventType === "memory.updated" ? "correct" : eventType === "memory.deleted" ? "forget" : "remember");
+    return { markerType: "memory", title: failed ? `Memory ${op} failed` : `Memory ${op}` };
+  }
+  // Boot-recovery park marker (recovery.ts RUN_RECONCILING). The legacy native lane
+  // renders this as a `reconciling` TimelineMarker, so the canonical lane must too - it
+  // was previously dropped to a harness.warning (invisible in the timeline), a real
+  // node-equality gap.
+  if (eventType === "run.reconciling") {
+    return { markerType: "reconciling", title: "Reconciling after a restart" };
+  }
+  return null;
+}
+
+/**
+ * Translate an OpenCode session (native frames + durable steps) into a canonical
+ * event stream + full source-event accounting. Stateful over the stream; `seq` on
+ * the output is Skynet's own dense monotonic cursor (the provider seq is preserved
+ * in `identity.nativeSeq`).
+ */
+export function translateOpenCode(
+  frames: readonly OpenCodeFrame[],
+  ctx: TranslateCtx,
+  steps: readonly OpenCodeStep[] = [],
+): TranslateResult {
+  const tsOf = ctx.ts ?? ((seq: number) => seq);
+  const orderedFrames = [...frames].sort((a, b) => a.seq - b.seq);
+
+  // Child sessions: any session linked to a parent (task fan-out). Established
+  // LOSSLESSLY via child.started so reducers - not the translator - decide hiding.
+  const childSessions = new Set<string>();
+  for (const f of orderedFrames) {
+    if (f.native.parentSessionId && f.native.sessionId) childSessions.add(f.native.sessionId);
+  }
+
+  // Message-anchored ordering (mirrors buildTimeline): min seq per messageId (the
+  // stable step-start anchor) + partId->messageId, so step tool events can be
+  // emitted in the SAME order the legacy timeline places them.
+  const msgOrderKey = new Map<string, number>();
+  const partMessage = new Map<string, string>();
+  for (const f of orderedFrames) {
+    const mid = f.native.messageId;
+    if (mid) {
+      const prev = msgOrderKey.get(mid);
+      if (prev === undefined || f.seq < prev) msgOrderKey.set(mid, f.seq);
+      if (f.native.partId) partMessage.set(f.native.partId, mid);
+    }
+  }
+
+  const emittedChild = new Set<string>();  // child sessionIds we've announced
+  const seenTaskCall = new Set<string>();  // task-tool callIds we've opened
+  const seenTool = new Set<string>();      // non-task tool callIds we've opened
+  const events: CanonicalAgentEvent[] = [];
+  const accounting: Disposition[] = [];
+  let cursor = 0;
+
+  const push = (id: string, provider: string, body: CanonicalEventBody, ident: Partial<CanonicalAgentEvent["identity"]> = {}, suffix = ""): CanonicalEventKind => {
+    events.push({
+      schemaVersion: CANONICAL_SCHEMA_VERSION,
+      eventId: `${ctx.runId}:${id}${suffix}`,
+      seq: cursor,
+      runId: ctx.runId,
+      threadId: ctx.threadId,
+      ts: tsOf(cursor),
+      identity: { provider, nativeEventId: id, ...ident },
+      ...body,
+    });
+    cursor++;
+    return body.kind;
+  };
+
+  // Announce a child session once (lossless: names the session a child so reducers
+  // can route its parts; does not itself hide anything).
+  const ensureChild = (produced: CanonicalEventKind[], f: OpenCodeFrame) => {
+    const sid = f.native.sessionId;
+    if (sid && childSessions.has(sid) && !emittedChild.has(sid)) {
+      emittedChild.add(sid);
+      produced.push(push(`childsess:${sid}`, f.provider, {
+        kind: "child.started", childId: sid, parentChildId: f.native.parentSessionId ?? undefined,
+      }, { nativeSessionId: sid }));
+    }
+  };
+
+  // ── frame lane ──────────────────────────────────────────────────────────────
+  for (const f of orderedFrames) {
+    const p = rec(f.payload);
+    const et = f.eventType;
+    const produced: CanonicalEventKind[] = [];
+    const ident = {
+      nativeSessionId: f.native.sessionId ?? undefined,
+      nativeSeq: f.seq,
+      nativeMessageId: f.native.messageId ?? undefined,
+      nativePartId: f.native.partId ?? undefined,
+    };
+    let suppressed: string | undefined;
+
+    ensureChild(produced, f); // lossless child-session establishment
+
+    if (f.provider.startsWith("skynet")) {
+      const marker = markerFromSkynet(et, p);
+      if (marker) {
+        // Carry the originating frame verbatim so the frontend reconstructs the FULL
+        // typed TimelineMarker with the SAME parser the legacy native lane uses (H3):
+        // no fabrication, deep-equal marker nodes.
+        produced.push(push(f.eventId, f.provider, { kind: "context.marker", ...marker, sourceEventType: et, ...(p ? { sourcePayload: p } : {}) }, ident));
+      }
+      else if (et === "secrets.injected") produced.push(push(f.eventId, f.provider, { kind: "session.metadata", metadata: { secretsInjected: true } }, ident));
+      else produced.push(push(f.eventId, f.provider, { kind: "harness.warning", message: "unmapped skynet event", rawEventType: et }, ident));
+    } else if (et.startsWith("session")) {
+      produced.push(push(f.eventId, f.provider, { kind: "session.metadata", metadata: p ?? {} }, ident));
+    } else if (et === "part.step-start") {
+      // The message ANCHOR (lowest seq per message) - emitted losslessly so view
+      // reducers can reproduce message-anchored ordering. Skipped only if it carries
+      // no messageId (nothing to anchor).
+      if (f.native.messageId) produced.push(push(f.eventId, f.provider, { kind: "message.started", messageId: f.native.messageId }, ident));
+      else suppressed = "step-start without messageId";
+    } else if (et === "part.step-finish") {
+      const mid = f.native.messageId;
+      if (mid) produced.push(push(f.eventId, f.provider, { kind: "message.completed", messageId: mid }, ident));
+      else suppressed = "step-finish without messageId";
+    } else if (et.startsWith("part.text")) {
+      const mid = f.native.messageId;
+      if (mid) produced.push(push(f.eventId, f.provider, { kind: "message.delta", messageId: mid, text: str(p?.text) ?? "" }, ident));
+      else suppressed = "text part without messageId";
+    } else if (et.startsWith("part.reasoning")) {
+      const mid = f.native.messageId ?? f.native.partId ?? f.eventId;
+      if (et.endsWith(".completed")) produced.push(push(f.eventId, f.provider, { kind: "reasoning.completed", messageId: mid }, ident));
+      else produced.push(push(f.eventId, f.provider, { kind: "reasoning.delta", messageId: mid, text: str(p?.text) ?? "" }, ident));
+    } else if (et.startsWith("part.tool") || et.startsWith("part.subtask")) {
+      const callId = f.native.callId;
+      const isTask = p?.tool === "task" || et.startsWith("part.subtask");
+      const terminal = et.endsWith(".completed") || et.endsWith(".error");
+      const errored = et.endsWith(".error");
+      if (isTask && callId) {
+        const state = rec(p?.state);
+        const output = str(state?.output) ?? "";
+        const childId = TASK_CHILD_ID.exec(output)?.[1] ?? callId;
+        if (!seenTaskCall.has(callId)) {
+          seenTaskCall.add(callId);
+          produced.push(push(f.eventId, f.provider, { kind: "child.started", childId, launchToolCallId: callId, title: str(p?.title) ?? undefined }, ident, "#child-start"));
+        }
+        if (terminal) {
+          const result = TASK_RESULT.exec(output)?.[1]?.trim();
+          produced.push(push(f.eventId, f.provider, { kind: "child.completed", childId, status: errored ? "error" : "ok", result: result || undefined }, ident, "#child-done"));
+        } else {
+          produced.push(push(f.eventId, f.provider, { kind: "child.updated", childId, status: "running" }, ident, "#child-upd"));
+        }
+      } else if (callId && !seenTool.has(callId) && !terminal) {
+        seenTool.add(callId);
+        produced.push(push(f.eventId, f.provider, { kind: "tool.started", toolCallId: callId, name: str(p?.tool) ?? "tool" }, ident, "#tool-start"));
+      } else if (terminal) {
+        produced.push(push(f.eventId, f.provider, { kind: "tool.completed", toolCallId: callId ?? f.eventId, status: errored ? "error" : "ok" }, ident, "#tool-done"));
+      } else {
+        produced.push(push(f.eventId, f.provider, { kind: "tool.progress", toolCallId: callId ?? f.eventId }, ident, "#tool-prog"));
+      }
+    } else {
+      produced.push(push(f.eventId, f.provider, { kind: "harness.warning", message: "unmapped opencode event", rawEventType: et }, ident));
+    }
+
+    accounting.push({ sourceId: f.eventId, kind: et, provider: f.provider, produced, ...(produced.length === 0 ? { suppressed } : {}) });
+  }
+
+  // ── step lane ────────────────────────────────────────────────────────────────
+  // Tool ROWS in the legacy timeline come from the durable step projection, not the
+  // frames. Emit a canonical tool.completed per non-`done` step (LOSSLESS: incl.
+  // narration/boot pseudo-steps - the reducer applies display policy), ordered by the
+  // SAME message-anchored key buildTimeline uses so the canonical seq preserves the
+  // legacy timeline order. `done` steps are terminal markers (not timeline nodes) and
+  // are explicitly accounted, not silently dropped.
+  const MAX = Number.MAX_SAFE_INTEGER;
+  // Steps carry no provider of their own; attribute them to the run's engine (honest
+  // provenance for claude/codex ACP tool rows, not a hardcoded "opencode").
+  const stepProvider = ctx.engine ?? "opencode";
+  const stepKey = (s: OpenCodeStep): [number, number] => {
+    let partID: string | null = null, messageID: string | null = null;
+    if (s.code_json) {
+      try {
+        const n = rec(JSON.parse(s.code_json))?.native as Record<string, unknown> | undefined;
+        partID = str(n?.partID); messageID = str(n?.messageID);
+      } catch { /* keep nulls */ }
+    }
+    const mid = (partID && partMessage.get(partID)) || messageID || null;
+    const k0 = mid ? msgOrderKey.get(mid) ?? MAX : MAX;
+    return [k0, s.idx];
+  };
+  const orderedSteps = [...steps]
+    .map((s, i) => ({ s, i, k: stepKey(s) }))
+    .sort((a, b) => a.k[0] - b.k[0] || a.k[1] - b.k[1] || a.i - b.i);
+
+  for (const { s } of orderedSteps) {
+    if (s.kind === "done") {
+      accounting.push({ sourceId: s.id, kind: `step:${s.kind}`, provider: stepProvider, produced: [], suppressed: "terminal done step (not a timeline node)" });
+      continue;
+    }
+    let callID: string | null = null, errored = false, native: Record<string, unknown> | undefined;
+    if (s.code_json) {
+      try {
+        const c = rec(JSON.parse(s.code_json));
+        native = rec(c?.native) ?? undefined;
+        callID = str(native?.callID);
+        errored = c?.error === true;
+      } catch { /* keep defaults */ }
+    }
+    const ident = {
+      nativeEventId: s.id, // step id = the reducer's node key + lookup handle
+      nativeSessionId: str(native?.sessionID) ?? undefined,
+    };
+    // Every non-done step is a tool ROW in the legacy timeline (command + file
+    // alike), so it maps to tool.completed for node-equivalence. (A separate
+    // file.changed for the editor pane is a later, additive refinement.)
+    const body: CanonicalEventBody = { kind: "tool.completed", toolCallId: callID ?? s.id, status: errored ? "error" : "ok" };
+    events.push({
+      schemaVersion: CANONICAL_SCHEMA_VERSION,
+      eventId: `${ctx.runId}:step:${s.id}`,
+      seq: cursor,
+      runId: ctx.runId,
+      threadId: ctx.threadId,
+      ts: tsOf(cursor),
+      identity: { provider: stepProvider, ...ident },
+      ...body,
+    });
+    cursor++;
+    accounting.push({ sourceId: s.id, kind: `step:${s.kind}`, provider: stepProvider, produced: [body.kind] });
+  }
+
+  return { events, accounting };
+}

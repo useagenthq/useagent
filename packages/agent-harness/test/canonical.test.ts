@@ -10,7 +10,7 @@ import {
   type CanonicalAgentEvent,
   type CanonicalEventBody,
   type CanonicalEventKind,
-} from "./canonical";
+} from "../src/canonical";
 
 /** A human label per kind, written via an exhaustive switch. If a new kind is
  *  added to the union and not handled here, this file fails to compile. */

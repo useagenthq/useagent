@@ -6,8 +6,8 @@
 // timeline.ts that alters the OpenCode output must update this on purpose.
 
 import { describe, expect, test } from "bun:test";
-import heavy from "./__fixtures__/opencode-heavy.json";
-import heavySteps from "./__fixtures__/opencode-heavy-steps.json";
+import heavy from "../../../packages/agent-harness/test/fixtures/opencode-heavy.json";
+import heavySteps from "../../../packages/agent-harness/test/fixtures/opencode-heavy-steps.json";
 import { createNativeStore } from "./native-store";
 import { buildTimeline, type TimelineNode } from "./timeline";
 import { deriveChildFidelity, parseNativeFrame, type NativeFrame } from "./native-events";
