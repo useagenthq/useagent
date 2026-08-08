@@ -99,22 +99,12 @@ export async function cacheAcpCommands(
   await upsertCatalog(acpCatalogKey(orgId, engine), commands);
 }
 
-/** The PER-SESSION snapshot key (thread id is a globally-unique run id, so this is org-safe
- *  by construction). This is the source of truth for the run's canonical commands.updated -
- *  NOT the org-wide priming cache. */
-export function sessionCatalogKey(threadId: string): string {
-  return `sess:${threadId}`;
-}
-
-/**
- * Record the LATEST command snapshot for a SESSION (thread), including an EMPTY one - an empty
- * `available_commands_update` is a real REPLACEMENT ("no commands now") and must be preserved
- * so the run's canonical commands.updated reflects it. Distinct from the org priming cache,
- * which keeps the last non-empty for pre-session New Task display.
- */
-export async function cacheSessionCommands(threadId: string, commands: readonly CanonicalCommand[]): Promise<void> {
-  await upsertCatalog(sessionCatalogKey(threadId), commands);
-}
+// The AUTHORITATIVE per-session command snapshot is NOT cached here - it is captured durably
+// in the ordered provider-events lane (acp-server records each `available_commands_update` as
+// an `acp.commands` provider event) and emitted as the run's canonical `commands.updated` by
+// the translator. This module keeps ONLY the org-scoped PRE-session New Task priming cache
+// (`acp:<org>:<engine>`, non-empty snapshots), deliberately separate from authoritative
+// session state so a live session's snapshot on the thread stream always wins.
 
 async function upsertCatalog(key: string, commands: readonly CanonicalCommand[]): Promise<void> {
   const rows: CatalogCommand[] = commands.map((c) => ({

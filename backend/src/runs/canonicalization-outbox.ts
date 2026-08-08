@@ -21,9 +21,8 @@ import { getNativeFramesSince } from "./native-events";
 import { getRun, getStepsApi } from "./repo";
 import { drainProviderEvents } from "./provider-events";
 import { translateOpenCode, type OpenCodeFrame, type OpenCodeStep } from "../engines/opencode-canonical";
-import { CANONICAL_SCHEMA_VERSION, type CanonicalAgentEvent, type CanonicalCommand } from "../engines/canonical";
+import type { CanonicalAgentEvent } from "../engines/canonical";
 import { canonicalEngine } from "../engines/engine-alias";
-import { readCommandCatalog, sessionCatalogKey } from "./command-catalog";
 import {
   publishDelivered,
   publishCanonicalizationComplete,
@@ -31,39 +30,13 @@ import {
   type DeliveredCanonicalEvent,
 } from "./canonical-events";
 
-/** Append a session-identified `commands.updated` to a run's canonical events from the run's
- *  PER-SESSION command snapshot (NOT the org-wide priming cache) - so it reflects exactly what
- *  THIS session advertised, incl. an EMPTY replacement. Only ACP engines with a recorded
- *  snapshot emit one; the stable eventId (`<runId>:commands`) keeps re-canonicalization
- *  idempotent (a new revision, latest wins). Mutates `events`. */
-export async function appendCommandsCatalogEvent(
-  events: CanonicalAgentEvent[],
-  runId: string,
-  threadId: string,
-  engineId: string,
-  nativeSessionId: string | null,
-): Promise<void> {
-  if (engineId !== "claude" && engineId !== "codex") return;
-  const snapshot = await readCommandCatalog(sessionCatalogKey(threadId)).catch(() => null);
-  if (!snapshot) return; // the session never advertised commands - emit nothing (not empty)
-  const catalog: CanonicalCommand[] = snapshot.commands.map((c) => ({
-    name: c.name,
-    ...(c.description ? { description: c.description } : {}),
-    ...(c.input ? { input: c.input } : {}),
-  }));
-  events.push({
-    schemaVersion: CANONICAL_SCHEMA_VERSION,
-    eventId: `${runId}:commands`,
-    seq: events.length, // ordered after the translated timeline events
-    runId,
-    threadId,
-    ts: events.length, // deterministic (relative), not wall-clock, so replays are stable
-    identity: { provider: engineId, ...(nativeSessionId ? { nativeSessionId } : {}) },
-    kind: "commands.updated",
-    commands: catalog.map((c) => c.name), // may be [] - a genuine empty replacement
-    catalog,
-  });
-}
+// The run's provider command catalog is captured durably in the ORDERED provider-events lane
+// (acp-server records each `available_commands_update` as an `acp.commands` provider event) and
+// the translator emits the canonical `commands.updated` from those frames - so it is sealed by
+// the same drain barrier and counted by the same watermark as every other native frame. There
+// is deliberately no separate mutable per-session cache read here: routing through provider
+// events is what makes "canonicalization cannot complete before the command snapshot is durable"
+// true for free.
 
 const BASE_BACKOFF_MS = 500;
 const MAX_BACKOFF_MS = 30_000;
@@ -186,12 +159,6 @@ export async function canonicalizeRun(runId: string, threadId: string): Promise<
     { runId, threadId, engine: engineId },
     steps as unknown as OpenCodeStep[],
   );
-  // Fold the run's PROVIDER COMMAND CATALOG into its canonical output as a session-identified
-  // `commands.updated`. The ACP adapter captured available_commands_update to the org-scoped
-  // cache during the turn; emitting it HERE (part of the run's finalized rows, not an ad-hoc
-  // mid-turn append) makes it durable, session-identified, and replay-safe - it survives the
-  // per-run row replacement in finalize, where a stand-alone persistAndPublish would be wiped.
-  await appendCommandsCatalogEvent(events, runId, threadId, engineId, run?.engineSessionId ?? null);
   const after = await sourceWatermark(runId);
   if (!watermarkStable(before, after)) {
     return { complete: false, delivered: [], watermark: after }; // source moved - retry against the newer source

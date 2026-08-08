@@ -1,69 +1,114 @@
-import { describe, expect, test } from "bun:test";
-import type { CanonicalAgentEvent } from "../src/engines/canonical";
-import { appendCommandsCatalogEvent } from "../src/runs/canonicalization-outbox";
-import { cacheSessionCommands } from "../src/runs/command-catalog";
-import "./helpers"; // migrate + seed
+// Phase 1 (durable native command capture): an ACP session's `available_commands_update` is
+// captured as an ORDERED `acp.commands` provider event (acp-server), so it is sealed by the
+// same drain barrier and counted by the same canonicalization WATERMARK as every other native
+// frame - canonicalization cannot reach `complete` until the run's command snapshot is durable.
+// The translator emits the run's canonical `commands.updated` from those frames. DB-backed
+// (skynet_test), through the REAL canonicalizeRun path (no mutable side-cache).
+import { describe, expect, test, beforeAll } from "bun:test";
+import { ACP_COMMANDS_EVENT_TYPE, type CanonicalCommand } from "../src/engines/canonical";
+import { db } from "../src/db/client";
+import { runs } from "../src/db/schema";
+import { recordProviderEvent } from "../src/runs/provider-events";
+import { canonicalizeRun, sourceWatermark } from "../src/runs/canonicalization-outbox";
+import { loadCanonicalThread } from "../src/runs/canonical-events";
+import { waitFor } from "./helpers"; // side-effect: migrate + seed
 
-// Review: a session's provider command catalog is emitted into the run's DURABLE canonical
-// output as a session-identified commands.updated, sourced from the PER-SESSION snapshot (never
-// the org-wide cache) so an empty replacement is honored and it survives per-run row replacement.
+beforeAll(async () => {
+  await waitFor(() => true, 1);
+});
+
 const uid = () => crypto.randomUUID();
 
-describe("commands.updated on the durable canonical stream (per-session, review)", () => {
-  test("an ACP run with a non-empty session snapshot appends a session-identified commands.updated", async () => {
-    const thread = uid();
-    const run = uid();
-    await cacheSessionCommands(thread, [
+async function seedAcpRun(engine: "claude" | "codex" | "opencode") {
+  const RUN = `cmd_${uid()}`;
+  const THREAD = RUN;
+  await db.insert(runs).values({
+    id: RUN, prompt: "p", model: "claude-haiku-4-5", engine, status: "completed", threadId: THREAD,
+  }).onConflictDoNothing();
+  return { RUN, THREAD };
+}
+
+/** Record a durable `acp.commands` provider event exactly as acp-server does, then AWAIT it so
+ *  it is committed before canonicalization reads the source (mirrors the drain barrier). */
+async function recordCommands(RUN: string, THREAD: string, provider: string, sessionId: string, commands: CanonicalCommand[]) {
+  await recordProviderEvent({
+    id: `${RUN}:${sessionId}:commands`, runId: RUN, threadId: THREAD, provider, eventType: ACP_COMMANDS_EVENT_TYPE,
+    nativeSessionId: sessionId, payload: { source: provider, adapter: "acp@x", commands, ts: 1 },
+  });
+}
+const commandsOf = (delivered: { kind: string }[]) =>
+  delivered.filter((e): e is { kind: "commands.updated"; commands: string[]; catalog?: CanonicalCommand[]; identity: { nativeSessionId?: string }; source?: string } =>
+    e.kind === "commands.updated") as unknown as Array<{ kind: string; commands: string[]; catalog?: CanonicalCommand[]; identity: { nativeSessionId?: string }; source?: string }>;
+
+describe("durable command capture -> canonical commands.updated (Phase 1)", () => {
+  test("the command frame is counted by the watermark (canonicalization covers it)", async () => {
+    const { RUN, THREAD } = await seedAcpRun("claude");
+    await recordCommands(RUN, THREAD, "claude", "ses_a", [{ name: "review" }]);
+    const w = await sourceWatermark(RUN);
+    expect(w.frameMax).toBeGreaterThanOrEqual(0); // the acp.commands frame is a durable provider event
+  });
+
+  test("a non-empty snapshot yields a session-identified commands.updated with the catalog + source", async () => {
+    const { RUN, THREAD } = await seedAcpRun("claude");
+    await recordCommands(RUN, THREAD, "claude", "ses_a", [
       { name: "review", description: "Review the diff", input: "[files]" },
-      { name: "status" },
+      { name: "compact" },
     ]);
-    const events: CanonicalAgentEvent[] = [];
-    await appendCommandsCatalogEvent(events, run, thread, "claude", "ses_abc");
-    expect(events).toHaveLength(1);
-    const e = events[0];
-    expect(e?.kind).toBe("commands.updated");
-    expect(e?.eventId).toBe(`${run}:commands`);
-    expect(e?.threadId).toBe(thread);
-    expect(e?.identity.provider).toBe("claude");
-    expect(e?.identity.nativeSessionId).toBe("ses_abc"); // session-identified
-    if (e?.kind === "commands.updated") {
-      expect(e.commands).toEqual(["review", "status"]);
-      expect(e.catalog).toEqual([{ name: "review", description: "Review the diff", input: "[files]" }, { name: "status" }]);
-    }
+    const res = await canonicalizeRun(RUN, THREAD);
+    expect(res.complete).toBe(true);
+    const cmds = commandsOf(res.delivered);
+    expect(cmds).toHaveLength(1);
+    expect(cmds[0]?.commands).toEqual(["review", "compact"]);
+    expect(cmds[0]?.catalog).toEqual([{ name: "review", description: "Review the diff", input: "[files]" }, { name: "compact" }]);
+    expect(cmds[0]?.source).toBe("claude");
+    expect(cmds[0]?.identity.nativeSessionId).toBe("ses_a");
   });
 
-  test("an EMPTY session snapshot emits an EMPTY commands.updated (replacement is honored, not dropped)", async () => {
-    const thread = uid();
-    await cacheSessionCommands(thread, [{ name: "gone" }]); // had commands...
-    await cacheSessionCommands(thread, []); // ...then the provider cleared them (empty replacement)
-    const events: CanonicalAgentEvent[] = [];
-    await appendCommandsCatalogEvent(events, uid(), thread, "codex", null);
-    expect(events).toHaveLength(1);
-    if (events[0]?.kind === "commands.updated") {
-      expect(events[0].commands).toEqual([]);
-      expect(events[0].catalog).toEqual([]);
-    }
+  test("an EMPTY replacement emits an EMPTY commands.updated (honored, not dropped)", async () => {
+    const { RUN, THREAD } = await seedAcpRun("codex");
+    // had commands, then the provider cleared them (same session id -> upsert, latest wins)
+    await recordCommands(RUN, THREAD, "codex", "ses_b", [{ name: "gone" }]);
+    await recordCommands(RUN, THREAD, "codex", "ses_b", []);
+    const res = await canonicalizeRun(RUN, THREAD);
+    const cmds = commandsOf(res.delivered);
+    expect(cmds).toHaveLength(1);
+    expect(cmds[0]?.commands).toEqual([]);
   });
 
-  test("a session that NEVER advertised commands emits NOTHING (absence != empty)", async () => {
-    const events: CanonicalAgentEvent[] = [];
-    await appendCommandsCatalogEvent(events, uid(), uid(), "claude", null);
-    expect(events).toHaveLength(0);
+  test("duplicate delivery is idempotent (one row per session, latest wins)", async () => {
+    const { RUN, THREAD } = await seedAcpRun("claude");
+    await recordCommands(RUN, THREAD, "claude", "ses_c", [{ name: "a" }]);
+    await recordCommands(RUN, THREAD, "claude", "ses_c", [{ name: "a" }, { name: "b" }]);
+    await recordCommands(RUN, THREAD, "claude", "ses_c", [{ name: "a" }, { name: "b" }]); // exact duplicate
+    const res = await canonicalizeRun(RUN, THREAD);
+    const cmds = commandsOf(res.delivered);
+    expect(cmds).toHaveLength(1);
+    expect(cmds[0]?.commands).toEqual(["a", "b"]);
   });
 
-  test("a non-ACP engine (opencode) never emits this event (its live catalog is served separately)", async () => {
-    const thread = uid();
-    await cacheSessionCommands(thread, [{ name: "x" }]);
-    const events: CanonicalAgentEvent[] = [];
-    await appendCommandsCatalogEvent(events, uid(), thread, "opencode", null);
-    expect(events).toHaveLength(0);
+  test("TWO native sessions in one thread keep DISTINCT catalogs", async () => {
+    const { RUN, THREAD } = await seedAcpRun("claude");
+    await recordCommands(RUN, THREAD, "claude", "ses_1", [{ name: "one" }]);
+    await recordCommands(RUN, THREAD, "claude", "ses_2", [{ name: "two" }]);
+    const res = await canonicalizeRun(RUN, THREAD);
+    const cmds = commandsOf(res.delivered).sort((a, b) => (a.commands[0] ?? "").localeCompare(b.commands[0] ?? ""));
+    expect(cmds.map((c) => c.identity.nativeSessionId)).toEqual(["ses_1", "ses_2"]);
+    expect(cmds.map((c) => c.commands)).toEqual([["one"], ["two"]]);
   });
 
-  test("the appended event orders AFTER the translated timeline events", async () => {
-    const thread = uid();
-    await cacheSessionCommands(thread, [{ name: "c" }]);
-    const events = [{ seq: 0 }, { seq: 1 }] as unknown as CanonicalAgentEvent[];
-    await appendCommandsCatalogEvent(events, uid(), thread, "claude", null);
-    expect(events[2]?.seq).toBe(2); // seq = prior events.length -> ordered last
+  test("reconnect/replay reconstructs the same commands.updated (durable canonical rows)", async () => {
+    const { RUN, THREAD } = await seedAcpRun("claude");
+    await recordCommands(RUN, THREAD, "claude", "ses_r", [{ name: "z", description: "d" }]);
+    await canonicalizeRun(RUN, THREAD);
+    const replayed = commandsOf(await loadCanonicalThread(THREAD));
+    expect(replayed).toHaveLength(1);
+    expect(replayed[0]?.commands).toEqual(["z"]);
+    expect(replayed[0]?.identity.nativeSessionId).toBe("ses_r");
+  });
+
+  test("a plain OpenCode run emits NO commands.updated (its catalog is served separately)", async () => {
+    const { RUN, THREAD } = await seedAcpRun("opencode");
+    const res = await canonicalizeRun(RUN, THREAD);
+    expect(commandsOf(res.delivered)).toHaveLength(0);
   });
 });

@@ -1,11 +1,12 @@
 import { Daytona, type Sandbox } from "@daytona/sdk";
 import type { EmitStep, EngineAdapter, EngineRunContext } from "./types";
 import { composeTurnPrompt } from "./types";
-import { parseAcpAvailableCommands } from "@skynet/agent-harness/canonical";
+import { ACP_COMMANDS_EVENT_TYPE, parseAcpAvailableCommands } from "@skynet/agent-harness/canonical";
 import { basename, parseJsonLine, persistSandboxBeforeExecution, truncate } from "./util";
 import { prepareRepos } from "./repo-prep";
 import { parseRepoRef } from "../github/repo-ref";
-import { cacheAcpCommands, cacheSessionCommands } from "../runs/command-catalog";
+import { cacheAcpCommands } from "../runs/command-catalog";
+import { recordProviderEvent } from "../runs/provider-events";
 import { buildSessionCancel, createAcpRpcClient, isAlreadyInitialized, relayStateAfterBoot } from "./acp-rpc";
 import { allowPermissionBypass, decideAcpPermission } from "./permission-policy";
 import { toolGatewayConfig } from "../knowledge/gateway/config";
@@ -530,13 +531,40 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
           const kind = String(u.sessionUpdate ?? "");
           if (kind === "available_commands_update") {
             // The provider's native slash-command catalog for THIS session - a REPLACEMENT
-            // snapshot (an empty list means "no commands right now"). Persist it PER-SESSION
-            // (incl. empty) - this is the source the run's canonical commands.updated reads, so
-            // an empty replacement is honored. ALSO prime the ORG New Task cache from a
-            // non-empty snapshot only (a transient empty frame must not wipe pre-session
-            // display). Fire-and-forget: a caching failure must never disturb the turn.
+            // snapshot (an empty list means "no commands right now"). Capture it durably in
+            // the ORDERED provider-events lane, keyed by the ACP session id read from the
+            // notification params (id `<sessionId>:commands`, upserted so the LATEST
+            // replacement wins and duplicates are idempotent). Because it is a provider event
+            // it is sealed by the same drain barrier and counted by the same canonicalization
+            // watermark as every other native frame - so canonicalization cannot reach
+            // `complete` until this snapshot is durable, and two native sessions in one thread
+            // keep DISTINCT catalogs. The translator emits the run's canonical
+            // `commands.updated` from these frames (empty replacement honored).
+            const sessionId = typeof params.sessionId === "string" && params.sessionId
+              ? params.sessionId
+              : (live.sessionId ?? ctx.runId);
             const snapshot = parseAcpAvailableCommands(u);
-            void cacheSessionCommands(ctx.threadId ?? ctx.runId, snapshot);
+            void recordProviderEvent({
+              // RUN-scoped id (the provider-events PK is global): a resumed session reuses its
+              // sessionId across turns, so a bare `<sessionId>:commands` would collide and let
+              // one turn's frame upsert another turn's row. `<runId>:<sessionId>:commands` keeps
+              // each (run, session) distinct while still upserting duplicates within a turn.
+              id: `${ctx.runId}:${sessionId}:commands`,
+              runId: ctx.runId,
+              threadId: ctx.threadId ?? ctx.runId,
+              provider: cfg.id,
+              eventType: ACP_COMMANDS_EVENT_TYPE,
+              nativeSessionId: sessionId,
+              payload: {
+                source: cfg.id,
+                adapter: cfg.packages.map((p) => p.pkg).join(","),
+                commands: snapshot,
+                ts: Date.now(),
+              },
+            });
+            // Keep the ORG New Task priming cache SEPARATE from authoritative session state:
+            // upsert only a NON-empty snapshot (a transient empty frame must not wipe the
+            // pre-session picker). Fire-and-forget: a caching failure never disturbs the turn.
             void cacheAcpCommands(ctx.orgId ?? "", cfg.id, snapshot);
             return;
           }
