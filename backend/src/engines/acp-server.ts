@@ -1,8 +1,10 @@
 import { Daytona, type Sandbox } from "@daytona/sdk";
 import type { EmitStep, EngineAdapter, EngineRunContext } from "./types";
 import { composeTurnPrompt } from "./types";
+import { parseAcpAvailableCommands } from "@skynet/agent-harness/canonical";
 import { basename, parseJsonLine, persistSandboxBeforeExecution, truncate } from "./util";
 import { prepareRepos } from "./repo-prep";
+import { cacheAcpCommands } from "../runs/command-catalog";
 import { buildSessionCancel, createAcpRpcClient, isAlreadyInitialized, relayStateAfterBoot } from "./acp-rpc";
 import { allowPermissionBypass, decideAcpPermission } from "./permission-policy";
 import { toolGatewayConfig } from "../knowledge/gateway/config";
@@ -519,6 +521,14 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
         const handleUpdate = async (params: Record<string, unknown>): Promise<void> => {
           const u = (params.update ?? {}) as Record<string, unknown>;
           const kind = String(u.sessionUpdate ?? "");
+          if (kind === "available_commands_update") {
+            // The provider's native slash-command catalog (a REPLACEMENT snapshot). Cache it
+            // keyed by engine so the New Task composer can offer this engine's real commands
+            // BEFORE a session exists; a live session's fresh snapshot always overrides it.
+            // Fire-and-forget: a caching failure must never disturb the turn.
+            void cacheAcpCommands(cfg.id, parseAcpAvailableCommands(u));
+            return;
+          }
           if (kind === "agent_message_chunk") {
             const text = ((u.content ?? {}) as { text?: string }).text;
             if (typeof text === "string" && text) {

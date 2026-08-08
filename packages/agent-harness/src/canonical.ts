@@ -67,6 +67,16 @@ export interface CanonicalPlanEntry {
   status: "pending" | "in_progress" | "completed" | "cancelled";
 }
 
+/** One native slash command advertised by the selected provider at runtime
+ *  (ACP `available_commands_update`, or OpenCode's `/command`). Provider-neutral:
+ *  a command is invoked by sending `/name arguments` as an ordinary prompt. */
+export interface CanonicalCommand {
+  name: string;
+  description?: string;
+  /** argument/input hint, when the provider supplies one. */
+  input?: string;
+}
+
 /** Skynet-generated context markers (memory/knowledge/skill/playbook/rule) that
  *  render identically for every engine because they originate in Skynet's lane,
  *  not the provider's. */
@@ -119,7 +129,7 @@ export type CanonicalEventBody =
   | { kind: "approval.resolved"; approvalId: string; decision: string }
   | { kind: "question.requested"; questionId: string; prompt: string; options?: readonly string[] }
   | { kind: "question.resolved"; questionId: string; answer: string }
-  | { kind: "commands.updated"; commands: readonly string[] }
+  | { kind: "commands.updated"; commands: readonly string[]; catalog?: readonly CanonicalCommand[] }
   | { kind: "mode.updated"; mode?: string; model?: string }
   | { kind: "usage.updated"; inputTokens?: number; outputTokens?: number; costUsd?: number }
   | {
@@ -195,4 +205,51 @@ export interface CanonicalEventSink {
  *  runtime means an unhandled canonical kind - a bug, not silent drop. */
 export function assertNeverEvent(x: never): never {
   throw new Error(`unhandled canonical event kind: ${JSON.stringify(x)}`);
+}
+
+/** Pull a `{name, description?, input?}` command out of a loosely-typed record,
+ *  or null if it has no usable name. `input` accepts a bare string OR `{hint}`. */
+function toCanonicalCommand(item: unknown): CanonicalCommand | null {
+  const rec = item as { name?: unknown; description?: unknown; input?: unknown } | null;
+  const name = typeof rec?.name === "string" ? rec.name.trim() : "";
+  if (!name) return null;
+  const cmd: CanonicalCommand = { name };
+  if (typeof rec?.description === "string" && rec.description) cmd.description = rec.description;
+  const input = rec?.input;
+  const hint = typeof input === "string" ? input : (input as { hint?: unknown } | null)?.hint;
+  if (typeof hint === "string" && hint) cmd.input = hint;
+  return cmd;
+}
+
+/** Dedupe by name (first wins), preserving order. */
+function dedupeCommands(list: CanonicalCommand[]): CanonicalCommand[] {
+  const seen = new Set<string>();
+  const out: CanonicalCommand[] = [];
+  for (const c of list) {
+    if (seen.has(c.name)) continue;
+    seen.add(c.name);
+    out.push(c);
+  }
+  return out;
+}
+
+/**
+ * Parse an ACP `available_commands_update` session/update into a REPLACEMENT command
+ * snapshot for that session. ACP v1 shape:
+ *   { sessionUpdate: "available_commands_update", availableCommands: [{ name, description?, input? }] }
+ * Nameless entries and duplicates drop; a non-array yields an empty snapshot (which the
+ * caller treats as "provider advertises no commands right now", not "keep the old list").
+ */
+export function parseAcpAvailableCommands(update: Record<string, unknown>): CanonicalCommand[] {
+  const list = (update.availableCommands ?? update.commands) as unknown;
+  if (!Array.isArray(list)) return [];
+  return dedupeCommands(list.map(toCanonicalCommand).filter((c): c is CanonicalCommand => c !== null));
+}
+
+/** Normalize OpenCode's `/command` body (a bare `{name, description}[]`) into the SAME
+ *  provider-neutral `CanonicalCommand[]` shape, so one product command surface serves
+ *  every engine. */
+export function normalizeOpencodeCommands(raw: unknown): CanonicalCommand[] {
+  if (!Array.isArray(raw)) return [];
+  return dedupeCommands(raw.map(toCanonicalCommand).filter((c): c is CanonicalCommand => c !== null));
 }
