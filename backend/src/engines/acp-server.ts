@@ -2,6 +2,7 @@ import { Daytona, type Sandbox } from "@daytona/sdk";
 import type { EmitStep, EngineAdapter, EngineRunContext } from "./types";
 import { composeTurnPrompt } from "./types";
 import { basename, parseJsonLine, persistSandboxBeforeExecution, truncate } from "./util";
+import { prepareRepos } from "./repo-prep";
 import { buildSessionCancel, createAcpRpcClient, isAlreadyInitialized, relayStateAfterBoot } from "./acp-rpc";
 import { allowPermissionBypass, decideAcpPermission } from "./permission-policy";
 import { toolGatewayConfig } from "../knowledge/gateway/config";
@@ -448,6 +449,12 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
         // in-memory native session id is dead. Invalidate it below so we session/load
         // (persisted id) or session/new instead of prompting a stale session.
         const relayRebooted = / BOOTED=1/.test(boot.result ?? "");
+
+        // Prepare the thread's selected repos into the workspace BEFORE the ACP session
+        // starts, so the resident agent works INSIDE them (its session cwd is ~/work).
+        // Shared, engine-neutral preparer - same secure clone as OpenCode; idempotent on
+        // a warm sandbox (already-cloned repos are fast skips).
+        await prepareRepos(box, `${home}/work`, ctx);
 
         if (!relay) {
           const link = await box.getPreviewLink(cfg.port);
