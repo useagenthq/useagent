@@ -2,6 +2,7 @@
 // A sample UI derives its view entirely from these - it never parses provider frames
 // or branches on engine name. All selectors are total + side-effect free.
 
+import type { CanonicalCommand } from "@skynet/agent-harness/canonical";
 import type { AgentTranscript } from "./thread-store";
 import type { CanonicalThreadEvent } from "./thread-events";
 
@@ -88,6 +89,17 @@ export function selectContextMarkers(t: AgentTranscript): ContextMarkerView[] {
     if (e.kind === "context.marker") out.push({ markerType: e.markerType, title: e.title, detail: e.detail });
   }
   return out;
+}
+
+/** The provider's native slash-command catalog for the thread, from the LATEST
+ *  `commands.updated` in delivery order (an empty replacement legitimately yields []).
+ *  Reads the DURABLE thread stream, so it survives reconnect + replay identically. */
+export function selectCommands(t: AgentTranscript): CanonicalCommand[] {
+  let catalog: CanonicalCommand[] = [];
+  for (const e of t.events) {
+    if (e.kind === "commands.updated") catalog = [...(e.catalog ?? [])];
+  }
+  return catalog;
 }
 
 /** Distinct run ids present in the transcript, in first-seen delivery order. */

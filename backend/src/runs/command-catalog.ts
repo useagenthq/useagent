@@ -96,12 +96,32 @@ export async function cacheAcpCommands(
   commands: readonly CanonicalCommand[],
 ): Promise<void> {
   if (commands.length === 0) return;
+  await upsertCatalog(acpCatalogKey(orgId, engine), commands);
+}
+
+/** The PER-SESSION snapshot key (thread id is a globally-unique run id, so this is org-safe
+ *  by construction). This is the source of truth for the run's canonical commands.updated -
+ *  NOT the org-wide priming cache. */
+export function sessionCatalogKey(threadId: string): string {
+  return `sess:${threadId}`;
+}
+
+/**
+ * Record the LATEST command snapshot for a SESSION (thread), including an EMPTY one - an empty
+ * `available_commands_update` is a real REPLACEMENT ("no commands now") and must be preserved
+ * so the run's canonical commands.updated reflects it. Distinct from the org priming cache,
+ * which keeps the last non-empty for pre-session New Task display.
+ */
+export async function cacheSessionCommands(threadId: string, commands: readonly CanonicalCommand[]): Promise<void> {
+  await upsertCatalog(sessionCatalogKey(threadId), commands);
+}
+
+async function upsertCatalog(key: string, commands: readonly CanonicalCommand[]): Promise<void> {
   const rows: CatalogCommand[] = commands.map((c) => ({
     name: c.name,
     description: c.description ?? null,
     input: c.input ?? null,
   }));
-  const key = acpCatalogKey(orgId, engine);
   await db
     .insert(commandsCatalog)
     .values({ snapshot: key, commands: rows, fetchedAt: new Date() })
