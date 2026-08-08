@@ -4,6 +4,6 @@
   "scripts": {
     "dev:frontend": "bun run --cwd frontend dev",
     "dev:backend": "bun run --cwd backend dev",
-    "typecheck": "bun run --cwd frontend typecheck && (cd backend && bunx tsc --noEmit) && (cd packages/agent-harness && bunx tsc --noEmit)"
+    "typecheck": "bun run --cwd frontend typecheck && (cd backend && bunx tsc --noEmit) && (cd packages/agent-harness && bunx tsc --noEmit) && (cd packages/agent-client && bunx tsc --noEmit)"
   }
 }
