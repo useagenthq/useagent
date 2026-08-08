@@ -144,20 +144,24 @@ export interface RelayHealth {
   readonly relay: string;
   readonly generation: number | null;
   readonly childAlive: boolean;
+  /** The ACP child has come up and is accepting stdin (a prompt sent before this would be
+   *  rejected by the relay `/send` guard). Legacy plain-text health -> assumed ready. */
+  readonly childReady: boolean;
 }
 
 /** Parse the relay `/health` JSON, tolerant of the legacy plain-text "ok" (generation null).
  *  Pure + total; never throws. */
 export function parseRelayHealth(body: string): RelayHealth {
   try {
-    const j = JSON.parse(body) as { relay?: unknown; generation?: unknown; childAlive?: unknown };
+    const j = JSON.parse(body) as { relay?: unknown; generation?: unknown; childAlive?: unknown; childReady?: unknown };
     return {
       relay: typeof j.relay === "string" ? j.relay : "ok",
       generation: typeof j.generation === "number" ? j.generation : null,
       childAlive: j.childAlive !== false,
+      childReady: j.childReady !== false,
     };
   } catch {
-    return { relay: body.trim() || "ok", generation: null, childAlive: true };
+    return { relay: body.trim() || "ok", generation: null, childAlive: true, childReady: true };
   }
 }
 

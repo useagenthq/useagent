@@ -16,12 +16,12 @@ import {
 } from "./acp-rpc";
 
 describe("acp-rpc: ACP child generation (Phase 4)", () => {
-  test("parseRelayHealth reads generation + childAlive from JSON, tolerating legacy 'ok'", () => {
-    expect(parseRelayHealth('{"relay":"ok","generation":3,"childAlive":true}')).toEqual({ relay: "ok", generation: 3, childAlive: true });
-    expect(parseRelayHealth('{"relay":"ok","generation":2,"childAlive":false}')).toEqual({ relay: "ok", generation: 2, childAlive: false });
-    // legacy plain-text health (no generation)
-    expect(parseRelayHealth("ok")).toEqual({ relay: "ok", generation: null, childAlive: true });
-    expect(parseRelayHealth("")).toEqual({ relay: "ok", generation: null, childAlive: true });
+  test("parseRelayHealth reads generation + childAlive + childReady from JSON, tolerating legacy 'ok'", () => {
+    expect(parseRelayHealth('{"relay":"ok","generation":3,"childAlive":true,"childReady":true}')).toEqual({ relay: "ok", generation: 3, childAlive: true, childReady: true });
+    expect(parseRelayHealth('{"relay":"ok","generation":2,"childAlive":false,"childReady":false}')).toEqual({ relay: "ok", generation: 2, childAlive: false, childReady: false });
+    // legacy plain-text health (no generation) -> assumed ready
+    expect(parseRelayHealth("ok")).toEqual({ relay: "ok", generation: null, childAlive: true, childReady: true });
+    expect(parseRelayHealth("")).toEqual({ relay: "ok", generation: null, childAlive: true, childReady: true });
   });
 
   test("relayRegenerated: a CHANGE from a known prior generation is a regeneration", () => {
