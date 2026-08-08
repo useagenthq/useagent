@@ -303,18 +303,29 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
   // placeholder). Only offered for opencode threads — the snapshot with noVNC.
   const hasDesktop = isOpencode;
 
-  // Slash-command list for the reply composer's "/" autocomplete — the resident
-  // opencode server's real GET /command, via the same-origin live-proxy. Best
-  // effort: a stopped sandbox or non-opencode thread just means no popover.
+  // Slash-command list for the reply composer's "/" autocomplete - the SELECTED engine's
+  // real native command catalog, capability-driven (no provider-name gate): OpenCode exposes
+  // its resident server's live GET /command via the same-origin live-proxy; the ACP engines
+  // (claude/codex) expose the catalog captured from their session's available_commands_update,
+  // served keyed by engine (GET /api/commands?engine=). An engine simply either has a catalog
+  // or it does not - a stopped sandbox or a provider with no commands just means no popover.
+  const engine = normalizeEngine(newest.engine);
   const [commands, setCommands] = useState<SlashCommand[]>([]);
   useEffect(() => {
-    if (!isOpencode || !engineSessionId) return;
     let cancelled = false;
     void (async () => {
       try {
-        const res = await backendFetch(`/api/live-proxy/${rootId}/command`);
-        if (!res.ok) return;
-        const list = (await res.json()) as { name?: string; description?: string }[];
+        let list: { name?: string; description?: string }[] = [];
+        if (engine === "opencode") {
+          if (!engineSessionId) return; // opencode's live catalog needs a resident session
+          const res = await backendFetch(`/api/live-proxy/${rootId}/command`);
+          if (!res.ok) return;
+          list = (await res.json()) as typeof list;
+        } else {
+          const res = await backendFetch(`/api/commands?engine=${encodeURIComponent(engine)}`);
+          if (!res.ok) return;
+          list = ((await res.json()) as { commands?: typeof list }).commands ?? [];
+        }
         if (cancelled || !Array.isArray(list)) return;
         setCommands(
           list
@@ -328,7 +339,7 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
     return () => {
       cancelled = true;
     };
-  }, [isOpencode, engineSessionId, rootId]);
+  }, [engine, engineSessionId, rootId]);
 
   return (
     <div className="flex h-full flex-col">
