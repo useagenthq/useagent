@@ -16,7 +16,7 @@ import { isEngineEnabled } from "../env";
 import { acceptRunCancel, CANCEL_SUMMARY } from "../commands/cancel";
 import { resolveSkillSelection } from "../skills/repo";
 import { buildNativeCommandPrompt, validateCommandIntent, type CommandIntent } from "./command-intent";
-import { acpCatalogKey, defaultSnapshot, readCommandCatalog, readSessionCommandCatalog } from "./command-catalog";
+import { readSessionCommandCatalog } from "./command-catalog";
 import { unknownRepos } from "../github/repos";
 import { formatRepoRef } from "../github/repo-ref";
 import { bus, channel, pumpThread, signalCancel, type BusEvent } from "../worker";
@@ -219,6 +219,12 @@ runsRoutes.post("/", async (c) => {
   // the full context. Product skills are versioned skill IDs (handled above), never commands.
   let finalPrompt = prompt;
   let commandName: string | null = null;
+  // The ACCEPTED command identity persisted with the durable run (not just the name): which
+  // provider, native session, and catalog snapshot authorized it - so the worker can re-validate
+  // against the LIVE session before sending, and history records exactly what was authorized.
+  let commandProvider: string | null = null;
+  let commandSessionId: string | null = null;
+  let commandCatalogRevision: number | null = null;
   if (body.command !== undefined && body.command !== null) {
     const raw = body.command as { name?: unknown; args?: unknown; provider?: unknown; sessionId?: unknown; catalogRevision?: unknown };
     const intent: CommandIntent = {
@@ -228,28 +234,26 @@ runsRoutes.post("/", async (c) => {
       sessionId: typeof raw.sessionId === "string" ? raw.sessionId : undefined,
       catalogRevision: typeof raw.catalogRevision === "number" ? raw.catalogRevision : undefined,
     };
-    // The provider a client claims must match the run's engine (no cross-engine command).
-    if (intent.provider && intent.provider !== engine) {
+    // The provider a client claims is REQUIRED and MUST match the run's engine (no cross-engine,
+    // no unattributed command).
+    if (!intent.provider || intent.provider !== engine) {
       return c.json({ error: "invalid_command", reason: "provider does not match engine" }, 400);
     }
-    // SESSION-AUTHORITATIVE catalog: validate against exactly what the CURRENT native session
-    // advertised (the durable commands.updated for the server-derived activeSessionId). An empty
-    // session catalog ([]) means the session advertises NONE -> reject any command. Only when the
-    // session has NOT advertised yet (null) do we fall back to the pre-session org priming cache
-    // (or OpenCode's snapshot catalog).
-    const orgKey = engine !== "opencode" ? acpCatalogKey(c.get("orgId") ?? "", engine) : defaultSnapshot();
-    let catalog: { name: string }[];
+    // FAIL-CLOSED authorization: a native command is validated ONLY against the LIVE session's
+    // authoritative catalog (the durable commands.updated for the server-derived active session,
+    // with its snapshot revision). The pre-session org priming cache is UI-ONLY and NEVER
+    // authorizes execution - so with no active session, or a session that has not advertised, the
+    // command is rejected. The client must also prove the session id + catalog revision it saw.
     const sessionCatalog = activeSessionId ? await readSessionCommandCatalog(threadId, activeSessionId) : null;
-    if (sessionCatalog !== null) {
-      catalog = sessionCatalog;
-    } else {
-      catalog = (await readCommandCatalog(orgKey))?.commands ?? [];
-    }
-    // The client-supplied session id must match the server-derived active session (reject a
-    // stale/cross-session intent), and the name must be in the authoritative catalog.
-    const v = validateCommandIntent(intent, catalog, { sessionId: activeSessionId });
+    const v = validateCommandIntent(intent, sessionCatalog?.commands ?? [], {
+      sessionId: activeSessionId,
+      revision: sessionCatalog?.revision ?? null,
+    });
     if (!v.ok) return c.json({ error: "invalid_command", reason: v.reason }, 400);
     commandName = v.name;
+    commandProvider = intent.provider;
+    commandSessionId = activeSessionId;
+    commandCatalogRevision = sessionCatalog?.revision ?? null;
     finalPrompt = buildNativeCommandPrompt(v.name, v.args); // built ONCE in the trusted backend
   }
 
@@ -262,7 +266,7 @@ runsRoutes.post("/", async (c) => {
     idempotencyKey,
     orgId: c.get("orgId"),
     actorId: c.get("userId"),
-    run: { id, prompt: finalPrompt, model, engine, parentRunId, threadId, repos, memoryScope, skillId, skillVersion, skillContentHash, commandName },
+    run: { id, prompt: finalPrompt, model, engine, parentRunId, threadId, repos, memoryScope, skillId, skillVersion, skillContentHash, commandName, commandProvider, commandSessionId, commandCatalogRevision },
   });
 
   // Translate the acceptance outcome to the HTTP response (exhaustive — a new

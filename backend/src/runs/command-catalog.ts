@@ -63,26 +63,35 @@ export async function cacheCommandCatalog(snapshot: string, rawBody: string): Pr
 }
 
 /** The AUTHORITATIVE command catalog for a SPECIFIC native session, read from the DURABLE
- *  canonical stream: the LATEST `commands.updated` for that session in the thread. This is what
- *  a native-command intent is validated against - exactly what THIS session advertised, not an
- *  org-wide cache. Returns [] when the session advertised none, or null when the session has not
- *  advertised a catalog yet (the caller then falls back to the pre-session org priming cache). */
+ *  canonical stream: the LATEST `commands.updated` for that session in the thread, WITH its
+ *  `revision` (that event's `delivery_seq` - a monotonic snapshot id that also advances when a
+ *  relay regeneration re-advertises). This is the ONLY thing a native-command intent is
+ *  authorized against - exactly what THIS session advertised, never an org-wide priming cache.
+ *  `commands` is [] when the session advertised none; the whole result is null when the session
+ *  has not advertised a catalog yet (the caller then FAILS CLOSED - a command cannot be
+ *  authorized against a cache). */
+export interface SessionCommandCatalog {
+  readonly commands: CatalogCommand[];
+  /** The latest `commands.updated` deliverySeq for this session (the catalog snapshot id). */
+  readonly revision: number;
+}
 export async function readSessionCommandCatalog(
   threadId: string,
   sessionId: string,
-): Promise<CatalogCommand[] | null> {
+): Promise<SessionCommandCatalog | null> {
   const rows = (await db.execute(sql`
-    select body from canonical_events
+    select body, delivery_seq from canonical_events
     where thread_id = ${threadId} and kind = 'commands.updated' and identity->>'nativeSessionId' = ${sessionId}
-    order by delivery_seq desc limit 1`)) as unknown as Array<{ body: { catalog?: unknown; commands?: unknown } }>;
-  const body = rows[0]?.body;
-  if (!body) return null;
+    order by delivery_seq desc limit 1`)) as unknown as Array<{ body: { catalog?: unknown; commands?: unknown }; delivery_seq: number | string }>;
+  const row = rows[0];
+  if (!row?.body) return null;
+  const body = row.body;
   const list = Array.isArray(body.catalog)
     ? body.catalog
     : Array.isArray(body.commands)
       ? (body.commands as unknown[]).map((n) => ({ name: n }))
       : [];
-  return list
+  const commands = list
     .map((c) => {
       const rec = c as { name?: unknown; description?: unknown; input?: unknown };
       return {
@@ -92,6 +101,7 @@ export async function readSessionCommandCatalog(
       };
     })
     .filter((c) => c.name.length > 0);
+  return { commands, revision: Number(row.delivery_seq) };
 }
 
 /** Read a keyed catalog (snapshot name, or an `acp:<engine>` key), or null. */

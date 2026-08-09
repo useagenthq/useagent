@@ -197,6 +197,13 @@
 			"when": 1786800000001,
 			"tag": "0029_run_command_name",
 			"breakpoints": true
+		},
+		{
+			"idx": 28,
+			"version": "7",
+			"when": 1786900000001,
+			"tag": "0030_run_command_identity",
+			"breakpoints": true
 		}
 	]
 }

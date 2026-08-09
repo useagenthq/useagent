@@ -129,6 +129,13 @@ export const runs = pgTable(
      *  checked against the active session catalog at acceptance. Non-null => the prompt is the
      *  exact `/name args` bytes and the worker delivers it verbatim with no injected context. */
     commandName: text("command_name"),
+    /** The ACCEPTED command IDENTITY persisted alongside the name (fail-closed authorization): the
+     *  provider, the native session, and the catalog snapshot revision it was authorized against,
+     *  so the worker can re-validate against the LIVE session before sending and history records
+     *  exactly what authorized it. Null for a non-command run. */
+    commandProvider: text("command_provider"),
+    commandSessionId: text("command_session_id"),
+    commandCatalogRevision: bigint("command_catalog_revision", { mode: "number" }),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),

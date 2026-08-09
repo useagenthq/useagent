@@ -38,6 +38,7 @@ import {
   selectActiveSessionId,
   selectSessionCapabilities,
   selectSessionCommands,
+  selectSessionCommandCatalog,
   type CanonicalCommandView,
 } from "@/components/chat/canonical-timeline";
 
@@ -104,6 +105,12 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
   const engineSessionId = useMemo(
     () => selectActiveSessionId([...snapshot.byId.values()], newest.id) ?? newest.engine_session_id ?? null,
     [snapshot.byId, newest.id, newest.engine_session_id],
+  );
+  // The active session catalog's SNAPSHOT revision (latest commands.updated deliverySeq) - sent
+  // with a native-command intent so the backend fail-closed authorization rejects a stale catalog.
+  const commandCatalogRevision = useMemo(
+    () => selectSessionCommandCatalog([...snapshot.byId.values()], engineSessionId)?.revision ?? null,
+    [snapshot.byId, engineSessionId],
   );
 
   // A settled turn shows its native timeline ONLY when it actually has native
@@ -184,7 +191,7 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
             // from the current session's catalog. Carries the provider + native session id so
             // the backend rejects a stale/cross-session intent; the backend re-validates before
             // delivering it verbatim. Absent => an ordinary prompt keeps its full context.
-            ...(command ? { command: { ...command, provider: engine, sessionId: engineSessionId ?? undefined } } : {}),
+            ...(command ? { command: { ...command, provider: engine, sessionId: engineSessionId ?? undefined, catalogRevision: commandCatalogRevision ?? undefined } } : {}),
           }),
         });
         if (!res.ok) throw new Error(`backend ${res.status}`);
@@ -205,7 +212,7 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
         throw err;
       }
     },
-    [newest.id, reconcile, engineSessionId],
+    [newest.id, reconcile, engineSessionId, commandCatalogRevision],
   );
 
   // Retire the optimistic bubble ONLY once its accepted run is present in the thread

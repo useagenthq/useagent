@@ -44,6 +44,13 @@ export interface RunCommandInput {
      *  exact `/name args` bytes, delivered verbatim with no injected context. Part of the run's
      *  identity (a command turn differs from the same text as a normal prompt). */
     readonly commandName: string | null;
+    /** The ACCEPTED command identity persisted with the run (fail-closed authorization): the
+     *  provider, native session, and catalog snapshot revision it was authorized against. Null
+     *  for a non-command run. Not part of the run fingerprint - identity is provenance, not intent
+     *  (commandName already distinguishes a command turn). */
+    readonly commandProvider: string | null;
+    readonly commandSessionId: string | null;
+    readonly commandCatalogRevision: number | null;
   };
 }
 

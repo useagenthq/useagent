@@ -669,18 +669,29 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
                 ts: Date.now(),
               },
             };
+            let persisted = false;
             for (let attempt = 0; attempt < 3; attempt++) {
               await recordProviderEvent(commandFrame, { critical: true });
               // Read-back: the serial chain swallows a failed insert (it must stay resolvable),
               // so verify the row landed and retry the idempotent upsert if it did not.
-              if (await providerEventExists(commandFrame.id)) break;
-              if (attempt === 2) console.error(`[acp:${cfg.id}] command catalog NOT persisted after retries (run ${ctx.runId})`);
-              else await new Promise((r) => setTimeout(r, 100 * (attempt + 1)));
+              if (await providerEventExists(commandFrame.id)) { persisted = true; break; }
+              if (attempt < 2) await new Promise((r) => setTimeout(r, 100 * (attempt + 1)));
             }
-            // Keep the ORG New Task priming cache SEPARATE from authoritative session state:
-            // upsert only a NON-empty snapshot (a transient empty frame must not wipe the
-            // pre-session picker). Fire-and-forget: a caching failure never disturbs the turn.
-            void cacheAcpCommands(ctx.orgId ?? "", cfg.id, snapshot);
+            // C4 fail-closed: the AUTHORITATIVE catalog is the durable commands.updated. If it
+            // could not be persisted, DEGRADE the command capability VISIBLY - do NOT fall back to
+            // only populating the org priming cache (that is UI-only and would advertise commands
+            // the session cannot authorize, since accept-time validation reads the durable catalog
+            // and now finds none). The command capability is simply unavailable for this session
+            // until it re-advertises; core chat is unaffected.
+            if (!persisted) {
+              console.error(`[acp:${cfg.id}] command catalog NOT persisted after retries (run ${ctx.runId}) - command capability DEGRADED for session ${sessionId.slice(0, 8)}`);
+              void ctx.emit({ kind: "task", label: "Native commands unavailable for this session (catalog could not be persisted)", chip: "warning" });
+            } else {
+              // Keep the ORG New Task priming cache SEPARATE from authoritative session state:
+              // upsert only a NON-empty snapshot (a transient empty frame must not wipe the
+              // pre-session picker). Fire-and-forget: a caching failure never disturbs the turn.
+              void cacheAcpCommands(ctx.orgId ?? "", cfg.id, snapshot);
+            }
             return;
           }
           if (kind === "agent_message_chunk") {
@@ -853,6 +864,18 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
           }
           live.sessionId = sessionId;
           ctx.saveEngineSessionId?.(sessionId);
+
+          // C3 fail-closed re-validation: a native command was authorized against a SPECIFIC
+          // session's catalog at acceptance. If the LIVE session is not that session - session/load
+          // failed so we opened a NEW one, or the relay regenerated to a different id - the command
+          // is STALE; reject it visibly rather than delivering a command validated against a now-dead
+          // session. An ordinary prompt is unaffected (it carries no commandName).
+          if (ctx.commandName && ctx.commandSessionId && sessionId !== ctx.commandSessionId) {
+            throw new Error(
+              `stale command "/${ctx.commandName}": authorized for session ${ctx.commandSessionId.slice(0, 8)} ` +
+                `but the live session is ${sessionId.slice(0, 8)} (session changed) - re-issue it against the current session`,
+            );
+          }
 
           // Emit session.started with the ONE negotiated capability map the UI gates on (never a
           // provider-name guess). Durable via the provider-events lane -> canonical session.started.
