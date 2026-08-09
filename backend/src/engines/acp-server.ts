@@ -25,6 +25,8 @@ import {
   recordSecretsInjected,
   SECRET_SOURCE_COMMAND,
 } from "../secrets/inject";
+import { createSecretRedactor } from "../secrets/redact";
+import { acpBrowserMcpServer, ensureSandboxDesktop } from "./desktop";
 import { getThreadSandbox, setRunSandbox } from "../runs/repo";
 import { buildAcpToolStep, type AcpToolNativeIds } from "./acp-tool-step";
 import {
@@ -291,7 +293,8 @@ export async function cancelAcpSession(sandboxId: string, sessionId: string): Pr
 
 /**
  * Build the ACP `mcpServers` array carrying the Skynet knowledge gateway — the
- * ACP-native equivalent of opencode's ensureKnowledgeGatewayConfig. Passed into
+ * ACP-native equivalent of OpenCode's knowledge portion of
+ * ensureOpencodeSandboxConfig. Passed into
  * BOTH session/new and session/load so a fresh AND a resumed ACP session can call
  * knowledge_search / knowledge_read, at parity with opencode.
  *
@@ -305,8 +308,8 @@ export async function cancelAcpSession(sandboxId: string, sessionId: string): Pr
  * so existing ACP runs are byte-for-byte unchanged.
  *
  * Shape: the ACP HTTP MCP-server descriptor `{ type:"http", name, url, headers }`.
- * NOTE: unverified against a LIVE claude/codex ACP agent (engines are disabled);
- * the contract test asserts the config carries the entry + a valid token.
+ * The descriptor is contract-tested and has been exercised by the live Claude
+ * journey; absence is represented honestly as an empty server list.
  */
 export function acpKnowledgeMcpServers(ctx: EngineRunContext): Record<string, unknown>[] {
   const gw = toolGatewayConfig();
@@ -355,6 +358,7 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
       const secretInjection = await composeSecretEnv(ctx, {
         excludeNames: PROVIDER_SECRET_NAMES,
       });
+      const redact = createSecretRedactor(secretInjection.redactionValues);
       // Provider credentials never enter the sandbox. The dedicated gateway
       // resolves the org credential server-side from the exact running run.
       const runtimeProviderEnv = providerGatewayEnv(ctx, cfg.id);
@@ -531,6 +535,14 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
           throw new Error(`${cfg.id} ACP relay failed to boot: ${truncate(boot.result ?? "", 200)}`);
         }
         const home = /HOME=(\S+)/.exec(boot.result ?? "")?.[1] ?? "/home/daytona";
+        const desktop = await ensureSandboxDesktop(box, ctx.signal);
+        if (!desktop.available || !desktop.browserTools) {
+          await ctx.emit({
+            kind: "task",
+            label: desktop.reason ?? "Desktop/browser tools unavailable in this sandbox",
+            chip: "warning",
+          });
+        }
         // A relay (re)boot this call means a fresh agent process - the previous turn's
         // in-memory native session id is dead. Invalidate it below so we session/load
         // (persisted id) or session/new instead of prompting a stale session.
@@ -681,7 +693,7 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
         };
 
         const handleUpdate = async (params: Record<string, unknown>): Promise<void> => {
-          const u = (params.update ?? {}) as Record<string, unknown>;
+          const u = redact.unknown((params.update ?? {}) as Record<string, unknown>);
           const kind = String(u.sessionUpdate ?? "");
           if (kind === "available_commands_update") {
             // The provider's native slash-command catalog for THIS session - a REPLACEMENT
@@ -934,7 +946,12 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
 
           // Knowledge MCP gateway at parity with opencode — minted ONCE per turn
           // and passed into both session/load and session/new (run-scoped token).
-          const mcpServers = acpKnowledgeMcpServers(ctx);
+          const knowledgeMcpServers = acpKnowledgeMcpServers(ctx);
+          const browserMcpServers =
+            desktop.browserTools && desktop.browserExecutable
+              ? [acpBrowserMcpServer(home, `${home}/work`, desktop.browserExecutable)]
+              : [];
+          const mcpServers = [...knowledgeMcpServers, ...browserMcpServers];
 
           // Session: live in-process one wins; else try loading the persisted
           // id; else a fresh session (with the composed preamble).
@@ -981,8 +998,8 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
 
           // Emit session.started with the ONE negotiated capability map the UI gates on (never a
           // provider-name guess). Durable via the provider-events lane -> canonical session.started.
-          // desktop: false (a cold ACP sandbox has no VNC); knowledgeTools: only if the gateway MCP
-          // was actually injected for this run.
+          // Runtime resources are advertised from their real provisioning
+          // results, never from the engine name.
           void recordProviderEvent({
             id: `${ctx.runId}:${sessionId}:session`,
             runId: ctx.runId,
@@ -993,8 +1010,8 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
             payload: {
               source: cfg.id,
               capabilities: sessionCapabilities(cfg.id, {
-                desktop: false,
-                knowledgeTools: Object.keys(mcpServers ?? {}).length > 0,
+                desktop: desktop.available,
+                knowledgeTools: knowledgeMcpServers.length > 0,
               }),
             },
           });

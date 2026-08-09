@@ -4,6 +4,7 @@ import { ProviderGatewayAdmissionError } from "./audit";
 import type { GatewayRun } from "./run-authorization";
 import { createProviderGatewayRoutes, providerUpstreamOrigin } from "./routes";
 import type { ProviderTokenClaims } from "./token";
+import { KIMI_K3_MODEL } from "../runs/model-policy";
 
 const claims: ProviderTokenClaims = {
   orgId: "org-a",
@@ -176,6 +177,33 @@ describe("provider gateway routes", () => {
       stream: true,
     });
     expect(auditCompletions).toBe(1);
+  });
+
+  test("enforces throughput-first, tool-capable routing for Kimi K3", async () => {
+    let forwardedBody = "";
+    const kimiRun = { ...run, model: KIMI_K3_MODEL };
+    const response = await app({
+      activeRun: kimiRun,
+      fetchUpstream: async (_input, init) => {
+        forwardedBody = String(init?.body ?? "");
+        return Response.json({ ok: true });
+      },
+    }).request("/api/provider/openrouter/v1/chat/completions", {
+      method: "POST",
+      body: JSON.stringify({
+        model: KIMI_K3_MODEL,
+        messages: [],
+        tools: [{ type: "function", function: { name: "browser_navigate" } }],
+        provider: { only: ["fireworks/fast"] },
+      }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(JSON.parse(forwardedBody).provider).toEqual({
+      sort: "throughput",
+      require_parameters: true,
+      allow_fallbacks: true,
+    });
   });
 
   test("proxies successful Anthropic message and token-count protocols", async () => {

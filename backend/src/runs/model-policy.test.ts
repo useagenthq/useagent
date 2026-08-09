@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import {
   DEFAULT_CODEX_MODEL,
+  DEFAULT_OPENCODE_MODEL,
+  KIMI_K3_MODEL,
   defaultModelForEngine,
   isModelAllowedForEngine,
   OPENCODE_ALLOWED_MODELS,
@@ -8,7 +10,8 @@ import {
 
 describe("paid model policy", () => {
   test("uses engine-owned defaults", () => {
-    expect(defaultModelForEngine("opencode", {})).toBe("claude-opus-5");
+    expect(DEFAULT_OPENCODE_MODEL).toBe(KIMI_K3_MODEL);
+    expect(defaultModelForEngine("opencode", {})).toBe(KIMI_K3_MODEL);
     expect(defaultModelForEngine("claude", {})).toBe("claude-opus-5");
     expect(defaultModelForEngine("codex", {})).toBe(DEFAULT_CODEX_MODEL);
     expect(
@@ -23,7 +26,9 @@ describe("paid model policy", () => {
       expect(isModelAllowedForEngine("opencode", model)).toBe(true);
     }
     expect(isModelAllowedForEngine("opencode", "openai/unbounded")).toBe(false);
+    expect(isModelAllowedForEngine("opencode", KIMI_K3_MODEL)).toBe(true);
     expect(isModelAllowedForEngine("claude", "openai/gpt-5.6-sol")).toBe(false);
+    expect(isModelAllowedForEngine("claude", KIMI_K3_MODEL)).toBe(false);
   });
 
   test("Codex allowlist is explicit and deployment-configurable", () => {

@@ -103,6 +103,8 @@ describe("both engine adapters obey the persistence-before-execution invariant (
       acp.indexOf("cfg.prepare?.(box, ctx)"),
     );
     // OpenCode: persist precedes wiring the knowledge gateway + booting `opencode serve`.
-    expect(opencode.indexOf("await persistSandboxBeforeExecution({")).toBeLessThan(opencode.indexOf("ensureKnowledgeGatewayConfig(sandbox, ctx)"));
+    expect(opencode.indexOf("await persistSandboxBeforeExecution({")).toBeLessThan(
+      opencode.indexOf("ensureOpencodeSandboxConfig(sandbox, ctx, desktop)"),
+    );
   });
 });

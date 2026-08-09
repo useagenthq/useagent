@@ -19,6 +19,7 @@ export function buildAcpToolStep(
 ): EmitStep {
   const kind = String(update.kind ?? "other");
   const title = String(update.title ?? kind);
+  const tool = kind === "other" && title.startsWith("mcp__") ? title : kind;
   const rawInput = (update.rawInput ?? {}) as Record<string, unknown>;
   const path = String(rawInput.file_path ?? rawInput.path ?? rawInput.abs_path ?? "");
   const isFile = ACP_FILE_KINDS.has(kind) && kind !== "read";
@@ -34,9 +35,18 @@ export function buildAcpToolStep(
   return {
     kind: isFile ? "file" : kind === "task" ? "task" : "command",
     label,
-    chip: kind === "execute" ? "bash" : kind === "task" ? "subagent" : isFile ? "file" : kind,
+    chip:
+      kind === "execute"
+        ? "bash"
+        : kind === "task"
+          ? "subagent"
+          : isFile
+            ? "file"
+            : tool.startsWith("mcp__")
+              ? "mcp"
+              : kind,
     code_json: {
-      tool: kind,
+      tool,
       title,
       input: rawInput,
       ...(output !== undefined ? { output: output.slice(0, 2000) } : {}),
