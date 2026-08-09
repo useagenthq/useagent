@@ -14,6 +14,19 @@ import { uid } from "./helpers";
 // logic is exercised end to end without the live gateway (the live proof is #92).
 
 const realFetch = globalThis.fetch;
+const originalMemoryEnv = {
+  MEMORY_API_KEY: process.env.MEMORY_API_KEY,
+  MEMORY_API_URL: process.env.MEMORY_API_URL,
+  MEMORY_TEAM_ID: process.env.MEMORY_TEAM_ID,
+};
+
+function restoreEnv(
+  key: keyof typeof originalMemoryEnv,
+  value: string | undefined,
+): void {
+  if (value === undefined) delete process.env[key];
+  else process.env[key] = value;
+}
 
 function jsonResponse(obj: unknown): Response {
   return new Response(JSON.stringify(obj), { status: 200, headers: { "content-type": "application/json" } });
@@ -104,6 +117,9 @@ beforeEach(() => {
 });
 afterEach(() => {
   globalThis.fetch = realFetch;
+  for (const [key, value] of Object.entries(originalMemoryEnv)) {
+    restoreEnv(key as keyof typeof originalMemoryEnv, value);
+  }
 });
 
 describe("memory_remember", () => {

@@ -294,7 +294,7 @@ async function scenarioExternal(browser: Browser): Promise<void> {
 const childEnv = (extra: Record<string, string>): Record<string, string> => {
   const base: Record<string, string> = {};
   for (const [k, v] of Object.entries(process.env)) if (v !== undefined) base[k] = v;
-  for (const k of ["SLACK_APP_TOKEN", "SLACK_BOT_TOKEN", "MEMORY_API_URL", "TOOL_GATEWAY_PUBLIC_URL", "DAYTONA_API_KEY", "OPENROUTER_API_KEY", "OPENAI_API_KEY", "GITHUB_TOKEN", "GITHUB_PAT", "GH_TOKEN"]) delete base[k];
+  for (const k of ["SLACK_APP_TOKEN", "SLACK_BOT_TOKEN", "MEMORY_API_URL", "GATEWAY_PUBLIC_URL", "TOOL_GATEWAY_PUBLIC_URL", "DAYTONA_API_KEY", "OPENROUTER_API_KEY", "OPENAI_API_KEY", "GITHUB_TOKEN", "GITHUB_PAT", "GH_TOKEN"]) delete base[k];
   return { ...base, ...extra };
 };
 

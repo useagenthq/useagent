@@ -102,6 +102,8 @@ export type ComposerProps = {
    *  into Send so a reply can still be queued. */
   running?: boolean;
   stopping?: boolean;
+  /** Visible failure from the durable cancel request; the Stop control remains retryable. */
+  stopError?: string | null;
   onStop?: () => void;
 };
 
@@ -136,6 +138,7 @@ export function Composer({
   onSubmit,
   running = false,
   stopping = false,
+  stopError,
   onStop,
 }: ComposerProps) {
   const [value, setValue] = useState("");
@@ -317,6 +320,17 @@ export function Composer({
         >
           <RiErrorWarningLine className="size-3.5 shrink-0" aria-hidden />
           Couldn&apos;t send - your message is restored. Press send to try again.
+        </div>
+      )}
+
+      {stopError && (
+        <div
+          role="alert"
+          data-testid="stop-error"
+          className="text-error-base mb-1.5 flex items-center gap-1.5 px-1 text-paragraph-xs"
+        >
+          <RiErrorWarningLine className="size-3.5 shrink-0" aria-hidden />
+          Couldn&apos;t stop this run: {stopError}. Try again.
         </div>
       )}
 

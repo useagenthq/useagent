@@ -9,10 +9,8 @@
  *     sandbox env for the raw HOST provider-key VALUES
  * The hard gate: no raw HOST provider-key VALUE (Daytona/OpenRouter/Anthropic/OpenAI) in any
  * PERSISTED product surface, the backend log, OR the sandbox env, and NO git clone token in the
- * sandbox git config. Injecting a host provider key into an untrusted customer sandbox is a REAL,
- * UNRESOLVED credential-exposure risk (#121), so it is a FAILURE here, not informational - the
- * audit stays red until the trusted provider gateway removes host keys from the sandbox. (D6
- * minimizes the surface to the single key the run's engine+model reads; it does not resolve it.)
+ * sandbox git config. Provider calls must use the trusted provider gateway; any raw provider
+ * key in the sandbox is a hard regression, including in development.
  *
  * Run (from backend/):  bun test/e2e/secret-audit-live.ts
  */

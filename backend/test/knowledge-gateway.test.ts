@@ -1,11 +1,12 @@
 import { beforeAll, describe, expect, test } from "bun:test";
 import { and, eq } from "drizzle-orm";
-import { fetchApi, uid, waitFor } from "./helpers";
+import { uid, waitFor } from "./helpers";
 import { db } from "../src/db/client";
 import { providerEvents, runs } from "../src/db/schema";
 import { ingestOne } from "../src/knowledge/ingest";
 import { mintToolToken, verifyToolToken } from "../src/knowledge/gateway/token";
 import { KNOWLEDGE_RETRIEVED } from "../src/knowledge/gateway/tools";
+import { createGatewayApp } from "../src/gateway-app";
 
 // ---------------------------------------------------------------------------
 // Slice A (mem_op.md 0.2) — the trusted agent-callable knowledge gateway. These
@@ -16,12 +17,17 @@ import { KNOWLEDGE_RETRIEVED } from "../src/knowledge/gateway/tools";
 // ---------------------------------------------------------------------------
 
 const MCP = "/api/mcp/knowledge";
+const gateway = createGatewayApp();
 
 /** POST one JSON-RPC message with a bearer token; return {status, body}. */
 async function rpc(token: string | null, msg: unknown): Promise<{ status: number; body: any }> {
   const headers: Record<string, string> = { "content-type": "application/json" };
   if (token) headers.authorization = `Bearer ${token}`;
-  const res = await fetchApi(MCP, { method: "POST", headers, body: msg });
+  const res = await gateway.request(MCP, {
+    method: "POST",
+    headers,
+    body: JSON.stringify(msg),
+  });
   const text = await res.text();
   return { status: res.status, body: text ? JSON.parse(text) : null };
 }
@@ -136,6 +142,98 @@ describe("knowledge MCP gateway", () => {
     const expired = mintToolToken({ orgId: orgA, userId: "", threadId, runId }, -1_000);
     const badTok = await rpc(expired, { jsonrpc: "2.0", id: 1, method: "tools/list" });
     expect(badTok.status).toBe(401);
+  });
+
+  test("a valid capability is inert when its matching turn is not running", async () => {
+    const inactiveRunId = uid("run");
+    await db.insert(runs).values({
+      id: inactiveRunId,
+      orgId: orgA,
+      userId: "user-A",
+      prompt: "done",
+      model: "claude-haiku-4-5",
+      engine: "opencode",
+      status: "completed",
+      threadId: inactiveRunId,
+    });
+    const inactiveToken = mintToolToken(
+      {
+        orgId: orgA,
+        userId: "user-A",
+        threadId: inactiveRunId,
+        runId: inactiveRunId,
+      },
+      60_000,
+    );
+    const response = await rpc(inactiveToken, {
+      jsonrpc: "2.0",
+      id: 1,
+      method: "tools/list",
+    });
+    expect(response.status).toBe(403);
+    expect(response.body).toEqual({ error: "inactive_capability" });
+  });
+
+  test("a stale token stays inert when a newer run in the same thread is running", async () => {
+    const staleRunId = uid("run");
+    const sharedThreadId = uid("thread");
+    await db.insert(runs).values([
+      {
+        id: staleRunId,
+        orgId: orgA,
+        userId: "user-A",
+        prompt: "old",
+        model: "claude-haiku-4-5",
+        engine: "opencode",
+        status: "completed",
+        threadId: sharedThreadId,
+      },
+      {
+        id: uid("run"),
+        orgId: orgA,
+        userId: "user-A",
+        prompt: "new",
+        model: "claude-haiku-4-5",
+        engine: "opencode",
+        status: "running",
+        threadId: sharedThreadId,
+      },
+    ]);
+    const staleToken = mintToolToken(
+      { orgId: orgA, userId: "user-A", threadId: sharedThreadId, runId: staleRunId },
+      60_000,
+    );
+    const response = await rpc(staleToken, {
+      jsonrpc: "2.0",
+      id: 1,
+      method: "tools/list",
+    });
+    expect(response.status).toBe(403);
+    expect(response.body).toEqual({ error: "inactive_capability" });
+  });
+
+  test("rejects an oversized JSON-RPC batch", async () => {
+    const response = await rpc(
+      tokenA,
+      Array.from({ length: 17 }, (_, index) => ({
+        jsonrpc: "2.0",
+        id: index,
+        method: "tools/list",
+      })),
+    );
+    expect(response.status).toBe(413);
+    expect(response.body).toEqual({ error: "batch_too_large" });
+  });
+
+  test("rejects an oversized MCP request before parsing it", async () => {
+    const response = await rpc(tokenA, {
+      jsonrpc: "2.0",
+      id: 1,
+      method: "tools/call",
+      params: { name: "knowledge_search", arguments: { query: "x".repeat(1024 * 1024) } },
+    });
+    expect(response.status).toBe(413);
+    expect(response.body).toEqual({ error: "request_too_large" });
   });
 
   test("initialize negotiates + advertises tools capability", async () => {

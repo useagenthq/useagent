@@ -1,8 +1,8 @@
 import { Hono } from "hono";
 import { SECRET_KINDS, type SecretKind } from "../db/schema";
 import type { AppEnv } from "../http";
-import { orgScope } from "../middleware/org";
-import { isValidSecretName } from "./crypto";
+import { orgAdminScope, orgScope } from "../middleware/org";
+import { isReservedSecretName, isValidSecretName } from "./crypto";
 import { deleteSecret, listSecretMeta, upsertSecret } from "./store";
 
 // ---------------------------------------------------------------------------
@@ -25,13 +25,16 @@ secretsRoutes.get("/", async (c) => {
 
 // Upsert a secret value by name. The name must be an env-var identifier; the
 // value is encrypted at rest and the response echoes metadata only.
-secretsRoutes.put("/:name", async (c) => {
+secretsRoutes.put("/:name", orgAdminScope, async (c) => {
   const name = c.req.param("name");
   if (!isValidSecretName(name)) {
     return c.json(
       { error: "name must match ^[A-Z][A-Z0-9_]*$ (an env-var identifier)" },
       400,
     );
+  }
+  if (isReservedSecretName(name)) {
+    return c.json({ error: "name is reserved for sandbox runtime control" }, 400);
   }
 
   let body: Record<string, unknown>;
@@ -62,7 +65,7 @@ secretsRoutes.put("/:name", async (c) => {
 });
 
 // Delete a secret by name (org-scoped). 404 when the org has no such secret.
-secretsRoutes.delete("/:name", async (c) => {
+secretsRoutes.delete("/:name", orgAdminScope, async (c) => {
   const name = c.req.param("name");
   const removed = await deleteSecret(c.get("orgId"), name);
   if (!removed) return c.json({ error: "secret not found" }, 404);

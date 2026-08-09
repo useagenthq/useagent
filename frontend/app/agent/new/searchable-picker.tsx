@@ -123,7 +123,6 @@ export function SearchablePicker({
         <div className="-mx-2.5 -mt-2.5 mb-1 flex items-center gap-2 border-b border-stroke-soft-200 px-3 pb-2 pt-1">
           <RiSearchLine className="size-4 shrink-0 text-text-soft-400" aria-hidden />
           <input
-            autoFocus
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             placeholder={searchPlaceholder}

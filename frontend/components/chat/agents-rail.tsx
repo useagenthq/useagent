@@ -68,6 +68,7 @@ function ChildStateDot({ status }: { status: ChildStatus }) {
     return (
       <span
         className="ai-loading-pixel bg-blue-500 size-1.5 shrink-0 rounded-full"
+        role="status"
         aria-label="running"
       />
     );

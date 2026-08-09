@@ -24,14 +24,16 @@ export function sessionCapabilities(engine: string, res: CapabilityResources): N
   const e = canonicalEngine(engine); // normalize legacy aliases (daytona->opencode, claude-sdk->claude)
   const isOpencode = e === "opencode";
   return {
-    // Streaming/tools/files/commands/terminal/children/reasoning are real for every current engine.
+    // Streaming, tool progress, commands and the sandbox terminal are real for
+    // every engine. Native reasoning/child/patch projections only exist on the
+    // OpenCode protocol today; ACP must not advertise aspirational UI surfaces.
     streamingText: true,
     toolProgress: true,
-    fileDiffs: true,
+    fileDiffs: isOpencode,
     commands: true,
     directTerminal: true, // the thread sandbox has a terminal for every engine
-    childSessions: true, // task-tool subagents
-    reasoning: true,
+    childSessions: isOpencode,
+    reasoning: isOpencode,
     resume: true, // opencode continuation / ACP session/load
     load: true,
     stop: true, // opencode POST /abort · ACP session/cancel (both wired)

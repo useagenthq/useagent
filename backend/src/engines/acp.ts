@@ -6,6 +6,7 @@ import type { EmitStep, EngineAdapter, EngineRunContext } from "./types";
 import { decideAcpPermission } from "./permission-policy";
 import { composeTurnPrompt } from "./types";
 import { basename, childEnv, parseJsonLine, readLines, truncate } from "./util";
+import { extractAcpToolOutput } from "./acp-content";
 
 // ---------------------------------------------------------------------------
 // ACP (Agent Client Protocol) adapter — ONE generic engine that speaks
@@ -107,29 +108,6 @@ function rpcErrorText(error: JsonRpcMsg["error"]): string {
   return truncate(`${error.message ?? "acp error"}${data ? `: ${data}` : ""}`, 200);
 }
 
-/** Text output out of a tool call's ACP `content` blocks / `rawOutput`. */
-function extractOutput(content: unknown, rawOutput: unknown): string {
-  if (Array.isArray(content)) {
-    const parts: string[] = [];
-    for (const block of content) {
-      const b = block as { type?: string; content?: { type?: string; text?: string } };
-      if (b?.type === "content" && b.content?.type === "text" && b.content.text) {
-        parts.push(b.content.text);
-      }
-    }
-    if (parts.length) return parts.join("\n").slice(0, 2000);
-  }
-  if (typeof rawOutput === "string") return rawOutput.slice(0, 2000);
-  if (rawOutput && typeof rawOutput === "object") {
-    try {
-      return JSON.stringify(rawOutput).slice(0, 2000);
-    } catch {
-      /* non-serializable — ignore */
-    }
-  }
-  return "";
-}
-
 export const acpAdapter: EngineAdapter = {
   id: "acp",
 
@@ -227,7 +205,7 @@ export const acpAdapter: EngineAdapter = {
       if (u.kind != null) rec.kind = u.kind as string;
       if (u.title != null) rec.title = u.title as string;
       if (u.rawInput != null) rec.rawInput = u.rawInput;
-      const out = extractOutput(u.content, u.rawOutput);
+      const out = extractAcpToolOutput(u.content, u.rawOutput);
       if (out) rec.output = out;
       if (u.status != null) rec.status = u.status as string;
       tools.set(id, rec);

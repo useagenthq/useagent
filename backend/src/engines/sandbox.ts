@@ -3,8 +3,18 @@ import type { EmitStep, EngineAdapter, EngineRunContext } from "./types";
 import { composeTurnPrompt } from "./types";
 import { basename, parseJsonLine, truncate } from "./util";
 import { allowPermissionBypass } from "./permission-policy";
-import { hostProviderEnv } from "./host-provider-env";
-import { composeSecretEnv, materializeSecretFiles } from "../secrets/inject";
+import {
+  composeSecretEnv,
+  materializeSecretFiles,
+  PROVIDER_SECRET_NAMES,
+} from "../secrets/inject";
+import {
+  prepareProviderGatewaySandbox,
+  providerGatewayEnv,
+  providerGatewaySandboxIsCurrent,
+  providerGatewaySandboxLabels,
+  providerGatewayWired,
+} from "../provider-gateway/sandbox-config";
 
 // ---------------------------------------------------------------------------
 // Sandbox engine substrate — ALL user-facing engines (opencode / claude / codex)
@@ -100,7 +110,7 @@ interface SpecAction {
 
 interface SandboxEngineSpec {
   /** Engine id as registered (also the step chip). */
-  id: string;
+  id: "claude" | "codex";
   /** Shell command for one turn. The runner feeds the staged prompt via STDIN
    *  (`< /tmp/skynet-prompt.txt`) — never as a positional argument, because a
    *  prompt whose first line starts with `---` (the team-memory block header)
@@ -119,7 +129,7 @@ interface SandboxEngineSpec {
   handleLine(line: string, state: ParseState): SpecAction[];
   /** Extra sandbox preparation (e.g. codex auth seeding). Runs after create AND
    *  after reuse — must be idempotent and cheap. */
-  prepare?(sandbox: Sandbox): Promise<void>;
+  prepare?(sandbox: Sandbox, ctx: EngineRunContext): Promise<void>;
 }
 
 /** Track the last MEANINGFUL non-JSON line for error surfacing. npm's install
@@ -194,16 +204,17 @@ function toolResultText(content: unknown): string {
 // the command string must not carry --dangerously-skip-permissions outside dev-yolo.
 export const claudeSpec: SandboxEngineSpec = {
   id: "claude",
-  command: ({ resumeId }) => {
+  command: ({ model, resumeId }) => {
     // Model is engine-managed (Anthropic only); the picker applies to opencode.
     const resume = resumeId ? `--resume ${resumeId} ` : "";
     // SECURITY (final_harness.md P0): only pass --dangerously-skip-permissions in
     // verified-dev yolo mode (permission-policy.ts). Without it a non-interactive
     // CLI cannot approve tools - fail-closed, the intended SaaS default.
     const skip = allowPermissionBypass() ? " --dangerously-skip-permissions" : "";
-    return `claude -p ${resume}--model ${DEFAULT_MODEL} --output-format stream-json --verbose${skip}`;
+    return `claude -p ${resume}--model ${model} --output-format stream-json --verbose${skip}`;
   },
   install: { pkg: `@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}`, bin: "claude" },
+  prepare: (sandbox, ctx) => prepareProviderGatewaySandbox(sandbox, ctx, "claude"),
   handleLine: (line, state) => {
     const ev = parseJsonLine(line);
     if (!ev) {
@@ -318,6 +329,7 @@ const codexSpec: SandboxEngineSpec = {
     );
   },
   install: { pkg: `@openai/codex@${CODEX_VERSION}`, bin: "codex" },
+  prepare: (sandbox, ctx) => prepareProviderGatewaySandbox(sandbox, ctx, "codex"),
   handleLine: (line, state) => {
     const ev = parseJsonLine(line);
     if (!ev) {
@@ -403,6 +415,9 @@ function makeSandboxAdapter(spec: SandboxEngineSpec): EngineAdapter {
     async run(ctx: EngineRunContext): Promise<void> {
       const apiKey = process.env.DAYTONA_API_KEY;
       if (!apiKey) throw new Error(`${spec.id} engine needs DAYTONA_API_KEY in the backend env`);
+      if (!providerGatewayWired()) {
+        throw new Error(`${spec.id} engine requires a configured provider gateway`);
+      }
       const startedAt = Date.now();
       const daytona = new Daytona({ apiKey, target: process.env.DAYTONA_TARGET ?? "us" });
 
@@ -411,15 +426,14 @@ function makeSandboxAdapter(spec: SandboxEngineSpec): EngineAdapter {
       // platform keys of the same name win. Same seam as the opencode/acp
       // adapters; also records the `secrets.injected` marker. The dotenv +
       // file-kind secrets are written after boot (below).
-      const secretInjection = await composeSecretEnv(ctx);
-      // Inject ONLY the single host key this engine's CLI reads, and only in the
-      // DEV-ONLY yolo escape hatch (D6/#121): claude reads ANTHROPIC, codex reads
-      // OPENAI - the old blanket ANTHROPIC+OPENROUTER leaked an OpenRouter key that
-      // neither CLI uses. Production (no bypass) injects no host key and relies on
-      // per-tenant org secrets. See host-provider-env.ts.
+      const secretInjection = await composeSecretEnv(ctx, {
+        excludeNames: PROVIDER_SECRET_NAMES,
+      });
+      // Provider authentication is brokered by the trusted gateway. No raw host
+      // or tenant provider credential is ever injected into this sandbox.
       const envVars: Record<string, string> = {
         ...secretInjection.createEnv,
-        ...hostProviderEnv(spec.id, ctx.model, { allowHostKeys: allowPermissionBypass() }),
+        ...providerGatewayEnv(ctx, spec.id),
       };
 
       // The org's snapshot (2 vCPU / 8 GiB, opencode preinstalled). The bare
@@ -454,6 +468,10 @@ function makeSandboxAdapter(spec: SandboxEngineSpec): EngineAdapter {
             } else if (state !== "started") {
               throw new Error(`sandbox in unusable state: ${state}`);
             }
+            if (!(await providerGatewaySandboxIsCurrent(prior))) {
+              await prior.delete().catch(() => {});
+              throw new Error("legacy sandbox credential generation");
+            }
             sandbox = prior;
             retainForThread = true;
             await ctx.emit({
@@ -474,7 +492,7 @@ function makeSandboxAdapter(spec: SandboxEngineSpec): EngineAdapter {
           // once below and stays resident for the sandbox's lifetime.
           sandbox = await daytona.create({
             envVars,
-            labels: { "skynet-run": ctx.runId },
+            labels: providerGatewaySandboxLabels(ctx.runId),
             autoStopInterval,
             autoDeleteInterval,
           });
@@ -512,7 +530,7 @@ function makeSandboxAdapter(spec: SandboxEngineSpec): EngineAdapter {
           }
         }
 
-        await spec.prepare?.(sandbox);
+        await spec.prepare?.(sandbox, ctx);
 
         // Explicit native-session resume: id from the DB (previous turn, same
         // engine). Resuming ⇒ the engine holds the history — send ONLY the new

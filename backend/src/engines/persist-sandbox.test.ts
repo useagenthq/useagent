@@ -98,8 +98,10 @@ describe("both engine adapters obey the persistence-before-execution invariant (
   });
 
   test("persistence is awaited BEFORE the engine prepares/boots (ordering, both adapters)", () => {
-    // ACP: persist precedes `cfg.prepare?.(box)`.
-    expect(acp.indexOf("await persistSandboxBeforeExecution({")).toBeLessThan(acp.indexOf("cfg.prepare?.(box)"));
+    // ACP: persist precedes per-run provider/repo preparation.
+    expect(acp.indexOf("await persistSandboxBeforeExecution({")).toBeLessThan(
+      acp.indexOf("cfg.prepare?.(box, ctx)"),
+    );
     // OpenCode: persist precedes wiring the knowledge gateway + booting `opencode serve`.
     expect(opencode.indexOf("await persistSandboxBeforeExecution({")).toBeLessThan(opencode.indexOf("ensureKnowledgeGatewayConfig(sandbox, ctx)"));
   });

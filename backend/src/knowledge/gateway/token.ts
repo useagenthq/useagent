@@ -1,5 +1,5 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
-import { env } from "../../env";
+import { authSecretMaterial } from "../../security/runtime-secrets";
 
 // ---------------------------------------------------------------------------
 // Run-scoped tool token — THE trust boundary for the agent-callable knowledge
@@ -14,11 +14,10 @@ import { env } from "../../env";
 //
 // Stateless HMAC design (no token table, no migration): the token is
 //   v1.<base64url(payloadJSON)>.<base64url(HMAC-SHA256(v1.<payload>, key))>
-// The signing key is derived from BETTER_AUTH_SECRET (or an explicit
-// TOOL_GATEWAY_SECRET) so there is no new required config, and it is DISTINCT
-// from the auth-cookie key (domain-separated by the derivation label) so a
-// gateway token can never be confused for a session. Revocation is by expiry
-// (short TTL); a durable revocation list is a later slice if needed.
+// Public gateway deployments require a dedicated TOOL_GATEWAY_SECRET. An
+// auth-root-derived key remains only for loopback local development, and is
+// domain-separated so a gateway token can never be confused for a session.
+// Revocation is by expiry plus exact-run liveness.
 // ---------------------------------------------------------------------------
 
 const VERSION = "v1";
@@ -53,7 +52,7 @@ function signingKey(): Buffer {
   if (explicit) return Buffer.from(explicit, "utf8");
   // Domain-separated HKDF-lite: HMAC the auth secret under a fixed label so the
   // gateway key is independent of (and non-invertible to) the cookie key.
-  return createHmac("sha256", env.BETTER_AUTH_SECRET).update(DERIVE_LABEL).digest();
+  return createHmac("sha256", authSecretMaterial()).update(DERIVE_LABEL).digest();
 }
 
 function b64url(buf: Buffer): string {

@@ -16,6 +16,7 @@ export function PulseMark({
   active?: boolean;
 }) {
   return (
+    // biome-ignore lint/a11y/noSvgWithoutTitle: presentational brand glyph is hidden from assistive technology
     <svg
       viewBox='0 0 24 24'
       fill='none'

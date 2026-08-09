@@ -341,7 +341,11 @@ async function s6_reconnect(): Promise<Result> {
     await page.reload({ waitUntil: "domcontentloaded" });
     await page.waitForTimeout(1500);
     const afterReloadRows = await page.locator('[aria-expanded], [aria-label^="Open subagent:"]').count();
-    checks.push({ name: "reconnect: turn re-renders after mid-run reload", ok: afterReloadRows > 0, note: `liveReload=${reloadedWhileLive} rows=${afterReloadRows}` });
+    checks.push({
+      name: "reconnect: turn re-renders after a genuinely mid-run reload",
+      ok: reloadedWhileLive && afterReloadRows > 0,
+      note: `liveReload=${reloadedWhileLive} rows=${afterReloadRows}`,
+    });
 
     // Settle, then compare rendered vs API truth (no missing / duplicated).
     const finalRun = await waitRun(id, (r) => r.status === "completed" || r.status === "failed", 120_000);

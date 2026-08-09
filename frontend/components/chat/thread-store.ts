@@ -9,10 +9,10 @@
 // summary. Store lifetime changes only when the root thread id changes (the hook
 // recreates it), so a constant generation is sufficient here.
 
-import { createNativeStore, type NativeSnapshot, type NativeStore } from "./native-store";
-import type { NativeFrame } from "./native-events";
 import type { StoredCanonicalEvent } from "./canonical-timeline";
-import { isLiveStatus, type ApiRun, type ApiStep, type RunStatus } from "./types";
+import type { NativeFrame } from "./native-events";
+import { createNativeStore, type NativeSnapshot, type NativeStore } from "./native-store";
+import { type ApiRun, type ApiStep, isLiveStatus, type RunStatus } from "./types";
 
 /** One run's view within the thread: its metadata + live/settled projection. */
 export interface ThreadRunView {
@@ -113,6 +113,14 @@ export function createThreadStore(): ThreadStore {
     return s;
   };
 
+  // A live payload is stronger evidence than a stale queued projection. The durable
+  // queued->running signal normally arrives first, but reconnect/replay races can deliver a
+  // step, text delta, or native frame before that metadata refresh. Promote only queued runs;
+  // late frames can never reopen a terminal run.
+  const markRunActive = (runId: string): void => {
+    if (status.get(runId) === "queued") status.set(runId, "running");
+  };
+
   /** Merge one run's durable projection into its slice (add if new). */
   const mergeRun = (run: ApiRun): void => {
     if (!runs.has(run.id)) order.push(run.id);
@@ -189,11 +197,15 @@ export function createThreadStore(): ThreadStore {
       // ingest returns whether it changed - so we never rebuild the native snapshot
       // just to detect a no-op (that before/after getSnapshot compare was O(n) per
       // call, i.e. O(n^2) across a burst replay). Same suppression, no rebuild.
-      if (ensureStore(runId).ingest(step, 0)) notify();
+      const wasQueued = status.get(runId) === "queued";
+      const changed = ensureStore(runId).ingest(step, 0);
+      if (step.kind !== "done") markRunActive(runId);
+      if (changed || (wasQueued && step.kind !== "done")) notify();
     },
 
     applyDelta(runId, delta) {
       if (!delta) return;
+      markRunActive(runId);
       liveText.set(runId, (liveText.get(runId) ?? "") + delta);
       notify();
     },
@@ -202,7 +214,10 @@ export function createThreadStore(): ThreadStore {
       // Highest-seq-wins dedupe lives in ingestNative; it returns whether it applied,
       // so a stale/duplicate frame is dropped WITHOUT a snapshot rebuild. This is the
       // hot path on a settled-run replay (hundreds of frames) - keep it O(1)/frame.
-      if (ensureStore(runId).ingestNative(frame, 0)) notify();
+      const wasQueued = status.get(runId) === "queued";
+      const changed = ensureStore(runId).ingestNative(frame, 0);
+      markRunActive(runId);
+      if (changed || wasQueued) notify();
     },
 
     applyCanonical(event) {

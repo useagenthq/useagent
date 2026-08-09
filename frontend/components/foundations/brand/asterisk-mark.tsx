@@ -8,6 +8,7 @@ import { cn } from '@/utils/cn';
  */
 export function AsteriskMark({ className }: { className?: string }) {
   return (
+    // biome-ignore lint/a11y/noSvgWithoutTitle: presentational brand glyph is hidden from assistive technology
     <svg
       viewBox='0 0 24 24'
       fill='currentColor'

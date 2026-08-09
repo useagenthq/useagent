@@ -455,6 +455,7 @@ function ReplyComposer({
   onReply,
   running,
   stopping,
+  stopError,
   onStop,
 }: {
   engine: EngineId;
@@ -469,6 +470,7 @@ function ReplyComposer({
   onReply: ComposerSubmit;
   running?: boolean;
   stopping?: boolean;
+  stopError?: string | null;
   onStop?: () => void;
 }) {
   return (
@@ -486,6 +488,7 @@ function ReplyComposer({
         onSubmit={onReply}
         running={running}
         stopping={stopping}
+        stopError={stopError}
         onStop={onStop}
       />
     </div>
@@ -512,6 +515,7 @@ export function Conversation({
   onSendNow,
   running,
   stopping,
+  stopError,
   onStop,
 }: {
   turns: Turn[];
@@ -534,6 +538,7 @@ export function Conversation({
   /** A turn is running - the composer send button becomes Stop while empty. */
   running?: boolean;
   stopping?: boolean;
+  stopError?: string | null;
   onStop?: () => void;
 }) {
   // Stick-to-bottom autoscroll: follow new turns/steps/narration as they
@@ -580,6 +585,7 @@ export function Conversation({
         onReply={onReply}
         running={running}
         stopping={stopping}
+        stopError={stopError}
         onStop={onStop}
       />
     </div>

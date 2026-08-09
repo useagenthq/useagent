@@ -37,8 +37,8 @@ export function NumberTicker({
     <MotionConfig reducedMotion="user">
       <span
         className={cnExt("inline-flex items-baseline tabular-nums leading-none", className)}
-        aria-label={text}
       >
+        <span className="sr-only">{text}</span>
         {Array.from(text).map((char, position) => {
           if (/\d/.test(char)) {
             digitIndex += 1;

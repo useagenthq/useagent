@@ -12,6 +12,7 @@ import {
 import type { AppEnv } from "../http";
 import { orgScope } from "../middleware/org";
 import { acceptRunCommand } from "../commands";
+import { defaultModelForEngine, isModelAllowedForEngine } from "../runs/model-policy";
 import { pumpThread } from "../worker";
 import {
   bumpSkillUsage,
@@ -186,10 +187,6 @@ skillsRoutes.post("/:id/run", async (c) => {
     );
   }
 
-  const model =
-    typeof body.model === "string" && body.model.trim()
-      ? body.model.trim()
-      : "claude-opus-5";
   // Engine is optional; default to the scripted `mock`. An explicit unknown value
   // is a client error, matching POST /api/runs.
   let engine: EngineId = "mock";
@@ -201,6 +198,13 @@ skillsRoutes.post("/:id/run", async (c) => {
       return c.json({ error: `engine must be one of: ${ENGINE_IDS.join(", ")}` }, 400);
     }
     engine = body.engine as EngineId;
+  }
+  const model =
+    typeof body.model === "string" && body.model.trim()
+      ? body.model.trim()
+      : defaultModelForEngine(engine);
+  if (!isModelAllowedForEngine(engine, model)) {
+    return c.json({ error: "model_not_allowed", engine, model }, 400);
   }
 
   const runId = crypto.randomUUID();

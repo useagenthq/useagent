@@ -257,9 +257,12 @@ function ErrorBadge() {
 
 function DiffStat({ adds, dels }: { adds: number; dels: number }) {
   return (
-    <span className="shrink-0 font-mono text-label-xs tabular-nums" aria-label={`+${adds} -${dels}`}>
-      <span className="text-success-base">+{adds}</span>{" "}
-      <span className="text-error-base">−{dels}</span>
+    <span className="shrink-0 font-mono text-label-xs tabular-nums">
+      <span aria-hidden="true">
+        <span className="text-success-base">+{adds}</span>{" "}
+        <span className="text-error-base">−{dels}</span>
+      </span>
+      <span className="sr-only">{`${adds} additions, ${dels} deletions`}</span>
     </span>
   );
 }

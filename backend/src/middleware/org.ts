@@ -1,5 +1,8 @@
 import { createMiddleware } from "hono/factory";
+import { and, eq } from "drizzle-orm";
 import { auth } from "../auth";
+import { db } from "../db/client";
+import { member } from "../db/schema";
 import { allowDevOrg } from "../env";
 import type { AppEnv } from "../http";
 import { firstOrgForUser, getDevContext } from "../seed";
@@ -23,10 +26,9 @@ import { firstOrgForUser, getDevContext } from "../seed";
 // is listed here on purpose.
 //   /api/health, /api/config  - public, secret-free (health probe + client config)
 //   /api/auth/                - better-auth's own login/session endpoints
-//   /api/mcp/                 - Bearer tool-token verified (knowledge/gateway/mcp.ts)
 //   /api/slack/               - Slack request-signature verified (slack/verify.ts)
 const PUBLIC_API_EXACT = new Set(["/api/health", "/api/config"]);
-const PUBLIC_API_PREFIXES = ["/api/auth/", "/api/mcp/", "/api/slack/"];
+const PUBLIC_API_PREFIXES = ["/api/auth/", "/api/slack/"];
 
 /** True when `path` authenticates itself (or is public) and must NOT be forced
  *  through org-session scoping. Pure + exported so the fail-closed default is
@@ -74,5 +76,24 @@ export const orgScope = createMiddleware<AppEnv>(async (c, next) => {
   const dev = getDevContext();
   c.set("orgId", dev.orgId);
   c.set("userId", dev.userId);
+  return next();
+});
+
+/** Secret/configuration mutation is an organization-administration operation.
+ * A normal member may use the org's configured integrations but cannot change
+ * executable sandbox inputs or rotate credentials. */
+export const orgAdminScope = createMiddleware<AppEnv>(async (c, next) => {
+  const orgId = c.get("orgId");
+  const userId = c.get("userId");
+  if (!orgId || !userId) return c.json({ error: "forbidden" }, 403);
+
+  const [membership] = await db
+    .select({ role: member.role })
+    .from(member)
+    .where(and(eq(member.organizationId, orgId), eq(member.userId, userId)))
+    .limit(1);
+  if (membership?.role !== "owner" && membership?.role !== "admin") {
+    return c.json({ error: "organization_admin_required" }, 403);
+  }
   return next();
 });

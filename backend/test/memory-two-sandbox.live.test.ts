@@ -11,7 +11,7 @@ import { uid } from "./helpers";
 // remember in run A -> IMMEDIATE recall in run B from Tencent L0, before L1
 // extraction, with a provider citation and NO Postgres/memory.md dependence.
 // Plus org isolation. The Daytona-sandbox network hop is gated separately on
-// TOOL_GATEWAY_PUBLIC_URL; this proves the authoritative layer end to end.
+// GATEWAY_PUBLIC_URL; this proves the authoritative layer end to end.
 //
 // Guarded: if :8420 is unreachable the tests SKIP (bun marks them skipped, not
 // passed) so a Tencent-less CI never prints a misleading PASS (12.7).

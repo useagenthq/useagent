@@ -92,6 +92,35 @@ jobs:
         working-directory: backend
         run: bun run test
 
+  # ── Reusable harness/client contracts ──────────────────────────────────────
+  # These packages carry the provider-neutral event vocabulary, reconnect
+  # reducer and conformance contract. Typechecking alone cannot catch semantic
+  # regressions in replay, deduplication or capability projection.
+  package-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        package: [agent-harness, agent-client, conformance]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - name: Cache bun install store
+        uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: bun-store-${{ runner.os }}-${{ matrix.package }}-${{ hashFiles(format('packages/{0}/bun.lock', matrix.package)) }}
+          restore-keys: bun-store-${{ runner.os }}-${{ matrix.package }}-
+      - run: bun install --frozen-lockfile
+        working-directory: packages/${{ matrix.package }}
+      - run: bun run typecheck
+        working-directory: packages/${{ matrix.package }}
+      - run: bun run test
+        working-directory: packages/${{ matrix.package }}
+
   # ── Frontend: chat logic tests + a real production build ─────────────────────
   frontend:
     runs-on: ubuntu-latest
@@ -111,9 +140,9 @@ jobs:
         working-directory: frontend
       # Chat is the surface we own end-to-end; its store/timeline/part-renderer
       # logic is pure and deterministic.
-      - name: bun test components/chat
+      - name: bun run test
         working-directory: frontend
-        run: bun test components/chat
+        run: bun run test
       # Next 16 production build — catches type/route/build regressions the dev
       # server hides. Rewrites resolve at runtime, so no backend is needed.
       - name: bun run build

@@ -204,6 +204,20 @@
 			"when": 1786900000001,
 			"tag": "0030_run_command_identity",
 			"breakpoints": true
+		},
+		{
+			"idx": 29,
+			"version": "7",
+			"when": 1787000000000,
+			"tag": "0031_provider_gateway_audit",
+			"breakpoints": true
+		},
+		{
+			"idx": 30,
+			"version": "7",
+			"when": 1787100000000,
+			"tag": "0032_provider_gateway_output_budget",
+			"breakpoints": true
 		}
 	]
 }

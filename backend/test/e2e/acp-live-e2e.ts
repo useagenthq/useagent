@@ -6,15 +6,16 @@
  * deletes + API-verifies every Daytona sandbox it touched.
  *
  * Run:  E2E_ENGINE=claude bun test/e2e/acp-live-e2e.ts
- *       E2E_ENGINE=codex  E2E_MODEL=gpt-5 bun test/e2e/acp-live-e2e.ts
+ *       E2E_ENGINE=codex  E2E_MODEL=gpt-5.6-sol bun test/e2e/acp-live-e2e.ts
  */
 import postgres from "postgres";
 import { deleteById, listAll } from "./soak/lib/daytona";
+import { DEFAULT_CLAUDE_MODEL, DEFAULT_CODEX_MODEL } from "../../src/runs/model-policy";
 
 const BE = process.env.BE_ORIGIN ?? "http://localhost:3501";
 const ORIGIN = "http://localhost:3200"; // dev org (anonymous)
 const ENGINE = process.env.E2E_ENGINE ?? "claude";
-const MODEL = process.env.E2E_MODEL ?? (ENGINE === "codex" ? "gpt-5" : "claude-haiku-4-5");
+const MODEL = process.env.E2E_MODEL ?? (ENGINE === "codex" ? DEFAULT_CODEX_MODEL : DEFAULT_CLAUDE_MODEL);
 const DB = process.env.DATABASE_URL ?? "postgres://postgres@localhost:5432/skynet";
 // CLIENT-side poll budget, NOT the backend timeout. The cold-ACP fix is the committed
 // backend default (acp-server resolveAcpTurnTimeoutMs: ACP_TURN_TIMEOUT_MS -> ENGINE_TIMEOUT_MS

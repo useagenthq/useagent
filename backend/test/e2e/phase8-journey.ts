@@ -21,19 +21,25 @@
  * Run (from backend/):
  *   E2E_ENGINE=opencode bun test/e2e/phase8-journey.ts
  *   E2E_ENGINE=claude   bun test/e2e/phase8-journey.ts
- *   E2E_ENGINE=codex    E2E_MODEL=gpt-5 bun test/e2e/phase8-journey.ts
+ *   E2E_ENGINE=codex    E2E_MODEL=gpt-5.6-sol bun test/e2e/phase8-journey.ts
  */
 import postgres from "postgres";
 import { openSync } from "node:fs";
 import { readFileSync } from "node:fs";
+import { Daytona } from "@daytona/sdk";
 import { deleteById, listAll } from "./soak/lib/daytona";
+import { DEFAULT_CODEX_MODEL } from "../../src/runs/model-policy";
+import { shq } from "../../src/engines/repo-prep";
 
 type Engine = "opencode" | "claude" | "codex";
 const ENGINE = (process.env.E2E_ENGINE ?? "opencode") as Engine;
 const DEFAULT_MODEL: Record<Engine, string> = {
-  opencode: "anthropic/claude-haiku-4.5",
-  claude: "claude-haiku-4-5",
-  codex: "gpt-5",
+  opencode: "claude-opus-5",
+  // This journey intentionally uses a repository with a 620 KB CLAUDE.md.
+  // Exercise the product's actual Claude default (1M context) instead of a
+  // 200K Haiku model that cannot represent the repository's own instructions.
+  claude: "claude-opus-5",
+  codex: DEFAULT_CODEX_MODEL,
 };
 const MODEL = process.env.E2E_MODEL ?? DEFAULT_MODEL[ENGINE];
 const PORT_BY_ENGINE: Record<Engine, number> = { opencode: 3532, claude: 3533, codex: 3534 };
@@ -69,6 +75,19 @@ const sandboxIds = new Set<string>();
 const myRunIds: string[] = [];
 const debug: Record<string, unknown> = {};
 const short = (s: unknown, n = 8) => String(s ?? "").slice(0, n);
+
+function parseStepCode(value: unknown): Row {
+  if (value && typeof value === "object" && !Array.isArray(value)) return value as Row;
+  if (typeof value !== "string" || !value) return {};
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? (parsed as Row)
+      : {};
+  } catch {
+    return {};
+  }
+}
 
 const sql = postgres(DB_URL, { max: 3 });
 type Row = Record<string, unknown>;
@@ -192,8 +211,11 @@ try {
 
   // ── 3. TURN 1 - real engine, with repo + skill; read a KNOWN repo file, echo FIRSTLINE ──
   const repoPrompt = repoRef
-    ? "Use your tools to run `git ls-files | head -1` to find the first tracked file, then read that file, " +
-      "and reply with a single line that begins with `FIRSTLINE:` followed by that file's first line."
+    ? "Use your shell tool to run exactly this working-directory-neutral command: " +
+      `\`repo=.; git -C "$repo" rev-parse --is-inside-work-tree >/dev/null 2>&1 || repo=${shq(repoRef)}; ` +
+      `file=$(git -C "$repo" ls-files | head -n 1); ` +
+      `printf 'FIRSTLINE: '; head -n 1 "$repo/$file"\`. ` +
+      "Wait for it to finish, then reply with exactly the command output."
     : "Use the shell tool to run `echo PHASE8_NO_REPO_MARKER` and reply with a line that begins with `FIRSTLINE:` followed by that output.";
   const t1body: Row = { prompt: repoPrompt, engine: ENGINE, model: MODEL };
   if (repoRef) t1body.repos = [repoRef];
@@ -221,6 +243,40 @@ try {
   if (!daytonaBlocked) {
     pass("turn 1 completed", r1?.status === "completed", `status=${r1?.status}`);
     pass("retained provider session id persisted", !!ses1, `session=${short(ses1)}`);
+    if (
+      r1?.status === "completed" &&
+      (process.env.PROVIDER_GATEWAY_PUBLIC_URL || process.env.GATEWAY_PUBLIC_URL) &&
+      box1
+    ) {
+      const daytona = new Daytona({
+        apiKey: process.env.DAYTONA_API_KEY,
+        target: process.env.DAYTONA_TARGET ?? "us",
+      });
+      const box = await daytona.get(box1);
+      const rawProviderEnv = await box.process.executeCommand(
+        "for n in ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN OPENAI_API_KEY OPENROUTER_API_KEY; do " +
+          "test -z \"$(printenv \"$n\")\" || printf '%s\\n' \"$n\"; done",
+        undefined,
+        undefined,
+        15,
+      );
+      pass(
+        "provider gateway: no raw provider credential env in sandbox",
+        (rawProviderEnv.exitCode ?? 1) === 0 && !rawProviderEnv.result?.trim(),
+        rawProviderEnv.result?.trim() || "raw provider env absent",
+      );
+      const marker = await box.process.executeCommand(
+        'test "$(cat $HOME/.skynet/provider-gateway-generation 2>/dev/null)" = "provider-gateway-v8"',
+        undefined,
+        undefined,
+        15,
+      );
+      pass(
+        "provider gateway: short-lived capability generation installed",
+        marker.exitCode === 0,
+        `generation=${marker.exitCode === 0 ? "provider-gateway-v8" : "missing"}`,
+      );
+    }
     const steps1 = (r1?.steps as Row[]) ?? [];
     const toolStep = steps1.some((s) => s.kind === "command");
     pass("real tool lifecycle (a command/tool step ran)", toolStep, `${steps1.length} steps`);
@@ -237,15 +293,68 @@ try {
     pass("canonical text streaming (message.* events)", [...kinds].some((k) => k.startsWith("message.")), `kinds=${[...kinds].slice(0, 8).join(",")}`);
     pass("canonical tool lifecycle (tool.* events)", [...kinds].some((k) => k.startsWith("tool.")), `${cev.length} canonical events`);
 
-    // KNOWN repo file read: prove the agent read a file from the cloned repo via the tool
-    // step's label/code_json (model-independent) OR the FIRSTLINE echo it was asked for.
+    // KNOWN repo file read: verify the physical owner-qualified checkout + origin,
+    // then require the agent's tool call to target that exact checkout AND echo the
+    // non-empty FIRSTLINE output. A failed `git ls-files` at the multi-repo root is
+    // not evidence of a read and must never satisfy this cell.
     if (repoRef) {
-      const stepText = steps1.map((s) => `${s.label ?? ""} ${s.code_json ?? ""}`).join("\n");
-      const readTool = /\b(read|cat|head|sed|less|git ls-files)\b|readme|license|package\.json|\.(md|ts|tsx|js|jsx|json|py|txt|ya?ml|toml|go|rs)\b/i.test(stepText);
-      const echoed = /FIRSTLINE:\s*\S/i.test(reply1);
-      const repoPrepared = Array.isArray(r1?.repos) && (r1?.repos as string[]).includes(repoRef);
-      pass("selected repo prepared securely (cloned into the run workdir)", repoPrepared, `repos=${JSON.stringify(r1?.repos)}`);
-      pass("known repo file read in live run (file-read tool ran / FIRSTLINE echoed)", (readTool || echoed) && toolStep, `readTool=${readTool} echoed=${echoed}`);
+      let physicalRepoVerified = false;
+      let physicalEvidence = "sandbox unavailable";
+      let expectedFirstLine: string | null = null;
+      if (box1) {
+        const daytona = new Daytona({
+          apiKey: process.env.DAYTONA_API_KEY,
+          target: process.env.DAYTONA_TARGET ?? "us",
+        });
+        const box = await daytona.get(box1);
+        const checkout = await box.process.executeCommand(
+          `DIR="$HOME/work"/${shq(repoRef)}; ` +
+            `test -d "$DIR/.git" || exit 1; ` +
+            `git -C "$DIR" remote get-url origin; ` +
+            `FILE="$(git -C "$DIR" ls-files | head -n 1)"; ` +
+            `head -n 1 "$DIR/$FILE" | base64 | tr -d '\n'; printf '\n'`,
+          undefined,
+          undefined,
+          15,
+        );
+        const expectedOrigin = `https://github.com/${repoRef}.git`;
+        const [actualOrigin = "", firstLineBase64 = ""] =
+          checkout.result?.trimEnd().split("\n") ?? [];
+        if (firstLineBase64) {
+          expectedFirstLine = Buffer.from(firstLineBase64, "base64")
+            .toString("utf8")
+            .replace(/\r?\n$/, "");
+        }
+        physicalRepoVerified =
+          checkout.exitCode === 0 && actualOrigin === expectedOrigin && expectedFirstLine !== null;
+        physicalEvidence = physicalRepoVerified
+          ? `${actualOrigin} firstLineBytes=${Buffer.byteLength(expectedFirstLine ?? "", "utf8")}`
+          : `origin=${actualOrigin || "missing"} firstLine=${expectedFirstLine === null ? "missing" : "present"} exit=${checkout.exitCode}`;
+      }
+      const expectedMarker =
+        expectedFirstLine === null ? null : `FIRSTLINE: ${expectedFirstLine}`;
+      const successfulRead = steps1.some((step) => {
+        const code = parseStepCode(step.code_json);
+        const outputText =
+          typeof code.output === "string" ? code.output : JSON.stringify(code.output ?? "");
+        return (
+          code.error !== true &&
+          (code.tool === "execute" || code.tool === "bash") &&
+          expectedMarker !== null &&
+          outputText.includes(expectedMarker)
+        );
+      });
+      const echoed = expectedMarker !== null && reply1.includes(expectedMarker);
+      pass(
+        "selected repo prepared securely (physical checkout + exact origin)",
+        physicalRepoVerified,
+        physicalEvidence,
+      );
+      pass(
+        "known repo file read in live run (successful tool output + FIRSTLINE)",
+        successfulRead && echoed && toolStep,
+        `successfulRead=${successfulRead} echoed=${echoed} inputTelemetry=${ENGINE === "opencode" ? "available" : "ACP may omit"}`,
+      );
     } else {
       rec("selected repo prepared securely", "blocked", "no repo available to clone");
       rec("known repo file read in live run", "blocked", "no repo available to clone");
@@ -265,7 +374,7 @@ try {
 
     // ── 4. real provider command catalog captured FROM the live session ──
     const [cmdEv] = (await sql`
-      SELECT body, revision FROM canonical_events
+      SELECT body, delivery_seq AS revision FROM canonical_events
       WHERE thread_id = ${threadId} AND kind = 'commands.updated' AND identity->>'nativeSessionId' = ${ses1 ?? ""}
       ORDER BY delivery_seq DESC LIMIT 1`) as unknown as { body: Row; revision: number }[];
     // canonical commands.updated body: `commands` is string[] (names), `catalog` is the objects.
@@ -287,16 +396,26 @@ try {
     // ── 5. TURN 2 - retained sandbox + session; invoke a safe native command if advertised ──
     const SAFE = new Set(["status", "diff", "help", "about", "compact", "models", "mcp", "review", "init", "usage", "context"]);
     const safeCmd = catalogNames.find((n) => SAFE.has(n));
+    const catalogRevision = Number(cmdEv?.revision);
     const t2body: Row = { engine: ENGINE, model: MODEL, parent_run_id: run1 };
     if (safeCmd) {
       t2body.prompt = `/${safeCmd}`;
-      t2body.command = { name: safeCmd, provider: ENGINE };
+      t2body.command = {
+        name: safeCmd,
+        provider: ENGINE,
+        sessionId: ses1,
+        catalogRevision: Number.isSafeInteger(catalogRevision) ? catalogRevision : undefined,
+      };
     } else {
       t2body.prompt = "Reply with exactly the word RETAINED. Do not run any tools.";
     }
     const t2 = await http("POST", "/api/runs", t2body);
     const run2 = t2.body?.id as string | undefined;
-    pass("turn 2 accepted (reply in same thread)", (t2.status === 200 || t2.status === 201) && !!run2, `HTTP ${t2.status} id=${short(run2)} ${t2.body?.error ?? ""}`);
+    pass(
+      "turn 2 accepted (reply in same thread)",
+      (t2.status === 200 || t2.status === 201) && !!run2,
+      `HTTP ${t2.status} id=${short(run2)} ${t2.body?.error ?? ""} ${t2.body?.reason ?? ""}`.trim(),
+    );
     if (run2) {
       myRunIds.push(run2);
       const r2 = await waitTerminal(run2, BUDGET);
@@ -359,9 +478,9 @@ try {
   }
 
   // ── 8. credential-leak audit over persisted PRODUCT surfaces ──
-  // (host provider keys reaching the sandbox env is a separate, known, out-of-scope item -
-  //  this audit is that raw secret VALUES never land in provider_events / canonical_events /
-  //  the run transcript that a tenant can read.)
+  // Raw secret values must never reach tenant-visible persistence. The live
+  // gateway assertion above independently verifies that provider keys are also
+  // absent from the sandbox environment.
   const secretVals = [
     process.env.DAYTONA_API_KEY, process.env.OPENROUTER_API_KEY, process.env.ANTHROPIC_API_KEY,
     process.env.OPENAI_API_KEY, process.env.GITHUB_APP_PRIVATE_KEY,
@@ -419,5 +538,5 @@ try {
   })}`);
   console.log(`\n${verdict === "PASS" ? "✅ PASS" : verdict === "BLOCKED" ? "⚠️  BLOCKED" : "❌ FAIL"} (${ENGINE}) - ${cells.filter((c) => c.status === "pass").length} pass, ${fails.length} fail, ${blocked.length} blocked`);
   if (fails.length) console.log("FAILED:", fails.map((c) => c.cell).join(" | "));
-  process.exit(verdict === "FAIL" ? 1 : 0);
+  process.exit(verdict === "PASS" ? 0 : verdict === "BLOCKED" ? 2 : 1);
 }

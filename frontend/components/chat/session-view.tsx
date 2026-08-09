@@ -91,6 +91,7 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
   // is momentarily down AND the reconcile fetch fails (Codex finding 4).
   const [pending, setPending] = useState<{ text: string; runId: string | null } | null>(null);
   const [stopping, setStopping] = useState(false);
+  const [stopError, setStopError] = useState<string | null>(null);
 
   // ONE realtime subscription for the whole conversation, keyed by the ROOT thread
   // id for the page lifetime (final_fix.md): creating/queueing/starting/settling/
@@ -257,17 +258,30 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
   const handleStop = useCallback(async () => {
     if (stopping) return;
     setStopping(true);
+    setStopError(null);
     try {
       // Prefer the running turn (the newest may be a queued reply, and Stop
       // means "stop the work", not "drop my message").
       const target = runningTurn?.run.id ?? newest.id;
-      await backendFetch(`/api/runs/${target}/cancel`, { method: "POST" });
-    } catch {
-      // Leave the button; the turn is still live so the user can retry Stop.
+      const response = await backendFetch(`/api/runs/${target}/cancel`, { method: "POST" });
+      if (!response.ok) {
+        const body = (await response.json().catch(() => ({}))) as { error?: unknown };
+        throw new Error(
+          typeof body.error === "string" ? body.error : `backend ${response.status}`,
+        );
+      }
+    } catch (error) {
+      // Leave the button and surface the failure; the turn is still live so the
+      // user can retry without guessing whether Stop worked.
+      setStopError(error instanceof Error ? error.message : "Could not stop this run");
     } finally {
       setStopping(false);
     }
   }, [newest.id, runningTurn, stopping]);
+
+  useEffect(() => {
+    if (!runningTurn) setStopError(null);
+  }, [runningTurn]);
 
   // Send-now steering (opencode's control, matched to our harness): cancel the
   // RUNNING turn; the per-thread command lane then auto-dispatches the head
@@ -275,10 +289,14 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
   // Only offered on the HEAD queued message so the queue order is preserved.
   const handleSendNow = useCallback(async () => {
     if (!runningTurn) return;
+    setStopError(null);
     try {
-      await backendFetch(`/api/runs/${runningTurn.run.id}/cancel`, { method: "POST" });
-    } catch {
-      // The queued bubble keeps its affordance; the user can retry.
+      const response = await backendFetch(`/api/runs/${runningTurn.run.id}/cancel`, { method: "POST" });
+      if (!response.ok) throw new Error(`backend ${response.status}`);
+    } catch (error) {
+      // The queued bubble keeps its affordance; the user can retry with an
+      // explicit failure instead of a silent no-op.
+      setStopError(error instanceof Error ? error.message : "Could not stop this run");
     }
   }, [runningTurn]);
 
@@ -477,6 +495,7 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
             onSendNow={handleSendNow}
             running={runningTurn !== null}
             stopping={stopping}
+            stopError={stopError}
             onStop={handleStop}
           />
           {/* Boot phase: engine spinning up, no steps yet — orb pill; clears the

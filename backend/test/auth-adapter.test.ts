@@ -17,8 +17,6 @@ describe("isPublicApiPath — the allowlist is the ONLY escape from org scoping"
     // Self-authenticating (own boundary, not org-session):
     expect(isPublicApiPath("/api/auth/sign-in")).toBe(true);
     expect(isPublicApiPath("/api/auth/session")).toBe(true);
-    expect(isPublicApiPath("/api/mcp/knowledge")).toBe(true); // Bearer tool-token
-    expect(isPublicApiPath("/api/mcp/knowledge/messages")).toBe(true);
     expect(isPublicApiPath("/api/slack/events")).toBe(true); // signature verified
   });
 
@@ -36,6 +34,8 @@ describe("isPublicApiPath — the allowlist is the ONLY escape from org scoping"
       "/api/pulls",
       "/api/wiki/generate",
       "/api/commands",
+      "/api/mcp/knowledge",
+      "/api/provider/openai/v1/responses",
     ]) {
       expect(isPublicApiPath(p)).toBe(false);
     }

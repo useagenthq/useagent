@@ -21,7 +21,7 @@
  */
 import { chromium, type Browser, type Page } from "playwright-core";
 import postgres from "postgres";
-import { openSync } from "node:fs";
+import { closeSync, openSync } from "node:fs";
 import { readFileSync, writeFileSync, rmSync } from "node:fs";
 
 const ADMIN_URL = process.env.TEST_ADMIN_URL ?? "postgres://postgres@localhost:5432/postgres";
@@ -85,37 +85,45 @@ async function main() {
   try {
     // ── 2. boot backend on the throwaway DB (mock engine only, no cloud) ──────
     const beLog = openSync(`${scratch}/skynet-cmd-e2e-backend.log`, "a");
-    be = Bun.spawn(["bun", "src/index.ts"], {
-      cwd: backendDir,
-      env: {
-        ...process.env,
-        PORT: String(BE_PORT),
-        DATABASE_URL: DB_URL,
-        ALLOW_DEV_ORG: "1",
-        FRONTEND_ORIGIN: FE,
-        // keep every optional integration a no-op — this proof is DB + HTTP + browser only
-        MEMORY_API_URL: "",
-        SLACK_BOT_TOKEN: "",
-        DAYTONA_API_KEY: "",
-      },
-      stdout: beLog,
-      stderr: beLog,
-    });
+    try {
+      be = Bun.spawn(["bun", "src/index.ts"], {
+        cwd: backendDir,
+        env: {
+          ...process.env,
+          PORT: String(BE_PORT),
+          DATABASE_URL: DB_URL,
+          ALLOW_DEV_ORG: "1",
+          FRONTEND_ORIGIN: FE,
+          // keep every optional integration a no-op — this proof is DB + HTTP + browser only
+          MEMORY_API_URL: "",
+          SLACK_BOT_TOKEN: "",
+          DAYTONA_API_KEY: "",
+        },
+        stdout: beLog,
+        stderr: beLog,
+      });
+    } finally {
+      closeSync(beLog);
+    }
     ok("backend booted", await waitHttp(`${BE}/health`, 60_000));
 
     // ── 3. boot the frontend (isolated dist, rewrites -> our backend) ─────────
     const feLog = openSync(`${scratch}/skynet-cmd-e2e-frontend.log`, "a");
-    fe = Bun.spawn(["bun", "run", "dev", "--port", String(FE_PORT)], {
-      cwd: frontendDir,
-      env: {
-        ...process.env,
-        PORT: String(FE_PORT),
-        SKYNET_API_ORIGIN: BE,
-        SKYNET_BUILD_DIST: DIST,
-      },
-      stdout: feLog,
-      stderr: feLog,
-    });
+    try {
+      fe = Bun.spawn(["bun", "run", "dev", "--port", String(FE_PORT)], {
+        cwd: frontendDir,
+        env: {
+          ...process.env,
+          PORT: String(FE_PORT),
+          SKYNET_API_ORIGIN: BE,
+          SKYNET_BUILD_DIST: DIST,
+        },
+        stdout: feLog,
+        stderr: feLog,
+      });
+    } finally {
+      closeSync(feLog);
+    }
     ok("frontend booted", await waitHttp(`${FE}/agent/new`, 120_000));
 
     browser = await chromium.launch({ channel: "chrome", headless: true });
@@ -162,7 +170,19 @@ async function main() {
 
       const page: Page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
       const consoleErrors: string[] = [];
+      const networkErrors: string[] = [];
       page.on("console", (m) => m.type() === "error" && consoleErrors.push(m.text()));
+      page.on("response", (response) => {
+        if (response.status() >= 400 && !/\/favicon\.ico(?:\?|$)/i.test(response.url())) {
+          networkErrors.push(`HTTP ${response.status()} ${response.url()}`);
+        }
+      });
+      page.on("requestfailed", (request) => {
+        const reason = request.failure()?.errorText ?? "request failed";
+        if (reason !== "net::ERR_ABORTED") {
+          networkErrors.push(`${reason} ${request.url()}`);
+        }
+      });
 
       await page.goto(`${FE}/session/${runId}`, { waitUntil: "domcontentloaded", timeout: 120_000 });
       // the REPLY composer specifically (a session page also mounts Monaco, whose hidden
@@ -213,9 +233,14 @@ async function main() {
       const reBtn = page.locator("button", { hasText: `/${first}` });
       ok(`[${engine}] catalog persists across reload`, await reBtn.first().isVisible({ timeout: 15_000 }).catch(() => false));
 
-      // benign resource 404s (favicon, an SSE reconnect, a source map) are not app errors;
-      // the proof is that the picker renders, not that the isolated dev stack is 404-free.
-      const appErrors = consoleErrors.filter((e) => !/Failed to load resource/i.test(e));
+      // Chromium's generic message omits the URL. Network listeners above are
+      // the authoritative URL/status oracle; only an optional favicon is exempt.
+      const appErrors = [
+        ...consoleErrors.filter(
+          (error) => !/Failed to load resource|favicon\.ico/i.test(error),
+        ),
+        ...networkErrors,
+      ];
       ok(`[${engine}] no app console errors on the session page`, appErrors.length === 0, appErrors.slice(0, 2).join(" | "));
       await page.close();
     }
