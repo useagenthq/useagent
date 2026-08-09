@@ -606,6 +606,29 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
         const toolCalls = new Map<string, Record<string, unknown>>(); // toolCallId → last tool_call payload
         let finalText = "";
 
+        // Durable native capture of the assistant's TEXT so the canonical lane emits
+        // message.started/delta/completed for ACP too (parity with opencode's part.text frames -
+        // the translator's message.* branches key off eventType `part.step-start`/`part.text`/
+        // `part.step-finish` carrying a nativeMessageId). One assistant message per turn (this
+        // run); tool calls stay separate step-lane events. This ONLY adds provider_events - the
+        // live `publishDelta` stream and the legacy step/summary reply are unchanged.
+        const assistantMsgId = `msg_${ctx.runId}`;
+        let textPartN = 0;
+        let msgStarted = false;
+        const recordAcpTextFrame = (id: string, eventType: string, payload: Record<string, unknown>): void => {
+          void recordProviderEvent({
+            id,
+            runId: ctx.runId,
+            threadId: ctx.threadId ?? ctx.runId,
+            provider: cfg.id,
+            eventType,
+            nativeSessionId: live.sessionId ?? ctx.runId,
+            nativeMessageId: assistantMsgId,
+            nativePartId: id,
+            payload,
+          });
+        };
+
         const handleUpdate = async (params: Record<string, unknown>): Promise<void> => {
           const u = (params.update ?? {}) as Record<string, unknown>;
           const kind = String(u.sessionUpdate ?? "");
@@ -665,6 +688,12 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
             if (typeof text === "string" && text) {
               finalText += text;
               ctx.publishDelta?.(text);
+              // durable capture: step-start once, then a part.text per chunk (message.delta)
+              if (!msgStarted) {
+                msgStarted = true;
+                recordAcpTextFrame(`${assistantMsgId}_start`, "part.step-start", {});
+              }
+              recordAcpTextFrame(`${assistantMsgId}_t${textPartN++}`, "part.text", { text });
             }
             return;
           }
@@ -865,6 +894,8 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
           await pump;
         }
 
+        // close the durable assistant message so the canonical lane emits message.completed
+        if (msgStarted) recordAcpTextFrame(`${assistantMsgId}_finish`, "part.step-finish", {});
         if (finalText.trim()) {
           await ctx.emit({ kind: "task", label: truncate(finalText, 60), chip: "task" });
         }
