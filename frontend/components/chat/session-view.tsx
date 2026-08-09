@@ -277,12 +277,9 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
   const hasCommands = allSteps.some((s) => s.kind === "command");
   const hasSubagents = allSteps.some((s) => s.chip === "subagent");
   const hasRailContent = hasFiles || hasCommands || hasSubagents;
-  // opencode threads carry a live resident server in their sandbox — offer its
-  // own web UI as a "Live" tab (opt-in: the heavy iframe mounts only when picked).
-  const isOpencode = thread.some((r) => normalizeEngine(r.engine) === "opencode");
-  // The ONE negotiated capability map for the current session (Phase 6): surface visibility gates
-  // on THIS, not a provider name. Null until session.started arrives, so a pre-session view falls
-  // back to the engine heuristic (`isOpencode`) rather than flashing/hiding a surface wrongly.
+  // The ONE negotiated capability map for the current session (Phase 6): every surface's
+  // visibility gates on THIS map, never a provider name. Null until session.started arrives (the
+  // durable event is replayed on reload, so a settled run has it immediately).
   const caps = useMemo(
     () => selectSessionCapabilities([...snapshot.byId.values()], engineSessionId),
     [snapshot.byId, engineSessionId],
@@ -333,22 +330,21 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
     (hasSubagents ? "agents" : hasFiles ? "editor" : hasCommands ? "terminal" : "editor");
   // The Desktop tab watches the sandbox GUI (multi-repo); a recorded opencode
   // session implies its sandbox exists, so the pane can connect (else it shows a
-  // placeholder). Only offered for opencode threads — the snapshot with noVNC.
-  // Desktop/VNC tab: shown only when a real desktop resource is negotiated (caps.desktop). Before
-  // session.started arrives, fall back to the engine heuristic so an opencode thread still offers
-  // it immediately. A capability-false session (e.g. a cold ACP sandbox with no VNC) never shows a
-  // fake tab.
-  const hasDesktop = caps ? caps.desktop === true : isOpencode;
+  // Desktop/VNC tab: shown ONLY when the session's negotiated capability map says a real desktop
+  // resource exists (caps.desktop) - a capability, never a provider-name guess. A capability-false
+  // session (e.g. a cold ACP sandbox with no VNC) never shows a fake tab; before session.started
+  // the tab is simply absent until the capability is known (fast; immediate on a settled reload).
+  const hasDesktop = caps?.desktop === true;
 
   // Slash-command catalog for the reply composer's "/" autocomplete - the SELECTED engine's
   // real native commands, capability-driven (no provider-name gate). Authoritative source is
   // the DURABLE canonical stream's per-session `commands.updated`, SESSION-SCOPED to the current
   // native session so a historical or other-session snapshot can NEVER mask the active session
   // (a restarted/new session that has not re-advertised falls back to the pre-session priming
-  // fetch rather than showing stale commands). The live session snapshot always wins; the fetch
-  // (OpenCode's live-proxy, or the ACP engines' org priming cache via GET /api/commands) only
-  // primes until this session advertises. `resolveCommandCatalog` folds both into one honest
-  // state (loading / unavailable / error / ready[+stale]).
+  // fetch rather than showing stale commands). The live session snapshot always wins; the priming
+  // fetch (GET /api/commands, keyed by engine - one path for OpenCode/Claude/Codex, no per-engine
+  // side channel) only primes until this session advertises. `resolveCommandCatalog` folds both
+  // into one honest state (loading / unavailable / error / ready[+stale]).
   const engine = normalizeEngine(newest.engine);
   const durableCommands = useMemo(
     () => selectSessionCommands([...snapshot.byId.values()], engineSessionId),
@@ -360,25 +356,19 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
     commands: [],
   });
   useEffect(() => {
-    if (hasDurable) return; // the durable session catalog wins; no live fetch needed
+    if (hasDurable) return; // the durable session catalog wins; no priming fetch needed
     let cancelled = false;
-    // Clear-on-change: reset immediately so a prior engine/session's commands never linger
-    // while the new source loads.
+    // Clear-on-change: reset immediately so a prior engine's commands never linger while loading.
     setFetchState({ phase: "loading", commands: [] });
     void (async () => {
       const fail = () => !cancelled && setFetchState({ phase: "error", commands: [] });
       try {
-        let list: { name?: string; description?: string; input?: string }[] = [];
-        if (engine === "opencode") {
-          if (!engineSessionId) { if (!cancelled) setFetchState({ phase: "done", commands: [] }); return; }
-          const res = await backendFetch(`/api/live-proxy/${rootId}/command`);
-          if (!res.ok) return fail();
-          list = (await res.json()) as typeof list;
-        } else {
-          const res = await backendFetch(`/api/commands?engine=${encodeURIComponent(engine)}`);
-          if (!res.ok) return fail();
-          list = ((await res.json()) as { commands?: typeof list }).commands ?? [];
-        }
+        // ONE pre-session priming path for every engine: the org/snapshot catalog via GET
+        // /api/commands (keyed by engine). The durable per-session `commands.updated` (now emitted
+        // by opencode too, C5) is authoritative and supersedes this the moment the session advertises.
+        const res = await backendFetch(`/api/commands?engine=${encodeURIComponent(engine)}`);
+        if (!res.ok) return fail();
+        const list = ((await res.json()) as { commands?: { name?: string; description?: string; input?: string }[] }).commands ?? [];
         if (cancelled) return;
         if (!Array.isArray(list)) return fail();
         setFetchState({
@@ -394,7 +384,7 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
     return () => {
       cancelled = true;
     };
-  }, [engine, engineSessionId, rootId, hasDurable]);
+  }, [engine, hasDurable]);
   const catalogState = resolveCommandCatalog(durableCommands, fetchState, engine);
   const commands: SlashCommand[] =
     catalogState.status === "ready"
@@ -556,7 +546,7 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
               ) : railTab === "editor" ? (
                 <EditorPane steps={allSteps} live={live} />
               ) : railTab === "desktop" ? (
-                <DesktopPane threadId={rootId} hasSandbox={(caps ? caps.desktop === true : isOpencode) && !!engineSessionId} />
+                <DesktopPane threadId={rootId} hasSandbox={caps?.desktop === true && !!engineSessionId} />
               ) : (
                 <TerminalPane steps={allSteps} live={live} engine={newest.engine} runId={newest.id} />
               )}

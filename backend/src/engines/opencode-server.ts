@@ -1,5 +1,5 @@
 import { Daytona, type Sandbox } from "@daytona/sdk";
-import { recordProviderEvent } from "../runs/provider-events";
+import { providerEventExists, recordProviderEvent } from "../runs/provider-events";
 import type {
   EmitStep,
   EngineAdapter,
@@ -17,7 +17,7 @@ import { getThreadSandbox, setRunSandbox } from "../runs/repo";
 import { prepareRepos, shq } from "./repo-prep";
 import { assertNever } from "../util/exhaustive";
 import { toolGatewayConfig } from "../knowledge/gateway/config";
-import { SESSION_STARTED_EVENT_TYPE } from "@skynet/agent-harness/canonical";
+import { ACP_COMMANDS_EVENT_TYPE, SESSION_STARTED_EVENT_TYPE } from "@skynet/agent-harness/canonical";
 import { sessionCapabilities } from "./capabilities";
 import { mintToolToken } from "../knowledge/gateway/token";
 import { MEMORY_SKILL_PATH, memorySkillText } from "../memory/memory-skill-text";
@@ -606,6 +606,37 @@ export const opencodeServerAdapter: EngineAdapter = {
           capabilities: sessionCapabilities("opencode", { desktop: true, knowledgeTools: toolGatewayConfig() !== null }),
         },
       });
+
+      // C5: capture OpenCode's native `/command` list into the SAME per-session `acp.commands`
+      // provider event the ACP engines write, so the translator emits a durable `commands.updated`
+      // for opencode too and all three engines share ONE authoritative session-command lane (no
+      // opencode-only live-proxy side channel; the pre-session snapshot cache is UI-only priming).
+      // Best-effort with a read-back retry; if it cannot persist, there is simply no durable
+      // catalog and command authorization fails closed (C3/C4) - the turn is unaffected.
+      void (async () => {
+        try {
+          const res = await fetch(`${baseUrl}/command${dirQ}`, { headers: authHeaders(token), signal: ctx.signal });
+          if (!res.ok) return;
+          const commands = await res.json().catch(() => null);
+          if (!Array.isArray(commands) || commands.length === 0) return;
+          const frame = {
+            id: `${ctx.runId}:${sessionId}:commands`,
+            runId: ctx.runId,
+            threadId: ctx.threadId ?? ctx.runId,
+            provider: "opencode",
+            eventType: ACP_COMMANDS_EVENT_TYPE,
+            nativeSessionId: sessionId,
+            payload: { source: "opencode", commands, ts: Date.now() },
+          };
+          for (let a = 0; a < 3; a++) {
+            await recordProviderEvent(frame, { critical: true });
+            if (await providerEventExists(frame.id)) break;
+            if (a < 2) await new Promise((r) => setTimeout(r, 100 * (a + 1)));
+          }
+        } catch {
+          /* best-effort: opencode chat is unaffected if the command list can't be captured */
+        }
+      })();
 
       // ── realtime: subscribe /event BEFORE prompting ─────────────────────────
       const sseAbort = new AbortController();
