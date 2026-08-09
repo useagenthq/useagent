@@ -8,7 +8,7 @@ import { describe, expect, test, beforeAll } from "bun:test";
 import { eq } from "drizzle-orm";
 import { db } from "../src/db/client";
 import { canonicalEvents, commandsCatalog, runs } from "../src/db/schema";
-import { acpCatalogKey } from "../src/runs/command-catalog";
+import { acpCatalogKey, readSessionCommandCatalog } from "../src/runs/command-catalog";
 import { DEV_ORG_ID } from "../src/seed";
 import { fetchApi, waitFor } from "./helpers";
 
@@ -116,6 +116,20 @@ describe("POST /api/runs - session-authoritative command authorization (C3)", ()
     const { parentId, revision } = await seedParentWithSession("ses_empty", []); // advertised none
     const r = await post({ prompt: "/review", engine: "mock", parent_run_id: parentId, command: { name: "review", provider: "mock", sessionId: "ses_empty", catalogRevision: revision } });
     expect(r.status).toBe(400);
+  });
+});
+
+// D3: an EMPTY catalog replacement is DURABLE (opencode/ACP persist empty too) and is DISTINCT
+// from a session that has never advertised - the former authorizes no command but is an authoritative
+// "advertises none" (a revision exists); the latter is null (fail-closed, may fall back to priming).
+describe("readSessionCommandCatalog (empty replacement is durable, distinct from not-advertised)", () => {
+  test("an EMPTY commands.updated -> {commands:[], revision}; a never-advertised session -> null", async () => {
+    const { parentId, revision } = await seedParentWithSession("ses_empty_persist", []); // empty catalog
+    const cat = await readSessionCommandCatalog(parentId, "ses_empty_persist");
+    expect(cat).not.toBeNull();
+    expect(cat?.commands).toEqual([]);
+    expect(cat?.revision).toBe(revision);
+    expect(await readSessionCommandCatalog(parentId, "ses_never_advertised")).toBeNull();
   });
 });
 
