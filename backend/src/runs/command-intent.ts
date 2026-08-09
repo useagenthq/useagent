@@ -70,3 +70,23 @@ export function validateCommandIntent(
   }
   return { ok: true, name, args: typeof intent.args === "string" ? intent.args : "" };
 }
+
+/** FAIL-CLOSED re-validation IMMEDIATELY before dispatch (D4). Accept-time validation can go stale
+ *  between acceptance and the moment the adapter sends the turn (the relay may regenerate, session/
+ *  load may fail into a NEW session, or the session may re-advertise a catalog that dropped the
+ *  command). This re-checks a PERSISTED command's identity against the LIVE session: the provider
+ *  matches the engine, the session is the one it was authorized for, the command is STILL a member
+ *  of the live catalog, and the authorized revision did not regress. Returns null when it is safe to
+ *  dispatch, or a human-readable reason to reject it visibly. Pure. */
+export function revalidateCommandBeforeDispatch(
+  cmd: { readonly name: string; readonly provider: string | null; readonly sessionId: string | null; readonly catalogRevision: number | null },
+  live: { readonly engine: string; readonly sessionId: string; readonly catalog: readonly { readonly name: string }[] | null; readonly revision: number | null },
+): string | null {
+  const reasons: string[] = [];
+  const provider = cmd.provider ?? live.engine;
+  if (provider !== live.engine) reasons.push(`provider ${provider} != ${live.engine}`);
+  if (cmd.sessionId && cmd.sessionId !== live.sessionId) reasons.push(`session ${cmd.sessionId.slice(0, 8)} != ${live.sessionId.slice(0, 8)}`);
+  if (!(live.catalog ?? []).some((c) => c.name === cmd.name)) reasons.push(`"/${cmd.name}" not in the live session catalog`);
+  if (cmd.catalogRevision != null && live.revision != null && live.revision < cmd.catalogRevision) reasons.push("catalog revision regressed");
+  return reasons.length > 0 ? reasons.join("; ") : null;
+}

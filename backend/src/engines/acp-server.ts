@@ -6,7 +6,8 @@ import { sessionCapabilities } from "./capabilities";
 import { basename, parseJsonLine, persistSandboxBeforeExecution, truncate } from "./util";
 import { prepareRepos } from "./repo-prep";
 import { parseRepoRef } from "../github/repo-ref";
-import { cacheAcpCommands } from "../runs/command-catalog";
+import { cacheAcpCommands, readSessionCommandCatalog } from "../runs/command-catalog";
+import { revalidateCommandBeforeDispatch } from "../runs/command-intent";
 import { providerEventExists, recordProviderEvent } from "../runs/provider-events";
 import { buildSessionCancel, createAcpRpcClient, isAlreadyInitialized, parseRelayHealth, relayRegenerated, relayStateAfterBoot } from "./acp-rpc";
 import { allowPermissionBypass, decideAcpPermission } from "./permission-policy";
@@ -868,16 +869,21 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
           live.sessionId = sessionId;
           ctx.saveEngineSessionId?.(sessionId);
 
-          // C3 fail-closed re-validation: a native command was authorized against a SPECIFIC
-          // session's catalog at acceptance. If the LIVE session is not that session - session/load
-          // failed so we opened a NEW one, or the relay regenerated to a different id - the command
-          // is STALE; reject it visibly rather than delivering a command validated against a now-dead
-          // session. An ordinary prompt is unaffected (it carries no commandName).
-          if (ctx.commandName && ctx.commandSessionId && sessionId !== ctx.commandSessionId) {
-            throw new Error(
-              `stale command "/${ctx.commandName}": authorized for session ${ctx.commandSessionId.slice(0, 8)} ` +
-                `but the live session is ${sessionId.slice(0, 8)} (session changed) - re-issue it against the current session`,
+          // C3/D4 fail-closed re-validation IMMEDIATELY before dispatch: a native command must STILL
+          // be authorized against the LIVE session. Re-check, against the session's current durable
+          // catalog: provider (matches the engine), session identity (session/load failed -> a new
+          // session, or the relay regenerated to a different id), and command MEMBERSHIP (the command
+          // is still advertised - a re-advertised session that dropped it, or an authorized revision
+          // that regressed, is rejected). An ordinary prompt is unaffected (no commandName).
+          if (ctx.commandName) {
+            const liveCatalog = await readSessionCommandCatalog(ctx.threadId ?? ctx.runId, sessionId);
+            const reason = revalidateCommandBeforeDispatch(
+              { name: ctx.commandName, provider: ctx.commandProvider ?? null, sessionId: ctx.commandSessionId ?? null, catalogRevision: ctx.commandCatalogRevision ?? null },
+              { engine: cfg.id, sessionId, catalog: liveCatalog?.commands ?? null, revision: liveCatalog?.revision ?? null },
             );
+            if (reason) {
+              throw new Error(`stale command "/${ctx.commandName}" rejected before dispatch: ${reason} - re-issue it against the current session`);
+            }
           }
 
           // Emit session.started with the ONE negotiated capability map the UI gates on (never a

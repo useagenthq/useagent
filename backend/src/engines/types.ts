@@ -77,6 +77,12 @@ export interface EngineRunContext {
    *  relay regenerated, session/load failed, or session/new returned a different id, the command
    *  is stale and the run is rejected visibly rather than sent to the wrong session. */
   commandSessionId?: string | null;
+  /** The provider + catalog snapshot the command was authorized against (fail-closed D4). The
+   *  adapter revalidates provider + session + command MEMBERSHIP against the LIVE session catalog
+   *  immediately before sending, so a command whose provider changed or that the session no longer
+   *  advertises is rejected rather than dispatched. */
+  commandProvider?: string | null;
+  commandCatalogRevision?: number | null;
   /** Persist the engine session id this run created/used, so the next turn can
    *  resume it. Fire-and-forget durable write; adapters call it as soon as the
    *  engine reveals its session id. */

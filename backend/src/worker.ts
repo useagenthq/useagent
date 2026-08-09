@@ -319,6 +319,8 @@ async function runWorker(runId: string): Promise<void> {
         wasCancelled,
         run.commandName ?? null,
         run.commandSessionId ?? null,
+        run.commandProvider ?? null,
+        run.commandCatalogRevision ?? null,
       );
     } finally {
       bus.off(channel(runId), onActivity);
@@ -429,6 +431,9 @@ async function runEngine(
   /** The native session the command was AUTHORIZED against (fail-closed C3): the adapter
    *  re-checks the LIVE session against this before sending, rejecting a stale command. */
   commandSessionId: string | null,
+  /** The provider + catalog snapshot the command was authorized against (fail-closed D4). */
+  commandProvider: string | null,
+  commandCatalogRevision: number | null,
 ): Promise<void> {
   const startedAt = Date.now();
   await setRunStatus(runId, "running");
@@ -509,6 +514,8 @@ async function runEngine(
     engineSessionId,
     commandName,
     commandSessionId,
+    commandProvider,
+    commandCatalogRevision,
     // Durable fire-and-forget: the id is saved the moment the engine reveals it,
     // so even a later-failing run leaves a resumable session for the next turn.
     saveEngineSessionId: (sid) => {
