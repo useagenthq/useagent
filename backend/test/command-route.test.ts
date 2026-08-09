@@ -125,11 +125,28 @@ describe("POST /api/runs - session-authoritative command authorization (C3)", ()
 describe("readSessionCommandCatalog (empty replacement is durable, distinct from not-advertised)", () => {
   test("an EMPTY commands.updated -> {commands:[], revision}; a never-advertised session -> null", async () => {
     const { parentId, revision } = await seedParentWithSession("ses_empty_persist", []); // empty catalog
-    const cat = await readSessionCommandCatalog(parentId, "ses_empty_persist");
+    const cat = await readSessionCommandCatalog(parentId, "mock", "ses_empty_persist");
     expect(cat).not.toBeNull();
     expect(cat?.commands).toEqual([]);
     expect(cat?.revision).toBe(revision);
-    expect(await readSessionCommandCatalog(parentId, "ses_never_advertised")).toBeNull();
+    expect(await readSessionCommandCatalog(parentId, "mock", "ses_never_advertised")).toBeNull();
+  });
+
+  test("catalog lookup is scoped by provider as well as native session", async () => {
+    const { parentId } = await seedParentWithSession("shared_session", ["deploy"]);
+    await db.insert(canonicalEvents).values({
+      eventId: `${parentId}:codex:shared_session:commands`, revision: 0, runId: parentId,
+      threadId: parentId, seq: 1, kind: "commands.updated", ts: 2,
+      identity: { provider: "codex", nativeSessionId: "shared_session" },
+      body: { commands: ["plan"], catalog: [{ name: "plan" }] },
+    });
+
+    expect((await readSessionCommandCatalog(parentId, "mock", "shared_session"))?.commands).toEqual([
+      { name: "deploy", description: null, input: null },
+    ]);
+    expect((await readSessionCommandCatalog(parentId, "codex", "shared_session"))?.commands).toEqual([
+      { name: "plan", description: null, input: null },
+    ]);
   });
 });
 

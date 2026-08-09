@@ -123,7 +123,7 @@ describe("runs", () => {
 
 describe("run threading", () => {
   test("reply threads under the root: clean prompt, shared thread_id, order", async () => {
-    const root = await runToCompletion({ prompt: "build a todo app" });
+    const root = await runToCompletion({ prompt: "build a todo app", model: "thread-fixed-model" });
     const rootId = root.id;
     // A root run threads under its own id and has no parent.
     expect(root.thread_id).toBe(rootId);
@@ -139,6 +139,8 @@ describe("run threading", () => {
     expect(reply.parent_run_id).toBe(rootId);
     // Same conversation → same thread_id (the root's id).
     expect(reply.thread_id).toBe(rootId);
+    // A reply with no supported model override inherits the thread model server-side.
+    expect(reply.model).toBe("thread-fixed-model");
 
     // GET ?thread=1 returns the whole thread oldest→newest, from either id.
     const fromRoot = await json<{ thread: any[] }>(`/api/runs/${rootId}?thread=1`);

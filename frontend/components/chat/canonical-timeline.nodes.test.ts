@@ -112,6 +112,27 @@ describe("canonical<->legacy node equivalence (synthetic text / markers / child)
     expect((text[0] as { text: string }).text).toBe("DONE C6MARK exact coherent text"); // exact
   });
 
+  test("ACP contiguous text bursts preserve narration -> tool -> answer order", () => {
+    const frames: F[] = [
+      frame({ eventType: "part.step-start", seq: 0, native: { messageId: "m_pre", partId: "pre_start" } }),
+      frame({ eventType: "part.text", seq: 1, native: { messageId: "m_pre", partId: "pre_text" }, payload: { text: "I'll check." } }),
+      frame({ eventType: "part.step-finish", seq: 2, native: { messageId: "m_pre", partId: "pre_finish" } }),
+      frame({ eventType: "part.step-start", seq: 3, native: { messageId: "m_tool", partId: "tool_start" } }),
+      frame({ eventType: "part.step-start", seq: 4, native: { messageId: "m_post", partId: "post_start" } }),
+      frame({ eventType: "part.text", seq: 5, native: { messageId: "m_post", partId: "post_text" }, payload: { text: "Done." } }),
+      frame({ eventType: "part.step-finish", seq: 6, native: { messageId: "m_post", partId: "post_finish" } }),
+    ];
+    const steps: S[] = [
+      step("tool", 0, { sessionID: "ses_root", messageID: "m_tool", partID: "tool_call", callID: "c1" }),
+    ];
+    const { canon } = bothWays(frames, steps);
+    expect(canon.map((node) => node.kind)).toEqual(["text", "tool", "text"]);
+    expect(canon.filter((node) => node.kind === "text").map((node) => node.text)).toEqual([
+      "I'll check.",
+      "Done.",
+    ]);
+  });
+
   test("REGRESSION: a distinct text part per chunk (the OLD token-per-line bug) fragments into N nodes", () => {
     const frames: F[] = [
       frame({ eventType: "part.step-start", seq: 0, native: { messageId: "m1", partId: "s" } }),

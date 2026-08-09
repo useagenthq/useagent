@@ -1,12 +1,17 @@
 import { Daytona, type Sandbox } from "@daytona/sdk";
-import type { EmitStep, EngineAdapter, EngineRunContext } from "./types";
+import type { EngineAdapter, EngineRunContext } from "./types";
 import { composeTurnPrompt } from "./types";
-import { ACP_COMMANDS_EVENT_TYPE, SESSION_STARTED_EVENT_TYPE, parseAcpAvailableCommands } from "@skynet/agent-harness/canonical";
+import {
+  ACP_COMMANDS_EVENT_TYPE,
+  SESSION_STARTED_EVENT_TYPE,
+  parseAcpAvailableCommands,
+  type CanonicalCommand,
+} from "@skynet/agent-harness/canonical";
 import { sessionCapabilities } from "./capabilities";
-import { basename, parseJsonLine, persistSandboxBeforeExecution, truncate } from "./util";
+import { parseJsonLine, persistSandboxBeforeExecution, truncate } from "./util";
 import { prepareRepos } from "./repo-prep";
 import { parseRepoRef } from "../github/repo-ref";
-import { cacheAcpCommands, readSessionCommandCatalog } from "../runs/command-catalog";
+import { cacheAcpCommands } from "../runs/command-catalog";
 import { revalidateCommandBeforeDispatch } from "../runs/command-intent";
 import { providerEventExists, recordProviderEvent } from "../runs/provider-events";
 import { buildSessionCancel, createAcpRpcClient, isAlreadyInitialized, parseRelayHealth, relayRegenerated, relayStateAfterBoot } from "./acp-rpc";
@@ -16,6 +21,7 @@ import { toolGatewayConfig } from "../knowledge/gateway/config";
 import { mintToolToken } from "../knowledge/gateway/token";
 import { composeSecretEnv, materializeSecretFiles } from "../secrets/inject";
 import { getThreadSandbox, setRunSandbox } from "../runs/repo";
+import { buildAcpToolStep, type AcpToolNativeIds } from "./acp-tool-step";
 
 // ---------------------------------------------------------------------------
 // Resident claude/codex via ACP — the opencode-server equivalent for the other
@@ -198,6 +204,10 @@ interface ThreadRelay {
    *  respawn INSIDE a still-up relay HTTP server; a changed generation invalidates the
    *  in-memory session id + initialization exactly like a full relay restart. */
   generation: number | null;
+  /** Latest command replacement observed from this resident child generation.
+   *  Cleared whenever the child/session is replaced; send-time authorization
+   *  never falls back to a historical DB snapshot. */
+  commandCatalog: { sessionId: string; commands: readonly CanonicalCommand[] } | null;
 }
 
 /** threadId → per-engine relay state (a thread talks to ONE engine's relay). */
@@ -289,38 +299,6 @@ export function acpKnowledgeMcpServers(ctx: EngineRunContext): Record<string, un
 }
 
 // ── ACP session/update → step/delta translation ─────────────────────────────
-
-const ACP_FILE_KINDS = new Set(["edit", "delete", "move", "read"]);
-
-function acpToolStep(
-  update: Record<string, unknown>,
-  output: string | undefined,
-): EmitStep {
-  const kind = String(update.kind ?? "other");
-  const title = String(update.title ?? kind);
-  const rawInput = (update.rawInput ?? {}) as Record<string, unknown>;
-  const path = String(rawInput.file_path ?? rawInput.path ?? rawInput.abs_path ?? "");
-  const isFile = ACP_FILE_KINDS.has(kind) && kind !== "read";
-  const label =
-    kind === "execute"
-      ? truncate(String(rawInput.command ?? title))
-      : path
-        ? isFile
-          ? basename(path)
-          : `${title.split(" ")[0]} ${basename(path)}`
-        : truncate(title, 60);
-  return {
-    kind: isFile ? "file" : kind === "task" ? "task" : "command",
-    label,
-    chip: kind === "execute" ? "bash" : kind === "task" ? "subagent" : isFile ? "file" : kind,
-    code_json: {
-      tool: kind,
-      title,
-      input: rawInput,
-      ...(output !== undefined ? { output: output.slice(0, 2000) } : {}),
-    },
-  };
-}
 
 /** Flatten a tool_call_update's content blocks to text. */
 function acpContentText(content: unknown): string {
@@ -546,6 +524,7 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
             sessionId: null,
             initialized: false,
             generation: health.generation,
+            commandCatalog: null,
           };
         }
         const live = relay; // narrowed non-null for the closures below
@@ -558,6 +537,7 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
         live.initialized = gen.initialized;
         live.sessionId = gen.sessionId;
         live.generation = health.generation ?? live.generation;
+        if (regenerated) live.commandCatalog = null;
         if (key) {
           threadRelays.set(key, live);
           retainForThread = true;
@@ -597,18 +577,25 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
 
         // Live translation state (reference bot contract: call → step, update → enrich).
         const toolSteps = new Map<string, string>(); // toolCallId → persisted step id
-        const toolCalls = new Map<string, Record<string, unknown>>(); // toolCallId → last tool_call payload
+        const toolCalls = new Map<
+          string,
+          { update: Record<string, unknown>; native: AcpToolNativeIds }
+        >();
         let finalText = "";
 
-        // Durable native capture of the assistant's TEXT so the canonical lane emits
-        // message.started/delta/completed for ACP too (parity with opencode's part.text frames -
-        // the translator's message.* branches key off eventType `part.step-start`/`part.text`/
-        // `part.step-finish` carrying a nativeMessageId). One assistant message per turn (this
-        // run); tool calls stay separate step-lane events. This ONLY adds provider_events - the
-        // live `publishDelta` stream and the legacy step/summary reply are unchanged.
-        const assistantMsgId = `msg_${ctx.runId}`;
-        let msgStarted = false;
-        const recordAcpTextFrame = (id: string, eventType: string, payload: Record<string, unknown>): void => {
+        // ACP streams chunks but does not assign assistant-message ids. Synthesize one stable
+        // message/part per CONTIGUOUS text burst: every chunk within a burst UPSERTS the same
+        // cumulative part; a tool call closes the burst, gets its own ordering anchor, and later
+        // text starts a new burst. This preserves narration -> tool -> answer order without ever
+        // regressing to one React node per token/chunk.
+        let nextTextBurst = 0;
+        let activeTextBurst: { messageId: string; partId: string; text: string } | null = null;
+        const recordAcpFrame = (
+          id: string,
+          eventType: string,
+          payload: Record<string, unknown>,
+          native: { messageId: string; partId: string },
+        ): void => {
           void recordProviderEvent({
             id,
             runId: ctx.runId,
@@ -616,10 +603,21 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
             provider: cfg.id,
             eventType,
             nativeSessionId: live.sessionId ?? ctx.runId,
-            nativeMessageId: assistantMsgId,
-            nativePartId: id,
+            nativeMessageId: native.messageId,
+            nativePartId: native.partId,
             payload,
           });
+        };
+        const closeTextBurst = (): void => {
+          if (!activeTextBurst) return;
+          const burst = activeTextBurst;
+          recordAcpFrame(
+            `${burst.messageId}_finish`,
+            "part.step-finish",
+            {},
+            { messageId: burst.messageId, partId: `${burst.messageId}_finish` },
+          );
+          activeTextBurst = null;
         };
 
         const handleUpdate = async (params: Record<string, unknown>): Promise<void> => {
@@ -677,9 +675,15 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
             // and now finds none). The command capability is simply unavailable for this session
             // until it re-advertises; core chat is unaffected.
             if (!persisted) {
+              if (live.commandCatalog?.sessionId === sessionId) live.commandCatalog = null;
               console.error(`[acp:${cfg.id}] command catalog NOT persisted after retries (run ${ctx.runId}) - command capability DEGRADED for session ${sessionId.slice(0, 8)}`);
               void ctx.emit({ kind: "task", label: "Native commands unavailable for this session (catalog could not be persisted)", chip: "warning" });
             } else {
+              // This is the provider's CURRENT replacement snapshot for the
+              // resident child generation. Keep it outside the DB projection so
+              // send-time revalidation cannot accidentally read yesterday's
+              // canonical catalog and call it live.
+              live.commandCatalog = { sessionId, commands: snapshot };
               // Keep the ORG New Task priming cache SEPARATE from authoritative session state:
               // upsert only a NON-empty snapshot (a transient empty frame must not wipe the
               // pre-session picker). Fire-and-forget: a caching failure never disturbs the turn.
@@ -692,24 +696,45 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
             if (typeof text === "string" && text) {
               finalText += text;
               ctx.publishDelta?.(text);
-              // durable capture: step-start once, then ONE stable text part UPSERTED with the
-              // CUMULATIVE text on every chunk (exactly like opencode's growing part.text). The
-              // canonical/live reducers dedupe message.delta by nativePartId (latest text wins), so
-              // one coherent assistant text block renders - NOT one line per chunk. (A distinct
-              // partId per chunk was the token-per-line bug.)
-              if (!msgStarted) {
-                msgStarted = true;
-                recordAcpTextFrame(`${assistantMsgId}_start`, "part.step-start", {});
+              if (!activeTextBurst) {
+                const messageId = `msg_${ctx.runId}_text_${nextTextBurst++}`;
+                activeTextBurst = { messageId, partId: `${messageId}_text`, text: "" };
+                recordAcpFrame(
+                  `${messageId}_start`,
+                  "part.step-start",
+                  {},
+                  { messageId, partId: `${messageId}_start` },
+                );
               }
-              recordAcpTextFrame(`${assistantMsgId}_text`, "part.text", { text: finalText });
+              activeTextBurst.text += text;
+              recordAcpFrame(
+                activeTextBurst.partId,
+                "part.text",
+                { text: activeTextBurst.text },
+                { messageId: activeTextBurst.messageId, partId: activeTextBurst.partId },
+              );
             }
             return;
           }
           if (kind === "tool_call") {
             const tcid = String(u.toolCallId ?? "");
             if (!tcid || toolSteps.has(tcid)) return;
-            toolCalls.set(tcid, u);
-            const id = await ctx.emit(acpToolStep(u, undefined));
+            closeTextBurst();
+            const messageId = `msg_${ctx.runId}_tool_${tcid}`;
+            const native = {
+              sessionID: live.sessionId ?? ctx.runId,
+              messageID: messageId,
+              partID: `${messageId}_part`,
+              callID: tcid,
+            } satisfies AcpToolNativeIds;
+            recordAcpFrame(
+              `${messageId}_start`,
+              "part.step-start",
+              {},
+              { messageId, partId: `${messageId}_start` },
+            );
+            toolCalls.set(tcid, { update: u, native });
+            const id = await ctx.emit(buildAcpToolStep(u, undefined, native));
             if (id) toolSteps.set(tcid, id);
             return;
           }
@@ -717,7 +742,8 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
             const tcid = String(u.toolCallId ?? "");
             const status = String(u.status ?? "");
             if (!tcid || (status !== "completed" && status !== "failed")) return;
-            const call = toolCalls.get(tcid) ?? u;
+            const recorded = toolCalls.get(tcid);
+            const call = recorded?.update ?? u;
             const stepId = toolSteps.get(tcid);
             const output = acpContentText(u.content);
             if (stepId) {
@@ -727,7 +753,20 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
                 input: (call.rawInput ?? {}) as Record<string, unknown>,
                 output: output.slice(0, 2000),
                 status,
+                ...(recorded ? { native: recorded.native } : {}),
+                ...(status === "failed" ? { error: true } : {}),
               });
+            }
+            if (recorded) {
+              recordAcpFrame(
+                `${recorded.native.messageID}_finish`,
+                "part.step-finish",
+                {},
+                {
+                  messageId: recorded.native.messageID,
+                  partId: `${recorded.native.messageID}_finish`,
+                },
+              );
             }
             return;
           }
@@ -860,19 +899,19 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
             resumed = false;
           }
           live.sessionId = sessionId;
+          if (live.commandCatalog?.sessionId !== sessionId) live.commandCatalog = null;
           ctx.saveEngineSessionId?.(sessionId);
 
           // C3/D4 fail-closed re-validation IMMEDIATELY before dispatch: a native command must STILL
-          // be authorized against the LIVE session. Re-check, against the session's current durable
+          // be authorized against the LIVE session. Re-check against the resident provider's current
           // catalog: provider (matches the engine), session identity (session/load failed -> a new
           // session, or the relay regenerated to a different id), and command MEMBERSHIP (the command
           // is still advertised - a re-advertised session that dropped it, or an authorized revision
           // that regressed, is rejected). An ordinary prompt is unaffected (no commandName).
           if (ctx.commandName) {
-            const liveCatalog = await readSessionCommandCatalog(ctx.threadId ?? ctx.runId, sessionId);
             const reason = revalidateCommandBeforeDispatch(
               { name: ctx.commandName, provider: ctx.commandProvider ?? null, sessionId: ctx.commandSessionId ?? null, catalogRevision: ctx.commandCatalogRevision ?? null },
-              { engine: cfg.id, sessionId, catalog: liveCatalog?.commands ?? null, revision: liveCatalog?.revision ?? null },
+              { engine: cfg.id, sessionId, catalog: live.commandCatalog?.commands ?? null },
             );
             if (reason) {
               throw new Error(`stale command "/${ctx.commandName}" rejected before dispatch: ${reason} - re-issue it against the current session`);
@@ -919,8 +958,8 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
           await pump;
         }
 
-        // close the durable assistant message so the canonical lane emits message.completed
-        if (msgStarted) recordAcpTextFrame(`${assistantMsgId}_finish`, "part.step-finish", {});
+        // Close the final durable assistant burst so canonical emits message.completed.
+        closeTextBurst();
         if (finalText.trim()) {
           await ctx.emit({ kind: "task", label: truncate(finalText, 60), chip: "task" });
         }

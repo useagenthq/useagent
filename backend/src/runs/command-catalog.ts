@@ -77,11 +77,14 @@ export interface SessionCommandCatalog {
 }
 export async function readSessionCommandCatalog(
   threadId: string,
+  provider: string,
   sessionId: string,
 ): Promise<SessionCommandCatalog | null> {
   const rows = (await db.execute(sql`
     select body, delivery_seq from canonical_events
-    where thread_id = ${threadId} and kind = 'commands.updated' and identity->>'nativeSessionId' = ${sessionId}
+    where thread_id = ${threadId} and kind = 'commands.updated'
+      and identity->>'provider' = ${provider}
+      and identity->>'nativeSessionId' = ${sessionId}
     order by delivery_seq desc limit 1`)) as unknown as Array<{ body: { catalog?: unknown; commands?: unknown }; delivery_seq: number | string }>;
   const row = rows[0];
   if (!row?.body) return null;

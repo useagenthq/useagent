@@ -9,19 +9,18 @@
 // malicious repo it runs) can read the key from its own environment and
 // exfiltrate it / burn the operator's account. This is NOT resolved here; the
 // SaaS-safe fix is the trusted provider gateway/broker (#121) that keeps host
-// keys OUT of the sandbox entirely. Until it lands we do the one honest thing we
-// can: inject the SMALLEST possible surface - exactly the single key the run's
-// engine+model actually reads, never the full provider set - and let
-// secret-audit-live.ts FAIL while any host key is still present.
+// keys OUT of the sandbox entirely. Until it lands, host keys stay OUT by
+// default; a verified-development-only escape hatch may inject the SMALLEST
+// possible surface - exactly the single key the run's engine+model reads.
 // ---------------------------------------------------------------------------
 
 /** Options for {@link hostProviderEnv}. */
 export interface HostProviderEnvOpts {
   /** Env to read the raw keys from (injectable for tests). Defaults to process.env. */
   readonly env?: Record<string, string | undefined>;
-  /** Whether the DEV-ONLY host-key escape hatch is open (verified-dev yolo). For
-   *  the ACP/CLI claude+codex engines the host key is injected ONLY when true;
-   *  production (false) injects nothing and relies on per-tenant org secrets. */
+  /** Whether the DEV-ONLY host-key escape hatch is open (verified-dev yolo).
+   *  Every engine injects a host key ONLY when true; production relies on
+   *  per-tenant org secrets until the trusted broker lands. */
   readonly allowHostKeys?: boolean;
 }
 
@@ -31,9 +30,9 @@ export interface HostProviderEnvOpts {
  *   - opencode/daytona: opencode routes a slug like "anthropic/claude-…" via
  *     OpenRouter and a bare "claude-…" via the direct Anthropic provider (see
  *     opencode-server.ts modelBody), reading ONLY the matching key - so inject
- *     ONLY that one. opencode is the resident DEFAULT engine with no org-secret
- *     path into its own serve process yet, so this host key is injected
- *     unconditionally (the unresolved #121 risk, minimized to a single key).
+ *     ONLY that one, and only when `allowHostKeys` opens the dev escape hatch.
+ *     Org secrets are sourced through BASH_ENV by the shell that launches the
+ *     resident server, so production does not need an operator key in the box.
  *   - claude / claude-sdk: reads ANTHROPIC_API_KEY. DEV-ONLY (allowHostKeys);
  *     prod uses the org secret / trusted gateway (#121).
  *   - codex: authenticates from OPENAI_API_KEY (`codex login --with-api-key`).
@@ -55,8 +54,10 @@ export function hostProviderEnv(
   switch (engine) {
     case "opencode":
     case "daytona":
-      if ((model ?? "").includes("/")) put("OPENROUTER_API_KEY");
-      else put("ANTHROPIC_API_KEY");
+      if (opts.allowHostKeys) {
+        if ((model ?? "").includes("/")) put("OPENROUTER_API_KEY");
+        else put("ANTHROPIC_API_KEY");
+      }
       break;
     case "claude":
     case "claude-sdk":

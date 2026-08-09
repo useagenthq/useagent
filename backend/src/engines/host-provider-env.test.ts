@@ -11,20 +11,25 @@ const FULL = {
 } as const;
 
 describe("hostProviderEnv (minimal host-key injection surface)", () => {
-  test("opencode + OpenRouter slug -> ONLY OpenRouter (never Anthropic/OpenAI/Daytona)", () => {
-    expect(hostProviderEnv("opencode", "anthropic/claude-haiku-4.5", { env: FULL })).toEqual({
+  test("opencode host keys are default-off and DEV-ONLY like every other engine", () => {
+    expect(hostProviderEnv("opencode", "anthropic/claude-haiku-4.5", { env: FULL })).toEqual({});
+    expect(hostProviderEnv("opencode", "anthropic/claude-haiku-4.5", { env: FULL, allowHostKeys: false })).toEqual({});
+  });
+
+  test("opencode + OpenRouter slug -> ONLY OpenRouter when the dev escape hatch is explicit", () => {
+    expect(hostProviderEnv("opencode", "anthropic/claude-haiku-4.5", { env: FULL, allowHostKeys: true })).toEqual({
       OPENROUTER_API_KEY: "sk-or-yyy",
     });
   });
 
-  test("opencode + bare model name -> ONLY the direct Anthropic key", () => {
-    expect(hostProviderEnv("opencode", "claude-haiku-4-5", { env: FULL })).toEqual({
+  test("opencode + bare model name -> ONLY the direct Anthropic key in dev", () => {
+    expect(hostProviderEnv("opencode", "claude-haiku-4-5", { env: FULL, allowHostKeys: true })).toEqual({
       ANTHROPIC_API_KEY: "sk-ant-xxx",
     });
   });
 
   test("daytona alias behaves like opencode", () => {
-    expect(hostProviderEnv("daytona", "openai/gpt-5", { env: FULL })).toEqual({
+    expect(hostProviderEnv("daytona", "openai/gpt-5", { env: FULL, allowHostKeys: true })).toEqual({
       OPENROUTER_API_KEY: "sk-or-yyy",
     });
   });
@@ -62,8 +67,8 @@ describe("hostProviderEnv (minimal host-key injection surface)", () => {
   });
 
   test("a missing key is omitted, not injected empty", () => {
-    expect(hostProviderEnv("opencode", "anthropic/claude", { env: { ANTHROPIC_API_KEY: "x" } })).toEqual({});
-    expect(hostProviderEnv("opencode", "anthropic/claude", { env: { OPENROUTER_API_KEY: "" } })).toEqual({});
+    expect(hostProviderEnv("opencode", "anthropic/claude", { env: { ANTHROPIC_API_KEY: "x" }, allowHostKeys: true })).toEqual({});
+    expect(hostProviderEnv("opencode", "anthropic/claude", { env: { OPENROUTER_API_KEY: "" }, allowHostKeys: true })).toEqual({});
   });
 
   test("an unknown engine injects nothing (fail closed)", () => {

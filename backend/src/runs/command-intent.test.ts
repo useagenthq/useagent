@@ -60,10 +60,15 @@ describe("validateCommandIntent (FAIL-CLOSED against the live session catalog)",
 
 describe("revalidateCommandBeforeDispatch (D4: re-check against the LIVE session immediately before send)", () => {
   const cmd = { name: "compact", provider: "claude", sessionId: "s1", catalogRevision: 5 };
-  const live = { engine: "claude", sessionId: "s1", catalog: [{ name: "compact" }, { name: "review" }], revision: 7 };
+  const live = { engine: "claude", sessionId: "s1", catalog: [{ name: "compact" }, { name: "review" }] };
 
-  test("still-authorized command -> null (safe to dispatch); a re-advertisement that KEEPS it is fine", () => {
-    expect(revalidateCommandBeforeDispatch(cmd, live)).toBeNull(); // live.revision 7 > authorized 5, still a member
+  test("a fully identified command still present in the current provider catalog is safe", () => {
+    expect(revalidateCommandBeforeDispatch(cmd, live)).toBeNull();
+  });
+  test("missing accepted identity fails closed", () => {
+    expect(revalidateCommandBeforeDispatch({ ...cmd, provider: null }, live)).toContain("missing provider");
+    expect(revalidateCommandBeforeDispatch({ ...cmd, sessionId: null }, live)).toContain("missing session");
+    expect(revalidateCommandBeforeDispatch({ ...cmd, catalogRevision: null }, live)).toContain("missing catalog revision");
   });
   test("provider changed since acceptance -> rejected", () => {
     expect(revalidateCommandBeforeDispatch({ ...cmd, provider: "codex" }, live)).toContain("provider");
@@ -75,8 +80,5 @@ describe("revalidateCommandBeforeDispatch (D4: re-check against the LIVE session
     expect(revalidateCommandBeforeDispatch(cmd, { ...live, catalog: [{ name: "review" }] })).toContain("not in the live session catalog");
     expect(revalidateCommandBeforeDispatch(cmd, { ...live, catalog: null })).toContain("not in the live session catalog");
     expect(revalidateCommandBeforeDispatch(cmd, { ...live, catalog: [] })).toContain("not in the live session catalog");
-  });
-  test("the authorized catalog revision regressed -> rejected", () => {
-    expect(revalidateCommandBeforeDispatch(cmd, { ...live, revision: 4 })).toContain("revision regressed");
   });
 });

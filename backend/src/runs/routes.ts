@@ -67,10 +67,10 @@ runsRoutes.post("/", async (c) => {
   const prompt = typeof body.prompt === "string" ? body.prompt.trim() : "";
   if (!prompt) return c.json({ error: "prompt is required" }, 400);
 
-  const model =
+  const requestedModel =
     typeof body.model === "string" && body.model.trim()
       ? body.model.trim()
-      : "claude-opus-5";
+      : null;
 
   // Engine is optional; default to the scripted `mock`. An explicit unknown
   // value is a client error rather than a silent fallback.
@@ -101,6 +101,7 @@ runsRoutes.post("/", async (c) => {
   let threadId: string = id;
   let inheritedRepos: string[] = [];
   let parentScope: MemoryScope | null = null;
+  let parentModel: string | null = null;
   // The ACTIVE native session this turn resumes, derived SERVER-SIDE from the parent run (a
   // reply resumes the thread's live session). A native-command intent's client-supplied session
   // id is validated against THIS, never trusted on its own.
@@ -117,8 +118,12 @@ runsRoutes.post("/", async (c) => {
     threadId = parent.threadId;
     inheritedRepos = parent.repos;
     parentScope = parent.memoryScope;
+    parentModel = parent.model;
     activeSessionId = parent.engineSessionId ?? null;
   }
+  // A reply whose UI has no model-selection capability omits `model`; inherit
+  // the thread's stored model instead of silently resetting to a global default.
+  const model = requestedModel ?? parentModel ?? "claude-opus-5";
 
   // Repo scope: a ROOT run may pick REPOSITORIES (each validated against the set
   // GET /api/repos actually offers — an unknown/malformed value is a client
@@ -244,7 +249,7 @@ runsRoutes.post("/", async (c) => {
     // with its snapshot revision). The pre-session org priming cache is UI-ONLY and NEVER
     // authorizes execution - so with no active session, or a session that has not advertised, the
     // command is rejected. The client must also prove the session id + catalog revision it saw.
-    const sessionCatalog = activeSessionId ? await readSessionCommandCatalog(threadId, activeSessionId) : null;
+    const sessionCatalog = activeSessionId ? await readSessionCommandCatalog(threadId, engine, activeSessionId) : null;
     const v = validateCommandIntent(intent, sessionCatalog?.commands ?? [], {
       sessionId: activeSessionId,
       revision: sessionCatalog?.revision ?? null,
