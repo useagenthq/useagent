@@ -19,12 +19,13 @@ describe("sessionCapabilities (truthful per-engine + resource-driven)", () => {
     }
   });
 
-  test("OpenCode-only truths: nativeEmbed, plans, usage, reconcile; ACP: close", () => {
+  test("OpenCode-only truths: nativeEmbed, plans, usage, reconcile, modelSelection; ACP: close", () => {
     const oc = sessionCapabilities("opencode", res);
     expect(oc.nativeEmbed).toBe(true);
     expect(oc.plans).toBe(true);
     expect(oc.usage).toBe(true);
     expect(oc.reconcile).toBe(true);
+    expect(oc.modelSelection).toBe(true); // opencode is an any-model sandbox
     expect(oc.close).toBe(false); // opencode stays resident
 
     for (const e of ["claude", "codex"]) {
@@ -33,6 +34,7 @@ describe("sessionCapabilities (truthful per-engine + resource-driven)", () => {
       expect(c.plans).toBe(false);
       expect(c.usage).toBe(false);
       expect(c.reconcile).toBe(false); // ACP control adapter is unsupported
+      expect(c.modelSelection).toBe(false); // ACP runs a fixed model - no fake model picker
       expect(c.close).toBe(true);
     }
   });

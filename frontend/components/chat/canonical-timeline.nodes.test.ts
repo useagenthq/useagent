@@ -96,6 +96,33 @@ describe("canonical<->legacy node equivalence (synthetic text / markers / child)
     expect(canon).toEqual(legacy);
   });
 
+  // D1: ACP records ONE text part per assistant message (stable partId), UPSERTED with the
+  // cumulative text on every chunk. provider_events therefore holds ONE row (the final text), so
+  // canonicalization emits ONE message.delta -> ONE coherent text node with the EXACT full text -
+  // never one node per token/chunk (the token-per-line bug).
+  test("ACP cumulative one-part text renders ONE coherent block with the exact full text", () => {
+    const frames: F[] = [
+      frame({ eventType: "part.step-start", seq: 0, native: { messageId: "m1", partId: "msg_r_start" } }),
+      frame({ eventType: "part.text", seq: 1, native: { messageId: "m1", partId: "msg_r_text" }, payload: { text: "DONE C6MARK exact coherent text" } }),
+      frame({ eventType: "part.step-finish", seq: 2, native: { messageId: "m1", partId: "msg_r_finish" } }),
+    ];
+    const { canon } = bothWays(frames, []);
+    const text = canon.filter((n) => n.kind === "text");
+    expect(text.length).toBe(1); // ONE block, not one-per-chunk
+    expect((text[0] as { text: string }).text).toBe("DONE C6MARK exact coherent text"); // exact
+  });
+
+  test("REGRESSION: a distinct text part per chunk (the OLD token-per-line bug) fragments into N nodes", () => {
+    const frames: F[] = [
+      frame({ eventType: "part.step-start", seq: 0, native: { messageId: "m1", partId: "s" } }),
+      frame({ eventType: "part.text", seq: 1, native: { messageId: "m1", partId: "t0" }, payload: { text: "DONE " } }),
+      frame({ eventType: "part.text", seq: 2, native: { messageId: "m1", partId: "t1" }, payload: { text: "C6MARK" } }),
+      frame({ eventType: "part.step-finish", seq: 3, native: { messageId: "m1", partId: "f" } }),
+    ];
+    const { canon } = bothWays(frames, []);
+    expect(canon.filter((n) => n.kind === "text").length).toBe(2); // fragmented - what the fix removes
+  });
+
   test("child/subagent text is routed OUT of the main timeline (only the parent tool row remains)", () => {
     const frames: F[] = [
       frame({ eventType: "part.step-start", seq: 0, native: { messageId: "m1", partId: "ps1" } }),

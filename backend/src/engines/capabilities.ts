@@ -38,6 +38,8 @@ export function sessionCapabilities(engine: string, res: CapabilityResources): N
     // Honest per-engine differences:
     plans: isOpencode, // only opencode emits plan.updated today
     usage: isOpencode, // only opencode captures step-finish usage today
+    modelSelection: isOpencode, // only opencode is an any-model sandbox; ACP engines run a fixed model
+
     reconcile: isOpencode, // opencode has authoritative-history reconcile; ACP control adapter is unsupported
     close: !isOpencode, // ACP session/close; opencode stays resident
     nativeEmbed: isOpencode, // only opencode has the native web-app embed (Live)

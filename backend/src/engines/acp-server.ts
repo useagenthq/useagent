@@ -613,7 +613,6 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
         // run); tool calls stay separate step-lane events. This ONLY adds provider_events - the
         // live `publishDelta` stream and the legacy step/summary reply are unchanged.
         const assistantMsgId = `msg_${ctx.runId}`;
-        let textPartN = 0;
         let msgStarted = false;
         const recordAcpTextFrame = (id: string, eventType: string, payload: Record<string, unknown>): void => {
           void recordProviderEvent({
@@ -699,12 +698,16 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
             if (typeof text === "string" && text) {
               finalText += text;
               ctx.publishDelta?.(text);
-              // durable capture: step-start once, then a part.text per chunk (message.delta)
+              // durable capture: step-start once, then ONE stable text part UPSERTED with the
+              // CUMULATIVE text on every chunk (exactly like opencode's growing part.text). The
+              // canonical/live reducers dedupe message.delta by nativePartId (latest text wins), so
+              // one coherent assistant text block renders - NOT one line per chunk. (A distinct
+              // partId per chunk was the token-per-line bug.)
               if (!msgStarted) {
                 msgStarted = true;
                 recordAcpTextFrame(`${assistantMsgId}_start`, "part.step-start", {});
               }
-              recordAcpTextFrame(`${assistantMsgId}_t${textPartN++}`, "part.text", { text });
+              recordAcpTextFrame(`${assistantMsgId}_text`, "part.text", { text: finalText });
             }
             return;
           }
