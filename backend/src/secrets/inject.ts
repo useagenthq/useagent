@@ -77,6 +77,15 @@ export interface SecretInjection {
 
 const EMPTY: SecretInjection = { createEnv: {}, files: [], names: [] };
 
+const LEGACY_GCP_CREDENTIAL = "GCP_SERVICE_ACCOUNT_KEY";
+const GOOGLE_APPLICATION_CREDENTIALS = "GOOGLE_APPLICATION_CREDENTIALS";
+const GOOGLE_PROJECT_ENV_NAMES = [
+  "GOOGLE_CLOUD_PROJECT",
+  "GCLOUD_PROJECT",
+  "CLOUDSDK_CORE_PROJECT",
+] as const;
+const GOOGLE_PROJECT_ID_RE = /^[a-z][a-z0-9-]{4,28}[a-z0-9]$/;
+
 /** Provider credentials never cross into an untrusted sandbox. */
 export const PROVIDER_SECRET_NAMES = new Set([
   "ANTHROPIC_API_KEY",
@@ -106,6 +115,21 @@ function shellExport(name: string, value: string): string {
   return `export ${name}='${value.replace(/'/g, "'\\''")}'`;
 }
 
+/** Read the standard project_id embedded in a Google service-account JSON file.
+ *  Invalid JSON and non-project credential files intentionally produce no aliases. */
+function googleProjectId(value: string): string | null {
+  try {
+    const parsed: unknown = JSON.parse(value);
+    if (!parsed || typeof parsed !== "object" || !("project_id" in parsed)) return null;
+    const projectId = (parsed as { project_id?: unknown }).project_id;
+    return typeof projectId === "string" && GOOGLE_PROJECT_ID_RE.test(projectId)
+      ? projectId
+      : null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Map decrypted secrets to an injection: a 0600 dotenv of `export NAME='value'`
  * lines (file-kind exports point at the materialized file's path) plus the
@@ -124,6 +148,7 @@ export function buildInjection(
   if (included.length === 0) return { createEnv: {}, files: [], names: [] };
   const files: SecretFile[] = [];
   const lines: string[] = [];
+  const includedNames = new Set(included.map((secret) => secret.name));
   for (const s of included) {
     if (s.kind === "file") {
       const path = `${SECRET_FILE_DIR}/${s.name}`;
@@ -133,6 +158,38 @@ export function buildInjection(
       lines.push(shellExport(s.name, s.value));
     }
   }
+
+  // Historical imports named the Google service-account file
+  // GCP_SERVICE_ACCOUNT_KEY. Keep that name available while also exporting the
+  // standard variables Google SDKs and CLIs discover automatically. An explicit
+  // canonical secret always wins, so this compatibility seam cannot override an
+  // administrator's configuration.
+  const canonicalGoogleCredential = included.find(
+    (secret) => secret.name === GOOGLE_APPLICATION_CREDENTIALS,
+  );
+  const legacyGoogleCredential = included.find(
+    (secret) => secret.name === LEGACY_GCP_CREDENTIAL && secret.kind === "file",
+  );
+  if (!canonicalGoogleCredential && legacyGoogleCredential) {
+    lines.push(
+      shellExport(
+        GOOGLE_APPLICATION_CREDENTIALS,
+        `${SECRET_FILE_DIR}/${LEGACY_GCP_CREDENTIAL}`,
+      ),
+    );
+  }
+
+  const effectiveGoogleCredential = canonicalGoogleCredential ?? legacyGoogleCredential;
+  const projectId =
+    effectiveGoogleCredential?.kind === "file"
+      ? googleProjectId(effectiveGoogleCredential.value)
+      : null;
+  if (projectId) {
+    for (const name of GOOGLE_PROJECT_ENV_NAMES) {
+      if (!includedNames.has(name)) lines.push(shellExport(name, projectId));
+    }
+  }
+
   // The dotenv is written FIRST (BASH_ENV points at it); a trailing newline keeps
   // the last export well-formed.
   files.unshift({ path: SECRET_DOTENV_PATH, content: `${lines.join("\n")}\n` });

@@ -330,6 +330,78 @@ describe("secrets — file kind (materialized to a sandbox file, env var = path)
     expect(injection.files).toContainEqual({ path: `${SECRET_FILE_DIR}/SA_JSON`, content: '{"k":"v"}' });
   });
 
+  test("legacy GCP service-account file receives canonical credential and project aliases", () => {
+    const value = JSON.stringify({
+      type: "service_account",
+      project_id: "skynet-production",
+      private_key: "redacted",
+    });
+    const injection = buildInjection({
+      secrets: [{ name: "GCP_SERVICE_ACCOUNT_KEY", kind: "file", value }],
+      names: ["GCP_SERVICE_ACCOUNT_KEY"],
+      skipped: [],
+    });
+    const path = `${SECRET_FILE_DIR}/GCP_SERVICE_ACCOUNT_KEY`;
+    const dotenv = injection.files.find((file) => file.path === SECRET_DOTENV_PATH)?.content ?? "";
+
+    expect(dotenv).toContain(`export GCP_SERVICE_ACCOUNT_KEY='${path}'`);
+    expect(dotenv).toContain(`export GOOGLE_APPLICATION_CREDENTIALS='${path}'`);
+    expect(dotenv).toContain("export GOOGLE_CLOUD_PROJECT='skynet-production'");
+    expect(dotenv).toContain("export GCLOUD_PROJECT='skynet-production'");
+    expect(dotenv).toContain("export CLOUDSDK_CORE_PROJECT='skynet-production'");
+    expect(injection.files).toContainEqual({ path, content: value });
+    expect(injection.names).toEqual(["GCP_SERVICE_ACCOUNT_KEY"]);
+  });
+
+  test("explicit canonical Google configuration wins over compatibility aliases", () => {
+    const legacy = JSON.stringify({ type: "service_account", project_id: "legacy-project" });
+    const canonical = JSON.stringify({ type: "service_account", project_id: "canonical-project" });
+    const injection = buildInjection({
+      secrets: [
+        { name: "GCP_SERVICE_ACCOUNT_KEY", kind: "file", value: legacy },
+        { name: "GOOGLE_APPLICATION_CREDENTIALS", kind: "file", value: canonical },
+        { name: "GOOGLE_CLOUD_PROJECT", kind: "env", value: "explicit-project" },
+      ],
+      names: [
+        "GCP_SERVICE_ACCOUNT_KEY",
+        "GOOGLE_APPLICATION_CREDENTIALS",
+        "GOOGLE_CLOUD_PROJECT",
+      ],
+      skipped: [],
+    });
+    const dotenv = injection.files.find((file) => file.path === SECRET_DOTENV_PATH)?.content ?? "";
+
+    expect(dotenv.match(/export GOOGLE_APPLICATION_CREDENTIALS=/g)).toHaveLength(1);
+    expect(dotenv).toContain(
+      `export GOOGLE_APPLICATION_CREDENTIALS='${SECRET_FILE_DIR}/GOOGLE_APPLICATION_CREDENTIALS'`,
+    );
+    expect(dotenv.match(/export GOOGLE_CLOUD_PROJECT=/g)).toHaveLength(1);
+    expect(dotenv).toContain("export GOOGLE_CLOUD_PROJECT='explicit-project'");
+    expect(dotenv).toContain("export GCLOUD_PROJECT='canonical-project'");
+    expect(dotenv).toContain("export CLOUDSDK_CORE_PROJECT='canonical-project'");
+    expect(dotenv).not.toContain("GCLOUD_PROJECT='legacy-project'");
+  });
+
+  test("a malformed or env-kind legacy GCP value does not invent Google project configuration", () => {
+    const malformed = buildInjection({
+      secrets: [{ name: "GCP_SERVICE_ACCOUNT_KEY", kind: "file", value: "not-json" }],
+      names: ["GCP_SERVICE_ACCOUNT_KEY"],
+      skipped: [],
+    });
+    const envKind = buildInjection({
+      secrets: [{ name: "GCP_SERVICE_ACCOUNT_KEY", kind: "env", value: "not-a-file" }],
+      names: ["GCP_SERVICE_ACCOUNT_KEY"],
+      skipped: [],
+    });
+    const malformedDotenv = malformed.files.find((file) => file.path === SECRET_DOTENV_PATH)?.content ?? "";
+    const envDotenv = envKind.files.find((file) => file.path === SECRET_DOTENV_PATH)?.content ?? "";
+
+    expect(malformedDotenv).toContain("GOOGLE_APPLICATION_CREDENTIALS=");
+    expect(malformedDotenv).not.toContain("GOOGLE_CLOUD_PROJECT=");
+    expect(envDotenv).not.toContain("GOOGLE_APPLICATION_CREDENTIALS=");
+    expect(envDotenv).not.toContain("GOOGLE_CLOUD_PROJECT=");
+  });
+
   test("buildInjection with no secrets → empty createEnv + no files", () => {
     const injection = buildInjection({ secrets: [], names: [], skipped: [] });
     expect(injection.createEnv).toEqual({});
