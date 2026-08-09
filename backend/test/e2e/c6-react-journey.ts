@@ -40,6 +40,11 @@ const DIST = `.next-c6-${ENGINE}`;
 const ORIGIN = "http://localhost:3200";
 const BUDGET_MS = Number(process.env.E2E_TERMINAL_MS ?? (ENGINE === "opencode" ? 240_000 : 420_000));
 const MARKER = `C6MARK_${ENGINE}`;
+// The EXACT assistant reply the agent is told to produce. The C6 pass criterion is that a single
+// rendered assistant text node EQUALS this string (not that the timeline merely CONTAINS the
+// marker) - which also proves D1: the cumulative ACP text is ONE coherent node, since a
+// token-per-line regression would render N fragments and NO single node would equal the full reply.
+const ANSWER = `DONE${MARKER}`;
 const backendDir = new URL("../..", import.meta.url).pathname;
 const frontendDir = new URL("../../../frontend", import.meta.url).pathname;
 const scratch = process.env.SCRATCH_DIR ?? "/tmp";
@@ -90,6 +95,9 @@ const timelineSource = (p: Page) => p.$$eval("[data-timeline-source]", (els) => 
 const runIds = (p: Page) => p.$$eval("[data-run-id]", (els) => els.map((e) => (e as HTMLElement).getAttribute("data-run-id") ?? ""));
 const toolCount = (p: Page) => p.$$eval('[data-testid="tool-row"]', (els) => els.length).catch(() => 0);
 const timelineText = (p: Page) => p.$$eval('[data-testid="turn-block"]', (els) => els.map((e) => (e as HTMLElement).innerText).join("\n")).catch(() => "");
+// The trimmed text of every rendered assistant answer node (TextBurst -> data-testid="agent-answer").
+// EXACT-equality against ANSWER (not a substring of the whole timeline) is the C6 pass criterion.
+const answerTexts = (p: Page) => p.$$eval('[data-testid="agent-answer"]', (els) => els.map((e) => ((e as HTMLElement).innerText ?? "").trim())).catch(() => [] as string[]);
 async function shot(page: Page, name: string) { await page.screenshot({ path: `${SHOTS}${ENGINE}-${name}.png`, fullPage: true }).catch(() => {}); }
 async function waitCanonical(page: Page, budgetMs = 60_000) {
   const deadline = Date.now() + budgetMs;
@@ -207,9 +215,19 @@ try {
   } else {
     pass("turn 1 completed on a REAL sandbox", settled?.status === "completed", `status=${settled?.status} sandbox=${short(box1)}`);
     await waitCanonical(page, 90_000);
-    const text1 = await timelineText(page);
+    // wait for the assistant answer node to actually carry the exact reply (streaming settles a
+    // moment after the run row goes terminal). Poll the exact-equality condition, not a substring.
+    let answers1: string[] = [];
+    for (let i = 0; i < 30; i++) { answers1 = await answerTexts(page); if (answers1.includes(ANSWER)) break; await sleep(1000); }
     const tools1 = await toolCount(page);
-    pass("React shows streaming assistant text (marker rendered)", text1.includes(MARKER), text1.includes(MARKER) ? "marker present" : "marker MISSING");
+    // EXACT rendered text: some assistant answer node EQUALS "DONEC6MARK_<engine>" - a coherent
+    // single node (D1), not the marker merely appearing somewhere (which the echoed tool output or
+    // a token-per-line fragment stream would also satisfy).
+    pass(
+      "React renders the EXACT assistant reply as one coherent node (not a substring/fragments)",
+      answers1.includes(ANSWER),
+      answers1.includes(ANSWER) ? `answer node == "${ANSWER}"` : `no answer node equals "${ANSWER}"; nodes=${JSON.stringify(answers1.slice(0, 6))}`,
+    );
     // tie the DOM tool-row assertion to backend truth: a tool row must render IFF a real tool step
     // exists. If the agent chose no tool this turn, that is honest (na), not a UI failure.
     const r1steps = ((await api(`/api/runs/${runId}`))?.steps as { kind?: string }[]) ?? [];
@@ -265,7 +283,11 @@ try {
     await page.reload({ waitUntil: "domcontentloaded" });
     await waitCanonical(page, 45_000);
     const ids = await runIds(page);
-    pass("reload: no duplicate/missing turns, marker persists", new Set(ids).size === ids.length && ids.includes(runId) && (await timelineText(page)).includes(MARKER), `ids=${ids.length}`);
+    // after reload the EXACT answer node must persist (built from canonical, not re-streamed) - the
+    // token-per-line regression re-hydrated as fragments here, so exact-equality guards it.
+    let answersR: string[] = [];
+    for (let i = 0; i < 20; i++) { answersR = await answerTexts(page); if (answersR.includes(ANSWER)) break; await sleep(1000); }
+    pass("reload: no duplicate/missing turns, EXACT answer node persists", new Set(ids).size === ids.length && ids.includes(runId) && answersR.includes(ANSWER), `ids=${ids.length} answerExact=${answersR.includes(ANSWER)}`);
     await shot(page, "4-reload");
 
     // ── 5. truthful surface states (capability-driven) ──
