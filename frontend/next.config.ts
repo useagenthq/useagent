@@ -1,4 +1,5 @@
 import type { NextConfig } from "next";
+import { PHASE_PRODUCTION_BUILD, PHASE_PRODUCTION_SERVER } from "next/constants";
 import { fileURLToPath } from "node:url";
 
 // Turbopack infers the project root as `frontend/`, but our shared libraries are
@@ -8,36 +9,48 @@ import { fileURLToPath } from "node:url";
 // sources resolve; transpilePackages has Turbopack transpile their raw TypeScript.
 const repositoryRoot = fileURLToPath(new URL("..", import.meta.url));
 
-const nextConfig: NextConfig = {
-  turbopack: {
-    root: repositoryRoot,
-    // root fixes symlink-following into ../packages, but shifts the node_modules base
-    // off frontend/; map the bare specifiers straight to the linked package sources.
-    // resolveAlias paths are relative to the PROJECT dir (frontend/), not the root.
-    resolveAlias: {
-      "@skynet/agent-client": "../packages/agent-client/src/index.ts",
-      "@skynet/agent-harness": "../packages/agent-harness/src/index.ts",
-      "@skynet/agent-harness/canonical": "../packages/agent-harness/src/canonical.ts",
-    },
-  },
-  transpilePackages: ["@skynet/agent-client", "@skynet/agent-harness"],
-  // Env-gated dist dir so an isolated verification build never clobbers a running dev
-  // server's `.next`. Defaults to the normal `.next` when unset.
-  distDir: process.env.SKYNET_BUILD_DIST || ".next",
-  // We maintain AGENTS.md by hand — stop Next 16 from regenerating it.
-  agentRules: false,
-  allowedDevOrigins: ["127.0.0.1"],
-  async rewrites() {
-    // Same override lib/backend-fetch.ts honors, so one env var retargets both
-    // the server-side fetches and this client-side rewrite (e.g. :3501 locally).
-    const origin = process.env.SKYNET_API_ORIGIN ?? "http://localhost:3201";
-    return [
-      {
-        source: "/api/:path*",
-        destination: `${origin}/api/:path*`,
-      },
-    ];
-  },
-};
+/**
+ * distDir isolation is MECHANICAL, not a convention. A `next build` / `next start`
+ * ALWAYS writes to a SEPARATE `.next-build` dir from the dev server's `.next`, so a
+ * production build can never poison (or be poisoned by) a running dev server's Turbopack
+ * cache - which is exactly what corrupted the compiled CSS and 500'd the dev server. The
+ * dev server keeps the conventional `.next`. `SKYNET_BUILD_DIST` still overrides for a
+ * caller that wants an explicitly-named isolated dir (e.g. a parallel E2E stack).
+ */
+function resolveDistDir(phase: string): string {
+  if (process.env.SKYNET_BUILD_DIST) return process.env.SKYNET_BUILD_DIST;
+  if (phase === PHASE_PRODUCTION_BUILD || phase === PHASE_PRODUCTION_SERVER) return ".next-build";
+  return ".next";
+}
 
-export default nextConfig;
+export default function nextConfig(phase: string): NextConfig {
+  return {
+    turbopack: {
+      root: repositoryRoot,
+      // root fixes symlink-following into ../packages, but shifts the node_modules base
+      // off frontend/; map the bare specifiers straight to the linked package sources.
+      // resolveAlias paths are relative to the PROJECT dir (frontend/), not the root.
+      resolveAlias: {
+        "@skynet/agent-client": "../packages/agent-client/src/index.ts",
+        "@skynet/agent-harness": "../packages/agent-harness/src/index.ts",
+        "@skynet/agent-harness/canonical": "../packages/agent-harness/src/canonical.ts",
+      },
+    },
+    transpilePackages: ["@skynet/agent-client", "@skynet/agent-harness"],
+    distDir: resolveDistDir(phase),
+    // We maintain AGENTS.md by hand — stop Next 16 from regenerating it.
+    agentRules: false,
+    allowedDevOrigins: ["127.0.0.1"],
+    async rewrites() {
+      // Same override lib/backend-fetch.ts honors, so one env var retargets both
+      // the server-side fetches and this client-side rewrite (e.g. :3501 locally).
+      const origin = process.env.SKYNET_API_ORIGIN ?? "http://localhost:3201";
+      return [
+        {
+          source: "/api/:path*",
+          destination: `${origin}/api/:path*`,
+        },
+      ];
+    },
+  };
+}

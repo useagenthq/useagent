@@ -5,6 +5,9 @@
 
 # next.js
 /.next/
+# isolated build/dev dirs (mechanical dev/build cache isolation; see next.config.ts)
+/.next-build/
+/.next-*/
 /out/
 next-env.d.ts
 
