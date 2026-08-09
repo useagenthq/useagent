@@ -7,7 +7,12 @@
 // a future refactor can't quietly reintroduce a PATH-based check.
 
 import { describe, expect, test } from "bun:test";
-import { buildAcpInstallClause, claudeAcpConfig, codexAcpConfig } from "./acp-server";
+import {
+  buildAcpInstallClause,
+  buildAcpRuntimeEnvExports,
+  claudeAcpConfig,
+  codexAcpConfig,
+} from "./acp-server";
 
 describe("ACP executable provisioning (#127)", () => {
   test("idempotency is keyed on the actual install path, not `command -v`", () => {
@@ -52,5 +57,28 @@ describe("ACP executable provisioning (#127)", () => {
     const clause = buildAcpInstallClause(codexAcpConfig.packages);
     expect(clause).toContain('[ -x "$HOME/.local/bin/codex-acp" ]');
     expect(clause).not.toContain("command -v");
+  });
+
+  test("runtime env exports refresh gateway endpoints while preserving $HOME expansion", () => {
+    const exports = buildAcpRuntimeEnvExports({
+      ANTHROPIC_BASE_URL: "https://gateway.example.test/api/provider/anthropic",
+      ANTHROPIC_MODEL: "claude-opus-5",
+      CLAUDE_CODE_EXECUTABLE: "$HOME/.local/bin/claude",
+    });
+
+    expect(exports).toContain(
+      "export ANTHROPIC_BASE_URL='https://gateway.example.test/api/provider/anthropic';",
+    );
+    expect(exports).toContain("export ANTHROPIC_MODEL='claude-opus-5';");
+    expect(exports).toContain('export CLAUDE_CODE_EXECUTABLE="$HOME/.local/bin/claude";');
+  });
+
+  test("runtime env exports reject invalid names and quote opaque values", () => {
+    expect(() => buildAcpRuntimeEnvExports({ "BAD-NAME": "value" })).toThrow(
+      "invalid ACP runtime environment name",
+    );
+    expect(buildAcpRuntimeEnvExports({ SAFE_VALUE: "a'b" })).toContain(
+      "export SAFE_VALUE='a'\\''b';",
+    );
   });
 });

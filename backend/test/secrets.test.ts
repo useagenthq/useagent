@@ -10,6 +10,7 @@ import {
   PROVIDER_SECRET_NAMES,
   SECRET_DOTENV_PATH,
   SECRET_FILE_DIR,
+  SECRET_SOURCE_COMMAND,
 } from "../src/secrets/inject";
 import { createOrgSession, json, uid, type OrgSession } from "./helpers";
 
@@ -304,7 +305,7 @@ describe("secrets — file kind (materialized to a sandbox file, env var = path)
     const injection = buildInjection(decrypted);
     const path = `${SECRET_FILE_DIR}/GOOGLE_APPLICATION_CREDENTIALS`;
     const dotenv = injection.files.find((f) => f.path === SECRET_DOTENV_PATH);
-    expect(dotenv?.content).toContain(`export GOOGLE_APPLICATION_CREDENTIALS='${path}'`);
+    expect(dotenv?.content).toContain(`export GOOGLE_APPLICATION_CREDENTIALS="${path}"`);
     expect(injection.files).toContainEqual({ path, content: '{"type":"service_account"}' });
   });
 
@@ -323,11 +324,29 @@ describe("secrets — file kind (materialized to a sandbox file, env var = path)
     const dotenv = injection.files.find((f) => f.path === SECRET_DOTENV_PATH);
     expect(dotenv).toBeTruthy();
     expect(dotenv!.content).toContain("export API_TOKEN='tok-123'");
-    expect(dotenv!.content).toContain(`export SA_JSON='${SECRET_FILE_DIR}/SA_JSON'`);
+    expect(dotenv!.content).toContain(`export SA_JSON="${SECRET_FILE_DIR}/SA_JSON"`);
     // POSIX single-quote escaping keeps an embedded quote intact.
     expect(dotenv!.content).toContain(`export WEIRD='a'\\''b'`);
     // The file-kind content is materialized as its own 0600 file.
     expect(injection.files).toContainEqual({ path: `${SECRET_FILE_DIR}/SA_JSON`, content: '{"k":"v"}' });
+  });
+
+  test("buildInjection uses a sandbox-user-neutral secret directory", () => {
+    const injection = buildInjection({
+      secrets: [{ name: "SA_JSON", kind: "file", value: "{}" }],
+      names: ["SA_JSON"],
+      skipped: [],
+    });
+
+    expect(SECRET_FILE_DIR).not.toMatch(/^\/(?:root|home)\//);
+    expect(SECRET_DOTENV_PATH).toBe(`${SECRET_FILE_DIR}/skynet-env.sh`);
+    expect(SECRET_SOURCE_COMMAND).toBe(`. "${SECRET_DOTENV_PATH}"`);
+    expect(injection.createEnv).toEqual({ BASH_ENV: SECRET_DOTENV_PATH });
+    expect(JSON.stringify(injection)).not.toContain("/root/.secrets");
+    expect(injection.files).toContainEqual({
+      path: `${SECRET_FILE_DIR}/SA_JSON`,
+      content: "{}",
+    });
   });
 
   test("legacy GCP service-account file receives canonical credential and project aliases", () => {
@@ -344,8 +363,8 @@ describe("secrets — file kind (materialized to a sandbox file, env var = path)
     const path = `${SECRET_FILE_DIR}/GCP_SERVICE_ACCOUNT_KEY`;
     const dotenv = injection.files.find((file) => file.path === SECRET_DOTENV_PATH)?.content ?? "";
 
-    expect(dotenv).toContain(`export GCP_SERVICE_ACCOUNT_KEY='${path}'`);
-    expect(dotenv).toContain(`export GOOGLE_APPLICATION_CREDENTIALS='${path}'`);
+    expect(dotenv).toContain(`export GCP_SERVICE_ACCOUNT_KEY="${path}"`);
+    expect(dotenv).toContain(`export GOOGLE_APPLICATION_CREDENTIALS="${path}"`);
     expect(dotenv).toContain("export GOOGLE_CLOUD_PROJECT='skynet-production'");
     expect(dotenv).toContain("export GCLOUD_PROJECT='skynet-production'");
     expect(dotenv).toContain("export CLOUDSDK_CORE_PROJECT='skynet-production'");
@@ -373,7 +392,7 @@ describe("secrets — file kind (materialized to a sandbox file, env var = path)
 
     expect(dotenv.match(/export GOOGLE_APPLICATION_CREDENTIALS=/g)).toHaveLength(1);
     expect(dotenv).toContain(
-      `export GOOGLE_APPLICATION_CREDENTIALS='${SECRET_FILE_DIR}/GOOGLE_APPLICATION_CREDENTIALS'`,
+      `export GOOGLE_APPLICATION_CREDENTIALS="${SECRET_FILE_DIR}/GOOGLE_APPLICATION_CREDENTIALS"`,
     );
     expect(dotenv.match(/export GOOGLE_CLOUD_PROJECT=/g)).toHaveLength(1);
     expect(dotenv).toContain("export GOOGLE_CLOUD_PROJECT='explicit-project'");
@@ -467,25 +486,51 @@ describe("secrets — file kind (materialized to a sandbox file, env var = path)
 
   test("materializeSecretFiles writes each file 0600 via base64, never inline", async () => {
     const cmds: string[] = [];
-    await materializeSecretFiles(async (cmd) => {
+    const state = await materializeSecretFiles(async (cmd) => {
       cmds.push(cmd);
+      return { exitCode: 0, result: "changed" };
     }, [{ path: `${SECRET_FILE_DIR}/PEM`, content: "-----BEGIN KEY-----\nsecret\n-----END KEY-----" }]);
 
+    expect(state).toEqual({ changed: true });
     expect(cmds).toHaveLength(1);
     const cmd = cmds[0]!;
-    expect(cmd).toContain(`mkdir -p ${SECRET_FILE_DIR}`);
-    expect(cmd).toContain(`chmod 600 '${SECRET_FILE_DIR}/PEM'`);
+    expect(cmd).toContain(`mkdir -p -- "${SECRET_FILE_DIR}"`);
+    expect(cmd).toContain(`find "${SECRET_FILE_DIR}" -mindepth 1 -maxdepth 1`);
+    expect(cmd).toContain(`chmod 600 -- "${SECRET_FILE_DIR}/PEM"`);
     expect(cmd).toContain("base64 -d");
     // The raw secret content must NOT appear literally on the command line.
     expect(cmd).not.toContain("BEGIN KEY");
     expect(cmd).toContain(Buffer.from("-----BEGIN KEY-----\nsecret\n-----END KEY-----").toString("base64"));
   });
 
-  test("materializeSecretFiles with no files is a no-op (never calls the shell)", async () => {
-    let called = 0;
-    await materializeSecretFiles(async () => {
-      called += 1;
+  test("materializeSecretFiles rejects a non-zero sandbox command result", async () => {
+    expect(
+      materializeSecretFiles(
+        async () => ({ exitCode: 1, result: "mkdir: Permission denied" }),
+        [{ path: `${SECRET_FILE_DIR}/PEM`, content: "secret" }],
+      ),
+    ).rejects.toThrow("secret materialization command exited 1");
+  });
+
+  test("materializeSecretFiles reconciles an empty injection and removes stale files", async () => {
+    const commands: string[] = [];
+    const state = await materializeSecretFiles(async (command) => {
+      commands.push(command);
+      return { exitCode: 0, result: "changed" };
     }, []);
-    expect(called).toBe(0);
+
+    expect(state).toEqual({ changed: true });
+    expect(commands).toHaveLength(1);
+    expect(commands[0]).toContain(`find "${SECRET_FILE_DIR}" -mindepth 1 -maxdepth 1`);
+    expect(commands[0]).toContain(`> "${SECRET_DOTENV_PATH}"`);
+  });
+
+  test("materializeSecretFiles reports an unchanged secret revision", async () => {
+    const state = await materializeSecretFiles(
+      async () => ({ exitCode: 0, result: "unchanged" }),
+      [{ path: SECRET_DOTENV_PATH, content: "export SAFE='value'\n" }],
+    );
+
+    expect(state).toEqual({ changed: false });
   });
 });

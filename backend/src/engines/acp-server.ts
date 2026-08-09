@@ -9,7 +9,7 @@ import {
 } from "@skynet/agent-harness/canonical";
 import { sessionCapabilities } from "./capabilities";
 import { parseJsonLine, persistSandboxBeforeExecution, truncate } from "./util";
-import { prepareRepos } from "./repo-prep";
+import { prepareRepos, shq } from "./repo-prep";
 import { parseRepoRef } from "../github/repo-ref";
 import { cacheAcpCommands } from "../runs/command-catalog";
 import { revalidateCommandBeforeDispatch } from "../runs/command-intent";
@@ -22,6 +22,8 @@ import {
   composeSecretEnv,
   materializeSecretFiles,
   PROVIDER_SECRET_NAMES,
+  recordSecretsInjected,
+  SECRET_SOURCE_COMMAND,
 } from "../secrets/inject";
 import { getThreadSandbox, setRunSandbox } from "../runs/repo";
 import { buildAcpToolStep, type AcpToolNativeIds } from "./acp-tool-step";
@@ -198,6 +200,25 @@ export function buildAcpInstallClause(packages: { pkg: string; bin: string }[]):
     .join("");
 }
 
+const RUNTIME_ENV_NAME_RE = /^[A-Z][A-Z0-9_]*$/;
+const HOME_RUNTIME_PATH_RE = /^\$HOME(?:\/[A-Za-z0-9._-]+)+$/;
+
+/** Explicit exports for the resident ACP relay. Daytona snapshots launch zsh,
+ * so container-level BASH_ENV is not a reliable delivery mechanism. Gateway
+ * endpoints are regenerated on every control-plane boot/tunnel and must also
+ * override immutable envVars on a durable sandbox reconnect. */
+export function buildAcpRuntimeEnvExports(env: Readonly<Record<string, string>>): string {
+  return Object.entries(env)
+    .map(([name, value]) => {
+      if (!RUNTIME_ENV_NAME_RE.test(name)) {
+        throw new Error(`invalid ACP runtime environment name: ${name}`);
+      }
+      const rendered = HOME_RUNTIME_PATH_RE.test(value) ? `"${value}"` : shq(value);
+      return `export ${name}=${rendered}; `;
+    })
+    .join("");
+}
+
 interface ThreadRelay {
   sandboxId: string;
   baseUrl: string;
@@ -327,19 +348,19 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
       const daytona = new Daytona({ apiKey, target: process.env.DAYTONA_TARGET ?? "us" });
       const budgetMs = resolveAcpTurnTimeoutMs();
 
-      // Org secrets ride in via a BASH_ENV dotenv (createEnv), not as N env vars
-      // (Daytona rejects a create with a whole secret catalog). Platform engine
-      // keys are added after and win on name. composeSecretEnv also records the
-      // `secrets.injected` marker (names only); the dotenv + file-kind secrets are
-      // written after the sandbox is up (below).
+      // Org secrets live in a protected dotenv, not in Daytona's immutable env
+      // catalog (which rejects large org catalogs). The ACP relay sources it
+      // explicitly at boot; BASH_ENV is only a compatibility path. The names-only
+      // marker is recorded only after the files are materialized successfully.
       const secretInjection = await composeSecretEnv(ctx, {
         excludeNames: PROVIDER_SECRET_NAMES,
       });
       // Provider credentials never enter the sandbox. The dedicated gateway
       // resolves the org credential server-side from the exact running run.
+      const runtimeProviderEnv = providerGatewayEnv(ctx, cfg.id);
       const envVars: Record<string, string> = {
         ...secretInjection.createEnv,
-        ...providerGatewayEnv(ctx, cfg.id),
+        ...runtimeProviderEnv,
       };
 
       const autoStopInterval = Number(process.env.SANDBOX_AUTO_STOP_MIN ?? 30);
@@ -443,18 +464,43 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
 
         await cfg.prepare?.(box, ctx);
 
-        // Materialize any file-kind org secrets (0600) before the agent turn.
-        await materializeSecretFiles(
+        const probeCmd = `curl -s -m 2 -o /dev/null -w '%{http_code}' http://127.0.0.1:${cfg.port}/health`;
+        const relayPidPath = `/tmp/acp-relay-${cfg.id}.pid`;
+
+        // Reconcile the protected directory on every turn. A revision change
+        // includes addition, rotation, and revocation. A backend restart also
+        // loses the in-memory relay/session generation, so restart rather than
+        // session/load into an already-loaded child. In both cases only the
+        // small relay restarts; the Daytona workspace and native session stay.
+        const secretState = await materializeSecretFiles(
           (cmd) => box.process.executeCommand(cmd, undefined, undefined, 30),
           secretInjection.files,
         );
+        await recordSecretsInjected(ctx, secretInjection);
+        const reconnectingToResidentProcess = retainForThread && !relay;
+        if (retainForThread && (secretState.changed || reconnectingToResidentProcess)) {
+          const stopped = await box.process.executeCommand(
+            `if [ -f ${relayPidPath} ]; then ` +
+              `relay_pid=$(cat ${relayPidPath}); ` +
+              `kill "$relay_pid" 2>/dev/null || true; ` +
+              `fi; ` +
+              `for i in $(seq 1 40); do [ "$(${probeCmd})" = "000" ] && break; sleep 0.25; done; ` +
+              `[ "$(${probeCmd})" = "000" ] && rm -f ${relayPidPath}`,
+            undefined,
+            undefined,
+            30,
+          );
+          if ((stopped.exitCode ?? 1) !== 0) {
+            throw new Error(`${cfg.id} ACP relay did not stop after secret revision change`);
+          }
+        }
 
         // ── resident agent: install once, relay up, resolve endpoint ────────
-        const probeCmd = `curl -s -m 2 -o /dev/null -w '%{http_code}' http://127.0.0.1:${cfg.port}/health`;
         const relayB64 = Buffer.from(RELAY_SCRIPT, "utf8").toString("base64");
-        const agentEnvExports = Object.entries(cfg.agentEnv ?? {})
-          .map(([k, v]) => `export ${k}="${v}"; `)
-          .join("");
+        const agentEnvExports = buildAcpRuntimeEnvExports({
+          ...runtimeProviderEnv,
+          ...(cfg.agentEnv ?? {}),
+        });
         const boot = await box.process.executeCommand(
           `export PATH=$HOME/.local/bin:$PATH; mkdir -p ~/work; ` +
             // Install the agent package(s) once per sandbox (path-keyed idempotency).
@@ -469,7 +515,10 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
             // uses it to seed auth (`codex login --with-api-key` -> ~/.codex/auth.json):
             // codex-acp requires the logged-in state, not just the OPENAI_API_KEY env.
             (cfg.preRelay ?? "") +
-            `${agentEnvExports}cd ~/work && nohup node ~/acp-relay.mjs ${cfg.port} ${cfg.agentCmd.join(" ")} > /tmp/acp-relay-${cfg.id}.log 2>&1 & ` +
+            `${SECRET_SOURCE_COMMAND} || { echo SECRET-ENV-FAIL; exit 1; }; ` +
+            `${agentEnvExports}cd ~/work || exit 1; ` +
+            `nohup node ~/acp-relay.mjs ${cfg.port} ${cfg.agentCmd.join(" ")} > /tmp/acp-relay-${cfg.id}.log 2>&1 & ` +
+            `relay_pid=$!; echo "$relay_pid" > ${relayPidPath}; ` +
             `fi; ` +
             `up=0; for i in $(seq 1 30); do [ "$(${probeCmd})" != "000" ] && up=1 && break; sleep 1; done; ` +
             `if [ "$up" = "1" ]; then echo "HOME=$HOME BOOTED=$booted"; exit 0; fi; ` +
@@ -588,6 +637,11 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
           { update: Record<string, unknown>; native: AcpToolNativeIds }
         >();
         let finalText = "";
+        // session/load replays historical messages before its JSON-RPC response.
+        // Keep command-catalog updates, but do not attribute replayed text/tools
+        // to the new run. The ordered relay stream guarantees every pre-response
+        // replay frame is drained before request("session/load") resolves.
+        let acceptingTurnOutput = false;
 
         // ACP streams chunks but does not assign assistant-message ids. Synthesize one stable
         // message/part per CONTIGUOUS text burst: every chunk within a burst UPSERTS the same
@@ -697,6 +751,7 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
             }
             return;
           }
+          if (!acceptingTurnOutput) return;
           if (kind === "agent_message_chunk") {
             const text = ((u.content ?? {}) as { text?: string }).text;
             if (typeof text === "string" && text) {
@@ -946,6 +1001,7 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
 
           await ctx.emit({ kind: "task", label: `Running ${cfg.id} (resident)…`, chip: cfg.id });
           const promptText = composeTurnPrompt(ctx, resumed);
+          acceptingTurnOutput = true;
           const result = await request("session/prompt", {
             sessionId,
             prompt: [{ type: "text", text: promptText }],
