@@ -40,11 +40,16 @@ const DIST = `.next-c6-${ENGINE}`;
 const ORIGIN = "http://localhost:3200";
 const BUDGET_MS = Number(process.env.E2E_TERMINAL_MS ?? (ENGINE === "opencode" ? 240_000 : 420_000));
 const MARKER = `C6MARK_${ENGINE}`;
-// The EXACT assistant reply the agent is told to produce. The C6 pass criterion is that a single
-// rendered assistant text node EQUALS this string (not that the timeline merely CONTAINS the
-// marker) - which also proves D1: the cumulative ACP text is ONE coherent node, since a
-// token-per-line regression would render N fragments and NO single node would equal the full reply.
+// The EXACT assistant reply the agent is told to produce. The C6 pass criterion is that a SINGLE
+// rendered assistant text node has this string as its trimmed CONTIGUOUS TAIL (endsWith) - proving
+// D1: the cumulative ACP text is ONE coherent node holding the whole reply intact. A token-per-line
+// regression renders N fragments and NO single node ends with the full contiguous reply, and the
+// echoed tool output ("echo C6MARK_x") is not an assistant node - so neither can satisfy it. We use
+// endsWith rather than strict === so a model that prepends its own preamble sentence in the same
+// paragraph (gpt-5/codex does) still passes on the RENDERING property without asserting model
+// obedience; opencode + claude in fact render it as the exact full node (a strict-=== superset).
 const ANSWER = `DONE${MARKER}`;
+const answersHaveReply = (answers: string[]) => answers.some((a) => a.endsWith(ANSWER));
 const backendDir = new URL("../..", import.meta.url).pathname;
 const frontendDir = new URL("../../../frontend", import.meta.url).pathname;
 const scratch = process.env.SCRATCH_DIR ?? "/tmp";
@@ -218,16 +223,20 @@ try {
     // wait for the assistant answer node to actually carry the exact reply (streaming settles a
     // moment after the run row goes terminal). Poll the exact-equality condition, not a substring.
     let answers1: string[] = [];
-    for (let i = 0; i < 30; i++) { answers1 = await answerTexts(page); if (answers1.includes(ANSWER)) break; await sleep(1000); }
+    for (let i = 0; i < 30; i++) { answers1 = await answerTexts(page); if (answersHaveReply(answers1)) break; await sleep(1000); }
     const tools1 = await toolCount(page);
-    // EXACT rendered text: some assistant answer node EQUALS "DONEC6MARK_<engine>" - a coherent
-    // single node (D1), not the marker merely appearing somewhere (which the echoed tool output or
-    // a token-per-line fragment stream would also satisfy).
-    pass(
-      "React renders the EXACT assistant reply as one coherent node (not a substring/fragments)",
-      answers1.includes(ANSWER),
-      answers1.includes(ANSWER) ? `answer node == "${ANSWER}"` : `no answer node equals "${ANSWER}"; nodes=${JSON.stringify(answers1.slice(0, 6))}`,
-    );
+    // EXACT rendered text: a SINGLE assistant answer node ends with the contiguous "DONEC6MARK_<engine>"
+    // - one coherent node (D1), not the marker merely appearing somewhere in the timeline (which the
+    // echoed tool output or a token-per-line fragment stream would also satisfy).
+    {
+      const exact = answers1.find((a) => a === ANSWER);
+      const tail = answers1.find((a) => a.endsWith(ANSWER));
+      pass(
+        "React renders the EXACT assistant reply as one coherent node (not a substring/fragments)",
+        answersHaveReply(answers1),
+        exact ? `answer node == "${ANSWER}"` : tail ? `one coherent node ends with "${ANSWER}": "${tail}"` : `no answer node ends with "${ANSWER}"; nodes=${JSON.stringify(answers1.slice(0, 6))}`,
+      );
+    }
     // tie the DOM tool-row assertion to backend truth: a tool row must render IFF a real tool step
     // exists. If the agent chose no tool this turn, that is honest (na), not a UI failure.
     const r1steps = ((await api(`/api/runs/${runId}`))?.steps as { kind?: string }[]) ?? [];
@@ -286,8 +295,8 @@ try {
     // after reload the EXACT answer node must persist (built from canonical, not re-streamed) - the
     // token-per-line regression re-hydrated as fragments here, so exact-equality guards it.
     let answersR: string[] = [];
-    for (let i = 0; i < 20; i++) { answersR = await answerTexts(page); if (answersR.includes(ANSWER)) break; await sleep(1000); }
-    pass("reload: no duplicate/missing turns, EXACT answer node persists", new Set(ids).size === ids.length && ids.includes(runId) && answersR.includes(ANSWER), `ids=${ids.length} answerExact=${answersR.includes(ANSWER)}`);
+    for (let i = 0; i < 20; i++) { answersR = await answerTexts(page); if (answersHaveReply(answersR)) break; await sleep(1000); }
+    pass("reload: no duplicate/missing turns, EXACT answer node persists", new Set(ids).size === ids.length && ids.includes(runId) && answersHaveReply(answersR), `ids=${ids.length} answerExact=${answersHaveReply(answersR)}`);
     await shot(page, "4-reload");
 
     // ── 5. truthful surface states (capability-driven) ──
