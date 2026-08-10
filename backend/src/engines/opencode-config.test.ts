@@ -7,6 +7,7 @@ describe("OpenCode generated config placement", () => {
     const command = buildOpencodeConfigWriteCommand("e30=");
 
     expect(command).toContain("> ~/.config/opencode/opencode.json");
+    expect(command).toContain("chmod 600 ~/.config/opencode/opencode.json");
     expect(command).toContain("rm -f -- ~/work/opencode.json");
     expect(command).not.toContain("tee");
   });
@@ -17,11 +18,16 @@ describe("OpenCode generated config placement", () => {
     );
   });
 
-  test("reloads every installed optional capability on a warm resident server", () => {
+  test("activates warm config in-process with a verified restart fallback", () => {
     const source = readFileSync(new URL("./opencode-server.ts", import.meta.url), "utf8");
 
-    expect(source).toContain(
-      "gatewayState.provider || gatewayState.knowledge || gatewayState.browser",
+    expect(source).toContain("activateOpenCodeRuntimeConfig({");
+    expect(source).toContain("reuseHealthyResidentServer(rememberedServer, sandbox.id, ctx.signal)");
+    expect(source).toContain("const [desktop, cachedRuntimeServer] = await Promise.all([");
+    expect(source).toContain("await stopServerForConfigReload(sandbox, runtimeServer, ctx.signal)");
+    expect(source).toContain("await verifyOpenCodeRuntimeConfig({");
+    expect(source).not.toContain(
+      "await sandbox.process.deleteSession(SERVER_PROCESS_SESSION).catch(() => {});\n      }",
     );
   });
 });

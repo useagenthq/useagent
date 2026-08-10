@@ -21,6 +21,11 @@ export function DesktopPane({ threadId }: { threadId: string }) {
   const [loaded, setLoaded] = useState(false);
   const [status, setStatus] = useState("Waiting for Daytona sandbox…");
 
+  const readySrc = useMemo(
+    () => `/api/desktop-proxy/${threadId}/ready`,
+    [threadId],
+  );
+
   const src = useMemo(() => {
     const params = new URLSearchParams({
       autoconnect: "true",
@@ -42,7 +47,7 @@ export function DesktopPane({ threadId }: { threadId: string }) {
 
     const probe = async (): Promise<void> => {
       try {
-        const response = await fetch(src, { cache: "no-store" });
+        const response = await fetch(readySrc, { cache: "no-store" });
         await response.body?.cancel();
         if (cancelled) return;
         if (response.ok) {
@@ -62,7 +67,7 @@ export function DesktopPane({ threadId }: { threadId: string }) {
       cancelled = true;
       if (retry) clearTimeout(retry);
     };
-  }, [src]);
+  }, [readySrc]);
 
   if (!ready) {
     return (

@@ -10,12 +10,17 @@ describe("Desktop product surface", () => {
     expect(sessionView).toContain('value="desktop" data-testid="rail-tab-desktop"');
     expect(sessionView).not.toContain("{hasDesktop && (");
     expect(sessionView).toContain("<DesktopPane threadId={rootId} />");
+    expect(sessionView).toContain("const railOpen = railOverride ?? true");
+    expect(sessionView).not.toContain("railOverride ?? hasRailContent");
+    expect(sessionView).toContain('aria-hidden={railTab !== "desktop"}');
+    expect(sessionView).toContain('railTab === "desktop" ? "visible" : "pointer-events-none invisible"');
   });
 
   test("the pane probes and retries without embedding raw proxy errors", () => {
     const desktopPane = read("./desktop-pane.tsx");
 
-    expect(desktopPane).toContain('fetch(src, { cache: "no-store" })');
+    expect(desktopPane).toContain('`/api/desktop-proxy/${threadId}/ready`');
+    expect(desktopPane).toContain('fetch(readySrc, { cache: "no-store" })');
     expect(desktopPane).toContain("Starting sandbox desktop…");
     expect(desktopPane).toContain("setTimeout(() => void probe(), 1_000)");
   });

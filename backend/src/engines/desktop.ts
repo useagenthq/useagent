@@ -100,22 +100,14 @@ export function opencodeBrowserMcpConfig(
 async function localDesktopHealthy(sandbox: Sandbox): Promise<boolean> {
   const probe = await sandbox.process
     .executeCommand(
-      `curl -fsS -m 3 -o /dev/null http://127.0.0.1:${DESKTOP_PORT}/vnc.html`,
+      `curl -fsS -m 3 -o /dev/null http://127.0.0.1:${DESKTOP_PORT}/vnc.html && ` +
+        `curl -fsS -m 3 -o /dev/null ${BROWSER_CDP_ENDPOINT}/json/version`,
       undefined,
       undefined,
       10,
     )
     .catch(() => null);
-  if (probe?.exitCode !== 0) return false;
-  const browser = await sandbox.process
-    .executeCommand(
-      `curl -fsS -m 3 -o /dev/null ${BROWSER_CDP_ENDPOINT}/json/version`,
-      undefined,
-      undefined,
-      10,
-    )
-    .catch(() => null);
-  return browser?.exitCode === 0;
+  return probe?.exitCode === 0;
 }
 
 async function provisionSandboxDesktopView(
@@ -125,7 +117,10 @@ async function provisionSandboxDesktopView(
   const probe = await sandbox.process.executeCommand(
     'mkdir -p ~/work; browser=$(command -v google-chrome 2>/dev/null || command -v chromium 2>/dev/null || command -v chromium-browser 2>/dev/null || true); ' +
       'missing=""; for bin in Xvfb xdpyinfo x11vnc websockify; do command -v "$bin" >/dev/null 2>&1 || missing="$missing $bin"; done; ' +
-      'printf "HOME=%s\\nBROWSER=%s\\nMISSING=%s\\n" "$HOME" "$browser" "$missing"',
+      `vnc=0; curl -fsS -m 3 -o /dev/null http://127.0.0.1:${DESKTOP_PORT}/vnc.html && vnc=1; ` +
+      `cdp=0; curl -fsS -m 3 -o /dev/null ${BROWSER_CDP_ENDPOINT}/json/version && cdp=1; ` +
+      'mcp=0; [ -x "$HOME/.local/bin/playwright-mcp" ] && mcp=1; ' +
+      'printf "HOME=%s\\nBROWSER=%s\\nMISSING=%s\\nVNC=%s\\nCDP=%s\\nMCP=%s\\n" "$HOME" "$browser" "$missing" "$vnc" "$cdp" "$mcp"',
     undefined,
     undefined,
     20,
@@ -135,6 +130,8 @@ async function provisionSandboxDesktopView(
   const workdir = `${home}/work`;
   const browserExecutable = /^BROWSER=(.*)$/m.exec(output)?.[1]?.trim() || null;
   const missing = /^MISSING=(.*)$/m.exec(output)?.[1]?.trim() || "";
+  const healthy = /^VNC=1$/m.test(output) && /^CDP=1$/m.test(output);
+  const browserTools = /^MCP=1$/m.test(output);
   if ((probe.exitCode ?? 1) !== 0 || missing) {
     return {
       available: false,
@@ -145,8 +142,18 @@ async function provisionSandboxDesktopView(
       reason: missing ? `missing desktop binaries:${missing}` : "desktop prerequisite probe failed",
     };
   }
+  if (!browserExecutable) {
+    return {
+      available: false,
+      browserTools: false,
+      home,
+      workdir,
+      browserExecutable,
+      reason: "no supported browser executable",
+    };
+  }
 
-  if (!(await localDesktopHealthy(sandbox))) {
+  if (!healthy) {
     await sandbox.process.deleteSession(DESKTOP_PROCESS_SESSION).catch(() => {});
     await sandbox.process.createSession(DESKTOP_PROCESS_SESSION);
     await sandbox.process.executeSessionCommand(
@@ -160,13 +167,17 @@ async function provisionSandboxDesktopView(
     );
   }
 
-  const deadline = Date.now() + 30_000;
-  while (Date.now() < deadline && !signal.aborted) {
-    if (await localDesktopHealthy(sandbox)) break;
-    await new Promise((resolve) => setTimeout(resolve, 500));
+  let available = healthy;
+  if (!available) {
+    const deadline = Date.now() + 30_000;
+    while (Date.now() < deadline && !signal.aborted) {
+      available = await localDesktopHealthy(sandbox);
+      if (available) break;
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    }
   }
-  const available = !signal.aborted && (await localDesktopHealthy(sandbox));
-  if (!available || !browserExecutable) {
+  available = !signal.aborted && available;
+  if (!available) {
     return {
       available,
       browserTools: false,
@@ -175,15 +186,13 @@ async function provisionSandboxDesktopView(
       browserExecutable,
       reason: signal.aborted
         ? "run aborted while starting desktop"
-        : !available
-          ? "noVNC failed readiness"
-          : "no supported browser executable",
+        : "noVNC or browser CDP failed readiness",
     };
   }
 
   return {
     available: true,
-    browserTools: false,
+    browserTools,
     home,
     workdir,
     browserExecutable,
@@ -196,6 +205,7 @@ async function provisionSandboxDesktop(
 ): Promise<SandboxDesktop> {
   const desktop = await provisionSandboxDesktopView(sandbox, signal);
   if (!desktop.available || !desktop.browserExecutable) return desktop;
+  if (desktop.browserTools) return desktop;
 
   const install = await sandbox.process.executeCommand(
     `export PATH="$HOME/.local/bin:$PATH"; ` +

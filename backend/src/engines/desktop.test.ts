@@ -95,7 +95,8 @@ describe("shared sandbox desktop", () => {
           if (command.includes("printf \"HOME=")) {
             return {
               exitCode: 0,
-              result: "HOME=/home/daytona\nBROWSER=/usr/bin/chromium\nMISSING=\n",
+              result:
+                "HOME=/home/daytona\nBROWSER=/usr/bin/chromium\nMISSING=\nVNC=1\nCDP=1\nMCP=0\n",
             };
           }
           return { exitCode: 0, result: "" };
@@ -110,6 +111,82 @@ describe("shared sandbox desktop", () => {
       browserTools: false,
       browserExecutable: "/usr/bin/chromium",
     });
+    expect(commands).toHaveLength(1);
+    expect(commands[0]).toContain("/vnc.html");
+    expect(commands[0]).toContain("/json/version");
     expect(commands).not.toEqual(expect.arrayContaining([expect.stringContaining("npm install")]));
+  });
+
+  test("reuses a provisioned browser tool without a second sandbox command", async () => {
+    const commands: string[] = [];
+    const sandbox = {
+      process: {
+        executeCommand: async (command: string) => {
+          commands.push(command);
+          return {
+            exitCode: 0,
+            result:
+              "HOME=/home/daytona\nBROWSER=/usr/bin/chromium\nMISSING=\nVNC=1\nCDP=1\nMCP=1\n",
+          };
+        },
+      },
+    } as unknown as Sandbox;
+
+    await expect(
+      ensureSandboxDesktop(sandbox, new AbortController().signal),
+    ).resolves.toMatchObject({
+      available: true,
+      browserTools: true,
+      browserExecutable: "/usr/bin/chromium",
+    });
+    expect(commands).toHaveLength(1);
+    expect(commands[0]).toContain("playwright-mcp");
+  });
+
+  test("repairs the desktop when either the VNC or CDP endpoint is unhealthy", async () => {
+    for (const firstHealth of ["VNC=1\nCDP=0", "VNC=0\nCDP=1"]) {
+      const commands: string[] = [];
+      const deleted: string[] = [];
+      const created: string[] = [];
+      const launched: string[] = [];
+      let healthChecks = 0;
+      const sandbox = {
+        process: {
+          executeCommand: async (command: string) => {
+            commands.push(command);
+            if (command.includes("printf \"HOME=")) {
+              return {
+                exitCode: 0,
+                result:
+                  `HOME=/home/daytona\nBROWSER=/usr/bin/chromium\nMISSING=\n${firstHealth}\n`,
+              };
+            }
+            healthChecks += 1;
+            return { exitCode: 0, result: "" };
+          },
+          deleteSession: async (name: string) => deleted.push(name),
+          createSession: async (name: string) => created.push(name),
+          executeSessionCommand: async (name: string, input: { command: string }) => {
+            launched.push(`${name}:${input.command}`);
+            return { id: "desktop-command" };
+          },
+        },
+      } as unknown as Sandbox;
+
+      await expect(
+        ensureSandboxDesktopView(sandbox, new AbortController().signal),
+      ).resolves.toMatchObject({
+        available: true,
+        browserTools: false,
+        browserExecutable: "/usr/bin/chromium",
+      });
+      expect(deleted).toEqual(["skynet-desktop"]);
+      expect(created).toEqual(["skynet-desktop"]);
+      expect(launched).toHaveLength(1);
+      expect(launched[0]).toContain("Xvfb :1");
+      expect(healthChecks).toBe(1);
+      expect(commands.at(-1)).toContain("/vnc.html");
+      expect(commands.at(-1)).toContain("/json/version");
+    }
   });
 });

@@ -1,5 +1,9 @@
 import { Daytona, type Sandbox } from "@daytona/sdk";
-import { getOpencodeThreadSandboxId } from "../engines/opencode-runtime";
+import {
+  forgetLiveThreadSandbox,
+  getLiveThreadSandbox,
+  rememberLiveThreadSandbox,
+} from "../engines/sandbox-runtime";
 import { getThreadSandbox } from "./repo";
 
 // ---------------------------------------------------------------------------
@@ -51,8 +55,18 @@ export async function resolvePreviewEndpoint(
     const cached = endpoints.get(key);
     if (cached) return cached;
   }
-  const sandbox = await resolvePreviewSandbox(threadId);
-  const link = await sandbox.getPreviewLink(port);
+  let sandbox = await resolvePreviewSandbox(threadId);
+  let link: Awaited<ReturnType<Sandbox["getPreviewLink"]>>;
+  try {
+    link = await sandbox.getPreviewLink(port);
+  } catch {
+    // A process-local SDK object can outlive a Daytona-side rotation. Evict it
+    // and retry once through the durable mapping instead of pinning every
+    // subsequent preview request to a dead object.
+    forgetLiveThreadSandbox(threadId, sandbox.id);
+    sandbox = await resolvePreviewSandbox(threadId);
+    link = await sandbox.getPreviewLink(port);
+  }
   const ep: PreviewEndpoint = {
     sandboxId: sandbox.id,
     baseUrl: link.url.replace(/\/+$/, ""),
@@ -66,11 +80,27 @@ export async function resolvePreviewEndpoint(
  * preview-link resolution so terminal/desktop proxies do not duplicate sandbox
  * identity or lifecycle rules. */
 export async function resolvePreviewSandbox(threadId: string): Promise<Sandbox> {
+  const cached = getLiveThreadSandbox(threadId);
+  if (cached) {
+    const state = (cached as { state?: string }).state;
+    if (state === "stopped" || state === "paused" || state === "archived") {
+      try {
+        await cached.start();
+        return cached;
+      } catch {
+        forgetLiveThreadSandbox(threadId, cached.id);
+      }
+    } else if (state === undefined || state === "started") {
+      return cached;
+    } else {
+      forgetLiveThreadSandbox(threadId, cached.id);
+    }
+  }
+
   const apiKey = process.env.DAYTONA_API_KEY;
   if (!apiKey) throw new Error("preview proxy needs DAYTONA_API_KEY in the backend env");
 
-  const sandboxId =
-    getOpencodeThreadSandboxId(threadId) ?? (await getThreadSandbox(threadId));
+  const sandboxId = await getThreadSandbox(threadId);
   if (!sandboxId) throw new Error("no-sandbox");
 
   const daytona = new Daytona({ apiKey, target: process.env.DAYTONA_TARGET ?? "us" });
@@ -79,6 +109,7 @@ export async function resolvePreviewSandbox(threadId: string): Promise<Sandbox> 
   if (state === "stopped" || state === "paused" || state === "archived") {
     await sandbox.start();
   }
+  rememberLiveThreadSandbox(threadId, sandbox);
   return sandbox;
 }
 

@@ -383,18 +383,16 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
     }
   }, [runningTurn]);
 
-  // Right rail: ONE tabbed panel (Editor | Terminal), not stacked panes. It only
-  // claims width when there's REAL content (parseable file edits or command
-  // output); empty panes never steal space from the conversation. The user can
-  // still collapse / reopen and switch tabs; auto state applies until they do.
+  // Right rail: one tabbed panel, not stacked panes. Desktop and terminal are
+  // useful before the first tool call, so the rail starts open on every real
+  // session. The user can still collapse/reopen it explicitly.
   const hasFiles = allSteps.some(
     (s) => s.kind === "file" && parseFileEntries(s).length > 0,
   );
   const hasCommands = allSteps.some((s) => s.kind === "command");
   const hasSubagents = allSteps.some((s) => s.chip === "subagent");
-  const hasRailContent = hasFiles || hasCommands || hasSubagents;
   const [railOverride, setRailOverride] = useState<boolean | null>(null);
-  const railOpen = railOverride ?? hasRailContent;
+  const railOpen = railOverride ?? true;
   // Rail resize: a dragger between the conversation and the rail (md+). Width
   // in px, persisted per browser; null → the 32% default. Loaded in an effect
   // (not the initializer) so SSR and first client render agree.
@@ -668,21 +666,36 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
                 type="button"
                 onClick={() => setRailOverride(false)}
                 title="Collapse panel"
-                aria-label="Collapse the editor/terminal panel"
+                aria-label="Collapse side panel"
                 className="text-text-soft-400 hover:bg-bg-weak-50 hover:text-text-sub-600 flex size-7 shrink-0 items-center justify-center rounded-lg transition-colors"
               >
                 <RiLayoutRightLine className="size-4" aria-hidden />
               </button>
             </div>
-            <div className="min-h-0 flex-1">
-              {railTab === "agents" ? (
-                <AgentsRail steps={allSteps} live={live} frames={allFrames} />
-              ) : railTab === "editor" ? (
-                <EditorPane steps={allSteps} live={live} />
-              ) : railTab === "desktop" ? (
+            <div className="relative min-h-0 flex-1">
+              {/* Keep the Desktop iframe mounted while the rail is open. noVNC
+                  and its WebSocket are expensive to reconnect; prewarming this
+                  hidden, full-size layer makes the first switch immediate and
+                  preserves the visible browser when the user checks another tab. */}
+              <div
+                aria-hidden={railTab !== "desktop"}
+                className={cn(
+                  "absolute inset-0",
+                  railTab === "desktop" ? "visible" : "pointer-events-none invisible",
+                )}
+              >
                 <DesktopPane threadId={rootId} />
-              ) : (
-                <TerminalPane steps={allSteps} live={live} engine={newest.engine} runId={newest.id} />
+              </div>
+              {railTab !== "desktop" && (
+                <div className="absolute inset-0">
+                  {railTab === "agents" ? (
+                    <AgentsRail steps={allSteps} live={live} frames={allFrames} />
+                  ) : railTab === "editor" ? (
+                    <EditorPane steps={allSteps} live={live} />
+                  ) : (
+                    <TerminalPane steps={allSteps} live={live} engine={newest.engine} runId={newest.id} />
+                  )}
+                </div>
               )}
             </div>
           </section>
@@ -691,11 +704,12 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
             type="button"
             onClick={() => setRailOverride(true)}
             title="Open the editor/terminal panel"
-            aria-label="Open the editor/terminal panel"
+            aria-label="Open side panel"
             className="border-stroke-soft-200 bg-bg-white-0 text-text-soft-400 hover:bg-bg-weak-50 hover:text-text-sub-600 hidden shrink-0 flex-col items-center gap-3 rounded-2xl border px-2 py-4 transition-colors lg:flex"
           >
             <RiCodeSSlashLine className="size-4" aria-hidden />
             <RiTerminalBoxLine className="size-4" aria-hidden />
+            <RiComputerLine className="size-4" aria-hidden />
           </button>
         )}
       </div>

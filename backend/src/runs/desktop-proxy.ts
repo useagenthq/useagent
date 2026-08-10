@@ -38,12 +38,20 @@ import { ensureSandboxDesktopView } from "../engines/desktop";
 // ---------------------------------------------------------------------------
 
 const DESKTOP_PORT = 6080;
+const DESKTOP_READY_TTL_MS = 30_000;
 const desktopRepairs = new Map<string, Promise<void>>();
+const desktopReadyUntil = new Map<string, number>();
+
+function invalidateDesktopPreview(threadId: string): void {
+  desktopReadyUntil.delete(threadId);
+}
 
 /** Old retained sandboxes may predate desktop provisioning, and a stopped box
  * may wake without its process session. Repair exactly once per thread while
  * concurrent iframe/static/WebSocket requests wait on the same promise. */
 async function ensureDesktopPreview(threadId: string): Promise<void> {
+  if ((desktopReadyUntil.get(threadId) ?? 0) > Date.now()) return;
+  desktopReadyUntil.delete(threadId);
   const existing = desktopRepairs.get(threadId);
   if (existing) return existing;
 
@@ -53,6 +61,7 @@ async function ensureDesktopPreview(threadId: string): Promise<void> {
     if (!desktop.available) {
       throw new Error(desktop.reason ?? "desktop service unavailable");
     }
+    desktopReadyUntil.set(threadId, Date.now() + DESKTOP_READY_TTL_MS);
   })().finally(() => desktopRepairs.delete(threadId));
   desktopRepairs.set(threadId, repair);
   return repair;
@@ -101,6 +110,8 @@ desktopProxyRoutes.get(
               }
             };
             const bye = () => {
+              invalidateDesktopPreview(threadId);
+              invalidatePreviewEndpoint(threadId, DESKTOP_PORT);
               try {
                 ws.close();
               } catch {
@@ -112,6 +123,7 @@ desktopProxyRoutes.get(
           } catch {
             // Stale endpoint (sandbox rotated) or no sandbox — drop the cache so
             // the next attempt re-resolves and wakes the box, then close.
+            invalidateDesktopPreview(threadId);
             invalidatePreviewEndpoint(threadId, DESKTOP_PORT);
             try {
               ws.close();
@@ -149,6 +161,29 @@ desktopProxyRoutes.get(
   }),
 );
 
+// Lightweight lifecycle probe for the React pane. It performs the one bounded
+// repair/readiness check without downloading and discarding vnc.html; the iframe
+// that follows reuses the short readiness lease and fetches the HTML exactly once.
+desktopProxyRoutes.get("/:threadId/ready", async (c) => {
+  const threadId = c.req.param("threadId") ?? "";
+  if (!(await getRunForOrg(c.get("orgId"), threadId))) {
+    return c.json({ error: "thread not found" }, 404);
+  }
+  try {
+    await ensureDesktopPreview(threadId);
+    return c.body(null, 204);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (message === "no-sandbox") {
+      return c.json(
+        { error: "no live sandbox for this conversation yet - send a message first" },
+        409,
+      );
+    }
+    return c.json({ error: `desktop proxy failed: ${message}` }, 502);
+  }
+});
+
 // ── HTTP: noVNC static app (vnc.html + js/css/img) ──────────────────────────
 desktopProxyRoutes.all("/:threadId/*", async (c) => {
   const threadId = c.req.param("threadId") ?? "";
@@ -162,9 +197,9 @@ desktopProxyRoutes.all("/:threadId/*", async (c) => {
   const prefix = `/api/desktop-proxy/${threadId}`;
   const subpath = url.pathname.slice(prefix.length) || "/";
 
-  // The pane probes vnc.html before mounting its iframe. Treat that one HTML
-  // request as the lifecycle boundary: wake/repair the Desktop there, without
-  // repeating Daytona health checks for every noVNC JS/CSS asset.
+  // React uses /ready as its lifecycle probe. Keep direct vnc.html loads as a
+  // fallback lifecycle boundary for non-React clients and old open tabs,
+  // without repeating Daytona health checks for every noVNC JS/CSS asset.
   if (subpath === "/vnc.html") {
     try {
       await ensureDesktopPreview(threadId);
@@ -201,6 +236,7 @@ desktopProxyRoutes.all("/:threadId/*", async (c) => {
     // A stale preview link (sandbox stopped/rotated since we cached it) surfaces
     // as a transport failure or a 5xx — re-resolve once (wakes the box) and retry.
     if (upstream.status === 502 || upstream.status === 503) {
+      invalidateDesktopPreview(threadId);
       await ensureDesktopPreview(threadId);
       invalidatePreviewEndpoint(threadId, DESKTOP_PORT);
       ep = await resolvePreviewEndpoint(threadId, DESKTOP_PORT, true);
@@ -208,6 +244,7 @@ desktopProxyRoutes.all("/:threadId/*", async (c) => {
     }
     return buildProxyResponse(upstream);
   } catch (err) {
+    invalidateDesktopPreview(threadId);
     invalidatePreviewEndpoint(threadId, DESKTOP_PORT);
     const msg = err instanceof Error ? err.message : String(err);
     if (msg === "no-sandbox") {

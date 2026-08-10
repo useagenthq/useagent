@@ -18,7 +18,9 @@ async function seed(
   eventType = "part.tool.completed",
 ): Promise<void> {
   await recordProviderEvent({
-    id: `pe_${partId}`,
+    // Provider-event ids are globally unique in production. Include the run id
+    // so this suite remains repeatable against the same durable test database.
+    id: eventId(runId, partId),
     runId,
     threadId: runId,
     provider: "opencode",
@@ -29,8 +31,15 @@ async function seed(
   });
 }
 
+function eventId(runId: string, partId: string): string {
+  return `pe_${runId}_${partId}`;
+}
+
 async function completedMockRun(prompt: string): Promise<string> {
-  const created = await json<{ id: string }>("/api/runs", { method: "POST", body: { prompt } });
+  const created = await json<{ id: string }>("/api/runs", {
+    method: "POST",
+    body: { prompt },
+  });
   expect(created.status).toBe(201);
   const id = created.body.id;
   await waitFor(async () => {
@@ -56,13 +65,25 @@ describe("native event SSE lane", () => {
     await seed(id, "p1", { n: 1, revised: true });
 
     // Full replay (no cursor).
-    const all = nativeFrames(await readSse(await fetchApi(`/api/runs/${id}/events`), { timeoutMs: 8000 }));
-    expect(all.map((f) => f.eventId)).toEqual(["pe_p0", "pe_p2", "pe_p3", "pe_p1"]);
+    const all = nativeFrames(
+      await readSse(await fetchApi(`/api/runs/${id}/events`), {
+        timeoutMs: 8000,
+      }),
+    );
+    expect(all.map((f) => f.eventId)).toEqual([
+      eventId(id, "p0"),
+      eventId(id, "p2"),
+      eventId(id, "p3"),
+      eventId(id, "p1"),
+    ]);
     // Ordered strictly ascending by seq.
     expect(all.map((f) => f.seq)).toEqual([0, 2, 3, 4]);
     // Deduped by event id — pe_p1 appears once, at its latest revision.
-    expect(all.filter((f) => f.eventId === "pe_p1")).toHaveLength(1);
-    expect(all.find((f) => f.eventId === "pe_p1").payload).toEqual({ n: 1, revised: true });
+    expect(all.filter((f) => f.eventId === eventId(id, "p1"))).toHaveLength(1);
+    expect(all.find((f) => f.eventId === eventId(id, "p1")).payload).toEqual({
+      n: 1,
+      revised: true,
+    });
     // Every frame carries the versioned envelope + native ids.
     expect(all[0].schemaVersion).toBe(1);
     expect(all[0].provider).toBe("opencode");
@@ -73,13 +94,18 @@ describe("native event SSE lane", () => {
       await readSse(await fetchApi(`/api/runs/${id}/events?cursor=2`), { timeoutMs: 8000 }),
     );
     expect(fromCursor.map((f) => f.seq)).toEqual([3, 4]);
-    expect(fromCursor.map((f) => f.eventId)).toEqual(["pe_p3", "pe_p1"]);
+    expect(fromCursor.map((f) => f.eventId)).toEqual([
+      eventId(id, "p3"),
+      eventId(id, "p1"),
+    ]);
   });
 
   test("the step/delta/done lane is unchanged alongside native frames", async () => {
     const id = await completedMockRun("native + steps");
     await seed(id, "px", { ok: true });
-    const events = await readSse(await fetchApi(`/api/runs/${id}/events`), { timeoutMs: 8000 });
+    const events = await readSse(await fetchApi(`/api/runs/${id}/events`), {
+      timeoutMs: 8000,
+    });
     // Steps still replay (8 scripted) and done still terminates the stream.
     expect(events.filter((e) => e.event === "step")).toHaveLength(8);
     expect(events.find((e) => e.event === "done")).toBeDefined();
@@ -92,9 +118,13 @@ describe("native event SSE lane", () => {
     // > 32KB stored JSON is sliced (invalid JSON) — surfaced as a bounded marker.
     await seed(id, "big", { blob: "x".repeat(40_000) });
 
-    const frames = nativeFrames(await readSse(await fetchApi(`/api/runs/${id}/events`), { timeoutMs: 8000 }));
-    const small = frames.find((f) => f.eventId === "pe_small");
-    const big = frames.find((f) => f.eventId === "pe_big");
+    const frames = nativeFrames(
+      await readSse(await fetchApi(`/api/runs/${id}/events`), {
+        timeoutMs: 8000,
+      }),
+    );
+    const small = frames.find((f) => f.eventId === eventId(id, "small"));
+    const big = frames.find((f) => f.eventId === eventId(id, "big"));
 
     expect(small.payload).toEqual({ hello: "world" });
     expect(big.payload._unparseable).toBe(true);
@@ -108,8 +138,14 @@ describe("native event SSE lane", () => {
     // arrive via the live lane, not replay (the native lane is empty at connect).
     const id = crypto.randomUUID();
     await createRun({
-      id, prompt: "live native", model: "claude-opus-5", engine: "mock",
-      orgId: "org-skynet-dev", userId: null, parentRunId: null, threadId: id,
+      id,
+      prompt: "live native",
+      model: "claude-opus-5",
+      engine: "mock",
+      orgId: "org-skynet-dev",
+      userId: null,
+      parentRunId: null,
+      threadId: id,
     });
     await setRunStatus(id, "running");
 
@@ -119,7 +155,7 @@ describe("native event SSE lane", () => {
     await seed(id, "live1", { live: true });
 
     const frames = nativeFrames(await reading);
-    const live = frames.find((f) => f.eventId === "pe_live1");
+    const live = frames.find((f) => f.eventId === eventId(id, "live1"));
     expect(live).toBeDefined();
     expect(live.payload).toEqual({ live: true });
     expect(live.seq).toBe(0);

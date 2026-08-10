@@ -24,7 +24,3 @@ export function rememberOpenCodeThreadServer(
 export function forgetOpenCodeThreadServer(threadId: string): void {
   threadServers.delete(threadId);
 }
-
-export function getOpencodeThreadSandboxId(threadId: string): string | null {
-  return threadServers.get(threadId)?.sandboxId ?? null;
-}

@@ -44,20 +44,15 @@ describe("command catalog cache", () => {
     expect(second!.commands).toEqual([{ name: "plan", description: null }]);
   });
 
-  test("GET /api/commands: empty until the default snapshot is cached", async () => {
-    // Nothing caches the default snapshot in unit tests (the live-proxy tap only
-    // fires against a real sandbox), so the route starts empty.
-    const empty = await json<{ commands: unknown[]; fetched_at: string | null }>(
-      "/api/commands",
-    );
-    expect(empty.status).toBe(200);
-    expect(empty.body.commands).toEqual([]);
-    expect(empty.body.fetched_at).toBeNull();
-
-    // Seed the default snapshot as the live-proxy would, then read it back.
+  test("GET /api/commands serves the current default snapshot cache", async () => {
+    // The test database is intentionally durable across invocations, so the
+    // default snapshot may already be primed by an earlier run. Upsert a unique
+    // command and assert the route reads that current value rather than making
+    // test order or database freshness part of the product contract.
+    const commandName = uid("review");
     await cacheCommandCatalog(
       defaultSnapshot(),
-      JSON.stringify([{ name: "review", description: "review the diff" }]),
+      JSON.stringify([{ name: commandName, description: "review the diff" }]),
     );
     const populated = await json<{
       commands: { name: string; description: string | null }[];
@@ -65,7 +60,7 @@ describe("command catalog cache", () => {
     }>("/api/commands");
     expect(populated.status).toBe(200);
     expect(populated.body.commands).toContainEqual({
-      name: "review",
+      name: commandName,
       description: "review the diff",
     });
     expect(typeof populated.body.fetched_at).toBe("string");

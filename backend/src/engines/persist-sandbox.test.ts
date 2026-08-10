@@ -104,7 +104,16 @@ describe("both engine adapters obey the persistence-before-execution invariant (
     );
     // OpenCode: persist precedes wiring the knowledge gateway + booting `opencode serve`.
     expect(opencode.indexOf("await persistSandboxBeforeExecution({")).toBeLessThan(
-      opencode.indexOf("ensureOpencodeSandboxConfig(sandbox, ctx, desktop)"),
+      opencode.indexOf("prepareOpencodeSandboxConfig(sandbox, ctx, desktop)"),
+    );
+  });
+
+  test("both resident adapters publish the live SDK object only after durable persistence", () => {
+    expect(acp.indexOf("await persistSandboxBeforeExecution({")).toBeLessThan(
+      acp.indexOf("rememberLiveThreadSandbox(ctx.threadId, box)"),
+    );
+    expect(opencode.indexOf("await persistSandboxBeforeExecution({")).toBeLessThan(
+      opencode.indexOf("rememberLiveThreadSandbox(ctx.threadId, box)"),
     );
   });
 });
