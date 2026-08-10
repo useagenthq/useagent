@@ -428,7 +428,7 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
     handle.addEventListener("pointermove", onMove);
     handle.addEventListener("pointerup", onUp);
   }
-  function resizeRailWithKeyboard(event: React.KeyboardEvent<HTMLHRElement>) {
+  function resizeRailWithKeyboard(event: React.KeyboardEvent<HTMLDivElement>) {
     const containerMax = bodyRef.current
       ? Math.min(bodyRef.current.getBoundingClientRect().width * 0.6, RAIL_MAX)
       : RAIL_MAX;
@@ -600,7 +600,8 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
         </section>
 
         {railOpen && (
-          <hr
+          <div
+            role="separator"
             tabIndex={0}
             aria-orientation="vertical"
             aria-label="Resize the side panel"
@@ -614,7 +615,7 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
               setRailWidth(null);
               localStorage.removeItem("skynet.rail-width");
             }}
-            className="hover:bg-stroke-sub-300 active:bg-stroke-sub-300 -mx-1.5 hidden w-1 shrink-0 cursor-col-resize touch-none self-stretch rounded-full border-0 transition-colors md:block"
+            className="before:bg-stroke-soft-200 hover:before:bg-stroke-sub-300 focus-visible:before:bg-primary-base relative -mx-1.5 hidden w-3 shrink-0 cursor-col-resize touch-none self-stretch outline-none before:absolute before:inset-y-3 before:left-1/2 before:w-px before:-translate-x-1/2 before:rounded-full before:content-[''] hover:before:w-1 focus-visible:before:w-1 md:block"
           />
         )}
 
