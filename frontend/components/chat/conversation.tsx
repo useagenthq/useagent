@@ -19,6 +19,8 @@ import {
   type StoredCanonicalEvent,
 } from "@/components/chat/canonical-timeline";
 import type { NativeSnapshot } from "@/components/chat/native-store";
+import { QuestionCard } from "@/components/chat/question-card";
+import type { PendingQuestion } from "@/components/chat/question-state";
 
 // Canonical-timeline cutover flag (final_harness Phase 1, slice 4). OFF by default:
 // the legacy native/steps derivation renders unless a backend + build opt in via
@@ -292,9 +294,10 @@ function TurnBlock({ turn, onSendNow }: { turn: Turn; onSendNow?: () => void }) 
     // projection (the outbox is retrying, the snapshot may be partial) never drives the
     // UI - the legacy native derivation does. The two are proven byte-for-byte equivalent,
     // so a completed swap never changes what the user sees.
-    if (shouldUseCanonicalTimeline(CANONICAL_TIMELINE, turn)) {
+    const canonical = turn.canonical;
+    if (canonical && shouldUseCanonicalTimeline(CANONICAL_TIMELINE, turn)) {
       const stepsById = new Map(turn.steps.map((s) => [s.id, s]));
-      return buildTimelineFromCanonical(turn.canonical!, stepsById, live);
+      return buildTimelineFromCanonical(canonical, stepsById, live);
     }
     return turn.native ? buildTimeline(turn.native, live) : null;
   }, [turn.native, turn.canonical, turn.canonicalComplete, turn.steps, live]);
@@ -452,6 +455,8 @@ function ReplyComposer({
   commands,
   commandState,
   modelSelection,
+  locked,
+  placeholder,
   onReply,
   running,
   stopping,
@@ -467,6 +472,8 @@ function ReplyComposer({
   /** The session's negotiated model-selection capability - the per-message model picker shows ONLY
    *  when the engine actually lets the user choose (opencode); ACP engines run a fixed model. */
   modelSelection?: boolean;
+  locked?: boolean;
+  placeholder?: string;
   onReply: ComposerSubmit;
   running?: boolean;
   stopping?: boolean;
@@ -477,11 +484,12 @@ function ReplyComposer({
     <div className="border-stroke-soft-200 shrink-0 border-t p-3">
       <Composer
         variant="compact"
-        placeholder="Reply to Skynet…"
+        placeholder={placeholder ?? "Reply to Skynet…"}
         defaultEngine={engine}
         defaultModel={model}
         defaultMemoryScope={memoryScope}
         pending={pending}
+        locked={locked}
         commands={commands}
         commandState={commandState}
         enableModelPicker={modelSelection === true}
@@ -511,6 +519,10 @@ export function Conversation({
   commandState,
   modelSelection,
   onReply,
+  pendingQuestion,
+  answeringQuestion,
+  questionError,
+  onAnswerQuestion,
   sendNowFor,
   onSendNow,
   running,
@@ -531,6 +543,12 @@ export function Conversation({
   /** The session's negotiated model-selection capability (opencode true, ACP false). */
   modelSelection?: boolean;
   onReply: ComposerSubmit;
+  /** A provider-native question blocks this turn until answered through its
+   * control endpoint. It is not a new user message/run. */
+  pendingQuestion?: PendingQuestion | null;
+  answeringQuestion?: boolean;
+  questionError?: string | null;
+  onAnswerQuestion?: (answers: string[][]) => void | Promise<void>;
   /** Run id of the HEAD queued turn when a turn is running - that bubble gets
    *  the "Send now" steering affordance (opencode's control on our harness). */
   sendNowFor?: string | null;
@@ -552,7 +570,12 @@ export function Conversation({
   useEffect(() => {
     const el = scrollRef.current;
     if (el && stickRef.current) el.scrollTop = el.scrollHeight;
-  }, [scrollSignature, pendingReply, turns.length]);
+  }, [scrollSignature, pendingReply, pendingQuestion?.id, turns.length]);
+
+  const composerCanAnswerQuestion =
+    pendingQuestion?.questions.length === 1 &&
+    pendingQuestion.questions[0]?.custom === true;
+  const questionLocksComposer = !!pendingQuestion && !composerCanAnswerQuestion;
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -571,6 +594,15 @@ export function Conversation({
             onSendNow={turn.run.id === sendNowFor ? onSendNow : undefined}
           />
         ))}
+        {pendingQuestion && onAnswerQuestion && (
+          <QuestionCard
+            key={pendingQuestion.id}
+            request={pendingQuestion}
+            submitting={answeringQuestion === true}
+            error={questionError ?? null}
+            onSubmit={onAnswerQuestion}
+          />
+        )}
         {pendingReply && <UserBubble>{pendingReply}</UserBubble>}
       </div>
 
@@ -582,6 +614,14 @@ export function Conversation({
         commands={commands}
         commandState={commandState}
         modelSelection={modelSelection}
+        locked={questionLocksComposer}
+        placeholder={
+          pendingQuestion
+            ? composerCanAnswerQuestion
+              ? "Answer Skynet’s question…"
+              : "Answer the question above to continue…"
+            : undefined
+        }
         onReply={onReply}
         running={running}
         stopping={stopping}

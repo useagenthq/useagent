@@ -949,7 +949,7 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
           const knowledgeMcpServers = acpKnowledgeMcpServers(ctx);
           const browserMcpServers =
             desktop.browserTools && desktop.browserExecutable
-              ? [acpBrowserMcpServer(home, `${home}/work`, desktop.browserExecutable)]
+              ? [acpBrowserMcpServer(home, `${home}/work`)]
               : [];
           const mcpServers = [...knowledgeMcpServers, ...browserMcpServers];
 

@@ -1,5 +1,5 @@
 /**
- * Aggressive browser-level UI E2E sweep — 10 scenarios, Playwright headless
+ * Aggressive browser-level UI E2E sweep — Playwright headless
  * (system Chrome) against the isolated stack (frontend :3413 → backend :3513,
  * real `skynet` DB, committed HEAD). Each scenario asserts and logs PASS/FAIL/SKIP.
  *
@@ -435,15 +435,15 @@ async function s7_terminal(wf: string): Promise<Result> {
   }
 }
 
-// ── Scenario 8 (lead #7): desktop tab for opencode threads ───────────────────
+// ── Scenario 8 (lead #7): stable desktop surface for Daytona threads ────────
 async function s8_desktop(wf: string): Promise<Result> {
   const checks: Result["checks"] = [];
   const { page } = await newPage(browser);
   try {
     await page.goto(`${FE}/session/${wf}`, { waitUntil: "domcontentloaded" });
     await page.waitForTimeout(2000);
-    const tab = page.getByText(/^Desktop$/).first();
-    checks.push({ name: "desktop: Desktop tab present for an opencode thread", ok: (await tab.count()) > 0 });
+    const tab = page.getByTestId("rail-tab-desktop");
+    checks.push({ name: "desktop: Desktop tab is a stable thread surface", ok: (await tab.count()) > 0 });
     await tab.click();
     await page.waitForTimeout(1500);
     const iframe = page.locator('iframe[title="Sandbox desktop"]');
@@ -454,7 +454,7 @@ async function s8_desktop(wf: string): Promise<Result> {
     const r = await fetch(vncUrl, { headers: { Origin: "http://localhost:3200" } }).catch(() => null);
     checks.push({ name: "desktop: vnc.html returns 200 through the pane URL", ok: r?.status === 200, note: `HTTP ${r?.status}` });
     await shot(page, "s8-desktop");
-    return verdictOf("8. Desktop tab (opencode thread / vnc.html 200)", checks, `run=${wf}`);
+    return verdictOf("8. Desktop tab (Daytona thread / vnc.html 200)", checks, `run=${wf}`);
   } catch (e) {
     await shot(page, "s8-desktop-fail");
     checks.push({ name: "scenario threw", ok: false, note: String(e).slice(0, 160) });
@@ -871,6 +871,86 @@ async function s17_artifacts(): Promise<Result> {
   }
 }
 
+// ── Scenario 18: provider-native question resumes the SAME live turn ─────────
+async function s18_nativeQuestion(): Promise<Result> {
+  const checks: Result["checks"] = [];
+  const prompt =
+    "Before doing any other work, use the question tool exactly once. Ask one question " +
+    "with header 'Environment', question 'Which target should I use?', options 'Staging' " +
+    "and 'Production', multiple=false, custom=false. Wait for the answer. After the answer, " +
+    "reply with exactly SELECTED:<answer> and finish.";
+  const { id, status } = await createRun(prompt, {
+    engine: "opencode",
+    model: "moonshotai/kimi-k3",
+  });
+  if (!id) {
+    checks.push({ name: "question: live run created", ok: false, note: `http=${status}` });
+    return verdictOf("18. Native question control", checks);
+  }
+
+  const { page } = await newPage(browser);
+  try {
+    await page.goto(`${FE}/session/${id}`, { waitUntil: "domcontentloaded" });
+    const card = page.getByTestId("native-question-card");
+    await card.waitFor({ state: "visible", timeout: 120_000 });
+    checks.push({
+      name: "question: provider request renders as an inline blocking card",
+      ok: await card.isVisible(),
+    });
+    checks.push({
+      name: "question: structured choices are visible",
+      ok: (await card.getByRole("button", { name: /Staging/ }).count()) === 1,
+    });
+    // OpenCode's emitted request is authoritative. Current OpenCode normalizes
+    // this prompt's request to custom=true even when the model supplied false;
+    // the UI therefore keeps the composer as a legitimate free-text answer path
+    // and labels it as such instead of pretending the input is blocked.
+    const composer = page.locator("textarea").first();
+    checks.push({
+      name: "question: composer truthfully exposes the provider's custom-answer path",
+      ok:
+        !(await composer.isDisabled()) &&
+        /Answer Skynet/i.test((await composer.getAttribute("placeholder")) ?? ""),
+    });
+
+    const before = await getThread(id);
+    await card.getByRole("button", { name: /Staging/ }).click();
+    await card.getByRole("button", { name: /^Continue$/ }).click();
+    await card.waitFor({ state: "hidden", timeout: 30_000 });
+    const settled = await waitRun(
+      id,
+      (run) => run.status === "completed" || run.status === "failed",
+      120_000,
+    );
+    const after = await getThread(id);
+    checks.push({
+      name: "question: answer continues the resident run instead of creating a queued child",
+      ok: before.length === 1 && after.length === 1 && after[0]?.id === id,
+      note: `thread ${before.length}→${after.length}`,
+    });
+    checks.push({
+      name: "question: provider receives the answer and settles the original turn",
+      ok: settled.status === "completed" && /SELECTED:\s*Staging/i.test(settled.summary ?? ""),
+      note: `status=${settled.status}`,
+    });
+
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await page.waitForTimeout(1_000);
+    checks.push({
+      name: "question: durable resolution survives reload without resurrecting the card",
+      ok: (await page.getByTestId("native-question-card").count()) === 0,
+    });
+    await shot(page, "s18-native-question");
+    return verdictOf("18. Native question control (block / answer / same turn / reload)", checks, `run=${id}`);
+  } catch (error) {
+    await shot(page, "s18-native-question-fail");
+    checks.push({ name: "scenario threw", ok: false, note: String(error).slice(0, 200) });
+    return verdictOf("18. Native question control", checks, `run=${id}`);
+  } finally {
+    await page.close().catch(() => {});
+  }
+}
+
 // ── runner ────────────────────────────────────────────────────────────────────
 function sh(cmd: string): string {
   try { return Bun.spawnSync(["bash", "-lc", cmd]).stdout.toString().trim(); } catch { return ""; }
@@ -914,6 +994,7 @@ async function main() {
     if (want(15)) results.push(await s15_schedules());
     if (want(16)) results.push(await s16_workspace(wf));
     if (want(17)) results.push(await s17_artifacts());
+    if (want(18)) results.push(await s18_nativeQuestion());
     if (want(2)) results.push(await s2_reply(wf)); // mutates wf (real reply) → run last on wf
     if (want(4)) results.push(await s4_streaming());
     if (want(6)) results.push(await s6_reconnect());

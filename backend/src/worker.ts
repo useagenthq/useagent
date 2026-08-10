@@ -184,6 +184,25 @@ async function onRunSettled(runId: string, threadId: string): Promise<void> {
   );
 }
 
+/** Start a real engine turn at the trusted worker boundary, before any optional
+ * context or runtime preparation can add seconds of silent UI time. The row is
+ * durable (so reload/reconnect sees the same state) and also published live.
+ * Returns the next step index for the engine adapter. */
+export async function beginEngineRun(runId: string, threadId: string): Promise<number> {
+  await setRunStatus(runId, "running");
+  publishThreadChange(threadId, { runId, kind: "running" });
+  const step = await insertStep({
+    runId,
+    idx: 0,
+    kind: "task",
+    label: "Preparing context and runtime…",
+    chip: "boot",
+    code: { phase: "preparing" },
+  });
+  bus.emit(channel(runId), { type: "step", step } satisfies BusEvent);
+  return 1;
+}
+
 async function runWorker(runId: string): Promise<void> {
   const run = await getRun(runId);
   if (!run) return; // deleted before the actor started
@@ -202,6 +221,12 @@ async function runWorker(runId: string): Promise<void> {
   cancellers.set(runId, requestCancel);
 
   try {
+    // Match mature agent UIs: expose a truthful, durable lifecycle row
+    // immediately, then do memory/skill/runtime work behind it. Mock retains its
+    // exact scripted fixture; every real engine starts its own rows at index 1.
+    const firstEngineStep =
+      run.engine === "mock" ? 0 : await beginEngineRun(run.id, run.threadId);
+
     // Skill context (Phase 0 slice 0.1): resolve + record the run's pinned skill
     // FIRST, for ANY engine. A run that selected a skill "loaded" it regardless of
     // harness — mock ignores context, but the durable `skill.loaded` marker and
@@ -321,6 +346,7 @@ async function runWorker(runId: string): Promise<void> {
         run.commandSessionId ?? null,
         run.commandProvider ?? null,
         run.commandCatalogRevision ?? null,
+        firstEngineStep,
       );
     } finally {
       bus.off(channel(runId), onActivity);
@@ -434,11 +460,11 @@ async function runEngine(
   /** The provider + catalog snapshot the command was authorized against (fail-closed D4). */
   commandProvider: string | null,
   commandCatalogRevision: number | null,
+  /** First adapter-owned step index; the worker reserves index 0 for the
+   * immediate real-turn lifecycle marker. */
+  firstEngineStep: number,
 ): Promise<void> {
   const startedAt = Date.now();
-  await setRunStatus(runId, "running");
-  // Wake connected thread streams to re-project the queued→running transition.
-  publishThreadChange(threadId, { runId, kind: "running" });
 
   // Explicit native-session resume (reference bot's set_resume_session_id model): the
   // thread's previous turn on the SAME engine recorded its engine session id in
@@ -479,7 +505,7 @@ async function runEngine(
     stderr: "ignore",
   }).exited.catch(() => {});
 
-  let idx = 0;
+  let idx = firstEngineStep;
   let summary: string | null = null;
   let summaryDuration: number | null = null;
 

@@ -77,6 +77,19 @@ export interface CanonicalCommand {
   input?: string;
 }
 
+export interface CanonicalQuestionOption {
+  label: string;
+  description?: string;
+}
+
+export interface CanonicalQuestion {
+  header?: string;
+  prompt: string;
+  options: readonly CanonicalQuestionOption[];
+  multiple: boolean;
+  custom: boolean;
+}
+
 /** Skynet-generated context markers (memory/knowledge/skill/playbook/rule) that
  *  render identically for every engine because they originate in Skynet's lane,
  *  not the provider's. */
@@ -127,8 +140,22 @@ export type CanonicalEventBody =
   | { kind: "child.completed"; childId: string; status: "ok" | "error"; result?: string }
   | { kind: "approval.requested"; approvalId: string; operation: string; options: readonly string[] }
   | { kind: "approval.resolved"; approvalId: string; decision: string }
-  | { kind: "question.requested"; questionId: string; prompt: string; options?: readonly string[] }
-  | { kind: "question.resolved"; questionId: string; answer: string }
+  | {
+      kind: "question.requested";
+      questionId: string;
+      /** Backward-compatible first prompt/options for simple consumers. */
+      prompt: string;
+      options?: readonly string[];
+      /** Full provider-neutral multi-question request for interactive clients. */
+      questions?: readonly CanonicalQuestion[];
+    }
+  | {
+      kind: "question.resolved";
+      questionId: string;
+      answer: string;
+      answers?: readonly (readonly string[])[];
+      status?: "answered" | "rejected";
+    }
   | {
       kind: "commands.updated";
       commands: readonly string[];

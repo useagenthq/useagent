@@ -25,6 +25,10 @@ import type { NativeSnapshot } from "@/components/chat/native-store";
 import type { ThreadRunView } from "@/components/chat/thread-store";
 import { SubagentChips } from "@/components/chat/subagent-pane";
 import {
+  selectPendingQuestion,
+  type PendingQuestion,
+} from "@/components/chat/question-state";
+import {
   isLiveStatus,
   normalizeEngine,
   parseFileEntries,
@@ -92,6 +96,8 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
   const [pending, setPending] = useState<{ text: string; runId: string | null } | null>(null);
   const [stopping, setStopping] = useState(false);
   const [stopError, setStopError] = useState<string | null>(null);
+  const [answeringQuestion, setAnsweringQuestion] = useState(false);
+  const [questionError, setQuestionError] = useState<string | null>(null);
 
   // ONE realtime subscription for the whole conversation, keyed by the ROOT thread
   // id for the page lifetime (final_fix.md): creating/queueing/starting/settling/
@@ -167,6 +173,67 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
   const booting =
     !!liveTurn && !liveTurn.liveText && !liveTurn.steps.some((s) => s.kind !== "done");
 
+  // Native questions are control traffic inside the currently-running provider
+  // turn. Derive the card from durable frames so live streaming and reload show
+  // the same pending request. Settled turns are intentionally excluded: a failed
+  // provider must not leave an unanswerable historical question blocking chat.
+  const activeQuestion = useMemo(() => {
+    for (const turn of turns.toReversed()) {
+      if (!isLiveStatus(turn.status)) continue;
+      const request = selectPendingQuestion(turn.native?.nativeFrames ?? []);
+      if (request) return { runId: turn.run.id, request };
+    }
+    return null;
+  }, [turns]);
+  const composerCanAnswerQuestion =
+    activeQuestion?.request.questions.length === 1 &&
+    activeQuestion.request.questions[0]?.custom === true;
+
+  const submitQuestionAnswers = useCallback(
+    async (target: { runId: string; request: PendingQuestion }, answers: string[][]) => {
+      if (answeringQuestion) return false;
+      setAnsweringQuestion(true);
+      setQuestionError(null);
+      try {
+        const response = await backendFetch(
+          `/api/runs/${target.runId}/questions/${target.request.id}/reply`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ answers }),
+          },
+        );
+        if (!response.ok) {
+          const body = (await response.json().catch(() => ({}))) as {
+            error?: unknown;
+            message?: unknown;
+          };
+          const message =
+            typeof body.message === "string"
+              ? body.message
+              : typeof body.error === "string"
+                ? body.error
+                : `backend ${response.status}`;
+          throw new Error(message);
+        }
+        void reconcile();
+        return true;
+      } catch (error) {
+        setQuestionError(
+          error instanceof Error ? error.message : "Could not continue this turn",
+        );
+        return false;
+      } finally {
+        setAnsweringQuestion(false);
+      }
+    },
+    [answeringQuestion, reconcile],
+  );
+
+  useEffect(() => {
+    setQuestionError(null);
+  }, [activeQuestion?.request.id]);
+
   // Removed with the cutover: the active-run projection cache, the terminal-state
   // refetch, and the five-second external-turn discovery poll. The thread stream
   // now delivers new runs (post-commit `created` signal), settled run fields
@@ -182,6 +249,13 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
       memoryScope: MemoryScope,
       command?: { name: string; args: string } | null,
     ) => {
+      // A free-text reply to a native question resumes the resident OpenCode
+      // turn. It must never enqueue a child run behind the blocked parent.
+      if (activeQuestion && composerCanAnswerQuestion) {
+        const accepted = await submitQuestionAnswers(activeQuestion, [[text]]);
+        if (!accepted) throw new Error("question reply failed");
+        return;
+      }
       setPending({ text, runId: null });
       try {
         const res = await backendFetch("/api/runs", {
@@ -228,7 +302,16 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
         throw err;
       }
     },
-    [newest.id, reconcile, engineSessionId, commandCatalogRevision, caps?.modelSelection],
+    [
+      activeQuestion,
+      caps?.modelSelection,
+      commandCatalogRevision,
+      composerCanAnswerQuestion,
+      engineSessionId,
+      newest.id,
+      reconcile,
+      submitQuestionAnswers,
+    ],
   );
 
   // Retire the optimistic bubble ONLY once its accepted run is present in the thread
@@ -376,13 +459,6 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
   const railTab =
     railTabOverride ??
     (hasSubagents ? "agents" : hasFiles ? "editor" : hasCommands ? "terminal" : "editor");
-  // The Desktop tab watches the sandbox GUI (multi-repo); a recorded opencode
-  // session implies its sandbox exists, so the pane can connect (else it shows a
-  // Desktop/VNC tab: shown ONLY when the session's negotiated capability map says a real desktop
-  // resource exists (caps.desktop) - a capability, never a provider-name guess. A capability-false
-  // session (e.g. a cold ACP sandbox with no VNC) never shows a fake tab; before session.started
-  // the tab is simply absent until the capability is known (fast; immediate on a settled reload).
-  const hasDesktop = caps?.desktop === true;
 
   // Slash-command catalog for the reply composer's "/" autocomplete - the SELECTED engine's
   // real native commands, capability-driven (no provider-name gate). Authoritative source is
@@ -491,6 +567,12 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
             commandState={catalogState}
             modelSelection={caps?.modelSelection === true}
             onReply={handleReply}
+            pendingQuestion={activeQuestion?.request ?? null}
+            answeringQuestion={answeringQuestion}
+            questionError={questionError}
+            onAnswerQuestion={async (answers) => {
+              if (activeQuestion) await submitQuestionAnswers(activeQuestion, answers);
+            }}
             sendNowFor={runningTurn ? headQueuedId : null}
             onSendNow={handleSendNow}
             running={runningTurn !== null}
@@ -574,14 +656,12 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
                     <RiTerminalBoxLine className="size-4" aria-hidden />
                     Terminal
                   </SegmentedControl.Trigger>
-                  {/* multi-repo desktop: watch (and click) the sandbox GUI over
-                      noVNC. Only opencode threads carry the noVNC snapshot. */}
-                  {hasDesktop && (
-                    <SegmentedControl.Trigger value="desktop" data-testid="rail-tab-desktop">
-                      <RiComputerLine className="size-4" aria-hidden />
-                      Desktop
-                    </SegmentedControl.Trigger>
-                  )}
+                  {/* Desktop is a stable product surface. The pane itself waits
+                      for or wakes the thread's Daytona sandbox on demand. */}
+                  <SegmentedControl.Trigger value="desktop" data-testid="rail-tab-desktop">
+                    <RiComputerLine className="size-4" aria-hidden />
+                    Desktop
+                  </SegmentedControl.Trigger>
                 </SegmentedControl.List>
               </SegmentedControl.Root>
               <button
@@ -600,7 +680,7 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
               ) : railTab === "editor" ? (
                 <EditorPane steps={allSteps} live={live} />
               ) : railTab === "desktop" ? (
-                <DesktopPane threadId={rootId} hasSandbox={caps?.desktop === true && !!engineSessionId} />
+                <DesktopPane threadId={rootId} />
               ) : (
                 <TerminalPane steps={allSteps} live={live} engine={newest.engine} runId={newest.id} />
               )}

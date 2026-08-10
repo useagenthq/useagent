@@ -64,6 +64,9 @@ export type ComposerProps = {
   engine?: EngineId;
   defaultEngine?: EngineId;
   pending?: boolean;
+  /** Disable prompt submission while a structured multi-question request must
+   * be completed in its card. Unlike `pending`, this is not a loading state. */
+  locked?: boolean;
   autoFocus?: boolean;
   className?: string;
   /** Enable the "/" Choose-Agent slash command (default on hero). */
@@ -125,6 +128,7 @@ export function Composer({
   engine: engineProp,
   defaultEngine = "opencode",
   pending = false,
+  locked = false,
   autoFocus = false,
   className,
   enableAgentCommand,
@@ -171,7 +175,8 @@ export function Composer({
   const slashActive = allowAgent && !command && value.trimStart().startsWith("/");
   const showAgentPopover = slashActive || toolsOpen;
   const busy = pending || submitting;
-  const canSend = value.trim().length > 0 && !busy;
+  const blocked = busy || locked;
+  const canSend = value.trim().length > 0 && !blocked;
   // Circular blue send button - reads correctly on BOTH the dark (#20201f) and the
   // light composer surface, so it theme-follows instead of forcing a static color.
   const sendToneClass = "bg-blue-500 text-white hover:bg-blue-600";
@@ -190,7 +195,7 @@ export function Composer({
     : commands ?? [];
   const cmdToken = /^\/([^\s]*)$/.exec(value.trimStart())?.[1];
   const slashTyped = !allowAgent && !cmdDismissed && cmdToken !== undefined;
-  const cmdMatches = slashTyped ? filterCommands(catalogCommands, cmdToken!) : [];
+  const cmdMatches = slashTyped ? filterCommands(catalogCommands, cmdToken ?? "") : [];
   // Show the popover while typing "/" when there is SOMETHING honest to show: matches, a
   // non-ready state row (loading/unavailable/error), or a ready-but-no-match note when a catalog
   // exists. A ready+empty catalog (the engine advertises none) shows nothing.
@@ -223,14 +228,15 @@ export function Composer({
       setCmdHighlight((h) => (h - 1 + cmdMatches.length) % cmdMatches.length);
     } else if (e.key === "Enter" || e.key === "Tab") {
       e.preventDefault();
-      pickCommand(cmdMatches[Math.min(cmdHighlight, cmdMatches.length - 1)]!);
+      const selected = cmdMatches[Math.min(cmdHighlight, cmdMatches.length - 1)];
+      if (selected) pickCommand(selected);
     }
   }
 
   async function submit() {
     const raw = value; // the ORIGINAL bytes, before any trim
     const text = raw.trim();
-    if (!text || busy) return; // duplicate-submit guard (Enter spam / double-click)
+    if (!text || blocked) return; // duplicate-submit / structured-question guard
     // Reuse the idempotency key when resending the SAME failed text, so a retry
     // after an ambiguous failure observes the original run instead of starting a
     // duplicate; fresh text gets a fresh key.
@@ -367,6 +373,7 @@ export function Composer({
             )}
             <PromptInputTextarea
               autoFocus={autoFocus}
+              disabled={locked}
               placeholder={command ? "" : placeholder}
               // ARIA combobox/listbox wiring for the "/" command popover: announce that a list is
               // available, whether it is open, and which option is active (so a screen reader reads
