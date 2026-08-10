@@ -1,5 +1,10 @@
 import { Daytona, type Sandbox } from "@daytona/sdk";
 import type { EmitStep, EngineAdapter, EngineRunContext } from "./types";
+import {
+  assertSandboxResources,
+  resolveSandboxResourceTarget,
+  sandboxMeetsResourceTarget,
+} from "./daytona-resources";
 import { composeTurnPrompt } from "./types";
 import { basename, parseJsonLine, truncate } from "./util";
 import { allowPermissionBypass } from "./permission-policy";
@@ -441,6 +446,8 @@ function makeSandboxAdapter(spec: SandboxEngineSpec): EngineAdapter {
       // world alive for days before deletion.
       const autoStopInterval = Number(process.env.SANDBOX_AUTO_STOP_MIN ?? 30);
       const autoDeleteInterval = Number(process.env.SANDBOX_AUTO_DELETE_MIN ?? 4320); // 3 days
+      const snapshot = process.env.DAYTONA_ACP_SNAPSHOT ?? "skynet-acp-v2";
+      const resourceTarget = resolveSandboxResourceTarget();
       let sandbox: Sandbox | null = null;
       let retainForThread = false;
 
@@ -480,33 +487,53 @@ function makeSandboxAdapter(spec: SandboxEngineSpec): EngineAdapter {
           }
         }
 
-        if (!sandbox) {
+        if (sandbox && !sandboxMeetsResourceTarget(sandbox, resourceTarget)) {
+          const staleId = sandbox.id;
+          await sandbox.delete().catch(() => {});
+          if (ctx.threadId) forgetLiveThreadSandbox(ctx.threadId, staleId);
+          sandbox = null;
+          retainForThread = false;
+          await ctx.emit({
+            kind: "task",
+            label: "Replacing an undersized retained sandbox…",
+            chip: spec.id,
+          });
+        }
+
+        const provisionedFresh = !sandbox;
+        if (provisionedFresh) {
           await ctx.emit({ kind: "task", label: "Provisioning cloud sandbox…", chip: spec.id });
-          // Default image (user `daytona`): the root-running snapshot refuses
-          // `claude --dangerously-skip-permissions`. The engine binary installs
-          // once below and stays resident for the sandbox's lifetime.
           sandbox = await daytona.create({
+            snapshot,
             envVars,
             labels: providerGatewaySandboxLabels(ctx.runId),
             autoStopInterval,
             autoDeleteInterval,
           });
+        }
+        if (!sandbox) throw new Error("Daytona returned no sandbox");
+        const box = sandbox;
+        const resources = assertSandboxResources(box, resourceTarget);
+        if (provisionedFresh && ctx.threadId) {
+          // Do not retain a fresh sandbox until its snapshot resource contract
+          // is proven. An undersized fallback must be deleted by finally, not
+          // cached as the thread's long-lived world.
+          rememberLiveThreadSandbox(ctx.threadId, box);
+          retainForThread = true;
+        }
+        if (provisionedFresh) {
           await ctx.emit({
             kind: "task",
-            label: `Sandbox ${sandbox.id.slice(0, 8)} ready in ${Math.round((Date.now() - startedAt) / 1000)}s`,
+            label: `Sandbox ${box.id.slice(0, 8)} ready in ${Math.round((Date.now() - startedAt) / 1000)}s (${resources.cpu} CPU / ${resources.memory} GiB)`,
             chip: spec.id,
           });
-          if (ctx.threadId) {
-            rememberLiveThreadSandbox(ctx.threadId, sandbox);
-            retainForThread = true;
-          }
         }
         if (ctx.signal.aborted) throw new Error(`${spec.id} run aborted (timeout)`);
 
         // Resident binary: install ONCE per sandbox into the user prefix (npm -g
         // needs root here), then every turn invokes it directly — no npx
         // resolution tax per message. Idempotent probe first, so reuse is free.
-        const probe = await sandbox.process.executeCommand(
+        const probe = await box.process.executeCommand(
           `export PATH=$HOME/.local/bin:$PATH; command -v ${spec.install.bin} >/dev/null 2>&1 && echo OK`,
           undefined,
           undefined,
@@ -514,7 +541,7 @@ function makeSandboxAdapter(spec: SandboxEngineSpec): EngineAdapter {
         );
         if (!(probe.result ?? "").includes("OK")) {
           await ctx.emit({ kind: "task", label: `Installing ${spec.install.bin} (once per sandbox)…`, chip: spec.id });
-          const inst = await sandbox.process.executeCommand(
+          const inst = await box.process.executeCommand(
             `npm install -g --prefix $HOME/.local --silent ${spec.install.pkg} 2>&1 | tail -2`,
             undefined,
             undefined,
@@ -525,7 +552,7 @@ function makeSandboxAdapter(spec: SandboxEngineSpec): EngineAdapter {
           }
         }
 
-        await spec.prepare?.(sandbox, ctx);
+        await spec.prepare?.(box, ctx);
 
         // Explicit native-session resume: id from the DB (previous turn, same
         // engine). Resuming ⇒ the engine holds the history — send ONLY the new
@@ -535,8 +562,6 @@ function makeSandboxAdapter(spec: SandboxEngineSpec): EngineAdapter {
         const resumeId = rawResume && SAFE_ARG.test(rawResume) ? rawResume : undefined;
         const rawModel = ctx.model?.trim() ?? "";
         const model = SAFE_ARG.test(rawModel) ? rawModel : DEFAULT_MODEL;
-        const box = sandbox;
-
         // Materialize any file-kind org secrets (0600) before the agent turn.
         await materializeSecretFiles(
           (cmd) => box.process.executeCommand(cmd, undefined, undefined, 30),

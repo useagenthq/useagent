@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { buildAcpToolStep } from "./acp-tool-step";
+import { buildAcpToolCompletion, buildAcpToolStep } from "./acp-tool-step";
 
 const native = {
   sessionID: "ses_1",
@@ -51,5 +51,22 @@ describe("buildAcpToolStep", () => {
       title: "mcp__skynet-browser__browser_navigate",
     });
     expect(step.chip).toBe("mcp");
+  });
+
+  test("does not overwrite an MCP method with other when its result arrives", () => {
+    const update = {
+      kind: "other",
+      title: "mcp__skynet-browser__browser_click",
+      rawInput: { element: "Close button", ref: "e152" },
+    };
+
+    expect(buildAcpToolCompletion(update, "clicked", native, false)).toEqual({
+      tool: "mcp__skynet-browser__browser_click",
+      title: "mcp__skynet-browser__browser_click",
+      input: { element: "Close button", ref: "e152" },
+      output: "clicked",
+      native,
+      status: "completed",
+    });
   });
 });

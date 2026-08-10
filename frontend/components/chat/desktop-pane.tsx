@@ -7,8 +7,10 @@ export function buildDesktopFrameSrc(threadId: string): string {
     autoconnect: "true",
     resize: "scale",
     reconnect: "true",
-    // noVNC resolves `path` against vnc.html. Keep it root-relative so it does
-    // not duplicate the iframe's /api/desktop-proxy/<threadId>/ directory.
+    reconnect_delay: "500",
+    // noVNC 1.6 resolves this value with `new URL(path, location.href)`.
+    // Keep it root-relative so the proxied vnc.html directory is not prepended
+    // a second time to the websocket route.
     path: `/api/desktop-proxy/${threadId}/websockify`,
   });
   return `/api/desktop-proxy/${threadId}/vnc.html?${params.toString()}`;
@@ -16,7 +18,7 @@ export function buildDesktopFrameSrc(threadId: string): string {
 
 /**
  * The "Desktop" tab: a live view of the conversation's sandbox GUI (multi-repo),
- * via noVNC. The skynet-agent snapshot runs Xvfb + XFCE + x11vnc + noVNC on
+ * via noVNC. The sandbox runtime keeps Xvfb + XFCE + x11vnc + noVNC alive on
  * :6080; we iframe noVNC's own `vnc.html` served THROUGH the same-origin
  * `/api/desktop-proxy/<threadId>` bridge (backend injects the Daytona preview
  * token on both the static app and the RFB WebSocket — see backend
@@ -52,7 +54,9 @@ export function DesktopPane({ threadId }: { threadId: string }) {
           setReady(true);
           return;
         }
-        setStatus(response.status === 409 ? "Waiting for Daytona sandbox…" : "Starting sandbox desktop…");
+        setStatus(
+          response.status === 409 ? "Waiting for Daytona sandbox…" : "Starting sandbox desktop…",
+        );
       } catch {
         if (cancelled) return;
         setStatus("Reconnecting to sandbox desktop…");

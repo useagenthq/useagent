@@ -136,7 +136,12 @@ export const AGENT_OPERATING_RULES =
   "it in a loop. Treat that dependency as unavailable: skip the sub-step it blocks, do " +
   "everything else the task allows, and finish. A partial result that explicitly names " +
   "what was skipped and why is far better than hanging until a timeout. Never block a " +
-  "whole task on one missing dependency.\n" +
+  "whole task on one missing dependency. When browser tools are available, reuse the " +
+  "existing visible tab and prefer bounded DOM/locator actions. On complex dynamic pages, " +
+  "never request an unbounded full accessibility snapshot: limit it by target or depth. " +
+  "If structural inspection times out once, switch to a viewport screenshot plus coordinate " +
+  "tools instead of repeating the same snapshot. Do not close the browser unless the user " +
+  "asks you to.\n" +
   "</operating_rules>\n\n";
 
 export function composeTurnPrompt(

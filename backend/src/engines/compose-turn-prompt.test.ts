@@ -41,6 +41,13 @@ describe("composeTurnPrompt — fresh vs resumed context", () => {
     expect(composeTurnPrompt(bare, true)).toBe("USER");
   });
 
+  test("fresh browser sessions prefer bounded DOM work with a vision fallback", () => {
+    expect(R).toContain("prefer bounded DOM/locator actions");
+    expect(R).toContain("limit it by target or depth");
+    expect(R).toContain("viewport screenshot plus coordinate tools");
+    expect(R).toContain("Do not close the browser unless the user asks");
+  });
+
   test("root fresh run (no bootstrap yet) still injects rules + turnContext", () => {
     expect(composeTurnPrompt(ctx({ bootstrapContext: "" }), false)).toBe(`${R}TURNUSER`);
   });

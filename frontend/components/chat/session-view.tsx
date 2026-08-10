@@ -428,7 +428,7 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
     handle.addEventListener("pointermove", onMove);
     handle.addEventListener("pointerup", onUp);
   }
-  function resizeRailWithKeyboard(event: React.KeyboardEvent<HTMLDivElement>) {
+  function resizeRailWithKeyboard(event: React.KeyboardEvent<HTMLElement>) {
     const containerMax = bodyRef.current
       ? Math.min(bodyRef.current.getBoundingClientRect().width * 0.6, RAIL_MAX)
       : RAIL_MAX;
@@ -600,8 +600,7 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
         </section>
 
         {railOpen && (
-          <div
-            role="separator"
+          <hr
             tabIndex={0}
             aria-orientation="vertical"
             aria-label="Resize the side panel"
