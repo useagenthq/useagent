@@ -30,6 +30,8 @@ function describeKind(e: CanonicalEventBody): string {
     case "tool.progress": return "tool progress";
     case "tool.completed": return "tool completed";
     case "file.changed": return "file changed";
+    case "artifact.created": return "artifact created";
+    case "artifact.delivered": return "artifact delivered";
     case "terminal.output": return "terminal output";
     case "child.started": return "child started";
     case "child.updated": return "child updated";
@@ -67,6 +69,12 @@ describe("canonical event vocabulary", () => {
       { ...base("turn.started"), kind: "turn.started" },
       { ...base("message.delta"), kind: "message.delta", messageId: "m1", text: "hi" },
       { ...base("tool.completed"), kind: "tool.completed", toolCallId: "t1", status: "ok" },
+      {
+        ...base("artifact.created"),
+        kind: "artifact.created",
+        name: "report.pdf",
+        artifact: { artifactId: "a1", bytes: 42, sha256: "a".repeat(64), contentType: "application/pdf" },
+      },
       { ...base("child.started"), kind: "child.started", childId: "c1" },
       { ...base("usage.updated"), kind: "usage.updated", outputTokens: 42 },
       { ...base("harness.error"), kind: "harness.error", message: "boom", fatal: true },

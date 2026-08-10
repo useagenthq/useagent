@@ -36,6 +36,14 @@ export interface CanonicalEventLike {
   readonly markerType?: string;
   readonly title?: string;
   readonly detail?: string;
+  readonly name?: string;
+  readonly destination?: string;
+  readonly artifact?: {
+    readonly artifactId: string;
+    readonly bytes: number;
+    readonly sha256: string;
+    readonly contentType: string;
+  };
   /** The originating skynet-lane frame, carried by the translator so the marker is
    *  reconstructed with the SAME parser the legacy native lane uses (H3, lossless). */
   readonly sourceEventType?: string;
@@ -178,13 +186,39 @@ export function buildTimelineFromCanonical(
       });
       continue;
     }
+    if (
+      (e.kind === "artifact.created" || e.kind === "artifact.delivered") &&
+      e.artifact &&
+      e.name
+    ) {
+      ranked.push({
+        node: {
+          kind: "artifact",
+          key: e.identity?.nativeEventId ?? String(e.seq),
+          artifact: {
+            id: e.artifact.artifactId,
+            name: e.name,
+            bytes: e.artifact.bytes,
+            sha256: e.artifact.sha256,
+            contentType: e.artifact.contentType,
+            ...(e.kind === "artifact.delivered" && e.destination
+              ? { destination: e.destination }
+              : {}),
+          },
+        },
+        k0: MAX,
+        k1: 2,
+        k2: e.identity?.nativeSeq ?? e.seq,
+      });
+      continue;
+    }
     // ── assistant text bursts (root, step-messages only; child text -> its pane) ─
     if (e.kind === "message.delta") {
       const sid = e.identity?.nativeSessionId;
       const mid = e.messageId;
       if (sid && childSessions.has(sid)) continue; // subagent chatter
       if (!mid || !stepMessages.has(mid)) continue; // injected context / user prompt
-      if (!e.text || !e.text.trim()) continue;
+      if (!e.text?.trim()) continue;
       const key = e.identity?.nativePartId ?? e.identity?.nativeEventId ?? String(e.seq);
       if (seenTextPart.has(key)) continue; // one burst per part (latest wins by seq order)
       seenTextPart.add(key);

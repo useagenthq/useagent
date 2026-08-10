@@ -216,6 +216,26 @@ export function translateOpenCode(
         // no fabrication, deep-equal marker nodes.
         produced.push(push(f.eventId, f.provider, { kind: "context.marker", ...marker, sourceEventType: et, ...(p ? { sourcePayload: p } : {}) }, ident));
       }
+      else if (et === "artifact.created" || et === "artifact.delivered") {
+        const artifactId = str(p?.id);
+        const name = str(p?.name);
+        const sha256 = str(p?.sha256);
+        const contentType = str(p?.content_type);
+        const bytes = typeof p?.size_bytes === "number" ? p.size_bytes : null;
+        if (artifactId && name && sha256 && contentType && bytes !== null) {
+          const artifact = { artifactId, bytes, sha256, contentType };
+          if (et === "artifact.created") {
+            produced.push(push(f.eventId, f.provider, { kind: "artifact.created", artifact, name }, ident));
+          } else {
+            produced.push(push(f.eventId, f.provider, {
+              kind: "artifact.delivered",
+              artifact,
+              name,
+              destination: str(p?.destination) ?? "unknown",
+            }, ident));
+          }
+        } else suppressed = `${et} without a complete artifact descriptor`;
+      }
       else if (et === "secrets.injected") produced.push(push(f.eventId, f.provider, { kind: "session.metadata", metadata: { secretsInjected: true } }, ident));
       else produced.push(push(f.eventId, f.provider, { kind: "harness.warning", message: "unmapped skynet event", rawEventType: et }, ident));
     } else if (et === "question.asked") {

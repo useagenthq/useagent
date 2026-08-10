@@ -17,16 +17,15 @@ export type AddReactionPayload = {
   readonly name: string;
 };
 
-/** Deliver a run-produced artifact into a thread. The BYTES are staged on disk
- *  (server-side, while the sandbox is alive); this payload carries only the
- *  staged path + metadata, so the durable row stays small. */
+/** Deliver a run-produced artifact into a thread. New rows reference immutable
+ * shared artifact storage; stagedPath remains readable for pre-migration rows. */
 export type UploadFilePayload = {
   readonly channel: string;
   readonly threadTs?: string;
   readonly filename: string;
   readonly title?: string;
-  /** Absolute path to the staged bytes on the backend's disk. */
-  readonly stagedPath: string;
+  readonly artifactId?: string;
+  readonly stagedPath?: string;
   readonly size: number;
 };
 

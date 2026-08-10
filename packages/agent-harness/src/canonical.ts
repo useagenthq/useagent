@@ -128,6 +128,13 @@ export type CanonicalEventBody =
       changeType: "create" | "edit" | "delete";
       diff?: ArtifactRef;
     }
+  | { kind: "artifact.created"; artifact: ArtifactRef; name: string }
+  | {
+      kind: "artifact.delivered";
+      artifact: ArtifactRef;
+      name: string;
+      destination: string;
+    }
   | { kind: "terminal.output"; terminalId?: string; chunk: string }
   | {
       kind: "child.started";
