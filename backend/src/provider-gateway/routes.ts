@@ -8,7 +8,11 @@ import { resolveProviderCredential } from "./credentials";
 import { providerForEngine, type ProviderId } from "./provider";
 import { providerRequestLimits } from "./limits";
 import { applyProviderBodyPolicy, type OutputLimitField } from "./request-policy";
-import { findRunningGatewayRun, type GatewayRun } from "./run-authorization";
+import {
+  findActiveThreadGatewayRun,
+  findRunningGatewayRun,
+  type GatewayRun,
+} from "./run-authorization";
 import { verifyProviderToken, type ProviderTokenClaims } from "./token";
 import { runtimeDevModeEnabled } from "../security/runtime-secrets";
 import { applyOpenRouterProviderRouting } from "./provider-routing";
@@ -18,6 +22,7 @@ const MAX_BODY_BYTES = 8 * 1024 * 1024;
 interface ProviderRouteDeps {
   readonly verifyToken?: typeof verifyProviderToken;
   readonly findRunningRun?: typeof findRunningGatewayRun;
+  readonly findActiveThreadRun?: typeof findActiveThreadGatewayRun;
   readonly resolveCredential?: typeof resolveProviderCredential;
   readonly fetchUpstream?: FetchLike;
   readonly beginAudit?: typeof beginProviderGatewayAudit;
@@ -130,13 +135,21 @@ function authorizedRun(
 ): run is GatewayRun {
   if (!run || claims.provider !== target.provider) return false;
   if (
-    run.id !== claims.issuedRunId ||
     run.orgId !== claims.orgId ||
-    (run.userId ?? "") !== claims.userId ||
     run.threadId !== claims.threadId ||
     run.engine !== claims.engine
   ) {
     return false;
+  }
+  // "run" scope binds to the exact minted turn AND its user. "thread" scope
+  // resolved the thread's live run per request; run identity (incl. the acting
+  // user for budgets/audit) comes from the RESOLVED run row - the token's
+  // minting user is provenance, not a gate, so an org teammate's later turn on
+  // the same thread is not rejected.
+  if (claims.scope === "run") {
+    if (run.id !== claims.issuedRunId || (run.userId ?? "") !== claims.userId) {
+      return false;
+    }
   }
   return providerForEngine(run.engine, run.model) === target.provider;
 }
@@ -181,6 +194,7 @@ function responseBodyWithRelease(
 export function createProviderGatewayRoutes(deps: ProviderRouteDeps = {}): Hono {
   const verifyToken = deps.verifyToken ?? verifyProviderToken;
   const findRunningRun = deps.findRunningRun ?? findRunningGatewayRun;
+  const findActiveThreadRun = deps.findActiveThreadRun ?? findActiveThreadGatewayRun;
   const resolveCredential = deps.resolveCredential ?? resolveProviderCredential;
   const fetchUpstream: FetchLike = deps.fetchUpstream ?? fetch;
   const beginAudit = deps.beginAudit ?? beginProviderGatewayAudit;
@@ -191,12 +205,22 @@ export function createProviderGatewayRoutes(deps: ProviderRouteDeps = {}): Hono 
     const claims = verifyToken(presentedToken(c.req.raw.headers));
     if (!claims) return c.json({ error: "unauthorized" }, 401);
 
-    const run = await findRunningRun({
-      runId: claims.issuedRunId,
-      orgId: claims.orgId,
-      threadId: claims.threadId,
-      engine: claims.engine,
-    });
+    // "run" scope: the exact minted turn must be live. "thread" scope: resolve
+    // the thread's single live turn (fail closed on none or - invariant breach -
+    // more than one); enforcement below keys to the resolved run.
+    const run =
+      claims.scope === "thread"
+        ? await findActiveThreadRun({
+            orgId: claims.orgId,
+            threadId: claims.threadId,
+            engine: claims.engine,
+          })
+        : await findRunningRun({
+            runId: claims.issuedRunId,
+            orgId: claims.orgId,
+            threadId: claims.threadId,
+            engine: claims.engine,
+          });
     if (!authorizedRun(claims, target, run)) return c.json({ error: "forbidden" }, 403);
 
     const limits = providerRequestLimits();

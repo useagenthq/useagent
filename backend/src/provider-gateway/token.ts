@@ -9,13 +9,27 @@ const TOKEN_OPTIONS = {
   },
 };
 
+/** How the capability binds to a turn (perf plan run-invariant-config slice):
+ *  - "run": usable ONLY while the exact minted run is running (the original
+ *    model - a warm process's older token is inert on later turns).
+ *  - "thread": usable while THIS thread has ANY currently-running turn on the
+ *    minted engine; the gateway resolves that live run per request and keys all
+ *    enforcement (model policy, budgets, audit) to the RESOLVED run. This is a
+ *    deliberate, documented relaxation that lets a resident OpenCode process
+ *    keep a byte-stable config across warm turns; outside a live turn the token
+ *    stays inert (fail closed), and the TTL bound is unchanged. */
+export type ProviderTokenScope = "run" | "thread";
+
 export interface ProviderTokenClaims {
   readonly orgId: string;
   readonly userId: string;
   readonly threadId: string;
+  /** The run the token was minted during. Identity authority for "run" scope;
+   *  provenance only for "thread" scope (enforcement uses the resolved run). */
   readonly issuedRunId: string;
   readonly engine: EngineId;
   readonly provider: ProviderId;
+  readonly scope: ProviderTokenScope;
   readonly exp: number;
 }
 
@@ -26,10 +40,12 @@ interface WireClaims {
   readonly r: string;
   readonly g: EngineId;
   readonly p: ProviderId;
+  /** Scope marker; absent (legacy tokens) means "run". */
+  readonly k?: "t";
 }
 
 export function mintProviderToken(
-  claims: Omit<ProviderTokenClaims, "exp">,
+  claims: Omit<ProviderTokenClaims, "exp" | "scope"> & { scope?: ProviderTokenScope },
   ttlMs: number,
 ): string {
   const wire: WireClaims = {
@@ -39,6 +55,7 @@ export function mintProviderToken(
     r: claims.issuedRunId,
     g: claims.engine,
     p: claims.provider,
+    ...(claims.scope === "thread" ? { k: "t" as const } : {}),
   };
   return mintSignedCapability(wire, ttlMs, TOKEN_OPTIONS);
 }
@@ -65,6 +82,7 @@ export function verifyProviderToken(
   ) {
     return null;
   }
+  if (wire.k !== undefined && wire.k !== "t") return null;
   return {
     orgId: wire.o,
     userId: wire.u,
@@ -72,6 +90,7 @@ export function verifyProviderToken(
     issuedRunId: wire.r,
     engine: wire.g as EngineId,
     provider: wire.p as ProviderId,
+    scope: wire.k === "t" ? "thread" : "run",
     exp: verified.exp,
   };
 }

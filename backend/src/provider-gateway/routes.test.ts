@@ -13,6 +13,7 @@ const claims: ProviderTokenClaims = {
   issuedRunId: "run-a",
   engine: "opencode",
   provider: "openrouter",
+  scope: "run",
   exp: Date.now() + 60_000,
 };
 
@@ -29,6 +30,7 @@ const run: GatewayRun = {
 function app(options: {
   token?: ProviderTokenClaims | null;
   activeRun?: GatewayRun | null;
+  activeThreadRun?: GatewayRun | null;
   credential?: string | null;
   fetchUpstream?: (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
   beginAudit?: () => Promise<void>;
@@ -40,6 +42,8 @@ function app(options: {
     createProviderGatewayRoutes({
       verifyToken: () => options.token === undefined ? claims : options.token,
       findRunningRun: async () => options.activeRun === undefined ? run : options.activeRun,
+      findActiveThreadRun: async () =>
+        options.activeThreadRun === undefined ? null : options.activeThreadRun,
       resolveCredential: async () => options.credential === undefined ? "real-upstream-key" : options.credential,
       fetchUpstream: options.fetchUpstream,
       beginAudit: options.beginAudit ?? (async () => undefined),
@@ -310,5 +314,61 @@ describe("provider gateway routes", () => {
     );
     expect(unavailable.status).toBe(503);
     expect(await unavailable.json()).toEqual({ error: "audit_unavailable" });
+  });
+});
+
+describe("thread-scoped capabilities (run-invariant config)", () => {
+  const threadClaims: ProviderTokenClaims = { ...claims, scope: "thread" };
+  const okUpstream = async () =>
+    new Response("{}", { status: 200, headers: { "content-type": "application/json" } });
+
+  test("authorizes via the thread's LIVE run - a later turn by a different org user", async () => {
+    // The live run is a DIFFERENT run id and a DIFFERENT user than the minting
+    // turn: thread scope takes identity from the resolved run row.
+    const laterTurn: GatewayRun = { ...run, id: "run-later", userId: "user-b" };
+    const response = await app({
+      token: threadClaims,
+      activeThreadRun: laterTurn,
+      fetchUpstream: okUpstream,
+    }).request("/api/provider/openrouter/v1/chat/completions", {
+      method: "POST",
+      body: JSON.stringify({ model: run.model }),
+    });
+    expect(response.status).toBe(200);
+  });
+
+  test("is inert when the thread has no live turn (fail closed)", async () => {
+    const response = await app({ token: threadClaims, activeThreadRun: null }).request(
+      "/api/provider/openrouter/v1/chat/completions",
+      { method: "POST", body: JSON.stringify({ model: run.model }) },
+    );
+    expect(response.status).toBe(403);
+  });
+
+  test("still enforces org/thread/engine binding against the resolved run", async () => {
+    const foreign: GatewayRun = { ...run, threadId: "thread-other" };
+    const response = await app({ token: threadClaims, activeThreadRun: foreign }).request(
+      "/api/provider/openrouter/v1/chat/completions",
+      { method: "POST", body: JSON.stringify({ model: run.model }) },
+    );
+    expect(response.status).toBe(403);
+  });
+
+  test("still enforces the resolved run's model policy", async () => {
+    const response = await app({ token: threadClaims, activeThreadRun: run }).request(
+      "/api/provider/openrouter/v1/chat/completions",
+      { method: "POST", body: JSON.stringify({ model: "openai/not-authorized" }) },
+    );
+    expect(response.status).toBe(403);
+  });
+
+  test("run-scoped tokens NEVER use thread resolution (exact-run binding intact)", async () => {
+    // findRunningRun returns null; even with a live thread run available, a
+    // run-scoped token must not fall back to it.
+    const response = await app({ activeRun: null, activeThreadRun: run }).request(
+      "/api/provider/openrouter/v1/chat/completions",
+      { method: "POST", body: JSON.stringify({ model: run.model }) },
+    );
+    expect(response.status).toBe(403);
   });
 });

@@ -5,6 +5,7 @@ import { providerGatewayConfig, PROVIDER_GATEWAY_PATH } from "./config";
 import { type ProviderId } from "./provider";
 import { mintProviderToken } from "./token";
 import { DEFAULT_CODEX_MODEL } from "../runs/model-policy";
+import { ThreadTokenMemo } from "../util/token-memo";
 
 export interface OpenCodeProviderOptions {
   readonly baseURL: string;
@@ -38,6 +39,48 @@ function mint(ctx: EngineRunContext, engine: EngineId, provider: ProviderId): st
       provider,
     },
     config.tokenTtlMs,
+  );
+}
+
+// Thread-scoped tokens for the resident OpenCode runtime (perf run-invariant-
+// config slice), memoized so warm turns reuse identical bytes and the sandbox
+// config stays byte-stable. The gateway resolves the thread's LIVE run per
+// request, so outside a running turn the token is inert - the exact-run
+// enforcement moved server-side, it did not weaken. TTL = turn-cover TTL
+// (tokenTtlMs, sized to the worker's absolute run ceiling) + a bounded reuse
+// window; refresh when remaining validity drops below the turn-cover TTL, so a
+// turn dispatched on a reused token has the SAME in-turn validity guarantee as
+// a freshly minted run token (adversarial-review finding).
+const THREAD_TOKEN_REUSE_MS = 8 * 60 * 60 * 1000;
+const opencodeThreadTokens = new ThreadTokenMemo();
+
+function mintOpencodeThreadToken(
+  ctx: EngineRunContext,
+  provider: ProviderId,
+): string | null {
+  const config = providerGatewayConfig();
+  if (!config || !ctx.orgId) return null;
+  const orgId = ctx.orgId;
+  // No thread → single-shot run: a memoized thread token buys nothing, keep the
+  // strict exact-run binding.
+  if (!ctx.threadId) return mint(ctx, "opencode", provider);
+  const threadId = ctx.threadId;
+  return opencodeThreadTokens.get(
+    `${orgId}:${threadId}:opencode:${provider}`,
+    { ttlMs: config.tokenTtlMs + THREAD_TOKEN_REUSE_MS, refreshMarginMs: config.tokenTtlMs },
+    () =>
+      mintProviderToken(
+        {
+          orgId,
+          userId: ctx.userId ?? "",
+          threadId,
+          issuedRunId: ctx.runId,
+          engine: "opencode",
+          provider,
+          scope: "thread",
+        },
+        config.tokenTtlMs + THREAD_TOKEN_REUSE_MS,
+      ),
   );
 }
 
@@ -85,8 +128,8 @@ export function providerGatewayEnv(
 export function opencodeProviderGatewayOptions(
   ctx: EngineRunContext,
 ): Partial<Record<"anthropic" | "openrouter", OpenCodeProviderOptions>> {
-  const anthropicToken = mint(ctx, "opencode", "anthropic");
-  const openrouterToken = mint(ctx, "opencode", "openrouter");
+  const anthropicToken = mintOpencodeThreadToken(ctx, "anthropic");
+  const openrouterToken = mintOpencodeThreadToken(ctx, "openrouter");
   // OpenCode passes provider options directly to the AI SDK; its documented
   // Anthropic baseURL includes `/v1` (the SDK appends `/messages`). Claude Code's
   // ANTHROPIC_BASE_URL seam differs and appends `/v1/messages` itself.
