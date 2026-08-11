@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import type { Sandbox } from "@daytona/sdk";
+import type { SandboxHandle } from "../sandboxes/provider";
 import type { EngineRunContext } from "./types";
 import { ensureRepoClone, prepareRepos, shq } from "./repo-prep";
 
@@ -29,7 +29,7 @@ interface Call {
  *  of a different repo -> safe to replace), "foreign" (an UNOWNED git repo, different origin ->
  *  fail closed), "occupied" (UNOWNED non-git content -> fail closed), "absent" (nothing there). */
 function fakeSandbox(opts: { state?: "reuse" | "branch" | "owned-stale" | "foreign" | "occupied" | "absent"; cloneExit?: number; cloneOut?: string; switchExit?: number; switchOut?: string } = {}): {
-  sandbox: Sandbox;
+  sandbox: SandboxHandle;
   calls: Call[];
 } {
   const calls: Call[] = [];
@@ -42,7 +42,7 @@ function fakeSandbox(opts: { state?: "reuse" | "branch" | "owned-stale" | "forei
       return { result: "", exitCode: 0 };
     },
   };
-  return { sandbox: { process } as unknown as Sandbox, calls };
+  return { sandbox: { process } as unknown as SandboxHandle, calls };
 }
 function fakeCtx(repos?: string[]): { ctx: EngineRunContext; emits: { label?: string }[] } {
   const emits: { label?: string }[] = [];

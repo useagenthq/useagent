@@ -1,6 +1,6 @@
 import type { EngineId } from "../db/schema";
 import type { EngineRunContext } from "../engines/types";
-import type { Sandbox } from "@daytona/sdk";
+import type { SandboxHandle } from "../sandboxes/provider";
 import { providerGatewayConfig, PROVIDER_GATEWAY_PATH } from "./config";
 import { type ProviderId } from "./provider";
 import { mintProviderToken } from "./token";
@@ -189,7 +189,7 @@ export function codexProviderConfigToml(model: string): string | null {
   ].join("\n");
 }
 
-async function readJsonFile(sandbox: Sandbox, path: string): Promise<Record<string, unknown>> {
+async function readJsonFile(sandbox: SandboxHandle, path: string): Promise<Record<string, unknown>> {
   const result = await sandbox.process
     .executeCommand(`cat ${path} 2>/dev/null || true`, undefined, undefined, 10)
     .catch(() => null);
@@ -206,7 +206,7 @@ async function readJsonFile(sandbox: Sandbox, path: string): Promise<Record<stri
 }
 
 async function writePrivateFiles(
-  sandbox: Sandbox,
+  sandbox: SandboxHandle,
   files: readonly { readonly path: string; readonly content: string }[],
 ): Promise<void> {
   const writes = files.map(({ path, content }) => {
@@ -225,7 +225,7 @@ async function writePrivateFiles(
 
 /** Rewrite the exact current run capability without restarting the resident agent. */
 export async function prepareProviderGatewaySandbox(
-  sandbox: Sandbox,
+  sandbox: SandboxHandle,
   ctx: EngineRunContext,
   engine: "claude" | "codex",
 ): Promise<void> {
@@ -264,7 +264,7 @@ export async function prepareProviderGatewaySandbox(
 }
 
 /** Old warm sandboxes may still contain raw provider env; never reuse them. */
-export async function providerGatewaySandboxIsCurrent(sandbox: Sandbox): Promise<boolean> {
+export async function providerGatewaySandboxIsCurrent(sandbox: SandboxHandle): Promise<boolean> {
   if (!providerGatewayWired()) return true;
   const labels = (sandbox as { labels?: Record<string, string> }).labels;
   if (labels?.[SANDBOX_GENERATION_LABEL] !== SANDBOX_GENERATION) return false;
@@ -275,7 +275,7 @@ export async function providerGatewaySandboxIsCurrent(sandbox: Sandbox): Promise
 }
 
 /** OpenCode writes its own dynamic provider config, but shares the generation marker. */
-export async function markProviderGatewaySandboxCurrent(sandbox: Sandbox): Promise<void> {
+export async function markProviderGatewaySandboxCurrent(sandbox: SandboxHandle): Promise<void> {
   if (!providerGatewayWired()) return;
   await writePrivateFiles(sandbox, [
     { path: SANDBOX_MARKER, content: SANDBOX_GENERATION },

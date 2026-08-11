@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, mock, test } from "bun:test";
-import type { Sandbox } from "@daytona/sdk";
+import type { SandboxHandle } from "../sandboxes/provider";
 import {
   forgetLiveThreadSandbox,
   rememberLiveThreadSandbox,
@@ -12,7 +12,7 @@ describe("preview sandbox resolution", () => {
   afterEach(() => forgetLiveThreadSandbox(threadId));
 
   test("reuses the engine-owned SDK object without a Daytona lookup", async () => {
-    const sandbox = { id: "sandbox-live", state: "started" } as Sandbox;
+    const sandbox = { id: "sandbox-live", state: "started" } as SandboxHandle;
     rememberLiveThreadSandbox(threadId, sandbox);
 
     expect(await resolvePreviewSandbox(threadId)).toBe(sandbox);
@@ -24,7 +24,7 @@ describe("preview sandbox resolution", () => {
       id: "sandbox-sleeping",
       state: "stopped",
       start,
-    } as unknown as Sandbox;
+    } as unknown as SandboxHandle;
     rememberLiveThreadSandbox(threadId, sandbox);
 
     expect(await resolvePreviewSandbox(threadId)).toBe(sandbox);

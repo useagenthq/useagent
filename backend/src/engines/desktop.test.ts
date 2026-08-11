@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { Sandbox } from "@daytona/sdk";
+import type { SandboxHandle } from "../sandboxes/provider";
 import {
   buildDesktopLaunchCommand,
   ensureSandboxDesktop,
@@ -35,7 +35,7 @@ describe("shared sandbox desktop", () => {
           throw new Error("sensitive provider failure");
         },
       },
-    } as unknown as Sandbox;
+    } as unknown as SandboxHandle;
 
     await expect(ensureSandboxDesktop(sandbox, new AbortController().signal)).resolves.toEqual({
       available: false,
@@ -63,7 +63,7 @@ describe("shared sandbox desktop", () => {
           return { exitCode: 0, result: "" };
         },
       },
-    } as unknown as Sandbox;
+    } as unknown as SandboxHandle;
 
     await expect(
       ensureSandboxDesktopView(sandbox, new AbortController().signal),
@@ -110,7 +110,7 @@ describe("shared sandbox desktop", () => {
             return { id: "desktop-command" };
           },
         },
-      } as unknown as Sandbox;
+      } as unknown as SandboxHandle;
 
       await expect(
         ensureSandboxDesktopView(sandbox, new AbortController().signal),
@@ -169,7 +169,7 @@ describe("shared sandbox desktop", () => {
           return { cmdId: `${name}-command` };
         },
       },
-    } as unknown as Sandbox;
+    } as unknown as SandboxHandle;
 
     const signal = new AbortController().signal;
     const [view, tools] = await Promise.all([

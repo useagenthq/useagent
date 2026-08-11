@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { Sandbox } from "@daytona/sdk";
+import type { SandboxHandle } from "../sandboxes/provider";
 import {
   acpBrowserMcpServer,
   ensureResidentBrowserMcp,
@@ -35,7 +35,7 @@ describe("resident browser MCP", () => {
           return { exitCode: 0, result: "" };
         },
       },
-    } as unknown as Sandbox;
+    } as unknown as SandboxHandle;
 
     await expect(registerClaudeBrowserMcp(sandbox)).resolves.toBe(true);
     expect(commands).toHaveLength(1);
@@ -50,7 +50,7 @@ describe("resident browser MCP", () => {
       process: {
         executeCommand: async () => ({ exitCode: 1, result: "sensitive cli failure" }),
       },
-    } as unknown as Sandbox;
+    } as unknown as SandboxHandle;
 
     await expect(registerClaudeBrowserMcp(sandbox)).resolves.toBe(false);
   });
@@ -66,7 +66,7 @@ describe("resident browser MCP", () => {
         },
         createSession: async (name: string) => created.push(name),
       },
-    } as unknown as Sandbox;
+    } as unknown as SandboxHandle;
 
     await expect(
       ensureResidentBrowserMcp(sandbox, "/home/daytona/work", new AbortController().signal),
@@ -92,7 +92,7 @@ describe("resident browser MCP", () => {
         },
         createSession: async (name: string) => created.push(name),
       },
-    } as unknown as Sandbox;
+    } as unknown as SandboxHandle;
 
     await expect(
       ensureResidentBrowserMcp(sandbox, "/home/daytona/work", new AbortController().signal),
@@ -132,7 +132,7 @@ describe("resident browser MCP", () => {
           return { cmdId: "browser-mcp-command" };
         },
       },
-    } as unknown as Sandbox;
+    } as unknown as SandboxHandle;
 
     await expect(
       ensureResidentBrowserMcp(sandbox, "/home/daytona/work", new AbortController().signal),

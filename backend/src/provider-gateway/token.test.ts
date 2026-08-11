@@ -28,8 +28,11 @@ describe("provider gateway capability", () => {
     process.env.PROVIDER_GATEWAY_SECRET = "provider-test-secret";
     const token = mintProviderToken(claims, 10);
     expect(verifyProviderToken(token, Date.now() + 11)).toBeNull();
-    const differentLastCharacter = token.endsWith("x") ? "y" : "x";
-    expect(verifyProviderToken(`${token.slice(0, -1)}${differentLastCharacter}`)).toBeNull();
+    // Corrupt a MIDDLE character - the final base64url char can carry padding
+    // bits, so a last-char flip may decode to identical signature bytes (flaky).
+    const m = Math.floor(token.length / 2);
+    const differentChar = token[m] === "A" ? "B" : "A";
+    expect(verifyProviderToken(`${token.slice(0, m)}${differentChar}${token.slice(m + 1)}`)).toBeNull();
     process.env.PROVIDER_GATEWAY_SECRET = "different-secret";
     expect(verifyProviderToken(token)).toBeNull();
   });

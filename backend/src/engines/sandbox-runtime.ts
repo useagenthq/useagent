@@ -1,4 +1,4 @@
-import type { Sandbox } from "@daytona/sdk";
+import type { SandboxHandle } from "../sandboxes/provider";
 
 /**
  * Process-local handles for sandboxes already resolved by this backend.
@@ -8,13 +8,13 @@ import type { Sandbox } from "@daytona/sdk";
  * owns a live SDK object. A restart naturally empties it and falls back to the
  * durable mapping.
  */
-const liveThreadSandboxes = new Map<string, Sandbox>();
+const liveThreadSandboxes = new Map<string, SandboxHandle>();
 
-export function getLiveThreadSandbox(threadId: string): Sandbox | null {
+export function getLiveThreadSandbox(threadId: string): SandboxHandle | null {
   return liveThreadSandboxes.get(threadId) ?? null;
 }
 
-export function rememberLiveThreadSandbox(threadId: string, sandbox: Sandbox): void {
+export function rememberLiveThreadSandbox(threadId: string, sandbox: SandboxHandle): void {
   liveThreadSandboxes.set(threadId, sandbox);
 }
 

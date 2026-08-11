@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import type { Sandbox } from "@daytona/sdk";
+import type { SandboxHandle } from "../sandboxes/provider";
 import type { EngineRunContext } from "../engines/types";
 import {
   opencodeProviderGatewayOptions,
@@ -127,7 +127,7 @@ describe("sandbox provider gateway config", () => {
           return { exitCode: 0 };
         },
       },
-    } as unknown as Sandbox;
+    } as unknown as SandboxHandle;
     expect(await providerGatewaySandboxIsCurrent(sandbox)).toBe(false);
     expect(shellChecks).toBe(0);
 

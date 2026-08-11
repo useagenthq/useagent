@@ -1,4 +1,4 @@
-import { Daytona, type Sandbox } from "@daytona/sdk";
+import { daytonaProvider, type SandboxHandle } from "../sandboxes/provider";
 import type { EngineAdapter, EngineRunContext } from "./types";
 import { composeTurnPrompt } from "./types";
 import {
@@ -173,7 +173,7 @@ export interface AcpEngineConfig {
    *  is on PATH) and BEFORE the relay starts. Codex uses it to seed auth. Idempotent. */
   preRelay?: string;
   /** Idempotent per-turn sandbox prep (codex auth seeding). */
-  prepare?(sandbox: Sandbox, ctx: EngineRunContext): Promise<void>;
+  prepare?(sandbox: SandboxHandle, ctx: EngineRunContext): Promise<void>;
 }
 
 /** Total wall-clock budget for ONE ACP turn (drives the turn-abort timer). A fresh
@@ -364,7 +364,7 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
         throw new Error(`${cfg.id} engine requires a configured provider gateway`);
       }
       const startedAt = Date.now();
-      const daytona = new Daytona({ apiKey, target: process.env.DAYTONA_TARGET ?? "us" });
+      const daytona = daytonaProvider(apiKey);
       const budgetMs = resolveAcpTurnTimeoutMs();
 
       // Org secrets live in a protected dotenv, not in Daytona's immutable env
@@ -390,7 +390,7 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
 
       const key = ctx.threadId ? relayKey(ctx.threadId, cfg.id) : null;
       let relay = key ? threadRelays.get(key) : undefined;
-      let sandbox: Sandbox | null = null;
+      let sandbox: SandboxHandle | null = null;
       let retainForThread = false;
       let snapshotBacked = false;
 

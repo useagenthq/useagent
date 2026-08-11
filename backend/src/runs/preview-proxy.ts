@@ -1,4 +1,4 @@
-import { Daytona, type Sandbox } from "@daytona/sdk";
+import { daytonaProvider, type SandboxHandle } from "../sandboxes/provider";
 import {
   forgetLiveThreadSandbox,
   getLiveThreadSandbox,
@@ -56,7 +56,7 @@ export async function resolvePreviewEndpoint(
     if (cached) return cached;
   }
   let sandbox = await resolvePreviewSandbox(threadId);
-  let link: Awaited<ReturnType<Sandbox["getPreviewLink"]>>;
+  let link: Awaited<ReturnType<SandboxHandle["getPreviewLink"]>>;
   try {
     link = await sandbox.getPreviewLink(port);
   } catch {
@@ -79,7 +79,7 @@ export async function resolvePreviewEndpoint(
 /** Resolve and wake the durable Daytona sandbox behind a thread. Kept beside
  * preview-link resolution so terminal/desktop proxies do not duplicate sandbox
  * identity or lifecycle rules. */
-export async function resolvePreviewSandbox(threadId: string): Promise<Sandbox> {
+export async function resolvePreviewSandbox(threadId: string): Promise<SandboxHandle> {
   const cached = getLiveThreadSandbox(threadId);
   if (cached) {
     const state = (cached as { state?: string }).state;
@@ -103,7 +103,7 @@ export async function resolvePreviewSandbox(threadId: string): Promise<Sandbox> 
   const sandboxId = await getThreadSandbox(threadId);
   if (!sandboxId) throw new Error("no-sandbox");
 
-  const daytona = new Daytona({ apiKey, target: process.env.DAYTONA_TARGET ?? "us" });
+  const daytona = daytonaProvider(apiKey);
   const sandbox = await daytona.get(sandboxId);
   const state = (sandbox as { state?: string }).state;
   if (state === "stopped" || state === "paused" || state === "archived") {
