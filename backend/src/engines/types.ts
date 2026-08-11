@@ -17,6 +17,11 @@ export interface EmitStep {
   code_json?: unknown;
 }
 
+/** The classification of a live turn-stream delta. Omitted/undefined = answer
+ *  text (the default). "reasoning" = provider thinking, surfaced as a subdued
+ *  live "Thinking" affordance ahead of the answer. */
+export type DeltaKind = "reasoning";
+
 /** Everything an adapter needs to execute one run and stream it into the log. */
 export interface EngineRunContext {
   runId: string;
@@ -98,11 +103,13 @@ export interface EngineRunContext {
    *  tool call the moment it's invoked and attach its output when it finishes —
    *  reference bot's tool_call → tool_result contract on an append-only log. */
   updateStep?(stepId: string, code: unknown): Promise<void>;
-  /** Publish a live assistant-text delta to the run's turn-stream. In-memory and
+  /** Publish a live assistant delta to the run's turn-stream. In-memory and
    *  synchronous (no DB round-trip) so live-typing narration reaches the SSE
-   *  before the persisted step does. Optional — adapters with no token stream
-   *  simply omit it; the durable step log stays the source of truth. */
-  publishDelta?(delta: string): void;
+   *  before the persisted step does. Optional - adapters with no token stream
+   *  simply omit it; the durable step log stays the source of truth. `kind`
+   *  "reasoning" tags provider thinking so the UI surfaces it as a subdued live
+   *  "Thinking" affordance ahead of the answer text (default/omitted = answer). */
+  publishDelta?(delta: string, kind?: DeltaKind): void;
   /** Record the run's final assistant text + wall-clock duration. */
   setSummary(summary: string, durationMs: number): void;
   /** Optional per-run stage timer (perf plan Phase 0). Adapters wrap startup

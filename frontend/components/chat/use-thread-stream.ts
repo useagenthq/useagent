@@ -108,7 +108,10 @@ export function applyDecodedFrame(store: ThreadStore, frame: DecodedFrame): void
         case "delta": {
           const runId = p.runId as string | undefined;
           const delta = p.delta;
-          if (runId && typeof delta === "string") store.applyDelta(runId, delta);
+          // `kind: "reasoning"` tags a live thinking delta (subdued Thinking
+          // affordance); any other/absent value is answer narration.
+          const kind = p.kind === "reasoning" ? "reasoning" : undefined;
+          if (runId && typeof delta === "string") store.applyDelta(runId, delta, kind);
           return;
         }
         case "native": {

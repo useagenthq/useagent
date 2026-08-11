@@ -575,8 +575,9 @@ async function runEngine(
       }
     },
     // Live-typing channel: synchronous, in-memory, no DB round-trip. SSE
-    // subscribers get narration text the instant an engine streams it.
-    publishDelta: (delta) => turnStream.publish(runId, delta),
+    // subscribers get narration text the instant an engine streams it. `kind`
+    // "reasoning" tags thinking so the UI can surface it distinctly.
+    publishDelta: (delta, kind) => turnStream.publish(runId, delta, kind),
     setSummary: (s, durationMs) => {
       summary = s;
       summaryDuration = durationMs;

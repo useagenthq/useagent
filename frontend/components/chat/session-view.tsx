@@ -145,7 +145,7 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
   const turns: Turn[] = thread.map((run) => {
     const v = snapshot.byId.get(run.id);
     if (!v) {
-      return { run, steps: run.steps, status: run.status, summary: run.summary, live: false, liveText: "", native: undefined };
+      return { run, steps: run.steps, status: run.status, summary: run.summary, live: false, liveText: "", liveReasoning: "", native: undefined };
     }
     return {
       run: v.run,
@@ -154,6 +154,7 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
       summary: v.summary,
       live: isLiveStatus(v.status),
       liveText: v.liveText,
+      liveReasoning: v.liveReasoning,
       native: nativeFor(v),
       canonical: v.canonical,
       canonicalComplete: v.canonicalComplete,

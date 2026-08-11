@@ -20,7 +20,7 @@ import { readSessionCommandCatalog } from "./command-catalog";
 import { unknownRepos } from "../github/repos";
 import { formatRepoRef } from "../github/repo-ref";
 import { bus, channel, pumpThread, signalCancel, type BusEvent } from "../worker";
-import { turnStream } from "./turn-stream";
+import { turnStream, type DeltaKind } from "./turn-stream";
 import { assertNever } from "../util/exhaustive";
 import {
   getNativeFramesSince,
@@ -445,7 +445,7 @@ runsRoutes.get("/:id/events", async (c) => {
   // drain loop below in order.
   type OutEvent =
     | BusEvent
-    | { type: "delta"; delta: string }
+    | { type: "delta"; delta: string; kind?: DeltaKind }
     | { type: "native"; frame: NativeFrame };
   const encoder = new TextEncoder();
   const signal = c.req.raw.signal;
@@ -495,8 +495,8 @@ runsRoutes.get("/:id/events", async (c) => {
       // Live-typing narration: each delta an engine publishes is forwarded as a
       // distinct `event: delta` frame. Old clients (which only listen for `step`
       // / `done`) ignore it — contract-compatible.
-      const unsubscribeDeltas = turnStream.subscribe(id, (delta) =>
-        push({ type: "delta", delta }),
+      const unsubscribeDeltas = turnStream.subscribe(id, (delta, kind) =>
+        push({ type: "delta", delta, kind }),
       );
       // Live native frames (lossless capture projection). Old clients ignore the
       // `event: native` type — additive, contract-compatible.
@@ -583,7 +583,7 @@ runsRoutes.get("/:id/events", async (c) => {
                 continue;
               }
               case "delta":
-                sendEvent("delta", { delta: ev.delta });
+                sendEvent("delta", { delta: ev.delta, kind: ev.kind });
                 continue;
               case "native":
                 sendNative(ev.frame);
@@ -653,7 +653,7 @@ runsRoutes.get("/:rootRunId/thread-events", async (c) => {
     | { type: "signal"; runId: string }
     | { type: "step"; runId: string; step: ApiStep }
     | { type: "end"; runId: string; status: RunStatus }
-    | { type: "delta"; runId: string; delta: string }
+    | { type: "delta"; runId: string; delta: string; kind?: DeltaKind }
     | { type: "native"; runId: string; frame: NativeFrame }
     | { type: "canonical"; event: DeliveredCanonicalEvent }
     | { type: "canonical-complete"; complete: CanonicalizationComplete };
@@ -716,8 +716,8 @@ runsRoutes.get("/:rootRunId/thread-events", async (c) => {
           else push({ type: "end", runId, status: ev.status });
         };
         bus.on(channel(runId), onBus);
-        const offDelta = turnStream.subscribe(runId, (delta) =>
-          push({ type: "delta", runId, delta }),
+        const offDelta = turnStream.subscribe(runId, (delta, kind) =>
+          push({ type: "delta", runId, delta, kind }),
         );
         const offNative = subscribeNative(runId, (frame) =>
           push({ type: "native", runId, frame }),
@@ -898,7 +898,7 @@ runsRoutes.get("/:rootRunId/thread-events", async (c) => {
                 sendStep(ev.runId, ev.step);
                 continue;
               case "delta":
-                sendFrame("delta", { threadId, runId: ev.runId, delta: ev.delta });
+                sendFrame("delta", { threadId, runId: ev.runId, delta: ev.delta, kind: ev.kind });
                 continue;
               case "native":
                 sendNative(ev.runId, ev.frame);

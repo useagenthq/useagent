@@ -21,6 +21,9 @@ export interface ThreadRunView {
   summary: string | null;
   /** Transient live narration for this run; "" once settled. */
   liveText: string;
+  /** Transient live provider "thinking" for this run, surfaced as a subdued
+   *  Thinking affordance ahead of the answer; "" once settled. */
+  liveReasoning: string;
   /** The run's native-id projection (reused per-run native store snapshot). */
   native: NativeSnapshot;
   /** The run's canonical events (final_harness Phase 1), latest revision per eventId,
@@ -56,8 +59,9 @@ export interface ThreadStore {
   upsertRun(run: ApiRun): void;
   /** Upsert a step onto the addressed run only. */
   applyStep(runId: string, step: ApiStep): void;
-  /** Append transient narration to the addressed run only. */
-  applyDelta(runId: string, delta: string): void;
+  /** Append a transient live delta to the addressed run only. `kind` "reasoning"
+   *  feeds the live Thinking buffer; otherwise the answer narration buffer. */
+  applyDelta(runId: string, delta: string, kind?: "reasoning"): void;
   /** Update the addressed run's native lane only (highest seq wins). */
   applyNative(runId: string, frame: NativeFrame): void;
   /** Add a canonical event to its run's lane (latest revision per eventId wins). */
@@ -78,6 +82,7 @@ export function createThreadStore(): ThreadStore {
   const status = new Map<string, RunStatus>();
   const summary = new Map<string, string | null>();
   const liveText = new Map<string, string>();
+  const liveReasoning = new Map<string, string>();
   const stores = new Map<string, NativeStore>();
   // Canonical lane (final_harness Phase 1): per-run eventId -> latest-revision event.
   const canonicalByRun = new Map<string, Map<string, StoredCanonicalEvent>>();
@@ -128,11 +133,15 @@ export function createThreadStore(): ThreadStore {
     status.set(run.id, run.status);
     summary.set(run.id, run.summary);
     if (!liveText.has(run.id)) liveText.set(run.id, "");
+    if (!liveReasoning.has(run.id)) liveReasoning.set(run.id, "");
     // A fresh DB read is authoritative for durable steps; ingestAll merges (dedupe
     // by native id / idx), so a live-enriched step is never regressed.
     ensureStore(run.id).ingestAll(run.steps, 0);
     // A settled run carries no live narration; its summary/steps are the truth.
-    if (!isLiveStatus(run.status)) liveText.set(run.id, "");
+    if (!isLiveStatus(run.status)) {
+      liveText.set(run.id, "");
+      liveReasoning.set(run.id, "");
+    }
   };
 
   return {
@@ -172,6 +181,7 @@ export function createThreadStore(): ThreadStore {
           status: status.get(id) ?? run.status,
           summary: summary.get(id) ?? run.summary,
           liveText: liveText.get(id) ?? "",
+          liveReasoning: liveReasoning.get(id) ?? "",
           native: ensureStore(id).getSnapshot(),
           canonical: canonMap
             ? [...canonMap.values()].sort((a, b) => a.deliverySeq - b.deliverySeq)
@@ -203,10 +213,14 @@ export function createThreadStore(): ThreadStore {
       if (changed || (wasQueued && step.kind !== "done")) notify();
     },
 
-    applyDelta(runId, delta) {
+    applyDelta(runId, delta, kind) {
       if (!delta) return;
       markRunActive(runId);
-      liveText.set(runId, (liveText.get(runId) ?? "") + delta);
+      if (kind === "reasoning") {
+        liveReasoning.set(runId, (liveReasoning.get(runId) ?? "") + delta);
+      } else {
+        liveText.set(runId, (liveText.get(runId) ?? "") + delta);
+      }
       notify();
     },
 
@@ -243,6 +257,7 @@ export function createThreadStore(): ThreadStore {
     applyDone(runId, nextStatus) {
       status.set(runId, nextStatus);
       liveText.set(runId, ""); // transient text is not reconnect truth
+      liveReasoning.set(runId, ""); // thinking is live-only, cleared on settle
       notify();
     },
   };
