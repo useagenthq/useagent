@@ -176,6 +176,7 @@ export function buildTimelineFromCanonical(
 
   const ranked: Ranked[] = [];
   const seenTextPart = new Set<string>();
+  const seenReasoningPart = new Set<string>();
 
   for (const e of ordered) {
     // ── context markers (skynet lane): lead the turn ──────────────────────────
@@ -225,6 +226,22 @@ export function buildTimelineFromCanonical(
       ranked.push({
         node: { kind: "text", key, text: e.text },
         k0: msgOrderKey.get(mid) ?? e.identity?.nativeSeq ?? e.seq, k1: 0, k2: e.identity?.nativeSeq ?? e.seq,
+      });
+      continue;
+    }
+    // ── reasoning ("thinking") bursts: root-session only, one node per part; the
+    //    delta carries the text, reasoning.completed just seals it. Ordered by the
+    //    part's own native seq, mirroring buildTimeline's reasoning loop exactly. ──
+    if (e.kind === "reasoning.delta") {
+      const sid = e.identity?.nativeSessionId;
+      if (sid && childSessions.has(sid)) continue; // subagent thinking -> its pane
+      if (!e.text?.trim()) continue;
+      const key = e.identity?.nativePartId ?? e.identity?.nativeEventId ?? String(e.seq);
+      if (seenReasoningPart.has(key)) continue;
+      seenReasoningPart.add(key);
+      ranked.push({
+        node: { kind: "reasoning", key, text: e.text },
+        k0: e.identity?.nativeSeq ?? e.seq, k1: 0, k2: e.identity?.nativeSeq ?? e.seq,
       });
       continue;
     }

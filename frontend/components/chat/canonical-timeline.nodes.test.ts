@@ -197,6 +197,35 @@ describe("canonical<->legacy node equivalence (synthetic text / markers / child)
     expect(canon.filter((n) => n.kind === "text").length).toBe(2); // fragmented - what the fix removes
   });
 
+  test("reasoning ('thinking') renders a Thought node ahead of the answer - identical in both lanes", () => {
+    const frames: F[] = [
+      frame({ eventType: "part.reasoning", seq: 0, native: { messageId: "mr", partId: "pr" }, payload: { text: "let me think about this" } }),
+      frame({ eventType: "part.reasoning.completed", seq: 1, native: { messageId: "mr", partId: "prf" } }),
+      frame({ eventType: "part.step-start", seq: 2, native: { messageId: "m1", partId: "ps1" } }),
+      frame({ eventType: "part.text", seq: 3, native: { messageId: "m1", partId: "pt1" }, payload: { text: "the answer" } }),
+      frame({ eventType: "part.step-finish", seq: 4, native: { messageId: "m1", partId: "pf1" } }),
+    ];
+    const { legacy, canon } = bothWays(frames, []);
+    expect(legacy.filter((n) => n.kind === "reasoning").length).toBe(1); // non-vacuous
+    expect(legacy.map((n) => n.kind)).toEqual(["reasoning", "text"]); // thinking leads the answer
+    expect((legacy.find((n) => n.kind === "reasoning") as { text: string }).text).toBe("let me think about this");
+    expect(canon).toEqual(legacy); // FULL deep equality across lanes (H3)
+  });
+
+  test("child/subagent reasoning is routed OUT of the main timeline", () => {
+    const frames: F[] = [
+      frame({ eventType: "part.step-start", seq: 0, native: { messageId: "m1", partId: "ps1" } }),
+      frame({ eventType: "part.tool.completed", seq: 1, native: { messageId: "m1", partId: "pc1", callId: "c1" }, payload: { type: "tool", tool: "task", state: { status: "completed", output: '<task id="ses_child"></task>' } } }),
+      // child session reasoning (parentSessionId set) - must NOT appear in the main timeline
+      frame({ eventType: "part.reasoning", seq: 2, native: { sessionId: "ses_child", parentSessionId: "ses_root", messageId: "cmr", partId: "cpr" }, payload: { text: "child thinking" } }),
+      frame({ eventType: "part.step-finish", seq: 3, native: { messageId: "m1", partId: "pf1" } }),
+    ];
+    const steps: S[] = [step("s1", 0, { sessionID: "ses_root", messageID: "m1", partID: "pc1", callID: "c1" }, "command")];
+    const { legacy, canon } = bothWays(frames, steps);
+    expect(legacy.some((n) => n.kind === "reasoning")).toBe(false); // child thinking excluded
+    expect(canon).toEqual(legacy); // FULL deep equality (H3)
+  });
+
   test("child/subagent text is routed OUT of the main timeline (only the parent tool row remains)", () => {
     const frames: F[] = [
       frame({ eventType: "part.step-start", seq: 0, native: { messageId: "m1", partId: "ps1" } }),

@@ -765,6 +765,12 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
         // regressing to one React node per token/chunk.
         let nextTextBurst = 0;
         let activeTextBurst: { messageId: string; partId: string; text: string } | null = null;
+        // Reasoning ("thinking") bursts, mirroring the text-burst machinery but
+        // recorded as part.reasoning so the shared translator emits
+        // reasoning.delta/completed (never a message node). A distinct messageId
+        // namespace keeps them separate from answer messages.
+        let nextReasoningBurst = 0;
+        let activeReasoningBurst: { messageId: string; partId: string; text: string } | null = null;
         const recordAcpFrame = (
           id: string,
           eventType: string,
@@ -793,6 +799,20 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
             { messageId: burst.messageId, partId: `${burst.messageId}_finish` },
           );
           activeTextBurst = null;
+        };
+        // Close the current reasoning burst with part.reasoning.completed so the
+        // translator seals a reasoning.completed. Called when the answer starts, a
+        // tool runs, or the turn ends - whichever comes first.
+        const closeReasoningBurst = (): void => {
+          if (!activeReasoningBurst) return;
+          const burst = activeReasoningBurst;
+          recordAcpFrame(
+            `${burst.messageId}_finish`,
+            "part.reasoning.completed",
+            {},
+            { messageId: burst.messageId, partId: `${burst.messageId}_finish` },
+          );
+          activeReasoningBurst = null;
         };
 
         const handleUpdate = async (params: Record<string, unknown>): Promise<void> => {
@@ -867,7 +887,31 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
             return;
           }
           if (!acceptingTurnOutput) return;
+          if (kind === "agent_thought_chunk") {
+            const text = ((u.content ?? {}) as { text?: string }).text;
+            if (typeof text === "string" && text) {
+              // Live: publish on the SAME reasoning lane Phase 4 built, so claude
+              // and codex turns get the subdued live "Thinking" affordance for free.
+              ctx.publishDelta?.(text, "reasoning");
+              // Durable: mirror the text burst as part.reasoning (cumulative). No
+              // part.step-start - reasoning must not synthesize a message node.
+              if (!activeReasoningBurst) {
+                const messageId = `msg_${ctx.runId}_reasoning_${nextReasoningBurst++}`;
+                activeReasoningBurst = { messageId, partId: `${messageId}_reasoning`, text: "" };
+              }
+              activeReasoningBurst.text += text;
+              recordAcpFrame(
+                activeReasoningBurst.partId,
+                "part.reasoning",
+                { text: activeReasoningBurst.text },
+                { messageId: activeReasoningBurst.messageId, partId: activeReasoningBurst.partId },
+              );
+            }
+            return;
+          }
           if (kind === "agent_message_chunk") {
+            // The answer is starting - thinking is done, seal the reasoning burst.
+            closeReasoningBurst();
             const text = ((u.content ?? {}) as { text?: string }).text;
             if (typeof text === "string" && text) {
               finalText += text;
@@ -895,6 +939,7 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
           if (kind === "tool_call") {
             const tcid = String(u.toolCallId ?? "");
             if (!tcid || toolSteps.has(tcid)) return;
+            closeReasoningBurst();
             closeTextBurst();
             const messageId = `msg_${ctx.runId}_tool_${tcid}`;
             const native = {
@@ -1149,7 +1194,9 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
           await pump;
         }
 
-        // Close the final durable assistant burst so canonical emits message.completed.
+        // Close the final durable assistant + reasoning bursts so canonical seals
+        // message.completed / reasoning.completed.
+        closeReasoningBurst();
         closeTextBurst();
         if (finalText.trim()) {
           await ctx.emit({ kind: "task", label: truncate(finalText, 60), chip: "task" });

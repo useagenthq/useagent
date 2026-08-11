@@ -70,6 +70,7 @@ export interface TimelineArtifact {
 export type TimelineNode =
   | { kind: "marker"; key: string; marker: TimelineMarker }
   | { kind: "text"; key: string; text: string }
+  | { kind: "reasoning"; key: string; text: string }
   | { kind: "artifact"; key: string; artifact: TimelineArtifact }
   | { kind: "tool"; key: string; step: ApiStep };
 
@@ -304,6 +305,25 @@ export function buildTimeline(
       node: { kind: "text", key: f.native.partId ?? f.eventId, text },
       k0: msgOrderKey.get(mid) ?? f.seq,
       k1: 0, // narration precedes its step's tools
+      k2: f.seq,
+    });
+  }
+
+  // Reasoning ("thinking") bursts — root-session only, one node per reasoning part
+  // (the delta carries the cumulative text; the .completed frame just seals it).
+  // Ordered by the part's own seq so a "Thought" disclosure lands where the model
+  // thought, ahead of its answer. Child-session thinking routes to its own pane.
+  for (const f of nativeFrames) {
+    if (!f.eventType.startsWith("part.reasoning")) continue;
+    if (f.eventType.endsWith(".completed")) continue;
+    const sid = f.native.sessionId;
+    if (sid && childSessions.has(sid)) continue;
+    const text = partText(f.payload);
+    if (!text) continue;
+    ranked.push({
+      node: { kind: "reasoning", key: f.native.partId ?? f.eventId, text },
+      k0: f.seq,
+      k1: 0,
       k2: f.seq,
     });
   }
