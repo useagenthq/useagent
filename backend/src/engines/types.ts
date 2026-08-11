@@ -105,6 +105,15 @@ export interface EngineRunContext {
   publishDelta?(delta: string): void;
   /** Record the run's final assistant text + wall-clock duration. */
   setSummary(summary: string, durationMs: number): void;
+  /** Optional per-run stage timer (perf plan Phase 0). Adapters wrap startup
+   *  phases (`const end = ctx.timing?.begin("sandbox"); ...; end?.()`) and mark
+   *  milestones (`ctx.timing?.mark("dispatch")`). Fire-and-forget diagnostics on
+   *  the durable native lane - never on the critical path, never a timeline row,
+   *  never carries prompt or credential content. */
+  timing?: {
+    begin(stage: string): () => void;
+    mark(stage: string): void;
+  };
 }
 
 /**

@@ -22,8 +22,10 @@ describe("OpenCode generated config placement", () => {
     const source = readFileSync(new URL("./opencode-server.ts", import.meta.url), "utf8");
 
     expect(source).toContain("activateOpenCodeRuntimeConfig({");
-    expect(source).toContain("reuseHealthyResidentServer(rememberedServer, sandbox.id, ctx.signal)");
-    expect(source).toContain("const [desktop, cachedRuntimeServer] = await Promise.all([");
+    expect(source).toContain("reuseHealthyResidentServer(rememberedServer, box.id, ctx.signal)");
+    // Perf Phase 1: the same concurrent stages now flow through stagesTogether,
+    // which honors the SKYNET_SERIAL_STARTUP rollback flag (same DAG, concurrency 1).
+    expect(source).toContain("const [desktop, cachedRuntimeServer] = await stagesTogether([");
     expect(source).toContain("await stopServerForConfigReload(sandbox, runtimeServer, ctx.signal)");
     expect(source).toContain("await verifyOpenCodeRuntimeConfig({");
     expect(source).not.toContain(

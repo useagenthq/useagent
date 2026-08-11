@@ -25,6 +25,7 @@ import { finalizeRun } from "./runs/finalize";
 import { turnStream } from "./runs/turn-stream";
 import { publishThreadChange } from "./runs/thread-signals";
 import { claimNextRun, settleCommandForRun } from "./commands/dispatch";
+import { createRunTimer, type RunStageTimer } from "./runs/run-timing";
 
 // ---------------------------------------------------------------------------
 // Event bus — the worker pushes trace events here; SSE clients subscribe.
@@ -220,12 +221,19 @@ async function runWorker(runId: string): Promise<void> {
   const wasCancelled = (): string | null => cancelReason;
   cancellers.set(runId, requestCancel);
 
+  // Perf Phase 0: per-run stage ledger (real engines only; mock keeps its exact
+  // scripted fixture). Fire-and-forget diagnostics - never on the critical path.
+  const stageLedger: RunStageTimer | null =
+    run.engine === "mock" ? null : createRunTimer(runId, run.threadId);
+
   try {
     // Match mature agent UIs: expose a truthful, durable lifecycle row
     // immediately, then do memory/skill/runtime work behind it. Mock retains its
     // exact scripted fixture; every real engine starts its own rows at index 1.
+    const endAccept = stageLedger?.begin("worker.accept_to_running");
     const firstEngineStep =
       run.engine === "mock" ? 0 : await beginEngineRun(run.id, run.threadId);
+    endAccept?.();
 
     // Skill context (Phase 0 slice 0.1): resolve + record the run's pinned skill
     // FIRST, for ANY engine. A run that selected a skill "loaded" it regardless of
@@ -279,6 +287,7 @@ async function runWorker(runId: string): Promise<void> {
     // captures into; null when memory is disabled. Identity is ALWAYS from the run
     // row — never the sandbox/prompt.
     const plan = resolveScopedMemory(run);
+    const endContext = stageLedger?.begin("worker.context");
     const [recall, bootstrapContext] = await Promise.all([
       // Layered recall (new_mem_prompt.md 6.2): Tencent L0 (immediate ground
       // evidence, incl. explicit "remember X") + L1 (distilled) searched in
@@ -307,6 +316,7 @@ async function runWorker(runId: string): Promise<void> {
         console.warn(`[worker] context.retrieved marker persist failed for run ${run.id}:`, err),
       );
     }
+    endContext?.();
 
     // The completed-turn capture is enqueued by runs/finalize.ts (transactionally,
     // from the run row's scope) — not here — so it survives a crash in the old
@@ -525,6 +535,10 @@ async function runEngine(
     return persisted.id;
   };
 
+  // Perf Phase 0: stage timer for the adapter's startup phases. Same durable
+  // lane as the worker spans (absolute epoch ms keeps the instances coherent).
+  const timing = createRunTimer(runId, threadId);
+
   const ctx: EngineRunContext = {
     runId,
     prompt,
@@ -533,6 +547,7 @@ async function runEngine(
     skillContext,
     workdir,
     threadId,
+    timing,
     orgId,
     userId,
     model,
@@ -571,6 +586,7 @@ async function runEngine(
   // Open the run's live delta channel; end() (below, in finally) schedules its
   // grace eviction so a late SSE subscriber can still snapshot the last text.
   turnStream.begin(runId);
+  const endTurnSpan = timing.begin("engine.turn");
 
   try {
     await adapter.run(ctx);
@@ -613,6 +629,7 @@ async function runEngine(
     await finalizeRun(runId, "failed", reason, Date.now() - startedAt);
     bus.emit(channel(runId), { type: "end", status: "failed" } satisfies BusEvent);
   } finally {
+    endTurnSpan();
     turnStream.end(runId);
   }
 }

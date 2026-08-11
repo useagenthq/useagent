@@ -1,6 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
-import { buildDesktopFrameSrc } from "./desktop-pane";
+import {
+  buildDesktopFrameSrc,
+  DESKTOP_PROBE_MAX_DELAY,
+  DESKTOP_PROBE_MIN_DELAY,
+  nextDesktopProbeDelay,
+} from "./desktop-pane";
 
 describe("Desktop product surface", () => {
   const read = (path: string) => readFileSync(new URL(path, import.meta.url), "utf8");
@@ -34,7 +39,33 @@ describe("Desktop product surface", () => {
     expect(desktopPane).toContain(`\`/api/desktop-proxy/${threadInterpolation}/ready\``);
     expect(desktopPane).toContain('fetch(readySrc, { cache: "no-store" })');
     expect(desktopPane).toContain("Starting sandbox desktop…");
-    expect(desktopPane).toContain("setTimeout(() => void probe(), 1_000)");
+    // Retries on bounded exponential backoff, not a fixed one-second interval.
+    expect(desktopPane).toContain("delay = nextDesktopProbeDelay(delay)");
+    expect(desktopPane).toContain("setTimeout(() => void probe(), delay)");
+    expect(desktopPane).not.toContain("setTimeout(() => void probe(), 1_000)");
+  });
+
+  test("the readiness probe backs off exponentially from 250ms, capped at 2000ms", () => {
+    // First retry starts at the floor.
+    expect(nextDesktopProbeDelay(null)).toBe(DESKTOP_PROBE_MIN_DELAY);
+    expect(DESKTOP_PROBE_MIN_DELAY).toBe(250);
+
+    // Each retry multiplies by 1.5x (ceil), plateauing at the cap - it never stops.
+    const schedule: number[] = [];
+    let delay: number | null = null;
+    for (let i = 0; i < 8; i++) {
+      delay = nextDesktopProbeDelay(delay);
+      schedule.push(delay);
+    }
+    expect(schedule).toEqual([250, 375, 563, 845, 1268, 1902, 2000, 2000]);
+
+    // The cap is a fixed point: once reached, the delay stays there forever.
+    expect(nextDesktopProbeDelay(DESKTOP_PROBE_MAX_DELAY)).toBe(DESKTOP_PROBE_MAX_DELAY);
+    expect(DESKTOP_PROBE_MAX_DELAY).toBe(2000);
+    // Monotonic non-decreasing (never regresses to a faster poll mid-backoff).
+    for (let i = 1; i < schedule.length; i++) {
+      expect(schedule[i]!).toBeGreaterThanOrEqual(schedule[i - 1]!);
+    }
   });
 
   test("noVNC resolves its WebSocket to the thread desktop proxy", () => {

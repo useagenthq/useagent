@@ -212,6 +212,21 @@ export function formatDuration(ms: number): string {
   return `${m}m ${Math.round(s % 60)}s`;
 }
 
+/** A lifecycle stage should advance within ~2s during genuine startup. */
+export const STALLED_STAGE_THRESHOLD_MS = 2_000;
+
+/**
+ * Elapsed-time affordance for a lifecycle stage that has stalled. Once a stage has
+ * been the current one LONGER than the threshold (2s), its indicator shows
+ * whole-second elapsed time ("4s") instead of an open-ended spinner, so a stuck
+ * boundary reads as honest progress rather than a generic infinite "Working". Below
+ * the threshold there is no affordance yet (returns null). Pure + testable.
+ */
+export function stalledStageElapsed(elapsedMs: number): string | null {
+  if (!(elapsedMs >= STALLED_STAGE_THRESHOLD_MS)) return null;
+  return `${Math.floor(elapsedMs / 1000)}s`;
+}
+
 // ── File steps ─────────────────────────────────────────────────────────────
 
 export type FileChangeKind = "add" | "edit" | "delete";

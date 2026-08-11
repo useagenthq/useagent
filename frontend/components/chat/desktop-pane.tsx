@@ -16,6 +16,23 @@ export function buildDesktopFrameSrc(threadId: string): string {
   return `/api/desktop-proxy/${threadId}/vnc.html?${params.toString()}`;
 }
 
+/** First retry delay for the Desktop readiness probe (ms). */
+export const DESKTOP_PROBE_MIN_DELAY = 250;
+/** Ceiling the probe backoff plateaus at (ms); polling continues below it. */
+export const DESKTOP_PROBE_MAX_DELAY = 2_000;
+
+/**
+ * Bounded exponential backoff for the Desktop readiness probe. The first retry
+ * fires at 250ms; each subsequent retry multiplies by 1.5x, capped at 2000ms.
+ * Readiness can arrive late (a retained sandbox repairs its desktop service on
+ * demand), so there is no attempt limit - the delay simply plateaus at the cap and
+ * keeps polling while the pane is mounted. `previous` is null for the first retry.
+ */
+export function nextDesktopProbeDelay(previous: number | null): number {
+  if (previous === null) return DESKTOP_PROBE_MIN_DELAY;
+  return Math.min(Math.ceil(previous * 1.5), DESKTOP_PROBE_MAX_DELAY);
+}
+
 /**
  * The "Desktop" tab: a live view of the conversation's sandbox GUI (multi-repo),
  * via noVNC. The sandbox runtime keeps Xvfb + XFCE + x11vnc + noVNC alive on
@@ -41,6 +58,9 @@ export function DesktopPane({ threadId }: { threadId: string }) {
   useEffect(() => {
     let cancelled = false;
     let retry: ReturnType<typeof setTimeout> | undefined;
+    // Bounded exponential backoff (250ms -> x1.5 -> 2000ms cap); null until the
+    // first retry is scheduled. Polling never stops while the pane is mounted.
+    let delay: number | null = null;
     setReady(false);
     setLoaded(false);
     setStatus("Waiting for Daytona sandbox…");
@@ -61,7 +81,8 @@ export function DesktopPane({ threadId }: { threadId: string }) {
         if (cancelled) return;
         setStatus("Reconnecting to sandbox desktop…");
       }
-      retry = setTimeout(() => void probe(), 1_000);
+      delay = nextDesktopProbeDelay(delay);
+      retry = setTimeout(() => void probe(), delay);
     };
 
     void probe();
