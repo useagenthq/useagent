@@ -212,9 +212,23 @@ export function shouldProjectT3Activity(
     return false;
   }
   if (payload?.itemType !== "collab_agent_tool_call") return true;
-  if (!toolCallId) return true;
-  return !activities.some((candidate) => {
+  const agentTasks = activities.filter((candidate) => {
     if (!candidate.kind.startsWith("task.")) return false;
+    const candidatePayload = record(candidate.payload);
+    return candidatePayload?.agentKind === "agent" && firstNonEmptyString(
+      candidatePayload.taskId,
+      candidatePayload.childSessionId,
+      candidatePayload.childSessionID,
+    ) !== null;
+  });
+  if (!toolCallId) {
+    // Codex can emit an identity-less collaboration completion after already
+    // publishing the authoritative child task lifecycle. Once that lifecycle
+    // exists, the wrapper is transport noise and cannot be reconciled safely.
+    // Providers that expose only the collaboration wrapper still retain it.
+    return agentTasks.length === 0;
+  }
+  return !agentTasks.some((candidate) => {
     const candidatePayload = record(candidate.payload);
     const childSessionId = firstNonEmptyString(
       candidatePayload?.taskId,
