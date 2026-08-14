@@ -1,8 +1,8 @@
 # Design ramp — skynet-a
 
 The single reference for **type**, **radius**, and **borders**. Read before adding any
-heading, card, row, or chrome. The house style is editorial + soft (Conduit/reference-composer
-playbook): one serif headline against a grotesque UI, generously rounded surfaces, and
+heading, card, row, or chrome. The house style is focused + soft (Vite+/reference-composer
+playbook): one compact display face against a neutral UI, generously rounded surfaces, and
 borders that are barely-there hairlines.
 
 ---
@@ -13,31 +13,32 @@ borders that are barely-there hairlines.
 
 | Role        | Face                     | Wiring                                  | Why |
 | ----------- | ------------------------ | --------------------------------------- | --- |
-| **Display** | **Newsreader** (serif)   | `--font-display`, `next/font/google`    | High-contrast transitional serif (Tiempos/Signifier class). Variable, with the `opsz` axis so 24–40px renders with delicate contrasting strokes — an instant editorial-quality signal against the grotesque UI. |
-| **UI / body** | **Inter** (grotesque)  | `--font-sans`, applied to `<html>`      | Söhne-class neutral grotesque. Tuned with `font-feature-settings: 'cv11','ss01','liga','calt'` + `text-rendering: optimizeLegibility` (set once on `<html>` in globals.css). |
+| **Display** | **Inter Tight**          | `--font-display`, `next/font/google`    | A compact, expressive companion to Inter for Vite+-style product heroes without a proprietary font dependency. |
+| **UI / body** | **Inter**              | `--font-sans`, applied to `<html>`      | Neutral and highly readable at chat, navigation, form, table, and tool-output sizes. Tuned with `font-feature-settings: 'cv11','ss01','liga','calt'` + `text-rendering: optimizeLegibility` (set once on `<html>` in globals.css). |
 | **Mono**    | **JetBrains Mono**       | `--font-mono`                           | Code, IDs, technical labels, `.text-mono-label` overlines. |
 
-Runners-up considered: Source Serif 4 (more neutral/techy), Fraunces (more characterful/wonky), Sentient (Fontshare — closest to Tiempos but needs vendoring).
+APK Protocol is the preferred licensed display face. Inter Tight is the current
+open-source substitute until licensed APK Protocol webfont files are available.
 
 ### When to use display vs sans
 
-**The serif is a scalpel, not a paintbrush.** Exactly ONE serif headline per page — the
-top-level page hero. Everything else (section headings, card titles, nav, body, captions)
+**The display face is a scalpel, not a paintbrush.** Use it for the top-level page
+hero only. Everything else (section headings, card titles, nav, body, captions)
 stays in the Inter scale. That contrast is the whole effect.
 
-- ✅ Page hero `<h1>` → serif display ramp
+- ✅ Page hero `<h1>` → display ramp
 - ❌ Section `<h2>`, card titles, sidebar labels → keep sans (`text-title-*`, `text-label-*`)
 
 ### The display ramp (globals.css `@utility`)
 
-Each class sets the serif family + size + tuned tracking + `font-optical-sizing:auto`.
+Each class sets Inter Tight + size + tuned tracking.
 
 | Class             | Size  | Line / tracking     | Use for |
 | ----------------- | ----- | ------------------- | ------- |
-| `text-display-lg` | 40px  | 1.05 / -0.02em      | Dedicated onboarding / welcome heroes |
-| `text-display-md` | 32px  | 1.10 / -0.02em      | Primary page heroes (dashboard, agent/new) |
-| `text-display-sm` | 24px  | 1.15 / -0.015em     | In-header page titles (runs, settings, knowledge) |
-| `font-display`    | any   | —                   | Serif family at a custom size |
+| `text-display-lg` | 40px  | 1.05 / -0.035em     | Dedicated onboarding / welcome heroes |
+| `text-display-md` | 32px  | 1.10 / -0.03em      | Primary page heroes (dashboard, agent/new) |
+| `text-display-sm` | 24px  | 1.15 / -0.025em     | In-header page titles (runs, settings, knowledge) |
+| `font-display`    | any   | —                   | Display family at a custom size |
 
 Sweep migration: `text-title-h4` hero → `text-display-md`/`lg`; `text-title-h5` hero → `text-display-sm`.
 
@@ -64,8 +65,8 @@ refinement lands as three token-level rules:
   tracking and override this (correct — they are not UI text).
 - **UI size scale = 12 / 13 / 14 / 24px.** 12–13px → captions + labels (`label-xs`
   `paragraph-xs` = 12px), 14px → body/default (`label-sm` `paragraph-sm` = 14px), 24px → the
-  page display size (the serif `text-display-sm` hero). Keep UI text inside this range — don't
-  reach for the large sans `title-*` tokens for chrome; the serif hero owns the display slot.
+  page display size (the `text-display-sm` hero). Keep UI text inside this range — don't
+  reach for the large sans `title-*` tokens for chrome; the display face owns the display slot.
 
 ### Text hierarchy — three grays on the semantic ladder
 

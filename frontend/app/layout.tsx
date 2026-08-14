@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import { Inter, JetBrains_Mono, Newsreader } from 'next/font/google';
+import { Inter, Inter_Tight, JetBrains_Mono } from 'next/font/google';
 
 import { cn } from '@/utils/cn';
 import { Providers } from '@/app/providers';
@@ -18,14 +18,12 @@ const fontMono = JetBrains_Mono({
   display: 'swap',
 });
 
-// Editorial display serif (Tiempos/Signifier class). Variable font with the
-// optical-size axis so display sizes (28–40px) render with delicate, high-
-// contrast strokes while text sizes stay legible on the dark #17181a canvas.
-const fontDisplay = Newsreader({
+// Licensed-safe display companion to Inter. Keep it on the existing display
+// utilities so dense product chrome, chat, and tool output remain in Inter.
+const fontDisplay = Inter_Tight({
   subsets: ['latin'],
   variable: '--font-display',
   display: 'swap',
-  axes: ['opsz'],
 });
 
 export const metadata: Metadata = {
