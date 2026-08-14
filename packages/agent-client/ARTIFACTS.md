@@ -87,6 +87,28 @@ rows reference a durable artifact id.
 - `artifact.created` and `artifact.delivered` render as provider-neutral inline
   rows in both native and canonical timeline modes.
 
+## Editable workpieces
+
+Safe source artifacts can additionally carry a provider-neutral `workpiece`
+descriptor. The immutable `source_version` is the artifact SHA-256. Mutable edits
+advance a separate integer `state_revision`; they never rewrite the original bytes.
+
+The behavior registry recognizes plain text, Markdown, JSON, XML, and CSV by safe
+MIME type or extension and validates exactly one state shape: `{ text }` for a
+document or `{ csv }` for a spreadsheet. The registry is pure schema and behavior;
+tenant state remains in the artifact row and all reads and writes stay behind the
+existing organization authorization boundary.
+
+`createAgentClient` exposes:
+
+- `getArtifactWorkpiece(artifactId)`
+- `updateArtifactWorkpiece(artifactId, { expectedRevision, state })`
+
+Writes use optimistic concurrency. A stale revision returns the latest durable
+workpiece and state so the UI can surface the conflict without overwriting another
+editor. Active HTML, SVG, DOCX, XLSX, and other binary formats do not receive an
+editor contract and retain their safe preview or download path.
+
 ## Verification
 
 `backend/test/e2e/artifact-delivery-live.ts` is the defining manual acceptance
@@ -105,8 +127,8 @@ suite. Future work can attach behind these stable seams:
 
 1. shared object-storage adapter, retention policy, orphan-byte garbage
    collection, quotas, and malware scanning;
-2. version history and explicit sharing/ACL operations;
-3. lazy product-owned renderers for PDF, documents, spreadsheets,
+2. version history, rich document/spreadsheet renderers, and explicit sharing/ACL operations;
+3. lazy product-owned renderers for PDF, binary documents, binary spreadsheets,
    presentations, video, datasets, and archives;
 4. interactive HTML/app artifacts in a separate-origin sandboxed iframe with a
    narrow parent-verified RPC bridge and no ambient credentials;

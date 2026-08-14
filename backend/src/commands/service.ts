@@ -50,6 +50,7 @@ export async function acceptRunCommand(input: RunCommandInput): Promise<RunComma
     parentRunId: input.run.parentRunId,
     threadId: input.run.threadId,
     repos: input.run.repos,
+    attachmentIds: input.run.attachmentIds ?? [],
     memoryScope: input.run.memoryScope,
     skillId: input.run.skillId,
     skillVersion: input.run.skillVersion,

@@ -20,6 +20,7 @@ import {
   recordSecretsInjected,
   SECRET_SOURCE_COMMAND,
 } from "../secrets/inject";
+import { materializeRunInputs } from "../uploads/materialize";
 import {
   prepareProviderGatewaySandbox,
   providerGatewayEnv,
@@ -572,6 +573,7 @@ function makeSandboxAdapter(spec: SandboxEngineSpec): EngineAdapter {
           (cmd) => box.process.executeCommand(cmd, undefined, undefined, 30),
           secretInjection.files,
         );
+        await materializeRunInputs(box, ctx.inputFiles);
         await recordSecretsInjected(ctx, secretInjection);
 
         const budgetSec = Math.floor(Number(process.env.ENGINE_TIMEOUT_MS ?? 180_000) / 1000);

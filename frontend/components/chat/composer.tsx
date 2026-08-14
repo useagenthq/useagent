@@ -35,6 +35,7 @@ import {
   PromptInputTextarea,
 } from "@/components/prompt-kit/prompt-input";
 import { cnExt as cn } from "@/utils/cn";
+import { RunUploadChips, useRunUploads } from "@/components/chat/run-uploads";
 
 type Variant = "hero" | "compact";
 
@@ -56,6 +57,7 @@ export type ComposerSubmit = (
    *  active catalog (see parseCommandIntent). The run API re-validates it and, only then,
    *  delivers the command verbatim. Absent for an ordinary prompt. */
   command?: { name: string; args: string } | null,
+  attachmentIds?: readonly string[],
 ) => void | Promise<void>;
 
 export type ComposerProps = {
@@ -99,6 +101,8 @@ export type ComposerProps = {
    *  "/" popover shows a truthful section label + state rows. When present it supersedes
    *  `commands` (its ready catalog is used); absent -> the plain `commands` behavior (status ready). */
   commandState?: CommandCatalogState;
+  /** Allow tenant-scoped files to be uploaded and attached to this sandbox turn. */
+  enableUploads?: boolean;
   onSubmit: ComposerSubmit;
   /** A turn is running in this thread - the send button becomes a Stop control
    *  while the input is empty (ChatGPT/opencode pattern); typing turns it back
@@ -139,6 +143,7 @@ export function Composer({
   defaultMemoryScope = "org",
   commands,
   commandState,
+  enableUploads = false,
   onSubmit,
   running = false,
   stopping = false,
@@ -164,6 +169,8 @@ export function Composer({
   const [submitting, setSubmitting] = useState(false);
   const [failed, setFailed] = useState(false);
   const retry = useRef<{ text: string; key: string } | null>(null);
+  const fileInput = useRef<HTMLInputElement>(null);
+  const runUploads = useRunUploads();
 
   const engine = engineProp ?? engineState;
   const hero = variant === "hero";
@@ -175,7 +182,7 @@ export function Composer({
   const slashActive = allowAgent && !command && value.trimStart().startsWith("/");
   const showAgentPopover = slashActive || toolsOpen;
   const busy = pending || submitting;
-  const blocked = busy || locked;
+  const blocked = busy || locked || runUploads.blocked;
   const canSend = value.trim().length > 0 && !blocked;
   // Circular blue send button - reads correctly on BOTH the dark (#20201f) and the
   // light composer surface, so it theme-follows instead of forcing a static color.
@@ -254,8 +261,17 @@ export function Composer({
       // backend rebuilds `/name <args>` verbatim from this intent. The backend re-validates.
       const intent = commands ? parseCommandIntent(raw, commands) : null;
       // The chat model picker (when present) owns the model; else the internal state.
-      await onSubmit(text, engine, modelMenu?.value ?? model, key, memoryScope, intent);
+      await onSubmit(
+        text,
+        engine,
+        modelMenu?.value ?? model,
+        key,
+        memoryScope,
+        intent,
+        runUploads.readyIds,
+      );
       retry.current = null; // accepted — drop the retry key
+      runUploads.clearAccepted();
     } catch {
       // Never silently swallow: restore the draft and show an explicit failed
       // state; keep the key so the next send retries idempotently.
@@ -349,6 +365,21 @@ export function Composer({
           white ? "rounded-3xl" : "rounded-2xl",
         )}
       >
+        {enableUploads ? (
+          <>
+            <input
+              ref={fileInput}
+              type="file"
+              multiple
+              className="hidden"
+              onChange={(event) => {
+                if (event.target.files) void runUploads.addFiles(event.target.files);
+                event.target.value = "";
+              }}
+            />
+            <RunUploadChips uploads={runUploads.uploads} onRemove={(upload) => void runUploads.remove(upload)} />
+          </>
+        ) : null}
         <PromptInput
           value={value}
           onValueChange={(v) => {
@@ -400,13 +431,14 @@ export function Composer({
               with the placeholder (was px-0.5 → a 2px asymmetry). */}
           <div className="mt-1.5 flex items-center gap-1.5 px-1">
             {/* Left cluster */}
-            <button
+            {enableUploads ? <button
               type="button"
               aria-label="Add context"
+              onClick={() => fileInput.current?.click()}
               className="border-stroke-soft-200 text-text-sub-600 hover:bg-bg-weak-50 flex size-9 items-center justify-center rounded-xl border transition-colors"
             >
               <RiAddLine className="size-5" aria-hidden />
-            </button>
+            </button> : null}
 
             {hero && !modelMenu && (
               <button

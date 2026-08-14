@@ -31,6 +31,7 @@ function sandboxWithResult(result: string, exitCode = 0): SandboxHandle {
     fs: {
       getFileDetails: async () => ({ size: 1 }),
       downloadFile: async () => Buffer.from("x"),
+      uploadFile: async () => {},
     },
     process: {
       executeCommand: async () => ({ exitCode, result }),
@@ -211,6 +212,7 @@ describe("recording gateway tools", () => {
           preview_url: "/api/artifacts/artifact-1/content",
           download_url: "/api/artifacts/artifact-1/content?download=1",
           created_at: "2026-08-12T00:00:00.000Z",
+          workpiece: null,
         },
         created: true,
       }),

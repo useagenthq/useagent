@@ -225,6 +225,20 @@
 			"when": 1787200000000,
 			"tag": "0033_artifacts",
 			"breakpoints": true
+		},
+		{
+			"idx": 32,
+			"version": "7",
+			"when": 1787300000000,
+			"tag": "0034_user_uploads",
+			"breakpoints": true
+		},
+		{
+			"idx": 33,
+			"version": "7",
+			"when": 1787300000001,
+			"tag": "0035_artifact_workpieces",
+			"breakpoints": true
 		}
 	]
 }

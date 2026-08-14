@@ -14,7 +14,7 @@ import {
 import type { RunStatus, StepKind } from "./db/schema";
 import { adapters } from "./engines";
 import { isEngineEnabled } from "./env";
-import type { EmitStep, EngineRunContext } from "./engines/types";
+import type { EmitStep, EngineRunContext, RunInputFile } from "./engines/types";
 import { recallScopedMemory } from "./memory/team-memory";
 import { resolveScopedMemory } from "./memory/scope";
 import { recordContextRetrieval } from "./memory/retrieval-ledger";
@@ -30,6 +30,8 @@ import {
   createRunTimer,
   type RunStageTimer,
 } from "./runs/run-timing";
+import { listRunUploads } from "./uploads/repo";
+import { formatInputContext, sandboxInputPath } from "./uploads/materialize";
 
 // ---------------------------------------------------------------------------
 // Event bus — the worker pushes trace events here; SSE clients subscribe.
@@ -350,6 +352,16 @@ async function runWorker(runId: string): Promise<void> {
     }
     endContext?.();
 
+    const inputFiles: RunInputFile[] = (await listRunUploads(run.id)).map((upload) => ({
+      id: upload.id,
+      name: upload.name,
+      contentType: upload.contentType,
+      sizeBytes: upload.sizeBytes,
+      sha256: upload.sha256,
+      storageKey: upload.storageKey,
+      sandboxPath: sandboxInputPath(upload.id, upload.name),
+    }));
+
     // The completed-turn capture is enqueued by runs/finalize.ts (transactionally,
     // from the run row's scope) — not here — so it survives a crash in the old
     // completeRun→enqueue gap and covers the mock + boot-reconcile paths too.
@@ -382,6 +394,7 @@ async function runWorker(runId: string): Promise<void> {
         run.repos,
         run.orgId,
         run.userId,
+        inputFiles,
         ac.signal,
         wasCancelled,
         run.commandName ?? null,
@@ -501,6 +514,7 @@ async function runEngine(
   repos: string[],
   orgId: string | null,
   userId: string | null,
+  inputFiles: readonly RunInputFile[],
   /** Aborts on the hard timeout OR a user cancel (worker owns the controller). */
   signal: AbortSignal,
   /** Non-null once a user cancel fired — distinguishes cancel from timeout. */
@@ -594,6 +608,8 @@ async function runEngine(
     timing,
     orgId,
     userId,
+    inputFiles,
+    inputContext: formatInputContext(inputFiles),
     model,
     repos,
     engineSessionId,

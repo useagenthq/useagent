@@ -14,7 +14,16 @@ const descriptor = {
   created_at: "2026-08-10T00:00:00.000Z",
   preview_url: "/api/artifacts/artifact-1/content",
   download_url: "/api/artifacts/artifact-1/content?download=1",
+  workpiece: null,
 };
+
+const workpiece = {
+  kind: "document",
+  source_version: "a".repeat(64),
+  state_revision: 2,
+  state_url: "/api/artifacts/artifact-1/workpiece",
+  actions: ["preview", "download", "edit"],
+} as const;
 
 function jsonResponse(body: unknown): ResponseLike {
   return {
@@ -45,5 +54,35 @@ describe("artifact client contract", () => {
   test("classifies malformed artifact responses as decode errors", async () => {
     const client = createAgentClient({ fetch: async () => jsonResponse({ artifacts: [{}] }) });
     await expect(client.listArtifacts()).rejects.toMatchObject({ code: "decode_error" });
+  });
+
+  test("round-trips typed workpiece state and optimistic revisions", async () => {
+    const calls: Array<{ url: string; body?: string }> = [];
+    const fetch: FetchLike = async (url, init) => {
+      calls.push({ url, body: init?.body });
+      return jsonResponse({ workpiece, state: { text: "updated" } });
+    };
+    const client = createAgentClient({ fetch });
+    expect(await client.getArtifactWorkpiece("artifact-1")).toEqual({
+      workpiece,
+      state: { text: "updated" },
+    });
+    expect(await client.updateArtifactWorkpiece("artifact-1", 2, { text: "updated" })).toEqual({
+      workpiece,
+      state: { text: "updated" },
+    });
+    expect(JSON.parse(calls[1]?.body ?? "{}")).toEqual({
+      expected_revision: 2,
+      state: { text: "updated" },
+    });
+  });
+
+  test("rejects a workpiece state that does not match its registered kind", async () => {
+    const client = createAgentClient({
+      fetch: async () => jsonResponse({ workpiece, state: { csv: "wrong shape" } }),
+    });
+    await expect(client.getArtifactWorkpiece("artifact-1")).rejects.toMatchObject({
+      code: "decode_error",
+    });
   });
 });

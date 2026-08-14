@@ -62,6 +62,8 @@ import { prewarmT3EnvironmentAccess } from "./engines/t3-environment-client";
 import { prewarmT3ProviderBridge } from "./engines/t3-provider-bridge";
 import { wikiGenRoutes } from "./wiki-gen/routes";
 import { allowedModelsForEngine } from "./runs/model-policy";
+import { uploadRoutes } from "./uploads/routes";
+import { startUploadCleanup } from "./uploads/cleanup";
 
 // Apply committed Drizzle migrations BEFORE anything reads or seeds the schema,
 // so a fresh clone (or a fresh database) boots with the tables in place. The
@@ -173,6 +175,9 @@ app.route("/api/runs", runsRoutes);
 // Durable run artifacts. The backend owns the immutable bytes and authorization;
 // browsers and connector deliveries resolve the same artifact id.
 app.route("/api/artifacts", artifactRoutes);
+// User-selected files are durable before a run exists, then atomically claimed
+// during command acceptance and materialized into the isolated sandbox.
+app.route("/api/uploads", uploadRoutes);
 // Interactive terminal WS bridge (browser xterm ⇄ sandbox PTY). Mounted before
 // nothing — separate router so the SSE/step routes stay untouched.
 app.route("/api/runs", terminalRoutes);
@@ -221,6 +226,10 @@ app.route("/api/commands", commandsRoutes);
 // Always-on scheduler loop (60s tick). Harmless when no schedule is enabled —
 // schedules default disabled, so nothing auto-fires until a human turns it on.
 startScheduler();
+
+// Abandoned pre-run uploads expire after 24h. Reclaim only their metadata;
+// content-addressed bytes may still be referenced by another durable record.
+startUploadCleanup();
 
 // Memory capture-outbox delivery loop (15s tick). Delivers each completed run's
 // queued outcome to team memory with retry/backoff/dead-letter; harmless when

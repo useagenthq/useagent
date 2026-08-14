@@ -9,7 +9,10 @@ import { createThreadConnection, type EventSourceLike, type ThreadConnection, ty
 import {
   decodeArtifactList,
   decodeArtifactResult,
+  decodeWorkpieceResult,
   type ArtifactDescriptor,
+  type ArtifactWorkpieceResult,
+  type ArtifactWorkpieceState,
 } from "./artifacts";
 import { decodeFrame, THREAD_FRAME_TYPES, type DecodedFrame } from "./thread-events";
 
@@ -111,6 +114,12 @@ export interface AgentClient {
   getThread(rootRunId: string): Promise<ThreadSnapshot>;
   listArtifacts(input?: ArtifactListInput): Promise<readonly ArtifactDescriptor[]>;
   getArtifact(artifactId: string): Promise<ArtifactDescriptor>;
+  getArtifactWorkpiece(artifactId: string): Promise<ArtifactWorkpieceResult>;
+  updateArtifactWorkpiece(
+    artifactId: string,
+    expectedRevision: number,
+    state: ArtifactWorkpieceState,
+  ): Promise<ArtifactWorkpieceResult>;
   /** Open ONE SSE to the thread, decoding each frame to a typed {@link DecodedFrame}
    *  before handing it to the sink. Returns the connection controller (start/stop). */
   connectThread(rootRunId: string, sink: (frame: DecodedFrame) => void, deps: ConnectThreadDeps): ThreadConnection;
@@ -193,6 +202,25 @@ export function createAgentClient(config: AgentClientConfig): AgentClient {
       const result = decodeArtifactResult(json);
       if (!result) throw new AgentClientError("decode_error", `${path} returned invalid artifact metadata`);
       return result.artifact;
+    },
+
+    async getArtifactWorkpiece(artifactId) {
+      const path = `/api/artifacts/${encodeURIComponent(artifactId)}/workpiece`;
+      const result = decodeWorkpieceResult(await send(path, {}));
+      if (!result) throw new AgentClientError("decode_error", `${path} returned invalid workpiece state`);
+      return result;
+    },
+
+    async updateArtifactWorkpiece(artifactId, expectedRevision, state) {
+      const path = `/api/artifacts/${encodeURIComponent(artifactId)}/workpiece`;
+      const result = decodeWorkpieceResult(
+        await send(path, {
+          method: "PATCH",
+          body: { expected_revision: expectedRevision, state },
+        }),
+      );
+      if (!result) throw new AgentClientError("decode_error", `${path} returned invalid workpiece state`);
+      return result;
     },
 
     connectThread(rootRunId, sink, deps) {

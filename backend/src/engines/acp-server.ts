@@ -32,6 +32,7 @@ import {
   recordSecretsInjected,
   SECRET_SOURCE_COMMAND,
 } from "../secrets/inject";
+import { materializeRunInputs } from "../uploads/materialize";
 import { createSecretRedactor } from "../secrets/redact";
 import { ensureSandboxDesktopView } from "./desktop";
 import { getThreadSandbox, setRunSandbox } from "../runs/repo";
@@ -781,6 +782,7 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
               (cmd) => box.process.executeCommand(cmd, undefined, undefined, 30),
               secretInjection.files,
             ),
+          () => materializeRunInputs(box, ctx.inputFiles),
         ]);
         await recordSecretsInjected(ctx, secretInjection);
         const reconnectingToResidentProcess = retainForThread && !relay;

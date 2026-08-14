@@ -30,6 +30,9 @@ export interface RunCommandInput {
      *  ref name, so the split is unambiguous). Part of the run's identity, branch
      *  included: a different branch is a different intent (see fingerprint.ts). */
     readonly repos: string[];
+    /** Pre-uploaded tenant/user-owned files atomically claimed by this run.
+     * IDs, not browser-provided paths or bytes, participate in intent. */
+    readonly attachmentIds?: readonly string[];
     /** Team-memory pool for the run — resolved at the boundary (explicit choice,
      *  parent inheritance, or the "org" default). Never taken from the sandbox. */
     readonly memoryScope: MemoryScope;
