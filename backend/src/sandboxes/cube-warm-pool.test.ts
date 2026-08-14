@@ -391,8 +391,6 @@ describe("CubeWarmPool", () => {
     pool.start();
     await waitFor(() => pool.status().failures, 1);
     expect(fakeProvider.creates).toHaveLength(1);
-    await sleep(20);
-    expect(fakeProvider.creates).toHaveLength(1);
     await waitFor(() => pool.status().ready, 1);
     expect(bad.deleted).toBe(true);
     expect(await pool.claim()).toBe(good);

@@ -179,16 +179,24 @@ export function SelectionActions({
     dispatch(retrying ? { type: "retry" } : { type: "request", request: normalizedRequest });
 
     const fallback = normalizedRequest === "shorten" ? shortenedText : rewriteText;
-    const replacementPromise = Promise.resolve(
-      resolveRewrite?.(normalizedRequest, selectedText) ?? fallback,
-    );
-    const [replacement] = await Promise.all([
-      replacementPromise,
-      wait(reducedMotion ? 0 : THINKING_DELAY_MS),
-    ]);
+    try {
+      const replacementPromise = Promise.resolve(
+        resolveRewrite?.(normalizedRequest, selectedText) ?? fallback,
+      );
+      const [replacement] = await Promise.all([
+        replacementPromise,
+        wait(reducedMotion ? 0 : THINKING_DELAY_MS),
+      ]);
 
-    if (requestIdRef.current !== requestId) return;
-    dispatch({ type: "stream", replacement });
+      if (requestIdRef.current !== requestId) return;
+      if (!replacement.trim()) {
+        dispatch({ type: "reject" });
+        return;
+      }
+      dispatch({ type: "stream", replacement });
+    } catch {
+      if (requestIdRef.current === requestId) dispatch({ type: "reject" });
+    }
   }
 
   function keep() {

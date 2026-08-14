@@ -56,6 +56,7 @@ export function SelectionActionsToolbar({
   onRequest,
 }: SelectionActionsToolbarProps) {
   const resultVisible = phase === "result";
+  const errorVisible = phase === "error";
 
   function submitPrompt(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -73,7 +74,9 @@ export function SelectionActionsToolbar({
       animate={{ opacity: 1, scale: 1, y: 0 }}
       exit={reducedMotion ? { opacity: 0 } : { opacity: 0, scale: 0.94, y: -3 }}
       className={`flex h-10 max-w-[calc(100vw-2rem)] items-center justify-center overflow-hidden rounded-full p-1 [box-shadow:0_18px_40px_-14px_hsl(var(--overlay)),0_0_0_1px_hsl(var(--stroke-sub-300))] ${
-        resultVisible ? "bg-bg-strong-950 text-text-white-0" : "bg-bg-weak-50 text-text-strong-950"
+        resultVisible || errorVisible
+          ? "bg-bg-strong-950 text-text-white-0"
+          : "bg-bg-weak-50 text-text-strong-950"
       }`}
     >
       <AnimatePresence initial={false} mode="popLayout">
@@ -124,6 +127,33 @@ export function SelectionActionsToolbar({
               className="flex size-8 items-center justify-center rounded-full text-text-white-0/70 outline-none transition-[background-color,color,transform] hover:bg-bg-surface-800 hover:text-text-white-0 active:scale-[0.96] focus-visible:bg-bg-surface-800 focus-visible:text-text-white-0 focus-visible:ring-2 focus-visible:ring-primary-base"
             >
               <RiRefreshLine className="size-5" aria-hidden />
+            </button>
+          </motion.div>
+        ) : errorVisible ? (
+          <motion.div
+            key="error"
+            initial={reducedMotion ? false : { opacity: 0, x: 6 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={reducedMotion ? { opacity: 0 } : { opacity: 0, x: -6 }}
+            className="flex items-center gap-0.5"
+            aria-live="polite"
+          >
+            <span className="px-2.5 text-paragraph-sm text-text-white-0">Rewrite failed</span>
+            <button
+              type="button"
+              onClick={onRetry}
+              className="inline-flex h-8 items-center gap-1.5 rounded-full bg-bg-white-0 px-3 text-paragraph-sm text-text-strong-950 outline-none transition-transform active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-primary-base"
+            >
+              <RiRefreshLine className="size-4" aria-hidden />
+              Retry
+            </button>
+            <button
+              type="button"
+              onClick={onDiscard}
+              className="inline-flex h-8 items-center gap-1.5 rounded-full px-2.5 text-paragraph-sm text-text-white-0 outline-none transition-[background-color,transform] hover:bg-bg-surface-800 active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-primary-base"
+            >
+              <RiCloseLine className="size-4" aria-hidden />
+              Discard
             </button>
           </motion.div>
         ) : (
