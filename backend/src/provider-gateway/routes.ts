@@ -16,6 +16,7 @@ import {
 import { verifyProviderToken, type ProviderTokenClaims } from "./token";
 import { runtimeDevModeEnabled } from "../security/runtime-secrets";
 import { applyOpenRouterProviderRouting } from "./provider-routing";
+import { fetchProviderUpstream, providerGatewayMaxRetries } from "./retry";
 
 const MAX_BODY_BYTES = 8 * 1024 * 1024;
 
@@ -115,12 +116,19 @@ function responseHeaders(upstream: Headers): Headers {
   for (const name of [
     "content-type",
     "cache-control",
+    "retry-after",
     "x-request-id",
     "request-id",
+    "x-ratelimit-limit-requests",
+    "x-ratelimit-limit-tokens",
     "anthropic-ratelimit-requests-remaining",
+    "anthropic-ratelimit-requests-reset",
     "anthropic-ratelimit-tokens-remaining",
+    "anthropic-ratelimit-tokens-reset",
     "x-ratelimit-remaining-requests",
     "x-ratelimit-remaining-tokens",
+    "x-ratelimit-reset-requests",
+    "x-ratelimit-reset-tokens",
   ]) {
     const value = upstream.get(name);
     if (value) headers.set(name, value);
@@ -141,13 +149,12 @@ function authorizedRun(
   ) {
     return false;
   }
-  // "run" scope binds to the exact minted turn AND its user. "thread" scope
-  // resolved the thread's live run per request; run identity (incl. the acting
-  // user for budgets/audit) comes from the RESOLVED run row - the token's
-  // minting user is provenance, not a gate, so an org teammate's later turn on
-  // the same thread is not rejected.
+  // "run" scope binds to the exact minted turn. "thread" scope resolves the
+  // thread's live run per request, but still binds to the signed user: a warm
+  // runtime token must not be spendable by a later turn from another actor.
+  if ((run.userId ?? "") !== claims.userId) return false;
   if (claims.scope === "run") {
-    if (run.id !== claims.issuedRunId || (run.userId ?? "") !== claims.userId) {
+    if (run.id !== claims.issuedRunId) {
       return false;
     }
   }
@@ -275,7 +282,10 @@ export function createProviderGatewayRoutes(deps: ProviderRouteDeps = {}): Hono 
       );
     } catch (error) {
       if (error instanceof ProviderGatewayAdmissionError) {
-        return c.json({ error: error.reason }, 429);
+        const headers = error.reason === "concurrency_exhausted"
+          ? { "retry-after": "1" }
+          : undefined;
+        return c.json({ error: error.reason }, 429, headers);
       }
       console.error(
         `[provider-gateway] audit start failed for run ${run.id}:`,
@@ -289,7 +299,7 @@ export function createProviderGatewayRoutes(deps: ProviderRouteDeps = {}): Hono 
         c.req.raw.signal,
         AbortSignal.timeout(limits.upstreamTimeoutMs),
       ]);
-      const upstream = await fetchUpstream(
+      const upstream = await fetchProviderUpstream(
         `${providerUpstreamOrigin(target.provider)}${target.upstreamPath}${new URL(c.req.url).search}`,
         {
           method: c.req.method,
@@ -297,6 +307,15 @@ export function createProviderGatewayRoutes(deps: ProviderRouteDeps = {}): Hono 
           body: upstreamBody || undefined,
           redirect: "error",
           signal: upstreamSignal,
+        },
+        {
+          fetch: fetchUpstream,
+          maxRetries: providerGatewayMaxRetries(),
+          onRetry: ({ attempt, delayMs, status }) => {
+            console.warn(
+              `[provider-gateway] retry ${attempt} for run ${run.id} after ${status ?? "connection error"} (${delayMs}ms)`,
+            );
+          },
         },
       );
       const completeAudit = () => {

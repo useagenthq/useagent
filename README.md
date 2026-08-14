@@ -35,8 +35,10 @@ migrator on start. Runtime is **bun** everywhere — do not use npm on this mach
 
 ## Where the decisions live
 
-- **`HANDOFF.md`** — the full decision log: what the old approach got wrong, the settled
+- **`codex-author/HANDOFF.md`** — the full decision log: what the old approach got wrong, the settled
   architecture, per-repo conventions, and coordination rules. Read it first.
+- **`new_prompt_modular.md`** — the current no-rewrite harness-library extraction
+  contract and end-to-end reusable-stack boundary.
 - **`~/Documents/skynet-saas/ARCHITECTURE.md`** — the architecture source of
   truth (VERA rationale, HARNESS-EXPLAINED). Most "obvious" alternatives were already
   evaluated and rejected there for recorded reasons.

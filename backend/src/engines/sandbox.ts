@@ -1,4 +1,9 @@
-import { daytonaProvider, type SandboxHandle } from "../sandboxes/provider";
+import {
+  sandboxProvider,
+  sandboxProviderApiKey,
+  sandboxTemplate,
+  type SandboxHandle,
+} from "../sandboxes/provider";
 import type { EmitStep, EngineAdapter, EngineRunContext } from "./types";
 import {
   assertSandboxResources,
@@ -415,13 +420,13 @@ function makeSandboxAdapter(spec: SandboxEngineSpec): EngineAdapter {
     id: spec.id as EngineAdapter["id"],
 
     async run(ctx: EngineRunContext): Promise<void> {
-      const apiKey = process.env.DAYTONA_API_KEY;
-      if (!apiKey) throw new Error(`${spec.id} engine needs DAYTONA_API_KEY in the backend env`);
+      const apiKey = sandboxProviderApiKey();
+      if (apiKey === undefined) throw new Error(`${spec.id} engine needs sandbox provider credentials`);
       if (!providerGatewayWired()) {
         throw new Error(`${spec.id} engine requires a configured provider gateway`);
       }
       const startedAt = Date.now();
-      const daytona = daytonaProvider(apiKey);
+      const provider = sandboxProvider(apiKey);
 
       // Engine/provider keys ride as sandbox env — never on the command line.
       // Org secrets live in a protected dotenv that the CLI launch sources
@@ -440,13 +445,13 @@ function makeSandboxAdapter(spec: SandboxEngineSpec): EngineAdapter {
       // The org's snapshot (2 vCPU / 8 GiB, opencode preinstalled). The bare
       // "skynet-agent" name does NOT exist — a wrong name silently drops every
       // opencode run onto the tiny default image, which OOM-kills (137) the
-      // npx-installed CLI mid-run. Keep this in sync with `daytona snapshot list`.
+      // npx-installed CLI mid-run. Keep this in sync with the configured template inventory.
       // A STOPPED sandbox keeps its disk (workspace + engine sessions) at ~zero
       // cost and restarts in seconds — so stop quickly, but keep the thread's
       // world alive for days before deletion.
       const autoStopInterval = Number(process.env.SANDBOX_AUTO_STOP_MIN ?? 30);
       const autoDeleteInterval = Number(process.env.SANDBOX_AUTO_DELETE_MIN ?? 4320); // 3 days
-      const snapshot = process.env.DAYTONA_ACP_SNAPSHOT ?? "skynet-acp-v2";
+      const snapshot = sandboxTemplate("DAYTONA_ACP_SNAPSHOT", "skynet-acp-v3");
       const resourceTarget = resolveSandboxResourceTarget();
       let sandbox: SandboxHandle | null = null;
       let retainForThread = false;
@@ -503,7 +508,7 @@ function makeSandboxAdapter(spec: SandboxEngineSpec): EngineAdapter {
         const provisionedFresh = !sandbox;
         if (provisionedFresh) {
           await ctx.emit({ kind: "task", label: "Provisioning cloud sandbox…", chip: spec.id });
-          sandbox = await daytona.create({
+          sandbox = await provider.create({
             snapshot,
             envVars,
             labels: providerGatewaySandboxLabels(ctx.runId),
@@ -511,7 +516,7 @@ function makeSandboxAdapter(spec: SandboxEngineSpec): EngineAdapter {
             autoDeleteInterval,
           });
         }
-        if (!sandbox) throw new Error("Daytona returned no sandbox");
+        if (!sandbox) throw new Error("Sandbox provider returned no sandbox");
         const box = sandbox;
         const resources = assertSandboxResources(box, resourceTarget);
         if (provisionedFresh && ctx.threadId) {

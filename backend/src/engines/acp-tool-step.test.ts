@@ -69,4 +69,148 @@ describe("buildAcpToolStep", () => {
       status: "completed",
     });
   });
+
+  test("recognizes upstream codex-acp subagent start metadata as a subagent card", () => {
+    const step = buildAcpToolStep(
+      {
+        kind: "other",
+        title: "Start subagent weather_research",
+        toolCallId: "call-spawn-weather",
+        status: "completed",
+        rawInput: {
+          agentThreadId: "thread-paris",
+          agentPath: "/root/weather_research",
+          activityKind: "started",
+        },
+        _meta: {
+          codex: {
+            subagent: {
+              threadId: "thread-paris",
+              path: "/root/weather_research",
+              activity: "started",
+            },
+          },
+        },
+      },
+      undefined,
+      native,
+    );
+
+    expect(step).toMatchObject({
+      kind: "task",
+      label: "Subagent — weather_research",
+      chip: "subagent",
+      code_json: {
+        tool: "subagent",
+        subagent: {
+          activity: "spawn",
+          threadId: "thread-paris",
+          path: "/root/weather_research",
+          name: "weather_research",
+        },
+        native: {
+          ...native,
+          childSessionID: "thread-paris",
+        },
+      },
+    });
+  });
+
+  test("groups codex-acp subagent follow-up activity by the child thread id", () => {
+    const step = buildAcpToolStep(
+      {
+        kind: "other",
+        title: "Interact with subagent weather_research",
+        toolCallId: "call-interact-weather",
+        rawInput: {
+          agentThreadId: "thread-paris",
+          agentPath: "/root/weather_research",
+          activityKind: "interacted",
+        },
+        _meta: {
+          codex: {
+            subagent: {
+              threadId: "thread-paris",
+              path: "/root/weather_research",
+              activity: "interacted",
+            },
+          },
+        },
+      },
+      "queued",
+      native,
+    );
+
+    expect(step).toMatchObject({
+      kind: "task",
+      label: "↳ Interact — weather_research",
+      chip: "task",
+      code_json: {
+        tool: "subagent",
+        output: "queued",
+        subagent: {
+          activity: "interact",
+          threadId: "thread-paris",
+          path: "/root/weather_research",
+          name: "weather_research",
+        },
+        native: {
+          ...native,
+          parentSessionID: "ses_1",
+          sessionID: "thread-paris",
+          childSessionID: "thread-paris",
+        },
+      },
+    });
+  });
+
+  test("recognizes Codex subagent tool names without inventing missing child ids", () => {
+    const spawn = buildAcpToolStep(
+      {
+        kind: "execute",
+        title: "spawn_agent",
+        rawInput: { prompt: "review the tests" },
+      },
+      undefined,
+      native,
+    );
+    expect(spawn).toMatchObject({
+      kind: "task",
+      label: "Subagent — review the tests",
+      chip: "subagent",
+      code_json: {
+        tool: "subagent",
+        native,
+        subagent: { activity: "spawn" },
+      },
+    });
+    expect((spawn.code_json as { native: { childSessionID?: string } }).native.childSessionID).toBeUndefined();
+
+    for (const [title, activity, label] of [
+      ["wait_agent", "wait", "↳ Wait — agent-1"],
+      ["close_agent", "close", "↳ Close — agent-1"],
+    ] as const) {
+      const step = buildAcpToolStep(
+        { kind: "execute", title, rawInput: { agentId: "agent-1" } },
+        undefined,
+        native,
+      );
+
+      expect(step).toMatchObject({
+        kind: "task",
+        label,
+        chip: "task",
+        code_json: {
+          tool: "subagent",
+          native: {
+            ...native,
+            parentSessionID: "ses_1",
+            sessionID: "agent-1",
+            childSessionID: "agent-1",
+          },
+          subagent: { activity, threadId: "agent-1" },
+        },
+      });
+    }
+  });
 });

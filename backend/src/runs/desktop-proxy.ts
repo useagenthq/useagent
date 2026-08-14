@@ -12,6 +12,7 @@ import {
   type PreviewEndpoint,
 } from "./preview-proxy";
 import { ensureSandboxDesktopView } from "../engines/desktop";
+import { sandboxPreviewHeaders } from "../sandboxes/provider";
 
 // ---------------------------------------------------------------------------
 // DESKTOP PROXY — same-origin bridge to the noVNC GUI running INSIDE a thread's
@@ -96,7 +97,7 @@ desktopProxyRoutes.get(
             // Bun's WebSocket client takes custom headers (browsers can't) — this
             // is how the Daytona preview token rides the upstream socket.
             const sock = new WebSocket(wsUrl, {
-              headers: { "x-daytona-preview-token": ep.token },
+              headers: sandboxPreviewHeaders(ep.token),
               protocols: ["binary"],
             });
             sock.binaryType = "arraybuffer";

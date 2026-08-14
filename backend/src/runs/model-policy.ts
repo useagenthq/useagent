@@ -1,6 +1,12 @@
 import type { EngineId } from "../db/schema";
 
 export const KIMI_K3_MODEL = "moonshotai/kimi-k3";
+export const FAST_OPENCODE_MODEL = "openai/gpt-5.6-luna";
+export const CODEX_ALLOWED_MODELS = [
+  "gpt-5.6-sol",
+  "gpt-5.6-terra",
+  "gpt-5.6-luna",
+] as const;
 
 /** Models that the OpenCode picker and provider gateway are allowed to spend. */
 export const OPENCODE_ALLOWED_MODELS = {
@@ -14,16 +20,16 @@ export const OPENCODE_ALLOWED_MODELS = {
     KIMI_K3_MODEL,
     "openai/gpt-5.6-sol",
     "openai/gpt-5.6-sol-pro",
-    "openai/gpt-5.6-luna",
+    FAST_OPENCODE_MODEL,
     "openai/gpt-5.6-terra",
   ],
 } as const;
 
 const OPENCODE_MODELS = new Set<string>(Object.values(OPENCODE_ALLOWED_MODELS).flat());
 const CLAUDE_MODELS = new Set<string>(OPENCODE_ALLOWED_MODELS.anthropic);
-export const DEFAULT_OPENCODE_MODEL = KIMI_K3_MODEL;
+export const DEFAULT_OPENCODE_MODEL = FAST_OPENCODE_MODEL;
 export const DEFAULT_CLAUDE_MODEL = "claude-opus-5";
-export const DEFAULT_CODEX_MODEL = "gpt-5.6-sol";
+export const DEFAULT_CODEX_MODEL = CODEX_ALLOWED_MODELS[0];
 
 function codexModels(
   env: Record<string, string | undefined> = process.env,
@@ -32,7 +38,26 @@ function codexModels(
     ?.split(",")
     .map((model) => model.trim())
     .filter(Boolean);
-  return new Set(configured?.length ? configured : [DEFAULT_CODEX_MODEL]);
+  return new Set(configured?.length ? configured : CODEX_ALLOWED_MODELS);
+}
+
+export function allowedModelsForEngine(
+  engine: EngineId,
+  env: Record<string, string | undefined> = process.env,
+): readonly string[] {
+  switch (engine) {
+    case "opencode":
+    case "daytona":
+      return Object.values(OPENCODE_ALLOWED_MODELS).flat();
+    case "claude":
+    case "claude-sdk":
+      return OPENCODE_ALLOWED_MODELS.anthropic;
+    case "codex":
+      return [...codexModels(env)];
+    case "mock":
+    case "acp":
+      return [];
+  }
 }
 
 /** Engine-owned default. ACP engines never inherit OpenCode's default model. */

@@ -20,6 +20,7 @@
     "@skynet/agent-harness": "file:../packages/agent-harness",
     "better-auth": "^1.6.25",
     "drizzle-orm": "^0.45.2",
+    "e2b": "2.38.3",
     "hono": "^4.13.1",
     "postgres": "^3.4.9"
   },

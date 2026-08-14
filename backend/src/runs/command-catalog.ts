@@ -5,6 +5,7 @@ import { db } from "../db/client";
 import { commandsCatalog, type CatalogCommand } from "../db/schema";
 import type { AppEnv } from "../http";
 import { orgScope } from "../middleware/org";
+import { sandboxTemplate } from "../sandboxes/provider";
 
 // ---------------------------------------------------------------------------
 // Slash-command catalog — a snapshot-level cache of the engine's real command
@@ -19,7 +20,7 @@ import { orgScope } from "../middleware/org";
 /** The snapshot new sandboxes are created from. Mirrors the resolution in
  *  engines/opencode-server.ts — the catalog is keyed by exactly this value. */
 export function defaultSnapshot(): string {
-  return process.env.DAYTONA_SNAPSHOT ?? "skynet-agent-v17";
+  return sandboxTemplate("DAYTONA_SNAPSHOT", "skynet-agent-v17");
 }
 
 /** Normalize opencode's /command body (a bare `{name, description}[]`) into the

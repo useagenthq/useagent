@@ -28,7 +28,8 @@ const DERIVE_LABEL = "skynet-tool-gateway-v1";
  *  "thread" is inert unless THIS thread has a currently-running turn - the
  *  gateway resolves that live run per call and attributes to it. Thread scope
  *  exists so a resident process's config can stay byte-stable across warm
- *  turns; outside a live turn both scopes fail closed, and TTL is unchanged. */
+ *  turns by the same user; outside a live turn both scopes fail closed, and
+ *  TTL is unchanged. */
 export type ToolTokenScope = "run" | "thread";
 
 /** The identity a verified token authorizes. Every field is server-trusted:

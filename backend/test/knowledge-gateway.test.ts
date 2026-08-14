@@ -50,6 +50,18 @@ describe("tool token: mint / verify / fail-closed", () => {
     expect(v!.userId).toBe("user-1");
     expect(v!.threadId).toBe("thread-1");
     expect(v!.runId).toBe("run-1");
+    expect(v!.scope).toBe("run");
+  });
+
+  test("round-trips thread scope for resident ACP sessions", () => {
+    const t = mintToolToken({ ...claims, scope: "thread" }, 60_000);
+    const v = verifyToolToken(t);
+    expect(v).not.toBeNull();
+    expect(v!.orgId).toBe("org-A");
+    expect(v!.userId).toBe("user-1");
+    expect(v!.threadId).toBe("thread-1");
+    expect(v!.runId).toBe("run-1");
+    expect(v!.scope).toBe("thread");
   });
 
   test("rejects an expired token (fail closed)", () => {
@@ -212,6 +224,104 @@ describe("knowledge MCP gateway", () => {
     expect(response.body).toEqual({ error: "inactive_capability" });
   });
 
+  test("a thread-scoped capability retained by a resident ACP session resolves the same user's current run", async () => {
+    const staleRunId = uid("run");
+    const currentRunId = uid("run");
+    const sharedThreadId = uid("thread");
+    await db.insert(runs).values([
+      {
+        id: staleRunId,
+        orgId: orgA,
+        userId: "user-old",
+        prompt: "old ACP turn",
+        model: "claude-haiku-4-5",
+        engine: "codex",
+        status: "completed",
+        threadId: sharedThreadId,
+      },
+      {
+        id: currentRunId,
+        orgId: orgA,
+        userId: "user-old",
+        prompt: "current ACP turn",
+        model: "claude-haiku-4-5",
+        engine: "codex",
+        status: "running",
+        threadId: sharedThreadId,
+      },
+    ]);
+    const retainedToken = mintToolToken(
+      {
+        orgId: orgA,
+        userId: "user-old",
+        threadId: sharedThreadId,
+        runId: staleRunId,
+        scope: "thread",
+      },
+      60_000,
+    );
+    const response = await rpc(retainedToken, call(21, "knowledge_search", { query: `${canaryA} rollback` }));
+    expect(response.status).toBe(200);
+    expect(response.body.result.isError).toBeFalsy();
+
+    const frame = await waitFor(async () => {
+      const rows = await db
+        .select()
+        .from(providerEvents)
+        .where(and(eq(providerEvents.runId, currentRunId), eq(providerEvents.eventType, KNOWLEDGE_RETRIEVED)));
+      return rows.length > 0 ? rows : null;
+    });
+    const payload = JSON.parse(frame[0]!.payload as string);
+    expect(payload.scope.actorUserId).toBe("user-old");
+
+    const staleFrames = await db
+      .select()
+      .from(providerEvents)
+      .where(and(eq(providerEvents.runId, staleRunId), eq(providerEvents.eventType, KNOWLEDGE_RETRIEVED)));
+    expect(staleFrames).toEqual([]);
+  });
+
+  test("a retained thread capability fails closed when another user owns the current turn", async () => {
+    const staleRunId = uid("run");
+    const currentRunId = uid("run");
+    const sharedThreadId = uid("thread");
+    await db.insert(runs).values([
+      {
+        id: staleRunId,
+        orgId: orgA,
+        userId: "user-old",
+        prompt: "old ACP turn",
+        model: "claude-haiku-4-5",
+        engine: "codex",
+        status: "completed",
+        threadId: sharedThreadId,
+      },
+      {
+        id: currentRunId,
+        orgId: orgA,
+        userId: "user-current",
+        prompt: "current ACP turn",
+        model: "claude-haiku-4-5",
+        engine: "codex",
+        status: "running",
+        threadId: sharedThreadId,
+      },
+    ]);
+    const retainedToken = mintToolToken(
+      {
+        orgId: orgA,
+        userId: "user-old",
+        threadId: sharedThreadId,
+        runId: staleRunId,
+        scope: "thread",
+      },
+      60_000,
+    );
+    const response = await rpc(retainedToken, { jsonrpc: "2.0", id: 22, method: "tools/list" });
+    expect(response.status).toBe(403);
+    expect(response.body).toEqual({ error: "inactive_capability" });
+  });
+
   test("rejects an oversized JSON-RPC batch", async () => {
     const response = await rpc(
       tokenA,
@@ -257,6 +367,19 @@ describe("knowledge MCP gateway", () => {
     // all ride the same gateway.
     expect(names).toEqual([
       "artifact_publish",
+      "computer_click",
+      "computer_drag",
+      "computer_hotkey",
+      "computer_key",
+      "computer_move",
+      "computer_screenshot",
+      "computer_scroll",
+      "computer_type",
+      "desktop_recording_start",
+      "desktop_recording_stop",
+      "gcs_list_buckets",
+      "github_clone_repository",
+      "github_repositories",
       "knowledge_read",
       "knowledge_search",
       "memory_correct",
@@ -264,6 +387,8 @@ describe("knowledge MCP gateway", () => {
       "memory_read",
       "memory_remember",
       "memory_search",
+      "skill_activate",
+      "skills_list",
       "web_search",
     ]);
     // No tool declares a tenant/org input — identity is token-only.

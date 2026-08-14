@@ -31,7 +31,8 @@ timeout and swallows errors, so a slow/broken memory service never fails a run.
 
 ## Quick start (data plane only — what the backend needs)
 
-Runs just `memory-core` (the gateway) from the public image. One command:
+Runs just `memory-core` (the gateway) from the public image, bound to loopback
+by default. One command:
 
 ```bash
 docker compose -f memory/docker-compose.yml up -d
@@ -77,7 +78,8 @@ llm:
 ## Production / auth
 
 The local default runs with `TDAI_GATEWAY_API_KEY` empty → **auth disabled**
-(open to anyone who can reach the port). Before exposing beyond loopback, set
+(reachable only over loopback with the default bind). Before changing
+`MEMORY_CORE_BIND` to expose it beyond loopback, set
 `MEMORY_CORE_GATEWAY_API_KEY` (compose env) to a strong secret and set the
 backend's `MEMORY_API_KEY` to the same value.
 

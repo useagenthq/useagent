@@ -117,6 +117,33 @@ export function createRunTimer(
   };
 }
 
+/** Mark the first provider output that can become visible to the user. Whitespace
+ * deltas do not paint anything, and repeated chunks must not overwrite the first
+ * milestone's stable timing row. */
+export function createFirstOutputMarker(
+  timer: Pick<RunStageTimer, "mark">,
+): (delta: string, kind?: "reasoning") => void {
+  let markedVisible = false;
+  let markedReasoning = false;
+  let markedText = false;
+  return (delta, kind) => {
+    if (delta.trim().length === 0) return;
+    if (kind === "reasoning") {
+      if (!markedReasoning) {
+        markedReasoning = true;
+        timer.mark("first_reasoning_delta");
+      }
+    } else if (!markedText) {
+      markedText = true;
+      timer.mark("first_text_delta");
+    }
+    if (!markedVisible) {
+      markedVisible = true;
+      timer.mark("first_visible_delta");
+    }
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Derivation: shape persisted timing rows into the per-run developer table.
 // Pure - the route supplies rows (and the first post-dispatch provider-event
@@ -142,6 +169,12 @@ export interface TimingTable {
   dispatchAt: number | null;
   /** ms from dispatch to the first non-timing provider event, when both exist. */
   timeToFirstEventMs: number | null;
+  /** ms from dispatch to the first streamed reasoning delta. */
+  timeToFirstReasoningMs: number | null;
+  /** ms from dispatch to the first streamed answer-text delta. */
+  timeToFirstTextMs: number | null;
+  /** ms from dispatch to whichever visible delta arrived first. */
+  timeToFirstVisibleMs: number | null;
   /** total wall span across all recorded stages (first start to last end). */
   totalMs: number | null;
 }
@@ -164,6 +197,9 @@ export function deriveTimingTable(
 ): TimingTable {
   const out: TimingTableRow[] = [];
   let dispatchAt: number | null = null;
+  let firstReasoningAt: number | null = null;
+  let firstTextAt: number | null = null;
+  let firstVisibleAt: number | null = null;
   for (const row of rows) {
     const p = parsePayload(row.payload);
     if (!p || typeof p.stage !== "string") continue;
@@ -180,6 +216,9 @@ export function deriveTimingTable(
       if (typeof p.at !== "number") continue;
       out.push({ stage: p.stage, kind: "mark", startedAt: p.at, endedAt: null, durMs: null });
       if (p.stage === "dispatch") dispatchAt = p.at;
+      else if (p.stage === "first_reasoning_delta") firstReasoningAt = p.at;
+      else if (p.stage === "first_text_delta") firstTextAt = p.at;
+      else if (p.stage === "first_visible_delta") firstVisibleAt = p.at;
     }
   }
   out.sort((a, b) => a.startedAt - b.startedAt);
@@ -191,7 +230,17 @@ export function deriveTimingTable(
     dispatchAt !== null && firstProviderEventAfterDispatchMs !== null
       ? Math.max(0, firstProviderEventAfterDispatchMs - dispatchAt)
       : null;
-  return { rows: out, dispatchAt, timeToFirstEventMs, totalMs };
+  const sinceDispatch = (at: number | null): number | null =>
+    dispatchAt !== null && at !== null ? Math.max(0, at - dispatchAt) : null;
+  return {
+    rows: out,
+    dispatchAt,
+    timeToFirstEventMs,
+    timeToFirstReasoningMs: sinceDispatch(firstReasoningAt),
+    timeToFirstTextMs: sinceDispatch(firstTextAt),
+    timeToFirstVisibleMs: sinceDispatch(firstVisibleAt),
+    totalMs,
+  };
 }
 
 /** Load one run's timing table from the durable lane. Dispatch-to-first-event is

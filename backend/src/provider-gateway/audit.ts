@@ -6,8 +6,7 @@ import type { ProviderId } from "./provider";
 
 export type ProviderGatewayAdmissionReason =
   | "request_budget_exhausted"
-  | "concurrency_exhausted"
-  | "output_budget_exhausted";
+  | "concurrency_exhausted";
 
 export class ProviderGatewayAdmissionError extends Error {
   constructor(readonly reason: ProviderGatewayAdmissionReason) {
@@ -40,8 +39,7 @@ export async function beginProviderGatewayAudit(
         count(*) filter (
           where outcome = 'started'
             and created_at > now() - (${limits.upstreamTimeoutMs} * interval '1 millisecond')
-        )::int as active,
-        coalesce(sum(requested_output_tokens), 0)::bigint as output_tokens
+        )::int as active
       from provider_gateway_audit
       where run_id = ${input.runId}
     `);
@@ -50,12 +48,6 @@ export async function beginProviderGatewayAudit(
     }
     if (Number(counts[0]?.active ?? 0) >= limits.maxConcurrentPerRun) {
       throw new ProviderGatewayAdmissionError("concurrency_exhausted");
-    }
-    if (
-      Number(counts[0]?.output_tokens ?? 0) + input.requestedOutputTokens >
-      limits.maxOutputTokensPerRun
-    ) {
-      throw new ProviderGatewayAdmissionError("output_budget_exhausted");
     }
     await tx.insert(providerGatewayAudit).values({
       ...input,

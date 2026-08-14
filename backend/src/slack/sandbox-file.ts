@@ -8,7 +8,7 @@
  * The downloader is swappable for tests (setSandboxDownloaderForTest) so the
  * tool + outbox can be exercised without a live sandbox.
  */
-import { daytonaProvider } from "../sandboxes/provider";
+import { sandboxProvider, sandboxProviderApiKey } from "../sandboxes/provider";
 
 export interface SandboxFile {
   bytes: Buffer;
@@ -17,11 +17,11 @@ export interface SandboxFile {
 
 export type SandboxDownloader = (sandboxId: string, path: string, maxBytes: number) => Promise<SandboxFile>;
 
-async function daytonaDownload(sandboxId: string, path: string, maxBytes: number): Promise<SandboxFile> {
-  const apiKey = process.env.DAYTONA_API_KEY;
-  if (!apiKey) throw new Error("DAYTONA_API_KEY is not set");
-  const daytona = daytonaProvider(apiKey);
-  const sandbox = await daytona.get(sandboxId);
+async function providerDownload(sandboxId: string, path: string, maxBytes: number): Promise<SandboxFile> {
+  const apiKey = sandboxProviderApiKey();
+  if (apiKey === undefined) throw new Error("sandbox provider credentials are not set");
+  const provider = sandboxProvider(apiKey);
+  const sandbox = await provider.get(sandboxId);
   const info = await sandbox.fs.getFileDetails(path);
   const declared = Number((info as { size?: number }).size ?? 0);
   if (declared > maxBytes) {
@@ -44,5 +44,5 @@ export function setSandboxDownloaderForTest(fn: SandboxDownloader | null): void 
 
 /** Download `path` from `sandboxId`, rejecting anything over `maxBytes`. */
 export function downloadSandboxFile(sandboxId: string, path: string, maxBytes: number): Promise<SandboxFile> {
-  return (override ?? daytonaDownload)(sandboxId, path, maxBytes);
+  return (override ?? providerDownload)(sandboxId, path, maxBytes);
 }

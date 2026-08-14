@@ -1,40 +1,40 @@
 "use client";
 
-import { useRef, useState } from "react";
 import {
   RiAddLine,
   RiArrowDownSLine,
   RiArrowUpLine,
-  RiStopFill,
   RiErrorWarningLine,
   RiMicLine,
+  RiStopFill,
   RiToolsLine,
 } from "@remixicon/react";
-import { cnExt as cn } from "@/utils/cn";
+import { useRef, useState } from "react";
+import {
+  type Agent,
+  AgentChip,
+  ChooseAgentPopover,
+} from "@/components/chat/agent-command";
+import type { CommandCatalogState } from "@/components/chat/canonical-timeline";
+import { ChatModelMenu, type ChatModelOption } from "@/components/chat/chat-model-menu";
+import { ModelPicker } from "@/components/chat/engine-picker";
+import { MemoryScopePicker } from "@/components/chat/memory-scope-picker";
+import {
+  type CommandPickerStatus,
+  commandOptionId,
+  filterCommands,
+  parseCommandIntent,
+  type SlashCommand,
+  SlashCommandPopover,
+  slashInsertText,
+} from "@/components/chat/slash-command";
+import type { EngineId, MemoryScope } from "@/components/chat/types";
+import { Loader } from "@/components/prompt-kit/loader";
 import {
   PromptInput,
   PromptInputTextarea,
 } from "@/components/prompt-kit/prompt-input";
-import { Loader } from "@/components/prompt-kit/loader";
-import { ModelPicker } from "@/components/chat/engine-picker";
-import { MemoryScopePicker } from "@/components/chat/memory-scope-picker";
-import {
-  AgentChip,
-  ChooseAgentPopover,
-  type Agent,
-} from "@/components/chat/agent-command";
-import {
-  commandOptionId,
-  filterCommands,
-  parseCommandIntent,
-  SlashCommandPopover,
-  slashInsertText,
-  type CommandPickerStatus,
-  type SlashCommand,
-} from "@/components/chat/slash-command";
-import type { CommandCatalogState } from "@/components/chat/canonical-timeline";
-import { ChatModelMenu, type ChatModelOption } from "@/components/chat/chat-model-menu";
-import type { EngineId, MemoryScope } from "@/components/chat/types";
+import { cnExt as cn } from "@/utils/cn";
 
 type Variant = "hero" | "compact";
 
@@ -460,7 +460,9 @@ export function Composer({
               {/* Team-memory pool for the run (org vs personal), sibling to model. */}
               <MemoryScopePicker scope={memoryScope} onChange={setMemoryScope} />
               {/* One engine now — the meaningful per-message choice is the MODEL. */}
-              {enableModelPicker && <ModelPicker model={model} onChange={setModel} />}
+              {enableModelPicker && (
+                <ModelPicker engine={engine} model={model} onChange={setModel} />
+              )}
               {hero && (
                 <button
                   type="button"

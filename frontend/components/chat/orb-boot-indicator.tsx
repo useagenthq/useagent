@@ -12,7 +12,7 @@ import { engineLabel, stalledStageElapsed, type EngineId, type RunStatus } from 
  * orb vocabulary as the live working pill; it clears the moment the first step
  * arrives and the Thinking disclosure takes over (a distinct role).
  *
- * State mapping: Daytona boots by provisioning a cloud sandbox → "shaping";
+ * State mapping: sandbox provisioning → "shaping";
  * every other engine just spins its process up → "working".
  */
 export function OrbBootIndicator({

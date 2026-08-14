@@ -32,7 +32,7 @@ describe("resident browser MCP", () => {
       process: {
         executeCommand: async (command: string) => {
           commands.push(command);
-          return { exitCode: 0, result: "" };
+          return { exitCode: 0, result: "healthy" };
         },
       },
     } as unknown as SandboxHandle;
@@ -62,7 +62,7 @@ describe("resident browser MCP", () => {
       process: {
         executeCommand: async (command: string) => {
           commands.push(command);
-          return { exitCode: 0, result: "" };
+          return { exitCode: 0, result: "healthy" };
         },
         createSession: async (name: string) => created.push(name),
       },
@@ -71,9 +71,9 @@ describe("resident browser MCP", () => {
     await expect(
       ensureResidentBrowserMcp(sandbox, "/home/daytona/work", new AbortController().signal),
     ).resolves.toBe(true);
-    expect(commands).toHaveLength(2);
+    expect(commands).toHaveLength(1);
     expect(commands[0]).toContain("localhost:8931/mcp");
-    expect(commands[1]).toContain("skynet-browser-guard-ping");
+    expect(commands[0]).toContain("skynet-browser-guard-ping");
     expect(created).toEqual([]);
     expect(commands).not.toEqual(expect.arrayContaining([expect.stringContaining("npm install")]));
   });
@@ -86,7 +86,7 @@ describe("resident browser MCP", () => {
         executeCommand: async (command: string) => {
           commands.push(command);
           if (command.includes("skynet-browser-guard-ping")) {
-            return { exitCode: 1, result: "" };
+            return { exitCode: 0, result: "listening" };
           }
           return { exitCode: 0, result: "" };
         },
@@ -98,12 +98,12 @@ describe("resident browser MCP", () => {
       ensureResidentBrowserMcp(sandbox, "/home/daytona/work", new AbortController().signal),
     ).resolves.toBe(true);
     expect(created).toEqual([]);
-    expect(commands).toHaveLength(3);
+    expect(commands).toHaveLength(2);
     expect(commands[0]).toContain("localhost:8931/mcp");
-    expect(commands[1]).toContain("skynet-browser-guard-ping");
-    expect(commands[2]).toContain("skynet-browser-guard-init");
-    expect(commands[2]).toContain("notifications/initialized");
-    expect(commands[2]).toContain("browser-mcp-guard.session");
+    expect(commands[0]).toContain("skynet-browser-guard-ping");
+    expect(commands[1]).toContain("skynet-browser-guard-init");
+    expect(commands[1]).toContain("notifications/initialized");
+    expect(commands[1]).toContain("browser-mcp-guard.session");
   });
 
   test("starts one server with explicit snapshots and bounded actions", async () => {
@@ -118,6 +118,9 @@ describe("resident browser MCP", () => {
           commands.push(command);
           if (command.includes("skynet-browser-guard-init")) {
             return { exitCode: 0, result: "" };
+          }
+          if (command.includes("skynet-browser-guard-ping")) {
+            return { exitCode: 0, result: "down" };
           }
           residentProbe += 1;
           return {

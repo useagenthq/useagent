@@ -22,9 +22,8 @@ import { nativeOf, readString, type NativeIds } from "./native-ids";
 
 export { nativeOf, type NativeIds };
 
-/** The `<task id="ses_…">` opencode's task tool writes into its output once the
- *  child completes — the child session id for the `task`-tool spawn path. */
-const TASK_CHILD_ID = /<task\s+id="(ses_[^"]+)"/;
+/** The `<task id="…">` task tool writes into its output once the child exists. */
+const TASK_CHILD_ID = /<task\s+id="([^"]+)"/;
 
 /** The child session id a subagent-spawn card launched, if discoverable:
  *  `native.childSessionID` (subtask path) else the `<task id>` in the task tool's
@@ -49,6 +48,10 @@ export interface SubagentCard {
   /** The parent's `task`-tool call id — links this card to its native status
    *  frame (`deriveChildFidelity`). Null on legacy/pre-native runs. */
   readonly callId: string | null;
+  /** Stable ids that can refer to this child in native T3/OpenCode activity
+   *  frames. T3 may use the tool call id on `collab_agent_tool_call` and the
+   *  child `taskId` on `task.*` lifecycle rows. */
+  readonly aliases: readonly string[];
   /** Latest attributed nested activity label; null until the first one lands. */
   status: string | null;
   /** Spawn step `created_at`, ms. */
@@ -73,14 +76,35 @@ export type Attribution =
 const UNATTRIBUTED: Attribution = { kind: "none" };
 const NESTED_MARKER = /^↳\s*/;
 
-const isSpawn = (step: ApiStep): boolean => step.chip === "subagent";
+const isT3TaskLifecycle = (step: ApiStep): boolean => {
+  const code = asRecord(parseStepCode(step));
+  return (
+    readString(code?.source) === "t3" &&
+    readString(code?.activityKind)?.startsWith("task.") === true
+  );
+};
+
+const isSpawn = (step: ApiStep): boolean => {
+  if (step.chip !== "subagent") return false;
+  const code = asRecord(parseStepCode(step));
+  if (!code) return true;
+  return (
+    readString(code?.tool) === "subagent" ||
+    nativeOf(step)?.childSessionID !== undefined ||
+    childSessionOf(step) !== null
+  );
+};
 
 function spawnCard(step: ApiStep): SubagentCard {
+  const childSessionId = childSessionOf(step);
+  const callId = nativeOf(step)?.callID ?? null;
+  const aliases = [...new Set([callId, childSessionId].filter((id): id is string => !!id))];
   return {
     id: step.id,
     title: deriveTrace(step).target,
-    childSessionId: childSessionOf(step),
-    callId: nativeOf(step)?.callID ?? null,
+    childSessionId,
+    callId,
+    aliases,
     status: null,
     startedAt: Date.parse(step.created_at),
     lastActivityAt: null,
@@ -99,11 +123,14 @@ function spawnCard(step: ApiStep): SubagentCard {
 export function attribute(
   step: ApiStep,
   byChildSession: ReadonlyMap<string, SubagentCard>,
+  byCallId: ReadonlyMap<string, SubagentCard>,
   cards: readonly SubagentCard[],
 ): Attribution {
   const native = nativeOf(step);
   if (native) {
-    const owner = native.sessionID ? byChildSession.get(native.sessionID) : undefined;
+    const owner =
+      (native.sessionID ? byChildSession.get(native.sessionID) : undefined) ??
+      (native.callID && isT3TaskLifecycle(step) ? byCallId.get(native.callID) : undefined);
     return owner ? { kind: "native", card: owner } : UNATTRIBUTED;
   }
   if (NESTED_MARKER.test(step.label ?? "")) {
@@ -128,6 +155,7 @@ function recordActivity(card: SubagentCard, step: ApiStep): void {
 export function deriveSubagents(steps: readonly ApiStep[]): SubagentModel {
   const cards: SubagentCard[] = [];
   const byChildSession = new Map<string, SubagentCard>();
+  const byCallId = new Map<string, SubagentCard>();
   const ownerByStep = new Map<string, string>();
 
   for (const step of steps) {
@@ -135,10 +163,11 @@ export function deriveSubagents(steps: readonly ApiStep[]): SubagentModel {
       const card = spawnCard(step);
       cards.push(card);
       if (card.childSessionId) byChildSession.set(card.childSessionId, card);
+      for (const alias of card.aliases) byCallId.set(alias, card);
       continue;
     }
 
-    const result = attribute(step, byChildSession, cards);
+    const result = attribute(step, byChildSession, byCallId, cards);
     switch (result.kind) {
       case "none":
         break;

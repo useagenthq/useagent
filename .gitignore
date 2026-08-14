@@ -10,11 +10,23 @@ backend/.runs/
 # build artifacts
 dist/
 build/
+t3-dist/
 *.tsbuildinfo
+
+# python bytecode
+__pycache__/
+*.py[cod]
 
 # env / secrets
 .env
 .env.*
+
+# terraform local state / operator inputs
+infra/terraform/**/.terraform/
+infra/terraform/**/terraform.tfstate
+infra/terraform/**/terraform.tfstate.*
+infra/terraform/**/*.tfvars
+!infra/terraform/**/*.tfvars.example
 
 # logs
 *.log

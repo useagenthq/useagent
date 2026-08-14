@@ -57,8 +57,14 @@ describe("adapter end-to-end through the real app", () => {
       new Request(BASE + "/api/config", { headers: { origin: ORIGIN } }),
     );
     expect(res.status).toBe(200);
-    const body = (await res.json()) as { capabilities?: unknown };
+    const body = (await res.json()) as {
+      capabilities?: unknown;
+      models?: Record<string, unknown>;
+    };
     expect(body.capabilities).toBeDefined();
+    const opencodeModels = body.models?.opencode;
+    expect(Array.isArray(opencodeModels)).toBe(true);
+    expect(opencodeModels as unknown[]).toContain("openai/gpt-5.6-luna");
   });
 
   test("a protected path is org-scoped by the adapter (identity resolved, not bypassed)", async () => {

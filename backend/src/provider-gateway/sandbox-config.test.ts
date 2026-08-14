@@ -7,9 +7,12 @@ import {
   providerGatewaySandboxLabels,
   providerGatewaySandboxIsCurrent,
   providerGatewayWired,
+  prepareProviderGatewaySandbox,
   codexProviderConfigToml,
+  SANDBOX_GENERATION,
 } from "./sandbox-config";
 import { verifyProviderToken } from "./token";
+import { verifyToolToken } from "../knowledge/gateway/token";
 
 const original = { ...process.env };
 
@@ -20,6 +23,7 @@ afterEach(() => {
     "TOOL_GATEWAY_PUBLIC_URL",
     "PROVIDER_GATEWAY_TOKEN_TTL_MS",
     "PROVIDER_GATEWAY_SECRET",
+    "TOOL_GATEWAY_SECRET",
   ]) {
     const value = original[name];
     if (value === undefined) delete process.env[name];
@@ -42,6 +46,24 @@ function ctx(): EngineRunContext {
     emit: async () => undefined,
     setSummary: () => {},
   };
+}
+
+function recordingSandbox(): {
+  readonly sandbox: SandboxHandle;
+  readonly files: Record<string, string>;
+} {
+  const files: Record<string, string> = {};
+  const sandbox = {
+    process: {
+      executeCommand: async (command: string) => {
+        for (const match of command.matchAll(/printf %s '([^']+)' \| base64 -d > ([^ ]+)/g)) {
+          files[match[2]!] = Buffer.from(match[1]!, "base64").toString("utf8");
+        }
+        return { exitCode: 0, result: "" };
+      },
+    },
+  } as unknown as SandboxHandle;
+  return { sandbox, files };
 }
 
 describe("sandbox provider gateway config", () => {
@@ -74,7 +96,10 @@ describe("sandbox provider gateway config", () => {
 
     const codex = providerGatewayEnv(ctx(), "codex");
     expect(codex).toEqual({});
-    const config = codexProviderConfigToml("gpt-5.6-sol");
+    const config = codexProviderConfigToml(
+      "gpt-5.6-sol",
+      { url: "https://gateway.example.test/api/mcp/knowledge", bearerToken: "tool-token" },
+    );
     expect(config).toContain('model = "gpt-5.6-sol"');
     expect(config).toContain('model_provider = "skynet"');
     expect(config).toContain('sandbox_mode = "danger-full-access"');
@@ -85,6 +110,11 @@ describe("sandbox provider gateway config", () => {
     expect(config).toContain("[model_providers.skynet.auth]");
     expect(config).toContain('command = "sh"');
     expect(config).not.toContain("env_key");
+    expect(config).toContain("[mcp_servers.skynet-knowledge]");
+    expect(config).toContain('url = "https://gateway.example.test/api/mcp/knowledge"');
+    expect(config).toContain('http_headers = { Authorization = "Bearer tool-token" }');
+    expect(config).toContain("enabled = true");
+    expect(config).toContain("required = true");
   });
 
   test("leaves 200K model ids unchanged", () => {
@@ -106,9 +136,76 @@ describe("sandbox provider gateway config", () => {
     expect(options.openrouter?.baseURL).toEndWith("/api/provider/openrouter/v1");
     expect(verifyProviderToken(options.anthropic?.apiKey)).toMatchObject({ provider: "anthropic" });
     expect(verifyProviderToken(options.openrouter?.apiKey)).toMatchObject({ provider: "openrouter" });
+    expect(SANDBOX_GENERATION).toBe("provider-gateway-v12-native-computer-use");
     expect(providerGatewaySandboxLabels("run-a")).toEqual({
       "skynet-run": "run-a",
-      "skynet-provider-generation": "provider-gateway-v10",
+      "skynet-provider-generation": SANDBOX_GENERATION,
+    });
+  });
+
+  test("OpenCode thread provider tokens are memoized per user", () => {
+    process.env.GATEWAY_PUBLIC_URL = "https://gateway.example.test";
+    process.env.PROVIDER_GATEWAY_SECRET = "provider-test-0123456789abcdef0123456789abcdef";
+    const first = ctx();
+    first.threadId = "thread-provider-user-key";
+    first.runId = "run-provider-a";
+    first.userId = "user-a";
+    const second = ctx();
+    second.threadId = "thread-provider-user-key";
+    second.runId = "run-provider-b";
+    second.userId = "user-b";
+
+    const firstToken = opencodeProviderGatewayOptions(first).openrouter?.apiKey;
+    const secondToken = opencodeProviderGatewayOptions(second).openrouter?.apiKey;
+
+    expect(firstToken).not.toBe(secondToken);
+    expect(verifyProviderToken(firstToken)).toMatchObject({
+      userId: "user-a",
+      issuedRunId: "run-provider-a",
+      scope: "thread",
+    });
+    expect(verifyProviderToken(secondToken)).toMatchObject({
+      userId: "user-b",
+      issuedRunId: "run-provider-b",
+      scope: "thread",
+    });
+  });
+
+  test("Codex MCP tool tokens written to config are memoized per user", async () => {
+    process.env.GATEWAY_PUBLIC_URL = "https://gateway.example.test";
+    process.env.PROVIDER_GATEWAY_SECRET = "provider-test-0123456789abcdef0123456789abcdef";
+    process.env.TOOL_GATEWAY_SECRET = "tool-test-0123456789abcdef0123456789abcdef";
+    const first = ctx();
+    first.threadId = "thread-tool-user-key";
+    first.runId = "run-tool-a";
+    first.userId = "user-a";
+    first.model = "gpt-5.6-sol";
+    const second = ctx();
+    second.threadId = "thread-tool-user-key";
+    second.runId = "run-tool-b";
+    second.userId = "user-b";
+    second.model = "gpt-5.6-sol";
+    const { sandbox, files } = recordingSandbox();
+
+    await prepareProviderGatewaySandbox(sandbox, first, "codex");
+    const firstConfig = files["$HOME/.codex/config.toml"]!;
+    await prepareProviderGatewaySandbox(sandbox, second, "codex");
+    const secondConfig = files["$HOME/.codex/config.toml"]!;
+
+    const firstBearer = firstConfig.match(/Authorization = "Bearer ([^"]+)"/)?.[1];
+    const secondBearer = secondConfig.match(/Authorization = "Bearer ([^"]+)"/)?.[1];
+    expect(firstBearer).toBeTruthy();
+    expect(secondBearer).toBeTruthy();
+    expect(firstBearer).not.toBe(secondBearer);
+    expect(verifyToolToken(firstBearer)).toMatchObject({
+      userId: "user-a",
+      runId: "run-tool-a",
+      scope: "thread",
+    });
+    expect(verifyToolToken(secondBearer)).toMatchObject({
+      userId: "user-b",
+      runId: "run-tool-b",
+      scope: "thread",
     });
   });
 
@@ -119,7 +216,7 @@ describe("sandbox provider gateway config", () => {
     const sandbox = {
       labels: {
         "skynet-run": "run-a",
-        "skynet-provider-generation": "provider-gateway-v9",
+        "skynet-provider-generation": "provider-gateway-v10",
       },
       process: {
         executeCommand: async () => {

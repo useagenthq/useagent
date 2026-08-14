@@ -2,11 +2,16 @@ import { describe, expect, test } from "bun:test";
 import type { NativeFrame } from "./native-events";
 import { composeQuestionAnswers, selectPendingQuestion } from "./question-state";
 
-const frame = (seq: number, eventType: string, payload: unknown): NativeFrame => ({
+const frame = (
+  seq: number,
+  eventType: string,
+  payload: unknown,
+  provider = "opencode",
+): NativeFrame => ({
   schemaVersion: 1,
   eventId: `e${seq}`,
   seq,
-  provider: "opencode",
+  provider,
   eventType,
   native: {
     sessionId: "ses_1",
@@ -49,5 +54,9 @@ describe("native question state", () => {
     if (!question) throw new Error("expected a pending question");
     expect(composeQuestionAnswers(question, [["Staging"]], ["Preview"])).toEqual([["Preview"]]);
     expect(composeQuestionAnswers(question, [[]], [""])).toBeNull();
+  });
+
+  test("T3 questions use the same durable card state", () => {
+    expect(selectPendingQuestion([{ ...asked, provider: "t3" }])?.id).toBe("que_1");
   });
 });

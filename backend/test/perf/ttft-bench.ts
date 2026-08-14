@@ -14,7 +14,7 @@
  * coarse error classes.
  *
  * Routes (curated ids come from src/runs/model-policy.ts):
- *   - OpenCode default: Kimi K3 via OpenRouter (DEFAULT_OPENCODE_MODEL)
+ *   - OpenCode default via OpenRouter (DEFAULT_OPENCODE_MODEL)
  *   - claude-opus-5 / claude-sonnet-5 via OpenRouter (anthropic/ prefixed slugs)
  *   - claude-opus-5 / claude-sonnet-5 direct on Anthropic (only if ANTHROPIC_API_KEY set)
  *
@@ -25,7 +25,6 @@
 import {
   DEFAULT_CLAUDE_MODEL,
   DEFAULT_OPENCODE_MODEL,
-  KIMI_K3_MODEL,
 } from "../../src/runs/model-policy";
 
 // ---------------------------------------------------------------------------
@@ -76,7 +75,7 @@ function buildRoutes(): Route[] {
     {
       id: `opencode-default (${DEFAULT_OPENCODE_MODEL})`,
       kind: "openrouter",
-      model: KIMI_K3_MODEL,
+      model: DEFAULT_OPENCODE_MODEL,
       keyName: "OPENROUTER_API_KEY",
     },
     { id: "openrouter/claude-opus-5", kind: "openrouter", model: "anthropic/claude-opus-5", keyName: "OPENROUTER_API_KEY" },

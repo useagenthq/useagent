@@ -1,48 +1,33 @@
 import { getOpenCodeThreadServer } from "./opencode-runtime";
 import { resolvePreviewSandbox } from "../runs/preview-proxy";
 import { providerEventExists, recordProviderEvent } from "../runs/provider-events";
+import { sandboxPreviewHeaders } from "../sandboxes/provider";
+import {
+  ProviderQuestionError,
+  questionEventId,
+  validateProviderQuestionAnswers,
+  type ProviderQuestionInfo,
+  type ProviderQuestionRequest,
+} from "./provider-question";
 
 const OPENCODE_PORT = 4096;
 const MAX_QUESTIONS = 8;
-const MAX_ANSWERS_PER_QUESTION = 12;
-const MAX_ANSWER_CHARS = 4_000;
-
-export interface OpenCodeQuestionOption {
-  readonly label: string;
-  readonly description: string;
-}
-
-export interface OpenCodeQuestionInfo {
-  readonly question: string;
-  readonly header: string;
-  readonly options: readonly OpenCodeQuestionOption[];
-  readonly multiple: boolean;
-  readonly custom: boolean;
-}
-
-export interface OpenCodeQuestionRequest {
-  readonly id: string;
-  readonly sessionID: string;
-  readonly questions: readonly OpenCodeQuestionInfo[];
-  readonly tool?: { readonly messageID: string; readonly callID: string };
-}
-
-export class OpenCodeQuestionError extends Error {
-  constructor(
-    readonly code: string,
-    readonly status: 400 | 404 | 409 | 502 | 503,
-    message: string,
-  ) {
-    super(message);
-  }
-}
+export {
+  ProviderQuestionError as OpenCodeQuestionError,
+  questionEventId,
+  validateProviderQuestionAnswers as validateOpenCodeQuestionAnswers,
+};
+export type {
+  ProviderQuestionInfo as OpenCodeQuestionInfo,
+  ProviderQuestionRequest as OpenCodeQuestionRequest,
+};
 
 const record = (value: unknown): Record<string, unknown> | null =>
   value && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : null;
 
-function readQuestionInfo(value: unknown): OpenCodeQuestionInfo | null {
+function readQuestionInfo(value: unknown): ProviderQuestionInfo | null {
   const item = record(value);
   if (!item || typeof item.question !== "string" || typeof item.header !== "string") return null;
   if (!Array.isArray(item.options)) return null;
@@ -63,7 +48,7 @@ function readQuestionInfo(value: unknown): OpenCodeQuestionInfo | null {
 }
 
 /** Defensive parser for OpenCode's current Question.Request contract. */
-export function parseOpenCodeQuestionRequest(value: unknown): OpenCodeQuestionRequest | null {
+export function parseOpenCodeQuestionRequest(value: unknown): ProviderQuestionRequest | null {
   const request = record(value);
   if (
     !request ||
@@ -82,76 +67,11 @@ export function parseOpenCodeQuestionRequest(value: unknown): OpenCodeQuestionRe
   return {
     id: request.id,
     sessionID: request.sessionID,
-    questions: questions as OpenCodeQuestionInfo[],
+    questions: questions as ProviderQuestionInfo[],
     ...(tool && typeof tool.messageID === "string" && typeof tool.callID === "string"
       ? { tool: { messageID: tool.messageID, callID: tool.callID } }
       : {}),
   };
-}
-
-/** Validate and normalize a user's answer against the live provider request. */
-export function validateOpenCodeQuestionAnswers(
-  request: OpenCodeQuestionRequest,
-  value: unknown,
-): string[][] {
-  if (!Array.isArray(value) || value.length !== request.questions.length) {
-    throw new OpenCodeQuestionError(
-      "answers_shape_invalid",
-      400,
-      `expected ${request.questions.length} answer set(s)`,
-    );
-  }
-  return value.map((rawAnswers, index) => {
-    const question = request.questions[index];
-    if (!question) {
-      throw new OpenCodeQuestionError(
-        "answers_shape_invalid",
-        400,
-        `missing question ${index + 1}`,
-      );
-    }
-    if (
-      !Array.isArray(rawAnswers) ||
-      rawAnswers.length === 0 ||
-      rawAnswers.length > MAX_ANSWERS_PER_QUESTION ||
-      (!question.multiple && rawAnswers.length !== 1)
-    ) {
-      throw new OpenCodeQuestionError(
-        "answers_shape_invalid",
-        400,
-        `invalid answer count for question ${index + 1}`,
-      );
-    }
-    const answers = rawAnswers.map((answer) =>
-      typeof answer === "string" ? answer.trim() : "",
-    );
-    if (answers.some((answer) => answer.length === 0 || answer.length > MAX_ANSWER_CHARS)) {
-      throw new OpenCodeQuestionError(
-        "answer_invalid",
-        400,
-        `invalid answer for question ${index + 1}`,
-      );
-    }
-    if (!question.custom) {
-      const allowed = new Set(question.options.map((option) => option.label));
-      if (answers.some((answer) => !allowed.has(answer))) {
-        throw new OpenCodeQuestionError(
-          "answer_not_allowed",
-          400,
-          `question ${index + 1} only accepts its listed options`,
-        );
-      }
-    }
-    return answers;
-  });
-}
-
-export function openCodeQuestionEventId(
-  runId: string,
-  questionId: string,
-  state: "asked" | "replied" | "rejected",
-): string {
-  return `pe_${runId}_${questionId}_${state}`;
 }
 
 async function resolveControl(threadId: string): Promise<{
@@ -171,7 +91,7 @@ async function resolveControl(threadId: string): Promise<{
     sandbox.getPreviewLink(OPENCODE_PORT),
   ]);
   if ((home.exitCode ?? 1) !== 0) {
-    throw new OpenCodeQuestionError("control_unavailable", 503, "sandbox workspace is unavailable");
+    throw new ProviderQuestionError("control_unavailable", 503, "sandbox workspace is unavailable");
   }
   return {
     baseUrl: link.url.replace(/\/+$/, ""),
@@ -188,21 +108,21 @@ export async function replyToOpenCodeQuestion(input: {
   readonly answers: unknown;
   readonly signal: AbortSignal;
 }): Promise<{ alreadyAnswered: boolean }> {
-  const resolvedEventId = openCodeQuestionEventId(input.runId, input.questionId, "replied");
+  const resolvedEventId = questionEventId(input.runId, input.questionId, "replied");
   if (await providerEventExists(resolvedEventId)) return { alreadyAnswered: true };
 
   const control = await resolveControl(input.threadId);
-  const headers = { "x-daytona-preview-token": control.token };
+  const headers = sandboxPreviewHeaders(control.token);
   const directory = `?directory=${encodeURIComponent(control.workdir)}`;
   const list = await fetch(`${control.baseUrl}/question${directory}`, {
     headers,
     signal: AbortSignal.any([input.signal, AbortSignal.timeout(15_000)]),
   }).catch(() => null);
   if (!list) {
-    throw new OpenCodeQuestionError("control_unavailable", 503, "OpenCode question service is unreachable");
+    throw new ProviderQuestionError("control_unavailable", 503, "OpenCode question service is unreachable");
   }
   if (!list.ok) {
-    throw new OpenCodeQuestionError(
+    throw new ProviderQuestionError(
       "control_failed",
       502,
       `OpenCode question list failed with HTTP ${list.status}`,
@@ -216,13 +136,13 @@ export async function replyToOpenCodeQuestion(input: {
       ) ?? null
     : null;
   if (!request) {
-    throw new OpenCodeQuestionError(
+    throw new ProviderQuestionError(
       "question_not_pending",
       409,
       "this question is no longer pending on the active OpenCode session",
     );
   }
-  const answers = validateOpenCodeQuestionAnswers(request, input.answers);
+  const answers = validateProviderQuestionAnswers(request, input.answers);
   const response = await fetch(
     `${control.baseUrl}/question/${encodeURIComponent(request.id)}/reply${directory}`,
     {
@@ -233,10 +153,10 @@ export async function replyToOpenCodeQuestion(input: {
     },
   ).catch(() => null);
   if (!response) {
-    throw new OpenCodeQuestionError("control_unavailable", 503, "OpenCode question reply is unreachable");
+    throw new ProviderQuestionError("control_unavailable", 503, "OpenCode question reply is unreachable");
   }
   if (!response.ok) {
-    throw new OpenCodeQuestionError(
+    throw new ProviderQuestionError(
       "reply_failed",
       response.status === 404 ? 409 : 502,
       `OpenCode question reply failed with HTTP ${response.status}`,
@@ -260,7 +180,7 @@ export async function replyToOpenCodeQuestion(input: {
     { critical: true },
   );
   if (!(await providerEventExists(resolvedEventId))) {
-    throw new OpenCodeQuestionError(
+    throw new ProviderQuestionError(
       "reply_persist_failed",
       503,
       "the answer reached OpenCode but its durable receipt could not be recorded",

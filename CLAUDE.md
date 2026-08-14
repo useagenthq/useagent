@@ -10,7 +10,7 @@ Skynet, rebuilt. Two standalone apps (no workspace/turbo):
   one-shot per run, worker + SSE, better-auth org scoping. The harness lives OUTSIDE the
   sandbox; the UI renders the event log, never a live process.
 
-**Read `HANDOFF.md` first** — it records the settled decisions (do not re-litigate: no
+**Read `codex-author/HANDOFF.md` first** — it records the settled decisions (do not re-litigate: no
 engine-UI iframes, no harness-in-sandbox, threading is backend truth) and the working
 protocol. Architecture source of truth: `~/Documents/skynet-saas/ARCHITECTURE.md`.
 

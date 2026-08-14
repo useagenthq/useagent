@@ -105,9 +105,10 @@ export function engineLabel(id: EngineId): string {
 /** The curated model set (single source of truth for every picker). Bare ids →
  * Anthropic direct; provider/model ids → OpenRouter. */
 export const MODELS: { value: string; label: string; tint: string }[] = [
+  { value: "openai/gpt-5.6-luna", label: "GPT-5.6 Luna · Fast", tint: "text-sky-500" },
   {
     value: "moonshotai/kimi-k3",
-    label: "Kimi K3 · Fast Agent",
+    label: "Kimi K3",
     tint: "text-fuchsia-500",
   },
   { value: "claude-opus-5", label: "Opus 5", tint: "text-orange-500" },
@@ -116,12 +117,55 @@ export const MODELS: { value: string; label: string; tint: string }[] = [
   { value: "claude-haiku-4-5", label: "Haiku 4.5", tint: "text-green-500" },
   { value: "openai/gpt-5.6-sol", label: "GPT-5.6 Sol", tint: "text-teal-500" },
   { value: "openai/gpt-5.6-sol-pro", label: "GPT-5.6 Sol Pro", tint: "text-teal-500" },
-  { value: "openai/gpt-5.6-luna", label: "GPT-5.6 Luna", tint: "text-sky-500" },
   { value: "openai/gpt-5.6-terra", label: "GPT-5.6 Terra", tint: "text-amber-500" },
 ];
 
-export function modelLabel(value: string): string {
-  return MODELS.find((m) => m.value === value)?.label ?? value;
+/** Codex model ids are the backend-policy ids accepted by the Codex runner. */
+export const CODEX_MODELS: { value: string; label: string; tint: string }[] = [
+  { value: "gpt-5.6-sol", label: "GPT-5.6 Sol", tint: "text-teal-500" },
+  { value: "gpt-5.6-terra", label: "GPT-5.6 Terra", tint: "text-amber-500" },
+  { value: "gpt-5.6-luna", label: "GPT-5.6 Luna · Fast", tint: "text-sky-500" },
+];
+
+export type ModelOption = { value: string; label: string; tint: string };
+
+export function selectableModelsForEngine(
+  engine: EngineId,
+): ModelOption[] {
+  const normalized = normalizeEngine(engine);
+  if (normalized === "opencode") return MODELS;
+  if (normalized === "codex") return CODEX_MODELS;
+  return [];
+}
+
+/**
+ * Pre-session model-selection capability. The durable `session.started`
+ * capability map remains authoritative once it arrives; this catalog-backed
+ * fallback keeps the picker usable while a new native session is booting.
+ */
+export function supportsPreSessionModelSelection(engine: EngineId): boolean {
+  return selectableModelsForEngine(engine).length > 0;
+}
+
+export function modelOptionsForEngine(
+  engine: EngineId,
+  allowedModelIds?: readonly string[],
+): ModelOption[] {
+  const known = selectableModelsForEngine(engine);
+  if (known.length === 0) return [];
+  if (!allowedModelIds) return known;
+  return allowedModelIds.map(
+    (value) =>
+      known.find((model) => model.value === value) ?? {
+        value,
+        label: value,
+        tint: "text-text-sub-600",
+      },
+  );
+}
+
+export function modelLabel(value: string, engine: EngineId = "opencode"): string {
+  return selectableModelsForEngine(engine).find((m) => m.value === value)?.label ?? value;
 }
 
 /** Fold a legacy engine id into its current sandbox equivalent (the backend

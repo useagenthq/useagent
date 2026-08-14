@@ -285,6 +285,47 @@ describe("provider gateway routes", () => {
     expect(JSON.parse(seen[0]!.body).max_output_tokens).toBe(65_536);
   });
 
+  test("preserves upstream retry guidance after the gateway budget is exhausted", async () => {
+    const previous = process.env.PROVIDER_GATEWAY_MAX_RETRIES;
+    process.env.PROVIDER_GATEWAY_MAX_RETRIES = "0";
+    try {
+    const token = { ...claims, engine: "codex" as const, provider: "openai" as const };
+    const activeRun = { ...run, engine: "codex" as const, model: "gpt-5.6-sol" };
+    const routes = app({
+      token,
+      activeRun,
+      fetchUpstream: async () => new Response(
+        JSON.stringify({ error: { message: "rate limited" } }),
+        {
+          status: 429,
+          headers: {
+            "content-type": "application/json",
+            "retry-after": "7",
+            "x-ratelimit-limit-requests": "500",
+            "x-ratelimit-remaining-requests": "0",
+            "x-ratelimit-reset-requests": "7s",
+          },
+        },
+      ),
+    });
+
+    const response = await routes.request("/api/provider/openai/v1/responses", {
+      method: "POST",
+      headers: { authorization: "Bearer capability" },
+      body: JSON.stringify({ model: activeRun.model, input: "hello" }),
+    });
+
+    expect(response.status).toBe(429);
+    expect(response.headers.get("retry-after")).toBe("7");
+    expect(response.headers.get("x-ratelimit-limit-requests")).toBe("500");
+    expect(response.headers.get("x-ratelimit-remaining-requests")).toBe("0");
+    expect(response.headers.get("x-ratelimit-reset-requests")).toBe("7s");
+    } finally {
+      if (previous === undefined) delete process.env.PROVIDER_GATEWAY_MAX_RETRIES;
+      else process.env.PROVIDER_GATEWAY_MAX_RETRIES = previous;
+    }
+  });
+
   test("fails closed when credentials or durable admission are unavailable", async () => {
     const noCredential = await app({ credential: null }).request(
       "/api/provider/openrouter/v1/chat/completions",
@@ -303,6 +344,7 @@ describe("provider gateway routes", () => {
     );
     expect(exhausted.status).toBe(429);
     expect(await exhausted.json()).toEqual({ error: "concurrency_exhausted" });
+    expect(exhausted.headers.get("retry-after")).toBe("1");
 
     const unavailable = await app({
       beginAudit: async () => {
@@ -322,10 +364,8 @@ describe("thread-scoped capabilities (run-invariant config)", () => {
   const okUpstream = async () =>
     new Response("{}", { status: 200, headers: { "content-type": "application/json" } });
 
-  test("authorizes via the thread's LIVE run - a later turn by a different org user", async () => {
-    // The live run is a DIFFERENT run id and a DIFFERENT user than the minting
-    // turn: thread scope takes identity from the resolved run row.
-    const laterTurn: GatewayRun = { ...run, id: "run-later", userId: "user-b" };
+  test("authorizes via the thread's LIVE run for the signed user", async () => {
+    const laterTurn: GatewayRun = { ...run, id: "run-later" };
     const response = await app({
       token: threadClaims,
       activeThreadRun: laterTurn,
@@ -335,6 +375,22 @@ describe("thread-scoped capabilities (run-invariant config)", () => {
       body: JSON.stringify({ model: run.model }),
     });
     expect(response.status).toBe(200);
+  });
+
+  test("fails closed when the thread's LIVE run belongs to another user", async () => {
+    // The live run is a DIFFERENT run id and a DIFFERENT user than the minting
+    // turn: thread scope must not let another actor spend the signed user's
+    // provider capability.
+    const laterTurn: GatewayRun = { ...run, id: "run-later", userId: "user-b" };
+    const response = await app({
+      token: threadClaims,
+      activeThreadRun: laterTurn,
+      fetchUpstream: okUpstream,
+    }).request("/api/provider/openrouter/v1/chat/completions", {
+      method: "POST",
+      body: JSON.stringify({ model: run.model }),
+    });
+    expect(response.status).toBe(403);
   });
 
   test("is inert when the thread has no live turn (fail closed)", async () => {

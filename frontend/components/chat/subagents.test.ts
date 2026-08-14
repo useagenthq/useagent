@@ -153,39 +153,81 @@ describe("deriveSubagents — native attribution", () => {
     expect(ownerByStep.has("readA")).toBe(false);
     expect(ownerByStep.has("readB")).toBe(false);
   });
+
+  test("ignores T3 task lifecycle rows that were incorrectly chipped as subagents", () => {
+    const badLifecycleRow = step({
+      id: "google_price_started",
+      kind: "task",
+      chip: "subagent",
+      label: "Tool started",
+      code_json: JSON.stringify({
+        source: "t3",
+        activityKind: "task.started",
+        tool: "task",
+        input: { description: "Tool" },
+        native: { callID: "google_price" },
+      }),
+    });
+    const realSpawn = step({
+      id: "google_price_spawn",
+      kind: "task",
+      chip: "subagent",
+      label: "Find Google price",
+      code_json: JSON.stringify({
+        source: "t3",
+        activityKind: "tool.completed",
+        tool: "subagent",
+        input: { toolCallId: "google_price" },
+        output: '<task id="agent-google" state="completed"><task_result>GOOG 123</task_result></task>',
+        native: { callID: "google_price", childSessionID: "agent-google" },
+      }),
+    });
+
+    const model = deriveSubagents([badLifecycleRow, realSpawn]);
+
+    expect(model.cards.map((card) => card.id)).toEqual(["google_price_spawn"]);
+    expect(model.cards[0]?.childSessionId).toBe("agent-google");
+  });
 });
 
 describe("attribute — discriminated outcomes", () => {
   const cards: SubagentCard[] = [];
   const byChildSession = new Map<string, SubagentCard>();
+  const byCallId = new Map<string, SubagentCard>();
   for (const s of nativeFanout()) {
     if (s.chip === "subagent") {
+      const childSessionId = childSessionOf(s);
+      const callId = nativeOf(s)?.callID ?? null;
+      const aliases = [...new Set([callId, childSessionId].filter((id): id is string => !!id))];
       const card: SubagentCard = {
         id: s.id,
         title: s.label,
-        childSessionId: childSessionOf(s),
+        childSessionId,
+        callId,
+        aliases,
         status: null,
         startedAt: 0,
         lastActivityAt: null,
       };
       cards.push(card);
       if (card.childSessionId) byChildSession.set(card.childSessionId, card);
+      for (const alias of card.aliases) byCallId.set(alias, card);
     }
   }
 
   test("native child-session match → kind 'native'", () => {
-    const r = attribute(childWrite("x", "p1.txt", CHILD_A), byChildSession, cards);
+    const r = attribute(childWrite("x", "p1.txt", CHILD_A), byChildSession, byCallId, cards);
     expect(r.kind).toBe("native");
     if (r.kind === "native") expect(r.card.id).toBe("cardA");
   });
 
   test("a native step with an unknown session is left unattributed, not guessed", () => {
     const grandchild = childWrite("gc", "deep.txt", "ses_grandchild");
-    expect(attribute(grandchild, byChildSession, cards).kind).toBe("none");
+    expect(attribute(grandchild, byChildSession, byCallId, cards).kind).toBe("none");
   });
 
   test("a native step on the root session is not nested", () => {
-    expect(attribute(rootRead("r", "p1.txt"), byChildSession, cards).kind).toBe("none");
+    expect(attribute(rootRead("r", "p1.txt"), byChildSession, byCallId, cards).kind).toBe("none");
   });
 });
 
@@ -205,6 +247,47 @@ describe("deriveSubagents — legacy fallback (pre-stamp, no native ids)", () =>
 
   test("↳ step attributes to the most-recently-spawned card", () => {
     expect(ownerByStep.get("Ln")).toBe("L2");
-    expect(attribute(legacy[2], new Map(), cards).kind).toBe("legacy");
+    expect(attribute(legacy[2], new Map(), new Map(), cards).kind).toBe("legacy");
+  });
+});
+
+describe("deriveSubagents — T3 lifecycle binding", () => {
+  test("attributes T3 task lifecycle rows to the real spawn card by child task id alias", () => {
+    const spawn = step({
+      id: "nvidia-spawn",
+      kind: "task",
+      chip: "subagent",
+      label: "Find NVIDIA stock price",
+      code_json: JSON.stringify({
+        source: "t3",
+        activityKind: "tool.started",
+        tool: "subagent",
+        input: { toolCallId: "tool-call-nvidia" },
+        output: '<task id="nvidia_price_1" state="running"></task>',
+        native: { callID: "tool-call-nvidia", childSessionID: "nvidia_price_1" },
+      }),
+    });
+    const progress = step({
+      id: "nvidia-progress",
+      kind: "task",
+      chip: "task.progress",
+      label: "Fetched NVIDIA quote",
+      code_json: JSON.stringify({
+        source: "t3",
+        activityKind: "task.progress",
+        tool: "task",
+        input: { description: "Fetched NVIDIA quote" },
+        native: { callID: "nvidia_price_1" },
+      }),
+    });
+
+    const model = deriveSubagents([spawn, progress]);
+
+    expect(model.cards).toHaveLength(1);
+    expect(model.cards[0]?.callId).toBe("tool-call-nvidia");
+    expect(model.cards[0]?.childSessionId).toBe("nvidia_price_1");
+    expect(model.cards[0]?.aliases).toEqual(["tool-call-nvidia", "nvidia_price_1"]);
+    expect(model.ownerByStep.get("nvidia-progress")).toBe("nvidia-spawn");
+    expect(model.cards[0]?.status).toBe("Fetched NVIDIA quote");
   });
 });

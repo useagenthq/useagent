@@ -1,3 +1,5 @@
+import { sandboxPreviewHeaders } from "../sandboxes/provider";
+
 export interface OpenCodeRuntimeServer {
   readonly baseUrl: string;
   readonly token: string;
@@ -63,7 +65,7 @@ function managedMcpServers(config: JsonObject): JsonObject {
 
 function authHeaders(server: OpenCodeRuntimeServer): Record<string, string> {
   return {
-    "x-daytona-preview-token": server.token,
+    ...sandboxPreviewHeaders(server.token),
     "content-type": "application/json",
   };
 }

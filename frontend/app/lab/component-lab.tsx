@@ -40,6 +40,8 @@ import { FilterTable } from '@/components/ai/filter-table';
 import { RecordsTable } from '@/components/ai/records-table';
 import * as Table from '@/components/ui/table';
 
+import { BeautifulUiExtras } from './beautiful-ui-extras';
+
 function Section({
   label,
   children,
@@ -614,6 +616,8 @@ export function ComponentLab() {
             ]}
           />
         </Section>
+
+        <BeautifulUiExtras />
 
         <div className='h-16' />
       </div>

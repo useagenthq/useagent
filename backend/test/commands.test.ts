@@ -40,6 +40,25 @@ describe("durable commands / idempotency", () => {
     expect(list.body.runs.length).toBe(1);
   });
 
+  test("concurrent same-key root submissions resolve after the losing transaction rolls back", async () => {
+    const s = await createOrgSession("idem-concurrent");
+    const key = uid("idem-key");
+
+    const responses = await Promise.all([
+      post({ prompt: "one durable intent" }, { "Idempotency-Key": key }, s.cookies),
+      post({ prompt: "one durable intent" }, { "Idempotency-Key": key }, s.cookies),
+    ]);
+
+    expect(responses.map((response) => response.status).toSorted()).toEqual([200, 201]);
+    expect(new Set(responses.map((response) => response.body.id)).size).toBe(1);
+
+    const list = await json<{ runs: Array<{ id: string }> }>("/api/runs?all=1", {
+      cookies: s.cookies,
+    });
+    expect(list.body.runs).toHaveLength(1);
+    expect(list.body.runs[0]?.id).toBe(responses[0]?.body.id);
+  });
+
   test("ambiguous retry: same key, DIFFERENT body → 409 idempotency_key_reused", async () => {
     const s = await createOrgSession("idem-ambig");
     const key = uid("idem-key");

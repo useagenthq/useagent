@@ -25,7 +25,11 @@ import { finalizeRun } from "./runs/finalize";
 import { turnStream } from "./runs/turn-stream";
 import { publishThreadChange } from "./runs/thread-signals";
 import { claimNextRun, settleCommandForRun } from "./commands/dispatch";
-import { createRunTimer, type RunStageTimer } from "./runs/run-timing";
+import {
+  createFirstOutputMarker,
+  createRunTimer,
+  type RunStageTimer,
+} from "./runs/run-timing";
 
 // ---------------------------------------------------------------------------
 // Event bus — the worker pushes trace events here; SSE clients subscribe.
@@ -240,10 +244,16 @@ async function runWorker(runId: string): Promise<void> {
     // harness — mock ignores context, but the durable `skill.loaded` marker and
     // provenance still hold. `skillContext` is the SKILL.md-shaped INSTRUCTIONS,
     // injected below via the per-turn seam SEPARATELY from the (clean) user prompt.
-    const pinnedSkill =
-      run.skillId && run.skillVersion != null
-        ? await getPinnedRevision(run.skillId, run.skillVersion)
-        : null;
+    const endSkillLookup = stageLedger?.begin("worker.skill_lookup");
+    const pinnedSkill = await (async () => {
+      try {
+        return run.skillId && run.skillVersion != null
+          ? await getPinnedRevision(run.skillId, run.skillVersion)
+          : null;
+      } finally {
+        endSkillLookup?.();
+      }
+    })();
     let skillContext = "";
     if (pinnedSkill) {
       const markdown = formatSkillMarkdown(pinnedSkill.content);
@@ -253,17 +263,22 @@ async function runWorker(runId: string): Promise<void> {
       // the engine runs, well off the delta fast-path) so a crash can't lose the
       // evidence that a skill governed this run; a persist failure is logged and
       // never fails the run.
-      await recordSkillLoaded(run.id, run.threadId, {
-        skillId: pinnedSkill.skillId,
-        version: pinnedSkill.version,
-        kind: pinnedSkill.kind,
-        name: pinnedSkill.content.name,
-        contentHash: pinnedSkill.contentHash,
-        source: "skill",
-        contentChars: markdown.length,
-      }).catch((err) =>
-        console.warn(`[worker] skill.loaded marker persist failed for run ${run.id}:`, err),
-      );
+      const endSkillMarker = stageLedger?.begin("worker.skill_marker");
+      try {
+        await recordSkillLoaded(run.id, run.threadId, {
+          skillId: pinnedSkill.skillId,
+          version: pinnedSkill.version,
+          kind: pinnedSkill.kind,
+          name: pinnedSkill.content.name,
+          contentHash: pinnedSkill.contentHash,
+          source: "skill",
+          contentChars: markdown.length,
+        }).catch((err) =>
+          console.warn(`[worker] skill.loaded marker persist failed for run ${run.id}:`, err),
+        );
+      } finally {
+        endSkillMarker?.();
+      }
     }
 
     // `mock` is the scripted trace and ignores context entirely. It IS
@@ -288,13 +303,28 @@ async function runWorker(runId: string): Promise<void> {
     // row — never the sandbox/prompt.
     const plan = resolveScopedMemory(run);
     const endContext = stageLedger?.begin("worker.context");
+    const timedContextOperation = async <T>(
+      stage: string,
+      operation: () => Promise<T>,
+    ): Promise<T> => {
+      const end = stageLedger?.begin(stage);
+      try {
+        return await operation();
+      } finally {
+        end?.();
+      }
+    };
     const [recall, bootstrapContext] = await Promise.all([
       // Layered recall (new_mem_prompt.md 6.2): Tencent L0 (immediate ground
       // evidence, incl. explicit "remember X") + L1 (distilled) searched in
       // parallel and merged, so a freshly-taught fact is injected into a NEW
       // thread's context before L1 extraction even finishes.
-      plan ? recallScopedMemory(run.prompt, plan.readPools) : Promise.resolve(null),
-      run.parentRunId ? buildThreadPreamble(run.threadId, run.id) : Promise.resolve(""),
+      timedContextOperation("worker.memory_recall", () =>
+        plan ? recallScopedMemory(run.prompt, plan.readPools) : Promise.resolve(null),
+      ),
+      timedContextOperation("worker.thread_preamble", () =>
+        run.parentRunId ? buildThreadPreamble(run.threadId, run.id) : Promise.resolve(""),
+      ),
     ]);
     const turnContext = recall?.rendered ?? "";
 
@@ -312,8 +342,10 @@ async function runWorker(runId: string): Promise<void> {
     // fast-path — deltas are published by the adapter during the turn, after this
     // resolves. A persist failure is logged, never fails the run.
     if (plan && recall) {
-      await recordContextRetrieval(run.id, run.threadId, plan, run.prompt, recall).catch((err) =>
-        console.warn(`[worker] context.retrieved marker persist failed for run ${run.id}:`, err),
+      await timedContextOperation("worker.context_marker", () =>
+        recordContextRetrieval(run.id, run.threadId, plan, run.prompt, recall).catch((err) =>
+          console.warn(`[worker] context.retrieved marker persist failed for run ${run.id}:`, err),
+        ),
       );
     }
     endContext?.();
@@ -363,6 +395,16 @@ async function runWorker(runId: string): Promise<void> {
       clearTimeout(timer);
       clearTimeout(ceiling);
     }
+  } catch (err) {
+    console.error(`[worker] run ${runId} failed before engine completion:`, err);
+    const reason =
+      err instanceof Error && err.message
+        ? `worker error: ${err.message.replace(/\s+/g, " ").slice(0, 180)}`
+        : "worker error";
+    await finalizeRun(runId, "failed", reason, 0).catch((finalizeError) =>
+      console.error(`[worker] failed to finalize run ${runId}:`, finalizeError),
+    );
+    bus.emit(channel(runId), { type: "end", status: "failed" } satisfies BusEvent);
   } finally {
     // Free the thread and dispatch its next turn — whatever the outcome.
     cancellers.delete(runId);
@@ -431,7 +473,8 @@ async function runMock(
 // hard timeout kills a runaway adapter and marks the run failed.
 // ---------------------------------------------------------------------------
 
-export const RUNS_ROOT = join(import.meta.dir, "..", ".runs");
+export const RUNS_ROOT =
+  process.env.RUNS_ROOT?.trim() || join(import.meta.dir, "..", ".runs");
 
 // INACTIVITY window on a single engine run: the abort fires only after this
 // much SILENCE on the run's event channel (every step/delta/native frame
@@ -538,6 +581,7 @@ async function runEngine(
   // Perf Phase 0: stage timer for the adapter's startup phases. Same durable
   // lane as the worker spans (absolute epoch ms keeps the instances coherent).
   const timing = createRunTimer(runId, threadId);
+  const markFirstOutput = createFirstOutputMarker(timing);
 
   const ctx: EngineRunContext = {
     runId,
@@ -577,7 +621,10 @@ async function runEngine(
     // Live-typing channel: synchronous, in-memory, no DB round-trip. SSE
     // subscribers get narration text the instant an engine streams it. `kind`
     // "reasoning" tags thinking so the UI can surface it distinctly.
-    publishDelta: (delta, kind) => turnStream.publish(runId, delta, kind),
+    publishDelta: (delta, kind) => {
+      markFirstOutput(delta, kind);
+      turnStream.publish(runId, delta, kind);
+    },
     setSummary: (s, durationMs) => {
       summary = s;
       summaryDuration = durationMs;

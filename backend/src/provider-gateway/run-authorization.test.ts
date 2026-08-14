@@ -95,8 +95,8 @@ describe("provider gateway run authorization", () => {
   });
 });
 
-describe("tool-gateway thread-scope identity substitution (cross-user safety)", () => {
-  test("a thread capability acts as the CURRENT live run's user, never the minting user", async () => {
+describe("tool-gateway thread-scope user binding", () => {
+  test("a thread capability cannot cross into a later run owned by another user", async () => {
     const { resolveToolRunIdentity } = await import("../knowledge/gateway/run-authorization");
     const threadId = `thread-${crypto.randomUUID()}`;
     const orgId = `org-${crypto.randomUUID()}`;
@@ -109,15 +109,13 @@ describe("tool-gateway thread-scope identity substitution (cross-user safety)", 
     ]);
     const claims = {
       orgId,
-      userId: "user-a", // minting user - must NOT survive resolution
+      userId: "user-a",
       threadId,
       runId: mintRun,
       scope: "thread" as const,
       exp: Date.now() + 60_000,
     };
-    const resolved = await resolveToolRunIdentity(claims);
-    expect(resolved?.runId).toBe(laterRun);
-    expect(resolved?.userId).toBe("user-b");
+    expect(await resolveToolRunIdentity(claims)).toBeNull();
 
     // Run scope is untouched: the minted run is settled, so it stays inert even
     // though the thread is busy.

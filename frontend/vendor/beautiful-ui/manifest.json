@@ -1,0 +1,271 @@
+{
+  "schemaVersion": 1,
+  "upstream": {
+    "name": "Beautiful UI",
+    "sourceUrl": "https://www.beautifului.dev/",
+    "licenseUrl": "https://www.beautifului.dev/license",
+    "fetchedAtUtc": "2026-08-14T09:05:32Z",
+    "nextBuildId": "ZAMSdOmu5k27rPLPX1Vv-",
+    "vercelDeploymentId": "dpl_66BjASRafaYmxpqJa1bemN6wtrMN",
+    "staticSourceSnapshot": {
+      "homeEtag": "cc4bac24ade07d54748c37dea217c085",
+      "licenseEtag": "d498956c72864e19bb5eb2ff9300a5f5",
+      "homeAppChunk": "/_next/static/chunks/app/page-a270d585e13da8b9.js",
+      "licenseAppChunk": "/_next/static/chunks/app/license/page-890f74e1c4f39ff6.js",
+      "webpackChunk": "/_next/static/chunks/webpack-dca0094f8340a94a.js"
+    }
+  },
+  "storage": {
+    "format": "Exact UTF-8 React/TypeScript source decoded from the upstream Next RSC payload",
+    "extension": ".tsx.txt",
+    "reason": "Keeps the unwired snapshot outside the frontend TypeScript compilation boundary until dependencies and site-local atoms are deliberately ported."
+  },
+  "license": {
+    "spdx": "MIT",
+    "file": "LICENSE",
+    "sha256": "e273df457a1fb6cedf6690b03f7bf70023dcccd094ff46910ac55a378345b26e"
+  },
+  "componentCount": 19,
+  "unresolvedUpstreamImports": [
+    "glimm",
+    "liveline",
+    "iconoir-react",
+    "@/components/atoms/Shimmer",
+    "@/components/atoms/StreamText"
+  ],
+  "components": [
+    {
+      "slug": "loading-state",
+      "displayName": "Loading State",
+      "description": "Pixel-grid loader with shimmer and elapsed time.",
+      "exportName": "LoadingState",
+      "intendedFilename": "loading-state.tsx",
+      "vendoredPath": "sources/loading-state.tsx.txt",
+      "rscRecordId": "d",
+      "bytes": 3079,
+      "sha256": "4486cd52587e99772215162d3cca77f4eac4b734b8696c3a0237446ab013ba46",
+      "imports": ["react"]
+    },
+    {
+      "slug": "thinking-state",
+      "displayName": "Thinking",
+      "description": "Expandable traces — steps, reasoning, search, coding.",
+      "exportName": "ThinkingState",
+      "intendedFilename": "thinking-state.tsx",
+      "vendoredPath": "sources/thinking-state.tsx.txt",
+      "rscRecordId": "e",
+      "bytes": 10439,
+      "sha256": "c8f70ed491fa886176f9978093ba3d3149806ca2a6a063a746c4547ca1e49e5c",
+      "imports": ["react"]
+    },
+    {
+      "slug": "streaming-text",
+      "displayName": "Streaming Text",
+      "description": "Streamed answer with inline sources, actions, and follow-ups.",
+      "exportName": "StreamingText",
+      "intendedFilename": "streaming-text.tsx",
+      "vendoredPath": "sources/streaming-text.tsx.txt",
+      "rscRecordId": "f",
+      "bytes": 8964,
+      "sha256": "bdbf40624fdc40124684273d2be71882b528a6cc6dbb3bb06b45eb8fa22995c9",
+      "imports": ["react"]
+    },
+    {
+      "slug": "approval-card",
+      "displayName": "Approval Card",
+      "description": "Human-in-the-loop questions the agent asks before acting.",
+      "exportName": "ApprovalCard",
+      "intendedFilename": "approval-card.tsx",
+      "vendoredPath": "sources/approval-card.tsx.txt",
+      "rscRecordId": "10",
+      "bytes": 10478,
+      "sha256": "f17a7b252d8d8cbdbc0f67e6abcce8e5cce811928142dce05cd8f3f1304e6ddd",
+      "imports": ["react"]
+    },
+    {
+      "slug": "tool-chips",
+      "displayName": "Tool Chips",
+      "description": "Code edits and tool calls as compact chips.",
+      "exportName": "ToolChips",
+      "intendedFilename": "tool-chips.tsx",
+      "vendoredPath": "sources/tool-chips.tsx.txt",
+      "rscRecordId": "11",
+      "bytes": 9084,
+      "sha256": "4296af52f4751beb1434272624e5617c43f93ba3e069a15f4780021faeef8f26",
+      "imports": ["react"]
+    },
+    {
+      "slug": "task-rows",
+      "displayName": "Task Rows",
+      "description": "Live agent task status — running, failed, completed.",
+      "exportName": "TaskRows",
+      "intendedFilename": "task-rows.tsx",
+      "vendoredPath": "sources/task-rows.tsx.txt",
+      "rscRecordId": "12",
+      "bytes": 9026,
+      "sha256": "665e31820b041600662fcffff044d6a4994ecd18059d5e8ef1026251bf996b0e",
+      "imports": ["react"]
+    },
+    {
+      "slug": "chat-composer",
+      "displayName": "Chat",
+      "description": "Tabbed chat panel with reasoning replies and a composer.",
+      "exportName": "ChatComposer",
+      "intendedFilename": "chat-composer.tsx",
+      "vendoredPath": "sources/chat-composer.tsx.txt",
+      "rscRecordId": "13",
+      "bytes": 7339,
+      "sha256": "35118eb31c616a29d124868149ef3a565c56444f9a950a2eb11d1a7d9402e11b",
+      "imports": ["react"]
+    },
+    {
+      "slug": "prompt-bar",
+      "displayName": "Prompt Bar",
+      "description": "Composer with @ sources, / commands, model picker, and dictation.",
+      "exportName": "PromptBar",
+      "intendedFilename": "prompt-bar.tsx",
+      "vendoredPath": "sources/prompt-bar.tsx.txt",
+      "rscRecordId": "14",
+      "bytes": 29151,
+      "sha256": "a37c9525b903e43bef8169ae041fc97f4afda220af40168da20ce64fc559c4c0",
+      "imports": ["react", "glimm"]
+    },
+    {
+      "slug": "recommendation-card",
+      "displayName": "Recommendation Card",
+      "description": "Agent suggestion with a confidence meter and actions.",
+      "exportName": "RecommendationCard",
+      "intendedFilename": "recommendation-card.tsx",
+      "vendoredPath": "sources/recommendation-card.tsx.txt",
+      "rscRecordId": "15",
+      "bytes": 6114,
+      "sha256": "8738c6a6aee5e49bdd3f4874dd353874d72333a24878640e7508b40449f76ab6",
+      "imports": ["react"]
+    },
+    {
+      "slug": "context-cards",
+      "displayName": "Context Cards",
+      "description": "Retrieved knowledge chunks with their sources.",
+      "exportName": "ContextCards",
+      "intendedFilename": "context-cards.tsx",
+      "vendoredPath": "sources/context-cards.tsx.txt",
+      "rscRecordId": "16",
+      "bytes": 3803,
+      "sha256": "9826e2e361d9480bbf69e571bccfa51db52f0ba81982938f904df4f9f0266f0f",
+      "imports": ["react"]
+    },
+    {
+      "slug": "diff-table",
+      "displayName": "Diff Table",
+      "description": "AI-proposed edits sweeping through tabular data.",
+      "exportName": "DiffTable",
+      "intendedFilename": "diff-table.tsx",
+      "vendoredPath": "sources/diff-table.tsx.txt",
+      "rscRecordId": "17",
+      "bytes": 5582,
+      "sha256": "aef76b9473debb1abf8cb3b8fe9cf71cfacd4b13ba03916932b1dd41f3007ab2",
+      "imports": ["react"]
+    },
+    {
+      "slug": "records-table",
+      "displayName": "Records Table",
+      "description": "CRM-style grid with tags, sorting, and relationship status.",
+      "exportName": "RecordsTable",
+      "intendedFilename": "records-table.tsx",
+      "vendoredPath": "sources/records-table.tsx.txt",
+      "rscRecordId": "18",
+      "bytes": 13236,
+      "sha256": "aaae556d2b6d43c4186f1f2cda6ad5ae9bcbce08258fa4deebbd8931572a8016",
+      "imports": ["react"]
+    },
+    {
+      "slug": "filter-table",
+      "displayName": "Filter Table",
+      "description": "Status chips that reorganize live data.",
+      "exportName": "FilterTable",
+      "intendedFilename": "filter-table.tsx",
+      "vendoredPath": "sources/filter-table.tsx.txt",
+      "rscRecordId": "19",
+      "bytes": 5067,
+      "sha256": "4a48c51cd6e5c0aa3bab91aab9975005518fd82dd294d059e402c2bb4ce681f4",
+      "imports": ["react"]
+    },
+    {
+      "slug": "sidebar-nav",
+      "displayName": "Sidebar Nav",
+      "description": "Workspace navigation with quick search.",
+      "exportName": "SidebarNav",
+      "intendedFilename": "sidebar-nav.tsx",
+      "vendoredPath": "sources/sidebar-nav.tsx.txt",
+      "rscRecordId": "1a",
+      "bytes": 8818,
+      "sha256": "34f3f49e55c332b3924fff483a78f46b0b8548cd3fd0c842fd5d8c86b07ef966",
+      "imports": ["react"]
+    },
+    {
+      "slug": "search",
+      "displayName": "Search",
+      "description": "Command search with live filtering and an empty state.",
+      "exportName": "SearchList",
+      "intendedFilename": "search.tsx",
+      "vendoredPath": "sources/search.tsx.txt",
+      "rscRecordId": "1b",
+      "bytes": 3947,
+      "sha256": "86e244a2ea8381cb5728690b2220421a1bbf9f16b2fcde27899bbd8acd4b872a",
+      "imports": ["react"]
+    },
+    {
+      "slug": "insight-cards",
+      "displayName": "Insight Cards",
+      "description": "Paged agent insights with scrub-ready live charts.",
+      "exportName": "InsightCards",
+      "intendedFilename": "insight-cards.tsx",
+      "vendoredPath": "sources/insight-cards.tsx.txt",
+      "rscRecordId": "1c",
+      "bytes": 17843,
+      "sha256": "f40abc989b2995be81b4aee35680e26a493467dd544b1fa5000a09507f51ce5e",
+      "imports": ["liveline", "react"]
+    },
+    {
+      "slug": "code-block",
+      "displayName": "Code Block",
+      "description": "Agent-written code streaming in line by line.",
+      "exportName": "CodeBlock",
+      "intendedFilename": "code-block.tsx",
+      "vendoredPath": "sources/code-block.tsx.txt",
+      "rscRecordId": "1d",
+      "bytes": 4607,
+      "sha256": "251b4b8bffcbbc96ca7c565b2ffe9c61c967e896676215e4697037d13a1d59b4",
+      "imports": ["react"]
+    },
+    {
+      "slug": "fine-tune-card",
+      "displayName": "Fine-tune Card",
+      "description": "The agent adjusts design properties in an inspector.",
+      "exportName": "FineTuneCard",
+      "intendedFilename": "fine-tune-card.tsx",
+      "vendoredPath": "sources/fine-tune-card.tsx.txt",
+      "rscRecordId": "1e",
+      "bytes": 9903,
+      "sha256": "d423c165e4feffcfddd46d93c6ed2ee0f8c5050c6fbb9ee93a4a5000b645a7c2",
+      "imports": ["react"]
+    },
+    {
+      "slug": "selection-actions",
+      "displayName": "Selection Actions",
+      "description": "Highlight a passage and hand it to the agent to rewrite.",
+      "exportName": "SelectionActions",
+      "intendedFilename": "selection-actions.tsx",
+      "vendoredPath": "sources/selection-actions.tsx.txt",
+      "rscRecordId": "1f",
+      "bytes": 17799,
+      "sha256": "6811384990c40c24c82e0246551c6518943720d636d960fea32c2fc0d019b147",
+      "imports": [
+        "react",
+        "iconoir-react",
+        "@/components/atoms/Shimmer",
+        "@/components/atoms/StreamText"
+      ]
+    }
+  ]
+}

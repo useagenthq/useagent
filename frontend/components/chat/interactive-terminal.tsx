@@ -5,7 +5,7 @@ import { useEffect, useRef } from "react";
 /**
  * A real shell into the conversation's LIVE sandbox — **ghostty-web** (Ghostty's
  * VT100 parser compiled to WASM, exposing the xterm.js API) over the backend's
- * WS bridge (`/api/runs/:id/terminal` → Daytona PTY). The user types into the
+ * WS bridge (`/api/runs/:id/terminal` → sandbox PTY). The user types into the
  * same filesystem the agent works in. Mounted only while the Shell tab is
  * active; the socket and PTY die with unmount.
  *
