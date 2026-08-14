@@ -147,13 +147,18 @@ function t3ToolCallId(
   const data = rec(payload?.data);
   const item = rec(data?.item);
   return firstString(
-    f.native.callId,
-    payload?.taskId,
-    payload?.toolCallId,
-    payload?.toolUseId,
-    payload?.callId,
-    payload?.id,
+    // Keep this precedence aligned with the T3 producer. Codex MCP activity
+    // revisions carry the stable identity under payload.data.toolCallId while
+    // each outer activity has a different presentation id.
+    data?.toolCallId,
     item?.id,
+    payload?.toolUseId,
+    payload?.toolCallId,
+    data?.toolUseId,
+    f.native.callId,
+    payload?.callId,
+    data?.callId,
+    payload?.id,
     activity?.id,
     f.eventId,
   ) ?? f.eventId;
@@ -269,10 +274,21 @@ export function translateOpenCode(
   let cursor = 0;
 
   for (const f of orderedFrames) {
-    if (!f.eventType.startsWith("t3.activity.task.")) continue;
-    const payload = t3Payload(rec(f.payload));
-    const toolUseId = firstString(payload?.toolUseId, payload?.toolCallId);
-    if (toolUseId) t3TaskToolUseIds.add(toolUseId);
+    if (!f.eventType.startsWith("t3.activity.")) continue;
+    const activity = rec(f.payload);
+    const activityKind = t3ActivityKind(f.eventType, activity);
+    const payload = t3Payload(activity);
+    if (activityKind.startsWith("task.")) {
+      const taskId = firstString(payload?.taskId, f.native.callId);
+      const toolUseId = firstString(payload?.toolUseId, payload?.toolCallId);
+      if (taskId) authoritativeT3ActivityIds.add(taskId);
+      if (toolUseId) {
+        t3TaskToolUseIds.add(toolUseId);
+        authoritativeT3ActivityIds.add(toolUseId);
+      }
+    } else if (activityKind.startsWith("tool.")) {
+      authoritativeT3ActivityIds.add(t3ToolCallId(f, activity, payload));
+    }
   }
 
   const push = (id: string, provider: string, body: CanonicalEventBody, ident: Partial<CanonicalAgentEvent["identity"]> = {}, suffix = ""): CanonicalEventKind => {

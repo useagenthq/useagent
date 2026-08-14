@@ -412,6 +412,89 @@ describe("T3 activity fidelity", () => {
       suppressed: "t3 provider activity lifecycle is authoritative",
     });
   });
+
+  test("uses nested T3 producer call identity across activity revisions and durable replay", () => {
+    const frames = [
+      t3Frame("activity-start", 1, "t3.activity.tool.started", {
+        id: "presentation-start",
+        kind: "tool.started",
+        summary: "Fetch quote",
+        payload: {
+          data: { toolCallId: "call-real", toolName: "webfetch" },
+        },
+      }),
+      t3Frame("activity-done", 2, "t3.activity.tool.completed", {
+        id: "presentation-done",
+        kind: "tool.completed",
+        summary: "Fetched quote",
+        payload: {
+          data: { toolCallId: "call-real", toolName: "webfetch" },
+        },
+      }),
+    ];
+    const steps: OpenCodeStep[] = [{
+      id: "step-real-tool",
+      idx: 0,
+      kind: "command",
+      label: "Fetch quote",
+      code_json: JSON.stringify({
+        source: "t3",
+        tool: "webfetch",
+        native: { callID: "call-real", sessionID: "ses_t3" },
+      }),
+    }];
+
+    const result = translateOpenCode(frames, { ...CTX, engine: "codex" }, steps);
+    expect(result.events.map((event) => event.kind)).toEqual(["tool.started", "tool.completed"]);
+    expect(result.events).toMatchObject([
+      { kind: "tool.started", toolCallId: "call-real" },
+      { kind: "tool.completed", toolCallId: "call-real" },
+    ]);
+    expect(result.accounting.at(-1)).toMatchObject({
+      sourceId: "step-real-tool",
+      produced: [],
+      suppressed: "t3 provider activity lifecycle is authoritative",
+    });
+  });
+
+  test("uses agent task activity as the single lifecycle over its durable task replay", () => {
+    const frames = [
+      t3Frame("task-start", 1, "t3.activity.task.started", {
+        id: "presentation-task-start",
+        kind: "task.started",
+        payload: { taskId: "task-real", agentKind: "agent", title: "Researcher" },
+      }),
+      t3Frame("task-done", 2, "t3.activity.task.completed", {
+        id: "presentation-task-done",
+        kind: "task.completed",
+        summary: "Quote found",
+        payload: { taskId: "task-real", agentKind: "agent" },
+      }),
+    ];
+    const steps: OpenCodeStep[] = [{
+      id: "step-real-task",
+      idx: 0,
+      kind: "task",
+      label: "Researcher",
+      code_json: JSON.stringify({
+        source: "t3",
+        tool: "subagent",
+        native: { callID: "task-real", sessionID: "task-real" },
+      }),
+    }];
+
+    const result = translateOpenCode(frames, { ...CTX, engine: "codex" }, steps);
+    expect(result.events.map((event) => event.kind)).toEqual(["child.started", "child.completed"]);
+    expect(result.events).toMatchObject([
+      { kind: "child.started", childId: "task-real" },
+      { kind: "child.completed", childId: "task-real" },
+    ]);
+    expect(result.accounting.at(-1)).toMatchObject({
+      sourceId: "step-real-task",
+      produced: [],
+      suppressed: "t3 provider activity lifecycle is authoritative",
+    });
+  });
 });
 
 describe("native question translation", () => {
