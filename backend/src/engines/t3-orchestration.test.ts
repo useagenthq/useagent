@@ -317,6 +317,14 @@ describe("T3 orchestration projection", () => {
         turnId: "turn",
       },
     ])).toBe(false);
+    expect(shouldProjectT3Activity(collabActivity, [{
+      id: "task-without-child-identity",
+      tone: "info",
+      kind: "task.started",
+      summary: "Anonymous child",
+      payload: { toolUseId: "call-1" },
+      turnId: "turn",
+    }])).toBe(true);
     expect(t3ActivityStepKey({
       ...collabActivity,
       id: "collab-updated",
@@ -332,6 +340,73 @@ describe("T3 orchestration projection", () => {
       id: "read",
       payload: { itemType: "command_execution", data: { toolCallId: "read-1" } },
     })).toBe(true);
+    expect(shouldProjectT3Activity({
+      ...collabActivity,
+      id: "anonymous-start",
+      kind: "tool.started",
+      summary: "Tool started",
+      payload: { itemType: "collab_agent_tool_call" },
+    })).toBe(false);
+    expect(shouldProjectT3Activity({
+      ...collabActivity,
+      id: "anonymous-mcp-start",
+      kind: "tool.started",
+      summary: "skynet-knowledge · computer_screenshot started",
+      payload: { itemType: "mcp_tool_call" },
+    })).toBe(false);
+    expect(shouldProjectT3Activity({
+      ...collabActivity,
+      id: "generic-mcp-complete",
+      kind: "tool.completed",
+      summary: "Mcp tool call",
+      payload: { itemType: "mcp_tool_call", callId: "opaque-1" },
+    })).toBe(false);
+    expect(activityStep({
+      ...collabActivity,
+      id: "dynamic-complete",
+      summary: "skynet-knowledge_github_clone_repository",
+      payload: {
+        itemType: "dynamic_tool_call",
+        detail: "repository cloned",
+        data: { toolCallId: "clone-1" },
+      },
+    })).toMatchObject({
+      label: "skynet-knowledge · github_clone_repository",
+      code_json: {
+        server: "skynet-knowledge",
+        tool: "github_clone_repository",
+      },
+    });
+    expect(activityStep({
+      ...collabActivity,
+      id: "mcp-complete",
+      summary: "skynet-knowledge · computer_screenshot started",
+      payload: {
+        itemType: "mcp_tool_call",
+        tool: "mcp_tool_call",
+        callId: "screenshot-1",
+      },
+    })).toMatchObject({
+      label: "skynet-knowledge · computer_screenshot",
+      code_json: {
+        server: "skynet-knowledge",
+        tool: "computer_screenshot",
+        native: { callID: "screenshot-1" },
+      },
+    });
+    expect(activityStep({
+      ...collabActivity,
+      id: "structured-child",
+      payload: {
+        itemType: "collab_agent_tool_call",
+        childSessionId: "ses_structured_child",
+        data: { toolCallId: "call-2" },
+      },
+    })).toMatchObject({
+      code_json: {
+        native: { callID: "call-2", childSessionID: "ses_structured_child" },
+      },
+    });
     expect(activityStep({
       id: "plan",
       tone: "info",

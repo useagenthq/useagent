@@ -42,13 +42,54 @@ function t3ToolCallId(activity: T3Activity): string | null {
   const payload = record(activity.payload);
   const data = record(payload?.data);
   const item = record(data?.item);
-  return firstNonEmptyString(data?.toolCallId, item?.id, payload?.toolUseId);
+  return firstNonEmptyString(
+    data?.toolCallId,
+    payload?.toolCallId,
+    item?.id,
+    data?.callId,
+    data?.callID,
+    payload?.callId,
+    payload?.callID,
+    payload?.toolUseId,
+  );
 }
 
 function firstNonEmptyString(...values: readonly unknown[]): string | null {
   return values.find(
     (value): value is string => typeof value === "string" && value.length > 0,
   ) ?? null;
+}
+
+const TRANSPORT_TOOL_NAMES = new Set([
+  "dynamic_tool_call",
+  "mcp_tool_call",
+  "task",
+  "tool",
+]);
+
+function semanticToolIdentity(
+  activity: T3Activity,
+  itemType: string | null,
+): { readonly server: string | null; readonly tool: string | null } {
+  const summary = descriptiveActivityLabel(activity.summary)
+    ?.replace(/\s+started$/iu, "")
+    .trim();
+  if (!summary) return { server: null, tool: null };
+
+  const delimiter = summary.indexOf(" · ");
+  if (delimiter > 0 && delimiter < summary.length - 3) {
+    return {
+      server: summary.slice(0, delimiter).trim(),
+      tool: summary.slice(delimiter + 3).trim(),
+    };
+  }
+
+  if (itemType === "dynamic_tool_call" || itemType === "mcp_tool_call") {
+    const structured = /^([a-z0-9][a-z0-9-]*)_([a-z][a-z0-9_-]*)$/iu.exec(summary);
+    if (structured) return { server: structured[1]!, tool: structured[2]! };
+    return { server: null, tool: summary };
+  }
+  return { server: null, tool: null };
 }
 
 /**
@@ -67,20 +108,43 @@ function t3ToolProjection(activity: T3Activity): {
   const payload = record(activity.payload);
   const data = record(payload?.data);
   const item = record(data?.item);
+  const itemType = typeof payload?.itemType === "string" ? payload.itemType : null;
+  const semantic = semanticToolIdentity(activity, itemType);
+  const projectedTool = firstNonEmptyString(
+    payload?.toolName,
+    payload?.tool,
+    data?.toolName,
+    data?.tool,
+    item?.tool,
+    item?.name,
+  );
+  const tool = projectedTool && !TRANSPORT_TOOL_NAMES.has(projectedTool.toLowerCase())
+    ? projectedTool
+    : semantic.tool;
   return {
     data,
     item,
-    server: firstNonEmptyString(payload?.server, data?.server, item?.server),
-    tool: firstNonEmptyString(
-      payload?.toolName,
-      payload?.tool,
-      data?.toolName,
-      data?.tool,
-      item?.tool,
-      item?.name,
-    ),
+    server: firstNonEmptyString(payload?.server, data?.server, item?.server) ?? semantic.server,
+    tool,
     input: item?.arguments ?? data ?? activity.payload,
   };
+}
+
+function t3ChildSessionId(activity: T3Activity): string | null {
+  const payload = record(activity.payload);
+  const data = record(payload?.data);
+  const item = record(data?.item);
+  const direct = firstNonEmptyString(
+    payload?.childSessionId,
+    payload?.childSessionID,
+    data?.childSessionId,
+    data?.childSessionID,
+    item?.childSessionId,
+    item?.childSessionID,
+  );
+  if (direct) return direct;
+  const detail = typeof payload?.detail === "string" ? payload.detail : null;
+  return detail ? /<task\s+id="([^"]+)"/u.exec(detail)?.[1] ?? null : null;
 }
 
 /**
@@ -109,13 +173,41 @@ export function shouldProjectT3Activity(
 ): boolean {
   if (!activity.kind.startsWith("tool.")) return true;
   const payload = record(activity.payload);
-  if (payload?.itemType !== "collab_agent_tool_call") return true;
+  const itemType = typeof payload?.itemType === "string" ? payload.itemType : null;
+  if (
+    (itemType === "dynamic_tool_call" || itemType === "mcp_tool_call") &&
+    !t3ToolProjection(activity).tool
+  ) {
+    // A completed transport wrapper with no semantic tool identity is still
+    // useful in the provider-event ledger, but it cannot produce a meaningful
+    // or reconcilable UI row. Do not expose generic "Mcp tool call" noise.
+    return false;
+  }
   const toolCallId = t3ToolCallId(activity);
+  if (
+    !toolCallId &&
+    (activity.kind.endsWith(".started") ||
+      activity.kind.endsWith(".updated") ||
+      activity.kind.endsWith(".progress"))
+  ) {
+    // T3 preserves these transport notifications in provider_events, but a
+    // provisional row without producer identity cannot be reconciled safely
+    // with its eventual completion. Projecting it creates duplicate/flickering
+    // UI rows and can merge concurrent calls by label, so wait for an
+    // identified revision before adding it to the durable step timeline.
+    return false;
+  }
+  if (payload?.itemType !== "collab_agent_tool_call") return true;
   if (!toolCallId) return true;
   return !activities.some((candidate) => {
     if (!candidate.kind.startsWith("task.")) return false;
     const candidatePayload = record(candidate.payload);
-    return candidatePayload?.toolUseId === toolCallId;
+    const childSessionId = firstNonEmptyString(
+      candidatePayload?.taskId,
+      candidatePayload?.childSessionId,
+      candidatePayload?.childSessionID,
+    );
+    return childSessionId !== null && candidatePayload?.toolUseId === toolCallId;
   });
 }
 
@@ -359,7 +451,7 @@ function toolActivityName(
     case "file_change":
       return "edit";
     case "web_search":
-      return "websearch";
+      return "web_search";
     default:
       return itemType ?? "tool";
   }
@@ -420,9 +512,7 @@ export function activityStep(activity: T3Activity): EmitStep {
     const isSubagent = itemType === "collab_agent_tool_call";
     const projection = t3ToolProjection(activity);
     const toolCallId = t3ToolCallId(activity);
-    const childSessionId = isSubagent && detail
-      ? /<task\s+id="([^"]+)"/u.exec(detail)?.[1] ?? null
-      : null;
+    const childSessionId = isSubagent ? t3ChildSessionId(activity) : null;
     const tool = toolActivityName(itemType, projection.tool, isSubagent);
     return {
       kind: itemType === "file_change" ? "file" : isSubagent ? "task" : "command",
