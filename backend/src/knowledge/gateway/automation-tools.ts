@@ -1,5 +1,5 @@
 import type { ToolCallResult } from "./tools";
-import type { ToolTokenClaims } from "./token";
+import { mintToolToken, type ToolTokenClaims } from "./token";
 import { getScheduleForOrg, listFirings, listSchedules } from "../../schedules/repo";
 import {
   createScheduleForOrg,
@@ -222,7 +222,7 @@ async function deleteAutomation(
   }
 }
 
-export async function executeAutomationTool(
+export async function executeAutomationToolLocal(
   claims: ToolTokenClaims,
   name: string,
   args: Record<string, unknown>,
@@ -242,4 +242,76 @@ export async function executeAutomationTool(
   if (name === "automation_history") return automationHistory(claims, args);
   if (name === "automation_delete") return deleteAutomation(claims, args);
   return errorResult(`Unknown tool: ${name}`);
+}
+
+function primaryApiOrigin(): string | null {
+  if (!process.env.GATEWAY_DATABASE_URL) return null;
+  const raw = process.env.SKYNET_API_ORIGIN?.trim();
+  if (!raw) return null;
+  try {
+    const url = new URL(raw);
+    if (url.protocol !== "http:" && url.protocol !== "https:") return null;
+    return url.origin;
+  } catch {
+    return null;
+  }
+}
+
+async function executeThroughPrimaryApi(
+  origin: string,
+  claims: ToolTokenClaims,
+  name: string,
+  args: Record<string, unknown>,
+): Promise<ToolCallResult> {
+  const remainingTtlMs = Math.max(1, Math.min(30_000, claims.exp - Date.now()));
+  const token = mintToolToken(
+    {
+      orgId: claims.orgId,
+      userId: claims.userId,
+      threadId: claims.threadId,
+      runId: claims.runId,
+      scope: claims.scope,
+    },
+    remainingTtlMs,
+  );
+  const response = await fetch(`${origin}/api/internal/automation`, {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${token}`,
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({ name, arguments: args }),
+    signal: AbortSignal.timeout(30_000),
+  });
+  const body = (await response.json().catch(() => null)) as
+    | { result?: ToolCallResult; error?: string }
+    | null;
+  if (!response.ok || !body?.result) {
+    return errorResult(body?.error ?? `automation control plane returned HTTP ${response.status}`, {
+      status: response.status,
+    });
+  }
+  return body.result;
+}
+
+/**
+ * The standalone gateway deliberately has a restricted database role and no
+ * command worker. In that process, automation mutations are delegated to the
+ * loopback primary API under a freshly minted, short-lived copy of the current
+ * live capability. The primary re-verifies liveness and tenant identity before
+ * executing. Local development and direct unit tests use the same service
+ * implementation in-process.
+ */
+export async function executeAutomationTool(
+  claims: ToolTokenClaims,
+  name: string,
+  args: Record<string, unknown>,
+): Promise<ToolCallResult> {
+  const origin = primaryApiOrigin();
+  if (process.env.GATEWAY_DATABASE_URL && !origin) {
+    return errorResult("automation control plane is not configured");
+  }
+  return origin
+    ? executeThroughPrimaryApi(origin, claims, name, args)
+    : executeAutomationToolLocal(claims, name, args);
 }

@@ -27,7 +27,11 @@ import { firstOrgForUser, getDevContext } from "../seed";
 //   /api/health, /api/config  - public, secret-free (health probe + client config)
 //   /api/auth/                - better-auth's own login/session endpoints
 //   /api/slack/               - Slack request-signature verified (slack/verify.ts)
-const PUBLIC_API_EXACT = new Set(["/api/health", "/api/config"]);
+const PUBLIC_API_EXACT = new Set([
+  "/api/health",
+  "/api/config",
+  "/api/internal/automation",
+]);
 const PUBLIC_API_PREFIXES = ["/api/auth/", "/api/slack/"];
 
 /** True when `path` authenticates itself (or is public) and must NOT be forced
