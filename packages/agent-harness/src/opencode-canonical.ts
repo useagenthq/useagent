@@ -267,7 +267,7 @@ export function translateOpenCode(
   const seenTaskCall = new Set<string>();  // task-tool callIds we've opened
   const seenTool = new Set<string>();      // non-task tool callIds we've opened
   const seenT3Tool = new Set<string>();    // T3 tool callIds we've opened
-  const authoritativeT3ActivityIds = new Set<string>();
+  const authoritativeT3LifecycleIds = new Set<string>();
   const t3TaskToolUseIds = new Set<string>();
   const events: CanonicalAgentEvent[] = [];
   const accounting: Disposition[] = [];
@@ -281,13 +281,13 @@ export function translateOpenCode(
     if (activityKind.startsWith("task.")) {
       const taskId = firstString(payload?.taskId, f.native.callId);
       const toolUseId = firstString(payload?.toolUseId, payload?.toolCallId);
-      if (taskId) authoritativeT3ActivityIds.add(taskId);
+      if (taskId) authoritativeT3LifecycleIds.add(taskId);
       if (toolUseId) {
         t3TaskToolUseIds.add(toolUseId);
-        authoritativeT3ActivityIds.add(toolUseId);
+        authoritativeT3LifecycleIds.add(toolUseId);
       }
     } else if (activityKind.startsWith("tool.")) {
-      authoritativeT3ActivityIds.add(t3ToolCallId(f, activity, payload));
+      authoritativeT3LifecycleIds.add(t3ToolCallId(f, activity, payload));
     }
   }
 
@@ -469,7 +469,6 @@ export function translateOpenCode(
         terminal: boolean,
         errored: boolean,
       ): void {
-        authoritativeT3ActivityIds.add(callId);
         if (activityKind.endsWith(".started")) {
           seenT3Tool.add(callId);
           produced.push(push(f.eventId, f.provider, {
@@ -679,7 +678,7 @@ export function translateOpenCode(
       nativeEventId: s.id, // step id = the reducer's node key + lookup handle
       nativeSessionId: str(native?.sessionID) ?? undefined,
     };
-    if (code?.source === "t3" && callID && authoritativeT3ActivityIds.has(callID)) {
+    if (code?.source === "t3" && callID && authoritativeT3LifecycleIds.has(callID)) {
       accounting.push({
         sourceId: s.id,
         kind: `step:${s.kind}`,
