@@ -1,0 +1,156 @@
+import { describe, expect, test } from "bun:test";
+import {
+  configuredDefaultRunEngine,
+  engineModelReadyForDispatch,
+  engineModelsForReadyEngines,
+  engineReadyForDispatch,
+  engineReadiness,
+  modelProviderReadyForEngine,
+  readyUserFacingEngines,
+  resolveAcceptedEngine,
+} from "./engine-readiness";
+
+const PROD = {
+  NODE_ENV: "production",
+  SKYNET_DEV_MODE: "false",
+} as const;
+
+describe("engine readiness advertisement", () => {
+  test("raw ENABLED_ENGINES is not enough to advertise an unproven Claude engine", () => {
+    const env = {
+      ...PROD,
+      ENABLED_ENGINES: "claude,codex",
+      T3_RUN_ADAPTER_ENABLED: "true",
+      T3_RUN_ADAPTER_MODE: "all",
+      T3_RUN_ADAPTER_ENGINES: "codex,opencode",
+    };
+
+    expect(readyUserFacingEngines(env)).toEqual([]);
+    expect(engineReadiness("claude", env)).toMatchObject({
+      ready: false,
+      reason: "not_proven",
+    });
+  });
+
+  test("engine and provider both require positive release evidence", () => {
+    const engineOnly = {
+      ...PROD,
+      ENABLED_ENGINES: "codex",
+      ENGINE_READINESS_CODEX: "verified",
+    };
+    expect(engineReadiness("codex", engineOnly)).toMatchObject({
+      ready: false,
+      reason: "not_proven",
+    });
+    expect(engineReadiness("codex", {
+      ...engineOnly,
+      PROVIDER_HEALTH_OPENAI: "verified",
+    })).toMatchObject({ ready: true, reason: "enabled" });
+  });
+
+  test("provider health failure removes a previously ready engine", () => {
+    const env = {
+      ...PROD,
+      ENABLED_ENGINES: "claude",
+      ENGINE_READINESS_CLAUDE: "verified",
+      PROVIDER_HEALTH_ANTHROPIC: "401",
+    };
+
+    expect(engineReadiness("claude", env)).toMatchObject({
+      ready: false,
+      reason: "provider_unhealthy",
+    });
+    expect(readyUserFacingEngines(env)).toEqual([]);
+  });
+
+  test("provider models require explicit positive health", () => {
+    const models = engineModelsForReadyEngines({
+      ...PROD,
+      ENGINE_READINESS_OPENCODE: "verified",
+      PROVIDER_HEALTH_ANTHROPIC: "invalid",
+      PROVIDER_HEALTH_OPENROUTER: "verified",
+    });
+
+    expect(Object.keys(models)).toEqual(["opencode"]);
+    expect(models.opencode?.every((model) => model.includes("/"))).toBe(true);
+  });
+
+  test("explicit model switches cannot bypass provider readiness", () => {
+    const env = {
+      ...PROD,
+      ENABLED_ENGINES: "opencode",
+      ENGINE_READINESS_OPENCODE: "verified",
+      PROVIDER_HEALTH_ANTHROPIC: "401",
+      PROVIDER_HEALTH_OPENROUTER: "verified",
+    };
+
+    expect(modelProviderReadyForEngine("opencode", "claude-opus-5", env)).toBe(false);
+    expect(modelProviderReadyForEngine("opencode", "openai/gpt-5.6-sol", env)).toBe(true);
+    expect(engineModelReadyForDispatch("opencode", "claude-opus-5", env)).toBe(false);
+    expect(engineModelReadyForDispatch("opencode", "openai/gpt-5.6-sol", env)).toBe(true);
+    expect(engineModelReadyForDispatch("opencode", "made-up/provider-model", env)).toBe(false);
+  });
+});
+
+describe("engine acceptance", () => {
+  test("development keeps the internal omitted-engine mock flow", () => {
+    expect(resolveAcceptedEngine(undefined, { NODE_ENV: "test" })).toEqual({
+      ok: true,
+      engine: "mock",
+    });
+  });
+
+  test("production omitted engine resolves only an honest configured real default", () => {
+    const withoutDefault = resolveAcceptedEngine(undefined, PROD);
+    expect(withoutDefault).toEqual({ ok: false, status: 400, error: "engine is required" });
+
+    const withDefault = {
+      ...PROD,
+      DEFAULT_RUN_ENGINE: "codex",
+      ENABLED_ENGINES: "codex",
+      ENGINE_READINESS_CODEX: "verified",
+      PROVIDER_HEALTH_OPENAI: "verified",
+    };
+    expect(configuredDefaultRunEngine(withDefault)).toBe("codex");
+    expect(resolveAcceptedEngine(undefined, withDefault)).toEqual({
+      ok: true,
+      engine: "codex",
+    });
+  });
+
+  test("production explicit mock and not-ready Claude fail closed", () => {
+    expect(resolveAcceptedEngine("mock", PROD)).toEqual({
+      ok: false,
+      status: 403,
+      error: "engine_not_enabled",
+      engine: "mock",
+    });
+    expect(resolveAcceptedEngine("claude", { ...PROD, ENABLED_ENGINES: "claude" })).toEqual({
+      ok: false,
+      status: 403,
+      error: "engine_not_ready",
+      engine: "claude",
+    });
+  });
+});
+
+describe("engine dispatch readiness", () => {
+  test("production rejects legacy mock and unproven user-facing rows", () => {
+    expect(engineReadyForDispatch("mock", PROD)).toBe(false);
+    expect(engineReadyForDispatch("claude", { ...PROD, ENABLED_ENGINES: "claude" })).toBe(
+      false,
+    );
+  });
+
+  test("test mode retains mock while production accepts proven engines", () => {
+    expect(engineReadyForDispatch("mock", { NODE_ENV: "test" })).toBe(true);
+    expect(
+      engineReadyForDispatch("codex", {
+        ...PROD,
+        ENABLED_ENGINES: "codex",
+        ENGINE_READINESS_CODEX: "verified",
+        PROVIDER_HEALTH_OPENAI: "verified",
+      }),
+    ).toBe(true);
+  });
+});

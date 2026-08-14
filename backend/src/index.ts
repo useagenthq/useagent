@@ -10,7 +10,6 @@ import type { AppEnv } from "./http";
 import {
   allowDevOrg,
   connectorEmailConfig,
-  enabledEngines,
   env,
   githubConfigured,
   googleAuthEnabled,
@@ -61,7 +60,7 @@ import {
 import { prewarmT3EnvironmentAccess } from "./engines/t3-environment-client";
 import { prewarmT3ProviderBridge } from "./engines/t3-provider-bridge";
 import { wikiGenRoutes } from "./wiki-gen/routes";
-import { allowedModelsForEngine } from "./runs/model-policy";
+import { engineModelsForReadyEngines, readyUserFacingEngines } from "./runs/engine-readiness";
 import { uploadRoutes } from "./uploads/routes";
 import { startUploadCleanup } from "./uploads/cleanup";
 
@@ -139,14 +138,12 @@ app.get("/api/health", (c) => c.json({ status: "ok" }));
 // `capabilities` are honest config-gated booleans (a name is NOT a secret) so
 // surfaces like /agent/plugins can show what is actually wired vs not.
 app.get("/api/config", (c) => {
-  // Which agent engines are ACTUALLY selectable, reflecting the server's
-  // ENABLED_ENGINES gate (capability-driven UI, final_harness Phase 2). Only the
-  // user-facing engines are advertised (mock/daytona/claude-sdk/acp are internal
-  // ids); claude/codex appear here ONLY when the operator enabled them, so the
-  // composer never offers an engine the backend would 403 as engine_not_enabled.
-  const enabled = enabledEngines();
-  const engines = (["opencode", "claude", "codex"] as const).filter((id) => enabled.has(id));
-  const models = Object.fromEntries(engines.map((id) => [id, allowedModelsForEngine(id)]));
+  // Which agent engines are ACTUALLY selectable. This is stricter than the raw
+  // ENABLED_ENGINES flag: optional engines must also be readiness-proven, and an
+  // explicit provider health failure removes the engine from the public picker.
+  // mock/daytona/claude-sdk/acp remain internal ids.
+  const engines = readyUserFacingEngines();
+  const models = engineModelsForReadyEngines();
   return c.json({
     auth: { google: googleAuthEnabled(), emailPassword: true },
     allowDevOrg: allowDevOrg(),

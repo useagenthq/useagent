@@ -77,6 +77,16 @@ describe("artifact client contract", () => {
     });
   });
 
+  test("accepts sanitized rich document state for browser Office companions", async () => {
+    const client = createAgentClient({
+      fetch: async () => jsonResponse({ workpiece, state: { html: "<h1>Brief</h1>" } }),
+    });
+    expect(await client.getArtifactWorkpiece("artifact-1")).toEqual({
+      workpiece,
+      state: { html: "<h1>Brief</h1>" },
+    });
+  });
+
   test("rejects a workpiece state that does not match its registered kind", async () => {
     const client = createAgentClient({
       fetch: async () => jsonResponse({ workpiece, state: { csv: "wrong shape" } }),

@@ -2,10 +2,8 @@ import { and, desc, eq, sql } from "drizzle-orm";
 import { Hono } from "hono";
 import { db } from "../db/client";
 import {
-  ENGINE_IDS,
   SKILL_KINDS,
   skills,
-  type EngineId,
   type SkillKind,
   type SkillSections,
 } from "../db/schema";
@@ -13,6 +11,11 @@ import type { AppEnv } from "../http";
 import { orgScope } from "../middleware/org";
 import { acceptRunCommand } from "../commands";
 import { defaultModelForEngine, isModelAllowedForEngine } from "../runs/model-policy";
+import {
+  engineResolutionErrorBody,
+  modelProviderReadyForEngine,
+  resolveAcceptedEngine,
+} from "../runs/engine-readiness";
 import { pumpThread } from "../worker";
 import {
   bumpSkillUsage,
@@ -187,24 +190,20 @@ skillsRoutes.post("/:id/run", async (c) => {
     );
   }
 
-  // Engine is optional; default to the scripted `mock`. An explicit unknown value
-  // is a client error, matching POST /api/runs.
-  let engine: EngineId = "mock";
-  if (body.engine !== undefined) {
-    if (
-      typeof body.engine !== "string" ||
-      !(ENGINE_IDS as readonly string[]).includes(body.engine)
-    ) {
-      return c.json({ error: `engine must be one of: ${ENGINE_IDS.join(", ")}` }, 400);
-    }
-    engine = body.engine as EngineId;
+  const resolvedEngine = resolveAcceptedEngine(body.engine);
+  if (!resolvedEngine.ok) {
+    return c.json(engineResolutionErrorBody(resolvedEngine), resolvedEngine.status);
   }
+  const engine = resolvedEngine.engine;
   const model =
     typeof body.model === "string" && body.model.trim()
       ? body.model.trim()
       : defaultModelForEngine(engine);
   if (!isModelAllowedForEngine(engine, model)) {
     return c.json({ error: "model_not_allowed", engine, model }, 400);
+  }
+  if (!modelProviderReadyForEngine(engine, model)) {
+    return c.json({ error: "model_provider_not_ready", engine, model }, 403);
   }
 
   const runId = crypto.randomUUID();

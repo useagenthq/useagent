@@ -30,7 +30,7 @@ function ModelRow({ model, totalTokens }: { model: ModelBurn; totalTokens: numbe
   const meta = [
     `${model.runs} run${model.runs === 1 ? "" : "s"}`,
     `${model.completed}/${model.runs} done`,
-    model.avgMs != null ? formatDuration(model.avgMs) + " avg" : null,
+    model.avgMs != null ? `${formatDuration(model.avgMs)} avg` : null,
   ]
     .filter(Boolean)
     .join(" · ");

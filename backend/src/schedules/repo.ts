@@ -134,6 +134,23 @@ export async function updateSchedule(
   return row ? toSchedule(row) : null;
 }
 
+export async function deleteSchedule(orgId: string, id: string): Promise<boolean> {
+  return db.transaction(async (tx) => {
+    const schedule = await tx
+      .select({ id: schedules.id })
+      .from(schedules)
+      .where(and(eq(schedules.id, id), eq(schedules.orgId, orgId)))
+      .limit(1);
+    if (!schedule[0]) return false;
+    await tx.delete(scheduleFirings).where(eq(scheduleFirings.scheduleId, id));
+    const deleted = await tx
+      .delete(schedules)
+      .where(and(eq(schedules.id, id), eq(schedules.orgId, orgId)))
+      .returning({ id: schedules.id });
+    return deleted.length > 0;
+  });
+}
+
 /** Enabled schedules across ALL orgs — the scheduler loop's tick query. */
 export async function listEnabledSchedules(): Promise<ScheduleRecord[]> {
   return db.select().from(schedules).where(eq(schedules.enabled, true));

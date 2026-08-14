@@ -188,6 +188,49 @@ describe("schedules API", () => {
       cookies: other.cookies,
     });
     expect(hist.status).toBe(404);
+
+    const del = await json(`/api/schedules/${created.id}`, {
+      method: "DELETE",
+      cookies: other.cookies,
+    });
+    expect(del.status).toBe(404);
+  });
+
+  test("DELETE removes an owned schedule and its firing projection", async () => {
+    const s = await createOrgSession("sched-delete");
+    const created = await createSchedule(s.cookies, {
+      name: "Temporary automation",
+      cron: "0 5 * * *",
+      prompt: "temporary",
+      engine: "mock",
+    });
+    const fired = await json<{ run_id: string }>(
+      `/api/schedules/${created.id}/run-now`,
+      { method: "POST", cookies: s.cookies },
+    );
+    expect(fired.status).toBe(201);
+
+    const deleted = await json(`/api/schedules/${created.id}`, {
+      method: "DELETE",
+      cookies: s.cookies,
+    });
+    expect(deleted.status).toBe(204);
+
+    const list = await json<{ schedules: any[] }>("/api/schedules", {
+      cookies: s.cookies,
+    });
+    expect(list.body.schedules.some((x) => x.id === created.id)).toBe(false);
+
+    const history = await json(`/api/schedules/${created.id}/history`, {
+      cookies: s.cookies,
+    });
+    expect(history.status).toBe(404);
+
+    const deletedAgain = await json(`/api/schedules/${created.id}`, {
+      method: "DELETE",
+      cookies: s.cookies,
+    });
+    expect(deletedAgain.status).toBe(404);
   });
 
   test("scheduler tick fires an enabled, due schedule once per minute", async () => {

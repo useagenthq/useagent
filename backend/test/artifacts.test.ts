@@ -8,7 +8,8 @@ import { createOrgSession, fetchApi, json, type OrgSession } from "./helpers";
 import { InMemoryArtifactStorage } from "./in-memory-artifact-storage";
 import type { ArtifactDescriptor } from "../src/artifacts/repo";
 
-const SOURCE_BYTES = new TextEncoder().encode("sandbox-to-browser\nexact bytes\n");
+let sandboxBytes = new TextEncoder().encode("sandbox-to-browser\nexact bytes\n");
+const SOURCE_BYTES = sandboxBytes;
 const SHA256 = createHash("sha256").update(SOURCE_BYTES).digest("hex");
 const storage = new InMemoryArtifactStorage();
 let owner: OrgSession;
@@ -58,8 +59,8 @@ beforeAll(async () => {
   outsider = await createOrgSession("artifact-outsider");
   setArtifactStorageForTest(storage);
   setSandboxDownloaderForTest(async (_sandboxId, _path, maxBytes) => {
-    if (SOURCE_BYTES.byteLength > maxBytes) throw new Error("test fixture exceeds cap");
-    return { bytes: Buffer.from(SOURCE_BYTES), size: SOURCE_BYTES.byteLength };
+    if (sandboxBytes.byteLength > maxBytes) throw new Error("test fixture exceeds cap");
+    return { bytes: Buffer.from(sandboxBytes), size: sandboxBytes.byteLength };
   });
 });
 
@@ -69,6 +70,47 @@ afterAll(() => {
 });
 
 describe("durable artifacts", () => {
+  test("serializes concurrent publication so a failed creator cannot erase the winner", async () => {
+    class FirstPutFailsStorage extends InMemoryArtifactStorage {
+      attempts = 0;
+
+      override async put(key: string, bytes: Uint8Array): Promise<void> {
+        this.attempts += 1;
+        if (this.attempts === 1) {
+          await Promise.resolve();
+          throw new Error("injected first publication failure");
+        }
+        await super.put(key, bytes);
+      }
+    }
+
+    const flaky = new FirstPutFailsStorage();
+    const runId = await createSandboxRun(owner);
+    setArtifactStorageForTest(flaky);
+    try {
+      const results = await Promise.allSettled([
+        publish(owner, runId, "/root/work/output/concurrent.txt"),
+        publish(owner, runId, "/root/work/output/concurrent.txt"),
+      ]);
+      const fulfilled = results.filter(
+        (result): result is PromiseFulfilledResult<Awaited<ReturnType<typeof publish>>> =>
+          result.status === "fulfilled",
+      );
+      expect(results.filter((result) => result.status === "rejected")).toHaveLength(1);
+      expect(fulfilled).toHaveLength(1);
+      expect(fulfilled[0]!.value.created).toBe(true);
+      expect(flaky.attempts).toBe(2);
+
+      const content = await fetchApi(`/api/artifacts/${fulfilled[0]!.value.artifact.id}/content`, {
+        cookies: owner.cookies,
+      });
+      expect(content.status).toBe(200);
+      expect(new Uint8Array(await content.arrayBuffer())).toEqual(SOURCE_BYTES);
+    } finally {
+      setArtifactStorageForTest(storage);
+    }
+  });
+
   test("publishes once and serves the exact bytes, metadata, HEAD, and ranges", async () => {
     const runId = await createSandboxRun(owner);
     const first = await publish(owner, runId, "/root/work/output/report.txt");
@@ -221,6 +263,57 @@ describe("durable artifacts", () => {
 
     const outside = await fetchApi(path, { cookies: outsider.cookies });
     expect(outside.status).toBe(404);
+  });
+
+  test("exposes bounded Office files as companion workpieces without mutating bytes", async () => {
+    const runId = await createSandboxRun(owner);
+    const docx = await publish(owner, runId, "brief.docx");
+    const xlsx = await publish(owner, runId, "model.xlsx");
+
+    expect(docx.artifact.workpiece).toMatchObject({ kind: "document", state_revision: 0 });
+    expect(xlsx.artifact.workpiece).toMatchObject({ kind: "spreadsheet", state_revision: 0 });
+
+    const documentPath = `/api/artifacts/${docx.artifact.id}/workpiece`;
+    const savedHtml = await json<{ state: { html: string } }>(documentPath, {
+      method: "PATCH",
+      cookies: owner.cookies,
+      body: { expected_revision: 0, state: { html: "<h1>Brief</h1><p>Edited</p>" } },
+    });
+    expect(savedHtml.status).toBe(200);
+    expect(savedHtml.body.state).toEqual({ html: "<h1>Brief</h1><p>Edited</p>" });
+
+    const rejectedHtml = await json(documentPath, {
+      method: "PATCH",
+      cookies: owner.cookies,
+      body: { expected_revision: 1, state: { html: "<img src=x onerror=alert(1)>" } },
+    });
+    expect(rejectedHtml.status).toBe(400);
+
+    const sheetPath = `/api/artifacts/${xlsx.artifact.id}/workpiece`;
+    const savedCsv = await json<{ state: { csv: string } }>(sheetPath, {
+      method: "PATCH",
+      cookies: owner.cookies,
+      body: { expected_revision: 0, state: { csv: "name,value\nrun,42" } },
+    });
+    expect(savedCsv.status).toBe(200);
+    expect(savedCsv.body.state).toEqual({ csv: "name,value\nrun,42" });
+
+    const content = await fetchApi(`/api/artifacts/${docx.artifact.id}/content`, {
+      cookies: owner.cookies,
+    });
+    expect(new Uint8Array(await content.arrayBuffer())).toEqual(SOURCE_BYTES);
+  });
+
+  test("keeps over-limit Office binaries download-only", async () => {
+    const runId = await createSandboxRun(owner);
+    const previous = sandboxBytes;
+    try {
+      sandboxBytes = new Uint8Array(10_000_001);
+      const published = await publish(owner, runId, "huge.xlsx");
+      expect(published.artifact.workpiece).toBeNull();
+    } finally {
+      sandboxBytes = previous;
+    }
   });
 
   test("encodes non-ASCII and reserved filename characters safely", async () => {

@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import type { AppEnv } from "../http";
-import { ENGINE_IDS, MEMORY_SCOPES, type EngineId, type MemoryScope, type RunStatus } from "../db/schema";
+import { MEMORY_SCOPES, type EngineId, type MemoryScope, type RunStatus } from "../db/schema";
 import { isMemoryScope } from "../memory/scope";
 import { orgScope } from "../middleware/org";
 import {
@@ -12,7 +12,6 @@ import {
   listRunsWithSteps,
 } from "./repo";
 import { acceptRunCommand } from "../commands";
-import { isEngineEnabled } from "../env";
 import { acceptRunCancel, CANCEL_SUMMARY } from "../commands/cancel";
 import { resolveSkillSelection } from "../skills/repo";
 import { buildNativeCommandPrompt, validateCommandIntent, type CommandIntent } from "./command-intent";
@@ -38,6 +37,11 @@ import { completeCanonicalRuns } from "./canonicalization-outbox";
 import { subscribeThread } from "./thread-signals";
 import type { ApiRun, ApiStep } from "./repo";
 import { defaultModelForEngine, isModelAllowedForEngine } from "./model-policy";
+import {
+  engineResolutionErrorBody,
+  modelProviderReadyForEngine,
+  resolveAcceptedEngine,
+} from "./engine-readiness";
 import { getRunTimingTable } from "./run-timing";
 import {
   OpenCodeQuestionError,
@@ -52,9 +56,6 @@ import { UploadClaimError } from "../uploads/repo";
 export const runsRoutes = new Hono<AppEnv>();
 
 runsRoutes.use("*", orgScope);
-
-// Create a run and spawn its actor.
-const ENGINES: readonly EngineId[] = ENGINE_IDS;
 
 runsRoutes.post("/", async (c) => {
   let body: {
@@ -102,25 +103,6 @@ runsRoutes.post("/", async (c) => {
       ? body.model.trim()
       : null;
 
-  // Engine is optional; default to the scripted `mock`. An explicit unknown
-  // value is a client error rather than a silent fallback.
-  let engine: EngineId = "mock";
-  if (body.engine !== undefined) {
-    if (typeof body.engine !== "string" || !ENGINES.includes(body.engine as EngineId)) {
-      return c.json(
-        { error: `engine must be one of: ${ENGINES.join(", ")}` },
-        400,
-      );
-    }
-    engine = body.engine as EngineId;
-    // SECURITY GATE (final_harness.md P0): a known engine id is not enough - the
-    // registered-but-unsafe Claude/Codex/ACP adapters must be explicitly enabled
-    // (ENABLED_ENGINES) before a direct API caller can activate them. Fail closed.
-    if (!isEngineEnabled(engine)) {
-      return c.json({ error: "engine_not_enabled", engine }, 403);
-    }
-  }
-
   const id = crypto.randomUUID();
 
   // Threading: a reply passes `parent_run_id`. Resolve it org-scoped (a
@@ -132,6 +114,7 @@ runsRoutes.post("/", async (c) => {
   let inheritedRepos: string[] = [];
   let parentScope: MemoryScope | null = null;
   let parentModel: string | null = null;
+  let parentEngine: EngineId | null = null;
   // The ACTIVE native session this turn resumes, derived SERVER-SIDE from the parent run (a
   // reply resumes the thread's live session). A native-command intent's client-supplied session
   // id is validated against THIS, never trusted on its own.
@@ -149,8 +132,26 @@ runsRoutes.post("/", async (c) => {
     inheritedRepos = parent.repos;
     parentScope = parent.memoryScope;
     parentModel = parent.model;
+    parentEngine = parent.engine;
     activeSessionId = parent.engineSessionId ?? null;
   }
+  if (
+    parentEngine &&
+    body.engine !== undefined &&
+    body.engine !== null &&
+    body.engine !== "" &&
+    body.engine !== parentEngine
+  ) {
+    return c.json({ error: "reply_engine_mismatch", engine: parentEngine }, 400);
+  }
+  // Public SDK replies intentionally send only parent_run_id. Resolve the
+  // org-scoped parent first, then inherit its engine so production replies do
+  // not depend on a global DEFAULT_RUN_ENGINE.
+  const resolvedEngine = resolveAcceptedEngine(parentEngine ?? body.engine);
+  if (!resolvedEngine.ok) {
+    return c.json(engineResolutionErrorBody(resolvedEngine), resolvedEngine.status);
+  }
+  const engine = resolvedEngine.engine;
   // A reply whose UI has no model-selection capability omits `model`; inherit
   // the thread's stored model instead of silently resetting to a global default.
   const inheritedModel =
@@ -160,6 +161,9 @@ runsRoutes.post("/", async (c) => {
   const model = requestedModel ?? inheritedModel;
   if (!isModelAllowedForEngine(engine, model)) {
     return c.json({ error: "model_not_allowed", engine, model }, 400);
+  }
+  if (!modelProviderReadyForEngine(engine, model)) {
+    return c.json({ error: "model_provider_not_ready", engine, model }, 403);
   }
 
   // Repo scope: a ROOT run may pick REPOSITORIES (each validated against the set

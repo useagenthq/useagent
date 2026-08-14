@@ -186,7 +186,10 @@ export const AGENT_SKILL_DISCOVERY_RULES =
   "available catalog by meaning, and call skill_activate for the best-fitting procedure before " +
   "acting. Do not guess a skill from keywords, improvise a known workflow, or ask for an org, " +
   "repository, or account identifier when the activated procedure and trusted gateway can resolve " +
-  "it from the authenticated workspace.\n" +
+  "it from the authenticated workspace. For recurring or scheduled work, use the trusted " +
+  "automation_list / automation_create / automation_update / automation_run_now / automation_history / " +
+  "automation_delete tools for Skynet automations; only discuss external scheduler products when " +
+  "the user explicitly asks about those products.\n" +
   "</skill_discovery>\n\n";
 
 export function composeTurnPrompt(

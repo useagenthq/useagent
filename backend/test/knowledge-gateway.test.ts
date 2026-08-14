@@ -2,7 +2,7 @@ import { beforeAll, describe, expect, test } from "bun:test";
 import { and, eq } from "drizzle-orm";
 import { uid, waitFor } from "./helpers";
 import { db } from "../src/db/client";
-import { providerEvents, runs } from "../src/db/schema";
+import { providerEvents, runs, schedules } from "../src/db/schema";
 import { ingestOne } from "../src/knowledge/ingest";
 import { mintToolToken, verifyToolToken } from "../src/knowledge/gateway/token";
 import { KNOWLEDGE_RETRIEVED } from "../src/knowledge/gateway/tools";
@@ -367,6 +367,12 @@ describe("knowledge MCP gateway", () => {
     // all ride the same gateway.
     expect(names).toEqual([
       "artifact_publish",
+      "automation_create",
+      "automation_delete",
+      "automation_history",
+      "automation_list",
+      "automation_run_now",
+      "automation_update",
       "computer_click",
       "computer_drag",
       "computer_hotkey",
@@ -374,6 +380,7 @@ describe("knowledge MCP gateway", () => {
       "computer_move",
       "computer_screenshot",
       "computer_scroll",
+      "computer_sequence",
       "computer_type",
       "desktop_recording_start",
       "desktop_recording_stop",
@@ -397,6 +404,70 @@ describe("knowledge MCP gateway", () => {
       expect(props).not.toContain("org_id");
       expect(props).not.toContain("orgId");
     }
+  });
+
+  test("automation tools create disabled, require explicit enable, run, history, and delete", async () => {
+    const created = await rpc(tokenA, call(30, "automation_create", {
+      name: "Gateway automation lifecycle",
+      cron: "0 6 * * *",
+      timezone: "Asia/Kolkata",
+      prompt: "say lifecycle ok",
+      engine: "mock",
+    }));
+    expect(created.status).toBe(200);
+    expect(created.body.result.isError).toBeFalsy();
+    const automation = created.body.result.structuredContent.automation;
+    expect(automation.org_id).toBe(orgA);
+    expect(automation.user_id).toBe("user-A");
+    expect(automation.enabled).toBe(false);
+
+    const rejectedCreate = await rpc(tokenA, call(31, "automation_create", {
+      name: "Unsafe enabled create",
+      cron: "0 7 * * *",
+      prompt: "should not create enabled",
+      engine: "mock",
+      enabled: true,
+    }));
+    expect(rejectedCreate.body.result.isError).toBe(true);
+    expect(rejectedCreate.body.result.content[0].text).toContain("always creates disabled");
+
+    const refusedEnable = await rpc(tokenA, call(32, "automation_update", {
+      id: automation.id,
+      enabled: true,
+    }));
+    expect(refusedEnable.body.result.isError).toBe(true);
+    expect(refusedEnable.body.result.content[0].text).toContain("confirmEnable=true");
+
+    const enabled = await rpc(tokenA, call(33, "automation_update", {
+      id: automation.id,
+      enabled: true,
+      confirmEnable: true,
+    }));
+    expect(enabled.body.result.isError).toBeFalsy();
+    expect(enabled.body.result.structuredContent.automation.enabled).toBe(true);
+
+    const runNow = await rpc(tokenA, call(34, "automation_run_now", { id: automation.id }));
+    expect(runNow.body.result.isError).toBeFalsy();
+    const runId = runNow.body.result.structuredContent.run_id as string;
+    expect(runId).toMatch(/[0-9a-f-]{36}/);
+
+    const history = await waitFor(async () => {
+      const response = await rpc(tokenA, call(35, "automation_history", { id: automation.id }));
+      const firings = response.body.result.structuredContent.firings as { run_id: string; trigger: string }[];
+      return firings.some((f) => f.run_id === runId && f.trigger === "manual") ? firings : null;
+    });
+    expect(history.some((f) => f.run_id === runId)).toBe(true);
+
+    const deleted = await rpc(tokenA, call(36, "automation_delete", { id: automation.id }));
+    expect(deleted.body.result.isError).toBeFalsy();
+    expect(deleted.body.result.structuredContent.deleted).toBe(true);
+
+    const rows = await db.select().from(schedules).where(and(eq(schedules.id, automation.id), eq(schedules.orgId, orgA)));
+    expect(rows).toEqual([]);
+
+    const missing = await rpc(tokenA, call(37, "automation_history", { id: automation.id }));
+    expect(missing.body.result.isError).toBe(true);
+    expect(missing.body.result.structuredContent.status).toBe(404);
   });
 
   test("knowledge_search returns ONLY the token org's data, with citation", async () => {
