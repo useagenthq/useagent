@@ -54,6 +54,11 @@ export interface EngineRunContext {
    *  resumed session's history. SEPARATE from the user's clean `prompt`. Compose
    *  via {@link composeTurnPrompt}. */
   skillContext?: string;
+  /** Org-scoped skill/playbook metadata for semantic selection when this turn has
+   *  no pinned skill. Data-only, never procedure bodies. The model may choose a
+   *  fitting id from it, but still MUST call skill_activate before following any
+   *  procedure. Empty when unavailable or unnecessary. */
+  skillCatalogContext?: string;
   /** Trusted descriptors for user uploads claimed by this run. Adapters copy
    * the bytes into sandboxPath before dispatch; only paths and metadata enter
    * the model context. */
@@ -180,22 +185,33 @@ export const AGENT_OPERATING_RULES =
 /** Repeated every turn because an already-resident provider session may predate
  *  a deployment that added or changed the workspace catalog. This is semantic
  *  model-side selection from authenticated metadata, never backend text matching. */
-export const AGENT_SKILL_DISCOVERY_RULES =
-  "<skill_discovery>\n" +
-  "Before any non-trivial or recurring organization workflow, call skills_list, inspect the " +
-  "available catalog by meaning, and call skill_activate for the best-fitting procedure before " +
-  "acting. Do not guess a skill from keywords, improvise a known workflow, or ask for an org, " +
-  "repository, or account identifier when the activated procedure and trusted gateway can resolve " +
+export const AGENT_WORKFLOW_ROUTING_RULES =
+  "<workflow_routing>\n" +
+  "Do not guess a skill from keywords, improvise a known workflow, or ask for an org, " +
+  "repository, or account identifier when an activated procedure and trusted gateway can resolve " +
   "it from the authenticated workspace. For recurring or scheduled work, use the trusted " +
   "automation_list / automation_create / automation_update / automation_run_now / automation_history / " +
   "automation_delete tools for Skynet automations; only discuss external scheduler products when " +
   "the user explicitly asks about those products.\n" +
+  "</workflow_routing>\n\n";
+
+export const AGENT_SKILL_DISCOVERY_RULES =
+  "<skill_discovery>\n" +
+  "When no pinned skill and no skill_catalog metadata are already present, before any non-trivial " +
+  "organization workflow, call skills_list, inspect the available catalog by meaning, and call " +
+  "skill_activate for the best-fitting procedure before acting.\n" +
   "</skill_discovery>\n\n";
 
 export function composeTurnPrompt(
   ctx: Pick<
     EngineRunContext,
-    "prompt" | "bootstrapContext" | "turnContext" | "skillContext" | "inputContext" | "commandName"
+    | "prompt"
+    | "bootstrapContext"
+    | "turnContext"
+    | "skillContext"
+    | "skillCatalogContext"
+    | "inputContext"
+    | "commandName"
   >,
   resumed: boolean,
 ): string {
@@ -206,9 +222,10 @@ export function composeTurnPrompt(
   // "/" is NOT a command: it keeps the full fresh/resumed context prefix (operating rules +
   // bootstrap + skill + memory), so raw slash-prefixed text can never silently bypass them.
   if (ctx.commandName) return ctx.prompt;
+  const skillReference = ctx.skillContext || ctx.skillCatalogContext || AGENT_SKILL_DISCOVERY_RULES;
   const perTurn =
-    AGENT_SKILL_DISCOVERY_RULES +
-    (ctx.skillContext ?? "") +
+    AGENT_WORKFLOW_ROUTING_RULES +
+    skillReference +
     (ctx.inputContext ?? "") +
     ctx.turnContext;
   const prefix = resumed ? perTurn : AGENT_OPERATING_RULES + ctx.bootstrapContext + perTurn;

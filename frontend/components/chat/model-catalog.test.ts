@@ -11,14 +11,14 @@ import {
 describe("engine model catalog", () => {
   test("Codex picker uses backend-policy model ids, not OpenRouter ids", () => {
     expect(CODEX_MODELS.map((m) => m.value)).toEqual([
-      "gpt-5.6-sol",
-      "gpt-5.6-terra",
       "gpt-5.6-luna",
+      "gpt-5.6-terra",
+      "gpt-5.6-sol",
     ]);
     expect(selectableModelsForEngine("codex").map((m) => m.value)).toEqual([
-      "gpt-5.6-sol",
-      "gpt-5.6-terra",
       "gpt-5.6-luna",
+      "gpt-5.6-terra",
+      "gpt-5.6-sol",
     ]);
     expect(selectableModelsForEngine("codex").some((m) => m.value.startsWith("openai/"))).toBe(
       false,

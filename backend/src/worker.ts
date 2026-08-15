@@ -18,7 +18,8 @@ import type { EmitStep, EngineRunContext, RunInputFile } from "./engines/types";
 import { recallScopedMemory } from "./memory/team-memory";
 import { resolveScopedMemory } from "./memory/scope";
 import { recordContextRetrieval } from "./memory/retrieval-ledger";
-import { getPinnedRevision } from "./skills/repo";
+import { getPinnedRevision, listSkillCatalogForOrg } from "./skills/repo";
+import { formatSkillCatalogPrefill, frameSkillCatalogContext } from "./skills/catalog";
 import { formatSkillMarkdown, frameSkillContext } from "./skills/format";
 import { recordSkillLoaded } from "./skills/skill-loaded";
 import { finalizeRun } from "./runs/finalize";
@@ -316,7 +317,9 @@ async function runWorker(runId: string): Promise<void> {
         end?.();
       }
     };
-    const [recall, bootstrapContext] = await Promise.all([
+    const shouldPrefillSkillCatalog =
+      !skillContext && !run.commandName && run.orgId !== null;
+    const [recall, bootstrapContext, skillCatalogPage] = await Promise.all([
       // Layered recall (new_mem_prompt.md 6.2): Tencent L0 (immediate ground
       // evidence, incl. explicit "remember X") + L1 (distilled) searched in
       // parallel and merged, so a freshly-taught fact is injected into a NEW
@@ -327,15 +330,33 @@ async function runWorker(runId: string): Promise<void> {
       timedContextOperation("worker.thread_preamble", () =>
         run.parentRunId ? buildThreadPreamble(run.threadId, run.id) : Promise.resolve(""),
       ),
+      timedContextOperation("worker.skill_catalog", async () => {
+        if (!shouldPrefillSkillCatalog || run.orgId === null) return null;
+        try {
+          const entries = await listSkillCatalogForOrg(run.orgId);
+          return formatSkillCatalogPrefill(entries);
+        } catch (error) {
+          console.warn(
+            `[worker] skill catalog prefill failed for run ${run.id}; ` +
+              "falling back to skills_list discovery:",
+            error,
+          );
+          return null;
+        }
+      }),
     ]);
     const turnContext = recall?.rendered ?? "";
+    const skillCatalogContext = skillCatalogPage
+      ? frameSkillCatalogContext(skillCatalogPage)
+      : "";
 
-    if (turnContext || bootstrapContext || skillContext) {
+    if (turnContext || bootstrapContext || skillContext || skillCatalogContext) {
       console.log(
         `[worker] run ${runId} thread ${run.threadId} scope=${plan?.scope ?? "off"}: ` +
           `turnContext ${turnContext.length} (${recall?.items.length ?? 0} memory items, ` +
           `${recall?.latencyMs ?? 0}ms) + bootstrapContext ${bootstrapContext.length}` +
-          ` + skillContext ${skillContext.length} chars`,
+          ` + skillContext ${skillContext.length} chars` +
+          ` + skillCatalogContext ${skillCatalogContext.length} chars`,
       );
     }
     // Retrieval ledger (Phase 3a): durably record + stream what was recalled as a
@@ -389,6 +410,7 @@ async function runWorker(runId: string): Promise<void> {
         bootstrapContext,
         turnContext,
         skillContext,
+        skillCatalogContext,
         run.threadId,
         run.model,
         run.repos,
@@ -509,6 +531,7 @@ async function runEngine(
   bootstrapContext: string,
   turnContext: string,
   skillContext: string,
+  skillCatalogContext: string,
   threadId: string,
   model: string,
   repos: string[],
@@ -604,6 +627,7 @@ async function runEngine(
     bootstrapContext,
     turnContext,
     skillContext,
+    skillCatalogContext,
     workdir,
     threadId,
     timing,

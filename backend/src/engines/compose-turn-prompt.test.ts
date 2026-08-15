@@ -8,10 +8,20 @@ import { describe, expect, test } from "bun:test";
 import {
   AGENT_OPERATING_RULES,
   AGENT_SKILL_DISCOVERY_RULES,
+  AGENT_WORKFLOW_ROUTING_RULES,
   composeTurnPrompt,
 } from "./types";
 
-const ctx = (over: Partial<{ prompt: string; bootstrapContext: string; turnContext: string; skillContext: string; commandName: string | null }> = {}) => ({
+const ctx = (
+  over: Partial<{
+    prompt: string;
+    bootstrapContext: string;
+    turnContext: string;
+    skillContext: string;
+    skillCatalogContext: string;
+    commandName: string | null;
+  }> = {},
+) => ({
   prompt: "USER",
   bootstrapContext: "BOOT",
   turnContext: "TURN",
@@ -20,15 +30,16 @@ const ctx = (over: Partial<{ prompt: string; bootstrapContext: string; turnConte
 
 const R = AGENT_OPERATING_RULES;
 const S = AGENT_SKILL_DISCOVERY_RULES;
+const W = AGENT_WORKFLOW_ROUTING_RULES;
 
 describe("composeTurnPrompt — fresh vs resumed context", () => {
   test("fresh native session gets operating-rules + bootstrap + turn + prompt, in that order", () => {
-    expect(composeTurnPrompt(ctx(), false)).toBe(`${R}BOOT${S}TURNUSER`);
+    expect(composeTurnPrompt(ctx(), false)).toBe(`${R}BOOT${W}${S}TURNUSER`);
   });
 
   test("resumed session gets current skill discovery + turn + prompt, but not bootstrap history", () => {
     const out = composeTurnPrompt(ctx(), true);
-    expect(out).toBe(`${S}TURNUSER`);
+    expect(out).toBe(`${W}${S}TURNUSER`);
     expect(out).not.toContain("BOOT"); // native session already holds the thread
     expect(out).not.toContain("operating_rules"); // and already saw the global rules on its first turn
     expect(out).toContain("skills_list");
@@ -42,10 +53,10 @@ describe("composeTurnPrompt — fresh vs resumed context", () => {
 
   test("fresh run ALWAYS carries the operating rules (graceful-degradation guardrail)", () => {
     const bare = ctx({ bootstrapContext: "", turnContext: "" });
-    expect(composeTurnPrompt(bare, false)).toBe(`${R}${S}USER`);
+    expect(composeTurnPrompt(bare, false)).toBe(`${R}${W}${S}USER`);
     expect(composeTurnPrompt(bare, false)).toContain("operating_rules");
     // resumed stays lean but still receives current catalog-discovery guidance.
-    expect(composeTurnPrompt(bare, true)).toBe(`${S}USER`);
+    expect(composeTurnPrompt(bare, true)).toBe(`${W}${S}USER`);
   });
 
   test("fresh browser sessions use bounded inspection without publishing internal frames", () => {
@@ -58,7 +69,41 @@ describe("composeTurnPrompt — fresh vs resumed context", () => {
   });
 
   test("root fresh run (no bootstrap yet) still injects rules + turnContext", () => {
-    expect(composeTurnPrompt(ctx({ bootstrapContext: "" }), false)).toBe(`${R}${S}TURNUSER`);
+    expect(composeTurnPrompt(ctx({ bootstrapContext: "" }), false)).toBe(
+      `${R}${W}${S}TURNUSER`,
+    );
+  });
+
+  test("pinned skill context governs without forcing catalog discovery again", () => {
+    const out = composeTurnPrompt(ctx({ skillContext: "PINNED_SKILL\n" }), true);
+    expect(out).toBe(`${W}PINNED_SKILL\nTURNUSER`);
+    expect(out).not.toContain("<skill_discovery>");
+    expect(out).toContain("automation_create");
+  });
+
+  test("fresh catalog metadata lets the model choose semantically without forced skills_list first", () => {
+    const catalog = "<skill_catalog>\nCATALOG_JSON\n</skill_catalog>\n\n";
+    const out = composeTurnPrompt(ctx({ skillCatalogContext: catalog }), false);
+    expect(out).toBe(`${R}BOOT${W}${catalog}TURNUSER`);
+    expect(out).not.toContain("<skill_discovery>");
+    expect(out).toContain("automation_create");
+  });
+
+  test("resumed catalog metadata lets the model choose semantically without forced skills_list first", () => {
+    const catalog = "<skill_catalog>\nCATALOG_JSON\n</skill_catalog>\n\n";
+    const out = composeTurnPrompt(ctx({ skillCatalogContext: catalog }), true);
+    expect(out).toBe(`${W}${catalog}TURNUSER`);
+    expect(out).not.toContain("<skill_discovery>");
+    expect(out).toContain("automation_create");
+  });
+
+  test("pinned skill takes precedence over catalog metadata", () => {
+    const out = composeTurnPrompt(
+      ctx({ skillContext: "PINNED_SKILL\n", skillCatalogContext: "CATALOG\n" }),
+      true,
+    );
+    expect(out).toBe(`${W}PINNED_SKILL\nTURNUSER`);
+    expect(out).not.toContain("CATALOG");
   });
 
   // A VALIDATED native command (commandName set; prompt already the exact `/name args` bytes)
@@ -66,11 +111,20 @@ describe("composeTurnPrompt — fresh vs resumed context", () => {
   // the leading "/", so arbitrary slash-prefixed text can never silently bypass the context.
   describe("validated native command is delivered byte-verbatim", () => {
     test("a fresh validated command turn skips ALL prefixes (rules/bootstrap/skill/memory)", () => {
-      const out = composeTurnPrompt(ctx({ prompt: "/review src/app.ts", commandName: "review", skillContext: "SKILL" }), false);
+      const out = composeTurnPrompt(
+        ctx({
+          prompt: "/review src/app.ts",
+          commandName: "review",
+          skillContext: "SKILL",
+          skillCatalogContext: "CATALOG",
+        }),
+        false,
+      );
       expect(out).toBe("/review src/app.ts");
       expect(out).not.toContain("operating_rules");
       expect(out).not.toContain("BOOT");
       expect(out).not.toContain("SKILL");
+      expect(out).not.toContain("CATALOG");
       expect(out).not.toContain("TURN");
     });
 
@@ -81,17 +135,17 @@ describe("composeTurnPrompt — fresh vs resumed context", () => {
     test("SECURITY: a raw prompt that starts with '/' but is NOT a validated command keeps the FULL prefix", () => {
       // The old code skipped context for ANY leading-slash prompt; now only commandName does.
       const out = composeTurnPrompt(ctx({ prompt: "/etc/passwd please read this", commandName: null }), false);
-      expect(out).toBe(`${R}BOOT${S}TURN/etc/passwd please read this`);
+      expect(out).toBe(`${R}BOOT${W}${S}TURN/etc/passwd please read this`);
     });
 
     test("SECURITY: leading whitespace + slash without a validated command still gets the prefix", () => {
       const out = composeTurnPrompt(ctx({ prompt: "  /deploy prod" }), false);
-      expect(out).toBe(`${R}BOOT${S}TURN  /deploy prod`);
+      expect(out).toBe(`${R}BOOT${W}${S}TURN  /deploy prod`);
     });
 
     test("a prompt that only MENTIONS a slash mid-sentence is NOT a command (keeps the prefix)", () => {
       const out = composeTurnPrompt(ctx({ prompt: "run the /review command please" }), false);
-      expect(out).toBe(`${R}BOOT${S}TURNrun the /review command please`);
+      expect(out).toBe(`${R}BOOT${W}${S}TURNrun the /review command please`);
     });
   });
 });

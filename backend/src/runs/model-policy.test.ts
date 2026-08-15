@@ -3,6 +3,7 @@ import {
   CODEX_ALLOWED_MODELS,
   DEFAULT_CODEX_MODEL,
   DEFAULT_OPENCODE_MODEL,
+  FAST_CODEX_MODEL,
   FAST_OPENCODE_MODEL,
   KIMI_K3_MODEL,
   allowedModelsForEngine,
@@ -14,6 +15,7 @@ import {
 describe("paid model policy", () => {
   test("uses engine-owned defaults", () => {
     expect(DEFAULT_OPENCODE_MODEL).toBe(FAST_OPENCODE_MODEL);
+    expect(DEFAULT_CODEX_MODEL).toBe(FAST_CODEX_MODEL);
     expect(defaultModelForEngine("opencode", {})).toBe(FAST_OPENCODE_MODEL);
     expect(defaultModelForEngine("claude", {})).toBe("claude-opus-5");
     expect(defaultModelForEngine("codex", {})).toBe(DEFAULT_CODEX_MODEL);
@@ -50,9 +52,9 @@ describe("paid model policy", () => {
 
   test("exposes engine-specific model catalogs using backend policy ids", () => {
     expect(CODEX_ALLOWED_MODELS).toEqual([
-      "gpt-5.6-sol",
-      "gpt-5.6-terra",
       "gpt-5.6-luna",
+      "gpt-5.6-terra",
+      "gpt-5.6-sol",
     ]);
     expect(allowedModelsForEngine("codex", {})).toEqual(CODEX_ALLOWED_MODELS);
     expect(
