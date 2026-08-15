@@ -1,10 +1,15 @@
 import { BROWSER_CDP_ENDPOINT, BROWSER_DISPLAY } from "./browser-mcp";
+import {
+  desktopCdpRelayProbeCommand,
+  providerCdpRelayProbeCommand,
+} from "./desktop-cdp-relay";
 
 export const DESKTOP_PORT = 6080;
 
 export const DESKTOP_REQUIRED_BINARIES = [
   "Xvfb",
   "dbus-launch",
+  "bun",
   "pgrep",
   "startxfce4",
   "thunar",
@@ -35,10 +40,11 @@ export function xfceSessionProbeCommand(): string {
 
 /** One long-lived process group owns the virtual display, XFCE workstation, browser,
  * VNC server, and noVNC bridge. The browser is deliberately NOT owned by an MCP
- * child: every harness attaches to its loopback-only CDP endpoint, so restarting
- * OpenCode/Claude/Codex or their MCP transport cannot close the user's tabs.
- * x11vnc listens on loopback only; the browser reaches websockify through
- * Skynet's authenticated same-origin desktop proxy. */
+ * child, so restarting OpenCode/Claude/Codex or their MCP transport cannot close
+ * the user's tabs. Chrome remains loopback-only. The provider-facing relay admits
+ * only bounded page CDP routes and requires a per-sandbox bearer token in addition
+ * to the provider preview credential. x11vnc also remains loopback-only and reaches
+ * the browser through Skynet's authenticated same-origin desktop proxy. */
 export function buildDesktopLaunchCommand(): string {
   return [
     "set -eu",
@@ -76,6 +82,9 @@ export function buildDesktopLaunchCommand(): string {
     ") &",
     `for i in $(seq 1 80); do curl -fsS -m 1 -o /dev/null ${BROWSER_CDP_ENDPOINT}/json/version && break; sleep 0.25; done`,
     `curl -fsS -m 3 -o /dev/null ${BROWSER_CDP_ENDPOINT}/json/version`,
+    'bun "$HOME/.skynet/cdp-relay.ts" >>"$HOME/.skynet/cdp-relay.log" 2>&1 &',
+    `for i in $(seq 1 40); do ${desktopCdpRelayProbeCommand()} && break; sleep 0.25; done`,
+    desktopCdpRelayProbeCommand(),
     'x11vnc -display :1 -localhost -nopw -forever -shared -rfbport 5900 >"$HOME/.skynet/x11vnc.log" 2>&1 &',
     `for i in $(seq 1 40); do ${rfbProbeCommand()} && break; sleep 0.25; done`,
     rfbProbeCommand(),
@@ -88,6 +97,8 @@ export function buildDesktopReadinessCommand(): string {
     `curl -fsS -m 3 -o /dev/null http://127.0.0.1:${DESKTOP_PORT}/vnc.html && ` +
     `${rfbProbeCommand()} && ` +
     `${xfceSessionProbeCommand()} && ` +
-    `curl -fsS -m 3 -o /dev/null ${BROWSER_CDP_ENDPOINT}/json/version`
+    `curl -fsS -m 3 -o /dev/null ${BROWSER_CDP_ENDPOINT}/json/version && ` +
+    `${desktopCdpRelayProbeCommand()} && ` +
+    providerCdpRelayProbeCommand()
   );
 }

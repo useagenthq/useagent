@@ -8,6 +8,11 @@ import {
   rfbProbeCommand,
   xfceSessionProbeCommand,
 } from "./desktop-workstation";
+import {
+  desktopCdpRelayProbeCommand,
+  ensureDesktopCdpRelayFiles,
+  providerCdpRelayProbeCommand,
+} from "./desktop-cdp-relay";
 
 export {
   buildDesktopLaunchCommand,
@@ -46,14 +51,15 @@ async function provisionSandboxDesktopView(
   signal: AbortSignal,
 ): Promise<SandboxDesktop> {
   const probe = await sandbox.process.executeCommand(
-    "mkdir -p ~/work; browser=$(command -v google-chrome 2>/dev/null || command -v chromium 2>/dev/null || command -v chromium-browser 2>/dev/null || true); " +
+    "mkdir -p ~/work ~/.skynet; browser=$(command -v google-chrome 2>/dev/null || command -v chromium 2>/dev/null || command -v chromium-browser 2>/dev/null || true); " +
       `missing=""; for bin in ${DESKTOP_REQUIRED_BINARIES.join(" ")}; do command -v "$bin" >/dev/null 2>&1 || missing="$missing $bin"; done; ` +
       `vnc=0; curl -fsS -m 3 -o /dev/null http://127.0.0.1:${DESKTOP_PORT}/vnc.html && vnc=1; ` +
       `rfb=0; ${rfbProbeCommand()} && rfb=1; ` +
       `cdp=0; curl -fsS -m 3 -o /dev/null ${BROWSER_CDP_ENDPOINT}/json/version && cdp=1; ` +
+      `cdp_relay=0; ${desktopCdpRelayProbeCommand()} && ${providerCdpRelayProbeCommand()} && cdp_relay=1; ` +
       `xfce=0; ${xfceSessionProbeCommand()} && xfce=1; ` +
       'mcp=0; [ -x "$HOME/.local/bin/playwright-mcp" ] && mcp=1; ' +
-      'printf "HOME=%s\\nBROWSER=%s\\nMISSING=%s\\nVNC=%s\\nRFB=%s\\nCDP=%s\\nXFCE=%s\\nMCP=%s\\n" "$HOME" "$browser" "$missing" "$vnc" "$rfb" "$cdp" "$xfce" "$mcp"',
+      'printf "HOME=%s\\nBROWSER=%s\\nMISSING=%s\\nVNC=%s\\nRFB=%s\\nCDP=%s\\nCDP_RELAY=%s\\nXFCE=%s\\nMCP=%s\\n" "$HOME" "$browser" "$missing" "$vnc" "$rfb" "$cdp" "$cdp_relay" "$xfce" "$mcp"',
     undefined,
     undefined,
     20,
@@ -61,12 +67,14 @@ async function provisionSandboxDesktopView(
   const output = probe.result ?? "";
   const home = /^HOME=(.*)$/m.exec(output)?.[1]?.trim() || "/home/daytona";
   const workdir = `${home}/work`;
+  await ensureDesktopCdpRelayFiles(sandbox, home);
   const browserExecutable = /^BROWSER=(.*)$/m.exec(output)?.[1]?.trim() || null;
   const missing = /^MISSING=(.*)$/m.exec(output)?.[1]?.trim() || "";
   const healthy =
     /^VNC=1$/m.test(output) &&
     /^RFB=1$/m.test(output) &&
     /^CDP=1$/m.test(output) &&
+    /^CDP_RELAY=1$/m.test(output) &&
     /^XFCE=1$/m.test(output);
   const browserTools = /^MCP=1$/m.test(output);
   if ((probe.exitCode ?? 1) !== 0 || missing) {
