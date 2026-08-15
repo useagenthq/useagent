@@ -92,6 +92,7 @@ bun run release:hosted
 
 | Area | Docs |
 |---|---|
+| Interactive request-flow architecture | [`docs/architecture/request-flow.html`](docs/architecture/request-flow.html) |
 | Backend control plane | [`backend/README.md`](backend/README.md) |
 | Frontend UI | [`frontend/README.md`](frontend/README.md) |
 | Optional team memory | [`memory/README.md`](memory/README.md) |
