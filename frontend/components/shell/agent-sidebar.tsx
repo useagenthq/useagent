@@ -49,10 +49,10 @@ export function AgentSidebar({ active }: AgentSidebarProps) {
         active={active === 'live-artifacts'}
       />
       <SidebarNavItem
-        href='/agent/schedules'
+        href='/agent/automations'
         icon={RiCalendarScheduleLine}
-        label='Schedules'
-        active={active === 'schedules'}
+        label='Automations'
+        active={active === 'automations'}
       />
       <SidebarNavItem
         href='/agent/plugins'

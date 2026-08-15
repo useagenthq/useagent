@@ -49,7 +49,7 @@ const COMMANDS: Cmd[] = [
   { href: '/agent/runs', label: 'Active runs', icon: RiPulseLine, group: 'Agent' },
   { href: '/agent/workspace', label: 'Workspace', icon: RiLayoutGridLine, group: 'Agent' },
   { href: '/agent/artifacts', label: 'Live Artifacts', icon: RiBroadcastLine, group: 'Agent' },
-  { href: '/agent/schedules', label: 'Schedules', icon: RiCalendarScheduleLine, group: 'Agent' },
+  { href: '/agent/automations', label: 'Automations', icon: RiCalendarScheduleLine, group: 'Agent' },
   { href: '/agent/plugins', label: 'Plugins', icon: RiPlugLine, group: 'Agent' },
   { href: '/agent/new', label: 'New task', icon: RiAddLine, group: 'Agent' },
 
