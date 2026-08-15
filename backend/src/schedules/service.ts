@@ -1,10 +1,12 @@
-import { ENGINE_IDS, type EngineId } from "../db/schema";
+import { ENGINE_IDS, type AutomationJson, type EngineId } from "../db/schema";
+import { unknownRepos } from "../github/repos";
 import {
   engineModelReadyForDispatch,
   engineResolutionErrorBody,
   resolveAcceptedEngine,
 } from "../runs/engine-readiness";
 import { defaultModelForEngine, isModelAllowedForEngine } from "../runs/model-policy";
+import { resolveSkillSelection } from "../skills/repo";
 import { isValidCron, isValidTimezone } from "./cron";
 import {
   createSchedule,
@@ -27,6 +29,89 @@ export class ScheduleServiceError extends Error {
 
 function textField(body: Record<string, unknown>, name: string): string {
   return typeof body[name] === "string" ? body[name].trim() : "";
+}
+
+function isPlainObject(value: unknown): value is AutomationJson {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function jsonObjectField(
+  body: Record<string, unknown>,
+  name: string,
+): AutomationJson | null | undefined {
+  const value = body[name];
+  if (value === undefined) return undefined;
+  if (value === null) return null;
+  if (!isPlainObject(value)) {
+    throw new ScheduleServiceError(400, { error: `${name} must be an object or null` });
+  }
+  return value;
+}
+
+function stringArrayField(
+  body: Record<string, unknown>,
+  name: string,
+): string[] | undefined {
+  const value = body[name];
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value)) {
+    throw new ScheduleServiceError(400, { error: `${name} must be an array of strings` });
+  }
+  const values = value
+    .map((item) => (typeof item === "string" ? item.trim() : ""))
+    .filter((item) => item.length > 0);
+  if (values.length !== value.length) {
+    throw new ScheduleServiceError(400, { error: `${name} must be an array of non-empty strings` });
+  }
+  return [...new Set(values)];
+}
+
+async function parseRepos(body: Record<string, unknown>): Promise<string[] | undefined> {
+  const repos = stringArrayField(body, "repos");
+  if (repos === undefined) return undefined;
+  if (repos.length > 0) {
+    const unknown = await unknownRepos(repos);
+    if (unknown.length > 0) {
+      throw new ScheduleServiceError(400, {
+        error: `repos not in the available set: ${unknown.join(", ")}`,
+      });
+    }
+  }
+  return repos;
+}
+
+async function parseSkillPin(
+  orgId: string,
+  value: unknown,
+): Promise<{
+  skillId: string | null;
+  skillVersion: number | null;
+  skillContentHash: string | null;
+} | undefined> {
+  if (value === undefined) return undefined;
+  if (value === null) {
+    return { skillId: null, skillVersion: null, skillContentHash: null };
+  }
+  if (!isPlainObject(value)) {
+    throw new ScheduleServiceError(400, { error: "skill must be an object or null" });
+  }
+  const rawId = typeof value.id === "string" ? value.id.trim() : "";
+  if (!rawId) throw new ScheduleServiceError(400, { error: "skill.id must be a skill id string" });
+  const version =
+    typeof value.version === "number" && Number.isInteger(value.version) && value.version > 0
+      ? value.version
+      : undefined;
+  const pinned = await resolveSkillSelection(orgId, { id: rawId, version });
+  if (!pinned) {
+    throw new ScheduleServiceError(400, {
+      error: "skill not found in this org (or unknown version)",
+    });
+  }
+  return {
+    skillId: pinned.skillId,
+    skillVersion: pinned.version,
+    skillContentHash: pinned.contentHash,
+  };
 }
 
 function parseTimezone(value: unknown): string | null | undefined {
@@ -72,6 +157,18 @@ function assertDispatchReady(engine: EngineId, model: string): void {
   }
 }
 
+function assertAutomationIntegrationsReady(schedule: {
+  delivery: AutomationJson | null;
+  notifications: AutomationJson | null;
+}): void {
+  if (schedule.delivery || schedule.notifications) {
+    throw new ScheduleServiceError(403, {
+      error: "automation_delivery_not_ready",
+      detail: "delivery and notification metadata can be drafted, but cannot be enabled until the integration is live",
+    });
+  }
+}
+
 export async function createScheduleForOrg(
   identity: { orgId: string; userId: string | null },
   body: Record<string, unknown>,
@@ -95,6 +192,17 @@ export async function createScheduleForOrg(
   const engine = resolveDraftEngine(body.engine);
   const model = textField(body, "model") || defaultModelForEngine(engine);
   assertModelAllowed(engine, model);
+  const skill = await parseSkillPin(identity.orgId, body.skill);
+  const repos = (await parseRepos(body)) ?? [];
+  const tags = stringArrayField(body, "tags") ?? [];
+  const delivery = jsonObjectField(body, "delivery") ?? null;
+  const notifications = jsonObjectField(body, "notifications") ?? null;
+  const concurrency = jsonObjectField(body, "concurrency") ?? null;
+  const queue = jsonObjectField(body, "queue") ?? null;
+  const costLimits = jsonObjectField(body, "costLimits") ?? null;
+  const frequencyLimits = jsonObjectField(body, "frequencyLimits") ?? null;
+  const approvalPolicy = jsonObjectField(body, "approvalPolicy") ?? null;
+  const enablementPolicy = jsonObjectField(body, "enablementPolicy") ?? null;
 
   return createSchedule({
     orgId: identity.orgId,
@@ -105,6 +213,20 @@ export async function createScheduleForOrg(
     prompt,
     engine,
     model,
+    skillId: skill?.skillId ?? null,
+    skillVersion: skill?.skillVersion ?? null,
+    skillContentHash: skill?.skillContentHash ?? null,
+    repos,
+    tags,
+    delivery,
+    notifications,
+    runActorId: identity.userId,
+    concurrency,
+    queue,
+    costLimits,
+    frequencyLimits,
+    approvalPolicy,
+    enablementPolicy,
   });
 }
 
@@ -120,6 +242,19 @@ export async function updateScheduleForOrg(
     prompt: string;
     engine: EngineId;
     model: string;
+    skillId: string | null;
+    skillVersion: number | null;
+    skillContentHash: string | null;
+    repos: string[];
+    tags: string[];
+    delivery: AutomationJson | null;
+    notifications: AutomationJson | null;
+    concurrency: AutomationJson | null;
+    queue: AutomationJson | null;
+    costLimits: AutomationJson | null;
+    frequencyLimits: AutomationJson | null;
+    approvalPolicy: AutomationJson | null;
+    enablementPolicy: AutomationJson | null;
     enabled: boolean;
   }> = {};
 
@@ -147,9 +282,45 @@ export async function updateScheduleForOrg(
 
   if (body.engine !== undefined) patch.engine = resolveDraftEngine(body.engine);
 
+  const skill = await parseSkillPin(orgId, body.skill);
+  if (skill !== undefined) Object.assign(patch, skill);
+
+  const repos = await parseRepos(body);
+  if (repos !== undefined) patch.repos = repos;
+
+  const tags = stringArrayField(body, "tags");
+  if (tags !== undefined) patch.tags = tags;
+
+  const delivery = jsonObjectField(body, "delivery");
+  if (delivery !== undefined) patch.delivery = delivery;
+
+  const notifications = jsonObjectField(body, "notifications");
+  if (notifications !== undefined) patch.notifications = notifications;
+
+  const concurrency = jsonObjectField(body, "concurrency");
+  if (concurrency !== undefined) patch.concurrency = concurrency;
+
+  const queue = jsonObjectField(body, "queue");
+  if (queue !== undefined) patch.queue = queue;
+
+  const costLimits = jsonObjectField(body, "costLimits");
+  if (costLimits !== undefined) patch.costLimits = costLimits;
+
+  const frequencyLimits = jsonObjectField(body, "frequencyLimits");
+  if (frequencyLimits !== undefined) patch.frequencyLimits = frequencyLimits;
+
+  const approvalPolicy = jsonObjectField(body, "approvalPolicy");
+  if (approvalPolicy !== undefined) patch.approvalPolicy = approvalPolicy;
+
+  const enablementPolicy = jsonObjectField(body, "enablementPolicy");
+  if (enablementPolicy !== undefined) patch.enablementPolicy = enablementPolicy;
+
   if (
     patch.engine !== undefined ||
     patch.model !== undefined ||
+    patch.skillId !== undefined ||
+    patch.delivery !== undefined ||
+    patch.notifications !== undefined ||
     patch.enabled === true
   ) {
     const current = await getScheduleForOrg(orgId, id);
@@ -158,7 +329,19 @@ export async function updateScheduleForOrg(
     const model = patch.model ?? current.model;
     assertModelAllowed(engine, model);
     const remainsEnabled = patch.enabled ?? current.enabled;
-    if (remainsEnabled) assertDispatchReady(engine, model);
+    if (remainsEnabled) {
+      assertDispatchReady(engine, model);
+      assertAutomationIntegrationsReady({
+        delivery: patch.delivery ?? current.delivery,
+        notifications: patch.notifications ?? current.notifications,
+      });
+      const skillId = patch.skillId === undefined ? current.skillId : patch.skillId;
+      const skillVersion = patch.skillVersion === undefined ? current.skillVersion : patch.skillVersion;
+      const skillHash = patch.skillContentHash === undefined ? current.skillContentHash : patch.skillContentHash;
+      if ((skillId && (!skillVersion || !skillHash)) || (!skillId && (skillVersion || skillHash))) {
+        throw new ScheduleServiceError(400, { error: "invalid skill pin" });
+      }
+    }
   }
 
   const updated = await updateSchedule(orgId, id, patch);

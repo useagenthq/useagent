@@ -16,13 +16,14 @@
 // comes from the parts' native ids. Tool detail is still read from the durable step
 // sidecar keyed by identity.nativeEventId (the "bounded raw sidecar").
 
-import { deriveTrace, type ApiStep } from "./types";
-import { isNarration, parseMarker, type TimelineNode, type TimelineMarker } from "./timeline";
+import { isNarration, parseMarker, type TimelineMarker, type TimelineNode } from "./timeline";
+import { type ApiStep, deriveTrace, isRenderableTimelineStep } from "./types";
 
 /** Structural view of a canonical event (envelope base + flattened body fields). */
 export interface CanonicalEventLike {
   readonly kind: string;
   readonly seq: number;
+  readonly ts?: number;
   readonly identity?: {
     readonly nativeEventId?: string;
     readonly nativeSessionId?: string;
@@ -33,10 +34,35 @@ export interface CanonicalEventLike {
   readonly messageId?: string;
   readonly text?: string;
   readonly childId?: string;
+  readonly parentChildId?: string;
+  readonly launchToolCallId?: string;
   readonly markerType?: string;
   readonly title?: string;
   readonly detail?: string;
   readonly name?: string;
+  readonly toolCallId?: string;
+  readonly input?: unknown;
+  readonly preview?: string;
+  readonly status?: string;
+  readonly result?: string;
+  readonly error?: string;
+  readonly entries?: readonly {
+    readonly id: string;
+    readonly text: string;
+    readonly status: "pending" | "in_progress" | "completed" | "cancelled";
+  }[];
+  readonly path?: string;
+  readonly changeType?: "create" | "edit" | "delete";
+  readonly diff?: {
+    readonly artifactId: string;
+    readonly bytes: number;
+    readonly sha256: string;
+    readonly contentType: string;
+  };
+  readonly terminalId?: string;
+  readonly chunk?: string;
+  readonly message?: string;
+  readonly fatal?: boolean;
   readonly destination?: string;
   readonly artifact?: {
     readonly artifactId: string;
@@ -85,7 +111,10 @@ const isFiniteNumber = (v: unknown): v is number => typeof v === "number" && Num
  *  missing seq/deliverySeq/revision/kind would corrupt ordering (NaN sort) or dedupe.
  *  Every envelope field is checked; `frameThreadId` (the frame's own threadId) must match
  *  the event's threadId. Returns the typed event, or null to drop it. */
-export function validateCanonicalEvent(raw: unknown, frameThreadId: unknown): StoredCanonicalEvent | null {
+export function validateCanonicalEvent(
+  raw: unknown,
+  frameThreadId: unknown,
+): StoredCanonicalEvent | null {
   if (typeof raw !== "object" || raw === null) return null;
   const e = raw as Record<string, unknown>;
   if (e.schemaVersion !== CANONICAL_SCHEMA_VERSION) return null;
@@ -100,7 +129,8 @@ export function validateCanonicalEvent(raw: unknown, frameThreadId: unknown): St
   // than its envelope is malformed - never apply it cross-thread.
   if (isNonEmptyString(frameThreadId) && e.threadId !== frameThreadId) return null;
   // identity, when present, must be an object (the reducer reads identity.native*).
-  if (e.identity !== undefined && (typeof e.identity !== "object" || e.identity === null)) return null;
+  if (e.identity !== undefined && (typeof e.identity !== "object" || e.identity === null))
+    return null;
   return e as unknown as StoredCanonicalEvent;
 }
 
@@ -110,17 +140,28 @@ export function validateCanonicalEvent(raw: unknown, frameThreadId: unknown): St
  *  so a partial/retrying snapshot never renders. Pure, so both flag states are testable. */
 export function shouldUseCanonicalTimeline(
   flagOn: boolean,
-  turn: { readonly canonical?: readonly CanonicalEventLike[]; readonly canonicalComplete?: boolean },
+  turn: {
+    readonly canonical?: readonly CanonicalEventLike[];
+    readonly canonicalComplete?: boolean;
+  },
 ): boolean {
   return flagOn && turn.canonicalComplete === true && !!turn.canonical && turn.canonical.length > 0;
 }
 
 /** Validate a canonical-complete frame's `complete` payload (H4). */
-export function validateCanonicalComplete(raw: unknown, frameThreadId: unknown): { runId: string } | null {
+export function validateCanonicalComplete(
+  raw: unknown,
+  frameThreadId: unknown,
+): { runId: string } | null {
   if (typeof raw !== "object" || raw === null) return null;
   const c = raw as Record<string, unknown>;
   if (!isNonEmptyString(c.runId)) return null;
-  if (isNonEmptyString(frameThreadId) && isNonEmptyString(c.threadId) && c.threadId !== frameThreadId) return null;
+  if (
+    isNonEmptyString(frameThreadId) &&
+    isNonEmptyString(c.threadId) &&
+    c.threadId !== frameThreadId
+  )
+    return null;
   return { runId: c.runId };
 }
 
@@ -136,7 +177,13 @@ function toTimelineMarker(e: CanonicalEventLike): TimelineMarker {
   }
   const t = e.markerType;
   if (t === "skill" || t === "playbook") {
-    return { kind: "skill", playbook: t === "playbook", name: e.title ?? "skill", version: 0, hash: "" };
+    return {
+      kind: "skill",
+      playbook: t === "playbook",
+      name: e.title ?? "skill",
+      version: 0,
+      hash: "",
+    };
   }
   if (t === "memory") {
     return { kind: "memory", op: "remember", scope: "org", failed: false, reconciled: false };
@@ -147,18 +194,105 @@ function toTimelineMarker(e: CanonicalEventLike): TimelineMarker {
 type Ranked = { node: TimelineNode; k0: number; k1: number; k2: number };
 const MAX = Number.MAX_SAFE_INTEGER;
 
+interface ToolLifecycle {
+  readonly toolCallId: string;
+  readonly firstSeq: number;
+  readonly lastSeq: number;
+  readonly nativeEventIds: readonly string[];
+  readonly name: string;
+  readonly title: string;
+  readonly input?: unknown;
+  readonly preview?: string;
+  readonly status?: string;
+  readonly error?: string;
+}
+
+function projectedStep(
+  event: CanonicalEventLike,
+  shape: Pick<ApiStep, "kind" | "label" | "chip"> & { readonly code: Record<string, unknown> },
+  id = event.identity?.nativeEventId ?? `${event.kind}-${event.seq}`,
+): ApiStep {
+  return {
+    id,
+    run_id: "",
+    idx: event.seq,
+    kind: shape.kind,
+    label: shape.label,
+    chip: shape.chip,
+    code_json: JSON.stringify(shape.code),
+    created_at: new Date(0).toISOString(),
+  };
+}
+
+function collectToolLifecycles(
+  events: readonly CanonicalEventLike[],
+): ReadonlyMap<string, ToolLifecycle> {
+  const mutable = new Map<string, ToolLifecycle>();
+  for (const event of events) {
+    if (
+      (event.kind !== "tool.started" &&
+        event.kind !== "tool.progress" &&
+        event.kind !== "tool.completed") ||
+      !event.toolCallId
+    ) {
+      continue;
+    }
+    const previous = mutable.get(event.toolCallId);
+    const nativeEventId = event.identity?.nativeEventId;
+    mutable.set(event.toolCallId, {
+      toolCallId: event.toolCallId,
+      firstSeq: previous?.firstSeq ?? event.seq,
+      lastSeq: event.seq,
+      nativeEventIds: nativeEventId
+        ? [...(previous?.nativeEventIds ?? []), nativeEventId]
+        : (previous?.nativeEventIds ?? []),
+      name: event.name ?? previous?.name ?? "tool",
+      title: event.title ?? previous?.title ?? event.name ?? "Tool",
+      input: event.input ?? previous?.input,
+      preview: event.preview ?? previous?.preview,
+      status: event.status ?? previous?.status,
+      error: event.error ?? previous?.error,
+    });
+  }
+  return mutable;
+}
+
+function projectToolLifecycle(lifecycle: ToolLifecycle, event: CanonicalEventLike): ApiStep {
+  const detail = lifecycle.error ?? lifecycle.preview;
+  return projectedStep(
+    event,
+    {
+      kind: "command",
+      label: lifecycle.title,
+      chip: null,
+      code: {
+        tool: lifecycle.name,
+        ...(lifecycle.input === undefined ? {} : { input: lifecycle.input }),
+        ...(detail === undefined ? {} : { output: detail }),
+        ...(lifecycle.status === "error" || lifecycle.error ? { error: true } : {}),
+      },
+    },
+    `canonical-tool-${lifecycle.toolCallId}`,
+  );
+}
+
 export function buildTimelineFromCanonical(
   events: readonly CanonicalEventLike[],
   stepsById: ReadonlyMap<string, ApiStep>,
   live = false,
 ): TimelineNode[] {
-  const ordered = [...events].sort((a, b) => a.seq - b.seq);
+  const ordered = events.toSorted((a, b) => a.seq - b.seq);
+  const toolLifecycles = collectToolLifecycles(ordered);
+  const latestPlanSeq = ordered.reduce(
+    (latest, event) => (event.kind === "plan.updated" ? Math.max(latest, event.seq) : latest),
+    -1,
+  );
 
   // Pass 1: derive the same ordering inputs buildTimeline builds from frames.
   const childSessions = new Set<string>();
   const msgOrderKey = new Map<string, number>(); // messageId -> anchor (step-start) seq
   const partMessage = new Map<string, string>(); // partId -> messageId
-  const stepMessages = new Set<string>();        // messages that began (step-start)
+  const stepMessages = new Set<string>(); // messages that began (step-start)
   for (const e of ordered) {
     if (e.kind === "child.started" && e.childId) childSessions.add(e.childId);
     const ns = e.identity?.nativeSeq;
@@ -182,8 +316,14 @@ export function buildTimelineFromCanonical(
     // ── context markers (skynet lane): lead the turn ──────────────────────────
     if (e.kind === "context.marker") {
       ranked.push({
-        node: { kind: "marker", key: e.identity?.nativeEventId ?? String(e.seq), marker: toTimelineMarker(e) },
-        k0: -2, k1: 0, k2: e.identity?.nativeSeq ?? e.seq,
+        node: {
+          kind: "marker",
+          key: e.identity?.nativeEventId ?? String(e.seq),
+          marker: toTimelineMarker(e),
+        },
+        k0: -2,
+        k1: 0,
+        k2: e.identity?.nativeSeq ?? e.seq,
       });
       continue;
     }
@@ -225,7 +365,9 @@ export function buildTimelineFromCanonical(
       seenTextPart.add(key);
       ranked.push({
         node: { kind: "text", key, text: e.text },
-        k0: msgOrderKey.get(mid) ?? e.identity?.nativeSeq ?? e.seq, k1: 0, k2: e.identity?.nativeSeq ?? e.seq,
+        k0: msgOrderKey.get(mid) ?? e.identity?.nativeSeq ?? e.seq,
+        k1: 0,
+        k2: e.identity?.nativeSeq ?? e.seq,
       });
       continue;
     }
@@ -241,16 +383,110 @@ export function buildTimelineFromCanonical(
       seenReasoningPart.add(key);
       ranked.push({
         node: { kind: "reasoning", key, text: e.text },
-        k0: e.identity?.nativeSeq ?? e.seq, k1: 0, k2: e.identity?.nativeSeq ?? e.seq,
+        k0: e.identity?.nativeSeq ?? e.seq,
+        k1: 0,
+        k2: e.identity?.nativeSeq ?? e.seq,
       });
       continue;
     }
-    // ── tool rows: step-sourced tool.completed, filtered like buildTimeline ────
-    if (e.kind === "tool.completed") {
-      const id = e.identity?.nativeEventId;
-      const step = id ? stepsById.get(id) : undefined;
-      if (!step) continue; // frame-sourced structural tool signal, not a durable row
+    // ── plan snapshot: only the latest provider-neutral plan is current ──────
+    if (e.kind === "plan.updated" && e.seq === latestPlanSeq && e.entries?.length) {
+      const step = projectedStep(e, {
+        kind: "command",
+        label: "Plan",
+        chip: null,
+        code: {
+          tool: "todowrite",
+          input: {
+            todos: e.entries.map(({ text, status }) => ({ content: text, status })),
+          },
+        },
+      });
+      ranked.push({ node: { kind: "tool", key: step.id, step }, k0: e.seq, k1: 1, k2: e.seq });
+      continue;
+    }
+    // ── file receipts: the diff is an out-of-band ref, never fabricated body ─
+    if (e.kind === "file.changed" && e.path && e.changeType) {
+      ranked.push({
+        node: {
+          kind: "file",
+          key: e.identity?.nativeEventId ?? String(e.seq),
+          file: {
+            path: e.path,
+            changeType: e.changeType,
+            ...(e.diff ? { diff: e.diff } : {}),
+          },
+        },
+        k0: e.seq,
+        k1: 1,
+        k2: e.seq,
+      });
+      continue;
+    }
+    // ── direct terminal output and harness diagnostics remain observable ─────
+    if (e.kind === "terminal.output" && e.chunk) {
+      const step = projectedStep(e, {
+        kind: "command",
+        label: e.terminalId ?? "Terminal",
+        chip: null,
+        code: {
+          tool: "terminal",
+          input: { name: e.terminalId ?? "terminal" },
+          output: e.chunk,
+        },
+      });
+      ranked.push({ node: { kind: "tool", key: step.id, step }, k0: e.seq, k1: 1, k2: e.seq });
+      continue;
+    }
+    if ((e.kind === "harness.warning" || e.kind === "harness.error") && e.message) {
+      const error = e.kind === "harness.error";
+      const step = projectedStep(e, {
+        kind: "command",
+        label: e.message,
+        chip: null,
+        code: {
+          tool: error ? "error" : "warning",
+          input: { description: e.message },
+          ...(error ? { error: true } : {}),
+        },
+      });
+      ranked.push({ node: { kind: "tool", key: step.id, step }, k0: e.seq, k1: 1, k2: e.seq });
+      continue;
+    }
+    // ── legacy tool receipt: early canonical rows identified only the durable
+    //    sidecar step. Preserve that exact row while newer translators fold the
+    //    full toolCallId lifecycle below. ─────────────────────────────────────
+    if (e.kind === "tool.completed" && !e.toolCallId && e.identity?.nativeEventId) {
+      const step = stepsById.get(e.identity.nativeEventId);
+      if (!step || step.kind === "done" || !isRenderableTimelineStep(step) || isNarration(step))
+        continue;
+      const boot = deriveTrace(step).accent === "boot";
+      if (boot && !live) continue;
+      const ids = nativeOfStep(step);
+      const mid = (ids.partID && partMessage.get(ids.partID)) || ids.messageID || null;
+      ranked.push({
+        node: { kind: "tool", key: step.id, step },
+        k0: boot ? -1 : mid ? (msgOrderKey.get(mid) ?? MAX) : e.seq,
+        k1: 1,
+        k2: step.idx,
+      });
+      continue;
+    }
+    // ── tool rows: lifecycle-folded rows, filtered like buildTimeline ─────────
+    if (
+      (e.kind === "tool.started" || e.kind === "tool.progress" || e.kind === "tool.completed") &&
+      e.toolCallId
+    ) {
+      const lifecycle = toolLifecycles.get(e.toolCallId);
+      if (!lifecycle || e.seq !== lifecycle.lastSeq) continue;
+      const step =
+        lifecycle.nativeEventIds
+          .toReversed()
+          .map((id) => stepsById.get(id))
+          .find((candidate): candidate is ApiStep => candidate !== undefined) ??
+        projectToolLifecycle(lifecycle, e);
       if (step.kind === "done") continue;
+      if (!isRenderableTimelineStep(step)) continue;
       if (isNarration(step)) continue;
       const boot = deriveTrace(step).accent === "boot";
       if (boot && !live) continue;
@@ -258,158 +494,28 @@ export function buildTimelineFromCanonical(
       const mid = (ids.partID && partMessage.get(ids.partID)) || ids.messageID || null;
       ranked.push({
         node: { kind: "tool", key: step.id, step },
-        k0: boot ? -1 : mid ? msgOrderKey.get(mid) ?? MAX : MAX,
-        k1: 1, k2: step.idx,
+        k0: boot ? -1 : mid ? (msgOrderKey.get(mid) ?? MAX) : lifecycle.firstSeq,
+        k1: 1,
+        k2: step.idx,
       });
     }
   }
 
-  ranked.sort((a, b) => a.k0 - b.k0 || a.k1 - b.k1 || a.k2 - b.k2);
-  return ranked.map((r) => r.node);
+  return ranked.toSorted((a, b) => a.k0 - b.k0 || a.k1 - b.k1 || a.k2 - b.k2).map((r) => r.node);
 }
 
-/** A native slash command as surfaced to the composer's "/" popover. */
-export interface CanonicalCommandView {
-  readonly name: string;
-  readonly description?: string | null;
-  readonly input?: string | null;
-}
-
-/** The CURRENT session's native slash-command catalog from the DURABLE canonical stream: the
- *  LATEST `commands.updated` (by `deliverySeq`) whose `identity.nativeSessionId === sessionId`.
- *  SESSION-SCOPED so a historical or other-session snapshot can NEVER mask the active session
- *  (a restarted/new session that has not re-advertised yields null, not a stale catalog).
- *  A reconnect/replay reconstructs the SAME catalog. An empty replacement legitimately yields
- *  [] ("provider advertises none right now"); a session that has not advertised yields null, so
- *  the caller falls back to the pre-session priming fetch. `sessionId` null => null. Pure. */
-export interface SessionCommandCatalog {
-  readonly commands: CanonicalCommandView[];
-  /** The latest `commands.updated` deliverySeq for this session - the catalog SNAPSHOT id the
-   *  backend fail-closed authorization matches a submitted command against (it also advances when
-   *  a relay regeneration re-advertises, so a stale pick is rejected). */
-  readonly revision: number;
-}
-
-/** The CURRENT session's command catalog AND its snapshot revision from the DURABLE canonical
- *  stream (the latest `commands.updated` for the session, by deliverySeq). The revision is what a
- *  submitted native command must carry so the backend can reject a stale snapshot. Null when the
- *  session has not advertised (fail-closed: no revision to authorize against). Pure. */
-export function selectSessionCommandCatalog(
-  runs: readonly { readonly canonical: readonly StoredCanonicalEvent[] }[],
-  sessionId: string | null,
-): SessionCommandCatalog | null {
-  if (!sessionId) return null;
-  let latest: StoredCanonicalEvent | null = null;
-  for (const run of runs) {
-    for (const e of run.canonical) {
-      if (
-        e.kind === "commands.updated" &&
-        e.identity?.nativeSessionId === sessionId &&
-        (latest === null || e.deliverySeq > latest.deliverySeq)
-      )
-        latest = e;
-    }
-  }
-  if (!latest) return null;
-  return {
-    commands: [...(latest.catalog ?? [])].map((c) => ({
-      name: c.name,
-      description: c.description ?? null,
-      input: c.input ?? null,
-    })),
-    revision: latest.deliverySeq,
-  };
-}
-
-/** The CURRENT session's native slash-command catalog (commands only) from the durable stream.
- *  A thin projection of {@link selectSessionCommandCatalog}. Null => the session has not
- *  advertised (caller falls back to the pre-session priming fetch). Pure. */
-export function selectSessionCommands(
-  runs: readonly { readonly canonical: readonly StoredCanonicalEvent[] }[],
-  sessionId: string | null,
-): CanonicalCommandView[] | null {
-  return selectSessionCommandCatalog(runs, sessionId)?.commands ?? null;
-}
-
-/** The negotiated capability map for the CURRENT session, from the DURABLE canonical stream's
- *  `session.started` (session-scoped by `identity.nativeSessionId`). This is the ONE map the UI
- *  gates every surface on - never a provider-name check. Null when the session has not started
- *  yet (the caller may fall back to a pre-session heuristic). A missing key reads as false. */
-export function selectSessionCapabilities(
-  runs: readonly { readonly canonical: readonly StoredCanonicalEvent[] }[],
-  sessionId: string | null,
-): Readonly<Record<string, boolean>> | null {
-  if (!sessionId) return null;
-  let latest: StoredCanonicalEvent | null = null;
-  for (const run of runs) {
-    for (const e of run.canonical) {
-      if (
-        e.kind === "session.started" &&
-        e.identity?.nativeSessionId === sessionId &&
-        (latest === null || e.deliverySeq > latest.deliverySeq)
-      )
-        latest = e;
-    }
-  }
-  return latest?.capabilities ?? null;
-}
-
-/** The ONE authoritative ACTIVE native-session id: the `session.started` of the CURRENT
- *  (newest) run - NOT a `findLast` over every historical run's `engine_session_id`, which would
- *  surface a REPLACED session's id while the new run has not started its session yet (letting a
- *  stale S1 catalog/capability mask the active S2). Scoped to `newestRunId` so only the current
- *  run decides identity; returns null until that run advertises `session.started` (the caller
- *  then shows no stale catalog and may fall back to the newest run's persisted column). Pure. */
-export function selectActiveSessionId(
-  runs: readonly { readonly canonical: readonly StoredCanonicalEvent[] }[],
-  newestRunId: string | null,
-): string | null {
-  if (!newestRunId) return null;
-  let latest: StoredCanonicalEvent | null = null;
-  for (const run of runs) {
-    for (const e of run.canonical) {
-      if (
-        e.kind === "session.started" &&
-        e.runId === newestRunId &&
-        e.identity?.nativeSessionId &&
-        (latest === null || e.deliverySeq > latest.deliverySeq)
-      )
-        latest = e;
-    }
-  }
-  return latest?.identity?.nativeSessionId ?? null;
-}
-
-/** The command-picker's honest state, so the UI can distinguish absence, loading, an empty
- *  (provider-advertises-none) catalog, a live catalog, a degraded pre-session/cached catalog,
- *  and a fetch error - instead of collapsing them all to "no popover". Capability-driven: no
- *  provider-name branching. */
-export type CommandCatalogState =
-  | { readonly status: "loading" }
-  | { readonly status: "unavailable"; readonly source?: string }
-  | { readonly status: "error" }
-  | { readonly status: "ready"; readonly commands: readonly CanonicalCommandView[]; readonly source?: string; readonly stale?: boolean };
-
-/** Combine the authoritative durable session catalog with the pre-session priming fetch into
- *  ONE honest state. The live session snapshot ALWAYS wins: a non-empty durable catalog is
- *  `ready`; an EMPTY durable catalog is `unavailable` (the session genuinely advertises none).
- *  Only when THIS session has not advertised yet do we fall back to the fetch - `loading` while
- *  it is in flight, `ready`+`stale` for a cached pre-session catalog, `unavailable` for an empty
- *  fetch, `error` on failure. Pure + total. */
-export function resolveCommandCatalog(
-  durable: readonly CanonicalCommandView[] | null,
-  fetchState: { phase: "loading" | "done" | "error"; commands: readonly CanonicalCommandView[] },
-  source?: string,
-): CommandCatalogState {
-  if (durable !== null) {
-    return durable.length > 0 ? { status: "ready", commands: durable, source } : { status: "unavailable", source };
-  }
-  if (fetchState.phase === "loading") return { status: "loading" };
-  if (fetchState.phase === "error") return { status: "error" };
-  return fetchState.commands.length > 0
-    ? { status: "ready", commands: fetchState.commands, source, stale: true }
-    : { status: "unavailable", source };
-}
+export type {
+  CanonicalCommandView,
+  CommandCatalogState,
+  SessionCommandCatalog,
+} from "./canonical-session";
+export {
+  resolveCommandCatalog,
+  selectActiveSessionId,
+  selectSessionCapabilities,
+  selectSessionCommandCatalog,
+  selectSessionCommands,
+} from "./canonical-session";
 
 /** Parse a step's native ids from code_json (mirrors native-ids.nativeOf). */
 function nativeOfStep(step: ApiStep): { partID: string | null; messageID: string | null } {

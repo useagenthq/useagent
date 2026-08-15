@@ -17,6 +17,13 @@ const failure = (text: string): ToolResult => ({
   isError: true,
 });
 
+const INSPECTION_SCREENSHOT_PATH =
+  /^(?:\/root|\/home\/daytona)\/work\/screenshots\/screenshot-\d+\.png$/;
+
+function requiresUserProofPurpose(path: string): boolean {
+  return INSPECTION_SCREENSHOT_PATH.test(path);
+}
+
 export const ARTIFACT_TOOLS = [
   {
     name: "artifact_publish",
@@ -27,7 +34,9 @@ export const ARTIFACT_TOOLS = [
       "in Skynet's editor. For editable DOCX or XLSX outputs, also provide editable_path " +
       "to a small HTML or CSV companion produced in the sandbox; the Office bytes remain " +
       "immutable. Use this for screenshots, reports, documents, spreadsheets, videos, " +
-      "and other outputs the user needs.",
+      "and other outputs the user needs. Private desktop inspection screenshots produced " +
+      "by computer_screenshot or computer_sequence require purpose=user_requested_proof; " +
+      "do not publish intermediate inspection screenshots.",
     inputSchema: {
       type: "object",
       properties: {
@@ -41,8 +50,13 @@ export const ARTIFACT_TOOLS = [
         },
         editable_path: {
           type: "string",
+          description: "Optional sandbox path to editable HTML for a DOCX or CSV for an XLSX.",
+        },
+        purpose: {
+          type: "string",
+          enum: ["user_requested_proof", "deliverable"],
           description:
-            "Optional sandbox path to editable HTML for a DOCX or CSV for an XLSX.",
+            "Required as user_requested_proof when publishing a private desktop inspection screenshot. Use deliverable or omit it for normal files the user requested.",
         },
       },
       required: ["path"],
@@ -63,6 +77,11 @@ export async function executeArtifactTool(
   if (name !== "artifact_publish") return failure(`Unknown tool: ${name}`);
   const path = typeof args.path === "string" ? args.path.trim() : "";
   if (!path) return failure("artifact_publish requires a `path` inside the sandbox.");
+  if (requiresUserProofPurpose(path) && args.purpose !== "user_requested_proof") {
+    return failure(
+      "Private desktop inspection screenshots can only be published when the user explicitly requested durable proof. Retry artifact_publish with purpose=user_requested_proof for the final requested screenshot only.",
+    );
+  }
   try {
     const published = await publishSandboxArtifact({
       orgId: claims.orgId,
@@ -70,9 +89,7 @@ export async function executeArtifactTool(
       runId: claims.runId,
       threadId: claims.threadId,
       path,
-      ...(typeof args.name === "string" && args.name.trim()
-        ? { name: args.name.trim() }
-        : {}),
+      ...(typeof args.name === "string" && args.name.trim() ? { name: args.name.trim() } : {}),
       ...(typeof args.editable_path === "string" && args.editable_path.trim()
         ? { editablePath: args.editable_path.trim() }
         : {}),

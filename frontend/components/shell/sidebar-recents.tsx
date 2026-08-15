@@ -1,14 +1,15 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 
-import { StatusDot } from '@/components/shared/status-dot';
 import {
   type Run,
   TONE_TO_DOT,
   fetchRuns,
   statusTone,
 } from '@/app/agent/runs/runs-data';
+import { StatusDot } from '@/components/shared/status-dot';
+import { useOrgChanges } from '@/hooks/use-org-changes';
 import { SidebarNavItem, SidebarSectionLabel } from './sidebar-nav';
 
 const POLL_MS = 30_000;
@@ -24,23 +25,27 @@ const MAX = 8;
 export function SidebarRecents() {
   const [runs, setRuns] = useState<Run[]>([]);
 
-  useEffect(() => {
-    let cancelled = false;
-    async function load() {
+  const load = useCallback(async (signal?: AbortSignal) => {
       try {
-        const next = await fetchRuns();
-        if (!cancelled) setRuns(next);
+        setRuns(await fetchRuns(signal));
       } catch {
         // Ambient list — keep the last good runs on a transient failure.
       }
-    }
-    void load();
-    const id = setInterval(load, POLL_MS);
+  }, []);
+
+  useOrgChanges((change) => {
+    if (change.type === 'run') void load();
+  });
+
+  useEffect(() => {
+    const controller = new AbortController();
+    void load(controller.signal);
+    const id = setInterval(() => void load(controller.signal), POLL_MS);
     return () => {
-      cancelled = true;
+      controller.abort();
       clearInterval(id);
     };
-  }, []);
+  }, [load]);
 
   if (runs.length === 0) return null;
 

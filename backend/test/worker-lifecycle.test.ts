@@ -20,7 +20,7 @@ describe("real engine lifecycle", () => {
       memoryScope: "org",
     });
 
-    const nextStep = await beginEngineRun(runId, runId);
+    const nextStep = await beginEngineRun(runId, runId, ORG_ID);
     const run = await getRunWithSteps(ORG_ID, runId);
 
     expect(nextStep).toBe(1);

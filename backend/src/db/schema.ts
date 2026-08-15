@@ -698,6 +698,7 @@ export const reconcileQueue = pgTable(
 
 /** How a firing was triggered: the cron loop, or a manual "run now". */
 export type ScheduleTrigger = "cron" | "manual";
+export type AutomationJson = Record<string, unknown>;
 
 export const schedules = pgTable(
   "schedules",
@@ -716,6 +717,28 @@ export const schedules = pgTable(
     prompt: text("prompt").notNull(),
     engine: text("engine").$type<EngineId>().notNull().default("mock"),
     model: text("model").notNull().default("claude-opus-5"),
+    // Optional pinned skill/playbook revision for unattended runs. Mirrors the
+    // run pin columns so scheduled execution carries the exact version/hash.
+    skillId: text("skill_id"),
+    skillVersion: integer("skill_version"),
+    skillContentHash: text("skill_content_hash"),
+    // Repository context and automation metadata are durable control-plane data.
+    // They are not pasted into prompts; the run command receives repos as typed
+    // execution context and tools return bounded summaries.
+    repos: jsonb("repos").$type<string[]>().notNull().default(sql`'[]'::jsonb`),
+    tags: text("tags")
+      .array()
+      .notNull()
+      .default(sql`'{}'::text[]`),
+    delivery: jsonb("delivery").$type<AutomationJson | null>(),
+    notifications: jsonb("notifications").$type<AutomationJson | null>(),
+    runActorId: text("run_actor_id"),
+    concurrency: jsonb("concurrency").$type<AutomationJson | null>(),
+    queue: jsonb("queue").$type<AutomationJson | null>(),
+    costLimits: jsonb("cost_limits").$type<AutomationJson | null>(),
+    frequencyLimits: jsonb("frequency_limits").$type<AutomationJson | null>(),
+    approvalPolicy: jsonb("approval_policy").$type<AutomationJson | null>(),
+    enablementPolicy: jsonb("enablement_policy").$type<AutomationJson | null>(),
     enabled: boolean("enabled").notNull().default(false),
     // Last time the loop fired this schedule. Used to de-dupe within a clock
     // minute (a 60s tick can revisit the same minute a cron matches).

@@ -4,6 +4,7 @@ import {
   runs,
   scheduleFirings,
   schedules,
+  type AutomationJson,
   type EngineId,
   type ScheduleTrigger,
 } from "../db/schema";
@@ -26,6 +27,20 @@ export interface ApiSchedule {
   prompt: string;
   engine: EngineId;
   model: string;
+  skill_id: string | null;
+  skill_version: number | null;
+  skill_content_hash: string | null;
+  repos: string[];
+  tags: string[];
+  delivery: AutomationJson | null;
+  notifications: AutomationJson | null;
+  run_actor_id: string | null;
+  concurrency: AutomationJson | null;
+  queue: AutomationJson | null;
+  cost_limits: AutomationJson | null;
+  frequency_limits: AutomationJson | null;
+  approval_policy: AutomationJson | null;
+  enablement_policy: AutomationJson | null;
   enabled: boolean;
   last_fired_at: string | null;
   created_at: string;
@@ -56,6 +71,20 @@ function toSchedule(s: ScheduleRecord): ApiSchedule {
     prompt: s.prompt,
     engine: s.engine,
     model: s.model,
+    skill_id: s.skillId,
+    skill_version: s.skillVersion,
+    skill_content_hash: s.skillContentHash,
+    repos: s.repos,
+    tags: s.tags,
+    delivery: s.delivery,
+    notifications: s.notifications,
+    run_actor_id: s.runActorId,
+    concurrency: s.concurrency,
+    queue: s.queue,
+    cost_limits: s.costLimits,
+    frequency_limits: s.frequencyLimits,
+    approval_policy: s.approvalPolicy,
+    enablement_policy: s.enablementPolicy,
     enabled: s.enabled,
     last_fired_at: s.lastFiredAt ? s.lastFiredAt.toISOString() : null,
     created_at: s.createdAt.toISOString(),
@@ -98,6 +127,20 @@ export async function createSchedule(input: {
   prompt: string;
   engine: EngineId;
   model: string;
+  skillId: string | null;
+  skillVersion: number | null;
+  skillContentHash: string | null;
+  repos: string[];
+  tags: string[];
+  delivery: AutomationJson | null;
+  notifications: AutomationJson | null;
+  runActorId: string | null;
+  concurrency: AutomationJson | null;
+  queue: AutomationJson | null;
+  costLimits: AutomationJson | null;
+  frequencyLimits: AutomationJson | null;
+  approvalPolicy: AutomationJson | null;
+  enablementPolicy: AutomationJson | null;
 }): Promise<ApiSchedule> {
   const [row] = await db
     .insert(schedules)
@@ -110,6 +153,20 @@ export async function createSchedule(input: {
       prompt: input.prompt,
       engine: input.engine,
       model: input.model,
+      skillId: input.skillId,
+      skillVersion: input.skillVersion,
+      skillContentHash: input.skillContentHash,
+      repos: input.repos,
+      tags: input.tags,
+      delivery: input.delivery,
+      notifications: input.notifications,
+      runActorId: input.runActorId,
+      concurrency: input.concurrency,
+      queue: input.queue,
+      costLimits: input.costLimits,
+      frequencyLimits: input.frequencyLimits,
+      approvalPolicy: input.approvalPolicy,
+      enablementPolicy: input.enablementPolicy,
       // enabled defaults FALSE at the column — never auto-fire on create.
     })
     .returning();
@@ -122,7 +179,27 @@ export async function updateSchedule(
   patch: Partial<
     Pick<
       typeof schedules.$inferInsert,
-      "name" | "cron" | "timezone" | "prompt" | "engine" | "model" | "enabled"
+      | "name"
+      | "cron"
+      | "timezone"
+      | "prompt"
+      | "engine"
+      | "model"
+      | "skillId"
+      | "skillVersion"
+      | "skillContentHash"
+      | "repos"
+      | "tags"
+      | "delivery"
+      | "notifications"
+      | "runActorId"
+      | "concurrency"
+      | "queue"
+      | "costLimits"
+      | "frequencyLimits"
+      | "approvalPolicy"
+      | "enablementPolicy"
+      | "enabled"
     >
   >,
 ): Promise<ApiSchedule | null> {

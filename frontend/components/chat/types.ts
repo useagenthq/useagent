@@ -129,9 +129,7 @@ export const CODEX_MODELS: { value: string; label: string; tint: string }[] = [
 
 export type ModelOption = { value: string; label: string; tint: string };
 
-export function selectableModelsForEngine(
-  engine: EngineId,
-): ModelOption[] {
+export function selectableModelsForEngine(engine: EngineId): ModelOption[] {
   const normalized = normalizeEngine(engine);
   if (normalized === "opencode") return MODELS;
   if (normalized === "codex") return CODEX_MODELS;
@@ -192,6 +190,43 @@ export function parseStepCode(step: ApiStep): unknown {
   }
 }
 
+const TRANSPORT_PLACEHOLDER_LABELS = new Set([
+  "dynamic tool call",
+  "mcp tool call",
+  "tool",
+  "tool started",
+  "tool updated",
+]);
+
+const TRANSPORT_TOOL_NAMES = new Set(["dynamic_tool_call", "mcp_tool_call", "tool", "unknown"]);
+
+/**
+ * Durable runs can contain provider transport receipts that are useful for raw
+ * event replay but not meaningful product timeline rows. Keep semantic tool
+ * calls, errors, and outputs; drop only empty T3 wrappers such as a bare
+ * "Mcp tool call" with no server/tool identity.
+ */
+export function isRenderableTimelineStep(step: ApiStep): boolean {
+  const code = asRecord(parseStepCode(step));
+  if (code?.source !== "t3") return true;
+  const activityKind = pickString(code, ["activityKind"]);
+  if (!activityKind?.startsWith("tool.")) return true;
+
+  const label = step.label.trim().toLowerCase();
+  if (!TRANSPORT_PLACEHOLDER_LABELS.has(label)) return true;
+
+  const tool = pickString(code, ["tool"])?.toLowerCase();
+  const server = pickString(code, ["server"]);
+  const output = pickString(code, ["output", "stdout"]);
+  const native = asRecord(code.native);
+  const activity = asRecord(native?.activity);
+  const itemType = pickString(activity, ["itemType"])?.toLowerCase();
+  const transportTool = tool ? TRANSPORT_TOOL_NAMES.has(tool) : false;
+  const transportItem = itemType === "dynamic_tool_call" || itemType === "mcp_tool_call";
+
+  return Boolean(server || output || (!transportTool && !transportItem));
+}
+
 export function basename(path: string): string {
   const clean = path.trim().replace(/[/\\]+$/, "");
   const parts = clean.split(/[/\\]/);
@@ -233,8 +268,7 @@ export function parseCommandStep(step: ApiStep): CommandStep {
       obj.input && typeof obj.input === "object" && !Array.isArray(obj.input)
         ? (obj.input as Record<string, unknown>)
         : null;
-    if (typeof obj.command === "string" && obj.command.trim())
-      command = obj.command;
+    if (typeof obj.command === "string" && obj.command.trim()) command = obj.command;
     else if (input && typeof input.command === "string" && input.command.trim())
       command = input.command;
     if (typeof obj.output === "string") output = obj.output;
@@ -424,15 +458,10 @@ const FILE_GLYPHS = new Set<TraceGlyph>(["read", "edit", "write", "list"]);
 /** Narrow an unknown JSON value to a plain object, or null. Shared with the
  *  subagent-attribution module (`./subagents`) for reading `code_json.native`. */
 export function asRecord(v: unknown): Record<string, unknown> | null {
-  return v && typeof v === "object" && !Array.isArray(v)
-    ? (v as Record<string, unknown>)
-    : null;
+  return v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : null;
 }
 
-function pickString(
-  obj: Record<string, unknown> | null,
-  keys: string[],
-): string | null {
+function pickString(obj: Record<string, unknown> | null, keys: string[]): string | null {
   if (!obj) return null;
   for (const key of keys) {
     const v = obj[key];
@@ -460,9 +489,7 @@ function countPatch(patch: string): { adds: number; dels: number } {
  * Single-line-for-single-line replacements are suppressed (they read as noise,
  * not a meaningful line delta). Returns null when nothing is derivable.
  */
-function diffStat(
-  input: Record<string, unknown> | null,
-): { adds: number; dels: number } | null {
+function diffStat(input: Record<string, unknown> | null): { adds: number; dels: number } | null {
   if (!input) return null;
 
   const edits = input.edits;
@@ -539,9 +566,7 @@ export function deriveTrace(step: ApiStep): StepTrace {
   if (step.chip === "subagent") {
     const prompt = pickString(input, ["prompt"]);
     const desc =
-      pickString(input, ["description"]) ??
-      prompt ??
-      label.replace(/^Subagent\s*—\s*/, "");
+      pickString(input, ["description"]) ?? prompt ?? label.replace(/^Subagent\s*—\s*/, "");
     return {
       ...base,
       verb: "Subagent",
@@ -604,7 +629,11 @@ export function deriveTrace(step: ApiStep): StepTrace {
     }
 
     // A tool that reads/searches a path (Read/Grep foo.ts) targets the file.
-    if (map && filePath && (map.glyph === "read" || map.glyph === "search" || map.glyph === "list")) {
+    if (
+      map &&
+      filePath &&
+      (map.glyph === "read" || map.glyph === "search" || map.glyph === "list")
+    ) {
       const fileBase = basename(filePath);
       return {
         ...base,
@@ -629,7 +658,14 @@ export function deriveTrace(step: ApiStep): StepTrace {
       const fileBase = filePath ? basename(filePath) : null;
       // Name-bearing inputs give the generic row a real target — a bare "Skill"
       // row (user-reported) becomes "Skill fast-installs".
-      const named = pickString(input, ["name", "skill", "skill_name", "id", "query", "description"]);
+      const named = pickString(input, [
+        "name",
+        "skill",
+        "skill_name",
+        "id",
+        "query",
+        "description",
+      ]);
       return {
         ...base,
         verb: humanizeTool(tool),
@@ -666,7 +702,11 @@ export function deriveTrace(step: ApiStep): StepTrace {
  * `mcp__server__` / dotted namespace, spacing out `_`/`-`, Title-case the head.
  * `mcp__github__create_issue` → "Create issue"; falls back to "Tool". */
 function humanizeTool(tool: string): string {
-  const leaf = tool.split(/__|[./]/).filter(Boolean).pop() ?? tool;
+  const leaf =
+    tool
+      .split(/__|[./]/)
+      .filter(Boolean)
+      .pop() ?? tool;
   const words = leaf.replace(/[_-]+/g, " ").trim();
   if (!words) return "Tool";
   return words.charAt(0).toUpperCase() + words.slice(1);
@@ -687,12 +727,7 @@ export interface TodoItem {
   status: TodoStatus;
 }
 
-const TODO_STATUS = new Set<TodoStatus>([
-  "pending",
-  "in_progress",
-  "completed",
-  "cancelled",
-]);
+const TODO_STATUS = new Set<TodoStatus>(["pending", "in_progress", "completed", "cancelled"]);
 
 function normalizeTodoStatus(value: unknown): TodoStatus {
   return typeof value === "string" && TODO_STATUS.has(value as TodoStatus)

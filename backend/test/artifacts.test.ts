@@ -1,12 +1,12 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
+import type { ArtifactDescriptor } from "../src/artifacts/repo";
+import { setArtifactStorageForTest } from "../src/artifacts/storage";
 import { executeArtifactTool } from "../src/knowledge/gateway/artifact-tools";
 import { createRun, setRunSandbox } from "../src/runs/repo";
 import { setSandboxDownloaderForTest } from "../src/slack/sandbox-file";
-import { setArtifactStorageForTest } from "../src/artifacts/storage";
 import { createOrgSession, fetchApi, json, type OrgSession } from "./helpers";
 import { InMemoryArtifactStorage } from "./in-memory-artifact-storage";
-import type { ArtifactDescriptor } from "../src/artifacts/repo";
 
 let sandboxBytes = new TextEncoder().encode("sandbox-to-browser\nexact bytes\n");
 const SOURCE_BYTES = sandboxBytes;
@@ -35,6 +35,7 @@ async function publish(
   session: OrgSession,
   runId: string,
   path: string,
+  args: Record<string, unknown> = {},
 ): Promise<{ artifact: ArtifactDescriptor; created: boolean }> {
   const result = await executeArtifactTool(
     {
@@ -45,12 +46,13 @@ async function publish(
       exp: Date.now() + 60_000,
     },
     "artifact_publish",
-    { path },
+    { path, ...args },
   );
   if (result.isError) throw new Error(result.content.map((item) => item.text).join("\n"));
   const artifact = result.structuredContent?.artifact as ArtifactDescriptor | undefined;
   const created = result.structuredContent?.created;
-  if (!artifact || typeof created !== "boolean") throw new Error("artifact tool returned no descriptor");
+  if (!artifact || typeof created !== "boolean")
+    throw new Error("artifact tool returned no descriptor");
   return { artifact, created };
 }
 
@@ -98,10 +100,13 @@ describe("durable artifacts", () => {
       );
       expect(results.filter((result) => result.status === "rejected")).toHaveLength(1);
       expect(fulfilled).toHaveLength(1);
-      expect(fulfilled[0]!.value.created).toBe(true);
+      const winner = fulfilled[0]?.value;
+      expect(winner).toBeDefined();
+      if (!winner) throw new Error("expected one successful artifact publication");
+      expect(winner.created).toBe(true);
       expect(flaky.attempts).toBe(2);
 
-      const content = await fetchApi(`/api/artifacts/${fulfilled[0]!.value.artifact.id}/content`, {
+      const content = await fetchApi(`/api/artifacts/${winner.artifact.id}/content`, {
         cookies: owner.cookies,
       });
       expect(content.status).toBe(200);
@@ -163,6 +168,47 @@ describe("durable artifacts", () => {
     expect(listed.body.artifacts.map((artifact) => artifact.id)).toContain(first.artifact.id);
   });
 
+  test("keeps private desktop inspection screenshots out of artifacts unless final proof is requested", async () => {
+    const runId = await createSandboxRun(owner);
+    const privatePath = "/root/work/screenshots/screenshot-1786558088313.png";
+
+    const blocked = await executeArtifactTool(
+      {
+        orgId: owner.orgId,
+        userId: owner.email,
+        threadId: runId,
+        runId,
+        exp: Date.now() + 60_000,
+      },
+      "artifact_publish",
+      { path: privatePath },
+    );
+    expect(blocked.isError).toBe(true);
+    expect(blocked.content[0]?.text).toContain("Private desktop inspection screenshots");
+
+    const daytonaBlocked = await executeArtifactTool(
+      {
+        orgId: owner.orgId,
+        userId: owner.email,
+        threadId: runId,
+        runId,
+        exp: Date.now() + 60_000,
+      },
+      "artifact_publish",
+      { path: "/home/daytona/work/screenshots/screenshot-1786558088313.png" },
+    );
+    expect(daytonaBlocked.isError).toBe(true);
+
+    const published = await publish(owner, runId, privatePath, {
+      purpose: "user_requested_proof",
+    });
+    expect(published.created).toBe(true);
+    expect(published.artifact.name).toBe("screenshot-1786558088313.png");
+
+    const normalScreenshot = await publish(owner, runId, "/root/work/output/final-screen.png");
+    expect(normalScreenshot.artifact.name).toBe("final-screen.png");
+  });
+
   test("fails closed across organizations and for missing sandbox ownership", async () => {
     const runId = await createSandboxRun(owner);
     const published = await publish(owner, runId, "safe.txt");
@@ -170,10 +216,9 @@ describe("durable artifacts", () => {
     const outsideMetadata = await fetchApi(`/api/artifacts/${published.artifact.id}`, {
       cookies: outsider.cookies,
     });
-    const outsideContent = await fetchApi(
-      `/api/artifacts/${published.artifact.id}/content`,
-      { cookies: outsider.cookies },
-    );
+    const outsideContent = await fetchApi(`/api/artifacts/${published.artifact.id}/content`, {
+      cookies: outsider.cookies,
+    });
     expect(outsideMetadata.status).toBe(404);
     expect(outsideContent.status).toBe(404);
 
@@ -329,21 +374,17 @@ describe("durable artifacts", () => {
         runId,
         exp: Date.now() + 60_000,
       };
-      const initialDoc = await executeArtifactTool(
-        claims,
-        "artifact_publish",
-        { path: "/root/work/brief.docx" },
-      );
-      const doc = await executeArtifactTool(
-        claims,
-        "artifact_publish",
-        { path: "/root/work/brief.docx", editable_path: "/root/work/brief.html" },
-      );
-      const sheet = await executeArtifactTool(
-        claims,
-        "artifact_publish",
-        { path: "/root/work/metrics.xlsx", editable_path: "/root/work/metrics.csv" },
-      );
+      const initialDoc = await executeArtifactTool(claims, "artifact_publish", {
+        path: "/root/work/brief.docx",
+      });
+      const doc = await executeArtifactTool(claims, "artifact_publish", {
+        path: "/root/work/brief.docx",
+        editable_path: "/root/work/brief.html",
+      });
+      const sheet = await executeArtifactTool(claims, "artifact_publish", {
+        path: "/root/work/metrics.xlsx",
+        editable_path: "/root/work/metrics.csv",
+      });
       expect(initialDoc.isError).toBeFalsy();
       expect(doc.isError).toBeFalsy();
       expect(sheet.isError).toBeFalsy();
@@ -364,14 +405,10 @@ describe("durable artifacts", () => {
       expect(docState.body.state).toEqual({ html: new TextDecoder().decode(html) });
       expect(sheetState.body.state).toEqual({ csv: new TextDecoder().decode(csv) });
 
-      const conflictingDoc = await executeArtifactTool(
-        claims,
-        "artifact_publish",
-        {
-          path: "/root/work/brief.docx",
-          editable_path: "/root/work/alternate.html",
-        },
-      );
+      const conflictingDoc = await executeArtifactTool(claims, "artifact_publish", {
+        path: "/root/work/brief.docx",
+        editable_path: "/root/work/alternate.html",
+      });
       expect(conflictingDoc.isError).toBe(true);
       expect(conflictingDoc.content[0]?.text).toContain("editable companion conflicts");
     } finally {

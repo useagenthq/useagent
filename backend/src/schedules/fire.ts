@@ -57,14 +57,12 @@ export async function fireSchedule(
       engine: schedule.engine,
       parentRunId: null,
       threadId: runId,
-      repos: [],
+      repos: schedule.repos,
       // Scheduled runs are always fresh roots — organization memory by default.
       memoryScope: "org",
-      // Schedules don't pin a skill yet (mem_op 0.4 leaves it optional); a future
-      // slice can thread schedule.skillId/version through here.
-      skillId: null,
-      skillVersion: null,
-      skillContentHash: null,
+      skillId: schedule.skillId,
+      skillVersion: schedule.skillVersion,
+      skillContentHash: schedule.skillContentHash,
       // A scheduled turn is never a native provider command.
       commandName: null,
       commandProvider: null,

@@ -3,7 +3,7 @@ import { db } from "../db/client";
 import { commands, runs, type RunStatus } from "../db/schema";
 import { isUniqueViolation } from "../db/pg-errors";
 import { completeRun } from "../runs/repo";
-import { publishThreadChange } from "../runs/thread-signals";
+import { publishRunLifecycleChange } from "../runs/org-signals";
 import { RUN_CANCEL, RUN_CREATE } from "./repo";
 
 // ---------------------------------------------------------------------------
@@ -107,7 +107,12 @@ export async function acceptRunCancel(input: {
     // worker step, so wake the thread stream to re-project it. A RUNNING cancel is
     // finalized by the actor's teardown, which signals `settled` itself.
     if (queuedCancelledThreadId) {
-      publishThreadChange(queuedCancelledThreadId, { runId: input.runId, kind: "cancelled" });
+      publishRunLifecycleChange({
+        orgId: input.orgId,
+        threadId: queuedCancelledThreadId,
+        runId: input.runId,
+        kind: "cancelled",
+      });
     }
     return outcome;
   } catch (err) {

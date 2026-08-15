@@ -1,7 +1,13 @@
 import type { ToolCallResult } from "./tools";
+import { errorResult, textResult } from "./tool-results";
 import { mintToolToken, type ToolTokenClaims } from "./token";
+import {
+  AUTOMATION_CONTRACT,
+  AUTOMATION_TOOL_NAMES,
+  AUTOMATION_TOOLS,
+} from "./automation-tool-catalog";
 import { getRunForOrg } from "../../runs/repo";
-import { getScheduleForOrg, listFirings, listSchedules } from "../../schedules/repo";
+import { getScheduleForOrg, listFirings, listSchedules, type ApiSchedule, type ScheduleRecord } from "../../schedules/repo";
 import {
   createScheduleForOrg,
   deleteScheduleForOrg,
@@ -9,117 +15,52 @@ import {
   updateScheduleForOrg,
 } from "../../schedules/service";
 
-export const AUTOMATION_TOOLS = [
-  {
-    name: "automation_list",
-    description:
-      "List this organization's Skynet scheduled automations. Use this for user requests about existing automations or recurring tasks. Identity is taken only from the gateway token.",
-    inputSchema: {
-      type: "object",
-      properties: {},
-      additionalProperties: false,
-    },
-  },
-  {
-    name: "automation_create",
-    description:
-      "Create a Skynet scheduled automation in this organization. New automations are always created disabled and never auto-run until automation_update enables them. Engine and model default to the current run when omitted. Use this for workspace recurring-task requests.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        name: { type: "string", description: "Human-readable automation name." },
-        cron: { type: "string", description: "Five-field cron expression." },
-        timezone: { type: "string", description: "Optional IANA timezone, for example Asia/Kolkata." },
-        prompt: { type: "string", description: "Prompt to run when the automation fires." },
-        engine: { type: "string", description: "Optional Skynet engine id." },
-        model: { type: "string", description: "Optional model id allowed for the selected engine." },
-      },
-      required: ["name", "cron", "prompt"],
-      additionalProperties: false,
-    },
-  },
-  {
-    name: "automation_update",
-    description:
-      "Update one existing Skynet automation in this organization. To set enabled=true, the user must have explicitly asked to enable or activate the automation and confirmEnable must be true.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        id: { type: "string", description: "Automation id returned by automation_list/create." },
-        name: { type: "string" },
-        cron: { type: "string" },
-        timezone: { type: ["string", "null"], description: "IANA timezone, or null/empty string to clear." },
-        prompt: { type: "string" },
-        engine: { type: "string" },
-        model: { type: "string" },
-        enabled: { type: "boolean" },
-        confirmEnable: {
-          type: "boolean",
-          description: "Required true only when enabling after an explicit user request.",
-        },
-      },
-      required: ["id"],
-      additionalProperties: false,
-    },
-  },
-  {
-    name: "automation_run_now",
-    description:
-      "Manually run one existing Skynet automation now. This creates a durable run and records a manual firing in the automation history.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        id: { type: "string", description: "Automation id returned by automation_list/create." },
-      },
-      required: ["id"],
-      additionalProperties: false,
-    },
-  },
-  {
-    name: "automation_history",
-    description:
-      "Read firing history for one Skynet automation in this organization, including linked run status.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        id: { type: "string", description: "Automation id returned by automation_list/create." },
-      },
-      required: ["id"],
-      additionalProperties: false,
-    },
-  },
-  {
-    name: "automation_delete",
-    description:
-      "Delete one Skynet automation in this organization and its firing projection rows. Use for cleanup of test or obsolete automations.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        id: { type: "string", description: "Automation id returned by automation_list/create." },
-      },
-      required: ["id"],
-      additionalProperties: false,
-    },
-  },
-] as const;
-
-export const AUTOMATION_TOOL_NAMES: ReadonlySet<string> = new Set(
-  AUTOMATION_TOOLS.map((tool) => tool.name),
-);
-
-function textResult(text: string, structuredContent?: Record<string, unknown>): ToolCallResult {
-  return { content: [{ type: "text", text }], structuredContent };
-}
-
-function errorResult(text: string, structuredContent?: Record<string, unknown>): ToolCallResult {
-  return { content: [{ type: "text", text }], structuredContent, isError: true };
-}
+export { AUTOMATION_TOOL_NAMES, AUTOMATION_TOOLS };
 
 function serviceError(error: ScheduleServiceError): ToolCallResult {
   return errorResult(String(error.body.error ?? error.message), {
     status: error.status,
     error: error.body,
   });
+}
+
+function promptPreview(prompt: string): string {
+  return prompt.length <= 160 ? prompt : `${prompt.slice(0, 157)}...`;
+}
+
+function automationSummary(schedule: ApiSchedule | ScheduleRecord): Record<string, unknown> {
+  const api = "org_id" in schedule;
+  return {
+    id: schedule.id,
+    org_id: api ? schedule.org_id : schedule.orgId,
+    user_id: api ? schedule.user_id : schedule.userId,
+    name: schedule.name,
+    cron: schedule.cron,
+    timezone: schedule.timezone,
+    prompt_preview: promptPreview(schedule.prompt),
+    engine: schedule.engine,
+    model: schedule.model,
+    skill_id: api ? schedule.skill_id : schedule.skillId,
+    skill_version: api ? schedule.skill_version : schedule.skillVersion,
+    skill_content_hash: api ? schedule.skill_content_hash : schedule.skillContentHash,
+    repos: schedule.repos,
+    tags: schedule.tags,
+    delivery: schedule.delivery,
+    notifications: schedule.notifications,
+    run_actor_id: api ? schedule.run_actor_id : schedule.runActorId,
+    concurrency: schedule.concurrency,
+    queue: schedule.queue,
+    cost_limits: api ? schedule.cost_limits : schedule.costLimits,
+    frequency_limits: api ? schedule.frequency_limits : schedule.frequencyLimits,
+    approval_policy: api ? schedule.approval_policy : schedule.approvalPolicy,
+    enablement_policy: api ? schedule.enablement_policy : schedule.enablementPolicy,
+    enabled: schedule.enabled,
+    last_fired_at: api
+      ? schedule.last_fired_at
+      : schedule.lastFiredAt?.toISOString() ?? null,
+    created_at: api ? schedule.created_at : schedule.createdAt.toISOString(),
+    updated_at: api ? schedule.updated_at : schedule.updatedAt.toISOString(),
+  };
 }
 
 function scheduleId(args: Record<string, unknown>): string | null {
@@ -148,7 +89,7 @@ async function createAutomation(
     );
     return textResult(
       `Created disabled automation ${schedule.name} (${schedule.id}). It will not run until enabled.`,
-      { automation: schedule },
+      { automation: automationSummary(schedule) },
     );
   } catch (error) {
     if (error instanceof ScheduleServiceError) return serviceError(error);
@@ -171,12 +112,25 @@ async function updateAutomation(
   try {
     const schedule = await updateScheduleForOrg(claims.orgId, id, patch);
     return textResult(`Updated automation ${schedule.name} (${schedule.id}).`, {
-      automation: schedule,
+      automation: automationSummary(schedule),
     });
   } catch (error) {
     if (error instanceof ScheduleServiceError) return serviceError(error);
     throw error;
   }
+}
+
+async function getAutomation(
+  claims: ToolTokenClaims,
+  args: Record<string, unknown>,
+): Promise<ToolCallResult> {
+  const id = scheduleId(args);
+  if (!id) return errorResult("automation_get requires an automation id.");
+  const schedule = await getScheduleForOrg(claims.orgId, id);
+  if (!schedule) return errorResult("schedule not found", { status: 404 });
+  return textResult(`Automation ${schedule.name} (${schedule.id}).`, {
+    automation: automationSummary(schedule),
+  });
 }
 
 async function runAutomationNow(
@@ -241,9 +195,13 @@ export async function executeAutomationToolLocal(
       automations.length === 0
         ? "No scheduled automations exist in this organization."
         : automations.map((item) => `${item.id} ${item.enabled ? "enabled" : "disabled"} ${item.cron} ${item.name}`).join("\n"),
-      { automations },
+      { automations: automations.map(automationSummary) },
     );
   }
+  if (name === "automation_schema") {
+    return textResult("Skynet automation contract r10.", { schema: AUTOMATION_CONTRACT });
+  }
+  if (name === "automation_get") return getAutomation(claims, args);
   if (name === "automation_create") return createAutomation(claims, args);
   if (name === "automation_update") return updateAutomation(claims, args);
   if (name === "automation_run_now") return runAutomationNow(claims, args);

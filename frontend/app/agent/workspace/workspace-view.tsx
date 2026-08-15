@@ -1,8 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { backendFetch } from "@/lib/backend-fetch";
 import { BackendUnreachable } from "@/components/shared/backend-unreachable";
+import { useOrgChanges } from "@/hooks/use-org-changes";
+import { backendFetch } from "@/lib/backend-fetch";
 import { extractFleet, type FleetData } from "./fleet-data";
 import { Fleet } from "./fleet";
 import { LimitsRow } from "./limits-row";
@@ -18,7 +19,8 @@ const POLL_MS = 15_000;
 
 /**
  * Fleet overview. Server-rendered from an initial GET /api/runs snapshot, then
- * refreshed client-side every 15s. Every figure is derived from live data: the
+ * refreshed from the org invalidation stream with a low-frequency recovery
+ * poll. Every figure is derived from live data: the
  * banner/lane math from GET /api/runs, and the Limits card (per-model token/cost
  * burn + Daytona footprint) from GET /api/fleet.
  */
@@ -60,6 +62,10 @@ export function WorkspaceView({
       // Transient failure — keep the last good snapshot.
     }
   }, []);
+
+  useOrgChanges((change) => {
+    if (change.type === "run") void load();
+  });
 
   useEffect(() => {
     const ctrl = new AbortController();

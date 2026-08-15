@@ -12,6 +12,7 @@ import { db } from "../db/client";
 import { sql } from "drizzle-orm";
 import { artifactStorage } from "./storage";
 import { getRunForOrg } from "../runs/repo";
+import { publishOrgChange } from "../runs/org-signals";
 import { recordProviderEvent } from "../runs/provider-events";
 import { downloadSandboxFile } from "../slack/sandbox-file";
 import {
@@ -125,6 +126,15 @@ export async function publishSandboxArtifact(input: {
     },
     { critical: true },
   );
+  if (stored.created) {
+    publishOrgChange(input.orgId, {
+      type: "artifact",
+      action: "created",
+      artifactId: stored.row.id,
+      runId: run.id,
+      threadId: run.threadId,
+    });
+  }
   return { artifact: descriptor, record: stored.row, created: stored.created };
 }
 

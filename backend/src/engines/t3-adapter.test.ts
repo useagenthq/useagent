@@ -65,6 +65,22 @@ describe("T3 run adapter gate", () => {
     ).toBe("candidate");
   });
 
+  test("inherits the configured Daytona snapshot unless a T3 override is present", () => {
+    expect(
+      t3RunSnapshot({
+        SANDBOX_PROVIDER: "daytona",
+        DAYTONA_SNAPSHOT: "production-daytona",
+      }),
+    ).toBe("production-daytona");
+    expect(
+      t3RunSnapshot({
+        SANDBOX_PROVIDER: "daytona",
+        DAYTONA_SNAPSHOT: "production-daytona",
+        T3_DAYTONA_SNAPSHOT: "candidate-daytona",
+      }),
+    ).toBe("candidate-daytona");
+  });
+
   test("matches T3's autonomous default and validates explicit runtime modes", () => {
     expect(t3RuntimeMode({})).toBe("full-access");
     expect(t3RuntimeMode({ T3_RUNTIME_MODE: "approval-required" })).toBe("approval-required");

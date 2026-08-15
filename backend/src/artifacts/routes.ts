@@ -11,6 +11,7 @@ import {
 } from "./repo";
 import { artifactStorage, type ArtifactByteRange } from "./storage";
 import { parseWorkpieceState } from "./workpiece";
+import { publishOrgChange } from "../runs/org-signals";
 
 function disposition(name: string, inline: boolean): string {
   const fallback = name.replace(/[^\x20-\x7e]/g, "_").replace(/["\\]/g, "_");
@@ -127,7 +128,16 @@ artifactRoutes.patch("/:id/workpiece", async (c) => {
     expectedRevision: Number(expectedRevision),
     state,
   });
-  if (updated) return c.json(workpieceResponse(updated));
+  if (updated) {
+    publishOrgChange(c.get("orgId"), {
+      type: "artifact",
+      action: "updated",
+      artifactId: updated.id,
+      runId: updated.runId,
+      threadId: updated.threadId,
+    });
+    return c.json(workpieceResponse(updated));
+  }
 
   const current = await getArtifactForOrg(c.get("orgId"), artifact.id);
   return current?.workpieceKind

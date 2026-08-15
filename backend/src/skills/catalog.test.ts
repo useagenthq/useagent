@@ -14,6 +14,7 @@ import {
   formatSkillCatalogPage,
   formatSkillCatalogPrefill,
   frameSkillCatalogContext,
+  shouldPrefillSkillCatalog,
 } from "./catalog";
 import type { SkillCatalogEntry } from "./repo";
 
@@ -27,6 +28,50 @@ const entry = (over: Partial<SkillCatalogEntry> = {}): SkillCatalogEntry => ({
 });
 
 describe("skill catalog formatter", () => {
+  test("prefills only an unpinned ordinary turn starting a fresh native session", () => {
+    expect(
+      shouldPrefillSkillCatalog({
+        hasPinnedSkill: false,
+        commandName: null,
+        orgId: "org-1",
+        engineSessionId: undefined,
+      }),
+    ).toBe(true);
+
+    expect(
+      shouldPrefillSkillCatalog({
+        hasPinnedSkill: false,
+        commandName: null,
+        orgId: "org-1",
+        engineSessionId: "native-session-1",
+      }),
+    ).toBe(false);
+    expect(
+      shouldPrefillSkillCatalog({
+        hasPinnedSkill: true,
+        commandName: null,
+        orgId: "org-1",
+        engineSessionId: undefined,
+      }),
+    ).toBe(false);
+    expect(
+      shouldPrefillSkillCatalog({
+        hasPinnedSkill: false,
+        commandName: "review",
+        orgId: "org-1",
+        engineSessionId: undefined,
+      }),
+    ).toBe(false);
+    expect(
+      shouldPrefillSkillCatalog({
+        hasPinnedSkill: false,
+        commandName: null,
+        orgId: null,
+        engineSessionId: undefined,
+      }),
+    ).toBe(false);
+  });
+
   test("formats the first page with bounded metadata only", () => {
     const page = formatSkillCatalogPage([
       entry({

@@ -10,6 +10,7 @@ import { backendFetch } from '@/lib/backend-fetch';
 import { AppShell } from '@/components/shell/app-shell';
 import { ChatSidebar } from '@/components/shell/chat-sidebar';
 import { ContributionsCard } from '@/components/dashboard/contributions-card';
+import { DashboardLiveRefresh } from '@/components/dashboard/dashboard-live-refresh';
 import {
   buildHeatmap,
   computeStats,
@@ -97,6 +98,7 @@ export default async function DashboardPage() {
 
   return (
     <AppShell activeTab='chat' sidebar={<ChatSidebar />}>
+      <DashboardLiveRefresh />
       <div className='mx-auto flex max-w-[1200px] flex-col gap-6 p-6 lg:p-8'>
         <WelcomeHeader liveCount={stats.running} />
         <StatCards stats={statItems} />
