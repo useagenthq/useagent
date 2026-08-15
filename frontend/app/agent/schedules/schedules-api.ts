@@ -20,6 +20,7 @@ export async function fetchSchedules(): Promise<ScheduleRecord[]> {
 export interface CreateScheduleInput {
   name: string;
   cron: string;
+  timezone?: string | null;
   prompt: string;
   engine: string;
 }
@@ -62,6 +63,13 @@ export async function runScheduleNow(id: string): Promise<string> {
   if (!res.ok) throw new Error(`run-now ${res.status}`);
   const data = (await res.json()) as { run_id: string };
   return data.run_id;
+}
+
+export async function deleteSchedule(id: string): Promise<void> {
+  const res = await backendFetch(`/api/schedules/${id}`, {
+    method: "DELETE",
+  });
+  if (!res.ok) throw new Error(`delete schedule ${res.status}`);
 }
 
 export async function fetchHistory(id: string): Promise<FiringRecord[]> {

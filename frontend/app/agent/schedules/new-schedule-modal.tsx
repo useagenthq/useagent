@@ -1,104 +1,112 @@
 "use client";
 
-import { RiErrorWarningLine } from "@remixicon/react";
-import { useState } from "react";
+import { RiCalendarScheduleLine, RiErrorWarningLine, RiTimeZoneLine } from "@remixicon/react";
+import { useEffect, useState } from "react";
 import * as Button from "@/components/ui/button";
 import * as Hint from "@/components/ui/hint";
 import * as Input from "@/components/ui/input";
 import * as Modal from "@/components/ui/modal";
 import * as Select from "@/components/ui/select";
 import * as Textarea from "@/components/ui/textarea";
+import { cnExt } from "@/utils/cn";
 import type { CreateScheduleInput } from "./schedules-api";
-import { engineLabel, SCHEDULE_ENGINES } from "./schedules-data";
+import {
+  cadenceLabel,
+  engineLabel,
+  SCHEDULE_ENGINES,
+  type ScheduleRecord,
+} from "./schedules-data";
 
-/**
- * "New schedule" modal — a real create form (name / cron / prompt / engine),
- * wired to `POST /api/schedules`. New schedules are created DISABLED (reference bot's
- * safety default) so nothing auto-fires until it's toggled on in the list.
- *
- * `onCreate` performs the network call and rejects on failure; the modal stays
- * open and surfaces the backend error (e.g. an invalid cron expression).
- */
+const CADENCE_PRESETS = [
+  { label: "Every hour", cron: "0 * * * *" },
+  { label: "Daily", cron: "0 9 * * *" },
+  { label: "Weekdays", cron: "0 9 * * 1-5" },
+  { label: "Weekly", cron: "0 9 * * 1" },
+] as const;
 
-const DEFAULT_CRON = "0 9 * * 1"; // Mondays 09:00
+function localZone(): string {
+  return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+}
 
-/** Loose client check — the backend does the authoritative 5-field validation. */
 function looksLikeCron(value: string): boolean {
   return value.trim().split(/\s+/).length === 5;
 }
 
-export function NewScheduleModal({
+export function AutomationEditorModal({
   open,
+  schedule,
   onClose,
-  onCreate,
+  onSave,
 }: {
   open: boolean;
+  schedule: ScheduleRecord | null;
   onClose: () => void;
-  onCreate: (input: CreateScheduleInput) => Promise<void>;
+  onSave: (input: CreateScheduleInput) => Promise<void>;
 }) {
   const [name, setName] = useState("");
-  const [cron, setCron] = useState(DEFAULT_CRON);
   const [prompt, setPrompt] = useState("");
+  const [cron, setCron] = useState<string>(CADENCE_PRESETS[2].cron);
+  const [timezone, setTimezone] = useState(localZone);
   const [engine, setEngine] = useState<string>(SCHEDULE_ENGINES[0]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const cronValid = looksLikeCron(cron);
-  const canSubmit =
-    name.trim().length > 0 && prompt.trim().length > 0 && cronValid && !busy;
-
-  const reset = () => {
-    setName("");
-    setCron(DEFAULT_CRON);
-    setPrompt("");
-    setEngine(SCHEDULE_ENGINES[0]);
-    setError(null);
+  useEffect(() => {
+    if (!open) return;
+    setName(schedule?.name ?? "");
+    setPrompt(schedule?.prompt ?? "");
+    setCron(schedule?.cron ?? CADENCE_PRESETS[2].cron);
+    setTimezone(schedule?.timezone ?? localZone());
+    setEngine(schedule?.engine ?? SCHEDULE_ENGINES[0]);
     setBusy(false);
-  };
+    setError(null);
+  }, [open, schedule]);
+
+  const cronValid = looksLikeCron(cron);
+  const canSubmit = Boolean(name.trim() && prompt.trim() && timezone.trim() && cronValid && !busy);
 
   const submit = async () => {
     if (!canSubmit) return;
     setBusy(true);
     setError(null);
     try {
-      await onCreate({
+      await onSave({
         name: name.trim(),
-        cron: cron.trim(),
         prompt: prompt.trim(),
+        cron: cron.trim(),
+        timezone: timezone.trim(),
         engine,
       });
-      reset();
       onClose();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to create automation");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Couldn’t save automation");
       setBusy(false);
     }
   };
 
   return (
-    <Modal.Root
-      open={open}
-      onOpenChange={(next) => {
-        if (!next) {
-          reset();
-          onClose();
-        }
-      }}
-    >
-      <Modal.Content className="max-w-[520px]">
+    <Modal.Root open={open} onOpenChange={(next) => !next && onClose()}>
+      <Modal.Content className="max-w-[620px]">
         <Modal.Header
-          title="New automation"
-          description="Describe the work and the cron cadence Skynet should start it on. Created off - enable it from the list."
+          icon={RiCalendarScheduleLine}
+          title={schedule ? "Edit automation" : "Create automation"}
+          description={
+            schedule
+              ? "Update its instructions, agent, or cadence."
+              : "Define recurring work. New automations start paused so you can review them first."
+          }
         />
 
-        <Modal.Body className="flex flex-col gap-4">
-          <div className="flex w-full flex-col gap-1">
-            <span className="text-label-sm text-text-strong-950">Name</span>
+        <Modal.Body className="flex max-h-[70vh] flex-col gap-5 overflow-y-auto">
+          <div className="flex flex-col gap-1.5">
+            <label htmlFor="automation-name" className="text-label-sm text-text-strong-950">
+              What should run?
+            </label>
             <Input.Root>
               <Input.Wrapper>
                 <Input.Input
-                  aria-label="Name"
-                  placeholder="e.g. Nightly dependency audit"
+                  id="automation-name"
+                  placeholder="Weekly dependency review"
                   value={name}
                   onChange={(event) => setName(event.target.value)}
                 />
@@ -106,51 +114,95 @@ export function NewScheduleModal({
             </Input.Root>
           </div>
 
-          <div className="flex w-full flex-col gap-1">
-            <span className="text-label-sm text-text-strong-950">Cron</span>
-            <Input.Root hasError={!cronValid && cron.trim().length > 0}>
-              <Input.Wrapper>
-                <Input.Input
-                  aria-label="Cron expression"
-                  className="font-mono"
-                  placeholder="0 9 * * 1"
-                  value={cron}
-                  onChange={(event) => setCron(event.target.value)}
-                  spellCheck={false}
-                  autoCapitalize="off"
-                  autoCorrect="off"
-                />
-              </Input.Wrapper>
-            </Input.Root>
-            <Hint.Root hasError={!cronValid && cron.trim().length > 0}>
-              5 fields: minute hour day month weekday - e.g. “0 9 * * 1” is
-              Mondays 09:00.
-            </Hint.Root>
-          </div>
-
-          <div className="flex w-full flex-col gap-1">
-            <span className="text-label-sm text-text-strong-950">Prompt</span>
+          <div className="flex flex-col gap-1.5">
+            <label htmlFor="automation-instructions" className="text-label-sm text-text-strong-950">
+              Instructions
+            </label>
             <Textarea.Root
+              id="automation-instructions"
               simple
-              aria-label="Prompt"
-              rows={3}
-              placeholder="e.g. Audit dependencies for CVEs and open a PR with safe bumps"
+              rows={5}
+              placeholder="Review dependency updates, run the relevant checks, and prepare a focused patch when an update is safe."
               value={prompt}
               onChange={(event) => setPrompt(event.target.value)}
             />
+            <Hint.Root>Include the repository, expected output, and success criteria.</Hint.Root>
           </div>
 
-          <div className="flex w-full flex-col gap-1">
-            <span className="text-label-sm text-text-strong-950">Engine</span>
+          <fieldset className="flex flex-col gap-2">
+            <legend className="text-label-sm text-text-strong-950">Cadence</legend>
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+              {CADENCE_PRESETS.map((preset) => (
+                <button
+                  key={preset.cron}
+                  type="button"
+                  onClick={() => setCron(preset.cron)}
+                  className={cnExt(
+                    "rounded-xl border px-3 py-2.5 text-left outline-none transition-colors focus-visible:ring-2 focus-visible:ring-stroke-strong-950",
+                    cron === preset.cron
+                      ? "border-stroke-strong-950 bg-bg-strong-950 text-text-white-0"
+                      : "border-stroke-soft-200 bg-bg-white-0 text-text-sub-600 hover:bg-bg-weak-50",
+                  )}
+                >
+                  <span className="block text-label-sm">{preset.label}</span>
+                  <span className="mt-0.5 block font-mono text-label-xs opacity-70">{preset.cron}</span>
+                </button>
+              ))}
+            </div>
+          </fieldset>
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="flex flex-col gap-1.5">
+              <label htmlFor="automation-cron" className="text-label-sm text-text-strong-950">
+                Cron expression
+              </label>
+              <Input.Root hasError={!cronValid && cron.trim().length > 0}>
+                <Input.Wrapper>
+                  <Input.Input
+                    id="automation-cron"
+                    className="font-mono"
+                    value={cron}
+                    onChange={(event) => setCron(event.target.value)}
+                    spellCheck={false}
+                  />
+                </Input.Wrapper>
+              </Input.Root>
+              <Hint.Root hasError={!cronValid && cron.trim().length > 0}>
+                {cronValid ? cadenceLabel(cron) : "Use five cron fields."}
+              </Hint.Root>
+            </div>
+
+            <div className="flex flex-col gap-1.5">
+              <label htmlFor="automation-timezone" className="text-label-sm text-text-strong-950">
+                Timezone
+              </label>
+              <Input.Root>
+                <Input.Wrapper>
+                  <Input.Icon as={RiTimeZoneLine} />
+                  <Input.Input
+                    id="automation-timezone"
+                    placeholder="Asia/Kolkata"
+                    value={timezone}
+                    onChange={(event) => setTimezone(event.target.value)}
+                    spellCheck={false}
+                  />
+                </Input.Wrapper>
+              </Input.Root>
+              <Hint.Root>Use an IANA timezone such as Europe/London.</Hint.Root>
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <label htmlFor="automation-engine" className="text-label-sm text-text-strong-950">
+              Agent
+            </label>
             <Select.Root value={engine} onValueChange={setEngine}>
-              <Select.Trigger aria-label="Engine">
-                <Select.Value placeholder="Select an engine" />
+              <Select.Trigger id="automation-engine">
+                <Select.Value />
               </Select.Trigger>
               <Select.Content>
                 {SCHEDULE_ENGINES.map((id) => (
-                  <Select.Item key={id} value={id}>
-                    {engineLabel(id)}
-                  </Select.Item>
+                  <Select.Item key={id} value={id}>{engineLabel(id)}</Select.Item>
                 ))}
               </Select.Content>
             </Select.Root>
@@ -165,25 +217,23 @@ export function NewScheduleModal({
         </Modal.Body>
 
         <Modal.Footer>
-          <Button.Root
-            className="rounded-full"
-            variant="neutral"
-            mode="stroke"
-            size="small"
-            onClick={onClose}
-          >
-            Cancel
-          </Button.Root>
-          <Button.Root
-            className="rounded-full"
-            variant="neutral"
-            mode="filled"
-            size="small"
-            onClick={submit}
-            disabled={!canSubmit}
-          >
-            {busy ? "Creating…" : "Create"}
-          </Button.Root>
+          <p className="hidden text-paragraph-xs text-text-soft-400 sm:block">
+            {schedule ? "Changes apply to the next run." : "Created in paused state."}
+          </p>
+          <div className="ml-auto flex gap-2">
+            <Button.Root variant="neutral" mode="stroke" size="small" onClick={onClose}>
+              Cancel
+            </Button.Root>
+            <Button.Root
+              variant="neutral"
+              mode="filled"
+              size="small"
+              onClick={() => void submit()}
+              disabled={!canSubmit}
+            >
+              {busy ? "Saving…" : schedule ? "Save changes" : "Create automation"}
+            </Button.Root>
+          </div>
         </Modal.Footer>
       </Modal.Content>
     </Modal.Root>
