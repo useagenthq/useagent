@@ -9,16 +9,14 @@ import {
   RiStopFill,
   RiToolsLine,
 } from "@remixicon/react";
+import { AnimatePresence, MotionConfig, motion } from "motion/react";
 import { useRef, useState } from "react";
-import {
-  type Agent,
-  AgentChip,
-  ChooseAgentPopover,
-} from "@/components/chat/agent-command";
+import { type Agent, AgentChip, ChooseAgentPopover } from "@/components/chat/agent-command";
 import type { CommandCatalogState } from "@/components/chat/canonical-timeline";
 import { ChatModelMenu, type ChatModelOption } from "@/components/chat/chat-model-menu";
 import { ModelPicker } from "@/components/chat/engine-picker";
 import { MemoryScopePicker } from "@/components/chat/memory-scope-picker";
+import { RunUploadChips, useRunUploads } from "@/components/chat/run-uploads";
 import {
   type CommandPickerStatus,
   commandOptionId,
@@ -30,14 +28,29 @@ import {
 } from "@/components/chat/slash-command";
 import type { EngineId, MemoryScope } from "@/components/chat/types";
 import { Loader } from "@/components/prompt-kit/loader";
-import {
-  PromptInput,
-  PromptInputTextarea,
-} from "@/components/prompt-kit/prompt-input";
+import { PromptInput, PromptInputTextarea } from "@/components/prompt-kit/prompt-input";
 import { cnExt as cn } from "@/utils/cn";
-import { RunUploadChips, useRunUploads } from "@/components/chat/run-uploads";
 
 type Variant = "hero" | "compact";
+
+type ComposerAction =
+  | { kind: "send"; label: "Send" }
+  | { kind: "steer"; label: "Steer" }
+  | { kind: "stop"; label: "Stop this run" };
+
+export function getComposerAction({
+  running,
+  hasDraft,
+  canStop,
+}: {
+  running: boolean;
+  hasDraft: boolean;
+  canStop: boolean;
+}): ComposerAction {
+  if (running && hasDraft) return { kind: "steer", label: "Steer" };
+  if (running && canStop) return { kind: "stop", label: "Stop this run" };
+  return { kind: "send", label: "Send" };
+}
 
 /**
  * Submit a composed prompt. `idempotencyKey` is a stable per-submission id the
@@ -104,9 +117,8 @@ export type ComposerProps = {
   /** Allow tenant-scoped files to be uploaded and attached to this sandbox turn. */
   enableUploads?: boolean;
   onSubmit: ComposerSubmit;
-  /** A turn is running in this thread - the send button becomes a Stop control
-   *  while the input is empty (ChatGPT/opencode pattern); typing turns it back
-   *  into Send so a reply can still be queued. */
+  /** A turn is running in this thread - an empty input exposes Stop, while a
+   *  non-empty draft exposes a labelled Steer action for the queued reply. */
   running?: boolean;
   stopping?: boolean;
   /** Visible failure from the durable cancel request; the Stop control remains retryable. */
@@ -183,10 +195,16 @@ export function Composer({
   const showAgentPopover = slashActive || toolsOpen;
   const busy = pending || submitting;
   const blocked = busy || locked || runUploads.blocked;
-  const canSend = value.trim().length > 0 && !blocked;
-  // Circular blue send button - reads correctly on BOTH the dark (#20201f) and the
-  // light composer surface, so it theme-follows instead of forcing a static color.
-  const sendToneClass = "bg-blue-500 text-white hover:bg-blue-600";
+  const hasDraft = value.trim().length > 0;
+  const canSend = hasDraft && !blocked;
+  const composerAction = getComposerAction({
+    running,
+    hasDraft,
+    canStop: Boolean(onStop),
+  });
+  const actionBusy = composerAction.kind === "stop" ? stopping : busy;
+  const actionDisabled = composerAction.kind === "stop" ? stopping : !canSend;
+  const actionLabel = composerAction.kind === "steer" ? "Steer this run" : composerAction.label;
 
   // Slash-command autocomplete: live while the FIRST token is being typed
   // ("/rev" but not "/review changes"). A trailing space ends completion.
@@ -194,12 +212,19 @@ export function Composer({
   // its READY catalog is the source of options, and its status drives the loading/unavailable/
   // error rows so the picker is always truthful instead of "just nothing".
   const catalogStatus: CommandPickerStatus = commandState?.status ?? "ready";
-  const catalogSource = commandState?.status === "unavailable" || commandState?.status === "ready" ? commandState.source : undefined;
+  const catalogSource =
+    commandState?.status === "unavailable" || commandState?.status === "ready"
+      ? commandState.source
+      : undefined;
   const catalogCommands: SlashCommand[] = commandState
     ? commandState.status === "ready"
-      ? commandState.commands.map((c) => ({ name: c.name, description: c.description ?? null, input: c.input ?? null }))
+      ? commandState.commands.map((c) => ({
+          name: c.name,
+          description: c.description ?? null,
+          input: c.input ?? null,
+        }))
       : []
-    : commands ?? [];
+    : (commands ?? []);
   const cmdToken = /^\/([^\s]*)$/.exec(value.trimStart())?.[1];
   const slashTyped = !allowAgent && !cmdDismissed && cmdToken !== undefined;
   const cmdMatches = slashTyped ? filterCommands(catalogCommands, cmdToken ?? "") : [];
@@ -207,9 +232,12 @@ export function Composer({
   // non-ready state row (loading/unavailable/error), or a ready-but-no-match note when a catalog
   // exists. A ready+empty catalog (the engine advertises none) shows nothing.
   const cmdActive =
-    slashTyped && (cmdMatches.length > 0 || catalogStatus !== "ready" || catalogCommands.length > 0);
+    slashTyped &&
+    (cmdMatches.length > 0 || catalogStatus !== "ready" || catalogCommands.length > 0);
   const cmdHighlightedName =
-    cmdMatches.length > 0 ? cmdMatches[Math.min(cmdHighlight, cmdMatches.length - 1)]?.name : undefined;
+    cmdMatches.length > 0
+      ? cmdMatches[Math.min(cmdHighlight, cmdMatches.length - 1)]?.name
+      : undefined;
 
   function pickCommand(cmd: SlashCommand) {
     setValue(slashInsertText(cmd.name)); // verbatim `/name ` - sent as-is to the resident session
@@ -248,9 +276,7 @@ export function Composer({
     // after an ambiguous failure observes the original run instead of starting a
     // duplicate; fresh text gets a fresh key.
     const key =
-      retry.current && retry.current.text === text
-        ? retry.current.key
-        : crypto.randomUUID();
+      retry.current && retry.current.text === text ? retry.current.key : crypto.randomUUID();
     setSubmitting(true);
     setFailed(false);
     setValue(""); // optimistic clear — the pending bubble shows the text meanwhile
@@ -377,7 +403,10 @@ export function Composer({
                 event.target.value = "";
               }}
             />
-            <RunUploadChips uploads={runUploads.uploads} onRemove={(upload) => void runUploads.remove(upload)} />
+            <RunUploadChips
+              uploads={runUploads.uploads}
+              onRemove={(upload) => void runUploads.remove(upload)}
+            />
           </>
         ) : null}
         <PromptInput
@@ -413,17 +442,16 @@ export function Composer({
               aria-autocomplete="list"
               aria-expanded={cmdActive}
               aria-controls={cmdActive ? "slashcmd-label" : undefined}
-              aria-activedescendant={cmdActive && cmdHighlightedName ? commandOptionId(cmdHighlightedName) : undefined}
+              aria-activedescendant={
+                cmdActive && cmdHighlightedName ? commandOptionId(cmdHighlightedName) : undefined
+              }
               onKeyDown={(e) => {
                 handleCmdKeys(e);
                 if (e.key === "Backspace" && value === "" && command) {
                   setCommand(null);
                 }
               }}
-              className={cn(
-                "flex-1",
-                hero ? "pt-1 text-paragraph-lg" : "text-paragraph-sm",
-              )}
+              className={cn("flex-1", hero ? "pt-1 text-paragraph-lg" : "text-paragraph-sm")}
             />
           </div>
 
@@ -431,14 +459,16 @@ export function Composer({
               with the placeholder (was px-0.5 → a 2px asymmetry). */}
           <div className="mt-1.5 flex items-center gap-1.5 px-1">
             {/* Left cluster */}
-            {enableUploads ? <button
-              type="button"
-              aria-label="Add context"
-              onClick={() => fileInput.current?.click()}
-              className="border-stroke-soft-200 text-text-sub-600 hover:bg-bg-weak-50 flex size-9 items-center justify-center rounded-xl border transition-colors"
-            >
-              <RiAddLine className="size-5" aria-hidden />
-            </button> : null}
+            {enableUploads ? (
+              <button
+                type="button"
+                aria-label="Add context"
+                onClick={() => fileInput.current?.click()}
+                className="border-stroke-soft-200 text-text-sub-600 hover:bg-bg-weak-50 flex size-9 items-center justify-center rounded-xl border transition-colors"
+              >
+                <RiAddLine className="size-5" aria-hidden />
+              </button>
+            ) : null}
 
             {hero && !modelMenu && (
               <button
@@ -504,53 +534,56 @@ export function Composer({
                   <RiMicLine className="size-5" aria-hidden />
                 </button>
               )}
-              {running && onStop && !canSend ? (
-                // A turn is running and the input is empty: this IS the Stop
-                // control (ChatGPT/opencode pattern - Stop where Send lives).
-                // Type anything and it flips back to Send so a reply can queue.
-                <button
+              <MotionConfig reducedMotion="user">
+                <motion.button
+                  layout
                   type="button"
-                  aria-label="Stop this run"
-                  title="Stop this run"
-                  onClick={onStop}
-                  disabled={stopping}
+                  aria-label={actionLabel}
+                  title={composerAction.kind === "send" ? undefined : actionLabel}
+                  onClick={composerAction.kind === "stop" ? onStop : submit}
+                  disabled={actionDisabled}
+                  transition={{
+                    layout: { duration: 0.2, ease: [0.22, 1, 0.36, 1] },
+                  }}
                   className={cn(
-                    "flex items-center justify-center rounded-full transition-all",
-                    hero ? "size-10" : "size-9",
-                    "bg-error-base text-white hover:opacity-90 disabled:opacity-50",
+                    "flex shrink-0 items-center justify-center overflow-hidden rounded-full transition-colors",
+                    hero ? "h-10 min-w-10" : "h-9 min-w-9",
+                    composerAction.kind === "steer" ? "gap-1.5 px-3.5" : hero ? "w-10" : "w-9",
+                    composerAction.kind === "stop"
+                      ? "bg-error-base text-static-white hover:opacity-90 disabled:opacity-50"
+                      : canSend
+                        ? "bg-primary-base text-static-white hover:bg-primary-darker"
+                        : "bg-bg-soft-200 text-text-soft-400 cursor-not-allowed",
                   )}
                 >
-                  {stopping ? (
-                    <Loader variant="circular" size="sm" className="border-white" />
-                  ) : (
-                    <RiStopFill className="size-5" aria-hidden />
-                  )}
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  aria-label="Send"
-                  onClick={submit}
-                  disabled={!canSend}
-                  className={cn(
-                    "flex items-center justify-center rounded-full transition-all",
-                    hero ? "size-10" : "size-9",
-                    canSend
-                      ? sendToneClass
-                      : "bg-bg-soft-200 text-text-soft-400 cursor-not-allowed",
-                  )}
-                >
-                  {busy ? (
-                    <Loader variant="circular" size="sm" className="border-white" />
-                  ) : (
-                    <RiArrowUpLine className="size-5" aria-hidden />
-                  )}
-                </button>
-              )}
+                  <AnimatePresence initial={false} mode="popLayout">
+                    <motion.span
+                      key={`${composerAction.kind}-${actionBusy ? "busy" : "ready"}`}
+                      initial={{ opacity: 0, filter: "blur(4px)", scale: 0.96 }}
+                      animate={{ opacity: 1, filter: "blur(0px)", scale: 1 }}
+                      exit={{ opacity: 0, filter: "blur(4px)", scale: 0.96 }}
+                      transition={{ duration: 0.16, ease: "easeOut" }}
+                      className="flex items-center justify-center gap-1.5 whitespace-nowrap"
+                    >
+                      {actionBusy ? (
+                        <Loader variant="circular" size="sm" className="border-static-white" />
+                      ) : composerAction.kind === "stop" ? (
+                        <RiStopFill className="size-5" aria-hidden />
+                      ) : (
+                        <>
+                          <RiArrowUpLine className="size-5" aria-hidden />
+                          {composerAction.kind === "steer" ? (
+                            <span className="text-label-sm">{composerAction.label}</span>
+                          ) : null}
+                        </>
+                      )}
+                    </motion.span>
+                  </AnimatePresence>
+                </motion.button>
+              </MotionConfig>
             </div>
           </div>
         </PromptInput>
-
       </div>
     </div>
   );

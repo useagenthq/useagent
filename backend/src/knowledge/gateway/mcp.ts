@@ -5,46 +5,14 @@ import {
   JSONRPCNotificationSchema,
   JSONRPCRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
-import { executeKnowledgeTool, KNOWLEDGE_TOOLS, KNOWLEDGE_TOOL_NAMES } from "./tools";
-import { executeMemoryTool, MEMORY_TOOLS, MEMORY_TOOL_NAMES } from "./memory-tools";
-import { executeSlackTool, SLACK_TOOLS, SLACK_TOOL_NAMES } from "./slack-tools";
-import { executeWebSearchTool, WEB_SEARCH_TOOLS, WEB_SEARCH_TOOL_NAMES } from "./web-search-tool";
-import {
-  ARTIFACT_TOOLS,
-  ARTIFACT_TOOL_NAMES,
-  executeArtifactTool,
-} from "./artifact-tools";
-import {
-  executeRecordingTool,
-  RECORDING_TOOLS,
-  RECORDING_TOOL_NAMES,
-} from "./recording-tools";
-import {
-  COMPUTER_USE_TOOLS,
-  COMPUTER_USE_TOOL_NAMES,
-  executeComputerUseTool,
-} from "./computer-use-tools";
-import {
-  executeRepositoryTool,
-  REPOSITORY_TOOLS,
-  REPOSITORY_TOOL_NAMES,
-} from "./repository-tools";
-import {
-  executeLoopLoginTool,
-  LOOP_LOGIN_TOOLS,
-  LOOP_LOGIN_TOOL_NAMES,
-  loopLoginConfigured,
-} from "./loop-login-tools";
 import { findSlackThreadByRoot } from "../../slack/repo";
 import { resolveToolRunIdentity } from "./run-authorization";
 import { verifyToolToken, type ToolTokenClaims } from "./token";
-import { executeSkillTool, SKILL_TOOLS, SKILL_TOOL_NAMES } from "./skill-tools";
-import { executeGcsTool, GCS_TOOLS, GCS_TOOL_NAMES } from "./gcs-tools";
 import {
-  AUTOMATION_TOOLS,
-  AUTOMATION_TOOL_NAMES,
-  executeAutomationTool,
-} from "./automation-tools";
+  advertisedGatewayToolDescriptors,
+  executeRegisteredGatewayTool,
+} from "./operation-registry";
+import { loopLoginConfigured } from "./loop-login-tools";
 
 // ---------------------------------------------------------------------------
 // Trusted capability MCP gateway (mem_op.md 0.2 / new_prompt.md "Trusted Tool
@@ -124,7 +92,7 @@ export async function handleMcpMessage(
           "validates and publishes it with working preview/download links. " +
           "Computer use: computer_screenshot inspects the visible desktop and computer_sequence is the primary " +
           "bounded action path. Batch predictable actions and request one post-sequence screenshot instead of " +
-          "alternating screenshots with individual actions. Both use Daytona's native API or Cube's OS-level X11 controls. " +
+          "alternating screenshots with individual actions. Both operate through the sandbox's trusted computer-control boundary; provider selection stays below this tool contract. " +
           "GitHub repositories: github_repositories resolves organization repo aliases and " +
           "github_clone_repository securely clones an accessible public or private repo into " +
           "the current sandbox without exposing GitHub credentials. " +
@@ -154,20 +122,10 @@ export async function handleMcpMessage(
       // slack_upload is only useful to a Slack-originated run, so advertise it
       // ONLY when this run's thread maps to a Slack thread. Artifact publishing
       // is available to every active sandbox-backed run.
-      const tools: unknown[] = [
-        ...KNOWLEDGE_TOOLS,
-        ...MEMORY_TOOLS,
-        ...WEB_SEARCH_TOOLS,
-        ...ARTIFACT_TOOLS,
-        ...RECORDING_TOOLS,
-        ...COMPUTER_USE_TOOLS,
-        ...REPOSITORY_TOOLS,
-        ...GCS_TOOLS,
-        ...AUTOMATION_TOOLS,
-        ...SKILL_TOOLS,
-        ...(loopLoginConfigured() ? LOOP_LOGIN_TOOLS : []),
-      ];
-      if (await findSlackThreadByRoot(claims.threadId)) tools.push(...SLACK_TOOLS);
+      const tools = advertisedGatewayToolDescriptors({
+        loopLogin: loopLoginConfigured(),
+        slack: Boolean(await findSlackThreadByRoot(claims.threadId)),
+      });
       return ok(msg.id, { tools });
     }
     case "tools/call": {
@@ -176,42 +134,8 @@ export async function handleMcpMessage(
       if (!parsed.success) return err(msg.id, ErrorCode.InvalidParams, "Invalid params for tools/call");
       const name = parsed.data.params.name;
       const args = (parsed.data.params.arguments ?? {}) as Record<string, unknown>;
-      if (KNOWLEDGE_TOOL_NAMES.has(name)) {
-        return ok(msg.id, await executeKnowledgeTool(claims, name, args));
-      }
-      if (MEMORY_TOOL_NAMES.has(name)) {
-        return ok(msg.id, await executeMemoryTool(claims, name, args));
-      }
-      if (ARTIFACT_TOOL_NAMES.has(name)) {
-        return ok(msg.id, await executeArtifactTool(claims, name, args));
-      }
-      if (RECORDING_TOOL_NAMES.has(name)) {
-        return ok(msg.id, await executeRecordingTool(claims, name, args));
-      }
-      if (COMPUTER_USE_TOOL_NAMES.has(name)) {
-        return ok(msg.id, await executeComputerUseTool(claims, name, args));
-      }
-      if (REPOSITORY_TOOL_NAMES.has(name)) {
-        return ok(msg.id, await executeRepositoryTool(claims, name, args));
-      }
-      if (GCS_TOOL_NAMES.has(name)) {
-        return ok(msg.id, await executeGcsTool(claims, name, args));
-      }
-      if (AUTOMATION_TOOL_NAMES.has(name)) {
-        return ok(msg.id, await executeAutomationTool(claims, name, args));
-      }
-      if (SKILL_TOOL_NAMES.has(name)) {
-        return ok(msg.id, await executeSkillTool(claims, name, args));
-      }
-      if (LOOP_LOGIN_TOOL_NAMES.has(name) && loopLoginConfigured()) {
-        return ok(msg.id, await executeLoopLoginTool(claims, name, args));
-      }
-      if (SLACK_TOOL_NAMES.has(name)) {
-        return ok(msg.id, await executeSlackTool(claims, name, args));
-      }
-      if (WEB_SEARCH_TOOL_NAMES.has(name)) {
-        return ok(msg.id, await executeWebSearchTool(claims, name, args));
-      }
+      const execution = await executeRegisteredGatewayTool(claims, name, args);
+      if (execution.matched) return ok(msg.id, execution.result);
       return err(msg.id, ErrorCode.InvalidParams, `Unknown tool: ${name}`);
     }
     default:

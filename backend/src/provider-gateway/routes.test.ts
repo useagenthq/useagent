@@ -301,6 +301,7 @@ describe("provider gateway routes", () => {
           headers: {
             "content-type": "application/json",
             "retry-after": "7",
+            "x-should-retry": "false",
             "x-ratelimit-limit-requests": "500",
             "x-ratelimit-remaining-requests": "0",
             "x-ratelimit-reset-requests": "7s",
@@ -317,6 +318,7 @@ describe("provider gateway routes", () => {
 
     expect(response.status).toBe(429);
     expect(response.headers.get("retry-after")).toBe("7");
+    expect(response.headers.get("x-should-retry")).toBe("false");
     expect(response.headers.get("x-ratelimit-limit-requests")).toBe("500");
     expect(response.headers.get("x-ratelimit-remaining-requests")).toBe("0");
     expect(response.headers.get("x-ratelimit-reset-requests")).toBe("7s");
@@ -324,6 +326,41 @@ describe("provider gateway routes", () => {
       if (previous === undefined) delete process.env.PROVIDER_GATEWAY_MAX_RETRIES;
       else process.env.PROVIDER_GATEWAY_MAX_RETRIES = previous;
     }
+  });
+
+  test("forwards the gateway's synthesized terminal-quota retry stop", async () => {
+    let calls = 0;
+    const token = { ...claims, engine: "codex" as const, provider: "openai" as const };
+    const activeRun = { ...run, engine: "codex" as const, model: "gpt-5.6-sol" };
+    const routes = app({
+      token,
+      activeRun,
+      fetchUpstream: async () => {
+        calls += 1;
+        return Response.json({
+          error: {
+            code: "insufficient_quota",
+            message: "You have no credits remaining.",
+          },
+        }, { status: 429 });
+      },
+    });
+
+    const response = await routes.request("/api/provider/openai/v1/responses", {
+      method: "POST",
+      headers: { authorization: "Bearer capability" },
+      body: JSON.stringify({ model: activeRun.model, input: "hello" }),
+    });
+
+    expect(calls).toBe(1);
+    expect(response.status).toBe(429);
+    expect(response.headers.get("x-should-retry")).toBe("false");
+    expect(await response.json()).toEqual({
+      error: {
+        code: "insufficient_quota",
+        message: "You have no credits remaining.",
+      },
+    });
   });
 
   test("fails closed when credentials or durable admission are unavailable", async () => {
