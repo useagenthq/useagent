@@ -9,83 +9,71 @@ const relayTokens = new Map<string, string>();
 
 export function desktopCdpRelaySource(): string {
   return String.raw`import { timingSafeEqual } from "node:crypto";
+import { readFileSync } from "node:fs";
+import { createServer, request as httpRequest } from "node:http";
+import { connect } from "node:net";
 
 const PORT = ${DESKTOP_CDP_RELAY_PORT};
 const VERSION = ${JSON.stringify(DESKTOP_CDP_RELAY_VERSION)};
-const TOKEN = (await Bun.file(new URL("./${RELAY_TOKEN_NAME}", import.meta.url)).text()).trim();
+const TOKEN = readFileSync(new URL("./${RELAY_TOKEN_NAME}", import.meta.url), "utf8").trim();
 
-type RelayData = {
-  readonly upstream: WebSocket;
-  readonly pending: Array<string | ArrayBuffer | Uint8Array>;
-};
-
-function authorized(request: Request): boolean {
+function authorized(request) {
   const expected = Buffer.from("Bearer " + TOKEN);
-  const actual = Buffer.from(request.headers.get("authorization") ?? "");
+  const header = request.headers.authorization;
+  const actual = Buffer.from(Array.isArray(header) ? header[0] ?? "" : header ?? "");
   return actual.length === expected.length && timingSafeEqual(actual, expected);
 }
 
-function upstreamUrl(request: Request, protocol: "http:" | "ws:"): URL {
-  const url = new URL(request.url);
-  url.protocol = protocol;
-  url.hostname = "127.0.0.1";
-  url.port = "9222";
-  return url;
+function reject(response, status, body) {
+  response.writeHead(status, { "content-type": "text/plain", "content-length": Buffer.byteLength(body) });
+  response.end(body);
 }
 
-Bun.serve<RelayData>({
-  hostname: "0.0.0.0",
-  port: PORT,
-  fetch(request, server) {
-    if (!authorized(request)) return new Response("unauthorized", { status: 401 });
-    const path = new URL(request.url).pathname;
-    if (request.headers.get("upgrade")?.toLowerCase() === "websocket") {
-      if (!path.startsWith("/devtools/page/")) return new Response("not found", { status: 404 });
-      const upstream = new WebSocket(upstreamUrl(request, "ws:"));
-      if (server.upgrade(request, { data: { upstream, pending: [] } })) return;
-      upstream.close();
-      return new Response("upgrade failed", { status: 500 });
-    }
-    if (request.method !== "GET" || !["/json/list", "/json/version"].includes(path)) {
-      return new Response("not found", { status: 404 });
-    }
-    const headers = new Headers(request.headers);
-    headers.delete("authorization");
-    headers.delete("host");
-    return fetch(upstreamUrl(request, "http:"), { headers }).then((response) => {
-      const responseHeaders = new Headers(response.headers);
-      responseHeaders.set("x-skynet-cdp-relay-version", VERSION);
-      return new Response(response.body, {
-        status: response.status,
-        statusText: response.statusText,
-        headers: responseHeaders,
-      });
+const server = createServer((request, response) => {
+  if (!authorized(request)) return reject(response, 401, "unauthorized");
+  const path = new URL(request.url ?? "/", "http://localhost").pathname;
+  if (request.method !== "GET" || !["/json/list", "/json/version"].includes(path)) {
+    return reject(response, 404, "not found");
+  }
+  const upstream = httpRequest({
+    hostname: "127.0.0.1",
+    port: 9222,
+    path: request.url,
+    method: "GET",
+  }, (upstreamResponse) => {
+    response.writeHead(upstreamResponse.statusCode ?? 502, {
+      ...upstreamResponse.headers,
+      "x-skynet-cdp-relay-version": VERSION,
     });
-  },
-  websocket: {
-    open(client) {
-      const { upstream, pending } = client.data;
-      upstream.binaryType = "arraybuffer";
-      const flush = () => {
-        for (const message of pending.splice(0)) upstream.send(message);
-      };
-      if (upstream.readyState === WebSocket.OPEN) flush();
-      else upstream.addEventListener("open", flush, { once: true });
-      upstream.addEventListener("message", (event) => client.send(event.data));
-      upstream.addEventListener("close", () => client.close());
-      upstream.addEventListener("error", () => client.close(1011, "upstream error"));
-    },
-    message(client, message) {
-      const { upstream, pending } = client.data;
-      if (upstream.readyState === WebSocket.OPEN) upstream.send(message);
-      else if (upstream.readyState === WebSocket.CONNECTING) pending.push(message);
-      else client.close(1011, "upstream unavailable");
-    },
-    close(client) {
-      client.data.upstream.close();
-    },
-  },
+    upstreamResponse.pipe(response);
+  });
+  upstream.on("error", () => reject(response, 502, "upstream unavailable"));
+  upstream.end();
 });
+
+server.on("upgrade", (request, socket, head) => {
+  if (!authorized(request)) return socket.end("HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n");
+  const path = new URL(request.url ?? "/", "http://localhost").pathname;
+  if (!path.startsWith("/devtools/page/")) {
+    return socket.end("HTTP/1.1 404 Not Found\r\nConnection: close\r\n\r\n");
+  }
+  const upstream = connect(9222, "127.0.0.1", () => {
+    const headers = [];
+    for (let index = 0; index < request.rawHeaders.length; index += 2) {
+      const name = request.rawHeaders[index];
+      if (["authorization", "host"].includes(name.toLowerCase())) continue;
+      headers.push(name + ": " + request.rawHeaders[index + 1]);
+    }
+    upstream.write("GET " + request.url + " HTTP/1.1\r\nHost: 127.0.0.1:9222\r\n" + headers.join("\r\n") + "\r\n\r\n");
+    if (head.length > 0) upstream.write(head);
+    upstream.pipe(socket);
+    socket.pipe(upstream);
+  });
+  upstream.on("error", () => socket.destroy());
+  socket.on("error", () => upstream.destroy());
+});
+
+server.listen(PORT, "0.0.0.0");
 `;
 }
 
@@ -117,7 +105,7 @@ export async function ensureDesktopCdpRelayFiles(
     .catch(() => "");
   const token = validRelayToken(existing) ? existing : randomBytes(32).toString("hex");
   await Promise.all([
-    sandbox.fs.uploadFile(Buffer.from(desktopCdpRelaySource()), `${home}/.skynet/cdp-relay.ts`),
+    sandbox.fs.uploadFile(Buffer.from(desktopCdpRelaySource()), `${home}/.skynet/cdp-relay.mjs`),
     existing === token
       ? Promise.resolve()
       : sandbox.fs.uploadFile(Buffer.from(`${token}\n`), tokenPath),
