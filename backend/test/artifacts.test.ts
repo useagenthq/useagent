@@ -227,7 +227,7 @@ describe("durable artifacts", () => {
 
     const initial = await json<{
       workpiece: NonNullable<ArtifactDescriptor["workpiece"]>;
-      state: null;
+      state: { text: string };
     }>(path, { cookies: owner.cookies });
     expect(initial.status).toBe(200);
     expect(initial.body.workpiece).toMatchObject({
@@ -235,7 +235,7 @@ describe("durable artifacts", () => {
       source_version: SHA256,
       state_revision: 0,
     });
-    expect(initial.body.state).toBeNull();
+    expect(initial.body.state).toEqual({ text: "sandbox-to-browser\nexact bytes\n" });
 
     const updated = await json<{
       workpiece: NonNullable<ArtifactDescriptor["workpiece"]>;
@@ -302,6 +302,84 @@ describe("durable artifacts", () => {
       cookies: owner.cookies,
     });
     expect(new Uint8Array(await content.arrayBuffer())).toEqual(SOURCE_BYTES);
+  });
+
+  test("seeds Office workpieces from explicit editable companions", async () => {
+    const runId = await createSandboxRun(owner);
+    const source = new Uint8Array([0x50, 0x4b, 0x03, 0x04]);
+    const html = new TextEncoder().encode("<h1>Launch brief</h1><p>Ready to edit</p>");
+    const alternateHtml = new TextEncoder().encode("<h1>Different brief</h1>");
+    const csv = new TextEncoder().encode("metric,value\nlatency_ms,4200\n");
+    setSandboxDownloaderForTest(async (_sandboxId, path, maxBytes) => {
+      const bytes = path.endsWith("alternate.html")
+        ? alternateHtml
+        : path.endsWith(".html")
+          ? html
+          : path.endsWith(".csv")
+            ? csv
+            : source;
+      if (bytes.byteLength > maxBytes) throw new Error("test fixture exceeds cap");
+      return { bytes: Buffer.from(bytes), size: bytes.byteLength };
+    });
+    try {
+      const claims = {
+        orgId: owner.orgId,
+        userId: owner.email,
+        threadId: runId,
+        runId,
+        exp: Date.now() + 60_000,
+      };
+      const initialDoc = await executeArtifactTool(
+        claims,
+        "artifact_publish",
+        { path: "/root/work/brief.docx" },
+      );
+      const doc = await executeArtifactTool(
+        claims,
+        "artifact_publish",
+        { path: "/root/work/brief.docx", editable_path: "/root/work/brief.html" },
+      );
+      const sheet = await executeArtifactTool(
+        claims,
+        "artifact_publish",
+        { path: "/root/work/metrics.xlsx", editable_path: "/root/work/metrics.csv" },
+      );
+      expect(initialDoc.isError).toBeFalsy();
+      expect(doc.isError).toBeFalsy();
+      expect(sheet.isError).toBeFalsy();
+
+      const initialDocArtifact = initialDoc.structuredContent?.artifact as ArtifactDescriptor;
+      const docArtifact = doc.structuredContent?.artifact as ArtifactDescriptor;
+      const sheetArtifact = sheet.structuredContent?.artifact as ArtifactDescriptor;
+      expect(docArtifact.id).toBe(initialDocArtifact.id);
+      expect(doc.structuredContent?.created).toBe(false);
+      const docState = await json<{ state: { html: string } }>(
+        `/api/artifacts/${docArtifact.id}/workpiece`,
+        { cookies: owner.cookies },
+      );
+      const sheetState = await json<{ state: { csv: string } }>(
+        `/api/artifacts/${sheetArtifact.id}/workpiece`,
+        { cookies: owner.cookies },
+      );
+      expect(docState.body.state).toEqual({ html: new TextDecoder().decode(html) });
+      expect(sheetState.body.state).toEqual({ csv: new TextDecoder().decode(csv) });
+
+      const conflictingDoc = await executeArtifactTool(
+        claims,
+        "artifact_publish",
+        {
+          path: "/root/work/brief.docx",
+          editable_path: "/root/work/alternate.html",
+        },
+      );
+      expect(conflictingDoc.isError).toBe(true);
+      expect(conflictingDoc.content[0]?.text).toContain("editable companion conflicts");
+    } finally {
+      setSandboxDownloaderForTest(async (_sandboxId, _path, maxBytes) => {
+        if (sandboxBytes.byteLength > maxBytes) throw new Error("test fixture exceeds cap");
+        return { bytes: Buffer.from(sandboxBytes), size: sandboxBytes.byteLength };
+      });
+    }
   });
 
   test("keeps over-limit Office binaries download-only", async () => {

@@ -55,6 +55,7 @@ export function decideAcpPermission(
 
 const TRUSTED_ACTIVE_RUN_MCP_TOOLS: ReadonlySet<string> = new Set([
   "mcp.skynet-knowledge.computer_screenshot",
+  "mcp.skynet-knowledge.computer_sequence",
   "mcp.skynet-knowledge.computer_click",
   "mcp.skynet-knowledge.computer_move",
   "mcp.skynet-knowledge.computer_drag",
@@ -73,6 +74,11 @@ const TRUSTED_ACTIVE_RUN_MCP_TOOLS: ReadonlySet<string> = new Set([
   "mcp.skynet-knowledge.loop_login_destroy",
   "mcp.skynet-knowledge.skills_list",
   "mcp.skynet-knowledge.skill_activate",
+  "mcp.skynet-knowledge.automation_list",
+  "mcp.skynet-knowledge.automation_create",
+  "mcp.skynet-knowledge.automation_update",
+  "mcp.skynet-knowledge.automation_run_now",
+  "mcp.skynet-knowledge.automation_history",
 ]);
 
 /**

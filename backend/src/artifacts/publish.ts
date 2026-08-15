@@ -14,6 +14,11 @@ import { artifactStorage } from "./storage";
 import { getRunForOrg } from "../runs/repo";
 import { recordProviderEvent } from "../runs/provider-events";
 import { downloadSandboxFile } from "../slack/sandbox-file";
+import {
+  buildInitialWorkpieceState,
+  inferWorkpieceKind,
+  MAX_WORKPIECE_STATE_BYTES,
+} from "./workpiece";
 
 export const MAX_ARTIFACT_BYTES = 50 * 1024 * 1024;
 
@@ -37,6 +42,7 @@ export async function publishSandboxArtifact(input: {
   readonly threadId?: string;
   readonly path: string;
   readonly name?: string;
+  readonly editablePath?: string;
 }): Promise<{ artifact: ArtifactDescriptor; record: ArtifactRecord; created: boolean }> {
   const sourcePath = checkedSourcePath(input.path);
   const run = await getRunForOrg(input.orgId, input.runId);
@@ -48,6 +54,29 @@ export async function publishSandboxArtifact(input: {
   const file = await downloadSandboxFile(run.sandboxId, sourcePath, MAX_ARTIFACT_BYTES);
   const digest = createHash("sha256").update(file.bytes).digest("hex");
   const name = safeName(sourcePath, input.name);
+  const contentType = contentTypeForName(name);
+  const workpieceKind = inferWorkpieceKind(name, contentType, file.bytes.length);
+  const editablePath = input.editablePath ? checkedSourcePath(input.editablePath) : null;
+  if (editablePath && !workpieceKind) {
+    throw new Error("editable_path can only accompany a supported document or spreadsheet");
+  }
+  const editable = editablePath
+    ? await downloadSandboxFile(run.sandboxId, editablePath, MAX_WORKPIECE_STATE_BYTES)
+    : null;
+  const workpieceState = workpieceKind
+    ? buildInitialWorkpieceState({
+        kind: workpieceKind,
+        sourceName: name,
+        sourceContentType: contentType,
+        sourceBytes: file.bytes,
+        ...(editablePath && editable
+          ? { editable: { name: basename(editablePath), bytes: editable.bytes } }
+          : {}),
+      })
+    : null;
+  if (editable && !workpieceState) {
+    throw new Error("editable_path must be valid UTF-8 HTML for documents or CSV for spreadsheets");
+  }
   const stored = await db.transaction(async (tx) => {
     // Serialize one logical publication across processes. Without this lock, a
     // creator that fails storage verification can roll back metadata already
@@ -66,10 +95,12 @@ export async function publishSandboxArtifact(input: {
       threadId: run.threadId,
       sourcePath,
       name,
-      contentType: contentTypeForName(name),
+      contentType,
       sizeBytes: file.bytes.length,
       sha256: digest,
       storageKey: digest,
+      workpieceKind,
+      workpieceState,
     }, tx);
     // Metadata is transactional but must precede bytes so orphan reclamation's
     // final database check sees the in-flight publication. A storage failure

@@ -7,7 +7,7 @@ import {
 } from "../../sandboxes/provider";
 import type { ToolTokenClaims } from "./token";
 
-type ComputerToolContent =
+export type ComputerToolContent =
   | { type: "text"; text: string }
   | { type: "image"; data: string; mimeType: "image/png" };
 
@@ -19,7 +19,7 @@ interface ComputerToolResult {
 
 type Button = "left" | "middle" | "right";
 type Direction = "up" | "down";
-type ComputerSequenceAction =
+export type ComputerSequenceAction =
   | { readonly action: "click"; readonly x: number; readonly y: number; readonly button: Button; readonly double: boolean }
   | { readonly action: "move"; readonly x: number; readonly y: number }
   | { readonly action: "drag"; readonly startX: number; readonly startY: number; readonly endX: number; readonly endY: number }
@@ -31,6 +31,11 @@ type ComputerSequenceAction =
 
 interface ComputerUseService {
   screenshot(claims: ToolTokenClaims): Promise<ComputerToolResult>;
+  sequence(
+    claims: ToolTokenClaims,
+    actions: readonly ComputerSequenceAction[],
+    captureScreenshot: boolean,
+  ): Promise<ComputerToolResult | null>;
   click(claims: ToolTokenClaims, x: number, y: number, button: Button, double: boolean): Promise<void>;
   move(claims: ToolTokenClaims, x: number, y: number): Promise<void>;
   drag(claims: ToolTokenClaims, startX: number, startY: number, endX: number, endY: number): Promise<void>;
@@ -72,12 +77,16 @@ function withSequenceReceipt(
   const actionNames = sequenceActionNames(actions);
   const receipt = sequenceReceipt(actionNames);
   const textIndex = captured.content.findIndex(({ type }) => type === "text");
-  const content = textIndex < 0
-    ? [...captured.content, { type: "text" as const, text: receipt }]
-    : captured.content.with(textIndex, {
+  const existingText = textIndex >= 0 && captured.content[textIndex]!.type === "text"
+    ? captured.content[textIndex]!.text
+    : "";
+  const content: ComputerToolContent[] = [
+    {
       type: "text",
-      text: `${receipt} ${captured.content[textIndex]!.type === "text" ? captured.content[textIndex]!.text : ""}`.trim(),
-    });
+      text: `${receipt} ${existingText}`.trim(),
+    },
+    ...captured.content.filter((_, index) => index !== textIndex),
+  ];
   return {
     ...captured,
     content,
@@ -249,38 +258,6 @@ function sequenceActions(value: unknown): ComputerSequenceAction[] {
   return value.map(parseSequenceAction);
 }
 
-async function executeSequenceAction(
-  service: ComputerUseService,
-  claims: ToolTokenClaims,
-  action: ComputerSequenceAction,
-): Promise<void> {
-  switch (action.action) {
-    case "click":
-      await service.click(claims, action.x, action.y, action.button, action.double);
-      return;
-    case "move":
-      await service.move(claims, action.x, action.y);
-      return;
-    case "drag":
-      await service.drag(claims, action.startX, action.startY, action.endX, action.endY);
-      return;
-    case "type":
-      await service.type(claims, action.text, action.delayMs);
-      return;
-    case "key":
-      await service.key(claims, action.key, [...action.modifiers]);
-      return;
-    case "hotkey":
-      await service.hotkey(claims, action.keys);
-      return;
-    case "scroll":
-      await service.scroll(claims, action.x, action.y, action.direction, action.amount);
-      return;
-    case "wait":
-      await Bun.sleep(action.ms);
-  }
-}
-
 async function computerSandbox(claims: ToolTokenClaims): Promise<SandboxHandle> {
   const run = await getRunForOrg(claims.orgId, claims.runId);
   if (!run || run.threadId !== claims.threadId) throw new Error("run is not active in this thread");
@@ -314,6 +291,73 @@ async function cubeCommand(sandbox: SandboxHandle, command: string): Promise<str
   return executed.result ?? "";
 }
 
+function cubeSequenceCommand(action: ComputerSequenceAction): string {
+  switch (action.action) {
+    case "click":
+      return `xdotool mousemove ${action.x} ${action.y} click ${
+        action.double ? "--repeat 2 --delay 100 " : ""
+      }${buttonNumber(action.button)}`;
+    case "move":
+      return `xdotool mousemove ${action.x} ${action.y}`;
+    case "drag":
+      return `xdotool mousemove ${action.startX} ${action.startY} mousedown 1 ` +
+        `mousemove --sync ${action.endX} ${action.endY} mouseup 1`;
+    case "type": {
+      const encoded = Buffer.from(action.text, "utf8").toString("base64");
+      return `printf '%s' '${encoded}' | base64 -d | ` +
+        `xdotool type --clearmodifiers --delay ${action.delayMs} --file -`;
+    }
+    case "key":
+      return x11KeyCommand(action.key, action.modifiers);
+    case "hotkey":
+      return `xdotool key --clearmodifiers ${x11Hotkey(action.keys)}`;
+    case "scroll":
+      return `xdotool mousemove ${action.x} ${action.y} click --repeat ${action.amount} ` +
+        `--delay 40 ${action.direction === "up" ? 4 : 5}`;
+    case "wait":
+      return `sleep ${(action.ms / 1000).toFixed(3)}`;
+  }
+}
+
+export function buildCubeSequenceCommand(
+  actions: readonly ComputerSequenceAction[],
+): string {
+  return actions.map(cubeSequenceCommand).join(" && ");
+}
+
+async function executeNativeSequenceAction(
+  sandbox: SandboxHandle,
+  action: ComputerSequenceAction,
+): Promise<void> {
+  const computerUse = sandbox.computerUse;
+  if (!computerUse) throw new Error("native computer use is unavailable");
+  switch (action.action) {
+    case "click":
+      await computerUse.mouse.click(action.x, action.y, action.button, action.double);
+      return;
+    case "move":
+      await computerUse.mouse.move(action.x, action.y);
+      return;
+    case "drag":
+      await computerUse.mouse.drag(action.startX, action.startY, action.endX, action.endY);
+      return;
+    case "type":
+      await computerUse.keyboard.type(action.text, action.delayMs);
+      return;
+    case "key":
+      await computerUse.keyboard.press(action.key, [...action.modifiers]);
+      return;
+    case "hotkey":
+      await computerUse.keyboard.hotkey(action.keys);
+      return;
+    case "scroll":
+      await computerUse.mouse.scroll(action.x, action.y, action.direction, action.amount);
+      return;
+    case "wait":
+      await Bun.sleep(action.ms);
+  }
+}
+
 function buttonNumber(button: Button): number {
   switch (button) {
     case "left":
@@ -325,8 +369,7 @@ function buttonNumber(button: Button): number {
   }
 }
 
-async function screenshot(claims: ToolTokenClaims): Promise<ComputerToolResult> {
-  const sandbox = await readySandbox(claims);
+async function captureSandboxScreenshot(sandbox: SandboxHandle): Promise<ComputerToolResult> {
   const path = `${sandbox.computerUse ? "/home/daytona" : "/root"}/work/screenshots/screenshot-${Date.now()}.png`;
   let data: string;
   if (sandbox.computerUse) {
@@ -361,8 +404,21 @@ async function screenshot(claims: ToolTokenClaims): Promise<ComputerToolResult> 
   };
 }
 
+async function screenshot(claims: ToolTokenClaims): Promise<ComputerToolResult> {
+  return await captureSandboxScreenshot(await readySandbox(claims));
+}
+
 const productionService: ComputerUseService = {
   screenshot,
+  async sequence(claims, actions, captureScreenshot) {
+    const sandbox = await readySandbox(claims);
+    if (sandbox.computerUse) {
+      for (const action of actions) await executeNativeSequenceAction(sandbox, action);
+    } else {
+      await cubeCommand(sandbox, buildCubeSequenceCommand(actions));
+    }
+    return captureScreenshot ? await captureSandboxScreenshot(sandbox) : null;
+  },
   async click(claims, x, y, button, double) {
     const sandbox = await readySandbox(claims);
     if (sandbox.computerUse) {
@@ -419,13 +475,13 @@ export const COMPUTER_USE_TOOLS = [
   {
     name: "computer_screenshot",
     description:
-      "Capture the current full desktop for model inspection without publishing a user-facing artifact. Always inspect this before and after coordinate actions. Use artifact_publish only when the user requests the screenshot file.",
+      "Capture the current full desktop for private model inspection without publishing a user-facing artifact. Use it for the initial state and after an uncertain or failed transition. For predictable follow-up actions, prefer one computer_sequence with screenshot=true instead of alternating screenshots and single actions. Use artifact_publish only when the user requests the file.",
     inputSchema: { type: "object", properties: {}, additionalProperties: false },
   },
   {
     name: "computer_sequence",
     description:
-      "Run 1-8 OS-level desktop actions in order, then optionally return one private post-sequence screenshot for inspection. Use for short low-level action batches that do not need intermediate visual feedback. Actions support click, move, drag, type, key, hotkey, scroll, and wait.",
+      "Primary desktop action tool. Run 1-8 OS-level actions in one ordered batch and optionally return one private post-sequence screenshot. Batch every predictable action chain, including click+type+submit and focus+hotkey+type+key, instead of issuing atomic calls. Stop the batch at the first point that genuinely needs new visual inspection. Actions support click, move, drag, type, key, hotkey, scroll, and wait.",
     inputSchema: {
       type: "object",
       properties: {
@@ -470,103 +526,22 @@ export const COMPUTER_USE_TOOLS = [
       additionalProperties: false,
     },
   },
-  {
-    name: "computer_click",
-    description: "Click an absolute desktop coordinate.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        x: { type: "integer" },
-        y: { type: "integer" },
-        button: { type: "string", enum: ["left", "middle", "right"] },
-        double: { type: "boolean" },
-      },
-      required: ["x", "y"],
-      additionalProperties: false,
-    },
-  },
-  {
-    name: "computer_move",
-    description: "Move the desktop pointer to an absolute coordinate.",
-    inputSchema: {
-      type: "object",
-      properties: { x: { type: "integer" }, y: { type: "integer" } },
-      required: ["x", "y"],
-      additionalProperties: false,
-    },
-  },
-  {
-    name: "computer_drag",
-    description: "Drag with the left mouse button between absolute desktop coordinates.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        start_x: { type: "integer" },
-        start_y: { type: "integer" },
-        end_x: { type: "integer" },
-        end_y: { type: "integer" },
-      },
-      required: ["start_x", "start_y", "end_x", "end_y"],
-      additionalProperties: false,
-    },
-  },
-  {
-    name: "computer_type",
-    description: "Type text into the currently focused desktop application.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        text: { type: "string" },
-        delay_ms: { type: "integer", minimum: 0, maximum: 1000 },
-      },
-      required: ["text"],
-      additionalProperties: false,
-    },
-  },
-  {
-    name: "computer_key",
-    description: "Press one desktop key with optional modifiers.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        key: { type: "string" },
-        modifiers: {
-          type: "array",
-          items: { type: "string", enum: ["ctrl", "alt", "shift", "cmd"] },
-        },
-      },
-      required: ["key"],
-      additionalProperties: false,
-    },
-  },
-  {
-    name: "computer_hotkey",
-    description: "Press one atomic desktop hotkey chord such as ctrl+l or alt+tab.",
-    inputSchema: {
-      type: "object",
-      properties: { keys: { type: "string" } },
-      required: ["keys"],
-      additionalProperties: false,
-    },
-  },
-  {
-    name: "computer_scroll",
-    description: "Scroll at an absolute desktop coordinate.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        x: { type: "integer" },
-        y: { type: "integer" },
-        direction: { type: "string", enum: ["up", "down"] },
-        amount: { type: "integer", minimum: 1, maximum: 100 },
-      },
-      required: ["x", "y", "direction"],
-      additionalProperties: false,
-    },
-  },
 ] as const;
 
-export const COMPUTER_USE_TOOL_NAMES: ReadonlySet<string> = new Set(COMPUTER_USE_TOOLS.map((tool) => tool.name));
+const LEGACY_ATOMIC_COMPUTER_TOOL_NAMES = [
+  "computer_click",
+  "computer_move",
+  "computer_drag",
+  "computer_type",
+  "computer_key",
+  "computer_hotkey",
+  "computer_scroll",
+] as const;
+
+export const COMPUTER_USE_TOOL_NAMES: ReadonlySet<string> = new Set([
+  ...COMPUTER_USE_TOOLS.map((tool) => tool.name),
+  ...LEGACY_ATOMIC_COMPUTER_TOOL_NAMES,
+]);
 
 export async function executeComputerUseTool(
   claims: ToolTokenClaims,
@@ -578,13 +553,8 @@ export async function executeComputerUseTool(
     if (name === "computer_screenshot") return await service.screenshot(claims);
     if (name === "computer_sequence") {
       const actions = sequenceActions(args.actions);
-      for (const action of actions) {
-        await executeSequenceAction(service, claims, action);
-      }
-      if (args.screenshot === true) {
-        const captured = await service.screenshot(claims);
-        return withSequenceReceipt(captured, actions);
-      }
+      const captured = await service.sequence(claims, actions, args.screenshot === true);
+      if (captured) return withSequenceReceipt(captured, actions);
       const actionNames = sequenceActionNames(actions);
       return result(sequenceReceipt(actionNames), {
         action: name,

@@ -122,9 +122,9 @@ export async function handleMcpMessage(
           "and available to the browser. Desktop recording: desktop_recording_start " +
           "starts an FFmpeg H.264 capture after desktop readiness; desktop_recording_stop " +
           "validates and publishes it with working preview/download links. " +
-          "Computer use: computer_screenshot, computer_sequence, plus computer_click / computer_move / computer_drag / " +
-          "computer_type / computer_key / computer_hotkey / computer_scroll drive the visible desktop " +
-          "through Daytona's native API or Cube's OS-level X11 controls. " +
+          "Computer use: computer_screenshot inspects the visible desktop and computer_sequence is the primary " +
+          "bounded action path. Batch predictable actions and request one post-sequence screenshot instead of " +
+          "alternating screenshots with individual actions. Both use Daytona's native API or Cube's OS-level X11 controls. " +
           "GitHub repositories: github_repositories resolves organization repo aliases and " +
           "github_clone_repository securely clones an accessible public or private repo into " +
           "the current sandbox without exposing GitHub credentials. " +

@@ -1,4 +1,4 @@
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import { db, type Executor } from "../db/client";
 import {
   artifacts,
@@ -70,6 +70,7 @@ export async function createArtifactRecord(input: {
   readonly sha256: string;
   readonly storageKey: string;
   readonly workpieceKind?: ArtifactWorkpieceKind | null;
+  readonly workpieceState?: ArtifactWorkpieceState | null;
 }, exec: Executor = db): Promise<{ row: ArtifactRecord; created: boolean }> {
   const workpieceKind =
     input.workpieceKind ?? inferWorkpieceKind(input.name, input.contentType, input.sizeBytes);
@@ -94,6 +95,37 @@ export async function createArtifactRecord(input: {
     )
     .limit(1);
   if (!existing) throw new Error("artifact idempotency conflict could not be resolved");
+  if (input.workpieceState && !existing.workpieceState) {
+    const [seeded] = await exec
+      .update(artifacts)
+      .set({
+        workpieceKind,
+        workpieceState: input.workpieceState,
+      })
+      .where(and(eq(artifacts.id, existing.id), isNull(artifacts.workpieceState)))
+      .returning();
+    if (seeded) return { row: seeded, created: false };
+
+    // Another idempotent publisher may have won the null-to-state transition.
+    // Re-read before comparing so equal concurrent companions converge rather
+    // than failing against the stale row selected above.
+    const [current] = await exec
+      .select()
+      .from(artifacts)
+      .where(eq(artifacts.id, existing.id))
+      .limit(1);
+    if (!current) throw new Error("artifact idempotency conflict disappeared");
+    if (JSON.stringify(current.workpieceState) !== JSON.stringify(input.workpieceState)) {
+      throw new Error("artifact editable companion conflicts with the existing publication");
+    }
+    return { row: current, created: false };
+  }
+  if (
+    input.workpieceState &&
+    JSON.stringify(existing.workpieceState) !== JSON.stringify(input.workpieceState)
+  ) {
+    throw new Error("artifact editable companion conflicts with the existing publication");
+  }
   return { row: existing, created: false };
 }
 
