@@ -1,5 +1,12 @@
 import type { EngineId, StepKind } from "../db/schema";
 
+export {
+  AGENT_OPERATING_RULES,
+  AGENT_SKILL_DISCOVERY_RULES,
+  AGENT_WORKFLOW_ROUTING_RULES,
+  composeTurnPrompt,
+} from "./turn-prompt";
+
 // ---------------------------------------------------------------------------
 // The pluggable engine layer. Every harness (Claude Agent SDK, Codex CLI,
 // OpenCode) implements `EngineAdapter` and maps its own native event stream
@@ -142,94 +149,6 @@ export interface EngineRunContext {
     begin(stage: string): () => void;
     mark(stage: string): void;
   };
-}
-
-/**
- * Compose the text an engine receives for one turn — the SINGLE source of truth
- * for the fresh-vs-resumed context rule (north star "Fix the Current Context Bug
- * First"). A FRESH native session gets the reconstructed prior-thread bootstrap;
- * a RESUMED session already holds the thread history natively, so it is dropped.
- * Both get the per-turn prefix — the run's pinned SKILL.md (instructions) then
- * fresh reference material (memory) — and finally the user's `prompt` verbatim.
- * Order: [prior-thread history] → [skill instructions] → [memory reference] →
- * [task]. The skill/memory are injected EVERY turn (per-run/per-turn), never
- * echoed into the stored `prompt`.
- *
- * Every adapter MUST use this instead of hand-concatenating, so a resumed turn
- * never silently drops freshly recalled memory or this turn's skill.
- */
-/**
- * Global agent operating rules, injected once per FRESH native session (a resumed
- * session already holds them in its native history, exactly like bootstrapContext).
- * Born from a real eval failure: on a task needing PostHog (credential absent), the
- * agent sleep-and-retried the auth-gated API in a loop until the turn timeout, while
- * reference hit the SAME missing credential, skipped that sub-step, and still delivered.
- * This makes graceful degradation the default instead of retry-until-death.
- */
-export const AGENT_OPERATING_RULES =
-  "<operating_rules>\n" +
-  "If a required tool, API, credential, or file is unavailable or repeatedly returns " +
-  "auth/permission errors (401/403), not-found, or empty results, do NOT sleep-and-retry " +
-  "it in a loop. Treat that dependency as unavailable: skip the sub-step it blocks, do " +
-  "everything else the task allows, and finish. A partial result that explicitly names " +
-  "what was skipped and why is far better than hanging until a timeout. Never block a " +
-  "whole task on one missing dependency. When browser tools are available, reuse the " +
-  "existing visible tab and prefer bounded DOM/locator actions. On complex dynamic pages, " +
-  "never request an unbounded full accessibility snapshot: limit it by target or depth. " +
-  "If structural inspection times out once, switch to a viewport screenshot plus coordinate " +
-  "tools instead of repeating the same snapshot. Do not close the browser unless the user " +
-  "asks you to. Inspection screenshots stay internal; publish an artifact only when the user " +
-  "requests a screenshot file or durable proof.\n" +
-  "</operating_rules>\n\n";
-
-/** Repeated every turn because an already-resident provider session may predate
- *  a deployment that added or changed the workspace catalog. This is semantic
- *  model-side selection from authenticated metadata, never backend text matching. */
-export const AGENT_WORKFLOW_ROUTING_RULES =
-  "<workflow_routing>\n" +
-  "Do not guess a skill from keywords, improvise a known workflow, or ask for an org, " +
-  "repository, or account identifier when an activated procedure and trusted gateway can resolve " +
-  "it from the authenticated workspace. For recurring or scheduled work, use the trusted " +
-  "automation_list / automation_create / automation_update / automation_run_now / automation_history / " +
-  "automation_delete tools for Skynet automations; only discuss external scheduler products when " +
-  "the user explicitly asks about those products.\n" +
-  "</workflow_routing>\n\n";
-
-export const AGENT_SKILL_DISCOVERY_RULES =
-  "<skill_discovery>\n" +
-  "When no pinned skill and no skill_catalog metadata are already present, before any non-trivial " +
-  "organization workflow, call skills_list, inspect the available catalog by meaning, and call " +
-  "skill_activate for the best-fitting procedure before acting.\n" +
-  "</skill_discovery>\n\n";
-
-export function composeTurnPrompt(
-  ctx: Pick<
-    EngineRunContext,
-    | "prompt"
-    | "bootstrapContext"
-    | "turnContext"
-    | "skillContext"
-    | "skillCatalogContext"
-    | "inputContext"
-    | "commandName"
-  >,
-  resumed: boolean,
-): string {
-  // A VALIDATED native provider command (its name was checked against the active session
-  // catalog at acceptance, so `commandName` is set and `prompt` already holds the exact
-  // `/name args` bytes) is delivered BYTE-VERBATIM with NO injected context/rules/skill -
-  // the provider's own command system handles it. An arbitrary prompt that merely starts with
-  // "/" is NOT a command: it keeps the full fresh/resumed context prefix (operating rules +
-  // bootstrap + skill + memory), so raw slash-prefixed text can never silently bypass them.
-  if (ctx.commandName) return ctx.prompt;
-  const skillReference = ctx.skillContext || ctx.skillCatalogContext || AGENT_SKILL_DISCOVERY_RULES;
-  const perTurn =
-    AGENT_WORKFLOW_ROUTING_RULES +
-    skillReference +
-    (ctx.inputContext ?? "") +
-    ctx.turnContext;
-  const prefix = resumed ? perTurn : AGENT_OPERATING_RULES + ctx.bootstrapContext + perTurn;
-  return prefix + ctx.prompt;
 }
 
 export interface EngineAdapter {
