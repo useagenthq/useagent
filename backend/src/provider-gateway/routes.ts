@@ -117,6 +117,7 @@ function responseHeaders(upstream: Headers): Headers {
     "content-type",
     "cache-control",
     "retry-after",
+    "x-should-retry",
     "x-request-id",
     "request-id",
     "x-ratelimit-limit-requests",
