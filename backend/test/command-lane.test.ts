@@ -79,7 +79,8 @@ describe("durable command lane", () => {
     expect(await claimNextRun(T)).toBeNull();
 
     // A finishes → its command settles → the NEXT turn (B) can dispatch, in order.
-    await completeRun(T, "completed", "done", 1);
+    expect(await completeRun(T, "completed", "done", 1)).toBe(true);
+    expect(await completeRun(`missing-${T}`, "completed", "done", 1)).toBe(false);
     expect((await settleCommandForRun(T)).status).toBe("completed");
     expect(await claimNextRun(T)).toBe(B);
     expect(await claimNextRun(T)).toBeNull(); // B now in flight
