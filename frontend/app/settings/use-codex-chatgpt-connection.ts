@@ -15,7 +15,7 @@ import type {
 
 const CODEX_STATUS_POLL_MS = 2_000;
 
-type CodexConnectionAction = "browser" | "device" | "cancel" | "revoke" | "status";
+type CodexConnectionAction = "connect" | "cancel" | "revoke" | "status";
 
 export function useCodexChatGptConnection(onChanged: () => Promise<void>) {
   const [status, setStatus] = useState<CodexChatGptStatus | null>(null);
@@ -57,12 +57,12 @@ export function useCodexChatGptConnection(onChanged: () => Promise<void>) {
     return () => window.clearInterval(timer);
   }, [login, refreshStatus]);
 
-  const startLogin = useCallback(async (loginMethod: "chatgpt" | "device_code") => {
-    setBusy(loginMethod === "chatgpt" ? "browser" : "device");
+  const startLogin = useCallback(async () => {
+    setBusy("connect");
     setError(null);
     setCopied(false);
     try {
-      setLogin(await startCodexChatGptLogin({ loginMethod }));
+      setLogin(await startCodexChatGptLogin());
     } catch {
       setError("Couldn't start the trusted ChatGPT login flow.");
     } finally {

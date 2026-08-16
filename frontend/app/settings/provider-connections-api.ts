@@ -69,13 +69,9 @@ export async function revokeProviderConnection(input: {
   return connection;
 }
 
-export async function startCodexChatGptLogin(input: {
-  loginMethod: "chatgpt" | "device_code";
-}): Promise<CodexChatGptLogin> {
+export async function startCodexChatGptLogin(): Promise<CodexChatGptLogin> {
   const res = await backendFetch("/api/provider-connections/openai/chatgpt-oauth/start", {
     method: "POST",
-    headers: jsonHeaders,
-    body: JSON.stringify({ loginMethod: input.loginMethod }),
   });
   if (!res.ok) throw new Error(`codex-chatgpt-start ${res.status}`);
   const data = (await res.json()) as { login?: unknown };

@@ -1027,9 +1027,10 @@ describe("provider connections", () => {
       start: async ({ scope, loginMethod }) => {
         calls.push({ action: `start:${loginMethod}`, scope });
         return {
-          type: "chatgpt",
+          type: "chatgptDeviceCode",
           loginId: "login-safe",
-          authUrl: "https://auth.openai.example/login",
+          verificationUrl: "https://auth.openai.com/activate",
+          userCode: "ABCD-EFGH",
         } satisfies CodexAppServerLoginStartResult;
       },
       status: async ({ scope }) => {
@@ -1078,9 +1079,10 @@ describe("provider connections", () => {
     expect(start.status).toBe(200);
     expect(start.body).toEqual({
       login: {
-        type: "chatgpt",
+        type: "chatgptDeviceCode",
         loginId: "login-safe",
-        authUrl: "https://auth.openai.example/login",
+        verificationUrl: "https://auth.openai.com/activate",
+        userCode: "ABCD-EFGH",
       },
     });
 
@@ -1141,7 +1143,7 @@ describe("provider connections", () => {
 
     const expectedScope = { orgId: session.orgId, userId };
     expect(calls).toEqual([
-      { action: "start:chatgpt", scope: expectedScope },
+      { action: "start:device_code", scope: expectedScope },
       { action: "status", scope: expectedScope },
       { action: "cancel", scope: expectedScope, loginId: "login-safe" },
       { action: "revoke", scope: expectedScope },

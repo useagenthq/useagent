@@ -80,24 +80,12 @@ export function CodexChatGptPath({
             size="xsmall"
             className="rounded-full"
             disabled={busy !== null}
-            onClick={() => void startLogin("chatgpt")}
+            onClick={() => void startLogin()}
           >
-            {busy === "browser" ? (
+            {busy === "connect" ? (
               <Button.Icon as={RiLoader4Line} className="animate-spin" />
             ) : null}
             Connect with ChatGPT
-          </Button.Root>
-          <Button.Root
-            type="button"
-            variant="neutral"
-            mode="stroke"
-            size="xsmall"
-            className="rounded-full"
-            disabled={busy !== null}
-            onClick={() => void startLogin("device_code")}
-          >
-            {busy === "device" ? <Button.Icon as={RiLoader4Line} className="animate-spin" /> : null}
-            Device code
           </Button.Root>
           <Button.Root
             type="button"
@@ -151,7 +139,8 @@ export function CodexChatGptPath({
             <div className="min-w-0">
               <p className="text-label-sm text-text-strong-950">Login pending</p>
               <p className="mt-1 text-paragraph-xs text-text-sub-600">
-                Complete the trusted login, then this panel will refresh automatically.
+                Copy the code, open the trusted OpenAI page, and complete sign-in. This panel will
+                refresh automatically.
               </p>
               {login.type === "chatgptDeviceCode" ? (
                 <div className="mt-2 flex flex-wrap items-center gap-2">
