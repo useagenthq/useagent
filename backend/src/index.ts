@@ -59,6 +59,7 @@ import {
 } from "./engines/t3-environment";
 import { prewarmT3EnvironmentAccess } from "./engines/t3-environment-client";
 import { prewarmT3ProviderBridge } from "./engines/t3-provider-bridge";
+import { providerConnectionsRoutes } from "./provider-connections/routes";
 import { wikiGenRoutes } from "./wiki-gen/routes";
 import { engineModelsForReadyEngines, readyUserFacingEngines } from "./runs/engine-readiness";
 import { uploadRoutes } from "./uploads/routes";
@@ -207,6 +208,9 @@ app.route("/api/schedules", schedulesRoutes);
 // sandbox at boot. Org-scoped; values are write-only at this boundary (set/delete
 // only, never returned). See src/secrets/*.
 app.route("/api/secrets", secretsRoutes);
+// User-scoped provider credentials. Values are encrypted at rest and write-only
+// over HTTP; trusted backend consumers use src/provider-connections/service.ts.
+app.route("/api/provider-connections", providerConnectionsRoutes);
 app.route("/api/knowledge", knowledgeRoutes);
 // Repo-wiki generator: POST /api/wiki/generate clones an offered repo and lands
 // a per-page architecture wiki as org-scoped published documents + immutable

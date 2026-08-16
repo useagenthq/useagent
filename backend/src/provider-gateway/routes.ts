@@ -4,7 +4,7 @@ import {
   finishProviderGatewayAudit,
   ProviderGatewayAdmissionError,
 } from "./audit";
-import { resolveProviderCredential } from "./credentials";
+import { resolveProviderCredentialForRun } from "./credentials";
 import { providerForEngine, type ProviderId } from "./provider";
 import { providerRequestLimits } from "./limits";
 import { applyProviderBodyPolicy, type OutputLimitField } from "./request-policy";
@@ -20,11 +20,11 @@ import { fetchProviderUpstream, providerGatewayMaxRetries } from "./retry";
 
 const MAX_BODY_BYTES = 8 * 1024 * 1024;
 
-interface ProviderRouteDeps {
+export interface ProviderRouteDeps {
   readonly verifyToken?: typeof verifyProviderToken;
   readonly findRunningRun?: typeof findRunningGatewayRun;
   readonly findActiveThreadRun?: typeof findActiveThreadGatewayRun;
-  readonly resolveCredential?: typeof resolveProviderCredential;
+  readonly resolveCredential?: typeof resolveProviderCredentialForRun;
   readonly fetchUpstream?: FetchLike;
   readonly beginAudit?: typeof beginProviderGatewayAudit;
   readonly finishAudit?: typeof finishProviderGatewayAudit;
@@ -203,7 +203,7 @@ export function createProviderGatewayRoutes(deps: ProviderRouteDeps = {}): Hono 
   const verifyToken = deps.verifyToken ?? verifyProviderToken;
   const findRunningRun = deps.findRunningRun ?? findRunningGatewayRun;
   const findActiveThreadRun = deps.findActiveThreadRun ?? findActiveThreadGatewayRun;
-  const resolveCredential = deps.resolveCredential ?? resolveProviderCredential;
+  const resolveCredential = deps.resolveCredential ?? resolveProviderCredentialForRun;
   const fetchUpstream: FetchLike = deps.fetchUpstream ?? fetch;
   const beginAudit = deps.beginAudit ?? beginProviderGatewayAudit;
   const finishAudit = deps.finishAudit ?? finishProviderGatewayAudit;
@@ -261,7 +261,11 @@ export function createProviderGatewayRoutes(deps: ProviderRouteDeps = {}): Hono 
       upstreamBody = applyOpenRouterProviderRouting(run.model, upstreamBody);
     }
 
-    const credential = await resolveCredential(claims.orgId, target.provider);
+    const credential = await resolveCredential({
+      orgId: claims.orgId,
+      userId: run.userId,
+      provider: target.provider,
+    });
     if (!credential) {
       return c.json({ error: "provider_not_configured" }, 503);
     }

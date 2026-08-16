@@ -2,7 +2,11 @@ import { describe, expect, test } from "bun:test";
 import { Hono } from "hono";
 import { ProviderGatewayAdmissionError } from "./audit";
 import type { GatewayRun } from "./run-authorization";
-import { createProviderGatewayRoutes, providerUpstreamOrigin } from "./routes";
+import {
+  createProviderGatewayRoutes,
+  providerUpstreamOrigin,
+  type ProviderRouteDeps,
+} from "./routes";
 import type { ProviderTokenClaims } from "./token";
 import { KIMI_K3_MODEL } from "../runs/model-policy";
 
@@ -32,6 +36,7 @@ function app(options: {
   activeRun?: GatewayRun | null;
   activeThreadRun?: GatewayRun | null;
   credential?: string | null;
+  resolveCredential?: ProviderRouteDeps["resolveCredential"];
   fetchUpstream?: (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
   beginAudit?: () => Promise<void>;
   finishAudit?: () => Promise<void>;
@@ -44,7 +49,8 @@ function app(options: {
       findRunningRun: async () => options.activeRun === undefined ? run : options.activeRun,
       findActiveThreadRun: async () =>
         options.activeThreadRun === undefined ? null : options.activeThreadRun,
-      resolveCredential: async () => options.credential === undefined ? "real-upstream-key" : options.credential,
+      resolveCredential: options.resolveCredential ??
+        (async () => options.credential === undefined ? "real-upstream-key" : options.credential),
       fetchUpstream: options.fetchUpstream,
       beginAudit: options.beginAudit ?? (async () => undefined),
       finishAudit: options.finishAudit ?? (async () => undefined),
@@ -181,6 +187,37 @@ describe("provider gateway routes", () => {
       stream: true,
     });
     expect(auditCompletions).toBe(1);
+  });
+
+  test("resolves upstream credentials with the active run user", async () => {
+    type ResolveInput = Parameters<NonNullable<ProviderRouteDeps["resolveCredential"]>>[0];
+    const captured = {
+      credentialInput: null as ResolveInput | null,
+      authorization: null as string | null,
+    };
+
+    const response = await app({
+      resolveCredential: async (input) => {
+        captured.credentialInput = input;
+        return "user-owned-key";
+      },
+      fetchUpstream: async (_input, init) => {
+        captured.authorization = new Headers(init?.headers).get("authorization");
+        return Response.json({ ok: true });
+      },
+    }).request("/api/provider/openrouter/v1/chat/completions", {
+      method: "POST",
+      headers: { authorization: "Bearer sandbox-capability" },
+      body: JSON.stringify({ model: run.model }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(captured.credentialInput).toEqual({
+      orgId: claims.orgId,
+      userId: claims.userId,
+      provider: "openrouter",
+    });
+    expect(captured.authorization).toBe("Bearer user-owned-key");
   });
 
   test("enforces throughput-first, tool-capable routing for Kimi K3", async () => {
