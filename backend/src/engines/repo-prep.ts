@@ -8,6 +8,7 @@
 import type { SandboxHandle } from "../sandboxes/provider";
 import { resolveGithubToken } from "../github/auth";
 import { parseRepoRef } from "../github/repo-ref";
+import { RUN_TIMING_OUTCOMES, RUN_TIMING_STAGES } from "../runs/run-timing";
 import type { EngineRunContext } from "./types";
 import { truncate } from "./util";
 
@@ -172,8 +173,20 @@ export async function prepareRepos(
   workdir: string,
   ctx: EngineRunContext,
 ): Promise<void> {
-  for (const r of ctx.repos ?? []) {
-    if (ctx.signal.aborted) throw new Error("run aborted (timeout)");
-    await ensureRepoClone(sandbox, workdir, r, ctx);
+  const repos = ctx.repos ?? [];
+  const end = ctx.timing?.begin(RUN_TIMING_STAGES.repoPrep);
+  if (repos.length === 0) {
+    end?.(RUN_TIMING_OUTCOMES.skipped);
+    return;
+  }
+  try {
+    for (const r of repos) {
+      if (ctx.signal.aborted) throw new Error("run aborted (timeout)");
+      await ensureRepoClone(sandbox, workdir, r, ctx);
+    }
+    end?.(RUN_TIMING_OUTCOMES.success);
+  } catch (error) {
+    end?.(ctx.signal.aborted ? RUN_TIMING_OUTCOMES.aborted : RUN_TIMING_OUTCOMES.failure);
+    throw error;
   }
 }

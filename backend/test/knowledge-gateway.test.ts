@@ -4,8 +4,10 @@ import { db } from "../src/db/client";
 import { providerEvents, runs, schedules } from "../src/db/schema";
 import { createGatewayApp } from "../src/gateway-app";
 import { mintToolToken, verifyToolToken } from "../src/knowledge/gateway/token";
+import { mintApprovalCapability } from "../src/knowledge/gateway/approval-capability";
 import { KNOWLEDGE_RETRIEVED } from "../src/knowledge/gateway/tools";
 import { ingestOne } from "../src/knowledge/ingest";
+import { subscribeOrg, type OrgChange } from "../src/runs/org-signals";
 import { createSkillWithRevision } from "../src/skills/repo";
 import { uid, waitFor } from "./helpers";
 
@@ -175,6 +177,23 @@ describe("knowledge MCP gateway", () => {
       60_000,
     );
   });
+
+  async function approvedArgs(
+    toolName: string,
+    args: Record<string, unknown>,
+  ): Promise<Record<string, unknown>> {
+    const claims = verifyToolToken(tokenA);
+    if (!claims) throw new Error("expected a live org A tool capability");
+    const { capability } = await mintApprovalCapability({
+      orgId: claims.orgId,
+      userId: claims.userId,
+      threadId: claims.threadId,
+      runId: claims.runId,
+      toolName,
+      arguments: args,
+    });
+    return { ...args, approvalCapability: capability };
+  }
 
   test("no / bad token → 401 (fail closed)", async () => {
     const noTok = await rpc(null, { jsonrpc: "2.0", id: 1, method: "tools/list" });
@@ -475,7 +494,7 @@ describe("knowledge MCP gateway", () => {
       expect(listed.status).toBe(200);
       expect(
         (listed.body.result.tools as { name: string }[]).map((tool) => tool.name).sort(),
-      ).toEqual(["gateway_tool_describe", "gateway_tools_search"]);
+      ).toEqual(["gateway_tool_call", "gateway_tool_describe", "gateway_tools_search"]);
 
       const search = await rpc(
         tokenA,
@@ -496,6 +515,15 @@ describe("knowledge MCP gateway", () => {
         inputSchema: expect.objectContaining({
           required: expect.arrayContaining(["name", "prompt", "cron"]),
         }),
+      });
+
+      const invoked = await rpc(
+        tokenA,
+        call(73, "gateway_tool_call", { name: "automation_schema" }),
+      );
+      expect(invoked.status).toBe(200);
+      expect(invoked.body.result.structuredContent.schema).toMatchObject({
+        identity: expect.stringContaining("signed gateway capability"),
       });
     } finally {
       if (previous === undefined) {
@@ -597,19 +625,26 @@ describe("knowledge MCP gateway", () => {
     expect(listed.body.result.structuredContent.documents.length).toBeLessThanOrEqual(10);
     expect(listed.body.result.structuredContent.truncated).toBe(true);
 
-    const refusedPublish = await rpc(tokenA, call(58, "knowledge_draft_publish", { documentId }));
-    expect(refusedPublish.body.result.isError).toBe(true);
-    expect(refusedPublish.body.result.structuredContent.requiredConfirmationToken).toBe(
-      `publish:${documentId}`,
-    );
+    for (const modelConfirmation of [
+      { confirmPublish: true },
+      { confirmationToken: `publish:${documentId}` },
+    ]) {
+      const refusedPublish = await rpc(
+        tokenA,
+        call(58, "knowledge_draft_publish", { documentId, ...modelConfirmation }),
+      );
+      expect(refusedPublish.body.result.isError).toBe(true);
+      expect(refusedPublish.body.result.structuredContent.error).toBe("approval_required");
+    }
 
+    const publishArgs = { documentId, baseRevisionId: currentRevisionId };
     const published = await rpc(
       tokenA,
-      call(59, "knowledge_draft_publish", {
-        documentId,
-        baseRevisionId: currentRevisionId,
-        confirmPublish: true,
-      }),
+      call(
+        59,
+        "knowledge_draft_publish",
+        await approvedArgs("knowledge_draft_publish", publishArgs),
+      ),
     );
     expect(published.body.result.isError).toBeFalsy();
     expect(published.body.result.structuredContent.document.status).toBe("published");
@@ -621,7 +656,14 @@ describe("knowledge MCP gateway", () => {
       ),
     ).toBe(true);
 
-    const archived = await rpc(tokenA, call(61, "knowledge_draft_archive", { documentId }));
+    const archived = await rpc(
+      tokenA,
+      call(
+        61,
+        "knowledge_draft_archive",
+        await approvedArgs("knowledge_draft_archive", { documentId }),
+      ),
+    );
     expect(archived.body.result.isError).toBeFalsy();
     expect(archived.body.result.structuredContent.document.status).toBe("archived");
 
@@ -688,9 +730,11 @@ describe("knowledge MCP gateway", () => {
     expect(got.body.result.structuredContent.automation.skill_id).toBe(skill!.id);
     const removedInherited = await rpc(
       tokenA,
-      call(291, "automation_delete", {
-        id: inheritedId,
-      }),
+      call(
+        291,
+        "automation_delete",
+        await approvedArgs("automation_delete", { id: inheritedId }),
+      ),
     );
     expect(removedInherited.body.result.structuredContent.deleted).toBe(true);
 
@@ -732,53 +776,79 @@ describe("knowledge MCP gateway", () => {
       }),
     );
     expect(refusedEnable.body.result.isError).toBe(true);
-    expect(refusedEnable.body.result.content[0].text).toContain("confirmEnable=true");
+    expect(refusedEnable.body.result.content[0].text).toContain("server-minted");
 
+    const deliveryArgs = {
+      id: automation.id,
+      delivery: { mode: "summary" },
+      notifications: { channels: ["slack"] },
+    };
     const deliveryDraft = await rpc(
       tokenA,
-      call(321, "automation_update", {
-        id: automation.id,
-        delivery: { mode: "summary" },
-        notifications: { channels: ["slack"] },
-      }),
+      call(321, "automation_update", await approvedArgs("automation_update", deliveryArgs)),
     );
     expect(deliveryDraft.body.result.isError).toBeFalsy();
+    const enableWithDeliveryArgs = { id: automation.id, enabled: true };
     const refusedDeliveryEnable = await rpc(
       tokenA,
-      call(322, "automation_update", {
-        id: automation.id,
-        enabled: true,
-        confirmEnable: true,
-      }),
+      call(
+        322,
+        "automation_update",
+        await approvedArgs("automation_update", enableWithDeliveryArgs),
+      ),
     );
     expect(refusedDeliveryEnable.body.result.isError).toBe(true);
     expect(refusedDeliveryEnable.body.result.structuredContent.error.error).toBe(
       "automation_delivery_not_ready",
     );
+    const clearDeliveryArgs = {
+      id: automation.id,
+      delivery: null,
+      notifications: null,
+    };
     const clearedDelivery = await rpc(
       tokenA,
-      call(323, "automation_update", {
-        id: automation.id,
-        delivery: null,
-        notifications: null,
-      }),
+      call(
+        323,
+        "automation_update",
+        await approvedArgs("automation_update", clearDeliveryArgs),
+      ),
     );
     expect(clearedDelivery.body.result.isError).toBeFalsy();
 
+    const oneShotArgs = await approvedArgs("automation_update", {
+      id: automation.id,
+      name: "Gateway automation one-shot proof",
+    });
+    const oneShotResults = await Promise.all([
+      rpc(tokenA, call(324, "automation_update", oneShotArgs)),
+      rpc(tokenA, call(325, "automation_update", oneShotArgs)),
+    ]);
+    expect(oneShotResults.filter((result) => !result.body.result.isError)).toHaveLength(1);
+    expect(
+      oneShotResults.filter(
+        (result) => result.body.result.structuredContent?.error === "approval_required",
+      ),
+    ).toHaveLength(1);
+
+    const enableArgs = {
+      id: automation.id,
+      skill: { id: skill!.id },
+      enabled: true,
+    };
     const enabled = await rpc(
       tokenA,
-      call(33, "automation_update", {
-        id: automation.id,
-        skill: { id: skill!.id },
-        enabled: true,
-        confirmEnable: true,
-      }),
+      call(33, "automation_update", await approvedArgs("automation_update", enableArgs)),
     );
     expect(enabled.body.result.isError).toBeFalsy();
     expect(enabled.body.result.structuredContent.automation.enabled).toBe(true);
     expect(enabled.body.result.structuredContent.automation.skill_id).toBe(skill!.id);
 
-    const runNow = await rpc(tokenA, call(34, "automation_run_now", { id: automation.id }));
+    const runNowArgs = { id: automation.id };
+    const runNow = await rpc(
+      tokenA,
+      call(34, "automation_run_now", await approvedArgs("automation_run_now", runNowArgs)),
+    );
     expect(runNow.body.result.isError).toBeFalsy();
     const runId = runNow.body.result.structuredContent.run_id as string;
     expect(runId).toMatch(/[0-9a-f-]{36}/);
@@ -800,7 +870,14 @@ describe("knowledge MCP gateway", () => {
     });
     expect(history.some((f) => f.run_id === runId)).toBe(true);
 
-    const deleted = await rpc(tokenA, call(36, "automation_delete", { id: automation.id }));
+    const deleted = await rpc(
+      tokenA,
+      call(
+        36,
+        "automation_delete",
+        await approvedArgs("automation_delete", { id: automation.id }),
+      ),
+    );
     expect(deleted.body.result.isError).toBeFalsy();
     expect(deleted.body.result.structuredContent.deleted).toBe(true);
 
@@ -812,7 +889,72 @@ describe("knowledge MCP gateway", () => {
 
     const missing = await rpc(tokenA, call(37, "automation_history", { id: automation.id }));
     expect(missing.body.result.isError).toBe(true);
+    expect(missing.body.result.content[0].text).toBe("automation not found");
     expect(missing.body.result.structuredContent.status).toBe(404);
+  });
+
+  test("signed automation mutations publish exactly one org invalidation each", async () => {
+    const changes: OrgChange[] = [];
+    const unsubscribe = subscribeOrg(orgA, (change) => {
+      if (change.type === "automation") changes.push(change);
+    });
+
+    try {
+      const created = await rpc(
+        tokenA,
+        call(380, "automation_create", {
+          name: "Gateway realtime invalidation",
+          cron: "0 8 * * *",
+          prompt: "say realtime ok",
+          engine: "mock",
+        }),
+      );
+      expect(created.body.result.isError).toBeFalsy();
+      const automationId = created.body.result.structuredContent.automation.id as string;
+
+      const updated = await rpc(
+        tokenA,
+        call(
+          381,
+          "automation_update",
+          await approvedArgs("automation_update", {
+            id: automationId,
+            name: "Gateway realtime invalidation updated",
+          }),
+        ),
+      );
+      expect(updated.body.result.isError).toBeFalsy();
+
+      const fired = await rpc(
+        tokenA,
+        call(
+          382,
+          "automation_run_now",
+          await approvedArgs("automation_run_now", { id: automationId }),
+        ),
+      );
+      expect(fired.body.result.isError).toBeFalsy();
+      const runId = fired.body.result.structuredContent.run_id as string;
+
+      const deleted = await rpc(
+        tokenA,
+        call(
+          383,
+          "automation_delete",
+          await approvedArgs("automation_delete", { id: automationId }),
+        ),
+      );
+      expect(deleted.body.result.isError).toBeFalsy();
+
+      expect(changes).toEqual([
+        { type: "automation", action: "created", automationId },
+        { type: "automation", action: "updated", automationId },
+        { type: "automation", action: "fired", automationId, runId },
+        { type: "automation", action: "deleted", automationId },
+      ]);
+    } finally {
+      unsubscribe();
+    }
   });
 
   test("knowledge_search returns ONLY the token org's data, with citation", async () => {

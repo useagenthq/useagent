@@ -10,24 +10,11 @@ import * as Button from "@/components/ui/button";
 import * as Input from "@/components/ui/input";
 import { BackendUnreachable } from "@/components/shared/backend-unreachable";
 import { cnExt } from "@/utils/cn";
+import { relTime } from "@/app/settings/relative-time";
 import { deleteSecret, fetchSecrets, putSecret } from "./secrets-api";
 import { isValidSecretName, SECRET_KINDS, type SecretKind, type SecretMeta } from "./secrets-data";
 
 const MASK = "••••••••";
-
-/** Relative "updated Xm ago" label. Client-only (reads the clock), so callers
- *  render it behind a mounted gate to avoid a server/client hydration mismatch. */
-function relTime(iso: string): string {
-  const secs = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 1000));
-  if (secs < 60) return "just now";
-  const mins = Math.round(secs / 60);
-  if (mins < 60) return `${mins}m ago`;
-  const hrs = Math.round(mins / 60);
-  if (hrs < 24) return `${hrs}h ago`;
-  const days = Math.round(hrs / 24);
-  if (days < 30) return `${days}d ago`;
-  return new Date(iso).toLocaleDateString();
-}
 
 function byName(a: SecretMeta, b: SecretMeta): number {
   return a.name.localeCompare(b.name);

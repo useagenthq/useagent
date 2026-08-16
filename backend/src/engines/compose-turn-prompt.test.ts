@@ -81,19 +81,21 @@ describe("composeTurnPrompt — fresh vs resumed context", () => {
     expect(out).toContain("automation_create");
   });
 
-  test("fresh catalog metadata lets the model choose semantically without forced skills_list first", () => {
+  test("fresh catalog metadata supplements model-side skill discovery", () => {
     const catalog = "<skill_catalog>\nCATALOG_JSON\n</skill_catalog>\n\n";
     const out = composeTurnPrompt(ctx({ skillCatalogContext: catalog }), false);
-    expect(out).toBe(`${R}BOOT${W}${catalog}TURNUSER`);
-    expect(out).not.toContain("<skill_discovery>");
+    expect(out).toBe(`${R}BOOT${W}${S}${catalog}TURNUSER`);
+    expect(out).toContain("skills_list");
+    expect(out).toContain("skill_activate");
     expect(out).toContain("automation_create");
   });
 
-  test("resumed catalog metadata lets the model choose semantically without forced skills_list first", () => {
+  test("resumed catalog metadata does not suppress model-side skill discovery", () => {
     const catalog = "<skill_catalog>\nCATALOG_JSON\n</skill_catalog>\n\n";
     const out = composeTurnPrompt(ctx({ skillCatalogContext: catalog }), true);
-    expect(out).toBe(`${W}${catalog}TURNUSER`);
-    expect(out).not.toContain("<skill_discovery>");
+    expect(out).toBe(`${W}${S}${catalog}TURNUSER`);
+    expect(out).toContain("skills_list");
+    expect(out).toContain("skill_activate");
     expect(out).toContain("automation_create");
   });
 

@@ -1,3 +1,13 @@
+import {
+  PROVIDER_CONNECTION_AUTH_METHODS,
+  PROVIDER_CONNECTION_PROVIDERS,
+  PROVIDER_CONNECTION_STATUSES,
+  type ProviderConnectionAuthMethod,
+  type ProviderConnectionMetadata,
+  type ProviderConnectionProvider,
+  type ProviderConnectionStatus,
+} from "@skynet/agent-client/provider-connections";
+import type { ArtifactWorkpieceKind, ArtifactWorkpieceState } from "@skynet/artifact-workspace";
 import { sql } from "drizzle-orm";
 import {
   type AnyPgColumn,
@@ -15,17 +25,24 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 
+export type {
+  ProviderConnectionAuthMethod,
+  ProviderConnectionMetadata,
+  ProviderConnectionProvider,
+  ProviderConnectionStatus,
+};
+export {
+  PROVIDER_CONNECTION_AUTH_METHODS,
+  PROVIDER_CONNECTION_PROVIDERS,
+  PROVIDER_CONNECTION_STATUSES,
+};
+
 // ---------------------------------------------------------------------------
 // Shared domain types
 // ---------------------------------------------------------------------------
 
 export type RunStatus = "queued" | "running" | "completed" | "failed";
 export type StepKind = "command" | "file" | "task" | "done";
-export type ArtifactWorkpieceKind = "document" | "spreadsheet";
-export type ArtifactWorkpieceState =
-  | Readonly<{ text: string }>
-  | Readonly<{ html: string }>
-  | Readonly<{ csv: string }>;
 
 /** Which team-memory pool a run reads and writes (see src/memory/scope.ts).
  *  - "org": read + capture ORGANIZATION memory only (every org member shares it).
@@ -480,34 +497,6 @@ export const secrets = pgTable(
 // safe display fields; credential material is AES-256-GCM sealed with the shared
 // secrets crypto implementation.
 // ---------------------------------------------------------------------------
-
-export const PROVIDER_CONNECTION_PROVIDERS = [
-  "openai",
-  "anthropic",
-  "openrouter",
-] as const;
-export type ProviderConnectionProvider =
-  (typeof PROVIDER_CONNECTION_PROVIDERS)[number];
-
-export const PROVIDER_CONNECTION_AUTH_METHODS = [
-  "chatgpt_oauth",
-  "api_key",
-] as const;
-export type ProviderConnectionAuthMethod =
-  (typeof PROVIDER_CONNECTION_AUTH_METHODS)[number];
-
-export const PROVIDER_CONNECTION_STATUSES = [
-  "connected",
-  "reauth_required",
-  "revoked",
-] as const;
-export type ProviderConnectionStatus =
-  (typeof PROVIDER_CONNECTION_STATUSES)[number];
-
-export interface ProviderConnectionMetadata {
-  email?: string;
-  planType?: string;
-}
 
 export const providerConnections = pgTable(
   "provider_connections",

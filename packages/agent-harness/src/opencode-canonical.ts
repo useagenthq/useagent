@@ -22,211 +22,47 @@ import {
   parseAcpCommandsFrame,
   parseSessionStartedFrame,
   type CanonicalAgentEvent,
+  type CanonicalChildState,
   type CanonicalEventBody,
   type CanonicalEventKind,
-  type ContextMarkerKind,
 } from "./canonical";
+import {
+  t3ActivityKind,
+  t3Errored,
+  t3Payload,
+  t3Preview,
+  t3ToolCallId,
+  t3ToolDuration,
+  t3ToolName,
+  t3ToolServer,
+  t3ToolStatus,
+} from "./opencode-t3";
+import type {
+  Disposition,
+  OpenCodeFrame,
+  OpenCodeStep,
+  TranslateCtx,
+  TranslateResult,
+} from "./opencode-types";
+import {
+  boundedPreview,
+  canonicalChildState,
+  firstString,
+  recordValue as rec,
+  stringValue as str,
+} from "./opencode-values";
+import { markerFromSkynet } from "./skynet-context-marker";
 
-/** OpenCode native frame (subset of the wire frame; matches src/runs/native-events
- *  + the frontend NativeFrame + the golden fixture). */
-export interface OpenCodeFrame {
-  eventId: string;
-  seq: number;
-  provider: string;
-  eventType: string;
-  native: {
-    sessionId: string | null;
-    parentSessionId: string | null;
-    messageId: string | null;
-    partId: string | null;
-    callId: string | null;
-  };
-  payload: unknown;
-}
-
-/** OpenCode durable step (matches ApiStep / the golden steps fixture). Tool ROWS in
- *  the legacy timeline come from here, so canonical tool events are sourced here too. */
-export interface OpenCodeStep {
-  id: string;
-  run_id?: string;
-  idx: number;
-  kind: string; // "command" | "file" | "task" | "done" | ...
-  label?: string | null;
-  chip?: string | null;
-  code_json?: string | null;
-}
-
-export interface TranslateCtx {
-  runId: string;
-  threadId: string;
-  /** The run's engine — the PROVENANCE stamped on step-derived events. OpenCode frames
-   *  carry their own real provider; steps do not, so a step tool row is attributed to the
-   *  run's engine ("opencode" | "claude" | "codex"). Defaults to "opencode" so every
-   *  existing caller + the golden fixture are unchanged. Claude/Codex ACP runs project
-   *  their tool_calls into `steps` and emit ~no frames, so this is their whole provenance
-   *  - we do NOT fabricate assistant-message frames they never durably persisted. */
-  engine?: string;
-  /** ts source (Skynet-assigned, never trusted from the provider). Defaults to the
-   *  source seq/idx for deterministic tests; the emit layer passes a real clock. */
-  ts?: (seq: number) => number;
-}
-
-/** Per source event: exactly what canonical it produced, or WHY it produced nothing.
- *  The test asserts every source frame/step has one of these (no silent drops). */
-export interface Disposition {
-  sourceId: string;
-  kind: string; // source eventType or step kind
-  provider: string;
-  produced: CanonicalEventKind[];
-  suppressed?: string; // named reason when produced is empty
-}
-
-export interface TranslateResult {
-  events: CanonicalAgentEvent[];
-  accounting: Disposition[];
-}
-
-const rec = (v: unknown): Record<string, unknown> | null =>
-  v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : null;
-const str = (v: unknown): string | null => (typeof v === "string" ? v : null);
-const num = (v: unknown): number | null => (typeof v === "number" && Number.isFinite(v) ? v : null);
-
-const MAX_PREVIEW_CHARS = 240;
-
-function firstString(...values: unknown[]): string | null {
-  for (const value of values) {
-    const text = str(value)?.trim();
-    if (text) return text;
-  }
-  return null;
-}
-
-function boundedPreview(...values: unknown[]): string | undefined {
-  const text = firstString(...values)?.replace(/\s+/g, " ");
-  if (!text) return undefined;
-  return text.length > MAX_PREVIEW_CHARS ? `${text.slice(0, MAX_PREVIEW_CHARS - 1)}…` : text;
-}
-
-function appendDuration(preview: string | undefined, durationMs: number | null): string | undefined {
-  if (durationMs === null) return preview;
-  const suffix = `${Math.round(durationMs)}ms`;
-  if (!preview) return suffix;
-  return preview.includes(suffix) ? preview : boundedPreview(`${preview} (${suffix})`);
-}
+export type {
+  Disposition,
+  OpenCodeFrame,
+  OpenCodeStep,
+  TranslateCtx,
+  TranslateResult,
+} from "./opencode-types";
 
 const TASK_CHILD_ID = /<task\s+id="(ses_[^"]+)"/;
 const TASK_RESULT = /<task_result>\s*([\s\S]*?)\s*<\/task_result>/;
-
-function t3Payload(activity: Record<string, unknown> | null): Record<string, unknown> | null {
-  return rec(activity?.payload);
-}
-
-function t3ActivityKind(eventType: string, activity: Record<string, unknown> | null): string {
-  return str(activity?.kind) ?? eventType.slice("t3.activity.".length);
-}
-
-function t3ToolName(payload: Record<string, unknown> | null): string {
-  const data = rec(payload?.data);
-  const item = rec(data?.item);
-  return firstString(
-    payload?.toolName,
-    payload?.tool,
-    data?.toolName,
-    data?.tool,
-    item?.tool,
-    item?.name,
-    payload?.itemType,
-  ) ?? "tool";
-}
-
-function t3ToolCallId(
-  f: OpenCodeFrame,
-  activity: Record<string, unknown> | null,
-  payload: Record<string, unknown> | null,
-): string {
-  const data = rec(payload?.data);
-  const item = rec(data?.item);
-  return firstString(
-    // Keep this precedence aligned with the T3 producer. Codex MCP activity
-    // revisions carry the stable identity under payload.data.toolCallId while
-    // each outer activity has a different presentation id.
-    data?.toolCallId,
-    item?.id,
-    payload?.toolUseId,
-    payload?.toolCallId,
-    data?.toolUseId,
-    f.native.callId,
-    payload?.callId,
-    data?.callId,
-    payload?.id,
-    activity?.id,
-    f.eventId,
-  ) ?? f.eventId;
-}
-
-function t3Preview(
-  activity: Record<string, unknown> | null,
-  payload: Record<string, unknown> | null,
-): string | undefined {
-  const data = rec(payload?.data);
-  const item = rec(data?.item);
-  const durationMs = num(payload?.durationMs) ?? num(rec(payload?.typedUsage)?.durationMs) ?? num(data?.durationMs);
-  return appendDuration(
-    boundedPreview(
-      payload?.summary,
-      activity?.summary,
-      payload?.detail,
-      activity?.detail,
-      payload?.error,
-      item?.text,
-      item?.message,
-    ),
-    durationMs,
-  );
-}
-
-function t3Errored(activityKind: string, activity: Record<string, unknown> | null, payload: Record<string, unknown> | null): boolean {
-  const status = str(payload?.status)?.toLowerCase();
-  const tone = str(activity?.tone)?.toLowerCase();
-  return activityKind.endsWith(".error")
-    || activityKind.endsWith(".failed")
-    || activityKind.endsWith(".denied")
-    || status === "error"
-    || status === "failed"
-    || tone === "error"
-    || Boolean(payload?.error);
-}
-
-function markerFromSkynet(eventType: string, p: Record<string, unknown> | null):
-  | { markerType: ContextMarkerKind; title: string; detail?: string }
-  | null {
-  if (eventType === "skill.loaded") {
-    const playbook = p?.kind === "playbook";
-    return {
-      markerType: playbook ? "playbook" : "skill",
-      title: str(p?.name) ?? (playbook ? "playbook" : "skill"),
-      detail: typeof p?.version === "number" ? `v${p.version}` : undefined,
-    };
-  }
-  if (eventType === "context.retrieved" || eventType === "knowledge.retrieved" || eventType === "memory.searched") {
-    const src = str(p?.source) ?? (eventType === "knowledge.retrieved" ? "knowledge" : "memory");
-    const n = typeof p?.itemCount === "number" ? p.itemCount : 0;
-    return { markerType: src === "knowledge" ? "knowledge" : "memory", title: `Recalled ${n} item${n === 1 ? "" : "s"} from ${src}` };
-  }
-  if (eventType === "memory.l0_accepted" || eventType === "memory.updated" || eventType === "memory.deleted" || eventType === "memory.failed") {
-    const failed = eventType === "memory.failed";
-    const op = str(p?.op) ?? (eventType === "memory.updated" ? "correct" : eventType === "memory.deleted" ? "forget" : "remember");
-    return { markerType: "memory", title: failed ? `Memory ${op} failed` : `Memory ${op}` };
-  }
-  // Boot-recovery park marker (recovery.ts RUN_RECONCILING). The legacy native lane
-  // renders this as a `reconciling` TimelineMarker, so the canonical lane must too - it
-  // was previously dropped to a harness.warning (invisible in the timeline), a real
-  // node-equality gap.
-  if (eventType === "run.reconciling") {
-    return { markerType: "reconciling", title: "Reconciling after a restart" };
-  }
-  return null;
-}
 
 /**
  * Translate an OpenCode session (native frames + durable steps) into a canonical
@@ -265,6 +101,7 @@ export function translateOpenCode(
 
   const emittedChild = new Set<string>();  // child sessionIds we've announced
   const seenTaskCall = new Set<string>();  // task-tool callIds we've opened
+  const seenChild = new Set<string>();     // structured provider child ids we've opened
   const seenTool = new Set<string>();      // non-task tool callIds we've opened
   const seenT3Tool = new Set<string>();    // T3 tool callIds we've opened
   const authoritativeT3LifecycleIds = new Set<string>();
@@ -371,7 +208,7 @@ export function translateOpenCode(
         } else suppressed = `${et} without a complete artifact descriptor`;
       }
       else if (et === "secrets.injected") produced.push(push(f.eventId, f.provider, { kind: "session.metadata", metadata: { secretsInjected: true } }, ident));
-      else produced.push(push(f.eventId, f.provider, { kind: "harness.warning", message: "unmapped skynet event", rawEventType: et }, ident));
+      else produced.push(push(f.eventId, f.provider, { kind: "harness.warning", message: "unmapped skynet event", rawEventType: et, rawPayload: f.payload }, ident));
     } else if (et === "question.asked") {
       const questionId = str(p?.id);
       const rawQuestions = Array.isArray(p?.questions) ? p.questions : [];
@@ -439,12 +276,15 @@ export function translateOpenCode(
         title: string | undefined,
         terminal: boolean,
         errored: boolean,
+        state: CanonicalChildState | undefined,
       ): void {
         if (activityKind.endsWith(".started")) {
+          seenChild.add(childId);
           produced.push(push(f.eventId, f.provider, {
             kind: "child.started",
             childId,
             title,
+            ...(state ? { state } : {}),
           }, ident, "#child-start"));
         } else if (terminal) {
           produced.push(push(f.eventId, f.provider, {
@@ -452,12 +292,14 @@ export function translateOpenCode(
             childId,
             status: errored ? "error" : "ok",
             result: preview,
+            ...(state ? { state } : {}),
           }, ident, "#child-done"));
         } else {
           produced.push(push(f.eventId, f.provider, {
             kind: "child.updated",
             childId,
             status: preview ?? firstString(payload?.status) ?? "running",
+            ...(state ? { state } : {}),
           }, ident, "#child-upd"));
         }
       }
@@ -469,36 +311,42 @@ export function translateOpenCode(
         terminal: boolean,
         errored: boolean,
       ): void {
-        if (activityKind.endsWith(".started")) {
+        const server = t3ToolServer(payload);
+        const nativeStatus = t3ToolStatus(payload);
+        const durationMs = t3ToolDuration(payload);
+        const start = (): void => {
           seenT3Tool.add(callId);
           produced.push(push(f.eventId, f.provider, {
             kind: "tool.started",
             toolCallId: callId,
             name,
             title,
+            ...(server ? { server } : {}),
+            ...(nativeStatus ? { nativeStatus } : {}),
+            ...(durationMs === undefined ? {} : { durationMs }),
           }, ident, "#tool-start"));
+        };
+        if (activityKind.endsWith(".started")) {
+          start();
         } else if (terminal) {
-          if (!seenT3Tool.has(callId)) {
-            seenT3Tool.add(callId);
-            produced.push(push(f.eventId, f.provider, {
-              kind: "tool.started",
-              toolCallId: callId,
-              name,
-              title,
-            }, ident, "#tool-start"));
-          }
+          if (!seenT3Tool.has(callId)) start();
           produced.push(push(f.eventId, f.provider, {
             kind: "tool.completed",
             toolCallId: callId,
             status: errored ? "error" : "ok",
             ...(preview ? { preview } : {}),
             ...(errored && preview ? { error: preview } : {}),
+            ...(nativeStatus ? { nativeStatus } : {}),
+            ...(durationMs === undefined ? {} : { durationMs }),
           }, ident, "#tool-done"));
         } else {
+          if (!seenT3Tool.has(callId)) start();
           produced.push(push(f.eventId, f.provider, {
             kind: "tool.progress",
             toolCallId: callId,
             ...(preview ? { preview } : {}),
+            ...(nativeStatus ? { nativeStatus } : {}),
+            ...(durationMs === undefined ? {} : { durationMs }),
           }, ident, "#tool-prog"));
         }
       }
@@ -511,11 +359,12 @@ export function translateOpenCode(
         const title = firstString(payload?.title, payload?.role, activity?.summary) ?? undefined;
         const errored = t3Errored(activityKind, activity, payload);
         const terminal = activityKind.endsWith(".completed") || activityKind.endsWith(".error") || activityKind.endsWith(".failed");
+        const state = canonicalChildState(payload);
 
         if (isAgentTask && !nativeTaskId) {
           suppressed = "t3 agent task without provider child identity";
         } else if (isAgentTask && nativeTaskId) {
-          emitChildActivity(nativeTaskId, title, terminal, errored);
+          emitChildActivity(nativeTaskId, title, terminal, errored, state);
         } else {
           const callId = nativeTaskId ?? firstString(activity?.id, f.eventId) ?? f.eventId;
           const name = title ?? "task";
@@ -537,7 +386,13 @@ export function translateOpenCode(
             activityKind.endsWith(".error") ||
             activityKind.endsWith(".failed") ||
             activityKind.endsWith(".denied");
-          emitChildActivity(explicitChildId, title, terminal, errored);
+          emitChildActivity(
+            explicitChildId,
+            title,
+            terminal,
+            errored,
+            canonicalChildState(payload),
+          );
         } else {
           const name = t3ToolName(payload);
           const title = firstString(activity?.summary, payload?.summary) ?? undefined;
@@ -545,9 +400,22 @@ export function translateOpenCode(
           const terminal = activityKind.endsWith(".completed") || activityKind.endsWith(".error") || activityKind.endsWith(".failed") || activityKind.endsWith(".denied");
 
           emitToolActivity(callId, name, title, terminal, errored);
+          const owningChildId = firstString(payload?.taskId);
+          if (owningChildId && seenChild.has(owningChildId)) {
+            const childSummary = preview ?? `Running ${name}`;
+            produced.push(push(f.eventId, f.provider, {
+              kind: "child.updated",
+              childId: owningChildId,
+              status: childSummary,
+              state: canonicalChildState(payload, {
+                summary: childSummary,
+                lastToolName: name,
+              }),
+            }, ident, "#child-upd"));
+          }
         }
       } else {
-        produced.push(push(f.eventId, f.provider, { kind: "harness.warning", message: "unmapped t3 activity", rawEventType: et }, ident));
+        produced.push(push(f.eventId, f.provider, { kind: "harness.warning", message: "unmapped t3 activity", rawEventType: et, rawPayload: f.payload }, ident));
       }
     } else if (et === SESSION_STARTED_EVENT_TYPE) {
       // A real provider session was established: emit the session-identified `session.started`
@@ -591,15 +459,33 @@ export function translateOpenCode(
         const state = rec(p?.state);
         const output = str(state?.output) ?? "";
         const childId = TASK_CHILD_ID.exec(output)?.[1] ?? callId;
+        const childState = canonicalChildState(state);
         if (!seenTaskCall.has(callId)) {
           seenTaskCall.add(callId);
-          produced.push(push(f.eventId, f.provider, { kind: "child.started", childId, launchToolCallId: callId, title: str(p?.title) ?? undefined }, ident, "#child-start"));
+          produced.push(push(f.eventId, f.provider, {
+            kind: "child.started",
+            childId,
+            launchToolCallId: callId,
+            title: str(p?.title) ?? undefined,
+            ...(childState ? { state: childState } : {}),
+          }, ident, "#child-start"));
         }
         if (terminal) {
           const result = TASK_RESULT.exec(output)?.[1]?.trim();
-          produced.push(push(f.eventId, f.provider, { kind: "child.completed", childId, status: errored ? "error" : "ok", result: result || undefined }, ident, "#child-done"));
+          produced.push(push(f.eventId, f.provider, {
+            kind: "child.completed",
+            childId,
+            status: errored ? "error" : "ok",
+            result: result || undefined,
+            ...(childState ? { state: childState } : {}),
+          }, ident, "#child-done"));
         } else {
-          produced.push(push(f.eventId, f.provider, { kind: "child.updated", childId, status: "running" }, ident, "#child-upd"));
+          produced.push(push(f.eventId, f.provider, {
+            kind: "child.updated",
+            childId,
+            status: "running",
+            ...(childState ? { state: childState } : {}),
+          }, ident, "#child-upd"));
         }
       } else if (callId && !seenTool.has(callId) && !terminal) {
         seenTool.add(callId);
@@ -627,7 +513,7 @@ export function translateOpenCode(
         }, ident));
       } else suppressed = "acp.commands without a parseable catalog";
     } else {
-      produced.push(push(f.eventId, f.provider, { kind: "harness.warning", message: "unmapped opencode event", rawEventType: et }, ident));
+      produced.push(push(f.eventId, f.provider, { kind: "harness.warning", message: "unmapped opencode event", rawEventType: et, rawPayload: f.payload }, ident));
     }
 
     accounting.push({ sourceId: f.eventId, kind: et, provider: f.provider, produced, ...(produced.length === 0 ? { suppressed } : {}) });

@@ -33,9 +33,12 @@ describe("T3 provider bridge", () => {
       ANTHROPIC_BASE_URL: "https://gateway.example.test/provider/anthropic",
       CLAUDE_CONFIG_DIR: "/tmp/skynet-claude-config",
     });
+    const wrapperBase64 = command.match(/printf %s '([^']+)' \| base64 -d/)?.[1];
+    const wrapper = Buffer.from(wrapperBase64!, "base64").toString("utf8");
 
     expect(command).toContain("userdata/settings.json");
     expect(command).toContain("skynet-bin/claude");
+    expect(wrapper).toContain('--mcp-config "$CLAUDE_CONFIG_DIR/skynet-mcp.json"');
     expect(command).toContain("chmod 700");
     expect(command).toContain("chmodSync(tmp,0o600)");
     expect(command).not.toContain("ANTHROPIC_API_KEY");
@@ -125,5 +128,16 @@ describe("T3 provider bridge", () => {
       prewarmT3ProviderBridge(sandbox, { T3_ENVIRONMENT_ENABLED: "true" }),
     ).resolves.toBeUndefined();
     expect(attempts).toBe(2);
+  });
+
+  test("does not materialize ChatGPT OAuth through sandbox bootstrap", () => {
+    const command = buildT3ProviderBootstrapCommand({
+      ANTHROPIC_BASE_URL: "https://gateway.example.test/provider/anthropic",
+      CLAUDE_CONFIG_DIR: "/tmp/skynet-claude-config",
+    });
+
+    expect(command).not.toContain("chatgpt");
+    expect(command).not.toContain("codex-subscription-broker");
+    expect(command).not.toContain("auth.json");
   });
 });

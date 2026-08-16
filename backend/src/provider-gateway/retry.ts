@@ -9,6 +9,7 @@ const INITIAL_RETRY_DELAY_MS = 500;
 const MAX_RETRY_DELAY_MS = 8_000;
 const MAX_RETRY_AFTER_MS = 60_000;
 const MAX_ERROR_CLASSIFICATION_BYTES = 64 * 1024;
+const MAX_ERROR_CLASSIFICATION_MS = 100;
 
 const TERMINAL_QUOTA_MARKERS = [
   "insufficient_quota",
@@ -52,6 +53,16 @@ export function shouldRetryProviderResponse(response: Response): boolean {
     response.status >= 500;
 }
 
+async function cancelResponseReader(
+  reader: Pick<ReadableStreamDefaultReader<unknown>, "cancel">,
+): Promise<void> {
+  try {
+    await reader.cancel();
+  } catch {
+    // Cancellation is best-effort and must not reject after classification returns.
+  }
+}
+
 async function responseBodyPrefix(response: Response): Promise<string> {
   const reader = response.clone().body?.getReader();
   if (!reader) return "";
@@ -59,9 +70,14 @@ async function responseBodyPrefix(response: Response): Promise<string> {
   const decoder = new TextDecoder();
   let text = "";
   let bytesRead = 0;
+  const timeout = Symbol("timeout");
+  const deadline = Promise.withResolvers<typeof timeout>();
+  const timer = setTimeout(() => deadline.resolve(timeout), MAX_ERROR_CLASSIFICATION_MS);
   try {
     while (bytesRead < MAX_ERROR_CLASSIFICATION_BYTES) {
-      const { done, value } = await reader.read();
+      const result = await Promise.race([reader.read(), deadline.promise]);
+      if (result === timeout) break;
+      const { done, value } = result;
       if (done) break;
       const remaining = MAX_ERROR_CLASSIFICATION_BYTES - bytesRead;
       const chunk = value.byteLength > remaining ? value.subarray(0, remaining) : value;
@@ -71,7 +87,8 @@ async function responseBodyPrefix(response: Response): Promise<string> {
     }
     return text + decoder.decode();
   } finally {
-    await reader.cancel().catch(() => undefined);
+    clearTimeout(timer);
+    void cancelResponseReader(reader);
   }
 }
 
@@ -180,11 +197,19 @@ export async function fetchProviderUpstream(
       continue;
     }
 
+    const retryable = shouldRetryProviderResponse(response);
+    // Once the gateway budget is exhausted, classification cannot change the
+    // decision. Return immediately instead of waiting up to 100 ms for a cloned
+    // 429 body that the downstream caller still needs to consume.
+    if (retryable && attempt >= maxRetries) {
+      return withRetryDirective(response, false);
+    }
+
     if (await isTerminalProviderResponse(response)) {
       return withRetryDirective(response, false);
     }
 
-    if (attempt >= maxRetries || !shouldRetryProviderResponse(response)) {
+    if (!retryable) {
       return response;
     }
 

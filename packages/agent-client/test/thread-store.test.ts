@@ -103,4 +103,34 @@ describe("canonical thread store", () => {
     expect(tools).toHaveLength(1);
     expect(tools[0]).toMatchObject({ toolCallId: "c1", name: "bash", status: "ok", preview: "done" });
   });
+
+  test("tool selector retains semantic identity and terminal error detail", () => {
+    const s = createCanonicalThreadStore();
+    s.ingest(ev({
+      eventId: "tool-start",
+      kind: "tool.started",
+      toolCallId: "call-1",
+      name: "github_clone_repository",
+      title: "Clone repository",
+      deliverySeq: 1,
+    }));
+    s.ingest(ev({
+      eventId: "tool-done",
+      kind: "tool.completed",
+      toolCallId: "call-1",
+      status: "error",
+      preview: "authentication failed",
+      error: "credential rejected",
+      deliverySeq: 2,
+    }));
+
+    expect(selectToolCalls(s.getSnapshot())).toEqual([{
+      toolCallId: "call-1",
+      name: "github_clone_repository",
+      title: "Clone repository",
+      status: "error",
+      preview: "authentication failed",
+      error: "credential rejected",
+    }]);
+  });
 });

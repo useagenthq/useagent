@@ -21,4 +21,15 @@ describe("shared thread sandbox lease", () => {
     expect(source).toContain("claimCubeWarmSandbox(options.warmPool || undefined)");
     expect(source).toContain("reused = sandbox !== null");
   });
+
+  test("records standardized sandbox acquisition timing outcomes", () => {
+    const source = readFileSync(new URL("./thread-sandbox.ts", import.meta.url), "utf8");
+    expect(source).toContain("RUN_TIMING_STAGES.sandboxRetained");
+    expect(source).toContain("RUN_TIMING_STAGES.sandboxWarmPool");
+    expect(source).toContain("RUN_TIMING_STAGES.sandboxCreate");
+    expect(source).toContain("RUN_TIMING_OUTCOMES.hit");
+    expect(source).toContain("RUN_TIMING_OUTCOMES.miss");
+    expect(source).toContain("RUN_TIMING_OUTCOMES.success");
+    expect(source).toContain("RUN_TIMING_OUTCOMES.failure");
+  });
 });

@@ -17,6 +17,8 @@ import {
   selectToolCalls,
   selectRunIds,
   selectContextMarkers,
+  selectCommands,
+  selectLatestUsage,
   type CanonicalThreadEvent,
   type CanonicalThreadStore,
   type DecodedFrame,
@@ -42,6 +44,24 @@ const fetchStub: FetchLike = async (url, init) => {
   return json(404, {});
 };
 const timers: TimerHost = { setTimeout: () => 0, clearTimeout: () => {}, setInterval: () => 0, clearInterval: () => {} };
+
+function recordingFetch(): { fetch: FetchLike; requests: { url: string; init?: Parameters<FetchLike>[1] }[] } {
+  const requests: { url: string; init?: Parameters<FetchLike>[1] }[] = [];
+  return {
+    requests,
+    fetch: async (url, init) => {
+      requests.push({ url, init });
+      if (init?.method === "POST" && url.endsWith("/api/runs")) {
+        const body = JSON.parse(init.body ?? "{}") as { parent_run_id?: string };
+        return json(200, { id: body.parent_run_id ? "run_reply" : "run_root", status: "queued" });
+      }
+      if (init?.method === "POST" && url.endsWith("/cancel")) {
+        return json(202, { id: "run_root", status: "cancelling" });
+      }
+      return json(404, {});
+    },
+  };
+}
 
 class FakeRelay {
   private listeners = new Map<string, (e: { data: string }) => void>();
@@ -129,6 +149,56 @@ describe("conformance: libraries are independently consumable (documented export
     expect(selectRunIds(store.getSnapshot())).toEqual(["run_1", "run_2"]);
   });
 
+  test("start, resume, steer, model selection, and cancel keep one typed product API", async () => {
+    const { fetch, requests } = recordingFetch();
+    const client = createAgentClient({
+      fetch,
+      baseUrl: "https://skynet.example.test/",
+      headers: () => ({ authorization: "Bearer session" }),
+    });
+
+    await expect(client.createRun({
+      prompt: "start",
+      engine: "opencode",
+      model: "openai/gpt-5.6-luna",
+      repos: ["acme/new-skynet"],
+      memoryScope: "personal",
+      idempotencyKey: "idem-root",
+    })).resolves.toEqual({ runId: "run_root", status: "queued" });
+    await expect(client.reply("run_root", {
+      prompt: "/review auth",
+      engine: "codex",
+      model: "gpt-5.6-sol",
+      idempotencyKey: "idem-reply",
+    })).resolves.toEqual({ runId: "run_reply", status: "queued" });
+    await expect(client.cancel("run_root")).resolves.toEqual({ ok: true, status: "cancelling" });
+
+    expect(requests.map((r) => r.url)).toEqual([
+      "https://skynet.example.test/api/runs",
+      "https://skynet.example.test/api/runs",
+      "https://skynet.example.test/api/runs/run_root/cancel",
+    ]);
+    expect(requests[0]!.init?.headers).toMatchObject({
+      authorization: "Bearer session",
+      "content-type": "application/json",
+      "Idempotency-Key": "idem-root",
+    });
+    expect(JSON.parse(requests[0]!.init?.body ?? "{}")).toEqual({
+      prompt: "start",
+      engine: "opencode",
+      model: "openai/gpt-5.6-luna",
+      repos: ["acme/new-skynet"],
+      memory_scope: "personal",
+    });
+    expect(requests[1]!.init?.headers).toMatchObject({ "Idempotency-Key": "idem-reply" });
+    expect(JSON.parse(requests[1]!.init?.body ?? "{}")).toEqual({
+      prompt: "/review auth",
+      engine: "codex",
+      model: "gpt-5.6-sol",
+      parent_run_id: "run_root",
+    });
+  });
+
   test("refresh/reconnect + replay reconstructs WITHOUT duplicates (idempotent revisions)", () => {
     const store = createCanonicalThreadStore();
     const frames = [
@@ -143,6 +213,35 @@ describe("conformance: libraries are independently consumable (documented export
     // and a durable snapshot reconcile is also idempotent
     store.reconcile(frames);
     expect(store.getSnapshot().events.length).toBe(before);
+  });
+
+  test("cross-thread replay frames are rejected before they can affect the store", () => {
+    const client = createAgentClient({ fetch: fetchStub, baseUrl: "" });
+    const store = createCanonicalThreadStore();
+    const relay = new FakeRelay();
+    const conn = client.connectThread("run_1", (f) => applyToStore(store, f), {
+      createEventSource: relay.createEventSource, timers, poll: () => {},
+    });
+    conn.start();
+
+    relay.emit("canonical", {
+      threadId: "thr_1",
+      event: ev({
+        eventId: "wrong-thread",
+        kind: "message.delta",
+        messageId: "m",
+        text: "wrong",
+        threadId: "thr_2",
+      }),
+    });
+    relay.emit("canonical", {
+      threadId: "thr_1",
+      event: ev({ eventId: "right-thread", kind: "message.delta", messageId: "m", text: "right", threadId: "thr_1" }),
+    });
+    conn.stop();
+
+    expect(selectAssistantText(store.getSnapshot())).toBe("right");
+    expect(store.getSnapshot().events.map((event) => event.eventId)).toEqual(["right-thread"]);
   });
 
   test("stop travels back through the typed client", async () => {
@@ -161,6 +260,55 @@ describe("conformance: libraries are independently consumable (documented export
     };
     expect(visibleControls(opencodeCaps)).toEqual(["stop", "approve", "answer", "subagents"]);
     expect(visibleControls(acpCaps)).toEqual([]); // an engine with no native cancel hides Stop - honestly
+  });
+
+  test("artifact, subagent, command, model, and usage events are durable canonical data", () => {
+    const store = createCanonicalThreadStore();
+    const artifact = {
+      artifactId: "artifact_1",
+      bytes: 1234,
+      sha256: "a".repeat(64),
+      contentType: "image/png",
+    };
+    store.batch(() => {
+      store.ingest(ev({ eventId: "session", kind: "session.started", capabilities: {
+        streamingText: true, reasoning: true, plans: true, toolProgress: true, fileDiffs: true,
+        childSessions: true, approvals: false, questions: true, usage: true, modelSelection: true,
+        commands: true, directTerminal: true, resume: true, load: true, close: false, stop: true,
+        reconcile: true, desktop: false, nativeEmbed: true, knowledgeTools: true,
+      } }));
+      store.ingest(ev({
+        eventId: "commands",
+        kind: "commands.updated",
+        commands: ["review"],
+        catalog: [{ name: "review", description: "Review current changes" }],
+        source: "opencode",
+        generation: 4,
+      }));
+      store.ingest(ev({ eventId: "mode", kind: "mode.updated", mode: "agent", model: "openai/gpt-5.6-luna" }));
+      store.ingest(ev({ eventId: "child-start", kind: "child.started", childId: "child_1", launchToolCallId: "tool_1", title: "Review tests" }));
+      store.ingest(ev({ eventId: "tool-start", kind: "tool.started", toolCallId: "tool_1", name: "subagent", title: "Review tests" }));
+      store.ingest(ev({ eventId: "tool-done", kind: "tool.completed", toolCallId: "tool_1", status: "ok", preview: "passed", artifact }));
+      store.ingest(ev({ eventId: "artifact-created", kind: "artifact.created", name: "screenshot.png", artifact }));
+      store.ingest(ev({ eventId: "artifact-delivered", kind: "artifact.delivered", name: "screenshot.png", destination: "browser", artifact }));
+      store.ingest(ev({ eventId: "usage", kind: "usage.updated", inputTokens: 10, outputTokens: 20, costUsd: 0.03 }));
+    });
+
+    expect(selectCommands(store.getSnapshot())).toEqual([{ name: "review", description: "Review current changes" }]);
+    expect(selectToolCalls(store.getSnapshot())).toEqual([{
+      toolCallId: "tool_1",
+      name: "subagent",
+      title: "Review tests",
+      status: "ok",
+      preview: "passed",
+      error: undefined,
+    }]);
+    expect(selectLatestUsage(store.getSnapshot())).toEqual({ inputTokens: 10, outputTokens: 20, costUsd: 0.03 });
+    expect(store.getSnapshot().events.filter((event) => event.kind.startsWith("artifact."))).toHaveLength(2);
+    expect(store.getSnapshot().events.find((event) => event.kind === "child.started")).toMatchObject({
+      childId: "child_1",
+      launchToolCallId: "tool_1",
+    });
   });
 
   test("the reducer is engine-agnostic: swapping the provider changes nothing", () => {

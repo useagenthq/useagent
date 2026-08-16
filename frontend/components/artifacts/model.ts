@@ -1,40 +1,32 @@
-export type ArtifactCategory = "files" | "docs" | "media";
-
 import {
+  artifactActionContractFor,
+  artifactExtensionLabel,
+  artifactSurfaceCategoryFor,
+  type ArtifactSurfaceCategory,
+} from "@skynet/artifact-workspace";
+import {
+  decodeArtifactResult,
   decodeArtifactList,
   type ArtifactDescriptor,
 } from "@skynet/agent-client";
 
 export type { ArtifactDescriptor } from "@skynet/agent-client";
-
-const DOCUMENT_EXTENSIONS = new Set([
-  "csv",
-  "docx",
-  "json",
-  "md",
-  "pdf",
-  "pptx",
-  "txt",
-  "xlsx",
-]);
+export type ArtifactCategory = ArtifactSurfaceCategory;
 
 export function extractArtifacts(value: unknown): ArtifactDescriptor[] | null {
   return decodeArtifactList(value);
 }
 
-export function extensionLabel(name: string): string {
-  const dot = name.lastIndexOf(".");
-  return dot > 0 && dot < name.length - 1 ? name.slice(dot + 1).toUpperCase() : "FILE";
+export function extractArtifactResult(value: unknown): ArtifactDescriptor | null {
+  return decodeArtifactResult(value)?.artifact ?? null;
 }
 
-export function categoryForArtifact(
-  item: Pick<ArtifactDescriptor, "content_type" | "name">,
-): ArtifactCategory {
-  const type = item.content_type.split(";", 1)[0]?.toLowerCase() ?? "";
-  if (type.startsWith("image/") || type.startsWith("video/")) return "media";
-  if (type.startsWith("text/") || type === "application/pdf") return "docs";
-  const extension = extensionLabel(item.name).toLowerCase();
-  return DOCUMENT_EXTENSIONS.has(extension) ? "docs" : "files";
+export function artifactViewFor(artifact: ArtifactDescriptor) {
+  return {
+    category: artifactSurfaceCategoryFor(artifact),
+    extension: artifactExtensionLabel(artifact.name),
+    ...artifactActionContractFor(artifact),
+  };
 }
 
 export function formatArtifactSize(bytes: number): string {

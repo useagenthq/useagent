@@ -1,5 +1,15 @@
 import { describe, expect, test } from "bun:test";
-import type { SandboxHandle } from "../sandboxes/provider";
+import type {
+  SandboxFileSystem,
+  SandboxHandle,
+  SandboxProcess,
+} from "../sandboxes/provider";
+import {
+  RUN_TIMING_OUTCOMES,
+  RUN_TIMING_STAGES,
+  type RunStageTimer,
+  type RunTimingOutcome,
+} from "../runs/run-timing";
 import {
   buildDesktopLaunchCommand,
   buildDesktopReadinessCommand,
@@ -8,9 +18,10 @@ import {
   ensureSandboxDesktopView,
 } from "./desktop";
 
-function relayFileSystem() {
+function relayFileSystem(): SandboxFileSystem {
   const files = new Map<string, Buffer>();
   return {
+    getFileDetails: async (path: string) => ({ size: files.get(path)?.byteLength }),
     downloadFile: async (path: string) => {
       const file = files.get(path);
       if (!file) throw new Error("missing file");
@@ -19,6 +30,36 @@ function relayFileSystem() {
     uploadFile: async (file: Buffer, path: string) => {
       files.set(path, file);
     },
+  };
+}
+
+function sandboxFixture(
+  id: string,
+  process: Pick<SandboxProcess, "executeCommand"> & Partial<SandboxProcess>,
+): SandboxHandle {
+  return {
+    id,
+    cpu: 1,
+    memory: 1,
+    process: {
+      createSession: async () => {},
+      deleteSession: async () => {},
+      getSession: async () => ({ commands: [] }),
+      executeSessionCommand: async () => ({ cmdId: "unused" }),
+      getSessionCommandLogs: async () => ({}),
+      createPty: async () => ({
+        waitForConnection: async () => {},
+        sendInput: async () => {},
+        resize: async () => {},
+        disconnect: async () => {},
+        kill: async () => {},
+      }),
+      ...process,
+    },
+    fs: relayFileSystem(),
+    start: async () => {},
+    delete: async () => {},
+    getPreviewLink: async () => ({ url: "http://sandbox.invalid" }),
   };
 }
 
@@ -34,6 +75,18 @@ describe("shared sandbox desktop", () => {
     expect(command).toContain('--user-data-dir="$HOME/.skynet/browser-profile"');
     expect(command).toContain("--restore-last-session");
     expect(command).toContain("--remote-debugging-pipe");
+    expect(command).not.toContain("\nsleep 1\n");
+    const launchLines = command.split("\n");
+    const legacyDrainProbeIndex = launchLines.findIndex(
+      (line) => line.includes("connect_ex(('127.0.0.1',9222))"),
+    );
+    const legacyDrainProbe = launchLines[legacyDrainProbeIndex];
+    expect(legacyDrainProbe).toContain("for i in $(seq 1 20)");
+    expect(legacyDrainProbe).toContain("--remote-debugging-pipe");
+    expect(legacyDrainProbe).toContain("&& break; sleep 0.25; done");
+    expect(launchLines[legacyDrainProbeIndex + 1]).toContain("--remote-debugging-pipe");
+    expect(launchLines[legacyDrainProbeIndex + 2]).toContain("connect_ex(('127.0.0.1',9222))");
+    expect(launchLines[legacyDrainProbeIndex + 3]).toStartWith("browser=");
     expect(command).toContain("http://127.0.0.1:9222/json/version");
     expect(command).toContain('node "$HOME/.skynet/cdp-relay.mjs"');
     expect(command).toContain("--disable-gpu");
@@ -69,15 +122,11 @@ describe("shared sandbox desktop", () => {
   });
 
   test("degrades the capability when Daytona provisioning fails", async () => {
-    const sandbox = {
-      id: "sandbox-provision-failure",
-      process: {
+    const sandbox = sandboxFixture("sandbox-provision-failure", {
         executeCommand: async () => {
           throw new Error("sensitive provider failure");
         },
-      },
-      fs: relayFileSystem(),
-    } as unknown as SandboxHandle;
+    });
 
     await expect(ensureSandboxDesktop(sandbox, new AbortController().signal)).resolves.toEqual({
       available: false,
@@ -91,9 +140,13 @@ describe("shared sandbox desktop", () => {
 
   test("readies the user-visible desktop without installing agent browser tools", async () => {
     const commands: string[] = [];
-    const sandbox = {
-      id: "sandbox-ready-view",
-      process: {
+    const spans: { stage: string; outcome?: RunTimingOutcome }[] = [];
+    const timing = {
+      begin: (stage: string) => (outcome?: RunTimingOutcome) => {
+        spans.push({ stage, outcome });
+      },
+    } satisfies Pick<RunStageTimer, "begin">;
+    const sandbox = sandboxFixture("sandbox-ready-view", {
         executeCommand: async (command: string) => {
           commands.push(command);
           if (command.includes('printf "HOME=')) {
@@ -105,17 +158,18 @@ describe("shared sandbox desktop", () => {
           }
           return { exitCode: 0, result: "" };
         },
-      },
-      fs: relayFileSystem(),
-    } as unknown as SandboxHandle;
+    });
 
     await expect(
-      ensureSandboxDesktopView(sandbox, new AbortController().signal),
+      ensureSandboxDesktopView(sandbox, new AbortController().signal, timing),
     ).resolves.toMatchObject({
       available: true,
       browserTools: false,
       browserExecutable: "/usr/bin/chromium",
     });
+    expect(spans).toEqual([
+      { stage: RUN_TIMING_STAGES.desktopReadiness, outcome: RUN_TIMING_OUTCOMES.ready },
+    ]);
     const probe = commands.find((command) => command.includes('printf "HOME='));
     expect(probe).toContain("/vnc.html");
     expect(probe).toContain("socket.create_connection(('127.0.0.1',5900),1)");
@@ -148,9 +202,7 @@ describe("shared sandbox desktop", () => {
       const created: string[] = [];
       const launched: string[] = [];
       let healthChecks = 0;
-      const sandbox = {
-        id: `sandbox-repair-${firstHealth}`,
-        process: {
+      const sandbox = sandboxFixture(`sandbox-repair-${firstHealth}`, {
           executeCommand: async (command: string) => {
             commands.push(command);
             if (command.includes('printf "HOME=')) {
@@ -166,11 +218,9 @@ describe("shared sandbox desktop", () => {
           createSession: async (name: string) => created.push(name),
           executeSessionCommand: async (name: string, input: { command: string }) => {
             launched.push(`${name}:${input.command}`);
-            return { id: "desktop-command" };
+            return { cmdId: "desktop-command" };
           },
-        },
-        fs: relayFileSystem(),
-      } as unknown as SandboxHandle;
+      });
 
       await expect(
         ensureSandboxDesktopView(sandbox, new AbortController().signal),
@@ -190,14 +240,44 @@ describe("shared sandbox desktop", () => {
     }
   });
 
+  test("repairs when stale desktop sessions are already absent", async () => {
+    let launched = false;
+    const sandbox = sandboxFixture("sandbox-missing-desktop-sessions", {
+        executeCommand: async (command: string) => {
+          if (command.includes('printf "HOME=')) {
+            return {
+              exitCode: 0,
+              result:
+                "HOME=/home/daytona\nBROWSER=/usr/bin/chromium\nMISSING=\nVNC=0\nRFB=0\nCDP=0\nCDP_RELAY=0\nXFCE=0\nMCP=0\n",
+            };
+          }
+          if (command.startsWith('chmod 700 "$HOME/.skynet"')) {
+            return { exitCode: 0, result: "" };
+          }
+          return { exitCode: launched ? 0 : 1, result: "" };
+        },
+        deleteSession: async () => {
+          throw new Error("session not found");
+        },
+        createSession: async () => {},
+        executeSessionCommand: async () => {
+          launched = true;
+          return { cmdId: "desktop-command" };
+        },
+    });
+
+    await expect(
+      ensureSandboxDesktopView(sandbox, new AbortController().signal),
+    ).resolves.toMatchObject({ available: true, browserExecutable: "/usr/bin/chromium" });
+    expect(launched).toBe(true);
+  });
+
   test("serializes an engine repair with a concurrent Desktop-pane repair", async () => {
     const created: string[] = [];
     const deleted: string[] = [];
     let desktopHealthy = false;
     let desktopLaunches = 0;
-    const sandbox = {
-      id: "sandbox-concurrent-desktop",
-      process: {
+    const sandbox = sandboxFixture("sandbox-concurrent-desktop", {
         executeCommand: async (command: string) => {
           if (command.startsWith("mkdir -p ~/work")) {
             // Leave a real scheduling window in which an unlocked second caller
@@ -231,9 +311,7 @@ describe("shared sandbox desktop", () => {
           }
           return { cmdId: `${name}-command` };
         },
-      },
-      fs: relayFileSystem(),
-    } as unknown as SandboxHandle;
+    });
 
     const signal = new AbortController().signal;
     const [view, tools] = await Promise.all([

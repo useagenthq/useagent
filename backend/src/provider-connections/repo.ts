@@ -25,6 +25,47 @@ export interface UpsertProviderConnectionInput extends ProviderConnectionScope {
   tag: string;
 }
 
+async function writeProviderConnection(
+  input: UpsertProviderConnectionInput,
+  preserveRevoked: boolean,
+): Promise<ProviderConnectionRecord | null> {
+  const now = new Date();
+  const [row] = await db
+    .insert(providerConnections)
+    .values({
+      orgId: input.orgId,
+      userId: input.userId,
+      provider: input.provider,
+      authMethod: input.authMethod,
+      status: input.status,
+      metadata: input.metadata,
+      credentialCiphertext: input.credentialCiphertext,
+      iv: input.iv,
+      tag: input.tag,
+      revokedAt: input.status === "revoked" ? now : null,
+    })
+    .onConflictDoUpdate({
+      target: [
+        providerConnections.orgId,
+        providerConnections.userId,
+        providerConnections.provider,
+        providerConnections.authMethod,
+      ],
+      set: {
+        status: input.status,
+        metadata: input.metadata,
+        credentialCiphertext: input.credentialCiphertext,
+        iv: input.iv,
+        tag: input.tag,
+        revokedAt: input.status === "revoked" ? now : null,
+        updatedAt: now,
+      },
+      ...(preserveRevoked ? { setWhere: eq(providerConnections.status, "connected") } : {}),
+    })
+    .returning();
+  return row ?? null;
+}
+
 export async function listProviderConnections(
   scope: ProviderConnectionScope,
 ): Promise<ProviderConnectionRecord[]> {
@@ -64,41 +105,15 @@ export async function findProviderConnection(
 export async function upsertProviderConnection(
   input: UpsertProviderConnectionInput,
 ): Promise<ProviderConnectionRecord> {
-  const now = new Date();
-  const [row] = await db
-    .insert(providerConnections)
-    .values({
-      orgId: input.orgId,
-      userId: input.userId,
-      provider: input.provider,
-      authMethod: input.authMethod,
-      status: input.status,
-      metadata: input.metadata,
-      credentialCiphertext: input.credentialCiphertext,
-      iv: input.iv,
-      tag: input.tag,
-      revokedAt: input.status === "revoked" ? now : null,
-    })
-    .onConflictDoUpdate({
-      target: [
-        providerConnections.orgId,
-        providerConnections.userId,
-        providerConnections.provider,
-        providerConnections.authMethod,
-      ],
-      set: {
-        status: input.status,
-        metadata: input.metadata,
-        credentialCiphertext: input.credentialCiphertext,
-        iv: input.iv,
-        tag: input.tag,
-        revokedAt: input.status === "revoked" ? now : null,
-        updatedAt: now,
-      },
-    })
-    .returning();
+  const row = await writeProviderConnection(input, false);
   if (!row) throw new Error("provider connection upsert returned no row");
   return row;
+}
+
+export async function upsertProviderConnectionUnlessRevoked(
+  input: UpsertProviderConnectionInput,
+): Promise<ProviderConnectionRecord | null> {
+  return writeProviderConnection(input, true);
 }
 
 export async function revokeProviderConnection(

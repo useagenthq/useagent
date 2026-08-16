@@ -24,7 +24,10 @@ import { providerEventExists, recordProviderEvent } from "../runs/provider-event
 import { buildSessionCancel, createAcpRpcClient, isAlreadyInitialized, parseRelayHealth, relayRegenerated, relayStateAfterBoot } from "./acp-rpc";
 import { decideAcpPermission } from "./permission-policy";
 import { toolGatewayConfig, type ToolGatewayConfig } from "../knowledge/gateway/config";
-import { mintToolToken } from "../knowledge/gateway/token";
+import {
+  buildToolGatewayCapabilityDescriptor,
+  toAcpKnowledgeMcpServer,
+} from "../knowledge/gateway/descriptor";
 import {
   composeSecretEnv,
   materializeSecretFiles,
@@ -386,25 +389,16 @@ function buildAcpKnowledgeMcpServers(
   ctx: EngineRunContext,
   gw: ToolGatewayConfig | null,
 ): Record<string, unknown>[] {
-  if (!gw || !ctx.orgId) return [];
-  const token = mintToolToken(
+  const descriptor = buildToolGatewayCapabilityDescriptor(
     {
       orgId: ctx.orgId,
       userId: ctx.userId ?? "",
       threadId: ctx.threadId ?? ctx.runId,
       runId: ctx.runId,
-      scope: "thread",
     },
-    gw.tokenTtlMs,
+    { config: gw, scope: "thread" },
   );
-  return [
-    {
-      type: "http",
-      name: "skynet-knowledge",
-      url: gw.mcpUrl,
-      headers: [{ name: "Authorization", value: `Bearer ${token}` }],
-    },
-  ];
+  return descriptor ? [toAcpKnowledgeMcpServer(descriptor)] : [];
 }
 
 export function acpKnowledgeMcpServers(ctx: EngineRunContext): Record<string, unknown>[] {

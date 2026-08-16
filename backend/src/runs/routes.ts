@@ -35,7 +35,7 @@ import {
 } from "./canonical-events";
 import { completeCanonicalRuns } from "./canonicalization-outbox";
 import { subscribeThread } from "./thread-signals";
-import { subscribeOrg } from "./org-signals";
+import { clientOrgChangeForUser, subscribeOrg } from "./org-signals";
 import type { ApiRun, ApiStep } from "./repo";
 import { defaultModelForEngine, isModelAllowedForEngine } from "./model-policy";
 import {
@@ -64,6 +64,7 @@ runsRoutes.use("*", orgScope);
 // refresh. The active conversation keeps its richer thread-events stream.
 runsRoutes.get("/changes", (c) => {
   const orgId = c.get("orgId");
+  const userId = c.get("userId");
   const encoder = new TextEncoder();
   const signal = c.req.raw.signal;
 
@@ -79,7 +80,9 @@ runsRoutes.get("/changes", (c) => {
         }
       };
       const unsubscribe = subscribeOrg(orgId, (change) => {
-        send(`event: change\ndata: ${JSON.stringify(change)}\n\n`);
+        const clientChange = clientOrgChangeForUser(change, userId);
+        if (!clientChange) return;
+        send(`event: change\ndata: ${JSON.stringify(clientChange)}\n\n`);
       });
       const heartbeat = setInterval(() => send(": ping\n\n"), 25_000);
       heartbeat.unref?.();

@@ -322,6 +322,44 @@ describe("provider gateway routes", () => {
     expect(JSON.parse(seen[0]!.body).max_output_tokens).toBe(65_536);
   });
 
+  test("OpenCode OpenAI-native models spend OpenAI credentials and strip the catalog prefix upstream", async () => {
+    const captured: { body: string; url: string; credentialInput: unknown } = {
+      body: "",
+      url: "",
+      credentialInput: null,
+    };
+    const token = { ...claims, provider: "openai" as const };
+    const activeRun = { ...run, model: "openai/gpt-5.6-sol" };
+    const response = await app({
+      token,
+      activeRun,
+      resolveCredential: async (input) => {
+        captured.credentialInput = input;
+        return "user-openai-key";
+      },
+      fetchUpstream: async (input, init) => {
+        captured.body = String(init?.body ?? "");
+        captured.url = String(input);
+        return Response.json({ ok: true });
+      },
+    }).request("/api/provider/openai/v1/responses", {
+      method: "POST",
+      headers: { authorization: "Bearer capability" },
+      body: JSON.stringify({ model: activeRun.model, input: "hello" }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(captured.credentialInput).toMatchObject({
+      userId: claims.userId,
+      provider: "openai",
+    });
+    expect(captured.url).toBe("https://api.openai.com/v1/responses");
+    expect(JSON.parse(captured.body)).toMatchObject({
+      model: "gpt-5.6-sol",
+      max_output_tokens: 65_536,
+    });
+  });
+
   test("preserves upstream retry guidance after the gateway budget is exhausted", async () => {
     const previous = process.env.PROVIDER_GATEWAY_MAX_RETRIES;
     process.env.PROVIDER_GATEWAY_MAX_RETRIES = "0";

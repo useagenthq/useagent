@@ -220,8 +220,19 @@ export async function getRun(id: string): Promise<RunRecord | null> {
 /** Persist the engine's own session id for a run (reference bot's
  * set_resume_session_id model, durably) so the thread's next turn can resume the
  * engine's native conversation explicitly by id. */
-export async function setRunEngineSession(id: string, sessionId: string): Promise<void> {
-  await db.update(runs).set({ engineSessionId: sessionId }).where(eq(runs.id, id));
+export async function setRunEngineSession(
+  id: string,
+  sessionId: string,
+  exec: Executor = db,
+): Promise<void> {
+  const updated = await exec
+    .update(runs)
+    .set({ engineSessionId: sessionId })
+    .where(eq(runs.id, id))
+    .returning({ id: runs.id });
+  if (updated.length === 0) {
+    throw new Error(`setRunEngineSession: run ${id} not found (no row updated)`);
+  }
 }
 
 /** Persist the sandbox a run executed in (thread→sandbox mapping, durable). Returns

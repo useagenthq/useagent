@@ -1,4 +1,5 @@
 import type { EngineId, StepKind } from "../db/schema";
+import type { TimingSpanEnd } from "../runs/run-timing";
 
 export {
   AGENT_OPERATING_RULES,
@@ -117,9 +118,9 @@ export interface EngineRunContext {
   commandProvider?: string | null;
   commandCatalogRevision?: number | null;
   /** Persist the engine session id this run created/used, so the next turn can
-   *  resume it. Fire-and-forget durable write; adapters call it as soon as the
-   *  engine reveals its session id. */
-  saveEngineSessionId?(sessionId: string): void;
+   *  resume it. Callers requiring durable initialization await this before
+   *  dispatch so a failed write cannot report an unresumable session as ready. */
+  saveEngineSessionId?(sessionId: string): Promise<void>;
   /** Aborted when the run exceeds its timeout; adapters must wire this to their
    *  subprocess / SDK call so a runaway engine is actually killed. */
   signal: AbortSignal;
@@ -146,7 +147,7 @@ export interface EngineRunContext {
    *  the durable native lane - never on the critical path, never a timeline row,
    *  never carries prompt or credential content. */
   timing?: {
-    begin(stage: string): () => void;
+    begin(stage: string): TimingSpanEnd;
     mark(stage: string): void;
   };
 }

@@ -22,6 +22,7 @@ afterEach(() => {
     "GATEWAY_PUBLIC_URL",
     "TOOL_GATEWAY_PUBLIC_URL",
     "PROVIDER_GATEWAY_TOKEN_TTL_MS",
+    "TOOL_GATEWAY_TOKEN_TTL_MS",
     "PROVIDER_GATEWAY_SECRET",
     "TOOL_GATEWAY_SECRET",
   ]) {
@@ -64,6 +65,15 @@ function recordingSandbox(): {
     },
   } as unknown as SandboxHandle;
   return { sandbox, files };
+}
+
+function expectLifetime(
+  exp: number,
+  mintedBetween: readonly [number, number],
+  ttlMs: number,
+): void {
+  expect(exp).toBeGreaterThanOrEqual(mintedBetween[0] + ttlMs);
+  expect(exp).toBeLessThanOrEqual(mintedBetween[1] + ttlMs);
 }
 
 describe("sandbox provider gateway config", () => {
@@ -117,6 +127,44 @@ describe("sandbox provider gateway config", () => {
     expect(config).toContain("required = true");
   });
 
+  test("Claude receives a private thread-scoped knowledge MCP capability", async () => {
+    process.env.GATEWAY_PUBLIC_URL = "https://gateway.example.test";
+    process.env.PROVIDER_GATEWAY_SECRET = "provider-test-0123456789abcdef0123456789abcdef";
+    process.env.TOOL_GATEWAY_SECRET = "tool-test-0123456789abcdef0123456789abcdef";
+    const { sandbox, files } = recordingSandbox();
+
+    await prepareProviderGatewaySandbox(sandbox, ctx(), "claude");
+
+    const mcpConfig = JSON.parse(
+      files["/tmp/skynet-claude-config/skynet-mcp.json"]!,
+    ) as {
+      mcpServers: Record<
+        string,
+        { type: string; url: string; headers: { Authorization: string } }
+      >;
+    };
+    const knowledge = mcpConfig.mcpServers["skynet-knowledge"]!;
+    expect(knowledge).toMatchObject({
+      type: "http",
+      url: "https://gateway.example.test/api/mcp/knowledge",
+    });
+    const bearerToken = knowledge.headers.Authorization.replace(/^Bearer /, "");
+    expect(verifyToolToken(bearerToken)).toMatchObject({
+      orgId: "org-a",
+      userId: "user-a",
+      threadId: "thread-a",
+      runId: "run-a",
+      scope: "thread",
+    });
+    expect(files["/tmp/skynet-claude-config/settings.json"]).not.toContain(bearerToken);
+    expect(files["/tmp/skynet-claude-config/settings.json"]).not.toContain(
+      process.env.TOOL_GATEWAY_SECRET!,
+    );
+    expect(files["/tmp/skynet-claude-config/skynet-mcp.json"]).not.toContain(
+      process.env.TOOL_GATEWAY_SECRET!,
+    );
+  });
+
   test("leaves 200K model ids unchanged", () => {
     process.env.GATEWAY_PUBLIC_URL = "https://gateway.example.test";
     process.env.PROVIDER_GATEWAY_SECRET = "provider-test-0123456789abcdef0123456789abcdef";
@@ -128,19 +176,71 @@ describe("sandbox provider gateway config", () => {
     );
   });
 
-  test("OpenCode pre-wires both providers for warm model switches", () => {
+  test("OpenCode pre-wires all paid providers for warm model switches", () => {
     process.env.GATEWAY_PUBLIC_URL = "https://gateway.example.test";
     process.env.PROVIDER_GATEWAY_SECRET = "provider-test-0123456789abcdef0123456789abcdef";
     const options = opencodeProviderGatewayOptions(ctx());
     expect(options.anthropic?.baseURL).toEndWith("/api/provider/anthropic/v1");
+    expect(options.openai?.baseURL).toEndWith("/api/provider/openai/v1");
     expect(options.openrouter?.baseURL).toEndWith("/api/provider/openrouter/v1");
     expect(verifyProviderToken(options.anthropic?.apiKey)).toMatchObject({ provider: "anthropic" });
+    expect(verifyProviderToken(options.openai?.apiKey)).toMatchObject({ provider: "openai" });
     expect(verifyProviderToken(options.openrouter?.apiKey)).toMatchObject({ provider: "openrouter" });
     expect(SANDBOX_GENERATION).toBe("provider-gateway-v12-native-computer-use");
     expect(providerGatewaySandboxLabels("run-a")).toEqual({
       "skynet-run": "run-a",
       "skynet-provider-generation": SANDBOX_GENERATION,
     });
+  });
+
+  test.each([
+    ["default", undefined, 4 * 60 * 60 * 1000 + 15 * 60 * 1000],
+    ["maximum", String(5 * 60 * 60 * 1000), 5 * 60 * 60 * 1000],
+    ["custom", "60000", 60_000],
+  ] as const)("configured %s provider TTL is the signed-token lifetime ceiling", (_name, rawTtl, ttlMs) => {
+    process.env.GATEWAY_PUBLIC_URL = "https://gateway.example.test";
+    process.env.PROVIDER_GATEWAY_SECRET = "provider-test-0123456789abcdef0123456789abcdef";
+    if (rawTtl === undefined) delete process.env.PROVIDER_GATEWAY_TOKEN_TTL_MS;
+    else process.env.PROVIDER_GATEWAY_TOKEN_TTL_MS = rawTtl;
+    const context = ctx();
+    context.threadId = `thread-provider-lifetime-${_name}`;
+    context.runId = `run-provider-lifetime-${_name}`;
+
+    const before = Date.now();
+    const token = opencodeProviderGatewayOptions(context).anthropic?.apiKey;
+    const after = Date.now();
+    const claims = verifyProviderToken(token, before);
+
+    expect(claims).not.toBeNull();
+    expectLifetime(claims!.exp, [before, after], ttlMs);
+  });
+
+  test.each([
+    ["default", undefined, 6 * 60 * 60 * 1000],
+    ["maximum", String(7 * 24 * 60 * 60 * 1000), 7 * 24 * 60 * 60 * 1000],
+    ["custom", "60000", 60_000],
+  ] as const)("configured %s tool TTL is the signed-token lifetime ceiling", async (_name, rawTtl, ttlMs) => {
+    process.env.GATEWAY_PUBLIC_URL = "https://gateway.example.test";
+    process.env.PROVIDER_GATEWAY_SECRET = "provider-test-0123456789abcdef0123456789abcdef";
+    process.env.TOOL_GATEWAY_SECRET = "tool-test-0123456789abcdef0123456789abcdef";
+    if (rawTtl === undefined) delete process.env.TOOL_GATEWAY_TOKEN_TTL_MS;
+    else process.env.TOOL_GATEWAY_TOKEN_TTL_MS = rawTtl;
+    const context = ctx();
+    context.threadId = `thread-tool-lifetime-${_name}`;
+    context.runId = `run-tool-lifetime-${_name}`;
+    const { sandbox, files } = recordingSandbox();
+
+    const before = Date.now();
+    await prepareProviderGatewaySandbox(sandbox, context, "claude");
+    const after = Date.now();
+    const config = JSON.parse(files["/tmp/skynet-claude-config/skynet-mcp.json"]!) as {
+      mcpServers: Record<string, { headers: { Authorization: string } }>;
+    };
+    const token = config.mcpServers["skynet-knowledge"]!.headers.Authorization.replace(/^Bearer /, "");
+    const claims = verifyToolToken(token, before);
+
+    expect(claims).not.toBeNull();
+    expectLifetime(claims!.exp, [before, after], ttlMs);
   });
 
   test("OpenCode thread provider tokens are memoized per user", () => {
@@ -167,6 +267,61 @@ describe("sandbox provider gateway config", () => {
     expect(verifyProviderToken(secondToken)).toMatchObject({
       userId: "user-b",
       issuedRunId: "run-provider-b",
+      scope: "thread",
+    });
+  });
+
+  test("warm turns reuse the same bounded provider token for the same identity", () => {
+    process.env.GATEWAY_PUBLIC_URL = "https://gateway.example.test";
+    process.env.PROVIDER_GATEWAY_SECRET = "provider-test-0123456789abcdef0123456789abcdef";
+    const first = ctx();
+    first.threadId = "thread-provider-warm-reuse";
+    first.runId = "run-provider-warm-a";
+    const second = ctx();
+    second.threadId = first.threadId;
+    second.runId = "run-provider-warm-b";
+
+    const firstToken = opencodeProviderGatewayOptions(first).openai?.apiKey;
+    const secondToken = opencodeProviderGatewayOptions(second).openai?.apiKey;
+
+    expect(secondToken).toBe(firstToken);
+    expect(verifyProviderToken(secondToken)).toMatchObject({
+      orgId: "org-a",
+      userId: "user-a",
+      threadId: "thread-provider-warm-reuse",
+      issuedRunId: "run-provider-warm-a",
+      scope: "thread",
+    });
+  });
+
+  test("OpenCode thread provider tokens are isolated by organization", () => {
+    process.env.GATEWAY_PUBLIC_URL = "https://gateway.example.test";
+    process.env.PROVIDER_GATEWAY_SECRET = "provider-test-0123456789abcdef0123456789abcdef";
+    const first = ctx();
+    first.threadId = "thread-provider-org-key";
+    first.runId = "run-provider-org-a";
+    first.orgId = "org-a";
+    first.userId = "user-shared";
+    const second = ctx();
+    second.threadId = "thread-provider-org-key";
+    second.runId = "run-provider-org-b";
+    second.orgId = "org-b";
+    second.userId = "user-shared";
+
+    const firstToken = opencodeProviderGatewayOptions(first).openai?.apiKey;
+    const secondToken = opencodeProviderGatewayOptions(second).openai?.apiKey;
+
+    expect(firstToken).not.toBe(secondToken);
+    expect(verifyProviderToken(firstToken)).toMatchObject({
+      orgId: "org-a",
+      userId: "user-shared",
+      issuedRunId: "run-provider-org-a",
+      scope: "thread",
+    });
+    expect(verifyProviderToken(secondToken)).toMatchObject({
+      orgId: "org-b",
+      userId: "user-shared",
+      issuedRunId: "run-provider-org-b",
       scope: "thread",
     });
   });
@@ -205,6 +360,48 @@ describe("sandbox provider gateway config", () => {
     expect(verifyToolToken(secondBearer)).toMatchObject({
       userId: "user-b",
       runId: "run-tool-b",
+      scope: "thread",
+    });
+  });
+
+  test("Codex MCP tool tokens written to config are isolated by organization", async () => {
+    process.env.GATEWAY_PUBLIC_URL = "https://gateway.example.test";
+    process.env.PROVIDER_GATEWAY_SECRET = "provider-test-0123456789abcdef0123456789abcdef";
+    process.env.TOOL_GATEWAY_SECRET = "tool-test-0123456789abcdef0123456789abcdef";
+    const first = ctx();
+    first.threadId = "thread-tool-org-key";
+    first.runId = "run-tool-org-a";
+    first.orgId = "org-a";
+    first.userId = "user-shared";
+    first.model = "gpt-5.6-sol";
+    const second = ctx();
+    second.threadId = "thread-tool-org-key";
+    second.runId = "run-tool-org-b";
+    second.orgId = "org-b";
+    second.userId = "user-shared";
+    second.model = "gpt-5.6-sol";
+    const { sandbox, files } = recordingSandbox();
+
+    await prepareProviderGatewaySandbox(sandbox, first, "codex");
+    const firstConfig = files["$HOME/.codex/config.toml"]!;
+    await prepareProviderGatewaySandbox(sandbox, second, "codex");
+    const secondConfig = files["$HOME/.codex/config.toml"]!;
+
+    const firstBearer = firstConfig.match(/Authorization = "Bearer ([^"]+)"/)?.[1];
+    const secondBearer = secondConfig.match(/Authorization = "Bearer ([^"]+)"/)?.[1];
+    expect(firstBearer).toBeTruthy();
+    expect(secondBearer).toBeTruthy();
+    expect(firstBearer).not.toBe(secondBearer);
+    expect(verifyToolToken(firstBearer)).toMatchObject({
+      orgId: "org-a",
+      userId: "user-shared",
+      runId: "run-tool-org-a",
+      scope: "thread",
+    });
+    expect(verifyToolToken(secondBearer)).toMatchObject({
+      orgId: "org-b",
+      userId: "user-shared",
+      runId: "run-tool-org-b",
       scope: "thread",
     });
   });

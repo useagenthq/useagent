@@ -8,6 +8,7 @@ import {
   issueT3EnvironmentWebSocketTicket,
   prewarmT3EnvironmentAccess,
   requestT3Environment,
+  T3EnvironmentRequestError,
 } from "./t3-environment-client";
 import { buildT3EnvironmentReadinessCommand } from "./t3-environment";
 
@@ -219,6 +220,56 @@ describe("T3 environment client", () => {
       buildT3EnvironmentReadinessCommand(),
       buildT3EnvironmentSessionProbeCommand(),
       expect.stringContaining("/api/orchestration/shell"),
+    ]);
+  });
+
+  test("surfaces a missing T3 thread without retrying it as stale authentication", async () => {
+    const commands: string[] = [];
+    const sandbox = {
+      id: "cube-t3-missing-thread",
+      process: {
+        executeCommand: async (command: string) => {
+          commands.push(command);
+          if (command === buildT3EnvironmentReadinessCommand()) {
+            return { exitCode: 0, result: "" };
+          }
+          if (command === buildT3EnvironmentSessionProbeCommand()) {
+            return { exitCode: 0, result: "" };
+          }
+          return {
+            exitCode: 0,
+            result: [
+              JSON.stringify({
+                code: "not_found",
+                reason: "thread_not_found",
+                traceId: "trace-missing-thread",
+              }),
+              "__SKYNET_T3_HTTP_STATUS__:404",
+            ].join("\n"),
+          };
+        },
+      },
+    } as unknown as SandboxHandle;
+
+    const request = requestT3Environment(
+      sandbox,
+      { method: "GET", path: "/api/orchestration/threads/thread-missing" },
+      new AbortController().signal,
+    );
+
+    await expect(request).rejects.toBeInstanceOf(T3EnvironmentRequestError);
+    await expect(request).rejects.toMatchObject({
+      status: 404,
+      response: {
+        code: "not_found",
+        reason: "thread_not_found",
+        traceId: "trace-missing-thread",
+      },
+    });
+    expect(commands).toEqual([
+      buildT3EnvironmentReadinessCommand(),
+      buildT3EnvironmentSessionProbeCommand(),
+      expect.stringContaining("/api/orchestration/threads/thread-missing"),
     ]);
   });
 

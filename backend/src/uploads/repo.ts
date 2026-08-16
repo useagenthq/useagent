@@ -69,6 +69,35 @@ export async function getOwnedUpload(
   return row ?? null;
 }
 
+/** Atomically bind one ready upload to the accepted run and return the claimed
+ * row. Call from the same transaction that creates the consuming record so a
+ * rollback releases the claim and a concurrent caller cannot reuse the bytes. */
+export async function claimUploadForRun(
+  input: {
+    readonly id: string;
+    readonly orgId: string;
+    readonly userId: string;
+    readonly runId: string;
+  },
+  exec: Executor,
+): Promise<UserUploadRecord> {
+  const [claimed] = await exec
+    .update(userUploads)
+    .set({ runId: input.runId })
+    .where(
+      and(
+        eq(userUploads.id, input.id),
+        eq(userUploads.orgId, input.orgId),
+        eq(userUploads.userId, input.userId),
+        isNull(userUploads.runId),
+        gt(userUploads.expiresAt, new Date()),
+      ),
+    )
+    .returning();
+  if (!claimed) throw new UploadClaimError();
+  return claimed;
+}
+
 export async function deleteReadyUpload(
   orgId: string,
   userId: string,

@@ -5,9 +5,9 @@
 
 import { describe, expect, test } from "bun:test";
 import { claudeHarness, codexHarness } from "./acp-harness";
-import { harnessAdapters, resolveHarness } from "./index";
+import { resolveHarness } from "./index";
 import { opencodeHarness } from "./opencode-server";
-import type { HarnessAdapter, HarnessSessionHandle } from "./types";
+import type { HarnessSessionHandle } from "./types";
 
 const HANDLE: HarnessSessionHandle = { provider: "x", sessionId: "ses_1", sandboxId: "sbx_1" };
 
@@ -74,7 +74,10 @@ describe("harness registry resolves control adapters by provider", () => {
     expect(resolveHarness("acp")).toBeUndefined();
   });
   test("every registered harness satisfies the HarnessAdapter shape", () => {
-    for (const h of Object.values(harnessAdapters) as HarnessAdapter[]) {
+    for (const provider of ["claude", "claude-sdk", "codex", "daytona", "opencode"]) {
+      const h = resolveHarness(provider);
+      expect(h).toBeDefined();
+      if (!h) continue;
       expect(typeof h.provider).toBe("string");
       expect(typeof h.capabilities).toBe("function");
       expect(typeof h.cancel).toBe("function");

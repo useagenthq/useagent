@@ -6,6 +6,10 @@ import {
   prepareProviderGatewaySandbox,
   providerGatewayEnv,
 } from "../provider-gateway/sandbox-config";
+import {
+  getCodexSubscriptionRuntimeSelection,
+  type CodexSubscriptionRuntimeSelection,
+} from "../provider-connections/service";
 import type { EngineRunContext } from "./types";
 import {
   prepareOpencodeSandboxConfig,
@@ -65,7 +69,7 @@ export function buildT3ProviderBootstrapCommand(
     "set -eu",
     `export ANTHROPIC_BASE_URL=${JSON.stringify(anthropicBaseUrl)}`,
     `export CLAUDE_CONFIG_DIR=${JSON.stringify(claudeConfigDir)}`,
-    'exec claude "$@"',
+    'exec claude --mcp-config "$CLAUDE_CONFIG_DIR/skynet-mcp.json" "$@"',
     "",
   ].join("\n");
   const settingsPatch = {
@@ -143,6 +147,22 @@ async function prepareOpenCodeGateway(
   }
   await writeOpencodeSandboxConfig(sandbox, prepared.config);
   await markProviderGatewaySandboxCurrent(sandbox);
+}
+
+/**
+ * Backend-only selector for subscription-backed Codex runtime auth. The returned
+ * managed app-server home is never copied into the sandbox; callers must use it
+ * only from trusted backend app-server/CLI integration.
+ */
+export async function resolveT3CodexSubscriptionRuntime(
+  ctx: Pick<EngineRunContext, "orgId" | "userId">,
+): Promise<CodexSubscriptionRuntimeSelection | null> {
+  if (!ctx.orgId || !ctx.userId) return null;
+  return getCodexSubscriptionRuntimeSelection({
+    orgId: ctx.orgId,
+    userId: ctx.userId,
+    provider: "openai",
+  });
 }
 
 export async function prepareT3ProviderBridge(

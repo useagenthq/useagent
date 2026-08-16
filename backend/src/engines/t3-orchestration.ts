@@ -4,6 +4,7 @@ import type { EmitStep, EngineRunContext } from "./types";
 import type { ProviderEventInput } from "../runs/provider-events";
 import { questionEventId, type ProviderQuestionRequest } from "./provider-question";
 import { approvalEventId, t3ApprovalRequest } from "./t3-approval";
+import { firstSemanticT3ToolName } from "@skynet/agent-harness";
 
 export type T3EngineId = Extract<EngineId, "codex" | "claude" | "opencode">;
 export type T3RuntimeMode = "approval-required" | "auto-accept-edits" | "auto" | "full-access";
@@ -37,6 +38,12 @@ export function t3ActivityRevision(activity: T3Activity): string {
     : String(activity.sequence);
 }
 
+/**
+ * Provider tool identity precedence: data.toolCallId, payload.toolCallId,
+ * data.item.id, payload/data call-id aliases, tool-use aliases, then payload.id.
+ * Durable consumers fall back to activity.id only after this list. Keep this
+ * mirrored by the canonical T3 translator so both lanes name the same call.
+ */
 function t3ToolCallId(activity: T3Activity): string | null {
   if (!activity.kind.startsWith("tool.")) return null;
   const payload = record(activity.payload);
@@ -51,6 +58,8 @@ function t3ToolCallId(activity: T3Activity): string | null {
     payload?.callId,
     payload?.callID,
     payload?.toolUseId,
+    data?.toolUseId,
+    payload?.id,
   );
 }
 
@@ -58,38 +67,6 @@ function firstNonEmptyString(...values: readonly unknown[]): string | null {
   return values.find(
     (value): value is string => typeof value === "string" && value.length > 0,
   ) ?? null;
-}
-
-const TRANSPORT_TOOL_NAMES = new Set([
-  "dynamic_tool_call",
-  "mcp_tool_call",
-  "task",
-  "tool",
-]);
-
-function semanticToolIdentity(
-  activity: T3Activity,
-  itemType: string | null,
-): { readonly server: string | null; readonly tool: string | null } {
-  const summary = descriptiveActivityLabel(activity.summary)
-    ?.replace(/\s+started$/iu, "")
-    .trim();
-  if (!summary) return { server: null, tool: null };
-
-  const delimiter = summary.indexOf(" · ");
-  if (delimiter > 0 && delimiter < summary.length - 3) {
-    return {
-      server: summary.slice(0, delimiter).trim(),
-      tool: summary.slice(delimiter + 3).trim(),
-    };
-  }
-
-  if (itemType === "dynamic_tool_call" || itemType === "mcp_tool_call") {
-    const structured = /^([a-z0-9][a-z0-9-]*)_([a-z][a-z0-9_-]*)$/iu.exec(summary);
-    if (structured) return { server: structured[1]!, tool: structured[2]! };
-    return { server: null, tool: summary };
-  }
-  return { server: null, tool: null };
 }
 
 function t3ToolInput(
@@ -122,23 +99,20 @@ function t3ToolProjection(activity: T3Activity): {
   const payload = record(activity.payload);
   const data = record(payload?.data);
   const item = record(data?.item);
-  const itemType = typeof payload?.itemType === "string" ? payload.itemType : null;
-  const semantic = semanticToolIdentity(activity, itemType);
-  const projectedTool = firstNonEmptyString(
+  const tool = firstSemanticT3ToolName(
     payload?.toolName,
-    payload?.tool,
     data?.toolName,
+    item?.toolName,
+    payload?.tool,
     data?.tool,
     item?.tool,
     item?.name,
+    item?.title,
   );
-  const tool = projectedTool && !TRANSPORT_TOOL_NAMES.has(projectedTool.toLowerCase())
-    ? projectedTool
-    : semantic.tool;
   return {
     data,
     item,
-    server: firstNonEmptyString(payload?.server, data?.server, item?.server) ?? semantic.server,
+    server: firstNonEmptyString(payload?.server, data?.server, item?.server),
     tool,
     input: t3ToolInput(payload, data, item),
   };
@@ -270,15 +244,19 @@ const DEFAULT_MODEL: Record<T3EngineId, string> = {
 };
 
 /**
- * Skynet stores OpenCode models in its product-facing catalog without the
- * OpenCode provider-instance prefix: Anthropic ids are bare, while OpenRouter
- * ids retain their upstream vendor prefix. T3's native OpenCode adapter accepts
- * only `provider/model` selections, so translate at this one transport boundary.
+ * Skynet stores OpenCode models in its product-facing catalog without an
+ * OpenCode provider-instance prefix for Anthropic and most OpenRouter ids.
+ * OpenAI-native ids keep their `openai/` provider prefix so T3 can spend a
+ * connected OpenAI key instead of routing through OpenRouter.
  */
 export function t3ModelId(engine: T3EngineId, requested?: string): string {
   const selected = requested?.trim() || DEFAULT_MODEL[engine];
   if (engine !== "opencode") return selected;
-  if (selected.startsWith("anthropic/") || selected.startsWith("openrouter/")) {
+  if (
+    selected.startsWith("anthropic/") ||
+    selected.startsWith("openai/") ||
+    selected.startsWith("openrouter/")
+  ) {
     return selected;
   }
   return selected.includes("/") ? `openrouter/${selected}` : `anthropic/${selected}`;
@@ -460,8 +438,8 @@ function toolActivityLabel(
   tool: string,
 ): string {
   if (projection.server && projection.tool) return `${projection.server} · ${projection.tool}`;
-  return descriptiveActivityLabel(activity.summary) ??
-    descriptiveActivityLabel(projection.tool) ??
+  return descriptiveActivityLabel(projection.tool) ??
+    descriptiveActivityLabel(activity.summary) ??
     descriptiveActivityLabel(tool) ??
     "Tool";
 }
@@ -557,9 +535,7 @@ export function activityStep(activity: T3Activity): EmitStep {
         error: activity.tone === "error" || activity.kind === "tool.denied",
         native: {
           sessionID: typeof payload?.taskId === "string" ? payload.taskId : undefined,
-          callID: toolCallId ?? (
-            typeof payload?.toolUseId === "string" ? payload.toolUseId : undefined
-          ),
+          callID: toolCallId ?? activity.id,
           childSessionID: childSessionId ?? undefined,
           activity: activity.payload,
         },

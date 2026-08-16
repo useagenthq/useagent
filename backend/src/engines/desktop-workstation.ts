@@ -38,6 +38,12 @@ export function xfceSessionProbeCommand(): string {
     .join(" && ");
 }
 
+const LEGACY_CHROME_PIPE_PIDS_COMMAND =
+  "ps -eo pid=,comm=,args= | awk '$2 ~ /(chrome|chromium)/ && /--remote-debugging-pipe/ {print $1}'";
+const LEGACY_CHROME_PIPE_GONE_COMMAND = `test -z "$(${LEGACY_CHROME_PIPE_PIDS_COMMAND})"`;
+const CDP_PORT_CLOSED_COMMAND =
+  "python3 -c \"import socket,sys; s=socket.socket(); s.settimeout(1); sys.exit(1 if s.connect_ex(('127.0.0.1',9222)) == 0 else 0)\"";
+
 /** One long-lived process group owns the virtual display, XFCE workstation, browser,
  * VNC server, and noVNC bridge. The browser is deliberately NOT owned by an MCP
  * child, so restarting OpenCode/Claude/Codex or their MCP transport cannot close
@@ -63,8 +69,10 @@ export function buildDesktopLaunchCommand(): string {
     // One-time migration from the old MCP-owned Chrome (`remote-debugging-pipe`).
     // Match only Chrome's process name so this shell cannot kill itself even
     // though its command text contains the same flag.
-    "ps -eo pid=,comm=,args= | awk '$2 ~ /(chrome|chromium)/ && /--remote-debugging-pipe/ {print $1}' | xargs -r kill -TERM",
-    "sleep 1",
+    `${LEGACY_CHROME_PIPE_PIDS_COMMAND} | xargs -r kill -TERM`,
+    `for i in $(seq 1 20); do ${LEGACY_CHROME_PIPE_GONE_COMMAND} && ${CDP_PORT_CLOSED_COMMAND} && break; sleep 0.25; done`,
+    LEGACY_CHROME_PIPE_GONE_COMMAND,
+    CDP_PORT_CLOSED_COMMAND,
     "browser=$(command -v google-chrome 2>/dev/null || command -v chromium 2>/dev/null || command -v chromium-browser 2>/dev/null)",
     'mkdir -p "$HOME/.skynet/browser-profile"',
     // Chrome can be killed by a renderer/browser crash on large dynamic sites.

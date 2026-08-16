@@ -470,6 +470,44 @@ function pickString(obj: Record<string, unknown> | null, keys: string[]): string
   return null;
 }
 
+function pickNestedString(
+  obj: Record<string, unknown> | null,
+  path: readonly string[],
+): string | null {
+  let current: unknown = obj;
+  for (const key of path) {
+    const record = asRecord(current);
+    if (!record) return null;
+    current = record[key];
+  }
+  return typeof current === "string" && current.trim() ? current : null;
+}
+
+function semanticToolName(
+  tool: string,
+  code: Record<string, unknown> | null,
+  input: Record<string, unknown> | null,
+): string {
+  const normalized = tool.toLowerCase();
+  if (!TRANSPORT_TOOL_NAMES.has(normalized)) return tool;
+  return (
+    pickString(code, ["name", "toolName", "tool_name", "method", "functionName"]) ??
+    pickNestedString(code, ["function", "name"]) ??
+    pickString(input, ["name", "toolName", "tool_name", "method", "functionName"]) ??
+    tool
+  );
+}
+
+function semanticServerName(
+  code: Record<string, unknown> | null,
+  input: Record<string, unknown> | null,
+): string | null {
+  return (
+    pickString(code, ["server", "serverName", "server_name", "mcpServer"]) ??
+    pickString(input, ["server", "serverName", "server_name", "mcpServer"])
+  );
+}
+
 const lineCount = (s: string | null): number => (s ? s.split("\n").length : 0);
 
 /** Count `+`/`-` body lines of a unified diff (ignoring the `+++`/`---` header). */
@@ -656,6 +694,8 @@ export function deriveTrace(step: ApiStep): StepTrace {
     // never touches recognized file/shell tools (they all resolve a `map`).
     if (tool && !map) {
       const fileBase = filePath ? basename(filePath) : null;
+      const displayTool = semanticToolName(tool, code, input);
+      const server = semanticServerName(code, input);
       // Name-bearing inputs give the generic row a real target — a bare "Skill"
       // row (user-reported) becomes "Skill fast-installs".
       const named = pickString(input, [
@@ -668,8 +708,8 @@ export function deriveTrace(step: ApiStep): StepTrace {
       ]);
       return {
         ...base,
-        verb: humanizeTool(tool),
-        target: fileBase ?? named ?? "",
+        verb: humanizeTool(displayTool),
+        target: server ?? fileBase ?? (displayTool === tool ? named : null) ?? "",
         monoTarget: Boolean(fileBase),
         glyph: "task",
         base: fileBase,

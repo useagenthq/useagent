@@ -65,7 +65,7 @@ describe("T3 orchestration projection", () => {
 
   test("maps Skynet OpenCode catalog ids onto T3 provider-qualified ids", () => {
     expect(t3ModelId("opencode", "openai/gpt-5.6-luna")).toBe(
-      "openrouter/openai/gpt-5.6-luna",
+      "openai/gpt-5.6-luna",
     );
     expect(t3ModelId("opencode", "moonshotai/kimi-k3")).toBe(
       "openrouter/moonshotai/kimi-k3",
@@ -94,7 +94,7 @@ describe("T3 orchestration projection", () => {
     ).toMatchObject({
       modelSelection: {
         instanceId: "opencode",
-        model: "openrouter/openai/gpt-5.6-luna",
+        model: "openai/gpt-5.6-luna",
       },
     });
     expect(
@@ -108,7 +108,7 @@ describe("T3 orchestration projection", () => {
     ).toMatchObject({
       modelSelection: {
         instanceId: "opencode",
-        model: "openrouter/openai/gpt-5.6-luna",
+        model: "openai/gpt-5.6-luna",
       },
     });
   });
@@ -381,6 +381,13 @@ describe("T3 orchestration projection", () => {
       summary: "Mcp tool call",
       payload: { itemType: "mcp_tool_call", callId: "opaque-1" },
     })).toBe(false);
+    expect(shouldProjectT3Activity({
+      ...collabActivity,
+      id: "summary-only-mcp-complete",
+      kind: "tool.completed",
+      summary: "skynet-knowledge · computer_screenshot started",
+      payload: { itemType: "mcp_tool_call", callId: "summary-only-1" },
+    })).toBe(false);
     expect(activityStep({
       ...collabActivity,
       id: "dynamic-complete",
@@ -388,7 +395,11 @@ describe("T3 orchestration projection", () => {
       payload: {
         itemType: "dynamic_tool_call",
         detail: "repository cloned",
-        data: { toolCallId: "clone-1" },
+        data: {
+          server: "skynet-knowledge",
+          toolName: "github_clone_repository",
+          toolCallId: "clone-1",
+        },
       },
     })).toMatchObject({
       label: "skynet-knowledge · github_clone_repository",
@@ -404,6 +415,8 @@ describe("T3 orchestration projection", () => {
       payload: {
         itemType: "dynamic_tool_call",
         data: {
+          server: "skynet-knowledge",
+          toolName: "computer_sequence",
           toolCallId: "sequence-1",
           arguments: {
             actions: [
@@ -433,6 +446,10 @@ describe("T3 orchestration projection", () => {
         itemType: "mcp_tool_call",
         tool: "mcp_tool_call",
         callId: "screenshot-1",
+        data: {
+          server: "skynet-knowledge",
+          toolName: "computer_screenshot",
+        },
       },
     })).toMatchObject({
       label: "skynet-knowledge · computer_screenshot",
@@ -440,6 +457,57 @@ describe("T3 orchestration projection", () => {
         server: "skynet-knowledge",
         tool: "computer_screenshot",
         native: { callID: "screenshot-1" },
+      },
+    });
+    const structuredMcpActivity = {
+      ...collabActivity,
+      id: "structured-mcp-identity",
+      summary: "Create a pull request for the fix",
+      payload: {
+        itemType: "mcp_tool_call",
+        data: {
+          tool: "mcp_tool_call",
+          toolCallId: "pr-1",
+          item: {
+            id: "pr-1",
+            server: "skynet-knowledge",
+            toolName: "github_create_pull_request",
+            arguments: { title: "Fix MCP identity" },
+            typedUsage: { inputTokens: 12, outputTokens: 3 },
+          },
+        },
+      },
+    } as const;
+    expect(activityStep(structuredMcpActivity)).toMatchObject({
+      label: "skynet-knowledge · github_create_pull_request",
+      code_json: {
+        server: "skynet-knowledge",
+        tool: "github_create_pull_request",
+        input: { title: "Fix MCP identity" },
+        native: {
+          callID: "pr-1",
+          activity: structuredMcpActivity.payload,
+        },
+      },
+    });
+    expect(shouldProjectT3Activity(structuredMcpActivity)).toBe(true);
+    expect(activityStep({
+      ...collabActivity,
+      id: "structured-mcp-no-server",
+      summary: "Read the latest pricing page",
+      payload: {
+        itemType: "mcp_tool_call",
+        data: {
+          toolName: "webfetch",
+          toolCallId: "webfetch-1",
+          input: { url: "https://example.com/pricing" },
+        },
+      },
+    })).toMatchObject({
+      label: "webfetch",
+      code_json: {
+        tool: "webfetch",
+        input: { url: "https://example.com/pricing" },
       },
     });
     expect(activityStep({
@@ -470,6 +538,80 @@ describe("T3 orchestration projection", () => {
         input: { todos: [{ content: "Test the bridge", status: "in_progress" }] },
       },
     });
+  });
+
+  test("uses canonical tool-call identity precedence without losing the native payload", () => {
+    const identityCases = [
+      {
+        name: "payload.toolCallId",
+        activityId: "activity-payload-tool-call",
+        payload: {
+          toolCallId: "payload-call",
+          data: { item: { id: "item-call" } },
+        },
+        expected: "payload-call",
+      },
+      {
+        name: "data.toolCallId",
+        activityId: "activity-data-tool-call",
+        payload: {
+          toolCallId: "payload-call",
+          data: { toolCallId: "data-call", item: { id: "item-call" } },
+        },
+        expected: "data-call",
+      },
+      {
+        name: "data.item.id",
+        activityId: "activity-item-id",
+        payload: {
+          toolUseId: "tool-use-call",
+          data: { item: { id: "item-call" } },
+        },
+        expected: "item-call",
+      },
+      {
+        name: "activity id fallback",
+        activityId: "fallback-activity",
+        payload: { detail: "identity-free native activity" },
+        expected: "fallback-activity",
+      },
+    ] as const;
+
+    for (const identityCase of identityCases) {
+      const identityActivity = {
+        id: identityCase.activityId,
+        tone: "tool" as const,
+        kind: "tool.completed",
+        summary: identityCase.name,
+        payload: identityCase.payload,
+        turnId: "turn",
+      };
+      const step = activityStep(identityActivity);
+      expect(step).toMatchObject({
+        code_json: { native: { callID: identityCase.expected } },
+      });
+      expect(t3ActivityStepKey(identityActivity).split(":").at(-1)).toBe(
+        identityCase.expected,
+      );
+      expect((step.code_json as {
+        native: { activity: unknown };
+      }).native.activity).toBe(identityCase.payload);
+    }
+  });
+
+  test("does not expose transport placeholders as durable tool names", () => {
+    for (const placeholder of ["task", "mcp tool call"]) {
+      const step = activityStep({
+        id: `activity-${placeholder}`,
+        tone: "tool",
+        kind: "tool.completed",
+        summary: placeholder,
+        payload: { data: { item: { id: `call-${placeholder}`, toolName: placeholder } } },
+        turnId: "turn",
+      });
+
+      expect(step).toMatchObject({ code_json: { tool: "tool" } });
+    }
   });
 
   test("distinguishes stable-id T3 activity revisions", () => {

@@ -1,5 +1,6 @@
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, spyOn, test } from "bun:test";
 import { createHash } from "node:crypto";
+import * as artifactFormats from "@skynet/artifact-formats";
 import type { ArtifactDescriptor } from "../src/artifacts/repo";
 import { setArtifactStorageForTest } from "../src/artifacts/storage";
 import { executeArtifactTool } from "../src/knowledge/gateway/artifact-tools";
@@ -240,7 +241,124 @@ describe("durable artifacts", () => {
       cookies: owner.cookies,
       body: { run_id: runId, path: "safe.txt" },
     });
-    expect(browserPublish.status).toBe(404);
+    expect(browserPublish.status).toBe(400);
+  });
+
+  test("creates browser-authored native files with canonical export fallbacks", async () => {
+    const runId = await createSandboxRun(owner);
+    const created = await json<{ artifact: ArtifactDescriptor; created: boolean }>(
+      "/api/artifacts",
+      {
+        method: "POST",
+        cookies: owner.cookies,
+        body: {
+          run_id: runId,
+          kind: "document",
+          name: "launch brief.docx",
+          state: { text: "# Launch brief\n\nReady for review" },
+        },
+      },
+    );
+    expect(created.status).toBe(201);
+    expect(created.body.created).toBe(true);
+    expect(created.body.artifact).toMatchObject({
+      name: "launch brief.docx",
+      content_type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      workpiece: {
+        kind: "document",
+        exports: expect.arrayContaining([
+          expect.objectContaining({ format: "docx", native: true }),
+          expect.objectContaining({ format: "text", native: false }),
+        ]),
+      },
+    });
+
+    const native = await fetchApi(
+      `/api/artifacts/${created.body.artifact.id}/workpiece/export`,
+      { cookies: owner.cookies },
+    );
+    expect(native.status).toBe(200);
+    expect(native.headers.get("content-type")).toBe(
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    );
+    expect(new Uint8Array(await native.arrayBuffer()).byteLength).toBeGreaterThan(1_000);
+
+    const text = await fetchApi(
+      `/api/artifacts/${created.body.artifact.id}/workpiece/export?format=text`,
+      { cookies: owner.cookies },
+    );
+    expect(text.status).toBe(200);
+    expect(text.headers.get("content-type")).toBe("text/plain; charset=utf-8");
+    expect(await text.text()).toContain("Ready for review");
+
+    const invalidFormat = await json<{ error: string }>(
+      `/api/artifacts/${created.body.artifact.id}/workpiece/export?format=zip`,
+      { cookies: owner.cookies },
+    );
+    expect(invalidFormat).toEqual({
+      status: 400,
+      body: { error: "format must be one of: docx, html, text" },
+    });
+  });
+
+  test("returns bounded 422 responses for render and extraction failures", async () => {
+    const runId = await createSandboxRun(owner);
+    const render = spyOn(artifactFormats, "renderArtifactExport")
+      .mockRejectedValue(new Error("sensitive renderer internals"));
+    let renderFailure: Awaited<ReturnType<typeof json<{ error: string }>>>;
+    try {
+      renderFailure = await json<{ error: string }>("/api/artifacts", {
+        method: "POST",
+        cookies: owner.cookies,
+        body: {
+          run_id: runId,
+          kind: "pdf",
+          name: "render-failure.pdf",
+          state: { pdfText: "Ready" },
+        },
+      });
+    } finally {
+      render.mockRestore();
+    }
+    expect(renderFailure).toEqual({
+      status: 422,
+      body: { error: "artifact export could not be rendered" },
+    });
+
+    const form = new FormData();
+    form.append("file", new File(
+      ["not a docx container"],
+      "broken.docx",
+      { type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document" },
+    ));
+    const uploaded = await json<{ upload: { id: string } }>("/api/uploads", {
+      method: "POST",
+      cookies: owner.cookies,
+      body: form,
+    });
+    expect(uploaded.status).toBe(201);
+
+    try {
+      const extractionFailure = await json<{ error: string }>("/api/artifacts", {
+        method: "POST",
+        cookies: owner.cookies,
+        body: {
+          run_id: runId,
+          kind: "document",
+          upload_id: uploaded.body.upload.id,
+        },
+      });
+      expect(extractionFailure).toEqual({
+        status: 422,
+        body: { error: "uploaded document could not be extracted" },
+      });
+    } finally {
+      const removed = await fetchApi(`/api/uploads/${uploaded.body.upload.id}`, {
+        method: "DELETE",
+        cookies: owner.cookies,
+      });
+      expect(removed.status).toBe(204);
+    }
   });
 
   test("rejects invalid ranges and active content is attachment-only", async () => {

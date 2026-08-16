@@ -4,19 +4,29 @@
 // re-trigger activation. Process-local by design: after a backend restart the
 // first warm turn re-mints and re-activates once.
 //
-// EXPIRY CONTRACT (adversarial-review finding): tokens are verified per REQUEST,
-// so a long turn dispatched on an aged token could see it expire MID-TURN. The
-// caller therefore mints with ttlMs = turn-cover TTL + reuse window, and passes
-// refreshMarginMs = the turn-cover TTL: any token this memo hands out is
-// guaranteed at least a full turn-cover TTL of remaining validity - the same
-// in-turn guarantee a freshly minted run token gives.
+// EXPIRY CONTRACT: ttlMs is the complete signed-token lifetime, never a base to
+// which reuse time is added. Callers reserve a refresh margin inside that TTL so
+// warm turns can reuse identical bytes without extending the configured ceiling.
 
 interface MemoizedToken {
   readonly token: string;
   readonly exp: number;
+  readonly ttlMs: number;
 }
 
 const MAX_ENTRIES = 5_000;
+
+export const THREAD_TOKEN_REUSE_WINDOW_MS = 15 * 60 * 1000;
+
+export function threadTokenMemoOptions(
+  ttlMs: number,
+  reuseWindowMs: number,
+): { readonly ttlMs: number; readonly refreshMarginMs: number } {
+  // Short custom TTLs still get useful warm reuse while retaining at least half
+  // their lifetime for the turn that receives an aged token.
+  const boundedReuseWindowMs = Math.min(reuseWindowMs, ttlMs / 2);
+  return { ttlMs, refreshMarginMs: ttlMs - boundedReuseWindowMs };
+}
 
 export class ThreadTokenMemo {
   private readonly entries = new Map<string, MemoizedToken>();
@@ -29,7 +39,13 @@ export class ThreadTokenMemo {
   ): string {
     const { ttlMs, refreshMarginMs } = opts;
     const existing = this.entries.get(key);
-    if (existing && nowMs < existing.exp - refreshMarginMs) return existing.token;
+    if (
+      existing &&
+      existing.ttlMs === ttlMs &&
+      nowMs < existing.exp - refreshMarginMs
+    ) {
+      return existing.token;
+    }
     if (this.entries.size >= MAX_ENTRIES) {
       for (const [k, v] of this.entries) {
         if (v.exp <= nowMs) this.entries.delete(k);
@@ -43,7 +59,7 @@ export class ThreadTokenMemo {
       }
     }
     const token = mint();
-    this.entries.set(key, { token, exp: nowMs + ttlMs });
+    this.entries.set(key, { token, exp: nowMs + ttlMs, ttlMs });
     return token;
   }
 

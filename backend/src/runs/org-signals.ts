@@ -1,21 +1,27 @@
 import { EventEmitter } from "node:events";
+import type { OrgChange as ClientOrgChange } from "@skynet/agent-client/org-changes";
+import type {
+  ProviderConnectionAuthMethod,
+  ProviderConnectionChangeAction,
+  ProviderConnectionProvider,
+  ProviderConnectionStatus,
+} from "@skynet/agent-client/provider-connections";
 import { publishThreadChange, type ThreadChangeKind } from "./thread-signals";
 
-/** IDs-only invalidation events for org-scoped ambient product surfaces. */
+/** Internal invalidation events for ambient product surfaces. */
 export type OrgChange =
+  | Exclude<ClientOrgChange, { readonly type: "provider_connection" }>
   | {
-      readonly type: "run";
-      readonly action: ThreadChangeKind;
-      readonly runId: string;
-      readonly threadId: string;
-    }
-  | {
-      readonly type: "artifact";
-      readonly action: "created" | "updated";
-      readonly artifactId: string;
-      readonly runId: string;
-      readonly threadId: string;
+      readonly type: "provider_connection";
+      readonly action: ProviderConnectionChangeAction;
+      readonly targetUserId: string;
+      readonly connectionId: string;
+      readonly provider: ProviderConnectionProvider;
+      readonly authMethod: ProviderConnectionAuthMethod;
+      readonly status: ProviderConnectionStatus;
     };
+
+export type { ClientOrgChange };
 
 export type OrgChangeListener = (change: OrgChange) => void;
 
@@ -44,6 +50,20 @@ export function publishOrgChange(orgId: string, change: OrgChange): void {
   } catch (error) {
     console.error(`[org-signals] publish failed for org ${orgId}:`, error);
   }
+}
+
+export function clientOrgChangeForUser(
+  change: OrgChange,
+  userId: string | null,
+): ClientOrgChange | null {
+  if (change.type !== "provider_connection") return change;
+  if (!userId || change.targetUserId !== userId) return null;
+  return {
+    type: "provider_connection",
+    action: change.action,
+    provider: change.provider,
+    authMethod: change.authMethod,
+  };
 }
 
 /** One production seam keeps the active-thread and ambient-org projections in sync. */

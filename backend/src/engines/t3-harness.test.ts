@@ -7,6 +7,20 @@ import {
   isT3ThreadSessionId,
 } from "./t3-orchestration";
 
+const LEGACY_CAPABILITIES = {
+  resume: true,
+  cancel: true,
+  streaming: "parts" as const,
+  authoritativeHistory: false,
+  childSessions: false,
+  approvals: false,
+  questions: false,
+  reasoning: false,
+  todos: false,
+  patches: false,
+  usage: false,
+};
+
 describe("T3 control harness", () => {
   test("builds the native T3 interrupt command", () => {
     const command = buildT3TurnInterruptCommand(
@@ -34,7 +48,7 @@ describe("T3 control harness", () => {
     let usedLegacy = false;
     const legacy: HarnessAdapter = {
       provider: "codex",
-      capabilities: () => t3Harness.capabilities(),
+      capabilities: () => ({ ...LEGACY_CAPABILITIES }),
       cancel: async () => {
         usedLegacy = true;
         return { status: "ok" };
@@ -50,5 +64,47 @@ describe("T3 control harness", () => {
       "stop",
     );
     expect(usedLegacy).toBe(true);
+  });
+
+  test("reports T3 capabilities for a native T3 session handle", () => {
+    const legacy: HarnessAdapter = {
+      provider: "codex",
+      capabilities: () => ({ ...LEGACY_CAPABILITIES }),
+      cancel: async () => ({ status: "ok" }),
+      reconcile: async () => ({ status: "no_change" }),
+    };
+
+    const routed = routeT3Harness(legacy);
+    const t3Caps = routed.capabilities({
+      provider: "codex",
+      sessionId: "skynet-thread-thread-1",
+      sandboxId: "sbx",
+    });
+    expect(t3Caps).toEqual(t3Harness.capabilities());
+    expect(t3Caps.authoritativeHistory).toBe(true);
+    expect(t3Caps.childSessions).toBe(true);
+    expect(t3Caps.approvals).toBe(true);
+    expect(t3Caps.questions).toBe(true);
+    expect(t3Caps.reasoning).toBe(true);
+    expect(t3Caps.patches).toBe(true);
+  });
+
+  test("keeps legacy capabilities when no T3 session handle is available", () => {
+    const legacy: HarnessAdapter = {
+      provider: "codex",
+      capabilities: () => ({ ...LEGACY_CAPABILITIES }),
+      cancel: async () => ({ status: "ok" }),
+      reconcile: async () => ({ status: "no_change" }),
+    };
+
+    const routed = routeT3Harness(legacy);
+    expect(routed.capabilities()).toEqual(LEGACY_CAPABILITIES);
+    expect(
+      routed.capabilities({
+        provider: "codex",
+        sessionId: "legacy-session",
+        sandboxId: "sbx",
+      }),
+    ).toEqual(LEGACY_CAPABILITIES);
   });
 });

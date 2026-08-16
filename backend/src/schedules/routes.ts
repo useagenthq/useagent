@@ -1,7 +1,6 @@
 import { Hono } from "hono";
 import type { AppEnv } from "../http";
 import { orgScope } from "../middleware/org";
-import { fireSchedule } from "./fire";
 import {
   getScheduleForOrg,
   listFirings,
@@ -10,6 +9,7 @@ import {
 import {
   createScheduleForOrg,
   deleteScheduleForOrg,
+  fireScheduleForOrg,
   ScheduleServiceError,
   updateScheduleForOrg,
 } from "./service";
@@ -18,10 +18,12 @@ export const schedulesRoutes = new Hono<AppEnv>();
 
 schedulesRoutes.use("*", orgScope);
 
-// List all schedules for the active org (newest first).
-schedulesRoutes.get("/", async (c) =>
-  c.json({ schedules: await listSchedules(c.get("orgId")) }),
-);
+// List all automations for the active org (newest first). The `schedules`
+// envelope is retained for backward-compatible clients and resumed sessions.
+schedulesRoutes.get("/", async (c) => {
+  const automations = await listSchedules(c.get("orgId"));
+  return c.json({ automations, schedules: automations });
+});
 
 // Create a schedule. `enabled` is always FALSE on create (reference bot's safety
 // default) so a new schedule never auto-fires until explicitly enabled.
@@ -67,7 +69,7 @@ schedulesRoutes.patch("/:id", async (c) => {
 schedulesRoutes.post("/:id/run-now", async (c) => {
   const schedule = await getScheduleForOrg(c.get("orgId"), c.req.param("id"));
   if (!schedule) return c.json({ error: "schedule not found" }, 404);
-  const runId = await fireSchedule(schedule, "manual");
+  const runId = await fireScheduleForOrg(schedule, "manual");
   return c.json({ run_id: runId }, 201);
 });
 

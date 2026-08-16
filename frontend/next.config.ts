@@ -32,11 +32,15 @@ export default function nextConfig(phase: string): NextConfig {
       // resolveAlias paths are relative to the PROJECT dir (frontend/), not the root.
       resolveAlias: {
         "@skynet/agent-client": "../packages/agent-client/src/index.ts",
+        "@skynet/agent-client/org-changes": "../packages/agent-client/src/org-changes.ts",
+        "@skynet/agent-client/provider-connections":
+          "../packages/agent-client/src/provider-connections.ts",
         "@skynet/agent-harness": "../packages/agent-harness/src/index.ts",
         "@skynet/agent-harness/canonical": "../packages/agent-harness/src/canonical.ts",
+        "@skynet/agent-harness/opencode": "../packages/agent-harness/src/opencode-canonical.ts",
+        "@skynet/artifact-workspace": "../packages/artifact-workspace/src/index.ts",
       },
     },
-    transpilePackages: ["@skynet/agent-client", "@skynet/agent-harness"],
     distDir: resolveDistDir(phase),
     // We maintain AGENTS.md by hand — stop Next 16 from regenerating it.
     agentRules: false,

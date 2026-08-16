@@ -11,8 +11,7 @@ import {
 import Image from "next/image";
 import Link from "next/link";
 import {
-  categoryForArtifact,
-  extensionLabel,
+  artifactViewFor,
   formatArtifactDate,
   formatArtifactSize,
   type ArtifactCategory,
@@ -29,16 +28,15 @@ function shortId(value: string): string {
   return value.length > 12 ? `${value.slice(0, 8)}…` : value;
 }
 
-function isRasterImage(contentType: string): boolean {
-  return ["image/gif", "image/jpeg", "image/png", "image/webp"].includes(
-    contentType.split(";", 1)[0]?.toLowerCase() ?? "",
-  );
-}
-
-function ArtifactPreview({ artifact }: { artifact: ArtifactDescriptor }) {
-  const category = categoryForArtifact(artifact);
-  const Icon = CATEGORY_ICON[category];
-  if (isRasterImage(artifact.content_type)) {
+function ArtifactPreview({
+  artifact,
+  view,
+}: {
+  artifact: ArtifactDescriptor;
+  view: ReturnType<typeof artifactViewFor>;
+}) {
+  const Icon = CATEGORY_ICON[view.category];
+  if (view.preview.renderer === "image") {
     return (
       <Image
         src={artifact.preview_url}
@@ -54,7 +52,7 @@ function ArtifactPreview({ artifact }: { artifact: ArtifactDescriptor }) {
     <div className="absolute inset-0 flex flex-col items-center justify-center gap-2.5">
       <Icon aria-hidden className="size-9 text-text-sub-600" />
       <span className="font-mono text-label-xs text-text-soft-400">
-        {extensionLabel(artifact.name)}
+        {view.extension}
       </span>
     </div>
   );
@@ -63,12 +61,13 @@ function ArtifactPreview({ artifact }: { artifact: ArtifactDescriptor }) {
 /** One durable artifact record. Preview and download use the authenticated
  * backend byte endpoint; no filename, size, status, or content is synthesized. */
 export function ArtifactCard({ artifact }: { artifact: ArtifactDescriptor }) {
+  const view = artifactViewFor(artifact);
   return (
     <article className="group flex min-w-0 flex-col overflow-hidden rounded-xl border border-stroke-soft-200 bg-bg-white-0 shadow-regular-xs transition-colors hover:border-stroke-sub-300">
       <div className="relative h-44 overflow-hidden bg-bg-weak-50 bg-halftone">
-        <ArtifactPreview artifact={artifact} />
+        <ArtifactPreview artifact={artifact} view={view} />
         <div className="absolute right-3 top-3 flex items-center gap-1.5 opacity-100 transition-opacity sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100">
-          {artifact.workpiece && (
+          {view.actions.includes("edit") && (
             <Link
               href={`/agent/artifacts/${artifact.id}`}
               aria-label={`Edit ${artifact.name}`}
@@ -78,25 +77,29 @@ export function ArtifactCard({ artifact }: { artifact: ArtifactDescriptor }) {
               <RiEditLine aria-hidden className="size-4" />
             </Link>
           )}
-          <a
-            href={artifact.preview_url}
-            target="_blank"
-            rel="noreferrer"
-            aria-label={`Preview ${artifact.name}`}
-            title="Preview"
-            className="flex size-8 items-center justify-center rounded-lg border border-stroke-soft-200 bg-bg-white-0 text-text-sub-600 shadow-regular-xs outline-none hover:text-text-strong-950 focus-visible:ring-2 focus-visible:ring-stroke-strong-950"
-          >
-            <RiExternalLinkLine aria-hidden className="size-4" />
-          </a>
-          <a
-            href={artifact.download_url}
-            download={artifact.name}
-            aria-label={`Download ${artifact.name}`}
-            title="Download"
-            className="flex size-8 items-center justify-center rounded-lg border border-stroke-soft-200 bg-bg-white-0 text-text-sub-600 shadow-regular-xs outline-none hover:text-text-strong-950 focus-visible:ring-2 focus-visible:ring-stroke-strong-950"
-          >
-            <RiDownloadLine aria-hidden className="size-4" />
-          </a>
+          {view.actions.includes("preview") && (
+            <a
+              href={artifact.preview_url}
+              target="_blank"
+              rel="noreferrer"
+              aria-label={`Preview ${artifact.name}`}
+              title="Preview"
+              className="flex size-8 items-center justify-center rounded-lg border border-stroke-soft-200 bg-bg-white-0 text-text-sub-600 shadow-regular-xs outline-none hover:text-text-strong-950 focus-visible:ring-2 focus-visible:ring-stroke-strong-950"
+            >
+              <RiExternalLinkLine aria-hidden className="size-4" />
+            </a>
+          )}
+          {view.actions.includes("download") && (
+            <a
+              href={artifact.download_url}
+              download={artifact.name}
+              aria-label={`Download ${artifact.name}`}
+              title="Download"
+              className="flex size-8 items-center justify-center rounded-lg border border-stroke-soft-200 bg-bg-white-0 text-text-sub-600 shadow-regular-xs outline-none hover:text-text-strong-950 focus-visible:ring-2 focus-visible:ring-stroke-strong-950"
+            >
+              <RiDownloadLine aria-hidden className="size-4" />
+            </a>
+          )}
         </div>
       </div>
 

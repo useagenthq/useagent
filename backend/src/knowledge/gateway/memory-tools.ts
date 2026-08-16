@@ -1,7 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { and, desc, eq } from "drizzle-orm";
-import { db } from "../../db/client";
-import { runs, type MemoryScope } from "../../db/schema";
+import type { MemoryScope } from "../../db/schema";
 import { recordProviderEvent } from "../../runs/provider-events";
 import { resolveScopedMemory, type ScopedMemoryPlan } from "../../memory/scope";
 import {
@@ -18,8 +16,12 @@ import {
   parseEnvelope,
   type ExplicitMemoryKind,
 } from "../../memory/explicit-memory";
+import type { ToolCallResult } from "./descriptor";
+import {
+  resolveAuthorizedToolRun,
+  type AuthorizedToolRun,
+} from "./run-authorization";
 import type { ToolTokenClaims } from "./token";
-import type { ToolCallResult } from "./tools";
 
 // ---------------------------------------------------------------------------
 // Agent-callable MEMORY tools on the SAME trusted gateway as knowledge
@@ -153,42 +155,6 @@ export const MEMORY_TOOL_NAMES: ReadonlySet<string> = new Set(MEMORY_TOOLS.map((
 
 // ── identity + scope resolution (server-trusted) ─────────────────────────────
 
-interface ActiveRun {
-  id: string;
-  threadId: string;
-  orgId: string | null;
-  userId: string | null;
-  memoryScope: MemoryScope;
-}
-
-/**
- * Resolve the run a memory op acts for: the thread's CURRENTLY-running run (the
- * agent's live turn), else the token's mint run. The resolved run MUST stay
- * within the token's org + thread (section 5.1 step 4) — otherwise fail closed.
- * Its persisted memory_scope is authoritative, so a resumed thread that changed
- * scope between turns is honored (section 5.1: not the warm token's older scope).
- */
-async function resolveActiveRun(claims: ToolTokenClaims): Promise<ActiveRun | null> {
-  const cols = {
-    id: runs.id,
-    threadId: runs.threadId,
-    orgId: runs.orgId,
-    userId: runs.userId,
-    memoryScope: runs.memoryScope,
-  };
-  const [running] = await db
-    .select(cols)
-    .from(runs)
-    .where(and(eq(runs.threadId, claims.threadId), eq(runs.status, "running")))
-    .orderBy(desc(runs.createdAt))
-    .limit(1);
-  const row = running ?? (await db.select(cols).from(runs).where(eq(runs.id, claims.runId)).limit(1))[0];
-  if (!row) return null;
-  // Trust boundary: never act outside the token's org/thread.
-  if (row.orgId !== claims.orgId || row.threadId !== claims.threadId) return null;
-  return row;
-}
-
 function textResult(text: string, structured?: Record<string, unknown>, isError = false): ToolCallResult {
   return { content: [{ type: "text", text }], ...(structured ? { structuredContent: structured } : {}), ...(isError ? { isError } : {}) };
 }
@@ -201,7 +167,7 @@ export const MEMORY_PROVIDER = "skynet-memory";
  *  carries `source: "memory"` (mirrors the context.retrieved marker shape) so one
  *  timeline parser branch handles the whole family. */
 function recordMemoryEvent(
-  run: ActiveRun,
+  run: AuthorizedToolRun,
   eventType: string,
   payload: Record<string, unknown>,
 ): void {
@@ -227,7 +193,7 @@ async function doRemember(claims: ToolTokenClaims, args: Record<string, unknown>
   const content = (typeof args.content === "string" ? args.content : "").trim().slice(0, CONTENT_MAX);
   if (!content) return textResult("memory_remember requires non-empty `content`.", undefined, true);
 
-  const run = await resolveActiveRun(claims);
+  const run = await resolveAuthorizedToolRun(claims);
   if (!run) return textResult("Memory unavailable: no active run to scope this write.", undefined, true);
   const plan: ScopedMemoryPlan | null = resolveScopedMemory(run);
   if (!plan) return textResult("Memory is not configured for this deployment.", undefined, true);
@@ -299,7 +265,7 @@ async function doSearch(claims: ToolTokenClaims, args: Record<string, unknown>):
   const rawLimit = typeof args.limit === "number" ? Math.floor(args.limit) : SEARCH_DEFAULT_LIMIT;
   const limit = Math.max(1, Math.min(rawLimit, SEARCH_MAX_LIMIT));
 
-  const run = await resolveActiveRun(claims);
+  const run = await resolveAuthorizedToolRun(claims);
   if (!run) return textResult("Memory unavailable: no active run to scope this search.", undefined, true);
   const plan = resolveScopedMemory(run);
   if (!plan) return textResult("Memory is not configured for this deployment.", undefined, true);
@@ -348,7 +314,7 @@ async function doRead(claims: ToolTokenClaims, args: Record<string, unknown>): P
   if (!m) return textResult("memory_read needs a ref like tencent:l1:<id> from memory_search.", undefined, true);
   const [, layer, id] = m as unknown as [string, "l0" | "l1", string];
 
-  const run = await resolveActiveRun(claims);
+  const run = await resolveAuthorizedToolRun(claims);
   if (!run) return textResult("Memory unavailable: no active run to scope this read.", undefined, true);
   const plan = resolveScopedMemory(run);
   if (!plan || plan.readPools.length === 0) return textResult("Memory is not available for this run.", undefined, true);
@@ -396,7 +362,7 @@ async function doCorrect(claims: ToolTokenClaims, args: Record<string, unknown>)
   const content = (typeof args.content === "string" ? args.content : "").trim().slice(0, CONTENT_MAX);
   if (!parsed || !content) return textResult("memory_correct needs a memoryRef and corrected `content`.", undefined, true);
 
-  const run = await resolveActiveRun(claims);
+  const run = await resolveAuthorizedToolRun(claims);
   if (!run) return textResult("Memory unavailable: no active run to scope this correction.", undefined, true);
   const plan = resolveScopedMemory(run);
   if (!plan?.writePool) return textResult("Cannot correct memory: no writable pool for this run.", undefined, true);
@@ -442,7 +408,7 @@ async function doForget(claims: ToolTokenClaims, args: Record<string, unknown>):
   const parsed = parseRef(typeof args.memoryRef === "string" ? args.memoryRef : "");
   if (!parsed) return textResult("memory_forget needs a memoryRef from memory_search.", undefined, true);
 
-  const run = await resolveActiveRun(claims);
+  const run = await resolveAuthorizedToolRun(claims);
   if (!run) return textResult("Memory unavailable: no active run to scope this.", undefined, true);
   const plan = resolveScopedMemory(run);
   if (!plan?.writePool) return textResult("Cannot forget memory: no writable pool for this run.", undefined, true);

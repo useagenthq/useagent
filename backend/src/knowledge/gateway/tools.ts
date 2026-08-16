@@ -1,11 +1,12 @@
 import { randomBytes } from "node:crypto";
-import { and, desc, eq } from "drizzle-orm";
-import { db } from "../../db/client";
-import { runs } from "../../db/schema";
 import { recordProviderEvent } from "../../runs/provider-events";
 import { embeddingsEnabled, embedOne } from "../embed";
 import { getRecord, searchRecords, type SearchHit } from "../store";
+import type { ToolCallResult } from "./descriptor";
+import { resolveAuthorizedToolRun } from "./run-authorization";
 import type { ToolTokenClaims } from "./token";
+
+export type { ToolCallResult } from "./descriptor";
 
 // ---------------------------------------------------------------------------
 // Agent-callable knowledge tools (mem_op.md 0.2). READ-ONLY. The resident
@@ -84,50 +85,17 @@ export const KNOWLEDGE_TOOLS = [
 
 export const KNOWLEDGE_TOOL_NAMES: ReadonlySet<string> = new Set(KNOWLEDGE_TOOLS.map((t) => t.name));
 
-/** A single MCP text content block. */
-interface TextContent {
-  type: "text";
-  text: string;
-}
-/** The MCP tools/call result shape (subset we use). */
-export interface ToolCallResult {
-  content: TextContent[];
-  structuredContent?: Record<string, unknown>;
-  isError?: boolean;
-}
-
 function clamp(s: string, n: number): string {
   return s.length > n ? `${s.slice(0, n)}…` : s;
 }
 
 // ---------------------------------------------------------------------------
-// Retrieval ledger — every tool call becomes a durable `knowledge.retrieved`
-// native frame (mem_op.md 0.2 / "Retrieval Ledger and UX"). AWAITED by callers
-// (so the frame is durable before the tool result returns — a crash can't lose
-// evidence of a retrieval) but wrapped in .catch so a persist failure never
-// fails the agent turn. Attributed to the thread's CURRENTLY-ACTIVE run (the one
-// the agent is executing), falling back to the token's mint run.
+// Retrieval ledger — every authorized tool call becomes a durable
+// `knowledge.retrieved` native frame (mem_op.md 0.2 / "Retrieval Ledger and
+// UX"). AWAITED by callers so the frame is durable before the tool result
+// returns. Attribution uses the gateway's single fail-closed live-run resolver;
+// an inactive or ambiguous capability cannot write a frame.
 // ---------------------------------------------------------------------------
-
-/** Resolve the run a retrieval should be attributed to: the thread's running run
- *  (the agent's current turn), else the token's mint run. Both are within the
- *  token's org by construction, so this cannot cross tenants. */
-async function resolveLedgerRun(claims: ToolTokenClaims): Promise<{ runId: string; threadId: string } | null> {
-  const [running] = await db
-    .select({ id: runs.id, threadId: runs.threadId })
-    .from(runs)
-    .where(and(eq(runs.threadId, claims.threadId), eq(runs.status, "running")))
-    .orderBy(desc(runs.createdAt))
-    .limit(1);
-  if (running) return { runId: running.id, threadId: running.threadId };
-  // Fallback: the mint run must still exist (FK target for the ledger frame).
-  const [mint] = await db
-    .select({ id: runs.id, threadId: runs.threadId })
-    .from(runs)
-    .where(eq(runs.id, claims.runId))
-    .limit(1);
-  return mint ? { runId: mint.id, threadId: mint.threadId } : null;
-}
 
 export interface LedgerItem {
   id: string;
@@ -146,11 +114,11 @@ export async function recordKnowledgeRetrieval(
   items: LedgerItem[],
   latencyMs: number,
 ): Promise<void> {
-  const target = await resolveLedgerRun(claims).catch(() => null);
+  const target = await resolveAuthorizedToolRun(claims).catch(() => null);
   if (!target) return;
   await recordProviderEvent({
-    id: `kbret_${target.runId}_${randomBytes(5).toString("hex")}`,
-    runId: target.runId,
+    id: `kbret_${target.id}_${randomBytes(5).toString("hex")}`,
+    runId: target.id,
     threadId: target.threadId,
     provider: "skynet-knowledge",
     eventType: KNOWLEDGE_RETRIEVED,
@@ -162,7 +130,7 @@ export async function recordKnowledgeRetrieval(
         orgId: claims.orgId,
         actorUserId: claims.userId,
         threadId: claims.threadId,
-        runId: target.runId,
+        runId: target.id,
       },
       itemCount: items.length,
       items,

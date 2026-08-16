@@ -8,7 +8,12 @@ import {
   RiRobot2Line,
 } from "@remixicon/react";
 import { useEffect, useState } from "react";
-import { deriveCanonicalChildren } from "@/components/chat/canonical-children";
+import {
+  type CanonicalChildFidelity,
+  deriveCanonicalChildren,
+  legacySpawnStepIdForCanonical,
+  remapCanonicalOwnerByStep,
+} from "@/components/chat/canonical-children";
 import type { CanonicalEventLike } from "@/components/chat/canonical-timeline";
 import {
   type ChildFidelity,
@@ -53,9 +58,21 @@ function useNow(live: boolean): number {
 }
 
 /** Elapsed ms this card has been (or was) active; frozen once it settles. */
-function elapsedOf(card: SubagentCard, now: number, live: boolean): number {
+export function childElapsedMs(
+  card: SubagentCard,
+  now: number,
+  live: boolean,
+  providerDurationMs: number | null,
+): number | null {
+  if (!live && providerDurationMs !== null && Number.isFinite(providerDurationMs) && providerDurationMs > 0) {
+    return providerDurationMs;
+  }
+  // Canonical translation currently falls back to the provider sequence when no
+  // wall-clock timestamp exists. Never present that sequence delta as a duration.
+  if (!Number.isFinite(card.startedAt) || card.startedAt < Date.UTC(2000, 0, 1)) return null;
   const endedAt = live ? now : (card.lastActivityAt ?? card.startedAt);
-  return Number.isFinite(card.startedAt) ? Math.max(0, endedAt - card.startedAt) : 0;
+  const elapsed = Math.max(0, endedAt - card.startedAt);
+  return elapsed > 0 ? elapsed : null;
 }
 
 /** Resolve a card's authoritative status: native fidelity first, else fall back
@@ -67,7 +84,7 @@ function statusOf(fidelity: ChildFidelity | undefined, runLive: boolean): ChildS
 const isChildActive = (status: ChildStatus): boolean =>
   status === "pending" || status === "running" || status === "waiting";
 
-const childStatusLabel = (status: ChildStatus): string => {
+export const childStatusLabel = (status: ChildStatus, resumable: boolean | null = null): string => {
   switch (status) {
     case "pending":
       return "Pending";
@@ -76,7 +93,7 @@ const childStatusLabel = (status: ChildStatus): string => {
     case "waiting":
       return "Waiting";
     case "idle":
-      return "Idle · resumable";
+      return resumable === false ? "Idle" : "Idle · resumable";
     case "completed":
       return "Completed";
     case "failed":
@@ -91,13 +108,16 @@ const childStatusLabel = (status: ChildStatus): string => {
   }
 };
 
+type RailChildFidelity = ChildFidelity &
+  Partial<Pick<CanonicalChildFidelity, "model" | "role" | "resumable">>;
+
 const compactCount = (value: number): string =>
   new Intl.NumberFormat("en", { notation: "compact", maximumFractionDigits: 1 }).format(value);
 
 function fidelityFor(
   card: SubagentCard,
-  fidelity: ReadonlyMap<string, ChildFidelity>,
-): ChildFidelity | undefined {
+  fidelity: ReadonlyMap<string, RailChildFidelity>,
+): RailChildFidelity | undefined {
   for (const id of card.aliases) {
     const match = fidelity.get(id);
     if (match) return match;
@@ -129,15 +149,16 @@ function AgentCardRow({
   onOpen,
 }: {
   card: SubagentCard;
-  fidelity: ChildFidelity | undefined;
+  fidelity: RailChildFidelity | undefined;
   runLive: boolean;
   onOpen: () => void;
 }) {
   const status = statusOf(fidelity, runLive);
   const live = isChildActive(status);
   const now = useNow(live);
-  const elapsed = elapsedOf(card, now, live);
-  const statusLine = fidelity?.progress ?? card.status ?? childStatusLabel(status);
+  const elapsed = childElapsedMs(card, now, live, fidelity?.usage?.durationMs ?? null);
+  const statusLine =
+    fidelity?.progress ?? card.status ?? childStatusLabel(status, fidelity?.resumable ?? null);
 
   return (
     <button
@@ -167,10 +188,13 @@ function AgentCardRow({
           >
             {statusLine}
           </span>
-          <span className="text-text-soft-400 shrink-0 font-mono text-label-xs tabular-nums">
-            {fidelity?.usage ? `${compactCount(fidelity.usage.totalTokens)} tok · ` : ""}
-            {formatDuration(elapsed)}
-          </span>
+          {(fidelity?.usage || elapsed !== null) && (
+            <span className="text-text-soft-400 shrink-0 font-mono text-label-xs tabular-nums">
+              {fidelity?.usage ? `${compactCount(fidelity.usage.totalTokens)} tok` : ""}
+              {fidelity?.usage && elapsed !== null ? " · " : ""}
+              {elapsed !== null ? formatDuration(elapsed) : ""}
+            </span>
+          )}
         </div>
       </div>
       <RiArrowRightSLine className="text-text-soft-400 size-4 shrink-0 self-center" aria-hidden />
@@ -189,21 +213,23 @@ function AgentDetail({
   runLive,
   steps,
   ownerByStep,
+  spawnStepId,
   onBack,
 }: {
   card: SubagentCard;
-  fidelity: ChildFidelity | undefined;
+  fidelity: RailChildFidelity | undefined;
   runLive: boolean;
   steps: ApiStep[];
   ownerByStep: ReadonlyMap<string, string>;
+  spawnStepId: string;
   onBack: () => void;
 }) {
   const status = statusOf(fidelity, runLive);
   const live = isChildActive(status);
   const now = useNow(live);
-  const elapsed = elapsedOf(card, now, live);
+  const elapsed = childElapsedMs(card, now, live, fidelity?.usage?.durationMs ?? null);
 
-  const spawn = steps.find((s) => s.id === card.id);
+  const spawn = steps.find((s) => s.id === spawnStepId);
   const objective = spawn ? deriveTrace(spawn).detail : null;
   const activity = steps.filter((s) => ownerByStep.get(s.id) === card.id);
 
@@ -230,11 +256,14 @@ function AgentDetail({
           </div>
           <div className="mt-0.5 flex items-center gap-2">
             <span className="text-mono-label text-text-soft-400 flex-1">
-              Subagent{status === "failed" ? " · failed" : ""}
+              {fidelity?.role ?? "Subagent"}
+              {status === "failed" ? " · failed" : ""}
             </span>
-            <span className="text-text-soft-400 shrink-0 font-mono text-label-xs tabular-nums">
-              {formatDuration(elapsed)}
-            </span>
+            {elapsed !== null && (
+              <span className="text-text-soft-400 shrink-0 font-mono text-label-xs tabular-nums">
+                {formatDuration(elapsed)}
+              </span>
+            )}
           </div>
         </div>
       </header>
@@ -269,19 +298,30 @@ function AgentDetail({
           </div>
         )}
 
-        {(fidelity?.usage || fidelity?.lastToolName) && (
+        {(fidelity?.usage ||
+          fidelity?.lastToolName ||
+          fidelity?.model ||
+          fidelity?.role ||
+          fidelity?.resumable != null) && (
           <div className="text-mono-label text-text-soft-400 flex flex-wrap gap-x-3 gap-y-1">
             {fidelity.lastToolName && <span>Last tool: {fidelity.lastToolName}</span>}
             {fidelity.usage && <span>{compactCount(fidelity.usage.totalTokens)} tokens</span>}
             {fidelity?.usage?.toolUses !== undefined && (
               <span>{fidelity.usage.toolUses} tool uses</span>
             )}
+            {fidelity.role && <span>Role: {fidelity.role}</span>}
+            {fidelity.model && <span>Model: {fidelity.model}</span>}
+            {fidelity.resumable !== undefined && fidelity.resumable !== null && (
+              <span>{fidelity.resumable ? "Resumable" : "Not resumable"}</span>
+            )}
           </div>
         )}
 
         {activity.length === 0 && (fidelity?.recentActivity.length ?? 0) === 0 ? (
           <p className="text-paragraph-sm text-text-soft-400 py-6 text-center">
-            {live ? "Waiting for the first native activity…" : childStatusLabel(status)}
+            {live
+              ? "Waiting for the first native activity…"
+              : childStatusLabel(status, fidelity?.resumable ?? null)}
           </p>
         ) : (
           <div className="space-y-2.5">
@@ -322,7 +362,10 @@ export function AgentsRail({
   const canonical = deriveCanonicalChildren(canonicalEvents);
   const legacy = deriveSubagents(steps);
   const hasCanonicalChildren = canonical.cards.length > 0;
-  const { cards, ownerByStep } = hasCanonicalChildren ? canonical : legacy;
+  const cards = hasCanonicalChildren ? canonical.cards : legacy.cards;
+  const ownerByStep = hasCanonicalChildren
+    ? remapCanonicalOwnerByStep(canonical.cards, legacy)
+    : legacy.ownerByStep;
   const fidelity = hasCanonicalChildren ? canonical.fidelity : deriveChildFidelity(frames);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   // Fallback liveness for cards without a native status frame: the run is live
@@ -343,6 +386,9 @@ export function AgentsRail({
   const selected = selectedId ? cards.find((c) => c.id === selectedId) : null;
   if (selected) {
     const f = fidelityFor(selected, fidelity);
+    const spawnStepId = hasCanonicalChildren
+      ? (legacySpawnStepIdForCanonical(selected, legacy) ?? selected.id)
+      : selected.id;
     return (
       <AgentDetail
         card={selected}
@@ -350,6 +396,7 @@ export function AgentsRail({
         runLive={runLive}
         steps={steps}
         ownerByStep={ownerByStep}
+        spawnStepId={spawnStepId}
         onBack={() => setSelectedId(null)}
       />
     );

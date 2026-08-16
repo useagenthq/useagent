@@ -67,6 +67,23 @@ export interface CanonicalPlanEntry {
   status: "pending" | "in_progress" | "completed" | "cancelled";
 }
 
+/** Bounded provider-reported usage for one child. Known counters stay named while
+ *  future numeric counters remain losslessly available to newer consumers. */
+export type CanonicalChildUsage = Readonly<Record<string, number>>;
+
+/** Optional provider snapshot carried alongside the legacy child lifecycle fields.
+ *  Values are additive so readers of schema v1 rows can ignore this object, while
+ *  richer consumers do not have to infer lifecycle state from display summaries. */
+export interface CanonicalChildState {
+  status?: string;
+  summary?: string;
+  lastToolName?: string;
+  usage?: CanonicalChildUsage;
+  model?: string;
+  role?: string;
+  resumable?: boolean;
+}
+
 /** One native slash command advertised by the selected provider at runtime
  *  (ACP `available_commands_update`, or OpenCode's `/command`). Provider-neutral:
  *  a command is invoked by sending `/name arguments` as an ordinary prompt. */
@@ -112,8 +129,23 @@ export type CanonicalEventBody =
   | { kind: "reasoning.delta"; messageId: string; text: string }
   | { kind: "reasoning.completed"; messageId: string }
   | { kind: "plan.updated"; entries: readonly CanonicalPlanEntry[] }
-  | { kind: "tool.started"; toolCallId: string; name: string; title?: string; input?: unknown }
-  | { kind: "tool.progress"; toolCallId: string; preview?: string }
+  | {
+      kind: "tool.started";
+      toolCallId: string;
+      name: string;
+      title?: string;
+      server?: string;
+      input?: unknown;
+      nativeStatus?: string;
+      durationMs?: number;
+    }
+  | {
+      kind: "tool.progress";
+      toolCallId: string;
+      preview?: string;
+      nativeStatus?: string;
+      durationMs?: number;
+    }
   | {
       kind: "tool.completed";
       toolCallId: string;
@@ -121,6 +153,8 @@ export type CanonicalEventBody =
       preview?: string;
       artifact?: ArtifactRef;
       error?: string;
+      nativeStatus?: string;
+      durationMs?: number;
     }
   | {
       kind: "file.changed";
@@ -142,9 +176,16 @@ export type CanonicalEventBody =
       parentChildId?: string;
       launchToolCallId?: string;
       title?: string;
+      state?: CanonicalChildState;
     }
-  | { kind: "child.updated"; childId: string; status: string }
-  | { kind: "child.completed"; childId: string; status: "ok" | "error"; result?: string }
+  | { kind: "child.updated"; childId: string; status: string; state?: CanonicalChildState }
+  | {
+      kind: "child.completed";
+      childId: string;
+      status: "ok" | "error";
+      result?: string;
+      state?: CanonicalChildState;
+    }
   | { kind: "approval.requested"; approvalId: string; operation: string; options: readonly string[] }
   | { kind: "approval.resolved"; approvalId: string; decision: string }
   | {
@@ -187,7 +228,7 @@ export type CanonicalEventBody =
       sourceEventType: string;
       sourcePayload?: Record<string, unknown>;
     }
-  | { kind: "harness.warning"; message: string; rawEventType?: string }
+  | { kind: "harness.warning"; message: string; rawEventType?: string; rawPayload?: unknown }
   | { kind: "harness.error"; message: string; fatal: boolean };
 
 export type CanonicalAgentEvent = CanonicalEventBase & CanonicalEventBody;

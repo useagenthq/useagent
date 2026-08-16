@@ -70,4 +70,31 @@ describe("decodeFrame: valid frames still decode", () => {
   test("unknown future frame -> unknown (surfaced, not fatal)", () => {
     expect(decodeFrame("some-future-frame", JSON.stringify({ x: 1 }))).toMatchObject({ kind: "unknown", type: "some-future-frame" });
   });
+
+  test("unknown provider-native event type remains byte-for-byte structured data", () => {
+    const frame = {
+      schemaVersion: 1,
+      eventId: "pi-experimental-1",
+      seq: 9,
+      provider: "pi",
+      eventType: "pi.experimental.capability",
+      native: {
+        sessionId: "pi-session",
+        parentSessionId: null,
+        messageId: "pi-message",
+        partId: "pi-part",
+        callId: "pi-call",
+      },
+      payload: {
+        capability: "future-tool",
+        detail: { version: 2, enabled: true },
+      },
+    };
+
+    expect(decodeFrame("native", JSON.stringify(frame))).toEqual({
+      kind: "raw",
+      type: "native",
+      payload: frame,
+    });
+  });
 });

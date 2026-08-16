@@ -5,7 +5,6 @@ import {
   type Dispatch,
   type SetStateAction,
   useCallback,
-  useEffect,
   useMemo,
   useState,
 } from "react";
@@ -27,6 +26,7 @@ import {
   type CreateScheduleInput,
 } from "./schedules-api";
 import type { ScheduleRecord } from "./schedules-data";
+import { useAutomationRecovery } from "./use-automation-recovery";
 
 type Filter = "all" | "active" | "paused";
 type IdSetSetter = Dispatch<SetStateAction<Set<string>>>;
@@ -51,23 +51,24 @@ export function AutomationsView() {
   const [running, setRunning] = useState<Set<string>>(() => new Set());
   const [mutating, setMutating] = useState<Set<string>>(() => new Set());
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (signal?: AbortSignal) => {
     try {
-      setAutomations(await fetchSchedules());
+      const next = await fetchSchedules(signal);
+      setAutomations(next);
+      setHistoryFor((current) =>
+        current ? (next.find((automation) => automation.id === current.id) ?? null) : null,
+      );
       setError(null);
     } catch {
+      if (signal?.aborted) return;
       setError("Couldn’t load automations. Check the connection and try again.");
     }
   }, []);
 
-  useEffect(() => {
-    void load();
-    const timer = setInterval(() => void load(), 30_000);
-    return () => clearInterval(timer);
-  }, [load]);
+  useAutomationRecovery(load);
 
   useOrgChanges((change) => {
-    if (change.type === "run") void load();
+    if (change.type === "automation") void load();
   });
 
   const filtered = useMemo(() => {

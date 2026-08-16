@@ -15,7 +15,8 @@ The frontend is the product UI for Skynet. It runs on `:3400` by default, uses N
 | `/artifacts` | Files and outputs from agent runs. |
 | `/secrets` | Encrypted org secrets manager. |
 | `/review` | GitHub pull request review workspace. |
-| `/settings` | General workspace settings, usage, and team cards. |
+| `/agent/automations` | Recurring-work list, editor, history, and run-now controls. |
+| `/settings` | General workspace settings, usage, team cards, and provider connections. |
 
 `/session/new` redirects to `/agent/new`.
 
@@ -35,16 +36,24 @@ The frontend is the product UI for Skynet. It runs on `:3400` by default, uses N
 
 ## Event Flow
 
-The frontend uses two different event flows:
+The frontend uses three different event flows:
 
 - The lightweight chat surface sends text to `POST /api/chat` and renders the streamed response plus read-only retrieval citations.
 - The session surface opens one SSE connection per root thread through `useThreadStream`, decodes frames with `@skynet/agent-client`, and feeds them into the thread store.
+- Ambient management surfaces share one reference-counted `EventSource` on `GET /api/runs/changes`. Run, artifact, Automation, and provider-connection invalidations trigger authoritative API refetches instead of carrying record or credential payloads.
 
 That separation is deliberate:
 
 - the client package owns the transport, reconnect, and reducer logic;
 - the frontend owns rendering and interaction state;
 - the backend owns the durable event log and canonical thread data.
+
+The ambient stream is backed by a process-local backend bus and is live-only.
+Browser reconnect creates a new subscription; the server does not assign event
+IDs or replay invalidations missed while disconnected. Automations retain
+bounded snapshot polls. Provider Connections loads on mount and refetches after
+a received invalidation or manual refresh; only a pending interactive Codex
+login adds a two-second status poll.
 
 ## Composer
 
@@ -102,6 +111,8 @@ The page shell and chat surfaces are built on AlignUI semantic tokens, not raw c
 - `/agent/new` is the real task kickoff surface.
 - `/session/[id]` renders one threaded conversation, a live timeline, the terminal, the desktop view, artifacts, and subagent chips.
 - `NEXT_PUBLIC_CANONICAL_TIMELINE=1` enables the canonical timeline path. The native timeline remains the default fallback.
+- The canonical path folds tool lifecycle updates into stable rows, preserves semantic MCP server/tool identity, duration and provider status, keeps unknown native payloads available, and renders structured child state without display-text inference.
+- Canonical child cards preserve durable child identity across realtime updates and replay, including terminal-only completions and exact native-step ownership. These are local event-contract guarantees, not proof of every live provider journey.
 
 ## Development
 
@@ -121,7 +132,7 @@ Notes:
 
 - `bun run dev` starts Next.js on `:3400`.
 - `bun run start` serves the built frontend on `:3400`.
-- `bun run test` runs the component tests under `components/`.
+- `bun run test` runs tests under `components/`. Run `app/` tests explicitly when changing route-local data modules.
 - `bun run lint` and `bun run lint:fix` use Biome.
 
 ## Current Versus Bounded
@@ -131,12 +142,16 @@ Notes:
 - Direct chat, agent kickoff, and threaded session rendering are implemented.
 - The session view uses one root-thread SSE stream and keeps replies on the same page.
 - The composer handles uploads, slash commands, memory scope, model selection, and live run control.
-- The UI surfaces for skills, playbooks, wiki, artifacts, secrets, review, and settings are real pages.
+- The UI surfaces for skills, playbooks, wiki, artifacts, secrets, review, automations, and settings are real pages.
+- Automations refetch their list and open history drawer on create, update, delete, fire, and related run invalidations. The existing 30-second list and 15-second history polls remain recovery fallbacks.
+- Document, spreadsheet, presentation, and PDF workpieces edit bounded canonical state and can request native Office/PDF exports. PPTX slide-state and PDF text editing are companion workflows, not rich binary round-trip editors; uploaded PDF import remains unsupported.
+- Settings exposes metadata-only API-key and ChatGPT/Codex account lifecycle state. It refetches on mount and received provider-connection invalidations, exposes manual refresh, and polls only while an interactive Codex login is pending. A connected ChatGPT account is not evidence that subscription-backed sandbox execution is enabled.
 
 ### Bounded Roadmap
 
 - Canonical timeline rendering is still opt-in.
 - Some advanced session capabilities still depend on the current engine adapter and provider.
+- Ambient management realtime is single-backend only until the backend adds durable cross-replica fanout.
 - The frontend does not own storage or execution. It renders backend state and events.
 
 ## See Also

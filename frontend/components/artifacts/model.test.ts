@@ -1,7 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import {
-  categoryForArtifact,
-  extensionLabel,
+  artifactViewFor,
   extractArtifacts,
   formatArtifactSize,
 } from "./model";
@@ -29,10 +28,39 @@ describe("artifact wire model", () => {
   });
 
   test("uses real MIME/name metadata for filters and labels", () => {
-    expect(categoryForArtifact(descriptor)).toBe("docs");
-    expect(categoryForArtifact({ name: "demo.webm", content_type: "video/webm" })).toBe("media");
-    expect(categoryForArtifact({ name: "archive.zip", content_type: "application/zip" })).toBe("files");
-    expect(extensionLabel("report.final.pdf")).toBe("PDF");
+    expect(artifactViewFor(descriptor)).toMatchObject({ category: "docs", extension: "PDF" });
+    expect(artifactViewFor({
+      ...descriptor,
+      name: "demo.webm",
+      content_type: "video/webm",
+    }).category).toBe("media");
+    expect(artifactViewFor({
+      ...descriptor,
+      name: "archive.zip",
+      content_type: "application/zip",
+    }).category).toBe("files");
+  });
+
+  test("derives preview and runtime actions from the shared artifact contract", () => {
+    expect(artifactViewFor({
+      ...descriptor,
+      name: "unsafe.svg",
+      content_type: "image/svg+xml",
+    })).toMatchObject({
+      category: "media",
+      extension: "SVG",
+      preview: { inline: false, renderer: null },
+      actions: ["download"],
+    });
+    expect(artifactViewFor({
+      ...descriptor,
+      name: "photo.png",
+      content_type: "image/png",
+    })).toMatchObject({
+      category: "media",
+      extension: "PNG",
+      preview: { inline: true, renderer: "image" },
+    });
   });
 
   test("formats exact byte counts without fabricated sizes", () => {

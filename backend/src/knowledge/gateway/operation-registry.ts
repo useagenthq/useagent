@@ -1,5 +1,9 @@
 import { ARTIFACT_TOOLS, executeArtifactTool } from "./artifact-tools";
-import { AUTOMATION_TOOLS, executeAutomationTool } from "./automation-tools";
+import {
+  AUTOMATION_APPROVAL_REQUIRED_TOOL_NAMES,
+  AUTOMATION_TOOLS,
+  executeAutomationTool,
+} from "./automation-tools";
 import { BLUEPRINT_TOOLS, executeBlueprintTool } from "./blueprint-tools";
 import {
   CHILD_SESSION_TOOLS,
@@ -18,6 +22,10 @@ import {
   executeKnowledgeManagementTool,
   KNOWLEDGE_MANAGEMENT_TOOLS,
 } from "./knowledge-management-tools";
+import {
+  argumentsWithoutApproval,
+  consumeGatewayOperationApproval,
+} from "./approval-capability";
 import { executeLoopLoginTool, LOOP_LOGIN_TOOLS, loopLoginConfigured } from "./loop-login-tools";
 import { executeMemoryTool, MEMORY_TOOLS } from "./memory-tools";
 import { executeRecordingTool, RECORDING_TOOLS } from "./recording-tools";
@@ -27,12 +35,12 @@ import { executeSlackTool, SLACK_TOOLS } from "./slack-tools";
 import type { ToolTokenClaims } from "./token";
 import { executeKnowledgeTool, KNOWLEDGE_TOOLS } from "./tools";
 import { executeWebSearchTool, WEB_SEARCH_TOOLS } from "./web-search-tool";
+import type {
+  GatewayToolDescriptor,
+  GatewayToolExecutor,
+} from "./descriptor";
 
-export interface GatewayToolDescriptor {
-  readonly name: string;
-  readonly description: string;
-  readonly inputSchema: Readonly<Record<string, unknown>>;
-}
+export type { GatewayToolDescriptor, GatewayToolExecutor } from "./descriptor";
 
 export interface GatewayToolListOptions {
   readonly childSessions: boolean;
@@ -40,20 +48,56 @@ export interface GatewayToolListOptions {
   readonly slack: boolean;
 }
 
-type GatewayToolExecutor = (
-  claims: ToolTokenClaims,
-  name: string,
-  args: Record<string, unknown>,
-) => Promise<unknown>;
-
 interface GatewayToolFamily {
   readonly tools: readonly GatewayToolDescriptor[];
   readonly execute: GatewayToolExecutor;
 }
 
+const ADDITIONAL_APPROVAL_REQUIRED_TOOL_NAMES: ReadonlySet<string> = new Set([
+  "knowledge_draft_publish",
+  "knowledge_draft_archive",
+]);
+
+const GATEWAY_APPROVAL_REQUIRED_TOOL_NAMES: ReadonlySet<string> = new Set([
+  ...AUTOMATION_APPROVAL_REQUIRED_TOOL_NAMES,
+  ...ADDITIONAL_APPROVAL_REQUIRED_TOOL_NAMES,
+]);
+
+function withApprovalRequirement(tool: GatewayToolDescriptor): GatewayToolDescriptor {
+  if (!ADDITIONAL_APPROVAL_REQUIRED_TOOL_NAMES.has(tool.name)) return tool;
+  const schema = tool.inputSchema as {
+    readonly properties?: Readonly<Record<string, unknown>>;
+    readonly required?: readonly string[];
+  };
+  const properties = { ...(schema.properties ?? {}) };
+  delete properties.confirmPublish;
+  delete properties.confirmationToken;
+  return {
+    ...tool,
+    description:
+      `${tool.description} This operation requires a server-minted one-shot approval capability bound to these exact arguments.`,
+    inputSchema: {
+      ...tool.inputSchema,
+      properties: {
+        ...properties,
+        approvalCapability: {
+          type: "string",
+          description:
+            "Opaque, short-lived, one-shot capability minted by the authenticated Skynet backend for this exact operation.",
+        },
+      },
+      required: [...new Set([...(schema.required ?? []), "approvalCapability"])],
+    },
+  };
+}
+
+const APPROVED_KNOWLEDGE_MANAGEMENT_TOOLS = KNOWLEDGE_MANAGEMENT_TOOLS.map(
+  withApprovalRequirement,
+);
+
 const BASE_TOOL_FAMILIES = [
   { tools: KNOWLEDGE_TOOLS, execute: executeKnowledgeTool },
-  { tools: KNOWLEDGE_MANAGEMENT_TOOLS, execute: executeKnowledgeManagementTool },
+  { tools: APPROVED_KNOWLEDGE_MANAGEMENT_TOOLS, execute: executeKnowledgeManagementTool },
   { tools: MEMORY_TOOLS, execute: executeMemoryTool },
   { tools: WEB_SEARCH_TOOLS, execute: executeWebSearchTool },
   { tools: ARTIFACT_TOOLS, execute: executeArtifactTool },
@@ -147,6 +191,45 @@ export type GatewayToolExecution =
   | { readonly matched: false }
   | { readonly matched: true; readonly result: unknown };
 
+/** Exact registry metadata, shared by discovery and the authenticated mint route. */
+export function gatewayToolRequiresApproval(name: string): boolean {
+  return GATEWAY_APPROVAL_REQUIRED_TOOL_NAMES.has(name) && ALL_OPERATIONS.has(name);
+}
+
+async function invokeRegisteredOperation(
+  executor: GatewayToolExecutor,
+  claims: ToolTokenClaims,
+  name: string,
+  args: Record<string, unknown>,
+): Promise<unknown> {
+  if (AUTOMATION_APPROVAL_REQUIRED_TOOL_NAMES.has(name)) {
+    return executor(claims, name, args);
+  }
+  if (
+    ADDITIONAL_APPROVAL_REQUIRED_TOOL_NAMES.has(name) &&
+    !(await consumeGatewayOperationApproval(claims, name, args))
+  ) {
+    return {
+      content: [
+        {
+          type: "text",
+          text: `A valid server-minted one-shot approval capability is required for ${name}.`,
+        },
+      ],
+      structuredContent: { error: "approval_required" },
+      isError: true,
+    };
+  }
+  const operationArgs = argumentsWithoutApproval(args);
+  return executor(
+    claims,
+    name,
+    name === "knowledge_draft_publish"
+      ? { ...operationArgs, confirmPublish: true }
+      : operationArgs,
+  );
+}
+
 export async function executeRegisteredGatewayTool(
   claims: ToolTokenClaims,
   name: string,
@@ -159,12 +242,23 @@ export async function executeRegisteredGatewayTool(
     slack: false,
   };
   if (isGatewayMetaToolName(name)) {
+    const availableTools = availableGatewayToolDescriptors(resolvedOptions);
     return {
       matched: true,
-      result: executeGatewayMetaTool(
+      result: await executeGatewayMetaTool(
         name,
         args,
-        availableGatewayToolDescriptors(resolvedOptions),
+        availableTools,
+        async (toolName, toolArgs) => {
+          const executor = ALL_OPERATIONS.get(toolName);
+          if (!executor) {
+            return {
+              content: [{ type: "text", text: `Unknown gateway tool: ${toolName}` }],
+              isError: true,
+            };
+          }
+          return invokeRegisteredOperation(executor, claims, toolName, toolArgs);
+        },
       ),
     };
   }
@@ -184,7 +278,10 @@ export async function executeRegisteredGatewayTool(
   }
   const executor = ALL_OPERATIONS.get(name);
   if (!executor) return { matched: false };
-  return { matched: true, result: await executor(claims, name, args) };
+  return {
+    matched: true,
+    result: await invokeRegisteredOperation(executor, claims, name, args),
+  };
 }
 
 export { gatewayCompactToolListEnabled, isGatewayMetaToolName } from "./gateway-meta-tools";

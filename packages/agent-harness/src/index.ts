@@ -15,3 +15,4 @@
 export * from "./canonical";
 export * from "./control";
 export * from "./opencode-canonical";
+export * from "./t3-tool";

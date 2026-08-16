@@ -1,5 +1,12 @@
 import { describe, expect, test } from "bun:test";
-import { cadenceLabel, scheduleZone } from "@/app/agent/schedules/schedules-data";
+import {
+  automationEditorEngineOptions,
+  automationEngineOptions,
+  cadenceLabel,
+  engineLabel,
+  reconcileAutomationEngine,
+  scheduleZone,
+} from "@/app/agent/schedules/schedules-data";
 
 describe("automation presentation", () => {
   test("explains supported cadence patterns without hiding cron semantics", () => {
@@ -13,5 +20,38 @@ describe("automation presentation", () => {
   test("labels explicit and server timezones honestly", () => {
     expect(scheduleZone({ timezone: "Asia/Kolkata" })).toBe("Asia/Kolkata");
     expect(scheduleZone({ timezone: null })).toBe("Server timezone");
+  });
+
+  test("offers only current engines enabled by the server catalog", () => {
+    expect(automationEngineOptions(["claude", "opencode"])).toEqual([
+      { id: "opencode", label: "OpenCode" },
+      { id: "claude", label: "Claude Code" },
+    ]);
+    expect(automationEngineOptions(["codex"])).toEqual([{ id: "codex", label: "Codex" }]);
+  });
+
+  test("keeps legacy engine ids displayable without making them selectable", () => {
+    expect(engineLabel("claude-sdk")).toBe("Claude SDK");
+    expect(engineLabel("daytona")).toBe("Daytona");
+    expect(engineLabel("acp")).toBe("ACP");
+    expect(automationEngineOptions(["claude-sdk", "daytona", "acp"])).toEqual([]);
+  });
+
+  test("preserves an unavailable stored engine only while editing its draft", () => {
+    expect(automationEditorEngineOptions(["codex"], "claude-sdk")).toEqual([
+      { id: "claude-sdk", label: "Claude SDK (unavailable)" },
+      { id: "codex", label: "Codex" },
+    ]);
+    expect(automationEditorEngineOptions(["codex"], "codex")).toEqual([
+      { id: "codex", label: "Codex" },
+    ]);
+  });
+
+  test("reconciles new Automation drafts with live engine capabilities", () => {
+    const options = automationEngineOptions(["opencode", "codex"]);
+    expect(reconcileAutomationEngine(options, "codex")).toBe("codex");
+    expect(reconcileAutomationEngine(options, "")).toBe("opencode");
+    expect(reconcileAutomationEngine(options, "claude")).toBe("opencode");
+    expect(reconcileAutomationEngine([], "codex")).toBe("");
   });
 });

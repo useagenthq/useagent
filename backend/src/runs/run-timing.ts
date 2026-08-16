@@ -17,8 +17,41 @@ export const TIMING_PROVIDER = "skynet-timing";
 export const TIMING_SPAN = "timing.span";
 export const TIMING_MARK = "timing.mark";
 
+export const RUN_TIMING_STAGES = {
+  sandboxRetained: "sandbox.retained",
+  sandboxWarmPool: "sandbox.warm_pool",
+  sandboxCreate: "sandbox.create",
+  repoPrep: "repo.prep",
+  desktopReadiness: "desktop.readiness",
+  desktopMcpReadiness: "desktop.mcp_readiness",
+  runtimeReadiness: "runtime.readiness",
+  providerSessionResume: "provider.session_resume",
+  providerSessionStart: "provider.session_start",
+  providerSessionPersist: "provider.session_persist",
+  workdirBoundary: "workdir.boundary",
+} as const;
+
+export const RUN_TIMING_OUTCOMES = {
+  aborted: "aborted",
+  disabled: "disabled",
+  failure: "failure",
+  hit: "hit",
+  miss: "miss",
+  ready: "ready",
+  repaired: "repaired",
+  skipped: "skipped",
+  success: "success",
+  unavailable: "unavailable",
+} as const;
+
+export type RunTimingStage = (typeof RUN_TIMING_STAGES)[keyof typeof RUN_TIMING_STAGES];
+export type RunTimingOutcome = (typeof RUN_TIMING_OUTCOMES)[keyof typeof RUN_TIMING_OUTCOMES];
+export type TimingSpanEnd = (outcome?: RunTimingOutcome) => void;
+const RUN_TIMING_OUTCOME_SET = new Set<string>(Object.values(RUN_TIMING_OUTCOMES));
+
 export interface TimingSpanPayload {
   stage: string;
+  outcome?: RunTimingOutcome;
   startedAt: number; // epoch ms
   endedAt: number; // epoch ms
   durMs: number;
@@ -57,13 +90,20 @@ export function recordStageSpan(
   startedAt: number,
   endedAt: number,
   sink: TimingSink = defaultSink,
+  outcome?: RunTimingOutcome,
 ): void {
   sink({
     id: `${runId}:timing:${stage}`,
     runId,
     threadId,
     eventType: TIMING_SPAN,
-    payload: { stage, startedAt, endedAt, durMs: Math.max(0, endedAt - startedAt) },
+    payload: {
+      stage,
+      ...(outcome ? { outcome } : {}),
+      startedAt,
+      endedAt,
+      durMs: Math.max(0, endedAt - startedAt),
+    },
   });
 }
 
@@ -86,7 +126,7 @@ export function recordStageMark(
 
 export interface RunStageTimer {
   /** Start a span; the returned closer records it (idempotent: first call wins). */
-  begin(stage: string): () => void;
+  begin(stage: string): TimingSpanEnd;
   /** Record an instantaneous milestone. */
   mark(stage: string): void;
 }
@@ -105,10 +145,10 @@ export function createRunTimer(
     begin(stage) {
       const startedAt = now();
       let done = false;
-      return () => {
+      return (outcome?: RunTimingOutcome) => {
         if (done) return;
         done = true;
-        recordStageSpan(runId, threadId, stage, startedAt, now(), sink);
+        recordStageSpan(runId, threadId, stage, startedAt, now(), sink, outcome);
       };
     },
     mark(stage) {
@@ -157,6 +197,7 @@ export interface TimingRowInput {
 
 export interface TimingTableRow {
   stage: string;
+  outcome: RunTimingOutcome | null;
   kind: "span" | "mark";
   startedAt: number;
   endedAt: number | null;
@@ -207,6 +248,10 @@ export function deriveTimingTable(
       if (typeof p.startedAt !== "number" || typeof p.endedAt !== "number") continue;
       out.push({
         stage: p.stage,
+        outcome:
+          typeof p.outcome === "string" && RUN_TIMING_OUTCOME_SET.has(p.outcome)
+            ? (p.outcome as RunTimingOutcome)
+            : null,
         kind: "span",
         startedAt: p.startedAt,
         endedAt: p.endedAt,
@@ -214,7 +259,14 @@ export function deriveTimingTable(
       });
     } else if (row.eventType === TIMING_MARK) {
       if (typeof p.at !== "number") continue;
-      out.push({ stage: p.stage, kind: "mark", startedAt: p.at, endedAt: null, durMs: null });
+      out.push({
+        stage: p.stage,
+        outcome: null,
+        kind: "mark",
+        startedAt: p.at,
+        endedAt: null,
+        durMs: null,
+      });
       if (p.stage === "dispatch") dispatchAt = p.at;
       else if (p.stage === "first_reasoning_delta") firstReasoningAt = p.at;
       else if (p.stage === "first_text_delta") firstTextAt = p.at;

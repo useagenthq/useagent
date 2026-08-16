@@ -25,7 +25,7 @@ export function fetchApi(path: string, init: ApiInit = {}): Promise<Response> {
     origin: ORIGIN,
     ...(init.headers ?? {}),
   };
-  let body: BodyInit | undefined;
+  let body: string | FormData | undefined;
   if (init.body !== undefined) {
     if (init.body instanceof FormData) {
       body = init.body;
@@ -37,9 +37,9 @@ export function fetchApi(path: string, init: ApiInit = {}): Promise<Response> {
     }
   }
   if (init.cookies) headers["cookie"] = init.cookies;
-  return server.fetch(
+  return Promise.resolve(server.fetch(
     new Request(BASE + path, { method: init.method ?? "GET", headers, body }),
-  );
+  ));
 }
 
 /** GET/POST/etc. helper that returns { status, json }. */
@@ -193,7 +193,7 @@ export async function createOrgSession(label = "org"): Promise<OrgSession> {
   });
   if (create.status !== 200) throw new Error(`org create failed: ${create.status}`);
   jar.absorb(create);
-  const created = await create.json();
+  const created = await create.json() as { id?: string; organization?: { id?: string } };
   const orgId = created.id ?? created.organization?.id;
   if (!orgId) throw new Error("org create returned no id");
 

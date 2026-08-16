@@ -17,12 +17,14 @@ export const OPENCODE_ALLOWED_MODELS = {
     "claude-fable-5",
     "claude-haiku-4-5",
   ],
-  openrouter: [
-    KIMI_K3_MODEL,
+  openai: [
     "openai/gpt-5.6-sol",
     "openai/gpt-5.6-sol-pro",
     FAST_OPENCODE_MODEL,
     "openai/gpt-5.6-terra",
+  ],
+  openrouter: [
+    KIMI_K3_MODEL,
   ],
 } as const;
 

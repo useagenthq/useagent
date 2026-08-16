@@ -26,15 +26,17 @@ describe("Desktop product surface", () => {
 
   test("the rail resize separator has a visible grip and explicit semantics", () => {
     const sessionView = read("./session-view.tsx");
+    const railResizer = read("./rail-resizer.tsx");
 
-    expect(sessionView).toContain("<hr");
-    expect(sessionView).toContain("before:bg-stroke-soft-200");
-    expect(sessionView).toContain('data-testid="rail-resize-grip"');
-    expect(sessionView).toContain("top-1/2");
-    expect(sessionView).toContain("-translate-y-1/2");
-    expect(sessionView).toContain('aria-label="Resize the side panel; double-click to reset"');
-    expect(sessionView).not.toContain('title="Drag to resize');
-    expect(sessionView).toContain("cursor-col-resize");
+    expect(sessionView).toContain("<RailResizer");
+    expect(railResizer).toContain("<hr");
+    expect(railResizer).toContain('data-testid="rail-resize-grip"');
+    expect(railResizer).toContain("before:absolute before:inset-y-3");
+    expect(railResizer).toContain("after:top-1/2");
+    expect(railResizer).toContain("after:-translate-y-1/2");
+    expect(railResizer).toContain('aria-label="Resize the side panel; double-click to reset"');
+    expect(railResizer).not.toContain('title="Drag to resize');
+    expect(railResizer).toContain("cursor-col-resize");
   });
 
   test("the pane probes and retries without embedding raw proxy errors", () => {
@@ -103,6 +105,8 @@ describe("Desktop product surface", () => {
     expect(desktopPane).toContain('pointerEvents: loaded && inputCaptured ? "auto" : "none"');
     expect(desktopPane).toContain('aria-label="Control sandbox desktop"');
     expect(desktopPane).toContain('window.addEventListener("focusin", releaseDesktopInput, true)');
-    expect(desktopPane).toContain('window.addEventListener("pointerdown", releaseDesktopInput, true)');
+    expect(desktopPane).toContain(
+      'window.addEventListener("pointerdown", releaseDesktopInput, true)',
+    );
   });
 });

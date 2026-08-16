@@ -79,6 +79,7 @@ function sign(signingInput: string): string {
 export function mintToolToken(
   claims: Omit<ToolTokenClaims, "exp" | "scope"> & { scope?: ToolTokenScope },
   ttlMs: number,
+  nowMs = Date.now(),
 ): string {
   const payload: WirePayload = {
     o: claims.orgId,
@@ -89,7 +90,7 @@ export function mintToolToken(
     // No clamp: a caller that passes a non-positive TTL gets an already-expired
     // token, which correctly fails closed. Production callers always pass a
     // bounded positive TTL (toolGatewayConfig validates > 0).
-    e: Date.now() + ttlMs,
+    e: nowMs + ttlMs,
   };
   const body = `${VERSION}.${b64url(Buffer.from(JSON.stringify(payload), "utf8"))}`;
   return `${body}.${sign(body)}`;

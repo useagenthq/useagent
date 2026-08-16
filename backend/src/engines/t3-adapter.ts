@@ -9,11 +9,6 @@ import { subscribeT3Thread } from "./t3-event-stream";
 import {
   activityStep,
   assistantText,
-  buildT3ProjectCreateCommand,
-  buildT3ThreadCreateCommand,
-  buildT3TurnInterruptCommand,
-  buildT3TurnStartCommand,
-  t3ProjectId,
   t3ActivityProviderEvent,
   t3ActivityRevision,
   t3ActivityStepKey,
@@ -33,56 +28,29 @@ import {
 } from "../secrets/inject";
 import { createSecretRedactor } from "../secrets/redact";
 import { providerGatewayWired } from "../provider-gateway/sandbox-config";
-import { sandboxProviderKind } from "../sandboxes/provider";
+import {
+  sandboxProviderKind,
+} from "../sandboxes/provider";
 import { recordProviderEvent } from "../runs/provider-events";
-import { SESSION_STARTED_EVENT_TYPE } from "@skynet/agent-harness/canonical";
+import type { ProviderDriver } from "@skynet/agent-harness/control";
 import { sessionCapabilities } from "./capabilities";
+import {
+  establishProviderSession,
+  providerSessionStartedEvent,
+} from "./provider-turn";
 import { materializeRunInputs } from "../uploads/materialize";
 import {
   T3_CUBE_WARM_POOL_NAME,
   T3_RUNTIME_GENERATION,
   T3_RUNTIME_GENERATION_LABEL,
 } from "./t3-environment";
+import { T3_SESSION_GENERATION, t3ProviderDrivers } from "./t3-provider-driver";
 
 const T3_POLL_INTERVAL_MS = 125;
 
 interface T3ShellSnapshot {
   readonly projects: readonly { readonly id: string }[];
   readonly threads: readonly { readonly id: string }[];
-}
-
-async function waitForProject(
-  ctx: EngineRunContext,
-  sandbox: Awaited<ReturnType<typeof acquireThreadSandbox>>["sandbox"],
-  projectId: string,
-): Promise<void> {
-  while (!ctx.signal.aborted) {
-    const shell = await requestT3Environment<T3ShellSnapshot>(
-      sandbox,
-      { method: "GET", path: "/api/orchestration/shell" },
-      ctx.signal,
-    );
-    if (shell.projects.some((project) => project.id === projectId)) return;
-    await Bun.sleep(T3_POLL_INTERVAL_MS);
-  }
-  throw new Error("T3 project creation aborted");
-}
-
-async function waitForThread(
-  ctx: EngineRunContext,
-  sandbox: Awaited<ReturnType<typeof acquireThreadSandbox>>["sandbox"],
-  threadId: string,
-): Promise<void> {
-  while (!ctx.signal.aborted) {
-    const shell = await requestT3Environment<T3ShellSnapshot>(
-      sandbox,
-      { method: "GET", path: "/api/orchestration/shell" },
-      ctx.signal,
-    );
-    if (shell.threads.some((thread) => thread.id === threadId)) return;
-    await Bun.sleep(T3_POLL_INTERVAL_MS);
-  }
-  throw new Error("T3 thread creation aborted");
 }
 
 export function t3RunAdapterEnabled(
@@ -195,36 +163,6 @@ async function readThreadSnapshot(
   );
 }
 
-async function interruptActiveT3Turn(
-  ctx: EngineRunContext,
-  sandbox: Awaited<ReturnType<typeof acquireThreadSandbox>>["sandbox"],
-): Promise<void> {
-  const threadId = t3ThreadId(ctx);
-  const snapshot = await requestT3Environment<T3ThreadSnapshot>(
-    sandbox,
-    {
-      method: "GET",
-      path: `/api/orchestration/threads/${encodeURIComponent(threadId)}`,
-    },
-    AbortSignal.timeout(5_000),
-  ).catch(() => null);
-  const turnId = snapshot?.thread.latestTurn?.turnId;
-  try {
-    await requestT3Environment(
-      sandbox,
-      {
-        method: "POST",
-        path: "/api/orchestration/dispatch",
-        payload: buildT3TurnInterruptCommand(threadId, turnId),
-      },
-      AbortSignal.timeout(5_000),
-    );
-  } catch (error) {
-    console.error(`[t3] failed to interrupt native turn for run ${ctx.runId}:`, error);
-    throw error;
-  }
-}
-
 async function waitForNewT3TurnSnapshot(
   ctx: EngineRunContext,
   sandbox: Awaited<ReturnType<typeof acquireThreadSandbox>>["sandbox"],
@@ -304,7 +242,7 @@ async function waitForT3Turn(
   throw new Error("T3 run aborted (timeout)");
 }
 
-function makeT3Adapter(engine: T3EngineId): EngineAdapter {
+export function makeT3Adapter(engine: T3EngineId, driver: ProviderDriver): EngineAdapter {
   return {
     id: engine,
     async run(ctx): Promise<void> {
@@ -375,11 +313,34 @@ function makeT3Adapter(engine: T3EngineId): EngineAdapter {
           ctx.signal,
         );
         endShell?.();
-        const projectId = t3ProjectId(ctx);
         const threadId = t3ThreadId(ctx);
-        const projectExists = shell.projects.some((project) => project.id === projectId);
         const threadExists = shell.threads.some((thread) => thread.id === threadId);
-        const priorSnapshot = threadExists ? await readThreadSnapshot(ctx, sandbox) : null;
+        const createdAt = new Date().toISOString();
+        const runtimeMode = t3RuntimeMode();
+        const negotiatedCapabilities = sessionCapabilities(engine, {
+          desktop: desktop.available,
+          knowledgeTools: true,
+          t3Orchestration: true,
+        });
+        const established = await establishProviderSession({
+          driver,
+          ctx,
+          runtime: { kind: "sandbox", id: sandbox.id },
+          capabilities: negotiatedCapabilities,
+          generation: T3_SESSION_GENERATION,
+          priorSessionId: threadExists ? threadId : undefined,
+          startMetadata: { workspaceRoot: workdir, runtimeMode, createdAt },
+          persistSession: async (nativeSessionId) => {
+            if (!ctx.saveEngineSessionId) {
+              throw new Error("T3 session persistence is unavailable");
+            }
+            await ctx.saveEngineSessionId(nativeSessionId);
+          },
+        });
+        const session = established.session;
+        const priorSnapshot = established.resumed
+          ? await readThreadSnapshot(ctx, sandbox)
+          : null;
         const preExistingActivities = new Map(
           priorSnapshot?.thread.activities.map((activity) => [
             activity.id,
@@ -387,70 +348,31 @@ function makeT3Adapter(engine: T3EngineId): EngineAdapter {
           ]) ?? [],
         );
         const priorTurnId = priorSnapshot?.thread.latestTurn?.turnId ?? null;
-        const createdAt = new Date().toISOString();
-        if (!projectExists) {
-          const endProject = ctx.timing?.begin("t3.project_create");
-          await requestT3Environment(
-            sandbox,
-            {
-              method: "POST",
-              path: "/api/orchestration/dispatch",
-              payload: buildT3ProjectCreateCommand(ctx, workdir, createdAt),
-            },
-            ctx.signal,
-          );
-          await waitForProject(ctx, sandbox, projectId);
-          endProject?.();
-        }
-        const runtimeMode = t3RuntimeMode();
-        if (!threadExists) {
-          const endThread = ctx.timing?.begin("t3.thread_create");
-          await requestT3Environment(
-            sandbox,
-            {
-              method: "POST",
-              path: "/api/orchestration/dispatch",
-              payload: buildT3ThreadCreateCommand(ctx, engine, createdAt, runtimeMode),
-            },
-            ctx.signal,
-          );
-          await waitForThread(ctx, sandbox, threadId);
-          endThread?.();
-        }
 
         // HTTP orchestration dispatch validates thread.turn.start against an
-        // already-projected thread. Create it explicitly above instead of
+        // already-projected thread. ProviderDriver.start creates it explicitly instead of
         // relying on the websocket-only bootstrap normalization path.
-        const prompt = composeTurnPrompt(ctx, threadExists);
-        ctx.saveEngineSessionId?.(threadId);
-        await recordProviderEvent({
-          id: `${ctx.runId}:${threadId}:session`,
-          runId: ctx.runId,
-          threadId: ctx.threadId ?? ctx.runId,
-          provider: "t3",
-          eventType: SESSION_STARTED_EVENT_TYPE,
-          nativeSessionId: threadId,
-          payload: {
-            source: engine,
-            capabilities: sessionCapabilities(engine, {
-              desktop: desktop.available,
-              knowledgeTools: true,
-              t3Orchestration: true,
-            }),
-          },
-        }, { critical: true });
+        const prompt = composeTurnPrompt(ctx, established.resumed);
+        await recordProviderEvent(
+          providerSessionStartedEvent(ctx, session, { provider: "t3", source: engine }),
+          { critical: true },
+        );
         ctx.timing?.mark("dispatch");
         const endDispatch = ctx.timing?.begin("t3.dispatch_request");
-        await requestT3Environment(
-          sandbox,
-          {
-            method: "POST",
-            path: "/api/orchestration/dispatch",
-            payload: buildT3TurnStartCommand(ctx, engine, prompt, createdAt, false, runtimeMode),
-          },
-          ctx.signal,
-        );
+        const steerResult = await driver.steer({
+          runId: ctx.runId,
+          threadId: ctx.threadId ?? ctx.runId,
+          session,
+          input: { kind: "prompt", text: prompt, model: ctx.model },
+          metadata: { runtimeMode, createdAt },
+          signal: ctx.signal,
+        });
         endDispatch?.();
+        if (steerResult.status !== "ok") {
+          throw new Error(
+            `T3 ${engine} steer failed (${steerResult.status}): ${steerResult.message ?? "unsupported"}`,
+          );
+        }
         const endTurn = ctx.timing?.begin("t3.turn_wait");
         try {
           const summary = await waitForT3Turn(
@@ -464,7 +386,14 @@ function makeT3Adapter(engine: T3EngineId): EngineAdapter {
           ctx.setSummary(summary.trim() || `T3 ${engine} run completed`, Date.now() - startedAt);
         } finally {
           endTurn?.();
-          if (ctx.signal.aborted) await interruptActiveT3Turn(ctx, sandbox);
+          if (ctx.signal.aborted) {
+            const cancelResult = await driver.cancel(session, "turn aborted");
+            if (cancelResult.status !== "ok") {
+              throw new Error(
+                `T3 ${engine} cancel failed (${cancelResult.status}): ${cancelResult.message ?? "unsupported"}`,
+              );
+            }
+          }
         }
       } finally {
         if (lease.releaseAfterRun) await sandbox.delete().catch(() => {});
@@ -473,6 +402,6 @@ function makeT3Adapter(engine: T3EngineId): EngineAdapter {
   };
 }
 
-export const t3CodexAdapter = makeT3Adapter("codex");
-export const t3ClaudeAdapter = makeT3Adapter("claude");
-export const t3OpenCodeAdapter = makeT3Adapter("opencode");
+export const t3CodexAdapter = makeT3Adapter("codex", t3ProviderDrivers.codex);
+export const t3ClaudeAdapter = makeT3Adapter("claude", t3ProviderDrivers.claude);
+export const t3OpenCodeAdapter = makeT3Adapter("opencode", t3ProviderDrivers.opencode);

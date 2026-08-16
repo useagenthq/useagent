@@ -253,8 +253,8 @@ export async function recordFiring(input: {
   /** Deterministic per-occurrence key (see fire.ts `firingKey`). Its UNIQUE
    *  index makes a retry after a crash-before-record a no-op instead of a dup. */
   idempotencyKey: string;
-}): Promise<void> {
-  await db
+}): Promise<boolean> {
+  const inserted = await db
     .insert(scheduleFirings)
     .values({
       scheduleId: input.scheduleId,
@@ -264,7 +264,9 @@ export async function recordFiring(input: {
       // The run is 'queued' the instant it is created; the reader joins for live status.
       status: "queued",
     })
-    .onConflictDoNothing({ target: scheduleFirings.idempotencyKey });
+    .onConflictDoNothing({ target: scheduleFirings.idempotencyKey })
+    .returning({ id: scheduleFirings.id });
+  return inserted.length === 1;
 }
 
 /** A schedule's firing history, newest first, enriched with the run's live status. */

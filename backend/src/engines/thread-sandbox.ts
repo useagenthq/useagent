@@ -10,6 +10,7 @@ import {
   providerGatewaySandboxIsCurrent,
   providerGatewaySandboxLabels,
 } from "../provider-gateway/sandbox-config";
+import { RUN_TIMING_OUTCOMES, RUN_TIMING_STAGES } from "../runs/run-timing";
 import { persistSandboxBeforeExecution } from "./util";
 import type { EngineRunContext } from "./types";
 import {
@@ -86,7 +87,14 @@ export async function acquireThreadSandbox(
   if (apiKey === undefined) throw new Error("sandbox provider credentials are unavailable");
   const provider = sandboxProvider(apiKey);
   const resourceTarget = resolveSandboxResourceTarget();
-  let sandbox = await resolveRetainedSandbox(ctx, options);
+  const endRetained = ctx.timing?.begin(RUN_TIMING_STAGES.sandboxRetained);
+  let sandbox: SandboxHandle | null;
+  try {
+    sandbox = await resolveRetainedSandbox(ctx, options);
+  } catch (error) {
+    endRetained?.(RUN_TIMING_OUTCOMES.failure);
+    throw error;
+  }
   let reused = sandbox !== null;
 
   if (sandbox && !sandboxMeetsResourceTarget(sandbox, resourceTarget)) {
@@ -96,23 +104,38 @@ export async function acquireThreadSandbox(
     sandbox = null;
     reused = false;
   }
+  endRetained?.(sandbox ? RUN_TIMING_OUTCOMES.hit : RUN_TIMING_OUTCOMES.miss);
 
   if (!sandbox) {
     await ctx.emit({ kind: "task", label: "Provisioning cloud sandbox…", chip: options.chip });
     if (sandboxProviderKind() === "cube" && options.warmPool !== false) {
-      sandbox = await claimCubeWarmSandbox(options.warmPool || undefined);
+      const endWarmPool = ctx.timing?.begin(RUN_TIMING_STAGES.sandboxWarmPool);
+      try {
+        sandbox = await claimCubeWarmSandbox(options.warmPool || undefined);
+        endWarmPool?.(sandbox ? RUN_TIMING_OUTCOMES.hit : RUN_TIMING_OUTCOMES.miss);
+      } catch (error) {
+        endWarmPool?.(RUN_TIMING_OUTCOMES.failure);
+        throw error;
+      }
       reused = sandbox !== null;
     }
     if (!sandbox) {
-      sandbox = await provider.create({
-        snapshot: options.snapshot,
-        labels: {
-          ...providerGatewaySandboxLabels(ctx.runId),
-          ...options.labels,
-        },
-        autoStopInterval: Number(process.env.SANDBOX_AUTO_STOP_MIN ?? 30),
-        autoDeleteInterval: Number(process.env.SANDBOX_AUTO_DELETE_MIN ?? 4320),
-      });
+      const endCreate = ctx.timing?.begin(RUN_TIMING_STAGES.sandboxCreate);
+      try {
+        sandbox = await provider.create({
+          snapshot: options.snapshot,
+          labels: {
+            ...providerGatewaySandboxLabels(ctx.runId),
+            ...options.labels,
+          },
+          autoStopInterval: Number(process.env.SANDBOX_AUTO_STOP_MIN ?? 30),
+          autoDeleteInterval: Number(process.env.SANDBOX_AUTO_DELETE_MIN ?? 4320),
+        });
+        endCreate?.(RUN_TIMING_OUTCOMES.success);
+      } catch (error) {
+        endCreate?.(RUN_TIMING_OUTCOMES.failure);
+        throw error;
+      }
     }
   }
 

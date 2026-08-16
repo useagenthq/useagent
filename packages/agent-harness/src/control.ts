@@ -15,6 +15,13 @@
  * composition) and re-exports these types for backward compatibility.
  */
 
+import type {
+  HarnessRuntime,
+  HarnessSession,
+  NegotiatedCapabilities,
+  ProviderId,
+} from "./canonical";
+
 /** Provider-native capability detection (a subset is meaningful in Stage 1;
  *  fields describe what the HARNESS supports natively, not what Skynet already
  *  projects). */
@@ -54,6 +61,7 @@ export interface HarnessUnsupported {
   status: "unsupported_capability";
   provider: string;
   capability: string;
+  message?: string;
 }
 
 /** Result of a control operation (e.g. cancel). Classified, never a bare throw. */
@@ -77,8 +85,9 @@ export type HarnessReconciliation =
  *  control/observability surface the product layer needs. */
 export interface HarnessAdapter {
   readonly provider: string;
-  /** Static provider capability detection. */
-  capabilities(): HarnessCapabilities;
+  /** Provider capability detection. Pass a live handle when session/runtime
+   *  metadata is available; adapters without per-session routing may ignore it. */
+  capabilities(handle?: HarnessSessionHandle): HarnessCapabilities;
   /** Ask the native session to abort. Records product intent at the caller. */
   cancel(
     handle: HarnessSessionHandle,
@@ -90,4 +99,292 @@ export interface HarnessAdapter {
     handle: HarnessSessionHandle,
     checkpoint?: HarnessCheckpoint,
   ): Promise<HarnessReconciliation>;
+}
+
+export type ProviderDriverCapability =
+  | "start"
+  | "resume"
+  | "reconcile"
+  | "steer"
+  | "cancel"
+  | "modelCapability"
+  | "toolGateway";
+
+export type HarnessResult<T> =
+  | { status: "ok"; value: T }
+  | { status: "error"; code: string; message: string }
+  | HarnessUnsupported;
+
+export interface ProviderProtocolDescriptor {
+  name: string;
+  version?: string;
+}
+
+export interface ProviderModelDescriptor {
+  id: string;
+  displayName?: string;
+  maxInputTokens?: number;
+  maxOutputTokens?: number;
+}
+
+export interface ProviderModelCapabilityDescriptor {
+  /** `fixed` means the provider chooses one model; `per_turn` means callers may steer it. */
+  selection: "fixed" | "per_turn";
+  defaultModel?: string;
+  availableModels?: readonly ProviderModelDescriptor[];
+  /** True only when the provider accepts arbitrary model ids beyond `availableModels`. */
+  supportsArbitraryModel?: boolean;
+}
+
+export interface ProviderToolDescriptor {
+  name: string;
+  description?: string;
+  inputSchema?: unknown;
+}
+
+export interface ProviderToolCapabilityDescriptor {
+  /** No gateway, provider-native tools, or Skynet-brokered tools. */
+  mode: "none" | "provider_native" | "skynet_brokered";
+  approval: "none" | "provider" | "skynet";
+  tools?: readonly ProviderToolDescriptor[];
+}
+
+export interface ProviderDriverDescriptor {
+  provider: ProviderId;
+  protocol: ProviderProtocolDescriptor;
+  /** Reuses the canonical negotiated map; there is no second product capability model. */
+  capabilities: NegotiatedCapabilities;
+  model: ProviderModelCapabilityDescriptor;
+  tools: ProviderToolCapabilityDescriptor;
+}
+
+export interface ProviderStartRequest {
+  runId: string;
+  threadId: string;
+  turnId?: string;
+  /** Existing runtime where the provider-native session should be created.
+   *  Product/runtime provisioning stays outside the pure driver contract. */
+  runtime: HarnessRuntime;
+  model?: string;
+  metadata?: Record<string, unknown>;
+  signal?: AbortSignal;
+}
+
+export interface ProviderResumeRequest {
+  session: HarnessSession;
+  checkpoint?: HarnessCheckpoint;
+  signal?: AbortSignal;
+}
+
+export interface ProviderReconcileRequest {
+  session: HarnessSession;
+  checkpoint?: HarnessCheckpoint;
+  signal?: AbortSignal;
+}
+
+export type ProviderSteerInput =
+  | { kind: "prompt"; text: string; model?: string }
+  | { kind: "command"; name: string; arguments?: string }
+  | { kind: "approval"; approvalId: string; decision: string }
+  | { kind: "question"; questionId: string; answers: readonly (readonly string[])[] };
+
+export interface ProviderSteerRequest {
+  /** Product-owned turn identity. Drivers may use it for stable native command/message ids,
+   *  but never allocate canonical event ids or delivery sequence numbers from it. */
+  runId: string;
+  threadId: string;
+  turnId?: string;
+  session: HarnessSession;
+  input: ProviderSteerInput;
+  metadata?: Record<string, unknown>;
+  signal?: AbortSignal;
+}
+
+export interface ProviderDriver {
+  readonly provider: ProviderId;
+  readonly descriptor: ProviderDriverDescriptor;
+  start(request: ProviderStartRequest): Promise<HarnessResult<HarnessSession>>;
+  resume(request: ProviderResumeRequest): Promise<HarnessResult<HarnessSession>>;
+  /** Optional while legacy providers still own their history probe. New native
+   *  drivers expose recovery here so lifecycle authority does not split across
+   *  a second provider registry. */
+  reconcile?(request: ProviderReconcileRequest): Promise<HarnessReconciliation>;
+  steer(request: ProviderSteerRequest): Promise<HarnessOperationResult>;
+  cancel(session: HarnessSession, reason: string): Promise<HarnessOperationResult>;
+}
+
+/** Compatibility projection onto the legacy control facade. The canonical driver
+ * descriptor remains authoritative; `todos` and `patches` retain their legacy
+ * names while mapping to the canonical plan and file-diff surfaces. */
+export function providerDriverHarnessCapabilities(
+  driver: Pick<ProviderDriver, "descriptor">,
+): HarnessCapabilities {
+  const capabilities = driver.descriptor.capabilities;
+  const streaming = capabilities.toolProgress || capabilities.fileDiffs
+    ? "parts"
+    : capabilities.streamingText
+      ? "text"
+      : "none";
+  return {
+    resume: capabilities.resume,
+    cancel: capabilities.stop,
+    streaming,
+    authoritativeHistory: capabilities.reconcile,
+    childSessions: capabilities.childSessions,
+    approvals: capabilities.approvals,
+    questions: capabilities.questions,
+    reasoning: capabilities.reasoning,
+    todos: capabilities.plans,
+    patches: capabilities.fileDiffs,
+    usage: capabilities.usage,
+  };
+}
+
+export function providerDriverUnsupported(
+  provider: ProviderId,
+  capability: ProviderDriverCapability,
+  message?: string,
+): HarnessUnsupported {
+  return {
+    status: "unsupported_capability",
+    provider,
+    capability,
+    ...(message ? { message } : {}),
+  };
+}
+
+function isFunction(value: unknown): value is (...args: never[]) => unknown {
+  return typeof value === "function";
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+const MODEL_SELECTION_MODES = new Set(["fixed", "per_turn"]);
+const TOOL_MODES = new Set(["none", "provider_native", "skynet_brokered"]);
+const TOOL_APPROVAL_MODES = new Set(["none", "provider", "skynet"]);
+
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === "string" && value.length > 0;
+}
+
+export function validateProviderDriver(driver: unknown): HarnessOperationResult {
+  if (!isRecord(driver)) {
+    return {
+      status: "error",
+      code: "invalid_provider_driver",
+      message: "provider driver must be an object",
+    };
+  }
+
+  const provider = driver.provider;
+  const descriptor = driver.descriptor;
+  if (typeof provider !== "string" || provider.length === 0) {
+    return {
+      status: "error",
+      code: "invalid_provider_driver",
+      message: "provider driver must declare a provider",
+    };
+  }
+  if (!isRecord(descriptor)) {
+    return {
+      status: "error",
+      code: "invalid_provider_descriptor",
+      message: `provider driver '${provider}' must declare a descriptor`,
+    };
+  }
+  if (descriptor.provider !== provider) {
+    return {
+      status: "error",
+      code: "provider_descriptor_mismatch",
+      message: `provider driver '${provider}' must use a matching descriptor provider`,
+    };
+  }
+  if (
+    !isRecord(descriptor.protocol) ||
+    typeof descriptor.protocol.name !== "string" ||
+    descriptor.protocol.name.length === 0
+  ) {
+    return {
+      status: "error",
+      code: "invalid_provider_protocol",
+      message: `provider driver '${provider}' must declare a protocol name`,
+    };
+  }
+  if (!isRecord(descriptor.capabilities)) {
+    return {
+      status: "error",
+      code: "invalid_provider_capabilities",
+      message: `provider driver '${provider}' must declare canonical capabilities`,
+    };
+  }
+  if (!isRecord(descriptor.model)) {
+    return {
+      status: "error",
+      code: "invalid_model_capability",
+      message: `provider driver '${provider}' must declare model capabilities`,
+    };
+  }
+  if (!MODEL_SELECTION_MODES.has(String(descriptor.model.selection))) {
+    return {
+      status: "error",
+      code: "invalid_model_capability",
+      message: `provider driver '${provider}' has an invalid model selection mode`,
+    };
+  }
+  if (!isRecord(descriptor.tools)) {
+    return {
+      status: "error",
+      code: "invalid_tool_gateway",
+      message: `provider driver '${provider}' must declare a tool gateway descriptor`,
+    };
+  }
+  if (!TOOL_MODES.has(String(descriptor.tools.mode))) {
+    return {
+      status: "error",
+      code: "invalid_tool_gateway",
+      message: `provider driver '${provider}' has an invalid tool mode`,
+    };
+  }
+  if (!TOOL_APPROVAL_MODES.has(String(descriptor.tools.approval))) {
+    return {
+      status: "error",
+      code: "invalid_tool_gateway",
+      message: `provider driver '${provider}' has an invalid tool approval mode`,
+    };
+  }
+  if (
+    "availableModels" in descriptor.model &&
+    (!Array.isArray(descriptor.model.availableModels) ||
+      descriptor.model.availableModels.some(
+        (model) => !isRecord(model) || !isNonEmptyString(model.id),
+      ))
+  ) {
+    return {
+      status: "error",
+      code: "invalid_model_capability",
+      message: `provider driver '${provider}' has an invalid model catalog`,
+    };
+  }
+
+  for (const method of ["start", "resume", "steer", "cancel"] as const) {
+    if (!isFunction(driver[method])) {
+      return {
+        status: "error",
+        code: "missing_provider_method",
+        message: `provider driver '${provider}' must implement ${method}`,
+      };
+    }
+  }
+
+  if ("reconcile" in driver && !isFunction(driver.reconcile)) {
+    return {
+      status: "error",
+      code: "invalid_provider_method",
+      message: `provider driver '${provider}' must implement reconcile as a function`,
+    };
+  }
+
+  return { status: "ok" };
 }
