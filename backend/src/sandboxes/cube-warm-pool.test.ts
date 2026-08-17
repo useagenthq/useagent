@@ -479,4 +479,30 @@ describe("CubeWarmPool", () => {
     await waitFor(() => pool.status().ready, 1);
     expect(await pool.claim()).toBe(box);
   });
+
+  test("can warm a runtime-only pool without desktop/noVNC readiness", async () => {
+    const box = sandbox("cube-t3-runtime-only");
+    let runtimeCalls = 0;
+    let desktopCalls = 0;
+    const pool = new CubeWarmPool({
+      provider: provider([box]),
+      size: 1,
+      createOptions: { snapshot: "t3-candidate" },
+      requireDesktop: false,
+      warmDesktop: async () => {
+        desktopCalls += 1;
+        throw new Error("desktop should not be on the runtime-only path");
+      },
+      warmRuntime: async () => {
+        runtimeCalls += 1;
+      },
+      logger: quietLogger,
+    });
+
+    pool.start();
+    await waitFor(() => pool.status().ready, 1);
+    expect(runtimeCalls).toBe(1);
+    expect(desktopCalls).toBe(0);
+    expect(await pool.claim()).toBe(box);
+  });
 });

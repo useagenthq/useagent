@@ -12,6 +12,8 @@ import {
   ensureT3Environment,
   prewarmT3Environment,
   T3_ENVIRONMENT_PORT,
+  t3FirstActivityTimeoutMs,
+  t3NoProgressTimeoutMs,
   t3EnvironmentEnabled,
 } from "./t3-environment";
 
@@ -41,6 +43,20 @@ describe("T3 Cube environment", () => {
     expect(t3EnvironmentEnabled({ T3_ENVIRONMENT_ENABLED: "false" })).toBe(false);
     expect(t3EnvironmentEnabled({ T3_ENVIRONMENT_ENABLED: "1" })).toBe(true);
     expect(t3EnvironmentEnabled({ T3_ENVIRONMENT_ENABLED: "TRUE" })).toBe(true);
+  });
+
+  test("bounds first-activity silence with an operator-tunable timeout", () => {
+    expect(t3FirstActivityTimeoutMs({})).toBe(45_000);
+    expect(t3FirstActivityTimeoutMs({ T3_FIRST_ACTIVITY_TIMEOUT_MS: "1500" })).toBe(1500);
+    expect(t3FirstActivityTimeoutMs({ T3_FIRST_ACTIVITY_TIMEOUT_MS: "0" })).toBe(45_000);
+    expect(t3FirstActivityTimeoutMs({ T3_FIRST_ACTIVITY_TIMEOUT_MS: "nope" })).toBe(45_000);
+  });
+
+  test("bounds provider no-progress time with an operator-tunable timeout", () => {
+    expect(t3NoProgressTimeoutMs({})).toBe(120_000);
+    expect(t3NoProgressTimeoutMs({ T3_NO_PROGRESS_TIMEOUT_MS: "2500" })).toBe(2500);
+    expect(t3NoProgressTimeoutMs({ T3_NO_PROGRESS_TIMEOUT_MS: "0" })).toBe(120_000);
+    expect(t3NoProgressTimeoutMs({ T3_NO_PROGRESS_TIMEOUT_MS: "nah" })).toBe(120_000);
   });
 
   test("launches one isolated headless environment inside the Cube workstation", () => {

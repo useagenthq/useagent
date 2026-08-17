@@ -111,6 +111,31 @@ describe("T3 run adapter gate", () => {
     expect(source).not.toContain("keyword");
   });
 
+  test("keeps desktop/noVNC readiness off the ordinary T3 turn critical path", () => {
+    const source = readFileSync(new URL("./t3-adapter.ts", import.meta.url), "utf8");
+    expect(source).toContain("Preparing T3 runtime and integrations");
+    expect(source).toContain("Waiting for T3 activity");
+    expect(source).toContain("t3FirstActivityTimeoutMs()");
+    expect(source).not.toContain("ensureSandboxDesktopView");
+    expect(source).not.toContain("desktop.available");
+    expect(source).toContain("desktop: false");
+  });
+
+  test("bounds a provider retry storm with one no-progress watchdog owner", () => {
+    const source = readFileSync(new URL("./t3-adapter.ts", import.meta.url), "utf8");
+    expect(source).toContain(
+      "createT3NoProgressWatchdog(t3NoProgressTimeoutMs(), redact.text)",
+    );
+    expect(source).toContain("watchdog.observeActivity(activity)");
+    expect(source).toContain("watchdog.observeProgress()");
+    expect(source).toContain("AbortSignal.any([ctx.signal, watchdog.signal])");
+    expect(source).toContain("if (watchdog.signal.aborted) throw watchdog.signal.reason;");
+    expect(source).toContain('await driver.cancel(session, "provider made no progress")');
+    // One watchdog owner and no steer replay after the turn may have started.
+    expect(source.split("createT3NoProgressWatchdog(").length - 1).toBe(1);
+    expect(source.split("driver.steer(").length - 1).toBe(1);
+  });
+
   test("requires durable session persistence before T3 steering", () => {
     const source = readFileSync(new URL("./t3-adapter.ts", import.meta.url), "utf8");
     expect(source).toContain("persistSession: async (nativeSessionId) => {");

@@ -38,6 +38,7 @@ export interface CubeWarmPoolOptions {
   readonly createOptions: SandboxCreateOptions;
   readonly warmDesktop?: (sandbox: SandboxHandle, signal: AbortSignal) => Promise<SandboxDesktop>;
   readonly warmRuntime?: (sandbox: SandboxHandle, signal: AbortSignal) => Promise<void>;
+  readonly requireDesktop?: boolean;
   readonly initialRetryDelayMs?: number;
   readonly maxRetryDelayMs?: number;
   readonly refillAfterClaim?: boolean;
@@ -62,6 +63,7 @@ export class CubeWarmPool {
     signal: AbortSignal,
   ) => Promise<SandboxDesktop>;
   private readonly warmRuntime: (sandbox: SandboxHandle, signal: AbortSignal) => Promise<void>;
+  private readonly requireDesktop: boolean;
   private readonly initialRetryDelayMs: number;
   private readonly maxRetryDelayMs: number;
   private readonly refillAfterClaim: boolean;
@@ -80,6 +82,7 @@ export class CubeWarmPool {
     this.createOptions = options.createOptions;
     this.warmDesktop = options.warmDesktop ?? ensureSandboxDesktopView;
     this.warmRuntime = options.warmRuntime ?? (async () => undefined);
+    this.requireDesktop = options.requireDesktop ?? true;
     this.initialRetryDelayMs = Math.max(1, options.initialRetryDelayMs ?? INITIAL_RETRY_DELAY_MS);
     this.maxRetryDelayMs = Math.max(
       this.initialRetryDelayMs,
@@ -194,12 +197,16 @@ export class CubeWarmPool {
     const sandbox = await this.provider.create(this.createOptions);
     try {
       const signal = AbortSignal.timeout(WARM_TIMEOUT_MS);
-      const [desktop] = await Promise.all([
-        this.warmDesktop(sandbox, signal),
-        this.warmRuntime(sandbox, signal),
-      ]);
-      if (!desktop.available) {
-        throw new Error(desktop.reason ?? "desktop computer-use surface unavailable");
+      if (this.requireDesktop) {
+        const [desktop] = await Promise.all([
+          this.warmDesktop(sandbox, signal),
+          this.warmRuntime(sandbox, signal),
+        ]);
+        if (!desktop.available) {
+          throw new Error(desktop.reason ?? "desktop computer-use surface unavailable");
+        }
+      } else {
+        await this.warmRuntime(sandbox, signal);
       }
       this.ready.push(sandbox);
       this.logger.log(

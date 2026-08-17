@@ -1,7 +1,6 @@
 import type { EngineAdapter, EngineRunContext } from "./types";
 import { composeTurnPrompt } from "./types";
 import { acquireThreadSandbox } from "./thread-sandbox";
-import { ensureSandboxDesktopView } from "./desktop";
 import { prepareRepos } from "./repo-prep";
 import {
   prepareT3ProviderBridge,
@@ -44,9 +43,12 @@ import {
 import { materializeRunInputs } from "../uploads/materialize";
 import {
   T3_CUBE_WARM_POOL_NAME,
+  t3FirstActivityTimeoutMs,
+  t3NoProgressTimeoutMs,
   T3_RUNTIME_GENERATION,
   T3_RUNTIME_GENERATION_LABEL,
 } from "./t3-environment";
+import { createT3NoProgressWatchdog, T3NoProgressError } from "./t3-no-progress";
 import { T3_SESSION_GENERATION, t3ProviderDrivers } from "./t3-provider-driver";
 
 const T3_POLL_INTERVAL_MS = 125;
@@ -171,11 +173,17 @@ async function waitForNewT3TurnSnapshot(
   sandbox: Awaited<ReturnType<typeof acquireThreadSandbox>>["sandbox"],
   priorTurnId: string | null,
 ): Promise<T3ThreadSnapshot> {
+  const deadline = Date.now() + t3FirstActivityTimeoutMs();
   while (!ctx.signal.aborted) {
     const snapshot = await readThreadSnapshot(ctx, sandbox).catch(() => null);
     const latestTurnId = snapshot?.thread.latestTurn?.turnId ?? null;
     if (snapshot && latestTurnId !== null && latestTurnId !== priorTurnId) {
       return snapshot;
+    }
+    if (Date.now() >= deadline) {
+      throw new Error(
+        `T3 produced no first activity within ${t3FirstActivityTimeoutMs()}ms`,
+      );
     }
     await Bun.sleep(T3_POLL_INTERVAL_MS);
   }
@@ -191,6 +199,10 @@ async function waitForT3Turn(
 ): Promise<string> {
   const activityRevisions = new Map(preExistingActivities);
   const activitySteps = new Map<string, string>();
+  // Single owner of the turn-stream no-progress bound: a provider retry storm
+  // (only runtime.warning activities, no tool/text progress) must terminate
+  // the run with the real provider reason instead of running forever.
+  const watchdog = createT3NoProgressWatchdog(t3NoProgressTimeoutMs(), redact.text);
   let publishedText = "";
   let finalText = "";
   const applySnapshot = async (snapshot: T3ThreadSnapshot): Promise<boolean> => {
@@ -202,6 +214,7 @@ async function waitForT3Turn(
         critical:
           activity.kind === "user-input.requested" || activity.kind === "approval.requested",
       });
+      watchdog.observeActivity(activity);
       if (!shouldProjectT3Activity(activity, snapshot.thread.activities)) continue;
       const step = redact.unknown(activityStep(activity));
       const activityStepKey = t3ActivityStepKey(activity);
@@ -217,7 +230,10 @@ async function waitForT3Turn(
     const text = redact.text(assistantText(snapshot));
     if (text.startsWith(publishedText)) {
       const delta = text.slice(publishedText.length);
-      if (delta) ctx.publishDelta?.(delta);
+      if (delta) {
+        ctx.publishDelta?.(delta);
+        watchdog.observeProgress();
+      }
     }
     publishedText = text;
 
@@ -229,18 +245,23 @@ async function waitForT3Turn(
   // Dispatch commits before the read projection necessarily observes the new
   // turn. Poll only this short projection hand-off; all subsequent updates use
   // T3's native replayable websocket stream.
-  const initial = await waitForNewT3TurnSnapshot(ctx, sandbox, priorTurnId);
-  if (!(await applySnapshot(initial))) return finalText;
-  await subscribeT3Thread(
-    sandbox,
-    t3ThreadId(ctx),
-    initial.snapshotSequence,
-    ctx.signal,
-    async (item) => {
-      if (item.kind === "synchronized") return true;
-      return await applySnapshot(await readThreadSnapshot(ctx, sandbox));
-    },
-  );
+  try {
+    const initial = await waitForNewT3TurnSnapshot(ctx, sandbox, priorTurnId);
+    if (!(await applySnapshot(initial))) return finalText;
+    await subscribeT3Thread(
+      sandbox,
+      t3ThreadId(ctx),
+      initial.snapshotSequence,
+      AbortSignal.any([ctx.signal, watchdog.signal]),
+      async (item) => {
+        if (item.kind === "synchronized") return true;
+        return await applySnapshot(await readThreadSnapshot(ctx, sandbox));
+      },
+    );
+  } finally {
+    watchdog.dispose();
+  }
+  if (watchdog.signal.aborted) throw watchdog.signal.reason;
   if (!ctx.signal.aborted) return finalText;
   throw new Error("T3 run aborted (timeout)");
 }
@@ -270,7 +291,7 @@ export function makeT3Adapter(engine: T3EngineId, driver: ProviderDriver): Engin
       try {
         await ctx.emit({
           kind: "task",
-          label: "Preparing T3 runtime, desktop, tools, and integrations…",
+          label: "Preparing T3 runtime and integrations…",
           chip: `t3:${engine}`,
         });
         const endPrepare = ctx.timing?.begin("t3.prepare");
@@ -284,9 +305,6 @@ export function makeT3Adapter(engine: T3EngineId, driver: ProviderDriver): Engin
         };
         const workdir = await prepareStage("workspace_root", () =>
           resolveWorkspaceRoot(ctx, sandbox),
-        );
-        const desktopPromise = prepareStage("desktop", () =>
-          ensureSandboxDesktopView(sandbox, ctx.signal),
         );
         await Promise.all([
           prepareStage("secrets", () =>
@@ -302,15 +320,7 @@ export function makeT3Adapter(engine: T3EngineId, driver: ProviderDriver): Engin
           prepareStage("inputs", () => materializeRunInputs(sandbox, ctx.inputFiles)),
         ]);
         await prepareStage("secrets_marker", () => recordSecretsInjected(ctx, secretInjection));
-        const desktop = await desktopPromise;
         endPrepare?.();
-        if (!desktop.available) {
-          await ctx.emit({
-            kind: "task",
-            label: desktop.reason ?? "Desktop computer-use tools unavailable",
-            chip: "warning",
-          });
-        }
 
         const endShell = ctx.timing?.begin("t3.shell");
         const shell = await requestT3Environment<T3ShellSnapshot>(
@@ -324,7 +334,7 @@ export function makeT3Adapter(engine: T3EngineId, driver: ProviderDriver): Engin
         const createdAt = new Date().toISOString();
         const runtimeMode = t3RuntimeMode();
         const negotiatedCapabilities = sessionCapabilities(engine, {
-          desktop: desktop.available,
+          desktop: false,
           knowledgeTools: true,
           t3Orchestration: true,
         });
@@ -380,6 +390,11 @@ export function makeT3Adapter(engine: T3EngineId, driver: ProviderDriver): Engin
           );
         }
         const endTurn = ctx.timing?.begin("t3.turn_wait");
+        await ctx.emit({
+          kind: "task",
+          label: "Waiting for T3 activity…",
+          chip: `t3:${engine}`,
+        });
         try {
           const summary = await waitForT3Turn(
             ctx,
@@ -390,6 +405,15 @@ export function makeT3Adapter(engine: T3EngineId, driver: ProviderDriver): Engin
           );
           await ctx.emit({ kind: "done", label: "Done", chip: null });
           ctx.setSummary(summary.trim() || `T3 ${engine} run completed`, Date.now() - startedAt);
+        } catch (error) {
+          if (error instanceof T3NoProgressError && !ctx.signal.aborted) {
+            // The durable run is failing with the provider's real reason; also
+            // stop the sandbox-side turn so a persistent thread does not keep
+            // retrying against the provider gateway. Best-effort only: a cancel
+            // failure must not mask the no-progress reason.
+            await driver.cancel(session, "provider made no progress").catch(() => {});
+          }
+          throw error;
         } finally {
           endTurn?.();
           if (ctx.signal.aborted) {
