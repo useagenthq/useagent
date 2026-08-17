@@ -7,7 +7,8 @@ import { SubagentPane } from '@/components/chat/subagent-pane';
 
 /**
  * Client-side provider stack. Kept as a leaf so the root layout stays a
- * server component. `next-themes` drives the `.dark` class on <html>; the
+ * server component. `next-themes` drives the theme class (`dark` / `aura` /
+ * `light`) on <html>; the
  * Radix TooltipProvider is hoisted here so any vendored AlignUI tooltip works
  * out of the box anywhere in the tree.
  *
@@ -16,7 +17,12 @@ import { SubagentPane } from '@/components/chat/subagent-pane';
  */
 export function Providers({ children }: { children: React.ReactNode }) {
   return (
-    <ThemeProvider attribute='class' defaultTheme='dark' enableSystem={false}>
+    <ThemeProvider
+      attribute='class'
+      defaultTheme='dark'
+      enableSystem={false}
+      themes={['light', 'dark', 'aura']}
+    >
       <TooltipProvider delayDuration={100} skipDelayDuration={300} disableHoverableContent>
         {children}
         <SubagentPane />
