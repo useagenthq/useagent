@@ -649,6 +649,17 @@
     transform: translateY(0);
   }
 }
+
+@keyframes skynet-orbit-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.skynet-orbit-active {
+  transform-origin: center;
+  animation: skynet-orbit-spin 4.8s linear infinite;
+}
 .animate-ai-fade-up {
   animation: ai-fade-up 350ms cubic-bezier(0.23, 1, 0.32, 1) both;
 }
@@ -757,6 +768,9 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .skynet-orbit-active {
+    animation: none;
+  }
   .ai-code-surface .ai-code-line {
     animation: none;
   }

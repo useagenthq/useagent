@@ -30,7 +30,6 @@ import * as React from "react";
 
 import * as CommandMenu from "@/components/ui/command-menu";
 import * as Kbd from "@/components/ui/kbd";
-import { cnExt } from "@/utils/cn";
 
 type IconComponent = ComponentType<{
   className?: string;
@@ -84,7 +83,7 @@ const GROUP_ORDER: Cmd["group"][] = ["Threads", "Library", "Developer"];
  * navigation. Built on the vendored AlignUI CommandMenu (cmdk + Modal), which
  * supplies the portal, backdrop, focus trap, and Esc-to-close for free.
  */
-export function SearchCommand({ variant = "top" }: { variant?: "top" | "sidebar" }) {
+export function SearchCommand() {
   const router = useRouter();
   const [open, setOpen] = React.useState(false);
   const [search, setSearch] = React.useState("");
@@ -121,16 +120,11 @@ export function SearchCommand({ variant = "top" }: { variant?: "top" | "sidebar"
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className={cnExt(
-          "items-center gap-2 text-text-soft-400 outline-none transition-colors hover:bg-bg-weak-50 hover:text-text-strong-950 focus-visible:ring-2 focus-visible:ring-stroke-strong-950",
-          variant === "top"
-            ? "hidden h-9 w-[min(360px,42vw)] rounded-full border border-stroke-soft-200 bg-bg-white-0 px-3.5 shadow-regular-xs md:inline-flex"
-            : "flex w-full rounded-lg px-2.5 py-2",
-        )}
+        className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-text-soft-400 outline-none transition-colors hover:bg-bg-weak-50 hover:text-text-strong-950 focus-visible:ring-2 focus-visible:ring-stroke-strong-950"
       >
         <RiSearch2Line className="size-3.5 shrink-0" aria-hidden />
         <span className="flex-1 text-left text-paragraph-sm">Search</span>
-        <Kbd.Root className={variant === "sidebar" ? "ml-auto" : undefined}>⌘K</Kbd.Root>
+        <Kbd.Root className="ml-auto">⌘K</Kbd.Root>
       </button>
 
       <CommandMenu.Dialog

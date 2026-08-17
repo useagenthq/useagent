@@ -1,7 +1,7 @@
-import Link from 'next/link';
-import type { ComponentType, ReactNode } from 'react';
+import Link from "next/link";
+import type { ComponentType, ReactNode } from "react";
 
-import { cnExt } from '@/utils/cn';
+import { cnExt } from "@/utils/cn";
 
 /**
  * Shared building blocks for the app-shell sidebars (chat + agent). Both rails
@@ -14,38 +14,35 @@ import { cnExt } from '@/utils/cn';
 
 type IconComponent = ComponentType<{
   className?: string;
-  'aria-hidden'?: boolean | 'true' | 'false';
+  "aria-hidden"?: boolean | "true" | "false";
 }>;
 
 export function Sidebar({
   ariaLabel,
   children,
+  header,
   footer,
 }: {
   ariaLabel: string;
   children: ReactNode;
+  header?: ReactNode;
   /** Optional pinned block below the scroll area (e.g. "Connect apps"). */
   footer?: ReactNode;
 }) {
   return (
     <aside
       aria-label={ariaLabel}
-      className='hidden w-64 shrink-0 flex-col border-r border-stroke-soft-200 bg-bg-white-0 md:flex'
+      className="flex h-full w-64 shrink-0 flex-col border-r border-stroke-soft-200 bg-bg-white-0"
     >
-      <nav className='min-h-0 flex-1 overflow-y-auto px-3 pb-4 pt-3'>
-        {children}
-      </nav>
+      {header}
+      <nav className="min-h-0 flex-1 overflow-y-auto px-3 pb-4 pt-3">{children}</nav>
       {footer}
     </aside>
   );
 }
 
 export function SidebarSectionLabel({ children }: { children: ReactNode }) {
-  return (
-    <p className='text-mono-label px-2.5 pb-1 pt-5 text-text-soft-400'>
-      {children}
-    </p>
-  );
+  return <p className="text-mono-label px-2.5 pb-1 pt-5 text-text-soft-400">{children}</p>;
 }
 
 export interface SidebarNavItemProps {
@@ -61,7 +58,7 @@ export interface SidebarNavItemProps {
 }
 
 export function SidebarNavItem({
-  href = '#',
+  href = "#",
   icon: Icon,
   leading,
   label,
@@ -71,25 +68,25 @@ export function SidebarNavItem({
   return (
     <Link
       href={href}
-      aria-current={active ? 'page' : undefined}
+      aria-current={active ? "page" : undefined}
       className={cnExt(
-        'flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-label-sm transition-colors',
+        "flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-label-sm transition-colors",
         active
-          ? 'bg-bg-weak-50 text-text-strong-950'
-          : 'text-text-sub-600 hover:bg-bg-weak-50 hover:text-text-strong-950',
+          ? "bg-bg-weak-50 text-text-strong-950"
+          : "text-text-sub-600 hover:bg-bg-weak-50 hover:text-text-strong-950",
       )}
     >
       {leading ??
         (Icon ? (
           <Icon
             className={cnExt(
-              'size-3.5 shrink-0',
-              active ? 'text-text-strong-950' : 'text-text-soft-400',
+              "size-3.5 shrink-0",
+              active ? "text-text-strong-950" : "text-text-soft-400",
             )}
             aria-hidden
           />
         ) : null)}
-      <span className='min-w-0 flex-1 truncate'>{label}</span>
+      <span className="min-w-0 flex-1 truncate">{label}</span>
       {trailing}
     </Link>
   );
