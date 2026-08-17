@@ -148,6 +148,22 @@ codexSubscriptionRelayRoutes.get(
     const accepted = Boolean(
       grant && !browserOrigin && !grant.consumed && grant.expiresAt > dependencies.now(),
     );
+    // Token-free relay visibility: the capability token is never logged; the runId
+    // correlates the sandbox dial with the run. Explains whether the sandbox
+    // reached the relay at all and why a capability was refused.
+    const relayRunId = grant?.binding.runId;
+    const validation = accepted
+      ? "accepted"
+      : !grant
+        ? "unknown-capability"
+        : browserOrigin
+          ? "rejected-browser-origin"
+          : grant.consumed
+            ? "rejected-consumed"
+            : "rejected-expired";
+    console.log(
+      `[codex-relay] capability ${validation}${relayRunId ? ` run=${relayRunId}` : ""}`,
+    );
     if (grant && browserOrigin) grants.delete(key);
     if (grant && accepted) grant.consumed = true;
     let child: ChildProcessWithoutNullStreams | null = null;
@@ -210,6 +226,7 @@ codexSubscriptionRelayRoutes.get(
           socket.close(1008, "invalid or expired capability");
           return;
         }
+        console.log(`[codex-relay] connection open run=${relayRunId}`);
         grants.delete(key);
         void attachCodexSubscriptionAppServer({
           childReady,
@@ -251,6 +268,7 @@ codexSubscriptionRelayRoutes.get(
         });
       },
       onClose: () => {
+        if (accepted) console.log(`[codex-relay] connection closed run=${relayRunId}`);
         closed = true;
         relaySocket = null;
         grants.delete(key);
