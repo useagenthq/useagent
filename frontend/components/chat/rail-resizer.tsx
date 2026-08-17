@@ -108,7 +108,9 @@ export function RailResizer({
       onDoubleClick={onReset}
       className={cnExt(
         "relative -mx-2 hidden h-auto w-4 shrink-0 cursor-col-resize touch-none self-stretch border-0 bg-transparent outline-none md:block",
-        "before:bg-stroke-soft-200 before:absolute before:inset-y-3 before:left-1/2 before:w-px before:-translate-x-1/2 before:transition-colors before:content-['']",
+        // The hairline stays INVISIBLE at rest (the panel edge reads cleaner without
+        // a full-height rule) and appears on hover, keyboard focus, or drag.
+        "before:absolute before:inset-y-3 before:left-1/2 before:w-px before:-translate-x-1/2 before:bg-transparent before:transition-colors before:content-['']",
         "after:border-stroke-soft-200 after:bg-bg-white-0 after:shadow-regular-xs after:absolute after:left-1/2 after:top-1/2 after:h-12 after:w-3 after:-translate-x-1/2 after:-translate-y-1/2 after:rounded-full after:border after:transition-[border-color,background-color,box-shadow,transform] after:content-['']",
         "hover:before:bg-stroke-sub-300 hover:after:border-primary-base focus-visible:before:bg-primary-base focus-visible:after:border-primary-base focus-visible:after:ring-2 focus-visible:after:ring-primary-alpha-16",
         dragging &&
