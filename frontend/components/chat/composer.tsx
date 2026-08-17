@@ -149,7 +149,6 @@ export function Composer({
   className,
   enableAgentCommand,
   enableModelPicker = true,
-  surface = "default",
   modelMenu,
   defaultModel = "claude-opus-5",
   defaultMemoryScope = "org",
@@ -186,7 +185,6 @@ export function Composer({
 
   const engine = engineProp ?? engineState;
   const hero = variant === "hero";
-  const white = surface === "white";
   // The real chat model picker (honest options) supersedes the placeholder agent
   // picker on this composer when supplied.
   const activeModelOption = modelMenu?.options.find((o) => o.value === modelMenu.value);
@@ -386,9 +384,8 @@ export function Composer({
           the card edge and must not be clipped. */}
       <div
         className={cn(
-          "border-stroke-soft-200 bg-bg-white-0 shadow-regular-md border",
-          // A larger radius reads as the reference's soft rounded pill on white.
-          white ? "rounded-3xl" : "rounded-2xl",
+          "border-stroke-soft-200 bg-bg-white-0 border",
+          hero ? "rounded-3xl shadow-regular-md" : "rounded-[20px]",
         )}
       >
         {enableUploads ? (
@@ -419,7 +416,7 @@ export function Composer({
           }}
           onSubmit={submit}
           isLoading={pending}
-          maxHeight={hero ? 220 : 150}
+          maxHeight={hero ? 220 : 96}
           className={cn(
             "cursor-text rounded-none border-0 bg-transparent shadow-none",
             hero ? "p-3 md:p-4" : "p-2.5",
@@ -451,7 +448,10 @@ export function Composer({
                   setCommand(null);
                 }
               }}
-              className={cn("flex-1", hero ? "pt-1 text-paragraph-lg" : "text-paragraph-sm")}
+              className={cn(
+                "flex-1",
+                hero ? "pt-1 text-paragraph-lg" : "min-h-8 text-paragraph-sm",
+              )}
             />
           </div>
 
