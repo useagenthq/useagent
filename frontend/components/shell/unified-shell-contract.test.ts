@@ -35,7 +35,7 @@ describe("unified shell contract", () => {
 
   test("limits primary sidebar navigation to projects, threads, usage, library, and settings", () => {
     const { threadSidebar } = shellSources();
-    const sidebarRecents = read("./sidebar-recents.tsx");
+    const sidebarThreads = read("./sidebar-threads.tsx");
     const primaryDestinations = ["All projects", "Threads", "Usage", "Library", "Settings"];
     const displacedDestinations = [
       "New chat",
@@ -55,7 +55,7 @@ describe("unified shell contract", () => {
     ];
 
     for (const label of primaryDestinations) {
-      expect(`${threadSidebar}\n${sidebarRecents}`).toContain(label);
+      expect(`${threadSidebar}\n${sidebarThreads}`).toContain(label);
     }
     for (const label of displacedDestinations) {
       expect(threadSidebar).not.toContain(`label='${label}'`);
