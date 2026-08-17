@@ -698,6 +698,7 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
             sendNowFor={runningTurn ? headQueuedId : null}
             onSendNow={handleSendNow}
             running={runningTurn !== null}
+            runStartedAt={runningTurn?.run.created_at ?? null}
             stopping={stopping}
             stopError={stopError}
             onStop={handleStop}
