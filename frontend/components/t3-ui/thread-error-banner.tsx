@@ -82,8 +82,9 @@ export function T3ThreadErrorBanner({
     >
       <RiErrorWarningLine className="mt-0.5 size-4 shrink-0" aria-hidden />
       <div className="min-w-0 flex-1">
-        <p className="text-label-sm text-error-base">This run failed</p>
-        <p className="text-paragraph-xs text-text-sub-600 mt-0.5 line-clamp-3 break-words" title={error}>
+        <p className="text-paragraph-xs text-text-sub-600 line-clamp-2 break-words" title={error}>
+          <span className="text-error-base">Run failed</span>
+          <span className="text-text-soft-400"> - </span>
           {error}
         </p>
       </div>

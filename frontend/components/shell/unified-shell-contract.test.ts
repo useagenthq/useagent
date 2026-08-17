@@ -203,7 +203,7 @@ describe("unified shell contract", () => {
     const conversation = readFromFrontend("components/chat/conversation.tsx");
 
     expect(composer).toContain("maxHeight={220}");
-    expect(composer).toContain('hero ? "pt-1 text-paragraph-lg" : "min-h-20 text-paragraph-md"');
+    expect(composer).toContain('hero ? "pt-1 text-paragraph-lg" : "min-h-20 text-paragraph-sm leading-relaxed"');
     expect(conversation).toContain("mx-auto w-full max-w-5xl");
     expect(conversation).not.toContain("shrink-0 border-t p-3");
   });

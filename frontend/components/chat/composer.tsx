@@ -540,7 +540,7 @@ export function Composer({
                 "flex-1",
                 // The reply composer is a drafting surface, not a search box:
                 // ~3 lines of standing room (T3-style) with comfortable type.
-                hero ? "pt-1 text-paragraph-lg" : "min-h-20 text-paragraph-md",
+                hero ? "pt-1 text-paragraph-lg" : "min-h-20 text-paragraph-sm leading-relaxed",
               )}
             />
           </div>

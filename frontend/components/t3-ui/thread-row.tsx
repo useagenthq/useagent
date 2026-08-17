@@ -134,9 +134,11 @@ export const T3ThreadRow = memo(function T3ThreadRow({
         {pill ? (
           <span
             className={cn("inline-flex shrink-0 items-center gap-1 text-[10px]", pill.textClass)}
+            title={pill.label}
           >
             <StatusDot {...pill.dot} />
-            <span>{pill.label}</span>
+            {/* Failed stays a quiet dot; only in-motion states carry a word. */}
+            {pill.label !== "Failed" ? <span>{pill.label}</span> : null}
           </span>
         ) : null}
         <span className="min-w-0 flex-1 truncate">{title}</span>
