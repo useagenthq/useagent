@@ -23,10 +23,34 @@ describe("agent UI accessibility contracts", () => {
     );
 
     expect(html).toContain('aria-label="Release plan"');
-    expect(html).toContain('role="progressbar"');
-    expect(html).toContain('aria-valuenow="25"');
+    // Collapsible header defaults open and states the completion count aloud.
+    expect(html).toContain('aria-expanded="true"');
+    expect(html).toContain("1/4");
+    expect(html).toContain('aria-label="1 of 4 complete"');
+    // Completed and cancelled entries strike through; every entry names its state.
+    expect(html).toContain("line-through");
+    expect(html).toContain("Completed");
     expect(html).toContain("In progress");
     expect(html).toContain("Cancelled");
+  });
+
+  test("morphs to an all-done card and honors a collapsed default", () => {
+    const html = renderToStaticMarkup(
+      <PlanChecklist
+        title="Done plan"
+        defaultOpen={false}
+        entries={[
+          { id: "a", text: "Alpha", status: "completed" },
+          { id: "b", text: "Beta", status: "completed" },
+        ]}
+      />,
+    );
+
+    expect(html).toContain('aria-expanded="false"');
+    expect(html).toContain("2/2");
+    expect(html).toContain('aria-label="2 of 2 complete"');
+    // Collapsed: the item list is not mounted.
+    expect(html).not.toContain("Alpha");
   });
 
   test("keeps canonical tool rows inside named activity phases", () => {
