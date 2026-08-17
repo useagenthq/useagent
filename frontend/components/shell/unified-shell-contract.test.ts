@@ -158,7 +158,7 @@ describe("unified shell contract", () => {
     expect(appShell).toContain("sidebarRestoreRef.current?.focus()");
     expect(compactSidebarRail).toContain('aria-label="Expand navigation"');
     expect(compactSidebarRail).toContain("<SearchCommand compact");
-    expect(compactSidebarRail).toContain('href="/agent/workspace"');
+    expect(compactSidebarRail).toContain('href="/dashboard"');
     expect(compactSidebarRail).toContain('href="/skills"');
     expect(compactSidebarRail).toContain("<UserMenu");
   });

@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { cnExt } from "@/utils/cn";
 
-/** A bordered surface panel — the workspace's repeated card frame. */
+/** A bordered surface panel — the fleet's repeated card frame. */
 export function Panel({
   className,
   children,

@@ -6,7 +6,7 @@ import { BackendUnreachable } from "@/components/shared/backend-unreachable";
 import { modelStyle } from "@/components/shared/model-mark";
 import { cnExt } from "@/utils/cn";
 import { compactNumber } from "@/utils/format";
-import { extractFleet, type FleetData, type ModelBurn } from "@/app/agent/workspace/fleet-data";
+import { extractFleet, type FleetData, type ModelBurn } from "@/components/fleet/fleet-data";
 
 // Real per-model consumption for the Settings > Usage card, from GET /api/fleet
 // (the same live source as the workspace Limits card). Every figure is real:
