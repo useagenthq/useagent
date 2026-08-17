@@ -2,6 +2,7 @@ import { and, asc, eq } from "drizzle-orm";
 import { db } from "../db/client";
 import {
   providerConnections,
+  providerConnectionThreads,
   type ProviderConnectionAuthMethod,
   type ProviderConnectionMetadata,
   type ProviderConnectionProvider,
@@ -13,6 +14,12 @@ export type ProviderConnectionRecord = typeof providerConnections.$inferSelect;
 export interface ProviderConnectionScope {
   orgId: string;
   userId: string;
+}
+
+export interface ProviderThreadBindingScope extends ProviderConnectionScope {
+  productThreadId: string;
+  connectionId: string;
+  authEpoch: string;
 }
 
 export interface UpsertProviderConnectionInput extends ProviderConnectionScope {
@@ -134,4 +141,44 @@ export async function revokeProviderConnection(
     .where(and(...filters))
     .returning();
   return row ?? null;
+}
+
+export async function findProviderThreadBinding(
+  scope: ProviderThreadBindingScope,
+): Promise<string | null> {
+  const [row] = await db
+    .select({ providerThreadId: providerConnectionThreads.providerThreadId })
+    .from(providerConnectionThreads)
+    .where(
+      and(
+        eq(providerConnectionThreads.orgId, scope.orgId),
+        eq(providerConnectionThreads.userId, scope.userId),
+        eq(providerConnectionThreads.productThreadId, scope.productThreadId),
+        eq(providerConnectionThreads.connectionId, scope.connectionId),
+        eq(providerConnectionThreads.authEpoch, scope.authEpoch),
+      ),
+    )
+    .limit(1);
+  return row?.providerThreadId ?? null;
+}
+
+export async function bindProviderThread(
+  scope: ProviderThreadBindingScope & { providerThreadId: string },
+): Promise<void> {
+  await db
+    .insert(providerConnectionThreads)
+    .values({
+      orgId: scope.orgId,
+      userId: scope.userId,
+      productThreadId: scope.productThreadId,
+      connectionId: scope.connectionId,
+      authEpoch: scope.authEpoch,
+      providerThreadId: scope.providerThreadId,
+    })
+    .onConflictDoNothing();
+
+  const established = await findProviderThreadBinding(scope);
+  if (established !== scope.providerThreadId) {
+    throw new Error("Codex provider thread binding already exists");
+  }
 }

@@ -60,6 +60,7 @@ import {
 import { prewarmT3EnvironmentAccess } from "./engines/t3-environment-client";
 import { prewarmT3ProviderBridge } from "./engines/t3-provider-bridge";
 import { providerConnectionsRoutes } from "./provider-connections/routes";
+import { codexSubscriptionRelayRoutes } from "./provider-connections/codex-subscription-relay";
 import { wikiGenRoutes } from "./wiki-gen/routes";
 import { engineModelsForReadyEngines, readyUserFacingEngines } from "./runs/engine-readiness";
 import { uploadRoutes } from "./uploads/routes";
@@ -139,6 +140,7 @@ app.use("/api/*", async (c, next) => {
 app.get("/api/health", (c) => c.json({ status: "ok" }));
 app.route("/api/internal/automation", internalAutomationRoutes);
 app.route("/api/internal/gateway-approval/consume", internalGatewayApprovalRoutes);
+app.route("/api/internal/codex-relay", codexSubscriptionRelayRoutes);
 
 // Public client config — what the frontend needs to render auth affordances
 // (which social providers are enabled) without exposing any secret. `allowDevOrg`

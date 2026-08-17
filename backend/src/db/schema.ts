@@ -529,6 +529,36 @@ export const providerConnections = pgTable(
   ],
 );
 
+// Codex provider thread ids are subscription-account capabilities. Keep their
+// ownership on the trusted host rather than accepting a resume cursor supplied
+// by the sandbox. The auth epoch is part of the key so reconnecting an account
+// cannot inherit thread access from the credential generation it replaced.
+export const providerConnectionThreads = pgTable(
+  "provider_connection_threads",
+  {
+    orgId: text("org_id").notNull(),
+    userId: text("user_id").notNull(),
+    productThreadId: text("product_thread_id").notNull(),
+    connectionId: uuid("connection_id")
+      .notNull()
+      .references(() => providerConnections.id, { onDelete: "cascade" }),
+    authEpoch: text("auth_epoch").notNull(),
+    providerThreadId: text("provider_thread_id").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    primaryKey({
+      columns: [t.orgId, t.userId, t.productThreadId, t.connectionId, t.authEpoch],
+    }),
+    uniqueIndex("uq_provider_connection_threads_provider_scope").on(
+      t.connectionId,
+      t.authEpoch,
+      t.providerThreadId,
+    ),
+  ],
+);
+
 // ---------------------------------------------------------------------------
 // Slack adapter — maps a Slack thread to the skynet run that ROOTED it, so a
 // later reply in that Slack thread becomes a `parent_run_id` follow-up (shared

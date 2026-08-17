@@ -8,5 +8,8 @@ describe("internal automation auth boundary", () => {
     expect(isPublicApiPath("/api/internal/automation-evil")).toBe(false);
     expect(isPublicApiPath("/api/internal/gateway-approval/consume")).toBe(true);
     expect(isPublicApiPath("/api/internal/gateway-approval/consume/extra")).toBe(false);
+    expect(isPublicApiPath("/api/internal/codex-relay/one-use-capability")).toBe(true);
+    expect(isPublicApiPath("/api/internal/codex-relay")).toBe(false);
+    expect(isPublicApiPath("/api/internal/codex-relay-evil/token")).toBe(false);
   });
 });

@@ -46,6 +46,8 @@ Skynet is a multi-package repository for the Loop agent platform. The repo has o
 | Desktop | The visible XFCE and Chromium workstation shown through noVNC. Readiness requires the noVNC page, RFB, XFCE, browser CDP, and both CDP relays; Daytona can also drive it natively, while Cube uses trusted X11 controls. | Sandbox and desktop gateway |
 | Gateway | A backend trust boundary that performs privileged work for a sandbox without placing long-lived provider or database credentials inside it. | Backend gateway services |
 | Capability token | A short-lived signed grant bound to the organization, user, thread, run, engine, provider, scope, and expiry. | Backend gateway services |
+| Provider connection | A user-owned API key or managed account identity stored by the trusted backend. Metadata is visible to the UI; reusable secrets are write-only. | Provider connection service |
+| Codex subscription relay | A one-use, run-bound WebSocket capability. Codex app-server and ChatGPT OAuth stay on the trusted backend while only Codex exec-server runs in Cube or Daytona. | Provider connection and T3 engine layers |
 | MCP tool | A typed operation offered to an engine, such as searching knowledge, cloning a repository, controlling the desktop, or publishing an artifact. | Knowledge gateway |
 | Skill | Versioned, reusable instructions selected semantically and activated by exact id for the current task. | Skill catalog |
 | Playbook | A skill whose content describes a repeatable end-to-end operating procedure. | Skill catalog |
@@ -107,6 +109,7 @@ bun run release:hosted
 - Direct chat is implemented as a no-sandbox surface with read-only retrieval.
 - Agent runs are implemented as threaded sessions backed by sandboxes and streamed events.
 - Production turn dispatch enters the provider registry first. Native OpenCode and selected T3 turns receive a concrete `ProviderDriver`; legacy ACP execution remains an explicit compatibility branch.
+- User API keys are resolved inside the signed provider gateway. Managed Codex subscription turns use a separate host-owned app-server relay and never copy OAuth state into T3 or a sandbox. Local protocol and isolation tests are green; hosted subscription execution remains a release-gated proof.
 - Skills and playbooks share one immutable substrate.
 - Wiki, artifacts, secrets, review, automations, uploads, and memory all have real UI and backend paths.
 - Ambient management updates, including Automations and Provider Connections, use one authenticated org SSE stream backed by an in-process event bus. It is a live-only invalidation channel, not event replay or distributed pub/sub; subscribed views refetch their authoritative APIs after an event arrives.

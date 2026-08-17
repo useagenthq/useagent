@@ -96,4 +96,35 @@ describe("provider credential trust boundary", () => {
       );
     }
   });
+
+  test("provider gateway resolves only API-key credentials through its restricted view", () => {
+    const gatewayCredentials = sourceFor("src/provider-gateway/credentials.ts");
+    const gatewayApiKeyResolver = sourceFor("src/provider-gateway/api-key-credentials.ts");
+
+    expect(gatewayCredentials).not.toContain("../provider-connections/service");
+    expect(gatewayApiKeyResolver).toContain("gateway_provider_api_key_credentials");
+    expect(gatewayApiKeyResolver).toContain("auth_method = 'api_key'");
+    expect(gatewayApiKeyResolver).toContain("authMethod !== \"api_key\"");
+    expect(gatewayApiKeyResolver).not.toContain("provider_connections");
+    expect(gatewayApiKeyResolver).not.toContain("chatgpt_oauth");
+  });
+
+  test("T3 sandbox execution cannot materialize managed Codex OAuth state", () => {
+    const sandboxExecutionSources = [
+      sourceFor("src/engines/t3-adapter.ts"),
+      sourceFor("src/engines/t3-provider-bridge.ts"),
+    ].join("\n");
+
+    for (const forbidden of [
+      "codexHome",
+      "accessToken",
+      "refreshToken",
+      "chatgptAuthTokens",
+      ".codex/auth.json",
+      "account/login/start",
+      "account/chatgptAuthTokens/refresh",
+    ]) {
+      expect(sandboxExecutionSources).not.toContain(forbidden);
+    }
+  });
 });

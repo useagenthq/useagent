@@ -143,6 +143,14 @@ function toolGatewayDescriptor(
   });
 }
 
+/** Trusted-host descriptor for subscription-backed Codex. The caller must keep
+ * the bearer token out of sandbox files and client-visible provider settings. */
+export function codexToolGatewayDescriptor(
+  ctx: EngineRunContext,
+): ToolGatewayCapabilityDescriptor | null {
+  return toolGatewayDescriptor(ctx, "codex");
+}
+
 function claudeMcpConfig(descriptor: ToolGatewayCapabilityDescriptor | null): string {
   return JSON.stringify({
     mcpServers: descriptor

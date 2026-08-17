@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type { ProviderConnectionAuthMethod, ProviderConnectionProvider } from "../db/schema";
 import { publishOrgChange } from "../runs/org-signals";
 import { openSecret, sealSecret } from "../secrets/crypto";
@@ -33,8 +34,20 @@ export interface CodexSubscriptionAuth {
 export interface CodexSubscriptionRuntimeSelection {
   authMethod: "chatgpt_oauth";
   mode: "managed_codex_app_server";
+  connectionId: string;
+  authEpoch: string;
   codexHome: string;
   metadata: ProviderConnectionMetadata;
+}
+
+function credentialEpoch(row: ProviderConnectionRecord): string {
+  return createHash("sha256")
+    .update(row.credentialCiphertext)
+    .update("\0")
+    .update(row.iv)
+    .update("\0")
+    .update(row.tag)
+    .digest("hex");
 }
 
 function toMeta(row: ProviderConnectionRecord): ProviderConnectionMeta {
@@ -325,6 +338,8 @@ export async function getCodexSubscriptionRuntimeSelection(
   return {
     authMethod: "chatgpt_oauth",
     mode: "managed_codex_app_server",
+    connectionId: row.id,
+    authEpoch: credentialEpoch(row),
     codexHome: session.codexHome,
     metadata: row.metadata,
   };

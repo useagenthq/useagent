@@ -12,6 +12,7 @@ The backend is the control plane for Skynet. It listens on `:3201` by default an
 | Engines and adapters | [`src/engines/index.ts`](src/engines/index.ts), [`src/engines/*.ts`](src/engines) |
 | Sandbox providers | [`src/sandboxes/provider.ts`](src/sandboxes/provider.ts), [`src/sandboxes/daytona-provider.ts`](src/sandboxes/daytona-provider.ts), [`src/sandboxes/cube-provider.ts`](src/sandboxes/cube-provider.ts) |
 | Trusted capability gateways | [`src/provider-gateway/*.ts`](src/provider-gateway), [`src/knowledge/gateway/*.ts`](src/knowledge/gateway) |
+| User provider identity and Codex subscription relay | [`src/provider-connections/*.ts`](src/provider-connections), [`src/engines/t3-codex-subscription.ts`](src/engines/t3-codex-subscription.ts) |
 | Knowledge, wiki, memory | [`src/knowledge/*.ts`](src/knowledge), [`src/memory/*.ts`](src/memory), [`src/wiki-gen/*.ts`](src/wiki-gen) |
 | Skills, playbooks, automations | [`src/skills/*.ts`](src/skills), [`src/schedules/*.ts`](src/schedules) |
 | Artifacts and uploads | [`src/artifacts/*.ts`](src/artifacts), [`src/uploads/*.ts`](src/uploads) |
@@ -40,6 +41,17 @@ Both gateways fail closed:
 - provider retries happen before a response is exposed to the sandbox. The gateway keeps one request body, bounds retry count and delay, honors provider retry directives, and marks terminal auth, billing, quota, or exhausted-budget responses non-retryable.
 - built-in gateway tools use a process-wide dispatch index for the base and conditional capability families. Child sessions, Loop login, and Slack are advertised only when their trusted context is present.
 - compact discovery is opt-in and advertises two separately dispatched meta tools instead of the full catalog. Current tests prove uniqueness across the base and conditional families, not one global namespace that also includes the meta tools or external MCP servers.
+
+Managed ChatGPT/Codex accounts use a separate transport from API-key traffic.
+The backend launches Codex app-server with the user's scoped managed home and
+issues a one-use relay URL bound to the exact tenant, user, thread, run,
+connection epoch, model, sandbox generation, remote environment, and working
+directory. T3 receives that URL, not OAuth state. The sandbox launches only
+Codex exec-server; a loopback bridge injects Cube or Daytona preview headers.
+Every relay frame is reauthorized, queues and frames are bounded, and the
+provider thread is durably bound to the same connection epoch before resume.
+These are locally tested boundaries; hosted execution is not claimed until the
+guarded canary passes.
 
 ## Engine Adapters
 
