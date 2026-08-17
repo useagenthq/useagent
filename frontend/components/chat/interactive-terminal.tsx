@@ -177,9 +177,11 @@ export function InteractiveTerminal({ runId }: { runId: string }) {
         sock.onmessage = (e) => {
           if (disposed) return;
           const text = String(e.data);
-          // Swallow the backend's repeated "no live sandbox yet" notice - we show a
-          // single calm waiting line (below) instead of letting it spam each reconnect.
-          if (text.includes("no live sandbox")) return;
+          // Swallow the backend's repeated idle notices - we show a single calm
+          // waiting line (below) instead of letting them spam each reconnect.
+          // Covers the "no live sandbox" notice and the older red
+          // "[skynet] Sandbox <id> not found" variant from the provider.
+          if (text.includes("no live sandbox") || /\[skynet\][^\n]*not found/i.test(text)) return;
           waitingShown = false; // real output flowing again
           term?.write(text);
         };
