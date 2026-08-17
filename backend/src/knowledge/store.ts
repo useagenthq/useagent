@@ -67,6 +67,18 @@ export function ready(): Promise<void> {
 }
 
 async function migrate(): Promise<void> {
+  // A restricted role (the sandbox gateway) holds SELECT/INSERT/UPDATE grants
+  // but deliberately no CREATE on the schema, and Postgres rejects even
+  // CREATE ... IF NOT EXISTS without it. When the schema is already in place
+  // (the privileged backend boot ran this), skip ALL DDL instead of failing.
+  try {
+    await sql`SELECT 1 FROM knowledge_records LIMIT 0`;
+    await sql`SELECT 1 FROM knowledge_documents LIMIT 0`;
+    await sql`SELECT 1 FROM knowledge_revisions LIMIT 0`;
+    return;
+  } catch {
+    // Tables absent (or unreadable): fall through to the owner bootstrap path.
+  }
   // pgvector must be enabled before the vector column is created. Enabling an
   // extension needs privilege; surface a clear, actionable preflight error
   // rather than a raw driver message if the role can't (or pgvector is absent).
