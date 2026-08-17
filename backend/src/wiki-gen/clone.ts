@@ -31,6 +31,49 @@ export function isValidRepoRef(ref: string): boolean {
   return /^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/.test(ref);
 }
 
+/** One-shot git auth env (http.extraHeader, never written to .git/config). */
+function gitAuthEnv(token: string | null): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = { ...process.env };
+  if (token) {
+    env.GIT_CONFIG_COUNT = "1";
+    env.GIT_CONFIG_KEY_0 = "http.extraHeader";
+    env.GIT_CONFIG_VALUE_0 = `Authorization: Basic ${Buffer.from(
+      `x-access-token:${token}`,
+    ).toString("base64")}`;
+  }
+  return env;
+}
+
+/**
+ * Resolve a repo's remote HEAD commit sha over the git smart-HTTP protocol
+ * (`ls-remote`), the same transport the clone uses. This exists because the
+ * REST git-data surface (`/commits/{ref}`, `/git/trees`) 404s under the
+ * backend's credentials against this org while the git protocol works.
+ */
+export async function resolveRemoteHeadSha(repo: string): Promise<string> {
+  if (!isValidRepoRef(repo)) throw new Error(`invalid repo ref: ${repo}`);
+  const token = await resolveGithubToken();
+  const url = `https://github.com/${repo}.git`;
+  try {
+    const { stdout } = await exec("git", ["ls-remote", url, "HEAD"], {
+      env: gitAuthEnv(token),
+      timeout: 30_000,
+      maxBuffer: 1024 * 1024,
+    });
+    const sha = stdout.trim().split(/\s+/)[0];
+    if (!sha || !/^[0-9a-f]{40}$/.test(sha)) {
+      throw new Error(`no HEAD ref returned for ${repo}`);
+    }
+    return sha;
+  } catch (e) {
+    const msg =
+      e instanceof Error
+        ? e.message.replace(/x-access-token:[^@\s]+/g, "x-access-token:***")
+        : String(e);
+    throw new Error(`failed to resolve HEAD of ${repo}: ${msg.slice(0, 200)}`);
+  }
+}
+
 /**
  * Shallow-clone `owner/name` into a fresh temp dir. Returns the dir, the checked
  * out default branch, and a cleanup fn. Throws (honestly, credential-free) on
@@ -46,14 +89,7 @@ export async function cloneRepoToTemp(repo: string): Promise<ClonedRepo> {
   };
 
   // Token via env only. Absent token -> public clone.
-  const env: NodeJS.ProcessEnv = { ...process.env };
-  if (token) {
-    env.GIT_CONFIG_COUNT = "1";
-    env.GIT_CONFIG_KEY_0 = "http.extraHeader";
-    env.GIT_CONFIG_VALUE_0 = `Authorization: Basic ${Buffer.from(
-      `x-access-token:${token}`,
-    ).toString("base64")}`;
-  }
+  const env = gitAuthEnv(token);
 
   try {
     await exec("git", ["clone", "--depth", "1", url, dir], {
@@ -79,4 +115,27 @@ export async function cloneRepoToTemp(repo: string): Promise<ClonedRepo> {
   }
 
   return { dir, defaultBranch, cleanup };
+}
+
+export interface ClonedRepoAtHead extends ClonedRepo {
+  commitSha: string;
+}
+
+/** Shallow-clone and pin the checked-out HEAD commit sha (skill discovery reads
+ *  files from disk and reports the commit those reads were pinned to). */
+export async function cloneRepoAtHead(repo: string): Promise<ClonedRepoAtHead> {
+  const cloned = await cloneRepoToTemp(repo);
+  try {
+    const { stdout } = await exec("git", ["-C", cloned.dir, "rev-parse", "HEAD"], {
+      timeout: 15_000,
+    });
+    const commitSha = stdout.trim();
+    if (!/^[0-9a-f]{40}$/.test(commitSha)) {
+      throw new Error(`clone of ${repo} has no HEAD commit`);
+    }
+    return { ...cloned, commitSha };
+  } catch (e) {
+    await cloned.cleanup();
+    throw e;
+  }
 }

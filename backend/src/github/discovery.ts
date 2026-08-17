@@ -1,15 +1,23 @@
+import { readdir, readFile, stat } from "node:fs/promises";
+import { join } from "node:path";
 import { githubConfigured } from "../env";
+import { cloneRepoAtHead, resolveRemoteHeadSha } from "../wiki-gen/clone";
 import { resolveGithubAuth } from "./auth";
 
 // ---------------------------------------------------------------------------
 // GitHub skill discovery (multi-repo "import Skills from a repo"). Given an
-// `owner/name` repo, walk the default branch's tree (recursive) for any
-// `**/SKILL.md` file and read the ones within the size cap. This is pure GitHub
-// I/O: it returns the raw file text + the HEAD commit the read was pinned to;
-// turning that text into a versioned skill (frontmatter parse, revisions) lives
-// in src/skills/import.ts. Auth is resolved through src/github/auth.ts, so the
-// same PAT > App > anon precedence and installation-token minting the repo
-// listing uses applies here — the credential never leaves the backend.
+// `owner/name` repo, find every `**/SKILL.md` on the default branch and read
+// the ones within the size cap. This is pure GitHub I/O: it returns the raw
+// file text + the HEAD commit the read was pinned to; turning that text into a
+// versioned skill (frontmatter parse, revisions) lives in src/skills/import.ts.
+//
+// The scan works from a shallow server-side clone (src/wiki-gen/clone.ts) and
+// HEAD resolution uses `git ls-remote`, NOT the REST git-data endpoints
+// (`/commits/{ref}`, `/git/trees`, `/git/blobs`): those 404 under the
+// backend's credentials against this org while the git protocol and the
+// `/contents` API work. The pinned-commit import read stays on `/contents`.
+// Auth is resolved through src/github/auth.ts (PAT > App > anon precedence);
+// the credential never leaves the backend.
 // ---------------------------------------------------------------------------
 
 const GITHUB_API = "https://api.github.com";
@@ -108,101 +116,12 @@ async function resolveToken(): Promise<string | null> {
   return (await resolveGithubAuth()).token;
 }
 
-interface RepoHead {
-  defaultBranch: string;
-  commitSha: string;
-  treeSha: string;
-}
-
-/** Resolve the default branch and its HEAD commit + tree sha. */
-async function resolveRepoHead(
-  owner: string,
-  name: string,
-  token: string | null,
-): Promise<RepoHead> {
-  const repoRes = await ghGet(`${GITHUB_API}/repos/${owner}/${name}`, token);
-  if (!repoRes.ok) {
-    throw new DiscoveryError(
-      `GitHub repo lookup failed for ${owner}/${name}: HTTP ${repoRes.status}`,
-      repoRes.status === 404 ? "bad_request" : "upstream",
-    );
-  }
-  const repo = (await repoRes.json()) as { default_branch?: string };
-  const defaultBranch = repo.default_branch || "main";
-
-  const commitRes = await ghGet(
-    `${GITHUB_API}/repos/${owner}/${name}/commits/${encodeURIComponent(defaultBranch)}`,
-    token,
-  );
-  if (!commitRes.ok) {
-    throw new DiscoveryError(
-      `GitHub HEAD lookup failed for ${owner}/${name}@${defaultBranch}: HTTP ${commitRes.status}`,
-      "upstream",
-    );
-  }
-  const commit = (await commitRes.json()) as {
-    sha?: string;
-    commit?: { tree?: { sha?: string } };
-  };
-  if (!commit.sha || !commit.commit?.tree?.sha) {
-    throw new DiscoveryError(
-      `GitHub HEAD response for ${owner}/${name} missing commit/tree sha`,
-      "upstream",
-    );
-  }
-  return { defaultBranch, commitSha: commit.sha, treeSha: commit.commit.tree.sha };
-}
-
-interface TreeEntry {
-  path: string;
-  type: string;
-  sha: string;
-  size?: number;
-}
-
-/** GET the recursive tree for a tree sha. */
-async function fetchTree(
-  owner: string,
-  name: string,
-  treeSha: string,
-  token: string | null,
-): Promise<{ entries: TreeEntry[]; truncated: boolean }> {
-  const res = await ghGet(
-    `${GITHUB_API}/repos/${owner}/${name}/git/trees/${treeSha}?recursive=1`,
-    token,
-  );
-  if (!res.ok) {
-    throw new DiscoveryError(
-      `GitHub tree lookup failed for ${owner}/${name}: HTTP ${res.status}`,
-      "upstream",
-    );
-  }
-  const body = (await res.json()) as { tree?: TreeEntry[]; truncated?: boolean };
-  return { entries: body.tree ?? [], truncated: Boolean(body.truncated) };
-}
-
-/** Read one blob by sha and decode its (base64) content to UTF-8 text. */
-async function fetchBlobText(
-  owner: string,
-  name: string,
-  sha: string,
-  token: string | null,
-): Promise<string> {
-  const res = await ghGet(`${GITHUB_API}/repos/${owner}/${name}/git/blobs/${sha}`, token);
-  if (!res.ok) {
-    throw new DiscoveryError(
-      `GitHub blob read failed for ${owner}/${name}@${sha}: HTTP ${res.status}`,
-      "upstream",
-    );
-  }
-  const body = (await res.json()) as { content?: string; encoding?: string };
-  if (body.encoding !== "base64" || typeof body.content !== "string") {
-    throw new DiscoveryError(
-      `GitHub blob ${sha} for ${owner}/${name} has unexpected encoding "${body.encoding}"`,
-      "upstream",
-    );
-  }
-  return Buffer.from(body.content, "base64").toString("utf8");
+/** Recursively list SKILL.md paths (repo-relative) inside a clone, `.git` excluded. */
+export async function listSkillPathsInDir(dir: string): Promise<string[]> {
+  const all = (await readdir(dir, { recursive: true })) as string[];
+  return all
+    .filter((p) => !p.startsWith(".git/") && p !== ".git" && isSkillPath(p))
+    .sort((a, b) => a.localeCompare(b));
 }
 
 /**
@@ -214,34 +133,43 @@ async function fetchBlobText(
 export async function discoverSkillFiles(repo: string): Promise<DiscoverResult> {
   const ref = parseRepoRef(repo);
   if (!ref) throw new DiscoveryError(`invalid repo ref "${repo}"`, "bad_request");
-  const token = await resolveToken();
+  await resolveToken();
 
-  const head = await resolveRepoHead(ref.owner, ref.name, token);
-  const tree = await fetchTree(ref.owner, ref.name, head.treeSha, token);
+  let cloned: Awaited<ReturnType<typeof cloneRepoAtHead>>;
+  try {
+    cloned = await cloneRepoAtHead(repo);
+  } catch (e) {
+    throw new DiscoveryError(e instanceof Error ? e.message : String(e), "upstream");
+  }
+  try {
+    const paths = await listSkillPathsInDir(cloned.dir);
+    const truncated = paths.length > MAX_CANDIDATES;
+    const chosen = paths.slice(0, MAX_CANDIDATES);
 
-  const skillEntries = tree.entries
-    .filter((e) => e.type === "blob" && isSkillPath(e.path))
-    .sort((a, b) => a.path.localeCompare(b.path));
-  const truncated = tree.truncated || skillEntries.length > MAX_CANDIDATES;
-  const chosen = skillEntries.slice(0, MAX_CANDIDATES);
-
-  const files = await Promise.all(
-    chosen.map(async (e): Promise<DiscoveredSkillFile> => {
-      const sizeBytes = e.size ?? 0;
-      if (sizeBytes > MAX_SKILL_BYTES) return { path: e.path, sizeBytes, text: null };
-      const text = await fetchBlobText(ref.owner, ref.name, e.sha, token);
-      return { path: e.path, sizeBytes, text };
-    }),
-  );
-  return { commitSha: head.commitSha, files, truncated };
+    const files = await Promise.all(
+      chosen.map(async (path): Promise<DiscoveredSkillFile> => {
+        const abs = join(cloned.dir, path);
+        const sizeBytes = (await stat(abs)).size;
+        if (sizeBytes > MAX_SKILL_BYTES) return { path, sizeBytes, text: null };
+        return { path, sizeBytes, text: await readFile(abs, "utf8") };
+      }),
+    );
+    return { commitSha: cloned.commitSha, files, truncated };
+  } finally {
+    await cloned.cleanup();
+  }
 }
 
 /** Resolve just the HEAD commit sha of a repo's default branch (import pins to it). */
 export async function resolveRepoHeadSha(repo: string): Promise<string> {
   const ref = parseRepoRef(repo);
   if (!ref) throw new DiscoveryError(`invalid repo ref "${repo}"`, "bad_request");
-  const token = await resolveToken();
-  return (await resolveRepoHead(ref.owner, ref.name, token)).commitSha;
+  await resolveToken();
+  try {
+    return await resolveRemoteHeadSha(repo);
+  } catch (e) {
+    throw new DiscoveryError(e instanceof Error ? e.message : String(e), "upstream");
+  }
 }
 
 /**
