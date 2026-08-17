@@ -22,6 +22,7 @@ process.env.PORT = "3211";
 
 delete process.env.OPENROUTER_API_KEY;
 delete process.env.OPENAI_API_KEY;
+delete process.env.WIKI_GEN_STRUCTURE_RETRIES;
 
 // Strip GitHub creds so the unit suite is hermetic — no live GitHub calls (repo
 // listing / installation-token mint) leak in from backend/.env. The e2e:real

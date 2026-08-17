@@ -1,7 +1,13 @@
 import { beforeAll, describe, expect, test } from "bun:test";
 import { createOrgSession, json, type OrgSession } from "./helpers";
 import { generateWiki, pageSlug } from "../src/wiki-gen/generate";
-import type { ChatMessage, WikiLlm } from "../src/wiki-gen/llm";
+import {
+  type ChatMessage,
+  isRetryableWikiLlmError,
+  openRouterLlm,
+  type WikiLlm,
+  WikiLlmError,
+} from "../src/wiki-gen/llm";
 
 // ---------------------------------------------------------------------------
 // Repo-wiki generator core (path b of the deepwiki-eval spike). Drives
@@ -17,6 +23,32 @@ import type { ChatMessage, WikiLlm } from "../src/wiki-gen/llm";
 // ---------------------------------------------------------------------------
 
 const OWNER = "acme";
+
+test("OpenRouter wiki errors distinguish transient failures from permanent configuration errors", async () => {
+  const originalFetch = globalThis.fetch;
+  const originalKey = process.env.OPENROUTER_API_KEY;
+  process.env.OPENROUTER_API_KEY = "test-openrouter-key";
+
+  try {
+    globalThis.fetch = (async () => new Response("invalid key", { status: 401 })) as typeof fetch;
+    const permanent = await openRouterLlm([{ role: "user", content: "structure" }]).catch(
+      (error: unknown) => error,
+    );
+    expect(permanent).toBeInstanceOf(WikiLlmError);
+    expect(isRetryableWikiLlmError(permanent)).toBe(false);
+
+    globalThis.fetch = (async () => new Response("rate limited", { status: 429 })) as typeof fetch;
+    const transient = await openRouterLlm([{ role: "user", content: "structure" }]).catch(
+      (error: unknown) => error,
+    );
+    expect(transient).toBeInstanceOf(WikiLlmError);
+    expect(isRetryableWikiLlmError(transient)).toBe(true);
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (originalKey === undefined) delete process.env.OPENROUTER_API_KEY;
+    else process.env.OPENROUTER_API_KEY = originalKey;
+  }
+});
 const REPO = "demo";
 const CANARY = "zephyrcanary";
 
@@ -216,6 +248,112 @@ describe("repo-wiki generator", () => {
     expect(doc.body.document.status).toBe("published");
     expect(doc.body.document.content).toContain(CANARY);
     expect(await revisionCount(orgA.cookies, overview.documentId!)).toBe(goodRevs);
+  });
+
+  test("repairs a malformed structure response before generating pages", async () => {
+    let structureCalls = 0;
+    let repairMessages: ChatMessage[] = [];
+    const llm: WikiLlm = async (messages) => {
+      if (messages.some((message) => message.content.includes("[WIKI_PAGE_TOPIC]"))) {
+        return "# Generated page\n\nGrounded content.";
+      }
+      structureCalls += 1;
+      if (structureCalls === 1) return "Here is the repository outline without XML.";
+      repairMessages = messages;
+      return STRUCTURE_XML;
+    };
+
+    const result = await generateWiki({
+      orgId: orgA.orgId,
+      userId: null,
+      owner: OWNER,
+      repo: "structure-repair",
+      defaultBranch: "main",
+      files: baseFiles(),
+      llm,
+    });
+
+    expect(structureCalls).toBe(2);
+    expect(result.counts.created).toBe(2);
+    expect(repairMessages[0]).toEqual({
+      role: "system",
+      content: expect.stringContaining("untrusted source data"),
+    });
+    expect(repairMessages).toContainEqual({
+      role: "assistant",
+      content: "Here is the repository outline without XML.",
+    });
+    expect(
+      repairMessages.some(
+        (message) =>
+          message.role === "user" &&
+          message.content.includes("No valid <wiki_structure> XML found in response"),
+      ),
+    ).toBe(true);
+  });
+
+  test("retries only retryable structure provider failures", async () => {
+    let transientCalls = 0;
+    const transientLlm: WikiLlm = async (messages) => {
+      if (messages.some((message) => message.content.includes("[WIKI_PAGE_TOPIC]"))) {
+        return "# Generated page";
+      }
+      transientCalls += 1;
+      if (transientCalls === 1) {
+        throw new WikiLlmError("openrouter 429: rate limited", { retryable: true });
+      }
+      return STRUCTURE_XML;
+    };
+    const transient = await generateWiki({
+      orgId: orgA.orgId,
+      userId: null,
+      owner: OWNER,
+      repo: "structure-transient-retry",
+      defaultBranch: "main",
+      files: baseFiles(),
+      llm: transientLlm,
+    });
+    expect(transientCalls).toBe(2);
+    expect(transient.counts.created).toBe(2);
+
+    let permanentCalls = 0;
+    const permanentLlm: WikiLlm = async () => {
+      permanentCalls += 1;
+      throw new WikiLlmError("openrouter 401: invalid key");
+    };
+    await expect(
+      generateWiki({
+        orgId: orgA.orgId,
+        userId: null,
+        owner: OWNER,
+        repo: "structure-permanent-failure",
+        defaultBranch: "main",
+        files: baseFiles(),
+        llm: permanentLlm,
+      }),
+    ).rejects.toThrow("openrouter 401: invalid key");
+    expect(permanentCalls).toBe(1);
+  });
+
+  test("stops after bounded structure repair attempts", async () => {
+    let structureCalls = 0;
+    const llm: WikiLlm = async () => {
+      structureCalls += 1;
+      return "Still not the required XML.";
+    };
+
+    await expect(
+      generateWiki({
+        orgId: orgA.orgId,
+        userId: null,
+        owner: OWNER,
+        repo: "structure-repair-exhausted",
+        defaultBranch: "main",
+        files: baseFiles(),
+        llm,
+      }),
+    ).rejects.toThrow("No valid <wiki_structure> XML found in response");
+    expect(structureCalls).toBe(3);
   });
 
   test("documents are org-scoped: another org sees nothing", async () => {

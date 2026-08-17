@@ -126,6 +126,13 @@ unproven for the current tree.
 - Knowledge search is read-only and org-scoped.
 - Retrieval is recorded durably on the run as a knowledge event.
 - The gateway also serves the wiki generation flow in `src/wiki-gen/routes.ts`.
+- Wiki structure generation validates the model response with the existing
+  bounded structure parser and performs a bounded repair turn when a
+  probabilistic provider returns prose or malformed XML. A higher-priority
+  system instruction marks repository data as untrusted source material.
+  `WIKI_GEN_STRUCTURE_RETRIES` defaults to `2` and is capped at `5`; release
+  canaries reject any failed wiki page instead of bypassing the generation
+  check.
 
 ### Memory
 
