@@ -680,6 +680,212 @@
     --social-amazon: 0 0% 100%;
     --social-zendesk: 0 0% 100%;
   }
+
+  .harbor {
+    /* -------------------------------------------------------------------
+     * Midnight Harbor - deep blue-slate dark theme.
+     *
+     * A dark-scheme sibling of the Tokyo Night ("Midnight") and Aura ramps,
+     * tuned to a soft-periwinkle accent over a very deep, blue-tinted navy
+     * canvas. Values are translated from an OKLCH reference palette into the
+     * SAME semantic token slots the `.dark`/`.aura` blocks use (canvas ->
+     * bg-white-0, raised -> bg-sub-300, accent -> the blue/primary ramp), so
+     * components keep consuming semantic tokens and never key on a theme name.
+     * The source palette gives canvas == chrome, so the chrome/weak/darkest
+     * steps below canvas are derived to keep the surface ladder monotonic. The
+     * accent (soft periwinkle) is too light for 7:1 white text, so the primary
+     * button base is a deeper blue; the success ramp is a derived harbor teal
+     * (the source had no distinct green). `color-scheme` is pinned dark so
+     * native controls treat Harbor as dark even though the class is not `.dark`.
+     * Hex in comments is the sRGB value each HSL triple encodes.
+     * ------------------------------------------------------------------- */
+    color-scheme: dark;
+    --brand-orbit: 220.80 88.70% 72.36%; /* #7aa2f7 soft periwinkle accent */
+
+    --neutral-0: 0 0% 100%;
+    --neutral-50: 217.48 24.31% 87.06%; /* #d6dce6 text */
+    --neutral-100: 217.68 16.36% 73.22%; /* #b0b8c6 */
+    --neutral-200: 218.58 13.58% 59.61%; /* #8a94a6 muted */
+    --neutral-300: 218.4 11.64% 42.69%; /* #60697a */
+    --neutral-400: 217.83 16.92% 23.08%; /* #313845 stronger border */
+    --neutral-500: 218.47 19.08% 18.04%; /* #252c37 */
+    --neutral-600: 218.48 20.19% 15.55%; /* #202530 */
+    --neutral-700: 216.03 22.33% 13.14%; /* #1a2029 raised */
+    --neutral-800: 220.01 28.96% 6.08%; /* #0b0e14 canvas */
+    --neutral-900: 221.4 36.94% 4.46%; /* #070a10 chrome (derived) */
+    --neutral-950: 223.89 45.61% 2.49%; /* #030509 (derived) */
+
+    --neutral-alpha-24: 218.58 13.58% 59.61% / 24%;
+    --neutral-alpha-16: 218.58 13.58% 59.61% / 16%;
+    --neutral-alpha-10: 218.58 13.58% 59.61% / 10%;
+
+    /* Blue ramp repurposed as the periwinkle accent (primary + information +
+       links + send/loading affordances all read the blue ramp). */
+    --blue-950: 221.68 54.47% 41.22%; /* #3053a2 primary button (deeper for white text) */
+    --blue-900: 221.46 54.88% 25.09%; /* #1d3363 */
+    --blue-800: 221.75 56.97% 33.84%; /* #254387 primary active */
+    --blue-700: 220.91 61.76% 60.78%; /* #5d85d9 */
+    --blue-600: 220.8 88.7% 72.36%; /* #7aa2f7 soft periwinkle */
+    --blue-500: 220.8 88.7% 72.36%; /* #7aa2f7 soft periwinkle */
+    --blue-400: 220.24 99.16% 79.77%; /* #98baff */
+    --blue-300: 219.07 100% 84.73%; /* #b1ccff */
+    --blue-200: 220.36 76.62% 73.1%; /* #86a8ef */
+    --blue-100: 221.68 54.47% 41.22% / 24%;
+    --blue-50: 221.68 54.47% 41.22% / 16%;
+
+    --blue-alpha-24: 221.68 54.47% 41.22% / 24%;
+    --blue-alpha-16: 221.68 54.47% 41.22% / 16%;
+    --blue-alpha-10: 221.68 54.47% 41.22% / 10%;
+
+    --orange-600: 35.62 73.13% 47.48%; /* #d28a21 */
+    --orange-500: 37.73 92.14% 50.13%; /* #f59e0b warning (amber) */
+    --orange-400: 34.28 89.81% 66.24%; /* #f6b45c */
+
+    --orange-alpha-24: 37.73 92.14% 50.13% / 24%;
+    --orange-alpha-16: 37.73 92.14% 50.13% / 16%;
+    --orange-alpha-10: 37.73 92.14% 50.13% / 10%;
+
+    --red-600: 335.8 74.47% 35.29%; /* #9d174d error (deep rose) */
+    --red-500: 339.61 61.14% 51.51%; /* #cf386b */
+    --red-400: 343.3 81.98% 65.54%; /* #ef5f87 */
+
+    --red-alpha-24: 335.8 74.47% 35.29% / 24%;
+    --red-alpha-16: 335.8 74.47% 35.29% / 16%;
+    --red-alpha-10: 335.8 74.47% 35.29% / 10%;
+
+    --green-600: 158.78 54.8% 39.43%; /* #2d9c75 success (derived harbor teal) */
+    --green-500: 157.5 44.62% 49.28%; /* #46b68c */
+    --green-400: 155.94 50.11% 59.48%; /* #64cba2 */
+
+    --green-alpha-24: 157.5 44.62% 49.28% / 24%;
+    --green-alpha-16: 157.5 44.62% 49.28% / 16%;
+    --green-alpha-10: 157.5 44.62% 49.28% / 10%;
+
+    --yellow-600: 37.47 81.46% 46.02%; /* #d58d16 */
+    --yellow-500: 37.73 92.14% 50.13%; /* #f59e0b */
+    --yellow-400: 34.28 89.81% 66.24%; /* #f6b45c */
+
+    --yellow-alpha-24: 37.73 92.14% 50.13% / 24%;
+    --yellow-alpha-16: 37.73 92.14% 50.13% / 16%;
+    --yellow-alpha-10: 37.73 92.14% 50.13% / 10%;
+
+    --purple-600: 268.74 55.39% 67.2%; /* #a97dda */
+    --purple-500: 268.11 74.31% 76.81%; /* #c198f0 feature */
+    --purple-400: 267.41 96.51% 84.64%; /* #d5b2fe */
+
+    --purple-alpha-24: 268.11 74.31% 76.81% / 24%;
+    --purple-alpha-16: 268.11 74.31% 76.81% / 16%;
+    --purple-alpha-10: 268.11 74.31% 76.81% / 10%;
+
+    --sky-600: 190.98 89.63% 38.91%; /* #0a9cbc verified */
+    --sky-500: 191.74 64.81% 52.41%; /* #37b6d4 */
+    --sky-400: 191.85 70.78% 65.27%; /* #68cce5 */
+
+    --sky-alpha-24: 191.74 64.81% 52.41% / 24%;
+    --sky-alpha-16: 191.74 64.81% 52.41% / 16%;
+    --sky-alpha-10: 191.74 64.81% 52.41% / 10%;
+
+    --pink-600: 329.24 62.24% 64.38%; /* #dd6ca6 highlighted */
+    --pink-500: 328.84 92.35% 79.43%; /* #fb9acc secondary pink */
+    --pink-400: 328.84 92.35% 79.43%; /* #fb9acc */
+
+    --pink-alpha-24: 328.84 92.35% 79.43% / 24%;
+    --pink-alpha-16: 328.84 92.35% 79.43% / 16%;
+    --pink-alpha-10: 328.84 92.35% 79.43% / 10%;
+
+    --teal-600: 166.99 55.09% 37.28%; /* #2b937d stable */
+    --teal-500: 162.92 37.59% 50.03%; /* #50af94 */
+    --teal-400: 160.26 44.73% 59.41%; /* #69c6a7 */
+
+    --teal-alpha-24: 162.92 37.59% 50.03% / 24%;
+    --teal-alpha-16: 162.92 37.59% 50.03% / 16%;
+    --teal-alpha-10: 162.92 37.59% 50.03% / 10%;
+
+    --primary-dark: var(--blue-950);
+    --primary-darker: var(--blue-800);
+    --primary-base: var(--blue-950);
+    --primary-alpha-24: var(--blue-alpha-24);
+    --primary-alpha-16: var(--blue-alpha-16);
+    --primary-alpha-10: var(--blue-alpha-10);
+
+    --bg-strong-950: var(--neutral-50);
+    --bg-surface-800: var(--neutral-100);
+    --bg-sub-300: var(--neutral-700);
+    --bg-soft-200: var(--neutral-900);
+    --bg-weak-50: 222.85 39.94% 3.6%; /* #06080d - Harbor muted row */
+    --bg-white-0: var(--neutral-800);
+
+    --text-strong-950: var(--neutral-50);
+    --text-sub-600: var(--neutral-100);
+    --text-soft-400: var(--neutral-200);
+    --text-disabled-300: var(--neutral-300);
+    --text-white-0: var(--neutral-800);
+
+    --stroke-strong-950: var(--neutral-50);
+    --stroke-sub-300: var(--neutral-400);
+    --stroke-soft-200: 217.87 21.36% 17.45%; /* #232a36 - Harbor border */
+    --stroke-white-0: var(--neutral-800);
+
+    --faded-dark: var(--neutral-100);
+    --faded-base: var(--neutral-200);
+    --faded-light: var(--neutral-alpha-24);
+    --faded-lighter: var(--neutral-alpha-16);
+
+    --information-dark: var(--blue-400);
+    --information-base: var(--blue-950);
+    --information-light: var(--blue-alpha-24);
+    --information-lighter: var(--blue-alpha-16);
+
+    --warning-dark: var(--orange-400);
+    --warning-base: var(--orange-500);
+    --warning-light: var(--orange-alpha-24);
+    --warning-lighter: var(--orange-alpha-16);
+
+    --error-dark: var(--red-400);
+    --error-base: var(--red-600);
+    --error-light: var(--red-alpha-24);
+    --error-lighter: var(--red-alpha-16);
+
+    --success-dark: var(--green-400);
+    --success-base: var(--green-600);
+    --success-light: var(--green-alpha-24);
+    --success-lighter: var(--green-alpha-16);
+
+    --away-dark: var(--yellow-400);
+    --away-base: var(--yellow-600);
+    --away-light: var(--yellow-alpha-24);
+    --away-lighter: var(--yellow-alpha-16);
+
+    --feature-dark: var(--purple-400);
+    --feature-base: var(--purple-500);
+    --feature-light: var(--purple-alpha-24);
+    --feature-lighter: var(--purple-alpha-16);
+
+    --verified-dark: var(--sky-400);
+    --verified-base: var(--sky-600);
+    --verified-light: var(--sky-alpha-24);
+    --verified-lighter: var(--sky-alpha-16);
+
+    --highlighted-dark: var(--pink-400);
+    --highlighted-base: var(--pink-600);
+    --highlighted-light: var(--pink-alpha-24);
+    --highlighted-lighter: var(--pink-alpha-16);
+
+    --stable-dark: var(--teal-400);
+    --stable-base: var(--teal-600);
+    --stable-light: var(--teal-alpha-24);
+    --stable-lighter: var(--teal-alpha-16);
+
+    --overlay: 223.89 45.61% 2.49% / 72%; /* #030509 scrim */
+
+    --social-apple: 0 0% 100%;
+    --social-twitter: 0 0% 100%;
+    --social-github: 0 0% 100%;
+    --social-notion: 0 0% 100%;
+    --social-tidal: 0 0% 100%;
+    --social-amazon: 0 0% 100%;
+    --social-zendesk: 0 0% 100%;
+  }
   /*#endregion Colors */
 
   html {
@@ -710,7 +916,8 @@
   }
 
   .dark,
-  .aura {
+  .aura,
+  .harbor {
     --illustration-white-0: var(--neutral-950);
     --illustration-weak-100: var(--neutral-900);
     --illustration-soft-200: var(--neutral-800);
@@ -759,6 +966,10 @@
 .theme-swatch-aura {
   --swatch-canvas: #15141b;
   --swatch-accent: #a277ff;
+}
+.theme-swatch-harbor {
+  --swatch-canvas: #0b0e14;
+  --swatch-accent: #7aa2f7;
 }
 
 /* ===========================================================================
@@ -972,7 +1183,9 @@
 .dark .shiki,
 .dark .shiki span,
 .aura .shiki,
-.aura .shiki span {
+.aura .shiki span,
+.harbor .shiki,
+.harbor .shiki span {
   color: var(--shiki-dark) !important;
   font-style: var(--shiki-dark-font-style) !important;
   font-weight: var(--shiki-dark-font-weight) !important;
