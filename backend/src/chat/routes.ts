@@ -3,10 +3,11 @@ import type { AppEnv } from "../http";
 import { auth } from "../auth";
 import { orgScope } from "../middleware/org";
 import { isMemoryScope, type MemoryScope } from "../memory/scope";
+import { resolveChatProviderCredential } from "../provider-gateway/credentials";
 import { chatModelCatalog } from "./models";
 import { CHAT_SYSTEM_PROMPT } from "./prompt";
 import { retrieveChatContext } from "./retrieve";
-import { chatLlmEnabled, chatModel, streamChat, type ChatMessage } from "./stream";
+import { chatModel, streamChat, type ChatMessage } from "./stream";
 
 /**
  * Lightweight Chat API (#122) - mounted at /api/chat. A NO-SANDBOX conversational
@@ -66,10 +67,6 @@ chatRoutes.get("/models", (c) => c.json(chatModelCatalog()));
 // `no-transform` + `X-Accel-Buffering: no` stop proxies buffering the stream
 // (the same SSE-hygiene the runs `/events` route relies on).
 chatRoutes.post("/", async (c) => {
-  if (!chatLlmEnabled()) {
-    return c.json({ error: "chat is not configured (OPENROUTER_API_KEY)" }, 503);
-  }
-
   let body: { messages?: unknown; model?: unknown; memoryScope?: unknown };
   try {
     body = (await c.req.json()) as typeof body;
@@ -91,6 +88,16 @@ chatRoutes.post("/", async (c) => {
 
   const orgId = c.get("orgId");
   const userId = await authedUserId(c.req.raw.headers);
+
+  // Resolve the OpenRouter credential BYOK-first: a customer's connected key
+  // wins over the house key, so their own quota is spent (and an invalid
+  // customer key surfaces its real error rather than re-billing the house).
+  const resolved = await resolveChatProviderCredential({ orgId, userId });
+  if (!resolved) {
+    return c.json({ error: "chat is not configured (no OpenRouter credential)" }, 503);
+  }
+  console.info(`[chat] org ${orgId} served by ${resolved.source}`);
+
   // Retrieve against the latest user message; the surface is stateless so a
   // synthetic per-org session id stands in for the memory provenance threadId.
   const query = [...messages].reverse().find((m) => m.role === "user")?.content ?? "";
@@ -142,7 +149,7 @@ chatRoutes.post("/", async (c) => {
 
           const system = context.block ? `${CHAT_SYSTEM_PROMPT}\n\n${context.block}` : CHAT_SYSTEM_PROMPT;
           const llmMessages: ChatMessage[] = [{ role: "system", content: system }, ...messages];
-          for await (const delta of streamChat(llmMessages, model, signal)) {
+          for await (const delta of streamChat(llmMessages, model, resolved.value, signal)) {
             if (closed) return;
             sendEvent("delta", { delta });
           }

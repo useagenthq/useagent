@@ -272,14 +272,20 @@ export function createProviderGatewayRoutes(deps: ProviderRouteDeps = {}): Hono 
       upstreamBody = normalizeOpenAIModelForUpstream(run, upstreamBody);
     }
 
-    const credential = await resolveCredential({
+    const resolved = await resolveCredential({
       orgId: claims.orgId,
       userId: run.userId,
       provider: target.provider,
     });
-    if (!credential) {
+    if (!resolved) {
       return c.json({ error: "provider_not_configured" }, 503);
     }
+    const credential = resolved.value;
+    // Non-secret provenance: which identity's key served this turn (source name
+    // only, never material) so usage can be attributed later.
+    console.info(
+      `[provider-gateway] run ${run.id} ${target.provider} served by ${resolved.source}`,
+    );
 
     const auditId = `provider_gateway_${crypto.randomUUID()}`;
     const requestedAt = Date.now();

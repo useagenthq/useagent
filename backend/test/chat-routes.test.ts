@@ -14,13 +14,13 @@ afterEach(() => {
 });
 
 describe("POST /api/chat", () => {
-  test("503 when the chat LLM is unconfigured (no OPENROUTER_API_KEY)", async () => {
+  test("503 when no OpenRouter credential resolves (no customer key, no house key)", async () => {
     const { status, body } = await json("/api/chat", {
       method: "POST",
       body: { messages: [{ role: "user", content: "hi" }] },
     });
     expect(status).toBe(503);
-    expect(body).toMatchObject({ error: expect.stringContaining("OPENROUTER_API_KEY") });
+    expect(body).toMatchObject({ error: expect.stringContaining("OpenRouter credential") });
   });
 
   test("400 on invalid JSON body (configured)", async () => {
