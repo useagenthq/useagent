@@ -6,7 +6,10 @@ import {
   prepareT3ProviderBridge,
   type T3ProviderBridgeLease,
 } from "./t3-provider-bridge";
-import { requestT3Environment } from "./t3-environment-client";
+import {
+  invalidateT3EnvironmentAccess,
+  requestT3Environment,
+} from "./t3-environment-client";
 import { subscribeT3Thread } from "./t3-event-stream";
 import {
   activityStep,
@@ -42,6 +45,7 @@ import {
 } from "./provider-turn";
 import { materializeRunInputs } from "../uploads/materialize";
 import {
+  restartT3Environment,
   T3_CUBE_WARM_POOL_NAME,
   t3FirstActivityTimeoutMs,
   t3NoProgressTimeoutMs,
@@ -320,6 +324,21 @@ export function makeT3Adapter(engine: T3EngineId, driver: ProviderDriver): Engin
           prepareStage("inputs", () => materializeRunInputs(sandbox, ctx.inputFiles)),
         ]);
         await prepareStage("secrets_marker", () => recordSecretsInjected(ctx, secretInjection));
+        // Codex subscription patches its per-run relay config into the sandbox's
+        // T3 settings.json above (provider_bridge). T3 only applies settings via
+        // an asynchronous file-watch reconcile, so a turn dispatched before that
+        // reconcile binds to the pre-reconcile, relay-less codex instance and
+        // falls back to a local, unauthenticated app-server (no first activity).
+        // Restart T3 so it reads the relay config synchronously at boot and builds
+        // the remote instance from the start. Scoped to codex; opencode/claude do
+        // not patch settings and their paths stay unchanged. The no-first-activity
+        // watchdog below remains the net if a restart still races.
+        if (engine === "codex") {
+          await prepareStage("runtime_restart", () =>
+            restartT3Environment(sandbox, ctx.signal),
+          );
+          invalidateT3EnvironmentAccess(sandbox);
+        }
         endPrepare?.();
 
         const endShell = ctx.timing?.begin("t3.shell");

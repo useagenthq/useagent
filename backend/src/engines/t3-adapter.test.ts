@@ -136,6 +136,27 @@ describe("T3 run adapter gate", () => {
     expect(source.split("driver.steer(").length - 1).toBe(1);
   });
 
+  test("restarts T3 for codex so the per-run relay config is read before steering", () => {
+    const source = readFileSync(new URL("./t3-adapter.ts", import.meta.url), "utf8");
+    // Scoped to codex-engine runs only; opencode/claude never patch settings and
+    // must not pay the restart.
+    expect(source).toContain('if (engine === "codex") {');
+    expect(source).toContain("restartT3Environment(sandbox, ctx.signal)");
+    expect(source).toContain("invalidateT3EnvironmentAccess(sandbox)");
+    // Exactly one restart, on the prepare path.
+    expect(source.split("restartT3Environment(").length - 1).toBe(1);
+    // Ordering: restart happens after the provider-bridge settings patch and
+    // before the provider session is established / the turn is steered.
+    const bridgeIdx = source.indexOf("prepareT3ProviderBridge(sandbox, ctx, engine, workdir)");
+    const restartIdx = source.indexOf("restartT3Environment(sandbox, ctx.signal)");
+    const establishIdx = source.indexOf("await establishProviderSession({");
+    const steerIdx = source.indexOf("const steerResult = await driver.steer({");
+    expect(bridgeIdx).toBeGreaterThan(-1);
+    expect(restartIdx).toBeGreaterThan(bridgeIdx);
+    expect(establishIdx).toBeGreaterThan(restartIdx);
+    expect(steerIdx).toBeGreaterThan(establishIdx);
+  });
+
   test("requires durable session persistence before T3 steering", () => {
     const source = readFileSync(new URL("./t3-adapter.ts", import.meta.url), "utf8");
     expect(source).toContain("persistSession: async (nativeSessionId) => {");
