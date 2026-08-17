@@ -60,7 +60,7 @@ import {
   supportsPreSessionModelSelection,
 } from "@/components/chat/types";
 import { shouldRetireOptimistic, useThreadStream } from "@/components/chat/use-thread-stream";
-import { runGitRefs, T3GitChips } from "@/components/t3-ui/git-chip";
+import { runGitRefs, GitChips } from "@/components/session-ui/git-chip";
 import * as SegmentedControl from "@/components/ui/segmented-control";
 import { backendFetch } from "@/lib/backend-fetch";
 import { cnExt as cn } from "@/utils/cn";
@@ -640,7 +640,7 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
           {/* The thread's git identity: repos (+ chosen branch) come from the
               ROOT run's durable wire row - repos are inherited across a thread,
               so the SSR-provided root is authoritative for the page lifetime. */}
-          <T3GitChips refs={runGitRefs(root)} />
+          <GitChips refs={runGitRefs(root)} />
         </div>
         <div className="flex items-center gap-3">
           <StatusPill status={threadStatus} />

@@ -92,7 +92,7 @@ test("queued turns render the T3 queued pill with honest FIFO positions", () => 
     { sendNowFor: "run-q1", onSendNow: () => {} },
   );
 
-  expect(html).toContain('data-t3-ui="queued-message-pill"');
+  expect(html).toContain('data-session-ui="queued-message-pill"');
   expect(html).toContain("Queued - sends after the current run");
   expect(html).toContain("Queued #2 - 1 reply ahead");
   // Send now steers ONLY the head queued turn (queue order preserved).
@@ -109,18 +109,18 @@ test("running thread threads runStartedAt into the composer status pill", () => 
     runStartedAt: startedAt,
   });
 
-  expect(html).toContain('data-t3-ui="background-status-pill"');
+  expect(html).toContain('data-session-ui="background-status-pill"');
   // The elapsed timer rendered from the provided start time (65s ago).
   expect(html).toContain("1m 5s");
 });
 
 test("settled answers carry the hover copy affordance; live turns do not", () => {
   const settled = render([makeTurn("run-settled", "completed", [])]);
-  expect(settled).toContain('data-t3-ui="message-copy-button"');
+  expect(settled).toContain('data-session-ui="message-copy-button"');
   expect(settled).toContain('aria-label="Copy message"');
 
   const live = render([makeTurn("run-live", "running", liveEvents())]);
-  expect(live).not.toContain('data-t3-ui="message-copy-button"');
+  expect(live).not.toContain('data-session-ui="message-copy-button"');
 });
 
 test("image artifacts get the click-to-expand affordance; other artifacts do not", () => {

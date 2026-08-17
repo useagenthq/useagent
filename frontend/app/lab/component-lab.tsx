@@ -41,7 +41,7 @@ import { AgentUiShowcase } from "./agent-ui-showcase";
 import { ARTIFACT_CAPABILITY_ROWS } from "./artifact-capability-matrix";
 import { BeautifulUiExtras } from "./beautiful-ui-extras";
 import { BeuiAgentInventory } from "./beui-agent-inventory";
-import { T3TimelineShowcase } from "./t3-timeline-showcase";
+import { TimelineShowcase } from "./session-ui-showcase";
 
 function Section({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -97,8 +97,8 @@ export function ComponentLab() {
         <AgentUiShowcase />
         <BeuiAgentInventory />
 
-        <Section label="T3 timeline grammar - vendored chat presentation (components/t3-ui)">
-          <T3TimelineShowcase />
+        <Section label="T3 timeline grammar - vendored chat presentation (components/session-ui)">
+          <TimelineShowcase />
         </Section>
 
         {/* Buttons */}

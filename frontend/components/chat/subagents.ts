@@ -76,7 +76,7 @@ export type Attribution =
 const UNATTRIBUTED: Attribution = { kind: "none" };
 const NESTED_MARKER = /^↳\s*/;
 
-const isT3TaskLifecycle = (step: ApiStep): boolean => {
+const isTaskLifecycle = (step: ApiStep): boolean => {
   const code = asRecord(parseStepCode(step));
   return (
     readString(code?.source) === "t3" &&
@@ -130,7 +130,7 @@ export function attribute(
   if (native) {
     const owner =
       (native.sessionID ? byChildSession.get(native.sessionID) : undefined) ??
-      (native.callID && isT3TaskLifecycle(step) ? byCallId.get(native.callID) : undefined);
+      (native.callID && isTaskLifecycle(step) ? byCallId.get(native.callID) : undefined);
     return owner ? { kind: "native", card: owner } : UNATTRIBUTED;
   }
   if (NESTED_MARKER.test(step.label ?? "")) {

@@ -29,9 +29,9 @@ import {
 import { type EngineId, engineLabel, type MemoryScope } from "@/components/chat/types";
 import { Loader } from "@/components/prompt-kit/loader";
 import { PromptInput, PromptInputTextarea } from "@/components/prompt-kit/prompt-input";
-import { T3BackgroundStatusPill } from "@/components/t3-ui/background-status-pill";
-import { T3ProviderStatusBanner } from "@/components/t3-ui/provider-status-banner";
-import { T3ThreadErrorBanner } from "@/components/t3-ui/thread-error-banner";
+import { BackgroundStatusPill } from "@/components/session-ui/background-status-pill";
+import { ProviderStatusBanner } from "@/components/session-ui/provider-status-banner";
+import { ThreadErrorBanner } from "@/components/session-ui/thread-error-banner";
 import { cnExt as cn } from "@/utils/cn";
 
 type Variant = "hero" | "compact";
@@ -454,11 +454,11 @@ export function Composer({
       {(threadError || engineUnavailable || (running && onStop)) && (
         <div className="mb-1.5 flex flex-col gap-1.5">
           {threadError && (
-            <T3ThreadErrorBanner error={threadError} onDismiss={onDismissThreadError} />
+            <ThreadErrorBanner error={threadError} onDismiss={onDismissThreadError} />
           )}
-          {engineUnavailable && <T3ProviderStatusBanner engineLabel={engineLabel(engine)} />}
+          {engineUnavailable && <ProviderStatusBanner engineLabel={engineLabel(engine)} />}
           {running && onStop && (
-            <T3BackgroundStatusPill
+            <BackgroundStatusPill
               label="Run in progress"
               startedAt={runStartedAt}
               onStop={onStop}
