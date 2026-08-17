@@ -62,6 +62,25 @@ body
     expect(c.description).toBe("single quoted");
   });
 
+  test("folded and literal block-scalar frontmatter values are read, not taken literally", () => {
+    const raw = `---
+name: access-chase
+description: >-
+  Chase down access requests
+  across every system: fast.
+notes: |-
+  line one
+  line two
+---
+body
+`;
+    const c = parseSkillMarkdown(raw, "fb");
+    expect(c.name).toBe("access-chase");
+    // Folded (>) joins continuation lines with spaces; the colon inside the
+    // continuation must not be mistaken for a new key.
+    expect(c.description).toBe("Chase down access requests across every system: fast.");
+  });
+
   test("non-canonical ## sections fold into Overview, keeping their label", () => {
     const raw = `---
 name: X

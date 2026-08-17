@@ -76,12 +76,31 @@ function splitFrontmatter(raw: string): {
   if (closeIdx === -1) return { frontmatter: {}, body: raw };
 
   const frontmatter: Record<string, string> = {};
-  for (const line of lines.slice(1, closeIdx)) {
+  const fmLines = lines.slice(1, closeIdx);
+  for (let i = 0; i < fmLines.length; i++) {
+    const line = fmLines[i]!;
+    // Indented lines are block-scalar continuations consumed below, never keys.
+    if (!line.trim() || /^\s/.test(line)) continue;
     const sep = line.indexOf(":");
     if (sep === -1) continue;
     const key = line.slice(0, sep).trim().toLowerCase();
-    const value = line.slice(sep + 1).trim().replace(/^["']|["']$/g, "");
-    if (key) frontmatter[key] = value;
+    if (!key) continue;
+    let value = line.slice(sep + 1).trim();
+    const block = /^([>|])[+-]?$/.exec(value);
+    if (block) {
+      // YAML block scalar: gather the indented lines; fold (`>`) joins with
+      // spaces, literal (`|`) keeps line breaks.
+      const parts: string[] = [];
+      while (i + 1 < fmLines.length && (!fmLines[i + 1]!.trim() || /^\s/.test(fmLines[i + 1]!))) {
+        i++;
+        const t = fmLines[i]!.trim();
+        if (t) parts.push(t);
+      }
+      value = parts.join(block[1] === ">" ? " " : "\n");
+    } else {
+      value = value.replace(/^["']|["']$/g, "");
+    }
+    frontmatter[key] = value;
   }
   return { frontmatter, body: lines.slice(closeIdx + 1).join("\n") };
 }
