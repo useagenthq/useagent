@@ -25,9 +25,11 @@ const FETCH_TIMEOUT_MS = 8_000;
 /** SKILL.md files above this are skipped, never imported (guards against a huge
  *  file blowing up a revision row / the injected context). */
 export const MAX_SKILL_BYTES = 64 * 1024;
-/** Upper bound on how many SKILL.md files one scan reads — a repo with more is
- *  reported `truncated` rather than fanning out an unbounded number of blob GETs. */
-const MAX_CANDIDATES = 100;
+/** Upper bound on how many SKILL.md files one scan reads. Reads come from a
+ *  local shallow clone (cheap disk I/O, not per-file API calls), so this only
+ *  bounds the response payload; a repo with more is reported `truncated`.
+ *  Sized above the largest real skill repo (120+) with headroom. */
+const MAX_CANDIDATES = 500;
 
 /** One discovered SKILL.md. `text` is null when the file is over the size cap
  *  (still surfaced so the caller can report the skip honestly). */
