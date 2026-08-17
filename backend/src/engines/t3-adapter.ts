@@ -15,6 +15,7 @@ import { subscribeT3Thread } from "./t3-event-stream";
 import {
   activityStep,
   assistantText,
+  hasOpenT3ToolCall,
   t3ActivityProviderEvent,
   t3ActivityRevision,
   t3ActivityStepKey,
@@ -214,9 +215,19 @@ async function waitForT3Turn(
   // (only runtime.warning activities, no tool/text progress) must terminate
   // the run with the real provider reason instead of running forever.
   const watchdog = createNoProgressWatchdog(t3NoProgressTimeoutMs(), redact.text);
+  // A long-running tool emits no new activity revisions while it executes, so
+  // the event stream goes silent even though the turn is making real progress.
+  // While the latest snapshot shows an open tool call, tick the watchdog on a
+  // timer; provider stalls (no tool running, no text) stay fully guarded.
+  let toolInFlight = false;
+  const toolHeartbeat = setInterval(() => {
+    if (toolInFlight) watchdog.observeProgress();
+  }, 15_000);
+  toolHeartbeat.unref?.();
   let publishedText = "";
   let finalText = "";
   const applySnapshot = async (snapshot: T3ThreadSnapshot): Promise<boolean> => {
+    toolInFlight = hasOpenT3ToolCall(snapshot.thread.activities);
     for (const activity of snapshot.thread.activities) {
       const revision = t3ActivityRevision(activity);
       if (activityRevisions.get(activity.id) === revision) continue;
@@ -270,6 +281,7 @@ async function waitForT3Turn(
       },
     );
   } finally {
+    clearInterval(toolHeartbeat);
     watchdog.dispose();
   }
   if (watchdog.signal.aborted) throw watchdog.signal.reason;

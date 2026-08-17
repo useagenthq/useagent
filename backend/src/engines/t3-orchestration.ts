@@ -151,6 +151,29 @@ export function t3ActivityStepKey(activity: T3Activity): string {
   return toolCallId ? `tool:${toolCallId}` : `activity:${activity.id}`;
 }
 
+/**
+ * Is any provider tool call still in flight? A call is open when its latest
+ * lifecycle revision (tool.started / tool.updated) has no later terminal
+ * revision (tool.completed / tool.denied, or an error tone) for the same call
+ * id. A long-running tool emits NO new activity revisions while it executes,
+ * so the turn watchdog must treat an open call as real progress instead of
+ * timing out a healthy install or build as "no provider activity".
+ */
+export function hasOpenT3ToolCall(activities: readonly T3Activity[]): boolean {
+  const latestKindByCall = new Map<string, T3Activity>();
+  for (const activity of activities) {
+    if (!activity.kind.startsWith("tool.")) continue;
+    const key = t3ToolCallId(activity) ?? activity.id;
+    latestKindByCall.set(key, activity);
+  }
+  for (const activity of latestKindByCall.values()) {
+    if (activity.tone === "error") continue;
+    if (activity.kind === "tool.completed" || activity.kind === "tool.denied") continue;
+    return true;
+  }
+  return false;
+}
+
 /** T3 emits provider collaboration wrappers in addition to the authoritative
  * task lifecycle for providers with native child-agent events. OpenCode may
  * expose only the collaboration tool lifecycle, so retain that row unless a
