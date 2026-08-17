@@ -1,6 +1,6 @@
+import { OrbitKnotMark } from "@/components/foundations/brand/orbit-knot-mark";
 import type { Metadata } from "next";
 import Link from "next/link";
-import { AsteriskMark } from "@/components/foundations/brand/asterisk-mark";
 import { type DotTone, StatusDot } from "@/components/shared/status-dot";
 import { AppShell } from "@/components/shell/app-shell";
 import { ThreadSidebar } from "@/components/shell/thread-sidebar";
@@ -87,7 +87,7 @@ export default async function NewTaskPage({
       <div className="flex min-h-full flex-col items-center px-4 sm:px-6">
         <div className="w-full max-w-2xl py-10 sm:py-14">
           <div className="flex flex-col items-center gap-3 text-center">
-            <AsteriskMark className="size-6 text-text-strong-950" />
+            <OrbitKnotMark className="size-7" />
             <p className="text-mono-label text-text-soft-400">New thread</p>
             <h1 className="text-display-md text-text-strong-950">What should Skynet do?</h1>
           </div>

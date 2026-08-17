@@ -27,7 +27,7 @@ import type { PendingQuestion } from "@/components/chat/question-state";
 import type { SlashCommand } from "@/components/chat/slash-command";
 import { buildTimeline, hasNarration, type TimelineNode } from "@/components/chat/timeline";
 import { MarkerRow } from "@/components/chat/tool-step-row";
-import { AsteriskMark } from "@/components/foundations/brand/asterisk-mark";
+import { OrbitKnotMark } from "@/components/foundations/brand/orbit-knot-mark";
 import { Markdown } from "@/components/prompt-kit/markdown";
 import { segmentTimelineForT3, workEntriesFromTimeline } from "@/components/t3-ui/adapter";
 import { T3ExpandedImageDialog } from "@/components/t3-ui/expanded-image-dialog";
@@ -464,7 +464,7 @@ function TurnBlock({
       <div className="group/turn space-y-3">
         <div className="flex items-center gap-2">
           <span className="ring-stroke-soft-200 bg-bg-weak-50 flex size-5 shrink-0 items-center justify-center rounded-full ring-1 ring-inset">
-            <AsteriskMark className="text-text-strong-950 size-3" />
+            <OrbitKnotMark className="size-3.5" />
           </span>
           <span className="text-label-sm text-text-strong-950">Skynet</span>
           <span className="text-mono-label text-text-soft-400">{engineLabel(run.engine)}</span>
