@@ -48,6 +48,57 @@ describe("engine readiness advertisement", () => {
     })).toMatchObject({ ready: true, reason: "enabled" });
   });
 
+  test("subscription-backed Codex requires engine proof but not an API-key provider", () => {
+    const env = {
+      ...PROD,
+      ENABLED_ENGINES: "codex",
+      ENGINE_READINESS_CODEX: "verified",
+      ENGINE_AUTH_MODE_CODEX: "subscription",
+    };
+
+    expect(engineReadiness("codex", env)).toMatchObject({
+      ready: true,
+      reason: "enabled",
+    });
+    expect(modelProviderReadyForEngine("codex", "gpt-5.6-sol", env)).toBe(true);
+    expect(engineModelReadyForDispatch("codex", "gpt-5.6-sol", env)).toBe(true);
+  });
+
+  test("hybrid and provider-gateway Codex retain paid-provider readiness", () => {
+    const base = {
+      ...PROD,
+      ENABLED_ENGINES: "codex",
+      ENGINE_READINESS_CODEX: "verified",
+    };
+
+    expect(engineReadiness("codex", { ...base, ENGINE_AUTH_MODE_CODEX: "hybrid" }))
+      .toMatchObject({ ready: false, reason: "not_proven" });
+    expect(engineReadiness("codex", {
+      ...base,
+      ENGINE_AUTH_MODE_CODEX: "provider_gateway",
+    })).toMatchObject({ ready: false, reason: "not_proven" });
+  });
+
+  test("unknown or inapplicable auth modes fail closed", () => {
+    const proven = {
+      ...PROD,
+      ENABLED_ENGINES: "codex,opencode",
+      ENGINE_READINESS_CODEX: "verified",
+      ENGINE_READINESS_OPENCODE: "verified",
+      PROVIDER_HEALTH_OPENAI: "verified",
+      PROVIDER_HEALTH_OPENROUTER: "verified",
+    };
+
+    expect(engineReadiness("codex", {
+      ...proven,
+      ENGINE_AUTH_MODE_CODEX: "mystery",
+    })).toMatchObject({ ready: false, reason: "not_proven" });
+    expect(engineReadiness("opencode", {
+      ...proven,
+      ENGINE_AUTH_MODE_OPENCODE: "subscription",
+    })).toMatchObject({ ready: false, reason: "not_proven" });
+  });
+
   test("provider health failure removes a previously ready engine", () => {
     const env = {
       ...PROD,

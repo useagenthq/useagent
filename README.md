@@ -109,7 +109,7 @@ bun run release:hosted
 - Direct chat is implemented as a no-sandbox surface with read-only retrieval.
 - Agent runs are implemented as threaded sessions backed by sandboxes and streamed events.
 - Production turn dispatch enters the provider registry first. Native OpenCode and selected T3 turns receive a concrete `ProviderDriver`; legacy ACP execution remains an explicit compatibility branch.
-- User API keys are resolved inside the signed provider gateway. Managed Codex subscription turns use a separate host-owned app-server relay and never copy OAuth state into T3 or a sandbox. Local protocol and isolation tests are green; hosted subscription execution remains a release-gated proof.
+- User API keys are resolved inside the signed provider gateway. Managed Codex subscription turns use a separate host-owned app-server relay and never copy OAuth state into T3 or a sandbox. Engine readiness is credential-mode-aware: a subscription-only Codex release must prove the connected account and native turn path, while API-key engines must prove their mapped gateway provider. Local protocol, isolation, and release-policy tests are green; hosted subscription execution remains a release-gated proof.
 - Skills and playbooks share one immutable substrate.
 - Wiki, artifacts, secrets, review, automations, uploads, and memory all have real UI and backend paths.
 - Ambient management updates, including Automations and Provider Connections, use one authenticated org SSE stream backed by an in-process event bus. It is a live-only invalidation channel, not event replay or distributed pub/sub; subscribed views refetch their authoritative APIs after an event arrives.

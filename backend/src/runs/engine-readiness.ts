@@ -5,6 +5,7 @@ import {
   isModelAllowedForEngine,
 } from "./model-policy";
 import { providerForEngine, type ProviderId } from "../provider-gateway/provider";
+import { engineAuthMode, engineUsesProviderGateway } from "./engine-auth-mode";
 
 export const USER_FACING_ENGINES = ["opencode", "claude", "codex"] as const;
 export type UserFacingEngineId = (typeof USER_FACING_ENGINES)[number];
@@ -96,6 +97,8 @@ export function modelProviderReadyForEngine(
   model: string,
   env: Record<string, string | undefined> = process.env,
 ): boolean {
+  if (engineAuthMode(engine, env) === null) return false;
+  if (!engineUsesProviderGateway(engine, env)) return true;
   const provider = providerForEngine(engine, model);
   return provider === null || providerHealthStatus(provider, env) === "ready";
 }
@@ -131,7 +134,13 @@ export function engineReadiness(
     return { engine, ready: false, reason: "not_proven" };
   }
 
-  const provider = providerForDefaultEngineModel(engine, env);
+  if (engineAuthMode(engine, env) === null) {
+    return { engine, ready: false, reason: "not_proven" };
+  }
+
+  const provider = engineUsesProviderGateway(engine, env)
+    ? providerForDefaultEngineModel(engine, env)
+    : null;
   if (provider) {
     const status = providerHealthStatus(provider, env);
     if (status !== "ready") {
