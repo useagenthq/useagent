@@ -1,5 +1,8 @@
 import { describe, expect, test } from "bun:test";
-import { childElapsedMs, childStatusLabel } from "./agents-rail";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { AgentsRail, childElapsedMs, childStatusLabel } from "./agents-rail";
+import type { CanonicalChildEventLike } from "./canonical-children";
 import type { SubagentCard } from "./subagents";
 
 describe("agents rail child state labels", () => {
@@ -26,5 +29,42 @@ describe("agents rail child state labels", () => {
 
     expect(childElapsedMs(card, 10_000, false, 1_234)).toBe(1_234);
     expect(childElapsedMs(card, 10_000, false, null)).toBeNull();
+  });
+});
+
+describe("agents rail rows", () => {
+  test("renders canonical children through the T3 fleet row with activity and usage", () => {
+    const events: readonly CanonicalChildEventLike[] = [
+      {
+        kind: "child.started",
+        seq: 1,
+        ts: Date.now() - 5_000,
+        childId: "child-1",
+        launchToolCallId: "call-1",
+        title: "Research checkout",
+        state: { status: "running", summary: "Scanning the repo" },
+      },
+      {
+        kind: "child.updated",
+        seq: 2,
+        ts: Date.now() - 1_000,
+        childId: "child-1",
+        state: {
+          status: "running",
+          summary: "Reading checkout files",
+          lastToolName: "bash",
+          usage: { totalTokens: 41200 },
+        },
+      },
+    ];
+
+    const html = renderToStaticMarkup(
+      createElement(AgentsRail, { steps: [], live: true, canonicalEvents: events }),
+    );
+    expect(html).toContain('data-t3-ui="agent-panel-row"');
+    expect(html).toContain('data-testid="subagent-card"');
+    expect(html).toContain("Open subagent: Research checkout");
+    expect(html).toContain("Reading checkout files");
+    expect(html).toContain("41.2k tok");
   });
 });

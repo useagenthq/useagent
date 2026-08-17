@@ -2,7 +2,6 @@
 
 import {
   RiArrowLeftLine,
-  RiArrowRightSLine,
   RiCheckLine,
   RiErrorWarningLine,
   RiRobot2Line,
@@ -24,12 +23,15 @@ import {
 import { deriveSubagents, type SubagentCard } from "@/components/chat/subagents";
 import { ToolStepRow } from "@/components/chat/tool-step-row";
 import { type ApiStep, deriveTrace, formatDuration } from "@/components/chat/types";
+import { formatSubagentTokenCount, T3AgentPanelRow } from "@/components/t3-ui/agent-panel-row";
 import { cnExt as cn } from "@/utils/cn";
 
 /**
  * The right-rail "Agents" tab: one card per fanned-out subagent, mirroring
- * the reference tool's session view. Each card shows the subagent's description, a live status
- * line, an elapsed timer, and — crucially — its OWN run-state.
+ * the reference tool's session view. Each card renders through the vendored T3 fleet row
+ * (`t3-ui/agent-panel-row`): status dot, current/last activity line, elapsed,
+ * token usage when known, result preview once settled — and, crucially, its OWN
+ * run-state.
  *
  * Cards + nested activity are derived from the ordered step stream via
  * `deriveSubagents` (native child-session attribution, not display order). Each
@@ -111,9 +113,6 @@ export const childStatusLabel = (status: ChildStatus, resumable: boolean | null 
 type RailChildFidelity = ChildFidelity &
   Partial<Pick<CanonicalChildFidelity, "model" | "role" | "resumable">>;
 
-const compactCount = (value: number): string =>
-  new Intl.NumberFormat("en", { notation: "compact", maximumFractionDigits: 1 }).format(value);
-
 function fidelityFor(
   card: SubagentCard,
   fidelity: ReadonlyMap<string, RailChildFidelity>,
@@ -157,48 +156,24 @@ function AgentCardRow({
   const live = isChildActive(status);
   const now = useNow(live);
   const elapsed = childElapsedMs(card, now, live, fidelity?.usage?.durationMs ?? null);
-  const statusLine =
-    fidelity?.progress ?? card.status ?? childStatusLabel(status, fidelity?.resumable ?? null);
 
   return (
-    <button
-      type="button"
-      onClick={onOpen}
-      data-testid="subagent-card"
-      aria-label={`Open subagent: ${card.title}`}
-      className="bg-bg-weak-50 border-stroke-soft-200 hover:bg-bg-soft-200 animate-ai-fade-up flex w-full items-start gap-2.5 rounded-xl border p-3 text-left transition-colors"
-    >
-      <span className="bg-feature-lighter text-feature-base mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-lg">
-        <RiRobot2Line className="size-3.5" aria-hidden />
-      </span>
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2">
-          <span className="text-label-sm text-text-strong-950 min-w-0 flex-1 truncate">
-            {card.title}
-          </span>
-          <ChildStateDot status={status} />
-        </div>
-        <div className="mt-1 flex items-center gap-2">
-          <span
-            className={cn(
-              "text-paragraph-xs min-w-0 flex-1 truncate",
-              status === "failed" ? "text-error-base" : "text-text-sub-600",
-              live && card.status && "agent-progress-loading-text",
-            )}
-          >
-            {statusLine}
-          </span>
-          {(fidelity?.usage || elapsed !== null) && (
-            <span className="text-text-soft-400 shrink-0 font-mono text-label-xs tabular-nums">
-              {fidelity?.usage ? `${compactCount(fidelity.usage.totalTokens)} tok` : ""}
-              {fidelity?.usage && elapsed !== null ? " · " : ""}
-              {elapsed !== null ? formatDuration(elapsed) : ""}
-            </span>
-          )}
-        </div>
-      </div>
-      <RiArrowRightSLine className="text-text-soft-400 size-4 shrink-0 self-center" aria-hidden />
-    </button>
+    <T3AgentPanelRow
+      agent={{
+        title: card.title,
+        role: fidelity?.role ?? null,
+        model: fidelity?.model ?? null,
+        status,
+        statusLabel: childStatusLabel(status, fidelity?.resumable ?? null),
+        progress: fidelity?.progress ?? null,
+        lastToolName: fidelity?.lastToolName ?? null,
+        lastStepLabel: card.status,
+        result: fidelity?.resultText ?? null,
+        usage: fidelity?.usage ?? null,
+        elapsed: elapsed !== null ? formatDuration(elapsed) : null,
+      }}
+      onOpen={onOpen}
+    />
   );
 }
 
@@ -305,7 +280,9 @@ function AgentDetail({
           fidelity?.resumable != null) && (
           <div className="text-mono-label text-text-soft-400 flex flex-wrap gap-x-3 gap-y-1">
             {fidelity.lastToolName && <span>Last tool: {fidelity.lastToolName}</span>}
-            {fidelity.usage && <span>{compactCount(fidelity.usage.totalTokens)} tokens</span>}
+            {fidelity.usage && (
+              <span>{formatSubagentTokenCount(fidelity.usage.totalTokens)} tokens</span>
+            )}
             {fidelity?.usage?.toolUses !== undefined && (
               <span>{fidelity.usage.toolUses} tool uses</span>
             )}
