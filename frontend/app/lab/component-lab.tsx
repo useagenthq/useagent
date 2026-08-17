@@ -40,6 +40,8 @@ import * as Table from "@/components/ui/table";
 import { AgentUiShowcase } from "./agent-ui-showcase";
 import { ARTIFACT_CAPABILITY_ROWS } from "./artifact-capability-matrix";
 import { BeautifulUiExtras } from "./beautiful-ui-extras";
+import { BeuiAgentInventory } from "./beui-agent-inventory";
+import { T3TimelineShowcase } from "./t3-timeline-showcase";
 
 function Section({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -93,6 +95,11 @@ export function ComponentLab() {
         </div>
 
         <AgentUiShowcase />
+        <BeuiAgentInventory />
+
+        <Section label="T3 timeline grammar - vendored chat presentation (components/t3-ui)">
+          <T3TimelineShowcase />
+        </Section>
 
         {/* Buttons */}
         <Section label="Button - variants, modes & sizes">
