@@ -19,7 +19,7 @@ export type ThreadSidebarActive = "new" | "projects" | "usage" | "library" | "se
 
 function ThreadSidebarFooter({ active }: { active?: ThreadSidebarActive }) {
   return (
-    <nav aria-label="Workspace utilities" className="border-t border-stroke-soft-200 p-3">
+    <nav aria-label="Workspace utilities" className="p-3">
       <SidebarNavItem
         href="/settings#usage"
         icon={RiBarChartBoxLine}
@@ -38,9 +38,9 @@ function ThreadSidebarFooter({ active }: { active?: ThreadSidebarActive }) {
         label="Settings"
         active={active === "settings"}
       />
-      <div className="mt-2 flex items-center gap-1 px-2">
-        <ThemeToggle />
+      <div className="mt-2 flex items-center justify-between px-2">
         <UserMenu />
+        <ThemeToggle />
       </div>
     </nav>
   );

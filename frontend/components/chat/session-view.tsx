@@ -629,7 +629,7 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
   return (
     <div className="flex h-full flex-col">
       {/* Compact thread bar. Brand and search belong to the collapsible sidebar. */}
-      <div className="border-stroke-soft-200 bg-bg-white-0 flex shrink-0 items-center justify-between gap-3 border-b px-4 py-2">
+      <div className="bg-bg-white-0 flex shrink-0 items-center justify-between gap-3 px-4 py-2">
         <span className="text-mono-label text-text-soft-400">Session</span>
         <div className="flex items-center gap-3">
           <StatusPill status={threadStatus} />
@@ -660,7 +660,7 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
         <section
           aria-hidden={railExpanded}
           className={cn(
-            "border-stroke-soft-200 bg-bg-white-0 relative flex min-h-[60vh] min-w-0 flex-1 flex-col overflow-hidden border-r md:min-h-0",
+            "bg-bg-white-0 relative flex min-h-[60vh] min-w-0 flex-1 flex-col overflow-hidden md:min-h-0",
             railExpanded && "hidden",
           )}
         >
@@ -747,13 +747,13 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
                 : undefined
             }
             className={cn(
-              "border-stroke-soft-200 bg-bg-white-0 flex min-h-[50vh] min-w-0 flex-col overflow-hidden border-l transition-[width] md:min-h-0",
+              "bg-bg-white-0 flex min-h-[50vh] min-w-0 flex-col overflow-hidden transition-[width] md:min-h-0",
               railExpanded
                 ? "flex-1 md:w-auto"
                 : cn("md:shrink-0", railWidth !== null ? "md:w-[var(--rail-w)]" : "md:w-[360px]"),
             )}
           >
-            <div className="border-stroke-soft-200 flex shrink-0 items-center gap-2 border-b p-2">
+            <div className="border-stroke-soft-200/50 flex shrink-0 items-center gap-2 border-b p-2">
               <SegmentedControl.Root
                 className="flex-1"
                 value={railTab ?? ""}

@@ -1,22 +1,22 @@
 "use client";
 
-import { memo, useState } from "react";
 import {
+  type RemixiconComponentType,
   RiArrowDownSLine,
   RiBookMarkedLine,
   RiBookOpenLine,
-  RiCheckboxCircleFill,
   RiCheckboxBlankCircleLine,
+  RiCheckboxCircleFill,
   RiCheckLine,
   RiCloseLine,
   RiDatabase2Line,
   RiErrorWarningLine,
   RiFileAddLine,
-  RiFlashlightLine,
   RiFileCodeLine,
   RiFileEditLine,
   RiFileLine,
   RiFileTextLine,
+  RiFlashlightLine,
   RiGlobalLine,
   RiImageLine,
   RiIndeterminateCircleLine,
@@ -28,21 +28,21 @@ import {
   RiServerLine,
   RiSparkling2Line,
   RiTerminalLine,
-  type RemixiconComponentType,
 } from "@remixicon/react";
-import { cnExt as cn } from "@/utils/cn";
+import { memo, useState } from "react";
+import type { TimelineMarker } from "@/components/chat/timeline";
 import {
+  type ApiStep,
   deriveTrace,
+  type FileChangeKind,
   formatDuration,
   parseTodos,
-  type ApiStep,
-  type FileChangeKind,
   type StepTrace,
   type TodoItem,
   type TodoStatus,
   type TraceGlyph,
 } from "@/components/chat/types";
-import type { TimelineMarker } from "@/components/chat/timeline";
+import { cnExt as cn } from "@/utils/cn";
 
 type RowState = "running" | "done";
 
@@ -75,12 +75,7 @@ export const ToolStepRow = memo(function ToolStepRow({
   const todos = parseTodos(step);
   if (todos) return <TodoList todos={todos} nested={nested} />;
   const trace = deriveTrace(step);
-  return (
-    <TraceRow
-      trace={nested === undefined ? trace : { ...trace, nested }}
-      state={state}
-    />
-  );
+  return <TraceRow trace={nested === undefined ? trace : { ...trace, nested }} state={state} />;
 });
 
 // ── Canonical context markers (skill.loaded / context.retrieved) ─────────────
@@ -136,7 +131,13 @@ function markerView(marker: TimelineMarker): {
       return { Icon: RiDatabase2Line, verb: "Updated", target: pool, badge: null, error: false };
     }
     if (marker.op === "forget") {
-      return { Icon: RiDatabase2Line, verb: "Forgot", target: `from ${pool}`, badge: null, error: false };
+      return {
+        Icon: RiDatabase2Line,
+        verb: "Forgot",
+        target: `from ${pool}`,
+        badge: null,
+        error: false,
+      };
     }
     // remember: L0 write is durable + searchable now; L1 distillation is async
     // and unobserved during the turn, so "indexing" is the terminal badge.
@@ -278,13 +279,13 @@ function TraceRow({ trace, state }: { trace: StepTrace; state: RowState }) {
   const head = (
     <>
       {subagent ? (
-        <span className="bg-feature-lighter text-feature-base flex size-5 shrink-0 items-center justify-center rounded-md">
-          <Icon className="size-3.5" aria-hidden />
+        <span className="bg-feature-lighter text-feature-base flex size-4.5 shrink-0 items-center justify-center rounded-md">
+          <Icon className="size-3" aria-hidden />
         </span>
       ) : (
         <Icon
           className={cn(
-            "size-4 shrink-0",
+            "size-3.5 shrink-0",
             trace.isError
               ? "text-error-base"
               : trace.accent === "boot"
@@ -300,7 +301,7 @@ function TraceRow({ trace, state }: { trace: StepTrace; state: RowState }) {
       <span className="min-w-0 flex-1 truncate">
         <span
           className={cn(
-            "text-label-sm font-medium",
+            "text-label-xs font-medium",
             subagent ? "text-feature-base" : "text-text-strong-950",
           )}
         >
@@ -311,8 +312,8 @@ function TraceRow({ trace, state }: { trace: StepTrace; state: RowState }) {
             className={cn(
               "ml-1.5",
               trace.monoTarget
-                ? "text-text-sub-600 font-mono text-label-xs"
-                : "text-text-sub-600 text-label-sm",
+                ? "text-text-sub-600 font-mono text-[11px]"
+                : "text-text-sub-600 text-paragraph-xs",
             )}
           >
             {trace.target}
@@ -363,12 +364,12 @@ function TraceRow({ trace, state }: { trace: StepTrace; state: RowState }) {
           type="button"
           aria-expanded={open}
           onClick={() => setOpen((o) => !o)}
-          className="hover:bg-bg-weak-50 flex w-full items-center gap-2 rounded-lg px-1.5 py-1 text-left transition-colors"
+          className="hover:bg-bg-weak-50 flex w-full items-center gap-1.5 rounded-md px-1.5 py-0.5 text-left transition-colors"
         >
           {head}
         </button>
       ) : (
-        <div className="flex items-center gap-2 px-1.5 py-1">{head}</div>
+        <div className="flex items-center gap-1.5 px-1.5 py-0.5">{head}</div>
       )}
 
       {expandable && open && trace.detail && (
@@ -409,10 +410,7 @@ function TodoList({ todos, nested }: { todos: TodoItem[]; nested?: boolean }) {
   return (
     <div
       data-testid="todo-list"
-      className={cn(
-        "animate-ai-fade-up",
-        nested && "border-stroke-soft-200 ml-2 border-l pl-3",
-      )}
+      className={cn("animate-ai-fade-up", nested && "border-stroke-soft-200 ml-2 border-l pl-3")}
     >
       <div className="flex items-center gap-2 px-1.5 py-1">
         <RiListCheck className="text-text-soft-400 size-4 shrink-0" aria-hidden />
@@ -438,9 +436,7 @@ function TodoList({ todos, nested }: { todos: TodoItem[]; nested?: boolean }) {
               <span
                 className={cn(
                   "text-paragraph-xs",
-                  struck
-                    ? "text-text-soft-400 line-through"
-                    : "text-text-sub-600",
+                  struck ? "text-text-soft-400 line-through" : "text-text-sub-600",
                 )}
               >
                 {todo.content}
@@ -460,10 +456,25 @@ export function fileTypeIcon(base: string): RemixiconComponentType {
   const ext = base.split(".").pop()?.toLowerCase() ?? "";
   if (ext === "tsx" || ext === "jsx") return RiReactjsLine;
   if (["md", "mdx", "txt"].includes(ext)) return RiFileTextLine;
-  if (["png", "jpg", "jpeg", "gif", "svg", "webp", "ico"].includes(ext))
-    return RiImageLine;
+  if (["png", "jpg", "jpeg", "gif", "svg", "webp", "ico"].includes(ext)) return RiImageLine;
   if (
-    ["ts", "js", "mjs", "cjs", "json", "css", "scss", "html", "py", "go", "rs", "sh", "yml", "yaml", "sql"].includes(ext)
+    [
+      "ts",
+      "js",
+      "mjs",
+      "cjs",
+      "json",
+      "css",
+      "scss",
+      "html",
+      "py",
+      "go",
+      "rs",
+      "sh",
+      "yml",
+      "yaml",
+      "sql",
+    ].includes(ext)
   )
     return RiFileCodeLine;
   return RiFileLine;

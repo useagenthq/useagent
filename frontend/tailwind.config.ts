@@ -409,6 +409,9 @@ const config = {
         'alpha-16': 'hsl(var(--primary-alpha-16))',
         'alpha-10': 'hsl(var(--primary-alpha-10))',
       },
+      brand: {
+        orbit: 'hsl(var(--brand-orbit))',
+      },
       static: {
         black: 'hsl(var(--static-black))',
         white: 'hsl(var(--static-white))',

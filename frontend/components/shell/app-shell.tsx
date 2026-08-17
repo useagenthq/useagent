@@ -5,6 +5,7 @@ import type { ReactNode } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { cn } from "@/utils/cn";
+import { CompactSidebarRail } from "./compact-sidebar-rail";
 import { useWorkingSignal } from "./working-signal";
 
 export interface AppShellProps {
@@ -59,32 +60,27 @@ export function AppShell({ sidebar, children }: AppShellProps) {
         inert={sidebarCollapsed}
         className={cn(
           "hidden h-full shrink-0 overflow-hidden transition-[width] duration-200 md:block",
-          sidebarCollapsed ? "pointer-events-none w-0" : "w-64",
+          sidebarCollapsed ? "w-0" : "w-64",
         )}
         data-testid="primary-sidebar-shell"
       >
         {sidebar}
       </div>
-      <button
-        ref={sidebarRestoreRef}
-        type="button"
-        onClick={() => {
-          if (sidebarCollapsed) setSidebarCollapsed(false);
-          else collapseSidebar();
-        }}
-        aria-label={sidebarCollapsed ? "Open navigation" : "Collapse navigation"}
-        aria-pressed={sidebarCollapsed}
-        className={cn(
-          "absolute top-3 z-40 hidden size-8 items-center justify-center rounded-lg text-text-soft-400 outline-none transition-[left,background-color,color] hover:bg-bg-weak-50 hover:text-text-strong-950 focus-visible:ring-2 focus-visible:ring-stroke-strong-950 md:flex",
-          sidebarCollapsed ? "left-3" : "left-[13.5rem]",
-        )}
-      >
-        {sidebarCollapsed ? (
-          <RiSidebarUnfoldLine className="size-4" aria-hidden />
-        ) : (
+      {sidebarCollapsed ? (
+        <CompactSidebarRail
+          expandButtonRef={sidebarRestoreRef}
+          onExpand={() => setSidebarCollapsed(false)}
+        />
+      ) : (
+        <button
+          type="button"
+          onClick={collapseSidebar}
+          aria-label="Collapse navigation"
+          className="absolute left-[13.5rem] top-3 z-40 hidden size-8 items-center justify-center rounded-lg text-text-soft-400 outline-none transition-colors hover:bg-bg-weak-50 hover:text-text-strong-950 focus-visible:ring-2 focus-visible:ring-stroke-strong-950 md:flex"
+        >
           <RiSidebarFoldLine className="size-4" aria-hidden />
-        )}
-      </button>
+        </button>
+      )}
       <button
         type="button"
         onClick={() => setMobileOpen(true)}
