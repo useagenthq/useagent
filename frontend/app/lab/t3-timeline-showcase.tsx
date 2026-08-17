@@ -9,10 +9,17 @@
 import { type TimelineNode } from "@/components/chat/timeline";
 import { type ApiStep } from "@/components/chat/types";
 import { workEntriesFromTimeline, workEntryFromTimelineNode } from "@/components/t3-ui/adapter";
+import { T3BackgroundStatusPill } from "@/components/t3-ui/background-status-pill";
+import { T3QueuedMessagePill } from "@/components/t3-ui/queued-message-pill";
 import { T3SyncStatusPill } from "@/components/t3-ui/sync-status-pill";
 import { T3WorkEntryRow } from "@/components/t3-ui/work-entry-row";
 import { T3WorkGroup } from "@/components/t3-ui/work-group";
+import { T3WorkedForFold } from "@/components/t3-ui/worked-for-fold";
 import { T3WorkingIndicator } from "@/components/t3-ui/working-indicator";
+
+// Mock steps get staggered timestamps (9s apart) so the worked-for fold derives
+// a real duration from node timestamps: 5 nodes span t+9s..t+45s -> 36s.
+const MOCK_T0 = Date.parse("2026-08-17T09:00:00Z");
 
 let mockIdx = 0;
 function toolNode(label: string, code: Record<string, unknown>, chip: string | null = null): TimelineNode {
@@ -25,7 +32,7 @@ function toolNode(label: string, code: Record<string, unknown>, chip: string | n
     label,
     chip,
     code_json: JSON.stringify(code),
-    created_at: "2026-08-17T09:00:00Z",
+    created_at: new Date(MOCK_T0 + mockIdx * 9000).toISOString(),
   };
   return { kind: "tool", key: step.id, step };
 }
@@ -110,6 +117,32 @@ export function T3TimelineShowcase() {
 
       <Panel title="work group / overflow fold">
         <T3WorkGroup entries={settledEntries} />
+      </Panel>
+
+      <Panel title="worked-for fold / settled turn burst">
+        <div className="space-y-3">
+          <T3WorkedForFold nodes={MOCK_NODES} />
+          <T3WorkedForFold nodes={MOCK_NODES} defaultExpanded />
+        </div>
+      </Panel>
+
+      <Panel title="queued message pill / serial thread turns">
+        <div className="space-y-2">
+          <T3QueuedMessagePill position={1} onSendNow={() => {}} />
+          <T3QueuedMessagePill position={2} />
+        </div>
+      </Panel>
+
+      <Panel title="background status pill / live + monitoring + stopping">
+        <div className="space-y-2">
+          <T3BackgroundStatusPill
+            label="Run in progress"
+            startedAt="2026-08-17T09:00:00Z"
+            onStop={() => {}}
+          />
+          <T3BackgroundStatusPill label="Monitoring in the background" onStop={() => {}} />
+          <T3BackgroundStatusPill label="Run in progress" stopping onStop={() => {}} />
+        </div>
       </Panel>
 
       <Panel title="working indicator">

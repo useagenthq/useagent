@@ -29,6 +29,7 @@ import {
 import type { EngineId, MemoryScope } from "@/components/chat/types";
 import { Loader } from "@/components/prompt-kit/loader";
 import { PromptInput, PromptInputTextarea } from "@/components/prompt-kit/prompt-input";
+import { T3BackgroundStatusPill } from "@/components/t3-ui/background-status-pill";
 import { cnExt as cn } from "@/utils/cn";
 
 type Variant = "hero" | "compact";
@@ -50,6 +51,27 @@ export function getComposerAction({
   if (running && hasDraft) return { kind: "steer", label: "Steer" };
   if (running && canStop) return { kind: "stop", label: "Stop this run" };
   return { kind: "send", label: "Send" };
+}
+
+/**
+ * Honest default placeholder: hint ONLY affordances this composer actually has.
+ * "/" is real (agent picker on hero, command autocomplete when a catalog holds
+ * commands); "@" files and "$" skills are NOT typed affordances here today, so
+ * they are never advertised. An explicit caller placeholder always wins.
+ */
+export function composerPlaceholder({
+  explicit,
+  agentSlash,
+  commandCount,
+}: {
+  explicit?: string;
+  agentSlash: boolean;
+  commandCount: number;
+}): string {
+  if (explicit !== undefined) return explicit;
+  if (agentSlash) return "Ask anything, / for agents";
+  if (commandCount > 0) return "Ask anything, / for commands";
+  return "Ask anything...";
 }
 
 /**
@@ -124,6 +146,9 @@ export type ComposerProps = {
   /** Visible failure from the durable cancel request; the Stop control remains retryable. */
   stopError?: string | null;
   onStop?: () => void;
+  /** ISO start of the RUNNING turn (its run.created_at) - powers the status
+   *  pill's elapsed timer; absent shows the pill without elapsed. */
+  runStartedAt?: string | null;
 };
 
 /**
@@ -140,7 +165,7 @@ export type ComposerProps = {
  */
 export function Composer({
   variant = "hero",
-  placeholder = "Ask anything...",
+  placeholder,
   engine: engineProp,
   defaultEngine = "opencode",
   pending = false,
@@ -160,6 +185,7 @@ export function Composer({
   stopping = false,
   stopError,
   onStop,
+  runStartedAt,
 }: ComposerProps) {
   const [value, setValue] = useState("");
   // Single fixed engine here; there is no setter (this composer serves replies -
@@ -223,6 +249,13 @@ export function Composer({
         }))
       : []
     : (commands ?? []);
+  // Honest affordance hint: only when the caller didn't set a placeholder, and
+  // only for the "/" affordances that really exist on THIS composer instance.
+  const effectivePlaceholder = composerPlaceholder({
+    explicit: placeholder,
+    agentSlash: allowAgent,
+    commandCount: catalogCommands.length,
+  });
   const cmdToken = /^\/([^\s]*)$/.exec(value.trimStart())?.[1];
   const slashTyped = !allowAgent && !cmdDismissed && cmdToken !== undefined;
   const cmdMatches = slashTyped ? filterCommands(catalogCommands, cmdToken ?? "") : [];
@@ -380,6 +413,21 @@ export function Composer({
         </div>
       )}
 
+      {/* Persistent status pill while this thread's turn runs (T3 desktop
+          grammar): the Stop here stays reachable even while a Steer draft is
+          being typed (the send button is Steer then, not Stop). Same existing
+          durable cancel handler as the button - never a second API path. */}
+      {running && onStop && (
+        <div className="mb-1.5">
+          <T3BackgroundStatusPill
+            label="Run in progress"
+            startedAt={runStartedAt}
+            onStop={onStop}
+            stopping={stopping}
+          />
+        </div>
+      )}
+
       {/* No overflow-hidden here: the engine-picker popover opens upward past
           the card edge and must not be clipped. */}
       <div
@@ -431,7 +479,7 @@ export function Composer({
             <PromptInputTextarea
               autoFocus={autoFocus}
               disabled={locked}
-              placeholder={command ? "" : placeholder}
+              placeholder={command ? "" : effectivePlaceholder}
               // ARIA combobox/listbox wiring for the "/" command popover: announce that a list is
               // available, whether it is open, and which option is active (so a screen reader reads
               // the highlighted command as the user arrows through it).
