@@ -10,7 +10,7 @@ import {
   RiToolsLine,
 } from "@remixicon/react";
 import { AnimatePresence, MotionConfig, motion } from "motion/react";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { type Agent, AgentChip, ChooseAgentPopover } from "@/components/chat/agent-command";
 import type { CommandCatalogState } from "@/components/chat/canonical-timeline";
 import { ChatModelMenu, type ChatModelOption } from "@/components/chat/chat-model-menu";
@@ -162,6 +162,10 @@ export type ComposerProps = {
    *  (GET /api/config `engines`, see unavailableEngineLabel) - shows the slim
    *  provider status banner. Computed by the call site; no fetch here. */
   engineUnavailable?: boolean;
+  /** Persist the in-progress draft per thread (localStorage, client only): a
+   *  reload or thread switch restores unsent text. Cleared on submit. Absent
+   *  keeps the composer stateless (hero/new-task surfaces). */
+  draftKey?: string | null;
 };
 
 /**
@@ -202,8 +206,20 @@ export function Composer({
   threadError,
   onDismissThreadError,
   engineUnavailable = false,
+  draftKey,
 }: ComposerProps) {
-  const [value, setValue] = useState("");
+  // Draft restore is a lazy initializer so SSR (no window) and draft-less
+  // composers stay on the empty string with zero effect churn.
+  const [value, setValue] = useState(() => {
+    if (!draftKey || typeof window === "undefined") return "";
+    return window.localStorage.getItem(`skynet.draft.${draftKey}`) ?? "";
+  });
+  useEffect(() => {
+    if (!draftKey || typeof window === "undefined") return;
+    const key = `skynet.draft.${draftKey}`;
+    if (value) window.localStorage.setItem(key, value);
+    else window.localStorage.removeItem(key);
+  }, [draftKey, value]);
   // Single fixed engine here; there is no setter (this composer serves replies -
   // a thread is pinned to one engine - and the no-sandbox Chat surface). Engine
   // SELECTION for a new task lives in NewTaskComposer. Kept as state so `engineProp`
