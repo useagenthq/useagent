@@ -1,6 +1,12 @@
 "use client";
 
-import { RiAddLine, RiBroadcastLine, RiRefreshLine, RiUpload2Line } from "@remixicon/react";
+import {
+  RiAddLine,
+  RiBroadcastLine,
+  RiDownloadLine,
+  RiRefreshLine,
+  RiUpload2Line,
+} from "@remixicon/react";
 import {
   ARTIFACT_AUTHORING_PROFILES,
   type ArtifactWorkpieceKind,
@@ -280,6 +286,13 @@ export function LiveArtifacts({
     [artifacts, filter],
   );
 
+  // "Download all" bundles a single run's artifacts. Only offer it when the
+  // visible set resolves to exactly one run, so the ZIP has an unambiguous scope.
+  const soleRunId = useMemo(() => {
+    const runs = new Set(visible.map((artifact) => artifact.run_id));
+    return runs.size === 1 ? [...runs][0] : null;
+  }, [visible]);
+
   return (
     <div className="mx-auto w-full max-w-[1120px] px-6 py-8 sm:px-10 sm:py-10">
       <div className="flex flex-wrap items-start justify-between gap-4">
@@ -293,6 +306,18 @@ export function LiveArtifacts({
           </div>
         </div>
         <div className="flex items-center gap-2">
+          {soleRunId && (
+            <a
+              href={`/api/artifacts/runs/${soleRunId}/archive`}
+              download
+              aria-label="Download all artifacts as a ZIP"
+              title="Download all"
+              className="inline-flex h-9 items-center gap-2 rounded-lg border border-stroke-soft-200 bg-bg-white-0 px-3 text-label-sm text-text-sub-600 outline-none hover:text-text-strong-950 focus-visible:ring-2 focus-visible:ring-stroke-strong-950"
+            >
+              <RiDownloadLine aria-hidden className="size-4" />
+              Download all
+            </a>
+          )}
           <button
             type="button"
             onClick={() => void load()}

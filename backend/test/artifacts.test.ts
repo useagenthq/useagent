@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, spyOn, test } from "bun:test";
 import { createHash } from "node:crypto";
+import JSZip from "jszip";
 import * as artifactFormats from "@skynet/artifact-formats";
 import type { ArtifactDescriptor } from "../src/artifacts/repo";
 import { setArtifactStorageForTest } from "../src/artifacts/storage";
@@ -547,6 +548,38 @@ describe("durable artifacts", () => {
     } finally {
       sandboxBytes = previous;
     }
+  });
+
+  test("packages a run's published artifacts into one downloadable ZIP", async () => {
+    const runId = await createSandboxRun(owner);
+    const report = await publish(owner, runId, "/root/work/output/report.txt");
+    const summary = await publish(owner, runId, "/root/work/output/summary.md");
+    expect(report.created).toBe(true);
+    expect(summary.created).toBe(true);
+
+    const archive = await fetchApi(`/api/artifacts/runs/${runId}/archive`, {
+      cookies: owner.cookies,
+    });
+    expect(archive.status).toBe(200);
+    expect(archive.headers.get("content-type")).toBe("application/zip");
+    expect(archive.headers.get("content-disposition")).toContain(`run-${runId}-artifacts.zip`);
+
+    const zip = await JSZip.loadAsync(new Uint8Array(await archive.arrayBuffer()));
+    expect(Object.keys(zip.files).toSorted()).toEqual(["report.txt", "summary.md"]);
+    expect(await zip.file("report.txt")?.async("uint8array")).toEqual(SOURCE_BYTES);
+
+    // A run with no artifacts has nothing to archive.
+    const emptyRun = await createSandboxRun(owner);
+    const empty = await fetchApi(`/api/artifacts/runs/${emptyRun}/archive`, {
+      cookies: owner.cookies,
+    });
+    expect(empty.status).toBe(404);
+
+    // Tenant isolation: another org sees none of the run's artifacts.
+    const outside = await fetchApi(`/api/artifacts/runs/${runId}/archive`, {
+      cookies: outsider.cookies,
+    });
+    expect(outside.status).toBe(404);
   });
 
   test("encodes non-ASCII and reserved filename characters safely", async () => {
