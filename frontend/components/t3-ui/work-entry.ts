@@ -151,11 +151,45 @@ function capitalizePhrase(value: string): string {
   return `${trimmed.charAt(0).toUpperCase()}${trimmed.slice(1)}`;
 }
 
-export function toolWorkEntryHeading(entry: T3WorkEntry): string {
-  if (!entry.toolTitle) {
-    return capitalizePhrase(normalizeCompactToolLabel(entry.label));
+/** Port addition (not upstream): structural noun for an entry whose title/label
+ *  normalize to nothing, so a work row can never render heading-less. */
+function structuralWorkEntryHeading(entry: T3WorkEntry): string {
+  if (entry.requestKind === "command") return "Run";
+  if (entry.requestKind === "file-read") return "Read";
+  if (entry.requestKind === "file-change") return "Edit";
+  switch (entry.itemType) {
+    case "command_execution":
+      return "Run";
+    case "file_change":
+      return "Edit";
+    case "web_search":
+      return "Search";
+    case "image_view":
+      return "View image";
+    case "mcp_tool_call":
+      return "MCP tool";
+    case "dynamic_tool_call":
+      return "Tool call";
+    case "collab_agent_tool_call":
+      return "Subagent";
   }
-  return capitalizePhrase(normalizeCompactToolLabel(entry.toolTitle));
+  if (entry.taskId) return "Subagent";
+  if (entry.tone === "thinking") return "Thinking";
+  return "Tool";
+}
+
+export function toolWorkEntryHeading(entry: T3WorkEntry): string {
+  // Upstream reads toolTitle ?? label verbatim. Our lanes can surface entries
+  // with no friendly label (child-session/task tool receipts), and the compact
+  // normalization can strip a label to "" - a heading-less row renders as a bare
+  // chevron+status glyph (user-reported). Every heading is therefore total:
+  // toolTitle, then label, then the structural fallback.
+  for (const source of [entry.toolTitle, entry.label]) {
+    if (!source) continue;
+    const heading = capitalizePhrase(normalizeCompactToolLabel(source));
+    if (heading.trim().length > 0) return heading;
+  }
+  return structuralWorkEntryHeading(entry);
 }
 
 /** filePathDisplay.ts, trimmed: strip a workspace root down to `rootBasename/relative`. */

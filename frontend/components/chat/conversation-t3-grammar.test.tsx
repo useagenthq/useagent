@@ -133,6 +133,37 @@ function liveEvents(): StoredCanonicalEvent[] {
   ];
 }
 
+// A child-session fan-out turn: a bare tool receipt (no name/title, the claude
+// lane's seal shape) followed by a gateway child_session_create call, plus the
+// child lifecycle events. The regression: these rows used to render heading-less
+// (bare chevron+status glyph in the conversation column).
+function fanOutEvents(): StoredCanonicalEvent[] {
+  return [
+    ev("tool.started", { toolCallId: "call-bare" }),
+    ev("tool.completed", { toolCallId: "call-bare", status: "ok", preview: "sealed" }),
+    ev("tool.started", {
+      toolCallId: "call-spawn",
+      name: "child_session_create",
+      input: { prompt: "Summarize the wiki", idempotencyKey: "k1" },
+    }),
+    ev("tool.completed", { toolCallId: "call-spawn", status: "ok", preview: "queued child c1" }),
+    ev("child.started", { childId: "c1", launchToolCallId: "call-spawn" }),
+    ev("child.completed", { childId: "c1", status: "ok", result: "Summary ready" }),
+  ];
+}
+
+test("fan-out turn rows always render a visible heading", () => {
+  const html = render([makeTurn("run-fanout", "completed", fanOutEvents())]);
+  const rows = html.split('data-t3-ui="work-entry-row"').slice(1);
+  expect(rows.length).toBeGreaterThan(0);
+  for (const row of rows) {
+    const heading = /<span class="min-w-0 shrink truncate[^"]*">([^<]*)<\/span>/.exec(row)?.[1];
+    expect(heading?.trim().length ?? 0).toBeGreaterThan(0);
+  }
+  // The newest visible row is the child_session_create call, named by its tool.
+  expect(html).toContain("Child session create");
+});
+
 test("settled turn renders tool bursts through the T3 work grammar", () => {
   const html = render([makeTurn("run-settled", "completed", settledEvents())]);
 
