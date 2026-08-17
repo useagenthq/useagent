@@ -53,13 +53,13 @@ export function ThreadSidebar({ active }: { active?: ThreadSidebarActive }) {
       header={<SidebarBrand />}
       footer={<ThreadSidebarFooter active={active} />}
     >
+      <SearchCommand />
       <SidebarNavItem
         href="/agent/new"
         icon={RiAddLine}
         label="New thread"
         active={active === "new"}
       />
-      <SearchCommand />
       <SidebarNavItem
         href="/agent/workspace"
         icon={RiFolderLine}
