@@ -26,11 +26,17 @@ export function getThreadErrorBannerKey(threadKey: string, error: string | null)
   return error === null ? null : `${threadKey}\u0000${error}`;
 }
 
+/** A deliberate user cancel is a neutral outcome, never an alarm. */
+export function isUserStopSummary(error: string | null): boolean {
+  return error !== null && /^stopped by user/i.test(error.trim());
+}
+
 export function shouldShowThreadErrorBanner(
   threadKey: string,
   error: string | null,
   isDismissed: boolean,
 ): boolean {
+  if (isUserStopSummary(error)) return false;
   return getThreadErrorBannerKey(threadKey, error) !== null && !isDismissed;
 }
 
@@ -72,12 +78,12 @@ export function T3ThreadErrorBanner({
     <div
       data-t3-ui="thread-error-banner"
       role="alert"
-      className="border-error-light bg-error-lighter text-error-base flex items-start gap-2 rounded-xl border px-3 py-2.5"
+      className="border-error-base/60 bg-bg-weak-50 flex items-start gap-2 rounded-lg border-l-2 py-2 pl-3 pr-2"
     >
       <RiErrorWarningLine className="mt-0.5 size-4 shrink-0" aria-hidden />
       <div className="min-w-0 flex-1">
-        <p className="text-label-sm">This run failed</p>
-        <p className="text-paragraph-xs mt-0.5 line-clamp-3 break-words" title={error}>
+        <p className="text-label-sm text-error-base">This run failed</p>
+        <p className="text-paragraph-xs text-text-sub-600 mt-0.5 line-clamp-3 break-words" title={error}>
           {error}
         </p>
       </div>
@@ -95,7 +101,7 @@ export function T3ThreadErrorBanner({
           type="button"
           aria-label="Dismiss error"
           onClick={onDismiss}
-          className="text-error-base hover:bg-error-light/40 flex size-6 shrink-0 items-center justify-center rounded-md transition-colors"
+          className="text-text-soft-400 hover:text-text-strong-950 hover:bg-bg-soft-200 flex size-6 shrink-0 items-center justify-center rounded-md transition-colors"
         >
           <RiCloseLine className="size-4" aria-hidden />
         </button>
