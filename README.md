@@ -83,6 +83,10 @@ bun run release:hosted
 ```
 
 `bun run typecheck` covers the frontend, backend, and shared packages. `bun run release:hosted` runs the hosted release gate in `deploy/hetzner/`.
+When promoting a newly built Cube runtime, set
+`RELEASE_T3_CUBE_TEMPLATE_ID=tpl-...`; the gate validates the id, activates it
+only inside the rollback-bound candidate environment, and restores the exact
+previous environment if any preflight or parity journey fails.
 
 ## Shared Packages
 

@@ -5,6 +5,7 @@ import {
   buildT3EnvironmentRequestCommand,
   buildT3EnvironmentSessionProbeCommand,
   buildT3EnvironmentWebSocketTicketCommand,
+  decodeT3EnvironmentCommandOutput,
   issueT3EnvironmentWebSocketTicket,
   prewarmT3EnvironmentAccess,
   requestT3Environment,
@@ -13,6 +14,16 @@ import {
 import { buildT3EnvironmentReadinessCommand } from "./t3-environment";
 
 describe("T3 environment client", () => {
+  test("decodes the bounded HTTP status marker for runtime and canary callers", () => {
+    expect(decodeT3EnvironmentCommandOutput([
+      '{"projects":[],"threads":[]}',
+      "__SKYNET_T3_HTTP_STATUS__:200",
+    ].join("\n"))).toEqual({
+      body: '{"projects":[],"threads":[]}',
+      status: 200,
+    });
+  });
+
   test("keeps the one-time pairing credential and cookie inside the sandbox", () => {
     const command = buildT3EnvironmentAuthenticationCommand();
 

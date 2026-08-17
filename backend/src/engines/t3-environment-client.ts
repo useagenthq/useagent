@@ -264,14 +264,17 @@ interface T3EnvironmentResponse {
   readonly status?: number;
 }
 
-function parseT3EnvironmentResponse(result: SandboxExecuteResult): T3EnvironmentResponse {
-  const output = result.result ?? "";
+export function decodeT3EnvironmentCommandOutput(output: string): T3EnvironmentResponse {
   const marker = output.match(new RegExp(`\\n${T3_HTTP_STATUS_MARKER}:(\\d{3})`));
   if (!marker || marker.index === undefined) return { body: output };
   return {
     body: output.slice(0, marker.index),
     status: Number(marker[1]),
   };
+}
+
+function parseT3EnvironmentResponse(result: SandboxExecuteResult): T3EnvironmentResponse {
+  return decodeT3EnvironmentCommandOutput(result.result ?? "");
 }
 
 function parseT3EnvironmentErrorResponse(
