@@ -9,10 +9,10 @@ import type { RemixiconComponentType } from "@remixicon/react";
 
 import { cn } from "@/utils/cn";
 
-export type SurfaceChoice = "desktop" | "terminal" | "artifacts" | "agents";
+export type SurfaceChoice = "desktop" | "terminal" | "artifacts" | "agents" | "diff";
 
 interface SurfaceOption {
-  readonly id: SurfaceChoice | "diff";
+  readonly id: SurfaceChoice;
   readonly label: string;
   readonly description: string;
   readonly icon: RemixiconComponentType;
@@ -53,9 +53,11 @@ const SURFACES: readonly SurfaceOption[] = [
 
 export function SurfaceChooser({
   agentsAvailable,
+  diffAvailable,
   onSelect,
 }: {
   agentsAvailable: boolean;
+  diffAvailable: boolean;
   onSelect: (surface: SurfaceChoice) => void;
 }) {
   return (
@@ -69,15 +71,14 @@ export function SurfaceChooser({
         </div>
         <div className="mt-5 grid grid-cols-2 gap-2.5">
           {SURFACES.map(({ id, label, description, icon: Icon }) => {
-            const disabled = id === "diff" || (id === "agents" && !agentsAvailable);
+            const disabled =
+              (id === "diff" && !diffAvailable) || (id === "agents" && !agentsAvailable);
             return (
               <button
                 key={id}
                 type="button"
                 disabled={disabled}
-                onClick={() => {
-                  if (id !== "diff") onSelect(id);
-                }}
+                onClick={() => onSelect(id)}
                 className={cn(
                   "min-h-32 rounded-xl border border-stroke-soft-200 bg-bg-white-0 p-4 text-left outline-none transition-colors hover:bg-bg-weak-50 focus-visible:ring-2 focus-visible:ring-primary-base",
                   disabled && "cursor-not-allowed opacity-40 hover:bg-bg-white-0",
