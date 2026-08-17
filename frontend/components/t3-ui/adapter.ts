@@ -12,8 +12,11 @@
 //   rows; output rides in `detail` (preview + expanded body), never `command`, so the
 //   icon resolves to the hammer, not the terminal.
 
+import { type ChildUsage } from "@/components/chat/child-usage";
 import { type TimelineNode } from "@/components/chat/timeline";
-import { deriveTrace } from "@/components/chat/types";
+import { deriveTrace, parseFileEntries } from "@/components/chat/types";
+import { type T3ChangedFile } from "./changed-files";
+import { type T3ContextWindowUsage } from "./context-window-meter";
 import {
   normalizeCompactToolLabel,
   type T3WorkEntry,
@@ -155,4 +158,97 @@ export function segmentTimelineForT3(
     }
   }
   return { segments, workingLabel };
+}
+
+// ── Changed-files aggregation (T3ChangedFilesCard binding) ───────────────────
+//
+// Upstream reads a real git checkpoint diff per turn; our canonical lane carries
+// no checkpoint, so the aggregate is derived from what the turn's own steps
+// state: file-mutating tool steps (deriveTrace glyph edit/write, full paths from
+// their code_json via parseFileEntries) plus durable `file` receipt nodes.
+// Line stats come ONLY from deriveTrace's honest diffStat (an Edit's old/new
+// strings or an explicit patch, denoised) - never fabricated, so a Write with no
+// derivable diff renders without a stat.
+
+interface MutableChangedFile {
+  path: string;
+  kind: string;
+  additions: number | null;
+  deletions: number | null;
+}
+
+function recordChangedFile(
+  byPath: Map<string, MutableChangedFile>,
+  path: string,
+  kind: string,
+  additions: number | null,
+  deletions: number | null,
+): void {
+  const prior = byPath.get(path);
+  if (!prior) {
+    byPath.set(path, { path, kind, additions, deletions });
+    return;
+  }
+  // A file created earlier in the turn is still an "add" for the turn aggregate;
+  // any later delete wins outright.
+  prior.kind = kind === "delete" ? "delete" : prior.kind === "add" ? "add" : kind;
+  if (additions !== null || deletions !== null) {
+    prior.additions = (prior.additions ?? 0) + (additions ?? 0);
+    prior.deletions = (prior.deletions ?? 0) + (deletions ?? 0);
+  }
+}
+
+/** Aggregate ONE turn's canonical timeline into changed-file entries for the
+ *  T3ChangedFilesCard/T3ChangedFilesTree, in first-touched order. */
+export function changedFilesFromTimeline(nodes: readonly TimelineNode[]): T3ChangedFile[] {
+  const byPath = new Map<string, MutableChangedFile>();
+  for (const node of nodes) {
+    if (node.kind === "file") {
+      const kind = node.file.changeType === "create" ? "add" : node.file.changeType;
+      recordChangedFile(byPath, node.file.path, kind, null, null);
+      continue;
+    }
+    if (node.kind !== "tool") continue;
+    const trace = deriveTrace(node.step);
+    if (trace.glyph !== "edit" && trace.glyph !== "write") continue;
+    const entries = parseFileEntries(node.step);
+    // A multi-file step's diffStat covers the whole input; attribute it only
+    // when the step names exactly one file (otherwise stats stay unknown).
+    const single = entries.length === 1;
+    for (const entry of entries) {
+      recordChangedFile(
+        byPath,
+        entry.path,
+        entry.kind,
+        single ? trace.adds : null,
+        single ? trace.dels : null,
+      );
+    }
+  }
+  return Array.from(byPath.values(), ({ path, kind, additions, deletions }) => ({
+    path,
+    kind,
+    ...(additions !== null && deletions !== null
+      ? { additions, deletions }
+      : {}),
+  }));
+}
+
+// ── Context-window binding ───────────────────────────────────────────────────
+
+/**
+ * Bind provider-cumulative usage (the ONLY token signal the frontend receives
+ * today - child-session `typedUsage`, normalized by ./child-usage.ts) to the
+ * meter's shape. `totalTokens` is cumulative processed tokens, used here as the
+ * context-occupancy proxy; `maxTokens` (the model's window) is not exposed by
+ * the backend, so callers pass a known limit or the meter renders limit-less.
+ */
+export function contextWindowFromChildUsage(
+  usage: ChildUsage,
+  maxTokens: number | null = null,
+): T3ContextWindowUsage {
+  return {
+    usedTokens: usage.totalTokens,
+    maxTokens,
+  };
 }
