@@ -9,6 +9,7 @@ import { CodexChatGptPath } from "./codex-chatgpt-path";
 import { putProviderApiKey, revokeProviderConnection } from "./provider-connections-api";
 import {
   accountLabel,
+  connectionBadgeStatus,
   isActiveConnection,
   PROVIDER_LABELS,
   type ProviderConnectionAuthMethod,
@@ -22,14 +23,10 @@ import { relTime } from "./relative-time";
 const MASK = "••••••••";
 
 function StatusPill({ connection }: { connection: ProviderConnectionMeta | null }) {
-  const active = isActiveConnection(connection);
   const revoked = connection?.status === "revoked";
   return (
-    <StatusBadge.Root
-      variant="light"
-      status={active ? "completed" : revoked ? "disabled" : "pending"}
-    >
-      <StatusBadge.Dot />
+    <StatusBadge.Root variant="light" status={connectionBadgeStatus(connection)}>
+      <StatusBadge.Dot className={revoked ? "text-error-base" : undefined} />
       {statusLabel(connection)}
     </StatusBadge.Root>
   );

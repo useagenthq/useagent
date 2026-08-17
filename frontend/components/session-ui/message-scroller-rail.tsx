@@ -46,7 +46,7 @@ export function pickActiveTurnIndex(visible: ReadonlySet<number>, fallback: numb
   return min === -1 ? fallback : min;
 }
 
-function prefersReducedMotion(): boolean {
+export function prefersReducedMotion(): boolean {
   return (
     typeof window !== "undefined" &&
     typeof window.matchMedia === "function" &&
@@ -121,7 +121,7 @@ export function MessageScrollerRail({
     <nav
       data-session-ui="message-scroller-rail"
       aria-label="Jump to a turn"
-      className="pointer-events-none absolute inset-y-6 right-1.5 z-10 hidden flex-col items-center justify-center gap-1 overflow-hidden lg:flex"
+      className="pointer-events-none absolute inset-y-4 right-2 z-20 hidden flex-col items-end justify-center gap-1 overflow-hidden lg:flex"
     >
       {ticks.map((tick, index) => {
         const active = index === activeIndex;
@@ -133,14 +133,14 @@ export function MessageScrollerRail({
             aria-label={`Jump to turn ${index + 1}: ${tick.snippet}`}
             aria-current={active ? "true" : undefined}
             onClick={() => jumpTo(index)}
-            className="group pointer-events-auto flex h-3 w-4 items-center justify-end rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-stroke-strong-950"
+            className="group pointer-events-auto flex h-3.5 w-3 items-center justify-end rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-stroke-strong-950"
           >
             <span
               className={cn(
-                "h-px rounded-full transition-all duration-200",
+                "h-0.5 rounded-full transition-all duration-200",
                 active
-                  ? "w-3.5 bg-text-strong-950"
-                  : "w-2 bg-stroke-soft-200 group-hover:w-3 group-hover:bg-stroke-sub-300",
+                  ? "w-2.5 bg-text-sub-600"
+                  : "w-1.5 bg-stroke-sub-300 group-hover:w-2.5 group-hover:bg-text-soft-400",
               )}
             />
           </button>

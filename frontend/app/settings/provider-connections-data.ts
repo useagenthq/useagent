@@ -162,6 +162,21 @@ export function statusLabel(connection: ProviderConnectionMeta | null): string {
   return "Revoked";
 }
 
+/** Quiet, consistent tone for a status chip. "Connected" is the only positive
+ *  (green) state; "Reauth required" keeps a subdued attention tone; every other
+ *  state - "Not connected" (a normal, expected state) and "Revoked" (a quiet
+ *  outcome, not an alarm) - is neutral gray. The revoked chip adds a small red
+ *  dot at the call site so it stays distinguishable without shouting. */
+export type ConnectionBadgeStatus = "completed" | "pending" | "disabled";
+
+export function connectionBadgeStatus(
+  connection: ProviderConnectionMeta | null,
+): ConnectionBadgeStatus {
+  if (isActiveConnection(connection)) return "completed";
+  if (connection?.status === "reauth_required") return "pending";
+  return "disabled";
+}
+
 export function safeProviderMetadata(input: {
   email: string;
   planType: string;
@@ -213,4 +228,15 @@ export function codexAuthStatusLabel(
   }
   if (connection?.status === "revoked") return "Revoked";
   return "Not connected";
+}
+
+/** The quiet-tone mapping for the ChatGPT connection chip, mirroring
+ *  codexAuthStatusLabel so label and tone never diverge. */
+export function codexAuthBadgeStatus(
+  status: CodexChatGptStatus | null,
+  connection: ProviderConnectionMeta | null,
+): ConnectionBadgeStatus {
+  if (isActiveConnection(connection) || status?.account?.authMode === "chatgpt") return "completed";
+  if (connection?.status === "reauth_required" || status?.requiresOpenaiAuth) return "pending";
+  return "disabled";
 }

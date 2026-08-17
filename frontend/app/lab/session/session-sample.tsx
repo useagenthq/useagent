@@ -34,6 +34,7 @@ import { MessageScrollerRail } from "@/components/session-ui/message-scroller-ra
 import { ProposedPlanCard } from "@/components/session-ui/proposed-plan-card";
 import { ProviderStatusBanner } from "@/components/session-ui/provider-status-banner";
 import { QueuedMessagePill } from "@/components/session-ui/queued-message-pill";
+import { ScrollToEndPill } from "@/components/session-ui/scroll-to-end-pill";
 import { SyncStatusPill } from "@/components/session-ui/sync-status-pill";
 import {
   isUserStopSummary,
@@ -58,7 +59,7 @@ import {
 /** Left-rail index: every covered type, linked to where it renders. */
 const INDEX: readonly { label: string; href: string }[] = [
   { label: "User message + attachment", href: "#turn-1" },
-  { label: "Context markers (skill / memory / knowledge)", href: "#turn-1" },
+  { label: "Context recall fold (skill / memory / knowledge)", href: "#turn-1" },
   { label: "Reasoning / thinking fold", href: "#turn-1" },
   { label: "Tool work groups (bash / read / search / web)", href: "#turn-1" },
   { label: "File edit with line diff", href: "#turn-1" },
@@ -262,7 +263,7 @@ export function SessionSample() {
             <div className="relative">
               <div
                 ref={scrollRef}
-                className="max-h-[76vh] space-y-8 overflow-y-auto rounded-2xl border border-stroke-soft-200 bg-bg-white-0 px-5 py-6"
+                className="scrollbar-slim max-h-[76vh] space-y-8 overflow-y-auto rounded-2xl border border-stroke-soft-200 bg-bg-white-0 px-5 py-6"
               >
                 {conversation.map((turn) => {
                   const live = mounted && turn.live;
@@ -278,6 +279,7 @@ export function SessionSample() {
                 })}
               </div>
               <MessageScrollerRail turns={scrollerTurns} scrollRef={scrollRef} />
+              <ScrollToEndPill scrollRef={scrollRef} />
             </div>
           </section>
 
