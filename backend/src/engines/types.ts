@@ -176,6 +176,7 @@ export type {
   HarnessCheckpoint,
   HarnessUnsupported,
   HarnessOperationResult,
+  HarnessInterimEvent,
   HarnessReconciliation,
   HarnessAdapter,
 } from "@skynet/agent-harness/control";

@@ -14,6 +14,7 @@ import type {
   HarnessAdapter,
   HarnessCapabilities,
   HarnessCheckpoint,
+  HarnessInterimEvent,
   HarnessOperationResult,
   HarnessReconciliation,
   HarnessSessionHandle,
@@ -591,10 +592,33 @@ export type OpencodeReconcile =
   | { outcome: "completed"; summary: string }
   /** Sandbox stopped/gone/unhealthy, or the probe timed out. */
   | { outcome: "unreachable" }
-  /** Session exists but the last assistant message is still generating. */
-  | { outcome: "in_progress" }
+  /** Session exists but the last assistant message is still generating. Carries
+   *  the interim native events seen for the in-flight turn so a re-probe can keep
+   *  the timeline advancing during adoption (deduped on the live-lane part id). */
+  | { outcome: "in_progress"; events: HarnessInterimEvent[] }
   /** Session reachable but nothing completed newer than our last step. */
   | { outcome: "no_new_message" };
+
+/** Project one opencode message part into the provider-neutral capture shape,
+ *  keyed by the SAME stable id (`pe_<partId>`) the live lane uses — so the SSE
+ *  capture, restart-recovery ingest, and revisions all upsert the same row rather
+ *  than duplicating it. Returns null for a part with no native id (nothing to
+ *  address). Pure; the payload is passed through verbatim (callers redact). */
+export function projectOpencodePart(part: Record<string, unknown>): HarnessInterimEvent | null {
+  const partId = String(part.id ?? "");
+  if (!partId) return null;
+  const st = (part as { state?: { status?: string } }).state;
+  return {
+    id: `pe_${partId}`,
+    provider: "opencode",
+    eventType: `part.${String(part.type ?? "unknown")}${st?.status ? `.${st.status}` : ""}`,
+    sessionId: typeof part.sessionID === "string" ? part.sessionID : null,
+    messageId: typeof part.messageID === "string" ? part.messageID : null,
+    partId,
+    callId: typeof part.callID === "string" ? part.callID : null,
+    payload: part,
+  };
+}
 
 type OcMessage = {
   info?: {
@@ -669,7 +693,25 @@ export async function reconcileOpencodeRun(input: {
     if (!last) return { outcome: "no_new_message" };
 
     const completed = last.info?.time?.completed;
-    if (typeof completed !== "number") return { outcome: "in_progress" };
+    if (typeof completed !== "number") {
+      // Still generating. Project the in-flight turn's parts as interim events so
+      // a re-probe can keep the timeline moving during adoption. Bounded to the
+      // active turn — assistant messages not already finished before our last step
+      // (older turns are durable pre-restart); dedup is by the live-lane part id.
+      const events: HarnessInterimEvent[] = [];
+      for (const m of assistants) {
+        const done = m.info?.time?.completed;
+        if (typeof done === "number" && done <= input.sinceMs) continue;
+        for (const part of m.parts ?? []) {
+          // The message endpoint returns full native parts (id/state/callID/…);
+          // the narrow OcMessage.parts type only names the fields the summary path
+          // reads, so widen here for the lossless projection.
+          const projected = projectOpencodePart(part as Record<string, unknown>);
+          if (projected) events.push(projected);
+        }
+      }
+      return { outcome: "in_progress", events };
+    }
     if (completed <= input.sinceMs) return { outcome: "no_new_message" };
 
     const text = (last.parts ?? [])
@@ -746,7 +788,7 @@ export const opencodeHarness: HarnessAdapter = {
       case "completed":
         return { status: "completed", summary: r.summary };
       case "in_progress":
-        return { status: "in_progress" };
+        return { status: "in_progress", events: r.events };
       case "no_new_message":
         return { status: "no_change" };
       case "unreachable":
@@ -1601,19 +1643,20 @@ export function makeOpenCodeServerAdapter(driver: ProviderDriver): EngineAdapter
       // recordProviderEvent mints the seq + serializes persist→publish per run
       // (see provider-events.ts), so no local seq counter is needed here.
       const capturePart = (part: Record<string, unknown>): void => {
-        const partId = String(part.id ?? "");
-        if (!partId) return;
-        const st = (part as { state?: { status?: string } }).state;
+        // Same projection (id/eventType/native ids) restart-recovery reuses, so
+        // the live lane and a re-probe address the identical row (upsert dedup).
+        const projected = projectOpencodePart(part);
+        if (!projected) return;
         void recordProviderEvent({
-          id: `pe_${partId}`,
+          id: projected.id,
           runId: ctx.runId,
           threadId: ctx.threadId ?? ctx.runId,
           provider: "opencode",
-          eventType: `part.${String(part.type ?? "unknown")}${st?.status ? `.${st.status}` : ""}`,
-          nativeSessionId: typeof part.sessionID === "string" ? part.sessionID : null,
-          nativeMessageId: typeof part.messageID === "string" ? part.messageID : null,
-          nativePartId: partId,
-          nativeCallId: typeof part.callID === "string" ? part.callID : null,
+          eventType: projected.eventType,
+          nativeSessionId: projected.sessionId ?? null,
+          nativeMessageId: projected.messageId ?? null,
+          nativePartId: projected.partId ?? null,
+          nativeCallId: projected.callId ?? null,
           payload: redact.unknown(part),
         });
       };

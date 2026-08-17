@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { and, eq, sql } from "drizzle-orm";
 import { db } from "../src/db/client";
-import { providerEvents } from "../src/db/schema";
+import { providerEvents, reconcileQueue } from "../src/db/schema";
+import type { HarnessInterimEvent } from "../src/engines/types";
 import { acceptRunCommand } from "../src/commands";
 import {
   recoverStaleRuns,
@@ -130,6 +131,113 @@ describe("background re-probe loop", () => {
     expect(out.adopted).toBe(0);
     expect(await getReconcile(runId)).toBeNull(); // parked row cleared
     expect((await getRun(runId))?.status).toBe("completed");
+  });
+});
+
+describe("continuity during re-probe (interim events + heartbeat)", () => {
+  const interimEvents: HarnessInterimEvent[] = [
+    {
+      id: "pe_part1",
+      provider: "opencode",
+      eventType: "part.tool.completed",
+      sessionId: "ses_x",
+      messageId: "msg_1",
+      partId: "part1",
+      callId: "call_1",
+      payload: { type: "tool", state: { status: "completed" } },
+    },
+    {
+      id: "pe_part2",
+      provider: "opencode",
+      eventType: "part.text",
+      sessionId: "ses_x",
+      messageId: "msg_1",
+      partId: "part2",
+      payload: { type: "text", text: "still working" },
+    },
+  ];
+  const inProgressProbe: ReconcileProbe = async () => ({ status: "in_progress", events: interimEvents });
+
+  async function interimRows(runId: string) {
+    return db
+      .select()
+      .from(providerEvents)
+      .where(and(eq(providerEvents.runId, runId), sql`${providerEvents.id} like 'pe\\_%'`));
+  }
+
+  test("interim in_progress events are ingested once and stay deduped across probes", async () => {
+    const { runId, threadId } = await seedRunning();
+    await park(runId, threadId);
+
+    const first = await runDueReconciles(inProgressProbe);
+    expect(first.retried).toBe(1); // still running, rescheduled
+    expect(first.eventsRecovered).toBe(2);
+    expect((await interimRows(runId)).length).toBe(2);
+    expect((await getRun(runId))?.status).toBe("running"); // finalize untouched
+
+    // Make the parked row due again and re-probe with the SAME events.
+    await db
+      .update(reconcileQueue)
+      .set({ nextAttemptAt: new Date(Date.now() - 1_000) })
+      .where(eq(reconcileQueue.runId, runId));
+    const second = await runDueReconciles(inProgressProbe);
+    expect(second.eventsRecovered).toBe(2);
+    // Upsert on the live-lane part id → still exactly two rows, no duplicates.
+    expect((await interimRows(runId)).length).toBe(2);
+  });
+
+  test("a reachable re-probe heartbeats the reconciling marker with lastProbeAt + eventsRecovered", async () => {
+    const { runId, threadId } = await seedRunning();
+    await park(runId, threadId);
+
+    const before = Date.now();
+    await runDueReconciles(inProgressProbe);
+
+    const markers = await reconcilingMarkers(runId);
+    expect(markers.length).toBe(1); // stable id → one marker, advanced in place
+    const payload = JSON.parse(markers[0]!.payload as string) as {
+      reason: string;
+      eventsRecovered: number;
+      lastProbeAt: number;
+      deadlineMs: number;
+    };
+    expect(payload.reason).toBe("reprobe");
+    expect(payload.eventsRecovered).toBe(2);
+    expect(payload.lastProbeAt).toBeGreaterThanOrEqual(before);
+  });
+
+  test("an unreachable re-probe fakes no progress: no heartbeat, no interim rows", async () => {
+    const { runId, threadId } = await seedRunning();
+    await park(runId, threadId);
+
+    const out = await runDueReconciles(transientProbe); // unreachable
+    expect(out.retried).toBe(1);
+    expect(out.eventsRecovered).toBe(0);
+    expect((await interimRows(runId)).length).toBe(0);
+    const markers = await db
+      .select()
+      .from(providerEvents)
+      .where(and(eq(providerEvents.runId, runId), eq(providerEvents.eventType, RUN_RECONCILING)));
+    expect(markers.length).toBe(0);
+  });
+
+  test("adoption is unchanged: a completed probe adopts with no interim ingest or heartbeat", async () => {
+    const { runId, threadId } = await seedRunning();
+    await park(runId, threadId);
+
+    const out = await runDueReconciles(completedProbe);
+    expect(out.adopted).toBe(1);
+    expect(out.eventsRecovered).toBe(0);
+    const run = await getRun(runId);
+    expect(run?.status).toBe("completed");
+    expect(run?.summary).toBe("adopted answer");
+    expect(await getReconcile(runId)).toBeNull();
+    expect((await interimRows(runId)).length).toBe(0);
+    const markers = await db
+      .select()
+      .from(providerEvents)
+      .where(and(eq(providerEvents.runId, runId), eq(providerEvents.eventType, RUN_RECONCILING)));
+    expect(markers.length).toBe(0);
   });
 });
 
