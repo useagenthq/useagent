@@ -504,7 +504,7 @@ export function Composer({
           }}
           onSubmit={submit}
           isLoading={pending}
-          maxHeight={hero ? 220 : 96}
+          maxHeight={220}
           className={cn(
             "cursor-text rounded-none border-0 bg-transparent shadow-none",
             hero ? "p-3 md:p-4" : "p-2.5",
@@ -538,7 +538,9 @@ export function Composer({
               }}
               className={cn(
                 "flex-1",
-                hero ? "pt-1 text-paragraph-lg" : "min-h-8 text-paragraph-sm",
+                // The reply composer is a drafting surface, not a search box:
+                // ~3 lines of standing room (T3-style) with comfortable type.
+                hero ? "pt-1 text-paragraph-lg" : "min-h-20 text-paragraph-md",
               )}
             />
           </div>

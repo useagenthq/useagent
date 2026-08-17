@@ -198,12 +198,12 @@ describe("unified shell contract", () => {
     expect(sidebarBrand).not.toContain("border-b");
   });
 
-  test("keeps the reply composer compact and avoids a second boxed wrapper", () => {
+  test("gives the reply composer drafting room without a second boxed wrapper", () => {
     const composer = readFromFrontend("components/chat/composer.tsx");
     const conversation = readFromFrontend("components/chat/conversation.tsx");
 
-    expect(composer).toContain("maxHeight={hero ? 220 : 96}");
-    expect(composer).toContain('hero ? "pt-1 text-paragraph-lg" : "min-h-8 text-paragraph-sm"');
+    expect(composer).toContain("maxHeight={220}");
+    expect(composer).toContain('hero ? "pt-1 text-paragraph-lg" : "min-h-20 text-paragraph-md"');
     expect(conversation).toContain("mx-auto w-full max-w-5xl");
     expect(conversation).not.toContain("shrink-0 border-t p-3");
   });
