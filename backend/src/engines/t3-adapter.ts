@@ -10,6 +10,7 @@ import {
   invalidateT3EnvironmentAccess,
   requestT3Environment,
 } from "./t3-environment-client";
+import { awaitT3CodexProviderReady } from "./t3-codex-subscription";
 import { subscribeT3Thread } from "./t3-event-stream";
 import {
   activityStep,
@@ -56,6 +57,12 @@ import { createNoProgressWatchdog, NoProgressError } from "./turn-no-progress";
 import { T3_SESSION_GENERATION, t3ProviderDrivers } from "./t3-provider-driver";
 
 const T3_POLL_INTERVAL_MS = 125;
+// Codex subscription writes its per-run relay config into the sandbox's T3
+// settings.json, which T3 applies through an asynchronous settings-watch
+// reconcile. Wait for the reconcile to publish the remote instance before
+// steering; if it does not land in time, fall back to a deterministic restart.
+const T3_CODEX_BARRIER_DEADLINE_MS = 5_000;
+const T3_CODEX_VERIFY_DEADLINE_MS = 8_000;
 
 interface T3ShellSnapshot {
   readonly projects: readonly { readonly id: string }[];
@@ -326,18 +333,34 @@ export function makeT3Adapter(engine: T3EngineId, driver: ProviderDriver): Engin
         await prepareStage("secrets_marker", () => recordSecretsInjected(ctx, secretInjection));
         // Codex subscription patches its per-run relay config into the sandbox's
         // T3 settings.json above (provider_bridge). T3 only applies settings via
-        // an asynchronous file-watch reconcile, so a turn dispatched before that
-        // reconcile binds to the pre-reconcile, relay-less codex instance and
+        // an asynchronous settings-watch reconcile, so a turn dispatched before
+        // that reconcile binds to the pre-reconcile, relay-less codex instance and
         // falls back to a local, unauthenticated app-server (no first activity).
-        // Restart T3 so it reads the relay config synchronously at boot and builds
-        // the remote instance from the start. Scoped to codex; opencode/claude do
-        // not patch settings and their paths stay unchanged. The no-first-activity
-        // watchdog below remains the net if a restart still races.
+        // Scoped to codex; opencode/claude do not patch settings and their paths
+        // stay unchanged. The no-first-activity watchdog below remains the net.
         if (engine === "codex") {
-          await prepareStage("runtime_restart", () =>
-            restartT3Environment(sandbox, ctx.signal),
-          );
-          invalidateT3EnvironmentAccess(sandbox);
+          await prepareStage("runtime_barrier", async () => {
+            // (B) Barrier: wait for the reconcile to publish the subscription
+            // (relay-backed) codex instance into its status cache. Content, not
+            // mtime: health refreshes rewrite the cache for the legacy instance
+            // too. Fast path, no restart cost.
+            if (
+              await awaitT3CodexProviderReady(sandbox, ctx.signal, T3_CODEX_BARRIER_DEADLINE_MS)
+            ) {
+              return;
+            }
+            // (A) Fallback: the reconcile did not land in time. Bounce T3 so boot
+            // reads the relay config synchronously and builds the remote instance
+            // from the start, then verify once before steering. Honest error if
+            // the runtime never reports ready.
+            await restartT3Environment(sandbox, ctx.signal);
+            invalidateT3EnvironmentAccess(sandbox);
+            if (
+              !(await awaitT3CodexProviderReady(sandbox, ctx.signal, T3_CODEX_VERIFY_DEADLINE_MS))
+            ) {
+              throw new Error("T3 codex subscription runtime did not become ready after restart");
+            }
+          });
         }
         endPrepare?.();
 
