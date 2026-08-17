@@ -12,6 +12,7 @@ import {
 } from "./service";
 import { bindProviderThread, findProviderThreadBinding } from "./repo";
 import { CodexSubscriptionProtocol } from "./codex-subscription-protocol";
+import { createCodexRemoteEnvironmentBootstrap } from "./codex-remote-environment-bootstrap";
 import { createSerialTaskQueue } from "./serial-task-queue";
 import {
   attachCodexSubscriptionAppServer,
@@ -69,7 +70,7 @@ const grants = new Map<string, RelayGrant>();
 const defaultDependencies: RelayDependencies = {
   now: Date.now,
   selectRuntime: getCodexSubscriptionRuntimeSelection,
-  spawnAppServer: ({ codexHome, execServerUrl, toolGateway }) =>
+  spawnAppServer: ({ codexHome, toolGateway }) =>
     spawn("codex", [
       "app-server",
       "--stdio",
@@ -84,7 +85,6 @@ const defaultDependencies: RelayDependencies = {
     ], {
       env: {
         ...codexAppServerChildEnvironment(codexHome),
-        CODEX_EXEC_SERVER_URL: execServerUrl,
         ...(toolGateway
           ? { SKYNET_TOOL_GATEWAY_BEARER_TOKEN: toolGateway.bearerToken }
           : {}),
@@ -161,6 +161,12 @@ codexSubscriptionRelayRoutes.get(
           }),
         })
       : null;
+    const environmentBootstrap = grant
+      ? createCodexRemoteEnvironmentBootstrap({
+          environmentId: grant.binding.environmentId,
+          execServerUrl: grant.execServerUrl,
+        })
+      : null;
     const childReady = accepted && grant
       ? startCodexSubscriptionAppServer({
           authorize: () => authorizeGrant(grant),
@@ -191,6 +197,7 @@ codexSubscriptionRelayRoutes.get(
       relaySocket?.close(1008, "relay frame rejected");
       relaySocket = null;
       closed = true;
+      environmentBootstrap?.close();
       closeChild();
     };
     const clientFrames = createSerialTaskQueue(rejectRelay);
@@ -213,9 +220,14 @@ codexSubscriptionRelayRoutes.get(
           },
           onLine: (line) => serverFrames.enqueue(async () => {
             await authorizeGrant(grant);
-            if (!protocol) throw new Error("Codex relay protocol is unavailable");
-            await protocol.observeServerFrame(line);
-            socket.send(line);
+            if (!protocol || !environmentBootstrap) {
+              throw new Error("Codex relay protocol is unavailable");
+            }
+            const forwarded = await environmentBootstrap.acceptServerFrame(line);
+            for (const frame of forwarded) {
+              await protocol.observeServerFrame(frame);
+              socket.send(frame);
+            }
           }),
           closeSocket: (code, reason) => socket.close(code, reason),
         });
@@ -229,16 +241,20 @@ codexSubscriptionRelayRoutes.get(
         clientFrames.enqueue(async () => {
           const process = await childReady;
           await authorizeGrant(grant);
-          if (!protocol) throw new Error("Codex relay protocol is unavailable");
+          if (!protocol || !environmentBootstrap) {
+            throw new Error("Codex relay protocol is unavailable");
+          }
           await protocol.acceptClientFrame(frame);
           if (!process.stdin.writable) throw new Error("Codex app-server is unavailable");
-          process.stdin.write(`${frame}\n`);
+          const forwarded = await environmentBootstrap.acceptClientFrame(frame);
+          for (const childFrame of forwarded) process.stdin.write(`${childFrame}\n`);
         });
       },
       onClose: () => {
         closed = true;
         relaySocket = null;
         grants.delete(key);
+        environmentBootstrap?.close();
         closeChild();
       },
     };
