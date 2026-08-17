@@ -1,6 +1,6 @@
 "use client";
 
-import { RiFolderLine } from "@remixicon/react";
+import { RiArrowDownSLine, RiArrowUpSLine, RiFolderLine } from "@remixicon/react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { fetchRuns } from "@/app/agent/runs/runs-data";
@@ -18,12 +18,16 @@ interface ProjectRepo {
   readonly name: string;
 }
 
-const MAX_PROJECTS = 24;
+/** Always-visible shortcut rows; the rest sit behind a disclosure so the
+ *  Threads section below never gets pushed out of view. */
+const VISIBLE_PROJECTS = 5;
+const MAX_PROJECTS = 48;
 const POLL_MS = 30_000;
 
 export function SidebarProjects() {
   const [projects, setProjects] = useState<ProjectRepo[]>([]);
   const [runs, setRuns] = useState<SidebarRun[]>([]);
+  const [expanded, setExpanded] = useState(false);
 
   const loadProjects = useCallback(async (signal?: AbortSignal) => {
     try {
@@ -86,18 +90,42 @@ export function SidebarProjects() {
 
   if (projects.length === 0) return null;
 
+  const visible = projects.slice(0, VISIBLE_PROJECTS);
+  const overflow = projects.slice(VISIBLE_PROJECTS);
+
+  const projectRow = (project: ProjectRepo) => (
+    <SidebarNavItem
+      key={project.fullName}
+      href={`/agent/new?repo=${encodeURIComponent(project.fullName)}`}
+      icon={RiFolderLine}
+      label={project.name}
+      trailing={<WorkingProjectStatus run={activeByRepo.get(project.fullName)} />}
+    />
+  );
+
   return (
     <>
       <SidebarSectionLabel>Projects</SidebarSectionLabel>
-      {projects.map((project) => (
-        <SidebarNavItem
-          key={project.fullName}
-          href={`/agent/new?repo=${encodeURIComponent(project.fullName)}`}
-          icon={RiFolderLine}
-          label={project.name}
-          trailing={<WorkingProjectStatus run={activeByRepo.get(project.fullName)} />}
-        />
-      ))}
+      {visible.map(projectRow)}
+      {overflow.length > 0 ? (
+        <>
+          {expanded ? (
+            <div className="max-h-56 overflow-y-auto">{overflow.map(projectRow)}</div>
+          ) : null}
+          <button
+            type="button"
+            onClick={() => setExpanded((v) => !v)}
+            className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-paragraph-xs text-text-soft-400 transition-colors hover:bg-bg-weak-50 hover:text-text-sub-600"
+          >
+            {expanded ? (
+              <RiArrowUpSLine className="size-4" aria-hidden />
+            ) : (
+              <RiArrowDownSLine className="size-4" aria-hidden />
+            )}
+            {expanded ? "Show fewer" : `Show ${overflow.length} more`}
+          </button>
+        </>
+      ) : null}
     </>
   );
 }
