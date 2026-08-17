@@ -2,6 +2,7 @@
 
 import {
   RiAddLine,
+  RiChatHistoryLine,
   RiCheckLine,
   RiFileEditLine,
   RiFileList2Line,
@@ -12,6 +13,7 @@ import {
   RiSparkling2Line,
   RiTerminalBoxLine,
 } from "@remixicon/react";
+import Link from "next/link";
 import * as React from "react";
 import { ApprovalCard } from "@/components/ai/approval-card";
 import { ContextCardStack } from "@/components/ai/context-card";
@@ -86,12 +88,19 @@ export function ComponentLab() {
       </header>
 
       <div className="mx-auto max-w-4xl px-6">
-        <div className="animate-ai-fade-up flex flex-col gap-1 py-10">
+        <div className="animate-ai-fade-up flex flex-col gap-3 py-10">
           <h1 className="text-title-h4 text-text-strong-950">The parts bin</h1>
           <p className="text-paragraph-md text-text-sub-600">
             Every vendored AlignUI primitive this app composes, wired to the Skynet brand layer.
             Toggle the theme from any page to confirm both render.
           </p>
+          <Link
+            href="/lab/session"
+            className="inline-flex w-fit items-center gap-1.5 rounded-lg border border-stroke-soft-200 px-3 py-1.5 text-label-sm text-text-sub-600 transition-colors hover:bg-bg-weak-50 hover:text-text-strong-950"
+          >
+            <RiChatHistoryLine className="size-4" aria-hidden />
+            Session sample - every timeline + chrome type in one conversation
+          </Link>
         </div>
 
         <AgentUiShowcase />

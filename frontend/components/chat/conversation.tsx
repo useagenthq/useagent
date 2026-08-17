@@ -116,7 +116,7 @@ function FailedNote() {
   );
 }
 
-function UserBubble({ children }: { children: string }) {
+export function UserBubble({ children }: { children: string }) {
   return (
     <div className="flex justify-end" data-testid="user-message">
       <div className="bg-bg-weak-50 text-text-strong-950 text-paragraph-sm max-w-[85%] rounded-2xl rounded-br-md px-3.5 py-2.5">
@@ -126,11 +126,25 @@ function UserBubble({ children }: { children: string }) {
   );
 }
 
+/** The assistant turn's identity row: brand glyph + "Skynet" + the engine label.
+ *  Shared by TurnBlock and the /lab/session sample so both read identically. */
+export function AssistantTurnHeader({ engine }: { engine: EngineId }) {
+  return (
+    <div className="flex items-center gap-2">
+      <span className="ring-stroke-soft-200 bg-bg-weak-50 flex size-5 shrink-0 items-center justify-center rounded-full ring-1 ring-inset">
+        <OrbitKnotMark className="size-3.5" stroke={2.2} />
+      </span>
+      <span className="text-label-sm text-text-strong-950">Skynet</span>
+      <span className="text-mono-label text-text-soft-400">{engineLabel(engine)}</span>
+    </div>
+  );
+}
+
 /** The agent's answer. No fake typewriter: real streaming is LiveNarration's
  * job (progressive markdown on actual deltas); once a run completes, the
  * summary renders as settled Markdown immediately — a plain-text re-typing
  * animation both lied about liveness and showed raw markdown runes. */
-function AgentAnswer({ summary }: { summary: string; stream?: boolean }) {
+export function AgentAnswer({ summary }: { summary: string; stream?: boolean }) {
   return (
     <div className="animate-ai-fade-up" data-testid="agent-answer">
       <Markdown className={MD_CLASS}>{summary}</Markdown>
@@ -328,7 +342,7 @@ function FileChangeRow({ node }: { node: Extract<TimelineNode, { kind: "file" }>
  * is represented by the T3 working indicator's step suffix (upstream filters
  * in-progress rows from the group), which also replaces the old LoadingState tail.
  */
-function Timeline({
+export function Timeline({
   nodes,
   live,
   workingSince,
@@ -475,13 +489,7 @@ function TurnBlock({
           worklog capsule aligned to the same left content edge as every other
           assistant turn — one column, symmetric with the user bubble's bounds. */}
       <div className="group/turn space-y-3">
-        <div className="flex items-center gap-2">
-          <span className="ring-stroke-soft-200 bg-bg-weak-50 flex size-5 shrink-0 items-center justify-center rounded-full ring-1 ring-inset">
-            <OrbitKnotMark className="size-3.5" stroke={2.2} />
-          </span>
-          <span className="text-label-sm text-text-strong-950">Skynet</span>
-          <span className="text-mono-label text-text-soft-400">{engineLabel(run.engine)}</span>
-        </div>
+        <AssistantTurnHeader engine={run.engine} />
 
         {/* Thinking surfaced ahead of the answer: real streamed reasoning tokens
             (not a spinner), yielding the instant answer text starts. */}
