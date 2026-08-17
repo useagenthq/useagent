@@ -209,7 +209,12 @@ async function scenarioMultiTurn(browser: Browser): Promise<void> {
   // their presence proves A is preserved AND B rendered - independent of the shared
   // mock tool labels that B also emits.
   check("both turns render: A's prompt + B's prompt both present", afterB.includes(aPrompt) && afterB.includes(bPrompt));
-  check("A preserved: its work still shown (rows, or 'Ran N tools' after settle-fold)", afterB.includes("Ran ") || markersPresent(afterB).length >= 2);
+  // Settle-fold copy changed with the T3 work-entry grammar: "+N previous tool
+  // calls" replaced "Ran N tools". Accept either so the proof spans the cutover.
+  check(
+    "A preserved: its work still shown (rows, or settle-fold)",
+    afterB.includes("Ran ") || afterB.includes("previous tool call") || markersPresent(afterB).length >= 2,
+  );
   await page.screenshot({ path: `${SHOTS}A3-B-running.png` }).catch(() => {});
 
   await page.reload({ waitUntil: "domcontentloaded" });
