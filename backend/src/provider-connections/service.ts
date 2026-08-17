@@ -238,7 +238,17 @@ export async function storeManagedCodexAppServerProviderConnection(
         iv: sealed.iv,
         tag: sealed.tag,
       } as const;
-      const row = scope.allowReconnect === false
+      // The conservative sync path (allowReconnect false) exists so a stale
+      // pre-logout status snapshot cannot resurrect a deliberately revoked row.
+      // A live account under a DIFFERENT email than the revoked row cannot be
+      // that stale snapshot - it is a genuinely new login whose completion
+      // notification was lost, so reconcile instead of stranding the row.
+      const revokedRowForOtherAccount =
+        existing?.status === "revoked" &&
+        typeof existing.metadata?.email === "string" &&
+        typeof scope.metadata.email === "string" &&
+        existing.metadata.email !== scope.metadata.email;
+      const row = scope.allowReconnect === false && !revokedRowForOtherAccount
         ? await upsertProviderConnectionUnlessRevoked(connectionInput)
         : await upsertProviderConnection(connectionInput);
       if (!row) {

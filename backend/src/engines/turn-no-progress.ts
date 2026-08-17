@@ -62,7 +62,7 @@ export function createNoProgressWatchdog(
 
   const noProgressError = (bound: string): NoProgressError =>
     new NoProgressError(
-      `T3 provider made no progress (${bound}): ${latestReason ?? "no provider activity"}`,
+      `Provider made no progress (${bound}): ${latestReason ?? "no provider activity"}`,
     );
   const settle = () => {
     disposed = true;
