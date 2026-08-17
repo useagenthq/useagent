@@ -10,12 +10,14 @@ import {
 describe("Desktop product surface", () => {
   const read = (path: string) => readFileSync(new URL(path, import.meta.url), "utf8");
 
-  test("every sandbox-backed thread exposes Desktop without waiting for a capability event", () => {
+  test("every sandbox-backed thread exposes Browser but mounts noVNC only after selection", () => {
     const sessionView = read("./session-view.tsx");
 
     expect(sessionView).toContain('value="desktop" data-testid="rail-tab-desktop"');
     expect(sessionView).not.toContain("{hasDesktop && (");
     expect(sessionView).toContain("<DesktopPane threadId={rootId} />");
+    expect(sessionView).toContain("desktopEverOpened ? (");
+    expect(sessionView).toContain('if (railTab === "desktop") setDesktopEverOpened(true)');
     expect(sessionView).toContain(
       'const hasRuntimeSurfaces = normalizeEngine(newest.engine) !== "chat"',
     );

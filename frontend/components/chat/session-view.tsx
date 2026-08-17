@@ -543,6 +543,10 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
             : railTab === "terminal"
               ? "Terminal"
               : "Desktop";
+  const [desktopEverOpened, setDesktopEverOpened] = useState(false);
+  useEffect(() => {
+    if (railTab === "desktop") setDesktopEverOpened(true);
+  }, [railTab]);
   useEffect(() => {
     if (!railOpen && railExpanded) setRailExpanded(false);
   }, [railExpanded, railOpen]);
@@ -746,7 +750,7 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
               "border-stroke-soft-200 bg-bg-white-0 flex min-h-[50vh] min-w-0 flex-col overflow-hidden border-l transition-[width] md:min-h-0",
               railExpanded
                 ? "flex-1 md:w-auto"
-                : cn("md:shrink-0", railWidth !== null ? "md:w-[var(--rail-w)]" : "md:w-[22%]"),
+                : cn("md:shrink-0", railWidth !== null ? "md:w-[var(--rail-w)]" : "md:w-[360px]"),
             )}
           >
             <div className="border-stroke-soft-200 flex shrink-0 items-center gap-2 border-b p-2">
@@ -817,19 +821,20 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
               </button>
             </div>
             <div className="relative min-h-0 flex-1">
-              {/* Keep the Desktop iframe mounted while the rail is open. noVNC
-                  and its WebSocket are expensive to reconnect; prewarming this
-                  hidden, full-size layer makes the first switch immediate and
-                  preserves the visible browser when the user checks another tab. */}
-              <div
-                aria-hidden={railTab !== "desktop"}
-                className={cn(
-                  "absolute inset-0",
-                  railTab === "desktop" ? "visible" : "pointer-events-none invisible",
-                )}
-              >
-                <DesktopPane threadId={rootId} />
-              </div>
+              {/* Browser work starts only after an explicit selection. Once
+                  opened, keep noVNC mounted across tab switches to preserve the
+                  visible desktop and its WebSocket. */}
+              {desktopEverOpened ? (
+                <div
+                  aria-hidden={railTab !== "desktop"}
+                  className={cn(
+                    "absolute inset-0",
+                    railTab === "desktop" ? "visible" : "pointer-events-none invisible",
+                  )}
+                >
+                  <DesktopPane threadId={rootId} />
+                </div>
+              ) : null}
               {railTab !== "desktop" && (
                 <div className="absolute inset-0">
                   {railTab === null ? (
