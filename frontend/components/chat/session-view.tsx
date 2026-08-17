@@ -482,9 +482,10 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
   const hasSubagents =
     allCanonicalEvents.some((event) => event.kind === "child.started") ||
     allSteps.some((s) => s.chip === "subagent");
+  const hasRuntimeSurfaces = normalizeEngine(newest.engine) !== "chat";
   const [railOverride, setRailOverride] = useState<boolean | null>(null);
   const [railExpanded, setRailExpanded] = useState(false);
-  const railOpen = railOverride ?? true;
+  const railOpen = railOverride ?? hasRuntimeSurfaces;
   // Rail resize: a dragger between the conversation and the rail (md+). Width
   // in px, persisted per browser; null → the 32% default. Loaded in an effect
   // (not the initializer) so SSR and first client render agree.
@@ -622,7 +623,7 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
 
   return (
     <div className="flex h-full flex-col">
-      {/* Compact session bar — the shell's TopNav + AgentSidebar (⌘K included)
+      {/* Compact session bar - the shell's TopNav + ThreadSidebar (⌘K included)
           wrap this view, so the brand/search chrome lives there now. */}
       <div className="border-stroke-soft-200 bg-bg-white-0 flex shrink-0 items-center justify-between gap-3 border-b px-4 py-2">
         <span className="text-mono-label text-text-soft-400">Session</span>
@@ -858,7 +859,7 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
               )}
             </div>
           </section>
-        ) : (
+        ) : hasRuntimeSurfaces ? (
           <button
             type="button"
             onClick={() => setRailOverride(true)}
@@ -871,7 +872,7 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
             <RiTerminalBoxLine className="size-4" aria-hidden />
             <RiComputerLine className="size-4" aria-hidden />
           </button>
-        )}
+        ) : null}
       </div>
     </div>
   );

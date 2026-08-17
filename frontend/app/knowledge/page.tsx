@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
-
-import { AgentSidebar } from "@/components/shell/agent-sidebar";
 import { AppShell } from "@/components/shell/app-shell";
+import { LibrarySidebar } from "@/components/shell/library-sidebar";
 import { fetchKnowledgeItems } from "./knowledge-api";
 import { mockKnowledgeItems } from "./knowledge-data";
 import { KnowledgeGallery } from "./knowledge-gallery";
@@ -26,7 +25,7 @@ export default async function KnowledgePage() {
   }
 
   return (
-    <AppShell activeTab="agent" sidebar={<AgentSidebar active="knowledge" />}>
+    <AppShell sidebar={<LibrarySidebar active="knowledge" />}>
       <KnowledgeGallery
         initialItems={initialItems}
         initialLive={initialLive}

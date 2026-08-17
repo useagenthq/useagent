@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 
 import { AppShell } from "@/components/shell/app-shell";
-import { ChatSidebar } from "@/components/shell/chat-sidebar";
+import { LibrarySidebar } from "@/components/shell/library-sidebar";
 import { fetchArtifactSnapshot } from "@/lib/fetch-artifacts";
 import { LiveArtifacts } from "../agent/artifacts/live-artifacts";
 
@@ -14,11 +14,8 @@ export default async function ArtifactsPage() {
   const snapshot = await fetchArtifactSnapshot();
 
   return (
-    <AppShell activeTab="chat" sidebar={<ChatSidebar active="artifacts" />}>
-      <LiveArtifacts
-        initialArtifacts={snapshot.artifacts}
-        initialAvailable={snapshot.available}
-      />
+    <AppShell sidebar={<LibrarySidebar active="artifacts" />}>
+      <LiveArtifacts initialArtifacts={snapshot.artifacts} initialAvailable={snapshot.available} />
     </AppShell>
   );
 }

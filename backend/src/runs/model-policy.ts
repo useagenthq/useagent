@@ -1,4 +1,6 @@
 import type { EngineId } from "../db/schema";
+import { chatModelCatalog } from "../chat/models";
+import { chatModel } from "../chat/stream";
 
 export const KIMI_K3_MODEL = "moonshotai/kimi-k3";
 export const FAST_OPENCODE_MODEL = "openai/gpt-5.6-luna";
@@ -57,6 +59,8 @@ export function allowedModelsForEngine(
       return OPENCODE_ALLOWED_MODELS.anthropic;
     case "codex":
       return [...codexModels(env)];
+    case "chat":
+      return chatModelCatalog(env).models.map((model) => model.value);
     case "mock":
     case "acp":
       return [];
@@ -74,6 +78,8 @@ export function defaultModelForEngine(
       return DEFAULT_OPENCODE_MODEL;
     case "codex":
       return codexModels(env).values().next().value ?? DEFAULT_CODEX_MODEL;
+    case "chat":
+      return chatModel(env);
     case "mock":
     case "claude":
     case "claude-sdk":
@@ -100,6 +106,8 @@ export function isModelAllowedForEngine(
       return CLAUDE_MODELS.has(model);
     case "codex":
       return codexModels(env).has(model);
+    case "chat":
+      return chatModelCatalog(env).models.some((candidate) => candidate.value === model);
     case "acp":
       return false;
   }

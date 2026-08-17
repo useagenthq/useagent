@@ -13,6 +13,14 @@ import { cnExt as cn } from "@/utils/cn";
 
 export type EngineModelCatalog = Partial<Record<EngineId, readonly string[]>>;
 
+export function resolveEnabledEngine(
+  current: EngineId,
+  enabled: readonly EngineId[],
+): EngineId | null {
+  if (enabled.includes(current)) return current;
+  return enabled[0] ?? null;
+}
+
 function parseEngineModelCatalog(raw: unknown): EngineModelCatalog {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
   const out: EngineModelCatalog = {};

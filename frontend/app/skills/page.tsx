@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
-
-import { AgentSidebar } from "@/components/shell/agent-sidebar";
 import { AppShell } from "@/components/shell/app-shell";
+import { LibrarySidebar } from "@/components/shell/library-sidebar";
 import { fetchSkills } from "./skills-api";
 import { mockSkills } from "./skills-data";
 import { SkillsView } from "./skills-view";
@@ -27,7 +26,7 @@ export default async function SkillsPage() {
   }
 
   return (
-    <AppShell activeTab="agent" sidebar={<AgentSidebar active="skills" />}>
+    <AppShell sidebar={<LibrarySidebar active="skills" />}>
       <SkillsView
         initialSkills={initialSkills}
         initialLive={initialLive}

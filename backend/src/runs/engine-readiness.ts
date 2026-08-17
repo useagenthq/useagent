@@ -6,12 +6,13 @@ import {
 } from "./model-policy";
 import { providerForEngine, type ProviderId } from "../provider-gateway/provider";
 import { engineAuthMode, engineUsesProviderGateway } from "./engine-auth-mode";
+import { chatLlmEnabled } from "../chat/stream";
+import { enabledEnginesForEnv } from "../env";
 
-export const USER_FACING_ENGINES = ["opencode", "claude", "codex"] as const;
+export const USER_FACING_ENGINES = ["chat", "opencode", "claude", "codex"] as const;
 export type UserFacingEngineId = (typeof USER_FACING_ENGINES)[number];
 
 const POSITIVE_HEALTH = new Set(["ready", "healthy", "ok", "pass", "passed", "verified"]);
-const BASE_ENABLED_ENGINES = new Set<EngineId>(["mock", "opencode", "daytona"]);
 const ENGINE_ID_SET: ReadonlySet<string> = new Set(ENGINE_IDS);
 const USER_FACING_ENGINE_SET: ReadonlySet<string> = new Set(USER_FACING_ENGINES);
 
@@ -46,25 +47,10 @@ export function engineResolutionErrorBody(
     : { error: resolution.error, engine: resolution.engine };
 }
 
-function normalizedEnvList(value: string | undefined): readonly string[] {
-  return (value ?? "")
-    .split(",")
-    .map((item) => item.trim().toLowerCase())
-    .filter(Boolean);
-}
-
 function devModeEnabledForEnv(env: Record<string, string | undefined>): boolean {
   const explicit = env.SKYNET_DEV_MODE;
   if (explicit !== undefined) return explicit === "true";
   return (env.NODE_ENV ?? "development") !== "production";
-}
-
-function enabledEngineSet(env: Record<string, string | undefined>): ReadonlySet<EngineId> {
-  const engines = new Set(BASE_ENABLED_ENGINES);
-  for (const id of normalizedEnvList(env.ENABLED_ENGINES)) {
-    if (ENGINE_ID_SET.has(id)) engines.add(id as EngineId);
-  }
-  return engines;
 }
 
 function healthFlag(name: string, env: Record<string, string | undefined>): string | null {
@@ -97,6 +83,7 @@ export function modelProviderReadyForEngine(
   model: string,
   env: Record<string, string | undefined> = process.env,
 ): boolean {
+  if (engine === "chat") return chatLlmEnabled(env);
   if (engineAuthMode(engine, env) === null) return false;
   if (!engineUsesProviderGateway(engine, env)) return true;
   const provider = providerForEngine(engine, model);
@@ -127,7 +114,15 @@ export function engineReadiness(
   engine: UserFacingEngineId,
   env: Record<string, string | undefined> = process.env,
 ): EngineReadiness {
-  if (!enabledEngineSet(env).has(engine)) return { engine, ready: false, reason: "disabled" };
+  if (!enabledEnginesForEnv(env).has(engine)) {
+    return { engine, ready: false, reason: "disabled" };
+  }
+
+  if (engine === "chat") {
+    return chatLlmEnabled(env)
+      ? { engine, ready: true, reason: "enabled" }
+      : { engine, ready: false, reason: "not_proven" };
+  }
 
   const engineHealth = explicitEngineHealth(engine, env);
   if (!engineHealth || !POSITIVE_HEALTH.has(engineHealth)) {
@@ -169,9 +164,10 @@ export function engineReadyForDispatch(
   env: Record<string, string | undefined> = process.env,
 ): boolean {
   if (!ENGINE_ID_SET.has(engine)) return false;
+  if (engine === "chat") return chatLlmEnabled(env);
   if (engine === "mock") return devModeEnabledForEnv(env);
   const knownEngine = engine as EngineId;
-  if (!enabledEngineSet(env).has(knownEngine)) return false;
+  if (!enabledEnginesForEnv(env).has(knownEngine)) return false;
   if (!USER_FACING_ENGINE_SET.has(engine)) return true;
   return engineReadiness(engine as UserFacingEngineId, env).ready;
 }
@@ -202,7 +198,7 @@ export function resolveAcceptedEngine(
       if (devModeEnabledForEnv(env)) return { ok: true, engine };
       return { ok: false, status: 403, error: "engine_not_enabled", engine };
     }
-    if (!enabledEngineSet(env).has(engine)) {
+    if (!enabledEnginesForEnv(env).has(engine)) {
       return { ok: false, status: 403, error: "engine_not_enabled", engine };
     }
     if (USER_FACING_ENGINE_SET.has(engine)) {

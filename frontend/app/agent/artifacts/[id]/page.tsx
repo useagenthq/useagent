@@ -1,15 +1,11 @@
 import { decodeArtifactResult } from "@skynet/agent-client";
 import { notFound } from "next/navigation";
-import { AgentSidebar } from "@/components/shell/agent-sidebar";
 import { AppShell } from "@/components/shell/app-shell";
+import { LibrarySidebar } from "@/components/shell/library-sidebar";
 import { backendFetch } from "@/lib/backend-fetch";
 import { ArtifactEditor } from "./artifact-editor";
 
-export default async function ArtifactEditorPage({
-  params,
-}: {
-  params: Promise<{ id: string }>;
-}) {
+export default async function ArtifactEditorPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const response = await backendFetch(`/api/artifacts/${encodeURIComponent(id)}`, {
     cache: "no-store",
@@ -19,7 +15,7 @@ export default async function ArtifactEditorPage({
   if (!result?.artifact.workpiece) notFound();
 
   return (
-    <AppShell activeTab="agent" sidebar={<AgentSidebar active="live-artifacts" />}>
+    <AppShell sidebar={<LibrarySidebar active="artifacts" />}>
       <ArtifactEditor artifact={result.artifact} />
     </AppShell>
   );

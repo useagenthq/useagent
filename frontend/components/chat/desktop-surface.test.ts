@@ -10,13 +10,16 @@ import {
 describe("Desktop product surface", () => {
   const read = (path: string) => readFileSync(new URL(path, import.meta.url), "utf8");
 
-  test("the rail always exposes Desktop instead of waiting for a capability event", () => {
+  test("every sandbox-backed thread exposes Desktop without waiting for a capability event", () => {
     const sessionView = read("./session-view.tsx");
 
     expect(sessionView).toContain('value="desktop" data-testid="rail-tab-desktop"');
     expect(sessionView).not.toContain("{hasDesktop && (");
     expect(sessionView).toContain("<DesktopPane threadId={rootId} />");
-    expect(sessionView).toContain("const railOpen = railOverride ?? true");
+    expect(sessionView).toContain(
+      'const hasRuntimeSurfaces = normalizeEngine(newest.engine) !== "chat"',
+    );
+    expect(sessionView).toContain("const railOpen = railOverride ?? hasRuntimeSurfaces");
     expect(sessionView).not.toContain("railOverride ?? hasRailContent");
     expect(sessionView).toContain('aria-hidden={railTab !== "desktop"}');
     expect(sessionView).toContain(

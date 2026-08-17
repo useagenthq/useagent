@@ -1,24 +1,16 @@
-import type { Metadata } from 'next';
-
-import { AppShell } from '@/components/shell/app-shell';
-import { ChatSidebar } from '@/components/shell/chat-sidebar';
-import { ChatView } from '@/components/chat/chat-view';
+import type { Metadata } from "next";
+import { redirect } from "next/navigation";
 
 export const metadata: Metadata = {
-  title: 'Chat',
-  description: 'Talk to the model directly - instant, no sandbox.',
+  title: "New thread",
+  description: "Start a direct conversation or a sandbox-backed task.",
 };
 
 /**
- * Home is the lightweight Chat surface (#122): a no-sandbox conversational page
- * that streams a model completion directly, augmented with read-only retrieval
- * (org knowledge + wiki + team memory) and a Promote to Agent action. Distinct
- * from the Agent surface (/agent/runs), which spins Daytona sandboxes.
+ * Chat and Agent share one durable thread entrypoint. The previous `/api/chat`
+ * route remains available as a server rollback path, but the product no longer
+ * exposes a second stateless conversation surface.
  */
 export default function Home() {
-  return (
-    <AppShell activeTab='chat' sidebar={<ChatSidebar active='new-chat' />}>
-      <ChatView />
-    </AppShell>
-  );
+  redirect("/agent/new");
 }

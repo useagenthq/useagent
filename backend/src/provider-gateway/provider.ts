@@ -14,6 +14,8 @@ export function providerForEngine(engine: EngineId, model: string): ProviderId |
       return "anthropic";
     case "codex":
       return "openai";
+    case "chat":
+      return "openrouter";
     case "mock":
     case "acp":
       return null;

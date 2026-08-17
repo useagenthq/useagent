@@ -31,8 +31,10 @@ const SERVED: ChatModelInfo[] = [
  * in the curated list, surface it too (first, marked as the configured default)
  * so the picker never hides the model actually in use.
  */
-export function chatModelCatalog(): { models: ChatModelInfo[]; default: string } {
-  const def = chatModel();
+export function chatModelCatalog(
+  env: Record<string, string | undefined> = process.env,
+): { models: ChatModelInfo[]; default: string } {
+  const def = chatModel(env);
   const models = SERVED.some((m) => m.value === def)
     ? SERVED
     : [{ value: def, label: def, description: "Configured via CHAT_MODEL" }, ...SERVED];

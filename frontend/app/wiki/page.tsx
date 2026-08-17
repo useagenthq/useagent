@@ -1,18 +1,13 @@
+import { RiBookOpenLine, RiFileList3Line } from "@remixicon/react";
 import type { Metadata } from "next";
 import Link from "next/link";
-import { RiBookOpenLine, RiFileList3Line } from "@remixicon/react";
-
-import { AgentSidebar } from "@/components/shell/agent-sidebar";
-import { AppShell } from "@/components/shell/app-shell";
 import { BackendUnreachable } from "@/components/shared/backend-unreachable";
+import { AppShell } from "@/components/shell/app-shell";
+import { LibrarySidebar } from "@/components/shell/library-sidebar";
 import * as Badge from "@/components/ui/badge";
 import { AskRepoBar } from "./ask-repo-bar";
 import { PagesRail } from "./pages-rail";
-import {
-  fetchPublishedWikiDocuments,
-  relativeTime,
-  type WikiDoc,
-} from "./wiki-data";
+import { fetchPublishedWikiDocuments, relativeTime, type WikiDoc } from "./wiki-data";
 
 export const metadata: Metadata = {
   title: "Wiki",
@@ -42,7 +37,7 @@ export default async function WikiPage() {
       .filter((l) => l.length > 0 && l !== d.title)[0] ?? "";
 
   return (
-    <AppShell activeTab="agent" sidebar={<AgentSidebar active="wiki" />}>
+    <AppShell sidebar={<LibrarySidebar active="wiki" />}>
       <div className="mx-auto w-full max-w-5xl p-6 pb-24 lg:p-8 lg:pb-24">
         {/* Header */}
         <header className="flex flex-wrap items-start justify-between gap-4">
@@ -76,17 +71,11 @@ export default async function WikiPage() {
               <BackendUnreachable />
             ) : docs.length === 0 ? (
               <div className="rounded-2xl border border-stroke-soft-200 bg-bg-weak-50 p-10 text-center">
-                <RiFileList3Line
-                  className="mx-auto size-7 text-text-soft-400"
-                  aria-hidden
-                />
-                <p className="mt-3 text-label-md text-text-strong-950">
-                  No published pages yet
-                </p>
+                <RiFileList3Line className="mx-auto size-7 text-text-soft-400" aria-hidden />
+                <p className="mt-3 text-label-md text-text-strong-950">No published pages yet</p>
                 <p className="mx-auto mt-1 max-w-md text-paragraph-sm leading-6 text-text-sub-600">
-                  Publish a knowledge document and it appears here — the same
-                  content the agent can search. Create one from Knowledge, then
-                  publish its revision.
+                  Publish a knowledge document and it appears here — the same content the agent can
+                  search. Create one from Knowledge, then publish its revision.
                 </p>
               </div>
             ) : (

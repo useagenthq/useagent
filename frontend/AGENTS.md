@@ -10,8 +10,8 @@ this file (`@AGENTS.md`) — edit here, never fork the content.
 Layer map (canonical paths):
 - **foundation** — `components/ui/**` (vendored AlignUI), `components/foundations/**`
   (brand), tokens + motion utilities in `app/globals.css`.
-- **app shell** — `components/shell/**` (AppShell, TopNav, ChatSidebar,
-  AgentSidebar, search-command ⌘K, user-menu, theme-toggle).
+- **app shell** - `components/shell/**` (AppShell, TopNav, ThreadSidebar,
+  LibrarySidebar, search-command ⌘K, user-menu, theme-toggle).
 - **chat surface** — `components/chat/**` (vendored prompt-kit + composer +
   session panes).
 - **AI kit** — `components/ai/**` (beautiful-ui ports; see its README).
@@ -132,39 +132,38 @@ Full source of truth: `tailwind.config.ts` (token scale) + `app/globals.css`
 
 Exception: brand icon tiles / the AsteriskMark may use `currentColor` freely.
 
-## Dark theme — the #20201f ladder
+## Dark theme - Tokyo Night
 
-**Dark is the default theme.** The whole app sits on a warm near-black base of
-**`#20201f`** — no pure black, no blue-gray. This is implemented in the `.dark`
-block of `app/globals.css` by re-anchoring the `neutral` ramp to a warm scale
-(hue ~40–60°, very low saturation) with `neutral-950 = #20201f`. Because every
-AlignUI semantic token derives from that ramp, **you get the ladder for free by
-using the semantic tokens** — never hard-code a background/border in dark.
+**Dark is the default theme.** The dark semantic ramp is mapped from the
+upstream Tokyo Night theme used by T3 Code. The canvas is `#1a1b26`, chrome is
+`#16161e`, raised surfaces are `#1e202e`, primary text is `#c0caf5`, muted text
+is `#787c99`, borders are `#292e42`, and the focused accent is `#7aa2f7`.
+Light-mode tokens remain independent and unchanged. Components consume the
+semantic tokens below and never hard-code dark values.
 
 Use these tokens for the elevation ladder (dark values shown; they invert
 correctly in light):
 
 | Role | Token (utility) | Dark value |
 |------|-----------------|-----------|
-| Base page / canvas | `bg-bg-white-0` | `#20201f` |
-| Card / panel / input / elevated | `bg-bg-weak-50` | `#292826` |
-| Raised / hover / popover | `bg-bg-soft-200` | `#3b3935` |
-| Raised+ / active | `bg-bg-sub-300` | `#4b4944` |
-| Hairline border | `border`/`ring`/`stroke` + `-stroke-soft-200` | `#3b3935` |
-| Stronger border | `…-stroke-sub-300` | `#4b4944` |
-| Primary text | `text-text-strong-950` | `#ffffff` |
-| Secondary text | `text-text-sub-600` | `#99968f` |
-| Muted text | `text-text-soft-400` | `#75726c` |
-| Modal / ⌘K palette scrim | `bg-overlay` | warm near-black @ 60% |
+| Base page / canvas | `bg-bg-white-0` | `#1a1b26` |
+| Muted row / hover | `bg-bg-weak-50` | `#13131a` |
+| Chrome / card | `bg-bg-soft-200` | `#16161e` |
+| Raised / active | `bg-bg-sub-300` | `#1e202e` |
+| Hairline border | `border`/`ring`/`stroke` + `-stroke-soft-200` | `#292e42` |
+| Stronger border | `...-stroke-sub-300` | `#3b3e52` |
+| Primary text | `text-text-strong-950` | `#c0caf5` |
+| Secondary text | `text-text-sub-600` | `#a9b1d6` |
+| Muted text | `text-text-soft-400` | `#787c99` |
+| Modal / command palette scrim | `bg-overlay` | `#101014` @ 72% |
 
 Rules for the four sibling page agents:
-- Sidebar, top nav, cards, command-palette backdrop, tables — **all** read from
-  the tokens above. If a surface looks pure-black or blue-gray in dark, you used
-  a raw color instead of a token.
+- Sidebar, top nav, cards, command-palette backdrop, and tables all read from
+  the tokens above.
 - Base surfaces = `bg-bg-white-0`; lift one step (`bg-bg-weak-50`) for cards, a
   second step (`bg-bg-soft-200`) for menus/hover. Separate with
   `border-stroke-soft-200`, not shadows.
-- Don't touch the light-mode neutrals — the warm ramp is scoped to `.dark` only.
+- Do not touch light-mode neutrals when adjusting the Tokyo Night mapping.
 - The `<html>` element also carries `bg-bg-white-0`, so overscroll never flashes
   black/white.
 
