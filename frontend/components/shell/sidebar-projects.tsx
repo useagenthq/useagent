@@ -18,7 +18,7 @@ interface ProjectRepo {
   readonly name: string;
 }
 
-const MAX_PROJECTS = 6;
+const MAX_PROJECTS = 24;
 const POLL_MS = 30_000;
 
 export function SidebarProjects() {

@@ -9,7 +9,8 @@ import { useOrgChanges } from "@/hooks/use-org-changes";
 import { SidebarSectionLabel } from "./sidebar-nav";
 
 const POLL_MS = 30_000;
-const MAX = 8;
+// Generous cap: the sidebar column scrolls; this only bounds DOM cost.
+const MAX = 100;
 
 /**
  * The sidebar thread list, rendered with the vendored T3 thread-row treatment
