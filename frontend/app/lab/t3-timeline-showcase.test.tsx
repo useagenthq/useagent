@@ -37,6 +37,15 @@ test("renders every ported t3-ui piece from mock canonical nodes", () => {
   expect(html).toContain('aria-expanded="false"');
   expect(html).toContain('aria-expanded="true"');
 
+  // Proposed plan card: long plan collapses behind the Expand toggle, short plan
+  // renders fully; both surface the approve action.
+  const planCards = html.match(/data-t3-ui="proposed-plan-card"/g) ?? [];
+  expect(planCards.length).toBe(2);
+  expect(html).toContain("Scope retry budgets per attempt chain");
+  expect(html).toContain("Expand plan");
+  expect(html).toContain("Implement plan");
+  expect(html).toContain("Rename the retry flag");
+
   // Queued pill: honest FIFO copy, Send now only on the head message.
   expect(html).toContain('data-t3-ui="queued-message-pill"');
   expect(html).toContain("Queued - sends after the current run");

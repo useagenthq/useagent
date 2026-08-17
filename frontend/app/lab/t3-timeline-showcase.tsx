@@ -20,6 +20,7 @@ import {
   T3ContextWindowDetails,
   T3ContextWindowMeter,
 } from "@/components/t3-ui/context-window-meter";
+import { T3ProposedPlanCard } from "@/components/t3-ui/proposed-plan-card";
 import { T3QueuedMessagePill } from "@/components/t3-ui/queued-message-pill";
 import { T3SyncStatusPill } from "@/components/t3-ui/sync-status-pill";
 import { T3WorkEntryRow } from "@/components/t3-ui/work-entry-row";
@@ -144,6 +145,42 @@ const USAGE_STEADY = contextWindowFromChildUsage({ totalTokens: 61_400 }, 200_00
 const USAGE_OVERLOADED = contextWindowFromChildUsage({ totalTokens: 191_000 }, 200_000);
 const USAGE_NO_LIMIT = contextWindowFromChildUsage({ totalTokens: 61_400 });
 
+// A proposed plan the agent would submit for approval before execution. Long
+// enough (>20 lines) to exercise the collapsed preview + Expand plan toggle.
+// NOTE: no canonical event feeds this card yet (plan.updated is a checklist
+// snapshot, approval.requested a tool-op approval); this is a prop-pure preview.
+const MOCK_PLAN_MARKDOWN = [
+  "# Scope retry budgets per attempt chain",
+  "",
+  "## Summary",
+  "",
+  "Hedged requests currently share one retry budget, so a slow primary starves its hedge.",
+  "",
+  "## Steps",
+  "",
+  "1. Introduce budgetFor(attempt) in backend/src/provider-gateway/retry.ts.",
+  "2. Thread the scoped budget through routes.ts request hedging.",
+  "3. Emit a budget-exhausted warning event instead of silently dropping.",
+  "4. Backfill unit tests for the per-chain budget arithmetic.",
+  "5. Re-run the focused provider-gateway suite.",
+  "6. Verify no shared-budget exhaustion under the soak storm profile.",
+  "7. Document the budget model in the provider-gateway README.",
+  "8. Add a regression fixture for the hedged-slow-primary case.",
+  "9. Sweep for callers still importing the old retry constant.",
+  "10. Land behind the existing retry flag, default off.",
+  "",
+  "## Verification",
+  "",
+  "Run the provider-gateway suite and confirm zero shared-budget exhaustion.",
+].join("\n");
+
+const MOCK_SHORT_PLAN_MARKDOWN = [
+  "# Rename the retry flag",
+  "",
+  "1. Rename PG_RETRY_V2 to PG_RETRY_BUDGETED.",
+  "2. Update the two call sites and the env template.",
+].join("\n");
+
 function Panel({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div className="rounded-10 border border-stroke-soft-200 bg-bg-white-0 p-3">
@@ -183,6 +220,13 @@ export function T3TimelineShowcase() {
         <div className="space-y-3">
           <T3WorkedForFold nodes={MOCK_NODES} />
           <T3WorkedForFold nodes={MOCK_NODES} defaultExpanded />
+        </div>
+      </Panel>
+
+      <Panel title="proposed plan card / agent proposes, user approves before execution">
+        <div className="space-y-3">
+          <T3ProposedPlanCard planMarkdown={MOCK_PLAN_MARKDOWN} onImplement={() => {}} />
+          <T3ProposedPlanCard planMarkdown={MOCK_SHORT_PLAN_MARKDOWN} onImplement={() => {}} />
         </div>
       </Panel>
 
