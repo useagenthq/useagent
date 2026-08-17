@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { websocket } from "hono/bun";
 import { cors } from "hono/cors";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
+import { ARTIFACT_FIDELITY } from "@skynet/artifact-workspace";
 import { auth } from "./auth";
 import { artifactRoutes } from "./artifacts/routes";
 import { startEmailConnector } from "./connectors/email";
@@ -166,6 +167,10 @@ app.get("/api/config", (c) => {
       memory: memoryConfig() !== null,
       toolGateway: toolGatewayConfig() !== null,
     },
+    // Honest per-format editing fidelity, from the shared artifact-workspace
+    // source of truth so the API and the UI never disagree about what a
+    // canonical companion actually preserves (or that uploaded PDF import is off).
+    artifacts: { fidelity: ARTIFACT_FIDELITY },
   });
 });
 
