@@ -8,6 +8,7 @@ import {
   sandboxProviderApiKey,
   type SandboxHandle,
 } from "../../sandboxes/provider";
+import { absoluteArtifactUrl, absoluteArtifactUrlContent } from "./artifact-links";
 import type { ToolTokenClaims } from "./token";
 
 interface ToolResult {
@@ -281,14 +282,16 @@ export async function executeRecordingTool(
     if (name === "desktop_recording_stop") {
       const stopped = await service.stop(claims);
       return result(
-        `Recording complete: [${stopped.artifact.name}](${stopped.artifact.preview_url}) ` +
+        `Recording complete: [${stopped.artifact.name}](${absoluteArtifactUrl(stopped.artifact.preview_url)}) ` +
           `(${stopped.recording.codec}, ${stopped.recording.width}x${stopped.recording.height}, ` +
           `${stopped.recording.durationSeconds.toFixed(2)}s). ` +
-          `[Download](${stopped.artifact.download_url})`,
+          `[Download](${absoluteArtifactUrl(stopped.artifact.download_url)}) ` +
+          "Share these URLs exactly as written, never substitute another host.",
         {
           recording: stopped.recording,
           artifact: stopped.artifact,
           created: stopped.created,
+          ...absoluteArtifactUrlContent(stopped.artifact),
         },
       );
     }

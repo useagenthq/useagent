@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
+import { env } from "../../env";
 import type { SandboxHandle } from "../../sandboxes/provider";
 import {
   executeRecordingTool,
@@ -220,7 +221,15 @@ describe("recording gateway tools", () => {
 
     const response = await executeRecordingTool(claims, "desktop_recording_stop", {});
     expect(response.isError).toBeUndefined();
-    expect(response.content[0]?.text).toContain("/api/artifacts/artifact-1/content");
-    expect(response.structuredContent?.artifact).toMatchObject({ id: "artifact-1" });
+    const text = response.content[0]?.text ?? "";
+    expect(env.FRONTEND_ORIGIN).toMatch(/^https?:\/\//);
+    expect(text).toContain(`(${env.FRONTEND_ORIGIN}/api/artifacts/artifact-1/content)`);
+    expect(text).toContain(`(${env.FRONTEND_ORIGIN}/api/artifacts/artifact-1/content?download=1)`);
+    expect(text).toContain("exactly as written");
+    expect(response.structuredContent).toMatchObject({
+      artifact: { id: "artifact-1", preview_url: "/api/artifacts/artifact-1/content" },
+      preview_url_absolute: `${env.FRONTEND_ORIGIN}/api/artifacts/artifact-1/content`,
+      download_url_absolute: `${env.FRONTEND_ORIGIN}/api/artifacts/artifact-1/content?download=1`,
+    });
   });
 });
