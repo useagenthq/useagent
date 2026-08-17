@@ -109,7 +109,7 @@ export default async function DashboardPage() {
   ];
 
   return (
-    <AppShell sidebar={<ThreadSidebar active="projects" />}>
+    <AppShell sidebar={<ThreadSidebar active="dashboard" />}>
       <DashboardLiveRefresh />
       <div className="mx-auto flex max-w-[1200px] flex-col gap-6 p-6 lg:p-8">
         <WelcomeHeader liveCount={stats.running} />
