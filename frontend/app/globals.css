@@ -288,61 +288,146 @@
 
   .dark {
     /* -------------------------------------------------------------------
-     * Cool near-black neutral ramp (skynet-a dark theme).
+     * Tokyo Night dark theme.
      *
-     * Base page background is #17181a (beautiful-ui reference). Every
-     * surface / border / text token below resolves from THIS ramp, so the
-     * whole app sits on #17181a with NO pure-black. The elevation ladder
-     * climbs toward white with the same soft-border deltas as before.
-     * Sibling page agents get the ladder for free via the semantic tokens.
+     * Values are mapped from SunkenInTime/t3-themes' Tokyo Night JSON through
+     * the existing semantic token system. Components continue to consume
+     * semantic bg/text/stroke/status tokens rather than page-specific colors.
      * ------------------------------------------------------------------- */
     --neutral-0: 0 0% 100%;
-    --neutral-50: 220 8% 96%;
-    --neutral-100: 220 7% 92%;
-    --neutral-200: 220 6% 85%;
-    --neutral-300: 220 5% 73%;
-    --neutral-400: 220 5% 58%;
-    --neutral-500: 220 4% 44%;
-    --neutral-600: 220 4.5% 19%;
-    --neutral-700: 220 5% 13%;
-    --neutral-800: 222 5% 14.2%;
-    --neutral-900: 220 5.5% 12.5%;
-    --neutral-950: 220 6% 9.6%; /* #17181a — dark base background */
+    --neutral-50: 228.68 72.6% 85.69%; /* #c0caf5 */
+    --neutral-100: 229.33 35.43% 75.1%; /* #a9b1d6 */
+    --neutral-200: 232.73 13.92% 53.53%; /* #787c99 */
+    --neutral-300: 230.32 16.06% 37.84%; /* #515670 */
+    --neutral-400: 232.17 16.31% 27.65%; /* #3b3e52 */
+    --neutral-500: 228.57 20% 41.18%; /* #545c7e */
+    --neutral-600: 225.33 21.74% 40.59%; /* #515c7e */
+    --neutral-700: 234 18.52% 15.88%; /* #1e202e */
+    --neutral-800: 235 18.75% 12.55%; /* #1a1b26 */
+    --neutral-900: 240 15.38% 10.2%; /* #16161e */
+    --neutral-950: 240 11.11% 7.06%; /* #101014 */
 
-    --neutral-alpha-24: 220 5% 60% / 24%;
-    --neutral-alpha-16: 220 5% 60% / 16%;
-    --neutral-alpha-10: 220 5% 60% / 10%;
+    --neutral-alpha-24: 232.73 13.92% 53.53% / 24%;
+    --neutral-alpha-16: 232.73 13.92% 53.53% / 16%;
+    --neutral-alpha-10: 232.73 13.92% 53.53% / 10%;
 
-    --bg-strong-950: var(--neutral-0);
-    --bg-surface-800: var(--neutral-200);
-    --bg-sub-300: var(--neutral-600);
-    --bg-soft-200: var(--neutral-700);
-    --bg-weak-50: var(--neutral-900);
-    --bg-white-0: var(--neutral-950);
+    --blue-950: 223.2 45.05% 43.53%; /* #3d59a1 */
+    --blue-900: 220.36 32.54% 33.14%; /* #394b70 */
+    --blue-800: 224 37.5% 25.1%; /* #29355a */
+    --blue-700: 217.5 37.21% 57.84%; /* #6183bb */
+    --blue-600: 220.8 88.65% 72.35%; /* #7aa2f7 */
+    --blue-500: 220.8 88.65% 72.35%; /* #7aa2f7 */
+    --blue-400: 202.15 100% 74.51%; /* #7dcfff */
+    --blue-300: 189 73.17% 51.76%; /* #2ac3de */
+    --blue-200: 189.02 86.93% 39.02%; /* #0da0ba */
+    --blue-100: 223.2 45.05% 43.53% / 24%;
+    --blue-50: 223.2 45.05% 43.53% / 16%;
 
-    --text-strong-950: var(--neutral-0);
-    --text-sub-600: var(--neutral-400);
-    --text-soft-400: var(--neutral-500);
-    --text-disabled-300: var(--neutral-600);
-    --text-white-0: var(--neutral-950);
+    --blue-alpha-24: 223.2 45.05% 43.53% / 24%;
+    --blue-alpha-16: 223.2 45.05% 43.53% / 16%;
+    --blue-alpha-10: 223.2 45.05% 43.53% / 10%;
 
-    --stroke-strong-950: var(--neutral-0);
-    --stroke-sub-300: var(--neutral-600);
-    --stroke-soft-200: var(--neutral-700);
-    --stroke-white-0: var(--neutral-950);
+    --orange-600: 22.45 100% 69.61%; /* #ff9e64 */
+    --orange-500: 22.45 100% 69.61%; /* #ff9e64 */
+    --orange-400: 35.5 65.93% 64.31%; /* #e0af68 */
 
-    --faded-dark: var(--neutral-300);
-    --faded-base: var(--neutral-500);
+    --orange-alpha-24: 22.45 100% 69.61% / 24%;
+    --orange-alpha-16: 22.45 100% 69.61% / 16%;
+    --orange-alpha-10: 22.45 100% 69.61% / 10%;
+
+    --red-600: 0 66.67% 57.65%; /* #db4b4b */
+    --red-500: 348.84 88.97% 71.57%; /* #f7768e */
+    --red-400: 348.84 88.97% 71.57%; /* #f7768e */
+
+    --red-alpha-24: 348.84 88.97% 71.57% / 24%;
+    --red-alpha-16: 348.84 88.97% 71.57% / 16%;
+    --red-alpha-10: 348.84 88.97% 71.57% / 10%;
+
+    --green-600: 187.76 47.15% 48.24%; /* #41a6b5 */
+    --green-500: 170.68 58.19% 65.29%; /* #73daca */
+    --green-400: 88.8 50.51% 61.18%; /* #9ece6a */
+
+    --green-alpha-24: 170.68 58.19% 65.29% / 24%;
+    --green-alpha-16: 170.68 58.19% 65.29% / 16%;
+    --green-alpha-10: 170.68 58.19% 65.29% / 10%;
+
+    --yellow-600: 35.5 65.93% 64.31%; /* #e0af68 */
+    --yellow-500: 35.5 65.93% 64.31%; /* #e0af68 */
+    --yellow-400: 35.5 65.93% 64.31%; /* #e0af68 */
+
+    --yellow-alpha-24: 35.5 65.93% 64.31% / 24%;
+    --yellow-alpha-16: 35.5 65.93% 64.31% / 16%;
+    --yellow-alpha-10: 35.5 65.93% 64.31% / 10%;
+
+    --purple-600: 261.52 54.12% 66.67%; /* #9d7cd8 */
+    --purple-500: 261.29 85.32% 78.63%; /* #bb9af7 */
+    --purple-400: 261.29 85.32% 78.63%; /* #bb9af7 */
+
+    --purple-alpha-24: 261.29 85.32% 78.63% / 24%;
+    --purple-alpha-16: 261.29 85.32% 78.63% / 16%;
+    --purple-alpha-10: 261.29 85.32% 78.63% / 10%;
+
+    --sky-600: 189 73.17% 51.76%; /* #2ac3de */
+    --sky-500: 202.15 100% 74.51%; /* #7dcfff */
+    --sky-400: 202.15 100% 74.51%; /* #7dcfff */
+
+    --sky-alpha-24: 202.15 100% 74.51% / 24%;
+    --sky-alpha-16: 202.15 100% 74.51% / 16%;
+    --sky-alpha-10: 202.15 100% 74.51% / 10%;
+
+    --pink-600: 348.84 88.97% 71.57%; /* #f7768e */
+    --pink-500: 348.84 88.97% 71.57%; /* #f7768e */
+    --pink-400: 348.84 88.97% 71.57%; /* #f7768e */
+
+    --pink-alpha-24: 348.84 88.97% 71.57% / 24%;
+    --pink-alpha-16: 348.84 88.97% 71.57% / 16%;
+    --pink-alpha-10: 348.84 88.97% 71.57% / 10%;
+
+    --teal-600: 187.76 47.15% 48.24%; /* #41a6b5 */
+    --teal-500: 170.68 58.19% 65.29%; /* #73daca */
+    --teal-400: 170.68 58.19% 65.29%; /* #73daca */
+
+    --teal-alpha-24: 170.68 58.19% 65.29% / 24%;
+    --teal-alpha-16: 170.68 58.19% 65.29% / 16%;
+    --teal-alpha-10: 170.68 58.19% 65.29% / 10%;
+
+    --primary-dark: var(--blue-950);
+    --primary-darker: var(--blue-800);
+    --primary-base: var(--blue-950);
+    --primary-alpha-24: var(--blue-alpha-24);
+    --primary-alpha-16: var(--blue-alpha-16);
+    --primary-alpha-10: var(--blue-alpha-10);
+
+    --bg-strong-950: var(--neutral-50);
+    --bg-surface-800: var(--neutral-100);
+    --bg-sub-300: var(--neutral-700);
+    --bg-soft-200: var(--neutral-900);
+    --bg-weak-50: 240 15.38% 8.82%; /* #13131a — Tokyo Night muted */
+    --bg-white-0: var(--neutral-800);
+
+    --text-strong-950: var(--neutral-50);
+    --text-sub-600: var(--neutral-100);
+    --text-soft-400: var(--neutral-200);
+    --text-disabled-300: var(--neutral-300);
+    --text-white-0: var(--neutral-800);
+
+    --stroke-strong-950: var(--neutral-50);
+    --stroke-sub-300: var(--neutral-400);
+    --stroke-soft-200: 229.09 23.4% 21.37%; /* #292e42 — Tokyo Night border */
+    --stroke-white-0: var(--neutral-800);
+
+    --faded-dark: var(--neutral-100);
+    --faded-base: var(--neutral-200);
     --faded-light: var(--neutral-alpha-24);
     --faded-lighter: var(--neutral-alpha-16);
 
     --information-dark: var(--blue-400);
-    --information-base: var(--blue-500);
+    --information-base: var(--blue-950);
     --information-light: var(--blue-alpha-24);
     --information-lighter: var(--blue-alpha-16);
 
     --warning-dark: var(--orange-400);
-    --warning-base: var(--orange-600);
+    --warning-base: var(--orange-500);
     --warning-light: var(--orange-alpha-24);
     --warning-lighter: var(--orange-alpha-16);
 
@@ -381,7 +466,7 @@
     --stable-light: var(--teal-alpha-24);
     --stable-lighter: var(--teal-alpha-16);
 
-    --overlay: 220 8% 4% / 60%; /* cool near-black scrim (modals, ⌘K palette backdrop) */
+    --overlay: 240 11.11% 7.06% / 72%; /* #101014 scrim */
 
     --social-apple: 0 0% 100%;
     --social-twitter: 0 0% 100%;
