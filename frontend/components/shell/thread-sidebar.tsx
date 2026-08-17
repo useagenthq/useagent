@@ -1,7 +1,7 @@
 import {
   RiAddLine,
   RiBarChartBoxLine,
-  RiBookMarkedLine,
+  RiBookShelfLine,
   RiFolderLine,
   RiSettings3Line,
 } from "@remixicon/react";
@@ -25,12 +25,6 @@ function ThreadSidebarFooter({ active }: { active?: ThreadSidebarActive }) {
         icon={RiBarChartBoxLine}
         label="Usage"
         active={active === "usage"}
-      />
-      <SidebarNavItem
-        href="/skills"
-        icon={RiBookMarkedLine}
-        label="Library"
-        active={active === "library"}
       />
       <SidebarNavItem
         href="/settings"
@@ -66,6 +60,12 @@ export function ThreadSidebar({ active }: { active?: ThreadSidebarActive }) {
         label="All projects"
         active={active === "projects"}
         trailing={<WorkingProjectStatus />}
+      />
+      <SidebarNavItem
+        href="/skills"
+        icon={RiBookShelfLine}
+        label="Library"
+        active={active === "library"}
       />
       <SidebarProjects />
       <SidebarThreads />
