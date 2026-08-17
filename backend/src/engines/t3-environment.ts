@@ -180,6 +180,24 @@ export async function ensureT3Environment(
   }
 }
 
+/** Kill the resident T3 server process directly. It is launched setsid-detached,
+ * so it is reparented to init and no longer appears in the cube session
+ * manager's tracked process list; `deleteSession` therefore cannot reach it and
+ * the readiness endpoint keeps answering. Match it by command line instead. The
+ * `[t]3 serve` pattern deliberately does not match the shell running this
+ * command. `pkill` ships in the T3 image; `ps` + `kill` is the fallback. SIGKILL
+ * keeps the stop prompt and deterministic for a restart. */
+async function killT3ServerProcess(sandbox: T3EnvironmentSandbox): Promise<void> {
+  const command = [
+    "set +e",
+    "if command -v pkill >/dev/null 2>&1; then pkill -KILL -f '[t]3 serve';" +
+      " else for pid in $(ps -eo pid=,args= | awk '/[t]3 serve/{print $1}');" +
+      ' do kill -KILL "$pid"; done; fi',
+    "true",
+  ].join("\n");
+  await sandbox.process.executeCommand(command, undefined, undefined, 10).catch(() => {});
+}
+
 /** Stop the resident T3 server and wait until it is confirmed down, so a
  * follow-up start binds a free port and boots against the current settings.json
  * instead of the readiness probe passing on the still-dying old process.
@@ -189,6 +207,7 @@ async function stopT3Environment(
   signal: AbortSignal,
 ): Promise<void> {
   await deleteT3EnvironmentSessionIfPresent(sandbox);
+  await killT3ServerProcess(sandbox);
   const deadline = Date.now() + T3_STOP_DEADLINE_MS;
   while (!signal.aborted) {
     if (!(await t3EnvironmentHealthy(sandbox))) return;
