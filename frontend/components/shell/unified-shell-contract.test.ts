@@ -185,16 +185,16 @@ describe("unified shell contract", () => {
     }
   });
 
-  test("uses the cyan orbit brand mark and animates it only while working", () => {
-    const mark = readFromFrontend("components/foundations/brand/pulse-mark.tsx");
+  test("uses the orbit-knot brand mark and animates it only while working", () => {
+    const mark = readFromFrontend("components/foundations/brand/orbit-knot-mark.tsx");
     const { sidebarBrand } = shellSources();
 
-    expect(mark).toContain("<ellipse");
-    expect(mark).toContain('strokeWidth="0.85"');
+    expect(mark).toContain("orbit-knot-ramp");
+    expect(mark).toContain('strokeLinejoin="round"');
     expect(mark).toContain('strokeLinecap="round"');
-    expect(mark).toContain("skynet-orbit-active");
+    expect(mark).toContain("motion-safe:animate-");
     expect(mark).toContain("active &&");
-    expect(sidebarBrand).toContain("text-brand-orbit");
+    expect(sidebarBrand).toContain("OrbitKnotMark");
     expect(sidebarBrand).not.toContain("border-b");
   });
 
