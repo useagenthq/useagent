@@ -13,6 +13,7 @@ import {
   RiRobot2Line,
   RiTerminalBoxLine,
 } from "@remixicon/react";
+import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AgentsRail } from "@/components/chat/agents-rail";
@@ -52,7 +53,23 @@ import { TerminalPane } from "@/components/chat/terminal-pane";
 import type { ThreadRunView } from "@/components/chat/thread-store";
 import type { TimelineArtifact } from "@/components/chat/timeline";
 import { WorkspaceOpenProvider } from "@/components/chat/workspace-open-context";
-import { type OpenWorkpieceTab, WorkspacePane } from "@/components/chat/workspace-pane";
+import type { OpenWorkpieceTab } from "@/components/chat/workspace-pane";
+
+// The Workspace pane pulls in the workpiece editor surfaces + revision hook. Code
+// split it so that weight loads ONLY when a user first opens a workpiece - it must
+// never sit in the base session bundle (the pane is already mount-gated, this keeps
+// its JS out of first load too).
+const WorkspacePane = dynamic(
+  () => import("@/components/chat/workspace-pane").then((mod) => mod.WorkspacePane),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="grid h-full place-items-center p-6 text-paragraph-sm text-text-sub-600">
+        Loading workspace...
+      </div>
+    ),
+  },
+);
 import {
   type ApiRun,
   type EngineId,
