@@ -209,7 +209,13 @@ codexSubscriptionRelayRoutes.get(
       active.kill("SIGTERM");
     };
     let relaySocket: { close(code?: number, reason?: string): void } | null = null;
-    const rejectRelay = () => {
+    const rejectRelay = (error: unknown) => {
+      // The rejection REASON must be visible in operations: a silent 1008 close
+      // reads as "no first activity" at the run layer and hides the real cause
+      // (binding mismatch, oversized frame, disconnected subscription). Frame
+      // CONTENT is never logged - only the protocol error message.
+      const reason = error instanceof Error ? error.message : String(error);
+      console.log(`[codex-relay] frame rejected run=${relayRunId}: ${reason}`);
       relaySocket?.close(1008, "relay frame rejected");
       relaySocket = null;
       closed = true;
