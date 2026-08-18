@@ -103,9 +103,74 @@ export interface PresentationDeck {
   readonly slides: readonly DeckSlide[];
 }
 
+// ---------------------------------------------------------------------------
+// Spreadsheet workbook v2 (web-native canonical model).
+//
+// A workbook is an ordered list of worksheets; each worksheet is a sparse map of
+// A1-keyed cells (only populated cells are stored) plus its own dimensions and
+// per-column widths. A cell carries a raw value, an optional `=formula` (the
+// formula is the source of truth; the display value is computed on the client by
+// the bounded formula engine), and optional presentation format. Cell fill/text
+// colors are DOCUMENT data, so they carry raw hex values, not tokens. v1 `{ csv }`
+// states upgrade on load (see `coerceSpreadsheetState`) so stored rows never break.
+// ---------------------------------------------------------------------------
+
+/** Bumped when the workbook shape changes; v1 `{ csv }` states upgrade to this. */
+export const SPREADSHEET_SCHEMA_VERSION = 2 as const;
+/** Honest dimension caps (well below cloudflare-os's 50000x702). Clamped, never
+ * a hard reject: an over-cap sheet is trimmed to fit, not dropped. */
+export const SHEET_MAX_ROWS = 10_000;
+export const SHEET_MAX_COLS = 256;
+export const WORKBOOK_MAX_SHEETS = 20;
+/** Per-cell text/formula ceiling so one pathological cell cannot bloat validation
+ * before the overall MAX_WORKPIECE_STATE_BYTES check catches it. */
+export const SHEET_MAX_CELL_LENGTH = 8_192;
+
+export type SheetNumberFormat = "auto" | "currency" | "percent" | "0" | "0.00";
+export type SheetCellAlign = "left" | "center" | "right";
+
+export interface SheetCellFormat {
+  readonly bold?: boolean;
+  readonly italic?: boolean;
+  readonly align?: SheetCellAlign;
+  readonly numFmt?: SheetNumberFormat;
+  /** Cell fill color (hex `#rgb`/`#rrggbb`). */
+  readonly fill?: string;
+  /** Text color (hex `#rgb`/`#rrggbb`). */
+  readonly color?: string;
+}
+
+export interface SheetCell {
+  /** The raw entered value (a literal). Ignored for display when `f` is set. */
+  readonly v: string | number;
+  /** An `=formula`; when present it is the source of truth and the engine
+   * computes the display value from it. */
+  readonly f?: string;
+  readonly fmt?: SheetCellFormat;
+}
+
+export interface Worksheet {
+  readonly id: string;
+  readonly name: string;
+  /** Sparse cell map keyed by A1 reference (only populated cells are stored). */
+  readonly cells: Readonly<Record<string, SheetCell>>;
+  /** Per-column pixel widths keyed by column letter (A, B, ...); absent = default. */
+  readonly colWidths?: Readonly<Record<string, number>>;
+  readonly rowCount: number;
+  readonly colCount: number;
+}
+
+export interface Workbook {
+  readonly schemaVersion: typeof SPREADSHEET_SCHEMA_VERSION;
+  readonly sheets: readonly Worksheet[];
+  readonly activeSheetId: string;
+}
+
 export interface ArtifactWorkpieceStateByKind {
   readonly document: Readonly<{ text: string }> | Readonly<{ html: string }>;
-  readonly spreadsheet: Readonly<{ csv: string }>;
+  /** Canonical v2 form: `{ workbook }`. v1 `{ csv }` states upgrade on load
+   * (see `coerceSpreadsheetState`) so stored v1 rows never break. */
+  readonly spreadsheet: Readonly<{ workbook: Workbook }>;
   /** Canonical v2 form: `{ deck }`. v1 `{ slides }` states upgrade on load
    * (see `coercePresentationState`) so stored v1 rows never break. */
   readonly presentation: Readonly<{ deck: PresentationDeck }>;
