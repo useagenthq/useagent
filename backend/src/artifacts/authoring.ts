@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import {
   extractDocxText,
   extractPptxSlides,
-  extractXlsxCsv,
+  extractXlsxWorkbook,
   renderArtifactExport,
   type ArtifactExportFormat,
 } from "@skynet/artifact-formats";
@@ -135,8 +135,8 @@ async function stateFromNativeUpload(input: {
       return state;
     }
     if (input.kind === "spreadsheet" && (suffix === "xlsx" || mime === XLSX_CONTENT_TYPE)) {
-      const csv = await extractXlsxCsv(input.bytes);
-      const state = parseWorkpieceState("spreadsheet", { csv });
+      const workbook = await extractXlsxWorkbook(input.bytes);
+      const state = parseWorkpieceState("spreadsheet", { workbook });
       if (!state) throw new Error("invalid extracted spreadsheet state");
       return state;
     }

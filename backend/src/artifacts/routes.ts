@@ -3,6 +3,7 @@ import { Hono, type Context } from "hono";
 import {
   ARTIFACT_PROPOSAL_STATUSES,
   coercePresentationState,
+  coerceSpreadsheetState,
   type ArtifactWorkpieceKind,
   type ArtifactWorkpieceState,
 } from "@skynet/artifact-workspace";
@@ -205,13 +206,17 @@ artifactRoutes.get("/:id", async (c) => {
 });
 
 /** The stored workpiece state upgraded to its canonical shape for the wire. A v1
- * `{slides}` presentation row is migrated to the v2 `{deck}` on read so every
- * reader sees one shape; other kinds pass through unchanged. */
+ * `{slides}` presentation row is migrated to the v2 `{deck}`, and a v1 `{csv}`
+ * spreadsheet row to the v2 `{workbook}`, on read so every reader sees one shape;
+ * other kinds pass through unchanged. */
 function canonicalWorkpieceState(artifact: ArtifactRecord): ArtifactWorkpieceState | null {
   const state = artifact.workpieceState ?? null;
   if (!state) return null;
   if (artifact.workpieceKind === "presentation") {
     return coercePresentationState(state) ?? state;
+  }
+  if (artifact.workpieceKind === "spreadsheet") {
+    return coerceSpreadsheetState(state) ?? state;
   }
   return state;
 }

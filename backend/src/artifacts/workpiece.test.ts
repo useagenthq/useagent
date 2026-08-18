@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { deckToSlides, migrateSlidesToDeck } from "@skynet/artifact-workspace";
+import { csvToWorkbook, deckToSlides, migrateSlidesToDeck } from "@skynet/artifact-workspace";
 import {
   exportWorkpieceState,
 } from "./authoring";
@@ -60,10 +60,19 @@ describe("artifact workpiece registry", () => {
       html: '<table><tbody><tr><td colspan="0">Invalid span</td></tr></tbody></table>',
     })).toBeNull();
     expect(parseWorkpieceState("document", { text: "plain" })).toEqual({ text: "plain" });
+    // v1 { csv } upgrades to the canonical v2 { workbook } on parse.
     expect(parseWorkpieceState("spreadsheet", { csv: "name,value\nrun,42" })).toEqual({
-      csv: "name,value\nrun,42",
+      workbook: csvToWorkbook("name,value\nrun,42"),
     });
     expect(parseWorkpieceState("spreadsheet", { html: "<p>wrong</p>" })).toBeNull();
+    // A control character in a cell value fails closed.
+    expect(parseWorkpieceState("spreadsheet", {
+      workbook: {
+        schemaVersion: 2,
+        activeSheetId: "sheet-1",
+        sheets: [{ id: "sheet-1", name: "Sheet 1", rowCount: 1, colCount: 1, cells: { A1: { v: "Bad\0" } } }],
+      },
+    })).toBeNull();
     // v1 { slides } upgrades to the canonical v2 { deck } on parse.
     expect(parseWorkpieceState("presentation", {
       slides: [{ title: "Intro", body: "Body", notes: "Speaker note" }],
@@ -88,7 +97,7 @@ describe("artifact workpiece registry", () => {
       kind: "spreadsheet",
       sourceName: "metrics.csv",
       sourceBytes: Buffer.from("name,value\nlatency,42"),
-    })).toEqual({ csv: "name,value\nlatency,42" });
+    })).toEqual({ workbook: csvToWorkbook("name,value\nlatency,42") });
   });
 
   test("seeds Office workpieces only from a matching validated companion", () => {
@@ -103,7 +112,7 @@ describe("artifact workpiece registry", () => {
       sourceName: "model.xlsx",
       sourceBytes: Buffer.from("zip"),
       editable: { name: "model.csv", bytes: Buffer.from("name,value\nrun,42") },
-    })).toEqual({ csv: "name,value\nrun,42" });
+    })).toEqual({ workbook: csvToWorkbook("name,value\nrun,42") });
     expect(buildInitialWorkpieceState({
       kind: "document",
       sourceName: "brief.docx",
