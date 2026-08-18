@@ -25,6 +25,7 @@ import {
   ArtifactFidelityNote,
   WorkpieceSurfaces,
 } from "@/app/agent/artifacts/[id]/artifact-editor-surfaces";
+import { WorkpieceProposalReview } from "@/components/artifacts/workpiece-proposal-review";
 import { backendFetch } from "@/lib/backend-fetch";
 import { cnExt as cn } from "@/utils/cn";
 
@@ -253,6 +254,9 @@ function WorkpieceEditorView({ artifact }: { readonly artifact: ArtifactDescript
           {editor.error}
         </p>
       )}
+      <div className="px-3 pt-2">
+        <WorkpieceProposalReview artifact={artifact} />
+      </div>
       <div className="flex min-h-0 flex-1 flex-col overflow-auto px-3 pb-3">
         <WorkpieceSurfaces editor={editor} viewMode={viewMode} />
       </div>

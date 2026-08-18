@@ -152,6 +152,19 @@ function DiffLineRow({ line }: { line: DiffLine }) {
   );
 }
 
+/** Presentational list of toned diff lines, sharing the run diff surface's exact
+ *  grammar (gutter markers + add/del/context tones). Reused by the workpiece
+ *  proposal review so an agent-proposed change reads the same as a run edit. */
+export function DiffLines({ lines }: { readonly lines: readonly DiffLine[] }) {
+  return (
+    <div className="py-1">
+      {lines.map((line, index) => (
+        <DiffLineRow key={index} line={line} />
+      ))}
+    </div>
+  );
+}
+
 function badgeKind(kind: string | undefined): FileChangeKind {
   return kind === "add" || kind === "delete" ? kind : "edit";
 }

@@ -4,6 +4,7 @@ import { RiArrowLeftLine, RiCodeSSlashLine, RiDownloadLine, RiEyeLine, RiSaveLin
 import type { ArtifactDescriptor } from "@skynet/agent-client";
 import Link from "next/link";
 import { useState } from "react";
+import { WorkpieceProposalReview } from "@/components/artifacts/workpiece-proposal-review";
 import { useWorkpieceEditor } from "./artifact-editor-state";
 import { ArtifactFidelityNote, WorkpieceSurfaces } from "./artifact-editor-surfaces";
 
@@ -107,6 +108,9 @@ export function ArtifactEditor({ artifact }: { readonly artifact: ArtifactDescri
           {editor.error}
         </p>
       )}
+      <div className="mt-5">
+        <WorkpieceProposalReview artifact={artifact} />
+      </div>
       <div className="mt-6 flex min-h-0 flex-1 flex-col">
         <WorkpieceSurfaces editor={editor} viewMode={viewMode} />
       </div>
