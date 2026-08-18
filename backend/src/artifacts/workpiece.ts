@@ -1,5 +1,6 @@
 import {
   artifactFileExtension,
+  coercePresentationState,
   DOCX_CONTENT_TYPE,
   isArtifactWorkpieceState,
   MAX_WORKPIECE_STATE_BYTES as ARTIFACT_MAX_WORKPIECE_STATE_BYTES,
@@ -26,6 +27,9 @@ function decodeUtf8(bytes: Uint8Array): string | null {
   }
 }
 
+/** Parse an editable slide-JSON companion (v1 `{slides}`, v2 `{deck}`, or a bare
+ * slide array) into the canonical deck state; migration and validation live in
+ * the shared `coercePresentationState`. */
 function parsePresentationSlides(value: string): ArtifactWorkpieceState | null {
   let parsed: unknown;
   try {
@@ -33,18 +37,26 @@ function parsePresentationSlides(value: string): ArtifactWorkpieceState | null {
   } catch {
     return null;
   }
-  const slides = Array.isArray(parsed)
-    ? parsed
-    : parsed && typeof parsed === "object" && "slides" in parsed
-    ? (parsed as { readonly slides: unknown }).slides
+  return parseWorkpieceState("presentation", parsed);
+}
+
+function withinStateByteCap(state: ArtifactWorkpieceState): ArtifactWorkpieceState | null {
+  return new TextEncoder().encode(JSON.stringify(state)).byteLength <=
+      ARTIFACT_MAX_WORKPIECE_STATE_BYTES
+    ? state
     : null;
-  return parseWorkpieceState("presentation", { slides });
 }
 
 export function parseWorkpieceState(
   kind: ArtifactWorkpieceKind,
   value: unknown,
 ): ArtifactWorkpieceState | null {
+  // Presentation upgrades v1 title/body states into the canonical v2 deck and
+  // validates blocks/theme in one shared, fail-closed pass.
+  if (kind === "presentation") {
+    const coerced = coercePresentationState(value);
+    return coerced ? withinStateByteCap(coerced) : null;
+  }
   if (!isArtifactWorkpieceState(kind, value)) return null;
   let state: ArtifactWorkpieceState = value;
   if ("html" in value) {
@@ -52,18 +64,7 @@ export function parseWorkpieceState(
     if (html === null) return null;
     state = { html };
   }
-  if ("slides" in value) {
-    const hasUnsafeText = value.slides.some((slide) =>
-      /[\u0000-\u0008\u000b\u000c\u000e-\u001f]/.test(
-        `${slide.title}${slide.body}${slide.notes ?? ""}`,
-      )
-    );
-    if (hasUnsafeText) return null;
-  }
-  return new TextEncoder().encode(JSON.stringify(state)).byteLength <=
-    ARTIFACT_MAX_WORKPIECE_STATE_BYTES
-    ? state
-    : null;
+  return withinStateByteCap(state);
 }
 
 /** Build the first browser-editable revision without interpreting Office

@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { deckToSlides, migrateSlidesToDeck } from "@skynet/artifact-workspace";
 import {
   exportWorkpieceState,
 } from "./authoring";
@@ -63,9 +64,12 @@ describe("artifact workpiece registry", () => {
       csv: "name,value\nrun,42",
     });
     expect(parseWorkpieceState("spreadsheet", { html: "<p>wrong</p>" })).toBeNull();
+    // v1 { slides } upgrades to the canonical v2 { deck } on parse.
     expect(parseWorkpieceState("presentation", {
       slides: [{ title: "Intro", body: "Body", notes: "Speaker note" }],
-    })).toEqual({ slides: [{ title: "Intro", body: "Body", notes: "Speaker note" }] });
+    })).toEqual({
+      deck: migrateSlidesToDeck([{ title: "Intro", body: "Body", notes: "Speaker note" }]),
+    });
     expect(parseWorkpieceState("presentation", {
       slides: [{ title: "Bad\0", body: "Body" }],
     })).toBeNull();
@@ -123,7 +127,7 @@ describe("artifact workpiece registry", () => {
         name: "deck.json",
         bytes: Buffer.from(JSON.stringify({ slides: [{ title: "Intro", body: "Body" }] })),
       },
-    })).toEqual({ slides: [{ title: "Intro", body: "Body" }] });
+    })).toEqual({ deck: migrateSlidesToDeck([{ title: "Intro", body: "Body" }]) });
     expect(buildInitialWorkpieceState({
       kind: "pdf",
       sourceName: "report.pdf",
@@ -160,12 +164,16 @@ describe("artifact workpiece registry", () => {
   });
 
   test("exports native formats by default and canonical formats on request", async () => {
-    expect(new TextDecoder().decode((await exportWorkpieceState({
+    const deckJson = new TextDecoder().decode((await exportWorkpieceState({
       name: "deck.pptx",
       kind: "presentation",
-      state: { slides: [{ title: "Intro", body: "Body" }] },
+      state: { deck: migrateSlidesToDeck([{ title: "Intro", body: "Body" }]) },
       format: "json",
-    })).bytes)).toContain('"slides"');
+    })).bytes);
+    expect(deckJson).toContain('"schemaVersion": 2');
+    expect(deckJson).toContain('"slides"');
+    // The exported JSON companion re-parses back into the same title/body deck.
+    expect(deckToSlides(JSON.parse(deckJson))).toEqual([{ title: "Intro", body: "Body" }]);
     const pdf = await exportWorkpieceState({
       name: "report.pdf",
       kind: "pdf",

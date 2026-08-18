@@ -82,8 +82,10 @@ export const ARTIFACT_TOOLS = [
       "The edit is recorded as a PROPOSED revision for the user to review: it does NOT change " +
       "what the user currently sees until they accept it. Pass the artifact id returned by " +
       "artifact_publish and the FULL replacement state for the workpiece's kind - document: " +
-      '{"text": string} or {"html": string}; spreadsheet: {"csv": string}; presentation: ' +
-      '{"slides": [{"title": string, "body": string, "notes"?: string}]}; pdf: {"pdfText": string}. ' +
+      '{"text": string} or {"html": string}; spreadsheet: {"csv": string}; presentation: a deck ' +
+      '{"deck": {"schemaVersion": 2, "theme": {...}, "slides": [{"id","blocks":[{id,type,x,y,w,h,content}]}]}} ' +
+      'or, more simply, {"slides": [{"title": string, "body": string, "notes"?: string}]} which is ' +
+      'upgraded to a deck automatically; pdf: {"pdfText": string}. ' +
       "Optionally include a short summary of what changed. Use this to revise a deliverable after " +
       "feedback instead of publishing a brand-new file; mainline is untouched until the user accepts.",
     inputSchema: {
@@ -97,7 +99,8 @@ export const ARTIFACT_TOOLS = [
           type: "object",
           description:
             "Full replacement workpiece state for the artifact's kind: document {text|html}, " +
-            "spreadsheet {csv}, presentation {slides:[{title,body,notes?}]}, or pdf {pdfText}.",
+            "spreadsheet {csv}, presentation {deck:{schemaVersion,theme,slides}} (or {slides:[{title,body,notes?}]} " +
+            "which is upgraded to a deck), or pdf {pdfText}.",
         },
         summary: {
           type: "string",
@@ -175,7 +178,8 @@ export async function executeArtifactTool(
 const WORKPIECE_STATE_SHAPES: Readonly<Record<string, string>> = {
   document: '{"text": string} or {"html": string}',
   spreadsheet: '{"csv": string}',
-  presentation: '{"slides": [{"title": string, "body": string, "notes"?: string}]}',
+  presentation:
+    '{"deck": {"schemaVersion": 2, "theme": {...}, "slides": [...]}} or {"slides": [{"title", "body", "notes"?}]}',
   pdf: '{"pdfText": string}',
 };
 

@@ -18,17 +18,29 @@ import mammoth from "mammoth";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import PptxGenJS from "pptxgenjs";
 import {
+  DECK_REFERENCE_HEIGHT,
+  deckToSlides,
   DOCX_CONTENT_TYPE,
   MAX_RICH_WORKPIECE_SOURCE_BYTES,
   MAX_WORKPIECE_STATE_BYTES,
   PDF_CONTENT_TYPE,
   parseArtifactCsv as parseCsv,
   PPTX_CONTENT_TYPE,
+  resolveBlockColor,
+  resolveSlideBackground,
   serializeArtifactCsv as serializeCsv,
   XLSX_CONTENT_TYPE,
   type ArtifactPresentationSlide as PresentationSlide,
   type ArtifactWorkpieceState as WorkpieceState,
+  type DeckBackground,
+  type DeckBlock,
+  type DeckSlide,
+  type DeckTheme,
+  type PresentationDeck,
 } from "@skynet/artifact-workspace";
+
+/** The concrete slide object pptxgenjs hands back from `addSlide()`. */
+type PptxSlide = ReturnType<InstanceType<typeof PptxGenJS>["addSlide"]>;
 
 export {
   DOCX_CONTENT_TYPE,
@@ -89,7 +101,7 @@ async function loadBoundedOfficeZip(bytes: Uint8Array): Promise<JSZip> {
   return zip;
 }
 
-function assertBoundedOfficeOutput(state: WorkpieceState): void {
+function assertBoundedOfficeOutput(state: unknown): void {
   if (encoder.encode(JSON.stringify(state)).byteLength > MAX_WORKPIECE_STATE_BYTES) {
     throw new Error("Office import exceeds output size limit");
   }
@@ -115,7 +127,9 @@ function textForState(state: WorkpieceState): string {
   if ("html" in state) return plainTextFromHtml(state.html);
   if ("csv" in state) return state.csv;
   if ("pdfText" in state) return state.pdfText;
-  return state.slides
+  // Presentation: flatten the deck to title/body/notes text for the non-native
+  // canonical exports (docx/pdf/text/html) that a deck may be shared through.
+  return deckToSlides(state.deck)
     .map((slide) => [slide.title, slide.body, slide.notes].filter(Boolean).join("\n"))
     .join("\n\n");
 }
@@ -416,38 +430,128 @@ async function renderXlsx(state: WorkpieceState): Promise<Uint8Array> {
   return bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
 }
 
+// The deck exports onto a 10 x 5.625in (16:9) slide, so a block's percent
+// coordinates map to inches by a flat scale and its reference-px font size maps
+// to points by the same ratio (5.625in = 405pt over the 1080-tall reference).
+const PPTX_SLIDE_WIDTH_IN = 10;
+const PPTX_SLIDE_HEIGHT_IN = 5.625;
+const PPTX_PT_PER_REF_PX = 405 / DECK_REFERENCE_HEIGHT;
+
+/** A hex color (with or without `#`, 3/4/6/8 digits) to the 6-digit RRGGBB
+ * pptxgenjs wants, upper-cased. Falls back to the supplied default. */
+function pptxColor(hex: string | undefined, fallback: string): string {
+  const raw = (hex ?? "").replace(/^#/, "");
+  const six = raw.length === 3
+    ? [...raw].map((c) => c + c).join("")
+    : raw.length >= 6
+    ? raw.slice(0, 6)
+    : raw.length === 4
+    ? [...raw.slice(0, 3)].map((c) => c + c).join("")
+    : "";
+  return /^[0-9a-fA-F]{6}$/.test(six) ? six.toUpperCase() : fallback;
+}
+
+/** The solid fill color a background maps to in PPTX (gradients export as their
+ * start color; images have no solid fill). */
+function backgroundFillColor(background: DeckBackground): string | null {
+  if (background.type === "color") return pptxColor(background.color, "111111");
+  if (background.type === "gradient") return pptxColor(background.from, "111111");
+  return null;
+}
+
+function applySlideBackground(
+  slide: PptxSlide,
+  background: DeckBackground,
+): void {
+  if (background.type === "image" && /^https?:\/\//.test(background.url)) {
+    slide.background = { path: background.url };
+    return;
+  }
+  slide.background = { color: backgroundFillColor(background) ?? "111111" };
+}
+
+function addDeckBlock(
+  pptx: PptxGenJS,
+  slide: PptxSlide,
+  block: DeckBlock,
+  theme: DeckTheme,
+): void {
+  const x = (block.x / 100) * PPTX_SLIDE_WIDTH_IN;
+  const y = (block.y / 100) * PPTX_SLIDE_HEIGHT_IN;
+  const w = (block.w / 100) * PPTX_SLIDE_WIDTH_IN;
+  const h = (block.h / 100) * PPTX_SLIDE_HEIGHT_IN;
+
+  if (block.type === "image") {
+    // Only absolute-URL images can be fetched at export time; positioned assets
+    // hosted at a relative path are left out (documented in the fidelity note).
+    if (/^https?:\/\//.test(block.content)) {
+      slide.addImage({ path: block.content, x, y, w, h });
+    }
+    return;
+  }
+  if (block.type === "shape") {
+    const radiusIn = ((block.style?.radius ?? 0) / DECK_REFERENCE_HEIGHT) * PPTX_SLIDE_HEIGHT_IN;
+    const shapeType = radiusIn > 0 ? pptx.ShapeType.roundRect : pptx.ShapeType.rect;
+    slide.addShape(shapeType, {
+      x,
+      y,
+      w,
+      h,
+      fill: { color: pptxColor(block.style?.fill ?? theme.accent, "7AA2F7") },
+      ...(radiusIn > 0 ? { rectRadius: radiusIn } : {}),
+    });
+    return;
+  }
+  slide.addText(block.content || " ", {
+    x,
+    y,
+    w,
+    h,
+    fontFace: "Arial",
+    fontSize: Math.max(1, Math.round((block.style?.fontSize ?? 40) * PPTX_PT_PER_REF_PX * 10) / 10),
+    color: pptxColor(resolveBlockColor(block, theme).replace(/^#/, ""), "FFFFFF"),
+    bold: block.style?.bold ?? block.type === "heading",
+    italic: block.style?.italic ?? false,
+    align: block.style?.align ?? "left",
+    valign: "top",
+    fit: "shrink",
+  });
+}
+
+function renderDeckSlide(pptx: PptxGenJS, deck: PresentationDeck, deckSlide: DeckSlide): void {
+  const slide = pptx.addSlide();
+  applySlideBackground(slide, resolveSlideBackground(deck, deckSlide));
+  for (const block of deckSlide.blocks) addDeckBlock(pptx, slide, block, deck.theme);
+  if (deckSlide.notes) slide.addNotes(deckSlide.notes);
+}
+
 async function renderPptx(state: WorkpieceState): Promise<Uint8Array> {
   const pptx = new PptxGenJS();
-  pptx.layout = "LAYOUT_WIDE";
-  const slides = "slides" in state
-    ? state.slides
-    : [{ title: "Document", body: textForState(state) }];
-  for (const item of slides.length > 0 ? slides : [{ title: "Untitled", body: "" }]) {
+  pptx.defineLayout({ name: "DECK", width: PPTX_SLIDE_WIDTH_IN, height: PPTX_SLIDE_HEIGHT_IN });
+  pptx.layout = "DECK";
+
+  if ("deck" in state) {
+    const deck = state.deck;
+    const slides = deck.slides.length > 0
+      ? deck.slides
+      : [{ id: "slide-1", blocks: [] }];
+    for (const deckSlide of slides) renderDeckSlide(pptx, deck, deckSlide);
+  } else {
+    // A non-presentation state exported to PPTX: one dark title slide of its text.
     const slide = pptx.addSlide();
     slide.background = { color: "111111" };
-    slide.addText(item.title || "Untitled", {
-      x: 0.7,
-      y: 0.55,
-      w: 11.9,
-      h: 0.7,
-      fontFace: "Arial",
-      fontSize: 30,
-      color: "FFFFFF",
-      bold: true,
-    });
-    slide.addText(item.body || " ", {
+    slide.addText(textForState(state) || " ", {
       x: 0.75,
-      y: 1.6,
-      w: 11.6,
-      h: 4.4,
+      y: 0.75,
+      w: 8.5,
+      h: 4,
       fontFace: "Arial",
       fontSize: 18,
       color: "D8D8D8",
-      breakLine: false,
       fit: "shrink",
     });
-    if (item.notes) slide.addNotes(item.notes);
   }
+
   const bytes = await pptx.write({ outputType: "nodebuffer" });
   return bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes as ArrayBuffer);
 }
@@ -528,7 +632,7 @@ function renderCanonical(state: WorkpieceState, format: CanonicalArtifactFormat)
   }
   if (format === "json") {
     return {
-      bytes: encoder.encode("slides" in state ? JSON.stringify({ slides: state.slides }, null, 2) : "{}"),
+      bytes: encoder.encode("deck" in state ? JSON.stringify(state.deck, null, 2) : "{}"),
       contentType: "application/json; charset=utf-8",
       extension: "json",
     };
