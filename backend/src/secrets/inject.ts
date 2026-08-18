@@ -145,9 +145,13 @@ function shellPath(path: string): string {
   return path.startsWith("$HOME/") ? `"${path}"` : shellQuote(path);
 }
 
+/** The dotenv path as a shell expression (quoted, `$HOME` left for the sandbox
+ *  shell to expand) - for launch scripts that need to test or export it. */
+export const SECRET_DOTENV_SHELL_PATH = shellPath(SECRET_DOTENV_PATH);
+
 /** Shell-neutral engine boot prefix. Do not rely on Daytona's command launcher
  *  honoring BASH_ENV: current snapshots invoke both zsh and bash. */
-export const SECRET_SOURCE_COMMAND = `. ${shellPath(SECRET_DOTENV_PATH)}`;
+export const SECRET_SOURCE_COMMAND = `. ${SECRET_DOTENV_SHELL_PATH}`;
 
 /** Export an opaque value without permitting shell evaluation. */
 function shellExport(name: string, value: string): string {
