@@ -562,6 +562,79 @@ export async function renderArtifactExport(
     : renderCanonical(state, format);
 }
 
+/** A structural, content-agnostic page operation over an existing PDF. Reorder
+ * takes a full permutation of the current page indices; delete removes a set of
+ * pages. Neither reads or rewrites the text or drawing inside a page, so page
+ * structure is preserved even on PDFs Skynet did not author. */
+export type PdfPageOperation =
+  | Readonly<{ type: "reorder"; order: readonly number[] }>
+  | Readonly<{ type: "delete"; pages: readonly number[] }>;
+
+export class PdfPageOperationError extends Error {
+  readonly code = "PDF_PAGE_OPERATION_INVALID";
+
+  constructor(message: string) {
+    super(message);
+    this.name = "PdfPageOperationError";
+  }
+}
+
+async function loadPdfForPageOps(bytes: Uint8Array): Promise<PDFDocument> {
+  try {
+    return await PDFDocument.load(bytes);
+  } catch {
+    throw new PdfPageOperationError("input is not a readable PDF");
+  }
+}
+
+export async function pdfPageCount(bytes: Uint8Array): Promise<number> {
+  return (await loadPdfForPageOps(bytes)).getPageCount();
+}
+
+function resolvedPageOrder(operation: PdfPageOperation, pageCount: number): number[] {
+  const inRange = (index: number) => Number.isInteger(index) && index >= 0 && index < pageCount;
+  if (operation.type === "reorder") {
+    if (operation.order.length !== pageCount) {
+      throw new PdfPageOperationError(`reorder needs exactly ${pageCount} page indices`);
+    }
+    const seen = new Set<number>();
+    for (const index of operation.order) {
+      if (!inRange(index)) throw new PdfPageOperationError(`page index ${index} is out of range`);
+      if (seen.has(index)) throw new PdfPageOperationError(`page index ${index} is duplicated`);
+      seen.add(index);
+    }
+    return [...operation.order];
+  }
+  if (operation.pages.length === 0) {
+    throw new PdfPageOperationError("delete needs at least one page index");
+  }
+  const removed = new Set<number>();
+  for (const index of operation.pages) {
+    if (!inRange(index)) throw new PdfPageOperationError(`page index ${index} is out of range`);
+    removed.add(index);
+  }
+  const kept = Array.from({ length: pageCount }, (_, index) => index).filter(
+    (index) => !removed.has(index),
+  );
+  if (kept.length === 0) throw new PdfPageOperationError("cannot delete every page");
+  return kept;
+}
+
+/** Apply a page reorder or delete to PDF bytes, returning fresh PDF bytes with
+ * the surviving pages copied in the requested order. Pure: same input bytes and
+ * operation always yield the same structure, and the source bytes are untouched. */
+export async function applyPdfPageOperation(
+  bytes: Uint8Array,
+  operation: PdfPageOperation,
+): Promise<Uint8Array> {
+  const source = await loadPdfForPageOps(bytes);
+  const order = resolvedPageOrder(operation, source.getPageCount());
+  const output = await PDFDocument.create();
+  const pages = await output.copyPages(source, order);
+  for (const page of pages) output.addPage(page);
+  return output.save();
+}
+
 export const ARTIFACT_BUNDLE_CONTENT_TYPE = "application/zip";
 
 export interface ArtifactBundleEntry {

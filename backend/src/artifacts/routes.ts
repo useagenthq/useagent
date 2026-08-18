@@ -1,11 +1,19 @@
+import { createHash } from "node:crypto";
 import { Hono, type Context } from "hono";
 import { isArtifactWorkpieceState, type ArtifactWorkpieceKind } from "@skynet/artifact-workspace";
-import { buildArtifactBundle, type ArtifactBundleEntry } from "@skynet/artifact-formats";
+import {
+  applyPdfPageOperation,
+  buildArtifactBundle,
+  PdfPageOperationError,
+  type ArtifactBundleEntry,
+  type PdfPageOperation,
+} from "@skynet/artifact-formats";
 import type { AppEnv } from "../http";
 import { orgScope } from "../middleware/org";
 import { ArtifactAuthoringError, createAuthoredArtifact, exportWorkpieceState } from "./authoring";
 import { canPreviewInline } from "./mime";
 import {
+  applyArtifactPdfPageRevision,
   getArtifactForOrg,
   listArtifactsForOrg,
   toArtifactDescriptor,
@@ -273,6 +281,98 @@ artifactRoutes.patch("/:id/workpiece", async (c) => {
   return current?.workpieceKind
     ? c.json({ error: "revision conflict", ...workpieceResponse(current) }, 409)
     : c.json({ error: "not found" }, 404);
+});
+
+function parsePdfPageOperation(value: unknown): PdfPageOperation | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const input = value as Record<string, unknown>;
+  const indices = (raw: unknown): number[] | null =>
+    Array.isArray(raw) && raw.every((entry) => Number.isSafeInteger(entry))
+      ? (raw as number[])
+      : null;
+  if (input.type === "reorder") {
+    const order = indices(input.order);
+    return order ? { type: "reorder", order } : null;
+  }
+  if (input.type === "delete") {
+    const pages = indices(input.pages);
+    return pages ? { type: "delete", pages } : null;
+  }
+  return null;
+}
+
+// Structural page reorder/delete for a PDF workpiece, persisted as a new
+// revision of the same artifact. Only byte-authoritative PDFs (published or
+// generated, no text state) are eligible; a text-authored PDF is edited through
+// its pdfText workpiece so its bytes are never the source of truth.
+artifactRoutes.post("/:id/workpiece/pdf-pages", async (c) => {
+  const artifact = await getArtifactForOrg(c.get("orgId"), c.req.param("id"));
+  if (!artifact?.workpieceKind) return c.json({ error: "not found" }, 404);
+  if (artifact.workpieceKind !== "pdf") {
+    return c.json({ error: "page operations are only available on PDF workpieces" }, 409);
+  }
+  if (artifact.workpieceState) {
+    return c.json({ error: "page operations apply to published PDFs, not text-authored PDFs" }, 409);
+  }
+
+  let body: unknown;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: "invalid JSON" }, 400);
+  }
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    return c.json({ error: "invalid page operation request" }, 400);
+  }
+  const input = body as Record<string, unknown>;
+  const expectedRevision = input.expected_revision;
+  if (!Number.isSafeInteger(expectedRevision) || Number(expectedRevision) < 0) {
+    return c.json({ error: "expected_revision must be a non-negative integer" }, 400);
+  }
+  const operation = parsePdfPageOperation(input.operation);
+  if (!operation) {
+    return c.json({ error: "operation must be a reorder or delete with integer page indices" }, 400);
+  }
+
+  let sourceBytes: Uint8Array;
+  try {
+    sourceBytes = await artifactStorage().read(artifact.storageKey);
+  } catch {
+    return c.json({ error: "artifact bytes unavailable" }, 410);
+  }
+
+  let outputBytes: Uint8Array;
+  try {
+    outputBytes = await applyPdfPageOperation(sourceBytes, operation);
+  } catch (error) {
+    if (error instanceof PdfPageOperationError) return c.json({ error: error.message }, 422);
+    throw error;
+  }
+
+  const digest = createHash("sha256").update(outputBytes).digest("hex");
+  await artifactStorage().put(digest, outputBytes);
+  const updated = await applyArtifactPdfPageRevision({
+    orgId: c.get("orgId"),
+    id: artifact.id,
+    expectedRevision: Number(expectedRevision),
+    sha256: digest,
+    storageKey: digest,
+    sizeBytes: outputBytes.byteLength,
+  });
+  if (!updated) {
+    const current = await getArtifactForOrg(c.get("orgId"), artifact.id);
+    return current
+      ? c.json({ error: "revision conflict", artifact: toArtifactDescriptor(current) }, 409)
+      : c.json({ error: "not found" }, 404);
+  }
+  publishOrgChange(c.get("orgId"), {
+    type: "artifact",
+    action: "updated",
+    artifactId: updated.id,
+    runId: updated.runId,
+    threadId: updated.threadId,
+  });
+  return c.json({ artifact: toArtifactDescriptor(updated) });
 });
 
 async function serveContent(c: Context<AppEnv>) {

@@ -149,6 +149,37 @@ export async function updateArtifactWorkpiece(input: {
   return updated ?? null;
 }
 
+/** Persist a structural PDF page operation as a new revision of the same
+ * artifact. Page ops replace the immutable source bytes (new digest + storage
+ * key + size) and bump the revision under optimistic concurrency, keeping the
+ * stable artifact id so existing preview/download references still resolve. */
+export async function applyArtifactPdfPageRevision(input: {
+  readonly orgId: string;
+  readonly id: string;
+  readonly expectedRevision: number;
+  readonly sha256: string;
+  readonly storageKey: string;
+  readonly sizeBytes: number;
+}): Promise<ArtifactRecord | null> {
+  const [updated] = await db
+    .update(artifacts)
+    .set({
+      sha256: input.sha256,
+      storageKey: input.storageKey,
+      sizeBytes: input.sizeBytes,
+      workpieceRevision: sql`${artifacts.workpieceRevision} + 1`,
+    })
+    .where(
+      and(
+        eq(artifacts.orgId, input.orgId),
+        eq(artifacts.id, input.id),
+        eq(artifacts.workpieceRevision, input.expectedRevision),
+      ),
+    )
+    .returning();
+  return updated ?? null;
+}
+
 export async function getArtifact(id: string): Promise<ArtifactRecord | null> {
   const [row] = await db.select().from(artifacts).where(eq(artifacts.id, id)).limit(1);
   return row ?? null;

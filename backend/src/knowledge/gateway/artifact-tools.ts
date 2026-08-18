@@ -33,9 +33,13 @@ export const ARTIFACT_TOOLS = [
       "Publish a file from your sandbox as a durable Skynet artifact. The trusted " +
       "backend pulls and size-checks the bytes once, records an immutable digest, " +
       "and returns browser preview/download references. Text and CSV files open directly " +
-      "in Skynet's editor. For editable DOCX or XLSX outputs, also provide editable_path " +
-      "to a small HTML or CSV companion produced in the sandbox; the Office bytes remain " +
-      "immutable. Use this for screenshots, reports, documents, spreadsheets, videos, " +
+      "in Skynet's editor, and PDFs preview inline. To make a document, spreadsheet, or " +
+      "deck editable and previewable instead of download-only, publish the native file AND " +
+      "pass editable_path to a small companion produced in the same sandbox (HTML for a " +
+      "DOCX, CSV for an XLSX, slide-text JSON for a PPTX); the Office bytes remain immutable. " +
+      "Publishing a raw .docx, .xlsx, or .pptx with no companion yields a download-only card " +
+      "with no preview or editor, so prefer the companion for deliverables the user will read " +
+      "or edit. Use this for screenshots, reports, documents, spreadsheets, videos, " +
       "and other outputs the user needs. Private desktop inspection screenshots produced " +
       "by computer_screenshot or computer_sequence require purpose=user_requested_proof; " +
       "do not publish intermediate inspection screenshots.",
@@ -52,7 +56,10 @@ export const ARTIFACT_TOOLS = [
         },
         editable_path: {
           type: "string",
-          description: "Optional sandbox path to editable HTML for a DOCX or CSV for an XLSX.",
+          description:
+            "Optional sandbox path to an editable companion so the file previews and edits in " +
+            "Skynet: HTML for a DOCX, CSV for an XLSX, or slide-text JSON for a PPTX. Without it, " +
+            "an Office file is download-only.",
         },
         purpose: {
           type: "string",
