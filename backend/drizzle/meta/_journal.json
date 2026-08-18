@@ -281,6 +281,13 @@
 			"when": 1787900000000,
 			"tag": "0041_artifact_workpiece_proposals",
 			"breakpoints": true
+		},
+		{
+			"idx": 40,
+			"version": "7",
+			"when": 1788000000000,
+			"tag": "0042_artifact_preview",
+			"breakpoints": true
 		}
 	]
 }

@@ -212,6 +212,7 @@ describe("recording gateway tools", () => {
           sha256: "abc",
           preview_url: "/api/artifacts/artifact-1/content",
           download_url: "/api/artifacts/artifact-1/content?download=1",
+          preview_pdf_url: null,
           created_at: "2026-08-12T00:00:00.000Z",
           workpiece: null,
         },

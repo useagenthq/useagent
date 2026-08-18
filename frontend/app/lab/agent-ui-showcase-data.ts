@@ -94,6 +94,7 @@ export const SHOWCASE_ARTIFACT = {
   created_at: NOW,
   preview_url: "/api/artifacts/artifact_agent_ui_notes/preview",
   download_url: "/api/artifacts/artifact_agent_ui_notes/download",
+  preview_pdf_url: null,
   workpiece: null,
 } as const;
 

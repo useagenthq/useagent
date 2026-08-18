@@ -29,7 +29,7 @@ export const GATEWAY_GRANTS: readonly string[] = [
   // Republish-as-revision (and companion seeding) update an existing artifact row
   // in place under the restricted role; column-scoped so it can never touch org
   // scope or identity columns.
-  "GRANT UPDATE (name, content_type, size_bytes, sha256, storage_key, workpiece_kind, workpiece_state, workpiece_revision) ON artifacts TO skynet_gateway",
+  "GRANT UPDATE (name, content_type, size_bytes, sha256, storage_key, workpiece_kind, workpiece_state, workpiece_revision, preview_storage_key) ON artifacts TO skynet_gateway",
   "GRANT SELECT, INSERT, UPDATE ON provider_gateway_audit TO skynet_gateway",
   "GRANT INSERT ON slack_outbox TO skynet_gateway",
   "GRANT SELECT, INSERT, UPDATE ON knowledge_records, knowledge_documents, knowledge_revisions TO skynet_gateway",

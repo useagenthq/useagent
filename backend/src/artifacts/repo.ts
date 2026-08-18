@@ -28,6 +28,7 @@ export function toArtifactDescriptor(row: ArtifactRecord): ArtifactDescriptor {
     created_at: row.createdAt.toISOString(),
     preview_url: content,
     download_url: `${content}?download=1`,
+    preview_pdf_url: row.previewStorageKey ? `/api/artifacts/${row.id}/preview` : null,
     workpiece: row.workpieceKind
       ? {
           kind: row.workpieceKind,
@@ -211,6 +212,22 @@ export async function reviseArtifactPublication(input: {
       workpieceState: input.workpieceState,
       workpieceRevision: sql`${artifacts.workpieceRevision} + 1`,
     })
+    .where(and(eq(artifacts.orgId, input.orgId), eq(artifacts.id, input.id)))
+    .returning();
+  return updated ?? null;
+}
+
+/** Attach (or clear) a rendered-PDF preview storage key on an artifact. Best-effort
+ * metadata; org-scoped, and it never touches content identity or the revision. */
+export async function updateArtifactPreview(input: {
+  readonly orgId: string;
+  readonly id: string;
+  readonly previewStorageKey: string | null;
+  readonly exec?: Executor;
+}): Promise<ArtifactRecord | null> {
+  const [updated] = await (input.exec ?? db)
+    .update(artifacts)
+    .set({ previewStorageKey: input.previewStorageKey })
     .where(and(eq(artifacts.orgId, input.orgId), eq(artifacts.id, input.id)))
     .returning();
   return updated ?? null;

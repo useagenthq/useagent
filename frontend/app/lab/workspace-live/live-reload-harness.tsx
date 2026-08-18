@@ -58,6 +58,7 @@ function descriptor(wp: MockWorkpiece): unknown {
     created_at: "2026-08-18T00:00:00.000Z",
     preview_url: `/api/artifacts/${wp.id}/preview`,
     download_url: `/api/artifacts/${wp.id}/download`,
+    preview_pdf_url: null,
     workpiece: {
       kind: wp.kind,
       source_version: HEX,

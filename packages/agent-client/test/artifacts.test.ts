@@ -26,6 +26,7 @@ const descriptor = {
   created_at: "2026-08-10T00:00:00.000Z",
   preview_url: "/api/artifacts/artifact-1/content",
   download_url: "/api/artifacts/artifact-1/content?download=1",
+  preview_pdf_url: null,
   workpiece: null,
 };
 

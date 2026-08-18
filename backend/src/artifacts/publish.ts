@@ -6,9 +6,16 @@ import {
   getArtifactForOrg,
   reviseArtifactPublication,
   toArtifactDescriptor,
+  updateArtifactPreview,
   type ArtifactDescriptor,
   type ArtifactRecord,
 } from "./repo";
+import {
+  convertOfficeToPdf,
+  isOfficePreviewContentType,
+  OFFICE_PREVIEW_MAX_BYTES,
+  OFFICE_PREVIEW_TIMEOUT_SECONDS,
+} from "./office-preview";
 import { db } from "../db/client";
 import { sql } from "drizzle-orm";
 import { artifactStorage } from "./storage";
@@ -35,6 +42,52 @@ function checkedSourcePath(value: string): string {
     throw new Error("artifact path must be a non-empty sandbox path under 4096 characters");
   }
   return path;
+}
+
+/** Best-effort Office->PDF preview attachment. For an Office binary, convert the
+ * just-published file in the sandbox and store the PDF as a linked preview on the
+ * SAME artifact; any failure is silent (download-only, as before) with one log
+ * line. On a revision (`regenerate`), a fresh preview replaces the old one, and a
+ * failed conversion clears the now-stale preview rather than leaving wrong bytes. */
+async function attachOfficePreview(
+  input: {
+    readonly orgId: string;
+    readonly record: ArtifactRecord;
+    readonly sandboxId: string;
+    readonly sourcePath: string;
+  },
+  opts: { readonly regenerate: boolean },
+): Promise<ArtifactRecord> {
+  const clearStale = async (): Promise<ArtifactRecord> => {
+    if (!opts.regenerate || !input.record.previewStorageKey) return input.record;
+    return (await updateArtifactPreview({
+      orgId: input.orgId,
+      id: input.record.id,
+      previewStorageKey: null,
+    })) ?? input.record;
+  };
+  if (!isOfficePreviewContentType(input.record.contentType)) return clearStale();
+  if (!opts.regenerate && input.record.previewStorageKey) return input.record;
+
+  const pdf = await convertOfficeToPdf({
+    sandboxId: input.sandboxId,
+    sourcePath: input.sourcePath,
+    timeoutSeconds: OFFICE_PREVIEW_TIMEOUT_SECONDS,
+    maxBytes: OFFICE_PREVIEW_MAX_BYTES,
+  });
+  if (!pdf) {
+    console.log(
+      `[office-preview] no PDF preview for artifact ${input.record.id} (${input.record.name})`,
+    );
+    return clearStale();
+  }
+  const previewKey = createHash("sha256").update(pdf).digest("hex");
+  await artifactStorage().put(previewKey, pdf);
+  return (await updateArtifactPreview({
+    orgId: input.orgId,
+    id: input.record.id,
+    previewStorageKey: previewKey,
+  })) ?? input.record;
 }
 
 export async function publishSandboxArtifact(input: {
@@ -113,10 +166,16 @@ export async function publishSandboxArtifact(input: {
       workpieceState,
     });
     if (!revised) throw new Error("artifact revision could not be applied");
-    const descriptor = toArtifactDescriptor(revised);
+    // The new bytes invalidate any prior preview: regenerate (or clear) it so the
+    // embedded PDF preview reflects the revised content, never the old version.
+    const revisedWithPreview = await attachOfficePreview(
+      { orgId: input.orgId, record: revised, sandboxId: run.sandboxId, sourcePath },
+      { regenerate: true },
+    );
+    const descriptor = toArtifactDescriptor(revisedWithPreview);
     await recordProviderEvent(
       {
-        id: `artifact.revised:${revised.id}:${revised.workpieceRevision}`,
+        id: `artifact.revised:${revisedWithPreview.id}:${revisedWithPreview.workpieceRevision}`,
         runId: run.id,
         threadId: run.threadId,
         provider: "skynet",
@@ -128,11 +187,11 @@ export async function publishSandboxArtifact(input: {
     publishOrgChange(input.orgId, {
       type: "artifact",
       action: "updated",
-      artifactId: revised.id,
-      runId: revised.runId,
-      threadId: revised.threadId,
+      artifactId: revisedWithPreview.id,
+      runId: revisedWithPreview.runId,
+      threadId: revisedWithPreview.threadId,
     });
-    return { artifact: descriptor, record: revised, created: false };
+    return { artifact: descriptor, record: revisedWithPreview, created: false };
   }
 
   const stored = await db.transaction(async (tx) => {
@@ -171,10 +230,16 @@ export async function publishSandboxArtifact(input: {
     return record;
   });
 
-  const descriptor = toArtifactDescriptor(stored.row);
+  // Best-effort Office->PDF preview for a fresh Office binary (skips a re-publish
+  // that already carries one). Non-fatal: a missing preview stays download-only.
+  const record = await attachOfficePreview(
+    { orgId: input.orgId, record: stored.row, sandboxId: run.sandboxId, sourcePath },
+    { regenerate: false },
+  );
+  const descriptor = toArtifactDescriptor(record);
   await recordProviderEvent(
     {
-      id: `artifact.created:${stored.row.id}`,
+      id: `artifact.created:${record.id}`,
       runId: run.id,
       threadId: run.threadId,
       provider: "skynet",
@@ -187,12 +252,12 @@ export async function publishSandboxArtifact(input: {
     publishOrgChange(input.orgId, {
       type: "artifact",
       action: "created",
-      artifactId: stored.row.id,
+      artifactId: record.id,
       runId: run.id,
       threadId: run.threadId,
     });
   }
-  return { artifact: descriptor, record: stored.row, created: stored.created };
+  return { artifact: descriptor, record, created: stored.created };
 }
 
 export async function resolveArtifactForThread(input: {

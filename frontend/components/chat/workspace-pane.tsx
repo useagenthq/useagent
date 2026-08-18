@@ -23,6 +23,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useWorkpieceEditor } from "@/app/agent/artifacts/[id]/artifact-editor-state";
 import {
   ArtifactFidelityNote,
+  PdfEmbedSurface,
   WorkpieceSurfaces,
 } from "@/app/agent/artifacts/[id]/artifact-editor-surfaces";
 import { EDIT_ACTIVITY_WINDOW_MS } from "@/components/artifacts/requested-edit-auto-accept";
@@ -383,6 +384,32 @@ function WorkpieceEditorPane({
     );
   }
   if (state.status === "unsupported") {
+    // An Office binary that is not editable here still gets a rendered-PDF preview
+    // when the sandbox produced one; otherwise it stays a plain download.
+    if (state.artifact.preview_pdf_url) {
+      return (
+        <div className="flex h-full min-h-0 flex-col">
+          <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 px-3 py-2">
+            <p className="truncate text-label-sm text-text-strong-950" title={state.artifact.name}>
+              {state.artifact.name}
+            </p>
+            <a
+              href={state.artifact.download_url}
+              download={state.artifact.name}
+              className="inline-flex h-7 items-center gap-1.5 rounded-lg border border-stroke-soft-200 px-2.5 text-label-xs text-text-sub-600 hover:bg-bg-weak-50 hover:text-text-strong-950"
+            >
+              <RiDownloadLine aria-hidden className="size-3.5" /> Download original
+            </a>
+          </div>
+          <div className="flex min-h-0 flex-1 flex-col overflow-auto px-3 pb-3">
+            <PdfEmbedSurface
+              url={state.artifact.preview_pdf_url}
+              note="Preview rendered from the Office file. Download the original to open or edit it."
+            />
+          </div>
+        </div>
+      );
+    }
     return (
       <div className="grid h-full place-items-center p-6 text-center">
         <div>

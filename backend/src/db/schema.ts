@@ -662,6 +662,10 @@ export const artifacts = pgTable(
     workpieceKind: text("workpiece_kind").$type<ArtifactWorkpieceKind>(),
     workpieceState: jsonb("workpiece_state").$type<ArtifactWorkpieceState>(),
     workpieceRevision: integer("workpiece_revision").notNull().default(0),
+    // Content-addressed storage key of a rendered PDF preview (from an in-sandbox
+    // soffice conversion of an Office binary). Null when no preview was produced;
+    // served read-only from the same ArtifactStorage as the bytes.
+    previewStorageKey: text("preview_storage_key"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
