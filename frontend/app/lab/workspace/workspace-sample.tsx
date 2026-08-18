@@ -12,7 +12,7 @@ import {
   DECK_THEME_PRESETS,
   migrateSlidesToDeck,
   type PresentationDeck,
-  serializeArtifactCsv,
+  type Workbook,
 } from "@skynet/artifact-workspace";
 import { useEffect, useRef, useState } from "react";
 import {
@@ -20,7 +20,7 @@ import {
   PdfBinaryCodeView,
   PdfEmbedSurface,
   RichDocumentSurface,
-  SpreadsheetGridSurface,
+  SheetGridSurface,
   WorkpieceCodeView,
 } from "@/app/agent/artifacts/[id]/artifact-editor-surfaces";
 import { Timeline } from "@/components/chat/conversation";
@@ -52,13 +52,58 @@ const SAMPLE_DOC_HTML =
   "<h3>Owners</h3>" +
   '<p>See the <a href="https://example.com/owners">owners sheet</a> for the full list.</p>';
 
-const SAMPLE_ROWS: string[][] = [
-  ["Region", "Pipeline", "Closed", "Win %"],
-  ["APAC", "1,200,000", "420,000", "35"],
-  ["EMEA", "980,000", "310,000", "31"],
-  ["AMER", "1,540,000", "690,000", "44"],
-  ["Total", "3,720,000", "1,420,000", "38"],
-];
+// A themed workbook fixture (v2): a styled header row, currency + percent number
+// formats, and a Total row of =SUM / ratio formulas, plus a second sheet - so the
+// grid review shows multi-sheet tabs, computed formula cells with the raw formula
+// in the value bar, and number formatting.
+const HEADER = { bold: true, fill: "#eef2ff", color: "#1e293b" } as const;
+const SAMPLE_WORKBOOK: Workbook = {
+  schemaVersion: 2,
+  activeSheetId: "sheet-1",
+  sheets: [
+    {
+      id: "sheet-1",
+      name: "Pipeline",
+      rowCount: 6,
+      colCount: 4,
+      colWidths: { A: 120, B: 140, C: 130, D: 90 },
+      cells: {
+        A1: { v: "Region", fmt: HEADER },
+        B1: { v: "Pipeline", fmt: { ...HEADER, align: "right" } },
+        C1: { v: "Closed", fmt: { ...HEADER, align: "right" } },
+        D1: { v: "Win", fmt: { ...HEADER, align: "right" } },
+        A2: { v: "APAC" },
+        B2: { v: 1200000, fmt: { numFmt: "currency" } },
+        C2: { v: 420000, fmt: { numFmt: "currency" } },
+        D2: { v: 0.35, fmt: { numFmt: "percent" } },
+        A3: { v: "EMEA" },
+        B3: { v: 980000, fmt: { numFmt: "currency" } },
+        C3: { v: 310000, fmt: { numFmt: "currency" } },
+        D3: { v: 0.31, fmt: { numFmt: "percent" } },
+        A4: { v: "AMER" },
+        B4: { v: 1540000, fmt: { numFmt: "currency" } },
+        C4: { v: 690000, fmt: { numFmt: "currency" } },
+        D4: { v: 0.44, fmt: { numFmt: "percent" } },
+        A5: { v: "Total", fmt: { bold: true } },
+        B5: { v: 3720000, f: "=SUM(B2:B4)", fmt: { bold: true, numFmt: "currency" } },
+        C5: { v: 1420000, f: "=SUM(C2:C4)", fmt: { bold: true, numFmt: "currency" } },
+        D5: { v: 0.38, f: "=C5/B5", fmt: { bold: true, numFmt: "percent" } },
+      },
+    },
+    {
+      id: "sheet-2",
+      name: "Notes",
+      rowCount: 3,
+      colCount: 2,
+      cells: {
+        A1: { v: "Owner", fmt: { bold: true } },
+        B1: { v: "Priya" },
+        A2: { v: "Updated", fmt: { bold: true } },
+        B2: { v: "2026-08-18" },
+      },
+    },
+  ],
+};
 
 // A themed deck fixture (v2): the sky preset plus an accent shape on the opener,
 // so the pane review shows the deck canvas, filmstrip, theme, and blocks.
@@ -109,7 +154,7 @@ export function WorkspaceSample() {
 
   const docRef = useRef<HTMLDivElement>(null);
   const [docHtml, setDocHtml] = useState(SAMPLE_DOC_HTML);
-  const [rows, setRows] = useState<string[][]>(SAMPLE_ROWS);
+  const [workbook, setWorkbook] = useState<Workbook>(SAMPLE_WORKBOOK);
   const [deck, setDeck] = useState<PresentationDeck>(SAMPLE_DECK);
 
   // Seed the contenteditable once, the way the real editor's load() does.
@@ -134,7 +179,7 @@ export function WorkspaceSample() {
   const kindLabel = (id: string) => FILES.find((f) => f.id === id)?.kindLabel ?? "Document";
   const sourceFor = (id: string) => {
     if (id === "wp-doc") return docHtml;
-    if (id === "wp-sheet") return serializeArtifactCsv(rows);
+    if (id === "wp-sheet") return JSON.stringify(workbook, null, 2);
     return JSON.stringify(deck, null, 2);
   };
   const dirtyFor = (id: string) => (id === "wp-doc" ? docHtml !== SAMPLE_DOC_HTML : false);
@@ -207,7 +252,7 @@ export function WorkspaceSample() {
                           ) : tab.id === "wp-doc" ? (
                             <RichDocumentSurface editorRef={docRef} loading={false} onChange={setDocHtml} />
                           ) : tab.id === "wp-sheet" ? (
-                            <SpreadsheetGridSurface rows={rows} onChange={setRows} />
+                            <SheetGridSurface workbook={workbook} loading={false} onChange={setWorkbook} />
                           ) : (
                             <DeckSurface deck={deck} loading={false} onChange={setDeck} />
                           )}

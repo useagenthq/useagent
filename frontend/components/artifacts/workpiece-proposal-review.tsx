@@ -56,6 +56,7 @@ function NoChange() {
 
 function SheetChanges({ cells }: { readonly cells: readonly SheetCellChange[] }) {
   const shown = cells.slice(0, SHEET_CELL_CAP);
+  const multiSheet = new Set(cells.map((cell) => cell.sheet)).size > 1;
   return (
     <div className="overflow-hidden rounded-10 border border-stroke-soft-200">
       <table className="w-full border-collapse text-left font-mono text-[11px]">
@@ -68,8 +69,13 @@ function SheetChanges({ cells }: { readonly cells: readonly SheetCellChange[] })
         </thead>
         <tbody>
           {shown.map((cell) => (
-            <tr key={cell.ref} className="border-t border-stroke-soft-200/60">
-              <td className="px-2 py-1 text-text-sub-600">{cell.ref}</td>
+            <tr key={`${cell.sheet}-${cell.ref}`} className="border-t border-stroke-soft-200/60">
+              <td className="px-2 py-1 text-text-sub-600">
+                {multiSheet ? `${cell.sheet}!${cell.ref}` : cell.ref}
+                {cell.formatChanged && cell.before === cell.after && (
+                  <span className="ml-1 rounded bg-feature-base/10 px-1 text-feature-base">fmt</span>
+                )}
+              </td>
               <td className="px-2 py-1">
                 <span className="rounded bg-error-base/10 px-1 text-text-sub-600">
                   {cell.before || " "}

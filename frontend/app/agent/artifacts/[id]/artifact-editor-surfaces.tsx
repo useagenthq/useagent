@@ -36,10 +36,12 @@ import {
   type PresentationDeck,
 } from "@skynet/artifact-workspace";
 import { type RefObject, useState } from "react";
-import * as Table from "@/components/ui/table";
 import type { WorkpieceEditorController } from "./artifact-editor-state";
 import { sanitizeRichHtml } from "./artifact-editor-model";
 import { DeckSlideCanvas } from "./deck-canvas";
+import { SheetGridSurface } from "./sheet-grid";
+
+export { SheetGridSurface } from "./sheet-grid";
 
 /** The honest per-format note (single source of truth in ARTIFACT_FIDELITY):
  * what the canonical editor preserves and what it deliberately drops. Shown in
@@ -274,140 +276,6 @@ export function RichDocumentSurface({
     </>
   );
 }
-
-function columnLabel(index: number): string {
-  return String.fromCharCode(65 + index);
-}
-
-/** An editable grid over the first-worksheet cell values: lettered columns,
- * numbered rows, an active-cell value bar, and a single honest sheet tab. Values
- * only - formulas, extra worksheets, and formatting are not preserved (see the
- * fidelity note). */
-export function SpreadsheetGridSurface({
-  rows,
-  onChange,
-}: {
-  readonly rows: readonly (readonly string[])[];
-  readonly onChange: (rows: string[][]) => void;
-}) {
-  const [active, setActive] = useState<{ row: number; column: number }>({ row: 0, column: 0 });
-  const rowCount = rows.length;
-  const columnCount = rows[0]?.length ?? 0;
-  const activeRow = Math.min(active.row, Math.max(0, rowCount - 1));
-  const activeColumn = Math.min(active.column, Math.max(0, columnCount - 1));
-  const activeValue = rows[activeRow]?.[activeColumn] ?? "";
-
-  const updateCell = (rowIndex: number, columnIndex: number, next: string) =>
-    onChange(
-      rows.map((row, index) =>
-        index === rowIndex ? row.with(columnIndex, next) : Array.from(row),
-      ),
-    );
-  const addRow = () =>
-    onChange([
-      ...rows.map((row) => Array.from(row)),
-      Array.from({ length: rows[0]?.length ?? 3 }, () => ""),
-    ]);
-  const addColumn = () => onChange(rows.map((row) => [...row, ""]));
-
-  return (
-    <section className="mt-4 flex min-h-0 flex-1 flex-col gap-3">
-      {/* Value bar: the active cell reference + its editable value, the way a
-          real spreadsheet exposes the focused cell. */}
-      <div className="flex items-center gap-2">
-        <span className="inline-flex h-8 min-w-12 items-center justify-center rounded-lg border border-stroke-soft-200 bg-bg-weak-50 px-2 font-mono text-label-xs text-text-sub-600">
-          {columnLabel(activeColumn)}
-          {activeRow + 1}
-        </span>
-        <span className="font-mono text-label-xs text-text-soft-400" aria-hidden>
-          fx
-        </span>
-        <input
-          value={activeValue}
-          onChange={(event) => updateCell(activeRow, activeColumn, event.currentTarget.value)}
-          aria-label={`Value of cell ${columnLabel(activeColumn)}${activeRow + 1}`}
-          placeholder="Empty cell"
-          className="h-8 min-w-0 flex-1 rounded-lg border border-stroke-soft-200 bg-bg-white-0 px-3 text-paragraph-sm text-text-strong-950 outline-none focus:border-stroke-strong-950"
-        />
-      </div>
-
-      <div className="flex flex-wrap items-center gap-2">
-        {(
-          [
-            ["Row", addRow],
-            ["Column", addColumn],
-          ] as const
-        ).map(([label, action]) => (
-          <button
-            key={label}
-            type="button"
-            onClick={action}
-            className="inline-flex h-8 items-center gap-2 rounded-lg border border-stroke-soft-200 px-3 text-label-sm hover:bg-bg-weak-50"
-          >
-            <RiAddLine aria-hidden className="size-4" />
-            {label}
-          </button>
-        ))}
-      </div>
-
-      <div className="min-h-0 flex-1 overflow-auto rounded-xl border border-stroke-soft-200 bg-bg-white-0">
-        <Table.Root>
-          <Table.Header>
-            <Table.Row>
-              <Table.Head className="w-12 min-w-12 bg-bg-weak-50 text-center" aria-label="Row" />
-              {rows[0]?.map((_, columnIndex) => (
-                <Table.Head key={columnIndex} className="min-w-32 text-center">
-                  {columnLabel(columnIndex)}
-                </Table.Head>
-              ))}
-            </Table.Row>
-          </Table.Header>
-          <Table.Body spacing={0}>
-            {rows.map((row, rowIndex) => (
-              <Table.Row key={rowIndex}>
-                <Table.Cell className="w-12 min-w-12 border-t border-stroke-soft-200 bg-bg-weak-50 p-0 text-center align-middle font-mono text-label-xs text-text-soft-400">
-                  {rowIndex + 1}
-                </Table.Cell>
-                {row.map((cell, columnIndex) => {
-                  const isActive = rowIndex === activeRow && columnIndex === activeColumn;
-                  return (
-                    <Table.Cell
-                      key={`${rowIndex}-${columnIndex}`}
-                      className="h-10 border-t border-stroke-soft-200 p-0"
-                    >
-                      <input
-                        value={cell}
-                        onFocus={() => setActive({ row: rowIndex, column: columnIndex })}
-                        onChange={(event) =>
-                          updateCell(rowIndex, columnIndex, event.currentTarget.value)
-                        }
-                        className={
-                          isActive
-                            ? "h-10 w-full bg-bg-white-0 px-3 text-paragraph-sm text-text-strong-950 outline-none ring-2 ring-inset ring-primary-base"
-                            : "h-10 w-full bg-transparent px-3 text-paragraph-sm outline-none focus:bg-bg-weak-50"
-                        }
-                        aria-label={`Cell ${columnLabel(columnIndex)}${rowIndex + 1}`}
-                      />
-                    </Table.Cell>
-                  );
-                })}
-              </Table.Row>
-            ))}
-          </Table.Body>
-        </Table.Root>
-      </div>
-
-      {/* Sheet tabs: a single honest tab - only the first worksheet is edited. */}
-      <div className="flex items-center gap-1">
-        <span className="inline-flex h-7 items-center rounded-lg border border-stroke-soft-200 bg-bg-weak-50 px-3 text-label-xs text-text-strong-950">
-          Sheet 1
-        </span>
-        <span className="text-paragraph-xs text-text-soft-400">First worksheet, values only</span>
-      </div>
-    </section>
-  );
-}
-
 
 function rid(): string {
   return (globalThis.crypto?.randomUUID?.() ?? `${Math.random()}`).replace(/-/g, "").slice(0, 8);
@@ -1012,25 +880,16 @@ export function DeckSurface({
 export function SourceSurface({
   label,
   loading,
-  sheetTooLarge,
-  spreadsheet,
   value,
   onChange,
 }: {
   readonly label: string;
   readonly loading: boolean;
-  readonly sheetTooLarge: boolean;
-  readonly spreadsheet: boolean;
   readonly value: string;
   readonly onChange: (value: string) => void;
 }) {
   return (
     <>
-      {sheetTooLarge && (
-        <p className="mb-4 rounded-lg border border-warning-base bg-warning-lighter px-4 py-3 text-paragraph-sm text-warning-base">
-          This sheet is larger than the browser grid limit, so it is open as CSV source.
-        </p>
-      )}
       <label htmlFor="workpiece-source" className="text-label-sm text-text-strong-950">
         {label}
       </label>
@@ -1039,7 +898,6 @@ export function SourceSurface({
         value={value}
         onChange={(event) => onChange(event.currentTarget.value)}
         disabled={loading}
-        spellCheck={!spreadsheet}
         className="mt-2 min-h-[420px] w-full flex-1 resize-y rounded-xl border border-stroke-soft-200 bg-bg-white-0 p-4 font-mono text-paragraph-sm text-text-strong-950 outline-none focus:border-stroke-strong-950 focus:ring-2 focus:ring-stroke-soft-200 disabled:opacity-50"
       />
     </>
@@ -1151,8 +1009,10 @@ export function WorkpieceSurfaces({
       />
     );
   }
-  if (editor.isGrid) {
-    return <SpreadsheetGridSurface rows={editor.rows} onChange={editor.setRows} />;
+  if (editor.isSheetGrid) {
+    return (
+      <SheetGridSurface workbook={editor.workbook} loading={editor.loading} onChange={editor.setWorkbook} />
+    );
   }
   if (editor.isSlidesEditor) {
     return <DeckSurface deck={editor.deck} loading={editor.loading} onChange={editor.setDeck} />;
@@ -1161,8 +1021,6 @@ export function WorkpieceSurfaces({
     <SourceSurface
       label={editor.label}
       loading={editor.loading}
-      sheetTooLarge={editor.isSpreadsheet && editor.mode === "grid" && !editor.isGrid}
-      spreadsheet={editor.isSpreadsheet}
       value={editor.value}
       onChange={editor.setSource}
     />

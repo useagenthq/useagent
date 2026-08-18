@@ -29,7 +29,7 @@ describe("byte-authoritative PDF detection", () => {
   test("a null state in any other mode is not a byte PDF", () => {
     expect(isByteAuthoritativePdf("source-document", null)).toBe(false);
     expect(isByteAuthoritativePdf("rich-document", null)).toBe(false);
-    expect(isByteAuthoritativePdf("grid", null)).toBe(false);
+    expect(isByteAuthoritativePdf("sheet-grid", null)).toBe(false);
   });
 });
 

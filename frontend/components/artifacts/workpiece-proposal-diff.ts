@@ -5,14 +5,18 @@
 // the logic is unit-tested directly.
 
 import {
-  parseArtifactCsv as parseCsv,
+  parseA1,
   primaryHeadingBlock,
+  workbookToCsv,
   type ArtifactWorkpieceKind,
   type ArtifactWorkpieceState,
   type DeckBlock,
   type DeckBlockType,
   type DeckSlide,
   type PresentationDeck,
+  type SheetCell,
+  type Workbook,
+  type Worksheet,
 } from "@skynet/artifact-workspace";
 import type { DiffLine } from "@/components/session-ui/file-diff-view";
 
@@ -81,43 +85,94 @@ export function countLineChanges(lines: readonly DiffLine[]): {
   return { additions, deletions };
 }
 
-/** A1-style column name: 0 -> A, 25 -> Z, 26 -> AA. */
-export function columnName(index: number): string {
-  let name = "";
-  let n = index;
-  do {
-    name = String.fromCharCode(65 + (n % 26)) + name;
-    n = Math.floor(n / 26) - 1;
-  } while (n >= 0);
-  return name;
-}
+/** A1-style column name: 0 -> A, 25 -> Z, 26 -> AA. Re-exported from the shared
+ * A1 helpers so the review and its tests share one implementation. */
+export { columnLabel as columnName } from "@skynet/artifact-workspace";
 
 export interface SheetCellChange {
+  /** The worksheet name the cell lives on (workbooks are multi-sheet). */
+  readonly sheet: string;
   readonly ref: string;
   readonly before: string;
   readonly after: string;
   readonly kind: "added" | "removed" | "changed";
+  /** The cell's number format / styling changed (even if its value did not). */
+  readonly formatChanged: boolean;
 }
 
-/** Changed cells (old -> new) between two CSV states, in row-major A1 order. */
-export function sheetCellChanges(before: string, after: string): SheetCellChange[] {
-  const a = parseCsv(before);
-  const b = parseCsv(after);
-  const rows = Math.max(a.length, b.length);
+/** The raw display of a cell for the diff: its formula if any, else its value. */
+function cellRaw(cell: SheetCell | undefined): string {
+  if (!cell) return "";
+  return cell.f ?? (typeof cell.v === "number" ? String(cell.v) : cell.v);
+}
+
+function fmtKey(cell: SheetCell | undefined): string {
+  return cell?.fmt ? JSON.stringify(cell.fmt) : "";
+}
+
+/** Changed cells between two worksheets, in row-major A1 order. */
+function worksheetCellChanges(
+  name: string,
+  before: Worksheet | null,
+  after: Worksheet,
+): SheetCellChange[] {
+  const refs = new Set<string>([
+    ...Object.keys(before?.cells ?? {}),
+    ...Object.keys(after.cells),
+  ]);
   const changes: SheetCellChange[] = [];
-  for (let r = 0; r < rows; r++) {
-    const rowA = a[r] ?? [];
-    const rowB = b[r] ?? [];
-    const cols = Math.max(rowA.length, rowB.length);
-    for (let c = 0; c < cols; c++) {
-      const beforeValue = rowA[c] ?? "";
-      const afterValue = rowB[c] ?? "";
-      if (beforeValue === afterValue) continue;
+  for (const ref of refs) {
+    const position = parseA1(ref);
+    if (!position) continue;
+    const beforeCell = before?.cells[ref];
+    const afterCell = after.cells[ref];
+    const beforeRaw = cellRaw(beforeCell);
+    const afterRaw = cellRaw(afterCell);
+    const valueChanged = beforeRaw !== afterRaw;
+    const formatChanged = fmtKey(beforeCell) !== fmtKey(afterCell);
+    if (!valueChanged && !formatChanged) continue;
+    changes.push({
+      sheet: name,
+      ref,
+      before: beforeRaw,
+      after: afterRaw,
+      kind: valueChanged
+        ? beforeRaw === ""
+          ? "added"
+          : afterRaw === ""
+          ? "removed"
+          : "changed"
+        : "changed",
+      formatChanged,
+    });
+  }
+  return changes.toSorted((a, b) => {
+    const pa = parseA1(a.ref)!;
+    const pb = parseA1(b.ref)!;
+    return pa.row - pb.row || pa.col - pb.col;
+  });
+}
+
+/** Changed cells across every worksheet of a workbook, matched by sheet id (a new
+ * or removed sheet contributes all its cells). Row-major A1 order per sheet. */
+export function workbookCellChanges(before: Workbook | null, after: Workbook): SheetCellChange[] {
+  const beforeById = new Map((before?.sheets ?? []).map((sheet) => [sheet.id, sheet]));
+  const changes: SheetCellChange[] = [];
+  for (const sheet of after.sheets) {
+    changes.push(...worksheetCellChanges(sheet.name, beforeById.get(sheet.id) ?? null, sheet));
+  }
+  // Removed sheets: every populated cell is a removal.
+  const afterIds = new Set(after.sheets.map((sheet) => sheet.id));
+  for (const sheet of before?.sheets ?? []) {
+    if (afterIds.has(sheet.id)) continue;
+    for (const [ref, cell] of Object.entries(sheet.cells)) {
       changes.push({
-        ref: `${columnName(c)}${r + 1}`,
-        before: beforeValue,
-        after: afterValue,
-        kind: beforeValue === "" ? "added" : afterValue === "" ? "removed" : "changed",
+        sheet: sheet.name,
+        ref,
+        before: cellRaw(cell),
+        after: "",
+        kind: "removed",
+        formatChanged: false,
       });
     }
   }
@@ -239,7 +294,7 @@ function stateText(state: ArtifactWorkpieceState | null): string {
   if ("html" in state) return state.html;
   if ("pdfText" in state) return state.pdfText;
   if ("text" in state) return state.text;
-  if ("csv" in state) return state.csv;
+  if ("workbook" in state) return workbookToCsv(state.workbook);
   return "";
 }
 
@@ -271,10 +326,10 @@ export function workpieceProposalDiff(
   proposed: ArtifactWorkpieceState,
 ): WorkpieceProposalDiff {
   if (kind === "spreadsheet") {
-    const cells = sheetCellChanges(
-      mainline && "csv" in mainline ? mainline.csv : "",
-      "csv" in proposed ? proposed.csv : "",
-    );
+    const beforeWorkbook = mainline && "workbook" in mainline ? mainline.workbook : null;
+    const afterWorkbook = "workbook" in proposed ? proposed.workbook : null;
+    if (!afterWorkbook) return { type: "sheet", cells: [], unchanged: true };
+    const cells = workbookCellChanges(beforeWorkbook, afterWorkbook);
     return { type: "sheet", cells, unchanged: cells.length === 0 };
   }
   if (kind === "presentation") {
@@ -302,6 +357,10 @@ export function workpieceProposalDiff(
 
 /** Read-only canonical text for the "View proposed" panel (all kinds). */
 export function proposedPreviewText(state: ArtifactWorkpieceState): string {
+  if ("workbook" in state) {
+    const names = state.workbook.sheets.map((sheet) => sheet.name).join(", ");
+    return `Sheets: ${names}\n\n${workbookToCsv(state.workbook)}`;
+  }
   if ("deck" in state) {
     return state.deck.slides
       .map((slide, index) => {
