@@ -46,7 +46,10 @@ export const ARTIFACT_TOOLS = [
       "The Office bytes remain immutable. " +
       "Publishing a raw .docx, .xlsx, or .pptx with no companion yields a download-only card " +
       "with no preview or editor, so prefer the companion for deliverables the user will read " +
-      "or edit. Use this for screenshots, reports, documents, spreadsheets, videos, " +
+      "or edit. When you REGENERATE a file you already published (a new version of the same " +
+      "deliverable), pass updates_artifact_id with that artifact's id: the new bytes + companion " +
+      "land as a NEW REVISION of the same artifact (one tab, with history) instead of a second " +
+      "card. Use this for screenshots, reports, documents, spreadsheets, videos, " +
       "and other outputs the user needs. Private desktop inspection screenshots produced " +
       "by computer_screenshot or computer_sequence require purpose=user_requested_proof; " +
       "do not publish intermediate inspection screenshots.",
@@ -68,6 +71,14 @@ export const ARTIFACT_TOOLS = [
             "Skynet: HTML for a DOCX, CSV for an XLSX, or a v2 deck JSON (theme + positioned blocks, " +
             "the full visual design) for a PPTX. Without it, " +
             "an Office file is download-only.",
+        },
+        updates_artifact_id: {
+          type: "string",
+          description:
+            "Optional id of an artifact you previously published that this file is a regenerated " +
+            "version of. When set, the new bytes + companion replace that artifact as a new revision " +
+            "(same tab, with history) instead of creating a second artifact. The kind must match " +
+            "(a docx updates a document, an xlsx a spreadsheet, and so on).",
         },
         purpose: {
           type: "string",
@@ -159,6 +170,10 @@ export async function executeArtifactTool(
       "Private desktop inspection screenshots can only be published when the user explicitly requested durable proof. Retry artifact_publish with purpose=user_requested_proof for the final requested screenshot only.",
     );
   }
+  const updatesArtifactId =
+    typeof args.updates_artifact_id === "string" && args.updates_artifact_id.trim()
+      ? args.updates_artifact_id.trim()
+      : undefined;
   try {
     const published = await (publisherOverride ?? publishSandboxArtifact)({
       orgId: claims.orgId,
@@ -170,9 +185,11 @@ export async function executeArtifactTool(
       ...(typeof args.editable_path === "string" && args.editable_path.trim()
         ? { editablePath: args.editable_path.trim() }
         : {}),
+      ...(updatesArtifactId ? { updatesArtifactId } : {}),
     });
+    const verb = updatesArtifactId ? "Revised" : published.created ? "Published" : "Already published";
     return result(
-      `${published.created ? "Published" : "Already published"} ${published.artifact.name} ` +
+      `${verb} ${published.artifact.name} ` +
         `(${published.artifact.size_bytes} bytes) as artifact ${published.artifact.id}.\n` +
         "Preview URL (use exactly as written, never substitute another host): " +
         `${absoluteArtifactUrl(published.artifact.preview_url)}\n` +

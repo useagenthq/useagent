@@ -547,6 +547,127 @@ describe("durable artifacts", () => {
     }
   });
 
+  test("republishes a regenerated file as a new revision of the same artifact", async () => {
+    const runId = await createSandboxRun(owner);
+    const v1 = new TextEncoder().encode("Version one\n");
+    const v2 = new TextEncoder().encode("Version two, regenerated\n");
+    setSandboxDownloaderForTest(async (_sandboxId, path, maxBytes) => {
+      const bytes = path.includes("v2") ? v2 : v1;
+      if (bytes.byteLength > maxBytes) throw new Error("test fixture exceeds cap");
+      return { bytes: Buffer.from(bytes), size: bytes.byteLength };
+    });
+    try {
+      const first = await publish(owner, runId, "/root/work/report-v1.txt", { name: "report.txt" });
+      expect(first.created).toBe(true);
+      expect(first.artifact.workpiece).toMatchObject({ kind: "document", state_revision: 0 });
+
+      // A republish lands as a NEW REVISION of the SAME artifact (one tab, history).
+      const revised = await publish(owner, runId, "/root/work/report-v2.txt", {
+        name: "report.txt",
+        updates_artifact_id: first.artifact.id,
+      });
+      expect(revised.created).toBe(false);
+      expect(revised.artifact.id).toBe(first.artifact.id);
+      expect(revised.artifact.workpiece?.state_revision).toBe(1);
+
+      // The content bytes and the editable state both reflect the regenerated file.
+      const content = await fetchApi(`/api/artifacts/${first.artifact.id}/content`, {
+        cookies: owner.cookies,
+      });
+      expect(new Uint8Array(await content.arrayBuffer())).toEqual(v2);
+      const state = await json<{ state: unknown }>(
+        `/api/artifacts/${first.artifact.id}/workpiece`,
+        { cookies: owner.cookies },
+      );
+      expect(state.body.state).toEqual({ text: "Version two, regenerated\n" });
+
+      // A kind mismatch is rejected: an xlsx cannot revise a document artifact.
+      const mismatch = await executeArtifactTool(
+        { orgId: owner.orgId, userId: owner.email, threadId: runId, runId, exp: Date.now() + 60_000 },
+        "artifact_publish",
+        { path: "/root/work/model-v1.xlsx", updates_artifact_id: first.artifact.id },
+      );
+      expect(mismatch.isError).toBe(true);
+      expect(mismatch.content[0]?.text).toContain("does not match");
+
+      // Cross-org isolation: another org cannot revise this artifact.
+      const foreign = await executeArtifactTool(
+        {
+          orgId: outsider.orgId,
+          userId: outsider.email,
+          threadId: runId,
+          runId,
+          exp: Date.now() + 60_000,
+        },
+        "artifact_publish",
+        { path: "/root/work/report-v2.txt", updates_artifact_id: first.artifact.id },
+      );
+      expect(foreign.isError).toBe(true);
+    } finally {
+      setSandboxDownloaderForTest(async (_sandboxId, _path, maxBytes) => {
+        if (sandboxBytes.byteLength > maxBytes) throw new Error("test fixture exceeds cap");
+        return { bytes: Buffer.from(sandboxBytes), size: sandboxBytes.byteLength };
+      });
+    }
+  });
+
+  test("a republish conflicts a proposal authored against the older revision", async () => {
+    const runId = await createSandboxRun(owner);
+    const v1 = new TextEncoder().encode("Brief version one\n");
+    const v2 = new TextEncoder().encode("Brief version two\n");
+    setSandboxDownloaderForTest(async (_sandboxId, path, maxBytes) => {
+      const bytes = path.includes("v2") ? v2 : v1;
+      if (bytes.byteLength > maxBytes) throw new Error("test fixture exceeds cap");
+      return { bytes: Buffer.from(bytes), size: bytes.byteLength };
+    });
+    try {
+      const claims = {
+        orgId: owner.orgId,
+        userId: owner.email,
+        threadId: runId,
+        runId,
+        exp: Date.now() + 60_000,
+      };
+      const doc = await publish(owner, runId, "/root/work/brief-v1.txt", { name: "brief.txt" });
+
+      // An agent proposes an edit against mainline revision 0.
+      const proposed = await executeArtifactTool(claims, "workpiece_propose_edit", {
+        artifact_id: doc.artifact.id,
+        state: { text: "Proposed edit body\n" },
+        summary: "tweak wording",
+      });
+      expect(proposed.isError).toBeFalsy();
+      const proposalId = proposed.structuredContent?.proposal_id as string;
+
+      // A republish advances mainline to revision 1 (a plain mainline advance).
+      const revised = await publish(owner, runId, "/root/work/brief-v2.txt", {
+        name: "brief.txt",
+        updates_artifact_id: doc.artifact.id,
+      });
+      expect(revised.artifact.workpiece?.state_revision).toBe(1);
+
+      // Accepting the proposal now 409s: it was authored against the old revision,
+      // exactly like accepting after a human save (existing conflict handling).
+      const accept = await fetchApi(
+        `/api/artifacts/${doc.artifact.id}/proposals/${proposalId}/accept`,
+        { method: "POST", cookies: owner.cookies },
+      );
+      expect(accept.status).toBe(409);
+
+      // Mainline still shows the republished bytes, not the proposed edit.
+      const state = await json<{ state: unknown }>(
+        `/api/artifacts/${doc.artifact.id}/workpiece`,
+        { cookies: owner.cookies },
+      );
+      expect(state.body.state).toEqual({ text: "Brief version two\n" });
+    } finally {
+      setSandboxDownloaderForTest(async (_sandboxId, _path, maxBytes) => {
+        if (sandboxBytes.byteLength > maxBytes) throw new Error("test fixture exceeds cap");
+        return { bytes: Buffer.from(sandboxBytes), size: sandboxBytes.byteLength };
+      });
+    }
+  });
+
   test("keeps over-limit Office binaries download-only", async () => {
     const runId = await createSandboxRun(owner);
     const previous = sandboxBytes;
