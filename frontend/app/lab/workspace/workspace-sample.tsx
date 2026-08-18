@@ -1,0 +1,191 @@
+"use client";
+
+// /lab/workspace - the session Workspace side pane rendered through the REAL
+// components (WorkpieceTabStrip / WorkpieceHeader / the three editor surfaces +
+// the conversation Timeline's artifact cards), fed by fixtures. Nothing here
+// reimplements a renderer; it wires the live ones so the pane can be reviewed
+// without a backend. The click-to-open flow is the real WorkspaceOpenProvider ->
+// ArtifactRow context path used in a live session.
+
+import type { ArtifactPresentationSlide } from "@skynet/agent-client";
+import { contentTypeForName, serializeArtifactCsv } from "@skynet/artifact-workspace";
+import { useEffect, useRef, useState } from "react";
+import {
+  RichDocumentSurface,
+  SlidesSurface,
+  SpreadsheetGridSurface,
+  WorkpieceCodeView,
+} from "@/app/agent/artifacts/[id]/artifact-editor-surfaces";
+import { serializeSlides } from "@/app/agent/artifacts/[id]/artifact-editor-state";
+import { Timeline } from "@/components/chat/conversation";
+import type { TimelineNode } from "@/components/chat/timeline";
+import { WorkspaceOpenProvider } from "@/components/chat/workspace-open-context";
+import {
+  type OpenWorkpieceTab,
+  WorkpieceHeader,
+  WorkpieceTabStrip,
+} from "@/components/chat/workspace-pane";
+
+const FILES = [
+  { id: "wp-doc", name: "Q2 Kickoff Brief.docx", kindLabel: "Document" },
+  { id: "wp-sheet", name: "Pipeline model.xlsx", kindLabel: "Spreadsheet" },
+  { id: "wp-deck", name: "Series B narrative.pptx", kindLabel: "Presentation" },
+] as const;
+
+const SAMPLE_DOC_HTML =
+  "<h1>Q2 Kickoff Brief</h1>" +
+  "<p>This document frames the <strong>Q2 objectives</strong> and the <em>key bets</em> for the team.</p>" +
+  "<h2>Objectives</h2>" +
+  "<ul><li>Ship the workspace side pane</li><li>Cut editor load time</li><li>Grow activation 12%</li></ul>" +
+  "<h3>Owners</h3>" +
+  '<p>See the <a href="https://example.com/owners">owners sheet</a> for the full list.</p>';
+
+const SAMPLE_ROWS: string[][] = [
+  ["Region", "Pipeline", "Closed", "Win %"],
+  ["APAC", "1,200,000", "420,000", "35"],
+  ["EMEA", "980,000", "310,000", "31"],
+  ["AMER", "1,540,000", "690,000", "44"],
+  ["Total", "3,720,000", "1,420,000", "38"],
+];
+
+const SAMPLE_SLIDES: ArtifactPresentationSlide[] = [
+  { title: "Series B narrative", body: "Why now\nMarket inflection\nOur wedge", notes: "Open confident" },
+  { title: "Traction", body: "3.2x YoY revenue\nNRR 128%\n40 logos", notes: "Lead with NRR" },
+  { title: "The ask", body: "$25M to scale GTM\n18-month runway", notes: "" },
+];
+
+function artifactNode(id: string, name: string): TimelineNode {
+  return {
+    kind: "artifact",
+    key: id,
+    artifact: { id, name, bytes: 24_000, sha256: "0".repeat(64), contentType: contentTypeForName(name) },
+  };
+}
+
+const TIMELINE_NODES: TimelineNode[] = [
+  { kind: "text", key: "intro", text: "Here are the workpieces I drafted for the kickoff:" },
+  ...FILES.map((file) => artifactNode(file.id, file.name)),
+];
+
+export function WorkspaceSample() {
+  const [open, setOpen] = useState<OpenWorkpieceTab[]>([
+    { id: "wp-doc", name: "Q2 Kickoff Brief.docx" },
+  ]);
+  const [activeId, setActiveId] = useState<string | null>("wp-doc");
+  const [viewMode, setViewMode] = useState<"rendered" | "code">("rendered");
+
+  const docRef = useRef<HTMLDivElement>(null);
+  const [docHtml, setDocHtml] = useState(SAMPLE_DOC_HTML);
+  const [rows, setRows] = useState<string[][]>(SAMPLE_ROWS);
+  const [slides, setSlides] = useState<ArtifactPresentationSlide[]>(SAMPLE_SLIDES);
+
+  // Seed the contenteditable once, the way the real editor's load() does.
+  useEffect(() => {
+    if (docRef.current) docRef.current.innerHTML = SAMPLE_DOC_HTML;
+  }, []);
+
+  const openWorkpiece = (artifact: { id: string; name: string }) => {
+    setOpen((prev) =>
+      prev.some((w) => w.id === artifact.id) ? prev : [...prev, { id: artifact.id, name: artifact.name }],
+    );
+    setActiveId(artifact.id);
+  };
+  const closeWorkpiece = (id: string) => {
+    setOpen((prev) => prev.filter((w) => w.id !== id));
+    if (activeId === id) {
+      const remaining = open.filter((w) => w.id !== id);
+      setActiveId(remaining[remaining.length - 1]?.id ?? null);
+    }
+  };
+
+  const kindLabel = (id: string) => FILES.find((f) => f.id === id)?.kindLabel ?? "Document";
+  const sourceFor = (id: string) => {
+    if (id === "wp-doc") return docHtml;
+    if (id === "wp-sheet") return serializeArtifactCsv(rows);
+    try {
+      return JSON.stringify({ slides }, null, 2);
+    } catch {
+      return serializeSlides(slides);
+    }
+  };
+  const dirtyFor = (id: string) => (id === "wp-doc" ? docHtml !== SAMPLE_DOC_HTML : false);
+
+  return (
+    <WorkspaceOpenProvider value={openWorkpiece}>
+      <main data-testid="workspace-sample" className="min-h-full bg-bg-white-0 p-6">
+        <div className="mx-auto max-w-6xl">
+          <h1 className="text-title-h5 text-text-strong-950">Workspace side pane</h1>
+          <p className="mt-1 max-w-3xl text-paragraph-sm text-text-sub-600">
+            Real session components: click a workpiece card in the conversation to open it in the
+            side pane. Tabs, the rendered/Code toggle, the quiet Saved indicator, and the three
+            structured editors are the exact live renderers, fed by fixtures.
+          </p>
+
+          <div className="mt-6 flex min-h-[640px] gap-4">
+            {/* Conversation column with the real artifact cards. */}
+            <section className="flex min-w-0 flex-1 flex-col rounded-2xl border border-stroke-soft-200 bg-bg-white-0 p-4">
+              <p className="text-mono-label text-text-soft-400">Conversation</p>
+              <div className="mt-3">
+                <Timeline nodes={TIMELINE_NODES} live={false} />
+              </div>
+            </section>
+
+            {/* The right rail panel hosting the Workspace surface. */}
+            <section className="flex w-[460px] shrink-0 flex-col overflow-hidden rounded-2xl border border-stroke-soft-200 bg-bg-white-0">
+              <div className="flex items-center gap-2 border-b border-stroke-soft-200 px-3 py-2">
+                <span className="text-mono-label text-text-soft-400">Rail</span>
+                <span className="inline-flex h-6 items-center rounded-md bg-bg-strong-950 px-2 text-label-xs text-text-white-0">
+                  Workspace
+                </span>
+              </div>
+              <div className="relative min-h-0 flex-1">
+                <div className="absolute inset-0 flex flex-col">
+                  <WorkpieceTabStrip
+                    tabs={open}
+                    activeId={activeId}
+                    onSelect={setActiveId}
+                    onClose={closeWorkpiece}
+                  />
+                  <div className="relative min-h-0 flex-1">
+                    {open.map((tab) => (
+                      <div
+                        key={tab.id}
+                        hidden={tab.id !== activeId}
+                        className="absolute inset-0 flex flex-col"
+                      >
+                        <WorkpieceHeader
+                          name={tab.name}
+                          kindLabel={kindLabel(tab.id)}
+                          revision={3}
+                          viewMode={viewMode}
+                          onViewMode={setViewMode}
+                          saving={false}
+                          dirty={dirtyFor(tab.id)}
+                          editable
+                          onSave={() => setDocHtml(SAMPLE_DOC_HTML)}
+                          downloadUrl="#"
+                          exportUrl="#"
+                        />
+                        <div className="flex min-h-0 flex-1 flex-col overflow-auto px-3 pb-3">
+                          {viewMode === "code" ? (
+                            <WorkpieceCodeView label={kindLabel(tab.id)} source={sourceFor(tab.id)} />
+                          ) : tab.id === "wp-doc" ? (
+                            <RichDocumentSurface editorRef={docRef} loading={false} onChange={setDocHtml} />
+                          ) : tab.id === "wp-sheet" ? (
+                            <SpreadsheetGridSurface rows={rows} onChange={setRows} />
+                          ) : (
+                            <SlidesSurface slides={slides} loading={false} onChange={setSlides} />
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </section>
+          </div>
+        </div>
+      </main>
+    </WorkspaceOpenProvider>
+  );
+}
