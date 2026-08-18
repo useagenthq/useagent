@@ -662,6 +662,7 @@ function ReplyComposer({
   onDismissThreadError,
   engineUnavailable,
   draftKey,
+  prefill,
 }: {
   engine: EngineId;
   model: string;
@@ -685,6 +686,8 @@ function ReplyComposer({
   engineUnavailable?: boolean;
   /** Thread key for per-thread draft persistence (the root run id). */
   draftKey?: string | null;
+  /** Externally seed the composer (conflicted-proposal "Ask agent to redo"). */
+  prefill?: { readonly text: string; readonly nonce: number } | null;
 }) {
   return (
     <div className="shrink-0 px-4 pb-4 pt-2">
@@ -711,6 +714,7 @@ function ReplyComposer({
           onDismissThreadError={onDismissThreadError}
           engineUnavailable={engineUnavailable}
           draftKey={draftKey}
+          prefill={prefill}
         />
       </div>
     </div>
@@ -748,6 +752,7 @@ export function Conversation({
   stopError,
   onStop,
   runStartedAt,
+  prefill,
 }: {
   turns: Turn[];
   defaultEngine: EngineId;
@@ -786,6 +791,9 @@ export function Conversation({
   /** ISO start of the RUNNING turn (its run.created_at) - powers the composer
    *  status pill's elapsed timer. */
   runStartedAt?: string | null;
+  /** Externally seed the reply composer (e.g. "Ask agent to redo" on a conflicted
+   *  proposal); each request carries a fresh nonce so repeats re-apply. */
+  prefill?: { readonly text: string; readonly nonce: number } | null;
 }) {
   // Stick-to-bottom autoscroll: follow new turns/steps/narration as they
   // stream, but ONLY while the user is already near the bottom — scrolling up
@@ -915,6 +923,7 @@ export function Conversation({
         onDismissThreadError={handleDismissThreadError}
         engineUnavailable={engineUnavailable}
         draftKey={turns[0]?.run.id ?? null}
+        prefill={prefill}
       />
     </div>
   );
