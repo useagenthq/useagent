@@ -19,7 +19,7 @@ import {
   contentTypeForName,
   inferWorkpieceKind,
 } from "@skynet/artifact-workspace";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useWorkpieceEditor } from "@/app/agent/artifacts/[id]/artifact-editor-state";
 import {
   ArtifactFidelityNote,
@@ -52,11 +52,15 @@ function kindForName(name: string): ArtifactWorkpieceKind {
 export function WorkpieceTabStrip({
   tabs,
   activeId,
+  unseenIds,
   onSelect,
   onClose,
 }: {
   readonly tabs: readonly OpenWorkpieceTab[];
   readonly activeId: string | null;
+  /** Tabs auto-opened without stealing focus (user was editing) - flagged with a
+   * quiet dot so the new workpiece is noticeable without a disruptive switch. */
+  readonly unseenIds?: readonly string[];
   readonly onSelect: (id: string) => void;
   readonly onClose: (id: string) => void;
 }) {
@@ -65,6 +69,7 @@ export function WorkpieceTabStrip({
       {tabs.map((tab) => {
         const Icon = KIND_META[kindForName(tab.name)].icon;
         const active = tab.id === activeId;
+        const unseen = !active && !!unseenIds?.includes(tab.id);
         return (
           <div
             key={tab.id}
@@ -72,7 +77,9 @@ export function WorkpieceTabStrip({
               "flex shrink-0 items-center gap-1 rounded-lg border pl-2 pr-1 text-label-xs transition-colors",
               active
                 ? "border-stroke-sub-300 bg-bg-weak-50 text-text-strong-950"
-                : "border-transparent text-text-sub-600 hover:bg-bg-weak-50",
+                : unseen
+                  ? "border-feature-base/40 bg-feature-lighter/30 text-text-strong-950"
+                  : "border-transparent text-text-sub-600 hover:bg-bg-weak-50",
             )}
           >
             <button
@@ -81,7 +88,14 @@ export function WorkpieceTabStrip({
               aria-current={active}
               className="flex h-7 min-w-0 items-center gap-1.5 outline-none"
             >
-              <Icon aria-hidden className="size-3.5 shrink-0 text-text-soft-400" />
+              {unseen ? (
+                <span
+                  aria-label="New"
+                  className="size-1.5 shrink-0 rounded-full bg-feature-base"
+                />
+              ) : (
+                <Icon aria-hidden className="size-3.5 shrink-0 text-text-soft-400" />
+              )}
               <span className="max-w-40 truncate">{tab.name}</span>
             </button>
             <button
@@ -212,10 +226,26 @@ export function WorkpieceHeader({
 }
 
 /** The mounted editor for one loaded workpiece descriptor. Auto-saves (debounced)
- * through the shared revision flow. */
-function WorkpieceEditorView({ artifact }: { readonly artifact: ArtifactDescriptor }) {
+ * through the shared revision flow. Reports its dirty state up so an auto-open
+ * never steals focus from an edit in progress. */
+function WorkpieceEditorView({
+  artifact,
+  onDirtyChange,
+}: {
+  readonly artifact: ArtifactDescriptor;
+  readonly onDirtyChange?: (dirty: boolean) => void;
+}) {
   const editor = useWorkpieceEditor(artifact, { autosave: true });
   const [viewMode, setViewMode] = useState<ViewMode>("rendered");
+  const dirty = editor.dirty;
+  // Report dirty by identity-stable ref so the effect fires only on real change
+  // (not every render) and reports clean on unmount.
+  const onDirtyChangeRef = useRef(onDirtyChange);
+  onDirtyChangeRef.current = onDirtyChange;
+  useEffect(() => {
+    onDirtyChangeRef.current?.(dirty);
+    return () => onDirtyChangeRef.current?.(false);
+  }, [dirty]);
   const workpiece = editor.workpiece;
   if (!workpiece) return null;
 
@@ -257,7 +287,12 @@ function WorkpieceEditorView({ artifact }: { readonly artifact: ArtifactDescript
       <div className="px-3 pt-2">
         <WorkpieceProposalReview artifact={artifact} />
       </div>
-      <div className="flex min-h-0 flex-1 flex-col overflow-auto px-3 pb-3">
+      {/* Marks the live editing region: an auto-open checks whether focus sits
+          inside a workspace surface here before it decides to steal focus. */}
+      <div
+        data-workspace-surface
+        className="flex min-h-0 flex-1 flex-col overflow-auto px-3 pb-3"
+      >
         <WorkpieceSurfaces editor={editor} viewMode={viewMode} />
       </div>
     </div>
@@ -266,7 +301,13 @@ function WorkpieceEditorView({ artifact }: { readonly artifact: ArtifactDescript
 
 /** Loads one artifact descriptor by id and mounts its workpiece editor. Only a
  * canonical workpiece opens here; anything else keeps its download affordance. */
-function WorkpieceEditorPane({ artifactId }: { readonly artifactId: string }) {
+function WorkpieceEditorPane({
+  artifactId,
+  onDirtyChange,
+}: {
+  readonly artifactId: string;
+  readonly onDirtyChange?: (dirty: boolean) => void;
+}) {
   const [state, setState] = useState<
     | { status: "loading" }
     | { status: "error"; message: string }
@@ -335,7 +376,7 @@ function WorkpieceEditorPane({ artifactId }: { readonly artifactId: string }) {
       </div>
     );
   }
-  return <WorkpieceEditorView artifact={state.artifact} />;
+  return <WorkpieceEditorView artifact={state.artifact} onDirtyChange={onDirtyChange} />;
 }
 
 /** The session side-pane Workspace surface: an internal tab strip over each open
@@ -344,13 +385,20 @@ function WorkpieceEditorPane({ artifactId }: { readonly artifactId: string }) {
 export function WorkspacePane({
   tabs,
   activeId,
+  unseenIds,
   onSelect,
   onClose,
+  onDirtyChange,
 }: {
   readonly tabs: readonly OpenWorkpieceTab[];
   readonly activeId: string | null;
+  /** Auto-opened-but-unfocused tabs, surfaced with a quiet dot in the strip. */
+  readonly unseenIds?: readonly string[];
   readonly onSelect: (id: string) => void;
   readonly onClose: (id: string) => void;
+  /** Reports each open editor's dirty state by id so the session can protect an
+   * in-progress edit from an auto-open focus switch. */
+  readonly onDirtyChange?: (id: string, dirty: boolean) => void;
 }) {
   if (tabs.length === 0) {
     return (
@@ -367,7 +415,13 @@ export function WorkspacePane({
   }
   return (
     <div className="absolute inset-0 flex flex-col">
-      <WorkpieceTabStrip tabs={tabs} activeId={activeId} onSelect={onSelect} onClose={onClose} />
+      <WorkpieceTabStrip
+        tabs={tabs}
+        activeId={activeId}
+        unseenIds={unseenIds}
+        onSelect={onSelect}
+        onClose={onClose}
+      />
       <div className="relative min-h-0 flex-1">
         {tabs.map((tab) => (
           <div
@@ -378,7 +432,12 @@ export function WorkspacePane({
               tab.id === activeId ? "visible" : "pointer-events-none invisible",
             )}
           >
-            <WorkpieceEditorPane artifactId={tab.id} />
+            <WorkpieceEditorPane
+              artifactId={tab.id}
+              onDirtyChange={
+                onDirtyChange ? (dirty) => onDirtyChange(tab.id, dirty) : undefined
+              }
+            />
           </div>
         ))}
       </div>

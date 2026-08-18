@@ -52,6 +52,8 @@ import { type SurfaceChoice, SurfaceChooser } from "@/components/chat/surface-ch
 import { TerminalPane } from "@/components/chat/terminal-pane";
 import type { ThreadRunView } from "@/components/chat/thread-store";
 import type { TimelineArtifact } from "@/components/chat/timeline";
+import { useWorkpieceAutoOpen } from "@/components/chat/use-workpiece-auto-open";
+import { shouldFocusAutoOpened } from "@/components/chat/workpiece-auto-open";
 import { WorkspaceOpenProvider } from "@/components/chat/workspace-open-context";
 import type { OpenWorkpieceTab } from "@/components/chat/workspace-pane";
 
@@ -85,6 +87,16 @@ import { runGitRefs, GitChips } from "@/components/session-ui/git-chip";
 import * as SegmentedControl from "@/components/ui/segmented-control";
 import { backendFetch } from "@/lib/backend-fetch";
 import { cnExt as cn } from "@/utils/cn";
+
+/** True when DOM focus sits inside a live workspace editing surface - the signal
+ * an auto-open uses to avoid yanking the caret away from an edit in progress.
+ * `visibility:hidden` on an inactive tab drops focus, so a focused surface is by
+ * definition the visible one. */
+function workspaceSurfaceHasFocus(): boolean {
+  if (typeof document === "undefined") return false;
+  const active = document.activeElement;
+  return active instanceof HTMLElement && active.closest("[data-workspace-surface]") !== null;
+}
 
 function StatusPill({ status }: { status: RunStatus }) {
   const live = status === "queued" || status === "running";
@@ -555,6 +567,14 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
   const [openWorkpieces, setOpenWorkpieces] = useState<OpenWorkpieceTab[]>([]);
   const [activeWorkpieceId, setActiveWorkpieceId] = useState<string | null>(null);
   const [workspaceEverOpened, setWorkspaceEverOpened] = useState(false);
+  // Tabs auto-opened without stealing focus (the user was mid-edit): flagged in
+  // the strip with a quiet dot until the user visits them.
+  const [unseenWorkpieceIds, setUnseenWorkpieceIds] = useState<readonly string[]>([]);
+  // Read fresh inside the auto-open callback (fired from the org-change listener,
+  // outside React's render closure) without re-creating the handler each render.
+  const activeWorkpieceIdRef = useRef(activeWorkpieceId);
+  activeWorkpieceIdRef.current = activeWorkpieceId;
+  const workspaceDirtyRef = useRef<Map<string, boolean>>(new Map());
 
   // Default to whichever pane actually has content; an explicit pick wins.
   // A quiet thread starts on the provider-neutral surface chooser.
@@ -570,13 +590,42 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
       prev.some((w) => w.id === artifact.id) ? prev : [...prev, { id: artifact.id, name: artifact.name }],
     );
     setActiveWorkpieceId(artifact.id);
+    setUnseenWorkpieceIds((ids) => ids.filter((id) => id !== artifact.id));
     setRailOverride(true);
     setRailTabOverride("workspace");
   }, []);
+  // Selecting a tab clears its unseen dot.
+  const selectWorkpiece = useCallback((id: string) => {
+    setActiveWorkpieceId(id);
+    setUnseenWorkpieceIds((ids) => ids.filter((x) => x !== id));
+  }, []);
+  const handleWorkspaceDirtyChange = useCallback((id: string, dirty: boolean) => {
+    workspaceDirtyRef.current.set(id, dirty);
+  }, []);
+  // Auto-open a workpiece the agent just published in THIS thread. Default: bring
+  // the new tab forward (open the rail on Workspace, focus the tab). Exception: if
+  // the user is actively editing a workspace surface (it holds focus AND is dirty),
+  // add the tab quietly with an unseen dot instead of yanking their caret away.
+  const autoOpenWorkpiece = useCallback((tab: OpenWorkpieceTab) => {
+    setOpenWorkpieces((prev) => (prev.some((w) => w.id === tab.id) ? prev : [...prev, tab]));
+    setRailOverride(true);
+    const activeId = activeWorkpieceIdRef.current;
+    const dirty = activeId ? (workspaceDirtyRef.current.get(activeId) ?? false) : false;
+    if (shouldFocusAutoOpened({ dirty, focused: workspaceSurfaceHasFocus() })) {
+      setActiveWorkpieceId(tab.id);
+      setUnseenWorkpieceIds((ids) => ids.filter((id) => id !== tab.id));
+      setRailTabOverride("workspace");
+    } else {
+      setUnseenWorkpieceIds((ids) => (ids.includes(tab.id) ? ids : [...ids, tab.id]));
+    }
+  }, []);
+  useWorkpieceAutoOpen(rootId, autoOpenWorkpiece);
   const closeWorkpiece = useCallback(
     (id: string) => {
       const remaining = openWorkpieces.filter((w) => w.id !== id);
       setOpenWorkpieces(remaining);
+      setUnseenWorkpieceIds((ids) => ids.filter((x) => x !== id));
+      workspaceDirtyRef.current.delete(id);
       if (activeWorkpieceId === id) {
         setActiveWorkpieceId(remaining[remaining.length - 1]?.id ?? null);
       }
@@ -931,8 +980,10 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
                   <WorkspacePane
                     tabs={openWorkpieces}
                     activeId={activeWorkpieceId}
-                    onSelect={setActiveWorkpieceId}
+                    unseenIds={unseenWorkpieceIds}
+                    onSelect={selectWorkpiece}
                     onClose={closeWorkpiece}
+                    onDirtyChange={handleWorkspaceDirtyChange}
                   />
                 </div>
               ) : null}
