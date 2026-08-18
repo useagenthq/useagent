@@ -166,8 +166,43 @@ export interface Workbook {
   readonly activeSheetId: string;
 }
 
+// ---------------------------------------------------------------------------
+// Themed document v2 (web-native canonical model for rich documents).
+//
+// A themed document is a deck-style theme (page background + heading/body/accent
+// colors) plus the validated rich-HTML body. It supersedes the bare `{ html }`
+// companion form; v1 `{ html }` states upgrade on load (see `coerceDocumentState`)
+// so stored rows never break. Plain-text source documents keep the separate
+// `{ text }` form (markdown / txt), which carries no theme. Document theme colors
+// are DOCUMENT data (like the deck's), so they carry raw hex values, not tokens.
+// ---------------------------------------------------------------------------
+
+/** Bumped when the themed-document shape changes; v1 `{ html }` states upgrade. */
+export const DOCUMENT_SCHEMA_VERSION = 2 as const;
+
+/** A document theme: the same background union + heading/body/accent roles the
+ * deck theme uses, so the picker and presets are shared. */
+export interface DocumentTheme {
+  readonly background: DeckBackground;
+  /** Default heading text color (hex). */
+  readonly heading: string;
+  /** Default body text color (hex). */
+  readonly body: string;
+  /** Accent color (used in the browser view; not mapped into DOCX). */
+  readonly accent: string;
+}
+
+export interface ThemedDocument {
+  readonly schemaVersion: typeof DOCUMENT_SCHEMA_VERSION;
+  readonly theme: DocumentTheme;
+  /** The validated rich-HTML body (the deliberately small safe subset). */
+  readonly html: string;
+}
+
 export interface ArtifactWorkpieceStateByKind {
-  readonly document: Readonly<{ text: string }> | Readonly<{ html: string }>;
+  /** Canonical rich form: `{ document }`. v1 `{ html }` upgrades on load (see
+   * `coerceDocumentState`). Plain-text source docs keep the separate `{ text }`. */
+  readonly document: Readonly<{ text: string }> | Readonly<{ document: ThemedDocument }>;
   /** Canonical v2 form: `{ workbook }`. v1 `{ csv }` states upgrade on load
    * (see `coerceSpreadsheetState`) so stored v1 rows never break. */
   readonly spreadsheet: Readonly<{ workbook: Workbook }>;

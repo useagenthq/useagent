@@ -1,5 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import { csvToWorkbook, deckToSlides, migrateSlidesToDeck } from "@skynet/artifact-workspace";
+import {
+  csvToWorkbook,
+  deckToSlides,
+  migrateHtmlToDocument,
+  migrateSlidesToDeck,
+} from "@skynet/artifact-workspace";
 import {
   exportWorkpieceState,
 } from "./authoring";
@@ -39,8 +44,9 @@ describe("artifact workpiece registry", () => {
   });
 
   test("accepts only bounded state shapes and rejects active rich HTML", () => {
+    // A v1 { html } companion upgrades to the themed v2 { document } on parse.
     expect(parseWorkpieceState("document", { html: "<h1>Brief</h1><p>Safe</p>" })).toEqual({
-      html: "<h1>Brief</h1><p>Safe</p>",
+      document: migrateHtmlToDocument("<h1>Brief</h1><p>Safe</p>")!,
     });
     expect(parseWorkpieceState("document", { html: "<img src=x onerror=alert(1)>" })).toBeNull();
     expect(parseWorkpieceState("document", {
@@ -106,7 +112,7 @@ describe("artifact workpiece registry", () => {
       sourceName: "brief.docx",
       sourceBytes: Buffer.from("zip"),
       editable: { name: "brief.html", bytes: Buffer.from("<h1>Brief</h1>") },
-    })).toEqual({ html: "<h1>Brief</h1>" });
+    })).toEqual({ document: migrateHtmlToDocument("<h1>Brief</h1>")! });
     expect(buildInitialWorkpieceState({
       kind: "spreadsheet",
       sourceName: "model.xlsx",

@@ -2,6 +2,8 @@ import { describe, expect, test } from "bun:test";
 import {
   csvToWorkbook,
   DECK_THEME_PRESETS,
+  DOCUMENT_THEME_PRESETS,
+  migrateHtmlToDocument,
   migrateSlidesToDeck,
   type Workbook,
 } from "@skynet/artifact-workspace";
@@ -176,6 +178,33 @@ describe("workpieceProposalDiff", () => {
     if (diff.type === "slides") {
       expect(diff.themeChanged).toBe(true);
       expect(diff.unchanged).toBe(false);
+    }
+  });
+
+  test("diffs a themed document body and flags a document theme-only change", () => {
+    const themeA = DOCUMENT_THEME_PRESETS[0]!.theme;
+    const themeB = DOCUMENT_THEME_PRESETS[1]!.theme;
+    // A body edit surfaces as a text line diff (theme unchanged).
+    const bodyDiff = workpieceProposalDiff(
+      "document",
+      { document: migrateHtmlToDocument("<p>before</p>", themeA)! },
+      { document: migrateHtmlToDocument("<p>after</p>", themeA)! },
+    );
+    expect(bodyDiff.type).toBe("text");
+    if (bodyDiff.type === "text") {
+      expect(bodyDiff.unchanged).toBe(false);
+      expect(bodyDiff.themeChanged).toBe(false);
+    }
+    // A theme-only change (identical body) is still a change, not "no change".
+    const themeDiff = workpieceProposalDiff(
+      "document",
+      { document: migrateHtmlToDocument("<p>same</p>", themeA)! },
+      { document: migrateHtmlToDocument("<p>same</p>", themeB)! },
+    );
+    expect(themeDiff.type).toBe("text");
+    if (themeDiff.type === "text") {
+      expect(themeDiff.themeChanged).toBe(true);
+      expect(themeDiff.unchanged).toBe(false);
     }
   });
 });

@@ -87,8 +87,10 @@ export const ARTIFACT_TOOLS = [
       "presentation, or PDF text companion you previously published with artifact_publish). " +
       "The edit is recorded as a PROPOSED revision for the user to review: it does NOT change " +
       "what the user currently sees until they accept it. Pass the artifact id returned by " +
-      "artifact_publish and the FULL replacement state for the workpiece's kind - document: " +
-      '{"text": string} or {"html": string}; spreadsheet: a workbook ' +
+      "artifact_publish and the FULL replacement state for the workpiece's kind - document: a themed rich document " +
+      '{"document": {"schemaVersion": 2, "theme": {"background": {"type": "color", "color": "#101020"}, "heading": "#f5f5ff", ' +
+      '"body": "#c8c8e0", "accent": "#ff8844"}, "html": "<h1>...</h1><p>...</p>"}} carrying the theme colors + rich-HTML body ' +
+      '(or, more simply, {"html": string} which is upgraded to a default-themed document, or {"text": string} for a plain-text source doc); spreadsheet: a workbook ' +
       '{"workbook": {"schemaVersion": 2, "activeSheetId": "sheet-1", "sheets": [{"id","name","rowCount","colCount",' +
       '"cells": {"A1": {"v": string|number, "f"?: "=SUM(A2:A9)", "fmt"?: {"bold"?, "numFmt"?: "currency"|"percent"|"0"|"0.00"}}}}]}} ' +
       'or, more simply, {"csv": string} which is upgraded to a single-sheet workbook automatically; presentation: a deck ' +
@@ -107,7 +109,8 @@ export const ARTIFACT_TOOLS = [
         state: {
           type: "object",
           description:
-            "Full replacement workpiece state for the artifact's kind: document {text|html}, " +
+            "Full replacement workpiece state for the artifact's kind: document {document:{schemaVersion,theme,html}} " +
+            "(or {html} upgraded to a default-themed document, or {text} for a plain-text source doc), " +
             "spreadsheet {workbook:{schemaVersion,activeSheetId,sheets:[{id,name,rowCount,colCount,cells}]}} " +
             "(or {csv} which is upgraded to a single-sheet workbook), presentation " +
             "{deck:{schemaVersion,theme,slides}} (or {slides:[{title,body,notes?}]} which is upgraded to a deck), " +
@@ -187,7 +190,8 @@ export async function executeArtifactTool(
 }
 
 const WORKPIECE_STATE_SHAPES: Readonly<Record<string, string>> = {
-  document: '{"text": string} or {"html": string}',
+  document:
+    '{"document": {"schemaVersion": 2, "theme": {...}, "html": string}} (or {"html": string} / {"text": string})',
   spreadsheet:
     '{"workbook": {"schemaVersion": 2, "activeSheetId", "sheets": [{"id", "name", "rowCount", "colCount", "cells"}]}} or {"csv": string}',
   presentation:

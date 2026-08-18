@@ -5,6 +5,7 @@ import {
   type ArtifactWorkpieceDescriptor,
   type ArtifactWorkpieceState,
   decodeWorkpieceResult,
+  type DocumentTheme,
   type PresentationDeck,
   type Workbook,
 } from "@skynet/agent-client";
@@ -12,6 +13,8 @@ import {
   artifactActionContractFor,
   coercePresentationState,
   coerceSpreadsheetState,
+  DEFAULT_DOCUMENT_THEME,
+  DOCUMENT_SCHEMA_VERSION,
   emptyWorkbook,
   migrateSlidesToDeck,
 } from "@skynet/artifact-workspace";
@@ -96,12 +99,16 @@ function workbookFromValue(value: string): Workbook | null {
   }
 }
 
-function stateForMode(mode: ArtifactEditorMode, value: string): ArtifactWorkpieceState {
+function stateForMode(
+  mode: ArtifactEditorMode,
+  value: string,
+  theme: DocumentTheme,
+): ArtifactWorkpieceState {
   switch (mode) {
     case "sheet-grid":
       return { workbook: parseWorkbookJson(value) };
     case "rich-document":
-      return { html: value };
+      return { document: { schemaVersion: DOCUMENT_SCHEMA_VERSION, theme, html: value } };
     case "slides-json":
       return { deck: parseDeckJson(value) };
     case "pdf-text":
@@ -109,6 +116,12 @@ function stateForMode(mode: ArtifactEditorMode, value: string): ArtifactWorkpiec
     case "source-document":
       return { text: value };
   }
+}
+
+/** The document theme carried by a loaded workpiece result: a themed `{ document }`
+ * state's theme, else the default (a plain-text source doc or an unsaved doc). */
+function themeFromResult(state: ArtifactWorkpieceState | null): DocumentTheme {
+  return state && "document" in state ? state.document.theme : DEFAULT_DOCUMENT_THEME;
 }
 
 /** A published PDF is byte-authoritative: its content lives in the immutable
@@ -172,9 +185,13 @@ export interface WorkpieceEditorController {
   readonly deck: PresentationDeck | null;
   /** The current workbook for the spreadsheet editor, or null before load. */
   readonly workbook: Workbook | null;
+  /** The current theme for the rich-document editor (background + heading/body/
+   * accent colors); the default theme for a plain-text source document. */
+  readonly documentTheme: DocumentTheme;
   readonly richEditorRef: RefObject<HTMLDivElement | null>;
   readonly setDeck: (deck: PresentationDeck) => void;
   readonly setWorkbook: (workbook: Workbook) => void;
+  readonly setDocumentTheme: (theme: DocumentTheme) => void;
   readonly setSource: (value: string) => void;
   readonly onRichChange: (html: string) => void;
   readonly save: () => Promise<void>;
@@ -197,6 +214,10 @@ export function useWorkpieceEditor(
   const [savedValue, setSavedValue] = useState("");
   const [deck, setDeck] = useState<PresentationDeck | null>(null);
   const [workbook, setWorkbook] = useState<Workbook | null>(null);
+  // The rich-document theme rides alongside the contentEditable HTML body: the
+  // body lives in richEditorRef, the theme is structured state (like deck/workbook).
+  const [documentTheme, setDocumentThemeState] = useState<DocumentTheme>(DEFAULT_DOCUMENT_THEME);
+  const [savedThemeKey, setSavedThemeKey] = useState(JSON.stringify(DEFAULT_DOCUMENT_THEME));
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -232,6 +253,11 @@ export function useWorkpieceEditor(
       if (!stateResponse.ok) throw new Error(`state request failed (${stateResponse.status})`);
       const result = decodeWorkpieceResult(await stateResponse.json());
       if (!result) throw new Error("state response was invalid");
+      if (isRich) {
+        const theme = themeFromResult(result.state);
+        setDocumentThemeState(theme);
+        setSavedThemeKey(JSON.stringify(theme));
+      }
       let text = stateValue(result);
       // A byte-authoritative PDF (published, no pdfText state) must NEVER fetch
       // its bytes into the text editor - it renders as an embedded preview.
@@ -295,8 +321,17 @@ export function useWorkpieceEditor(
   const canonicalSource = useCallback(() => {
     if (isSlidesEditor) return deck ? JSON.stringify(deck, null, 2) : "";
     if (isSheetGrid) return workbook ? JSON.stringify(workbook, null, 2) : "";
+    // The rich document's canonical form is the themed { document } object, so the
+    // Code view shows exactly what a save writes (body + theme), not just the HTML.
+    if (isRich) {
+      return JSON.stringify(
+        { schemaVersion: DOCUMENT_SCHEMA_VERSION, theme: documentTheme, html: currentValue() },
+        null,
+        2,
+      );
+    }
     return currentValue();
-  }, [currentValue, deck, isSheetGrid, isSlidesEditor, workbook]);
+  }, [currentValue, deck, documentTheme, isRich, isSheetGrid, isSlidesEditor, workbook]);
 
   const save = useCallback(async () => {
     if (!workpiece) return;
@@ -305,7 +340,7 @@ export function useWorkpieceEditor(
     const nextValue = currentValue();
     let state: ArtifactWorkpieceState;
     try {
-      state = stateForMode(editorMode, nextValue);
+      state = stateForMode(editorMode, nextValue, documentTheme);
     } catch (cause) {
       setSaving(false);
       setError(cause instanceof Error ? cause.message : "The workpiece state is invalid.");
@@ -321,6 +356,11 @@ export function useWorkpieceEditor(
       if (response.status === 409 && result) {
         const latest = normalizeValue(stateValue(result) ?? "");
         setRevision(result.workpiece.state_revision);
+        if (isRich) {
+          const theme = themeFromResult(result.state);
+          setDocumentThemeState(theme);
+          setSavedThemeKey(JSON.stringify(theme));
+        }
         if (isSlidesEditor) {
           const parsedDeck = deckFromValue(latest) ?? migrateSlidesToDeck([]);
           const canonical = serializeDeck(parsedDeck);
@@ -344,6 +384,7 @@ export function useWorkpieceEditor(
       setRevision(result.workpiece.state_revision);
       setEditorValue(nextValue);
       setSavedValue(nextValue);
+      setSavedThemeKey(JSON.stringify(documentTheme));
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "The workpiece could not be saved.");
     } finally {
@@ -351,7 +392,9 @@ export function useWorkpieceEditor(
     }
   }, [
     currentValue,
+    documentTheme,
     editorMode,
+    isRich,
     isSheetGrid,
     isSlidesEditor,
     normalizeValue,
@@ -360,7 +403,9 @@ export function useWorkpieceEditor(
     workpiece,
   ]);
 
-  const dirty = currentValue() !== savedValue;
+  // A theme change dirties a rich document even when its HTML body is unchanged.
+  const dirty = currentValue() !== savedValue ||
+    (isRich && JSON.stringify(documentTheme) !== savedThemeKey);
   const editable = !!actionContract.edit;
 
   // Debounced auto-save: opt-in (the side pane), off for the full-page editor
@@ -394,6 +439,13 @@ export function useWorkpieceEditor(
   const setWorkbookTracked = useCallback(
     (next: Workbook) => {
       setWorkbook(next);
+      bump();
+    },
+    [bump],
+  );
+  const setDocumentTheme = useCallback(
+    (next: DocumentTheme) => {
+      setDocumentThemeState(next);
       bump();
     },
     [bump],
@@ -433,9 +485,11 @@ export function useWorkpieceEditor(
     value,
     deck,
     workbook,
+    documentTheme,
     richEditorRef,
     setDeck: setDeckTracked,
     setWorkbook: setWorkbookTracked,
+    setDocumentTheme,
     setSource,
     onRichChange,
     save,

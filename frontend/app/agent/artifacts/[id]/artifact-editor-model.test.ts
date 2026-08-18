@@ -1,11 +1,17 @@
 import { describe, expect, test } from "bun:test";
-import { normalizeArtifactRichHtml } from "@skynet/artifact-workspace";
+import type { ArtifactWorkpieceResult } from "@skynet/agent-client";
+import {
+  DEFAULT_DOCUMENT_THEME,
+  migrateHtmlToDocument,
+  normalizeArtifactRichHtml,
+} from "@skynet/artifact-workspace";
 import {
   artifactEditorMode,
   parseCsv,
   richDocumentTemplate,
   sanitizeRichHtml,
   serializeCsv,
+  stateValue,
 } from "./artifact-editor-model";
 
 describe("artifact editor model", () => {
@@ -36,6 +42,14 @@ describe("artifact editor model", () => {
 
   test("keeps rich document editing bounded", () => {
     expect(richDocumentTemplate("<unsafe>.docx")).toContain("&lt;unsafe&gt;");
+  });
+
+  test("surfaces the themed document HTML body (and plain text) to the editor", () => {
+    const doc = migrateHtmlToDocument("<h1>Brief</h1><p>Body</p>", DEFAULT_DOCUMENT_THEME)!;
+    const result = (state: unknown) => ({ state } as unknown as ArtifactWorkpieceResult);
+    expect(stateValue(result({ document: doc }))).toBe("<h1>Brief</h1><p>Body</p>");
+    expect(stateValue(result({ text: "plain source" }))).toBe("plain source");
+    expect(stateValue(result(null))).toBeNull();
   });
 
   test("never returns rich HTML that the shared save contract rejects", () => {

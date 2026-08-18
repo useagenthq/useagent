@@ -1,5 +1,6 @@
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import {
+  coerceDocumentState,
   coercePresentationState,
   coerceSpreadsheetState,
   type ArtifactProposalStatus,
@@ -15,12 +16,14 @@ export type ProposalRecord = typeof artifactWorkpieceProposals.$inferSelect;
 
 export function toProposalDescriptor(row: ProposalRecord): ArtifactWorkpieceProposalDescriptor {
   // Upgrade a legacy v1 proposal to its canonical v2 shape for the wire (deck for
-  // presentation, workbook for spreadsheet) so the review diff always compares
-  // one shape against mainline.
+  // presentation, workbook for spreadsheet, themed document for a v1 `{html}` doc)
+  // so the review diff always compares one shape against mainline.
   const state = row.kind === "presentation"
     ? coercePresentationState(row.state) ?? row.state
     : row.kind === "spreadsheet"
     ? coerceSpreadsheetState(row.state) ?? row.state
+    : row.kind === "document"
+    ? coerceDocumentState(row.state) ?? row.state
     : row.state;
   return {
     id: row.id,

@@ -12,13 +12,16 @@ import {
   type ArtifactWorkpieceKind,
   type ArtifactWorkpieceState,
 } from "./contracts";
+import { coerceDocumentState, normalizeDocument } from "./document";
 import { migrateSlidesToDeck, normalizeDeck } from "./presentation";
 import { csvToWorkbook, normalizeWorkbook } from "./spreadsheet";
 
 export * from "./contracts";
 export * from "./csv";
+export * from "./document";
 export * from "./formula";
 export * from "./presentation";
+export * from "./rich-html";
 export * from "./spreadsheet";
 
 const CONTENT_TYPES: Readonly<Record<string, string>> = {
@@ -76,31 +79,6 @@ const DOCUMENT_CONTENT_TYPES = new Set([
   "text/tab-separated-values",
   "text/x-markdown",
 ]);
-
-const SAFE_RICH_HTML_TAGS = new Set([
-  "a",
-  "b",
-  "br",
-  "div",
-  "em",
-  "h1",
-  "h2",
-  "h3",
-  "i",
-  "li",
-  "ol",
-  "p",
-  "strong",
-  "table",
-  "tbody",
-  "td",
-  "th",
-  "thead",
-  "tr",
-  "u",
-  "ul",
-]);
-const RICH_HTML_TABLE_CELL_TAGS = new Set(["td", "th"]);
 
 export type ArtifactWorkspaceKind =
   | "document"
@@ -317,79 +295,6 @@ export function artifactExtensionLabel(name: string): string {
 export function contentTypeForName(name: string): string {
   const extension = artifactFileExtension(name);
   return CONTENT_TYPES[extension ? `.${extension}` : ""] ?? "application/octet-stream";
-}
-
-export function isArtifactRichHtmlTag(tag: string): boolean {
-  return SAFE_RICH_HTML_TAGS.has(tag.toLowerCase());
-}
-
-export function isArtifactRichHtmlAttribute(
-  tag: string,
-  name: string,
-  value: string,
-): boolean {
-  const normalizedTag = tag.toLowerCase();
-  const normalizedName = name.toLowerCase();
-  if (normalizedName === "href") {
-    const href = value.trim().toLowerCase();
-    return normalizedTag === "a" &&
-      (href.startsWith("https://") || href.startsWith("http://") || href.startsWith("mailto:"));
-  }
-  if (normalizedName !== "colspan" && normalizedName !== "rowspan") return false;
-  if (!RICH_HTML_TABLE_CELL_TAGS.has(normalizedTag) || !/^\d{1,3}$/.test(value)) return false;
-  const span = Number(value);
-  return span >= 1 && span <= 100;
-}
-
-function hasSafeRichHtmlAttributes(tag: string, source: string): boolean {
-  let remaining = source.trim();
-  if (!remaining) return true;
-  if (remaining.endsWith("/")) {
-    if (tag !== "br") return false;
-    remaining = remaining.slice(0, -1).trimEnd();
-  }
-
-  const seen = new Set<string>();
-  while (remaining) {
-    const match =
-      /^([a-z][a-z0-9-]*)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+))(?:\s+|$)/i.exec(
-        remaining,
-      );
-    if (!match) return false;
-    const rawName = match[1];
-    if (!rawName) return false;
-    const name = rawName.toLowerCase();
-    const value = match[2] ?? match[3] ?? match[4] ?? "";
-    if (seen.has(name) || !isArtifactRichHtmlAttribute(tag, name, value)) return false;
-    seen.add(name);
-    remaining = remaining.slice(match[0].length);
-  }
-  return true;
-}
-
-/** Validate the browser editor's deliberately small rich-HTML subset. Unknown
- * tags, misplaced attributes, unsafe URL schemes, and malformed markup fail
- * closed so browser and server consumers enforce one storage contract. */
-export function normalizeArtifactRichHtml(value: string): string | null {
-  const tags = value.matchAll(/<[^>]*>/g);
-  let cursor = 0;
-  for (const match of tags) {
-    const start = match.index;
-    if (start === undefined || /[<>]/.test(value.slice(cursor, start))) return null;
-    const parsed = /^<\s*(\/?)\s*([a-z][a-z0-9]*)\s*([^>]*)>$/i.exec(match[0]);
-    if (!parsed) return null;
-    const closing = parsed[1] === "/";
-    const rawTag = parsed[2];
-    if (!rawTag) return null;
-    const tag = rawTag.toLowerCase();
-    const attributes = parsed[3] ?? "";
-    if (!isArtifactRichHtmlTag(tag)) return null;
-    if (closing ? attributes.trim() !== "" : !hasSafeRichHtmlAttributes(tag, attributes)) {
-      return null;
-    }
-    cursor = start + match[0].length;
-  }
-  return /[<>]/.test(value.slice(cursor)) ? null : value;
 }
 
 /** HTML and SVG are deliberately attachment-only because they are active content
@@ -624,18 +529,23 @@ export interface ArtifactFidelity {
 const ARTIFACT_FIDELITY_BY_KIND = {
   document: {
     kind: "document",
-    summary: "Rich text: headings, emphasis, lists, links, and simple tables.",
+    summary:
+      "Rich text with a document theme: headings, emphasis, lists, links, simple tables, and heading/body/background colors.",
     preserved: [
       "Headings (H1-H3)",
       "Bold, italic, and underline",
       "Bulleted and numbered lists",
       "Hyperlinks",
       "Tables with basic row and column spans",
+      "Document theme heading and body text colors",
+      "A solid page background color",
     ],
     notPreserved: [
       "Images and drawings",
       "Page layout, headers and footers, and columns",
-      "Fonts, colors, and theme styling",
+      "Gradient and image page backgrounds (a gradient exports as its start color; an image background is dropped)",
+      "The theme accent color (used in the browser view only)",
+      "Font families and sizes",
       "Comments and tracked changes",
     ],
     uploadImport: "companion",
@@ -741,7 +651,11 @@ export function isArtifactWorkpieceState<Kind extends ArtifactWorkpieceKind>(
   // upgraded on load via `coerceSpreadsheetState`, never accepted as canonical.
   if (kind === "spreadsheet") return entry[0] === "workbook" && normalizeWorkbook(entry[1]) !== null;
   if (kind === "document") {
-    return (entry[0] === "text" || entry[0] === "html") && typeof entry[1] === "string";
+    // Canonical rich state is the v2 themed `{ document }`; v1 `{ html }` inputs
+    // upgrade on load via `coerceDocumentState`, never accepted as canonical. The
+    // plain-text `{ text }` source form (markdown / txt) is also canonical.
+    if (entry[0] === "text") return typeof entry[1] === "string";
+    return entry[0] === "document" && normalizeDocument(entry[1]) !== null;
   }
   if (kind === "pdf") return entry[0] === "pdfText" && typeof entry[1] === "string";
   // Presentation canonical state is the v2 deck. v1 `{ slides }` inputs are

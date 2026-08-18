@@ -180,8 +180,17 @@ function ProposalDiffBody({ diff }: { readonly diff: WorkpieceProposalDiff }) {
   if (diff.unchanged) return <NoChange />;
   if (diff.type === "text") {
     return (
-      <div className="max-h-72 overflow-auto rounded-10 border border-stroke-soft-200">
-        <DiffLines lines={diff.lines} />
+      <div className="space-y-2">
+        {diff.themeChanged && (
+          <p className="rounded-10 border border-stroke-soft-200 bg-bg-weak-50 px-2.5 py-1.5 text-paragraph-xs text-text-sub-600">
+            Document theme changed (background and colors).
+          </p>
+        )}
+        {diff.lines.length > 0 && (
+          <div className="max-h-72 overflow-auto rounded-10 border border-stroke-soft-200">
+            <DiffLines lines={diff.lines} />
+          </div>
+        )}
       </div>
     );
   }

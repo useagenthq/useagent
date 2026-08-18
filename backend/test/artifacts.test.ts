@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, spyOn, test } from "bun:test";
 import { createHash } from "node:crypto";
 import JSZip from "jszip";
 import * as artifactFormats from "@skynet/artifact-formats";
-import { csvToWorkbook } from "@skynet/artifact-workspace";
+import { csvToWorkbook, migrateHtmlToDocument } from "@skynet/artifact-workspace";
 import type { ArtifactDescriptor } from "../src/artifacts/repo";
 import { setArtifactStorageForTest } from "../src/artifacts/storage";
 import { executeArtifactTool } from "../src/knowledge/gateway/artifact-tools";
@@ -439,13 +439,16 @@ describe("durable artifacts", () => {
     expect(xlsx.artifact.workpiece).toMatchObject({ kind: "spreadsheet", state_revision: 0 });
 
     const documentPath = `/api/artifacts/${docx.artifact.id}/workpiece`;
-    const savedHtml = await json<{ state: { html: string } }>(documentPath, {
+    // A v1 { html } PATCH is upgraded to the themed v2 { document } on the wire.
+    const savedHtml = await json<{ state: unknown }>(documentPath, {
       method: "PATCH",
       cookies: owner.cookies,
       body: { expected_revision: 0, state: { html: "<h1>Brief</h1><p>Edited</p>" } },
     });
     expect(savedHtml.status).toBe(200);
-    expect(savedHtml.body.state).toEqual({ html: "<h1>Brief</h1><p>Edited</p>" });
+    expect(savedHtml.body.state).toEqual({
+      document: migrateHtmlToDocument("<h1>Brief</h1><p>Edited</p>"),
+    });
 
     const rejectedHtml = await json(documentPath, {
       method: "PATCH",
@@ -515,7 +518,7 @@ describe("durable artifacts", () => {
       const sheetArtifact = sheet.structuredContent?.artifact as ArtifactDescriptor;
       expect(docArtifact.id).toBe(initialDocArtifact.id);
       expect(doc.structuredContent?.created).toBe(false);
-      const docState = await json<{ state: { html: string } }>(
+      const docState = await json<{ state: unknown }>(
         `/api/artifacts/${docArtifact.id}/workpiece`,
         { cookies: owner.cookies },
       );
@@ -523,7 +526,9 @@ describe("durable artifacts", () => {
         `/api/artifacts/${sheetArtifact.id}/workpiece`,
         { cookies: owner.cookies },
       );
-      expect(docState.body.state).toEqual({ html: new TextDecoder().decode(html) });
+      expect(docState.body.state).toEqual({
+        document: migrateHtmlToDocument(new TextDecoder().decode(html)),
+      });
       expect(sheetState.body.state).toEqual({
         workbook: csvToWorkbook(new TextDecoder().decode(csv)),
       });
