@@ -116,6 +116,7 @@ describe("gateway operation registry", () => {
 
     expect(defaultNames).toContain("knowledge_search");
     expect(defaultNames).toContain("automation_create");
+    expect(defaultNames).toContain("workpiece_create");
     expect(defaultNames).not.toContain("gateway_tools_search");
     expect(compactNames).toEqual(metaNames);
     expect(compactNames.every(isGatewayMetaToolName)).toBe(true);

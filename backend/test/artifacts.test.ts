@@ -2,12 +2,17 @@ import { afterAll, beforeAll, describe, expect, spyOn, test } from "bun:test";
 import { createHash } from "node:crypto";
 import JSZip from "jszip";
 import * as artifactFormats from "@skynet/artifact-formats";
-import { csvToWorkbook, migrateHtmlToDocument } from "@skynet/artifact-workspace";
+import {
+  csvToWorkbook,
+  migrateHtmlToDocument,
+  migrateSlidesToDeck,
+} from "@skynet/artifact-workspace";
 import type { ArtifactDescriptor } from "../src/artifacts/repo";
 import { setArtifactStorageForTest } from "../src/artifacts/storage";
 import { setOfficePreviewConverterForTest } from "../src/artifacts/office-preview";
 import { executeArtifactTool } from "../src/knowledge/gateway/artifact-tools";
 import { createRun, setRunSandbox } from "../src/runs/repo";
+import { type OrgChange, subscribeOrg } from "../src/runs/org-signals";
 import { setSandboxDownloaderForTest } from "../src/slack/sandbox-file";
 import { createOrgSession, fetchApi, json, type OrgSession } from "./helpers";
 import { InMemoryArtifactStorage } from "./in-memory-artifact-storage";
@@ -713,6 +718,64 @@ describe("durable artifacts", () => {
     } finally {
       setOfficePreviewConverterForTest(async () => null);
       sandboxBytes = previous;
+    }
+  });
+
+  test("workpiece_create authors a native workpiece and fires the created auto-open signal", async () => {
+    const runId = await createSandboxRun(owner);
+    const claims = {
+      orgId: owner.orgId,
+      userId: owner.email,
+      threadId: runId,
+      runId,
+      exp: Date.now() + 60_000,
+    };
+    const created: OrgChange[] = [];
+    const unsubscribe = subscribeOrg(owner.orgId, (change) => {
+      if (change.type === "artifact" && change.action === "created") created.push(change);
+    });
+    try {
+      const res = await executeArtifactTool(claims, "workpiece_create", {
+        kind: "presentation",
+        name: "Pitch.pptx",
+        state: { deck: migrateSlidesToDeck([{ title: "Intro", body: "Hello" }]) },
+        summary: "first draft",
+      });
+      expect(res.isError).toBeFalsy();
+      const artifact = res.structuredContent?.artifact as ArtifactDescriptor;
+      expect(artifact.workpiece).toMatchObject({ kind: "presentation" });
+      // The created signal (what auto-opens the pane) fired for this artifact.
+      expect(
+        created.some((c) => c.type === "artifact" && c.artifactId === artifact.id),
+      ).toBe(true);
+
+      // Persisted and openable via the workpiece route with the canonical deck.
+      const wp = await json<{ workpiece: { kind: string }; state: { deck?: unknown } }>(
+        `/api/artifacts/${artifact.id}/workpiece`,
+        { cookies: owner.cookies },
+      );
+      expect(wp.status).toBe(200);
+      expect(wp.body.workpiece.kind).toBe("presentation");
+      expect(wp.body.state.deck).toBeDefined();
+
+      // Invalid state for the kind is rejected with a helpful message.
+      const bad = await executeArtifactTool(claims, "workpiece_create", {
+        kind: "spreadsheet",
+        name: "broken.xlsx",
+        state: { deck: { nope: true } },
+      });
+      expect(bad.isError).toBe(true);
+      expect(bad.content[0]?.text).toContain("Could not create");
+
+      // An unknown kind is rejected before any authoring.
+      const badKind = await executeArtifactTool(claims, "workpiece_create", {
+        kind: "movie",
+        name: "x.mp4",
+        state: { text: "x" },
+      });
+      expect(badKind.isError).toBe(true);
+    } finally {
+      unsubscribe();
     }
   });
 
