@@ -3,6 +3,7 @@ import { basename } from "node:path";
 import { contentTypeForName } from "./mime";
 import {
   createArtifactRecord,
+  findArtifactByOrgAndSha256,
   getArtifactForOrg,
   reviseArtifactPublication,
   toArtifactDescriptor,
@@ -24,7 +25,7 @@ import { publishOrgChange } from "../runs/org-signals";
 import { recordProviderEvent } from "../runs/provider-events";
 import { downloadSandboxFile } from "../slack/sandbox-file";
 import { extractPptxDeck, type PptxImportResult } from "@skynet/artifact-formats";
-import type { DeckBlock, PresentationDeck } from "@skynet/artifact-workspace";
+import type { DeckBackground, DeckBlock, DeckSlide, PresentationDeck } from "@skynet/artifact-workspace";
 import {
   buildInitialWorkpieceState,
   inferWorkpieceKind,
@@ -100,11 +101,47 @@ const IMPORT_IMAGE_EXTENSION: Readonly<Record<string, string>> = {
   "image/webp": "webp",
 };
 
-/** Store each image a PPTX import lifted out of its slides as a linked image
- * artifact and add an image block (referencing that artifact's URL) to the deck,
- * so an imported deck shows its real pictures. Image artifacts are content-
- * addressed and idempotent by (run, sourcePath, digest), so a re-publish reuses
- * them. Returns the deck with image blocks added. */
+/** Store one imported picture as a content-addressed image artifact and return its
+ * URL. Deduped org-wide by digest: a republish/reimport of the same picture (or
+ * the same art in another deck) reuses the existing artifact instead of creating a
+ * duplicate. */
+async function storeImportedImage(
+  image: PptxImportResult["images"][number],
+  ctx: {
+    readonly orgId: string;
+    readonly userId: string | null;
+    readonly run: { readonly id: string; readonly threadId: string };
+    readonly sourcePath: string;
+    readonly deckStem: string;
+    readonly index: number;
+  },
+): Promise<string> {
+  const digest = createHash("sha256").update(image.bytes).digest("hex");
+  const existing = await findArtifactByOrgAndSha256(ctx.orgId, digest);
+  if (existing) return `/api/artifacts/${existing.id}/content`;
+  const extension = IMPORT_IMAGE_EXTENSION[image.contentType] ?? "img";
+  const created = await createArtifactRecord({
+    orgId: ctx.orgId,
+    userId: ctx.userId,
+    runId: ctx.run.id,
+    threadId: ctx.run.threadId,
+    sourcePath: `${ctx.sourcePath}::media/${ctx.index + 1}`,
+    name: `${ctx.deckStem}-image-${ctx.index + 1}.${extension}`,
+    contentType: image.contentType,
+    sizeBytes: image.bytes.byteLength,
+    sha256: digest,
+    storageKey: digest,
+    workpieceKind: null,
+    workpieceState: null,
+  });
+  await artifactStorage().put(digest, image.bytes);
+  return `/api/artifacts/${created.row.id}/content`;
+}
+
+/** Store each picture a PPTX import lifted out of its slides as a linked, content-
+ * addressed image artifact and wire it into the deck: a full-slide picture becomes
+ * the slide's background image (the generated-background-art case), every other
+ * picture becomes a positioned image block. Returns the deck with images wired in. */
 async function materializePptxImages(
   imported: PptxImportResult,
   ctx: {
@@ -116,27 +153,23 @@ async function materializePptxImages(
   },
 ): Promise<PresentationDeck> {
   if (imported.images.length === 0) return imported.deck;
-  const stem = ctx.deckName.replace(/\.[^.]+$/, "") || "deck";
+  const deckStem = ctx.deckName.replace(/\.[^.]+$/, "") || "deck";
   const blocksBySlide = new Map<number, DeckBlock[]>();
+  const backgroundBySlide = new Map<number, DeckBackground>();
   for (let index = 0; index < imported.images.length; index += 1) {
     const image = imported.images[index]!;
-    const digest = createHash("sha256").update(image.bytes).digest("hex");
-    const extension = IMPORT_IMAGE_EXTENSION[image.contentType] ?? "img";
-    const created = await createArtifactRecord({
+    const url = await storeImportedImage(image, {
       orgId: ctx.orgId,
       userId: ctx.userId,
-      runId: ctx.run.id,
-      threadId: ctx.run.threadId,
-      sourcePath: `${ctx.sourcePath}::media/${index + 1}`,
-      name: `${stem}-image-${index + 1}.${extension}`,
-      contentType: image.contentType,
-      sizeBytes: image.bytes.byteLength,
-      sha256: digest,
-      storageKey: digest,
-      workpieceKind: null,
-      workpieceState: null,
+      run: ctx.run,
+      sourcePath: ctx.sourcePath,
+      deckStem,
+      index,
     });
-    await artifactStorage().put(digest, image.bytes);
+    if (image.role === "background") {
+      backgroundBySlide.set(image.slideIndex, { type: "image", url });
+      continue;
+    }
     const block: DeckBlock = {
       id: `slide-${image.slideIndex + 1}-image-${index + 1}`,
       type: "image",
@@ -144,15 +177,20 @@ async function materializePptxImages(
       y: image.y,
       w: image.w,
       h: image.h,
-      content: `/api/artifacts/${created.row.id}/content`,
+      content: url,
     };
     const list = blocksBySlide.get(image.slideIndex) ?? [];
     list.push(block);
     blocksBySlide.set(image.slideIndex, list);
   }
-  const slides = imported.deck.slides.map((slide, index) => {
-    const extra = blocksBySlide.get(index);
-    return extra ? { ...slide, blocks: [...slide.blocks, ...extra] } : slide;
+  const slides = imported.deck.slides.map((slide, index): DeckSlide => {
+    const extraBlocks = blocksBySlide.get(index);
+    const background = backgroundBySlide.get(index);
+    return {
+      ...slide,
+      ...(background ? { background } : {}),
+      ...(extraBlocks ? { blocks: [...slide.blocks, ...extraBlocks] } : {}),
+    };
   });
   return { ...imported.deck, slides };
 }

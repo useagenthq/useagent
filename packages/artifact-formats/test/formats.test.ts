@@ -377,10 +377,10 @@ describe("artifact native formats", () => {
     expect(await extractPptxDeck(output.bytes)).toBeNull();
   });
 
-  test("extracts embedded PPTX images as placed media for artifact storage", async () => {
-    // A 1x1 PNG embedded via pptxgenjs lands in ppt/media and is referenced by a
-    // slide <p:pic>; the parser recovers its bytes + geometry for the caller to
-    // store as an image artifact and reference from an image block.
+  test("extracts embedded PPTX images: full-slide -> background, smaller -> block", async () => {
+    // 1x1 PNGs embedded via pptxgenjs land in ppt/media referenced by slide <p:pic>;
+    // the parser recovers bytes + geometry and marks a full-slide picture as the
+    // slide background (generated-art case) and a smaller one as a positioned block.
     const png =
       "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==";
     const pptx = new PptxGenJS();
@@ -388,19 +388,23 @@ describe("artifact native formats", () => {
     pptx.layout = "DECK";
     const slide = pptx.addSlide();
     slide.addText("Cover", { x: 0.5, y: 0.4, w: 8, h: 1, fontSize: 40 });
-    slide.addImage({ data: `image/png;base64,${png}`, x: 1, y: 2, w: 3, h: 2 });
+    slide.addImage({ data: `image/png;base64,${png}`, x: 0, y: 0, w: 10, h: 5.625 }); // full-slide
+    slide.addImage({ data: `image/png;base64,${png}`, x: 1, y: 2, w: 3, h: 2 }); // positioned
     const written = await pptx.write({ outputType: "nodebuffer" });
     const bytes = written instanceof Uint8Array ? written : new Uint8Array(written as ArrayBuffer);
 
     const imported = await extractPptxDeck(bytes);
     expect(imported).not.toBeNull();
-    expect(imported!.images).toHaveLength(1);
-    const image = imported!.images[0]!;
-    expect(image.contentType).toBe("image/png");
-    expect(image.bytes.byteLength).toBeGreaterThan(0);
-    expect(image.slideIndex).toBe(0);
-    expect(Math.round(image.x)).toBe(10); // 1in / 10in
-    expect(Math.round(image.w)).toBe(30); // 3in / 10in
+    expect(imported!.images).toHaveLength(2);
+    const background = imported!.images.find((image) => image.role === "background");
+    const block = imported!.images.find((image) => image.role === "block");
+    expect(background).toBeDefined();
+    expect(block).toBeDefined();
+    expect(background!.contentType).toBe("image/png");
+    expect(background!.bytes.byteLength).toBeGreaterThan(0);
+    expect(block!.slideIndex).toBe(0);
+    expect(Math.round(block!.x)).toBe(10); // 1in / 10in
+    expect(Math.round(block!.w)).toBe(30); // 3in / 10in
   });
 
   test("bundles multiple artifacts into one ZIP, disambiguating name collisions", async () => {

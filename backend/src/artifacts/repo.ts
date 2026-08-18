@@ -238,6 +238,21 @@ export async function getArtifact(id: string): Promise<ArtifactRecord | null> {
   return row ?? null;
 }
 
+/** The first artifact in the org whose bytes have this digest, or null. Used to
+ * dedupe content-addressed image assets extracted from a deck import so a
+ * republish/reimport of the same picture reuses the existing artifact. */
+export async function findArtifactByOrgAndSha256(
+  orgId: string,
+  sha256: string,
+): Promise<ArtifactRecord | null> {
+  const [row] = await db
+    .select()
+    .from(artifacts)
+    .where(and(eq(artifacts.orgId, orgId), eq(artifacts.sha256, sha256)))
+    .limit(1);
+  return row ?? null;
+}
+
 export async function getArtifactForOrg(
   orgId: string,
   id: string,

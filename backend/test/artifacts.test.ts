@@ -842,7 +842,7 @@ describe("durable artifacts", () => {
     }
   });
 
-  test("artifact_publish extracts PPTX images into linked image artifacts + blocks", async () => {
+  test("artifact_publish maps a full-slide PPTX picture to the deck background and dedupes assets", async () => {
     const runId = await createSandboxRun(owner);
     const png =
       "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==";
@@ -851,7 +851,8 @@ describe("durable artifacts", () => {
     pptx.layout = "DECK";
     const slide = pptx.addSlide();
     slide.addText("With Art", { x: 0.5, y: 0.4, w: 8, h: 1, fontSize: 40 });
-    slide.addImage({ data: `image/png;base64,${png}`, x: 1, y: 2, w: 3, h: 2 });
+    slide.addImage({ data: `image/png;base64,${png}`, x: 0, y: 0, w: 10, h: 5.625 }); // background art
+    slide.addImage({ data: `image/png;base64,${png}`, x: 1, y: 2, w: 3, h: 2 }); // positioned block
     const written = await pptx.write({ outputType: "nodebuffer" });
     const pptxBytes = written instanceof Uint8Array ? written : new Uint8Array(written as ArrayBuffer);
 
@@ -860,13 +861,29 @@ describe("durable artifacts", () => {
       sandboxBytes = pptxBytes;
       const published = await publish(owner, runId, "/root/work/art.pptx");
       const wp = await json<{
-        state: { deck?: { slides: { blocks: { type: string; content: string }[] }[] } };
+        state: {
+          deck?: {
+            slides: {
+              background?: { type: string; url?: string };
+              blocks: { type: string; content: string }[];
+            }[];
+          };
+        };
       }>(`/api/artifacts/${published.artifact.id}/workpiece`, { cookies: owner.cookies });
       expect(wp.status).toBe(200);
-      const blocks = wp.body.state.deck!.slides[0]!.blocks;
-      const imageBlock = blocks.find((block) => block.type === "image");
+      const deckSlide = wp.body.state.deck!.slides[0]!;
+
+      // The full-slide picture became the slide's background image.
+      expect(deckSlide.background?.type).toBe("image");
+      expect(deckSlide.background!.url).toMatch(/^\/api\/artifacts\/[^/]+\/content$/);
+      // The smaller picture became a positioned image block.
+      const imageBlock = deckSlide.blocks.find((block) => block.type === "image");
       expect(imageBlock).toBeDefined();
       expect(imageBlock!.content).toMatch(/^\/api\/artifacts\/[^/]+\/content$/);
+
+      // Both pictures are the same PNG bytes, so org content-addressed dedup points
+      // them at ONE image artifact - no duplicate.
+      expect(imageBlock!.content).toBe(deckSlide.background!.url);
 
       // The referenced image artifact serves the real embedded bytes.
       const imageId = imageBlock!.content.split("/")[3]!;

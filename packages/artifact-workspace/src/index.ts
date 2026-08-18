@@ -593,7 +593,7 @@ const ARTIFACT_FIDELITY_BY_KIND = {
     ],
     uploadImport: "companion",
     importNote:
-      "PowerPoint files import their text boxes (position, size, color, weight, and alignment), solid rectangle shapes, solid slide backgrounds, and embedded images (extracted as linked image artifacts) as editable blocks; gradients, non-rectangle shapes, charts, and animations are dropped from the editable deck but stay in the downloadable original and its PDF preview.",
+      "PowerPoint files import their text boxes (position, size, color, weight, and alignment), solid rectangle shapes, and slide backgrounds (a solid color, or a full-slide picture as the slide's background image), with smaller pictures becoming positioned image blocks - each image stored as a linked artifact, up to 12 per deck at 5MB each; gradients, non-rectangle shapes, charts, animations, and excess or oversize images are dropped from the editable deck but stay in the downloadable original and its PDF preview.",
   },
   pdf: {
     kind: "pdf",
