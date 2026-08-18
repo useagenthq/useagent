@@ -20,6 +20,7 @@ import PptxGenJS from "pptxgenjs";
 import {
   columnLabel,
   DECK_REFERENCE_HEIGHT,
+  DEFAULT_DECK_THEME,
   deckToSlides,
   DOCX_CONTENT_TYPE,
   formatA1,
@@ -29,6 +30,7 @@ import {
   PDF_CONTENT_TYPE,
   parseArtifactCsv as parseCsv,
   PPTX_CONTENT_TYPE,
+  PRESENTATION_SCHEMA_VERSION,
   resolveBlockColor,
   resolveSlideBackground,
   SHEET_MAX_COLS,
@@ -40,6 +42,7 @@ import {
   type ArtifactWorkpieceState as WorkpieceState,
   type DeckBackground,
   type DeckBlock,
+  type DeckBlockStyle,
   type DeckSlide,
   type DeckTheme,
   type DocumentTheme,
@@ -1063,6 +1066,263 @@ export async function extractXlsxWorkbook(bytes: Uint8Array): Promise<Workbook> 
   const result: Workbook = { schemaVersion: 2, sheets, activeSheetId: sheets[0]!.id };
   assertBoundedOfficeOutput(result);
   return result;
+}
+
+// --- PPTX -> native v2 deck import (the reverse of renderPptx) --------------
+//
+// A structured import that converges a script-generated PPTX to an editable
+// native deck ON ARRIVAL. It reads only what the XML PROVES: text boxes (position/
+// size/color/bold/align, heading vs body by placeholder type or font size), solid
+// rectangle shape fills, and a solid slide background. Everything unrepresentable
+// (embedded images, gradients, shapes beyond rects, charts, animations) is dropped
+// - the original bytes stay downloadable and the PDF preview keeps the true view.
+// EMU/point math mirrors renderPptx exactly so an export -> import round-trips.
+
+const DEFAULT_SLIDE_WIDTH_EMU = 9_144_000; // 10in
+const DEFAULT_SLIDE_HEIGHT_EMU = 5_143_500; // 5.625in
+/** Above this reference-px font size (and with no placeholder) a text box is a
+ * heading. Sits between the body presets (40-44) and the heading presets (84-96). */
+const IMPORT_HEADING_MIN_REF_PX = 60;
+
+function importPercent(emu: number, totalEmu: number): number {
+  return totalEmu > 0 ? (emu / totalEmu) * 100 : 0;
+}
+
+function importClamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, Math.round(value * 100) / 100));
+}
+
+function importXfrm(
+  spXml: string,
+): { readonly x: number; readonly y: number; readonly cx: number; readonly cy: number } | null {
+  const off = /<a:off x="(-?\d+)" y="(-?\d+)"\s*\/>/.exec(spXml);
+  const ext = /<a:ext cx="(\d+)" cy="(\d+)"\s*\/>/.exec(spXml);
+  if (!off || !ext) return null;
+  return { x: Number(off[1]), y: Number(off[2]), cx: Number(ext[1]), cy: Number(ext[2]) };
+}
+
+/** Concatenate a text body's paragraphs into block text (one line per <a:p>). */
+function importTextBody(txBody: string): string {
+  const paragraphs = txBody.match(/<a:p>[\s\S]*?<\/a:p>/g) ?? [];
+  const lines = paragraphs.map((p) =>
+    [...p.matchAll(/<a:t>([\s\S]*?)<\/a:t>/g)].map((m) => xmlText(m[1] ?? "")).join("")
+  );
+  while (lines.length > 0 && lines[lines.length - 1]!.trim() === "") lines.pop();
+  return lines.join("\n");
+}
+
+/** Parse one shape into a deck block, or null when it is not representable. */
+function importShapeBlock(
+  spXml: string,
+  id: string,
+  slideWidth: number,
+  slideHeight: number,
+): DeckBlock | null {
+  const xf = importXfrm(spXml);
+  if (!xf) return null;
+  const geometry = {
+    x: importClamp(importPercent(xf.x, slideWidth), -20, 120),
+    y: importClamp(importPercent(xf.y, slideHeight), -20, 120),
+    w: importClamp(importPercent(xf.cx, slideWidth), 1, 140),
+    h: importClamp(importPercent(xf.cy, slideHeight), 1, 140),
+  };
+  const txBody = /<p:txBody>([\s\S]*?)<\/p:txBody>/.exec(spXml)?.[1] ?? "";
+  const content = importTextBody(txBody);
+  if (content.trim()) {
+    const szMatch = /<a:rPr[^>]*\bsz="(\d+)"/.exec(txBody);
+    const fontSize = szMatch
+      ? Math.round(Number(szMatch[1]) / 100 / (405 / DECK_REFERENCE_HEIGHT))
+      : undefined;
+    const bold = /<a:rPr[^>]*\bb="1"/.test(txBody);
+    const colorMatch = /<a:srgbClr val="([0-9A-Fa-f]{6})"/.exec(txBody);
+    const alignMatch = /<a:pPr[^>]*\balgn="(l|ctr|r)"/.exec(txBody);
+    const align = alignMatch
+      ? alignMatch[1] === "ctr" ? "center" : alignMatch[1] === "r" ? "right" : "left"
+      : undefined;
+    const placeholder = /<p:ph[^>]*\btype="([a-zA-Z]+)"/.exec(spXml)?.[1];
+    const heading = placeholder === "title" || placeholder === "ctrTitle" ||
+      (!placeholder && (fontSize ?? 0) >= IMPORT_HEADING_MIN_REF_PX);
+    const style: DeckBlockStyle = {
+      ...(fontSize ? { fontSize } : {}),
+      ...(bold ? { bold: true } : {}),
+      ...(align ? { align } : {}),
+      ...(colorMatch ? { color: `#${colorMatch[1]!.toLowerCase()}` } : {}),
+    };
+    return {
+      id,
+      type: heading ? "heading" : "text",
+      ...geometry,
+      content,
+      ...(Object.keys(style).length > 0 ? { style } : {}),
+    };
+  }
+  // A solid rectangle shape (no text). Anything else (gradients, non-rect prstGeom,
+  // pictures) is dropped - the original bytes + PDF preview keep it.
+  const prst = /<a:prstGeom[^>]*\bprst="([a-zA-Z]+)"/.exec(spXml)?.[1];
+  const fill = /<a:solidFill><a:srgbClr val="([0-9A-Fa-f]{6})"/.exec(spXml);
+  if (fill && (prst === "rect" || prst === "roundRect")) {
+    return { id, type: "shape", ...geometry, content: "", style: { fill: `#${fill[1]!.toLowerCase()}` } };
+  }
+  return null;
+}
+
+function importSlideBackground(slideXml: string): DeckBackground | undefined {
+  const bg = /<p:bg>([\s\S]*?)<\/p:bg>/.exec(slideXml)?.[1];
+  const color = bg ? /<a:srgbClr val="([0-9A-Fa-f]{6})"/.exec(bg)?.[1] : undefined;
+  return color ? { type: "color", color: `#${color.toLowerCase()}` } : undefined;
+}
+
+/** Web-previewable image media types the import extracts as artifacts; anything
+ * else (emf/wmf/tiff) is left in the original file only. */
+const IMPORT_MEDIA_CONTENT_TYPE: Readonly<Record<string, string>> = {
+  png: "image/png",
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  gif: "image/gif",
+  webp: "image/webp",
+};
+/** Honest bounds so one deck cannot spawn unbounded image artifacts. */
+const MAX_IMPORT_IMAGES = 60;
+const MAX_IMPORT_IMAGE_BYTES = 12 * 1024 * 1024;
+
+/** A picture placement lifted from a slide: its geometry (percent of the slide)
+ * plus the raw media bytes, to be stored as a linked image artifact by the caller
+ * (only the caller has DB + storage) and referenced from an image block. */
+export interface PptxImportImage {
+  readonly slideIndex: number;
+  readonly x: number;
+  readonly y: number;
+  readonly w: number;
+  readonly h: number;
+  readonly bytes: Uint8Array;
+  readonly contentType: string;
+}
+
+export interface PptxImportResult {
+  /** Text + shape blocks and slide backgrounds; image blocks are added by the
+   * caller after it stores each image as an artifact (see `images`). */
+  readonly deck: PresentationDeck;
+  readonly images: readonly PptxImportImage[];
+}
+
+function importMediaContentType(path: string): string | undefined {
+  return IMPORT_MEDIA_CONTENT_TYPE[path.split(".").pop()?.toLowerCase() ?? ""];
+}
+
+/** Resolve a slide relationship Target (e.g. "../media/image1.png") to its zip
+ * entry path (ppt/media/image1.png). */
+function resolveMediaPath(target: string): string {
+  const cleaned = target.replace(/^\//, "");
+  return cleaned.startsWith("../") ? `ppt/${cleaned.slice(3)}` : `ppt/slides/${cleaned}`;
+}
+
+/** Map a slide's image relationship ids to their media zip paths. */
+async function slideImageRels(zip: JSZip, slideFile: string): Promise<Map<string, string>> {
+  const relsPath = slideFile.replace(/([^/]+)$/, "_rels/$1.rels");
+  const xml = await zip.file(relsPath)?.async("string");
+  const map = new Map<string, string>();
+  if (!xml) return map;
+  for (const rel of xml.matchAll(/<Relationship\b[^>]*?\/?>/g)) {
+    const seg = rel[0];
+    const id = /\bId="([^"]+)"/.exec(seg)?.[1];
+    const target = /\bTarget="([^"]+)"/.exec(seg)?.[1];
+    const type = /\bType="([^"]+)"/.exec(seg)?.[1] ?? "";
+    if (id && target && (/image/i.test(type) || /(?:^|\/)media\//.test(target))) {
+      map.set(id, resolveMediaPath(target));
+    }
+  }
+  return map;
+}
+
+async function importSlideImages(
+  zip: JSZip,
+  slideXml: string,
+  slideFile: string,
+  slideIndex: number,
+  slideWidth: number,
+  slideHeight: number,
+  budget: { remaining: number },
+): Promise<PptxImportImage[]> {
+  if (!slideXml.includes("<p:pic>")) return [];
+  const rels = await slideImageRels(zip, slideFile);
+  if (rels.size === 0) return [];
+  const images: PptxImportImage[] = [];
+  for (const pic of slideXml.matchAll(/<p:pic>([\s\S]*?)<\/p:pic>/g)) {
+    if (budget.remaining <= 0) break;
+    const seg = pic[1] ?? "";
+    const xf = importXfrm(seg);
+    const embed = /<a:blip[^>]*\br:embed="([^"]+)"/.exec(seg)?.[1];
+    if (!xf || !embed) continue;
+    const mediaPath = rels.get(embed);
+    if (!mediaPath) continue;
+    const contentType = importMediaContentType(mediaPath);
+    if (!contentType) continue; // non-web image (emf/wmf/...): left in the original only
+    const bytes = await zip.file(mediaPath)?.async("uint8array");
+    if (!bytes || bytes.byteLength === 0 || bytes.byteLength > MAX_IMPORT_IMAGE_BYTES) continue;
+    images.push({
+      slideIndex,
+      x: importClamp(importPercent(xf.x, slideWidth), -20, 120),
+      y: importClamp(importPercent(xf.y, slideHeight), -20, 120),
+      w: importClamp(importPercent(xf.cx, slideWidth), 1, 140),
+      h: importClamp(importPercent(xf.cy, slideHeight), 1, 140),
+      bytes,
+      contentType,
+    });
+    budget.remaining -= 1;
+  }
+  return images;
+}
+
+/** Structured import of a PPTX into a native v2 deck plus its extracted image
+ * media, or null when nothing meaningful (no text boxes and no images) can be
+ * parsed - in which case the caller keeps the file download-only exactly as
+ * before. The deck carries text + shape blocks and slide backgrounds; the caller
+ * stores each image as an artifact and adds the image blocks. The result is still
+ * funnelled through the shared deck validator by the caller. */
+export async function extractPptxDeck(bytes: Uint8Array): Promise<PptxImportResult | null> {
+  const zip = await loadBoundedOfficeZip(bytes);
+  const presentation = await zip.file("ppt/presentation.xml")?.async("string");
+  const sldSz = presentation
+    ? /<p:sldSz[^>]*\bcx="(\d+)"[^>]*\bcy="(\d+)"/.exec(presentation)
+    : null;
+  const slideWidth = sldSz ? Number(sldSz[1]) : DEFAULT_SLIDE_WIDTH_EMU;
+  const slideHeight = sldSz ? Number(sldSz[2]) : DEFAULT_SLIDE_HEIGHT_EMU;
+
+  const slideFiles = Object.keys(zip.files)
+    .filter((name) => /^ppt\/slides\/slide\d+\.xml$/.test(name))
+    .toSorted((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+
+  const slides: DeckSlide[] = [];
+  const images: PptxImportImage[] = [];
+  const imageBudget = { remaining: MAX_IMPORT_IMAGES };
+  let textBlockCount = 0;
+  for (let index = 0; index < slideFiles.length; index += 1) {
+    const slideFile = slideFiles[index]!;
+    const xml = await zip.file(slideFile)?.async("string");
+    if (!xml) continue;
+    const shapes = [...xml.matchAll(/<p:sp>([\s\S]*?)<\/p:sp>/g)];
+    const blocks: DeckBlock[] = [];
+    for (let s = 0; s < shapes.length; s += 1) {
+      const block = importShapeBlock(shapes[s]![1] ?? "", `slide-${index + 1}-block-${s + 1}`, slideWidth, slideHeight);
+      if (!block) continue;
+      blocks.push(block);
+      if (block.type === "heading" || block.type === "text") textBlockCount += 1;
+    }
+    const background = importSlideBackground(xml);
+    slides.push({ id: `slide-${index + 1}`, blocks, ...(background ? { background } : {}) });
+    images.push(
+      ...(await importSlideImages(zip, xml, slideFile, index, slideWidth, slideHeight, imageBudget)),
+    );
+  }
+  // Nothing meaningful parsed (no text and no images): skip import entirely.
+  if (textBlockCount === 0 && images.length === 0) return null;
+  const deck: PresentationDeck = {
+    schemaVersion: PRESENTATION_SCHEMA_VERSION,
+    theme: DEFAULT_DECK_THEME,
+    slides,
+  };
+  assertBoundedOfficeOutput(deck);
+  return { deck, images };
 }
 
 export async function extractPptxSlides(bytes: Uint8Array): Promise<PresentationSlide[]> {

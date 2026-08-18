@@ -593,7 +593,7 @@ const ARTIFACT_FIDELITY_BY_KIND = {
     ],
     uploadImport: "companion",
     importNote:
-      "Uploaded PowerPoint files import slide text only; it becomes editable heading and text blocks.",
+      "PowerPoint files import their text boxes (position, size, color, weight, and alignment), solid rectangle shapes, solid slide backgrounds, and embedded images (extracted as linked image artifacts) as editable blocks; gradients, non-rectangle shapes, charts, and animations are dropped from the editable deck but stay in the downloadable original and its PDF preview.",
   },
   pdf: {
     kind: "pdf",

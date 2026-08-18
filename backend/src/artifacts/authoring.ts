@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import {
   extractDocxText,
+  extractPptxDeck,
   extractPptxSlides,
   extractXlsxWorkbook,
   renderArtifactExport,
@@ -141,6 +142,15 @@ async function stateFromNativeUpload(input: {
       return state;
     }
     if (input.kind === "presentation" && (suffix === "pptx" || mime === PPTX_CONTENT_TYPE)) {
+      // Prefer the structured native import (positioned blocks + colors +
+      // backgrounds); fall back to a text-only import when nothing parses. Image
+      // extraction into separate artifacts is the artifact_publish lane's job (it
+      // owns the run/storage); an upload keeps images in the original + preview.
+      const imported = await extractPptxDeck(input.bytes);
+      if (imported) {
+        const deckState = parseWorkpieceState("presentation", { deck: imported.deck });
+        if (deckState) return deckState;
+      }
       const slides = await extractPptxSlides(input.bytes);
       const state = parseWorkpieceState("presentation", { slides });
       if (!state) throw new Error("invalid extracted presentation state");

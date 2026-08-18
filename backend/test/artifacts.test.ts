@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, spyOn, test } from "bun:test";
 import { createHash } from "node:crypto";
 import JSZip from "jszip";
+import PptxGenJS from "pptxgenjs";
 import * as artifactFormats from "@skynet/artifact-formats";
 import {
   csvToWorkbook,
@@ -776,6 +777,105 @@ describe("durable artifacts", () => {
       expect(badKind.isError).toBe(true);
     } finally {
       unsubscribe();
+    }
+  });
+
+  test("artifact_publish natively imports a companion-less PPTX into an editable deck", async () => {
+    const runId = await createSandboxRun(owner);
+    const deck = {
+      schemaVersion: 2 as const,
+      theme: {
+        background: { type: "color" as const, color: "#101828" },
+        heading: "#ffffff",
+        body: "#c8c8e0",
+        accent: "#5eb0ff",
+      },
+      slides: [
+        {
+          id: "s1",
+          background: { type: "color" as const, color: "#0b1220" },
+          blocks: [
+            {
+              id: "h",
+              type: "heading" as const,
+              x: 6,
+              y: 8,
+              w: 88,
+              h: 17,
+              content: "Native Deck",
+              style: { fontSize: 96, bold: true, align: "left" as const, color: "#ffd166" },
+            },
+            {
+              id: "b",
+              type: "text" as const,
+              x: 6,
+              y: 30,
+              w: 88,
+              h: 50,
+              content: "Converged on arrival",
+              style: { fontSize: 44, align: "left" as const, color: "#c8c8e0" },
+            },
+          ],
+        },
+      ],
+    };
+    const pptx = await artifactFormats.renderArtifactExport({ deck }, "pptx");
+    const previous = sandboxBytes;
+    try {
+      sandboxBytes = pptx.bytes;
+      const published = await publish(owner, runId, "/root/work/pitch.pptx");
+      expect(published.artifact.workpiece).toMatchObject({ kind: "presentation" });
+
+      // Converged to an editable native deck instead of a download-only card.
+      const wp = await json<{ state: { deck?: { slides: { blocks: { content: string }[] }[] } } }>(
+        `/api/artifacts/${published.artifact.id}/workpiece`,
+        { cookies: owner.cookies },
+      );
+      expect(wp.status).toBe(200);
+      expect(wp.body.state.deck).toBeDefined();
+      expect(wp.body.state.deck!.slides).toHaveLength(1);
+      const contents = wp.body.state.deck!.slides[0]!.blocks.map((block) => block.content);
+      expect(contents).toContain("Native Deck");
+      expect(contents).toContain("Converged on arrival");
+    } finally {
+      sandboxBytes = previous;
+    }
+  });
+
+  test("artifact_publish extracts PPTX images into linked image artifacts + blocks", async () => {
+    const runId = await createSandboxRun(owner);
+    const png =
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==";
+    const pptx = new PptxGenJS();
+    pptx.defineLayout({ name: "DECK", width: 10, height: 5.625 });
+    pptx.layout = "DECK";
+    const slide = pptx.addSlide();
+    slide.addText("With Art", { x: 0.5, y: 0.4, w: 8, h: 1, fontSize: 40 });
+    slide.addImage({ data: `image/png;base64,${png}`, x: 1, y: 2, w: 3, h: 2 });
+    const written = await pptx.write({ outputType: "nodebuffer" });
+    const pptxBytes = written instanceof Uint8Array ? written : new Uint8Array(written as ArrayBuffer);
+
+    const previous = sandboxBytes;
+    try {
+      sandboxBytes = pptxBytes;
+      const published = await publish(owner, runId, "/root/work/art.pptx");
+      const wp = await json<{
+        state: { deck?: { slides: { blocks: { type: string; content: string }[] }[] } };
+      }>(`/api/artifacts/${published.artifact.id}/workpiece`, { cookies: owner.cookies });
+      expect(wp.status).toBe(200);
+      const blocks = wp.body.state.deck!.slides[0]!.blocks;
+      const imageBlock = blocks.find((block) => block.type === "image");
+      expect(imageBlock).toBeDefined();
+      expect(imageBlock!.content).toMatch(/^\/api\/artifacts\/[^/]+\/content$/);
+
+      // The referenced image artifact serves the real embedded bytes.
+      const imageId = imageBlock!.content.split("/")[3]!;
+      const content = await fetchApi(`/api/artifacts/${imageId}/content`, { cookies: owner.cookies });
+      expect(content.status).toBe(200);
+      expect(content.headers.get("content-type")).toContain("image/png");
+      expect((await content.arrayBuffer()).byteLength).toBeGreaterThan(0);
+    } finally {
+      sandboxBytes = previous;
     }
   });
 
