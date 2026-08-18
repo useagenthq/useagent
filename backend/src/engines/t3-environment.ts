@@ -4,7 +4,6 @@ import {
   RUN_TIMING_STAGES,
   type RunStageTimer,
 } from "../runs/run-timing";
-import { SECRET_DOTENV_SHELL_PATH, SECRET_SOURCE_COMMAND } from "../secrets/inject";
 
 export const T3_ENVIRONMENT_PORT = 37_733;
 export const T3_RUNTIME_GENERATION_LABEL = "skynet.runtime";
@@ -76,14 +75,11 @@ export function buildT3EnvironmentLaunchCommand(): string {
     "export T3CODE_AUTO_BOOTSTRAP_PROJECT_FROM_CWD=false",
     "export T3CODE_LOG_WS_EVENTS=false",
     `mkdir -p "${T3_ENVIRONMENT_HOME}" "${T3_ENVIRONMENT_WORKDIR}"`,
-    // Org secrets reach tool shells two ways. Sourcing here covers environments
-    // launched after the run's dotenv is materialized. Exporting BASH_ENV covers
-    // warm/prewarmed environments that booted BEFORE the dotenv existed:
-    // non-interactive bash re-reads the file at every command, so freshly seeded
-    // secrets appear without a restart. Cube strips BASH_ENV from create-env at
-    // its API boundary, so this export is the only place it can be set.
-    `export BASH_ENV=${SECRET_DOTENV_SHELL_PATH}`,
-    `if [ -f ${SECRET_DOTENV_SHELL_PATH} ]; then ${SECRET_SOURCE_COMMAND}; fi`,
+    // Org secrets are deliberately NOT sourced into the T3 process environment:
+    // the codex provider adapter composes child/session environments from the
+    // T3 process env, and foreign variables there broke the codex subscription
+    // dial (proven by the 2026-08-18 release-gate failure). Tool shells receive
+    // secrets through rc-file hooks installed by materializeSecretFiles.
     `exec t3 serve --host 0.0.0.0 --port ${T3_ENVIRONMENT_PORT} --base-dir "$T3CODE_HOME" --no-browser "${T3_ENVIRONMENT_WORKDIR}"`,
   ].join("\n");
 }

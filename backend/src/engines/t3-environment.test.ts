@@ -71,13 +71,12 @@ describe("T3 Cube environment", () => {
     expect(command).toContain('exec t3 serve --host 0.0.0.0 --port 37733 --base-dir "$T3CODE_HOME"');
     expect(command).toContain('"$HOME/work"');
     expect(command).not.toContain("@latest");
-    // Org secrets: the environment sources the dotenv when present (cold path)
-    // and exports BASH_ENV so bash tool shells re-read it at command time
-    // (warm/prewarmed path - t3 may boot before the dotenv is materialized).
-    expect(command).toContain('export BASH_ENV="$HOME/.skynet/secrets/skynet-env.sh"');
-    expect(command).toContain(
-      'if [ -f "$HOME/.skynet/secrets/skynet-env.sh" ]; then . "$HOME/.skynet/secrets/skynet-env.sh"; fi',
-    );
+    // Org secrets must NEVER enter the T3 process environment (the codex
+    // provider adapter builds child environments from it and foreign variables
+    // broke the subscription dial). Tool shells get secrets via rc hooks
+    // installed by materializeSecretFiles instead.
+    expect(command).not.toContain("skynet-env.sh");
+    expect(command).not.toContain("BASH_ENV");
     expect(Bun.spawnSync(["bash", "-n", "-c", command]).exitCode).toBe(0);
   });
 

@@ -352,12 +352,25 @@ export async function materializeSecretFiles(
       ];
     }),
   ];
+  // Tool-shell delivery: T3 spawns tool shells that read the standard rc files
+  // but do NOT inherit a secrets-bearing environment (and must not - sourcing
+  // the dotenv into the T3 process env broke the codex subscription dial, see
+  // the 2026-08-18 release-gate incident). An idempotent source hook in each rc
+  // file gives every tool shell the CURRENT dotenv at spawn time, which also
+  // covers warm sandboxes whose secrets were re-seeded after boot. The hook line
+  // itself contains no secret material.
+  const hookLine = `. ${SECRET_DOTENV_SHELL_PATH} 2>/dev/null || true`;
+  const installRcHooks =
+    `for rc in "$HOME/.bashrc" "$HOME/.profile" "$HOME/.zshenv"; do ` +
+    `grep -qsF 'skynet-env.sh' "$rc" || printf '\\n%s\\n' ${shellQuote(hookLine)} >> "$rc"; ` +
+    `done`;
   const cmds = [
     "umask 077",
     `test ! -L ${directory}`,
     `mkdir -p -- ${directory}`,
     `test -d ${directory}`,
     `chmod 700 -- ${directory}`,
+    installRcHooks,
     `if ${unchangedChecks.join(" && ")}; then printf unchanged; exit 0; fi`,
     `find ${directory} -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +`,
   ];
