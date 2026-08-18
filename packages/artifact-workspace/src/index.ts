@@ -12,8 +12,10 @@ import {
   type ArtifactWorkpieceKind,
   type ArtifactWorkpieceState,
 } from "./contracts";
+import { migrateSlidesToDeck, normalizeDeck } from "./presentation";
 
 export * from "./contracts";
+export * from "./presentation";
 
 const CONTENT_TYPES: Readonly<Record<string, string>> = {
   ".csv": "text/csv; charset=utf-8",
@@ -258,7 +260,7 @@ const AUTHORING_PROFILE_BY_KIND = {
     exports: PRESENTATION_EXPORTS,
     actions: ARTIFACT_AUTHORING_ACTIONS,
     defaultState: (name: string) => ({
-      slides: [{ title: artifactNameStem(name), body: "", notes: "" }],
+      deck: migrateSlidesToDeck([{ title: artifactNameStem(name), body: "", notes: "" }]),
     }),
   },
   pdf: {
@@ -696,15 +698,24 @@ const ARTIFACT_FIDELITY_BY_KIND = {
   },
   presentation: {
     kind: "presentation",
-    summary: "Slides with a title, body, and speaker notes.",
-    preserved: ["Slide title and body text", "Speaker notes", "Slide order"],
+    summary:
+      "A web-native deck: positioned heading, text, and image blocks on a 16:9 canvas with a deck theme.",
+    preserved: [
+      "Positioned heading, text, and image blocks",
+      "Deck theme (background, heading, body, and accent colors)",
+      "Per-slide background overrides",
+      "Speaker notes",
+      "Slide order",
+    ],
     notPreserved: [
-      "Layouts, themes, and master slides",
-      "Shapes, images, charts, and tables",
       "Animations and transitions",
+      "Charts and tables",
+      "Shapes beyond rectangles",
+      "Embedded fonts and master slides",
     ],
     uploadImport: "companion",
-    importNote: "Uploaded PowerPoint files import slide text only.",
+    importNote:
+      "Uploaded PowerPoint files import slide text only; it becomes editable heading and text blocks.",
   },
   pdf: {
     kind: "pdf",
@@ -763,18 +774,7 @@ export function isArtifactWorkpieceState<Kind extends ArtifactWorkpieceKind>(
     return (entry[0] === "text" || entry[0] === "html") && typeof entry[1] === "string";
   }
   if (kind === "pdf") return entry[0] === "pdfText" && typeof entry[1] === "string";
-  if (entry[0] !== "slides" || !Array.isArray(entry[1]) || entry[1].length > 200) return false;
-  return entry[1].every((slide) => {
-    const item = record(slide);
-    return !!item &&
-      typeof item.title === "string" &&
-      typeof item.body === "string" &&
-      (item.notes === undefined || typeof item.notes === "string");
-  });
-}
-
-function record(value: unknown): Record<string, unknown> | null {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : null;
+  // Presentation canonical state is the v2 deck. v1 `{ slides }` inputs are
+  // upgraded on load via `coercePresentationState`, never accepted as canonical.
+  return entry[0] === "deck" && normalizeDeck(entry[1]) !== null;
 }

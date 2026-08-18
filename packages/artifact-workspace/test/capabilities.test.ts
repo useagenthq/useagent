@@ -15,6 +15,7 @@ import {
   inferWorkpieceKind,
   isArtifactWorkpieceState,
   MAX_RICH_WORKPIECE_SOURCE_BYTES,
+  migrateSlidesToDeck,
   normalizeArtifactRichHtml,
   PDF_CONTENT_TYPE,
   parseArtifactCsv,
@@ -189,9 +190,14 @@ describe("artifact workspace capabilities", () => {
     expect(isArtifactWorkpieceState("document", { csv: "wrong" })).toBe(false);
     expect(isArtifactWorkpieceState("spreadsheet", { csv: "name,value\nrun,42" })).toBe(true);
     expect(isArtifactWorkpieceState("spreadsheet", { html: "<p>wrong</p>" })).toBe(false);
+    // Presentation canonical state is the v2 deck; v1 `{ slides }` is not
+    // canonical (it upgrades on load, see the presentation migration tests).
+    expect(isArtifactWorkpieceState("presentation", {
+      deck: migrateSlidesToDeck([{ title: "Intro", body: "Body", notes: "Notes" }]),
+    })).toBe(true);
     expect(isArtifactWorkpieceState("presentation", {
       slides: [{ title: "Intro", body: "Body", notes: "Notes" }],
-    })).toBe(true);
+    })).toBe(false);
     expect(isArtifactWorkpieceState("pdf", { pdfText: "Extracted text" })).toBe(true);
   });
 

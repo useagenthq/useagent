@@ -1,6 +1,7 @@
 import {
   ARTIFACT_WORKPIECE_ACTIONS,
   artifactWorkpieceExports,
+  coercePresentationState,
   isArtifactWorkpieceState,
   type ArtifactDescriptor,
   type ArtifactWorkpieceDescriptor,
@@ -22,6 +23,15 @@ export type {
   ArtifactWorkpieceProposalDescriptor,
   ArtifactWorkpieceResult,
   ArtifactWorkpieceState,
+  // Presentation deck v2 model, re-exported for browser consumers.
+  DeckBackground,
+  DeckBlock,
+  DeckBlockStyle,
+  DeckBlockType,
+  DeckSlide,
+  DeckTextAlign,
+  DeckTheme,
+  PresentationDeck,
 } from "@skynet/artifact-workspace";
 
 function record(value: unknown): Record<string, unknown> | null {
@@ -78,6 +88,11 @@ export function decodeWorkpieceState<Kind extends ArtifactWorkpieceKind>(
   value: unknown,
 ): ArtifactWorkpieceState<Kind> | null | undefined {
   if (value === null) return null;
+  // Presentation upgrades any wire v1 `{slides}` to the canonical v2 `{deck}` so
+  // the browser only ever handles one shape (the backend already coerces reads).
+  if (kind === "presentation") {
+    return (coercePresentationState(value) as ArtifactWorkpieceState<Kind> | null) ?? undefined;
+  }
   return isArtifactWorkpieceState(kind, value) ? value : undefined;
 }
 
