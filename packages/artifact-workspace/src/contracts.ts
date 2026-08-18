@@ -83,3 +83,31 @@ export type ArtifactWorkpieceResult<
     readonly state: ArtifactWorkpieceState<Kind> | null;
   }>
   : never;
+
+// Agent-proposed workpiece revisions. An agent edit lands as a "pending"
+// proposal that leaves mainline untouched until an explicit accept folds it in;
+// a dismissed proposal is recorded, not erased. Shared wire contract for the
+// backend proposal endpoints and the browser review UI.
+export const ARTIFACT_PROPOSAL_STATUSES = ["pending", "accepted", "dismissed"] as const;
+export type ArtifactProposalStatus = (typeof ARTIFACT_PROPOSAL_STATUSES)[number];
+
+export interface ArtifactWorkpieceProposalDescriptor<
+  Kind extends ArtifactWorkpieceKind = ArtifactWorkpieceKind,
+> {
+  readonly id: string;
+  readonly artifact_id: string;
+  /** The run whose agent proposed this revision (provenance). */
+  readonly proposer_run_id: string;
+  readonly kind: Kind;
+  /** The mainline state_revision this proposal was authored against. */
+  readonly base_revision: number;
+  readonly summary: string | null;
+  readonly status: ArtifactProposalStatus;
+  readonly created_at: string;
+  readonly resolved_at: string | null;
+  readonly resolved_by: string | null;
+  /** The mainline revision this proposal produced when accepted. */
+  readonly resolved_revision: number | null;
+  /** Full proposed state, so the review UI can diff without a second fetch. */
+  readonly state: ArtifactWorkpieceState<Kind>;
+}

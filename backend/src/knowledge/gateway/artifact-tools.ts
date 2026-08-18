@@ -1,9 +1,11 @@
 import { publishSandboxArtifact } from "../../artifacts/publish";
+import { proposeWorkpieceEdit } from "../../artifacts/proposals";
 import type { ArtifactDescriptor } from "../../artifacts/repo";
+import { publishOrgChange } from "../../runs/org-signals";
 import { absoluteArtifactUrl, absoluteArtifactUrlContent } from "./artifact-links";
 import type { ToolTokenClaims } from "./token";
 
-interface ToolResult {
+export interface ToolResult {
   content: Array<{ type: "text"; text: string }>;
   structuredContent?: Record<string, unknown>;
   isError?: boolean;
@@ -72,6 +74,41 @@ export const ARTIFACT_TOOLS = [
       additionalProperties: false,
     },
   },
+  {
+    name: "workpiece_propose_edit",
+    description:
+      "Propose an edit to an existing editable workpiece (a document, spreadsheet, " +
+      "presentation, or PDF text companion you previously published with artifact_publish). " +
+      "The edit is recorded as a PROPOSED revision for the user to review: it does NOT change " +
+      "what the user currently sees until they accept it. Pass the artifact id returned by " +
+      "artifact_publish and the FULL replacement state for the workpiece's kind - document: " +
+      '{"text": string} or {"html": string}; spreadsheet: {"csv": string}; presentation: ' +
+      '{"slides": [{"title": string, "body": string, "notes"?: string}]}; pdf: {"pdfText": string}. ' +
+      "Optionally include a short summary of what changed. Use this to revise a deliverable after " +
+      "feedback instead of publishing a brand-new file; mainline is untouched until the user accepts.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        artifact_id: {
+          type: "string",
+          description: "The workpiece artifact id returned by artifact_publish.",
+        },
+        state: {
+          type: "object",
+          description:
+            "Full replacement workpiece state for the artifact's kind: document {text|html}, " +
+            "spreadsheet {csv}, presentation {slides:[{title,body,notes?}]}, or pdf {pdfText}.",
+        },
+        summary: {
+          type: "string",
+          description:
+            "Optional one-line description of the proposed change, shown to the user in the review banner.",
+        },
+      },
+      required: ["artifact_id", "state"],
+      additionalProperties: false,
+    },
+  },
 ] as const;
 
 export const ARTIFACT_TOOL_NAMES: ReadonlySet<string> = new Set(
@@ -96,6 +133,7 @@ export async function executeArtifactTool(
   name: string,
   args: Record<string, unknown>,
 ): Promise<ToolResult> {
+  if (name === "workpiece_propose_edit") return proposeWorkpieceEditTool(claims, args);
   if (name !== "artifact_publish") return failure(`Unknown tool: ${name}`);
   const path = typeof args.path === "string" ? args.path.trim() : "";
   if (!path) return failure("artifact_publish requires a `path` inside the sandbox.");
@@ -131,5 +169,70 @@ export async function executeArtifactTool(
   } catch (error) {
     const message = error instanceof Error ? error.message : "artifact publish failed";
     return failure(`Could not publish ${path}: ${message}`);
+  }
+}
+
+const WORKPIECE_STATE_SHAPES: Readonly<Record<string, string>> = {
+  document: '{"text": string} or {"html": string}',
+  spreadsheet: '{"csv": string}',
+  presentation: '{"slides": [{"title": string, "body": string, "notes"?: string}]}',
+  pdf: '{"pdfText": string}',
+};
+
+async function proposeWorkpieceEditTool(
+  claims: ToolTokenClaims,
+  args: Record<string, unknown>,
+): Promise<ToolResult> {
+  const artifactId = typeof args.artifact_id === "string" ? args.artifact_id.trim() : "";
+  if (!artifactId) {
+    return failure("workpiece_propose_edit requires an `artifact_id` from artifact_publish.");
+  }
+  if (!args.state || typeof args.state !== "object" || Array.isArray(args.state)) {
+    return failure(
+      "workpiece_propose_edit requires a `state` object matching the workpiece kind.",
+    );
+  }
+  const summary =
+    typeof args.summary === "string" && args.summary.trim() ? args.summary.trim() : null;
+  try {
+    const proposed = await proposeWorkpieceEdit({
+      orgId: claims.orgId,
+      artifactId,
+      proposerRunId: claims.runId,
+      state: args.state,
+      summary,
+    });
+    if (proposed.outcome === "not_found") {
+      return failure(
+        `No editable workpiece found for artifact ${artifactId} in this workspace. Publish an ` +
+          "editable file with artifact_publish first, then propose edits against its id.",
+      );
+    }
+    if (proposed.outcome === "invalid_state") {
+      return failure(
+        `The proposed state is not a valid ${proposed.kind} workpiece. Send the full state as ` +
+          `${WORKPIECE_STATE_SHAPES[proposed.kind] ?? "the kind's documented shape"}.`,
+      );
+    }
+    publishOrgChange(claims.orgId, {
+      type: "artifact",
+      action: "proposed",
+      artifactId: proposed.artifact.id,
+      runId: proposed.artifact.runId,
+      threadId: proposed.artifact.threadId,
+    });
+    return result(
+      `Proposed changes to ${proposed.artifact.name} (workpiece ${proposed.artifact.id}). ` +
+        "The user will review and accept or dismiss them; the workpiece keeps showing the current " +
+        "version until they accept. No further action is needed from you.",
+      {
+        proposal_id: proposed.proposal.id,
+        artifact_id: proposed.artifact.id,
+        status: "pending",
+      },
+    );
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "workpiece proposal failed";
+    return failure(`Could not propose changes to ${artifactId}: ${message}`);
   }
 }
