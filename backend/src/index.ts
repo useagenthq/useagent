@@ -6,7 +6,7 @@ import { ARTIFACT_FIDELITY } from "@skynet/artifact-workspace";
 import { auth } from "./auth";
 import { artifactRoutes } from "./artifacts/routes";
 import { startEmailConnector } from "./connectors/email";
-import { db } from "./db/client";
+import { client, db } from "./db/client";
 import type { AppEnv } from "./http";
 import {
   allowDevOrg,
@@ -77,6 +77,12 @@ import {
 // migrator is idempotent — already-applied migrations are skipped. Path is
 // resolved from this module so cwd doesn't matter.
 await migrate(db, { migrationsFolder: `${import.meta.dir}/../drizzle` });
+
+// Reconcile the restricted gateway role's grants on EVERY boot: a migration
+// that adds a gateway-written table ships its grant in the same commit (see
+// db/gateway-grants.ts for the incident class this kills).
+const { applyGatewayGrants } = await import("./db/gateway-grants");
+await applyGatewayGrants(client);
 
 // Single-backend guard: canonicalization sealing + realtime SSE fan-out are process-local
 // (single-replica). Acquire the per-database singleton advisory lock BEFORE recovering or
