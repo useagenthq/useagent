@@ -1,8 +1,6 @@
 import { notFound } from "next/navigation";
 import { SessionView } from "@/components/chat/session-view";
 import { toThread } from "@/components/chat/types";
-import { AppShell } from "@/components/shell/app-shell";
-import { ThreadSidebar } from "@/components/shell/thread-sidebar";
 import { backendFetch } from "@/lib/backend-fetch";
 
 // Always render fresh: a session is a live run (cookies + streaming state).
@@ -25,9 +23,6 @@ export default async function SessionPage({ params }: { params: Promise<{ id: st
   const thread = toThread(await res.json());
   if (thread.length === 0) notFound();
 
-  return (
-    <AppShell sidebar={<ThreadSidebar />}>
-      <SessionView initialThread={thread} />
-    </AppShell>
-  );
+  // The persistent shell lives in the (thread) layout above this segment.
+  return <SessionView initialThread={thread} />;
 }
