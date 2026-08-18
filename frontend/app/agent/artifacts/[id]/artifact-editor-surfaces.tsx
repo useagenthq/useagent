@@ -11,18 +11,35 @@ import {
   RiH1,
   RiH2,
   RiH3,
+  RiImageLine,
   RiItalic,
   RiLink,
   RiListOrdered,
   RiListUnordered,
+  RiShapesLine,
+  RiText,
   RiUnderline,
 } from "@remixicon/react";
-import type { ArtifactPresentationSlide, ArtifactWorkpieceKind } from "@skynet/agent-client";
-import { artifactFidelityFor } from "@skynet/artifact-workspace";
+import type { ArtifactWorkpieceKind } from "@skynet/agent-client";
+import {
+  artifactFidelityFor,
+  DECK_THEME_PRESETS,
+  deckBlockPreset,
+  primaryBodyBlock,
+  primaryHeadingBlock,
+  type DeckBackground,
+  type DeckBlock,
+  type DeckBlockStyle,
+  type DeckBlockType,
+  type DeckSlide,
+  type DeckTheme,
+  type PresentationDeck,
+} from "@skynet/artifact-workspace";
 import { type RefObject, useState } from "react";
 import * as Table from "@/components/ui/table";
 import type { WorkpieceEditorController } from "./artifact-editor-state";
 import { sanitizeRichHtml } from "./artifact-editor-model";
+import { DeckSlideCanvas } from "./deck-canvas";
 
 /** The honest per-format note (single source of truth in ARTIFACT_FIDELITY):
  * what the canonical editor preserves and what it deliberately drops. Shown in
@@ -391,89 +408,390 @@ export function SpreadsheetGridSurface({
   );
 }
 
-function SlidePreviewCanvas({
-  slide,
-  index,
-  total,
+
+function rid(): string {
+  return (globalThis.crypto?.randomUUID?.() ?? `${Math.random()}`).replace(/-/g, "").slice(0, 8);
+}
+
+/** A raw color to the 6-digit `#rrggbb` an `<input type="color">` requires. */
+function toColorInput(hex: string): string {
+  const raw = hex.replace(/^#/, "");
+  const six = raw.length === 3
+    ? [...raw].map((c) => c + c).join("")
+    : raw.length >= 6
+    ? raw.slice(0, 6)
+    : "000000";
+  return `#${six}`;
+}
+
+function NumberField({
+  label,
+  value,
+  onChange,
+  min,
+  max,
 }: {
-  readonly slide: ArtifactPresentationSlide;
-  readonly index: number;
-  readonly total: number;
+  readonly label: string;
+  readonly value: number;
+  readonly onChange: (value: number) => void;
+  readonly min?: number;
+  readonly max?: number;
 }) {
-  const bodyLines = slide.body.split("\n");
   return (
-    <div className="relative aspect-video w-full overflow-hidden rounded-xl border border-stroke-soft-200 bg-bg-white-0 shadow-regular-xs">
-      <div className="bg-halftone pointer-events-none absolute inset-0 opacity-60" aria-hidden />
-      <div className="relative flex h-full flex-col gap-3 p-6 sm:p-8">
-        <h3 className="text-title-h5 text-text-strong-950 sm:text-title-h4">
-          {slide.title || "Untitled slide"}
-        </h3>
-        <div className="min-h-0 flex-1 space-y-1.5 overflow-auto">
-          {slide.body.trim()
-            ? bodyLines.map((line, lineIndex) => (
-                <p key={lineIndex} className="text-paragraph-sm text-text-sub-600 sm:text-paragraph-md">
-                  {line || " "}
-                </p>
-              ))
-            : <p className="text-paragraph-sm text-text-soft-400">No body text yet.</p>}
+    <label className="flex flex-col gap-1 text-label-xs text-text-sub-600">
+      {label}
+      <input
+        type="number"
+        value={Math.round(value * 10) / 10}
+        min={min}
+        max={max}
+        onChange={(event) => {
+          const next = Number(event.currentTarget.value);
+          if (Number.isFinite(next)) onChange(next);
+        }}
+        className="h-8 w-full rounded-lg border border-stroke-soft-200 bg-bg-white-0 px-2 text-label-sm text-text-strong-950 outline-none focus:border-stroke-strong-950"
+      />
+    </label>
+  );
+}
+
+function ColorField({
+  label,
+  value,
+  onChange,
+}: {
+  readonly label: string;
+  readonly value: string;
+  readonly onChange: (value: string) => void;
+}) {
+  return (
+    <label className="flex items-center justify-between gap-2 text-label-xs text-text-sub-600">
+      <span>{label}</span>
+      <input
+        type="color"
+        aria-label={label}
+        value={toColorInput(value)}
+        onChange={(event) => onChange(event.currentTarget.value)}
+        className="h-7 w-10 cursor-pointer rounded border border-stroke-soft-200 bg-bg-white-0"
+      />
+    </label>
+  );
+}
+
+const BLOCK_ADD: readonly (readonly [DeckBlockType, string, typeof RiText])[] = [
+  ["heading", "Heading", RiH1],
+  ["text", "Text", RiText],
+  ["image", "Image", RiImageLine],
+  ["shape", "Shape", RiShapesLine],
+];
+
+/** Inspector for the one selected block: content, position/size, and per-type
+ * style (text color/size/weight/align, shape fill/radius, image URL). */
+function BlockInspector({
+  block,
+  onChange,
+  onRemove,
+}: {
+  readonly block: DeckBlock;
+  readonly onChange: (next: DeckBlock) => void;
+  readonly onRemove: () => void;
+}) {
+  const setStyle = (patch: Partial<DeckBlockStyle>) => {
+    const style: Record<string, unknown> = { ...block.style };
+    for (const [key, value] of Object.entries(patch)) {
+      if (value === undefined || value === false || value === "") delete style[key];
+      else style[key] = value;
+    }
+    onChange({ ...block, style: Object.keys(style).length ? (style as DeckBlockStyle) : undefined });
+  };
+  const isText = block.type === "heading" || block.type === "text";
+
+  return (
+    <div className="flex flex-col gap-3 rounded-xl border border-stroke-soft-200 bg-bg-weak-50 p-3">
+      <div className="flex items-center justify-between">
+        <p className="text-label-sm text-text-strong-950">
+          {block.type[0]?.toUpperCase()}
+          {block.type.slice(1)} block
+        </p>
+        <button
+          type="button"
+          onClick={onRemove}
+          aria-label="Remove block"
+          title="Remove block"
+          className="grid size-7 place-items-center rounded-lg text-text-sub-600 hover:bg-bg-white-0 hover:text-error-base"
+        >
+          <RiDeleteBinLine aria-hidden className="size-4" />
+        </button>
+      </div>
+
+      {isText && (
+        <textarea
+          value={block.content}
+          onChange={(event) => onChange({ ...block, content: event.currentTarget.value })}
+          aria-label="Block text"
+          className="min-h-16 w-full resize-y rounded-lg border border-stroke-soft-200 bg-bg-white-0 p-2 text-paragraph-sm text-text-strong-950 outline-none focus:border-stroke-strong-950"
+        />
+      )}
+      {block.type === "image" && (
+        <input
+          value={block.content}
+          onChange={(event) => onChange({ ...block, content: event.currentTarget.value })}
+          placeholder="/api/... or https://"
+          aria-label="Image URL"
+          className="h-8 w-full rounded-lg border border-stroke-soft-200 bg-bg-white-0 px-2 text-label-sm text-text-strong-950 outline-none focus:border-stroke-strong-950"
+        />
+      )}
+
+      <div className="grid grid-cols-4 gap-2">
+        <NumberField label="X %" value={block.x} onChange={(x) => onChange({ ...block, x })} />
+        <NumberField label="Y %" value={block.y} onChange={(y) => onChange({ ...block, y })} />
+        <NumberField label="W %" value={block.w} onChange={(w) => onChange({ ...block, w })} min={1} />
+        <NumberField label="H %" value={block.h} onChange={(h) => onChange({ ...block, h })} min={1} />
+      </div>
+
+      {isText && (
+        <div className="flex flex-col gap-2">
+          <div className="grid grid-cols-2 gap-2">
+            <NumberField
+              label="Font px"
+              value={block.style?.fontSize ?? (block.type === "heading" ? 96 : 44)}
+              onChange={(fontSize) => setStyle({ fontSize })}
+              min={4}
+            />
+            <label className="flex flex-col gap-1 text-label-xs text-text-sub-600">
+              Align
+              <select
+                value={block.style?.align ?? "left"}
+                onChange={(event) => setStyle({ align: event.currentTarget.value as DeckBlockStyle["align"] })}
+                className="h-8 w-full rounded-lg border border-stroke-soft-200 bg-bg-white-0 px-2 text-label-sm text-text-strong-950 outline-none focus:border-stroke-strong-950"
+              >
+                <option value="left">Left</option>
+                <option value="center">Center</option>
+                <option value="right">Right</option>
+              </select>
+            </label>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              aria-pressed={block.style?.bold ?? false}
+              onClick={() => setStyle({ bold: !(block.style?.bold ?? false) })}
+              className="grid size-8 place-items-center rounded-lg border border-stroke-soft-200 text-text-sub-600 hover:bg-bg-white-0 aria-pressed:bg-bg-strong-950 aria-pressed:text-text-white-0"
+            >
+              <RiBold aria-hidden className="size-4" />
+            </button>
+            <button
+              type="button"
+              aria-pressed={block.style?.italic ?? false}
+              onClick={() => setStyle({ italic: !(block.style?.italic ?? false) })}
+              className="grid size-8 place-items-center rounded-lg border border-stroke-soft-200 text-text-sub-600 hover:bg-bg-white-0 aria-pressed:bg-bg-strong-950 aria-pressed:text-text-white-0"
+            >
+              <RiItalic aria-hidden className="size-4" />
+            </button>
+            <ColorField
+              label="Color"
+              value={block.style?.color ?? "#ffffff"}
+              onChange={(color) => setStyle({ color })}
+            />
+          </div>
         </div>
-        <span className="absolute bottom-3 right-4 font-mono text-label-xs text-text-soft-400">
-          {index + 1} / {total}
-        </span>
+      )}
+      {block.type === "shape" && (
+        <div className="grid grid-cols-2 gap-2">
+          <ColorField
+            label="Fill"
+            value={block.style?.fill ?? "#7aa2f7"}
+            onChange={(fill) => setStyle({ fill })}
+          />
+          <NumberField
+            label="Radius"
+            value={block.style?.radius ?? 0}
+            onChange={(radius) => setStyle({ radius })}
+            min={0}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Deck theme picker: tasteful presets plus custom heading/body/accent and a
+ * solid background color. Deck colors are document data (raw hex is allowed). */
+function ThemeControls({
+  theme,
+  onChange,
+}: {
+  readonly theme: DeckTheme;
+  readonly onChange: (theme: DeckTheme) => void;
+}) {
+  return (
+    <div className="flex flex-col gap-2 rounded-xl border border-stroke-soft-200 p-3">
+      <p className="text-label-sm text-text-strong-950">Deck theme</p>
+      <div className="flex flex-wrap gap-2">
+        {DECK_THEME_PRESETS.map((preset) => (
+          <button
+            key={preset.id}
+            type="button"
+            onClick={() => onChange(preset.theme)}
+            title={preset.label}
+            aria-label={`${preset.label} theme`}
+            className="size-8 rounded-lg border border-stroke-soft-200"
+            style={preset.theme.background.type === "gradient"
+              ? {
+                background:
+                  `linear-gradient(150deg, ${preset.theme.background.from}, ${preset.theme.background.to})`,
+              }
+              : preset.theme.background.type === "color"
+              ? { background: preset.theme.background.color }
+              : { background: preset.theme.accent }}
+          />
+        ))}
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        <ColorField
+          label="Background"
+          value={theme.background.type === "color"
+            ? theme.background.color
+            : theme.background.type === "gradient"
+            ? theme.background.from
+            : theme.accent}
+          onChange={(color) => onChange({ ...theme, background: { type: "color", color } })}
+        />
+        <ColorField label="Accent" value={theme.accent} onChange={(accent) => onChange({ ...theme, accent })} />
+        <ColorField label="Heading" value={theme.heading} onChange={(heading) => onChange({ ...theme, heading })} />
+        <ColorField label="Body" value={theme.body} onChange={(body) => onChange({ ...theme, body })} />
       </div>
     </div>
   );
 }
 
-/** Structure-aware slide editor over the canonical presentation state (title,
- * body, and speaker notes per slide) with a rendered 16:9 preview and per-slide
- * navigation. Round-trips through the same revisioned workpiece state as every
- * other surface; the native PPTX export is derived from it. Slide visuals,
- * layouts, and media are out of scope (see the fidelity note). */
-export function SlidesSurface({
-  slides,
+/** Web-native deck editor over the canonical v2 presentation state. Renders the
+ * deck with the SAME DeckSlideCanvas used by the filmstrip (one renderer, two
+ * scales), with per-block select/drag/edit, add/remove block, a deck theme
+ * picker, per-slide background, and a title/body quick-edit that writes the
+ * slide's primary heading and text blocks. The themed PPTX export is derived
+ * from this exact state. */
+export function DeckSurface({
+  deck,
   loading,
   onChange,
 }: {
-  readonly slides: readonly ArtifactPresentationSlide[];
+  readonly deck: PresentationDeck | null;
   readonly loading: boolean;
-  readonly onChange: (slides: ArtifactPresentationSlide[]) => void;
+  readonly onChange: (deck: PresentationDeck) => void;
 }) {
   const [index, setIndex] = useState(0);
-  const activeIndex = Math.min(index, Math.max(0, slides.length - 1));
-  const active = slides[activeIndex];
+  const [selectedBlockId, setSelectedBlockId] = useState<string | null>(null);
 
-  const clone = () => slides.map((slide) => ({ ...slide }));
-  const patch = (position: number, next: Partial<ArtifactPresentationSlide>) =>
-    onChange(
-      slides.map((slide, current) =>
-        current === position ? { ...slide, ...next } : { ...slide },
-      ),
+  if (!deck) {
+    return (
+      <p className="mt-4 rounded-xl border border-dashed border-stroke-soft-200 px-4 py-8 text-center text-paragraph-sm text-text-sub-600">
+        Loading deck...
+      </p>
     );
+  }
+
+  const slides = deck.slides;
+  const activeIndex = Math.min(index, Math.max(0, slides.length - 1));
+  const slide: DeckSlide | undefined = slides[activeIndex];
+  const selected = slide?.blocks.find((block) => block.id === selectedBlockId) ?? null;
+
+  const setSlides = (next: readonly DeckSlide[]) => onChange({ ...deck, slides: next });
+  const mapActive = (fn: (slide: DeckSlide) => DeckSlide) =>
+    setSlides(slides.map((item, position) => (position === activeIndex ? fn(item) : item)));
+  const patchBlock = (next: DeckBlock) =>
+    mapActive((item) => ({
+      ...item,
+      blocks: item.blocks.map((block) => (block.id === next.id ? next : block)),
+    }));
+
   const addSlide = () => {
-    onChange([...clone(), { title: `Slide ${slides.length + 1}`, body: "", notes: "" }]);
+    const id = `slide-${rid()}`;
+    onChange({
+      ...deck,
+      slides: [
+        ...slides,
+        {
+          id,
+          blocks: [
+            {
+              id: `${id}-heading`,
+              type: "heading",
+              x: 6,
+              y: 8,
+              w: 88,
+              h: 17,
+              content: `Slide ${slides.length + 1}`,
+              style: { fontSize: 96, bold: true, align: "left" },
+            },
+            { id: `${id}-body`, type: "text", x: 6, y: 30, w: 88, h: 62, content: "", style: { fontSize: 44 } },
+          ],
+        },
+      ],
+    });
     setIndex(slides.length);
+    setSelectedBlockId(null);
   };
-  const removeSlide = (position: number) => {
-    onChange(slides.filter((_, current) => current !== position).map((slide) => ({ ...slide })));
-    setIndex((current) => Math.max(0, current > position ? current - 1 : current));
+  const removeSlide = () => {
+    setSlides(slides.filter((_, position) => position !== activeIndex));
+    setIndex((current) => Math.max(0, current > activeIndex ? current - 1 : current));
+    setSelectedBlockId(null);
   };
-  const move = (position: number, delta: number) => {
-    const target = position + delta;
+  const moveSlide = (delta: number) => {
+    const target = activeIndex + delta;
     if (target < 0 || target >= slides.length) return;
-    const next = clone();
-    const moved = next[position];
-    const displaced = next[target];
-    if (!moved || !displaced) return;
-    next[position] = displaced;
+    const next = [...slides];
+    const moved = next[activeIndex]!;
+    next[activeIndex] = next[target]!;
     next[target] = moved;
-    onChange(next);
+    setSlides(next);
     setIndex(target);
   };
+  const addBlock = (type: DeckBlockType) => {
+    const block = deckBlockPreset(type, `${type}-${rid()}`);
+    mapActive((item) => ({ ...item, blocks: [...item.blocks, block] }));
+    setSelectedBlockId(block.id);
+  };
+  const removeBlock = (id: string) => {
+    mapActive((item) => ({ ...item, blocks: item.blocks.filter((block) => block.id !== id) }));
+    setSelectedBlockId(null);
+  };
+  const setSlideBackground = (background: DeckBackground | null) =>
+    mapActive((item) => {
+      if (!background) {
+        const { background: _drop, ...rest } = item;
+        return rest;
+      }
+      return { ...item, background };
+    });
+  const setNotes = (notes: string) =>
+    mapActive((item) => {
+      if (!notes) {
+        const { notes: _drop, ...rest } = item;
+        return rest;
+      }
+      return { ...item, notes };
+    });
+  // Quick-edit writes the slide's primary heading/text block, creating one if the
+  // slide has none, so the convenience fields always map to real blocks.
+  const setPrimary = (type: "heading" | "text", content: string) =>
+    mapActive((item) => {
+      const existing = (type === "heading" ? primaryHeadingBlock(item) : primaryBodyBlock(item));
+      if (existing) {
+        return {
+          ...item,
+          blocks: item.blocks.map((block) => (block.id === existing.id ? { ...block, content } : block)),
+        };
+      }
+      return { ...item, blocks: [...item.blocks, { ...deckBlockPreset(type, `${type}-${rid()}`), content }] };
+    });
+
+  const headingText = slide ? primaryHeadingBlock(slide)?.content ?? "" : "";
+  const bodyText = slide ? primaryBodyBlock(slide)?.content ?? "" : "";
 
   return (
-    <section className="mt-4 flex min-h-0 flex-1 flex-col gap-4">
-      <div className="flex items-center justify-between gap-2">
+    <section className="mt-4 flex min-h-0 flex-1 flex-col gap-4 overflow-auto pb-2">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-label-sm text-text-strong-950">Slides ({slides.length})</p>
         <button
           type="button"
@@ -481,20 +799,30 @@ export function SlidesSurface({
           disabled={loading}
           className="inline-flex h-8 items-center gap-2 rounded-lg border border-stroke-soft-200 px-3 text-label-sm hover:bg-bg-weak-50 disabled:opacity-50"
         >
-          <RiAddLine aria-hidden className="size-4" />
-          Add slide
+          <RiAddLine aria-hidden className="size-4" /> Add slide
         </button>
       </div>
 
-      {slides.length === 0 || !active ? (
+      {slides.length === 0 || !slide ? (
         <p className="rounded-xl border border-dashed border-stroke-soft-200 px-4 py-8 text-center text-paragraph-sm text-text-sub-600">
           No slides yet. Add the first slide to start the deck.
         </p>
       ) : (
-        <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-auto pb-2">
-          <SlidePreviewCanvas slide={active} index={activeIndex} total={slides.length} />
+        <>
+          <DeckSlideCanvas
+            deck={deck}
+            slide={slide}
+            editing={!loading}
+            selectedBlockId={selectedBlockId}
+            onSelectBlock={setSelectedBlockId}
+            onMoveBlock={(id, x, y) => {
+              const target = slide.blocks.find((block) => block.id === id);
+              if (target) patchBlock({ ...target, x, y });
+            }}
+            className="w-full rounded-xl border border-stroke-soft-200 shadow-regular-xs"
+          />
 
-          {/* Per-slide navigation + slide-level controls. */}
+          {/* Slide navigation + reorder + delete. */}
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="flex items-center gap-1">
               <button
@@ -524,7 +852,7 @@ export function SlidesSurface({
             <div className="flex items-center gap-1">
               <button
                 type="button"
-                onClick={() => move(activeIndex, -1)}
+                onClick={() => moveSlide(-1)}
                 disabled={loading || activeIndex === 0}
                 aria-label={`Move slide ${activeIndex + 1} earlier`}
                 title="Move earlier"
@@ -534,7 +862,7 @@ export function SlidesSurface({
               </button>
               <button
                 type="button"
-                onClick={() => move(activeIndex, 1)}
+                onClick={() => moveSlide(1)}
                 disabled={loading || activeIndex === slides.length - 1}
                 aria-label={`Move slide ${activeIndex + 1} later`}
                 title="Move later"
@@ -544,7 +872,7 @@ export function SlidesSurface({
               </button>
               <button
                 type="button"
-                onClick={() => removeSlide(activeIndex)}
+                onClick={removeSlide}
                 disabled={loading}
                 aria-label={`Delete slide ${activeIndex + 1}`}
                 title="Delete slide"
@@ -555,60 +883,127 @@ export function SlidesSurface({
             </div>
           </div>
 
-          {/* Filmstrip: jump between slides. */}
+          {/* Filmstrip: the SAME renderer at thumbnail scale, editing off. The
+              explicit height + shrink-0 keep this horizontal scroll row (an
+              overflow container nested in a flex column) from collapsing. */}
           {slides.length > 1 && (
-            <div className="flex gap-2 overflow-x-auto pb-1">
-              {slides.map((slide, position) => (
+            <div className="flex h-[71px] shrink-0 items-center gap-2 overflow-x-auto pb-1">
+              {slides.map((item, position) => (
                 <button
-                  key={position}
+                  key={item.id}
                   type="button"
-                  onClick={() => setIndex(position)}
+                  onClick={() => {
+                    setIndex(position);
+                    setSelectedBlockId(null);
+                  }}
                   aria-current={position === activeIndex}
-                  title={slide.title || `Slide ${position + 1}`}
+                  title={`Slide ${position + 1}`}
+                  // Explicit 16:9 height (w-28 = 112px -> 63px) so the flex-item
+                  // button does not collapse around its padding-sized canvas.
                   className={
                     position === activeIndex
-                      ? "flex h-14 w-24 shrink-0 flex-col justify-between rounded-lg border-2 border-primary-base bg-bg-white-0 p-1.5 text-left"
-                      : "flex h-14 w-24 shrink-0 flex-col justify-between rounded-lg border border-stroke-soft-200 bg-bg-white-0 p-1.5 text-left hover:border-stroke-sub-300"
+                      ? "h-[63px] w-28 shrink-0 overflow-hidden rounded-lg border-2 border-primary-base"
+                      : "h-[63px] w-28 shrink-0 overflow-hidden rounded-lg border border-stroke-soft-200 hover:border-stroke-sub-300"
                   }
                 >
-                  <span className="font-mono text-[10px] text-text-soft-400">{position + 1}</span>
-                  <span className="line-clamp-2 text-[10px] leading-tight text-text-sub-600">
-                    {slide.title || "Untitled"}
-                  </span>
+                  <DeckSlideCanvas deck={deck} slide={item} />
                 </button>
               ))}
             </div>
           )}
 
-          {/* Edit fields for the active slide. */}
-          <label className="block text-label-xs text-text-sub-600">
-            Title
-            <input
-              value={active.title}
-              disabled={loading}
-              onChange={(event) => patch(activeIndex, { title: event.currentTarget.value })}
-              className="mt-1 h-9 w-full rounded-lg border border-stroke-soft-200 bg-bg-white-0 px-3 text-label-sm text-text-strong-950 outline-none focus:border-stroke-strong-950 focus:ring-2 focus:ring-stroke-soft-200 disabled:opacity-50"
-            />
-          </label>
-          <label className="block text-label-xs text-text-sub-600">
-            Body
-            <textarea
-              value={active.body}
-              disabled={loading}
-              onChange={(event) => patch(activeIndex, { body: event.currentTarget.value })}
-              className="mt-1 min-h-24 w-full resize-y rounded-lg border border-stroke-soft-200 bg-bg-white-0 p-3 text-paragraph-sm text-text-strong-950 outline-none focus:border-stroke-strong-950 focus:ring-2 focus:ring-stroke-soft-200 disabled:opacity-50"
-            />
-          </label>
-          <label className="block text-label-xs text-text-sub-600">
-            Speaker notes
-            <textarea
-              value={active.notes ?? ""}
-              disabled={loading}
-              onChange={(event) => patch(activeIndex, { notes: event.currentTarget.value })}
-              className="mt-1 min-h-16 w-full resize-y rounded-lg border border-stroke-soft-200 bg-bg-white-0 p-3 text-paragraph-sm text-text-strong-950 outline-none focus:border-stroke-strong-950 focus:ring-2 focus:ring-stroke-soft-200 disabled:opacity-50"
-            />
-          </label>
-        </div>
+          {/* Add block. */}
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-label-xs text-text-sub-600">Add block:</span>
+            {BLOCK_ADD.map(([type, label, Icon]) => (
+              <button
+                key={type}
+                type="button"
+                onClick={() => addBlock(type)}
+                disabled={loading}
+                className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-stroke-soft-200 px-2.5 text-label-xs hover:bg-bg-weak-50 disabled:opacity-50"
+              >
+                <Icon aria-hidden className="size-4" /> {label}
+              </button>
+            ))}
+          </div>
+
+          <div className="grid gap-4 md:grid-cols-2">
+            {/* Quick edit + slide-level controls. */}
+            <div className="flex flex-col gap-3">
+              <label className="block text-label-xs text-text-sub-600">
+                Title
+                <input
+                  value={headingText}
+                  disabled={loading}
+                  onChange={(event) => setPrimary("heading", event.currentTarget.value)}
+                  className="mt-1 h-9 w-full rounded-lg border border-stroke-soft-200 bg-bg-white-0 px-3 text-label-sm text-text-strong-950 outline-none focus:border-stroke-strong-950"
+                />
+              </label>
+              <label className="block text-label-xs text-text-sub-600">
+                Body
+                <textarea
+                  value={bodyText}
+                  disabled={loading}
+                  onChange={(event) => setPrimary("text", event.currentTarget.value)}
+                  className="mt-1 min-h-20 w-full resize-y rounded-lg border border-stroke-soft-200 bg-bg-white-0 p-3 text-paragraph-sm text-text-strong-950 outline-none focus:border-stroke-strong-950"
+                />
+              </label>
+              <label className="block text-label-xs text-text-sub-600">
+                Speaker notes
+                <textarea
+                  value={slide.notes ?? ""}
+                  disabled={loading}
+                  onChange={(event) => setNotes(event.currentTarget.value)}
+                  className="mt-1 min-h-16 w-full resize-y rounded-lg border border-stroke-soft-200 bg-bg-white-0 p-3 text-paragraph-sm text-text-strong-950 outline-none focus:border-stroke-strong-950"
+                />
+              </label>
+              <div className="flex items-center justify-between rounded-xl border border-stroke-soft-200 p-3 text-label-xs text-text-sub-600">
+                <span>Slide background</span>
+                {slide.background ? (
+                  <div className="flex items-center gap-2">
+                    <ColorField
+                      label="Color"
+                      value={slide.background.type === "color" ? slide.background.color : deck.theme.accent}
+                      onChange={(color) => setSlideBackground({ type: "color", color })}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setSlideBackground(null)}
+                      className="rounded-lg border border-stroke-soft-200 px-2 py-1 text-label-xs hover:bg-bg-weak-50"
+                    >
+                      Use theme
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setSlideBackground({ type: "color", color: "#111827" })}
+                    className="rounded-lg border border-stroke-soft-200 px-2 py-1 text-label-xs hover:bg-bg-weak-50"
+                  >
+                    Override
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Theme + selected block inspector. */}
+            <div className="flex flex-col gap-3">
+              <ThemeControls theme={deck.theme} onChange={(theme) => onChange({ ...deck, theme })} />
+              {selected ? (
+                <BlockInspector
+                  block={selected}
+                  onChange={patchBlock}
+                  onRemove={() => removeBlock(selected.id)}
+                />
+              ) : (
+                <p className="rounded-xl border border-dashed border-stroke-soft-200 px-3 py-6 text-center text-paragraph-xs text-text-soft-400">
+                  Select a block on the canvas to edit its content, position, and style.
+                </p>
+              )}
+            </div>
+          </div>
+        </>
       )}
     </section>
   );
@@ -760,7 +1155,7 @@ export function WorkpieceSurfaces({
     return <SpreadsheetGridSurface rows={editor.rows} onChange={editor.setRows} />;
   }
   if (editor.isSlidesEditor) {
-    return <SlidesSurface slides={editor.slides} loading={editor.loading} onChange={editor.setSlides} />;
+    return <DeckSurface deck={editor.deck} loading={editor.loading} onChange={editor.setDeck} />;
   }
   return (
     <SourceSurface

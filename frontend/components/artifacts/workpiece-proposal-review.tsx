@@ -25,9 +25,10 @@ import {
   useWorkpieceProposals,
 } from "./use-workpiece-proposals";
 import {
+  type DeckBlockChange,
+  type DeckSlideChange,
   proposedPreviewText,
   type SheetCellChange,
-  type SlideChange,
   workpieceProposalDiff,
   type WorkpieceProposalDiff,
 } from "./workpiece-proposal-diff";
@@ -92,14 +93,40 @@ function SheetChanges({ cells }: { readonly cells: readonly SheetCellChange[] })
   );
 }
 
-function SlideChanges({ slides }: { readonly slides: readonly SlideChange[] }) {
-  const KIND_LABEL: Record<SlideChange["kind"], string> = {
-    added: "Added",
-    removed: "Removed",
-    changed: "Changed",
-  };
+const SLIDE_KIND_LABEL: Record<DeckSlideChange["kind"], string> = {
+  added: "Added",
+  removed: "Removed",
+  changed: "Changed",
+};
+const BLOCK_KIND_LABEL: Record<DeckBlockChange["kind"], string> = {
+  added: "added",
+  removed: "removed",
+  moved: "moved",
+  edited: "edited",
+};
+const BLOCK_KIND_TONE: Record<DeckBlockChange["kind"], string> = {
+  added: "bg-success-base/10 text-success-base",
+  removed: "bg-error-base/10 text-error-base",
+  moved: "bg-bg-weak-50 text-text-sub-600",
+  edited: "bg-feature-base/10 text-feature-base",
+};
+
+/** Block-level summary of a deck proposal: added/removed/moved/edited blocks per
+ * slide, plus a deck-theme-change note. */
+function SlideChanges({
+  slides,
+  themeChanged,
+}: {
+  readonly slides: readonly DeckSlideChange[];
+  readonly themeChanged: boolean;
+}) {
   return (
     <div className="space-y-2">
+      {themeChanged && (
+        <p className="rounded-10 border border-stroke-soft-200 bg-bg-weak-50 px-2.5 py-1.5 text-paragraph-xs text-text-sub-600">
+          Deck theme changed (background and colors).
+        </p>
+      )}
       {slides.map((slide) => (
         <div
           key={slide.index}
@@ -109,27 +136,33 @@ function SlideChanges({ slides }: { readonly slides: readonly SlideChange[] }) {
             <span className="text-label-xs text-text-strong-950">
               Slide {slide.index + 1}
             </span>
-            <span className="text-paragraph-xs text-text-soft-400">{KIND_LABEL[slide.kind]}</span>
+            <span className="text-paragraph-xs text-text-soft-400">
+              {SLIDE_KIND_LABEL[slide.kind]}
+            </span>
             <span className="min-w-0 flex-1 truncate text-paragraph-xs text-text-soft-400">
               {slide.label}
             </span>
           </div>
           <div className="divide-y divide-stroke-soft-200/60">
-            {slide.fields.map((field) => (
-              <div key={field.field} className="px-2.5 py-1.5">
-                <p className="text-mono-label text-text-soft-400">{field.field}</p>
-                {field.before && (
-                  <p className="mt-0.5 whitespace-pre-wrap break-words rounded bg-error-base/10 px-1.5 py-0.5 font-mono text-[11px] text-text-sub-600">
-                    {field.before}
-                  </p>
-                )}
-                {field.after && (
-                  <p className="mt-0.5 whitespace-pre-wrap break-words rounded bg-success-base/10 px-1.5 py-0.5 font-mono text-[11px] text-text-sub-600">
-                    {field.after}
-                  </p>
-                )}
+            {slide.blocks.map((block) => (
+              <div key={block.id} className="flex items-center gap-2 px-2.5 py-1.5">
+                <span className="text-mono-label text-text-soft-400">{block.type}</span>
+                <span className={cn("rounded px-1 text-[11px]", BLOCK_KIND_TONE[block.kind])}>
+                  {BLOCK_KIND_LABEL[block.kind]}
+                </span>
+                <span className="min-w-0 flex-1 truncate text-paragraph-xs text-text-sub-600">
+                  {block.label}
+                </span>
               </div>
             ))}
+            {(slide.backgroundChanged || slide.notesChanged) && (
+              <p className="px-2.5 py-1.5 text-paragraph-xs text-text-soft-400">
+                {[slide.backgroundChanged && "background", slide.notesChanged && "notes"]
+                  .filter(Boolean)
+                  .join(", ")}{" "}
+                changed
+              </p>
+            )}
           </div>
         </div>
       ))}
@@ -147,7 +180,7 @@ function ProposalDiffBody({ diff }: { readonly diff: WorkpieceProposalDiff }) {
     );
   }
   if (diff.type === "sheet") return <SheetChanges cells={diff.cells} />;
-  return <SlideChanges slides={diff.slides} />;
+  return <SlideChanges slides={diff.slides} themeChanged={diff.themeChanged} />;
 }
 
 export function ProposalCard({

@@ -1,13 +1,17 @@
 import { describe, expect, test } from "bun:test";
+import { DECK_THEME_PRESETS, migrateSlidesToDeck } from "@skynet/artifact-workspace";
 import {
   columnName,
   computeLineDiff,
   countLineChanges,
+  deckSlideChanges,
   proposedPreviewText,
   sheetCellChanges,
-  slideChanges,
   workpieceProposalDiff,
 } from "./workpiece-proposal-diff";
+
+const emptyDeck = (theme = DECK_THEME_PRESETS[0]!.theme) =>
+  ({ schemaVersion: 2 as const, theme, slides: [] });
 
 describe("computeLineDiff", () => {
   test("all-context when nothing changed", () => {
@@ -59,27 +63,45 @@ describe("sheetCellChanges", () => {
   });
 });
 
-describe("slideChanges", () => {
-  test("reports a changed field on an existing slide", () => {
-    const changes = slideChanges(
-      [{ title: "T", body: "B", notes: "" }],
-      [{ title: "T2", body: "B", notes: "" }],
-    );
-    expect(changes).toEqual([
-      { index: 0, kind: "changed", label: "T2", fields: [{ field: "title", before: "T", after: "T2" }] },
-    ]);
+describe("deckSlideChanges", () => {
+  test("reports an edited heading block on an existing slide (matched by id)", () => {
+    const before = migrateSlidesToDeck([{ title: "T", body: "B" }]);
+    const after = migrateSlidesToDeck([{ title: "T2", body: "B" }]);
+    const changes = deckSlideChanges(before, after);
+    expect(changes).toHaveLength(1);
+    expect(changes[0]).toMatchObject({ index: 0, kind: "changed", label: "T2" });
+    expect(changes[0]!.blocks.some((block) => block.kind === "edited" && block.type === "heading"))
+      .toBe(true);
+    // The unchanged body block is not reported.
+    expect(changes[0]!.blocks.some((block) => block.type === "text")).toBe(false);
+  });
+
+  test("classifies a pure position change as a moved block", () => {
+    const before = migrateSlidesToDeck([{ title: "T", body: "B" }]);
+    const after = {
+      ...before,
+      slides: [{
+        ...before.slides[0]!,
+        blocks: before.slides[0]!.blocks.map((block) =>
+          block.type === "heading" ? { ...block, x: block.x + 10 } : block
+        ),
+      }],
+    };
+    const [change] = deckSlideChanges(before, after);
+    expect(change!.blocks[0]).toMatchObject({ kind: "moved", type: "heading" });
   });
 
   test("reports added and removed slides", () => {
-    expect(slideChanges([], [{ title: "New", body: "", notes: "" }])[0]).toMatchObject({
+    const one = migrateSlidesToDeck([{ title: "New", body: "" }]);
+    expect(deckSlideChanges(emptyDeck(), one)[0]).toMatchObject({
       index: 0,
       kind: "added",
       label: "New",
     });
-    expect(slideChanges([{ title: "Old", body: "", notes: "" }], [])[0]).toMatchObject({
+    expect(deckSlideChanges(one, emptyDeck())[0]).toMatchObject({
       index: 0,
       kind: "removed",
-      label: "Old",
+      label: "New",
     });
   });
 });
@@ -108,19 +130,35 @@ describe("workpieceProposalDiff", () => {
 
     const slides = workpieceProposalDiff(
       "presentation",
-      { slides: [{ title: "T", body: "", notes: "" }] },
-      { slides: [{ title: "T2", body: "", notes: "" }] },
+      { deck: migrateSlidesToDeck([{ title: "T", body: "" }]) },
+      { deck: migrateSlidesToDeck([{ title: "T2", body: "" }]) },
     );
     expect(slides.type).toBe("slides");
-    if (slides.type === "slides") expect(slides.slides[0]).toMatchObject({ kind: "changed" });
+    if (slides.type === "slides") {
+      expect(slides.unchanged).toBe(false);
+      expect(slides.slides[0]).toMatchObject({ kind: "changed" });
+    }
+  });
+
+  test("flags a deck theme change even when slides are identical", () => {
+    const diff = workpieceProposalDiff(
+      "presentation",
+      { deck: migrateSlidesToDeck([{ title: "T", body: "" }], DECK_THEME_PRESETS[0]!.theme) },
+      { deck: migrateSlidesToDeck([{ title: "T", body: "" }], DECK_THEME_PRESETS[1]!.theme) },
+    );
+    expect(diff.type).toBe("slides");
+    if (diff.type === "slides") {
+      expect(diff.themeChanged).toBe(true);
+      expect(diff.unchanged).toBe(false);
+    }
   });
 });
 
 describe("proposedPreviewText", () => {
-  test("passes text-like state through and formats slides", () => {
+  test("passes text-like state through and formats a deck", () => {
     expect(proposedPreviewText({ text: "hello" })).toBe("hello");
-    expect(proposedPreviewText({ slides: [{ title: "T", body: "Body", notes: "N" }] })).toBe(
-      "Slide 1: T\nBody\nNotes: N",
-    );
+    expect(
+      proposedPreviewText({ deck: migrateSlidesToDeck([{ title: "T", body: "Body", notes: "N" }]) }),
+    ).toBe("Slide 1:\nT\nBody\nNotes: N");
   });
 });

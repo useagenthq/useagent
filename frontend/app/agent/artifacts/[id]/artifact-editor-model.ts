@@ -4,6 +4,7 @@ import {
   artifactFileExtension,
   isArtifactRichHtmlAttribute,
   isArtifactRichHtmlTag,
+  migrateSlidesToDeck,
   normalizeArtifactRichHtml,
 } from "@skynet/artifact-workspace";
 
@@ -49,7 +50,7 @@ export function stateValue(result: ArtifactWorkpieceResult): string | null {
   if (!result.state) return null;
   if ("csv" in result.state) return result.state.csv;
   if ("html" in result.state) return result.state.html;
-  if ("slides" in result.state) return JSON.stringify({ slides: result.state.slides }, null, 2);
+  if ("deck" in result.state) return JSON.stringify(result.state.deck, null, 2);
   if ("pdfText" in result.state) return result.state.pdfText;
   return result.state.text;
 }
@@ -71,7 +72,7 @@ export function richDocumentTemplate(name: string): string {
 export function presentationTemplate(name: string): string {
   const suffix = artifactFileExtension(name);
   const stem = suffix ? name.slice(0, -(suffix.length + 1)) : name;
-  return JSON.stringify({ slides: [{ title: stem, body: "", notes: "" }] }, null, 2);
+  return JSON.stringify(migrateSlidesToDeck([{ title: stem, body: "", notes: "" }]), null, 2);
 }
 
 export function sanitizeRichHtml(value: string): string {
