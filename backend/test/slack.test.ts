@@ -11,8 +11,12 @@
  */
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { createHmac } from "node:crypto";
+import { eq } from "drizzle-orm";
+import { db } from "../src/db/client";
+import { userUploads } from "../src/db/schema";
 import { DEV_ORG_ID, DEV_USER_ID } from "../src/seed";
 import { setSlackClientForTest } from "../src/slack";
+import { setInboundFileDownloaderForTest } from "../src/slack/inbound-files";
 import { dispatchSocketFrame } from "../src/slack/socket-mode";
 import {
   findSlackWorkspace,
@@ -461,3 +465,180 @@ describe("slack workspace identity (fail closed)", () => {
   });
 });
 
+// Inbound attachments: files on an accepted message are downloaded bounded
+// (Slack-hosted URLs only, size + count caps) and staged through the uploads
+// lane, then claimed by the created run as its input files.
+describe("slack inbound attachments", () => {
+  const downloaded: string[] = [];
+  let payload = new TextEncoder().encode("hello slack bytes");
+
+  beforeAll(() => {
+    setInboundFileDownloaderForTest(async (url) => {
+      downloaded.push(url);
+      return payload;
+    });
+  });
+
+  afterAll(() => {
+    setInboundFileDownloaderForTest(null);
+  });
+
+  function slackFile(name: string, extra: Record<string, unknown> = {}): Record<string, unknown> {
+    return {
+      id: `F${uid("f")}`,
+      name,
+      size: payload.byteLength,
+      mimetype: "text/plain",
+      url_private_download: `https://files.slack.com/files-pri/${TEAM}/${name}`,
+      ...extra,
+    };
+  }
+
+  async function uploadsByName(name: string) {
+    return db.select().from(userUploads).where(eq(userUploads.name, name));
+  }
+
+  test("a mention with a file stages it and claims it for the created run", async () => {
+    const marker = uid("attach");
+    const fileName = `${marker}.txt`;
+    await postSlack(
+      eventCallback({
+        type: "app_mention",
+        channel: `C${uid("ch")}`,
+        user: "U-HUMAN",
+        text: `<@${BOT}> summarize ${marker}`,
+        ts: `${uid("ts")}.1`,
+        files: [slackFile(fileName)],
+      }),
+    );
+    const run = await waitFor(async () => findRunByPrompt(`summarize ${marker}`));
+
+    const rows = await waitFor(async () => {
+      const found = await uploadsByName(fileName);
+      return found.length > 0 ? found : null;
+    });
+    expect(rows).toHaveLength(1);
+    const upload = rows[0]!;
+    expect(upload.runId).toBe(run.id); // claimed atomically with acceptance
+    expect(upload.orgId).toBe(DEV_ORG_ID);
+    expect(upload.userId).toBe(DEV_USER_ID);
+    expect(upload.contentType).toBe("text/plain; charset=utf-8");
+    expect(upload.sizeBytes).toBe(payload.byteLength);
+    expect(upload.sha256).toBe(
+      new Bun.CryptoHasher("sha256").update(payload).digest("hex"),
+    );
+  });
+
+  test("a files-only DM (file_share subtype, no text) still creates a run", async () => {
+    const fileName = `${uid("filesonly")}.txt`;
+    await postSlack(
+      eventCallback({
+        type: "message",
+        subtype: "file_share",
+        channel: `D${uid("dm")}`,
+        channel_type: "im",
+        user: "U-HUMAN",
+        text: "",
+        ts: `${uid("ts")}.1`,
+        files: [slackFile(fileName)],
+      }),
+    );
+    const upload = await waitFor(async () => (await uploadsByName(fileName))[0] ?? null);
+    expect(upload.runId).toBeTruthy();
+    const { body: run } = await json<any>(`/api/runs/${upload.runId}`);
+    expect(run.prompt).toBe("Review the attached files.");
+  });
+
+  test("count cap: only the first 5 of 7 files are staged", async () => {
+    const marker = uid("cap");
+    const names = Array.from({ length: 7 }, (_, i) => `${marker}-${i}.txt`);
+    await postSlack(
+      eventCallback({
+        type: "message",
+        channel: `D${uid("dm")}`,
+        channel_type: "im",
+        user: "U-HUMAN",
+        text: `cap ${marker}`,
+        ts: `${uid("ts")}.1`,
+        files: names.map((n) => slackFile(n)),
+      }),
+    );
+    await waitFor(async () => findRunByPrompt(`cap ${marker}`));
+    const staged = await waitFor(async () => {
+      const rows = await Promise.all(names.map(uploadsByName));
+      const flat = rows.flat();
+      return flat.length >= 5 ? flat : null;
+    });
+    expect(staged).toHaveLength(5);
+    expect(await uploadsByName(names[5]!)).toHaveLength(0);
+    expect(await uploadsByName(names[6]!)).toHaveLength(0);
+  });
+
+  test("size cap: an over-declared file is skipped without downloading", async () => {
+    const marker = uid("big");
+    const fileName = `${marker}.bin`;
+    const before = downloaded.length;
+    await postSlack(
+      eventCallback({
+        type: "message",
+        channel: `D${uid("dm")}`,
+        channel_type: "im",
+        user: "U-HUMAN",
+        text: `big ${marker}`,
+        ts: `${uid("ts")}.1`,
+        files: [slackFile(fileName, { size: 21 * 1024 * 1024 })],
+      }),
+    );
+    await waitFor(async () => findRunByPrompt(`big ${marker}`));
+    expect(await uploadsByName(fileName)).toHaveLength(0);
+    expect(downloaded.length).toBe(before); // rejected on declared size, never fetched
+  });
+
+  test("only Slack-hosted https URLs are fetched (bot token never leaves Slack)", async () => {
+    const marker = uid("offhost");
+    const fileName = `${marker}.txt`;
+    const before = downloaded.length;
+    await postSlack(
+      eventCallback({
+        type: "message",
+        channel: `D${uid("dm")}`,
+        channel_type: "im",
+        user: "U-HUMAN",
+        text: `offhost ${marker}`,
+        ts: `${uid("ts")}.1`,
+        files: [
+          slackFile(fileName, {
+            url_private_download: `https://evil.example.com/steal-token/${fileName}`,
+          }),
+        ],
+      }),
+    );
+    await waitFor(async () => findRunByPrompt(`offhost ${marker}`));
+    expect(await uploadsByName(fileName)).toHaveLength(0);
+    expect(downloaded.length).toBe(before);
+  });
+
+  test("a lying declared size is caught after download (post-check cap)", async () => {
+    const marker = uid("liar");
+    const fileName = `${marker}.bin`;
+    const original = payload;
+    payload = new Uint8Array(20 * 1024 * 1024 + 1); // real bytes over the cap
+    try {
+      await postSlack(
+        eventCallback({
+          type: "message",
+          channel: `D${uid("dm")}`,
+          channel_type: "im",
+          user: "U-HUMAN",
+          text: `liar ${marker}`,
+          ts: `${uid("ts")}.1`,
+          files: [slackFile(fileName, { size: 100 })],
+        }),
+      );
+      await waitFor(async () => findRunByPrompt(`liar ${marker}`));
+      expect(await uploadsByName(fileName)).toHaveLength(0);
+    } finally {
+      payload = original;
+    }
+  });
+});

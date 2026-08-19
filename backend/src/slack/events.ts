@@ -1,10 +1,10 @@
 /**
  * Slack Events-API ingest, adapted to the runs model. Given a verified
  * `event_callback` envelope, this resolves the workspace to a tenant identity
- * (fail closed), decides whether the message is for us, maps it onto a run
- * (root or `parent_run_id` reply), 👀-acks, and registers a completion
- * watcher. Kept deliberately small — QM's turn-handler (approvals, reactions,
- * mirroring, attachments, agent-requests) is DEFERRED.
+ * (fail closed), decides whether the message is for us, stages inbound
+ * attachments, maps it onto a run (root or `parent_run_id` reply), 👀-acks, and
+ * registers a completion watcher. Kept deliberately small — QM's turn-handler
+ * (approvals, reactions, mirroring, agent-requests) is DEFERRED.
  *
  * Gating (from QM's events.ts, condensed):
  *  - DM (`channel_type: "im"`)      → always ours.
@@ -20,6 +20,7 @@ import { getRunForOrg } from "../runs/repo";
 import { acceptRunCommand } from "../commands";
 import { pumpThread } from "../worker";
 import { resolveSlackClient } from "./client";
+import { stageInboundSlackFiles, type SlackInboundFileMeta } from "./inbound-files";
 import { findSlackThread, linkSlackThread } from "./repo";
 import { watchSlackRun } from "./watcher";
 import { resolveSlackWorkspace } from "./workspaces";
@@ -65,6 +66,9 @@ export interface SlackEnvelope {
     text?: string;
     ts?: string;
     thread_ts?: string;
+    /** Inbound attachments (Slack file objects) — downloaded bounded and staged
+     *  through the uploads lane (see inbound-files.ts). */
+    files?: SlackInboundFileMeta[];
   };
 }
 
@@ -93,11 +97,12 @@ export async function handleSlackEvent(body: SlackEnvelope): Promise<void> {
   if (!event || (type !== "app_mention" && type !== "message")) return;
 
   // Never react to bot-authored messages (loop guard) or non-plain message
-  // subtypes (edits/deletes/joins — deferred).
+  // subtypes (edits/deletes/joins — deferred). `file_share` is the one subtype
+  // let through: it is how a plain message with attachments arrives.
   if (event.bot_id) return;
   const botUserId = botUserIdOf(body);
   if (botUserId && event.user === botUserId) return;
-  if (type === "message" && event.subtype) return;
+  if (type === "message" && event.subtype && event.subtype !== "file_share") return;
 
   const channel = event.channel;
   const ts = event.ts;
@@ -137,10 +142,23 @@ export async function handleSlackEvent(body: SlackEnvelope): Promise<void> {
   const orgId = link?.orgId ?? workspace.orgId;
   const userId = workspace.userId;
 
-  const prompt = cleanPrompt(rawText, botUserId);
+  // Inbound attachments: download bounded (count/size caps, Slack CDN only) and
+  // stage through the uploads lane so the run claims them like browser uploads.
+  const files = Array.isArray(event.files) ? event.files : [];
+  const attachmentIds =
+    files.length > 0
+      ? await stageInboundSlackFiles({ files, botToken: config.botToken, orgId, userId })
+      : [];
+
+  let prompt = cleanPrompt(rawText, botUserId);
   if (!prompt) {
-    deduper.forget(key);
-    return;
+    // A files-only message still runs (the attachments ARE the request); an
+    // empty message with no staged files stays a no-op.
+    if (attachmentIds.length === 0) {
+      deduper.forget(key);
+      return;
+    }
+    prompt = "Review the attached files.";
   }
 
   // Threading: an existing Slack thread → reply under its root run (inherits the
@@ -177,6 +195,8 @@ export async function handleSlackEvent(body: SlackEnvelope): Promise<void> {
       threadId,
       // Slack runs work in a bare sandbox (no repo picker) and default to org memory.
       repos: [],
+      // Staged inbound attachments — claimed atomically with run acceptance.
+      ...(attachmentIds.length > 0 ? { attachmentIds } : {}),
       memoryScope,
       // Slack turns don't pin a skill yet.
       skillId: null,
