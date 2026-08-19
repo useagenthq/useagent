@@ -19,7 +19,9 @@ import { deliverTeamMemory, type MemoryIdentity } from "./team-memory";
 // NOT every completed run lands here. Finalization (runs/finalize.ts) EXCLUDES
 // INTERNAL runs (parity canaries, e2e/soak harnesses, QC probes) — marked
 // first-class on runs.origin (src/runs/origin.ts) at command acceptance — so
-// evaluation traffic never pollutes org memory.
+// evaluation traffic never pollutes org memory. Non-SALIENT summaries (trivial
+// one-liners, failure apologies, raw command output) are gated out by
+// assessCaptureSalience (capture-salience.ts) before enqueue.
 // ---------------------------------------------------------------------------
 
 const PAYLOAD_CAP = 16_384;

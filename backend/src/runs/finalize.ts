@@ -4,6 +4,7 @@ import { runs, type RunStatus } from "../db/schema";
 import { completeRun } from "./repo";
 import { resolveScopedMemory } from "../memory/scope";
 import { enqueueCapture } from "../memory/capture-outbox";
+import { assessCaptureSalience } from "../memory/capture-salience";
 import { isInternalRunOrigin } from "./origin";
 import { findSlackThreadByRoot } from "../slack/repo";
 import { composeSlackReplyText } from "../slack/reply";
@@ -72,10 +73,12 @@ export async function finalizeRun(
     // `writePool` is null when a personal run failed closed (no auth user) —
     // either way a clean no-op. INTERNAL runs (parity canaries, e2e harnesses —
     // runs.origin, src/runs/origin.ts) never enqueue: evaluation traffic must
-    // not pollute org memory.
+    // not pollute org memory. Non-SALIENT summaries (trivial one-liners,
+    // apologies, raw command output) are gated out by assessCaptureSalience
+    // BEFORE anything durable is written.
     if (status === "completed" && !isInternalRunOrigin(run.origin)) {
       const plan = resolveScopedMemory(run);
-      if (plan?.writePool) {
+      if (plan?.writePool && assessCaptureSalience({ prompt: run.prompt, summary }).salient) {
         await enqueueCapture(
           runId,
           plan.writePool.identity,
