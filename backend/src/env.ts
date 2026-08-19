@@ -306,6 +306,9 @@ export function githubConfigured(): boolean {
  * run uses; `SLACK_DEFAULT_MODEL` (default "claude-opus-5") its model.
  * `SLACK_API_URL` (default Slack) is overridable for tests. Only the HTTP
  * Events path is ported — no Socket Mode / app token in v1.
+ * `SLACK_CHANNEL_ALLOWLIST` (comma-separated channel ids) restricts where
+ * server-initiated messages (automation notifications/delivery) may post;
+ * unset/empty = no restriction.
  */
 export interface SlackConfig {
   botToken: string;

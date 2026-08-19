@@ -46,7 +46,7 @@ import { secretsRoutes } from "./secrets/routes";
 import { seedDev } from "./seed";
 import { skillImportRoutes } from "./skills/import-routes";
 import { skillsRoutes } from "./skills/routes";
-import { slackEnabled, slackRoutes, startSlackOutbox } from "./slack";
+import { slackEnabled, slackRoutes, startSlackOutbox, syncSlackWorkspaceBindings } from "./slack";
 import { enforceSingleBackend } from "./db/single-backend";
 import { ensureWarmPool, warmPoolSize } from "./sandboxes/warm-pool";
 import {
@@ -369,8 +369,11 @@ if (sandboxProviderKind() === "cube" && cubeT3PoolTarget && cubeT3Template) {
 // Slack adapter: mounted only when SLACK_BOT_TOKEN + SLACK_SIGNING_SECRET are
 // set (env-gated). Handles the Events API at POST /api/slack/events, and starts
 // the durable outbox relay (boot recovery of undelivered replies + retry loop).
+// Workspace -> org/user bindings from SLACK_WORKSPACE_BINDINGS are upserted here
+// (ingress fails closed for workspaces with no mapping).
 if (slackEnabled()) {
   app.route("/api/slack", slackRoutes);
+  await syncSlackWorkspaceBindings();
   startSlackOutbox();
   console.log("[slack] adapter enabled — POST /api/slack/events (durable outbox)");
 }
