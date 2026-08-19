@@ -23,6 +23,7 @@ export { slackRoutes } from "./routes";
 export { slackEnabled } from "../env";
 export { setSlackClientForTest, type SlackClient } from "./client";
 export { stopSlackSocketMode } from "./socket-mode";
+export { syncSlackWorkspaceBindings } from "./workspaces";
 
 /** Start the durable outbox delivery relay (boot recovery + interval) and,
  *  when SLACK_APP_TOKEN is set, the Socket Mode ingress (WebSocket lane - no

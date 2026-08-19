@@ -572,6 +572,20 @@ export const providerConnectionThreads = pgTable(
 // composite key is the Slack thread's identity `(channel, thread root ts)`.
 // ---------------------------------------------------------------------------
 
+// Maps a Slack WORKSPACE (team id) to the tenant identity its events act as:
+// the org runs are scoped to and the user they are attributed to. Ingress fails
+// CLOSED — an event from a team with no row here is ignored (no seeded-org
+// fallback). Rows are provisioned by an operator (SLACK_WORKSPACE_BINDINGS env
+// sync at boot, or direct insert).
+export const slackWorkspaces = pgTable("slack_workspaces", {
+  teamId: text("team_id").primaryKey(),
+  orgId: text("org_id").notNull(),
+  userId: text("user_id").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
 export const slackThreads = pgTable(
   "slack_threads",
   {
