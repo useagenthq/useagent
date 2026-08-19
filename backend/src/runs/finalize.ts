@@ -6,7 +6,14 @@ import { resolveScopedMemory } from "../memory/scope";
 import { enqueueCapture } from "../memory/capture-outbox";
 import { findSlackThreadByRoot } from "../slack/repo";
 import { composeSlackReplyText } from "../slack/reply";
+import {
+  composeAutomationDeliveryText,
+  parseSlackAutomationTarget,
+  slackChannelAllowed,
+} from "../slack/automation";
 import { enqueuePostMessageTx, kickSlackOutbox } from "../slack/outbox";
+import { slackConfig } from "../env";
+import { findScheduleForRun } from "../schedules/repo";
 import { publishRunLifecycleChange } from "./org-signals";
 import { enqueueCanonicalization } from "./canonicalization-outbox";
 import { canonicalEngine } from "../engines/engine-alias";
@@ -94,6 +101,25 @@ export async function finalizeRun(
         text: composeSlackReplyText(status, summary),
         threadTs: slack.threadTs,
       });
+    }
+
+    // Automation delivery (delivery.slack) — a run fired by an automation whose
+    // delivery config targets Slack posts its terminal outcome to that channel,
+    // enqueued in THIS transaction (idempotent per run) so it survives a crash
+    // exactly like the thread reply. Both terminal statuses deliver; the
+    // allowlist is re-checked at delivery-enqueue time.
+    const automation = await findScheduleForRun(runId, tx);
+    if (automation) {
+      const target = parseSlackAutomationTarget(automation.delivery);
+      const config = slackConfig();
+      if (target && config && slackChannelAllowed(target.channel, config)) {
+        const created = await enqueuePostMessageTx(tx, {
+          idempotencyKey: `automation-delivery:${runId}`,
+          channel: target.channel,
+          text: composeAutomationDeliveryText(automation.name, status, summary),
+        });
+        kickSlack = kickSlack || created;
+      }
     }
 
     // Canonical lane (final_harness Phase 1): enqueue canonicalization durably IN this

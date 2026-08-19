@@ -306,6 +306,9 @@ export function githubConfigured(): boolean {
  * run uses; `SLACK_DEFAULT_MODEL` (default "claude-opus-5") its model.
  * `SLACK_API_URL` (default Slack) is overridable for tests. Only the HTTP
  * Events path is ported — no Socket Mode / app token in v1.
+ * `SLACK_CHANNEL_ALLOWLIST` (comma-separated channel ids) restricts where
+ * server-initiated messages (automation notifications/delivery) may post;
+ * unset/empty = no restriction.
  */
 export interface SlackConfig {
   botToken: string;
@@ -313,6 +316,8 @@ export interface SlackConfig {
   apiUrl: string;
   defaultEngine: EngineId;
   model: string;
+  /** Channels server-initiated posts may target; null = any channel. */
+  channelAllowlist: readonly string[] | null;
 }
 
 const SLACK_ENGINES: readonly EngineId[] = ENGINE_IDS;
@@ -331,12 +336,18 @@ export function slackConfig(): SlackConfig | null {
   const rawUrl = (process.env.SLACK_API_URL ?? "https://slack.com/api/").replace(/\/+$/, "");
   const apiUrl = rawUrl.endsWith("/api") ? `${rawUrl}/` : `${rawUrl}/api/`;
 
+  const allowlist = (process.env.SLACK_CHANNEL_ALLOWLIST ?? "")
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0);
+
   return {
     botToken,
     signingSecret,
     apiUrl,
     defaultEngine,
     model: process.env.SLACK_DEFAULT_MODEL?.trim() || "claude-opus-5",
+    channelAllowlist: allowlist.length > 0 ? allowlist : null,
   };
 }
 
