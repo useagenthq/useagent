@@ -28,6 +28,12 @@ const SLACK_ENV_OVERRIDES: Record<string, string | undefined> = {
   SLACK_SIGNING_SECRET: SECRET,
   SLACK_BOT_TOKEN: "xoxb-test-token",
   SLACK_APP_TOKEN: undefined, // keep a real app token out of the suite entirely
+  // Operator scoping must not leak in from a machine's .env: an allowlist
+  // would silently drop this suite's random channels, and org/user pinning
+  // would break the dev-org assertions.
+  SLACK_CHANNEL_ALLOWLIST: undefined,
+  SLACK_DEFAULT_ORG_ID: undefined,
+  SLACK_DEFAULT_USER_ID: undefined,
 };
 const savedSlackEnv: Record<string, string | undefined> = {};
 
