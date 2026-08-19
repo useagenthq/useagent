@@ -95,7 +95,7 @@ function messageText(data: unknown): Promise<string> {
     return Promise.resolve(new TextDecoder().decode(data));
   }
   if (data instanceof Blob) return data.text();
-  return Promise.reject(new Error("T3 websocket returned an unsupported frame"));
+  return Promise.reject(new Error("The provider stream returned an unsupported frame"));
 }
 
 export async function subscribeT3Thread(
@@ -176,16 +176,16 @@ export async function subscribeT3Thread(
           ) {
             finish(
               frame.exit._tag === "Failure"
-                ? new Error("T3 thread subscription failed")
+                ? new Error("The provider thread subscription failed")
                 : undefined,
             );
           }
         })
         .catch((error) => finish(error instanceof Error ? error : new Error(String(error))));
     };
-    socket.onerror = () => finish(new Error("T3 websocket connection failed"));
+    socket.onerror = () => finish(new Error("The provider stream connection failed"));
     socket.onclose = () => {
-      if (!settled) finish(new Error("T3 websocket closed before the turn settled"));
+      if (!settled) finish(new Error("The provider stream closed before the turn settled"));
     };
     if (signal.aborted) abort();
   });

@@ -192,7 +192,7 @@ describe("T3 Cube environment", () => {
 
     await expect(
       restartT3Environment(sandbox, controller.signal),
-    ).rejects.toThrow("T3 environment restart aborted");
+    ).rejects.toThrow("Provider runtime restart aborted");
   });
 
   test("repairs after a failed probe when the stale session is already absent", async () => {

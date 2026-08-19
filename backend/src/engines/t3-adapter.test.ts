@@ -152,7 +152,7 @@ describe("T3 run adapter gate", () => {
       "awaitT3CodexProviderReady(sandbox, ctx.signal, T3_CODEX_VERIFY_DEADLINE_MS)",
     );
     expect(source).toContain(
-      "T3 codex subscription runtime did not become ready after restart",
+      "Codex runtime did not become ready after restart",
     );
     // Exactly one restart; the barrier probe runs twice (barrier + post-restart verify).
     expect(source.split("restartT3Environment(").length - 1).toBe(1);
@@ -176,7 +176,7 @@ describe("T3 run adapter gate", () => {
   test("requires durable session persistence before T3 steering", () => {
     const source = readFileSync(new URL("./t3-adapter.ts", import.meta.url), "utf8");
     expect(source).toContain("persistSession: async (nativeSessionId) => {");
-    expect(source).toContain("T3 session persistence is unavailable");
+    expect(source).toContain("Session persistence is unavailable");
     expect(source).toContain("await ctx.saveEngineSessionId(nativeSessionId)");
     expect(source).not.toContain("ctx.saveEngineSessionId?.(");
   });

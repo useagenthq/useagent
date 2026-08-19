@@ -113,7 +113,7 @@ async function provisionT3Environment(
 ): Promise<T3EnvironmentRuntime> {
   const endReadiness = timing?.begin(RUN_TIMING_STAGES.runtimeReadiness);
   try {
-    if (signal.aborted) throw new Error("T3 environment start aborted");
+    if (signal.aborted) throw new Error("Provider runtime start aborted");
     const alreadyHealthy = await t3EnvironmentHealthy(sandbox);
     if (!alreadyHealthy) {
       await deleteT3EnvironmentSessionIfPresent(sandbox);
@@ -128,7 +128,7 @@ async function provisionT3Environment(
         30,
       );
       if ((launch.exitCode ?? 0) !== 0) {
-        throw new Error("T3 environment process failed to start");
+        throw new Error("Provider runtime process failed to start");
       }
 
       const deadline = Date.now() + T3_READINESS_DEADLINE_MS;
@@ -138,9 +138,9 @@ async function provisionT3Environment(
         if (ready) break;
         await new Promise((resolve) => setTimeout(resolve, T3_READINESS_DELAY_MS));
       }
-      if (signal.aborted) throw new Error("T3 environment start aborted");
+      if (signal.aborted) throw new Error("Provider runtime start aborted");
       if (!ready) {
-        throw new Error("T3 environment failed readiness");
+        throw new Error("Provider runtime failed readiness");
       }
     }
 
@@ -217,11 +217,11 @@ async function stopT3Environment(
   while (!signal.aborted) {
     if (!(await t3EnvironmentHealthy(sandbox))) return;
     if (Date.now() >= deadline) {
-      throw new Error("T3 environment did not stop for restart");
+      throw new Error("Provider runtime did not stop for restart");
     }
     await new Promise((resolve) => setTimeout(resolve, T3_READINESS_DELAY_MS));
   }
-  throw new Error("T3 environment restart aborted");
+  throw new Error("Provider runtime restart aborted");
 }
 
 /** Restart the resident T3 server for a sandbox: force it down, then bring it

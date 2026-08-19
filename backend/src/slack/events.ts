@@ -150,12 +150,21 @@ export async function handleSlackEvent(body: SlackEnvelope): Promise<void> {
   // thread defaults to "org". (Personal-scope Slack runs would need a verified
   // per-actor identity, which the current dev-org fallback doesn't provide.)
   let memoryScope: MemoryScope = "org";
+  // A reply MUST run on the thread's original engine and model - engines keep
+  // per-thread native session state in the sandbox, and a cross-engine turn
+  // lands on a runtime shaped for a different provider (observed live: a codex
+  // reply on an opencode-born thread failed its runtime readiness). Mirrors the
+  // API reply path, which inherits the parent engine and refuses mismatches.
+  let engine = config.defaultEngine;
+  let model = config.model;
   if (link) {
     const parent = await getRunForOrg(orgId, link.rootRunId);
     if (parent) {
       parentRunId = parent.id;
       threadId = parent.threadId;
       memoryScope = parent.memoryScope;
+      engine = parent.engine as typeof engine;
+      model = parent.model;
     }
   }
 
@@ -169,8 +178,8 @@ export async function handleSlackEvent(body: SlackEnvelope): Promise<void> {
     run: {
       id: runId,
       prompt,
-      model: config.model,
-      engine: config.defaultEngine,
+      model,
+      engine,
       parentRunId,
       threadId,
       // Slack runs work in a bare sandbox (no repo picker) and default to org memory.
