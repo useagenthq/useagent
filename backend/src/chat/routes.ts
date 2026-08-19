@@ -4,6 +4,7 @@ import { auth } from "../auth";
 import { orgScope } from "../middleware/org";
 import { isMemoryScope, type MemoryScope } from "../memory/scope";
 import { resolveChatProviderCredential } from "../provider-gateway/credentials";
+import { captureChatExchange } from "./capture";
 import { chatModelCatalog } from "./models";
 import { CHAT_SYSTEM_PROMPT } from "./prompt";
 import { retrieveChatContext } from "./retrieve";
@@ -149,11 +150,20 @@ chatRoutes.post("/", async (c) => {
 
           const system = context.block ? `${CHAT_SYSTEM_PROMPT}\n\n${context.block}` : CHAT_SYSTEM_PROMPT;
           const llmMessages: ChatMessage[] = [{ role: "system", content: system }, ...messages];
+          let answer = "";
           for await (const delta of streamChat(llmMessages, model, resolved.value, signal)) {
             if (closed) return;
+            answer += delta;
             sendEvent("delta", { delta });
           }
-          if (!closed) sendEvent("done", {});
+          if (!closed) {
+            sendEvent("done", {});
+            // Governed capture parity (item 7): a COMPLETED exchange (never an
+            // aborted stream) enqueues through the same outbox + salience gate
+            // as runs, marked with the chat origin. Best-effort by contract —
+            // captureChatExchange never throws into the stream.
+            void captureChatExchange({ orgId, userId, memoryScope, prompt: query, summary: answer, model });
+          }
         } catch {
           if (!closed) sendEvent("error", { error: "chat request failed" });
         } finally {

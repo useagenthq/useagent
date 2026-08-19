@@ -1,6 +1,7 @@
 import { eq, sql } from "drizzle-orm";
 import { db, type Executor } from "../db/client";
 import { memoryOutbox, type MemoryOutboxState, type MemoryScope } from "../db/schema";
+import { renderCaptureEvidence, type CaptureEvidence } from "./capture-evidence";
 import { deliverTeamMemory, type MemoryIdentity } from "./team-memory";
 
 // ---------------------------------------------------------------------------
@@ -15,6 +16,13 @@ import { deliverTeamMemory, type MemoryIdentity } from "./team-memory";
 // by a crash is therefore NEVER auto-reset to pending (no resetStuckDelivering —
 // the opposite of the Slack outbox) — it awaits manual inspection. That trades a
 // rare lost capture for never duplicating a team-memory turn.
+//
+// NOT every completed run lands here. Finalization (runs/finalize.ts) EXCLUDES
+// INTERNAL runs (parity canaries, e2e/soak harnesses, QC probes) — marked
+// first-class on runs.origin (src/runs/origin.ts) at command acceptance — so
+// evaluation traffic never pollutes org memory. Non-SALIENT summaries (trivial
+// one-liners, failure apologies, raw command output) are gated out by
+// assessCaptureSalience (capture-salience.ts) before enqueue.
 // ---------------------------------------------------------------------------
 
 const PAYLOAD_CAP = 16_384;
@@ -30,6 +38,11 @@ interface CapturePayload {
    *  so a retry — which reuses this same committed payload — provably preserves
    *  the original destination scope. */
   readonly scope: MemoryScope;
+  /** Structured verified-outcome facts (capture-evidence.ts): artifacts, tool
+   *  counts, status/duration/engine/model, user-correction signal. Optional —
+   *  pre-evidence rows (and captures with nothing to attest) omit it and still
+   *  parse. Rendered into the delivered assistant turn at delivery time. */
+  readonly evidence?: CaptureEvidence;
 }
 
 /** Next retry time: exponential backoff (30s·2^attempt), capped at 1h. Pure. */
@@ -57,7 +70,7 @@ export function nextOutboxState(
 export async function enqueueCapture(
   runId: string,
   identity: MemoryIdentity,
-  run: { prompt: string; summary: string },
+  run: { prompt: string; summary: string; evidence?: CaptureEvidence },
   /** The destination pool (personal|org) — recorded in the payload so a retry,
    *  which reuses this committed row verbatim, provably preserves the original
    *  destination scope. */
@@ -85,7 +98,7 @@ export async function enqueueCapture(
  */
 export function buildCapturePayload(
   identity: MemoryIdentity,
-  run: { prompt: string; summary: string },
+  run: { prompt: string; summary: string; evidence?: CaptureEvidence },
   scope: MemoryScope,
 ): string {
   let promptText = run.prompt;
@@ -98,6 +111,10 @@ export function buildCapturePayload(
       prompt: promptText,
       summary: summaryText,
       scope,
+      // Evidence is bounded at collection (capped artifact list / name lengths),
+      // so it never needs shrinking and the whole-envelope check below still
+      // verifies the final size.
+      ...(run.evidence ? { evidence: run.evidence } : {}),
     } satisfies CapturePayload);
     if (payload.length <= PAYLOAD_CAP || budget < 256) return payload;
   }
@@ -191,9 +208,16 @@ export async function deliverDueCaptures(
       dead++;
       continue;
     }
+    // Verified-outcome evidence rides the assistant turn as a compact rendered
+    // line — the memory wire accepts only role/content strings (team-memory.ts),
+    // so composing here keeps the adapter untouched and old rows (no evidence)
+    // deliver byte-identically.
+    const summary = parsed.evidence
+      ? `${parsed.summary}\n\n${renderCaptureEvidence(parsed.evidence)}`
+      : parsed.summary;
     let ok = false;
     try {
-      ok = await deliverTeamMemory({ prompt: parsed.prompt, summary: parsed.summary }, parsed.identity);
+      ok = await deliverTeamMemory({ prompt: parsed.prompt, summary }, parsed.identity);
     } catch {
       ok = false;
     }
