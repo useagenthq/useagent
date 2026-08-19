@@ -15,6 +15,11 @@ import { deliverTeamMemory, type MemoryIdentity } from "./team-memory";
 // by a crash is therefore NEVER auto-reset to pending (no resetStuckDelivering —
 // the opposite of the Slack outbox) — it awaits manual inspection. That trades a
 // rare lost capture for never duplicating a team-memory turn.
+//
+// NOT every completed run lands here. Finalization (runs/finalize.ts) EXCLUDES
+// INTERNAL runs (parity canaries, e2e/soak harnesses, QC probes) — marked
+// first-class on runs.origin (src/runs/origin.ts) at command acceptance — so
+// evaluation traffic never pollutes org memory.
 // ---------------------------------------------------------------------------
 
 const PAYLOAD_CAP = 16_384;
