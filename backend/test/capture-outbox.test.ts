@@ -114,6 +114,44 @@ describe("capture-outbox retry preserves the destination scope (spec test 10)", 
   });
 });
 
+describe("capture-outbox delivery composes verified-outcome evidence (item 5)", () => {
+  test("evidence renders into the delivered assistant turn; evidence-free rows stay byte-identical", async () => {
+    const bodies: any[] = [];
+    globalThis.fetch = (async (_url: unknown, init?: RequestInit) => {
+      bodies.push(JSON.parse(String(init?.body)));
+      return new Response(JSON.stringify({ code: 0, data: { accepted_ids: ["m1"] } }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    }) as unknown as typeof fetch;
+
+    const withEvidence = uid("cap-ev");
+    await enqueueCapture(
+      withEvidence,
+      personalIdentity("alice"),
+      {
+        prompt: "build the report",
+        summary: "Built the Q3 report",
+        evidence: { source: "run", status: "completed", engine: "mock", toolCounts: { command: 2 } },
+      },
+      "personal",
+    );
+    const plain = uid("cap-plain");
+    await enqueueCapture(plain, personalIdentity("alice"), { prompt: "p", summary: "just prose" }, "personal");
+
+    const res = await deliverDueCaptures();
+    expect(res.delivered).toBe(2);
+    const assistantTurns = bodies.map(
+      (b) => b.messages.find((m: { role: string }) => m.role === "assistant").content as string,
+    );
+    const enriched = assistantTurns.find((t) => t.startsWith("Built the Q3 report"));
+    expect(enriched).toBe(
+      "Built the Q3 report\n\n[verified outcome] source=run status=completed engine=mock; tools: command x2",
+    );
+    expect(assistantTurns).toContain("just prose"); // no evidence → unchanged
+  });
+});
+
 describe("capture-outbox pure policy", () => {
   test("nextOutboxState: ok → delivered; fail before max → retry; fail at max → dead", () => {
     expect(nextOutboxState(true, 0, 6)).toBe("delivered");
