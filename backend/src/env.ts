@@ -313,6 +313,10 @@ export interface SlackConfig {
   apiUrl: string;
   defaultEngine: EngineId;
   model: string;
+  /** Channel ids the adapter may ingest from (empty = all channels). Set via
+   *  SLACK_CHANNEL_ALLOWLIST (comma-separated) to scope a fresh workspace
+   *  connection to designated test channels. */
+  channelAllowlist: ReadonlySet<string>;
 }
 
 const SLACK_ENGINES: readonly EngineId[] = ENGINE_IDS;
@@ -331,12 +335,20 @@ export function slackConfig(): SlackConfig | null {
   const rawUrl = (process.env.SLACK_API_URL ?? "https://slack.com/api/").replace(/\/+$/, "");
   const apiUrl = rawUrl.endsWith("/api") ? `${rawUrl}/` : `${rawUrl}/api/`;
 
+  const channelAllowlist = new Set(
+    (process.env.SLACK_CHANNEL_ALLOWLIST ?? "")
+      .split(",")
+      .map((channel) => channel.trim())
+      .filter(Boolean),
+  );
+
   return {
     botToken,
     signingSecret,
     apiUrl,
     defaultEngine,
     model: process.env.SLACK_DEFAULT_MODEL?.trim() || "claude-opus-5",
+    channelAllowlist,
   };
 }
 
