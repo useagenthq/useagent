@@ -107,23 +107,11 @@ export type Turn = {
   canonicalComplete?: boolean;
 };
 
-// Lightweight prose styling for rendered summaries — the AlignUI foundation
-// doesn't ship @tailwindcss/typography, so map the flow elements (headings,
-// paragraphs, lists, links) to brand tokens here. Structural elements that need
-// a wrapper — tables, blockquotes, code — are styled as component overrides in
-// `prompt-kit/markdown.tsx` so every caller gets them.
-const MD_CLASS = cn(
-  "text-paragraph-sm text-text-strong-950",
-  // First/last block flush to the turn's edges; even rhythm everywhere else.
-  "[&>*:first-child]:mt-0 [&>*:last-child]:mb-0",
-  "[&_p]:my-2",
-  "[&_h1]:text-label-md [&_h1]:font-medium [&_h1]:mt-4 [&_h1]:mb-1.5",
-  "[&_h2]:text-label-sm [&_h2]:font-medium [&_h2]:mt-4 [&_h2]:mb-1.5",
-  "[&_h3]:text-label-sm [&_h3]:font-medium [&_h3]:mt-3 [&_h3]:mb-1",
-  "[&_h4]:text-label-xs [&_h4]:font-medium [&_h4]:mt-3 [&_h4]:mb-1",
-  "[&_ul]:my-2 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:my-2 [&_ol]:list-decimal [&_ol]:pl-5 [&_li]:my-1",
-  "[&_a]:text-blue-500 [&_a]:underline [&_a]:underline-offset-2 [&_strong]:font-medium",
-);
+// Surface context only - the flow-element prose styling (headings, lists,
+// links, paragraph rhythm) lives in the shared Markdown primitive
+// (`prompt-kit/markdown.tsx` FLOW_CLASS) so EVERY consumer renders
+// identically; this class adds the conversation turn's size and color.
+const MD_CLASS = "text-paragraph-sm text-text-strong-950";
 
 /** Terminal note for a run that failed before writing a summary. */
 function FailedNote() {
