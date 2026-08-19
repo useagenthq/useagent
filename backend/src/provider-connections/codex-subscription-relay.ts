@@ -267,9 +267,11 @@ codexSubscriptionRelayRoutes.get(
           if (!protocol || !environmentBootstrap) {
             throw new Error("Codex relay protocol is unavailable");
           }
-          await protocol.acceptClientFrame(frame);
+          // The protocol may rewrite the frame (bound-thread `thread/start`
+          // becomes `thread/resume`); everything downstream sees the outbound.
+          const outbound = await protocol.acceptClientFrame(frame);
           if (!process.stdin.writable) throw new Error("Codex app-server is unavailable");
-          const forwarded = await environmentBootstrap.acceptClientFrame(frame);
+          const forwarded = await environmentBootstrap.acceptClientFrame(outbound);
           for (const childFrame of forwarded) process.stdin.write(`${childFrame}\n`);
         });
       },
