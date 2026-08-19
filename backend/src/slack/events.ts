@@ -132,11 +132,14 @@ export async function handleSlackEvent(body: SlackEnvelope): Promise<void> {
     return;
   }
 
-  // Org identity: v1 is single-tenant — a Slack request has no better-auth
-  // session, so runs are scoped to the seeded dev org (an existing thread keeps
-  // its original org). Multi-workspace → org mapping is deferred.
-  const orgId = link?.orgId ?? getDevContext().orgId;
-  const userId = getDevContext().userId;
+  // Org identity: v1 is single-tenant - a Slack request has no better-auth
+  // session. SLACK_DEFAULT_ORG_ID / SLACK_DEFAULT_USER_ID pin new Slack threads
+  // to the operator's real workspace (an existing thread keeps its original
+  // org); without them the seeded dev org remains the fallback. Proper
+  // multi-workspace -> org mapping is in flight and supersedes this.
+  const defaultOrgId = process.env.SLACK_DEFAULT_ORG_ID?.trim() || getDevContext().orgId;
+  const orgId = link?.orgId ?? defaultOrgId;
+  const userId = process.env.SLACK_DEFAULT_USER_ID?.trim() || getDevContext().userId;
 
   // Threading: an existing Slack thread → reply under its root run (inherits the
   // skynet thread); a new thread → a root run under its own id.
