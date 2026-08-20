@@ -3,6 +3,7 @@
 // decomposition stays private.
 import { enqueue } from "./repo";
 import { kickSlackOutbox } from "./delivery";
+import { chunkSlackText } from "../chunk";
 import type { Executor } from "../../db/client";
 
 export { startSlackOutboxRelay, stopSlackOutboxRelay, kickSlackOutbox, processDue } from "./delivery";
@@ -11,6 +12,8 @@ export type { SlackOutboxRow } from "./repo";
 
 /** Enqueue a run-completion reply INSIDE a caller's transaction (run
  *  finalization), so the reply commits atomically with the run reaching terminal.
+ *  A long text is CHUNKED into sequential thread messages here - the one place
+ *  every post_message enqueue passes through - never truncated (see ../chunk.ts).
  *  Returns whether a NEW row was created; the caller kicks the relay AFTER commit
  *  (the row isn't visible to the relay until then). */
 export async function enqueuePostMessageTx(
@@ -21,7 +24,7 @@ export async function enqueuePostMessageTx(
     {
       kind: "post_message",
       idempotencyKey: entry.idempotencyKey,
-      payload: { channel: entry.channel, text: entry.text, threadTs: entry.threadTs },
+      payload: { channel: entry.channel, chunks: chunkSlackText(entry.text), threadTs: entry.threadTs },
     },
     exec,
   );
@@ -59,8 +62,9 @@ export async function enqueueUploadFileTx(
   );
 }
 
-/** Durably enqueue the run-completion reply; the relay delivers it (survives a
- *  restart). Idempotent by `idempotencyKey`. */
+/** Durably enqueue an outbound message; the relay delivers it (survives a
+ *  restart). Long texts chunk exactly like enqueuePostMessageTx. Idempotent by
+ *  `idempotencyKey`. */
 export async function enqueuePostMessage(entry: {
   idempotencyKey: string;
   channel: string;
@@ -70,7 +74,7 @@ export async function enqueuePostMessage(entry: {
   const created = await enqueue({
     kind: "post_message",
     idempotencyKey: entry.idempotencyKey,
-    payload: { channel: entry.channel, text: entry.text, threadTs: entry.threadTs },
+    payload: { channel: entry.channel, chunks: chunkSlackText(entry.text), threadTs: entry.threadTs },
   });
   if (created) kickSlackOutbox();
 }

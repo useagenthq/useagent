@@ -7,7 +7,11 @@ import type { SlackErrorClass, SlackOutboxKind } from "../../db/schema";
 
 export type PostMessagePayload = {
   readonly channel: string;
-  readonly text: string;
+  /** Ordered message texts, posted sequentially into the same thread (a long
+   *  reply is CHUNKED, not truncated - see ../chunk.ts). New rows always carry
+   *  `chunks`; `text` remains readable for pre-migration rows. */
+  readonly chunks?: readonly string[];
+  readonly text?: string;
   readonly threadTs?: string;
 };
 

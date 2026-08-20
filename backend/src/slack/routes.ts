@@ -3,8 +3,8 @@
  * http-events.ts receiver, reframed onto Hono:
  *   1. read the RAW body (needed byte-for-byte for signature verification),
  *   2. verify the Slack request signature (401 on failure),
- *   3. answer the one-time `url_verification` challenge,
- *   4. hand `event_callback`s to the ingest logic and 200 fast (< Slack's 3s).
+ *   3. answer the one-time `url_verification` challenge (synchronous),
+ *   4. ACK `event_callback`s with a 200 IMMEDIATELY and process async.
  *
  * The route is also self-gated: with the adapter unconfigured it 404s, so it is
  * inert even if somehow mounted.
@@ -42,12 +42,24 @@ slackRoutes.post("/events", async (c) => {
   }
 
   if (body.type === "event_callback") {
-    try {
-      await handleSlackEvent(body);
-    } catch (err) {
-      // Swallow: a handler failure must not make Slack retry-storm us.
-      console.error("[slack] event handler error:", (err as Error).message);
+    // ACK-FIRST: the 200 goes back within milliseconds of signature
+    // verification - Slack's 3s ack budget must never wait on run acceptance
+    // (DB writes, attachment downloads). Processing continues asynchronously;
+    // failures are logged, never surfaced (a 5xx would make Slack retry-storm
+    // us). A RETRY delivery (x-slack-retry-num) is acked the same way and is
+    // never reprocessed into a second run: the dedupe lanes (in-memory
+    // channel:ts + the durable slack-event command key) collapse it. The header
+    // alone is NOT used to drop the event - a retry can also mean the first
+    // attempt never reached us, and then it is the only delivery we get.
+    const retryNum = c.req.header("x-slack-retry-num");
+    if (retryNum) {
+      console.log(
+        `[slack] retry delivery (num ${retryNum}, reason ${c.req.header("x-slack-retry-reason") ?? "unknown"})`,
+      );
     }
+    void handleSlackEvent(body).catch((err) => {
+      console.error("[slack] event handler error:", (err as Error).message);
+    });
   }
 
   return c.body(null, 200);

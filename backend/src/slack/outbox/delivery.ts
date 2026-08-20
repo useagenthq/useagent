@@ -5,7 +5,7 @@ import { readStagedBytes, removeStaged } from "../upload-staging";
 import { getArtifact, toArtifactDescriptor } from "../../artifacts/repo";
 import { artifactStorage } from "../../artifacts/storage";
 import { recordProviderEvent } from "../../runs/provider-events";
-import { claimDue, markDead, markDelivered, markRetry, resetStuckDelivering, type ClaimedRow } from "./repo";
+import { claimDue, markDead, markDelivered, markRetry, resetStuckDelivering, updatePayload, type ClaimedRow } from "./repo";
 import type { ProcessResult, SlackDeliveryOutcome } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -42,9 +42,27 @@ async function attempt(client: SlackClient, row: ClaimedRow): Promise<DeliveryRe
   switch (row.kind) {
     case "post_message": {
       const channel = string("channel");
-      const text = string("text");
-      if (!channel || !text) return { ok: false, class: "permanent", message: "invalid_payload" };
-      return client.postMessage({ channel, text, threadTs: string("threadTs") });
+      // New rows carry `chunks` (a long reply split into sequential thread
+      // messages); pre-migration rows carry a single `text`.
+      const chunks = Array.isArray(p.chunks)
+        ? p.chunks.filter((c): c is string => typeof c === "string" && c.length > 0)
+        : [string("text")].filter((c): c is string => c !== undefined);
+      if (!channel || chunks.length === 0) {
+        return { ok: false, class: "permanent", message: "invalid_payload" };
+      }
+      const threadTs = string("threadTs");
+      for (let i = 0; i < chunks.length; i++) {
+        const res = await client.postMessage({ channel, text: chunks[i]!, threadTs });
+        if (!res.ok) {
+          // Persist the chunk cursor: a retry resumes at the FAILED chunk, so
+          // already-posted ones are not duplicated. (A crash between the post
+          // and this write can still re-post one chunk - the outbox's accepted
+          // at-least-once trade.)
+          if (i > 0) await updatePayload(row.id, JSON.stringify({ ...p, chunks: chunks.slice(i) }));
+          return res;
+        }
+      }
+      return { ok: true };
     }
     case "add_reaction": {
       const channel = string("channel");

@@ -16,8 +16,11 @@ import { db } from "../src/db/client";
 import { artifacts, userUploads } from "../src/db/schema";
 import { artifactStorage } from "../src/artifacts/storage";
 import { finalizeRun } from "../src/runs/finalize";
+import { createRun } from "../src/runs/repo";
+import { linkSlackThread } from "../src/slack/repo";
 import { DEV_ORG_ID, DEV_USER_ID } from "../src/seed";
 import { setSlackClientForTest } from "../src/slack";
+import { resetSlackDeduperForTest } from "../src/slack/events";
 import { setInboundFileDownloaderForTest } from "../src/slack/inbound-files";
 import { dispatchSocketFrame } from "../src/slack/socket-mode";
 import { composeSlackReplyText } from "../src/slack/reply";
@@ -109,7 +112,7 @@ function sign(timestamp: string, raw: string): string {
 
 async function postSlack(
   envelope: unknown,
-  opts: { timestamp?: string; signature?: string } = {},
+  opts: { timestamp?: string; signature?: string; headers?: Record<string, string> } = {},
 ): Promise<Response> {
   const raw = JSON.stringify(envelope);
   const ts = opts.timestamp ?? Math.floor(Date.now() / 1000).toString();
@@ -121,6 +124,7 @@ async function postSlack(
       "content-type": "application/json",
       "x-slack-signature": signature,
       "x-slack-request-timestamp": ts,
+      ...(opts.headers ?? {}),
     },
   });
 }
@@ -318,6 +322,32 @@ describe("slack event → run", () => {
     expect(Buffer.from(upload.bytes).toString()).toBe("png-bytes");
   });
 
+  test("a long reply is CHUNKED into sequential thread messages, in order", async () => {
+    // Root a Slack thread directly (no HTTP round trip needed) and finalize with
+    // a summary far past one Slack message: the outbox relay must deliver it as
+    // ordered chunks in the SAME thread, continuation-marked, none truncated.
+    const runId = crypto.randomUUID();
+    const channel = `C${uid("long")}`;
+    const ts = `${uid("ts")}.1`;
+    await createRun({ id: runId, prompt: "long reply", model: "claude-opus-5", engine: "mock", orgId: DEV_ORG_ID, userId: null, parentRunId: null, threadId: runId });
+    await linkSlackThread({ channel, threadTs: ts, rootRunId: runId, orgId: DEV_ORG_ID });
+    const summary = Array.from({ length: 50 }, (_, i) => `finding ${i}: ${"detail ".repeat(30)}`).join("\n\n");
+    await finalizeRun(runId, "completed", summary, 1);
+
+    await waitFor(async () =>
+      rec.messages.filter((m) => m.channel === channel).length >= 3 ? true : null,
+    );
+    const mine = rec.messages.filter((m) => m.channel === channel);
+    expect(mine.length).toBeGreaterThanOrEqual(3);
+    for (const m of mine) {
+      expect(m.threadTs).toBe(ts); // every chunk stays in the thread
+      expect(m.text.length).toBeLessThanOrEqual(3900);
+    }
+    expect(mine[0]!.text.startsWith("finding 0:")).toBe(true); // head first
+    for (const m of mine.slice(0, -1)) expect(m.text.endsWith("_(continued…)_")).toBe(true);
+    expect(mine.at(-1)!.text).toContain("finding 49:"); // nothing dropped
+  });
+
   test("the channel allowlist drops events from unlisted channels and admits listed ones", async () => {
     const allowed = `C${uid("ok")}`;
     process.env.SLACK_CHANNEL_ALLOWLIST = ` ${allowed} , C0LISTED2 `;
@@ -513,6 +543,151 @@ describe("slack event → run", () => {
     } finally {
       statusFails = false;
     }
+  });
+});
+
+// Durable inbound dedupe: the command lane is keyed by the Slack event identity
+// (slack-event:<team>:<event_id>, channel:ts fallback), so a duplicate that
+// OUTLIVES the in-memory deduper (process restart, cross-lane double delivery)
+// still collapses to one run. resetSlackDeduperForTest simulates the restart.
+describe("slack durable inbound dedupe (survives a restart)", () => {
+  test("the same event_id re-delivered after a 'restart' does not create a second run", async () => {
+    const marker = uid("durable");
+    const envelope = eventCallback({
+      type: "app_mention",
+      channel: `C${uid("ch")}`,
+      user: "U-HUMAN",
+      text: `<@${BOT}> durable ${marker}`,
+      ts: `${uid("ts")}.1`,
+    });
+    await postSlack(envelope);
+    await waitFor(async () => findRunByPrompt(`durable ${marker}`));
+
+    resetSlackDeduperForTest(); // the in-memory fast path forgets everything
+    const res = await postSlack(envelope); // same event_id -> durable replay
+    expect(res.status).toBe(200);
+    await new Promise((r) => setTimeout(r, 300));
+    const { body } = await json<{ runs: any[] }>("/api/runs?all=1");
+    expect(body.runs.filter((r) => r.prompt === `durable ${marker}`).length).toBe(1);
+  });
+
+  test("a duplicate whose replay regenerated attachment ids (conflict) is still dropped", async () => {
+    setInboundFileDownloaderForTest(async () => new TextEncoder().encode("dup bytes"));
+    try {
+      const marker = uid("dupconflict");
+      const envelope = eventCallback({
+        type: "message",
+        channel: `D${uid("dm")}`,
+        channel_type: "im",
+        user: "U-HUMAN",
+        text: `attach ${marker}`,
+        ts: `${uid("ts")}.1`,
+        files: [
+          {
+            id: `F${uid("f")}`,
+            name: `${marker}.txt`,
+            size: 9,
+            mimetype: "text/plain",
+            url_private_download: `https://files.slack.com/files-pri/${TEAM}/${marker}.txt`,
+          },
+        ],
+      });
+      await postSlack(envelope);
+      await waitFor(async () => findRunByPrompt(`attach ${marker}`));
+
+      resetSlackDeduperForTest();
+      // The replay stages FRESH upload ids -> a different payload fingerprint
+      // under the same durable key -> conflict -> dropped, no second run.
+      expect((await postSlack(envelope)).status).toBe(200);
+      await new Promise((r) => setTimeout(r, 300));
+      const { body } = await json<{ runs: any[] }>("/api/runs?all=1");
+      expect(body.runs.filter((r) => r.prompt === `attach ${marker}`).length).toBe(1);
+    } finally {
+      setInboundFileDownloaderForTest(null);
+    }
+  });
+
+  test("an envelope with NO event_id falls back to the channel:ts durable key", async () => {
+    const marker = uid("fallback");
+    const envelope = eventCallback({
+      type: "app_mention",
+      channel: `C${uid("ch")}`,
+      user: "U-HUMAN",
+      text: `<@${BOT}> fallback ${marker}`,
+      ts: `${uid("ts")}.1`,
+    });
+    delete (envelope as Record<string, unknown>).event_id;
+    await postSlack(envelope);
+    await waitFor(async () => findRunByPrompt(`fallback ${marker}`));
+
+    resetSlackDeduperForTest();
+    expect((await postSlack(envelope)).status).toBe(200);
+    await new Promise((r) => setTimeout(r, 300));
+    const { body } = await json<{ runs: any[] }>("/api/runs?all=1");
+    expect(body.runs.filter((r) => r.prompt === `fallback ${marker}`).length).toBe(1);
+  });
+});
+
+// Ack-first ingress: the events route 200s immediately after signature
+// verification; processing (staging, acceptance) happens BEHIND the ack.
+describe("slack ack-first ingress", () => {
+  test("the 200 does not wait for event processing (slow attachment staging)", async () => {
+    // A 600ms attachment download would blow a synchronous handler way past
+    // this assertion; ack-first returns while staging is still in flight.
+    setInboundFileDownloaderForTest(async () => {
+      await new Promise((r) => setTimeout(r, 600));
+      return new TextEncoder().encode("slow bytes");
+    });
+    try {
+      const marker = uid("ackfirst");
+      const started = Date.now();
+      const res = await postSlack(
+        eventCallback({
+          type: "message",
+          channel: `D${uid("dm")}`,
+          channel_type: "im",
+          user: "U-HUMAN",
+          text: `stage ${marker}`,
+          ts: `${uid("ts")}.1`,
+          files: [
+            {
+              id: `F${uid("f")}`,
+              name: `${marker}.txt`,
+              size: 10,
+              mimetype: "text/plain",
+              url_private_download: `https://files.slack.com/files-pri/${TEAM}/${marker}.txt`,
+            },
+          ],
+        }),
+      );
+      expect(res.status).toBe(200);
+      expect(Date.now() - started).toBeLessThan(400); // acked BEFORE the 600ms download
+      // The event still fully processes after the ack.
+      const run = await waitFor(async () => findRunByPrompt(`stage ${marker}`));
+      expect(run.id).toBeTruthy();
+    } finally {
+      setInboundFileDownloaderForTest(null);
+    }
+  });
+
+  test("a Slack retry delivery (x-slack-retry-num) is acked without a second run", async () => {
+    const marker = uid("retry");
+    const channel = `C${uid("ch")}`;
+    const envelope = eventCallback({
+      type: "app_mention",
+      channel,
+      user: "U-HUMAN",
+      text: `<@${BOT}> retry ${marker}`,
+      ts: `${uid("ts")}.1`,
+    });
+    await postSlack(envelope);
+    await waitFor(async () => findRunByPrompt(`retry ${marker}`));
+
+    const res = await postSlack(envelope, { headers: { "x-slack-retry-num": "1", "x-slack-retry-reason": "http_timeout" } });
+    expect(res.status).toBe(200); // acked immediately...
+    await new Promise((r) => setTimeout(r, 300));
+    const { body } = await json<{ runs: any[] }>("/api/runs?all=1");
+    expect(body.runs.filter((r) => r.prompt === `retry ${marker}`).length).toBe(1); // ...never reprocessed
   });
 });
 
