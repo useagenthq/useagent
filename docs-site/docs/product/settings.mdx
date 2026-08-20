@@ -1,0 +1,48 @@
+---
+title: Settings
+description: Workspace configuration in one place. General settings, usage, the team, and the provider connections that authenticate engines.
+sidebar:
+  order: 12
+---
+
+`/settings` is the workspace's control panel. It holds the configuration that
+spans the whole organization rather than a single run.
+
+## What lives here
+
+<CardGroup cols={2}>
+  <Card title="General and usage" icon="sliders-horizontal">
+    Workspace settings and usage meters, backed by `GET /api/config` and
+    `GET /api/settings`.
+  </Card>
+  <Card title="Team" icon="users">
+    The members of the organization.
+  </Card>
+  <Card title="Provider connections" icon="plug-zap">
+    Managed accounts and API keys that authenticate engines. See below.
+  </Card>
+  <Card title="Machine snapshots" icon="server-cog">
+    The current sandbox and machine footprint.
+  </Card>
+</CardGroup>
+
+## Provider connections
+
+An engine needs credentials, and there are two ways to supply them, both stored
+by the trusted backend:
+
+| Method | How it works |
+| --- | --- |
+| Managed account | A ChatGPT or Codex account is connected with an OAuth flow. The account lifecycle (start, status, cancel, revoke) is driven from settings, and the credential never enters a sandbox. |
+| API key | A key for a supported provider is stored write-only and resolved inside the signed provider gateway. |
+
+Only metadata is visible in the UI; the reusable secret is write-only. See
+[Provider connections and models](/platform/provider-connections-and-models) for
+the full lifecycle and the providers served.
+
+:::note
+Settings is where the credential-mode of an engine is decided. That mode then
+shapes what a release proves for that engine: a managed-account engine proves the
+connected account and native turn path, an API-key engine proves its mapped
+gateway provider. See [Engines](/concepts/engines-and-adapters#engine-readiness-is-credential-mode-aware).
+:::

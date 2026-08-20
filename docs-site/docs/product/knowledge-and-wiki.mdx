@@ -1,0 +1,54 @@
+---
+title: Knowledge and wiki
+description: Reference material an agent can search, and published documents generated from a repository. The /knowledge and /wiki surfaces.
+sidebar:
+  order: 6
+---
+
+Knowledge is what an organization wants an agent to be able to look up. It comes
+in two forms: discrete facts and conventions, and longer published documents.
+
+## Knowledge
+
+`/knowledge` is a gallery of the facts and conventions Skynet remembers across
+runs. It is reference material, not executable instructions. Under the hood it is
+searchable and revisioned:
+
+| Operation | Endpoint |
+| --- | --- |
+| Search | `POST /api/knowledge/search` |
+| Ingest | `POST /api/knowledge/ingest` |
+| List, edit, remove | `GET`, `PATCH`, `DELETE /api/knowledge` |
+| Documents | `GET`, `POST`, `PATCH /api/knowledge/documents` |
+| Publish, archive, revisions | `.../documents/:id/publish`, `/archive`, `/revisions` |
+
+An agent reaches the same material in a run through the knowledge gateway tools.
+
+## Wiki
+
+`/wiki` lists published documents, and `/wiki/:id` shows one with a navigation
+rail. A wiki document is generated, not hand-written:
+
+<Steps>
+  <Step title="Point at a repository">
+    Generation starts from a repository, via `POST /api/wiki/generate`.
+  </Step>
+  <Step title="Read and structure">
+    The repository is cloned and read, and the content, its file tree, manifests,
+    config, and code, is structured into pages by a model.
+  </Step>
+  <Step title="Publish as knowledge">
+    The pages are published as org-scoped knowledge documents with revisions, so
+    they are retrievable by agents afterward.
+  </Step>
+</Steps>
+
+Generation is a tracked job (`GET /api/wiki/generate/:jobId`), deduplicated per
+organization and repository so two requests do not race.
+
+:::note
+A generated wiki is not a dead-end document. Because it is published into the
+knowledge store, an agent can later find and cite it through
+`/api/knowledge/search`. Wiki generation is therefore a way to turn a repository
+into retrievable organization memory.
+:::

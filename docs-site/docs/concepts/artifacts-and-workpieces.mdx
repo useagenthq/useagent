@@ -1,0 +1,59 @@
+---
+title: Artifacts and workpieces
+description: The files a run produces, the four editable workpiece kinds, uploads coming the other way, and the outbox that delivers follow-up work safely.
+sidebar:
+  order: 8
+---
+
+A run produces results a human can open. Some are static files; some are editable
+surfaces with revisions.
+
+## Artifact
+
+A file or result produced by an agent and published with an authenticated preview
+or download link. Artifacts are first-class timeline items: the session view
+renders artifact cards after the answer text, and links are absolute.
+
+## Workpiece
+
+A revisioned artifact editing surface with one of four canonical kinds:
+
+<CardGroup cols={2}>
+  <Card title="Document" icon="file-text">
+    A DOCX-backed prose document.
+  </Card>
+  <Card title="Spreadsheet" icon="table">
+    An XLSX-backed grid.
+  </Card>
+  <Card title="Presentation" icon="presentation">
+    A PPTX-backed slide deck.
+  </Card>
+  <Card title="PDF" icon="file">
+    A PDF document.
+  </Card>
+</CardGroup>
+
+Native renderers for these formats live in
+[`packages/artifact-formats`](/architecture/shared-packages), and the
+provider-neutral capability matrix lives in `packages/artifact-workspace`. Images
+and videos remain previewable media artifacts, not workpieces.
+
+## Upload
+
+A user-provided file accepted by the backend and attached to a run after
+validation. Uploads travel the other direction from artifacts: into a run rather
+than out of it. Inbound Slack images, for example, ride the run and render on the
+user's turn in the timeline.
+
+## Outbox
+
+Durable follow-up work written together with run state inside the finalization
+transaction, then processed safely after the transaction commits. The outbox
+pattern is how Skynet does things like canonicalization and Slack delivery
+without a crash window: the intent is committed atomically with the run, and a
+worker delivers it afterward.
+
+:::warning
+Artifact storage is currently local to the backend node. Distributing it is
+tracked work, not a shipped capability.
+:::

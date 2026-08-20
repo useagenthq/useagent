@@ -1,0 +1,60 @@
+---
+title: Runs, threads, and commands
+description: The units of work. A command starts a run, a run is one turn, and a thread is the conversation that ties runs together.
+sidebar:
+  order: 2
+---
+
+These four terms describe how work is scoped and made durable. They are backend
+truth: the frontend renders them but never invents them.
+
+## Organization
+
+The tenant boundary. Users, secrets, skills, knowledge, runs, and integrations
+all belong to exactly one organization. Org scoping is enforced by the backend
+auth layer and the database, not by the client.
+
+## Thread
+
+One continuing conversation. Replies reuse the thread's history, its sandbox, and
+its working directory. Threading is server-side: a reply stores the raw user
+prompt only, and the backend composes the engine's context preamble from recent
+turns. Prior turns are never stuffed into a stored prompt.
+
+## Run
+
+One agent turn inside a thread, from an accepted command to a terminal result.
+The runs list returns thread roots; a single thread is fetched whole when you
+open it.
+
+## Command
+
+The durable instruction that starts, steers, cancels, or resumes a run. Every
+command carries an **idempotency key**, so a retried submission never creates
+duplicate work. Commands are the single door: the web app, Slack, and scheduled
+automations all enter through the same durable command lane.
+
+## Step
+
+A durable timeline item. A step is one of a fixed set of kinds:
+
+| Step kind | What it is |
+| --- | --- |
+| Text | Assistant or user message content. |
+| Reasoning | A disclosed thinking segment. |
+| Tool call | An invocation of a gateway tool, with its result. |
+| Question | A prompt back to the human for input. |
+| Approval | A human authorization request for a gated operation. |
+| Artifact | A published file or result with a preview or download link. |
+
+Because the event log is the source of truth, the sequence of steps fully
+describes a run and can be replayed. The UI reduces the step stream into the
+session timeline.
+
+:::note
+A run **survives a backend restart**. The sandbox keeps executing; on restart a
+recovery loop re-probes the session, streams the interim events into the timeline
+with a visible heartbeat, and adopts the real result rather than failing work
+that actually completed. See [Restart
+reconciliation](/concepts/sandboxes-and-desktop#restart-reconciliation).
+:::

@@ -1,0 +1,52 @@
+---
+title: Memory hub
+description: Browse what Skynet remembers, audit what it captured, and see what it recalled. The /memory surface, its scopes, and its delivery safety.
+sidebar:
+  order: 7
+---
+
+The memory hub at `/memory` makes an otherwise invisible subsystem inspectable:
+what is stored, what was captured from runs, and what was recalled into them.
+
+## Three views
+
+<CardGroup cols={3}>
+  <Card title="Browse" icon="list">
+    The stored items in a pool. `GET /api/memory/browse`.
+  </Card>
+  <Card title="Captures" icon="inbox">
+    The capture log: what each run wrote, and its delivery state.
+  </Card>
+  <Card title="Recalls" icon="rotate-ccw">
+    The recall ledger: which memory was used in which runs.
+  </Card>
+</CardGroup>
+
+## Scopes
+
+Memory is pooled by scope. A search can span the personal and organization pools;
+browsing targets one pool. The organization pool is shared; the personal pool is
+private, and an unauthenticated personal request fails closed rather than leaking.
+An item can be corrected (`PATCH /api/memory/item/:id`) or removed
+(`DELETE /api/memory/item/:id`) within its pool.
+
+## Delivery is durable and inspectable
+
+Capture is not fire-and-forget. Each capture rides an outbox with a visible state,
+so the hub can surface problems and let you recover:
+
+| State | Meaning |
+| --- | --- |
+| Pending, delivering | In flight. |
+| Delivered | Written to the pool. |
+| Dead | Failed after its budget; can be retried with a fresh budget. |
+| Orphan (`delivering`) | Recoverable: resolve it as delivered or discard, at most once. |
+
+Retry re-enqueues a dead capture; resolve reconciles an orphan. This is the
+at-most-once recovery that keeps the capture log honest.
+
+:::warning
+Memory is optional and config-gated. When the memory service is not configured it
+is a no-op, and a memory failure never fails a run. Treat memory as reference
+material that enriches a run, not a dependency it needs to succeed.
+:::

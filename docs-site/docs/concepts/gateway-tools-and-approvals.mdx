@@ -1,0 +1,82 @@
+---
+title: Gateway, tools, and approvals
+description: The trust boundary that does privileged work for a sandbox, the capability tokens that bound it, the in-run tool families, and the human approval lane.
+sidebar:
+  order: 6
+---
+
+A sandbox is untrusted. Anything privileged, such as reading a repository,
+publishing an artifact, or using a provider account, happens on the trusted side
+through the gateway.
+
+## Gateway
+
+A backend trust boundary that performs privileged work for a sandbox without
+placing long-lived provider or database credentials inside it. The sandbox asks;
+the gateway decides and acts.
+
+## Capability token
+
+A short-lived signed grant, bound to the organization, user, thread, run,
+engine, provider, scope, and expiry. A token authorizes exactly one narrow thing
+for one run, and it expires. A run cannot mint its own capabilities.
+
+## MCP tool
+
+A typed operation offered to an engine, such as searching knowledge, cloning a
+repository, controlling the desktop, or publishing an artifact.
+
+## Gateway tool families
+
+The full in-run tool surface an engine can call:
+
+| Family | What it does |
+| --- | --- |
+| Knowledge | Search organization knowledge, skills, playbooks, and automations. |
+| Memory | Remember and recall scoped facts across sessions. |
+| Skills | List and activate versioned procedures by exact id. |
+| Automations | Manage scheduled triggers, with an approval capability gating destructive operations. |
+| GitHub | Pull-request and issue reads bound to the run's repository. |
+| Storage | List GCS objects. |
+| Web | Web search. |
+| Desktop | Computer-use controls with screenshots, plus recording that publishes an MP4 artifact. |
+| Login | Guarded ephemeral login. |
+| Artifacts | Publish artifacts with absolute links. |
+
+:::tip
+**Every gated refusal names its remedy.** When a tool declines, it points at the
+exact skill, environment variable, or human approval path that would unblock it,
+so an agent can self-correct instead of fabricating a result.
+:::
+
+## Provider connection
+
+A user-owned API key or managed account identity, stored by the trusted backend.
+Metadata is visible to the UI; reusable secrets are write-only and never returned.
+API keys are resolved inside the signed provider gateway, never handed to a
+sandbox.
+
+## Approval lane
+
+Human-in-the-loop authorization for destructive or outward-facing gated
+operations:
+
+<Steps>
+  <Step title="The agent requests">
+    A run calls `approval_request` for a gated operation.
+  </Step>
+  <Step title="A card appears">
+    An approval card shows in the session timeline, and in Slack for
+    Slack-started runs.
+  </Step>
+  <Step title="A human decides">
+    An org member approves in the session view or in Slack.
+  </Step>
+  <Step title="A one-shot capability is issued">
+    The agent's `approval_poll` receives a one-shot, argument-bound capability
+    exactly once. It can never be self-issued from inside a run.
+  </Step>
+</Steps>
+
+The approval lane is live and certified by the guarded release: a destructive
+gated tool pauses for the card, then resumes with the one-shot capability.

@@ -1,0 +1,63 @@
+---
+title: Product
+description: The app you actually use. Three tiers of surface, from starting a task to watching it run to managing everything an organization accumulates.
+sidebar:
+  label: The app at a glance
+  order: 1
+---
+
+Everything in [Concepts](/concepts) and [Architecture](/architecture) exists to
+power a product with real screens. Those screens fall into three tiers.
+
+<CardGroup cols={3}>
+  <Card title="Start a task" icon="square-pen">
+    The composer at `/agent/new`. Pick an engine, model, memory scope, and
+    repositories, attach files, and start a run or a direct conversation.
+  </Card>
+  <Card title="Watch it run" icon="activity">
+    The session view at `/session/:id`. A live timeline plus side panes for
+    files, an editor, a terminal, and the desktop.
+  </Card>
+  <Card title="Manage everything" icon="library">
+    Hubs for skills, playbooks, knowledge, wiki, memory, artifacts, automations,
+    secrets, and settings.
+  </Card>
+</CardGroup>
+
+## Route map
+
+| Route | What it is |
+| --- | --- |
+| `/agent/new` | The task composer. Start a run or a direct conversation. |
+| `/session/:id` | The thread view for a live or settled run. |
+| `/dashboard` | The workspace hub: recent runs, activity, fleet lanes, usage limits. |
+| `/agent/automations` | Recurring and triggered runs, with history and fire-now. |
+| `/skills`, `/playbooks` | The reusable-procedure catalog. |
+| `/knowledge`, `/wiki` | Reference material and published documents. |
+| `/memory` | The team memory hub: browse, capture log, recall ledger. |
+| `/learnings` | The review queue for proposed knowledge and skill revisions. |
+| `/artifacts` | Files and outputs produced by runs, with workpiece editors. |
+| `/secrets` | The encrypted organization secrets manager. |
+| `/settings` | Workspace configuration, provider connections, and usage. |
+| `/review` | A GitHub pull-request review workspace. |
+| `/apps`, `/agent/plugins` | Integrations and the connections available to agents. |
+| `/foundation`, `/lab` | The design-token explorer and the component lab. |
+
+## The shell around every page
+
+Every surface lives inside one app shell: a top navigation bar, a left sidebar
+that adapts to the page (a thread list on run pages, a section index on library
+pages), and a scrollable content area.
+
+- **Command palette.** A search pill in the top navigation, and `Cmd K`, open a
+  command menu with live results and shortcuts.
+- **Theme menu.** Switch between Midnight (the default), Aura, Harbor, and Light.
+  See [Themes and design](/product/themes-and-design).
+- **User menu.** Account and workspace controls.
+
+:::note
+The product owns its own rendering layer. It does not embed an engine's web UI in
+an iframe; it renders the canonical event log through native React components.
+That is what lets the timeline, the panes, and the artifact viewers stay
+consistent across every engine.
+:::

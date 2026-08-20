@@ -1,0 +1,54 @@
+---
+title: Artifacts
+description: The files runs produce and the editors that open them. The /artifacts hub, workpiece editing, and revision proposals.
+sidebar:
+  order: 9
+---
+
+Artifacts are the outputs a run leaves behind. Some are static media; some are
+editable documents with revisions. `/artifacts` is the hub; a run's own artifacts
+also stream into the [session view](/product/session-view).
+
+## The hub
+
+`/artifacts` lists files and outputs from every run, and `/agent/artifacts`
+streams them live filtered to a run. Opening one at `/agent/artifacts/:id` shows
+its detail and, for a workpiece, an inline editor.
+
+| Operation | Endpoint |
+| --- | --- |
+| List, create | `GET`, `POST /api/artifacts` |
+| Fetch, content | `GET /api/artifacts/:id`, `/:id/content` |
+| Preview | `GET /api/artifacts/:id/preview` |
+| Workpiece, export | `/:id/workpiece`, `/:id/workpiece/export` |
+| Archive a run's artifacts | `POST /api/artifacts/runs/:runId/archive` |
+
+## Workpieces
+
+A workpiece is a revisioned editing surface with one of four canonical kinds:
+document, spreadsheet, presentation, or PDF. The editors are bounded, and native
+renderers back each format (see [Artifacts and
+workpieces](/concepts/artifacts-and-workpieces) and [Shared
+packages](/architecture/shared-packages)). Images and videos stay previewable
+media, not workpieces.
+
+## Revision proposals
+
+An agent can propose an edit to a workpiece rather than overwrite it. The proposal
+waits for a human decision:
+
+<Steps>
+  <Step title="A proposal is made">
+    A run proposes a workpiece revision. `GET /api/artifacts/:id/proposals`.
+  </Step>
+  <Step title="A human accepts or dismisses">
+    Accept it with `POST /api/artifacts/:id/proposals/:proposalId/accept`, or
+    dismiss it.
+  </Step>
+</Steps>
+
+:::note
+Editing is revisioned, so accepting a proposal advances the workpiece to a new
+revision rather than destroying the prior one. The published artifact link stays
+authenticated and absolute.
+:::

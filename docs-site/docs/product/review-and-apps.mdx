@@ -1,0 +1,40 @@
+---
+title: Review and integrations
+description: Reviewing pull requests across connected repositories, and the integrations available to the workspace and to agents.
+sidebar:
+  order: 13
+---
+
+Two smaller surfaces round out the product: a pull-request review workspace and
+the integrations catalog.
+
+## Review
+
+`/review` is a GitHub pull-request review workspace. It surfaces open pull
+requests across the repositories connected to the organization
+(`GET /api/pulls`), so review happens next to the runs that produced the changes
+rather than in a separate tab. Repositories and branches come from the same
+GitHub integration the rest of the platform uses (see [GitHub
+integration](/platform/github-integration)).
+
+## Integrations
+
+<CardGroup cols={2}>
+  <Card title="Apps" icon="grid-2x2-plus" href="/apps">
+    The integration catalog: the tools and services the workspace can connect.
+  </Card>
+  <Card title="Plugins" icon="puzzle" href="/agent/plugins">
+    The connections and skills available to agents, managed from one panel.
+  </Card>
+</CardGroup>
+
+`/apps` is where an organization adds a capability to the workspace;
+`/agent/plugins` is where you see and manage what agents can actually reach in a
+run. Together they answer "what is connected, and what can an agent use."
+
+:::note
+An integration reaches a run through the gateway tool families, never as a
+credential handed into the sandbox. Connecting an app makes a capability
+available; the [gateway](/concepts/gateway-tools-and-approvals) still mediates
+every privileged call.
+:::

@@ -1,0 +1,70 @@
+---
+title: Knowledge and learning
+description: Skills, playbooks, knowledge, wiki, and memory, plus the human-gated loop that turns a successful run into a reusable procedure.
+sidebar:
+  order: 7
+---
+
+Skynet gives an agent an organization's accumulated know-how at the start of a
+run, and captures what a run figures out at the end. Nothing is published without
+a human.
+
+## The knowledge substrate
+
+| Term | What it is |
+| --- | --- |
+| **Skill** | Versioned, reusable instructions, selected semantically and activated by exact id for the current task. |
+| **Playbook** | A skill whose content describes a repeatable end-to-end operating procedure. |
+| **Knowledge** | Organization-scoped source material an agent can search and read. Reference data, not executable instructions. |
+| **Wiki** | A published document generated from repository or organization knowledge and later retrievable by agents. |
+| **Memory** | Optional scoped facts retained across sessions for a user or team. Reference material, and independently disablable. |
+
+Skills and playbooks share one immutable substrate. The turn-prefill catalog is
+re-ranked by prompt relevance on every unpinned turn, so the procedures that
+match the current ask surface into the page the model sees, rather than a fixed
+top-N by usage.
+
+## Skill import
+
+GitHub is the source of an organization's procedures. Skynet scans a repository
+for `SKILL.md` files and imports selected paths as versioned skills:
+
+- Discovery runs over a **server-side shallow clone**, resolving the head with
+  `git ls-remote`, because the REST git-data surface is not dependable for org
+  installations.
+- Imports are **pinned to a commit** and **idempotent by source**, so re-running
+  an import does not create duplicates.
+- An optional hourly resync keeps the catalog current with the organization's
+  repositories.
+
+## The learning lane
+
+The self-improvement loop runs on every completed run and is fully human-gated:
+
+<Steps>
+  <Step title="Recall at start">
+    A run recalls organization memory when it begins.
+  </Step>
+  <Step title="Capture at finish">
+    At the end, capture is salience-gated and enriched with structured evidence,
+    including the ordered tool trace of what actually worked.
+  </Step>
+  <Step title="Propose knowledge drafts">
+    High-value runs propose knowledge drafts, carrying the redacted procedure
+    trace.
+  </Step>
+  <Step title="Propose skill revisions">
+    Accepted drafts that cluster propose skill revisions whose procedure is
+    assembled from the real traces.
+  </Step>
+  <Step title="A human reviews">
+    An org admin accepts or dismisses each proposal at `/learnings`. Nothing
+    auto-publishes.
+  </Step>
+</Steps>
+
+:::note
+The machinery is complete, but throughput is intentionally gated on human review.
+The loop compounds only once a person accepts the first draft; there is no
+unattended write path into the knowledge stores.
+:::

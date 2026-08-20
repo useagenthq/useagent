@@ -1,0 +1,50 @@
+---
+title: GitHub integration
+description: How repositories are selected, authenticated with a GitHub App, cloned server-side, and read by agents in a run.
+sidebar:
+  order: 3
+---
+
+GitHub is where an organization's code and procedures live. The integration
+covers selecting repositories, authenticating to them, cloning them for
+server-side work, and exposing them to a run.
+
+## Repository selection
+
+The composer and the platform read the organization's repositories and branches:
+
+| Operation | Endpoint |
+| --- | --- |
+| List repositories | `GET /api/repos` |
+| List branches | `GET /api/repos/:owner/:name/branches` |
+| Open pull requests | `GET /api/pulls` |
+
+## Authenticated with a GitHub App
+
+Access is configured through a GitHub App installation rather than a personal
+token, so private organization repositories are reachable without a human pasting
+a PAT. The backend mints an installation token for the organization and scopes
+access to it. Credential precedence favors an explicit token, then the App, then
+anonymous access for public repositories.
+
+## Server-side clones
+
+Work that needs the actual code, such as [skill
+import](/concepts/knowledge-and-learning#skill-import) and [wiki
+generation](/product/knowledge-and-wiki#wiki), runs over a server-side shallow
+clone, resolving the head with `git ls-remote`. This is deliberate: the REST
+git-data surface is not dependable for organization installations.
+
+## In a run
+
+Inside a run, GitHub is reached through gateway tools bound to the run's
+repositories: pull-request and issue reads scoped to what the run is allowed to
+touch. Repository binding is validated against an allowlist, and the same
+allowlist governs binding whether a run starts from the web composer or from a
+[Slack](/channels/slack) message.
+
+:::note
+The [review workspace](/product/review-and-apps#review) at `/review` is the
+human-facing side of the same integration: it lists open pull requests across the
+connected repositories so review sits next to the runs that produced the changes.
+:::

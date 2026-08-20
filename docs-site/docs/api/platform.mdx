@@ -1,0 +1,60 @@
+---
+title: Platform API
+description: Endpoints for GitHub, provider connections, fleet usage, Slack ingress, terminal and desktop proxies, and the commands catalog.
+sidebar:
+  label: Platform
+  order: 4
+---
+
+The integration and infrastructure surfaces. See [GitHub
+integration](/platform/github-integration), [Provider connections and
+models](/platform/provider-connections-and-models), and [Fleet and
+usage](/platform/fleet-and-usage).
+
+## GitHub
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| GET | `/api/repos` | List the organization's repositories. |
+| GET | `/api/repos/:owner/:name/branches` | List a repository's branches. |
+| GET | `/api/pulls` | Open pull requests across connected repositories. |
+
+## Provider connections
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| GET / POST / PUT | `/api/provider-connections` | List, create, and update connections. |
+| POST | `/api/provider-connections/openai/chatgpt-oauth/start` | Begin the managed-account OAuth flow. |
+| GET | `/api/provider-connections/openai/chatgpt-oauth/status` | Poll the OAuth flow. |
+| POST | `/api/provider-connections/openai/chatgpt-oauth/cancel` | Cancel an in-progress flow. |
+| POST | `/api/provider-connections/openai/chatgpt-oauth/revoke` | Revoke the managed account. |
+| GET | `/api/provider-connections/:provider` | A provider's connection. |
+| PUT | `/api/provider-connections/:provider/api-key` | Store a provider API key (write-only). |
+| POST | `/api/provider-connections/:provider/revoke` | Revoke a provider's credential. |
+
+## Fleet
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| GET | `/api/fleet` | Today's model burn and the sandbox footprint. |
+
+## Slack
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| POST | `/api/slack/events` | The Slack events ingress. See [Slack](/channels/slack). |
+
+## Terminal and desktop
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| WS | `/api/runs/:id/terminal/:sessionId` | A run's interactive terminal. |
+| GET / POST | `/api/live-proxy/*` | The run live proxy. |
+| WS / HTTP | `/api/desktop-proxy/*` | The noVNC desktop proxy (`websockify`). |
+| GET | `/api/desktop-proxy/:threadId/ready` | Desktop readiness. |
+
+## Commands
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| GET | `/api/commands` | The command catalog available to a thread. |
