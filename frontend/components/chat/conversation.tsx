@@ -24,6 +24,7 @@ import {
 import { Composer, type ComposerSubmit } from "@/components/chat/composer";
 import { useEnabledEngines } from "@/components/chat/engine-picker";
 import { GatewayApprovalCard } from "@/components/chat/gateway-approval-card";
+import { InboundAttachments } from "@/components/chat/inbound-attachments";
 import { NativeApprovalCard } from "@/components/chat/native-approval-card";
 import type { NativeSnapshot } from "@/components/chat/native-store";
 import { QuestionCard } from "@/components/chat/question-card";
@@ -547,6 +548,7 @@ function TurnBlock({
     return (
       <div className="space-y-1" data-testid="turn-block" data-run-id={run.id}>
         <UserBubble>{cleanPrompt(run.prompt)}</UserBubble>
+        <InboundAttachments uploads={run.uploads} />
         <QueuedMessagePill position={queuePosition ?? 1} onSendNow={onSendNow} />
       </div>
     );
@@ -554,7 +556,10 @@ function TurnBlock({
 
   return (
     <div className="space-y-4" data-testid="turn-block" data-run-id={run.id}>
-      <UserBubble>{cleanPrompt(run.prompt)}</UserBubble>
+      <div className="space-y-2">
+        <UserBubble>{cleanPrompt(run.prompt)}</UserBubble>
+        <InboundAttachments uploads={run.uploads} />
+      </div>
 
       {/* Assistant block: avatar + name on a header row, with the answer and the
           worklog capsule aligned to the same left content edge as every other

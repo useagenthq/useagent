@@ -9,6 +9,7 @@ import {
   type StepKind,
 } from "../db/schema";
 import { parseRepoRef, type RepoRef } from "../github/repo-ref";
+import { listUploadsForRuns, type RunUploadDescriptor } from "../uploads/repo";
 
 // ---------------------------------------------------------------------------
 // API serialization — preserve the exact snake_case shapes the frontend reads
@@ -61,6 +62,10 @@ export interface ApiRun {
   skill_id: string | null;
   skill_version: number | null;
   skill_content_hash: string | null;
+  /** Inbound attachments the user sent with this turn (from Slack files or a
+   *  browser upload), claimed by the run. [] = none. The timeline renders these
+   *  on the user's bubble; bytes come from `/api/uploads/:id/content`. */
+  uploads: RunUploadDescriptor[];
   created_at: string;
   updated_at: string;
   steps: ApiStep[];
@@ -79,7 +84,11 @@ function toStep(s: StepRecord): ApiStep {
   };
 }
 
-function toRun(r: RunRecord, stepRows: StepRecord[]): ApiRun {
+function toRun(
+  r: RunRecord,
+  stepRows: StepRecord[],
+  uploads: RunUploadDescriptor[] = [],
+): ApiRun {
   // Stored refs may carry a branch ("owner/name:branch"); decode so the wire
   // stays clean "owner/name" and the branch surfaces in `repo_specs` instead.
   const specs = r.repos.map(parseRepoRef);
@@ -103,6 +112,7 @@ function toRun(r: RunRecord, stepRows: StepRecord[]): ApiRun {
     skill_id: r.skillId,
     skill_version: r.skillVersion,
     skill_content_hash: r.skillContentHash,
+    uploads,
     created_at: r.createdAt.toISOString(),
     updated_at: r.updatedAt.toISOString(),
     steps: stepRows.map(toStep),
@@ -113,16 +123,11 @@ function toRun(r: RunRecord, stepRows: StepRecord[]): ApiRun {
  * given run order. Shared by the list + thread readers. */
 async function withSteps(runRows: RunRecord[]): Promise<ApiRun[]> {
   if (runRows.length === 0) return [];
-  const stepRows = await db
-    .select()
-    .from(steps)
-    .where(
-      inArray(
-        steps.runId,
-        runRows.map((r) => r.id),
-      ),
-    )
-    .orderBy(steps.idx);
+  const runIds = runRows.map((r) => r.id);
+  const [stepRows, uploadsByRun] = await Promise.all([
+    db.select().from(steps).where(inArray(steps.runId, runIds)).orderBy(steps.idx),
+    listUploadsForRuns(runIds),
+  ]);
 
   const byRun = new Map<string, StepRecord[]>();
   for (const s of stepRows) {
@@ -130,7 +135,7 @@ async function withSteps(runRows: RunRecord[]): Promise<ApiRun[]> {
     list.push(s);
     byRun.set(s.runId, list);
   }
-  return runRows.map((r) => toRun(r, byRun.get(r.id) ?? []));
+  return runRows.map((r) => toRun(r, byRun.get(r.id) ?? [], uploadsByRun.get(r.id) ?? []));
 }
 
 // ---------------------------------------------------------------------------
@@ -374,12 +379,11 @@ export async function getRunWithSteps(
 ): Promise<ApiRun | null> {
   const run = await getRunForOrg(orgId, id);
   if (!run) return null;
-  const stepRows = await db
-    .select()
-    .from(steps)
-    .where(eq(steps.runId, id))
-    .orderBy(steps.idx);
-  return toRun(run, stepRows);
+  const [stepRows, uploadsByRun] = await Promise.all([
+    db.select().from(steps).where(eq(steps.runId, id)).orderBy(steps.idx),
+    listUploadsForRuns([id]),
+  ]);
+  return toRun(run, stepRows, uploadsByRun.get(id) ?? []);
 }
 
 /** List runs for an org, newest first. By default only THREAD ROOTS (runs with

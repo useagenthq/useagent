@@ -49,9 +49,22 @@ export interface ApiRun {
    *  the thread's current scope (its newest run). Optional so a pre-scope run
    *  shape still parses; treated as "org" when absent. */
   memory_scope?: MemoryScope;
+  /** Inbound attachments the user sent with this turn (Slack files or a browser
+   *  upload), claimed by the run. Rendered on the user's bubble; bytes come from
+   *  `/api/uploads/:id/content`. Optional so a pre-uploads run shape still parses. */
+  uploads?: RunUpload[];
   created_at: string;
   updated_at: string;
   steps: ApiStep[];
+}
+
+/** One inbound attachment on a run's user turn (backend `RunUploadDescriptor`). */
+export interface RunUpload {
+  id: string;
+  name: string;
+  content_type: string;
+  size_bytes: number;
+  created_at: string;
 }
 
 /** `GET /api/runs/:id?thread=1` → the whole conversation, oldest → newest. */
