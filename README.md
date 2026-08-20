@@ -104,6 +104,26 @@ configuration. It validates and reloads the candidate, and restores the prior
 file on failure. The only direct backend WebSocket ingress is the one-use Codex
 relay capability path; other product traffic remains behind the frontend.
 
+## Run Your Own Instance
+
+To stand up Skynet on your own server, [`infra/terraform/hetzner/`](infra/terraform/hetzner/README.md)
+provisions a Hetzner Cloud host (server, firewall, PostgreSQL 16 + pgvector, bun,
+Node, Docker, Caddy) with one `terraform apply`, and `deploy-app.sh` brings up the
+**core stack** (backend + frontend + Caddy) with a single command:
+
+```bash
+export HCLOUD_TOKEN=...            # never committed
+cd infra/terraform/hetzner
+terraform init && terraform apply  # provision the host + dependencies
+SERVER_IP=$(terraform output -raw server_ip) PG_PASSWORD=... OPENROUTER_API_KEY=... \
+  ./deploy-app.sh /path/to/this/repo
+```
+
+That yields a signed-in web UI and model-backed chat. Full engine runs, team
+memory, and the desktop need the additional secrets and a baked sandbox template
+documented in the [Terraform README](infra/terraform/hetzner/README.md#scope-core-vs-full).
+The token is read from `HCLOUD_TOKEN` only; state and tfvars are gitignored.
+
 ## Shared Packages
 
 | Package | Docs |
