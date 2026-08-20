@@ -23,6 +23,7 @@ import { resolveSlackClient } from "./client";
 import { stageInboundSlackFiles, type SlackInboundFileMeta } from "./inbound-files";
 import { findSlackThread, linkSlackThread } from "./repo";
 import { watchSlackRun } from "./watcher";
+import { githubRepoRefs } from "./repo-refs";
 import { resolveSlackWorkspace } from "./workspaces";
 import { enqueueAddReaction, enqueuePostMessage } from "./outbox";
 import { defaultModelForEngine, isModelAllowedForEngine } from "../runs/model-policy";
@@ -277,8 +278,10 @@ export async function handleSlackEvent(body: SlackEnvelope): Promise<void> {
       engine,
       parentRunId,
       threadId,
-      // Slack runs work in a bare sandbox (no repo picker) and default to org memory.
-      repos: [],
+      // Slack has no repo picker; repositories the message LINKS become the
+      // run's bound repos (clone + GitHub read tools), mirroring a web-composer
+      // selection. An unlinked message keeps the bare sandbox.
+      repos: githubRepoRefs(rawText),
       // Staged inbound attachments — claimed atomically with run acceptance.
       ...(attachmentIds.length > 0 ? { attachmentIds } : {}),
       memoryScope,
