@@ -34,6 +34,10 @@ export const GATEWAY_GRANTS: readonly string[] = [
   "GRANT INSERT ON slack_outbox TO skynet_gateway",
   "GRANT SELECT, INSERT, UPDATE ON knowledge_records, knowledge_documents, knowledge_revisions TO skynet_gateway",
   "GRANT SELECT, INSERT ON artifact_workpiece_proposals TO skynet_gateway",
+  // Unified context index (Phase 1): the gateway context_search/context_read
+  // tools READ the projection; the privileged BACKEND writes it (projector on
+  // skill/knowledge/automation writes). SELECT only - no gateway write path.
+  "GRANT SELECT ON context_index TO skynet_gateway",
 ];
 
 /** The BYOK credentials view is created by provisioning; grant only if present. */

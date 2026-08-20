@@ -117,11 +117,25 @@ describe("gateway operation registry", () => {
     const metaNames = gatewayMetaToolDescriptors().map((tool) => tool.name);
 
     expect(defaultNames).toContain("knowledge_search");
+    expect(defaultNames).toContain("context_search");
+    expect(defaultNames).toContain("context_read");
     expect(defaultNames).toContain("automation_create");
     expect(defaultNames).toContain("workpiece_create");
     expect(defaultNames).not.toContain("gateway_tools_search");
     expect(compactNames).toEqual(metaNames);
     expect(compactNames.every(isGatewayMetaToolName)).toBe(true);
+  });
+
+  test("pins the unified context index tools as always-on base tools", () => {
+    const baseNames = baseGatewayToolDescriptors().map((tool) => tool.name);
+    // The context family is a BASE family (advertised without any conditional
+    // context), mirroring knowledge_search/skills_list. These two names are a
+    // deliberate release surface - adding/removing one updates this pin.
+    expect(baseNames).toContain("context_search");
+    expect(baseNames).toContain("context_read");
+    // Neither is approval-gated: unified search + read are read-only.
+    expect(gatewayToolRequiresApproval("context_search")).toBe(false);
+    expect(gatewayToolRequiresApproval("context_read")).toBe(false);
   });
 
   test("preserves semantic discovery while marking exact sensitive operations", () => {

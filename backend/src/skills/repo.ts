@@ -1,6 +1,7 @@
 import { and, desc, eq, sql } from "drizzle-orm";
 import { db, type Executor } from "../db/client";
 import { skillRevisions, skills, type SkillKind, type SkillSections } from "../db/schema";
+import { syncSkillToContextIndex } from "../context/projector";
 import { formatSkillMarkdown, hashSkillContent, type SkillContent } from "./format";
 
 // ---------------------------------------------------------------------------
@@ -72,7 +73,7 @@ export async function createSkillWithRevision(input: {
   lastRunAt?: Date | null;
 }): Promise<SkillRecord | null> {
   const kind = input.kind ?? "skill";
-  return db.transaction(async (tx) => {
+  const created = await db.transaction(async (tx) => {
     const [row] = await tx
       .insert(skills)
       .values({
@@ -96,6 +97,33 @@ export async function createSkillWithRevision(input: {
     });
     return row;
   });
+  // Best-effort: project the new skill into the unified context index. A
+  // projection failure is logged inside the helper and never fails the create.
+  if (created) await syncSkillToContextIndex(skillToContextLike(created));
+  return created;
+}
+
+/** Shape a stored skill row into the projector's source-neutral input. */
+function skillToContextLike(row: SkillRecord): {
+  id: string;
+  orgId: string;
+  kind: SkillKind;
+  name: string;
+  description: string;
+  tags: string[];
+  sections: SkillSections;
+  currentVersion: number;
+} {
+  return {
+    id: row.id,
+    orgId: row.orgId,
+    kind: row.kind,
+    name: row.name,
+    description: row.description,
+    tags: row.tags,
+    sections: row.sections,
+    currentVersion: row.currentVersion,
+  };
 }
 
 /**
@@ -115,7 +143,7 @@ export async function updateSkillWithRevision(
     sections?: SkillSections;
   },
 ): Promise<SkillRecord | null> {
-  return db.transaction(async (tx) => {
+  const updated = await db.transaction(async (tx) => {
     const [current] = await tx
       .select()
       .from(skills)
@@ -162,6 +190,10 @@ export async function updateSkillWithRevision(
     }
     return row ?? null;
   });
+  // Best-effort: re-project the edited skill (title/body/tags/version may all
+  // have changed). Non-fatal — a projection failure never fails the edit.
+  if (updated) await syncSkillToContextIndex(skillToContextLike(updated));
+  return updated;
 }
 
 /** Org-scoped fetch — a cross-org (or missing) id resolves to null. */
