@@ -72,7 +72,7 @@ Skynet is a multi-package repository for the Loop agent platform. The repo has o
 | Workpiece | A revisioned artifact editing surface with one of four canonical kinds: document, spreadsheet, presentation, or PDF. Images and videos remain previewable media artifacts, not workpieces. | Artifact service and frontend renderer |
 | Outbox | Durable follow-up work written with run state, then processed safely after the transaction, such as canonicalization or Slack delivery. | Backend workers |
 | Agent client | The browser-side package that reconnects to SSE, reduces events into thread state, and exposes selectors to the UI. | `packages/agent-client/` |
-| Agent harness | Shared provider-neutral event, capability, session, and `ProviderDriver` lifecycle types. The production worker resolves this registry before each turn: OpenCode and selected T3 routes use native drivers, while non-T3 Claude/Codex execution is declared as an EngineAdapter compatibility path. | `packages/agent-harness/` and backend engine registry |
+| Agent harness | Shared provider-neutral event, capability, session, and `ProviderDriver` lifecycle types. The production worker resolves this registry before each turn: OpenCode and selected runtime-path routes use native drivers, while legacy ACP Claude/Codex execution is declared as an EngineAdapter compatibility path. | `packages/agent-harness/` and backend engine registry |
 | Conformance suite | Deterministic tests for the public agent-client and agent-harness contracts, reducer behavior, replay, and capability gating. Sandbox adapters share a provider-neutral interface but retain provider-specific tests; live provider parity is a separate environment-gated proof. | `packages/conformance/` and backend tests |
 
 ## Quick Start
