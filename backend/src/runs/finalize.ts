@@ -9,13 +9,20 @@ import { assessCaptureSalience } from "../memory/capture-salience";
 import { isInternalRunOrigin } from "./origin";
 import { findSlackThreadByRoot } from "../slack/repo";
 import { composeSlackReplyText } from "../slack/reply";
+import { buildRunCard, deriveTitle, phaseForStatus, sessionUrl } from "../slack/card";
+import { parseRepoRef } from "../github/repo-ref";
 import {
   composeAutomationDeliveryText,
   parseSlackAutomationTarget,
   slackChannelAllowed,
 } from "../slack/automation";
-import { enqueuePostMessageTx, enqueueUploadFileTx, kickSlackOutbox } from "../slack/outbox";
-import { slackConfig } from "../env";
+import {
+  enqueuePostMessageTx,
+  enqueueUpdateCardTx,
+  enqueueUploadFileTx,
+  kickSlackOutbox,
+} from "../slack/outbox";
+import { env, slackConfig } from "../env";
 import { findScheduleForRun } from "../schedules/repo";
 import { publishRunLifecycleChange } from "./org-signals";
 import { enqueueCanonicalization } from "./canonicalization-outbox";
@@ -116,11 +123,27 @@ export async function finalizeRun(
     // resolve null and enqueue nothing.
     const slack = await findSlackThreadByRoot(run.threadId, tx);
     if (slack) {
-      kickSlack = await enqueuePostMessageTx(tx, {
+      // Advance the run CARD in place to its settled state (status + answer). The
+      // update_card delivery targets the stored card ts; when no card ts exists
+      // (the card post never landed) or the card is gone, it falls back to posting
+      // the answer as a plain CHUNKED reply, so the answer is NEVER lost. The
+      // plain-text fallback string stays the ONE compose function (reply.ts).
+      const finalCard = buildRunCard({
+        title: deriveTitle(run.prompt),
+        phase: phaseForStatus(status),
+        model: run.model,
+        repoSpecs: run.repos.map(parseRepoRef),
+        webUrl: sessionUrl(env.FRONTEND_ORIGIN, run.threadId),
+        answer: summary,
+      });
+      kickSlack = await enqueueUpdateCardTx(tx, {
         idempotencyKey: `slack-reply:${runId}`,
         channel: slack.channel,
-        text: composeSlackReplyText(status, summary),
         threadTs: slack.threadTs,
+        rootRunId: run.threadId,
+        blocks: finalCard.blocks,
+        text: finalCard.text,
+        fallbackText: composeSlackReplyText(status, summary),
       });
 
       // Artifact share-back: a Slack-asked run delivers its FILES to the
