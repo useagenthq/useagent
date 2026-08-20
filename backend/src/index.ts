@@ -45,6 +45,7 @@ import {
 import { secretsRoutes } from "./secrets/routes";
 import { seedDev } from "./seed";
 import { skillImportRoutes } from "./skills/import-routes";
+import { startSkillsResync } from "./skills/resync";
 import { skillsRoutes } from "./skills/routes";
 import { slackEnabled, slackRoutes, startSlackOutbox, syncSlackWorkspaceBindings } from "./slack";
 import { enforceSingleBackend } from "./db/single-backend";
@@ -271,6 +272,12 @@ startScheduler();
 // Abandoned pre-run uploads expire after 24h. Reclaim only their metadata;
 // content-addressed bytes may still be referenced by another durable record.
 startUploadCleanup();
+
+// Periodic GitHub skill resync — keeps the org's .claude/skills SKILL.md files
+// flowing into the catalog without manual per-repo imports. OFF by default:
+// only when SKILLS_RESYNC_INTERVAL_MIN is set does it sweep (serial, paced,
+// bounded), reusing the manual import's source-keyed idempotent upsert.
+startSkillsResync();
 
 // Memory capture-outbox delivery loop (15s tick). Delivers each completed run's
 // queued outcome to team memory with retry/backoff/dead-letter; harmless when
