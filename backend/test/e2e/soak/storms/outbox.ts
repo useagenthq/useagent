@@ -91,6 +91,7 @@ async function main(): Promise<void> {
       okByKey.set(key, (okByKey.get(key) ?? 0) + 1);
       return { ok: true };
     },
+    async updateMessage() { return { ok: true }; },
     async addReaction() { return { ok: true }; },
     async setAssistantStatus() {},
   });

@@ -17,7 +17,11 @@ import { artifacts, userUploads } from "../src/db/schema";
 import { artifactStorage } from "../src/artifacts/storage";
 import { finalizeRun } from "../src/runs/finalize";
 import { createRun } from "../src/runs/repo";
-import { linkSlackThread } from "../src/slack/repo";
+import { linkSlackThread, findSlackThreadByRoot } from "../src/slack/repo";
+import { enqueuePostCard } from "../src/slack/outbox";
+import { resolveSlackClient } from "../src/slack/client";
+import { slackConfig } from "../src/env";
+import { buildRunCard } from "../src/slack/card";
 import { DEV_ORG_ID, DEV_USER_ID } from "../src/seed";
 import { setSlackClientForTest } from "../src/slack";
 import { resetSlackDeduperForTest } from "../src/slack/events";
@@ -61,13 +65,29 @@ const savedSlackEnv: Record<string, string | undefined> = {};
 
 interface Recorded {
   reactions: Array<{ channel: string; timestamp: string; name: string }>;
-  messages: Array<{ channel: string; text: string; threadTs?: string }>;
+  messages: Array<{ channel: string; text: string; threadTs?: string; blocks?: unknown[] }>;
+  updates: Array<{ channel: string; ts: string; text: string; blocks?: unknown[] }>;
   statuses: Array<{ channel: string; threadTs: string; status: string }>;
   uploads: Array<{ channel: string; filename: string; threadTs?: string; bytes: Buffer }>;
 }
-const rec: Recorded = { reactions: [], messages: [], statuses: [], uploads: [] };
+const rec: Recorded = { reactions: [], messages: [], updates: [], statuses: [], uploads: [] };
 /** When true the mock rejects setAssistantStatus — the non-assistant fallback case. */
 let statusFails = false;
+/** When set, chat.update returns this failure (drives the update-fallback path). */
+let updateResult: import("../src/slack/client").DeliveryResult = { ok: true };
+/** Synthetic message ts source — the card post returns one so updates can target it. */
+let tsSeq = 1000;
+
+/** The FINAL answer text delivered to a thread: the last card update (in place)
+ *  when the card path drove it, else the last posted message. One helper so an
+ *  assertion is agnostic to whether the answer updated the card or fell back to a
+ *  fresh post. */
+function finalAnswerFor(channel: string, threadTs: string): string | null {
+  const update = [...rec.updates].reverse().find((u) => u.channel === channel);
+  if (update) return update.text;
+  const msg = [...rec.messages].reverse().find((m) => m.channel === channel && m.threadTs === threadTs);
+  return msg?.text ?? null;
+}
 
 beforeAll(async () => {
   for (const [k, v] of Object.entries(SLACK_ENV_OVERRIDES)) {
@@ -85,7 +105,12 @@ beforeAll(async () => {
     },
     postMessage: async (m) => {
       rec.messages.push(m);
-      return { ok: true };
+      // A card post (carries blocks) returns a ts so later chat.update targets it.
+      return m.blocks ? { ok: true, ts: `${tsSeq++}.1` } : { ok: true };
+    },
+    updateMessage: async (u) => {
+      if (updateResult.ok) rec.updates.push(u);
+      return updateResult;
     },
     setAssistantStatus: async (s) => {
       if (statusFails) throw new Error("invalid_thread (not an assistant container)");
@@ -236,18 +261,21 @@ describe("slack event → run", () => {
       rec.reactions.some((r) => r.channel === channel && r.timestamp === ts && r.name === "eyes") || null,
     );
 
-    // On settle the reply is posted back into the Slack thread (thread_ts =
-    // message ts), composed by the ONE real compose function. Asserting through
-    // it keeps the check strict while staying agnostic to whether a
-    // credential-less test environment completes or honestly fails the run
-    // (the previous equality-with-summary only held because stale test-db
-    // state let the run complete; a fresh database fails it).
-    const msg = await waitFor(async () =>
-      rec.messages.find((m) => m.channel === channel && m.threadTs === ts) ?? null,
+    // A Block Kit RUN CARD is posted into the thread (thread_ts = message ts) with
+    // blocks and an "Open in Skynet" url button; on settle it is UPDATED in place
+    // (chat.update) to its final state, never a second bare message. Asserting the
+    // card + its update stays agnostic to whether the credential-less test env
+    // completes or honestly fails the run.
+    const card = await waitFor(async () =>
+      rec.messages.find((m) => m.channel === channel && m.threadTs === ts && m.blocks) ?? null,
     );
-    expect(msg.text.length).toBeGreaterThan(0);
+    const actions = (card.blocks as any[]).find((b) => b.type === "actions");
+    expect(actions.elements[0].url).toContain(`/session/${run.thread_id}`);
+    // The settled answer arrives via a card update (in place), not a new post.
+    const answer = await waitFor(async () => finalAnswerFor(channel, ts));
+    expect(answer!.length).toBeGreaterThan(0);
     const done = await json<any>(`/api/runs/${run.id}`);
-    expect(msg.text).toBe(composeSlackReplyText(done.body.status, done.body.summary));
+    expect(answer).toBe(composeSlackReplyText(done.body.status, done.body.summary));
   });
 
   test("a model directive picks the model for a new thread and strips from the prompt", async () => {
@@ -526,8 +554,11 @@ describe("slack event → run", () => {
     );
     const run = await waitFor(async () => findRunByPrompt(`go ${marker}`));
 
-    // Summary posted on completion…
-    await waitFor(async () => rec.messages.find((m) => m.channel === channel && m.threadTs === ts) ?? null);
+    // The shimmer clears ("") only when the watcher finishes (run settled) - wait
+    // on it directly so the assertion never races the async clear.
+    await waitFor(async () =>
+      rec.statuses.some((s) => s.channel === channel && s.threadTs === ts && s.status === "") || null,
+    );
 
     // …and the assistant shimmer bracketed the run: "Starting up…" first, "" (clear) last.
     const mine = rec.statuses.filter((s) => s.channel === channel && s.threadTs === ts);
@@ -555,6 +586,130 @@ describe("slack event → run", () => {
     } finally {
       statusFails = false;
     }
+  });
+});
+
+// Block Kit RUN CARD: a Slack-started run posts ONE structured card that is
+// UPDATED in place (chat.update on the stored ts) as it progresses + settles. The
+// durable outbox relay delivers each row; assertions waitFor the delivered state.
+describe("slack run card (Block Kit, updated in place)", () => {
+  const client = () => resolveSlackClient(slackConfig()!);
+
+  /** Root a Slack thread with a run, WITHOUT posting a card (card_ts stays null). */
+  async function rootThread(prompt: string): Promise<{ runId: string; channel: string; ts: string }> {
+    const runId = crypto.randomUUID();
+    const channel = `C${uid("card")}`;
+    const ts = `${uid("ts")}.1`;
+    await createRun({ id: runId, prompt, model: "claude-opus-5", engine: "mock", orgId: DEV_ORG_ID, userId: null, parentRunId: null, threadId: runId });
+    await linkSlackThread({ channel, threadTs: ts, rootRunId: runId, orgId: DEV_ORG_ID });
+    return { runId, channel, ts };
+  }
+
+  test("post_card posts blocks + a url button and stores the returned message ts", async () => {
+    const { runId, channel, ts } = await rootThread("card post");
+    const card = buildRunCard({
+      title: "card post",
+      phase: "queued",
+      model: "claude-opus-5",
+      repoSpecs: [{ repo: "loop/backend", branch: "main" }],
+      webUrl: `https://app.example.com/session/${runId}`,
+    });
+    await enqueuePostCard({
+      idempotencyKey: `slack-card:${runId}`,
+      channel,
+      threadTs: ts,
+      rootRunId: runId,
+      blocks: card.blocks,
+      text: card.text,
+    });
+
+    const posted = await waitFor(async () =>
+      rec.messages.find((m) => m.channel === channel && m.blocks) ?? null,
+    );
+    const actions = (posted.blocks as any[]).find((b) => b.type === "actions");
+    expect(actions.elements[0].url).toBe(`https://app.example.com/session/${runId}`);
+    // The returned ts is persisted on the thread for later chat.update.
+    const link = await waitFor(async () => {
+      const l = await findSlackThreadByRoot(runId);
+      return l?.cardTs ? l : null;
+    });
+    expect(link.cardTs).toBeTruthy();
+  });
+
+  test("update_card advances the SAME card in place (chat.update) when a ts exists", async () => {
+    const { runId, channel, ts } = await rootThread("card update");
+    // Post the card first so a ts is stored.
+    const queued = buildRunCard({ title: "card update", phase: "queued", model: "m", repoSpecs: [], webUrl: "https://x/session/1" });
+    await enqueuePostCard({ idempotencyKey: `slack-card:${runId}`, channel, threadTs: ts, rootRunId: runId, blocks: queued.blocks, text: queued.text });
+    const cardTs = (await waitFor(async () => {
+      const l = await findSlackThreadByRoot(runId);
+      return l?.cardTs ? l : null;
+    })).cardTs!;
+    expect(cardTs).toBeTruthy();
+
+    // Finalize enqueues the settled update_card; the relay updates in place.
+    await finalizeRun(runId, "completed", "the answer", 1);
+    await waitFor(async () => (rec.updates.some((u) => u.ts === cardTs) ? true : null));
+    const update = rec.updates.find((u) => u.ts === cardTs)!;
+    expect(update.channel).toBe(channel);
+    expect(update.text).toBe(composeSlackReplyText("completed", "the answer"));
+    // Re-finalizing never double-posts (idempotent by slack-reply:<runId>).
+    const before = rec.updates.length + rec.messages.length;
+    await finalizeRun(runId, "completed", "the answer", 1);
+    await new Promise((r) => setTimeout(r, 150));
+    expect(rec.updates.length + rec.messages.length).toBe(before);
+  });
+
+  test("update_card falls back to a plain post when there is NO card ts (answer never lost)", async () => {
+    const { runId, channel, ts } = await rootThread("no card");
+    // No post_card enqueued → card_ts is null. Finalize must still deliver the
+    // answer as a plain message.
+    await finalizeRun(runId, "completed", "fallback answer", 1);
+    const msg = await waitFor(async () =>
+      rec.messages.find((m) => m.channel === channel && m.threadTs === ts && !m.blocks && m.text.includes("fallback answer")) ?? null,
+    );
+    expect(msg.text).toContain("fallback answer");
+    // Nothing was updated (no card to update).
+    expect(rec.updates.some((u) => u.channel === channel)).toBe(false);
+  });
+
+  test("a PERMANENT chat.update failure falls back to posting the answer as a fresh reply", async () => {
+    const { runId, channel, ts } = await rootThread("update fails");
+    const queued = buildRunCard({ title: "update fails", phase: "queued", model: "m", repoSpecs: [], webUrl: "https://x/session/1" });
+    await enqueuePostCard({ idempotencyKey: `slack-card:${runId}`, channel, threadTs: ts, rootRunId: runId, blocks: queued.blocks, text: queued.text });
+    await waitFor(async () => {
+      const l = await findSlackThreadByRoot(runId);
+      return l?.cardTs ? true : null;
+    });
+
+    updateResult = { ok: false, class: "permanent", message: "message_not_found" };
+    try {
+      await finalizeRun(runId, "completed", "recovered answer", 1);
+      // The permanent update failure must not strand the answer: it posts fresh.
+      const msg = await waitFor(async () =>
+        rec.messages.find((m) => m.channel === channel && !m.blocks && m.text.includes("recovered answer")) ?? null,
+      );
+      expect(msg.threadTs).toBe(ts);
+    } finally {
+      updateResult = { ok: true };
+    }
+  });
+
+  test("progress: a queued->running card update carries a 'working: <step>' line", async () => {
+    // Build the running-phase card the watcher would send and update in place.
+    const { runId, channel, ts } = await rootThread("progress");
+    const queued = buildRunCard({ title: "progress", phase: "queued", model: "m", repoSpecs: [], webUrl: "https://x/session/1" });
+    await enqueuePostCard({ idempotencyKey: `slack-card:${runId}`, channel, threadTs: ts, rootRunId: runId, blocks: queued.blocks, text: queued.text });
+    const cardTs = (await waitFor(async () => {
+      const l = await findSlackThreadByRoot(runId);
+      return l?.cardTs ? l : null;
+    })).cardTs!;
+
+    const running = buildRunCard({ title: "progress", phase: "running", model: "m", repoSpecs: [], webUrl: "https://x/session/1", workingStep: "cloning repo" });
+    await client().updateMessage({ channel, ts: cardTs, text: running.text, blocks: running.blocks });
+    const update = rec.updates.find((u) => u.ts === cardTs)!;
+    const contexts = (update.blocks as any[]).filter((b) => b.type === "context");
+    expect(contexts.some((c) => c.elements[0].text.includes("working: cloning repo"))).toBe(true);
   });
 });
 
@@ -729,14 +884,16 @@ describe("slack socket-mode ingest shares the HTTP handler", () => {
     const run = await waitFor(async () => findRunByPrompt(`socket ${marker}`));
     expect(run.org_id).toBe("org-skynet-dev");
 
-    // watchSlackRun attached downstream: the 👀 ack + the completion summary land.
+    // watchSlackRun attached downstream: the 👀 ack + the run CARD land, and the
+    // settled answer updates the card in place.
     await waitFor(async () =>
       rec.reactions.some((r) => r.channel === channel && r.timestamp === ts && r.name === "eyes") || null,
     );
-    const msg = await waitFor(async () =>
-      rec.messages.find((m) => m.channel === channel && m.threadTs === ts) ?? null,
+    await waitFor(async () =>
+      rec.messages.find((m) => m.channel === channel && m.threadTs === ts && m.blocks) ?? null,
     );
-    expect(msg.text.length).toBeGreaterThan(0);
+    const answer = await waitFor(async () => finalAnswerFor(channel, ts));
+    expect(answer!.length).toBeGreaterThan(0);
   });
 
   test("hello is a no-op; disconnect asks us to close", () => {
