@@ -1,11 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import type { HarnessAdapter } from "./types";
-import { routeT3Harness, t3Harness } from "./t3-harness";
+import { routeRuntimeHarness, runtimeHarness } from "./runtime-harness";
 import {
-  buildT3TurnInterruptCommand,
-  isT3ThreadSessionId,
-} from "./t3-orchestration";
+  buildRuntimeTurnInterruptCommand,
+  isRuntimeThreadSessionId,
+} from "./runtime-orchestration";
 
 const LEGACY_CAPABILITIES = {
   resume: true,
@@ -23,7 +23,7 @@ const LEGACY_CAPABILITIES = {
 
 describe("T3 control harness", () => {
   test("builds the native T3 interrupt command", () => {
-    const command = buildT3TurnInterruptCommand(
+    const command = buildRuntimeTurnInterruptCommand(
       "skynet-thread-thread-1",
       "turn-1",
       "2026-08-12T00:00:00.000Z",
@@ -35,12 +35,12 @@ describe("T3 control harness", () => {
   });
 
   test("recognizes only Skynet-owned native T3 sessions", () => {
-    expect(isT3ThreadSessionId("skynet-thread-thread-1")).toBe(true);
-    expect(isT3ThreadSessionId("ses_opencode")).toBe(false);
+    expect(isRuntimeThreadSessionId("skynet-thread-thread-1")).toBe(true);
+    expect(isRuntimeThreadSessionId("ses_opencode")).toBe(false);
   });
 
   test("cancels the projected turn by its native turn id", () => {
-    const source = readFileSync(new URL("./t3-harness.ts", import.meta.url), "utf8");
+    const source = readFileSync(new URL("./runtime-harness.ts", import.meta.url), "utf8");
     expect(source).toContain("snapshot.thread.latestTurn?.turnId");
   });
 
@@ -58,7 +58,7 @@ describe("T3 control harness", () => {
         return { status: "no_change" };
       },
     };
-    const routed = routeT3Harness(legacy);
+    const routed = routeRuntimeHarness(legacy);
     await routed.cancel(
       { provider: "codex", sessionId: "legacy-session", sandboxId: "sbx" },
       "stop",
@@ -74,19 +74,19 @@ describe("T3 control harness", () => {
       reconcile: async () => ({ status: "no_change" }),
     };
 
-    const routed = routeT3Harness(legacy);
-    const t3Caps = routed.capabilities({
+    const routed = routeRuntimeHarness(legacy);
+    const runtimeCaps = routed.capabilities({
       provider: "codex",
       sessionId: "skynet-thread-thread-1",
       sandboxId: "sbx",
     });
-    expect(t3Caps).toEqual(t3Harness.capabilities());
-    expect(t3Caps.authoritativeHistory).toBe(true);
-    expect(t3Caps.childSessions).toBe(true);
-    expect(t3Caps.approvals).toBe(true);
-    expect(t3Caps.questions).toBe(true);
-    expect(t3Caps.reasoning).toBe(true);
-    expect(t3Caps.patches).toBe(true);
+    expect(runtimeCaps).toEqual(runtimeHarness.capabilities());
+    expect(runtimeCaps.authoritativeHistory).toBe(true);
+    expect(runtimeCaps.childSessions).toBe(true);
+    expect(runtimeCaps.approvals).toBe(true);
+    expect(runtimeCaps.questions).toBe(true);
+    expect(runtimeCaps.reasoning).toBe(true);
+    expect(runtimeCaps.patches).toBe(true);
   });
 
   test("keeps legacy capabilities when no T3 session handle is available", () => {
@@ -97,7 +97,7 @@ describe("T3 control harness", () => {
       reconcile: async () => ({ status: "no_change" }),
     };
 
-    const routed = routeT3Harness(legacy);
+    const routed = routeRuntimeHarness(legacy);
     expect(routed.capabilities()).toEqual(LEGACY_CAPABILITIES);
     expect(
       routed.capabilities({

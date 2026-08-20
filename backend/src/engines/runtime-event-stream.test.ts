@@ -1,12 +1,12 @@
 import { describe, expect, test } from "bun:test";
 import {
-  buildT3ThreadSubscriptionRequest,
-  decodeT3ThreadStreamItems,
-} from "./t3-event-stream";
+  buildRuntimeThreadSubscriptionRequest,
+  decodeRuntimeThreadStreamItems,
+} from "./runtime-event-stream";
 
 describe("T3 native thread event stream", () => {
   test("builds the Effect RPC subscribe request with a replay watermark", () => {
-    expect(buildT3ThreadSubscriptionRequest("skynet-thread-1", 41)).toEqual({
+    expect(buildRuntimeThreadSubscriptionRequest("skynet-thread-1", 41)).toEqual({
       _tag: "Request",
       id: 1,
       tag: "orchestration.subscribeThread",
@@ -20,7 +20,7 @@ describe("T3 native thread event stream", () => {
   });
 
   test("decodes only thread stream items from the matching RPC chunk", () => {
-    const items = decodeT3ThreadStreamItems(JSON.stringify({
+    const items = decodeRuntimeThreadStreamItems(JSON.stringify({
       _tag: "Chunk",
       requestId: 1,
       values: [
@@ -35,6 +35,6 @@ describe("T3 native thread event stream", () => {
       "event",
       "synchronized",
     ]);
-    expect(decodeT3ThreadStreamItems('{"_tag":"Exit","requestId":1,"exit":{"_tag":"Success"}}')).toEqual([]);
+    expect(decodeRuntimeThreadStreamItems('{"_tag":"Exit","requestId":1,"exit":{"_tag":"Success"}}')).toEqual([]);
   });
 });

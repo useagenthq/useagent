@@ -2,33 +2,33 @@ import { describe, expect, test } from "bun:test";
 import {
   activityStep,
   assistantText,
-  hasOpenT3ToolCall,
-  buildT3ProjectCreateCommand,
-  buildT3ThreadCreateCommand,
-  buildT3TurnStartCommand,
-  t3ActivityProviderEvent,
-  t3ActivityRevision,
-  t3ActivityStepKey,
-  shouldProjectT3Activity,
-  t3ModelId,
-  t3QuestionRequest,
-  t3ProjectId,
-  t3ThreadId,
-  t3TurnError,
-  t3TurnSettled,
-  type T3ThreadSnapshot,
-} from "./t3-orchestration";
+  hasOpenRuntimeToolCall,
+  buildRuntimeProjectCreateCommand,
+  buildRuntimeThreadCreateCommand,
+  buildRuntimeTurnStartCommand,
+  runtimeActivityProviderEvent,
+  runtimeActivityRevision,
+  runtimeActivityStepKey,
+  shouldProjectRuntimeActivity,
+  runtimeModelId,
+  runtimeQuestionRequest,
+  runtimeProjectId,
+  runtimeThreadId,
+  runtimeTurnError,
+  runtimeTurnSettled,
+  type RuntimeThreadSnapshot,
+} from "./runtime-orchestration";
 
 const context = { runId: "run/unsafe", threadId: "thread unsafe", model: "gpt-5.6-luna" };
 
 describe("T3 orchestration projection", () => {
   test("derives stable transport-safe project and thread ids", () => {
-    expect(t3ProjectId(context)).toBe("skynet-project-thread-unsafe");
-    expect(t3ThreadId(context)).toBe("skynet-thread-thread-unsafe");
+    expect(runtimeProjectId(context)).toBe("skynet-project-thread-unsafe");
+    expect(runtimeThreadId(context)).toBe("skynet-thread-thread-unsafe");
   });
 
   test("builds a first-turn bootstrap using the selected provider instance", () => {
-    const command = buildT3TurnStartCommand(
+    const command = buildRuntimeTurnStartCommand(
       context,
       "codex",
       "use every prompt without keyword routing",
@@ -50,7 +50,7 @@ describe("T3 orchestration projection", () => {
 
   test("builds an explicit thread before HTTP turn dispatch", () => {
     expect(
-      buildT3ThreadCreateCommand(
+      buildRuntimeThreadCreateCommand(
         { runId: "run-1", threadId: "thread-1", model: "gpt-5.6-luna" },
         "codex",
         "2026-08-12T00:00:00.000Z",
@@ -65,19 +65,19 @@ describe("T3 orchestration projection", () => {
   });
 
   test("maps Skynet OpenCode catalog ids onto T3 provider-qualified ids", () => {
-    expect(t3ModelId("opencode", "openai/gpt-5.6-luna")).toBe(
+    expect(runtimeModelId("opencode", "openai/gpt-5.6-luna")).toBe(
       "openai/gpt-5.6-luna",
     );
-    expect(t3ModelId("opencode", "moonshotai/kimi-k3")).toBe(
+    expect(runtimeModelId("opencode", "moonshotai/kimi-k3")).toBe(
       "openrouter/moonshotai/kimi-k3",
     );
-    expect(t3ModelId("opencode", "claude-opus-5")).toBe(
+    expect(runtimeModelId("opencode", "claude-opus-5")).toBe(
       "anthropic/claude-opus-5",
     );
-    expect(t3ModelId("opencode", "openrouter/openai/gpt-5.6-luna")).toBe(
+    expect(runtimeModelId("opencode", "openrouter/openai/gpt-5.6-luna")).toBe(
       "openrouter/openai/gpt-5.6-luna",
     );
-    expect(t3ModelId("codex", "gpt-5.6-luna")).toBe("gpt-5.6-luna");
+    expect(runtimeModelId("codex", "gpt-5.6-luna")).toBe("gpt-5.6-luna");
   });
 
   test("uses provider-qualified OpenCode ids for thread and turn commands", () => {
@@ -87,7 +87,7 @@ describe("T3 orchestration projection", () => {
       model: "openai/gpt-5.6-luna",
     };
     expect(
-      buildT3ThreadCreateCommand(
+      buildRuntimeThreadCreateCommand(
         opencodeContext,
         "opencode",
         "2026-08-12T00:00:00.000Z",
@@ -99,7 +99,7 @@ describe("T3 orchestration projection", () => {
       },
     });
     expect(
-      buildT3TurnStartCommand(
+      buildRuntimeTurnStartCommand(
         opencodeContext,
         "opencode",
         "test",
@@ -127,7 +127,7 @@ describe("T3 orchestration projection", () => {
       },
       turnId: "turn-1",
     };
-    expect(t3ActivityProviderEvent(
+    expect(runtimeActivityProviderEvent(
       { runId: "run-1", threadId: "thread-1" },
       "skynet-thread-thread-1",
       activity,
@@ -141,7 +141,7 @@ describe("T3 orchestration projection", () => {
         detail: "git status",
       },
     });
-    expect(t3ActivityProviderEvent(
+    expect(runtimeActivityProviderEvent(
       { runId: "run-1", threadId: "thread-1" },
       "skynet-thread-thread-1",
       {
@@ -159,7 +159,7 @@ describe("T3 orchestration projection", () => {
 
   test("builds a project rooted in the prepared sandbox workspace", () => {
     expect(
-      buildT3ProjectCreateCommand(context, "/root/work", "2026-08-12T00:00:00.000Z"),
+      buildRuntimeProjectCreateCommand(context, "/root/work", "2026-08-12T00:00:00.000Z"),
     ).toMatchObject({
       type: "project.create",
       projectId: "skynet-project-thread-unsafe",
@@ -168,7 +168,7 @@ describe("T3 orchestration projection", () => {
   });
 
   test("projects streaming text, activities, completion, and errors", () => {
-    const snapshot: T3ThreadSnapshot = {
+    const snapshot: RuntimeThreadSnapshot = {
       snapshotSequence: 8,
       thread: {
         id: "thread",
@@ -181,8 +181,8 @@ describe("T3 orchestration projection", () => {
       },
     };
     expect(assistantText(snapshot)).toBe("done");
-    expect(t3TurnSettled(snapshot)).toBe(true);
-    expect(t3TurnError(snapshot)).toBeNull();
+    expect(runtimeTurnSettled(snapshot)).toBe(true);
+    expect(runtimeTurnError(snapshot)).toBeNull();
     expect(
       activityStep({
         id: "activity",
@@ -237,7 +237,7 @@ describe("T3 orchestration projection", () => {
         native: { callID: "exec-login-1" },
       },
     });
-    expect(t3ActivityStepKey(mcpCompleted)).toBe("tool:exec-login-1");
+    expect(runtimeActivityStepKey(mcpCompleted)).toBe("tool:exec-login-1");
     const agentStarted = {
       id: "subagent",
       tone: "info",
@@ -255,7 +255,7 @@ describe("T3 orchestration projection", () => {
         native: { sessionID: "task-1", callID: "task-1", childSessionID: "task-1" },
       },
     });
-    expect(t3ActivityStepKey(agentStarted)).toBe("task:task-1");
+    expect(runtimeActivityStepKey(agentStarted)).toBe("task:task-1");
     expect(activityStep({
       id: "tool-started-child-lifecycle",
       tone: "info",
@@ -301,9 +301,9 @@ describe("T3 orchestration projection", () => {
         native: { callID: "call-1", childSessionID: "ses_child" },
       },
     });
-    expect(t3ActivityStepKey(collabActivity)).toBe("tool:call-1");
-    expect(shouldProjectT3Activity(collabActivity)).toBe(true);
-    expect(shouldProjectT3Activity(collabActivity, [
+    expect(runtimeActivityStepKey(collabActivity)).toBe("tool:call-1");
+    expect(shouldProjectRuntimeActivity(collabActivity)).toBe(true);
+    expect(shouldProjectRuntimeActivity(collabActivity, [
       collabActivity,
       {
         id: "task-started",
@@ -318,7 +318,7 @@ describe("T3 orchestration projection", () => {
         turnId: "turn",
       },
     ])).toBe(false);
-    expect(shouldProjectT3Activity(collabActivity, [{
+    expect(shouldProjectRuntimeActivity(collabActivity, [{
       id: "task-without-child-identity",
       tone: "info",
       kind: "task.started",
@@ -326,7 +326,7 @@ describe("T3 orchestration projection", () => {
       payload: { toolUseId: "call-1" },
       turnId: "turn",
     }])).toBe(true);
-    expect(t3ActivityStepKey({
+    expect(runtimeActivityStepKey({
       ...collabActivity,
       id: "collab-updated",
       kind: "tool.updated",
@@ -336,12 +336,12 @@ describe("T3 orchestration projection", () => {
         data: { toolCallId: "call-1" },
       },
     })).toBe("tool:call-1");
-    expect(shouldProjectT3Activity({
+    expect(shouldProjectRuntimeActivity({
       ...collabActivity,
       id: "read",
       payload: { itemType: "command_execution", data: { toolCallId: "read-1" } },
     })).toBe(true);
-    expect(shouldProjectT3Activity({
+    expect(shouldProjectRuntimeActivity({
       ...collabActivity,
       id: "anonymous-start",
       kind: "tool.started",
@@ -354,8 +354,8 @@ describe("T3 orchestration projection", () => {
       summary: "Tool",
       payload: { itemType: "collab_agent_tool_call", data: {} },
     };
-    expect(shouldProjectT3Activity(anonymousCompletion)).toBe(true);
-    expect(shouldProjectT3Activity(anonymousCompletion, [{
+    expect(shouldProjectRuntimeActivity(anonymousCompletion)).toBe(true);
+    expect(shouldProjectRuntimeActivity(anonymousCompletion, [{
       id: "authoritative-child",
       tone: "info",
       kind: "task.updated",
@@ -368,21 +368,21 @@ describe("T3 orchestration projection", () => {
       },
       turnId: "turn",
     }])).toBe(false);
-    expect(shouldProjectT3Activity({
+    expect(shouldProjectRuntimeActivity({
       ...collabActivity,
       id: "anonymous-mcp-start",
       kind: "tool.started",
       summary: "skynet-knowledge · computer_screenshot started",
       payload: { itemType: "mcp_tool_call" },
     })).toBe(false);
-    expect(shouldProjectT3Activity({
+    expect(shouldProjectRuntimeActivity({
       ...collabActivity,
       id: "generic-mcp-complete",
       kind: "tool.completed",
       summary: "Mcp tool call",
       payload: { itemType: "mcp_tool_call", callId: "opaque-1" },
     })).toBe(false);
-    expect(shouldProjectT3Activity({
+    expect(shouldProjectRuntimeActivity({
       ...collabActivity,
       id: "summary-only-mcp-complete",
       kind: "tool.completed",
@@ -491,7 +491,7 @@ describe("T3 orchestration projection", () => {
         },
       },
     });
-    expect(shouldProjectT3Activity(structuredMcpActivity)).toBe(true);
+    expect(shouldProjectRuntimeActivity(structuredMcpActivity)).toBe(true);
     expect(activityStep({
       ...collabActivity,
       id: "structured-mcp-no-server",
@@ -543,7 +543,7 @@ describe("T3 orchestration projection", () => {
 
   test("projects only the latest turn's exact assistant output", () => {
     const exactOutput = `EXACT_${crypto.randomUUID()}`;
-    const snapshot: T3ThreadSnapshot = {
+    const snapshot: RuntimeThreadSnapshot = {
       snapshotSequence: 12,
       thread: {
         id: "skynet-thread-thread-1",
@@ -577,7 +577,7 @@ describe("T3 orchestration projection", () => {
   });
 
   test("keeps resumed-turn provider events on the product thread and current run", () => {
-    expect(t3ActivityProviderEvent(
+    expect(runtimeActivityProviderEvent(
       { runId: "run-2", threadId: "thread-1" },
       "skynet-thread-thread-1",
       {
@@ -646,7 +646,7 @@ describe("T3 orchestration projection", () => {
       expect(step).toMatchObject({
         code_json: { native: { callID: identityCase.expected } },
       });
-      expect(t3ActivityStepKey(identityActivity).split(":").at(-1)).toBe(
+      expect(runtimeActivityStepKey(identityActivity).split(":").at(-1)).toBe(
         identityCase.expected,
       );
       expect((step.code_json as {
@@ -679,9 +679,9 @@ describe("T3 orchestration projection", () => {
       payload: { taskId: "task-1", status: "running" },
       turnId: "turn-1",
     };
-    expect(t3ActivityRevision({ ...base, sequence: 7 })).toBe("7");
-    expect(t3ActivityRevision(base)).not.toBe(
-      t3ActivityRevision({ ...base, payload: { taskId: "task-1", status: "completed" } }),
+    expect(runtimeActivityRevision({ ...base, sequence: 7 })).toBe("7");
+    expect(runtimeActivityRevision(base)).not.toBe(
+      runtimeActivityRevision({ ...base, payload: { taskId: "task-1", status: "completed" } }),
     );
   });
 
@@ -703,12 +703,12 @@ describe("T3 orchestration projection", () => {
       },
       turnId: "turn-1",
     };
-    expect(t3QuestionRequest(activity, "skynet-thread-thread-1")).toMatchObject({
+    expect(runtimeQuestionRequest(activity, "skynet-thread-thread-1")).toMatchObject({
       id: "request-1",
       sessionID: "skynet-thread-thread-1",
       questions: [{ multiple: false, custom: true }],
     });
-    expect(t3ActivityProviderEvent(
+    expect(runtimeActivityProviderEvent(
       { runId: "run-1", threadId: "thread-1" },
       "skynet-thread-thread-1",
       activity,
@@ -720,7 +720,7 @@ describe("T3 orchestration projection", () => {
   });
 });
 
-describe("hasOpenT3ToolCall", () => {
+describe("hasOpenRuntimeToolCall", () => {
   const tool = (kind: string, callId: string, tone: "tool" | "error" = "tool") => ({
     id: `${kind}-${callId}-${Math.abs(kind.length * 31 + callId.length)}`,
     tone,
@@ -731,37 +731,37 @@ describe("hasOpenT3ToolCall", () => {
   });
 
   test("an open tool call (started, no terminal) counts as in flight", () => {
-    expect(hasOpenT3ToolCall([tool("tool.started", "call-1")])).toBe(true);
-    expect(hasOpenT3ToolCall([
+    expect(hasOpenRuntimeToolCall([tool("tool.started", "call-1")])).toBe(true);
+    expect(hasOpenRuntimeToolCall([
       tool("tool.started", "call-1"),
       tool("tool.updated", "call-1"),
     ])).toBe(true);
   });
 
   test("a completed or denied call is not in flight", () => {
-    expect(hasOpenT3ToolCall([
+    expect(hasOpenRuntimeToolCall([
       tool("tool.started", "call-1"),
       tool("tool.completed", "call-1"),
     ])).toBe(false);
-    expect(hasOpenT3ToolCall([
+    expect(hasOpenRuntimeToolCall([
       tool("tool.started", "call-1"),
       tool("tool.denied", "call-1"),
     ])).toBe(false);
   });
 
   test("an errored call does not hold the turn open", () => {
-    expect(hasOpenT3ToolCall([
+    expect(hasOpenRuntimeToolCall([
       tool("tool.started", "call-1"),
       tool("tool.updated", "call-1", "error"),
     ])).toBe(false);
   });
 
   test("one open call among settled ones keeps the turn in flight", () => {
-    expect(hasOpenT3ToolCall([
+    expect(hasOpenRuntimeToolCall([
       tool("tool.started", "call-1"),
       tool("tool.completed", "call-1"),
       tool("tool.started", "call-2"),
     ])).toBe(true);
-    expect(hasOpenT3ToolCall([])).toBe(false);
+    expect(hasOpenRuntimeToolCall([])).toBe(false);
   });
 });

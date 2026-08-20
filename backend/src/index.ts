@@ -50,19 +50,20 @@ import { slackEnabled, slackRoutes, startSlackOutbox, syncSlackWorkspaceBindings
 import { enforceSingleBackend } from "./db/single-backend";
 import { ensureWarmPool, warmPoolSize } from "./sandboxes/warm-pool";
 import {
-  cubeT3WarmPoolSize,
+  cubeRuntimeWarmPoolSize,
   cubeWarmPoolSize,
   startCubeWarmPool,
 } from "./sandboxes/cube-warm-pool";
 import { providerGatewaySandboxLabels } from "./provider-gateway/sandbox-config";
 import { prewarmOpenCodeRuntime } from "./engines/opencode-server";
 import {
-  T3_CUBE_WARM_POOL_NAME,
-  T3_RUNTIME_GENERATION,
-  T3_RUNTIME_GENERATION_LABEL,
-} from "./engines/t3-environment";
-import { prewarmT3EnvironmentAccess } from "./engines/t3-environment-client";
-import { prewarmT3ProviderBridge } from "./engines/t3-provider-bridge";
+  RUNTIME_CUBE_WARM_POOL_NAME,
+  RUNTIME_GENERATION,
+  RUNTIME_GENERATION_LABEL,
+} from "./engines/runtime-environment";
+import { prewarmRuntimeEnvironmentAccess } from "./engines/runtime-environment-client";
+import { operatorEnv } from "./engines/runtime-env";
+import { prewarmRuntimeProviderBridge } from "./engines/runtime-provider-bridge";
 import { providerConnectionsRoutes } from "./provider-connections/routes";
 import { codexSubscriptionRelayRoutes } from "./provider-connections/codex-subscription-relay";
 import { wikiGenRoutes } from "./wiki-gen/routes";
@@ -332,37 +333,41 @@ if (sandboxProviderKind() === "cube" && cubePoolTarget && cubeTemplate) {
   console.log(`[cube-warm-pool] target=${cubePoolTarget} template=${cubeTemplate}`);
 }
 
-const cubeT3PoolTarget = cubeT3WarmPoolSize();
-const cubeT3Template = process.env.T3_CUBE_TEMPLATE_ID?.trim();
-if (sandboxProviderKind() === "cube" && cubeT3PoolTarget && cubeT3Template) {
+const cubeRuntimePoolTarget = cubeRuntimeWarmPoolSize();
+const cubeRuntimeTemplate = operatorEnv(
+  process.env,
+  "RUNTIME_CUBE_TEMPLATE_ID",
+  "T3_CUBE_TEMPLATE_ID",
+)?.trim();
+if (sandboxProviderKind() === "cube" && cubeRuntimePoolTarget && cubeRuntimeTemplate) {
   const apiKey = sandboxProviderApiKey();
   const autoStopInterval = Number(process.env.SANDBOX_AUTO_STOP_MIN ?? 30);
   const autoDeleteInterval = Number(process.env.SANDBOX_AUTO_DELETE_MIN ?? 4320);
   startCubeWarmPool({
-    name: T3_CUBE_WARM_POOL_NAME,
+    name: RUNTIME_CUBE_WARM_POOL_NAME,
     provider: sandboxProvider(apiKey),
-    size: cubeT3PoolTarget,
+    size: cubeRuntimePoolTarget,
     requireDesktop: false,
     createOptions: {
-      snapshot: cubeT3Template,
+      snapshot: cubeRuntimeTemplate,
       labels: {
-        ...providerGatewaySandboxLabels(`warm-pool:${T3_RUNTIME_GENERATION}`),
-        [T3_RUNTIME_GENERATION_LABEL]: T3_RUNTIME_GENERATION,
+        ...providerGatewaySandboxLabels(`warm-pool:${RUNTIME_GENERATION}`),
+        [RUNTIME_GENERATION_LABEL]: RUNTIME_GENERATION,
       },
       autoStopInterval,
       autoDeleteInterval,
     },
     warmRuntime: async (sandbox, signal) => {
-      const t3PrewarmEnv = { ...process.env, T3_ENVIRONMENT_ENABLED: "true" };
-      await prewarmT3ProviderBridge(sandbox, t3PrewarmEnv);
+      const runtimePrewarmEnv = { ...process.env, RUNTIME_ENVIRONMENT_ENABLED: "true" };
+      await prewarmRuntimeProviderBridge(sandbox, runtimePrewarmEnv);
       await Promise.all([
-        prewarmT3EnvironmentAccess(sandbox, signal),
+        prewarmRuntimeEnvironmentAccess(sandbox, signal),
         prewarmOpenCodeRuntime(sandbox, signal),
       ]);
     },
   });
   console.log(
-    `[cube-warm-pool:${T3_CUBE_WARM_POOL_NAME}] target=${cubeT3PoolTarget} template=${cubeT3Template}`,
+    `[cube-warm-pool:${RUNTIME_CUBE_WARM_POOL_NAME}] target=${cubeRuntimePoolTarget} template=${cubeRuntimeTemplate}`,
   );
 }
 

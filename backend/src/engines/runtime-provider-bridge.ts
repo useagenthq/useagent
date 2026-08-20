@@ -17,17 +17,17 @@ import {
   readOpencodeSandboxConfig,
   writeOpencodeSandboxConfig,
 } from "./opencode-server";
-import { T3_ENVIRONMENT_HOME } from "./t3-environment";
-import { t3EnvironmentEnabled } from "./t3-environment";
+import { RUNTIME_ENVIRONMENT_HOME } from "./runtime-environment";
+import { runtimeEnvironmentEnabled } from "./runtime-environment";
 import {
-  prepareT3CodexSubscription,
-  type T3CodexSubscriptionLease,
-} from "./t3-codex-subscription";
+  prepareCodexSubscription,
+  type CodexSubscriptionLease,
+} from "./codex-subscription-runtime";
 
-const T3_SETTINGS_PATH = `${T3_ENVIRONMENT_HOME}/userdata/settings.json`;
-const T3_BIN_DIRECTORY = `${T3_ENVIRONMENT_HOME}/skynet-bin`;
-const T3_CLAUDE_WRAPPER = `${T3_BIN_DIRECTORY}/claude`;
-const T3_CLAUDE_WRAPPER_PLACEHOLDER = "__SKYNET_T3_CLAUDE_WRAPPER__";
+const RUNTIME_SETTINGS_PATH = `${RUNTIME_ENVIRONMENT_HOME}/userdata/settings.json`;
+const RUNTIME_BIN_DIRECTORY = `${RUNTIME_ENVIRONMENT_HOME}/skynet-bin`;
+const RUNTIME_CLAUDE_WRAPPER = `${RUNTIME_BIN_DIRECTORY}/claude`;
+const RUNTIME_CLAUDE_WRAPPER_PLACEHOLDER = "__SKYNET_T3_CLAUDE_WRAPPER__";
 
 interface BootstrapState {
   readonly command: string;
@@ -40,11 +40,11 @@ interface BootstrapState {
 // extra shell round trip before every first token.
 const bootstrapStates = new Map<string | object, BootstrapState>();
 
-type T3EngineId = Extract<EngineId, "codex" | "claude" | "opencode">;
+type RuntimeEngineId = Extract<EngineId, "codex" | "claude" | "opencode">;
 
-export type T3ProviderBridgeLease = T3CodexSubscriptionLease;
+export type RuntimeProviderBridgeLease = CodexSubscriptionLease;
 
-const NOOP_PROVIDER_BRIDGE_LEASE: T3ProviderBridgeLease = {
+const NOOP_PROVIDER_BRIDGE_LEASE: RuntimeProviderBridgeLease = {
   async close() {},
 };
 
@@ -60,12 +60,12 @@ function assertSafeUrl(value: string): void {
 }
 
 /**
- * Configure T3's provider drivers without persisting a bearer token in T3
+ * Configure the runtime provider drivers without persisting a bearer token in
  * settings. Codex and OpenCode read their private, dynamically refreshed
  * config files. Claude is launched through a stable wrapper that exports only
  * the non-secret gateway URL; its apiKeyHelper reads the run capability file.
  */
-export function buildT3ProviderBootstrapCommand(
+export function buildRuntimeProviderBootstrapCommand(
   claudeEnvironment: Readonly<Record<string, string>>,
 ): string {
   const anthropicBaseUrl = claudeEnvironment.ANTHROPIC_BASE_URL;
@@ -95,7 +95,7 @@ export function buildT3ProviderBootstrapCommand(
       },
       claudeAgent: {
         enabled: true,
-        binaryPath: T3_CLAUDE_WRAPPER_PLACEHOLDER,
+        binaryPath: RUNTIME_CLAUDE_WRAPPER_PLACEHOLDER,
         homePath: claudeConfigDir,
         customModels: [],
         launchArgs: "",
@@ -112,9 +112,9 @@ export function buildT3ProviderBootstrapCommand(
 
   return [
     "set -eu",
-    `BIN_DIR="${T3_BIN_DIRECTORY}"`,
-    `SETTINGS="${T3_SETTINGS_PATH}"`,
-    `CLAUDE_WRAPPER="${T3_CLAUDE_WRAPPER}"`,
+    `BIN_DIR="${RUNTIME_BIN_DIRECTORY}"`,
+    `SETTINGS="${RUNTIME_SETTINGS_PATH}"`,
+    `CLAUDE_WRAPPER="${RUNTIME_CLAUDE_WRAPPER}"`,
     'install -d -m 700 "$BIN_DIR" "$(dirname "$SETTINGS")"',
     `printf %s '${encode(wrapper)}' | base64 -d > "$CLAUDE_WRAPPER"`,
     'chmod 700 "$CLAUDE_WRAPPER"',
@@ -123,7 +123,7 @@ export function buildT3ProviderBootstrapCommand(
   ].join("\n");
 }
 
-async function ensureT3ProviderBootstrap(
+async function ensureRuntimeProviderBootstrap(
   sandbox: SandboxHandle,
   command: string,
 ): Promise<void> {
@@ -165,7 +165,7 @@ async function prepareOpenCodeGateway(
  * managed app-server home is never copied into the sandbox; callers must use it
  * only from trusted backend app-server/CLI integration.
  */
-export async function resolveT3CodexSubscriptionRuntime(
+export async function resolveCodexSubscriptionRuntime(
   ctx: Pick<EngineRunContext, "orgId" | "userId">,
 ): Promise<CodexSubscriptionRuntimeSelection | null> {
   if (!ctx.orgId || !ctx.userId) return null;
@@ -193,14 +193,14 @@ export function codexBridgeAuthPath(
   return "provider_gateway";
 }
 
-export async function prepareT3ProviderBridge(
+export async function prepareRuntimeProviderBridge(
   sandbox: SandboxHandle,
   ctx: EngineRunContext,
-  engine: T3EngineId,
+  engine: RuntimeEngineId,
   workdir: string,
-): Promise<T3ProviderBridgeLease> {
+): Promise<RuntimeProviderBridgeLease> {
   const claudeEnvironment = providerGatewayEnv(ctx, "claude");
-  const command = buildT3ProviderBootstrapCommand(claudeEnvironment);
+  const command = buildRuntimeProviderBootstrapCommand(claudeEnvironment);
 
   if (engine === "opencode") {
     await prepareOpenCodeGateway(sandbox, ctx);
@@ -211,31 +211,31 @@ export async function prepareT3ProviderBridge(
     if (!mode) throw new Error("invalid ENGINE_AUTH_MODE_CODEX");
     const subscription = mode === "provider_gateway"
       ? null
-      : await resolveT3CodexSubscriptionRuntime(ctx);
+      : await resolveCodexSubscriptionRuntime(ctx);
     const authPath = codexBridgeAuthPath(subscription !== null);
     if (authPath === "subscription") {
       if (!subscription) throw new Error("codex_subscription_runtime_missing");
-      await ensureT3ProviderBootstrap(sandbox, command);
-      return prepareT3CodexSubscription({ sandbox, ctx, workdir, runtime: subscription });
+      await ensureRuntimeProviderBootstrap(sandbox, command);
+      return prepareCodexSubscription({ sandbox, ctx, workdir, runtime: subscription });
     }
     await prepareProviderGatewaySandbox(sandbox, ctx, engine);
   }
 
-  await ensureT3ProviderBootstrap(sandbox, command);
+  await ensureRuntimeProviderBootstrap(sandbox, command);
   return NOOP_PROVIDER_BRIDGE_LEASE;
 }
 
-/** Install stable provider driver paths before a warm T3 server starts. No
+/** Install stable provider driver paths before a warm runtime server starts. No
  * run capability is minted here; per-run preparation supplies those later. */
-export async function prewarmT3ProviderBridge(
+export async function prewarmRuntimeProviderBridge(
   sandbox: SandboxHandle,
   env: Readonly<Record<string, string | undefined>> = process.env,
 ): Promise<void> {
-  if (!t3EnvironmentEnabled(env)) return;
-  const command = buildT3ProviderBootstrapCommand(claudeProviderGatewayEnvironment());
-  await ensureT3ProviderBootstrap(sandbox, command);
+  if (!runtimeEnvironmentEnabled(env)) return;
+  const command = buildRuntimeProviderBootstrapCommand(claudeProviderGatewayEnvironment());
+  await ensureRuntimeProviderBootstrap(sandbox, command);
 }
 
-export function resetT3ProviderBridgeCacheForTest(): void {
+export function resetRuntimeProviderBridgeCacheForTest(): void {
   bootstrapStates.clear();
 }

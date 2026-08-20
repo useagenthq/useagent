@@ -12,46 +12,46 @@ import {
 } from "../sandboxes/provider";
 import { sessionCapabilities } from "./capabilities";
 import {
-  isT3EnvironmentMissingSessionError,
-  requestT3Environment,
-} from "./t3-environment-client";
-import { T3_RUNTIME_GENERATION } from "./t3-environment";
+  isRuntimeEnvironmentMissingSessionError,
+  requestRuntimeEnvironment,
+} from "./runtime-environment-client";
+import { RUNTIME_GENERATION } from "./runtime-environment";
 import {
   assistantText,
-  buildT3ProjectCreateCommand,
-  buildT3ThreadCreateCommand,
-  buildT3TurnInterruptCommand,
-  buildT3TurnStartCommand,
-  t3ProjectId,
-  t3ThreadId,
-  type T3EngineId,
-  type T3RuntimeMode,
-  type T3ThreadSnapshot,
-} from "./t3-orchestration";
+  buildRuntimeProjectCreateCommand,
+  buildRuntimeThreadCreateCommand,
+  buildRuntimeTurnInterruptCommand,
+  buildRuntimeTurnStartCommand,
+  runtimeProjectId,
+  runtimeThreadId,
+  type RuntimeEngineId,
+  type RuntimeMode,
+  type RuntimeThreadSnapshot,
+} from "./runtime-orchestration";
 
-const T3_POLL_INTERVAL_MS = 125;
+const RUNTIME_POLL_INTERVAL_MS = 125;
 export const T3_SESSION_GENERATION = 2;
 
-interface T3ShellSnapshot {
+interface RuntimeShellSnapshot {
   readonly projects: readonly { readonly id: string }[];
   readonly threads: readonly { readonly id: string }[];
 }
 
 interface T3StartMetadata {
   readonly workspaceRoot: string;
-  readonly runtimeMode: T3RuntimeMode;
+  readonly runtimeMode: RuntimeMode;
   readonly createdAt: string;
 }
 
-function isT3RuntimeMode(value: unknown): value is T3RuntimeMode {
+function isRuntimeMode(value: unknown): value is RuntimeMode {
   return value === "approval-required" ||
     value === "auto-accept-edits" ||
     value === "auto" ||
     value === "full-access";
 }
 
-function steerRuntimeMode(metadata: Record<string, unknown> | undefined): T3RuntimeMode {
-  return isT3RuntimeMode(metadata?.runtimeMode) ? metadata.runtimeMode : "full-access";
+function steerRuntimeMode(metadata: Record<string, unknown> | undefined): RuntimeMode {
+  return isRuntimeMode(metadata?.runtimeMode) ? metadata.runtimeMode : "full-access";
 }
 
 function steerCreatedAt(metadata: Record<string, unknown> | undefined): string {
@@ -64,7 +64,7 @@ function t3StartMetadata(metadata: Record<string, unknown> | undefined): T3Start
   const createdAt = metadata?.createdAt;
   return typeof workspaceRoot === "string" &&
     workspaceRoot.startsWith("/") &&
-    isT3RuntimeMode(runtimeMode) &&
+    isRuntimeMode(runtimeMode) &&
     typeof createdAt === "string"
     ? { workspaceRoot, runtimeMode, createdAt }
     : null;
@@ -89,30 +89,30 @@ async function resolveRuntime(runtime: HarnessRuntime): Promise<SandboxHandle | 
 
 interface T3ProviderDriverDependencies {
   readonly resolveRuntime: typeof resolveRuntime;
-  readonly requestEnvironment: typeof requestT3Environment;
+  readonly requestEnvironment: typeof requestRuntimeEnvironment;
 }
 
 const defaultT3ProviderDriverDependencies = {
   resolveRuntime,
-  requestEnvironment: requestT3Environment,
+  requestEnvironment: requestRuntimeEnvironment,
 } satisfies T3ProviderDriverDependencies;
 
 async function waitForShellState(
   sandbox: SandboxHandle,
   signal: AbortSignal,
-  ready: (shell: T3ShellSnapshot) => boolean,
+  ready: (shell: RuntimeShellSnapshot) => boolean,
   description: string,
 ): Promise<void> {
   while (!signal.aborted) {
-    const shell = await requestT3Environment<T3ShellSnapshot>(
+    const shell = await requestRuntimeEnvironment<RuntimeShellSnapshot>(
       sandbox,
       { method: "GET", path: "/api/orchestration/shell" },
       signal,
     );
     if (ready(shell)) return;
-    await Bun.sleep(T3_POLL_INTERVAL_MS);
+    await Bun.sleep(RUNTIME_POLL_INTERVAL_MS);
   }
-  throw new Error(`T3 ${description} creation aborted`);
+  throw new Error(`Provider runtime ${description} creation aborted`);
 }
 
 function session(
@@ -134,10 +134,10 @@ async function readThreadSnapshot(
   dependencies: T3ProviderDriverDependencies,
   currentSession: HarnessSession,
   signal: AbortSignal,
-): Promise<{ readonly sandbox: SandboxHandle; readonly snapshot: T3ThreadSnapshot } | null> {
+): Promise<{ readonly sandbox: SandboxHandle; readonly snapshot: RuntimeThreadSnapshot } | null> {
   const sandbox = await dependencies.resolveRuntime(currentSession.runtime);
   if (!sandbox) return null;
-  const snapshot = await dependencies.requestEnvironment<T3ThreadSnapshot>(
+  const snapshot = await dependencies.requestEnvironment<RuntimeThreadSnapshot>(
     sandbox,
     {
       method: "GET",
@@ -149,19 +149,19 @@ async function readThreadSnapshot(
 }
 
 export function makeT3ProviderDriver(
-  engine: T3EngineId,
+  engine: RuntimeEngineId,
   dependencies: T3ProviderDriverDependencies = defaultT3ProviderDriverDependencies,
 ): ProviderDriver {
   const capabilities = sessionCapabilities(engine, {
     desktop: false,
     knowledgeTools: true,
-    t3Orchestration: true,
+    runtimeOrchestration: true,
   });
   const driver: ProviderDriver = {
     provider: engine,
     descriptor: {
       provider: engine,
-      protocol: { name: "t3-orchestration", version: T3_RUNTIME_GENERATION },
+      protocol: { name: "t3-orchestration", version: RUNTIME_GENERATION },
       capabilities,
       model: { selection: "per_turn", supportsArbitraryModel: true },
       tools: { mode: "skynet_brokered", approval: "skynet" },
@@ -172,28 +172,28 @@ export function makeT3ProviderDriver(
       if (!metadata) {
         return driverError(
           "invalid_start_metadata",
-          "T3 start requires workspaceRoot, runtimeMode, and createdAt metadata",
+          "The provider runtime start requires workspaceRoot, runtimeMode, and createdAt metadata",
         );
       }
       const sandbox = await dependencies.resolveRuntime(request.runtime);
-      if (!sandbox) return driverError("runtime_unreachable", "T3 sandbox is unreachable");
+      if (!sandbox) return driverError("runtime_unreachable", "The provider runtime sandbox is unreachable");
       const signal = request.signal ?? AbortSignal.timeout(30_000);
       const ctx = { runId: request.runId, threadId: request.threadId, model: request.model };
       try {
-        const shell = await dependencies.requestEnvironment<T3ShellSnapshot>(
+        const shell = await dependencies.requestEnvironment<RuntimeShellSnapshot>(
           sandbox,
           { method: "GET", path: "/api/orchestration/shell" },
           signal,
         );
-        const projectId = t3ProjectId(ctx);
-        const threadId = t3ThreadId(ctx);
+        const projectId = runtimeProjectId(ctx);
+        const threadId = runtimeThreadId(ctx);
         if (!shell.projects.some((project) => project.id === projectId)) {
           await dependencies.requestEnvironment(
             sandbox,
             {
               method: "POST",
               path: "/api/orchestration/dispatch",
-              payload: buildT3ProjectCreateCommand(ctx, metadata.workspaceRoot, metadata.createdAt),
+              payload: buildRuntimeProjectCreateCommand(ctx, metadata.workspaceRoot, metadata.createdAt),
             },
             signal,
           );
@@ -210,7 +210,7 @@ export function makeT3ProviderDriver(
             {
               method: "POST",
               path: "/api/orchestration/dispatch",
-              payload: buildT3ThreadCreateCommand(
+              payload: buildRuntimeThreadCreateCommand(
                 ctx,
                 engine,
                 metadata.createdAt,
@@ -230,7 +230,7 @@ export function makeT3ProviderDriver(
       } catch (error) {
         return driverError(
           "session_create_failed",
-          error instanceof Error ? error.message : "unknown T3 session create error",
+          error instanceof Error ? error.message : "unknown provider runtime session create error",
         );
       }
     },
@@ -242,17 +242,17 @@ export function makeT3ProviderDriver(
           request.session,
           request.signal ?? AbortSignal.timeout(10_000),
         );
-        if (!result) return driverError("runtime_unreachable", "T3 sandbox is unreachable");
+        if (!result) return driverError("runtime_unreachable", "The provider runtime sandbox is unreachable");
         const { snapshot } = result;
         return snapshot.thread.id === request.session.nativeSessionId
           ? { status: "ok", value: request.session }
-          : driverError("session_invalid", "T3 thread identity changed");
+          : driverError("session_invalid", "The provider runtime thread identity changed");
       } catch (error) {
         return driverError(
-          isT3EnvironmentMissingSessionError(error)
+          isRuntimeEnvironmentMissingSessionError(error)
             ? "session_invalid"
             : "session_resume_failed",
-          error instanceof Error ? error.message : "T3 thread is not available",
+          error instanceof Error ? error.message : "The provider runtime thread is not available",
         );
       }
     },
@@ -271,7 +271,7 @@ export function makeT3ProviderDriver(
         if (state === "completed") {
           return {
             status: "completed",
-            summary: assistantText(snapshot).trim() || "T3 run completed",
+            summary: assistantText(snapshot).trim() || "Run completed",
           };
         }
         return { status: "no_change" };
@@ -285,18 +285,18 @@ export function makeT3ProviderDriver(
         return providerDriverUnsupported(
           engine,
           "steer",
-          "T3 production turns currently accept prompt steering through this seam",
+          "The provider runtime currently accepts prompt steering through this seam",
         );
       }
       const sandbox = await dependencies.resolveRuntime(request.session.runtime);
-      if (!sandbox) return driverError("runtime_unreachable", "T3 sandbox is unreachable");
+      if (!sandbox) return driverError("runtime_unreachable", "The provider runtime sandbox is unreachable");
       try {
         await dependencies.requestEnvironment(
           sandbox,
           {
             method: "POST",
             path: "/api/orchestration/dispatch",
-            payload: buildT3TurnStartCommand(
+            payload: buildRuntimeTurnStartCommand(
               {
                 runId: request.runId,
                 threadId: request.threadId,
@@ -315,7 +315,7 @@ export function makeT3ProviderDriver(
       } catch (error) {
         return driverError(
           "steer_failed",
-          error instanceof Error ? error.message : "unknown T3 steer error",
+          error instanceof Error ? error.message : "unknown provider runtime steer error",
         );
       }
     },
@@ -328,14 +328,14 @@ export function makeT3ProviderDriver(
           currentSession,
           signal,
         );
-        if (!result) return driverError("runtime_unreachable", "T3 sandbox is unreachable");
+        if (!result) return driverError("runtime_unreachable", "The provider runtime sandbox is unreachable");
         const { sandbox, snapshot } = result;
         await dependencies.requestEnvironment(
           sandbox,
           {
             method: "POST",
             path: "/api/orchestration/dispatch",
-            payload: buildT3TurnInterruptCommand(
+            payload: buildRuntimeTurnInterruptCommand(
               currentSession.nativeSessionId,
               snapshot.thread.latestTurn?.turnId,
             ),
@@ -346,7 +346,7 @@ export function makeT3ProviderDriver(
       } catch (error) {
         return driverError(
           "cancel_failed",
-          error instanceof Error ? error.message : "unknown T3 cancel error",
+          error instanceof Error ? error.message : "unknown provider runtime cancel error",
         );
       }
     },
@@ -354,7 +354,7 @@ export function makeT3ProviderDriver(
   return driver;
 }
 
-export const t3ProviderDrivers: Readonly<Record<T3EngineId, ProviderDriver>> = {
+export const t3ProviderDrivers: Readonly<Record<RuntimeEngineId, ProviderDriver>> = {
   codex: makeT3ProviderDriver("codex"),
   claude: makeT3ProviderDriver("claude"),
   opencode: makeT3ProviderDriver("opencode"),

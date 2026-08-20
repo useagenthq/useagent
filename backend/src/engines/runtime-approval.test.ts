@@ -1,12 +1,12 @@
 import { describe, expect, test } from "bun:test";
 import {
-  assertT3ApprovalPending,
-  T3ApprovalError,
-  validateT3ApprovalDecision,
-} from "./t3-approval";
-import type { T3ThreadSnapshot } from "./t3-orchestration";
+  assertRuntimeApprovalPending,
+  RuntimeApprovalError,
+  validateRuntimeApprovalDecision,
+} from "./runtime-approval";
+import type { RuntimeThreadSnapshot } from "./runtime-orchestration";
 
-function snapshot(resolved = false): T3ThreadSnapshot {
+function snapshot(resolved = false): RuntimeThreadSnapshot {
   return {
     snapshotSequence: resolved ? 3 : 2,
     thread: {
@@ -40,26 +40,26 @@ function snapshot(resolved = false): T3ThreadSnapshot {
 
 describe("T3 native approvals", () => {
   test("accepts only T3's native decisions", () => {
-    expect(validateT3ApprovalDecision("acceptForSession")).toBe("acceptForSession");
-    expect(() => validateT3ApprovalDecision("always")).toThrow(T3ApprovalError);
+    expect(validateRuntimeApprovalDecision("acceptForSession")).toBe("acceptForSession");
+    expect(() => validateRuntimeApprovalDecision("always")).toThrow(RuntimeApprovalError);
   });
 
   test("returns the pending request and fails closed once resolved", () => {
-    expect(assertT3ApprovalPending(
+    expect(assertRuntimeApprovalPending(
       snapshot(),
       "skynet-thread-thread-1",
       "approval-1",
     )).toMatchObject({ id: "approval-1", requestKind: "command" });
-    expect(() => assertT3ApprovalPending(
+    expect(() => assertRuntimeApprovalPending(
       snapshot(true),
       "skynet-thread-thread-1",
       "approval-1",
-    )).toThrow(T3ApprovalError);
+    )).toThrow(RuntimeApprovalError);
   });
 
   test("keeps provider-generic approvals actionable without misclassifying them", () => {
     const base = snapshot();
-    const generic: T3ThreadSnapshot = {
+    const generic: RuntimeThreadSnapshot = {
       ...base,
       thread: {
         ...base.thread,
@@ -69,7 +69,7 @@ describe("T3 native approvals", () => {
         }],
       },
     };
-    expect(assertT3ApprovalPending(
+    expect(assertRuntimeApprovalPending(
       generic,
       "skynet-thread-thread-1",
       "approval-1",

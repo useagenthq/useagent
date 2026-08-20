@@ -5,7 +5,7 @@ const agentTurnFiles = [
   "src/engines/acp-server.ts",
   "src/engines/opencode-server.ts",
   "src/engines/sandbox.ts",
-  "src/engines/t3-adapter.ts",
+  "src/engines/runtime-adapter.ts",
 ] as const;
 
 const sourceFor = (path: string): string =>
@@ -111,8 +111,8 @@ describe("provider credential trust boundary", () => {
 
   test("T3 sandbox execution cannot materialize managed Codex OAuth state", () => {
     const sandboxExecutionSources = [
-      sourceFor("src/engines/t3-adapter.ts"),
-      sourceFor("src/engines/t3-provider-bridge.ts"),
+      sourceFor("src/engines/runtime-adapter.ts"),
+      sourceFor("src/engines/runtime-provider-bridge.ts"),
     ].join("\n");
 
     for (const forbidden of [
