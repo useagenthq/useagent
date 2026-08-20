@@ -17,7 +17,7 @@ import type { SkillRecord } from "./repo";
 // ---------------------------------------------------------------------------
 
 export interface ImportUpsertOutcome {
-  action: "created" | "updated" | "unchanged";
+  action: "created" | "updated" | "unchanged" | "protected";
   skillId: string;
   version: number;
 }
@@ -143,6 +143,19 @@ export async function importSkillFromSource(input: {
       .limit(1);
 
     if (existing) {
+      // Security-anchored skills are OWNED by their seeder, never by imports:
+      // the hosted login-as gate pins an exact canonical content hash, and an
+      // import appending a repo revision bumps current_version past it - the
+      // 2026-08-20 resync sweep did exactly that and broke every login until a
+      // re-seed. The repo's own copy still imports under a suffixed name via
+      // the create path's conflict handling.
+      if (existing.name.trim().toLowerCase() === "login-as") {
+        return {
+          action: "protected" as const,
+          skillId: existing.id,
+          version: existing.currentVersion,
+        };
+      }
       // Name stays fixed (org-unique identity); description + sections track source.
       const nextContent: SkillContent = {
         name: existing.name,
