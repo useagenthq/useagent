@@ -1,4 +1,5 @@
 import type { SandboxHandle } from "../sandboxes/provider";
+import { operatorEnv } from "./runtime-env";
 import {
   RUN_TIMING_OUTCOMES,
   RUN_TIMING_STAGES,
@@ -44,7 +45,9 @@ const environmentOperations = new Map<string | RuntimeEnvironmentSandbox, Promis
 export function runtimeEnvironmentEnabled(
   env: Readonly<Record<string, string | undefined>> = process.env,
 ): boolean {
-  const value = env.T3_ENVIRONMENT_ENABLED?.trim().toLowerCase();
+  const value = operatorEnv(env, "RUNTIME_ENVIRONMENT_ENABLED", "T3_ENVIRONMENT_ENABLED")
+    ?.trim()
+    .toLowerCase();
   return value === "1" || value === "true";
 }
 
@@ -55,7 +58,9 @@ export function buildRuntimeEnvironmentReadinessCommand(): string {
 export function runtimeFirstActivityTimeoutMs(
   env: Readonly<Record<string, string | undefined>> = process.env,
 ): number {
-  const parsed = Number(env.T3_FIRST_ACTIVITY_TIMEOUT_MS?.trim());
+  const parsed = Number(
+    operatorEnv(env, "RUNTIME_FIRST_ACTIVITY_TIMEOUT_MS", "T3_FIRST_ACTIVITY_TIMEOUT_MS")?.trim(),
+  );
   return Number.isFinite(parsed) && parsed > 0
     ? Math.trunc(parsed)
     : DEFAULT_FIRST_ACTIVITY_TIMEOUT_MS;
@@ -64,7 +69,9 @@ export function runtimeFirstActivityTimeoutMs(
 export function runtimeNoProgressTimeoutMs(
   env: Readonly<Record<string, string | undefined>> = process.env,
 ): number {
-  const parsed = Number(env.T3_NO_PROGRESS_TIMEOUT_MS?.trim());
+  const parsed = Number(
+    operatorEnv(env, "RUNTIME_NO_PROGRESS_TIMEOUT_MS", "T3_NO_PROGRESS_TIMEOUT_MS")?.trim(),
+  );
   return Number.isFinite(parsed) && parsed > 0
     ? Math.trunc(parsed)
     : DEFAULT_NO_PROGRESS_TIMEOUT_MS;

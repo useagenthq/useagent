@@ -12,7 +12,15 @@ import {
 describe("T3 run adapter gate", () => {
   test("is disabled unless explicitly enabled", () => {
     expect(runtimeAdapterEnabled({})).toBe(false);
+    expect(runtimeAdapterEnabled({ RUNTIME_RUN_ADAPTER_ENABLED: "true" })).toBe(true);
+    // Deployment-safe dual-read: legacy name still works; the new name wins.
     expect(runtimeAdapterEnabled({ T3_RUN_ADAPTER_ENABLED: "true" })).toBe(true);
+    expect(
+      runtimeAdapterEnabled({
+        RUNTIME_RUN_ADAPTER_ENABLED: "false",
+        T3_RUN_ADAPTER_ENABLED: "true",
+      }),
+    ).toBe(false);
   });
 
   test("defaults an enabled adapter to explicit canary threads", () => {
@@ -27,6 +35,12 @@ describe("T3 run adapter gate", () => {
     ).toBe(true);
     expect(
       runtimeAdapterSelected(ctx, {
+        RUNTIME_RUN_ADAPTER_ENABLED: "true",
+        RUNTIME_CANARY_THREAD_IDS: "other, thread-1",
+      }),
+    ).toBe(true);
+    expect(
+      runtimeAdapterSelected(ctx, {
         T3_RUN_ADAPTER_ENABLED: "true",
         T3_RUN_ADAPTER_MODE: "all",
       }),
@@ -35,8 +49,9 @@ describe("T3 run adapter gate", () => {
 
   test("rejects an unknown routing mode", () => {
     expect(() => runtimeAdapterMode({ T3_RUN_ADAPTER_MODE: "maybe" })).toThrow(
-      "T3_RUN_ADAPTER_MODE must be canary or all",
+      "RUNTIME_RUN_ADAPTER_MODE (legacy T3_RUN_ADAPTER_MODE) must be canary or all",
     );
+    expect(runtimeAdapterMode({ RUNTIME_RUN_ADAPTER_MODE: "all" })).toBe("all");
   });
 
   test("can restrict an all-mode cutover to proven engines", () => {
@@ -53,6 +68,11 @@ describe("T3 run adapter gate", () => {
         T3_RUN_ADAPTER_ENGINES: "codex, opencode",
       }),
     ).toBe(false);
+    expect(
+      runtimeAdapterEngineSelected("claude", {
+        RUNTIME_RUN_ADAPTER_ENGINES: "claude",
+      }),
+    ).toBe(true);
   });
 
   test("uses a separate Cube candidate template during parity testing", () => {
@@ -63,6 +83,14 @@ describe("T3 run adapter gate", () => {
         T3_CUBE_TEMPLATE_ID: "candidate",
       }),
     ).toBe("candidate");
+    expect(
+      runtimeRunSnapshot({
+        SANDBOX_PROVIDER: "cube",
+        CUBE_TEMPLATE_ID: "production",
+        RUNTIME_CUBE_TEMPLATE_ID: "candidate-new",
+        T3_CUBE_TEMPLATE_ID: "candidate-legacy",
+      }),
+    ).toBe("candidate-new");
   });
 
   test("inherits the configured Daytona snapshot unless a T3 override is present", () => {
@@ -79,14 +107,24 @@ describe("T3 run adapter gate", () => {
         T3_DAYTONA_SNAPSHOT: "candidate-daytona",
       }),
     ).toBe("candidate-daytona");
+    expect(
+      runtimeRunSnapshot({
+        SANDBOX_PROVIDER: "daytona",
+        DAYTONA_SNAPSHOT: "production-daytona",
+        RUNTIME_DAYTONA_SNAPSHOT: "candidate-daytona-new",
+      }),
+    ).toBe("candidate-daytona-new");
   });
 
   test("matches T3's autonomous default and validates explicit runtime modes", () => {
     expect(configuredRuntimeMode({})).toBe("full-access");
     expect(configuredRuntimeMode({ T3_RUNTIME_MODE: "approval-required" })).toBe("approval-required");
-    expect(configuredRuntimeMode({ T3_RUNTIME_MODE: "full-access" })).toBe("full-access");
+    expect(configuredRuntimeMode({ RUNTIME_MODE: "full-access" })).toBe("full-access");
+    expect(
+      configuredRuntimeMode({ RUNTIME_MODE: "auto", T3_RUNTIME_MODE: "full-access" }),
+    ).toBe("auto");
     expect(() => configuredRuntimeMode({ T3_RUNTIME_MODE: "unsafe-ish" })).toThrow(
-      "T3_RUNTIME_MODE must be",
+      "RUNTIME_MODE (legacy T3_RUNTIME_MODE) must be",
     );
   });
 

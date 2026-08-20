@@ -62,6 +62,7 @@ import {
   RUNTIME_GENERATION_LABEL,
 } from "./engines/runtime-environment";
 import { prewarmRuntimeEnvironmentAccess } from "./engines/runtime-environment-client";
+import { operatorEnv } from "./engines/runtime-env";
 import { prewarmRuntimeProviderBridge } from "./engines/runtime-provider-bridge";
 import { providerConnectionsRoutes } from "./provider-connections/routes";
 import { codexSubscriptionRelayRoutes } from "./provider-connections/codex-subscription-relay";
@@ -333,7 +334,11 @@ if (sandboxProviderKind() === "cube" && cubePoolTarget && cubeTemplate) {
 }
 
 const cubeRuntimePoolTarget = cubeRuntimeWarmPoolSize();
-const cubeRuntimeTemplate = process.env.T3_CUBE_TEMPLATE_ID?.trim();
+const cubeRuntimeTemplate = operatorEnv(
+  process.env,
+  "RUNTIME_CUBE_TEMPLATE_ID",
+  "T3_CUBE_TEMPLATE_ID",
+)?.trim();
 if (sandboxProviderKind() === "cube" && cubeRuntimePoolTarget && cubeRuntimeTemplate) {
   const apiKey = sandboxProviderApiKey();
   const autoStopInterval = Number(process.env.SANDBOX_AUTO_STOP_MIN ?? 30);
@@ -353,7 +358,7 @@ if (sandboxProviderKind() === "cube" && cubeRuntimePoolTarget && cubeRuntimeTemp
       autoDeleteInterval,
     },
     warmRuntime: async (sandbox, signal) => {
-      const runtimePrewarmEnv = { ...process.env, T3_ENVIRONMENT_ENABLED: "true" };
+      const runtimePrewarmEnv = { ...process.env, RUNTIME_ENVIRONMENT_ENABLED: "true" };
       await prewarmRuntimeProviderBridge(sandbox, runtimePrewarmEnv);
       await Promise.all([
         prewarmRuntimeEnvironmentAccess(sandbox, signal),
