@@ -1,3 +1,7 @@
+import {
+  APPROVAL_REQUEST_TOOLS,
+  executeApprovalRequestTool,
+} from "./approval-request-tools";
 import { ARTIFACT_TOOLS, executeArtifactTool } from "./artifact-tools";
 import {
   AUTOMATION_APPROVAL_REQUIRED_TOOL_NAMES,
@@ -59,7 +63,10 @@ const ADDITIONAL_APPROVAL_REQUIRED_TOOL_NAMES: ReadonlySet<string> = new Set([
   "knowledge_draft_archive",
 ]);
 
-const GATEWAY_APPROVAL_REQUIRED_TOOL_NAMES: ReadonlySet<string> = new Set([
+/** THE registry of approval-gated operations - discovery, the authenticated
+ *  mint route, and the mid-run approval-request lane all read this one set.
+ *  Extending it is one entry here (or in a family's own gated-name set). */
+export const GATEWAY_APPROVAL_REQUIRED_TOOL_NAMES: ReadonlySet<string> = new Set([
   ...AUTOMATION_APPROVAL_REQUIRED_TOOL_NAMES,
   ...ADDITIONAL_APPROVAL_REQUIRED_TOOL_NAMES,
 ]);
@@ -108,6 +115,7 @@ const BASE_TOOL_FAMILIES = [
   { tools: GITHUB_TOOLS, execute: executeGithubTool },
   { tools: GCS_TOOLS, execute: executeGcsTool },
   { tools: AUTOMATION_TOOLS, execute: executeAutomationTool },
+  { tools: APPROVAL_REQUEST_TOOLS, execute: executeApprovalRequestTool },
   { tools: BLUEPRINT_TOOLS, execute: executeBlueprintTool },
   { tools: CHILD_SESSION_TOOLS, execute: executeChildSessionTool },
   { tools: SKILL_TOOLS, execute: executeSkillTool },
@@ -198,6 +206,18 @@ export function gatewayToolRequiresApproval(name: string): boolean {
   return GATEWAY_APPROVAL_REQUIRED_TOOL_NAMES.has(name) && ALL_OPERATIONS.has(name);
 }
 
+/** Registered descriptor lookup across every family (conditional included) -
+ *  used by approval_request to verify the gated arguments are complete. */
+export function advertisedGatewayToolDescriptor(
+  name: string,
+): GatewayToolDescriptor | null {
+  for (const family of ALL_TOOL_FAMILIES) {
+    const tool = family.tools.find((candidate) => candidate.name === name);
+    if (tool) return tool;
+  }
+  return null;
+}
+
 async function invokeRegisteredOperation(
   executor: GatewayToolExecutor,
   claims: ToolTokenClaims,
@@ -215,7 +235,7 @@ async function invokeRegisteredOperation(
       content: [
         {
           type: "text",
-          text: `A valid server-minted one-shot approval capability is required for ${name}.`,
+          text: `A valid server-minted one-shot approval capability is required for ${name}. Call approval_request with this tool name and the exact argument object, have the user approve it in the Skynet session view, poll approval_poll for the approvalCapability, then retry ${name} with it.`,
         },
       ],
       structuredContent: { error: "approval_required" },

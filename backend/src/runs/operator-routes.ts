@@ -24,6 +24,11 @@ import { Hono } from "hono";
 interface OperatorOps {
   readonly pump: (threadId: string) => Promise<string | null>;
   readonly cancel: (runId: string, reason: string) => boolean;
+  /** Approve one pending gateway approval request AS the target run's owner
+   *  (the parity canary acting as the human in the approval-lane journey). */
+  readonly approveGatewayRequest: (
+    requestId: string,
+  ) => Promise<{ approved: boolean; error?: string }>;
 }
 
 function bearer(header: string | undefined): string {
@@ -54,6 +59,13 @@ export function createOperatorRoutes(ops: OperatorOps): Hono {
     const threadId = typeof body?.threadId === "string" ? body.threadId.trim() : "";
     if (!threadId) return c.json({ error: "threadId_required" }, 400);
     return c.json({ dispatched: await ops.pump(threadId) });
+  });
+
+  routes.post("/approve-gateway-request", async (c) => {
+    const body = (await c.req.json().catch(() => null)) as { requestId?: unknown } | null;
+    const requestId = typeof body?.requestId === "string" ? body.requestId.trim() : "";
+    if (!requestId) return c.json({ error: "requestId_required" }, 400);
+    return c.json(await ops.approveGatewayRequest(requestId));
   });
 
   routes.post("/signal-cancel", async (c) => {

@@ -1,4 +1,4 @@
-import { Hono } from "hono";
+import { Hono, type Context } from "hono";
 import type { AppEnv } from "../../http";
 import { orgScope } from "../../middleware/org";
 import { getRunForOrg } from "../../runs/repo";
@@ -6,6 +6,13 @@ import {
   consumeApprovalCapability,
   mintApprovalCapability,
 } from "./approval-capability";
+import {
+  approvalRequestSummary,
+  approveApprovalRequest,
+  denyApprovalRequest,
+  listPendingApprovalRequests,
+  type ApprovalResolutionError,
+} from "./approval-requests";
 import { gatewayToolRequiresApproval } from "./operation-registry";
 import { resolveToolRunIdentity } from "./run-authorization";
 import { verifyToolToken } from "./token";
@@ -103,6 +110,12 @@ export async function issueGatewayOperationApproval(
   };
 }
 
+function resolutionErrorStatus(error: ApprovalResolutionError): 403 | 404 | 409 {
+  if (error === "request_not_found" || error === "run_not_found") return 404;
+  if (error === "run_user_mismatch") return 403;
+  return 409;
+}
+
 export function createGatewayApprovalRoutes(
   dependencies: ApprovalRouteDependencies = defaultDependencies,
 ): Hono<AppEnv> {
@@ -131,6 +144,47 @@ export function createGatewayApprovalRoutes(
       throw error;
     }
   });
+
+  // Mid-run approval-request lane (#77): the human side of approval_request /
+  // approval_poll. Same boundary as the mint route above - an org member's
+  // session, and resolution additionally requires the target run to be ACTIVE
+  // and belong to that member. The parked capability is never exposed here; it
+  // reaches only the requesting run through approval_poll.
+  routes.get("/requests", async (c) => {
+    const runId = c.req.query("runId")?.trim() ?? "";
+    const threadId = c.req.query("threadId")?.trim() ?? "";
+    if (!runId && !threadId) return c.json({ error: "run_or_thread_required" }, 400);
+    const requests = await listPendingApprovalRequests({
+      orgId: c.get("orgId"),
+      ...(runId ? { runId } : {}),
+      ...(threadId ? { threadId } : {}),
+    });
+    return c.json({ requests: requests.map(approvalRequestSummary) });
+  });
+
+  const resolveRequest = async (c: Context<AppEnv>, decision: "approve" | "deny") => {
+    const userId = c.get("userId");
+    if (!userId) return c.json({ error: "user_required" }, 403);
+    const input = { orgId: c.get("orgId"), requestId: c.req.param("id") ?? "" };
+    const serviceDependencies = {
+      findRun: dependencies.findRun,
+      mint: dependencies.mint,
+    };
+    const result =
+      decision === "approve"
+        ? await approveApprovalRequest(
+            { ...input, approvedBy: userId },
+            serviceDependencies,
+          )
+        : await denyApprovalRequest({ ...input, deniedBy: userId }, serviceDependencies);
+    if (!result.ok) {
+      return c.json({ error: result.error }, resolutionErrorStatus(result.error));
+    }
+    return c.json({ id: result.request.id, status: result.request.status });
+  };
+
+  routes.post("/requests/:id/approve", (c) => resolveRequest(c, "approve"));
+  routes.post("/requests/:id/deny", (c) => resolveRequest(c, "deny"));
   return routes;
 }
 
