@@ -411,7 +411,7 @@ async function runWorker(runId: string): Promise<void> {
         }
         try {
           const entries = await listSkillCatalogForOrg(run.orgId);
-          return formatSkillCatalogPrefill(entries);
+          return formatSkillCatalogPrefill(entries, run.prompt);
         } catch (error) {
           console.warn(
             `[worker] skill catalog prefill failed for run ${run.id}; ` +
