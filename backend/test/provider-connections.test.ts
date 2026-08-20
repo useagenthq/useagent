@@ -4,7 +4,7 @@ import { Hono } from "hono";
 import { db } from "../src/db/client";
 import { member, providerConnections, user } from "../src/db/schema";
 import type { AppEnv } from "../src/http";
-import { resolveT3CodexSubscriptionRuntime } from "../src/engines/t3-provider-bridge";
+import { resolveT3CodexSubscriptionRuntime } from "../src/engines/runtime-provider-bridge";
 import {
   cancelCodexChatGptAppServerLogin,
   codexAppServerChildEnvironment,

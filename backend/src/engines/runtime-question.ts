@@ -5,11 +5,11 @@ import {
   questionEventId,
   validateProviderQuestionAnswers,
 } from "./provider-question";
-import { requestT3Environment } from "./t3-environment-client";
+import { requestT3Environment } from "./runtime-environment-client";
 import {
   t3QuestionRequest,
   type T3ThreadSnapshot,
-} from "./t3-orchestration";
+} from "./runtime-orchestration";
 
 const T3_QUESTION_TIMEOUT_MS = 15_000;
 

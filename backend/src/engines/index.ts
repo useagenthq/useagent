@@ -11,7 +11,7 @@ import {
   makeT3Adapter,
   t3RunAdapterEngineSelected,
   t3RunAdapterSelected,
-} from "./t3-adapter";
+} from "./runtime-adapter";
 import { T3_SESSION_GENERATION, t3ProviderDrivers } from "./t3-provider-driver";
 import {
   normalizeNegotiatedCapabilities,
@@ -25,7 +25,7 @@ import {
   type ProviderDriverCapability,
 } from "@skynet/agent-harness/control";
 import type { EngineAdapter, EngineRunContext, HarnessAdapter } from "./types";
-import { isT3ThreadSessionId, type T3EngineId } from "./t3-orchestration";
+import { isT3ThreadSessionId, type T3EngineId } from "./runtime-orchestration";
 import { sessionCapabilities } from "./capabilities";
 
 // Build the ACP compatibility adapters before registering them beside native

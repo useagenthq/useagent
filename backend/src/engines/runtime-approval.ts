@@ -1,7 +1,7 @@
 import { resolvePreviewSandbox } from "../runs/preview-proxy";
 import { providerEventExists, recordProviderEvent } from "../runs/provider-events";
-import { requestT3Environment } from "./t3-environment-client";
-import type { T3ThreadSnapshot } from "./t3-orchestration";
+import { requestT3Environment } from "./runtime-environment-client";
+import type { T3ThreadSnapshot } from "./runtime-orchestration";
 
 const T3_APPROVAL_TIMEOUT_MS = 15_000;
 

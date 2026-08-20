@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
   buildT3ThreadSubscriptionRequest,
   decodeT3ThreadStreamItems,
-} from "./t3-event-stream";
+} from "./runtime-event-stream";
 
 describe("T3 native thread event stream", () => {
   test("builds the Effect RPC subscribe request with a replay watermark", () => {

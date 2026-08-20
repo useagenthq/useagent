@@ -4,7 +4,7 @@ import {
   T3_ENVIRONMENT_HOME,
   T3_ENVIRONMENT_PORT,
   T3_RUNTIME_GENERATION,
-} from "./t3-environment";
+} from "./runtime-environment";
 
 const T3_AUTH_DIRECTORY = `${T3_ENVIRONMENT_HOME}/skynet-auth`;
 const T3_COOKIE_JAR = `${T3_AUTH_DIRECTORY}/session.cookies`;

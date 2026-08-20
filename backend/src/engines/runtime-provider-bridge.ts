@@ -17,12 +17,12 @@ import {
   readOpencodeSandboxConfig,
   writeOpencodeSandboxConfig,
 } from "./opencode-server";
-import { T3_ENVIRONMENT_HOME } from "./t3-environment";
-import { t3EnvironmentEnabled } from "./t3-environment";
+import { T3_ENVIRONMENT_HOME } from "./runtime-environment";
+import { t3EnvironmentEnabled } from "./runtime-environment";
 import {
   prepareT3CodexSubscription,
   type T3CodexSubscriptionLease,
-} from "./t3-codex-subscription";
+} from "./codex-subscription-runtime";
 
 const T3_SETTINGS_PATH = `${T3_ENVIRONMENT_HOME}/userdata/settings.json`;
 const T3_BIN_DIRECTORY = `${T3_ENVIRONMENT_HOME}/skynet-bin`;

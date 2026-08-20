@@ -1,4 +1,4 @@
-import type { T3Activity } from "./t3-orchestration";
+import type { T3Activity } from "./runtime-orchestration";
 
 /**
  * A provider retry storm (for example a broken provider gateway answering 500)
