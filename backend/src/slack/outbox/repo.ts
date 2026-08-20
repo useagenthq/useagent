@@ -9,6 +9,8 @@ import type { SlackOutboxEnqueue } from "./types";
 // ---------------------------------------------------------------------------
 
 const PAYLOAD_CAP = 8_192;
+// Free-text cap leaves generous headroom for the JSON envelope and other fields.
+const TEXT_FIELD_CAP = 7_000;
 
 export type SlackOutboxRow = typeof slackOutbox.$inferSelect;
 
@@ -35,7 +37,20 @@ export async function enqueue(
    *  atomically with the run reaching terminal). Defaults to the shared pool. */
   exec: Executor = db,
 ): Promise<boolean> {
-  const payload = JSON.stringify(entry.payload).slice(0, PAYLOAD_CAP);
+  // Bound the payload at the FIELD level, never by slicing serialized JSON -
+  // a byte-slice cut a production reply mid-string (8,978-char summary ->
+  // exactly 8,192 stored, unparseable, permanently dead-lettered as
+  // invalid_payload). Only free-text fields are truncated (with an honest
+  // marker); a payload that is still oversized after that is a programming
+  // error and refuses loudly instead of corrupting.
+  const bounded: Record<string, unknown> = { ...(entry.payload as Record<string, unknown>) };
+  if (typeof bounded.text === "string" && bounded.text.length > TEXT_FIELD_CAP) {
+    bounded.text = `${bounded.text.slice(0, TEXT_FIELD_CAP)}\n... (truncated; full reply in the app)`;
+  }
+  const payload = JSON.stringify(bounded);
+  if (payload.length > PAYLOAD_CAP) {
+    throw new Error(`slack outbox payload exceeds ${PAYLOAD_CAP} bytes after field bounding`);
+  }
   const res = await exec
     .insert(slackOutbox)
     .values({
