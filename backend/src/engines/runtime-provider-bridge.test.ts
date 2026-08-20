@@ -4,24 +4,24 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { SandboxHandle } from "../sandboxes/provider";
 import {
-  buildT3ProviderBootstrapCommand,
+  buildRuntimeProviderBootstrapCommand,
   codexBridgeAuthPath,
-  prewarmT3ProviderBridge,
-  resetT3ProviderBridgeCacheForTest,
+  prewarmRuntimeProviderBridge,
+  resetRuntimeProviderBridgeCacheForTest,
 } from "./runtime-provider-bridge";
 
 const previousGatewayUrl = process.env.PROVIDER_GATEWAY_PUBLIC_URL;
 const previousGatewaySecret = process.env.PROVIDER_GATEWAY_SECRET;
 
 beforeEach(() => {
-  resetT3ProviderBridgeCacheForTest();
+  resetRuntimeProviderBridgeCacheForTest();
   process.env.PROVIDER_GATEWAY_PUBLIC_URL = "https://gateway.example.test";
   process.env.PROVIDER_GATEWAY_SECRET =
     "provider-test-0123456789abcdef0123456789abcdef";
 });
 
 afterEach(() => {
-  resetT3ProviderBridgeCacheForTest();
+  resetRuntimeProviderBridgeCacheForTest();
   if (previousGatewayUrl === undefined) delete process.env.PROVIDER_GATEWAY_PUBLIC_URL;
   else process.env.PROVIDER_GATEWAY_PUBLIC_URL = previousGatewayUrl;
   if (previousGatewaySecret === undefined) delete process.env.PROVIDER_GATEWAY_SECRET;
@@ -45,7 +45,7 @@ describe("T3 provider bridge", () => {
   });
 
   test("uses private dynamic provider files instead of persisted credentials", () => {
-    const command = buildT3ProviderBootstrapCommand({
+    const command = buildRuntimeProviderBootstrapCommand({
       ANTHROPIC_BASE_URL: "https://gateway.example.test/provider/anthropic",
       CLAUDE_CONFIG_DIR: "/tmp/skynet-claude-config",
     });
@@ -64,7 +64,7 @@ describe("T3 provider bridge", () => {
 
   test("rejects non-HTTP provider endpoints", () => {
     expect(() =>
-      buildT3ProviderBootstrapCommand({
+      buildRuntimeProviderBootstrapCommand({
         ANTHROPIC_BASE_URL: "file:///tmp/provider",
         CLAUDE_CONFIG_DIR: "/tmp/skynet-claude-config",
       }),
@@ -73,7 +73,7 @@ describe("T3 provider bridge", () => {
 
   test("requires the managed Claude config directory", () => {
     expect(() =>
-      buildT3ProviderBootstrapCommand({
+      buildRuntimeProviderBootstrapCommand({
         ANTHROPIC_BASE_URL: "https://gateway.example.test/provider/anthropic",
       }),
     ).toThrow("incomplete");
@@ -85,7 +85,7 @@ describe("T3 provider bridge", () => {
       const settingsPath = join(home, ".skynet/t3/userdata/settings.json");
       await mkdir(join(home, ".skynet/t3/userdata"), { recursive: true });
       await Bun.write(settingsPath, JSON.stringify({ enableProviderUpdateChecks: false }));
-      const command = buildT3ProviderBootstrapCommand({
+      const command = buildRuntimeProviderBootstrapCommand({
         ANTHROPIC_BASE_URL: "https://gateway.example.test/provider/anthropic",
         CLAUDE_CONFIG_DIR: "/tmp/skynet-claude-config",
       });
@@ -119,8 +119,8 @@ describe("T3 provider bridge", () => {
       },
     } as unknown as SandboxHandle;
 
-    await prewarmT3ProviderBridge(sandbox, { T3_ENVIRONMENT_ENABLED: "true" });
-    await prewarmT3ProviderBridge(sandbox, { T3_ENVIRONMENT_ENABLED: "true" });
+    await prewarmRuntimeProviderBridge(sandbox, { T3_ENVIRONMENT_ENABLED: "true" });
+    await prewarmRuntimeProviderBridge(sandbox, { T3_ENVIRONMENT_ENABLED: "true" });
 
     expect(commands).toHaveLength(1);
   });
@@ -138,16 +138,16 @@ describe("T3 provider bridge", () => {
     } as unknown as SandboxHandle;
 
     await expect(
-      prewarmT3ProviderBridge(sandbox, { T3_ENVIRONMENT_ENABLED: "true" }),
+      prewarmRuntimeProviderBridge(sandbox, { T3_ENVIRONMENT_ENABLED: "true" }),
     ).rejects.toThrow("bootstrap failed");
     await expect(
-      prewarmT3ProviderBridge(sandbox, { T3_ENVIRONMENT_ENABLED: "true" }),
+      prewarmRuntimeProviderBridge(sandbox, { T3_ENVIRONMENT_ENABLED: "true" }),
     ).resolves.toBeUndefined();
     expect(attempts).toBe(2);
   });
 
   test("does not materialize ChatGPT OAuth through sandbox bootstrap", () => {
-    const command = buildT3ProviderBootstrapCommand({
+    const command = buildRuntimeProviderBootstrapCommand({
       ANTHROPIC_BASE_URL: "https://gateway.example.test/provider/anthropic",
       CLAUDE_CONFIG_DIR: "/tmp/skynet-claude-config",
     });

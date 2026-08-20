@@ -3,12 +3,12 @@ import type { HarnessSession } from "@skynet/agent-harness/canonical";
 import { validateProviderDriver } from "@skynet/agent-harness/control";
 import type { SandboxHandle } from "../sandboxes/provider";
 import {
-  T3EnvironmentRequestError,
-  type T3EnvironmentRequest,
-  type requestT3Environment,
+  RuntimeEnvironmentRequestError,
+  type RuntimeEnvironmentRequest,
+  type requestRuntimeEnvironment,
 } from "./runtime-environment-client";
 import { makeT3ProviderDriver, t3ProviderDrivers } from "./t3-provider-driver";
-import type { T3ThreadSnapshot } from "./runtime-orchestration";
+import type { RuntimeThreadSnapshot } from "./runtime-orchestration";
 
 function sessionFor(driver: ReturnType<typeof makeT3ProviderDriver>): HarnessSession {
   return {
@@ -51,18 +51,18 @@ describe("T3 provider drivers", () => {
     })).resolves.toEqual({
       status: "error",
       code: "invalid_start_metadata",
-      message: "T3 start requires workspaceRoot, runtimeMode, and createdAt metadata",
+      message: "The provider runtime start requires workspaceRoot, runtimeMode, and createdAt metadata",
     });
   });
 
   test("classifies only a missing native T3 thread as session_invalid", async () => {
     const missingByStatus = driverRejectingResume(
-      new T3EnvironmentRequestError("T3 environment GET request failed (HTTP 404)", {
+      new RuntimeEnvironmentRequestError("T3 environment GET request failed (HTTP 404)", {
         status: 404,
       }),
     );
     const missingByResponse = driverRejectingResume(
-      new T3EnvironmentRequestError("T3 environment GET request failed", {
+      new RuntimeEnvironmentRequestError("T3 environment GET request failed", {
         response: {
           code: "not_found",
           reason: "thread_not_found",
@@ -71,7 +71,7 @@ describe("T3 provider drivers", () => {
       }),
     );
     const providerFailure = driverRejectingResume(
-      new T3EnvironmentRequestError("T3 environment GET request failed (HTTP 503)", {
+      new RuntimeEnvironmentRequestError("T3 environment GET request failed (HTTP 503)", {
         status: 503,
       }),
     );
@@ -111,12 +111,12 @@ describe("T3 provider drivers", () => {
       status: "unsupported_capability",
       provider: "opencode",
       capability: "steer",
-      message: "T3 production turns currently accept prompt steering through this seam",
+      message: "The provider runtime currently accepts prompt steering through this seam",
     });
   });
 
   test("owns native cancel and recovery through the same driver session", async () => {
-    const snapshot: T3ThreadSnapshot = {
+    const snapshot: RuntimeThreadSnapshot = {
       snapshotSequence: 8,
       thread: {
         id: "skynet-thread-thread-1",
@@ -136,10 +136,10 @@ describe("T3 provider drivers", () => {
         session: { status: "ready", lastError: null },
       },
     };
-    const requests: T3EnvironmentRequest[] = [];
-    const requestEnvironment: typeof requestT3Environment = async <T>(
+    const requests: RuntimeEnvironmentRequest[] = [];
+    const requestEnvironment: typeof requestRuntimeEnvironment = async <T>(
       _sandbox: SandboxHandle,
-      request: T3EnvironmentRequest,
+      request: RuntimeEnvironmentRequest,
     ): Promise<T> => {
       requests.push(request);
       return snapshot as unknown as T;

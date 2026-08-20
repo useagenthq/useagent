@@ -4,7 +4,7 @@ import type { ToolTokenClaims } from "./token";
 import { getRunForOrg } from "../../runs/repo";
 import { engineModelReadyForDispatch } from "../../runs/engine-readiness";
 import { sessionCapabilities } from "../../engines/capabilities";
-import { isT3ThreadSessionId } from "../../engines/runtime-orchestration";
+import { isRuntimeThreadSessionId } from "../../engines/runtime-orchestration";
 import {
   childSessionEventLimit,
   childSessionLimit,
@@ -117,7 +117,7 @@ export async function childSessionToolsEnabled(
   const capabilities = sessionCapabilities(run.engine, {
     desktop: Boolean(run.sandboxId),
     knowledgeTools: true,
-    t3Orchestration: isT3ThreadSessionId(run.engineSessionId ?? ""),
+    runtimeOrchestration: isRuntimeThreadSessionId(run.engineSessionId ?? ""),
   });
   return (
     capabilities.childSessions &&

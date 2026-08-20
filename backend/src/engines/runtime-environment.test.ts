@@ -7,26 +7,26 @@ import {
   type RunTimingOutcome,
 } from "../runs/run-timing";
 import {
-  buildT3EnvironmentLaunchCommand,
-  buildT3EnvironmentReadinessCommand,
-  ensureT3Environment,
-  restartT3Environment,
-  prewarmT3Environment,
-  T3_ENVIRONMENT_PORT,
-  t3FirstActivityTimeoutMs,
-  t3NoProgressTimeoutMs,
-  t3EnvironmentEnabled,
+  buildRuntimeEnvironmentLaunchCommand,
+  buildRuntimeEnvironmentReadinessCommand,
+  ensureRuntimeEnvironment,
+  restartRuntimeEnvironment,
+  prewarmRuntimeEnvironment,
+  RUNTIME_ENVIRONMENT_PORT,
+  runtimeFirstActivityTimeoutMs,
+  runtimeNoProgressTimeoutMs,
+  runtimeEnvironmentEnabled,
 } from "./runtime-environment";
 
-type T3TestProcess = Pick<
+type RuntimeTestProcess = Pick<
   SandboxProcess,
   "createSession" | "deleteSession" | "executeCommand" | "executeSessionCommand"
 >;
 
-function t3Sandbox(
+function runtimeSandbox(
   id: string,
-  process: Pick<T3TestProcess, "executeCommand"> & Partial<T3TestProcess>,
-): { readonly id: string; readonly process: T3TestProcess } {
+  process: Pick<RuntimeTestProcess, "executeCommand"> & Partial<RuntimeTestProcess>,
+): { readonly id: string; readonly process: RuntimeTestProcess } {
   return {
     id,
     process: {
@@ -40,32 +40,32 @@ function t3Sandbox(
 
 describe("T3 Cube environment", () => {
   test("is opt-in until hosted parity is proven", () => {
-    expect(t3EnvironmentEnabled({})).toBe(false);
-    expect(t3EnvironmentEnabled({ T3_ENVIRONMENT_ENABLED: "false" })).toBe(false);
-    expect(t3EnvironmentEnabled({ T3_ENVIRONMENT_ENABLED: "1" })).toBe(true);
-    expect(t3EnvironmentEnabled({ T3_ENVIRONMENT_ENABLED: "TRUE" })).toBe(true);
+    expect(runtimeEnvironmentEnabled({})).toBe(false);
+    expect(runtimeEnvironmentEnabled({ T3_ENVIRONMENT_ENABLED: "false" })).toBe(false);
+    expect(runtimeEnvironmentEnabled({ T3_ENVIRONMENT_ENABLED: "1" })).toBe(true);
+    expect(runtimeEnvironmentEnabled({ T3_ENVIRONMENT_ENABLED: "TRUE" })).toBe(true);
   });
 
   test("bounds first-activity silence with an operator-tunable timeout", () => {
-    expect(t3FirstActivityTimeoutMs({})).toBe(45_000);
-    expect(t3FirstActivityTimeoutMs({ T3_FIRST_ACTIVITY_TIMEOUT_MS: "1500" })).toBe(1500);
-    expect(t3FirstActivityTimeoutMs({ T3_FIRST_ACTIVITY_TIMEOUT_MS: "0" })).toBe(45_000);
-    expect(t3FirstActivityTimeoutMs({ T3_FIRST_ACTIVITY_TIMEOUT_MS: "nope" })).toBe(45_000);
+    expect(runtimeFirstActivityTimeoutMs({})).toBe(45_000);
+    expect(runtimeFirstActivityTimeoutMs({ T3_FIRST_ACTIVITY_TIMEOUT_MS: "1500" })).toBe(1500);
+    expect(runtimeFirstActivityTimeoutMs({ T3_FIRST_ACTIVITY_TIMEOUT_MS: "0" })).toBe(45_000);
+    expect(runtimeFirstActivityTimeoutMs({ T3_FIRST_ACTIVITY_TIMEOUT_MS: "nope" })).toBe(45_000);
   });
 
   test("bounds provider no-progress time with an operator-tunable timeout", () => {
-    expect(t3NoProgressTimeoutMs({})).toBe(120_000);
-    expect(t3NoProgressTimeoutMs({ T3_NO_PROGRESS_TIMEOUT_MS: "2500" })).toBe(2500);
-    expect(t3NoProgressTimeoutMs({ T3_NO_PROGRESS_TIMEOUT_MS: "0" })).toBe(120_000);
-    expect(t3NoProgressTimeoutMs({ T3_NO_PROGRESS_TIMEOUT_MS: "nah" })).toBe(120_000);
+    expect(runtimeNoProgressTimeoutMs({})).toBe(120_000);
+    expect(runtimeNoProgressTimeoutMs({ T3_NO_PROGRESS_TIMEOUT_MS: "2500" })).toBe(2500);
+    expect(runtimeNoProgressTimeoutMs({ T3_NO_PROGRESS_TIMEOUT_MS: "0" })).toBe(120_000);
+    expect(runtimeNoProgressTimeoutMs({ T3_NO_PROGRESS_TIMEOUT_MS: "nah" })).toBe(120_000);
   });
 
   test("launches one isolated headless environment inside the Cube workstation", () => {
-    const command = buildT3EnvironmentLaunchCommand();
+    const command = buildRuntimeEnvironmentLaunchCommand();
 
     expect(command).toContain('export T3CODE_HOME="$HOME/.skynet/t3"');
     expect(command).toContain("export T3CODE_HOST=0.0.0.0");
-    expect(command).toContain(`export T3CODE_PORT=${T3_ENVIRONMENT_PORT}`);
+    expect(command).toContain(`export T3CODE_PORT=${RUNTIME_ENVIRONMENT_PORT}`);
     expect(command).toContain("export T3_CODEX_REQUIRED_MCP_SERVERS=skynet-knowledge");
     expect(command).toContain("export T3CODE_NO_BROWSER=true");
     expect(command).toContain('exec t3 serve --host 0.0.0.0 --port 37733 --base-dir "$T3CODE_HOME"');
@@ -81,9 +81,9 @@ describe("T3 Cube environment", () => {
   });
 
   test("uses a loopback readiness probe", () => {
-    const command = buildT3EnvironmentReadinessCommand();
+    const command = buildRuntimeEnvironmentReadinessCommand();
 
-    expect(command).toContain(`http://127.0.0.1:${T3_ENVIRONMENT_PORT}/api/auth/session`);
+    expect(command).toContain(`http://127.0.0.1:${RUNTIME_ENVIRONMENT_PORT}/api/auth/session`);
     expect(command).not.toContain("0.0.0.0");
   });
 
@@ -95,7 +95,7 @@ describe("T3 Cube environment", () => {
         spans.push({ stage, outcome });
       },
     } satisfies Pick<RunStageTimer, "begin">;
-    const sandbox = t3Sandbox("cube-t3-healthy", {
+    const sandbox = runtimeSandbox("cube-t3-healthy", {
         executeCommand: async (command: string) => {
           commands.push(command);
           return { exitCode: 0, result: "" };
@@ -103,9 +103,9 @@ describe("T3 Cube environment", () => {
     });
 
     await expect(
-      ensureT3Environment(sandbox, new AbortController().signal, timing),
-    ).resolves.toMatchObject({ sandboxId: "cube-t3-healthy", port: T3_ENVIRONMENT_PORT });
-    expect(commands).toEqual([buildT3EnvironmentReadinessCommand()]);
+      ensureRuntimeEnvironment(sandbox, new AbortController().signal, timing),
+    ).resolves.toMatchObject({ sandboxId: "cube-t3-healthy", port: RUNTIME_ENVIRONMENT_PORT });
+    expect(commands).toEqual([buildRuntimeEnvironmentReadinessCommand()]);
     expect(spans).toEqual([
       { stage: RUN_TIMING_STAGES.runtimeReadiness, outcome: RUN_TIMING_OUTCOMES.ready },
     ]);
@@ -116,7 +116,7 @@ describe("T3 Cube environment", () => {
     const created: string[] = [];
     const launched: string[] = [];
     let probes = 0;
-    const sandbox = t3Sandbox("cube-t3-cold", {
+    const sandbox = runtimeSandbox("cube-t3-cold", {
         executeCommand: async () => ({ exitCode: probes++ === 0 ? 1 : 0, result: "" }),
         deleteSession: async (name: string) => deleted.push(name),
         createSession: async (name: string) => created.push(name),
@@ -127,8 +127,8 @@ describe("T3 Cube environment", () => {
     });
 
     await expect(
-      ensureT3Environment(sandbox, new AbortController().signal),
-    ).resolves.toMatchObject({ sandboxId: "cube-t3-cold", port: T3_ENVIRONMENT_PORT });
+      ensureRuntimeEnvironment(sandbox, new AbortController().signal),
+    ).resolves.toMatchObject({ sandboxId: "cube-t3-cold", port: RUNTIME_ENVIRONMENT_PORT });
     expect(deleted).toEqual(["skynet-t3-environment"]);
     expect(created).toEqual(["skynet-t3-environment"]);
     expect(launched).toHaveLength(1);
@@ -146,7 +146,7 @@ describe("T3 Cube environment", () => {
     const created: string[] = [];
     const launched: string[] = [];
     let killCommand: string | undefined;
-    const sandbox = t3Sandbox("cube-t3-restart", {
+    const sandbox = runtimeSandbox("cube-t3-restart", {
       executeCommand: async (command: string) => {
         if (command.includes("[t]3 serve")) {
           killCommand = command;
@@ -169,8 +169,8 @@ describe("T3 Cube environment", () => {
     });
 
     await expect(
-      restartT3Environment(sandbox, new AbortController().signal),
-    ).resolves.toMatchObject({ sandboxId: "cube-t3-restart", port: T3_ENVIRONMENT_PORT });
+      restartRuntimeEnvironment(sandbox, new AbortController().signal),
+    ).resolves.toMatchObject({ sandboxId: "cube-t3-restart", port: RUNTIME_ENVIRONMENT_PORT });
     // Force-stopped even though the environment was healthy: the server process is
     // killed directly by command line (self-safe pattern, cube deleteSession
     // cannot reach the detached process), the session directory is cleaned, then
@@ -186,19 +186,19 @@ describe("T3 Cube environment", () => {
   test("fails closed when a restart is aborted before the environment stops", async () => {
     const controller = new AbortController();
     controller.abort();
-    const sandbox = t3Sandbox("cube-t3-restart-aborted", {
+    const sandbox = runtimeSandbox("cube-t3-restart-aborted", {
       executeCommand: async () => ({ exitCode: 0, result: "" }),
     });
 
     await expect(
-      restartT3Environment(sandbox, controller.signal),
+      restartRuntimeEnvironment(sandbox, controller.signal),
     ).rejects.toThrow("Provider runtime restart aborted");
   });
 
   test("repairs after a failed probe when the stale session is already absent", async () => {
     let probes = 0;
     let launches = 0;
-    const sandbox = t3Sandbox("cube-t3-missing-session", {
+    const sandbox = runtimeSandbox("cube-t3-missing-session", {
         executeCommand: async () => {
           if (probes++ === 0) throw new Error("probe transport failed");
           return { exitCode: 0, result: "" };
@@ -214,7 +214,7 @@ describe("T3 Cube environment", () => {
     });
 
     await expect(
-      ensureT3Environment(sandbox, new AbortController().signal),
+      ensureRuntimeEnvironment(sandbox, new AbortController().signal),
     ).resolves.toMatchObject({ sandboxId: "cube-t3-missing-session" });
     expect(probes).toBe(2);
     expect(launches).toBe(1);
@@ -222,14 +222,14 @@ describe("T3 Cube environment", () => {
 
   test("does no work while the migration flag is disabled", async () => {
     let calls = 0;
-    const sandbox = t3Sandbox("cube-t3-disabled", {
+    const sandbox = runtimeSandbox("cube-t3-disabled", {
         executeCommand: async () => {
           calls += 1;
           return { exitCode: 0, result: "" };
         },
     });
 
-    await prewarmT3Environment(sandbox, new AbortController().signal, {});
+    await prewarmRuntimeEnvironment(sandbox, new AbortController().signal, {});
     expect(calls).toBe(0);
   });
 });

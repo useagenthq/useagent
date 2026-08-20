@@ -2,7 +2,8 @@ import { ensureSandboxDesktopView, type SandboxDesktop } from "../engines/deskto
 import type { SandboxCreateOptions, SandboxHandle, SandboxProvider } from "./provider";
 
 const CUBE_WARM_POOL_SIZE_ENV = "CUBE_WARM_POOL_SIZE";
-const CUBE_T3_WARM_POOL_SIZE_ENV = "CUBE_T3_WARM_POOL_SIZE";
+// Frozen VALUE: operator env var name already set in production host config.
+const CUBE_RUNTIME_WARM_POOL_SIZE_ENV = "CUBE_T3_WARM_POOL_SIZE";
 export const DEFAULT_CUBE_WARM_POOL_NAME = "default";
 const WARM_TIMEOUT_MS = 120_000;
 const CLAIM_PROBE_TIMEOUT_SECONDS = 5;
@@ -25,10 +26,10 @@ export function cubeWarmPoolSize(
   return configuredPoolSize(CUBE_WARM_POOL_SIZE_ENV, env);
 }
 
-export function cubeT3WarmPoolSize(
+export function cubeRuntimeWarmPoolSize(
   env: Readonly<Record<string, string | undefined>> = process.env,
 ): number | null {
-  return configuredPoolSize(CUBE_T3_WARM_POOL_SIZE_ENV, env);
+  return configuredPoolSize(CUBE_RUNTIME_WARM_POOL_SIZE_ENV, env);
 }
 
 export interface CubeWarmPoolOptions {

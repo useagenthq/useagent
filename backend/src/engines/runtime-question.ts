@@ -5,13 +5,13 @@ import {
   questionEventId,
   validateProviderQuestionAnswers,
 } from "./provider-question";
-import { requestT3Environment } from "./runtime-environment-client";
+import { requestRuntimeEnvironment } from "./runtime-environment-client";
 import {
-  t3QuestionRequest,
-  type T3ThreadSnapshot,
+  runtimeQuestionRequest,
+  type RuntimeThreadSnapshot,
 } from "./runtime-orchestration";
 
-const T3_QUESTION_TIMEOUT_MS = 15_000;
+const RUNTIME_QUESTION_TIMEOUT_MS = 15_000;
 
 function record(value: unknown): Readonly<Record<string, unknown>> | null {
   return value && typeof value === "object" && !Array.isArray(value)
@@ -19,8 +19,8 @@ function record(value: unknown): Readonly<Record<string, unknown>> | null {
     : null;
 }
 
-export function t3QuestionAnswers(
-  snapshot: T3ThreadSnapshot,
+export function runtimeQuestionAnswers(
+  snapshot: RuntimeThreadSnapshot,
   sessionId: string,
   questionId: string,
   value: unknown,
@@ -29,12 +29,12 @@ export function t3QuestionAnswers(
     const payload = record(candidate.payload);
     return candidate.kind === "user-input.requested" && payload?.requestId === questionId;
   });
-  const request = activity ? t3QuestionRequest(activity, sessionId) : null;
+  const request = activity ? runtimeQuestionRequest(activity, sessionId) : null;
   if (!activity || !request) {
     throw new ProviderQuestionError(
       "question_not_pending",
       409,
-      "this question is no longer pending on the active T3 session",
+      "this question is no longer pending on the active provider session",
     );
   }
   const requestedAt = snapshot.thread.activities.findLastIndex(({ id }) => id === activity.id);
@@ -46,7 +46,7 @@ export function t3QuestionAnswers(
     throw new ProviderQuestionError(
       "question_not_pending",
       409,
-      "this T3 question has already been answered",
+      "this question has already been answered",
     );
   }
   const answers = validateProviderQuestionAnswers(request, value);
@@ -59,14 +59,14 @@ export function t3QuestionAnswers(
       throw new ProviderQuestionError(
         "question_invalid",
         409,
-        "the pending T3 question is missing its answer key",
+        "the pending question is missing its answer key",
       );
     }
     return [id, request.questions[index]?.multiple ? answer : answer[0]];
   }));
 }
 
-export async function replyToT3Question(input: {
+export async function replyToRuntimeQuestion(input: {
   readonly runId: string;
   readonly threadId: string;
   readonly sessionId: string;
@@ -80,9 +80,9 @@ export async function replyToT3Question(input: {
   const sandbox = await resolvePreviewSandbox(input.threadId);
   const signal = AbortSignal.any([
     input.signal,
-    AbortSignal.timeout(T3_QUESTION_TIMEOUT_MS),
+    AbortSignal.timeout(RUNTIME_QUESTION_TIMEOUT_MS),
   ]);
-  const snapshot = await requestT3Environment<T3ThreadSnapshot>(
+  const snapshot = await requestRuntimeEnvironment<RuntimeThreadSnapshot>(
     sandbox,
     {
       method: "GET",
@@ -90,8 +90,8 @@ export async function replyToT3Question(input: {
     },
     signal,
   );
-  const answers = t3QuestionAnswers(snapshot, input.sessionId, input.questionId, input.answers);
-  await requestT3Environment(
+  const answers = runtimeQuestionAnswers(snapshot, input.sessionId, input.questionId, input.answers);
+  await requestRuntimeEnvironment(
     sandbox,
     {
       method: "POST",
@@ -120,7 +120,7 @@ export async function replyToT3Question(input: {
     throw new ProviderQuestionError(
       "reply_persist_failed",
       503,
-      "the answer reached T3 but its durable receipt could not be recorded",
+      "the answer reached the provider runtime but its durable receipt could not be recorded",
     );
   }
   return { alreadyAnswered: false };

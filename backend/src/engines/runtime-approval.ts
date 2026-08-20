@@ -1,27 +1,27 @@
 import { resolvePreviewSandbox } from "../runs/preview-proxy";
 import { providerEventExists, recordProviderEvent } from "../runs/provider-events";
-import { requestT3Environment } from "./runtime-environment-client";
-import type { T3ThreadSnapshot } from "./runtime-orchestration";
+import { requestRuntimeEnvironment } from "./runtime-environment-client";
+import type { RuntimeThreadSnapshot } from "./runtime-orchestration";
 
-const T3_APPROVAL_TIMEOUT_MS = 15_000;
+const RUNTIME_APPROVAL_TIMEOUT_MS = 15_000;
 
-export const T3_APPROVAL_DECISIONS = [
+export const RUNTIME_APPROVAL_DECISIONS = [
   "accept",
   "acceptForSession",
   "decline",
   "cancel",
 ] as const;
 
-export type T3ApprovalDecision = (typeof T3_APPROVAL_DECISIONS)[number];
+export type RuntimeApprovalDecision = (typeof RUNTIME_APPROVAL_DECISIONS)[number];
 
-export interface T3ApprovalRequest {
+export interface RuntimeApprovalRequest {
   readonly id: string;
   readonly sessionID: string;
   readonly requestKind: "command" | "file-read" | "file-change" | "other";
   readonly detail?: string;
 }
 
-export class T3ApprovalError extends Error {
+export class RuntimeApprovalError extends Error {
   constructor(
     readonly code: string,
     readonly status: 400 | 409 | 502 | 503,
@@ -45,10 +45,10 @@ export function approvalEventId(
   return `pe_${runId}_${requestId}_approval_${state}`;
 }
 
-export function t3ApprovalRequest(
-  activity: T3ThreadSnapshot["thread"]["activities"][number],
+export function runtimeApprovalRequest(
+  activity: RuntimeThreadSnapshot["thread"]["activities"][number],
   sessionId: string,
-): T3ApprovalRequest | null {
+): RuntimeApprovalRequest | null {
   if (activity.kind !== "approval.requested") return null;
   const payload = record(activity.payload);
   if (typeof payload?.requestId !== "string") return null;
@@ -65,43 +65,43 @@ export function t3ApprovalRequest(
   };
 }
 
-export function validateT3ApprovalDecision(value: unknown): T3ApprovalDecision {
-  if (typeof value === "string" && T3_APPROVAL_DECISIONS.includes(value as T3ApprovalDecision)) {
-    return value as T3ApprovalDecision;
+export function validateRuntimeApprovalDecision(value: unknown): RuntimeApprovalDecision {
+  if (typeof value === "string" && RUNTIME_APPROVAL_DECISIONS.includes(value as RuntimeApprovalDecision)) {
+    return value as RuntimeApprovalDecision;
   }
-  throw new T3ApprovalError(
+  throw new RuntimeApprovalError(
     "approval_decision_invalid",
     400,
-    `decision must be one of: ${T3_APPROVAL_DECISIONS.join(", ")}`,
+    `decision must be one of: ${RUNTIME_APPROVAL_DECISIONS.join(", ")}`,
   );
 }
 
-export function assertT3ApprovalPending(
-  snapshot: T3ThreadSnapshot,
+export function assertRuntimeApprovalPending(
+  snapshot: RuntimeThreadSnapshot,
   sessionId: string,
   requestId: string,
-): T3ApprovalRequest {
+): RuntimeApprovalRequest {
   const requestedAt = snapshot.thread.activities.findLastIndex((activity) => {
     const payload = record(activity.payload);
     return activity.kind === "approval.requested" && payload?.requestId === requestId;
   });
   const activity = requestedAt >= 0 ? snapshot.thread.activities[requestedAt] : undefined;
-  const request = activity ? t3ApprovalRequest(activity, sessionId) : null;
+  const request = activity ? runtimeApprovalRequest(activity, sessionId) : null;
   const resolved = snapshot.thread.activities.slice(requestedAt + 1).some((candidate) => {
     const payload = record(candidate.payload);
     return candidate.kind === "approval.resolved" && payload?.requestId === requestId;
   });
   if (!request || resolved) {
-    throw new T3ApprovalError(
+    throw new RuntimeApprovalError(
       "approval_not_pending",
       409,
-      "this approval is no longer pending on the active T3 session",
+      "this approval is no longer pending on the active provider session",
     );
   }
   return request;
 }
 
-export async function replyToT3Approval(input: {
+export async function replyToRuntimeApproval(input: {
   readonly runId: string;
   readonly threadId: string;
   readonly sessionId: string;
@@ -112,10 +112,10 @@ export async function replyToT3Approval(input: {
   const respondedEventId = approvalEventId(input.runId, input.requestId, "responded");
   if (await providerEventExists(respondedEventId)) return { alreadyAnswered: true };
 
-  const decision = validateT3ApprovalDecision(input.decision);
+  const decision = validateRuntimeApprovalDecision(input.decision);
   const sandbox = await resolvePreviewSandbox(input.threadId);
-  const signal = AbortSignal.any([input.signal, AbortSignal.timeout(T3_APPROVAL_TIMEOUT_MS)]);
-  const snapshot = await requestT3Environment<T3ThreadSnapshot>(
+  const signal = AbortSignal.any([input.signal, AbortSignal.timeout(RUNTIME_APPROVAL_TIMEOUT_MS)]);
+  const snapshot = await requestRuntimeEnvironment<RuntimeThreadSnapshot>(
     sandbox,
     {
       method: "GET",
@@ -123,8 +123,8 @@ export async function replyToT3Approval(input: {
     },
     signal,
   );
-  assertT3ApprovalPending(snapshot, input.sessionId, input.requestId);
-  await requestT3Environment(
+  assertRuntimeApprovalPending(snapshot, input.sessionId, input.requestId);
+  await requestRuntimeEnvironment(
     sandbox,
     {
       method: "POST",
@@ -150,10 +150,10 @@ export async function replyToT3Approval(input: {
     payload: { requestId: input.requestId, decision },
   }, { critical: true });
   if (!(await providerEventExists(respondedEventId))) {
-    throw new T3ApprovalError(
+    throw new RuntimeApprovalError(
       "approval_persist_failed",
       503,
-      "the approval reached T3 but its durable receipt could not be recorded",
+      "the approval reached the provider runtime but its durable receipt could not be recorded",
     );
   }
   return { alreadyAnswered: false };

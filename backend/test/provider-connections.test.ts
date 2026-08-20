@@ -4,7 +4,7 @@ import { Hono } from "hono";
 import { db } from "../src/db/client";
 import { member, providerConnections, user } from "../src/db/schema";
 import type { AppEnv } from "../src/http";
-import { resolveT3CodexSubscriptionRuntime } from "../src/engines/runtime-provider-bridge";
+import { resolveCodexSubscriptionRuntime } from "../src/engines/runtime-provider-bridge";
 import {
   cancelCodexChatGptAppServerLogin,
   codexAppServerChildEnvironment,
@@ -550,9 +550,9 @@ describe("provider connections", () => {
         userId,
       }),
     ).toBeNull();
-    await expect(resolveT3CodexSubscriptionRuntime({ orgId: session.orgId })).resolves.toBeNull();
-    await expect(resolveT3CodexSubscriptionRuntime({ userId })).resolves.toBeNull();
-    await expect(resolveT3CodexSubscriptionRuntime({ orgId: session.orgId, userId })).resolves.toMatchObject({
+    await expect(resolveCodexSubscriptionRuntime({ orgId: session.orgId })).resolves.toBeNull();
+    await expect(resolveCodexSubscriptionRuntime({ userId })).resolves.toBeNull();
+    await expect(resolveCodexSubscriptionRuntime({ orgId: session.orgId, userId })).resolves.toMatchObject({
       connectionId: connection.id,
       authEpoch: expect.stringMatching(/^[a-f0-9]{64}$/),
       authMethod: "chatgpt_oauth",
@@ -572,7 +572,7 @@ describe("provider connections", () => {
         userId,
       }),
     ).resolves.toBeNull();
-    await expect(resolveT3CodexSubscriptionRuntime({ orgId: "wrong-org", userId })).resolves.toBeNull();
+    await expect(resolveCodexSubscriptionRuntime({ orgId: "wrong-org", userId })).resolves.toBeNull();
   });
 
   test("managed Codex login completion consumes app-server notification and persists connected account metadata", async () => {
@@ -611,7 +611,7 @@ describe("provider connections", () => {
       status: "connected",
       metadata: { email: "complete@example.com", planType: "team" },
     });
-    await expect(resolveT3CodexSubscriptionRuntime({ orgId: session.orgId, userId })).resolves.toMatchObject({
+    await expect(resolveCodexSubscriptionRuntime({ orgId: session.orgId, userId })).resolves.toMatchObject({
       connectionId: connection.id,
       authEpoch: expect.stringMatching(/^[a-f0-9]{64}$/),
       authMethod: "chatgpt_oauth",
