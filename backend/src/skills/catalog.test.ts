@@ -28,7 +28,7 @@ const entry = (over: Partial<SkillCatalogEntry> = {}): SkillCatalogEntry => ({
 });
 
 describe("skill catalog formatter", () => {
-  test("prefills only an unpinned ordinary turn starting a fresh native session", () => {
+  test("prefills every unpinned ordinary turn, resumed sessions included", () => {
     expect(
       shouldPrefillSkillCatalog({
         hasPinnedSkill: false,
@@ -38,6 +38,8 @@ describe("skill catalog formatter", () => {
       }),
     ).toBe(true);
 
+    // Reply turns get the catalog too: relevance ranking makes the visible
+    // page prompt-specific, so the first turn's page is stale for follow-ups.
     expect(
       shouldPrefillSkillCatalog({
         hasPinnedSkill: false,
@@ -45,7 +47,7 @@ describe("skill catalog formatter", () => {
         orgId: "org-1",
         engineSessionId: "native-session-1",
       }),
-    ).toBe(false);
+    ).toBe(true);
     expect(
       shouldPrefillSkillCatalog({
         hasPinnedSkill: true,
