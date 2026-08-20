@@ -23,6 +23,7 @@ import {
 } from "@/components/chat/canonical-timeline";
 import { Composer, type ComposerSubmit } from "@/components/chat/composer";
 import { useEnabledEngines } from "@/components/chat/engine-picker";
+import { GatewayApprovalCard } from "@/components/chat/gateway-approval-card";
 import { NativeApprovalCard } from "@/components/chat/native-approval-card";
 import type { NativeSnapshot } from "@/components/chat/native-store";
 import { QuestionCard } from "@/components/chat/question-card";
@@ -60,6 +61,7 @@ import {
 } from "@/components/session-ui/thread-error-banner";
 import { WorkGroup } from "@/components/session-ui/work-group";
 import { WorkingIndicator } from "@/components/session-ui/working-indicator";
+import type { GatewayApproval } from "@/lib/gateway-approvals";
 import { cnExt as cn } from "@/utils/cn";
 
 // Canonical-timeline cutover flag (final_harness Phase 1, slice 4). OFF by default:
@@ -733,6 +735,8 @@ export function Conversation({
   answeringApproval,
   approvalError,
   onAnswerApproval,
+  gatewayApprovals,
+  onGatewayApprovalResolved,
   sendNowFor,
   onSendNow,
   running,
@@ -767,6 +771,12 @@ export function Conversation({
   answeringApproval?: boolean;
   approvalError?: string | null;
   onAnswerApproval?: (decision: ApprovalDecision) => void | Promise<void>;
+  /** Gateway approvals (#77) for the thread's live runs - pending ones render
+   * as Approve/Deny cards (stacked when several are pending); each card owns
+   * its own optimistic resolve against /api/gateway/approvals. */
+  gatewayApprovals?: readonly GatewayApproval[];
+  /** Nudges the approvals fetch lane after a card resolves locally. */
+  onGatewayApprovalResolved?: () => void;
   /** Run id of the HEAD queued turn when a turn is running - that bubble gets
    *  the "Send now" steering affordance (opencode's control on our harness). */
   sendNowFor?: string | null;
@@ -797,7 +807,14 @@ export function Conversation({
   useEffect(() => {
     const el = scrollRef.current;
     if (el && stickRef.current) el.scrollTop = el.scrollHeight;
-  }, [scrollSignature, pendingReply, pendingQuestion?.id, pendingApproval?.id, turns.length]);
+  }, [
+    scrollSignature,
+    pendingReply,
+    pendingQuestion?.id,
+    pendingApproval?.id,
+    gatewayApprovals?.length,
+    turns.length,
+  ]);
 
   const composerCanAnswerQuestion =
     pendingQuestion?.questions.length === 1 && pendingQuestion.questions[0]?.custom === true;
@@ -877,6 +894,13 @@ export function Conversation({
               onRespond={onAnswerApproval}
             />
           )}
+          {gatewayApprovals?.map((approval) => (
+            <GatewayApprovalCard
+              key={approval.id}
+              approval={approval}
+              onResolved={onGatewayApprovalResolved}
+            />
+          ))}
           {pendingReply && <UserBubble>{pendingReply}</UserBubble>}
         </div>
         <MessageScrollerRail turns={turns} scrollRef={scrollRef} />
