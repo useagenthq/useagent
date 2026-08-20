@@ -255,7 +255,7 @@ export async function executeAutomationToolLocal(
     );
     if (!approved) {
       return errorResult(
-        `A valid server-minted one-shot approval capability is required for ${name}. Approvals cannot be issued from inside a run: ask the user to approve this exact operation in skynet (an org member issues it via POST /api/gateway/approvals with this run id, tool name, and arguments), then retry with the returned approvalCapability.`,
+        `A valid server-minted one-shot approval capability is required for ${name}. A run can never mint its own: call approval_request with this tool name and the exact argument object, tell the user to approve it in the Skynet session view, poll approval_poll for the returned approvalCapability, then retry ${name} with it.`,
         { error: "approval_required" },
       );
     }
