@@ -1,3 +1,7 @@
+import {
+  removeFromContextIndex,
+  syncKnowledgeToContextIndex,
+} from "../context/projector";
 import { contentHash } from "./distill";
 import { embedOne, embeddingsEnabled } from "./embed";
 import {
@@ -211,13 +215,13 @@ export async function publishDocument(
   // A partial failure can no longer leave a "published" doc missing from search
   // (or an unindexed doc marked published) — the two steps are atomic.
   const embedding = embeddingsEnabled() ? await embedOne(rev.content).catch(() => null) : null;
-  await sql.begin(async (tx) => {
+  const recordId = await sql.begin(async (tx) => {
     await tx`
       UPDATE knowledge_documents
       SET status = 'published', published_revision_id = ${rev.id}, updated_at = now()
       WHERE id = ${documentId} AND org_id = ${orgId}
     `;
-    await upsertRecord(
+    return upsertRecord(
       {
         orgId,
         userId: doc.user_id,
@@ -243,6 +247,15 @@ export async function publishDocument(
     );
   });
 
+  // Best-effort: project the now-searchable knowledge record into the unified
+  // context index (source_ref keyed by the knowledge_records id). Non-fatal.
+  await syncKnowledgeToContextIndex({
+    recordId,
+    orgId,
+    title: doc.title,
+    body: rev.content,
+  });
+
   return getDocument(orgId, documentId);
 }
 
@@ -256,13 +269,19 @@ export async function archiveDocument(orgId: string, documentId: string): Promis
   if (!doc) return null;
   // Status flip + record removal in ONE tx, so an archived doc is never left
   // still-searchable (nor a still-published doc left without its record).
-  await sql.begin(async (tx) => {
+  const removedRecordId = await sql.begin(async (tx) => {
     await tx`
       UPDATE knowledge_documents SET status = 'archived', published_revision_id = NULL, updated_at = now()
       WHERE id = ${documentId} AND org_id = ${orgId}
     `;
     const rec = await findExisting(orgId, "wiki", `wiki:${documentId}`, tx);
-    if (rec) await deleteRecord(orgId, rec.id, tx);
+    if (rec) {
+      await deleteRecord(orgId, rec.id, tx);
+      return rec.id;
+    }
+    return null;
   });
+  // Best-effort: drop the projection for the archived record. Non-fatal.
+  if (removedRecordId) await removeFromContextIndex(orgId, `knowledge:${removedRecordId}`);
   return getDocument(orgId, documentId);
 }

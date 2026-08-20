@@ -1,8 +1,9 @@
 import { and, eq, isNotNull } from "drizzle-orm";
 import { db, type Executor } from "../db/client";
 import { skillRevisions, skills, type SkillKind } from "../db/schema";
+import { syncSkillToContextIndex } from "../context/projector";
 import { formatSkillMarkdown, hashSkillContent, type SkillContent } from "./format";
-import type { SkillRecord } from "./repo";
+import { getSkillForOrg, type SkillRecord } from "./repo";
 
 // ---------------------------------------------------------------------------
 // Source-keyed data access for GitHub-imported skills. A skill imported from a
@@ -129,7 +130,7 @@ export async function importSkillFromSource(input: {
   content: SkillContent;
 }): Promise<ImportUpsertOutcome> {
   const { orgId, sourceRepo, sourcePath, commitSha, content } = input;
-  return db.transaction(async (tx) => {
+  const outcome = await db.transaction(async (tx) => {
     const [existing] = await tx
       .select()
       .from(skills)
@@ -204,4 +205,25 @@ export async function importSkillFromSource(input: {
     });
     return { action: "created" as const, skillId: created.id, version: 1 };
   });
+
+  // Best-effort: project a created/updated imported skill into the unified
+  // context index (unchanged/protected are no-ops). Fetch the committed row so
+  // the projection reflects the exact stored content + current version. A
+  // projection failure is logged inside the helper and never fails the import.
+  if (outcome.action === "created" || outcome.action === "updated") {
+    const row = await getSkillForOrg(orgId, outcome.skillId).catch(() => null);
+    if (row) {
+      await syncSkillToContextIndex({
+        id: row.id,
+        orgId: row.orgId,
+        kind: row.kind,
+        name: row.name,
+        description: row.description,
+        tags: row.tags,
+        sections: row.sections,
+        currentVersion: row.currentVersion,
+      });
+    }
+  }
+  return outcome;
 }
