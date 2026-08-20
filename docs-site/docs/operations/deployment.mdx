@@ -1,0 +1,56 @@
+---
+title: Deployment lanes
+description: Three lanes with different jobs. A full certification, a source-convergence bootstrap, and an atomic frontend swap.
+sidebar:
+  order: 2
+---
+
+Skynet ships through explicit lanes, each with a different guarantee. Releases
+always run from a **clean worktree of the pushed commit**, never from a working
+tree.
+
+## Guarded release
+
+The full certification, run with `bun run release:hosted`.
+
+- Eight fail-closed gates covering identity, source sync, service restart,
+  readiness (credential-mode aware), wiki generation, and per-engine parity
+  canaries.
+- Automatic rollback of source, environment, Caddy configuration, and services on
+  any failure.
+- The Caddyfile is installed only after the live configuration is backed up; the
+  candidate is validated and reloaded, and the prior file is restored on failure.
+
+When promoting a newly built Cube runtime, the gate validates the template id,
+activates it only inside the rollback-bound candidate environment, and restores
+the exact previous environment if any preflight or parity journey fails.
+
+## Provider-connection bootstrap
+
+Deploys the full source tree and proves the account lifecycle surface **without**
+claiming runtime parity. It is used to converge production onto a verified commit
+between certifications.
+
+## Atomic frontend release
+
+Builds into an isolated `dist` directory, verifies the build id, swaps under a
+brief stop and start, checks public health and that the backend and gateway PIDs
+never moved, and parks the previous `dist` as a rollback directory.
+
+<CardGroup cols={3}>
+  <Card title="Guarded release" icon="shield-check">
+    Full certification with rollback. Ship path for engine-affecting changes.
+  </Card>
+  <Card title="Bootstrap" icon="git-pull-request">
+    Converge source onto a verified commit. No parity claim.
+  </Card>
+  <Card title="Atomic frontend" icon="repeat">
+    Swap the UI build with health checks and a parked rollback.
+  </Card>
+</CardGroup>
+
+:::warning
+A release is never run from a live working tree. The lane checks out a clean
+worktree pinned to the pushed commit, so what ships is exactly what was reviewed
+and pushed.
+:::

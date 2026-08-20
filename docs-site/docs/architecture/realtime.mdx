@@ -1,0 +1,60 @@
+---
+title: Realtime and canonicalization
+description: The two SSE streams, the canonicalization outbox, and why exactly one backend runs per database today.
+sidebar:
+  order: 3
+---
+
+Realtime in Skynet is deliberately simple: durable snapshots over one-way
+streams, plus an in-process event bus for ambient invalidations. It is not
+distributed pub/sub, and that shapes how it scales.
+
+## Two streams, two jobs
+
+<CardGroup cols={2}>
+  <Card title="Thread stream" icon="messages-square">
+    Per-thread, replayable. Reconnects get a fresh durable snapshot then live
+    steps. This is the session view's lifeline.
+  </Card>
+  <Card title="Org-change stream" icon="bell">
+    One authenticated org stream carrying live invalidations only. Subscribed
+    views (Automations, Provider Connections) refetch their authoritative APIs
+    after an event. No replay.
+  </Card>
+</CardGroup>
+
+The org-change stream is backed by an in-process event bus. It exists to tell a
+view "something changed, refetch," not to carry state.
+
+## Canonicalization
+
+Engine output is translated into provider-neutral canonical events before it is
+authoritative to the UI. Canonicalization is claimed with
+`FOR UPDATE SKIP LOCKED`, and the resulting follow-up work rides the outbox so it
+survives a crash. Native frames are retained alongside canonical events for
+fidelity and debugging.
+
+## One backend per database
+
+This is the single most important operational constraint, and it is intentional
+for the current release.
+
+:::warning
+The canonical lane's provider-source seal and the realtime SSE fan-out are
+**process-local**. `FOR UPDATE SKIP LOCKED` protects canonicalization claiming,
+but not the sealing or the fan-out. Exactly **one backend per database** is
+supported.
+:::
+
+Boot acquires a per-database Postgres advisory lock. A duplicate backend warns by
+default and refuses to boot when `REQUIRE_SINGLE_BACKEND=1`, which production
+sets. Multi-replica realtime would require a durable, database-backed seal and
+org-event fan-out first; until that exists, adding replicas is not safe and is
+not claimed. See [Operational invariants](/operations/invariants).
+
+## What this buys, and what it costs
+
+- **Buys:** a simple, debuggable realtime path with durable reconnection and no
+  external message broker.
+- **Costs:** horizontal scale of the realtime tier waits on durable fan-out. It is
+  a known, bounded piece of work, not an accident.

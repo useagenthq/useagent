@@ -1,0 +1,63 @@
+---
+title: Concepts
+description: The handful of ideas the rest of the platform is built on, and where each one is defined in depth.
+sidebar:
+  label: The core model
+  order: 1
+---
+
+Everything in Skynet reduces to a small set of ideas. Hold these four and the
+rest of the system reads cleanly.
+
+<Steps>
+  <Step title="The harness lives outside the sandbox">
+    The backend is the harness. Runs and steps in Postgres are the source of
+    truth. The sandbox runs the engine and the work; the UI renders the log.
+  </Step>
+  <Step title="The inner loop is rented">
+    Engine adapters spawn Codex, Claude, or OpenCode one-shot per run and
+    translate each engine's stream into steps. No engine servers, no engine UI.
+  </Step>
+  <Step title="Output is canonicalized">
+    Every engine's native output is mapped to provider-neutral canonical events,
+    so different engines render through one UI contract. Native frames are kept
+    for fidelity.
+  </Step>
+  <Step title="Privileged work goes through the gateway">
+    A run never holds long-lived provider or database credentials. It calls
+    typed gateway tools that perform privileged work behind short-lived,
+    scope-bound capability tokens.
+  </Step>
+</Steps>
+
+## The pieces
+
+<CardGroup cols={2}>
+  <Card title="Runs, threads, and commands" href="/concepts/runs-threads-commands" icon="git-commit-horizontal">
+    The units of work: a command starts a run, a run is one turn, a thread is the
+    continuing conversation.
+  </Card>
+  <Card title="Events and streaming" href="/concepts/events-and-streaming" icon="radio-tower">
+    Canonical events, native frames, steps, and the two SSE streams that carry
+    them to the UI.
+  </Card>
+  <Card title="Engines and adapters" href="/concepts/engines-and-adapters" icon="plug">
+    How Codex, Claude, and OpenCode are driven, the runtime path versus ACP, and
+    the Codex subscription relay.
+  </Card>
+  <Card title="Sandboxes and desktop" href="/concepts/sandboxes-and-desktop" icon="box">
+    Isolated Linux workstations, warm pools, the noVNC desktop, and restart
+    reconciliation.
+  </Card>
+  <Card title="Gateway, tools, and approvals" href="/concepts/gateway-tools-and-approvals" icon="shield-check">
+    The trust boundary, capability tokens, the in-run tool families, and the
+    human approval lane.
+  </Card>
+  <Card title="Knowledge and learning" href="/concepts/knowledge-and-learning" icon="brain">
+    Skills, playbooks, knowledge, wiki, memory, and the human-gated
+    self-improvement loop.
+  </Card>
+  <Card title="Artifacts and workpieces" href="/concepts/artifacts-and-workpieces" icon="file-output">
+    Published results, the four editable workpiece kinds, uploads, and the outbox.
+  </Card>
+</CardGroup>

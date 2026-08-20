@@ -1,0 +1,62 @@
+---
+title: Verification
+description: The test and parity arsenal, from fast isolated-database suites to real engine journeys run against a release candidate.
+sidebar:
+  order: 3
+---
+
+Verification runs at two altitudes: deterministic suites that never touch a live
+system, and real journeys that exercise sandboxes and engines end to end.
+
+## Deterministic suites
+
+- **Backend suite** against an isolated throwaway database, so it never disturbs a
+  live one.
+- **Frontend suite** and the **shared package suites**.
+- **Root typecheck** across every package with `bun run typecheck`.
+
+These are fast, stable, and safe to run anywhere.
+
+## Full-stack and real journeys
+
+| Command | What it exercises |
+| --- | --- |
+| `bun run e2e` | A mock full-stack pass including Slack and memory outbox delivery, and crash-survival stages. |
+| `bun run e2e:real` | Real sandboxes end to end. |
+| soak marathon | Storm coverage over the durable lanes. |
+| UI sweep | Browser coverage of the rendered surfaces. |
+
+:::warning
+Real journeys create sandboxes. Delete and API-verify them after a run. The
+shared sandbox capacity is a finite, cross-session resource, so leftover
+sandboxes degrade everyone's runs.
+:::
+
+## Release parity canaries
+
+Before a candidate can ship, the guarded release runs **real engine journeys**
+against it, not mocks:
+
+<CardGroup cols={2}>
+  <Card title="Repository work" icon="git-branch">
+    Clone a repository and operate on it.
+  </Card>
+  <Card title="Desktop and computer use" icon="monitor">
+    Drive the desktop, take screenshots, and record a real MP4 artifact.
+  </Card>
+  <Card title="Artifacts and automations" icon="file-output">
+    Publish an artifact; run an automation through the command lane.
+  </Card>
+  <Card title="Continuity and choice" icon="repeat">
+    Subagent fan-out, thread resume, model switch, and web search.
+  </Card>
+</CardGroup>
+
+A candidate that fails a parity journey does not ship, and the lane rolls the
+environment back. See [Deployment lanes](/operations/deployment).
+
+:::note
+Parity is proved per engine and per credential mode. A subscription-only Codex
+release proves the connected account and native turn path; an API-key engine
+proves its mapped gateway provider.
+:::

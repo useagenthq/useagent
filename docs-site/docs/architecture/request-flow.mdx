@@ -1,0 +1,68 @@
+---
+title: Request flow
+description: One turn, end to end. From an accepted command to a rendered timeline, and the promote-to-agent path from lightweight chat.
+sidebar:
+  order: 2
+---
+
+This is the life of a single agent turn, following the units from
+[Runs, threads, and commands](/concepts/runs-threads-commands).
+
+## From prompt to timeline
+
+<Steps>
+  <Step title="A command is accepted">
+    A prompt from the web app, Slack, or an automation becomes a durable command
+    with an idempotency key. It enters the one command lane every channel shares.
+  </Step>
+  <Step title="A run is created">
+    The backend creates a run inside a thread. A reply reuses the thread's sandbox
+    and working directory; a root run claims a fresh sandbox, preferably from the
+    warm pool.
+  </Step>
+  <Step title="The engine is spawned one-shot">
+    The engine registry resolves a driver for the turn. The engine runs in the
+    sandbox, in its own working directory, and starts emitting native events.
+  </Step>
+  <Step title="Privileged work goes through the gateway">
+    When the engine needs to read a repository, search knowledge, use the desktop,
+    or publish an artifact, it calls a gateway tool bound by a short-lived
+    capability token. A destructive operation pauses on the approval lane.
+  </Step>
+  <Step title="Output is canonicalized into steps">
+    Native events are translated into canonical steps and appended to the event
+    log, with native frames retained for fidelity.
+  </Step>
+  <Step title="The timeline renders live">
+    The session view subscribes to the thread stream, reduces steps into state,
+    and renders each as a card or row. A reconnect receives a fresh durable
+    snapshot.
+  </Step>
+  <Step title="The run finalizes">
+    On completion the run writes its terminal state and any follow-up work to the
+    outbox in the same transaction, then workers deliver canonicalization, Slack
+    updates, and learning capture.
+  </Step>
+</Steps>
+
+## Promote a chat into a run
+
+The lightweight chat surface at the app root is a **no-sandbox** surface: it
+streams answers over SSE with read-only knowledge, wiki, and memory retrieval
+cited inline. When a conversation needs real work, it can be **promoted into a
+full agent run**, which then follows the flow above with a sandbox and engine.
+
+:::tip
+The chat surface and the agent run share retrieval and rendering primitives, so a
+promotion continues the same conversation rather than starting over.
+:::
+
+## Reconnection and recovery
+
+Two independent mechanisms keep a turn durable:
+
+- **Thread stream reconnect** hands back a fresh durable snapshot, so a dropped
+  browser connection resyncs cleanly.
+- **Restart reconciliation** re-probes an in-flight sandbox session after a
+  backend bounce and adopts the real result. See
+  [Sandboxes](/concepts/sandboxes-and-desktop#restart-reconciliation).
