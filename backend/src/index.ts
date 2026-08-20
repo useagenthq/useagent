@@ -37,6 +37,7 @@ import { terminalRoutes } from "./runs/terminal";
 import { schedulesRoutes } from "./schedules/routes";
 import { startScheduler } from "./schedules/scheduler";
 import { startCaptureDelivery } from "./memory/capture-outbox";
+import { resetStuckLearning, startLearningOutbox } from "./learning/learning-outbox";
 import { sandboxProvider, sandboxProviderApiKey, sandboxProviderKind } from "./sandboxes/provider";
 import {
   resetStuckCanonicalization,
@@ -126,6 +127,13 @@ if (
 const canonReset = await resetStuckCanonicalization();
 if (canonReset > 0)
   console.log(`[boot] canonicalization recovery — ${canonReset} stuck rows re-armed`);
+
+// Learning-outbox boot recovery: a crash mid-build strands a `processing` row.
+// Reset it to `pending` so the worker retries — SAFE because candidate building
+// is idempotent (one draft per run).
+const learningReset = await resetStuckLearning();
+if (learningReset > 0)
+  console.log(`[boot] learning recovery — ${learningReset} stuck rows re-armed`);
 
 const app = new Hono<AppEnv>();
 
@@ -309,6 +317,13 @@ startCaptureDelivery();
 // rows, and marks `complete` only when the whole source was translated. Harmless
 // when nothing is due; multi-instance safe (FOR UPDATE SKIP LOCKED claim).
 startCanonicalizationOutbox();
+
+// Learning-outbox delivery loop (15s tick, self_improving 6.1). Builds each
+// completed non-internal run's evidence-backed learning candidate off the intent
+// enqueued IN the finalization transaction — retry/backoff/dead-letter, and it
+// never fails an already-completed run. The verified-outcome gate (6.4) runs at
+// build time, so an unverified completion is a clean skip, not a candidate.
+startLearningOutbox();
 
 // Adaptive post-boot reconciler (#63, 15s tick). Re-probes runs PARKED by boot
 // recovery (native session may still be finishing after a fast restart): adopts
