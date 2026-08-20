@@ -1,19 +1,25 @@
 /**
  * Slack workspace -> tenant identity mapping. Every inbound Slack event carries
  * the workspace (team) id it came from; this module resolves that id to the org
- * the run is scoped to and the user it is attributed to. Resolution FAILS
- * CLOSED: an event from an unmapped workspace is ignored (logged once per team
- * id), never attributed to a seeded fallback org.
+ * the run is scoped to. Resolution FAILS CLOSED: an event from an unmapped
+ * workspace is ignored (logged once per team id), never attributed to a seeded
+ * fallback org. Event user attribution comes only from `slack_users`; the
+ * workspace row's legacy operator user is not a sender identity.
  *
  * Rows are provisioned by an operator: `SLACK_WORKSPACE_BINDINGS` (comma-
  * separated `teamId:orgId:userId` triples) is upserted at boot, and direct
  * inserts work for multi-workspace setups without a redeploy.
  */
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { db } from "../db/client";
-import { slackWorkspaces } from "../db/schema";
+import { slackUsers, slackWorkspaces } from "../db/schema";
 
 export interface SlackWorkspaceIdentity {
+  orgId: string;
+  userId: string;
+}
+
+export interface SlackSenderIdentity {
   orgId: string;
   userId: string;
 }
@@ -43,6 +49,51 @@ export async function upsertSlackWorkspace(input: {
       target: slackWorkspaces.teamId,
       set: { orgId: input.orgId, userId: input.userId },
     });
+}
+
+/** The product identity explicitly bound to one Slack sender, if any. */
+export async function findSlackUser(
+  teamId: string,
+  slackUserId: string,
+): Promise<SlackSenderIdentity | null> {
+  const [row] = await db
+    .select({ orgId: slackUsers.orgId, userId: slackUsers.userId })
+    .from(slackUsers)
+    .where(and(eq(slackUsers.teamId, teamId), eq(slackUsers.slackUserId, slackUserId)))
+    .limit(1);
+  return row ?? null;
+}
+
+/** Bind one Slack sender to one product user inside the workspace tenant. */
+export async function upsertSlackUser(input: {
+  teamId: string;
+  slackUserId: string;
+  orgId: string;
+  userId: string;
+}): Promise<void> {
+  await db
+    .insert(slackUsers)
+    .values(input)
+    .onConflictDoUpdate({
+      target: [slackUsers.teamId, slackUsers.slackUserId],
+      set: { orgId: input.orgId, userId: input.userId },
+    });
+}
+
+/**
+ * Resolve a sender only when its explicit mapping belongs to the currently
+ * mapped workspace org. A stale cross-org user row fails closed.
+ */
+export async function resolveSlackSender(
+  workspace: SlackWorkspaceIdentity,
+  teamId: string | undefined,
+  slackUserId: string | undefined,
+): Promise<SlackSenderIdentity | null> {
+  const team = teamId?.trim();
+  const sender = slackUserId?.trim();
+  if (!team || !sender) return null;
+  const identity = await findSlackUser(team, sender);
+  return identity?.orgId === workspace.orgId ? identity : null;
 }
 
 // Bounded once-per-team logging so an unmapped workspace's retry storm does not
@@ -75,25 +126,42 @@ export async function resolveSlackWorkspace(
 }
 
 /**
- * Boot-time sync of `SLACK_WORKSPACE_BINDINGS` ("T123:org-id:user-id,...") into
- * slack_workspaces. Additive upserts only - removing an env entry does not
- * delete a row (ops may have inserted rows directly). Malformed entries are
- * skipped loudly.
+ * Boot-time sync of workspace and per-sender bindings. Both are additive
+ * upserts; removing an env entry does not delete an operator-managed row.
+ * Malformed entries are skipped loudly.
  */
 export async function syncSlackWorkspaceBindings(): Promise<void> {
   const raw = process.env.SLACK_WORKSPACE_BINDINGS?.trim();
-  if (!raw) return;
-  for (const entry of raw.split(",")) {
+  if (raw) {
+    for (const entry of raw.split(",")) {
+      const trimmed = entry.trim();
+      if (!trimmed) continue;
+      const parts = trimmed.split(":").map((p) => p.trim());
+      const [teamId, orgId, userId] = parts;
+      if (parts.length !== 3 || !teamId || !orgId || !userId) {
+        console.error(
+          `[slack] skipping malformed SLACK_WORKSPACE_BINDINGS entry "${trimmed}" (expected teamId:orgId:userId)`,
+        );
+        continue;
+      }
+      await upsertSlackWorkspace({ teamId, orgId, userId });
+    }
+  }
+
+  const userRaw = process.env.SLACK_USER_BINDINGS?.trim();
+  if (!userRaw) return;
+  for (const entry of userRaw.split(",")) {
     const trimmed = entry.trim();
     if (!trimmed) continue;
-    const parts = trimmed.split(":").map((p) => p.trim());
-    const [teamId, orgId, userId] = parts;
-    if (parts.length !== 3 || !teamId || !orgId || !userId) {
+    const parts = trimmed.split(":").map((part) => part.trim());
+    const [teamId, slackUserId, orgId, userId] = parts;
+    if (parts.length !== 4 || !teamId || !slackUserId || !orgId || !userId) {
       console.error(
-        `[slack] skipping malformed SLACK_WORKSPACE_BINDINGS entry "${trimmed}" (expected teamId:orgId:userId)`,
+        `[slack] skipping malformed SLACK_USER_BINDINGS entry "${trimmed}" ` +
+          "(expected teamId:slackUserId:orgId:userId)",
       );
       continue;
     }
-    await upsertSlackWorkspace({ teamId, orgId, userId });
+    await upsertSlackUser({ teamId, slackUserId, orgId, userId });
   }
 }

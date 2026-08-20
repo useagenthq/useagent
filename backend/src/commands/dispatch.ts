@@ -1,7 +1,7 @@
 import { sql } from "drizzle-orm";
 import { db } from "../db/client";
 import type { EngineId, RunStatus } from "../db/schema";
-import { RUN_CREATE } from "./repo";
+import { RUN_CANCEL, RUN_CREATE } from "./repo";
 
 // ---------------------------------------------------------------------------
 // Durable per-session command lane (north star "Durable Runtime", single-replica
@@ -37,6 +37,8 @@ export interface ActiveCommand {
   readonly engine: EngineId;
   readonly engineSessionId: string | null;
   readonly sandboxId: string | null;
+  /** A durable user stop committed before the actor/recovery path settled. */
+  readonly cancelRequested: boolean;
 }
 
 /**
@@ -109,7 +111,11 @@ export async function settleCommandForRun(runId: string): Promise<CommandSettle>
 export async function listActiveCommands(): Promise<ActiveCommand[]> {
   const rows = await db.execute(sql`
     select c.id as command_id, c.state, c.run_id, c.thread_id,
-           r.status as run_status, r.engine, r.engine_session_id, r.sandbox_id
+           r.status as run_status, r.engine, r.engine_session_id, r.sandbox_id,
+           exists (
+             select 1 from commands cancel_cmd
+             where cancel_cmd.run_id = r.id and cancel_cmd.kind = ${RUN_CANCEL}
+           ) as cancel_requested
     from commands c
     join runs r on r.id = c.run_id
     where c.kind = ${RUN_CREATE} and c.state in ('queued', 'dispatched')`);
@@ -122,6 +128,7 @@ export async function listActiveCommands(): Promise<ActiveCommand[]> {
     engine: r.engine as EngineId,
     engineSessionId: (r.engine_session_id as string | null) ?? null,
     sandboxId: (r.sandbox_id as string | null) ?? null,
+    cancelRequested: r.cancel_requested === true,
   }));
 }
 

@@ -84,7 +84,9 @@ async function fixture(
     userId: "user-1",
     parentRunId: null,
     threadId: runId,
-    repos: ["acme/new-skynet"],
+    // These gateway-contract tests exercise child lifecycle, not GitHub access.
+    // Keep the parent bare so they do not depend on an external tenant binding.
+    repos: [],
     memoryScope: "org",
   });
   if (options.t3) await setRunEngineSession(runId, `skynet-thread-${runId}`);

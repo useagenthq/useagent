@@ -1,0 +1,40 @@
+name: Docs
+
+on:
+  push:
+    paths:
+      - "docs-site/**"
+      - ".github/workflows/docs.yml"
+  pull_request:
+    paths:
+      - "docs-site/**"
+      - ".github/workflows/docs.yml"
+
+concurrency:
+  group: docs-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  BUN_VERSION: "1.3.14"
+
+jobs:
+  build-and-validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - name: Cache bun install store
+        uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: bun-store-${{ runner.os }}-docs-${{ hashFiles('docs-site/bun.lock') }}
+          restore-keys: bun-store-${{ runner.os }}-docs-
+      - run: bun install --frozen-lockfile
+        working-directory: docs-site
+      - run: bun run build
+        working-directory: docs-site
+      - run: bunx blume validate
+        working-directory: docs-site

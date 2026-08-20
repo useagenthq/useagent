@@ -71,6 +71,7 @@ export async function insertCommandWithRun(
         parentRunId: cmd.run.parentRunId,
         threadId: cmd.run.threadId,
         repos: cmd.run.repos,
+        resolvedResources: cmd.run.resolvedResources,
         memoryScope: cmd.run.memoryScope,
         skillId: cmd.run.skillId,
         skillVersion: cmd.run.skillVersion,

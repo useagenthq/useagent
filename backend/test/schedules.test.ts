@@ -1,8 +1,14 @@
 import { describe, expect, test } from "bun:test";
+import { and, eq } from "drizzle-orm";
 import type { ApiRun } from "../src/runs/repo";
 import { subscribeOrg, type OrgChange } from "../src/runs/org-signals";
 import type { ApiFiring, ApiSchedule } from "../src/schedules/repo";
 import { tick } from "../src/schedules/scheduler";
+import { acceptRunCommand, type RunCommandIntent } from "../src/commands";
+import { fireScheduleWithOutcome, firingKey } from "../src/schedules/fire";
+import { getScheduleForOrg } from "../src/schedules/repo";
+import { db } from "../src/db/client";
+import { skillRevisions } from "../src/db/schema";
 import { createOrgSession, json, waitFor } from "./helpers";
 
 interface AutomationListResponse {
@@ -24,6 +30,11 @@ interface EngineModelNotReadyResponse {
   readonly model: string;
 }
 
+interface ApiSkill {
+  readonly id: string;
+  readonly current_version: number;
+}
+
 /** Create a schedule under the given org session; returns the created body. */
 async function createSchedule(
   cookies: string,
@@ -33,6 +44,21 @@ async function createSchedule(
     method: "POST",
     body,
     cookies,
+  });
+  expect(res.status).toBe(201);
+  return res.body;
+}
+
+async function createSkill(cookies: string): Promise<ApiSkill> {
+  const res = await json<ApiSkill>("/api/skills", {
+    method: "POST",
+    cookies,
+    body: {
+      name: `Automation skill ${crypto.randomUUID()}`,
+      description: "Pinned automation procedure.",
+      tags: [],
+      sections: { overview: ["ov"], procedure: ["proc"], verify: ["ver"] },
+    },
   });
   expect(res.status).toBe(201);
   return res.body;
@@ -232,6 +258,135 @@ describe("schedules API", () => {
     expect(firing.trigger).toBe("manual");
     expect(firing.run_id).toBe(runId);
     expect(firing.run_status).toBe("completed");
+  });
+
+  test("run-now fails before persistence when a linked resource is unavailable", async () => {
+    const s = await createOrgSession("sched-resource-gate");
+    const marker = crypto.randomUUID();
+    const created = await createSchedule(s.cookies, {
+      name: "Resource-gated automation",
+      cron: "0 3 * * *",
+      prompt: `test ${marker} https://github.com/upstream-org/backend/pull/19625`,
+      engine: "mock",
+    });
+
+    const fired = await json<{ error: string; message: string }>(
+      `/api/schedules/${created.id}/run-now`,
+      { method: "POST", cookies: s.cookies },
+    );
+    expect(fired.status).toBe(403);
+    expect(fired.body.error).toBe("resource_unauthorized");
+
+    const runs = await json<{ runs: ApiRun[] }>("/api/runs?all=1", {
+      cookies: s.cookies,
+    });
+    expect(runs.body.runs.some((run) => run.prompt.includes(marker))).toBe(false);
+    const history = await json<FiringHistoryResponse>(
+      `/api/schedules/${created.id}/history`,
+      { cookies: s.cookies },
+    );
+    expect(history.body.firings).toEqual([]);
+  });
+
+  test("run-now fails closed before persistence when a pinned automation revision is gone", async () => {
+    const s = await createOrgSession("sched-skill-integrity");
+    const skill = await createSkill(s.cookies);
+    const created = await createSchedule(s.cookies, {
+      name: "Pinned automation",
+      cron: "0 3 * * *",
+      prompt: "must use the pinned procedure",
+      engine: "mock",
+      skill: { id: skill.id },
+    });
+    expect(created.skill_id).toBe(skill.id);
+    expect(created.skill_version).toBe(skill.current_version);
+    expect(created.skill_content_hash).toBeString();
+
+    await db
+      .delete(skillRevisions)
+      .where(
+        and(
+          eq(skillRevisions.skillId, skill.id),
+          eq(skillRevisions.version, skill.current_version),
+        ),
+      );
+
+    const fired = await json<{ error: string; detail: string }>(
+      `/api/schedules/${created.id}/run-now`,
+      { method: "POST", cookies: s.cookies },
+    );
+    expect(fired.status).toBe(409);
+    expect(fired.body.error).toBe("missing_skill_revision");
+
+    const runs = await json<{ runs: ApiRun[] }>("/api/runs?all=1", {
+      cookies: s.cookies,
+    });
+    expect(runs.body.runs.some((run) => run.prompt === "must use the pinned procedure")).toBe(
+      false,
+    );
+    const history = await json<FiringHistoryResponse>(
+      `/api/schedules/${created.id}/history`,
+      { cookies: s.cookies },
+    );
+    expect(history.body.firings).toEqual([]);
+  });
+
+  test("a durable schedule occurrence replays before unavailable resource preflight", async () => {
+    const s = await createOrgSession("sched-occurrence-replay");
+    const prompt = "test https://github.com/acme/api/pull/42";
+    const created = await createSchedule(s.cookies, {
+      name: "Replay resource occurrence",
+      cron: "31 5 * * *",
+      prompt,
+      engine: "mock",
+    });
+    const schedule = await getScheduleForOrg(s.orgId, created.id);
+    if (!schedule) throw new Error("expected schedule");
+    const occurrence = new Date("2026-08-21T05:31:42.000Z");
+    const key = firingKey(schedule.id, "cron", occurrence);
+    const runId = crypto.randomUUID();
+    const intent: RunCommandIntent = {
+      prompt,
+      model: schedule.model,
+      engine: schedule.engine,
+      parentRunId: null,
+      requestedRepos: schedule.repos,
+      attachmentIds: [],
+      memoryScope: "org",
+      skillId: schedule.skillId,
+      skillVersion: schedule.skillVersion,
+      commandName: null,
+      commandProvider: null,
+      commandSessionId: null,
+      commandCatalogRevision: null,
+    };
+    await acceptRunCommand({
+      idempotencyKey: key,
+      orgId: schedule.orgId,
+      actorId: schedule.userId,
+      intent,
+      run: {
+        id: runId,
+        prompt,
+        model: schedule.model,
+        engine: schedule.engine,
+        parentRunId: null,
+        threadId: runId,
+        repos: ["acme/api:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"],
+        resolvedResources: [],
+        memoryScope: "org",
+        skillId: null,
+        skillVersion: null,
+        skillContentHash: null,
+        commandName: null,
+        commandProvider: null,
+        commandSessionId: null,
+        commandCatalogRevision: null,
+      },
+    });
+
+    const replay = await fireScheduleWithOutcome(schedule, "cron", occurrence);
+    expect(replay).toMatchObject({ runId, created: false, firingRecorded: true });
   });
 
   test("org isolation: another org cannot see, patch, run, or read history", async () => {

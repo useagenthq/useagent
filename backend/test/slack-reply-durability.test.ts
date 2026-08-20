@@ -4,7 +4,7 @@ import { db } from "../src/db/client";
 import { acceptRunCommand } from "../src/commands";
 import { finalizeRun } from "../src/runs/finalize";
 import { recoverStaleRuns, type ReconcileProbe } from "../src/runs/recovery";
-import { linkSlackThread } from "../src/slack/repo";
+import { createSlackRunResponse, linkSlackThread } from "../src/slack/repo";
 import { getSlackOutbox } from "../src/slack/outbox";
 import { createRun, setRunEngineSession, setRunSandbox, setRunStatus } from "../src/runs/repo";
 import "./helpers"; // side-effect: imports src/index → migrate + seed
@@ -15,15 +15,16 @@ import "./helpers"; // side-effect: imports src/index → migrate + seed
 // gap lost it). It now enqueues transactionally at finalization (runs/finalize.ts),
 // keyed `slack-reply:<runId>`, so it's durable BEFORE any watcher/relay runs.
 //
-// The row is now an `update_card` (the settled Block Kit run card, advanced in
-// place at delivery), carrying the SAME plain-text answer in `fallbackChunks` -
-// what `chunks` used to hold - so the answer lands even when no card ts exists.
+// The row is now a `stop_stream` (the settled native Slack stream, with Block Kit
+// blocks allowed at stop), carrying the SAME plain-text answer in
+// `fallbackChunks` so the answer lands even when no stream/card ts exists.
 //
 // These tests read the slack_outbox ROW directly (no relay/mock), i.e. they prove
 // the durable INTENT is committed with the run — the delivery mechanism is already
 // covered by slack-outbox.test.ts + slack.test.ts.
 
 const ORG = "org-skynet-dev";
+const TEAM = "T-SKYNET-DEV";
 
 /** Root a Slack thread on a fresh run (channel/threadTs are the thread identity). */
 async function slackRootRun(prompt: string): Promise<{ runId: string; channel: string; ts: string }> {
@@ -31,7 +32,8 @@ async function slackRootRun(prompt: string): Promise<{ runId: string; channel: s
   const channel = `C${runId.slice(0, 6)}`;
   const ts = `${runId.slice(0, 6)}.1`;
   await createRun({ id: runId, prompt, model: "claude-opus-5", engine: "mock", orgId: ORG, userId: null, parentRunId: null, threadId: runId });
-  await linkSlackThread({ channel, threadTs: ts, rootRunId: runId, orgId: ORG });
+  await linkSlackThread({ teamId: TEAM, channel, threadTs: ts, rootRunId: runId, orgId: ORG });
+  await createSlackRunResponse({ runId, teamId: TEAM, channel, threadTs: ts });
   return { runId, channel, ts };
 }
 
@@ -40,25 +42,31 @@ describe("slack reply durability at finalization (GAP 3)", () => {
     const { runId, channel, ts } = await slackRootRun("do the thing");
     await finalizeRun(runId, "completed", "here is the result", 100);
 
-    const row = await getSlackOutbox(`slack-reply:${runId}`);
+    const row = await getSlackOutbox(`slack-reply:${TEAM}:${runId}`);
     expect(row).not.toBeNull();
-    expect(row!.kind).toBe("update_card");
+    expect(row!.kind).toBe("stop_stream");
     const payload = JSON.parse(row!.payload) as {
       channel: string;
       fallbackChunks: string[];
       threadTs?: string;
-      rootRunId: string;
+      runId: string;
+      teamId: string;
     };
     expect(payload.channel).toBe(channel);
+    expect(payload.teamId).toBe(TEAM);
     expect(payload.threadTs).toBe(ts);
-    expect(payload.rootRunId).toBe(runId);
+    expect(payload.runId).toBe(runId);
     expect(payload.fallbackChunks).toEqual(["here is the result"]); // completed → the summary
+    const status = await getSlackOutbox(`slack-status:final:${TEAM}:${runId}`);
+    expect(status).not.toBeNull();
+    expect(status!.kind).toBe("set_session_status");
+    expect((JSON.parse(status!.payload) as { status: string }).status).toBe("active");
   });
 
   test("a FAILED Slack run replies with a warning notice", async () => {
     const { runId } = await slackRootRun("this will fail");
     await finalizeRun(runId, "failed", "boom", 0);
-    const row = await getSlackOutbox(`slack-reply:${runId}`);
+    const row = await getSlackOutbox(`slack-reply:${TEAM}:${runId}`);
     expect(row).not.toBeNull();
     expect((JSON.parse(row!.payload) as { fallbackChunks: string[] }).fallbackChunks).toEqual([":warning: Run failed: boom"]);
   });
@@ -74,7 +82,7 @@ describe("slack reply durability at finalization (GAP 3)", () => {
     const { runId } = await slackRootRun("idempotent");
     await finalizeRun(runId, "completed", "sum", 1);
     await finalizeRun(runId, "completed", "sum", 1);
-    const row = await getSlackOutbox(`slack-reply:${runId}`);
+    const row = await getSlackOutbox(`slack-reply:${TEAM}:${runId}`);
     expect(row).not.toBeNull();
     expect(row!.attemptCount).toBe(0); // one original pending row, never duplicated
   });
@@ -90,7 +98,8 @@ describe("slack reply durability at finalization (GAP 3)", () => {
       idempotencyKey: null, orgId: ORG, actorId: null,
       run: { id: runId, prompt: "slack reconcile", model: "claude-opus-5", engine: "opencode", parentRunId: null, threadId: runId },
     });
-    await linkSlackThread({ channel, threadTs: ts, rootRunId: runId, orgId: ORG });
+    await linkSlackThread({ teamId: TEAM, channel, threadTs: ts, rootRunId: runId, orgId: ORG });
+    await createSlackRunResponse({ runId, teamId: TEAM, channel, threadTs: ts });
     await setRunStatus(runId, "running");
     await setRunEngineSession(runId, "ses_done");
     await setRunSandbox(runId, "sb");
@@ -101,7 +110,7 @@ describe("slack reply durability at finalization (GAP 3)", () => {
     const res = await recoverStaleRuns(reconcile);
     expect(res.reconciled).toBeGreaterThanOrEqual(1);
 
-    const row = await getSlackOutbox(`slack-reply:${runId}`);
+    const row = await getSlackOutbox(`slack-reply:${TEAM}:${runId}`);
     expect(row).not.toBeNull();
     expect((JSON.parse(row!.payload) as { fallbackChunks: string[] }).fallbackChunks).toEqual(["reconciled reply"]);
   });

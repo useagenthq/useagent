@@ -1,9 +1,16 @@
 // Public surface of the durable-commands module. Callers import from
 // `../commands`; internal repo/service/fingerprint/dispatch decomposition stays
 // private (the worker/recovery import dispatch directly).
-export { acceptRunCommand } from "./service";
+export { acceptRunCommand, preflightRunCommandReplay } from "./service";
+export {
+  assertRunAdmissionOpen,
+  getRunAdmission,
+  RunAdmissionClosedError,
+  setRunAdmission,
+} from "./admission";
 export type {
   IdempotencyConflictReason,
   RunCommandInput,
+  RunCommandIntent,
   RunCommandOutcome,
 } from "./types";

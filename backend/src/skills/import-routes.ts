@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import { DiscoveryError, parseRepoRef } from "../github/discovery";
+import { isKnownRepo } from "../github/repos";
 import type { AppEnv } from "../http";
 import { orgScope } from "../middleware/org";
 import { importSkills, scanSkillCandidates } from "./import";
@@ -29,6 +30,9 @@ skillImportRoutes.get("/scan", async (c) => {
   if (!parseRepoRef(repo)) {
     return c.json({ error: "repo query param must be owner/name" }, 400);
   }
+  if (!(await isKnownRepo(repo, c.get("orgId")))) {
+    return c.json({ error: "repository is not available to this organization" }, 403);
+  }
   try {
     return c.json(await scanSkillCandidates(c.get("orgId"), repo));
   } catch (e) {
@@ -51,6 +55,9 @@ skillImportRoutes.post("/", async (c) => {
   const repo = typeof body.repo === "string" ? body.repo.trim() : "";
   if (!parseRepoRef(repo)) {
     return c.json({ error: "repo must be owner/name" }, 400);
+  }
+  if (!(await isKnownRepo(repo, c.get("orgId")))) {
+    return c.json({ error: "repository is not available to this organization" }, 403);
   }
   const paths = Array.isArray(body.paths)
     ? body.paths.filter((p): p is string => typeof p === "string" && p.trim().length > 0)

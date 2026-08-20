@@ -1,7 +1,13 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import type { SandboxHandle } from "../sandboxes/provider";
+import type { RunResource } from "../resources/types";
 import type { EngineRunContext } from "./types";
-import { ensureRepoClone, prepareRepos, shq } from "./repo-prep";
+import {
+  checkoutPullRequestResources,
+  ensureRepoClone,
+  prepareRepos,
+  shq,
+} from "./repo-prep";
 import { RUN_TIMING_OUTCOMES, RUN_TIMING_STAGES, type TimingSpanEnd } from "../runs/run-timing";
 
 // Slice 1 + Phase 5 (non-destructive hardening): ONE shared, engine-neutral repository preparer.
@@ -25,11 +31,20 @@ interface Call {
   cmd: string;
   env: Record<string, string> | undefined;
 }
+interface FakeSandboxOptions {
+  state?: "reuse" | "branch" | "owned-stale" | "foreign" | "occupied" | "absent";
+  cloneExit?: number;
+  cloneOut?: string;
+  switchExit?: number;
+  switchOut?: string;
+  pullExit?: number;
+  pullOut?: string;
+}
 /** `state` is what the pre-check reports for the destination: "reuse" (right repo+branch),
  *  "branch" (right repo, wrong branch -> switch in place), "owned-stale" (a Skynet-owned checkout
  *  of a different repo -> safe to replace), "foreign" (an UNOWNED git repo, different origin ->
  *  fail closed), "occupied" (UNOWNED non-git content -> fail closed), "absent" (nothing there). */
-function fakeSandbox(opts: { state?: "reuse" | "branch" | "owned-stale" | "foreign" | "occupied" | "absent"; cloneExit?: number; cloneOut?: string; switchExit?: number; switchOut?: string } = {}): {
+function fakeSandbox(opts: FakeSandboxOptions = {}): {
   sandbox: SandboxHandle;
   calls: Call[];
 } {
@@ -38,6 +53,7 @@ function fakeSandbox(opts: { state?: "reuse" | "branch" | "owned-stale" | "forei
     executeCommand: async (cmd: string, _cwd?: string, env?: Record<string, string>) => {
       calls.push({ cmd, env });
       if (/echo state:absent/.test(cmd) && !/git clone/.test(cmd)) return { result: `state:${opts.state ?? "absent"}`, exitCode: 0 };
+      if (/refs\/pull\//.test(cmd)) return { result: opts.pullOut ?? "pr:ok", exitCode: opts.pullExit ?? 0 };
       if (/git -C .* (fetch|checkout)/.test(cmd)) return { result: opts.switchOut ?? "switch:ok", exitCode: opts.switchExit ?? 0 };
       if (/git clone/.test(cmd)) return { result: opts.cloneOut ?? "clone:ok", exitCode: opts.cloneExit ?? 0 };
       return { result: "", exitCode: 0 };
@@ -54,6 +70,7 @@ function fakeCtx(repos?: string[]): {
   const timing: { stage: string; outcome?: string }[] = [];
   const ctx = {
     emit: async (s: { label?: string }) => { emits.push(s); return "step-id"; },
+    orgId: "org-acme",
     signal: new AbortController().signal,
     repos,
     timing: {
@@ -68,6 +85,49 @@ function fakeCtx(repos?: string[]): {
 const cloneCmd = (calls: Call[]) => calls.find((c) => /git clone/.test(c.cmd));
 const idCmd = (calls: Call[]) => calls.find((c) => /echo state:absent/.test(c.cmd) && !/git clone/.test(c.cmd));
 const switchCmd = (calls: Call[]) => calls.find((c) => /git -C .* checkout/.test(c.cmd));
+const pullCmd = (calls: Call[]) => calls.find((c) => /refs\/pull\//.test(c.cmd));
+
+async function withProductionMode<T>(action: () => Promise<T>): Promise<T> {
+  const priorNodeEnv = process.env.NODE_ENV;
+  const priorDevMode = process.env.SKYNET_DEV_MODE;
+  const priorTenantOrgId = process.env.GITHUB_TENANT_ORG_ID;
+  process.env.NODE_ENV = "production";
+  process.env.SKYNET_DEV_MODE = "false";
+  process.env.GITHUB_TENANT_ORG_ID = "org-acme";
+  try {
+    return await action();
+  } finally {
+    if (priorNodeEnv === undefined) delete process.env.NODE_ENV;
+    else process.env.NODE_ENV = priorNodeEnv;
+    if (priorDevMode === undefined) delete process.env.SKYNET_DEV_MODE;
+    else process.env.SKYNET_DEV_MODE = priorDevMode;
+    if (priorTenantOrgId === undefined) delete process.env.GITHUB_TENANT_ORG_ID;
+    else process.env.GITHUB_TENANT_ORG_ID = priorTenantOrgId;
+  }
+}
+
+const pullRequestResource = (
+  revision: string | null,
+): RunResource => ({
+  kind: "code.change",
+  provider: "github",
+  locator: {
+    type: "github.pull_request",
+    repository: "acme/widget",
+    number: 42,
+    revision,
+  },
+  capabilities: ["change.read"],
+  provenance: [
+    {
+      source: "user_text",
+      channel: "web",
+      raw: "https://github.com/acme/widget/pull/42",
+      start: 0,
+      end: 40,
+    },
+  ],
+});
 
 describe("repo-prep: shared engine-neutral repository preparation", () => {
   test("shq single-quotes and POSIX-escapes embedded quotes", () => {
@@ -96,14 +156,41 @@ describe("repo-prep: shared engine-neutral repository preparation", () => {
   test("a public gateway clone never injects the organization GitHub credential", async () => {
     const { sandbox, calls } = fakeSandbox({ state: "absent" });
     const { ctx } = fakeCtx();
-    await ensureRepoClone(
-      sandbox,
-      "/root/work",
-      "octocat/Hello-World",
-      ctx,
-      { useGithubCredential: false },
+    await withProductionMode(() =>
+      ensureRepoClone(
+        sandbox,
+        "/root/work",
+        "octocat/Hello-World",
+        ctx,
+        { useGithubCredential: false },
+      ),
     );
     expect(cloneCmd(calls)?.env).toEqual({});
+  });
+
+  test("a retained production sandbox rejects PAT-only private repository preparation", async () => {
+    const { sandbox, calls } = fakeSandbox({ state: "absent" });
+    const { ctx } = fakeCtx();
+
+    await expect(
+      withProductionMode(() =>
+        ensureRepoClone(sandbox, "/root/work", "acme/private", ctx)
+      ),
+    ).rejects.toThrow(/retained sandbox.*configure GITHUB_APP_ID/s);
+    expect(cloneCmd(calls)).toBeUndefined();
+  });
+
+  test("repository preparation carries the run org and rejects a different production tenant", async () => {
+    const { sandbox, calls } = fakeSandbox({ state: "absent" });
+    const { ctx } = fakeCtx();
+    ctx.orgId = "org-other";
+
+    await expect(
+      withProductionMode(() =>
+        ensureRepoClone(sandbox, "/root/work", "acme/private", ctx)
+      ),
+    ).rejects.toThrow(/not available to this organization/);
+    expect(cloneCmd(calls)).toBeUndefined();
   });
 
   test("a branch override clones with -b <branch>, and the identity check requires that branch", async () => {
@@ -113,6 +200,82 @@ describe("repo-prep: shared engine-neutral repository preparation", () => {
     expect(cloneCmd(calls)?.cmd).toContain("-b 'dev'");
     expect(idCmd(calls)?.cmd).toContain("'dev'"); // branch is part of the reuse identity
     expect(emits.some((e) => e.label === "Cloning acme/widget (dev)")).toBe(true);
+  });
+
+  test("an authorized pull request fetches the base repository PR ref into a deterministic local ref and checks out detached", async () => {
+    const expectedHead = "0123456789abcdef0123456789abcdef01234567";
+    const { sandbox, calls } = fakeSandbox({
+      pullOut: `pr:ok sha=${expectedHead}`,
+    });
+    const { ctx, emits } = fakeCtx();
+
+    await checkoutPullRequestResources(
+      sandbox,
+      "/home/daytona/work with spaces",
+      [pullRequestResource(expectedHead)],
+      ctx,
+    );
+
+    const checkout = pullCmd(calls);
+    expect(checkout).toBeDefined();
+    expect(checkout?.cmd).toContain("DIR='/home/daytona/work with spaces/acme/widget'");
+    expect(checkout?.cmd).toContain(
+      "git -C \"$DIR\" fetch --force --quiet origin 'refs/pull/42/head:refs/skynet/pull/42/head'",
+    );
+    expect(checkout?.cmd).toContain(
+      "git -C \"$DIR\" checkout --detach 'refs/skynet/pull/42/head'",
+    );
+    expect(checkout?.cmd).toContain(`EXPECTED='${expectedHead}'`);
+    expect(checkout?.cmd).not.toContain("github.com/acme/widget/pull/42");
+    expect(checkout?.env?.GIT_CONFIG_VALUE_0).toContain(
+      Buffer.from(`x-access-token:${SENTINEL}`).toString("base64"),
+    );
+    expect(checkout?.cmd).not.toContain(SENTINEL);
+    expect(
+      emits.some((event) => event.label === "Checking out acme/widget pull request #42"),
+    ).toBe(true);
+  });
+
+  test("a pull request head SHA mismatch fails before provider execution", async () => {
+    const expectedHead = "0123456789abcdef0123456789abcdef01234567";
+    const actualHead = "89abcdef0123456789abcdef0123456789abcdef";
+    const { sandbox } = fakeSandbox({
+      pullExit: 1,
+      pullOut: `pr:sha-mismatch actual=${actualHead}`,
+    });
+    const { ctx } = fakeCtx();
+
+    await expect(
+      checkoutPullRequestResources(
+        sandbox,
+        "/w",
+        [pullRequestResource(expectedHead)],
+        ctx,
+      ),
+    ).rejects.toThrow(
+      `pull request acme/widget#42 head SHA mismatch: expected ${expectedHead}, fetched ${actualHead}`,
+    );
+  });
+
+  test("resources without a code change do not run a checkout command", async () => {
+    const { sandbox, calls } = fakeSandbox();
+    const { ctx, emits } = fakeCtx();
+    const repository: RunResource = {
+      kind: "code.repository",
+      provider: "github",
+      locator: {
+        type: "github.repository",
+        repository: "acme/widget",
+        revision: null,
+      },
+      capabilities: ["content.read", "code.checkout"],
+      provenance: [],
+    };
+
+    await checkoutPullRequestResources(sandbox, "/w", [repository], ctx);
+
+    expect(calls).toHaveLength(0);
+    expect(emits).toHaveLength(0);
   });
 
   test("prepareRepos clones EVERY selected repo (multi-repo workspace)", async () => {
@@ -203,7 +366,7 @@ describe("repo-prep: shared engine-neutral repository preparation", () => {
     expect(clone?.cmd).toContain("-b 'main'");
   });
 
-  test("token redaction: the PAT rides in ENV only, NEVER in the command string", async () => {
+  test("token redaction: the dev-gated credential rides in ENV only, NEVER in the command string", async () => {
     const { sandbox, calls } = fakeSandbox({ state: "absent" });
     const { ctx } = fakeCtx();
     await ensureRepoClone(sandbox, "/w", "acme/private", ctx);

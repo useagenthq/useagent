@@ -44,7 +44,10 @@ beforeAll(() => {
     },
     updateMessage: async () => ({ ok: true }),
     addReaction: async () => ({ ok: true }),
-    setAssistantStatus: async () => {},
+    setSessionStatus: async () => ({ ok: true }),
+    startStream: async () => ({ ok: true, ts: "stream.1" }),
+    appendStream: async () => ({ ok: true }),
+    stopStream: async () => ({ ok: true }),
     uploadFile: async () => ({ ok: true }),
   });
 });

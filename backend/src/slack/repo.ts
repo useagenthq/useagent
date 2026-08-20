@@ -1,39 +1,112 @@
 /**
  * Slack thread ↔ run mapping. One row per Slack thread the bot has rooted,
- * keyed by `(channel, thread root ts)`. The FIRST bot interaction in a Slack
+ * keyed by `(team, channel, thread root ts)`. The FIRST bot interaction in a Slack
  * thread creates a skynet ROOT run and links it here; every later message in
  * that Slack thread resolves to the root and becomes a `parent_run_id` reply,
  * so the thread stays one skynet conversation with clean, un-nested prompts.
  */
 import { and, eq } from "drizzle-orm";
 import { db, type Executor } from "../db/client";
-import { slackThreads } from "../db/schema";
+import { slackRunResponses, slackThreads } from "../db/schema";
+import type { SlackStreamTaskDisplayMode } from "./streaming";
 
 export interface SlackThreadLink {
   rootRunId: string;
   orgId: string;
 }
 
-/** Where a Slack-originated run's reply must be posted (the thread it rooted).
- *  `cardTs` is the Block Kit run card's message ts when one has been posted, so a
- *  final update targets the SAME card (null = no card yet; post a fresh reply). */
 export interface SlackThreadTarget {
+  teamId: string;
   channel: string;
   threadTs: string;
-  cardTs: string | null;
+}
+
+export interface SlackRunResponseTarget extends SlackThreadTarget {
+  runId: string;
+  nativeStreamTs: string | null;
+  nativeStreamMode: SlackStreamTaskDisplayMode | null;
+  fallbackMessageTs: string | null;
 }
 
 /** The skynet root run for a Slack thread, or null if the bot hasn't engaged it. */
 export async function findSlackThread(
+  teamId: string,
   channel: string,
   threadTs: string,
 ): Promise<SlackThreadLink | null> {
   const [row] = await db
     .select({ rootRunId: slackThreads.rootRunId, orgId: slackThreads.orgId })
     .from(slackThreads)
-    .where(and(eq(slackThreads.channel, channel), eq(slackThreads.threadTs, threadTs)))
+    .where(
+      and(
+        eq(slackThreads.teamId, teamId),
+        eq(slackThreads.channel, channel),
+        eq(slackThreads.threadTs, threadTs),
+      ),
+    )
     .limit(1);
   return row ?? null;
+}
+
+/** Resolve a Slack thread in the post-team-id schema. During the 0053 migration
+ * legacy rows are temporarily stamped `__legacy__`; the first event from the
+ * resolved workspace may adopt exactly one matching legacy row, but only when
+ * its stored org matches the workspace org. Anything ambiguous or cross-org
+ * returns null so ingress fails closed instead of routing across tenants. */
+export async function findOrAdoptSlackThread(
+  input: { teamId: string; channel: string; threadTs: string; orgId: string },
+): Promise<SlackThreadLink | null> {
+  return await db.transaction(async (tx) => {
+    const [exact] = await tx
+      .select({ rootRunId: slackThreads.rootRunId, orgId: slackThreads.orgId })
+      .from(slackThreads)
+      .where(
+        and(
+          eq(slackThreads.teamId, input.teamId),
+          eq(slackThreads.channel, input.channel),
+          eq(slackThreads.threadTs, input.threadTs),
+        ),
+      )
+      .limit(1);
+    if (exact) return exact.orgId === input.orgId ? exact : null;
+
+    const legacyRows = await tx
+      .select({ rootRunId: slackThreads.rootRunId, orgId: slackThreads.orgId })
+      .from(slackThreads)
+      .where(
+        and(
+          eq(slackThreads.teamId, "__legacy__"),
+          eq(slackThreads.channel, input.channel),
+          eq(slackThreads.threadTs, input.threadTs),
+        ),
+      )
+      .limit(2);
+    if (legacyRows.length !== 1) return null;
+    const [legacy] = legacyRows;
+    if (!legacy || legacy.orgId !== input.orgId) return null;
+
+    await tx
+      .update(slackThreads)
+      .set({ teamId: input.teamId })
+      .where(
+        and(
+          eq(slackThreads.teamId, "__legacy__"),
+          eq(slackThreads.channel, input.channel),
+          eq(slackThreads.threadTs, input.threadTs),
+        ),
+      );
+    await tx
+      .update(slackRunResponses)
+      .set({ teamId: input.teamId, updatedAt: new Date() })
+      .where(
+        and(
+          eq(slackRunResponses.teamId, "__legacy__"),
+          eq(slackRunResponses.channel, input.channel),
+          eq(slackRunResponses.threadTs, input.threadTs),
+        ),
+      );
+    return legacy;
+  });
 }
 
 /** The Slack channel + thread ts a run's reply belongs in, resolved from the run's
@@ -46,9 +119,9 @@ export async function findSlackThreadByRoot(
 ): Promise<SlackThreadTarget | null> {
   const [row] = await exec
     .select({
+      teamId: slackThreads.teamId,
       channel: slackThreads.channel,
       threadTs: slackThreads.threadTs,
-      cardTs: slackThreads.cardTs,
     })
     .from(slackThreads)
     .where(eq(slackThreads.rootRunId, rootRunId))
@@ -59,6 +132,7 @@ export async function findSlackThreadByRoot(
 /** Link a Slack thread to the run that rooted it. Idempotent: a duplicate
  * (channel, threadTs) from a Slack retry race is ignored, keeping the original. */
 export async function linkSlackThread(input: {
+  teamId: string;
   channel: string;
   threadTs: string;
   rootRunId: string;
@@ -67,35 +141,75 @@ export async function linkSlackThread(input: {
   await db.insert(slackThreads).values(input).onConflictDoNothing();
 }
 
-/** Persist the Block Kit run card's message ts on the thread it was posted into,
- *  so later progress/completion updates target the SAME card. Keyed by
- *  (channel, threadTs) - the card lives in exactly one thread. */
-export async function setSlackCardTs(
-  channel: string,
-  threadTs: string,
-  cardTs: string,
+export async function createSlackRunResponse(
+  input: { runId: string; teamId: string; channel: string; threadTs: string },
+  exec: Executor = db,
 ): Promise<void> {
-  await db
-    .update(slackThreads)
-    .set({ cardTs })
-    .where(and(eq(slackThreads.channel, channel), eq(slackThreads.threadTs, threadTs)));
+  await exec.insert(slackRunResponses).values(input).onConflictDoNothing();
 }
 
-/** The run card's message ts for a rooted Slack thread (null before it is posted).
- *  Used by the live-progress watcher to advance the card in place. */
+export async function findSlackRunResponse(
+  runId: string,
+  exec: Executor = db,
+): Promise<SlackRunResponseTarget | null> {
+  const [row] = await exec
+    .select({
+      runId: slackRunResponses.runId,
+      teamId: slackRunResponses.teamId,
+      channel: slackRunResponses.channel,
+      threadTs: slackRunResponses.threadTs,
+      nativeStreamTs: slackRunResponses.nativeStreamTs,
+      nativeStreamMode: slackRunResponses.nativeStreamMode,
+      fallbackMessageTs: slackRunResponses.fallbackMessageTs,
+    })
+    .from(slackRunResponses)
+    .where(eq(slackRunResponses.runId, runId))
+    .limit(1);
+  return row ?? null;
+}
+
+export async function setSlackNativeStream(
+  runId: string,
+  nativeStreamTs: string,
+  nativeStreamMode: SlackStreamTaskDisplayMode,
+): Promise<void> {
+  await db
+    .update(slackRunResponses)
+    .set({ nativeStreamTs, nativeStreamMode, updatedAt: new Date() })
+    .where(eq(slackRunResponses.runId, runId));
+}
+
+export async function setSlackFallbackMessageTs(runId: string, fallbackMessageTs: string): Promise<void> {
+  await db
+    .update(slackRunResponses)
+    .set({ fallbackMessageTs, updatedAt: new Date() })
+    .where(eq(slackRunResponses.runId, runId));
+}
+
+/** Compatibility wrapper for pre-native-stream card rows. New native delivery
+ *  paths store card/fallback timestamps on slack_run_responses instead. */
+export async function setSlackCardTs(
+  rootRunId: string,
+  cardTs: string,
+): Promise<void> {
+  await setSlackFallbackMessageTs(rootRunId, cardTs);
+}
+
 export async function getSlackCardTsByRoot(rootRunId: string): Promise<{
+  teamId: string;
   channel: string;
   threadTs: string;
   cardTs: string | null;
 } | null> {
-  const [row] = await db
-    .select({
-      channel: slackThreads.channel,
-      threadTs: slackThreads.threadTs,
-      cardTs: slackThreads.cardTs,
-    })
-    .from(slackThreads)
-    .where(eq(slackThreads.rootRunId, rootRunId))
-    .limit(1);
-  return row ?? null;
+  const response = await findSlackRunResponse(rootRunId);
+  if (response) {
+    return {
+      teamId: response.teamId,
+      channel: response.channel,
+      threadTs: response.threadTs,
+      cardTs: response.fallbackMessageTs,
+    };
+  }
+  const thread = await findSlackThreadByRoot(rootRunId);
+  return thread ? { ...thread, cardTs: null } : null;
 }

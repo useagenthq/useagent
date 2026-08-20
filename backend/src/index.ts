@@ -80,6 +80,12 @@ import {
 } from "./knowledge/gateway/approval-routes";
 import { internalApprovalRequestRoutes } from "./knowledge/gateway/approval-request-tools";
 import { approveApprovalRequestAsRunOwner } from "./knowledge/gateway/approval-requests";
+import { currentReleaseFingerprint, isClientReleaseCompatible } from "./release";
+
+// Acquire the per-database singleton before ANY shared-state mutation. In strict
+// production mode an unavailable/contended lock fails boot closed, so a duplicate
+// process cannot migrate or recover another backend's database first.
+await enforceSingleBackend();
 
 // Apply committed Drizzle migrations BEFORE anything reads or seeds the schema,
 // so a fresh clone (or a fresh database) boots with the tables in place. The
@@ -92,13 +98,6 @@ await migrate(db, { migrationsFolder: `${import.meta.dir}/../drizzle` });
 // db/gateway-grants.ts for the incident class this kills).
 const { applyGatewayGrants } = await import("./db/gateway-grants");
 await applyGatewayGrants(client);
-
-// Single-backend guard: canonicalization sealing + realtime SSE fan-out are process-local
-// (single-replica). Acquire the per-database singleton advisory lock BEFORE recovering or
-// mutating runs, so a duplicate replica can't split the realtime lane or reconcile another
-// backend's in-flight runs. Warn-and-continue by default (dev/test-safe); fatal only when
-// the release sets REQUIRE_SINGLE_BACKEND=1.
-await enforceSingleBackend();
 
 // Idempotent boot seeding: dev org/user/member only. No demo content — the
 // Knowledge and Skills surfaces start empty and fill with real records.
@@ -144,10 +143,30 @@ app.use(
   cors({
     origin: env.FRONTEND_ORIGIN,
     credentials: true,
-    allowHeaders: ["Content-Type", "Authorization"],
+    allowHeaders: ["Content-Type", "Authorization", "x-skynet-client-release"],
+    exposeHeaders: ["x-skynet-release-fingerprint", "x-skynet-api-compat"],
     allowMethods: ["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
   }),
 );
+
+app.use("/api/*", async (c, next) => {
+  const release = currentReleaseFingerprint();
+  c.header("x-skynet-release-fingerprint", release.fingerprint);
+  c.header("x-skynet-api-compat", release.apiCompat);
+  if (
+    ["POST", "PUT", "PATCH", "DELETE"].includes(c.req.method) &&
+    !isClientReleaseCompatible(c.req.header("x-skynet-client-release"), release.fingerprint)
+  ) {
+    return c.json(
+      {
+        error: "frontend_release_mismatch",
+        release,
+      },
+      409,
+    );
+  }
+  return next();
+});
 
 // Universal auth adapter (fail CLOSED by default). Every /api/* request is
 // org-session scoped UNLESS its prefix self-authenticates or is public
@@ -192,6 +211,7 @@ app.get("/api/config", (c) => {
   return c.json({
     auth: { google: googleAuthEnabled(), emailPassword: true },
     allowDevOrg: allowDevOrg(),
+    release: currentReleaseFingerprint(),
     engines,
     models,
     sandbox: { provider: sandboxProviderKind() },

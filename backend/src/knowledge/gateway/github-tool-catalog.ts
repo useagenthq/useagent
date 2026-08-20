@@ -48,8 +48,10 @@ export const GITHUB_TOOLS = [
     name: "github_pr_detail",
     description:
       "Read one pull request from a bound repository: title, body, author, branches, merge state, " +
-      "counts, and a bounded files-changed summary. Read-only server-side call; credentials never " +
-      "reach the sandbox and long bodies or file lists are truncated with explicit markers.",
+      "counts, a bounded files-changed summary, and head-revision evidence from check runs, " +
+      "deployments with latest statuses, and legacy commit statuses. HTTPS links in bounded check " +
+      "summaries are extracted for preview discovery. Read-only server-side calls; credentials never " +
+      "reach the sandbox, long fields are truncated, and unavailable evidence is reported explicitly.",
     inputSchema: {
       type: "object",
       properties: {

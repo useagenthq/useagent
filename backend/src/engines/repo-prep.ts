@@ -6,17 +6,36 @@
 // one trust boundary; do not copy this per engine.
 // ---------------------------------------------------------------------------
 import type { SandboxHandle } from "../sandboxes/provider";
-import { resolveGithubToken } from "../github/auth";
+import { resolveGithubSandboxToken } from "../github/auth";
 import { parseRepoRef } from "../github/repo-ref";
 import { RUN_TIMING_OUTCOMES, RUN_TIMING_STAGES } from "../runs/run-timing";
+import type { RunResource } from "../resources/types";
 import type { EngineRunContext } from "./types";
 import { truncate } from "./util";
 
-type RepoCloneContext = Pick<EngineRunContext, "emit">;
+type RepoCloneContext = Pick<EngineRunContext, "emit" | "orgId">;
+type RepoCloneOptions = { readonly useGithubCredential?: boolean };
 
 /** POSIX single-quote a string for safe interpolation into a shell command. */
 export function shq(s: string): string {
   return `'${s.replace(/'/g, `'\\''`)}'`;
+}
+
+async function githubAuthEnv(
+  repository: string,
+  orgId: string | null | undefined,
+  options: RepoCloneOptions,
+): Promise<Record<string, string>> {
+  const token = options.useGithubCredential === false
+    ? null
+    : await resolveGithubSandboxToken(repository, orgId);
+  return token
+    ? {
+        GIT_CONFIG_COUNT: "1",
+        GIT_CONFIG_KEY_0: "http.extraHeader",
+        GIT_CONFIG_VALUE_0: `Authorization: Basic ${Buffer.from(`x-access-token:${token}`).toString("base64")}`,
+      }
+    : {};
 }
 
 /**
@@ -42,7 +61,7 @@ export async function ensureRepoClone(
   workdir: string,
   entry: string,
   ctx: RepoCloneContext,
-  options: { readonly useGithubCredential?: boolean } = {},
+  options: RepoCloneOptions = {},
 ): Promise<void> {
   // The stored entry may carry a branch ("owner/name:branch"); split it so the
   // subdir/URL use the clean repo and the clone checks out the chosen branch.
@@ -85,19 +104,10 @@ export async function ensureRepoClone(
     throw new Error(`refusing to prepare ${repo}: ${dir} holds existing content not created by Skynet`);
   }
 
-  // One-shot GitHub credential (a PAT or a FRESHLY-valid App installation token). Passed via
+  // One-shot GitHub credential (an exact-repo App token, or a dev-gated local PAT). Passed via
   // GIT_CONFIG_* ENV ONLY (never the git argv / .git-config / logs / prompt), applied for THIS
   // operation and never persisted. Absent -> public repo. Shared by the switch + clone paths.
-  const token = options.useGithubCredential === false
-    ? null
-    : await resolveGithubToken();
-  const authEnv: Record<string, string> = token
-    ? {
-        GIT_CONFIG_COUNT: "1",
-        GIT_CONFIG_KEY_0: "http.extraHeader",
-        GIT_CONFIG_VALUE_0: `Authorization: Basic ${Buffer.from(`x-access-token:${token}`).toString("base64")}`,
-      }
-    : {};
+  const authEnv = await githubAuthEnv(repo, ctx.orgId, options);
 
   // SAME repo, WRONG branch: switch in place (fetch + checkout). NON-DESTRUCTIVE - we never
   // rm -rf a checkout that IS the requested repo, so a warm checkout's local work survives.
@@ -159,6 +169,78 @@ export async function ensureRepoClone(
     const detail = out.replace(/clone:\w+/g, "").trim() || "git clone error";
     const what = branch ? `${repo} (${branch})` : repo;
     throw new Error(`failed to clone ${what}: ${truncate(detail, 200)}`);
+  }
+}
+
+/**
+ * Check out each authorized GitHub pull-request resource after its base
+ * repository has been prepared. GitHub exposes the contributor head through
+ * the base repository's `refs/pull/<number>/head`, including for fork PRs, so
+ * this never needs a contributor-controlled remote URL or persisted credential.
+ */
+export async function checkoutPullRequestResources(
+  sandbox: SandboxHandle,
+  workdir: string,
+  resources: readonly RunResource[],
+  ctx: RepoCloneContext,
+): Promise<void> {
+  const changes = resources.filter(
+    (resource): resource is Extract<RunResource, { kind: "code.change" }> =>
+      resource.kind === "code.change" &&
+      resource.provider === "github" &&
+      resource.locator.type === "github.pull_request",
+  );
+  if (changes.length === 0) return;
+
+  for (const change of changes) {
+    const { repository, number, revision } = change.locator;
+    const authEnv = await githubAuthEnv(repository, ctx.orgId, {});
+    const dir = `${workdir}/${repository}`;
+    const remoteRef = `refs/pull/${number}/head`;
+    const localRef = `refs/skynet/pull/${number}/head`;
+    const expected = revision ?? "";
+    const script =
+      `set -e; DIR=${shq(dir)}; EXPECTED=${shq(expected)}; L="$(mktemp)"; ` +
+      `if ! git -C "$DIR" fetch --force --quiet origin ${shq(`${remoteRef}:${localRef}`)} >"$L" 2>&1; ` +
+      `then echo pr:fetch-failed; tail -c 300 "$L"; rm -f "$L"; exit 1; fi; ` +
+      `ACTUAL="$(git -C "$DIR" rev-parse ${shq(localRef)} 2>/dev/null)"; ` +
+      `if [ -z "$ACTUAL" ]; then echo pr:verify-failed; rm -f "$L"; exit 1; fi; ` +
+      `if [ -n "$EXPECTED" ] && [ "$ACTUAL" != "$EXPECTED" ]; ` +
+      `then echo "pr:sha-mismatch actual=$ACTUAL"; rm -f "$L"; exit 1; fi; ` +
+      `if ! git -C "$DIR" checkout --detach ${shq(localRef)} >"$L" 2>&1; ` +
+      `then echo pr:checkout-failed; tail -c 300 "$L"; rm -f "$L"; exit 1; fi; ` +
+      `rm -f "$L"; echo "pr:ok sha=$ACTUAL"`;
+
+    await ctx.emit({
+      kind: "command",
+      label: `Checking out ${repository} pull request #${number}`,
+      chip: "git",
+    });
+    const result = await sandbox.process.executeCommand(
+      script,
+      undefined,
+      authEnv,
+      120,
+    );
+    const output = (result.result ?? "").trim();
+    if ((result.exitCode ?? 1) === 0 && /(?:^|\n)pr:ok(?:\s|$)/u.test(output)) {
+      continue;
+    }
+    if (/pr:sha-mismatch/u.test(output)) {
+      const actual = /\bactual=([0-9a-f]{40})\b/iu.exec(output)?.[1] ?? "unknown";
+      throw new Error(
+        `pull request ${repository}#${number} head SHA mismatch: expected ${expected}, fetched ${actual}`,
+      );
+    }
+    const detail = output.replace(/pr:\S+/gu, "").trim();
+    if (/pr:checkout-failed/u.test(output)) {
+      throw new Error(
+        `failed to check out pull request ${repository}#${number}: ${truncate(detail || "git checkout error", 200)}`,
+      );
+    }
+    throw new Error(
+      `failed to fetch pull request ${repository}#${number}: ${truncate(detail || "git fetch error", 200)}`,
+    );
   }
 }
 

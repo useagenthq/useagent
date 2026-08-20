@@ -297,6 +297,26 @@ export function githubConfigured(): boolean {
 }
 
 /**
+ * Product-organization id allowed to use the deployment-wide GitHub
+ * connection. GitHub credentials are still process configuration rather than
+ * per-org records, so they must be assigned to exactly one product tenant.
+ *
+ * `GITHUB_TENANT_ORG_ID` is the canonical binding. The two fallbacks preserve
+ * the current single-tenant deployment while it migrates: the host bootstrap
+ * already receives `SKYNET_PRIMARY_ORG_ID`, and older installs carry their
+ * tenant id in `SLACK_DEFAULT_ORG_ID`. Local development stays bound to the
+ * seeded dev org only while the dev-org fallback is explicitly enabled.
+ */
+export function githubTenantOrgId(): string | null {
+  return (
+    process.env.GITHUB_TENANT_ORG_ID?.trim() ||
+    process.env.SKYNET_PRIMARY_ORG_ID?.trim() ||
+    process.env.SLACK_DEFAULT_ORG_ID?.trim() ||
+    (allowDevOrg() ? "org-skynet-dev" : null)
+  );
+}
+
+/**
  * Slack adapter config for the optional Events-API integration (src/slack/*).
  * Gated exactly like memoryConfig(): read per call, and BOTH `SLACK_BOT_TOKEN`
  * and `SLACK_SIGNING_SECRET` must be set or the whole adapter is a no-op —

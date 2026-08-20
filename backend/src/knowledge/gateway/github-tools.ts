@@ -1,7 +1,15 @@
 import { githubConfigured } from "../../env";
 import { resolveGithubToken } from "../../github/auth";
 import { parseRepoRef } from "../../github/repo-ref";
+import { githubOrgAccessError } from "../../github/repos";
 import { getRunForOrg } from "../../runs/repo";
+import type { ResourceCapability } from "../../resources/types";
+import {
+  githubAuthor,
+  githubHeadEvidenceText,
+  readGithubHeadEvidence,
+  type GithubEvidenceService,
+} from "./github-pr-evidence";
 import { GITHUB_TOOL_NAMES, GITHUB_TOOLS } from "./github-tool-catalog";
 import { errorResult, textResult } from "./tool-results";
 import type { ToolCallResult } from "./tools";
@@ -20,12 +28,19 @@ export { GITHUB_TOOL_NAMES, GITHUB_TOOLS };
 //    headers; tool results carry bounded JSON summaries, never credentials.
 // ---------------------------------------------------------------------------
 
-/** The two effects the tools need, seamed for hermetic tests. */
-export interface GithubReadService {
+/** GitHub tool effects, seamed for hermetic tests. */
+export interface GithubReadService extends GithubEvidenceService {
   /** Clean "owner/name" repositories bound to the calling run. */
   boundRepos(claims: ToolTokenClaims): Promise<string[]>;
-  /** GET an api.github.com path, return parsed JSON; throws on a non-2xx. */
-  fetchJson(path: string): Promise<unknown>;
+  /** Persisted, revision-pinned PR capabilities granted to the calling run. */
+  pullRequestGrants(claims: ToolTokenClaims): Promise<readonly GithubPullRequestGrant[]>;
+}
+
+export interface GithubPullRequestGrant {
+  readonly repository: string;
+  readonly number: number;
+  readonly revision: string | null;
+  readonly capabilities: readonly ResourceCapability[];
 }
 
 const GITHUB_API = "https://api.github.com";
@@ -35,6 +50,11 @@ const MAX_LIMIT = 50;
 const MAX_BODY_CHARS = 4_000;
 const MAX_FILES = 50;
 const REPO_SHAPE = /^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/;
+const PR_DETAIL_CAPABILITIES = [
+  "change.read",
+  "change.checks.read",
+  "deployment.read",
+] as const satisfies readonly ResourceCapability[];
 
 /** GitHub shapes (only the fields we read). */
 interface GhPull {
@@ -46,7 +66,7 @@ interface GhPull {
   created_at?: string;
   updated_at?: string;
   user?: { login?: string } | null;
-  head?: { ref?: string } | null;
+  head?: { ref?: string; sha?: string } | null;
   base?: { ref?: string } | null;
 }
 
@@ -97,6 +117,21 @@ const productionService: GithubReadService = {
     return run.repos.map((entry) => parseRepoRef(entry).repo);
   },
 
+  async pullRequestGrants(claims) {
+    const run = await getRunForOrg(claims.orgId, claims.runId);
+    if (!run || run.threadId !== claims.threadId) throw new Error("run not found in this thread");
+    return run.resolvedResources.flatMap((resource) =>
+      resource.locator.type === "github.pull_request"
+        ? [{
+            repository: resource.locator.repository,
+            number: resource.locator.number,
+            revision: resource.locator.revision,
+            capabilities: resource.capabilities,
+          }]
+        : [],
+    );
+  },
+
   async fetchJson(path) {
     if (!githubConfigured()) {
       throw new Error(
@@ -124,6 +159,13 @@ let serviceOverride: GithubReadService | null = null;
 /** Test-only seam. Production always uses the run row + server-side auth above. */
 export function setGithubReadServiceForTest(service: GithubReadService | null): void {
   serviceOverride = service;
+}
+
+function serviceForCall(claims: ToolTokenClaims): GithubReadService {
+  if (serviceOverride) return serviceOverride;
+  const accessError = githubOrgAccessError(claims.orgId);
+  if (accessError) throw new Error(accessError);
+  return productionService;
 }
 
 function checkedRepo(value: unknown): string {
@@ -178,8 +220,38 @@ async function boundRepoOrThrow(
   return match;
 }
 
-function author(user: { login?: string } | null | undefined): string {
-  return user?.login ?? "unknown";
+async function pullRequestGrantOrThrow(
+  service: GithubReadService,
+  claims: ToolTokenClaims,
+  repository: string,
+  number: number,
+): Promise<GithubPullRequestGrant> {
+  const grants = await service.pullRequestGrants(claims);
+  const grant = grants.find(
+    (candidate) =>
+      candidate.repository.toLowerCase() === repository.toLowerCase() &&
+      candidate.number === number,
+  );
+  if (!grant) {
+    throw new Error(
+      `pull request ${repository}#${number} is not authorized for this run; ` +
+        "bind that exact pull request before requesting its details",
+    );
+  }
+  if (!grant.revision) {
+    throw new Error(
+      `pull request ${repository}#${number} has no pinned authorized revision; start a new run from the PR link`,
+    );
+  }
+  const missing = PR_DETAIL_CAPABILITIES.filter(
+    (capability) => !grant.capabilities.includes(capability),
+  );
+  if (missing.length > 0) {
+    throw new Error(
+      `pull request ${repository}#${number} is missing required capabilities: ${missing.join(", ")}`,
+    );
+  }
+  return grant;
 }
 
 interface PullSummary {
@@ -201,7 +273,7 @@ function toPullSummary(p: GhPull): PullSummary {
     title: p.title ?? "",
     state: p.state ?? "unknown",
     draft: Boolean(p.draft),
-    author: author(p.user),
+    author: githubAuthor(p.user),
     head: p.head?.ref ?? null,
     base: p.base?.ref ?? null,
     created_at: p.created_at ?? null,
@@ -241,10 +313,19 @@ async function pullRequestDetail(
 ): Promise<ToolCallResult> {
   const repo = await boundRepoOrThrow(service, claims, checkedRepo(args.repo));
   const number = checkedNumber(args.number);
+  const grant = await pullRequestGrantOrThrow(service, claims, repo, number);
   const detail = (await service.fetchJson(`/repos/${repo}/pulls/${number}`)) as GhPullDetail;
-  const rawFiles = await service.fetchJson(
+  const headSha = detail.head?.sha ? detail.head.sha : null;
+  if (!headSha || headSha.toLowerCase() !== grant.revision!.toLowerCase()) {
+    throw new Error(
+      `pull request ${repo}#${number} no longer matches its authorized revision; start a new run from the PR link`,
+    );
+  }
+  const filesPromise = service.fetchJson(
     `/repos/${repo}/pulls/${number}/files?per_page=${MAX_FILES}`,
   );
+  const evidencePromise = readGithubHeadEvidence(service, repo, headSha);
+  const [rawFiles, evidence] = await Promise.all([filesPromise, evidencePromise]);
   const files = (Array.isArray(rawFiles) ? (rawFiles as GhPullFile[]) : [])
     .slice(0, MAX_FILES)
     .map((f) => ({
@@ -263,10 +344,11 @@ async function pullRequestDetail(
     state: detail.state ?? "unknown",
     draft: Boolean(detail.draft),
     merged: Boolean(detail.merged),
-    author: author(detail.user),
+    author: githubAuthor(detail.user),
     body: bodyTruncated ? `${body.slice(0, MAX_BODY_CHARS)}\n[body truncated]` : body,
     body_truncated: bodyTruncated,
     head: detail.head?.ref ?? null,
+    head_sha: headSha,
     base: detail.base?.ref ?? null,
     created_at: detail.created_at ?? null,
     updated_at: detail.updated_at ?? null,
@@ -278,13 +360,15 @@ async function pullRequestDetail(
     files,
     files_truncated: changedFiles > files.length,
     url: detail.html_url ?? null,
+    ...evidence,
   };
-  const text =
+  const baseText =
     `PR #${summary.number} ${summary.title}\n` +
     `${repo} ${summary.head ?? "?"} -> ${summary.base ?? "?"} | state ${summary.state}` +
     `${summary.draft ? " (draft)" : ""}${summary.merged ? " (merged)" : ""} | author ${summary.author}\n` +
     `${changedFiles} files changed (+${summary.additions ?? "?"} -${summary.deletions ?? "?"})` +
     `${summary.files_truncated ? `, first ${files.length} listed` : ""}`;
+  const text = [baseText, ...githubHeadEvidenceText(evidence)].join("\n");
   return textResult(text, summary);
 }
 
@@ -307,7 +391,7 @@ async function listIssues(
       number: issue.number,
       title: issue.title ?? "",
       state: issue.state ?? "unknown",
-      author: author(issue.user),
+      author: githubAuthor(issue.user),
       labels: (issue.labels ?? [])
         .map((label) => (typeof label === "string" ? label : label?.name ?? ""))
         .filter((name) => name.length > 0)
@@ -333,12 +417,18 @@ export async function executeGithubTool(
   name: string,
   args: Record<string, unknown>,
 ): Promise<ToolCallResult> {
-  const service = serviceOverride ?? productionService;
   try {
+    if (
+      name !== "github_list_prs" &&
+      name !== "github_pr_detail" &&
+      name !== "github_list_issues"
+    ) {
+      return errorResult(`Unknown GitHub tool: ${name}`);
+    }
+    const service = serviceForCall(claims);
     if (name === "github_list_prs") return await listPullRequests(service, claims, args);
     if (name === "github_pr_detail") return await pullRequestDetail(service, claims, args);
-    if (name === "github_list_issues") return await listIssues(service, claims, args);
-    return errorResult(`Unknown GitHub tool: ${name}`);
+    return await listIssues(service, claims, args);
   } catch (error) {
     return errorResult(error instanceof Error ? error.message : "github operation failed");
   }

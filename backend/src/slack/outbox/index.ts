@@ -5,6 +5,7 @@ import { enqueue } from "./repo";
 import { kickSlackOutbox } from "./delivery";
 import { chunkSlackText } from "../chunk";
 import type { Executor } from "../../db/client";
+import type { SlackSessionStatus, SlackStreamChunk, SlackStreamTaskDisplayMode } from "../streaming";
 
 export { startSlackOutboxRelay, stopSlackOutboxRelay, kickSlackOutbox, processDue } from "./delivery";
 export { resetStuckDelivering, getByKey as getSlackOutbox } from "./repo";
@@ -39,9 +40,10 @@ export async function enqueueUpdateCardTx(
   exec: Executor,
   entry: {
     idempotencyKey: string;
+    teamId: string;
     channel: string;
     threadTs: string;
-    rootRunId: string;
+    runId: string;
     blocks: unknown[];
     text: string;
     /** The full answer text; chunked here so a long fallback stays postable. */
@@ -54,12 +56,118 @@ export async function enqueueUpdateCardTx(
       idempotencyKey: entry.idempotencyKey,
       payload: {
         channel: entry.channel,
+        teamId: entry.teamId,
         threadTs: entry.threadTs,
-        rootRunId: entry.rootRunId,
+        runId: entry.runId,
         blocks: entry.blocks,
         text: entry.text,
         fallbackChunks: chunkSlackText(entry.fallbackText),
       },
+    },
+    exec,
+  );
+}
+
+export async function enqueueStopStreamTx(
+  exec: Executor,
+  entry: {
+    idempotencyKey: string;
+    teamId: string;
+    channel: string;
+    threadTs: string;
+    runId: string;
+    chunks: readonly SlackStreamChunk[];
+    blocks: readonly unknown[];
+    text: string;
+    fallbackText: string;
+  },
+): Promise<boolean> {
+  return enqueue(
+    {
+      kind: "stop_stream",
+      idempotencyKey: entry.idempotencyKey,
+      payload: {
+        channel: entry.channel,
+        teamId: entry.teamId,
+        threadTs: entry.threadTs,
+        runId: entry.runId,
+        chunks: entry.chunks,
+        blocks: entry.blocks,
+        text: entry.text,
+        fallbackChunks: chunkSlackText(entry.fallbackText),
+      },
+    },
+    exec,
+  );
+}
+
+export async function enqueueSessionStatusTx(
+  exec: Executor,
+  entry: {
+    idempotencyKey: string;
+    teamId: string;
+    channel: string;
+    threadTs: string;
+    status: SlackSessionStatus;
+  },
+): Promise<boolean> {
+  return enqueue(
+    {
+      kind: "set_session_status",
+      idempotencyKey: entry.idempotencyKey,
+      payload: { teamId: entry.teamId, channel: entry.channel, threadTs: entry.threadTs, status: entry.status },
+    },
+    exec,
+  );
+}
+
+export async function enqueueStartStreamTx(
+  exec: Executor,
+  entry: {
+    idempotencyKey: string;
+    teamId: string;
+    channel: string;
+    threadTs: string;
+    runId: string;
+    taskDisplayMode: SlackStreamTaskDisplayMode;
+    chunks: readonly SlackStreamChunk[];
+    fallbackBlocks: readonly unknown[];
+    fallbackText: string;
+  },
+): Promise<boolean> {
+  return enqueue(
+    {
+      kind: "start_stream",
+      idempotencyKey: entry.idempotencyKey,
+      payload: {
+        channel: entry.channel,
+        teamId: entry.teamId,
+        threadTs: entry.threadTs,
+        runId: entry.runId,
+        taskDisplayMode: entry.taskDisplayMode,
+        chunks: entry.chunks,
+        fallbackBlocks: entry.fallbackBlocks,
+        fallbackText: entry.fallbackText,
+      },
+    },
+    exec,
+  );
+}
+
+export async function enqueueAddReactionTx(
+  exec: Executor,
+  entry: {
+    idempotencyKey: string;
+    channel: string;
+    timestamp: string;
+    name: string;
+  },
+): Promise<boolean> {
+  return enqueue(
+    {
+      kind: "add_reaction",
+      idempotencyKey: entry.idempotencyKey,
+      payload: { channel: entry.channel, timestamp: entry.timestamp, name: entry.name },
     },
     exec,
   );
@@ -119,9 +227,10 @@ export async function enqueuePostMessage(entry: {
  *  by `idempotencyKey`. */
 export async function enqueuePostCard(entry: {
   idempotencyKey: string;
+  teamId: string;
   channel: string;
   threadTs: string;
-  rootRunId: string;
+  runId: string;
   blocks: unknown[];
   text: string;
 }): Promise<void> {
@@ -130,11 +239,81 @@ export async function enqueuePostCard(entry: {
     idempotencyKey: entry.idempotencyKey,
     payload: {
       channel: entry.channel,
+      teamId: entry.teamId,
       threadTs: entry.threadTs,
-      rootRunId: entry.rootRunId,
+      runId: entry.runId,
       blocks: entry.blocks,
       text: entry.text,
     },
+  });
+  if (created) kickSlackOutbox();
+}
+
+export async function enqueueStartStream(entry: {
+  idempotencyKey: string;
+  teamId: string;
+  channel: string;
+  threadTs: string;
+  runId: string;
+  taskDisplayMode: SlackStreamTaskDisplayMode;
+  chunks: readonly SlackStreamChunk[];
+  fallbackBlocks: readonly unknown[];
+  fallbackText: string;
+}): Promise<void> {
+  const created = await enqueue({
+    kind: "start_stream",
+    idempotencyKey: entry.idempotencyKey,
+    payload: {
+      channel: entry.channel,
+      teamId: entry.teamId,
+      threadTs: entry.threadTs,
+      runId: entry.runId,
+      taskDisplayMode: entry.taskDisplayMode,
+      chunks: entry.chunks,
+      fallbackBlocks: entry.fallbackBlocks,
+      fallbackText: entry.fallbackText,
+    },
+  });
+  if (created) kickSlackOutbox();
+}
+
+export async function enqueueAppendStream(entry: {
+  idempotencyKey: string;
+  teamId: string;
+  channel: string;
+  threadTs: string;
+  runId: string;
+  chunks: readonly SlackStreamChunk[];
+  fallbackBlocks: readonly unknown[];
+  fallbackText: string;
+}): Promise<void> {
+  const created = await enqueue({
+    kind: "append_stream",
+    idempotencyKey: entry.idempotencyKey,
+    payload: {
+      channel: entry.channel,
+      teamId: entry.teamId,
+      threadTs: entry.threadTs,
+      runId: entry.runId,
+      chunks: entry.chunks,
+      fallbackBlocks: entry.fallbackBlocks,
+      fallbackText: entry.fallbackText,
+    },
+  });
+  if (created) kickSlackOutbox();
+}
+
+export async function enqueueSessionStatus(entry: {
+  idempotencyKey: string;
+  teamId: string;
+  channel: string;
+  threadTs: string;
+  status: SlackSessionStatus;
+}): Promise<void> {
+  const created = await enqueue({
+    kind: "set_session_status",
+    idempotencyKey: entry.idempotencyKey,
+    payload: { teamId: entry.teamId, channel: entry.channel, threadTs: entry.threadTs, status: entry.status },
   });
   if (created) kickSlackOutbox();
 }

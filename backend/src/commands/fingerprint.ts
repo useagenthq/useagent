@@ -1,4 +1,26 @@
-import type { RunCommandInput } from "./types";
+import type { RunCommandInput, RunCommandIntent } from "./types";
+
+/** Compatibility adapter for internal callers that do not have a distinct raw
+ * ingress payload. Product ingresses pass an explicit intent instead. */
+export function runIntentFromAcceptedRun(
+  run: RunCommandInput["run"],
+): RunCommandIntent {
+  return {
+    prompt: run.prompt,
+    model: run.model,
+    engine: run.engine,
+    parentRunId: run.parentRunId,
+    requestedRepos: run.repos,
+    attachmentIds: run.attachmentIds ?? [],
+    memoryScope: run.memoryScope ?? "org",
+    skillId: run.skillId ?? null,
+    skillVersion: run.skillVersion ?? null,
+    commandName: run.commandName ?? null,
+    commandProvider: run.commandProvider ?? null,
+    commandSessionId: run.commandSessionId ?? null,
+    commandCatalogRevision: run.commandCatalogRevision ?? null,
+  };
+}
 
 /**
  * Stable content hash of the semantically-significant request fields. Two
@@ -7,37 +29,37 @@ import type { RunCommandInput } from "./types";
  * fixed and the run id / thread id are excluded — only the user's intent
  * (prompt, model, engine, parent, repos, skill) participates.
  */
-export function runPayloadFingerprint(run: RunCommandInput["run"]): string {
+export function runIntentFingerprint(intent: RunCommandIntent): string {
   const canonical = JSON.stringify([
-    run.prompt,
-    run.model,
-    run.engine,
-    run.parentRunId,
+    intent.prompt,
+    intent.model,
+    intent.engine,
+    intent.parentRunId,
     // Each repo entry is "owner/name" or "owner/name:branch" (see repo-ref.ts).
     // Hashing the raw strings means a DIFFERENT branch on the same repo yields a
     // DIFFERENT fingerprint - so an Idempotency-Key replay that changes the branch
     // is (correctly) a payload mismatch, not a silent reuse of the other branch's
     // run. This falls out of the encoding for free; the test asserts it stays true.
-    run.repos,
-    run.attachmentIds ?? [],
+    intent.requestedRepos,
+    intent.attachmentIds,
     // A skill'd turn is a distinct intent from the same prompt without one; the
     // (id, version) reference is canonical (its content hash derives from it).
-    run.skillId ?? null,
-    run.skillVersion ?? null,
+    intent.skillId,
+    intent.skillVersion,
     // The destination memory pool is part of the intent: replaying the same key
     // after switching org/personal must NOT silently reuse the other scope's
     // run (external audit finding — scope was stored but not fingerprinted).
-    run.memoryScope ?? null,
+    intent.memoryScope,
     // A VALIDATED native-command turn is a distinct intent from the same text as a
     // normal prompt (it skips context + is delivered verbatim), so it participates.
-    run.commandName ?? null,
+    intent.commandName,
     // The FULL accepted command IDENTITY (D5): provider + native session + catalog revision. Two
     // commands with the same NAME but a different provider/session/revision are DIFFERENT intents
     // (a different authorization), so an Idempotency-Key replay that changes any of them must NOT
     // silently reuse the other run - the identity participates in the fingerprint, not only the name.
-    run.commandProvider ?? null,
-    run.commandSessionId ?? null,
-    run.commandCatalogRevision ?? null,
+    intent.commandProvider,
+    intent.commandSessionId,
+    intent.commandCatalogRevision,
   ]);
   return new Bun.CryptoHasher("sha256").update(canonical).digest("hex");
 }

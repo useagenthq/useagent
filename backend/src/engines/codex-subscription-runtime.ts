@@ -10,7 +10,10 @@ import {
 } from "../provider-connections/codex-subscription-relay";
 import type { CodexSubscriptionRuntimeSelection } from "../provider-connections/service";
 import { DEFAULT_CODEX_MODEL } from "../runs/model-policy";
-import { codexToolGatewayDescriptor } from "../provider-gateway/sandbox-config";
+import {
+  codexToolGatewayDescriptor,
+  markProviderGatewaySandboxCurrent,
+} from "../provider-gateway/sandbox-config";
 import type { EngineRunContext } from "./types";
 import { RUNTIME_ENVIRONMENT_HOME, RUNTIME_GENERATION } from "./runtime-environment";
 
@@ -111,6 +114,11 @@ export async function prepareCodexSubscription(input: {
       environmentId,
       workdir,
     });
+    // Retained-sandbox validation requires both the immutable control-plane
+    // generation label and this on-disk marker. Subscription-backed Codex does
+    // not materialize the provider-gateway model config, so it must stamp the
+    // shared marker explicitly after its relay-backed configuration succeeds.
+    await markProviderGatewaySandboxCurrent(sandbox);
   } catch (error) {
     relay?.close();
     execBridge?.close();

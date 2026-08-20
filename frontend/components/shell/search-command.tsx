@@ -8,7 +8,6 @@ import {
   RiBookMarkedLine,
   RiBrainLine,
   RiCalendarScheduleLine,
-  RiCodeSSlashLine,
   RiCornerDownLeftLine,
   RiDashboardLine,
   RiDatabase2Line,
@@ -16,7 +15,6 @@ import {
   RiFlaskLine,
   RiGitPullRequestLine,
   RiKey2Line,
-  RiPenNibLine,
   RiPlugLine,
   RiPulseLine,
   RiSearch2Line,
@@ -43,9 +41,7 @@ type Cmd = {
   group: "Threads" | "Library" | "Developer";
 };
 
-// Every skynet-a route surfaced by the ⌘K palette. `/code` and `/design` are
-// still being built and 404 until they land. They remain listed because the shell
-// contract so the palette is the canonical route index.
+// Every supported skynet-a route surfaced by the ⌘K palette.
 const COMMANDS: Cmd[] = [
   { href: "/agent/new", label: "New thread", icon: RiAddLine, group: "Threads" },
   { href: "/agent/runs", label: "Threads", icon: RiPulseLine, group: "Threads" },
@@ -70,8 +66,6 @@ const COMMANDS: Cmd[] = [
   { href: "/dashboard", label: "Dashboard", icon: RiDashboardLine, group: "Developer" },
   { href: "/review", label: "Review", icon: RiGitPullRequestLine, group: "Developer" },
   { href: "/lab", label: "Component lab", icon: RiFlaskLine, group: "Developer" },
-  { href: "/code", label: "Code", icon: RiCodeSSlashLine, group: "Developer" },
-  { href: "/design", label: "Design", icon: RiPenNibLine, group: "Developer" },
 ];
 
 const GROUP_ORDER: Cmd["group"][] = ["Threads", "Library", "Developer"];

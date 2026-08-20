@@ -77,7 +77,7 @@ export function skillsResyncConfig(
  *  bounds, error isolation) with fakes and zero GitHub/DB traffic. Structural
  *  subsets of the real functions' types — the defaults satisfy them as-is. */
 export interface SkillsResyncDeps {
-  listRepos: () => Promise<{
+  listRepos: (orgId: string) => Promise<{
     configured: boolean;
     repos: readonly { full_name: string }[];
     error?: string;
@@ -157,7 +157,7 @@ export async function runSkillsResyncSweep(
 
   let listing: Awaited<ReturnType<SkillsResyncDeps["listRepos"]>>;
   try {
-    listing = await deps.listRepos();
+    listing = await deps.listRepos(orgId);
   } catch (err) {
     console.error("[skills-resync] repo listing failed:", err);
     return summary;

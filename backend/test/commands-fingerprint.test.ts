@@ -1,6 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import { runPayloadFingerprint } from "../src/commands/fingerprint";
-import type { RunCommandInput } from "../src/commands/types";
+import {
+  runIntentFingerprint,
+  runIntentFromAcceptedRun,
+} from "../src/commands/fingerprint";
+import type { RunCommandInput, RunCommandIntent } from "../src/commands/types";
+import type { RunResource } from "../src/resources/types";
 
 // Pure single-purpose unit: the idempotency fingerprint depends ONLY on the
 // user's intent (prompt/model/engine/parent), never on the pre-allocated run id
@@ -15,22 +19,48 @@ const base: RunCommandInput["run"] = {
   threadId: "thread-a",
 };
 
-describe("runPayloadFingerprint", () => {
+const pullRequestResource: RunResource = {
+  kind: "code.change",
+  provider: "github",
+  locator: {
+    type: "github.pull_request",
+    repository: "acme/api",
+    number: 42,
+    revision: "abc123",
+  },
+  capabilities: ["content.read", "code.checkout", "change.read"],
+  provenance: [
+    {
+      source: "user_text",
+      channel: "web",
+      raw: "https://github.com/acme/api/pull/42",
+      start: 5,
+      end: 39,
+    },
+  ],
+};
+
+describe("runIntentFingerprint", () => {
   test("deterministic for identical intent", () => {
-    expect(runPayloadFingerprint(base)).toBe(runPayloadFingerprint({ ...base }));
+    expect(runIntentFingerprint(runIntentFromAcceptedRun(base))).toBe(
+      runIntentFingerprint(runIntentFromAcceptedRun({ ...base })),
+    );
   });
 
   test("ignores run id and thread id (identity, not intent)", () => {
-    const other = runPayloadFingerprint({ ...base, id: "run-b", threadId: "thread-b" });
-    expect(other).toBe(runPayloadFingerprint(base));
+    const other = runIntentFingerprint(
+      runIntentFromAcceptedRun({ ...base, id: "run-b", threadId: "thread-b" }),
+    );
+    expect(other).toBe(runIntentFingerprint(runIntentFromAcceptedRun(base)));
   });
 
   test("changes when any intent field changes", () => {
-    const fp = runPayloadFingerprint(base);
-    expect(runPayloadFingerprint({ ...base, prompt: "different" })).not.toBe(fp);
-    expect(runPayloadFingerprint({ ...base, model: "claude-sonnet-4-5" })).not.toBe(fp);
-    expect(runPayloadFingerprint({ ...base, engine: "mock" })).not.toBe(fp);
-    expect(runPayloadFingerprint({ ...base, parentRunId: "run-x" })).not.toBe(fp);
+    const intent = runIntentFromAcceptedRun(base);
+    const fp = runIntentFingerprint(intent);
+    expect(runIntentFingerprint({ ...intent, prompt: "different" })).not.toBe(fp);
+    expect(runIntentFingerprint({ ...intent, model: "claude-sonnet-4-5" })).not.toBe(fp);
+    expect(runIntentFingerprint({ ...intent, engine: "mock" })).not.toBe(fp);
+    expect(runIntentFingerprint({ ...intent, parentRunId: "run-x" })).not.toBe(fp);
   });
 
   test("branch is intent: a different repo branch changes the fingerprint", () => {
@@ -38,48 +68,77 @@ describe("runPayloadFingerprint", () => {
     // so it participates in the fingerprint for free - a keyed replay that only
     // changes the branch is a payload mismatch, NOT a silent reuse of the other
     // branch's run.
-    const defaultBranch = runPayloadFingerprint({ ...base, repos: ["acme/api"] });
-    const develop = runPayloadFingerprint({ ...base, repos: ["acme/api:develop"] });
-    const feature = runPayloadFingerprint({ ...base, repos: ["acme/api:feat/x"] });
+    const intent = runIntentFromAcceptedRun(base);
+    const defaultBranch = runIntentFingerprint({ ...intent, requestedRepos: ["acme/api"] });
+    const develop = runIntentFingerprint({ ...intent, requestedRepos: ["acme/api:develop"] });
+    const feature = runIntentFingerprint({ ...intent, requestedRepos: ["acme/api:feat/x"] });
     expect(develop).not.toBe(defaultBranch); // explicit branch != default
     expect(develop).not.toBe(feature); // one branch != another
     // Same repo + same branch is the same intent (deterministic replay).
-    expect(runPayloadFingerprint({ ...base, repos: ["acme/api:develop"] })).toBe(develop);
+    expect(runIntentFingerprint({ ...intent, requestedRepos: ["acme/api:develop"] })).toBe(develop);
   });
 
   test("memory scope is intent: org vs personal fingerprints differ (audit finding)", () => {
-    const org = runPayloadFingerprint({ ...base, memoryScope: "org" });
-    const personal = runPayloadFingerprint({ ...base, memoryScope: "personal" });
+    const intent = runIntentFromAcceptedRun(base);
+    const org = runIntentFingerprint({ ...intent, memoryScope: "org" });
+    const personal = runIntentFingerprint({ ...intent, memoryScope: "personal" });
     expect(org).not.toBe(personal);
     // Legacy payloads without a scope stay stable relative to themselves.
-    expect(runPayloadFingerprint(base)).toBe(runPayloadFingerprint({ ...base }));
+    expect(runIntentFingerprint(intent)).toBe(runIntentFingerprint({ ...intent }));
   });
 
   test("attached upload ids are part of the durable intent", () => {
-    const withoutFiles = runPayloadFingerprint({ ...base, attachmentIds: [] });
-    const withFile = runPayloadFingerprint({ ...base, attachmentIds: [crypto.randomUUID()] });
+    const intent = runIntentFromAcceptedRun(base);
+    const withoutFiles = runIntentFingerprint({ ...intent, attachmentIds: [] });
+    const withFile = runIntentFingerprint({ ...intent, attachmentIds: [crypto.randomUUID()] });
     expect(withFile).not.toBe(withoutFiles);
+  });
+
+  test("derived resources, provider revisions, and provenance never affect intent", () => {
+    const acceptedAtHeadA = runIntentFromAcceptedRun({
+      ...base,
+      resolvedResources: [pullRequestResource],
+    });
+    const acceptedAtHeadB = runIntentFromAcceptedRun({
+      ...base,
+      resolvedResources: [{
+        ...pullRequestResource,
+        locator: { ...pullRequestResource.locator, revision: "different-sha" },
+        provenance: [{
+          source: "legacy_parent",
+          channel: "slack",
+          raw: "different",
+          start: null,
+          end: null,
+        }],
+      }],
+    });
+    expect(runIntentFingerprint(acceptedAtHeadB)).toBe(
+      runIntentFingerprint(acceptedAtHeadA),
+    );
   });
 
   test("the FULL command identity is intent (D5): provider/session/revision each change the fingerprint", () => {
     // A validated `/compact` on claude, authorized against session s1 @ revision 5.
-    const cmd = {
-      ...base,
+    const cmd: RunCommandIntent = {
+      ...runIntentFromAcceptedRun(base),
       commandName: "compact",
       commandProvider: "claude",
       commandSessionId: "s1",
       commandCatalogRevision: 5,
     };
-    const fp = runPayloadFingerprint(cmd);
+    const fp = runIntentFingerprint(cmd);
     // Same NAME but a different authorization (provider/session/revision) is a DIFFERENT intent -
     // a keyed replay that changes any one of them must NOT silently reuse the other run.
-    expect(runPayloadFingerprint({ ...cmd, commandProvider: "codex" })).not.toBe(fp);
-    expect(runPayloadFingerprint({ ...cmd, commandSessionId: "s2" })).not.toBe(fp);
-    expect(runPayloadFingerprint({ ...cmd, commandCatalogRevision: 6 })).not.toBe(fp);
+    expect(runIntentFingerprint({ ...cmd, commandProvider: "codex" })).not.toBe(fp);
+    expect(runIntentFingerprint({ ...cmd, commandSessionId: "s2" })).not.toBe(fp);
+    expect(runIntentFingerprint({ ...cmd, commandCatalogRevision: 6 })).not.toBe(fp);
     // Identical identity is the same intent (deterministic replay).
-    expect(runPayloadFingerprint({ ...cmd })).toBe(fp);
+    expect(runIntentFingerprint({ ...cmd })).toBe(fp);
     // The name alone no longer stands in for identity: a bare command name (no provider/session)
     // differs from the fully-identified one.
-    expect(runPayloadFingerprint({ ...base, commandName: "compact" })).not.toBe(fp);
+    expect(
+      runIntentFingerprint({ ...runIntentFromAcceptedRun(base), commandName: "compact" }),
+    ).not.toBe(fp);
   });
 });

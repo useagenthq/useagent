@@ -1,5 +1,5 @@
 import { desc, eq } from "drizzle-orm";
-import { db } from "../db/client";
+import { db, type Executor } from "../db/client";
 import { artifacts, runs, type RunStatus } from "../db/schema";
 import { completeRun } from "./repo";
 import { resolveScopedMemory } from "../memory/scope";
@@ -7,7 +7,7 @@ import { enqueueCapture } from "../memory/capture-outbox";
 import { collectRunEvidence } from "../memory/capture-evidence";
 import { assessCaptureSalience } from "../memory/capture-salience";
 import { isInternalRunOrigin } from "./origin";
-import { findSlackThreadByRoot } from "../slack/repo";
+import { findSlackRunResponse } from "../slack/repo";
 import { composeSlackReplyText } from "../slack/reply";
 import { buildRunCard, deriveTitle, phaseForStatus, sessionUrl } from "../slack/card";
 import { parseRepoRef } from "../github/repo-ref";
@@ -18,10 +18,12 @@ import {
 } from "../slack/automation";
 import {
   enqueuePostMessageTx,
-  enqueueUpdateCardTx,
+  enqueueSessionStatusTx,
+  enqueueStopStreamTx,
   enqueueUploadFileTx,
   kickSlackOutbox,
 } from "../slack/outbox";
+import { terminalStreamChunks } from "../slack/streaming";
 import { env, slackConfig } from "../env";
 import { findScheduleForRun } from "../schedules/repo";
 import { publishRunLifecycleChange } from "./org-signals";
@@ -35,6 +37,77 @@ import { enqueueLearning } from "../learning/learning-outbox";
  *  {@link canonicalEngine} and are NOT left silently outside the lane. Only `mock`
  *  (scripted) has no provider source to translate. */
 const CANONICAL_ENGINES = new Set(["opencode", "acp", "claude", "codex"]);
+
+type RunRow = typeof runs.$inferSelect;
+
+export async function enqueueSlackTerminalDeliveryForRunTx(
+  tx: Executor,
+  run: RunRow,
+  status: RunStatus,
+  summary: string,
+): Promise<boolean> {
+  const slack = await findSlackRunResponse(run.id, tx);
+  if (!slack) return false;
+
+  const finalCard = buildRunCard({
+    title: deriveTitle(run.prompt),
+    phase: phaseForStatus(status),
+    model: run.model,
+    repoSpecs: run.repos.map(parseRepoRef),
+    webUrl: sessionUrl(env.FRONTEND_ORIGIN, run.threadId),
+    answer: summary,
+  });
+  const replyText = composeSlackReplyText(status, summary);
+  let kickSlack = await enqueueStopStreamTx(tx, {
+    idempotencyKey: `slack-reply:${slack.teamId}:${run.id}`,
+    teamId: slack.teamId,
+    channel: slack.channel,
+    threadTs: slack.threadTs,
+    runId: run.id,
+    chunks: terminalStreamChunks({ phase: phaseForStatus(status), answerText: replyText }),
+    blocks: finalCard.blocks,
+    text: finalCard.text,
+    fallbackText: replyText,
+  });
+  const statusCreated = await enqueueSessionStatusTx(tx, {
+    idempotencyKey: `slack-status:final:${slack.teamId}:${run.id}`,
+    teamId: slack.teamId,
+    channel: slack.channel,
+    threadTs: slack.threadTs,
+    status: "active",
+  });
+  kickSlack = kickSlack || statusCreated;
+
+  if (status === "completed") {
+    const SHARE_LIMIT = 5;
+    const SHARE_MAX_BYTES = 20 * 1024 * 1024;
+    const runArtifacts = await tx
+      .select({
+        id: artifacts.id,
+        name: artifacts.name,
+        sizeBytes: artifacts.sizeBytes,
+      })
+      .from(artifacts)
+      .where(eq(artifacts.runId, run.id))
+      .orderBy(desc(artifacts.createdAt))
+      .limit(SHARE_LIMIT);
+    for (const artifact of runArtifacts) {
+      if (artifact.sizeBytes > SHARE_MAX_BYTES) continue;
+      const created = await enqueueUploadFileTx(tx, {
+        idempotencyKey: `slack-artifact:${slack.teamId}:${run.id}:${artifact.id}`,
+        channel: slack.channel,
+        threadTs: slack.threadTs,
+        filename: artifact.name,
+        title: artifact.name,
+        artifactId: artifact.id,
+        size: artifact.sizeBytes,
+      });
+      kickSlack = kickSlack || created;
+    }
+  }
+
+  return kickSlack;
+}
 
 // ---------------------------------------------------------------------------
 // Run finalization — the ONE place a run reaches a terminal state, so the
@@ -122,65 +195,7 @@ export async function finalizeRun(
     // Slack reply — durable for a Slack-originated run (resolved from the run's
     // thread, so replies + boot-reconciled runs both find it). Non-Slack runs
     // resolve null and enqueue nothing.
-    const slack = await findSlackThreadByRoot(run.threadId, tx);
-    if (slack) {
-      // Advance the run CARD in place to its settled state (status + answer). The
-      // update_card delivery targets the stored card ts; when no card ts exists
-      // (the card post never landed) or the card is gone, it falls back to posting
-      // the answer as a plain CHUNKED reply, so the answer is NEVER lost. The
-      // plain-text fallback string stays the ONE compose function (reply.ts).
-      const finalCard = buildRunCard({
-        title: deriveTitle(run.prompt),
-        phase: phaseForStatus(status),
-        model: run.model,
-        repoSpecs: run.repos.map(parseRepoRef),
-        webUrl: sessionUrl(env.FRONTEND_ORIGIN, run.threadId),
-        answer: summary,
-      });
-      kickSlack = await enqueueUpdateCardTx(tx, {
-        idempotencyKey: `slack-reply:${runId}`,
-        channel: slack.channel,
-        threadTs: slack.threadTs,
-        rootRunId: run.threadId,
-        blocks: finalCard.blocks,
-        text: finalCard.text,
-        fallbackText: composeSlackReplyText(status, summary),
-      });
-
-      // Artifact share-back: a Slack-asked run delivers its FILES to the
-      // thread, not just prose (the reply text alone strands screenshots and
-      // decks in the web app). Newest-first, bounded (5 files, 20MB each -
-      // the inbound caps mirrored outward); enqueued in THIS transaction,
-      // after the reply row so the summary posts first. Idempotent per
-      // (run, artifact), so re-finalizing never re-uploads.
-      if (status === "completed") {
-        const SHARE_LIMIT = 5;
-        const SHARE_MAX_BYTES = 20 * 1024 * 1024;
-        const runArtifacts = await tx
-          .select({
-            id: artifacts.id,
-            name: artifacts.name,
-            sizeBytes: artifacts.sizeBytes,
-          })
-          .from(artifacts)
-          .where(eq(artifacts.runId, runId))
-          .orderBy(desc(artifacts.createdAt))
-          .limit(SHARE_LIMIT);
-        for (const artifact of runArtifacts) {
-          if (artifact.sizeBytes > SHARE_MAX_BYTES) continue;
-          const created = await enqueueUploadFileTx(tx, {
-            idempotencyKey: `slack-artifact:${runId}:${artifact.id}`,
-            channel: slack.channel,
-            threadTs: slack.threadTs,
-            filename: artifact.name,
-            title: artifact.name,
-            artifactId: artifact.id,
-            size: artifact.sizeBytes,
-          });
-          kickSlack = kickSlack || created;
-        }
-      }
-    }
+    kickSlack = (await enqueueSlackTerminalDeliveryForRunTx(tx, run, status, summary)) || kickSlack;
 
     // Automation delivery (delivery.slack) — a run fired by an automation whose
     // delivery config targets Slack posts its terminal outcome to that channel,

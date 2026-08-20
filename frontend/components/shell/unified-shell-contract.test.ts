@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 
 const read = (path: string) => readFileSync(new URL(path, import.meta.url), "utf8");
 const readFromFrontend = (path: string) =>
@@ -143,6 +143,22 @@ describe("unified shell contract", () => {
     expect(librarySidebar).toContain("<SidebarBrand");
     expect(librarySidebar).toContain("<SearchCommand");
     expect(searchCommand).not.toContain('variant === "top"');
+  });
+
+  test("keeps legacy code and design showcases out of product navigation", () => {
+    const { searchCommand } = shellSources();
+
+    expect(searchCommand).not.toContain('href: "/code"');
+    expect(searchCommand).not.toContain('href: "/design"');
+    expect(existsSync(new URL("../../app/code/page.tsx", import.meta.url))).toBe(false);
+    expect(existsSync(new URL("../../app/design/page.tsx", import.meta.url))).toBe(false);
+  });
+
+  test("names the optional skill and playbook control when nothing is selected", () => {
+    const composer = readFromFrontend("app/agent/new/new-task-composer.tsx");
+
+    expect(composer).toContain('triggerLabel="Skill / playbook"');
+    expect(composer).toContain('label: "No skill or playbook"');
   });
 
   test("folds the project rail to a useful compact rail on a real working transition", () => {

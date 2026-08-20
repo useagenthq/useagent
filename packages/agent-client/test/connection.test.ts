@@ -24,8 +24,17 @@ class Clock {
       for (const [i, iv] of this.intervals) if (iv.next <= target && iv.next < earliest) { earliest = iv.next; kind = "iv"; id = i; }
       if (earliest === Infinity) break;
       this.now = earliest;
-      if (kind === "to") { const t = this.timeouts.get(id)!; this.timeouts.delete(id); t.fn(); }
-      else { const iv = this.intervals.get(id)!; iv.next += iv.every; iv.fn(); }
+      if (kind === "to") {
+        const timeout = this.timeouts.get(id);
+        if (!timeout) throw new Error(`missing timeout ${id}`);
+        this.timeouts.delete(id);
+        timeout.fn();
+      } else {
+        const interval = this.intervals.get(id);
+        if (!interval) throw new Error(`missing interval ${id}`);
+        interval.next += interval.every;
+        interval.fn();
+      }
     }
     this.now = target;
   }
@@ -45,6 +54,12 @@ class FakeES implements EventSourceLike {
   }
   close(): void { this.closed = true; }
   emit(type: string, data: string): void { for (const l of this.listeners.get(type) ?? []) l({ data }); }
+}
+
+function expectSource(sources: readonly FakeES[], index: number): FakeES {
+  const source = sources[index];
+  if (!source) throw new Error(`expected source ${index}`);
+  return source;
 }
 
 function harness(opts: { failCreates?: number } = {}) {
@@ -71,7 +86,7 @@ function harness(opts: { failCreates?: number } = {}) {
     healthyMs: 3000,
     pollMs: 5000,
   });
-  const last = () => sources[sources.length - 1]!;
+  const last = () => expectSource(sources, sources.length - 1);
   const openThenError = () => { last().onopen?.(); last().onerror?.(); };
   return { clock, sources, frames, conn, get polls() { return polls; }, get creates() { return creates; }, last, openThenError };
 }
@@ -160,6 +175,39 @@ describe("thread-connection", () => {
       { event: "native", data: '{"runId":"r1"}' },
     ]);
   });
+
+  test("re-evaluates URL callbacks for each reconnect", () => {
+    const clock = new Clock();
+    const urls: string[] = [];
+    const sources: FakeES[] = [];
+    let cursor = -1;
+    const conn = createThreadConnection({
+      url: () => `/api/runs/root/events?cursor=${cursor}`,
+      frameTypes: ["step"],
+      healthFrame: "step",
+      createEventSource: (url) => {
+        urls.push(url);
+        const source = new FakeES();
+        sources.push(source);
+        return source;
+      },
+      onFrame: () => {},
+      poll: () => {},
+      timers: clock.host,
+      backoff: () => 1000,
+    });
+
+    conn.start();
+    cursor = 41;
+    expectSource(sources, 0).onerror?.();
+    clock.advance(1000);
+
+    expect(urls).toEqual([
+      "/api/runs/root/events?cursor=-1",
+      "/api/runs/root/events?cursor=41",
+    ]);
+    conn.stop();
+  });
 });
 
 describe("thread-connection: stale-callback generation guard", () => {
@@ -171,11 +219,11 @@ describe("thread-connection: stale-callback generation guard", () => {
     expect(h.sources.length).toBe(2);
 
     // The OLD source 0 fires a buffered frame AFTER being replaced - it must be ignored.
-    h.sources[0]!.emit("run", '{"run":{"id":"stale"}}');
+    expectSource(h.sources, 0).emit("run", '{"run":{"id":"stale"}}');
     expect(h.frames).toEqual([]); // stale frame dropped by the generation guard
 
     // The CURRENT source still delivers normally.
-    h.sources[1]!.emit("run", '{"run":{"id":"fresh"}}');
+    expectSource(h.sources, 1).emit("run", '{"run":{"id":"fresh"}}');
     expect(h.frames).toEqual([{ event: "run", data: '{"run":{"id":"fresh"}}' }]);
   });
 
@@ -186,7 +234,7 @@ describe("thread-connection: stale-callback generation guard", () => {
     for (let i = 2; i <= 5; i++) { h.clock.advance(6000); h.openThenError(); }
     expect(h.conn.isPolling()).toBe(true); // fallback engaged
     h.clock.advance(6000); // reconnect → a fresh current source
-    const staleSource = h.sources[0]!;
+    const staleSource = expectSource(h.sources, 0);
 
     // A stale snapshot from the replaced source must NOT reset failures or stop the poll.
     staleSource.emit("snapshot", '{"runs":[]}');
@@ -202,12 +250,13 @@ describe("thread-connection: stale-callback generation guard", () => {
     h.conn.start(); // source 0
     h.openThenError();
     h.clock.advance(6000); // reconnect → source 1
-    expect(h.sources[0]!.onopen).toBeNull();
-    expect(h.sources[0]!.onerror).toBeNull();
+    const replaced = expectSource(h.sources, 0);
+    expect(replaced.onopen).toBeNull();
+    expect(replaced.onerror).toBeNull();
     // Even if a caller force-invokes the old callbacks, the guard makes them inert:
     // there is exactly one health/reconnect timer regardless.
     const timers = h.clock.timeoutCount();
-    h.sources[0]!.onopen?.(); // null -> no-op; guard would also block it
+    replaced.onopen?.(); // null -> no-op; guard would also block it
     expect(h.clock.timeoutCount()).toBe(timers);
   });
 });

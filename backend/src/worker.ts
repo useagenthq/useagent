@@ -19,7 +19,8 @@ import { classifyTurnFailure } from "./engines/turn-failure-classification";
 import { recallScopedMemory } from "./memory/team-memory";
 import { resolveScopedMemory } from "./memory/scope";
 import { recordContextRetrieval } from "./memory/retrieval-ledger";
-import { getPinnedRevision, listSkillCatalogForOrg } from "./skills/repo";
+import { listSkillCatalogForOrg } from "./skills/repo";
+import { resolveExecutableSkillPin } from "./skills/pins";
 import {
   formatSkillCatalogPrefill,
   frameSkillCatalogContext,
@@ -44,6 +45,8 @@ import { CHAT_SYSTEM_PROMPT } from "./chat/prompt";
 import { retrieveChatContext } from "./chat/retrieve";
 import { streamChat, type ChatMessage } from "./chat/stream";
 import { resolveChatProviderCredential } from "./provider-gateway/credentials";
+import { subscribeNative } from "./runs/native-events";
+import { createSlidingInactivityWatchdog } from "./runs/inactivity-watchdog";
 
 // ---------------------------------------------------------------------------
 // Event bus — the worker pushes trace events here; SSE clients subscribe.
@@ -306,9 +309,11 @@ async function runWorker(runId: string): Promise<void> {
     const endSkillLookup = stageLedger?.begin("worker.skill_lookup");
     const pinnedSkill = await (async () => {
       try {
-        return run.skillId && run.skillVersion != null
-          ? await getPinnedRevision(run.skillId, run.skillVersion)
-          : null;
+        return resolveExecutableSkillPin({
+          skillId: run.skillId,
+          skillVersion: run.skillVersion,
+          skillContentHash: run.skillContentHash,
+        });
       } finally {
         endSkillLookup?.();
       }
@@ -473,13 +478,16 @@ async function runWorker(runId: string): Promise<void> {
     // (user-observed via Slack) — "busy" is not "hung". Every published run
     // event resets the timer; the abort fires only after ADAPTER_TIMEOUT_MS of
     // SILENCE, or at the ADAPTER_MAX_MS absolute ceiling (runaway safety).
-    let timer = setTimeout(() => ac.abort(), ADAPTER_TIMEOUT_MS);
+    const activity = createSlidingInactivityWatchdog(
+      ADAPTER_TIMEOUT_MS,
+      () => ac.abort(),
+    );
     const ceiling = setTimeout(() => ac.abort(), ADAPTER_MAX_MS);
-    const onActivity = (): void => {
-      clearTimeout(timer);
-      timer = setTimeout(() => ac.abort(), ADAPTER_TIMEOUT_MS);
+    const onBusEvent = (event: BusEvent): void => {
+      if (event.type === "step") activity.touch();
     };
-    bus.on(channel(runId), onActivity);
+    bus.on(channel(runId), onBusEvent);
+    const unsubscribeNativeActivity = subscribeNative(runId, activity.touch);
     try {
       await runEngine(
         runId,
@@ -493,6 +501,7 @@ async function runWorker(runId: string): Promise<void> {
         engineSessionId,
         run.model,
         run.repos,
+        run.resolvedResources,
         run.orgId,
         run.userId,
         inputFiles,
@@ -503,10 +512,12 @@ async function runWorker(runId: string): Promise<void> {
         run.commandProvider ?? null,
         run.commandCatalogRevision ?? null,
         firstEngineStep,
+        activity.touch,
       );
     } finally {
-      bus.off(channel(runId), onActivity);
-      clearTimeout(timer);
+      bus.off(channel(runId), onBusEvent);
+      unsubscribeNativeActivity();
+      activity.dispose();
       clearTimeout(ceiling);
     }
   } catch (err) {
@@ -729,6 +740,7 @@ async function runEngine(
   engineSessionId: string | undefined,
   model: string,
   repos: string[],
+  resolvedResources: EngineRunContext["resolvedResources"],
   orgId: string | null,
   userId: string | null,
   inputFiles: readonly RunInputFile[],
@@ -747,6 +759,9 @@ async function runEngine(
   /** First adapter-owned step index; the worker reserves index 0 for the
    * immediate real-turn lifecycle marker. */
   firstEngineStep: number,
+  /** Canonical outer inactivity pulse shared by steps, deltas, native frames,
+   * and adapter-only liveness such as a long-running tool heartbeat. */
+  reportActivity: () => void,
 ): Promise<void> {
   const startedAt = Date.now();
 
@@ -825,6 +840,7 @@ async function runEngine(
     inputContext: formatInputContext(inputFiles),
     model,
     repos,
+    resolvedResources,
     engineSessionId,
     commandName,
     commandSessionId,
@@ -854,9 +870,12 @@ async function runEngine(
     // subscribers get narration text the instant an engine streams it. `kind`
     // "reasoning" tags thinking so the UI can surface it distinctly.
     publishDelta: (delta, kind) => {
+      if (!delta) return;
       markFirstOutput(delta, kind);
       turnStream.publish(runId, delta, kind);
+      reportActivity();
     },
+    reportActivity,
     setSummary: (s, durationMs) => {
       summary = s;
       summaryDuration = durationMs;

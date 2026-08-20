@@ -7,7 +7,11 @@ import type {
 } from "../engines/types";
 import { getLastStepAt, getRun, STALE_SUMMARY } from "./repo";
 import { finalizeRun } from "./finalize";
-import { recordProviderEvent } from "./provider-events";
+import {
+  providerEventExists,
+  recordProviderEvent,
+  scopedProviderEventId,
+} from "./provider-events";
 import { orgSecretRedactor } from "../secrets/store";
 import {
   bumpReconcile,
@@ -27,6 +31,7 @@ import {
 } from "../commands/dispatch";
 import { pumpThread } from "../worker";
 import { assertNever } from "../util/exhaustive";
+import { CANCEL_SUMMARY, hasRunCancelIntent } from "../commands/cancel";
 
 /** The event type for the durable "reconciling after restart" marker. Distinct
  *  from the terminal events so the timeline can show a run is being re-probed. */
@@ -58,6 +63,10 @@ const RECONCILE_BUDGET_MS = 11_000;
 /** OpenCode's two adapter ids run the legacy resident-server path. */
 const OPENCODE_ENGINES = new Set(["opencode", "daytona"]);
 const RUNTIME_SESSION_PREFIX = "skynet-thread-";
+
+function reconcileProvider(engine: ActiveCommand["engine"]): string {
+  return engine === "daytona" ? "opencode" : engine;
+}
 
 /** The native-session probe (HarnessAdapter.reconcile). Injectable for tests. */
 export type ReconcileProbe = (
@@ -136,6 +145,10 @@ async function recoverRunningRun(
   cmd: ActiveCommand,
   reconcile: ReconcileProbe,
 ): Promise<"reconciled" | "failed" | "parked"> {
+  if (cmd.cancelRequested) {
+    await finalizeRun(cmd.runId, "failed", CANCEL_SUMMARY, 0);
+    return "failed";
+  }
   const runtimeSession = cmd.engineSessionId?.startsWith(RUNTIME_SESSION_PREFIX) ?? false;
   const candidate =
     !!cmd.engineSessionId &&
@@ -148,7 +161,7 @@ async function recoverRunningRun(
 
   const lastStepAt = await getLastStepAt(cmd.runId);
   const handle: HarnessSessionHandle = {
-    provider: cmd.engine === "daytona" ? "opencode" : cmd.engine,
+    provider: reconcileProvider(cmd.engine),
     sessionId: cmd.engineSessionId!,
     sandboxId: cmd.sandboxId!,
   };
@@ -237,9 +250,10 @@ function recordReconcilingMarker(runId: string, threadId: string, payload: Recon
 /** Append the interim native events a re-probe surfaced to the canonical run, so
  *  SSE subscribers watch the timeline advance while the run is being adopted.
  *  Idempotent: recordProviderEvent upserts on the stable provider event id
- *  (opencode `pe_<partId>`), the SAME key the live lane uses, so re-probes and the
- *  pre-restart lane never create a duplicate row. Payloads are redacted like the
- *  live lane. Returns the number ingested this probe. Never throws. */
+ *  (the run-scoped OpenCode part id), the SAME key the live lane uses, so
+ *  re-probes and the pre-restart lane never create a duplicate row or collide
+ *  with another run. Payloads are redacted like the live lane. Returns the
+ *  number durably present after this probe. Never throws. */
 async function ingestInterimEvents(
   entry: ReconcileEntry,
   orgId: string | null,
@@ -249,8 +263,9 @@ async function ingestInterimEvents(
   let recovered = 0;
   for (const ev of events) {
     try {
+      const eventId = scopedProviderEventId(entry.runId, ev.id);
       await recordProviderEvent({
-        id: ev.id,
+        id: eventId,
         runId: entry.runId,
         threadId: entry.threadId,
         provider: ev.provider,
@@ -261,7 +276,7 @@ async function ingestInterimEvents(
         nativeCallId: ev.callId ?? null,
         payload: redact.unknown(ev.payload),
       });
-      recovered++;
+      if (await providerEventExists(eventId)) recovered++;
     } catch {
       /* a single malformed event must never abort the probe */
     }
@@ -303,7 +318,14 @@ export async function runDueReconciles(
       dropped++;
       continue;
     }
-    const result = await probeParked(entry, reconcile);
+    if (run.orgId && await hasRunCancelIntent(run.orgId, run.id)) {
+      await finalizeRun(entry.runId, "failed", CANCEL_SUMMARY, 0);
+      await settleAndPump(entry.runId, entry.threadId);
+      await deleteReconcile(entry.runId);
+      failed++;
+      continue;
+    }
+    const result = await probeParked(entry, run.engine, reconcile);
     // CONTINUITY (#63): while the run is still parked and its session is reachable
     // and generating, ingest the interim native events so the timeline advances
     // during adoption instead of freezing. Idempotent across probes (upsert on the
@@ -354,9 +376,13 @@ export async function runDueReconciles(
 }
 
 /** Bounded native-session re-probe for one parked entry. Never throws. */
-async function probeParked(entry: ReconcileEntry, reconcile: ReconcileProbe): Promise<HarnessReconciliation> {
+async function probeParked(
+  entry: ReconcileEntry,
+  engine: ActiveCommand["engine"],
+  reconcile: ReconcileProbe,
+): Promise<HarnessReconciliation> {
   const handle: HarnessSessionHandle = {
-    provider: "opencode",
+    provider: reconcileProvider(engine),
     sessionId: entry.sessionId,
     sandboxId: entry.sandboxId,
   };

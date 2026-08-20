@@ -189,6 +189,7 @@ try {
     ]);
   stopSlackOutboxRelay();
   await linkSlackThread({
+    teamId: "T-SKYNET-DEV",
     channel: "CARTIFACTLIVE",
     threadTs: "1720000000.000001",
     rootRunId: runId,
@@ -209,7 +210,10 @@ try {
     postMessage: async () => ({ ok: true }),
     updateMessage: async () => ({ ok: true }),
     addReaction: async () => ({ ok: true }),
-    setAssistantStatus: async () => {},
+    setSessionStatus: async () => ({ ok: true }),
+    startStream: async () => ({ ok: true, ts: "stream.1" }),
+    appendStream: async () => ({ ok: true }),
+    stopStream: async () => ({ ok: true }),
     uploadFile: async ({ filename, bytes }) => {
       uploads.push({ filename, bytes });
       return { ok: true };

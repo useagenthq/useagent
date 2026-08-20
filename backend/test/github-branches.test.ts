@@ -22,14 +22,14 @@ describe("github branch listing — honest degradation", () => {
   beforeEach(clearGithubEnv);
 
   test("unconfigured → configured:false, empty, never throws", async () => {
-    const listing = await listBranches("upstream-org/skynet");
+    const listing = await listBranches("upstream-org/skynet", "org-test");
     expect(listing.configured).toBe(false);
     expect(listing.branches).toEqual([]);
     expect(listing.error).toBeUndefined();
   });
 
   test("a malformed ref is reported, not proxied", async () => {
-    const listing = await listBranches("not-a-ref");
+    const listing = await listBranches("not-a-ref", "org-test");
     // unconfigured short-circuits first (feature off), so still configured:false.
     expect(listing.configured).toBe(false);
     expect(listing.branches).toEqual([]);

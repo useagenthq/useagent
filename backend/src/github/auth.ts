@@ -1,12 +1,19 @@
-import { githubAppConfig, githubConfig, type GithubAuthSource } from "../env";
-import { getInstallationToken } from "./app-auth";
+import {
+  devModeEnabled,
+  githubAppConfig,
+  githubConfig,
+  githubTenantOrgId,
+  type GithubAuthSource,
+} from "../env";
+import {
+  getInstallationToken,
+  getRepositoryInstallationToken,
+} from "./app-auth";
 
 // ---------------------------------------------------------------------------
-// One place that turns the configured credentials into a concrete bearer token
-// + listing scope, applying the precedence PAT > GitHub App > anonymous. Both
-// the repo listing (src/github/repos.ts) and the sandbox clone
-// (src/engines/opencode-server.ts) resolve through here, so the auth choice —
-// and the "mint a fresh installation token" step — lives in exactly one spot.
+// One place that turns configured credentials into concrete bearer tokens.
+// Backend-only GitHub calls retain PAT > App > anonymous precedence. Retained
+// sandboxes use the separate repo-aware resolver at the bottom of this file.
 // ---------------------------------------------------------------------------
 
 export interface GithubAuth {
@@ -38,11 +45,49 @@ export async function resolveGithubAuth(): Promise<GithubAuth> {
 }
 
 /**
- * Just the bearer token for the current auth — used at clone time, where the App
- * path needs a token that is still fresh (installation tokens expire ~1h, so we
- * resolve one per clone; the cache re-mints only when the previous one is near
- * expiry). Returns null for a public clone.
+ * Just the bearer token for backend-only GitHub operations. Never use this for
+ * a retained sandbox; use {@link resolveGithubSandboxToken} with the exact repo.
  */
 export async function resolveGithubToken(): Promise<string | null> {
   return (await resolveGithubAuth()).token;
+}
+
+/**
+ * Resolve the only credential allowed to cross into a retained sandbox.
+ * GitHub App auth deliberately wins over a configured PAT here because the App
+ * can mint an exact-repository, read-only token. Production refuses PAT-only
+ * deployments; local development keeps the old convenience path behind the
+ * existing verified dev-mode gate.
+ */
+export async function resolveGithubSandboxToken(
+  repository: string,
+  orgId?: string | null,
+): Promise<string | null> {
+  const app = githubAppConfig();
+  const { token: pat } = githubConfig();
+  const production = process.env.NODE_ENV === "production" || !devModeEnabled();
+  if (production && (app || pat)) {
+    const tenantOrgId = githubTenantOrgId();
+    if (!tenantOrgId) {
+      throw new Error(
+        "GitHub sandbox access is not assigned to a product organization; " +
+          "set GITHUB_TENANT_ORG_ID to the owning organization id",
+      );
+    }
+    if (!orgId || orgId !== tenantOrgId) {
+      throw new Error("GitHub sandbox access is not available to this organization");
+    }
+  }
+
+  if (app) {
+    return (await getRepositoryInstallationToken(repository, app)).token;
+  }
+
+  if (!pat) return null;
+  if (process.env.NODE_ENV !== "production" && devModeEnabled()) return pat;
+  throw new Error(
+    `cannot prepare ${repository} in a retained sandbox with a deployment-wide GitHub token; ` +
+      "configure GITHUB_APP_ID and GITHUB_APP_PRIVATE_KEY, install the App on this repository, " +
+      "and grant Contents: read",
+  );
 }

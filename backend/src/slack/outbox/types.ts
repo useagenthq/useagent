@@ -1,4 +1,5 @@
 import type { SlackErrorClass, SlackOutboxKind } from "../../db/schema";
+import type { SlackSessionStatus, SlackStreamChunk, SlackStreamTaskDisplayMode } from "../streaming";
 
 // ---------------------------------------------------------------------------
 // Boundary types for the durable Slack outbox. Kept separate from persistence
@@ -37,9 +38,10 @@ export type UploadFilePayload = {
  *  slack_threads so later updates target it. `rootRunId` keys the thread row the
  *  ts is stored on; `text` is the plain-text notification/fallback string. */
 export type PostCardPayload = {
+  readonly teamId: string;
   readonly channel: string;
   readonly threadTs: string;
-  readonly rootRunId: string;
+  readonly runId: string;
   readonly blocks: readonly unknown[];
   readonly text: string;
 };
@@ -49,12 +51,55 @@ export type PostCardPayload = {
  *  no card ts is found or the update fails permanently, the delivery falls back to
  *  posting the answer as CHUNKED plain messages so the reply is NEVER lost. */
 export type UpdateCardPayload = {
+  readonly teamId: string;
   readonly channel: string;
   readonly threadTs: string;
-  readonly rootRunId: string;
+  readonly runId: string;
   readonly blocks: readonly unknown[];
   readonly text: string;
   /** The full answer, chunked - the plain-text fallback when no card ts exists. */
+  readonly fallbackChunks: readonly string[];
+};
+
+export type SetSessionStatusPayload = {
+  readonly teamId: string;
+  readonly channel: string;
+  readonly threadTs: string;
+  readonly status: SlackSessionStatus;
+};
+
+export type StartStreamPayload = {
+  readonly teamId: string;
+  readonly channel: string;
+  readonly threadTs: string;
+  readonly runId: string;
+  readonly taskDisplayMode: SlackStreamTaskDisplayMode;
+  readonly chunks: readonly SlackStreamChunk[];
+  /** Fallback Block Kit card used when native streaming is unavailable. */
+  readonly fallbackBlocks: readonly unknown[];
+  readonly fallbackText: string;
+};
+
+export type AppendStreamPayload = {
+  readonly teamId: string;
+  readonly channel: string;
+  readonly threadTs: string;
+  readonly runId: string;
+  readonly chunks: readonly SlackStreamChunk[];
+  /** Fallback card update used when a stream append is permanently unsupported. */
+  readonly fallbackBlocks: readonly unknown[];
+  readonly fallbackText: string;
+};
+
+export type StopStreamPayload = {
+  readonly teamId: string;
+  readonly channel: string;
+  readonly threadTs: string;
+  readonly runId: string;
+  readonly chunks: readonly SlackStreamChunk[];
+  readonly blocks: readonly unknown[];
+  readonly text: string;
+  /** The full answer, chunked - plain-text fallback when no stream/card update works. */
   readonly fallbackChunks: readonly string[];
 };
 
@@ -65,7 +110,11 @@ export type SlackOutboxEnqueue =
   | { readonly kind: "add_reaction"; readonly idempotencyKey: string; readonly payload: AddReactionPayload }
   | { readonly kind: "upload_file"; readonly idempotencyKey: string; readonly payload: UploadFilePayload }
   | { readonly kind: "post_card"; readonly idempotencyKey: string; readonly payload: PostCardPayload }
-  | { readonly kind: "update_card"; readonly idempotencyKey: string; readonly payload: UpdateCardPayload };
+  | { readonly kind: "update_card"; readonly idempotencyKey: string; readonly payload: UpdateCardPayload }
+  | { readonly kind: "set_session_status"; readonly idempotencyKey: string; readonly payload: SetSessionStatusPayload }
+  | { readonly kind: "start_stream"; readonly idempotencyKey: string; readonly payload: StartStreamPayload }
+  | { readonly kind: "append_stream"; readonly idempotencyKey: string; readonly payload: AppendStreamPayload }
+  | { readonly kind: "stop_stream"; readonly idempotencyKey: string; readonly payload: StopStreamPayload };
 
 /** How a claimed row transitioned after a delivery attempt. */
 export type SlackDeliveryOutcome =

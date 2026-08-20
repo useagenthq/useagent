@@ -21,6 +21,7 @@ import {
   SECRET_SOURCE_COMMAND,
 } from "../secrets/inject";
 import { materializeRunInputs } from "../uploads/materialize";
+import { checkoutPullRequestResources, prepareRepos } from "./repo-prep";
 import {
   prepareProviderGatewaySandbox,
   providerGatewayEnv,
@@ -559,6 +560,18 @@ function makeSandboxAdapter(spec: SandboxEngineSpec): EngineAdapter {
         }
 
         await spec.prepare?.(box, ctx);
+
+        // The documented CLI fallback must honor the same persisted repository
+        // and change-resource scope as the resident ACP/runtime adapters. Prepare
+        // the base checkout first, then pin an authorized PR to its exact head.
+        const workdir = "/home/daytona/work";
+        await prepareRepos(box, workdir, ctx);
+        await checkoutPullRequestResources(
+          box,
+          workdir,
+          ctx.resolvedResources ?? [],
+          ctx,
+        );
 
         // Explicit native-session resume: id from the DB (previous turn, same
         // engine). Resuming ⇒ the engine holds the history — send ONLY the new

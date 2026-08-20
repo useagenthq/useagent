@@ -1,6 +1,6 @@
 import { githubConfigured } from "../env";
 import { resolveGithubAuth } from "./auth";
-import { listRepos } from "./repos";
+import { githubOrgAccessError, listRepos } from "./repos";
 
 // ---------------------------------------------------------------------------
 // Real open pull requests across the org's App/PAT-accessible repositories — the
@@ -60,7 +60,7 @@ const CONCURRENCY = 6; // simultaneous per-repo PR fetches
 const FETCH_TIMEOUT_MS = 8_000;
 const CACHE_TTL_MS = 60_000; // PR state moves faster than the repo set
 
-let cache: { at: number; listing: PullListing } | null = null;
+const cache = new Map<string, { at: number; listing: PullListing }>();
 
 function ghHeaders(token: string | null): Record<string, string> {
   const h: Record<string, string> = {
@@ -129,23 +129,26 @@ async function mapPool<T, R>(
  * error}. Work is bounded (≤MAX_REPOS_SCAN repos, ≤MAX_PULLS returned); when more
  * repos exist than we scan, `truncated:true` says so.
  */
-export async function listPulls(): Promise<PullListing> {
+export async function listPulls(orgId: string): Promise<PullListing> {
   if (!githubConfigured()) return { configured: false, pulls: [] };
+  const accessError = githubOrgAccessError(orgId);
+  if (accessError) return { configured: true, pulls: [], error: accessError };
 
   const now = Date.now();
-  if (cache && now - cache.at < CACHE_TTL_MS) return cache.listing;
+  const hit = cache.get(orgId);
+  if (hit && now - hit.at < CACHE_TTL_MS) return hit.listing;
 
   try {
-    const repoListing = await listRepos();
+    const repoListing = await listRepos(orgId);
     if (!repoListing.configured) {
       const listing: PullListing = { configured: false, pulls: [] };
-      cache = { at: now, listing };
+      cache.set(orgId, { at: now, listing });
       return listing;
     }
     // A failed repo listing surfaces as an honest error rather than "no PRs".
     if (repoListing.error && repoListing.repos.length === 0) {
       const listing: PullListing = { configured: true, pulls: [], error: repoListing.error };
-      cache = { at: now, listing };
+      cache.set(orgId, { at: now, listing });
       return listing;
     }
 
@@ -173,7 +176,7 @@ export async function listPulls(): Promise<PullListing> {
     }
 
     const listing: PullListing = { configured: true, pulls, ...(truncated ? { truncated } : {}) };
-    cache = { at: now, listing };
+    cache.set(orgId, { at: now, listing });
     return listing;
   } catch (err) {
     const listing: PullListing = {
@@ -181,12 +184,12 @@ export async function listPulls(): Promise<PullListing> {
       pulls: [],
       error: err instanceof Error ? err.message : "github fetch failed",
     };
-    cache = { at: now, listing };
+    cache.set(orgId, { at: now, listing });
     return listing;
   }
 }
 
 /** Test/ops hook: drop the cache so the next list re-fetches. */
 export function clearPullsCache(): void {
-  cache = null;
+  cache.clear();
 }

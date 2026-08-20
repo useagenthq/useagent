@@ -93,7 +93,10 @@ async function main(): Promise<void> {
     },
     async updateMessage() { return { ok: true }; },
     async addReaction() { return { ok: true }; },
-    async setAssistantStatus() {},
+    async setSessionStatus() { return { ok: true }; },
+    async startStream() { return { ok: true, ts: "stream.1" }; },
+    async appendStream() { return { ok: true }; },
+    async stopStream() { return { ok: true }; },
   });
 
   try {

@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { sql } from "drizzle-orm";
 import { db } from "../src/db/client";
 import { acceptRunCommand } from "../src/commands";
+import { acceptRunCancel, CANCEL_SUMMARY } from "../src/commands/cancel";
 import { recoverStaleRuns, type ReconcileProbe } from "../src/runs/recovery";
 import {
   createRun,
@@ -61,6 +62,35 @@ async function seed(opts: {
 const isDone = async (id: string) => ((await getRun(id))?.status === "completed" ? true : null);
 
 describe("command-lane restart recovery", () => {
+  test("a durable cancel settles the interrupted run and unblocks its queued replacement", async () => {
+    const A = crypto.randomUUID();
+    await seed({
+      runId: A,
+      threadId: A,
+      parentRunId: null,
+      engine: "opencode",
+      runStatus: "running",
+      commandState: "dispatched",
+      session: "ses_done",
+      sandbox: "sb",
+      withStep: true,
+    });
+    const B = await seed({
+      threadId: A,
+      parentRunId: A,
+      engine: "mock",
+      runStatus: "queued",
+      commandState: "queued",
+    });
+    await acceptRunCancel({ orgId: ORG, actorId: null, runId: A });
+
+    await recoverStaleRuns(fakeReconcile);
+
+    expect((await getRun(A))?.status).toBe("failed");
+    expect((await getRun(A))?.summary).toBe(CANCEL_SUMMARY);
+    await waitFor(() => isDone(B));
+  });
+
   test("reconciles the in-flight run AND dispatches the queued next turn in order", async () => {
     // A: opencode, running, command dispatched (native session finished server-side).
     const A = crypto.randomUUID();

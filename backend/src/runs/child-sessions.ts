@@ -1,8 +1,18 @@
 import { and, asc, desc, eq, inArray, like, sql } from "drizzle-orm";
 import { commands, providerEvents, runs, type EngineId, type MemoryScope, type RunStatus } from "../db/schema";
 import { db } from "../db/client";
-import { acceptRunCommand } from "../commands/service";
+import {
+  acceptRunCommand,
+  preflightRunCommandReplay,
+} from "../commands/service";
+import type { RunCommandIntent } from "../commands/types";
 import { getNativeFramesSince, type NativeFrame } from "./native-events";
+import { getRunForOrg } from "./repo";
+import { createRunResourceAuthorization } from "../resources/authorization";
+import {
+  legacyParentResources,
+  resolveRunIntake,
+} from "../resources/run-intake";
 
 export const CHILD_SESSION_IDEMPOTENCY_PREFIX = "child-session";
 
@@ -92,29 +102,80 @@ export async function createChildSession(input: {
   readonly idempotencyKey: string;
 }): Promise<{ readonly status: "created" | "replayed"; readonly child: ChildSessionSummary } | { readonly status: "conflict" }> {
   const runId = crypto.randomUUID();
-  const accepted = await acceptRunCommand({
-    idempotencyKey: childKey(input.threadId, input.parentRunId, input.idempotencyKey),
+  const idempotencyKey = childKey(
+    input.threadId,
+    input.parentRunId,
+    input.idempotencyKey,
+  );
+  const intent: RunCommandIntent = {
+    prompt: input.prompt,
+    model: input.model,
+    engine: input.engine,
+    parentRunId: input.parentRunId,
+    // Child sessions inherit the parent's already-authorized resources. They
+    // cannot make an explicit repository selection of their own.
+    requestedRepos: [],
+    attachmentIds: [],
+    memoryScope: input.memoryScope,
+    skillId: null,
+    skillVersion: null,
+    commandName: null,
+    commandProvider: null,
+    commandSessionId: null,
+    commandCatalogRevision: null,
+  };
+  let accepted = await preflightRunCommandReplay({
     orgId: input.orgId,
-    actorId: input.actorId,
-    run: {
-      id: runId,
-      prompt: input.prompt,
-      model: input.model,
-      engine: input.engine,
-      parentRunId: input.parentRunId,
-      threadId: input.threadId,
-      repos: [...input.repos],
-      attachmentIds: [],
-      memoryScope: input.memoryScope,
-      skillId: null,
-      skillVersion: null,
-      skillContentHash: null,
-      commandName: null,
-      commandProvider: null,
-      commandSessionId: null,
-      commandCatalogRevision: null,
-    },
+    idempotencyKey,
+    intent,
   });
+  if (accepted?.status === "conflict") return { status: "conflict" };
+
+  if (!accepted) {
+    const parent = await getRunForOrg(input.orgId, input.parentRunId);
+    if (!parent || parent.threadId !== input.threadId) {
+      throw new Error("child session parent is not available in this thread");
+    }
+    const inheritedResources =
+      parent.resolvedResources.length > 0
+        ? parent.resolvedResources
+        : legacyParentResources(parent.repos, "api");
+    const intake = await resolveRunIntake(
+      {
+        source: "api",
+        // Child prompts are agent-authored delegation text, not direct user
+        // input, so they cannot discover or widen resource scope.
+        text: "",
+        inheritedResources,
+      },
+      { authorize: createRunResourceAuthorization(input.orgId) },
+    );
+    accepted = await acceptRunCommand({
+      idempotencyKey,
+      orgId: input.orgId,
+      actorId: input.actorId,
+      intent,
+      run: {
+        id: runId,
+        prompt: input.prompt,
+        model: input.model,
+        engine: input.engine,
+        parentRunId: input.parentRunId,
+        threadId: input.threadId,
+        repos: [...intake.repos],
+        resolvedResources: intake.resources,
+        attachmentIds: [],
+        memoryScope: input.memoryScope,
+        skillId: null,
+        skillVersion: null,
+        skillContentHash: null,
+        commandName: null,
+        commandProvider: null,
+        commandSessionId: null,
+        commandCatalogRevision: null,
+      },
+    });
+  }
   if (accepted.status === "conflict") return { status: "conflict" };
   const child = await getChildSession(input.orgId, input.threadId, accepted.runId);
   if (!child) throw new Error(`Accepted child session ${accepted.runId} was not readable`);

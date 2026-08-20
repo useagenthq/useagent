@@ -28,7 +28,7 @@ export interface TimerHost {
 }
 
 export interface ThreadConnectionOptions {
-  url: string;
+  url: string | (() => string);
   /** Frame `event:` names to subscribe to. */
   frameTypes: readonly string[];
   /** The frame whose arrival proves the connection is healthy (resets failures). */
@@ -132,7 +132,7 @@ export function createThreadConnection(opts: ThreadConnectionOptions): ThreadCon
     const isStale = (): boolean => stopped || gen !== generation;
     let es: EventSourceLike;
     try {
-      es = opts.createEventSource(opts.url);
+      es = opts.createEventSource(typeof opts.url === "function" ? opts.url() : opts.url);
     } catch {
       onFailure(); // constructor threw — still schedule an SSE retry (not just polling)
       return;

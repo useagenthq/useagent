@@ -79,6 +79,29 @@ describe("skills CRUD + run", () => {
     expect(body.error).toBeDefined();
   });
 
+  test("a keyed skill run replays after the selected skill is deleted", async () => {
+    const created = await json<any>("/api/skills", {
+      method: "POST",
+      body: { name: `Replay Skill ${uid()}` },
+    });
+    const id = created.body.id as string;
+    const key = uid("skill-replay");
+    const first = await json<{ id: string }>(`/api/skills/${id}/run`, {
+      method: "POST",
+      body: { prompt: "run once", engine: "mock" },
+      headers: { "Idempotency-Key": key },
+    });
+    expect(first.status).toBe(201);
+    expect((await json(`/api/skills/${id}`, { method: "DELETE" })).status).toBe(200);
+
+    const replay = await json<{ id: string }>(`/api/skills/${id}/run`, {
+      method: "POST",
+      body: { prompt: "run once", engine: "mock" },
+      headers: { "Idempotency-Key": key },
+    });
+    expect(replay).toEqual({ status: 200, body: { id: first.body.id } });
+  });
+
   test("PATCH/DELETE unknown id → 404", async () => {
     const missing = crypto.randomUUID();
     const patch = await json(`/api/skills/${missing}`, {

@@ -9,7 +9,13 @@ import {
 } from "../db/schema";
 import type { AppEnv } from "../http";
 import { orgScope } from "../middleware/org";
-import { acceptRunCommand } from "../commands";
+import {
+  acceptRunCommand,
+  RunAdmissionClosedError,
+  preflightRunCommandReplay,
+  assertRunAdmissionOpen,
+  type RunCommandIntent,
+} from "../commands";
 import { defaultModelForEngine, isModelAllowedForEngine } from "../runs/model-policy";
 import {
   engineResolutionErrorBody,
@@ -17,6 +23,8 @@ import {
   resolveAcceptedEngine,
 } from "../runs/engine-readiness";
 import { pumpThread } from "../worker";
+import { createRunResourceAuthorization } from "../resources/authorization";
+import { resolveRunIntake, RunIntakeError } from "../resources/run-intake";
 import {
   bumpSkillUsage,
   createSkillWithRevision,
@@ -168,6 +176,7 @@ skillsRoutes.delete("/:id", async (c) => {
 // "run"). Requires a `prompt` (the task the skill governs); bumps usage on accept.
 skillsRoutes.post("/:id/run", async (c) => {
   const id = c.req.param("id");
+  const idempotencyKey = c.req.header("Idempotency-Key")?.trim() || null;
   let body: Record<string, unknown> = {};
   try {
     const text = await c.req.text();
@@ -176,11 +185,25 @@ skillsRoutes.post("/:id/run", async (c) => {
     return c.json({ error: "invalid JSON body" }, 400);
   }
 
-  // Resolve + pin the skill's current version, org-scoped FIRST (fail closed →
-  // 404) so a cross-org id is indistinguishable from missing, before any other
-  // validation could leak its existence.
-  const pinned = await resolveSkillSelection(c.get("orgId"), { id });
-  if (!pinned) return c.json({ error: "skill not found" }, 404);
+  if (!idempotencyKey) {
+    try {
+      await assertRunAdmissionOpen();
+    } catch (error) {
+      if (error instanceof RunAdmissionClosedError) {
+        return c.json({ error: error.code, retryable: true }, 503);
+      }
+      throw error;
+    }
+  }
+
+  // Preserve the established unkeyed API contract: a missing/cross-org skill
+  // is a 404 before request validation. Keyed requests defer this lookup until
+  // after the durable replay probe so deletion cannot break a lost-response
+  // retry of a previously accepted run.
+  let pinned = idempotencyKey
+    ? null
+    : await resolveSkillSelection(c.get("orgId"), { id });
+  if (!idempotencyKey && !pinned) return c.json({ error: "skill not found" }, 404);
 
   const prompt = typeof body.prompt === "string" ? body.prompt.trim() : "";
   if (!prompt) {
@@ -202,36 +225,106 @@ skillsRoutes.post("/:id/run", async (c) => {
   if (!isModelAllowedForEngine(engine, model)) {
     return c.json({ error: "model_not_allowed", engine, model }, 400);
   }
+
+  const intent: RunCommandIntent = {
+    prompt,
+    model,
+    engine,
+    parentRunId: null,
+    requestedRepos: [],
+    attachmentIds: [],
+    memoryScope: "org",
+    // The route means "run the current revision of this skill". Keep that raw
+    // selection stable; the resolved immutable version belongs on the run.
+    skillId: id,
+    skillVersion: null,
+    commandName: null,
+    commandProvider: null,
+    commandSessionId: null,
+    commandCatalogRevision: null,
+  };
+  let replay;
+  try {
+    replay = await preflightRunCommandReplay({
+      orgId: c.get("orgId"),
+      idempotencyKey,
+      intent,
+    });
+  } catch (error) {
+    if (error instanceof RunAdmissionClosedError) {
+      return c.json({ error: error.code, retryable: true }, 503);
+    }
+    throw error;
+  }
+  if (replay?.status === "conflict") {
+    return c.json({ error: "idempotency_key_reused", reason: replay.reason }, 409);
+  }
+  if (replay?.status === "replayed") {
+    await bumpSkillUsage(c.get("orgId"), id);
+    return c.json({ id: replay.runId }, 200);
+  }
+
   if (!modelProviderReadyForEngine(engine, model)) {
     return c.json({ error: "model_provider_not_ready", engine, model }, 403);
   }
 
+  // A first acceptance still resolves and pins the skill org-scoped before any
+  // resource authorization or command persistence.
+  pinned ??= await resolveSkillSelection(c.get("orgId"), { id });
+  if (!pinned) return c.json({ error: "skill not found" }, 404);
+
+  let intake;
+  try {
+    intake = await resolveRunIntake(
+      { source: "api", text: prompt },
+      { authorize: createRunResourceAuthorization(c.get("orgId")) },
+    );
+  } catch (error) {
+    if (error instanceof RunIntakeError) {
+      return c.json(
+        { error: error.code, ...error.diagnostic },
+        error.code === "resource_unauthorized" ? 403 : 400,
+      );
+    }
+    throw error;
+  }
+
   const runId = crypto.randomUUID();
-  const accepted = await acceptRunCommand({
-    idempotencyKey: c.req.header("Idempotency-Key")?.trim() || null,
-    orgId: c.get("orgId"),
-    actorId: c.get("userId"),
-    run: {
-      id: runId,
-      prompt,
-      model,
-      engine,
-      parentRunId: null,
-      threadId: runId,
-      // Skill runs are bare-workdir, organization-scoped fresh roots (like a
-      // scheduled firing) — the branch's multi-repo + memory-scope command shape.
-      repos: [],
-      memoryScope: "org",
-      skillId: pinned.skillId,
-      skillVersion: pinned.version,
-      skillContentHash: pinned.contentHash,
-      // A skill "Run" applies a versioned product skill; it is never a native provider command.
-      commandName: null,
-      commandProvider: null,
-      commandSessionId: null,
-      commandCatalogRevision: null,
-    },
-  });
+  let accepted;
+  try {
+    accepted = await acceptRunCommand({
+      idempotencyKey,
+      orgId: c.get("orgId"),
+      actorId: c.get("userId"),
+      intent,
+      run: {
+        id: runId,
+        prompt,
+        model,
+        engine,
+        parentRunId: null,
+        threadId: runId,
+        // Skill runs are bare-workdir, organization-scoped fresh roots (like a
+        // scheduled firing) — the branch's multi-repo + memory-scope command shape.
+        repos: [...intake.repos],
+        resolvedResources: intake.resources,
+        memoryScope: "org",
+        skillId: pinned.skillId,
+        skillVersion: pinned.version,
+        skillContentHash: pinned.contentHash,
+        // A skill "Run" applies a versioned product skill; it is never a native provider command.
+        commandName: null,
+        commandProvider: null,
+        commandSessionId: null,
+        commandCatalogRevision: null,
+      },
+    });
+  } catch (error) {
+    if (error instanceof RunAdmissionClosedError) {
+      return c.json({ error: error.code, retryable: true }, 503);
+    }
+    throw error;
+  }
   if (accepted.status === "conflict") {
     return c.json({ error: "idempotency_key_reused", reason: accepted.reason }, 409);
   }

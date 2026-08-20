@@ -2,13 +2,13 @@ import { createPrivateKey, createSign } from "node:crypto";
 import { githubAppConfig, type GithubAppConfig } from "../env";
 
 // ---------------------------------------------------------------------------
-// GitHub App → installation access token. When no PAT is configured, the repo
-// listing and the private-repo clone authenticate with a short-lived (~1h)
-// installation token minted from the App's private key:
+// GitHub App → installation access tokens. Backend-only repository discovery
+// uses an installation-wide token. Retained sandboxes receive a separate token
+// narrowed by GitHub to one exact repository and read-only clone permissions:
 //
 //   1. sign an App JWT (RS256) with the private key,
-//   2. GET /app/installations and pick the org's installation,
-//   3. POST /app/installations/{id}/access_tokens to mint the token.
+//   2. resolve the installation (by org for discovery, exact repo for sandbox),
+//   3. POST /app/installations/{id}/access_tokens with the required scope.
 //
 // The minted token is cached and reused until it is close to expiry, so a burst
 // of runs shares one token instead of re-minting per call. Nothing here is ever
@@ -35,11 +35,14 @@ interface GhInstallation {
   account: { login: string } | null;
 }
 
-/** Process-global token cache. One App identity per process, so a single slot
- *  keyed by the resolved installation scope is enough. */
-let cache: { key: string; token: InstallationToken } | null = null;
-/** Collapse concurrent mints (a fan-out of runs booting at once) onto one flight. */
-let inflight: Promise<InstallationToken> | null = null;
+/** Backend-only installation-wide tokens used for repository discovery. */
+const installationTokenCache = new Map<string, InstallationToken>();
+const installationTokenInflight = new Map<string, Promise<InstallationToken>>();
+/** Sandbox tokens are isolated by App, installation, and exact repository. */
+const repositoryTokenCache = new Map<string, InstallationToken>();
+const repositoryTokenInflight = new Map<string, Promise<InstallationToken>>();
+/** Repository -> installation is stable for the life of the process. */
+const repositoryInstallations = new Map<string, number>();
 
 function base64url(input: Buffer | string): string {
   return Buffer.from(input).toString("base64url");
@@ -151,6 +154,89 @@ async function mintInstallationToken(
   return { token: body.token, expiresAt };
 }
 
+function parseRepository(repository: string): { owner: string; name: string } {
+  const match = /^([A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?)\/([A-Za-z0-9_.-]{1,100})$/u.exec(
+    repository,
+  );
+  if (!match?.[1] || !match[2] || match[2] === "." || match[2] === "..") {
+    throw new Error(`invalid GitHub repository "${repository}"; expected owner/name`);
+  }
+  return { owner: match[1], name: match[2] };
+}
+
+async function repositoryInstallationId(
+  cfg: GithubAppConfig,
+  repository: string,
+  headers: Record<string, string>,
+): Promise<number> {
+  const { owner, name } = parseRepository(repository);
+  const lookupKey = `${cfg.appId}|${owner.toLowerCase()}/${name.toLowerCase()}`;
+  const cached = repositoryInstallations.get(lookupKey);
+  if (cached !== undefined) return cached;
+
+  const response = await ghFetch(
+    `${GITHUB_API}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/installation`,
+    { headers },
+  );
+  if (!response.ok) {
+    const hint = response.status === 404
+      ? " (install the GitHub App on this repository and grant Contents: read)"
+      : "";
+    throw new Error(
+      `GitHub App installation lookup failed for ${repository}: HTTP ${response.status}${hint}`,
+    );
+  }
+  const body = (await response.json()) as { id?: number };
+  const installationId = body.id;
+  if (typeof installationId !== "number" || !Number.isSafeInteger(installationId) || installationId <= 0) {
+    throw new Error(`GitHub App installation lookup returned no installation id for ${repository}`);
+  }
+  repositoryInstallations.set(lookupKey, installationId);
+  return installationId;
+}
+
+async function mintRepositoryInstallationToken(
+  cfg: GithubAppConfig,
+  repository: string,
+): Promise<{ key: string; token: InstallationToken }> {
+  const { name } = parseRepository(repository);
+  const jwt = signAppJwt(cfg, Math.floor(Date.now() / 1000));
+  const headers = appJwtHeaders(jwt);
+  const installationId = await repositoryInstallationId(cfg, repository, headers);
+  const key = `${cfg.appId}|${installationId}|${repository.toLowerCase()}`;
+
+  const now = Date.now();
+  const cached = repositoryTokenCache.get(key);
+  if (cached && cached.expiresAt - now > REFRESH_MARGIN_MS) {
+    return { key, token: cached };
+  }
+
+  const response = await ghFetch(
+    `${GITHUB_API}/app/installations/${installationId}/access_tokens`,
+    {
+      method: "POST",
+      headers: { ...headers, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        repositories: [name],
+        permissions: { contents: "read", metadata: "read" },
+      }),
+    },
+  );
+  if (!response.ok) {
+    throw new Error(
+      `GitHub App repository token mint failed for ${repository}: HTTP ${response.status}`,
+    );
+  }
+  const body = (await response.json()) as { token?: string; expires_at?: string };
+  if (!body.token) {
+    throw new Error(`GitHub App repository token mint returned no token for ${repository}`);
+  }
+  const expiresAt = body.expires_at
+    ? Date.parse(body.expires_at)
+    : Date.now() + 55 * 60_000;
+  return { key, token: { token: body.token, expiresAt } };
+}
+
 /**
  * Return a valid installation token for the configured App, minting on first use
  * and re-minting once the cached one nears expiry. Concurrent callers during a
@@ -166,23 +252,67 @@ export async function getInstallationToken(
 ): Promise<InstallationToken> {
   const key = `${cfg.appId}|${cfg.org ?? ""}`;
   const now = Date.now();
-  if (cache && cache.key === key && cache.token.expiresAt - now > REFRESH_MARGIN_MS) {
-    return cache.token;
+  const cached = installationTokenCache.get(key);
+  if (cached && cached.expiresAt - now > REFRESH_MARGIN_MS) {
+    return cached;
   }
-  if (inflight) return inflight;
-  inflight = mintInstallationToken(cfg)
-    .then((token) => {
-      cache = { key, token };
+  const active = installationTokenInflight.get(key);
+  if (active) return active;
+  const mint = (async (): Promise<InstallationToken> => {
+    try {
+      const token = await mintInstallationToken(cfg);
+      installationTokenCache.set(key, token);
       return token;
-    })
-    .finally(() => {
-      inflight = null;
-    });
-  return inflight;
+    } finally {
+      installationTokenInflight.delete(key);
+    }
+  })();
+  installationTokenInflight.set(key, mint);
+  return mint;
+}
+
+/**
+ * Mint a token that can read exactly one repository. This is the only App token
+ * suitable for crossing into a retained sandbox: GitHub constrains it to the
+ * named repository and to read-only Contents + Metadata permissions.
+ */
+export async function getRepositoryInstallationToken(
+  repository: string,
+  cfg: GithubAppConfig = githubAppConfig() ??
+    (() => {
+      throw new Error("GitHub App is not configured");
+    })(),
+): Promise<InstallationToken> {
+  const parsed = parseRepository(repository);
+  const repositoryKey = `${cfg.appId}|${parsed.owner.toLowerCase()}/${parsed.name.toLowerCase()}`;
+  const installationId = repositoryInstallations.get(repositoryKey);
+  if (installationId !== undefined) {
+    const tokenKey = `${cfg.appId}|${installationId}|${repository.toLowerCase()}`;
+    const cached = repositoryTokenCache.get(tokenKey);
+    if (cached && cached.expiresAt - Date.now() > REFRESH_MARGIN_MS) return cached;
+  }
+
+  const provisionalKey = `${cfg.appId}|pending|${repository.toLowerCase()}`;
+  const pending = repositoryTokenInflight.get(provisionalKey);
+  if (pending) return pending;
+  const mint = (async (): Promise<InstallationToken> => {
+    try {
+      const result = await mintRepositoryInstallationToken(cfg, repository);
+      repositoryTokenCache.set(result.key, result.token);
+      return result.token;
+    } finally {
+      repositoryTokenInflight.delete(provisionalKey);
+    }
+  })();
+  repositoryTokenInflight.set(provisionalKey, mint);
+  return mint;
 }
 
 /** Test/ops hook: drop the cached installation token so the next call re-mints. */
 export function clearInstallationTokenCache(): void {
-  cache = null;
-  inflight = null;
+  installationTokenCache.clear();
+  installationTokenInflight.clear();
+  repositoryTokenCache.clear();
+  repositoryTokenInflight.clear();
+  repositoryInstallations.clear();
 }
