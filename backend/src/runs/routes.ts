@@ -54,7 +54,7 @@ import { releaseRunSandbox } from "./sandbox-release";
 import { isRuntimeThreadSessionId } from "../engines/runtime-orchestration";
 import { replyToRuntimeQuestion } from "../engines/runtime-question";
 import { replyToRuntimeApproval, RuntimeApprovalError } from "../engines/runtime-approval";
-import { UploadClaimError } from "../uploads/repo";
+import { listUploadsForRuns, UploadClaimError } from "../uploads/repo";
 
 export const runsRoutes = new Hono<AppEnv>();
 
@@ -568,6 +568,18 @@ runsRoutes.get("/:id", async (c) => {
   const run = await getRunWithSteps(orgId, id);
   if (!run) return c.json({ error: "run not found" }, 404);
   return c.json(run);
+});
+
+// A run's INBOUND attachments (Slack files / browser uploads the user sent with
+// the turn). Org-scoped: a cross-org (or missing) run id is a 404. The compact
+// list also rides the run/thread payload (repo.ts), so the timeline needs no
+// extra round trip; this route exists for callers that want it standalone.
+runsRoutes.get("/:id/uploads", async (c) => {
+  const orgId = c.get("orgId");
+  const id = c.req.param("id");
+  if (!(await getRunForOrg(orgId, id))) return c.json({ error: "run not found" }, 404);
+  const uploads = (await listUploadsForRuns([id])).get(id) ?? [];
+  return c.json({ uploads });
 });
 
 // Per-run developer timing table (perf plan Phase 0): the run's recorded stage
