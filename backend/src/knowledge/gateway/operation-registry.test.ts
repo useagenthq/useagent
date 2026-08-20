@@ -2,9 +2,11 @@ import { describe, expect, test } from "bun:test";
 import { CHILD_SESSION_TOOLS } from "./child-session-tools";
 import { LOOP_LOGIN_TOOLS } from "./loop-login-tools";
 import {
+  advertisedGatewayToolDescriptor,
   advertisedGatewayToolDescriptors,
   baseGatewayToolDescriptors,
   executeRegisteredGatewayTool,
+  GATEWAY_APPROVAL_REQUIRED_TOOL_NAMES,
   gatewayCompactToolListEnabled,
   gatewayMetaToolDescriptors,
   gatewayToolListDescriptors,
@@ -155,6 +157,34 @@ describe("gateway operation registry", () => {
     expect(publishSchema.required).toContain("approvalCapability");
     expect(publishSchema.properties).not.toHaveProperty("confirmPublish");
     expect(publishSchema.properties).not.toHaveProperty("confirmationToken");
+  });
+
+  test("pins the approval-gated operation set and the mid-run approval lane", () => {
+    // The registry is the single source of which tools need approval. This set
+    // is a deliberate release decision - extending it (e.g. GitHub write tools)
+    // must update this pin consciously.
+    expect([...GATEWAY_APPROVAL_REQUIRED_TOOL_NAMES].toSorted()).toEqual([
+      "automation_delete",
+      "automation_run_now",
+      "automation_update",
+      "knowledge_draft_archive",
+      "knowledge_draft_publish",
+    ]);
+
+    // The approval lane itself is advertised and never approval-gated:
+    // requesting or polling an approval must not require one.
+    const names = advertisedGatewayToolDescriptors(ALL_OPTIONS).map((tool) => tool.name);
+    expect(names).toContain("approval_request");
+    expect(names).toContain("approval_poll");
+    expect(gatewayToolRequiresApproval("approval_request")).toBe(false);
+    expect(gatewayToolRequiresApproval("approval_poll")).toBe(false);
+
+    // approval_request validates gated-argument completeness against the exact
+    // registered descriptor.
+    expect(advertisedGatewayToolDescriptor("automation_delete")?.name).toBe(
+      "automation_delete",
+    );
+    expect(advertisedGatewayToolDescriptor("made_up_tool")).toBeNull();
   });
 
   test("meta tools search and describe the live gateway catalog", async () => {
