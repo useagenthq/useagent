@@ -20,6 +20,7 @@ import {
   fetchDrafts,
   fetchProposals,
   type KnowledgeDraft,
+  type ProcedureTraceStep,
   type SkillProposal,
 } from "./learnings-api";
 
@@ -213,6 +214,41 @@ function Disclosure({ label, children }: { label: string; children: React.ReactN
   );
 }
 
+/** The run's ordered executable trace: what ran, against what, and whether it
+ *  worked - the procedure a skill proposal is later assembled from. */
+function ProcedureTraceList({
+  steps,
+  elided,
+}: {
+  steps: ProcedureTraceStep[];
+  elided: number;
+}) {
+  return (
+    <div className="flex flex-col gap-1">
+      <p className="text-mono-label text-text-soft-400">Procedure trace</p>
+      <ol className="flex max-h-48 flex-col gap-0.5 overflow-auto">
+        {steps.map((step, i) => (
+          <li key={i} className="flex items-baseline gap-2 text-paragraph-xs">
+            <span className="w-5 shrink-0 text-right [font-family:var(--font-mono)] text-text-soft-400">
+              {i + 1}
+            </span>
+            <span className="shrink-0 [font-family:var(--font-mono)] text-text-strong-950">
+              {step.tool}
+            </span>
+            <span className="min-w-0 truncate text-text-sub-600">{step.gist}</span>
+            {!step.ok && <span className="shrink-0 text-label-xs text-error-base">failed</span>}
+          </li>
+        ))}
+        {elided > 0 && (
+          <li className="pl-7 text-paragraph-xs text-text-soft-400">
+            ... {elided} more step{elided === 1 ? "" : "s"}
+          </li>
+        )}
+      </ol>
+    </div>
+  );
+}
+
 function DraftCard({
   draft,
   onResolved,
@@ -249,6 +285,9 @@ function DraftCard({
             {e.stepCount} steps, {e.distinctStepKinds} step kinds, {e.engine}/{e.model}
             {e.artifactNames.length > 0 ? ` - ${e.artifactNames.join(", ")}` : ""}
           </p>
+          {e.procedure && e.procedure.length > 0 && (
+            <ProcedureTraceList steps={e.procedure} elided={e.procedureElided ?? 0} />
+          )}
           <pre className="max-h-64 overflow-auto whitespace-pre-wrap [font-family:var(--font-mono)] text-paragraph-xs text-text-sub-600">
             {draft.content}
           </pre>

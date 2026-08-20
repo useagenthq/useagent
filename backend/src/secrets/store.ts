@@ -2,6 +2,7 @@ import { and, asc, eq } from "drizzle-orm";
 import { db } from "../db/client";
 import { secrets, type SecretKind } from "../db/schema";
 import { isReservedSecretName, isValidSecretName, openSecret, sealSecret } from "./crypto";
+import { createSecretRedactor, type SecretRedactor } from "./redact";
 
 // ---------------------------------------------------------------------------
 // Org-secrets data access (task #100). Values are encrypted at rest (crypto.ts)
@@ -145,6 +146,21 @@ export async function decryptOrgSecrets(orgId: string): Promise<DecryptedSecrets
   return out;
 }
 
+
+/** Build a redactor over an org's decrypted secret values, so durable text
+ *  derived after the fact (recovery re-probes, learning-lane traces) redacts
+ *  exactly what the live capture lane does. A null org (or a decrypt failure)
+ *  still yields the baseline redactor that scrubs JWTs and signed capabilities.
+ *  Never throws. */
+export async function orgSecretRedactor(orgId: string | null): Promise<SecretRedactor> {
+  if (!orgId) return createSecretRedactor([]);
+  try {
+    const decrypted = await decryptOrgSecrets(orgId);
+    return createSecretRedactor(decrypted.secrets.map((s) => s.value));
+  } catch {
+    return createSecretRedactor([]);
+  }
+}
 
 /** Decrypt exactly one named secret for a trusted control-plane consumer. This
  * keeps provider-gateway plaintext exposure to the credential it needs instead

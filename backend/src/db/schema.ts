@@ -487,6 +487,15 @@ export type KnowledgeDraftStatus = (typeof KNOWLEDGE_DRAFT_STATUSES)[number];
 /** Why the producer judged the source run high-value (deterministic salience). */
 export type KnowledgeDraftReason = "published_artifacts" | "long_multi_tool_run";
 
+/** One step of a draft's ordered executable procedure trace: the tool that ran,
+ *  a one-line sanitized gist of its target (paths/commands/names, never secret
+ *  values), and whether it terminally succeeded. */
+export interface ProcedureTraceStep {
+  tool: string;
+  gist: string;
+  ok: boolean;
+}
+
 /** The deterministic facts a draft was proposed FROM — shown to the reviewer. */
 export interface KnowledgeDraftEvidence {
   reason: KnowledgeDraftReason;
@@ -497,6 +506,13 @@ export interface KnowledgeDraftEvidence {
   distinctStepKinds: number;
   artifactCount: number;
   artifactNames: string[];
+  /** Ordered, bounded procedure trace (max ~40 steps) collected from the run's
+   *  step rows at draft time. Optional + additive inside the evidence jsonb —
+   *  pre-feature drafts simply lack it (no migration). */
+  procedure?: ProcedureTraceStep[];
+  /** How many trailing steps the trace cap elided (rendered honestly as
+   *  "... N more steps"). Absent when nothing was elided. */
+  procedureElided?: number;
 }
 
 export const knowledgeDrafts = pgTable(
