@@ -30,6 +30,41 @@ export async function enqueuePostMessageTx(
   );
 }
 
+/** Enqueue the FINAL run-card update INSIDE a caller's transaction (run
+ *  finalization), so the settled card commits atomically with the run reaching
+ *  terminal. At delivery it advances the card in place (chat.update) or, when no
+ *  card ts exists, posts the CHUNKED answer as a fresh reply - the answer is never
+ *  lost. Returns whether a NEW row was created. */
+export async function enqueueUpdateCardTx(
+  exec: Executor,
+  entry: {
+    idempotencyKey: string;
+    channel: string;
+    threadTs: string;
+    rootRunId: string;
+    blocks: unknown[];
+    text: string;
+    /** The full answer text; chunked here so a long fallback stays postable. */
+    fallbackText: string;
+  },
+): Promise<boolean> {
+  return enqueue(
+    {
+      kind: "update_card",
+      idempotencyKey: entry.idempotencyKey,
+      payload: {
+        channel: entry.channel,
+        threadTs: entry.threadTs,
+        rootRunId: entry.rootRunId,
+        blocks: entry.blocks,
+        text: entry.text,
+        fallbackChunks: chunkSlackText(entry.fallbackText),
+      },
+    },
+    exec,
+  );
+}
+
 /** Enqueue an artifact upload INSIDE a caller's transaction (run finalization),
  *  mirroring enqueuePostMessageTx: the file share commits atomically with the
  *  run reaching terminal. Returns whether a NEW row was created. */
@@ -75,6 +110,31 @@ export async function enqueuePostMessage(entry: {
     kind: "post_message",
     idempotencyKey: entry.idempotencyKey,
     payload: { channel: entry.channel, chunks: chunkSlackText(entry.text), threadTs: entry.threadTs },
+  });
+  if (created) kickSlackOutbox();
+}
+
+/** Durably enqueue the initial Block Kit RUN CARD post (survives a restart). The
+ *  relay posts it and stores the returned message ts on slack_threads. Idempotent
+ *  by `idempotencyKey`. */
+export async function enqueuePostCard(entry: {
+  idempotencyKey: string;
+  channel: string;
+  threadTs: string;
+  rootRunId: string;
+  blocks: unknown[];
+  text: string;
+}): Promise<void> {
+  const created = await enqueue({
+    kind: "post_card",
+    idempotencyKey: entry.idempotencyKey,
+    payload: {
+      channel: entry.channel,
+      threadTs: entry.threadTs,
+      rootRunId: entry.rootRunId,
+      blocks: entry.blocks,
+      text: entry.text,
+    },
   });
   if (created) kickSlackOutbox();
 }
