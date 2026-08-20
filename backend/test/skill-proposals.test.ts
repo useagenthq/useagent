@@ -11,7 +11,13 @@
 import { describe, expect, test } from "bun:test";
 import { and, eq } from "drizzle-orm";
 import { db } from "../src/db/client";
-import { knowledgeDrafts, member, user, type KnowledgeDraftEvidence } from "../src/db/schema";
+import {
+  knowledgeDrafts,
+  member,
+  user,
+  type KnowledgeDraftEvidence,
+  type ProcedureTraceStep,
+} from "../src/db/schema";
 import { createRun } from "../src/runs/repo";
 import { createOrgSession, json, type OrgSession } from "./helpers";
 
@@ -39,7 +45,11 @@ const EVIDENCE: KnowledgeDraftEvidence = {
 
 /** Insert an OPEN draft directly (the producer path is proven in
  *  knowledge-drafts.test.ts); returns its id. */
-async function insertDraft(session: OrgSession, title: string): Promise<string> {
+async function insertDraft(
+  session: OrgSession,
+  title: string,
+  procedure?: ProcedureTraceStep[],
+): Promise<string> {
   const runId = crypto.randomUUID();
   await createRun({
     id: runId,
@@ -61,7 +71,7 @@ async function insertDraft(session: OrgSession, title: string): Promise<string> 
       threadId: runId,
       title,
       content: `## Task\n\n${title}\n\n## Outcome\n\nDone.\n`,
-      evidence: EVIDENCE,
+      evidence: procedure ? { ...EVIDENCE, procedure } : EVIDENCE,
     })
     .returning({ id: knowledgeDrafts.id });
   return row!.id;
@@ -124,6 +134,26 @@ describe("skill revision proposals", () => {
     const d4 = await insertDraft(org, "Rotate expired API keys for payments");
     expect((await acceptDraft(org, d4)).body.proposal_id).toBeNull();
     expect((await listProposals(org, "proposed")).body.proposals).toHaveLength(1);
+  });
+
+  test("drafts with procedure traces assemble the executable backbone into the proposal", async () => {
+    const org = await createOrgSession("sp-backbone");
+    const traceFor = (i: string): ProcedureTraceStep[] => [
+      { tool: "bash", gist: `vault kv get payments/run-${i}`, ok: true },
+      { tool: "edit", gist: ".env.production", ok: true },
+      { tool: "bash", gist: "bun run deploy", ok: true },
+    ];
+    for (const [i, title] of SIMILAR_TITLES.entries()) {
+      await acceptDraft(org, await insertDraft(org, title, traceFor(String(i))));
+    }
+
+    const proposal = (await listProposals(org)).body.proposals[0]!;
+    // The Procedure section is the common ordered backbone (majority tools,
+    // first-seen order, run-specific tokens generalized), not the generic
+    // "search knowledge" fallback.
+    expect(proposal.proposed_content).toContain("bash: vault kv get payments/run-2");
+    expect(proposal.proposed_content).toContain("edit: .env.production");
+    expect(proposal.proposed_content).not.toContain("Search org knowledge");
   });
 
   test("dissimilar accepted drafts never raise a proposal", async () => {

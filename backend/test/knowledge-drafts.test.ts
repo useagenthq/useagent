@@ -23,7 +23,13 @@ interface DraftApi {
   title: string;
   content: string;
   status: string;
-  evidence: { reason: string; stepCount: number; artifactNames: string[] };
+  evidence: {
+    reason: string;
+    stepCount: number;
+    artifactNames: string[];
+    procedure?: { tool: string; gist: string; ok: boolean }[];
+    procedureElided?: number;
+  };
   accepted_record_id: string | null;
 }
 
@@ -94,6 +100,50 @@ describe("knowledge drafts — producer", () => {
     const knowledge = await json<{ records: unknown[] }>("/api/knowledge", { cookies: org.cookies });
     expect(knowledge.status).toBe(200);
     expect(knowledge.body.records).toHaveLength(0);
+  });
+
+  test("draft evidence carries the ordered, redacted procedure trace and round-trips the API", async () => {
+    const org = await createOrgSession("kd-procedure");
+    const runId = await newRun(org, "Rotate the API keys for the payments service");
+    // Real-shaped step rows: tool payloads with targets, one terminal failure,
+    // and the done marker (which the trace must exclude).
+    const recorded = [
+      { kind: "command" as const, label: "bun install", chip: "bash", code: { tool: "bash", input: { command: "bun install" } } },
+      { kind: "file" as const, label: ".env.production", chip: "file", code: { tool: "edit", input: { filePath: "config/.env.production" } } },
+      { kind: "command" as const, label: "bun test", chip: "bash", code: { tool: "bash", input: { command: "bun test" }, error: true } },
+      { kind: "command" as const, label: "bun test", chip: "bash", code: { tool: "bash", input: { command: "bun test" } } },
+    ];
+    // Pad past the long-multi-tool salience bar (>= 10 steps, 2 kinds).
+    while (recorded.length < 10) {
+      const command = `vault kv get payments/${recorded.length}`;
+      recorded.push({
+        kind: "command",
+        label: command,
+        chip: "bash",
+        code: { tool: "bash", input: { command } },
+      });
+    }
+    for (const [i, s] of recorded.entries()) {
+      await insertStep({ runId, idx: i, kind: s.kind, label: s.label, chip: s.chip, code: s.code });
+    }
+    await insertStep({ runId, idx: recorded.length, kind: "done", label: "Done", chip: null, code: null });
+    await finalizeRun(runId, "completed", "Rotated and verified.", 800);
+
+    const draft = (await listDrafts(org)).body.drafts[0]!;
+    // Ordered, done-marker excluded, terminal outcome per step.
+    expect(draft.evidence.procedure).toHaveLength(recorded.length);
+    expect(draft.evidence.procedure!.slice(0, 4)).toEqual([
+      { tool: "bash", gist: "bun install", ok: true },
+      { tool: "edit", gist: "config/.env.production", ok: true },
+      { tool: "bash", gist: "bun test", ok: false },
+      { tool: "bash", gist: "bun test", ok: true },
+    ]);
+    expect(draft.evidence.procedure!.at(-1)).toEqual({
+      tool: "bash",
+      gist: "vault kv get payments/9",
+      ok: true,
+    });
+    expect(draft.evidence.procedureElided).toBeUndefined();
   });
 
   test("a run with published artifacts proposes with reason published_artifacts", async () => {
