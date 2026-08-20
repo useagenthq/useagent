@@ -35,6 +35,11 @@ import { Conversation, type Turn } from "@/components/chat/conversation";
 import { DesktopPane } from "@/components/chat/desktop-pane";
 import { DiffPane } from "@/components/chat/diff-pane";
 import { EditorPane } from "@/components/chat/editor-pane";
+import { gatewayApprovalSignature } from "@/components/chat/gateway-approval-state";
+import {
+  type GatewayApprovalSignal,
+  useGatewayApprovals,
+} from "@/components/chat/use-gateway-approvals";
 import type { NativeSnapshot } from "@/components/chat/native-store";
 import { OrbBootIndicator } from "@/components/chat/orb-boot-indicator";
 import { type PendingQuestion, selectPendingQuestion } from "@/components/chat/question-state";
@@ -264,6 +269,29 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
     }
     return null;
   }, [turns]);
+
+  // Gateway approvals (#77): same seam as the question card - the run's OWN
+  // projection decides. A live turn whose timeline carries an approval step /
+  // provider event signals this lane, which then fetches the authoritative
+  // records from GET /api/gateway/approvals. The SIGNATURE (not a poll) drives
+  // revalidation: a new approval event arriving on the thread SSE re-projects
+  // the turn, changes the signature, and triggers exactly one refetch. Settled
+  // turns are excluded like questions: history never re-raises a card.
+  const gatewayApprovalSignals = useMemo(() => {
+    const signals: GatewayApprovalSignal[] = [];
+    for (const turn of turns) {
+      if (!isLiveStatus(turn.status)) continue;
+      const signature = gatewayApprovalSignature(
+        turn.steps,
+        turn.native?.nativeFrames ?? [],
+        turn.canonical ?? [],
+      );
+      if (signature) signals.push({ runId: turn.run.id, signature });
+    }
+    return signals;
+  }, [turns]);
+  const { approvals: gatewayApprovals, refresh: refreshGatewayApprovals } =
+    useGatewayApprovals(gatewayApprovalSignals);
 
   const submitQuestionAnswers = useCallback(
     async (target: { runId: string; request: PendingQuestion }, answers: string[][]) => {
@@ -826,6 +854,8 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
             onAnswerApproval={async (decision) => {
               if (activeApproval) await submitApproval(activeApproval, decision);
             }}
+            gatewayApprovals={gatewayApprovals}
+            onGatewayApprovalResolved={() => void refreshGatewayApprovals()}
             sendNowFor={runningTurn ? headQueuedId : null}
             onSendNow={handleSendNow}
             running={runningTurn !== null}
