@@ -200,7 +200,11 @@ async function doRemember(claims: ToolTokenClaims, args: Record<string, unknown>
   if (!plan.writePool) {
     // personal scope with no authenticated user → fail closed (section 3).
     recordMemoryEvent(run, MEMORY_EVENTS.failed, { op: "remember", reason: "fail_closed", scope: plan.scope });
-    return textResult("Cannot remember: a personal memory needs an authenticated user.", undefined, true);
+    return textResult(
+      "Cannot remember: a personal memory needs an authenticated user. Continue without saving, or ask the user to switch this thread to organization memory scope and retry.",
+      undefined,
+      true,
+    );
   }
 
   const kind = validKind(args.kind) ?? "note";

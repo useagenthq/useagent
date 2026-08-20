@@ -98,7 +98,11 @@ const productionService: GithubReadService = {
   },
 
   async fetchJson(path) {
-    if (!githubConfigured()) throw new Error("GitHub is not configured");
+    if (!githubConfigured()) {
+      throw new Error(
+        "GitHub is not configured; ask the workspace operator to connect GitHub (GitHub App installation or access token), then retry",
+      );
+    }
     const token = await resolveGithubToken();
     const ac = new AbortController();
     const timer = setTimeout(() => ac.abort(), FETCH_TIMEOUT_MS);
