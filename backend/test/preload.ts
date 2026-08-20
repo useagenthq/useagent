@@ -39,6 +39,10 @@ for (const k of [
   delete process.env[k];
 }
 
+// Never let a dev .env's periodic skill resync start its boot sweep inside the
+// unit suite (the app import in helpers.ts runs startSkillsResync).
+delete process.env.SKILLS_RESYNC_INTERVAL_MIN;
+
 process.env.WORKER_STEP_DELAY_MS = process.env.WORKER_STEP_DELAY_MS ?? "5";
 
 // Unit fixtures intentionally exercise every provider lane without making paid
