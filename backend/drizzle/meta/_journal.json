@@ -323,6 +323,13 @@
 			"when": 1788500000000,
 			"tag": "0047_gateway_approval_requests",
 			"breakpoints": true
+		},
+		{
+			"idx": 46,
+			"version": "7",
+			"when": 1788800000000,
+			"tag": "0049_learning_outbox",
+			"breakpoints": true
 		}
 	]
 }

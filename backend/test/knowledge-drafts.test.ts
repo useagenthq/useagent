@@ -13,9 +13,17 @@ import { and, eq } from "drizzle-orm";
 import { db } from "../src/db/client";
 import { artifacts, knowledgeDrafts, member, user } from "../src/db/schema";
 import { proposeKnowledgeDraftForRun } from "../src/learning/drafts";
+import { processDueLearning } from "../src/learning/learning-outbox";
 import { finalizeRun } from "../src/runs/finalize";
 import { createRun, insertStep } from "../src/runs/repo";
 import { createOrgSession, json, uid, type OrgSession } from "./helpers";
+
+// The draft is now built by the boot-started learning-outbox worker off the
+// intent finalizeRun enqueues IN its terminal transaction (self_improving 6.1),
+// not synchronously at finalize. Drain the worker so a draft is materialized.
+async function drainLearning(): Promise<void> {
+  await processDueLearning();
+}
 
 interface DraftApi {
   id: string;
@@ -52,13 +60,20 @@ async function newRun(session: OrgSession, prompt: string): Promise<string> {
 
 async function addSteps(runId: string, count: number, kinds: ("command" | "file")[]) {
   for (let i = 0; i < count; i++) {
+    const kind = kinds[i % kinds.length]!;
+    // The FIRST command step is a verification (`bun test`), so the run carries a
+    // verified postcondition and passes the verified-outcome gate (6.4). The rest
+    // are generic. A run with < 1 command step relies on a published artifact.
+    const isVerify = kind === "command" && i === kinds.indexOf("command");
     await insertStep({
       runId,
       idx: i,
-      kind: kinds[i % kinds.length]!,
-      label: `step ${i}`,
-      chip: null,
-      code: null,
+      kind,
+      label: isVerify ? "bun test" : `step ${i}`,
+      chip: kind === "command" ? "bash" : "file",
+      code: isVerify
+        ? { tool: "bash", input: { command: "bun test" } }
+        : { tool: kind === "command" ? "bash" : "edit", input: { command: `step ${i}` } },
     });
   }
 }
@@ -84,6 +99,7 @@ describe("knowledge drafts — producer", () => {
     const runId = await newRun(org, "Investigate the flaky payment webhook retries\nDetails follow.");
     await addSteps(runId, 12, ["command", "file"]);
     await finalizeRun(runId, "completed", "Root-caused the retry storm and fixed the backoff.", 4200);
+    await drainLearning();
 
     const { status, body } = await listDrafts(org);
     expect(status).toBe(200);
@@ -128,6 +144,7 @@ describe("knowledge drafts — producer", () => {
     }
     await insertStep({ runId, idx: recorded.length, kind: "done", label: "Done", chip: null, code: null });
     await finalizeRun(runId, "completed", "Rotated and verified.", 800);
+    await drainLearning();
 
     const draft = (await listDrafts(org)).body.drafts[0]!;
     // Ordered, done-marker excluded, terminal outcome per step.
@@ -161,6 +178,7 @@ describe("knowledge drafts — producer", () => {
       storageKey: uid("key"),
     });
     await finalizeRun(runId, "completed", "Published the deck.", 900);
+    await drainLearning();
 
     const { body } = await listDrafts(org);
     expect(body.drafts).toHaveLength(1);
@@ -181,13 +199,15 @@ describe("knowledge drafts — producer", () => {
     const failedRun = await newRun(org, "Big refactor");
     await addSteps(failedRun, 12, ["command", "file"]);
     await finalizeRun(failedRun, "failed", "Crashed.", 100);
+    await drainLearning();
 
     expect((await listDrafts(org)).body.drafts).toHaveLength(0);
 
-    // Idempotency: re-proposing an already-drafted run is a no-op.
+    // Idempotency: the worker built the draft; re-proposing is a no-op.
     const goodRun = await newRun(org, "Long investigation");
     await addSteps(goodRun, 12, ["command", "file"]);
     await finalizeRun(goodRun, "completed", "Done.", 100);
+    await drainLearning();
     expect(await proposeKnowledgeDraftForRun(goodRun)).toBeNull();
     expect((await listDrafts(org)).body.drafts).toHaveLength(1);
   });
@@ -198,6 +218,7 @@ describe("knowledge drafts — producer", () => {
     const runId = await newRun(org, "Org-private learning");
     await addSteps(runId, 12, ["command", "file"]);
     await finalizeRun(runId, "completed", "Done.", 100);
+    await drainLearning();
 
     expect((await listDrafts(org)).body.drafts).toHaveLength(1);
     expect((await listDrafts(outsider)).body.drafts).toHaveLength(0);
@@ -210,6 +231,7 @@ describe("knowledge drafts — review governance", () => {
     const runId = await newRun(org, "Migrate the analytics pipeline to the new warehouse");
     await addSteps(runId, 12, ["command", "file"]);
     await finalizeRun(runId, "completed", "Migrated and verified row counts.", 100);
+    await drainLearning();
     const draft = (await listDrafts(org)).body.drafts[0]!;
 
     const accept = await json<{ draft: DraftApi; record_id: string; proposal_id: string | null }>(
@@ -249,6 +271,7 @@ describe("knowledge drafts — review governance", () => {
     const runId = await newRun(org, "One-off spike we should not memorialize");
     await addSteps(runId, 12, ["command", "file"]);
     await finalizeRun(runId, "completed", "Done.", 100);
+    await drainLearning();
     const draft = (await listDrafts(org)).body.drafts[0]!;
 
     const dismiss = await json<{ draft: DraftApi }>(`/api/knowledge/drafts/${draft.id}/dismiss`, {
@@ -268,6 +291,7 @@ describe("knowledge drafts — review governance", () => {
     const runId = await newRun(org, "Members can look but not govern");
     await addSteps(runId, 12, ["command", "file"]);
     await finalizeRun(runId, "completed", "Done.", 100);
+    await drainLearning();
     const draft = (await listDrafts(org)).body.drafts[0]!;
 
     await demoteToMember(org);

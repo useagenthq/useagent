@@ -20,7 +20,7 @@ import { findScheduleForRun } from "../schedules/repo";
 import { publishRunLifecycleChange } from "./org-signals";
 import { enqueueCanonicalization } from "./canonicalization-outbox";
 import { canonicalEngine } from "../engines/engine-alias";
-import { proposeKnowledgeDraftForRun } from "../learning/drafts";
+import { enqueueLearning } from "../learning/learning-outbox";
 
 /** Providers whose runs project native events and/or `steps` into the canonical lane.
  *  OpenCode + the ACP engines (acp/claude/codex). Legacy aliases (daytona -> opencode,
@@ -54,10 +54,11 @@ const CANONICAL_ENGINES = new Set(["opencode", "acp", "claude", "codex"]);
 /**
  * Commit a run's terminal status + summary and, in the SAME transaction, enqueue
  * its durable side-effects: the memory capture (completed runs, when team memory
- * is configured) and the Slack reply (Slack-originated runs, both terminal
- * statuses). Replaces the bare terminal-status update on every terminal path
- * (worker success/failure/mock, boot reconcile/fail). Safe to call more than once
- * — the run update is a plain UPDATE and both enqueues are idempotent.
+ * is configured), the Slack reply (Slack-originated runs, both terminal
+ * statuses), canonicalization, and the LEARNING intent (completed non-internal
+ * runs - self_improving 6.1). Replaces the bare terminal-status update on every
+ * terminal path (worker success/failure/mock, boot reconcile/fail). Safe to call
+ * more than once - the run update is a plain UPDATE and every enqueue is idempotent.
  */
 export async function finalizeRun(
   runId: string,
@@ -186,6 +187,29 @@ export async function finalizeRun(
     if (CANONICAL_ENGINES.has(canonicalEngine(run.engine))) {
       await enqueueCanonicalization(runId, run.threadId, tx);
     }
+
+    // Learning intent (self_improving 6.1): a completed, non-internal run
+    // enqueues its DURABLE learning intent IN this transaction, replacing the
+    // old post-commit proposeKnowledgeDraftForRun call (which left a crash
+    // window between the commit and the draft). A boot-started worker
+    // (learning-outbox.ts) builds the evidence-backed candidate off this
+    // committed row - retryable, dead-lettering, and it NEVER fails the run.
+    // INTERNAL runs (parity canaries, e2e/soak harnesses - runs.origin) are
+    // excluded so evaluation traffic never becomes org learning. The verified-
+    // outcome gate (6.4) still runs at build time, so an unverified completion
+    // enqueues an intent but produces no candidate (a clean skip).
+    if (status === "completed" && run.orgId && !isInternalRunOrigin(run.origin)) {
+      await enqueueLearning(
+        {
+          runId,
+          orgId: run.orgId,
+          userId: run.userId,
+          memoryScope: run.memoryScope,
+          origin: run.origin,
+        },
+        tx,
+      );
+    }
   });
 
   // Kick the relay AFTER commit (the row isn't visible to it until then). No-op
@@ -204,17 +228,5 @@ export async function finalizeRun(
       runId,
       kind: "settled",
     });
-  }
-
-  // Learning lane (item 4), post-commit + best-effort: a completed HIGH-VALUE
-  // run proposes a reviewable knowledge DRAFT (never a knowledge record —
-  // publishing is org-admin-gated). Idempotent per run, and a failure here must
-  // never affect the already-finalized run.
-  if (status === "completed" && settledOrgId) {
-    try {
-      await proposeKnowledgeDraftForRun(runId);
-    } catch (err) {
-      console.error("[learning] draft proposal failed:", (err as Error).message);
-    }
   }
 }
