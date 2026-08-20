@@ -196,7 +196,7 @@ async function doRemember(claims: ToolTokenClaims, args: Record<string, unknown>
   const run = await resolveAuthorizedToolRun(claims);
   if (!run) return textResult("Memory unavailable: no active run to scope this write.", undefined, true);
   const plan: ScopedMemoryPlan | null = resolveScopedMemory(run);
-  if (!plan) return textResult("Memory is not configured for this deployment.", undefined, true);
+  if (!plan) return textResult("Memory is not configured for this deployment; ask the workspace operator to enable team memory (MEMORY_API_URL), and continue without saved memory.", undefined, true);
   if (!plan.writePool) {
     // personal scope with no authenticated user → fail closed (section 3).
     recordMemoryEvent(run, MEMORY_EVENTS.failed, { op: "remember", reason: "fail_closed", scope: plan.scope });
@@ -272,9 +272,12 @@ async function doSearch(claims: ToolTokenClaims, args: Record<string, unknown>):
   const run = await resolveAuthorizedToolRun(claims);
   if (!run) return textResult("Memory unavailable: no active run to scope this search.", undefined, true);
   const plan = resolveScopedMemory(run);
-  if (!plan) return textResult("Memory is not configured for this deployment.", undefined, true);
+  if (!plan) return textResult("Memory is not configured for this deployment; ask the workspace operator to enable team memory (MEMORY_API_URL), and continue without saved memory.", undefined, true);
   if (plan.readPools.length === 0) {
-    return textResult("No personal memory is available without an authenticated user.", { items: [] });
+    return textResult(
+      "No personal memory is available without an authenticated user. Use organization-scope memory instead, or continue without recall.",
+      { items: [] },
+    );
   }
 
   const recall = await recallScopedMemory(query, plan.readPools, { limit });
@@ -337,7 +340,11 @@ async function doRead(claims: ToolTokenClaims, args: Record<string, unknown>): P
   const browse = await browseScopedMemory(plan.readPools, { limit: 50 });
   const found = browse.items.find((i) => i.id === id);
   if (!found) {
-    return textResult(`No memory ${ref} is available to this run.`, undefined, true);
+    return textResult(
+      `No memory ${ref} is available to this run; the ref may be stale or outside this run's scope. Use memory_search to find accessible memories.`,
+      undefined,
+      true,
+    );
   }
   return textResult(`${found.content}${found.background ? `\n(${found.background})` : ""}`, {
     ref,
