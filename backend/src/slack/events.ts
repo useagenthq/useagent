@@ -24,6 +24,7 @@ import { stageInboundSlackFiles, type SlackInboundFileMeta } from "./inbound-fil
 import { findSlackThread, linkSlackThread } from "./repo";
 import { watchSlackRun } from "./watcher";
 import { githubRepoRefs } from "./repo-refs";
+import { unknownRepos } from "../github/repos";
 import { resolveSlackWorkspace } from "./workspaces";
 import { enqueueAddReaction, enqueuePostMessage } from "./outbox";
 import { defaultModelForEngine, isModelAllowedForEngine } from "../runs/model-policy";
@@ -258,6 +259,18 @@ export async function handleSlackEvent(body: SlackEnvelope): Promise<void> {
     model = defaultModelForEngine(engine);
   }
 
+  // Repositories linked in the message bind to the run - but ONLY after the
+  // SAME allowlist the web composer enforces (unknownRepos): a Slack link must
+  // never let the installation token reach a repo outside the offered set. An
+  // unknown ref is dropped (the run proceeds without it) rather than failing
+  // the whole message.
+  const linkedRepos = githubRepoRefs(rawText);
+  let boundRepos: string[] = [];
+  if (linkedRepos.length > 0) {
+    const unknown = new Set(await unknownRepos(linkedRepos));
+    boundRepos = linkedRepos.filter((repo) => !unknown.has(repo));
+  }
+
   // Enter through the durable command lane keyed by the SLACK EVENT IDENTITY
   // (event_id when present - retries reuse it - else channel:ts), so a
   // duplicate delivery that outlives the in-memory deduper (restart, cross-lane
@@ -278,10 +291,9 @@ export async function handleSlackEvent(body: SlackEnvelope): Promise<void> {
       engine,
       parentRunId,
       threadId,
-      // Slack has no repo picker; repositories the message LINKS become the
-      // run's bound repos (clone + GitHub read tools), mirroring a web-composer
-      // selection. An unlinked message keeps the bare sandbox.
-      repos: githubRepoRefs(rawText),
+      // Repositories the message links, VALIDATED against the offered set above
+      // (mirrors the web composer). An unlinked message keeps the bare sandbox.
+      repos: boundRepos,
       // Staged inbound attachments — claimed atomically with run acceptance.
       ...(attachmentIds.length > 0 ? { attachmentIds } : {}),
       memoryScope,

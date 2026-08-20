@@ -73,6 +73,30 @@ describe("finalizeRun — transactional memory capture (GAP 2)", () => {
     });
   });
 
+  test("FIRST-writer-wins: a second finalize is a no-op (no status flip, no double-capture)", async () => {
+    // Zombie-cancel racing the reconcile loop must not flip a settled status or
+    // enqueue a second capture (C2). The first finalize wins; the second, with a
+    // DIFFERENT status, updates zero rows and skips every side-effect.
+    await withMemory(async () => {
+      const id = await freshRun("race me");
+      await finalizeRun(id, "completed", "the real answer RC-99", 1000);
+      expect((await getRun(id))?.status).toBe("completed");
+      const capBefore = await getCapture(id);
+      expect(capBefore).not.toBeNull();
+
+      // A racing finalizer tries to mark it failed - must be a total no-op.
+      await finalizeRun(id, "failed", "Stopped by user", 0);
+      const run = await getRun(id);
+      expect(run?.status).toBe("completed"); // NOT flipped to failed
+      expect(run?.summary).toBe("the real answer RC-99");
+      // The capture is the same single row (payload unchanged).
+      const capAfter = await getCapture(id);
+      const before = JSON.parse(capBefore!.payload) as { summary: string };
+      const after = JSON.parse(capAfter!.payload) as { summary: string };
+      expect(after.summary).toBe(before.summary);
+    });
+  });
+
   test("a failed run does NOT enqueue a capture", async () => {
     await withMemory(async () => {
       const id = await freshRun();
