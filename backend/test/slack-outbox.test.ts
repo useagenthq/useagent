@@ -142,3 +142,42 @@ describe("durable slack outbox", () => {
     expect(rec.posted.some((p) => p.text === key)).toBe(true);
   });
 });
+
+describe("chunked reply delivery", () => {
+  test("chunks post sequentially, in order, all into the same thread", async () => {
+    const key = uid("chunks");
+    await enqueue({
+      kind: "post_message",
+      idempotencyKey: key,
+      payload: { channel: "C9", chunks: ["head", "middle", "tail"], threadTs: "9.1" },
+    });
+    const rec = recorder(() => ({ ok: true }));
+    await processDue(rec.client);
+    expect((await getSlackOutbox(key))?.state).toBe("delivered");
+    expect(rec.posted.map((p) => p.text)).toEqual(["head", "middle", "tail"]);
+    for (const p of rec.posted) expect(p.threadTs).toBe("9.1");
+  });
+
+  test("a mid-sequence failure retries from the FAILED chunk, not from the start", async () => {
+    const key = uid("resume");
+    await enqueue({
+      kind: "post_message",
+      idempotencyKey: key,
+      payload: { channel: "C9", chunks: ["one", "two", "three"], threadTs: "9.2" },
+    });
+    // First pass: chunk 1 delivers, chunk 2 fails transiently.
+    let calls = 0;
+    const flaky = recorder(() => (++calls === 2 ? { ok: false, class: "transient", message: "boom" } : { ok: true }));
+    await processDue(flaky.client);
+    const row = await getSlackOutbox(key);
+    expect(row?.state).toBe("pending");
+    // The chunk cursor persisted: only the undelivered chunks remain.
+    expect((JSON.parse(row!.payload) as { chunks: string[] }).chunks).toEqual(["two", "three"]);
+
+    await forceDue(key);
+    const rec = recorder(() => ({ ok: true }));
+    await processDue(rec.client);
+    expect((await getSlackOutbox(key))?.state).toBe("delivered");
+    expect(rec.posted.map((p) => p.text)).toEqual(["two", "three"]); // "one" never re-posts
+  });
+});
