@@ -1,3 +1,4 @@
+import { isValidRepoRef } from "../wiki-gen/clone";
 import { toVectorLiteral } from "../knowledge/embed";
 import { sql, type StoreExec } from "../knowledge/store";
 
@@ -16,8 +17,9 @@ import { sql, type StoreExec } from "../knowledge/store";
 // at the tool boundary, so a projection query can never return an unbounded dump.
 // ---------------------------------------------------------------------------
 
-/** The projectable source kinds. `code` is reserved for Phase 2 (config/code
- *  index) — the enum leaves room for it; no schema change is needed to add it. */
+/** The projectable source kinds. `code` (Phase 3) projects repository
+ *  identifiers/config/domains/docs; it needs no schema change (the enum column is
+ *  plain text and the `code:` source_ref carries repo/commit/file/line). */
 export const CONTEXT_KINDS = [
   "knowledge",
   "skill",
@@ -25,6 +27,7 @@ export const CONTEXT_KINDS = [
   "blueprint",
   "automation",
   "memory",
+  "code",
 ] as const;
 export type ContextKind = (typeof CONTEXT_KINDS)[number];
 
@@ -241,6 +244,9 @@ export async function searchContext(opts: {
   orgId: string;
   query: string;
   kinds?: ContextKind[];
+  /** Narrow to `code` rows from one repo ("owner/name"). The projection carries
+   *  no repo column, so this filters on the `code:<repo>@...` source_ref prefix. */
+  repo?: string;
   k?: number;
   queryEmbedding?: number[] | null;
 }): Promise<ContextSearchHit[]> {
@@ -249,11 +255,16 @@ export async function searchContext(opts: {
   const candN = Math.min(100, Math.max(k * 4, 20));
   const kindFilter =
     opts.kinds && opts.kinds.length ? sql`AND kind = ANY(${opts.kinds})` : sql``;
+  // A repo narrows to that repo's code rows: source_ref is "code:<repo>@<sha>:...".
+  const repoFilter =
+    opts.repo && isValidRepoRef(opts.repo)
+      ? sql`AND source_ref LIKE ${`code:${opts.repo}@%`}`
+      : sql``;
 
   const keyword = await sql<Candidate[]>`
     SELECT id, kind, title, searchable_text, source_ref, source_kind_id, version
     FROM context_index
-    WHERE org_id = ${opts.orgId} AND to_tsvector('english', searchable_text) @@ ${tsQuery(opts.query)} ${kindFilter}
+    WHERE org_id = ${opts.orgId} AND to_tsvector('english', searchable_text) @@ ${tsQuery(opts.query)} ${kindFilter} ${repoFilter}
     ORDER BY ts_rank_cd(to_tsvector('english', searchable_text), ${tsQuery(opts.query)}) DESC, updated_at DESC
     LIMIT ${candN}
   `;
@@ -264,7 +275,7 @@ export async function searchContext(opts: {
     vector = await sql<Candidate[]>`
       SELECT id, kind, title, searchable_text, source_ref, source_kind_id, version
       FROM context_index
-      WHERE org_id = ${opts.orgId} AND embedding IS NOT NULL ${kindFilter}
+      WHERE org_id = ${opts.orgId} AND embedding IS NOT NULL ${kindFilter} ${repoFilter}
       ORDER BY embedding <=> ${qvec}::vector ASC
       LIMIT ${candN}
     `;

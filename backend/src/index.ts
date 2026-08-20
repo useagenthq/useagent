@@ -42,6 +42,7 @@ import {
   resetStuckCanonicalization,
   startCanonicalizationOutbox,
 } from "./runs/canonicalization-outbox";
+import { startCodeIndex } from "./context/code/index-sweep";
 import { secretsRoutes } from "./secrets/routes";
 import { seedDev } from "./seed";
 import { skillImportRoutes } from "./skills/import-routes";
@@ -288,6 +289,13 @@ startUploadCleanup();
 // only when SKILLS_RESYNC_INTERVAL_MIN is set does it sweep (serial, paced,
 // bounded), reusing the manual import's source-keyed idempotent upsert.
 startSkillsResync();
+
+// Periodic repository CODE indexer - projects org-approved repos' docs, config,
+// domains, symbols, and manifests into context_index as kind="code" so terms that
+// live only in code (e.g. `yofix`) become searchable evidence. OFF by default:
+// only when CODE_INDEX_INTERVAL_MIN is set does it sweep (serial, paced, bounded,
+// unchanged-HEAD short-circuit so a restart never full-rescans).
+startCodeIndex();
 
 // Memory capture-outbox delivery loop (15s tick). Delivers each completed run's
 // queued outcome to team memory with retry/backoff/dead-letter; harmless when
