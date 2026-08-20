@@ -1,0 +1,75 @@
+---
+title: Session view
+description: The screen where a run comes alive. A structured timeline grammar plus side panes for files, an editor, a terminal, and the desktop.
+sidebar:
+  order: 3
+---
+
+The session view at `/session/:id` is where you watch and steer a run. It renders
+the canonical event log through a consistent visual grammar, and hosts the panes
+that show the run's environment.
+
+## The timeline grammar
+
+Nothing in the timeline is raw JSON. Every step renders as a purpose-built card or
+row, so a run reads like a structured narrative:
+
+| Element | What it shows |
+| --- | --- |
+| Work-entry row | A tool call: icon, heading, a preview, a status, and an expandable body with the full output. |
+| Reasoning disclosure | A collapsible thinking segment, with a shimmer while it streams. |
+| Context-recall fold | The receipts for a turn: which skills, playbooks, memory, and knowledge were pulled in, folded behind a "+N items" summary. |
+| Plan and todo cards | A proposed plan or checklist, rendered as a disclosure. |
+| Per-file diff | A unified diff with a changed-files index and line stats, drawn only from patches recorded in the step payload. |
+| Git chip | A compact `owner/name:branch` badge for the run's bound repositories. |
+| Queue and status pills | Pending input, background work, and sync state. |
+| Provider status banner | A slim notice when the selected engine is not in the ready set. |
+| Failure banner | A quiet, one-line thread-level error when a run fails to start or crashes. |
+| Artifact card | A published artifact, shown after the answer text. |
+
+Within a turn the order is deliberate: the work happens first, the answer comes
+after. Repeated tool calls fold together while preserving their identity, so a
+long run stays scannable.
+
+## The side panes
+
+The right side of the session hosts the run's environment. A surface chooser
+switches between them:
+
+<CardGroup cols={2}>
+  <Card title="Files" icon="folder-tree">
+    The project's file tree, read from the run's artifacts.
+  </Card>
+  <Card title="Editor" icon="file-pen">
+    Bounded workpiece editors for a document, spreadsheet, presentation, or PDF,
+    read-only for a produced artifact or live with save and export.
+  </Card>
+  <Card title="Terminal" icon="square-terminal">
+    Live terminal output from the run, with ANSI color.
+  </Card>
+  <Card title="Desktop" icon="monitor">
+    The sandbox desktop over noVNC, for runs that drive a GUI.
+  </Card>
+</CardGroup>
+
+Two rails sit alongside the panes:
+
+- **Artifacts rail.** A streaming list of files the run produces, with file-kind
+  badges, filterable to the current run.
+- **Agents rail.** Chips for nested subagent runs, with status and a stop control,
+  so a fan-out is navigable from the parent.
+
+## Live updates and recovery
+
+The session subscribes to a single thread-scoped SSE stream. On reconnect it
+receives a fresh durable snapshot rather than replaying from zero, so a flaky
+network resyncs cleanly. If the backend restarts under a live run, restart
+reconciliation re-probes the sandbox and streams the interim events back with a
+heartbeat. See [Events and streaming](/concepts/events-and-streaming) and
+[Sandboxes](/concepts/sandboxes-and-desktop#restart-reconciliation).
+
+:::note
+The timeline is virtualized and its updates are batched, so a run that emits
+thousands of steps stays responsive. Collapsed disclosures do not render their
+bodies until opened, keeping large tool payloads out of the DOM.
+:::

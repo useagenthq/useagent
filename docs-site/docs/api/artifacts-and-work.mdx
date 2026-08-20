@@ -1,0 +1,58 @@
+---
+title: Artifacts and work API
+description: Endpoints for artifacts and workpieces, uploads, automations, and secrets.
+sidebar:
+  label: Artifacts and work
+  order: 3
+---
+
+The surfaces that produce, attach, schedule, and secure a run's work. See
+[Artifacts](/product/artifacts), [Automations](/product/automations), and
+[Secrets](/product/secrets).
+
+## Artifacts
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| GET / POST | `/api/artifacts` | List and create artifacts. |
+| GET | `/api/artifacts/:id` | Fetch an artifact. |
+| GET | `/api/artifacts/:id/content` | Raw content. |
+| GET | `/api/artifacts/:id/preview` | A preview rendering. |
+| GET / PUT | `/api/artifacts/:id/workpiece` | Read or edit a workpiece. |
+| POST | `/api/artifacts/:id/workpiece/export` | Export a workpiece. |
+| GET | `/api/artifacts/:id/workpiece/pdf-pages` | PDF page data. |
+| GET | `/api/artifacts/:id/proposals` | Workpiece revision proposals. |
+| POST | `/api/artifacts/:id/proposals/:proposalId/accept` | Accept a proposal. |
+| POST | `/api/artifacts/:id/proposals/:proposalId/dismiss` | Dismiss a proposal. |
+| POST | `/api/artifacts/runs/:runId/archive` | Archive a run's artifacts. |
+
+## Uploads
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| POST | `/api/uploads` | Upload a file. |
+| GET | `/api/uploads/:id` | Upload metadata. |
+| GET | `/api/uploads/:id/content` | Upload content. |
+| DELETE | `/api/uploads/:id` | Remove an upload. |
+
+## Automations
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| GET / POST | `/api/automations` | List and create automations. |
+| PATCH / DELETE | `/api/automations/:id` | Edit or remove an automation. |
+| POST | `/api/automations/:id/run-now` | Fire an automation immediately. |
+| GET | `/api/automations/:id/history` | An automation's run history. |
+
+## Secrets
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| GET | `/api/secrets` | List secret names and metadata (never values). |
+| PUT | `/api/secrets/:name` | Set a secret (write-only). |
+| DELETE | `/api/secrets/:name` | Remove a secret. |
+
+:::note
+`GET /api/secrets` returns metadata only. There is no endpoint that returns a
+stored secret value; see [Secrets](/product/secrets).
+:::
