@@ -6,7 +6,7 @@ Skynet is a multi-package repository for the Loop agent platform. The repo has o
 
 | Path | What it owns |
 |---|---|
-| `frontend/` | Next.js UI. Chat, agent sessions, skills, playbooks, wiki, artifacts, secrets, review, automations, and settings. |
+| `frontend/` | Next.js UI. Chat, agent sessions, skills, playbooks, wiki, artifacts, secrets, learnings review, automations, and settings. |
 | `backend/` | Hono + Postgres control plane. Auth, org scoping, runs, sandboxes, engines, knowledge, memory, skills, automations, artifacts, uploads, and connectors. |
 | `packages/agent-client/` | Runtime-neutral client for thread events, SSE reconnect, reducers, selectors, and typed API helpers. |
 | `packages/agent-harness/` | Provider-neutral canonical event and control contract for engine adapters. |
@@ -22,9 +22,11 @@ Skynet is a multi-package repository for the Loop agent platform. The repo has o
 - `frontend/app/agent/new/page.tsx` is the task composer that starts agent runs.
 - `frontend/app/session/[id]/page.tsx` is the thread view for a live or settled run. The timeline renders the canonical event log through one vendored session grammar: work-entry tool groups with folds, reasoning disclosures, collapsible context-recall receipts, live todo and plan cards, per-file unified diffs with a changed-files index, git chips, queue pills, a quiet one-line failure banner, a message-scroller tick rail, and artifact cards after the answer text. Side panes host files, an editor, a terminal, and the noVNC desktop.
 - `frontend/app/lab/` is the component lab; `frontend/app/lab/session/` renders one synthetic session through the real timeline components so every event type can be reviewed on a single page.
-- Skills at `/skills` include one-click import from GitHub: the backend scans a repository for `SKILL.md` files over a server-side shallow clone and imports selected ones as versioned skills pinned to a commit.
-- Knowledge, wiki, memory hub, artifacts, secrets, review, automations, and settings all have real UI and backend paths.
-- Themes: light plus two dark themes, Midnight (the default, Tokyo Night derived) and Aura (violet), selected from a theme menu and applied wholesale through semantic design tokens.
+- Skills at `/skills` include one-click import from GitHub plus an optional hourly auto-resync that keeps the catalog in sync with the org's repositories: the backend scans a repository for `SKILL.md` files over a server-side shallow clone and imports selected ones as versioned skills pinned to a commit.
+- `frontend/app/learnings/page.tsx` is the human review queue for the self-improvement lane: knowledge drafts proposed from high-value runs (with the ordered, redacted procedure trace of what actually worked) and skill-revision proposals assembled from accepted drafts. Nothing is auto-published; an org admin accepts or dismisses each.
+- Knowledge, wiki, memory hub, artifacts, secrets, learnings, automations, and settings all have real UI and backend paths.
+- Themes: light plus three dark themes, Midnight (the default, Tokyo Night derived), Aura (violet), and Harbor (blue), selected from a theme menu and applied wholesale through semantic design tokens.
+- Slack is a first-class channel: an @mention or DM starts a run, replies thread under it, inbound file attachments ride the run, GitHub links in the message bind the run's repositories (validated against the same allowlist the web composer enforces), and answers, artifacts, and approval cards flow back. Ingress enters the same durable command lane as the web UI.
 - The backend exposes the API and orchestration layer at `:3201`.
 - The frontend runs at `:3400` and proxies browser `/api/*` requests to the backend. The one direct backend WebSocket ingress is the run-bound Codex relay capability path.
 
@@ -42,8 +44,8 @@ Skynet is a multi-package repository for the Loop agent platform. The repo has o
 | Native frame | The original engine event retained for fidelity and debugging when the canonical shape cannot express every provider detail yet. | Engine adapter and backend |
 | Engine | The coding agent runtime, such as Codex, Claude, or OpenCode. It decides what to do and emits native events. | Engine adapter |
 | Engine adapter | The translator between an engine's protocol and Skynet's thread, command, and event contracts. | Backend `src/engines/` |
-| T3 path | An opt-in orchestration route adapted from T3 Code patterns for authoritative history, approvals, questions, child agents, patches, todos, reasoning, and usage. It is an adapter path, not a second product UI. | Backend engine layer |
-| ACP | Agent Client Protocol, used by the legacy resident Codex and Claude route when T3 routing is not selected. It has fewer authoritative lifecycle surfaces than the T3 path. | Backend ACP adapter |
+| Runtime path | The primary orchestration route (backend `src/engines/runtime-*`) for authoritative history, approvals, questions, child agents, patches, todos, reasoning, and usage. It is an adapter path, not a second product UI. Named by function; the vendored protocol name appears only at true wire boundaries (the provider driver and frame parsers). | Backend engine layer |
+| ACP | Agent Client Protocol, used by the legacy resident Codex and Claude route when the runtime path is not selected. It has fewer authoritative lifecycle surfaces than the runtime path. | Backend ACP adapter |
 | Sandbox | The isolated Linux workstation where agent commands, repositories, browser automation, desktop apps, and recordings run. | Sandbox provider |
 | Sandbox provider | A vendor-specific implementation selected behind the provider-neutral sandbox contract. Daytona and Cube expose the same required process, filesystem, PTY, preview, and lifecycle boundary, then keep provider-specific behavior and tests for native capabilities. | Backend `src/sandboxes/` |
 | Warm pool | Prepared sandboxes kept ready so a new run avoids most cold-start work. | Backend sandbox pool |
@@ -51,13 +53,15 @@ Skynet is a multi-package repository for the Loop agent platform. The repo has o
 | Gateway | A backend trust boundary that performs privileged work for a sandbox without placing long-lived provider or database credentials inside it. | Backend gateway services |
 | Capability token | A short-lived signed grant bound to the organization, user, thread, run, engine, provider, scope, and expiry. | Backend gateway services |
 | Provider connection | A user-owned API key or managed account identity stored by the trusted backend. Metadata is visible to the UI; reusable secrets are write-only. | Provider connection service |
-| Codex subscription relay | A one-use, run-bound WebSocket capability. Codex app-server and ChatGPT OAuth stay on the trusted backend while only Codex exec-server runs in Cube or Daytona. | Provider connection and T3 engine layers |
+| Codex subscription relay | A one-use, run-bound WebSocket capability. Codex app-server and ChatGPT OAuth stay on the trusted backend while only Codex exec-server runs in Cube or Daytona. Proven end-to-end: subscription turns, multi-turn replies (the relay continues a bound thread when the driver restarts), and the run-bound tool surface all run live. | Provider connection and runtime engine layers |
 | MCP tool | A typed operation offered to an engine, such as searching knowledge, cloning a repository, controlling the desktop, or publishing an artifact. | Knowledge gateway |
-| Gateway tool families | The full in-run tool surface: knowledge search, memory remember and recall, skills list and activate, automations with an approval capability gating destructive operations, GitHub pull-request and issue reads bound to the run's repository, GCS listing, web search, desktop computer-use controls with screenshots, desktop recording that publishes a real MP4 artifact, guarded ephemeral login, and artifact publishing with absolute links. | Knowledge gateway |
+| Gateway tool families | The full in-run tool surface: knowledge search, memory remember and recall, skills list and activate, automations with an approval capability gating destructive operations, GitHub pull-request and issue reads bound to the run's repository, GCS listing, web search, desktop computer-use controls with screenshots, desktop recording that publishes a real MP4 artifact, guarded ephemeral login, and artifact publishing with absolute links. Every gated refusal names its remedy (the exact skill, env var, or human approval path) so an agent can self-correct rather than fabricate. | Knowledge gateway |
+| Approval lane | Human-in-the-loop authorization for destructive or outward-facing gated operations. An agent calls `approval_request`, a run-timeline card appears, an org member approves in the session view (or Slack), and the agent's `approval_poll` receives a one-shot, argument-bound capability exactly once. The capability can never be self-issued from inside a run. | Knowledge gateway and frontend |
+| Learning lane | The self-improvement loop. Every completed run recalls org memory at start and captures at finish (salience-gated, evidence-enriched with the ordered tool trace). High-value runs propose knowledge drafts; accepted drafts that cluster propose skill revisions whose procedure is assembled from the real traces. Nothing publishes without a human. | Learning service and `/learnings` |
 | Skill import | Scan a GitHub repository for `SKILL.md` files and import selected paths as versioned skills. Discovery runs over a server-side shallow clone with head resolution via `git ls-remote`, because the REST git-data surface is not dependable for org installations; imports are pinned to a commit and idempotent by source. | Skill catalog and GitHub service |
 | Restart reconciliation | When the backend restarts under a live run, the sandbox keeps executing; a background loop re-probes the session, streams the interim provider events into the timeline with a visible heartbeat, and adopts the real result or honestly fails at a bounded deadline. | Backend run recovery |
 | Connection reconcile | The durable provider-connection row heals from broker truth: a revoked row may only be reclaimed when the live account email differs from the revoked one, which proves a genuinely new login rather than a stale pre-logout snapshot. | Provider connection service |
-| Skill | Versioned, reusable instructions selected semantically and activated by exact id for the current task. | Skill catalog |
+| Skill | Versioned, reusable instructions selected semantically and activated by exact id for the current task. The turn-prefill catalog is re-ranked by prompt relevance on every unpinned turn, so the procedures that match the ask surface into the page the model sees rather than a fixed top-N by usage. | Skill catalog |
 | Playbook | A skill whose content describes a repeatable end-to-end operating procedure. | Skill catalog |
 | Knowledge | Organization-scoped source material the agent can search and read. It is reference data, not executable instructions. | Knowledge service |
 | Wiki | A published document generated from repository or organization knowledge and later retrievable by agents. | Wiki service |
@@ -141,21 +145,25 @@ Operational invariants: exactly one backend per database (a boot-time advisory l
 - Direct chat is implemented as a no-sandbox surface with read-only retrieval.
 - Agent runs are implemented as threaded sessions backed by sandboxes and streamed events; the canonical session grammar is the default rendering in the live thread view.
 - Runs survive backend restarts: recovery parks and re-probes in-flight sessions, streams recovered events live, and adopts the finished result instead of failing work that actually completed.
-- Production turn dispatch enters the provider registry first. Native OpenCode and selected T3 turns receive a concrete `ProviderDriver`; legacy ACP execution remains an explicit compatibility branch.
-- User API keys are resolved inside the signed provider gateway. Managed Codex subscription turns use a separate host-owned app-server relay and never copy OAuth state into T3 or a sandbox. Engine readiness is credential-mode-aware: a subscription-only Codex release must prove the connected account and native turn path, while API-key engines must prove their mapped gateway provider. Local protocol, isolation, and release-policy tests are green; hosted subscription execution remains a release-gated proof.
-- Skills and playbooks share one immutable substrate.
-- Wiki, artifacts, secrets, review, automations, uploads, and memory all have real UI and backend paths.
+- Production turn dispatch enters the provider registry first. Native OpenCode and selected runtime-path turns receive a concrete `ProviderDriver`; legacy ACP execution remains an explicit compatibility branch.
+- User API keys are resolved inside the signed provider gateway. Managed Codex subscription turns use a separate host-owned app-server relay and never copy OAuth state into the runtime environment or a sandbox. Hosted Codex subscription execution now runs end-to-end in production: first turns, multi-turn replies, in-run tools, and the guarded-release parity case all pass live. Engine readiness stays credential-mode-aware: a subscription-only Codex release proves the connected account and native turn path, while API-key engines prove their mapped gateway provider.
+- Skills and playbooks share one immutable substrate. GitHub is the source of the org's procedures: manual import plus an optional hourly resync keep the catalog current, and the prefill is relevance-ranked so the right procedure is discoverable per prompt.
+- The self-improvement lane is live: salience-gated capture with structured evidence and an ordered procedure trace, human-reviewed knowledge drafts, and skill-revision proposals assembled from accepted traces. Nothing publishes without a human.
+- The approval lane is live and guarded-release certified: destructive gated tools pause for a human approval card in the session (or Slack), then resume with a one-shot capability.
+- Slack is bidirectional: mention-to-run, threaded replies with multi-turn continuity, inbound attachments, allowlist-validated repo binding, artifact and approval delivery back to the thread, and a per-channel ingress allowlist for scoped bring-up.
+- Wiki, artifacts, secrets, learnings, automations, uploads, and memory all have real UI and backend paths.
 - Ambient management updates, including Automations and Provider Connections, use one authenticated org SSE stream backed by an in-process event bus. It is a live-only invalidation channel, not event replay or distributed pub/sub; subscribed views refetch their authoritative APIs after an event arrives.
 - The shared packages define the public thread-event and canonical-engine schemas; the backend event log and each live provider remain authoritative for persisted and native runtime state.
 
 ## Bounded Roadmap
 
-- Hosted Codex subscription execution is blocked on shipping a sandbox runtime template that contains the relay-aware driver; the backend contract, relay route, account lifecycle, and reconcile barrier are in place and the template rebuild is the remaining step.
-- The release parity canaries assert tool names that predate the current canonical step naming; several journeys succeed in substance (real artifacts, recordings, listings) while the assertions under-report, and the suite needs a remap before parity can be claimed honestly.
-- Internal canary and diagnostic runs should be tagged and filtered out of the user's thread list.
+- The feature-lockdown parity matrix (product features plus the reference-parity core) certifies 16 of 19 cases live on Codex through the guarded release; the remaining three are test-harness bugs (a canary-side file-ownership issue on inbound attachments, a seeded-record cleanup, and a memory-config path), not product regressions, and need harness fixes before a fully green gate.
+- Two deploy-lane hardening items are the next infrastructure work: a deploy mutex so a certification rollback can never clobber a concurrent deploy, and drain-aware restarts so a backend bounce never kills an in-flight run mid-stream.
+- Internal canary and diagnostic runs carry a first-class `origin` and are excluded from memory capture; filtering them out of the user's thread list is the remaining display step.
 - The sandbox provider interface does not expose explicit pause, checkpoint, or snapshot operations yet.
 - Turn-start latency work continues: warm-pool-claimable creation, parallelized post-sandbox preparation, and config-refresh caching are in; regional always-on topology and the remaining perceived-latency budgets are not.
 - Multi-replica realtime requires durable org-event fanout before adding backend replicas.
 - Artifact storage is still local to the backend node.
+- Lower-severity review follow-ups are logged: down-ranking untrusted imported skill metadata in the per-turn prefill, loopback-only hardening of the operator bridge, centralizing the protected-skill name set, and caching the per-org catalog to remove the per-turn full scan.
 
 If you need the implemented flow in detail, read [`backend/README.md`](backend/README.md) first and then [`frontend/README.md`](frontend/README.md).
