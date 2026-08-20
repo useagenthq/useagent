@@ -1,6 +1,6 @@
-import { eq } from "drizzle-orm";
+import { desc, eq } from "drizzle-orm";
 import { db } from "../db/client";
-import { runs, type RunStatus } from "../db/schema";
+import { artifacts, runs, type RunStatus } from "../db/schema";
 import { completeRun } from "./repo";
 import { resolveScopedMemory } from "../memory/scope";
 import { enqueueCapture } from "../memory/capture-outbox";
@@ -14,7 +14,7 @@ import {
   parseSlackAutomationTarget,
   slackChannelAllowed,
 } from "../slack/automation";
-import { enqueuePostMessageTx, kickSlackOutbox } from "../slack/outbox";
+import { enqueuePostMessageTx, enqueueUploadFileTx, kickSlackOutbox } from "../slack/outbox";
 import { slackConfig } from "../env";
 import { findScheduleForRun } from "../schedules/repo";
 import { publishRunLifecycleChange } from "./org-signals";
@@ -113,6 +113,40 @@ export async function finalizeRun(
         text: composeSlackReplyText(status, summary),
         threadTs: slack.threadTs,
       });
+
+      // Artifact share-back: a Slack-asked run delivers its FILES to the
+      // thread, not just prose (the reply text alone strands screenshots and
+      // decks in the web app). Newest-first, bounded (5 files, 20MB each -
+      // the inbound caps mirrored outward); enqueued in THIS transaction,
+      // after the reply row so the summary posts first. Idempotent per
+      // (run, artifact), so re-finalizing never re-uploads.
+      if (status === "completed") {
+        const SHARE_LIMIT = 5;
+        const SHARE_MAX_BYTES = 20 * 1024 * 1024;
+        const runArtifacts = await tx
+          .select({
+            id: artifacts.id,
+            name: artifacts.name,
+            sizeBytes: artifacts.sizeBytes,
+          })
+          .from(artifacts)
+          .where(eq(artifacts.runId, runId))
+          .orderBy(desc(artifacts.createdAt))
+          .limit(SHARE_LIMIT);
+        for (const artifact of runArtifacts) {
+          if (artifact.sizeBytes > SHARE_MAX_BYTES) continue;
+          const created = await enqueueUploadFileTx(tx, {
+            idempotencyKey: `slack-artifact:${runId}:${artifact.id}`,
+            channel: slack.channel,
+            threadTs: slack.threadTs,
+            filename: artifact.name,
+            title: artifact.name,
+            artifactId: artifact.id,
+            size: artifact.sizeBytes,
+          });
+          kickSlack = kickSlack || created;
+        }
+      }
     }
 
     // Automation delivery (delivery.slack) — a run fired by an automation whose

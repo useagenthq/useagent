@@ -13,7 +13,9 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { createHmac } from "node:crypto";
 import { eq } from "drizzle-orm";
 import { db } from "../src/db/client";
-import { userUploads } from "../src/db/schema";
+import { artifacts, userUploads } from "../src/db/schema";
+import { artifactStorage } from "../src/artifacts/storage";
+import { finalizeRun } from "../src/runs/finalize";
 import { DEV_ORG_ID, DEV_USER_ID } from "../src/seed";
 import { setSlackClientForTest } from "../src/slack";
 import { setInboundFileDownloaderForTest } from "../src/slack/inbound-files";
@@ -58,8 +60,9 @@ interface Recorded {
   reactions: Array<{ channel: string; timestamp: string; name: string }>;
   messages: Array<{ channel: string; text: string; threadTs?: string }>;
   statuses: Array<{ channel: string; threadTs: string; status: string }>;
+  uploads: Array<{ channel: string; filename: string; threadTs?: string; bytes: Buffer }>;
 }
-const rec: Recorded = { reactions: [], messages: [], statuses: [] };
+const rec: Recorded = { reactions: [], messages: [], statuses: [], uploads: [] };
 /** When true the mock rejects setAssistantStatus — the non-assistant fallback case. */
 let statusFails = false;
 
@@ -85,7 +88,10 @@ beforeAll(async () => {
       if (statusFails) throw new Error("invalid_thread (not an assistant container)");
       rec.statuses.push(s);
     },
-    uploadFile: async () => ({ ok: true }),
+    uploadFile: async (u) => {
+      rec.uploads.push(u);
+      return { ok: true };
+    },
   });
 });
 
@@ -265,6 +271,51 @@ describe("slack event → run", () => {
     );
     expect(msg.text).toContain(root.engine);
     expect(await findRunByPrompt(`continue ${marker}`)).toBeNull();
+  });
+
+  test("a completed slack run shares its artifacts back into the thread", async () => {
+    const marker = uid("share");
+    const channel = `C${uid("ch")}`;
+    const ts = `${uid("ts")}.1`;
+    await postSlack(
+      eventCallback({
+        type: "app_mention",
+        channel,
+        user: "U-HUMAN",
+        text: `<@${BOT}> build ${marker}`,
+        ts,
+      }),
+    );
+    const run = await waitFor(async () => findRunByPrompt(`build ${marker}`));
+
+    // Publish an artifact on the run BEFORE it settles is racy in this suite
+    // (the mock run settles fast), so store bytes + row now and re-finalize:
+    // finalizeRun is idempotent and the share enqueue is keyed per (run,
+    // artifact), so the replay enqueues exactly the new upload.
+    await waitFor(async () => ((await json<any>(`/api/runs/${run.id}`)).body.status !== "running" ? true : null));
+    const storageKey = "c".repeat(64); // content-addressed: keys are sha256 hex
+    await artifactStorage().put(storageKey, Buffer.from("png-bytes"));
+    await db.insert(artifacts).values({
+      orgId: run.org_id,
+      runId: run.id,
+      threadId: run.thread_id,
+      sourcePath: "/work/shot.png",
+      name: "shot.png",
+      contentType: "image/png",
+      sizeBytes: 9,
+      sha256: "b".repeat(64),
+      storageKey,
+    });
+    // Re-finalize as COMPLETED (shares fire on completion only; the
+    // credential-less test run settles failed). finalizeRun is idempotent and
+    // the replay enqueues exactly the new artifact upload.
+    await finalizeRun(run.id, "completed", "All done, screenshot attached.", 1);
+
+    const upload = await waitFor(async () =>
+      rec.uploads.find((u) => u.channel === channel && u.filename === "shot.png") ?? null,
+    );
+    expect(upload.threadTs).toBe(ts);
+    expect(Buffer.from(upload.bytes).toString()).toBe("png-bytes");
   });
 
   test("the channel allowlist drops events from unlisted channels and admits listed ones", async () => {
