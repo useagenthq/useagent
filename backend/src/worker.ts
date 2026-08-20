@@ -15,6 +15,7 @@ import type { EngineId, RunStatus, StepKind } from "./db/schema";
 import { resolveProviderRegistration, runProviderTurn } from "./engines";
 import { engineModelReadyForDispatch } from "./runs/engine-readiness";
 import type { EmitStep, EngineRunContext, RunInputFile } from "./engines/types";
+import { classifyTurnFailure } from "./engines/turn-failure-classification";
 import { recallScopedMemory } from "./memory/team-memory";
 import { resolveScopedMemory } from "./memory/scope";
 import { recordContextRetrieval } from "./memory/retrieval-ledger";
@@ -886,6 +887,12 @@ async function runEngine(
     const cancelledReason = wasCancelled();
     const cancelled = cancelledReason !== null;
     const timedOut = signal.aborted && !cancelled;
+    // Honest classification: a dropped provider stream (backend restarted under
+    // a live turn / stream dropped) is TRANSIENT and resumable, not a provider
+    // error. Cancellation + timeout dominate; only the remaining engine errors
+    // are classified. See src/engines/turn-failure-classification.ts.
+    const failure =
+      !cancelled && !timedOut ? classifyTurnFailure(err) : null;
     if (!cancelled) console.error(`[worker] engine ${engineId} run ${runId} failed:`, err);
     // Terminal done step so the trace shows why it stopped.
     await emit({
@@ -894,18 +901,19 @@ async function runEngine(
         ? cancelledReason
         : timedOut
           ? `Timed out after ${ADAPTER_TIMEOUT_MS / 1000}s`
-          : "Engine error",
+          : failure?.kind === "transient"
+            ? "Interrupted (resumable)"
+            : "Engine error",
       chip: null,
     }).catch(() => {});
     // Surface the REAL failure reason (truncated) — a bare "engine error"
-    // summary tells the user nothing actionable (battle-test T6 finding).
+    // summary tells the user nothing actionable (battle-test T6 finding). A
+    // transient stream drop reports as resumable rather than an engine error.
     const reason = cancelled
       ? cancelledReason
       : timedOut
         ? `timed out after ${ADAPTER_TIMEOUT_MS / 1000}s`
-        : err instanceof Error && err.message
-          ? `error: ${err.message.replace(/\s+/g, " ").slice(0, 180)}`
-          : "engine error";
+        : classifyTurnFailure(err).summary;
     await finalizeRun(runId, "failed", reason, Date.now() - startedAt);
     bus.emit(channel(runId), { type: "end", status: "failed" } satisfies BusEvent);
   } finally {
