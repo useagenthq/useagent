@@ -48,7 +48,10 @@ export function createSecretRedactor(values: readonly string[]): SecretRedactor 
     if (Array.isArray(value)) return value.map(visit);
     if (value && typeof value === "object") {
       return Object.fromEntries(
-        Object.entries(value as Record<string, unknown>).map(([key, entry]) => [key, visit(entry)]),
+        Object.entries(value as Record<string, unknown>).map(([key, entry]) => [
+          text(key),
+          visit(entry),
+        ]),
       );
     }
     return value;
