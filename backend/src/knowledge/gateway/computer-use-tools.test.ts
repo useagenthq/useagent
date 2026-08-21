@@ -1,8 +1,11 @@
 import { afterEach, describe, expect, test } from "bun:test";
+import type { ArtifactDescriptor } from "../../artifacts/repo";
+import { setSandboxArtifactPublisherForTest } from "./artifact-tools";
 import {
   buildCubeSequenceCommand,
   COMPUTER_USE_TOOL_NAMES,
   COMPUTER_USE_TOOLS,
+  type ComputerToolContent,
   executeComputerUseTool,
   screenshotArtifactHandoff,
   setComputerUseServiceForTest,
@@ -81,7 +84,32 @@ function testService(calls: string[]) {
   };
 }
 
-afterEach(() => setComputerUseServiceForTest(null));
+afterEach(() => {
+  setComputerUseServiceForTest(null);
+  setSandboxArtifactPublisherForTest(null);
+});
+
+const screenshotArtifact: ArtifactDescriptor = {
+  id: "artifact-proof-1",
+  run_id: "run-1",
+  thread_id: "thread-1",
+  name: "proof.png",
+  source_path: "/root/work/screenshots/proof.png",
+  content_type: "image/png",
+  size_bytes: 1234,
+  sha256: "abc123",
+  created_at: "2026-08-21T00:00:00.000Z",
+  preview_url: "/api/artifacts/artifact-proof-1/content",
+  download_url: "/api/artifacts/artifact-proof-1/content?download=1",
+  preview_pdf_url: null,
+  workpiece: null,
+};
+
+function textAt(content: readonly ComputerToolContent[], index: number): string {
+  const item = content[index];
+  if (item?.type !== "text") throw new Error(`content[${index}] is not text`);
+  return item.text;
+}
 
 describe("computer-use gateway tools", () => {
   test("gives every harness the exact secure handoff for requested screenshot proof", () => {
@@ -182,6 +210,74 @@ describe("computer-use gateway tools", () => {
       action_count: 4,
       executed_actions: ["click", "type", "key", "wait"],
     });
+  });
+
+  test("can atomically publish an explicitly requested proof screenshot from computer_sequence", async () => {
+    const calls: string[] = [];
+    const publishInputs: unknown[] = [];
+    setComputerUseServiceForTest(testService(calls));
+    setSandboxArtifactPublisherForTest(async (input) => {
+      publishInputs.push(input);
+      return { artifact: screenshotArtifact, created: true };
+    });
+
+    const response = await executeComputerUseTool(claims, "computer_sequence", {
+      actions: [{ action: "wait", ms: 0 }],
+      screenshot: true,
+      publish_screenshot: true,
+      purpose: "user_requested_proof",
+    });
+
+    expect(response.isError).toBeUndefined();
+    expect(calls).toEqual(["sequence:wait:true"]);
+    expect(publishInputs).toEqual([{
+      orgId: "org-1",
+      userId: "user-1",
+      runId: "run-1",
+      threadId: "thread-1",
+      path: "/root/work/screenshots/proof.png",
+    }]);
+    expect(textAt(response.content, 0)).toContain("Computer sequence completed. Executed actions: wait.");
+    expect(textAt(response.content, 0)).toContain("Published proof.png (1234 bytes) as artifact artifact-proof-1.");
+    expect(response.content[1]).toEqual({ type: "image", data: "cG5n", mimeType: "image/png" });
+    expect(response.structuredContent).toMatchObject({
+      path: "/root/work/screenshots/proof.png",
+      action: "computer_sequence",
+      artifact: {
+        id: "artifact-proof-1",
+        preview_url: "/api/artifacts/artifact-proof-1/content",
+      },
+      proof_published: true,
+    });
+  });
+
+  test("fails closed when proof publication is requested without an explicit proof screenshot", async () => {
+    const calls: string[] = [];
+    const publishInputs: unknown[] = [];
+    setComputerUseServiceForTest(testService(calls));
+    setSandboxArtifactPublisherForTest(async (input) => {
+      publishInputs.push(input);
+      return { artifact: screenshotArtifact, created: true };
+    });
+
+    const missingScreenshot = await executeComputerUseTool(claims, "computer_sequence", {
+      actions: [{ action: "wait", ms: 0 }],
+      publish_screenshot: true,
+      purpose: "user_requested_proof",
+    });
+    const wrongPurpose = await executeComputerUseTool(claims, "computer_sequence", {
+      actions: [{ action: "wait", ms: 0 }],
+      screenshot: true,
+      publish_screenshot: true,
+      purpose: "deliverable",
+    });
+
+    expect(missingScreenshot).toMatchObject({ isError: true });
+    expect(textAt(missingScreenshot.content, 0)).toBe("publish_screenshot requires screenshot=true");
+    expect(wrongPurpose).toMatchObject({ isError: true });
+    expect(textAt(wrongPurpose.content, 0)).toBe("publish_screenshot requires purpose=user_requested_proof");
+    expect(calls).toEqual([]);
+    expect(publishInputs).toEqual([]);
   });
 
   test("rejects invalid action sequences before touching the sandbox", async () => {

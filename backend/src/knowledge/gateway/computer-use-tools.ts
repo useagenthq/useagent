@@ -5,6 +5,7 @@ import {
   sandboxProviderApiKey,
   type SandboxHandle,
 } from "../../sandboxes/provider";
+import { executeArtifactTool, type ToolResult } from "./artifact-tools";
 import type { ToolTokenClaims } from "./token";
 
 export type ComputerToolContent =
@@ -54,6 +55,7 @@ const MODIFIERS = new Set(["ctrl", "alt", "shift", "cmd"]);
 const MAX_SEQUENCE_ACTIONS = 8;
 const MAX_SEQUENCE_TEXT_LENGTH = 2_000;
 const MAX_SEQUENCE_WAIT_MS = 5_000;
+const USER_REQUESTED_PROOF_PURPOSE = "user_requested_proof";
 
 function result(text: string, structuredContent?: Record<string, unknown>): ComputerToolResult {
   return {
@@ -102,6 +104,35 @@ function withSequenceReceipt(
       action_count: actions.length,
       executed_actions: actionNames,
     },
+  };
+}
+
+function withPublishedProof(
+  captured: ComputerToolResult,
+  actions: readonly ComputerSequenceAction[],
+  published: ToolResult,
+): ComputerToolResult {
+  const sequenced = withSequenceReceipt(captured, actions);
+  const proofText = published.content.map(({ text }) => text).join("\n");
+  const textIndex = sequenced.content.findIndex(({ type }) => type === "text");
+  const existingText = textIndex >= 0 && sequenced.content[textIndex]!.type === "text"
+    ? sequenced.content[textIndex]!.text
+    : "";
+  const content: ComputerToolContent[] = [
+    {
+      type: "text",
+      text: `${existingText}\n${proofText}`.trim(),
+    },
+    ...sequenced.content.filter((_, index) => index !== textIndex),
+  ];
+  return {
+    content,
+    structuredContent: {
+      ...(sequenced.structuredContent ?? {}),
+      ...(published.structuredContent ?? {}),
+      proof_published: published.isError !== true,
+    },
+    ...(published.isError ? { isError: true } : {}),
   };
 }
 
@@ -262,6 +293,23 @@ function sequenceActions(value: unknown): ComputerSequenceAction[] {
     throw new Error(`actions must contain 1 to ${MAX_SEQUENCE_ACTIONS} items`);
   }
   return value.map(parseSequenceAction);
+}
+
+function sequenceRequestedProof(args: Record<string, unknown>): boolean {
+  if (args.publish_screenshot !== true) return false;
+  if (args.screenshot !== true) throw new Error("publish_screenshot requires screenshot=true");
+  if (args.purpose !== USER_REQUESTED_PROOF_PURPOSE) {
+    throw new Error("publish_screenshot requires purpose=user_requested_proof");
+  }
+  return true;
+}
+
+function capturedScreenshotPath(captured: ComputerToolResult): string {
+  const path = captured.structuredContent?.path;
+  if (typeof path !== "string" || path.trim().length === 0) {
+    throw new Error("publish_screenshot requires a captured screenshot path");
+  }
+  return path.trim();
 }
 
 async function computerSandbox(claims: ToolTokenClaims): Promise<SandboxHandle> {
@@ -533,6 +581,16 @@ export const COMPUTER_USE_TOOLS = [
           },
         },
         screenshot: { type: "boolean" },
+        publish_screenshot: {
+          type: "boolean",
+          description:
+            "Only set true when the user explicitly requested durable desktop proof. Requires screenshot=true and purpose=user_requested_proof; publishes only the post-sequence screenshot.",
+        },
+        purpose: {
+          type: "string",
+          enum: [USER_REQUESTED_PROOF_PURPOSE],
+          description: "Required as user_requested_proof when publish_screenshot=true.",
+        },
       },
       required: ["actions"],
       additionalProperties: false,
@@ -565,7 +623,16 @@ export async function executeComputerUseTool(
     if (name === "computer_screenshot") return await service.screenshot(claims);
     if (name === "computer_sequence") {
       const actions = sequenceActions(args.actions);
+      const publishProof = sequenceRequestedProof(args);
       const captured = await service.sequence(claims, actions, args.screenshot === true);
+      if (publishProof) {
+        if (!captured) throw new Error("publish_screenshot requires a captured screenshot path");
+        const published = await executeArtifactTool(claims, "artifact_publish", {
+          path: capturedScreenshotPath(captured),
+          purpose: USER_REQUESTED_PROOF_PURPOSE,
+        });
+        return withPublishedProof(captured, actions, published);
+      }
       if (captured) return withSequenceReceipt(captured, actions);
       const actionNames = sequenceActionNames(actions);
       return result(sequenceReceipt(actionNames), {
