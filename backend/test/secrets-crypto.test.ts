@@ -2,7 +2,9 @@ import { describe, expect, test } from "bun:test";
 import {
   isValidSecretName,
   openSecret,
+  rewrapSecret,
   sealSecret,
+  secretNeedsRewrap,
   type SealedSecret,
 } from "../src/secrets/crypto";
 
@@ -12,9 +14,11 @@ import {
 
 /** Flip the first byte of a base64 field so it is guaranteed different. */
 function flipByte(b64: string): string {
-  const buf = Buffer.from(b64, "base64");
+  const prefix = b64.startsWith("v2:") ? b64.slice(0, b64.indexOf(":", 3) + 1) : "";
+  const payload = prefix ? b64.slice(prefix.length) : b64;
+  const buf = Buffer.from(payload, "base64");
   buf[0] = buf[0]! ^ 0xff;
-  return buf.toString("base64");
+  return `${prefix}${buf.toString("base64")}`;
 }
 
 describe("secrets crypto — AES-256-GCM round-trip", () => {
@@ -56,6 +60,54 @@ describe("secrets crypto — tamper fails closed", () => {
 
   test("garbage fields throw rather than decode to something", () => {
     expect(() => openSecret({ ciphertext: "!!!", iv: "!!!", tag: "!!!" })).toThrow();
+  });
+});
+
+describe("secrets crypto — dedicated key rotation", () => {
+  test("previous keys keep old rows readable until they are rewrapped", () => {
+    const previousCurrent = process.env.SECRETS_ENCRYPTION_KEY;
+    const previousKeyring = process.env.SECRETS_ENCRYPTION_PREVIOUS_KEYS;
+    const oldKey = "old-encryption-root-0123456789abcdef0123456789";
+    const newKey = "new-encryption-root-0123456789abcdef0123456789";
+    try {
+      process.env.SECRETS_ENCRYPTION_KEY = oldKey;
+      delete process.env.SECRETS_ENCRYPTION_PREVIOUS_KEYS;
+      const oldSealed = sealSecret("rotation-proof");
+
+      process.env.SECRETS_ENCRYPTION_KEY = newKey;
+      process.env.SECRETS_ENCRYPTION_PREVIOUS_KEYS = JSON.stringify([oldKey]);
+      expect(openSecret(oldSealed)).toBe("rotation-proof");
+      expect(secretNeedsRewrap(oldSealed)).toBe(true);
+
+      const rewrapped = rewrapSecret(oldSealed);
+      expect(secretNeedsRewrap(rewrapped)).toBe(false);
+      delete process.env.SECRETS_ENCRYPTION_PREVIOUS_KEYS;
+      expect(openSecret(rewrapped)).toBe("rotation-proof");
+      expect(() => openSecret(oldSealed)).toThrow(/no configured secret encryption key matches/);
+    } finally {
+      if (previousCurrent === undefined) delete process.env.SECRETS_ENCRYPTION_KEY;
+      else process.env.SECRETS_ENCRYPTION_KEY = previousCurrent;
+      if (previousKeyring === undefined) delete process.env.SECRETS_ENCRYPTION_PREVIOUS_KEYS;
+      else process.env.SECRETS_ENCRYPTION_PREVIOUS_KEYS = previousKeyring;
+    }
+  });
+
+  test("unversioned historical ciphertext remains readable and requires rewrap", () => {
+    const current = sealSecret("legacy-row");
+    const legacy = { ...current, ciphertext: current.ciphertext.split(":", 3)[2]! };
+    expect(openSecret(legacy)).toBe("legacy-row");
+    expect(secretNeedsRewrap(legacy)).toBe(true);
+  });
+
+  test("rejects malformed previous-key configuration", () => {
+    const previous = process.env.SECRETS_ENCRYPTION_PREVIOUS_KEYS;
+    try {
+      process.env.SECRETS_ENCRYPTION_PREVIOUS_KEYS = "not-json";
+      expect(() => openSecret(sealSecret("x"))).toThrow(/must be a JSON string array/);
+    } finally {
+      if (previous === undefined) delete process.env.SECRETS_ENCRYPTION_PREVIOUS_KEYS;
+      else process.env.SECRETS_ENCRYPTION_PREVIOUS_KEYS = previous;
+    }
   });
 });
 
