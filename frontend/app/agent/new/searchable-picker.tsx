@@ -34,6 +34,8 @@ export interface SearchablePickerProps {
   groups: PickerGroup[];
   value: string;
   onChange: (value: string) => void;
+  /** Override the trigger styling (e.g. render as a full-width menu row). */
+  triggerClassName?: string;
 }
 
 function OptionMark({ option }: { option: PickerOption }) {
@@ -60,6 +62,7 @@ export function SearchablePicker({
   groups,
   value,
   onChange,
+  triggerClassName,
 }: SearchablePickerProps) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -104,7 +107,10 @@ export function SearchablePicker({
         <button
           type="button"
           aria-label={ariaLabel}
-          className="inline-flex max-w-full items-center gap-1.5 rounded-lg px-2 py-1.5 text-label-sm text-text-strong-950 outline-none transition-colors hover:bg-bg-weak-50 focus-visible:ring-2 focus-visible:ring-stroke-strong-950"
+          className={cnExt(
+            "inline-flex max-w-full items-center gap-1.5 rounded-lg px-2 py-1.5 text-label-sm text-text-strong-950 outline-none transition-colors hover:bg-bg-weak-50 focus-visible:ring-2 focus-visible:ring-stroke-strong-950",
+            triggerClassName,
+          )}
         >
           {selected ? <OptionMark option={selected} /> : null}
           <span className={cnExt("truncate", selected?.mono && "font-mono text-paragraph-xs")}>
@@ -120,7 +126,7 @@ export function SearchablePicker({
         sideOffset={6}
         className="w-[264px] overflow-hidden rounded-2xl bg-bg-white-0 p-2.5 shadow-regular-md ring-1 ring-inset ring-stroke-soft-200"
       >
-        <div className="-mx-2.5 -mt-2.5 mb-1 flex items-center gap-2 border-b border-stroke-soft-200 px-3 pb-2 pt-1">
+        <div className="-mx-2.5 -mt-1 mb-1 flex items-center gap-2 border-b border-stroke-soft-200 px-3 pb-2.5 pt-1">
           <RiSearchLine className="size-4 shrink-0 text-text-soft-400" aria-hidden />
           <input
             value={query}
