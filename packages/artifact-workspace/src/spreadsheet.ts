@@ -119,18 +119,20 @@ function normalizeCellFormat(value: unknown): SheetCellFormat | undefined {
 function normalizeCell(value: unknown): SheetCell | null {
   const item = record(value);
   if (!item) return null;
+  let f: string | undefined;
+  if (item.f !== undefined && item.f !== null) {
+    if (!safeText(item.f) || !item.f.startsWith("=")) return null;
+    f = item.f;
+  }
   let v: string | number;
   if (typeof item.v === "number" && Number.isFinite(item.v)) {
     v = item.v;
   } else if (safeText(item.v)) {
     v = item.v;
+  } else if (f !== undefined) {
+    v = "";
   } else {
     return null;
-  }
-  let f: string | undefined;
-  if (item.f !== undefined && item.f !== null) {
-    if (!safeText(item.f) || !item.f.startsWith("=")) return null;
-    f = item.f;
   }
   const fmt = normalizeCellFormat(item.fmt);
   return { v, ...(f !== undefined ? { f } : {}), ...(fmt ? { fmt } : {}) };

@@ -102,6 +102,22 @@ describe("coerceSpreadsheetState (upgrade on load)", () => {
     expect(coerceWorkbook(workbook)).toEqual(workbook);
   });
 
+  test("normalizes formula-only cells with an empty cached value", () => {
+    const workbook = coerceWorkbook({
+      schemaVersion: 2,
+      activeSheetId: "sheet-1",
+      sheets: [{
+        id: "sheet-1",
+        name: "Sheet 1",
+        rowCount: 3,
+        colCount: 1,
+        cells: { A1: { v: 2 }, A2: { v: 3 }, A3: { f: "=SUM(A1:A2)" } },
+      }],
+    });
+
+    expect(workbook?.sheets[0]?.cells.A3).toEqual({ v: "", f: "=SUM(A1:A2)" });
+  });
+
   test("fails closed on unsafe or malformed input", () => {
     expect(coerceSpreadsheetState(42)).toBeNull();
     expect(coerceSpreadsheetState({ csv: 42 })).toBeNull();
