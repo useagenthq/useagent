@@ -15,10 +15,10 @@ import { basename, parseJsonLine, truncate } from "./util";
 import { allowPermissionBypass } from "./permission-bypass";
 import {
   composeSecretEnv,
-  materializeSecretFiles,
+  materializeSecretInjection,
   PROVIDER_SECRET_NAMES,
   recordSecretsInjected,
-  SECRET_SOURCE_COMMAND,
+  sandboxSecretSourceCommand,
 } from "../secrets/inject";
 import { materializeRunInputs } from "../uploads/materialize";
 import { checkoutPullRequestResources, prepareRepos } from "./repo-prep";
@@ -476,6 +476,7 @@ function makeSandboxAdapter(spec: SandboxEngineSpec): EngineAdapter {
       const secretInjection = await composeSecretEnv(ctx, {
         excludeNames: PROVIDER_SECRET_NAMES,
       });
+      const secretSourceCommand = sandboxSecretSourceCommand(secretInjection.mode);
       const redact = createSecretRedactor(secretInjection.redactionValues);
       ctx = withSandboxOutputRedaction(ctx, redact);
       // Provider authentication is brokered by the trusted gateway. No raw host
@@ -623,9 +624,9 @@ function makeSandboxAdapter(spec: SandboxEngineSpec): EngineAdapter {
         const rawModel = ctx.model?.trim() ?? "";
         const model = SAFE_ARG.test(rawModel) ? rawModel : DEFAULT_MODEL;
         // Materialize any file-kind org secrets (0600) before the agent turn.
-        await materializeSecretFiles(
+        await materializeSecretInjection(
           (cmd) => box.process.executeCommand(cmd, undefined, undefined, 30),
-          secretInjection.files,
+          secretInjection,
         );
         await materializeRunInputs(box, ctx.inputFiles);
         await recordSecretsInjected(ctx, secretInjection);
@@ -652,7 +653,7 @@ function makeSandboxAdapter(spec: SandboxEngineSpec): EngineAdapter {
         ): Promise<{ exitCode: number; state: ParseState; produced: boolean }> => {
           const command = spec.command({ model, resumeId: resume });
           const launch = await box.process.executeCommand(
-            `rm -f ${OUT_PATH} ${EXIT_PATH} ${PID_PATH}; ${SECRET_SOURCE_COMMAND} || exit 1; export PATH=$HOME/.local/bin:$PATH; cd ~/work && ` +
+            `rm -f ${OUT_PATH} ${EXIT_PATH} ${PID_PATH}; ${secretSourceCommand} || exit 1; export PATH=$HOME/.local/bin:$PATH; cd ~/work && ` +
               `nohup sh -c '${command} < ${PROMPT_PATH}; echo $? > ${EXIT_PATH}' ` +
               `> ${OUT_PATH} 2>&1 & echo $! > ${PID_PATH}`,
             undefined,

@@ -30,10 +30,10 @@ import {
 } from "../knowledge/gateway/descriptor";
 import {
   composeSecretEnv,
-  materializeSecretFiles,
+  materializeSecretInjection,
   PROVIDER_SECRET_NAMES,
   recordSecretsInjected,
-  SECRET_SOURCE_COMMAND,
+  sandboxSecretSourceCommand,
 } from "../secrets/inject";
 import { materializeRunInputs } from "../uploads/materialize";
 import { createSecretRedactor } from "../secrets/redact";
@@ -593,6 +593,7 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
       const secretInjection = await composeSecretEnv(ctx, {
         excludeNames: PROVIDER_SECRET_NAMES,
       });
+      const secretSourceCommand = sandboxSecretSourceCommand(secretInjection.mode);
       const redact = createSecretRedactor(secretInjection.redactionValues);
       // Provider credentials never enter the sandbox. The dedicated gateway
       // resolves the org credential server-side from the exact running run.
@@ -780,9 +781,9 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
             await cfg.prepare?.(box, ctx);
           },
           () =>
-            materializeSecretFiles(
+            materializeSecretInjection(
               (cmd) => box.process.executeCommand(cmd, undefined, undefined, 30),
-              secretInjection.files,
+              secretInjection,
             ),
           () => materializeRunInputs(box, ctx.inputFiles),
         ]);
@@ -844,7 +845,7 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
             // uses it to seed auth (`codex login --with-api-key` -> ~/.codex/auth.json):
             // codex-acp requires the logged-in state, not just the OPENAI_API_KEY env.
             (cfg.preRelay ?? "") +
-            `${SECRET_SOURCE_COMMAND} || { echo SECRET-ENV-FAIL; exit 1; }; ` +
+            `${secretSourceCommand} || { echo SECRET-ENV-FAIL; exit 1; }; ` +
             `${agentEnvExports}cd ~/work || exit 1; ` +
             `nohup node ~/acp-relay.mjs ${cfg.port} ${cfg.agentCmd.join(" ")} > /tmp/acp-relay-${cfg.id}.log 2>&1 & ` +
             `relay_pid=$!; echo "$relay_pid" > ${relayPidPath}; ` +

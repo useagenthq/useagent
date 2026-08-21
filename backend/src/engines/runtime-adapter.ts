@@ -29,7 +29,7 @@ import {
 } from "./runtime-orchestration";
 import {
   composeSecretEnv,
-  materializeSecretFiles,
+  materializeSecretInjection,
   PROVIDER_SECRET_NAMES,
   recordSecretsInjected,
 } from "../secrets/inject";
@@ -349,13 +349,13 @@ export function makeRuntimeAdapter(engine: RuntimeEngineId, driver: ProviderDriv
         const workdir = await prepareStage("workspace_root", () =>
           resolveWorkspaceRoot(ctx, sandbox),
         );
-        // Secrets land BEFORE the parallel stages: provider_bridge may launch
-        // (or restart) the T3 environment, whose boot sources the secrets
-        // dotenv. Racing them left cold launches without org secrets in env.
+        // Compatibility-mode secrets land BEFORE the parallel stages:
+        // provider_bridge may launch (or restart) the T3 environment, whose tool
+        // shells source the dotenv. Gateway-only mode is a no-op here.
         await prepareStage("secrets", () =>
-          materializeSecretFiles(
+          materializeSecretInjection(
             (command) => sandbox.process.executeCommand(command, undefined, undefined, 30),
-            secretInjection.files,
+            secretInjection,
           ),
         );
         await Promise.all([
