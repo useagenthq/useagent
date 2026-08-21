@@ -34,7 +34,7 @@ export function QuestionCard({
           <RiQuestionLine className="size-4" aria-hidden />
         </span>
         <div>
-          <p className="text-label-sm text-text-strong-950">useAgent needs your input</p>
+          <p className="text-label-sm text-text-strong-950">Agent needs your input</p>
           <p className="text-paragraph-xs text-text-soft-400">
             Your answer continues this turn immediately.
           </p>
