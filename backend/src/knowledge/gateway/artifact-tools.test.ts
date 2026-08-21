@@ -100,6 +100,7 @@ describe("artifact gateway contract", () => {
     });
     expect(theme.properties!.background!.anyOf).toEqual(
       expect.arrayContaining([
+        expect.objectContaining({ type: "string", pattern: expect.stringContaining("#") }),
         expect.objectContaining({ required: ["type", "color"] }),
         expect.objectContaining({ required: ["type", "from", "to"] }),
         expect.objectContaining({ required: ["type", "url"] }),
@@ -190,6 +191,12 @@ describe("artifact gateway contract", () => {
           body: "#d0d5dd",
           accent: "#ffcc66",
         },
+      },
+    })).toBe(true);
+    expect(isArtifactWorkpieceState("presentation", {
+      deck: {
+        ...validState.deck,
+        theme: { ...validState.deck.theme, background: "not-a-color" },
       },
     })).toBe(false);
   });

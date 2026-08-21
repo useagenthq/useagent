@@ -34,6 +34,14 @@ export function allowDevOrg(): boolean {
   return devModeEnabled();
 }
 
+/** Self-service account creation is a development convenience only. Production
+ * users must arrive through an existing account or an administrator-managed
+ * invitation; there is deliberately no environment override that can reopen
+ * public signup on a production process. */
+export function selfSignupEnabled(): boolean {
+  return devModeEnabled();
+}
+
 /**
  * Which engines may actually run. SECURITY GATE (final_harness.md P0): the
  * Claude/Codex ACP adapters are registered but still require an operator-provisioned

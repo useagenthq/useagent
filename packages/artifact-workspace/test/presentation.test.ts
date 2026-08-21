@@ -97,6 +97,23 @@ describe("coercePresentationState (upgrade on load)", () => {
     };
     expect(coerceDeck(withBadImage)).toBeNull();
   });
+
+  test("normalizes a safe theme background color shorthand and rejects unsafe strings", () => {
+    const deck = migrateSlidesToDeck([{ title: "T", body: "B" }]);
+    const shorthand = {
+      ...deck,
+      theme: { ...deck.theme, background: "#F7F3EA" },
+    };
+
+    expect(coerceDeck(shorthand)?.theme.background).toEqual({
+      type: "color",
+      color: "#F7F3EA",
+    });
+    expect(coerceDeck({
+      ...shorthand,
+      theme: { ...shorthand.theme, background: "url(javascript:alert(1))" },
+    })).toBeNull();
+  });
 });
 
 describe("normalizeDeck", () => {

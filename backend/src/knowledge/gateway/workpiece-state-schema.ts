@@ -15,6 +15,10 @@ const hexColorSchema = {
 const deckBackgroundSchema = {
   anyOf: [
     {
+      ...hexColorSchema,
+      description: "Solid background shorthand; normalized to {type: color, color}.",
+    },
+    {
       type: "object",
       properties: {
         type: { type: "string", enum: ["color"] },

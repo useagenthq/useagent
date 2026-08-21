@@ -1,6 +1,6 @@
 "use client";
 
-import { RiAddLine, RiBookMarkedLine, RiCpuLine, RiFlashlightLine } from "@remixicon/react";
+import { RiBookMarkedLine, RiCpuLine, RiFlashlightLine } from "@remixicon/react";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { resolveEnabledEngine, useEnabledEngineConfig } from "@/components/chat/engine-picker";
@@ -19,8 +19,8 @@ import {
   modelOptionsForEngine,
   selectableModelsForEngine,
 } from "@/components/chat/types";
-import { AsteriskMark } from "@/components/foundations/brand/asterisk-mark";
 import { backendFetch } from "@/lib/backend-fetch";
+import { NewTaskContextMenu } from "./new-task-context-menu";
 import { RepoBranchBar } from "./repo-branch-bar";
 import { type RepoItem, RepoMultiPicker } from "./repo-multi-picker";
 import { type PickerGroup, SearchablePicker } from "./searchable-picker";
@@ -384,23 +384,15 @@ export function NewTaskComposer({
 
           {/* Pickers */}
           <div className="flex flex-wrap items-center gap-0.5">
-            <button
-              type="button"
-              onClick={() => fileInput.current?.click()}
-              className="text-text-sub-600 hover:bg-bg-weak-50 inline-flex h-9 items-center gap-1.5 rounded-lg px-2 text-label-sm"
-            >
-              <RiAddLine className="size-4" aria-hidden />
-              Add files
-            </button>
-            <RepoMultiPicker repos={repos} value={selectedRepos} onChange={setSelectedRepos} />
-            <SearchablePicker
-              ariaLabel="Select skill or playbook"
-              triggerLabel="Skill / playbook"
-              searchPlaceholder="Search skills and playbooks..."
-              groups={skillGroups}
-              value={playbook}
-              onChange={setPlaybook}
+            <NewTaskContextMenu
+              skillGroups={skillGroups}
+              selectedSkill={playbook}
+              memoryScope={memoryScope}
+              onAddFiles={() => fileInput.current?.click()}
+              onSelectSkill={setPlaybook}
+              onSelectMemoryScope={setMemoryScope}
             />
+            <RepoMultiPicker repos={repos} value={selectedRepos} onChange={setSelectedRepos} />
             <SearchablePicker
               ariaLabel="Select engine"
               triggerLabel="Engine"
@@ -423,25 +415,13 @@ export function NewTaskComposer({
             ) : null}
             {/* Team-memory pool this task reads/writes (org vs personal). */}
             <MemoryScopePicker scope={memoryScope} onChange={setMemoryScope} />
-          </div>
-          {/* Removed: Machine (snapshot) and "Plan first" were cosmetic - neither
-              reached POST /api/runs. Snapshot selection isn't a real run option
-              yet, and a plan-first/approval flow lands with the durable
-              approvals workflow (task #77); re-add "Plan first" here then. */}
-
-          {/* Per-repo branch pickers + CTA. The branch strip only appears once a
-              repo is selected; every branch here is a real ref that rides into
-              the run and is cloned. */}
-          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-stroke-soft-200 pt-3">
             <RepoBranchBar repos={selectedRepoItems} value={branches} onChange={setBranches} />
-
             <button
               type="button"
               onClick={() => void submit()}
               disabled={!canSubmit}
-              className="ml-auto inline-flex shrink-0 items-center gap-1.5 rounded-full bg-bg-strong-950 px-4 py-2 text-label-sm text-text-white-0 outline-none transition-opacity hover:opacity-90 focus-visible:ring-2 focus-visible:ring-stroke-strong-950 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-40"
+              className="ml-auto inline-flex min-w-40 shrink-0 items-center justify-center rounded-full bg-bg-strong-950 px-6 py-2.5 text-label-sm text-text-white-0 outline-none transition-opacity hover:opacity-90 focus-visible:ring-2 focus-visible:ring-stroke-strong-950 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-40"
             >
-              <AsteriskMark className="size-4" />
               {submitting ? "Starting..." : "Start thread"}
             </button>
           </div>

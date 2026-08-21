@@ -156,9 +156,24 @@ describe("unified shell contract", () => {
 
   test("names the optional skill and playbook control when nothing is selected", () => {
     const composer = readFromFrontend("app/agent/new/new-task-composer.tsx");
+    const contextMenu = readFromFrontend("app/agent/new/new-task-context-menu.tsx");
 
-    expect(composer).toContain('triggerLabel="Skill / playbook"');
+    expect(composer).toContain("<NewTaskContextMenu");
+    expect(contextMenu).toContain('triggerLabel="Skill or playbook"');
     expect(composer).toContain('label: "No skill or playbook"');
+  });
+
+  test("keeps context actions expandable and the primary action inline", () => {
+    const composer = readFromFrontend("app/agent/new/new-task-composer.tsx");
+    const contextMenu = readFromFrontend("app/agent/new/new-task-context-menu.tsx");
+
+    expect(contextMenu).toContain('aria-label="Add context"');
+    expect(contextMenu).toContain("Add photos &amp; files");
+    expect(contextMenu).toContain("Company knowledge");
+    expect(contextMenu).toContain("Personal memory");
+    expect(composer).toContain("min-w-40");
+    expect(composer).not.toContain("<AsteriskMark");
+    expect(composer).not.toContain("border-t border-stroke-soft-200 pt-3");
   });
 
   test("folds the project rail to a useful compact rail on a real working transition", () => {
@@ -219,7 +234,9 @@ describe("unified shell contract", () => {
     const conversation = readFromFrontend("components/chat/conversation.tsx");
 
     expect(composer).toContain("maxHeight={220}");
-    expect(composer).toContain('hero ? "pt-1 text-paragraph-lg" : "min-h-20 text-paragraph-sm leading-relaxed"');
+    expect(composer).toContain(
+      'hero ? "pt-1 text-paragraph-lg" : "min-h-20 text-paragraph-sm leading-relaxed"',
+    );
     expect(conversation).toContain("mx-auto w-full max-w-5xl");
     expect(conversation).not.toContain("shrink-0 border-t p-3");
   });
