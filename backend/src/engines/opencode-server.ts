@@ -91,6 +91,7 @@ import {
 import {
   questionEventId,
   parseOpenCodeQuestionRequest,
+  redactProviderQuestionPayload,
 } from "./opencode-question";
 import {
   activateOpenCodeRuntimeConfig,
@@ -1778,7 +1779,7 @@ export function makeOpenCodeServerAdapter(driver: ProviderDriver): EngineAdapter
                     nativeSessionId: question.sessionID,
                     nativeMessageId: question.tool?.messageID ?? null,
                     nativeCallId: question.tool?.callID ?? null,
-                    payload: question,
+                    payload: redactProviderQuestionPayload(question, redact),
                   },
                   { critical: true },
                 );
@@ -1806,7 +1807,7 @@ export function makeOpenCodeServerAdapter(driver: ProviderDriver): EngineAdapter
                     provider: "opencode",
                     eventType: ev.type,
                     nativeSessionId: questionSessionId,
-                    payload: rawProps,
+                    payload: redactProviderQuestionPayload(rawProps, redact),
                   },
                   { critical: true },
                 );

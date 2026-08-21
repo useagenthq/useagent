@@ -1,3 +1,5 @@
+import type { SecretRedactor } from "../secrets/redact";
+
 const MAX_ANSWERS_PER_QUESTION = 12;
 const MAX_ANSWER_CHARS = 4_000;
 
@@ -19,6 +21,45 @@ export interface ProviderQuestionRequest {
   readonly sessionID: string;
   readonly questions: readonly ProviderQuestionInfo[];
   readonly tool?: { readonly messageID: string; readonly callID: string };
+}
+
+function record(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null;
+}
+
+/** Redact question content while retaining native identifiers needed to
+ * correlate and resume a pending request. */
+export function redactProviderQuestionPayload<T>(
+  value: T,
+  redact: Pick<SecretRedactor, "text" | "unknown">,
+): T {
+  const source = record(value);
+  if (!source) return redact.unknown(value);
+  const safe = record(redact.unknown(value));
+  if (!safe) return redact.unknown(value);
+
+  for (const key of ["id", "sessionID", "requestID", "requestId"] as const) {
+    if (typeof source[key] === "string") safe[key] = source[key];
+  }
+  const sourceTool = record(source.tool);
+  const safeTool = record(safe.tool);
+  if (sourceTool && safeTool) {
+    for (const key of ["messageID", "callID"] as const) {
+      if (typeof sourceTool[key] === "string") safeTool[key] = sourceTool[key];
+    }
+  }
+  const sourceAnswers = record(source.answers);
+  if (sourceAnswers) {
+    safe.answers = Object.fromEntries(
+      Object.entries(sourceAnswers).map(([key, answer]) => [
+        redact.text(key),
+        redact.unknown(answer),
+      ]),
+    );
+  }
+  return safe as T;
 }
 
 export class ProviderQuestionError extends Error {

@@ -1,7 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import { ProviderQuestionError } from "./provider-question";
-import { runtimeQuestionAnswers } from "./runtime-question";
+import {
+  runtimeQuestionAnswers,
+  runtimeQuestionReplyProviderEvent,
+} from "./runtime-question";
 import type { RuntimeThreadSnapshot } from "./runtime-orchestration";
+import { createSecretRedactor } from "../secrets/redact";
 
 function snapshot(resolved = false): RuntimeThreadSnapshot {
   return {
@@ -63,5 +67,25 @@ describe("T3 native user input", () => {
       "request-1",
       [["React"]],
     )).toThrow(ProviderQuestionError);
+  });
+
+  test("redacts synchronous T3 answers without changing the request routing id", () => {
+    const secret = "SYNTHETIC_T3_QUESTION_ANSWER_SECRET_123456";
+    const event = runtimeQuestionReplyProviderEvent(
+      {
+        runId: "run-1",
+        threadId: "thread-1",
+        sessionId: "skynet-thread-thread-1",
+        questionId: "request-stable",
+      },
+      { [secret]: secret },
+      createSecretRedactor([secret]),
+    );
+
+    expect(event.payload).toEqual({
+      requestID: "request-stable",
+      answers: { "<redacted>": "<redacted>" },
+    });
+    expect(event.nativeSessionId).toBe("skynet-thread-thread-1");
   });
 });

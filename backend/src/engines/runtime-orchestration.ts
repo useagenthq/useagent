@@ -3,7 +3,11 @@ import { DEFAULT_CODEX_MODEL, DEFAULT_OPENCODE_MODEL } from "../runs/model-polic
 import type { EmitStep, EngineRunContext } from "./types";
 import type { ProviderEventInput } from "../runs/provider-events";
 import type { SecretRedactor } from "../secrets/redact";
-import { questionEventId, type ProviderQuestionRequest } from "./provider-question";
+import {
+  questionEventId,
+  redactProviderQuestionPayload,
+  type ProviderQuestionRequest,
+} from "./provider-question";
 import { approvalEventId, runtimeApprovalRequest } from "./runtime-approval";
 import { firstSemanticT3ToolName, t3SummaryToolIdentity } from "@skynet/agent-harness";
 
@@ -641,7 +645,7 @@ export function runtimeActivityProviderEvent(
   ctx: Pick<EngineRunContext, "runId" | "threadId">,
   sessionId: string,
   activity: RuntimeActivity,
-  redact: Pick<SecretRedactor, "unknown">,
+  redact: Pick<SecretRedactor, "text" | "unknown">,
 ): ProviderEventInput {
   const question = runtimeQuestionRequest(activity, sessionId);
   const approval = runtimeApprovalRequest(activity, sessionId);
@@ -678,13 +682,15 @@ export function runtimeActivityProviderEvent(
     nativeParentSessionId: parentAgentId,
     nativePartId: activity.id,
     nativeCallId: activity.kind.startsWith("task.") ? taskId : null,
-    payload: redact.unknown(approval ?? question ?? (
-      activity.kind === "approval.resolved" && requestId
-        ? { requestId, ...payload }
-        : activity.kind === "user-input.resolved" && requestId
-          ? { requestID: requestId, ...payload }
-          : activity
-    )),
+    payload: question
+      ? redactProviderQuestionPayload(question, redact)
+      : activity.kind === "user-input.resolved" && requestId
+        ? redactProviderQuestionPayload({ requestID: requestId, ...payload }, redact)
+        : redact.unknown(approval ?? (
+          activity.kind === "approval.resolved" && requestId
+            ? { requestId, ...payload }
+            : activity
+        )),
   };
 }
 
