@@ -4,7 +4,7 @@ import type { EmitStep, EngineRunContext } from "./types";
 import type { ProviderEventInput } from "../runs/provider-events";
 import { questionEventId, type ProviderQuestionRequest } from "./provider-question";
 import { approvalEventId, runtimeApprovalRequest } from "./runtime-approval";
-import { firstSemanticT3ToolName } from "@skynet/agent-harness";
+import { firstSemanticT3ToolName, t3SummaryToolIdentity } from "@skynet/agent-harness";
 
 export type RuntimeEngineId = Extract<EngineId, "codex" | "claude" | "opencode">;
 export type RuntimeMode = "approval-required" | "auto-accept-edits" | "auto" | "full-access";
@@ -99,6 +99,7 @@ function runtimeToolProjection(activity: RuntimeActivity): {
   const payload = record(activity.payload);
   const data = record(payload?.data);
   const item = record(data?.item);
+  const summaryIdentity = t3SummaryToolIdentity(activity.summary);
   const tool = firstSemanticT3ToolName(
     payload?.toolName,
     data?.toolName,
@@ -108,11 +109,17 @@ function runtimeToolProjection(activity: RuntimeActivity): {
     item?.tool,
     item?.name,
     item?.title,
+    summaryIdentity?.tool,
   );
   return {
     data,
     item,
-    server: firstNonEmptyString(payload?.server, data?.server, item?.server),
+    server: firstNonEmptyString(
+      payload?.server,
+      data?.server,
+      item?.server,
+      summaryIdentity?.server,
+    ),
     tool,
     input: runtimeToolInput(payload, data, item),
   };

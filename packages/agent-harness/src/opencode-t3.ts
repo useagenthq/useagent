@@ -5,7 +5,7 @@ import {
   numberValue,
   recordValue,
 } from "./opencode-values";
-import { firstSemanticT3ToolName } from "./t3-tool";
+import { firstSemanticT3ToolName, t3SummaryToolIdentity } from "./t3-tool";
 
 export function t3Payload(
   activity: Record<string, unknown> | null,
@@ -20,9 +20,10 @@ export function t3ActivityKind(
   return typeof activity?.kind === "string" ? activity.kind : eventType.slice("t3.activity.".length);
 }
 
-export function t3ToolName(payload: Record<string, unknown> | null): string {
+export function t3ToolName(payload: Record<string, unknown> | null, summary?: unknown): string {
   const data = recordValue(payload?.data);
   const item = recordValue(data?.item);
+  const summaryIdentity = t3SummaryToolIdentity(summary);
   const semanticName = firstSemanticT3ToolName(
     payload?.toolName,
     data?.toolName,
@@ -32,14 +33,20 @@ export function t3ToolName(payload: Record<string, unknown> | null): string {
     item?.tool,
     item?.name,
     item?.title,
+    summaryIdentity?.tool,
   );
   return semanticName ?? firstSemanticT3ToolName(payload?.itemType) ?? "tool";
 }
 
-export function t3ToolServer(payload: Record<string, unknown> | null): string | undefined {
+export function t3ToolServer(payload: Record<string, unknown> | null, summary?: unknown): string | undefined {
   const data = recordValue(payload?.data);
   const item = recordValue(data?.item);
-  return firstString(payload?.server, data?.server, item?.server) ?? undefined;
+  return firstString(
+    payload?.server,
+    data?.server,
+    item?.server,
+    t3SummaryToolIdentity(summary)?.server,
+  ) ?? undefined;
 }
 
 export function t3ToolStatus(payload: Record<string, unknown> | null): string | undefined {
