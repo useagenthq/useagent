@@ -174,6 +174,7 @@ describe("unified shell contract", () => {
     expect(contextMenu).toContain("Type to search skills and playbooks");
     expect(contextMenu).not.toContain("<SearchablePicker");
     expect(composer).toContain("min-w-40");
+    expect(composer).toContain("grid-cols-[minmax(0,1fr)_auto]");
     expect(composer).toContain('e.id !== "chat"');
     expect(composer).not.toContain("<AsteriskMark");
     expect(composer).not.toContain("border-t border-stroke-soft-200 pt-3");

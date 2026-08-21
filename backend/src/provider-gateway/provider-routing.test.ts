@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { KIMI_K3_MODEL } from "../runs/model-policy";
+import { DEEPSEEK_V4_FLASH_MODEL, KIMI_K3_MODEL } from "../runs/model-policy";
 import { applyOpenRouterProviderRouting } from "./provider-routing";
 
 describe("OpenRouter provider routing", () => {
@@ -32,5 +32,25 @@ describe("OpenRouter provider routing", () => {
       provider: { only: ["openai"] },
     });
     expect(applyOpenRouterProviderRouting("openai/gpt-5.6-sol", body)).toBe(body);
+  });
+
+  test("prefers Wafer Fast for DeepSeek V4 Flash agent turns", () => {
+    const routed = JSON.parse(
+      applyOpenRouterProviderRouting(
+        DEEPSEEK_V4_FLASH_MODEL,
+        JSON.stringify({
+          model: DEEPSEEK_V4_FLASH_MODEL,
+          messages: [],
+          tools: [{ type: "function", function: { name: "bash" } }],
+        }),
+      ),
+    ) as Record<string, unknown>;
+
+    expect(routed.provider).toEqual({
+      order: ["wafer/fast"],
+      sort: "throughput",
+      require_parameters: true,
+      allow_fallbacks: true,
+    });
   });
 });

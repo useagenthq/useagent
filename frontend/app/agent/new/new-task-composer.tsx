@@ -385,44 +385,46 @@ export function NewTaskComposer({
           </div>
 
           {/* Pickers */}
-          <div className="flex flex-wrap items-center gap-0.5">
-            <NewTaskContextMenu
-              skillGroups={skillGroups}
-              selectedSkill={playbook}
-              memoryScope={memoryScope}
-              onAddFiles={() => fileInput.current?.click()}
-              onSelectSkill={setPlaybook}
-              onSelectMemoryScope={setMemoryScope}
-            />
-            <RepoMultiPicker repos={repos} value={selectedRepos} onChange={setSelectedRepos} />
-            <SearchablePicker
-              ariaLabel="Select engine"
-              triggerLabel="Engine"
-              searchPlaceholder="Search engines..."
-              groups={engineGroups}
-              value={engine}
-              onChange={setEngine}
-            />
-            {/* Model is shown only for engines whose backend policy accepts an
-                explicit user choice (OpenCode and Codex). */}
-            {selectableModels.length > 0 ? (
-              <SearchablePicker
-                ariaLabel="Select model"
-                triggerLabel="Model"
-                searchPlaceholder="Search models..."
-                groups={modelGroups}
-                value={model}
-                onChange={setModel}
+          <div className="grid grid-cols-[minmax(0,1fr)_auto] items-end gap-3">
+            <div className="flex min-w-0 flex-wrap items-center gap-0.5">
+              <NewTaskContextMenu
+                skillGroups={skillGroups}
+                selectedSkill={playbook}
+                memoryScope={memoryScope}
+                onAddFiles={() => fileInput.current?.click()}
+                onSelectSkill={setPlaybook}
+                onSelectMemoryScope={setMemoryScope}
               />
-            ) : null}
-            {/* Team-memory pool this task reads/writes (org vs personal). */}
-            <MemoryScopePicker scope={memoryScope} onChange={setMemoryScope} />
-            <RepoBranchBar repos={selectedRepoItems} value={branches} onChange={setBranches} />
+              <RepoMultiPicker repos={repos} value={selectedRepos} onChange={setSelectedRepos} />
+              <SearchablePicker
+                ariaLabel="Select engine"
+                triggerLabel="Engine"
+                searchPlaceholder="Search engines..."
+                groups={engineGroups}
+                value={engine}
+                onChange={setEngine}
+              />
+              {/* Model is shown only for engines whose backend policy accepts an
+                  explicit user choice (OpenCode and Codex). */}
+              {selectableModels.length > 0 ? (
+                <SearchablePicker
+                  ariaLabel="Select model"
+                  triggerLabel="Model"
+                  searchPlaceholder="Search models..."
+                  groups={modelGroups}
+                  value={model}
+                  onChange={setModel}
+                />
+              ) : null}
+              {/* Team-memory pool this task reads/writes (org vs personal). */}
+              <MemoryScopePicker scope={memoryScope} onChange={setMemoryScope} />
+              <RepoBranchBar repos={selectedRepoItems} value={branches} onChange={setBranches} />
+            </div>
             <button
               type="button"
               onClick={() => void submit()}
               disabled={!canSubmit}
-              className="ml-auto inline-flex min-w-40 shrink-0 items-center justify-center rounded-full bg-bg-strong-950 px-6 py-2.5 text-label-sm text-text-white-0 outline-none transition-opacity hover:opacity-90 focus-visible:ring-2 focus-visible:ring-stroke-strong-950 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-40"
+              className="inline-flex min-w-40 shrink-0 items-center justify-center rounded-full bg-bg-strong-950 px-6 py-2.5 text-label-sm text-text-white-0 outline-none transition-opacity hover:opacity-90 focus-visible:ring-2 focus-visible:ring-stroke-strong-950 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-40"
             >
               {submitting ? "Starting..." : "Start thread"}
             </button>
