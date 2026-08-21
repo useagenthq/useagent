@@ -1,8 +1,8 @@
 import type { ArtifactWorkpieceKind } from "@skynet/artifact-workspace";
 import { ArtifactAuthoringError, createAuthoredArtifact } from "../../artifacts/authoring";
 import { publishSandboxArtifact } from "../../artifacts/publish";
-import { proposeWorkpieceEdit } from "../../artifacts/proposals";
-import type { ArtifactDescriptor } from "../../artifacts/repo";
+import { acceptWorkpieceProposal, proposeWorkpieceEdit } from "../../artifacts/proposals";
+import { toArtifactDescriptor, type ArtifactDescriptor } from "../../artifacts/repo";
 import { publishOrgChange } from "../../runs/org-signals";
 import { absoluteArtifactUrl, absoluteArtifactUrlContent } from "./artifact-links";
 import type { ToolTokenClaims } from "./token";
@@ -94,6 +94,34 @@ export const ARTIFACT_TOOLS = [
         },
       },
       required: ["path"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "workpiece_update",
+    description:
+      "Apply the user's explicitly requested edit directly to an existing editable document, " +
+      "spreadsheet, presentation, or PDF text workpiece. Pass the artifact id and the FULL " +
+      "replacement state. This advances the existing workpiece as a new revision immediately, " +
+      "without a second approval prompt, because the user's message already authorized the edit. " +
+      "Revision conflicts fail closed instead of overwriting concurrent user changes. Use " +
+      "workpiece_propose_edit instead for unsolicited suggestions that the user did not request.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        artifact_id: {
+          type: "string",
+          description: "The existing editable workpiece artifact id.",
+        },
+        state: {
+          ...WORKPIECE_STATE_INPUT_SCHEMA,
+        },
+        summary: {
+          type: "string",
+          description: "Optional one-line description of the applied change.",
+        },
+      },
+      required: ["artifact_id", "state"],
       additionalProperties: false,
     },
   },
@@ -200,6 +228,7 @@ export async function executeArtifactTool(
   args: Record<string, unknown>,
 ): Promise<ToolResult> {
   if (name === "workpiece_propose_edit") return proposeWorkpieceEditTool(claims, args);
+  if (name === "workpiece_update") return updateWorkpieceTool(claims, args);
   if (name === "workpiece_create") return workpieceCreateTool(claims, args);
   if (name !== "artifact_publish") return failure(`Unknown tool: ${name}`);
   const path = typeof args.path === "string" ? args.path.trim() : "";
@@ -259,14 +288,49 @@ async function proposeWorkpieceEditTool(
   claims: ToolTokenClaims,
   args: Record<string, unknown>,
 ): Promise<ToolResult> {
+  const staged = await stageWorkpieceEdit(claims, args);
+  if (!staged.ok) return staged.result;
+  const { proposed } = staged;
+  publishOrgChange(claims.orgId, {
+    type: "artifact",
+    action: "proposed",
+    artifactId: proposed.artifact.id,
+    runId: proposed.artifact.runId,
+    threadId: proposed.artifact.threadId,
+  });
+  return result(
+    `Proposed changes to ${proposed.artifact.name} (workpiece ${proposed.artifact.id}). ` +
+      "The user will review and accept or dismiss them; the workpiece keeps showing the current " +
+      "version until they accept. No further action is needed from you.",
+    {
+      proposal_id: proposed.proposal.id,
+      artifact_id: proposed.artifact.id,
+      status: "pending",
+    },
+  );
+}
+
+type StagedWorkpieceEdit = Extract<
+  Awaited<ReturnType<typeof proposeWorkpieceEdit>>,
+  { readonly outcome: "proposed" }
+>;
+
+async function stageWorkpieceEdit(
+  claims: ToolTokenClaims,
+  args: Record<string, unknown>,
+): Promise<{ readonly ok: true; readonly proposed: StagedWorkpieceEdit } | {
+  readonly ok: false;
+  readonly result: ToolResult;
+}> {
   const artifactId = typeof args.artifact_id === "string" ? args.artifact_id.trim() : "";
   if (!artifactId) {
-    return failure("workpiece_propose_edit requires an `artifact_id` from artifact_publish.");
+    return { ok: false, result: failure("workpiece edit requires an existing `artifact_id`.") };
   }
   if (!args.state || typeof args.state !== "object" || Array.isArray(args.state)) {
-    return failure(
-      "workpiece_propose_edit requires a `state` object matching the workpiece kind.",
-    );
+    return {
+      ok: false,
+      result: failure("workpiece edit requires a `state` object matching the workpiece kind."),
+    };
   }
   const summary =
     typeof args.summary === "string" && args.summary.trim() ? args.summary.trim() : null;
@@ -279,37 +343,76 @@ async function proposeWorkpieceEditTool(
       summary,
     });
     if (proposed.outcome === "not_found") {
-      return failure(
-        `No editable workpiece found for artifact ${artifactId} in this workspace. Publish an ` +
-          "editable file with artifact_publish first, then propose edits against its id.",
-      );
+      return {
+        ok: false,
+        result: failure(
+          `No editable workpiece found for artifact ${artifactId} in this workspace. Publish or ` +
+            "create an editable workpiece first, then edit its id.",
+        ),
+      };
     }
     if (proposed.outcome === "invalid_state") {
+      return {
+        ok: false,
+        result: failure(
+          `The replacement state is not a valid ${proposed.kind} workpiece. Send the full state as ` +
+            `${WORKPIECE_STATE_SHAPES[proposed.kind] ?? "the kind's documented shape"}.`,
+        ),
+      };
+    }
+    return { ok: true, proposed };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "workpiece edit failed";
+    return { ok: false, result: failure(`Could not edit ${artifactId}: ${message}`) };
+  }
+}
+
+async function updateWorkpieceTool(
+  claims: ToolTokenClaims,
+  args: Record<string, unknown>,
+): Promise<ToolResult> {
+  const staged = await stageWorkpieceEdit(claims, args);
+  if (!staged.ok) return staged.result;
+  const { proposed } = staged;
+  try {
+    const accepted = await acceptWorkpieceProposal({
+      orgId: claims.orgId,
+      artifactId: proposed.artifact.id,
+      proposalId: proposed.proposal.id,
+      resolvedBy: null,
+    });
+    if (accepted.outcome === "revision_conflict") {
       return failure(
-        `The proposed state is not a valid ${proposed.kind} workpiece. Send the full state as ` +
-          `${WORKPIECE_STATE_SHAPES[proposed.kind] ?? "the kind's documented shape"}.`,
+        "The workpiece changed while this edit was being applied. Read the current state and retry " +
+          "the requested edit against that revision; no user change was overwritten.",
       );
     }
+    if (accepted.outcome !== "accepted") {
+      return failure(`The direct workpiece edit could not be applied (${accepted.outcome}).`);
+    }
+    const artifact = toArtifactDescriptor(accepted.artifact);
     publishOrgChange(claims.orgId, {
       type: "artifact",
-      action: "proposed",
-      artifactId: proposed.artifact.id,
-      runId: proposed.artifact.runId,
-      threadId: proposed.artifact.threadId,
+      action: "updated",
+      artifactId: accepted.artifact.id,
+      runId: accepted.artifact.runId,
+      threadId: accepted.artifact.threadId,
     });
     return result(
-      `Proposed changes to ${proposed.artifact.name} (workpiece ${proposed.artifact.id}). ` +
-        "The user will review and accept or dismiss them; the workpiece keeps showing the current " +
-        "version until they accept. No further action is needed from you.",
+      `Applied the requested edit to ${accepted.artifact.name} as workpiece revision ` +
+        `${accepted.artifact.workpieceRevision}. The prior revision was not overwritten and no ` +
+        "additional approval is required.",
       {
         proposal_id: proposed.proposal.id,
-        artifact_id: proposed.artifact.id,
-        status: "pending",
+        artifact_id: accepted.artifact.id,
+        status: "applied",
+        state_revision: accepted.artifact.workpieceRevision,
+        artifact,
       },
     );
   } catch (error) {
-    const message = error instanceof Error ? error.message : "workpiece proposal failed";
-    return failure(`Could not propose changes to ${artifactId}: ${message}`);
+    const message = error instanceof Error ? error.message : "workpiece update failed";
+    return failure(`Could not apply the requested edit: ${message}`);
   }
 }
 

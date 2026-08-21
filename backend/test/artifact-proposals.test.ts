@@ -67,6 +67,20 @@ function propose(
   });
 }
 
+function updateDirectly(
+  session: OrgSession,
+  runId: string,
+  artifactId: string,
+  state: unknown,
+  summary?: string,
+): Promise<ToolResult> {
+  return executeArtifactTool(claimsFor(session, runId), "workpiece_update", {
+    artifact_id: artifactId,
+    state,
+    ...(summary ? { summary } : {}),
+  });
+}
+
 function proposalIdOf(result: ToolResult): string {
   expect(result.isError).toBeFalsy();
   const id = result.structuredContent?.proposal_id;
@@ -90,6 +104,39 @@ afterAll(() => {
 });
 
 describe("agent-proposed workpiece revisions", () => {
+  test("a user-requested direct edit advances mainline without a pending approval", async () => {
+    const runId = await createSandboxRun(owner);
+    const artifact = await publishDoc(owner, runId, "direct.md");
+    const workpiecePath = `/api/artifacts/${artifact.id}/workpiece`;
+
+    const applied = await updateDirectly(
+      owner,
+      runId,
+      artifact.id,
+      { text: "direct revision\n" },
+      "Apply the requested rewrite",
+    );
+
+    expect(applied.isError).toBeFalsy();
+    expect(applied.structuredContent).toMatchObject({
+      artifact_id: artifact.id,
+      status: "applied",
+      state_revision: 1,
+    });
+    const mainline = await json<{
+      workpiece: { state_revision: number };
+      state: { text: string };
+    }>(workpiecePath, { cookies: owner.cookies });
+    expect(mainline.body.workpiece.state_revision).toBe(1);
+    expect(mainline.body.state).toEqual({ text: "direct revision\n" });
+
+    const pending = await json<{ proposals: ArtifactWorkpieceProposalDescriptor[] }>(
+      `/api/artifacts/${artifact.id}/proposals`,
+      { cookies: owner.cookies },
+    );
+    expect(pending.body.proposals).toHaveLength(0);
+  });
+
   test("propose leaves mainline untouched, then accept folds it in with provenance", async () => {
     const runId = await createSandboxRun(owner);
     const artifact = await publishDoc(owner, runId, "notes.md");
