@@ -27,6 +27,11 @@ import {
 } from "@/components/chat/types";
 import { PromptInput, PromptInputTextarea } from "@/components/prompt-kit/prompt-input";
 import { backendFetch } from "@/lib/backend-fetch";
+import {
+  createRun,
+  type RunCreateAttempt,
+  selectRunCreateAttempt,
+} from "@/lib/create-run";
 import { cnExt } from "@/utils/cn";
 import { RepoBranchBar } from "./repo-branch-bar";
 import { type RepoItem, RepoMultiPicker } from "./repo-multi-picker";
@@ -105,6 +110,7 @@ export function NewTaskComposer({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
+  const runCreateAttempt = useRef<RunCreateAttempt | null>(null);
   const runUploads = useRunUploads();
 
   useEffect(() => {
@@ -322,28 +328,29 @@ export function NewTaskComposer({
       if (chosen && chosen !== item.default_branch) branchPayload[item.full_name] = chosen;
     }
 
+    const body = {
+      // Send a model only for engines with an explicit picker/catalog. Codex
+      // uses bare backend-policy ids; OpenCode uses provider-qualified ids.
+      prompt: text,
+      engine,
+      memory_scope: "org",
+      ...(selectableModels.length > 0 ? { model } : {}),
+      ...(selectedRepos.length ? { repos: selectedRepos } : {}),
+      ...(Object.keys(branchPayload).length ? { branches: branchPayload } : {}),
+      ...(runUploads.readyIds.length > 0 ? { attachments: runUploads.readyIds } : {}),
+      ...(selectedSkill
+        ? { skill: { id: selectedSkill.id, version: selectedSkill.version } }
+        : {}),
+    };
+    const attempt = selectRunCreateAttempt(body, runCreateAttempt.current);
+    runCreateAttempt.current = attempt;
+
     try {
-      const res = await backendFetch("/api/runs", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        // Send a model only for engines with an explicit picker/catalog. Codex
-        // uses bare backend-policy ids; OpenCode uses provider-qualified ids.
-        body: JSON.stringify({
-          prompt: text,
-          engine,
-          memory_scope: "org",
-          ...(selectableModels.length > 0 ? { model } : {}),
-          ...(selectedRepos.length ? { repos: selectedRepos } : {}),
-          ...(Object.keys(branchPayload).length ? { branches: branchPayload } : {}),
-          ...(runUploads.readyIds.length > 0 ? { attachments: runUploads.readyIds } : {}),
-          ...(selectedSkill
-            ? { skill: { id: selectedSkill.id, version: selectedSkill.version } }
-            : {}),
-        }),
-      });
+      const res = await createRun(body, attempt.idempotencyKey);
       if (!res.ok) throw new Error(String(res.status));
       const data = (await res.json()) as { id?: string };
       if (!data.id) throw new Error("missing run id");
+      runCreateAttempt.current = null;
       router.push(`/session/${data.id}`);
       // Keep `submitting` true through the navigation.
     } catch {

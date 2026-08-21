@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 import { RiCloseLine, RiEyeLine, RiRobot2Line } from "@remixicon/react";
 import { backendFetch } from "@/lib/backend-fetch";
+import { createRun } from "@/lib/create-run";
 import { cnExt as cn } from "@/utils/cn";
 import { Composer } from "@/components/chat/composer";
 import { ToolStepRow } from "@/components/chat/tool-step-row";
@@ -131,18 +132,17 @@ function SubagentPaneBody({ initialRun }: { initialRun: ApiRun }) {
   const { ownerByStep } = deriveSubagents(steps);
 
   const passDown = useCallback(
-    async (text: string, engine: EngineId) => {
+    async (text: string, engine: EngineId, _model: string, idempotencyKey: string) => {
       setSending(true);
       try {
-        const res = await backendFetch("/api/runs", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
+        const res = await createRun(
+          {
             prompt: text,
             engine,
             parent_run_id: initialRun.id,
-          }),
-        });
+          },
+          idempotencyKey,
+        );
         if (!res.ok) throw new Error(`backend ${res.status}`);
         const { id } = (await res.json()) as { id: string };
         // Follow the freshly-spawned child in-pane (remounts this body).

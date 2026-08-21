@@ -229,7 +229,12 @@ describe("unified shell contract", () => {
     const mark = readFromFrontend("components/foundations/brand/orbit-knot-mark.tsx");
     const { sidebarBrand } = shellSources();
 
+    expect(mark).toContain('viewBox="0 0 300 300"');
+    expect(mark).toContain("M 150.00 51.00 C 176.40 51.00");
     expect(mark).toContain("useId");
+    expect(mark).toContain("linearGradient");
+    expect(mark).toContain("#6DD5FA");
+    expect(mark).toContain("#20A9F5");
     expect(mark).toContain('strokeLinejoin="round"');
     expect(mark).toContain('strokeLinecap="round"');
     expect(mark).toContain("motion-safe:animate-");

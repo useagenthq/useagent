@@ -3,24 +3,30 @@
 import { useId } from "react";
 import { cn } from "@/utils/cn";
 
-// The woven orbit knot glyph (stroke-rounded seven-petal weave). Path sourced
-// from the user-supplied reference SVG; colors are the sampled brand ramp.
+// Exact continuous path from the user-supplied star-knot.svg reference.
 const KNOT_PATH =
-  "M17.3702 16.2713L20.465 15.2776C21.5834 14.9184 21.8652 13.4928 20.9647 12.749L18.5414 10.7472M17.3702 16.2713L15.6246 16.8319C14.8533 17.0796 14.1247 17.441 13.464 17.9038L12.1229 18.8432M17.3702 16.2713L17.4325 14.7768C17.4671 13.9453 17.636 13.1245 17.9329 12.345L18.5414 10.7472M17.3702 16.2713L17.2401 19.3942C17.193 20.5254 15.9184 21.1841 14.942 20.5819L12.1229 18.8432M12.1229 18.8432L9.43738 20.7242C8.50033 21.3805 7.19058 20.7997 7.07263 19.6754L6.74168 16.5208M12.1229 18.8432L10.5594 17.8788C9.87224 17.455 9.12342 17.1362 8.33865 16.9335L6.74168 16.5208M6.74168 16.5208L3.61989 15.7141C2.48271 15.4203 2.11569 14.0149 2.96854 13.22L5.2878 11.0584M6.74168 16.5208L6.43349 13.5832L5.2878 11.0584M5.2878 11.0584L4.00706 8.23589C3.53226 7.18955 4.40146 6.03466 5.55954 6.17312L8.85203 6.56678M5.2878 11.0584L6.58864 9.84595C7.1925 9.28313 7.70325 8.63126 8.10245 7.91385L8.85203 6.56678M8.85203 6.56678L10.4099 3.76716C10.9595 2.7795 12.3882 2.73674 12.998 3.68971L14.7505 6.42828M8.85203 6.56678L10.7141 6.78942C11.5126 6.88489 12.3213 6.86164 13.1127 6.72045L14.7505 6.42828M14.7505 6.42828L17.9828 5.85166C19.1288 5.64722 20.0649 6.74666 19.657 7.81789L18.5414 10.7472M14.7505 6.42828L15.6961 7.90606C16.1377 8.59606 16.6858 9.21445 17.3209 9.73905L18.5414 10.7472";
+  "M 150.00 51.00 C 176.40 51.00, 176.40 67.72, 201.42 88.72 C 226.45 109.71, 242.91 106.81, 247.50 132.81 C 252.08 158.80, 235.62 161.71, 219.28 190.00 C 202.95 218.29, 208.67 234.00, 183.86 243.03 C 159.05 252.06, 153.33 236.35, 122.64 225.18 C 91.94 214.00, 77.46 222.36, 64.26 199.50 C 51.06 176.64, 65.54 168.28, 71.22 136.11 C 76.89 103.94, 66.14 91.13, 86.36 74.16 C 106.59 57.19, 117.33 70.00, 150.00 70.00 C 182.67 70.00, 193.41 57.19, 213.64 74.16 C 233.86 91.13, 223.11 103.94, 228.78 136.11 C 234.46 168.28, 248.94 176.64, 235.74 199.50 C 222.54 222.36, 208.06 214.00, 177.36 225.18 C 146.67 236.35, 140.95 252.06, 116.14 243.03 C 91.33 234.00, 97.05 218.29, 80.72 190.00 C 64.38 161.71, 47.92 158.80, 52.50 132.81 C 57.09 106.81, 73.55 109.71, 98.58 88.72 C 123.60 67.72, 123.60 51.00, 150.00 51.00 Z";
 
 function KnotSvg({
   className,
   stroke,
-  gid,
+  gradientId,
 }: {
   className?: string;
   stroke: number;
-  gid: string;
+  gradientId: string;
 }) {
   return (
-    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true" className={className}>
+    <svg viewBox="0 0 300 300" fill="none" aria-hidden="true" className={className}>
       <defs>
-        <linearGradient id={gid} x1="4" y1="4" x2="20" y2="20" gradientUnits="userSpaceOnUse">
+        <linearGradient
+          id={gradientId}
+          x1="0"
+          y1="0"
+          x2="300"
+          y2="300"
+          gradientUnits="userSpaceOnUse"
+        >
           <stop stopColor="#6DD5FA" />
           <stop offset="0.45" stopColor="#55B9F3" />
           <stop offset="1" stopColor="#20A9F5" />
@@ -28,8 +34,8 @@ function KnotSvg({
       </defs>
       <path
         d={KNOT_PATH}
-        stroke={`url(#${gid})`}
-        strokeWidth={stroke}
+        stroke={`url(#${gradientId})`}
+        strokeWidth={stroke * 4}
         strokeLinejoin="round"
         strokeLinecap="round"
       />
@@ -38,14 +44,13 @@ function KnotSvg({
 }
 
 /**
- * useAgent orbit-knot mark: seven woven petals from one continuous stroke in the
- * brand cyan-to-blue ramp (135deg: #6DD5FA -> #55B9F3 -> #20A9F5). Brand layer
- * exception: the raw gradient is part of the mark. Size via className;
- * `stroke` thickens small renders for legibility.
+ * UseAgent star-knot mark. Geometry is the exact user-supplied continuous path;
+ * size and color remain controlled by the caller's design-token classes.
+ * `stroke` retains the existing compact component scale (the reference's 6-unit
+ * stroke is the default 1.5 multiplied into its 300-unit viewBox).
  *
- * While `active` the mark spins slowly and BREATHES a soft brand-blue glow: a
- * blurred twin pulses behind the crisp glyph, so the mark itself never fades.
- * Both effects are motion-safe.
+ * While `active` the mark spins slowly and breathes a soft glow. Both effects
+ * remain motion-safe, and the crisp glyph itself never fades.
  */
 export function OrbitKnotMark({
   className,
@@ -56,20 +61,20 @@ export function OrbitKnotMark({
   active?: boolean;
   stroke?: number;
 }) {
-  const gid = useId();
-  const glowId = useId();
+  const gradientId = useId();
+  const glowGradientId = useId();
   return (
     <span className={cn("relative inline-flex shrink-0", className)}>
       {active ? (
         <KnotSvg
-          gid={glowId}
           stroke={stroke + 1.5}
+          gradientId={glowGradientId}
           className="absolute inset-0 size-full blur-[5px] motion-safe:animate-pulse motion-reduce:opacity-60"
         />
       ) : null}
       <KnotSvg
-        gid={gid}
         stroke={stroke}
+        gradientId={gradientId}
         className={cn(
           "relative size-full",
           active && "motion-safe:animate-[spin_9s_linear_infinite]",

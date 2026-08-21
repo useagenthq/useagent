@@ -130,6 +130,19 @@ function runtimeToolProjection(activity: RuntimeActivity): {
   };
 }
 
+function runtimeToolResultFailed(activity: RuntimeActivity): boolean {
+  if (activity.kind !== "tool.completed") return false;
+  const payload = record(activity.payload);
+  const data = record(payload?.data);
+  const item = record(data?.item);
+  return [payload?.result, data?.result, item?.result].some((value) => {
+    const result = record(value);
+    return result?.isError === true || (
+      result?.error !== undefined && result.error !== null && result.error !== false
+    );
+  });
+}
+
 function runtimeChildSessionId(activity: RuntimeActivity): string | null {
   const payload = record(activity.payload);
   const data = record(payload?.data);
@@ -569,7 +582,9 @@ export function activityStep(activity: RuntimeActivity): EmitStep {
         input: projection.input,
         ...(projection.server ? { server: projection.server } : {}),
         ...(detail ? { output: detail } : {}),
-        error: activity.tone === "error" || activity.kind === "tool.denied",
+        error: activity.tone === "error" ||
+          activity.kind === "tool.denied" ||
+          runtimeToolResultFailed(activity),
         native: {
           sessionID: typeof payload?.taskId === "string" ? payload.taskId : undefined,
           callID: toolCallId ?? activity.id,

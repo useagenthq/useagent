@@ -1,11 +1,15 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { RiArrowUpLine } from "@remixicon/react";
 
 import { AsteriskMark } from "@/components/foundations/brand/asterisk-mark";
-import { backendFetch } from "@/lib/backend-fetch";
+import {
+  createRun,
+  type RunCreateAttempt,
+  selectRunCreateAttempt,
+} from "@/lib/create-run";
 import { cnExt } from "@/utils/cn";
 
 /**
@@ -24,6 +28,7 @@ export function AskRepoBar() {
   const [value, setValue] = useState("");
   const [status, setStatus] = useState<Status>("idle");
   const [failed, setFailed] = useState(false);
+  const runCreateAttempt = useRef<RunCreateAttempt | null>(null);
 
   const busy = status === "sending";
 
@@ -32,18 +37,18 @@ export function AskRepoBar() {
     if (!prompt || busy) return;
     setStatus("sending");
     setFailed(false);
+    const body = {
+      prompt: `Answer from the organization wiki (use knowledge_search and knowledge_read; cite the documents you used): ${prompt}`,
+    };
+    const attempt = selectRunCreateAttempt(body, runCreateAttempt.current);
+    runCreateAttempt.current = attempt;
     try {
-      const res = await backendFetch("/api/runs", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          prompt: `Answer from the organization wiki (use knowledge_search and knowledge_read; cite the documents you used): ${prompt}`,
-        }),
-      });
+      const res = await createRun(body, attempt.idempotencyKey);
       if (!res.ok) throw new Error(`runs ${res.status}`);
       const created = (await res.json()) as { id?: string; run?: { id?: string } };
       const id = created.id ?? created.run?.id;
       if (!id) throw new Error("no run id");
+      runCreateAttempt.current = null;
       router.push(`/session/${id}`);
     } catch {
       setFailed(true);
