@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { posix } from "node:path";
 import type { EngineRunContext } from "../engines/types";
 import { recordProviderEvent } from "../runs/provider-events";
 import { isReservedSecretName } from "./crypto";
@@ -66,6 +67,33 @@ export const SECRET_FILE_DIR = resolveSecretFileDir();
 /** The dotenv explicitly sourced at engine boot (and exposed through BASH_ENV
  * for compatible non-interactive Bash commands). */
 export const SECRET_DOTENV_PATH = `${SECRET_FILE_DIR}/skynet-env.sh`;
+
+const DOTENV_BASENAME_RE = /^\.env(?:\..+)?$/;
+
+/** Artifact publication must never expose the injected-secret directory or a
+ * dotenv file, even when the agent addresses the home directory explicitly. */
+export function isProtectedInjectedSecretPath(value: string): boolean {
+  const normalized = posix.normalize(value.replaceAll("\\", "/"));
+  const basename = normalized.split("/").at(-1) ?? "";
+  if (DOTENV_BASENAME_RE.test(basename)) return true;
+
+  const secretDir = SECRET_FILE_DIR.replaceAll("\\", "/");
+  if (secretDir.startsWith("$HOME/")) {
+    const suffix = secretDir.slice("$HOME".length);
+    const escapedSuffix = suffix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const expandedHomePath = new RegExp(
+      `^/(?:root|home/[^/]+)${escapedSuffix}(?:/|$)`,
+    );
+    return (
+      normalized === secretDir ||
+      normalized.startsWith(`${secretDir}/`) ||
+      normalized === `~${suffix}` ||
+      normalized.startsWith(`~${suffix}/`) ||
+      expandedHomePath.test(normalized)
+    );
+  }
+  return normalized === secretDir || normalized.startsWith(`${secretDir}/`);
+}
 
 /** Bounded secrets.injected payload - the injected NAMES and their count, never
  *  any value. `source` mirrors skill.loaded's discriminator for the timeline. */
@@ -249,6 +277,14 @@ export function buildInjection(
     names: included.map((secret) => secret.name),
     redactionValues: included.map((secret) => secret.value),
   };
+}
+
+/** Load the exact org-secret values eligible for sandbox injection. Artifact
+ * publication uses this fail-closed boundary instead of the availability-safe
+ * composeSecretEnv wrapper: a lookup failure must not permit unscanned bytes. */
+export async function loadInjectedSecretRedactionValues(orgId: string): Promise<string[]> {
+  const decrypted = await decryptOrgSecrets(orgId);
+  return buildInjection(decrypted, { excludeNames: PROVIDER_SECRET_NAMES }).redactionValues;
 }
 
 /**

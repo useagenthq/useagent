@@ -4,6 +4,7 @@ import { publishSandboxArtifact } from "../../artifacts/publish";
 import { acceptWorkpieceProposal, proposeWorkpieceEdit } from "../../artifacts/proposals";
 import { toArtifactDescriptor, type ArtifactDescriptor } from "../../artifacts/repo";
 import { publishOrgChange } from "../../runs/org-signals";
+import { isProtectedInjectedSecretPath } from "../../secrets/inject";
 import { absoluteArtifactUrl, absoluteArtifactUrlContent } from "./artifact-links";
 import type { ToolTokenClaims } from "./token";
 import { WORKPIECE_STATE_INPUT_SCHEMA } from "./workpiece-state-schema";
@@ -233,6 +234,13 @@ export async function executeArtifactTool(
   if (name !== "artifact_publish") return failure(`Unknown tool: ${name}`);
   const path = typeof args.path === "string" ? args.path.trim() : "";
   if (!path) return failure("artifact_publish requires a `path` inside the sandbox.");
+  const editablePath = typeof args.editable_path === "string" ? args.editable_path.trim() : "";
+  if (
+    isProtectedInjectedSecretPath(path) ||
+    (editablePath && isProtectedInjectedSecretPath(editablePath))
+  ) {
+    return failure("Protected secret paths and dotenv files cannot be published as artifacts.");
+  }
   if (requiresUserProofPurpose(path) && args.purpose !== "user_requested_proof") {
     return failure(
       "Private desktop inspection screenshots can only be published when the user explicitly requested durable proof. Retry artifact_publish with purpose=user_requested_proof for the final requested screenshot only.",
@@ -250,9 +258,7 @@ export async function executeArtifactTool(
       threadId: claims.threadId,
       path,
       ...(typeof args.name === "string" && args.name.trim() ? { name: args.name.trim() } : {}),
-      ...(typeof args.editable_path === "string" && args.editable_path.trim()
-        ? { editablePath: args.editable_path.trim() }
-        : {}),
+      ...(editablePath ? { editablePath } : {}),
       ...(updatesArtifactId ? { updatesArtifactId } : {}),
     });
     const verb = updatesArtifactId ? "Revised" : published.created ? "Published" : "Already published";
