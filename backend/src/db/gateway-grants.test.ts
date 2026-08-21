@@ -46,5 +46,8 @@ describe("gateway grants single source of truth", () => {
       expect(grant).not.toMatch(/\bALL\b/);
       expect(grant).not.toMatch(/ON provider_connections\b/);
     }
+    expect(GATEWAY_GRANTS).toContain(
+      "GRANT UPDATE (status, resolved_at, resolved_by, resolved_revision) ON artifact_workpiece_proposals TO skynet_gateway",
+    );
   });
 });
