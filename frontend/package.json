@@ -5,6 +5,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev -p 3400",
+    "local": "SKYNET_PREVIEW_OPEN=1 SKYNET_API_ORIGIN=${SKYNET_API_ORIGIN:-https://skynet.meow.gs} next dev -p 3400",
     "build": "next build",
     "start": "next start -p 3400",
     "typecheck": "tsc --noEmit",

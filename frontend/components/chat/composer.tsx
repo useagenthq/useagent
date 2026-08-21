@@ -15,7 +15,6 @@ import { type Agent, AgentChip, ChooseAgentPopover } from "@/components/chat/age
 import type { CommandCatalogState } from "@/components/chat/canonical-timeline";
 import { ChatModelMenu, type ChatModelOption } from "@/components/chat/chat-model-menu";
 import { ModelPicker } from "@/components/chat/engine-picker";
-import { MemoryScopePicker } from "@/components/chat/memory-scope-picker";
 import { RunUploadChips, useRunUploads } from "@/components/chat/run-uploads";
 import {
   type CommandPickerStatus,
@@ -247,7 +246,6 @@ export function Composer({
   // can still override it without changing the call sites.
   const [engineState] = useState<EngineId>(defaultEngine);
   const [model, setModel] = useState(defaultModel);
-  const [memoryScope, setMemoryScope] = useState<MemoryScope>(defaultMemoryScope);
   const [command, setCommand] = useState<Agent | null>(null);
   const [toolsOpen, setToolsOpen] = useState(false);
   const [modelMenuOpen, setModelMenuOpen] = useState(false);
@@ -376,7 +374,9 @@ export function Composer({
         engine,
         modelMenu?.value ?? model,
         key,
-        memoryScope,
+        // Memory scope is inherited from the thread (the interactive picker was
+        // removed from the toolbar); the run still reads/writes that pool.
+        defaultMemoryScope,
         intent,
         runUploads.readyIds,
       );
@@ -566,9 +566,12 @@ export function Composer({
               }}
               className={cn(
                 "flex-1",
-                // The reply composer is a drafting surface, not a search box:
-                // ~3 lines of standing room (T3-style) with comfortable type.
-                hero ? "pt-1 text-paragraph-lg" : "min-h-9 text-paragraph-sm leading-6",
+                // Compact: the box height must equal the line-height so the single
+                // line of placeholder/text sits vertically CENTERED against the
+                // +/send buttons - a taller min-height top-aligns the text (textarea
+                // text can't vertical-center), which read as "input slightly up". It
+                // still auto-grows with content up to maxHeight.
+                hero ? "pt-1 text-paragraph-lg" : "min-h-6 text-paragraph-sm leading-6",
               )}
             />
           </div>
@@ -642,8 +645,6 @@ export function Composer({
                 !hero && "col-start-3 row-start-1",
               )}
             >
-              {/* Team-memory pool for the run (org vs personal), sibling to model. */}
-              <MemoryScopePicker scope={memoryScope} onChange={setMemoryScope} />
               {/* One engine now — the meaningful per-message choice is the MODEL. */}
               {enableModelPicker && (
                 <ModelPicker engine={engine} model={model} onChange={setModel} />
