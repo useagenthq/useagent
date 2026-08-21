@@ -8,6 +8,7 @@ test("renders the UseAgent wordmark and accessible new-thread label by default",
   expect(html).toContain(">UseAgent<");
   expect(html).toContain('aria-label="UseAgent new thread"');
   expect(html).toContain('href="/agent/new"');
+  expect(html).toContain("size-8");
 });
 
 test("keeps the accessible brand label when the visible label is contextual", () => {
