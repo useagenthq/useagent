@@ -27,8 +27,8 @@ const fontDisplay = Inter_Tight({
 });
 
 export const metadata: Metadata = {
-  title: 'useAgent - Loop agent platform',
-  description: 'Internal agent platform for Loop, built on AlignUI + prompt-kit.',
+  title: 'useAgent - one interface for every coding agent',
+  description: 'Run coding agents in isolated workspaces with durable context, automations, and audit trails.',
 };
 
 export default function RootLayout({

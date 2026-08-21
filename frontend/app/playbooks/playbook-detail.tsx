@@ -15,7 +15,7 @@ import { tagChipColor, usageCaption, type Skill } from "@/app/skills/skills-data
 /**
  * The detail view of one playbook: its Overview / Procedure / Verify content
  * rendered as read-only sections, with the version + usage caption and Edit /
- * Run actions. The copy is deliberately honest - Skynet FOLLOWS the procedure as
+ * Run actions. The copy is deliberately honest - useAgent FOLLOWS the procedure as
  * guidance; it is not a deterministic, step-by-step workflow engine.
  */
 
