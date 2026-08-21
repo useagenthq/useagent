@@ -61,7 +61,9 @@ describe("slack_upload tool", () => {
     const runId = crypto.randomUUID();
     await createRun({ id: runId, prompt: "api run", model: "claude-opus-5", engine: "mock", orgId: ORG, userId: null, parentRunId: null, threadId: runId });
     await setRunSandbox(runId, "sb-x");
-    const res = await executeSlackTool(claimsFor(runId), "slack_upload", { path: "out/x.txt" });
+    const res = await executeSlackTool(claimsFor(runId), "slack_upload", {
+      path: "/root/work/out/x.txt",
+    });
     expect(res.isError).toBe(true);
     expect(text(res)).toContain("not linked to a Slack thread");
   });
@@ -75,7 +77,10 @@ describe("slack_upload tool", () => {
 
   test("one sandbox pull produces the exact browser and Slack bytes", async () => {
     const { runId, channel, ts } = await slackRunWithSandbox("make a report");
-    const res = await executeSlackTool(claimsFor(runId), "slack_upload", { path: "outputs/demo.txt", title: "Demo" });
+    const res = await executeSlackTool(claimsFor(runId), "slack_upload", {
+      path: "/root/work/outputs/demo.txt",
+      title: "Demo",
+    });
     expect(res.isError).toBeUndefined();
     expect(text(res)).toContain("Queued demo.txt (11 bytes)");
 
@@ -161,7 +166,7 @@ describe("slack_upload tool", () => {
     const { runId } = await slackRunWithSandbox("publish once");
     const claims = claimsFor(runId);
     const published = await executeArtifactTool(claims, "artifact_publish", {
-      path: "outputs/report.txt",
+      path: "/root/work/outputs/report.txt",
     });
     const artifact = published.structuredContent?.artifact as { id?: unknown } | undefined;
     const artifactId = typeof artifact?.id === "string" ? artifact.id : "";
@@ -199,7 +204,9 @@ describe("slack_upload tool", () => {
       throw new Error("file is 99999999 bytes, over the 52428800-byte limit");
     });
     const { runId } = await slackRunWithSandbox("too big");
-    const res = await executeSlackTool(claimsFor(runId), "slack_upload", { path: "outputs/huge.bin" });
+    const res = await executeSlackTool(claimsFor(runId), "slack_upload", {
+      path: "/root/work/outputs/huge.bin",
+    });
     expect(res.isError).toBe(true);
     expect(text(res)).toContain("over the");
   });

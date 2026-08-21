@@ -38,7 +38,7 @@ import {
 } from "../secrets/inject";
 
 export const MAX_ARTIFACT_BYTES = 50 * 1024 * 1024;
-const ARTIFACT_WORKSPACE_ROOT = "/root/work";
+export const ARTIFACT_WORKSPACE_ROOT = "/root/work";
 
 function safeName(sourcePath: string, requested?: string): string {
   const candidate = requested?.trim() || basename(sourcePath.replaceAll("\\", "/")) || "artifact";

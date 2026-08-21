@@ -1,6 +1,7 @@
 import { findSlackThreadByRoot } from "../../slack/repo";
 import { enqueueUploadFile } from "../../slack/outbox";
 import {
+  ARTIFACT_WORKSPACE_ROOT,
   publishSandboxArtifact,
   resolveArtifactForThread,
 } from "../../artifacts/publish";
@@ -39,8 +40,8 @@ export const SLACK_TOOLS = [
     name: "slack_upload",
     description:
       "Deliver a file you produced (screenshot, video, PDF, report - any artifact) " +
-      "back to the Slack thread this task came from. Pass the file's path inside " +
-      "your sandbox. Prefer this over only describing or linking a file: when the " +
+      `back to the Slack thread this task came from. Pass its canonical absolute path under ${ARTIFACT_WORKSPACE_ROOT}. ` +
+      "Prefer this over only describing or linking a file: when the " +
       "request came from Slack, uploading the real file is what the user wants. " +
       "Available only for tasks that originated from Slack.",
     inputSchema: {
@@ -49,7 +50,8 @@ export const SLACK_TOOLS = [
         path: {
           type: "string",
           description:
-            "Path to the file inside your sandbox. Used only when artifactId is absent.",
+            `Canonical absolute sandbox path under ${ARTIFACT_WORKSPACE_ROOT}, for example ` +
+            `${ARTIFACT_WORKSPACE_ROOT}/outputs/demo.mp4. Used only when artifactId is absent.`,
         },
         artifactId: {
           type: "string",
