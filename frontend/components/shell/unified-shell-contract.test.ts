@@ -175,17 +175,18 @@ describe("unified shell contract", () => {
     const composer = readFromFrontend("app/agent/new/new-task-composer.tsx");
     const contextMenu = readFromFrontend("app/agent/new/new-task-context-menu.tsx");
 
-    expect(contextMenu).toContain('aria-label="Add context"');
+    expect(contextMenu).toContain('aria-label="Add files and context"');
     expect(contextMenu).toContain("Add photos &amp; files");
-    expect(contextMenu).toContain("Company knowledge");
-    expect(contextMenu).toContain("Personal memory");
+    expect(contextMenu).not.toContain("Company knowledge");
+    expect(contextMenu).not.toContain("Personal memory");
     expect(contextMenu).toContain("Type to search skills and playbooks");
     expect(contextMenu).not.toContain("<SearchablePicker");
     expect(composer).toContain("<PromptInput");
     expect(composer).toContain("<PromptInputTextarea");
     expect(composer).not.toContain("<textarea");
-    expect(composer).toContain("min-w-40");
+    expect(composer).toContain("min-w-32");
     expect(composer).toContain("grid-cols-[minmax(0,1fr)_auto]");
+    expect(composer).toContain("flex-nowrap");
     expect(composer).toContain('e.id !== "chat"');
     expect(composer).not.toContain("<AsteriskMark");
     expect(composer).not.toContain("border-t border-stroke-soft-200 pt-3");
@@ -248,9 +249,9 @@ describe("unified shell contract", () => {
     const composer = readFromFrontend("components/chat/composer.tsx");
     const conversation = readFromFrontend("components/chat/conversation.tsx");
 
-    expect(composer).toContain("maxHeight={220}");
+    expect(composer).toContain("maxHeight={180}");
     expect(composer).toContain(
-      'hero ? "pt-1 text-paragraph-lg" : "min-h-20 text-paragraph-sm leading-relaxed"',
+      'hero ? "pt-1 text-paragraph-lg" : "min-h-12 text-paragraph-sm leading-relaxed"',
     );
     expect(conversation).toContain("mx-auto w-full max-w-5xl");
     expect(conversation).not.toContain("shrink-0 border-t p-3");
