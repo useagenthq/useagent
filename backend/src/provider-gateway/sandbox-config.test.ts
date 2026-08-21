@@ -25,6 +25,9 @@ afterEach(() => {
     "TOOL_GATEWAY_TOKEN_TTL_MS",
     "PROVIDER_GATEWAY_SECRET",
     "TOOL_GATEWAY_SECRET",
+    "NODE_ENV",
+    "SKYNET_DEV_MODE",
+    "SANDBOX_SECRET_MODE",
   ]) {
     const value = original[name];
     if (value === undefined) delete process.env[name];
@@ -208,6 +211,7 @@ describe("sandbox provider gateway config", () => {
   test("OpenCode pre-wires all paid providers for warm model switches", () => {
     process.env.GATEWAY_PUBLIC_URL = "https://gateway.example.test";
     process.env.PROVIDER_GATEWAY_SECRET = "provider-test-0123456789abcdef0123456789abcdef";
+    process.env.SANDBOX_SECRET_MODE = "gateway_only";
     const options = opencodeProviderGatewayOptions(ctx());
     expect(options.anthropic?.baseURL).toEndWith("/api/provider/anthropic/v1");
     expect(options.openai?.baseURL).toEndWith("/api/provider/openai/v1");
@@ -215,7 +219,7 @@ describe("sandbox provider gateway config", () => {
     expect(verifyProviderToken(options.anthropic?.apiKey)).toMatchObject({ provider: "anthropic" });
     expect(verifyProviderToken(options.openai?.apiKey)).toMatchObject({ provider: "openai" });
     expect(verifyProviderToken(options.openrouter?.apiKey)).toMatchObject({ provider: "openrouter" });
-    expect(SANDBOX_GENERATION).toBe("provider-gateway-v14-gateway-only-secrets");
+    expect(SANDBOX_GENERATION).toBe("provider-gateway-v15-gateway-only-secrets");
     expect(providerGatewaySandboxLabels("run-a")).toEqual({
       "skynet-run": "run-a",
       "skynet-provider-generation": SANDBOX_GENERATION,
@@ -458,5 +462,34 @@ describe("sandbox provider gateway config", () => {
       providerGatewaySandboxLabels("run-a");
     expect(await providerGatewaySandboxIsCurrent(sandbox)).toBe(true);
     expect(shellChecks).toBe(1);
+  });
+
+  test("compatibility sandboxes cannot survive a gateway-only transition", async () => {
+    process.env.GATEWAY_PUBLIC_URL = "https://gateway.example.test";
+    process.env.PROVIDER_GATEWAY_SECRET = "provider-test-0123456789abcdef0123456789abcdef";
+    process.env.NODE_ENV = "development";
+    process.env.SANDBOX_SECRET_MODE = "compatibility";
+    const compatibilityLabels = providerGatewaySandboxLabels("run-compatibility");
+    expect(compatibilityLabels["skynet-provider-generation"]).toBe(
+      "provider-gateway-v15-compatibility-secrets",
+    );
+
+    process.env.SANDBOX_SECRET_MODE = "gateway_only";
+    let shellChecks = 0;
+    const retained = {
+      labels: compatibilityLabels,
+      process: {
+        executeCommand: async () => {
+          shellChecks++;
+          return { exitCode: 0 };
+        },
+      },
+    } as unknown as SandboxHandle;
+
+    expect(await providerGatewaySandboxIsCurrent(retained)).toBe(false);
+    expect(shellChecks).toBe(0);
+    expect(providerGatewaySandboxLabels("run-gateway")["skynet-provider-generation"]).toBe(
+      SANDBOX_GENERATION,
+    );
   });
 });

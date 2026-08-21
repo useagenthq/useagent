@@ -133,9 +133,13 @@ export function sandboxSecretMode(
   env: Readonly<Record<string, string | undefined>> = process.env,
 ): SandboxSecretMode {
   const configured = env.SANDBOX_SECRET_MODE?.trim().toLowerCase();
-  if (configured === "gateway_only" || configured === "compatibility") {
+  if (configured === "compatibility") {
+    if (env.NODE_ENV?.trim().toLowerCase() === "production" || !runtimeDevModeEnabled(env)) {
+      throw new Error("SANDBOX_SECRET_MODE=compatibility is forbidden outside development");
+    }
     return configured;
   }
+  if (configured === "gateway_only") return configured;
   return runtimeDevModeEnabled(env) ? "compatibility" : "gateway_only";
 }
 

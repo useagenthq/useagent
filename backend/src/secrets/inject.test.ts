@@ -25,9 +25,16 @@ describe("sandbox secret delivery mode", () => {
     expect(sandboxSecretMode({ NODE_ENV: "production" })).toBe("gateway_only");
     expect(sandboxSecretMode({ NODE_ENV: "development" })).toBe("compatibility");
     expect(
+      () =>
+        sandboxSecretMode({
+          NODE_ENV: "production",
+          SKYNET_DEV_MODE: "true",
+          SANDBOX_SECRET_MODE: "compatibility",
+        }),
+    ).toThrow("SANDBOX_SECRET_MODE=compatibility is forbidden outside development");
+    expect(
       sandboxSecretMode({
-        NODE_ENV: "production",
-        SKYNET_DEV_MODE: "false",
+        NODE_ENV: "development",
         SANDBOX_SECRET_MODE: "compatibility",
       }),
     ).toBe("compatibility");
