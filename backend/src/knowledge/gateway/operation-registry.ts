@@ -92,7 +92,7 @@ function withApprovalRequirement(tool: GatewayToolDescriptor): GatewayToolDescri
         approvalCapability: {
           type: "string",
           description:
-            "Opaque, short-lived, one-shot capability minted by the authenticated Skynet backend for this exact operation.",
+            "Opaque, short-lived, one-shot capability minted by the authenticated useAgent backend for this exact operation.",
         },
       },
       required: [...new Set([...(schema.required ?? []), "approvalCapability"])],
@@ -244,7 +244,7 @@ async function invokeRegisteredOperation(
       content: [
         {
           type: "text",
-          text: `A valid server-minted one-shot approval capability is required for ${name}. Call approval_request with this tool name and the exact argument object, have the user approve it in the Skynet session view, poll approval_poll for the approvalCapability, then retry ${name} with it.`,
+          text: `A valid server-minted one-shot approval capability is required for ${name}. Call approval_request with this tool name and the exact argument object, have the user approve it in the useAgent session view, poll approval_poll for the approvalCapability, then retry ${name} with it.`,
         },
       ],
       structuredContent: { error: "approval_required" },

@@ -1,5 +1,5 @@
 // Wire types + small parse helpers for the coding-session surface. These mirror
-// the Skynet backend contract (:3201) verbatim — snake_case as the API sends it.
+// the useAgent backend contract (:3201) verbatim — snake_case as the API sends it.
 
 import type { RunStatus } from "@/lib/runs";
 

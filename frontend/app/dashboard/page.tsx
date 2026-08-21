@@ -32,7 +32,7 @@ import { backendFetch } from "@/lib/backend-fetch";
 import { compactNumber, estimatedTokens } from "@/utils/format";
 
 export const metadata: Metadata = {
-  title: "Dashboard - skynet-a",
+  title: "Dashboard - useAgent",
 };
 
 // Auth cookies are forwarded per-request, so this page must render dynamically.

@@ -57,7 +57,7 @@ terminalRoutes.get(
             const sandboxId = sandbox.id;
             const state = (sandbox as { state?: string }).state;
             if (state === "stopped" || state === "paused" || state === "archived") {
-              send("\r\n\x1b[2m[skynet] waking sandbox…\x1b[0m\r\n");
+              send("\r\n\x1b[2m[useAgent] waking sandbox…\x1b[0m\r\n");
               await sandbox.start();
             }
 
@@ -80,7 +80,7 @@ terminalRoutes.get(
               await handle.disconnect().catch(() => {});
               return;
             }
-            send("\x1b[2m[skynet] connected to sandbox " + sandboxId.slice(0, 8) + "\x1b[0m\r\n");
+            send("\x1b[2m[useAgent] connected to sandbox " + sandboxId.slice(0, 8) + "\x1b[0m\r\n");
             await pty.sendInput("cd ~/work 2>/dev/null; clear\n");
           } catch (err) {
             const message = err instanceof Error ? err.message : String(err);
@@ -89,9 +89,9 @@ terminalRoutes.get(
             // filters that phrase into one calm waiting line) instead of a red
             // error that repeats on every reconnect.
             if (/not found|no live sandbox/i.test(message)) {
-              send("\r\n\x1b[2m[skynet] no live sandbox yet\x1b[0m\r\n");
+              send("\r\n\x1b[2m[useAgent] no live sandbox yet\x1b[0m\r\n");
             } else {
-              send(`\r\n\x1b[31m[skynet] ${message}\x1b[0m\r\n`);
+              send(`\r\n\x1b[31m[useAgent] ${message}\x1b[0m\r\n`);
             }
             try {
               ws.close();

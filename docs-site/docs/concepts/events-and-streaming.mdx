@@ -10,7 +10,7 @@ two shapes of it, and how events reach the UI.
 
 ## Canonical event
 
-Skynet's provider-neutral representation of engine output. Canonicalization is
+useAgent's provider-neutral representation of engine output. Canonicalization is
 what lets Codex, Claude, and OpenCode render through one UI contract: each
 engine's native stream is translated into the same canonical shape, so the
 timeline components never need to know which engine produced a run.
@@ -24,7 +24,7 @@ native runtime state; the shared packages define the public schema on top.
 
 ## The two streams
 
-Skynet uses two distinct server-sent event streams, and it is important not to
+useAgent uses two distinct server-sent event streams, and it is important not to
 conflate them:
 
 <CardGroup cols={2}>

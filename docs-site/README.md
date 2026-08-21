@@ -1,6 +1,6 @@
-# Skynet docs
+# useAgent docs
 
-The product documentation site for Skynet, the Loop agent platform. Built with
+The product documentation site for useAgent, the multi-harness agent platform. Built with
 [Blume](https://github.com/haydenbleasel/blume), a markdown-first docs framework
 on Astro and Vite.
 

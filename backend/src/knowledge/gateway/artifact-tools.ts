@@ -36,11 +36,11 @@ export const ARTIFACT_TOOLS = [
   {
     name: "artifact_publish",
     description:
-      "Publish a file from your sandbox as a durable Skynet artifact. The trusted " +
+      "Publish a file from your sandbox as a durable useAgent artifact. The trusted " +
       "backend pulls and size-checks the bytes once, records an immutable digest, " +
       "and returns browser preview/download references. Use this for FILES the user " +
       "explicitly wants AS files - screenshots, exported reports, videos, archives, and " +
-      "other raw outputs. Text and CSV files open directly in Skynet's editor, and PDFs " +
+      "other raw outputs. Text and CSV files open directly in useAgent's editor, and PDFs " +
       "preview inline. " +
       "To make a DOCUMENT, SPREADSHEET, or DECK the user will read or edit, do NOT script an " +
       "Office binary: call workpiece_create with the canonical state (for a deck, deck JSON " +
@@ -75,7 +75,7 @@ export const ARTIFACT_TOOLS = [
           type: "string",
           description:
             "Optional sandbox path to an editable companion so the file previews and edits in " +
-            "Skynet: HTML for a DOCX, CSV for an XLSX, or a v2 deck JSON (theme + positioned blocks, " +
+            "useAgent: HTML for a DOCX, CSV for an XLSX, or a v2 deck JSON (theme + positioned blocks, " +
             "the full visual design) for a PPTX. Without it, " +
             "an Office file is download-only.",
         },
@@ -171,7 +171,7 @@ export const ARTIFACT_TOOLS = [
       "Create an editable, previewable workpiece natively from its canonical state - no file, no " +
       "editable_path, no scripting an Office binary. This is the EASIEST and preferred way to " +
       "produce a document, spreadsheet, or deck the user will read or edit: pass the kind, a name, " +
-      "and the canonical v2 state, and Skynet creates the artifact, renders it natively, and opens " +
+      "and the canonical v2 state, and useAgent creates the artifact, renders it natively, and opens " +
       "it in the user's workspace. Export then produces the Office file (DOCX/XLSX/PPTX/PDF). " +
       "State by kind: document a themed rich document " +
       "{document:{schemaVersion:2,theme:{background,heading,body,accent},html}} (or {html} / {text}); " +

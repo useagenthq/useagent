@@ -30,7 +30,7 @@ export const APPROVAL_REQUEST_TOOLS: readonly GatewayToolDescriptor[] = [
   {
     name: "approval_request",
     description:
-      "Ask the human user to approve one approval-gated gateway operation (a tool that refused with approval_required). Records a durable approval request bound to this run and the exact tool arguments, and surfaces it in the session view. Returns the request id as pending: tell the user to approve or deny it in the Skynet session view, then check the decision with approval_poll.",
+      "Ask the human user to approve one approval-gated gateway operation (a tool that refused with approval_required). Records a durable approval request bound to this run and the exact tool arguments, and surfaces it in the session view. Returns the request id as pending: tell the user to approve or deny it in the useAgent session view, then check the decision with approval_poll.",
     inputSchema: {
       type: "object",
       properties: {
@@ -115,7 +115,7 @@ async function requestApproval(
     arguments: operationArguments,
   });
   return textResult(
-    `Approval request ${request.id} for ${toolName} is pending. Tell the user to approve or deny it in the Skynet session view, then check the decision with approval_poll using this id.`,
+    `Approval request ${request.id} for ${toolName} is pending. Tell the user to approve or deny it in the useAgent session view, then check the decision with approval_poll using this id.`,
     {
       approval_request_id: request.id,
       tool_name: request.toolName,
@@ -142,7 +142,7 @@ async function pollApproval(
   }
   if (request.status === "pending") {
     return textResult(
-      "Still pending. Remind the user to approve or deny this request in the Skynet session view, wait briefly, and poll again.",
+      "Still pending. Remind the user to approve or deny this request in the useAgent session view, wait briefly, and poll again.",
       { approval_request_id: request.id, status: "pending" },
     );
   }

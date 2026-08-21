@@ -61,7 +61,7 @@ export function LearningReview({
         <div className="flex flex-col gap-0.5">
           <h1 className="text-display-sm text-text-strong-950">Learnings</h1>
           <p className="text-paragraph-sm text-text-sub-600">
-            Review what Skynet proposes to learn. Nothing goes live without an accept.
+            Review what useAgent proposes to learn. Nothing goes live without an accept.
           </p>
         </div>
       </div>

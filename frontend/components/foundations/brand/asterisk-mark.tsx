@@ -1,7 +1,7 @@
 import { cn } from '@/utils/cn';
 
 /**
- * Skynet's 8-point asterisk brand mark (the ✳ used in the top nav, the
+ * useAgent's 8-point asterisk brand mark (the ✳ used in the top nav, the
  * new-chat hero, run traces, and plan headers). Purely presentational —
  * size and color come from className, so the same glyph serves the black
  * hero mark and the orange model badge.

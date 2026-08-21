@@ -70,6 +70,7 @@ describe("artifact native formats", () => {
     const reloaded = new ExcelJS.Workbook();
     const buffer = Buffer.from(output.bytes);
     await reloaded.xlsx.load(buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength));
+    expect(reloaded.creator).toBe("useAgent");
     expect(reloaded.worksheets.map((sheet) => sheet.name)).toEqual(["Summary", "Data"]);
     const summary = reloaded.getWorksheet("Summary")!;
     expect(summary.getCell("B4").formula).toBe("SUM(B2:B3)"); // a real formula, not text
@@ -91,6 +92,15 @@ describe("artifact native formats", () => {
     // The CSV canonical export downgrades the active sheet to values.
     const csv = await renderArtifactExport({ workbook }, "csv");
     expect(new TextDecoder().decode(csv.bytes)).toContain("APAC,1200000");
+  });
+
+  test("brands text-only XLSX exports with the useAgent creator", async () => {
+    const output = await renderArtifactExport({ text: "Region,Pipeline\nAPAC,1200000" }, "xlsx");
+    const reloaded = new ExcelJS.Workbook();
+    const buffer = Buffer.from(output.bytes);
+    await reloaded.xlsx.load(buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength));
+
+    expect(reloaded.creator).toBe("useAgent");
   });
 
   test("renders a themed deck to PPTX: slide count, text runs, background fill, shape, notes", async () => {

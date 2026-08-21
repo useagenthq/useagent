@@ -124,6 +124,8 @@ describe("isIdleTerminalNotice", () => {
     expect(isIdleTerminalNotice("[skynet] no live sandbox for this run")).toBe(true);
     expect(isIdleTerminalNotice("[skynet] Sandbox tpl-123 not found")).toBe(true);
     expect(isIdleTerminalNotice("[skynet] Sandbox is probably not running anymore")).toBe(true);
+    expect(isIdleTerminalNotice("[useAgent] Sandbox tpl-123 not found")).toBe(true);
+    expect(isIdleTerminalNotice("[useAgent] Sandbox is probably not running anymore")).toBe(true);
   });
 
   test("preserves real terminal output", () => {

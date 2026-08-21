@@ -7,7 +7,7 @@ import { PlaybooksView } from "./playbooks-view";
 
 export const metadata: Metadata = {
   title: "Playbooks",
-  description: "Structured procedures Skynet follows as guidance for repeatable work.",
+  description: "Structured procedures useAgent follows as guidance for repeatable work.",
 };
 
 export default async function PlaybooksPage() {

@@ -3,8 +3,8 @@ import type { Metadata } from "next";
 import { AuthForm } from "./auth-form";
 
 export const metadata: Metadata = {
-  title: "Sign in - skynet-a",
-  description: "Sign in to your skynet-a workspace.",
+  title: "Sign in - useAgent",
+  description: "Sign in to your useAgent workspace.",
 };
 
 export default function LoginPage() {

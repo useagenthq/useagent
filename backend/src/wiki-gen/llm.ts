@@ -71,7 +71,7 @@ export const openRouterLlm: WikiLlm = async (messages, opts) => {
         "content-type": "application/json",
         authorization: `Bearer ${apiKey}`,
         "HTTP-Referer": "https://github.com/skynet-saas/wiki-gen",
-        "X-Title": "Skynet Wiki Generator",
+        "X-Title": "useAgent Wiki Generator",
       },
       body: JSON.stringify({
         model: wikiModel(),

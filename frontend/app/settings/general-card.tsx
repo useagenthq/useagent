@@ -53,7 +53,7 @@ export function GeneralCard() {
         <SettingsRow label="Workspace name">
           <Input.Root size="small" className={INPUT_WIDTH}>
             <Input.Wrapper>
-              <Input.Input aria-label="Workspace name" defaultValue="Skynet" />
+              <Input.Input aria-label="Workspace name" defaultValue="useAgent" />
             </Input.Wrapper>
           </Input.Root>
         </SettingsRow>

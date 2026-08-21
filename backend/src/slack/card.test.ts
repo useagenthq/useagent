@@ -110,12 +110,13 @@ describe("buildRunCard shape", () => {
     expect(context.elements[0].text).not.toContain("Repo:");
   });
 
-  test("the actions block has an 'Open in Skynet' url button", () => {
+  test("the actions block has an 'Open in useAgent' url button", () => {
     const { blocks } = buildRunCard(base);
     const actions = firstOfType(blocks, "actions");
     const button = actions.elements[0];
     expect(button.type).toBe("button");
-    expect(button.text.text).toBe("Open in Skynet");
+    expect(button.text.text).toBe("Open in useAgent");
+    expect(button.action_id).toBe("open_in_skynet");
     expect(button.url).toBe("https://app.example.com/session/thread-1");
   });
 

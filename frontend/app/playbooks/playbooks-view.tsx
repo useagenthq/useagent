@@ -135,7 +135,7 @@ export function PlaybooksView({
             <h1 className="text-display-sm text-text-strong-950">Playbooks</h1>
           </div>
           <p className="mt-1.5 text-paragraph-sm text-text-sub-600">
-            Structured procedures Skynet follows as guidance - Overview, Procedure, Verify
+            Structured procedures useAgent follows as guidance - Overview, Procedure, Verify
           </p>
         </div>
         <Button.Root
