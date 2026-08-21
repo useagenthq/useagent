@@ -10,6 +10,7 @@ import * as Modal from "@/components/ui/modal";
 import * as Select from "@/components/ui/select";
 import * as Textarea from "@/components/ui/textarea";
 import { ingestKnowledge } from "./knowledge-api";
+import { knowledgeFolderLabel } from "./knowledge-data";
 
 /**
  * "Add knowledge" — the header dark pill plus the AlignUI modal it opens. The
@@ -161,7 +162,7 @@ export function AddKnowledgeModal({
                 <Select.Content>
                   {folders.map((option) => (
                     <Select.Item key={option} value={option}>
-                      {option}
+                      {knowledgeFolderLabel(option)}
                     </Select.Item>
                   ))}
                 </Select.Content>
