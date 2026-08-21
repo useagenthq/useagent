@@ -157,6 +157,22 @@ describe("durable artifacts", () => {
     }
   });
 
+  test("rejects signed provider or tool capabilities copied into workspace output", async () => {
+    const runId = await createSandboxRun(owner);
+    const previousBytes = sandboxBytes;
+    sandboxBytes = new TextEncoder().encode(
+      "copied capability: v1.eyJvIjoib3JnIiwidCI6InRocmVhZCJ9.c2lnbmF0dXJlYnl0ZXM",
+    );
+
+    try {
+      await expect(
+        publish(owner, runId, "/root/work/output/report.txt"),
+      ).rejects.toThrow("artifact content contains a signed runtime capability");
+    } finally {
+      sandboxBytes = previousBytes;
+    }
+  });
+
   test("serializes concurrent publication so a failed creator cannot erase the winner", async () => {
     class FirstPutFailsStorage extends InMemoryArtifactStorage {
       attempts = 0;

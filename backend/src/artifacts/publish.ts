@@ -36,6 +36,7 @@ import {
   isProtectedInjectedSecretPath,
   loadInjectedSecretRedactionValues,
 } from "../secrets/inject";
+import { containsSignedCapability } from "../secrets/redact";
 
 export const MAX_ARTIFACT_BYTES = 50 * 1024 * 1024;
 export const ARTIFACT_WORKSPACE_ROOT = "/root/work";
@@ -80,6 +81,9 @@ async function resolvePublishablePath(sandboxId: string, value: string): Promise
 
 function assertNoInjectedSecretBytes(bytes: Uint8Array, redactionValues: readonly string[]): void {
   const content = Buffer.from(bytes);
+  if (containsSignedCapability(content.toString("utf8"))) {
+    throw new Error("artifact content contains a signed runtime capability and cannot be published");
+  }
   for (const value of redactionValues) {
     if (value && content.includes(Buffer.from(value))) {
       throw new Error("artifact content contains protected secret material and cannot be published");
