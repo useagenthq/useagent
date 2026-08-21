@@ -6,6 +6,13 @@ export type ProviderBodyPolicyResult =
   | { readonly ok: false; readonly error: "invalid_json" | "model_not_allowed" | "output_limit_exceeded" }
   | { readonly ok: true; readonly body: string; readonly requestedOutputTokens: number };
 
+function requestModelMatchesRun(run: GatewayRun, requested: unknown): boolean {
+  if (requested === run.model) return true;
+  return run.engine === "opencode" &&
+    run.model.startsWith("openai/") &&
+    requested === run.model.slice("openai/".length);
+}
+
 /**
  * Validate the paid request against the durable run and add a ceiling when the
  * provider endpoint supports one. The sandbox cannot select a second model or
@@ -28,7 +35,9 @@ export function applyProviderBodyPolicy(
     return { ok: false, error: "invalid_json" };
   }
 
-  if (body.model !== run.model) return { ok: false, error: "model_not_allowed" };
+  if (!requestModelMatchesRun(run, body.model)) {
+    return { ok: false, error: "model_not_allowed" };
+  }
 
   let requestedOutputTokens = 0;
   if (outputLimitField) {
