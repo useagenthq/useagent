@@ -1,6 +1,6 @@
-# Skynet backend
+# useAgent backend
 
-The backend is the control plane for Skynet. It listens on `:3201` by default and owns auth, org scoping, durable runs, sandbox orchestration, knowledge, memory, skills, playbooks, automations, artifacts, uploads, and external connectors.
+The backend is the control plane for useAgent. It listens on `:3201` by default and owns auth, org scoping, durable runs, sandbox orchestration, knowledge, memory, skills, playbooks, automations, artifacts, uploads, and external connectors.
 
 ## What It Owns
 

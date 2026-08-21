@@ -36,7 +36,7 @@ weaker security posture than the web app; it shares the allowlist.
 Answers, artifacts, and approval cards all flow back to the Slack thread:
 
 - A Slack-started run posts a **Block Kit run card** with title and status, model,
-  and owner or repository, plus an "Open in Skynet" button.
+  and owner or repository, plus an "Open in useAgent" button.
 - The card **updates in place** as the run moves from queued to running to
   completed, throttled, with a plain-text chunked fallback so the answer is never
   lost.
@@ -46,7 +46,7 @@ Answers, artifacts, and approval cards all flow back to the Slack thread:
 ## Scoped bring-up
 
 A per-channel ingress allowlist scopes where Slack can start runs, so a workspace
-can enable Skynet in one channel before opening it more widely.
+can enable useAgent in one channel before opening it more widely.
 
 :::tip
 Everything Slack does here rides shared machinery: the command lane, the thread

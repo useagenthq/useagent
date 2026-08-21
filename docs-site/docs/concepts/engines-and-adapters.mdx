@@ -5,7 +5,7 @@ sidebar:
   order: 4
 ---
 
-An engine is the rented inner loop. Skynet does not build the agent that decides
+An engine is the rented inner loop. useAgent does not build the agent that decides
 what to do; it drives an existing one and owns everything around it.
 
 ## Engine
@@ -17,7 +17,7 @@ servers.
 
 ## Engine adapter
 
-The translator between an engine's protocol and Skynet's thread, command, and
+The translator between an engine's protocol and useAgent's thread, command, and
 event contracts. Adapters live in `backend/src/engines/`. The adapter's job is to
 turn an engine's native stream into canonical steps and to accept control (start,
 steer, cancel, resume) from the command lane.

@@ -1,6 +1,6 @@
-# Skynet frontend
+# useAgent frontend
 
-The frontend is the product UI for Skynet. It runs on `:3400` by default, uses Next.js 16, and talks to the backend through the same-origin `/api/*` proxy.
+The frontend is the product UI for useAgent. It runs on `:3400` by default, uses Next.js 16, and talks to the backend through the same-origin `/api/*` proxy.
 
 ## Route Map
 
