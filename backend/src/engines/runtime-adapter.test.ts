@@ -176,9 +176,9 @@ describe("T3 run adapter gate", () => {
 
   test("barriers on the codex reconcile (restart fallback) before steering", () => {
     const source = readFileSync(new URL("./runtime-adapter.ts", import.meta.url), "utf8");
-    // Scoped to codex-engine runs only; opencode/claude never patch settings and
-    // must not pay the barrier or restart.
-    expect(source).toContain('if (engine === "codex") {');
+    // Scoped to the subscription bridge only. Provider-gateway Codex and the
+    // other engines never publish the relay-backed subscription cache marker.
+    expect(source).toContain('providerBridgeLease?.authPath === "subscription"');
     // (B) Content barrier is attempted first (fast path, no restart cost).
     expect(source).toContain(
       "awaitCodexProviderReady(sandbox, ctx.signal, CODEX_BARRIER_DEADLINE_MS)",

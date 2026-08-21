@@ -42,9 +42,17 @@ const bootstrapStates = new Map<string | object, BootstrapState>();
 
 type RuntimeEngineId = Extract<EngineId, "codex" | "claude" | "opencode">;
 
-export type RuntimeProviderBridgeLease = CodexSubscriptionLease;
+export interface RuntimeProviderBridgeLease extends CodexSubscriptionLease {
+  readonly authPath: CodexBridgeAuthPath | null;
+}
 
 const NOOP_PROVIDER_BRIDGE_LEASE: RuntimeProviderBridgeLease = {
+  authPath: null,
+  async close() {},
+};
+
+const CODEX_GATEWAY_BRIDGE_LEASE: RuntimeProviderBridgeLease = {
+  authPath: "provider_gateway",
   async close() {},
 };
 
@@ -216,13 +224,17 @@ export async function prepareRuntimeProviderBridge(
     if (authPath === "subscription") {
       if (!subscription) throw new Error("codex_subscription_runtime_missing");
       await ensureRuntimeProviderBootstrap(sandbox, command);
-      return prepareCodexSubscription({ sandbox, ctx, workdir, runtime: subscription });
+      const lease = await prepareCodexSubscription({ sandbox, ctx, workdir, runtime: subscription });
+      return {
+        authPath: "subscription",
+        close: () => lease.close(),
+      };
     }
     await prepareProviderGatewaySandbox(sandbox, ctx, engine);
   }
 
   await ensureRuntimeProviderBootstrap(sandbox, command);
-  return NOOP_PROVIDER_BRIDGE_LEASE;
+  return engine === "codex" ? CODEX_GATEWAY_BRIDGE_LEASE : NOOP_PROVIDER_BRIDGE_LEASE;
 }
 
 /** Install stable provider driver paths before a warm runtime server starts. No

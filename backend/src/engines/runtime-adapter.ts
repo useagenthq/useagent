@@ -376,7 +376,7 @@ export function makeRuntimeAdapter(engine: RuntimeEngineId, driver: ProviderDriv
         // falls back to a local, unauthenticated app-server (no first activity).
         // Scoped to codex; opencode/claude do not patch settings and their paths
         // stay unchanged. The no-first-activity watchdog below remains the net.
-        if (engine === "codex") {
+        if (providerBridgeLease?.authPath === "subscription") {
           await prepareStage("runtime_barrier", async () => {
             // (B) Barrier: wait for the reconcile to publish the subscription
             // (relay-backed) codex instance into its status cache. Content, not
