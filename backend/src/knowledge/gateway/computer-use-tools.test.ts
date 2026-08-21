@@ -9,6 +9,7 @@ import {
   executeComputerUseTool,
   screenshotArtifactHandoff,
   setComputerUseServiceForTest,
+  x11HotkeyCommand,
   x11KeyCommand,
   x11KeyName,
 } from "./computer-use-tools";
@@ -130,7 +131,14 @@ describe("computer-use gateway tools", () => {
       "xdotool keydown --clearmodifiers Return; sleep 0.1; xdotool keyup Return; sleep 0.2",
     );
     expect(x11KeyCommand("l", ["ctrl", "shift"])).toBe(
-      "xdotool key --clearmodifiers --delay 100 ctrl+shift+l; sleep 0.2",
+      "xdotool keyup ctrl alt shift Super_L && sleep 0.05 && xdotool keydown ctrl && " +
+        "xdotool keydown shift && xdotool key l; status=$?; xdotool keyup shift; " +
+        "xdotool keyup ctrl; sleep 0.2; test $status -eq 0",
+    );
+    expect(x11HotkeyCommand("ctrl+alt+t")).toBe(
+      "xdotool keyup ctrl alt shift Super_L && sleep 0.05 && xdotool keydown ctrl && " +
+        "xdotool keydown alt && xdotool key t; status=$?; xdotool keyup alt; " +
+        "xdotool keyup ctrl; sleep 0.2; test $status -eq 0",
     );
   });
 
