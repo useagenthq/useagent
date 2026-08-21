@@ -64,7 +64,7 @@ export default function Home() {
           <div className='flex items-center gap-3'>
             <AsteriskMark className='size-8 text-text-strong-950' />
             <div className='flex flex-col'>
-              <span className='text-label-lg text-text-strong-950'>skynet-a</span>
+              <span className='text-label-lg text-text-strong-950'>useAgent</span>
               <span className='text-mono-label text-text-soft-400'>
                 Loop · agent platform
               </span>
@@ -80,7 +80,7 @@ export default function Home() {
             AlignUI foundation
           </h1>
           <p className='text-paragraph-md text-text-sub-600'>
-            Vendored AlignUI base components on Tailwind v4, wired to the Skynet
+            Vendored AlignUI base components on Tailwind v4, wired to the useAgent
             brand layer. This page proves the foundation renders in both themes.
           </p>
         </div>

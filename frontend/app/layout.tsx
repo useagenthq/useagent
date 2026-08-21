@@ -27,7 +27,7 @@ const fontDisplay = Inter_Tight({
 });
 
 export const metadata: Metadata = {
-  title: 'skynet-a - Loop agent platform',
+  title: 'useAgent - Loop agent platform',
   description: 'Internal agent platform for Loop, built on AlignUI + prompt-kit.',
 };
 

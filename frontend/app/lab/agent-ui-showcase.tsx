@@ -60,12 +60,12 @@ export function AgentUiShowcase() {
             <RiSparkling2Line className="size-5" aria-hidden />
           </span>
           <div className="max-w-2xl">
-            <p className="font-mono text-label-xs text-text-disabled-300">beUI.dev × Skynet</p>
+            <p className="font-mono text-label-xs text-text-disabled-300">beUI.dev × useAgent</p>
             <h2 className="mt-2 text-title-h4 text-text-white-0">Agent interface primitives</h2>
             <p className="mt-2 text-paragraph-md text-text-disabled-300">
               Production components for canonical activity, approvals, artifacts, tool results, and
               live subagents. The examples below use lab-only fixtures; the components accept real
-              Skynet view models.
+              useAgent view models.
             </p>
           </div>
           <nav aria-label="Agent component examples" className="flex flex-wrap gap-2">

@@ -129,7 +129,7 @@ export function NewSkillModal({
               New skill
             </Modal.Title>
             <Modal.Description className="text-paragraph-sm text-text-sub-600">
-              Capture a reusable skill Skynet can follow for repeatable work.
+              Capture a reusable skill useAgent can follow for repeatable work.
             </Modal.Description>
           </div>
 
@@ -209,7 +209,7 @@ export function NewSkillModal({
 
           {status === "error" && (
             <p className="rounded-xl bg-error-lighter px-3 py-2 text-paragraph-xs text-error-base">
-              Couldn&rsquo;t reach Skynet. Check the backend and try again.
+              Couldn&rsquo;t reach useAgent. Check the backend and try again.
             </p>
           )}
 

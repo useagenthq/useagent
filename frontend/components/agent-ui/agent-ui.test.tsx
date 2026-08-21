@@ -129,7 +129,7 @@ describe("agent UI accessibility contracts", () => {
     );
 
     expect(html).toContain('data-testid="native-question-card"');
-    expect(html).toContain("Skynet needs your input");
+    expect(html).toContain("useAgent needs your input");
     expect(html).toContain("What should the lab surface show?");
   });
 
