@@ -181,6 +181,9 @@ describe("unified shell contract", () => {
     expect(contextMenu).toContain("Personal memory");
     expect(contextMenu).toContain("Type to search skills and playbooks");
     expect(contextMenu).not.toContain("<SearchablePicker");
+    expect(composer).toContain("<PromptInput");
+    expect(composer).toContain("<PromptInputTextarea");
+    expect(composer).not.toContain("<textarea");
     expect(composer).toContain("min-w-40");
     expect(composer).toContain("grid-cols-[minmax(0,1fr)_auto]");
     expect(composer).toContain('e.id !== "chat"');

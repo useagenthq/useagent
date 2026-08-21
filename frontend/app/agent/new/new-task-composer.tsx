@@ -19,6 +19,7 @@ import {
   modelOptionsForEngine,
   selectableModelsForEngine,
 } from "@/components/chat/types";
+import { PromptInput, PromptInputTextarea } from "@/components/prompt-kit/prompt-input";
 import { backendFetch } from "@/lib/backend-fetch";
 import { NewTaskContextMenu } from "./new-task-context-menu";
 import { RepoBranchBar } from "./repo-branch-bar";
@@ -333,104 +334,98 @@ export function NewTaskComposer({
 
   return (
     <div>
-      <div className="rounded-2xl border border-stroke-soft-200 bg-bg-white-0 shadow-regular-sm">
-        {/* No overflow-hidden: the slash-command popover drops below the textarea
-          and must float over the card edge instead of clipping at it (same rule
-          as the chat composer card). */}
-        <div className="flex flex-col gap-3 p-3.5">
-          <input
-            ref={fileInput}
-            type="file"
-            multiple
-            className="hidden"
-            onChange={(event) => {
-              if (event.target.files) void runUploads.addFiles(event.target.files);
-              event.target.value = "";
-            }}
-          />
-          <RunUploadChips
-            uploads={runUploads.uploads}
-            onRemove={(upload) => void runUploads.remove(upload)}
-          />
-          <div className="relative">
-            {cmdActive && (
-              <div className="absolute left-0 top-full z-30 mt-2 w-full">
-                <SlashCommandPopover
-                  matches={cmdMatches}
-                  highlight={Math.min(cmdHighlight, cmdMatches.length - 1)}
-                  onSelect={pickCommand}
-                />
-              </div>
-            )}
-            <textarea
-              value={prompt}
-              onChange={(event) => {
-                setPrompt(event.target.value);
-                setCmdDismissed(false);
-                setCmdHighlight(0);
-              }}
-              rows={3}
-              placeholder="Describe what you need - task, question, repo, constraints..."
-              aria-label="Describe what you need"
-              onKeyDown={(event) => {
-                if (handleCmdKeys(event)) return; // consumed by the "/" popover
-                // Plain Enter submits (chat convention); Shift+Enter = newline.
-                if (event.key === "Enter" && !event.shiftKey) {
-                  event.preventDefault();
-                  void submit();
-                }
-              }}
-              className="min-h-[104px] w-full resize-none bg-transparent px-1 text-paragraph-sm text-text-strong-950 outline-none placeholder:text-text-soft-400"
-            />
-          </div>
-
-          {/* Pickers */}
-          <div className="grid grid-cols-[minmax(0,1fr)_auto] items-end gap-3">
-            <div className="flex min-w-0 flex-wrap items-center gap-0.5">
-              <NewTaskContextMenu
-                skillGroups={skillGroups}
-                selectedSkill={playbook}
-                memoryScope={memoryScope}
-                onAddFiles={() => fileInput.current?.click()}
-                onSelectSkill={setPlaybook}
-                onSelectMemoryScope={setMemoryScope}
+      <PromptInput
+        value={prompt}
+        onValueChange={(value) => {
+          setPrompt(value);
+          setCmdDismissed(false);
+          setCmdHighlight(0);
+        }}
+        onSubmit={() => void submit()}
+        maxHeight={220}
+        disabled={submitting}
+        className="flex flex-col gap-3 p-3.5 shadow-regular-sm"
+      >
+        <input
+          ref={fileInput}
+          type="file"
+          multiple
+          className="hidden"
+          onChange={(event) => {
+            if (event.target.files) void runUploads.addFiles(event.target.files);
+            event.target.value = "";
+          }}
+        />
+        <RunUploadChips
+          uploads={runUploads.uploads}
+          onRemove={(upload) => void runUploads.remove(upload)}
+        />
+        <div className="relative min-w-0">
+          {cmdActive && (
+            <div className="absolute left-0 top-full z-30 mt-2 w-full">
+              <SlashCommandPopover
+                matches={cmdMatches}
+                highlight={Math.min(cmdHighlight, cmdMatches.length - 1)}
+                onSelect={pickCommand}
               />
-              <RepoMultiPicker repos={repos} value={selectedRepos} onChange={setSelectedRepos} />
-              <SearchablePicker
-                ariaLabel="Select engine"
-                triggerLabel="Engine"
-                searchPlaceholder="Search engines..."
-                groups={engineGroups}
-                value={engine}
-                onChange={setEngine}
-              />
-              {/* Model is shown only for engines whose backend policy accepts an
-                  explicit user choice (OpenCode and Codex). */}
-              {selectableModels.length > 0 ? (
-                <SearchablePicker
-                  ariaLabel="Select model"
-                  triggerLabel="Model"
-                  searchPlaceholder="Search models..."
-                  groups={modelGroups}
-                  value={model}
-                  onChange={setModel}
-                />
-              ) : null}
-              {/* Team-memory pool this task reads/writes (org vs personal). */}
-              <MemoryScopePicker scope={memoryScope} onChange={setMemoryScope} />
-              <RepoBranchBar repos={selectedRepoItems} value={branches} onChange={setBranches} />
             </div>
-            <button
-              type="button"
-              onClick={() => void submit()}
-              disabled={!canSubmit}
-              className="inline-flex min-w-40 shrink-0 items-center justify-center rounded-full bg-bg-strong-950 px-6 py-2.5 text-label-sm text-text-white-0 outline-none transition-opacity hover:opacity-90 focus-visible:ring-2 focus-visible:ring-stroke-strong-950 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              {submitting ? "Starting..." : "Start thread"}
-            </button>
-          </div>
+          )}
+          <PromptInputTextarea
+            placeholder="Describe what you need - task, question, repo, constraints..."
+            aria-label="Describe what you need"
+            onKeyDown={(event) => {
+              handleCmdKeys(event);
+            }}
+            className="min-h-[132px] px-1 text-paragraph-sm leading-relaxed"
+          />
         </div>
-      </div>
+
+        {/* Pickers */}
+        <div className="grid grid-cols-[minmax(0,1fr)_auto] items-end gap-3">
+          <div className="flex min-w-0 flex-wrap items-center gap-0.5">
+            <NewTaskContextMenu
+              skillGroups={skillGroups}
+              selectedSkill={playbook}
+              memoryScope={memoryScope}
+              onAddFiles={() => fileInput.current?.click()}
+              onSelectSkill={setPlaybook}
+              onSelectMemoryScope={setMemoryScope}
+            />
+            <RepoMultiPicker repos={repos} value={selectedRepos} onChange={setSelectedRepos} />
+            <SearchablePicker
+              ariaLabel="Select engine"
+              triggerLabel="Engine"
+              searchPlaceholder="Search engines..."
+              groups={engineGroups}
+              value={engine}
+              onChange={setEngine}
+            />
+            {/* Model is shown only for engines whose backend policy accepts an
+                  explicit user choice (OpenCode and Codex). */}
+            {selectableModels.length > 0 ? (
+              <SearchablePicker
+                ariaLabel="Select model"
+                triggerLabel="Model"
+                searchPlaceholder="Search models..."
+                groups={modelGroups}
+                value={model}
+                onChange={setModel}
+              />
+            ) : null}
+            {/* Team-memory pool this task reads/writes (org vs personal). */}
+            <MemoryScopePicker scope={memoryScope} onChange={setMemoryScope} />
+            <RepoBranchBar repos={selectedRepoItems} value={branches} onChange={setBranches} />
+          </div>
+          <button
+            type="button"
+            onClick={() => void submit()}
+            disabled={!canSubmit}
+            className="inline-flex min-w-40 shrink-0 items-center justify-center rounded-full bg-bg-strong-950 px-6 py-2.5 text-label-sm text-text-white-0 outline-none transition-opacity hover:opacity-90 focus-visible:ring-2 focus-visible:ring-stroke-strong-950 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            {submitting ? "Starting..." : "Start thread"}
+          </button>
+        </div>
+      </PromptInput>
 
       {error ? (
         <p role="alert" className="mt-2 text-paragraph-xs text-error-base">
