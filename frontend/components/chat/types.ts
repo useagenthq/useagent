@@ -120,15 +120,12 @@ export function engineLabel(id: EngineId): string {
 /** The curated model set (single source of truth for every picker). Bare ids →
  * Anthropic direct; provider/model ids → OpenRouter. */
 export const MODELS: { value: string; label: string; tint: string }[] = [
-  // Kimi leads: it is the production default lane (OpenRouter) and the one
-  // proven end-to-end on the deployed backend. The openai/* ids stay listed but
-  // currently 403 at the gateway model check until the backend release lands.
+  { value: "openai/gpt-5.6-luna", label: "GPT-5.6 Luna · Fast", tint: "text-sky-500" },
   {
     value: "moonshotai/kimi-k3",
     label: "Kimi K3",
     tint: "text-fuchsia-500",
   },
-  { value: "openai/gpt-5.6-luna", label: "GPT-5.6 Luna · Fast", tint: "text-sky-500" },
   { value: "claude-opus-5", label: "Opus 5", tint: "text-orange-500" },
   { value: "claude-sonnet-5", label: "Sonnet 5", tint: "text-blue-500" },
   { value: "claude-fable-5", label: "Fable 5", tint: "text-purple-500" },

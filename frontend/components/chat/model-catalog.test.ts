@@ -35,6 +35,7 @@ describe("engine model catalog", () => {
 
   test("OpenCode picker keeps provider-qualified model ids", () => {
     expect(selectableModelsForEngine("opencode")).toEqual(MODELS);
+    expect(selectableModelsForEngine("opencode")[0]?.value).toBe("openai/gpt-5.6-luna");
     expect(selectableModelsForEngine("opencode").map((m) => m.value)).toContain(
       "openai/gpt-5.6-luna",
     );
