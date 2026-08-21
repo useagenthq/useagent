@@ -386,7 +386,7 @@ async function pullRequestDetail(
   };
   const baseText =
     `PR #${summary.number} ${summary.title}\n` +
-    `${repo} ${summary.head ?? "?"} -> ${summary.base ?? "?"} | state ${summary.state}` +
+    `${repo} ${summary.head ?? "?"} @ ${headSha} -> ${summary.base ?? "?"} | state ${summary.state}` +
     `${summary.draft ? " (draft)" : ""}${summary.merged ? " (merged)" : ""} | author ${summary.author}\n` +
     `${changedFiles} files changed (+${summary.additions ?? "?"} -${summary.deletions ?? "?"})` +
     `${summary.files_truncated ? `, first ${files.length} listed` : ""}`;
