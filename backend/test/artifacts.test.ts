@@ -14,7 +14,10 @@ import { setOfficePreviewConverterForTest } from "../src/artifacts/office-previe
 import { executeArtifactTool } from "../src/knowledge/gateway/artifact-tools";
 import { createRun, setRunSandbox } from "../src/runs/repo";
 import { type OrgChange, subscribeOrg } from "../src/runs/org-signals";
-import { setSandboxDownloaderForTest } from "../src/slack/sandbox-file";
+import {
+  setSandboxDownloaderForTest,
+  setSandboxPathResolverForTest,
+} from "../src/slack/sandbox-file";
 import { deleteSecret, upsertSecret } from "../src/secrets/store";
 import { createOrgSession, fetchApi, json, type OrgSession } from "./helpers";
 import { InMemoryArtifactStorage } from "./in-memory-artifact-storage";
@@ -82,6 +85,7 @@ beforeAll(async () => {
 
 afterAll(() => {
   setSandboxDownloaderForTest(null);
+  setSandboxPathResolverForTest(null);
   setOfficePreviewConverterForTest(null);
   setArtifactStorageForTest(null);
 });
@@ -96,6 +100,43 @@ describe("durable artifacts", () => {
     await expect(
       publish(owner, runId, "/root/work/output/.env.local"),
     ).rejects.toThrow("Protected secret paths and dotenv files");
+  });
+
+  test("rejects relative paths, traversal, and workspace symlinks before download", async () => {
+    const runId = await createSandboxRun(owner);
+    const downloaded: string[] = [];
+    setSandboxDownloaderForTest(async (_sandboxId, path) => {
+      downloaded.push(path);
+      return { bytes: Buffer.from(SOURCE_BYTES), size: SOURCE_BYTES.byteLength };
+    });
+    setSandboxPathResolverForTest(async (_sandboxId, path) =>
+      path === "/root/work/output/dotenv-link"
+        ? "/root/.skynet/secrets/skynet-env.sh"
+        : path,
+    );
+
+    try {
+      await expect(publish(owner, runId, ".skynet/secrets/skynet-env.sh")).rejects.toThrow(
+        "canonical path under /root/work",
+      );
+      await expect(
+        publish(owner, runId, "/root/work/../../etc/passwd"),
+      ).rejects.toThrow("canonical path under /root/work");
+      await expect(
+        publish(owner, runId, "/root/work/output/dotenv-link"),
+      ).rejects.toThrow("must not traverse or use a symlink");
+      expect(downloaded).toEqual([]);
+
+      const normal = await publish(owner, runId, "/root/work/output/report.txt");
+      expect(normal.artifact.name).toBe("report.txt");
+      expect(downloaded).toEqual(["/root/work/output/report.txt"]);
+    } finally {
+      setSandboxPathResolverForTest(null);
+      setSandboxDownloaderForTest(async (_sandboxId, _path, maxBytes) => {
+        if (sandboxBytes.byteLength > maxBytes) throw new Error("test fixture exceeds cap");
+        return { bytes: Buffer.from(sandboxBytes), size: sandboxBytes.byteLength };
+      });
+    }
   });
 
   test("rejects artifact bytes containing a secret injected into the run sandbox", async () => {
@@ -255,7 +296,7 @@ describe("durable artifacts", () => {
 
   test("fails closed across organizations and for missing sandbox ownership", async () => {
     const runId = await createSandboxRun(owner);
-    const published = await publish(owner, runId, "safe.txt");
+    const published = await publish(owner, runId, "/root/work/safe.txt");
 
     const outsideMetadata = await fetchApi(`/api/artifacts/${published.artifact.id}`, {
       cookies: outsider.cookies,
@@ -406,7 +447,7 @@ describe("durable artifacts", () => {
 
   test("rejects invalid ranges and active content is attachment-only", async () => {
     const runId = await createSandboxRun(owner);
-    const published = await publish(owner, runId, "unsafe.html");
+    const published = await publish(owner, runId, "/root/work/unsafe.html");
     const path = `/api/artifacts/${published.artifact.id}/content`;
 
     const content = await fetchApi(path, { cookies: owner.cookies });
@@ -428,7 +469,7 @@ describe("durable artifacts", () => {
 
   test("persists typed workpiece state with optimistic concurrency and tenant isolation", async () => {
     const runId = await createSandboxRun(owner);
-    const published = await publish(owner, runId, "notes.md");
+    const published = await publish(owner, runId, "/root/work/notes.md");
     const path = `/api/artifacts/${published.artifact.id}/workpiece`;
 
     const initial = await json<{
@@ -473,8 +514,8 @@ describe("durable artifacts", () => {
 
   test("exposes bounded Office files as companion workpieces without mutating bytes", async () => {
     const runId = await createSandboxRun(owner);
-    const docx = await publish(owner, runId, "brief.docx");
-    const xlsx = await publish(owner, runId, "model.xlsx");
+    const docx = await publish(owner, runId, "/root/work/brief.docx");
+    const xlsx = await publish(owner, runId, "/root/work/model.xlsx");
 
     expect(docx.artifact.workpiece).toMatchObject({ kind: "document", state_revision: 0 });
     expect(xlsx.artifact.workpiece).toMatchObject({ kind: "spreadsheet", state_revision: 0 });
@@ -931,7 +972,7 @@ describe("durable artifacts", () => {
     const previous = sandboxBytes;
     try {
       sandboxBytes = new Uint8Array(10_000_001);
-      const published = await publish(owner, runId, "huge.xlsx");
+      const published = await publish(owner, runId, "/root/work/huge.xlsx");
       expect(published.artifact.workpiece).toBeNull();
     } finally {
       sandboxBytes = previous;
@@ -972,7 +1013,7 @@ describe("durable artifacts", () => {
 
   test("encodes non-ASCII and reserved filename characters safely", async () => {
     const runId = await createSandboxRun(owner);
-    const published = await publish(owner, runId, "report (final)' é.txt");
+    const published = await publish(owner, runId, "/root/work/report (final)' é.txt");
     const content = await fetchApi(`/api/artifacts/${published.artifact.id}/content`, {
       cookies: owner.cookies,
     });

@@ -106,7 +106,7 @@ afterAll(() => {
 describe("agent-proposed workpiece revisions", () => {
   test("a user-requested direct edit advances mainline without a pending approval", async () => {
     const runId = await createSandboxRun(owner);
-    const artifact = await publishDoc(owner, runId, "direct.md");
+    const artifact = await publishDoc(owner, runId, "/root/work/direct.md");
     const workpiecePath = `/api/artifacts/${artifact.id}/workpiece`;
 
     const applied = await updateDirectly(
@@ -139,7 +139,7 @@ describe("agent-proposed workpiece revisions", () => {
 
   test("propose leaves mainline untouched, then accept folds it in with provenance", async () => {
     const runId = await createSandboxRun(owner);
-    const artifact = await publishDoc(owner, runId, "notes.md");
+    const artifact = await publishDoc(owner, runId, "/root/work/notes.md");
     const workpiecePath = `/api/artifacts/${artifact.id}/workpiece`;
 
     const before = await json<{ workpiece: { state_revision: number }; state: { text: string } }>(
@@ -231,7 +231,7 @@ describe("agent-proposed workpiece revisions", () => {
 
   test("dismiss records the drop and never touches mainline", async () => {
     const runId = await createSandboxRun(owner);
-    const artifact = await publishDoc(owner, runId, "brief.md");
+    const artifact = await publishDoc(owner, runId, "/root/work/brief.md");
     const workpiecePath = `/api/artifacts/${artifact.id}/workpiece`;
 
     const proposalId = proposalIdOf(
@@ -274,7 +274,7 @@ describe("agent-proposed workpiece revisions", () => {
 
   test("accept conflicts when mainline advanced past the proposal, preserving the human edit", async () => {
     const runId = await createSandboxRun(owner);
-    const artifact = await publishDoc(owner, runId, "conflict.md");
+    const artifact = await publishDoc(owner, runId, "/root/work/conflict.md");
     const workpiecePath = `/api/artifacts/${artifact.id}/workpiece`;
 
     const proposalId = proposalIdOf(
@@ -312,7 +312,7 @@ describe("agent-proposed workpiece revisions", () => {
 
   test("fails closed across organizations and rejects malformed proposals", async () => {
     const runId = await createSandboxRun(owner);
-    const artifact = await publishDoc(owner, runId, "iso.md");
+    const artifact = await publishDoc(owner, runId, "/root/work/iso.md");
     const proposalId = proposalIdOf(await propose(owner, runId, artifact.id, { text: "x\n" }));
 
     const outsiderRunId = await createSandboxRun(outsider);

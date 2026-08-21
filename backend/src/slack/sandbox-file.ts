@@ -16,6 +16,24 @@ export interface SandboxFile {
 }
 
 export type SandboxDownloader = (sandboxId: string, path: string, maxBytes: number) => Promise<SandboxFile>;
+export type SandboxPathResolver = (sandboxId: string, path: string) => Promise<string>;
+
+function shellQuote(value: string): string {
+  return `'${value.replace(/'/g, `'\\''`)}'`;
+}
+
+async function providerResolvePath(sandboxId: string, path: string): Promise<string> {
+  const apiKey = sandboxProviderApiKey();
+  if (apiKey === undefined) throw new Error("sandbox provider credentials are not set");
+  const provider = sandboxProvider(apiKey);
+  const sandbox = await provider.get(sandboxId);
+  const result = await sandbox.process.executeCommand(`realpath -e -- ${shellQuote(path)}`);
+  const resolved = result.result?.replace(/\r?\n$/, "") ?? "";
+  if ((result.exitCode ?? 1) !== 0 || !resolved.startsWith("/")) {
+    throw new Error("artifact path does not resolve to a sandbox file");
+  }
+  return resolved;
+}
 
 async function providerDownload(sandboxId: string, path: string, maxBytes: number): Promise<SandboxFile> {
   const apiKey = sandboxProviderApiKey();
@@ -36,10 +54,25 @@ async function providerDownload(sandboxId: string, path: string, maxBytes: numbe
 }
 
 let override: SandboxDownloader | null = null;
+let resolverOverride: SandboxPathResolver | null = null;
 
 /** TEST ONLY: swap in a fake downloader so no live sandbox is needed. */
 export function setSandboxDownloaderForTest(fn: SandboxDownloader | null): void {
   override = fn;
+}
+
+/** TEST ONLY: swap in a fake realpath resolver so no live sandbox is needed. */
+export function setSandboxPathResolverForTest(fn: SandboxPathResolver | null): void {
+  resolverOverride = fn;
+}
+
+/** Resolve the actual sandbox target before crossing the file-download boundary. */
+export function resolveSandboxFilePath(sandboxId: string, path: string): Promise<string> {
+  if (resolverOverride) return resolverOverride(sandboxId, path);
+  // Downloader overrides are test-only and historically did not require a live
+  // sandbox. Preserve that seam unless a test installs an explicit resolver.
+  if (override) return Promise.resolve(path);
+  return providerResolvePath(sandboxId, path);
 }
 
 /** Download `path` from `sandboxId`, rejecting anything over `maxBytes`. */

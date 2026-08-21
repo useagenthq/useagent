@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { basename } from "node:path";
+import { basename, posix } from "node:path";
 import { contentTypeForName } from "./mime";
 import {
   createArtifactRecord,
@@ -23,7 +23,7 @@ import { artifactStorage } from "./storage";
 import { getRunForOrg } from "../runs/repo";
 import { publishOrgChange } from "../runs/org-signals";
 import { recordProviderEvent } from "../runs/provider-events";
-import { downloadSandboxFile } from "../slack/sandbox-file";
+import { downloadSandboxFile, resolveSandboxFilePath } from "../slack/sandbox-file";
 import { extractPptxDeck, type PptxImportResult } from "@skynet/artifact-formats";
 import type { DeckBackground, DeckBlock, DeckSlide, PresentationDeck } from "@skynet/artifact-workspace";
 import {
@@ -38,6 +38,7 @@ import {
 } from "../secrets/inject";
 
 export const MAX_ARTIFACT_BYTES = 50 * 1024 * 1024;
+const ARTIFACT_WORKSPACE_ROOT = "/root/work";
 
 function safeName(sourcePath: string, requested?: string): string {
   const candidate = requested?.trim() || basename(sourcePath.replaceAll("\\", "/")) || "artifact";
@@ -49,10 +50,32 @@ function checkedSourcePath(value: string): string {
   if (!path || path.length > 4_096 || path.includes("\0")) {
     throw new Error("artifact path must be a non-empty sandbox path under 4096 characters");
   }
+  if (
+    !posix.isAbsolute(path) ||
+    posix.normalize(path) !== path ||
+    (path !== ARTIFACT_WORKSPACE_ROOT && !path.startsWith(`${ARTIFACT_WORKSPACE_ROOT}/`))
+  ) {
+    throw new Error(`artifact path must be a canonical path under ${ARTIFACT_WORKSPACE_ROOT}`);
+  }
   if (isProtectedInjectedSecretPath(path)) {
     throw new Error("protected secret paths and dotenv files cannot be published as artifacts");
   }
   return path;
+}
+
+async function resolvePublishablePath(sandboxId: string, value: string): Promise<string> {
+  const requested = checkedSourcePath(value);
+  const resolved = await resolveSandboxFilePath(sandboxId, requested);
+  if (
+    resolved !== requested ||
+    (resolved !== ARTIFACT_WORKSPACE_ROOT && !resolved.startsWith(`${ARTIFACT_WORKSPACE_ROOT}/`))
+  ) {
+    throw new Error("artifact path must not traverse or use a symlink outside the workspace");
+  }
+  if (isProtectedInjectedSecretPath(resolved)) {
+    throw new Error("protected secret paths and dotenv files cannot be published as artifacts");
+  }
+  return resolved;
 }
 
 function assertNoInjectedSecretBytes(bytes: Uint8Array, redactionValues: readonly string[]): void {
@@ -223,12 +246,12 @@ export async function publishSandboxArtifact(input: {
    * artifact (same org + same workpiece kind), not a new artifact. */
   readonly updatesArtifactId?: string;
 }): Promise<{ artifact: ArtifactDescriptor; record: ArtifactRecord; created: boolean }> {
-  const sourcePath = checkedSourcePath(input.path);
   const run = await getRunForOrg(input.orgId, input.runId);
   if (!run || (input.threadId && run.threadId !== input.threadId)) {
     throw new Error("run not found in this thread");
   }
   if (!run.sandboxId) throw new Error("no sandbox is attached to this run");
+  const sourcePath = await resolvePublishablePath(run.sandboxId, input.path);
 
   const redactionValues = await loadInjectedSecretRedactionValues(input.orgId);
   const file = await downloadSandboxFile(run.sandboxId, sourcePath, MAX_ARTIFACT_BYTES);
@@ -237,7 +260,9 @@ export async function publishSandboxArtifact(input: {
   const name = safeName(sourcePath, input.name);
   const contentType = contentTypeForName(name);
   const workpieceKind = inferWorkpieceKind(name, contentType, file.bytes.length);
-  const editablePath = input.editablePath ? checkedSourcePath(input.editablePath) : null;
+  const editablePath = input.editablePath
+    ? await resolvePublishablePath(run.sandboxId, input.editablePath)
+    : null;
   if (editablePath && !workpieceKind) {
     throw new Error("editable_path can only accompany a supported document or spreadsheet");
   }
