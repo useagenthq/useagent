@@ -208,6 +208,13 @@ export function gatewayToolRequiresApproval(name: string): boolean {
   return GATEWAY_APPROVAL_REQUIRED_TOOL_NAMES.has(name) && ALL_OPERATIONS.has(name);
 }
 
+/** Whether a tool name is implemented by this gateway process. Permission
+ * bridges use this exact registry lookup to allow the RPC round-trip; the
+ * gateway still performs run, tenant, and one-shot approval authorization. */
+export function isRegisteredGatewayToolName(name: string): boolean {
+  return ALL_OPERATIONS.has(name) || isGatewayMetaToolName(name);
+}
+
 /** Registered descriptor lookup across every family (conditional included) -
  *  used by approval_request to verify the gated arguments are complete. */
 export function advertisedGatewayToolDescriptor(

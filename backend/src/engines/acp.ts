@@ -7,6 +7,7 @@ import { decideAcpPermission } from "./permission-policy";
 import { composeTurnPrompt } from "./types";
 import { basename, childEnv, parseJsonLine, readLines, truncate } from "./util";
 import { extractAcpToolOutput } from "./acp-content";
+import { acpToolResultFailed } from "./acp-tool-step";
 
 // ---------------------------------------------------------------------------
 // ACP (Agent Client Protocol) adapter — ONE generic engine that speaks
@@ -97,6 +98,7 @@ interface ToolRecord {
   rawInput?: unknown;
   output?: string;
   status?: string;
+  failed?: boolean;
   flushed: boolean; // preceding narration already flushed as a task step
   emitted: boolean; // terminal step already emitted
 }
@@ -168,13 +170,16 @@ export const acpAdapter: EngineAdapter = {
 
     const stepForTool = (rec: ToolRecord): EmitStep => {
       const input = (rec.rawInput ?? {}) as Record<string, unknown>;
+      const resultState = rec.failed
+        ? { error: true, status: "failed" as const }
+        : { status: "completed" as const };
       if (rec.kind === "execute") {
         const cmd = (input.command as string) ?? rec.title ?? "command";
         return {
           kind: "command",
           label: truncate(String(cmd)),
           chip: "bash",
-          code_json: { command: cmd, output: rec.output ?? "" },
+          code_json: { command: cmd, output: rec.output ?? "", ...resultState },
         };
       }
       if (rec.kind === "edit" || rec.kind === "delete" || rec.kind === "move") {
@@ -185,7 +190,7 @@ export const acpAdapter: EngineAdapter = {
           kind: "file",
           label: truncate(String(label)),
           chip: "file",
-          code_json: { kind: rec.kind, path, input },
+          code_json: { kind: rec.kind, path, input, ...resultState },
         };
       }
       // read / search / fetch / think / other — surface as activity so the
@@ -194,7 +199,7 @@ export const acpAdapter: EngineAdapter = {
         kind: "command",
         label: truncate(String(rec.title ?? rec.kind ?? "tool")),
         chip: rec.kind ?? "tool",
-        code_json: { kind: rec.kind, input, output: rec.output ?? "" },
+        code_json: { kind: rec.kind, input, output: rec.output ?? "", ...resultState },
       };
     };
 
@@ -208,6 +213,9 @@ export const acpAdapter: EngineAdapter = {
       const out = extractAcpToolOutput(u.content, u.rawOutput);
       if (out) rec.output = out;
       if (u.status != null) rec.status = u.status as string;
+      rec.failed = rec.status === "failed" ||
+        acpToolResultFailed(u.content) ||
+        acpToolResultFailed(u.rawOutput);
       tools.set(id, rec);
 
       // A tool marks the end of the preceding narration block — flush it first
@@ -248,12 +256,18 @@ export const acpAdapter: EngineAdapter = {
 
     const handleServerRequest = (msg: JsonRpcMsg): void => {
       if (msg.method === "session/request_permission") {
-        // SECURITY (final_harness.md P0): single fail-closed decision point. DENY
-        // unless verified-dev yolo. See permission-policy.ts / Phase 3 (#77).
-        const options =
-          (msg.params as { options?: Array<{ optionId?: string; kind?: string }> } | undefined)
-            ?.options ?? [];
-        writeFrame({ jsonrpc: "2.0", id: msg.id, result: decideAcpPermission(options) });
+        // SECURITY: the shared fail-closed policy selects allow-once only for
+        // exact sandbox-native tools and registered, server-authorized gateway
+        // operations. Arbitrary MCP servers and titles remain denied.
+        const params = msg.params as {
+          options?: Array<{ optionId?: string; kind?: string }>;
+          toolCall?: { title?: string };
+        } | undefined;
+        writeFrame({
+          jsonrpc: "2.0",
+          id: msg.id,
+          result: decideAcpPermission(params?.options ?? [], undefined, params?.toolCall?.title),
+        });
         return;
       }
       // Any other server→client request (fs/*, terminal/*) — we serve none, so

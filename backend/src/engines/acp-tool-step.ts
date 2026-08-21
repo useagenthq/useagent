@@ -207,6 +207,24 @@ export function buildAcpToolCompletion(
   };
 }
 
+/** Detect an application-level MCP failure even when ACP reports that the
+ * transport call itself completed. */
+export function acpToolResultFailed(value: unknown, depth = 0): boolean {
+  if (depth > 6 || value === null || value === undefined) return false;
+  if (Array.isArray(value)) {
+    return value.some((item) => acpToolResultFailed(item, depth + 1));
+  }
+  if (typeof value !== "object") return false;
+  const record = value as Readonly<Record<string, unknown>>;
+  if (record.isError === true) return true;
+  if (record.status === "failed" || record.status === "error") return true;
+  if (record.error !== undefined && record.error !== null && record.error !== false) return true;
+  for (const nested of [record.result, record.structuredContent, record.content, record.data]) {
+    if (acpToolResultFailed(nested, depth + 1)) return true;
+  }
+  return false;
+}
+
 /** Translate one ACP tool notification into the provider-neutral step contract. */
 export function buildAcpToolStep(
   update: Record<string, unknown>,

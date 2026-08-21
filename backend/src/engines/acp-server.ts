@@ -40,6 +40,7 @@ import { createSecretRedactor } from "../secrets/redact";
 import { ensureSandboxDesktopView } from "./desktop";
 import { getThreadSandbox, setRunSandbox } from "../runs/repo";
 import {
+  acpToolResultFailed,
   buildAcpToolCompletion,
   buildAcpToolStep,
   type AcpToolNativeIds,
@@ -1204,6 +1205,9 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
             const call = recorded?.update ?? u;
             const stepId = toolSteps.get(tcid);
             const output = extractAcpToolOutput(u.content, u.rawOutput);
+            const failed = status === "failed" ||
+              acpToolResultFailed(u.content) ||
+              acpToolResultFailed(u.rawOutput);
             if (stepId) {
               await ctx.updateStep?.(
                 stepId,
@@ -1211,7 +1215,7 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
                   call,
                   output,
                   recorded?.native,
-                  status === "failed",
+                  failed,
                 ),
               );
             }
