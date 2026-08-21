@@ -11,6 +11,17 @@ const SESSION_COOKIES = [
  * Better Auth session and fails closed independently.
  */
 export function proxy(request: NextRequest): NextResponse {
+  // Local preview escape hatch (used by `bun run local`): skip the login redirect
+  // so the app renders against a remote API for UI work. HARD-GATED to development
+  // - NODE_ENV is 'production' in every real build, so this can never open auth in
+  // production even if the flag leaks into an env. Backend APIs still validate the
+  // Better Auth session independently and fail closed.
+  if (
+    process.env.NODE_ENV !== 'production' &&
+    process.env.SKYNET_PREVIEW_OPEN === '1'
+  ) {
+    return NextResponse.next();
+  }
   const hasSession = SESSION_COOKIES.some((name) => request.cookies.has(name));
   if (hasSession) return NextResponse.next();
 
