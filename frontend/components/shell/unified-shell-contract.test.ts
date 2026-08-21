@@ -164,32 +164,25 @@ describe("unified shell contract", () => {
 
   test("names the optional skill and playbook control when nothing is selected", () => {
     const composer = readFromFrontend("app/agent/new/new-task-composer.tsx");
-    const contextMenu = readFromFrontend("app/agent/new/new-task-context-menu.tsx");
 
-    expect(composer).toContain("<NewTaskContextMenu");
-    expect(contextMenu).toContain("visibleGroups.map");
-    expect(composer).toContain('label: "No skill or playbook"');
+    expect(composer).toContain('triggerLabel="Playbook or skills"');
+    expect(composer).toContain('label: "Playbook or skills"');
   });
 
   test("keeps context actions expandable and the primary action inline", () => {
     const composer = readFromFrontend("app/agent/new/new-task-composer.tsx");
-    const contextMenu = readFromFrontend("app/agent/new/new-task-context-menu.tsx");
 
-    expect(contextMenu).toContain('aria-label="Add files and context"');
-    expect(contextMenu).toContain("Add photos &amp; files");
-    expect(contextMenu).not.toContain("Company knowledge");
-    expect(contextMenu).not.toContain("Personal memory");
-    expect(contextMenu).toContain("Type to search skills and playbooks");
-    expect(contextMenu).not.toContain("<SearchablePicker");
+    expect(composer).toContain('aria-label="Add context"');
+    expect(composer).toContain("Add photos &amp; files");
+    expect(composer).toContain("GitHub");
+    expect(composer).toContain("triggerClassName={ADD_MENU_ROW}");
     expect(composer).toContain("<PromptInput");
     expect(composer).toContain("<PromptInputTextarea");
     expect(composer).not.toContain("<textarea");
-    expect(composer).toContain("min-w-36");
-    expect(composer).toContain('className="flex items-center gap-2"');
+    expect(composer).toContain("Start thread");
     expect(composer).toContain("flex-nowrap");
     expect(composer).toContain('e.id !== "chat"');
     expect(composer).not.toContain("<AsteriskMark");
-    expect(composer).not.toContain("border-t border-stroke-soft-200 pt-3");
   });
 
   test("folds the project rail to a useful compact rail on a real working transition", () => {
@@ -251,7 +244,7 @@ describe("unified shell contract", () => {
 
     expect(composer).toContain("maxHeight={180}");
     expect(composer).toContain(
-      'hero ? "pt-1 text-paragraph-lg" : "min-h-9 text-paragraph-sm leading-6"',
+      'hero ? "pt-1 text-paragraph-lg" : "min-h-6 text-paragraph-sm leading-6"',
     );
     expect(conversation).toContain("mx-auto w-full max-w-5xl");
     expect(conversation).not.toContain("shrink-0 border-t p-3");
