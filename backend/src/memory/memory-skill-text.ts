@@ -5,7 +5,7 @@
  * `/root/.skynet/memory.md` "is synced back to the user's account (in Postgres)
  * and reloaded into your next session ... synced automatically when the task
  * ends". That is FALSE: the sandbox file is ephemeral working state, never the
- * memory authority. Real persistence lives behind Skynet's memory TOOLS, backed
+ * memory authority. Real persistence lives behind useAgent's memory TOOLS, backed
  * by TencentDB Agent Memory. The adapter overwrites the on-disk SKILL.md at boot
  * (before `opencode serve`) with this text so the agent uses the tools, not the
  * file. No em dashes (project rule for user-visible strings).
@@ -13,7 +13,7 @@
 export const MEMORY_SKILL_PATH = "/opt/skynet/skills/memory/SKILL.md";
 
 /**
- * Pick the skill text for a run by whether the Skynet memory TOOLS are actually
+ * Pick the skill text for a run by whether the useAgent memory TOOLS are actually
  * wired into this sandbox. When the trusted gateway is NOT injected (e.g.
  * GATEWAY_PUBLIC_URL unset), an agent with no tools was observed improvising
  * a local `/root/.skynet/memory.md` write and FALSELY telling the user "saved to
@@ -26,10 +26,10 @@ export function memorySkillText(hasTools: boolean): string {
 
 export const MEMORY_SKILL_TEXT = `---
 name: memory
-description: Durable, cross-session memory for this user/organization, backed by the Skynet memory tools (TencentDB Agent Memory). Use memory_search to recall what you should already know, and memory_remember to persist a durable fact for next time. The local file /root/.skynet/memory.md is ephemeral scratch space in this throwaway sandbox and is NOT persistent; only the tools persist.
+description: Durable, cross-session memory for this user/organization, backed by the useAgent memory tools (TencentDB Agent Memory). Use memory_search to recall what you should already know, and memory_remember to persist a durable fact for next time. The local file /root/.skynet/memory.md is ephemeral scratch space in this throwaway sandbox and is NOT persistent; only the tools persist.
 ---
 
-Your durable memory for this user lives in the Skynet team-memory service (TencentDB Agent Memory), reached through backend memory TOOLS. It is NOT a file. The sandbox you are in, and any file you write in it (including /root/.skynet/memory.md), is destroyed when the task ends; writing a file is NOT remembering.
+Your durable memory for this user lives in the useAgent team-memory service (TencentDB Agent Memory), reached through backend memory TOOLS. It is NOT a file. The sandbox you are in, and any file you write in it (including /root/.skynet/memory.md), is destroyed when the task ends; writing a file is NOT remembering.
 
 ## Tools (this is how memory works)
 

@@ -37,7 +37,7 @@ export const AGENT_WORKFLOW_ROUTING_RULES =
   "repository, or account identifier when an activated procedure and trusted gateway can resolve " +
   "it from the authenticated workspace. For recurring or scheduled work, use the trusted " +
   "automation_list / automation_create / automation_update / automation_run_now / automation_history / " +
-  "automation_delete tools for Skynet automations; only discuss external scheduler products when " +
+  "automation_delete tools for useAgent automations; only discuss external scheduler products when " +
   "the user explicitly asks about those products.\n" +
   "</workflow_routing>\n\n";
 
