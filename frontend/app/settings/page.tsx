@@ -57,7 +57,7 @@ function Section({
 export default function SettingsPage() {
   return (
     <AppShell sidebar={<ThreadSidebar active="settings" />}>
-      <div className="mx-auto w-full max-w-4xl px-6 py-8 lg:px-10">
+      <div className="w-full min-w-0 px-6 py-8 lg:px-10">
         <h1 className="text-display-sm text-text-strong-950">Settings</h1>
 
         <div className="mt-8 flex gap-8">
