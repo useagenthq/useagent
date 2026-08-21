@@ -44,3 +44,14 @@ export function hasExactGitHubRepositoryUrlProvenance(resource: RunResource): bo
     return repository === resource.locator.repository;
   });
 }
+
+/** A repository companion synthesized from a PR URL binds that exact change;
+ * it does not grant checkout or repository-wide reads. Those broader actions
+ * require an explicit selection, inherited checkout scope, or an exact repo URL. */
+export function hasGitHubRepositoryCheckoutIntent(resource: RunResource): boolean {
+  if (resource.kind !== "code.repository") return false;
+  return resource.provenance.some((provenance) => {
+    if (provenance.source !== "user_text") return true;
+    return parseExactGitHubRepositoryUrl(provenance.raw) === resource.locator.repository;
+  });
+}

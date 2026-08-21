@@ -15,6 +15,7 @@ import type { EngineRunContext } from "./types";
 import { truncate } from "./util";
 
 type RepoCloneContext = Pick<EngineRunContext, "emit" | "orgId">;
+type RepoCheckoutContext = RepoCloneContext & Pick<EngineRunContext, "repos">;
 type RepoCloneOptions = { readonly useGithubCredential?: boolean };
 
 /** POSIX single-quote a string for safe interpolation into a shell command. */
@@ -196,13 +197,17 @@ export async function checkoutPullRequestResources(
   sandbox: SandboxHandle,
   workdir: string,
   resources: readonly RunResource[],
-  ctx: RepoCloneContext,
+  ctx: RepoCheckoutContext,
 ): Promise<void> {
+  const selectedRepos = new Set(
+    (ctx.repos ?? []).map((entry) => parseRepoRef(entry).repo.toLowerCase()),
+  );
   const changes = resources.filter(
     (resource): resource is Extract<RunResource, { kind: "code.change" }> =>
       resource.kind === "code.change" &&
       resource.provider === "github" &&
-      resource.locator.type === "github.pull_request",
+      resource.locator.type === "github.pull_request" &&
+      selectedRepos.has(resource.locator.repository.toLowerCase()),
   );
   if (changes.length === 0) return;
 

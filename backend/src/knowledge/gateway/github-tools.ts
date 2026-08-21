@@ -3,7 +3,8 @@ import { resolveGithubToken } from "../../github/auth";
 import { parseRepoRef } from "../../github/repo-ref";
 import { githubOrgAccessError } from "../../github/repos";
 import { getRunForOrg } from "../../runs/repo";
-import type { ResourceCapability } from "../../resources/types";
+import { hasGitHubRepositoryCheckoutIntent } from "../../resources/public-github";
+import type { ResourceCapability, RunResource } from "../../resources/types";
 import {
   githubAuthor,
   githubHeadEvidenceText,
@@ -41,6 +42,26 @@ export interface GithubPullRequestGrant {
   readonly number: number;
   readonly revision: string | null;
   readonly capabilities: readonly ResourceCapability[];
+}
+
+export function boundGithubRepositories(run: {
+  readonly repos: readonly string[];
+  readonly resolvedResources: readonly RunResource[];
+}): string[] {
+  const repositories = new Map<string, string>();
+  const add = (repository: string) => {
+    const key = repository.toLowerCase();
+    if (!repositories.has(key)) repositories.set(key, repository);
+  };
+  for (const entry of run.repos) add(parseRepoRef(entry).repo);
+  for (const resource of run.resolvedResources) {
+    if (resource.provider !== "github") continue;
+    if (resource.locator.type !== "github.repository") continue;
+    if (!resource.capabilities.includes("content.read")) continue;
+    if (!hasGitHubRepositoryCheckoutIntent(resource)) continue;
+    add(resource.locator.repository);
+  }
+  return [...repositories.values()];
 }
 
 const GITHUB_API = "https://api.github.com";
@@ -114,7 +135,7 @@ const productionService: GithubReadService = {
   async boundRepos(claims) {
     const run = await getRunForOrg(claims.orgId, claims.runId);
     if (!run || run.threadId !== claims.threadId) throw new Error("run not found in this thread");
-    return run.repos.map((entry) => parseRepoRef(entry).repo);
+    return boundGithubRepositories(run);
   },
 
   async pullRequestGrants(claims) {
@@ -311,9 +332,10 @@ async function pullRequestDetail(
   claims: ToolTokenClaims,
   args: Record<string, unknown>,
 ): Promise<ToolCallResult> {
-  const repo = await boundRepoOrThrow(service, claims, checkedRepo(args.repo));
+  const requestedRepo = checkedRepo(args.repo);
   const number = checkedNumber(args.number);
-  const grant = await pullRequestGrantOrThrow(service, claims, repo, number);
+  const grant = await pullRequestGrantOrThrow(service, claims, requestedRepo, number);
+  const repo = grant.repository;
   const detail = (await service.fetchJson(`/repos/${repo}/pulls/${number}`)) as GhPullDetail;
   const headSha = detail.head?.sha ? detail.head.sha : null;
   if (!headSha || headSha.toLowerCase() !== grant.revision!.toLowerCase()) {

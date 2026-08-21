@@ -1,4 +1,5 @@
 import { formatRepoRef, parseRepoRef } from "../github/repo-ref";
+import { hasGitHubRepositoryCheckoutIntent } from "./public-github";
 import {
   githubResourceResolver,
   isSafeGitRevision,
@@ -227,9 +228,11 @@ function applyAuthorizationDecision(
 function legacyRepos(resources: readonly RunResource[]): string[] {
   return resources.flatMap((resource) => {
     if (resource.locator.type !== "github.repository") return [];
+    const repository = resource.locator.repository;
+    if (!hasGitHubRepositoryCheckoutIntent(resource)) return [];
     return [
       formatRepoRef(
-        resource.locator.repository,
+        repository,
         resource.locator.revision,
       ),
     ];

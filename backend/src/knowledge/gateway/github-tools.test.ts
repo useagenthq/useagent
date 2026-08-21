@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import {
+  boundGithubRepositories,
   executeGithubTool,
   GITHUB_TOOLS,
   setGithubReadServiceForTest,
@@ -7,6 +8,7 @@ import {
   type GithubReadService,
 } from "./github-tools";
 import { baseGatewayToolDescriptors } from "./operation-registry";
+import { resolveRunIntake } from "../../resources/run-intake";
 import type { ToolTokenClaims } from "./token";
 
 const claims: ToolTokenClaims = {
@@ -84,6 +86,21 @@ describe("github gateway tool catalog", () => {
 });
 
 describe("repo binding", () => {
+  test("a resolved PR URL does not widen into repository-wide reads", async () => {
+    const intake = await resolveRunIntake(
+      {
+        source: "api",
+        text: "Review https://github.com/upstream-org/backend/pull/7",
+      },
+      { authorize: () => true },
+    );
+    expect(intake.resources).toHaveLength(2);
+    expect(boundGithubRepositories({
+      repos: intake.repos,
+      resolvedResources: intake.resources,
+    })).toEqual([]);
+  });
+
   test("rejects another product org before every production GitHub read path", async () => {
     setGithubReadServiceForTest(null);
     process.env.GITHUB_TENANT_ORG_ID = "org-primary";
@@ -118,9 +135,8 @@ describe("repo binding", () => {
 
   test("rejects when the run has no bound repositories", async () => {
     const mock = mockGithub({}, []);
-    const response = await executeGithubTool(claims, "github_pr_detail", {
+    const response = await executeGithubTool(claims, "github_list_prs", {
       repo: "upstream-org/backend",
-      number: 7,
     });
     expect(response.isError).toBe(true);
     expect(response.content[0]?.text).toContain("no bound repositories");
@@ -232,6 +248,34 @@ describe("github_list_prs", () => {
 });
 
 describe("github_pr_detail", () => {
+  test("uses an exact PR grant without broadening it to repository-wide reads", async () => {
+    mockGithub(
+      {
+        "/repos/upstream-org/backend/pulls/7": {
+          number: 7,
+          title: "Read through the exact grant",
+          state: "open",
+          head: { ref: "feature", sha: "abc123" },
+          base: { ref: "main" },
+        },
+        "/repos/upstream-org/backend/pulls/7/files?per_page=50": [],
+      },
+      [],
+    );
+
+    const detail = await executeGithubTool(claims, "github_pr_detail", {
+      repo: "upstream-org/backend",
+      number: 7,
+    });
+    expect(detail.isError).toBeUndefined();
+
+    const list = await executeGithubTool(claims, "github_list_prs", {
+      repo: "upstream-org/backend",
+    });
+    expect(list.isError).toBe(true);
+    expect(list.content[0]?.text).toContain("no bound repositories");
+  });
+
   test("requires an exact persisted PR grant, not only a bound repository", async () => {
     const mock = mockGithub({}, BOUND, []);
     const response = await executeGithubTool(claims, "github_pr_detail", {
