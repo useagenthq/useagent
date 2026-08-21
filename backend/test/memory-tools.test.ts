@@ -221,6 +221,55 @@ describe("memory_search", () => {
   });
 });
 
+describe("memory_read", () => {
+  test("reads L2 scenes and L3 persona inside the run's organization scope", async () => {
+    const calls: Array<{ path: string; body: Record<string, unknown> }> = [];
+    globalThis.fetch = (async (url: unknown, init?: RequestInit) => {
+      const path = new URL(String(url)).pathname;
+      const body = JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>;
+      calls.push({ path, body });
+      if (path === "/v3/scenario/read") {
+        return jsonResponse({ code: 0, data: { path: body.path, content: "deployment scene" } });
+      }
+      if (path === "/v3/core/read") {
+        return jsonResponse({ code: 0, data: { content: "organization persona" } });
+      }
+      return jsonResponse({ code: 0, data: {} });
+    }) as typeof fetch;
+    const run = await insertRun({ orgId: "org-12", userId: "u-1", scope: "org" });
+    const claims = claimsFor(run, "org-12");
+
+    const scene = await executeMemoryTool(claims, "memory_read", {
+      memoryRef: "tencent:l2:deployments.md",
+    });
+    const persona = await executeMemoryTool(claims, "memory_read", {
+      memoryRef: "tencent:l3:core",
+    });
+
+    expect(scene.content[0]?.text).toBe("deployment scene");
+    expect(persona.content[0]?.text).toBe("organization persona");
+    expect(calls).toEqual([
+      {
+        path: "/v3/scenario/read",
+        body: {
+          team_id: "org-12",
+          agent_id: "skynet-backend",
+          user_id: "org:org-12",
+          path: "deployments.md",
+        },
+      },
+      {
+        path: "/v3/core/read",
+        body: {
+          team_id: "org-12",
+          agent_id: "skynet-backend",
+          user_id: "org:org-12",
+        },
+      },
+    ]);
+  });
+});
+
 describe("memory_correct / memory_forget", () => {
   test("correcting an ORG L1 ref replaces-then-deletes (avoids the atomic/update 403)", async () => {
     const mock = tencentMock();
