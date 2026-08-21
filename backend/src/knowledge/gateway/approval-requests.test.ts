@@ -268,6 +268,8 @@ describe("gateway approval-request lane (#77)", () => {
     expect(payload.status).toBe("approved");
     const capability = payload.approval_capability as string;
     expect(capability.length).toBeGreaterThan(0);
+    const deliveryText = delivered.content.find((item) => item.type === "text")?.text ?? "";
+    expect(deliveryText).toContain(`approvalCapability=${capability}`);
 
     // Handed out exactly once: the row's parked copy is cleared.
     const again = await executeApprovalRequestToolLocal(actor.claims, "approval_poll", {
