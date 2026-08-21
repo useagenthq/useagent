@@ -1,6 +1,6 @@
 # @skynet/agent-client
 
-The browser/runtime-neutral Skynet thread client. Understands ONLY the Skynet product API
+The browser/runtime-neutral useAgent thread client. Understands ONLY the useAgent product API
 plus canonical/thread events. Knows nothing about OpenCode, ACP, Claude, Codex, Daytona,
 secrets, or databases, and imports no React, Next, backend, or provider module. Its only
 bare imports are the zero-dependency canonical protocol and artifact-workspace contracts.
@@ -36,7 +36,7 @@ typed API, the reconnect/replay connection, the canonical reducer, and selectors
 
 bun's `file:` install symlinks each package file into `node_modules`, and Turbopack's
 inferred project root is the app dir, so it rejects the out-of-root symlinked `package.json`
-("Invalid symlink"). The Skynet frontend fixes this in `frontend/next.config.ts` with
+("Invalid symlink"). The useAgent frontend fixes this in `frontend/next.config.ts` with
 `turbopack.root` = the repository root + a `turbopack.resolveAlias` mapping the bare
 specifiers to the package sources + `transpilePackages`. A non-Turbopack consumer (bun,
 Node, Vite) needs none of this - see `packages/conformance` for a framework-free example.
