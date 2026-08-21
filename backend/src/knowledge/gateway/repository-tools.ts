@@ -1,6 +1,11 @@
 import { ensureRepoClone, shq } from "../../engines/repo-prep";
 import { formatRepoRef, parseRepoRef } from "../../github/repo-ref";
 import { listRepos, type RepoInfo } from "../../github/repos";
+import {
+  hasExactGitHubRepositoryUrlProvenance,
+  parseExactGitHubRepositoryUrl,
+} from "../../resources/public-github";
+import type { RunResource } from "../../resources/types";
 import { getRunForOrg } from "../../runs/repo";
 import {
   sandboxProvider,
@@ -99,9 +104,17 @@ export function resolveRepositoryCloneTarget(
   accessibleRepos: readonly RepoInfo[],
   runRepos: readonly string[],
   query: string,
+  authorizedResources: readonly RunResource[] = [],
 ): RepositoryCloneTarget | null {
   const publicRepository = parsePublicGitHubUrl(query);
   if (publicRepository) {
+    const authorized = authorizedResources.some(
+      (resource) =>
+        resource.locator.type === "github.repository" &&
+        resource.locator.repository === publicRepository &&
+        hasExactGitHubRepositoryUrlProvenance(resource),
+    );
+    if (!authorized) return null;
     return {
       fullName: publicRepository,
       defaultBranch: null,
@@ -129,36 +142,7 @@ export function resolveRepositoryCloneTarget(
  * accepted.
  */
 export function parsePublicGitHubUrl(query: string): string | null {
-  let url: URL;
-  try {
-    url = new URL(query.trim());
-  } catch {
-    return null;
-  }
-  if (
-    url.protocol !== "https:" ||
-    url.hostname !== "github.com" ||
-    url.port ||
-    url.username ||
-    url.password ||
-    url.search ||
-    url.hash
-  ) {
-    return null;
-  }
-  const parts = url.pathname.replace(/\/$/, "").split("/").filter(Boolean);
-  if (parts.length !== 2) return null;
-  const owner = parts[0] ?? "";
-  const name = (parts[1] ?? "").replace(/\.git$/i, "");
-  if (
-    !/^[a-z0-9](?:[a-z0-9-]{0,37}[a-z0-9])?$/i.test(owner) ||
-    !/^[a-z0-9_.-]{1,100}$/i.test(name) ||
-    name === "." ||
-    name === ".."
-  ) {
-    return null;
-  }
-  return `${owner}/${name}`;
+  return parseExactGitHubRepositoryUrl(query);
 }
 
 function checkedQuery(value: unknown): string {
@@ -232,6 +216,7 @@ const productionService: RepositoryService = {
       publicRepository ? [] : await availableRepos(claims.orgId),
       run.repos,
       query,
+      run.resolvedResources ?? [],
     );
     if (!target) {
       throw new Error(

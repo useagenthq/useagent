@@ -10,6 +10,7 @@ import {
   setRepositoryServiceForTest,
 } from "./repository-tools";
 import type { ToolTokenClaims } from "./token";
+import type { RunResource } from "../../resources/types";
 
 const repos: RepoInfo[] = [
   {
@@ -39,6 +40,24 @@ const claims: ToolTokenClaims = {
   runId: "run-1",
   scope: "run",
   exp: Date.now() + 60_000,
+};
+
+const publicRepositoryResource: RunResource = {
+  kind: "code.repository",
+  provider: "github",
+  locator: {
+    type: "github.repository",
+    repository: "octocat/Hello-World",
+    revision: null,
+  },
+  capabilities: ["content.read", "code.checkout"],
+  provenance: [{
+    source: "user_text",
+    channel: "api",
+    raw: "https://github.com/octocat/Hello-World.git",
+    start: 0,
+    end: 41,
+  }],
 };
 
 afterEach(() => setRepositoryServiceForTest(null));
@@ -102,6 +121,14 @@ describe("repository gateway tools", () => {
         repos,
         [],
         "https://github.com/octocat/Hello-World",
+      ),
+    ).toBeNull();
+    expect(
+      resolveRepositoryCloneTarget(
+        repos,
+        ["octocat/Hello-World"],
+        "https://github.com/octocat/Hello-World.git",
+        [publicRepositoryResource],
       ),
     ).toEqual({
       fullName: "octocat/Hello-World",

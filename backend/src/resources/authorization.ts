@@ -1,5 +1,6 @@
 import { resolveGithubAuth } from "../github/auth";
 import { listRepos, unknownRepos, type RepoListing } from "../github/repos";
+import { hasExactGitHubRepositoryUrlProvenance } from "./public-github";
 import type {
   ResourceAuthorization,
   ResourceAuthorizationDecision,
@@ -17,6 +18,11 @@ interface GitHubPullResponse {
   } | null;
 }
 
+interface GitHubRepositoryResponse {
+  readonly full_name?: string;
+  readonly private?: boolean;
+}
+
 export interface RunResourceAuthorizationDependencies {
   readonly listRepos?: (orgId: string) => Promise<RepoListing>;
   readonly unknownRepos?: (repos: string[], orgId: string) => Promise<string[]>;
@@ -24,6 +30,7 @@ export interface RunResourceAuthorizationDependencies {
     repository: string,
     number: number,
   ) => Promise<{ readonly headSha: string }>;
+  readonly verifyPublicRepository?: (repository: string) => Promise<void>;
 }
 
 /** Server-side GitHub PR verification shared by every run ingress. */
@@ -64,6 +71,33 @@ export async function verifyGithubPullRequest(
   }
 }
 
+/** Anonymous, bounded verification for exact public GitHub repository URLs. */
+export async function verifyPublicGithubRepository(repository: string): Promise<void> {
+  const [owner = "", name = ""] = repository.split("/");
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+  try {
+    const response = await fetch(
+      `${GITHUB_API}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`,
+      {
+        headers: {
+          Accept: "application/vnd.github+json",
+          "X-GitHub-Api-Version": "2022-11-28",
+          "User-Agent": "skynet-a",
+        },
+        signal: controller.signal,
+      },
+    );
+    if (!response.ok) throw new Error(`GitHub API ${response.status}`);
+    const repo = (await response.json()) as GitHubRepositoryResponse;
+    if (repo.full_name !== repository || repo.private !== false) {
+      throw new Error("GitHub returned an unavailable public repository identity");
+    }
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 function unavailable(message: string): ResourceAuthorizationDecision {
   return { available: false, message };
 }
@@ -80,6 +114,7 @@ export function createRunResourceAuthorization(
   const list = dependencies.listRepos ?? listRepos;
   const unknown = dependencies.unknownRepos ?? unknownRepos;
   const verifyPull = dependencies.verifyPullRequest ?? verifyGithubPullRequest;
+  const verifyPublic = dependencies.verifyPublicRepository ?? verifyPublicGithubRepository;
 
   return async (resource) => {
     if (resource.locator.type === "web.page") {
@@ -99,6 +134,20 @@ export function createRunResourceAuthorization(
     }
 
     const repository = resource.locator.repository;
+    if (
+      resource.locator.type === "github.repository" &&
+      hasExactGitHubRepositoryUrlProvenance(resource)
+    ) {
+      try {
+        await verifyPublic(repository);
+        return { available: true, capabilities: ["content.read", "code.checkout"] };
+      } catch (error) {
+        return unavailable(
+          `Could not verify public repository ${repository}: ${error instanceof Error ? error.message : "GitHub lookup failed"}. Confirm the repository exists and is public.`,
+        );
+      }
+    }
+
     let listing: RepoListing;
     try {
       listing = await list(orgId);
