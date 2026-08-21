@@ -6,6 +6,7 @@ import type { ArtifactDescriptor } from "../../artifacts/repo";
 import { publishOrgChange } from "../../runs/org-signals";
 import { absoluteArtifactUrl, absoluteArtifactUrlContent } from "./artifact-links";
 import type { ToolTokenClaims } from "./token";
+import { WORKPIECE_STATE_INPUT_SCHEMA } from "./workpiece-state-schema";
 
 export interface ToolResult {
   content: Array<{ type: "text"; text: string }>;
@@ -123,14 +124,7 @@ export const ARTIFACT_TOOLS = [
           description: "The workpiece artifact id returned by artifact_publish.",
         },
         state: {
-          type: "object",
-          description:
-            "Full replacement workpiece state for the artifact's kind: document {document:{schemaVersion,theme,html}} " +
-            "(or {html} upgraded to a default-themed document, or {text} for a plain-text source doc), " +
-            "spreadsheet {workbook:{schemaVersion,activeSheetId,sheets:[{id,name,rowCount,colCount,cells}]}} " +
-            "(or {csv} which is upgraded to a single-sheet workbook), presentation " +
-            "{deck:{schemaVersion,theme,slides}} (or {slides:[{title,body,notes?}]} which is upgraded to a deck), " +
-            "or pdf {pdfText}.",
+          ...WORKPIECE_STATE_INPUT_SCHEMA,
         },
         summary: {
           type: "string",
@@ -170,8 +164,7 @@ export const ARTIFACT_TOOLS = [
             'The workpiece file name, e.g. "Q3 plan.docx". An extension matching the kind is added if you omit one.',
         },
         state: {
-          type: "object",
-          description: "The full canonical v2 state for the kind (see the tool description).",
+          ...WORKPIECE_STATE_INPUT_SCHEMA,
         },
         summary: {
           type: "string",
