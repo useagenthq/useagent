@@ -4,6 +4,7 @@ import {
   DEFAULT_CODEX_MODEL,
   DEFAULT_OPENCODE_MODEL,
   DEEPSEEK_V4_FLASH_MODEL,
+  GEMINI_3_7_FLASH_MODEL,
   FAST_CODEX_MODEL,
   FAST_OPENCODE_MODEL,
   KIMI_K3_MODEL,
@@ -34,6 +35,7 @@ describe("paid model policy", () => {
     expect(isModelAllowedForEngine("opencode", "openai/unbounded")).toBe(false);
     expect(isModelAllowedForEngine("opencode", KIMI_K3_MODEL)).toBe(true);
     expect(isModelAllowedForEngine("opencode", DEEPSEEK_V4_FLASH_MODEL)).toBe(true);
+    expect(isModelAllowedForEngine("opencode", GEMINI_3_7_FLASH_MODEL)).toBe(true);
     expect(isModelAllowedForEngine("claude", "openai/gpt-5.6-sol")).toBe(false);
     expect(isModelAllowedForEngine("claude", KIMI_K3_MODEL)).toBe(false);
   });

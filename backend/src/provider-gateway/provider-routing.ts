@@ -1,4 +1,8 @@
-import { DEEPSEEK_V4_FLASH_MODEL, KIMI_K3_MODEL } from "../runs/model-policy";
+import {
+  DEEPSEEK_V4_FLASH_MODEL,
+  GEMINI_3_7_FLASH_MODEL,
+  KIMI_K3_MODEL,
+} from "../runs/model-policy";
 
 /**
  * The literal Fireworks Fast Kimi K3 endpoint currently omits tool support.
@@ -19,6 +23,12 @@ const DEEPSEEK_V4_FLASH_ROUTING = {
   allow_fallbacks: true,
 } as const;
 
+const GEMINI_3_7_FLASH_ROUTING = {
+  sort: "throughput",
+  require_parameters: true,
+  allow_fallbacks: true,
+} as const;
+
 /** Apply trusted server-owned provider routing after the sandbox request passes
  * model authorization. A sandbox cannot pin an incompatible or untrusted route. */
 export function applyOpenRouterProviderRouting(model: string, body: string): string {
@@ -28,6 +38,8 @@ export function applyOpenRouterProviderRouting(model: string, body: string): str
     ? KIMI_K3_AGENT_ROUTING
     : model === DEEPSEEK_V4_FLASH_MODEL
       ? DEEPSEEK_V4_FLASH_ROUTING
+      : model === GEMINI_3_7_FLASH_MODEL
+        ? GEMINI_3_7_FLASH_ROUTING
       : null;
   if (!routing) return body;
 
