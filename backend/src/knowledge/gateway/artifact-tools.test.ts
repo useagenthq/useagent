@@ -34,7 +34,7 @@ describe("artifact gateway contract", () => {
       type: "string",
       description:
         "Optional sandbox path to an editable companion so the file previews and edits in " +
-        "Skynet: HTML for a DOCX, CSV for an XLSX, or a v2 deck JSON (theme + positioned blocks, " +
+        "useAgent: HTML for a DOCX, CSV for an XLSX, or a v2 deck JSON (theme + positioned blocks, " +
         "the full visual design) for a PPTX. Without it, " +
         "an Office file is download-only.",
     });

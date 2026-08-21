@@ -5,7 +5,7 @@ export const GATEWAY_META_TOOLS = [
   {
     name: "gateway_tools_search",
     description:
-      "Search the signed Skynet gateway's available tools by task, capability, or exact name. Use this when compact tool discovery is enabled or when you need to find a tool without carrying every schema in context.",
+      "Search the signed useAgent gateway's available tools by task, capability, or exact name. Use this when compact tool discovery is enabled or when you need to find a tool without carrying every schema in context.",
     inputSchema: {
       type: "object",
       properties: {
@@ -28,7 +28,7 @@ export const GATEWAY_META_TOOLS = [
   {
     name: "gateway_tool_describe",
     description:
-      "Return the full authoritative JSON schema for one signed Skynet gateway tool by exact name. Call this before using a tool discovered through gateway_tools_search.",
+      "Return the full authoritative JSON schema for one signed useAgent gateway tool by exact name. Call this before using a tool discovered through gateway_tools_search.",
     inputSchema: {
       type: "object",
       properties: {
@@ -41,7 +41,7 @@ export const GATEWAY_META_TOOLS = [
   {
     name: "gateway_tool_call",
     description:
-      "Invoke one exact signed Skynet gateway tool discovered through gateway_tools_search and gateway_tool_describe. Use this bridge when compact tool discovery is enabled; the target must be available to the current live run.",
+      "Invoke one exact signed useAgent gateway tool discovered through gateway_tools_search and gateway_tool_describe. Use this bridge when compact tool discovery is enabled; the target must be available to the current live run.",
     inputSchema: {
       type: "object",
       properties: {

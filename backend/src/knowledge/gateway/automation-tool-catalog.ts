@@ -2,7 +2,7 @@ export const AUTOMATION_TOOLS = [
   {
     name: "automation_schema",
     description:
-      "Describe the provider-neutral Skynet automation contract and safety gates. Use this before creating or editing an automation when field support is unclear.",
+      "Describe the provider-neutral useAgent automation contract and safety gates. Use this before creating or editing an automation when field support is unclear.",
     inputSchema: {
       type: "object",
       properties: {},
@@ -12,7 +12,7 @@ export const AUTOMATION_TOOLS = [
   {
     name: "automation_list",
     description:
-      "List this organization's Skynet scheduled automations. Use this for user requests about existing automations or recurring tasks. Identity is taken only from the gateway token.",
+      "List this organization's useAgent scheduled automations. Use this for user requests about existing automations or recurring tasks. Identity is taken only from the gateway token.",
     inputSchema: {
       type: "object",
       properties: {},
@@ -22,7 +22,7 @@ export const AUTOMATION_TOOLS = [
   {
     name: "automation_get",
     description:
-      "Get one Skynet scheduled automation summary by id. Identity is taken only from the gateway token; full prompt bodies are not returned to the model.",
+      "Get one useAgent scheduled automation summary by id. Identity is taken only from the gateway token; full prompt bodies are not returned to the model.",
     inputSchema: {
       type: "object",
       properties: {
@@ -35,7 +35,7 @@ export const AUTOMATION_TOOLS = [
   {
     name: "automation_create",
     description:
-      "Create a Skynet scheduled automation in this organization. New automations are always created disabled and never auto-run until automation_update enables them. Engine and model default to the current run when omitted. Use this for workspace recurring-task requests.",
+      "Create a useAgent scheduled automation in this organization. New automations are always created disabled and never auto-run until automation_update enables them. Engine and model default to the current run when omitted. Use this for workspace recurring-task requests.",
     inputSchema: {
       type: "object",
       properties: {
@@ -43,7 +43,7 @@ export const AUTOMATION_TOOLS = [
         cron: { type: "string", description: "Five-field cron expression." },
         timezone: { type: "string", description: "Optional IANA timezone, for example Asia/Kolkata." },
         prompt: { type: "string", description: "Prompt to run when the automation fires." },
-        engine: { type: "string", description: "Optional Skynet engine id." },
+        engine: { type: "string", description: "Optional useAgent engine id." },
         model: { type: "string", description: "Optional model id allowed for the selected engine." },
         skill: {
           type: ["object", "null"],
@@ -77,7 +77,7 @@ export const AUTOMATION_TOOLS = [
   {
     name: "automation_update",
     description:
-      "Update one existing Skynet automation in this organization. To set enabled=true, the user must have explicitly asked to enable or activate the automation and confirmEnable must be true.",
+      "Update one existing useAgent automation in this organization. To set enabled=true, the user must have explicitly asked to enable or activate the automation and confirmEnable must be true.",
     inputSchema: {
       type: "object",
       properties: {
@@ -120,7 +120,7 @@ export const AUTOMATION_TOOLS = [
   {
     name: "automation_run_now",
     description:
-      "Manually run one existing Skynet automation now. This creates a durable run and records a manual firing in the automation history.",
+      "Manually run one existing useAgent automation now. This creates a durable run and records a manual firing in the automation history.",
     inputSchema: {
       type: "object",
       properties: {
@@ -133,7 +133,7 @@ export const AUTOMATION_TOOLS = [
   {
     name: "automation_history",
     description:
-      "Read firing history for one Skynet automation in this organization, including linked run status.",
+      "Read firing history for one useAgent automation in this organization, including linked run status.",
     inputSchema: {
       type: "object",
       properties: {
@@ -146,7 +146,7 @@ export const AUTOMATION_TOOLS = [
   {
     name: "automation_delete",
     description:
-      "Delete one Skynet automation in this organization and its firing projection rows. Use for cleanup of test or obsolete automations.",
+      "Delete one useAgent automation in this organization and its firing projection rows. Use for cleanup of test or obsolete automations.",
     inputSchema: {
       type: "object",
       properties: {

@@ -54,7 +54,7 @@ export const MEMORY_TOOLS = [
   {
     name: "memory_remember",
     description:
-      "Persist a durable fact about THIS user/organization into Skynet team memory " +
+      "Persist a durable fact about THIS user/organization into useAgent team memory " +
       "(backed by TencentDB Agent Memory). Use for stable preferences, where things " +
       "live, and gotchas worth recalling next session. Writes synchronously and only " +
       "reports success once the memory provider acknowledges it. Never store secrets, " +
