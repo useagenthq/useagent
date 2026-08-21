@@ -306,6 +306,9 @@ interface ThreadRelay extends AcpGatewayDescriptorState {
    *  Cleared whenever the child/session is replaced; send-time authorization
    *  never falls back to a historical DB snapshot. */
   commandCatalog: { sessionId: string; commands: readonly CanonicalCommand[] } | null;
+  /** Model baked into the resident Claude process environment. Codex changes
+   * models through ACP and therefore leaves this null. */
+  providerModel: string | null;
 }
 
 /** threadId → per-engine relay state (a thread talks to ONE engine's relay). */
@@ -448,6 +451,7 @@ export async function refreshAcpRelayConfigurationIfNeeded(input: {
   retainForThread: boolean;
   secretChanged: boolean;
   reconnectingToResidentProcess: boolean;
+  providerModelChanged: boolean;
   descriptor: AcpGatewayDescriptorState | null;
   desiredGatewayUrl: string | null;
   desiredGatewayUserId: string | null;
@@ -464,7 +468,10 @@ export async function refreshAcpRelayConfigurationIfNeeded(input: {
   );
   const needsRestart =
     input.retainForThread &&
-    (input.secretChanged || input.reconnectingToResidentProcess || gatewayChanged);
+    (input.secretChanged ||
+      input.reconnectingToResidentProcess ||
+      input.providerModelChanged ||
+      gatewayChanged);
   if (!needsRestart) return false;
   await input.stopRelay();
   return true;
@@ -783,10 +790,16 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
         const reconnectingToResidentProcess = retainForThread && !relay;
         const desiredGatewayUrl = gateway && ctx.orgId ? gateway.mcpUrl : null;
         const desiredGatewayUserId = desiredGatewayUrl ? (ctx.userId ?? "") : null;
+        const desiredProviderModel = cfg.id === "claude"
+          ? runtimeProviderEnv.ANTHROPIC_MODEL ?? ctx.model ?? null
+          : null;
         await refreshAcpRelayConfigurationIfNeeded({
           retainForThread,
           secretChanged: secretState.changed,
           reconnectingToResidentProcess,
+          providerModelChanged: Boolean(
+            relay && relay.providerModel !== desiredProviderModel
+          ),
           descriptor: relay ?? null,
           desiredGatewayUrl,
           desiredGatewayUserId,
@@ -916,12 +929,14 @@ function makeAcpAdapter(cfg: AcpEngineConfig): EngineAdapter {
             initialized: false,
             generation: health.generation,
             commandCatalog: null,
+            providerModel: desiredProviderModel,
             mcpGatewayUrl: undefined,
             mcpUserId: undefined,
             mcpTokenExpiresAt: null,
           };
         }
         const live = relay; // narrowed non-null for the closures below
+        live.providerModel = desiredProviderModel;
         // Restart-generation state machine (single source of truth in acp-rpc): a relay/agent
         // (re)start OR an in-place ACP-child regeneration resets ACP initialization AND
         // invalidates the stale session id; a reused turn on the SAME generation carries both

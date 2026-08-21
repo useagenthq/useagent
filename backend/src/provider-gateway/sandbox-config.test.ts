@@ -165,6 +165,35 @@ describe("sandbox provider gateway config", () => {
     );
   });
 
+  test("Claude warm replies reuse a user-bound thread provider capability", async () => {
+    process.env.GATEWAY_PUBLIC_URL = "https://gateway.example.test";
+    process.env.PROVIDER_GATEWAY_SECRET = "provider-test-0123456789abcdef0123456789abcdef";
+    process.env.TOOL_GATEWAY_SECRET = "tool-test-0123456789abcdef0123456789abcdef";
+    const first = ctx();
+    first.threadId = "thread-claude-warm-provider";
+    first.runId = "run-claude-warm-a";
+    const second = ctx();
+    second.threadId = first.threadId;
+    second.runId = "run-claude-warm-b";
+    const { sandbox, files } = recordingSandbox();
+
+    await prepareProviderGatewaySandbox(sandbox, first, "claude");
+    const firstToken = files["$HOME/.skynet/provider-anthropic.token"];
+    await prepareProviderGatewaySandbox(sandbox, second, "claude");
+    const secondToken = files["$HOME/.skynet/provider-anthropic.token"];
+
+    expect(secondToken).toBe(firstToken);
+    expect(verifyProviderToken(secondToken)).toMatchObject({
+      orgId: "org-a",
+      userId: "user-a",
+      threadId: "thread-claude-warm-provider",
+      issuedRunId: "run-claude-warm-a",
+      engine: "claude",
+      provider: "anthropic",
+      scope: "thread",
+    });
+  });
+
   test("leaves 200K model ids unchanged", () => {
     process.env.GATEWAY_PUBLIC_URL = "https://gateway.example.test";
     process.env.PROVIDER_GATEWAY_SECRET = "provider-test-0123456789abcdef0123456789abcdef";
@@ -186,7 +215,7 @@ describe("sandbox provider gateway config", () => {
     expect(verifyProviderToken(options.anthropic?.apiKey)).toMatchObject({ provider: "anthropic" });
     expect(verifyProviderToken(options.openai?.apiKey)).toMatchObject({ provider: "openai" });
     expect(verifyProviderToken(options.openrouter?.apiKey)).toMatchObject({ provider: "openrouter" });
-    expect(SANDBOX_GENERATION).toBe("provider-gateway-v12-native-computer-use");
+    expect(SANDBOX_GENERATION).toBe("provider-gateway-v13-claude-thread-token");
     expect(providerGatewaySandboxLabels("run-a")).toEqual({
       "skynet-run": "run-a",
       "skynet-provider-generation": SANDBOX_GENERATION,

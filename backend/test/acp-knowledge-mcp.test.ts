@@ -193,6 +193,7 @@ describe("ACP knowledge MCP parity", () => {
       retainForThread: true,
       secretChanged: false,
       reconnectingToResidentProcess: false,
+      providerModelChanged: false,
       descriptor: {
         mcpGatewayUrl: "https://gw.example.test/api/mcp/knowledge",
         mcpUserId: "user-a",
@@ -248,5 +249,25 @@ describe("ACP knowledge MCP parity", () => {
       runId: "run-2",
       scope: "thread",
     });
+  });
+
+  test("a retained Claude relay restarts when its process model changes", async () => {
+    let stops = 0;
+    const restarted = await refreshAcpRelayConfigurationIfNeeded({
+      retainForThread: true,
+      secretChanged: false,
+      reconnectingToResidentProcess: false,
+      providerModelChanged: true,
+      descriptor: null,
+      desiredGatewayUrl: null,
+      desiredGatewayUserId: null,
+      turnBudgetMs: 360_000,
+      stopRelay: async () => {
+        stops += 1;
+      },
+    });
+
+    expect(restarted).toBe(true);
+    expect(stops).toBe(1);
   });
 });

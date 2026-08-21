@@ -3,6 +3,8 @@ import { basename, truncate } from "./util";
 
 const ACP_FILE_KINDS = new Set(["edit", "delete", "move", "read"]);
 const CODEX_SUBAGENT_TOOLS = new Map<string, CodexSubagentActivity>([
+  ["agent", "spawn"],
+  ["task", "spawn"],
   ["spawn_agent", "spawn"],
   ["send_message", "interact"],
   ["send_input", "interact"],
@@ -31,6 +33,7 @@ interface CodexSubagentInfo {
   readonly path?: string;
   readonly name?: string;
   readonly prompt?: string;
+  readonly callScopedIdentity?: boolean;
 }
 
 type AcpToolNativeCode = AcpToolNativeIds & {
@@ -128,6 +131,9 @@ function readSubagentInfo(
     ...(path ? { path } : {}),
     ...(name ? { name } : {}),
     ...(prompt ? { prompt } : {}),
+    ...(["agent", "task"].includes(title.trim().toLowerCase())
+      ? { callScopedIdentity: true }
+      : {}),
   };
 }
 
@@ -157,10 +163,16 @@ function augmentNative(
   info: CodexSubagentInfo | undefined,
 ): AcpToolNativeCode | undefined {
   if (!native) return undefined;
-  if (!info?.threadId) return native;
+  if (!info) return native;
   if (info.activity === "spawn") {
-    return { ...native, childSessionID: info.threadId };
+    return {
+      ...native,
+      ...(info.threadId || info.callScopedIdentity
+        ? { childSessionID: info.threadId ?? native.callID }
+        : {}),
+    };
   }
+  if (!info.threadId) return native;
   return {
     ...native,
     parentSessionID: native.sessionID,
