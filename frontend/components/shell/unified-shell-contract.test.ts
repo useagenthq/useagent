@@ -167,7 +167,7 @@ describe("unified shell contract", () => {
     const contextMenu = readFromFrontend("app/agent/new/new-task-context-menu.tsx");
 
     expect(composer).toContain("<NewTaskContextMenu");
-    expect(contextMenu).toContain("visibleSkills.map");
+    expect(contextMenu).toContain("visibleGroups.map");
     expect(composer).toContain('label: "No skill or playbook"');
   });
 
@@ -184,8 +184,8 @@ describe("unified shell contract", () => {
     expect(composer).toContain("<PromptInput");
     expect(composer).toContain("<PromptInputTextarea");
     expect(composer).not.toContain("<textarea");
-    expect(composer).toContain("min-w-32");
-    expect(composer).toContain("grid-cols-[minmax(0,1fr)_auto]");
+    expect(composer).toContain("min-w-36");
+    expect(composer).toContain('className="flex items-center gap-2"');
     expect(composer).toContain("flex-nowrap");
     expect(composer).toContain('e.id !== "chat"');
     expect(composer).not.toContain("<AsteriskMark");
@@ -251,7 +251,7 @@ describe("unified shell contract", () => {
 
     expect(composer).toContain("maxHeight={180}");
     expect(composer).toContain(
-      'hero ? "pt-1 text-paragraph-lg" : "min-h-12 text-paragraph-sm leading-relaxed"',
+      'hero ? "pt-1 text-paragraph-lg" : "min-h-9 text-paragraph-sm leading-6"',
     );
     expect(conversation).toContain("mx-auto w-full max-w-5xl");
     expect(conversation).not.toContain("shrink-0 border-t p-3");

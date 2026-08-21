@@ -30,18 +30,21 @@ export function NewTaskContextMenu({
 }: NewTaskContextMenuProps) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
-  const skillOptions = useMemo(() => skillGroups.flatMap((group) => group.options), [skillGroups]);
-  const visibleSkills = useMemo(() => {
+  const visibleGroups = useMemo(() => {
     const normalized = query.trim().toLowerCase();
-    const matching = normalized
-      ? skillOptions.filter((option) =>
-          [option.label, option.caption]
-            .filter(Boolean)
-            .some((value) => value?.toLowerCase().includes(normalized) === true),
-        )
-      : skillOptions;
-    return matching.slice(0, 7);
-  }, [query, skillOptions]);
+    return skillGroups
+      .map((group) => ({
+        ...group,
+        options: normalized
+          ? group.options.filter((option) =>
+              [option.label, option.caption]
+                .filter(Boolean)
+                .some((value) => value?.toLowerCase().includes(normalized) === true),
+            )
+          : group.options,
+      }))
+      .filter((group) => group.options.length > 0);
+  }, [query, skillGroups]);
 
   function selectSkill(option: PickerOption) {
     onSelectSkill(option.value);
@@ -61,9 +64,12 @@ export function NewTaskContextMenu({
         <button
           type="button"
           aria-label="Add files and context"
-          className="inline-flex size-9 shrink-0 items-center justify-center rounded-xl text-text-sub-600 outline-none transition-colors hover:bg-bg-weak-50 focus-visible:ring-2 focus-visible:ring-stroke-strong-950"
+          className="inline-flex size-9 shrink-0 items-center justify-center rounded-full text-text-sub-600 outline-none transition-colors hover:bg-bg-weak-50 focus-visible:ring-2 focus-visible:ring-stroke-strong-950"
         >
-          <RiAddLine className="size-5" aria-hidden />
+          <RiAddLine
+            className={`size-5 transition-transform duration-200 ${open ? "rotate-45" : ""}`}
+            aria-hidden
+          />
         </button>
       </Popover.Trigger>
       <Popover.Content
@@ -71,7 +77,7 @@ export function NewTaskContextMenu({
         showArrow={false}
         align="start"
         sideOffset={8}
-        className="w-[560px] max-w-[calc(100vw-32px)] rounded-2xl bg-bg-white-0 p-2 shadow-regular-md ring-1 ring-inset ring-stroke-soft-200"
+        className="w-[520px] max-w-[calc(100vw-32px)] overflow-hidden rounded-2xl bg-bg-white-0 p-2 shadow-regular-md ring-1 ring-inset ring-stroke-soft-200"
       >
         <button
           type="button"
@@ -88,34 +94,43 @@ export function NewTaskContextMenu({
           </span>
         </button>
 
-        <div className="max-h-[280px] overflow-y-auto">
-          {visibleSkills.length > 0 ? (
-            visibleSkills.map((option) => {
-              const Icon = option.icon ?? RiBookMarkedLine;
-              return (
-                <button
-                  key={option.value || "none"}
-                  type="button"
-                  className={rowClassName}
-                  onClick={() => selectSkill(option)}
-                >
-                  <Icon className="size-[18px] shrink-0 text-text-sub-600" aria-hidden />
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-label-sm text-text-strong-950">
-                      {option.label}
-                    </span>
-                    {option.caption ? (
-                      <span className="block truncate text-paragraph-xs text-text-soft-400">
-                        {option.caption}
+        <div className="max-h-[320px] overflow-y-auto py-1">
+          {visibleGroups.length > 0 ? (
+            visibleGroups.map((group, groupIndex) => (
+              <div key={group.label ?? groupIndex} className="py-1">
+                {group.label ? (
+                  <p className="px-2.5 pb-1 pt-1 text-mono-label text-text-soft-400">
+                    {group.label}
+                  </p>
+                ) : null}
+                {group.options.map((option) => {
+                  const Icon = option.icon ?? RiBookMarkedLine;
+                  return (
+                    <button
+                      key={option.value || "none"}
+                      type="button"
+                      className={rowClassName}
+                      onClick={() => selectSkill(option)}
+                    >
+                      <Icon className="size-[18px] shrink-0 text-text-sub-600" aria-hidden />
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-label-sm text-text-strong-950">
+                          {option.label}
+                        </span>
+                        {option.caption ? (
+                          <span className="block truncate text-paragraph-xs text-text-soft-400">
+                            {option.caption}
+                          </span>
+                        ) : null}
                       </span>
-                    ) : null}
-                  </span>
-                  {option.value === selectedSkill ? (
-                    <RiCheckLine className="size-4 shrink-0 text-text-sub-600" aria-hidden />
-                  ) : null}
-                </button>
-              );
-            })
+                      {option.value === selectedSkill ? (
+                        <RiCheckLine className="size-4 shrink-0 text-text-sub-600" aria-hidden />
+                      ) : null}
+                    </button>
+                  );
+                })}
+              </div>
+            ))
           ) : (
             <p className="px-2.5 py-2 text-paragraph-sm text-text-soft-400">No matching skills</p>
           )}

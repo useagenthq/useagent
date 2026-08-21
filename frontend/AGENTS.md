@@ -253,3 +253,10 @@ given; the render must stay cheap. Rules learned the hard way (do NOT regress):
 - Learn the rendering approach from opencode (fine-grained reactivity, batched
   events) before hand-rolling — we own the React port, so we replicate their
   behavior with memo + batching + virtualization.
+# Execution discipline
+
+- Think before coding: name material assumptions and competing interpretations. If uncertainty would change behavior or scope, stop and resolve it instead of silently guessing.
+- Simplicity first: add no unrequested feature, configurability, single-use abstraction, or defensive branch for an impossible condition. If a substantially smaller clear solution satisfies the same contract, use it.
+- Surgical changes: touch only what the task requires and match the local style. Do not clean unrelated debt; remove only the dead code or imports your change creates. Every changed line should trace to the requested outcome.
+- Goal-driven execution: define observable success criteria and the checks that prove them before editing. Keep iterating until those checks pass or report the exact unresolved blocker.
+- Tests must protect requested behavior or a concrete regression. Do not add generic source-shape assertions merely to increase test counts.

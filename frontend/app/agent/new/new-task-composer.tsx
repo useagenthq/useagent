@@ -7,6 +7,7 @@ import { resolveEnabledEngine, useEnabledEngineConfig } from "@/components/chat/
 import { MemoryScopePicker } from "@/components/chat/memory-scope-picker";
 import { RunUploadChips, useRunUploads } from "@/components/chat/run-uploads";
 import {
+  type CommandPickerStatus,
   filterCommands,
   type SlashCommand,
   SlashCommandPopover,
@@ -106,27 +107,32 @@ export function NewTaskComposer({
   // Claude/Codex native catalog. Refetches when the engine changes. Selection only completes
   // the text; the command executes engine-side (verbatim `/name`) once the run starts.
   const [commands, setCommands] = useState<SlashCommand[]>([]);
+  const [commandStatus, setCommandStatus] = useState<CommandPickerStatus>("loading");
   const [cmdHighlight, setCmdHighlight] = useState(0);
   const [cmdDismissed, setCmdDismissed] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
     setCommands([]); // clear the prior engine's catalog while the new one loads (no stale mix)
+    setCommandStatus("loading");
     void (async () => {
       try {
         const res = await backendFetch(`/api/commands?engine=${encodeURIComponent(engine)}`);
-        if (!res.ok) return;
+        if (!res.ok) {
+          if (!cancelled) setCommandStatus("error");
+          return;
+        }
         const data = (await res.json()) as {
           commands?: { name?: string; description?: string | null }[];
         };
         if (cancelled || !Array.isArray(data.commands)) return;
-        setCommands(
-          data.commands
+        const nextCommands = data.commands
             .filter((c): c is { name: string; description?: string | null } => !!c.name)
-            .map((c) => ({ name: c.name, description: c.description ?? null })),
-        );
+            .map((c) => ({ name: c.name, description: c.description ?? null }));
+        setCommands(nextCommands);
+        setCommandStatus(nextCommands.length > 0 ? "ready" : "unavailable");
       } catch {
-        // no catalog cached yet — the composer simply has no "/" popover
+        if (!cancelled) setCommandStatus("error");
       }
     })();
     return () => {
@@ -196,10 +202,12 @@ export function NewTaskComposer({
   // trailing space ends completion. Mirrors composer.tsx exactly.
   const cmdToken = /^\/([^\s]*)$/.exec(prompt.trimStart())?.[1];
   const cmdMatches =
-    !cmdDismissed && commands.length && cmdToken !== undefined
+    !cmdDismissed && commands.length > 0 && cmdToken !== undefined
       ? filterCommands(commands, cmdToken)
       : [];
-  const cmdActive = cmdMatches.length > 0;
+  const slashTyped = !cmdDismissed && cmdToken !== undefined;
+  const cmdActive = slashTyped &&
+    (cmdMatches.length > 0 || commandStatus !== "ready" || commands.length > 0);
 
   function pickCommand(cmd: SlashCommand) {
     setPrompt(slashInsertText(cmd.name)); // verbatim `/name ` - executes engine-side as-is
@@ -210,6 +218,12 @@ export function NewTaskComposer({
    *  the key was consumed so the caller skips its own Enter-submits path. */
   function handleCmdKeys(e: React.KeyboardEvent<HTMLTextAreaElement>): boolean {
     if (!cmdActive) return false;
+    if (e.key === "Escape") {
+      e.preventDefault();
+      setCmdDismissed(true);
+      return true;
+    }
+    if (cmdMatches.length === 0) return false;
     if (e.key === "ArrowDown") {
       e.preventDefault();
       setCmdHighlight((h) => (h + 1) % cmdMatches.length);
@@ -223,11 +237,6 @@ export function NewTaskComposer({
     if (e.key === "Enter" || e.key === "Tab") {
       e.preventDefault();
       pickCommand(cmdMatches[Math.min(cmdHighlight, cmdMatches.length - 1)]);
-      return true;
-    }
-    if (e.key === "Escape") {
-      e.preventDefault();
-      setCmdDismissed(true);
       return true;
     }
     return false;
@@ -342,9 +351,9 @@ export function NewTaskComposer({
           setCmdHighlight(0);
         }}
         onSubmit={() => void submit()}
-        maxHeight={220}
+        maxHeight={260}
         disabled={submitting}
-        className="flex flex-col gap-3 p-3.5 shadow-regular-sm"
+        className="flex flex-col gap-3 rounded-[22px] p-4 shadow-regular-sm transition-colors focus-within:border-stroke-sub-300"
       >
         <input
           ref={fileInput}
@@ -365,8 +374,10 @@ export function NewTaskComposer({
             <div className="absolute left-0 top-full z-30 mt-2 w-full">
               <SlashCommandPopover
                 matches={cmdMatches}
-                highlight={Math.min(cmdHighlight, cmdMatches.length - 1)}
+                highlight={Math.max(0, Math.min(cmdHighlight, cmdMatches.length - 1))}
                 onSelect={pickCommand}
+                status={commandStatus}
+                source={engine}
               />
             </div>
           )}
@@ -376,13 +387,13 @@ export function NewTaskComposer({
             onKeyDown={(event) => {
               handleCmdKeys(event);
             }}
-            className="min-h-24 px-1 text-paragraph-sm leading-relaxed"
+            className="min-h-32 px-1 text-paragraph-sm leading-relaxed"
           />
         </div>
 
         {/* Pickers */}
-        <div className="grid grid-cols-[minmax(0,1fr)_auto] items-end gap-3">
-          <div className="flex min-w-0 flex-nowrap items-center gap-0.5 overflow-x-auto">
+        <div className="flex items-center gap-2">
+          <div className="flex min-w-0 flex-1 flex-nowrap items-center gap-0.5 overflow-x-auto">
             <NewTaskContextMenu
               skillGroups={skillGroups}
               selectedSkill={playbook}
@@ -418,7 +429,7 @@ export function NewTaskComposer({
             type="button"
             onClick={() => void submit()}
             disabled={!canSubmit}
-            className="inline-flex min-w-32 shrink-0 items-center justify-center rounded-full bg-bg-strong-950 px-5 py-2.5 text-label-sm text-text-white-0 outline-none transition-opacity hover:opacity-90 focus-visible:ring-2 focus-visible:ring-stroke-strong-950 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-40"
+            className="inline-flex h-10 min-w-36 shrink-0 items-center justify-center rounded-full bg-bg-strong-950 px-6 text-label-sm text-text-white-0 outline-none transition-opacity hover:opacity-90 focus-visible:ring-2 focus-visible:ring-stroke-strong-950 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-40"
           >
             {submitting ? "Starting..." : "Start thread"}
           </button>

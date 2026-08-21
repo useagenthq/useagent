@@ -528,10 +528,17 @@ export function Composer({
           maxHeight={180}
           className={cn(
             "cursor-text rounded-none border-0 bg-transparent shadow-none",
-            hero ? "p-3 md:p-4" : "p-2",
+            hero
+              ? "p-3 md:p-4"
+              : "grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-1 p-2",
           )}
         >
-          <div className="flex items-start gap-1.5 px-1">
+          <div
+            className={cn(
+              "flex items-start gap-1.5 px-1",
+              !hero && "col-start-2 row-start-1 min-w-0 items-center",
+            )}
+          >
             {command && (
               <span className="pt-1">
                 <AgentChip agent={command} onRemove={() => setCommand(null)} />
@@ -561,21 +568,21 @@ export function Composer({
                 "flex-1",
                 // The reply composer is a drafting surface, not a search box:
                 // ~3 lines of standing room (T3-style) with comfortable type.
-                hero ? "pt-1 text-paragraph-lg" : "min-h-12 text-paragraph-sm leading-relaxed",
+                hero ? "pt-1 text-paragraph-lg" : "min-h-9 text-paragraph-sm leading-6",
               )}
             />
           </div>
 
           {/* px-1 matches the text row above so the +/send controls left/right-align
               with the placeholder (was px-0.5 → a 2px asymmetry). */}
-          <div className="mt-1 flex items-center gap-1.5 px-1">
+          <div className={cn(hero ? "mt-1 flex items-center gap-1.5 px-1" : "contents")}>
             {/* Left cluster */}
             {enableUploads ? (
               <button
                 type="button"
                 aria-label="Add files"
                 onClick={() => fileInput.current?.click()}
-                className="border-stroke-soft-200 text-text-sub-600 hover:bg-bg-weak-50 flex size-9 items-center justify-center rounded-xl border transition-colors"
+                className="border-stroke-soft-200 text-text-sub-600 hover:bg-bg-weak-50 col-start-1 row-start-1 flex size-9 items-center justify-center rounded-full border transition-colors"
               >
                 <RiAddLine className="size-5" aria-hidden />
               </button>
@@ -629,7 +636,12 @@ export function Composer({
             )}
 
             {/* Right cluster */}
-            <div className="ml-auto flex items-center gap-1.5">
+            <div
+              className={cn(
+                "ml-auto flex items-center gap-1.5",
+                !hero && "col-start-3 row-start-1",
+              )}
+            >
               {/* Team-memory pool for the run (org vs personal), sibling to model. */}
               <MemoryScopePicker scope={memoryScope} onChange={setMemoryScope} />
               {/* One engine now — the meaningful per-message choice is the MODEL. */}
