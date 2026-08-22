@@ -268,6 +268,103 @@ describe("provider-neutral native lifecycle identity", () => {
   });
 });
 
+describe("OpenCode native todowrite plans", () => {
+  test("maps a valid native todowrite frame to a canonical plan without a generic tool row", () => {
+    const result = translateOpenCode([{
+      eventId: "todo-frame",
+      seq: 1,
+      provider: "opencode",
+      eventType: "part.tool.completed",
+      native: {
+        sessionId: "ses-plan",
+        parentSessionId: null,
+        messageId: "msg-plan",
+        partId: "part-plan",
+        callId: "call-plan",
+      },
+      payload: {
+        tool: "todowrite",
+        state: {
+          input: {
+            todos: [
+              { id: "inspect", content: "Inspect flow", status: "completed" },
+              { id: "verify", content: "Verify UI", status: "in_progress" },
+            ],
+          },
+        },
+      },
+    }], CTX);
+
+    expect(result.events).toMatchObject([{
+      kind: "plan.updated",
+      entries: [
+        { id: "inspect", text: "Inspect flow", status: "completed" },
+        { id: "verify", text: "Verify UI", status: "in_progress" },
+      ],
+    }]);
+    expect(result.events.some((event) => event.kind.startsWith("tool."))).toBe(false);
+    expect(result.accounting[0]?.produced).toEqual(["plan.updated"]);
+  });
+
+  test("maps each valid durable snapshot to plan.updated and keeps provider item ids", () => {
+    const steps: OpenCodeStep[] = [
+      {
+        id: "plan-1",
+        idx: 1,
+        kind: "command",
+        code_json: JSON.stringify({
+          tool: "todowrite",
+          input: { todos: [{ id: "one", content: "First", status: "in_progress" }] },
+        }),
+      },
+      {
+        id: "plan-2",
+        idx: 2,
+        kind: "command",
+        code_json: JSON.stringify({
+          tool: "todowrite",
+          input: {
+            todos: [
+              { id: "one", content: "First", status: "completed" },
+              { id: "two", content: "Second", status: "pending" },
+            ],
+          },
+        }),
+      },
+    ];
+    const result = translateOpenCode([], CTX, steps);
+
+    expect(result.events.map((event) => event.kind)).toEqual(["plan.updated", "plan.updated"]);
+    expect(result.events[1]).toMatchObject({
+      entries: [
+        { id: "one", text: "First", status: "completed" },
+        { id: "two", text: "Second", status: "pending" },
+      ],
+    });
+  });
+
+  test("keeps malformed or empty todowrite payloads on the existing generic tool path", () => {
+    const steps: OpenCodeStep[] = [
+      {
+        id: "empty-plan",
+        idx: 1,
+        kind: "command",
+        code_json: JSON.stringify({ tool: "todowrite", input: { todos: [] } }),
+      },
+      {
+        id: "malformed-plan",
+        idx: 2,
+        kind: "command",
+        code_json: JSON.stringify({ tool: "todowrite", input: { todos: "invalid" } }),
+      },
+    ];
+    const result = translateOpenCode([], CTX, steps);
+
+    expect(result.events.map((event) => event.kind)).toEqual(["tool.completed", "tool.completed"]);
+    expect(result.events.some((event) => event.kind === "plan.updated")).toBe(false);
+  });
+});
+
 describe("T3 activity fidelity", () => {
   const t3Frame = (
     eventId: string,

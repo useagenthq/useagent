@@ -25,6 +25,7 @@ import {
   type CanonicalChildState,
   type CanonicalEventBody,
   type CanonicalEventKind,
+  type CanonicalPlanEntry,
 } from "./canonical";
 import {
   t3ActivityKind,
@@ -63,6 +64,34 @@ export type {
 
 const TASK_CHILD_ID = /<task\s+id="(ses_[^"]+)"/;
 const TASK_RESULT = /<task_result>\s*([\s\S]*?)\s*<\/task_result>/;
+const PLAN_STATUSES = new Set<CanonicalPlanEntry["status"]>([
+  "pending",
+  "in_progress",
+  "completed",
+  "cancelled",
+]);
+
+function planEntries(value: unknown): CanonicalPlanEntry[] | null {
+  const input = rec(value);
+  const todos = input?.todos;
+  if (!Array.isArray(todos)) return null;
+
+  const entries: CanonicalPlanEntry[] = [];
+  for (const [index, value] of todos.entries()) {
+    const todo = rec(value);
+    const text = firstString(todo?.content, todo?.title, todo?.text)?.trim();
+    if (!text) continue;
+    const rawStatus = str(todo?.status);
+    entries.push({
+      id: firstString(todo?.id)?.trim() || `${index}-${text}`,
+      text,
+      status: rawStatus && PLAN_STATUSES.has(rawStatus as CanonicalPlanEntry["status"])
+        ? rawStatus as CanonicalPlanEntry["status"]
+        : "pending",
+    });
+  }
+  return entries.length > 0 ? entries : null;
+}
 
 /**
  * Translate an OpenCode session (native frames + durable steps) into a canonical
@@ -453,9 +482,17 @@ export function translateOpenCode(
     } else if (et.startsWith("part.tool") || et.startsWith("part.subtask")) {
       const callId = f.native.callId;
       const isTask = p?.tool === "task" || et.startsWith("part.subtask");
+      const todoPlan = p?.tool === "todowrite"
+        ? planEntries(rec(p?.state)?.input ?? p?.input)
+        : null;
       const terminal = et.endsWith(".completed") || et.endsWith(".error");
       const errored = et.endsWith(".error");
-      if (isTask && callId) {
+      if (todoPlan) {
+        produced.push(push(f.eventId, f.provider, {
+          kind: "plan.updated",
+          entries: todoPlan,
+        }, ident));
+      } else if (isTask && callId) {
         const state = rec(p?.state);
         const output = str(state?.output) ?? "";
         const childId = TASK_CHILD_ID.exec(output)?.[1] ?? callId;
@@ -572,6 +609,17 @@ export function translateOpenCode(
         produced: [],
         suppressed: "t3 provider activity lifecycle is authoritative",
       });
+      continue;
+    }
+    const todoPlan = str(code?.tool)?.toLowerCase() === "todowrite"
+      ? planEntries(rec(code?.input))
+      : null;
+    if (todoPlan) {
+      const produced = [push(`step:${s.id}`, stepProvider, {
+        kind: "plan.updated",
+        entries: todoPlan,
+      }, ident)];
+      accounting.push({ sourceId: s.id, kind: `step:${s.kind}`, provider: stepProvider, produced });
       continue;
     }
     // Every non-done step is a tool ROW in the legacy timeline (command + file

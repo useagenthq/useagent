@@ -393,8 +393,8 @@ function TraceRow({ trace, state }: { trace: StepTrace; state: RowState }) {
  *  the canonical plan-entry props; content is the stable key so a live status
  *  flip transitions in place. */
 function TodoList({ todos, nested }: { todos: TodoItem[]; nested?: boolean }) {
-  const entries = todos.map((todo, index) => ({
-    id: `${index}-${todo.content}`,
+  const entries = todos.map((todo) => ({
+    id: todo.id,
     text: todo.content,
     status: todo.status,
   }));

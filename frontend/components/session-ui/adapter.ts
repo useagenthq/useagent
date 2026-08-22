@@ -20,14 +20,13 @@ import {
   deriveTrace,
   parseFileEntries,
   parseStepCode,
+  parseTodos,
 } from "@/components/chat/types";
 import { type ChangedFile } from "./changed-files";
 import { type ContextWindowUsage } from "./context-window-meter";
 import {
-  normalizeCompactToolLabel,
   type WorkEntry,
   toolWorkEntryHeading,
-  workEntryPreview,
 } from "./work-entry";
 
 export type RowState = "running" | "done";
@@ -126,7 +125,8 @@ export function workEntriesFromTimeline(
 // status) - the working indicator's step suffix represents them instead.
 
 export type TimelineSegment =
-  | { kind: "node"; key: string; node: Exclude<TimelineNode, { kind: "tool" }> }
+  | { kind: "node"; key: string; node: Exclude<TimelineNode, { kind: "tool" } | { kind: "plan" }> }
+  | { kind: "plan"; key: string; entries: Extract<TimelineNode, { kind: "plan" }>["entries"] }
   | { kind: "tools"; key: string; entries: WorkEntry[] };
 
 export interface TimelineProjection {
@@ -137,18 +137,10 @@ export interface TimelineProjection {
   workingLabel: string | null;
 }
 
-/** Compact "Heading - preview" label for one entry (the row's own collapsed grammar). */
+/** Compact semantic heading for the live indicator. Detailed tool output stays in
+ *  the expandable work entry instead of overflowing the one-line status suffix. */
 function entryDisplayLabel(entry: WorkEntry): string {
-  const heading = toolWorkEntryHeading(entry);
-  const preview = workEntryPreview(entry, undefined);
-  if (
-    !preview ||
-    normalizeCompactToolLabel(preview).toLowerCase() ===
-      normalizeCompactToolLabel(heading).toLowerCase()
-  ) {
-    return heading;
-  }
-  return `${heading} - ${preview}`;
+  return toolWorkEntryHeading(entry);
 }
 
 /**
@@ -163,7 +155,32 @@ export function segmentTimeline(
 ): TimelineProjection {
   const segments: TimelineSegment[] = [];
   let workingLabel: string | null = null;
+  let latestPlanIndex = -1;
+  const planEntries = new Map<number, Extract<TimelineNode, { kind: "plan" }>["entries"]>();
   for (const [index, node] of nodes.entries()) {
+    if (node.kind === "plan") {
+      latestPlanIndex = index;
+      planEntries.set(index, node.entries);
+      continue;
+    }
+    if (node.kind !== "tool") continue;
+    const todos = parseTodos(node.step);
+    if (!todos) continue;
+    latestPlanIndex = index;
+    planEntries.set(
+      index,
+      todos.map(({ id, content, status }) => ({ id, text: content, status })),
+    );
+  }
+  for (const [index, node] of nodes.entries()) {
+    const entries = planEntries.get(index);
+    if (entries) {
+      if (index === latestPlanIndex) {
+        segments.push({ kind: "plan", key: node.key, entries });
+      }
+      continue;
+    }
+    if (node.kind === "plan") continue;
     if (node.kind !== "tool") {
       segments.push({ kind: "node", key: node.key, node });
       continue;

@@ -405,18 +405,16 @@ export function buildTimelineFromCanonical(
     }
     // ── plan snapshot: only the latest provider-neutral plan is current ──────
     if (e.kind === "plan.updated" && e.seq === latestPlanSeq && e.entries?.length) {
-      const step = projectedStep(e, {
-        kind: "command",
-        label: "Plan",
-        chip: null,
-        code: {
-          tool: "todowrite",
-          input: {
-            todos: e.entries.map(({ text, status }) => ({ content: text, status })),
-          },
+      ranked.push({
+        node: {
+          kind: "plan",
+          key: e.identity?.nativeEventId ?? String(e.seq),
+          entries: e.entries,
         },
+        k0: e.seq,
+        k1: 1,
+        k2: e.seq,
       });
-      ranked.push({ node: { kind: "tool", key: step.id, step }, k0: e.seq, k1: 1, k2: e.seq });
       continue;
     }
     // ── file receipts: the diff is an out-of-band ref, never fabricated body ─

@@ -15,7 +15,13 @@
 
 import { nativeOf } from "./native-ids";
 import type { NativeSnapshot } from "./native-store";
-import { type ApiStep, asRecord, deriveTrace, isRenderableTimelineStep } from "./types";
+import {
+  type ApiStep,
+  asRecord,
+  deriveTrace,
+  isRenderableTimelineStep,
+  parseTodos,
+} from "./types";
 
 /** A canonical context marker — a typed row (skill.loaded / context.retrieved)
  *  rendered in the SHARED timeline grammar, not a parallel context pane. */
@@ -78,6 +84,12 @@ export interface TimelineFileChange {
   };
 }
 
+export interface TimelinePlanEntry {
+  readonly id: string;
+  readonly text: string;
+  readonly status: "pending" | "in_progress" | "completed" | "cancelled";
+}
+
 /** One node of the interleaved timeline: a context marker, a narration burst, or
  *  a tool row. */
 /** Provider-neutral rows rendered in the conversation, including durable artifact receipts. */
@@ -87,6 +99,7 @@ export type TimelineNode =
   | { kind: "reasoning"; key: string; text: string }
   | { kind: "artifact"; key: string; artifact: TimelineArtifact }
   | { kind: "file"; key: string; file: TimelineFileChange }
+  | { kind: "plan"; key: string; entries: readonly TimelinePlanEntry[] }
   | { kind: "tool"; key: string; step: ApiStep };
 
 function parseArtifact(eventType: string, payload: unknown): TimelineArtifact | null {
@@ -350,6 +363,20 @@ export function buildTimeline(native: NativeSnapshot, live: boolean): TimelineNo
     if (deriveTrace(step).accent === "boot") {
       if (!live) continue;
       ranked.push({ node: { kind: "tool", key: step.id, step }, k0: -1, k1: 1, k2: step.idx });
+      continue;
+    }
+    const todos = parseTodos(step);
+    if (todos) {
+      ranked.push({
+        node: {
+          kind: "plan",
+          key: step.id,
+          entries: todos.map(({ id, content, status }) => ({ id, text: content, status })),
+        },
+        k0: Number.MAX_SAFE_INTEGER,
+        k1: 1,
+        k2: step.idx,
+      });
       continue;
     }
     const ids = nativeOf(step);

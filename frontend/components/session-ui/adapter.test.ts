@@ -5,7 +5,7 @@ import {
 } from "@/components/chat/canonical-timeline";
 import type { TimelineNode } from "@/components/chat/timeline";
 import type { ApiStep } from "@/components/chat/types";
-import { workEntriesFromTimeline, workEntryFromTimelineNode } from "./adapter";
+import { segmentTimeline, workEntriesFromTimeline, workEntryFromTimelineNode } from "./adapter";
 import {
   toolWorkEntryHeading,
   workEntryIndicatesToolFailure,
@@ -139,4 +139,21 @@ describe("child-session fan-out heading regression (bare chevron+status rows)", 
       expect(toolWorkEntryHeading(entry!).trim().length).toBeGreaterThan(0);
     }
   });
+});
+
+test("live status keeps only the semantic heading while detail stays in the work entry", () => {
+  const projection = segmentTimeline([
+    toolNode(step({
+      id: "skill-activate",
+      label: "Skill activate",
+      code_json: JSON.stringify({
+        tool: "skill_activate",
+        input: { name: "design-taste" },
+        output: "The following skill now governs this turn. Treat it as authoritative.",
+      }),
+    })),
+  ], true);
+
+  expect(projection.workingLabel).toBe("Skill activate");
+  expect(projection.segments).toHaveLength(1);
 });
