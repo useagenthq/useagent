@@ -1,9 +1,9 @@
 import type { ArtifactWorkpieceKind } from "@skynet/artifact-workspace";
 import { ArtifactAuthoringError, createAuthoredArtifact } from "../../artifacts/authoring";
+import { publishArtifactChangeFromTool } from "../../artifacts/change-bridge";
 import { publishSandboxArtifact } from "../../artifacts/publish";
 import { acceptWorkpieceProposal, proposeWorkpieceEdit } from "../../artifacts/proposals";
 import { toArtifactDescriptor, type ArtifactDescriptor } from "../../artifacts/repo";
-import { publishOrgChange } from "../../runs/org-signals";
 import { isProtectedInjectedSecretPath } from "../../secrets/inject";
 import { absoluteArtifactUrl, absoluteArtifactUrlContent } from "./artifact-links";
 import type { ToolTokenClaims } from "./token";
@@ -297,13 +297,7 @@ async function proposeWorkpieceEditTool(
   const staged = await stageWorkpieceEdit(claims, args);
   if (!staged.ok) return staged.result;
   const { proposed } = staged;
-  publishOrgChange(claims.orgId, {
-    type: "artifact",
-    action: "proposed",
-    artifactId: proposed.artifact.id,
-    runId: proposed.artifact.runId,
-    threadId: proposed.artifact.threadId,
-  });
+  await publishArtifactChangeFromTool(claims, proposed.artifact, "proposed");
   return result(
     `Proposed changes to ${proposed.artifact.name} (workpiece ${proposed.artifact.id}). ` +
       "The user will review and accept or dismiss them; the workpiece keeps showing the current " +
@@ -397,13 +391,7 @@ async function updateWorkpieceTool(
       return failure(`The direct workpiece edit could not be applied (${accepted.outcome}).`);
     }
     const artifact = toArtifactDescriptor(accepted.artifact);
-    publishOrgChange(claims.orgId, {
-      type: "artifact",
-      action: "updated",
-      artifactId: accepted.artifact.id,
-      runId: accepted.artifact.runId,
-      threadId: accepted.artifact.threadId,
-    });
+    await publishArtifactChangeFromTool(claims, accepted.artifact, "updated");
     return result(
       `Applied the requested edit to ${accepted.artifact.name} as workpiece revision ` +
         `${accepted.artifact.workpieceRevision}. The prior revision was not overwritten and no ` +

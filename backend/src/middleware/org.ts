@@ -30,6 +30,7 @@ import { firstOrgForUser, getDevContext } from "../seed";
 const PUBLIC_API_EXACT = new Set([
   "/api/health",
   "/api/config",
+  "/api/internal/artifact-changes",
   "/api/internal/automation",
   "/api/internal/gateway-approval/consume",
   // Approval-request lane bridge - authenticates its own short-lived run

@@ -5,6 +5,7 @@ import { migrate } from "drizzle-orm/postgres-js/migrator";
 import { ARTIFACT_FIDELITY } from "@skynet/artifact-workspace";
 import { auth } from "./auth";
 import { artifactRoutes } from "./artifacts/routes";
+import { internalArtifactChangeRoutes } from "./artifacts/internal-change-routes";
 import { startEmailConnector } from "./connectors/email";
 import { client, db } from "./db/client";
 import type { AppEnv } from "./http";
@@ -68,6 +69,7 @@ import { prewarmRuntimeEnvironmentAccess } from "./engines/runtime-environment-c
 import { operatorEnv } from "./engines/runtime-env";
 import { prewarmRuntimeProviderBridge } from "./engines/runtime-provider-bridge";
 import { providerConnectionsRoutes } from "./provider-connections/routes";
+import { integrationRoutes } from "./integrations/routes";
 import { codexSubscriptionRelayRoutes } from "./provider-connections/codex-subscription-relay";
 import { wikiGenRoutes } from "./wiki-gen/routes";
 import { engineModelsForReadyEngines, readyUserFacingEngines } from "./runs/engine-readiness";
@@ -180,6 +182,7 @@ app.use("/api/*", async (c, next) => {
 });
 
 app.get("/api/health", (c) => c.json({ status: "ok" }));
+app.route("/api/internal/artifact-changes", internalArtifactChangeRoutes);
 app.route("/api/internal/automation", internalAutomationRoutes);
 app.route("/api/internal/gateway-approval/consume", internalGatewayApprovalRoutes);
 app.route("/api/internal/gateway-approval-requests", internalApprovalRequestRoutes);
@@ -286,6 +289,9 @@ app.route("/api/secrets", secretsRoutes);
 // User-scoped provider credentials. Values are encrypted at rest and write-only
 // over HTTP; trusted backend consumers use src/provider-connections/service.ts.
 app.route("/api/provider-connections", providerConnectionsRoutes);
+// Tenant-owned SaaS connections. Native GitHub/Slack remain managed adapters;
+// optional long-tail backends stay behind the provider-neutral lifecycle.
+app.route("/api/integrations", integrationRoutes);
 // Learning lane (item 4): reviewable knowledge drafts from high-value runs.
 // Mounted before /api/knowledge so the /drafts subtree resolves to its own routes.
 app.route("/api/knowledge/drafts", knowledgeDraftRoutes);

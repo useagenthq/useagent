@@ -1,20 +1,23 @@
 import {
+  type RemixiconComponentType,
   RiBubbleChartFill,
+  RiDriveFill,
   RiDropboxFill,
   RiFigmaFill,
   RiGithubFill,
+  RiGoogleFill,
+  RiMailFill,
   RiNotionFill,
   RiPaletteFill,
+  RiPlugLine,
   RiSlackFill,
   RiTrelloFill,
   RiTwitterXFill,
   RiVideoOnLine,
-  type RemixiconComponentType,
 } from "@remixicon/react";
 
 export interface Integration {
-  name: string;
-  description: string;
+  provider: string;
   icon: RemixiconComponentType;
   /**
    * Glyph color. Monochrome brands (X, GitHub, Notion) use the semantic token
@@ -22,69 +25,86 @@ export interface Integration {
    * place raw color is allowed per the design brief.
    */
   iconClass: string;
-  connected?: boolean;
 }
 
-export const integrations: Integration[] = [
+const integrations: Integration[] = [
   {
-    name: "X (formerly Twitter)",
-    description: "Interact with X for social media management",
+    provider: "x",
     icon: RiTwitterXFill,
     iconClass: "text-text-primary",
-    connected: true,
   },
   {
-    name: "GitHub",
-    description: "Streamline your development workflow",
+    provider: "github",
     icon: RiGithubFill,
     iconClass: "text-text-primary",
   },
   {
-    name: "Slack",
-    description: "Facilitate team communication and collaboration",
+    provider: "slack",
     icon: RiSlackFill,
     iconClass: "text-[#611f69]",
   },
   {
-    name: "Asana",
-    description: "Manage project tasks and deadlines with ease",
+    provider: "asana",
     icon: RiBubbleChartFill,
     iconClass: "text-[#f06a6a]",
   },
   {
-    name: "Zoom",
-    description: "Host virtual meetings and webinars easily",
+    provider: "zoom",
     icon: RiVideoOnLine,
     iconClass: "text-[#2d8cff]",
   },
   {
-    name: "Trello",
-    description: "Organize projects with boards and cards",
+    provider: "trello",
     icon: RiTrelloFill,
     iconClass: "text-[#1868db]",
   },
   {
-    name: "Figma",
-    description: "Design and prototype collaboratively in real time",
+    provider: "figma",
     icon: RiFigmaFill,
     iconClass: "text-[#a259ff]",
   },
   {
-    name: "Notion",
-    description: "Create documents and databases for your team",
+    provider: "notion",
     icon: RiNotionFill,
     iconClass: "text-text-primary",
   },
   {
-    name: "Canva",
-    description: "Design graphics and presentations with ease",
+    provider: "canva",
     icon: RiPaletteFill,
     iconClass: "text-[#00c4cc]",
   },
   {
-    name: "Dropbox",
-    description: "Store and share files securely in the cloud",
+    provider: "dropbox",
     icon: RiDropboxFill,
     iconClass: "text-[#0061ff]",
   },
+  {
+    provider: "gmail",
+    icon: RiMailFill,
+    iconClass: "text-[#ea4335]",
+  },
+  {
+    provider: "google_drive",
+    icon: RiDriveFill,
+    iconClass: "text-[#4285f4]",
+  },
+  {
+    provider: "google",
+    icon: RiGoogleFill,
+    iconClass: "text-[#4285f4]",
+  },
 ];
+
+const integrationVisuals = new Map(
+  integrations.map((integration) => [integration.provider, integration] as const),
+);
+
+const defaultVisual: Integration = {
+  provider: "unknown",
+  icon: RiPlugLine,
+  iconClass: "text-text-secondary",
+};
+
+export function integrationVisual(provider: string): Integration {
+  return integrationVisuals.get(provider) ?? defaultVisual;
+}

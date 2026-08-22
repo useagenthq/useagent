@@ -18,6 +18,7 @@ describe("isPublicApiPath — the allowlist is the ONLY escape from org scoping"
     expect(isPublicApiPath("/api/auth/sign-in")).toBe(true);
     expect(isPublicApiPath("/api/auth/session")).toBe(true);
     expect(isPublicApiPath("/api/slack/events")).toBe(true); // signature verified
+    expect(isPublicApiPath("/api/internal/artifact-changes")).toBe(true);
     expect(isPublicApiPath("/api/internal/gateway-approval/consume")).toBe(true);
     expect(isPublicApiPath("/api/internal/gateway-approval-requests")).toBe(true);
     expect(isPublicApiPath("/api/internal/codex-relay/run-capability")).toBe(true);

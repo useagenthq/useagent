@@ -6,6 +6,7 @@ import { Button } from "@/components/base/buttons/button";
 import { AppShell } from "@/components/shell/app-shell";
 import { ThreadSidebar } from "@/components/shell/thread-sidebar";
 import { GeneralCard } from "./general-card";
+import { IntegrationConnections } from "./integration-connections";
 import { ProviderConnectionsCard } from "./provider-connections-card";
 import { SecretsCard } from "./secrets-card";
 import { SettingsRail } from "./settings-rail";
@@ -38,7 +39,9 @@ function Section({
       <div className="rounded-2xl border border-border-button-default bg-background-primary-default p-5 shadow-sm">
         <div className="mb-4 flex flex-col gap-0.5">
           <h2 className="text-headline-medium text-text-primary">{title}</h2>
-          {description && <p className="text-caption-1-regular text-text-secondary">{description}</p>}
+          {description && (
+            <p className="text-caption-1-regular text-text-secondary">{description}</p>
+          )}
         </div>
         {children}
       </div>
@@ -104,7 +107,9 @@ export default function SettingsPage() {
                     snapshot-2026-07-24
                   </span>
                 </div>
-                <p className="text-caption-1-regular text-text-secondary">Node 24 · pnpm · Playwright</p>
+                <p className="text-caption-1-regular text-text-secondary">
+                  Node 24 · pnpm · Playwright
+                </p>
                 <div className="flex flex-wrap gap-2">
                   <Button
                     className="rounded-full"
@@ -114,20 +119,25 @@ export default function SettingsPage() {
                   >
                     Edit machine
                   </Button>
-                  <Button className="rounded-full" variant="primary" size="xs" leadingIcon={RiCameraLine}>
+                  <Button
+                    className="rounded-full"
+                    variant="primary"
+                    size="xs"
+                    leadingIcon={RiCameraLine}
+                  >
                     New snapshot
                   </Button>
                 </div>
               </div>
             </Section>
 
-            {/* Secrets */}
+            {/* Integrations */}
             <Section
-              id="secrets"
-              title="Secrets"
-              description="Persisted for every future session on this workspace."
+              id="integrations"
+              title="Integrations"
+              description="Connected tools agents can use for this workspace."
             >
-              <SecretsCard />
+              <IntegrationConnections />
             </Section>
 
             {/* Provider connections */}
@@ -137,6 +147,15 @@ export default function SettingsPage() {
               description="Your model provider accounts and write-only API keys."
             >
               <ProviderConnectionsCard />
+            </Section>
+
+            {/* Secrets */}
+            <Section
+              id="secrets"
+              title="Secrets"
+              description="Persisted for every future session on this workspace."
+            >
+              <SecretsCard />
             </Section>
 
             {/* Team */}

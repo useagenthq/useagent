@@ -1,12 +1,17 @@
 import { createHash, randomBytes } from "node:crypto";
 import { and, eq, gt, isNull } from "drizzle-orm";
 import { db } from "../db/client";
-import { integrationConnectSessions } from "../db/schema";
+import { integrationConnections, integrationConnectSessions } from "../db/schema";
+import { projectIntegrationConnection } from "./connection-repo";
 import {
   ownerColumns,
+  readSafeIntegrationAccount,
+  readSafeIntegrationScopes,
   requireNonEmptyIntegrationIdentifier,
   type ConnectionOwner,
+  type ConnectionProjection,
 } from "./types";
+import type { DelegatedConnectionResult } from "./backend";
 
 export type IntegrationConnectSessionRecord = typeof integrationConnectSessions.$inferSelect;
 
@@ -119,4 +124,79 @@ export async function consumeIntegrationConnectSession(input: {
     )
     .returning();
   return row ?? null;
+}
+
+export async function findActiveIntegrationConnectSession(input: {
+  readonly orgId: string;
+  readonly actorUserId: string;
+  readonly state: string;
+  readonly now?: Date;
+}): Promise<IntegrationConnectSessionRecord | null> {
+  if (!input.state) throw new Error("state is required");
+  const now = input.now ?? new Date();
+  const [row] = await db
+    .select()
+    .from(integrationConnectSessions)
+    .where(
+      and(
+        eq(integrationConnectSessions.orgId, input.orgId),
+        eq(integrationConnectSessions.actorUserId, input.actorUserId),
+        eq(integrationConnectSessions.stateHash, hashIntegrationConnectState(input.state)),
+        isNull(integrationConnectSessions.consumedAt),
+        gt(integrationConnectSessions.expiresAt, now),
+      ),
+    )
+    .limit(1);
+  return row ?? null;
+}
+
+/** Atomically claims one OAuth state and persists its safe connection projection. */
+export async function finalizeIntegrationConnectSession(input: {
+  readonly orgId: string;
+  readonly actorUserId: string;
+  readonly state: string;
+  readonly result: DelegatedConnectionResult;
+  readonly now?: Date;
+}): Promise<ConnectionProjection | null> {
+  const now = input.now ?? new Date();
+  return db.transaction(async (tx) => {
+    const [session] = await tx
+      .update(integrationConnectSessions)
+      .set({ consumedAt: now })
+      .where(
+        and(
+          eq(integrationConnectSessions.orgId, input.orgId),
+          eq(integrationConnectSessions.actorUserId, input.actorUserId),
+          eq(integrationConnectSessions.stateHash, hashIntegrationConnectState(input.state)),
+          isNull(integrationConnectSessions.consumedAt),
+          gt(integrationConnectSessions.expiresAt, now),
+        ),
+      )
+      .returning();
+    if (!session) return null;
+    const owner = ownerColumns(
+      session.ownerType === "org"
+        ? { type: "org" }
+        : { type: "user", userId: session.ownerUserId! },
+    );
+    const [connection] = await tx
+      .insert(integrationConnections)
+      .values({
+        orgId: session.orgId,
+        ...owner,
+        provider: session.provider,
+        runtimeBindingId: input.result.runtimeBindingId,
+        externalConnectionId: input.result.externalConnectionId,
+        externalConnectionName: input.result.externalConnectionName?.trim() || null,
+        status: "connected",
+        authMethod: input.result.authMethod,
+        accountMetadata: readSafeIntegrationAccount(input.result.account),
+        scopes: readSafeIntegrationScopes(input.result.scopes),
+        createdByUserId: session.actorUserId,
+        lastVerifiedAt: now,
+      })
+      .returning();
+    if (!connection) throw new Error("integration connection insert returned no row");
+    return projectIntegrationConnection(connection);
+  });
 }
