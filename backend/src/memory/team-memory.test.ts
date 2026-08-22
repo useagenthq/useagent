@@ -238,6 +238,146 @@ describe("deliverTeamMemory", () => {
 describe("recallScopedMemory (layered L0-L3) degrades honestly", () => {
   const pool: ScopedPool = { sourceScope: "org", identity: IDENT };
 
+  function stubLayeredRecall(input: {
+    l0?: Array<{ id: string; content: string; score?: number }>;
+    l1?: Array<{ id: string; type: string; content: string; score?: number }>;
+    l2?: Array<{ path: string; summary: string }>;
+    l3?: string;
+  }): void {
+    globalThis.fetch = mock(async (url: string) => {
+      const path = new URL(url).pathname;
+      if (path === "/v3/conversation/search") {
+        return new Response(JSON.stringify({ code: 0, data: { messages: input.l0 ?? [] } }));
+      }
+      if (path === "/v3/atomic/search") {
+        return new Response(JSON.stringify({ code: 0, data: { items: input.l1 ?? [] } }));
+      }
+      if (path === "/v3/scenario/ls") {
+        return new Response(JSON.stringify({ code: 0, data: { entries: input.l2 ?? [], total: input.l2?.length ?? 0 } }));
+      }
+      if (path === "/v3/core/read") {
+        return new Response(JSON.stringify({ code: 0, data: { content: input.l3 ?? "" } }));
+      }
+      return new Response(JSON.stringify({ code: 0, data: {} }));
+    }) as unknown as typeof fetch;
+  }
+
+  test("reserves a unique L3 line under a saturated prefix and keeps citations aligned", async () => {
+    enableMemory();
+    const first = `first-${"a".repeat(984)}`;
+    const second = `second-${"b".repeat(983)}`;
+    stubLayeredRecall({
+      l0: [
+        { id: "l0-first", content: first },
+        { id: "l0-second", content: second },
+      ],
+      l3: "bounded organization persona",
+    });
+
+    const recall = await recallScopedMemory("q", [pool]);
+    const lines = recall.rendered.split("\n").filter((line) => line.startsWith("- "));
+    const body = recall.rendered
+      .replace(`${BLOCK_HEADER}\n`, "")
+      .replace(`\n${BLOCK_FOOTER}\n\n`, "");
+
+    expect(body.length).toBeLessThanOrEqual(2000);
+    expect(lines).toEqual([`- ${first}`, "- bounded organization persona"]);
+    expect(recall.items.map((item) => item.citation.ref)).toEqual([
+      "tencent:l0:l0-first",
+      "tencent:l3:core",
+    ]);
+    expect(recall.items.map((item) => item.content)).toEqual([
+      first,
+      "bounded organization persona",
+    ]);
+    expect(recall.items).toHaveLength(lines.length);
+    expect(recall.truncated).toBe(true);
+  });
+
+  test("reserves only the actual short L3 line cost so the prefix uses the flexible remainder", async () => {
+    enableMemory();
+    const first = `first-${"a".repeat(1190)}`;
+    const second = `second-${"b".repeat(680)}`;
+    stubLayeredRecall({
+      l0: [
+        { id: "l0-first", content: first },
+        { id: "l0-second", content: second },
+      ],
+      l3: "short persona",
+    });
+
+    const recall = await recallScopedMemory("q", [pool]);
+
+    expect(recall.items.map((item) => item.content)).toEqual([first, second, "short persona"]);
+    expect(recall.items.map((item) => item.citation.layer)).toEqual(["l0", "l0", "l3"]);
+    expect(recall.truncated).toBe(false);
+  });
+
+  test("absent L3 preserves the legacy budget, framing, ordering, and truncation byte-for-byte", async () => {
+    enableMemory();
+    const first = `first-${"a".repeat(984)}`;
+    const second = `second-${"b".repeat(983)}`;
+    const overflow = `overflow-${"c".repeat(20)}`;
+    stubLayeredRecall({
+      l0: [
+        { id: "l0-first", content: first },
+        { id: "l0-second", content: second },
+        { id: "l0-overflow", content: overflow },
+      ],
+    });
+
+    const recall = await recallScopedMemory("q", [pool]);
+
+    expect(recall.rendered).toBe(
+      `${BLOCK_HEADER}\n- ${first}\n- ${second}\n${BLOCK_FOOTER}\n\n`,
+    );
+    expect(recall.items.map((item) => item.citation.ref)).toEqual([
+      "tencent:l0:l0-first",
+      "tencent:l0:l0-second",
+    ]);
+    expect(recall.truncated).toBe(true);
+  });
+
+  test("duplicate L3 reserves nothing and keeps first-wins dedupe provenance", async () => {
+    enableMemory();
+    const duplicate = "shared organization fact";
+    const second = `second-${"b".repeat(1900)}`;
+    stubLayeredRecall({
+      l0: [{ id: "l0-first", content: duplicate }],
+      l1: [{ id: "l1-second", type: "fact", content: second }],
+      l3: duplicate.toUpperCase(),
+    });
+
+    const recall = await recallScopedMemory("q", [pool]);
+
+    expect(recall.items.map((item) => item.citation.ref)).toEqual([
+      "tencent:l0:l0-first",
+      "tencent:l1:l1-second",
+    ]);
+    expect(recall.rendered.match(/shared organization fact/gi)).toHaveLength(1);
+    expect(recall.truncated).toBe(false);
+  });
+
+  test("keeps L0, L1, L2, L3 rendered and cited in provider-neutral layer order", async () => {
+    enableMemory();
+    stubLayeredRecall({
+      l0: [{ id: "l0", content: "immediate fact" }],
+      l1: [{ id: "l1", type: "fact", content: "distilled fact" }],
+      l2: [{ path: "scene/deploy", summary: "deployment scene" }],
+      l3: "organization persona",
+    });
+
+    const recall = await recallScopedMemory("q", [pool]);
+
+    expect(recall.items.map((item) => item.citation.layer)).toEqual(["l0", "l1", "l2", "l3"]);
+    expect(recall.rendered.split("\n").filter((line) => line.startsWith("- "))).toEqual([
+      "- immediate fact",
+      "- distilled fact",
+      "- deployment scene",
+      "- organization persona",
+    ]);
+  });
+
   test("reproducible Tencent layer matrix: L0/L1/L2/L3 calls, citations, org isolation, dedupe, budget, degradation", async () => {
     enableMemory();
     const personal: ScopedPool = {
