@@ -97,8 +97,8 @@ export function WorkingProjectStatus({
   return (
     <span
       className={cn(
-        "inline-flex shrink-0 items-center gap-1 text-paragraph-xs tabular-nums",
-        live ? "text-brand-orbit" : "text-text-soft-400",
+        "inline-flex shrink-0 items-center gap-1 text-caption-1-regular tabular-nums",
+        live ? "text-brand-orbit" : "text-text-tertiary",
       )}
       role={live ? "status" : undefined}
       title={title}

@@ -1,11 +1,11 @@
 "use client";
 
-import { RiKey2Line, RiLoader4Line, RiPlugLine } from "@remixicon/react";
+import { RiKey2Line, RiPlugLine } from "@remixicon/react";
 import { useCallback, useEffect, useState } from "react";
-import * as Button from "@/components/ui/button";
-import * as Input from "@/components/ui/input";
-import * as StatusBadge from "@/components/ui/status-badge";
+import { Button } from "@/components/base/buttons/button";
+import { InputBase } from "@/components/base/input/input";
 import { CodexChatGptPath } from "./codex-chatgpt-path";
+import { ConnectionStatusChip, SpinnerIcon } from "./connection-status-chip";
 import { putProviderApiKey, revokeProviderConnection } from "./provider-connections-api";
 import {
   accountLabel,
@@ -25,10 +25,12 @@ const MASK = "••••••••";
 function StatusPill({ connection }: { connection: ProviderConnectionMeta | null }) {
   const revoked = connection?.status === "revoked";
   return (
-    <StatusBadge.Root variant="light" status={connectionBadgeStatus(connection)}>
-      <StatusBadge.Dot className={revoked ? "text-error-base" : undefined} />
+    <ConnectionStatusChip
+      status={connectionBadgeStatus(connection)}
+      dotClassName={revoked ? "bg-red-500" : undefined}
+    >
       {statusLabel(connection)}
-    </StatusBadge.Root>
+    </ConnectionStatusChip>
   );
 }
 
@@ -47,18 +49,18 @@ function AuthPathRow({
 }) {
   const active = isActiveConnection(connection);
   return (
-    <div className="flex flex-col gap-3 rounded-xl border border-stroke-soft-200 bg-bg-white-0 p-3 sm:flex-row sm:items-center sm:justify-between">
+    <div className="flex flex-col gap-3 rounded-xl border border-border-button-default bg-background-primary-default p-3 sm:flex-row sm:items-center sm:justify-between">
       <div className="min-w-0">
         <div className="flex flex-wrap items-center gap-2">
-          <p className="text-label-sm text-text-strong-950">{label}</p>
+          <p className="text-body-2-medium text-text-primary">{label}</p>
           <StatusPill connection={connection} />
         </div>
-        <p className="mt-1 text-paragraph-xs text-text-soft-400">{detail}</p>
-        <div className="mt-2 flex flex-wrap items-center gap-2 text-paragraph-xs text-text-sub-600">
+        <p className="mt-1 text-caption-1-regular text-text-tertiary">{detail}</p>
+        <div className="mt-2 flex flex-wrap items-center gap-2 text-caption-1-regular text-text-secondary">
           <span className="truncate">{accountLabel(connection)}</span>
           {connection ? (
             <>
-              <span className="text-text-soft-400">·</span>
+              <span className="text-text-tertiary">·</span>
               <span>Updated {relTime(connection.updatedAt)}</span>
             </>
           ) : null}
@@ -66,22 +68,20 @@ function AuthPathRow({
       </div>
       <div className="flex shrink-0 items-center gap-2">
         {active ? (
-          <span className="select-none font-mono text-paragraph-xs text-text-soft-400">
+          <span className="select-none font-mono text-caption-1-regular text-text-tertiary">
             {MASK}
             <span className="sr-only"> stored write-only credential</span>
           </span>
         ) : null}
-        <Button.Root
-          type="button"
-          variant={active ? "error" : "neutral"}
-          mode="stroke"
-          size="xsmall"
+        <Button
+          variant={active ? "danger" : "secondary"}
+          size="xs"
           className="rounded-full"
           disabled={!active || disabled}
           onClick={onRevoke}
         >
           Revoke
-        </Button.Root>
+        </Button>
       </div>
     </div>
   );
@@ -150,14 +150,14 @@ export function ProviderConnectionPanel({
   );
 
   return (
-    <section className="flex flex-col gap-4 rounded-xl border border-stroke-soft-200 bg-bg-weak-50 p-4">
+    <section className="flex flex-col gap-4 rounded-xl border border-border-button-default bg-background-secondary-default p-4">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
           <div className="flex items-center gap-2">
-            <RiPlugLine aria-hidden className="size-4 text-text-soft-400" />
-            <h3 className="text-title-h6 text-text-strong-950">{labels.name}</h3>
+            <RiPlugLine aria-hidden className="size-4 text-foreground-icon-tertiary" />
+            <h3 className="text-headline-medium text-text-primary">{labels.name}</h3>
           </div>
-          <p className="mt-1 text-paragraph-xs text-text-sub-600">{labels.scope}</p>
+          <p className="mt-1 text-caption-1-regular text-text-secondary">{labels.scope}</p>
         </div>
         <StatusPill connection={connection ?? oauthConnection} />
       </div>
@@ -187,58 +187,47 @@ export function ProviderConnectionPanel({
         }}
       >
         <div className="grid gap-2 lg:grid-cols-[minmax(0,1fr)_minmax(0,0.75fr)_minmax(0,0.75fr)_auto]">
-          <Input.Root>
-            <Input.Wrapper>
-              <Input.Icon as={RiKey2Line} />
-              <Input.Input
-                aria-label={`${labels.name} API key`}
-                placeholder={labels.keyPlaceholder}
-                type="password"
-                autoComplete="off"
-                spellCheck={false}
-                value={apiKey}
-                onChange={(event) => setApiKey(event.target.value)}
-              />
-            </Input.Wrapper>
-          </Input.Root>
-          <Input.Root>
-            <Input.Wrapper>
-              <Input.Input
-                aria-label={`${labels.name} account email`}
-                placeholder="Account email"
-                type="email"
-                autoComplete="off"
-                value={email}
-                onChange={(event) => setEmail(event.target.value)}
-              />
-            </Input.Wrapper>
-          </Input.Root>
-          <Input.Root>
-            <Input.Wrapper>
-              <Input.Input
-                aria-label={`${labels.name} plan or label`}
-                placeholder="Plan or label"
-                value={planType}
-                onChange={(event) => setPlanType(event.target.value)}
-              />
-            </Input.Wrapper>
-          </Input.Root>
-          <Button.Root
+          <InputBase
+            aria-label={`${labels.name} API key`}
+            placeholder={labels.keyPlaceholder}
+            type="password"
+            autoComplete="off"
+            spellCheck={false}
+            leadingIcon={RiKey2Line}
+            value={apiKey}
+            onChange={(event) => setApiKey(event.target.value)}
+          />
+          <InputBase
+            aria-label={`${labels.name} account email`}
+            placeholder="Account email"
+            type="email"
+            autoComplete="off"
+            value={email}
+            onChange={(event) => setEmail(event.target.value)}
+          />
+          <InputBase
+            aria-label={`${labels.name} plan or label`}
+            placeholder="Plan or label"
+            value={planType}
+            onChange={(event) => setPlanType(event.target.value)}
+          />
+          <Button
             type="submit"
-            variant="neutral"
-            mode="stroke"
+            variant="secondary"
             size="small"
             className="rounded-full"
             disabled={apiKey.trim().length === 0 || saving}
+            leadingIcon={saving ? SpinnerIcon : undefined}
           >
-            {saving ? <Button.Icon as={RiLoader4Line} className="animate-spin" /> : null}
             Save key
-          </Button.Root>
+          </Button>
         </div>
-        <p className="text-paragraph-xs text-text-soft-400">
+        <p className="text-caption-1-regular text-text-tertiary">
           Account fields are labels only; they help identify the credential without exposing it.
         </p>
-        {formError ? <p className="text-paragraph-xs text-error-base">{formError}</p> : null}
+        {formError ? (
+          <p className="text-caption-1-regular text-text-error-primary">{formError}</p>
+        ) : null}
       </form>
     </section>
   );

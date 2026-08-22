@@ -50,16 +50,16 @@ export { SheetGridSurface } from "./sheet-grid";
 export function ArtifactFidelityNote({ kind }: { readonly kind: ArtifactWorkpieceKind }) {
   const fidelity = artifactFidelityFor(kind);
   return (
-    <div className="max-w-2xl text-paragraph-xs text-text-soft-400">
+    <div className="max-w-2xl text-caption-1-regular text-text-tertiary">
       <p>
         {fidelity.summary} Original bytes stay immutable; edits save as a browser workpiece and
         export native or canonical files.
       </p>
       <p className="mt-1">
-        <span className="text-success-base">Preserved:</span> {fidelity.preserved.join(", ")}.
+        <span className="text-status-lime-text">Preserved:</span> {fidelity.preserved.join(", ")}.
       </p>
       <p className="mt-0.5">
-        <span className="text-warning-base">Not preserved:</span> {fidelity.notPreserved.join(", ")}.
+        <span className="text-yellow-600">Not preserved:</span> {fidelity.notPreserved.join(", ")}.
       </p>
     </div>
   );
@@ -226,14 +226,14 @@ export function RichDocumentSurface({
   return (
     <>
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <p id="workpiece-rich-label" className="text-label-sm text-text-strong-950">
+        <p id="workpiece-rich-label" className="text-body-2-medium text-text-primary">
           Rich document
         </p>
         <details className="group">
-          <summary className="cursor-pointer list-none rounded-lg border border-stroke-soft-200 px-2.5 py-1 text-label-xs text-text-sub-600 outline-none hover:bg-bg-weak-50 hover:text-text-strong-950">
+          <summary className="cursor-pointer list-none rounded-lg border border-border-button-default px-2.5 py-1 text-label-xs text-text-secondary outline-none hover:bg-background-secondary-default hover:text-text-primary">
             Theme
           </summary>
-          <div className="absolute right-3 z-10 mt-1 w-72 max-w-[calc(100%-1.5rem)] rounded-xl border border-stroke-soft-200 bg-bg-white-0 p-1 shadow-regular-md">
+          <div className="absolute right-3 z-10 mt-1 w-72 max-w-[calc(100%-1.5rem)] rounded-xl border border-border-button-default bg-background-primary-default p-1 shadow-md">
             <ThemeControls
               theme={theme}
               onChange={(next) => onThemeChange(next)}
@@ -245,7 +245,7 @@ export function RichDocumentSurface({
       {/* Scoped heading color so the theme's heading role paints h1-h3 in the
           contentEditable without touching any other editor on the page. */}
       <style>{`.${themeClass} h1,.${themeClass} h2,.${themeClass} h3{color:${theme.heading}}`}</style>
-      <div className="mt-3 flex flex-wrap items-center gap-1 border-y border-stroke-soft-200 py-2">
+      <div className="mt-3 flex flex-wrap items-center gap-1 border-y border-border-button-default py-2">
         {RICH_TOOLBAR.map(([command, title, Icon]) => (
           <button
             key={command}
@@ -254,12 +254,12 @@ export function RichDocumentSurface({
             aria-label={title}
             disabled={loading}
             onClick={() => runCommand(command)}
-            className="grid size-8 place-items-center rounded-lg text-text-sub-600 hover:bg-bg-weak-50 hover:text-text-strong-950 disabled:opacity-40"
+            className="grid size-8 place-items-center rounded-lg text-text-secondary hover:bg-background-secondary-default hover:text-text-primary disabled:opacity-40"
           >
             <Icon aria-hidden className="size-4" />
           </button>
         ))}
-        <div className="mx-1 h-5 w-px bg-stroke-soft-200" aria-hidden />
+        <div className="mx-1 h-5 w-px bg-border-button-default" aria-hidden />
         <button
           type="button"
           title="Insert link"
@@ -267,7 +267,7 @@ export function RichDocumentSurface({
           aria-pressed={linkOpen}
           disabled={loading}
           onClick={() => setLinkOpen((open) => !open)}
-          className="grid size-8 place-items-center rounded-lg text-text-sub-600 hover:bg-bg-weak-50 hover:text-text-strong-950 aria-pressed:bg-bg-weak-50 aria-pressed:text-text-strong-950 disabled:opacity-40"
+          className="grid size-8 place-items-center rounded-lg text-text-secondary hover:bg-background-secondary-default hover:text-text-primary aria-pressed:bg-background-secondary-default aria-pressed:text-text-primary disabled:opacity-40"
         >
           <RiLink aria-hidden className="size-4" />
         </button>
@@ -287,13 +287,13 @@ export function RichDocumentSurface({
               placeholder="https://"
               // biome-ignore lint/a11y/noAutofocus: focus the URL field the moment the link tool opens.
               autoFocus
-              className="h-8 w-56 rounded-lg border border-stroke-soft-200 bg-bg-white-0 px-2.5 text-label-xs text-text-strong-950 outline-none focus:border-stroke-strong-950"
+              className="h-8 w-56 rounded-lg border border-border-button-default bg-background-primary-default px-2.5 text-label-xs text-text-primary outline-none focus:border-foreground-icon-primary"
             />
             <button
               type="button"
               onClick={applyLink}
               disabled={!isSafeLinkHref(linkValue)}
-              className="h-8 rounded-lg bg-bg-strong-950 px-2.5 text-label-xs text-text-white-0 disabled:opacity-40"
+              className="h-8 rounded-lg bg-foreground-icon-primary px-2.5 text-label-xs text-background-full disabled:opacity-40"
             >
               Add
             </button>
@@ -315,7 +315,7 @@ export function RichDocumentSurface({
         // The theme paints the rendered/edited surface: page background + body
         // text color inline, heading color through the scoped rule above.
         style={{ ...documentBackgroundStyle(theme.background), color: theme.body }}
-        className={`${themeClass} prose prose-sm mt-4 min-h-[420px] w-full flex-1 overflow-auto rounded-xl border border-stroke-soft-200 p-6 outline-none focus:border-stroke-strong-950 focus:ring-2 focus:ring-stroke-soft-200 aria-disabled:opacity-50`}
+        className={`${themeClass} prose prose-sm mt-4 min-h-[420px] w-full flex-1 overflow-auto rounded-xl border border-border-button-default p-6 outline-none focus:border-foreground-icon-primary focus:ring-2 focus:ring-border-button-default aria-disabled:opacity-50`}
       />
     </>
   );
@@ -350,7 +350,7 @@ function NumberField({
   readonly max?: number;
 }) {
   return (
-    <label className="flex flex-col gap-1 text-label-xs text-text-sub-600">
+    <label className="flex flex-col gap-1 text-label-xs text-text-secondary">
       {label}
       <input
         type="number"
@@ -361,7 +361,7 @@ function NumberField({
           const next = Number(event.currentTarget.value);
           if (Number.isFinite(next)) onChange(next);
         }}
-        className="h-8 w-full rounded-lg border border-stroke-soft-200 bg-bg-white-0 px-2 text-label-sm text-text-strong-950 outline-none focus:border-stroke-strong-950"
+        className="h-8 w-full rounded-lg border border-border-button-default bg-background-primary-default px-2 text-body-2-medium text-text-primary outline-none focus:border-foreground-icon-primary"
       />
     </label>
   );
@@ -377,14 +377,14 @@ function ColorField({
   readonly onChange: (value: string) => void;
 }) {
   return (
-    <label className="flex items-center justify-between gap-2 text-label-xs text-text-sub-600">
+    <label className="flex items-center justify-between gap-2 text-label-xs text-text-secondary">
       <span>{label}</span>
       <input
         type="color"
         aria-label={label}
         value={toColorInput(value)}
         onChange={(event) => onChange(event.currentTarget.value)}
-        className="h-7 w-10 cursor-pointer rounded border border-stroke-soft-200 bg-bg-white-0"
+        className="h-7 w-10 cursor-pointer rounded border border-border-button-default bg-background-primary-default"
       />
     </label>
   );
@@ -419,9 +419,9 @@ function BlockInspector({
   const isText = block.type === "heading" || block.type === "text";
 
   return (
-    <div className="flex flex-col gap-3 rounded-xl border border-stroke-soft-200 bg-bg-weak-50 p-3">
+    <div className="flex flex-col gap-3 rounded-xl border border-border-button-default bg-background-secondary-default p-3">
       <div className="flex items-center justify-between">
-        <p className="text-label-sm text-text-strong-950">
+        <p className="text-body-2-medium text-text-primary">
           {block.type[0]?.toUpperCase()}
           {block.type.slice(1)} block
         </p>
@@ -430,7 +430,7 @@ function BlockInspector({
           onClick={onRemove}
           aria-label="Remove block"
           title="Remove block"
-          className="grid size-7 place-items-center rounded-lg text-text-sub-600 hover:bg-bg-white-0 hover:text-error-base"
+          className="grid size-7 place-items-center rounded-lg text-text-secondary hover:bg-background-primary-default hover:text-text-error-primary"
         >
           <RiDeleteBinLine aria-hidden className="size-4" />
         </button>
@@ -441,7 +441,7 @@ function BlockInspector({
           value={block.content}
           onChange={(event) => onChange({ ...block, content: event.currentTarget.value })}
           aria-label="Block text"
-          className="min-h-16 w-full resize-y rounded-lg border border-stroke-soft-200 bg-bg-white-0 p-2 text-paragraph-sm text-text-strong-950 outline-none focus:border-stroke-strong-950"
+          className="min-h-16 w-full resize-y rounded-lg border border-border-button-default bg-background-primary-default p-2 text-body-2-regular text-text-primary outline-none focus:border-foreground-icon-primary"
         />
       )}
       {block.type === "image" && (
@@ -450,7 +450,7 @@ function BlockInspector({
           onChange={(event) => onChange({ ...block, content: event.currentTarget.value })}
           placeholder="/api/... or https://"
           aria-label="Image URL"
-          className="h-8 w-full rounded-lg border border-stroke-soft-200 bg-bg-white-0 px-2 text-label-sm text-text-strong-950 outline-none focus:border-stroke-strong-950"
+          className="h-8 w-full rounded-lg border border-border-button-default bg-background-primary-default px-2 text-body-2-medium text-text-primary outline-none focus:border-foreground-icon-primary"
         />
       )}
 
@@ -470,12 +470,12 @@ function BlockInspector({
               onChange={(fontSize) => setStyle({ fontSize })}
               min={4}
             />
-            <label className="flex flex-col gap-1 text-label-xs text-text-sub-600">
+            <label className="flex flex-col gap-1 text-label-xs text-text-secondary">
               Align
               <select
                 value={block.style?.align ?? "left"}
                 onChange={(event) => setStyle({ align: event.currentTarget.value as DeckBlockStyle["align"] })}
-                className="h-8 w-full rounded-lg border border-stroke-soft-200 bg-bg-white-0 px-2 text-label-sm text-text-strong-950 outline-none focus:border-stroke-strong-950"
+                className="h-8 w-full rounded-lg border border-border-button-default bg-background-primary-default px-2 text-body-2-medium text-text-primary outline-none focus:border-foreground-icon-primary"
               >
                 <option value="left">Left</option>
                 <option value="center">Center</option>
@@ -488,7 +488,7 @@ function BlockInspector({
               type="button"
               aria-pressed={block.style?.bold ?? false}
               onClick={() => setStyle({ bold: !(block.style?.bold ?? false) })}
-              className="grid size-8 place-items-center rounded-lg border border-stroke-soft-200 text-text-sub-600 hover:bg-bg-white-0 aria-pressed:bg-bg-strong-950 aria-pressed:text-text-white-0"
+              className="grid size-8 place-items-center rounded-lg border border-border-button-default text-text-secondary hover:bg-background-primary-default aria-pressed:bg-foreground-icon-primary aria-pressed:text-background-full"
             >
               <RiBold aria-hidden className="size-4" />
             </button>
@@ -496,7 +496,7 @@ function BlockInspector({
               type="button"
               aria-pressed={block.style?.italic ?? false}
               onClick={() => setStyle({ italic: !(block.style?.italic ?? false) })}
-              className="grid size-8 place-items-center rounded-lg border border-stroke-soft-200 text-text-sub-600 hover:bg-bg-white-0 aria-pressed:bg-bg-strong-950 aria-pressed:text-text-white-0"
+              className="grid size-8 place-items-center rounded-lg border border-border-button-default text-text-secondary hover:bg-background-primary-default aria-pressed:bg-foreground-icon-primary aria-pressed:text-background-full"
             >
               <RiItalic aria-hidden className="size-4" />
             </button>
@@ -540,8 +540,8 @@ function ThemeControls({
   readonly label?: string;
 }) {
   return (
-    <div className="flex flex-col gap-2 rounded-xl border border-stroke-soft-200 p-3">
-      <p className="text-label-sm text-text-strong-950">{label}</p>
+    <div className="flex flex-col gap-2 rounded-xl border border-border-button-default p-3">
+      <p className="text-body-2-medium text-text-primary">{label}</p>
       <div className="flex flex-wrap gap-2">
         {DECK_THEME_PRESETS.map((preset) => (
           <button
@@ -550,7 +550,7 @@ function ThemeControls({
             onClick={() => onChange(preset.theme)}
             title={preset.label}
             aria-label={`${preset.label} theme`}
-            className="size-8 rounded-lg border border-stroke-soft-200"
+            className="size-8 rounded-lg border border-border-button-default"
             style={preset.theme.background.type === "gradient"
               ? {
                 background:
@@ -600,7 +600,7 @@ export function DeckSurface({
 
   if (!deck) {
     return (
-      <p className="mt-4 rounded-xl border border-dashed border-stroke-soft-200 px-4 py-8 text-center text-paragraph-sm text-text-sub-600">
+      <p className="mt-4 rounded-xl border border-dashed border-border-button-default px-4 py-8 text-center text-body-2-regular text-text-secondary">
         Loading deck...
       </p>
     );
@@ -707,19 +707,19 @@ export function DeckSurface({
   return (
     <section className="mt-4 flex min-h-0 flex-1 flex-col gap-4 overflow-auto pb-2">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-label-sm text-text-strong-950">Slides ({slides.length})</p>
+        <p className="text-body-2-medium text-text-primary">Slides ({slides.length})</p>
         <button
           type="button"
           onClick={addSlide}
           disabled={loading}
-          className="inline-flex h-8 items-center gap-2 rounded-lg border border-stroke-soft-200 px-3 text-label-sm hover:bg-bg-weak-50 disabled:opacity-50"
+          className="inline-flex h-8 items-center gap-2 rounded-lg border border-border-button-default px-3 text-body-2-medium hover:bg-background-secondary-default disabled:opacity-50"
         >
           <RiAddLine aria-hidden className="size-4" /> Add slide
         </button>
       </div>
 
       {slides.length === 0 || !slide ? (
-        <p className="rounded-xl border border-dashed border-stroke-soft-200 px-4 py-8 text-center text-paragraph-sm text-text-sub-600">
+        <p className="rounded-xl border border-dashed border-border-button-default px-4 py-8 text-center text-body-2-regular text-text-secondary">
           No slides yet. Add the first slide to start the deck.
         </p>
       ) : (
@@ -734,7 +734,7 @@ export function DeckSurface({
               const target = slide.blocks.find((block) => block.id === id);
               if (target) patchBlock({ ...target, x, y });
             }}
-            className="w-full rounded-xl border border-stroke-soft-200 shadow-regular-xs"
+            className="w-full rounded-xl border border-border-button-default shadow-card"
           />
 
           {/* Slide navigation + reorder + delete. */}
@@ -746,11 +746,11 @@ export function DeckSurface({
                 disabled={activeIndex === 0}
                 aria-label="Previous slide"
                 title="Previous slide"
-                className="grid size-8 place-items-center rounded-lg text-text-sub-600 hover:bg-bg-weak-50 disabled:opacity-30"
+                className="grid size-8 place-items-center rounded-lg text-text-secondary hover:bg-background-secondary-default disabled:opacity-30"
               >
                 <RiArrowLeftSLine aria-hidden className="size-5" />
               </button>
-              <span className="min-w-16 text-center text-label-sm text-text-strong-950">
+              <span className="min-w-16 text-center text-body-2-medium text-text-primary">
                 Slide {activeIndex + 1}
               </span>
               <button
@@ -759,7 +759,7 @@ export function DeckSurface({
                 disabled={activeIndex === slides.length - 1}
                 aria-label="Next slide"
                 title="Next slide"
-                className="grid size-8 place-items-center rounded-lg text-text-sub-600 hover:bg-bg-weak-50 disabled:opacity-30"
+                className="grid size-8 place-items-center rounded-lg text-text-secondary hover:bg-background-secondary-default disabled:opacity-30"
               >
                 <RiArrowRightSLine aria-hidden className="size-5" />
               </button>
@@ -771,7 +771,7 @@ export function DeckSurface({
                 disabled={loading || activeIndex === 0}
                 aria-label={`Move slide ${activeIndex + 1} earlier`}
                 title="Move earlier"
-                className="grid size-8 place-items-center rounded-lg text-text-sub-600 hover:bg-bg-weak-50 disabled:opacity-30"
+                className="grid size-8 place-items-center rounded-lg text-text-secondary hover:bg-background-secondary-default disabled:opacity-30"
               >
                 <RiArrowUpLine aria-hidden className="size-4" />
               </button>
@@ -781,7 +781,7 @@ export function DeckSurface({
                 disabled={loading || activeIndex === slides.length - 1}
                 aria-label={`Move slide ${activeIndex + 1} later`}
                 title="Move later"
-                className="grid size-8 place-items-center rounded-lg text-text-sub-600 hover:bg-bg-weak-50 disabled:opacity-30"
+                className="grid size-8 place-items-center rounded-lg text-text-secondary hover:bg-background-secondary-default disabled:opacity-30"
               >
                 <RiArrowDownLine aria-hidden className="size-4" />
               </button>
@@ -791,7 +791,7 @@ export function DeckSurface({
                 disabled={loading}
                 aria-label={`Delete slide ${activeIndex + 1}`}
                 title="Delete slide"
-                className="grid size-8 place-items-center rounded-lg text-text-sub-600 hover:bg-bg-weak-50 hover:text-error-base disabled:opacity-30"
+                className="grid size-8 place-items-center rounded-lg text-text-secondary hover:bg-background-secondary-default hover:text-text-error-primary disabled:opacity-30"
               >
                 <RiDeleteBinLine aria-hidden className="size-4" />
               </button>
@@ -817,8 +817,8 @@ export function DeckSurface({
                   // button does not collapse around its padding-sized canvas.
                   className={
                     position === activeIndex
-                      ? "h-[63px] w-28 shrink-0 overflow-hidden rounded-lg border-2 border-primary-base"
-                      : "h-[63px] w-28 shrink-0 overflow-hidden rounded-lg border border-stroke-soft-200 hover:border-stroke-sub-300"
+                      ? "h-[63px] w-28 shrink-0 overflow-hidden rounded-lg border-2 border-accent-500"
+                      : "h-[63px] w-28 shrink-0 overflow-hidden rounded-lg border border-border-button-default hover:border-border-button-hover"
                   }
                 >
                   <DeckSlideCanvas deck={deck} slide={item} />
@@ -829,14 +829,14 @@ export function DeckSurface({
 
           {/* Add block. */}
           <div className="flex flex-wrap items-center gap-2">
-            <span className="text-label-xs text-text-sub-600">Add block:</span>
+            <span className="text-label-xs text-text-secondary">Add block:</span>
             {BLOCK_ADD.map(([type, label, Icon]) => (
               <button
                 key={type}
                 type="button"
                 onClick={() => addBlock(type)}
                 disabled={loading}
-                className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-stroke-soft-200 px-2.5 text-label-xs hover:bg-bg-weak-50 disabled:opacity-50"
+                className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-border-button-default px-2.5 text-label-xs hover:bg-background-secondary-default disabled:opacity-50"
               >
                 <Icon aria-hidden className="size-4" /> {label}
               </button>
@@ -846,34 +846,34 @@ export function DeckSurface({
           <div className="grid gap-4 md:grid-cols-2">
             {/* Quick edit + slide-level controls. */}
             <div className="flex flex-col gap-3">
-              <label className="block text-label-xs text-text-sub-600">
+              <label className="block text-label-xs text-text-secondary">
                 Title
                 <input
                   value={headingText}
                   disabled={loading}
                   onChange={(event) => setPrimary("heading", event.currentTarget.value)}
-                  className="mt-1 h-9 w-full rounded-lg border border-stroke-soft-200 bg-bg-white-0 px-3 text-label-sm text-text-strong-950 outline-none focus:border-stroke-strong-950"
+                  className="mt-1 h-9 w-full rounded-lg border border-border-button-default bg-background-primary-default px-3 text-body-2-medium text-text-primary outline-none focus:border-foreground-icon-primary"
                 />
               </label>
-              <label className="block text-label-xs text-text-sub-600">
+              <label className="block text-label-xs text-text-secondary">
                 Body
                 <textarea
                   value={bodyText}
                   disabled={loading}
                   onChange={(event) => setPrimary("text", event.currentTarget.value)}
-                  className="mt-1 min-h-20 w-full resize-y rounded-lg border border-stroke-soft-200 bg-bg-white-0 p-3 text-paragraph-sm text-text-strong-950 outline-none focus:border-stroke-strong-950"
+                  className="mt-1 min-h-20 w-full resize-y rounded-lg border border-border-button-default bg-background-primary-default p-3 text-body-2-regular text-text-primary outline-none focus:border-foreground-icon-primary"
                 />
               </label>
-              <label className="block text-label-xs text-text-sub-600">
+              <label className="block text-label-xs text-text-secondary">
                 Speaker notes
                 <textarea
                   value={slide.notes ?? ""}
                   disabled={loading}
                   onChange={(event) => setNotes(event.currentTarget.value)}
-                  className="mt-1 min-h-16 w-full resize-y rounded-lg border border-stroke-soft-200 bg-bg-white-0 p-3 text-paragraph-sm text-text-strong-950 outline-none focus:border-stroke-strong-950"
+                  className="mt-1 min-h-16 w-full resize-y rounded-lg border border-border-button-default bg-background-primary-default p-3 text-body-2-regular text-text-primary outline-none focus:border-foreground-icon-primary"
                 />
               </label>
-              <div className="flex items-center justify-between rounded-xl border border-stroke-soft-200 p-3 text-label-xs text-text-sub-600">
+              <div className="flex items-center justify-between rounded-xl border border-border-button-default p-3 text-label-xs text-text-secondary">
                 <span>Slide background</span>
                 {slide.background ? (
                   <div className="flex items-center gap-2">
@@ -885,7 +885,7 @@ export function DeckSurface({
                     <button
                       type="button"
                       onClick={() => setSlideBackground(null)}
-                      className="rounded-lg border border-stroke-soft-200 px-2 py-1 text-label-xs hover:bg-bg-weak-50"
+                      className="rounded-lg border border-border-button-default px-2 py-1 text-label-xs hover:bg-background-secondary-default"
                     >
                       Use theme
                     </button>
@@ -894,7 +894,7 @@ export function DeckSurface({
                   <button
                     type="button"
                     onClick={() => setSlideBackground({ type: "color", color: "#111827" })}
-                    className="rounded-lg border border-stroke-soft-200 px-2 py-1 text-label-xs hover:bg-bg-weak-50"
+                    className="rounded-lg border border-border-button-default px-2 py-1 text-label-xs hover:bg-background-secondary-default"
                   >
                     Override
                   </button>
@@ -912,7 +912,7 @@ export function DeckSurface({
                   onRemove={() => removeBlock(selected.id)}
                 />
               ) : (
-                <p className="rounded-xl border border-dashed border-stroke-soft-200 px-3 py-6 text-center text-paragraph-xs text-text-soft-400">
+                <p className="rounded-xl border border-dashed border-border-button-default px-3 py-6 text-center text-caption-1-regular text-text-tertiary">
                   Select a block on the canvas to edit its content, position, and style.
                 </p>
               )}
@@ -937,7 +937,7 @@ export function SourceSurface({
 }) {
   return (
     <>
-      <label htmlFor="workpiece-source" className="text-label-sm text-text-strong-950">
+      <label htmlFor="workpiece-source" className="text-body-2-medium text-text-primary">
         {label}
       </label>
       <textarea
@@ -945,7 +945,7 @@ export function SourceSurface({
         value={value}
         onChange={(event) => onChange(event.currentTarget.value)}
         disabled={loading}
-        className="mt-2 min-h-[420px] w-full flex-1 resize-y rounded-xl border border-stroke-soft-200 bg-bg-white-0 p-4 font-mono text-paragraph-sm text-text-strong-950 outline-none focus:border-stroke-strong-950 focus:ring-2 focus:ring-stroke-soft-200 disabled:opacity-50"
+        className="mt-2 min-h-[420px] w-full flex-1 resize-y rounded-xl border border-border-button-default bg-background-primary-default p-4 font-mono text-body-2-regular text-text-primary outline-none focus:border-foreground-icon-primary focus:ring-2 focus:ring-border-button-default disabled:opacity-50"
       />
     </>
   );
@@ -971,23 +971,23 @@ export function PdfEmbedSurface({
         data={url}
         type="application/pdf"
         aria-label="Embedded PDF preview"
-        className="min-h-[420px] w-full flex-1 rounded-xl border border-stroke-soft-200 bg-bg-weak-50"
+        className="min-h-[420px] w-full flex-1 rounded-xl border border-border-button-default bg-background-secondary-default"
       >
-        <div className="grid h-full place-items-center p-6 text-center text-paragraph-sm text-text-sub-600">
+        <div className="grid h-full place-items-center p-6 text-center text-body-2-regular text-text-secondary">
           <p>
             This PDF cannot preview inline here.{" "}
             <a
               href={url}
               target="_blank"
               rel="noreferrer"
-              className="text-primary-base underline underline-offset-2"
+              className="text-accent-500 underline underline-offset-2"
             >
               Open the PDF
             </a>
           </p>
         </div>
       </object>
-      <p className="text-paragraph-xs text-text-soft-400">{note}</p>
+      <p className="text-caption-1-regular text-text-tertiary">{note}</p>
     </div>
   );
 }
@@ -1001,11 +1001,11 @@ function formatKb(sizeBytes: number): string {
 export function PdfBinaryCodeView({ sizeBytes }: { readonly sizeBytes: number }) {
   return (
     <div className="mt-4 flex min-h-0 flex-1 flex-col">
-      <p className="text-label-sm text-text-strong-950">PDF source</p>
-      <p className="mt-1 text-paragraph-xs text-text-soft-400">
+      <p className="text-body-2-medium text-text-primary">PDF source</p>
+      <p className="mt-1 text-caption-1-regular text-text-tertiary">
         Read-only. A published PDF stores immutable bytes, not editable text.
       </p>
-      <pre className="mt-2 min-h-0 flex-1 overflow-auto rounded-xl border border-stroke-soft-200 bg-bg-weak-50 p-4 font-mono text-paragraph-xs text-text-strong-950">
+      <pre className="mt-2 min-h-0 flex-1 overflow-auto rounded-xl border border-border-button-default bg-background-secondary-default p-4 font-mono text-caption-1-regular text-text-primary">
         Binary PDF source ({formatKb(sizeBytes)}) - not text
       </pre>
     </div>
@@ -1023,11 +1023,11 @@ export function WorkpieceCodeView({
 }) {
   return (
     <div className="mt-4 flex min-h-0 flex-1 flex-col">
-      <p className="text-label-sm text-text-strong-950">{label} source</p>
-      <p className="mt-1 text-paragraph-xs text-text-soft-400">
+      <p className="text-body-2-medium text-text-primary">{label} source</p>
+      <p className="mt-1 text-caption-1-regular text-text-tertiary">
         Read-only. This is exactly what a save writes; edit in the rendered view.
       </p>
-      <pre className="mt-2 min-h-0 flex-1 overflow-auto rounded-xl border border-stroke-soft-200 bg-bg-weak-50 p-4 font-mono text-paragraph-xs text-text-strong-950">
+      <pre className="mt-2 min-h-0 flex-1 overflow-auto rounded-xl border border-border-button-default bg-background-secondary-default p-4 font-mono text-caption-1-regular text-text-primary">
         {source || "(empty)"}
       </pre>
     </div>

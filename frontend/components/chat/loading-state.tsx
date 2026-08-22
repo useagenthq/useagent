@@ -1,4 +1,4 @@
-import { cnExt as cn } from "@/utils/cn";
+import { cx as cn } from "@/utils/cx";
 
 /**
  * Pixel-matrix loading state — a 5×5 grid pulsing on a diagonal stagger
@@ -21,13 +21,13 @@ export function LoadingState({
           return (
             <span
               key={i}
-              className="ai-loading-pixel bg-primary-base size-2 rounded-[3px]"
+              className="ai-loading-pixel bg-accent-500 size-2 rounded-[3px]"
               style={{ animationDelay: `${(row + col) * 90}ms` }}
             />
           );
         })}
       </div>
-      <span className="agent-progress-loading-text text-label-sm">{label}</span>
+      <span className="agent-progress-loading-text text-body-2-medium">{label}</span>
     </div>
   );
 }

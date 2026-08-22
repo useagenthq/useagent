@@ -17,7 +17,7 @@ import {
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { type ReactNode, useCallback, useEffect, useId, useState } from "react";
 
-import { cn } from "@/utils/cn";
+import { cx } from "@/utils/cx";
 
 // -- motion tokens ---------------------------------------------------------
 const EASE_OUT = [0.16, 1, 0.3, 1] as const;
@@ -65,10 +65,10 @@ export function MessageBubbleCollapsible({
   const toggle = useCallback(() => setOpen((value) => !value), []);
 
   return (
-    <div className={cn("w-full", className)}>
+    <div className={cx("w-full", className)}>
       <div
         id={contentId}
-        className={cn(
+        className={cx(
           "transition-[mask-image] duration-200",
           !open && LINE_CLAMP_CLASS[collapsedLines],
           !open && "[mask-image:linear-gradient(to_bottom,#000_68%,transparent_100%)]",
@@ -81,7 +81,7 @@ export function MessageBubbleCollapsible({
         aria-expanded={open}
         aria-controls={contentId}
         onClick={toggle}
-        className="mt-2 inline-flex h-7 items-center gap-1 rounded-full px-2 text-paragraph-xs font-medium text-text-sub-600 outline-none transition-colors hover:bg-bg-weak-50 hover:text-text-strong-950 focus-visible:ring-2 focus-visible:ring-stroke-strong-950"
+        className="mt-2 inline-flex h-7 items-center gap-1 rounded-full px-2 text-caption-1-regular font-medium text-text-secondary outline-none transition-colors hover:bg-background-primary-hover hover:text-text-primary focus-visible:ring-2 focus-visible:ring-border-focus-ring"
       >
         <span>{open ? lessLabel : moreLabel}</span>
         <motion.span
@@ -102,9 +102,9 @@ function MessageAvatar({ role }: { role: MessageRole }) {
   return (
     <span
       aria-hidden="true"
-      className={cn(
+      className={cx(
         "grid size-8 shrink-0 place-items-center rounded-full",
-        isUser ? "bg-bg-weak-50 text-text-sub-600" : "bg-primary-base text-static-white",
+        isUser ? "bg-background-secondary-default text-text-secondary" : "bg-accent-500 text-text-white",
       )}
     >
       {isUser ? <RiUserLine className="size-4" /> : <RiSparkling2Line className="size-4" />}
@@ -133,9 +133,9 @@ function MessageAction({
       title={label}
       whileTap={reduce ? undefined : { scale: 0.9 }}
       transition={SPRING_PRESS}
-      className={cn(
-        "grid size-7 place-items-center rounded-lg text-text-soft-400 outline-none transition-colors hover:bg-bg-weak-50 hover:text-text-sub-600 focus-visible:ring-2 focus-visible:ring-stroke-strong-950",
-        active && "text-primary-base",
+      className={cx(
+        "grid size-7 place-items-center rounded-lg text-text-tertiary outline-none transition-colors hover:bg-background-primary-hover hover:text-text-secondary focus-visible:ring-2 focus-visible:ring-border-focus-ring",
+        active && "text-accent-500",
       )}
     >
       {children}
@@ -144,11 +144,11 @@ function MessageAction({
 }
 
 function bubbleSurfaceClass(role: MessageRole) {
-  return cn(
+  return cx(
     "pointer-events-none absolute inset-0 -z-10 rounded-2xl",
     role === "user"
-      ? "origin-bottom-right bg-primary-base"
-      : "origin-bottom-left bg-bg-weak-50",
+      ? "origin-bottom-right bg-accent-500"
+      : "origin-bottom-left bg-background-secondary-default",
   );
 }
 
@@ -193,7 +193,7 @@ export function MessageBubble({
       animate={{ opacity: 1, y: 0 }}
       exit={reduce ? { opacity: 0 } : { opacity: 0, y: -3, scale: 0.99 }}
       transition={reduce ? { duration: 0.12 } : SPRING_LAYOUT}
-      className={cn(
+      className={cx(
         "group/message flex w-full items-start gap-2.5",
         isUser && "flex-row-reverse",
         className,
@@ -201,13 +201,13 @@ export function MessageBubble({
     >
       <MessageAvatar role={role} />
 
-      <div className={cn("flex min-w-0 flex-col gap-1", isUser ? "items-end" : "items-start")}>
+      <div className={cx("flex min-w-0 flex-col gap-1", isUser ? "items-end" : "items-start")}>
         <div
           data-slot="message-bubble-content"
-          className={cn(
-            "relative z-0 min-w-9 max-w-[80%] rounded-2xl px-3.5 py-2.5 text-paragraph-sm leading-6",
-            isUser ? "text-static-white" : "text-text-strong-950",
-            "[&_code]:rounded [&_code]:bg-bg-weak-50 [&_code]:px-1 [&_code]:py-0.5 [&_code]:font-mono [&_code]:text-[0.9em] [&_p+p]:mt-2",
+          className={cx(
+            "relative z-0 min-w-9 max-w-[80%] rounded-2xl px-3.5 py-2.5 text-body-2-regular leading-6",
+            isUser ? "text-text-white" : "text-text-primary",
+            "[&_code]:rounded [&_code]:bg-background-secondary-default [&_code]:px-1 [&_code]:py-0.5 [&_code]:font-mono [&_code]:text-[0.9em] [&_p+p]:mt-2",
           )}
         >
           <motion.span
@@ -233,7 +233,7 @@ export function MessageBubble({
 
         {showActions ? (
           <div
-            className={cn(
+            className={cx(
               "flex items-center gap-0.5 opacity-0 transition-opacity duration-150 group-hover/message:opacity-100 focus-within:opacity-100",
               isUser && "flex-row-reverse",
             )}
@@ -249,7 +249,7 @@ export function MessageBubble({
                   className="grid place-items-center"
                 >
                   {copied ? (
-                    <RiCheckLine className="size-4 text-success-base" />
+                    <RiCheckLine className="size-4 text-lime-600" />
                   ) : (
                     <RiFileCopyLine className="size-4" />
                   )}
@@ -305,8 +305,8 @@ export function MessageBubbleDemo() {
   const visible = SCRIPT.slice(0, count);
 
   return (
-    <div className="flex items-center justify-center rounded-xl bg-bg-weak-50 p-3">
-      <div className="w-full max-w-md rounded-2xl border border-stroke-soft-200 bg-bg-white-0 p-4 shadow-regular-sm">
+    <div className="flex items-center justify-center rounded-xl bg-background-secondary-default p-3">
+      <div className="w-full max-w-md rounded-2xl border border-border-button-default bg-background-primary-default p-4 shadow-sm">
         <div className="flex flex-col gap-4">
           <AnimatePresence initial={false} mode="popLayout">
             {visible.map((message) => (

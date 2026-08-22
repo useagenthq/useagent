@@ -32,18 +32,18 @@ function PlaybookCard({
     <button
       type="button"
       onClick={() => onOpen(playbook)}
-      className="flex flex-col rounded-2xl bg-bg-white-0 p-4 text-left shadow-regular-sm ring-1 ring-inset ring-stroke-soft-200 outline-none transition-colors hover:bg-bg-weak-50 focus-visible:ring-2 focus-visible:ring-stroke-strong-950"
+      className="flex flex-col rounded-2xl bg-background-primary-default p-4 text-left shadow-sm ring-1 ring-inset ring-border-button-default outline-none transition-colors hover:bg-background-secondary-default focus-visible:ring-2 focus-visible:ring-border-focus-ring"
     >
       <div className="flex items-center justify-between">
-        <div className="flex size-9 items-center justify-center rounded-lg border border-stroke-soft-200 bg-bg-weak-50">
-          <RiBookMarkedLine aria-hidden className="size-5 text-text-sub-600" />
+        <div className="flex size-9 items-center justify-center rounded-lg border border-border-button-default bg-background-secondary-default">
+          <RiBookMarkedLine aria-hidden className="size-5 text-text-secondary" />
         </div>
-        <span className="font-mono text-label-xs tabular-nums text-text-soft-400">
+        <span className="font-mono text-label-xs tabular-nums text-text-tertiary">
           v{playbook.version}
         </span>
       </div>
-      <h3 className="mt-3 text-label-sm text-text-strong-950">{playbook.name}</h3>
-      <p className="mt-1 line-clamp-2 text-paragraph-xs text-text-sub-600">
+      <h3 className="mt-3 text-body-2-medium text-text-primary">{playbook.name}</h3>
+      <p className="mt-1 line-clamp-2 text-caption-1-regular text-text-secondary">
         {playbook.description}
       </p>
       {playbook.tags.length > 0 && (
@@ -55,7 +55,7 @@ function PlaybookCard({
           ))}
         </div>
       )}
-      <p className="mt-4 border-t border-stroke-soft-200 pt-3 text-paragraph-xs text-text-soft-400">
+      <p className="mt-4 border-t border-border-button-default pt-3 text-caption-1-regular text-text-tertiary">
         Used {playbook.usageCount} {playbook.usageCount === 1 ? "time" : "times"}
       </p>
     </button>
@@ -131,10 +131,10 @@ export function PlaybooksView({
       <div className="flex items-start justify-between gap-3">
         <div>
           <div className="flex items-center gap-2.5">
-            <RiBookMarkedLine aria-hidden className="size-5 text-text-strong-950" />
-            <h1 className="text-display-sm text-text-strong-950">Playbooks</h1>
+            <RiBookMarkedLine aria-hidden className="size-5 text-text-primary" />
+            <h1 className="text-display-sm text-text-primary">Playbooks</h1>
           </div>
-          <p className="mt-1.5 text-paragraph-sm text-text-sub-600">
+          <p className="mt-1.5 text-body-2-regular text-text-secondary">
             Structured procedures useAgent follows as guidance - Overview, Procedure, Verify
           </p>
         </div>
@@ -152,7 +152,7 @@ export function PlaybooksView({
         error ? (
           <BackendUnreachable className="mt-10" onRetry={refetch} />
         ) : (
-          <p className="mt-10 text-paragraph-sm text-text-sub-600">
+          <p className="mt-10 text-body-2-regular text-text-secondary">
             No playbooks yet. Capture your first procedure to get started.
           </p>
         )

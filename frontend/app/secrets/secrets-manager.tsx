@@ -6,10 +6,15 @@ import {
   RiKey2Line,
   RiLoader4Line,
 } from "@remixicon/react";
-import * as Button from "@/components/ui/button";
-import * as Input from "@/components/ui/input";
+import { Button } from "@/components/base/buttons/button";
+import { IconButton } from "@/components/base/buttons/icon-button";
+import { InputBase, TextField } from "@/components/base/input/input";
+import {
+  SegmentedControl,
+  SegmentedControlItem,
+} from "@/components/base/segmented-control/segmented-control";
 import { BackendUnreachable } from "@/components/shared/backend-unreachable";
-import { cnExt } from "@/utils/cn";
+import { cx } from "@/utils/cx";
 import { relTime } from "@/app/settings/relative-time";
 import { deleteSecret, fetchSecrets, putSecret } from "./secrets-api";
 import { isValidSecretName, SECRET_KINDS, type SecretKind, type SecretMeta } from "./secrets-data";
@@ -18,6 +23,17 @@ const MASK = "••••••••";
 
 function byName(a: SecretMeta, b: SecretMeta): number {
   return a.name.localeCompare(b.name);
+}
+
+/** Remix loader with the spin baked in, in Button `leadingIcon` shape. */
+function SpinnerIcon({
+  className,
+  ...props
+}: {
+  className?: string;
+  "aria-hidden"?: boolean | "true" | "false";
+}) {
+  return <RiLoader4Line {...props} className={cx(className, "animate-spin")} />;
 }
 
 /**
@@ -121,101 +137,83 @@ export function SecretsManager({
       >
         <div className="flex flex-col gap-2 sm:flex-row sm:items-start">
           <div className="sm:w-[260px]">
-            <Input.Root hasError={nameInvalid}>
-              <Input.Wrapper>
-                <Input.Icon as={RiKey2Line} />
-                <Input.Input
-                  aria-label="Secret name"
-                  placeholder="SECRET_NAME"
-                  spellCheck={false}
-                  autoCapitalize="characters"
-                  className="font-mono"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                />
-              </Input.Wrapper>
-            </Input.Root>
+            <TextField
+              aria-label="Secret name"
+              isInvalid={nameInvalid}
+              value={name}
+              onChange={setName}
+            >
+              <InputBase
+                leadingIcon={RiKey2Line}
+                placeholder="SECRET_NAME"
+                spellCheck={false}
+                autoCapitalize="characters"
+                className="font-mono"
+              />
+            </TextField>
           </div>
           <div className="min-w-0 flex-1">
-            <Input.Root>
-              <Input.Wrapper>
-                <Input.Input
-                  aria-label="Secret value"
-                  placeholder="Value (write-only)"
-                  type="password"
-                  autoComplete="off"
-                  value={value}
-                  onChange={(e) => setValue(e.target.value)}
-                />
-              </Input.Wrapper>
-            </Input.Root>
+            <TextField
+              aria-label="Secret value"
+              type="password"
+              value={value}
+              onChange={setValue}
+            >
+              <InputBase placeholder="Value (write-only)" autoComplete="off" />
+            </TextField>
           </div>
           {/* Kind toggle: env var vs materialized file. */}
-          <div
-            role="radiogroup"
+          <SegmentedControl
             aria-label="Secret kind"
-            className="inline-flex shrink-0 rounded-full border border-stroke-soft-200 p-0.5"
+            className="shrink-0"
+            selectedKeys={[kind]}
+            onSelectionChange={(keys) => {
+              const next = [...(keys as Set<string>)][0];
+              if (next) setKind(next as SecretKind);
+            }}
           >
             {SECRET_KINDS.map((k) => (
-              <label
-                key={k}
-                className={cnExt(
-                  "cursor-pointer rounded-full px-3 py-1 text-label-xs capitalize transition-colors focus-within:ring-2 focus-within:ring-stroke-strong-950",
-                  kind === k
-                    ? "bg-bg-strong-950 text-text-white-0"
-                    : "text-text-sub-600 hover:text-text-strong-950",
-                )}
-              >
-                <input
-                  type="radio"
-                  name="secret-kind"
-                  value={k}
-                  checked={kind === k}
-                  onChange={() => setKind(k)}
-                  className="sr-only"
-                />
+              <SegmentedControlItem key={k} id={k} className="capitalize">
                 {k}
-              </label>
+              </SegmentedControlItem>
             ))}
-          </div>
-          <Button.Root
+          </SegmentedControl>
+          <Button
             type="submit"
-            variant="neutral"
-            mode="stroke"
+            variant="secondary"
             size="small"
-            className="rounded-full"
+            leadingIcon={saving ? SpinnerIcon : undefined}
             disabled={!canSave}
           >
-            {saving ? <Button.Icon as={RiLoader4Line} className="animate-spin" /> : null}
             {exists ? "Update" : "Add secret"}
-          </Button.Root>
+          </Button>
         </div>
         {nameInvalid ? (
-          <p className="text-paragraph-xs text-error-base">
+          <p className="text-caption-1-regular text-text-error-primary">
             Use an env-var name: an uppercase letter, then uppercase letters, digits, or underscores (e.g. GCP_SA_KEY).
           </p>
         ) : kind === "file" ? (
-          <p className="text-paragraph-xs text-text-soft-400">
+          <p className="text-caption-1-regular text-text-tertiary">
             Written to a 0600 file in every sandbox this workspace boots; the env var holds its path.
           </p>
         ) : (
-          <p className="text-paragraph-xs text-text-soft-400">
+          <p className="text-caption-1-regular text-text-tertiary">
             Injected as an environment variable into every sandbox this workspace boots.
           </p>
         )}
-        {saveError && <p className="text-paragraph-xs text-error-base">{saveError}</p>}
+        {saveError && <p className="text-caption-1-regular text-text-error-primary">{saveError}</p>}
       </form>
 
       {/* List / empty / error */}
       {error && secrets.length === 0 ? (
         <BackendUnreachable onRetry={refetch} />
       ) : loading && secrets.length === 0 ? (
-        <div className="flex items-center gap-2 py-6 text-paragraph-sm text-text-sub-600">
+        <div className="flex items-center gap-2 py-6 text-body-2-regular text-text-secondary">
           <RiLoader4Line aria-hidden className="size-4 animate-spin" />
           Loading secrets...
         </div>
       ) : secrets.length === 0 ? (
-        <p className="py-6 text-paragraph-sm text-text-sub-600">
+        <p className="py-6 text-body-2-regular text-text-secondary">
           No secrets yet. Add one above to inject it into every sandbox this workspace boots.
         </p>
       ) : (
@@ -223,63 +221,55 @@ export function SecretsManager({
           {secrets.map((s) => (
             <div
               key={s.name}
-              className="flex items-center gap-3 border-b border-stroke-soft-200 py-2.5 last:border-b-0"
+              className="flex items-center gap-3 border-b border-separator-border py-2.5 last:border-b-0"
             >
-              <RiKey2Line aria-hidden className="size-4 shrink-0 text-text-soft-400" />
-              <span className="min-w-0 flex-1 truncate font-mono text-label-sm text-text-strong-950">
+              <RiKey2Line aria-hidden className="size-4 shrink-0 text-foreground-icon-tertiary" />
+              <span className="min-w-0 flex-1 truncate font-mono text-body-2-medium text-text-primary">
                 {s.name}
               </span>
               {s.kind === "file" && (
-                <span className="shrink-0 rounded-full border border-stroke-soft-200 px-1.5 py-0.5 text-[0.625rem] uppercase tracking-wide text-text-soft-400">
+                <span className="shrink-0 rounded-full border border-border-button-default px-1.5 py-0.5 text-[0.625rem] uppercase tracking-wide text-text-tertiary">
                   file
                 </span>
               )}
               <span
-                className="hidden select-none font-mono text-paragraph-xs text-text-sub-600 sm:inline"
+                className="hidden select-none font-mono text-caption-1-regular text-text-secondary sm:inline"
                 aria-hidden
               >
                 {MASK}
               </span>
               {mounted && (
-                <span className="hidden text-paragraph-xs text-text-soft-400 sm:inline">
+                <span className="hidden text-caption-1-regular text-text-tertiary sm:inline">
                   Updated {relTime(s.updatedAt)}
                 </span>
               )}
               {confirming === s.name ? (
                 <div className="flex items-center gap-1">
-                  <Button.Root
+                  <Button
                     type="button"
-                    variant="neutral"
-                    mode="ghost"
-                    size="xsmall"
-                    className="rounded-full"
+                    variant="ghost"
+                    size="xs"
                     onClick={() => setConfirming(null)}
                   >
                     Cancel
-                  </Button.Root>
-                  <Button.Root
+                  </Button>
+                  <Button
                     type="button"
-                    variant="error"
-                    mode="stroke"
-                    size="xsmall"
-                    className="rounded-full"
+                    variant="danger"
+                    size="xs"
                     onClick={() => void remove(s.name)}
                   >
                     Delete
-                  </Button.Root>
+                  </Button>
                 </div>
               ) : (
-                <Button.Root
+                <IconButton
                   type="button"
-                  variant="neutral"
-                  mode="ghost"
-                  size="xsmall"
+                  icon={RiDeleteBinLine}
+                  size="small"
                   aria-label={`Delete ${s.name}`}
-                  className={cnExt("rounded-full")}
                   onClick={() => setConfirming(s.name)}
-                >
-                  <Button.Icon as={RiDeleteBinLine} />
-                </Button.Root>
+                />
               )}
             </div>
           ))}

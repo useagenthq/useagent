@@ -6,7 +6,7 @@
 
 import type { ComponentType } from 'react';
 
-import { cn } from '@/utils/cn';
+import { cx as cn } from "@/utils/cx";
 
 type IconComponent = ComponentType<{
   className?: string;
@@ -23,7 +23,7 @@ const TONE: Record<ChipTone, string> = {
   purple: 'bg-purple-500/15 text-purple-500',
   orange: 'bg-orange-500/15 text-orange-500',
   red: 'bg-red-500/15 text-red-500',
-  neutral: 'bg-bg-weak-50 text-text-sub-600',
+  neutral: 'bg-background-secondary-default text-text-secondary',
 };
 
 const SIZE = {

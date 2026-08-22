@@ -1,7 +1,7 @@
 "use client";
 
 import { RiCheckLine } from "@remixicon/react";
-import { cnExt as cn } from "@/utils/cn";
+import { cx as cn } from "@/utils/cx";
 import { PixelAvatar } from "@/components/chat/agent-command";
 
 /** One selectable chat model - the honest shape the picker renders, mirrored from
@@ -35,11 +35,11 @@ export function ChatModelMenu({
   return (
     <div
       className={cn(
-        "border-stroke-soft-200 bg-bg-white-0 shadow-regular-md w-full rounded-2xl border p-2",
+        "border-border-button-default bg-background-primary-default shadow-dropdown w-full rounded-2xl border p-2",
         className,
       )}
     >
-      <p className="text-mono-label text-text-soft-400 px-2 pb-1 pt-1.5">Choose model</p>
+      <p className="text-mono-label text-text-tertiary px-2 pb-1 pt-1.5">Choose model</p>
       {options.map((m) => {
         const selected = m.value === value;
         return (
@@ -52,16 +52,16 @@ export function ChatModelMenu({
             }}
             className={cn(
               "flex w-full items-center gap-2.5 rounded-xl px-2 py-2 text-left transition-colors",
-              selected ? "bg-bg-weak-50" : "hover:bg-bg-weak-50",
+              selected ? "bg-background-secondary-default" : "hover:bg-background-primary-hover",
             )}
           >
             <PixelAvatar color={m.color} />
-            <span className="text-label-sm shrink-0" style={{ color: m.color }}>
+            <span className="text-body-2-medium shrink-0" style={{ color: m.color }}>
               {m.label}
             </span>
-            <span className="text-text-soft-400 truncate text-paragraph-sm">{m.description}</span>
+            <span className="text-text-tertiary truncate text-body-2-regular">{m.description}</span>
             {selected && (
-              <RiCheckLine className="text-text-sub-600 ml-auto size-4 shrink-0" aria-hidden />
+              <RiCheckLine className="text-text-secondary ml-auto size-4 shrink-0" aria-hidden />
             )}
           </button>
         );

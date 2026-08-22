@@ -13,7 +13,7 @@ import {
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { type CSSProperties, type ReactNode, useEffect, useState } from "react";
 
-import { cn } from "@/utils/cn";
+import { cx } from "@/utils/cx";
 
 // -- motion tokens ---------------------------------------------------------
 const EASE_OUT = [0.16, 1, 0.3, 1] as const;
@@ -65,14 +65,14 @@ const OVERLAY_OPACITY: Record<ImageGenerationStatus, number> = {
 
 // -- status mark -----------------------------------------------------------
 function StatusMark({ status, reduce }: { status: ImageGenerationStatus; reduce: boolean }) {
-  if (status === "complete") return <RiCheckLine aria-hidden="true" className="size-3.5 text-success-base" />;
-  if (status === "error") return <RiErrorWarningLine aria-hidden="true" className="size-3.5 text-error-base" />;
+  if (status === "complete") return <RiCheckLine aria-hidden="true" className="size-3.5 text-lime-600" />;
+  if (status === "error") return <RiErrorWarningLine aria-hidden="true" className="size-3.5 text-text-error-primary" />;
   return (
     <motion.span
       aria-hidden="true"
       animate={reduce ? undefined : { rotate: 360 }}
       transition={{ duration: 2.4, ease: EASE_IN_OUT, repeat: Number.POSITIVE_INFINITY }}
-      className="grid size-3.5 grid-cols-2 place-items-center gap-0.5 text-primary-base"
+      className="grid size-3.5 grid-cols-2 place-items-center gap-0.5 text-accent-500"
     >
       <span className="size-1 rounded-[1px] bg-current" />
       <span className="size-1 rounded-[1px] bg-current opacity-55" />
@@ -91,10 +91,10 @@ function ScanOverlay({ reduce, status }: { reduce: boolean; status: ImageGenerat
       initial={false}
       animate={{ opacity: OVERLAY_OPACITY[status] }}
       transition={{ duration: reduce ? 0 : 0.4, ease: EASE_OUT }}
-      className="absolute inset-0 overflow-hidden bg-bg-weak-50"
+      className="absolute inset-0 overflow-hidden bg-background-secondary-default"
     >
       <div
-        className="absolute inset-0 text-text-soft-400 opacity-40"
+        className="absolute inset-0 text-text-tertiary opacity-40"
         style={{
           backgroundImage: "radial-gradient(currentColor 1px, transparent 1px)",
           backgroundSize: "10px 10px",
@@ -105,7 +105,7 @@ function ScanOverlay({ reduce, status }: { reduce: boolean; status: ImageGenerat
           initial={{ y: "-40%" }}
           animate={{ y: "140%" }}
           transition={{ duration: 1.6, ease: EASE_IN_OUT, repeat: Number.POSITIVE_INFINITY }}
-          className="absolute inset-x-0 h-1/3 bg-gradient-to-b from-transparent via-bg-white-0/70 to-transparent mix-blend-overlay"
+          className="absolute inset-x-0 h-1/3 bg-gradient-to-b from-transparent via-background-primary-default/70 to-transparent mix-blend-overlay"
         />
       )}
     </motion.div>
@@ -135,12 +135,12 @@ export function ImageGenerationPanel({
   const resolvedLabel = label ?? (prompt ? `${resolvedStatusText}: ${prompt}` : resolvedStatusText);
 
   return (
-    <div data-slot="image-generation" data-state={status} aria-busy={active} className={cn("w-full", className)}>
+    <div data-slot="image-generation" data-state={status} aria-busy={active} className={cx("w-full", className)}>
       <div
         role="img"
         aria-label={resolvedLabel}
         style={{ aspectRatio }}
-        className="relative isolate w-full overflow-hidden rounded-xl bg-bg-weak-50"
+        className="relative isolate w-full overflow-hidden rounded-xl bg-background-secondary-default"
       >
         <motion.div
           aria-hidden={children ? undefined : true}
@@ -151,7 +151,7 @@ export function ImageGenerationPanel({
               : { filter: mediaState.filter, opacity: mediaState.opacity, scale: mediaState.scale }
           }
           transition={reduce ? { duration: 0 } : { duration: 0.4, ease: EASE_OUT }}
-          className={cn(
+          className={cx(
             "absolute inset-0 [&>*]:size-full [&>*]:object-cover [&_img]:size-full [&_img]:object-cover",
             mediaClassName,
           )}
@@ -175,13 +175,13 @@ export function ImageGenerationPanel({
         </AnimatePresence>
 
         {interactive && status === "queued" ? (
-          <span className="absolute inset-0 grid place-items-center text-text-soft-400">
+          <span className="absolute inset-0 grid place-items-center text-text-tertiary">
             <RiSparkling2Line aria-hidden="true" className="size-6" />
           </span>
         ) : null}
 
         {resolution ? (
-          <span className="absolute right-2 top-2 z-10 rounded-full bg-bg-white-0/75 px-2 py-0.5 font-mono text-[10px] tabular-nums text-text-soft-400">
+          <span className="absolute right-2 top-2 z-10 rounded-full bg-background-primary-default/75 px-2 py-0.5 font-mono text-[10px] tabular-nums text-text-tertiary">
             {resolution}
           </span>
         ) : null}
@@ -192,9 +192,9 @@ export function ImageGenerationPanel({
           {showStatus ? (
             <div
               aria-live="polite"
-              className={cn(
-                "flex min-h-5 items-center gap-2 text-label-sm text-text-strong-950",
-                status === "error" && "text-error-base",
+              className={cx(
+                "flex min-h-5 items-center gap-2 text-body-2-medium text-text-primary",
+                status === "error" && "text-text-error-primary",
                 statusClassName,
               )}
             >
@@ -213,7 +213,7 @@ export function ImageGenerationPanel({
             </div>
           ) : null}
           {prompt ? (
-            <p className="mt-0.5 truncate text-paragraph-xs text-text-sub-600">&ldquo;{prompt}&rdquo;</p>
+            <p className="mt-0.5 truncate text-caption-1-regular text-text-secondary">&ldquo;{prompt}&rdquo;</p>
           ) : null}
         </div>
       ) : null}
@@ -224,7 +224,7 @@ export function ImageGenerationPanel({
           onClick={onRetry}
           whileTap={reduce ? undefined : { scale: 0.96 }}
           transition={SPRING_PRESS}
-          className="mt-3 inline-flex min-h-10 items-center gap-2 rounded-full px-3 text-label-sm text-text-strong-950 outline-none transition-colors hover:bg-bg-weak-50 focus-visible:ring-2 focus-visible:ring-stroke-strong-950"
+          className="mt-3 inline-flex min-h-10 items-center gap-2 rounded-full px-3 text-body-2-medium text-text-primary outline-none transition-colors hover:bg-background-primary-hover focus-visible:ring-2 focus-visible:ring-border-focus-ring"
         >
           <RiRestartLine aria-hidden="true" className="size-4" />
           Try again
@@ -284,8 +284,8 @@ const DEMO_TILES: DemoTile[] = [
 function TileGradient({ gradient }: { gradient: string }) {
   return (
     <div style={{ background: gradient }}>
-      <div className="absolute left-4 top-4 size-10 rounded-full bg-static-white/45 blur-md" />
-      <div className="absolute -bottom-6 -right-5 size-24 rounded-full bg-static-white/30 blur-2xl" />
+      <div className="absolute left-4 top-4 size-10 rounded-full bg-white/45 blur-md" />
+      <div className="absolute -bottom-6 -right-5 size-24 rounded-full bg-white/30 blur-2xl" />
     </div>
   );
 }
@@ -308,9 +308,9 @@ function DemoTilePanel({ tile }: { tile: DemoTile }) {
 /** Self-contained demo: a grid of tiles that generate on independent, looping timers. */
 export function ImageGenerationDemo() {
   return (
-    <div className="flex items-center justify-center rounded-xl bg-bg-weak-50 p-3">
+    <div className="flex items-center justify-center rounded-xl bg-background-secondary-default p-3">
       <div className="w-full max-w-md">
-        <div className="rounded-2xl border border-stroke-soft-200 bg-bg-white-0 p-3 shadow-regular-sm">
+        <div className="rounded-2xl border border-border-button-default bg-background-primary-default p-3 shadow-sm">
           <div className="grid grid-cols-3 gap-3">
             {DEMO_TILES.map((tile) => (
               <DemoTilePanel key={tile.id} tile={tile} />

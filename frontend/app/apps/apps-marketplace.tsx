@@ -67,15 +67,15 @@ function PromoBanner() {
           <div
             key={label}
             className={cnExt(
-              "inline-flex w-fit max-w-full items-center gap-3 rounded-full bg-white py-2 pl-2 pr-5 shadow-regular-sm",
+              "inline-flex w-fit max-w-full items-center gap-3 rounded-full bg-white py-2 pl-2 pr-5 shadow-sm",
               indent,
             )}
           >
             <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-neutral-50 px-2.5 py-1 ring-1 ring-black/[0.04]">
               <Icon className={cnExt("size-4 shrink-0", labelClass)} aria-hidden />
-              <span className={cnExt("text-label-sm", labelClass)}>{label}</span>
+              <span className={cnExt("text-body-2-medium", labelClass)}>{label}</span>
             </span>
-            <span className="truncate text-paragraph-sm text-neutral-800">
+            <span className="truncate text-body-2-regular text-neutral-800">
               {task}
             </span>
           </div>
@@ -104,13 +104,13 @@ function IntegrationRow({
 
   return (
     <li className="flex items-center gap-3">
-      <span className="flex size-11 shrink-0 items-center justify-center rounded-xl border border-stroke-soft-200 bg-bg-white-0 shadow-regular-xs">
+      <span className="flex size-11 shrink-0 items-center justify-center rounded-xl border border-border-button-default bg-background-primary-default shadow-card">
         <Icon className={cnExt("size-6", iconClass)} aria-hidden />
       </span>
 
       <div className="min-w-0 flex-1">
-        <p className="text-label-sm text-text-strong-950">{name}</p>
-        <p className="truncate text-paragraph-sm text-text-sub-600">
+        <p className="text-body-2-medium text-text-primary">{name}</p>
+        <p className="truncate text-body-2-regular text-text-secondary">
           {description}
         </p>
       </div>
@@ -120,10 +120,10 @@ function IntegrationRow({
         onClick={() => onToggle(name)}
         aria-label={connected ? `Disconnect ${name}` : `Connect ${name}`}
         className={cnExt(
-          "flex size-7 shrink-0 items-center justify-center rounded-lg text-text-sub-600 transition-colors",
+          "flex size-7 shrink-0 items-center justify-center rounded-lg text-text-secondary transition-colors",
           connected
-            ? "hover:bg-bg-soft-200"
-            : "bg-bg-soft-200 hover:bg-bg-sub-300",
+            ? "hover:bg-background-tertiary-default"
+            : "bg-background-tertiary-default hover:bg-background-tertiary-hover",
         )}
       >
         {connected ? (
@@ -167,7 +167,7 @@ export function AppsMarketplace() {
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-8 px-6 py-10 sm:px-8">
       <div className="flex flex-col gap-5">
-        <h1 className="text-center text-display-sm text-text-strong-950">
+        <h1 className="text-center text-display-sm text-text-primary">
           Connect the tools your team already uses
         </h1>
         <Input.Root>
@@ -186,7 +186,7 @@ export function AppsMarketplace() {
       <PromoBanner />
 
       <section className="flex flex-col gap-5">
-        <h2 className="text-label-sm text-text-strong-950">Featured</h2>
+        <h2 className="text-body-2-medium text-text-primary">Featured</h2>
         {results.length > 0 ? (
           <ul className="grid grid-cols-1 gap-x-10 gap-y-6 sm:grid-cols-2">
             {results.map((integration) => (
@@ -199,7 +199,7 @@ export function AppsMarketplace() {
             ))}
           </ul>
         ) : (
-          <p className="text-paragraph-sm text-text-sub-600">
+          <p className="text-body-2-regular text-text-secondary">
             No integrations match “{query}”.
           </p>
         )}

@@ -28,18 +28,18 @@ const STATUS_LABEL: Record<ChildStatus, string> = {
 
 function StatusIcon({ status }: { readonly status: ChildStatus }) {
   if (status === "completed") {
-    return <RiCheckboxCircleFill className="size-4 text-success-base" aria-hidden />;
+    return <RiCheckboxCircleFill className="size-4 text-lime-600" aria-hidden />;
   }
   if (status === "failed" || status === "cancelled" || status === "interrupted") {
-    return <RiCloseCircleFill className="size-4 text-error-base" aria-hidden />;
+    return <RiCloseCircleFill className="size-4 text-text-error-primary" aria-hidden />;
   }
   if (status === "running") {
-    return <RiLoader4Line className="size-4 animate-spin text-information-base" aria-hidden />;
+    return <RiLoader4Line className="size-4 animate-spin text-blue-600" aria-hidden />;
   }
   if (status === "waiting" || status === "idle") {
-    return <RiPauseCircleLine className="size-4 text-away-base" aria-hidden />;
+    return <RiPauseCircleLine className="size-4 text-orange-600" aria-hidden />;
   }
-  return <RiTimeLine className="size-4 text-text-soft-400" aria-hidden />;
+  return <RiTimeLine className="size-4 text-text-tertiary" aria-hidden />;
 }
 
 function formatTokens(tokens: number): string {
@@ -57,21 +57,21 @@ export function LiveSubagentStatus({
     <section
       aria-label="Subagents"
       aria-live="polite"
-      className={`overflow-hidden rounded-2xl border border-stroke-soft-200 bg-bg-white-0 shadow-regular-xs ${className ?? ""}`}
+      className={`overflow-hidden rounded-2xl border border-border-button-default bg-background-primary-default shadow-card ${className ?? ""}`}
     >
-      <div className="flex items-center justify-between gap-3 border-b border-stroke-soft-200 bg-bg-weak-50 px-4 py-3">
+      <div className="flex items-center justify-between gap-3 border-b border-border-button-default bg-background-secondary-default px-4 py-3">
         <span className="flex items-center gap-2">
-          <RiRobot2Line className="size-4 text-feature-base" aria-hidden />
-          <h3 className="text-label-sm text-text-strong-950">Subagents</h3>
+          <RiRobot2Line className="size-4 text-purple-600" aria-hidden />
+          <h3 className="text-body-2-medium text-text-primary">Subagents</h3>
         </span>
-        <span className="font-mono text-label-xs text-text-soft-400 tabular-nums">
+        <span className="font-mono text-caption-1-medium text-text-tertiary tabular-nums">
           {model.cards.length}
         </span>
       </div>
       {model.cards.length === 0 ? (
-        <p className="px-4 py-4 text-paragraph-sm text-text-soft-400">{emptyLabel}</p>
+        <p className="px-4 py-4 text-body-2-regular text-text-tertiary">{emptyLabel}</p>
       ) : (
-        <ul className="divide-y divide-stroke-soft-200">
+        <ul className="divide-y divide-border-button-default">
           {model.cards.map((card) => {
             const fidelity = card.aliases
               .map((alias) => model.fidelity.get(alias))
@@ -84,12 +84,12 @@ export function LiveSubagentStatus({
                   <StatusIcon status={status} />
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
-                      <p className="truncate text-label-sm text-text-strong-950">{card.title}</p>
-                      <span className="text-label-xs text-text-sub-600">
+                      <p className="truncate text-body-2-medium text-text-primary">{card.title}</p>
+                      <span className="text-caption-1-medium text-text-secondary">
                         {STATUS_LABEL[status]}
                       </span>
                     </div>
-                    <div className="mt-0.5 flex flex-wrap gap-x-2 text-paragraph-xs text-text-soft-400">
+                    <div className="mt-0.5 flex flex-wrap gap-x-2 text-caption-1-regular text-text-tertiary">
                       {fidelity?.role && <span>{fidelity.role}</span>}
                       {fidelity?.model && <span className="font-mono">{fidelity.model}</span>}
                       {fidelity?.usage && (
@@ -99,7 +99,7 @@ export function LiveSubagentStatus({
                       )}
                     </div>
                     {activity && (
-                      <p className="mt-1 truncate text-paragraph-xs text-text-sub-600">
+                      <p className="mt-1 truncate text-caption-1-regular text-text-secondary">
                         {activity}
                       </p>
                     )}

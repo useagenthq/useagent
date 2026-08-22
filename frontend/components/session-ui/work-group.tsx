@@ -15,7 +15,7 @@
 
 import { RiArrowDownSLine } from "@remixicon/react";
 import { memo, useState } from "react";
-import { cn } from "@/utils/cn";
+import { cx as cn } from "@/utils/cx";
 import {
   groupWorkEntryOverflow,
   MAX_VISIBLE_WORK_ENTRIES,
@@ -64,7 +64,7 @@ export const WorkGroup = memo(function WorkGroup({
   return (
     <section data-session-ui="work-group" className="-mx-1 space-y-0.5 px-1 py-0.5" aria-label={groupLabel}>
       {!onlyToolEntries && (
-        <p className="px-0.5 pb-0.5 text-[11px] font-medium text-text-sub-600">{groupLabel}</p>
+        <p className="px-0.5 pb-0.5 text-[11px] font-medium text-text-secondary">{groupLabel}</p>
       )}
       <div className="space-y-px">
         {visible.map((entry) => (
@@ -79,11 +79,11 @@ export const WorkGroup = memo(function WorkGroup({
       {hiddenCount > 0 && (
         <button
           type="button"
-          className="flex w-full cursor-pointer items-center gap-1.5 rounded-md px-0.5 py-0.5 text-left text-[12px] leading-5 transition-colors duration-150 hover:bg-bg-weak-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary-base"
+          className="flex w-full cursor-pointer items-center gap-1.5 rounded-md px-0.5 py-0.5 text-left text-[12px] leading-5 transition-colors duration-150 hover:bg-background-primary-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-border-focus-ring"
           aria-expanded={expanded}
           onClick={() => setExpanded((v) => !v)}
         >
-          <span className="flex size-5 shrink-0 items-center justify-center text-text-soft-400">
+          <span className="flex size-5 shrink-0 items-center justify-center text-text-tertiary">
             <RiArrowDownSLine
               className={cn(
                 "size-3.5 shrink-0 opacity-70 transition-transform duration-200",
@@ -93,11 +93,11 @@ export const WorkGroup = memo(function WorkGroup({
             />
           </span>
           {expanded ? (
-            <span className="font-medium text-text-strong-950">
+            <span className="font-medium text-text-primary">
               Show fewer {onlyToolEntries ? "tool calls" : "log entries"}
             </span>
           ) : (
-            <span className="font-medium text-text-strong-950">
+            <span className="font-medium text-text-primary">
               +{hiddenCount} previous {labelNoun}
             </span>
           )}

@@ -15,7 +15,7 @@ function SegMeter({ value, fill }: { value: number; fill: string }) {
       {Array.from({ length: METER_BARS }, (_, index) => (
         <span
           key={index}
-          className={cnExt("h-3 w-[3px] rounded-full", index < filled ? fill : "bg-bg-soft-200")}
+          className={cnExt("h-3 w-[3px] rounded-full", index < filled ? fill : "bg-background-tertiary-default")}
         />
       ))}
     </span>
@@ -39,15 +39,15 @@ function ModelRow({ model, totalTokens }: { model: ModelBurn; totalTokens: numbe
     <div className="flex items-start gap-2.5 py-2">
       <Mark className={cnExt("mt-0.5 size-[18px] shrink-0", markClass)} aria-hidden />
       <div className="min-w-0 flex-1">
-        <p className="truncate text-label-sm text-text-strong-950">{model.model}</p>
-        <p className="mt-0.5 truncate text-mono-label text-text-soft-400">{meta}</p>
+        <p className="truncate text-body-2-medium text-text-primary">{model.model}</p>
+        <p className="mt-0.5 truncate text-mono-label text-text-tertiary">{meta}</p>
       </div>
       <div className="flex shrink-0 flex-col items-end gap-1">
-        <span className="font-mono text-label-sm tabular-nums text-text-strong-950">
+        <span className="font-mono text-body-2-medium tabular-nums text-text-primary">
           {model.tokens > 0 ? compactNumber(model.tokens) : "-"}
         </span>
         {model.cost > 0 && (
-          <span className="font-mono text-label-xs tabular-nums text-text-soft-400">
+          <span className="font-mono text-label-xs tabular-nums text-text-tertiary">
             ${model.cost.toFixed(2)}
           </span>
         )}
@@ -61,8 +61,8 @@ function ModelRow({ model, totalTokens }: { model: ModelBurn; totalTokens: numbe
 function StatRow({ label, value }: { label: string; value: number }) {
   return (
     <div className="flex items-center justify-between gap-2">
-      <span className="text-mono-label text-text-sub-600">{label}</span>
-      <span className="font-mono text-label-sm tabular-nums text-text-strong-950">{value}</span>
+      <span className="text-mono-label text-text-secondary">{label}</span>
+      <span className="font-mono text-body-2-medium tabular-nums text-text-primary">{value}</span>
     </div>
   );
 }
@@ -73,29 +73,29 @@ function ModelsPanel({ fleet }: { fleet: FleetData | null }) {
     <Panel>
       <PanelHeading>Models · burn</PanelHeading>
       {fleet == null ? (
-        <p className="py-2 text-paragraph-xs text-text-soft-400">Loading usage…</p>
+        <p className="py-2 text-caption-1-regular text-text-tertiary">Loading usage…</p>
       ) : fleet.models.length === 0 ? (
-        <p className="py-2 text-paragraph-xs text-text-soft-400">No model runs yet today.</p>
+        <p className="py-2 text-caption-1-regular text-text-tertiary">No model runs yet today.</p>
       ) : (
-        <div className="divide-y divide-stroke-soft-200">
+        <div className="divide-y divide-border-button-default">
           {fleet.models.map((model) => (
             <ModelRow key={model.model} model={model} totalTokens={fleet.totalTokens} />
           ))}
         </div>
       )}
 
-      <div className="mt-4 flex items-end justify-between border-t border-stroke-soft-200 pt-4">
+      <div className="mt-4 flex items-end justify-between border-t border-border-button-default pt-4">
         <div>
-          <p className="font-mono text-label-lg font-semibold tabular-nums text-text-strong-950">
+          <p className="font-mono text-label-lg font-semibold tabular-nums text-text-primary">
             <NumberTicker value={fleet?.totalTokens ?? 0} format={compactNumber} />
           </p>
-          <p className="mt-1 text-mono-label text-text-soft-400">tokens today</p>
+          <p className="mt-1 text-mono-label text-text-tertiary">tokens today</p>
         </div>
         <div className="text-right">
-          <p className="font-mono text-title-h6 tabular-nums text-text-strong-950">
+          <p className="font-mono text-title-h6 tabular-nums text-text-primary">
             ${(fleet?.totalCost ?? 0).toFixed(2)}
           </p>
-          <p className="mt-1 text-mono-label text-text-soft-400">cost today</p>
+          <p className="mt-1 text-mono-label text-text-tertiary">cost today</p>
         </div>
       </div>
     </Panel>
@@ -109,7 +109,7 @@ function MachinePanel({ machine }: { machine: MachineStats | null }) {
     <Panel>
       <PanelHeading
         right={
-          <span className="inline-flex items-center rounded-md bg-bg-weak-50 px-2 py-0.5 font-mono text-[0.6875rem] text-text-sub-600">
+          <span className="inline-flex items-center rounded-md bg-background-secondary-default px-2 py-0.5 font-mono text-[0.6875rem] text-text-secondary">
             {machine?.snapshot ?? "-"}
           </span>
         }
@@ -118,16 +118,16 @@ function MachinePanel({ machine }: { machine: MachineStats | null }) {
       </PanelHeading>
 
       {sandboxes == null ? (
-        <p className="py-2 text-paragraph-xs text-text-soft-400">Live sandbox count updating…</p>
+        <p className="py-2 text-caption-1-regular text-text-tertiary">Live sandbox count updating…</p>
       ) : (
         <>
           <div className="mb-4">
-            <p className="font-mono text-label-lg font-semibold tabular-nums text-text-strong-950">
+            <p className="font-mono text-label-lg font-semibold tabular-nums text-text-primary">
               <NumberTicker value={sandboxes.active} />
             </p>
-            <p className="mt-1 text-mono-label text-text-soft-400">active sandboxes</p>
+            <p className="mt-1 text-mono-label text-text-tertiary">active sandboxes</p>
           </div>
-          <div className="space-y-2.5 border-t border-stroke-soft-200 pt-4">
+          <div className="space-y-2.5 border-t border-border-button-default pt-4">
             <StatRow label="Live threads" value={sandboxes.liveThreads} />
             <StatRow label="Idle · retained" value={sandboxes.idle} />
           </div>

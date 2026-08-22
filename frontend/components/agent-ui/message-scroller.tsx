@@ -16,7 +16,7 @@ import {
   useState,
 } from "react";
 
-import { cn } from "@/utils/cn";
+import { cx } from "@/utils/cx";
 
 // -- motion tokens ---------------------------------------------------------
 const EASE_OUT = [0.16, 1, 0.3, 1] as const;
@@ -155,7 +155,7 @@ export function MessageScroller({
   );
 
   return (
-    <div data-slot="message-scroller" className={cn("relative min-h-0", className)} {...props}>
+    <div data-slot="message-scroller" className={cx("relative min-h-0", className)} {...props}>
       <section
         ref={setViewportRef}
         aria-label={label}
@@ -165,8 +165,8 @@ export function MessageScroller({
         onKeyDown={(event) => {
           if (["ArrowUp", "PageUp", "Home"].includes(event.key)) leaveLiveEdge();
         }}
-        className={cn(
-          "h-full overflow-y-auto overscroll-contain outline-none [overflow-anchor:none] [scrollbar-gutter:stable] focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-stroke-strong-950",
+        className={cx(
+          "h-full overflow-y-auto overscroll-contain outline-none [overflow-anchor:none] [scrollbar-gutter:stable] focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-border-focus-ring",
           viewportClassName,
         )}
       >
@@ -192,7 +192,7 @@ export function MessageScroller({
             exit={reduce ? { opacity: 0 } : { opacity: 0, y: 8, scale: 0.9 }}
             whileTap={reduce ? undefined : { scale: 0.94 }}
             transition={reduce ? { duration: 0.12 } : SPRING_PRESS}
-            className="absolute bottom-3 left-1/2 flex -translate-x-1/2 items-center gap-1.5 rounded-full bg-primary-base py-1.5 pl-3 pr-2.5 text-paragraph-xs font-medium text-static-white shadow-regular-sm outline-none focus-visible:ring-2 focus-visible:ring-stroke-strong-950 focus-visible:ring-offset-2"
+            className="absolute bottom-3 left-1/2 flex -translate-x-1/2 items-center gap-1.5 rounded-full bg-button-primary py-1.5 pl-3 pr-2.5 text-caption-1-regular font-medium text-text-white shadow-sm outline-none focus-visible:ring-2 focus-visible:ring-border-focus-ring focus-visible:ring-offset-2"
           >
             {jumpLabel}
             <RiArrowDownSLine className="size-4" />
@@ -233,9 +233,9 @@ export function MessageScrollerDemo() {
   const visible = DEMO_THREAD.slice(0, count);
 
   return (
-    <div className="flex items-center justify-center rounded-xl bg-bg-weak-50 p-3">
+    <div className="flex items-center justify-center rounded-xl bg-background-secondary-default p-3">
       <div className="w-full max-w-md">
-        <div className="h-80 overflow-hidden rounded-2xl border border-stroke-soft-200 bg-bg-white-0 shadow-regular-sm">
+        <div className="h-80 overflow-hidden rounded-2xl border border-border-button-default bg-background-primary-default shadow-sm">
           <MessageScroller
             busy={count < DEMO_THREAD.length}
             className="h-full"
@@ -249,17 +249,17 @@ export function MessageScrollerDemo() {
                   initial={{ opacity: 0, y: 8 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ duration: 0.22, ease: EASE_OUT }}
-                  className={cn(
+                  className={cx(
                     "flex w-full",
                     message.from === "user" ? "justify-end" : "justify-start",
                   )}
                 >
                   <div
-                    className={cn(
-                      "max-w-[82%] rounded-2xl px-3.5 py-2.5 text-paragraph-sm leading-5",
+                    className={cx(
+                      "max-w-[82%] rounded-2xl px-3.5 py-2.5 text-body-2-regular leading-5",
                       message.from === "user"
-                        ? "bg-primary-base text-static-white"
-                        : "bg-bg-weak-50 text-text-strong-950",
+                        ? "bg-accent-500 text-text-white"
+                        : "bg-background-secondary-default text-text-primary",
                     )}
                   >
                     {message.text}

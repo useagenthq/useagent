@@ -23,7 +23,7 @@ function OverviewList({ steps }: { steps: string[] }) {
   return (
     <ul className="flex flex-col gap-2">
       {steps.map((step) => (
-        <li key={step} className="flex gap-2.5 text-paragraph-sm text-text-sub-600">
+        <li key={step} className="flex gap-2.5 text-body-2-regular text-text-secondary">
           <span className="mt-2 size-1.5 shrink-0 rounded-full bg-text-soft-400" />
           <span>{step}</span>
         </li>
@@ -37,10 +37,10 @@ function ProcedureList({ steps }: { steps: string[] }) {
     <ol className="flex flex-col gap-2.5">
       {steps.map((step, index) => (
         <li key={step} className="flex gap-2.5">
-          <span className="mt-px flex size-5 shrink-0 items-center justify-center rounded-md bg-bg-soft-200 font-mono text-subheading-2xs text-text-sub-600">
+          <span className="mt-px flex size-5 shrink-0 items-center justify-center rounded-md bg-background-tertiary-default font-mono text-subheading-2xs text-text-secondary">
             {index + 1}
           </span>
-          <span className="text-paragraph-sm text-text-sub-600">{step}</span>
+          <span className="text-body-2-regular text-text-secondary">{step}</span>
         </li>
       ))}
     </ol>
@@ -52,17 +52,17 @@ function VerifyList({ steps }: { steps: string[] }) {
     <ul className="flex flex-col gap-2.5">
       {steps.map((step) => (
         <li key={step} className="flex gap-2.5">
-          <span className="mt-px flex size-5 shrink-0 items-center justify-center rounded-md bg-success-lighter text-success-base">
+          <span className="mt-px flex size-5 shrink-0 items-center justify-center rounded-md bg-status-lime-background text-status-lime-text">
             <RiCheckLine className="size-3.5" aria-hidden />
           </span>
-          <span className="text-paragraph-sm text-text-sub-600">{step}</span>
+          <span className="text-body-2-regular text-text-secondary">{step}</span>
         </li>
       ))}
     </ul>
   );
 }
 
-const EMPTY = <p className="text-paragraph-sm text-text-soft-400">Not specified</p>;
+const EMPTY = <p className="text-body-2-regular text-text-tertiary">Not specified</p>;
 
 function Section({
   label,
@@ -75,7 +75,7 @@ function Section({
 }) {
   return (
     <div className="flex flex-col gap-3">
-      <p className="text-mono-label text-text-soft-400">{label}</p>
+      <p className="text-mono-label text-text-tertiary">{label}</p>
       {empty ? EMPTY : children}
     </div>
   );
@@ -100,22 +100,22 @@ export function PlaybookDetail({
         {playbook && (
           <div className="flex flex-col gap-6 p-6">
             <div className="flex items-start gap-4">
-              <div className="flex size-11 shrink-0 items-center justify-center rounded-xl border border-stroke-soft-200 bg-bg-weak-50">
-                <RiBookMarkedLine aria-hidden className="size-5 text-text-sub-600" />
+              <div className="flex size-11 shrink-0 items-center justify-center rounded-xl border border-border-button-default bg-background-secondary-default">
+                <RiBookMarkedLine aria-hidden className="size-5 text-text-secondary" />
               </div>
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-2">
-                  <Modal.Title className="text-title-h6 text-text-strong-950">
+                  <Modal.Title className="text-title-h6 text-text-primary">
                     {playbook.name}
                   </Modal.Title>
                   <Badge.Root variant="lighter" size="medium" color="purple">
                     Playbook
                   </Badge.Root>
-                  <span className="font-mono text-label-xs tabular-nums text-text-soft-400">
+                  <span className="font-mono text-label-xs tabular-nums text-text-tertiary">
                     v{playbook.version}
                   </span>
                 </div>
-                <Modal.Description className="mt-1 text-paragraph-sm text-text-sub-600">
+                <Modal.Description className="mt-1 text-body-2-regular text-text-secondary">
                   {playbook.description}
                 </Modal.Description>
                 {playbook.tags.length > 0 && (
@@ -135,7 +135,7 @@ export function PlaybookDetail({
               </div>
             </div>
 
-            <div className="flex flex-col gap-6 rounded-xl border border-stroke-soft-200 bg-bg-weak-50 p-5">
+            <div className="flex flex-col gap-6 rounded-xl border border-border-button-default bg-background-secondary-default p-5">
               <Section label="Overview" empty={playbook.sections.overview.length === 0}>
                 <OverviewList steps={playbook.sections.overview} />
               </Section>
@@ -147,14 +147,14 @@ export function PlaybookDetail({
               </Section>
             </div>
 
-            <p className="text-paragraph-xs text-text-soft-400">
+            <p className="text-caption-1-regular text-text-tertiary">
               useAgent follows this procedure as guidance when the playbook is
               attached to a run. It is not a fixed, step-by-step workflow - the
               agent applies judgement and the steps shape how it works.
             </p>
 
-            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-stroke-soft-200 pt-4">
-              <p className="text-paragraph-xs text-text-sub-600">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border-button-default pt-4">
+              <p className="text-caption-1-regular text-text-secondary">
                 {usageCaption(playbook)}
               </p>
               <div className="flex items-center gap-2">

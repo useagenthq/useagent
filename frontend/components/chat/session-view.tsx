@@ -74,7 +74,7 @@ const WorkspacePane = dynamic(
   {
     ssr: false,
     loading: () => (
-      <div className="grid h-full place-items-center p-6 text-paragraph-sm text-text-sub-600">
+      <div className="grid h-full place-items-center p-6 text-body-2-regular text-text-secondary">
         Loading workspace...
       </div>
     ),
@@ -92,10 +92,12 @@ import {
 } from "@/components/chat/types";
 import { shouldRetireOptimistic, useThreadStream } from "@/components/chat/use-thread-stream";
 import { runGitRefs, GitChips } from "@/components/session-ui/git-chip";
-import * as SegmentedControl from "@/components/ui/segmented-control";
+import { Chip } from "@/components/base/badges/chip";
+import { Button } from "@/components/base/buttons/button";
+import { PillTab, PillTabList } from "@/components/base/tabs/pill-tab";
 import { backendFetch } from "@/lib/backend-fetch";
 import { createRun } from "@/lib/create-run";
-import { cnExt as cn } from "@/utils/cn";
+import { cx } from "@/utils/cx";
 
 /** True when DOM focus sits inside a live workspace editing surface - the signal
  * an auto-open uses to avoid yanking the caret away from an edit in progress.
@@ -109,22 +111,17 @@ function workspaceSurfaceHasFocus(): boolean {
 
 function StatusPill({ status }: { status: RunStatus }) {
   const live = status === "queued" || status === "running";
-  const map: Record<RunStatus, string> = {
-    queued: "bg-blue-50 text-blue-500",
-    running: "bg-blue-50 text-blue-500",
-    completed: "bg-green-50 text-green-600",
-    failed: "bg-red-50 text-red-600",
+  const map: Record<RunStatus, "blue" | "lime" | "rose"> = {
+    queued: "blue",
+    running: "blue",
+    completed: "lime",
+    failed: "rose",
   };
   return (
-    <span
-      className={cn(
-        "flex items-center gap-1.5 rounded-full px-2.5 py-1 text-label-xs capitalize",
-        map[status],
-      )}
-    >
+    <Chip variant="caption" color={map[status]} className="gap-1.5 capitalize">
       {live && <span className="ai-loading-pixel size-1.5 rounded-full bg-blue-500" />}
       {status}
-    </span>
+    </Chip>
   );
 }
 
@@ -779,9 +776,9 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
       <SessionLatestRunProvider value={newest.id}>
       <div className="flex h-full flex-col">
       {/* Compact thread bar. Brand and search belong to the collapsible sidebar. */}
-      <div className="bg-bg-white-0 flex shrink-0 items-center justify-between gap-3 px-4 py-2">
+      <div className="bg-background-primary-default flex shrink-0 items-center justify-between gap-3 px-4 py-2">
         <div className="flex min-w-0 items-center gap-2">
-          <span className="text-mono-label text-text-soft-400">Session</span>
+          <span className="text-mono-label text-text-tertiary">Session</span>
           {/* The thread's git identity: repos (+ chosen branch) come from the
               ROOT run's durable wire row - repos are inherited across a thread,
               so the SSR-provided root is authoritative for the page lifetime. */}
@@ -794,7 +791,7 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
               there is exactly ONE Stop affordance (user: "i mean stop here"). */}
           <Link
             href="/agent/new"
-            className="border-stroke-soft-200 text-text-sub-600 hover:bg-bg-weak-50 flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-label-xs transition-colors"
+            className="flex items-center gap-1.5 rounded-lg border border-border-button-default bg-background-primary-default px-2.5 py-1.5 text-caption-1-medium text-text-secondary shadow-xs transition-colors hover:border-border-button-hover hover:bg-background-primary-hover"
           >
             <RiAddLine className="size-4" aria-hidden />
             New session
@@ -815,8 +812,8 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
         {/* Conversation */}
         <section
           aria-hidden={railExpanded}
-          className={cn(
-            "bg-bg-white-0 relative flex min-h-[60vh] min-w-0 flex-1 flex-col overflow-hidden md:min-h-0",
+          className={cx(
+            "bg-background-primary-default relative flex min-h-[60vh] min-w-0 flex-1 flex-col overflow-hidden md:min-h-0",
             railExpanded && "hidden",
           )}
         >
@@ -906,66 +903,91 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
                 ? ({ "--rail-w": `${railWidth}px` } as React.CSSProperties)
                 : undefined
             }
-            className={cn(
-              "bg-bg-white-0 flex min-h-[50vh] min-w-0 flex-col overflow-hidden transition-[width] md:min-h-0",
+            className={cx(
+              "bg-background-primary-default flex min-h-[50vh] min-w-0 flex-col overflow-hidden transition-[width] md:min-h-0",
               railExpanded
                 ? "flex-1 md:w-auto"
-                : cn("md:shrink-0", railWidth !== null ? "md:w-[var(--rail-w)]" : "md:w-[360px]"),
+                : cx("md:shrink-0", railWidth !== null ? "md:w-[var(--rail-w)]" : "md:w-[360px]"),
             )}
           >
-            <div className="border-stroke-soft-200/50 flex shrink-0 items-center gap-2 border-b p-2">
-              <SegmentedControl.Root
-                className="flex-1 [&_[role=tab]]:text-label-xs [&_[role=tab]_svg]:size-3.5"
-                value={railTab ?? ""}
-                onValueChange={(v) => setRailTabOverride(v as SurfaceChoice | "editor" | "workspace")}
-              >
-                <SegmentedControl.List>
-                  {/* Agents leads the switcher, but only once a run has fanned
-                      out — no empty tab before then. */}
-                  {hasSubagents && (
-                    <SegmentedControl.Trigger value="agents" data-testid="rail-tab-agents">
-                      <RiRobot2Line className="size-4" aria-hidden />
-                      Agents
-                    </SegmentedControl.Trigger>
-                  )}
-                  <SegmentedControl.Trigger value="artifacts" data-testid="rail-tab-artifacts">
-                    <RiFileList2Line className="size-4" aria-hidden />
-                    Files
-                  </SegmentedControl.Trigger>
-                  {/* Workspace holds the canonical workpieces the user opened from
-                      the conversation - only present once at least one is open. */}
-                  {openWorkpieces.length > 0 && (
-                    <SegmentedControl.Trigger value="workspace" data-testid="rail-tab-workspace">
-                      <RiPagesLine className="size-4" aria-hidden />
-                      Workspace
-                    </SegmentedControl.Trigger>
-                  )}
-                  {/* Diff appears once a real change set exists - the chooser
-                      card's "available when a real patch exists" promise. */}
-                  {hasFiles && (
-                    <SegmentedControl.Trigger value="diff" data-testid="rail-tab-diff">
-                      <RiGitMergeLine className="size-4" aria-hidden />
-                      Diff
-                    </SegmentedControl.Trigger>
-                  )}
-                  <SegmentedControl.Trigger value="editor" data-testid="rail-tab-editor">
-                    <RiCodeSSlashLine className="size-4" aria-hidden />
-                    Editor
-                  </SegmentedControl.Trigger>
-                  <SegmentedControl.Trigger value="terminal" data-testid="rail-tab-terminal">
-                    <RiTerminalBoxLine className="size-4" aria-hidden />
-                    Terminal
-                  </SegmentedControl.Trigger>
-                  {/* Desktop is a stable product surface. The pane itself waits
-                      for or wakes the thread's sandbox on demand. */}
-                  <SegmentedControl.Trigger value="desktop" data-testid="rail-tab-desktop">
-                    <RiComputerLine className="size-4" aria-hidden />
-                    Browser
-                  </SegmentedControl.Trigger>
-                </SegmentedControl.List>
-              </SegmentedControl.Root>
-              <button
-                type="button"
+            <div className="border-border-button-default/50 flex shrink-0 items-center gap-2 border-b p-2">
+              <PillTabList aria-label="Surface" className="min-w-0 flex-1 overflow-x-auto">
+                {/* Agents leads the switcher, but only once a run has fanned
+                    out — no empty tab before then. */}
+                {hasSubagents && (
+                  <PillTab
+                    icon={RiRobot2Line}
+                    isSelected={railTab === "agents"}
+                    onSelect={() => setRailTabOverride("agents")}
+                    data-testid="rail-tab-agents"
+                  >
+                    Agents
+                  </PillTab>
+                )}
+                <PillTab
+                  icon={RiFileList2Line}
+                  isSelected={railTab === "artifacts"}
+                  onSelect={() => setRailTabOverride("artifacts")}
+                  data-testid="rail-tab-artifacts"
+                >
+                  Files
+                </PillTab>
+                {/* Workspace holds the canonical workpieces the user opened from
+                    the conversation - only present once at least one is open. */}
+                {openWorkpieces.length > 0 && (
+                  <PillTab
+                    icon={RiPagesLine}
+                    isSelected={railTab === "workspace"}
+                    onSelect={() => setRailTabOverride("workspace")}
+                    data-testid="rail-tab-workspace"
+                  >
+                    Workspace
+                  </PillTab>
+                )}
+                {/* Diff appears once a real change set exists - the chooser
+                    card's "available when a real patch exists" promise. */}
+                {hasFiles && (
+                  <PillTab
+                    icon={RiGitMergeLine}
+                    isSelected={railTab === "diff"}
+                    onSelect={() => setRailTabOverride("diff")}
+                    data-testid="rail-tab-diff"
+                  >
+                    Diff
+                  </PillTab>
+                )}
+                <PillTab
+                  icon={RiCodeSSlashLine}
+                  isSelected={railTab === "editor"}
+                  onSelect={() => setRailTabOverride("editor")}
+                  data-testid="rail-tab-editor"
+                >
+                  Editor
+                </PillTab>
+                <PillTab
+                  icon={RiTerminalBoxLine}
+                  isSelected={railTab === "terminal"}
+                  onSelect={() => setRailTabOverride("terminal")}
+                  data-testid="rail-tab-terminal"
+                >
+                  Terminal
+                </PillTab>
+                {/* Desktop is a stable product surface. The pane itself waits
+                    for or wakes the thread's sandbox on demand. */}
+                <PillTab
+                  icon={RiComputerLine}
+                  isSelected={railTab === "desktop"}
+                  onSelect={() => setRailTabOverride("desktop")}
+                  data-testid="rail-tab-desktop"
+                >
+                  Browser
+                </PillTab>
+              </PillTabList>
+              <Button
+                variant="ghost"
+                size="small"
+                iconOnly
+                leadingIcon={railExpanded ? RiCollapseDiagonal2Line : RiExpandDiagonal2Line}
                 onClick={() => setRailExpanded((expanded) => !expanded)}
                 title={railExpanded ? "Restore panel" : `Expand ${railTabLabel}`}
                 aria-label={
@@ -975,26 +997,21 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
                 }
                 aria-pressed={railExpanded}
                 aria-keyshortcuts={railExpanded ? "Escape" : undefined}
-                className="text-text-soft-400 hover:bg-bg-weak-50 hover:text-text-sub-600 flex size-7 shrink-0 items-center justify-center rounded-lg transition-colors"
-              >
-                {railExpanded ? (
-                  <RiCollapseDiagonal2Line className="size-4" aria-hidden />
-                ) : (
-                  <RiExpandDiagonal2Line className="size-4" aria-hidden />
-                )}
-              </button>
-              <button
-                type="button"
+                className="shrink-0"
+              />
+              <Button
+                variant="ghost"
+                size="small"
+                iconOnly
+                leadingIcon={RiLayoutRightLine}
                 onClick={() => {
                   setRailExpanded(false);
                   setRailOverride(false);
                 }}
                 title="Collapse panel"
                 aria-label="Collapse side panel"
-                className="text-text-soft-400 hover:bg-bg-weak-50 hover:text-text-sub-600 flex size-7 shrink-0 items-center justify-center rounded-lg transition-colors"
-              >
-                <RiLayoutRightLine className="size-4" aria-hidden />
-              </button>
+                className="shrink-0"
+              />
             </div>
             <div className="relative min-h-0 flex-1">
               {/* Browser work starts only after an explicit selection. Once
@@ -1003,7 +1020,7 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
               {desktopEverOpened ? (
                 <div
                   aria-hidden={railTab !== "desktop"}
-                  className={cn(
+                  className={cx(
                     "absolute inset-0",
                     railTab === "desktop" ? "visible" : "pointer-events-none invisible",
                   )}
@@ -1016,7 +1033,7 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
               {workspaceEverOpened ? (
                 <div
                   aria-hidden={railTab !== "workspace"}
-                  className={cn(
+                  className={cx(
                     "absolute inset-0",
                     railTab === "workspace" ? "visible" : "pointer-events-none invisible",
                   )}
@@ -1070,7 +1087,7 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
             onClick={() => setRailOverride(true)}
             title="Open the editor/terminal panel"
             aria-label="Open side panel"
-            className="border-stroke-soft-200 bg-bg-white-0 text-text-soft-400 hover:bg-bg-weak-50 hover:text-text-sub-600 hidden shrink-0 flex-col items-center gap-3 rounded-2xl border px-2 py-4 transition-colors lg:flex"
+            className="hidden shrink-0 flex-col items-center gap-3 rounded-2xl border border-border-button-default bg-background-primary-default px-2 py-4 text-foreground-icon-tertiary transition-colors hover:bg-background-primary-hover hover:text-foreground-icon-secondary lg:flex"
           >
             <RiCodeSSlashLine className="size-4" aria-hidden />
             <RiFileList2Line className="size-4" aria-hidden />

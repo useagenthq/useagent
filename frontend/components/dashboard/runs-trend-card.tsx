@@ -21,9 +21,9 @@ function TrendTooltip({ active, payload }: TooltipProps<number, string>) {
   const bucket = payload[0]?.payload as DayBucket | undefined;
   if (!bucket) return null;
   return (
-    <div className='rounded-lg bg-bg-white-0 px-3 py-2 text-paragraph-xs shadow-tooltip ring-1 ring-inset ring-stroke-soft-200'>
-      <p className='mb-1 text-label-xs text-text-strong-950'>{bucket.label}</p>
-      <p className='text-text-sub-600'>
+    <div className='rounded-lg bg-background-primary-default px-3 py-2 text-caption-1-regular shadow-tooltip ring-1 ring-inset ring-border-button-default'>
+      <p className='mb-1 text-label-xs text-text-primary'>{bucket.label}</p>
+      <p className='text-text-secondary'>
         {bucket.total} {bucket.total === 1 ? 'run' : 'runs'}
       </p>
     </div>
@@ -47,15 +47,15 @@ export function RunsTrendCard({
     <Card className='h-[329px] gap-4'>
       <div className='flex items-start justify-between'>
         <div className='flex flex-col gap-0.5'>
-          <p className='text-paragraph-sm text-text-sub-600'>Token throughput</p>
+          <p className='text-body-2-regular text-text-secondary'>Token throughput</p>
           <div className='flex items-center gap-2'>
-            <p className='text-label-lg font-semibold tracking-[-0.1px] tabular-nums text-text-strong-950'>{tokensLabel}</p>
+            <p className='text-label-lg font-semibold tracking-[-0.1px] tabular-nums text-text-primary'>{tokensLabel}</p>
             <Badge.Root variant='lighter' color='gray'>
               est.
             </Badge.Root>
           </div>
         </div>
-        <span className='text-paragraph-xs text-text-soft-400'>Last 14 days</span>
+        <span className='text-caption-1-regular text-text-tertiary'>Last 14 days</span>
       </div>
 
       <div className='h-[220px] w-full [&_.recharts-cartesian-axis-tick_text]:fill-text-soft-400 [&_.recharts-surface]:outline-none'>
@@ -69,7 +69,7 @@ export function RunsTrendCard({
             </defs>
             <CartesianGrid
               vertical={false}
-              stroke='hsl(var(--stroke-soft-200))'
+              stroke='var(--color-chart-track)'
               strokeDasharray='3 3'
             />
             <XAxis
@@ -83,7 +83,7 @@ export function RunsTrendCard({
             />
             <Tooltip
               content={<TrendTooltip />}
-              cursor={{ stroke: 'hsl(var(--stroke-sub-300))', strokeWidth: 1, strokeDasharray: '4 4' }}
+              cursor={{ stroke: 'var(--color-chart-cursor)', strokeWidth: 1, strokeDasharray: '4 4' }}
             />
             <Area
               type='monotone'

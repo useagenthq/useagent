@@ -1,4 +1,4 @@
-import { cnExt } from "@/utils/cn";
+import { cx as cnExt } from "@/utils/cx";
 
 /**
  * A bare 12×12 status disc — AlignUI ships StatusBadge.Dot only inside a badge,
@@ -9,19 +9,19 @@ import { cnExt } from "@/utils/cn";
 export type DotTone = "success" | "away" | "error" | "info" | "neutral";
 
 const TONE_FILL: Record<DotTone, string> = {
-  success: "bg-success-base",
-  away: "bg-away-base",
-  error: "bg-error-base",
-  info: "bg-information-base",
-  neutral: "bg-text-soft-400",
+  success: "bg-lime-500",
+  away: "bg-orange-500",
+  error: "bg-red-500",
+  info: "bg-blue-500",
+  neutral: "bg-text-tertiary",
 };
 
 const TONE_RING: Record<DotTone, string> = {
-  success: "border-success-base",
-  away: "border-away-base",
-  error: "border-error-base",
-  info: "border-information-base",
-  neutral: "border-stroke-sub-300",
+  success: "border-lime-500",
+  away: "border-orange-500",
+  error: "border-border-error-default",
+  info: "border-blue-500",
+  neutral: "border-border-button-hover",
 };
 
 export function StatusDot({

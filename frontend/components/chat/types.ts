@@ -202,7 +202,7 @@ export function modelOptionsForEngine(
       known.find((model) => model.value === value) ?? {
         value,
         label: value,
-        tint: "text-text-sub-600",
+        tint: "text-text-secondary",
       },
   );
 }

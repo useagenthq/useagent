@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { cnExt as cn } from "@/utils/cn";
+import { cx } from "@/utils/cx";
 
 /**
  * Status-filtered task table — a row of filter chips (each with a live count)
@@ -19,15 +19,15 @@ export type FilterTone =
   | "neutral";
 
 const tone: Record<FilterTone, { dot: string; pill: string }> = {
-  warning: { dot: "bg-warning-base", pill: "bg-warning-lighter text-warning-base" },
+  warning: { dot: "bg-yellow-500", pill: "bg-status-yellow-background text-status-yellow-text" },
   information: {
-    dot: "bg-information-base",
-    pill: "bg-information-lighter text-information-base",
+    dot: "bg-blue-500",
+    pill: "bg-status-blue-background text-status-blue-text",
   },
-  success: { dot: "bg-success-base", pill: "bg-success-lighter text-success-base" },
-  error: { dot: "bg-error-base", pill: "bg-error-lighter text-error-base" },
-  away: { dot: "bg-away-base", pill: "bg-away-lighter text-away-base" },
-  neutral: { dot: "bg-text-soft-400", pill: "bg-bg-weak-50 text-text-sub-600" },
+  success: { dot: "bg-lime-500", pill: "bg-status-lime-background text-status-lime-text" },
+  error: { dot: "bg-red-500", pill: "bg-status-rose-background text-status-rose-text" },
+  away: { dot: "bg-orange-500", pill: "bg-orange-100 text-orange-700" },
+  neutral: { dot: "bg-foreground-icon-tertiary", pill: "bg-background-secondary-default text-text-secondary" },
 };
 
 export interface FilterStatus {
@@ -99,19 +99,19 @@ export function FilterTable({
         type="button"
         aria-pressed={on}
         onClick={() => setActive(id)}
-        className={cn(
-          "flex h-7 shrink-0 items-center gap-1.5 rounded-full px-2.5 text-label-xs transition-colors duration-200",
+        className={cx(
+          "flex h-7 shrink-0 items-center gap-1.5 rounded-full px-2.5 text-caption-1-medium transition-colors duration-200",
           on
-            ? "bg-bg-white-0 text-text-strong-950 shadow-regular-sm ring-stroke-soft-200 ring-1"
-            : "text-text-sub-600 hover:bg-bg-weak-50",
+            ? "bg-background-primary-default text-text-primary shadow-sm ring-border-button-default ring-1"
+            : "text-text-secondary hover:bg-background-primary-hover",
         )}
       >
-        {dot && <span className={cn("size-1.5 rounded-full", dot)} aria-hidden />}
+        {dot && <span className={cx("size-1.5 rounded-full", dot)} aria-hidden />}
         {label}
         <span
-          className={cn(
+          className={cx(
             "rounded px-1 text-[10.5px] tabular-nums",
-            on ? "bg-bg-weak-50 text-text-sub-600" : "text-text-soft-400",
+            on ? "bg-background-secondary-default text-text-secondary" : "text-text-tertiary",
           )}
         >
           {count}
@@ -121,7 +121,7 @@ export function FilterTable({
   }
 
   return (
-    <div className={cn("w-full", className)}>
+    <div className={cx("w-full", className)}>
       <div className="mb-1 flex items-center gap-1 overflow-x-auto py-1">
         <Chip id="all" label="All" count={rows.length} />
         {statuses.map((s) => (
@@ -135,12 +135,12 @@ export function FilterTable({
         ))}
       </div>
 
-      <div className="border-stroke-soft-200 bg-bg-white-0 shadow-regular-sm overflow-x-auto rounded-xl border">
+      <div className="border-border-button-default bg-background-primary-default shadow-sm overflow-x-auto rounded-xl border">
         <div className="min-w-[420px]">
           <div
-            className={cn(
+            className={cx(
               COLS,
-              "border-stroke-soft-200 text-label-xs text-text-soft-400 border-b px-3 py-2",
+              "border-border-button-default text-caption-1-medium text-text-tertiary border-b px-3 py-2",
             )}
           >
             <span>{h.name}</span>
@@ -153,19 +153,19 @@ export function FilterTable({
             return (
               <div
                 key={`${row.name}-${i}`}
-                className={cn(
+                className={cx(
                   COLS,
-                  "border-stroke-soft-200 hover:bg-bg-weak-50 items-center border-b px-3 py-2 text-paragraph-xs transition-colors duration-100 last:border-0",
+                  "border-border-button-default hover:bg-background-primary-hover items-center border-b px-3 py-2 text-caption-1-regular transition-colors duration-100 last:border-0",
                 )}
               >
-                <span className="text-text-strong-950 truncate font-medium">
+                <span className="text-text-primary truncate font-medium">
                   {row.name}
                 </span>
-                <span className="text-text-sub-600 tabular-nums">{row.date}</span>
+                <span className="text-text-secondary tabular-nums">{row.date}</span>
                 <span>
                   {status && (
                     <span
-                      className={cn(
+                      className={cx(
                         "inline-flex h-5 items-center rounded-md px-1.5 text-[11px] font-medium",
                         tone[status.tone].pill,
                       )}
@@ -174,7 +174,7 @@ export function FilterTable({
                     </span>
                   )}
                 </span>
-                <span className="text-text-sub-600 truncate">{row.advisor}</span>
+                <span className="text-text-secondary truncate">{row.advisor}</span>
               </div>
             );
           })}

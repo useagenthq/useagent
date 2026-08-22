@@ -227,7 +227,14 @@ const config = {
     './utils/**/*.{js,ts,jsx,tsx,mdx}',
   ],
   theme: {
-    colors: {
+    /* Everything lives under `extend` (not the replace position) on purpose:
+     * BoardUI's styles/theme.css builds its semantic tokens on Tailwind v4's
+     * DEFAULT palette (--color-neutral-*, --color-lime-*, --color-white, the
+     * default shadow scale...). A non-extend `colors`/`fontSize`/`boxShadow`
+     * here replaces those namespaces and silently deletes the default theme
+     * variables theme.css references. The AlignUI scales below merge on top. */
+    extend: {
+      colors: {
       neutral: {
         '0': 'hsl(var(--neutral-0))',
         '50': 'hsl(var(--neutral-50))',
@@ -529,7 +536,6 @@ const config = {
       ...shadows,
       none: '0 0 #0000',
     },
-    extend: {
       borderRadius: {
         ...borderRadii,
       },

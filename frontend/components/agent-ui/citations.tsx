@@ -8,7 +8,7 @@ import { RiArrowDownSLine, RiBookOpenLine, RiExternalLinkLine, RiGlobalLine } fr
 import { AnimatePresence, motion, useReducedMotion, type HTMLMotionProps } from "motion/react";
 import { type CSSProperties, type ReactNode, useCallback, useId, useState } from "react";
 
-import { cn } from "@/utils/cn";
+import { cx } from "@/utils/cx";
 
 // -- motion tokens ---------------------------------------------------------
 const EASE_OUT = [0.16, 1, 0.3, 1] as const;
@@ -66,7 +66,7 @@ function AgentDisclosure({
             }
       }
       transition={transition ?? { duration: reduce ? 0 : open ? 0.22 : 0.14, ease: EASE_OUT }}
-      className={cn("overflow-hidden", className)}
+      className={cx("overflow-hidden", className)}
       style={{
         ...style,
         height: open ? openHeight : 0,
@@ -93,8 +93,8 @@ export function Citation({
     <a
       href={`#${citationTargetId(idPrefix, citationId)}`}
       aria-label={`View citation ${index}`}
-      className={cn(
-        "mx-0.5 inline-flex min-w-4 -translate-y-0.5 items-center justify-center rounded-md bg-bg-weak-50 px-1 py-0.5 text-[10px] font-semibold leading-none text-text-sub-600 no-underline outline-none transition-colors hover:text-text-strong-950 focus-visible:ring-2 focus-visible:ring-stroke-strong-950",
+      className={cx(
+        "mx-0.5 inline-flex min-w-4 -translate-y-0.5 items-center justify-center rounded-md bg-background-secondary-default px-1 py-0.5 text-[10px] font-semibold leading-none text-text-secondary no-underline outline-none transition-colors hover:text-text-primary focus-visible:ring-2 focus-visible:ring-border-focus-ring",
         className,
       )}
     >
@@ -110,7 +110,7 @@ function CitationFavicon({ url, className }: { url?: string; className?: string 
   return (
     <span
       aria-hidden="true"
-      className={cn("grid size-5 shrink-0 place-items-center text-text-sub-600", className)}
+      className={cx("grid size-5 shrink-0 place-items-center text-text-secondary", className)}
     >
       {favicon && failedUrl !== favicon ? (
         <img
@@ -142,25 +142,25 @@ function CitationRow({
     <>
       <CitationFavicon url={citation.url} />
       <span className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-2 gap-y-0.5">
-        <span className="truncate text-paragraph-sm font-medium text-text-sub-600 transition-colors group-hover/citation:text-text-strong-950">
+        <span className="truncate text-body-2-regular font-medium text-text-secondary transition-colors group-hover/citation:text-text-primary">
           {citation.title}
         </span>
         {citation.domain ? (
-          <span className="min-w-0 truncate text-paragraph-xs text-text-soft-400">{citation.domain}</span>
+          <span className="min-w-0 truncate text-caption-1-regular text-text-tertiary">{citation.domain}</span>
         ) : null}
       </span>
       <span className="flex shrink-0 items-center gap-1.5">
-        <span className="grid size-5 place-items-center rounded-md bg-bg-weak-50 text-[10px] font-semibold tabular-nums text-text-sub-600">
+        <span className="grid size-5 place-items-center rounded-md bg-background-secondary-default text-[10px] font-semibold tabular-nums text-text-secondary">
           {index}
         </span>
         {citation.url ? (
-          <RiExternalLinkLine className="size-3.5 text-text-soft-400 transition-colors group-hover/citation:text-text-sub-600" />
+          <RiExternalLinkLine className="size-3.5 text-text-tertiary transition-colors group-hover/citation:text-text-secondary" />
         ) : null}
       </span>
     </>
   );
   const className =
-    "group/citation flex items-center gap-2 rounded-md px-1.5 py-1 outline-none focus-visible:ring-2 focus-visible:ring-stroke-strong-950";
+    "group/citation flex items-center gap-2 rounded-md px-1.5 py-1 outline-none focus-visible:ring-2 focus-visible:ring-border-focus-ring";
   const id = citationTargetId(idPrefix, citation.id);
 
   return citation.url ? (
@@ -188,7 +188,7 @@ function CitationList({
   const resolvedPrefix = idPrefix ?? `citation-list-${baseId.replace(/:/g, "")}`;
 
   return (
-    <div className={cn("grid gap-0.5", className)}>
+    <div className={cx("grid gap-0.5", className)}>
       <AnimatePresence mode="popLayout">
         {citations.map((citation, index) => (
           <motion.div
@@ -237,24 +237,24 @@ export function SourcesPanel({
   const toggle = useCallback(() => setOpen((value) => !value), []);
 
   return (
-    <div className={cn("w-full text-paragraph-sm", className)}>
+    <div className={cx("w-full text-body-2-regular", className)}>
       <button
         type="button"
         aria-expanded={open}
         aria-controls={contentId}
         onClick={toggle}
-        className="group -ml-1 flex min-h-8 items-center gap-2 rounded-lg px-1 text-left text-text-sub-600 outline-none transition-colors hover:text-text-strong-950 focus-visible:ring-2 focus-visible:ring-stroke-strong-950"
+        className="group -ml-1 flex min-h-8 items-center gap-2 rounded-lg px-1 text-left text-text-secondary outline-none transition-colors hover:text-text-primary focus-visible:ring-2 focus-visible:ring-border-focus-ring"
       >
         <RiBookOpenLine className="size-4" />
         <span className="font-medium">{title}</span>
-        <span className="rounded-full bg-bg-weak-50 px-1.5 py-0.5 text-[10px] font-semibold tabular-nums">
+        <span className="rounded-full bg-background-secondary-default px-1.5 py-0.5 text-[10px] font-semibold tabular-nums">
           {citations.length}
         </span>
         <motion.span
           aria-hidden="true"
           animate={{ rotate: open ? 180 : 0 }}
           transition={reduce ? { duration: 0 } : SPRING_SWAP}
-          className="text-text-soft-400"
+          className="text-text-tertiary"
         >
           <RiArrowDownSLine className="size-3.5" />
         </motion.span>
@@ -284,9 +284,9 @@ const DEMO_PREFIX = "citations-demo";
 /** Self-contained demo: a grounded paragraph with inline markers over a collapsible source list. */
 export function CitationsDemo() {
   return (
-    <div className="flex items-center justify-center rounded-xl bg-bg-weak-50 p-3">
+    <div className="flex items-center justify-center rounded-xl bg-background-secondary-default p-3">
       <div className="w-full max-w-md">
-        <p className="text-[13px] leading-relaxed text-text-strong-950">
+        <p className="text-[13px] leading-relaxed text-text-primary">
           Transformer models replace recurrence with self-attention
           <Citation citationId="attention" index={1} idPrefix={DEMO_PREFIX} />, letting every token attend to the full
           sequence in parallel. React ships a stable, SSR-safe id hook

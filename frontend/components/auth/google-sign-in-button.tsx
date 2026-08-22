@@ -42,8 +42,8 @@ export function GoogleSignInButton({
         disabled={!enabled || pending}
         aria-label="Continue with Google"
         className={cnExt(
-          "inline-flex h-11 w-full items-center justify-center gap-2.5 rounded-full border border-stroke-soft-200 bg-bg-white-0 text-label-sm text-text-strong-950 shadow-regular-xs outline-none transition-colors",
-          "hover:bg-bg-weak-50 focus-visible:ring-2 focus-visible:ring-primary-base focus-visible:ring-offset-2",
+          "inline-flex h-11 w-full items-center justify-center gap-2.5 rounded-full border border-border-button-default bg-background-primary-default text-body-2-medium text-text-primary shadow-card outline-none transition-colors",
+          "hover:bg-background-secondary-default focus-visible:ring-2 focus-visible:ring-border-focus-ring focus-visible:ring-offset-2",
           "disabled:cursor-not-allowed disabled:opacity-60",
         )}
       >
@@ -51,12 +51,12 @@ export function GoogleSignInButton({
         {pending ? "Redirecting…" : "Continue with Google"}
       </button>
       {!enabled && (
-        <p className="text-paragraph-xs text-text-soft-400">
+        <p className="text-caption-1-regular text-text-tertiary">
           Google sign-in isn&apos;t configured on this server.
         </p>
       )}
       {error && (
-        <p role="alert" className="text-paragraph-xs text-error-base">
+        <p role="alert" className="text-caption-1-regular text-text-error-primary">
           {error}
         </p>
       )}

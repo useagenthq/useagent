@@ -11,7 +11,7 @@ import { RiArrowDownSLine, RiSparkling2Line } from "@remixicon/react";
 import { memo, useState } from "react";
 import type { TimelineMarker } from "@/components/chat/timeline";
 import { MarkerRow } from "@/components/chat/tool-step-row";
-import { cnExt as cn } from "@/utils/cn";
+import { cx as cn } from "@/utils/cx";
 
 /** A context marker the run pulled in (a skill/playbook load or a memory/
  *  knowledge retrieval). These fold; memory writes and the reconcile marker do
@@ -61,20 +61,20 @@ export const ContextRecallFold = memo(function ContextRecallFold({
         type="button"
         aria-expanded={open}
         onClick={() => setOpen((v) => !v)}
-        className="flex w-full items-center gap-2 rounded-md px-1.5 py-1 text-left transition-colors hover:bg-bg-weak-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary-base"
+        className="flex w-full items-center gap-2 rounded-md px-1.5 py-1 text-left transition-colors hover:bg-background-primary-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-border-focus-ring"
       >
-        <span className="flex size-5 shrink-0 items-center justify-center rounded-md bg-feature-lighter text-feature-base">
+        <span className="flex size-5 shrink-0 items-center justify-center rounded-md bg-purple-100 text-purple-500">
           <RiSparkling2Line className="size-3.5" aria-hidden />
         </span>
         <span className="min-w-0 flex-1 truncate">
-          <span className="text-label-sm font-medium text-text-sub-600">Context</span>
+          <span className="text-body-2-medium font-medium text-text-secondary">Context</span>
           {summary && (
-            <span className="ml-1.5 text-label-sm text-text-soft-400">{summary}</span>
+            <span className="ml-1.5 text-body-2-medium text-text-tertiary">{summary}</span>
           )}
         </span>
         <RiArrowDownSLine
           className={cn(
-            "size-4 shrink-0 text-text-soft-400 transition-transform duration-200",
+            "size-4 shrink-0 text-text-tertiary transition-transform duration-200",
             open && "rotate-180",
           )}
           aria-hidden

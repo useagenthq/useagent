@@ -1,6 +1,6 @@
 "use client";
 
-import { cnExt as cn } from "@/utils/cn";
+import { cx as cn } from "@/utils/cx";
 
 /**
  * Slash-command "Choose Agent" machinery (HeyRico ref 2081778664228945957_1):
@@ -55,11 +55,11 @@ export function ChooseAgentPopover({
   return (
     <div
       className={cn(
-        "border-stroke-soft-200 bg-bg-white-0 shadow-regular-md w-full rounded-2xl border p-2",
+        "border-border-button-default bg-background-primary-default shadow-dropdown w-full rounded-2xl border p-2",
         className,
       )}
     >
-      <p className="text-mono-label text-text-soft-400 px-2 pb-1 pt-1.5">Choose Agent</p>
+      <p className="text-mono-label text-text-tertiary px-2 pb-1 pt-1.5">Choose Agent</p>
       {matches.map((a, i) => (
         <button
           key={a.id}
@@ -70,14 +70,14 @@ export function ChooseAgentPopover({
           }}
           className={cn(
             "flex w-full items-center gap-2.5 rounded-xl px-2 py-2 text-left transition-colors",
-            i === 0 ? "bg-bg-weak-50" : "hover:bg-bg-weak-50",
+            i === 0 ? "bg-background-secondary-default" : "hover:bg-background-primary-hover",
           )}
         >
           <PixelAvatar color={a.color} />
-          <span className="text-label-sm" style={{ color: a.color }}>
+          <span className="text-body-2-medium" style={{ color: a.color }}>
             {a.name}
           </span>
-          <span className="text-paragraph-sm text-text-soft-400 truncate">
+          <span className="text-body-2-regular text-text-tertiary truncate">
             {a.tagline}
           </span>
         </button>
@@ -98,7 +98,7 @@ export function AgentChip({
       type="button"
       onClick={onRemove}
       title="Remove agent"
-      className="inline-flex shrink-0 items-center gap-1 rounded-lg px-2 py-0.5 text-label-sm"
+      className="inline-flex shrink-0 items-center gap-1 rounded-lg px-2 py-0.5 text-body-2-medium"
       style={{ backgroundColor: `${agent.color}1F`, color: agent.color }}
     >
       /{agent.id}

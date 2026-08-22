@@ -35,16 +35,16 @@ export function QueuedMessagePill({
     <div data-session-ui="queued-message-pill" className="flex justify-end">
       <div
         role="status"
-        className="flex w-fit max-w-full items-center gap-1.5 rounded-full border border-stroke-soft-200 bg-bg-weak-50 px-2.5 py-1 text-[11px] leading-4 text-text-sub-600 tabular-nums"
+        className="flex w-fit max-w-full items-center gap-1.5 rounded-full border border-border-button-default bg-background-secondary-default px-2.5 py-1 text-[11px] leading-4 text-text-secondary tabular-nums"
       >
-        <RiTimeLine className="size-3.5 shrink-0 text-text-soft-400" aria-hidden />
+        <RiTimeLine className="size-3.5 shrink-0 text-text-tertiary" aria-hidden />
         <span className="truncate">{queuedPillLabel(position)}</span>
         {onSendNow && (
           <button
             type="button"
             onClick={onSendNow}
             title="Stops the current turn; this message starts immediately"
-            className="shrink-0 cursor-pointer text-primary-base underline-offset-2 outline-none hover:underline focus-visible:underline"
+            className="shrink-0 cursor-pointer text-accent-500 underline-offset-2 outline-none hover:underline focus-visible:underline"
           >
             Send now
           </button>

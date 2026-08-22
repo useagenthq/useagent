@@ -1,12 +1,8 @@
 "use client";
 
-import {
-  RiExternalLinkLine,
-  RiFileCopyLine,
-  RiLoader4Line,
-} from "@remixicon/react";
-import * as Button from "@/components/ui/button";
-import * as StatusBadge from "@/components/ui/status-badge";
+import { RiExternalLinkLine, RiFileCopyLine } from "@remixicon/react";
+import { Button, ButtonLink } from "@/components/base/buttons/button";
+import { ConnectionStatusChip, SpinnerIcon } from "./connection-status-chip";
 import {
   codexAccountLabel,
   codexAuthBadgeStatus,
@@ -43,79 +39,69 @@ export function CodexChatGptPath({
   const loginUrl = codexLoginUrl(login);
 
   return (
-    <div className="flex flex-col gap-3 rounded-xl border border-stroke-soft-200 bg-bg-white-0 p-3">
+    <div className="flex flex-col gap-3 rounded-xl border border-border-button-default bg-background-primary-default p-3">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
-            <p className="text-label-sm text-text-strong-950">ChatGPT account connection</p>
-            <StatusBadge.Root variant="light" status={codexAuthBadgeStatus(status, connection)}>
-              <StatusBadge.Dot
-                className={connection?.status === "revoked" ? "text-error-base" : undefined}
-              />
+            <p className="text-body-2-medium text-text-primary">ChatGPT account connection</p>
+            <ConnectionStatusChip
+              status={codexAuthBadgeStatus(status, connection)}
+              dotClassName={connection?.status === "revoked" ? "bg-red-500" : undefined}
+            >
               {codexAuthStatusLabel(status, connection)}
-            </StatusBadge.Root>
+            </ConnectionStatusChip>
           </div>
-          <p className="mt-1 text-paragraph-xs text-text-soft-400">
+          <p className="mt-1 text-caption-1-regular text-text-tertiary">
             Account lifecycle only. The contained backend broker can sign in, read account status,
             and log out. It does not run Codex turns on the host or send subscription credentials
             into sandboxes.
           </p>
-          <div className="mt-2 flex flex-wrap items-center gap-2 text-paragraph-xs text-text-sub-600">
+          <div className="mt-2 flex flex-wrap items-center gap-2 text-caption-1-regular text-text-secondary">
             <span className="truncate">{codexAccountLabel(status, connection)}</span>
             {connection ? (
               <>
-                <span className="text-text-soft-400">·</span>
+                <span className="text-text-tertiary">·</span>
                 <span>Updated {relTime(connection.updatedAt)}</span>
               </>
             ) : null}
           </div>
         </div>
         <div className="flex shrink-0 flex-wrap items-center gap-2">
-          <Button.Root
-            type="button"
-            variant="neutral"
-            mode="stroke"
-            size="xsmall"
+          <Button
+            variant="secondary"
+            size="xs"
             className="rounded-full"
             disabled={busy !== null}
             onClick={() => void startLogin()}
+            leadingIcon={busy === "connect" ? SpinnerIcon : undefined}
           >
-            {busy === "connect" ? (
-              <Button.Icon as={RiLoader4Line} className="animate-spin" />
-            ) : null}
             Connect with ChatGPT
-          </Button.Root>
-          <Button.Root
-            type="button"
-            variant="error"
-            mode="stroke"
-            size="xsmall"
+          </Button>
+          <Button
+            variant="danger"
+            size="xs"
             className="rounded-full"
             disabled={!active || busy !== null}
             onClick={() => void revokeLogin()}
+            leadingIcon={busy === "revoke" ? SpinnerIcon : undefined}
           >
-            {busy === "revoke" ? <Button.Icon as={RiLoader4Line} className="animate-spin" /> : null}
             Log out
-          </Button.Root>
+          </Button>
         </div>
       </div>
 
-      <div className="rounded-lg border border-stroke-soft-200 bg-bg-weak-50 p-3">
+      <div className="rounded-lg border border-border-button-default bg-background-secondary-default p-3">
         <div className="flex flex-wrap items-center gap-2">
-          <p className="text-label-sm text-text-strong-950">Codex sandbox execution</p>
-          <StatusBadge.Root
-            variant="light"
-            status={sandboxExecutionEnabled ? "completed" : "disabled"}
-          >
-            <StatusBadge.Dot />
+          <p className="text-body-2-medium text-text-primary">Codex sandbox execution</p>
+          <ConnectionStatusChip status={sandboxExecutionEnabled ? "completed" : "disabled"}>
             {sandboxExecutionEnabled === null
               ? "Status unavailable"
               : sandboxExecutionEnabled
                 ? "Enabled"
                 : "Not enabled"}
-          </StatusBadge.Root>
+          </ConnectionStatusChip>
         </div>
-        <p className="mt-1 text-paragraph-xs text-text-sub-600">
+        <p className="mt-1 text-caption-1-regular text-text-secondary">
           {sandboxExecutionEnabled
             ? "Codex runs execute inside the sandbox through its provider gateway credential, not through this ChatGPT account."
             : "Connecting this ChatGPT account does not enable sandbox execution. Codex must be enabled independently by the runtime configuration."}
@@ -124,85 +110,74 @@ export function CodexChatGptPath({
 
       {login ? (
         <div
-          className="rounded-lg border border-stroke-soft-200 bg-bg-weak-50 p-3"
+          className="rounded-lg border border-border-button-default bg-background-secondary-default p-3"
           aria-live="polite"
         >
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="min-w-0">
-              <p className="text-label-sm text-text-strong-950">Login pending</p>
-              <p className="mt-1 text-paragraph-xs text-text-sub-600">
+              <p className="text-body-2-medium text-text-primary">Login pending</p>
+              <p className="mt-1 text-caption-1-regular text-text-secondary">
                 Copy the code, open the trusted OpenAI page, and complete sign-in. This panel will
                 refresh automatically.
               </p>
               {login.type === "chatgptDeviceCode" ? (
                 <div className="mt-2 flex flex-wrap items-center gap-2">
-                  <span className="rounded-md bg-bg-white-0 px-2 py-1 font-mono text-label-sm text-text-strong-950 ring-1 ring-inset ring-stroke-soft-200">
+                  <span className="rounded-md bg-background-primary-default px-2 py-1 font-mono text-body-2-medium text-text-primary ring-1 ring-inset ring-border-button-default">
                     {login.userCode}
                   </span>
-                  <Button.Root
-                    type="button"
-                    variant="neutral"
-                    mode="stroke"
-                    size="xsmall"
+                  <Button
+                    variant="secondary"
+                    size="xs"
                     className="rounded-full"
                     onClick={() => void copyDeviceCode()}
+                    leadingIcon={RiFileCopyLine}
                   >
-                    <Button.Icon as={RiFileCopyLine} />
                     {copied ? "Copied" : "Copy"}
-                  </Button.Root>
+                  </Button>
                 </div>
               ) : null}
             </div>
             <div className="flex shrink-0 flex-wrap items-center gap-2">
               {loginUrl ? (
-                <Button.Root
-                  asChild
-                  variant="neutral"
-                  mode="filled"
-                  size="xsmall"
+                <ButtonLink
+                  variant="primary"
+                  size="xs"
                   className="rounded-full"
+                  href={loginUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  leadingIcon={RiExternalLinkLine}
                 >
-                  <a href={loginUrl} target="_blank" rel="noreferrer">
-                    <Button.Icon as={RiExternalLinkLine} />
-                    Open login
-                  </a>
-                </Button.Root>
+                  Open login
+                </ButtonLink>
               ) : null}
-              <Button.Root
-                type="button"
-                variant="neutral"
-                mode="stroke"
-                size="xsmall"
+              <Button
+                variant="secondary"
+                size="xs"
                 className="rounded-full"
                 disabled={busy !== null}
                 onClick={() => void refreshStatus()}
+                leadingIcon={busy === "status" ? SpinnerIcon : undefined}
               >
-                {busy === "status" ? (
-                  <Button.Icon as={RiLoader4Line} className="animate-spin" />
-                ) : null}
                 Check
-              </Button.Root>
-              <Button.Root
-                type="button"
-                variant="error"
-                mode="stroke"
-                size="xsmall"
+              </Button>
+              <Button
+                variant="danger"
+                size="xs"
                 className="rounded-full"
                 disabled={busy !== null}
                 onClick={() => void cancelLogin()}
+                leadingIcon={busy === "cancel" ? SpinnerIcon : undefined}
               >
-                {busy === "cancel" ? (
-                  <Button.Icon as={RiLoader4Line} className="animate-spin" />
-                ) : null}
                 Cancel
-              </Button.Root>
+              </Button>
             </div>
           </div>
         </div>
       ) : null}
 
       {error ? (
-        <p className="text-paragraph-xs text-error-base" role="status" aria-live="polite">
+        <p className="text-caption-1-regular text-text-error-primary" role="status" aria-live="polite">
           {error}
         </p>
       ) : null}

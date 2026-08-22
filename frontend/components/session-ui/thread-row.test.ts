@@ -27,7 +27,7 @@ describe("thread status pill (upstream running/failed/settled treatment)", () =>
     expect(pill?.label).toBe("Failed");
     expect(pill?.dot.tone).toBe("error");
     expect(pill?.dot.pulse).toBeUndefined();
-    expect(pill?.textClass).toBe("text-error-base");
+    expect(pill?.textClass).toBe("text-text-error-primary");
   });
 
   test("cancelled counts as Failed", () => {
@@ -67,9 +67,9 @@ describe("row density (upstream resolveThreadRowClassName)", () => {
 
   test("active rows hold their fill and weight", () => {
     const className = resolveThreadRowClassName({ active: true });
-    expect(className).toContain("bg-bg-weak-50");
+    expect(className).toContain("bg-background-secondary-default");
     expect(className).toContain("font-medium");
-    expect(className).toContain("text-text-strong-950");
+    expect(className).toContain("text-text-primary");
   });
 
   test("a git line trades the fixed height for a two-line column", () => {
@@ -85,9 +85,9 @@ describe("row density (upstream resolveThreadRowClassName)", () => {
 
   test("resting rows brighten on hover only", () => {
     const className = resolveThreadRowClassName({ active: false });
-    expect(className).toContain("hover:bg-bg-weak-50");
-    expect(className).toContain("hover:text-text-strong-950");
-    expect(className).toContain("text-text-sub-600");
+    expect(className).toContain("hover:bg-background-primary-hover");
+    expect(className).toContain("hover:text-text-primary");
+    expect(className).toContain("text-text-secondary");
     expect(className).not.toContain("font-medium");
   });
 });

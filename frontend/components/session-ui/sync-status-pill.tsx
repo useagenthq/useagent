@@ -17,12 +17,12 @@ export function SyncStatusPill({ label }: { label: string }) {
     <div
       data-session-ui="sync-status-pill"
       aria-label={label}
-      className="pointer-events-none mx-auto mb-2 flex w-fit max-w-full items-center gap-2 rounded-full border border-stroke-soft-200 bg-bg-weak-50 px-3 py-1.5 text-xs font-medium text-text-strong-950 shadow-regular-sm"
+      className="pointer-events-none mx-auto mb-2 flex w-fit max-w-full items-center gap-2 rounded-full border border-border-button-default bg-background-secondary-default px-3 py-1.5 text-xs font-medium text-text-primary shadow-sm"
       role="status"
     >
       <RiLoader4Line
         aria-hidden
-        className="size-3.5 shrink-0 text-text-soft-400 motion-safe:animate-spin"
+        className="size-3.5 shrink-0 text-text-tertiary motion-safe:animate-spin"
       />
       <span className="truncate">{label}</span>
     </div>

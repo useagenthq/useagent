@@ -62,11 +62,11 @@ function ShowcaseCard({ entry }: { readonly entry: Entry }) {
     <div
       id={`beui-${id}`}
       data-agent-ui-component={id}
-      className="flex flex-col gap-4 rounded-2xl border border-stroke-soft-200 bg-bg-white-0 p-5 shadow-regular-sm"
+      className="flex flex-col gap-4 rounded-2xl border border-border-button-default bg-background-primary-default p-5 shadow-sm"
     >
       <div className="flex flex-col gap-0.5">
-        <h3 className="text-title-h6 text-text-strong-950">{title}</h3>
-        <p className="text-paragraph-sm text-text-sub-600">{description}</p>
+        <h3 className="text-title-3-medium text-text-primary">{title}</h3>
+        <p className="text-body-2-regular text-text-secondary">{description}</p>
       </div>
       <div className="min-w-0">
         <Demo />
@@ -79,8 +79,8 @@ function ShowcaseCard({ entry }: { readonly entry: Entry }) {
  * single full-width column so every piece is legible and extendable without leaving the page. */
 export function BeuiAgentShowcase() {
   return (
-    <section className="flex flex-col gap-4 border-t border-stroke-soft-200 py-8">
-      <p className="text-mono-label text-text-soft-400">
+    <section className="flex flex-col gap-4 border-t border-border-button-default py-8">
+      <p className="text-mono-label text-text-tertiary">
         beUI agent components (components/agent-ui) - the full agent set on our tokens
       </p>
       <div className="flex flex-col gap-5">

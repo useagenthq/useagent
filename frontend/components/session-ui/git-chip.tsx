@@ -13,7 +13,7 @@
 // are fallbacks for older payload shapes. All three are read defensively so a
 // leaner run projection (e.g. an SSE upsert) simply renders no chips.
 
-import { cn } from "@/utils/cn";
+import { cx as cn } from "@/utils/cx";
 
 export interface GitRef {
   /** Clean "owner/name". */
@@ -80,7 +80,7 @@ export function GitChips({ refs, className }: { refs: GitRef[]; className?: stri
           key={ref.repo}
           data-session-ui="git-chip"
           title={gitRefTitle(ref)}
-          className="border-stroke-soft-200 text-text-soft-400 inline-flex h-5 min-w-0 shrink items-center rounded-full border px-1.5 font-mono text-[10px] font-medium tracking-tight"
+          className="border-border-button-default text-text-tertiary inline-flex h-5 min-w-0 shrink items-center rounded-full border px-1.5 font-mono text-[10px] font-medium tracking-tight"
         >
           <span className="truncate">
             {repoShortname(ref.repo)}

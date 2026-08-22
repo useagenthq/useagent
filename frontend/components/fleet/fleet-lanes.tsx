@@ -34,13 +34,13 @@ function RunRow({ run }: { run: WorkspaceRun }) {
   return (
     <Link
       href={`/session/${run.id}`}
-      className="flex items-center gap-3 rounded-lg px-2 py-2 outline-none transition-colors hover:bg-bg-weak-50 focus-visible:ring-2 focus-visible:ring-stroke-strong-950"
+      className="flex items-center gap-3 rounded-lg px-2 py-2 outline-none transition-colors hover:bg-background-secondary-default focus-visible:ring-2 focus-visible:ring-border-focus-ring"
     >
       <RunStatusDot status={run.status} />
-      <span className="min-w-0 flex-1 truncate text-label-xs text-text-strong-950">
+      <span className="min-w-0 flex-1 truncate text-label-xs text-text-primary">
         {run.prompt || "Untitled run"}
       </span>
-      <span className="hidden font-mono text-paragraph-xs tabular-nums text-text-soft-400 sm:inline">
+      <span className="hidden font-mono text-caption-1-regular tabular-nums text-text-tertiary sm:inline">
         {formatDuration(run.duration_ms)}
       </span>
       <Badge.Root variant="light" size="medium" color={chip.color}>
@@ -56,28 +56,28 @@ function LaneCard({ lane, defaultOpen }: { lane: LaneGroup; defaultOpen: boolean
   const caption = lane.working > 0 ? `${lane.working} working` : count > 0 ? "idle" : "empty";
 
   return (
-    <div className="border-t border-stroke-soft-200 first:border-t-0">
+    <div className="border-t border-border-button-default first:border-t-0">
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
-        className="flex w-full items-center gap-3 py-3 text-left outline-none focus-visible:ring-2 focus-visible:ring-stroke-strong-950"
+        className="flex w-full items-center gap-3 py-3 text-left outline-none focus-visible:ring-2 focus-visible:ring-border-focus-ring"
       >
         <RiArrowRightSLine
           aria-hidden
           className={cnExt(
-            "size-4 shrink-0 text-text-soft-400 transition-transform",
+            "size-4 shrink-0 text-text-tertiary transition-transform",
             open && "rotate-90",
           )}
         />
-        <RiFolderLine className="size-4 shrink-0 text-text-sub-600" aria-hidden />
-        <span className="text-label-sm text-text-strong-950" title={lane.name}>
+        <RiFolderLine className="size-4 shrink-0 text-text-secondary" aria-hidden />
+        <span className="text-body-2-medium text-text-primary" title={lane.name}>
           {lane.label}
         </span>
         <span
           className={cnExt(
             "text-mono-label",
-            lane.working > 0 ? "text-warning-base" : "text-text-soft-400",
+            lane.working > 0 ? "text-yellow-600" : "text-text-tertiary",
           )}
         >
           {caption}
@@ -94,7 +94,7 @@ function LaneCard({ lane, defaultOpen }: { lane: LaneGroup; defaultOpen: boolean
           {count > 0 ? (
             lane.runs.map((run) => <RunRow key={run.id} run={run} />)
           ) : (
-            <p className="px-2 py-2 text-paragraph-xs text-text-soft-400">
+            <p className="px-2 py-2 text-caption-1-regular text-text-tertiary">
               No runs in this project yet.
             </p>
           )}
@@ -111,12 +111,12 @@ export function Fleet({ lanes, stats }: { lanes: LaneGroup[]; stats: FleetStats 
   return (
     <Panel>
       <div className="mb-2 flex flex-wrap items-baseline gap-x-2 gap-y-1">
-        <span className="text-mono-label text-text-soft-400">Projects</span>
-        <span className="text-paragraph-xs text-text-sub-600">
+        <span className="text-mono-label text-text-tertiary">Projects</span>
+        <span className="text-caption-1-regular text-text-secondary">
           {stats.total} repository-backed run{stats.total === 1 ? "" : "s"} across {activeLanes}{" "}
           project
           {activeLanes === 1 ? "" : "s"} ·{" "}
-          <span className={stats.failed > 0 ? "text-warning-base" : "text-success-base"}>
+          <span className={stats.failed > 0 ? "text-yellow-600" : "text-status-lime-text"}>
             {summary}
           </span>
         </span>
@@ -128,7 +128,7 @@ export function Fleet({ lanes, stats }: { lanes: LaneGroup[]; stats: FleetStats 
           ))}
         </div>
       ) : (
-        <p className="py-8 text-center text-paragraph-sm text-text-soft-400">
+        <p className="py-8 text-center text-body-2-regular text-text-tertiary">
           No repository-backed runs yet.
         </p>
       )}

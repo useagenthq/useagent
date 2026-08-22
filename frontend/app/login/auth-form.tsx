@@ -2,16 +2,14 @@
 
 import { RiLockLine, RiMailLine } from "@remixicon/react";
 import { useRouter } from "next/navigation";
-import { type ComponentType, type FormEvent, useId, useState } from "react";
+import { type FormEvent, useState } from "react";
 import { GoogleSignInButton } from "@/components/auth/google-sign-in-button";
+import { Button } from "@/components/base/buttons/button";
+import { Divider } from "@/components/base/divider/divider";
+import { Input } from "@/components/base/input/input";
 import { OrbitKnotMark } from "@/components/foundations/brand/orbit-knot-mark";
-import * as Input from "@/components/ui/input";
-import * as Label from "@/components/ui/label";
 import { useAuthConfig } from "@/lib/auth";
 import { backendFetch } from "@/lib/backend-fetch";
-import { cnExt } from "@/utils/cn";
-
-type IconComponent = ComponentType<{ className?: string }>;
 
 const COPY = {
   title: "Welcome back",
@@ -20,32 +18,6 @@ const COPY = {
   pending: "Signing in…",
   endpoint: "/api/auth/sign-in/email",
 } as const;
-
-/** Full-width dark pill submit. */
-const SUBMIT_PILL =
-  "inline-flex h-11 w-full items-center justify-center rounded-full bg-bg-strong-950 text-label-sm text-text-white-0 shadow-regular-xs outline-none transition-opacity hover:opacity-90 focus-visible:ring-2 focus-visible:ring-primary-base focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60";
-
-function Field({
-  label,
-  icon,
-  ...inputProps
-}: {
-  label: string;
-  icon: IconComponent;
-} & Omit<React.InputHTMLAttributes<HTMLInputElement>, "size">) {
-  const id = useId();
-  return (
-    <div className="flex flex-col gap-1.5">
-      <Label.Root htmlFor={id}>{label}</Label.Root>
-      <Input.Root>
-        <Input.Wrapper>
-          <Input.Icon as={icon} />
-          <Input.Input id={id} {...inputProps} />
-        </Input.Wrapper>
-      </Input.Root>
-    </div>
-  );
-}
 
 export function AuthForm() {
   const router = useRouter();
@@ -88,53 +60,60 @@ export function AuthForm() {
   }
 
   return (
-    <main className="flex min-h-dvh w-full items-center justify-center bg-bg-weak-50 p-4 sm:p-6">
-      <div className="animate-ai-fade-up mx-auto flex w-full max-w-[420px] flex-col rounded-2xl border border-stroke-soft-200 bg-bg-white-0 px-6 py-10 shadow-regular-md sm:px-8">
+    <main className="flex min-h-dvh w-full items-center justify-center bg-background-secondary-default p-4 sm:p-6">
+      {/* Card recipe mirrors components/application/auth/auth-card.tsx; the
+          form stays our own so the real better-auth handlers (error surface,
+          pending state, Google config gating) are preserved verbatim. */}
+      <div className="animate-ai-fade-up mx-auto flex w-full max-w-[400px] flex-col rounded-3xl border border-border-button-default bg-background-primary-default p-6 shadow-xs sm:p-8">
         <OrbitKnotMark className="size-8" />
-        <h1 className="mt-5 text-display-sm text-text-strong-950">{COPY.title}</h1>
-        <p className="mt-1.5 text-paragraph-sm text-text-sub-600">{COPY.subtitle}</p>
+        <h1 className="mt-5 text-title-2-medium text-text-primary">{COPY.title}</h1>
+        <p className="mt-1.5 text-body-regular text-text-secondary">{COPY.subtitle}</p>
 
         <div className="mt-8">
           <GoogleSignInButton enabled={authConfig?.google ?? false} />
         </div>
 
-        <div className="my-6 flex items-center gap-3" aria-hidden>
-          <span className="h-px flex-1 bg-stroke-soft-200" />
-          <span className="text-mono-label text-text-soft-400">or</span>
-          <span className="h-px flex-1 bg-stroke-soft-200" />
-        </div>
+        <Divider
+          aria-hidden
+          className="my-6"
+          contentClassName="text-mono-label text-text-tertiary"
+        >
+          or
+        </Divider>
 
         <form className="flex flex-col gap-4" onSubmit={handleSubmit} noValidate>
-          <Field
-            label="Email"
-            icon={RiMailLine}
+          <Input
+            name="email"
             type="email"
+            label="Email"
             placeholder="you@company.com"
             autoComplete="email"
+            leadingIcon={RiMailLine}
             value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            required
+            onChange={setEmail}
+            isRequired
           />
-          <Field
-            label="Password"
-            icon={RiLockLine}
+          <Input
+            name="password"
             type="password"
+            label="Password"
             placeholder="••••••••"
             autoComplete="current-password"
+            leadingIcon={RiLockLine}
             value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            required
+            onChange={setPassword}
+            isRequired
           />
 
           {error && (
-            <p role="alert" className="text-paragraph-sm text-error-base">
+            <p role="alert" className="text-body-2-regular text-text-error-primary">
               {error}
             </p>
           )}
 
-          <button type="submit" className={cnExt(SUBMIT_PILL, "mt-2")} disabled={pending}>
+          <Button type="submit" className="mt-2 w-full" disabled={pending}>
             {pending ? COPY.pending : COPY.submit}
-          </button>
+          </Button>
         </form>
       </div>
     </main>

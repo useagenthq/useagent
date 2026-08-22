@@ -47,8 +47,8 @@ function Section({
   children: React.ReactNode;
 }) {
   return (
-    <section className='flex flex-col gap-4 border-t border-stroke-soft-200 py-8'>
-      <p className='text-mono-label text-text-soft-400'>{label}</p>
+    <section className='flex flex-col gap-4 border-t border-border-button-default py-8'>
+      <p className='text-mono-label text-text-tertiary'>{label}</p>
       {children}
     </section>
   );
@@ -56,16 +56,16 @@ function Section({
 
 export default function Home() {
   return (
-    <main className='min-h-dvh bg-bg-white-0'>
+    <main className='min-h-dvh bg-background-primary-default'>
       {/* Halftone brand header */}
-      <header className='relative overflow-hidden border-b border-stroke-soft-200'>
+      <header className='relative overflow-hidden border-b border-border-button-default'>
         <div className='bg-halftone pointer-events-none absolute inset-0' aria-hidden />
         <div className='relative mx-auto flex max-w-4xl items-center justify-between px-6 py-10'>
           <div className='flex items-center gap-3'>
-            <AsteriskMark className='size-8 text-text-strong-950' />
+            <AsteriskMark className='size-8 text-text-primary' />
             <div className='flex flex-col'>
-              <span className='text-label-lg text-text-strong-950'>useAgent</span>
-              <span className='text-mono-label text-text-soft-400'>
+              <span className='text-label-lg text-text-primary'>useAgent</span>
+              <span className='text-mono-label text-text-tertiary'>
                 multi-harness agent platform
               </span>
             </div>
@@ -76,10 +76,10 @@ export default function Home() {
 
       <div className='mx-auto max-w-4xl px-6'>
         <div className='animate-ai-fade-up flex flex-col gap-1 py-10'>
-          <h1 className='text-title-h4 text-text-strong-950'>
+          <h1 className='text-title-h4 text-text-primary'>
             AlignUI foundation
           </h1>
-          <p className='text-paragraph-md text-text-sub-600'>
+          <p className='text-paragraph-md text-text-secondary'>
             Vendored AlignUI base components on Tailwind v4, wired to the useAgent
             brand layer. This page proves the foundation renders in both themes.
           </p>
@@ -146,7 +146,7 @@ export default function Home() {
         <Section label='Switch'>
           <div className='flex items-center gap-3'>
             <Switch.Root defaultChecked id='autopilot' />
-            <label htmlFor='autopilot' className='text-label-sm text-text-strong-950'>
+            <label htmlFor='autopilot' className='text-body-2-medium text-text-primary'>
               Autopilot mode
             </label>
           </div>
@@ -168,15 +168,15 @@ export default function Home() {
               </TabMenuHorizontal.Trigger>
             </TabMenuHorizontal.List>
             <TabMenuHorizontal.Content value='overview' className='pt-4'>
-              <p className='text-paragraph-sm text-text-sub-600'>
+              <p className='text-body-2-regular text-text-secondary'>
                 Overview panel - the active-tab indicator animates underneath.
               </p>
             </TabMenuHorizontal.Content>
             <TabMenuHorizontal.Content value='runs' className='pt-4'>
-              <p className='text-paragraph-sm text-text-sub-600'>Runs panel.</p>
+              <p className='text-body-2-regular text-text-secondary'>Runs panel.</p>
             </TabMenuHorizontal.Content>
             <TabMenuHorizontal.Content value='skills' className='pt-4'>
-              <p className='text-paragraph-sm text-text-sub-600'>Skills panel.</p>
+              <p className='text-body-2-regular text-text-secondary'>Skills panel.</p>
             </TabMenuHorizontal.Content>
           </TabMenuHorizontal.Root>
         </Section>
@@ -187,7 +187,7 @@ export default function Home() {
             <p className='agent-progress-loading-text text-label-md'>
               Thinking through the plan…
             </p>
-            <p className='text-label-sm text-text-strong-950'>
+            <p className='text-body-2-medium text-text-primary'>
               Streaming output
               <span className='ai-caret ml-0.5 inline-block w-px bg-current align-middle' style={{ height: '1em' }} />
             </p>
@@ -195,7 +195,7 @@ export default function Home() {
               {[0, 1, 2, 3, 4].map((i) => (
                 <span
                   key={i}
-                  className='ai-loading-pixel size-1.5 rounded-full bg-primary-base'
+                  className='ai-loading-pixel size-1.5 rounded-full bg-accent-500'
                   style={{ animationDelay: `${i * 120}ms` }}
                 />
               ))}

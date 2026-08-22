@@ -218,10 +218,10 @@ export function WorkspaceSample() {
   return (
     <ComposerPrefillProvider value={setFollowUp}>
     <WorkspaceOpenProvider value={openWorkpiece}>
-      <main data-testid="workspace-sample" className="min-h-full bg-bg-white-0 p-6">
+      <main data-testid="workspace-sample" className="min-h-full bg-background-primary-default p-6">
         <div className="mx-auto max-w-6xl">
-          <h1 className="text-title-h5 text-text-strong-950">Workspace side pane</h1>
-          <p className="mt-1 max-w-3xl text-paragraph-sm text-text-sub-600">
+          <h1 className="text-title-h5 text-text-primary">Workspace side pane</h1>
+          <p className="mt-1 max-w-3xl text-body-2-regular text-text-secondary">
             Real session components: click a workpiece card in the conversation to open it in the
             side pane. Tabs, the rendered/Code toggle, the quiet Saved indicator, and the three
             structured editors are the exact live renderers, fed by fixtures.
@@ -229,18 +229,18 @@ export function WorkspaceSample() {
 
           <div className="mt-6 flex min-h-[640px] gap-4">
             {/* Conversation column with the real artifact cards. */}
-            <section className="flex min-w-0 flex-1 flex-col rounded-2xl border border-stroke-soft-200 bg-bg-white-0 p-4">
-              <p className="text-mono-label text-text-soft-400">Conversation</p>
+            <section className="flex min-w-0 flex-1 flex-col rounded-2xl border border-border-button-default bg-background-primary-default p-4">
+              <p className="text-mono-label text-text-tertiary">Conversation</p>
               <div className="mt-3">
                 <Timeline nodes={TIMELINE_NODES} live={false} />
               </div>
             </section>
 
             {/* The right rail panel hosting the Workspace surface. */}
-            <section className="flex w-[460px] shrink-0 flex-col overflow-hidden rounded-2xl border border-stroke-soft-200 bg-bg-white-0">
-              <div className="flex items-center gap-2 border-b border-stroke-soft-200 px-3 py-2">
-                <span className="text-mono-label text-text-soft-400">Rail</span>
-                <span className="inline-flex h-6 items-center rounded-md bg-bg-strong-950 px-2 text-label-xs text-text-white-0">
+            <section className="flex w-[460px] shrink-0 flex-col overflow-hidden rounded-2xl border border-border-button-default bg-background-primary-default">
+              <div className="flex items-center gap-2 border-b border-border-button-default px-3 py-2">
+                <span className="text-mono-label text-text-tertiary">Rail</span>
+                <span className="inline-flex h-6 items-center rounded-md bg-foreground-icon-primary px-2 text-label-xs text-background-full">
                   Workspace
                 </span>
               </div>
@@ -278,9 +278,9 @@ export function WorkspaceSample() {
                           revision={3}
                         />
                         {followUp && (
-                          <div className="shrink-0 border-b border-feature-base/30 bg-feature-lighter/30 px-3 py-1.5 text-paragraph-xs text-text-sub-600">
+                          <div className="shrink-0 border-b border-status-purple-text/30 bg-status-purple-background/40 px-3 py-1.5 text-caption-1-regular text-text-secondary">
                             Seeded the reply composer:{" "}
-                            <span className="text-text-strong-950">{followUp.replace(/\n/g, " ")}</span>
+                            <span className="text-text-primary">{followUp.replace(/\n/g, " ")}</span>
                           </div>
                         )}
                         <div className="flex min-h-0 flex-1 flex-col overflow-auto px-3 pb-3">

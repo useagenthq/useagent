@@ -1,13 +1,14 @@
 import Link from "next/link";
 import type { ComponentType, ReactNode } from "react";
 
-import { cnExt } from "@/utils/cn";
+import { cx } from "@/utils/cx";
 
 /**
  * Shared building blocks for the app-shell sidebars (chat + agent). Both rails
- * use one recipe — a scrollable nav column with icon rows, `text-mono-label`
- * section headers, and left-aligned "Recents" rows — so the row + section
- * primitives live here instead of being duplicated per sidebar.
+ * use one recipe — a BoardUI floating panel (rounded, shadow-sidebar, inset
+ * from the viewport edge) holding a scrollable nav column with icon rows,
+ * `text-mono-label` section headers, and left-aligned "Recents" rows — so the
+ * row + section primitives live here instead of being duplicated per sidebar.
  *
  * Server component: presentational + `next/link` only, no hooks.
  */
@@ -30,19 +31,21 @@ export function Sidebar({
   footer?: ReactNode;
 }) {
   return (
-    <aside
-      aria-label={ariaLabel}
-      className="flex h-full w-64 shrink-0 flex-col border-r border-stroke-soft-200/50 bg-bg-white-0"
-    >
-      {header}
-      <nav className="min-h-0 flex-1 overflow-y-auto px-3 pb-4 pt-3">{children}</nav>
-      {footer}
-    </aside>
+    <div className="h-full w-full p-3">
+      <aside
+        aria-label={ariaLabel}
+        className="flex h-full w-full flex-col overflow-hidden rounded-3xl border border-border-button-white bg-background-secondary-default shadow-sidebar"
+      >
+        {header}
+        <nav className="min-h-0 flex-1 overflow-y-auto px-3 pb-4 pt-1.5">{children}</nav>
+        {footer}
+      </aside>
+    </div>
   );
 }
 
 export function SidebarSectionLabel({ children }: { children: ReactNode }) {
-  return <p className="text-mono-label px-2.5 pb-1 pt-5 text-text-soft-400">{children}</p>;
+  return <p className="text-mono-label px-2.5 pb-1 pt-5 text-text-tertiary">{children}</p>;
 }
 
 export type NavIconTone = "blue" | "purple" | "green" | "orange" | "primary";
@@ -53,7 +56,7 @@ const NAV_ICON_TONE: Record<NavIconTone, string> = {
   purple: "text-purple-500",
   green: "text-green-600",
   orange: "text-orange-500",
-  primary: "text-primary-base",
+  primary: "text-accent-500",
 };
 
 export interface SidebarNavItemProps {
@@ -83,23 +86,19 @@ export function SidebarNavItem({
     <Link
       href={href}
       aria-current={active ? "page" : undefined}
-      className={cnExt(
-        "flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-label-sm transition-colors",
+      className={cx(
+        "flex items-center gap-2.5 rounded-2lg px-2.5 py-2 text-body-2-medium transition-colors",
         active
-          ? "bg-bg-weak-50 text-text-strong-950"
-          : "text-text-sub-600 hover:bg-bg-weak-50 hover:text-text-strong-950",
+          ? "bg-linear-to-b from-accent-500 to-accent-600 text-white shadow-nav-selected"
+          : "text-text-secondary hover:bg-background-secondary-hover hover:text-text-primary",
       )}
     >
       {leading ??
         (Icon ? (
           <Icon
-            className={cnExt(
+            className={cx(
               "size-3.5 shrink-0",
-              tone
-                ? NAV_ICON_TONE[tone]
-                : active
-                  ? "text-text-strong-950"
-                  : "text-text-soft-400",
+              active ? "text-white" : tone ? NAV_ICON_TONE[tone] : "text-foreground-icon-tertiary",
             )}
             aria-hidden
           />

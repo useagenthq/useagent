@@ -3,7 +3,7 @@
 import { RiHistoryLine } from "@remixicon/react";
 import Link from "next/link";
 
-import * as Badge from "@/components/ui/badge";
+import { Chip } from "@/components/base/badges/chip";
 import { BackendUnreachable } from "@/components/shared/backend-unreachable";
 import { relativeTime } from "@/utils/format";
 import { SCOPE_META, type RecallLedgerRow } from "./memory-data";
@@ -26,15 +26,15 @@ export function RecallLedger({
   return (
     <section className="mt-10 flex flex-col gap-4">
       <div className="flex items-center gap-2">
-        <RiHistoryLine className="size-4 text-text-sub-600" aria-hidden />
-        <h2 className="text-label-sm text-text-sub-600">Recently recalled</h2>
+        <RiHistoryLine className="size-4 text-foreground-icon-secondary" aria-hidden />
+        <h2 className="text-body-2-medium text-text-secondary">Recently recalled</h2>
         {recalls.length > 0 && (
-          <span className="text-paragraph-xs text-text-soft-400">
+          <span className="text-caption-1-regular text-text-tertiary">
             {recalls.length} {recalls.length === 1 ? "run" : "runs"}
           </span>
         )}
       </div>
-      <p className="-mt-2 text-paragraph-xs text-text-soft-400">
+      <p className="-mt-2 text-caption-1-regular text-text-tertiary">
         What each run pulled from memory at start, straight from the retrieval
         ledger.
       </p>
@@ -42,7 +42,7 @@ export function RecallLedger({
       {error ? (
         <BackendUnreachable onRetry={onRefetch} />
       ) : recalls.length === 0 ? (
-        <p className="text-paragraph-sm text-text-sub-600">
+        <p className="text-body-2-regular text-text-secondary">
           No recalls yet - runs record what memory they used here.
         </p>
       ) : (
@@ -50,43 +50,42 @@ export function RecallLedger({
           {recalls.map((row) => (
             <article
               key={row.runId}
-              className="flex flex-col gap-2 rounded-2xl bg-bg-white-0 p-4 shadow-regular-xs ring-1 ring-inset ring-stroke-soft-200"
+              className="flex flex-col gap-2 rounded-2xl bg-background-primary-default p-4 shadow-card ring-1 ring-inset ring-border-button-default"
             >
               <div className="flex items-center gap-2">
-                <Badge.Root
-                  variant="light"
-                  size="medium"
+                <Chip
+                  variant="caption"
                   color={row.memoryScope === "org" ? "blue" : "purple"}
                 >
                   {SCOPE_META[row.memoryScope].tag}
-                </Badge.Root>
-                <span className="text-paragraph-xs text-text-soft-400">
+                </Chip>
+                <span className="text-caption-1-regular text-text-tertiary">
                   {row.itemCount} {row.itemCount === 1 ? "item" : "items"} - {row.latencyMs}ms
                 </span>
                 <Link
                   href={`/session/${row.runId}`}
-                  className="ml-auto text-paragraph-xs text-primary-base hover:underline"
+                  className="ml-auto text-caption-1-regular text-accent-500 hover:underline"
                 >
                   Open run
                 </Link>
               </div>
 
-              <p className="line-clamp-1 text-paragraph-sm text-text-strong-950">
+              <p className="line-clamp-1 text-body-2-regular text-text-primary">
                 {row.query}
               </p>
 
               {row.items.length > 0 && (
-                <ul className="flex flex-col gap-1 border-l-2 border-stroke-soft-200 pl-3">
+                <ul className="flex flex-col gap-1 border-l-2 border-separator-border pl-3">
                   {row.items.map((it, i) => (
-                    <li key={i} className="line-clamp-1 text-paragraph-xs text-text-sub-600">
-                      <span className="text-text-soft-400">[{SCOPE_META[it.sourceScope].tag}]</span>{" "}
+                    <li key={i} className="line-clamp-1 text-caption-1-regular text-text-secondary">
+                      <span className="text-text-tertiary">[{SCOPE_META[it.sourceScope].tag}]</span>{" "}
                       {it.content}
                     </li>
                   ))}
                 </ul>
               )}
 
-              <span className="text-paragraph-xs text-text-soft-400">
+              <span className="text-caption-1-regular text-text-tertiary">
                 {relativeTime(row.createdAt)}
               </span>
             </article>

@@ -2,10 +2,10 @@
 
 import { RiMailLine, RiUserAddLine } from "@remixicon/react";
 import { useState, type FormEvent } from "react";
-import * as Avatar from "@/components/ui/avatar";
-import * as Badge from "@/components/ui/badge";
-import * as Button from "@/components/ui/button";
-import * as Input from "@/components/ui/input";
+import { Avatar } from "@/components/base/avatar/avatar";
+import { Chip } from "@/components/base/badges/chip";
+import { Button } from "@/components/base/buttons/button";
+import { InputBase } from "@/components/base/input/input";
 import { AVATAR_GRADIENT } from "./general-card";
 
 /**
@@ -21,14 +21,14 @@ type Row = {
   initials: string;
   roleLabel: string;
   emphasizeRole: boolean;
-  avatarColor: "gray" | "blue" | "purple";
+  avatarColor: "neutral" | "blue" | "pink";
   gradient: boolean;
 };
 
 const ROSTER: Row[] = [
-  { key: "a", name: "Dev User", email: "you@example.com", initials: "A", roleLabel: "Owner", emphasizeRole: true, avatarColor: "gray", gradient: true },
+  { key: "a", name: "Dev User", email: "you@example.com", initials: "A", roleLabel: "Owner", emphasizeRole: true, avatarColor: "neutral", gradient: true },
   { key: "p", name: "Priya Nair", email: "priya@example.com", initials: "P", roleLabel: "Member", emphasizeRole: false, avatarColor: "blue", gradient: false },
-  { key: "d", name: "Diego Fuentes", email: "diego@example.com", initials: "D", roleLabel: "Member", emphasizeRole: false, avatarColor: "purple", gradient: false },
+  { key: "d", name: "Diego Fuentes", email: "diego@example.com", initials: "D", roleLabel: "Member", emphasizeRole: false, avatarColor: "pink", gradient: false },
 ];
 
 export function TeamCard() {
@@ -52,46 +52,49 @@ export function TeamCard() {
         {ROSTER.map((row) => (
           <div
             key={row.key}
-            className="flex items-center gap-3 border-b border-stroke-soft-200 py-2.5 last:border-b-0"
+            className="flex items-center gap-3 border-b border-separator-border py-2.5 last:border-b-0"
           >
-            <Avatar.Root
-              size="32"
+            <Avatar
+              size="md"
               color={row.avatarColor}
               className={row.gradient ? AVATAR_GRADIENT : undefined}
-            >
-              {row.initials}
-            </Avatar.Root>
+              initials={row.initials}
+            />
             <div className="min-w-0 flex-1">
-              <p className="truncate text-label-sm text-text-strong-950">{row.name}</p>
-              <p className="truncate text-paragraph-xs text-text-sub-600">{row.email}</p>
+              <p className="truncate text-body-2-medium text-text-primary">{row.name}</p>
+              <p className="truncate text-caption-1-regular text-text-secondary">{row.email}</p>
             </div>
-            <Badge.Root variant="light" size="medium" color={row.emphasizeRole ? "purple" : "gray"}>
+            <Chip variant="caption" color={row.emphasizeRole ? "purple" : "soft"}>
               {row.roleLabel}
-            </Badge.Root>
+            </Chip>
           </div>
         ))}
       </div>
 
       <form className="flex items-center gap-2 pt-3" onSubmit={handleInvite} noValidate>
-        <Input.Root size="small" className="min-w-0 flex-1">
-          <Input.Wrapper>
-            <Input.Icon as={RiMailLine} />
-            <Input.Input
-              aria-label="Invite teammate by email"
-              type="email"
-              placeholder="teammate@company.com"
-              value={email}
-              onChange={(event) => setEmail(event.target.value)}
-            />
-          </Input.Wrapper>
-        </Input.Root>
-        <Button.Root className="rounded-full" type="submit" variant="neutral" mode="stroke" size="small" disabled={pending || !email.trim()}>
-          <Button.Icon as={RiUserAddLine} />
+        <InputBase
+          size="small"
+          aria-label="Invite teammate by email"
+          type="email"
+          placeholder="teammate@company.com"
+          leadingIcon={RiMailLine}
+          value={email}
+          onChange={(event) => setEmail(event.target.value)}
+          fieldClassName="min-w-0 flex-1"
+        />
+        <Button
+          className="rounded-full"
+          type="submit"
+          variant="secondary"
+          size="small"
+          leadingIcon={RiUserAddLine}
+          disabled={pending || !email.trim()}
+        >
           Invite member
-        </Button.Root>
+        </Button>
       </form>
 
-      {notice && <p className="pt-2 text-paragraph-xs text-text-sub-600">{notice}</p>}
+      {notice && <p className="pt-2 text-caption-1-regular text-text-secondary">{notice}</p>}
     </>
   );
 }

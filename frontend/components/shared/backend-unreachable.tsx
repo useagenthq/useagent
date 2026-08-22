@@ -1,7 +1,7 @@
 "use client";
 
 import { RiErrorWarningLine, RiRefreshLine } from "@remixicon/react";
-import { cnExt } from "@/utils/cn";
+import { cx as cnExt } from "@/utils/cx";
 
 /**
  * Small inline "couldn't reach the backend" affordance — the honest counterpart
@@ -24,21 +24,21 @@ export function BackendUnreachable({
   return (
     <div
       className={cnExt(
-        "flex items-center gap-3 rounded-2xl border border-stroke-soft-200 bg-bg-weak-50 px-4 py-3",
+        "flex items-center gap-3 rounded-2xl border border-border-button-default bg-background-secondary-default px-4 py-3",
         className,
       )}
     >
-      <RiErrorWarningLine aria-hidden className="size-5 shrink-0 text-warning-base" />
+      <RiErrorWarningLine aria-hidden className="size-5 shrink-0 text-yellow-600" />
       <div className="min-w-0 flex-1">
-        <p className="text-label-sm text-text-strong-950">Couldn’t reach the backend</p>
-        <p className="text-paragraph-xs text-text-sub-600">
+        <p className="text-body-2-medium text-text-primary">Couldn’t reach the backend</p>
+        <p className="text-caption-1-regular text-text-secondary">
           A connection problem, not an empty list.
         </p>
       </div>
       <button
         type="button"
         onClick={retry}
-        className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-stroke-soft-200 bg-bg-white-0 px-3 py-1.5 text-label-xs text-text-sub-600 outline-none transition-colors hover:text-text-strong-950 focus-visible:ring-2 focus-visible:ring-stroke-strong-950"
+        className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-border-button-default bg-background-primary-default px-3 py-1.5 text-caption-1-medium text-text-secondary outline-none transition-colors hover:text-text-primary focus-visible:ring-2 focus-visible:ring-border-focus-ring"
       >
         <RiRefreshLine aria-hidden className="size-3.5" />
         Retry
