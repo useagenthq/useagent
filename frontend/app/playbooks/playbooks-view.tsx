@@ -1,64 +1,106 @@
 "use client";
 
-import { RiBookMarkedLine } from "@remixicon/react";
+import {
+  RiBookMarkedLine,
+  RiPlayMiniLine,
+  RiSearchLine,
+} from "@remixicon/react";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
-import * as Badge from "@/components/ui/badge";
-import * as Button from "@/components/ui/button";
+import { Button } from "@/components/base/buttons/button";
+import { InputBase } from "@/components/base/input/input";
 import { BackendUnreachable } from "@/components/shared/backend-unreachable";
+import { cx } from "@/utils/cx";
 import { fetchSkills } from "@/app/skills/skills-api";
-import { tagChipColor, type Skill } from "@/app/skills/skills-data";
+import { usageCaption, type Skill } from "@/app/skills/skills-data";
 import { PlaybookDetail } from "./playbook-detail";
 import { PlaybookEditor } from "./playbook-editor";
 
 /**
  * Client owner for the Playbooks page. Playbooks are versioned skills with
  * `kind: "playbook"` (one substrate, mem_op doctrine), so this reuses the shared
- * skills client scoped to that kind. Cards open a read-only detail; detail hosts
- * Edit (mints a new version) and Run. Running a playbook opens the New Task
- * composer with it preselected - the same run-with-skill path a skill uses - so
- * the agent loads the procedure as governing context, not a separate executor.
+ * skills client scoped to that kind. The list is compact scannable rows - name,
+ * clamped description, and a real meta line (version, procedure length, usage) -
+ * with client-side search once the library outgrows a screenful. A row opens a
+ * read-only detail; detail hosts Edit (mints a new version) and Run. Running a
+ * playbook opens the New Task composer with it preselected - the same
+ * run-with-skill path a skill uses - so the agent loads the procedure as
+ * governing context, not a separate executor.
  */
 
-function PlaybookCard({
+/** Search appears only once the library exceeds a scannable screenful. */
+const SEARCH_THRESHOLD = 8;
+
+/** "v3 · 6 steps · Used 14 times · last run 2d ago" - every part real. */
+function playbookMeta(playbook: Skill): string {
+  const steps = playbook.sections.procedure.length;
+  const parts = [`v${playbook.version}`];
+  if (steps > 0) parts.push(`${steps} ${steps === 1 ? "step" : "steps"}`);
+  parts.push(usageCaption(playbook));
+  return parts.join(" · ");
+}
+
+function PlaybookRow({
   playbook,
   onOpen,
+  onRun,
 }: {
   playbook: Skill;
   onOpen: (playbook: Skill) => void;
+  onRun: (playbook: Skill) => void;
 }) {
   return (
-    <button
-      type="button"
-      onClick={() => onOpen(playbook)}
-      className="flex flex-col rounded-2xl bg-background-primary-default p-4 text-left shadow-sm ring-1 ring-inset ring-border-button-default outline-none transition-colors hover:bg-background-secondary-default focus-visible:ring-2 focus-visible:ring-border-focus-ring"
-    >
-      <div className="flex items-center justify-between">
-        <div className="flex size-9 items-center justify-center rounded-lg border border-border-button-default bg-background-secondary-default">
-          <RiBookMarkedLine aria-hidden className="size-5 text-text-secondary" />
-        </div>
-        <span className="font-mono text-caption-1-medium tabular-nums text-text-tertiary">
-          v{playbook.version}
+    <li className="flex items-center gap-3 px-4 py-3 transition-colors hover:bg-background-primary-hover">
+      <button
+        type="button"
+        onClick={() => onOpen(playbook)}
+        className="flex min-w-0 flex-1 items-start gap-3 rounded-lg text-left outline-none focus-visible:ring-2 focus-visible:ring-border-focus-ring"
+      >
+        <RiBookMarkedLine
+          aria-hidden
+          className="mt-0.5 size-5 shrink-0 text-foreground-icon-secondary"
+        />
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-body-medium text-text-primary">
+            {playbook.name}
+          </span>
+          {playbook.description && (
+            <span className="mt-0.5 block truncate text-caption-1-regular text-text-secondary">
+              {playbook.description}
+            </span>
+          )}
+          <span className="mt-0.5 block truncate text-caption-1-regular tabular-nums text-text-tertiary">
+            {playbookMeta(playbook)}
+          </span>
         </span>
-      </div>
-      <h3 className="mt-3 text-body-2-medium text-text-primary">{playbook.name}</h3>
-      <p className="mt-1 line-clamp-2 text-caption-1-regular text-text-secondary">
-        {playbook.description}
+      </button>
+      <Button
+        variant="ghost"
+        size="xs"
+        className="rounded-full"
+        leadingIcon={RiPlayMiniLine}
+        aria-label={`Run ${playbook.name}`}
+        onClick={() => onRun(playbook)}
+      >
+        Run
+      </Button>
+    </li>
+  );
+}
+
+function EmptyState() {
+  return (
+    <div className="mt-6 flex flex-col items-center justify-center rounded-2xl border border-dashed border-border-button-default px-6 py-16 text-center">
+      <RiBookMarkedLine
+        aria-hidden
+        className="size-6 text-foreground-icon-tertiary"
+      />
+      <p className="mt-3 text-body-2-medium text-text-primary">No playbooks yet</p>
+      <p className="mt-1 max-w-xs text-body-2-regular text-text-secondary">
+        Capture your first procedure to get started.
       </p>
-      {playbook.tags.length > 0 && (
-        <div className="mt-3 flex flex-wrap gap-1.5">
-          {playbook.tags.map((tag) => (
-            <Badge.Root key={tag} variant="light" size="medium" color={tagChipColor(tag)}>
-              {tag}
-            </Badge.Root>
-          ))}
-        </div>
-      )}
-      <p className="mt-4 border-t border-border-button-default pt-3 text-caption-1-regular text-text-tertiary">
-        Used {playbook.usageCount} {playbook.usageCount === 1 ? "time" : "times"}
-      </p>
-    </button>
+    </div>
   );
 }
 
@@ -74,6 +116,7 @@ export function PlaybooksView({
   const router = useRouter();
   const [playbooks, setPlaybooks] = useState<Skill[]>(initialPlaybooks);
   const [error, setError] = useState(initialError);
+  const [query, setQuery] = useState("");
   const [detail, setDetail] = useState<Skill | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
   const [editorOpen, setEditorOpen] = useState(false);
@@ -126,42 +169,84 @@ export function PlaybooksView({
     [router],
   );
 
+  const q = query.trim().toLowerCase();
+  const visible = useMemo(() => {
+    if (!q) return playbooks;
+    return playbooks.filter(
+      (playbook) =>
+        playbook.name.toLowerCase().includes(q) ||
+        playbook.description.toLowerCase().includes(q) ||
+        playbook.tags.some((tag) => tag.toLowerCase().includes(q)),
+    );
+  }, [playbooks, q]);
+
+  const searchable = playbooks.length > SEARCH_THRESHOLD;
+
   return (
-    <div className="mx-auto w-full max-w-[1040px] px-6 py-8 sm:px-10 sm:py-10">
+    <div className="mx-auto w-full max-w-[880px] px-6 py-8 sm:px-10 sm:py-10">
       <div className="flex items-start justify-between gap-3">
         <div>
           <div className="flex items-center gap-2.5">
-            <RiBookMarkedLine aria-hidden className="size-5 text-text-primary" />
-            <h1 className="text-display-sm text-text-primary">Playbooks</h1>
+            <RiBookMarkedLine
+              aria-hidden
+              className="size-5 text-foreground-icon-primary"
+            />
+            <h1 className="text-title-2-medium text-text-primary">Playbooks</h1>
           </div>
           <p className="mt-1.5 text-body-2-regular text-text-secondary">
-            Structured procedures useAgent follows as guidance - Overview, Procedure, Verify
+            Structured procedures useAgent follows as guidance - Overview,
+            Procedure, Verify
           </p>
         </div>
-        <Button.Root
-          variant="neutral"
-          mode="filled"
-          className="rounded-full"
-          onClick={openCreate}
-        >
+        <Button variant="primary" onClick={openCreate}>
           New playbook
-        </Button.Root>
+        </Button>
       </div>
 
       {playbooks.length === 0 ? (
         error ? (
           <BackendUnreachable className="mt-10" onRetry={refetch} />
         ) : (
-          <p className="mt-10 text-body-2-regular text-text-secondary">
-            No playbooks yet. Capture your first procedure to get started.
-          </p>
+          <EmptyState />
         )
       ) : (
-        <div className="mt-8 grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
-          {playbooks.map((playbook) => (
-            <PlaybookCard key={playbook.id} playbook={playbook} onOpen={openDetail} />
-          ))}
-        </div>
+        <>
+          {searchable && (
+            <div className="mt-6">
+              <InputBase
+                size="small"
+                aria-label="Search playbooks"
+                placeholder="Search playbooks…"
+                leadingIcon={RiSearchLine}
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                fieldClassName="sm:w-72"
+              />
+            </div>
+          )}
+
+          {visible.length === 0 ? (
+            <p className="mt-6 text-body-2-regular text-text-secondary">
+              No playbooks match &ldquo;{query.trim()}&rdquo;.
+            </p>
+          ) : (
+            <ul
+              className={cx(
+                searchable ? "mt-3" : "mt-6",
+                "divide-y divide-separator-border overflow-hidden rounded-2xl bg-background-primary-default shadow-sm ring-1 ring-inset ring-border-button-default",
+              )}
+            >
+              {visible.map((playbook) => (
+                <PlaybookRow
+                  key={playbook.id}
+                  playbook={playbook}
+                  onOpen={openDetail}
+                  onRun={runPlaybook}
+                />
+              ))}
+            </ul>
+          )}
+        </>
       )}
 
       <PlaybookDetail

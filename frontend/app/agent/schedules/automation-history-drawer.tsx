@@ -1,22 +1,24 @@
 "use client";
 
-import { RiArrowRightUpLine, RiHistoryLine, RiPlayLine } from "@remixicon/react";
+import { RiArrowRightUpLine, RiPlayLine } from "@remixicon/react";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
-import * as Button from "@/components/ui/button";
+import { Chip, type ChipProps } from "@/components/base/badges/chip";
+import { Button } from "@/components/base/buttons/button";
 import * as Drawer from "@/components/ui/drawer";
-import * as StatusBadge from "@/components/ui/status-badge";
 import { useOrgChanges } from "@/hooks/use-org-changes";
 import { relativeTime } from "@/utils/format";
 import { fetchHistory } from "./schedules-api";
 import { cadenceLabel, engineLabel, type FiringRecord, type ScheduleRecord } from "./schedules-data";
 import { useAutomationRecovery } from "./use-automation-recovery";
 
-function badgeStatus(status: string | null): "completed" | "failed" | "pending" | "disabled" {
-  if (status === "completed") return "completed";
-  if (status === "failed" || status === "cancelled") return "failed";
-  if (status === "queued" || status === "running") return "pending";
-  return "disabled";
+/** Real run status → chip color; the label always shows the raw status. */
+function statusChipColor(status: string): NonNullable<ChipProps["color"]> {
+  if (status === "completed") return "lime";
+  if (status === "failed" || status === "cancelled") return "rose";
+  if (status === "running") return "cyan";
+  if (status === "queued") return "yellow";
+  return "neutral";
 }
 
 export function AutomationHistoryDrawer({
@@ -68,12 +70,11 @@ export function AutomationHistoryDrawer({
   return (
     <Drawer.Root open={schedule !== null} onOpenChange={(next) => !next && onClose()}>
       <Drawer.Content className="max-w-[480px]">
-        <Drawer.Header className="border-b">
-          <div className="flex size-9 items-center justify-center rounded-xl bg-background-secondary-default">
-            <RiHistoryLine className="size-5 text-text-secondary" aria-hidden />
-          </div>
+        <Drawer.Header className="border-b border-border-button-default">
           <div className="min-w-0 flex-1">
-            <Drawer.Title className="truncate">{schedule?.name ?? "Run history"}</Drawer.Title>
+            <Drawer.Title className="truncate text-body-medium text-text-primary">
+              {schedule?.name ?? "Run history"}
+            </Drawer.Title>
             {schedule && (
               <p className="mt-0.5 truncate text-caption-1-regular text-text-tertiary">
                 {cadenceLabel(schedule.cron)} · {engineLabel(schedule.engine)}
@@ -84,20 +85,19 @@ export function AutomationHistoryDrawer({
 
         <Drawer.Body className="p-5">
           {schedule && (
-            <Button.Root
+            <Button
               className="w-full"
-              variant="neutral"
-              mode="stroke"
+              variant="secondary"
               size="small"
+              leadingIcon={RiPlayLine}
               disabled={running}
               onClick={() => onRunNow(schedule.id)}
             >
-              <Button.Icon as={RiPlayLine} />
               {running ? "Starting run…" : "Run automation now"}
-            </Button.Root>
+            </Button>
           )}
 
-          <div className="mt-6 flex items-center justify-between">
+          <div className="mt-6 flex items-baseline justify-between">
             <h2 className="text-body-2-medium text-text-primary">Executions</h2>
             {firings && firings.length > 0 && (
               <span className="text-caption-1-medium text-text-tertiary">{firings.length} recorded</span>
@@ -105,16 +105,20 @@ export function AutomationHistoryDrawer({
           </div>
 
           {error && firings === null ? (
-            <div className="mt-4 rounded-xl border border-border-error-default/30 bg-background-tertiary-error p-4">
+            <div className="mt-4 rounded-xl bg-background-tertiary-error p-4">
               <p className="text-body-2-regular text-text-secondary">Couldn’t load execution history.</p>
-              <button type="button" onClick={() => void load()} className="mt-2 text-body-2-medium text-text-error-primary">
+              <button
+                type="button"
+                onClick={() => void load()}
+                className="mt-2 text-body-2-medium text-text-error-primary"
+              >
                 Try again
               </button>
             </div>
           ) : firings === null ? (
-            <div role="status" className="mt-4 space-y-3" aria-label="Loading execution history">
+            <div role="status" className="mt-4 space-y-2" aria-label="Loading execution history">
               {[0, 1, 2].map((item) => (
-                <div key={item} className="h-24 animate-pulse rounded-xl bg-background-secondary-default" />
+                <div key={item} className="h-16 animate-pulse rounded-xl bg-background-secondary-default" />
               ))}
             </div>
           ) : firings.length === 0 ? (
@@ -125,40 +129,36 @@ export function AutomationHistoryDrawer({
               </p>
             </div>
           ) : (
-            <ol className="relative mt-4 space-y-3 before:absolute before:bottom-5 before:left-[11px] before:top-5 before:w-px before:bg-border-button-default">
+            <ol className="mt-4 space-y-2">
               {firings.map((firing) => {
                 const status = firing.run_status ?? firing.status;
                 return (
-                  <li key={firing.id} className="relative pl-8">
-                    <span
-                      className="absolute left-1 top-4 z-10 size-4 rounded-full border-4 border-background-primary-default bg-foreground-icon-tertiary"
-                      aria-hidden
-                    />
-                    <div className="rounded-xl border border-border-button-default bg-background-primary-default p-3.5 shadow-card">
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <StatusBadge.Root variant="light" status={badgeStatus(status)}>
-                            <StatusBadge.Dot />
-                            {status}
-                          </StatusBadge.Root>
-                          <p className="mt-2 text-caption-1-regular text-text-tertiary">
-                            {relativeTime(firing.fired_at)} · {firing.trigger === "cron" ? "Scheduled" : "Manual"}
-                          </p>
-                        </div>
+                  <li
+                    key={firing.id}
+                    className="rounded-xl bg-background-primary-default p-3 shadow-sm ring-1 ring-inset ring-border-button-default"
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <Chip variant="caption" color={statusChipColor(status)} className="shrink-0">
+                        {status}
+                      </Chip>
+                      <div className="flex min-w-0 items-center gap-1">
+                        <span className="truncate text-caption-1-regular text-text-tertiary">
+                          {relativeTime(firing.fired_at)} · {firing.trigger === "cron" ? "Scheduled" : "Manual"}
+                        </span>
                         <Link
                           href={`/session/${firing.run_id}`}
-                          className="flex size-8 items-center justify-center rounded-lg text-text-tertiary transition-colors hover:bg-background-secondary-default hover:text-text-primary"
                           aria-label="Open run"
+                          className="flex size-7 shrink-0 items-center justify-center rounded-lg text-foreground-icon-tertiary transition-colors hover:bg-background-secondary-default hover:text-text-primary"
                         >
                           <RiArrowRightUpLine className="size-4" aria-hidden />
                         </Link>
                       </div>
-                      {firing.run_summary && (
-                        <p className="mt-3 line-clamp-3 text-body-2-regular text-text-secondary">
-                          {firing.run_summary}
-                        </p>
-                      )}
                     </div>
+                    {firing.run_summary && (
+                      <p className="mt-2 line-clamp-2 text-caption-1-regular text-text-secondary">
+                        {firing.run_summary}
+                      </p>
+                    )}
                   </li>
                 );
               })}

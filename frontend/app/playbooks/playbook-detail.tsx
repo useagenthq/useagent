@@ -7,16 +7,21 @@ import {
   RiPlayMiniLine,
 } from "@remixicon/react";
 
-import * as Badge from "@/components/ui/badge";
-import * as Button from "@/components/ui/button";
+import { Chip, type ChipProps } from "@/components/base/badges/chip";
+import { Button } from "@/components/base/buttons/button";
 import * as Modal from "@/components/ui/modal";
 import { tagChipColor, usageCaption, type Skill } from "@/app/skills/skills-data";
+import type { ChipColor } from "@/app/knowledge/knowledge-data";
+import { CHIP_COLOR } from "@/components/foundations/form-recipes";
 
 /**
  * The detail view of one playbook: its Overview / Procedure / Verify content
- * rendered as read-only sections, with the version + usage caption and Edit /
- * Run actions. The copy is deliberately honest - useAgent FOLLOWS the procedure as
- * guidance; it is not a deterministic, step-by-step workflow engine.
+ * rendered as read-only sections (the step markers are semantic - bullet,
+ * numbered, check), with the version + usage caption and Edit / Run actions.
+ * The full description lives here; the list row clamps it. The copy is
+ * deliberately honest - useAgent FOLLOWS the procedure as guidance; it is not a
+ * deterministic, step-by-step workflow engine. The Modal shell stays AlignUI
+ * (no BoardUI equivalent); its visible surfaces are BoardUI tokens.
  */
 
 function OverviewList({ steps }: { steps: string[] }) {
@@ -96,21 +101,19 @@ export function PlaybookDetail({
 }) {
   return (
     <Modal.Root open={open} onOpenChange={onOpenChange}>
-      <Modal.Content className="max-h-[90vh] max-w-[600px] overflow-y-auto">
+      <Modal.Content className="max-h-[90vh] max-w-[600px] overflow-y-auto rounded-3xl border border-border-button-default bg-background-primary-default shadow-dropdown">
         {playbook && (
           <div className="flex flex-col gap-6 p-6">
-            <div className="flex items-start gap-4">
-              <div className="flex size-11 shrink-0 items-center justify-center rounded-xl border border-border-button-default bg-background-secondary-default">
-                <RiBookMarkedLine aria-hidden className="size-5 text-text-secondary" />
-              </div>
+            <div className="flex items-start gap-3">
+              <RiBookMarkedLine
+                aria-hidden
+                className="mt-1 size-5 shrink-0 text-foreground-icon-secondary"
+              />
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-2">
                   <Modal.Title className="text-title-3-medium text-text-primary">
                     {playbook.name}
                   </Modal.Title>
-                  <Badge.Root variant="lighter" size="medium" color="purple">
-                    Playbook
-                  </Badge.Root>
                   <span className="font-mono text-caption-1-medium tabular-nums text-text-tertiary">
                     v{playbook.version}
                   </span>
@@ -121,14 +124,13 @@ export function PlaybookDetail({
                 {playbook.tags.length > 0 && (
                   <div className="mt-2.5 flex flex-wrap gap-1.5">
                     {playbook.tags.map((tag) => (
-                      <Badge.Root
+                      <Chip
                         key={tag}
-                        variant="light"
-                        size="medium"
-                        color={tagChipColor(tag)}
+                        variant="caption"
+                        color={CHIP_COLOR[tagChipColor(tag)]}
                       >
                         {tag}
-                      </Badge.Root>
+                      </Chip>
                     ))}
                   </div>
                 )}
@@ -153,29 +155,27 @@ export function PlaybookDetail({
               agent applies judgement and the steps shape how it works.
             </p>
 
-            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border-button-default pt-4">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-separator-border pt-4">
               <p className="text-caption-1-regular text-text-secondary">
                 {usageCaption(playbook)}
               </p>
               <div className="flex items-center gap-2">
-                <Button.Root
-                  className="rounded-full"
-                  variant="neutral"
-                  mode="stroke"
+                <Button
+                  variant="secondary"
                   size="small"
+                  leadingIcon={RiEditLine}
                   onClick={() => onEdit(playbook)}
                 >
-                  <Button.Icon as={RiEditLine} />
                   Edit
-                </Button.Root>
-                <Button.Root
-                  className="rounded-full"
+                </Button>
+                <Button
+                  variant="primary"
                   size="small"
+                  leadingIcon={RiPlayMiniLine}
                   onClick={() => onRun(playbook)}
                 >
-                  <Button.Icon as={RiPlayMiniLine} />
                   Run playbook
-                </Button.Root>
+                </Button>
               </div>
             </div>
           </div>

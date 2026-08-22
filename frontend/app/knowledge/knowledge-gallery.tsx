@@ -1,18 +1,24 @@
 "use client";
 
 import {
+  RiArrowDownSLine,
+  RiArrowUpSLine,
   RiBrainLine,
   RiSearchLine,
   RiStarFill,
 } from "@remixicon/react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 
-import * as Badge from "@/components/ui/badge";
-import * as Input from "@/components/ui/input";
+import { Chip } from "@/components/base/badges/chip";
+import { Input } from "@/components/base/input/input";
+import {
+  SegmentedControl,
+  SegmentedControlItem,
+} from "@/components/base/segmented-control/segmented-control";
 import { BackendUnreachable } from "@/components/shared/backend-unreachable";
 import { AddKnowledgeModal } from "./add-knowledge-modal";
 import { ContextCardStack } from "./context-card";
-import { EntryCard, PinnedCard } from "./knowledge-cards";
+import { KnowledgeRow } from "./knowledge-rows";
 import {
   deleteKnowledge,
   fetchKnowledgeItems,
@@ -20,7 +26,6 @@ import {
   setKnowledgePinned,
 } from "./knowledge-api";
 import {
-  folderChipColor,
   knowledgeFolderLabel,
   knowledgeItemForDisplay,
   seedFolders,
@@ -29,6 +34,19 @@ import {
 } from "./knowledge-data";
 
 const MIN_SEARCH_LENGTH = 3;
+// Compact rows keep the page scannable; beyond this the rest sits behind a
+// Show-more disclosure (the sidebar-threads pattern) so a large org corpus
+// never floods the initial render.
+const VISIBLE_ROWS = 30;
+
+/** Shared list shell: bordered card containing divided compact rows. */
+function RowList({ children }: { children: ReactNode }) {
+  return (
+    <ul className="divide-y divide-separator-border overflow-hidden rounded-2xl bg-background-primary-default shadow-sm ring-1 ring-inset ring-border-button-default">
+      {children}
+    </ul>
+  );
+}
 
 export function KnowledgeGallery({
   initialItems,
@@ -48,6 +66,8 @@ export function KnowledgeGallery({
   );
   const [searching, setSearching] = useState(false);
   const [searchFailed, setSearchFailed] = useState(false);
+  const [activeFolder, setActiveFolder] = useState("all");
+  const [showAll, setShowAll] = useState(false);
 
   const refetch = useCallback(async () => {
     try {
@@ -69,7 +89,7 @@ export function KnowledgeGallery({
   }, [initialLive, refetch]);
 
   // Search: ≥3 chars → POST search (debounced). Below the threshold, restore
-  // the grouped list. If the endpoint is unavailable, degrade to a local match.
+  // the row list. If the endpoint is unavailable, degrade to a local match.
   useEffect(() => {
     const q = query.trim();
     if (q.length < MIN_SEARCH_LENGTH) {
@@ -156,51 +176,83 @@ export function KnowledgeGallery({
   const isSearchMode = query.trim().length >= MIN_SEARCH_LENGTH;
   const showRanked = isSearchMode && !searchFailed && searchResults !== null;
 
-  const groupSource = isSearchMode && searchFailed ? localFiltered : items;
-  const pinned = groupSource.filter((item) => item.pinned);
-  const folders = Array.from(new Set(groupSource.map((item) => item.folder)));
-  const grouped = folders
-    .map((folder) => ({
-      folder,
-      entries: groupSource.filter(
-        (item) => item.folder === folder && !item.pinned,
-      ),
-    }))
-    .filter((group) => group.entries.length > 0);
+  const folders = useMemo(
+    () => Array.from(new Set(items.map((item) => item.folder))),
+    [items],
+  );
+  // A stale selection (folder emptied by delete/refetch) falls back to All.
+  const folderFilter = folders.includes(activeFolder) ? activeFolder : "all";
+
+  const rowSource = isSearchMode && searchFailed ? localFiltered : items;
+  const filtered =
+    folderFilter === "all"
+      ? rowSource
+      : rowSource.filter((item) => item.folder === folderFilter);
+  const pinned = filtered.filter((item) => item.pinned);
+  const unpinned = filtered.filter((item) => !item.pinned);
+  const visibleRows = showAll ? unpinned : unpinned.slice(0, VISIBLE_ROWS);
+  const overflowCount = unpinned.length - VISIBLE_ROWS;
+
+  const renderRow = (item: KnowledgeItem) => (
+    <KnowledgeRow
+      key={item.id}
+      item={knowledgeItemForDisplay(item)}
+      onTogglePin={() => togglePin(item)}
+      onDelete={() => removeItem(item)}
+    />
+  );
 
   return (
     <div className="mx-auto w-full max-w-[880px] px-6 py-8 sm:px-10 sm:py-10">
       {/* Header */}
       <div className="flex items-start justify-between gap-3">
-        <div className="flex items-start gap-2.5">
-          <RiBrainLine
-            aria-hidden
-            className="mt-0.5 size-5 text-text-primary"
-          />
-          <div className="flex flex-col gap-0.5">
-            <h1 className="text-display-sm text-text-primary">Knowledge</h1>
-            <p className="text-body-2-regular text-text-secondary">
-              Facts and conventions useAgent remembers across runs
-            </p>
+        <div>
+          <div className="flex items-center gap-2.5">
+            <RiBrainLine
+              aria-hidden
+              className="size-5 text-foreground-icon-primary"
+            />
+            <h1 className="text-title-2-medium text-text-primary">Knowledge</h1>
           </div>
+          <p className="mt-1.5 text-body-2-regular text-text-secondary">
+            Facts and conventions useAgent remembers across runs
+          </p>
         </div>
         <AddKnowledgeModal folders={folderOptions} onIngested={refetch} />
       </div>
 
       {/* Search */}
       <div className="mt-6">
-        <Input.Root>
-          <Input.Wrapper>
-            <Input.Icon as={RiSearchLine} />
-            <Input.Input
-              aria-label="Search knowledge"
-              placeholder="Search knowledge..."
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-            />
-          </Input.Wrapper>
-        </Input.Root>
+        <Input
+          aria-label="Search knowledge"
+          placeholder="Search knowledge..."
+          leadingIcon={RiSearchLine}
+          value={query}
+          onChange={setQuery}
+        />
       </div>
+
+      {/* Folder filter — page-level, applies to both sections below. */}
+      {!showRanked && folders.length > 1 && (
+        <div className="mt-4">
+          <SegmentedControl
+            aria-label="Filter knowledge by folder"
+            className="flex-wrap"
+            selectedKeys={[folderFilter]}
+            onSelectionChange={(keys) => {
+              const next = [...(keys as Set<string>)][0];
+              if (typeof next === "string") setActiveFolder(next);
+            }}
+          >
+            <SegmentedControlItem id="all">All</SegmentedControlItem>
+            {folders.map((folder) => (
+              <SegmentedControlItem key={folder} id={folder}>
+                {knowledgeFolderLabel(folder)}
+              </SegmentedControlItem>
+            ))}
+          </SegmentedControl>
+        </div>
+      )}
 
       {showRanked ? (
         /* Ranked search results — the retrieved-context stack */
@@ -223,71 +275,70 @@ export function KnowledgeGallery({
             />
           )}
         </section>
-      ) : pinned.length === 0 && grouped.length === 0 ? (
+      ) : pinned.length === 0 && unpinned.length === 0 ? (
         isSearchMode ? (
           <p className="mt-10 text-body-2-regular text-text-secondary">
             No knowledge matches “{query.trim()}”.
           </p>
-        ) : error ? (
-          <BackendUnreachable className="mt-10" onRetry={refetch} />
+        ) : items.length === 0 ? (
+          error ? (
+            <BackendUnreachable className="mt-10" onRetry={refetch} />
+          ) : (
+            <p className="mt-10 text-body-2-regular text-text-secondary">
+              No knowledge yet. Add your first fact to teach useAgent.
+            </p>
+          )
         ) : (
           <p className="mt-10 text-body-2-regular text-text-secondary">
-            No knowledge yet. Add your first fact to teach useAgent.
+            Nothing in {knowledgeFolderLabel(folderFilter)} yet.
           </p>
         )
       ) : (
         <>
           {/* Pinned */}
           {pinned.length > 0 && (
-            <section className="mt-8 flex flex-col gap-4">
-              <div className="flex items-center gap-1.5">
-                <RiStarFill className="size-4 text-yellow-500" aria-hidden />
+            <section className="mt-8 flex flex-col gap-3">
+              <div className="flex items-center gap-2">
+                <RiStarFill aria-hidden className="size-4 text-yellow-500" />
                 <h2 className="text-body-2-medium text-text-secondary">Pinned</h2>
+                <Chip variant="caption" color="soft">
+                  {pinned.length}
+                </Chip>
               </div>
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                {pinned.map((item) => (
-                  <PinnedCard
-                    key={item.id}
-                    item={knowledgeItemForDisplay(item)}
-                    onTogglePin={() => togglePin(item)}
-                    onDelete={() => removeItem(item)}
-                  />
-                ))}
-              </div>
+              <RowList>{pinned.map(renderRow)}</RowList>
             </section>
           )}
 
-          {/* All knowledge, grouped by folder */}
-          {grouped.length > 0 && (
-            <section className="mt-10 flex flex-col gap-8">
-              <h2 className="text-body-2-medium text-text-secondary">All knowledge</h2>
-              {grouped.map(({ folder, entries }) => (
-                <div key={folder} className="flex flex-col gap-4">
-                  <div className="flex items-center gap-2">
-                    <Badge.Root
-                      variant="light"
-                      size="medium"
-                      color={folderChipColor(folder)}
+          {/* All knowledge */}
+          {unpinned.length > 0 && (
+            <section className="mt-8 flex flex-col gap-3">
+              <div className="flex items-center gap-2">
+                <h2 className="text-body-2-medium text-text-secondary">
+                  All knowledge
+                </h2>
+                <Chip variant="caption" color="soft">
+                  {unpinned.length}
+                </Chip>
+              </div>
+              <RowList>
+                {visibleRows.map(renderRow)}
+                {overflowCount > 0 && (
+                  <li>
+                    <button
+                      type="button"
+                      onClick={() => setShowAll((v) => !v)}
+                      className="flex w-full items-center justify-center gap-1.5 px-4 py-2.5 text-caption-1-regular text-text-tertiary transition-colors hover:bg-background-secondary-default hover:text-text-secondary"
                     >
-                      {knowledgeFolderLabel(folder)}
-                    </Badge.Root>
-                    <span className="text-caption-1-regular text-text-tertiary">
-                      {entries.length}{" "}
-                      {entries.length === 1 ? "entry" : "entries"}
-                    </span>
-                  </div>
-                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                    {entries.map((item) => (
-                      <EntryCard
-                        key={item.id}
-                        item={knowledgeItemForDisplay(item)}
-                        onTogglePin={() => togglePin(item)}
-                        onDelete={() => removeItem(item)}
-                      />
-                    ))}
-                  </div>
-                </div>
-              ))}
+                      {showAll ? (
+                        <RiArrowUpSLine aria-hidden className="size-4" />
+                      ) : (
+                        <RiArrowDownSLine aria-hidden className="size-4" />
+                      )}
+                      {showAll ? "Show fewer" : `Show ${overflowCount} more`}
+                    </button>
+                  </li>
+                )}
+              </RowList>
             </section>
           )}
         </>
