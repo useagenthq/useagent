@@ -25,6 +25,8 @@ import {
   modelOptionsForEngine,
   selectableModelsForEngine,
 } from "@/components/chat/types";
+import { AgentThinking } from "@/components/application/agent-thinking/agent-thinking";
+import { ComposerLoader } from "@/components/application/composer-loader/composer-loader";
 import { Button } from "@/components/base/buttons/button";
 import { PromptInput, PromptInputTextarea } from "@/components/prompt-kit/prompt-input";
 import { backendFetch } from "@/lib/backend-fetch";
@@ -324,6 +326,9 @@ export function NewTaskComposer({
     if (!text) return;
     setSubmitting(true);
     setError(null);
+    // Close the add-context shelf so the rim light wraps the full rounded card
+    // (the shelf's controls are inert during submission anyway).
+    setAddMenuOpen(false);
 
     // Skill/playbook selection is a REAL run contract now — send { id, version }
     // so the backend pins the immutable revision and injects its SKILL.md as
@@ -375,132 +380,149 @@ export function NewTaskComposer({
       {/* Composer card modeled on the ai-kit KnowledgeComposerCard: an outer card
           wrapping a darker inset that holds the prompt textarea and a clean pill
           toolbar. Every control is real - attach, repos, engine, model, skill -
-          and rides POST /api/runs on submit. */}
-      <PromptInput
-        value={prompt}
-        onValueChange={(value) => {
-          setPrompt(value);
-          setCmdDismissed(false);
-          setCmdHighlight(0);
-        }}
-        onSubmit={() => void submit()}
-        maxHeight={260}
-        disabled={submitting}
-        className={cx(
-          "relative z-10 p-2 shadow-md transition-colors",
-          addMenuOpen ? "rounded-[20px] rounded-b-none" : "rounded-[20px]",
-        )}
-      >
-        <input
-          ref={fileInput}
-          type="file"
-          multiple
-          className="hidden"
-          onChange={(event) => {
-            if (event.target.files) void runUploads.addFiles(event.target.files);
-            event.target.value = "";
-          }}
-        />
-        <div className="relative">
-          {cmdActive && (
-            <div className="absolute left-0 top-full z-30 mt-2 w-full">
-              <SlashCommandPopover
-                matches={cmdMatches}
-                highlight={Math.max(0, Math.min(cmdHighlight, cmdMatches.length - 1))}
-                onSelect={pickCommand}
-                status={commandStatus}
-                source={engine}
-              />
-            </div>
-          )}
-          {runUploads.uploads.length > 0 ? (
-            <div className="px-3 pt-3">
-              <RunUploadChips
-                uploads={runUploads.uploads}
-                onRemove={(upload) => void runUploads.remove(upload)}
-              />
-            </div>
-          ) : null}
-          <PromptInputTextarea
-            placeholder="Describe what you need - task, question, repo, constraints..."
-            aria-label="Describe what you need"
-            onKeyDown={(event) => {
-              handleCmdKeys(event);
-            }}
-            className="min-h-[84px] px-3.5 pt-3.5 text-body-2-regular leading-relaxed"
-          />
+          and rides POST /api/runs on submit.
 
-          {/* Toolbar: the "+" opens the add-context shelf below; engine + model +
-              Start stay inline. The context controls (repos, skills, GitHub,
-              branches) live in the shelf, so this row never overflows. */}
-          <div className="flex min-w-0 items-center gap-1 overflow-hidden px-2 pb-2">
-            <button
-              type="button"
-              aria-label="Add context"
-              aria-haspopup="menu"
-              aria-expanded={addMenuOpen}
-              onClick={() => setAddMenuOpen((o) => !o)}
-              className={cx(
-                "grid size-8 shrink-0 place-items-center rounded-2lg outline-none transition-colors focus-visible:ring-2 focus-visible:ring-border-focus-ring",
-                addMenuOpen
-                  ? "bg-background-secondary-default text-foreground-icon-primary"
-                  : "text-foreground-icon-secondary hover:bg-background-primary-hover",
-              )}
-            >
-              <RiAddLine
-                className={cx(
-                  "size-5 transition-transform duration-200",
-                  addMenuOpen && "rotate-45",
-                )}
-                aria-hidden
-              />
-            </button>
-            <div className="flex min-w-0 flex-1 flex-nowrap items-center gap-0.5 overflow-hidden">
-              <SearchablePicker
-                ariaLabel="Select engine"
-                triggerLabel="Engine"
-                searchPlaceholder="Search engines..."
-                groups={engineGroups}
-                value={engine}
-                onChange={setEngine}
-                triggerClassName="max-w-[9rem] shrink-0"
-              />
-              {/* Model is shown only for engines whose backend policy accepts an
-                  explicit user choice (OpenCode and Codex). */}
-              {selectableModels.length > 0 ? (
-                <SearchablePicker
-                  ariaLabel="Select model"
-                  triggerLabel="Model"
-                  searchPlaceholder="Search models..."
-                  groups={modelGroups}
-                  value={model}
-                  onChange={setModel}
-                  triggerClassName="min-w-0 max-w-[22rem] flex-[1_1_16rem]"
+          While the run is being created (click -> navigation) the ComposerLoader
+          rim light carries the working state: it paints the card surface itself,
+          so the PromptInput goes transparent (bg/border/shadow) for that window
+          and hands the surface back when idle. Geometry is untouched. */}
+      <ComposerLoader active={submitting} radius={20} className="relative z-10">
+        <PromptInput
+          value={prompt}
+          onValueChange={(value) => {
+            setPrompt(value);
+            setCmdDismissed(false);
+            setCmdHighlight(0);
+          }}
+          onSubmit={() => void submit()}
+          maxHeight={260}
+          disabled={submitting}
+          className={cx(
+            "p-2 shadow-md transition-colors",
+            addMenuOpen ? "rounded-[20px] rounded-b-none" : "rounded-[20px]",
+            submitting && "border-transparent bg-transparent opacity-100 shadow-none",
+          )}
+        >
+          <input
+            ref={fileInput}
+            type="file"
+            multiple
+            className="hidden"
+            onChange={(event) => {
+              if (event.target.files) void runUploads.addFiles(event.target.files);
+              event.target.value = "";
+            }}
+          />
+          <div className="relative">
+            {cmdActive && (
+              <div className="absolute left-0 top-full z-30 mt-2 w-full">
+                <SlashCommandPopover
+                  matches={cmdMatches}
+                  highlight={Math.max(0, Math.min(cmdHighlight, cmdMatches.length - 1))}
+                  onSelect={pickCommand}
+                  status={commandStatus}
+                  source={engine}
                 />
-              ) : null}
-              {/* Skill/playbook sits beside the model; the trigger truncates a long
-                  name so it never widens the row. */}
-              <SearchablePicker
-                ariaLabel="Select playbook or skill"
-                triggerLabel="Playbook or skills"
-                searchPlaceholder="Search playbooks & skills..."
-                groups={skillGroups}
-                value={playbook}
-                onChange={setPlaybook}
-                triggerClassName="hidden min-w-0 max-w-[10rem] sm:inline-flex sm:flex-[0_2_10rem]"
-              />
+              </div>
+            )}
+            {runUploads.uploads.length > 0 ? (
+              <div className="px-3 pt-3">
+                <RunUploadChips
+                  uploads={runUploads.uploads}
+                  onRemove={(upload) => void runUploads.remove(upload)}
+                />
+              </div>
+            ) : null}
+            <PromptInputTextarea
+              placeholder="Describe what you need - task, question, repo, constraints..."
+              aria-label="Describe what you need"
+              onKeyDown={(event) => {
+                handleCmdKeys(event);
+              }}
+              className="min-h-[84px] px-3.5 pt-3.5 text-body-2-regular leading-relaxed"
+            />
+
+            {/* Toolbar: the "+" opens the add-context shelf below; engine + model +
+                Start stay inline. The context controls (repos, skills, GitHub,
+                branches) live in the shelf, so this row never overflows. */}
+            <div className="flex min-w-0 items-center gap-1 overflow-hidden px-2 pb-2">
+              <button
+                type="button"
+                aria-label="Add context"
+                aria-haspopup="menu"
+                aria-expanded={addMenuOpen}
+                onClick={() => setAddMenuOpen((o) => !o)}
+                className={cx(
+                  "grid size-8 shrink-0 place-items-center rounded-2lg outline-none transition-colors focus-visible:ring-2 focus-visible:ring-border-focus-ring",
+                  addMenuOpen
+                    ? "bg-background-secondary-default text-foreground-icon-primary"
+                    : "text-foreground-icon-secondary hover:bg-background-primary-hover",
+                )}
+              >
+                <RiAddLine
+                  className={cx(
+                    "size-5 transition-transform duration-200",
+                    addMenuOpen && "rotate-45",
+                  )}
+                  aria-hidden
+                />
+              </button>
+              {submitting ? (
+                /* Status swap while the run is being created: the pickers are
+                   inert (the fieldset is disabled), so the row's middle becomes
+                   the thinking indicator until navigation or failure. */
+                <div className="flex min-w-0 flex-1 items-center overflow-hidden px-1.5">
+                  <AgentThinking variant="wave" label="Starting the run" />
+                </div>
+              ) : (
+                <div className="flex min-w-0 flex-1 flex-nowrap items-center gap-0.5 overflow-hidden">
+                  <SearchablePicker
+                    ariaLabel="Select engine"
+                    triggerLabel="Engine"
+                    searchPlaceholder="Search engines..."
+                    groups={engineGroups}
+                    value={engine}
+                    onChange={setEngine}
+                    triggerClassName="max-w-[9rem] shrink-0"
+                  />
+                  {/* Model is shown only for engines whose backend policy accepts an
+                      explicit user choice (OpenCode and Codex). */}
+                  {selectableModels.length > 0 ? (
+                    <SearchablePicker
+                      ariaLabel="Select model"
+                      triggerLabel="Model"
+                      searchPlaceholder="Search models..."
+                      groups={modelGroups}
+                      value={model}
+                      onChange={setModel}
+                      triggerClassName="min-w-0 max-w-[22rem] flex-[1_1_16rem]"
+                    />
+                  ) : null}
+                  {/* Skill/playbook sits beside the model; the trigger truncates a long
+                      name so it never widens the row. */}
+                  <SearchablePicker
+                    ariaLabel="Select playbook or skill"
+                    triggerLabel="Playbook or skills"
+                    searchPlaceholder="Search playbooks & skills..."
+                    groups={skillGroups}
+                    value={playbook}
+                    onChange={setPlaybook}
+                    triggerClassName="hidden min-w-0 max-w-[10rem] sm:inline-flex sm:flex-[0_2_10rem]"
+                  />
+                </div>
+              )}
+              <Button
+                variant="primary"
+                onClick={() => void submit()}
+                disabled={!canSubmit}
+                className="min-w-[7.5rem] shrink-0 rounded-full px-3"
+              >
+                {submitting ? "Starting..." : "Start thread"}
+              </Button>
             </div>
-            <Button
-              variant="primary"
-              onClick={() => void submit()}
-              disabled={!canSubmit}
-              className="min-w-[7.5rem] shrink-0 rounded-full px-3"
-            >
-              {submitting ? "Starting..." : "Start thread"}
-            </Button>
           </div>
-        </div>
-      </PromptInput>
+        </PromptInput>
+      </ComposerLoader>
 
       {/* The "+" action shelf (ai-kit ACTION MENU VARIANT): the add-context
           controls live here as full-width rows so the toolbar never overflows.

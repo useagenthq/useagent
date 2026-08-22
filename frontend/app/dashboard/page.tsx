@@ -48,11 +48,6 @@ async function getJson(path: string): Promise<unknown> {
   }
 }
 
-function toMillis(value: string | number): number {
-  const n = typeof value === "number" ? value : Date.parse(value);
-  return Number.isFinite(n) ? n : 0;
-}
-
 export default async function DashboardPage() {
   const [runsData, skillsData, knowledgeData] = await Promise.all([
     getJson("/api/runs"),
@@ -77,9 +72,6 @@ export default async function DashboardPage() {
 
   const weekTotal = week.reduce((n, d) => n + d.total, 0);
   const fortnightTotal = fortnight.reduce((n, d) => n + d.total, 0);
-  const recent = runs
-    .toSorted((a, b) => toMillis(b.created_at) - toMillis(a.created_at))
-    .slice(0, 8);
 
   const statItems: StatItem[] = [
     {
@@ -132,7 +124,7 @@ export default async function DashboardPage() {
 
         <ContributionsCard cells={heat.cells} total={heat.total} />
 
-        <RecentRunsTable runs={recent} />
+        <RecentRunsTable runs={runs} />
       </div>
     </AppShell>
   );

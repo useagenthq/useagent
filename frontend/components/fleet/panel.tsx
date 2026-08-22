@@ -20,19 +20,3 @@ export function Panel({
     </section>
   );
 }
-
-/** Mono micro-heading row used at the top of each panel. */
-export function PanelHeading({
-  children,
-  right,
-}: {
-  children: ReactNode;
-  right?: ReactNode;
-}) {
-  return (
-    <div className="mb-4 flex items-center justify-between gap-2">
-      <span className="text-mono-label text-text-tertiary">{children}</span>
-      {right}
-    </div>
-  );
-}
