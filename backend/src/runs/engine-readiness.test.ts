@@ -140,7 +140,6 @@ describe("engine readiness advertisement", () => {
     expect(Object.keys(models)).toEqual(["opencode"]);
     expect(models.opencode).toEqual([
       "openai/gpt-5.6-sol",
-      "openai/gpt-5.6-sol-pro",
       "openai/gpt-5.6-luna",
       "openai/gpt-5.6-terra",
       "moonshotai/kimi-k3",

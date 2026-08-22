@@ -23,7 +23,6 @@ export const OPENCODE_ALLOWED_MODELS = {
   ],
   openai: [
     "openai/gpt-5.6-sol",
-    "openai/gpt-5.6-sol-pro",
     FAST_OPENCODE_MODEL,
     "openai/gpt-5.6-terra",
   ],

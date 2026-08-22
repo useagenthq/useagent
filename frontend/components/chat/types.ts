@@ -141,7 +141,6 @@ export const MODELS: { value: string; label: string; tint: string }[] = [
   { value: "claude-fable-5", label: "Fable 5", tint: "text-purple-500" },
   { value: "claude-haiku-4-5", label: "Haiku 4.5", tint: "text-green-500" },
   { value: "openai/gpt-5.6-sol", label: "GPT-5.6 Sol", tint: "text-teal-500" },
-  { value: "openai/gpt-5.6-sol-pro", label: "GPT-5.6 Sol Pro", tint: "text-teal-500" },
   { value: "openai/gpt-5.6-terra", label: "GPT-5.6 Terra", tint: "text-amber-500" },
 ];
 

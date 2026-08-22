@@ -34,6 +34,7 @@ describe("paid model policy", () => {
       expect(isModelAllowedForEngine("opencode", model)).toBe(true);
     }
     expect(isModelAllowedForEngine("opencode", "openai/unbounded")).toBe(false);
+    expect(isModelAllowedForEngine("opencode", "openai/gpt-5.6-sol-pro")).toBe(false);
     expect(isModelAllowedForEngine("opencode", KIMI_K3_MODEL)).toBe(true);
     expect(isModelAllowedForEngine("opencode", DEEPSEEK_V4_FLASH_MODEL)).toBe(true);
     expect(isModelAllowedForEngine("opencode", GEMINI_3_7_FLASH_MODEL)).toBe(true);
