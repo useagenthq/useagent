@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import type { SortDescriptor } from 'react-aria-components';
 import {
   flexRender,
   getCoreRowModel,
@@ -167,6 +168,11 @@ export function RecentRunsTable({ runs }: { runs: DashRun[] }) {
   const headers = table.getHeaderGroups()[0].headers;
   const rows = table.getRowModel().rows;
   const totalPages = table.getPageCount();
+  const activeSort = sorting[0] ?? { id: 'started', desc: true };
+  const sortDescriptor: SortDescriptor = {
+    column: activeSort.id,
+    direction: activeSort.desc ? 'descending' : 'ascending',
+  };
 
   return (
     <Card className={cx('gap-0 p-0', totalPages <= 1 && 'pb-2')}>
@@ -189,6 +195,10 @@ export function RecentRunsTable({ runs }: { runs: DashRun[] }) {
             aria-label='Recent runs'
             size='sm'
             className='min-w-[760px]'
+            sortDescriptor={sortDescriptor}
+            onSortChange={(descriptor) => {
+              setSorting([{ id: String(descriptor.column), desc: descriptor.direction === 'descending' }]);
+            }}
             onRowAction={(key) => router.push(`/session/${String(key)}`)}
           >
             <TableHeader>
@@ -200,17 +210,14 @@ export function RecentRunsTable({ runs }: { runs: DashRun[] }) {
                     key={header.id}
                     id={header.id}
                     isRowHeader={id === 'run'}
+                    allowsSorting={header.column.getCanSort()}
                     className={COL_WIDTHS[id]}
                   >
                     {header.column.getCanSort() ? (
-                      <button
-                        type='button'
-                        onClick={header.column.getToggleSortingHandler()}
-                        className='flex w-full cursor-pointer items-center justify-end gap-0.5'
-                      >
+                      <span className='flex w-full items-center justify-end gap-0.5'>
                         {label}
                         <SortChevron dir={header.column.getIsSorted()} />
-                      </button>
+                      </span>
                     ) : id === 'duration' ? (
                       <span className='block text-right'>{label}</span>
                     ) : (

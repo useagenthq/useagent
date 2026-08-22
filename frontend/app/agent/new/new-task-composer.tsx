@@ -472,7 +472,7 @@ export function NewTaskComposer({
                    inert (the fieldset is disabled), so the row's middle becomes
                    the thinking indicator until navigation or failure. */
                 <div className="flex min-w-0 flex-1 items-center overflow-hidden px-1.5">
-                  <AgentThinking variant="wave" label="Starting the run" />
+                  <AgentThinking variant="wave" label="Starting the run" showTimer={false} />
                 </div>
               ) : (
                 <div className="flex min-w-0 flex-1 flex-nowrap items-center gap-0.5 overflow-hidden">
