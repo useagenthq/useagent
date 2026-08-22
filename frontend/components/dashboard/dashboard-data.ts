@@ -8,7 +8,7 @@
  * defensively so a shape drift never crashes the dashboard.
  */
 
-import { envelope, toRunStatus, type RunStatus } from '@/lib/runs';
+import { envelope, primaryRepo, toRunStatus, type RunStatus } from '@/lib/runs';
 
 export type { RunStatus };
 
@@ -18,6 +18,8 @@ export interface DashRun {
   prompt: string;
   model: string | null;
   engine: string | null;
+  /** Primary repository for this run, using the authoritative wire fallback order. */
+  repo: string | null;
   status: RunStatus;
   duration_ms: number | null;
   created_at: string | number;
@@ -38,6 +40,7 @@ function toDashRun(value: unknown): DashRun | null {
     prompt: typeof r.prompt === 'string' ? r.prompt : '',
     model: typeof r.model === 'string' ? r.model : null,
     engine: typeof r.engine === 'string' ? r.engine : null,
+    repo: primaryRepo(r),
     status: toRunStatus(r.status),
     duration_ms: typeof r.duration_ms === 'number' ? r.duration_ms : null,
     created_at: (r.created_at as string | number) ?? 0,
@@ -80,9 +83,15 @@ export function computeStats(runs: readonly DashRun[]): RunStats {
   return stats;
 }
 
-function timestamp(value: string | number): number {
+/** Millisecond timestamp of a run `created_at` (string or epoch; 0 on junk). */
+export function timestamp(value: string | number): number {
   const n = typeof value === 'number' ? value : Date.parse(value);
   return Number.isFinite(n) ? n : 0;
+}
+
+/** Newest runs sent to the interactive table; bounds the RSC client payload. */
+export function recentRuns(runs: readonly DashRun[], limit = 80): DashRun[] {
+  return runs.toSorted((a, b) => timestamp(b.created_at) - timestamp(a.created_at)).slice(0, limit);
 }
 
 /** Local YYYY-MM-DD key for a timestamp (0 => empty, sorts before all days). */

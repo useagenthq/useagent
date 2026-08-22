@@ -1,139 +1,173 @@
+"use client";
+
+import { useState } from "react";
+import { RiArrowDownSLine } from "@remixicon/react";
+import { AnimatePresence, motion } from "motion/react";
 import { NumberTicker } from "@/components/shared/number-ticker";
 import { modelStyle } from "@/components/shared/model-mark";
-import { cnExt } from "@/utils/cn";
+import { cx } from "@/utils/cx";
 import { compactNumber, formatDuration } from "@/utils/format";
 import type { FleetData, MachineStats, ModelBurn } from "./fleet-data";
-import { Panel, PanelHeading } from "./panel";
+import { Panel } from "./panel";
 
-const METER_BARS = 16;
+/**
+ * The "Limits" card, on the agent-limits block recipe (stacked meter bar +
+ * expandable breakdown, separator, labelled stat section) but bound to OUR
+ * real GET /api/fleet data: per-model token/cost burn for today and the org's
+ * live Daytona footprint. We track no token budget, reset timers, or sandbox
+ * caps, so the block's "used / max", reset copy, and capped progress bars are
+ * omitted rather than faked; every percentage is a share of today's real burn.
+ */
 
-/** Segmented share meter — how much of today's total token burn this model is. */
-function SegMeter({ value, fill }: { value: number; fill: string }) {
-  const filled = Math.round(METER_BARS * Math.min(1, Math.max(0, value)));
+const EASE = [0.22, 1, 0.36, 1] as const;
+
+/** Thin rounded meter track; children are the fill segments (block recipe). */
+function Bar({ children, className }: { children: React.ReactNode; className?: string }) {
   return (
-    <span className="flex items-center gap-[3px]" aria-hidden>
-      {Array.from({ length: METER_BARS }, (_, index) => (
-        <span
-          key={index}
-          className={cnExt("h-3 w-[3px] rounded-full", index < filled ? fill : "bg-background-tertiary-default")}
-        />
-      ))}
-    </span>
+    <div className={cx("flex h-1.5 w-full gap-px overflow-hidden rounded-full bg-chart-track", className)}>
+      {children}
+    </div>
   );
 }
 
-/** One model's real burn: runs / completion / avg duration / cost + a token
- *  count and a share-of-total meter. */
+/** Breakdown legend row: swatch · model + real meta · tokens · share. */
 function ModelRow({ model, totalTokens }: { model: ModelBurn; totalTokens: number }) {
-  const { Mark, markClass, fill } = modelStyle(model.model);
-  const share = totalTokens > 0 ? model.tokens / totalTokens : 0;
+  const { fill } = modelStyle(model.model);
+  const pct = totalTokens > 0 ? (model.tokens / totalTokens) * 100 : 0;
   const meta = [
     `${model.runs} run${model.runs === 1 ? "" : "s"}`,
     `${model.completed}/${model.runs} done`,
-    model.avgMs != null ? `${formatDuration(model.avgMs)} avg` : null,
+    model.avgMs ? `${formatDuration(model.avgMs)} avg` : null,
+    model.cost > 0 ? `$${model.cost.toFixed(2)}` : null,
   ]
     .filter(Boolean)
     .join(" · ");
 
   return (
-    <div className="flex items-start gap-2.5 py-2">
-      <Mark className={cnExt("mt-0.5 size-[18px] shrink-0", markClass)} aria-hidden />
+    <div className="flex items-start gap-2 py-[5px]">
+      <span className={cx("mt-[5px] size-2.5 shrink-0 rounded-[3px]", fill)} aria-hidden />
       <div className="min-w-0 flex-1">
-        <p className="truncate text-body-2-medium text-text-primary">{model.model}</p>
-        <p className="mt-0.5 truncate text-mono-label text-text-tertiary">{meta}</p>
+        <p className="truncate text-body-regular text-text-primary">{model.model}</p>
+        <p className="mt-0.5 truncate text-body-2-regular text-text-tertiary">{meta}</p>
       </div>
-      <div className="flex shrink-0 flex-col items-end gap-1">
-        <span className="font-mono text-body-2-medium tabular-nums text-text-primary">
-          {model.tokens > 0 ? compactNumber(model.tokens) : "-"}
-        </span>
-        {model.cost > 0 && (
-          <span className="font-mono text-caption-1-medium tabular-nums text-text-tertiary">
-            ${model.cost.toFixed(2)}
+      <span className="text-body-regular text-text-tertiary tabular-nums">
+        {model.tokens > 0 ? compactNumber(model.tokens) : "-"}
+      </span>
+      <span className="w-14 text-right text-body-medium text-text-primary tabular-nums">
+        {model.tokens > 0 ? `${pct.toFixed(1)}%` : "-"}
+      </span>
+    </div>
+  );
+}
+
+/** Token burn · today: stacked per-model meter + expandable breakdown. */
+function BurnSection({ fleet }: { fleet: FleetData | null }) {
+  const [expanded, setExpanded] = useState(false);
+
+  if (fleet == null || fleet.models.length === 0) {
+    return (
+      <div className="flex flex-col py-1">
+        <span className="text-body-medium text-text-secondary">Token burn · today</span>
+        <p className="mt-2 text-body-2-regular text-text-tertiary">
+          {fleet == null ? "Loading usage…" : "No model runs yet today."}
+        </p>
+      </div>
+    );
+  }
+
+  const total = fleet.totalTokens;
+  const share = (n: number) => (n / Math.max(1, total)) * 100;
+
+  return (
+    <div className="flex flex-col">
+      <button
+        type="button"
+        onClick={() => setExpanded((v) => !v)}
+        aria-expanded={expanded}
+        className="group -mx-2 flex cursor-pointer items-center justify-between gap-3 rounded-2lg px-2 py-1 text-left outline-none transition-colors duration-150 hover:bg-background-secondary-hover focus-visible:ring-2 focus-visible:ring-border-focus-ring"
+      >
+        <span className="text-body-medium text-text-secondary">Token burn · today</span>
+        <span className="flex items-center gap-2">
+          <span className="text-body-medium whitespace-nowrap text-text-secondary tabular-nums">
+            <NumberTicker value={total} format={compactNumber} /> tokens
+            <span className="text-text-primary"> · ${fleet.totalCost.toFixed(2)}</span>
           </span>
+          <RiArrowDownSLine
+            className={cx(
+              "size-4 shrink-0 text-text-tertiary transition-transform duration-200 ease-out group-hover:text-text-secondary",
+              expanded && "rotate-180",
+            )}
+            aria-hidden
+          />
+        </span>
+      </button>
+
+      <Bar className="mt-1.5">
+        {fleet.models.map((m) =>
+          m.tokens > 0 ? (
+            <div
+              key={m.model}
+              className={cx("h-full shrink-0 transition-[width] duration-500 ease-out", modelStyle(m.model).fill)}
+              style={{ width: `${share(m.tokens)}%` }}
+              title={`${m.model} · ${compactNumber(m.tokens)}`}
+            />
+          ) : null,
         )}
-        <SegMeter value={share} fill={fill} />
-      </div>
+      </Bar>
+
+      <AnimatePresence initial={false}>
+        {expanded && (
+          <motion.div
+            key="breakdown"
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.32, ease: EASE }}
+            className="-mx-2 overflow-hidden px-2"
+          >
+            <div className="flex flex-col pt-3">
+              {fleet.models.map((m) => (
+                <ModelRow key={m.model} model={m} totalTokens={total} />
+              ))}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
 
-/** A labelled figure in the Machine card. */
-function StatRow({ label, value }: { label: string; value: number }) {
+function MachineRow({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="flex items-center justify-between gap-2">
-      <span className="text-mono-label text-text-secondary">{label}</span>
-      <span className="font-mono text-body-2-medium tabular-nums text-text-primary">{value}</span>
+    <div className="flex items-center justify-between gap-3 py-[5px]">
+      <span className="text-body-regular text-text-primary">{label}</span>
+      <span className="text-body-medium text-text-primary tabular-nums">{children}</span>
     </div>
   );
 }
 
-/** Models · burn — real per-model token/cost aggregates for today. */
-function ModelsPanel({ fleet }: { fleet: FleetData | null }) {
-  return (
-    <Panel>
-      <PanelHeading>Models · burn</PanelHeading>
-      {fleet == null ? (
-        <p className="py-2 text-caption-1-regular text-text-tertiary">Loading usage…</p>
-      ) : fleet.models.length === 0 ? (
-        <p className="py-2 text-caption-1-regular text-text-tertiary">No model runs yet today.</p>
-      ) : (
-        <div className="divide-y divide-border-button-default">
-          {fleet.models.map((model) => (
-            <ModelRow key={model.model} model={model} totalTokens={fleet.totalTokens} />
-          ))}
-        </div>
-      )}
-
-      <div className="mt-4 flex items-end justify-between border-t border-border-button-default pt-4">
-        <div>
-          <p className="font-mono text-headline-medium font-semibold tabular-nums text-text-primary">
-            <NumberTicker value={fleet?.totalTokens ?? 0} format={compactNumber} />
-          </p>
-          <p className="mt-1 text-mono-label text-text-tertiary">tokens today</p>
-        </div>
-        <div className="text-right">
-          <p className="font-mono text-headline-medium tabular-nums text-text-primary">
-            ${(fleet?.totalCost ?? 0).toFixed(2)}
-          </p>
-          <p className="mt-1 text-mono-label text-text-tertiary">cost today</p>
-        </div>
-      </div>
-    </Panel>
-  );
-}
-
-/** Machine — the org's live Daytona footprint + the real snapshot in use. */
-function MachinePanel({ machine }: { machine: MachineStats | null }) {
+/** Machine · snapshot: the org's live Daytona footprint (no caps, so no bars). */
+function MachineSection({ machine }: { machine: MachineStats | null }) {
   const sandboxes = machine?.sandboxes ?? null;
   return (
-    <Panel>
-      <PanelHeading
-        right={
-          <span className="inline-flex items-center rounded-md bg-background-secondary-default px-2 py-0.5 font-mono text-[0.6875rem] text-text-secondary">
-            {machine?.snapshot ?? "-"}
-          </span>
-        }
-      >
-        Machine
-      </PanelHeading>
-
+    <div className="flex flex-col">
+      <div className="flex items-center justify-between gap-3 py-1">
+        <span className="min-w-0 truncate text-body-medium text-text-secondary">
+          Machine{machine ? ` · ${machine.snapshot}` : ""}
+        </span>
+      </div>
       {sandboxes == null ? (
-        <p className="py-2 text-caption-1-regular text-text-tertiary">Live sandbox count updating…</p>
+        <p className="mt-1 text-body-2-regular text-text-tertiary">Live sandbox count updating…</p>
       ) : (
-        <>
-          <div className="mb-4">
-            <p className="font-mono text-headline-medium font-semibold tabular-nums text-text-primary">
-              <NumberTicker value={sandboxes.active} />
-            </p>
-            <p className="mt-1 text-mono-label text-text-tertiary">active sandboxes</p>
-          </div>
-          <div className="space-y-2.5 border-t border-border-button-default pt-4">
-            <StatRow label="Live threads" value={sandboxes.liveThreads} />
-            <StatRow label="Idle · retained" value={sandboxes.idle} />
-          </div>
-        </>
+        <div className="flex flex-col pt-1">
+          <MachineRow label="Active sandboxes">
+            <NumberTicker value={sandboxes.active} />
+          </MachineRow>
+          <MachineRow label="Live threads">{sandboxes.liveThreads}</MachineRow>
+          <MachineRow label="Idle · retained">{sandboxes.idle}</MachineRow>
+        </div>
       )}
-    </Panel>
+    </div>
   );
 }
 
@@ -144,9 +178,10 @@ function MachinePanel({ machine }: { machine: MachineStats | null }) {
  */
 export function LimitsRow({ fleet }: { fleet: FleetData | null }) {
   return (
-    <div className="grid gap-4 lg:grid-cols-2">
-      <ModelsPanel fleet={fleet} />
-      <MachinePanel machine={fleet?.machine ?? null} />
-    </div>
+    <Panel>
+      <BurnSection fleet={fleet} />
+      <div className="my-4 h-px w-full bg-separator-border-strong" />
+      <MachineSection machine={fleet?.machine ?? null} />
+    </Panel>
   );
 }
