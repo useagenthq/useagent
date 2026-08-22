@@ -15,6 +15,7 @@ import {
   getRunWithSteps,
   getStepsApi,
   getThreadForRun,
+  listRunSummaries,
   listRunsWithSteps,
 } from "./repo";
 import {
@@ -648,13 +649,23 @@ runsRoutes.delete("/:id/sandbox", async (c) => {
 // List runs (newest first) with their steps, scoped to the active org. By
 // default only thread roots (one entry per conversation); `?all=1` returns every
 // run in every thread.
-runsRoutes.get("/", async (c) =>
-  c.json({
-    runs: await listRunsWithSteps(c.get("orgId"), {
-      all: c.req.query("all") === "1",
-    }),
-  }),
-);
+runsRoutes.get("/", async (c) => {
+  const all = c.req.query("all") === "1";
+  if (c.req.query("view") === "summary") {
+    const requestedLimit = Number.parseInt(c.req.query("limit") ?? "100", 10);
+    const limit = Number.isFinite(requestedLimit)
+      ? Math.min(100, Math.max(1, requestedLimit))
+      : 100;
+    return c.json({
+      runs: await listRunSummaries(c.get("orgId"), {
+        all,
+        limit,
+        includeActive: c.req.query("include_active") === "1",
+      }),
+    });
+  }
+  return c.json({ runs: await listRunsWithSteps(c.get("orgId"), { all }) });
+});
 
 // Single run + steps (scoped to the active org — cross-org id → 404).
 // `?thread=1` returns the whole thread the run belongs to, oldest→newest.

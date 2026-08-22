@@ -1,4 +1,6 @@
 import { describe, expect, test } from "bun:test";
+import { db } from "../src/db/client";
+import { runs } from "../src/db/schema";
 import { buildThreadPreamble } from "../src/runs/repo";
 import { createOrgSession, fetchApi, json, readSse, waitFor } from "./helpers";
 
@@ -96,6 +98,99 @@ describe("runs", () => {
     const mine = list.body.runs.find((r) => r.id === id);
     expect(mine).toBeDefined();
     expect(mine.steps.length).toBe(8);
+  });
+
+  test("summary view is org-scoped, newest-first, bounded, and compact", async () => {
+    const mine = await createOrgSession("summary-mine");
+    const other = await createOrgSession("summary-other");
+    await runToCompletion({ prompt: "first summary row" }, mine.cookies);
+    const newest = await runToCompletion({ prompt: "second summary row" }, mine.cookies);
+    await runToCompletion({ prompt: "other org row" }, other.cookies);
+
+    const list = await json<{ runs: any[] }>("/api/runs?view=summary&limit=1", {
+      cookies: mine.cookies,
+    });
+    expect(list.status).toBe(200);
+    expect(list.body.runs).toHaveLength(1);
+    expect(list.body.runs[0].id).toBe(newest.id);
+    expect(list.body.runs[0]).toHaveProperty("model");
+    expect(list.body.runs[0]).toHaveProperty("created_at");
+    expect(list.body.runs[0]).toHaveProperty("repos");
+    expect(list.body.runs[0]).not.toHaveProperty("steps");
+    expect(list.body.runs[0]).not.toHaveProperty("resolved_resources");
+    expect(list.body.runs[0]).not.toHaveProperty("engine_session_id");
+  });
+
+  test("summary view can retain active roots older than its completed-run limit", async () => {
+    const session = await createOrgSession("summary-active");
+    const now = Date.now();
+    const completed = Array.from({ length: 101 }, (_, index) => {
+      const id = crypto.randomUUID();
+      return {
+        id,
+        orgId: session.orgId,
+        userId: null,
+        prompt: `completed ${index}`,
+        model: "test-model",
+        engine: "mock" as const,
+        status: "completed" as const,
+        threadId: id,
+        createdAt: new Date(now - index * 1_000),
+        updatedAt: new Date(now - index * 1_000),
+      };
+    });
+    const activeId = crypto.randomUUID();
+    const activeReplyId = crypto.randomUUID();
+    await db.insert(runs).values([
+      ...completed,
+      {
+        id: activeId,
+        orgId: session.orgId,
+        userId: null,
+        prompt: "older active root",
+        model: "test-model",
+        engine: "mock",
+        status: "running",
+        threadId: activeId,
+        createdAt: new Date(now - 1_000_000),
+        updatedAt: new Date(now - 1_000_000),
+      },
+      {
+        id: activeReplyId,
+        orgId: session.orgId,
+        userId: null,
+        prompt: "older active reply",
+        model: "test-model",
+        engine: "mock",
+        status: "queued",
+        parentRunId: completed[0]!.id,
+        threadId: completed[0]!.id,
+        createdAt: new Date(now - 1_100_000),
+        updatedAt: new Date(now - 1_100_000),
+      },
+    ]);
+
+    const bounded = await json<{ runs: any[] }>("/api/runs?view=summary&limit=100", {
+      cookies: session.cookies,
+    });
+    expect(bounded.body.runs).toHaveLength(100);
+    expect(bounded.body.runs.some((run) => run.id === activeId)).toBe(false);
+
+    const sidebar = await json<{ runs: any[] }>(
+      "/api/runs?view=summary&limit=100&include_active=1",
+      { cookies: session.cookies },
+    );
+    expect(sidebar.body.runs).toHaveLength(101);
+    expect(sidebar.body.runs.some((run) => run.id === activeId)).toBe(true);
+    expect(sidebar.body.runs.some((run) => run.id === activeReplyId)).toBe(false);
+
+    const allRuns = await json<{ runs: any[] }>(
+      "/api/runs?view=summary&all=1&limit=100&include_active=1",
+      { cookies: session.cookies },
+    );
+    expect(allRuns.body.runs).toHaveLength(102);
+    expect(allRuns.body.runs.some((run) => run.id === activeId)).toBe(true);
+    expect(allRuns.body.runs.some((run) => run.id === activeReplyId)).toBe(true);
   });
 
   test("GET /api/runs/:id → 404 for unknown id", async () => {

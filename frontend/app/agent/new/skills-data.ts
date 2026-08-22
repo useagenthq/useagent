@@ -35,7 +35,7 @@ function toSkill(value: unknown): Skill | null {
  */
 export async function fetchSkills(): Promise<Skill[]> {
   try {
-    const res = await backendFetch("/api/skills", { cache: "no-store" });
+    const res = await backendFetch("/api/skills?view=picker&limit=2000", { cache: "no-store" });
     if (!res.ok) return [];
     const data: unknown = await res.json();
     const raw = Array.isArray(data)

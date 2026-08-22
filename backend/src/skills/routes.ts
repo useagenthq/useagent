@@ -86,6 +86,33 @@ skillsRoutes.get("/", async (c) => {
       ? // an explicit but unrecognized kind matches nothing (fail closed)
         sql`false`
       : eq(skills.orgId, c.get("orgId"));
+  if (c.req.query("view") === "picker") {
+    const requestedLimit = Number.parseInt(c.req.query("limit") ?? "2000", 10);
+    const limit = Number.isFinite(requestedLimit)
+      ? Math.min(2000, Math.max(1, requestedLimit))
+      : 2000;
+    const rows = await db
+      .select({
+        id: skills.id,
+        name: skills.name,
+        kind: skills.kind,
+        tags: skills.tags,
+        currentVersion: skills.currentVersion,
+      })
+      .from(skills)
+      .where(where)
+      .orderBy(desc(skills.createdAt), desc(skills.id))
+      .limit(limit);
+    return c.json({
+      skills: rows.map((row) => ({
+        id: row.id,
+        name: row.name,
+        kind: row.kind,
+        tags: row.tags,
+        current_version: row.currentVersion,
+      })),
+    });
+  }
   const rows = await db
     .select()
     .from(skills)

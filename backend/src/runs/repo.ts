@@ -74,6 +74,22 @@ export interface ApiRun {
   steps: ApiStep[];
 }
 
+export type ApiRunSummary = Pick<
+  ApiRun,
+  | "id"
+  | "prompt"
+  | "model"
+  | "engine"
+  | "status"
+  | "summary"
+  | "duration_ms"
+  | "repo"
+  | "repos"
+  | "repo_specs"
+  | "created_at"
+  | "updated_at"
+>;
+
 function toStep(s: StepRecord): ApiStep {
   return {
     id: s.id,
@@ -408,6 +424,84 @@ export async function listRunsWithSteps(
     .where(where)
     .orderBy(desc(runs.createdAt), desc(runs.id));
   return withSteps(runRows);
+}
+
+/** Compact projection for navigation/dashboard surfaces. Heavy steps,
+ * uploads, resources, and provider session state stay off this wire. */
+export async function listRunSummaries(
+  orgId: string,
+  opts: { all?: boolean; limit?: number; includeActive?: boolean } = {},
+): Promise<ApiRunSummary[]> {
+  const where = opts.all
+    ? eq(runs.orgId, orgId)
+    : and(eq(runs.orgId, orgId), isNull(runs.parentRunId));
+  const rows = await db
+    .select({
+      id: runs.id,
+      prompt: runs.prompt,
+      model: runs.model,
+      engine: runs.engine,
+      status: runs.status,
+      summary: runs.summary,
+      durationMs: runs.durationMs,
+      repo: runs.repo,
+      repos: runs.repos,
+      createdAt: runs.createdAt,
+      updatedAt: runs.updatedAt,
+    })
+    .from(runs)
+    .where(where)
+    .orderBy(desc(runs.createdAt), desc(runs.id))
+    .limit(opts.limit ?? 100);
+
+  if (opts.includeActive) {
+    const activeRows = await db
+      .select({
+        id: runs.id,
+        prompt: runs.prompt,
+        model: runs.model,
+        engine: runs.engine,
+        status: runs.status,
+        summary: runs.summary,
+        durationMs: runs.durationMs,
+        repo: runs.repo,
+        repos: runs.repos,
+        createdAt: runs.createdAt,
+        updatedAt: runs.updatedAt,
+      })
+      .from(runs)
+      .where(
+        and(
+          where,
+          inArray(runs.status, ["queued", "running"]),
+        ),
+      )
+      .orderBy(desc(runs.createdAt), desc(runs.id));
+    const seen = new Set(rows.map((row) => row.id));
+    for (const row of activeRows) {
+      if (!seen.has(row.id)) rows.push(row);
+    }
+  }
+
+  rows.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime() || b.id.localeCompare(a.id));
+
+  return rows.map((row) => {
+    const specs = row.repos.map(parseRepoRef);
+    return {
+      id: row.id,
+      prompt: row.prompt,
+      model: row.model,
+      engine: row.engine,
+      status: row.status,
+      summary: row.summary,
+      duration_ms: row.durationMs,
+      repo: row.repo ? parseRepoRef(row.repo).repo : null,
+      repos: specs.map((spec) => spec.repo),
+      repo_specs: specs,
+      created_at: row.createdAt.toISOString(),
+      updated_at: row.updatedAt.toISOString(),
+    };
+  });
 }
 
 /** Every run in the thread that `id` belongs to, oldest→newest, with steps.
