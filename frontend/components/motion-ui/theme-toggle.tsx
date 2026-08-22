@@ -36,13 +36,13 @@ html[data-theme-vt="circle"]::view-transition-new(root){mix-blend-mode:normal;an
 `;
 
 /**
- * Theme toggle wired to our next-themes ramp. `light` and `sakura` are the
- * light themes; everything else is a dark palette, so "dark" means any
- * non-light theme. Toggling to dark returns to the default Midnight (`dark`)
- * ramp and toggling to light returns to `light`; the palette picker
- * (ThemeMenu) owns the specific palettes.
+ * Theme toggle wired to our next-themes ramp. `light`, `sakura`, and
+ * `phosphor-light` are the light themes; everything else is a dark palette,
+ * so "dark" means any non-light theme. Toggling to dark returns to the
+ * default Midnight (`dark`) ramp and toggling to light returns to `light`;
+ * the palette picker (ThemeMenu) owns the specific palettes.
  */
-const LIGHT_THEMES = new Set(['light', 'sakura']);
+const LIGHT_THEMES = new Set(['light', 'sakura', 'phosphor-light']);
 
 export function useThemeToggle() {
   const { theme, resolvedTheme, setTheme } = useTheme();
