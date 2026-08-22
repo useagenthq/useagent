@@ -31,7 +31,7 @@ import { PromptInput, PromptInputTextarea } from "@/components/prompt-kit/prompt
 import { BackgroundStatusPill } from "@/components/session-ui/background-status-pill";
 import { ProviderStatusBanner } from "@/components/session-ui/provider-status-banner";
 import { ThreadErrorBanner } from "@/components/session-ui/thread-error-banner";
-import { cnExt as cn } from "@/utils/cn";
+import { cx as cn } from "@/utils/cx";
 
 type Variant = "hero" | "compact";
 
@@ -115,7 +115,7 @@ export type ComposerProps = {
   enableModelPicker?: boolean;
   /** Surface treatment. Both flip with the app theme (never a white island). "white"
    *  is the lightweight Chat-page variant: a softer rounded-3xl pill; the card still
-   *  uses bg-bg-white-0, so it's a clean white pill in light mode and a native dark
+   *  uses bg-background-primary-default, so it's a clean white pill in light mode and a native dark
    *  pill in dark mode. "default" is the standard card used everywhere else. */
   surface?: "default" | "white";
   /** Real MODEL picker for the lightweight Chat surface. When provided, a labeled
@@ -400,7 +400,7 @@ export function Composer({
   }
 
   return (
-    // The composer THEME-FOLLOWS: its card uses bg-bg-white-0 (white in light mode,
+    // The composer THEME-FOLLOWS: its card uses bg-background-primary-default (white in light mode,
     // #20201f in dark) so it reads as the reference's clean white pill in light and
     // a native dark pill in dark - never a white island clashing with the dark page.
     <div ref={rootRef} className={cn("relative w-full", className)}>
@@ -448,7 +448,7 @@ export function Composer({
       {failed && (
         <div
           role="alert"
-          className="text-error-base mb-1.5 flex items-center gap-1.5 px-1 text-paragraph-xs"
+          className="text-red-500 mb-1.5 flex items-center gap-1.5 px-1 text-caption-1-regular"
         >
           <RiErrorWarningLine className="size-3.5 shrink-0" aria-hidden />
           Couldn&apos;t send - your message is restored. Press send to try again.
@@ -459,7 +459,7 @@ export function Composer({
         <div
           role="alert"
           data-testid="stop-error"
-          className="text-error-base mb-1.5 flex items-center gap-1.5 px-1 text-paragraph-xs"
+          className="text-red-500 mb-1.5 flex items-center gap-1.5 px-1 text-caption-1-regular"
         >
           <RiErrorWarningLine className="size-3.5 shrink-0" aria-hidden />
           Couldn&apos;t stop this run: {stopError}. Try again.
@@ -493,8 +493,8 @@ export function Composer({
           the card edge and must not be clipped. */}
       <div
         className={cn(
-          "border-stroke-soft-200 bg-bg-white-0 border",
-          hero ? "rounded-3xl shadow-regular-md" : "rounded-[20px]",
+          "border-border-button-default bg-background-primary-default border",
+          hero ? "rounded-3xl shadow-md" : "rounded-[20px]",
         )}
       >
         {enableUploads ? (
@@ -571,7 +571,7 @@ export function Composer({
                 // +/send buttons - a taller min-height top-aligns the text (textarea
                 // text can't vertical-center), which read as "input slightly up". It
                 // still auto-grows with content up to maxHeight.
-                hero ? "pt-1 text-paragraph-lg" : "min-h-6 text-paragraph-sm leading-6",
+                hero ? "pt-1 text-headline-regular" : "min-h-6 text-body-2-regular leading-6",
               )}
             />
           </div>
@@ -585,7 +585,7 @@ export function Composer({
                 type="button"
                 aria-label="Add files"
                 onClick={() => fileInput.current?.click()}
-                className="border-stroke-soft-200 text-text-sub-600 hover:bg-bg-weak-50 col-start-1 row-start-1 flex size-9 items-center justify-center rounded-full border transition-colors"
+                className="border-border-button-default text-text-secondary hover:bg-background-primary-hover col-start-1 row-start-1 flex size-9 items-center justify-center rounded-full border transition-colors"
               >
                 <RiAddLine className="size-5" aria-hidden />
               </button>
@@ -600,8 +600,8 @@ export function Composer({
                 className={cn(
                   "flex size-9 items-center justify-center rounded-xl transition-colors",
                   toolsOpen
-                    ? "bg-bg-weak-50 text-text-strong-950"
-                    : "border-stroke-soft-200 text-text-sub-600 hover:bg-bg-weak-50 border",
+                    ? "bg-background-secondary-default text-text-primary"
+                    : "border-border-button-default text-text-secondary hover:bg-background-primary-hover border",
                 )}
               >
                 <RiToolsLine className="size-[18px]" aria-hidden />
@@ -618,10 +618,10 @@ export function Composer({
                 aria-label={`Model: ${activeModelOption?.label ?? modelMenu.value}`}
                 onClick={() => setModelMenuOpen((o) => !o)}
                 className={cn(
-                  "flex h-9 items-center gap-1.5 rounded-xl border px-2.5 text-label-sm transition-colors",
+                  "flex h-9 items-center gap-1.5 rounded-xl border px-2.5 text-body-2-medium transition-colors",
                   modelMenuOpen
-                    ? "border-stroke-soft-200 bg-bg-weak-50 text-text-strong-950"
-                    : "border-stroke-soft-200 text-text-sub-600 hover:bg-bg-weak-50",
+                    ? "border-border-button-default bg-background-secondary-default text-text-primary"
+                    : "border-border-button-default text-text-secondary hover:bg-background-primary-hover",
                 )}
               >
                 {activeModelOption && (
@@ -653,7 +653,7 @@ export function Composer({
                 <button
                   type="button"
                   aria-label="Voice input"
-                  className="text-text-sub-600 hover:bg-bg-weak-50 flex size-9 items-center justify-center rounded-xl transition-colors"
+                  className="text-text-secondary hover:bg-background-primary-hover flex size-9 items-center justify-center rounded-xl transition-colors"
                 >
                   <RiMicLine className="size-5" aria-hidden />
                 </button>
@@ -674,10 +674,10 @@ export function Composer({
                     hero ? "h-10 min-w-10" : "h-9 min-w-9",
                     composerAction.kind === "steer" ? "gap-1.5 px-3.5" : hero ? "w-10" : "w-9",
                     composerAction.kind === "stop"
-                      ? "bg-error-base text-static-white hover:opacity-90 disabled:opacity-50"
+                      ? "bg-red-500 text-white hover:opacity-90 disabled:opacity-50"
                       : canSend
-                        ? "bg-primary-base text-static-white hover:bg-primary-darker"
-                        : "bg-bg-soft-200 text-text-soft-400 cursor-not-allowed",
+                        ? "bg-accent-500 text-white hover:bg-accent-600"
+                        : "bg-background-tertiary-default text-text-tertiary cursor-not-allowed",
                   )}
                 >
                   <AnimatePresence initial={false} mode="popLayout">
@@ -690,14 +690,14 @@ export function Composer({
                       className="flex items-center justify-center gap-1.5 whitespace-nowrap"
                     >
                       {actionBusy ? (
-                        <Loader variant="circular" size="sm" className="border-static-white" />
+                        <Loader variant="circular" size="sm" className="border-white" />
                       ) : composerAction.kind === "stop" ? (
                         <RiStopFill className="size-5" aria-hidden />
                       ) : (
                         <>
                           <RiArrowUpLine className="size-5" aria-hidden />
                           {composerAction.kind === "steer" ? (
-                            <span className="text-label-sm">{composerAction.label}</span>
+                            <span className="text-body-2-medium">{composerAction.label}</span>
                           ) : null}
                         </>
                       )}

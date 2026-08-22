@@ -37,11 +37,11 @@ function ShowcaseCell({
     <section
       id={id}
       data-agent-ui-component={id}
-      className={`scroll-mt-6 rounded-3xl border border-stroke-soft-200 bg-bg-white-0 p-5 shadow-regular-xs ${wide ? "lg:col-span-2" : ""}`}
+      className={`scroll-mt-6 rounded-3xl border border-border-button-default bg-background-primary-default p-5 shadow-card ${wide ? "lg:col-span-2" : ""}`}
     >
       <div className="mb-4">
-        <h3 className="text-title-h6 text-text-strong-950">{title}</h3>
-        <p className="mt-1 text-paragraph-sm text-text-sub-600">{description}</p>
+        <h3 className="text-title-h6 text-text-primary">{title}</h3>
+        <p className="mt-1 text-body-2-regular text-text-secondary">{description}</p>
       </div>
       {children}
     </section>
@@ -53,16 +53,16 @@ export function AgentUiShowcase() {
   const childModel = useMemo(() => deriveCanonicalChildren(CHILD_EVENTS), []);
 
   return (
-    <section id="agent-ui" className="scroll-mt-6 border-t border-stroke-soft-200 py-10">
-      <div className="overflow-hidden rounded-3xl bg-bg-strong-950 text-text-white-0 shadow-regular-lg">
+    <section id="agent-ui" className="scroll-mt-6 border-t border-border-button-default py-10">
+      <div className="overflow-hidden rounded-3xl bg-foreground-icon-primary text-background-full shadow-lg">
         <div className="bg-halftone flex flex-col gap-5 p-6 sm:p-8">
-          <span className="flex size-10 items-center justify-center rounded-xl bg-primary-base text-static-white">
+          <span className="flex size-10 items-center justify-center rounded-xl bg-accent-500 text-white">
             <RiSparkling2Line className="size-5" aria-hidden />
           </span>
           <div className="max-w-2xl">
-            <p className="font-mono text-label-xs text-text-disabled-300">beUI.dev × useAgent</p>
-            <h2 className="mt-2 text-title-h4 text-text-white-0">Agent interface primitives</h2>
-            <p className="mt-2 text-paragraph-md text-text-disabled-300">
+            <p className="font-mono text-label-xs text-text-disabled">beUI.dev × useAgent</p>
+            <h2 className="mt-2 text-title-h4 text-background-full">Agent interface primitives</h2>
+            <p className="mt-2 text-paragraph-md text-text-disabled">
               Production components for canonical activity, approvals, artifacts, tool results, and
               live subagents. The examples below use lab-only fixtures; the components accept real
               useAgent view models.
@@ -81,7 +81,7 @@ export function AgentUiShowcase() {
               <a
                 key={href}
                 href={`#${href}`}
-                className="inline-flex items-center gap-1 rounded-full border border-stroke-strong-400 px-3 py-1.5 text-label-xs text-text-white-0 hover:bg-bg-surface-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-base"
+                className="inline-flex items-center gap-1 rounded-full border border-background-full/30 px-3 py-1.5 text-label-xs text-background-full hover:bg-foreground-icon-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-focus-ring"
               >
                 {label}
                 <RiArrowRightUpLine className="size-3" aria-hidden />
@@ -133,7 +133,7 @@ export function AgentUiShowcase() {
           {approvalDecision ? (
             <div
               role="status"
-              className="rounded-2xl bg-success-lighter p-4 text-label-sm text-success-base"
+              className="rounded-2xl bg-status-lime-background p-4 text-body-2-medium text-status-lime-text"
             >
               Lab decision recorded: {approvalDecision}
             </div>

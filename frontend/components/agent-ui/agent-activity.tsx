@@ -30,7 +30,7 @@ import {
   useState,
 } from "react";
 
-import { cn } from "@/utils/cn";
+import { cx } from "@/utils/cx";
 
 // -- motion tokens ---------------------------------------------------------
 const EASE_OUT = [0.16, 1, 0.3, 1] as const;
@@ -141,47 +141,47 @@ function StepRow({ item }: { item: AgentActivityStep }) {
   const state = item.status ?? "complete";
   return (
     <div className="flex min-h-7 items-start gap-2.5 rounded-md px-1.5 py-1">
-      <span aria-hidden="true" className="mt-0.5 grid size-4 shrink-0 place-items-center text-text-soft-400">
+      <span aria-hidden="true" className="mt-0.5 grid size-4 shrink-0 place-items-center text-text-tertiary">
         {state === "complete" ? (
           <RiCheckLine className="size-4" />
         ) : state === "active" ? (
           <span className="relative grid size-3 place-items-center">
             <motion.span
-              className="absolute inset-0 rounded-full bg-text-strong-950/10"
+              className="absolute inset-0 rounded-full bg-foreground-icon-primary/10"
               animate={{ opacity: [0.35, 0.8, 0.35] }}
               transition={{ duration: 1.5, repeat: Number.POSITIVE_INFINITY }}
             />
-            <span className="size-1.5 rounded-full bg-text-strong-950/60" />
+            <span className="size-1.5 rounded-full bg-foreground-icon-primary/60" />
           </span>
         ) : (
           <RiCheckboxBlankCircleLine className="size-3" />
         )}
       </span>
-      <span className={cn("min-w-0 flex-1 leading-5", state === "pending" ? "text-text-soft-400" : "text-text-strong-950")}>
+      <span className={cx("min-w-0 flex-1 leading-5", state === "pending" ? "text-text-tertiary" : "text-text-primary")}>
         {item.label}
       </span>
-      {item.meta ? <span className="shrink-0 leading-5 text-text-soft-400">{item.meta}</span> : null}
+      {item.meta ? <span className="shrink-0 leading-5 text-text-tertiary">{item.meta}</span> : null}
     </div>
   );
 }
 
 function TextRow({ item }: { item: AgentActivityText }) {
-  return <div className="rounded-md px-1.5 py-1 leading-5 text-text-sub-600">{item.content}</div>;
+  return <div className="rounded-md px-1.5 py-1 leading-5 text-text-secondary">{item.content}</div>;
 }
 
 function SearchResultRow({ result }: { result: AgentSearchResult }) {
   const content = (
     <>
-      <span aria-hidden="true" className="grid size-5 shrink-0 place-items-center text-text-sub-600">
+      <span aria-hidden="true" className="grid size-5 shrink-0 place-items-center text-text-secondary">
         {result.icon ?? <RiGlobalLine className="size-3" />}
       </span>
-      <span className="min-w-0 truncate font-medium text-text-strong-950">{result.title}</span>
-      {result.domain ? <span className="min-w-0 truncate text-text-soft-400">{result.domain}</span> : null}
+      <span className="min-w-0 truncate font-medium text-text-primary">{result.title}</span>
+      {result.domain ? <span className="min-w-0 truncate text-text-tertiary">{result.domain}</span> : null}
     </>
   );
-  const className = cn(
+  const className = cx(
     "flex min-h-7 items-center gap-2 rounded-md px-1.5 py-1 text-left outline-none transition-colors",
-    result.url && "focus-visible:ring-2 focus-visible:ring-stroke-strong-950",
+    result.url && "focus-visible:ring-2 focus-visible:ring-border-focus-ring",
   );
   return result.url ? (
     <a href={result.url} className={className}>
@@ -202,7 +202,7 @@ function SearchRow({ item }: { item: AgentActivitySearch }) {
     : { opacity: { duration: 0.18, ease: EASE_OUT }, y: SPRING_LAYOUT, layout: SPRING_LAYOUT };
   return (
     <div className="space-y-0.5">
-      <div className="flex min-h-7 items-center gap-2.5 rounded-md px-1.5 py-1 text-text-sub-600">
+      <div className="flex min-h-7 items-center gap-2.5 rounded-md px-1.5 py-1 text-text-secondary">
         <RiSearchLine aria-hidden="true" className="size-4 shrink-0" />
         <span className="min-w-0 truncate">{item.query}</span>
       </div>
@@ -225,7 +225,7 @@ function SearchRow({ item }: { item: AgentActivitySearch }) {
             animate={visible}
             exit={exit}
             transition={transition}
-            className="px-1.5 py-1 pl-8 text-text-soft-400"
+            className="px-1.5 py-1 pl-8 text-text-tertiary"
           >
             +{item.moreCount} more
           </motion.div>
@@ -246,17 +246,17 @@ function ToolRow({ item }: { item: AgentActivityTool }) {
   const action = item.action.charAt(0).toUpperCase() + item.action.slice(1);
   return (
     <div className="flex min-h-8 min-w-0 items-center gap-2.5 rounded-md px-1.5 py-0.5 leading-5">
-      <span aria-hidden="true" className="grid size-4 shrink-0 place-items-center text-text-soft-400">
+      <span aria-hidden="true" className="grid size-4 shrink-0 place-items-center text-text-tertiary">
         <ActionIcon action={item.action} />
       </span>
-      <span className="shrink-0 font-medium text-text-strong-950">{action}</span>
-      <span className="min-w-0 flex-1 truncate rounded-lg bg-bg-weak-50 px-2.5 py-1 font-mono text-paragraph-xs text-text-soft-400">
+      <span className="shrink-0 font-medium text-text-primary">{action}</span>
+      <span className="min-w-0 flex-1 truncate rounded-lg bg-background-secondary-default px-2.5 py-1 font-mono text-caption-1-regular text-text-tertiary">
         {item.target}
       </span>
       {typeof item.additions === "number" || typeof item.deletions === "number" ? (
         <span className="flex shrink-0 items-center gap-2 font-mono tabular-nums">
-          {typeof item.additions === "number" ? <span className="text-success-base">+{item.additions}</span> : null}
-          {typeof item.deletions === "number" ? <span className="text-error-base">-{item.deletions}</span> : null}
+          {typeof item.additions === "number" ? <span className="text-lime-600">+{item.additions}</span> : null}
+          {typeof item.deletions === "number" ? <span className="text-text-error-primary">-{item.deletions}</span> : null}
         </span>
       ) : null}
     </div>
@@ -275,12 +275,12 @@ function TraceIcon({ kind }: { kind: AgentActivityTrace["kind"] }) {
 function TraceRow({ item }: { item: AgentActivityTrace }) {
   return (
     <div className="grid min-h-8 grid-cols-[1rem_auto_minmax(0,1fr)] items-center gap-2.5 rounded-md px-1.5 py-0.5">
-      <span aria-hidden="true" className="grid size-4 place-items-center text-text-soft-400">
+      <span aria-hidden="true" className="grid size-4 place-items-center text-text-tertiary">
         {item.icon ?? <TraceIcon kind={item.kind} />}
       </span>
-      <span className="font-medium text-text-strong-950">{item.label}</span>
+      <span className="font-medium text-text-primary">{item.label}</span>
       {item.detail ? (
-        <span className="min-w-0 truncate rounded-lg bg-bg-weak-50 px-2.5 py-1 font-mono text-paragraph-xs text-text-soft-400">
+        <span className="min-w-0 truncate rounded-lg bg-background-secondary-default px-2.5 py-1 font-mono text-caption-1-regular text-text-tertiary">
           {item.detail}
         </span>
       ) : (
@@ -451,10 +451,10 @@ export function AgentActivityPanel({
       data-state={working ? "working" : expanded ? "open" : "closed"}
       data-content={contentType}
       aria-busy={working}
-      className={cn("w-full text-paragraph-sm", className)}
+      className={cx("w-full text-body-2-regular", className)}
     >
       {working ? (
-        <div id={triggerId} role="status" className="flex h-7 min-w-0 items-center text-text-sub-600">
+        <div id={triggerId} role="status" className="flex h-7 min-w-0 items-center text-text-secondary">
           {renderWorkingStatus ? renderWorkingStatus({ label: liveLabel, duration }) : <ThinkingShimmer>{liveLabel}</ThinkingShimmer>}
         </div>
       ) : (
@@ -464,7 +464,7 @@ export function AgentActivityPanel({
           aria-expanded={expanded}
           aria-controls={contentId}
           onClick={toggle}
-          className="group flex h-7 min-w-0 items-center gap-1.5 rounded-md text-left font-medium text-text-sub-600 outline-none transition-colors hover:text-text-strong-950 focus-visible:ring-2 focus-visible:ring-stroke-strong-950 focus-visible:ring-offset-2"
+          className="group flex h-7 min-w-0 items-center gap-1.5 rounded-md text-left font-medium text-text-secondary outline-none transition-colors hover:text-text-primary focus-visible:ring-2 focus-visible:ring-border-focus-ring focus-visible:ring-offset-2"
         >
           <span className="truncate">
             {renderCompletedStatus ? renderCompletedStatus({ summary: completedSummary, duration }) : completedSummary}
@@ -473,7 +473,7 @@ export function AgentActivityPanel({
             aria-hidden="true"
             animate={{ rotate: expanded ? 180 : 0 }}
             transition={reduce ? { duration: 0 } : SPRING_SWAP}
-            className="inline-flex shrink-0 text-text-soft-400 group-hover:text-text-strong-950"
+            className="inline-flex shrink-0 text-text-tertiary group-hover:text-text-primary"
           >
             <RiArrowDownSLine className="size-3.5" />
           </motion.span>
@@ -483,7 +483,7 @@ export function AgentActivityPanel({
       <AgentDisclosure id={contentId} role="region" aria-labelledby={triggerId} open={expanded} openHeight={viewportHeight}>
         <div
           ref={viewportRef}
-          className={cn("pr-1 [scrollbar-width:none]", capped && expanded && !working ? "overflow-y-auto" : "overflow-y-hidden")}
+          className={cx("pr-1 [scrollbar-width:none]", capped && expanded && !working ? "overflow-y-auto" : "overflow-y-hidden")}
           style={{ height: viewportHeight, maskImage, WebkitMaskImage: maskImage }}
         >
           <motion.div
@@ -492,7 +492,7 @@ export function AgentActivityPanel({
             initial={false}
             animate={{ y: streamOffset }}
             transition={reduce ? { duration: 0 } : SPRING_LAYOUT}
-            className={cn("space-y-0.5 py-2", contentClassName)}
+            className={cx("space-y-0.5 py-2", contentClassName)}
           >
             <AnimatePresence mode="popLayout">
               {items.map((item) => (
@@ -553,9 +553,9 @@ export function AgentActivityDemo() {
   }, [status]);
 
   return (
-    <div className="flex items-center justify-center rounded-xl bg-bg-weak-50 p-3">
+    <div className="flex items-center justify-center rounded-xl bg-background-secondary-default p-3">
       <div className="w-full max-w-md">
-        <div className="rounded-2xl border border-stroke-soft-200 bg-bg-white-0 p-3 shadow-regular-sm">
+        <div className="rounded-2xl border border-border-button-default bg-background-primary-default p-3 shadow-sm">
           <AgentActivityPanel items={SCRIPT.slice(0, count)} status={status} collapseOnComplete={false} />
         </div>
       </div>

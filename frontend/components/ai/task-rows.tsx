@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { RiArrowDownSLine, RiCheckLine } from "@remixicon/react";
-import { cnExt as cn } from "@/utils/cn";
+import { cx } from "@/utils/cx";
 
 /**
  * Agent task list — a stack of expandable task cards. Each row shows a status
@@ -37,9 +37,9 @@ export interface TaskRowsProps {
 }
 
 const pill: Record<TaskRowStatus, string> = {
-  done: "bg-success-lighter text-success-base",
-  running: "bg-information-lighter text-information-base",
-  pending: "bg-bg-weak-50 text-text-sub-600",
+  done: "bg-status-lime-background text-status-lime-text",
+  running: "bg-status-blue-background text-status-blue-text",
+  pending: "bg-background-secondary-default text-text-secondary",
 };
 
 function StatusGlyph({
@@ -51,7 +51,7 @@ function StatusGlyph({
 }) {
   if (status === "done") {
     return (
-      <span className="animate-ai-fade-up bg-success-base text-static-white flex size-5 items-center justify-center rounded-full">
+      <span className="animate-ai-fade-up bg-lime-500 text-text-white flex size-5 items-center justify-center rounded-full">
         <RiCheckLine className="size-3" aria-hidden />
       </span>
     );
@@ -66,14 +66,14 @@ function StatusGlyph({
         width="24"
         height="24"
         viewBox="0 0 24 24"
-        className={cn("absolute inset-0", status === "running" && "animate-spin")}
+        className={cx("absolute inset-0", status === "running" && "animate-spin")}
       >
         <circle
           cx="12"
           cy="12"
           r="11"
           fill="none"
-          stroke="hsl(var(--stroke-soft-200))"
+          stroke="var(--color-border-button-default)"
           strokeWidth="2"
         />
         {status === "running" && (
@@ -82,7 +82,7 @@ function StatusGlyph({
             cy="12"
             r="11"
             fill="none"
-            stroke="hsl(var(--text-sub-600))"
+            stroke="var(--color-text-secondary)"
             strokeWidth="2"
             strokeLinecap="round"
             strokeDasharray="19 50"
@@ -90,7 +90,7 @@ function StatusGlyph({
         )}
       </svg>
       {typeof index === "number" && (
-        <span className="text-text-strong-950 relative text-[10.5px] font-semibold tabular-nums">
+        <span className="text-text-primary relative text-[10.5px] font-semibold tabular-nums">
           {index}
         </span>
       )}
@@ -104,7 +104,7 @@ function TaskCard({ task, delay }: { task: TaskRowItem; delay: number }) {
 
   return (
     <div
-      className="animate-ai-fade-up border-stroke-soft-200 bg-bg-white-0 shadow-regular-sm overflow-hidden rounded-2xl border"
+      className="animate-ai-fade-up border-border-button-default bg-background-primary-default shadow-sm overflow-hidden rounded-2xl border"
       style={{ animationDelay: `${delay}ms` }}
     >
       <button
@@ -112,26 +112,26 @@ function TaskCard({ task, delay }: { task: TaskRowItem; delay: number }) {
         aria-expanded={hasSteps ? expanded : undefined}
         disabled={!hasSteps}
         onClick={() => hasSteps && setExpanded((e) => !e)}
-        className={cn(
+        className={cx(
           "flex h-11 w-full items-center gap-2.5 px-2.5 text-left transition-colors duration-100",
-          hasSteps ? "hover:bg-bg-weak-50" : "cursor-default",
+          hasSteps ? "hover:bg-background-primary-hover" : "cursor-default",
         )}
       >
         <span className="flex size-6 shrink-0 items-center justify-center">
           <StatusGlyph status={task.status} index={task.index} />
         </span>
-        <span className="text-label-sm text-text-strong-950 min-w-0 flex-1 truncate">
+        <span className="text-body-2-medium text-text-primary min-w-0 flex-1 truncate">
           {task.title}
         </span>
         {task.count && (
-          <span className="text-paragraph-xs text-text-sub-600 shrink-0 tabular-nums">
+          <span className="text-caption-1-regular text-text-secondary shrink-0 tabular-nums">
             {task.count}
           </span>
         )}
         {task.statusLabel && (
           <span
-            className={cn(
-              "inline-flex h-5 shrink-0 items-center rounded-full px-2 text-label-xs",
+            className={cx(
+              "inline-flex h-5 shrink-0 items-center rounded-full px-2 text-caption-1-medium",
               pill[task.status],
             )}
           >
@@ -140,8 +140,8 @@ function TaskCard({ task, delay }: { task: TaskRowItem; delay: number }) {
         )}
         {hasSteps && (
           <RiArrowDownSLine
-            className={cn(
-              "text-text-soft-400 size-4 shrink-0 transition-transform duration-300",
+            className={cx(
+              "text-text-tertiary size-4 shrink-0 transition-transform duration-300",
               expanded && "rotate-180",
             )}
             aria-hidden
@@ -159,17 +159,17 @@ function TaskCard({ task, delay }: { task: TaskRowItem; delay: number }) {
         >
           <div className="overflow-hidden">
             <div className="mb-2.5 grid grid-cols-[24px_1fr] gap-2.5 px-2.5">
-              <span aria-hidden className="bg-stroke-soft-200 mx-auto h-full w-px" />
+              <span aria-hidden className="bg-border-button-default mx-auto h-full w-px" />
               <div className="flex flex-col gap-1.5">
                 {task.substeps!.map((step) => (
                   <div
                     key={step.label}
                     className="flex items-center justify-between gap-3"
                   >
-                    <span className="text-paragraph-xs text-text-sub-600 min-w-0 truncate">
+                    <span className="text-caption-1-regular text-text-secondary min-w-0 truncate">
                       {step.label}
                     </span>
-                    <span className="text-text-soft-400 shrink-0 font-mono text-[11.5px] tabular-nums">
+                    <span className="text-text-tertiary shrink-0 font-mono text-[11.5px] tabular-nums">
                       {step.value}
                     </span>
                   </div>
@@ -185,7 +185,7 @@ function TaskCard({ task, delay }: { task: TaskRowItem; delay: number }) {
 
 export function TaskRows({ tasks, className }: TaskRowsProps) {
   return (
-    <div className={cn("flex w-full flex-col gap-2", className)}>
+    <div className={cx("flex w-full flex-col gap-2", className)}>
       {tasks.map((task, i) => (
         <TaskCard key={`${task.title}-${i}`} task={task} delay={i * 80} />
       ))}

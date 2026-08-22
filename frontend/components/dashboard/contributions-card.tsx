@@ -4,11 +4,11 @@ import type { HeatCell } from './dashboard-data';
 
 /** Single-hue intensity ramp — adapts to both themes via the primary token. */
 const LEVEL: Record<HeatCell['level'], string> = {
-  0: 'bg-bg-weak-50',
-  1: 'bg-primary-base/25',
-  2: 'bg-primary-base/45',
-  3: 'bg-primary-base/70',
-  4: 'bg-primary-base',
+  0: 'bg-background-secondary-default',
+  1: 'bg-accent-500/25',
+  2: 'bg-accent-500/45',
+  3: 'bg-accent-500/70',
+  4: 'bg-accent-500',
 };
 
 const DAY_LABELS = ['', 'Mon', '', 'Wed', '', 'Fri', ''];
@@ -39,10 +39,10 @@ export function ContributionsCard({
     <Card className='gap-4'>
       <div className='flex items-start justify-between gap-2'>
         <div className='flex flex-col gap-0.5'>
-          <p className='text-paragraph-sm text-text-sub-600'>Run activity</p>
+          <p className='text-body-2-regular text-text-secondary'>Run activity</p>
           <div className='flex items-center gap-2'>
-            <p className='text-label-lg font-semibold tracking-[-0.1px] tabular-nums text-text-strong-950'>{total}</p>
-            <span className='text-paragraph-xs text-text-soft-400'>
+            <p className='text-label-lg font-semibold tracking-[-0.1px] tabular-nums text-text-primary'>{total}</p>
+            <span className='text-caption-1-regular text-text-tertiary'>
               runs in the last {weeks} weeks
             </span>
           </div>
@@ -56,7 +56,7 @@ export function ContributionsCard({
             {DAY_LABELS.map((label, i) => (
               <span
                 key={i}
-                className='flex h-3 items-center text-[10px] leading-none text-text-soft-400'
+                className='flex h-3 items-center text-[10px] leading-none text-text-tertiary'
               >
                 {label}
               </span>
@@ -78,18 +78,18 @@ export function ContributionsCard({
         {/* Stats rail */}
         <dl className='flex gap-6'>
           <div className='flex flex-col gap-0.5'>
-            <dt className='text-paragraph-xs text-text-soft-400'>Active days</dt>
-            <dd className='text-label-lg tabular-nums text-text-strong-950'>{activeDays}</dd>
+            <dt className='text-caption-1-regular text-text-tertiary'>Active days</dt>
+            <dd className='text-label-lg tabular-nums text-text-primary'>{activeDays}</dd>
           </div>
           <div className='flex flex-col gap-0.5'>
-            <dt className='text-paragraph-xs text-text-soft-400'>Busiest day</dt>
-            <dd className='text-label-lg tabular-nums text-text-strong-950'>{busiest}</dd>
+            <dt className='text-caption-1-regular text-text-tertiary'>Busiest day</dt>
+            <dd className='text-label-lg tabular-nums text-text-primary'>{busiest}</dd>
           </div>
         </dl>
       </div>
 
       {/* Legend */}
-      <div className='flex items-center justify-end gap-1.5 text-paragraph-xs text-text-soft-400'>
+      <div className='flex items-center justify-end gap-1.5 text-caption-1-regular text-text-tertiary'>
         <span>Less</span>
         {([0, 1, 2, 3, 4] as const).map((l) => (
           <span key={l} className={cn('size-3 rounded-[3px]', LEVEL[l])} />

@@ -25,8 +25,8 @@ export function RecentRunsTable({ runs }: { runs: DashRun[] }) {
     <Card className='gap-0 p-0'>
       <div className='flex items-center justify-between p-4'>
         <div className='flex flex-col gap-0.5'>
-          <p className='text-label-md text-text-strong-950'>Recent runs</p>
-          <p className='text-paragraph-xs text-text-sub-600'>
+          <p className='text-label-md text-text-primary'>Recent runs</p>
+          <p className='text-caption-1-regular text-text-secondary'>
             Latest agent activity across the fleet.
           </p>
         </div>
@@ -34,7 +34,7 @@ export function RecentRunsTable({ runs }: { runs: DashRun[] }) {
 
       {runs.length === 0 ? (
         <div className='flex h-40 items-center justify-center px-4 pb-4'>
-          <p className='text-paragraph-sm text-text-soft-400'>No runs yet.</p>
+          <p className='text-body-2-regular text-text-tertiary'>No runs yet.</p>
         </div>
       ) : (
         <div className='px-4 pb-2'>
@@ -55,7 +55,7 @@ export function RecentRunsTable({ runs }: { runs: DashRun[] }) {
                 return (
                   <Table.Row key={run.id}>
                     <Table.Cell className='max-w-[320px]'>
-                      <span className='block truncate text-label-sm text-text-strong-950'>
+                      <span className='block truncate text-body-2-medium text-text-primary'>
                         {run.prompt || 'Untitled run'}
                       </span>
                     </Table.Cell>
@@ -75,17 +75,17 @@ export function RecentRunsTable({ runs }: { runs: DashRun[] }) {
                       </Badge.Root>
                     </Table.Cell>
                     <Table.Cell>
-                      <span className='whitespace-nowrap text-paragraph-sm text-text-sub-600'>
+                      <span className='whitespace-nowrap text-body-2-regular text-text-secondary'>
                         {run.model ?? '-'}
                       </span>
                     </Table.Cell>
                     <Table.Cell className='text-right'>
-                      <span className='tabular-nums text-paragraph-sm text-text-sub-600'>
+                      <span className='tabular-nums text-body-2-regular text-text-secondary'>
                         {formatDuration(run.duration_ms)}
                       </span>
                     </Table.Cell>
                     <Table.Cell className='text-right'>
-                      <span className='whitespace-nowrap text-paragraph-sm text-text-soft-400'>
+                      <span className='whitespace-nowrap text-body-2-regular text-text-tertiary'>
                         {relativeTime(run.created_at)}
                       </span>
                     </Table.Cell>

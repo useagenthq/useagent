@@ -25,7 +25,7 @@ import {
   useState,
 } from "react";
 
-import { cn } from "@/utils/cn";
+import { cx } from "@/utils/cx";
 
 // -- motion tokens ---------------------------------------------------------
 const EASE_OUT = [0.16, 1, 0.3, 1] as const;
@@ -73,7 +73,7 @@ function AgentDisclosure({
             }
       }
       transition={transition ?? { duration: reduce ? 0 : open ? 0.22 : 0.14, ease: EASE_OUT }}
-      className={cn("overflow-hidden", className)}
+      className={cx("overflow-hidden", className)}
       style={{
         ...style,
         height: open ? openHeight : 0,
@@ -103,7 +103,7 @@ function CitationFavicon({ url, className }: { url?: string; className?: string 
   return (
     <span
       aria-hidden="true"
-      className={cn("grid size-5 shrink-0 place-items-center text-text-sub-600", className)}
+      className={cx("grid size-5 shrink-0 place-items-center text-text-secondary", className)}
     >
       {favicon && failedUrl !== favicon ? (
         <img
@@ -132,12 +132,12 @@ function CitationStack({
   className?: string;
 }) {
   return (
-    <span aria-hidden="true" className={cn("flex -space-x-1.5", className)}>
+    <span aria-hidden="true" className={cx("flex -space-x-1.5", className)}>
       {citations.slice(0, limit).map((citation) => (
         <CitationFavicon
           key={citation.id}
           url={citation.url}
-          className="size-6 rounded-full bg-bg-white-0 ring-2 ring-bg-white-0"
+          className="size-6 rounded-full bg-background-primary-default ring-2 ring-background-primary-default"
         />
       ))}
     </span>
@@ -157,25 +157,25 @@ function CitationRow({
     <>
       <CitationFavicon url={citation.url} />
       <span className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-2 gap-y-0.5">
-        <span className="truncate text-paragraph-sm font-medium text-text-sub-600 transition-colors group-hover/citation:text-text-strong-950">
+        <span className="truncate text-body-2-regular font-medium text-text-secondary transition-colors group-hover/citation:text-text-primary">
           {citation.title}
         </span>
         {citation.domain ? (
-          <span className="min-w-0 truncate text-paragraph-xs text-text-soft-400">{citation.domain}</span>
+          <span className="min-w-0 truncate text-caption-1-regular text-text-tertiary">{citation.domain}</span>
         ) : null}
       </span>
       <span className="flex shrink-0 items-center gap-1.5">
-        <span className="grid size-5 place-items-center rounded-md bg-bg-weak-50 text-[10px] font-semibold tabular-nums text-text-sub-600">
+        <span className="grid size-5 place-items-center rounded-md bg-background-secondary-default text-[10px] font-semibold tabular-nums text-text-secondary">
           {index}
         </span>
         {citation.url ? (
-          <RiExternalLinkLine className="size-3.5 text-text-soft-400 transition-colors group-hover/citation:text-text-sub-600" />
+          <RiExternalLinkLine className="size-3.5 text-text-tertiary transition-colors group-hover/citation:text-text-secondary" />
         ) : null}
       </span>
     </>
   );
   const className =
-    "group/citation flex items-center gap-2 rounded-md px-1.5 py-1 outline-none focus-visible:ring-2 focus-visible:ring-stroke-strong-950";
+    "group/citation flex items-center gap-2 rounded-md px-1.5 py-1 outline-none focus-visible:ring-2 focus-visible:ring-border-focus-ring";
   const id = citationTargetId(idPrefix, citation.id);
 
   return citation.url ? (
@@ -203,7 +203,7 @@ function CitationList({
   const resolvedPrefix = idPrefix ?? `citation-list-${baseId.replace(/:/g, "")}`;
 
   return (
-    <div className={cn("grid gap-0.5", className)}>
+    <div className={cx("grid gap-0.5", className)}>
       <AnimatePresence mode="popLayout">
         {citations.map((citation, index) => (
           <motion.div
@@ -240,7 +240,7 @@ function StreamingCaret() {
       initial={reduce ? { opacity: 1 } : { opacity: 0.3 }}
       animate={reduce ? { opacity: 1 } : { opacity: [0.3, 1, 0.3] }}
       transition={reduce ? { duration: 0 } : { duration: 1, repeat: Infinity, ease: "easeInOut" }}
-      className="ml-0.5 inline-block h-[1em] w-[3px] translate-y-[2px] rounded-full bg-primary-base align-baseline"
+      className="ml-0.5 inline-block h-[1em] w-[3px] translate-y-[2px] rounded-full bg-accent-500 align-baseline"
     />
   );
 }
@@ -297,9 +297,9 @@ function ResponseAction({
       onClick={onClick}
       whileTap={reduce ? undefined : { scale: 0.9 }}
       transition={SPRING_PRESS}
-      className={cn(
-        "grid size-7 place-items-center rounded-md text-text-sub-600 outline-none transition-colors hover:bg-bg-weak-50 hover:text-text-strong-950 focus-visible:ring-2 focus-visible:ring-stroke-strong-950",
-        active && "bg-bg-weak-50 text-text-strong-950",
+      className={cx(
+        "grid size-7 place-items-center rounded-md text-text-secondary outline-none transition-colors hover:bg-background-primary-hover hover:text-text-primary focus-visible:ring-2 focus-visible:ring-border-focus-ring",
+        active && "bg-background-secondary-default text-text-primary",
       )}
     >
       {children}
@@ -377,11 +377,11 @@ export function StreamingResponsePanel({
   );
 
   return (
-    <div data-state={status} aria-busy={streaming} className={cn("w-full", className)}>
+    <div data-state={status} aria-busy={streaming} className={cx("w-full", className)}>
       <div
         aria-live={announce ? "polite" : "off"}
-        className={cn(
-          "text-paragraph-sm leading-6 text-text-strong-950 [&_a]:font-medium [&_a]:text-primary-base [&_a]:underline [&_a]:underline-offset-4 [&_code]:rounded [&_code]:bg-bg-weak-50 [&_code]:px-1 [&_code]:py-0.5 [&_code]:font-mono [&_code]:text-[0.9em] [&_ol]:my-3 [&_ol]:list-decimal [&_ol]:space-y-1 [&_ol]:pl-5 [&_p+p]:mt-3 [&_pre]:my-3 [&_pre]:overflow-x-auto [&_pre]:rounded-xl [&_pre]:border [&_pre]:border-stroke-soft-200 [&_pre]:bg-bg-weak-50 [&_pre]:p-3 [&_pre_code]:bg-transparent [&_pre_code]:p-0 [&_ul]:my-3 [&_ul]:list-disc [&_ul]:space-y-1 [&_ul]:pl-5",
+        className={cx(
+          "text-body-2-regular leading-6 text-text-primary [&_a]:font-medium [&_a]:text-accent-500 [&_a]:underline [&_a]:underline-offset-4 [&_code]:rounded [&_code]:bg-background-secondary-default [&_code]:px-1 [&_code]:py-0.5 [&_code]:font-mono [&_code]:text-[0.9em] [&_ol]:my-3 [&_ol]:list-decimal [&_ol]:space-y-1 [&_ol]:pl-5 [&_p+p]:mt-3 [&_pre]:my-3 [&_pre]:overflow-x-auto [&_pre]:rounded-xl [&_pre]:border [&_pre]:border-border-button-default [&_pre]:bg-background-secondary-default [&_pre]:p-3 [&_pre_code]:bg-transparent [&_pre_code]:p-0 [&_ul]:my-3 [&_ul]:list-disc [&_ul]:space-y-1 [&_ul]:pl-5",
           contentClassName,
         )}
       >
@@ -398,7 +398,7 @@ export function StreamingResponsePanel({
             transition={{ duration: reduce ? 0.12 : 0.22, ease: EASE_OUT }}
             className="mt-3"
           >
-            <div className={cn("flex items-center gap-0.5", actionsClassName)}>
+            <div className={cx("flex items-center gap-0.5", actionsClassName)}>
               {canCopy ? (
                 <ResponseAction label={copied ? "Copied" : "Copy response"} onClick={handleCopy}>
                   {copied ? <RiCheckLine className="size-3.5" /> : <RiFileCopyLine className="size-3.5" />}
@@ -429,7 +429,7 @@ export function StreamingResponsePanel({
                   aria-expanded={currentSourcesOpen}
                   aria-controls={sourcesContentId}
                   onClick={() => setSourcesOpen(!currentSourcesOpen)}
-                  className="group ml-1 inline-flex min-h-7 items-center gap-2 rounded-md px-1.5 text-paragraph-xs text-text-sub-600 outline-none transition-colors hover:text-text-strong-950 focus-visible:ring-2 focus-visible:ring-stroke-strong-950"
+                  className="group ml-1 inline-flex min-h-7 items-center gap-2 rounded-md px-1.5 text-caption-1-regular text-text-secondary outline-none transition-colors hover:text-text-primary focus-visible:ring-2 focus-visible:ring-border-focus-ring"
                 >
                   <CitationStack citations={sources} />
                   <span className="tabular-nums">
@@ -439,7 +439,7 @@ export function StreamingResponsePanel({
                     aria-hidden="true"
                     animate={{ rotate: currentSourcesOpen ? 180 : 0 }}
                     transition={reduce ? { duration: 0 } : SPRING_SWAP}
-                    className="text-text-soft-400 group-hover:text-text-sub-600"
+                    className="text-text-tertiary group-hover:text-text-secondary"
                   >
                     <RiArrowDownSLine className="size-3" />
                   </motion.span>
@@ -452,7 +452,7 @@ export function StreamingResponsePanel({
                 <CitationList
                   citations={sources}
                   idPrefix={resolvedSourcePrefix}
-                  className="mt-2 rounded-xl bg-bg-weak-50 p-2"
+                  className="mt-2 rounded-xl bg-background-secondary-default p-2"
                 />
               </AgentDisclosure>
             ) : null}
@@ -500,9 +500,9 @@ export function StreamingResponseDemo() {
   const shown = TOKENS.slice(0, count).join("");
 
   return (
-    <div className="flex items-center justify-center rounded-xl bg-bg-weak-50 p-3">
+    <div className="flex items-center justify-center rounded-xl bg-background-secondary-default p-3">
       <div className="w-full max-w-md">
-        <div className="rounded-2xl border border-stroke-soft-200 bg-bg-white-0 p-4 shadow-regular-sm">
+        <div className="rounded-2xl border border-border-button-default bg-background-primary-default p-4 shadow-sm">
           <StreamingResponsePanel
             status={done ? "complete" : "streaming"}
             copyText={FULL_TEXT}

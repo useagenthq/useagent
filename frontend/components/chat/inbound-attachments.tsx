@@ -24,7 +24,7 @@ function ImageAttachment({ upload }: { upload: RunUpload }) {
         type="button"
         onClick={() => setExpanded(true)}
         aria-label={`Expand ${upload.name}`}
-        className="block cursor-zoom-in overflow-hidden rounded-xl border border-stroke-soft-200 bg-bg-weak-50 outline-none focus-visible:ring-2 focus-visible:ring-stroke-strong-950"
+        className="block cursor-zoom-in overflow-hidden rounded-xl border border-border-button-default bg-background-secondary-default outline-none focus-visible:ring-2 focus-visible:ring-border-focus-ring"
       >
         {/* biome-ignore lint/performance/noImgElement: dynamic upload bytes
             (/api/uploads/:id/content), bounded + lazy - next/image optimization
@@ -51,11 +51,11 @@ function ImageAttachment({ upload }: { upload: RunUpload }) {
  *  matching the artifact card's AlignUI styling. */
 function FileAttachment({ upload }: { upload: RunUpload }) {
   return (
-    <div className="flex min-w-0 items-center gap-3 rounded-xl border border-stroke-soft-200 bg-bg-weak-50 px-3 py-2.5">
-      <RiFileLine aria-hidden className="size-5 shrink-0 text-text-sub-600" />
+    <div className="flex min-w-0 items-center gap-3 rounded-xl border border-border-button-default bg-background-secondary-default px-3 py-2.5">
+      <RiFileLine aria-hidden className="size-5 shrink-0 text-text-secondary" />
       <div className="min-w-0 flex-1">
-        <p className="truncate text-label-sm text-text-strong-950">{upload.name}</p>
-        <p className="text-paragraph-xs text-text-soft-400">
+        <p className="truncate text-body-2-medium text-text-primary">{upload.name}</p>
+        <p className="text-caption-1-regular text-text-tertiary">
           Attachment · {formatArtifactSize(upload.size_bytes)}
         </p>
       </div>
@@ -64,7 +64,7 @@ function FileAttachment({ upload }: { upload: RunUpload }) {
         download={upload.name}
         aria-label={`Download ${upload.name}`}
         title={`Download ${upload.name}`}
-        className="flex size-8 shrink-0 items-center justify-center rounded-lg text-text-sub-600 outline-none hover:bg-bg-white-0 hover:text-text-strong-950 focus-visible:ring-2 focus-visible:ring-stroke-strong-950"
+        className="flex size-8 shrink-0 items-center justify-center rounded-lg text-text-secondary outline-none hover:bg-background-primary-default hover:text-text-primary focus-visible:ring-2 focus-visible:ring-border-focus-ring"
       >
         <RiDownloadLine aria-hidden className="size-4" />
       </a>

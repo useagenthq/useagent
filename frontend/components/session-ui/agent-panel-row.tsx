@@ -30,7 +30,7 @@ import { RiArrowRightSLine, RiCheckLine } from "@remixicon/react";
 import type { ChildUsage } from "@/components/chat/child-usage";
 import type { ChildStatus } from "@/components/chat/native-events";
 import { type DotTone, StatusDot } from "@/components/shared/status-dot";
-import { cn } from "@/utils/cn";
+import { cx as cn } from "@/utils/cx";
 
 /** Everything the row renders, already resolved against OUR child model. */
 export interface AgentPanelRowModel {
@@ -146,43 +146,43 @@ export function AgentPanelRow({
       data-testid="subagent-card"
       data-session-ui="agent-panel-row"
       aria-label={`Open subagent: ${agent.title}`}
-      className="bg-bg-weak-50 border-stroke-soft-200 hover:bg-bg-soft-200 animate-ai-fade-up flex w-full items-center gap-2 rounded-xl border px-3 py-2 text-left transition-colors"
+      className="bg-background-secondary-default border-border-button-default hover:bg-background-tertiary-hover animate-ai-fade-up flex w-full items-center gap-2 rounded-xl border px-3 py-2 text-left transition-colors"
     >
       <div className="grid min-w-0 flex-1 grid-cols-[0.75rem_minmax(0,1fr)_auto] grid-rows-[1.25rem_1.125rem_1rem] items-center gap-x-1.5">
         <span className="col-start-1 row-start-1 flex items-center">
           <StatusDot tone={STATUS_TONE[agent.status]} pulse={live} />
         </span>
         <span className="col-start-2 row-start-1 flex min-w-0 items-baseline gap-2">
-          <span className="text-label-sm text-text-strong-950 min-w-0 truncate">{agent.title}</span>
+          <span className="text-body-2-medium text-text-primary min-w-0 truncate">{agent.title}</span>
           {role ? (
-            <span className="border-stroke-soft-200 text-text-soft-400 max-w-28 shrink-0 truncate rounded-sm border px-1 font-mono text-[.65rem]">
+            <span className="border-border-button-default text-text-tertiary max-w-28 shrink-0 truncate rounded-sm border px-1 font-mono text-[.65rem]">
               {role}
             </span>
           ) : null}
         </span>
-        <span className="text-text-soft-400 col-start-3 row-start-1 min-w-14 text-right font-mono text-label-xs">
+        <span className="text-text-tertiary col-start-3 row-start-1 min-w-14 text-right font-mono text-caption-1-medium">
           <span className="inline-flex items-center gap-1">
             {agent.elapsed ? <span className="tabular-nums">{agent.elapsed}</span> : null}
             {agent.status === "completed" ? (
-              <RiCheckLine aria-hidden className="text-success-base size-3 shrink-0" />
+              <RiCheckLine aria-hidden className="text-lime-600 size-3 shrink-0" />
             ) : null}
           </span>
         </span>
         <span
           className={cn(
-            "text-paragraph-xs col-start-2 col-end-4 row-start-2 block truncate",
-            agent.status === "failed" ? "text-error-base" : "text-text-sub-600",
+            "text-caption-1-regular col-start-2 col-end-4 row-start-2 block truncate",
+            agent.status === "failed" ? "text-text-error-primary" : "text-text-secondary",
             live && activity && "agent-progress-loading-text",
           )}
         >
           {activity ?? agent.statusLabel}
         </span>
-        <span className="text-text-soft-400 col-start-2 col-end-4 row-start-3 truncate font-mono text-[.7rem] tabular-nums">
+        <span className="text-text-tertiary col-start-2 col-end-4 row-start-3 truncate font-mono text-[.7rem] tabular-nums">
           {metadata.join(" · ")}
         </span>
         <span className="sr-only">{agent.statusLabel}</span>
       </div>
-      <RiArrowRightSLine className="text-text-soft-400 size-4 shrink-0" aria-hidden />
+      <RiArrowRightSLine className="text-text-tertiary size-4 shrink-0" aria-hidden />
     </button>
   );
 }

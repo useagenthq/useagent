@@ -1,6 +1,6 @@
 "use client";
 
-import { cnExt as cn } from "@/utils/cn";
+import { cx } from "@/utils/cx";
 
 export interface LoadingStateProps {
   label?: string;
@@ -18,17 +18,17 @@ const DOT_DELAYS = [90, 180, 270, 0, 90, 180, 90, 180, 270];
  */
 export function LoadingState({ label = "Working", className }: LoadingStateProps) {
   return (
-    <div className={cn("flex w-fit items-center gap-2.5", className)}>
+    <div className={cx("flex w-fit items-center gap-2.5", className)}>
       <span aria-hidden className="grid grid-cols-3 gap-[2px]">
         {DOT_DELAYS.map((delay, index) => (
           <span
             key={index}
-            className="ai-loading-pixel size-1 rounded-[1px] bg-text-strong-950"
+            className="ai-loading-pixel size-1 rounded-[1px] bg-foreground-icon-primary"
             style={{ animationDelay: `${delay}ms` }}
           />
         ))}
       </span>
-      <span className="agent-progress-loading-text text-label-sm">{label}</span>
+      <span className="agent-progress-loading-text text-body-2-medium">{label}</span>
     </div>
   );
 }

@@ -23,7 +23,7 @@ import {
   useState,
 } from "react";
 
-import { cn } from "@/utils/cn";
+import { cx } from "@/utils/cx";
 
 // -- motion tokens ---------------------------------------------------------
 const EASE_OUT = [0.16, 1, 0.3, 1] as const;
@@ -79,7 +79,7 @@ function AgentDisclosure({
             }
       }
       transition={transition ?? { duration: reduce ? 0 : open ? 0.22 : 0.14, ease: EASE_OUT }}
-      className={cn("overflow-hidden", className)}
+      className={cx("overflow-hidden", className)}
       style={{
         ...style,
         height: open ? openHeight : 0,
@@ -119,7 +119,7 @@ function ActionSwapRollText({
 
   return (
     <span
-      className={cn("relative inline-block overflow-hidden whitespace-nowrap align-bottom", className)}
+      className={cx("relative inline-block overflow-hidden whitespace-nowrap align-bottom", className)}
       style={{ width, transition: reduce ? undefined : `width 220ms ${EASE_OUT_CSS}` }}
     >
       <span ref={measureRef} aria-hidden className="invisible inline-block whitespace-nowrap">
@@ -155,7 +155,7 @@ function TodoHeaderIcon({ complete }: { complete: boolean }) {
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0 }}
             transition={reduce ? { duration: 0 } : SPRING_SWAP}
-            className="absolute size-[22px] overflow-visible text-success-base"
+            className="absolute size-[22px] overflow-visible text-lime-600"
           >
             <circle cx="12" cy="12" r="9" fill="currentColor" />
             <motion.path
@@ -177,7 +177,7 @@ function TodoHeaderIcon({ complete }: { complete: boolean }) {
             animate={{ opacity: 1, scale: 1 }}
             exit={reduce ? { opacity: 0 } : { opacity: 0, scale: 0.72 }}
             transition={reduce ? { duration: 0 } : SPRING_SWAP}
-            className="absolute grid place-items-center text-text-sub-600"
+            className="absolute grid place-items-center text-text-secondary"
           >
             <RiListCheck2 className="size-4" />
           </motion.span>
@@ -196,10 +196,10 @@ function TodoStatusIcon({ status, progress }: { status: TodoItemStatus; progress
       aria-hidden="true"
       viewBox="0 0 24 24"
       initial={false}
-      className={cn(
-        "mx-0.5 size-5 shrink-0 overflow-visible text-text-sub-600",
-        status === "in-progress" && "text-text-strong-950",
-        status === "cancelled" && "text-error-base",
+      className={cx(
+        "mx-0.5 size-5 shrink-0 overflow-visible text-text-secondary",
+        status === "in-progress" && "text-text-primary",
+        status === "cancelled" && "text-text-error-primary",
       )}
     >
       <motion.circle
@@ -214,7 +214,7 @@ function TodoStatusIcon({ status, progress }: { status: TodoItemStatus; progress
         initial={false}
         animate={{ fillOpacity: status === "completed" ? 0.06 : 0 }}
         transition={reduce ? { duration: 0 } : { duration: 0.18, ease: EASE_OUT }}
-        className={cn(status === "in-progress" && "opacity-20")}
+        className={cx(status === "in-progress" && "opacity-20")}
       />
       <motion.circle
         cx="12"
@@ -318,8 +318,8 @@ export function TodoListPanel({
   return (
     <section
       aria-label="Agent task list"
-      className={cn(
-        "w-full overflow-hidden rounded-2xl border border-stroke-soft-200 bg-bg-white-0 shadow-regular-sm",
+      className={cx(
+        "w-full overflow-hidden rounded-2xl border border-border-button-default bg-background-primary-default shadow-sm",
         className,
       )}
     >
@@ -329,14 +329,14 @@ export function TodoListPanel({
         aria-expanded={currentOpen}
         aria-controls={contentId}
         onClick={() => setOpen(!currentOpen)}
-        className="group flex h-11 w-full items-center gap-2.5 rounded-2xl px-3.5 text-left outline-none focus-visible:ring-2 focus-visible:ring-stroke-strong-950"
+        className="group flex h-11 w-full items-center gap-2.5 rounded-2xl px-3.5 text-left outline-none focus-visible:ring-2 focus-visible:ring-border-focus-ring"
       >
         <TodoHeaderIcon complete={allComplete} />
-        <h3 className="min-w-0 flex-1 truncate text-label-sm text-text-strong-950">{title}</h3>
+        <h3 className="min-w-0 flex-1 truncate text-body-2-medium text-text-primary">{title}</h3>
         <span
-          className={cn(
-            "shrink-0 text-subheading-xs font-medium tabular-nums text-text-sub-600",
-            allComplete && "text-success-base",
+          className={cx(
+            "shrink-0 text-caption-1-medium font-medium tabular-nums text-text-secondary",
+            allComplete && "text-lime-600",
           )}
         >
           <span className="sr-only">
@@ -352,7 +352,7 @@ export function TodoListPanel({
           aria-hidden="true"
           animate={{ rotate: currentOpen ? 180 : 0 }}
           transition={reduce ? { duration: 0 } : SPRING_SWAP}
-          className="text-text-soft-400 transition-colors group-hover:text-text-sub-600"
+          className="text-text-tertiary transition-colors group-hover:text-text-secondary"
         >
           <RiArrowDownSLine className="size-4" />
         </motion.span>
@@ -382,12 +382,12 @@ export function TodoListPanel({
                       <TodoStatusIcon status={status} progress={item.progress} />
                       <span className="sr-only">{statusLabel(status)}: </span>
                       <span
-                        className={cn(
-                          "min-w-0 flex-1 truncate text-paragraph-sm leading-5",
-                          status === "pending" && "text-text-soft-400",
-                          status === "in-progress" && "text-text-strong-950",
-                          status === "completed" && "text-text-soft-400",
-                          status === "cancelled" && "text-text-soft-400",
+                        className={cx(
+                          "min-w-0 flex-1 truncate text-body-2-regular leading-5",
+                          status === "pending" && "text-text-tertiary",
+                          status === "in-progress" && "text-text-primary",
+                          status === "completed" && "text-text-tertiary",
+                          status === "cancelled" && "text-text-tertiary",
                         )}
                       >
                         <span className="relative inline-block max-w-full">
@@ -402,7 +402,7 @@ export function TodoListPanel({
                         </span>
                       </span>
                       {item.detail ? (
-                        <span className="shrink-0 text-paragraph-sm text-text-soft-400">{item.detail}</span>
+                        <span className="shrink-0 text-body-2-regular text-text-tertiary">{item.detail}</span>
                       ) : null}
                     </motion.li>
                   );
@@ -410,7 +410,7 @@ export function TodoListPanel({
               </AnimatePresence>
             </ol>
           ) : (
-            <p className="px-1.5 py-2 text-paragraph-sm text-text-sub-600">No tasks yet</p>
+            <p className="px-1.5 py-2 text-body-2-regular text-text-secondary">No tasks yet</p>
           )}
         </div>
       </AgentDisclosure>
@@ -445,7 +445,7 @@ export function TodoListDemo() {
   }));
 
   return (
-    <div className="flex items-center justify-center rounded-xl bg-bg-weak-50 p-3">
+    <div className="flex items-center justify-center rounded-xl bg-background-secondary-default p-3">
       <div className="w-full max-w-md">
         <TodoListPanel items={items} title="Refactor plan" collapseOnComplete={false} defaultOpen />
       </div>

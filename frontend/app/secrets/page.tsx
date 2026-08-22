@@ -27,10 +27,10 @@ export default async function SecretsPage() {
     <AppShell sidebar={<LibrarySidebar active="secrets" />}>
       <div className="mx-auto w-full max-w-[880px] px-6 py-8 sm:px-10 sm:py-10">
         <div className="flex items-start gap-2.5">
-          <RiKey2Line aria-hidden className="mt-0.5 size-5 text-text-strong-950" />
+          <RiKey2Line aria-hidden className="mt-0.5 size-5 text-foreground-icon-primary" />
           <div className="flex flex-col gap-0.5">
-            <h1 className="text-display-sm text-text-strong-950">Secrets</h1>
-            <p className="text-paragraph-sm text-text-sub-600">
+            <h1 className="text-title-2-medium text-text-primary">Secrets</h1>
+            <p className="text-body-2-regular text-text-secondary">
               Encrypted values injected into every sandbox this workspace boots - as env vars or
               files
             </p>

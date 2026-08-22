@@ -12,7 +12,148 @@
  * prefixes — reference the semantic tokens and they flip automatically.
  * ------------------------------------------------------------------------- */
 @import 'tailwindcss';
+@import '../styles/theme.css';
+@import '../styles/typography.css';
 @config '../tailwind.config.ts';
+
+/* BoardUI's token files (styles/theme.css) expect --font-inter and
+ * --font-mono-source; app/layout.tsx loads the same faces via next/font as
+ * --font-sans (Inter) and --font-mono (JetBrains Mono). Bridge the names so
+ * theme.css's --font-sans/--font-mono stacks resolve to the loaded fonts.
+ * (Do not remove the next/font variables from layout.tsx: theme.css's
+ * --font-sans references --font-inter, so without the next/font value this
+ * pair would become circular.) */
+:root {
+  --font-inter: var(--font-sans);
+  --font-mono-source: var(--font-mono);
+}
+
+/* Default-palette bridge for styles/theme.css.
+ *
+ * The @config JS theme defines AlignUI `colors` families (neutral, blue, red,
+ * ...). Even under `extend`, Tailwind v4's compat layer stops emitting the
+ * DEFAULT `--color-*` variables for any family the JS config also names - and
+ * BoardUI's semantic tokens in styles/theme.css are built on exactly those
+ * (e.g. --color-text-primary: var(--color-neutral-950)). Re-declare the masked
+ * families here as PLAIN :root variables, verbatim from
+ * node_modules/tailwindcss/theme.css. Plain vars register no utilities, so
+ * `bg-neutral-500` etc. keep resolving through the theme-flipping AlignUI
+ * hsl(var(--neutral-*)) values; these only serve var() chains in theme.css.
+ * Families theme.css overrides in @theme (neutral-100/200/925, blue-400,
+ * slate-200) and families the JS config does not name (lime, rose, cyan,
+ * emerald, indigo, violet, amber, zinc, slate...) are deliberately absent -
+ * Tailwind emits those itself. */
+:root {
+  --color-red-50: oklch(97.1% 0.013 17.38);
+  --color-red-100: oklch(93.6% 0.032 17.717);
+  --color-red-200: oklch(88.5% 0.062 18.334);
+  --color-red-300: oklch(80.8% 0.114 19.571);
+  --color-red-400: oklch(70.4% 0.191 22.216);
+  --color-red-500: oklch(63.7% 0.237 25.331);
+  --color-red-600: oklch(57.7% 0.245 27.325);
+  --color-red-700: oklch(50.5% 0.213 27.518);
+  --color-red-800: oklch(44.4% 0.177 26.899);
+  --color-red-900: oklch(39.6% 0.141 25.723);
+  --color-red-950: oklch(25.8% 0.092 26.042);
+  --color-orange-50: oklch(98% 0.016 73.684);
+  --color-orange-100: oklch(95.4% 0.038 75.164);
+  --color-orange-200: oklch(90.1% 0.076 70.697);
+  --color-orange-300: oklch(83.7% 0.128 66.29);
+  --color-orange-400: oklch(75% 0.183 55.934);
+  --color-orange-500: oklch(70.5% 0.213 47.604);
+  --color-orange-600: oklch(64.6% 0.222 41.116);
+  --color-orange-700: oklch(55.3% 0.195 38.402);
+  --color-orange-800: oklch(47% 0.157 37.304);
+  --color-orange-900: oklch(40.8% 0.123 38.172);
+  --color-orange-950: oklch(26.6% 0.079 36.259);
+  --color-yellow-50: oklch(98.7% 0.026 102.212);
+  --color-yellow-100: oklch(97.3% 0.071 103.193);
+  --color-yellow-200: oklch(94.5% 0.129 101.54);
+  --color-yellow-300: oklch(90.5% 0.182 98.111);
+  --color-yellow-400: oklch(85.2% 0.199 91.936);
+  --color-yellow-500: oklch(79.5% 0.184 86.047);
+  --color-yellow-600: oklch(68.1% 0.162 75.834);
+  --color-yellow-700: oklch(55.4% 0.135 66.442);
+  --color-yellow-800: oklch(47.6% 0.114 61.907);
+  --color-yellow-900: oklch(42.1% 0.095 57.708);
+  --color-yellow-950: oklch(28.6% 0.066 53.813);
+  --color-green-50: oklch(98.2% 0.018 155.826);
+  --color-green-100: oklch(96.2% 0.044 156.743);
+  --color-green-200: oklch(92.5% 0.084 155.995);
+  --color-green-300: oklch(87.1% 0.15 154.449);
+  --color-green-400: oklch(79.2% 0.209 151.711);
+  --color-green-500: oklch(72.3% 0.219 149.579);
+  --color-green-600: oklch(62.7% 0.194 149.214);
+  --color-green-700: oklch(52.7% 0.154 150.069);
+  --color-green-800: oklch(44.8% 0.119 151.328);
+  --color-green-900: oklch(39.3% 0.095 152.535);
+  --color-green-950: oklch(26.6% 0.065 152.934);
+  --color-teal-50: oklch(98.4% 0.014 180.72);
+  --color-teal-100: oklch(95.3% 0.051 180.801);
+  --color-teal-200: oklch(91% 0.096 180.426);
+  --color-teal-300: oklch(85.5% 0.138 181.071);
+  --color-teal-400: oklch(77.7% 0.152 181.912);
+  --color-teal-500: oklch(70.4% 0.14 182.503);
+  --color-teal-600: oklch(60% 0.118 184.704);
+  --color-teal-700: oklch(51.1% 0.096 186.391);
+  --color-teal-800: oklch(43.7% 0.078 188.216);
+  --color-teal-900: oklch(38.6% 0.063 188.416);
+  --color-teal-950: oklch(27.7% 0.046 192.524);
+  --color-sky-50: oklch(97.7% 0.013 236.62);
+  --color-sky-100: oklch(95.1% 0.026 236.824);
+  --color-sky-200: oklch(90.1% 0.058 230.902);
+  --color-sky-300: oklch(82.8% 0.111 230.318);
+  --color-sky-400: oklch(74.6% 0.16 232.661);
+  --color-sky-500: oklch(68.5% 0.169 237.323);
+  --color-sky-600: oklch(58.8% 0.158 241.966);
+  --color-sky-700: oklch(50% 0.134 242.749);
+  --color-sky-800: oklch(44.3% 0.11 240.79);
+  --color-sky-900: oklch(39.1% 0.09 240.876);
+  --color-sky-950: oklch(29.3% 0.066 243.157);
+  --color-blue-50: oklch(97% 0.014 254.604);
+  --color-blue-100: oklch(93.2% 0.032 255.585);
+  --color-blue-200: oklch(88.2% 0.059 254.128);
+  --color-blue-300: oklch(80.9% 0.105 251.813);
+  --color-blue-500: oklch(62.3% 0.214 259.815);
+  --color-blue-600: oklch(54.6% 0.245 262.881);
+  --color-blue-700: oklch(48.8% 0.243 264.376);
+  --color-blue-800: oklch(42.4% 0.199 265.638);
+  --color-blue-900: oklch(37.9% 0.146 265.522);
+  --color-blue-950: oklch(28.2% 0.091 267.935);
+  --color-purple-50: oklch(97.7% 0.014 308.299);
+  --color-purple-100: oklch(94.6% 0.033 307.174);
+  --color-purple-200: oklch(90.2% 0.063 306.703);
+  --color-purple-300: oklch(82.7% 0.119 306.383);
+  --color-purple-400: oklch(71.4% 0.203 305.504);
+  --color-purple-500: oklch(62.7% 0.265 303.9);
+  --color-purple-600: oklch(55.8% 0.288 302.321);
+  --color-purple-700: oklch(49.6% 0.265 301.924);
+  --color-purple-800: oklch(43.8% 0.218 303.724);
+  --color-purple-900: oklch(38.1% 0.176 304.987);
+  --color-purple-950: oklch(29.1% 0.149 302.717);
+  --color-pink-50: oklch(97.1% 0.014 343.198);
+  --color-pink-100: oklch(94.8% 0.028 342.258);
+  --color-pink-200: oklch(89.9% 0.061 343.231);
+  --color-pink-300: oklch(82.3% 0.12 346.018);
+  --color-pink-400: oklch(71.8% 0.202 349.761);
+  --color-pink-500: oklch(65.6% 0.241 354.308);
+  --color-pink-600: oklch(59.2% 0.249 0.584);
+  --color-pink-700: oklch(52.5% 0.223 3.958);
+  --color-pink-800: oklch(45.9% 0.187 3.815);
+  --color-pink-900: oklch(40.8% 0.153 2.432);
+  --color-pink-950: oklch(28.4% 0.109 3.907);
+  --color-neutral-50: oklch(98.5% 0 none);
+  --color-neutral-300: oklch(87% 0 none);
+  --color-neutral-400: oklch(70.8% 0 none);
+  --color-neutral-500: oklch(55.6% 0 none);
+  --color-neutral-600: oklch(43.9% 0 none);
+  --color-neutral-700: oklch(37.1% 0 none);
+  --color-neutral-800: oklch(26.9% 0 none);
+  --color-neutral-900: oklch(20.5% 0 none);
+  --color-neutral-950: oklch(14.5% 0 none);
+  --color-black: #000;
+  --color-white: #fff;
+}
 
 @layer base {
   /*#region Colors */
@@ -24,43 +165,45 @@
    * with the `.dark` block below (both token blocks extend it). */
   :root,
   .theme-light {
-    --brand-orbit: 205.82 92.18% 64.9%;
-    --neutral-950: 221.54 31.71% 8.04%;
-    --neutral-900: 226.15 21.31% 11.96%;
-    --neutral-800: 227.14 17.07% 16.08%;
-    --neutral-700: 221.25 15.69% 20%;
-    --neutral-600: 222 10.87% 36.08%;
-    --neutral-500: 221.05 7.76% 48.04%;
-    --neutral-400: 220 11.48% 64.12%;
-    --neutral-300: 218.57 15.22% 81.96%;
-    --neutral-200: 220 17.65% 90%;
-    --neutral-100: 210 30% 96.08%;
-    --neutral-50: 216 33.33% 97.06%;
+    --brand-orbit: 212.06 100% 60%; /* #3392ff BoardUI accent (blue-400) */
+    /* BoardUI neutral ramp (pure grays; Tailwind v4 neutrals with BoardUI's
+       #f7f7f7 / #ebebeb overrides and #0a0a0a at the 950 anchor). Unconverted
+       AlignUI surfaces keep their utility names but resolve to these values. */
+    --neutral-950: 0 0% 3.92%; /* #0a0a0a */
+    --neutral-900: 0 0% 9.02%; /* #171717 */
+    --neutral-800: 0 0% 14.9%; /* #262626 */
+    --neutral-700: 0 0% 25.1%; /* #404040 */
+    --neutral-600: 0 0% 32.16%; /* #525252 */
+    --neutral-500: 0 0% 45.1%; /* #737373 */
+    --neutral-400: 0 0% 63.14%; /* #a1a1a1 */
+    --neutral-300: 0 0% 83.14%; /* #d4d4d4 */
+    --neutral-200: 0 0% 92.16%; /* #ebebeb */
+    --neutral-100: 0 0% 96.86%; /* #f7f7f7 */
+    --neutral-50: 0 0% 98.04%; /* #fafafa */
     --neutral-0: 0 0% 100%;
 
-    --neutral-alpha-24: 220 11.48% 64.12% / 24%;
-    --neutral-alpha-16: 220 11.48% 64.12% / 16%;
-    --neutral-alpha-10: 220 11.48% 64.12% / 10%;
+    --neutral-alpha-24: 0 0% 63.14% / 24%;
+    --neutral-alpha-16: 0 0% 63.14% / 16%;
+    --neutral-alpha-10: 0 0% 63.14% / 10%;
 
-    /* Azure/sky accent (retuned from indigo 228deg -> ~198deg): matches the
-       reference bright-blue sampled at ~#0EB8F6 = hsl(197 92% 51%). Anchored at
-       -500; the ladder stays coherent so every blue accent (send, links, status,
-       loading dots, model tints) picks up the azure. */
-    --blue-950: 201 80% 16%;
-    --blue-900: 201 80% 24%;
-    --blue-800: 200 90% 28%;
-    --blue-700: 199 96% 33%;
-    --blue-600: 199 95% 42%;
-    --blue-500: 197 92% 51%;
-    --blue-400: 198 94% 62%;
-    --blue-300: 199 95% 74%;
-    --blue-200: 201 94% 86%;
-    --blue-100: 204 94% 93%;
-    --blue-50: 204 100% 96%;
+    /* BoardUI accent blues (Tailwind v4 blue with BoardUI's #3392ff at -400).
+       Every blue accent on unconverted surfaces (send, links, status, loading
+       dots, model tints) picks up the BoardUI accent through this ladder. */
+    --blue-950: 226.88 59.26% 21.18%; /* #162456 */
+    --blue-900: 224.74 67.06% 33.33%; /* #1c398e */
+    --blue-800: 226.79 76.08% 40.98%; /* #193cb8 */
+    --blue-700: 225.43 84% 49.02%; /* #1447e6 */
+    --blue-600: 221.3 97.47% 53.53%; /* #155dfc */
+    --blue-500: 216.23 100% 58.43%; /* #2b7fff */
+    --blue-400: 212.06 100% 60%; /* #3392ff */
+    --blue-300: 210.8 100% 77.84%; /* #8ec5ff */
+    --blue-200: 213.23 100% 87.25%; /* #bedbff */
+    --blue-100: 214.29 94.59% 92.75%; /* #dbeafe */
+    --blue-50: 213.75 100% 96.86%; /* #eff6ff */
 
-    --blue-alpha-24: 227.93 100% 63.92% / 24%;
-    --blue-alpha-16: 227.93 100% 63.92% / 16%;
-    --blue-alpha-10: 227.93 100% 63.92% / 10%;
+    --blue-alpha-24: 216.23 100% 58.43% / 24%;
+    --blue-alpha-16: 216.23 100% 58.43% / 16%;
+    --blue-alpha-10: 216.23 100% 58.43% / 10%;
 
     --orange-950: 23.72 70.49% 23.92%;
     --orange-900: 24 70.55% 31.96%;
@@ -222,11 +365,13 @@
     --bg-surface-800: var(--neutral-800);
     --bg-sub-300: var(--neutral-300);
     --bg-soft-200: var(--neutral-200);
-    --bg-weak-50: var(--neutral-50);
+    /* neutral-100, not -50: BoardUI's background/secondary (#f7f7f7 canvas). */
+    --bg-weak-50: var(--neutral-100);
     --bg-white-0: var(--neutral-0);
 
     --text-strong-950: var(--neutral-950);
-    --text-sub-600: var(--neutral-600);
+    /* neutral-500, not -600: BoardUI's text/secondary (#737373). */
+    --text-sub-600: var(--neutral-500);
     --text-soft-400: var(--neutral-400);
     --text-disabled-300: var(--neutral-300);
     --text-white-0: var(--neutral-0);
@@ -288,46 +433,50 @@
   }
 
   .dark {
-    --brand-orbit: 205.82 92.18% 64.9%;
+    --brand-orbit: 212.06 100% 60%; /* #3392ff BoardUI accent (blue-400) */
     /* -------------------------------------------------------------------
-     * Tokyo Night dark theme.
+     * BoardUI dark theme.
      *
-     * Values are mapped from SunkenInTime/t3-themes' Tokyo Night JSON through
-     * the existing semantic token system. Components continue to consume
-     * semantic bg/text/stroke/status tokens rather than page-specific colors.
+     * The BoardUI gray scale mapped through the existing inverted dark ramp:
+     * canvas = neutral-925 #121212 (bg-white-0), raised = neutral-800 #262626
+     * (bg-sub-300), chrome = neutral-900 #171717 (bg-soft-200/bg-weak-50),
+     * text = neutral-50 #fafafa. Components continue to consume semantic
+     * bg/text/stroke/status tokens rather than page-specific colors.
      * ------------------------------------------------------------------- */
     --neutral-0: 0 0% 100%;
-    --neutral-50: 228.68 72.6% 85.69%; /* #c0caf5 */
-    --neutral-100: 229.33 35.43% 75.1%; /* #a9b1d6 */
-    --neutral-200: 232.73 13.92% 53.53%; /* #787c99 */
-    --neutral-300: 230.32 16.06% 37.84%; /* #515670 */
-    --neutral-400: 232.17 16.31% 27.65%; /* #3b3e52 */
-    --neutral-500: 228.57 20% 41.18%; /* #545c7e */
-    --neutral-600: 225.33 21.74% 40.59%; /* #515c7e */
-    --neutral-700: 234 18.52% 15.88%; /* #1e202e */
-    --neutral-800: 235 18.75% 12.55%; /* #1a1b26 */
-    --neutral-900: 240 15.38% 10.2%; /* #16161e */
-    --neutral-950: 240 11.11% 7.06%; /* #101014 */
+    --neutral-50: 0 0% 98.04%; /* #fafafa - primary text */
+    --neutral-100: 0 0% 63.14%; /* #a1a1a1 - inverted surface / faded-dark */
+    --neutral-200: 0 0% 45.1%; /* #737373 - BoardUI dark text/secondary */
+    --neutral-300: 0 0% 32.16%; /* #525252 - BoardUI dark text/tertiary */
+    --neutral-400: 0 0% 25.1%; /* #404040 - BoardUI dark border/default */
+    --neutral-500: 0 0% 45.1%; /* #737373 */
+    --neutral-600: 0 0% 32.16%; /* #525252 */
+    --neutral-700: 0 0% 14.9%; /* #262626 - raised surface */
+    --neutral-800: 0 0% 7.06%; /* #121212 - canvas (BoardUI neutral-925) */
+    --neutral-900: 0 0% 9.02%; /* #171717 - chrome */
+    --neutral-950: 0 0% 3.92%; /* #0a0a0a */
 
-    --neutral-alpha-24: 232.73 13.92% 53.53% / 24%;
-    --neutral-alpha-16: 232.73 13.92% 53.53% / 16%;
-    --neutral-alpha-10: 232.73 13.92% 53.53% / 10%;
+    --neutral-alpha-24: 0 0% 45.1% / 24%;
+    --neutral-alpha-16: 0 0% 45.1% / 16%;
+    --neutral-alpha-10: 0 0% 45.1% / 10%;
 
-    --blue-950: 223.2 45.05% 43.53%; /* #3d59a1 */
-    --blue-900: 220.36 32.54% 33.14%; /* #394b70 */
-    --blue-800: 224 37.5% 25.1%; /* #29355a */
-    --blue-700: 217.5 37.21% 57.84%; /* #6183bb */
-    --blue-600: 220.8 88.65% 72.35%; /* #7aa2f7 */
-    --blue-500: 220.8 88.65% 72.35%; /* #7aa2f7 */
-    --blue-400: 202.15 100% 74.51%; /* #7dcfff */
-    --blue-300: 189 73.17% 51.76%; /* #2ac3de */
-    --blue-200: 189.02 86.93% 39.02%; /* #0da0ba */
-    --blue-100: 223.2 45.05% 43.53% / 24%;
-    --blue-50: 223.2 45.05% 43.53% / 16%;
+    /* BoardUI's accent primitives are theme-invariant; only the -100/-50 tint
+       steps go translucent so light-pastel chips don't glow on the dark canvas. */
+    --blue-950: 226.88 59.26% 21.18%; /* #162456 */
+    --blue-900: 224.74 67.06% 33.33%; /* #1c398e */
+    --blue-800: 226.79 76.08% 40.98%; /* #193cb8 */
+    --blue-700: 225.43 84% 49.02%; /* #1447e6 */
+    --blue-600: 221.3 97.47% 53.53%; /* #155dfc */
+    --blue-500: 216.23 100% 58.43%; /* #2b7fff */
+    --blue-400: 212.06 100% 60%; /* #3392ff */
+    --blue-300: 210.8 100% 77.84%; /* #8ec5ff */
+    --blue-200: 213.23 100% 87.25%; /* #bedbff */
+    --blue-100: 216.23 100% 58.43% / 24%;
+    --blue-50: 216.23 100% 58.43% / 16%;
 
-    --blue-alpha-24: 223.2 45.05% 43.53% / 24%;
-    --blue-alpha-16: 223.2 45.05% 43.53% / 16%;
-    --blue-alpha-10: 223.2 45.05% 43.53% / 10%;
+    --blue-alpha-24: 216.23 100% 58.43% / 24%;
+    --blue-alpha-16: 216.23 100% 58.43% / 16%;
+    --blue-alpha-10: 216.23 100% 58.43% / 10%;
 
     --orange-600: 22.45 100% 69.61%; /* #ff9e64 */
     --orange-500: 22.45 100% 69.61%; /* #ff9e64 */
@@ -393,9 +542,10 @@
     --teal-alpha-16: 170.68 58.19% 65.29% / 16%;
     --teal-alpha-10: 170.68 58.19% 65.29% / 10%;
 
-    --primary-dark: var(--blue-950);
-    --primary-darker: var(--blue-800);
-    --primary-base: var(--blue-950);
+    /* BoardUI keeps the same accent CTA in dark (no muted primary). */
+    --primary-dark: var(--blue-800);
+    --primary-darker: var(--blue-700);
+    --primary-base: var(--blue-500);
     --primary-alpha-24: var(--blue-alpha-24);
     --primary-alpha-16: var(--blue-alpha-16);
     --primary-alpha-10: var(--blue-alpha-10);
@@ -404,18 +554,18 @@
     --bg-surface-800: var(--neutral-100);
     --bg-sub-300: var(--neutral-700);
     --bg-soft-200: var(--neutral-900);
-    --bg-weak-50: 240 15.38% 8.82%; /* #13131a — Tokyo Night muted */
+    --bg-weak-50: 0 0% 9.02%; /* #171717 - BoardUI dark background/secondary */
     --bg-white-0: var(--neutral-800);
 
     --text-strong-950: var(--neutral-50);
-    --text-sub-600: var(--neutral-100);
-    --text-soft-400: var(--neutral-200);
-    --text-disabled-300: var(--neutral-300);
+    --text-sub-600: var(--neutral-200); /* #737373 - BoardUI dark text/secondary */
+    --text-soft-400: var(--neutral-300); /* #525252 - BoardUI dark text/tertiary */
+    --text-disabled-300: var(--neutral-400);
     --text-white-0: var(--neutral-800);
 
     --stroke-strong-950: var(--neutral-50);
     --stroke-sub-300: var(--neutral-400);
-    --stroke-soft-200: 229.09 23.4% 21.37%; /* #292e42 — Tokyo Night border */
+    --stroke-soft-200: 0 0% 14.9%; /* #262626 - BoardUI dark separator */
     --stroke-white-0: var(--neutral-800);
 
     --faded-dark: var(--neutral-100);
@@ -424,7 +574,7 @@
     --faded-lighter: var(--neutral-alpha-16);
 
     --information-dark: var(--blue-400);
-    --information-base: var(--blue-950);
+    --information-base: var(--blue-500);
     --information-light: var(--blue-alpha-24);
     --information-lighter: var(--blue-alpha-16);
 
@@ -468,7 +618,7 @@
     --stable-light: var(--teal-alpha-24);
     --stable-lighter: var(--teal-alpha-16);
 
-    --overlay: 240 11.11% 7.06% / 72%; /* #101014 scrim */
+    --overlay: 0 0% 3.92% / 72%; /* #0a0a0a scrim */
 
     --social-apple: 0 0% 100%;
     --social-twitter: 0 0% 100%;
@@ -927,6 +1077,425 @@
   }
 }
 
+/* ===========================================================================
+ * BoardUI semantic tokens for the Aura + Harbor themes.
+ *
+ * styles/theme.css (vendor, untouched) only flips the BoardUI semantic slots
+ * under `.dark`; `.aura`/`.harbor` are standalone classes, so without these
+ * blocks every BoardUI-converted surface (bg-background-*, text-text-*,
+ * border-border-*, foreground-icon-*, shadow-*) stayed LIGHT while the legacy
+ * AlignUI vars above went dark. Each block below overrides the SAME slot list
+ * as theme.css's `.dark` (plus text-secondary and the accent ramp, which
+ * `.dark` inherits from light but which must re-tint here), deriving values
+ * from the theme's OWN AlignUI ramps in this file, so both token systems stay
+ * in lockstep per theme:
+ *   aura   - violet-tinted dark (canvas #15141b, accent #a277ff violet)
+ *   harbor - blue-slate dark    (canvas #0b0e14, accent #7aa2f7 periwinkle)
+ * MUST stay un-layered: theme.css's `:root` semantic block is un-layered, and
+ * an @layer'd override would lose to it regardless of specificity.
+ * ========================================================================= */
+.aura {
+  /* Accent ramp -> Aura violet. Re-points everything accent-driven (primary
+   * button gradients, focus ring, nav-selected/checkbox shadows, switch-on
+   * chips) at the AlignUI violet ramp. 500 mirrors AlignUI --primary-base
+   * (blue-950 #6544ad: the vivid #a277ff is too light under white text). */
+  --color-accent-50:  hsl(var(--blue-50));
+  --color-accent-100: hsl(var(--blue-100));
+  --color-accent-200: hsl(var(--blue-200));
+  --color-accent-300: hsl(var(--blue-300));
+  --color-accent-400: hsl(var(--blue-700));  /* #8762d8 hover-top */
+  --color-accent-500: hsl(var(--blue-950));  /* #6544ad primary base */
+  --color-accent-600: hsl(var(--blue-800));  /* #4f368b */
+  --color-accent-700: hsl(var(--blue-900));  /* #412d73 */
+  --color-accent-800: hsl(var(--blue-800));
+  --color-accent-900: hsl(var(--blue-900));
+  --color-accent-950: hsl(var(--blue-950));
+
+  /* Foreground */
+  --color-foreground-full:            hsl(var(--neutral-400));
+  --color-foreground-icon-primary:    hsl(var(--neutral-50));
+  --color-foreground-icon-hover:      hsl(var(--neutral-0));
+  --color-foreground-icon-error:      hsl(var(--red-400));
+  --color-foreground-icon-tertiary:   hsl(var(--neutral-200));
+  --color-foreground-icon-quaternary: hsl(var(--neutral-300));
+  --color-foreground-icon-disabled:   hsl(259.96 19.06% 24.71%); /* #3b334b */
+  --color-foreground-disabled:        hsl(var(--neutral-400));
+  --color-foreground-disabled-danger: hsl(var(--red-400));
+  --color-input-disabled-foreground:  hsl(var(--neutral-300));
+  --color-icon-button-disabled-foreground: hsl(var(--neutral-200));
+  --color-button-primary-disabled-foreground: hsl(var(--neutral-200));
+
+  /* Text (secondary is not in theme.css's .dark - its light value is a mid
+   * gray that survives Midnight - but Aura's tinted secondary must land). */
+  --color-text-primary:   hsl(var(--neutral-50));
+  --color-text-secondary: hsl(var(--neutral-100));
+  --color-text-tertiary:  hsl(var(--neutral-200));
+  --color-text-disabled:  hsl(259.96 19.06% 24.71%); /* #3b334b */
+  --color-text-error-primary: hsl(var(--red-400));
+  --color-input-disabled-text: color-mix(in srgb, hsl(var(--neutral-200)) 40%, transparent);
+
+  /* Background */
+  --color-background-full:              hsl(var(--neutral-800));
+  --color-background-primary-default:   hsl(var(--neutral-700));
+  --color-background-inner-default:     color-mix(in srgb, hsl(var(--neutral-700)) 60%, transparent);
+  --color-background-primary-hover:     color-mix(in srgb, hsl(var(--neutral-400)) 60%, transparent);
+  --color-background-primary-active:    hsl(var(--neutral-700));
+  --color-background-primary-disabled:  hsl(var(--neutral-700));
+  --color-input-disabled-background:    color-mix(in srgb, hsl(var(--neutral-700)) 30%, transparent);
+  --color-switch-off-chip-start:        var(--color-background-tertiary-default);
+  --color-switch-off-chip-end:          var(--color-background-tertiary-default);
+  --color-background-secondary-default: hsl(var(--neutral-900));
+  --color-background-secondary-hover:   hsl(var(--neutral-700));
+  --color-background-tertiary-default:  hsl(var(--neutral-700));
+  --color-background-tertiary-hover:    hsl(var(--neutral-400));
+  --color-background-tertiary-error:    hsl(var(--red-alpha-16));
+  --color-background-quaternary-default: hsl(var(--neutral-400));
+  --color-background-quaternary-hover:   hsl(var(--neutral-300));
+  --color-background-recent-hire-role:  color-mix(in srgb, hsl(var(--neutral-900)) 60%, transparent);
+  --color-avatar-neutral-background:    var(--color-background-primary-default);
+  --color-file-upload-icon-background:  hsl(var(--neutral-300));
+  --color-file-upload-icon-foreground:  hsl(var(--neutral-100));
+  --color-file-upload-icon-foreground-hover: hsl(var(--neutral-50));
+  --color-stat-card-icon-background:    hsl(var(--neutral-700));
+  --color-segmented-control-background:          hsl(var(--neutral-800));
+  --color-segmented-control-selected-background: hsl(var(--neutral-700));
+  --color-theme-toggle-sidebar-background:       hsl(var(--neutral-700));
+  --color-theme-toggle-sidebar-selected-background: hsl(var(--neutral-400));
+  --color-ai-chat-composer-add-background:       hsl(var(--neutral-400));
+  --color-ai-chat-composer-add-hover-background: hsl(var(--neutral-300));
+  --color-agent-progress-ring:                   color-mix(in srgb, hsl(var(--neutral-0)) 50%, transparent);
+  --color-button-ghost-background:               hsl(var(--blue-900));
+  --color-button-ghost-hover:                    hsl(var(--blue-800));
+  --color-button-ghost-active:                   hsl(var(--blue-700));
+  --color-button-ghost-disabled:                 hsl(var(--neutral-700));
+  --color-button-ghost-foreground:               hsl(var(--blue-300));
+  --color-button-ghost-disabled-foreground:      hsl(var(--neutral-300));
+  --color-dropdown-item-hover-background:        color-mix(in srgb, hsl(var(--neutral-400)) 60%, transparent);
+  --color-kbd-background:                        hsl(var(--neutral-400));
+  --color-kbd-foreground:                        hsl(var(--neutral-100));
+  --color-docs-file-chip-background:             hsl(var(--purple-alpha-16));
+  --color-docs-file-chip-border:                 color-mix(in srgb, hsl(var(--purple-500)) 40%, transparent);
+  --color-docs-file-chip-foreground:             hsl(var(--purple-400));
+  --color-docs-code-background:                  var(--color-background-full);
+  --color-docs-install-rail:                     color-mix(in srgb, hsl(var(--neutral-700)) 60%, transparent);
+
+  /* Elevation: same raised-black-alpha recipe as theme.css `.dark` (Aura's
+   * canvas is darker still, so the geometry/alpha pairing carries over). */
+  --shadow-2xs: 0 1px rgb(0 0 0 / 0.16);
+  --shadow-xs: 0 1px 2px 0 rgb(0 0 0 / 0.18);
+  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.12), 0 1px 3px 0 rgb(0 0 0 / 0.16);
+  --shadow-md: 0 2px 4px -1px rgb(0 0 0 / 0.12), 0 4px 6px -1px rgb(0 0 0 / 0.18);
+  --shadow-lg: 0 4px 6px -2px rgb(0 0 0 / 0.10), 0 10px 15px -3px rgb(0 0 0 / 0.18);
+  --shadow-xl: 0 10px 10px -5px rgb(0 0 0 / 0.08), 0 20px 25px -5px rgb(0 0 0 / 0.20);
+  --shadow-card: 0 1px 1px 0 rgb(0 0 0 / 0.14);
+  --shadow-dropdown:
+    0 1px 1px 0 rgb(0 0 0 / 0.14),
+    0 4px 4px 0 rgb(0 0 0 / 0.10);
+  --shadow-sidebar:
+    0 1px 0 0 rgb(0 0 0 / 0.10),
+    0 1px 12px 0 rgb(0 0 0 / 0.16),
+    0 0 1px 0 rgb(0 0 0 / 0.42);
+  --shadow-waitlist:
+    0 0 6px 0 rgb(0 0 0 / 0.12),
+    0 0 64px 0 rgb(0 0 0 / 0.22),
+    0 0 1px 0 rgb(0 0 0 / 0.42),
+    0 1px 12px 0 rgb(0 0 0 / 0.14),
+    0 1px 0 0 rgb(0 0 0 / 0.08);
+
+  /* Badges */
+  --color-badge-neutral-background: hsl(var(--neutral-700));
+  --color-team-menu-count-background: hsl(var(--neutral-400));
+  --color-team-menu-count-foreground: hsl(var(--neutral-100));
+  --color-badge-new-background: hsl(var(--blue-alpha-24));
+  --color-badge-new-text:       hsl(var(--blue-400));
+  --color-tab-count-selected-background: color-mix(in srgb, hsl(var(--blue-800)) 60%, transparent);
+
+  /* Status discs: translucent theme-accent washes with the ramp's bright step
+   * as foreground (Aura's ramps have no /800-/950 stops to mix from). */
+  --color-notification-information-background: color-mix(in srgb, hsl(var(--blue-800)) 50%, transparent);
+  --color-notification-information-foreground: hsl(var(--blue-300));
+  --color-notification-success-background:     hsl(var(--green-alpha-24));
+  --color-notification-success-foreground:     hsl(var(--green-400));
+  --color-notification-error-background:       hsl(var(--red-alpha-24));
+  --color-notification-error-foreground:       hsl(var(--red-400));
+  --color-notification-center-background:      hsl(var(--neutral-900));
+
+  /* Borders and separators */
+  --color-border-button-default:   hsl(var(--neutral-400));
+  --color-border-button-hover:     hsl(var(--neutral-200));
+  --color-border-button-active:    hsl(var(--neutral-300));
+  --color-border-button-white:     hsl(259.96 19.06% 24.71%); /* #3b334b */
+  --color-border-error-default:    hsl(var(--red-400));
+  --color-border-checkbox-default: hsl(var(--neutral-400));
+  --color-border-checkbox-hover:   hsl(var(--neutral-200));
+  --color-border-checkbox-active:  hsl(var(--neutral-200));
+  --color-border-component-detail-container: hsl(259.96 19.06% 24.71%);
+  --color-border-ai-profile-card:  hsl(259.96 19.06% 24.71%);
+  --color-border-table:            hsl(259.96 19.06% 24.71%);
+  --color-border-button-group:     color-mix(in srgb, hsl(var(--neutral-300)) 60%, transparent);
+  --color-border-sidebar-profile-hover: hsl(var(--neutral-300));
+  --color-separator-border:        hsl(259.96 19.06% 24.71%); /* #3b334b Aura border */
+  --color-separator-border-strong: color-mix(in srgb, hsl(var(--neutral-400)) 60%, transparent);
+
+  /* Table status chips (lime->green, rose->red, cyan->sky, indigo->purple:
+   * the Aura ramp's nearest families). */
+  --color-status-lime-background:   hsl(var(--green-alpha-24));
+  --color-status-lime-text:         hsl(var(--green-400));
+  --color-status-yellow-background: hsl(var(--yellow-alpha-24));
+  --color-status-yellow-text:       hsl(var(--yellow-400));
+  --color-status-rose-background:   hsl(var(--red-alpha-24));
+  --color-status-rose-text:         hsl(var(--red-400));
+  --color-status-cyan-background:   hsl(var(--sky-alpha-24));
+  --color-status-cyan-text:         hsl(var(--sky-400));
+  --color-status-blue-background:   hsl(var(--blue-alpha-24));
+  --color-status-blue-text:         hsl(var(--blue-300));
+  --color-status-purple-background: hsl(var(--purple-alpha-24));
+  --color-status-purple-text:       hsl(var(--purple-400));
+  --color-status-dot-green-halo:    hsl(var(--green-alpha-24));
+  --color-status-dot-yellow-halo:   hsl(var(--yellow-alpha-24));
+  --color-status-dot-indigo-halo:   hsl(var(--purple-alpha-24));
+
+  --color-date-range-background:      hsl(var(--blue-alpha-24));
+  --color-date-range-edge-background: hsl(var(--blue-800));
+
+  --color-pill-tab-blue-selected-background: color-mix(in srgb, hsl(var(--blue-900)) 60%, transparent);
+  --color-pill-tab-blue-hover-background: hsl(var(--neutral-700));
+
+  /* Calendar event chips: alpha washes + bright ramp steps. */
+  --color-calendar-event-blue-background:    hsl(var(--blue-alpha-24));
+  --color-calendar-event-blue-title:         hsl(var(--blue-300));
+  --color-calendar-event-blue-time:          hsl(var(--blue-300));
+  --color-calendar-event-pink-background:    hsl(var(--pink-alpha-24));
+  --color-calendar-event-pink-title:         hsl(var(--pink-400));
+  --color-calendar-event-pink-time:          hsl(var(--pink-400));
+  --color-calendar-event-purple-background:  hsl(var(--purple-alpha-24));
+  --color-calendar-event-purple-title:       hsl(var(--purple-400));
+  --color-calendar-event-purple-time:        hsl(var(--purple-400));
+  --color-calendar-event-lime-background:    hsl(var(--green-alpha-24));
+  --color-calendar-event-lime-title:         hsl(var(--green-400));
+  --color-calendar-event-lime-time:          hsl(var(--green-400));
+  --color-calendar-event-emerald-background: hsl(var(--teal-alpha-24));
+  --color-calendar-event-emerald-title:      hsl(var(--teal-400));
+  --color-calendar-event-emerald-time:       hsl(var(--teal-400));
+
+  /* Disabled CTAs: low-emphasis dark fills on the Aura neutral ladder. */
+  --gradient-button-primary-disabled: linear-gradient(
+    180deg,
+    hsl(var(--neutral-400)) 0%,
+    hsl(var(--neutral-700)) 100%
+  );
+  --gradient-button-danger-disabled: linear-gradient(
+    180deg,
+    color-mix(in srgb, hsl(var(--red-600)) 45%, black) 0%,
+    color-mix(in srgb, hsl(var(--red-600)) 28%, black) 100%
+  );
+
+  /* Charts */
+  --color-chart-track:   hsl(var(--neutral-700));
+  --color-chart-cursor:  hsl(var(--neutral-400));
+  --color-chart-neutral: hsl(var(--neutral-700));
+  --color-chart-agents-bar:        hsl(var(--purple-500));
+  --color-chart-agents-bar-active: hsl(var(--purple-600));
+}
+
+.harbor {
+  /* Accent ramp -> Harbor periwinkle. 500 mirrors AlignUI --primary-base
+   * (blue-950 #3053a2: deep enough for white button text). */
+  --color-accent-50:  hsl(var(--blue-50));
+  --color-accent-100: hsl(var(--blue-100));
+  --color-accent-200: hsl(var(--blue-200));
+  --color-accent-300: hsl(var(--blue-300));
+  --color-accent-400: hsl(var(--blue-700));  /* #5d85d9 hover-top */
+  --color-accent-500: hsl(var(--blue-950));  /* #3053a2 primary base */
+  --color-accent-600: hsl(var(--blue-800));  /* #254387 */
+  --color-accent-700: hsl(var(--blue-900));  /* #1d3363 */
+  --color-accent-800: hsl(var(--blue-800));
+  --color-accent-900: hsl(var(--blue-900));
+  --color-accent-950: hsl(var(--blue-950));
+
+  /* Foreground */
+  --color-foreground-full:            hsl(var(--neutral-400));
+  --color-foreground-icon-primary:    hsl(var(--neutral-50));
+  --color-foreground-icon-hover:      hsl(var(--neutral-0));
+  --color-foreground-icon-error:      hsl(var(--red-400));
+  --color-foreground-icon-tertiary:   hsl(var(--neutral-200));
+  --color-foreground-icon-quaternary: hsl(var(--neutral-300));
+  --color-foreground-icon-disabled:   hsl(217.87 21.36% 17.45%); /* #232a36 */
+  --color-foreground-disabled:        hsl(var(--neutral-400));
+  --color-foreground-disabled-danger: hsl(var(--red-400));
+  --color-input-disabled-foreground:  hsl(var(--neutral-300));
+  --color-icon-button-disabled-foreground: hsl(var(--neutral-200));
+  --color-button-primary-disabled-foreground: hsl(var(--neutral-200));
+
+  /* Text */
+  --color-text-primary:   hsl(var(--neutral-50));
+  --color-text-secondary: hsl(var(--neutral-100));
+  --color-text-tertiary:  hsl(var(--neutral-200));
+  --color-text-disabled:  hsl(217.87 21.36% 17.45%); /* #232a36 */
+  --color-text-error-primary: hsl(var(--red-400));
+  --color-input-disabled-text: color-mix(in srgb, hsl(var(--neutral-200)) 40%, transparent);
+
+  /* Background */
+  --color-background-full:              hsl(var(--neutral-800));
+  --color-background-primary-default:   hsl(var(--neutral-700));
+  --color-background-inner-default:     color-mix(in srgb, hsl(var(--neutral-700)) 60%, transparent);
+  --color-background-primary-hover:     color-mix(in srgb, hsl(var(--neutral-400)) 60%, transparent);
+  --color-background-primary-active:    hsl(var(--neutral-700));
+  --color-background-primary-disabled:  hsl(var(--neutral-700));
+  --color-input-disabled-background:    color-mix(in srgb, hsl(var(--neutral-700)) 30%, transparent);
+  --color-switch-off-chip-start:        var(--color-background-tertiary-default);
+  --color-switch-off-chip-end:          var(--color-background-tertiary-default);
+  --color-background-secondary-default: hsl(var(--neutral-900));
+  --color-background-secondary-hover:   hsl(var(--neutral-700));
+  --color-background-tertiary-default:  hsl(var(--neutral-700));
+  --color-background-tertiary-hover:    hsl(var(--neutral-400));
+  --color-background-tertiary-error:    hsl(var(--red-alpha-16));
+  --color-background-quaternary-default: hsl(var(--neutral-400));
+  --color-background-quaternary-hover:   hsl(var(--neutral-300));
+  --color-background-recent-hire-role:  color-mix(in srgb, hsl(var(--neutral-900)) 60%, transparent);
+  --color-avatar-neutral-background:    var(--color-background-primary-default);
+  --color-file-upload-icon-background:  hsl(var(--neutral-300));
+  --color-file-upload-icon-foreground:  hsl(var(--neutral-100));
+  --color-file-upload-icon-foreground-hover: hsl(var(--neutral-50));
+  --color-stat-card-icon-background:    hsl(var(--neutral-700));
+  --color-segmented-control-background:          hsl(var(--neutral-800));
+  --color-segmented-control-selected-background: hsl(var(--neutral-700));
+  --color-theme-toggle-sidebar-background:       hsl(var(--neutral-700));
+  --color-theme-toggle-sidebar-selected-background: hsl(var(--neutral-400));
+  --color-ai-chat-composer-add-background:       hsl(var(--neutral-400));
+  --color-ai-chat-composer-add-hover-background: hsl(var(--neutral-300));
+  --color-agent-progress-ring:                   color-mix(in srgb, hsl(var(--neutral-0)) 50%, transparent);
+  --color-button-ghost-background:               hsl(var(--blue-900));
+  --color-button-ghost-hover:                    hsl(var(--blue-800));
+  --color-button-ghost-active:                   hsl(var(--blue-700));
+  --color-button-ghost-disabled:                 hsl(var(--neutral-700));
+  --color-button-ghost-foreground:               hsl(var(--blue-300));
+  --color-button-ghost-disabled-foreground:      hsl(var(--neutral-300));
+  --color-dropdown-item-hover-background:        color-mix(in srgb, hsl(var(--neutral-400)) 60%, transparent);
+  --color-kbd-background:                        hsl(var(--neutral-400));
+  --color-kbd-foreground:                        hsl(var(--neutral-100));
+  --color-docs-file-chip-background:             hsl(var(--purple-alpha-16));
+  --color-docs-file-chip-border:                 color-mix(in srgb, hsl(var(--purple-500)) 40%, transparent);
+  --color-docs-file-chip-foreground:             hsl(var(--purple-400));
+  --color-docs-code-background:                  var(--color-background-full);
+  --color-docs-install-rail:                     color-mix(in srgb, hsl(var(--neutral-700)) 60%, transparent);
+
+  /* Elevation: same raised-black-alpha recipe as theme.css `.dark`. */
+  --shadow-2xs: 0 1px rgb(0 0 0 / 0.16);
+  --shadow-xs: 0 1px 2px 0 rgb(0 0 0 / 0.18);
+  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.12), 0 1px 3px 0 rgb(0 0 0 / 0.16);
+  --shadow-md: 0 2px 4px -1px rgb(0 0 0 / 0.12), 0 4px 6px -1px rgb(0 0 0 / 0.18);
+  --shadow-lg: 0 4px 6px -2px rgb(0 0 0 / 0.10), 0 10px 15px -3px rgb(0 0 0 / 0.18);
+  --shadow-xl: 0 10px 10px -5px rgb(0 0 0 / 0.08), 0 20px 25px -5px rgb(0 0 0 / 0.20);
+  --shadow-card: 0 1px 1px 0 rgb(0 0 0 / 0.14);
+  --shadow-dropdown:
+    0 1px 1px 0 rgb(0 0 0 / 0.14),
+    0 4px 4px 0 rgb(0 0 0 / 0.10);
+  --shadow-sidebar:
+    0 1px 0 0 rgb(0 0 0 / 0.10),
+    0 1px 12px 0 rgb(0 0 0 / 0.16),
+    0 0 1px 0 rgb(0 0 0 / 0.42);
+  --shadow-waitlist:
+    0 0 6px 0 rgb(0 0 0 / 0.12),
+    0 0 64px 0 rgb(0 0 0 / 0.22),
+    0 0 1px 0 rgb(0 0 0 / 0.42),
+    0 1px 12px 0 rgb(0 0 0 / 0.14),
+    0 1px 0 0 rgb(0 0 0 / 0.08);
+
+  /* Badges */
+  --color-badge-neutral-background: hsl(var(--neutral-700));
+  --color-team-menu-count-background: hsl(var(--neutral-400));
+  --color-team-menu-count-foreground: hsl(var(--neutral-100));
+  --color-badge-new-background: hsl(var(--blue-alpha-24));
+  --color-badge-new-text:       hsl(var(--blue-400));
+  --color-tab-count-selected-background: color-mix(in srgb, hsl(var(--blue-800)) 60%, transparent);
+
+  /* Status discs */
+  --color-notification-information-background: color-mix(in srgb, hsl(var(--blue-800)) 50%, transparent);
+  --color-notification-information-foreground: hsl(var(--blue-300));
+  --color-notification-success-background:     hsl(var(--green-alpha-24));
+  --color-notification-success-foreground:     hsl(var(--green-400));
+  --color-notification-error-background:       hsl(var(--red-alpha-24));
+  --color-notification-error-foreground:       hsl(var(--red-400));
+  --color-notification-center-background:      hsl(var(--neutral-900));
+
+  /* Borders and separators */
+  --color-border-button-default:   hsl(var(--neutral-400));
+  --color-border-button-hover:     hsl(var(--neutral-200));
+  --color-border-button-active:    hsl(var(--neutral-300));
+  --color-border-button-white:     hsl(217.87 21.36% 17.45%); /* #232a36 */
+  --color-border-error-default:    hsl(var(--red-400));
+  --color-border-checkbox-default: hsl(var(--neutral-400));
+  --color-border-checkbox-hover:   hsl(var(--neutral-200));
+  --color-border-checkbox-active:  hsl(var(--neutral-200));
+  --color-border-component-detail-container: hsl(217.87 21.36% 17.45%);
+  --color-border-ai-profile-card:  hsl(217.87 21.36% 17.45%);
+  --color-border-table:            hsl(217.87 21.36% 17.45%);
+  --color-border-button-group:     color-mix(in srgb, hsl(var(--neutral-300)) 60%, transparent);
+  --color-border-sidebar-profile-hover: hsl(var(--neutral-300));
+  --color-separator-border:        hsl(217.87 21.36% 17.45%); /* #232a36 Harbor border */
+  --color-separator-border-strong: color-mix(in srgb, hsl(var(--neutral-400)) 60%, transparent);
+
+  /* Table status chips (lime->green, rose->red, cyan->sky, indigo->purple) */
+  --color-status-lime-background:   hsl(var(--green-alpha-24));
+  --color-status-lime-text:         hsl(var(--green-400));
+  --color-status-yellow-background: hsl(var(--yellow-alpha-24));
+  --color-status-yellow-text:       hsl(var(--yellow-400));
+  --color-status-rose-background:   hsl(var(--red-alpha-24));
+  --color-status-rose-text:         hsl(var(--red-400));
+  --color-status-cyan-background:   hsl(var(--sky-alpha-24));
+  --color-status-cyan-text:         hsl(var(--sky-400));
+  --color-status-blue-background:   hsl(var(--blue-alpha-24));
+  --color-status-blue-text:         hsl(var(--blue-300));
+  --color-status-purple-background: hsl(var(--purple-alpha-24));
+  --color-status-purple-text:       hsl(var(--purple-400));
+  --color-status-dot-green-halo:    hsl(var(--green-alpha-24));
+  --color-status-dot-yellow-halo:   hsl(var(--yellow-alpha-24));
+  --color-status-dot-indigo-halo:   hsl(var(--purple-alpha-24));
+
+  --color-date-range-background:      hsl(var(--blue-alpha-24));
+  --color-date-range-edge-background: hsl(var(--blue-800));
+
+  --color-pill-tab-blue-selected-background: color-mix(in srgb, hsl(var(--blue-900)) 60%, transparent);
+  --color-pill-tab-blue-hover-background: hsl(var(--neutral-700));
+
+  /* Calendar event chips */
+  --color-calendar-event-blue-background:    hsl(var(--blue-alpha-24));
+  --color-calendar-event-blue-title:         hsl(var(--blue-300));
+  --color-calendar-event-blue-time:          hsl(var(--blue-300));
+  --color-calendar-event-pink-background:    hsl(var(--pink-alpha-24));
+  --color-calendar-event-pink-title:         hsl(var(--pink-400));
+  --color-calendar-event-pink-time:          hsl(var(--pink-400));
+  --color-calendar-event-purple-background:  hsl(var(--purple-alpha-24));
+  --color-calendar-event-purple-title:       hsl(var(--purple-400));
+  --color-calendar-event-purple-time:        hsl(var(--purple-400));
+  --color-calendar-event-lime-background:    hsl(var(--green-alpha-24));
+  --color-calendar-event-lime-title:         hsl(var(--green-400));
+  --color-calendar-event-lime-time:          hsl(var(--green-400));
+  --color-calendar-event-emerald-background: hsl(var(--teal-alpha-24));
+  --color-calendar-event-emerald-title:      hsl(var(--teal-400));
+  --color-calendar-event-emerald-time:       hsl(var(--teal-400));
+
+  /* Disabled CTAs */
+  --gradient-button-primary-disabled: linear-gradient(
+    180deg,
+    hsl(var(--neutral-400)) 0%,
+    hsl(var(--neutral-700)) 100%
+  );
+  --gradient-button-danger-disabled: linear-gradient(
+    180deg,
+    color-mix(in srgb, hsl(var(--red-600)) 45%, black) 0%,
+    color-mix(in srgb, hsl(var(--red-600)) 28%, black) 100%
+  );
+
+  /* Charts */
+  --color-chart-track:   hsl(var(--neutral-700));
+  --color-chart-cursor:  hsl(var(--neutral-400));
+  --color-chart-neutral: hsl(var(--neutral-700));
+  --color-chart-agents-bar:        hsl(var(--purple-500));
+  --color-chart-agents-bar-active: hsl(var(--purple-600));
+}
+
 /* custom scale for Remix Icon */
 .remixicon path {
   transform: scale(0.8996);
@@ -957,12 +1526,12 @@
   background-image: linear-gradient(135deg, var(--swatch-canvas) 0 50%, var(--swatch-accent) 50% 100%);
 }
 .theme-swatch-light {
-  --swatch-canvas: #f4f5f7;
-  --swatch-accent: #0eb8f6;
+  --swatch-canvas: #f7f7f7;
+  --swatch-accent: #3392ff;
 }
 .theme-swatch-dark {
-  --swatch-canvas: #1a1b26;
-  --swatch-accent: #7aa2f7;
+  --swatch-canvas: #121212;
+  --swatch-accent: #2b7fff;
 }
 .theme-swatch-aura {
   --swatch-canvas: #15141b;
@@ -1268,6 +1837,453 @@
 /* Dark neutral ladder lives in the `.dark` block inside @layer base above —
  * single source of truth (#17181a base, soft border deltas). Do not add a
  * second `.dark` override here; un-layered rules would silently win. */
+
+/* ===========================================================================
+ * BoardUI foundations support CSS — copied from styles/globals.css (the
+ * BoardUI entry, which is NOT imported wholesale because it double-imports
+ * tailwindcss). Only the rules the vendored BoardUI components in
+ * components/base/* and components/application/* actually reference are here;
+ * BoardUI's landing/docs-site rules (marquee, glass, beam, contributions…)
+ * are not. `agent-progress-loading-text` + the `ai-chat-text-shimmer`
+ * keyframes already exist above (AlignUI-token variant) and are NOT
+ * duplicated — the bui-agent-thinking label below reuses those keyframes.
+ * ========================================================================= */
+
+/* Theme reveal (components/application/theme/theme-toggle.tsx): the next
+ * theme expands from the interaction point. Native view-transition
+ * crossfades are disabled so only the circular clip-path animation runs;
+ * unsupported browsers ignore these rules. */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
+}
+::view-transition-old(root) {
+  z-index: 1;
+}
+::view-transition-new(root) {
+  z-index: 2;
+}
+
+/* Freeze component transitions while the browser captures the next theme so
+ * the expanding circle contains the fully resolved new palette. */
+.theme-transitioning,
+.theme-transitioning * {
+  transition: none !important;
+}
+
+/* Native form controls follow the active scheme. Aura/Harbor are dark-scheme
+ * themes; they must be pinned HERE (un-layered) because the `color-scheme` in
+ * their @layer'd token blocks loses to this un-layered `html` rule. */
+html {
+  color-scheme: light;
+}
+html.dark,
+html.aura,
+html.harbor {
+  color-scheme: dark;
+}
+
+/* Theme-aware monochrome brand marks (components/foundations/brand/logo.tsx).
+ * Extended beyond BoardUI's `.dark` to our other dark-scheme themes. */
+.theme-logo-dark,
+.theme-asset-dark {
+  display: none;
+}
+.dark .theme-logo-light,
+.dark .theme-asset-light,
+.aura .theme-logo-light,
+.aura .theme-asset-light,
+.harbor .theme-logo-light,
+.harbor .theme-asset-light {
+  display: none;
+}
+.dark .theme-logo-dark,
+.dark .theme-asset-dark,
+.aura .theme-logo-dark,
+.aura .theme-asset-dark,
+.harbor .theme-logo-dark,
+.harbor .theme-asset-dark {
+  display: block;
+}
+
+/* Tailwind expands shadow utilities into `--tw-shadow` at build time. Point
+ * the generated utilities back to the live dark elevation tokens (defined in
+ * styles/theme.css `.dark` and the `.aura`/`.harbor` blocks above) so
+ * class-based theming adjusts shadow opacity under every dark-scheme theme. */
+.dark .shadow-2xs,
+.aura .shadow-2xs,
+.harbor .shadow-2xs {
+  --tw-shadow: var(--shadow-2xs);
+}
+.dark .shadow-xs,
+.aura .shadow-xs,
+.harbor .shadow-xs {
+  --tw-shadow: var(--shadow-xs);
+}
+.dark .shadow-sm,
+.aura .shadow-sm,
+.harbor .shadow-sm {
+  --tw-shadow: var(--shadow-sm);
+}
+.dark .shadow-md,
+.aura .shadow-md,
+.harbor .shadow-md {
+  --tw-shadow: var(--shadow-md);
+}
+.dark .shadow-lg,
+.aura .shadow-lg,
+.harbor .shadow-lg {
+  --tw-shadow: var(--shadow-lg);
+}
+.dark .shadow-xl,
+.aura .shadow-xl,
+.harbor .shadow-xl {
+  --tw-shadow: var(--shadow-xl);
+}
+.dark .shadow-card,
+.aura .shadow-card,
+.harbor .shadow-card {
+  --tw-shadow: var(--shadow-card);
+}
+.dark .shadow-dropdown,
+.aura .shadow-dropdown,
+.harbor .shadow-dropdown {
+  --tw-shadow: var(--shadow-dropdown);
+}
+.dark .shadow-sidebar,
+.aura .shadow-sidebar,
+.harbor .shadow-sidebar {
+  --tw-shadow: var(--shadow-sidebar);
+}
+.dark .shadow-waitlist,
+.aura .shadow-waitlist,
+.harbor .shadow-waitlist {
+  --tw-shadow: var(--shadow-waitlist);
+}
+
+/* Hide default expand arrow on Safari */
+details summary::-webkit-details-marker {
+  display: none;
+}
+
+/* Hide default number-input spinners */
+input::-webkit-outer-spin-button,
+input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type='number'] {
+  -moz-appearance: textfield;
+}
+
+/* Hide default search clear button */
+input[type='search']::-webkit-search-cancel-button {
+  -webkit-appearance: none;
+}
+
+/* iOS Safari auto-zooms focused fields under 16px; bump only the font-size
+ * on small screens instead of changing the type scale. */
+@media (max-width: 639px) {
+  input,
+  select,
+  textarea {
+    font-size: 16px;
+  }
+}
+
+/* Recharts' accessibility layer makes chart surfaces keyboard-focusable and
+ * Chrome paints the UA focus outline around clicked bars/segments. The chart
+ * cards drive their own focus feedback, so hide the outline. */
+.recharts-wrapper:focus,
+.recharts-wrapper:focus-visible,
+.recharts-wrapper :focus,
+.recharts-wrapper :focus-visible {
+  outline: none;
+}
+
+/* Checkbox tick (components/base/checkbox): draws the stroke on like it's
+ * being ticked by hand. pathLength=1 keeps the dash math resolution-free. */
+@keyframes check-draw {
+  from {
+    stroke-dashoffset: 1;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+.animate-check-draw {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: check-draw 200ms cubic-bezier(0.65, 0, 0.35, 1) forwards;
+}
+@media (prefers-reduced-motion: reduce) {
+  .animate-check-draw {
+    animation: none;
+    stroke-dashoffset: 0;
+  }
+}
+
+/* Rolling label swap (components/application/medical/week-range-pill). */
+@keyframes label-out {
+  from {
+    transform: translateY(0);
+    opacity: 1;
+  }
+  to {
+    transform: translateY(-10px);
+    opacity: 0;
+  }
+}
+@keyframes label-in {
+  from {
+    transform: translateY(10px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+.animate-label-out {
+  animation: label-out 220ms ease-out forwards;
+}
+.animate-label-in {
+  animation: label-in 220ms ease-out;
+}
+
+/* New-row entrance/exit for the Storage settings table
+ * (components/application/settings/settings-storage.tsx). */
+@keyframes row-grow-in {
+  from {
+    grid-template-rows: 0fr;
+  }
+  to {
+    grid-template-rows: 1fr;
+  }
+}
+@keyframes row-slide-in {
+  from {
+    translate: 0 -100%;
+  }
+}
+@keyframes row-fade-in {
+  from {
+    opacity: 0;
+    filter: blur(2px);
+  }
+}
+.animate-row-grow-in {
+  animation: row-grow-in 400ms ease-out;
+}
+.animate-row-slide-in {
+  animation:
+    row-slide-in 400ms ease-out,
+    row-fade-in 240ms ease-out;
+}
+@keyframes row-collapse-out {
+  from {
+    grid-template-rows: 1fr;
+  }
+  to {
+    grid-template-rows: 0fr;
+  }
+}
+@keyframes row-slide-out {
+  to {
+    translate: 0 -100%;
+  }
+}
+@keyframes row-fade-out {
+  to {
+    opacity: 0;
+    filter: blur(2px);
+  }
+}
+.animate-row-collapse-out {
+  animation: row-collapse-out 225ms ease-in forwards;
+}
+.animate-row-slide-out {
+  animation:
+    row-slide-out 225ms ease-in forwards,
+    row-fade-out 160ms ease-in forwards;
+}
+@media (prefers-reduced-motion: reduce) {
+  .animate-row-grow-in,
+  .animate-row-slide-in,
+  .animate-row-collapse-out,
+  .animate-row-slide-out {
+    animation-duration: 1ms;
+  }
+}
+
+/* Transitions.dev "Texts reveal" (components/base/file-upload dropzone). */
+.t-stagger {
+  --stagger-dur: 500ms;
+  --stagger-distance: 12px;
+  --stagger-stagger: 40ms;
+  --stagger-blur: 3px;
+  --stagger-ease: cubic-bezier(0.22, 1, 0.36, 1);
+}
+.t-stagger-line {
+  opacity: 0;
+  transform: translateY(var(--stagger-distance));
+  filter: blur(var(--stagger-blur));
+  transition:
+    opacity var(--stagger-dur) var(--stagger-ease),
+    transform var(--stagger-dur) var(--stagger-ease),
+    filter var(--stagger-dur) var(--stagger-ease);
+  will-change: transform, opacity, filter;
+}
+.t-stagger-line--2 {
+  transition-delay: var(--stagger-stagger);
+}
+.t-stagger-line--3 {
+  transition-delay: calc(var(--stagger-stagger) * 2);
+}
+.t-stagger.is-shown .t-stagger-line {
+  opacity: 1;
+  transform: translateY(0);
+  filter: blur(0);
+}
+.t-stagger.is-hiding .t-stagger-line {
+  opacity: 0;
+  transform: translateY(0);
+  filter: blur(0);
+  transition:
+    opacity 200ms ease,
+    transform 0s linear,
+    filter 0s linear;
+  transition-delay: 0s;
+}
+@media (prefers-reduced-motion: reduce) {
+  .t-stagger-line {
+    transition: none !important;
+  }
+}
+
+/* Table primitive (components/base/table): React Aria's collection
+ * components can't be wrapped without losing collection behaviour, so the
+ * primitive re-exports them untouched and styling lives here. */
+.bui-table {
+  @apply w-full border-collapse text-left;
+}
+.bui-table th {
+  @apply px-3 py-2.5 text-left align-middle text-body-medium text-text-tertiary whitespace-nowrap outline-none;
+  background-color: var(--color-background-secondary-default);
+  border-top: 1px solid var(--color-separator-border);
+  border-bottom: 1px solid var(--color-separator-border);
+  transition: padding 200ms ease, font-size 200ms ease;
+}
+.bui-table td {
+  @apply px-3 py-2.5 align-middle text-body-medium text-text-primary outline-none;
+  transition: padding 200ms ease, font-size 200ms ease;
+}
+.bui-table tbody tr {
+  @apply transition-colors duration-150;
+  border-bottom: 1px solid var(--color-separator-border);
+}
+.bui-table tbody tr[data-focus-visible] {
+  @apply ring-2 ring-inset ring-border-focus-ring;
+}
+.bui-table.bui-table-sm th,
+.bui-table.bui-table-sm td {
+  @apply px-2.5 py-1.5 text-body-2-medium;
+}
+
+/* Agent Thinking (components/application/agent-thinking): the label reuses
+ * the ai-chat-text-shimmer keyframes defined earlier in this file. */
+.bui-agent-thinking-label {
+  color: transparent;
+  background-image: linear-gradient(
+    100deg,
+    color-mix(in oklab, var(--bui-agent-thinking-tone) 55%, transparent) 30%,
+    var(--bui-agent-thinking-tone) 50%,
+    color-mix(in oklab, var(--bui-agent-thinking-tone) 55%, transparent) 70%
+  );
+  background-position: 200% center;
+  background-size: 300% 100%;
+  background-clip: text;
+  -webkit-background-clip: text;
+  animation: ai-chat-text-shimmer 2.6s linear infinite;
+  will-change: background-position;
+}
+
+@keyframes bui-agent-thinking-star {
+  0%,
+  100% {
+    transform: scale(0);
+    opacity: 0;
+  }
+  40% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  60% {
+    transform: scale(0.8);
+    opacity: 0.9;
+  }
+}
+.bui-agent-thinking-star {
+  transform: scale(0);
+  animation-name: bui-agent-thinking-star;
+  animation-timing-function: ease-in-out;
+  animation-iteration-count: infinite;
+}
+
+@keyframes bui-agent-thinking-dash {
+  to {
+    stroke-dashoffset: -100;
+  }
+}
+.bui-agent-thinking-comet {
+  animation-name: bui-agent-thinking-dash;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bui-agent-thinking-label {
+    color: var(--bui-agent-thinking-tone);
+    background-image: none;
+    animation: none;
+  }
+  .bui-agent-thinking-star {
+    animation: none;
+    transform: none;
+    opacity: 0.7;
+  }
+  .bui-agent-thinking-comet {
+    animation: none;
+  }
+}
+
+/* Star glyphs read heavier than the dot grids on light backgrounds; soften
+ * only them there. Dark-scheme themes keep the full tone. */
+.bui-agent-thinking-stars {
+  color: color-mix(in oklab, currentColor 75%, transparent);
+}
+.dark .bui-agent-thinking-stars,
+.aura .bui-agent-thinking-stars,
+.harbor .bui-agent-thinking-stars {
+  color: inherit;
+}
+
+/* Composer Loader (components/application/composer-loader): the light band
+ * orbiting the composer while the agent works. */
+@keyframes bui-composer-loader-dash {
+  from {
+    stroke-dashoffset: 0;
+  }
+  to {
+    stroke-dashoffset: -100;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .bui-composer-loader-rect {
+    animation: none !important;
+  }
+}
 
 /* ── opencode inline element (Live tab) ─────────────────────────────────────
    The custom element's internal root wrapper reproduces opencode's own

@@ -10,7 +10,7 @@ import {
 } from "@remixicon/react";
 import { useState } from "react";
 import type { CanonicalEventLike } from "@/components/chat/canonical-timeline";
-import { cnExt as cn } from "@/utils/cn";
+import { cx } from "@/utils/cx";
 
 export type PlanEntry = NonNullable<CanonicalEventLike["entries"]>[number];
 export type PlanEntryStatus = PlanEntry["status"];
@@ -40,10 +40,10 @@ const ITEM_ICON: Record<PlanEntryStatus, RemixiconComponentType> = {
 };
 
 const ITEM_TONE: Record<PlanEntryStatus, string> = {
-  pending: "text-text-soft-400",
-  in_progress: "text-primary-base",
-  completed: "text-success-base",
-  cancelled: "text-text-disabled-300",
+  pending: "text-text-tertiary",
+  in_progress: "text-accent-500",
+  completed: "text-lime-600",
+  cancelled: "text-text-disabled",
 };
 
 /**
@@ -55,7 +55,7 @@ function CompletionMark({ done, total }: { readonly done: number; readonly total
   if (total > 0 && done === total) {
     return (
       <RiCheckboxCircleFill
-        className="size-5 shrink-0 text-success-base transition-colors duration-300"
+        className="size-5 shrink-0 text-lime-600 transition-colors duration-300"
         aria-hidden
       />
     );
@@ -65,7 +65,7 @@ function CompletionMark({ done, total }: { readonly done: number; readonly total
   const ratio = total === 0 ? 0 : done / total;
   return (
     <svg viewBox="0 0 18 18" className="size-5 shrink-0" aria-hidden>
-      <circle cx="9" cy="9" r={radius} strokeWidth="2" className="fill-none stroke-bg-soft-200" />
+      <circle cx="9" cy="9" r={radius} strokeWidth="2" className="fill-none stroke-background-tertiary-default" />
       <circle
         cx="9"
         cy="9"
@@ -75,7 +75,7 @@ function CompletionMark({ done, total }: { readonly done: number; readonly total
         transform="rotate(-90 9 9)"
         strokeDasharray={circumference}
         strokeDashoffset={circumference * (1 - ratio)}
-        className="fill-none stroke-success-base transition-[stroke-dashoffset] duration-500 ease-out"
+        className="fill-none stroke-lime-500 transition-[stroke-dashoffset] duration-500 ease-out"
       />
     </svg>
   );
@@ -104,8 +104,8 @@ export function PlanChecklist({
     <section
       aria-label={title}
       data-testid={testId}
-      className={cn(
-        "overflow-hidden rounded-2xl border border-stroke-soft-200 bg-bg-white-0 shadow-regular-xs",
+      className={cx(
+        "overflow-hidden rounded-2xl border border-border-button-default bg-background-primary-default shadow-card",
         className,
       )}
     >
@@ -113,26 +113,26 @@ export function PlanChecklist({
         type="button"
         onClick={() => setOpen((value) => !value)}
         aria-expanded={open}
-        className="flex w-full items-center gap-2.5 px-4 py-3 text-left transition-colors hover:bg-bg-weak-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-base"
+        className="flex w-full items-center gap-2.5 px-4 py-3 text-left transition-colors hover:bg-background-primary-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-focus-ring"
       >
         <CompletionMark done={done} total={total} />
-        <span className="min-w-0 flex-1 truncate text-label-sm text-text-strong-950">{title}</span>
+        <span className="min-w-0 flex-1 truncate text-body-2-medium text-text-primary">{title}</span>
         <span
-          className="text-label-xs font-medium tabular-nums text-success-base"
+          className="text-caption-1-medium font-medium tabular-nums text-lime-600"
           aria-label={`${done} of ${total} complete`}
         >
           {done}/{total}
         </span>
         <RiArrowDownSLine
-          className={cn(
-            "size-4 shrink-0 text-text-soft-400 transition-transform duration-200",
+          className={cx(
+            "size-4 shrink-0 text-text-tertiary transition-transform duration-200",
             open ? "rotate-0" : "-rotate-90",
           )}
           aria-hidden
         />
       </button>
       {open && (
-        <ol className="border-t border-stroke-soft-200 py-1 motion-safe:animate-ai-fade-up">
+        <ol className="border-t border-border-button-default py-1 motion-safe:animate-ai-fade-up">
           {entries.map((entry) => {
             const Icon = ITEM_ICON[entry.status];
             const struck = entry.status === "completed" || entry.status === "cancelled";
@@ -140,13 +140,13 @@ export function PlanChecklist({
             return (
               <li
                 key={entry.id}
-                className={cn(
+                className={cx(
                   "flex items-start gap-2.5 px-4 py-2 transition-colors duration-300",
-                  active && "bg-primary-alpha-10",
+                  active && "bg-accent-500/10",
                 )}
               >
                 <Icon
-                  className={cn(
+                  className={cx(
                     "mt-0.5 size-4 shrink-0 transition-colors duration-300",
                     ITEM_TONE[entry.status],
                     active && "motion-safe:animate-spin",
@@ -154,11 +154,11 @@ export function PlanChecklist({
                   aria-hidden
                 />
                 <span
-                  className={cn(
-                    "min-w-0 flex-1 text-paragraph-sm transition-colors duration-300",
-                    struck && "text-text-soft-400 line-through",
-                    active && "font-medium text-text-strong-950",
-                    !struck && !active && "text-text-sub-600",
+                  className={cx(
+                    "min-w-0 flex-1 text-body-2-regular transition-colors duration-300",
+                    struck && "text-text-tertiary line-through",
+                    active && "font-medium text-text-primary",
+                    !struck && !active && "text-text-secondary",
                   )}
                 >
                   {entry.text}

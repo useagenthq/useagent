@@ -28,7 +28,7 @@ export type MessageAvatarProps = {
 const MessageAvatar = ({ children, className }: MessageAvatarProps) => (
   <div
     className={cn(
-      "bg-bg-weak-50 text-text-strong-950 flex size-8 shrink-0 items-center justify-center rounded-full",
+      "bg-background-secondary-default text-text-primary flex size-8 shrink-0 items-center justify-center rounded-full",
       className,
     )}
   >
@@ -50,7 +50,7 @@ const MessageContent = ({
   ...props
 }: MessageContentProps) => {
   const classNames = cn(
-    "text-text-strong-950 break-words whitespace-normal",
+    "text-text-primary break-words whitespace-normal",
     className,
   );
 
@@ -72,7 +72,7 @@ export type MessageActionsProps = {
 
 const MessageActions = ({ children, className, ...props }: MessageActionsProps) => (
   <div
-    className={cn("text-text-soft-400 flex items-center gap-1", className)}
+    className={cn("text-text-tertiary flex items-center gap-1", className)}
     {...props}
   >
     {children}

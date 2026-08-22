@@ -88,10 +88,10 @@ const INDEX: readonly { label: string; href: string }[] = [
 function AttachmentChip({ name }: { name: string }) {
   return (
     <div className="flex justify-end">
-      <span className="inline-flex items-center gap-1.5 rounded-lg border border-stroke-soft-200 bg-bg-weak-50 px-2 py-1 text-label-xs text-text-sub-600">
-        <RiAttachment2 className="size-3.5 text-text-soft-400" aria-hidden />
+      <span className="inline-flex items-center gap-1.5 rounded-lg border border-border-button-default bg-background-secondary-default px-2 py-1 text-label-xs text-text-secondary">
+        <RiAttachment2 className="size-3.5 text-text-tertiary" aria-hidden />
         {name}
-        <span className="text-text-soft-400">attached</span>
+        <span className="text-text-tertiary">attached</span>
       </span>
     </div>
   );
@@ -127,7 +127,7 @@ function TurnView({
           {turn.answer && !live && (
             <div className="flex items-center gap-2">
               <MessageCopyButton text={turn.answer} />
-              <span className="text-label-xs text-text-soft-400">Copy answer</span>
+              <span className="text-label-xs text-text-tertiary">Copy answer</span>
             </div>
           )}
         </div>
@@ -148,10 +148,10 @@ function Surface({
   children: React.ReactNode;
 }) {
   return (
-    <section id={id} className="scroll-mt-6 space-y-3 border-t border-stroke-soft-200 pt-6">
+    <section id={id} className="scroll-mt-6 space-y-3 border-t border-border-button-default pt-6">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h3 className="text-label-md text-text-strong-950">{title}</h3>
-        <code className="text-mono-label text-text-soft-400">{owner}</code>
+        <h3 className="text-label-md text-text-primary">{title}</h3>
+        <code className="text-mono-label text-text-tertiary">{owner}</code>
       </div>
       {children}
     </section>
@@ -179,22 +179,22 @@ export function SessionSample() {
   const diffPatches = filePatchesFromSteps(changeSetSteps);
 
   return (
-    <main data-testid="session-sample" className="min-h-full bg-bg-white-0">
-      <header className="relative overflow-hidden border-b border-stroke-soft-200">
+    <main data-testid="session-sample" className="min-h-full bg-background-primary-default">
+      <header className="relative overflow-hidden border-b border-border-button-default">
         <div className="bg-halftone pointer-events-none absolute inset-0" aria-hidden />
         <div className="relative mx-auto flex max-w-6xl flex-col gap-1 px-6 py-10">
           <div className="flex items-center gap-2">
             <Link
               href="/lab"
-              className="text-mono-label text-text-soft-400 hover:text-text-sub-600"
+              className="text-mono-label text-text-tertiary hover:text-text-secondary"
             >
               Component lab
             </Link>
-            <span className="text-text-disabled-300">/</span>
-            <span className="text-mono-label text-text-soft-400">Session sample</span>
+            <span className="text-text-disabled">/</span>
+            <span className="text-mono-label text-text-tertiary">Session sample</span>
           </div>
-          <h1 className="text-title-h4 text-text-strong-950">Session sample</h1>
-          <p className="max-w-3xl text-paragraph-md text-text-sub-600">
+          <h1 className="text-title-h4 text-text-primary">Session sample</h1>
+          <p className="max-w-3xl text-paragraph-md text-text-secondary">
             One synthetic session rendered through the real chat timeline and session
             chrome - every canonical event and adjacent surface in one believable
             conversation, for visual review. Nothing here reimplements a renderer; it
@@ -209,12 +209,12 @@ export function SessionSample() {
           aria-label="Covered types"
           className="sticky top-6 hidden h-fit w-56 shrink-0 flex-col gap-1 lg:flex"
         >
-          <p className="text-mono-label text-text-soft-400 pb-1">Covered types</p>
+          <p className="text-mono-label text-text-tertiary pb-1">Covered types</p>
           {INDEX.map((item) => (
             <a
               key={item.label}
               href={item.href}
-              className="rounded-md px-2 py-1 text-label-xs text-text-sub-600 transition-colors hover:bg-bg-weak-50 hover:text-text-strong-950"
+              className="rounded-md px-2 py-1 text-label-xs text-text-secondary transition-colors hover:bg-background-secondary-default hover:text-text-primary"
             >
               {item.label}
             </a>
@@ -228,8 +228,8 @@ export function SessionSample() {
             title="Session bar chrome"
             owner="git-chip · context-window-meter · sync/background pills"
           >
-            <div className="flex flex-wrap items-center gap-3 rounded-xl border border-stroke-soft-200 bg-bg-white-0 px-4 py-2.5">
-              <span className="text-mono-label text-text-soft-400">Session</span>
+            <div className="flex flex-wrap items-center gap-3 rounded-xl border border-border-button-default bg-background-primary-default px-4 py-2.5">
+              <span className="text-mono-label text-text-tertiary">Session</span>
               <GitChips
                 refs={[
                   { repo: "skynet/gateway", branch: "main" },
@@ -263,7 +263,7 @@ export function SessionSample() {
             <div className="relative">
               <div
                 ref={scrollRef}
-                className="scrollbar-slim max-h-[76vh] space-y-8 overflow-y-auto rounded-2xl border border-stroke-soft-200 bg-bg-white-0 px-5 py-6"
+                className="scrollbar-slim max-h-[76vh] space-y-8 overflow-y-auto rounded-2xl border border-border-button-default bg-background-primary-default px-5 py-6"
               >
                 {conversation.map((turn) => {
                   const live = mounted && turn.live;
@@ -284,7 +284,7 @@ export function SessionSample() {
           </section>
 
           <div className="space-y-8">
-            <p className="text-mono-label text-text-soft-400">
+            <p className="text-mono-label text-text-tertiary">
               Adjacent surfaces - session chrome + rails that render OUTSIDE the
               conversation timeline
             </p>
@@ -296,7 +296,7 @@ export function SessionSample() {
             >
               <ProviderStatusBanner engineLabel="Codex" onDismiss={() => {}} />
               <ThreadErrorBanner error={THREAD_ERROR_SUMMARY} onDismiss={() => {}} />
-              <p className="text-paragraph-xs text-text-soft-400">
+              <p className="text-caption-1-regular text-text-tertiary">
                 A deliberate user stop settles the run as &ldquo;{USER_STOP_SUMMARY}&rdquo;
                 and the error banner is intentionally suppressed (isUserStopSummary =
                 {" "}
@@ -318,7 +318,7 @@ export function SessionSample() {
               title="Plan / todo card (mixed states)"
               owner="plan-checklist via tool-step-row (Agents / subagent activity)"
             >
-              <p className="text-paragraph-xs text-text-soft-400">
+              <p className="text-caption-1-regular text-text-tertiary">
                 In the main conversation a plan folds into a generic work row; the rich
                 collapsible card is the Agents-rail / subagent-activity rendering
                 (ToolStepRow -&gt; PlanChecklist). Both variants shown.
@@ -351,7 +351,7 @@ export function SessionSample() {
               title="File-diff view (recovered hunks)"
               owner="file-diff-view"
             >
-              <div className="rounded-2xl border border-stroke-soft-200 bg-bg-white-0">
+              <div className="rounded-2xl border border-border-button-default bg-background-primary-default">
                 <FileDiffView files={changedFiles} patches={diffPatches} />
               </div>
             </Surface>
@@ -373,12 +373,12 @@ export function SessionSample() {
               title="Composer upload tray"
               owner="run-uploads (RunUploadChips)"
             >
-              <p className="text-paragraph-xs text-text-soft-400">
+              <p className="text-caption-1-regular text-text-tertiary">
                 A user&rsquo;s attached image is a composer affordance, not a thumbnail on
                 the historical user bubble. Image content itself renders as an artifact
                 card (with a click-to-expand lightbox) in the conversation above.
               </p>
-              <div className="rounded-xl border border-stroke-soft-200 bg-bg-white-0 pt-2">
+              <div className="rounded-xl border border-border-button-default bg-background-primary-default pt-2">
                 <RunUploadChips
                   uploads={uploads}
                   onRemove={(u) =>
@@ -388,7 +388,7 @@ export function SessionSample() {
               </div>
               <a
                 href="#turn-1"
-                className="inline-flex items-center gap-1 text-label-xs text-primary-base hover:underline"
+                className="inline-flex items-center gap-1 text-label-xs text-accent-500 hover:underline"
               >
                 <RiExternalLinkLine className="size-3.5" aria-hidden />
                 Jump to the image artifact + lightbox in turn 1

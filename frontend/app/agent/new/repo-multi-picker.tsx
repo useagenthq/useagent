@@ -1,9 +1,15 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { RiCheckLine, RiFolderLine, RiSearchLine } from "@remixicon/react";
-import * as Popover from "@/components/ui/popover";
-import { cnExt } from "@/utils/cn";
+import { RiFolderLine, RiSearchLine } from "@remixicon/react";
+import { CheckboxGlyph } from "@/components/base/checkbox/checkbox-glyph";
+import {
+  Dropdown,
+  DropdownItem,
+  DropdownPopover,
+  DropdownTrigger,
+} from "@/components/base/dropdown/dropdown";
+import { cx } from "@/utils/cx";
 
 export interface RepoItem {
   full_name: string; // "owner/name" — the value sent + validated
@@ -37,11 +43,11 @@ function readRecents(): string[] {
 }
 
 /**
- * multi-repo multi-select repository picker: a popover with a searchable,
- * checkbox list of the org's real repos, sectioned into "Recent" (recently
- * picked, from localStorage) and "All repositories" grouped by org. Selecting
- * toggles a repo and keeps the popover open. The trigger shows the count
- * ("N selected"). Mirrors the composer's other pill triggers + popover shell.
+ * multi-repo multi-select repository picker: a BoardUI dropdown with a
+ * searchable, checkbox list of the org's real repos, sectioned into "Recent"
+ * (recently picked, from localStorage) and "All repositories" grouped by org.
+ * Selecting toggles a repo and keeps the popover open. The trigger shows the
+ * count ("N selected"). Mirrors the composer's other pill triggers + panels.
  */
 export function RepoMultiPicker({
   repos,
@@ -107,75 +113,68 @@ export function RepoMultiPicker({
   const Row = ({ repo }: { repo: RepoItem }) => {
     const checked = selectedSet.has(repo.full_name);
     return (
-      <button
-        type="button"
-        onClick={() => toggle(repo.full_name)}
-        className="flex items-center gap-2.5 rounded-lg p-2 text-left outline-none transition-colors hover:bg-bg-weak-50 focus-visible:bg-bg-weak-50"
-      >
-        <span
-          className={cnExt(
-            "flex size-[18px] shrink-0 items-center justify-center rounded-[6px] border transition-colors",
-            checked ? "border-primary-base bg-primary-base" : "border-stroke-sub-300 bg-bg-white-0",
-          )}
-        >
-          {checked ? <RiCheckLine className="size-3.5 text-text-white-0" aria-hidden /> : null}
-        </span>
-        <RiFolderLine className="size-[18px] shrink-0 text-text-sub-600" aria-hidden />
-        <span className="min-w-0 flex-1 truncate text-label-sm text-text-strong-950">
+      <DropdownItem onSelect={() => toggle(repo.full_name)} className="gap-2.5">
+        <CheckboxGlyph
+          state={{
+            isSelected: checked,
+            isIndeterminate: false,
+            isFocusVisible: false,
+            isDisabled: false,
+            isHovered: false,
+          }}
+        />
+        <RiFolderLine className="size-[18px] shrink-0 text-foreground-icon-secondary" aria-hidden />
+        <span className="min-w-0 flex-1 truncate text-body-2-medium text-text-primary">
           {repo.name}
         </span>
-      </button>
+      </DropdownItem>
     );
   };
 
   return (
-    <Popover.Root
-      open={open}
+    <Dropdown
+      isOpen={open}
       onOpenChange={(next) => {
         setOpen(next);
         if (!next) setQuery("");
       }}
     >
-      <Popover.Trigger asChild>
-        <button
-          type="button"
-          aria-label="Select repositories"
-          className={cnExt(
-            "inline-flex max-w-full items-center gap-1.5 rounded-lg px-2 py-1.5 text-label-sm text-text-strong-950 outline-none transition-colors hover:bg-bg-weak-50 focus-visible:ring-2 focus-visible:ring-stroke-strong-950",
-            triggerClassName,
-          )}
-        >
-          <RiFolderLine className="size-[18px] shrink-0 text-text-sub-600" aria-hidden />
-          <span className="truncate">{triggerLabel}</span>
-        </button>
-      </Popover.Trigger>
-      <Popover.Content
-        unstyled
-        showArrow={false}
-        align="start"
-        sideOffset={6}
-        className="w-[280px] overflow-hidden rounded-2xl bg-bg-white-0 p-2.5 shadow-regular-md ring-1 ring-inset ring-stroke-soft-200"
+      <DropdownTrigger
+        aria-label="Select repositories"
+        className={cx(
+          "inline-flex max-w-full items-center gap-1.5 rounded-lg px-2 py-1.5 text-body-2-medium text-text-primary outline-none transition-colors hover:bg-background-primary-hover focus-visible:ring-2 focus-visible:ring-border-focus-ring",
+          triggerClassName,
+        )}
       >
-        <div className="-mx-2.5 -mt-1 mb-1 flex items-center gap-2 border-b border-stroke-soft-200 px-3 pb-2.5 pt-1">
-          <RiSearchLine className="size-4 shrink-0 text-text-soft-400" aria-hidden />
+        <RiFolderLine className="size-[18px] shrink-0 text-foreground-icon-secondary" aria-hidden />
+        <span className="truncate">{triggerLabel}</span>
+      </DropdownTrigger>
+      <DropdownPopover
+        aria-label="Select repositories"
+        placement="bottom start"
+        offset={6}
+        className="w-[280px]"
+      >
+        <div className="-mx-2.5 -mt-1 mb-1 flex items-center gap-2 border-b border-border-button-default px-3 pb-2.5 pt-1">
+          <RiSearchLine className="size-4 shrink-0 text-foreground-icon-tertiary" aria-hidden />
           <input
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             placeholder="Search repositories..."
             aria-label="Search repositories"
-            className="min-w-0 flex-1 bg-transparent text-label-sm text-text-strong-950 outline-none placeholder:text-text-soft-400"
+            className="min-w-0 flex-1 bg-transparent text-body-2-medium text-text-primary outline-none placeholder:text-text-tertiary"
           />
         </div>
         <div className="flex max-h-[288px] flex-col gap-1.5 overflow-y-auto">
           {filtered.length === 0 ? (
-            <p className="px-2 py-2 text-label-sm text-text-soft-400">
+            <p className="px-2 py-2 text-body-2-medium text-text-tertiary">
               {repos.length === 0 ? "No repositories available" : "No results"}
             </p>
           ) : (
             <>
               {recentItems.length > 0 ? (
                 <div className="flex flex-col gap-1">
-                  <span className="text-mono-label px-2 pt-1 text-text-soft-400">Recent</span>
+                  <span className="text-mono-label px-2 pt-1 text-text-tertiary">Recent</span>
                   {recentItems.map((repo) => (
                     <Row key={`recent-${repo.full_name}`} repo={repo} />
                   ))}
@@ -183,7 +182,7 @@ export function RepoMultiPicker({
               ) : null}
               {byOrg.map(([org, items]) => (
                 <div key={org} className="flex flex-col gap-1">
-                  <span className="text-mono-label px-2 pt-1 text-text-soft-400">{org}</span>
+                  <span className="text-mono-label px-2 pt-1 text-text-tertiary">{org}</span>
                   {items.map((repo) => (
                     <Row key={repo.full_name} repo={repo} />
                   ))}
@@ -192,7 +191,7 @@ export function RepoMultiPicker({
             </>
           )}
         </div>
-      </Popover.Content>
-    </Popover.Root>
+      </DropdownPopover>
+    </Dropdown>
   );
 }

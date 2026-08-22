@@ -15,7 +15,7 @@ import {
 import { AnimatePresence, motion, useReducedMotion, type HTMLMotionProps } from "motion/react";
 import { type CSSProperties, type ReactNode, useCallback, useEffect, useId, useRef, useState } from "react";
 
-import { cn } from "@/utils/cn";
+import { cx } from "@/utils/cx";
 
 // -- motion tokens ---------------------------------------------------------
 const EASE_OUT = [0.16, 1, 0.3, 1] as const;
@@ -49,14 +49,14 @@ function getStatusCopy(status: ToolApprovalStatus) {
 
 // pending=warning, running/approving=information, approved/complete=success, denied/error=error.
 function getStatusBadgeClass(status: ToolApprovalStatus) {
-  if (status === "pending") return "border-warning-base/30 bg-warning-base/10 text-warning-base";
+  if (status === "pending") return "border-yellow-500/30 bg-yellow-500/10 text-yellow-600";
   if (status === "approving" || status === "running") {
-    return "border-information-base/30 bg-information-base/10 text-information-base";
+    return "border-blue-500/30 bg-blue-500/10 text-blue-600";
   }
   if (status === "approved" || status === "complete") {
-    return "border-success-base/30 bg-success-base/10 text-success-base";
+    return "border-lime-500/30 bg-lime-500/10 text-lime-600";
   }
-  return "border-error-base/30 bg-error-base/10 text-error-base";
+  return "border-red-500/30 bg-red-500/10 text-text-error-primary";
 }
 
 // -- collapsible disclosure ------------------------------------------------
@@ -90,7 +90,7 @@ function AgentDisclosure({
             }
       }
       transition={transition ?? { duration: reduce ? 0 : open ? 0.22 : 0.14, ease: EASE_OUT }}
-      className={cn("overflow-hidden", className)}
+      className={cx("overflow-hidden", className)}
       style={{
         ...style,
         height: open ? openHeight : 0,
@@ -144,21 +144,21 @@ export function ToolApprovalCard({
     <div
       data-state={status}
       aria-busy={busy}
-      className={cn(
-        "w-full overflow-hidden rounded-2xl border border-stroke-soft-200 bg-bg-white-0 text-paragraph-sm shadow-regular-sm",
+      className={cx(
+        "w-full overflow-hidden rounded-2xl border border-border-button-default bg-background-primary-default text-body-2-regular shadow-sm",
         className,
       )}
     >
       <div className="flex items-start gap-3 p-4">
         <span
           aria-hidden="true"
-          className={cn(
-            "mt-0.5 grid size-8 shrink-0 place-items-center rounded-xl bg-bg-weak-50 text-text-sub-600",
-            error && "text-error-base",
+          className={cx(
+            "mt-0.5 grid size-8 shrink-0 place-items-center rounded-xl bg-background-secondary-default text-text-secondary",
+            error && "text-text-error-primary",
           )}
         >
           {busy ? (
-            <RiLoader4Line className={cn("size-4", !reduce && "animate-spin")} />
+            <RiLoader4Line className={cx("size-4", !reduce && "animate-spin")} />
           ) : error ? (
             <RiErrorWarningLine className="size-4" />
           ) : status === "denied" ? (
@@ -173,11 +173,11 @@ export function ToolApprovalCard({
         <div className="min-w-0 flex-1">
           <div className="flex min-w-0 items-start justify-between gap-3">
             <div className="min-w-0">
-              <div className="text-label-sm text-text-strong-950">{title}</div>
-              <div className="mt-0.5 truncate font-mono text-paragraph-xs text-text-sub-600">{tool}</div>
+              <div className="text-body-2-medium text-text-primary">{title}</div>
+              <div className="mt-0.5 truncate font-mono text-caption-1-regular text-text-secondary">{tool}</div>
             </div>
             <span
-              className={cn(
+              className={cx(
                 "shrink-0 rounded-full border px-2 py-0.5 text-[11px] font-medium transition-colors",
                 getStatusBadgeClass(status),
               )}
@@ -185,7 +185,7 @@ export function ToolApprovalCard({
               {getStatusCopy(status)}
             </span>
           </div>
-          {description ? <p className="mt-2 leading-5 text-text-sub-600">{description}</p> : null}
+          {description ? <p className="mt-2 leading-5 text-text-secondary">{description}</p> : null}
 
           {parameters.length ? (
             <button
@@ -193,7 +193,7 @@ export function ToolApprovalCard({
               aria-expanded={currentOpen}
               aria-controls={detailsId}
               onClick={() => setOpen(!currentOpen)}
-              className="mt-2 inline-flex items-center gap-1 rounded-md text-paragraph-xs font-medium text-text-sub-600 outline-none transition-colors hover:text-text-strong-950 focus-visible:ring-2 focus-visible:ring-stroke-strong-950"
+              className="mt-2 inline-flex items-center gap-1 rounded-md text-caption-1-regular font-medium text-text-secondary outline-none transition-colors hover:text-text-primary focus-visible:ring-2 focus-visible:ring-border-focus-ring"
             >
               View details
               <motion.span
@@ -209,14 +209,14 @@ export function ToolApprovalCard({
       </div>
 
       <AgentDisclosure id={detailsId} open={currentOpen}>
-        <dl className="mx-4 mb-4 grid gap-2 rounded-xl bg-bg-weak-50 p-3">
+        <dl className="mx-4 mb-4 grid gap-2 rounded-xl bg-background-secondary-default p-3">
           {parameters.map((parameter) => (
             <div
               key={parameter.id}
-              className="grid grid-cols-[minmax(0,7rem)_minmax(0,1fr)] items-center gap-3 text-paragraph-xs"
+              className="grid grid-cols-[minmax(0,7rem)_minmax(0,1fr)] items-center gap-3 text-caption-1-regular"
             >
-              <dt className="text-text-sub-600">{parameter.label}</dt>
-              <dd className="min-w-0 break-words font-mono text-text-strong-950">{parameter.value}</dd>
+              <dt className="text-text-secondary">{parameter.label}</dt>
+              <dd className="min-w-0 break-words font-mono text-text-primary">{parameter.value}</dd>
             </div>
           ))}
         </dl>
@@ -229,14 +229,14 @@ export function ToolApprovalCard({
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0 }}
             transition={{ duration: reduce ? 0.12 : 0.22, ease: EASE_OUT }}
-            className="flex flex-wrap items-center gap-2 border-t border-stroke-soft-200 px-4 py-3"
+            className="flex flex-wrap items-center gap-2 border-t border-border-button-default px-4 py-3"
           >
             <motion.button
               type="button"
               onClick={onApprove}
               whileTap={reduce ? undefined : { scale: 0.97 }}
               transition={SPRING_PRESS}
-              className="rounded-xl bg-primary-base px-3 py-1.5 text-paragraph-xs font-medium text-static-white outline-none focus-visible:ring-2 focus-visible:ring-stroke-strong-950 focus-visible:ring-offset-2"
+              className="rounded-xl bg-button-primary px-3 py-1.5 text-caption-1-regular font-medium text-text-white outline-none focus-visible:ring-2 focus-visible:ring-border-focus-ring focus-visible:ring-offset-2"
             >
               Allow once
             </motion.button>
@@ -246,7 +246,7 @@ export function ToolApprovalCard({
                 onClick={onAlwaysAllow}
                 whileTap={reduce ? undefined : { scale: 0.97 }}
                 transition={SPRING_PRESS}
-                className="rounded-xl border border-stroke-soft-200 bg-bg-white-0 px-3 py-1.5 text-paragraph-xs font-medium text-text-strong-950 outline-none transition-colors hover:bg-bg-weak-50 focus-visible:ring-2 focus-visible:ring-stroke-strong-950"
+                className="rounded-xl border border-border-button-default bg-background-primary-default px-3 py-1.5 text-caption-1-regular font-medium text-text-primary outline-none transition-colors hover:bg-background-primary-hover focus-visible:ring-2 focus-visible:ring-border-focus-ring"
               >
                 Always allow
               </motion.button>
@@ -254,7 +254,7 @@ export function ToolApprovalCard({
             <button
               type="button"
               onClick={onDeny}
-              className="rounded-xl px-3 py-1.5 text-paragraph-xs font-medium text-text-sub-600 outline-none transition-colors hover:bg-bg-weak-50 hover:text-text-strong-950 focus-visible:ring-2 focus-visible:ring-stroke-strong-950"
+              className="rounded-xl px-3 py-1.5 text-caption-1-regular font-medium text-text-secondary outline-none transition-colors hover:bg-background-primary-hover hover:text-text-primary focus-visible:ring-2 focus-visible:ring-border-focus-ring"
             >
               Deny
             </button>
@@ -291,7 +291,7 @@ export function ToolApprovalDemo() {
   }, [status]);
 
   return (
-    <div className="flex items-center justify-center rounded-xl bg-bg-weak-50 p-3">
+    <div className="flex items-center justify-center rounded-xl bg-background-secondary-default p-3">
       <div className="w-full max-w-md">
         <ToolApprovalCard
           tool="shell.exec"

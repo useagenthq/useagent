@@ -15,14 +15,16 @@
 //   is the minimal prop shape and the percentage is computed HERE from
 //   usedTokens/maxTokens (no caller math). Bind real data via
 //   contextWindowFromChildUsage in ./adapter.ts.
-// - Their hover Popover (tooltipStyle) -> AlignUI Tooltip; the detail panel is
+// - Their hover Popover (tooltipStyle) -> BoardUI tooltip (react-aria; the
+//   plain button trigger is wrapped in Focusable); the detail panel is
 //   the exported ContextWindowDetails so it stays SSR-testable and reusable.
 // - CSS color-mix ring colors -> semantic token classes with currentColor
-//   strokes (track text-bg-soft-200, fill text-text-soft-400, >90% overloaded
-//   -> text-error-base).
+//   strokes (track text-background-tertiary-default, fill text-text-tertiary, >90% overloaded
+//   -> text-text-error-primary).
 
-import * as Tooltip from "@/components/ui/tooltip";
-import { cn } from "@/utils/cn";
+import { Focusable } from "react-aria-components";
+import { Tooltip, TooltipTrigger } from "@/components/base/tooltip/tooltip";
+import { cx as cn } from "@/utils/cx";
 
 /** The minimal usage shape the meter renders; maxTokens null = unknown limit. */
 export interface ContextWindowUsage {
@@ -80,9 +82,9 @@ export function ContextWindowDetails(props: {
   return (
     <div data-session-ui="context-window-details" className="flex w-64 flex-col gap-2 text-left">
       <div className="flex items-center justify-between gap-3">
-        <div className="text-[12px] font-medium text-text-sub-600">Context Window</div>
+        <div className="text-[12px] font-medium text-text-secondary">Context Window</div>
         {usage.maxTokens !== null && usedPercentageLabel ? (
-          <div className="text-[11px] text-text-soft-400 tabular-nums">
+          <div className="text-[11px] text-text-tertiary tabular-nums">
             <span>{usedPercentageLabel}</span>
             <span className="mx-1">·</span>
             <span>
@@ -91,14 +93,14 @@ export function ContextWindowDetails(props: {
             </span>
           </div>
         ) : (
-          <div className="text-[11px] text-text-soft-400 tabular-nums">
+          <div className="text-[11px] text-text-tertiary tabular-nums">
             {formatContextWindowTokens(usage.usedTokens)}
           </div>
         )}
       </div>
       {usage.maxTokens !== null ? (
         <div
-          className="h-1.5 w-full overflow-hidden rounded-full bg-bg-soft-200"
+          className="h-1.5 w-full overflow-hidden rounded-full bg-background-tertiary-default"
           role="progressbar"
           aria-valuemin={0}
           aria-valuemax={100}
@@ -107,8 +109,8 @@ export function ContextWindowDetails(props: {
         >
           <div
             className={cn(
-              "h-full rounded-full bg-text-soft-400 transition-[width,background-color] duration-500 ease-out motion-reduce:transition-none",
-              isOverloaded && "bg-error-base",
+              "h-full rounded-full bg-foreground-icon-tertiary transition-[width,background-color] duration-500 ease-out motion-reduce:transition-none",
+              isOverloaded && "bg-red-500",
             )}
             style={{ width: `${normalizedPercentage}%` }}
           />
@@ -116,14 +118,14 @@ export function ContextWindowDetails(props: {
       ) : null}
       {showTotalProcessed ? (
         <div className="flex items-center justify-between gap-3 text-[11px] leading-4">
-          <span className="text-text-soft-400">Total processed</span>
-          <span className="font-medium text-text-soft-400 tabular-nums">
+          <span className="text-text-tertiary">Total processed</span>
+          <span className="font-medium text-text-tertiary tabular-nums">
             {formatContextWindowTokens(totalProcessedTokens)}
           </span>
         </div>
       ) : null}
       {usage.compactsAutomatically ? (
-        <div className="mt-1 text-pretty text-[11px] font-medium text-text-soft-400">
+        <div className="mt-1 text-pretty text-[11px] font-medium text-text-tertiary">
           {providerDisplayName ?? "It"} automatically compacts its context when needed.
         </div>
       ) : null}
@@ -149,12 +151,12 @@ export function ContextWindowMeter(props: {
   const isOverloaded = normalizedPercentage > 90;
 
   return (
-    <Tooltip.Root delayDuration={150}>
-      <Tooltip.Trigger asChild>
+    <TooltipTrigger delay={150}>
+      <Focusable>
         <button
           type="button"
           data-session-ui="context-window-meter"
-          className="inline-flex size-7 cursor-pointer items-center justify-center rounded-full border border-transparent text-text-sub-600 outline-none transition-colors hover:bg-bg-weak-50 focus-visible:ring-2 focus-visible:ring-primary-base"
+          className="inline-flex size-7 cursor-pointer items-center justify-center rounded-full border border-transparent text-text-secondary outline-none transition-colors hover:bg-background-primary-hover focus-visible:ring-2 focus-visible:ring-border-focus-ring"
           aria-label={
             usage.maxTokens !== null && usedPercentageLabel
               ? `Context window ${usedPercentageLabel} used`
@@ -173,7 +175,7 @@ export function ContextWindowMeter(props: {
                 r={radius}
                 fill="none"
                 stroke="currentColor"
-                className="text-bg-soft-200"
+                className="text-background-tertiary-default"
                 strokeWidth="3"
               />
               <circle
@@ -187,17 +189,17 @@ export function ContextWindowMeter(props: {
                 strokeDasharray={circumference}
                 strokeDashoffset={dashOffset}
                 className={cn(
-                  "text-text-soft-400 transition-[stroke-dashoffset,stroke] duration-500 ease-out motion-reduce:transition-none",
-                  isOverloaded && "text-error-base",
+                  "text-text-tertiary transition-[stroke-dashoffset,stroke] duration-500 ease-out motion-reduce:transition-none",
+                  isOverloaded && "text-text-error-primary",
                 )}
               />
             </svg>
           </span>
         </button>
-      </Tooltip.Trigger>
-      <Tooltip.Content size="medium" variant="light" side="top" align="end">
+      </Focusable>
+      <Tooltip size="md" placement="top end">
         <ContextWindowDetails usage={usage} providerDisplayName={providerDisplayName} />
-      </Tooltip.Content>
-    </Tooltip.Root>
+      </Tooltip>
+    </TooltipTrigger>
   );
 }

@@ -4,7 +4,7 @@ import {
   RiArrowUpLine,
   RiSubtractLine,
 } from "@remixicon/react";
-import { cnExt as cn } from "@/utils/cn";
+import { cx } from "@/utils/cx";
 
 /**
  * Metric insight — a labelled micro-stat with a tone-colored delta, a one-line
@@ -26,18 +26,18 @@ type Tone = "up" | "down" | "flat";
 const toneMeta: Record<Tone, { text: string; bar: string; icon: IconComponent }> =
   {
     up: {
-      text: "text-success-base",
-      bar: "bg-success-base",
+      text: "text-lime-600",
+      bar: "bg-lime-500",
       icon: RiArrowUpLine,
     },
     down: {
-      text: "text-error-base",
-      bar: "bg-error-base",
+      text: "text-text-error-primary",
+      bar: "bg-red-500",
       icon: RiArrowDownLine,
     },
     flat: {
-      text: "text-text-soft-400",
-      bar: "bg-text-disabled-300",
+      text: "text-text-tertiary",
+      bar: "bg-foreground-icon-quaternary",
       icon: RiSubtractLine,
     },
   };
@@ -58,7 +58,7 @@ function Sparkline({ data, barClass }: { data: number[]; barClass: string }) {
       {data.map((value, i) => (
         <span
           key={i}
-          className={cn(
+          className={cx(
             "w-1 rounded-full",
             barClass,
             i === data.length - 1 ? "opacity-100" : "opacity-40",
@@ -82,22 +82,22 @@ export function InsightCard({
   const ToneIcon = meta.icon;
   return (
     <div
-      className={cn(
-        "flex flex-col gap-2 rounded-2xl border border-stroke-soft-200 bg-bg-white-0 p-4 shadow-regular-xs",
+      className={cx(
+        "flex flex-col gap-2 rounded-2xl border border-border-button-default bg-background-primary-default p-4 shadow-card",
         className,
       )}
     >
       <div className="flex items-start justify-between gap-3">
-        <span className="text-mono-label text-text-soft-400">{title}</span>
+        <span className="text-mono-label text-text-tertiary">{title}</span>
         {chart && chart.length > 0 && (
           <Sparkline data={chart} barClass={meta.bar} />
         )}
       </div>
-      <div className={cn("flex items-center gap-1", meta.text)}>
+      <div className={cx("flex items-center gap-1", meta.text)}>
         <ToneIcon className="size-4 shrink-0" aria-hidden />
-        <span className="text-label-lg font-semibold tracking-[-0.1px] tabular-nums">{delta}</span>
+        <span className="text-title-3-medium font-semibold tracking-[-0.1px] tabular-nums">{delta}</span>
       </div>
-      <p className="text-paragraph-sm text-text-sub-600">{body}</p>
+      <p className="text-body-2-regular text-text-secondary">{body}</p>
     </div>
   );
 }

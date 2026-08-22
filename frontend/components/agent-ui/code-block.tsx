@@ -22,7 +22,7 @@ import {
   useState,
 } from "react";
 
-import { cn } from "@/utils/cn";
+import { cx } from "@/utils/cx";
 
 // -- motion tokens ---------------------------------------------------------
 const SPRING_PRESS = { type: "spring", stiffness: 500, damping: 30, mass: 0.6 } as const;
@@ -83,11 +83,11 @@ function tokenizeLine(line: string, language: CodeLanguage): CodeToken[] {
 }
 
 const TOKEN_CLASS: Record<CodeToken["kind"], string> = {
-  keyword: "text-primary-base",
-  string: "text-success-base",
-  comment: "text-text-soft-400 italic",
-  number: "text-warning-base",
-  plain: "text-text-sub-600",
+  keyword: "text-accent-500",
+  string: "text-lime-600",
+  comment: "text-text-tertiary italic",
+  number: "text-yellow-600",
+  plain: "text-text-secondary",
 };
 
 function CodeLine({ content, language }: { content: string; language: CodeLanguage }) {
@@ -175,29 +175,29 @@ export function CodeBlockPanel({
     <div
       data-state={status}
       aria-busy={streaming}
-      className={cn(
-        "w-full overflow-hidden rounded-2xl bg-bg-weak-50 text-paragraph-sm",
+      className={cx(
+        "w-full overflow-hidden rounded-2xl bg-background-secondary-default text-body-2-regular",
         className,
       )}
     >
       <div className="flex h-10 items-center gap-2.5 px-3">
-        <RiFileCodeLine aria-hidden="true" className="size-3.5 shrink-0 text-text-soft-400" />
+        <RiFileCodeLine aria-hidden="true" className="size-3.5 shrink-0 text-text-tertiary" />
         {filename ? (
-          <span className="min-w-0 truncate font-mono text-paragraph-xs text-text-sub-600">
+          <span className="min-w-0 truncate font-mono text-caption-1-regular text-text-secondary">
             {filename}
           </span>
         ) : null}
-        <span className="text-[10px] font-medium uppercase tracking-wide text-text-soft-400">
+        <span className="text-[10px] font-medium uppercase tracking-wide text-text-tertiary">
           {language}
         </span>
         <span
-          className={cn(
+          className={cx(
             "ml-auto inline-flex shrink-0 items-center gap-1 text-[10px] font-medium",
-            streaming ? "text-primary-base" : "text-success-base",
+            streaming ? "text-accent-500" : "text-lime-600",
           )}
         >
           {streaming ? (
-            <RiLoader4Line className={cn("size-3", !reduce && "animate-spin")} />
+            <RiLoader4Line className={cx("size-3", !reduce && "animate-spin")} />
           ) : (
             <RiCheckLine className="size-3" />
           )}
@@ -211,7 +211,7 @@ export function CodeBlockPanel({
             onClick={handleCopy}
             whileTap={reduce ? undefined : { scale: 0.9 }}
             transition={SPRING_PRESS}
-            className="grid size-7 shrink-0 place-items-center rounded-full text-text-sub-600 outline-none transition-colors hover:bg-bg-white-0 hover:text-text-strong-950 focus-visible:ring-2 focus-visible:ring-stroke-strong-950"
+            className="grid size-7 shrink-0 place-items-center rounded-full text-text-secondary outline-none transition-colors hover:bg-background-primary-default hover:text-text-primary focus-visible:ring-2 focus-visible:ring-border-focus-ring"
           >
             {copied ? (
               <RiCheckLine className="size-3.5" />
@@ -226,29 +226,29 @@ export function CodeBlockPanel({
         ref={viewportRef}
         role={streaming ? "log" : undefined}
         aria-live={streaming ? "polite" : undefined}
-        className="overflow-auto border-t border-stroke-soft-200 py-2 [scrollbar-width:none]"
+        className="overflow-auto border-t border-border-button-default py-2 [scrollbar-width:none]"
         style={{ maxHeight }}
       >
-        <pre className="m-0 min-w-max font-mono text-paragraph-xs leading-5 text-text-sub-600">
+        <pre className="m-0 min-w-max font-mono text-caption-1-regular leading-5 text-text-secondary">
           <code>
             {lines.map((content, index) => {
               const lineNumber = index + 1;
               return (
                 <span
                   key={lineNumber}
-                  className={cn(
+                  className={cx(
                     "grid min-h-5",
                     showLineNumbers ? "grid-cols-[2.75rem_minmax(0,1fr)]" : "grid-cols-1",
-                    highlighted.has(lineNumber) && "bg-primary-base/[0.07]",
+                    highlighted.has(lineNumber) && "bg-accent-500/[0.07]",
                   )}
                 >
                   {showLineNumbers ? (
-                    <span className="select-none pr-3 text-right tabular-nums text-text-soft-400">
+                    <span className="select-none pr-3 text-right tabular-nums text-text-tertiary">
                       {lineNumber}
                     </span>
                   ) : null}
                   <span
-                    className={cn(
+                    className={cx(
                       "pr-4",
                       showLineNumbers ? "pl-1" : "pl-4",
                       wrap ? "whitespace-pre-wrap break-words" : "whitespace-pre",
@@ -298,7 +298,7 @@ export function CodeBlockDemo() {
     count >= DEMO_CODE_LINES.length ? "complete" : "streaming";
 
   return (
-    <div className="flex items-center justify-center rounded-xl bg-bg-weak-50 p-3">
+    <div className="flex items-center justify-center rounded-xl bg-background-secondary-default p-3">
       <div className="w-full max-w-md">
         <CodeBlockPanel
           code={DEMO_CODE_LINES.slice(0, count).join("\n")}

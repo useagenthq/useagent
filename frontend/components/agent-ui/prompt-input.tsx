@@ -32,7 +32,7 @@ import {
   useState,
 } from "react";
 
-import { cn } from "@/utils/cn";
+import { cx } from "@/utils/cx";
 
 // -- motion tokens ---------------------------------------------------------
 const SPRING_SWAP = { type: "spring", stiffness: 460, damping: 30, mass: 0.55 } as const;
@@ -72,8 +72,8 @@ function useDismiss(open: boolean, onClose: () => void, ref: RefObject<HTMLEleme
 // -- Button (focused to used variants/sizes) -------------------------------
 type ButtonVariant = "primary" | "ghost";
 const BUTTON_VARIANT: Record<ButtonVariant, string> = {
-  primary: "bg-primary-base text-static-white hover:bg-primary-darker",
-  ghost: "text-text-sub-600 hover:text-text-strong-950 hover:bg-bg-weak-50",
+  primary: "bg-button-primary text-text-white",
+  ghost: "text-text-secondary hover:text-text-primary hover:bg-background-primary-hover",
 };
 
 function Button({
@@ -98,8 +98,8 @@ function Button({
       whileTap={reduce ? undefined : { scale: 0.93 }}
       whileHover={reduce || !canHover ? undefined : { scale: 1.02 }}
       transition={SPRING_PRESS}
-      className={cn(
-        "inline-flex select-none items-center justify-center rounded-lg font-medium transition-colors outline-none focus-visible:ring-2 focus-visible:ring-stroke-strong-950 disabled:pointer-events-none disabled:opacity-50",
+      className={cx(
+        "inline-flex select-none items-center justify-center rounded-lg font-medium transition-colors outline-none focus-visible:ring-2 focus-visible:ring-border-focus-ring disabled:pointer-events-none disabled:opacity-50",
         BUTTON_VARIANT[variant],
         className,
       )}
@@ -174,7 +174,7 @@ function MorphPopoverContent({
           exit={reduce ? { opacity: 0 } : { opacity: 0, scale: 0.94, y: 4 }}
           transition={reduce ? { duration: 0 } : SPRING_SWAP}
           style={{ bottom: "100%", left: 0, marginBottom: sideOffset, borderRadius: radius, transformOrigin: "bottom left" }}
-          className={cn("absolute z-20 border border-stroke-soft-200 bg-bg-white-0 shadow-regular-md", className)}
+          className={cx("absolute z-20 border border-border-button-default bg-background-primary-default shadow-md", className)}
         >
           {children}
         </motion.div>
@@ -215,7 +215,7 @@ function Select({
   );
   return (
     <SelectContext.Provider value={ctx}>
-      <div ref={containerRef} className={cn("relative", className)}>
+      <div ref={containerRef} className={cx("relative", className)}>
         {children}
       </div>
     </SelectContext.Provider>
@@ -238,8 +238,8 @@ function SelectTrigger({ className, children }: { className?: string; children: 
       aria-haspopup="listbox"
       aria-expanded={open}
       onClick={() => !disabled && setOpen(!open)}
-      className={cn(
-        "inline-flex items-center gap-1 outline-none transition-colors disabled:opacity-50 focus-visible:ring-stroke-strong-950",
+      className={cx(
+        "inline-flex items-center gap-1 outline-none transition-colors disabled:opacity-50 focus-visible:ring-border-focus-ring",
         className,
       )}
     >
@@ -248,7 +248,7 @@ function SelectTrigger({ className, children }: { className?: string; children: 
         aria-hidden="true"
         animate={{ rotate: open ? 180 : 0 }}
         transition={reduce ? { duration: 0 } : SPRING_SWAP}
-        className="grid shrink-0 place-items-center text-text-soft-400"
+        className="grid shrink-0 place-items-center text-text-tertiary"
       >
         <ChevronGlyph />
       </motion.span>
@@ -278,8 +278,8 @@ function SelectContent({ className, children }: { className?: string; children: 
           exit={reduce ? { opacity: 0 } : { opacity: 0, scale: 0.96, y: 4 }}
           transition={reduce ? { duration: 0 } : SPRING_SWAP}
           style={{ bottom: "100%", left: 0, marginBottom: 6, transformOrigin: "bottom left" }}
-          className={cn(
-            "absolute z-20 rounded-xl border border-stroke-soft-200 bg-bg-white-0 p-1 shadow-regular-md",
+          className={cx(
+            "absolute z-20 rounded-xl border border-border-button-default bg-background-primary-default p-1 shadow-md",
             className,
           )}
         >
@@ -313,13 +313,13 @@ function SelectItem({
         onValueChange(value);
         setOpen(false);
       }}
-      className={cn(
-        "flex w-full items-center justify-between gap-2 rounded-lg px-2.5 text-left outline-none transition-colors hover:bg-bg-weak-50 focus-visible:bg-bg-weak-50 disabled:pointer-events-none disabled:opacity-50",
+      className={cx(
+        "flex w-full items-center justify-between gap-2 rounded-lg px-2.5 text-left outline-none transition-colors hover:bg-background-primary-hover focus-visible:bg-background-primary-hover disabled:pointer-events-none disabled:opacity-50",
         className,
       )}
     >
       <span className="min-w-0 flex-1">{children}</span>
-      {selected ? <RiCheckLine className="size-3.5 shrink-0 text-text-sub-600" /> : null}
+      {selected ? <RiCheckLine className="size-3.5 shrink-0 text-text-secondary" /> : null}
     </button>
   );
 }
@@ -450,8 +450,8 @@ export function PromptInputPanel({
   return (
     <form
       onSubmit={submit}
-      className={cn(
-        "relative w-full rounded-2xl border border-stroke-soft-200 bg-bg-white-0 p-2 transition-colors focus-within:border-text-soft-400",
+      className={cx(
+        "relative w-full rounded-2xl border border-border-button-default bg-background-primary-default p-2 transition-colors focus-within:border-text-tertiary",
         disabled && "opacity-60",
         className,
       )}
@@ -459,7 +459,7 @@ export function PromptInputPanel({
       <div
         ref={measurementRef}
         aria-hidden="true"
-        className="pointer-events-none invisible absolute inset-x-2 top-0 whitespace-pre-wrap px-2 text-paragraph-sm leading-6 [overflow-wrap:break-word]"
+        className="pointer-events-none invisible absolute inset-x-2 top-0 whitespace-pre-wrap px-2 text-body-2-regular leading-6 [overflow-wrap:break-word]"
       >
         {`${currentValue}​`}
       </div>
@@ -473,7 +473,7 @@ export function PromptInputPanel({
         {...textareaProps}
         onChange={(event) => setValue(event.target.value)}
         onKeyDown={handleKeyDown}
-        className="block w-full resize-none overflow-y-auto bg-transparent px-2 pt-1.5 text-paragraph-sm leading-6 text-text-strong-950 outline-none [scrollbar-width:none] placeholder:text-text-soft-400"
+        className="block w-full resize-none overflow-y-auto bg-transparent px-2 pt-1.5 text-body-2-regular leading-6 text-text-primary outline-none [scrollbar-width:none] placeholder:text-text-placeholder"
       />
 
       <div className="mt-1 flex min-h-8 items-center gap-1">
@@ -508,17 +508,17 @@ export function PromptInputPanel({
                     onAction?.(action.value);
                     setActionsOpen(false);
                   }}
-                  className="flex w-full items-start gap-2.5 rounded-lg px-2.5 py-2 text-left outline-none transition-colors hover:bg-bg-weak-50 focus-visible:bg-bg-weak-50 disabled:pointer-events-none disabled:opacity-50"
+                  className="flex w-full items-start gap-2.5 rounded-lg px-2.5 py-2 text-left outline-none transition-colors hover:bg-background-primary-hover focus-visible:bg-background-primary-hover disabled:pointer-events-none disabled:opacity-50"
                 >
                   {action.icon ? (
-                    <span className="mt-0.5 grid size-5 shrink-0 place-items-center text-text-soft-400 [&_svg]:size-4">
+                    <span className="mt-0.5 grid size-5 shrink-0 place-items-center text-text-tertiary [&_svg]:size-4">
                       {action.icon}
                     </span>
                   ) : null}
                   <span className="min-w-0">
-                    <span className="block text-paragraph-sm text-text-strong-950">{action.label}</span>
+                    <span className="block text-body-2-regular text-text-primary">{action.label}</span>
                     {action.description ? (
-                      <span className="mt-0.5 block text-paragraph-xs leading-4 text-text-sub-600">
+                      <span className="mt-0.5 block text-caption-1-regular leading-4 text-text-secondary">
                         {action.description}
                       </span>
                     ) : null}
@@ -531,14 +531,14 @@ export function PromptInputPanel({
         {leadingAction}
         {models.length ? (
           <Select value={currentModelValue} onValueChange={setModel} disabled={disabled || loading} className="min-w-0">
-            <SelectTrigger className="h-8 w-auto max-w-52 rounded-xl px-2 py-0 text-paragraph-xs hover:bg-bg-weak-50 focus-visible:ring-2">
+            <SelectTrigger className="h-8 w-auto max-w-52 rounded-xl px-2 py-0 text-caption-1-regular hover:bg-background-primary-hover focus-visible:ring-2">
               <span className="flex min-w-0 items-center gap-1.5">
                 {currentModel?.icon ? (
-                  <span className="grid size-4 shrink-0 place-items-center text-text-soft-400 [&_svg]:size-3.5">
+                  <span className="grid size-4 shrink-0 place-items-center text-text-tertiary [&_svg]:size-3.5">
                     {currentModel.icon}
                   </span>
                 ) : null}
-                <span className="truncate text-text-sub-600">{currentModel?.label ?? "Choose model"}</span>
+                <span className="truncate text-text-secondary">{currentModel?.label ?? "Choose model"}</span>
               </span>
             </SelectTrigger>
             <SelectContent className="w-52">
@@ -546,11 +546,11 @@ export function PromptInputPanel({
                 <SelectItem key={option.value} value={option.value} disabled={option.disabled} className="py-2">
                   <span className="flex min-w-0 items-center gap-2">
                     {option.icon ? (
-                      <span className="grid size-5 shrink-0 place-items-center text-text-soft-400 [&_svg]:size-4">
+                      <span className="grid size-5 shrink-0 place-items-center text-text-tertiary [&_svg]:size-4">
                         {option.icon}
                       </span>
                     ) : null}
-                    <span className="min-w-0 truncate text-paragraph-sm text-text-strong-950">{option.label}</span>
+                    <span className="min-w-0 truncate text-body-2-regular text-text-primary">{option.label}</span>
                   </span>
                 </SelectItem>
               ))}
@@ -636,7 +636,7 @@ export function PromptInputDemo() {
   }, []);
 
   return (
-    <div className="flex items-center justify-center rounded-xl bg-bg-weak-50 p-3">
+    <div className="flex items-center justify-center rounded-xl bg-background-secondary-default p-3">
       <div className="w-full max-w-md">
         <PromptInputPanel
           key={reactId}

@@ -25,6 +25,7 @@ import {
   modelOptionsForEngine,
   selectableModelsForEngine,
 } from "@/components/chat/types";
+import { Button } from "@/components/base/buttons/button";
 import { PromptInput, PromptInputTextarea } from "@/components/prompt-kit/prompt-input";
 import { backendFetch } from "@/lib/backend-fetch";
 import {
@@ -32,7 +33,7 @@ import {
   type RunCreateAttempt,
   selectRunCreateAttempt,
 } from "@/lib/create-run";
-import { cnExt } from "@/utils/cn";
+import { cx } from "@/utils/cx";
 import { RepoBranchBar } from "./repo-branch-bar";
 import { type RepoItem, RepoMultiPicker } from "./repo-multi-picker";
 import { type PickerGroup, SearchablePicker } from "./searchable-picker";
@@ -50,7 +51,7 @@ const ENGINE_CAPTIONS: Partial<Record<EngineId, string>> = {
 
 /** Full-width row styling for the controls inside the "+" action shelf. */
 const ADD_MENU_ROW =
-  "flex w-full items-center gap-3 rounded-[10px] px-2.5 py-2 text-left text-label-sm text-text-strong-950 transition-colors hover:bg-bg-weak-50";
+  "flex w-full items-center gap-3 rounded-2lg px-2.5 py-2 text-left text-body-2-medium text-text-primary transition-colors hover:bg-background-primary-hover";
 
 /** "Create" actions in the + shelf: the colored BoardUI plugin icons
  *  (public/plugin-icons) that seed the prompt with a real artifact-creation task
@@ -385,8 +386,8 @@ export function NewTaskComposer({
         onSubmit={() => void submit()}
         maxHeight={260}
         disabled={submitting}
-        className={cnExt(
-          "relative z-10 p-2 shadow-regular-md transition-colors",
+        className={cx(
+          "relative z-10 p-2 shadow-md transition-colors",
           addMenuOpen ? "rounded-[20px] rounded-b-none" : "rounded-[20px]",
         )}
       >
@@ -426,7 +427,7 @@ export function NewTaskComposer({
             onKeyDown={(event) => {
               handleCmdKeys(event);
             }}
-            className="min-h-[84px] px-3.5 pt-3.5 text-paragraph-sm leading-relaxed"
+            className="min-h-[84px] px-3.5 pt-3.5 text-body-2-regular leading-relaxed"
           />
 
           {/* Toolbar: the "+" opens the add-context shelf below; engine + model +
@@ -439,15 +440,15 @@ export function NewTaskComposer({
               aria-haspopup="menu"
               aria-expanded={addMenuOpen}
               onClick={() => setAddMenuOpen((o) => !o)}
-              className={cnExt(
-                "grid size-8 shrink-0 place-items-center rounded-[10px] outline-none transition-colors focus-visible:ring-2 focus-visible:ring-stroke-strong-950",
+              className={cx(
+                "grid size-8 shrink-0 place-items-center rounded-2lg outline-none transition-colors focus-visible:ring-2 focus-visible:ring-border-focus-ring",
                 addMenuOpen
-                  ? "bg-bg-weak-50 text-text-strong-950"
-                  : "text-text-sub-600 hover:bg-bg-weak-50",
+                  ? "bg-background-secondary-default text-foreground-icon-primary"
+                  : "text-foreground-icon-secondary hover:bg-background-primary-hover",
               )}
             >
               <RiAddLine
-                className={cnExt(
+                className={cx(
                   "size-5 transition-transform duration-200",
                   addMenuOpen && "rotate-45",
                 )}
@@ -489,14 +490,14 @@ export function NewTaskComposer({
                 triggerClassName="hidden min-w-0 max-w-[10rem] sm:inline-flex sm:flex-[0_2_10rem]"
               />
             </div>
-            <button
-              type="button"
+            <Button
+              variant="primary"
               onClick={() => void submit()}
               disabled={!canSubmit}
-              className="inline-flex h-9 min-w-[7.5rem] shrink-0 items-center justify-center rounded-full bg-bg-strong-950 px-4 text-label-sm text-text-white-0 outline-none transition-opacity hover:opacity-90 focus-visible:ring-2 focus-visible:ring-stroke-strong-950 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-40"
+              className="min-w-[7.5rem] shrink-0 rounded-full px-3"
             >
               {submitting ? "Starting..." : "Start thread"}
-            </button>
+            </Button>
           </div>
         </div>
       </PromptInput>
@@ -506,7 +507,7 @@ export function NewTaskComposer({
           Every row is real - upload, the repo multi-select, the skill picker,
           per-repo branches, and GitHub (already connected server-side). */}
       {addMenuOpen ? (
-        <div className="relative z-0 rounded-b-[20px] rounded-t-none border-x border-b border-stroke-soft-200 bg-bg-white-0 p-1.5 shadow-regular-md">
+        <div className="relative z-0 rounded-b-[20px] rounded-t-none border-x border-b border-border-button-default bg-background-primary-default p-1.5 shadow-md">
           <button
             type="button"
             onClick={() => {
@@ -515,10 +516,10 @@ export function NewTaskComposer({
             }}
             className={ADD_MENU_ROW}
           >
-            <RiAttachment2 className="size-[18px] shrink-0 text-text-sub-600" aria-hidden />
+            <RiAttachment2 className="size-[18px] shrink-0 text-foreground-icon-secondary" aria-hidden />
             <span className="flex min-w-0 flex-1 flex-col">
-              <span className="text-label-sm text-text-strong-950">Add photos &amp; files</span>
-              <span className="text-paragraph-xs text-text-soft-400">Upload from computer</span>
+              <span className="text-body-2-medium text-text-primary">Add photos &amp; files</span>
+              <span className="text-caption-1-regular text-text-tertiary">Upload from computer</span>
             </span>
           </button>
 
@@ -535,10 +536,10 @@ export function NewTaskComposer({
             </div>
           ) : null}
 
-          <div className="my-1 border-t border-stroke-soft-200" />
+          <div className="my-1 border-t border-border-button-default" />
 
           {/* Create: colored BoardUI plugin icons that seed a real artifact task. */}
-          <p className="px-2.5 pb-0.5 pt-0.5 text-mono-label text-text-soft-400">Create</p>
+          <p className="px-2.5 pb-0.5 pt-0.5 text-mono-label text-text-tertiary">Create</p>
           {CREATE_ROWS.map((row) => (
             <button
               key={row.label}
@@ -551,25 +552,25 @@ export function NewTaskComposer({
             >
               <img src={row.icon} alt="" width={20} height={20} className="size-5 shrink-0" aria-hidden />
               <span className="flex min-w-0 flex-1 flex-col">
-                <span className="text-label-sm text-text-strong-950">{row.label}</span>
-                <span className="text-paragraph-xs text-text-soft-400">{row.desc}</span>
+                <span className="text-body-2-medium text-text-primary">{row.label}</span>
+                <span className="text-caption-1-regular text-text-tertiary">{row.desc}</span>
               </span>
             </button>
           ))}
 
-          <div className="my-1 border-t border-stroke-soft-200" />
+          <div className="my-1 border-t border-border-button-default" />
 
           {/* GitHub is connected server-side via the GitHub App (that is why the
               repo list loads) - so this is a status row, not a "Connect" action. */}
-          <div className={cnExt(ADD_MENU_ROW, "cursor-default hover:bg-transparent")}>
-            <RiGithubLine className="size-[18px] shrink-0 text-text-sub-600" aria-hidden />
+          <div className={cx(ADD_MENU_ROW, "cursor-default hover:bg-transparent")}>
+            <RiGithubLine className="size-[18px] shrink-0 text-foreground-icon-secondary" aria-hidden />
             <span className="flex min-w-0 flex-1 flex-col">
-              <span className="text-label-sm text-text-strong-950">GitHub</span>
-              <span className="text-paragraph-xs text-text-soft-400">
+              <span className="text-body-2-medium text-text-primary">GitHub</span>
+              <span className="text-caption-1-regular text-text-tertiary">
                 Read pull requests &amp; issues
               </span>
             </span>
-            <span className="rounded-full bg-bg-weak-50 px-2 py-0.5 text-label-xs text-text-sub-600">
+            <span className="rounded-full bg-background-secondary-default px-2 py-0.5 text-caption-1-medium text-text-secondary">
               Connected
             </span>
           </div>
@@ -577,7 +578,7 @@ export function NewTaskComposer({
       ) : null}
 
       {error ? (
-        <p role="alert" className="mt-2 text-paragraph-xs text-error-base">
+        <p role="alert" className="mt-2 text-caption-1-regular text-text-error-primary">
           {error}
         </p>
       ) : null}

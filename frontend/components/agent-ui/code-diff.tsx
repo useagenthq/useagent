@@ -13,8 +13,8 @@ export function CodeDiff({ title, code, changes, className }: CodeDiffProps) {
   return (
     <section aria-label={title} className={className}>
       <div className="mb-3 flex items-center justify-between gap-3">
-        <h3 className="text-label-sm text-text-strong-950">{title}</h3>
-        <span className="font-mono text-label-xs text-text-soft-400">
+        <h3 className="text-body-2-medium text-text-primary">{title}</h3>
+        <span className="font-mono text-caption-1-medium text-text-tertiary">
           {changes.length} {changes.length === 1 ? "change" : "changes"}
         </span>
       </div>

@@ -12,7 +12,7 @@
 
 import { type RefObject, useEffect, useRef, useState } from "react";
 import { cleanPrompt } from "@/components/chat/types";
-import { cnExt as cn } from "@/utils/cn";
+import { cx as cn } from "@/utils/cx";
 
 /** Below this many turns the rail adds no navigational value, so it is hidden. */
 export const MIN_TURNS_FOR_SCROLLER = 4;
@@ -133,14 +133,14 @@ export function MessageScrollerRail({
             aria-label={`Jump to turn ${index + 1}: ${tick.snippet}`}
             aria-current={active ? "true" : undefined}
             onClick={() => jumpTo(index)}
-            className="group pointer-events-auto flex h-3.5 w-3 items-center justify-end rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-stroke-strong-950"
+            className="group pointer-events-auto flex h-3.5 w-3 items-center justify-end rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-border-focus-ring"
           >
             <span
               className={cn(
                 "h-0.5 rounded-full transition-all duration-200",
                 active
                   ? "w-2.5 bg-text-sub-600"
-                  : "w-1.5 bg-stroke-sub-300 group-hover:w-2.5 group-hover:bg-text-soft-400",
+                  : "w-1.5 bg-border-button-hover group-hover:w-2.5 group-hover:bg-foreground-icon-tertiary",
               )}
             />
           </button>

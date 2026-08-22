@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { cnExt } from "@/utils/cn";
+import { cx } from "@/utils/cx";
 
 /**
  * Sticky left section rail for the settings page. Anchor links jump to each
@@ -56,12 +56,12 @@ export function SettingsRail() {
             key={id}
             href={`#${id}`}
             aria-current={selected ? "true" : undefined}
-            className={cnExt(
-              "rounded-lg px-3 py-1.5 text-label-sm transition-colors duration-150",
-              "outline-none focus-visible:ring-2 focus-visible:ring-stroke-strong-950",
+            className={cx(
+              "rounded-2lg px-3 py-1.5 text-body-2-medium transition-colors duration-150",
+              "outline-none focus-visible:ring-2 focus-visible:ring-border-focus-ring",
               selected
-                ? "bg-bg-weak-50 text-text-strong-950"
-                : "text-text-sub-600 hover:bg-bg-weak-50 hover:text-text-strong-950",
+                ? "bg-linear-to-b from-accent-500 to-accent-600 text-white shadow-nav-selected"
+                : "text-text-secondary hover:bg-background-secondary-hover hover:text-text-primary",
             )}
           >
             {label}

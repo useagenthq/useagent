@@ -121,12 +121,12 @@ export default async function DashboardPage() {
         </div>
 
         <section className="flex flex-col gap-3">
-          <h2 className="text-label-lg text-text-strong-950">Fleet by project</h2>
+          <h2 className="text-headline-medium text-text-primary">Fleet by project</h2>
           <Fleet lanes={lanes} stats={fleetStats} />
         </section>
 
         <section className="flex flex-col gap-3">
-          <h2 className="text-label-lg text-text-strong-950">Limits</h2>
+          <h2 className="text-headline-medium text-text-primary">Limits</h2>
           <FleetLimits />
         </section>
 

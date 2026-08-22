@@ -40,25 +40,25 @@ export function ContextCard({
   return (
     <article
       className={cnExt(
-        "overflow-hidden rounded-xl bg-bg-white-0 shadow-regular-xs ring-1 ring-inset ring-stroke-soft-200 transition-colors hover:ring-stroke-sub-300",
+        "overflow-hidden rounded-xl bg-background-primary-default shadow-card ring-1 ring-inset ring-border-button-default transition-colors hover:ring-border-button-hover",
         className,
       )}
     >
-      <div className="flex items-center gap-2 border-b border-stroke-soft-200 px-3 py-2">
+      <div className="flex items-center gap-2 border-b border-border-button-default px-3 py-2">
         <Icon
-          className="size-3.5 shrink-0 text-text-soft-400"
+          className="size-3.5 shrink-0 text-text-tertiary"
           aria-hidden
         />
-        <span className="min-w-0 flex-1 truncate text-label-sm text-text-strong-950">
+        <span className="min-w-0 flex-1 truncate text-body-2-medium text-text-primary">
           {title}
         </span>
         {meta && (
-          <span className="shrink-0 text-paragraph-xs tabular-nums text-text-soft-400">
+          <span className="shrink-0 text-caption-1-regular tabular-nums text-text-tertiary">
             {meta}
           </span>
         )}
       </div>
-      <div className="line-clamp-2 px-3 py-2 text-paragraph-sm text-text-sub-600">
+      <div className="line-clamp-2 px-3 py-2 text-body-2-regular text-text-secondary">
         {body}
       </div>
     </article>
@@ -81,7 +81,7 @@ export function ContextCardStack({
   return (
     <div className={cnExt("flex flex-col gap-2", className)}>
       <div className="flex items-center gap-2 px-0.5">
-        <span className="text-label-sm text-text-strong-950">{label}</span>
+        <span className="text-body-2-medium text-text-primary">{label}</span>
         <Badge.Root variant="light" color="gray" size="medium">
           {count}
         </Badge.Root>

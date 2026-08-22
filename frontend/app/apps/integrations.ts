@@ -30,14 +30,14 @@ export const integrations: Integration[] = [
     name: "X (formerly Twitter)",
     description: "Interact with X for social media management",
     icon: RiTwitterXFill,
-    iconClass: "text-text-strong-950",
+    iconClass: "text-text-primary",
     connected: true,
   },
   {
     name: "GitHub",
     description: "Streamline your development workflow",
     icon: RiGithubFill,
-    iconClass: "text-text-strong-950",
+    iconClass: "text-text-primary",
   },
   {
     name: "Slack",
@@ -73,7 +73,7 @@ export const integrations: Integration[] = [
     name: "Notion",
     description: "Create documents and databases for your team",
     icon: RiNotionFill,
-    iconClass: "text-text-strong-950",
+    iconClass: "text-text-primary",
   },
   {
     name: "Canva",

@@ -19,13 +19,13 @@ function Metric({
 }) {
   return (
     <div className="flex min-w-0 items-start gap-3 px-4 py-4 sm:px-5">
-      <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-bg-weak-50 text-text-sub-600">
+      <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-background-secondary-default text-text-secondary">
         <Icon className="size-4" aria-hidden />
       </span>
       <div className="min-w-0">
-        <p className="text-label-xs text-text-soft-400">{label}</p>
-        <p className="mt-0.5 truncate text-label-lg text-text-strong-950">{value}</p>
-        <p className="mt-0.5 truncate text-paragraph-xs text-text-soft-400">{detail}</p>
+        <p className="text-label-xs text-text-tertiary">{label}</p>
+        <p className="mt-0.5 truncate text-label-lg text-text-primary">{value}</p>
+        <p className="mt-0.5 truncate text-caption-1-regular text-text-tertiary">{detail}</p>
       </div>
     </div>
   );
@@ -43,7 +43,7 @@ export function AutomationOverview({
   return (
     <section
       aria-label="Automation overview"
-      className="mt-7 grid overflow-hidden rounded-2xl border border-stroke-soft-200 bg-bg-white-0 shadow-regular-xs sm:grid-cols-3 sm:divide-x sm:divide-stroke-soft-200"
+      className="mt-7 grid overflow-hidden rounded-2xl border border-border-button-default bg-background-primary-default shadow-card sm:grid-cols-3 sm:divide-x sm:divide-border-button-default"
     >
       <Metric icon={RiPulseLine} label="Active" value={String(active)} detail="Running on cadence" />
       <Metric icon={RiPauseCircleLine} label="Paused" value={String(paused)} detail="Waiting for activation" />
@@ -60,13 +60,13 @@ export function AutomationOverview({
 export function EmptyAutomations({ filtered, onCreate }: { filtered: boolean; onCreate: () => void }) {
   return (
     <div className="flex flex-col items-center px-6 py-16 text-center">
-      <span className="flex size-11 items-center justify-center rounded-2xl border border-stroke-soft-200 bg-bg-weak-50 text-text-sub-600 shadow-regular-xs">
+      <span className="flex size-11 items-center justify-center rounded-2xl border border-border-button-default bg-background-secondary-default text-text-secondary shadow-card">
         <RiCalendarScheduleLine className="size-5" aria-hidden />
       </span>
-      <h2 className="mt-4 text-label-md text-text-strong-950">
+      <h2 className="mt-4 text-label-md text-text-primary">
         {filtered ? "No matching automations" : "Automate recurring work"}
       </h2>
-      <p className="mt-1 max-w-sm text-paragraph-sm text-text-sub-600">
+      <p className="mt-1 max-w-sm text-body-2-regular text-text-secondary">
         {filtered
           ? "Try a different search or status filter."
           : "Give an agent repeatable instructions and a cadence. New automations start paused until you activate them."}

@@ -4,12 +4,24 @@ import { RiFileList2Line, RiRefreshLine } from "@remixicon/react";
 import { useCallback, useEffect, useState } from "react";
 import { ArtifactCard } from "@/app/agent/artifacts/artifact-card";
 import { type ArtifactDescriptor, extractArtifacts } from "@/components/artifacts/model";
-import * as Button from "@/components/ui/button";
+import { IconButton } from "@/components/base/buttons/icon-button";
 import { useOrgChanges } from "@/hooks/use-org-changes";
 import { backendFetch } from "@/lib/backend-fetch";
+import { cx } from "@/utils/cx";
 import { artifactQueryForThread } from "./artifacts-rail-model";
 
 const LIVE_REFRESH_MS = 5_000;
+
+/** Refresh glyph in its in-flight state; IconButton sizes it like any icon. */
+function SpinningRefreshIcon({
+  className,
+  ...props
+}: {
+  className?: string;
+  "aria-hidden"?: boolean | "true" | "false";
+}) {
+  return <RiRefreshLine {...props} className={cx("animate-spin", className)} />;
+}
 
 export function ArtifactsRail({
   threadId,
@@ -63,38 +75,35 @@ export function ArtifactsRail({
     <div className="absolute inset-0 overflow-y-auto p-3">
       <div className="mb-3 flex items-center justify-between gap-3">
         <div className="min-w-0">
-          <p className="text-label-sm text-text-strong-950">Session files</p>
-          <p className="text-paragraph-xs text-text-soft-400">
+          <p className="text-body-2-medium text-text-primary">Session files</p>
+          <p className="text-caption-1-regular text-text-tertiary">
             Durable outputs you can preview, edit, or download
           </p>
         </div>
-        <Button.Root
-          variant="neutral"
-          mode="stroke"
-          size="xsmall"
+        <IconButton
+          size="small"
+          icon={refreshing ? SpinningRefreshIcon : RiRefreshLine}
           onClick={() => void load()}
           disabled={refreshing}
           aria-label="Refresh session files"
           title="Refresh"
-          className="size-8 shrink-0 p-0"
-        >
-          <RiRefreshLine className={refreshing ? "size-4 animate-spin" : "size-4"} aria-hidden />
-        </Button.Root>
+          className="shrink-0"
+        />
       </div>
 
       {available === false && artifacts.length === 0 ? (
-        <div className="flex min-h-48 flex-col items-center justify-center rounded-xl border border-dashed border-stroke-soft-200 bg-bg-weak-50 px-5 text-center">
-          <RiFileList2Line className="size-5 text-text-soft-400" aria-hidden />
-          <p className="mt-3 text-label-sm text-text-strong-950">Files unavailable</p>
-          <p className="mt-1 text-paragraph-xs text-text-sub-600">Refresh to reconnect.</p>
+        <div className="flex min-h-48 flex-col items-center justify-center rounded-xl border border-dashed border-border-button-default bg-background-secondary-default px-5 text-center">
+          <RiFileList2Line className="size-5 text-text-tertiary" aria-hidden />
+          <p className="mt-3 text-body-2-medium text-text-primary">Files unavailable</p>
+          <p className="mt-1 text-caption-1-regular text-text-secondary">Refresh to reconnect.</p>
         </div>
       ) : artifacts.length === 0 ? (
-        <div className="flex min-h-48 flex-col items-center justify-center rounded-xl border border-dashed border-stroke-soft-200 bg-bg-weak-50 px-5 text-center">
-          <RiFileList2Line className="size-5 text-text-soft-400" aria-hidden />
-          <p className="mt-3 text-label-sm text-text-strong-950">
+        <div className="flex min-h-48 flex-col items-center justify-center rounded-xl border border-dashed border-border-button-default bg-background-secondary-default px-5 text-center">
+          <RiFileList2Line className="size-5 text-text-tertiary" aria-hidden />
+          <p className="mt-3 text-body-2-medium text-text-primary">
             {available === null ? "Loading files..." : "No files yet"}
           </p>
-          <p className="mt-1 text-paragraph-xs text-text-sub-600">
+          <p className="mt-1 text-caption-1-regular text-text-secondary">
             Agent-published documents and spreadsheets appear here.
           </p>
         </div>

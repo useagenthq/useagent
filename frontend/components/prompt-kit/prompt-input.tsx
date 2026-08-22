@@ -1,15 +1,16 @@
 "use client";
 
 // Vendored from prompt-kit (prompt-kit.com/c/prompt-input.json), adapted to the
-// AlignUI foundation. Two adaptations from the shadcn original:
+// BoardUI foundation (semantic tokens from styles/theme.css). Two adaptations
+// from the shadcn original:
 //   - the `@/components/ui/textarea` dep is replaced with a plain autosizing
-//     <textarea> (the AlignUI Textarea ships its own bordered container we don't
-//     want inside the composer card);
+//     <textarea> (a design-system Textarea ships its own bordered container we
+//     don't want inside the composer card);
 //   - the `@/components/ui/tooltip` dep is dropped — `PromptInputAction` renders
 //     its child directly (the composer's controls are self-describing). The
 //     `tooltip` prop is kept optional so the call-shape stays source-compatible.
 
-import { cnExt as cn } from "@/utils/cn";
+import { cx as cn } from "@/utils/cx";
 import React, {
   createContext,
   useContext,
@@ -98,7 +99,7 @@ function PromptInput({
         disabled={disabled}
         onPointerDown={handlePointerDown}
         className={cn(
-          "border-stroke-soft-200 bg-bg-white-0 min-w-0 cursor-text rounded-2xl border p-2 shadow-regular-xs",
+          "border-border-button-default bg-background-primary-default min-w-0 cursor-text rounded-2xl border p-2 shadow-card",
           disabled && "cursor-not-allowed opacity-60",
           className,
         )}
@@ -175,7 +176,7 @@ function PromptInputTextarea({
       onChange={handleChange}
       onKeyDown={handleKeyDown}
       className={cn(
-        "text-text-strong-950 placeholder:text-text-soft-400 min-h-[44px] w-full resize-none border-none bg-transparent shadow-none outline-none focus-visible:ring-0 focus-visible:ring-offset-0",
+        "text-text-primary placeholder:text-text-tertiary min-h-[44px] w-full resize-none border-none bg-transparent shadow-none outline-none focus-visible:ring-0 focus-visible:ring-offset-0",
         className,
       )}
       rows={1}

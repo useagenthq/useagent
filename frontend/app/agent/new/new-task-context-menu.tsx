@@ -8,7 +8,13 @@ import {
   RiSearchLine,
 } from "@remixicon/react";
 import { useMemo, useState } from "react";
-import * as Popover from "@/components/ui/popover";
+import {
+  Dropdown,
+  DropdownItem,
+  DropdownPopover,
+  DropdownTrigger,
+} from "@/components/base/dropdown/dropdown";
+import { cx } from "@/utils/cx";
 import type { PickerGroup, PickerOption } from "./searchable-picker";
 
 interface NewTaskContextMenuProps {
@@ -17,9 +23,6 @@ interface NewTaskContextMenuProps {
   readonly onAddFiles: () => void;
   readonly onSelectSkill: (skillId: string) => void;
 }
-
-const rowClassName =
-  "flex w-full items-center gap-3 rounded-xl px-2.5 py-2 text-left outline-none transition-colors hover:bg-bg-weak-50 focus-visible:bg-bg-weak-50";
 
 /** Compact, real-action context menu adapted from the AI-kit knowledge composer. */
 export function NewTaskContextMenu({
@@ -53,100 +56,94 @@ export function NewTaskContextMenu({
   }
 
   return (
-    <Popover.Root
-      open={open}
+    <Dropdown
+      isOpen={open}
       onOpenChange={(next) => {
         setOpen(next);
         if (!next) setQuery("");
       }}
     >
-      <Popover.Trigger asChild>
-        <button
-          type="button"
-          aria-label="Add files and context"
-          className="inline-flex size-9 shrink-0 items-center justify-center rounded-full text-text-sub-600 outline-none transition-colors hover:bg-bg-weak-50 focus-visible:ring-2 focus-visible:ring-stroke-strong-950"
-        >
-          <RiAddLine
-            className={`size-5 transition-transform duration-200 ${open ? "rotate-45" : ""}`}
-            aria-hidden
-          />
-        </button>
-      </Popover.Trigger>
-      <Popover.Content
-        unstyled
-        showArrow={false}
-        align="start"
-        sideOffset={8}
-        className="w-[520px] max-w-[calc(100vw-32px)] overflow-hidden rounded-2xl bg-bg-white-0 p-2 shadow-regular-md ring-1 ring-inset ring-stroke-soft-200"
+      <DropdownTrigger
+        aria-label="Add files and context"
+        className="inline-flex size-9 shrink-0 items-center justify-center rounded-full text-foreground-icon-secondary outline-none transition-colors hover:bg-background-primary-hover focus-visible:ring-2 focus-visible:ring-border-focus-ring"
       >
-        <button
-          type="button"
-          className={rowClassName}
-          onClick={() => {
+        <RiAddLine
+          className={cx("size-5 transition-transform duration-200", open && "rotate-45")}
+          aria-hidden
+        />
+      </DropdownTrigger>
+      <DropdownPopover
+        aria-label="Add files and context"
+        placement="bottom start"
+        offset={8}
+        className="w-[520px] p-2"
+      >
+        <DropdownItem
+          className="gap-3 rounded-xl px-2.5"
+          onSelect={() => {
             setOpen(false);
             onAddFiles();
           }}
         >
-          <RiAttachment2 className="size-[18px] shrink-0 text-text-sub-600" aria-hidden />
-          <span className="text-label-sm text-text-strong-950">Add photos &amp; files</span>
-          <span className="truncate text-paragraph-sm text-text-soft-400">
+          <RiAttachment2 className="size-[18px] shrink-0 text-foreground-icon-secondary" aria-hidden />
+          <span className="text-body-2-medium text-text-primary">Add photos &amp; files</span>
+          <span className="truncate text-body-2-regular text-text-tertiary">
             Upload from computer
           </span>
-        </button>
+        </DropdownItem>
 
         <div className="max-h-[320px] overflow-y-auto py-1">
           {visibleGroups.length > 0 ? (
             visibleGroups.map((group, groupIndex) => (
-              <div key={group.label ?? groupIndex} className="py-1">
+              <div key={group.label ?? groupIndex} className="flex flex-col gap-1 py-1">
                 {group.label ? (
-                  <p className="px-2.5 pb-1 pt-1 text-mono-label text-text-soft-400">
+                  <p className="px-2.5 pb-1 pt-1 text-mono-label text-text-tertiary">
                     {group.label}
                   </p>
                 ) : null}
                 {group.options.map((option) => {
                   const Icon = option.icon ?? RiBookMarkedLine;
                   return (
-                    <button
+                    <DropdownItem
                       key={option.value || "none"}
-                      type="button"
-                      className={rowClassName}
-                      onClick={() => selectSkill(option)}
+                      className="gap-3 rounded-xl px-2.5"
+                      onSelect={() => selectSkill(option)}
                     >
-                      <Icon className="size-[18px] shrink-0 text-text-sub-600" aria-hidden />
+                      <Icon className="size-[18px] shrink-0 text-foreground-icon-secondary" aria-hidden />
                       <span className="min-w-0 flex-1">
-                        <span className="block truncate text-label-sm text-text-strong-950">
+                        <span className="block truncate text-body-2-medium text-text-primary">
                           {option.label}
                         </span>
                         {option.caption ? (
-                          <span className="block truncate text-paragraph-xs text-text-soft-400">
+                          <span className="block truncate text-caption-1-regular text-text-tertiary">
                             {option.caption}
                           </span>
                         ) : null}
                       </span>
                       {option.value === selectedSkill ? (
-                        <RiCheckLine className="size-4 shrink-0 text-text-sub-600" aria-hidden />
+                        <RiCheckLine className="size-4 shrink-0 text-foreground-icon-secondary" aria-hidden />
                       ) : null}
-                    </button>
+                    </DropdownItem>
                   );
                 })}
               </div>
             ))
           ) : (
-            <p className="px-2.5 py-2 text-paragraph-sm text-text-soft-400">No matching skills</p>
+            <p className="px-2.5 py-2 text-body-2-regular text-text-tertiary">No matching skills</p>
           )}
         </div>
 
-        <label className="mt-1 flex items-center gap-2 border-t border-stroke-soft-200 px-2.5 pb-1 pt-3">
-          <RiSearchLine className="size-[18px] shrink-0 text-text-soft-400" aria-hidden />
+        <label className="mt-1 flex items-center gap-2 border-t border-border-button-default px-2.5 pb-1 pt-3">
+          <RiSearchLine className="size-[18px] shrink-0 text-foreground-icon-tertiary" aria-hidden />
           <span className="sr-only">Search skills and playbooks</span>
           <input
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             placeholder="Type to search skills and playbooks"
-            className="min-w-0 flex-1 bg-transparent text-paragraph-sm text-text-strong-950 outline-none placeholder:text-text-soft-400"
+            className="min-w-0 flex-1 bg-transparent text-body-2-regular text-text-primary outline-none placeholder:text-text-tertiary"
           />
         </label>
-      </Popover.Content>
-    </Popover.Root>
+      </DropdownPopover>
+    </Dropdown>
   );
 }

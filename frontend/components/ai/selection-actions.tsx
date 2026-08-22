@@ -12,7 +12,7 @@ import {
   useState,
 } from "react";
 
-import { cnExt as cn } from "@/utils/cn";
+import { cx } from "@/utils/cx";
 
 import {
   createSelectionActionsState,
@@ -231,29 +231,29 @@ export function SelectionActions({
   return (
     <MotionConfig reducedMotion="user" transition={{ duration: 0.22 }}>
       <div
-        className={cn(
-          "relative flex min-h-[272px] w-full items-center overflow-hidden rounded-[24px] border border-[#303237] bg-[#18191b] px-5 py-16 shadow-regular-xs sm:px-14 lg:px-[72px]",
+        className={cx(
+          "relative flex min-h-[272px] w-full items-center overflow-hidden rounded-[24px] border border-[#303237] bg-[#18191b] px-5 py-16 shadow-card sm:px-14 lg:px-[72px]",
           className,
         )}
       >
         <div className="absolute top-6 right-6 hidden items-center gap-2 sm:flex" aria-hidden>
-          <span className="inline-flex size-11 items-center justify-center rounded-[18px] border border-[#383a3f] bg-[#202124] text-text-sub-600 shadow-regular-xs">
+          <span className="inline-flex size-11 items-center justify-center rounded-[18px] border border-[#383a3f] bg-[#202124] text-text-secondary shadow-card">
             <RiFileCopyLine className="size-5" />
           </span>
-          <span className="inline-flex size-11 items-center justify-center rounded-[18px] border border-[#383a3f] bg-[#202124] text-text-sub-600 shadow-regular-xs">
+          <span className="inline-flex size-11 items-center justify-center rounded-[18px] border border-[#383a3f] bg-[#202124] text-text-secondary shadow-card">
             <RiCodeSSlashLine className="size-5" />
           </span>
         </div>
         <div ref={hostRef} className="relative mx-auto w-full max-w-[770px] pb-14">
-          <p className="text-[24px] leading-[1.45] text-text-strong-950">
+          <p className="text-[24px] leading-[1.45] text-text-primary">
             {leadingText}
             <span
               ref={selectionRef}
-              className={cn(
+              className={cx(
                 "box-decoration-clone rounded-[3px] transition-[color,background-color] duration-200",
                 state.phase === "accepted"
-                  ? "text-text-strong-950"
-                  : "bg-[#2a384c] text-text-strong-950",
+                  ? "text-text-primary"
+                  : "bg-[#2a384c] text-text-primary",
               )}
             >
               {displayText}

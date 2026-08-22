@@ -16,7 +16,7 @@ function ViewModeToggle({
   readonly onChange: (mode: "rendered" | "code") => void;
 }) {
   return (
-    <div className="inline-flex items-center rounded-lg border border-stroke-soft-200 p-0.5">
+    <div className="inline-flex items-center rounded-lg border border-border-button-default p-0.5">
       {(
         [
           ["rendered", "Rendered", RiEyeLine],
@@ -30,8 +30,8 @@ function ViewModeToggle({
           aria-pressed={value === mode}
           className={
             value === mode
-              ? "inline-flex h-7 items-center gap-1.5 rounded-md bg-bg-strong-950 px-2.5 text-label-xs text-text-white-0"
-              : "inline-flex h-7 items-center gap-1.5 rounded-md px-2.5 text-label-xs text-text-sub-600 hover:text-text-strong-950"
+              ? "inline-flex h-7 items-center gap-1.5 rounded-md bg-foreground-icon-primary px-2.5 text-label-xs text-background-full"
+              : "inline-flex h-7 items-center gap-1.5 rounded-md px-2.5 text-label-xs text-text-secondary hover:text-text-primary"
           }
         >
           <Icon aria-hidden className="size-3.5" />
@@ -55,13 +55,13 @@ export function ArtifactEditor({ artifact }: { readonly artifact: ArtifactDescri
         <div>
           <Link
             href="/agent/artifacts"
-            className="inline-flex items-center gap-1.5 text-label-sm text-text-sub-600 outline-none hover:text-text-strong-950 focus-visible:underline"
+            className="inline-flex items-center gap-1.5 text-body-2-medium text-text-secondary outline-none hover:text-text-primary focus-visible:underline"
           >
             <RiArrowLeftLine aria-hidden className="size-4" />
             Artifacts
           </Link>
-          <h1 className="mt-3 text-display-sm text-text-strong-950">{artifact.name}</h1>
-          <p className="mt-1 text-paragraph-sm text-text-sub-600">
+          <h1 className="mt-3 text-display-sm text-text-primary">{artifact.name}</h1>
+          <p className="mt-1 text-body-2-regular text-text-secondary">
             {editor.label} · revision {editor.revision}
           </p>
           {actionContract.edit && <ArtifactFidelityNote kind={workpiece.kind} />}
@@ -72,7 +72,7 @@ export function ArtifactEditor({ artifact }: { readonly artifact: ArtifactDescri
             <a
               href={artifact.download_url}
               download={artifact.name}
-              className="inline-flex h-9 items-center gap-2 rounded-lg border border-stroke-soft-200 bg-bg-white-0 px-3 text-label-sm text-text-sub-600 outline-none hover:bg-bg-weak-50 hover:text-text-strong-950 focus-visible:ring-2 focus-visible:ring-stroke-strong-950 focus-visible:ring-offset-2"
+              className="inline-flex h-9 items-center gap-2 rounded-lg border border-border-button-default bg-background-primary-default px-3 text-body-2-medium text-text-secondary outline-none hover:bg-background-secondary-default hover:text-text-primary focus-visible:ring-2 focus-visible:ring-border-focus-ring focus-visible:ring-offset-2"
             >
               <RiDownloadLine aria-hidden className="size-4" /> Original
             </a>
@@ -82,7 +82,7 @@ export function ArtifactEditor({ artifact }: { readonly artifact: ArtifactDescri
               href={workpiece.export_url}
               download
               aria-disabled={editor.loading}
-              className="inline-flex h-9 items-center gap-2 rounded-lg border border-stroke-soft-200 bg-bg-white-0 px-3 text-label-sm text-text-sub-600 outline-none hover:bg-bg-weak-50 hover:text-text-strong-950 focus-visible:ring-2 focus-visible:ring-stroke-strong-950 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-40"
+              className="inline-flex h-9 items-center gap-2 rounded-lg border border-border-button-default bg-background-primary-default px-3 text-body-2-medium text-text-secondary outline-none hover:bg-background-secondary-default hover:text-text-primary focus-visible:ring-2 focus-visible:ring-border-focus-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-40"
             >
               <RiDownloadLine aria-hidden className="size-4" /> Export
             </a>
@@ -92,7 +92,7 @@ export function ArtifactEditor({ artifact }: { readonly artifact: ArtifactDescri
               type="button"
               onClick={() => void editor.save()}
               disabled={editor.loading || editor.saving || !editor.dirty}
-              className="inline-flex h-9 items-center gap-2 rounded-lg bg-bg-strong-950 px-4 text-label-sm text-text-white-0 outline-none hover:opacity-90 focus-visible:ring-2 focus-visible:ring-stroke-strong-950 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-40"
+              className="inline-flex h-9 items-center gap-2 rounded-lg bg-foreground-icon-primary px-4 text-body-2-medium text-background-full outline-none hover:opacity-90 focus-visible:ring-2 focus-visible:ring-border-focus-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-40"
             >
               <RiSaveLine aria-hidden className="size-4" /> {editor.saving ? "Saving..." : "Save"}
             </button>
@@ -103,7 +103,7 @@ export function ArtifactEditor({ artifact }: { readonly artifact: ArtifactDescri
       {editor.error && (
         <p
           role="alert"
-          className="mt-5 rounded-lg border border-error-base bg-error-lighter px-4 py-3 text-paragraph-sm text-error-base"
+          className="mt-5 rounded-lg border border-border-error-default bg-background-tertiary-error px-4 py-3 text-body-2-regular text-text-error-primary"
         >
           {editor.error}
         </p>

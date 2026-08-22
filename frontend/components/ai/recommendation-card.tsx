@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import * as Badge from "@/components/ui/badge";
 import * as Button from "@/components/ui/button";
-import { cnExt as cn } from "@/utils/cn";
+import { cx } from "@/utils/cx";
 
 /**
  * Suggestion card — a titled recommendation with a confidence pill and an
@@ -23,17 +23,17 @@ const confidenceMeta: Record<
 > = {
   high: {
     color: "green",
-    dot: "bg-success-base",
+    dot: "bg-lime-500",
     label: "High confidence",
   },
   medium: {
     color: "yellow",
-    dot: "bg-away-base",
+    dot: "bg-orange-500",
     label: "Medium confidence",
   },
   low: {
     color: "gray",
-    dot: "bg-text-soft-400",
+    dot: "bg-foreground-icon-tertiary",
     label: "Low confidence",
   },
 };
@@ -58,18 +58,18 @@ export function RecommendationCard({
   const meta = confidenceMeta[confidence];
   return (
     <article
-      className={cn(
-        "overflow-hidden rounded-2xl border border-stroke-soft-200 bg-bg-white-0 shadow-regular-xs",
+      className={cx(
+        "overflow-hidden rounded-2xl border border-border-button-default bg-background-primary-default shadow-card",
         className,
       )}
     >
       <div className="flex flex-col gap-1.5 p-4">
-        <h3 className="text-label-md text-text-strong-950">{title}</h3>
-        <div className="text-paragraph-sm text-text-sub-600">{body}</div>
+        <h3 className="text-body-medium text-text-primary">{title}</h3>
+        <div className="text-body-2-regular text-text-secondary">{body}</div>
       </div>
-      <div className="flex items-center justify-between gap-3 border-t border-stroke-soft-200 bg-bg-weak-50 px-4 py-3">
+      <div className="flex items-center justify-between gap-3 border-t border-border-button-default bg-background-secondary-default px-4 py-3">
         <Badge.Root variant="light" color={meta.color} size="medium">
-          <span className={cn("size-1.5 rounded-full", meta.dot)} aria-hidden />
+          <span className={cx("size-1.5 rounded-full", meta.dot)} aria-hidden />
           {meta.label}
         </Badge.Root>
         <div className="flex items-center gap-2">

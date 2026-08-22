@@ -73,13 +73,13 @@ export const WorkedForFold = memo(function WorkedForFold({
     <section
       data-session-ui="worked-for-fold"
       aria-label={label}
-      className="border-b border-stroke-soft-200 pb-2 pt-1"
+      className="border-b border-border-button-default pb-2 pt-1"
     >
       <button
         type="button"
         aria-expanded={expanded}
         onClick={() => setExpanded((v) => !v)}
-        className="flex cursor-pointer select-none items-center gap-1 rounded-md px-1 text-[12px] leading-5 text-text-sub-600 tabular-nums transition-colors hover:text-text-strong-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary-base"
+        className="flex cursor-pointer select-none items-center gap-1 rounded-md px-1 text-[12px] leading-5 text-text-secondary tabular-nums transition-colors hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-border-focus-ring"
       >
         <span>{label}</span>
         <Chevron className="size-3.5 shrink-0" aria-hidden />

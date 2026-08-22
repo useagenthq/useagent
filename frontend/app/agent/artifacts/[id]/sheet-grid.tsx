@@ -223,7 +223,7 @@ export function SheetGridSurface({
 
   if (!workbook || !sheet || !evaluation) {
     return (
-      <p className="mt-4 rounded-xl border border-dashed border-stroke-soft-200 px-4 py-8 text-center text-paragraph-sm text-text-sub-600">
+      <p className="mt-4 rounded-xl border border-dashed border-border-button-default px-4 py-8 text-center text-body-2-regular text-text-secondary">
         Loading workbook...
       </p>
     );
@@ -263,10 +263,10 @@ export function SheetGridSurface({
       {/* Value bar: active cell ref + its RAW value/formula (the cell shows the
           computed value). */}
       <div className="flex items-center gap-2">
-        <span className="inline-flex h-8 min-w-14 items-center justify-center rounded-lg border border-stroke-soft-200 bg-bg-weak-50 px-2 font-mono text-label-xs text-text-sub-600">
+        <span className="inline-flex h-8 min-w-14 items-center justify-center rounded-lg border border-border-button-default bg-background-secondary-default px-2 font-mono text-label-xs text-text-secondary">
           {selectedRef}
         </span>
-        <span className="font-mono text-label-xs text-text-soft-400" aria-hidden>
+        <span className="font-mono text-label-xs text-text-tertiary" aria-hidden>
           fx
         </span>
         <input
@@ -295,13 +295,13 @@ export function SheetGridSurface({
           }}
           aria-label={`Value of cell ${selectedRef}`}
           placeholder="Value or =formula"
-          className="h-8 min-w-0 flex-1 rounded-lg border border-stroke-soft-200 bg-bg-white-0 px-3 font-mono text-paragraph-sm text-text-strong-950 outline-none focus:border-stroke-strong-950"
+          className="h-8 min-w-0 flex-1 rounded-lg border border-border-button-default bg-background-primary-default px-3 font-mono text-body-2-regular text-text-primary outline-none focus:border-foreground-icon-primary"
         />
       </div>
 
       {/* Format toolbar: number formats, bold/italic, alignment, fill + text color. */}
       <div className="flex flex-wrap items-center gap-1.5">
-        <div className="inline-flex items-center rounded-lg border border-stroke-soft-200 p-0.5">
+        <div className="inline-flex items-center rounded-lg border border-border-button-default p-0.5">
           {NUMBER_FORMATS.map(([value, title, glyph]) => (
             <button
               key={value}
@@ -311,13 +311,13 @@ export function SheetGridSurface({
               aria-pressed={(fmt?.numFmt ?? "auto") === value}
               disabled={loading}
               onClick={() => patchFmt({ numFmt: value === "auto" ? undefined : value })}
-              className="grid h-7 min-w-8 place-items-center rounded-md px-1.5 font-mono text-label-xs text-text-sub-600 hover:bg-bg-weak-50 aria-pressed:bg-bg-strong-950 aria-pressed:text-text-white-0 disabled:opacity-40"
+              className="grid h-7 min-w-8 place-items-center rounded-md px-1.5 font-mono text-label-xs text-text-secondary hover:bg-background-secondary-default aria-pressed:bg-foreground-icon-primary aria-pressed:text-background-full disabled:opacity-40"
             >
               {glyph}
             </button>
           ))}
         </div>
-        <div className="mx-0.5 h-5 w-px bg-stroke-soft-200" aria-hidden />
+        <div className="mx-0.5 h-5 w-px bg-border-button-default" aria-hidden />
         <button
           type="button"
           title="Bold"
@@ -325,7 +325,7 @@ export function SheetGridSurface({
           aria-pressed={fmt?.bold ?? false}
           disabled={loading}
           onClick={() => patchFmt({ bold: !(fmt?.bold ?? false) })}
-          className="grid size-8 place-items-center rounded-lg border border-stroke-soft-200 text-text-sub-600 hover:bg-bg-weak-50 aria-pressed:bg-bg-strong-950 aria-pressed:text-text-white-0 disabled:opacity-40"
+          className="grid size-8 place-items-center rounded-lg border border-border-button-default text-text-secondary hover:bg-background-secondary-default aria-pressed:bg-foreground-icon-primary aria-pressed:text-background-full disabled:opacity-40"
         >
           <RiBold aria-hidden className="size-4" />
         </button>
@@ -336,11 +336,11 @@ export function SheetGridSurface({
           aria-pressed={fmt?.italic ?? false}
           disabled={loading}
           onClick={() => patchFmt({ italic: !(fmt?.italic ?? false) })}
-          className="grid size-8 place-items-center rounded-lg border border-stroke-soft-200 text-text-sub-600 hover:bg-bg-weak-50 aria-pressed:bg-bg-strong-950 aria-pressed:text-text-white-0 disabled:opacity-40"
+          className="grid size-8 place-items-center rounded-lg border border-border-button-default text-text-secondary hover:bg-background-secondary-default aria-pressed:bg-foreground-icon-primary aria-pressed:text-background-full disabled:opacity-40"
         >
           <RiItalic aria-hidden className="size-4" />
         </button>
-        <div className="inline-flex items-center rounded-lg border border-stroke-soft-200 p-0.5">
+        <div className="inline-flex items-center rounded-lg border border-border-button-default p-0.5">
           {(["left", "center", "right"] as const).map((align) => (
             <button
               key={align}
@@ -350,13 +350,13 @@ export function SheetGridSurface({
               aria-pressed={fmt?.align === align}
               disabled={loading}
               onClick={() => patchFmt({ align: fmt?.align === align ? undefined : align })}
-              className="grid h-7 min-w-7 place-items-center rounded-md text-label-xs text-text-sub-600 hover:bg-bg-weak-50 aria-pressed:bg-bg-strong-950 aria-pressed:text-text-white-0 disabled:opacity-40"
+              className="grid h-7 min-w-7 place-items-center rounded-md text-label-xs text-text-secondary hover:bg-background-secondary-default aria-pressed:bg-foreground-icon-primary aria-pressed:text-background-full disabled:opacity-40"
             >
               {align === "left" ? "L" : align === "center" ? "C" : "R"}
             </button>
           ))}
         </div>
-        <label className="inline-flex items-center gap-1 text-label-xs text-text-sub-600">
+        <label className="inline-flex items-center gap-1 text-label-xs text-text-secondary">
           Fill
           <input
             type="color"
@@ -364,10 +364,10 @@ export function SheetGridSurface({
             value={toColorInput(fmt?.fill, "#ffffff")}
             disabled={loading}
             onChange={(event) => patchFmt({ fill: event.currentTarget.value })}
-            className="h-7 w-8 cursor-pointer rounded border border-stroke-soft-200 bg-bg-white-0"
+            className="h-7 w-8 cursor-pointer rounded border border-border-button-default bg-background-primary-default"
           />
         </label>
-        <label className="inline-flex items-center gap-1 text-label-xs text-text-sub-600">
+        <label className="inline-flex items-center gap-1 text-label-xs text-text-secondary">
           Text
           <input
             type="color"
@@ -375,21 +375,21 @@ export function SheetGridSurface({
             value={toColorInput(fmt?.color, "#000000")}
             disabled={loading}
             onChange={(event) => patchFmt({ color: event.currentTarget.value })}
-            className="h-7 w-8 cursor-pointer rounded border border-stroke-soft-200 bg-bg-white-0"
+            className="h-7 w-8 cursor-pointer rounded border border-border-button-default bg-background-primary-default"
           />
         </label>
       </div>
 
       {/* The windowed grid. */}
-      <div className="min-h-0 flex-1 overflow-auto rounded-xl border border-stroke-soft-200 bg-bg-white-0">
+      <div className="min-h-0 flex-1 overflow-auto rounded-xl border border-border-button-default bg-background-primary-default">
         <table className="border-collapse" style={{ tableLayout: "fixed" }}>
           <thead>
             <tr>
-              <th className="sticky left-0 top-0 z-10 h-8 w-12 min-w-12 border-b border-r border-stroke-soft-200 bg-bg-weak-50" />
+              <th className="sticky left-0 top-0 z-10 h-8 w-12 min-w-12 border-b border-r border-border-button-default bg-background-secondary-default" />
               {Array.from({ length: visibleCols }, (_, col) => (
                 <th
                   key={col}
-                  className="relative h-8 border-b border-r border-stroke-soft-200 bg-bg-weak-50 text-center font-mono text-label-xs text-text-soft-400"
+                  className="relative h-8 border-b border-r border-border-button-default bg-background-secondary-default text-center font-mono text-label-xs text-text-tertiary"
                   style={{ width: columnWidth(sheet, col), minWidth: columnWidth(sheet, col) }}
                 >
                   {columnLabel(col)}
@@ -407,7 +407,7 @@ export function SheetGridSurface({
           <tbody>
             {Array.from({ length: visibleRows }, (_, row) => (
               <tr key={row}>
-                <td className="sticky left-0 z-10 h-8 w-12 min-w-12 border-b border-r border-stroke-soft-200 bg-bg-weak-50 text-center align-middle font-mono text-label-xs text-text-soft-400">
+                <td className="sticky left-0 z-10 h-8 w-12 min-w-12 border-b border-r border-border-button-default bg-background-secondary-default text-center align-middle font-mono text-label-xs text-text-tertiary">
                   {row + 1}
                 </td>
                 {Array.from({ length: visibleCols }, (_, col) => {
@@ -417,7 +417,7 @@ export function SheetGridSurface({
                   return (
                     <td
                       key={col}
-                      className="border-b border-r border-stroke-soft-200 p-0"
+                      className="border-b border-r border-border-button-default p-0"
                       style={{ width: columnWidth(sheet, col), minWidth: columnWidth(sheet, col) }}
                     >
                       <button
@@ -428,11 +428,11 @@ export function SheetGridSurface({
                         style={cellStyle(sheet.cells[ref], evaluated.numeric)}
                         className={
                           isActive
-                            ? "block h-8 w-full truncate px-2 text-paragraph-sm text-text-strong-950 outline-none ring-2 ring-inset ring-primary-base"
-                            : "block h-8 w-full truncate px-2 text-paragraph-sm text-text-strong-950 outline-none hover:bg-bg-weak-50"
+                            ? "block h-8 w-full truncate px-2 text-body-2-regular text-text-primary outline-none ring-2 ring-inset ring-border-focus-ring"
+                            : "block h-8 w-full truncate px-2 text-body-2-regular text-text-primary outline-none hover:bg-background-secondary-default"
                         }
                       >
-                        <span className={evaluated.error ? "text-error-base" : undefined}>
+                        <span className={evaluated.error ? "text-text-error-primary" : undefined}>
                           {evaluated.display}
                         </span>
                       </button>
@@ -456,7 +456,7 @@ export function SheetGridSurface({
               ),
             )}
           disabled={loading || sheet.rowCount >= SHEET_MAX_ROWS}
-          className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-stroke-soft-200 px-3 text-label-sm hover:bg-bg-weak-50 disabled:opacity-40"
+          className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-border-button-default px-3 text-body-2-medium hover:bg-background-secondary-default disabled:opacity-40"
         >
           <RiAddLine aria-hidden className="size-4" /> Row
         </button>
@@ -470,12 +470,12 @@ export function SheetGridSurface({
               ),
             )}
           disabled={loading || sheet.colCount >= SHEET_MAX_COLS}
-          className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-stroke-soft-200 px-3 text-label-sm hover:bg-bg-weak-50 disabled:opacity-40"
+          className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-border-button-default px-3 text-body-2-medium hover:bg-background-secondary-default disabled:opacity-40"
         >
           <RiAddLine aria-hidden className="size-4" /> Column
         </button>
         {capped && (
-          <span className="text-paragraph-xs text-text-soft-400">
+          <span className="text-caption-1-regular text-text-tertiary">
             Large sheet - showing the first {visibleRows} rows and {visibleCols} columns.
           </span>
         )}
@@ -504,7 +504,7 @@ export function SheetGridSurface({
                     }
                     if (event.key === "Escape") setRenaming(null);
                   }}
-                  className="h-7 w-28 rounded-lg border border-stroke-strong-950 bg-bg-white-0 px-2 text-label-xs text-text-strong-950 outline-none"
+                  className="h-7 w-28 rounded-lg border border-foreground-icon-primary bg-background-primary-default px-2 text-label-xs text-text-primary outline-none"
                 />
               ) : (
                 <button
@@ -515,8 +515,8 @@ export function SheetGridSurface({
                   title={`${item.name} (double-click to rename)`}
                   className={
                     active
-                      ? "inline-flex h-7 items-center rounded-lg border border-stroke-soft-200 bg-bg-strong-950 px-3 text-label-xs text-text-white-0"
-                      : "inline-flex h-7 items-center rounded-lg border border-stroke-soft-200 bg-bg-weak-50 px-3 text-label-xs text-text-sub-600 hover:text-text-strong-950"
+                      ? "inline-flex h-7 items-center rounded-lg border border-border-button-default bg-foreground-icon-primary px-3 text-label-xs text-background-full"
+                      : "inline-flex h-7 items-center rounded-lg border border-border-button-default bg-background-secondary-default px-3 text-label-xs text-text-secondary hover:text-text-primary"
                   }
                 >
                   {item.name}
@@ -529,7 +529,7 @@ export function SheetGridSurface({
                     onClick={() => onChange(moveSheet(workbook, item.id, -1))}
                     aria-label={`Move ${item.name} left`}
                     title="Move left"
-                    className="grid size-6 place-items-center rounded text-text-soft-400 hover:bg-bg-weak-50 hover:text-text-strong-950"
+                    className="grid size-6 place-items-center rounded text-text-tertiary hover:bg-background-secondary-default hover:text-text-primary"
                   >
                     <RiArrowLeftSLine aria-hidden className="size-4" />
                   </button>
@@ -538,7 +538,7 @@ export function SheetGridSurface({
                     onClick={() => onChange(moveSheet(workbook, item.id, 1))}
                     aria-label={`Move ${item.name} right`}
                     title="Move right"
-                    className="grid size-6 place-items-center rounded text-text-soft-400 hover:bg-bg-weak-50 hover:text-text-strong-950"
+                    className="grid size-6 place-items-center rounded text-text-tertiary hover:bg-background-secondary-default hover:text-text-primary"
                   >
                     <RiArrowRightSLine aria-hidden className="size-4" />
                   </button>
@@ -553,7 +553,7 @@ export function SheetGridSurface({
           disabled={loading || workbook.sheets.length >= WORKBOOK_MAX_SHEETS}
           aria-label="Add sheet"
           title="Add sheet"
-          className="grid size-7 shrink-0 place-items-center rounded-lg border border-stroke-soft-200 text-text-sub-600 hover:bg-bg-weak-50 disabled:opacity-40"
+          className="grid size-7 shrink-0 place-items-center rounded-lg border border-border-button-default text-text-secondary hover:bg-background-secondary-default disabled:opacity-40"
         >
           <RiAddLine aria-hidden className="size-4" />
         </button>

@@ -48,10 +48,10 @@ function CapabilityRow({
 }) {
   return (
     <div className="flex items-center gap-3 py-2">
-      <Icon className="text-text-sub-600 size-5 shrink-0" aria-hidden />
+      <Icon className="text-text-secondary size-5 shrink-0" aria-hidden />
       <span className="min-w-0 flex-1">
-        <span className="text-label-sm text-text-strong-950 block">{name}</span>
-        <span className="text-paragraph-xs text-text-soft-400 block truncate">{detail}</span>
+        <span className="text-body-2-medium text-text-primary block">{name}</span>
+        <span className="text-caption-1-regular text-text-tertiary block truncate">{detail}</span>
       </span>
       <StatusBadge.Root status={enabled ? "completed" : "disabled"} variant="light">
         {enabled ? "Enabled" : "Not configured"}
@@ -101,8 +101,8 @@ export function PluginsPanel() {
 
   const caps = config?.capabilities;
   return (
-    <div className="border-stroke-soft-200 bg-bg-white-0 shadow-regular-sm rounded-2xl border px-5 py-4">
-      <h2 className="text-label-sm text-text-sub-600">Connections</h2>
+    <div className="border-border-button-default bg-background-primary-default shadow-sm rounded-2xl border px-5 py-4">
+      <h2 className="text-body-2-medium text-text-secondary">Connections</h2>
       <div className="mt-1">
         <CapabilityRow
           icon={RiGithubFill}
@@ -136,33 +136,33 @@ export function PluginsPanel() {
         />
       </div>
 
-      <div className="border-stroke-soft-200 my-4 border-t" />
+      <div className="border-border-button-default my-4 border-t" />
 
       {/* Credentials = the org's stored secrets from the DB (names + kind only,
           values are write-only). This makes the page reflect what agents can
           actually authenticate to; managing them lives on the Secrets page.
           Skills are NOT listed here - they have their own page. */}
       <div className="flex items-center justify-between">
-        <h2 className="text-label-sm text-text-sub-600">Credentials</h2>
+        <h2 className="text-body-2-medium text-text-secondary">Credentials</h2>
         {secrets !== null && (
-          <span className="text-text-soft-400 text-label-xs tabular-nums">
+          <span className="text-text-tertiary text-label-xs tabular-nums">
             {secrets.length} in this org
           </span>
         )}
       </div>
       <div className="mt-1">
         {secrets === null ? (
-          <p className="text-paragraph-xs text-text-soft-400 py-2">Loading credentials...</p>
+          <p className="text-caption-1-regular text-text-tertiary py-2">Loading credentials...</p>
         ) : secrets.length === 0 ? (
-          <p className="text-paragraph-xs text-text-soft-400 py-2">
+          <p className="text-caption-1-regular text-text-tertiary py-2">
             No credentials yet. Add secrets on the Secrets page; each becomes an env var or file
             available inside run sandboxes.
           </p>
         ) : (
           secrets.map((s) => (
             <div key={s.name} className="flex items-center gap-3 py-1.5">
-              <RiKey2Line className="text-text-sub-600 size-4 shrink-0" aria-hidden />
-              <span className="text-label-xs text-text-strong-950 flex-1 truncate font-mono">
+              <RiKey2Line className="text-text-secondary size-4 shrink-0" aria-hidden />
+              <span className="text-label-xs text-text-primary flex-1 truncate font-mono">
                 {s.name}
               </span>
               <StatusBadge.Root status="completed" variant="light">

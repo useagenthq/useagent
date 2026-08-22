@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { cnExt as cn } from "@/utils/cn";
+import { cx as cn } from "@/utils/cx";
 import { CodeBlock } from "@/components/ai/code-block";
 import { FileKindBadge, fileTypeIcon } from "@/components/chat/tool-step-row";
 import { parseFileEntries, type ApiStep, type FileEntry } from "@/components/chat/types";
@@ -49,11 +49,11 @@ export function EditorPane({ steps, live }: { steps: ApiStep[]; live: boolean })
   const current = files.find((f) => f.path === active) ?? files[files.length - 1];
 
   return (
-    <div className="bg-bg-white-0 flex h-full min-h-0 flex-col overflow-hidden" data-testid="editor-pane">
+    <div className="bg-background-primary-default flex h-full min-h-0 flex-col overflow-hidden" data-testid="editor-pane">
       {/* File tab strip */}
-      <div className="border-stroke-soft-200 flex shrink-0 items-center gap-0.5 overflow-x-auto border-b px-1.5">
+      <div className="border-border-button-default flex shrink-0 items-center gap-0.5 overflow-x-auto border-b px-1.5">
         {files.length === 0 ? (
-          <span className="text-mono-label text-text-soft-400 px-2.5 py-2.5">
+          <span className="text-mono-label text-text-tertiary px-2.5 py-2.5">
             Editor
           </span>
         ) : (
@@ -68,10 +68,10 @@ export function EditorPane({ steps, live }: { steps: ApiStep[]; live: boolean })
                 title={file.path}
                 data-testid="editor-file"
                 className={cn(
-                  "flex shrink-0 items-center gap-1.5 border-b-2 px-3 py-2 text-label-xs transition-colors",
+                  "flex shrink-0 items-center gap-1.5 border-b-2 px-3 py-2 text-caption-1-medium transition-colors",
                   isActive
-                    ? "border-blue-500 text-text-strong-950"
-                    : "border-transparent text-text-soft-400 hover:text-text-sub-600",
+                    ? "border-blue-500 text-text-primary"
+                    : "border-transparent text-text-tertiary hover:text-text-secondary",
                 )}
               >
                 <Icon className="size-3.5" aria-hidden />
@@ -88,7 +88,7 @@ export function EditorPane({ steps, live }: { steps: ApiStep[]; live: boolean })
           <FileDetail entry={current} />
         ) : (
           <div className="flex h-full items-center justify-center">
-            <p className="text-paragraph-sm text-text-soft-400">
+            <p className="text-body-2-regular text-text-tertiary">
               {live ? "Waiting for the first file edit…" : "No files were edited."}
             </p>
           </div>
@@ -117,10 +117,10 @@ function langForFile(base: string): string {
 function FileDetail({ entry }: { entry: FileEntry }) {
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="border-stroke-soft-200 flex shrink-0 items-center gap-2 border-b px-3 py-2">
+      <div className="border-border-button-default flex shrink-0 items-center gap-2 border-b px-3 py-2">
         <FileKindBadge kind={entry.kind} />
         <span
-          className="text-text-sub-600 min-w-0 flex-1 truncate font-mono text-label-xs"
+          className="text-text-secondary min-w-0 flex-1 truncate font-mono text-caption-1-medium"
           title={entry.path}
         >
           {entry.path}

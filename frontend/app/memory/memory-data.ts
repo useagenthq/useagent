@@ -107,8 +107,8 @@ export interface CaptureRow {
   updatedAt: string;
 }
 
-/** The subset of AlignUI Badge colors we drive state chips with. */
-export type ChipColor = "gray" | "blue" | "orange" | "green" | "red";
+/** The subset of BoardUI Chip colors we drive state chips with. */
+export type ChipColor = "gray" | "blue" | "yellow" | "lime" | "rose";
 
 /** One capture state, rendered as a labeled chip. `delivering` reads as an
  *  orphan candidate (the happy-path window is milliseconds, so a row shown here
@@ -117,14 +117,14 @@ export const CAPTURE_STATE_META: Record<
   CaptureState,
   { label: string; color: ChipColor; note: string }
 > = {
-  delivered: { label: "Delivered", color: "green", note: "Written to team memory." },
+  delivered: { label: "Delivered", color: "lime", note: "Written to team memory." },
   pending: { label: "Pending", color: "blue", note: "Queued for delivery with backoff." },
   delivering: {
     label: "Delivering",
-    color: "orange",
+    color: "yellow",
     note: "In flight - a row that lingers here is a crash orphan awaiting manual inspection (at-most-once).",
   },
-  dead: { label: "Dead", color: "red", note: "Delivery failed after max attempts." },
+  dead: { label: "Dead", color: "rose", note: "Delivery failed after max attempts." },
 };
 
 /* -------------------------------------------------------------------------- */

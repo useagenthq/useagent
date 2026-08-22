@@ -13,16 +13,16 @@ import { cva, type VariantProps } from "class-variance-authority";
 import { cnExt as cn } from "@/utils/cn";
 
 export const buttonVariants = cva(
-  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-lg text-label-sm transition-colors outline-none focus-visible:ring-2 focus-visible:ring-primary-alpha-10 disabled:pointer-events-none disabled:opacity-50",
+  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-lg text-body-2-medium transition-colors outline-none focus-visible:ring-2 focus-visible:ring-accent-500/10 disabled:pointer-events-none disabled:opacity-50",
   {
     variants: {
       variant: {
-        default: "bg-primary-base text-static-white hover:bg-primary-dark",
+        default: "bg-accent-500 text-white hover:bg-accent-600",
         outline:
-          "border border-stroke-soft-200 bg-bg-white-0 text-text-strong-950 hover:bg-bg-weak-50",
-        ghost: "text-text-strong-950 hover:bg-bg-weak-50",
-        secondary: "bg-bg-weak-50 text-text-strong-950 hover:bg-bg-soft-200",
-        link: "text-primary-base underline-offset-4 hover:underline",
+          "border border-border-button-default bg-background-primary-default text-text-primary hover:bg-background-secondary-default",
+        ghost: "text-text-primary hover:bg-background-secondary-default",
+        secondary: "bg-background-secondary-default text-text-primary hover:bg-background-tertiary-default",
+        link: "text-accent-500 underline-offset-4 hover:underline",
       },
       size: {
         default: "h-9 px-4 py-2",

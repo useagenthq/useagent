@@ -6,21 +6,20 @@ import { ThemeMenu } from './theme-menu';
 
 /**
  * Theme picker trigger for the app-shell clusters (thread sidebar footer,
- * compact rail, library sidebar). A compact icon button that opens the
- * Light / Midnight / Aura menu. Theming flips via the theme class on <html>
- * (next-themes), so components stay on semantic tokens with no `dark:` prefixes.
+ * compact rail, library sidebar). A compact icon button on BoardUI tokens that
+ * opens the Light / Midnight / Aura / Harbor menu. The BoardUI application
+ * theme-toggle block is light/dark-only and owns its own storage, so the
+ * four-theme next-themes menu stays; theming flips via the theme class on
+ * <html> (next-themes), so components stay on semantic tokens with no `dark:`
+ * prefixes.
  */
 export function ThemeToggle() {
   return (
-    <ThemeMenu align='end'>
-      <button
-        type='button'
-        aria-label='Change theme'
-        title='Change theme'
-        className='flex size-9 shrink-0 items-center justify-center rounded-lg text-text-sub-600 outline-none transition-colors hover:bg-bg-weak-50 hover:text-text-strong-950 focus-visible:ring-2 focus-visible:ring-stroke-strong-950'
-      >
-        <RiContrast2Line className='size-5' aria-hidden />
-      </button>
+    <ThemeMenu
+      triggerAriaLabel='Change theme'
+      triggerClassName='flex size-9 shrink-0 items-center justify-center rounded-2lg text-foreground-icon-secondary transition-colors hover:bg-background-secondary-hover hover:text-foreground-icon-primary'
+    >
+      <RiContrast2Line className='size-5' aria-hidden />
     </ThemeMenu>
   );
 }

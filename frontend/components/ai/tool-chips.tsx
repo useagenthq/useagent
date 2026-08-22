@@ -1,7 +1,7 @@
 "use client";
 
 import type { ComponentType } from "react";
-import { cnExt as cn } from "@/utils/cn";
+import { cx } from "@/utils/cx";
 
 type IconComponent = ComponentType<{
   className?: string;
@@ -20,9 +20,9 @@ export interface ToolChipProps {
 }
 
 const tone: Record<ToolChipState, string> = {
-  running: "border-stroke-soft-200 bg-bg-white-0 text-text-sub-600",
-  done: "border-transparent bg-bg-weak-50 text-text-sub-600",
-  error: "border-transparent bg-error-lighter text-error-base",
+  running: "border-border-button-default bg-background-primary-default text-text-secondary",
+  done: "border-transparent bg-background-secondary-default text-text-secondary",
+  error: "border-transparent bg-status-rose-background text-status-rose-text",
 };
 
 /**
@@ -39,8 +39,8 @@ export function ToolChip({
 }: ToolChipProps) {
   return (
     <span
-      className={cn(
-        "inline-flex max-w-full items-center gap-1.5 rounded-lg border px-2 py-1 text-label-xs",
+      className={cx(
+        "inline-flex max-w-full items-center gap-1.5 rounded-lg border px-2 py-1 text-caption-1-medium",
         tone[state],
         className,
       )}
@@ -48,13 +48,13 @@ export function ToolChip({
       <Icon className="size-3.5 shrink-0" aria-hidden />
       <span className="min-w-0 truncate">{label}</span>
       {typeof count === "number" && (
-        <span className="shrink-0 font-mono text-label-xs tabular-nums opacity-70">
+        <span className="shrink-0 font-mono text-caption-1-medium tabular-nums opacity-70">
           {count}
         </span>
       )}
       {state === "running" && (
         <span
-          className="ml-0.5 size-1.5 shrink-0 animate-pulse rounded-full bg-away-base"
+          className="ml-0.5 size-1.5 shrink-0 animate-pulse rounded-full bg-orange-500"
           aria-hidden
         />
       )}

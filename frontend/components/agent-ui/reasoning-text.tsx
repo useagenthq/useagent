@@ -16,7 +16,7 @@ import {
   useState,
 } from "react";
 
-import { cn } from "@/utils/cn";
+import { cx } from "@/utils/cx";
 
 // -- motion tokens ---------------------------------------------------------
 const EASE_OUT = [0.16, 1, 0.3, 1] as const;
@@ -26,7 +26,7 @@ const SPRING_SWAP = { type: "spring", stiffness: 460, damping: 30, mass: 0.55 } 
 const TEXT_SHIMMER_KEYFRAMES =
   "@keyframes agent-reasoning-shimmer{from{background-position:200% 0}to{background-position:-200% 0}}";
 const TEXT_SHIMMER_CLASS_NAME =
-  "bg-[length:200%_100%] bg-clip-text text-transparent bg-[linear-gradient(110deg,hsl(var(--text-soft-400))_30%,hsl(var(--text-strong-950))_50%,hsl(var(--text-soft-400))_70%)]";
+  "bg-[length:200%_100%] bg-clip-text text-transparent bg-[linear-gradient(110deg,var(--color-text-tertiary)_30%,var(--color-text-primary)_50%,var(--color-text-tertiary)_70%)]";
 function textShimmerStyle(duration: number): CSSProperties {
   return { animation: `agent-reasoning-shimmer ${duration}s linear infinite` };
 }
@@ -72,14 +72,14 @@ function ReasoningPhrase({
         role="status"
         aria-live="polite"
         aria-labelledby={statusId}
-        className="inline-flex min-w-0 items-center text-label-sm"
+        className="inline-flex min-w-0 items-center text-body-2-medium"
       >
         <span aria-hidden="true" className="grid min-w-0 overflow-hidden text-left">
           <span className="invisible col-start-1 row-start-1 whitespace-nowrap">{longestPhrase}...</span>
           <AnimatePresence initial={false}>
             <motion.span
               key={phrase}
-              className={cn(
+              className={cx(
                 "col-start-1 row-start-1 inline-block justify-self-start whitespace-nowrap will-change-[opacity,transform]",
                 TEXT_SHIMMER_CLASS_NAME,
               )}
@@ -132,7 +132,7 @@ function AgentDisclosure({
             }
       }
       transition={transition ?? { duration: reduce ? 0 : open ? 0.22 : 0.14, ease: EASE_OUT }}
-      className={cn("overflow-hidden", className)}
+      className={cx("overflow-hidden", className)}
       style={{
         ...style,
         height: open ? openHeight : 0,
@@ -202,8 +202,8 @@ export function ReasoningBlock({
   return (
     <section
       aria-label="Agent reasoning"
-      className={cn(
-        "w-full overflow-hidden rounded-2xl border border-stroke-soft-200 bg-bg-white-0 shadow-regular-sm",
+      className={cx(
+        "w-full overflow-hidden rounded-2xl border border-border-button-default bg-background-primary-default shadow-sm",
         className,
       )}
     >
@@ -213,23 +213,23 @@ export function ReasoningBlock({
         aria-expanded={currentOpen}
         aria-controls={contentId}
         onClick={() => setOpen(!currentOpen)}
-        className="group flex h-11 w-full items-center gap-2.5 rounded-2xl px-3.5 text-left outline-none focus-visible:ring-2 focus-visible:ring-stroke-strong-950"
+        className="group flex h-11 w-full items-center gap-2.5 rounded-2xl px-3.5 text-left outline-none focus-visible:ring-2 focus-visible:ring-border-focus-ring"
       >
         <span
           aria-hidden="true"
-          className={cn(
-            "grid size-6 shrink-0 place-items-center text-text-sub-600 transition-colors",
-            thinking && "text-primary-base",
+          className={cx(
+            "grid size-6 shrink-0 place-items-center text-text-secondary transition-colors",
+            thinking && "text-accent-500",
           )}
         >
-          <RiSparkling2Line className={cn("size-4", thinking && !reduce && "animate-pulse")} />
+          <RiSparkling2Line className={cx("size-4", thinking && !reduce && "animate-pulse")} />
         </span>
 
         <span className="min-w-0 flex-1">
           {thinking ? (
             <ReasoningPhrase phrases={phrases} interval={interval} shimmerDuration={shimmerDuration} />
           ) : (
-            <span className="truncate text-label-sm text-text-strong-950">
+            <span className="truncate text-body-2-medium text-text-primary">
               {seconds === undefined ? "Reasoning" : `Thought for ${seconds}s`}
             </span>
           )}
@@ -239,7 +239,7 @@ export function ReasoningBlock({
           aria-hidden="true"
           animate={{ rotate: currentOpen ? 180 : 0 }}
           transition={reduce ? { duration: 0 } : SPRING_SWAP}
-          className="shrink-0 text-text-soft-400 transition-colors group-hover:text-text-sub-600"
+          className="shrink-0 text-text-tertiary transition-colors group-hover:text-text-secondary"
         >
           <RiArrowDownSLine className="size-4" />
         </motion.span>
@@ -251,7 +251,7 @@ export function ReasoningBlock({
           className="overflow-y-auto px-3.5 pb-3.5"
           style={{ maxHeight, scrollbarWidth: "none" }}
         >
-          <div className="border-l border-stroke-soft-200 pl-3.5 text-paragraph-sm leading-relaxed text-text-sub-600">
+          <div className="border-l border-border-button-default pl-3.5 text-body-2-regular leading-relaxed text-text-secondary">
             {reasoning}
           </div>
         </div>
@@ -286,7 +286,7 @@ export function ReasoningTextDemo() {
   }, [thinking, revealed]);
 
   return (
-    <div className="flex items-center justify-center rounded-xl bg-bg-weak-50 p-3">
+    <div className="flex items-center justify-center rounded-xl bg-background-secondary-default p-3">
       <div className="w-full max-w-md">
         <ReasoningBlock
           thinking={thinking}

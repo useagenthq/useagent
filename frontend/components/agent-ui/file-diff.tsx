@@ -24,7 +24,7 @@ import {
   useState,
 } from "react";
 
-import { cn } from "@/utils/cn";
+import { cx } from "@/utils/cx";
 
 // -- motion tokens ---------------------------------------------------------
 const EASE_OUT = [0.16, 1, 0.3, 1] as const;
@@ -73,7 +73,7 @@ function AgentDisclosure({
             }
       }
       transition={transition ?? { duration: reduce ? 0 : open ? 0.22 : 0.14, ease: EASE_OUT }}
-      className={cn("overflow-hidden", className)}
+      className={cx("overflow-hidden", className)}
       style={{
         ...style,
         height: open ? openHeight : 0,
@@ -89,9 +89,9 @@ function ChangeCount({ value, type }: { value: number; type: "added" | "removed"
   if (!value) return null;
   return (
     <span
-      className={cn(
-        "font-mono text-paragraph-xs tabular-nums",
-        type === "added" ? "text-success-base" : "text-error-base",
+      className={cx(
+        "font-mono text-caption-1-regular tabular-nums",
+        type === "added" ? "text-lime-600" : "text-text-error-primary",
       )}
     >
       {type === "added" ? "+" : "-"}
@@ -177,33 +177,33 @@ export function FileDiffPanel({
   }, [copyText, onCopy]);
 
   return (
-    <div data-state={status} aria-busy={streaming} className={cn("w-full text-paragraph-sm", className)}>
+    <div data-state={status} aria-busy={streaming} className={cx("w-full text-body-2-regular", className)}>
       <button
         id={triggerId}
         type="button"
         aria-expanded={currentOpen}
         aria-controls={contentId}
         onClick={() => setOpen(!currentOpen)}
-        className="group flex min-h-9 w-full items-center gap-2 rounded-md py-1 text-left outline-none focus-visible:ring-2 focus-visible:ring-stroke-strong-950"
+        className="group flex min-h-9 w-full items-center gap-2 rounded-md py-1 text-left outline-none focus-visible:ring-2 focus-visible:ring-border-focus-ring"
       >
-        <RiFileCodeLine aria-hidden="true" className="size-4 shrink-0 text-text-sub-600" />
-        <span className="min-w-0 flex-1 truncate font-mono text-paragraph-xs text-text-sub-600">{file}</span>
+        <RiFileCodeLine aria-hidden="true" className="size-4 shrink-0 text-text-secondary" />
+        <span className="min-w-0 flex-1 truncate font-mono text-caption-1-regular text-text-secondary">{file}</span>
         <span className="flex shrink-0 items-center gap-2">
           <ChangeCount value={additions} type="added" />
           <ChangeCount value={deletions} type="removed" />
         </span>
-        <span className="grid size-4 shrink-0 place-items-center text-text-soft-400">
+        <span className="grid size-4 shrink-0 place-items-center text-text-tertiary">
           {streaming ? (
-            <RiLoader4Line aria-label="Applying changes" className={cn("size-3.5", !reduce && "animate-spin")} />
+            <RiLoader4Line aria-label="Applying changes" className={cx("size-3.5", !reduce && "animate-spin")} />
           ) : (
-            <RiCheckLine aria-label="Changes applied" className="size-3.5 text-success-base" />
+            <RiCheckLine aria-label="Changes applied" className="size-3.5 text-lime-600" />
           )}
         </span>
         <motion.span
           aria-hidden="true"
           animate={{ rotate: currentOpen ? 180 : 0 }}
           transition={reduce ? { duration: 0 } : SPRING_SWAP}
-          className="shrink-0 text-text-soft-400 transition-colors group-hover:text-text-sub-600"
+          className="shrink-0 text-text-tertiary transition-colors group-hover:text-text-secondary"
         >
           <RiArrowDownSLine className="size-3.5" />
         </motion.span>
@@ -211,7 +211,7 @@ export function FileDiffPanel({
 
       <AgentDisclosure id={contentId} role="region" aria-labelledby={triggerId} open={currentOpen}>
         <div className="pl-6 pt-1.5">
-          <div className="overflow-hidden rounded-xl bg-bg-weak-50">
+          <div className="overflow-hidden rounded-xl bg-background-secondary-default">
             <div
               ref={viewportRef}
               data-slot="file-diff-viewport"
@@ -219,38 +219,38 @@ export function FileDiffPanel({
               className="overflow-auto [scrollbar-width:none]"
               style={{ maxHeight }}
             >
-              <div className="font-mono text-paragraph-xs leading-5">
+              <div className="font-mono text-caption-1-regular leading-5">
                 <span className="sr-only">File changes</span>
                 {lines.map((line) => {
                   const type = line.type ?? "context";
                   return (
                     <div
                       key={line.id}
-                      className={cn(
+                      className={cx(
                         "grid grid-cols-[2.25rem_2.25rem_1rem_minmax(0,1fr)]",
-                        type === "added" && "bg-success-base/[0.07]",
-                        type === "removed" && "bg-error-base/[0.07]",
+                        type === "added" && "bg-lime-500/[0.07]",
+                        type === "removed" && "bg-red-500/[0.07]",
                       )}
                     >
-                      <span className="select-none pr-2 text-right tabular-nums text-text-soft-400">
+                      <span className="select-none pr-2 text-right tabular-nums text-text-tertiary">
                         {line.oldLine}
                       </span>
-                      <span className="select-none pr-2 text-right tabular-nums text-text-soft-400">
+                      <span className="select-none pr-2 text-right tabular-nums text-text-tertiary">
                         {line.newLine}
                       </span>
                       <span
-                        className={cn(
-                          "select-none text-center text-text-soft-400",
-                          type === "added" && "text-success-base",
-                          type === "removed" && "text-error-base",
+                        className={cx(
+                          "select-none text-center text-text-tertiary",
+                          type === "added" && "text-lime-600",
+                          type === "removed" && "text-text-error-primary",
                         )}
                       >
                         {type === "added" ? "+" : type === "removed" ? "-" : ""}
                       </span>
                       <span
-                        className={cn(
-                          "min-w-0 whitespace-pre px-1.5 text-text-strong-950",
-                          type === "context" && "text-text-sub-600",
+                        className={cx(
+                          "min-w-0 whitespace-pre px-1.5 text-text-primary",
+                          type === "context" && "text-text-secondary",
                         )}
                       >
                         {line.content}
@@ -270,9 +270,9 @@ export function FileDiffPanel({
                   onClick={handleCopy}
                   whileTap={reduce ? undefined : { scale: 0.9 }}
                   transition={SPRING_PRESS}
-                  className="grid size-7 place-items-center rounded-md text-text-sub-600 outline-none transition-colors hover:bg-bg-weak-50 hover:text-text-strong-950 focus-visible:ring-2 focus-visible:ring-stroke-strong-950"
+                  className="grid size-7 place-items-center rounded-md text-text-secondary outline-none transition-colors hover:bg-background-primary-hover hover:text-text-primary focus-visible:ring-2 focus-visible:ring-border-focus-ring"
                 >
-                  {copied ? <RiCheckLine className="size-3.5 text-success-base" /> : <RiFileCopyLine className="size-3.5" />}
+                  {copied ? <RiCheckLine className="size-3.5 text-lime-600" /> : <RiFileCopyLine className="size-3.5" />}
                 </motion.button>
               </div>
             ) : null}
@@ -311,9 +311,9 @@ export function FileDiffDemo() {
   const status: FileDiffStatus = count >= DEMO_LINES.length ? "complete" : "streaming";
 
   return (
-    <div className="flex items-center justify-center rounded-xl bg-bg-weak-50 p-3">
+    <div className="flex items-center justify-center rounded-xl bg-background-secondary-default p-3">
       <div className="w-full max-w-md">
-        <div className="rounded-2xl border border-stroke-soft-200 bg-bg-white-0 p-3 shadow-regular-sm">
+        <div className="rounded-2xl border border-border-button-default bg-background-primary-default p-3 shadow-sm">
           <FileDiffPanel
             file="src/lib/greet.ts"
             lines={DEMO_LINES.slice(0, count)}

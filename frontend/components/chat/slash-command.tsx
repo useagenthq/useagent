@@ -1,7 +1,7 @@
 "use client";
 
 import { RiErrorWarningLine, RiTerminalLine } from "@remixicon/react";
-import { cnExt as cn } from "@/utils/cn";
+import { cx as cn } from "@/utils/cx";
 
 /**
  * Slash-command autocomplete for the reply composer — the engine's real
@@ -96,20 +96,20 @@ export function SlashCommandPopover({
   // A muted/error status row so absence, loading, and failure read honestly instead of nothing.
   const statusRow =
     status === "loading" ? (
-      <p className="text-paragraph-xs text-text-soft-400 px-2 py-2" role="status">
+      <p className="text-caption-1-regular text-text-tertiary px-2 py-2" role="status">
         Loading commands…
       </p>
     ) : status === "error" ? (
-      <p className="text-paragraph-xs text-error-base px-2 py-2 flex items-center gap-1.5" role="alert">
+      <p className="text-caption-1-regular text-red-500 px-2 py-2 flex items-center gap-1.5" role="alert">
         <RiErrorWarningLine className="size-3.5 shrink-0" aria-hidden />
         Couldn&apos;t load commands - keep typing to send as text.
       </p>
     ) : status === "unavailable" ? (
-      <p className="text-paragraph-xs text-text-soft-400 px-2 py-2" role="status">
+      <p className="text-caption-1-regular text-text-tertiary px-2 py-2" role="status">
         No native commands for this session.
       </p>
     ) : matches.length === 0 ? (
-      <p className="text-paragraph-xs text-text-soft-400 px-2 py-2" role="status">
+      <p className="text-caption-1-regular text-text-tertiary px-2 py-2" role="status">
         No matching commands.
       </p>
     ) : null;
@@ -117,11 +117,11 @@ export function SlashCommandPopover({
   return (
     <div
       className={cn(
-        "border-stroke-soft-200 bg-bg-white-0 shadow-regular-md w-full rounded-2xl border p-2",
+        "border-border-button-default bg-background-primary-default shadow-dropdown w-full rounded-2xl border p-2",
         className,
       )}
     >
-      <p className="text-mono-label text-text-soft-400 px-2 pb-1 pt-1.5" id="slashcmd-label">
+      <p className="text-mono-label text-text-tertiary px-2 pb-1 pt-1.5" id="slashcmd-label">
         {header}
       </p>
       <div className="max-h-72 overflow-y-auto" role="listbox" aria-labelledby="slashcmd-label">
@@ -141,20 +141,20 @@ export function SlashCommandPopover({
               }}
               className={cn(
                 "flex w-full items-center gap-2.5 rounded-xl px-2 py-2 text-left transition-colors",
-                i === highlight ? "bg-bg-weak-50" : "hover:bg-bg-weak-50",
+                i === highlight ? "bg-background-secondary-default" : "hover:bg-background-primary-hover",
               )}
             >
-              <RiTerminalLine className="text-text-sub-600 size-4 shrink-0" aria-hidden />
-              <span className="text-label-sm text-text-strong-950 shrink-0 font-mono">
+              <RiTerminalLine className="text-text-secondary size-4 shrink-0" aria-hidden />
+              <span className="text-body-2-medium text-text-primary shrink-0 font-mono">
                 /{c.name}
               </span>
               {c.input && (
-                <span className="text-paragraph-xs text-text-soft-400 shrink-0 font-mono">
+                <span className="text-caption-1-regular text-text-tertiary shrink-0 font-mono">
                   {c.input}
                 </span>
               )}
               {c.description && (
-                <span className="text-paragraph-xs text-text-soft-400 truncate">
+                <span className="text-caption-1-regular text-text-tertiary truncate">
                   {c.description}
                 </span>
               )}

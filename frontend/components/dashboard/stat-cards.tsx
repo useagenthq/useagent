@@ -21,13 +21,13 @@ export function StatCards({ stats }: { stats: StatItem[] }) {
     <div className='grid grid-cols-2 gap-4 lg:grid-cols-4'>
       {stats.map((stat) => (
         <Card key={stat.label} className='h-[132px] justify-between'>
-          <span className='flex size-9 items-center justify-center rounded-lg bg-bg-weak-50 ring-1 ring-inset ring-stroke-soft-200'>
-            <stat.icon className='size-5 text-text-sub-600' />
+          <span className='flex size-9 items-center justify-center rounded-lg bg-background-secondary-default ring-1 ring-inset ring-border-button-default'>
+            <stat.icon className='size-5 text-text-secondary' />
           </span>
           <div className='flex flex-col gap-1'>
-            <p className='text-paragraph-sm text-text-sub-600'>{stat.label}</p>
+            <p className='text-body-2-regular text-text-secondary'>{stat.label}</p>
             <div className='flex flex-wrap items-center gap-2'>
-              <p className='whitespace-nowrap text-label-lg font-semibold tracking-[-0.1px] tabular-nums text-text-strong-950'>
+              <p className='whitespace-nowrap text-label-lg font-semibold tracking-[-0.1px] tabular-nums text-text-primary'>
                 {stat.value}
               </p>
               {stat.delta && (

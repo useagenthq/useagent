@@ -18,7 +18,7 @@ import { useComposerPrefill } from "@/components/chat/composer-prefill-context";
 import { useSessionLatestRun } from "@/components/chat/session-run-context";
 import { DiffStatLabel } from "@/components/session-ui/diff-stat-label";
 import { DiffLines } from "@/components/session-ui/file-diff-view";
-import { cn } from "@/utils/cn";
+import { cx } from "@/utils/cx";
 import {
   proposalConflictsWithMainline,
   type RequestedEditAutoAcceptToast,
@@ -48,7 +48,7 @@ export function askAgentRedoMessage(summary: string | null, artifactName: string
 
 function NoChange() {
   return (
-    <p className="rounded-10 border border-stroke-soft-200 px-3 py-2 text-paragraph-xs text-text-soft-400">
+    <p className="rounded-2lg border border-border-button-default px-3 py-2 text-caption-1-regular text-text-tertiary">
       This proposal matches the current version - nothing would change.
     </p>
   );
@@ -58,10 +58,10 @@ function SheetChanges({ cells }: { readonly cells: readonly SheetCellChange[] })
   const shown = cells.slice(0, SHEET_CELL_CAP);
   const multiSheet = new Set(cells.map((cell) => cell.sheet)).size > 1;
   return (
-    <div className="overflow-hidden rounded-10 border border-stroke-soft-200">
+    <div className="overflow-hidden rounded-2lg border border-border-button-default">
       <table className="w-full border-collapse text-left font-mono text-[11px]">
         <thead>
-          <tr className="bg-bg-weak-50 text-text-soft-400">
+          <tr className="bg-background-secondary-default text-text-tertiary">
             <th className="px-2 py-1 font-normal">Cell</th>
             <th className="px-2 py-1 font-normal">Before</th>
             <th className="px-2 py-1 font-normal">After</th>
@@ -69,20 +69,20 @@ function SheetChanges({ cells }: { readonly cells: readonly SheetCellChange[] })
         </thead>
         <tbody>
           {shown.map((cell) => (
-            <tr key={`${cell.sheet}-${cell.ref}`} className="border-t border-stroke-soft-200/60">
-              <td className="px-2 py-1 text-text-sub-600">
+            <tr key={`${cell.sheet}-${cell.ref}`} className="border-t border-border-button-default/60">
+              <td className="px-2 py-1 text-text-secondary">
                 {multiSheet ? `${cell.sheet}!${cell.ref}` : cell.ref}
                 {cell.formatChanged && cell.before === cell.after && (
-                  <span className="ml-1 rounded bg-feature-base/10 px-1 text-feature-base">fmt</span>
+                  <span className="ml-1 rounded bg-purple-500/10 px-1 text-purple-600">fmt</span>
                 )}
               </td>
               <td className="px-2 py-1">
-                <span className="rounded bg-error-base/10 px-1 text-text-sub-600">
+                <span className="rounded bg-red-500/10 px-1 text-text-secondary">
                   {cell.before || " "}
                 </span>
               </td>
               <td className="px-2 py-1">
-                <span className="rounded bg-success-base/10 px-1 text-text-sub-600">
+                <span className="rounded bg-lime-500/10 px-1 text-text-secondary">
                   {cell.after || " "}
                 </span>
               </td>
@@ -91,7 +91,7 @@ function SheetChanges({ cells }: { readonly cells: readonly SheetCellChange[] })
         </tbody>
       </table>
       {cells.length > shown.length && (
-        <p className="border-t border-stroke-soft-200 px-2 py-1 text-paragraph-xs text-text-soft-400">
+        <p className="border-t border-border-button-default px-2 py-1 text-caption-1-regular text-text-tertiary">
           +{cells.length - shown.length} more changed cells
         </p>
       )}
@@ -111,10 +111,10 @@ const BLOCK_KIND_LABEL: Record<DeckBlockChange["kind"], string> = {
   edited: "edited",
 };
 const BLOCK_KIND_TONE: Record<DeckBlockChange["kind"], string> = {
-  added: "bg-success-base/10 text-success-base",
-  removed: "bg-error-base/10 text-error-base",
-  moved: "bg-bg-weak-50 text-text-sub-600",
-  edited: "bg-feature-base/10 text-feature-base",
+  added: "bg-lime-500/10 text-lime-600",
+  removed: "bg-red-500/10 text-text-error-primary",
+  moved: "bg-background-secondary-default text-text-secondary",
+  edited: "bg-purple-500/10 text-purple-600",
 };
 
 /** Block-level summary of a deck proposal: added/removed/moved/edited blocks per
@@ -129,40 +129,40 @@ function SlideChanges({
   return (
     <div className="space-y-2">
       {themeChanged && (
-        <p className="rounded-10 border border-stroke-soft-200 bg-bg-weak-50 px-2.5 py-1.5 text-paragraph-xs text-text-sub-600">
+        <p className="rounded-2lg border border-border-button-default bg-background-secondary-default px-2.5 py-1.5 text-caption-1-regular text-text-secondary">
           Deck theme changed (background and colors).
         </p>
       )}
       {slides.map((slide) => (
         <div
           key={slide.index}
-          className="overflow-hidden rounded-10 border border-stroke-soft-200"
+          className="overflow-hidden rounded-2lg border border-border-button-default"
         >
-          <div className="flex items-center gap-2 bg-bg-weak-50 px-2.5 py-1.5">
-            <span className="text-label-xs text-text-strong-950">
+          <div className="flex items-center gap-2 bg-background-secondary-default px-2.5 py-1.5">
+            <span className="text-caption-1-medium text-text-primary">
               Slide {slide.index + 1}
             </span>
-            <span className="text-paragraph-xs text-text-soft-400">
+            <span className="text-caption-1-regular text-text-tertiary">
               {SLIDE_KIND_LABEL[slide.kind]}
             </span>
-            <span className="min-w-0 flex-1 truncate text-paragraph-xs text-text-soft-400">
+            <span className="min-w-0 flex-1 truncate text-caption-1-regular text-text-tertiary">
               {slide.label}
             </span>
           </div>
-          <div className="divide-y divide-stroke-soft-200/60">
+          <div className="divide-y divide-border-button-default/60">
             {slide.blocks.map((block) => (
               <div key={block.id} className="flex items-center gap-2 px-2.5 py-1.5">
-                <span className="text-mono-label text-text-soft-400">{block.type}</span>
-                <span className={cn("rounded px-1 text-[11px]", BLOCK_KIND_TONE[block.kind])}>
+                <span className="text-mono-label text-text-tertiary">{block.type}</span>
+                <span className={cx("rounded px-1 text-[11px]", BLOCK_KIND_TONE[block.kind])}>
                   {BLOCK_KIND_LABEL[block.kind]}
                 </span>
-                <span className="min-w-0 flex-1 truncate text-paragraph-xs text-text-sub-600">
+                <span className="min-w-0 flex-1 truncate text-caption-1-regular text-text-secondary">
                   {block.label}
                 </span>
               </div>
             ))}
             {(slide.backgroundChanged || slide.notesChanged) && (
-              <p className="px-2.5 py-1.5 text-paragraph-xs text-text-soft-400">
+              <p className="px-2.5 py-1.5 text-caption-1-regular text-text-tertiary">
                 {[slide.backgroundChanged && "background", slide.notesChanged && "notes"]
                   .filter(Boolean)
                   .join(", ")}{" "}
@@ -182,12 +182,12 @@ function ProposalDiffBody({ diff }: { readonly diff: WorkpieceProposalDiff }) {
     return (
       <div className="space-y-2">
         {diff.themeChanged && (
-          <p className="rounded-10 border border-stroke-soft-200 bg-bg-weak-50 px-2.5 py-1.5 text-paragraph-xs text-text-sub-600">
+          <p className="rounded-2lg border border-border-button-default bg-background-secondary-default px-2.5 py-1.5 text-caption-1-regular text-text-secondary">
             Document theme changed (background and colors).
           </p>
         )}
         {diff.lines.length > 0 && (
-          <div className="max-h-72 overflow-auto rounded-10 border border-stroke-soft-200">
+          <div className="max-h-72 overflow-auto rounded-2lg border border-border-button-default">
             <DiffLines lines={diff.lines} />
           </div>
         )}
@@ -230,14 +230,14 @@ export function ProposalCard({
   return (
     <div
       data-testid="workpiece-proposal-card"
-      className="rounded-10 border border-stroke-soft-200 bg-bg-white-0 p-3"
+      className="rounded-2lg border border-border-button-default bg-background-primary-default p-3"
     >
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="min-w-0">
-          <p className="truncate text-label-sm text-text-strong-950">
+          <p className="truncate text-body-2-medium text-text-primary">
             {proposal.summary || "Proposed edit"}
           </p>
-          <p className="text-paragraph-xs text-text-soft-400">
+          <p className="text-caption-1-regular text-text-tertiary">
             from run {proposal.proposer_run_id.slice(0, 8)}
             {diff.type === "text" && !diff.unchanged && (
               <>
@@ -251,7 +251,7 @@ export function ProposalCard({
             )}
           </p>
         </div>
-        <div className="inline-flex items-center rounded-lg border border-stroke-soft-200 p-0.5">
+        <div className="inline-flex items-center rounded-lg border border-border-button-default p-0.5">
           {(
             [
               ["diff", "Diff"],
@@ -263,11 +263,11 @@ export function ProposalCard({
               type="button"
               onClick={() => setView(mode)}
               aria-pressed={view === mode}
-              className={cn(
-                "inline-flex h-6 items-center rounded-md px-2 text-label-xs",
+              className={cx(
+                "inline-flex h-6 items-center rounded-md px-2 text-caption-1-medium",
                 view === mode
-                  ? "bg-bg-strong-950 text-text-white-0"
-                  : "text-text-sub-600 hover:text-text-strong-950",
+                  ? "bg-foreground-icon-primary text-background-full"
+                  : "text-text-secondary hover:text-text-primary",
               )}
             >
               {label}
@@ -280,11 +280,11 @@ export function ProposalCard({
         {view === "diff" ? (
           <ProposalDiffBody diff={diff} />
         ) : (
-          <div className="rounded-10 border border-stroke-soft-200">
-            <p className="border-b border-stroke-soft-200 bg-bg-weak-50 px-3 py-1.5 text-mono-label text-text-soft-400">
+          <div className="rounded-2lg border border-border-button-default">
+            <p className="border-b border-border-button-default bg-background-secondary-default px-3 py-1.5 text-mono-label text-text-tertiary">
               Proposed version - not applied
             </p>
-            <pre className="max-h-72 overflow-auto whitespace-pre-wrap break-words px-3 py-2 font-mono text-[11px] text-text-sub-600">
+            <pre className="max-h-72 overflow-auto whitespace-pre-wrap break-words px-3 py-2 font-mono text-[11px] text-text-secondary">
               {proposedPreviewText(proposal.state) || " "}
             </pre>
           </div>
@@ -295,7 +295,7 @@ export function ProposalCard({
         // Dead-end guard: mainline moved on, so Accept can only 409. Explain why
         // inline, make Dismiss the primary action, and offer a one-click re-propose.
         <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
-          <p className="text-paragraph-xs text-warning-base">
+          <p className="text-caption-1-regular text-yellow-600">
             Cannot apply - written against an older version
           </p>
           <div className="flex items-center gap-2">
@@ -304,7 +304,7 @@ export function ProposalCard({
               disabled
               aria-disabled
               title="This proposal was written against an older version and can no longer be applied."
-              className="inline-flex h-8 cursor-not-allowed items-center gap-1.5 rounded-lg border border-stroke-soft-200 px-3 text-label-xs text-text-disabled-300"
+              className="inline-flex h-8 cursor-not-allowed items-center gap-1.5 rounded-lg border border-border-button-default px-3 text-caption-1-medium text-text-disabled"
             >
               <RiCheckLine aria-hidden className="size-3.5" /> Accept
             </button>
@@ -313,7 +313,7 @@ export function ProposalCard({
                 type="button"
                 onClick={onAskRedo}
                 disabled={busy}
-                className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-stroke-soft-200 px-3 text-label-xs text-text-sub-600 hover:bg-bg-weak-50 hover:text-text-strong-950 disabled:opacity-40"
+                className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-border-button-default px-3 text-caption-1-medium text-text-secondary hover:bg-background-primary-hover hover:text-text-primary disabled:opacity-40"
               >
                 <RiSparkling2Line aria-hidden className="size-3.5" /> Ask agent to redo
               </button>
@@ -322,7 +322,7 @@ export function ProposalCard({
               type="button"
               onClick={onDismiss}
               disabled={busy}
-              className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-bg-strong-950 px-3 text-label-xs text-text-white-0 hover:opacity-90 disabled:opacity-40"
+              className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-button-primary px-3 text-caption-1-medium text-text-white hover:opacity-90 disabled:opacity-40"
             >
               <RiCloseLine aria-hidden className="size-3.5" /> Dismiss
             </button>
@@ -334,7 +334,7 @@ export function ProposalCard({
             type="button"
             onClick={onDismiss}
             disabled={busy}
-            className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-stroke-soft-200 px-3 text-label-xs text-text-sub-600 hover:bg-bg-weak-50 hover:text-text-strong-950 disabled:opacity-40"
+            className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-border-button-default px-3 text-caption-1-medium text-text-secondary hover:bg-background-primary-hover hover:text-text-primary disabled:opacity-40"
           >
             <RiCloseLine aria-hidden className="size-3.5" /> Dismiss
           </button>
@@ -342,7 +342,7 @@ export function ProposalCard({
             type="button"
             onClick={onAccept}
             disabled={busy}
-            className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-bg-strong-950 px-3 text-label-xs text-text-white-0 hover:opacity-90 disabled:opacity-40"
+            className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-button-primary px-3 text-caption-1-medium text-text-white hover:opacity-90 disabled:opacity-40"
           >
             <RiCheckLine aria-hidden className="size-3.5" /> Accept
           </button>
@@ -388,34 +388,34 @@ export function WorkpieceProposalBanner({
     <section
       data-testid="workpiece-proposal-review"
       aria-label="Agent proposed changes"
-      className="shrink-0 overflow-hidden rounded-10 border border-feature-base/40 bg-feature-lighter/30"
+      className="shrink-0 overflow-hidden rounded-2lg border border-purple-500/40 bg-purple-500/10"
     >
       <button
         type="button"
         onClick={() => setOpen((value) => !value)}
         aria-expanded={open}
-        className="flex w-full items-center gap-2 px-3 py-2 text-left outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-feature-base"
+        className="flex w-full items-center gap-2 px-3 py-2 text-left outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-purple-500"
       >
-        <RiSparkling2Line aria-hidden className="size-4 shrink-0 text-feature-base" />
-        <span className="text-label-sm text-text-strong-950">
+        <RiSparkling2Line aria-hidden className="size-4 shrink-0 text-purple-600" />
+        <span className="text-body-2-medium text-text-primary">
           Agent proposed {pending.length === 1 ? "a change" : `${pending.length} changes`}
         </span>
-        <span className="text-paragraph-xs text-text-soft-400">Review</span>
+        <span className="text-caption-1-regular text-text-tertiary">Review</span>
         <RiArrowRightSLine
           aria-hidden
-          className={cn(
-            "ml-auto size-4 shrink-0 text-text-soft-400 transition-transform",
+          className={cx(
+            "ml-auto size-4 shrink-0 text-text-tertiary transition-transform",
             open && "rotate-90",
           )}
         />
       </button>
 
       {open && (
-        <div className="space-y-3 border-t border-feature-base/30 p-3">
+        <div className="space-y-3 border-t border-purple-500/30 p-3">
           {error && (
             <p
               role="alert"
-              className="rounded-lg border border-warning-base bg-warning-lighter px-3 py-2 text-paragraph-xs text-warning-base"
+              className="rounded-lg border border-yellow-500/40 bg-status-yellow-background px-3 py-2 text-caption-1-regular text-status-yellow-text"
             >
               {error}
             </p>
@@ -458,22 +458,22 @@ function RequestedEditToast({
   }, [toast.status, toast.id, onDismiss]);
 
   return (
-    <div className="animate-ai-fade-up flex items-center gap-2 rounded-10 border border-stroke-soft-200 bg-bg-white-0 px-3 py-2 shadow-regular-sm">
-      <RiSparkling2Line aria-hidden className="size-4 shrink-0 text-feature-base" />
+    <div className="animate-ai-fade-up flex items-center gap-2 rounded-2lg border border-border-button-default bg-background-primary-default px-3 py-2 shadow-sm">
+      <RiSparkling2Line aria-hidden className="size-4 shrink-0 text-purple-600" />
       <div className="min-w-0 flex-1">
-        <p className="truncate text-label-sm text-text-strong-950">Agent edit applied</p>
+        <p className="truncate text-body-2-medium text-text-primary">Agent edit applied</p>
         {toast.summary && (
-          <p className="truncate text-paragraph-xs text-text-soft-400">{toast.summary}</p>
+          <p className="truncate text-caption-1-regular text-text-tertiary">{toast.summary}</p>
         )}
       </div>
       {toast.status === "error" ? (
-        <span className="text-paragraph-xs text-warning-base">Could not undo</span>
+        <span className="text-caption-1-regular text-yellow-600">Could not undo</span>
       ) : (
         <button
           type="button"
           onClick={() => onUndo(toast.id)}
           disabled={toast.status === "undoing"}
-          className="inline-flex h-7 items-center gap-1.5 rounded-lg border border-stroke-soft-200 px-2.5 text-label-xs text-text-sub-600 hover:bg-bg-weak-50 hover:text-text-strong-950 disabled:opacity-40"
+          className="inline-flex h-7 items-center gap-1.5 rounded-lg border border-border-button-default px-2.5 text-caption-1-medium text-text-secondary hover:bg-background-primary-hover hover:text-text-primary disabled:opacity-40"
         >
           <RiArrowGoBackLine aria-hidden className="size-3.5" />
           {toast.status === "undoing" ? "Undoing..." : "Undo"}
@@ -483,7 +483,7 @@ function RequestedEditToast({
         type="button"
         onClick={() => onDismiss(toast.id)}
         aria-label="Dismiss"
-        className="grid size-6 shrink-0 place-items-center rounded text-text-soft-400 hover:bg-bg-weak-50 hover:text-text-strong-950"
+        className="grid size-6 shrink-0 place-items-center rounded text-text-tertiary hover:bg-background-primary-hover hover:text-text-primary"
       >
         <RiCloseLine aria-hidden className="size-3.5" />
       </button>

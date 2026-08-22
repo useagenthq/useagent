@@ -46,12 +46,12 @@ export function WorkingIndicator({
 }) {
   return (
     <div data-session-ui="working-indicator" className="py-0.5 pl-1.5">
-      <div className="flex min-w-0 items-center gap-2 pt-1 text-[11px] text-text-sub-600 tabular-nums">
+      <div className="flex min-w-0 items-center gap-2 pt-1 text-[11px] text-text-secondary tabular-nums">
         <span className="inline-flex items-center gap-[3px]">
           {[0, 200, 400].map((delay) => (
             <span
               key={delay}
-              className="ai-loading-pixel h-1 w-1 rounded-full bg-text-soft-400"
+              className="ai-loading-pixel h-1 w-1 rounded-full bg-foreground-icon-tertiary"
               style={{ animationDelay: `${delay}ms` }}
             />
           ))}
@@ -66,7 +66,7 @@ export function WorkingIndicator({
           )}
         </span>
         {stepLabel ? (
-          <span className="min-w-0 truncate text-text-soft-400">· {stepLabel}</span>
+          <span className="min-w-0 truncate text-text-tertiary">· {stepLabel}</span>
         ) : null}
       </div>
     </div>

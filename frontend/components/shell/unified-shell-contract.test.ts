@@ -26,7 +26,7 @@ describe("unified shell contract", () => {
   test("renders the application shell full-bleed without an outer rounded card", () => {
     const { appShell } = shellSources();
 
-    expect(appShell).toContain("h-dvh w-full overflow-hidden bg-bg-white-0");
+    expect(appShell).toContain("h-dvh w-full overflow-hidden bg-background-full");
     expect(appShell).not.toContain("p-2");
     expect(appShell).not.toContain("sm:p-3");
     expect(appShell).not.toContain("rounded-2xl");

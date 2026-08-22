@@ -63,9 +63,9 @@ export function AskRepoBar() {
           event.preventDefault();
           void submit();
         }}
-        className="flex items-center gap-3 rounded-2xl bg-bg-white-0 px-3.5 py-2.5 shadow-regular-md ring-1 ring-inset ring-stroke-soft-200"
+        className="flex items-center gap-3 rounded-2xl bg-background-primary-default px-3.5 py-2.5 shadow-md ring-1 ring-inset ring-border-button-default"
       >
-        <AsteriskMark className="size-5 shrink-0 text-text-strong-950" />
+        <AsteriskMark className="size-5 shrink-0 text-text-primary" />
         <input
           type="text"
           aria-label="Ask the wiki"
@@ -73,19 +73,19 @@ export function AskRepoBar() {
           value={value}
           disabled={busy}
           onChange={(event) => setValue(event.target.value)}
-          className="min-w-0 flex-1 bg-transparent text-paragraph-sm text-text-strong-950 outline-none placeholder:text-text-soft-400 disabled:opacity-60"
+          className="min-w-0 flex-1 bg-transparent text-body-2-regular text-text-primary outline-none placeholder:text-text-tertiary disabled:opacity-60"
         />
         {failed && (
-          <span className="text-label-xs text-error-base shrink-0">Could not start, retry</span>
+          <span className="text-label-xs text-text-error-primary shrink-0">Could not start, retry</span>
         )}
         <button
           type="submit"
           aria-label="Ask the wiki"
           disabled={busy || !value.trim()}
           className={cnExt(
-            "flex size-8 shrink-0 items-center justify-center rounded-full text-static-white outline-none transition-opacity",
-            "focus-visible:ring-2 focus-visible:ring-primary-base focus-visible:ring-offset-2",
-            "bg-primary-base",
+            "flex size-8 shrink-0 items-center justify-center rounded-full text-white outline-none transition-opacity",
+            "focus-visible:ring-2 focus-visible:ring-border-focus-ring focus-visible:ring-offset-2",
+            "bg-accent-500",
             "hover:opacity-90 disabled:opacity-40",
           )}
         >

@@ -5,7 +5,7 @@ import { createPortal } from "react-dom";
 import { RiCloseLine, RiEyeLine, RiRobot2Line } from "@remixicon/react";
 import { backendFetch } from "@/lib/backend-fetch";
 import { createRun } from "@/lib/create-run";
-import { cnExt as cn } from "@/utils/cn";
+import { cx as cn } from "@/utils/cx";
 import { Composer } from "@/components/chat/composer";
 import { ToolStepRow } from "@/components/chat/tool-step-row";
 import { LoadingState } from "@/components/ai/loading-state";
@@ -90,7 +90,7 @@ function StatusPill({ status }: { status: RunStatus }) {
   return (
     <span
       className={cn(
-        "ml-auto flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-label-xs capitalize",
+        "ml-auto flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-caption-1-medium capitalize",
         tone.pill,
       )}
     >
@@ -108,7 +108,7 @@ function CloseButton() {
       type="button"
       onClick={closeSubagentPane}
       aria-label="Close subagent pane"
-      className="text-text-sub-600 hover:bg-bg-soft-200 flex size-7 shrink-0 items-center justify-center rounded-lg transition-colors"
+      className="text-text-secondary hover:bg-background-secondary-hover flex size-7 shrink-0 items-center justify-center rounded-lg transition-colors"
     >
       <RiCloseLine className="size-4" aria-hidden />
     </button>
@@ -156,20 +156,20 @@ function SubagentPaneBody({ initialRun }: { initialRun: ApiRun }) {
 
   return (
     <>
-      <header className="border-stroke-soft-200 flex shrink-0 items-start gap-2.5 border-b px-4 py-3">
-        <span className="bg-feature-lighter text-feature-base mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-lg">
+      <header className="border-border-button-default flex shrink-0 items-start gap-2.5 border-b px-4 py-3">
+        <span className="bg-purple-50 text-purple-500 mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-lg">
           <RiRobot2Line className="size-3.5" aria-hidden />
         </span>
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5">
-            <span className="text-mono-label text-text-soft-400">Subagent</span>
-            <span className="text-text-soft-400">·</span>
-            <span className="text-mono-label text-text-soft-400">
+            <span className="text-mono-label text-text-tertiary">Subagent</span>
+            <span className="text-text-tertiary">·</span>
+            <span className="text-mono-label text-text-tertiary">
               {engineLabel(initialRun.engine)}
             </span>
             <StatusPill status={status} />
           </div>
-          <p className="text-label-sm text-text-strong-950 mt-1 line-clamp-2">
+          <p className="text-body-2-medium text-text-primary mt-1 line-clamp-2">
             {initialRun.prompt}
           </p>
         </div>
@@ -178,13 +178,13 @@ function SubagentPaneBody({ initialRun }: { initialRun: ApiRun }) {
 
       <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-3">
         {summary && (
-          <p className="text-paragraph-sm text-text-sub-600 border-stroke-soft-200 border-b pb-3">
+          <p className="text-body-2-regular text-text-secondary border-border-button-default border-b pb-3">
             {summary}
           </p>
         )}
 
         {activity.length === 0 ? (
-          <p className="text-paragraph-sm text-text-soft-400 py-6 text-center">
+          <p className="text-body-2-regular text-text-tertiary py-6 text-center">
             {live ? "Waiting for the first step…" : "No activity recorded."}
           </p>
         ) : (
@@ -201,7 +201,7 @@ function SubagentPaneBody({ initialRun }: { initialRun: ApiRun }) {
         )}
       </div>
 
-      <div className="border-stroke-soft-200 shrink-0 border-t p-3">
+      <div className="border-border-button-default shrink-0 border-t p-3">
         <Composer
           variant="compact"
           placeholder="Pass instructions down…"
@@ -218,8 +218,8 @@ function SubagentPaneBody({ initialRun }: { initialRun: ApiRun }) {
 function PaneStub({ children }: { children: React.ReactNode }) {
   return (
     <>
-      <header className="border-stroke-soft-200 flex shrink-0 items-center gap-2 border-b px-4 py-3">
-        <span className="text-mono-label text-text-soft-400">Subagent</span>
+      <header className="border-border-button-default flex shrink-0 items-center gap-2 border-b px-4 py-3">
+        <span className="text-mono-label text-text-tertiary">Subagent</span>
         <span className="ml-auto" />
         <CloseButton />
       </header>
@@ -282,7 +282,7 @@ export function SubagentPane() {
       aria-hidden={!open}
       aria-label="Subagent pane"
       className={cn(
-        "border-stroke-soft-200 bg-bg-white-0 shadow-regular-md fixed inset-y-0 right-0 z-40 flex h-dvh w-[440px] max-w-[92vw] flex-col border-l",
+        "border-border-button-default bg-background-primary-default shadow-sidebar fixed inset-y-0 right-0 z-40 flex h-dvh w-[440px] max-w-[92vw] flex-col border-l",
         "transition-transform duration-300 ease-out",
         open ? "translate-x-0" : "pointer-events-none translate-x-full",
       )}
@@ -292,7 +292,7 @@ export function SubagentPane() {
           <SubagentPaneBody key={run.id} initialRun={run} />
         ) : errored ? (
           <PaneStub>
-            <p className="text-paragraph-sm text-text-sub-600 text-center">
+            <p className="text-body-2-regular text-text-secondary text-center">
               Couldn&apos;t load this run.
             </p>
           </PaneStub>
@@ -322,9 +322,9 @@ function SubagentChip({ run }: { run: ThreadRun }) {
       type="button"
       onClick={() => openSubagentPane(run.id)}
       title={run.prompt}
-      className="border-stroke-soft-200 bg-bg-white-0 text-text-sub-600 hover:bg-bg-weak-50 inline-flex max-w-full shrink-0 items-center gap-1.5 rounded-lg border px-2 py-1 text-label-xs transition-colors"
+      className="border-border-button-default bg-background-primary-default text-text-secondary hover:bg-background-primary-hover inline-flex max-w-full shrink-0 items-center gap-1.5 rounded-lg border px-2 py-1 text-caption-1-medium transition-colors"
     >
-      <RiRobot2Line className="text-feature-base size-3.5 shrink-0" aria-hidden />
+      <RiRobot2Line className="text-purple-500 size-3.5 shrink-0" aria-hidden />
       <span className="min-w-0 max-w-[16rem] truncate">{run.prompt}</span>
       <span
         className={cn("size-1.5 shrink-0 rounded-full", tone.dot, tone.pulse && "animate-pulse")}
@@ -379,8 +379,8 @@ export function SubagentChips({
   if (subs.length === 0) return null;
 
   return (
-    <div className="border-stroke-soft-200 bg-bg-white-0 flex shrink-0 items-center gap-2 overflow-x-auto border-b px-4 py-2">
-      <span className="text-mono-label text-text-soft-400 shrink-0">Subagents</span>
+    <div className="border-border-button-default bg-background-primary-default flex shrink-0 items-center gap-2 overflow-x-auto border-b px-4 py-2">
+      <span className="text-mono-label text-text-tertiary shrink-0">Subagents</span>
       {subs.map((c) => (
         <SubagentChip key={c.id} run={c} />
       ))}
@@ -410,7 +410,7 @@ export function SubagentPeekButton({
         openSubagentPane(runId);
       }}
       className={cn(
-        "text-text-soft-400 hover:bg-bg-weak-50 hover:text-text-sub-600 flex size-8 shrink-0 items-center justify-center rounded-lg transition-colors",
+        "text-text-tertiary hover:bg-background-primary-hover hover:text-text-secondary flex size-8 shrink-0 items-center justify-center rounded-lg transition-colors",
         className,
       )}
     >

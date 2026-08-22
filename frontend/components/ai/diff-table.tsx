@@ -1,5 +1,5 @@
 import * as Badge from "@/components/ui/badge";
-import { cnExt as cn } from "@/utils/cn";
+import { cx } from "@/utils/cx";
 
 /**
  * Proposed-changes table — a compact bordered diff. Ported from the AI
@@ -31,19 +31,19 @@ const statusMeta: Record<
   { edge: string; rowTint: string; text: string; sign: string }
 > = {
   added: {
-    edge: "hsl(var(--success-base))",
-    rowTint: "bg-success-lighter",
-    text: "text-success-base",
+    edge: "var(--color-lime-500)",
+    rowTint: "bg-status-lime-background",
+    text: "text-lime-600",
     sign: "+",
   },
   removed: {
-    edge: "hsl(var(--error-base))",
-    rowTint: "bg-error-lighter",
-    text: "text-error-base line-through",
+    edge: "var(--color-red-500)",
+    rowTint: "bg-status-rose-background",
+    text: "text-text-error-primary line-through",
     sign: "−",
   },
   changed: {
-    edge: "hsl(var(--away-base))",
+    edge: "var(--color-orange-500)",
     rowTint: "",
     text: "",
     sign: "",
@@ -53,18 +53,18 @@ const statusMeta: Record<
 export function DiffTable({ columns, rows, className }: DiffTableProps) {
   return (
     <div
-      className={cn(
-        "overflow-hidden rounded-xl border border-stroke-soft-200 bg-bg-white-0 shadow-regular-xs",
+      className={cx(
+        "overflow-hidden rounded-xl border border-border-button-default bg-background-primary-default shadow-card",
         className,
       )}
     >
       <table className="w-full border-collapse text-left">
         <thead>
-          <tr className="border-b border-stroke-soft-200">
+          <tr className="border-b border-border-button-default">
             {columns.map((col) => (
               <th
                 key={col}
-                className="px-3 py-2 text-label-xs font-medium text-text-soft-400"
+                className="px-3 py-2 text-caption-1-medium font-medium text-text-tertiary"
               >
                 {col}
               </th>
@@ -79,8 +79,8 @@ export function DiffTable({ columns, rows, className }: DiffTableProps) {
               <tr
                 // Rows are a static ordered list; index keys are stable.
                 key={ri}
-                className={cn(
-                  "border-b border-stroke-soft-200 last:border-0",
+                className={cx(
+                  "border-b border-border-button-default last:border-0",
                   meta?.rowTint,
                 )}
               >
@@ -90,13 +90,13 @@ export function DiffTable({ columns, rows, className }: DiffTableProps) {
                   return (
                     <td
                       key={ci}
-                      className={cn(
-                        "px-3 py-2 align-middle text-paragraph-xs",
+                      className={cx(
+                        "px-3 py-2 align-middle text-caption-1-regular",
                         ci === 0 && "border-l-2 font-medium",
                         tinted ||
                           (ci === 0
-                            ? "text-text-strong-950"
-                            : "text-text-sub-600"),
+                            ? "text-text-primary"
+                            : "text-text-secondary"),
                       )}
                       style={
                         ci === 0

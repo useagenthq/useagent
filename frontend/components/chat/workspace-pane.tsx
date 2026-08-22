@@ -32,8 +32,12 @@ import { EDIT_ACTIVITY_WINDOW_MS } from "@/components/artifacts/requested-edit-a
 import { WorkpieceProposalReview } from "@/components/artifacts/workpiece-proposal-review";
 import { workpieceFollowUpMessage } from "@/components/artifacts/workpiece-follow-up";
 import { useComposerPrefill } from "@/components/chat/composer-prefill-context";
+import { StatusDot } from "@/components/base/badges/status-dot";
+import { Button, ButtonLink } from "@/components/base/buttons/button";
+import { IconLinkButton } from "@/components/base/buttons/icon-button";
+import { PillTab, PillTabList } from "@/components/base/tabs/pill-tab";
 import { backendFetch } from "@/lib/backend-fetch";
-import { cnExt as cn } from "@/utils/cn";
+import { cx } from "@/utils/cx";
 
 export interface OpenWorkpieceTab {
   readonly id: string;
@@ -71,7 +75,7 @@ export function WorkpieceTabStrip({
   readonly onClose: (id: string) => void;
 }) {
   return (
-    <div className="flex shrink-0 items-center gap-1 overflow-x-auto border-b border-stroke-soft-200 px-2 py-1.5">
+    <div className="flex shrink-0 items-center gap-1 overflow-x-auto border-b border-border-button-default px-2 py-1.5">
       {tabs.map((tab) => {
         const Icon = KIND_META[kindForName(tab.name)].icon;
         const active = tab.id === activeId;
@@ -79,13 +83,13 @@ export function WorkpieceTabStrip({
         return (
           <div
             key={tab.id}
-            className={cn(
-              "flex shrink-0 items-center gap-1 rounded-lg border pl-2 pr-1 text-label-xs transition-colors",
+            className={cx(
+              "flex shrink-0 items-center gap-1 rounded-lg border pl-2 pr-1 text-caption-1-medium transition-colors",
               active
-                ? "border-stroke-sub-300 bg-bg-weak-50 text-text-strong-950"
+                ? "border-border-button-hover bg-background-secondary-default text-text-primary"
                 : unseen
-                  ? "border-feature-base/40 bg-feature-lighter/30 text-text-strong-950"
-                  : "border-transparent text-text-sub-600 hover:bg-bg-weak-50",
+                  ? "border-accent-500/40 bg-accent-100/30 text-text-primary"
+                  : "border-transparent text-text-secondary hover:bg-background-primary-hover",
             )}
           >
             <button
@@ -97,10 +101,10 @@ export function WorkpieceTabStrip({
               {unseen ? (
                 <span
                   aria-label="New"
-                  className="size-1.5 shrink-0 rounded-full bg-feature-base"
+                  className="size-1.5 shrink-0 rounded-full bg-accent-500"
                 />
               ) : (
-                <Icon aria-hidden className="size-3.5 shrink-0 text-text-soft-400" />
+                <Icon aria-hidden className="size-3.5 shrink-0 text-foreground-icon-tertiary" />
               )}
               <span className="max-w-40 truncate">{tab.name}</span>
             </button>
@@ -109,7 +113,7 @@ export function WorkpieceTabStrip({
               onClick={() => onClose(tab.id)}
               aria-label={`Close ${tab.name}`}
               title="Close"
-              className="grid size-5 place-items-center rounded text-text-soft-400 hover:bg-bg-soft-200 hover:text-text-strong-950"
+              className="grid size-5 place-items-center rounded text-foreground-icon-tertiary hover:bg-background-tertiary-default hover:text-text-primary"
             >
               <RiCloseLine aria-hidden className="size-3.5" />
             </button>
@@ -122,10 +126,10 @@ export function WorkpieceTabStrip({
 
 function SaveState({ saving, dirty }: { readonly saving: boolean; readonly dirty: boolean }) {
   const label = saving ? "Saving..." : dirty ? "Unsaved changes" : "Saved";
-  const dot = saving ? "bg-away-base" : dirty ? "bg-warning-base" : "bg-success-base";
+  const color = saving ? ("indigo" as const) : dirty ? ("yellow" as const) : ("green" as const);
   return (
-    <span className="inline-flex items-center gap-1.5 text-label-xs text-text-sub-600">
-      <span className={cn("size-1.5 rounded-full", dot)} aria-hidden />
+    <span className="inline-flex items-center gap-1 text-caption-1-medium text-text-secondary">
+      <StatusDot color={color} />
       {label}
     </span>
   );
@@ -162,69 +166,62 @@ export function WorkpieceHeader({
   return (
     <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 px-3 py-2">
       <div className="min-w-0">
-        <p className="truncate text-label-sm text-text-strong-950" title={name}>
+        <p className="truncate text-body-2-medium text-text-primary" title={name}>
           {name}
         </p>
-        <p className="text-paragraph-xs text-text-soft-400">
+        <p className="text-caption-1-regular text-text-tertiary">
           {kindLabel} · revision {revision}
         </p>
       </div>
       <div className="flex flex-wrap items-center gap-2">
         {editable && <SaveState saving={saving} dirty={dirty} />}
-        <div className="inline-flex items-center rounded-lg border border-stroke-soft-200 p-0.5">
+        <PillTabList
+          aria-label="View mode"
+          className="rounded-2lg border border-border-button-default p-0.5"
+        >
           {(
             [
               ["rendered", "Rendered", RiEyeLine],
               ["code", "Code", RiCodeSSlashLine],
             ] as const
           ).map(([mode, label, Icon]) => (
-            <button
+            <PillTab
               key={mode}
-              type="button"
-              onClick={() => onViewMode(mode)}
-              aria-pressed={viewMode === mode}
+              variant="gray"
+              icon={Icon}
+              isSelected={viewMode === mode}
+              onSelect={() => onViewMode(mode)}
               title={label}
-              className={cn(
-                "inline-flex h-7 items-center gap-1 rounded-md px-2 text-label-xs",
-                viewMode === mode
-                  ? "bg-bg-strong-950 text-text-white-0"
-                  : "text-text-sub-600 hover:text-text-strong-950",
-              )}
             >
-              <Icon aria-hidden className="size-3.5" />
               <span className="hidden sm:inline">{label}</span>
-            </button>
+            </PillTab>
           ))}
-        </div>
+        </PillTabList>
         {downloadUrl && (
-          <a
+          <IconLinkButton
+            icon={RiDownloadLine}
+            size="small"
             href={downloadUrl}
             download={name}
             aria-label={`Download original ${name}`}
             title="Download original"
-            className="grid size-7 place-items-center rounded-lg border border-stroke-soft-200 text-text-sub-600 hover:bg-bg-weak-50 hover:text-text-strong-950"
-          >
-            <RiDownloadLine aria-hidden className="size-3.5" />
-          </a>
+          />
         )}
         {exportUrl && (
-          <a
-            href={exportUrl}
-            download
-            className="inline-flex h-7 items-center gap-1.5 rounded-lg border border-stroke-soft-200 px-2 text-label-xs text-text-sub-600 hover:bg-bg-weak-50 hover:text-text-strong-950"
-          >
-            <RiDownloadLine aria-hidden className="size-3.5" /> Export
-          </a>
+          <ButtonLink variant="secondary" size="xs" leadingIcon={RiDownloadLine} href={exportUrl} download>
+            Export
+          </ButtonLink>
         )}
         {editable && onSave && dirty && (
-          <button
-            type="button"
+          <Button
+            variant="primary"
+            size="xs"
+            leadingIcon={RiSaveLine}
             onClick={onSave}
             disabled={saving}
-            className="inline-flex h-7 items-center gap-1.5 rounded-lg bg-bg-strong-950 px-2.5 text-label-xs text-text-white-0 hover:opacity-90 disabled:opacity-40"
           >
-            <RiSaveLine aria-hidden className="size-3.5" /> Save
-          </button>
+            Save
+          </Button>
         )}
       </div>
     </div>
@@ -263,8 +260,8 @@ export function WorkpieceFollowUpComposer({
   };
 
   return (
-    <div className="flex shrink-0 items-center gap-1.5 border-t border-stroke-soft-200 px-3 py-2">
-      <RiSparkling2Line aria-hidden className="size-4 shrink-0 text-feature-base" />
+    <div className="flex shrink-0 items-center gap-1.5 border-t border-border-button-default px-3 py-2">
+      <RiSparkling2Line aria-hidden className="size-4 shrink-0 text-purple-500" />
       <input
         value={text}
         onChange={(event) => setText(event.currentTarget.value)}
@@ -276,18 +273,19 @@ export function WorkpieceFollowUpComposer({
         }}
         aria-label="Ask a follow-up about this file"
         placeholder="Ask a follow-up about this file..."
-        className="h-8 min-w-0 flex-1 rounded-lg border border-stroke-soft-200 bg-bg-white-0 px-2.5 text-label-xs text-text-strong-950 outline-none placeholder:text-text-soft-400 focus:border-stroke-strong-950"
+        className="h-8 min-w-0 flex-1 rounded-lg border border-border-button-default bg-background-primary-default px-2.5 text-caption-1-medium text-text-primary outline-none placeholder:text-text-tertiary focus:border-border-focus-ring"
       />
-      <button
-        type="button"
+      <Button
+        variant="primary"
+        size="small"
+        iconOnly
+        leadingIcon={RiSendPlane2Line}
         onClick={submit}
         disabled={!text.trim()}
         aria-label="Send follow-up"
         title="Send to the agent"
-        className="grid size-8 shrink-0 place-items-center rounded-lg bg-bg-strong-950 text-text-white-0 hover:opacity-90 disabled:opacity-40"
-      >
-        <RiSendPlane2Line aria-hidden className="size-4" />
-      </button>
+        className="shrink-0"
+      />
     </div>
   );
 }
@@ -355,8 +353,8 @@ function WorkpieceEditorView({
       />
       <WorkpieceFollowUpComposer artifact={artifact} kind={workpiece.kind} revision={editor.revision} />
       {editor.actionContract.edit && (
-        <details className="shrink-0 border-t border-stroke-soft-200 px-3 py-1.5">
-          <summary className="cursor-pointer text-label-xs text-text-sub-600 outline-none marker:text-text-soft-400 hover:text-text-strong-950">
+        <details className="shrink-0 border-t border-border-button-default px-3 py-1.5">
+          <summary className="cursor-pointer text-caption-1-medium text-text-secondary outline-none marker:text-text-tertiary hover:text-text-primary">
             What edits are preserved
           </summary>
           <div className="pt-2">
@@ -367,7 +365,7 @@ function WorkpieceEditorView({
       {editor.error && (
         <p
           role="alert"
-          className="mx-3 mt-2 shrink-0 rounded-lg border border-error-base bg-error-lighter px-3 py-2 text-paragraph-xs text-error-base"
+          className="mx-3 mt-2 shrink-0 rounded-lg border border-border-error-default bg-red-50 px-3 py-2 text-caption-1-regular text-red-500"
         >
           {editor.error}
         </p>
@@ -437,14 +435,14 @@ function WorkpieceEditorPane({
 
   if (state.status === "loading") {
     return (
-      <div className="grid h-full place-items-center p-6 text-paragraph-sm text-text-sub-600">
+      <div className="grid h-full place-items-center p-6 text-body-2-regular text-text-secondary">
         Loading workspace...
       </div>
     );
   }
   if (state.status === "error") {
     return (
-      <div className="grid h-full place-items-center p-6 text-center text-paragraph-sm text-error-base">
+      <div className="grid h-full place-items-center p-6 text-center text-body-2-regular text-red-500">
         {state.message}
       </div>
     );
@@ -456,16 +454,18 @@ function WorkpieceEditorPane({
       return (
         <div className="flex h-full min-h-0 flex-col">
           <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 px-3 py-2">
-            <p className="truncate text-label-sm text-text-strong-950" title={state.artifact.name}>
+            <p className="truncate text-body-2-medium text-text-primary" title={state.artifact.name}>
               {state.artifact.name}
             </p>
-            <a
+            <ButtonLink
+              variant="secondary"
+              size="xs"
+              leadingIcon={RiDownloadLine}
               href={state.artifact.download_url}
               download={state.artifact.name}
-              className="inline-flex h-7 items-center gap-1.5 rounded-lg border border-stroke-soft-200 px-2.5 text-label-xs text-text-sub-600 hover:bg-bg-weak-50 hover:text-text-strong-950"
             >
-              <RiDownloadLine aria-hidden className="size-3.5" /> Download original
-            </a>
+              Download original
+            </ButtonLink>
           </div>
           <div className="flex min-h-0 flex-1 flex-col overflow-auto px-3 pb-3">
             <PdfEmbedSurface
@@ -479,17 +479,20 @@ function WorkpieceEditorPane({
     return (
       <div className="grid h-full place-items-center p-6 text-center">
         <div>
-          <p className="text-label-sm text-text-strong-950">Not an editable workpiece</p>
-          <p className="mt-1 text-paragraph-xs text-text-sub-600">
+          <p className="text-body-2-medium text-text-primary">Not an editable workpiece</p>
+          <p className="mt-1 text-caption-1-regular text-text-secondary">
             This file opens as a download.
           </p>
-          <a
+          <ButtonLink
+            variant="secondary"
+            size="small"
+            leadingIcon={RiDownloadLine}
             href={state.artifact.download_url}
             download={state.artifact.name}
-            className="mt-3 inline-flex h-8 items-center gap-1.5 rounded-lg border border-stroke-soft-200 px-3 text-label-xs text-text-sub-600 hover:bg-bg-weak-50 hover:text-text-strong-950"
+            className="mt-3"
           >
-            <RiDownloadLine aria-hidden className="size-3.5" /> Download
-          </a>
+            Download
+          </ButtonLink>
         </div>
       </div>
     );
@@ -522,9 +525,9 @@ export function WorkspacePane({
     return (
       <div className="grid h-full place-items-center p-6 text-center">
         <div className="flex flex-col items-center">
-          <RiPagesLine className="size-5 text-text-soft-400" aria-hidden />
-          <p className="mt-3 text-label-sm text-text-strong-950">No workpiece open</p>
-          <p className="mt-1 text-paragraph-xs text-text-sub-600">
+          <RiPagesLine className="size-5 text-text-tertiary" aria-hidden />
+          <p className="mt-3 text-body-2-medium text-text-primary">No workpiece open</p>
+          <p className="mt-1 text-caption-1-regular text-text-secondary">
             Open a document, spreadsheet, or deck from the conversation to edit it here.
           </p>
         </div>
@@ -545,7 +548,7 @@ export function WorkspacePane({
           <div
             key={tab.id}
             aria-hidden={tab.id !== activeId}
-            className={cn(
+            className={cx(
               "absolute inset-0",
               tab.id === activeId ? "visible" : "pointer-events-none invisible",
             )}
