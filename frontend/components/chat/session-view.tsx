@@ -192,47 +192,65 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
   // Once negotiated capabilities exist, an explicit false remains authoritative.
   const modelSelection = caps?.modelSelection ?? supportsPreSessionModelSelection(newest.engine);
 
-  // A settled turn shows its native timeline ONLY when it actually has native
-  // frames (opencode tool rows live only on the native lane); a settled turn with
-  // no frames (mock / non-native engines) falls back to the worklog+answer
-  // rendering, exactly as before. A live turn always uses its native timeline.
-  const nativeFor = (v: ThreadRunView): NativeSnapshot | undefined =>
-    isLiveStatus(v.status) ? v.native : v.native.nativeFrames.length > 0 ? v.native : undefined;
-
   // Every run renders from its OWN thread-store slice - no active-run selection, no
   // projection cache: a reply never makes another turn render less than it already
   // showed, because nothing switches the subscription (root-fix of the reply flash).
-  const turns: Turn[] = thread.map((run) => {
-    const v = snapshot.byId.get(run.id);
-    if (!v) {
-      return {
-        run,
-        steps: run.steps,
-        status: run.status,
-        summary: run.summary,
-        live: false,
-        liveText: "",
-        liveReasoning: "",
-        native: undefined,
-      };
-    }
-    return {
-      run: v.run,
-      steps: v.native.steps,
-      status: v.status,
-      summary: v.summary,
-      live: isLiveStatus(v.status),
-      liveText: v.liveText,
-      liveReasoning: v.liveReasoning,
-      native: nativeFor(v),
-      canonical: v.canonical,
-      canonicalComplete: v.canonicalComplete,
-    };
-  });
-  const allSteps = turns.flatMap((t) => t.steps);
-  const allCanonicalEvents = turns.flatMap((t) => t.canonical ?? []);
+  //
+  // Per-run Turn objects are identity-stable while their store view (or fallback
+  // ApiRun) is unchanged: the store rebuilds only mutated runs' views, so a
+  // streaming sibling no longer hands every settled (memoized) TurnBlock a fresh
+  // `turn` prop each SSE animation frame.
+  const turnCacheRef = useRef(new Map<string, { source: ApiRun | ThreadRunView; turn: Turn }>());
+  const turns: Turn[] = useMemo(() => {
+    // A settled turn shows its native timeline ONLY when it actually has native
+    // frames (opencode tool rows live only on the native lane); a settled turn with
+    // no frames (mock / non-native engines) falls back to the worklog+answer
+    // rendering, exactly as before. A live turn always uses its native timeline.
+    const nativeFor = (v: ThreadRunView): NativeSnapshot | undefined =>
+      isLiveStatus(v.status) ? v.native : v.native.nativeFrames.length > 0 ? v.native : undefined;
+    const cache = turnCacheRef.current;
+    const next = new Map<string, { source: ApiRun | ThreadRunView; turn: Turn }>();
+    const list = thread.map((run) => {
+      const v = snapshot.byId.get(run.id);
+      const source = v ?? run;
+      const cached = cache.get(run.id);
+      if (cached && cached.source === source) {
+        next.set(run.id, cached);
+        return cached.turn;
+      }
+      const turn: Turn = v
+        ? {
+            run: v.run,
+            steps: v.native.steps,
+            status: v.status,
+            summary: v.summary,
+            live: isLiveStatus(v.status),
+            liveText: v.liveText,
+            liveReasoning: v.liveReasoning,
+            native: nativeFor(v),
+            canonical: v.canonical,
+            canonicalComplete: v.canonicalComplete,
+          }
+        : {
+            run,
+            steps: run.steps,
+            status: run.status,
+            summary: run.summary,
+            live: false,
+            liveText: "",
+            liveReasoning: "",
+            native: undefined,
+          };
+      next.set(run.id, { source, turn });
+      return turn;
+    });
+    turnCacheRef.current = next;
+    return list;
+  }, [thread, snapshot.byId]);
+  const allSteps = useMemo(() => turns.flatMap((t) => t.steps), [turns]);
+  const allCanonicalEvents = useMemo(() => turns.flatMap((t) => t.canonical ?? []), [turns]);
   // Subagent fidelity is derived from native frames across the WHOLE thread.
-  const allFrames = turns.flatMap((t) => t.native?.nativeFrames ?? []);
+  const allFrames = useMemo(() => turns.flatMap((t) => t.native?.nativeFrames ?? []), [turns]);
   const live = turns.some((t) => isLiveStatus(t.status));
   const terminalRunId = terminalRunIdForThread(turns);
   // The turn currently producing events (running preferred; else the newest live
@@ -380,6 +398,25 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
   useEffect(() => {
     setApprovalError(null);
   }, [activeApproval?.request.id]);
+
+  // Stable identities for the memoized Conversation - an inline arrow here would
+  // defeat its memo() on every SessionView render.
+  const handleAnswerQuestion = useCallback(
+    async (answers: string[][]) => {
+      if (activeQuestion) await submitQuestionAnswers(activeQuestion, answers);
+    },
+    [activeQuestion, submitQuestionAnswers],
+  );
+  const handleAnswerApproval = useCallback(
+    async (decision: ApprovalDecision) => {
+      if (activeApproval) await submitApproval(activeApproval, decision);
+    },
+    [activeApproval, submitApproval],
+  );
+  const handleGatewayApprovalResolved = useCallback(
+    () => void refreshGatewayApprovals(),
+    [refreshGatewayApprovals],
+  );
 
   // Removed with the cutover: the active-run projection cache, the terminal-state
   // refetch, and the five-second external-turn discovery poll. The thread stream
@@ -551,29 +588,48 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
   // in px, persisted per browser; null → the 32% default. Loaded in an effect
   // (not the initializer) so SSR and first client render agree.
   const bodyRef = useRef<HTMLDivElement>(null);
+  const railRef = useRef<HTMLElement>(null);
   const [railWidth, setRailWidth] = useState<number | null>(null);
   useEffect(() => {
     const saved = Number(localStorage.getItem("skynet.rail-width"));
     if (Number.isFinite(saved) && saved >= RAIL_MIN) setRailWidth(saved);
   }, []);
-  function resizeRailFromPointer(pointerX: number) {
-    const body = bodyRef.current;
-    if (!body) return;
-    const bounds = body.getBoundingClientRect();
-    setRailWidth(
-      railWidthFromPointer({
-        containerRight: bounds.right,
-        containerWidth: bounds.width,
-        pointerX,
-      }),
-    );
-  }
-  function persistRailWidth() {
-    setRailWidth((width) => {
-      if (width !== null) localStorage.setItem("skynet.rail-width", String(width));
-      return width;
+  // The drag itself is ZERO-React: each (rAF-coalesced) pointer move writes the
+  // rail's `--rail-w` var imperatively against container bounds cached once per
+  // drag - no layout read, no setState, no re-render per move. React state (and
+  // localStorage) commit ONCE on pointerup via persistRailWidth; the committed
+  // style prop then re-writes the same var value, so nothing jumps.
+  const dragBoundsRef = useRef<DOMRect | null>(null);
+  const dragWidthRef = useRef<number | null>(null);
+  const resizeRailFromPointer = useCallback((pointerX: number) => {
+    dragBoundsRef.current ??= bodyRef.current?.getBoundingClientRect() ?? null;
+    const bounds = dragBoundsRef.current;
+    if (!bounds) return;
+    const width = railWidthFromPointer({
+      containerRight: bounds.right,
+      containerWidth: bounds.width,
+      pointerX,
     });
-  }
+    dragWidthRef.current = width;
+    railRef.current?.style.setProperty("--rail-w", `${width}px`);
+  }, []);
+  const persistRailWidth = useCallback(() => {
+    dragBoundsRef.current = null;
+    const width = dragWidthRef.current;
+    dragWidthRef.current = null;
+    if (width === null) return; // pointerdown without movement - nothing to commit
+    setRailWidth(width);
+    localStorage.setItem("skynet.rail-width", String(width));
+  }, []);
+  const resetRailWidth = useCallback(() => {
+    dragBoundsRef.current = null;
+    dragWidthRef.current = null;
+    // Clear the imperative var too: a drag that was never committed lives only
+    // on the element, where React's style diffing would not remove it.
+    railRef.current?.style.removeProperty("--rail-w");
+    setRailWidth(null);
+    localStorage.removeItem("skynet.rail-width");
+  }, []);
   function resizeRailWithKeyboard(key: string) {
     const containerMax = bodyRef.current
       ? Math.min(bodyRef.current.getBoundingClientRect().width * 0.6, RAIL_MAX)
@@ -761,11 +817,19 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
       cancelled = true;
     };
   }, [engine, hasDurable]);
-  const catalogState = resolveCommandCatalog(durableCommands, fetchState, engine);
-  const commands: SlashCommand[] =
-    catalogState.status === "ready"
-      ? catalogState.commands.map((c) => ({ name: c.name, description: c.description ?? null }))
-      : [];
+  // Memoized so the memoized Conversation sees stable prop identities between
+  // catalog changes (a re-render here must not re-render the whole timeline).
+  const catalogState = useMemo(
+    () => resolveCommandCatalog(durableCommands, fetchState, engine),
+    [durableCommands, fetchState, engine],
+  );
+  const commands: SlashCommand[] = useMemo(
+    () =>
+      catalogState.status === "ready"
+        ? catalogState.commands.map((c) => ({ name: c.name, description: c.description ?? null }))
+        : [],
+    [catalogState],
+  );
 
   return (
     <WorkspaceOpenProvider value={openWorkpiece}>
@@ -839,17 +903,13 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
             pendingQuestion={activeQuestion?.request ?? null}
             answeringQuestion={answeringQuestion}
             questionError={questionError}
-            onAnswerQuestion={async (answers) => {
-              if (activeQuestion) await submitQuestionAnswers(activeQuestion, answers);
-            }}
+            onAnswerQuestion={handleAnswerQuestion}
             pendingApproval={activeApproval?.request ?? null}
             answeringApproval={answeringApproval}
             approvalError={approvalError}
-            onAnswerApproval={async (decision) => {
-              if (activeApproval) await submitApproval(activeApproval, decision);
-            }}
+            onAnswerApproval={handleAnswerApproval}
             gatewayApprovals={gatewayApprovals}
-            onGatewayApprovalResolved={() => void refreshGatewayApprovals()}
+            onGatewayApprovalResolved={handleGatewayApprovalResolved}
             sendNowFor={runningTurn ? headQueuedId : null}
             onSendNow={handleSendNow}
             running={runningTurn !== null}
@@ -886,10 +946,7 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
             onMove={resizeRailFromPointer}
             onCommit={persistRailWidth}
             onKeyDown={resizeRailWithKeyboard}
-            onReset={() => {
-              setRailWidth(null);
-              localStorage.removeItem("skynet.rail-width");
-            }}
+            onReset={resetRailWidth}
           />
         )}
 
@@ -898,16 +955,24 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
           // its header; the active pane fills the body bare (its own border/round
           // is dropped so this panel owns the single card edge).
           <section
+            ref={railRef}
             style={
               railWidth !== null
                 ? ({ "--rail-w": `${railWidth}px` } as React.CSSProperties)
                 : undefined
             }
             className={cx(
-              "bg-background-primary-default flex min-h-[50vh] min-w-0 flex-col overflow-hidden transition-[width] md:min-h-0",
+              // transition-[width] smooths the expand/collapse toggle only; while
+              // the grip (the `peer` before this section) reports data-dragging,
+              // the transition is suppressed so the edge tracks the pointer
+              // exactly and the terminal's ResizeObserver stops firing the
+              // moment the pointer stops (no post-drag animation tail).
+              "bg-background-primary-default flex min-h-[50vh] min-w-0 flex-col overflow-hidden transition-[width] peer-data-[dragging=true]:transition-none md:min-h-0",
               railExpanded
                 ? "flex-1 md:w-auto"
-                : cx("md:shrink-0", railWidth !== null ? "md:w-[var(--rail-w)]" : "md:w-[360px]"),
+                : // Width always reads the var (drag writes it imperatively even
+                  // before any committed state); 360px is the uncustomized default.
+                  "md:w-[var(--rail-w,360px)] md:shrink-0",
             )}
           >
             <div className="border-border-button-default/50 flex shrink-0 items-center gap-2 border-b p-2">
