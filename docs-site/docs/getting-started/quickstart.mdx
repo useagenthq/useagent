@@ -5,30 +5,58 @@ sidebar:
   order: 2
 ---
 
-useAgent runs as two standalone apps that share a Postgres database. This page gets
+UseAgent runs as two standalone apps that share a Postgres database. This page gets
 both dev servers up locally.
 
 ## Prerequisites
 
-- **Bun** as the runtime and package manager. useAgent uses Bun everywhere, never npm.
-- **Postgres**. The backend is the source of truth and applies its Drizzle
-  migrations on boot, so an empty database is enough to start.
+- **Bun** as the runtime and package manager. UseAgent uses Bun everywhere, never npm.
+- **Postgres** with the **pgvector** extension available. The backend is the source
+  of truth and applies its Drizzle migrations on boot; one migration runs
+  `CREATE EXTENSION IF NOT EXISTS vector`, so the server must have pgvector
+  installed and the connecting role must be able to create the extension (or it
+  must already exist in the database).
 
 :::warning
-Exactly one backend may run against a given database. A boot-time advisory lock
-enforces it, and boot recovery reconciles in-flight runs, so a second backend on
-the same database will interfere with the first. Point new work at a throwaway
-database. See [Operational invariants](/operations/invariants).
+Exactly one backend is supported per database: sealing and the realtime SSE
+fan-out are process-local. A boot-time advisory lock detects a duplicate, but by
+default it only warns and continues; it refuses to boot only when
+`REQUIRE_SINGLE_BACKEND=1` is set (the production setting). So in dev nothing
+stops a second backend from reconciling another session's in-flight runs - point
+new work at a throwaway database. See
+[Operational invariants](/operations/invariants).
 :::
 
 ## Install
 
-Each app carries its own lockfile, so install inside each one:
+The two apps and the five shared packages each carry their own lockfile, so
+install inside each one:
 
 ```bash
 (cd frontend && bun install)
 (cd backend && bun install)
+for p in packages/*/; do (cd "$p" && bun install); done
 ```
+
+The package installs matter on a fresh clone: the root `bun run typecheck` runs
+`tsc` inside every `packages/*` directory, which needs each package's own
+devDependencies.
+
+## Environment
+
+Local dev is designed to boot with almost no configuration:
+
+- `DATABASE_URL` defaults to `postgres://postgres@localhost:5432/skynet`.
+- `BETTER_AUTH_SECRET` falls back to an insecure dev default while dev mode is
+  on; the backend warns at boot. Production requires a real secret.
+- Requests without a session fall back to a seeded dev org and user, so every
+  API works unauthenticated in local dev.
+
+Live model and sandbox work needs real keys in `backend/.env`:
+
+- A live chat turn needs `OPENROUTER_API_KEY`.
+- A sandboxed agent run needs a sandbox provider key: `DAYTONA_API_KEY` with the
+  default `SANDBOX_PROVIDER=daytona`.
 
 ## Run the dev servers
 
@@ -44,24 +72,31 @@ with the product entirely through `http://localhost:3400`.
 
 <Steps>
   <Step title="Backend is listening">
-    `:3201` answers and the boot migrator has applied the schema.
+    `:3201` answers and the boot migrator has applied the schema. Needs only
+    Postgres with pgvector.
   </Step>
   <Step title="Frontend is up">
-    `http://localhost:3400` loads the chat surface.
+    `http://localhost:3400` loads the chat surface. A live chat turn needs
+    `OPENROUTER_API_KEY`.
   </Step>
   <Step title="A run streams">
     Start an agent run and watch steps arrive live in the session timeline.
+    Needs a sandbox provider key (`DAYTONA_API_KEY` by default).
   </Step>
 </Steps>
 
 ## Root scripts
 
-The common root scripts cover every package at once:
+The root scripts you will actually use day to day are:
 
 ```bash
-bun run typecheck        # frontend, backend, and shared packages
-bun run release:hosted   # the hosted release gate in deploy/hetzner/
+bun run dev:backend      # Hono control plane on :3201
+bun run dev:frontend     # Next.js UI on :3400
+bun run typecheck        # frontend, backend, and all five shared packages
 ```
 
-`bun run typecheck` must pass before any change is considered done. For the full
-test and operations toolset, see [Verification](/operations/verification).
+`bun run typecheck` must pass before any change is considered done. The remaining
+root scripts (`release:hosted`, `canary:hosted-release`,
+`release:provider-connection-bootstrap`, `stage:t3-dist`) are deploy-lane tooling
+covered in [Operations](/operations/deployment). For the full test and operations
+toolset, see [Verification](/operations/verification).

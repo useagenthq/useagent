@@ -21,10 +21,10 @@ These are fast, stable, and safe to run anywhere.
 
 | Command | What it exercises |
 | --- | --- |
-| `bun run e2e` | A mock full-stack pass including Slack and memory outbox delivery, and crash-survival stages. |
-| `bun run e2e:real` | Real sandboxes end to end. |
-| soak marathon | Storm coverage over the durable lanes. |
-| UI sweep | Browser coverage of the rendered surfaces. |
+| `cd backend && bun run e2e` | A mock full-stack pass including Slack and memory outbox delivery, and crash-survival stages. |
+| `cd backend && bun run e2e:real` | Real sandboxes end to end. |
+| `cd backend && bun run soak` | Storm coverage over the durable lanes. |
+| `bun backend/test/e2e/ui-sweep/sweep.ts` | Browser coverage of the rendered surfaces. |
 
 :::warning
 Real journeys create sandboxes. Delete and API-verify them after a run. The
@@ -35,22 +35,24 @@ sandboxes degrade everyone's runs.
 ## Release parity canaries
 
 Before a candidate can ship, the guarded release runs **real engine journeys**
-against it, not mocks:
+against it, not mocks, and it runs them twice:
 
-<CardGroup cols={2}>
-  <Card title="Repository work" icon="git-branch">
-    Clone a repository and operate on it.
-  </Card>
-  <Card title="Desktop and computer use" icon="monitor">
-    Drive the desktop, take screenshots, and record a real MP4 artifact.
-  </Card>
-  <Card title="Artifacts and automations" icon="file-output">
-    Publish an artifact; run an automation through the command lane.
-  </Card>
-  <Card title="Continuity and choice" icon="repeat">
-    Subagent fan-out, thread resume, model switch, and web search.
-  </Card>
-</CardGroup>
+1. **Candidate matrix.** The full parity matrix runs on the host against the
+   candidate, before it is publicly advertised.
+2. **Public re-run.** After the candidate is atomically activated, the hard
+   journeys rerun through the authenticated public APIs.
+
+The case matrix covers: `repo-clone`, `github-pr-detail`, `gcs-list`,
+`computer-browser`, `full-desktop`, `desktop-recording`, `artifact-publish`,
+`thread-resume`, `model-switch`, `subagent-fanout`, `web-search`,
+`automation-lifecycle`, `loop-login`, `loop-chat`, `workpiece-deck`,
+`workpiece-sheet`, `workpiece-document`, `workpiece-pdf`,
+`cross-thread-memory`, `knowledge-search`, `skill-playbook`, and
+`inbound-attachment`.
+
+`PARITY_CASES` and `PARITY_ENGINES` can narrow one certification run to a
+targeted probe, but scoping never skips the gate itself, and the public re-run
+always executes the full case matrix.
 
 A candidate that fails a parity journey does not ship, and the lane rolls the
 environment back. See [Deployment lanes](/operations/deployment).

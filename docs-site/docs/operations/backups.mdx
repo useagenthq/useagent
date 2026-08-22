@@ -1,0 +1,54 @@
+---
+title: Backups and restore
+description: A daily encrypted snapshot of the database and durable state, with verify and restore lanes and an explicit off-host requirement.
+sidebar:
+  order: 5
+---
+
+Production takes a full local backup every day and can verify or restore any
+archive. The lane is deliberately explicit about what it does not cover: a
+local archive is **not disaster recovery** until it leaves the host.
+
+## What a backup captures
+
+Each archive bundles:
+
+- A PostgreSQL dump of the `skynet` database (`pg_dump --format=custom`).
+- The host configuration and durable state: `/etc/skynet`,
+  `/var/lib/skynet/artifacts`, `/var/lib/skynet/runs`, and
+  `/var/lib/skynet/secrets`.
+- A manifest and SHA-256 checksums for both payloads.
+
+The bundle is encrypted with AES-256-CBC (PBKDF2 key derivation) using the
+passphrase file at `/etc/skynet/backup-passphrase`, and written to
+`/var/lib/skynet/backups/skynet-backup-<timestamp>.tar.gz.enc`. Every new
+archive is verified immediately after it is written.
+
+## Commands
+
+| Command | What it does |
+| --- | --- |
+| `skynet-backup.sh backup` | Create, verify, and retain a new encrypted archive. |
+| `skynet-backup.sh verify --archive PATH` | Decrypt, check the checksums, and validate both payloads without touching live state. |
+| `skynet-backup.sh restore --archive PATH --yes` | Stop the runtime services, restore the database and durable files, and restart. |
+
+Restore refuses to run without `--yes`. Set `DRY_RUN=1` with `backup` or
+`restore` to print the work without mutating state.
+
+Database **roles** are host resources and are deliberately not part of the
+dump: a restore keeps the replacement host's current role passwords and
+rewrites only the two connection URLs after restoring the archived application
+configuration.
+
+## Schedule and retention
+
+A systemd timer runs the backup daily at 03:17 UTC, with a randomized delay of
+up to 20 minutes, and catches up after downtime. Local archives are kept for
+14 days by default (`SKYNET_BACKUP_RETENTION_DAYS`).
+
+:::warning
+Archives are encrypted **local** snapshots. They are not disaster recovery
+until `SKYNET_BACKUP_REMOTE_SYNC_COMMAND` ships them off-host. Set
+`SKYNET_BACKUP_REQUIRE_REMOTE=1` to fail the backup closed when remote sync is
+unavailable.
+:::

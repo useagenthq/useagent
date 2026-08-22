@@ -1,0 +1,98 @@
+<svg viewBox="0 0 940 512" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Two lanes over time: the sandbox keeps executing through a backend crash while boot recovery and the adaptive reconcile loop adopt the finished result">
+  <title>A run surviving a backend restart</title>
+  <defs>
+    <marker id="mA" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto">
+      <path d="M0,0.5 L8,4.5 L0,8.5 Z" fill="#3392ff"/>
+    </marker>
+    <marker id="mN" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
+      <path d="M0,0.8 L7,4 L0,7.2 Z" fill="#737373"/>
+    </marker>
+    <marker id="mX" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
+      <path d="M0,0.8 L7,4 L0,7.2 Z" fill="#a3a3a3"/>
+    </marker>
+  </defs>
+
+  <!-- canvas -->
+  <rect x="0" y="0" width="940" height="512" rx="12" fill="#f7f7f7"/>
+
+  <g font-family="Inter, system-ui, sans-serif">
+    <!-- lane labels -->
+    <text x="36" y="54" font-size="11" font-weight="600" fill="#737373" letter-spacing="0.06em">BACKEND</text>
+    <text x="36" y="348" font-size="11" font-weight="600" fill="#737373" letter-spacing="0.06em">SANDBOX</text>
+
+    <!-- lane separator -->
+    <line x1="36" y1="316" x2="908" y2="316" stroke="#e3e3e3" stroke-width="1" stroke-dasharray="4 5"/>
+
+    <!-- crash mark: the flow line from the live worker dies here -->
+    <line x1="210" y1="123" x2="234" y2="123" stroke="#3392ff" stroke-width="1.6"/>
+    <line x1="238" y1="44" x2="238" y2="214" stroke="#737373" stroke-width="1.2" stroke-dasharray="4 4"/>
+    <text x="238" y="54" font-size="12" font-weight="600" fill="#737373" text-anchor="middle" stroke="#f7f7f7" stroke-width="5" paint-order="stroke">backend crash</text>
+    <text x="238" y="131" font-size="13" font-weight="600" fill="#737373" text-anchor="middle" stroke="#f7f7f7" stroke-width="5" paint-order="stroke">&#x2715;</text>
+
+    <!-- Backend lane: box 1, the live worker before the crash -->
+    <rect x="36" y="64" width="172" height="118" rx="10" fill="#ffffff" stroke="#ebebeb" stroke-width="1"/>
+    <text x="48" y="88" font-size="13" font-weight="600" fill="#171717">Worker streams turn</text>
+    <text x="48" y="108" font-size="11" fill="#737373">commands: dispatched</text>
+    <text x="48" y="124" font-size="11" fill="#737373">native events append to</text>
+    <text x="48" y="140" font-size="11" fill="#737373">provider_events</text>
+
+    <!-- Backend lane: box 2, one-shot boot recovery pass -->
+    <rect x="282" y="64" width="210" height="118" rx="10" fill="#ffffff" stroke="#ebebeb" stroke-width="1"/>
+    <text x="294" y="88" font-size="13" font-weight="600" fill="#171717">Boot: recoverStaleRuns()</text>
+    <text x="294" y="108" font-size="11" fill="#737373">one-shot command-lane pass</text>
+    <text x="294" y="124" font-size="11" fill="#737373">resolve dispatched commands</text>
+    <text x="294" y="140" font-size="11" fill="#737373">requeue queued, fail orphans</text>
+    <text x="294" y="172" font-size="10" fill="#a3a3a3">runs/recovery.ts:41-58</text>
+
+    <!-- Backend lane: box 3, adaptive reconcile loop -->
+    <rect x="520" y="64" width="210" height="118" rx="10" fill="#ffffff" stroke="#ebebeb" stroke-width="1"/>
+    <text x="532" y="88" font-size="13" font-weight="600" fill="#171717">Adaptive reconcile loop</text>
+    <text x="532" y="108" font-size="11" fill="#737373">re-probes parked runs</text>
+    <text x="532" y="124" font-size="11" fill="#737373">15s tick, 15/30/60s backoff</text>
+    <text x="532" y="140" font-size="11" fill="#737373">run.reconciling heartbeats</text>
+    <text x="532" y="156" font-size="11" fill="#737373">into the timeline</text>
+    <text x="532" y="172" font-size="10" fill="#a3a3a3">recovery.ts:288, index.ts:348</text>
+
+    <!-- Backend lane: box 4, outcome -->
+    <rect x="766" y="64" width="142" height="118" rx="10" fill="#ffffff" stroke="#ebebeb" stroke-width="1"/>
+    <text x="778" y="88" font-size="13" font-weight="600" fill="#171717">Outcome</text>
+    <text x="778" y="108" font-size="11" fill="#737373">adopt real result</text>
+    <text x="778" y="124" font-size="11" fill="#737373">or fail honestly</text>
+    <text x="778" y="140" font-size="11" fill="#737373">at the bounded</text>
+    <text x="778" y="156" font-size="11" fill="#737373">5 min deadline</text>
+
+    <!-- primary flow arrows across the backend lane -->
+    <line x1="494" y1="123" x2="514" y2="123" stroke="#3392ff" stroke-width="1.6" marker-end="url(#mA)"/>
+    <line x1="732" y1="123" x2="760" y2="123" stroke="#3392ff" stroke-width="1.6" marker-end="url(#mA)"/>
+
+    <!-- source of truth: Postgres survives the restart -->
+    <rect x="36" y="222" width="624" height="52" rx="10" fill="#e8f2ff" stroke="#bcdcff" stroke-width="1"/>
+    <text x="52" y="244" font-size="13" font-weight="600" fill="#171717">Postgres - the source of truth</text>
+    <text x="52" y="262" font-size="11" fill="#737373">commands mailbox &#183; provider_events timeline &#183; reconcile_queue</text>
+    <text x="644" y="244" font-size="11" font-weight="600" fill="#3392ff" text-anchor="end">survives the restart</text>
+
+    <!-- small durable-store arrows -->
+    <line x1="122" y1="188" x2="122" y2="216" stroke="#737373" stroke-width="1.2" marker-end="url(#mN)"/>
+    <text x="130" y="206" font-size="10" fill="#a3a3a3">append</text>
+    <line x1="387" y1="218" x2="387" y2="190" stroke="#737373" stroke-width="1.2" marker-end="url(#mN)"/>
+    <text x="395" y="208" font-size="10" fill="#a3a3a3">read the mailbox</text>
+    <line x1="600" y1="188" x2="600" y2="216" stroke="#737373" stroke-width="1.2" marker-end="url(#mN)"/>
+    <text x="592" y="206" font-size="10" fill="#a3a3a3" text-anchor="end">heartbeat upsert</text>
+
+    <!-- Sandbox lane: the session never stops -->
+    <rect x="36" y="360" width="694" height="80" rx="10" fill="#ffffff" stroke="#ebebeb" stroke-width="1"/>
+    <text x="52" y="386" font-size="13" font-weight="600" fill="#171717">Engine session keeps executing</text>
+    <text x="52" y="406" font-size="11" fill="#737373">the native session inside the isolated sandbox never notices the backend bounce</text>
+    <text x="52" y="424" font-size="11" fill="#737373">it keeps running to completion; the finished result waits to be adopted</text>
+
+    <!-- cross-lane flow: re-probe down, adopt up -->
+    <line x1="690" y1="186" x2="690" y2="356" stroke="#3392ff" stroke-width="1.6" marker-end="url(#mA)"/>
+    <text x="682" y="300" font-size="11" font-weight="600" fill="#3392ff" text-anchor="end">re-probe (15s)</text>
+    <path d="M 734 400 H 837 V 190" fill="none" stroke="#3392ff" stroke-width="1.6" marker-end="url(#mA)"/>
+    <text x="829" y="300" font-size="11" font-weight="600" fill="#3392ff" text-anchor="end">adopt the real result</text>
+
+    <!-- time axis -->
+    <line x1="36" y1="472" x2="908" y2="472" stroke="#b3b3b3" stroke-width="1.2" marker-end="url(#mX)"/>
+    <text x="908" y="492" font-size="11" fill="#a3a3a3" text-anchor="end">time</text>
+  </g>
+</svg>

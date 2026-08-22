@@ -1,0 +1,40 @@
+---
+// Logo slot override: Blume reads a local SVG logo and inlines it into a
+// <span> (generate.ts resolveLogo), so `logo.image` never reaches the page as
+// an <img>. This renders the star-knot mark as a real <img> from
+// /useagent-mark.svg, sized 22px, next to the wordmark.
+import { withBase } from "blume/components/islands/base-path.ts";
+
+interface Props {
+  site: { title: string };
+  logo?: {
+    svg?: string;
+    light?: string;
+    dark?: string;
+    alt?: string;
+    href?: string;
+    text?: string;
+  } | null;
+}
+
+const { site, logo } = Astro.props;
+
+const brandHref = logo?.href ?? "/";
+// The configured `logo.text`, or the site title when omitted.
+const brandText = logo?.text ?? site.title;
+const alt = logo?.alt || "UseAgent mark";
+---
+
+<a
+  class="inline-flex min-w-0 items-center gap-2 font-semibold text-base text-foreground"
+  href={withBase(brandHref)}
+>
+  <img
+    alt={alt}
+    class="h-[22px] w-[22px] shrink-0"
+    height="22"
+    src={withBase("/useagent-mark.svg")}
+    width="22"
+  />
+  {brandText && <span class="truncate">{brandText}</span>}
+</a>

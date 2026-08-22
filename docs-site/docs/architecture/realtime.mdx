@@ -5,7 +5,7 @@ sidebar:
   order: 3
 ---
 
-Realtime in useAgent is deliberately simple: durable snapshots over one-way
+Realtime in UseAgent is deliberately simple: durable snapshots over one-way
 streams, plus an in-process event bus for ambient invalidations. It is not
 distributed pub/sub, and that shapes how it scales.
 
@@ -13,26 +13,53 @@ distributed pub/sub, and that shapes how it scales.
 
 <CardGroup cols={2}>
   <Card title="Thread stream" icon="messages-square">
-    Per-thread, replayable. Reconnects get a fresh durable snapshot then live
-    steps. This is the session view's lifeline.
+    `GET /api/runs/:rootRunId/thread-events`, one connection per conversation,
+    replayable. Reconnects get a fresh durable snapshot then live frames. This
+    is the session view's lifeline.
   </Card>
   <Card title="Org-change stream" icon="bell">
-    One authenticated org stream carrying live invalidations only. Subscribed
-    views (Automations, Provider Connections) refetch their authoritative APIs
-    after an event. No replay.
+    `GET /api/runs/changes`, one authenticated org stream carrying live
+    invalidations for ambient surfaces (Workspace, Runs, Recents, Artifacts).
+    Events carry IDs only, so a view refetches its authoritative snapshot. No
+    replay.
   </Card>
 </CardGroup>
 
-The org-change stream is backed by an in-process event bus. It exists to tell a
-view "something changed, refetch," not to carry state.
+The thread stream's frame types are `snapshot`, `run`, `step`, `delta`,
+`native`, and `done`, plus `canonical` and `canonical-complete` for the
+canonical lane; the full contract lives in
+[Events and streaming](/concepts/events-and-streaming). Two facts matter here: a
+`done` frame settles one run but does **not** close the stream, and a bounded
+queue (20,000 live frames) closes the connection on overflow so the browser
+reconnects to a fresh authoritative snapshot instead of growing without limit.
+The legacy per-run `/:id/events` route is retained as the rollback path.
+
+The org-change stream is backed by an in-process event bus. Its change types are
+`run`, `artifact`, `automation`, `provider_connection`, and
+`integration_connection`, and provider-connection changes are filtered to the
+target user. It exists to tell a view "something changed, refetch," not to carry
+state.
 
 ## Canonicalization
 
-Engine output is translated into provider-neutral canonical events before it is
-authoritative to the UI. Canonicalization is claimed with
-`FOR UPDATE SKIP LOCKED`, and the resulting follow-up work rides the outbox so it
-survives a crash. Native frames are retained alongside canonical events for
-fidelity and debugging.
+Engine output is translated into provider-neutral canonical events before the
+canonical lane is authoritative to the UI. Native frames are retained alongside
+canonical events for fidelity and debugging. Four invariants govern the lane:
+
+- **Enqueue inside finalize.** Canonicalization is itself the outbox work item,
+  enqueued inside the run-finalization transaction, so the intent to translate
+  commits atomically with the terminal run. Workers claim pending items with
+  `FOR UPDATE SKIP LOCKED`.
+- **Watermark-stable seal.** The worker marks a run complete only when the
+  source watermark (max native frame seq plus a step content signature) is
+  stable across the translate; until then it retries, never freezing a partial
+  snapshot.
+- **Persist before publish.** Canonical rows are written with an immutable
+  thread-wide delivery cursor and append-only revisions, and only then emitted
+  to live subscribers, so a reconnect replays exactly what live showed.
+- **Never trust provisional.** The client trusts the canonical lane for a run
+  only after the durable canonical-complete signal, never on the mere presence
+  of provisional rows.
 
 ## One backend per database
 

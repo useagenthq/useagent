@@ -31,11 +31,12 @@ The usage figures come from real run accounting rather than estimates, so the
 limits card reflects actual model and sandbox consumption. See
 [Fleet and usage](/platform/fleet-and-usage) for where those numbers originate.
 
-## The live runs list
+## The runs list
 
-For a focused view of what is executing right now, `/agent/runs` lists live agent
-runs straight from the orchestrator. It is deliberately dynamic: it reflects the
-current state of the fleet rather than a cached snapshot.
+For a focused view of run activity, `/agent/runs` lists recent runs with status
+filter tabs (All, Live, Completed, Failed) and a text filter, kept current by an
+interval poll plus the org-change stream. Filter to Live when you only want
+what is executing right now.
 
 :::tip
 The dashboard and the runs list both refetch on the ambient org-change stream, so

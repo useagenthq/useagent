@@ -14,7 +14,7 @@ the sandbox fleet.
 ```json
 {
   "models": [
-    { "model": "…", "runs": 0, "completed": 0, "avgMs": 0, "tokens": 0, "cost": 0 }
+    { "model": "…", "runs": 0, "completed": 0, "avgMs": null, "tokens": 0, "cost": 0 }
   ],
   "totalTokens": 0,
   "totalCost": 0,
@@ -26,6 +26,12 @@ the sandbox fleet.
 }
 ```
 
+Two fields are nullable by design. `avgMs` is a number or `null` when no run has
+a recorded duration yet. `machine.sandboxes` is the counts object or `null` when
+the sandbox provider is unconfigured or the inventory cache is still cold.
+`snapshot` reflects the deployment's image configuration per provider
+(`DAYTONA_SNAPSHOT` or `CUBE_TEMPLATE_ID`).
+
 ## Where the numbers come from
 
 <CardGroup cols={2}>
@@ -34,21 +40,26 @@ the sandbox fleet.
     from the step-finish event, then aggregated by model for the current day.
   </Card>
   <Card title="Sandbox fleet" icon="server">
-    The machine view is the live sandbox inventory, filtered to useAgent-owned
+    The machine view is the live sandbox inventory, filtered to UseAgent-owned
     sandboxes by label.
   </Card>
 </CardGroup>
 
 Because burn is derived from what runs actually emitted rather than a meter, the
-figure reflects real consumption. Aggregation is per model and scoped to today, so
-the limits card reads as "today's burn."
+figure reflects real consumption. One caveat: only OpenCode's `part.step-finish`
+provider events carry token and cost usage. A model whose runs came from an
+engine that emits no usage shows real run counts, status, and duration with zero
+tokens and zero cost. That zero is honest, never invented, so do not read it as
+no spend. Aggregation is per model and scoped to today, so the limits card reads
+as "today's burn."
 
 ## Freshness
 
-The sandbox inventory is cached with a short time-to-live and served
+The sandbox inventory is cached with a 30-second time-to-live and served
 stale-while-revalidate: a request gets the last known inventory immediately while
-a refresh runs in the background. On a cold cache the sandbox counts are reported
-as unknown until the first refresh completes, rather than blocking the response.
+a single refresh runs in the background. On a cold cache the response reports
+`sandboxes: null` until the first refresh completes, rather than blocking the
+response or inventing counts.
 
 :::note
 The fleet endpoint is the single source for the dashboard's limits card. It is

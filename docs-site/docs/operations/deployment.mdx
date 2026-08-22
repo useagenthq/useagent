@@ -1,25 +1,65 @@
 ---
 title: Deployment lanes
-description: Three lanes with different jobs. A full certification, a source-convergence bootstrap, and an atomic frontend swap.
+description: Two lanes with different jobs. A full certification and a source-convergence bootstrap, both ending in the same atomic frontend swap.
 sidebar:
   order: 2
 ---
 
-useAgent ships through explicit lanes, each with a different guarantee. Releases
-always run from a **clean worktree of the pushed commit**, never from a working
-tree.
+UseAgent ships through explicit lanes, each with a different guarantee. Releases
+run from an **immutable checkout of the committed HEAD**: the lane refuses to
+deploy uncommitted tracked changes, materializes the commit's tree into a
+temporary directory, and verifies the checkout's tree hash against the commit
+before anything is synchronized.
+
+## Before any host mutation
+
+Every lane runs the same protective preamble before it touches the host:
+
+<Steps>
+  <Step title="Take the host deploy lock">
+    Deploys serialize behind a host-side mutex, so exactly one lane mutates the
+    host at a time. A second concurrent lane fails fast with a clear message
+    instead of racing a live deploy.
+  </Step>
+  <Step title="Close run admission and drain">
+    Durable run admission closes, then the lane waits a bounded time (180
+    seconds by default) for in-flight runs to settle. A timeout fails closed;
+    proceeding anyway requires an explicit audited force triple naming the
+    actor and the reason.
+  </Step>
+  <Step title="Users see an honest pause">
+    While admission is closed, a Slack message that would start a run is
+    answered with "New runs are temporarily paused for a deployment. Retry
+    this message shortly." instead of failing silently.
+  </Step>
+  <Step title="Reopen when healthy">
+    Admission reopens only after the restarted services answer their health
+    checks.
+  </Step>
+</Steps>
 
 ## Guarded release
 
-The full certification, run with `bun run release:hosted`.
+The full certification, run with `bun run release:hosted`. Eight fail-closed
+gates cover the candidate end to end:
 
-- Eight fail-closed gates covering identity, source sync, service restart,
-  readiness (credential-mode aware), wiki generation, and per-engine parity
-  canaries.
-- Automatic rollback of source, environment, Caddy configuration, and services on
-  any failure.
-- The Caddyfile is installed only after the live configuration is backed up; the
-  candidate is validated and reloaded, and the prior file is restored on failure.
+1. Preserve the exact live environment and build a rollback-bound candidate
+   environment.
+2. Activate the candidate source and Caddyfile, then run the preflight canary:
+   upload rejection, wiki generation and retrieval.
+3. Prove readiness for each selected credential path, failing fast when one is
+   unavailable.
+4. Prove the complete candidate parity matrix without public advertisement.
+5. Derive readiness into the offline candidate environment.
+6. Atomically activate the fully evidenced candidate.
+7. Rerun all hard journeys through the authenticated public APIs.
+8. Run the hosted canaries: editable workpieces, live timing, noVNC, focus
+   isolation, and the cutover canary.
+
+Any failure triggers automatic rollback of source, environment, Caddy
+configuration, and services. The Caddyfile is installed only after the live
+configuration is backed up; the candidate is validated and reloaded, and the
+prior file is restored on failure.
 
 When promoting a newly built Cube runtime, the gate validates the template id,
 activates it only inside the rollback-bound candidate environment, and restores
@@ -27,15 +67,34 @@ the exact previous environment if any preflight or parity journey fails.
 
 ## Provider-connection bootstrap
 
-Deploys the full source tree and proves the account lifecycle surface **without**
-claiming runtime parity. It is used to converge production onto a verified commit
-between certifications.
+Run with `bun run release:provider-connection-bootstrap`. It converges
+production onto a verified commit between certifications and proves the
+account-lifecycle surface **without** claiming runtime parity:
 
-## Atomic frontend release
+- Validates the authenticated release identity before changing the host.
+- Closes admission and drains, then snapshots the live source tree before
+  synchronizing the immutable checkout.
+- Restarts every application service (which includes the frontend swap below),
+  then proves the provider-connection account surface with a dedicated canary.
+- On failure, restores the source snapshot and restarts services.
+- Finishes by stating explicitly: "Provider execution readiness was not
+  promoted by this bootstrap."
 
-Builds into an isolated `dist` directory, verifies the build id, swaps under a
-brief stop and start, checks public health and that the backend and gateway PIDs
-never moved, and parks the previous `dist` as a rollback directory.
+## The frontend swap inside every restart
+
+There is no separate frontend lane. Both lanes above end in the same service
+restart script, and every restart finishes by swapping the UI atomically:
+
+- The candidate UI builds **beside** the live tree, into an isolated
+  `.next-release-<id>` directory, so a failed compilation never corrupts the
+  served build.
+- The build must carry a `BUILD_ID` equal to the release commit, or it never
+  activates.
+- The frontend stops, the prior build is parked as
+  `.next-build.previous-<id>`, and the candidate moves into place.
+- The new build must start and answer its local health check. On failure, the
+  bad build is kept as `.next-build.failed-<id>` for diagnosis and the previous
+  build is restored automatically.
 
 <CardGroup cols={3}>
   <Card title="Guarded release" icon="shield-check">
@@ -44,13 +103,14 @@ never moved, and parks the previous `dist` as a rollback directory.
   <Card title="Bootstrap" icon="git-pull-request">
     Converge source onto a verified commit. No parity claim.
   </Card>
-  <Card title="Atomic frontend" icon="repeat">
-    Swap the UI build with health checks and a parked rollback.
+  <Card title="Frontend swap" icon="repeat">
+    Not a lane. Runs inside every restart, build-id checked, with a parked
+    rollback.
   </Card>
 </CardGroup>
 
 :::warning
-A release is never run from a live working tree. The lane checks out a clean
-worktree pinned to the pushed commit, so what ships is exactly what was reviewed
-and pushed.
+A release is never run from a live working tree. The lane materializes the
+committed HEAD into an immutable checkout, refuses uncommitted tracked changes,
+and verifies the checkout's tree hash against the commit.
 :::
