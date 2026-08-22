@@ -24,7 +24,6 @@ import {
 } from '@/components/base/dropdown/dropdown';
 import { Avatar } from '@/components/base/avatar/avatar';
 import { Switch } from '@/components/base/switch/switch';
-import { type ChipTone, IconChip } from '@/components/board-ui/icon-chip';
 import { useThemeToggle } from '@/components/motion-ui/theme-toggle';
 import { signOut, useSession } from '@/lib/auth';
 import { cx } from '@/utils/cx';
@@ -60,20 +59,18 @@ function UsageMeter({ value, tone }: { value: number; tone: 'opus' | 'gpt' }) {
 
 function ModelRow({
   icon: Icon,
-  chipTone,
   name,
   value,
   tone,
 }: {
   icon: IconComponent;
-  chipTone: ChipTone;
   name: string;
   value: number;
   tone: 'opus' | 'gpt';
 }) {
   return (
     <div className='flex items-center gap-2 px-2 py-1.5'>
-      <IconChip icon={Icon} tone={chipTone} size='sm' />
+      <Icon className='size-5 shrink-0 text-foreground-icon-secondary' aria-hidden />
       <span className='min-w-0 flex-1 truncate text-body-2-regular text-text-primary'>
         {name}
       </span>
@@ -199,20 +196,8 @@ export function UserMenu() {
         <p className='text-mono-label px-2 pb-1 pt-0.5 text-text-tertiary'>
           Models
         </p>
-        <ModelRow
-          icon={RiAsterisk}
-          chipTone='orange'
-          name='Opus 4.7'
-          value={0.8}
-          tone='opus'
-        />
-        <ModelRow
-          icon={RiOpenaiFill}
-          chipTone='green'
-          name='GPT 5.5'
-          value={0.95}
-          tone='gpt'
-        />
+        <ModelRow icon={RiAsterisk} name='Opus 4.7' value={0.8} tone='opus' />
+        <ModelRow icon={RiOpenaiFill} name='GPT 5.5' value={0.95} tone='gpt' />
       </DropdownPopover>
     </Dropdown>
   );
