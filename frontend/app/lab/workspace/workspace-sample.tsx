@@ -220,7 +220,7 @@ export function WorkspaceSample() {
     <WorkspaceOpenProvider value={openWorkpiece}>
       <main data-testid="workspace-sample" className="min-h-full bg-background-primary-default p-6">
         <div className="mx-auto max-w-6xl">
-          <h1 className="text-title-h5 text-text-primary">Workspace side pane</h1>
+          <h1 className="text-title-2-medium text-text-primary">Workspace side pane</h1>
           <p className="mt-1 max-w-3xl text-body-2-regular text-text-secondary">
             Real session components: click a workpiece card in the conversation to open it in the
             side pane. Tabs, the rendered/Code toggle, the quiet Saved indicator, and the three
@@ -240,7 +240,7 @@ export function WorkspaceSample() {
             <section className="flex w-[460px] shrink-0 flex-col overflow-hidden rounded-2xl border border-border-button-default bg-background-primary-default">
               <div className="flex items-center gap-2 border-b border-border-button-default px-3 py-2">
                 <span className="text-mono-label text-text-tertiary">Rail</span>
-                <span className="inline-flex h-6 items-center rounded-md bg-foreground-icon-primary px-2 text-label-xs text-background-full">
+                <span className="inline-flex h-6 items-center rounded-md bg-foreground-icon-primary px-2 text-caption-1-medium text-background-full">
                   Workspace
                 </span>
               </div>

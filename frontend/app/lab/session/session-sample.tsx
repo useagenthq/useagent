@@ -88,7 +88,7 @@ const INDEX: readonly { label: string; href: string }[] = [
 function AttachmentChip({ name }: { name: string }) {
   return (
     <div className="flex justify-end">
-      <span className="inline-flex items-center gap-1.5 rounded-lg border border-border-button-default bg-background-secondary-default px-2 py-1 text-label-xs text-text-secondary">
+      <span className="inline-flex items-center gap-1.5 rounded-lg border border-border-button-default bg-background-secondary-default px-2 py-1 text-caption-1-medium text-text-secondary">
         <RiAttachment2 className="size-3.5 text-text-tertiary" aria-hidden />
         {name}
         <span className="text-text-tertiary">attached</span>
@@ -127,7 +127,7 @@ function TurnView({
           {turn.answer && !live && (
             <div className="flex items-center gap-2">
               <MessageCopyButton text={turn.answer} />
-              <span className="text-label-xs text-text-tertiary">Copy answer</span>
+              <span className="text-caption-1-medium text-text-tertiary">Copy answer</span>
             </div>
           )}
         </div>
@@ -150,7 +150,7 @@ function Surface({
   return (
     <section id={id} className="scroll-mt-6 space-y-3 border-t border-border-button-default pt-6">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h3 className="text-label-md text-text-primary">{title}</h3>
+        <h3 className="text-body-medium text-text-primary">{title}</h3>
         <code className="text-mono-label text-text-tertiary">{owner}</code>
       </div>
       {children}
@@ -193,8 +193,8 @@ export function SessionSample() {
             <span className="text-text-disabled">/</span>
             <span className="text-mono-label text-text-tertiary">Session sample</span>
           </div>
-          <h1 className="text-title-h4 text-text-primary">Session sample</h1>
-          <p className="max-w-3xl text-paragraph-md text-text-secondary">
+          <h1 className="text-title-1-medium text-text-primary">Session sample</h1>
+          <p className="max-w-3xl text-body-regular text-text-secondary">
             One synthetic session rendered through the real chat timeline and session
             chrome - every canonical event and adjacent surface in one believable
             conversation, for visual review. Nothing here reimplements a renderer; it
@@ -214,7 +214,7 @@ export function SessionSample() {
             <a
               key={item.label}
               href={item.href}
-              className="rounded-md px-2 py-1 text-label-xs text-text-secondary transition-colors hover:bg-background-secondary-default hover:text-text-primary"
+              className="rounded-md px-2 py-1 text-caption-1-medium text-text-secondary transition-colors hover:bg-background-secondary-default hover:text-text-primary"
             >
               {item.label}
             </a>
@@ -388,7 +388,7 @@ export function SessionSample() {
               </div>
               <a
                 href="#turn-1"
-                className="inline-flex items-center gap-1 text-label-xs text-accent-500 hover:underline"
+                className="inline-flex items-center gap-1 text-caption-1-medium text-accent-500 hover:underline"
               >
                 <RiExternalLinkLine className="size-3.5" aria-hidden />
                 Jump to the image artifact + lightbox in turn 1

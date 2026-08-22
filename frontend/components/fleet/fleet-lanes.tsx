@@ -37,7 +37,7 @@ function RunRow({ run }: { run: WorkspaceRun }) {
       className="flex items-center gap-3 rounded-lg px-2 py-2 outline-none transition-colors hover:bg-background-secondary-default focus-visible:ring-2 focus-visible:ring-border-focus-ring"
     >
       <RunStatusDot status={run.status} />
-      <span className="min-w-0 flex-1 truncate text-label-xs text-text-primary">
+      <span className="min-w-0 flex-1 truncate text-caption-1-medium text-text-primary">
         {run.prompt || "Untitled run"}
       </span>
       <span className="hidden font-mono text-caption-1-regular tabular-nums text-text-tertiary sm:inline">

@@ -66,7 +66,7 @@ export default async function WikiPage() {
             ) : docs.length === 0 ? (
               <div className="rounded-2xl border border-border-button-default bg-background-secondary-default p-10 text-center">
                 <RiFileList3Line className="mx-auto size-7 text-text-tertiary" aria-hidden />
-                <p className="mt-3 text-label-md text-text-primary">No published pages yet</p>
+                <p className="mt-3 text-body-medium text-text-primary">No published pages yet</p>
                 <p className="mx-auto mt-1 max-w-md text-body-2-regular leading-6 text-text-secondary">
                   Publish a knowledge document and it appears here — the same content the agent can
                   search. Create one from Knowledge, then publish its revision.
@@ -84,7 +84,7 @@ export default async function WikiPage() {
                         className="border-border-button-default bg-background-primary-default hover:bg-background-secondary-default block rounded-xl border px-4 py-3 transition-colors"
                       >
                         <div className="flex items-baseline justify-between gap-3">
-                          <span className="text-label-md text-text-primary truncate">
+                          <span className="text-body-medium text-text-primary truncate">
                             {doc.title}
                           </span>
                           <span className="text-caption-1-regular text-text-tertiary shrink-0">

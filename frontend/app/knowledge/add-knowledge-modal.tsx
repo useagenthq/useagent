@@ -95,7 +95,7 @@ export function AddKnowledgeModal({
       <Modal.Content className="max-w-[480px]">
         <div className="flex flex-col gap-5 p-6">
           <div className="flex flex-col gap-1.5">
-            <Modal.Title className="text-title-h6 text-text-primary">
+            <Modal.Title className="text-title-3-medium text-text-primary">
               Add knowledge
             </Modal.Title>
             <Modal.Description className="text-body-2-regular text-text-secondary">

@@ -63,11 +63,11 @@ function ShellCard({
     >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="font-mono text-label-xs text-text-tertiary">{slug}</p>
-          <h3 className="mt-1 text-title-h6 text-text-primary">{title}</h3>
+          <p className="font-mono text-caption-1-medium text-text-tertiary">{slug}</p>
+          <h3 className="mt-1 text-title-3-medium text-text-primary">{title}</h3>
           <p className="mt-1 text-body-2-regular text-text-secondary">{note}</p>
         </div>
-        <span className={cn("shrink-0 rounded-full px-2.5 py-1 text-label-xs", tone)}>
+        <span className={cn("shrink-0 rounded-full px-2.5 py-1 text-caption-1-medium", tone)}>
           {decision}
         </span>
       </div>
@@ -79,13 +79,13 @@ function ShellCard({
             href={sourceUrl}
             target="_blank"
             rel="noreferrer"
-            className="inline-flex items-center gap-1 rounded-full border border-border-button-default bg-background-secondary-default px-2 py-1 text-label-xs text-text-secondary transition-colors hover:bg-background-tertiary-default"
+            className="inline-flex items-center gap-1 rounded-full border border-border-button-default bg-background-secondary-default px-2 py-1 text-caption-1-medium text-text-secondary transition-colors hover:bg-background-tertiary-default"
           >
             Source
             <RiExternalLinkLine className="size-3" aria-hidden />
           </a>
         ) : (
-          <span className="rounded-full border border-border-button-default bg-background-secondary-default px-2 py-1 text-label-xs">
+          <span className="rounded-full border border-border-button-default bg-background-secondary-default px-2 py-1 text-caption-1-medium">
             Local primitive
           </span>
         )}
@@ -104,7 +104,7 @@ function InventoryChip({ label, decision }: { readonly label: string; readonly d
 
   return (
     <span
-      className={cn("inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-label-xs", tone)}
+      className={cn("inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-caption-1-medium", tone)}
     >
       {label}
     </span>
@@ -127,13 +127,13 @@ export function BeuiAgentInventory() {
                   <RiSparkling2Line className="size-5" aria-hidden />
                 </span>
                 <div>
-                  <p className="font-mono text-label-xs text-text-disabled">
+                  <p className="font-mono text-caption-1-medium text-text-disabled">
                     {BEUI_AGENT_SOURCE_URL}
                   </p>
-                  <h2 className="mt-1 text-title-h4 text-background-full">beUI agent inventory</h2>
+                  <h2 className="mt-1 text-title-1-medium text-background-full">beUI agent inventory</h2>
                 </div>
               </div>
-              <p className="mt-3 text-paragraph-md text-text-disabled">
+              <p className="mt-3 text-body-regular text-text-disabled">
                 Compact, exact-fidelity lab examples for prompt input, grouped activity, planning,
                 approvals, questions, tool output, diffs, and subagents. The live app keeps one
                 shell and one sidebar; these entries are adapters or reuses, not a second chat
@@ -141,14 +141,14 @@ export function BeuiAgentInventory() {
               </p>
             </div>
             <div className="flex flex-col items-end gap-2 text-right">
-              <span className="rounded-full bg-background-primary-default/10 px-3 py-1 text-label-xs text-background-full">
+              <span className="rounded-full bg-background-primary-default/10 px-3 py-1 text-caption-1-medium text-background-full">
                 {BEUI_AGENT_LICENSE} upstream
               </span>
               <a
                 href={BEUI_AGENT_REGISTRY_URL}
                 target="_blank"
                 rel="noreferrer"
-                className="inline-flex items-center gap-1 rounded-full border border-background-full/30 px-3 py-1.5 text-label-xs text-background-full transition-colors hover:bg-foreground-icon-hover"
+                className="inline-flex items-center gap-1 rounded-full border border-background-full/30 px-3 py-1.5 text-caption-1-medium text-background-full transition-colors hover:bg-foreground-icon-hover"
               >
                 Registry
                 <RiArrowRightUpLine className="size-3" aria-hidden />
@@ -166,7 +166,7 @@ export function BeuiAgentInventory() {
             {BEUI_REJECTED_SURFACES.map((item) => (
               <span
                 key={item.slug}
-                className="inline-flex items-center gap-1 rounded-full border border-background-full/30 px-2.5 py-1 text-label-xs text-text-disabled"
+                className="inline-flex items-center gap-1 rounded-full border border-background-full/30 px-2.5 py-1 text-caption-1-medium text-text-disabled"
               >
                 {item.label}
                 <span className="text-text-tertiary">rejected</span>
