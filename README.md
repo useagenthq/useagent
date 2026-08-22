@@ -6,8 +6,10 @@ useAgent is a multi-package repository for a multi-harness coding-agent control 
 
 | Path | What it owns |
 |---|---|
-| `frontend/` | Next.js UI. Chat, agent sessions, skills, playbooks, wiki, artifacts, secrets, learnings review, automations, and settings. |
+| `frontend/` | Next.js UI on the BoardUI design system (vendored base primitives, application blocks, and semantic tokens). Chat, agent sessions, skills, playbooks, wiki, artifacts, secrets, learnings review, automations, and settings. |
 | `backend/` | Hono + Postgres control plane. Auth, org scoping, runs, sandboxes, engines, knowledge, memory, skills, automations, artifacts, uploads, and connectors. |
+| `docs-site/` | The product documentation site (Blume/Astro): getting started, concepts, architecture with SVG diagrams, product, platform, API, operations, and channels. `bun run dev` / `bun run build`. |
+| `deploy/hetzner/` | Hosted release tooling: the guarded release gate, provider-connection bootstrap, and the atomic frontend release. |
 | `packages/agent-client/` | Runtime-neutral client for thread events, SSE reconnect, reducers, selectors, and typed API helpers. |
 | `packages/agent-harness/` | Provider-neutral canonical event and control contract for engine adapters. |
 | `packages/artifact-formats/` | Native DOCX, XLSX, PPTX, and PDF artifact renderers plus bounded Office text extraction. |
@@ -21,11 +23,12 @@ useAgent is a multi-package repository for a multi-harness coding-agent control 
 - `frontend/app/page.tsx` is the lightweight chat surface. It streams answers over SSE with read-only knowledge, wiki, and memory retrieval cited inline, and can promote a chat into a full agent run.
 - `frontend/app/agent/new/page.tsx` is the task composer that starts agent runs.
 - `frontend/app/session/[id]/page.tsx` is the thread view for a live or settled run. The timeline renders the canonical event log through one vendored session grammar: work-entry tool groups with folds, reasoning disclosures, collapsible context-recall receipts, live todo and plan cards, per-file unified diffs with a changed-files index, git chips, queue pills, a quiet one-line failure banner, a message-scroller tick rail, and artifact cards after the answer text. Side panes host files, an editor, a terminal, and the noVNC desktop.
-- `frontend/app/lab/` is the component lab; `frontend/app/lab/session/` renders one synthetic session through the real timeline components so every event type can be reviewed on a single page.
+- `frontend/app/lab/` is the component lab: the BoardUI parts bin (native primitives with their variants), the full vendored agent component set rendered live, the AI kit, and the session timeline grammar; `frontend/app/lab/session/` renders one synthetic session through the real timeline components so every event type can be reviewed on a single page.
 - Skills at `/skills` include one-click import from GitHub plus an optional hourly auto-resync that keeps the catalog in sync with the org's repositories: the backend scans a repository for `SKILL.md` files over a server-side shallow clone and imports selected ones as versioned skills pinned to a commit.
 - `frontend/app/learnings/page.tsx` is the human review queue for the self-improvement lane: knowledge drafts proposed from high-value runs (with the ordered, redacted procedure trace of what actually worked) and skill-revision proposals assembled from accepted drafts. Nothing is auto-published; an org admin accepts or dismisses each.
 - Knowledge, wiki, memory hub, artifacts, secrets, learnings, automations, and settings all have real UI and backend paths.
-- Themes: light plus three dark themes, Midnight (the default, Tokyo Night derived), Aura (violet), and Harbor (blue), selected from a theme menu and applied wholesale through semantic design tokens.
+- Design system: BoardUI (licensed, vendored source via its CLI) - base primitives in `frontend/components/base/`, application blocks in `frontend/components/application/`, and the semantic token layer in `frontend/styles/theme.css` + per-theme override blocks in `frontend/app/globals.css`. The legacy AlignUI library survives only as the sanctioned dialog/overlay layer (`frontend/components/ui/README.md`).
+- Themes: nine, light-first - Light (default), Midnight, Aura (violet), Harbor (blue), Slate (blue-gray), Dark Green and Light Green (phosphor), Dark Red and Light Red (sakura) - selected from the theme menu and applied wholesale through semantic tokens; each theme overrides the full BoardUI slot list so every surface follows.
 - Slack is a first-class channel: an @mention or DM starts a run, replies thread under it, inbound file attachments ride the run, GitHub links in the message bind the run's repositories (validated against the same allowlist the web composer enforces), and answers, artifacts, and approval cards flow back. Ingress enters the same durable command lane as the web UI.
 - The backend exposes the API and orchestration layer at `:3201`.
 - The frontend runs at `:3400` and proxies browser `/api/*` requests to the backend. The one direct backend WebSocket ingress is the run-bound Codex relay capability path.
@@ -138,6 +141,7 @@ The token is read from `HCLOUD_TOKEN` only; state and tfvars are gitignored.
 
 | Area | Docs |
 |---|---|
+| Product docs site (concepts, architecture + SVG diagrams, API, operations) | [`docs-site/`](docs-site/README.md) |
 | Interactive request-flow architecture | [`docs/architecture/request-flow.html`](docs/architecture/request-flow.html) |
 | Backend control plane | [`backend/README.md`](backend/README.md) |
 | Frontend UI | [`frontend/README.md`](frontend/README.md) |
