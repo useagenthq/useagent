@@ -1,0 +1,76 @@
+---
+// Sidebar slot override: a rounded Quick Search pill above the built-in nav
+// tree (BoardUI layout). The pill opens the same search dialog as the header
+// trigger; it stays hidden until the trigger is confirmed present, so a site
+// with search disabled renders the plain tree.
+import NavTree from "blume/components/layout/NavTree.astro";
+
+interface Props {
+  items: unknown[];
+  currentRoute: string;
+  strings?: Record<string, string>;
+}
+
+const { items, currentRoute, strings } = Astro.props;
+---
+
+<button
+  class="mb-4 hidden h-9 w-full cursor-pointer items-center gap-2 rounded-[0.625rem] border border-border bg-background px-3 text-muted-foreground text-[0.8125rem] shadow-[0_1px_2px_rgba(0,0,0,0.06)] transition-colors hover:border-foreground/25 hover:text-foreground"
+  data-docs-quick-search
+  type="button"
+>
+  <svg
+    aria-hidden="true"
+    fill="none"
+    height="14"
+    stroke="currentColor"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    stroke-width="2"
+    viewBox="0 0 24 24"
+    width="14"
+  >
+    <circle cx="11" cy="11" r="8"></circle>
+    <path d="m21 21-4.3-4.3"></path>
+  </svg>
+  <span class="flex-1 truncate text-start">Quick Search</span>
+  <kbd
+    class="rounded border border-border bg-muted px-1 py-0.5 font-mono text-[0.7rem]"
+    data-docs-quick-search-kbd>⌘K</kbd
+  >
+</button>
+
+<NavTree currentRoute={currentRoute} items={items as never} strings={strings as never} />
+
+<script>
+  // Reveal the pill only when the header search trigger exists, and mirror its
+  // platform-adjusted shortcut hint (Ctrl K on non-Mac).
+  const sync = () => {
+    const trigger = document.querySelector("[data-blume-search-open]");
+    const hint = document.querySelector("[data-blume-search-kbd]");
+    for (const pill of document.querySelectorAll("[data-docs-quick-search]")) {
+      pill.classList.toggle("hidden", !trigger);
+      pill.classList.toggle("flex", Boolean(trigger));
+      const kbd = pill.querySelector("[data-docs-quick-search-kbd]");
+      if (kbd && hint?.textContent) {
+        kbd.textContent = hint.textContent;
+      }
+    }
+  };
+
+  document.addEventListener("click", (event) => {
+    const pill =
+      event.target instanceof Element
+        ? event.target.closest("[data-docs-quick-search]")
+        : null;
+    if (!pill) {
+      return;
+    }
+    document
+      .querySelector<HTMLButtonElement>("[data-blume-search-open]")
+      ?.click();
+  });
+
+  sync();
+  document.addEventListener("astro:page-load", sync);
+</script>

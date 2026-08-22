@@ -1,0 +1,68 @@
+---
+// Breadcrumbs slot override: the full trail (Docs > Group > Page) with chevron
+// separators, BoardUI style. The built-in shows only the parent group.
+import { withBase } from "blume/components/islands/base-path.ts";
+
+interface Crumb {
+  label: string;
+  route?: string;
+}
+
+interface Props {
+  crumbs: Crumb[];
+  strings?: { breadcrumb?: string };
+  wide?: boolean;
+}
+
+const { crumbs, strings, wide = false } = Astro.props;
+const ariaLabel = strings?.breadcrumb ?? "Breadcrumb";
+const last = crumbs.length - 1;
+---
+
+{
+  crumbs.length > 0 && (
+    <nav
+      aria-label={ariaLabel}
+      class:list={[
+        "mb-3 flex flex-wrap items-center gap-1.5 text-[0.8125rem] text-muted-foreground",
+        wide ? "max-w-none" : "mx-auto max-w-content",
+      ]}
+    >
+      <a class="transition-colors hover:text-foreground" href={withBase("/")}>
+        Docs
+      </a>
+      {crumbs.map((crumb, index) => (
+        <>
+          <svg
+            aria-hidden="true"
+            class="shrink-0 opacity-60"
+            fill="none"
+            height="12"
+            stroke="currentColor"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="2"
+            viewBox="0 0 24 24"
+            width="12"
+          >
+            <path d="m9 18 6-6-6-6" />
+          </svg>
+          {index === last ? (
+            <span aria-current="page" class="font-medium text-foreground">
+              {crumb.label}
+            </span>
+          ) : crumb.route ? (
+            <a
+              class="transition-colors hover:text-foreground"
+              href={withBase(crumb.route)}
+            >
+              {crumb.label}
+            </a>
+          ) : (
+            <span>{crumb.label}</span>
+          )}
+        </>
+      ))}
+    </nav>
+  )
+}

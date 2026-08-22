@@ -21,10 +21,15 @@ export default defineConfig({
   },
 
   theme: {
-    // Tokyo Night blue, the product's Midnight accent.
-    accent: "#7aa2f7",
+    // BoardUI-style palette: blue-500 accent on clean, light-first neutrals.
+    // The rest of the look (surfaces, shadows, sidebar, rails) lives in theme.css.
+    accent: "#3392ff",
     radius: "md",
-    mode: "system",
+    mode: "light",
+    background: {
+      light: "#ffffff",
+      dark: "#121212",
+    },
   },
 
   navigation: {
