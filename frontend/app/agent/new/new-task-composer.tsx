@@ -385,7 +385,7 @@ export function NewTaskComposer({
         onSubmit={() => void submit()}
         maxHeight={260}
         disabled={submitting}
-        className="rounded-[20px] p-2 shadow-regular-md transition-colors"
+        className="relative z-10 rounded-[20px] p-2 shadow-regular-md transition-colors"
       >
         <input
           ref={fileInput}
@@ -503,7 +503,7 @@ export function NewTaskComposer({
           Every row is real - upload, the repo multi-select, the skill picker,
           per-repo branches, and GitHub (already connected server-side). */}
       {addMenuOpen ? (
-        <div className="mx-1.5 -mt-3 rounded-b-[18px] border-x border-b border-stroke-soft-200 bg-bg-white-0 px-1.5 pb-1.5 pt-5 shadow-regular-md">
+        <div className="relative z-0 -mt-2 rounded-2xl border border-stroke-soft-200 bg-bg-white-0 px-1.5 pb-1.5 pt-4 shadow-regular-md">
           <button
             type="button"
             onClick={() => {

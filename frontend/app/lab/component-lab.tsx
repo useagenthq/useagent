@@ -101,6 +101,13 @@ export function ComponentLab() {
             <RiChatHistoryLine className="size-4" aria-hidden />
             Session sample - every timeline + chrome type in one conversation
           </Link>
+          <Link
+            href="/lab/agent-ui"
+            className="inline-flex w-fit items-center gap-1.5 rounded-lg border border-stroke-soft-200 px-3 py-1.5 text-label-sm text-text-sub-600 transition-colors hover:bg-bg-weak-50 hover:text-text-strong-950"
+          >
+            <RiSparkling2Line className="size-4" aria-hidden />
+            beUI agent components - the full agent component set in a gallery
+          </Link>
         </div>
 
         <AgentUiShowcase />
