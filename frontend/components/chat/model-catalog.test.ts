@@ -40,8 +40,13 @@ describe("engine model catalog", () => {
       "openai/gpt-5.6-luna",
     );
     expect(selectableModelsForEngine("opencode").map((m) => m.value)).toContain(
-      "deepseek/deepseek-v4-flash-0731",
+      "deepseek/deepseek-v4-flash",
     );
+    expect(
+      selectableModelsForEngine("opencode").find(
+        (model) => model.value === "deepseek/deepseek-v4-flash",
+      )?.label,
+    ).toBe("DeepSeek V4 Flash · Wafer Fast");
     expect(selectableModelsForEngine("opencode").map((m) => m.value)).toContain(
       "google/gemini-3.7-flash",
     );
