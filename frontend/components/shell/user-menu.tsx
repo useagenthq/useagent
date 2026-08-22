@@ -6,16 +6,19 @@ import {
   RiFileTextLine,
   RiLoginBoxLine,
   RiLogoutBoxRLine,
+  RiMoonLine,
   RiOpenaiFill,
   RiSettings3Line,
 } from '@remixicon/react';
 import { useRouter } from 'next/navigation';
 import type { ComponentType } from 'react';
 
-import { ThemeToggle } from '@/components/motion-ui/theme-toggle';
+import { type ChipTone, IconChip } from '@/components/board-ui/icon-chip';
+import { useThemeToggle } from '@/components/motion-ui/theme-toggle';
 import * as Avatar from '@/components/ui/avatar';
 import * as Badge from '@/components/ui/badge';
 import * as Dropdown from '@/components/ui/dropdown';
+import * as Switch from '@/components/ui/switch';
 import { signOut, useSession } from '@/lib/auth';
 import { cn } from '@/utils/cn';
 
@@ -50,20 +53,20 @@ function UsageMeter({ value, tone }: { value: number; tone: 'opus' | 'gpt' }) {
 
 function ModelRow({
   icon: Icon,
-  iconClassName,
+  chipTone,
   name,
   value,
   tone,
 }: {
   icon: IconComponent;
-  iconClassName: string;
+  chipTone: ChipTone;
   name: string;
   value: number;
   tone: 'opus' | 'gpt';
 }) {
   return (
     <div className='flex items-center gap-2 px-2 py-1.5'>
-      <Icon className={cn('size-3.5 shrink-0', iconClassName)} aria-hidden />
+      <IconChip icon={Icon} tone={chipTone} size='sm' />
       <span className='min-w-0 flex-1 truncate text-paragraph-sm text-text-strong-950'>
         {name}
       </span>
@@ -81,6 +84,7 @@ function ModelRow({
 export function UserMenu() {
   const router = useRouter();
   const { session, refresh } = useSession();
+  const { isDark, toggle } = useThemeToggle();
 
   const signedIn = session !== null;
   const name = session?.user.name?.trim() || (signedIn ? session!.user.email : 'Guest');
@@ -122,16 +126,20 @@ export function UserMenu() {
           </div>
         </div>
 
-        {/* Dark mode: a beUI-derived animated toggle (page-wide View Transition
-            circle reveal) embedded in the AlignUI dropdown. It is a plain button,
-            not a Dropdown.Item, so the menu stays open while you flip modes. The
-            Aura/Harbor palettes still live in the shell ThemeMenu. */}
-        <ThemeToggle
-          className='w-full rounded-lg px-2 py-1.5 text-label-sm text-text-strong-950 outline-none transition-colors hover:bg-bg-weak-50 focus-visible:ring-2 focus-visible:ring-stroke-strong-950'
-          iconClassName='size-[18px] text-text-sub-600'
-        >
-          <span className='flex-1 text-left'>Dark mode</span>
-        </ThemeToggle>
+        {/* Dark mode: an AlignUI Switch (matching the AlignUI dropdown reference)
+            that drives the beUI-derived View Transition theme reveal via
+            useThemeToggle. A plain row, not a Dropdown.Item, so the menu stays
+            open while you flip modes. Aura/Harbor palettes live in the shell
+            ThemeMenu. */}
+        <div className='flex items-center gap-2 rounded-lg px-2 py-1.5'>
+          <RiMoonLine className='size-[18px] shrink-0 text-text-sub-600' aria-hidden />
+          <span className='flex-1 text-label-sm text-text-strong-950'>Dark mode</span>
+          <Switch.Root
+            checked={isDark}
+            onCheckedChange={() => toggle()}
+            aria-label='Toggle dark mode'
+          />
+        </div>
 
         <Dropdown.Separator className='-mx-2 my-1 h-px bg-stroke-soft-200' />
 
@@ -173,14 +181,14 @@ export function UserMenu() {
         </p>
         <ModelRow
           icon={RiAsterisk}
-          iconClassName='text-warning-base'
+          chipTone='orange'
           name='Opus 4.7'
           value={0.8}
           tone='opus'
         />
         <ModelRow
           icon={RiOpenaiFill}
-          iconClassName='text-text-strong-950'
+          chipTone='green'
           name='GPT 5.5'
           value={0.95}
           tone='gpt'
