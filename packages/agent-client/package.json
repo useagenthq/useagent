@@ -9,6 +9,7 @@
     "./artifacts": "./src/artifacts.ts",
     "./connection": "./src/connection.ts",
     "./events": "./src/thread-events.ts",
+    "./integrations": "./src/integrations.ts",
     "./org-changes": "./src/org-changes.ts",
     "./provider-connections": "./src/provider-connections.ts",
     "./store": "./src/thread-store.ts",

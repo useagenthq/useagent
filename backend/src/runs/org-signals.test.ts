@@ -44,3 +44,40 @@ describe("provider connection org-change projection", () => {
     expect(JSON.stringify(projected)).not.toContain("status");
   });
 });
+
+describe("integration connection org-change projection", () => {
+  const userOwned = {
+    type: "integration_connection",
+    action: "health_changed",
+    targetUserId: "user-1",
+    connectionId: "integration-1",
+    provider: "linear",
+  } satisfies OrgChange;
+
+  test("publishes user-owned changes only to the target user", () => {
+    const projected = clientOrgChangeForUser(userOwned, "user-1");
+
+    expect(projected).toEqual({
+      type: "integration_connection",
+      action: "health_changed",
+      connectionId: "integration-1",
+      provider: "linear",
+    });
+    expect(decodeOrgChange(projected)).toEqual(projected);
+    expect(clientOrgChangeForUser(userOwned, "user-2")).toBeNull();
+    expect(clientOrgChangeForUser(userOwned, null)).toBeNull();
+    expect(JSON.stringify(projected)).not.toContain("targetUserId");
+  });
+
+  test("publishes org-owned changes to authenticated org members", () => {
+    const orgOwned: OrgChange = {
+      type: "integration_connection",
+      action: "updated",
+      connectionId: "integration-org",
+      provider: "notion",
+    };
+
+    expect(clientOrgChangeForUser(orgOwned, "user-1")).toEqual(orgOwned);
+    expect(clientOrgChangeForUser(orgOwned, null)).toEqual(orgOwned);
+  });
+});
