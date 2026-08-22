@@ -913,7 +913,7 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
           >
             <div className="border-stroke-soft-200/50 flex shrink-0 items-center gap-2 border-b p-2">
               <SegmentedControl.Root
-                className="flex-1"
+                className="flex-1 [&_[role=tab]]:text-label-xs [&_[role=tab]_svg]:size-3.5"
                 value={railTab ?? ""}
                 onValueChange={(v) => setRailTabOverride(v as SurfaceChoice | "editor" | "workspace")}
               >

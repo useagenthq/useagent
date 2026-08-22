@@ -39,10 +39,9 @@ import * as StatusBadge from "@/components/ui/status-badge";
 import * as Switch from "@/components/ui/switch";
 import * as TabMenuHorizontal from "@/components/ui/tab-menu-horizontal";
 import * as Table from "@/components/ui/table";
-import { AgentUiShowcase } from "./agent-ui-showcase";
 import { ARTIFACT_CAPABILITY_ROWS } from "./artifact-capability-matrix";
 import { BeautifulUiExtras } from "./beautiful-ui-extras";
-import { BeuiAgentInventory } from "./beui-agent-inventory";
+import { BeuiAgentShowcase } from "./beui-agent-showcase";
 import { TimelineShowcase } from "./session-ui-showcase";
 
 function Section({ label, children }: { label: string; children: React.ReactNode }) {
@@ -103,8 +102,7 @@ export function ComponentLab() {
           </Link>
         </div>
 
-        <AgentUiShowcase />
-        <BeuiAgentInventory />
+        <BeuiAgentShowcase />
 
         <Section label="T3 timeline grammar - vendored chat presentation (components/session-ui)">
           <TimelineShowcase />

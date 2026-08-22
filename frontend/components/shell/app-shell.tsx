@@ -100,7 +100,7 @@ export function AppShell({ sidebar, children }: AppShellProps) {
           <div className="relative h-full w-64">{sidebar}</div>
         </div>
       ) : null}
-      <main className="relative isolate min-h-0 min-w-0 flex-1 overflow-y-auto bg-bg-white-0">
+      <main className="relative isolate min-h-0 min-w-0 flex-1 overflow-y-auto bg-bg-weak-50">
         <div
           aria-hidden
           className="bg-halftone pointer-events-none absolute inset-x-0 top-0 -z-10 h-40"
