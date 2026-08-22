@@ -15,10 +15,12 @@
 //   one honest degraded signal is "the selected engine is missing from the
 //   manifest". `unavailableEngineLabel` computes exactly that; the wording says
 //   "may fail", never a certainty the manifest cannot back.
-// - Their shadcn/lucide chrome -> AlignUI warning tokens + Remixicon, matching
-//   the other session-ui ports.
+// - Presentation rides the BoardUI base Notification card (semantic
+//   notification-* tokens, so it follows every theme) instead of the original
+//   raw yellow ramp; BoardUI ships no warning status, so the advisory uses
+//   `information`.
 
-import { RiCloseLine, RiInformationLine } from "@remixicon/react";
+import { Notification } from "@/components/base/notification/notification";
 import { ENGINES, type EngineId } from "@/components/chat/types";
 
 /**
@@ -36,7 +38,7 @@ export function unavailableEngineLabel(
 }
 
 /**
- * Slim provider-status banner: the thread's engine is missing from the server's
+ * Provider-status notice: the thread's engine is missing from the server's
  * ready-engines manifest. Purely presentational; the call site passes the
  * computed label (see unavailableEngineLabel).
  */
@@ -49,26 +51,16 @@ export function ProviderStatusBanner({
   onDismiss?: () => void;
 }) {
   return (
-    <div
-      data-session-ui="provider-status-banner"
-      role="alert"
-      className="border-yellow-200 bg-yellow-100 text-yellow-600 flex items-center gap-2 rounded-xl border px-3 py-2"
-    >
-      <RiInformationLine className="size-4 shrink-0" aria-hidden />
-      <p className="text-caption-1-regular min-w-0 flex-1">
-        {engineLabel} is currently unavailable on this server. Replies that use this engine may
-        fail until it returns.
-      </p>
-      {onDismiss && (
-        <button
-          type="button"
-          aria-label={`Dismiss ${engineLabel} status`}
-          onClick={onDismiss}
-          className="text-yellow-600 hover:bg-yellow-200/40 flex size-6 shrink-0 items-center justify-center rounded-md transition-colors"
-        >
-          <RiCloseLine className="size-4" aria-hidden />
-        </button>
-      )}
+    <div data-session-ui="provider-status-banner">
+      <Notification
+        role="alert"
+        status="information"
+        title={`${engineLabel} is unavailable`}
+        description={`${engineLabel} is currently unavailable on this server. Replies that use this engine may fail until it returns.`}
+        dismissible={Boolean(onDismiss)}
+        closeLabel={`Dismiss ${engineLabel} status`}
+        onDismiss={onDismiss}
+      />
     </div>
   );
 }
