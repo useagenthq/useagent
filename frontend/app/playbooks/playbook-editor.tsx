@@ -4,10 +4,10 @@ import { useEffect, useState } from "react";
 
 import { Button } from "@/components/base/buttons/button";
 import { Input } from "@/components/base/input/input";
-import { Label } from "@/components/base/input/label";
 import * as Modal from "@/components/ui/modal";
 import { createSkill, updateSkill } from "@/app/skills/skills-api";
 import type { Skill } from "@/app/skills/skills-data";
+import { SectionTextarea } from "@/components/foundations/form-recipes";
 
 /**
  * Create/edit a playbook. A playbook is a plain skill with `kind: "playbook"`
@@ -30,40 +30,6 @@ function toLines(value: string): string[] {
 
 /** Plain textarea styled to match the BoardUI input field shell (mirrors the
  *  skills new-skill-modal - no shared BoardUI textarea primitive yet). */
-const TEXTAREA_FIELD =
-  "w-full resize-y rounded-2lg bg-background-tertiary-default p-2 pl-3 font-sans text-body-regular text-text-primary outline-none ring-2 ring-inset ring-transparent transition-[box-shadow] placeholder:text-text-tertiary hover:ring-border-button-hover focus:ring-border-button-active disabled:cursor-not-allowed disabled:opacity-60";
-
-function SectionTextarea({
-  id,
-  label,
-  placeholder,
-  value,
-  onChange,
-  disabled,
-}: {
-  id: string;
-  label: string;
-  placeholder: string;
-  value: string;
-  onChange: (value: string) => void;
-  disabled: boolean;
-}) {
-  return (
-    <div className="flex w-full flex-col gap-1">
-      <Label htmlFor={id}>{label}</Label>
-      <textarea
-        id={id}
-        rows={3}
-        placeholder={placeholder}
-        value={value}
-        disabled={disabled}
-        onChange={(event) => onChange(event.target.value)}
-        className={TEXTAREA_FIELD}
-      />
-    </div>
-  );
-}
-
 export function PlaybookEditor({
   open,
   onOpenChange,
