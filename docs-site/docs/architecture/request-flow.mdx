@@ -14,20 +14,32 @@ This is the life of a single agent turn, following the units from
   <Step title="A command is accepted">
     A prompt from the web app, Slack, or an automation becomes a durable command
     with an idempotency key. It enters the one command lane every channel shares.
+    A thread admits one in-flight turn at a time; additional prompts, including
+    gateway child-session requests, queue durably in the commands mailbox and
+    dispatch serially per thread under a per-thread advisory lock.
   </Step>
   <Step title="A run is created">
     The backend creates a run inside a thread. A reply reuses the thread's sandbox
     and working directory; a root run claims a fresh sandbox, preferably from the
     warm pool.
   </Step>
-  <Step title="The engine is spawned one-shot">
-    The engine registry resolves a driver for the turn. The engine runs in the
-    sandbox, in its own working directory, and starts emitting native events.
+  <Step title="The turn reaches a resident engine session">
+    The engine registry resolves a `ProviderDriver` for the engine, and the turn
+    is dispatched to the thread's resident engine session inside the sandbox:
+    OpenCode behind its own server, Claude and Codex as persistent ACP agents
+    behind the in-sandbox relay. A per-turn one-shot CLI runner exists only as
+    the `ENGINE_TRANSPORT=cli` fallback. The engine works in its own directory
+    and starts emitting native events.
   </Step>
   <Step title="Privileged work goes through the gateway">
     When the engine needs to read a repository, search knowledge, use the desktop,
     or publish an artifact, it calls a gateway tool bound by a short-lived
-    capability token. A destructive operation pauses on the approval lane.
+    capability token. A destructive operation pauses on a durable approval
+    request with a 15-minute TTL (pending, then approved, denied, or expired). A
+    human resolves it through `/api/gateway/approvals`, and the agent polls out
+    a one-shot capability bound to the exact run, tool, and normalized
+    arguments. See [Gateway tools and
+    approvals](/concepts/gateway-tools-and-approvals).
   </Step>
   <Step title="Output is canonicalized into steps">
     Native events are translated into canonical steps and appended to the event

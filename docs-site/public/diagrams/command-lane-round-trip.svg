@@ -1,0 +1,78 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 980 540" role="img" aria-label="The command-lane round trip: entry points become a durable command, a run worker spawns a one-shot engine in a sandbox, native frames are canonicalized into the Postgres event log, and a thread-scoped SSE stream renders the session timeline. Reconnect replays a fresh durable snapshot.">
+  <defs>
+    <marker id="arrow-accent" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto" markerUnits="userSpaceOnUse">
+      <path d="M0,0 L8,4.5 L0,9 Z" fill="#3392ff"/>
+    </marker>
+    <marker id="arrow-gray" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto" markerUnits="userSpaceOnUse">
+      <path d="M0,0 L8,4.5 L0,9 Z" fill="#a3a3a3"/>
+    </marker>
+  </defs>
+
+  <rect x="0.5" y="0.5" width="979" height="539" rx="12" fill="#f7f7f7" stroke="#ebebeb"/>
+
+  <g font-family="Inter, system-ui, sans-serif">
+
+    <!-- Row 1: entry points -> durable command -> run worker -> sandbox + engine -->
+    <rect x="32" y="56" width="216" height="96" rx="10" fill="#ffffff" stroke="#ebebeb"/>
+    <text x="140" y="84" text-anchor="middle" font-size="13" font-weight="600" fill="#0a0a0a">Web UI / Slack / Automation</text>
+    <text x="140" y="106" text-anchor="middle" font-size="11" fill="#737373">Web: POST /api/runs</text>
+    <text x="140" y="122" text-anchor="middle" font-size="11" fill="#737373">Slack: slack/events.ts</text>
+    <text x="140" y="138" text-anchor="middle" font-size="11" fill="#737373">Cron: schedules/fire.ts</text>
+
+    <rect x="288" y="56" width="200" height="96" rx="10" fill="#ffffff" stroke="#ebebeb"/>
+    <text x="388" y="84" text-anchor="middle" font-size="13" font-weight="600" fill="#0a0a0a">Durable command</text>
+    <text x="388" y="106" text-anchor="middle" font-size="11" fill="#737373">acceptRunCommand()</text>
+    <text x="388" y="122" text-anchor="middle" font-size="11" fill="#737373">commands table (Postgres)</text>
+    <text x="388" y="138" text-anchor="middle" font-size="11" fill="#737373">Idempotency-Key dedupe</text>
+
+    <rect x="528" y="56" width="162" height="96" rx="10" fill="#ffffff" stroke="#ebebeb"/>
+    <text x="609" y="84" text-anchor="middle" font-size="13" font-weight="600" fill="#0a0a0a">Run worker</text>
+    <text x="609" y="106" text-anchor="middle" font-size="11" fill="#737373">worker.ts</text>
+    <text x="609" y="122" text-anchor="middle" font-size="11" fill="#737373">pumpThread + spawnWorker</text>
+    <text x="609" y="138" text-anchor="middle" font-size="11" fill="#737373">one turn per thread</text>
+
+    <rect x="730" y="56" width="218" height="96" rx="10" fill="#ffffff" stroke="#ebebeb"/>
+    <text x="839" y="84" text-anchor="middle" font-size="13" font-weight="600" fill="#0a0a0a">Sandbox + one-shot engine</text>
+    <text x="839" y="106" text-anchor="middle" font-size="11" fill="#737373">src/sandboxes + src/engines</text>
+    <text x="839" y="122" text-anchor="middle" font-size="11" fill="#737373">spawned per run, then discarded</text>
+
+    <!-- Side lane: native frames -> canonicalizer -->
+    <rect x="700" y="204" width="248" height="84" rx="10" fill="#ffffff" stroke="#ebebeb"/>
+    <text x="824" y="232" text-anchor="middle" font-size="13" font-weight="600" fill="#0a0a0a">Native frames &#8594; canonicalizer</text>
+    <text x="824" y="254" text-anchor="middle" font-size="11" fill="#737373">provider_events (lossless capture)</text>
+    <text x="824" y="270" text-anchor="middle" font-size="11" fill="#737373">runs/canonicalization-outbox.ts</text>
+
+    <!-- Row 2 (right to left): canonical log -> thread SSE -> session timeline -->
+    <rect x="700" y="340" width="248" height="96" rx="10" fill="#eaf3ff" stroke="#3392ff"/>
+    <text x="824" y="372" text-anchor="middle" font-size="13" font-weight="600" fill="#1f6fd6">Canonical event log</text>
+    <text x="824" y="394" text-anchor="middle" font-size="11" fill="#737373">canonical_events (Postgres)</text>
+    <text x="824" y="410" text-anchor="middle" font-size="11" fill="#737373">durable source of truth</text>
+
+    <rect x="404" y="340" width="252" height="96" rx="10" fill="#ffffff" stroke="#ebebeb"/>
+    <text x="530" y="372" text-anchor="middle" font-size="13" font-weight="600" fill="#0a0a0a">Thread-scoped SSE</text>
+    <text x="530" y="394" text-anchor="middle" font-size="11" fill="#737373">GET /api/runs/:id/thread-events</text>
+    <text x="530" y="410" text-anchor="middle" font-size="11" fill="#737373">snapshot + live frames, one stream</text>
+
+    <rect x="32" y="340" width="248" height="96" rx="10" fill="#ffffff" stroke="#ebebeb"/>
+    <text x="156" y="372" text-anchor="middle" font-size="13" font-weight="600" fill="#0a0a0a">Session timeline</text>
+    <text x="156" y="394" text-anchor="middle" font-size="11" fill="#737373">components/chat/use-thread-stream</text>
+    <text x="156" y="410" text-anchor="middle" font-size="11" fill="#737373">thread-store reducer &#8594; timeline</text>
+
+    <!-- Primary flow arrows (accent) -->
+    <line x1="248" y1="104" x2="286" y2="104" stroke="#3392ff" stroke-width="1.5" stroke-linecap="round" marker-end="url(#arrow-accent)"/>
+    <line x1="488" y1="104" x2="526" y2="104" stroke="#3392ff" stroke-width="1.5" stroke-linecap="round" marker-end="url(#arrow-accent)"/>
+    <line x1="690" y1="104" x2="728" y2="104" stroke="#3392ff" stroke-width="1.5" stroke-linecap="round" marker-end="url(#arrow-accent)"/>
+    <line x1="824" y1="152" x2="824" y2="202" stroke="#3392ff" stroke-width="1.5" stroke-linecap="round" marker-end="url(#arrow-accent)"/>
+    <line x1="824" y1="288" x2="824" y2="338" stroke="#3392ff" stroke-width="1.5" stroke-linecap="round" marker-end="url(#arrow-accent)"/>
+    <line x1="700" y1="388" x2="658" y2="388" stroke="#3392ff" stroke-width="1.5" stroke-linecap="round" marker-end="url(#arrow-accent)"/>
+    <line x1="404" y1="388" x2="282" y2="388" stroke="#3392ff" stroke-width="1.5" stroke-linecap="round" marker-end="url(#arrow-accent)"/>
+
+    <!-- Dashed return arrow: reconnect replays a fresh durable snapshot -->
+    <path d="M824,436 L824,464 Q824,472 816,472 L164,472 Q156,472 156,464 L156,442"
+      fill="none" stroke="#a3a3a3" stroke-width="1.5" stroke-dasharray="5 5" stroke-linecap="round" marker-end="url(#arrow-gray)"/>
+    <text x="490" y="494" text-anchor="middle" font-size="12" fill="#737373">reconnect = fresh durable snapshot</text>
+
+    <!-- Boot-pipeline grounding -->
+    <text x="32" y="520" font-size="11" fill="#737373">Boot pipeline (backend/src/index.ts): migrate &#8594; recoverStaleRuns &#8594; canonicalization, reconcile and outbox workers</text>
+  </g>
+</svg>

@@ -41,7 +41,7 @@ export function ContributionsCard({
         <div className='flex flex-col gap-0.5'>
           <p className='text-body-2-regular text-text-secondary'>Run activity</p>
           <div className='flex items-center gap-2'>
-            <p className='text-label-lg font-semibold tracking-[-0.1px] tabular-nums text-text-primary'>{total}</p>
+            <p className='text-headline-medium font-semibold tracking-[-0.1px] tabular-nums text-text-primary'>{total}</p>
             <span className='text-caption-1-regular text-text-tertiary'>
               runs in the last {weeks} weeks
             </span>
@@ -79,11 +79,11 @@ export function ContributionsCard({
         <dl className='flex gap-6'>
           <div className='flex flex-col gap-0.5'>
             <dt className='text-caption-1-regular text-text-tertiary'>Active days</dt>
-            <dd className='text-label-lg tabular-nums text-text-primary'>{activeDays}</dd>
+            <dd className='text-headline-medium tabular-nums text-text-primary'>{activeDays}</dd>
           </div>
           <div className='flex flex-col gap-0.5'>
             <dt className='text-caption-1-regular text-text-tertiary'>Busiest day</dt>
-            <dd className='text-label-lg tabular-nums text-text-primary'>{busiest}</dd>
+            <dd className='text-headline-medium tabular-nums text-text-primary'>{busiest}</dd>
           </div>
         </dl>
       </div>

@@ -351,6 +351,24 @@
     --social-amazon: 210 14.52% 24.31%;
     --social-zendesk: 46.67 25.71% 6.86%;
 
+    /* --------------------------------------------------------------------
+     * AlignUI COMPAT BRIDGE: the legacy AlignUI semantic variables
+     * (--primary-*, --bg-*, --text-*, --stroke-*, --faded-*, state colors)
+     * retargeted at the BoardUI ramps above. The .dark / .theme-aura /
+     * .theme-harbor blocks below re-flip the SAME slot list. Remaining
+     * consumers (2026-08-22 sweep; app/ + product components/ are clean):
+     *   - components/ui/* (42 files): the kept legacy AlignUI primitive
+     *     library, sanctioned as the dialog/overlay layer (Modal, Drawer,
+     *     CommandMenu + their deps); badge/button/tooltip/input etc. are
+     *     still imported by dashboard/foundation/review surfaces. See
+     *     components/ui/README.md.
+     *   - components/application/* (36 files): dormant vendored AlignUI
+     *     reference layer; no live imports, but it resolves through this
+     *     bridge if ever rendered (e.g. app/lab inventories).
+     *   - This file: scrollbar, grid-pattern and shimmer rules further
+     *     down reference the --text- and --stroke- vars directly.
+     * The bridge can only be removed when those consumers are gone or
+     * converted to BoardUI tokens (styles/theme.css). Do not grow it. */
     --primary-dark: var(--blue-800);
     --primary-darker: var(--blue-700);
     --primary-base: var(--blue-500);
@@ -1037,6 +1055,500 @@
     --social-amazon: 0 0% 100%;
     --social-zendesk: 0 0% 100%;
   }
+
+  .phosphor {
+    /* -------------------------------------------------------------------
+     * Phosphor - CRT-green dark theme.
+     * (adapted from the t3themes "Phosphor" OKLCH reference palette)
+     *
+     * A dark-scheme sibling of the Midnight/Aura/Harbor ramps: a vivid
+     * phosphor-green accent over a near-black green-tinted canvas, with the
+     * source palette's rose/magenta family carrying error + highlight.
+     * Values are translated from the OKLCH reference into the SAME semantic
+     * token slots the `.dark`/`.aura` blocks use (canvas -> bg-white-0,
+     * raised -> bg-sub-300, accent -> the blue/primary ramp), so components
+     * keep consuming semantic tokens and never key on a theme name. The
+     * source gives canvas == chrome, so the chrome/darkest steps below the
+     * canvas are derived to keep the surface ladder monotonic. The accent
+     * (#3dff7c) is far too light for white button text, so the primary
+     * button base is a deeper green; the source's deep-rose error is
+     * brightened one step so error text stays readable on the near-black
+     * canvas. `color-scheme` is pinned dark so native controls treat
+     * Phosphor as dark even though the class is not `.dark`. Hex in
+     * comments is the sRGB value each HSL triple encodes.
+     * ------------------------------------------------------------------- */
+    color-scheme: dark;
+    --brand-orbit: 139.48 100% 61.96%; /* #3dff7c phosphor green */
+
+    --neutral-0: 0 0% 100%;
+    --neutral-50: 134.59 69.81% 79.22%; /* #a5efb7 text */
+    --neutral-100: 134.34 36% 63.51%; /* #80c390 */
+    --neutral-200: 136.29 29.41% 46.67%; /* #549a67 muted */
+    --neutral-300: 139.61 29.21% 34.9%; /* #3f7350 */
+    --neutral-400: 137.14 31.11% 17.65%; /* #1f3b27 stronger border */
+    --neutral-500: 136.7 27.56% 20.31%; /* #26422d */
+    --neutral-600: 136.62 27.4% 19.43%; /* #243f2c */
+    --neutral-700: 130 27.27% 8.63%; /* #101c12 raised */
+    --neutral-800: 120 29.41% 3.33%; /* #060b06 canvas */
+    --neutral-900: 120.64 31.29% 2.3%; /* #040804 chrome (derived) */
+    --neutral-950: 120.68 31.97% 1.36%; /* #020502 (derived) */
+
+    --neutral-alpha-24: 136.29 29.41% 46.67% / 24%;
+    --neutral-alpha-16: 136.29 29.41% 46.67% / 16%;
+    --neutral-alpha-10: 136.29 29.41% 46.67% / 10%;
+
+    /* Blue ramp repurposed as the phosphor-green accent (primary +
+       information + links + send/loading affordances all read the blue
+       ramp). */
+    --blue-950: 144.64 85.65% 26.65%; /* #0a7e3a primary button (deeper for white text) */
+    --blue-900: 145.06 99.35% 17.16%; /* #005725 */
+    --blue-800: 145.14 92.75% 21.64%; /* #046a2f primary active */
+    --blue-700: 141.84 66.98% 37.5%; /* #20a04e */
+    --blue-600: 139.48 100% 61.96%; /* #3dff7c phosphor green */
+    --blue-500: 139.48 100% 61.96%; /* #3dff7c phosphor green */
+    --blue-400: 134.34 100% 72.76%; /* #74ff95 */
+    --blue-300: 133.97 100% 79.45%; /* #96ffaf */
+    --blue-200: 135.17 63.5% 73.14%; /* #8fe6a5 */
+    --blue-100: 144.64 85.65% 26.65% / 24%;
+    --blue-50: 144.64 85.65% 26.65% / 16%;
+
+    --blue-alpha-24: 144.64 85.65% 26.65% / 24%;
+    --blue-alpha-16: 144.64 85.65% 26.65% / 16%;
+    --blue-alpha-10: 144.64 85.65% 26.65% / 10%;
+
+    --orange-600: 36.32 79.42% 48.8%; /* #df911a */
+    --orange-500: 37.69 92.13% 50.2%; /* #f59e0b warning */
+    --orange-400: 43.26 96.41% 56.27%; /* #fbbf24 */
+
+    --orange-alpha-24: 37.69 92.13% 50.2% / 24%;
+    --orange-alpha-16: 37.69 92.13% 50.2% / 16%;
+    --orange-alpha-10: 37.69 92.13% 50.2% / 10%;
+
+    --red-600: 339.61 61.14% 51.51%; /* #cf386b error (brightened source rose) */
+    --red-500: 340.25 74.5% 62.64%; /* #e75987 */
+    --red-400: 335.94 88.03% 77.47%; /* #f893bc */
+
+    --red-alpha-24: 339.61 61.14% 51.51% / 24%;
+    --red-alpha-16: 339.61 61.14% 51.51% / 16%;
+    --red-alpha-10: 339.61 61.14% 51.51% / 10%;
+
+    --green-600: 143.08 71.7% 44.76%; /* #20c45f success */
+    --green-500: 142.75 75.64% 52.31%; /* #29e16f */
+    --green-400: 139.48 100% 61.96%; /* #3dff7c */
+
+    --green-alpha-24: 142.75 75.64% 52.31% / 24%;
+    --green-alpha-16: 142.75 75.64% 52.31% / 16%;
+    --green-alpha-10: 142.75 75.64% 52.31% / 10%;
+
+    --yellow-600: 36.32 79.42% 48.8%; /* #df911a */
+    --yellow-500: 37.69 92.13% 50.2%; /* #f59e0b */
+    --yellow-400: 43.26 96.41% 56.27%; /* #fbbf24 */
+
+    --yellow-alpha-24: 37.69 92.13% 50.2% / 24%;
+    --yellow-alpha-16: 37.69 92.13% 50.2% / 16%;
+    --yellow-alpha-10: 37.69 92.13% 50.2% / 10%;
+
+    --purple-600: 322.77 52.56% 56.1%; /* #ca549d */
+    --purple-500: 323.92 65.99% 66.48%; /* #e271b5 feature */
+    --purple-400: 325.43 78.4% 76.55%; /* #f294ca */
+
+    --purple-alpha-24: 323.92 65.99% 66.48% / 24%;
+    --purple-alpha-16: 323.92 65.99% 66.48% / 16%;
+    --purple-alpha-10: 323.92 65.99% 66.48% / 10%;
+
+    --sky-600: 173.71 52.31% 41.92%; /* #33a397 verified */
+    --sky-500: 173.5 50.04% 51.5%; /* #45c1b4 */
+    --sky-400: 173.05 60.69% 61.14%; /* #60d8ca */
+
+    --sky-alpha-24: 173.5 50.04% 51.5% / 24%;
+    --sky-alpha-16: 173.5 50.04% 51.5% / 16%;
+    --sky-alpha-10: 173.5 50.04% 51.5% / 10%;
+
+    --pink-600: 333.79 62.36% 62.22%; /* #db6397 highlighted */
+    --pink-500: 331.96 79.99% 72.29%; /* #f180b5 secondary pink */
+    --pink-400: 331.29 86.61% 79.41%; /* #f89dc9 */
+
+    --pink-alpha-24: 331.96 79.99% 72.29% / 24%;
+    --pink-alpha-16: 331.96 79.99% 72.29% / 16%;
+    --pink-alpha-10: 331.96 79.99% 72.29% / 10%;
+
+    --teal-600: 160.42 45.81% 45.07%; /* #3ea885 stable */
+    --teal-500: 160.08 49.19% 53.61%; /* #4fc39c */
+    --teal-400: 159.16 60.55% 62.99%; /* #67dab2 */
+
+    --teal-alpha-24: 160.08 49.19% 53.61% / 24%;
+    --teal-alpha-16: 160.08 49.19% 53.61% / 16%;
+    --teal-alpha-10: 160.08 49.19% 53.61% / 10%;
+
+    --primary-dark: var(--blue-950);
+    --primary-darker: var(--blue-800);
+    --primary-base: var(--blue-950);
+    --primary-alpha-24: var(--blue-alpha-24);
+    --primary-alpha-16: var(--blue-alpha-16);
+    --primary-alpha-10: var(--blue-alpha-10);
+
+    --bg-strong-950: var(--neutral-50);
+    --bg-surface-800: var(--neutral-100);
+    --bg-sub-300: var(--neutral-700);
+    --bg-soft-200: var(--neutral-900);
+    --bg-weak-50: 120.57 30.01% 2.6%; /* #050905 - Phosphor muted row */
+    --bg-white-0: var(--neutral-800);
+
+    --text-strong-950: var(--neutral-50);
+    --text-sub-600: var(--neutral-100);
+    --text-soft-400: var(--neutral-200);
+    --text-disabled-300: var(--neutral-300);
+    --text-white-0: var(--neutral-800);
+
+    --stroke-strong-950: var(--neutral-50);
+    --stroke-sub-300: var(--neutral-400);
+    --stroke-soft-200: 135.65 29.11% 15.49%; /* #1c3322 - Phosphor border */
+    --stroke-white-0: var(--neutral-800);
+
+    --faded-dark: var(--neutral-100);
+    --faded-base: var(--neutral-200);
+    --faded-light: var(--neutral-alpha-24);
+    --faded-lighter: var(--neutral-alpha-16);
+
+    --information-dark: var(--blue-400);
+    --information-base: var(--blue-950);
+    --information-light: var(--blue-alpha-24);
+    --information-lighter: var(--blue-alpha-16);
+
+    --warning-dark: var(--orange-400);
+    --warning-base: var(--orange-500);
+    --warning-light: var(--orange-alpha-24);
+    --warning-lighter: var(--orange-alpha-16);
+
+    --error-dark: var(--red-400);
+    --error-base: var(--red-600);
+    --error-light: var(--red-alpha-24);
+    --error-lighter: var(--red-alpha-16);
+
+    --success-dark: var(--green-400);
+    --success-base: var(--green-600);
+    --success-light: var(--green-alpha-24);
+    --success-lighter: var(--green-alpha-16);
+
+    --away-dark: var(--yellow-400);
+    --away-base: var(--yellow-600);
+    --away-light: var(--yellow-alpha-24);
+    --away-lighter: var(--yellow-alpha-16);
+
+    --feature-dark: var(--purple-400);
+    --feature-base: var(--purple-500);
+    --feature-light: var(--purple-alpha-24);
+    --feature-lighter: var(--purple-alpha-16);
+
+    --verified-dark: var(--sky-400);
+    --verified-base: var(--sky-600);
+    --verified-light: var(--sky-alpha-24);
+    --verified-lighter: var(--sky-alpha-16);
+
+    --highlighted-dark: var(--pink-400);
+    --highlighted-base: var(--pink-600);
+    --highlighted-light: var(--pink-alpha-24);
+    --highlighted-lighter: var(--pink-alpha-16);
+
+    --stable-dark: var(--teal-400);
+    --stable-base: var(--teal-600);
+    --stable-light: var(--teal-alpha-24);
+    --stable-lighter: var(--teal-alpha-16);
+
+    --overlay: 120.68 31.97% 1.36% / 72%; /* #020502 scrim */
+
+    --social-apple: 0 0% 100%;
+    --social-twitter: 0 0% 100%;
+    --social-github: 0 0% 100%;
+    --social-notion: 0 0% 100%;
+    --social-tidal: 0 0% 100%;
+    --social-amazon: 0 0% 100%;
+    --social-zendesk: 0 0% 100%;
+  }
+
+  .sakura {
+    /* -------------------------------------------------------------------
+     * Sakura - cherry-blossom LIGHT theme.
+     * (adapted from the t3themes "Sakura" OKLCH reference palette, light
+     * variant; the source also ships a plum-night dark variant, unused)
+     *
+     * Unlike Aura/Harbor this is a LIGHT-scheme sibling of the `:root`
+     * ramp: the slot orientation (light canvas, dark text) already matches
+     * `:root`, so this block only overrides what carries the personality -
+     * blush-tinted neutrals, the blue ramp repurposed as the rose accent
+     * (primary + information + links read the blue ramp), the error/warning
+     * anchors - plus the few slots whose stop mapping differs from `:root`.
+     * Everything not set here deliberately inherits the `:root` light
+     * values, which resolve through these ramps where they chain via
+     * var(). No `color-scheme` pin: the un-layered `html` rule already
+     * resolves light for non-dark theme classes. Hex in comments is the
+     * sRGB value each HSL triple encodes.
+     * ------------------------------------------------------------------- */
+    --brand-orbit: 334.15 50.2% 48.04%; /* #b83d72 rose accent */
+
+    --neutral-0: 0 0% 100%;
+    --neutral-50: 340 60% 98.04%; /* #fdf7f9 raised blush */
+    --neutral-100: 345 50% 96.86%; /* #fbf3f5 canvas */
+    --neutral-200: 343.64 37.93% 94.31%; /* #f6ebee */
+    --neutral-300: 336.43 32.56% 83.14%; /* #e2c6d1 */
+    --neutral-400: 335.68 17.7% 59.02%; /* #a98493 */
+    --neutral-500: 335 15% 47.06%; /* #8a6675 muted text */
+    --neutral-600: 333.8 15.5% 38.67%; /* #725361 */
+    --neutral-700: 333.64 16.9% 31.96%; /* #5f4450 */
+    --neutral-800: 333.43 18.73% 26.56%; /* #503742 */
+    --neutral-900: 332.65 20.67% 23.42%; /* #482f3b */
+    --neutral-950: 332.5 21.82% 21.57%; /* #432b36 text (deep plum) */
+
+    --neutral-alpha-24: 335.68 17.7% 59.02% / 24%;
+    --neutral-alpha-16: 335.68 17.7% 59.02% / 16%;
+    --neutral-alpha-10: 335.68 17.7% 59.02% / 10%;
+
+    /* Blue ramp repurposed as the rose accent, as a full light 50->950
+       ladder so `:root`'s light stop mappings (base -> 500, pastels ->
+       200/100/50) re-tint without remapping. */
+    --blue-950: 333.72 57.45% 19.59%; /* #4f152e */
+    --blue-900: 333.16 58.26% 24.76%; /* #641a3b */
+    --blue-800: 332.7 59.07% 30.08%; /* #7a1f49 */
+    --blue-700: 332.82 56.92% 35.78%; /* #8f2756 */
+    --blue-600: 333.33 52.95% 41.84%; /* #a33264 */
+    --blue-500: 334.15 50.2% 48.04%; /* #b83d72 rose accent (primary) */
+    --blue-400: 335.2 55.06% 57.21%; /* #ce5687 */
+    --blue-300: 337.9 59.95% 69.72%; /* #e083a6 */
+    --blue-200: 338.79 72.07% 82.48%; /* #f3b2c9 */
+    --blue-100: 338.88 81.9% 90.08%; /* #fad1e0 */
+    --blue-50: 339.82 87.04% 96.14%; /* #feedf2 */
+
+    --blue-alpha-24: 334.15 50.2% 48.04% / 24%;
+    --blue-alpha-16: 334.15 50.2% 48.04% / 16%;
+    --blue-alpha-10: 334.15 50.2% 48.04% / 10%;
+
+    --red-600: 335.65 100% 43.38%; /* #dd005a */
+    --red-500: 334.9 93.73% 50%; /* #f7086c error */
+    --red-400: 343.05 94.38% 68.09%; /* #fa618c */
+
+    --red-alpha-24: 334.9 93.73% 50% / 24%;
+    --red-alpha-16: 334.9 93.73% 50% / 16%;
+    --red-alpha-10: 334.9 93.73% 50% / 10%;
+
+    --orange-600: 35.13 91.18% 45.68%; /* #df870a */
+    --orange-500: 37.69 92.13% 50.2%; /* #f59e0b warning (amber) */
+    --orange-400: 36.93 100% 63.64%; /* #ffb846 */
+
+    --orange-alpha-24: 37.69 92.13% 50.2% / 24%;
+    --orange-alpha-16: 37.69 92.13% 50.2% / 16%;
+    --orange-alpha-10: 37.69 92.13% 50.2% / 10%;
+
+    /* Slot deltas vs `:root` (same orientation, different stop values). */
+    --bg-white-0: var(--neutral-50); /* blush card surface, not pure white */
+    --stroke-soft-200: 340 35.59% 88.43%; /* #ecd7de - Sakura hairline */
+    --overlay: 332.5 21.82% 21.57% / 24%; /* #432b36 plum scrim */
+  }
+
+  .slate {
+    /* -------------------------------------------------------------------
+     * Slate - blue-gray dark theme.
+     * (adapted from the OKLCH reference palette of a code editor's default
+     * dark look - see the PR/source link; named by function, not vendor)
+     *
+     * A dark-scheme sibling of the Midnight/Aura/Harbor ramps: a soft
+     * desaturated blue accent over a slate blue-gray canvas, with muted
+     * one-dark-style status hues. Values map into the SAME semantic token
+     * slots the `.dark`/`.aura` blocks use (canvas -> bg-white-0, raised ->
+     * bg-sub-300, accent -> the blue/primary ramp). Unlike Aura/Harbor the
+     * source puts panels LIGHTER than the canvas (editor darkest), so
+     * chrome/raised/muted-row sit above the canvas like Midnight's ladder.
+     * The accent (#74ade8) is too light for white button text, so the
+     * primary button base is a deeper blue. `color-scheme` is pinned dark
+     * so native controls treat Slate as dark even though the class is not
+     * `.dark`. Hex in comments is the sRGB value each HSL triple encodes.
+     * ------------------------------------------------------------------- */
+    color-scheme: dark;
+    --brand-orbit: 210.52 71.6% 68.24%; /* #74ade8 soft blue accent */
+
+    --neutral-0: 0 0% 100%;
+    --neutral-50: 213.33 14.75% 88.04%; /* #dce0e5 text */
+    --neutral-100: 217.03 13.6% 78.96%; /* #c2c8d1 */
+    --neutral-200: 221.05 12.42% 70%; /* #a9afbc muted */
+    --neutral-300: 220.41 7.4% 51.56%; /* #7a808d */
+    --neutral-400: 221.94 10.01% 35.92%; /* #525865 stronger border */
+    --neutral-500: 221.19 9.75% 33.58%; /* #4d535e */
+    --neutral-600: 221.21 10.77% 31.48%; /* #484d59 */
+    --neutral-700: 220 13.24% 26.67%; /* #3b414d raised */
+    --neutral-800: 218.18 12.09% 17.84%; /* #282c33 canvas */
+    --neutral-900: 220 13.76% 21.37%; /* #2f343e chrome (lighter than canvas, per source) */
+    --neutral-950: 218.38 12.23% 14.67%; /* #21242a (derived) */
+
+    --neutral-alpha-24: 221.05 12.42% 70% / 24%;
+    --neutral-alpha-16: 221.05 12.42% 70% / 16%;
+    --neutral-alpha-10: 221.05 12.42% 70% / 10%;
+
+    /* Blue ramp carries the soft-blue accent (primary + information + links
+       + send/loading affordances all read the blue ramp). */
+    --blue-950: 210.38 61.23% 44.57%; /* #2c71b7 primary button (deeper for white text) */
+    --blue-900: 210.44 63.16% 31.13%; /* #1d4f82 */
+    --blue-800: 210.12 66.01% 37.46%; /* #205f9f primary active */
+    --blue-700: 210.56 59.3% 56.95%; /* #5090d2 */
+    --blue-600: 210.52 71.6% 68.24%; /* #74ade8 soft blue */
+    --blue-500: 210.52 71.6% 68.24%; /* #74ade8 soft blue */
+    --blue-400: 210.59 80.21% 75.43%; /* #8ebff3 */
+    --blue-300: 210.75 89.92% 81.58%; /* #a6cffa */
+    --blue-200: 210.46 77.13% 71.71%; /* #7fb6ee */
+    --blue-100: 210.38 61.23% 44.57% / 24%;
+    --blue-50: 210.38 61.23% 44.57% / 16%;
+
+    --blue-alpha-24: 210.38 61.23% 44.57% / 24%;
+    --blue-alpha-16: 210.38 61.23% 44.57% / 16%;
+    --blue-alpha-10: 210.38 61.23% 44.57% / 10%;
+
+    --orange-600: 37.78 48.9% 60.87%; /* #cca86a */
+    --orange-500: 40.67 57.69% 69.41%; /* #dec184 warning */
+    --orange-400: 41.74 64.1% 74.5%; /* #e8ce94 */
+
+    --orange-alpha-24: 40.67 57.69% 69.41% / 24%;
+    --orange-alpha-16: 40.67 57.69% 69.41% / 16%;
+    --orange-alpha-10: 40.67 57.69% 69.41% / 10%;
+
+    --red-600: 356.81 50% 63.14%; /* #d07277 error */
+    --red-500: 356.94 54.66% 68.09%; /* #da8186 */
+    --red-400: 355.97 58.37% 74.89%; /* #e49a9f */
+
+    --red-alpha-24: 356.81 50% 63.14% / 24%;
+    --red-alpha-16: 356.81 50% 63.14% / 16%;
+    --red-alpha-10: 356.81 50% 63.14% / 10%;
+
+    --green-600: 98.61 26.41% 52.71%; /* #7da667 success */
+    --green-500: 93.32 34.3% 61.64%; /* #99bf7c */
+    --green-400: 90.08 43.26% 68.56%; /* #afd28c */
+
+    --green-alpha-24: 93.32 34.3% 61.64% / 24%;
+    --green-alpha-16: 93.32 34.3% 61.64% / 16%;
+    --green-alpha-10: 93.32 34.3% 61.64% / 10%;
+
+    --yellow-600: 37.78 48.9% 60.87%; /* #cca86a */
+    --yellow-500: 40.67 57.69% 69.41%; /* #dec184 */
+    --yellow-400: 41.74 64.1% 74.5%; /* #e8ce94 */
+
+    --yellow-alpha-24: 40.67 57.69% 69.41% / 24%;
+    --yellow-alpha-16: 40.67 57.69% 69.41% / 16%;
+    --yellow-alpha-10: 40.67 57.69% 69.41% / 10%;
+
+    --purple-600: 274.68 32.59% 58.47%; /* #9a73b8 */
+    --purple-500: 274.42 43.86% 68.31%; /* #b38bd2 feature */
+    --purple-400: 274.06 58.44% 77.87%; /* #cba6e8 */
+
+    --purple-alpha-24: 274.42 43.86% 68.31% / 24%;
+    --purple-alpha-16: 274.42 43.86% 68.31% / 16%;
+    --purple-alpha-10: 274.42 43.86% 68.31% / 10%;
+
+    --sky-600: 193.76 46.25% 53.07%; /* #50a5bf verified */
+    --sky-500: 194.05 57.04% 62%; /* #67bbd5 */
+    --sky-400: 194.43 64.83% 70.76%; /* #84cee5 */
+
+    --sky-alpha-24: 194.05 57.04% 62% / 24%;
+    --sky-alpha-16: 194.05 57.04% 62% / 16%;
+    --sky-alpha-10: 194.05 57.04% 62% / 10%;
+
+    --pink-600: 340.79 43.68% 62.16%; /* #c9748f highlighted */
+    --pink-500: 341.6 52.75% 70.69%; /* #dc8da5 secondary pink */
+    --pink-400: 342.53 56.76% 77.59%; /* #e6a5b8 */
+
+    --pink-alpha-24: 341.6 52.75% 70.69% / 24%;
+    --pink-alpha-16: 341.6 52.75% 70.69% / 16%;
+    --pink-alpha-10: 341.6 52.75% 70.69% / 10%;
+
+    --teal-600: 176.2 32.54% 48.87%; /* #54a5a0 stable */
+    --teal-500: 175.98 37.37% 57.61%; /* #6bbbb6 */
+    --teal-400: 175.83 45.55% 65.18%; /* #7ecfc9 */
+
+    --teal-alpha-24: 175.98 37.37% 57.61% / 24%;
+    --teal-alpha-16: 175.98 37.37% 57.61% / 16%;
+    --teal-alpha-10: 175.98 37.37% 57.61% / 10%;
+
+    --primary-dark: var(--blue-950);
+    --primary-darker: var(--blue-800);
+    --primary-base: var(--blue-950);
+    --primary-alpha-24: var(--blue-alpha-24);
+    --primary-alpha-16: var(--blue-alpha-16);
+    --primary-alpha-10: var(--blue-alpha-10);
+
+    --bg-strong-950: var(--neutral-50);
+    --bg-surface-800: var(--neutral-100);
+    --bg-sub-300: var(--neutral-700);
+    --bg-soft-200: var(--neutral-900);
+    --bg-weak-50: 219.08 12.52% 19.74%; /* #2c3039 - Slate muted row (lighter than canvas, per source) */
+    --bg-white-0: var(--neutral-800);
+
+    --text-strong-950: var(--neutral-50);
+    --text-sub-600: var(--neutral-100);
+    --text-soft-400: var(--neutral-200);
+    --text-disabled-300: var(--neutral-300);
+    --text-white-0: var(--neutral-800);
+
+    --stroke-strong-950: var(--neutral-50);
+    --stroke-sub-300: var(--neutral-400);
+    --stroke-soft-200: 222.35 10.83% 30.78%; /* #464b57 - Slate border */
+    --stroke-white-0: var(--neutral-800);
+
+    --faded-dark: var(--neutral-100);
+    --faded-base: var(--neutral-200);
+    --faded-light: var(--neutral-alpha-24);
+    --faded-lighter: var(--neutral-alpha-16);
+
+    --information-dark: var(--blue-400);
+    --information-base: var(--blue-950);
+    --information-light: var(--blue-alpha-24);
+    --information-lighter: var(--blue-alpha-16);
+
+    --warning-dark: var(--orange-400);
+    --warning-base: var(--orange-500);
+    --warning-light: var(--orange-alpha-24);
+    --warning-lighter: var(--orange-alpha-16);
+
+    --error-dark: var(--red-400);
+    --error-base: var(--red-600);
+    --error-light: var(--red-alpha-24);
+    --error-lighter: var(--red-alpha-16);
+
+    --success-dark: var(--green-400);
+    --success-base: var(--green-600);
+    --success-light: var(--green-alpha-24);
+    --success-lighter: var(--green-alpha-16);
+
+    --away-dark: var(--yellow-400);
+    --away-base: var(--yellow-600);
+    --away-light: var(--yellow-alpha-24);
+    --away-lighter: var(--yellow-alpha-16);
+
+    --feature-dark: var(--purple-400);
+    --feature-base: var(--purple-500);
+    --feature-light: var(--purple-alpha-24);
+    --feature-lighter: var(--purple-alpha-16);
+
+    --verified-dark: var(--sky-400);
+    --verified-base: var(--sky-600);
+    --verified-light: var(--sky-alpha-24);
+    --verified-lighter: var(--sky-alpha-16);
+
+    --highlighted-dark: var(--pink-400);
+    --highlighted-base: var(--pink-600);
+    --highlighted-light: var(--pink-alpha-24);
+    --highlighted-lighter: var(--pink-alpha-16);
+
+    --stable-dark: var(--teal-400);
+    --stable-base: var(--teal-600);
+    --stable-light: var(--teal-alpha-24);
+    --stable-lighter: var(--teal-alpha-16);
+
+    --overlay: 218.38 12.23% 14.67% / 72%; /* #21242a scrim */
+
+    --social-apple: 0 0% 100%;
+    --social-twitter: 0 0% 100%;
+    --social-github: 0 0% 100%;
+    --social-notion: 0 0% 100%;
+    --social-tidal: 0 0% 100%;
+    --social-amazon: 0 0% 100%;
+    --social-zendesk: 0 0% 100%;
+  }
   /*#endregion Colors */
 
   html {
@@ -1068,7 +1580,9 @@
 
   .dark,
   .aura,
-  .harbor {
+  .harbor,
+  .phosphor,
+  .slate {
     --illustration-white-0: var(--neutral-950);
     --illustration-weak-100: var(--neutral-900);
     --illustration-soft-200: var(--neutral-800);
@@ -1078,19 +1592,27 @@
 }
 
 /* ===========================================================================
- * BoardUI semantic tokens for the Aura + Harbor themes.
+ * BoardUI semantic tokens for the Aura / Harbor / Phosphor / Sakura / Slate
+ * themes.
  *
  * styles/theme.css (vendor, untouched) only flips the BoardUI semantic slots
- * under `.dark`; `.aura`/`.harbor` are standalone classes, so without these
+ * under `.dark`; the other theme classes are standalone, so without these
  * blocks every BoardUI-converted surface (bg-background-*, text-text-*,
  * border-border-*, foreground-icon-*, shadow-*) stayed LIGHT while the legacy
- * AlignUI vars above went dark. Each block below overrides the SAME slot list
- * as theme.css's `.dark` (plus text-secondary and the accent ramp, which
+ * AlignUI vars above went dark. Each dark block below overrides the SAME slot
+ * list as theme.css's `.dark` (plus text-secondary and the accent ramp, which
  * `.dark` inherits from light but which must re-tint here), deriving values
  * from the theme's OWN AlignUI ramps in this file, so both token systems stay
  * in lockstep per theme:
- *   aura   - violet-tinted dark (canvas #15141b, accent #a277ff violet)
- *   harbor - blue-slate dark    (canvas #0b0e14, accent #7aa2f7 periwinkle)
+ *   aura     - violet-tinted dark (canvas #15141b, accent #a277ff violet)
+ *   harbor   - blue-slate dark    (canvas #0b0e14, accent #7aa2f7 periwinkle)
+ *   phosphor - CRT-green dark     (canvas #060b06, accent #3dff7c green)
+ *   slate    - blue-gray dark     (canvas #282c33, accent #74ade8 soft blue)
+ *   sakura   - cherry-blossom LIGHT (canvas #fbf3f5, accent #b83d72 rose):
+ *              same orientation as theme.css's light `:root`, so its block
+ *              re-tints the light recipes (accent ramp + the neutral-driven
+ *              and error slots) and keeps the light shadow + status-chip
+ *              defaults, which already sit well on a light canvas.
  * MUST stay un-layered: theme.css's `:root` semantic block is un-layered, and
  * an @layer'd override would lose to it regardless of specificity.
  * ========================================================================= */
@@ -1496,6 +2018,524 @@
   --color-chart-agents-bar-active: hsl(var(--purple-600));
 }
 
+.phosphor {
+  /* Accent ramp -> Phosphor green. 500 mirrors AlignUI --primary-base
+   * (blue-950 #0a7e3a: the vivid #3dff7c is far too light under white text). */
+  --color-accent-50:  hsl(var(--blue-50));
+  --color-accent-100: hsl(var(--blue-100));
+  --color-accent-200: hsl(var(--blue-200));
+  --color-accent-300: hsl(var(--blue-300));
+  --color-accent-400: hsl(var(--blue-700));  /* #20a04e hover-top */
+  --color-accent-500: hsl(var(--blue-950));  /* #0a7e3a primary base */
+  --color-accent-600: hsl(var(--blue-800));  /* #046a2f */
+  --color-accent-700: hsl(var(--blue-900));  /* #005725 */
+  --color-accent-800: hsl(var(--blue-800));
+  --color-accent-900: hsl(var(--blue-900));
+  --color-accent-950: hsl(var(--blue-950));
+
+  /* Foreground */
+  --color-foreground-full:            hsl(var(--neutral-400));
+  --color-foreground-icon-primary:    hsl(var(--neutral-50));
+  --color-foreground-icon-hover:      hsl(var(--neutral-0));
+  --color-foreground-icon-error:      hsl(var(--red-400));
+  --color-foreground-icon-tertiary:   hsl(var(--neutral-200));
+  --color-foreground-icon-quaternary: hsl(var(--neutral-300));
+  --color-foreground-icon-disabled:   hsl(135.65 29.11% 15.49%); /* #1c3322 */
+  --color-foreground-disabled:        hsl(var(--neutral-400));
+  --color-foreground-disabled-danger: hsl(var(--red-400));
+  --color-input-disabled-foreground:  hsl(var(--neutral-300));
+  --color-icon-button-disabled-foreground: hsl(var(--neutral-200));
+  --color-button-primary-disabled-foreground: hsl(var(--neutral-200));
+
+  /* Text */
+  --color-text-primary:   hsl(var(--neutral-50));
+  --color-text-secondary: hsl(var(--neutral-100));
+  --color-text-tertiary:  hsl(var(--neutral-200));
+  --color-text-disabled:  hsl(135.65 29.11% 15.49%); /* #1c3322 */
+  --color-text-error-primary: hsl(var(--red-400));
+  --color-input-disabled-text: color-mix(in srgb, hsl(var(--neutral-200)) 40%, transparent);
+
+  /* Background */
+  --color-background-full:              hsl(var(--neutral-800));
+  --color-background-primary-default:   hsl(var(--neutral-700));
+  --color-background-inner-default:     color-mix(in srgb, hsl(var(--neutral-700)) 60%, transparent);
+  --color-background-primary-hover:     color-mix(in srgb, hsl(var(--neutral-400)) 60%, transparent);
+  --color-background-primary-active:    hsl(var(--neutral-700));
+  --color-background-primary-disabled:  hsl(var(--neutral-700));
+  --color-input-disabled-background:    color-mix(in srgb, hsl(var(--neutral-700)) 30%, transparent);
+  --color-switch-off-chip-start:        var(--color-background-tertiary-default);
+  --color-switch-off-chip-end:          var(--color-background-tertiary-default);
+  --color-background-secondary-default: hsl(var(--neutral-900));
+  --color-background-secondary-hover:   hsl(var(--neutral-700));
+  --color-background-tertiary-default:  hsl(var(--neutral-700));
+  --color-background-tertiary-hover:    hsl(var(--neutral-400));
+  --color-background-tertiary-error:    hsl(var(--red-alpha-16));
+  --color-background-quaternary-default: hsl(var(--neutral-400));
+  --color-background-quaternary-hover:   hsl(var(--neutral-300));
+  --color-background-recent-hire-role:  color-mix(in srgb, hsl(var(--neutral-900)) 60%, transparent);
+  --color-avatar-neutral-background:    var(--color-background-primary-default);
+  --color-file-upload-icon-background:  hsl(var(--neutral-300));
+  --color-file-upload-icon-foreground:  hsl(var(--neutral-100));
+  --color-file-upload-icon-foreground-hover: hsl(var(--neutral-50));
+  --color-stat-card-icon-background:    hsl(var(--neutral-700));
+  --color-segmented-control-background:          hsl(var(--neutral-800));
+  --color-segmented-control-selected-background: hsl(var(--neutral-700));
+  --color-theme-toggle-sidebar-background:       hsl(var(--neutral-700));
+  --color-theme-toggle-sidebar-selected-background: hsl(var(--neutral-400));
+  --color-ai-chat-composer-add-background:       hsl(var(--neutral-400));
+  --color-ai-chat-composer-add-hover-background: hsl(var(--neutral-300));
+  --color-agent-progress-ring:                   color-mix(in srgb, hsl(var(--neutral-0)) 50%, transparent);
+  --color-button-ghost-background:               hsl(var(--blue-900));
+  --color-button-ghost-hover:                    hsl(var(--blue-800));
+  --color-button-ghost-active:                   hsl(var(--blue-700));
+  --color-button-ghost-disabled:                 hsl(var(--neutral-700));
+  --color-button-ghost-foreground:               hsl(var(--blue-300));
+  --color-button-ghost-disabled-foreground:      hsl(var(--neutral-300));
+  --color-dropdown-item-hover-background:        color-mix(in srgb, hsl(var(--neutral-400)) 60%, transparent);
+  --color-kbd-background:                        hsl(var(--neutral-400));
+  --color-kbd-foreground:                        hsl(var(--neutral-100));
+  --color-docs-file-chip-background:             hsl(var(--purple-alpha-16));
+  --color-docs-file-chip-border:                 color-mix(in srgb, hsl(var(--purple-500)) 40%, transparent);
+  --color-docs-file-chip-foreground:             hsl(var(--purple-400));
+  --color-docs-code-background:                  var(--color-background-full);
+  --color-docs-install-rail:                     color-mix(in srgb, hsl(var(--neutral-700)) 60%, transparent);
+
+  /* Elevation: same raised-black-alpha recipe as theme.css `.dark`. */
+  --shadow-2xs: 0 1px rgb(0 0 0 / 0.16);
+  --shadow-xs: 0 1px 2px 0 rgb(0 0 0 / 0.18);
+  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.12), 0 1px 3px 0 rgb(0 0 0 / 0.16);
+  --shadow-md: 0 2px 4px -1px rgb(0 0 0 / 0.12), 0 4px 6px -1px rgb(0 0 0 / 0.18);
+  --shadow-lg: 0 4px 6px -2px rgb(0 0 0 / 0.10), 0 10px 15px -3px rgb(0 0 0 / 0.18);
+  --shadow-xl: 0 10px 10px -5px rgb(0 0 0 / 0.08), 0 20px 25px -5px rgb(0 0 0 / 0.20);
+  --shadow-card: 0 1px 1px 0 rgb(0 0 0 / 0.14);
+  --shadow-dropdown:
+    0 1px 1px 0 rgb(0 0 0 / 0.14),
+    0 4px 4px 0 rgb(0 0 0 / 0.10);
+  --shadow-sidebar:
+    0 1px 0 0 rgb(0 0 0 / 0.10),
+    0 1px 12px 0 rgb(0 0 0 / 0.16),
+    0 0 1px 0 rgb(0 0 0 / 0.42);
+  --shadow-waitlist:
+    0 0 6px 0 rgb(0 0 0 / 0.12),
+    0 0 64px 0 rgb(0 0 0 / 0.22),
+    0 0 1px 0 rgb(0 0 0 / 0.42),
+    0 1px 12px 0 rgb(0 0 0 / 0.14),
+    0 1px 0 0 rgb(0 0 0 / 0.08);
+
+  /* Badges */
+  --color-badge-neutral-background: hsl(var(--neutral-700));
+  --color-team-menu-count-background: hsl(var(--neutral-400));
+  --color-team-menu-count-foreground: hsl(var(--neutral-100));
+  --color-badge-new-background: hsl(var(--blue-alpha-24));
+  --color-badge-new-text:       hsl(var(--blue-400));
+  --color-tab-count-selected-background: color-mix(in srgb, hsl(var(--blue-800)) 60%, transparent);
+
+  /* Status discs */
+  --color-notification-information-background: color-mix(in srgb, hsl(var(--blue-800)) 50%, transparent);
+  --color-notification-information-foreground: hsl(var(--blue-300));
+  --color-notification-success-background:     hsl(var(--green-alpha-24));
+  --color-notification-success-foreground:     hsl(var(--green-400));
+  --color-notification-error-background:       hsl(var(--red-alpha-24));
+  --color-notification-error-foreground:       hsl(var(--red-400));
+  --color-notification-center-background:      hsl(var(--neutral-900));
+
+  /* Borders and separators */
+  --color-border-button-default:   hsl(var(--neutral-400));
+  --color-border-button-hover:     hsl(var(--neutral-200));
+  --color-border-button-active:    hsl(var(--neutral-300));
+  --color-border-button-white:     hsl(135.65 29.11% 15.49%); /* #1c3322 */
+  --color-border-error-default:    hsl(var(--red-400));
+  --color-border-checkbox-default: hsl(var(--neutral-400));
+  --color-border-checkbox-hover:   hsl(var(--neutral-200));
+  --color-border-checkbox-active:  hsl(var(--neutral-200));
+  --color-border-component-detail-container: hsl(135.65 29.11% 15.49%);
+  --color-border-ai-profile-card:  hsl(135.65 29.11% 15.49%);
+  --color-border-table:            hsl(135.65 29.11% 15.49%);
+  --color-border-button-group:     color-mix(in srgb, hsl(var(--neutral-300)) 60%, transparent);
+  --color-border-sidebar-profile-hover: hsl(var(--neutral-300));
+  --color-separator-border:        hsl(135.65 29.11% 15.49%); /* #1c3322 Phosphor border */
+  --color-separator-border-strong: color-mix(in srgb, hsl(var(--neutral-400)) 60%, transparent);
+
+  /* Table status chips (lime->green, rose->red, cyan->sky, indigo->purple) */
+  --color-status-lime-background:   hsl(var(--green-alpha-24));
+  --color-status-lime-text:         hsl(var(--green-400));
+  --color-status-yellow-background: hsl(var(--yellow-alpha-24));
+  --color-status-yellow-text:       hsl(var(--yellow-400));
+  --color-status-rose-background:   hsl(var(--red-alpha-24));
+  --color-status-rose-text:         hsl(var(--red-400));
+  --color-status-cyan-background:   hsl(var(--sky-alpha-24));
+  --color-status-cyan-text:         hsl(var(--sky-400));
+  --color-status-blue-background:   hsl(var(--blue-alpha-24));
+  --color-status-blue-text:         hsl(var(--blue-300));
+  --color-status-purple-background: hsl(var(--purple-alpha-24));
+  --color-status-purple-text:       hsl(var(--purple-400));
+  --color-status-dot-green-halo:    hsl(var(--green-alpha-24));
+  --color-status-dot-yellow-halo:   hsl(var(--yellow-alpha-24));
+  --color-status-dot-indigo-halo:   hsl(var(--purple-alpha-24));
+
+  --color-date-range-background:      hsl(var(--blue-alpha-24));
+  --color-date-range-edge-background: hsl(var(--blue-800));
+
+  --color-pill-tab-blue-selected-background: color-mix(in srgb, hsl(var(--blue-900)) 60%, transparent);
+  --color-pill-tab-blue-hover-background: hsl(var(--neutral-700));
+
+  /* Calendar event chips */
+  --color-calendar-event-blue-background:    hsl(var(--blue-alpha-24));
+  --color-calendar-event-blue-title:         hsl(var(--blue-300));
+  --color-calendar-event-blue-time:          hsl(var(--blue-300));
+  --color-calendar-event-pink-background:    hsl(var(--pink-alpha-24));
+  --color-calendar-event-pink-title:         hsl(var(--pink-400));
+  --color-calendar-event-pink-time:          hsl(var(--pink-400));
+  --color-calendar-event-purple-background:  hsl(var(--purple-alpha-24));
+  --color-calendar-event-purple-title:       hsl(var(--purple-400));
+  --color-calendar-event-purple-time:        hsl(var(--purple-400));
+  --color-calendar-event-lime-background:    hsl(var(--green-alpha-24));
+  --color-calendar-event-lime-title:         hsl(var(--green-400));
+  --color-calendar-event-lime-time:          hsl(var(--green-400));
+  --color-calendar-event-emerald-background: hsl(var(--teal-alpha-24));
+  --color-calendar-event-emerald-title:      hsl(var(--teal-400));
+  --color-calendar-event-emerald-time:       hsl(var(--teal-400));
+
+  /* Disabled CTAs */
+  --gradient-button-primary-disabled: linear-gradient(
+    180deg,
+    hsl(var(--neutral-400)) 0%,
+    hsl(var(--neutral-700)) 100%
+  );
+  --gradient-button-danger-disabled: linear-gradient(
+    180deg,
+    color-mix(in srgb, hsl(var(--red-600)) 45%, black) 0%,
+    color-mix(in srgb, hsl(var(--red-600)) 28%, black) 100%
+  );
+
+  /* Charts */
+  --color-chart-track:   hsl(var(--neutral-700));
+  --color-chart-cursor:  hsl(var(--neutral-400));
+  --color-chart-neutral: hsl(var(--neutral-700));
+  --color-chart-agents-bar:        hsl(var(--purple-500));
+  --color-chart-agents-bar-active: hsl(var(--purple-600));
+}
+
+.slate {
+  /* Accent ramp -> Slate soft blue. 500 mirrors AlignUI --primary-base
+   * (blue-950 #2c71b7: the soft #74ade8 is too light under white text). */
+  --color-accent-50:  hsl(var(--blue-50));
+  --color-accent-100: hsl(var(--blue-100));
+  --color-accent-200: hsl(var(--blue-200));
+  --color-accent-300: hsl(var(--blue-300));
+  --color-accent-400: hsl(var(--blue-700));  /* #5090d2 hover-top */
+  --color-accent-500: hsl(var(--blue-950));  /* #2c71b7 primary base */
+  --color-accent-600: hsl(var(--blue-800));  /* #205f9f */
+  --color-accent-700: hsl(var(--blue-900));  /* #1d4f82 */
+  --color-accent-800: hsl(var(--blue-800));
+  --color-accent-900: hsl(var(--blue-900));
+  --color-accent-950: hsl(var(--blue-950));
+
+  /* Foreground */
+  --color-foreground-full:            hsl(var(--neutral-400));
+  --color-foreground-icon-primary:    hsl(var(--neutral-50));
+  --color-foreground-icon-hover:      hsl(var(--neutral-0));
+  --color-foreground-icon-error:      hsl(var(--red-400));
+  --color-foreground-icon-tertiary:   hsl(var(--neutral-200));
+  --color-foreground-icon-quaternary: hsl(var(--neutral-300));
+  --color-foreground-icon-disabled:   hsl(222.35 10.83% 30.78%); /* #464b57 */
+  --color-foreground-disabled:        hsl(var(--neutral-400));
+  --color-foreground-disabled-danger: hsl(var(--red-400));
+  --color-input-disabled-foreground:  hsl(var(--neutral-300));
+  --color-icon-button-disabled-foreground: hsl(var(--neutral-200));
+  --color-button-primary-disabled-foreground: hsl(var(--neutral-200));
+
+  /* Text */
+  --color-text-primary:   hsl(var(--neutral-50));
+  --color-text-secondary: hsl(var(--neutral-100));
+  --color-text-tertiary:  hsl(var(--neutral-200));
+  --color-text-disabled:  hsl(222.35 10.83% 30.78%); /* #464b57 */
+  --color-text-error-primary: hsl(var(--red-400));
+  --color-input-disabled-text: color-mix(in srgb, hsl(var(--neutral-200)) 40%, transparent);
+
+  /* Background */
+  --color-background-full:              hsl(var(--neutral-800));
+  --color-background-primary-default:   hsl(var(--neutral-700));
+  --color-background-inner-default:     color-mix(in srgb, hsl(var(--neutral-700)) 60%, transparent);
+  --color-background-primary-hover:     color-mix(in srgb, hsl(var(--neutral-400)) 60%, transparent);
+  --color-background-primary-active:    hsl(var(--neutral-700));
+  --color-background-primary-disabled:  hsl(var(--neutral-700));
+  --color-input-disabled-background:    color-mix(in srgb, hsl(var(--neutral-700)) 30%, transparent);
+  --color-switch-off-chip-start:        var(--color-background-tertiary-default);
+  --color-switch-off-chip-end:          var(--color-background-tertiary-default);
+  --color-background-secondary-default: hsl(var(--neutral-900));
+  --color-background-secondary-hover:   hsl(var(--neutral-700));
+  --color-background-tertiary-default:  hsl(var(--neutral-700));
+  --color-background-tertiary-hover:    hsl(var(--neutral-400));
+  --color-background-tertiary-error:    hsl(var(--red-alpha-16));
+  --color-background-quaternary-default: hsl(var(--neutral-400));
+  --color-background-quaternary-hover:   hsl(var(--neutral-300));
+  --color-background-recent-hire-role:  color-mix(in srgb, hsl(var(--neutral-900)) 60%, transparent);
+  --color-avatar-neutral-background:    var(--color-background-primary-default);
+  --color-file-upload-icon-background:  hsl(var(--neutral-300));
+  --color-file-upload-icon-foreground:  hsl(var(--neutral-100));
+  --color-file-upload-icon-foreground-hover: hsl(var(--neutral-50));
+  --color-stat-card-icon-background:    hsl(var(--neutral-700));
+  --color-segmented-control-background:          hsl(var(--neutral-800));
+  --color-segmented-control-selected-background: hsl(var(--neutral-700));
+  --color-theme-toggle-sidebar-background:       hsl(var(--neutral-700));
+  --color-theme-toggle-sidebar-selected-background: hsl(var(--neutral-400));
+  --color-ai-chat-composer-add-background:       hsl(var(--neutral-400));
+  --color-ai-chat-composer-add-hover-background: hsl(var(--neutral-300));
+  --color-agent-progress-ring:                   color-mix(in srgb, hsl(var(--neutral-0)) 50%, transparent);
+  --color-button-ghost-background:               hsl(var(--blue-900));
+  --color-button-ghost-hover:                    hsl(var(--blue-800));
+  --color-button-ghost-active:                   hsl(var(--blue-700));
+  --color-button-ghost-disabled:                 hsl(var(--neutral-700));
+  --color-button-ghost-foreground:               hsl(var(--blue-300));
+  --color-button-ghost-disabled-foreground:      hsl(var(--neutral-300));
+  --color-dropdown-item-hover-background:        color-mix(in srgb, hsl(var(--neutral-400)) 60%, transparent);
+  --color-kbd-background:                        hsl(var(--neutral-400));
+  --color-kbd-foreground:                        hsl(var(--neutral-100));
+  --color-docs-file-chip-background:             hsl(var(--purple-alpha-16));
+  --color-docs-file-chip-border:                 color-mix(in srgb, hsl(var(--purple-500)) 40%, transparent);
+  --color-docs-file-chip-foreground:             hsl(var(--purple-400));
+  --color-docs-code-background:                  var(--color-background-full);
+  --color-docs-install-rail:                     color-mix(in srgb, hsl(var(--neutral-700)) 60%, transparent);
+
+  /* Elevation: same raised-black-alpha recipe as theme.css `.dark`. */
+  --shadow-2xs: 0 1px rgb(0 0 0 / 0.16);
+  --shadow-xs: 0 1px 2px 0 rgb(0 0 0 / 0.18);
+  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.12), 0 1px 3px 0 rgb(0 0 0 / 0.16);
+  --shadow-md: 0 2px 4px -1px rgb(0 0 0 / 0.12), 0 4px 6px -1px rgb(0 0 0 / 0.18);
+  --shadow-lg: 0 4px 6px -2px rgb(0 0 0 / 0.10), 0 10px 15px -3px rgb(0 0 0 / 0.18);
+  --shadow-xl: 0 10px 10px -5px rgb(0 0 0 / 0.08), 0 20px 25px -5px rgb(0 0 0 / 0.20);
+  --shadow-card: 0 1px 1px 0 rgb(0 0 0 / 0.14);
+  --shadow-dropdown:
+    0 1px 1px 0 rgb(0 0 0 / 0.14),
+    0 4px 4px 0 rgb(0 0 0 / 0.10);
+  --shadow-sidebar:
+    0 1px 0 0 rgb(0 0 0 / 0.10),
+    0 1px 12px 0 rgb(0 0 0 / 0.16),
+    0 0 1px 0 rgb(0 0 0 / 0.42);
+  --shadow-waitlist:
+    0 0 6px 0 rgb(0 0 0 / 0.12),
+    0 0 64px 0 rgb(0 0 0 / 0.22),
+    0 0 1px 0 rgb(0 0 0 / 0.42),
+    0 1px 12px 0 rgb(0 0 0 / 0.14),
+    0 1px 0 0 rgb(0 0 0 / 0.08);
+
+  /* Badges */
+  --color-badge-neutral-background: hsl(var(--neutral-700));
+  --color-team-menu-count-background: hsl(var(--neutral-400));
+  --color-team-menu-count-foreground: hsl(var(--neutral-100));
+  --color-badge-new-background: hsl(var(--blue-alpha-24));
+  --color-badge-new-text:       hsl(var(--blue-400));
+  --color-tab-count-selected-background: color-mix(in srgb, hsl(var(--blue-800)) 60%, transparent);
+
+  /* Status discs */
+  --color-notification-information-background: color-mix(in srgb, hsl(var(--blue-800)) 50%, transparent);
+  --color-notification-information-foreground: hsl(var(--blue-300));
+  --color-notification-success-background:     hsl(var(--green-alpha-24));
+  --color-notification-success-foreground:     hsl(var(--green-400));
+  --color-notification-error-background:       hsl(var(--red-alpha-24));
+  --color-notification-error-foreground:       hsl(var(--red-400));
+  --color-notification-center-background:      hsl(var(--neutral-900));
+
+  /* Borders and separators */
+  --color-border-button-default:   hsl(var(--neutral-400));
+  --color-border-button-hover:     hsl(var(--neutral-200));
+  --color-border-button-active:    hsl(var(--neutral-300));
+  --color-border-button-white:     hsl(222.35 10.83% 30.78%); /* #464b57 */
+  --color-border-error-default:    hsl(var(--red-400));
+  --color-border-checkbox-default: hsl(var(--neutral-400));
+  --color-border-checkbox-hover:   hsl(var(--neutral-200));
+  --color-border-checkbox-active:  hsl(var(--neutral-200));
+  --color-border-component-detail-container: hsl(222.35 10.83% 30.78%);
+  --color-border-ai-profile-card:  hsl(222.35 10.83% 30.78%);
+  --color-border-table:            hsl(222.35 10.83% 30.78%);
+  --color-border-button-group:     color-mix(in srgb, hsl(var(--neutral-300)) 60%, transparent);
+  --color-border-sidebar-profile-hover: hsl(var(--neutral-300));
+  --color-separator-border:        hsl(222.35 10.83% 30.78%); /* #464b57 Slate border */
+  --color-separator-border-strong: color-mix(in srgb, hsl(var(--neutral-400)) 60%, transparent);
+
+  /* Table status chips (lime->green, rose->red, cyan->sky, indigo->purple) */
+  --color-status-lime-background:   hsl(var(--green-alpha-24));
+  --color-status-lime-text:         hsl(var(--green-400));
+  --color-status-yellow-background: hsl(var(--yellow-alpha-24));
+  --color-status-yellow-text:       hsl(var(--yellow-400));
+  --color-status-rose-background:   hsl(var(--red-alpha-24));
+  --color-status-rose-text:         hsl(var(--red-400));
+  --color-status-cyan-background:   hsl(var(--sky-alpha-24));
+  --color-status-cyan-text:         hsl(var(--sky-400));
+  --color-status-blue-background:   hsl(var(--blue-alpha-24));
+  --color-status-blue-text:         hsl(var(--blue-300));
+  --color-status-purple-background: hsl(var(--purple-alpha-24));
+  --color-status-purple-text:       hsl(var(--purple-400));
+  --color-status-dot-green-halo:    hsl(var(--green-alpha-24));
+  --color-status-dot-yellow-halo:   hsl(var(--yellow-alpha-24));
+  --color-status-dot-indigo-halo:   hsl(var(--purple-alpha-24));
+
+  --color-date-range-background:      hsl(var(--blue-alpha-24));
+  --color-date-range-edge-background: hsl(var(--blue-800));
+
+  --color-pill-tab-blue-selected-background: color-mix(in srgb, hsl(var(--blue-900)) 60%, transparent);
+  --color-pill-tab-blue-hover-background: hsl(var(--neutral-700));
+
+  /* Calendar event chips */
+  --color-calendar-event-blue-background:    hsl(var(--blue-alpha-24));
+  --color-calendar-event-blue-title:         hsl(var(--blue-300));
+  --color-calendar-event-blue-time:          hsl(var(--blue-300));
+  --color-calendar-event-pink-background:    hsl(var(--pink-alpha-24));
+  --color-calendar-event-pink-title:         hsl(var(--pink-400));
+  --color-calendar-event-pink-time:          hsl(var(--pink-400));
+  --color-calendar-event-purple-background:  hsl(var(--purple-alpha-24));
+  --color-calendar-event-purple-title:       hsl(var(--purple-400));
+  --color-calendar-event-purple-time:        hsl(var(--purple-400));
+  --color-calendar-event-lime-background:    hsl(var(--green-alpha-24));
+  --color-calendar-event-lime-title:         hsl(var(--green-400));
+  --color-calendar-event-lime-time:          hsl(var(--green-400));
+  --color-calendar-event-emerald-background: hsl(var(--teal-alpha-24));
+  --color-calendar-event-emerald-title:      hsl(var(--teal-400));
+  --color-calendar-event-emerald-time:       hsl(var(--teal-400));
+
+  /* Disabled CTAs */
+  --gradient-button-primary-disabled: linear-gradient(
+    180deg,
+    hsl(var(--neutral-400)) 0%,
+    hsl(var(--neutral-700)) 100%
+  );
+  --gradient-button-danger-disabled: linear-gradient(
+    180deg,
+    color-mix(in srgb, hsl(var(--red-600)) 45%, black) 0%,
+    color-mix(in srgb, hsl(var(--red-600)) 28%, black) 100%
+  );
+
+  /* Charts */
+  --color-chart-track:   hsl(var(--neutral-700));
+  --color-chart-cursor:  hsl(var(--neutral-400));
+  --color-chart-neutral: hsl(var(--neutral-700));
+  --color-chart-agents-bar:        hsl(var(--purple-500));
+  --color-chart-agents-bar-active: hsl(var(--purple-600));
+}
+
+.sakura {
+  /* LIGHT theme: same orientation as theme.css's `:root`, so this block
+   * re-tints the light recipes through Sakura's blush AlignUI ramps instead
+   * of mirroring `.dark`. Slots identical to the light defaults (status
+   * chips, calendar events, light shadows, danger gradients - Tailwind's red
+   * is within a hair of Sakura's error) are deliberately NOT repeated here.
+   *
+   * Accent ramp -> Sakura rose. The AlignUI blue ramp above is already a
+   * light 50->950 ladder, so it maps 1:1 (500 = #b83d72 primary base). */
+  --color-accent-50:  hsl(var(--blue-50));
+  --color-accent-100: hsl(var(--blue-100));
+  --color-accent-200: hsl(var(--blue-200));
+  --color-accent-300: hsl(var(--blue-300));
+  --color-accent-400: hsl(var(--blue-400));
+  --color-accent-500: hsl(var(--blue-500));
+  --color-accent-600: hsl(var(--blue-600));
+  --color-accent-700: hsl(var(--blue-700));
+  --color-accent-800: hsl(var(--blue-800));
+  --color-accent-900: hsl(var(--blue-900));
+  --color-accent-950: hsl(var(--blue-950));
+
+  /* Foreground */
+  --color-foreground-full:            hsl(var(--neutral-0));
+  --color-foreground-icon-primary:    hsl(var(--neutral-950));
+  --color-foreground-icon-hover:      hsl(var(--neutral-950));
+  --color-foreground-icon-error:      hsl(var(--red-600));
+  --color-foreground-icon-tertiary:   hsl(var(--neutral-400));
+  --color-foreground-icon-quaternary: hsl(var(--neutral-300));
+  --color-foreground-icon-disabled:   hsl(var(--neutral-300));
+  --color-foreground-disabled:        hsl(var(--neutral-400));
+  --color-foreground-disabled-danger: hsl(var(--red-300));
+  --color-input-disabled-foreground:  hsl(var(--neutral-300));
+  --color-icon-button-disabled-foreground: hsl(var(--neutral-300));
+  --color-button-primary-disabled-foreground: hsl(var(--neutral-400));
+
+  /* Text */
+  --color-text-primary:   hsl(var(--neutral-950));
+  --color-text-secondary: hsl(var(--neutral-500));
+  --color-text-tertiary:  hsl(var(--neutral-400));
+  --color-text-disabled:  hsl(var(--neutral-300));
+  --color-text-error-primary: hsl(var(--red-500));
+  --color-input-disabled-text: hsl(var(--neutral-300));
+
+  /* Background */
+  --color-background-full:              hsl(var(--neutral-50));
+  --color-background-primary-default:   hsl(var(--neutral-50));
+  --color-background-inner-default:     hsl(var(--neutral-50));
+  --color-background-primary-hover:     hsl(var(--neutral-100));
+  --color-background-primary-active:    hsl(var(--neutral-200));
+  --color-background-primary-disabled:  hsl(var(--neutral-100));
+  --color-input-disabled-background:    hsl(var(--neutral-100));
+  --color-switch-off-chip-start:        hsl(var(--neutral-0));
+  --color-switch-off-chip-end:          hsl(var(--neutral-100));
+  --color-background-secondary-default: hsl(var(--neutral-100));
+  --color-background-secondary-hover:   hsl(var(--neutral-200));
+  --color-background-tertiary-default:  hsl(var(--neutral-200));
+  --color-background-tertiary-hover:    hsl(var(--neutral-300));
+  --color-background-tertiary-error:    hsl(var(--red-100));
+  --color-background-quaternary-default: hsl(var(--neutral-300));
+  --color-background-quaternary-hover:   hsl(var(--neutral-400));
+  --color-background-recent-hire-role:  hsl(var(--neutral-100));
+  --color-avatar-neutral-background:    hsl(var(--neutral-300));
+  --color-file-upload-icon-background:  hsl(var(--neutral-300));
+  --color-file-upload-icon-foreground:  hsl(var(--neutral-400));
+  --color-file-upload-icon-foreground-hover: hsl(var(--neutral-500));
+  --color-stat-card-icon-background:    hsl(var(--neutral-0));
+  --color-segmented-control-background:          hsl(var(--neutral-100));
+  --color-segmented-control-selected-background: hsl(var(--neutral-0));
+  --color-theme-toggle-sidebar-background:       hsl(var(--neutral-200));
+  --color-theme-toggle-sidebar-selected-background: hsl(var(--neutral-0));
+  --color-ai-chat-composer-add-background:       hsl(var(--neutral-100));
+  --color-ai-chat-composer-add-hover-background: hsl(var(--neutral-200));
+  --color-agent-progress-ring:                   hsl(var(--neutral-700));
+  --color-dropdown-item-hover-background:        hsl(var(--neutral-100));
+  --color-kbd-background:                        hsl(var(--neutral-300));
+  --color-kbd-foreground:                        hsl(var(--neutral-500));
+  --color-docs-code-background:                  var(--color-background-primary-default);
+  --color-docs-install-rail:                     var(--color-border-button-default);
+
+  /* Badges */
+  --color-badge-neutral-background: hsl(var(--neutral-200));
+  --color-team-menu-count-background: hsl(var(--neutral-200));
+  --color-team-menu-count-foreground: hsl(var(--neutral-500));
+
+  /* Information disc re-tints to the rose accent; success/error keep
+   * theme.css's light lime/rose pastels, already at home on blush. */
+  --color-notification-information-background: hsl(var(--blue-100));
+  --color-notification-information-foreground: hsl(var(--blue-600));
+  --color-notification-center-background:      hsl(var(--neutral-0));
+
+  /* Borders and separators */
+  --color-border-button-default:   hsl(var(--neutral-200));
+  --color-border-button-hover:     hsl(var(--neutral-300));
+  --color-border-button-active:    hsl(var(--neutral-400));
+  --color-border-button-white:     hsl(var(--neutral-0));
+  --color-border-error-default:    hsl(var(--red-500));
+  --color-border-checkbox-default: hsl(var(--neutral-300));
+  --color-border-checkbox-hover:   hsl(var(--neutral-400));
+  --color-border-checkbox-active:  hsl(var(--neutral-400));
+  --color-border-component-detail-container: hsl(var(--neutral-200));
+  --color-border-ai-profile-card:  hsl(var(--neutral-200));
+  --color-border-table:            hsl(var(--neutral-200));
+  --color-border-button-group:     hsl(var(--neutral-200));
+  --color-border-sidebar-profile-hover: hsl(var(--neutral-300));
+  --color-separator-border:        hsl(var(--neutral-200));
+  --color-separator-border-strong: hsl(var(--neutral-200));
+
+  --color-pill-tab-blue-hover-background: hsl(var(--neutral-100));
+
+  /* Disabled primary CTA keeps the light recipe, tinted blush. */
+  --gradient-button-primary-disabled: linear-gradient(
+    180deg,
+    hsl(var(--neutral-200)) 0%,
+    hsl(var(--neutral-300)) 100%
+  );
+
+  /* Charts */
+  --color-chart-track:   hsl(var(--neutral-200));
+  --color-chart-cursor:  hsl(var(--neutral-300));
+  --color-chart-neutral: hsl(var(--neutral-300));
+}
+
 /* custom scale for Remix Icon */
 .remixicon path {
   transform: scale(0.8996);
@@ -1540,6 +2580,18 @@
 .theme-swatch-harbor {
   --swatch-canvas: #0b0e14;
   --swatch-accent: #7aa2f7;
+}
+.theme-swatch-phosphor {
+  --swatch-canvas: #060b06;
+  --swatch-accent: #3dff7c;
+}
+.theme-swatch-sakura {
+  --swatch-canvas: #fbf3f5;
+  --swatch-accent: #b83d72;
+}
+.theme-swatch-slate {
+  --swatch-canvas: #282c33;
+  --swatch-accent: #74ade8;
 }
 
 /* ===========================================================================
@@ -1755,7 +2807,11 @@
 .aura .shiki,
 .aura .shiki span,
 .harbor .shiki,
-.harbor .shiki span {
+.harbor .shiki span,
+.phosphor .shiki,
+.phosphor .shiki span,
+.slate .shiki,
+.slate .shiki span {
   color: var(--shiki-dark) !important;
   font-style: var(--shiki-dark-font-style) !important;
   font-weight: var(--shiki-dark-font-weight) !important;
@@ -1872,15 +2928,18 @@
   transition: none !important;
 }
 
-/* Native form controls follow the active scheme. Aura/Harbor are dark-scheme
- * themes; they must be pinned HERE (un-layered) because the `color-scheme` in
- * their @layer'd token blocks loses to this un-layered `html` rule. */
+/* Native form controls follow the active scheme. Aura/Harbor/Phosphor/Slate
+ * are dark-scheme themes; they must be pinned HERE (un-layered) because the
+ * `color-scheme` in their @layer'd token blocks loses to this un-layered
+ * `html` rule. Sakura is light-scheme and correctly stays off this list. */
 html {
   color-scheme: light;
 }
 html.dark,
 html.aura,
-html.harbor {
+html.harbor,
+html.phosphor,
+html.slate {
   color-scheme: dark;
 }
 
@@ -1895,7 +2954,11 @@ html.harbor {
 .aura .theme-logo-light,
 .aura .theme-asset-light,
 .harbor .theme-logo-light,
-.harbor .theme-asset-light {
+.harbor .theme-asset-light,
+.phosphor .theme-logo-light,
+.phosphor .theme-asset-light,
+.slate .theme-logo-light,
+.slate .theme-asset-light {
   display: none;
 }
 .dark .theme-logo-dark,
@@ -1903,7 +2966,11 @@ html.harbor {
 .aura .theme-logo-dark,
 .aura .theme-asset-dark,
 .harbor .theme-logo-dark,
-.harbor .theme-asset-dark {
+.harbor .theme-asset-dark,
+.phosphor .theme-logo-dark,
+.phosphor .theme-asset-dark,
+.slate .theme-logo-dark,
+.slate .theme-asset-dark {
   display: block;
 }
 
@@ -1913,52 +2980,72 @@ html.harbor {
  * class-based theming adjusts shadow opacity under every dark-scheme theme. */
 .dark .shadow-2xs,
 .aura .shadow-2xs,
-.harbor .shadow-2xs {
+.harbor .shadow-2xs,
+.phosphor .shadow-2xs,
+.slate .shadow-2xs {
   --tw-shadow: var(--shadow-2xs);
 }
 .dark .shadow-xs,
 .aura .shadow-xs,
-.harbor .shadow-xs {
+.harbor .shadow-xs,
+.phosphor .shadow-xs,
+.slate .shadow-xs {
   --tw-shadow: var(--shadow-xs);
 }
 .dark .shadow-sm,
 .aura .shadow-sm,
-.harbor .shadow-sm {
+.harbor .shadow-sm,
+.phosphor .shadow-sm,
+.slate .shadow-sm {
   --tw-shadow: var(--shadow-sm);
 }
 .dark .shadow-md,
 .aura .shadow-md,
-.harbor .shadow-md {
+.harbor .shadow-md,
+.phosphor .shadow-md,
+.slate .shadow-md {
   --tw-shadow: var(--shadow-md);
 }
 .dark .shadow-lg,
 .aura .shadow-lg,
-.harbor .shadow-lg {
+.harbor .shadow-lg,
+.phosphor .shadow-lg,
+.slate .shadow-lg {
   --tw-shadow: var(--shadow-lg);
 }
 .dark .shadow-xl,
 .aura .shadow-xl,
-.harbor .shadow-xl {
+.harbor .shadow-xl,
+.phosphor .shadow-xl,
+.slate .shadow-xl {
   --tw-shadow: var(--shadow-xl);
 }
 .dark .shadow-card,
 .aura .shadow-card,
-.harbor .shadow-card {
+.harbor .shadow-card,
+.phosphor .shadow-card,
+.slate .shadow-card {
   --tw-shadow: var(--shadow-card);
 }
 .dark .shadow-dropdown,
 .aura .shadow-dropdown,
-.harbor .shadow-dropdown {
+.harbor .shadow-dropdown,
+.phosphor .shadow-dropdown,
+.slate .shadow-dropdown {
   --tw-shadow: var(--shadow-dropdown);
 }
 .dark .shadow-sidebar,
 .aura .shadow-sidebar,
-.harbor .shadow-sidebar {
+.harbor .shadow-sidebar,
+.phosphor .shadow-sidebar,
+.slate .shadow-sidebar {
   --tw-shadow: var(--shadow-sidebar);
 }
 .dark .shadow-waitlist,
 .aura .shadow-waitlist,
-.harbor .shadow-waitlist {
+.harbor .shadow-waitlist,
+.phosphor .shadow-waitlist,
+.slate .shadow-waitlist {
   --tw-shadow: var(--shadow-waitlist);
 }
 
@@ -2265,7 +3352,9 @@ input[type='search']::-webkit-search-cancel-button {
 }
 .dark .bui-agent-thinking-stars,
 .aura .bui-agent-thinking-stars,
-.harbor .bui-agent-thinking-stars {
+.harbor .bui-agent-thinking-stars,
+.phosphor .bui-agent-thinking-stars,
+.slate .bui-agent-thinking-stars {
   color: inherit;
 }
 

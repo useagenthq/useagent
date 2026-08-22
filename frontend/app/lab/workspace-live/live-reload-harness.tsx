@@ -158,7 +158,7 @@ function LivePane({
       <div className="flex items-center justify-between gap-2 border-b border-border-button-default px-3 py-2">
         <div className="flex items-center gap-2">
           <span className="text-mono-label text-text-tertiary">Rail</span>
-          <span className="inline-flex h-6 items-center rounded-md bg-foreground-icon-primary px-2 text-label-xs text-background-full">
+          <span className="inline-flex h-6 items-center rounded-md bg-foreground-icon-primary px-2 text-caption-1-medium text-background-full">
             Workspace
           </span>
         </div>
@@ -166,7 +166,7 @@ function LivePane({
           type="button"
           data-testid={`revise-${id}`}
           onClick={onRevise}
-          className="inline-flex h-7 items-center rounded-lg border border-border-button-default px-2.5 text-label-xs text-text-secondary hover:bg-background-secondary-default hover:text-text-primary"
+          className="inline-flex h-7 items-center rounded-lg border border-border-button-default px-2.5 text-caption-1-medium text-text-secondary hover:bg-background-secondary-default hover:text-text-primary"
         >
           Simulate agent revision ({label})
         </button>
@@ -189,7 +189,7 @@ export function WorkspaceLiveHarness() {
   return (
     <main data-testid="workspace-live" className="min-h-full bg-background-primary-default p-6">
       <div className="mx-auto max-w-6xl">
-        <h1 className="text-title-h5 text-text-primary">Workspace live-reload</h1>
+        <h1 className="text-title-2-medium text-text-primary">Workspace live-reload</h1>
         <p className="mt-1 max-w-3xl text-body-2-regular text-text-secondary">
           The real Workspace pane + editor hook + org-change stream. "Simulate agent revision"
           mutates the backing state and emits an artifact change; a clean (not-dirty) editor

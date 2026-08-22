@@ -21,9 +21,14 @@ usage](/platform/fleet-and-usage).
 
 ## Provider connections
 
+The whole router is user-scoped: without an authenticated user every route
+returns `403 user_required`. Creation and update happen only through the
+per-provider key route and the OAuth subroutes; the collection root is
+read-only.
+
 | Method | Path | Purpose |
 | --- | --- | --- |
-| GET / POST / PUT | `/api/provider-connections` | List, create, and update connections. |
+| GET | `/api/provider-connections` | List the current user's connections. |
 | POST | `/api/provider-connections/openai/chatgpt-oauth/start` | Begin the managed-account OAuth flow. |
 | GET | `/api/provider-connections/openai/chatgpt-oauth/status` | Poll the OAuth flow. |
 | POST | `/api/provider-connections/openai/chatgpt-oauth/cancel` | Cancel an in-progress flow. |
@@ -48,8 +53,8 @@ usage](/platform/fleet-and-usage).
 
 | Method | Path | Purpose |
 | --- | --- | --- |
-| WS | `/api/runs/:id/terminal/:sessionId` | A run's interactive terminal. |
-| GET / POST | `/api/live-proxy/*` | The run live proxy. |
+| WS | `/api/runs/:id/terminal` | A run's interactive terminal (one sandbox PTY per WebSocket connection). |
+| ANY | `/api/live-proxy/:threadId/*` | Same-origin bridge to the thread's engine server. The thread id is the root run id and is org-authorized; an unknown or cross-org thread returns 404. |
 | WS / HTTP | `/api/desktop-proxy/*` | The noVNC desktop proxy (`websockify`). |
 | GET | `/api/desktop-proxy/:threadId/ready` | Desktop readiness. |
 

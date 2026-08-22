@@ -64,7 +64,7 @@ export default function Home() {
           <div className='flex items-center gap-3'>
             <AsteriskMark className='size-8 text-text-primary' />
             <div className='flex flex-col'>
-              <span className='text-label-lg text-text-primary'>useAgent</span>
+              <span className='text-title-3-medium text-text-primary'>useAgent</span>
               <span className='text-mono-label text-text-tertiary'>
                 multi-harness agent platform
               </span>
@@ -76,10 +76,10 @@ export default function Home() {
 
       <div className='mx-auto max-w-4xl px-6'>
         <div className='animate-ai-fade-up flex flex-col gap-1 py-10'>
-          <h1 className='text-title-h4 text-text-primary'>
+          <h1 className='text-title-1-medium text-text-primary'>
             AlignUI foundation
           </h1>
-          <p className='text-paragraph-md text-text-secondary'>
+          <p className='text-body-regular text-text-secondary'>
             Vendored AlignUI base components on Tailwind v4, wired to the useAgent
             brand layer. This page proves the foundation renders in both themes.
           </p>
@@ -184,7 +184,7 @@ export default function Home() {
         {/* Motion primitives */}
         <Section label='Brand motion primitives'>
           <div className='flex flex-col gap-4'>
-            <p className='agent-progress-loading-text text-label-md'>
+            <p className='agent-progress-loading-text text-body-medium'>
               Thinking through the plan…
             </p>
             <p className='text-body-2-medium text-text-primary'>

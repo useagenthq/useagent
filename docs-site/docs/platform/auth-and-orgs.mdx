@@ -1,34 +1,69 @@
 ---
 title: Auth and organizations
-description: The tenant boundary. How sign-in works, how every resource is scoped to an organization, and why dev mode is fail-closed.
+description: The tenant boundary. How sign-in works, how every resource is scoped to an organization, and how the dev-mode switches behave.
 sidebar:
   order: 5
 ---
 
-Every resource in useAgent, a run, a secret, a skill, a piece of knowledge, an
+Every resource in UseAgent, a run, a secret, a skill, a piece of knowledge, an
 integration, belongs to exactly one organization. That boundary is enforced by the
 backend, not trusted from the client.
 
 ## Sign-in
 
-`/login` and `/signup` authenticate against the backend auth service
-(`POST /api/auth`). Sessions are managed by the auth layer, and the browser talks
-to the backend through the frontend proxy.
+`/login` and `/signup` go through the better-auth surface mounted at
+`/api/auth/*` (`GET` and `POST`), which owns sessions, email/password sign-in,
+and the organization plugin. Google social sign-in is env-gated: it is offered
+only when both `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` are set.
+`GET /api/config` advertises which methods are enabled
+(`auth: { google, emailPassword }`), so the UI renders the right affordances
+without probing.
+
+Self-service account creation is a development convenience, not a production
+surface. Signup is disabled for both email/password and Google whenever verified
+dev mode is off, and the check always fails closed when `NODE_ENV=production`,
+even if a dev-mode flag was accidentally left on. Production users are
+administratively provisioned. Every newly created user, however provisioned,
+receives a personal organization on creation so they land in their own tenant.
 
 ## Organization scoping
 
-The organization is the tenant boundary. Membership determines what a user can
-see and do, and the scope is resolved server-side on every request. The backend
-does not trust an organization id supplied by the client; it derives scope from
-the authenticated session, so a client cannot ask for another organization's data
-by changing a header.
+The organization is the tenant boundary, and scope is resolved server-side on
+every request; the backend never trusts an organization id supplied by the
+client. Resolution follows a fixed ladder:
 
-## Fail-closed dev mode
+- A valid session resolves to its user plus the session's active organization,
+  falling back to the user's first membership.
+- An authenticated user with zero memberships gets `403 no_organization`. It
+  never silently borrows the dev org, because that would cross tenancy.
+- An anonymous request gets `401 unauthorized`, unless the dev-org fallback is
+  allowed (below), in which case it resolves to the seeded dev org.
 
-A development mode exists to ease local work, but it is fail-closed in production:
-the shortcuts it enables are refused unless the environment explicitly opts in. In
-production the dev bypass simply does not apply, so nothing about local
-convenience weakens a deployed instance.
+Every `/api/*` path runs behind a universal fail-closed adapter: a route is
+org-scoped unless its path is explicitly public or self-authenticating (health,
+config, the better-auth surface, the signature-verified Slack ingress, and the
+capability-authenticated internal bridges). A new router is therefore protected
+by default; forgetting a per-router guard does not leave it open.
+
+## Roles
+
+Membership role is a real authorization tier. Routes wrapped in the org-admin
+guard require the caller's membership role to be `owner` or `admin`; a plain
+member gets `403 organization_admin_required`. The gated surfaces are:
+
+- `PUT` and `DELETE /api/secrets/:name`, because secrets are executable sandbox
+  inputs and rotating credentials is an administration operation.
+- Accept and dismiss for learning-lane knowledge drafts and skill proposals,
+  because they change (or decline to change) what the whole organization learns.
+
+## Dev mode and the dev-org fallback
+
+A development mode exists to ease local work. The dev-org fallback, where an
+anonymous request resolves to the seeded dev org, defaults on in dev and off in
+production; `ALLOW_DEV_ORG` is the explicit switch in either direction. Set
+`ALLOW_DEV_ORG=0` to force real auth even in dev, or `ALLOW_DEV_ORG=1` to open
+the fallback deliberately in any environment. Self-signup is stricter: it is
+hard fail-closed in production regardless of any dev-mode flag.
 
 :::warning
 Org scoping is load-bearing for every other guarantee in the platform. Secrets,

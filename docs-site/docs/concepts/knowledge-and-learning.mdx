@@ -5,7 +5,7 @@ sidebar:
   order: 7
 ---
 
-useAgent gives an agent an organization's accumulated know-how at the start of a
+UseAgent gives an agent an organization's accumulated know-how at the start of a
 run, and captures what a run figures out at the end. Nothing is published without
 a human.
 
@@ -26,7 +26,7 @@ top-N by usage.
 
 ## Skill import
 
-GitHub is the source of an organization's procedures. useAgent scans a repository
+GitHub is the source of an organization's procedures. UseAgent scans a repository
 for `SKILL.md` files and imports selected paths as versioned skills:
 
 - Discovery runs over a **server-side shallow clone**, resolving the head with
@@ -34,8 +34,10 @@ for `SKILL.md` files and imports selected paths as versioned skills:
   installations.
 - Imports are **pinned to a commit** and **idempotent by source**, so re-running
   an import does not create duplicates.
-- An optional hourly resync keeps the catalog current with the organization's
-  repositories.
+- Resync is **opt-in and operator-timed**: a periodic sweep runs only when
+  `SKILLS_RESYNC_INTERVAL_MIN` is set to a positive number of minutes, and
+  unset means disabled. Each sweep is capped at 200 repositories with 2-second
+  pacing between repositories (`backend/src/skills/resync.ts`).
 
 ## The learning lane
 

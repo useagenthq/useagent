@@ -82,7 +82,7 @@ export function PinnedCard({
           aria-hidden
         />
         <div className="flex min-w-0 flex-col gap-1">
-          <h3 className="text-label-md text-text-primary">{item.title}</h3>
+          <h3 className="text-body-medium text-text-primary">{item.title}</h3>
           {item.trigger && (
             <p className="text-caption-1-regular italic text-text-tertiary">
               {item.trigger}
@@ -126,7 +126,7 @@ export function EntryCard({
   return (
     <article className="flex flex-col gap-2.5 rounded-2xl bg-background-primary-default p-4 shadow-card ring-1 ring-inset ring-border-button-default transition-colors hover:ring-border-button-hover">
       <div className="flex flex-col gap-1">
-        <h3 className="text-label-md text-text-primary">{item.title}</h3>
+        <h3 className="text-body-medium text-text-primary">{item.title}</h3>
         {item.trigger && (
           <p className="text-caption-1-regular italic text-text-tertiary">
             {item.trigger}

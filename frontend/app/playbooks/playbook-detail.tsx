@@ -24,7 +24,7 @@ function OverviewList({ steps }: { steps: string[] }) {
     <ul className="flex flex-col gap-2">
       {steps.map((step) => (
         <li key={step} className="flex gap-2.5 text-body-2-regular text-text-secondary">
-          <span className="mt-2 size-1.5 shrink-0 rounded-full bg-text-soft-400" />
+          <span className="mt-2 size-1.5 shrink-0 rounded-full bg-foreground-icon-tertiary" />
           <span>{step}</span>
         </li>
       ))}
@@ -37,7 +37,7 @@ function ProcedureList({ steps }: { steps: string[] }) {
     <ol className="flex flex-col gap-2.5">
       {steps.map((step, index) => (
         <li key={step} className="flex gap-2.5">
-          <span className="mt-px flex size-5 shrink-0 items-center justify-center rounded-md bg-background-tertiary-default font-mono text-subheading-2xs text-text-secondary">
+          <span className="mt-px flex size-5 shrink-0 items-center justify-center rounded-md bg-background-tertiary-default font-mono text-caption-2-medium text-text-secondary">
             {index + 1}
           </span>
           <span className="text-body-2-regular text-text-secondary">{step}</span>
@@ -105,13 +105,13 @@ export function PlaybookDetail({
               </div>
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-2">
-                  <Modal.Title className="text-title-h6 text-text-primary">
+                  <Modal.Title className="text-title-3-medium text-text-primary">
                     {playbook.name}
                   </Modal.Title>
                   <Badge.Root variant="lighter" size="medium" color="purple">
                     Playbook
                   </Badge.Root>
-                  <span className="font-mono text-label-xs tabular-nums text-text-tertiary">
+                  <span className="font-mono text-caption-1-medium tabular-nums text-text-tertiary">
                     v{playbook.version}
                   </span>
                 </div>

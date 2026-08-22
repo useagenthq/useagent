@@ -18,12 +18,24 @@ At `/agent/new` a new task carries more than a prompt:
 | Prompt | The instruction, with file uploads attached inline. |
 | Engine | Which coding engine runs the turn (subject to the enabled set). |
 | Model | The model, when the engine exposes a choice. |
-| Memory scope | Which memory the run recalls and captures against. |
 | Repositories | The repositories bound to the run, plus a branch override. |
 | Pinned skill or playbook | A procedure pinned for this turn, so it is always in context. |
 
+There is no memory-scope control: runs always recall and capture against the
+organization memory scope.
+
 Starting a task submits to the run service, which creates a run inside a new
 thread. See [Request flow](/architecture/request-flow) for what happens next.
+
+## Slash commands
+
+Typing `/` as the first token opens the selected engine's real command catalog.
+The composer fetches the command list before any sandbox exists (`GET
+/api/commands?engine=...`) and clears it when you switch engines, so no stale
+commands from another engine mix in. The reply composer inside a session
+autocompletes the same way, labeling the catalog's source per engine (Claude
+commands, Codex commands). Selection only completes the text; the command
+executes engine-side verbatim once the run starts.
 
 ## Send, Steer, Stop
 
@@ -35,10 +47,13 @@ whole lifecycle of a turn:
     With no live run, the button sends the draft as a new turn.
   </Step>
   <Step title="Steer">
-    While a run is live, the draft becomes a reply that steers the running turn.
+    While a run is live, a non-empty draft turns the button into Steer: the
+    text becomes a reply that steers the running turn.
   </Step>
   <Step title="Stop">
-    While a run is live, the same surface offers a cancel action to stop it.
+    While a run is live and the input is empty, the same button offers Stop.
+    The status pill above the input keeps a persistent Stop reachable even
+    while a Steer draft is being typed.
   </Step>
 </Steps>
 
@@ -55,5 +70,7 @@ nothing you type is lost to timing.
 
 :::tip
 Because every submission carries an idempotency key, a double-click or a retry
-never starts the same work twice. The composer is safe to lean on.
+never starts the same work twice. A failed send reuses its key when you retry
+the same text, so the retry observes the original run instead of starting a
+duplicate. The composer is safe to lean on.
 :::

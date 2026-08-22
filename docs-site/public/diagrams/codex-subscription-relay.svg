@@ -1,0 +1,97 @@
+<svg viewBox="0 0 960 480" xmlns="http://www.w3.org/2000/svg" font-family="Inter, system-ui, sans-serif" role="img" aria-label="Codex subscription relay: the backend writes a one-use, run-bound relay URL into the sandbox settings; the sandbox codex provider instance dials the wss capability URL; Caddy routes only /api/internal/codex-relay/* straight to the backend on port 3201; the relay consumes the grant, spawns a codex app-server with the operator codexHome, and bridges exec and file calls back to the codex exec-server in the sandbox; ChatGPT OAuth never enters the sandbox.">
+  <defs>
+    <marker id="csr-accent" viewBox="0 0 8 8" refX="8" refY="4" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto">
+      <path d="M0 0 L8 4 L0 8 Z" fill="#3392ff"/>
+    </marker>
+    <marker id="csr-neutral" viewBox="0 0 8 8" refX="8" refY="4" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto">
+      <path d="M0 0 L8 4 L0 8 Z" fill="#a3a3a3"/>
+    </marker>
+  </defs>
+
+  <!-- canvas -->
+  <rect x="0" y="0" width="960" height="480" rx="10" fill="#f7f7f7"/>
+
+  <!-- header -->
+  <text x="36" y="34" font-size="13" font-weight="600" fill="#171717">Codex subscription relay</text>
+  <text x="924" y="34" text-anchor="end" font-size="10.5" fill="#737373">the only direct backend WebSocket ingress</text>
+
+  <!-- 1: backend issues the relay URL into the sandbox -->
+  <path d="M 790 112 L 790 84 L 215 84 L 215 170" fill="none" stroke="#3392ff" stroke-width="1.5" marker-end="url(#csr-accent)"/>
+  <text x="502" y="76" text-anchor="middle" font-size="12" font-weight="600" fill="#3392ff" paint-order="stroke" stroke="#f7f7f7" stroke-width="5">1. backend issues the one-use relay URL into the sandbox</text>
+  <text x="502" y="100" text-anchor="middle" font-size="10.5" fill="#737373" paint-order="stroke" stroke="#f7f7f7" stroke-width="5">prepareCodexSubscription patches it into settings.json (codex-subscription-runtime.ts)</text>
+
+  <!-- sandbox column -->
+  <rect x="36" y="112" width="232" height="340" rx="10" fill="#ffffff" stroke="#ebebeb"/>
+  <text x="52" y="140" font-size="13" font-weight="600" fill="#171717">Sandbox</text>
+  <text x="118" y="140" font-size="10.5" fill="#737373">Cube or Daytona</text>
+  <text x="52" y="158" font-size="10.5" fill="#737373">untrusted, one per run</text>
+
+  <rect x="52" y="170" width="200" height="104" rx="8" fill="#f7f7f7" stroke="#ebebeb"/>
+  <text x="66" y="192" font-size="12" font-weight="600" fill="#171717">Codex provider instance</text>
+  <text x="66" y="212" font-size="10" fill="#737373" font-family="ui-monospace, SFMono-Regular, Menlo, monospace">providerInstances.codex</text>
+  <text x="66" y="230" font-size="10.5" fill="#737373">written into settings.json</text>
+  <text x="66" y="250" font-size="10" fill="#171717" font-family="ui-monospace, SFMono-Regular, Menlo, monospace">T3_CODEX_APP_SERVER_WS_URL</text>
+
+  <rect x="52" y="352" width="200" height="88" rx="8" fill="#f7f7f7" stroke="#ebebeb"/>
+  <text x="66" y="374" font-size="12" font-weight="600" fill="#171717">codex exec-server</text>
+  <text x="66" y="394" font-size="10.5" fill="#737373" font-family="ui-monospace, SFMono-Regular, Menlo, monospace">ws://0.0.0.0:37734</text>
+  <text x="66" y="412" font-size="10" fill="#737373" font-family="ui-monospace, SFMono-Regular, Menlo, monospace">run-bound --environment-id</text>
+  <text x="66" y="428" font-size="10.5" fill="#737373">exec + file surface, no OAuth</text>
+
+  <!-- 2: sandbox dials the capability URL -->
+  <line x1="252" y1="222" x2="364" y2="222" stroke="#3392ff" stroke-width="1.5" marker-end="url(#csr-accent)"/>
+  <text x="308" y="206" text-anchor="middle" font-size="12" font-weight="600" fill="#3392ff" paint-order="stroke" stroke="#f7f7f7" stroke-width="5">2. dials wss</text>
+  <text x="308" y="240" text-anchor="middle" font-size="10.5" fill="#737373" paint-order="stroke" stroke="#f7f7f7" stroke-width="5">one-use URL</text>
+
+  <!-- caddy column -->
+  <rect x="352" y="124" width="220" height="216" rx="10" fill="#ffffff" stroke="#ebebeb"/>
+  <text x="368" y="152" font-size="13" font-weight="600" fill="#171717">Caddy public origin</text>
+  <text x="368" y="170" font-size="10.5" fill="#737373">deploy/hetzner/Caddyfile:11-17</text>
+
+  <rect x="364" y="184" width="196" height="76" rx="8" fill="#f7f7f7" stroke="#ebebeb"/>
+  <text x="378" y="206" font-size="11" font-weight="600" fill="#171717" font-family="ui-monospace, SFMono-Regular, Menlo, monospace">@codex_relay</text>
+  <text x="378" y="226" font-size="9.5" fill="#737373" font-family="ui-monospace, SFMono-Regular, Menlo, monospace">/api/internal/codex-relay/*</text>
+  <text x="378" y="244" font-size="9.5" fill="#737373" font-family="ui-monospace, SFMono-Regular, Menlo, monospace">reverse_proxy 127.0.0.1:3201</text>
+
+  <text x="462" y="292" text-anchor="middle" font-size="10.5" fill="#737373">only this path skips Next.js;</text>
+  <text x="462" y="308" text-anchor="middle" font-size="10.5" fill="#737373">everything else proxies to :3400</text>
+
+  <!-- 3: upgrade proxied to the backend -->
+  <line x1="560" y1="222" x2="672" y2="222" stroke="#3392ff" stroke-width="1.5" marker-end="url(#csr-accent)"/>
+  <text x="616" y="206" text-anchor="middle" font-size="12" font-weight="600" fill="#3392ff" paint-order="stroke" stroke="#f7f7f7" stroke-width="5">3. upgrade</text>
+  <text x="616" y="240" text-anchor="middle" font-size="10.5" fill="#737373" paint-order="stroke" stroke="#f7f7f7" stroke-width="5">to Hono :3201</text>
+
+  <!-- backend column (source of truth, accent tint) -->
+  <rect x="656" y="112" width="268" height="340" rx="10" fill="#eaf3ff" stroke="#b9d9ff"/>
+  <text x="672" y="140" font-size="13" font-weight="600" fill="#171717">Backend (Hono :3201)</text>
+  <text x="908" y="140" text-anchor="end" font-size="10.5" fill="#3392ff">source of truth</text>
+
+  <rect x="672" y="168" width="236" height="108" rx="8" fill="#ffffff" stroke="#cfe4ff"/>
+  <text x="686" y="190" font-size="12" font-weight="600" fill="#171717">Relay grant</text>
+  <text x="894" y="190" text-anchor="end" font-size="10.5" fill="#3392ff">one grant per run</text>
+  <text x="686" y="212" font-size="10.5" fill="#737373" font-family="ui-monospace, SFMono-Regular, Menlo, monospace">codex-subscription-relay.ts</text>
+  <text x="686" y="232" font-size="10.5" fill="#737373">one-use, run-bound, ~2 min TTL</text>
+  <text x="686" y="250" font-size="10.5" fill="#737373">rejects browser Origin dials</text>
+
+  <line x1="790" y1="276" x2="790" y2="292" stroke="#3392ff" stroke-width="1.5" marker-end="url(#csr-accent)"/>
+  <text x="798" y="288" font-size="10" fill="#737373">consume grant, spawn</text>
+
+  <rect x="672" y="292" width="236" height="68" rx="8" fill="#ffffff" stroke="#cfe4ff"/>
+  <text x="686" y="314" font-size="12" font-weight="600" fill="#171717">codex app-server --stdio</text>
+  <text x="686" y="334" font-size="10.5" fill="#737373">spawned per accepted dial</text>
+  <text x="686" y="352" font-size="10.5" fill="#737373">bridged to the relay socket</text>
+
+  <line x1="710" y1="376" x2="710" y2="360" stroke="#a3a3a3" stroke-width="1.25" marker-end="url(#csr-neutral)"/>
+  <text x="722" y="372" font-size="10" fill="#737373">codexHome env</text>
+
+  <rect x="672" y="376" width="236" height="72" rx="8" fill="#ffffff" stroke="#cfe4ff"/>
+  <text x="686" y="398" font-size="12" font-weight="600" fill="#171717">ChatGPT OAuth state</text>
+  <text x="894" y="398" text-anchor="end" font-size="10.5" fill="#737373">sealed</text>
+  <text x="686" y="418" font-size="10" fill="#737373" font-family="ui-monospace, SFMono-Regular, Menlo, monospace">provider-connections/service.ts</text>
+  <text x="686" y="436" font-size="10.5" fill="#3392ff">OAuth never enters the sandbox</text>
+
+  <!-- 4: exec and file calls bridged back into the sandbox -->
+  <path d="M 672 326 L 630 326 L 630 396 L 252 396" fill="none" stroke="#a3a3a3" stroke-width="1.25" marker-end="url(#csr-neutral)"/>
+  <text x="440" y="386" text-anchor="middle" font-size="12" font-weight="600" fill="#737373" paint-order="stroke" stroke="#f7f7f7" stroke-width="5">4. exec + file calls bridged back into the sandbox</text>
+  <text x="440" y="414" text-anchor="middle" font-size="10.5" fill="#737373" paint-order="stroke" stroke="#f7f7f7" stroke-width="5">codex-exec-server-bridge dials the exec-server preview host</text>
+</svg>

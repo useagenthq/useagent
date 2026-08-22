@@ -19,13 +19,36 @@ The composer and the platform read the organization's repositories and branches:
 | List branches | `GET /api/repos/:owner/:name/branches` |
 | Open pull requests | `GET /api/pulls` |
 
+When GitHub is not configured at all, `GET /api/repos` returns
+`{ configured: false }` rather than erroring, so the composer can degrade
+gracefully.
+
+:::note
+**Org binding.** GitHub credentials are process configuration, so the
+deployment-wide connection is bound to exactly one product organization via
+`GITHUB_TENANT_ORG_ID`. When
+GitHub is configured, repo and branch listing for any other organization returns
+`403` with "GitHub repository access is not available to this organization", and
+a configured deployment with no tenant id set returns a setup error asking for
+`GITHUB_TENANT_ORG_ID`.
+:::
+
 ## Authenticated with a GitHub App
 
 Access is configured through a GitHub App installation rather than a personal
 token, so private organization repositories are reachable without a human pasting
 a PAT. The backend mints an installation token for the organization and scopes
-access to it. Credential precedence favors an explicit token, then the App, then
-anonymous access for public repositories.
+access to it. Credential resolution has three distinct lanes:
+
+- **Backend-only GitHub calls** use PAT over App over anonymous: an explicit
+  token wins, then a configured App mints an installation token, then public
+  access.
+- **The repository picker and branch browser** deliberately prefer the App over
+  a broader deployment PAT, so the offered catalog matches what a run can
+  actually open.
+- **A retained sandbox** only ever receives an exact-repository App installation
+  token. Production refuses PAT-only deployments outright; local development
+  keeps the PAT convenience behind the verified dev-mode gate.
 
 ## Server-side clones
 

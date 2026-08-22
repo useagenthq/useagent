@@ -14,8 +14,12 @@ proxy; integrations call it directly. This reference groups the surface by area.
 - **Org-scoped.** Scope is derived from the authenticated session, never from a
   client-supplied organization id. See [Auth and
   organizations](/platform/auth-and-orgs).
-- **Idempotent commands.** Anything that starts or steers a run carries an
-  idempotency key, so a retry never duplicates work.
+- **Idempotent commands.** `POST /api/runs` accepts an `Idempotency-Key` header,
+  so a retried command never duplicates work.
+- **Release compatibility.** Every response carries `x-skynet-release-fingerprint`
+  and `x-skynet-api-compat`. A client may send `x-skynet-client-release`; a
+  mutating request (`POST`, `PUT`, `PATCH`, `DELETE`) with an incompatible value
+  is rejected with `409 { "error": "frontend_release_mismatch" }`.
 - **Streaming over SSE.** Live updates use server-sent events: a thread-scoped
   stream per run, and one org-change stream for ambient invalidations. See
   [Events and streaming](/concepts/events-and-streaming).
@@ -26,21 +30,21 @@ proxy; integrations call it directly. This reference groups the surface by area.
 | Method | Path | Purpose |
 | --- | --- | --- |
 | GET | `/api/health` | Liveness. |
-| GET | `/api/config` | Client configuration, including the enabled-engines manifest. |
+| GET | `/api/config` | The client capability contract: `auth` (`google`, `emailPassword`), `allowDevOrg`, `release`, readiness-filtered `engines` and `models`, `sandbox.provider`, `capabilities` (`github`, `slack`, `memory`, `toolGateway`), and `artifacts.fidelity`. |
 
 ## Runs and threads
 
 | Method | Path | Purpose |
 | --- | --- | --- |
-| GET | `/api/runs` | List runs (thread roots). |
+| GET | `/api/runs` | List runs (thread roots by default; `?all=1` for every run, `view=summary` with `limit` and `include_active` for a compact list). |
 | POST | `/api/runs` | Start a run, or a reply when a parent is referenced. |
 | GET | `/api/runs/changes` | Org-change SSE stream (invalidations only). |
 | GET | `/api/runs/:id` | Fetch a run; the whole thread with `?thread=1`. |
 | POST | `/api/runs/:id/cancel` | Cancel a run. |
 | POST | `/api/runs/:id/questions/:questionId/reply` | Answer a question a run asked. |
 | POST | `/api/runs/:id/approvals/:requestId/reply` | Respond to an approval request. |
-| GET | `/api/runs/:id/sandbox` | The run's sandbox info. |
-| POST | `/api/runs/:id/uploads` | Attach uploads to the run. |
+| DELETE | `/api/runs/:id/sandbox` | Release the thread's sandbox (explicit eval/test cleanup; 404 unknown run, 409 thread is active, 502 release failed). |
+| GET | `/api/runs/:id/uploads` | List the run's inbound attachments (Slack files, browser uploads). Attachment happens by creating uploads via `POST /api/uploads` and referencing them when the run starts; they are claimed at command acceptance. |
 | GET | `/api/runs/:id/timings` | Turn timings. |
 | GET | `/api/runs/:id/events` | Per-run event stream (legacy). |
 | GET | `/api/runs/:rootRunId/thread-events` | Thread-scoped SSE stream. |

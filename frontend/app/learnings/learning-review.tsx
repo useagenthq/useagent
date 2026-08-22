@@ -178,7 +178,7 @@ function ResolveActions({
         type="button"
         disabled={busy}
         onClick={() => run(onAccept)}
-        className="inline-flex items-center gap-1 rounded-full border border-border-button-default px-3 py-1 text-label-xs text-status-lime-text transition-colors hover:bg-background-secondary-default disabled:opacity-60"
+        className="inline-flex items-center gap-1 rounded-full border border-border-button-default px-3 py-1 text-caption-1-medium text-status-lime-text transition-colors hover:bg-background-secondary-default disabled:opacity-60"
       >
         Accept
       </button>
@@ -186,7 +186,7 @@ function ResolveActions({
         type="button"
         disabled={busy}
         onClick={() => run(onDismiss)}
-        className="inline-flex items-center gap-1 rounded-full border border-border-button-default px-3 py-1 text-label-xs text-text-error-primary transition-colors hover:bg-background-secondary-default disabled:opacity-60"
+        className="inline-flex items-center gap-1 rounded-full border border-border-button-default px-3 py-1 text-caption-1-medium text-text-error-primary transition-colors hover:bg-background-secondary-default disabled:opacity-60"
       >
         Dismiss
       </button>
@@ -204,7 +204,7 @@ function Disclosure({ label, children }: { label: string; children: React.ReactN
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="inline-flex w-fit items-center gap-1 text-label-xs text-text-secondary transition-colors hover:text-text-primary"
+        className="inline-flex w-fit items-center gap-1 text-caption-1-medium text-text-secondary transition-colors hover:text-text-primary"
       >
         <Chevron className="size-3.5" aria-hidden />
         {label}
@@ -236,7 +236,7 @@ function ProcedureTraceList({
               {step.tool}
             </span>
             <span className="min-w-0 truncate text-text-secondary">{step.gist}</span>
-            {!step.ok && <span className="shrink-0 text-label-xs text-text-error-primary">failed</span>}
+            {!step.ok && <span className="shrink-0 text-caption-1-medium text-text-error-primary">failed</span>}
           </li>
         ))}
         {elided > 0 && (

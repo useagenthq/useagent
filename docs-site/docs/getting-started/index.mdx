@@ -6,7 +6,7 @@ sidebar:
   order: 1
 ---
 
-useAgent is a multi-package repository with one product UI, one backend control
+UseAgent is a multi-package repository with one product UI, one backend control
 plane, and shared TypeScript packages that define the cross-package contracts.
 Everything a user sees is a rendering of the backend's durable event log.
 
@@ -15,8 +15,9 @@ Everything a user sees is a rendering of the backend's durable event log.
 <CardGroup cols={3}>
   <Card title="Frontend" icon="monitor">
     A Next.js UI at port `3400`. Chat, agent sessions, skills, playbooks, wiki,
-    artifacts, secrets, learnings review, automations, and settings. Browser
-    `/api/*` calls are proxied to the backend.
+    knowledge, memory hub, artifacts, secrets, learnings review, automations,
+    dashboard, review, apps, and settings. Browser `/api/*` calls are proxied to
+    the backend.
   </Card>
   <Card title="Backend" icon="server">
     A Hono and Postgres control plane at port `3201`. Auth, org scoping, runs,
@@ -30,6 +31,16 @@ Everything a user sees is a rendering of the backend's durable event log.
 </CardGroup>
 
 ## How a request travels
+
+<div style={{ background: "#ffffff", border: "1px solid #ebebeb", borderRadius: "12px", padding: "12px", margin: "16px 0 8px" }}>
+  <img
+    src="/diagrams/command-lane-round-trip.svg"
+    alt="The command-lane round trip: Web UI, Slack, or an automation becomes a durable command, a run worker spawns a one-shot engine in a sandbox, native frames are canonicalized into the Postgres event log, and a thread-scoped SSE stream renders the session timeline."
+    style={{ display: "block", width: "100%", height: "auto" }}
+  />
+</div>
+
+*The command-lane round trip: every entry point lands in the same durable command lane, and the UI only ever renders the canonical event log.*
 
 <Steps>
   <Step title="A command enters the lane">
@@ -51,6 +62,7 @@ Read [Quickstart](/getting-started/quickstart) to run it locally, then
 [Concepts](/concepts) section defines every term used above.
 
 :::tip
-The runtime is **Bun** everywhere. The two apps carry their own lockfiles, so you
-install inside each app rather than at the root.
+The runtime is **Bun** everywhere. The two apps and the five `packages/*` each
+carry their own lockfile: install inside `frontend/` and `backend/` to run the
+dev servers, and inside each package before `bun run typecheck`.
 :::

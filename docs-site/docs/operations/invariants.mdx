@@ -11,13 +11,35 @@ elsewhere in the platform.
 ## One backend per database
 
 Exactly one backend runs against a given database. A boot-time Postgres advisory
-lock enforces it, and production sets `REQUIRE_SINGLE_BACKEND=1` so a duplicate
-refuses to boot rather than warning.
+lock enforces it, and the host configuration sets `REQUIRE_SINGLE_BACKEND=true`
+so a duplicate refuses to boot rather than warning. The flag parser accepts
+`1`/`true` and `0`/`false` and rejects anything else.
 
 The reason is architectural: the canonical lane's provider-source seal and the
 realtime SSE fan-out are process-local. A second backend on the same database
 would interfere with in-flight runs, because boot recovery reconciles them. See
 [Realtime and canonicalization](/architecture/realtime).
+
+## Boot order is the invariant
+
+The backend boots in a fixed order: **advisory lock, migrations, gateway
+grants, seed, stale-run recovery**. Each position is load-bearing:
+
+- The singleton lock is taken **before** migrations and recovery, so a
+  duplicate process can never migrate or recover another backend's database
+  first.
+- Migrations apply at every boot, and the migrator only applies journal entries
+  stamped **strictly above** the last applied one. The operator rule: a new
+  migration is always stamped above the journal tail. A hand-set stamp at or
+  below the tail makes later migrations skip silently.
+- The restricted gateway role's grants are reconciled on every boot from a
+  manifest in code, so a migration that adds a gateway-written table ships its
+  grant in the same commit. This kills the incident class where a new table's
+  inserts die in production with permission errors (42501) because grants lived
+  only in one-time host provisioning.
+
+Only after all of that does the backend seed and recover stale runs left by an
+unclean shutdown.
 
 ## Secrets are write-only
 
@@ -31,14 +53,15 @@ The sandbox gateway connects with a restricted database role that has explicit
 grants and no DDL. The trust boundary is enforced at the database, not only in
 application code.
 
-## Releases run from a clean worktree
+## Releases run from an immutable checkout
 
-A release is built from a clean worktree pinned to the pushed commit, never from
-a live working tree. What ships is exactly what was reviewed and pushed.
+A release is built from an immutable checkout of the committed HEAD, never from
+a live working tree. Uncommitted tracked changes refuse to deploy, and the
+checkout's tree hash is verified against the commit before anything ships.
 
 <CardGroup cols={2}>
   <Card title="Single backend" icon="lock">
-    `REQUIRE_SINGLE_BACKEND=1` in production; one replica per database.
+    `REQUIRE_SINGLE_BACKEND=true` in production; one replica per database.
   </Card>
   <Card title="Write-only secrets" icon="key-round">
     Values never leave the trusted backend, and never enter a sandbox.
@@ -46,8 +69,8 @@ a live working tree. What ships is exactly what was reviewed and pushed.
   <Card title="Restricted gateway role" icon="database">
     Explicit grants, no DDL, enforced at the database.
   </Card>
-  <Card title="Clean-worktree releases" icon="git-commit-horizontal">
-    Ship the pushed commit, not the working tree.
+  <Card title="Immutable-source releases" icon="git-commit-horizontal">
+    Ship the committed HEAD, verified by tree hash, never the working tree.
   </Card>
 </CardGroup>
 

@@ -3,9 +3,10 @@
 // Ported and adapted from beUI (https://beui.dev/components/motion/theme-toggle;
 // registry https://beui.dev/r/theme-toggle.json), MIT. The View Transition API
 // circle reveal is beUI's; adapted for our stack: @remixicon/react instead of
-// lucide, @/utils/cx, next-themes over our four-theme ramp (light + three dark
-// palettes: dark/aura/harbor), and a self-contained Motion icon swap instead of
-// beUI's ActionSwapIcon dependency chain. Neutral name per the vendoring rule.
+// lucide, @/utils/cx, next-themes over our theme ramp (light palettes:
+// light/sakura; dark palettes: dark/aura/harbor/phosphor/slate), and a
+// self-contained Motion icon swap instead of beUI's ActionSwapIcon dependency
+// chain. Neutral name per the vendoring rule.
 
 import { RiMoonLine, RiSunLine } from '@remixicon/react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
@@ -35,11 +36,14 @@ html[data-theme-vt="circle"]::view-transition-new(root){mix-blend-mode:normal;an
 `;
 
 /**
- * Theme toggle wired to our next-themes ramp. `light` is the only light theme;
- * `dark`/`aura`/`harbor` are dark palettes, so "dark" means any non-light theme
- * and toggling back to dark returns to the default Midnight (`dark`) ramp. The
- * three-way palette picker (ThemeMenu) still owns aura/harbor.
+ * Theme toggle wired to our next-themes ramp. `light` and `sakura` are the
+ * light themes; everything else is a dark palette, so "dark" means any
+ * non-light theme. Toggling to dark returns to the default Midnight (`dark`)
+ * ramp and toggling to light returns to `light`; the palette picker
+ * (ThemeMenu) owns the specific palettes.
  */
+const LIGHT_THEMES = new Set(['light', 'sakura']);
+
 export function useThemeToggle() {
   const { theme, resolvedTheme, setTheme } = useTheme();
   const reduce = useReducedMotion() ?? false;
@@ -55,7 +59,7 @@ export function useThemeToggle() {
   }, []);
 
   const current = theme ?? resolvedTheme;
-  const isDark = mounted && current !== 'light';
+  const isDark = mounted && !LIGHT_THEMES.has(current ?? '');
 
   const toggle = useCallback(
     (origin?: { x: number; y: number }) => {

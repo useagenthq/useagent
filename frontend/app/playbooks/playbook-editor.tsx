@@ -135,7 +135,7 @@ export function PlaybookEditor({
       <Modal.Content className="max-h-[90vh] max-w-[520px] overflow-y-auto">
         <div className="flex flex-col gap-5 p-6">
           <div className="flex flex-col gap-1.5">
-            <Modal.Title className="text-title-h6 text-text-primary">
+            <Modal.Title className="text-title-3-medium text-text-primary">
               {isEdit ? "Edit playbook" : "New playbook"}
             </Modal.Title>
             <Modal.Description className="text-body-2-regular text-text-secondary">

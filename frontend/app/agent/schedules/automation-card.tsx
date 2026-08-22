@@ -77,7 +77,7 @@ export function AutomationCard({
 
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-2">
-              <h2 className="truncate text-label-md text-text-primary">{schedule.name}</h2>
+              <h2 className="truncate text-body-medium text-text-primary">{schedule.name}</h2>
               <StatusBadge.Root
                 variant="light"
                 status={schedule.enabled ? "completed" : "disabled"}
@@ -92,7 +92,7 @@ export function AutomationCard({
 
             <dl className="mt-4 grid gap-3 text-left sm:grid-cols-3 sm:gap-5">
               <div className="min-w-0">
-                <dt className="flex items-center gap-1.5 text-label-xs text-text-tertiary">
+                <dt className="flex items-center gap-1.5 text-caption-1-medium text-text-tertiary">
                   <RiTimeLine className="size-3.5" aria-hidden /> Cadence
                 </dt>
                 <dd className="mt-1 truncate text-body-2-medium text-text-primary">
@@ -103,7 +103,7 @@ export function AutomationCard({
                 </p>
               </div>
               <div className="min-w-0">
-                <dt className="flex items-center gap-1.5 text-label-xs text-text-tertiary">
+                <dt className="flex items-center gap-1.5 text-caption-1-medium text-text-tertiary">
                   <RiRobot2Line className="size-3.5" aria-hidden /> Agent
                 </dt>
                 <dd className="mt-1 truncate text-body-2-medium text-text-primary">
@@ -114,7 +114,7 @@ export function AutomationCard({
                 </p>
               </div>
               <div className="min-w-0">
-                <dt className="text-label-xs text-text-tertiary">Last execution</dt>
+                <dt className="text-caption-1-medium text-text-tertiary">Last execution</dt>
                 <dd className="mt-1 truncate text-body-2-medium text-text-primary">
                   {schedule.last_fired_at ? relativeTime(schedule.last_fired_at) : "Not run yet"}
                 </dd>

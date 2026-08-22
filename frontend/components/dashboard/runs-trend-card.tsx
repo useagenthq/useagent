@@ -22,7 +22,7 @@ function TrendTooltip({ active, payload }: TooltipProps<number, string>) {
   if (!bucket) return null;
   return (
     <div className='rounded-lg bg-background-primary-default px-3 py-2 text-caption-1-regular shadow-tooltip ring-1 ring-inset ring-border-button-default'>
-      <p className='mb-1 text-label-xs text-text-primary'>{bucket.label}</p>
+      <p className='mb-1 text-caption-1-medium text-text-primary'>{bucket.label}</p>
       <p className='text-text-secondary'>
         {bucket.total} {bucket.total === 1 ? 'run' : 'runs'}
       </p>
@@ -49,7 +49,7 @@ export function RunsTrendCard({
         <div className='flex flex-col gap-0.5'>
           <p className='text-body-2-regular text-text-secondary'>Token throughput</p>
           <div className='flex items-center gap-2'>
-            <p className='text-label-lg font-semibold tracking-[-0.1px] tabular-nums text-text-primary'>{tokensLabel}</p>
+            <p className='text-headline-medium font-semibold tracking-[-0.1px] tabular-nums text-text-primary'>{tokensLabel}</p>
             <Badge.Root variant='lighter' color='gray'>
               est.
             </Badge.Root>
@@ -58,7 +58,7 @@ export function RunsTrendCard({
         <span className='text-caption-1-regular text-text-tertiary'>Last 14 days</span>
       </div>
 
-      <div className='h-[220px] w-full [&_.recharts-cartesian-axis-tick_text]:fill-text-soft-400 [&_.recharts-surface]:outline-none'>
+      <div className='h-[220px] w-full [&_.recharts-cartesian-axis-tick_text]:fill-text-tertiary [&_.recharts-surface]:outline-none'>
         <ResponsiveContainer width='100%' height='100%'>
           <ComposedChart data={data} margin={{ top: 8, right: 6, bottom: 0, left: 0 }}>
             <defs>
@@ -99,7 +99,7 @@ export function RunsTrendCard({
               stroke='#519DFA'
               strokeWidth={2.5}
               dot={false}
-              activeDot={{ r: 4, fill: '#519DFA', stroke: 'hsl(var(--bg-white-0))', strokeWidth: 2 }}
+              activeDot={{ r: 4, fill: '#519DFA', stroke: 'var(--color-background-primary-default)', strokeWidth: 2 }}
               isAnimationActive
               animationDuration={450}
             />
