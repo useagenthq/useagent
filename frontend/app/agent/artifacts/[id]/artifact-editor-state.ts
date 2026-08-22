@@ -3,6 +3,7 @@
 import {
   type ArtifactDescriptor,
   type ArtifactWorkpieceDescriptor,
+  type ArtifactWorkpieceKind,
   type ArtifactWorkpieceState,
   decodeWorkpieceResult,
   type DocumentTheme,
@@ -160,7 +161,7 @@ function withCacheBust(url: string, nonce: number): string {
  * concurrency (409 -> reload latest, never a silent overwrite). Shared by the
  * full-page editor and the session side-pane so there is ONE state model. */
 export interface WorkpieceEditorController {
-  readonly workpiece: ArtifactWorkpieceDescriptor | null;
+  readonly workpiece: ArtifactWorkpieceDescriptor<ArtifactWorkpieceKind> | null;
   readonly actionContract: ReturnType<typeof artifactActionContractFor>;
   readonly mode: ArtifactEditorMode;
   readonly editorMode: ArtifactEditorMode;
