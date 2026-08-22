@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mkdirSync, readFileSync, rmSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -123,6 +123,77 @@ describe("mac demo harness", () => {
       expect(result.stdout).toContain("redaction_boundary=true");
       expect(result.stdout).toContain("ffprobe -hide_banner");
       expect(result.stdout).toContain("kill -INT");
+    } finally {
+      rmSync(baseDir, { recursive: true, force: true });
+    }
+  });
+
+  test("stop sends SIGINT so the recorder can finalize before probing", async () => {
+    const baseDir = await mkdtemp(join(tmpdir(), "skynet-demo-harness-sigint-"));
+    const fakeRecorder = join(baseDir, "fake-ffmpeg.sh");
+    const fakeProbe = join(baseDir, "fake-ffprobe.sh");
+    const signalFile = join(baseDir, "signal.txt");
+    const readyFile = join(baseDir, "ready.txt");
+    const sessionId = "sigint-session--finalize--codex--demo";
+    const sessionDir = join(baseDir, sessionId);
+
+    try {
+      writeFileSync(
+        fakeRecorder,
+        `#!/usr/bin/env python3
+import os
+import signal
+import sys
+import time
+
+video_path = sys.argv[-1]
+
+def finalize(_signum, _frame):
+    with open(os.environ["SKYNET_TEST_SIGNAL_FILE"], "w", encoding="utf-8") as marker:
+        marker.write("INT")
+    open(video_path, "a", encoding="utf-8").close()
+    raise SystemExit(0)
+
+signal.signal(signal.SIGINT, finalize)
+with open(os.environ["SKYNET_TEST_READY_FILE"], "w", encoding="utf-8") as marker:
+    marker.write("ready")
+while True:
+    time.sleep(0.05)
+`,
+      );
+      writeFileSync(
+        fakeProbe,
+        `#!/usr/bin/env bash
+printf 'codec_name=h264\\nwidth=1280\\nheight=720\\nduration=1.25\\nsize=42\\n'
+`,
+      );
+      chmodSync(fakeRecorder, 0o755);
+      chmodSync(fakeProbe, 0o755);
+
+      const env = {
+        SKYNET_DEMO_SESSION_ID: "sigint-session",
+        SKYNET_DEMO_CREATED_AT: "2026-08-22T00:00:00Z",
+        SKYNET_FFMPEG_BIN: fakeRecorder,
+        SKYNET_FFPROBE_BIN: fakeProbe,
+        SKYNET_TEST_SIGNAL_FILE: signalFile,
+        SKYNET_TEST_READY_FILE: readyFile,
+      };
+      const started = run(
+        ["--base-dir", baseDir, "start", "--scenario", "Finalize", "--engine", "Codex", "--label", "Demo"],
+        env,
+      );
+      expect(started.exitCode).toBe(0);
+
+      for (let attempt = 0; attempt < 100 && !existsSync(readyFile); attempt += 1) {
+        await Bun.sleep(10);
+      }
+      expect(existsSync(readyFile)).toBe(true);
+
+      const stopped = run(["--base-dir", baseDir, "stop", "--session-dir", sessionDir], env);
+      expect(stopped.exitCode).toBe(0);
+      expect(readFileSync(signalFile, "utf8")).toBe("INT");
+      expect(stopped.stdout).toContain("codec=h264 width=1280 height=720 duration=1.25 size=42");
+      expect(existsSync(join(sessionDir, `${sessionId}.pid`))).toBe(false);
     } finally {
       rmSync(baseDir, { recursive: true, force: true });
     }

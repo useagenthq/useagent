@@ -264,6 +264,7 @@ stop_recording() {
   if [[ -f "$pid_file" ]]; then
     pid="$(cat "$pid_file")"
     [[ "$pid" =~ ^[0-9]+$ ]] || die "invalid pid file: $pid_file"
+    kill -INT "$pid" 2>/dev/null || true
     wait_for_pid_exit "$pid"
     rm -f "$pid_file"
   fi
