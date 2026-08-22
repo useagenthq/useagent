@@ -3,6 +3,7 @@ import { eq } from "drizzle-orm";
 import { db } from "../src/db/client";
 import { runs } from "../src/db/schema";
 import { buildThreadPreamble } from "../src/runs/repo";
+import { DEV_ORG_ID, DEV_USER_ID } from "../src/seed";
 import { createOrgSession, fetchApi, json, readSse, waitFor } from "./helpers";
 
 /** Create a run and resolve once its scripted worker has completed. */
@@ -30,6 +31,47 @@ describe("runs", () => {
     const { status, body } = await json("/api/runs", { method: "POST", body: {} });
     expect(status).toBe(400);
     expect(body.error).toBeDefined();
+  });
+
+  test("POST /api/runs rejects caller-supplied origin", async () => {
+    const { status, body } = await json("/api/runs", {
+      method: "POST",
+      body: { prompt: "not internal", origin: "internal:eval" },
+    });
+    expect(status).toBe(400);
+    expect(body.error).toBe("origin is server-owned");
+  });
+
+  test("loopback parity admission persists an internal origin and remains hidden", async () => {
+    const previousSecret = process.env.BETTER_AUTH_SECRET;
+    process.env.BETTER_AUTH_SECRET = "parity-operator-test-secret";
+    try {
+      const created = await json<{ id: string }>("/api/internal/operator/admit-release-eval", {
+        method: "POST",
+        headers: {
+          authorization: "Bearer parity-operator-test-secret",
+          "idempotency-key": `release-eval:${crypto.randomUUID()}`,
+        },
+        body: {
+          orgId: DEV_ORG_ID,
+          userId: DEV_USER_ID,
+          run: { prompt: "internal release parity", engine: "mock", model: "claude-sonnet-4-5" },
+        },
+      });
+      expect(created.status).toBe(201);
+      const [stored] = await db
+        .select({ origin: runs.origin })
+        .from(runs)
+        .where(eq(runs.id, created.body.id))
+        .limit(1);
+      expect(stored?.origin).toBe("internal:eval");
+
+      const listed = await json<{ runs: Array<{ id: string }> }>("/api/runs?all=1");
+      expect(listed.body.runs.some((run) => run.id === created.body.id)).toBe(false);
+    } finally {
+      if (previousSecret === undefined) delete process.env.BETTER_AUTH_SECRET;
+      else process.env.BETTER_AUTH_SECRET = previousSecret;
+    }
   });
 
   test("POST /api/runs maps resource failures and persists no run", async () => {

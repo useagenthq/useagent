@@ -1,5 +1,7 @@
 import { timingSafeEqual } from "node:crypto";
-import { Hono } from "hono";
+import { Hono, type Context } from "hono";
+import type { AppEnv } from "../http";
+import type { RunCreateBody } from "./routes";
 
 /**
  * Loopback operator bridge for cross-process run dispatch.
@@ -29,6 +31,10 @@ interface OperatorOps {
   readonly approveGatewayRequest: (
     requestId: string,
   ) => Promise<{ approved: boolean; error?: string }>;
+  readonly admitReleaseParity: (
+    c: Context<AppEnv>,
+    body: RunCreateBody,
+  ) => Promise<Response>;
 }
 
 function bearer(header: string | undefined): string {
@@ -42,8 +48,8 @@ function secretMatches(presented: string, expected: string): boolean {
   return a.length === b.length && a.length > 0 && timingSafeEqual(a, b);
 }
 
-export function createOperatorRoutes(ops: OperatorOps): Hono {
-  const routes = new Hono();
+export function createOperatorRoutes(ops: OperatorOps): Hono<AppEnv> {
+  const routes = new Hono<AppEnv>();
 
   routes.use("*", async (c, next) => {
     if (c.req.header("x-forwarded-for")) return c.json({ error: "not_found" }, 404);
@@ -59,6 +65,28 @@ export function createOperatorRoutes(ops: OperatorOps): Hono {
     const threadId = typeof body?.threadId === "string" ? body.threadId.trim() : "";
     if (!threadId) return c.json({ error: "threadId_required" }, 400);
     return c.json({ dispatched: await ops.pump(threadId) });
+  });
+
+  routes.post("/admit-release-eval", async (c) => {
+    const payload = (await c.req.json().catch(() => null)) as {
+      orgId?: unknown;
+      userId?: unknown;
+      run?: unknown;
+    } | null;
+    const orgId = typeof payload?.orgId === "string" ? payload.orgId.trim() : "";
+    const userId = typeof payload?.userId === "string" ? payload.userId.trim() : "";
+    if (
+      !orgId ||
+      !userId ||
+      !payload?.run ||
+      typeof payload.run !== "object" ||
+      Array.isArray(payload.run)
+    ) {
+      return c.json({ error: "orgId_userId_run_required" }, 400);
+    }
+    c.set("orgId", orgId);
+    c.set("userId", userId);
+    return ops.admitReleaseParity(c, payload.run as RunCreateBody);
   });
 
   routes.post("/approve-gateway-request", async (c) => {
