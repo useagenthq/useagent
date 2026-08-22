@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   DEEPSEEK_V4_FLASH_MODEL,
-  GEMINI_3_7_FLASH_MODEL,
+  GEMINI_FLASH_MODEL,
   KIMI_K3_MODEL,
 } from "../runs/model-policy";
 import { applyOpenRouterProviderRouting } from "./provider-routing";
@@ -56,12 +56,12 @@ describe("OpenRouter provider routing", () => {
     });
   });
 
-  test("selects the fastest compatible Gemini 3.7 Flash endpoint", () => {
+  test("selects the fastest compatible Gemini Flash endpoint", () => {
     const routed = JSON.parse(
       applyOpenRouterProviderRouting(
-        GEMINI_3_7_FLASH_MODEL,
+        GEMINI_FLASH_MODEL,
         JSON.stringify({
-          model: GEMINI_3_7_FLASH_MODEL,
+          model: GEMINI_FLASH_MODEL,
           messages: [],
           tools: [{ type: "function", function: { name: "bash" } }],
         }),

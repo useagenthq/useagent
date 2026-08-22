@@ -144,7 +144,7 @@ describe("engine readiness advertisement", () => {
       "openai/gpt-5.6-terra",
       "moonshotai/kimi-k3",
       "deepseek/deepseek-v4-flash",
-      "google/gemini-3.7-flash",
+      "google/gemini-2.5-flash",
     ]);
   });
 
