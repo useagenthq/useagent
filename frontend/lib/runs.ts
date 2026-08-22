@@ -31,3 +31,23 @@ export function envelope(data: unknown, key: string): unknown[] {
   }
   return [];
 }
+
+/**
+ * Primary repository of a raw wire run: `repo_specs` is authoritative,
+ * followed by the legacy plural and singular fields.
+ */
+export function primaryRepo(run: Record<string, unknown>): string | null {
+  if (Array.isArray(run.repo_specs)) {
+    for (const spec of run.repo_specs) {
+      if (!spec || typeof spec !== "object") continue;
+      const repo = (spec as { repo?: unknown }).repo;
+      if (typeof repo === "string" && repo.length > 0) return repo;
+    }
+  }
+  if (Array.isArray(run.repos)) {
+    for (const repo of run.repos) {
+      if (typeof repo === "string" && repo.length > 0) return repo;
+    }
+  }
+  return typeof run.repo === "string" && run.repo.length > 0 ? run.repo : null;
+}

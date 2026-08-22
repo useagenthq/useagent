@@ -7,7 +7,7 @@
 // context-recall markers fold here; memory WRITE chips and the reconcile marker
 // stay as their own rows (they are turn events, not context the run pulled in).
 
-import { RiArrowDownSLine, RiSparkling2Line } from "@remixicon/react";
+import { RiArrowDownSLine, RiChatHistoryLine } from "@remixicon/react";
 import { memo, useState } from "react";
 import type { TimelineMarker } from "@/components/chat/timeline";
 import { MarkerRow } from "@/components/chat/tool-step-row";
@@ -63,9 +63,10 @@ export const ContextRecallFold = memo(function ContextRecallFold({
         onClick={() => setOpen((v) => !v)}
         className="flex w-full items-center gap-2 rounded-md px-1.5 py-1 text-left transition-colors hover:bg-background-primary-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-border-focus-ring"
       >
-        <span className="flex size-5 shrink-0 items-center justify-center rounded-md bg-purple-100 text-purple-500">
-          <RiSparkling2Line className="size-3.5" aria-hidden />
-        </span>
+        <RiChatHistoryLine
+          className="size-4 shrink-0 text-foreground-icon-secondary"
+          aria-hidden
+        />
         <span className="min-w-0 flex-1 truncate">
           <span className="text-body-2-medium font-medium text-text-secondary">Context</span>
           {summary && (
