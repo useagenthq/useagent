@@ -293,6 +293,11 @@ describe("child session gateway tools", () => {
     expect(events.structuredContent?.eventRef).toBe(
       `skynet://runs/${firstId}/native-events`,
     );
+    expect(events.content[0]?.text).toContain(`Child run: ${firstId}`);
+    expect(events.content[0]?.text).toContain("Returned: 1; shown: 1; more: true; cursor: 0;");
+    expect(events.content[0]?.text).toContain(
+      'seq=0 provider=opencode event_type=child.started payload={"message":"started"} payload_truncated=false',
+    );
 
     const gathered = await executeChildSessionTool(
       claims,
@@ -313,6 +318,88 @@ describe("child session gateway tools", () => {
     ]);
     expect(firstGather?.eventRef).toBe(
       `skynet://runs/${firstId}/native-events`,
+    );
+  });
+
+  test("event text is stable, self-contained, and bounded to 20 lines", async () => {
+    const claims = await fixture();
+    const created = await executeChildSessionTool(
+      claims,
+      "child_session_create",
+      { idempotencyKey: "text-portability", prompt: "Inspect bounded text." },
+    );
+    const runId = childId(created);
+
+    for (let index = 0; index < 25; index += 1) {
+      await recordProviderEvent({
+        id: `${runId}:portable:${index}`,
+        runId,
+        threadId: claims.threadId,
+        provider: "opencode",
+        eventType: `portable.${index}`,
+        nativeSessionId: "child-native-portable",
+        nativeParentSessionId: "parent-native",
+        payload:
+          index === 0
+            ? { z: "x".repeat(400), a: { y: 2, x: 1 } }
+            : { index },
+      });
+    }
+
+    const result = await executeChildSessionTool(
+      claims,
+      "child_session_events",
+      { childRunId: runId, cursor: -1, limit: 50 },
+    );
+    const text = result.content[0]?.text ?? "";
+    const eventLines = text.split("\n").filter((line) => line.startsWith("seq="));
+
+    expect(text).toContain(`Child run: ${runId}`);
+    expect(text).toContain("Returned: 25; shown: 20; more: true; cursor: 19;");
+    expect(text).toContain(`ref: skynet://runs/${runId}/native-events`);
+    expect(eventLines).toHaveLength(20);
+    const payload = eventLines[0]!.match(/ payload=(.*) payload_truncated=/)?.[1];
+    expect(payload?.length).toBeLessThanOrEqual(320);
+    expect(JSON.parse(payload ?? "")).toMatchObject({
+      preview: expect.stringContaining('{"a":{"x":1,"y":2},"z":"'),
+      truncated: true,
+    });
+    expect(eventLines[0]).toContain("payload_truncated=true");
+    expect(text).not.toContain("event_type=portable.20 ");
+    expect((result.structuredContent?.events as unknown[])).toHaveLength(25);
+  });
+
+  test("an exact event page has no false-positive continuation cursor", async () => {
+    const claims = await fixture();
+    const created = await executeChildSessionTool(
+      claims,
+      "child_session_create",
+      { idempotencyKey: "exact-page", prompt: "Inspect exact pagination." },
+    );
+    const runId = childId(created);
+
+    for (let index = 0; index < 20; index += 1) {
+      await recordProviderEvent({
+        id: `${runId}:exact:${index}`,
+        runId,
+        threadId: claims.threadId,
+        provider: "opencode",
+        eventType: `exact.${index}`,
+        nativeSessionId: "child-native-exact",
+        nativeParentSessionId: "parent-native",
+        payload: { index },
+      });
+    }
+
+    const result = await executeChildSessionTool(
+      claims,
+      "child_session_events",
+      { childRunId: runId, cursor: -1, limit: 20 },
+    );
+
+    expect(result.structuredContent?.nextCursor).toBeNull();
+    expect(result.content[0]?.text).toContain(
+      "Returned: 20; shown: 20; more: false; cursor: end;",
     );
   });
 

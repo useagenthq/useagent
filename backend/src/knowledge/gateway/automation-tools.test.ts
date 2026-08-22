@@ -3,6 +3,7 @@ import {
   AUTOMATION_TOOLS,
   executeAutomationTool,
   executeAutomationToolLocal,
+  formatAutomationHistoryText,
 } from "./automation-tools";
 import {
   mintApprovalCapability,
@@ -53,6 +54,55 @@ afterEach(() => {
 });
 
 describe("automation gateway control-plane delegation", () => {
+  test("history text is self-contained, newest-first, and bounded to 20 firings", () => {
+    const longSummary = `first line\n${"x".repeat(300)}`;
+    const firings = Array.from({ length: 22 }, (_, index) => ({
+      id: `firing-${index}`,
+      schedule_id: "automation-1",
+      run_id: `run-${index}`,
+      fired_at: new Date(Date.UTC(2026, 7, 22, 12, 0, 22 - index)).toISOString(),
+      trigger: index % 2 === 0 ? "manual" as const : "cron" as const,
+      status: "queued",
+      run_status: index === 0 ? "completed" : "running",
+      run_summary: index === 0 ? longSummary : `summary ${index}`,
+    }));
+
+    const text = formatAutomationHistoryText(
+      { id: "automation-1", name: "Daily report" },
+      firings,
+    );
+    const firingLines = text.split("\n").filter((line) => line.startsWith("fired_at="));
+
+    expect(text).toContain('Automation: automation-1 name="Daily report"');
+    expect(text).toContain("Total: 22; shown: 20; truncated: true");
+    expect(firingLines).toHaveLength(20);
+    expect(firingLines[0]).toContain("run_id=run-0 run_status=completed");
+    expect(firingLines[0]).toContain("summary_truncated=true");
+    expect(firingLines[0]).not.toContain("\n");
+    const summary = firingLines[0]!.match(/ summary=(.*) summary_truncated=/)?.[1];
+    expect(summary?.length).toBeLessThanOrEqual(240);
+    expect(() => JSON.parse(summary ?? "")).not.toThrow();
+    expect(text).not.toContain("run_id=run-20");
+  });
+
+  test("history text renders a missing live run status explicitly", () => {
+    const text = formatAutomationHistoryText(
+      { id: "automation-1", name: "Daily report" },
+      [{
+        id: "firing-1",
+        schedule_id: "automation-1",
+        run_id: "run-missing",
+        fired_at: "2026-08-22T12:00:00.000Z",
+        trigger: "cron",
+        status: "queued",
+        run_status: null,
+        run_summary: null,
+      }],
+    );
+
+    expect(text).toContain("run_id=run-missing run_status=null summary=null");
+  });
+
   test("advertises schema, list, create, and get as ordinary discoverable MCP tools", async () => {
     const names = AUTOMATION_TOOLS.map((tool) => tool.name);
     const createTool = AUTOMATION_TOOLS.find((tool) => tool.name === "automation_create");

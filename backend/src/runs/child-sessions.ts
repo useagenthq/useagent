@@ -255,12 +255,14 @@ export async function listChildSessionEvents(input: {
   if (!child) return null;
   const cursor = typeof input.cursor === "number" && Number.isInteger(input.cursor) ? input.cursor : -1;
   const limit = childSessionEventLimit(input.limit);
-  const events = (await getNativeFramesSince(input.childRunId, cursor)).slice(0, limit);
+  const rows = (await getNativeFramesSince(input.childRunId, cursor)).slice(0, limit + 1);
+  const hasMore = rows.length > limit;
+  const events = rows.slice(0, limit);
   const last = events.at(-1);
   return {
     childRunId: input.childRunId,
     events,
-    nextCursor: events.length === limit && last ? last.seq : null,
+    nextCursor: hasMore && last ? last.seq : null,
     eventRef: child.eventRef,
   };
 }

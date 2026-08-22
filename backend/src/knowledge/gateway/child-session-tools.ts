@@ -15,6 +15,8 @@ import {
 } from "../../runs/child-sessions";
 
 const MAX_PROMPT_CHARS = 4_000;
+const MAX_TEXT_EVENT_LINES = 20;
+const MAX_TEXT_PAYLOAD_CHARS = 320;
 
 export const CHILD_SESSION_TOOLS = [
   {
@@ -107,6 +109,48 @@ export const CHILD_SESSION_TOOL_NAMES: ReadonlySet<string> = new Set(
 
 function cleanString(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
+}
+
+function stableJsonValue(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(stableJsonValue);
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>)
+        .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
+        .map(([key, entry]) => [key, stableJsonValue(entry)]),
+    );
+  }
+  return value;
+}
+
+function payloadPreview(payload: unknown): {
+  readonly text: string;
+  readonly truncated: boolean;
+} {
+  const serialized = JSON.stringify(stableJsonValue(payload)) ?? "null";
+  if (serialized.length <= MAX_TEXT_PAYLOAD_CHARS) {
+    return { text: serialized, truncated: false };
+  }
+  let low = 0;
+  let high = serialized.length;
+  let text = JSON.stringify({ preview: "", truncated: true });
+  while (low <= high) {
+    const middle = Math.floor((low + high) / 2);
+    const candidate = JSON.stringify({
+      preview: serialized.slice(0, middle),
+      truncated: true,
+    });
+    if (candidate.length <= MAX_TEXT_PAYLOAD_CHARS) {
+      text = candidate;
+      low = middle + 1;
+    } else {
+      high = middle - 1;
+    }
+  }
+  return {
+    text,
+    truncated: true,
+  };
 }
 
 export async function childSessionToolsEnabled(
@@ -221,10 +265,22 @@ async function events(
     limit: args.limit,
   });
   if (!page) return errorResult("child session not found", { status: 404 });
+  const shownEvents = page.events.slice(0, MAX_TEXT_EVENT_LINES);
+  const hasHiddenReturnedEvents = page.events.length > shownEvents.length;
+  const more = hasHiddenReturnedEvents || page.nextCursor !== null;
+  const textCursor = hasHiddenReturnedEvents
+    ? shownEvents.at(-1)?.seq ?? null
+    : page.nextCursor;
+  const lines = shownEvents.map((event) => {
+    const payload = payloadPreview(event.payload);
+    return `seq=${event.seq} provider=${event.provider} event_type=${event.eventType} payload=${payload.text} payload_truncated=${payload.truncated}`;
+  });
   return textResult(
-    page.events.length === 0
-      ? `No child session events after the requested cursor. Event reference: ${page.eventRef}`
-      : `Returned ${page.events.length} event(s) for ${childRunId}. Event reference: ${page.eventRef}`,
+    [
+      `Child run: ${childRunId}`,
+      `Returned: ${page.events.length}; shown: ${shownEvents.length}; more: ${more}; cursor: ${textCursor ?? "end"}; ref: ${page.eventRef}`,
+      ...lines,
+    ].join("\n"),
     { ...page, limit: childSessionEventLimit(args.limit) },
   );
 }
