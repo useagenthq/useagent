@@ -4,9 +4,9 @@
 // pure decisions the hook is built on.
 
 import { describe, expect, test } from "bun:test";
-import { seedThreadStore, shouldRetireOptimistic } from "./use-thread-stream";
 import { createThreadStore } from "./thread-store";
 import type { ApiRun, RunStatus } from "./types";
+import { seedThreadStore, shouldRetireOptimistic } from "./use-thread-stream";
 
 function makeRun(id: string, status: RunStatus = "running", parent: string | null = null): ApiRun {
   return {

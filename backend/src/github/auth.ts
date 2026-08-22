@@ -45,6 +45,21 @@ export async function resolveGithubAuth(): Promise<GithubAuth> {
 }
 
 /**
+ * Resolve the credential used by the repository picker and branch browser.
+ * When an App is configured it must win over a broader deployment PAT because
+ * retained production sandboxes also require App-scoped repository access.
+ * This keeps the offered catalog identical to what a run can actually open.
+ */
+export async function resolveGithubCatalogAuth(): Promise<GithubAuth> {
+  const app = githubAppConfig();
+  if (!app) return resolveGithubAuth();
+
+  const { owner } = githubConfig();
+  const { token } = await getInstallationToken(app);
+  return { token, owner: owner ?? app.org, source: "app" };
+}
+
+/**
  * Just the bearer token for backend-only GitHub operations. Never use this for
  * a retained sandbox; use {@link resolveGithubSandboxToken} with the exact repo.
  */

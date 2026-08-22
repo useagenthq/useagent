@@ -36,7 +36,7 @@ describe("unified shell contract", () => {
   test("limits primary sidebar navigation to projects, threads, usage, library, and settings", () => {
     const { threadSidebar } = shellSources();
     const sidebarThreads = read("./sidebar-threads.tsx");
-    const primaryDestinations = ["All projects", "Threads", "Usage", "Library", "Settings"];
+    const primaryDestinations = ["Dashboard", "Threads", "Usage", "Library", "Settings"];
     const displacedDestinations = [
       "New chat",
       "New task",
@@ -60,6 +60,8 @@ describe("unified shell contract", () => {
     for (const label of displacedDestinations) {
       expect(threadSidebar).not.toContain(`label='${label}'`);
     }
+    expect(threadSidebar).not.toContain('label="All projects"');
+    expect(threadSidebar.match(/href="\/dashboard"/g)).toHaveLength(1);
   });
 
   test("groups all library surfaces under Library", () => {
@@ -203,6 +205,8 @@ describe("unified shell contract", () => {
     expect(compactSidebarRail).toContain('aria-label="Expand navigation"');
     expect(compactSidebarRail).toContain("<SearchCommand compact");
     expect(compactSidebarRail).toContain('href="/dashboard"');
+    expect(compactSidebarRail).toContain('label="Dashboard"');
+    expect(compactSidebarRail).not.toContain('label="All projects"');
     expect(compactSidebarRail).toContain('href="/skills"');
     expect(compactSidebarRail).toContain("<UserMenu");
   });

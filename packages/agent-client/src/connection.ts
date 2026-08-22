@@ -43,6 +43,12 @@ export interface ThreadConnectionOptions {
   maxAttempts?: number;
   healthyMs?: number;
   pollMs?: number;
+  /** Bounded durable verification after terminal evidence (`done` or canonical
+   * completion) when the corresponding settled run projection may have been
+   * missed. Returns true once durable state is terminal. */
+  reconcileSettlement?: (runId: string) => Promise<boolean>;
+  settlementAttempts?: number;
+  settlementBackoff?: (attempts: number) => number;
   /** Backoff for the Nth consecutive failure (ms). */
   backoff?: (attempts: number) => number;
 }
@@ -50,6 +56,8 @@ export interface ThreadConnectionOptions {
 export interface ThreadConnection {
   start(): void;
   stop(): void;
+  /** Request bounded durable settlement verification after terminal evidence. */
+  requestSettlementReconcile(runId: string): void;
   /** Test/introspection: whether the fallback poll is currently active. */
   isPolling(): boolean;
 }
@@ -59,12 +67,17 @@ export function createThreadConnection(opts: ThreadConnectionOptions): ThreadCon
   const healthyMs = opts.healthyMs ?? 3000;
   const pollMs = opts.pollMs ?? 5000;
   const backoff = opts.backoff ?? ((n: number) => Math.min(1000 * n, 5000));
+  const settlementAttempts = opts.settlementAttempts ?? 3;
+  const settlementBackoff = opts.settlementBackoff ?? ((n: number) => 1000 * n);
   const { timers } = opts;
 
   let source: EventSourceLike | null = null;
   let reconnectTimer: unknown = null;
   let healthTimer: unknown = null;
   let pollTimer: unknown = null;
+  let settlementTimer: unknown = null;
+  let settlementInFlight = false;
+  let settlementAttempt = 0;
   let attempts = 0;
   let stopped = false;
   // Bumped on every (re)connect and on stop(). Each EventSource's callbacks capture their
@@ -82,6 +95,12 @@ export function createThreadConnection(opts: ThreadConnectionOptions): ThreadCon
   };
   const stopPolling = (): void => {
     if (pollTimer !== null) { timers.clearInterval(pollTimer); pollTimer = null; }
+  };
+  const clearSettlement = (): void => {
+    if (settlementTimer !== null) {
+      timers.clearTimeout(settlementTimer);
+      settlementTimer = null;
+    }
   };
   const startPolling = (): void => {
     if (pollTimer !== null || stopped) return;
@@ -159,6 +178,32 @@ export function createThreadConnection(opts: ThreadConnectionOptions): ThreadCon
     };
   }
 
+  const requestSettlementReconcile = (runId: string): void => {
+    if (stopped || !opts.reconcileSettlement || settlementInFlight || settlementTimer !== null) {
+      return;
+    }
+    settlementAttempt = 0;
+
+    const verify = async (): Promise<void> => {
+      if (stopped || !opts.reconcileSettlement) return;
+      settlementTimer = null;
+      settlementInFlight = true;
+      settlementAttempt += 1;
+      let settled = false;
+      try {
+        settled = await opts.reconcileSettlement(runId);
+      } catch {
+        // The bounded retry budget handles transient/backend-down failures.
+      } finally {
+        settlementInFlight = false;
+      }
+      if (stopped || settled || settlementAttempt >= settlementAttempts) return;
+      settlementTimer = timers.setTimeout(verify, settlementBackoff(settlementAttempt));
+    };
+
+    void verify();
+  };
+
   return {
     start() {
       stopped = false;
@@ -169,8 +214,10 @@ export function createThreadConnection(opts: ThreadConnectionOptions): ThreadCon
       clearReconnect();
       clearHealth();
       stopPolling();
+      clearSettlement();
       closeSource();
     },
+    requestSettlementReconcile,
     isPolling() {
       return pollTimer !== null;
     },

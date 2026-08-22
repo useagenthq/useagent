@@ -55,6 +55,7 @@ import type { SlashCommand } from "@/components/chat/slash-command";
 import { SubagentChips } from "@/components/chat/subagent-pane";
 import { type SurfaceChoice, SurfaceChooser } from "@/components/chat/surface-chooser";
 import { TerminalPane } from "@/components/chat/terminal-pane";
+import { terminalRunIdForThread } from "@/components/chat/terminal-run-state";
 import type { ThreadRunView } from "@/components/chat/thread-store";
 import type { TimelineArtifact } from "@/components/chat/timeline";
 import { ComposerPrefillProvider } from "@/components/chat/composer-prefill-context";
@@ -236,6 +237,7 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
   // Subagent fidelity is derived from native frames across the WHOLE thread.
   const allFrames = turns.flatMap((t) => t.native?.nativeFrames ?? []);
   const live = turns.some((t) => isLiveStatus(t.status));
+  const terminalRunId = terminalRunIdForThread(turns);
   // The turn currently producing events (running preferred; else the newest live
   // turn about to start) - the boot orb + live indicators read from it.
   const liveTurn =
@@ -1055,7 +1057,7 @@ export function SessionView({ initialThread }: { initialThread: ApiRun[] }) {
                       steps={allSteps}
                       live={live}
                       engine={newest.engine}
-                      runId={newest.id}
+                      runId={terminalRunId}
                     />
                   )}
                 </div>
