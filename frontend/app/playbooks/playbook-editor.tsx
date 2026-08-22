@@ -2,12 +2,10 @@
 
 import { useEffect, useState } from "react";
 
-import * as Button from "@/components/ui/button";
-import * as Hint from "@/components/ui/hint";
-import * as Input from "@/components/ui/input";
-import * as Label from "@/components/ui/label";
+import { Button } from "@/components/base/buttons/button";
+import { Input } from "@/components/base/input/input";
+import { Label } from "@/components/base/input/label";
 import * as Modal from "@/components/ui/modal";
-import * as Textarea from "@/components/ui/textarea";
 import { createSkill, updateSkill } from "@/app/skills/skills-api";
 import type { Skill } from "@/app/skills/skills-data";
 
@@ -17,7 +15,8 @@ import type { Skill } from "@/app/skills/skills-data";
  * POSTs kind:"playbook"; editing PATCHes - and a content change mints a new
  * immutable version server-side, so a past run stays pinned to the version it
  * ran. A controlled modal (open/onOpenChange owned by the parent) so both the
- * page's "New playbook" button and the detail view's "Edit" reuse it.
+ * page's "New playbook" button and the detail view's "Edit" reuse it. The Modal
+ * shell stays AlignUI (no BoardUI equivalent); fields are BoardUI primitives.
  */
 
 type SaveStatus = "idle" | "saving" | "error";
@@ -28,6 +27,11 @@ function toLines(value: string): string[] {
     .map((line) => line.trim())
     .filter(Boolean);
 }
+
+/** Plain textarea styled to match the BoardUI input field shell (mirrors the
+ *  skills new-skill-modal - no shared BoardUI textarea primitive yet). */
+const TEXTAREA_FIELD =
+  "w-full resize-y rounded-2lg bg-background-tertiary-default p-2 pl-3 font-sans text-body-regular text-text-primary outline-none ring-2 ring-inset ring-transparent transition-[box-shadow] placeholder:text-text-tertiary hover:ring-border-button-hover focus:ring-border-button-active disabled:cursor-not-allowed disabled:opacity-60";
 
 function SectionTextarea({
   id,
@@ -46,15 +50,15 @@ function SectionTextarea({
 }) {
   return (
     <div className="flex w-full flex-col gap-1">
-      <Label.Root htmlFor={id}>{label}</Label.Root>
-      <Textarea.Root
+      <Label htmlFor={id}>{label}</Label>
+      <textarea
         id={id}
-        simple
         rows={3}
         placeholder={placeholder}
         value={value}
         disabled={disabled}
         onChange={(event) => onChange(event.target.value)}
+        className={TEXTAREA_FIELD}
       />
     </div>
   );
@@ -132,7 +136,7 @@ export function PlaybookEditor({
         onOpenChange(next);
       }}
     >
-      <Modal.Content className="max-h-[90vh] max-w-[520px] overflow-y-auto">
+      <Modal.Content className="max-h-[90vh] max-w-[520px] overflow-y-auto rounded-3xl border border-border-button-default bg-background-primary-default shadow-dropdown">
         <div className="flex flex-col gap-5 p-6">
           <div className="flex flex-col gap-1.5">
             <Modal.Title className="text-title-3-medium text-text-primary">
@@ -146,52 +150,31 @@ export function PlaybookEditor({
           </div>
 
           <div className="flex flex-col gap-4">
-            <div className="flex flex-col gap-1">
-              <Label.Root htmlFor="playbook-name">Name</Label.Root>
-              <Input.Root>
-                <Input.Wrapper>
-                  <Input.Input
-                    id="playbook-name"
-                    placeholder="e.g. Triage a customer escalation"
-                    value={name}
-                    disabled={busy}
-                    onChange={(event) => setName(event.target.value)}
-                  />
-                </Input.Wrapper>
-              </Input.Root>
-            </div>
+            <Input
+              label="Name"
+              placeholder="e.g. Triage a customer escalation"
+              value={name}
+              isDisabled={busy}
+              onChange={setName}
+            />
 
-            <div className="flex flex-col gap-1">
-              <Label.Root htmlFor="playbook-description">Description</Label.Root>
-              <Input.Root>
-                <Input.Wrapper>
-                  <Input.Input
-                    id="playbook-description"
-                    placeholder="When to reach for this procedure..."
-                    value={description}
-                    disabled={busy}
-                    onChange={(event) => setDescription(event.target.value)}
-                  />
-                </Input.Wrapper>
-              </Input.Root>
-              <Hint.Root>A one-line summary of when to follow this playbook.</Hint.Root>
-            </div>
+            <Input
+              label="Description"
+              placeholder="When to reach for this procedure..."
+              hint="A one-line summary of when to follow this playbook."
+              value={description}
+              isDisabled={busy}
+              onChange={setDescription}
+            />
 
-            <div className="flex flex-col gap-1">
-              <Label.Root htmlFor="playbook-tags">Tags</Label.Root>
-              <Input.Root>
-                <Input.Wrapper>
-                  <Input.Input
-                    id="playbook-tags"
-                    placeholder="support, escalation"
-                    value={tags}
-                    disabled={busy}
-                    onChange={(event) => setTags(event.target.value)}
-                  />
-                </Input.Wrapper>
-              </Input.Root>
-              <Hint.Root>Comma-separated, e.g. support, review</Hint.Root>
-            </div>
+            <Input
+              label="Tags"
+              placeholder="support, escalation"
+              hint="Comma-separated, e.g. support, review"
+              value={tags}
+              isDisabled={busy}
+              onChange={setTags}
+            />
 
             <SectionTextarea
               id="playbook-overview"
@@ -231,22 +214,20 @@ export function PlaybookEditor({
                 Saving…
               </span>
             )}
-            <Button.Root
-              className="rounded-full"
-              variant="neutral"
-              mode="stroke"
+            <Button
+              variant="secondary"
               onClick={() => onOpenChange(false)}
               disabled={busy}
             >
               Cancel
-            </Button.Root>
-            <Button.Root
-              className="rounded-full"
+            </Button>
+            <Button
+              variant="primary"
               onClick={onSave}
               disabled={busy || !name.trim() || !description.trim()}
             >
               {isEdit ? "Save version" : "Create playbook"}
-            </Button.Root>
+            </Button>
           </div>
         </div>
       </Modal.Content>

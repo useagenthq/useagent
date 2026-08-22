@@ -1,6 +1,11 @@
 "use client";
 
-import { RiAddLine, RiErrorWarningLine, RiFlashlightLine, RiSearch2Line } from "@remixicon/react";
+import {
+  RiAddLine,
+  RiCalendarScheduleLine,
+  RiErrorWarningLine,
+  RiSearch2Line,
+} from "@remixicon/react";
 import {
   type Dispatch,
   type SetStateAction,
@@ -8,9 +13,12 @@ import {
   useMemo,
   useState,
 } from "react";
-import * as Button from "@/components/ui/button";
-import * as Input from "@/components/ui/input";
-import * as SegmentedControl from "@/components/ui/segmented-control";
+import { Button } from "@/components/base/buttons/button";
+import { Input } from "@/components/base/input/input";
+import {
+  SegmentedControl,
+  SegmentedControlItem,
+} from "@/components/base/segmented-control/segmented-control";
 import { useOrgChanges } from "@/hooks/use-org-changes";
 import { relativeTime } from "@/utils/format";
 import { AutomationCard } from "./automation-card";
@@ -162,27 +170,21 @@ export function AutomationsView() {
   };
 
   return (
-    <div className="mx-auto w-full max-w-[1040px] px-5 py-8 sm:px-8 sm:py-10">
-      <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+    <div className="mx-auto w-full max-w-[1040px] px-6 py-8 sm:px-10 sm:py-10">
+      <div className="flex items-start justify-between gap-3">
         <div>
-          <div className="flex items-center gap-2 text-caption-1-medium text-text-tertiary">
-            <RiFlashlightLine className="size-4" aria-hidden /> Agent operations
+          <div className="flex items-center gap-2.5">
+            <RiCalendarScheduleLine aria-hidden className="size-5 text-foreground-icon-primary" />
+            <h1 className="text-title-2-medium text-text-primary">Automations</h1>
           </div>
-          <h1 className="mt-2 text-display-4-medium text-text-primary">Automations</h1>
-          <p className="mt-1 max-w-xl text-body-2-regular text-text-secondary">
+          <p className="mt-1.5 text-body-2-regular text-text-secondary">
             Schedule repeatable work, inspect every execution, and intervene when needed.
           </p>
         </div>
-        <Button.Root
-          variant="neutral"
-          mode="filled"
-          size="small"
-          className="rounded-full"
-          onClick={openCreate}
-        >
-          <Button.Icon as={RiAddLine} /> New automation
-        </Button.Root>
-      </header>
+        <Button variant="primary" leadingIcon={RiAddLine} onClick={openCreate}>
+          New automation
+        </Button>
+      </div>
 
       <AutomationOverview
         active={activeCount}
@@ -190,33 +192,33 @@ export function AutomationsView() {
         latestActivity={latestActivity ? relativeTime(latestActivity) : "No runs yet"}
       />
 
-      <section className="mt-6 overflow-hidden rounded-2xl border border-border-button-default bg-background-primary-default shadow-card">
+      <section className="mt-5 overflow-hidden rounded-2xl bg-background-primary-default shadow-sm ring-1 ring-inset ring-border-button-default">
         <div className="flex flex-col gap-3 border-b border-border-button-default px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-5">
-          <SegmentedControl.Root
-            value={filter}
-            onValueChange={(value) => setFilter(value as Filter)}
+          <SegmentedControl
+            aria-label="Filter automations by status"
+            selectedKeys={[filter]}
+            onSelectionChange={(keys) => {
+              const next = [...(keys as Set<string>)][0];
+              if (next) setFilter(next as Filter);
+            }}
           >
-            <SegmentedControl.List className="w-full sm:w-[290px]">
-              <SegmentedControl.Trigger value="all">All</SegmentedControl.Trigger>
-              <SegmentedControl.Trigger value="active">Active</SegmentedControl.Trigger>
-              <SegmentedControl.Trigger value="paused">Paused</SegmentedControl.Trigger>
-            </SegmentedControl.List>
-          </SegmentedControl.Root>
-          <Input.Root size="small" className="sm:w-72">
-            <Input.Wrapper>
-              <Input.Icon as={RiSearch2Line} />
-              <Input.Input
-                aria-label="Search automations"
-                placeholder="Search automations…"
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-              />
-            </Input.Wrapper>
-          </Input.Root>
+            <SegmentedControlItem id="all">All</SegmentedControlItem>
+            <SegmentedControlItem id="active">Active</SegmentedControlItem>
+            <SegmentedControlItem id="paused">Paused</SegmentedControlItem>
+          </SegmentedControl>
+          <Input
+            aria-label="Search automations"
+            placeholder="Search automations"
+            leadingIcon={RiSearch2Line}
+            size="small"
+            className="sm:w-64"
+            value={query}
+            onChange={setQuery}
+          />
         </div>
 
         {error && (
-          <div className="flex items-start gap-2 border-b border-border-error-default/20 bg-background-tertiary-error px-4 py-3 text-body-2-regular text-text-secondary sm:px-5">
+          <div className="flex items-start gap-2 border-b border-border-button-default bg-background-tertiary-error px-4 py-3 text-body-2-regular text-text-secondary sm:px-5">
             <RiErrorWarningLine
               className="mt-0.5 size-4 shrink-0 text-text-error-primary"
               aria-hidden
@@ -236,12 +238,13 @@ export function AutomationsView() {
           <div
             role="status"
             aria-label="Loading automations"
-            className="space-y-px bg-border-button-default"
+            className="divide-y divide-border-button-default"
           >
             {[0, 1, 2].map((item) => (
-              <div key={item} className="h-36 animate-pulse bg-background-primary-default p-5">
-                <div className="h-4 w-48 rounded bg-background-tertiary-default" />
-                <div className="mt-3 h-3 w-2/3 rounded bg-background-secondary-default" />
+              <div key={item} className="animate-pulse px-4 py-3 sm:px-5">
+                <div className="h-4 w-44 rounded bg-background-secondary-default" />
+                <div className="mt-2 h-3 w-2/3 rounded bg-background-secondary-default" />
+                <div className="mt-2 h-3 w-1/2 rounded bg-background-secondary-default" />
               </div>
             ))}
           </div>

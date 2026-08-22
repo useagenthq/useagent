@@ -1,12 +1,12 @@
 import type { ComponentType, ReactNode } from "react";
 import { RiFileList2Line } from "@remixicon/react";
 
-import * as Badge from "@/components/ui/badge";
-import { cnExt } from "@/utils/cn";
+import { Chip } from "@/components/base/badges/chip";
+import { cx } from "@/utils/cx";
 
 /**
  * Retrieved-context primitive — the "Matches · N" stack the knowledge search
- * renders its ranked hits into, rebuilt on AlignUI semantic tokens.
+ * renders its ranked hits into, built on BoardUI semantic tokens.
  *
  * `ContextCard` is one retrieved chunk: a title bar (glyph + name + a
  * right-aligned caption for the citation) over a two-line body preview.
@@ -39,8 +39,8 @@ export function ContextCard({
 }: ContextCardProps) {
   return (
     <article
-      className={cnExt(
-        "overflow-hidden rounded-xl bg-background-primary-default shadow-card ring-1 ring-inset ring-border-button-default transition-colors hover:ring-border-button-hover",
+      className={cx(
+        "overflow-hidden rounded-xl bg-background-primary-default shadow-sm ring-1 ring-inset ring-border-button-default transition-colors hover:ring-border-button-hover",
         className,
       )}
     >
@@ -79,12 +79,12 @@ export function ContextCardStack({
   className,
 }: ContextCardStackProps) {
   return (
-    <div className={cnExt("flex flex-col gap-2", className)}>
+    <div className={cx("flex flex-col gap-2", className)}>
       <div className="flex items-center gap-2 px-0.5">
         <span className="text-body-2-medium text-text-primary">{label}</span>
-        <Badge.Root variant="light" color="gray" size="medium">
+        <Chip variant="caption" color="soft">
           {count}
-        </Badge.Root>
+        </Chip>
       </div>
       {cards.map((card, i) => (
         <ContextCard key={`${card.title}-${i}`} {...card} />
