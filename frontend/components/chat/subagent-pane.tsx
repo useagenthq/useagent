@@ -157,7 +157,7 @@ function SubagentPaneBody({ initialRun }: { initialRun: ApiRun }) {
   return (
     <>
       <header className="border-border-button-default flex shrink-0 items-start gap-2.5 border-b px-4 py-3">
-        <span className="bg-purple-50 text-purple-500 mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-lg">
+        <span className="bg-background-secondary-default text-foreground-icon-secondary mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-lg">
           <RiRobot2Line className="size-3.5" aria-hidden />
         </span>
         <div className="min-w-0 flex-1">
