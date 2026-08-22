@@ -392,9 +392,6 @@ async function doRead(claims: ToolTokenClaims, args: Record<string, unknown>): P
   });
 }
 
-function isOrgPool(userId: string): boolean {
-  return userId.startsWith("org:");
-}
 function scopeWord(scope: MemoryScope): string {
   return scope === "org" ? "organization" : "personal";
 }
@@ -422,7 +419,7 @@ async function doCorrect(claims: ToolTokenClaims, args: Record<string, unknown>)
   // atomic/update (upstream ownership-check inconsistency for colon-namespaced
   // pools), and L0 refs have no update endpoint - both take the 6.3
   // replace-then-delete path (write the corrected fact, best-effort remove the old).
-  if (parsed.layer === "l1" && !isOrgPool(wp.identity.userId)) {
+  if (parsed.layer === "l1" && wp.sourceScope !== "org") {
     const ok = await updateScopedMemory(wp.identity, parsed.id, content);
     recordMemoryEvent(run, ok ? MEMORY_EVENTS.updated : MEMORY_EVENTS.failed, {
       op: "correct", ref: `tencent:l1:${parsed.id}`, scope: plan.scope,

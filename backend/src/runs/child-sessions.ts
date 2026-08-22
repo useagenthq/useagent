@@ -2,7 +2,9 @@ import { and, asc, desc, eq, inArray, like, sql } from "drizzle-orm";
 import { commands, providerEvents, runs, type EngineId, type MemoryScope, type RunStatus } from "../db/schema";
 import { db } from "../db/client";
 import {
+  acceptInternalRunCommand,
   acceptRunCommand,
+  preflightInternalRunCommandReplay,
   preflightRunCommandReplay,
 } from "../commands/service";
 import type { RunCommandIntent } from "../commands/types";
@@ -13,6 +15,7 @@ import {
   legacyParentResources,
   resolveRunIntake,
 } from "../resources/run-intake";
+import { isInternalRunOrigin } from "./origin";
 
 export const CHILD_SESSION_IDEMPOTENCY_PREFIX = "child-session";
 
@@ -124,18 +127,26 @@ export async function createChildSession(input: {
     commandSessionId: null,
     commandCatalogRevision: null,
   };
-  let accepted = await preflightRunCommandReplay({
-    orgId: input.orgId,
-    idempotencyKey,
-    intent,
-  });
+  const parent = await getRunForOrg(input.orgId, input.parentRunId);
+  if (!parent || parent.threadId !== input.threadId) {
+    throw new Error("child session parent is not available in this thread");
+  }
+  const internalOrigin = isInternalRunOrigin(parent.origin) ? parent.origin : null;
+  let accepted = internalOrigin
+    ? await preflightInternalRunCommandReplay({
+      orgId: input.orgId,
+      idempotencyKey,
+      intent,
+      origin: internalOrigin,
+    })
+    : await preflightRunCommandReplay({
+      orgId: input.orgId,
+      idempotencyKey,
+      intent,
+    });
   if (accepted?.status === "conflict") return { status: "conflict" };
 
   if (!accepted) {
-    const parent = await getRunForOrg(input.orgId, input.parentRunId);
-    if (!parent || parent.threadId !== input.threadId) {
-      throw new Error("child session parent is not available in this thread");
-    }
     const inheritedResources =
       parent.resolvedResources.length > 0
         ? parent.resolvedResources
@@ -150,7 +161,7 @@ export async function createChildSession(input: {
       },
       { authorize: createRunResourceAuthorization(input.orgId) },
     );
-    accepted = await acceptRunCommand({
+    const commandInput = {
       idempotencyKey,
       orgId: input.orgId,
       actorId: input.actorId,
@@ -174,7 +185,10 @@ export async function createChildSession(input: {
         commandSessionId: null,
         commandCatalogRevision: null,
       },
-    });
+    };
+    accepted = internalOrigin
+      ? await acceptInternalRunCommand({ ...commandInput, origin: internalOrigin })
+      : await acceptRunCommand(commandInput);
   }
   if (accepted.status === "conflict") return { status: "conflict" };
   const child = await getChildSession(input.orgId, input.threadId, accepted.runId);

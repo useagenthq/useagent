@@ -14,10 +14,13 @@
  *
  * Identity is ALWAYS resolved from the persisted authenticated run — never from
  * the sandbox, prompt, tool arguments, or a request body. This module is pure
- * policy; the Tencent wire calls live in team-memory.ts.
+ * policy; the Tencent wire calls live in team-memory.ts. Internal canary/test
+ * origins retain the same team_id but use origin-specific agent/user partitions
+ * so evaluation traffic cannot read or write product L0-L3 memory.
  */
 import { memoryConfig } from "../env";
 import { MEMORY_SCOPES, type MemoryScope } from "../db/schema";
+import { isInternalRunOrigin } from "../runs/origin";
 import type { MemoryIdentity, ScopedPool } from "./team-memory";
 
 export { MEMORY_SCOPES };
@@ -58,6 +61,7 @@ export function resolveScopedMemory(run: {
   threadId: string;
   id: string;
   memoryScope: MemoryScope;
+  origin?: string | null;
 }): ScopedMemoryPlan | null {
   const cfg = memoryConfig();
   if (!cfg) return null;
@@ -65,9 +69,18 @@ export function resolveScopedMemory(run: {
   // team_id = the run's org (spec); fall back to the configured default team for
   // a legacy/system run with no org so it still resolves a stable partition.
   const orgId = run.orgId ?? cfg.teamId;
+  const internalOrigin = run.origin && isInternalRunOrigin(run.origin)
+    ? run.origin.toLowerCase()
+    : null;
+  const agentId = internalOrigin
+    ? `${cfg.agentId}:internal:${internalOrigin}`
+    : cfg.agentId;
+  const orgUserId = internalOrigin
+    ? `internal:${internalOrigin}:org:${orgId}`
+    : `org:${orgId}`;
   const base = {
     teamId: orgId,
-    agentId: cfg.agentId,
+    agentId,
     sessionId: run.threadId,
     runId: run.id,
   } as const;
@@ -76,7 +89,7 @@ export function resolveScopedMemory(run: {
     sourceScope: "org",
     identity: {
       ...base,
-      userId: `org:${orgId}`,
+      userId: orgUserId,
       // Provenance = the real actor when known, else the shared org partition.
       actorUserId: run.userId ?? `org:${orgId}`,
     },
@@ -84,7 +97,7 @@ export function resolveScopedMemory(run: {
 
   const common = {
     orgId,
-    agentId: cfg.agentId,
+    agentId,
     sessionId: run.threadId,
     actorUserId: run.userId,
   } as const;
@@ -99,7 +112,13 @@ export function resolveScopedMemory(run: {
   }
   const personalPool: ScopedPool = {
     sourceScope: "personal",
-    identity: { ...base, userId: run.userId, actorUserId: run.userId },
+    identity: {
+      ...base,
+      userId: internalOrigin
+        ? `internal:${internalOrigin}:user:${run.userId}`
+        : run.userId,
+      actorUserId: run.userId,
+    },
   };
   return {
     ...common,

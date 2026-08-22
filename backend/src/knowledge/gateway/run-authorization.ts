@@ -9,6 +9,7 @@ export interface AuthorizedToolRun {
   readonly userId: string | null;
   readonly threadId: string;
   readonly memoryScope: MemoryScope;
+  readonly origin: string | null;
 }
 
 /**
@@ -51,6 +52,7 @@ export async function resolveAuthorizedToolRun(
       userId: runs.userId,
       threadId: runs.threadId,
       memoryScope: runs.memoryScope,
+      origin: runs.origin,
     })
     .from(runs)
     .where(claims.scope === "thread" ? identity : and(identity, eq(runs.id, claims.runId)))
@@ -70,6 +72,7 @@ export async function resolveAuthorizedToolRun(
     userId: run.userId,
     threadId: run.threadId,
     memoryScope: run.memoryScope,
+    origin: run.origin,
   };
 }
 

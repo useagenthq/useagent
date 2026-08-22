@@ -8,7 +8,7 @@ import { acceptRunCommand, type RunCommandIntent } from "../src/commands";
 import { fireScheduleWithOutcome, firingKey } from "../src/schedules/fire";
 import { getScheduleForOrg } from "../src/schedules/repo";
 import { db } from "../src/db/client";
-import { skillRevisions } from "../src/db/schema";
+import { runs, skillRevisions } from "../src/db/schema";
 import { createOrgSession, json, waitFor } from "./helpers";
 
 interface AutomationListResponse {
@@ -245,6 +245,12 @@ describe("schedules API", () => {
       return body.status === "completed" ? body : null;
     });
     expect(done.prompt).toBe("do the thing");
+    const [persisted] = await db
+      .select({ origin: runs.origin })
+      .from(runs)
+      .where(eq(runs.id, runId))
+      .limit(1);
+    expect(persisted?.origin).toBeNull();
 
     // History shows the manual firing, enriched with the live run status.
     const hist = await json<FiringHistoryResponse>(

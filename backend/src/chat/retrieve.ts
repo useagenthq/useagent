@@ -11,6 +11,7 @@
  */
 import type { MemoryScope } from "../memory/scope";
 import { resolveScopedMemory } from "../memory/scope";
+import type { InternalRunOrigin } from "../runs/origin";
 import { embeddingsEnabled, embedOne } from "../knowledge/embed";
 import { searchRecords, type SearchHit } from "../knowledge/store";
 import { recallScopedMemory, type ScopedRecall } from "../memory/team-memory";
@@ -36,6 +37,7 @@ export interface RetrieveInput {
   query: string;
   memoryScope: MemoryScope;
   threadId: string;
+  origin?: InternalRunOrigin | null;
 }
 
 /** Injectable dependencies. Defaults hit the real knowledge store + team memory;
@@ -85,8 +87,16 @@ const realRecallMemory: RetrieveDeps["recallMemory"] = async ({
   query,
   memoryScope,
   threadId,
+  origin,
 }) => {
-  const plan = resolveScopedMemory({ orgId, userId, threadId, id: threadId, memoryScope });
+  const plan = resolveScopedMemory({
+    orgId,
+    userId,
+    threadId,
+    id: threadId,
+    memoryScope,
+    origin,
+  });
   if (!plan) return null;
   return recallScopedMemory(query, plan.readPools);
 };

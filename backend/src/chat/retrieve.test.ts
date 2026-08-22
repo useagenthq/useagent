@@ -52,6 +52,20 @@ function deps(over: Partial<RetrieveDeps> = {}): RetrieveDeps {
 }
 
 describe("retrieveChatContext", () => {
+  test("passes the persisted trusted origin to memory retrieval", async () => {
+    let observedOrigin: string | null | undefined;
+    await retrieveChatContext(
+      { ...INPUT, origin: "internal:t3-parity" },
+      deps({
+        recallMemory: async (input) => {
+          observedOrigin = input.origin;
+          return null;
+        },
+      }),
+    );
+    expect(observedOrigin).toBe("internal:t3-parity");
+  });
+
   test("blank query short-circuits to empty (no dep calls)", async () => {
     let called = false;
     const ctx = await retrieveChatContext(

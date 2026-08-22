@@ -66,10 +66,33 @@ describe("finalizeRun — transactional memory capture (GAP 2)", () => {
 
   test("an INTERNAL run (canary/e2e origin) does NOT enqueue a capture", async () => {
     await withMemory(async () => {
-      const id = await freshRun("t3 parity probe: list the repo files", "t3-parity");
+      const id = await freshRun("t3 parity probe: list the repo files", "internal:t3-parity");
       await finalizeRun(id, "completed", "Listed 14 files across src and test directories", 500);
       expect((await getRun(id))?.status).toBe("completed");
       expect(await getCapture(id)).toBeNull();
+    });
+  });
+
+  test("a forged public internal-looking idempotency key remains product and captures", async () => {
+    await withMemory(async () => {
+      const id = crypto.randomUUID();
+      const accepted = await acceptRunCommand({
+        idempotencyKey: `e2e-${crypto.randomUUID()}`,
+        orgId: ORG,
+        actorId: null,
+        run: {
+          id,
+          prompt: "summarize the quarterly invoices",
+          model: "claude-opus-5",
+          engine: "mock",
+          parentRunId: null,
+          threadId: id,
+        },
+      });
+      expect(accepted.status).toBe("created");
+      expect((await getRun(id))?.origin).toBeNull();
+      await finalizeRun(id, "completed", "Summarized 42 invoices across four regions", 25);
+      expect(await getCapture(id)).not.toBeNull();
     });
   });
 

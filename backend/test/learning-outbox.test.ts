@@ -79,7 +79,7 @@ describe("learning outbox — enqueue is inside finalizeRun's terminal transacti
   });
 
   test("an INTERNAL-origin run enqueues NO learning intent (no eval traffic)", async () => {
-    const id = await freshRun("parity probe", { origin: "t3-parity" });
+    const id = await freshRun("parity probe", { origin: "internal:t3-parity" });
     await finalizeRun(id, "completed", "Listed files across the repo tree", 500);
     expect(await getLearningIntent(id)).toBeNull();
   });
