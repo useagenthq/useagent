@@ -846,6 +846,34 @@ describe("durable artifacts", () => {
       expect(wp.body.workpiece.kind).toBe("presentation");
       expect(wp.body.state.deck).toBeDefined();
 
+      // The MCP schema exposes the same color shorthand as presentations. The
+      // document boundary canonicalizes it instead of rejecting the authoring call.
+      const documentRes = await executeArtifactTool(claims, "workpiece_create", {
+        kind: "document",
+        name: "Brief.docx",
+        state: {
+          document: {
+            schemaVersion: 2,
+            theme: {
+              background: "#101828",
+              heading: "#ffffff",
+              body: "#d0d5dd",
+              accent: "#ffcc66",
+            },
+            html: "<h1>Brief</h1><p>Exact production shorthand.</p>",
+          },
+        },
+      });
+      expect(documentRes.isError).toBeFalsy();
+      const documentArtifact = documentRes.structuredContent?.artifact as ArtifactDescriptor;
+      const documentState = await json<{
+        state: { document: { theme: { background: unknown } } };
+      }>(`/api/artifacts/${documentArtifact.id}/workpiece`, { cookies: owner.cookies });
+      expect(documentState.body.state.document.theme.background).toEqual({
+        type: "color",
+        color: "#101828",
+      });
+
       // Invalid state for the kind is rejected with a helpful message.
       const bad = await executeArtifactTool(claims, "workpiece_create", {
         kind: "spreadsheet",
