@@ -65,11 +65,27 @@ export function RailResizer({
 }) {
   const draggingRef = useRef(false);
   const [dragging, setDragging] = useState(false);
+  // Pointer moves can outpace the display; buffer the newest clientX and emit at
+  // most ONE onMove per animation frame so the consumer pays one width write per
+  // painted frame, never one per pointer event.
+  const pendingXRef = useRef<number | null>(null);
+  const moveFrameRef = useRef<number | null>(null);
+
+  const flushMove = () => {
+    moveFrameRef.current = null;
+    if (pendingXRef.current === null) return;
+    const pointerX = pendingXRef.current;
+    pendingXRef.current = null;
+    onMove(pointerX);
+  };
 
   const finishDrag = (element: HTMLHRElement, pointerId?: number) => {
     if (!draggingRef.current) return;
     draggingRef.current = false;
     setDragging(false);
+    // Apply the last buffered move first so the commit sees the final width.
+    if (moveFrameRef.current !== null) cancelAnimationFrame(moveFrameRef.current);
+    flushMove();
     if (pointerId !== undefined && element.hasPointerCapture(pointerId)) {
       element.releasePointerCapture(pointerId);
     }
@@ -94,7 +110,9 @@ export function RailResizer({
         event.currentTarget.setPointerCapture(event.pointerId);
       }}
       onPointerMove={(event) => {
-        if (draggingRef.current) onMove(event.clientX);
+        if (!draggingRef.current) return;
+        pendingXRef.current = event.clientX;
+        moveFrameRef.current ??= requestAnimationFrame(flushMove);
       }}
       onPointerUp={(event) => finishDrag(event.currentTarget, event.pointerId)}
       onPointerCancel={(event) => finishDrag(event.currentTarget, event.pointerId)}
@@ -107,7 +125,9 @@ export function RailResizer({
       }}
       onDoubleClick={onReset}
       className={cnExt(
-        "relative -mx-2 hidden h-auto w-4 shrink-0 cursor-col-resize touch-none self-stretch border-0 bg-transparent outline-none md:block",
+        // `peer`: the rail <section> that follows suppresses its width transition
+        // while this grip reports data-dragging (peer-data-[dragging=true]).
+        "peer relative -mx-2 hidden h-auto w-4 shrink-0 cursor-col-resize touch-none self-stretch border-0 bg-transparent outline-none md:block",
         // The hairline stays INVISIBLE at rest (the panel edge reads cleaner without
         // a full-height rule) and appears on hover, keyboard focus, or drag.
         "before:absolute before:inset-y-3 before:left-1/2 before:w-px before:-translate-x-1/2 before:bg-transparent before:transition-colors before:content-['']",

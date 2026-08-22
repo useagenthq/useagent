@@ -478,8 +478,11 @@ function toolNodesFromSteps(steps: readonly ApiStep[]): TimelineNode[] {
 }
 
 /** A single turn: the user's clean prompt, the agent's answer, and its activity
- * (open + streaming while live, a collapsed disclosure once settled). */
-function TurnBlock({
+ * (open + streaming while live, a collapsed disclosure once settled).
+ * Memoized: the thread store keeps a settled run's view (and so its Turn object)
+ * identity-stable across snapshot rebuilds, so while one run streams every other
+ * turn bails here instead of re-running buildTimeline per SSE animation frame. */
+const TurnBlock = memo(function TurnBlock({
   turn,
   queuePosition,
   onSendNow,
@@ -641,7 +644,7 @@ function TurnBlock({
       </div>
     </div>
   );
-}
+});
 
 function ReplyComposer({
   engine,
@@ -727,8 +730,12 @@ function ReplyComposer({
  * `TurnBlock` per run (clean user bubble + agent answer + activity) — with a
  * reply composer pinned to the bottom. A reply appears optimistically until the
  * refetched thread carries the real child run.
+ *
+ * Memoized: SessionView hands it memoized `turns` and useCallback handlers, so
+ * unrelated SessionView state (rail width commit, tab switches, workspace
+ * bookkeeping) no longer re-renders the whole timeline.
  */
-export function Conversation({
+export const Conversation = memo(function Conversation({
   turns,
   defaultEngine,
   defaultModel,
@@ -950,4 +957,4 @@ export function Conversation({
       />
     </div>
   );
-}
+});

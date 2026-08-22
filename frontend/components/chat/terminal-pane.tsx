@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 // clsx-only (not cnExt): tailwind-merge misgroups the custom `text-mono-label`
 // utility with the `text-neutral-*` color in the same call and drops it, blowing
 // the tab labels up to the inherited 16px instead of the 11px mono-label rhythm.
@@ -19,8 +19,11 @@ import {
  * captured output beneath. Intentionally uses the fixed `neutral-950` scale
  * (not the theme-flipping `bg-strong-950` token) so the terminal stays dark in
  * both light and dark app themes, like a real IDE terminal.
+ *
+ * Memoized: SessionView memoizes `allSteps`, so renders that don't change the
+ * step list (drag commits, tab bookkeeping) skip this pane entirely.
  */
-export function TerminalPane({
+export const TerminalPane = memo(function TerminalPane({
   steps,
   live,
   engine,
@@ -32,10 +35,16 @@ export function TerminalPane({
   /** Any run in the conversation — the shell attaches to the THREAD's sandbox. */
   runId?: string;
 }) {
-  const commandSteps = steps.filter((s) => s.kind === "command");
-  // Parse once: the row render, the in-flight detection, and the autoscroll
-  // signature all read the same command/output/exit projection.
-  const parsedCommands = commandSteps.map((step) => ({ step, ...parseCommandStep(step) }));
+  // Parse once PER STEP LIST, not per render: the row render, the in-flight
+  // detection, and the autoscroll signature all read the same
+  // command/output/exit projection.
+  const parsedCommands = useMemo(
+    () =>
+      steps
+        .filter((s) => s.kind === "command")
+        .map((step) => ({ step, ...parseCommandStep(step) })),
+    [steps],
+  );
   // The last command is genuinely in-flight (just invoked, no output/exit yet)
   // only while the thread is live - an opencode tool emits its `$ command` line
   // at `running`, before its output lands. A settled command from a PRIOR turn
@@ -159,4 +168,4 @@ export function TerminalPane({
       )}
     </div>
   );
-}
+});
