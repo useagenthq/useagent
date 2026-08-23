@@ -2,6 +2,7 @@
 
 import {
   RiAddLine,
+  RiArrowUpLine,
   RiBookMarkedLine,
   RiCpuLine,
   RiFlashlightLine,
@@ -506,10 +507,14 @@ export function NewTaskComposer({
                   />
                 </div>
               )}
+              {/* Stays primary-blue at rest (user decision 2026-08-23): disabled
+                  only while actually submitting or uploads are blocked; an
+                  empty-prompt click is a no-op (submit guards on empty). */}
               <Button
                 variant="primary"
+                trailingIcon={RiArrowUpLine}
                 onClick={() => void submit()}
-                disabled={!canSubmit}
+                disabled={submitting || runUploads.blocked}
                 className="min-w-[7.5rem] shrink-0 rounded-full px-3"
               >
                 {submitting ? "Starting..." : "Start thread"}
